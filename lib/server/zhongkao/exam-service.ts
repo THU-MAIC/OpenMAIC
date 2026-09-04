@@ -40,6 +40,7 @@ import {
 import {
   examAuthoritativeAnswerKeyObjectKey,
   examDocumentArtifactObjectKey,
+  examErrorSuggestionsObjectKey,
   examHumanReviewObjectKey,
   examKnowledgeMappingObjectKey,
   examKnowledgeSuggestionsObjectKey,
@@ -634,6 +635,15 @@ function examDerivativeObjectKeys(snapshot: ExamRuntimeSnapshot): string[] {
       examKnowledgeSuggestionsObjectKey(
         snapshot.state.examSessionId,
         knowledgeSuggestions.generationVersion,
+      ),
+    );
+  }
+  const errorSuggestions = snapshot.state.errorSuggestions;
+  if (errorSuggestions) {
+    keys.push(
+      examErrorSuggestionsObjectKey(
+        snapshot.state.examSessionId,
+        errorSuggestions.generationVersion,
       ),
     );
   }

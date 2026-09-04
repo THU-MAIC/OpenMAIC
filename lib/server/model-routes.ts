@@ -148,6 +148,7 @@ export const LLM_STAGES = [
   'generate-classroom',
   'web-search-query-rewrite',
   'exam-knowledge-suggestions',
+  'exam-error-suggestions',
   'maic-agent',
   'maic-agent-driver',
 ] as const;

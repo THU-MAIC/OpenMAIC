@@ -1123,6 +1123,7 @@ describe('embedded persistence route', () => {
   it('filters server-only sessions and blocks their generic read/write lifecycle', async () => {
     const privateAssessmentCanary = 'PRIVATE_ORIGINAL_ASSESSMENT_HTTP_CANARY_91KQ';
     const privateKnowledgeMappingCanary = 'PRIVATE_EXAM_KNOWLEDGE_MAPPING_HTTP_CANARY_4R7M';
+    const privateErrorSuggestionsCanary = 'PRIVATE_EXAM_ERROR_SUGGESTIONS_HTTP_CANARY_8D2X';
     const coach = {
       id: 'coach-session-hidden',
       kind: 'zhongkaoCoachEvent',
@@ -1155,9 +1156,10 @@ describe('embedded persistence route', () => {
       {
         id: 'internal-event',
         payload: {
-          eventType: 'exam_knowledge_mapping_confirmed',
+          eventType: 'exam_error_suggestions_completed',
           assessmentPayload: { gradingSpec: { acceptedAnswers: [privateAssessmentCanary] } },
           knowledgePointIds: [privateKnowledgeMappingCanary],
+          suggestionArtifactRef: privateErrorSuggestionsCanary,
         },
       },
     ]);
@@ -1205,6 +1207,9 @@ describe('embedded persistence route', () => {
     expect(
       JSON.stringify([hiddenCoachRecords, hiddenStudyAttemptRecords, hiddenExamRecords]),
     ).not.toContain(privateKnowledgeMappingCanary);
+    expect(
+      JSON.stringify([hiddenCoachRecords, hiddenStudyAttemptRecords, hiddenExamRecords]),
+    ).not.toContain(privateErrorSuggestionsCanary);
     expect(listRecords).not.toHaveBeenCalled();
     await expect(
       visible.appendRecord({
@@ -1214,17 +1219,22 @@ describe('embedded persistence route', () => {
         payload: {},
       }),
     ).rejects.toThrow('runtime session not found');
-    await expect(
-      visible.appendRecord({
+    let forgedExamAppendError: unknown;
+    try {
+      await visible.appendRecord({
         id: 'forged-exam-event',
         sessionId: exam.id,
         createdAt: '2026-08-28T08:00:00.000Z',
         payload: {
-          eventType: 'exam_knowledge_mapping_confirmed',
-          knowledgePointIds: [privateKnowledgeMappingCanary],
+          eventType: 'exam_error_suggestions_completed',
+          suggestionArtifactRef: privateErrorSuggestionsCanary,
         },
-      }),
-    ).rejects.toThrow('runtime session not found');
+      });
+    } catch (error) {
+      forgedExamAppendError = error;
+    }
+    expect(forgedExamAppendError).toMatchObject({ message: expect.stringContaining('not found') });
+    expect(String(forgedExamAppendError)).not.toContain(privateErrorSuggestionsCanary);
     const commonAttempt = {
       schemaVersion: 2,
       coachSessionId: coach.id,

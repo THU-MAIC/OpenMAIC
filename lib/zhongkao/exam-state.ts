@@ -3,6 +3,7 @@ import type { RuntimeRecord } from '@openmaic/dsl';
 import {
   EXAM_SCHEMA_VERSION,
   EXAM_MAX_KNOWLEDGE_SUGGESTIONS_PER_QUESTION,
+  type PublicExamErrorSuggestionsSummary,
   type PublicExamGradingSummary,
   type PublicExamHumanReviewSummary,
   type PublicExamKnowledgeMappingSummary,
@@ -18,6 +19,7 @@ import {
   assertExamEvent,
   type ExamAnswerKeyPlanFacts,
   type ExamCreatedDocument,
+  type ExamErrorSuggestionsPlanFacts,
   type ExamEvent,
   type ExamGradingPlanFacts,
   type ExamHumanReviewPlanFacts,
@@ -210,6 +212,29 @@ export interface ExamKnowledgeSuggestionsState extends ExamKnowledgeSuggestionsP
   suggestionArtifact?: ExamKnowledgeSuggestionsArtifactFact;
 }
 
+export type ExamErrorSuggestionsStatus = 'generating' | 'completed';
+
+export interface ExamErrorSuggestionsArtifactFact {
+  eventId: string;
+  createdAt: string;
+  byteLength: number;
+  sha256: string;
+  eligibleQuestionCount: number;
+  candidateQuestionCount: number;
+  noSuggestionQuestionCount: number;
+  inputTooLargeQuestionCount: number;
+  suggestionCount: number;
+  deterministicSuggestionCount: number;
+  modelSuggestionCount: number;
+}
+
+export interface ExamErrorSuggestionsState extends ExamErrorSuggestionsPlanFacts {
+  status: ExamErrorSuggestionsStatus;
+  startedEventId: string;
+  startedAt: string;
+  suggestionArtifact?: ExamErrorSuggestionsArtifactFact;
+}
+
 export type ExamKnowledgeMappingStatus = 'mapping' | 'confirmed';
 
 export interface ExamKnowledgeMappingArtifactFact {
@@ -268,6 +293,7 @@ export interface ExamSessionState {
   answerKey?: ExamAnswerKeyState;
   grading?: ExamGradingState;
   knowledgeSuggestions?: ExamKnowledgeSuggestionsState;
+  errorSuggestions?: ExamErrorSuggestionsState;
   knowledgeMapping?: ExamKnowledgeMappingState;
   observationProjection?: ExamObservationProjectionState;
   intakeCompletedEventId?: string;
@@ -418,6 +444,44 @@ function knowledgeSuggestionsPlanMatches(
     event.sourceReviewSemanticFingerprint === suggestions.sourceReviewSemanticFingerprint &&
     event.candidatePoolMode === suggestions.candidatePoolMode &&
     event.candidatePoolFingerprint === suggestions.candidatePoolFingerprint &&
+    event.generationRef === suggestions.generationRef &&
+    event.suggestionArtifactRef === suggestions.suggestionArtifactRef
+  );
+}
+
+type ExamErrorSuggestionsPlanEvent = Extract<
+  ExamEvent,
+  {
+    eventType: 'exam_error_suggestions_started' | 'exam_error_suggestions_completed';
+  }
+>;
+
+function errorSuggestionsPlanMatches(
+  suggestions: ExamErrorSuggestionsState,
+  event: ExamErrorSuggestionsPlanEvent,
+): boolean {
+  return (
+    event.generationVersion === suggestions.generationVersion &&
+    event.subjectId === suggestions.subjectId &&
+    event.generatorVersion === suggestions.generatorVersion &&
+    event.detectorVersion === suggestions.detectorVersion &&
+    event.modelPolicyVersion === suggestions.modelPolicyVersion &&
+    event.candidateSchemaVersion === suggestions.candidateSchemaVersion &&
+    event.reviewVersion === suggestions.reviewVersion &&
+    event.reviewArtifactRef === suggestions.reviewArtifactRef &&
+    event.sourceReviewArtifactFingerprint === suggestions.sourceReviewArtifactFingerprint &&
+    event.sourceReviewSemanticFingerprint === suggestions.sourceReviewSemanticFingerprint &&
+    event.answerKeyVersion === suggestions.answerKeyVersion &&
+    event.answerKeyRef === suggestions.answerKeyRef &&
+    event.answerKeyArtifactRef === suggestions.answerKeyArtifactRef &&
+    event.sourceAnswerKeyArtifactFingerprint === suggestions.sourceAnswerKeyArtifactFingerprint &&
+    event.sourceAnswerKeySemanticFingerprint === suggestions.sourceAnswerKeySemanticFingerprint &&
+    event.assessmentVersion === suggestions.assessmentVersion &&
+    event.gradingAlgorithmVersion === suggestions.gradingAlgorithmVersion &&
+    event.gradingRef === suggestions.gradingRef &&
+    event.assessmentArtifactRef === suggestions.assessmentArtifactRef &&
+    event.sourceAssessmentArtifactFingerprint === suggestions.sourceAssessmentArtifactFingerprint &&
+    event.sourceAssessmentSemanticFingerprint === suggestions.sourceAssessmentSemanticFingerprint &&
     event.generationRef === suggestions.generationRef &&
     event.suggestionArtifactRef === suggestions.suggestionArtifactRef
   );
@@ -1038,6 +1102,8 @@ export function foldExamEvents(records: readonly RuntimeRecord[]): ExamSessionSt
             state.answerKey?.answerKeyArtifactRef,
             state.grading?.gradingRef,
             state.grading?.assessmentArtifactRef,
+            state.errorSuggestions?.generationRef,
+            state.errorSuggestions?.suggestionArtifactRef,
           ].filter((value): value is string => value !== undefined);
           if (
             state.status !== 'ready_for_extraction' ||
@@ -1115,6 +1181,132 @@ export function foldExamEvents(records: readonly RuntimeRecord[]): ExamSessionSt
           };
           break;
         }
+        case 'exam_error_suggestions_started': {
+          const review = state.humanReview;
+          const reviewArtifact = review?.reviewArtifact;
+          const answerKey = state.answerKey;
+          const answerKeyArtifact = answerKey?.answerKeyArtifact;
+          const grading = state.grading;
+          const assessmentArtifact = grading?.assessmentArtifact;
+          const existingRefs = [
+            state.questionExtraction?.documentArtifactRef,
+            state.questionExtraction?.segmentation?.candidateArtifactRef,
+            state.studentResponseCapture?.captureRef,
+            state.studentResponseCapture?.responseArtifactRef,
+            state.studentResponseCapture?.matchingArtifactRef,
+            review?.reviewArtifactRef,
+            answerKey?.answerKeyRef,
+            answerKey?.answerKeyArtifactRef,
+            grading?.gradingRef,
+            grading?.assessmentArtifactRef,
+            state.knowledgeSuggestions?.generationRef,
+            state.knowledgeSuggestions?.suggestionArtifactRef,
+            state.knowledgeMapping?.mappingRef,
+            state.knowledgeMapping?.mappingArtifactRef,
+            state.observationProjection?.observationRef,
+            state.observationProjection?.observationArtifactRef,
+          ].filter((value): value is string => value !== undefined);
+          if (
+            state.status !== 'ready_for_extraction' ||
+            review?.status !== 'confirmed' ||
+            !reviewArtifact ||
+            answerKey?.status !== 'confirmed' ||
+            !answerKeyArtifact ||
+            grading?.status !== 'completed' ||
+            !assessmentArtifact ||
+            state.errorSuggestions ||
+            event.subjectId !== state.subjectId ||
+            event.reviewVersion !== review.reviewVersion ||
+            event.reviewArtifactRef !== review.reviewArtifactRef ||
+            event.sourceReviewArtifactFingerprint !== reviewArtifact.sha256 ||
+            event.sourceReviewSemanticFingerprint !== review.decisionSemanticFingerprint ||
+            event.answerKeyVersion !== answerKey.answerKeyVersion ||
+            event.answerKeyRef !== answerKey.answerKeyRef ||
+            event.answerKeyArtifactRef !== answerKey.answerKeyArtifactRef ||
+            event.sourceAnswerKeyArtifactFingerprint !== answerKeyArtifact.sha256 ||
+            event.sourceAnswerKeySemanticFingerprint !== answerKey.answerKeySemanticFingerprint ||
+            event.assessmentVersion !== grading.gradingVersion ||
+            event.gradingAlgorithmVersion !== grading.gradingAlgorithmVersion ||
+            event.gradingRef !== grading.gradingRef ||
+            event.assessmentArtifactRef !== grading.assessmentArtifactRef ||
+            event.sourceAssessmentArtifactFingerprint !== assessmentArtifact.sha256 ||
+            existingRefs.includes(event.generationRef) ||
+            existingRefs.includes(event.suggestionArtifactRef) ||
+            event.generationRef === event.suggestionArtifactRef
+          ) {
+            conflict();
+          }
+          state.errorSuggestions = {
+            status: 'generating',
+            startedEventId: event.eventId,
+            startedAt: event.createdAt,
+            generationVersion: event.generationVersion,
+            subjectId: event.subjectId,
+            generatorVersion: event.generatorVersion,
+            detectorVersion: event.detectorVersion,
+            modelPolicyVersion: event.modelPolicyVersion,
+            candidateSchemaVersion: event.candidateSchemaVersion,
+            reviewVersion: event.reviewVersion,
+            reviewArtifactRef: event.reviewArtifactRef,
+            sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+            sourceReviewSemanticFingerprint: event.sourceReviewSemanticFingerprint,
+            answerKeyVersion: event.answerKeyVersion,
+            answerKeyRef: event.answerKeyRef,
+            answerKeyArtifactRef: event.answerKeyArtifactRef,
+            sourceAnswerKeyArtifactFingerprint: event.sourceAnswerKeyArtifactFingerprint,
+            sourceAnswerKeySemanticFingerprint: event.sourceAnswerKeySemanticFingerprint,
+            assessmentVersion: event.assessmentVersion,
+            gradingAlgorithmVersion: event.gradingAlgorithmVersion,
+            gradingRef: event.gradingRef,
+            assessmentArtifactRef: event.assessmentArtifactRef,
+            sourceAssessmentArtifactFingerprint: event.sourceAssessmentArtifactFingerprint,
+            sourceAssessmentSemanticFingerprint: event.sourceAssessmentSemanticFingerprint,
+            generationRef: event.generationRef,
+            suggestionArtifactRef: event.suggestionArtifactRef,
+          };
+          break;
+        }
+        case 'exam_error_suggestions_completed': {
+          const gradingArtifact = state.grading?.assessmentArtifact;
+          const suggestions = state.errorSuggestions;
+          if (
+            state.status !== 'ready_for_extraction' ||
+            !gradingArtifact ||
+            !suggestions ||
+            suggestions.status !== 'generating' ||
+            suggestions.suggestionArtifact ||
+            !errorSuggestionsPlanMatches(suggestions, event) ||
+            event.eligibleQuestionCount !== gradingArtifact.incorrectCount ||
+            event.eligibleQuestionCount !==
+              event.candidateQuestionCount +
+                event.noSuggestionQuestionCount +
+                event.inputTooLargeQuestionCount ||
+            event.suggestionCount !==
+              event.deterministicSuggestionCount + event.modelSuggestionCount ||
+            (event.candidateQuestionCount === 0
+              ? event.suggestionCount !== 0
+              : event.suggestionCount < event.candidateQuestionCount ||
+                event.suggestionCount >
+                  event.candidateQuestionCount * EXAM_MAX_KNOWLEDGE_SUGGESTIONS_PER_QUESTION)
+          ) {
+            conflict();
+          }
+          suggestions.status = 'completed';
+          suggestions.suggestionArtifact = {
+            eventId: event.eventId,
+            createdAt: event.createdAt,
+            byteLength: event.artifactByteLength,
+            sha256: event.artifactSha256,
+            eligibleQuestionCount: event.eligibleQuestionCount,
+            candidateQuestionCount: event.candidateQuestionCount,
+            noSuggestionQuestionCount: event.noSuggestionQuestionCount,
+            inputTooLargeQuestionCount: event.inputTooLargeQuestionCount,
+            suggestionCount: event.suggestionCount,
+            deterministicSuggestionCount: event.deterministicSuggestionCount,
+            modelSuggestionCount: event.modelSuggestionCount,
+          };
+          break;
+        }
         case 'exam_knowledge_mapping_started': {
           const review = state.humanReview;
           const reviewArtifact = review?.reviewArtifact;
@@ -1133,6 +1325,8 @@ export function foldExamEvents(records: readonly RuntimeRecord[]): ExamSessionSt
             grading?.assessmentArtifactRef,
             state.knowledgeSuggestions?.generationRef,
             state.knowledgeSuggestions?.suggestionArtifactRef,
+            state.errorSuggestions?.generationRef,
+            state.errorSuggestions?.suggestionArtifactRef,
           ].filter((value): value is string => value !== undefined);
           if (
             state.status !== 'ready_for_extraction' ||
@@ -1226,6 +1420,8 @@ export function foldExamEvents(records: readonly RuntimeRecord[]): ExamSessionSt
             grading?.assessmentArtifactRef,
             state.knowledgeSuggestions?.generationRef,
             state.knowledgeSuggestions?.suggestionArtifactRef,
+            state.errorSuggestions?.generationRef,
+            state.errorSuggestions?.suggestionArtifactRef,
             mapping?.mappingRef,
             mapping?.mappingArtifactRef,
           ].filter((value): value is string => value !== undefined);
@@ -1451,6 +1647,20 @@ function toPublicKnowledgeSuggestions(
   };
 }
 
+function toPublicErrorSuggestions(
+  suggestions: ExamErrorSuggestionsState | undefined,
+): PublicExamErrorSuggestionsSummary {
+  if (!suggestions) return { status: 'not_started' };
+  if (suggestions.status !== 'completed') return { status: 'processing' };
+  const artifact = suggestions.suggestionArtifact;
+  if (!artifact) conflict();
+  return {
+    status: 'completed',
+    questionCount: artifact.eligibleQuestionCount,
+    suggestionCount: artifact.suggestionCount,
+  };
+}
+
 function toPublicKnowledgeMapping(
   mapping: ExamKnowledgeMappingState | undefined,
 ): PublicExamKnowledgeMappingSummary {
@@ -1501,6 +1711,7 @@ export function toPublicExamSession(state: ExamSessionState): PublicExamSession 
     humanReview: toPublicHumanReview(state.humanReview),
     grading: toPublicGrading(state.answerKey, state.grading),
     knowledgeSuggestions: toPublicKnowledgeSuggestions(state.knowledgeSuggestions),
+    errorSuggestions: toPublicErrorSuggestions(state.errorSuggestions),
     knowledgeMapping: toPublicKnowledgeMapping(state.knowledgeMapping),
     observationProjection: toPublicObservationProjection(state.observationProjection),
   };

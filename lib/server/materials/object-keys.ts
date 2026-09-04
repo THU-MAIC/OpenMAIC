@@ -193,6 +193,16 @@ export function examKnowledgeSuggestionsObjectKey(
   )}knowledge/suggestions_v${generationVersion}/exam_knowledge_suggestions_v1.json`;
 }
 
+export function examErrorSuggestionsObjectKey(
+  examSessionId: string,
+  generationVersion: number,
+): string {
+  assertArtifactVersion(generationVersion);
+  return `${examSnapshotObjectPrefix(
+    examSessionId,
+  )}diagnosis/error_suggestions_v${generationVersion}/exam_error_diagnosis_candidates_v1.json`;
+}
+
 export function examObservationsObjectKey(
   examSessionId: string,
   mappingVersion: number,

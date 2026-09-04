@@ -156,7 +156,7 @@ describe('profile-wide KnowledgeProgress evidence collection', () => {
     ]);
   });
 
-  it('ignores corrupt non-authoritative knowledge suggestions while preserving evidence semantics', async () => {
+  it('ignores corrupt non-authoritative knowledge and error suggestions while preserving evidence semantics', async () => {
     const attempt = studyAttempt({
       id: 'attempt-before-suggestions',
       profileId: PROFILE_ID,
@@ -164,6 +164,7 @@ describe('profile-wide KnowledgeProgress evidence collection', () => {
     });
     const confirmedObservation = observation();
     const suggestionStateRead = vi.fn();
+    const errorSuggestionStateRead = vi.fn();
     const active = snapshot(EXAM_ID);
     Object.assign(active.state, {
       knowledgeSuggestions: new Proxy(
@@ -174,6 +175,18 @@ describe('profile-wide KnowledgeProgress evidence collection', () => {
         {
           get(target, property, receiver) {
             suggestionStateRead(property);
+            return Reflect.get(target, property, receiver);
+          },
+        },
+      ),
+      errorSuggestions: new Proxy(
+        {
+          status: 'completed',
+          suggestionArtifact: { sha256: 'corrupt', byteLength: -1 },
+        },
+        {
+          get(target, property, receiver) {
+            errorSuggestionStateRead(property);
             return Reflect.get(target, property, receiver);
           },
         },
@@ -208,6 +221,7 @@ describe('profile-wide KnowledgeProgress evidence collection', () => {
     });
 
     expect(suggestionStateRead).not.toHaveBeenCalled();
+    expect(errorSuggestionStateRead).not.toHaveBeenCalled();
     expect(suggestionArtifactRead).not.toHaveBeenCalled();
     expect(
       deriveKnowledgeProgressFromEvidence({ ...progressInput, evidence: result.evidence }),

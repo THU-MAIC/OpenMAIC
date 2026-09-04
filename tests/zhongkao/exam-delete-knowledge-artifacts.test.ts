@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RuntimeStore } from '@openmaic/storage';
 
 import {
+  examErrorSuggestionsObjectKey,
   examKnowledgeMappingObjectKey,
   examKnowledgeSuggestionsObjectKey,
   examObservationsObjectKey,
@@ -37,6 +38,7 @@ const DOCUMENT_ID = `exam-document:v1:${'b'.repeat(64)}`;
 const RAW_KEY = examSnapshotObjectKey(EXAM_ID, DOCUMENT_ID);
 const MAPPING_KEY = examKnowledgeMappingObjectKey(EXAM_ID, 1);
 const SUGGESTIONS_KEY = examKnowledgeSuggestionsObjectKey(EXAM_ID, 1);
+const ERROR_SUGGESTIONS_KEY = examErrorSuggestionsObjectKey(EXAM_ID, 1);
 const OBSERVATIONS_KEY = examObservationsObjectKey(EXAM_ID, 1, 1);
 
 class ExactOnlyByteStore implements MaterialByteStore {
@@ -102,6 +104,7 @@ interface SyntheticExamState {
   documentSetFingerprint: string;
   documents: Array<{ examDocumentId: string }>;
   knowledgeSuggestions?: { generationVersion: number; status: 'generating' | 'completed' };
+  errorSuggestions?: { generationVersion: number; status: 'generating' | 'completed' };
   knowledgeMapping?: { mappingVersion: number };
   observationProjection?: { mappingVersion: number; observationVersion: number };
   deleteRequestedEventId?: string;
@@ -193,6 +196,18 @@ function harness() {
         },
       };
     },
+    setOnlyErrorSuggestionsPresent(status: 'generating' | 'completed') {
+      current = {
+        ...current,
+        state: {
+          ...current.state,
+          errorSuggestions: { generationVersion: 1, status },
+          knowledgeSuggestions: undefined,
+          knowledgeMapping: undefined,
+          observationProjection: undefined,
+        },
+      };
+    },
   };
 }
 
@@ -232,6 +247,46 @@ describe('Exam deletion of private knowledge artifacts', () => {
     expect(h.current.state.status).toBe('deleting');
     expect(h.byteStore.objects.has(RAW_KEY)).toBe(false);
     expect(h.byteStore.objects.has(SUGGESTIONS_KEY)).toBe(true);
+
+    await expect(deleteExam(h.deps, EXAM_ID)).resolves.toBe('deleted');
+    expect(h.byteStore.objects.size).toBe(0);
+    expect(
+      runtimeMocks.appendExamRuntimeEvent.mock.calls.filter(
+        ([, input]) => input.event.eventType === 'exam_delete_requested',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it.each(['generating', 'completed'] as const)(
+    'deletes the exact error-suggestion key while generation is %s',
+    async (status) => {
+      const h = harness();
+      h.setOnlyErrorSuggestionsPresent(status);
+      for (const key of [RAW_KEY, ERROR_SUGGESTIONS_KEY]) {
+        await h.byteStore.put(key, Buffer.from(`private:${key}`));
+      }
+
+      await expect(deleteExam(h.deps, EXAM_ID)).resolves.toBe('deleted');
+
+      expect(h.byteStore.objects.size).toBe(0);
+      expect(h.byteStore.deleteCalls).toEqual([RAW_KEY, ERROR_SUGGESTIONS_KEY]);
+    },
+  );
+
+  it('retries partial error-suggestion cleanup after the started event persisted', async () => {
+    const h = harness();
+    h.setOnlyErrorSuggestionsPresent('generating');
+    for (const key of [RAW_KEY, ERROR_SUGGESTIONS_KEY]) {
+      await h.byteStore.put(key, Buffer.from(`private:${key}`));
+    }
+    h.byteStore.failDeleteKeyOnce = ERROR_SUGGESTIONS_KEY;
+
+    await expect(deleteExam(h.deps, EXAM_ID)).rejects.toMatchObject({
+      code: 'EXAM_DELETE_FAILED',
+    });
+    expect(h.current.state.status).toBe('deleting');
+    expect(h.byteStore.objects.has(RAW_KEY)).toBe(false);
+    expect(h.byteStore.objects.has(ERROR_SUGGESTIONS_KEY)).toBe(true);
 
     await expect(deleteExam(h.deps, EXAM_ID)).resolves.toBe('deleted');
     expect(h.byteStore.objects.size).toBe(0);

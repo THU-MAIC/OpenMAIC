@@ -1820,3 +1820,125 @@ KnowledgeProgress update, StudyAttempt write, Coach behavior change, correctness
 change, or error diagnosis. Any future error-diagnosis work remains reserved
 for M3B-2C and requires its own explicit evidence and authority contract; no
 M3B-2C behavior is introduced here.
+
+## Milestone 3B-2C reviewable observable error candidates
+
+M3B-2C creates `ExamErrorDiagnosisCandidate` review material for objective
+questions whose current authoritative `ExamQuestionAssessment` is
+`evaluated/incorrect`. A candidate is not a diagnosis, confirmed observation,
+grading fact, knowledge fact, Progress signal, or statement about the learner.
+Correct and unassessed questions are excluded before detection or model input.
+The milestone does not implement confirmed error authority; a later, separate
+human error review gate is required before any candidate could become a trusted
+error observation.
+
+### Authoritative sources and observable rules
+
+Question and response facts come only from the immutable
+`ConfirmedExamReviewFacts` artifact. Correctness comes only from the immutable
+`ExamQuestionAssessments` artifact. When an expected-versus-actual comparison
+is necessary, the server resolves the private owner-confirmed grading artifact
+and uses only the relevant per-question specification. Extraction candidates,
+raw PDF bytes, unconfirmed matches, generated answer keys, model output, and
+historical learner state are never correctness or diagnosis sources.
+
+The versioned deterministic detector does not re-grade. After the persisted
+assessment has admitted an incorrect question, it reuses the grading parser and
+canonical decimal representation solely to derive observable mismatch facts.
+Its closed v1 candidates are blank response, no response, unsupported response
+format for the selected objective grader, single-choice option mismatch,
+multiple-choice set mismatch, opposite numeric sign, and other numeric value
+mismatch. A valid but non-matching exact short answer produces
+`no_suggestion`; static text does not prove a concept error or incomplete
+answer. A contradiction between the persisted assessment and the reconstructed
+mechanical facts is source corruption and fails closed rather than changing the
+grade.
+
+Arithmetic process, completeness, expected units, and cognitive causes are not
+present in the current grading contract. The schema therefore contains no
+carelessness, rushing, time pressure, anxiety, stress, attention, focus,
+motivation, memory, intelligence, ability, personality, concept-understanding,
+mastery, weakness, study-effort, or reading-error label. An invalid expression
+such as `1/2`, `1+2`, or a number followed by text is only a response-format
+observation under deterministic rules.
+
+### Narrow model supplement and injection boundary
+
+Deterministic candidates are produced first and cannot be removed or replaced
+by a model. The only v1 model supplement is a reviewable
+`unit_error_candidate` for a numeric response already proven mechanically
+unparseable. The model receives an opaque request key, subject id, confirmed
+question and optional parent text, confirmed response text, the fixed numeric
+format-mismatch fact, and the one allowed candidate kind. It receives no owner,
+profile, learner, Exam identity, answer-key value, accepted-answer list,
+knowledge point, score, Progress, StudyAttempt, Coach, prior-error, or admission
+information. No expected answer enters this model payload.
+
+A unit candidate must cite at least one exact substring from the confirmed
+question or parent context and one exact substring from the confirmed response.
+This remains an untrusted model suggestion for owner review, not proof that the
+units are semantically comparable. Question, parent, and response strings are
+all untrusted data and never instructions. The prompt prohibits grading
+changes, advice, subjective attribution, and chain-of-thought. Native
+`JSON.parse` plus a closed TypeBox schema rejects Markdown repair, unknown
+fields or kinds, correctness fields, free reasoning, missing or duplicate
+opaque keys, fabricated spans, and oversized output.
+
+### Candidate artifact and public boundary
+
+Every suggestion has a server-derived candidate id, fixed
+`candidateStatus=candidate`, `generationSource` of `deterministic_candidate` or
+`model_candidate`, an uncalibrated `high|medium|low` confidence band, and closed
+structured evidence. Evidence is limited to response status, option-set
+difference, numeric difference kind, parser-format observation, or grounded
+text spans. It contains no free explanation. Exact semantic duplicates are
+deduplicated; fuzzy merging is not performed.
+
+The private `exam_error_diagnosis_candidates_v1.json` artifact binds the exact
+review, authoritative answer-key, assessment, grading algorithm, detector,
+model policy, generator, and candidate-schema versions. It stores neither
+question text, raw response text, expected answers, full grading specs, prompts,
+raw provider responses, credentials, usage, nor reasoning. The dedicated
+owner-authorized GET joins current confirmed question and response facts for
+review while withholding the complete expected answer and private grading
+specification. Ordinary Exam detail exposes only generation status and aggregate
+question/suggestion counts. Both dedicated methods use `private, no-store`.
+
+The private artifact also records a closed model-execution fact. It is
+`not_used` with the fixed `exam-error-suggestions` stage when no model call was
+made, or `used` with that stage plus the bounded provider and model identifiers
+from the exact memoized `resolveModel` result used by `callLLM`. This fact is
+part of the artifact semantic fingerprint. It never contains a prompt, raw
+response, reasoning, credential, base URL, model object, or connection setting,
+and it is absent from Exam events, ordinary Exam DTOs, and the dedicated public
+review bundle. Model resolution remains lazy, so reading an existing artifact
+does not depend on the current route or `DEFAULT_MODEL` configuration.
+
+### Persistence, replay, deletion, and non-authority
+
+The Exam stream appends `exam_error_suggestions_started` before detector or
+provider work. Provider work runs outside the mutation lock. Finalization
+reacquires the lock, reloads the active Exam, revalidates all three immutable
+sources and their fingerprints, writes the deterministic private object key,
+reads back and validates canonical bytes and SHA-256, and only then appends
+`exam_error_suggestions_completed`. Events contain source/version references,
+integrity facts, and aggregate deterministic/model counts, never candidate
+content or student/answer text.
+
+Retries recover created reservations, bytes written before the completed event,
+completed-response loss, and CAS races. Concurrent calls share an in-process
+flight; across processes the first valid committed artifact wins and later
+calls revalidate it. The provider may be called more than once before that
+commit, but model non-determinism never overwrites committed facts. A started
+event is enough to derive the exact cleanup key. Delete may win while the model
+is running; late finalization then rejects the inactive Exam and cannot restore
+the artifact or session.
+
+Error candidates are deliberately absent from the confirmed-observation
+resolver, strict Progress evidence collector, StudyAttempt projection, and
+Coach runtime. Corruption of this non-authoritative artifact makes only the
+dedicated error-suggestion surface fail closed. It cannot invalidate otherwise
+sound grading, knowledge mapping, confirmed Exam observations, or Progress.
+M3B-2C adds no OCR, vision, answer-key extraction, confirmed error type,
+KnowledgeProgress write, ExamObservation write, StudyAttempt write, Coach
+event, UI, production dependency, or database schema.

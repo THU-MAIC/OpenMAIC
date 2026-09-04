@@ -608,6 +608,69 @@ function expectedOperationFingerprint(event: ExamEvent): string {
         inputTooLargeQuestionCount: event.inputTooLargeQuestionCount,
         suggestionCount: event.suggestionCount,
       });
+    case 'exam_error_suggestions_started':
+      return createExamOperationFingerprint({
+        ...common,
+        generationVersion: event.generationVersion,
+        subjectId: event.subjectId,
+        generatorVersion: event.generatorVersion,
+        detectorVersion: event.detectorVersion,
+        modelPolicyVersion: event.modelPolicyVersion,
+        candidateSchemaVersion: event.candidateSchemaVersion,
+        reviewVersion: event.reviewVersion,
+        reviewArtifactRef: event.reviewArtifactRef,
+        sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+        sourceReviewSemanticFingerprint: event.sourceReviewSemanticFingerprint,
+        answerKeyVersion: event.answerKeyVersion,
+        answerKeyRef: event.answerKeyRef,
+        answerKeyArtifactRef: event.answerKeyArtifactRef,
+        sourceAnswerKeyArtifactFingerprint: event.sourceAnswerKeyArtifactFingerprint,
+        sourceAnswerKeySemanticFingerprint: event.sourceAnswerKeySemanticFingerprint,
+        assessmentVersion: event.assessmentVersion,
+        gradingAlgorithmVersion: event.gradingAlgorithmVersion,
+        gradingRef: event.gradingRef,
+        assessmentArtifactRef: event.assessmentArtifactRef,
+        sourceAssessmentArtifactFingerprint: event.sourceAssessmentArtifactFingerprint,
+        sourceAssessmentSemanticFingerprint: event.sourceAssessmentSemanticFingerprint,
+        generationRef: event.generationRef,
+        suggestionArtifactRef: event.suggestionArtifactRef,
+      });
+    case 'exam_error_suggestions_completed':
+      return createExamOperationFingerprint({
+        ...common,
+        generationVersion: event.generationVersion,
+        subjectId: event.subjectId,
+        generatorVersion: event.generatorVersion,
+        detectorVersion: event.detectorVersion,
+        modelPolicyVersion: event.modelPolicyVersion,
+        candidateSchemaVersion: event.candidateSchemaVersion,
+        reviewVersion: event.reviewVersion,
+        reviewArtifactRef: event.reviewArtifactRef,
+        sourceReviewArtifactFingerprint: event.sourceReviewArtifactFingerprint,
+        sourceReviewSemanticFingerprint: event.sourceReviewSemanticFingerprint,
+        answerKeyVersion: event.answerKeyVersion,
+        answerKeyRef: event.answerKeyRef,
+        answerKeyArtifactRef: event.answerKeyArtifactRef,
+        sourceAnswerKeyArtifactFingerprint: event.sourceAnswerKeyArtifactFingerprint,
+        sourceAnswerKeySemanticFingerprint: event.sourceAnswerKeySemanticFingerprint,
+        assessmentVersion: event.assessmentVersion,
+        gradingAlgorithmVersion: event.gradingAlgorithmVersion,
+        gradingRef: event.gradingRef,
+        assessmentArtifactRef: event.assessmentArtifactRef,
+        sourceAssessmentArtifactFingerprint: event.sourceAssessmentArtifactFingerprint,
+        sourceAssessmentSemanticFingerprint: event.sourceAssessmentSemanticFingerprint,
+        generationRef: event.generationRef,
+        suggestionArtifactRef: event.suggestionArtifactRef,
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        eligibleQuestionCount: event.eligibleQuestionCount,
+        candidateQuestionCount: event.candidateQuestionCount,
+        noSuggestionQuestionCount: event.noSuggestionQuestionCount,
+        inputTooLargeQuestionCount: event.inputTooLargeQuestionCount,
+        suggestionCount: event.suggestionCount,
+        deterministicSuggestionCount: event.deterministicSuggestionCount,
+        modelSuggestionCount: event.modelSuggestionCount,
+      });
     case 'exam_knowledge_mapping_started':
       return createExamOperationFingerprint({
         ...common,
@@ -1167,6 +1230,7 @@ describe('Exam intake service', () => {
       snapshotStatus: 'snapshotted',
     });
     expect(result.exam.humanReview).toEqual({ status: 'not_started' });
+    expect(result.exam.errorSuggestions).toEqual({ status: 'not_started' });
   });
 
   it('fails closed when a resolved snapshot is missing, corrupt or foreign', async () => {

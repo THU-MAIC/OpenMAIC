@@ -4,6 +4,7 @@ import {
   assertPortableMaterialObjectKey,
   examAuthoritativeAnswerKeyObjectKey,
   examDocumentArtifactObjectKey,
+  examErrorSuggestionsObjectKey,
   examHumanReviewObjectKey,
   examKnowledgeMappingObjectKey,
   examKnowledgeSuggestionsObjectKey,
@@ -181,6 +182,24 @@ describe('material object key contract', () => {
     expect(() => assertPortableMaterialObjectKey(first)).not.toThrow();
   });
 
+  it('derives a deterministic private error-suggestion artifact per Exam generation', () => {
+    const first = examErrorSuggestionsObjectKey('exam-alpha', 1);
+    const replay = examErrorSuggestionsObjectKey('exam-alpha', 1);
+    const nextVersion = examErrorSuggestionsObjectKey('exam-alpha', 2);
+    const otherExam = examErrorSuggestionsObjectKey('exam-beta', 1);
+
+    expect(first).toBe(replay);
+    expect(first).toMatch(
+      /^materials\/v1\/exams\/exm_[a-f0-9]{64}\/diagnosis\/error_suggestions_v1\/exam_error_diagnosis_candidates_v1\.json$/,
+    );
+    expect(first).not.toBe(nextVersion);
+    expect(first).not.toBe(otherExam);
+    expect(first).not.toContain('exam-alpha');
+    expect(isExamSnapshotObjectKey('exam-alpha', first)).toBe(true);
+    expect(isExamSnapshotObjectKey('exam-beta', first)).toBe(false);
+    expect(() => assertPortableMaterialObjectKey(first)).not.toThrow();
+  });
+
   it('rejects invalid Exam derivative versions', () => {
     expect(() => examDocumentArtifactObjectKey('exam', 'document', 0)).toThrow(
       'invalid exam artifact version',
@@ -210,6 +229,7 @@ describe('material object key contract', () => {
     expect(() => examKnowledgeSuggestionsObjectKey('exam', 0)).toThrow(
       'invalid exam artifact version',
     );
+    expect(() => examErrorSuggestionsObjectKey('exam', 0)).toThrow('invalid exam artifact version');
     expect(() => examObservationsObjectKey('exam', 1, Number.NaN)).toThrow(
       'invalid exam artifact version',
     );
@@ -221,6 +241,7 @@ describe('material object key contract', () => {
       const keys = [
         examSnapshotObjectKey(identity, identity),
         examKnowledgeSuggestionsObjectKey(identity, 1),
+        examErrorSuggestionsObjectKey(identity, 1),
         examKnowledgeMappingObjectKey(identity, 1),
         examObservationsObjectKey(identity, 1, 1),
       ];

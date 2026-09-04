@@ -83,6 +83,7 @@ function publicExam(overrides: Partial<PublicExamSession> = {}): PublicExamSessi
     humanReview: { status: 'not_started' },
     grading: { status: 'not_started' },
     knowledgeSuggestions: { status: 'not_started' },
+    errorSuggestions: { status: 'not_started' },
     knowledgeMapping: { status: 'not_started' },
     observationProjection: { status: 'not_started' },
     documents: [

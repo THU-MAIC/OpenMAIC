@@ -6,6 +6,7 @@ import {
   EXAM_MAX_CANDIDATE_ARTIFACT_BYTES,
   EXAM_MAX_DOCUMENT_BYTES,
   EXAM_MAX_DOCUMENT_ARTIFACT_BYTES,
+  EXAM_MAX_ERROR_SUGGESTION_ARTIFACT_BYTES,
   EXAM_MAX_EXTRACTED_PAGES,
   EXAM_MAX_HUMAN_REVIEW_ARTIFACT_BYTES,
   EXAM_MAX_KNOWLEDGE_SUGGESTION_ARTIFACT_BYTES,
@@ -90,6 +91,31 @@ const KNOWLEDGE_SUGGESTIONS_PLAN = {
   candidatePoolFingerprint: '8'.repeat(64),
   generationRef: 'exam-knowledge-suggestions-v1',
   suggestionArtifactRef: 'exam-knowledge-suggestions-artifact-v1',
+} as const;
+const ERROR_SUGGESTIONS_PLAN = {
+  generationVersion: 1,
+  subjectId: 'math',
+  generatorVersion: 'exam-error-diagnosis-generator:v1',
+  detectorVersion: 'exam-error-observable-rules:v1',
+  modelPolicyVersion: 'exam-error-model-policy:v1',
+  candidateSchemaVersion: 1,
+  reviewVersion: HUMAN_REVIEW_PLAN.reviewVersion,
+  reviewArtifactRef: HUMAN_REVIEW_PLAN.reviewArtifactRef,
+  sourceReviewArtifactFingerprint: '7'.repeat(64),
+  sourceReviewSemanticFingerprint: HUMAN_REVIEW_PLAN.decisionSemanticFingerprint,
+  answerKeyVersion: ANSWER_KEY_PLAN.answerKeyVersion,
+  answerKeyRef: ANSWER_KEY_PLAN.answerKeyRef,
+  answerKeyArtifactRef: ANSWER_KEY_PLAN.answerKeyArtifactRef,
+  sourceAnswerKeyArtifactFingerprint: '9'.repeat(64),
+  sourceAnswerKeySemanticFingerprint: ANSWER_KEY_PLAN.answerKeySemanticFingerprint,
+  assessmentVersion: GRADING_PLAN.gradingVersion,
+  gradingAlgorithmVersion: GRADING_PLAN.gradingAlgorithmVersion,
+  gradingRef: GRADING_PLAN.gradingRef,
+  assessmentArtifactRef: GRADING_PLAN.assessmentArtifactRef,
+  sourceAssessmentArtifactFingerprint: 'a'.repeat(64),
+  sourceAssessmentSemanticFingerprint: 'b'.repeat(64),
+  generationRef: 'exam-error-suggestions-v1',
+  suggestionArtifactRef: 'exam-error-suggestions-artifact-v1',
 } as const;
 const KNOWLEDGE_MAPPING_PLAN = {
   mappingVersion: 1,
@@ -333,6 +359,23 @@ function event(eventType: ExamEvent['eventType']): ExamEvent {
         noSuggestionQuestionCount: 1,
         inputTooLargeQuestionCount: 0,
         suggestionCount: 3,
+      };
+    case 'exam_error_suggestions_started':
+      return { ...base, eventType, ...ERROR_SUGGESTIONS_PLAN };
+    case 'exam_error_suggestions_completed':
+      return {
+        ...base,
+        eventType,
+        ...ERROR_SUGGESTIONS_PLAN,
+        artifactByteLength: 384,
+        artifactSha256: 'c'.repeat(64),
+        eligibleQuestionCount: 3,
+        candidateQuestionCount: 2,
+        noSuggestionQuestionCount: 1,
+        inputTooLargeQuestionCount: 0,
+        suggestionCount: 3,
+        deterministicSuggestionCount: 2,
+        modelSuggestionCount: 1,
       };
     case 'exam_knowledge_mapping_started':
       return { ...base, eventType, ...KNOWLEDGE_MAPPING_PLAN };
@@ -768,6 +811,57 @@ describe('Exam event schema', () => {
       expect(
         validateExamEvent({
           ...event('exam_knowledge_suggestions_completed'),
+          ...privateField,
+        }).valid,
+      ).toBe(false);
+    }
+  });
+
+  it('validates source-bound error-suggestion plans and exact aggregate counts', () => {
+    for (const invalid of [
+      { detectorVersion: '' },
+      { modelPolicyVersion: '' },
+      { sourceAnswerKeySemanticFingerprint: 'bad' },
+      { sourceAssessmentSemanticFingerprint: 'bad' },
+      { gradingAlgorithmVersion: 'exam-objective-grading:v2' },
+      { suggestionArtifactRef: ERROR_SUGGESTIONS_PLAN.generationRef },
+    ]) {
+      expect(
+        validateExamEvent({ ...event('exam_error_suggestions_started'), ...invalid }).valid,
+      ).toBe(false);
+    }
+    for (const invalid of [
+      { artifactByteLength: EXAM_MAX_ERROR_SUGGESTION_ARTIFACT_BYTES + 1 },
+      { candidateQuestionCount: 1 },
+      { suggestionCount: 2 },
+      { deterministicSuggestionCount: 3, modelSuggestionCount: 1 },
+      {
+        candidateQuestionCount: 1,
+        noSuggestionQuestionCount: 2,
+        suggestionCount: EXAM_MAX_KNOWLEDGE_SUGGESTIONS_PER_QUESTION + 1,
+        deterministicSuggestionCount: EXAM_MAX_KNOWLEDGE_SUGGESTIONS_PER_QUESTION + 1,
+        modelSuggestionCount: 0,
+      },
+    ]) {
+      expect(
+        validateExamEvent({ ...event('exam_error_suggestions_completed'), ...invalid }).valid,
+      ).toBe(false);
+    }
+  });
+
+  it('keeps error candidate content, responses and grading facts out of Runtime events', () => {
+    for (const privateField of [
+      { questionText: 'PRIVATE QUESTION' },
+      { rawAnswerText: 'PRIVATE STUDENT RESPONSE' },
+      { expectedValue: 'PRIVATE EXPECTED ANSWER' },
+      { acceptedAnswers: ['PRIVATE EXPECTED ANSWER'] },
+      { candidates: [{ kind: 'sign_error_candidate' }] },
+      { evidence: [{ type: 'numeric_difference', differenceKind: 'sign_mismatch' }] },
+      { objectKey: 'materials/private/exam_error_diagnosis_candidates_v1.json' },
+    ]) {
+      expect(
+        validateExamEvent({
+          ...event('exam_error_suggestions_completed'),
           ...privateField,
         }).valid,
       ).toBe(false);

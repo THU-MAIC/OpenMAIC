@@ -6,6 +6,7 @@ import {
   EXAM_MAX_ASSESSMENT_ARTIFACT_BYTES,
   EXAM_MAX_CANDIDATE_ARTIFACT_BYTES,
   EXAM_MAX_DOCUMENT_ARTIFACT_BYTES,
+  EXAM_MAX_ERROR_SUGGESTION_ARTIFACT_BYTES,
   EXAM_MAX_EXTRACTED_PAGES,
   EXAM_MAX_HUMAN_REVIEW_ARTIFACT_BYTES,
   EXAM_MAX_KNOWLEDGE_MAPPING_ARTIFACT_BYTES,
@@ -319,6 +320,51 @@ export interface ExamKnowledgeSuggestionsCompletedEvent
   suggestionCount: number;
 }
 
+export interface ExamErrorSuggestionsPlanFacts {
+  generationVersion: number;
+  subjectId: string;
+  generatorVersion: string;
+  detectorVersion: string;
+  modelPolicyVersion: string;
+  candidateSchemaVersion: number;
+  reviewVersion: number;
+  reviewArtifactRef: string;
+  sourceReviewArtifactFingerprint: string;
+  sourceReviewSemanticFingerprint: string;
+  answerKeyVersion: number;
+  answerKeyRef: string;
+  answerKeyArtifactRef: string;
+  sourceAnswerKeyArtifactFingerprint: string;
+  sourceAnswerKeySemanticFingerprint: string;
+  assessmentVersion: number;
+  gradingAlgorithmVersion: typeof EXAM_OBJECTIVE_GRADING_ALGORITHM_VERSION;
+  gradingRef: string;
+  assessmentArtifactRef: string;
+  sourceAssessmentArtifactFingerprint: string;
+  sourceAssessmentSemanticFingerprint: string;
+  generationRef: string;
+  suggestionArtifactRef: string;
+}
+
+export interface ExamErrorSuggestionsStartedEvent
+  extends ExamEventBase, ExamErrorSuggestionsPlanFacts {
+  eventType: 'exam_error_suggestions_started';
+}
+
+export interface ExamErrorSuggestionsCompletedEvent
+  extends ExamEventBase, ExamErrorSuggestionsPlanFacts {
+  eventType: 'exam_error_suggestions_completed';
+  artifactByteLength: number;
+  artifactSha256: string;
+  eligibleQuestionCount: number;
+  candidateQuestionCount: number;
+  noSuggestionQuestionCount: number;
+  inputTooLargeQuestionCount: number;
+  suggestionCount: number;
+  deterministicSuggestionCount: number;
+  modelSuggestionCount: number;
+}
+
 export interface ExamObservationProjectionPlanFacts {
   observationVersion: number;
   reviewVersion: number;
@@ -386,6 +432,8 @@ export type ExamEvent =
   | ExamGradingCompletedEvent
   | ExamKnowledgeSuggestionsStartedEvent
   | ExamKnowledgeSuggestionsCompletedEvent
+  | ExamErrorSuggestionsStartedEvent
+  | ExamErrorSuggestionsCompletedEvent
   | ExamKnowledgeMappingStartedEvent
   | ExamKnowledgeMappingConfirmedEvent
   | ExamObservationProjectionStartedEvent
@@ -414,6 +462,8 @@ export const EXAM_EVENT_TYPES = [
   'exam_grading_completed',
   'exam_knowledge_suggestions_started',
   'exam_knowledge_suggestions_completed',
+  'exam_error_suggestions_started',
+  'exam_error_suggestions_completed',
   'exam_knowledge_mapping_started',
   'exam_knowledge_mapping_confirmed',
   'exam_observation_projection_started',
@@ -500,6 +550,32 @@ const KNOWLEDGE_SUGGESTIONS_PLAN_KEYS = [
   'sourceReviewSemanticFingerprint',
   'candidatePoolMode',
   'candidatePoolFingerprint',
+  'generationRef',
+  'suggestionArtifactRef',
+] as const;
+
+const ERROR_SUGGESTIONS_PLAN_KEYS = [
+  'generationVersion',
+  'subjectId',
+  'generatorVersion',
+  'detectorVersion',
+  'modelPolicyVersion',
+  'candidateSchemaVersion',
+  'reviewVersion',
+  'reviewArtifactRef',
+  'sourceReviewArtifactFingerprint',
+  'sourceReviewSemanticFingerprint',
+  'answerKeyVersion',
+  'answerKeyRef',
+  'answerKeyArtifactRef',
+  'sourceAnswerKeyArtifactFingerprint',
+  'sourceAnswerKeySemanticFingerprint',
+  'assessmentVersion',
+  'gradingAlgorithmVersion',
+  'gradingRef',
+  'assessmentArtifactRef',
+  'sourceAssessmentArtifactFingerprint',
+  'sourceAssessmentSemanticFingerprint',
   'generationRef',
   'suggestionArtifactRef',
 ] as const;
@@ -677,6 +753,20 @@ const EVENT_KEYS: Readonly<Record<ExamEventType, ReadonlySet<string>>> = {
     'noSuggestionQuestionCount',
     'inputTooLargeQuestionCount',
     'suggestionCount',
+  ]),
+  exam_error_suggestions_started: new Set([...COMMON_KEYS, ...ERROR_SUGGESTIONS_PLAN_KEYS]),
+  exam_error_suggestions_completed: new Set([
+    ...COMMON_KEYS,
+    ...ERROR_SUGGESTIONS_PLAN_KEYS,
+    'artifactByteLength',
+    'artifactSha256',
+    'eligibleQuestionCount',
+    'candidateQuestionCount',
+    'noSuggestionQuestionCount',
+    'inputTooLargeQuestionCount',
+    'suggestionCount',
+    'deterministicSuggestionCount',
+    'modelSuggestionCount',
   ]),
   exam_knowledge_mapping_started: new Set([...COMMON_KEYS, ...KNOWLEDGE_MAPPING_PLAN_KEYS]),
   exam_knowledge_mapping_confirmed: new Set([
@@ -1024,6 +1114,65 @@ function validateKnowledgeSuggestionsPlan(
   const refs = [value.reviewArtifactRef, value.generationRef, value.suggestionArtifactRef];
   if (new Set(refs).size !== refs.length) {
     pushIssue(errors, '/suggestionArtifactRef', 'knowledge-suggestion references must be distinct');
+  }
+}
+
+function validateErrorSuggestionsPlan(
+  value: Record<string, unknown>,
+  errors: DomainValidationIssue[],
+): void {
+  validatePositiveVersion(value.generationVersion, '/generationVersion', errors);
+  validateIdentifier(value.subjectId, '/subjectId', errors);
+  validateIdentifier(value.generatorVersion, '/generatorVersion', errors);
+  validateIdentifier(value.detectorVersion, '/detectorVersion', errors);
+  validateIdentifier(value.modelPolicyVersion, '/modelPolicyVersion', errors);
+  validatePositiveVersion(value.candidateSchemaVersion, '/candidateSchemaVersion', errors);
+  validatePositiveVersion(value.reviewVersion, '/reviewVersion', errors);
+  validateIdentifier(value.reviewArtifactRef, '/reviewArtifactRef', errors);
+  validateSha256(value.sourceReviewArtifactFingerprint, '/sourceReviewArtifactFingerprint', errors);
+  validateSha256(value.sourceReviewSemanticFingerprint, '/sourceReviewSemanticFingerprint', errors);
+  validatePositiveVersion(value.answerKeyVersion, '/answerKeyVersion', errors);
+  validateIdentifier(value.answerKeyRef, '/answerKeyRef', errors);
+  validateIdentifier(value.answerKeyArtifactRef, '/answerKeyArtifactRef', errors);
+  validateSha256(
+    value.sourceAnswerKeyArtifactFingerprint,
+    '/sourceAnswerKeyArtifactFingerprint',
+    errors,
+  );
+  validateSha256(
+    value.sourceAnswerKeySemanticFingerprint,
+    '/sourceAnswerKeySemanticFingerprint',
+    errors,
+  );
+  validatePositiveVersion(value.assessmentVersion, '/assessmentVersion', errors);
+  if (value.gradingAlgorithmVersion !== EXAM_OBJECTIVE_GRADING_ALGORITHM_VERSION) {
+    pushIssue(errors, '/gradingAlgorithmVersion', 'unexpected grading algorithm version');
+  }
+  validateIdentifier(value.gradingRef, '/gradingRef', errors);
+  validateIdentifier(value.assessmentArtifactRef, '/assessmentArtifactRef', errors);
+  validateSha256(
+    value.sourceAssessmentArtifactFingerprint,
+    '/sourceAssessmentArtifactFingerprint',
+    errors,
+  );
+  validateSha256(
+    value.sourceAssessmentSemanticFingerprint,
+    '/sourceAssessmentSemanticFingerprint',
+    errors,
+  );
+  validateIdentifier(value.generationRef, '/generationRef', errors);
+  validateIdentifier(value.suggestionArtifactRef, '/suggestionArtifactRef', errors);
+  const refs = [
+    value.reviewArtifactRef,
+    value.answerKeyRef,
+    value.answerKeyArtifactRef,
+    value.gradingRef,
+    value.assessmentArtifactRef,
+    value.generationRef,
+    value.suggestionArtifactRef,
+  ];
+  if (new Set(refs).size !== refs.length) {
+    pushIssue(errors, '/suggestionArtifactRef', 'error-suggestion references must be distinct');
   }
 }
 
@@ -1423,6 +1572,84 @@ export function validateExamEvent(value: unknown): DomainValidationResult {
           errors,
           '/suggestionCount',
           'generated questions must contain a bounded number of suggestions',
+        );
+      }
+      break;
+    }
+    case 'exam_error_suggestions_started':
+      validateErrorSuggestionsPlan(value, errors);
+      break;
+    case 'exam_error_suggestions_completed': {
+      validateErrorSuggestionsPlan(value, errors);
+      validateArtifactByteLength(
+        value.artifactByteLength,
+        '/artifactByteLength',
+        EXAM_MAX_ERROR_SUGGESTION_ARTIFACT_BYTES,
+        errors,
+      );
+      validateSha256(value.artifactSha256, '/artifactSha256', errors);
+      for (const field of [
+        'eligibleQuestionCount',
+        'candidateQuestionCount',
+        'noSuggestionQuestionCount',
+        'inputTooLargeQuestionCount',
+      ] as const) {
+        validateBoundedCount(value[field], `/${field}`, EXAM_MAX_QUESTION_CANDIDATES, true, errors);
+      }
+      for (const field of [
+        'suggestionCount',
+        'deterministicSuggestionCount',
+        'modelSuggestionCount',
+      ] as const) {
+        validateBoundedCount(
+          value[field],
+          `/${field}`,
+          EXAM_MAX_QUESTION_CANDIDATES * EXAM_MAX_KNOWLEDGE_SUGGESTIONS_PER_QUESTION,
+          true,
+          errors,
+        );
+      }
+      if (
+        Number.isSafeInteger(value.eligibleQuestionCount) &&
+        Number.isSafeInteger(value.candidateQuestionCount) &&
+        Number.isSafeInteger(value.noSuggestionQuestionCount) &&
+        Number.isSafeInteger(value.inputTooLargeQuestionCount) &&
+        value.eligibleQuestionCount !==
+          (value.candidateQuestionCount as number) +
+            (value.noSuggestionQuestionCount as number) +
+            (value.inputTooLargeQuestionCount as number)
+      ) {
+        pushIssue(
+          errors,
+          '/eligibleQuestionCount',
+          'error-suggestion statuses must cover every eligible question',
+        );
+      }
+      if (
+        Number.isSafeInteger(value.suggestionCount) &&
+        Number.isSafeInteger(value.deterministicSuggestionCount) &&
+        Number.isSafeInteger(value.modelSuggestionCount) &&
+        value.suggestionCount !==
+          (value.deterministicSuggestionCount as number) + (value.modelSuggestionCount as number)
+      ) {
+        pushIssue(
+          errors,
+          '/suggestionCount',
+          'error-suggestion sources must cover every suggestion',
+        );
+      }
+      if (
+        Number.isSafeInteger(value.candidateQuestionCount) &&
+        Number.isSafeInteger(value.suggestionCount) &&
+        ((value.candidateQuestionCount === 0 && value.suggestionCount !== 0) ||
+          (value.candidateQuestionCount as number) > (value.suggestionCount as number) ||
+          (value.suggestionCount as number) >
+            (value.candidateQuestionCount as number) * EXAM_MAX_KNOWLEDGE_SUGGESTIONS_PER_QUESTION)
+      ) {
+        pushIssue(
+          errors,
+          '/suggestionCount',
+          'candidate questions must contain a bounded number of error suggestions',
         );
       }
       break;

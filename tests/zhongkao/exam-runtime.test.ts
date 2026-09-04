@@ -28,6 +28,10 @@ import {
   deriveExamDeletedOperationId,
   deriveExamDeleteRequestedOperationId,
   deriveExamEventId,
+  deriveExamErrorSuggestionsArtifactRef,
+  deriveExamErrorSuggestionsCompletedOperationId,
+  deriveExamErrorSuggestionsGenerationRef,
+  deriveExamErrorSuggestionsStartedOperationId,
   deriveExamHumanReviewArtifactRef,
   deriveExamHumanReviewCompletedOperationId,
   deriveExamHumanReviewRef,
@@ -75,6 +79,8 @@ import type {
   ExamDeleteRequestedEvent,
   ExamDocumentArtifactExtractedEvent,
   ExamDocumentSnapshottedEvent,
+  ExamErrorSuggestionsCompletedEvent,
+  ExamErrorSuggestionsStartedEvent,
   ExamHumanReviewCompletedEvent,
   ExamHumanReviewStartedEvent,
   ExamGradingCompletedEvent,
@@ -850,6 +856,102 @@ function gradingEvents(
   return [started, completed];
 }
 
+function errorSuggestionEvents(
+  created: ExamCreatedEvent,
+  review: ExamHumanReviewCompletedEvent,
+  answerKey: ExamAnswerKeyConfirmedEvent,
+  grading: ExamGradingCompletedEvent,
+): [ExamErrorSuggestionsStartedEvent, ExamErrorSuggestionsCompletedEvent] {
+  const sourceFacts = {
+    generationVersion: 1,
+    subjectId: created.subjectId,
+    generatorVersion: 'exam-error-diagnosis-generator:v1',
+    detectorVersion: 'exam-error-observable-rules:v1',
+    modelPolicyVersion: 'exam-error-model-policy:v1',
+    candidateSchemaVersion: 1,
+    reviewVersion: review.reviewVersion,
+    reviewArtifactRef: review.reviewArtifactRef,
+    sourceReviewArtifactFingerprint: review.artifactSha256,
+    sourceReviewSemanticFingerprint: review.decisionSemanticFingerprint,
+    answerKeyVersion: answerKey.answerKeyVersion,
+    answerKeyRef: answerKey.answerKeyRef,
+    answerKeyArtifactRef: answerKey.answerKeyArtifactRef,
+    sourceAnswerKeyArtifactFingerprint: answerKey.artifactSha256,
+    sourceAnswerKeySemanticFingerprint: answerKey.answerKeySemanticFingerprint,
+    assessmentVersion: grading.gradingVersion,
+    gradingAlgorithmVersion: grading.gradingAlgorithmVersion,
+    gradingRef: grading.gradingRef,
+    assessmentArtifactRef: grading.assessmentArtifactRef,
+    sourceAssessmentArtifactFingerprint: grading.artifactSha256,
+    sourceAssessmentSemanticFingerprint: '6'.repeat(64),
+  } as const;
+  const generationRef = deriveExamErrorSuggestionsGenerationRef({
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    ...sourceFacts,
+  });
+  const plan = {
+    ...sourceFacts,
+    generationRef,
+    suggestionArtifactRef: deriveExamErrorSuggestionsArtifactRef(generationRef),
+  };
+  const startedOperationId = deriveExamErrorSuggestionsStartedOperationId(
+    created.examSessionId,
+    plan.generationVersion,
+  );
+  const started: ExamErrorSuggestionsStartedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(startedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_error_suggestions_started',
+    createdAt: '2026-08-31T08:00:16.000Z',
+    operationId: startedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_error_suggestions_started',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...plan,
+    }),
+    ...plan,
+  };
+  const completedFacts = {
+    ...plan,
+    artifactByteLength: 384,
+    artifactSha256: '7'.repeat(64),
+    eligibleQuestionCount: 1,
+    candidateQuestionCount: 1,
+    noSuggestionQuestionCount: 0,
+    inputTooLargeQuestionCount: 0,
+    suggestionCount: 2,
+    deterministicSuggestionCount: 1,
+    modelSuggestionCount: 1,
+  } as const;
+  const completedOperationId = deriveExamErrorSuggestionsCompletedOperationId(
+    created.examSessionId,
+    plan.generationVersion,
+  );
+  const completed: ExamErrorSuggestionsCompletedEvent = {
+    schemaVersion: 1,
+    eventId: deriveExamEventId(completedOperationId),
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    eventType: 'exam_error_suggestions_completed',
+    createdAt: '2026-08-31T08:00:17.000Z',
+    operationId: completedOperationId,
+    operationFingerprint: createExamOperationFingerprint({
+      action: 'exam_error_suggestions_completed',
+      schemaVersion: 1,
+      examSessionId: created.examSessionId,
+      profileId: created.profileId,
+      ...completedFacts,
+    }),
+    ...completedFacts,
+  };
+  return [started, completed];
+}
+
 function knowledgeMappingEvents(
   created: ExamCreatedEvent,
   review: ExamHumanReviewCompletedEvent,
@@ -1154,6 +1256,44 @@ describe('Exam RuntimeStore adapter', () => {
     expect(deriveExamKnowledgeSuggestionsArtifactRef(suggestionRef)).not.toBe(suggestionRef);
     expect(deriveExamKnowledgeSuggestionsStartedOperationId(first, 1)).not.toBe(
       deriveExamKnowledgeSuggestionsCompletedOperationId(first, 1),
+    );
+
+    const errorSuggestionInput = {
+      examSessionId: first,
+      profileId: PROFILE_ID,
+      generationVersion: 1,
+      subjectId: 'math',
+      generatorVersion: 'exam-error-diagnosis-generator:v1',
+      detectorVersion: 'exam-error-observable-rules:v1',
+      modelPolicyVersion: 'exam-error-model-policy:v1',
+      candidateSchemaVersion: 1,
+      reviewVersion: answerKeyInput.reviewVersion,
+      reviewArtifactRef: answerKeyInput.reviewArtifactRef,
+      sourceReviewArtifactFingerprint: answerKeyInput.sourceReviewArtifactFingerprint,
+      sourceReviewSemanticFingerprint: '1'.repeat(64),
+      answerKeyVersion: answerKeyInput.answerKeyVersion,
+      answerKeyRef,
+      answerKeyArtifactRef: deriveExamAnswerKeyArtifactRef(answerKeyRef),
+      sourceAnswerKeyArtifactFingerprint: gradingInput.sourceAnswerKeyArtifactFingerprint,
+      sourceAnswerKeySemanticFingerprint: '4'.repeat(64),
+      assessmentVersion: 1,
+      gradingAlgorithmVersion: gradingInput.gradingAlgorithmVersion,
+      gradingRef,
+      assessmentArtifactRef: deriveExamAssessmentArtifactRef(gradingRef),
+      sourceAssessmentArtifactFingerprint: '5'.repeat(64),
+      sourceAssessmentSemanticFingerprint: '6'.repeat(64),
+    };
+    const errorSuggestionRef = deriveExamErrorSuggestionsGenerationRef(errorSuggestionInput);
+    expect(errorSuggestionRef).toBe(deriveExamErrorSuggestionsGenerationRef(errorSuggestionInput));
+    expect(errorSuggestionRef).not.toBe(
+      deriveExamErrorSuggestionsGenerationRef({
+        ...errorSuggestionInput,
+        sourceAssessmentSemanticFingerprint: '7'.repeat(64),
+      }),
+    );
+    expect(deriveExamErrorSuggestionsArtifactRef(errorSuggestionRef)).not.toBe(errorSuggestionRef);
+    expect(deriveExamErrorSuggestionsStartedOperationId(first, 1)).not.toBe(
+      deriveExamErrorSuggestionsCompletedOperationId(first, 1),
     );
 
     const mappingInput = {
@@ -1818,6 +1958,85 @@ describe('Exam RuntimeStore adapter', () => {
         },
       },
     });
+  });
+
+  it('derives, appends and replays assessment-bound error suggestions', async () => {
+    const backing = store();
+    const created = createdEvent();
+    await ensureExamRuntimeCreated({ store: backing, ownerId: OWNER_ID }, created);
+    const review = humanReviewEvents(created);
+    const answerKey = answerKeyEvents(created, review[1]);
+    const grading = gradingEvents(created, review[1], answerKey[1]);
+    const baseChain = [
+      snapshotEvent(created),
+      completedEvent(created),
+      ...extractionEvents(created),
+      ...responseEvents(created),
+      ...review,
+      ...answerKey,
+      ...grading,
+    ];
+    for (const [index, event] of baseChain.entries()) {
+      await appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event, expectedRevision: index },
+      );
+    }
+
+    const suggestions = errorSuggestionEvents(created, review[1], answerKey[1], grading[1]);
+    const forged = {
+      ...suggestions[0],
+      sourceAssessmentSemanticFingerprint: '8'.repeat(64),
+    };
+    const {
+      eventId: _eventId,
+      eventType,
+      createdAt: _createdAt,
+      operationId: _operationId,
+      operationFingerprint: _operationFingerprint,
+      ...forgedFacts
+    } = forged;
+    forged.operationFingerprint = createExamOperationFingerprint({
+      action: eventType,
+      ...forgedFacts,
+    });
+    await expect(
+      appendExamRuntimeEvent(
+        { store: backing, ownerId: OWNER_ID },
+        { event: forged, expectedRevision: baseChain.length },
+      ),
+    ).rejects.toThrow('EXAM_EVENT_CONFLICT');
+
+    for (const [index, event] of suggestions.entries()) {
+      const expectedRevision = baseChain.length + index;
+      await expect(
+        appendExamRuntimeEvent({ store: backing, ownerId: OWNER_ID }, { event, expectedRevision }),
+      ).resolves.toMatchObject({ replayed: false, eventAppended: true });
+      await expect(
+        appendExamRuntimeEvent({ store: backing, ownerId: OWNER_ID }, { event, expectedRevision }),
+      ).resolves.toMatchObject({ replayed: true, eventAppended: false });
+    }
+
+    const snapshot = await loadExamRuntime(
+      { store: backing, ownerId: OWNER_ID },
+      created.examSessionId,
+    );
+    expect(snapshot.state).toMatchObject({
+      revision: baseChain.length + suggestions.length,
+      errorSuggestions: {
+        status: 'completed',
+        subjectId: 'math',
+        detectorVersion: 'exam-error-observable-rules:v1',
+        suggestionArtifact: {
+          eligibleQuestionCount: 1,
+          candidateQuestionCount: 1,
+          suggestionCount: 2,
+          deterministicSuggestionCount: 1,
+          modelSuggestionCount: 1,
+        },
+      },
+    });
+    expect(snapshot.state).not.toHaveProperty('confirmedErrorDiagnosis');
   });
 
   it('derives and enforces mapping and observation source lineage', async () => {

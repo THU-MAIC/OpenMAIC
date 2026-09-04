@@ -9,6 +9,8 @@ import type {
   ExamCreatedEvent,
   ExamDocumentArtifactExtractedEvent,
   ExamDocumentSnapshottedEvent,
+  ExamErrorSuggestionsCompletedEvent,
+  ExamErrorSuggestionsStartedEvent,
   ExamEvent,
   ExamGradingCompletedEvent,
   ExamGradingStartedEvent,
@@ -94,6 +96,31 @@ const KNOWLEDGE_SUGGESTIONS_PLAN = {
   candidatePoolFingerprint: '8'.repeat(64),
   generationRef: 'exam-knowledge-suggestions-v1',
   suggestionArtifactRef: 'exam-knowledge-suggestions-artifact-v1',
+} as const;
+const ERROR_SUGGESTIONS_PLAN = {
+  generationVersion: 1,
+  subjectId: 'math',
+  generatorVersion: 'exam-error-diagnosis-generator:v1',
+  detectorVersion: 'exam-error-observable-rules:v1',
+  modelPolicyVersion: 'exam-error-model-policy:v1',
+  candidateSchemaVersion: 1,
+  reviewVersion: HUMAN_REVIEW_PLAN.reviewVersion,
+  reviewArtifactRef: HUMAN_REVIEW_PLAN.reviewArtifactRef,
+  sourceReviewArtifactFingerprint: '7'.repeat(64),
+  sourceReviewSemanticFingerprint: HUMAN_REVIEW_PLAN.decisionSemanticFingerprint,
+  answerKeyVersion: ANSWER_KEY_PLAN.answerKeyVersion,
+  answerKeyRef: ANSWER_KEY_PLAN.answerKeyRef,
+  answerKeyArtifactRef: ANSWER_KEY_PLAN.answerKeyArtifactRef,
+  sourceAnswerKeyArtifactFingerprint: '9'.repeat(64),
+  sourceAnswerKeySemanticFingerprint: ANSWER_KEY_PLAN.answerKeySemanticFingerprint,
+  assessmentVersion: GRADING_PLAN.gradingVersion,
+  gradingAlgorithmVersion: GRADING_PLAN.gradingAlgorithmVersion,
+  gradingRef: GRADING_PLAN.gradingRef,
+  assessmentArtifactRef: GRADING_PLAN.assessmentArtifactRef,
+  sourceAssessmentArtifactFingerprint: 'a'.repeat(64),
+  sourceAssessmentSemanticFingerprint: 'b'.repeat(64),
+  generationRef: 'exam-error-suggestions-v1',
+  suggestionArtifactRef: 'exam-error-suggestions-artifact-v1',
 } as const;
 const KNOWLEDGE_MAPPING_PLAN = {
   mappingVersion: 1,
@@ -455,6 +482,39 @@ function knowledgeSuggestionsCompleted(
   };
 }
 
+function errorSuggestionsStarted(
+  seq: number,
+  overrides: Partial<ExamErrorSuggestionsStartedEvent> = {},
+): ExamErrorSuggestionsStartedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_error_suggestions_started',
+    ...ERROR_SUGGESTIONS_PLAN,
+    ...overrides,
+  };
+}
+
+function errorSuggestionsCompleted(
+  seq: number,
+  overrides: Partial<ExamErrorSuggestionsCompletedEvent> = {},
+): ExamErrorSuggestionsCompletedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_error_suggestions_completed',
+    ...ERROR_SUGGESTIONS_PLAN,
+    artifactByteLength: 384,
+    artifactSha256: 'c'.repeat(64),
+    eligibleQuestionCount: 1,
+    candidateQuestionCount: 1,
+    noSuggestionQuestionCount: 0,
+    inputTooLargeQuestionCount: 0,
+    suggestionCount: 2,
+    deterministicSuggestionCount: 1,
+    modelSuggestionCount: 1,
+    ...overrides,
+  };
+}
+
 function knowledgeMappingStarted(
   seq: number,
   overrides: Partial<ExamKnowledgeMappingStartedEvent> = {},
@@ -586,6 +646,14 @@ function knowledgeSuggestionEvents(startSeq = 14): ExamEvent[] {
     ...reviewEvents(),
     knowledgeSuggestionsStarted(startSeq),
     knowledgeSuggestionsCompleted(startSeq + 1),
+  ];
+}
+
+function errorSuggestionEvents(startSeq = 18): ExamEvent[] {
+  return [
+    ...gradingEvents(),
+    errorSuggestionsStarted(startSeq),
+    errorSuggestionsCompleted(startSeq + 1),
   ];
 }
 
@@ -890,6 +958,92 @@ describe('Exam event fold', () => {
     );
     expect(state.knowledgeSuggestions?.status).toBe('completed');
     expect(state.knowledgeMapping?.status).toBe('mapping');
+  });
+
+  it('folds source-bound error suggestions without creating diagnosis authority', () => {
+    const generating = foldExamEvents(records([...gradingEvents(), errorSuggestionsStarted(18)]));
+    expect(generating.errorSuggestions).toEqual({
+      status: 'generating',
+      startedEventId: 'exam-event-18',
+      startedAt: errorSuggestionsStarted(18).createdAt,
+      ...ERROR_SUGGESTIONS_PLAN,
+    });
+
+    const completed = foldExamEvents(records(errorSuggestionEvents()));
+    expect(completed.errorSuggestions).toEqual({
+      status: 'completed',
+      startedEventId: 'exam-event-18',
+      startedAt: errorSuggestionsStarted(18).createdAt,
+      ...ERROR_SUGGESTIONS_PLAN,
+      suggestionArtifact: {
+        eventId: 'exam-event-19',
+        createdAt: errorSuggestionsCompleted(19).createdAt,
+        byteLength: 384,
+        sha256: 'c'.repeat(64),
+        eligibleQuestionCount: 1,
+        candidateQuestionCount: 1,
+        noSuggestionQuestionCount: 0,
+        inputTooLargeQuestionCount: 0,
+        suggestionCount: 2,
+        deterministicSuggestionCount: 1,
+        modelSuggestionCount: 1,
+      },
+    });
+    expect(completed).not.toHaveProperty('confirmedErrorDiagnosis');
+    expect(completed).not.toHaveProperty('authoritativeErrorType');
+  });
+
+  it('requires completed grading and exact immutable error-suggestion sources and counts', () => {
+    expect(() =>
+      foldExamEvents(records([...answerKeyEvents(), errorSuggestionsStarted(16)])),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    for (const invalid of [
+      { subjectId: 'physics' },
+      { sourceReviewArtifactFingerprint: '0'.repeat(64) },
+      { sourceAnswerKeyArtifactFingerprint: '0'.repeat(64) },
+      { sourceAnswerKeySemanticFingerprint: '0'.repeat(64) },
+      { gradingRef: 'other-grading-ref' },
+      { sourceAssessmentArtifactFingerprint: '0'.repeat(64) },
+    ]) {
+      expect(() =>
+        foldExamEvents(records([...gradingEvents(), errorSuggestionsStarted(18, invalid)])),
+      ).toThrow('EXAM_EVENT_CONFLICT');
+    }
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...gradingEvents(),
+          errorSuggestionsStarted(18),
+          errorSuggestionsCompleted(19, { eligibleQuestionCount: 2 }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+    expect(() =>
+      foldExamEvents(
+        records([
+          ...gradingEvents(),
+          errorSuggestionsStarted(18),
+          errorSuggestionsCompleted(19, {
+            deterministicSuggestionCount: 2,
+            modelSuggestionCount: 1,
+          }),
+        ]),
+      ),
+    ).toThrow('EXAM_EVENT_CONFLICT');
+  });
+
+  it('keeps error suggestions independent from knowledge mapping and observation ordering', () => {
+    const errorFirst = foldExamEvents(
+      records([...errorSuggestionEvents(), knowledgeMappingStarted(20)]),
+    );
+    expect(errorFirst.errorSuggestions?.status).toBe('completed');
+    expect(errorFirst.knowledgeMapping?.status).toBe('mapping');
+
+    const mappingFirst = foldExamEvents(
+      records([...mappingEvents(), errorSuggestionsStarted(20), errorSuggestionsCompleted(21)]),
+    );
+    expect(mappingFirst.knowledgeMapping?.status).toBe('confirmed');
+    expect(mappingFirst.errorSuggestions?.status).toBe('completed');
   });
 
   it('folds confirmed knowledge mapping and source-bound observation projection', () => {
@@ -1638,6 +1792,29 @@ describe('public Exam projection', () => {
     });
     expect(JSON.stringify(summary)).not.toMatch(
       /knowledgePoint|questionText|suggestions|artifact|digest|sha256|fingerprint|event|operation|ref|objectKey|path/u,
+    );
+  });
+
+  it('exposes only aggregate error-suggestion lifecycle facts', () => {
+    expect(toPublicExamSession(foldExamEvents(records(gradingEvents()))).errorSuggestions).toEqual({
+      status: 'not_started',
+    });
+    expect(
+      toPublicExamSession(
+        foldExamEvents(records([...gradingEvents(), errorSuggestionsStarted(18)])),
+      ).errorSuggestions,
+    ).toEqual({ status: 'processing' });
+
+    const summary = toPublicExamSession(
+      foldExamEvents(records(errorSuggestionEvents())),
+    ).errorSuggestions;
+    expect(summary).toEqual({
+      status: 'completed',
+      questionCount: 1,
+      suggestionCount: 2,
+    });
+    expect(JSON.stringify(summary)).not.toMatch(
+      /questionText|response|answer|expected|candidate|evidence|artifact|digest|sha256|fingerprint|event|operation|ref|objectKey|path/u,
     );
   });
 
