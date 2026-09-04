@@ -2,8 +2,9 @@
  * Per-stage LLM model routing (issue #745).
  *
  * Optional, config-only overrides that map a generation *stage* to a specific
- * model string. Consulted during model resolution and falling back to today's
- * behavior (`DEFAULT_MODEL`) when unset — zero behavior change unless opted in.
+ * model string. This module returns only configured routes; callers choose their
+ * own fallback when a route is unset or invalid. Most use `DEFAULT_MODEL`, while
+ * `conversation-title` reuses the agent-driver connection.
  *
  * Surface: a single JSON env var `MODEL_ROUTES`. Each value is a model string in
  * the canonical `provider:model` format (see parseModelString), OR an object
@@ -149,6 +150,7 @@ export const LLM_STAGES = [
   'web-search-query-rewrite',
   'maic-agent',
   'maic-agent-driver',
+  'conversation-title',
 ] as const;
 
 export type LlmStage = (typeof LLM_STAGES)[number];
@@ -234,7 +236,7 @@ function loadRoutes(): Record<string, StageRoute> {
         log.error('MODEL_ROUTES must be a JSON object of stage -> model; ignoring.');
       }
     } catch (err) {
-      log.error('Invalid MODEL_ROUTES JSON, ignoring (falling back to DEFAULT_MODEL).', err);
+      log.error('Invalid MODEL_ROUTES JSON, ignoring; callers apply their own fallback.', err);
     }
   }
 
@@ -244,7 +246,8 @@ function loadRoutes(): Record<string, StageRoute> {
 
 /**
  * Resolve the configured model string for a stage, or `undefined` when the
- * stage is unset/unconfigured (callers fall back to `DEFAULT_MODEL`).
+ * stage is unset or unconfigured. Callers choose their fallback; notably,
+ * `conversation-title` reuses the agent-driver connection.
  *
  * Composite `a:b` stages resolve most-specific-first: the full key is tried,
  * then successively shorter prefixes (e.g. `scene-content:quiz` →

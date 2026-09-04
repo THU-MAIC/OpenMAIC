@@ -256,10 +256,9 @@ export interface WorkbenchFold {
    * something better, including the queued window before `session_start`. */
   sessionPrompt: string | null;
   /**
-   * The name the user gave this conversation, if any. An OVERRIDE over the
-   * derived title, not a replacement for the prompt — clearing it restores the
-   * derived one. Like `sessionPrompt` it comes from session meta rather than
-   * from the event log: a rename is not something the run did.
+   * The stored automatic or manual title, if any. It overrides the derived
+   * title, not the prompt — clearing it restores the derived one. Like
+   * `sessionPrompt`, it is session metadata rather than Agent transcript data.
    */
   sessionTitle: string | null;
   skillId: string | null;

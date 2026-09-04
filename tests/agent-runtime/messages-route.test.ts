@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   postUserMessage: vi.fn(),
   bindOwnerMaterialsToSession: vi.fn(),
+  scheduleConversationTitle: vi.fn(),
 }));
 
 vi.mock('@/lib/config/feature-flags', () => ({
@@ -28,9 +29,13 @@ vi.mock('@/lib/server/agent-runtime/session-materials', () => ({
   SessionMaterialBindingError: class SessionMaterialBindingError extends Error {},
   bindOwnerMaterialsToSession: mocks.bindOwnerMaterialsToSession,
 }));
+vi.mock('@/lib/server/agent-runtime/conversation-title-task', () => ({
+  scheduleConversationTitle: mocks.scheduleConversationTitle,
+}));
 
 import { POST } from '@/app/api/agent/sessions/[id]/messages/route';
 import { MAX_SESSION_TEXT_LENGTH } from '@/lib/server/agent-runtime/limits';
+import { SessionMaterialBindingError } from '@/lib/server/agent-runtime/session-materials';
 
 function call(body: unknown) {
   const request = new NextRequest('http://localhost/api/agent/sessions/session-1/messages', {
@@ -59,6 +64,10 @@ describe('POST agent session message', () => {
       { text: 'Continue' },
       { expectedOwnerId: 'owner-1' },
     );
+    expect(mocks.postUserMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.scheduleConversationTitle.mock.invocationCallOrder[0]!,
+    );
+    expect(mocks.scheduleConversationTitle).toHaveBeenCalledWith('session-1', 'owner-1');
     await expect(response.json()).resolves.toEqual({
       id: 'session-1',
       message: { seq: 4, text: 'Continue', delivery: 'queued' },
@@ -105,6 +114,32 @@ describe('POST agent session message', () => {
       { text: '', materials: [material] },
       { expectedOwnerId: 'owner-1' },
     );
+    expect(mocks.scheduleConversationTitle).not.toHaveBeenCalled();
+  });
+
+  it('schedules when later nonblank text follows an attachment-only message', async () => {
+    mocks.bindOwnerMaterialsToSession.mockResolvedValue([
+      { materialId: 'mat-1', originalName: 'notes.pdf', mime: 'application/pdf', bytes: 42 },
+    ]);
+
+    expect((await call({ text: '', materialIds: ['mat-1'] })).status).toBe(202);
+    expect(mocks.scheduleConversationTitle).not.toHaveBeenCalled();
+
+    expect((await call({ text: 'Explain these notes' })).status).toBe(202);
+    expect(mocks.scheduleConversationTitle).toHaveBeenCalledOnce();
+    expect(mocks.scheduleConversationTitle).toHaveBeenCalledWith('session-1', 'owner-1');
+  });
+
+  it('does not schedule when attachment binding fails before the message write', async () => {
+    mocks.bindOwnerMaterialsToSession.mockRejectedValue(
+      new SessionMaterialBindingError('material binding failed'),
+    );
+
+    const response = await call({ text: 'Read this', materialIds: ['mat-1'] });
+
+    expect(response.status).toBe(404);
+    expect(mocks.postUserMessage).not.toHaveBeenCalled();
+    expect(mocks.scheduleConversationTitle).not.toHaveBeenCalled();
   });
 
   it('accepts a follow-up for a failed session', async () => {
@@ -124,6 +159,7 @@ describe('POST agent session message', () => {
 
     expect(response.status).toBe(400);
     expect(mocks.postUserMessage).not.toHaveBeenCalled();
+    expect(mocks.scheduleConversationTitle).not.toHaveBeenCalled();
   });
 
   it('rejects a message that exceeds the text length cap', async () => {
@@ -132,6 +168,7 @@ describe('POST agent session message', () => {
     expect(response.status).toBe(400);
     expect(response.headers.get('set-cookie')).toContain('anonymous_id=test');
     expect(mocks.postUserMessage).not.toHaveBeenCalled();
+    expect(mocks.scheduleConversationTitle).not.toHaveBeenCalled();
   });
 
   it('hides an absent or foreign session', async () => {
@@ -141,6 +178,7 @@ describe('POST agent session message', () => {
     expect(response.status).toBe(404);
     expect(response.headers.get('set-cookie')).toContain('anonymous_id=test');
     expect(mocks.postUserMessage).not.toHaveBeenCalled();
+    expect(mocks.scheduleConversationTitle).not.toHaveBeenCalled();
   });
 
   it('keeps the minted owner cookie when the store fails', async () => {
@@ -150,6 +188,7 @@ describe('POST agent session message', () => {
 
     expect(response.status).toBe(500);
     expect(response.headers.get('set-cookie')).toContain('anonymous_id=test');
+    expect(mocks.scheduleConversationTitle).not.toHaveBeenCalled();
   });
 
   it('maps a transactional ownership race to forbidden', async () => {
@@ -158,5 +197,6 @@ describe('POST agent session message', () => {
     const response = await call({ text: 'Continue' });
     expect(response.status).toBe(403);
     expect(response.headers.get('set-cookie')).toContain('anonymous_id=test');
+    expect(mocks.scheduleConversationTitle).not.toHaveBeenCalled();
   });
 });

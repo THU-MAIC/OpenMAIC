@@ -1,9 +1,9 @@
 /**
  * What a conversation is called.
  *
- * Two facts and one rule. The facts: `title`, the name the user gave it (an
- * override, stored on the session row), and `prompt`, the first message. The
- * rule: the override wins, otherwise the title is derived from what was asked —
+ * Two facts and one rule. The facts: `title`, the stored concise name (automatic
+ * or manually overridden), and `prompt`, the first message. The rule: the stored
+ * title wins, otherwise the title is derived from what was asked —
  * a conversation is named by its own question, never by whatever course happens
  * to be open beside it.
  *
@@ -12,8 +12,18 @@
  * in one place and not the other.
  */
 
-/** The longest name a conversation may be given. Mirrors the server's cap. */
+/** The longest stored conversation title. Mirrors the server's cap. */
 export const SESSION_TITLE_MAX_LENGTH = 120;
+
+/** Replace characters PostgreSQL TEXT / JSONB cannot store. */
+export function sanitizeSessionTitleText(value: string): string {
+  return Array.from(value, (character) => {
+    const codeUnit = character.charCodeAt(0);
+    const unstorable =
+      codeUnit === 0 || (character.length === 1 && codeUnit >= 0xd800 && codeUnit <= 0xdfff);
+    return unstorable ? '\ufffd' : character;
+  }).join('');
+}
 
 /**
  * Normalize one stored title override at the shared client/server boundary.
@@ -26,12 +36,7 @@ export const SESSION_TITLE_MAX_LENGTH = 120;
  */
 export function normalizeSessionTitleOverride(value: string | null): string | null {
   if (value === null) return null;
-  const wellFormed = Array.from(value.trim(), (character) => {
-    const codeUnit = character.charCodeAt(0);
-    const unstorable =
-      codeUnit === 0 || (character.length === 1 && codeUnit >= 0xd800 && codeUnit <= 0xdfff);
-    return unstorable ? '\ufffd' : character;
-  }).join('');
+  const wellFormed = sanitizeSessionTitleText(value.trim());
   const truncated = wellFormed.slice(0, SESSION_TITLE_MAX_LENGTH);
   if (!truncated) return null;
   const last = truncated.charCodeAt(truncated.length - 1);
@@ -39,7 +44,7 @@ export function normalizeSessionTitleOverride(value: string | null): string | nu
 }
 
 export interface WorkbenchSessionNaming {
-  /** The stored override, if the user named this conversation. */
+  /** The stored automatic or manual title, if one exists. */
   readonly title?: string | null;
   /** The first message. */
   readonly prompt?: string | null;
@@ -138,7 +143,6 @@ export async function commitSessionRename({
 }): Promise<SessionRenameOutcome> {
   const next = normalizeSessionTitleInput(current, raw);
   const previous = current.title?.trim() || null;
-  // Unchanged is not a rename; do not spend a round trip saying so.
   if (!forceSave && next === previous) return 'unchanged';
   apply(next, false);
   try {
