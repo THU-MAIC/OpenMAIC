@@ -81,7 +81,7 @@ function asGeneratedCodeContent(value: unknown): InteractiveContent | null {
  *
  * Narration/actions and the scene id stay untouched. The source outline is
  * resolved by stable outlineId first, with order retained only for legacy
- * classrooms. A stage switch or generation-epoch change drops the late result.
+ * classrooms. A stage switch, generation-epoch change, or scene edit drops the late result.
  */
 export async function regenerateCodeSceneContent(
   sceneId: string,
@@ -138,7 +138,7 @@ export async function regenerateCodeSceneContent(
   if (
     after.stage?.id !== stageId ||
     after.generationEpoch !== generationEpoch ||
-    !after.scenes.some((candidate) => candidate.id === sceneId)
+    after.scenes.find((candidate) => candidate.id === sceneId) !== scene
   ) {
     return { ok: false, reason: 'stale' };
   }

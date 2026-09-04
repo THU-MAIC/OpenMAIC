@@ -129,6 +129,31 @@ describe('regenerateCodeSceneContent', () => {
     expect(h.updateScene).not.toHaveBeenCalled();
   });
 
+  it('drops a late response after the same scene is edited', async () => {
+    const h = harness();
+    h.fetchContent.mockImplementation(async () => {
+      h.setState({
+        ...h.getState(),
+        scenes: [
+          {
+            ...codeScene,
+            content: { ...codeScene.content, html: '<html><body>user edit</body></html>' },
+          },
+        ],
+      });
+      return {
+        success: true,
+        content: { html: '<html><body>stale</body></html>', widgetType: 'code' },
+      };
+    });
+
+    await expect(regenerateCodeSceneContent(codeScene.id, h.deps)).resolves.toEqual({
+      ok: false,
+      reason: 'stale',
+    });
+    expect(h.updateScene).not.toHaveBeenCalled();
+  });
+
   it('refuses to overwrite the current scene while it is edit-locked', async () => {
     const h = harness();
     h.setState({ ...h.getState(), mode: 'edit' });
