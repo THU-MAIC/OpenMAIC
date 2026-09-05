@@ -184,8 +184,14 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       agentId?: string;
     } | null>(null);
 
-    // Cue user state (Issue 7)
-    const [isCueUser, setIsCueUser] = useState(false);
+    // Durable learner hand-off metadata. The session hook rehydrates this
+    // after reload, while live cue_user events update it immediately.
+    const [cueUser, setCueUser] = useState<{
+      fromAgentId?: string;
+      prompt?: string;
+      options?: string[];
+    } | null>(null);
+    const isCueUser = cueUser !== null;
 
     // End flash state (Issue 3)
     const [showEndFlash, setShowEndFlash] = useState(false);
@@ -414,7 +420,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       setSpeakingAgentId(null);
       setSpeechProgress(null);
       setThinkingState(null);
-      setIsCueUser(false);
+      setCueUser(null);
       setIsTopicPending(false);
       setChatIsStreaming(false);
       setChatIsSoftClosing(false);
@@ -479,6 +485,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         setChatIsSoftClosing(false);
         setSoftCloseDeadline(undefined);
       }
+    }, []);
+
+    const handleResumeLesson = useCallback(async () => {
+      await chatAreaRef.current?.resumeLesson();
     }, []);
 
     /**
@@ -1581,6 +1591,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 endFlashSessionType={endFlashSessionType}
                 thinkingState={thinkingState}
                 isCueUser={isCueUser}
+                cueUserPrompt={cueUser?.prompt}
+                cueUserOptions={cueUser?.options}
                 isSoftClosing={chatIsSoftClosing}
                 softCloseDeadline={softCloseDeadline}
                 isTopicPending={isTopicPending}
@@ -1631,7 +1643,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                   }
                   // Auto-switch to chat tab when user sends a message
                   chatAreaRef.current?.switchToTab('chat');
-                  setIsCueUser(false);
+                  setCueUser(null);
                   // Immediately mark streaming for synchronized stop button
                   setChatIsStreaming(true);
                   setChatSessionType(chatSessionType || 'qa');
@@ -1647,6 +1659,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 onDiscussionSkip={() => {
                   // User clicks "Skip" on ProactiveCard
                   engineRef.current?.skipDiscussion();
+                }}
+                onResumeLesson={() => {
+                  void handleResumeLesson();
                 }}
                 onStopDiscussion={handleStopDiscussion}
                 onContinueDiscussion={handleContinueDiscussion}
@@ -1777,14 +1792,14 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 setThinkingState(state);
               });
             }}
-            onCueUser={(_fromAgentId, _prompt) => {
-              setIsCueUser(true);
+            onCueUser={(fromAgentId, prompt, options) => {
+              setCueUser({ fromAgentId, prompt: prompt?.trim() || undefined, options });
             }}
             onLiveSessionError={handleLiveSessionError}
             onSoftCloseSession={() => {
               setThinkingState(null);
               setSpeechProgress(null);
-              setIsCueUser(false);
+              setCueUser(null);
               setActiveBubbleId(null);
             }}
             onSoftClosingChange={(softClosing, deadline) => {

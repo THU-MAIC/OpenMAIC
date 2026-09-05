@@ -61,6 +61,8 @@ interface RoundtableProps {
   readonly endFlashSessionType?: 'qa' | 'discussion';
   readonly thinkingState?: { stage: string; agentId?: string } | null;
   readonly isCueUser?: boolean;
+  readonly cueUserPrompt?: string;
+  readonly cueUserOptions?: readonly string[];
   /** Session entered the soft-closing grace window (client-side, ~15s). */
   readonly isSoftClosing?: boolean;
   readonly softCloseDeadline?: number;
@@ -70,6 +72,8 @@ interface RoundtableProps {
   readonly onDiscussionSkip?: () => void;
   readonly onStopDiscussion?: () => void;
   readonly onContinueDiscussion?: () => void;
+  /** Deterministic escape from a parked Q&A back to lecture playback. */
+  readonly onResumeLesson?: () => void;
   readonly onInputActivate?: () => void;
   readonly onUserInputActivity?: (
     kind: 'text_input' | 'composition_start' | 'recording_start',
@@ -130,6 +134,13 @@ const VOICE_WAVE_BARS = [
   { peak: 14, duration: 0.53 },
 ] as const;
 
+const RESUME_LESSON_OPTION_PATTERN =
+  /^(?:(?:不用|不需要|不了|先不用)[，,、。!！\s]*)?(?:继续(?:课程|上课|学习)|回到(?:课程|课堂)|返回(?:课程|课堂))$|^(?:(?:no thanks|not now)[,!.\s]*)?(?:(?:continue|resume)(?:\s+(?:the))?|return to|back to)\s+(?:lesson|course|class)$/i;
+
+export function isResumeLessonOption(option: string): boolean {
+  return RESUME_LESSON_OPTION_PATTERN.test(option.trim());
+}
+
 function VoiceWaveformBars({ barClassName }: { readonly barClassName: string }) {
   return VOICE_WAVE_BARS.map((bar, i) => (
     <motion.div
@@ -147,6 +158,119 @@ function VoiceWaveformBars({ barClassName }: { readonly barClassName: string }) 
       className={cn('w-1 rounded-full', barClassName)}
     />
   ));
+}
+
+function CueUserCard({
+  label,
+  prompt,
+  options,
+  voiceEnabled,
+  textLabel,
+  voiceLabel,
+  resumeLessonLabel,
+  onOpenText,
+  onOpenVoice,
+  onResumeLesson,
+  onSelect,
+  presentation = false,
+}: {
+  readonly label: string;
+  readonly prompt?: string;
+  readonly options?: readonly string[];
+  readonly voiceEnabled: boolean;
+  readonly textLabel: string;
+  readonly voiceLabel: string;
+  readonly resumeLessonLabel: string;
+  readonly onOpenText: () => void;
+  readonly onOpenVoice: () => void;
+  readonly onResumeLesson?: () => void;
+  readonly onSelect: (answer: string) => void;
+  readonly presentation?: boolean;
+}) {
+  const quickReplies =
+    options
+      ?.filter(Boolean)
+      .filter((option) => !onResumeLesson || !isResumeLessonOption(option))
+      .slice(0, 4) ?? [];
+  return (
+    <div
+      data-testid="cue-user-card"
+      role="group"
+      aria-label={label}
+      aria-live="polite"
+      className={cn(
+        'w-[min(560px,calc(100vw-2rem))] overflow-hidden rounded-[24px] border border-violet-200/90 bg-white/95 shadow-[0_24px_80px_-28px_rgba(76,29,149,0.45),0_8px_28px_-16px_rgba(15,23,42,0.28)] ring-1 ring-white/80 backdrop-blur-2xl dark:border-violet-800/70 dark:bg-gray-950/92 dark:ring-white/10',
+        presentation && 'w-[min(600px,calc(100vw-3rem))] bg-white/90 dark:bg-black/75',
+      )}
+    >
+      <div className="flex items-start gap-3.5 px-5 pb-3.5 pt-4.5">
+        <span className="relative mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-lg shadow-violet-500/20">
+          <span className="absolute -inset-1 animate-pulse rounded-[18px] border border-violet-400/35" />
+          <MessageSquare className="size-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[10px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-300">
+            {label}
+          </span>
+          {prompt && (
+            <span className="mt-1 block text-[15px] font-medium leading-relaxed text-gray-900 dark:text-gray-50">
+              {prompt}
+            </span>
+          )}
+        </span>
+      </div>
+      {quickReplies.length > 0 && (
+        <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto px-4 pb-3 sm:grid-cols-2">
+          {quickReplies.map((option, index) => (
+            <button
+              key={`${index}:${option}`}
+              type="button"
+              onClick={() => onSelect(option)}
+              className="group flex min-h-11 min-w-0 items-center gap-2.5 rounded-2xl border border-gray-200/90 bg-gray-50/85 px-3 py-2.5 text-left text-xs font-semibold text-gray-700 transition-all hover:-translate-y-0.5 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-800 hover:shadow-sm active:translate-y-0 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-violet-700 dark:hover:bg-violet-950/35 dark:hover:text-violet-100"
+            >
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-bold text-gray-400 shadow-sm ring-1 ring-gray-200 transition-colors group-hover:text-violet-600 group-hover:ring-violet-200 dark:bg-gray-800 dark:ring-gray-700 dark:group-hover:text-violet-300 dark:group-hover:ring-violet-700">
+                {index + 1}
+              </span>
+              <span className="line-clamp-2 min-w-0 flex-1 leading-relaxed">{option}</span>
+              <span className="shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-violet-400 dark:text-gray-600">
+                →
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2 border-t border-gray-100/90 bg-gray-50/55 px-3 py-2.5 dark:border-gray-800 dark:bg-gray-900/55">
+        <button
+          type="button"
+          onClick={onOpenText}
+          className="inline-flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-semibold text-gray-600 transition-colors hover:bg-white hover:text-violet-700 hover:shadow-sm dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-violet-200"
+        >
+          <MessageSquare className="size-3.5" />
+          {textLabel}
+        </button>
+        <button
+          type="button"
+          onClick={onOpenVoice}
+          disabled={!voiceEnabled}
+          className="inline-flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs font-semibold text-gray-600 transition-colors hover:bg-white hover:text-violet-700 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-35 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-violet-200"
+        >
+          {voiceEnabled ? <Mic className="size-3.5" /> : <MicOff className="size-3.5" />}
+          {voiceLabel}
+        </button>
+        {onResumeLesson && (
+          <button
+            type="button"
+            data-testid="cue-user-resume-lesson"
+            onClick={onResumeLesson}
+            className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-xl bg-violet-600 px-3 text-xs font-semibold text-white shadow-sm shadow-violet-500/20 transition-all hover:bg-violet-700 hover:shadow-md active:scale-[0.98] dark:bg-violet-500 dark:hover:bg-violet-400"
+          >
+            <BookOpen className="size-3.5" />
+            {resumeLessonLabel}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function Roundtable({
@@ -169,6 +293,8 @@ export function Roundtable({
   endFlashSessionType = 'discussion',
   thinkingState,
   isCueUser,
+  cueUserPrompt,
+  cueUserOptions,
   isSoftClosing,
   softCloseDeadline,
   isTopicPending,
@@ -177,6 +303,7 @@ export function Roundtable({
   onDiscussionSkip,
   onStopDiscussion,
   onContinueDiscussion,
+  onResumeLesson,
   onInputActivate,
   onUserInputActivity,
 
@@ -374,6 +501,22 @@ export function Roundtable({
   const teacherName = teacherParticipant?.name || t('roundtable.teacher');
   const userAvatar = userParticipant?.avatar || DEFAULT_USER_AVATAR;
 
+  const submitUserMessage = useCallback(
+    (message: string) => {
+      const normalized = message.trim();
+      if (!normalized || isSendCooldownRef.current) return false;
+      showLocalUserMessage(normalized);
+      onMessageSend?.(normalized);
+      setIsSendCooldown(true);
+      isSendCooldownRef.current = true;
+      setInputValue('');
+      setIsInputOpen(false);
+      setIsVoiceOpen(false);
+      return true;
+    },
+    [onMessageSend, showLocalUserMessage],
+  );
+
   // Audio recording
   const { isRecording, isProcessing, startRecording, stopRecording, cancelRecording } =
     useAudioRecorder({
@@ -388,11 +531,7 @@ export function Roundtable({
           setIsVoiceOpen(false);
           return;
         }
-        showLocalUserMessage(text);
-        onMessageSend?.(text);
-        setIsSendCooldown(true);
-        isSendCooldownRef.current = true;
-        setIsVoiceOpen(false);
+        submitUserMessage(text);
       },
       onError: (error) => {
         toast.error(error);
@@ -401,14 +540,8 @@ export function Roundtable({
     });
 
   const handleSendMessage = () => {
-    if (!inputValue.trim() || isSendCooldown) return;
-
-    showLocalUserMessage(inputValue);
-    onMessageSend?.(inputValue);
-    setIsSendCooldown(true);
-    isSendCooldownRef.current = true;
-    setInputValue('');
-    setIsInputOpen(false);
+    if (isSendCooldown) return;
+    submitUserMessage(inputValue);
   };
 
   const handleToggleInput = () => {
@@ -907,13 +1040,20 @@ export function Roundtable({
                 transition={{ duration: 0.22, ease: [0.21, 1, 0.36, 1] }}
                 className="pointer-events-auto"
               >
-                <button
-                  onClick={() => (asrEnabled ? handleToggleVoice() : handleToggleInput())}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/70 dark:bg-black/50 backdrop-blur-xl border border-amber-400/50 dark:border-amber-500/50 shadow-[0_0_16px_rgba(245,158,11,0.2),0_8px_32px_rgba(0,0,0,0.06)] dark:shadow-[0_0_16px_rgba(245,158,11,0.25),0_8px_32px_rgba(0,0,0,0.4)] text-amber-600 dark:text-amber-400 text-sm font-semibold tracking-wide hover:bg-gray-100/80 dark:hover:bg-black/60 hover:border-amber-500/70 dark:hover:border-amber-400/70 hover:shadow-[0_0_24px_rgba(245,158,11,0.25)] dark:hover:shadow-[0_0_24px_rgba(245,158,11,0.35)] transition-all active:scale-95 animate-pulse"
-                >
-                  {asrEnabled ? <Mic className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
-                  {t('roundtable.yourTurn')}
-                </button>
+                <CueUserCard
+                  label={t('roundtable.yourTurn')}
+                  prompt={cueUserPrompt}
+                  options={cueUserOptions}
+                  voiceEnabled={asrEnabled}
+                  textLabel={t('roundtable.textInput')}
+                  voiceLabel={t('roundtable.voiceInput')}
+                  resumeLessonLabel={t('roundtable.resumeLesson')}
+                  onOpenText={handleToggleInput}
+                  onOpenVoice={handleToggleVoice}
+                  onResumeLesson={onResumeLesson}
+                  onSelect={submitUserMessage}
+                  presentation
+                />
               </motion.div>
             )}
           </AnimatePresence>
@@ -1144,6 +1284,38 @@ export function Roundtable({
           : 'border-t border-gray-100 dark:border-gray-800 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md',
       )}
     >
+      {/* Parked learner hand-off floats over the lower canvas instead of being
+          squeezed into the 192px roundtable interaction slot. */}
+      <AnimatePresence>
+        {isCueUser && !bubbleRole && !thinkingState && !isInputOpen && !isVoiceOpen && (
+          <motion.div
+            key="cue-user-floating-panel"
+            data-testid="cue-user-floating-panel"
+            initial={{ opacity: 0, scale: 0.96, y: 14 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 10 }}
+            transition={{ duration: 0.24, ease: [0.21, 1, 0.36, 1] }}
+            className="pointer-events-none absolute bottom-[calc(100%_-_10px)] left-1/2 z-[70] -translate-x-1/2 px-4"
+          >
+            <div className="pointer-events-auto">
+              <CueUserCard
+                label={t('roundtable.yourTurn')}
+                prompt={cueUserPrompt}
+                options={cueUserOptions}
+                voiceEnabled={asrEnabled}
+                textLabel={t('roundtable.textInput')}
+                voiceLabel={t('roundtable.voiceInput')}
+                resumeLessonLabel={t('roundtable.resumeLesson')}
+                onOpenText={handleToggleInput}
+                onOpenVoice={handleToggleVoice}
+                onResumeLesson={onResumeLesson}
+                onSelect={submitUserMessage}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Toolbar strip — merged from CanvasArea ── */}
       <div
         className={cn(
@@ -1467,150 +1639,6 @@ export function Roundtable({
                   <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium">
                     {t('roundtable.thinking')}
                   </span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Cue user: centered indicator when waiting for user input */}
-            <AnimatePresence>
-              {isCueUser && !bubbleRole && !thinkingState && !isInputOpen && !isVoiceOpen && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.85 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.85 }}
-                  transition={{ duration: 0.35, ease: [0.21, 1, 0.36, 1] }}
-                  className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2.5"
-                >
-                  {/* Button with ripple effect */}
-                  <div className="relative flex items-center justify-center">
-                    {/* Soft background glow */}
-                    <div
-                      className={cn(
-                        'absolute w-24 h-24 rounded-full blur-2xl',
-                        asrEnabled
-                          ? 'bg-amber-400/[0.08] dark:bg-amber-500/[0.06]'
-                          : 'bg-purple-400/[0.08] dark:bg-purple-500/[0.06]',
-                      )}
-                    />
-
-                    {/* Expanding ripple 1 */}
-                    <motion.div
-                      animate={{ scale: [1, 2.2], opacity: [0.25, 0] }}
-                      transition={{
-                        repeat: Infinity,
-                        duration: 2.2,
-                        ease: 'easeOut',
-                      }}
-                      className={cn(
-                        'absolute w-11 h-11 rounded-full border',
-                        asrEnabled
-                          ? 'border-amber-400/50 dark:border-amber-500/35'
-                          : 'border-purple-400/50 dark:border-purple-500/35',
-                      )}
-                    />
-                    {/* Expanding ripple 2 */}
-                    <motion.div
-                      animate={{ scale: [1, 2.2], opacity: [0.25, 0] }}
-                      transition={{
-                        repeat: Infinity,
-                        duration: 2.2,
-                        ease: 'easeOut',
-                        delay: 0.7,
-                      }}
-                      className={cn(
-                        'absolute w-11 h-11 rounded-full border',
-                        asrEnabled
-                          ? 'border-amber-300/40 dark:border-amber-400/25'
-                          : 'border-purple-300/40 dark:border-purple-400/25',
-                      )}
-                    />
-
-                    {/* Action circle — voice (ASR on) or text input (ASR off) */}
-                    <motion.button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (asrEnabled) handleToggleVoice();
-                        else handleToggleInput();
-                      }}
-                      animate={{ scale: [1, 1.05, 1] }}
-                      transition={{
-                        repeat: Infinity,
-                        duration: 2,
-                        ease: 'easeInOut',
-                      }}
-                      className={cn(
-                        'relative w-11 h-11 rounded-full flex items-center justify-center shadow-lg cursor-pointer hover:shadow-xl active:scale-95 z-10 bg-gradient-to-br',
-                        asrEnabled
-                          ? 'from-amber-400 to-orange-500 dark:from-amber-500 dark:to-orange-600 shadow-amber-400/30 dark:shadow-amber-600/20 hover:shadow-amber-400/40 dark:hover:shadow-amber-600/30'
-                          : 'from-purple-400 to-indigo-500 dark:from-purple-500 dark:to-indigo-600 shadow-purple-400/30 dark:shadow-purple-600/20 hover:shadow-purple-400/40 dark:hover:shadow-purple-600/30',
-                      )}
-                    >
-                      {asrEnabled ? (
-                        <Mic className="w-[18px] h-[18px] text-white drop-shadow-sm" />
-                      ) : (
-                        <MessageSquare className="w-[18px] h-[18px] text-white drop-shadow-sm" />
-                      )}
-                    </motion.button>
-                  </div>
-
-                  {/* Visual indicator below button */}
-                  {asrEnabled ? (
-                    <div className="flex items-center justify-center gap-[3px] h-3">
-                      {[0, 1, 2, 3, 4, 3, 2, 1, 0].map((intensity, i) => (
-                        <motion.div
-                          key={i}
-                          animate={{
-                            scaleY: [0.3, 0.5 + intensity * 0.15, 0.3],
-                            opacity: [0.3, 0.7, 0.3],
-                          }}
-                          transition={{
-                            repeat: Infinity,
-                            duration: 0.8 + (i % 3) * 0.1,
-                            delay: i * 0.08,
-                            ease: 'easeInOut',
-                          }}
-                          className="w-[2.5px] h-full origin-center rounded-full bg-amber-400/70 dark:bg-amber-500/60"
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center gap-[3px] h-3">
-                      {[0, 1, 2, 3, 2, 1, 0].map((intensity, i) => (
-                        <motion.div
-                          key={i}
-                          animate={{
-                            scaleY: [0.3, 0.45 + intensity * 0.15, 0.3],
-                            opacity: [0.25, 0.6, 0.25],
-                          }}
-                          transition={{
-                            repeat: Infinity,
-                            duration: 1.0 + (i % 3) * 0.15,
-                            delay: i * 0.12,
-                            ease: 'easeInOut',
-                          }}
-                          className="w-[2.5px] h-full origin-center rounded-full bg-purple-400/60 dark:bg-purple-500/50"
-                        />
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Label */}
-                  <motion.span
-                    animate={{ opacity: [0.5, 0.9, 0.5] }}
-                    transition={{
-                      repeat: Infinity,
-                      duration: 2.5,
-                      ease: 'easeInOut',
-                    }}
-                    className={cn(
-                      'text-[10px] font-medium tracking-wider',
-                      asrEnabled
-                        ? 'text-amber-600/70 dark:text-amber-400/60'
-                        : 'text-purple-600/70 dark:text-purple-400/60',
-                    )}
-                  >
-                    {t('roundtable.yourTurn')}
-                  </motion.span>
                 </motion.div>
               )}
             </AnimatePresence>

@@ -230,6 +230,7 @@ vi.mock('@/components/chat/chat-area', async () => {
         resumeActiveLiveBuffer: vi.fn(),
         pauseActiveLiveBuffer: vi.fn(),
         stopActiveSession: vi.fn(),
+        resumeLesson: vi.fn().mockResolvedValue(true),
         continueActiveSoftClosingSession: vi.fn(),
         getActiveSessionType: vi.fn(),
         pauseBuffer: vi.fn(),
