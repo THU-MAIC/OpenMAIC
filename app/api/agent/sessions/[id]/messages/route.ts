@@ -7,6 +7,7 @@ import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { apiError } from '@/lib/server/api-response';
 import { MAX_SESSION_TEXT_LENGTH } from '@/lib/server/agent-runtime/limits';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
+import { scheduleConversationTitle } from '@/lib/server/agent-runtime/conversation-title-task';
 import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
 import { decodeElementRefs } from '@/lib/workbench/element-refs';
 import { decodeCourseRefs } from '@/lib/workbench/course-refs';
@@ -100,6 +101,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         },
         { expectedOwnerId: ownerId },
       );
+      if (text) scheduleConversationTitle(id, ownerId);
       return NextResponse.json(
         {
           id,

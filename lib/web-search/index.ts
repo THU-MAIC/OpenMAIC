@@ -3,6 +3,7 @@ import { searchWithBocha } from './bocha';
 import { searchWithBrave } from './brave';
 import { searchWithClaude } from './claude';
 import { searchWithDoubao } from './doubao';
+import { searchWithExa } from './exa';
 import { searchWithMiniMax } from './minimax';
 import { searchWithSearxng } from './searxng';
 import { searchWithTavily } from './tavily';
@@ -65,6 +66,8 @@ export async function searchWeb(params: {
       });
     case 'doubao':
       return searchWithDoubao({ query, apiKey, maxResults, baseUrl, ...abortOptions });
+    case 'exa':
+      return searchWithExa({ query, apiKey, maxResults, baseUrl, ...abortOptions });
     case 'minimax':
       return searchWithMiniMax({ query, apiKey, maxResults, baseUrl, ...abortOptions });
     case 'searxng':

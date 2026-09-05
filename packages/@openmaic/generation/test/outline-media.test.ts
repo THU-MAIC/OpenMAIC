@@ -1,9 +1,17 @@
-// Behavior-parity coverage for uniquifyMediaElementIds from lib/generation/scene-builder.ts.
-import { describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { uniquifyMediaElementIds, type SceneOutline } from '@openmaic/generation';
 
+const nanoid = vi.hoisted(() => vi.fn());
+
+vi.mock('nanoid', () => ({ nanoid }));
+
 describe('uniquifyMediaElementIds', () => {
-  test('replaces colliding generated IDs consistently without mutating the input', () => {
+  beforeEach(() => {
+    let sequence = 0;
+    nanoid.mockImplementation(() => String(++sequence).padStart(8, '0'));
+  });
+
+  test('assigns every generation request a globally unique ID without mutating the input', () => {
     const outlines: SceneOutline[] = [1, 2].map((order) => ({
       id: `scene_${order}`,
       type: 'slide',
@@ -12,18 +20,28 @@ describe('uniquifyMediaElementIds', () => {
       keyPoints: [],
       order,
       mediaGenerations: [
-        { type: 'image', prompt: 'A diagram', elementId: 'gen_img_1' },
-        { type: 'video', prompt: 'A clip', elementId: `custom_${order}` },
+        { type: 'image', prompt: `Diagram ${order}`, elementId: 'gen_img_1' },
+        { type: 'video', prompt: `Clip ${order}`, elementId: `custom_${order}` },
       ],
     }));
 
     const result = uniquifyMediaElementIds(outlines);
-    const firstId = result[0]?.mediaGenerations?.[0]?.elementId;
+    const resultIds = result.flatMap((outline) =>
+      (outline.mediaGenerations ?? []).map((request) => request.elementId),
+    );
 
-    expect(firstId).toMatch(/^gen_img_[A-Za-z0-9_-]{8}$/);
-    expect(result[1]?.mediaGenerations?.[0]?.elementId).toBe(firstId);
-    expect(result[0]?.mediaGenerations?.[1]?.elementId).toMatch(/^gen_vid_[A-Za-z0-9_-]{8}$/);
-    expect(outlines[0]?.mediaGenerations?.[0]?.elementId).toBe('gen_img_1');
+    expect(resultIds).toEqual([
+      'gen_img_00000001',
+      'gen_vid_00000002',
+      'gen_img_00000003',
+      'gen_vid_00000004',
+    ]);
+    expect(new Set(resultIds).size).toBe(resultIds.length);
+    expect(
+      outlines.flatMap((outline) =>
+        (outline.mediaGenerations ?? []).map((request) => request.elementId),
+      ),
+    ).toEqual(['gen_img_1', 'custom_1', 'gen_img_1', 'custom_2']);
   });
 
   test('returns the original array when no media IDs exist', () => {

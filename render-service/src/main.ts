@@ -10,6 +10,7 @@
  * demo-scale deployment without the app noticing:
  *
  *   POST   /render                 multipart: project(zip) + fps/quality/format → 202 { jobId }
+ *   POST   /preview                JSON: scene + stage + viewport → PNG
  *   GET    /render/:jobId          → { status, progress, currentStage, done, ... }
  *   GET    /render/:jobId/download → stream MP4 (or 302 to a presigned URL)
  *   DELETE /render/:jobId          → cancel
@@ -25,7 +26,8 @@ import { createReadStream } from 'node:fs';
 import { mkdir, stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { serve } from '@hono/node-server';
-import { Hono } from 'hono';
+import { validateScene } from '@openmaic/dsl';
+import { Hono, type Context } from 'hono';
 import { config } from './config.js';
 import { InMemoryJobStore } from './job-store.js';
 import { LocalDiskArtifactStore } from './artifact-store.js';
@@ -38,6 +40,17 @@ import { InProcessExecutor } from './render-executor.js';
 import { InvalidProjectError, unzipProject as defaultUnzipProject } from './unzip.js';
 import { capBodyStream } from './capped-stream.js';
 import { Semaphore } from './semaphore.js';
+import { PreviewGate, PreviewRejectedError } from './preview-gate.js';
+import {
+  ChromiumPreviewRenderer,
+  PreviewTimeoutError,
+  buildSlideClientBundle,
+  type PreviewRenderer,
+  type PreviewScene,
+  type PreviewStageContext,
+  type PreviewViewport,
+} from './preview-renderer.js';
+import { invalidSlideCanvasElementError, previewabilityError } from './preview-validation.js';
 import type { JobStore } from './job-store.js';
 import type { ArtifactStore } from './artifact-store.js';
 import { isTerminal, type RenderOptions } from './types.js';
@@ -49,9 +62,11 @@ import type { RuntimeVersions } from './types.js';
 class UploadTooLargeError extends Error {}
 /** Thrown inside the gated section for a malformed request (→ HTTP 400). */
 class BadRequestError extends Error {}
+/** Thrown for a valid payload whose scene cannot produce a faithful preview (→ HTTP 422). */
+class UnprocessablePreviewError extends Error {}
 
 /** 429 body for an admission rejection: the prose plus its machine code, if any. */
-function rejectionBody(error: RenderRejectedError): { error: string; reason?: string } {
+function rejectionBody(error: Error & { reason?: string }): { error: string; reason?: string } {
   // Spread-omission keeps reason-less rejections (internal invariants) from
   // serializing `"reason": undefined` into the body.
   return { error: error.message, ...(error.reason ? { reason: error.reason } : {}) };
@@ -64,12 +79,122 @@ export interface AppDeps {
   coordinator: RenderCoordinator;
   /** Bounds concurrent *buffering + extraction* (the whole RAM-heavy section). */
   extractionGate: Semaphore;
+  /** Independent preview admission, injectable for focused route tests. */
+  previewGate?: PreviewGate;
+  /** Render one validated persisted scene to PNG. */
+  previewRenderer?: PreviewRenderer;
+  /** Preview wall-clock deadline, injectable for focused route tests. */
+  previewDeadlineMs?: number;
+  /** Preview JSON byte ceiling, injectable for focused route tests. */
+  previewMaxJsonBytes?: number;
   /** Extract a validated archive into a dir. Overridable in tests. */
   unzipProject?: (zip: Uint8Array, destDir: string) => Promise<void>;
   /** Create a fresh per-render scratch dir. Overridable in tests. */
   makeProjectDir?: () => Promise<string>;
   /** Runtime identity reported by health and copied into per-render metrics. */
   runtimeVersions?: RuntimeVersions;
+}
+
+interface PreviewPayload {
+  version: 1;
+  scene: PreviewScene;
+  stage: PreviewStageContext;
+  viewport: PreviewViewport;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parsePreviewPayload(value: unknown): PreviewPayload | string {
+  if (!isRecord(value)) return 'Expected a JSON object';
+  if (value.version !== 1) return 'Unsupported preview payload version';
+
+  const sceneValidation = validateScene(value.scene);
+  if (!sceneValidation.valid) {
+    const issue = sceneValidation.errors[0];
+    return issue ? `Invalid scene at ${issue.path || '/'}: ${issue.message}` : 'Invalid scene';
+  }
+  const invalidCanvasElement = invalidSlideCanvasElementError(value.scene);
+  if (invalidCanvasElement) return invalidCanvasElement;
+  const scene = value.scene as PreviewScene;
+
+  if (!isRecord(value.stage)) return 'Invalid stage context';
+  const stageId = value.stage.id;
+  const stageName = value.stage.name;
+  if (typeof stageId !== 'string' || !stageId.trim() || stageId.length > 256) {
+    return 'Invalid stage id';
+  }
+  if (typeof stageName !== 'string' || !stageName.trim() || stageName.length > 10_000) {
+    return 'Invalid stage name';
+  }
+  if (stageId !== scene.stageId) return 'Stage context does not match scene.stageId';
+
+  if (!isRecord(value.viewport)) return 'Invalid viewport';
+  const { width, height, deviceScaleFactor } = value.viewport;
+  if (typeof width !== 'number' || !Number.isInteger(width) || width < 64 || width > 4096) {
+    return 'Invalid viewport width';
+  }
+  if (typeof height !== 'number' || !Number.isInteger(height) || height < 64 || height > 4096) {
+    return 'Invalid viewport height';
+  }
+  if (
+    typeof deviceScaleFactor !== 'number' ||
+    !Number.isFinite(deviceScaleFactor) ||
+    deviceScaleFactor <= 0 ||
+    deviceScaleFactor > config.resourceProfile.maxPreviewDeviceScaleFactor
+  ) {
+    return `Invalid deviceScaleFactor (maximum ${config.resourceProfile.maxPreviewDeviceScaleFactor} for ${config.resourceProfile.name})`;
+  }
+  const pixels = width * height * deviceScaleFactor * deviceScaleFactor;
+  if (pixels > config.resourceProfile.maxPreviewPixels) {
+    return `Preview exceeds the ${config.resourceProfile.name} resource profile pixel limit`;
+  }
+
+  return {
+    version: 1,
+    scene,
+    stage: { id: stageId, name: stageName },
+    viewport: { width, height, deviceScaleFactor },
+  };
+}
+
+/** Buffer and parse a byte-capped JSON body while preserving socket backpressure. */
+async function readPreviewPayload(
+  c: Context,
+  signal: AbortSignal,
+  maxJsonBytes: number,
+): Promise<unknown> {
+  if (!c.req.header('content-type')?.toLowerCase().includes('application/json')) {
+    throw new BadRequestError('Expected application/json');
+  }
+
+  const raw = c.req.raw;
+  let value: unknown;
+  let capped: ReturnType<typeof capBodyStream> | undefined;
+  try {
+    if (raw.body) {
+      capped = capBodyStream(raw.body, maxJsonBytes, signal);
+      const bounded = new Request(raw.url, {
+        method: raw.method,
+        headers: raw.headers,
+        body: capped.stream,
+        signal,
+        duplex: 'half',
+      } as RequestInit);
+      value = await bounded.json();
+    } else {
+      signal.throwIfAborted();
+      value = await c.req.json();
+    }
+  } catch {
+    if (capped?.exceeded()) throw new UploadTooLargeError('Upload too large');
+    if (signal.aborted)
+      throw signal.reason ?? new PreviewTimeoutError('Preview exceeded the deadline');
+    throw new BadRequestError('Expected valid JSON');
+  }
+
+  return value;
 }
 
 /** Parse + validate the multipart render options. Returns options or an error string. */
@@ -92,8 +217,8 @@ function parseOptions(form: FormData): RenderOptions | string {
  * Build the render-service HTTP app over injected collaborators.
  *
  * Admission ordering is the security boundary here:
- *  1. `reserve()` (queue + per-identity) runs FIRST, before anything is read —
- *     a rejected caller never buffers a byte.
+ *  1. Each route's admission gate runs FIRST, before anything is read — a
+ *     rejected caller never buffers a byte.
  *  2. The whole RAM-heavy section — buffering the multipart (`formData()` is
  *     what materializes the uploaded file into memory), parsing, reading the
  *     file bytes, and extracting — runs INSIDE `extractionGate`. So at most
@@ -105,6 +230,11 @@ export function createApp(deps: AppDeps): Hono {
   const { jobs, artifacts, coordinator, extractionGate } = deps;
   const unzipProject = deps.unzipProject ?? defaultUnzipProject;
   const makeProjectDir = deps.makeProjectDir ?? defaultMakeProjectDir;
+  const previewRenderer = deps.previewRenderer ?? new ChromiumPreviewRenderer();
+  const previewDeadlineMs = deps.previewDeadlineMs ?? config.previewDeadlineMs;
+  const previewMaxJsonBytes = deps.previewMaxJsonBytes ?? config.previewMaxJsonBytes;
+  const previewGate =
+    deps.previewGate ?? new PreviewGate(config.previewMaxInFlight, config.previewMaxPerUser);
 
   const app = new Hono();
 
@@ -200,6 +330,92 @@ export function createApp(deps: AppDeps): Hono {
     }
   });
 
+  app.post('/preview', async (c) => {
+    const declared = Number(c.req.header('content-length') ?? '0');
+    if (Number.isFinite(declared) && declared > previewMaxJsonBytes) {
+      return c.json({ error: 'Upload too large' }, 413);
+    }
+
+    const identity = c.req.header('x-openmaic-client')?.trim() || 'anonymous';
+    let release: () => void;
+    try {
+      release = previewGate.acquire(identity);
+    } catch (error) {
+      if (error instanceof PreviewRejectedError) return c.json(rejectionBody(error), 429);
+      throw error;
+    }
+
+    const deadlineAbort = new AbortController();
+    const deadline = setTimeout(
+      () => deadlineAbort.abort(new PreviewTimeoutError('Preview exceeded the deadline')),
+      previewDeadlineMs,
+    );
+    deadline.unref?.();
+    // The Fetch request signal is backed by the Node request's close event, so
+    // disconnecting clients abort body reads and Chromium work immediately.
+    const signal = AbortSignal.any([c.req.raw.signal, deadlineAbort.signal]);
+
+    try {
+      // The extraction permit covers only byte buffering + JSON parse. A parsed
+      // scene is bounded by previewMaxJsonBytes times the parser's expansion,
+      // and PreviewGate bounds live parsed scenes to previewMaxInFlight.
+      const value = await extractionGate.run(
+        () => readPreviewPayload(c, signal, previewMaxJsonBytes),
+        signal,
+      );
+      const payload = parsePreviewPayload(value);
+      if (typeof payload === 'string') throw new BadRequestError(payload);
+      const unpreviewable = previewabilityError(payload.scene);
+      if (unpreviewable) throw new UnprocessablePreviewError(unpreviewable);
+      const execution = coordinator.tryRunWithExecutionSlot(
+        () =>
+          previewRenderer.render({
+            scene: payload.scene,
+            stage: payload.stage,
+            viewport: payload.viewport,
+            signal,
+            deadlineMs: previewDeadlineMs,
+          }),
+        signal,
+      );
+      if (!execution) {
+        throw new PreviewRejectedError(
+          'Preview capacity is busy with another render; retry shortly.',
+          'capacity_busy',
+        );
+      }
+      const png = await execution;
+      if (png.byteLength === 0) throw new Error('Preview renderer returned an empty image');
+
+      const body = new Uint8Array(png.byteLength);
+      body.set(png);
+      return new Response(body.buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': 'image/png',
+          'Content-Length': String(png.byteLength),
+        },
+      });
+    } catch (error) {
+      if (error instanceof UploadTooLargeError) return c.json({ error: error.message }, 413);
+      if (error instanceof BadRequestError) return c.json({ error: error.message }, 400);
+      if (error instanceof UnprocessablePreviewError) {
+        return c.json({ error: error.message }, 422);
+      }
+      if (error instanceof PreviewRejectedError) return c.json(rejectionBody(error), 429);
+      if (error instanceof PreviewTimeoutError || deadlineAbort.signal.aborted) {
+        return c.json({ error: 'Preview exceeded the deadline' }, 504);
+      }
+      return c.json(
+        { error: error instanceof Error ? error.message : 'Preview rendering failed' },
+        500,
+      );
+    } finally {
+      clearTimeout(deadline);
+      release();
+    }
+  });
+
   app.get('/render/:jobId', async (c) => {
     const job = await jobs.get(c.req.param('jobId'));
     if (!job) return c.json({ error: 'Job not found' }, 404);
@@ -282,6 +498,10 @@ async function main(): Promise<void> {
     void coordinator.cleanupProject(record.projectDir);
   });
   coordinator = new RenderCoordinator(executor, jobs, artifacts);
+
+  // Build the browser mount off the request path so the first preview does not
+  // pay the cold esbuild cost while holding admission and execution permits.
+  await buildSlideClientBundle();
 
   const app = createApp({
     jobs,
