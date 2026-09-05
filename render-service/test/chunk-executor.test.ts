@@ -185,6 +185,29 @@ describe('local bounded chunk executor', () => {
     expect(assembled).toBe(false);
   });
 
+  it('ignores stale audio from a failed planning attempt when the current plan has no audio', async () => {
+    const paths = setup();
+    await materializeProject(paths.projectDir);
+    let assembledAudio: string | null | undefined;
+    const dependencies = deps();
+    const assemble = dependencies.assemble!;
+    await executeRenderChunks(
+      { ...paths, options },
+      deps({
+        plan: async (...args) => {
+          const result = await fakePlan(...args);
+          await writeFile(join(paths.planDir, 'audio.m4a'), 'stale-audio');
+          return result;
+        },
+        assemble: async (...args) => {
+          assembledAudio = args[2];
+          return assemble(...args);
+        },
+      }),
+    );
+    expect(assembledAudio).toBeNull();
+  });
+
   it('terminates a real child worker on deadline without crashing the parent', async () => {
     const controller = new AbortController();
     const fixture = join(

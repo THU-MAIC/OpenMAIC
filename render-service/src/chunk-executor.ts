@@ -845,10 +845,10 @@ export async function executeRenderChunks(
     let assembly: AssembleResult;
     const assembleStartedAt = Date.now();
     try {
-      const audioPath = resolvePlanAudioPath(plan.planDir);
       const producerMetadata = JSON.parse(
         await readFile(join(plan.planDir, 'plan.json'), 'utf8'),
       ) as { hasAudio?: boolean };
+      const audioPath = producerMetadata.hasAudio ? resolvePlanAudioPath(plan.planDir) : null;
       if (producerMetadata.hasAudio && !audioPath) {
         throw new Error('Plan declares audio but its audio artifact is missing');
       }
