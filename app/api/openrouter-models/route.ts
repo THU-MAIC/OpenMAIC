@@ -16,7 +16,10 @@
  */
 import type { NextRequest } from 'next/server';
 
-import { OPENROUTER_DEFAULT_BASE_URL } from '@/lib/media/adapters/openrouter-image-adapter';
+import {
+  OPENROUTER_DEFAULT_BASE_URL,
+  openRouterBaseUrl,
+} from '@/lib/media/adapters/openrouter-image-adapter';
 import { apiError } from '@/lib/server/api-response';
 
 export const runtime = 'nodejs';
@@ -47,12 +50,14 @@ export async function GET(req: NextRequest) {
     req.headers.get('x-api-key')?.trim() ||
     '';
 
-  const baseUrl =
+  // Same normalisation the adapters use: a saved base URL that already ends in
+  // /images or /videos would otherwise ask for `/images/images/models` and 404.
+  const baseUrl = openRouterBaseUrl(
     req.headers.get('x-base-url')?.trim() ||
-    (kind === 'image'
-      ? process.env.IMAGE_OPENROUTER_BASE_URL?.trim()
-      : process.env.VIDEO_OPENROUTER_BASE_URL?.trim()) ||
-    OPENROUTER_DEFAULT_BASE_URL;
+      (kind === 'image'
+        ? process.env.IMAGE_OPENROUTER_BASE_URL?.trim()
+        : process.env.VIDEO_OPENROUTER_BASE_URL?.trim()),
+  );
 
   const cacheKey = `${kind}:${baseUrl}`;
   const hit = cache.get(cacheKey);
@@ -60,18 +65,20 @@ export async function GET(req: NextRequest) {
     return Response.json({ models: hit.models, cached: true });
   }
 
-  let upstream: Response;
-  try {
-    upstream = await fetch(`${baseUrl}/${kind}s/models`, {
-      method: 'GET',
-      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-    });
-  } catch {
-    return apiError('UPSTREAM_ERROR', 502, `unable to reach ${baseUrl}`);
+  const headers: Record<string, string> = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+  const read = (base: string) =>
+    fetch(`${base}/${kind}s/models`, { method: 'GET', headers }).catch(() => null);
+
+  // A saved base URL is a free-text field, so any typo would otherwise empty
+  // the model picker. Fall back to the public catalog rather than fail: the
+  // list is read-only, and a wrong base URL still surfaces at generation time.
+  let upstream = await read(baseUrl);
+  if ((!upstream || !upstream.ok) && baseUrl !== OPENROUTER_DEFAULT_BASE_URL) {
+    upstream = await read(OPENROUTER_DEFAULT_BASE_URL);
   }
 
-  if (!upstream.ok) {
-    const text = await upstream.text().catch(() => '');
+  if (!upstream || !upstream.ok) {
+    const text = upstream ? await upstream.text().catch(() => '') : 'unreachable';
     return apiError('UPSTREAM_ERROR', 502, `OpenRouter ${kind} catalog failed: ${text}`);
   }
 
