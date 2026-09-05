@@ -172,7 +172,10 @@ export function ChatSessionComponent({
   const isDiscussion = session.type === 'discussion';
   const isQA = session.type === 'qa';
   const canEnd =
-    (isDiscussion || isQA) && (session.status === 'active' || session.status === 'soft-closing');
+    (isDiscussion || isQA) &&
+    (session.status === 'active' ||
+      session.status === 'waiting-user' ||
+      session.status === 'soft-closing');
   const isEnded = session.status === 'completed' && (isDiscussion || isQA);
   const isSoftClosing = session.status === 'soft-closing' && (isDiscussion || isQA);
   const remainingSoftCloseSeconds = useSoftCloseCountdown(session.softCloseDeadline);

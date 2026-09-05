@@ -39,7 +39,7 @@ interface ChatAreaProps {
   onLiveSpeech?: (text: string | null, agentId?: string | null) => void;
   onSpeechProgress?: (ratio: number | null) => void;
   onThinking?: (state: { stage: string; agentId?: string } | null) => void;
-  onCueUser?: (fromAgentId?: string, prompt?: string) => void;
+  onCueUser?: (fromAgentId?: string, prompt?: string, options?: string[]) => void;
   onLiveSessionError?: () => void;
   onSoftCloseSession?: (payload: SessionCleanupPayload) => void;
   onSoftClosingChange?: (softClosing: boolean, deadline?: number) => void;
@@ -63,6 +63,7 @@ export interface ChatAreaRef {
   endSession: (sessionId: string, options?: EndSessionOptions) => Promise<void>;
   endActiveSession: (options?: EndSessionOptions) => Promise<void>;
   stopActiveSession: () => Promise<void>;
+  resumeLesson: () => Promise<boolean>;
   continueActiveSoftClosingSession: () => boolean;
   softPauseActiveSession: () => Promise<void>;
   resumeActiveSession: () => Promise<void>;
@@ -113,6 +114,10 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
   ) => {
     const { t } = useI18n();
     const scenes = useStageStore((s) => s.scenes);
+    const onCueUserRef = useRef(onCueUser);
+    useEffect(() => {
+      onCueUserRef.current = onCueUser;
+    }, [onCueUser]);
     const {
       sessions,
       activeSessionType,
@@ -161,9 +166,25 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
 
     // Whether there's an active discussion/QA session (for amber dot on Chat tab)
     const hasActiveChatSession = useMemo(
-      () => chatSessions.some((s) => s.status === 'active'),
+      () => chatSessions.some((s) => s.status === 'active' || s.status === 'waiting-user'),
       [chatSessions],
     );
+
+    const waitingUserSession = useMemo(
+      () => chatSessions.find((session) => session.status === 'waiting-user'),
+      [chatSessions],
+    );
+
+    // Re-hydrate the learner hand-off after a reload/course restore. The
+    // stream callback handles the live path; this effect handles persistence.
+    useEffect(() => {
+      if (!waitingUserSession) return;
+      onCueUserRef.current?.(
+        waitingUserSession.cueUser?.fromAgentId,
+        waitingUserSession.cueUser?.prompt,
+        waitingUserSession.cueUser?.options,
+      );
+    }, [waitingUserSession]);
 
     const softClosingChatSession = useMemo(
       () => chatSessions.find((s) => s.status === 'soft-closing'),
@@ -194,10 +215,31 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
 
     const handleStopActiveSession = useCallback(async () => {
       const active = chatSessions.find(
-        (session) => session.status === 'active' || session.status === 'soft-closing',
+        (session) =>
+          session.status === 'active' ||
+          session.status === 'waiting-user' ||
+          session.status === 'soft-closing',
       );
       if (active) await handleEndSession(active.id);
     }, [chatSessions, handleEndSession]);
+
+    const handleResumeLesson = useCallback(async (): Promise<boolean> => {
+      const active = chatSessions.find(
+        (session) =>
+          session.status === 'active' ||
+          session.status === 'waiting-user' ||
+          session.status === 'soft-closing',
+      );
+      if (!active) return false;
+
+      await endSession(active.id, { source: 'resume_lesson' });
+      onStopSession?.({
+        sessionId: active.id,
+        endReason: 'back_to_lesson',
+        source: 'resume_lesson',
+      });
+      return true;
+    }, [chatSessions, endSession, onStopSession]);
 
     const handleContinueActiveSoftClosingSession = useCallback((): boolean => {
       const softClosing = chatSessions.find((session) => session.status === 'soft-closing');
@@ -213,6 +255,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       endSession,
       endActiveSession,
       stopActiveSession: handleStopActiveSession,
+      resumeLesson: handleResumeLesson,
       continueActiveSoftClosingSession: handleContinueActiveSoftClosingSession,
       softPauseActiveSession,
       resumeActiveSession,

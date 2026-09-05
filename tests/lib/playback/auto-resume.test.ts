@@ -30,6 +30,17 @@ describe('shouldAutoResumeLecture', () => {
     ).toBe(false);
   });
 
+  it('resumes immediately for the explicit continue-lesson action', () => {
+    expect(
+      shouldAutoResumeLecture({
+        ...base,
+        source: 'resume_lesson',
+        endReason: 'back_to_lesson',
+        hadLectureInterruption: false,
+      }),
+    ).toBe(true);
+  });
+
   it('never resumes for a non-soft-close cleanup source', () => {
     expect(shouldAutoResumeLecture({ ...base, source: 'soft_close_enter' })).toBe(false);
     expect(shouldAutoResumeLecture({ ...base, source: 'manual_stop' })).toBe(false);

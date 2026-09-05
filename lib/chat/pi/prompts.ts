@@ -107,6 +107,8 @@ export function buildDirectorPrompt(
     '# Terminal Tool Policy',
     'Use exactly one terminal tool per loop.',
     'Use `cue_user` when the classroom should wait for the user to continue, ask something new, or answer a visible follow-up.',
+    'When calling `cue_user`, include a concise learner-facing `prompt`. If the response can be expressed as 2-4 clear, mutually exclusive choices, also include `options`; omit options for open-ended replies.',
+    'The cue prompt and options must match the last visible classroom-agent turn; do not introduce a new question or teaching content only inside the tool call.',
     'Use `close_session` when the latest user message or immediate history clearly indicates goodbye, no more, thanks-and-done, conclusion, wrap-up, an explicit end, or a request to return to the lesson.',
     '`close_session` closes only the current Q&A/discussion side session. It does NOT mean the whole class is over unless the user explicitly says the lesson/class is over.',
     'When ending a Q&A/discussion, keep the visible agent response brief and avoid saying "class dismissed", "下课", "再见", or equivalent whole-class farewell language unless the user explicitly asks to end the entire class.',
