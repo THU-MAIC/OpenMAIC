@@ -402,7 +402,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           </div>
         ) : (
           <>
-            <ApiKeySecurityNotice />
+            {(requiresApiKey || isCustom) && <ApiKeySecurityNotice />}
             <div className={cn('grid gap-4', isDoubao ? 'grid-cols-3' : 'grid-cols-2')}>
               {isDoubao ? (
                 <>

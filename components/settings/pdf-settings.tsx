@@ -117,7 +117,7 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
           admin-owned and not overridable from the client. */}
       {!isServerConfigured && needsRemoteConfig && (
         <>
-          <ApiKeySecurityNotice />
+          {(isCloud || isAliDocMind) && <ApiKeySecurityNotice />}
           <div className="grid grid-cols-2 gap-4">
             {/* API Key — shown first for cloud, second for self-hosted */}
             {isCloud && (

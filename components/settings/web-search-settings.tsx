@@ -80,7 +80,7 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
       {/* API Key + Base URL Configuration */}
       {showCredentialFields && (
         <>
-          <ApiKeySecurityNotice />
+          {provider.requiresApiKey && <ApiKeySecurityNotice />}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-sm">{t('settings.webSearchApiKey')}</Label>
