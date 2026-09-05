@@ -70,6 +70,7 @@ async function fetchVideoDataUrl(
   const response = await fetch(`${baseUrl}/videos/${encodeURIComponent(jobId)}/content?index=0`, {
     method: 'GET',
     headers: { Authorization: `Bearer ${apiKey}` },
+    redirect: 'manual',
     ...(signal ? { signal } : {}),
   });
   if (!response.ok) {
@@ -124,6 +125,7 @@ async function submitVideoJob(
   const response = await fetch(`${baseUrl}/videos`, {
     method: 'POST',
     headers: openRouterHeaders(apiKey),
+    redirect: 'manual',
     body: JSON.stringify(body),
     ...(options.signal ? { signal: options.signal } : {}),
   });
@@ -144,6 +146,7 @@ async function pollVideoJob(
   const response = await fetch(`${baseUrl}/videos/${encodeURIComponent(jobId)}`, {
     method: 'GET',
     headers: openRouterHeaders(apiKey),
+    redirect: 'manual',
     ...(signal ? { signal } : {}),
   });
   if (!response.ok) {
@@ -223,5 +226,8 @@ export async function generateWithOpenRouterVideo(
     intervalMs: POLL_INTERVAL_MS,
     maxAttempts: MAX_POLL_ATTEMPTS,
     label: 'OpenRouter video generation',
+    // Cancelling a generation should stop the poll immediately, not after the
+    // current 10s sleep elapses.
+    ...(options.signal ? { signal: options.signal } : {}),
   });
 }

@@ -128,6 +128,8 @@ export async function generateWithOpenRouterImage(
   const response = await fetch(`${baseUrl}/images`, {
     method: 'POST',
     headers: openRouterHeaders(config.apiKey),
+    // Never let a redirect carry the Authorization header to another host.
+    redirect: 'manual',
     body: JSON.stringify(body),
     ...(options.signal ? { signal: options.signal } : {}),
   });
@@ -150,7 +152,15 @@ export async function generateWithOpenRouterImage(
   }
 
   const { width, height } = getDimensions(options.aspectRatio);
+  // Return a data URL rather than bare `base64`. OpenRouter answers whatever the
+  // upstream model produced — `output_format` accepts png, jpeg, webp and svg —
+  // but the orchestration layer wraps a bare `base64` as `data:image/png`
+  // unconditionally, which mislabels every non-PNG result. Carrying the reported
+  // `media_type` in the URL keeps the bytes and their type together, and callers
+  // already prefer `url` when present.
+  const mediaType = first.media_type || 'image/png';
   return {
+    url: `data:${mediaType};base64,${first.b64_json}`,
     base64: first.b64_json,
     width: options.width || width,
     height: options.height || height,

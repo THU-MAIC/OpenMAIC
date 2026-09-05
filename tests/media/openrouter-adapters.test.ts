@@ -52,6 +52,35 @@ describe('OpenRouter image adapter', () => {
     });
   });
 
+  it('preserves the reported media type instead of assuming png', async () => {
+    // The orchestration layer wraps a bare `base64` as `data:image/png`
+    // unconditionally, so a jpeg/webp result would be mislabelled unless the
+    // adapter carries the type itself.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({ created: 1, data: [{ b64_json: 'BBBB', media_type: 'image/webp' }] }),
+      ),
+    );
+    const result = await generateWithOpenRouterImage(
+      { providerId: 'openrouter-image', apiKey: 'k', model: 'x' },
+      { prompt: 'a fox' },
+    );
+    expect(result.url).toBe('data:image/webp;base64,BBBB');
+  });
+
+  it('falls back to png when the response reports no media type', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ created: 1, data: [{ b64_json: 'CCCC' }] })),
+    );
+    const result = await generateWithOpenRouterImage(
+      { providerId: 'openrouter-image', apiKey: 'k', model: 'x' },
+      { prompt: 'a fox' },
+    );
+    expect(result.url).toBe('data:image/png;base64,CCCC');
+  });
+
   it('throws when the response carries no image data', async () => {
     vi.stubGlobal(
       'fetch',
