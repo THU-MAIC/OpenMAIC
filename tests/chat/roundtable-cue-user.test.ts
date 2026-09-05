@@ -8,8 +8,8 @@ vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
 }));
 
-describe('Roundtable cue-user card', () => {
-  it('shows the learner-facing prompt and structured quick replies', () => {
+describe('Roundtable cue-user turn', () => {
+  it('embeds the learner-facing prompt beside the user with structured quick replies', () => {
     const html = renderToStaticMarkup(
       createElement(Roundtable, {
         isCueUser: true,
@@ -21,7 +21,10 @@ describe('Roundtable cue-user card', () => {
     );
 
     expect(html).toContain('data-testid="cue-user-card"');
-    expect(html).toContain('data-testid="cue-user-floating-panel"');
+    expect(html).toContain('data-testid="cue-user-embedded-turn"');
+    expect(html).toContain('data-cue-side="user"');
+    expect(html).toContain('data-testid="cue-user-bubble-tail"');
+    expect(html).not.toContain('data-testid="cue-user-floating-panel"');
     expect(html).toContain('data-testid="cue-user-resume-lesson"');
     expect(html).toContain('roundtable.yourTurn');
     expect(html).toContain('roundtable.textInput');
