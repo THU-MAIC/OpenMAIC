@@ -137,4 +137,175 @@ describe('fetchWithRedirectValidation — every redirect hop is re-validated', (
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[1][0])).toBe('http://127.0.0.1:8080/internal');
   });
+
+  it('drops credential headers before a cross-origin hop when init.headers is a Headers instance, keeping the other headers', async () => {
+    const { fetchWithRedirectValidation } = await loadWrapper();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { location: 'https://cdn.public.example/v1/chat/completions' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const headers = new Headers({
+      authorization: 'Bearer sk-test',
+      'x-api-key': 'anthropic-key',
+      'content-type': 'application/json',
+    });
+
+    const response = await fetchWithRedirectValidation(
+      'https://api.public.example/v1/chat/completions',
+      { method: 'POST', headers, body: '{}' },
+    );
+
+    expect(response.status).toBe(200);
+    const firstInit = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((firstInit.headers as Headers).get('authorization')).toBe('Bearer sk-test');
+    const secondHeaders = (fetchMock.mock.calls[1][1] as RequestInit).headers as Headers;
+    expect(secondHeaders).toBeInstanceOf(Headers);
+    expect(secondHeaders.get('authorization')).toBeNull();
+    expect(secondHeaders.get('x-api-key')).toBeNull();
+    expect(secondHeaders.get('content-type')).toBe('application/json');
+    // The caller's Headers instance is never mutated.
+    expect(headers.get('authorization')).toBe('Bearer sk-test');
+  });
+
+  it('drops credential headers before a cross-origin hop when init.headers is an array of string pairs', async () => {
+    const { fetchWithRedirectValidation } = await loadWrapper();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { location: 'https://cdn.public.example/v1/chat/completions' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await fetchWithRedirectValidation(
+      'https://api.public.example/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: [
+          ['authorization', 'Bearer sk-test'],
+          ['api-key', 'azure-key'],
+          ['content-type', 'application/json'],
+        ],
+        body: '{}',
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toEqual([
+      ['authorization', 'Bearer sk-test'],
+      ['api-key', 'azure-key'],
+      ['content-type', 'application/json'],
+    ]);
+    expect((fetchMock.mock.calls[1][1] as RequestInit).headers).toEqual([
+      ['content-type', 'application/json'],
+    ]);
+  });
+
+  it('drops every credential spelling case-insensitively from a plain-object header block on a cross-origin hop', async () => {
+    const { fetchWithRedirectValidation } = await loadWrapper();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { location: 'https://cdn.public.example/v1/chat/completions' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const headers: Record<string, string> = {
+      AUTHORIZATION: 'Bearer sk-test',
+      'Api-Key': 'azure-key',
+      'X-Api-Key': 'anthropic-key',
+      'X-GOOG-API-KEY': 'google-key',
+      'content-type': 'application/json',
+    };
+
+    const response = await fetchWithRedirectValidation(
+      'https://api.public.example/v1/chat/completions',
+      { method: 'POST', headers, body: '{}' },
+    );
+
+    expect(response.status).toBe(200);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toEqual(headers);
+    expect((fetchMock.mock.calls[1][1] as RequestInit).headers).toEqual({
+      'content-type': 'application/json',
+    });
+    // The caller's plain-object headers are never mutated.
+    expect(headers.AUTHORIZATION).toBe('Bearer sk-test');
+  });
+
+  it('keeps credential headers on a same-origin redirect (different path, same host)', async () => {
+    const { fetchWithRedirectValidation } = await loadWrapper();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { location: 'https://cdn.public.example/v2/chat/completions' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await fetchWithRedirectValidation(
+      'https://cdn.public.example/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: { authorization: 'Bearer sk-test', 'content-type': 'application/json' },
+        body: '{}',
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toEqual({
+      authorization: 'Bearer sk-test',
+      'content-type': 'application/json',
+    });
+    expect((fetchMock.mock.calls[1][1] as RequestInit).headers).toEqual({
+      authorization: 'Bearer sk-test',
+      'content-type': 'application/json',
+    });
+  });
+
+  it('fails clearly when a streaming request body cannot be replayed onto a redirect target', async () => {
+    const { fetchWithRedirectValidation } = await loadWrapper();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { location: 'https://cdn.public.example/v1/chat/completions' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{}'));
+        controller.close();
+      },
+    });
+
+    await expect(
+      fetchWithRedirectValidation('https://api.public.example/v1/chat/completions', {
+        method: 'POST',
+        headers: { authorization: 'Bearer sk-test' },
+        body: body as BodyInit,
+      }),
+    ).rejects.toThrow(/cannot be replayed/);
+
+    // Only the origin request is issued; no follow-up request carries the
+    // consumed stream as an empty body.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
