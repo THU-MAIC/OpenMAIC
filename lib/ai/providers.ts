@@ -1897,20 +1897,21 @@ function openAIStreamErrorStatus(error: Record<string, unknown>): number {
 async function fetchCustomOpenAIChat(
   input: RequestInfo | URL,
   init?: RequestInit,
+  fetchImpl: typeof fetch = (fetchInput, fetchInit) => globalThis.fetch(fetchInput, fetchInit),
 ): Promise<Response> {
   const requestUrl = requestUrlString(input);
   if (!requestUrl.includes('/chat/completions') || !init?.body || typeof init.body !== 'string') {
-    return globalThis.fetch(input, init);
+    return fetchImpl(input, init);
   }
 
   let requestBody: Record<string, unknown>;
   try {
     requestBody = JSON.parse(init.body) as Record<string, unknown>;
   } catch {
-    return globalThis.fetch(input, init);
+    return fetchImpl(input, init);
   }
 
-  if (requestBody.stream === true) return globalThis.fetch(input, init);
+  if (requestBody.stream === true) return fetchImpl(input, init);
 
   const streamOptions =
     requestBody.stream_options &&
@@ -1919,7 +1920,7 @@ async function fetchCustomOpenAIChat(
       ? (requestBody.stream_options as Record<string, unknown>)
       : {};
 
-  const response = await globalThis.fetch(input, {
+  const response = await fetchImpl(input, {
     ...init,
     body: JSON.stringify({
       ...requestBody,
@@ -2078,14 +2079,23 @@ export function getModel(config: ModelConfig): ModelWithInfo {
     config.baseUrl || provider?.defaultBaseUrl || undefined,
   );
 
+  // The outbound transport. resolveModel installs a redirect-validating fetch
+  // here so every hop of a request to a client-supplied base URL is re-checked;
+  // without one, requests go through the global fetch exactly as before
+  // (resolved at call time, so tests that stub it keep working).
+  const transportFetch: typeof fetch =
+    config.fetchImpl ?? ((fetchInput, fetchInit) => globalThis.fetch(fetchInput, fetchInit));
+
   let model: LanguageModel;
 
   switch (providerType) {
     case 'azure': {
-      const azure = createAzure({
+      const azureOptions: Parameters<typeof createAzure>[0] = {
         apiKey: effectiveApiKey,
         baseURL: normalizeAzureBaseUrl(effectiveBaseUrl),
-      });
+      };
+      if (config.fetchImpl) azureOptions.fetch = config.fetchImpl;
+      const azure = createAzure(azureOptions);
       model = azure(config.modelId);
       break;
     }
@@ -2154,8 +2164,8 @@ export function getModel(config: ModelConfig): ModelWithInfo {
             }
           }
           const response = useStreamingChatCompat
-            ? await fetchCustomOpenAIChat(url, init)
-            : await globalThis.fetch(url, init);
+            ? await fetchCustomOpenAIChat(url, init, transportFetch)
+            : await transportFetch(url, init);
 
           // Recover reasoning that @ai-sdk/openai's chat schema drops: rewrite
           // streamed `reasoning_content` deltas into an inline <think> block
@@ -2213,6 +2223,10 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           return response;
         };
         openaiOptions.fetch = compatFetch as typeof globalThis.fetch;
+      } else if (config.fetchImpl) {
+        // Native OpenAI / Responses transport with a validated fetch installed
+        // by the server: still route requests through it.
+        openaiOptions.fetch = config.fetchImpl;
       }
 
       const openai = createOpenAI(openaiOptions);
@@ -2272,8 +2286,10 @@ export function getModel(config: ModelConfig): ModelWithInfo {
             }
           }
 
-          return globalThis.fetch(url, init);
+          return transportFetch(url, init);
         }) as typeof globalThis.fetch;
+      } else if (config.fetchImpl) {
+        anthropicOptions.fetch = config.fetchImpl;
       }
 
       const anthropic = createAnthropic(anthropicOptions);
@@ -2317,6 +2333,8 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           });
           return response as Response;
         }) as typeof fetch;
+      } else if (config.fetchImpl) {
+        googleOptions.fetch = config.fetchImpl;
       }
       const google = createGoogleGenerativeAI(googleOptions);
       model = google.chat(config.modelId);

@@ -255,7 +255,7 @@ async function runExtraction(
     const mediaClientBaseUrl = mediaManaged ? undefined : requestConfig.baseUrl || undefined;
     // Same SSRF guard the document path applies: a client-supplied endpoint
     // must not let the server connect to internal/metadata hosts.
-    if (mediaClientBaseUrl && process.env.NODE_ENV === 'production') {
+    if (mediaClientBaseUrl) {
       const ssrfError = await validateUrlForSSRF(mediaClientBaseUrl);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
@@ -383,7 +383,7 @@ async function runExtraction(
       );
     }
   }
-  if (clientBaseUrl && process.env.NODE_ENV === 'production') {
+  if (clientBaseUrl) {
     const ssrfError = await validateUrlForSSRF(clientBaseUrl);
     if (ssrfError) {
       return apiError('INVALID_URL', 403, ssrfError);
