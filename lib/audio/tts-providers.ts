@@ -741,7 +741,16 @@ async function generateQwenTTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = config.baseUrl || TTS_PROVIDERS['qwen-tts'].defaultBaseUrl;
+  // Qwen TTS is a native DashScope API, not an OpenAI-compatible endpoint.
+  // Alibaba's workspace-dedicated host is commonly configured as
+  // `.../compatible-mode/v1` for LLM calls; the same host exposes native TTS
+  // under `.../api/v1`. Preserve the official workspace domain and translate
+  // only the API path used by this provider.
+  const configuredBaseUrl = config.baseUrl || TTS_PROVIDERS['qwen-tts'].defaultBaseUrl || '';
+  const baseUrl = configuredBaseUrl.replace(
+    /\/(?:compatible-mode\/v1|apps\/anthropic)\/?$/i,
+    '/api/v1',
+  );
   const cloneVoice = isQwenCloneVoice(config.voice);
 
   if (cloneVoice) {
@@ -765,10 +774,9 @@ async function generateQwenTTS(
     }
   }
 
-  // Calculate speed: Qwen3 uses rate parameter from -500 to 500
-  // speed 1.0 = rate 0, speed 2.0 = rate 500, speed 0.5 = rate -250
+  // Qwen3 uses `rate` from -500 to 500: 1.0x maps to 0, 2.0x to 500,
+  // and 0.5x to -250.
   const rate = Math.round(((config.speed || 1.0) - 1.0) * 500);
-
   const modelId = resolveTTSModelForVoice('qwen-tts', config.voice, config.modelId);
   const response = await fetch(`${baseUrl}/services/aigc/multimodal-generation/generation`, {
     method: 'POST',
@@ -783,9 +791,7 @@ async function generateQwenTTS(
         voice: config.voice,
         language_type: 'Chinese', // Default to Chinese, can be made configurable
       },
-      parameters: {
-        rate, // Speech rate from -500 to 500
-      },
+      parameters: { rate },
     }),
     signal,
   });

@@ -51,6 +51,7 @@ import {
   FileAudio,
   Mic,
   Square,
+  Search,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -103,8 +104,10 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const isCustom = isCustomTTSProvider(selectedProviderId);
   // Voice-clone models are resolved from the picked voice, never chosen by
   // hand, so they are hidden from the manual model list.
-  const manuallySelectableModels = getManuallySelectableTTSModels(selectedProviderId);
   const providerConfig = ttsProvidersConfig[selectedProviderId];
+  const manuallySelectableModels = providerConfig?.serverModels?.length
+    ? providerConfig.serverModels.map((id) => ({ id, name: id }))
+    : getManuallySelectableTTSModels(selectedProviderId);
   const isServerConfigured = !!providerConfig?.isServerConfigured;
   // Per-provider enablement (#665): the toggle is meaningful only for an
   // AVAILABLE provider (configured / server-managed). An unconfigured provider
@@ -189,7 +192,10 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         modelId: resolveTTSModelForVoice(
           selectedProviderId,
           effectiveVoice,
-          ttsProvidersConfig[selectedProviderId]?.modelId || ttsProvider?.defaultModelId || '',
+          ttsProvidersConfig[selectedProviderId]?.modelId ||
+            providerConfig?.serverModels?.[0] ||
+            ttsProvider?.defaultModelId ||
+            '',
         ),
         voice: effectiveVoice,
         speed: ttsSpeed,
@@ -1202,6 +1208,7 @@ function QwenVoiceCloneManager() {
   const { t } = useI18n();
   const { profiles, addCloneVoice, deleteVoice } = useQwenVoiceProfiles();
   const ttsProviderId = useSettingsStore((state) => state.ttsProviderId);
+  const setTTSProvider = useSettingsStore((state) => state.setTTSProvider);
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
@@ -1214,6 +1221,7 @@ function QwenVoiceCloneManager() {
   const [refText, setRefText] = useState('');
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [catalogSearch, setCatalogSearch] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
@@ -1357,7 +1365,7 @@ function QwenVoiceCloneManager() {
     }
   };
 
-  const handlePreview = async (voiceId: string) => {
+  const handlePreview = async (voiceId: string, cloned = false) => {
     if (previewingVoiceId === voiceId) {
       stopPreview();
       setPreviewingVoiceId(null);
@@ -1368,7 +1376,9 @@ function QwenVoiceCloneManager() {
       await startPreview({
         text: t('settings.ttsTestTextDefault'),
         providerId: 'qwen-tts',
-        modelId: QWEN_TTS_VOICE_CLONE_MODEL,
+        modelId: cloned
+          ? QWEN_TTS_VOICE_CLONE_MODEL
+          : resolveTTSModelForVoice('qwen-tts', voiceId, providerConfig?.modelId),
         voice: voiceId,
         speed: ttsSpeed,
         apiKey: providerConfig?.apiKey,
@@ -1379,6 +1389,20 @@ function QwenVoiceCloneManager() {
       toast.error(error instanceof Error ? error.message : t('settings.qwenCloneSaveFailed'));
     }
   };
+
+  const handleSelectOfficialVoice = (voiceId: string) => {
+    setTTSProvider('qwen-tts');
+    setTTSVoice(voiceId);
+    toast.success(`已选择官方音色：${voiceId}`);
+  };
+
+  const normalizedCatalogSearch = catalogSearch.trim().toLocaleLowerCase();
+  const catalogVoices = TTS_PROVIDERS['qwen-tts'].voices.filter((voice) => {
+    if (!normalizedCatalogSearch) return true;
+    return [voice.id, voice.name, voice.language]
+      .filter(Boolean)
+      .some((value) => value.toLocaleLowerCase().includes(normalizedCatalogSearch));
+  });
 
   const handleDelete = async (voiceId: string) => {
     const vendorDeleted = await deleteVoice(voiceId, {
@@ -1414,31 +1438,63 @@ function QwenVoiceCloneManager() {
       <div className="overflow-hidden rounded-lg border border-border/70 bg-background">
         <div className="grid lg:grid-cols-[minmax(280px,0.95fr)_minmax(0,1.15fr)]">
           <section className="border-b border-border/60 lg:border-b-0 lg:border-r">
-            <div className="flex h-12 items-center justify-between border-b border-border/60 px-4">
-              <span className="text-sm font-medium">{t('settings.voxcpmVoicePool')}</span>
-              <span className="text-xs text-muted-foreground">
-                {t('settings.voxcpmVoiceCount', { count: profiles.length })}
-              </span>
+            <div className="flex min-h-12 items-center gap-3 border-b border-border/60 px-4 py-2">
+              <span className="text-sm font-medium">Qwen 官方音色</span>
+              <div className="ml-auto flex min-w-0 items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {t('settings.voxcpmVoiceCount', {
+                    count: TTS_PROVIDERS['qwen-tts'].voices.length + profiles.length,
+                  })}
+                </span>
+                <div className="relative w-44 max-w-[45vw]">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={catalogSearch}
+                    onChange={(event) => setCatalogSearch(event.target.value)}
+                    placeholder="搜索名称、ID 或语言"
+                    className="h-8 pl-8 text-xs"
+                  />
+                </div>
+              </div>
             </div>
             <div className="max-h-[360px] overflow-y-auto">
-              {profiles.length ? (
-                profiles.map((profile) => (
-                  <VoiceProfileRow
-                    key={profile.id}
-                    icon={<FileAudio className="h-4 w-4" />}
-                    title={profile.name}
-                    badge={t('settings.voxcpmClone')}
-                    detail={profile.referenceAudioName || profile.id}
-                    kind="clone"
-                    previewing={previewingVoiceId === profile.id}
-                    onPreview={() => handlePreview(profile.id)}
-                    onDelete={() => handleDelete(profile.id)}
-                  />
-                ))
-              ) : (
+              {catalogVoices.map((voice) => (
+                <VoiceProfileRow
+                  key={voice.id}
+                  title={voice.name}
+                  badge="官方"
+                  detail={`${voice.id} · ${voice.language}`}
+                  kind="auto"
+                  selected={ttsProviderId === 'qwen-tts' && ttsVoice === voice.id}
+                  previewing={previewingVoiceId === voice.id}
+                  onPreview={() => handlePreview(voice.id)}
+                  onSelect={() => handleSelectOfficialVoice(voice.id)}
+                />
+              ))}
+              {catalogVoices.length === 0 && (
                 <div className="px-4 py-8 text-center text-sm text-muted-foreground/60">
-                  {t('settings.voxcpmNoCustomVoices')}
+                  未找到匹配的官方音色
                 </div>
+              )}
+              {profiles.length > 0 && (
+                <>
+                  <div className="border-y border-border/60 bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground">
+                    我的复刻音色
+                  </div>
+                  {profiles.map((profile) => (
+                    <VoiceProfileRow
+                      key={profile.id}
+                      icon={<FileAudio className="h-4 w-4" />}
+                      title={profile.name}
+                      badge={profile.kind === 'imported' ? 'Qwen 导入' : t('settings.voxcpmClone')}
+                      detail={profile.referenceAudioName || profile.id}
+                      kind="clone"
+                      previewing={previewingVoiceId === profile.id}
+                      onPreview={() => handlePreview(profile.id, true)}
+                      onDelete={() => handleDelete(profile.id)}
+                    />
+                  ))}
+                </>
               )}
             </div>
           </section>
@@ -1529,19 +1585,23 @@ function VoiceProfileRow({
   detail,
   kind = 'prompt',
   muted,
+  selected,
   previewing,
   onPreview,
+  onSelect,
   onDelete,
 }: {
-  icon: ReactNode;
+  icon?: ReactNode;
   title: string;
   badge: string;
   badgeTone?: 'default' | 'warning' | 'neutral';
   detail: string;
   kind?: 'auto' | 'prompt' | 'clone';
   muted?: boolean;
+  selected?: boolean;
   previewing?: boolean;
   onPreview?: () => void;
+  onSelect?: () => void;
   onDelete?: () => void | Promise<void>;
 }) {
   const iconClassName =
@@ -1562,17 +1622,19 @@ function VoiceProfileRow({
     <div
       className={cn(
         'group relative flex min-h-16 items-center gap-3 border-t border-border/50 px-4 py-3 first:border-t-0',
-        muted ? 'opacity-60' : 'hover:bg-muted/35',
+        muted ? 'opacity-60' : selected ? 'bg-primary/5' : 'hover:bg-muted/35',
       )}
     >
-      <div
-        className={cn(
-          'flex h-9 w-9 shrink-0 items-center justify-center rounded-md',
-          iconClassName,
-        )}
-      >
-        {icon}
-      </div>
+      {icon && (
+        <div
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-md',
+            iconClassName,
+          )}
+        >
+          {icon}
+        </div>
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">{title}</span>
@@ -1602,6 +1664,16 @@ function VoiceProfileRow({
           ) : (
             <Volume2 className="h-3.5 w-3.5" />
           )}
+        </Button>
+      )}
+      {onSelect && (
+        <Button
+          variant={selected ? 'secondary' : 'ghost'}
+          size="sm"
+          onClick={onSelect}
+          className="h-8 px-2 text-xs"
+        >
+          {selected ? '已使用' : '使用'}
         </Button>
       )}
       {onDelete && (
