@@ -173,11 +173,6 @@ export async function persistGeneratedMediaReference(
 ): Promise<MediaReferenceWriteBackResult> {
   const { stageId } = allocation;
   const rewrite = rewriteOf(allocation);
-  // Recorded before the attempt, and kept whatever the attempt does with it.
-  // Every later snapshot that still carries this placeholder — a queued save,
-  // an editor-history entry, a departing-course flush — is rewritten from this
-  // record at the persistence write boundary.
-  recordMediaAllocation(allocation);
   let documentMatched = false;
   // Set immediately BEFORE handing a write to the store, never after it
   // resolves: a rejected request does not prove the server did not apply it,
@@ -205,8 +200,14 @@ export async function persistGeneratedMediaReference(
     // left behind it: the next ordinary flush writes the live snapshot, and a
     // snapshot still holding the placeholder would undo the half that landed.
     const placedLive = applyToLiveStage(stageId, rewrite);
-    if (!placedLive && writeIssued) recordPendingMediaAllocation(allocation);
-    throw new MediaReferenceWriteBackError(error, placedLive || writeIssued);
+    const retained = placedLive || writeIssued;
+    // Recorded only where the allocation survives. A record for bytes the
+    // caller is about to reclaim would outlive them and let a later save stamp
+    // a deleted id into the document — where it reads as "already generated"
+    // and stops anything from retrying.
+    if (placedLive) recordMediaAllocation(allocation);
+    else if (writeIssued) recordPendingMediaAllocation(allocation);
+    throw new MediaReferenceWriteBackError(error, retained);
   }
 
   // No await may be introduced between this live check and the park below. The
@@ -215,12 +216,18 @@ export async function persistGeneratedMediaReference(
   // finds nothing to give would sit there answering the skip test forever. That
   // gap is exactly the defect this ordering exists to remove.
   const liveMatched = applyToLiveStage(stageId, rewrite);
-  if (!documentMatched && !liveMatched) {
+  if (documentMatched || liveMatched) {
+    // Placed. Every later snapshot that still carries this placeholder — a
+    // queued save, an editor-history entry, a departing-course flush — is
+    // rewritten from this record at the persistence write boundary.
+    recordMediaAllocation(allocation);
+    return 'written';
+  }
+  {
     recordPendingMediaAllocation(allocation);
     log.info(
       `No slot of stage ${stageId} references ${allocation.placeholderRef} yet; holding the allocation until its scene arrives.`,
     );
     return 'held';
   }
-  return 'written';
 }

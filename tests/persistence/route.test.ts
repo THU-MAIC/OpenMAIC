@@ -201,6 +201,270 @@ describe('embedded persistence route', () => {
     ).resolves.toBeUndefined();
   });
 
+  // Driven against the REAL storage handler, because the question is not which
+  // principal the route resolves but what that principal is then allowed to do.
+  // Reads and allocations are open — the same posture documents already have —
+  // while replacing and deleting require the deployment's credential, since the
+  // asset partition is shared and a document read hands out every id it names.
+  it('opens asset reads and allocations, and gates replacement and deletion', async () => {
+    interface Entry {
+      bytes: Uint8Array;
+      mime: string;
+      revision: number;
+      key: string;
+    }
+    const entries = new Map<string, Entry>();
+    let nextId = 0;
+    const assetStore = {
+      put: async (
+        principal: { key: string },
+        data: { arrayBuffer(): Promise<ArrayBuffer>; type: string },
+      ) => {
+        const id = `ast_${(nextId += 1)}`;
+        entries.set(id, {
+          bytes: new Uint8Array(await data.arrayBuffer()),
+          mime: data.type,
+          revision: 1,
+          key: principal.key,
+        });
+        return id;
+      },
+      identify: async (principal: { key: string }, ref: string) => {
+        const entry = entries.get(ref);
+        if (!entry || entry.key !== principal.key) return null;
+        return { mime: entry.mime, revision: entry.revision, byteLength: entry.bytes.byteLength };
+      },
+      resolve: async (principal: { key: string }, ref: string) => {
+        const entry = entries.get(ref);
+        if (!entry || entry.key !== principal.key) return null;
+        return { bytes: entry.bytes, mime: entry.mime, revision: entry.revision };
+      },
+      remove: async (principal: { key: string }, ref: string) => {
+        const entry = entries.get(ref);
+        if (entry && entry.key === principal.key) entries.delete(ref);
+      },
+      replace: async (
+        principal: { key: string },
+        ref: string,
+        data: { arrayBuffer(): Promise<ArrayBuffer>; type: string },
+      ) => {
+        const entry = entries.get(ref);
+        if (!entry || entry.key !== principal.key) {
+          const { AssetNotFoundError } = await import('@openmaic/storage');
+          throw new AssetNotFoundError();
+        }
+        entry.bytes = new Uint8Array(await data.arrayBuffer());
+        entry.revision += 1;
+        return entry.revision;
+      },
+    };
+
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {
+        constructor() {
+          return assetStore as never;
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    // The handler itself is the subject here, so it must be the real one even
+    // though earlier cases in this file stub it.
+    vi.doUnmock('@openmaic/storage/server');
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('PERSISTENCE_ALLOW_INSECURE_DEV_AUTH', '');
+    vi.stubEnv('DATABASE_URL', 'postgres://asset-authz-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const pool = { end: vi.fn().mockResolvedValue(undefined) };
+    const call = (request: Request) =>
+      handlePersistenceRequest(request, { poolFactory: () => pool as never });
+
+    const writeBody = (bytes: number[]) => {
+      const form = new FormData();
+      form.append('meta', new Blob([JSON.stringify({})], { type: 'application/json' }), 'meta');
+      form.append('bytes', new Blob([new Uint8Array(bytes)], { type: 'image/png' }), 'bytes');
+      return form;
+    };
+
+    // A visitor with no credential at all stores and reads.
+    const allocated = await call(
+      new Request('http://localhost/api/persistence/assets', {
+        method: 'POST',
+        body: writeBody([1, 2, 3]),
+      }),
+    );
+    expect(allocated.status).toBe(201);
+    const { id } = (await allocated.json()) as { id: string };
+
+    const read = await call(new Request(`http://localhost/api/persistence/assets/${id}/content`));
+    expect(read.status).toBe(200);
+
+    // The same visitor cannot take it away from its author, or swap its bytes.
+    const put = await call(
+      new Request(`http://localhost/api/persistence/assets/${id}/content`, {
+        method: 'PUT',
+        body: writeBody([9]),
+      }),
+    );
+    expect(put.status).toBe(403);
+    const removed = await call(
+      new Request(`http://localhost/api/persistence/assets/${id}`, { method: 'DELETE' }),
+    );
+    expect(removed.status).toBe(403);
+    expect(entries.has(id)).toBe(true);
+
+    // In this build there is no way to hold the credential at all, so the
+    // deployment's own token does not help either — mutations are simply
+    // unavailable, which is what they were before assets worked.
+    const tokenPut = await call(
+      new Request(`http://localhost/api/persistence/assets/${id}/content`, {
+        method: 'PUT',
+        body: writeBody([9]),
+        headers: { authorization: 'Bearer test-token' },
+      }),
+    );
+    expect(tokenPut.status).toBe(403);
+    expect(entries.has(id)).toBe(true);
+  });
+
+  // Where the operator has opted into the development authenticator, the
+  // credential it defines is what separates a mutation from a read.
+  it('performs asset mutations for a caller holding the deployment credential', async () => {
+    interface Entry {
+      bytes: Uint8Array;
+      mime: string;
+      revision: number;
+      key: string;
+    }
+    const entries = new Map<string, Entry>();
+    let nextId = 0;
+    const assetStore = {
+      put: async (
+        principal: { key: string },
+        data: { arrayBuffer(): Promise<ArrayBuffer>; type: string },
+      ) => {
+        const id = `ast_${(nextId += 1)}`;
+        entries.set(id, {
+          bytes: new Uint8Array(await data.arrayBuffer()),
+          mime: data.type,
+          revision: 1,
+          key: principal.key,
+        });
+        return id;
+      },
+      identify: async (principal: { key: string }, ref: string) => {
+        const entry = entries.get(ref);
+        if (!entry || entry.key !== principal.key) return null;
+        return { mime: entry.mime, revision: entry.revision, byteLength: entry.bytes.byteLength };
+      },
+      resolve: async (principal: { key: string }, ref: string) => {
+        const entry = entries.get(ref);
+        if (!entry || entry.key !== principal.key) return null;
+        return { bytes: entry.bytes, mime: entry.mime, revision: entry.revision };
+      },
+      remove: async (principal: { key: string }, ref: string) => {
+        const entry = entries.get(ref);
+        if (entry && entry.key === principal.key) entries.delete(ref);
+      },
+      replace: async (
+        principal: { key: string },
+        ref: string,
+        data: { arrayBuffer(): Promise<ArrayBuffer>; type: string },
+      ) => {
+        const entry = entries.get(ref);
+        if (!entry || entry.key !== principal.key) {
+          const { AssetNotFoundError } = await import('@openmaic/storage');
+          throw new AssetNotFoundError();
+        }
+        entry.bytes = new Uint8Array(await data.arrayBuffer());
+        entry.revision += 1;
+        return entry.revision;
+      },
+    };
+
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {
+        constructor() {
+          return assetStore as never;
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.doUnmock('@openmaic/storage/server');
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('DATABASE_URL', 'postgres://asset-authz-opt-in');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const pool = { end: vi.fn().mockResolvedValue(undefined) };
+    const call = (request: Request) =>
+      handlePersistenceRequest(request, { poolFactory: () => pool as never });
+    const writeBody = (bytes: number[]) => {
+      const form = new FormData();
+      form.append('meta', new Blob([JSON.stringify({})], { type: 'application/json' }), 'meta');
+      form.append('bytes', new Blob([new Uint8Array(bytes)], { type: 'image/png' }), 'bytes');
+      return form;
+    };
+    const credential = { authorization: 'Bearer test-token', 'x-learner-key': 'anon:test' };
+
+    const allocated = await call(
+      new Request('http://localhost/api/persistence/assets', {
+        method: 'POST',
+        body: writeBody([1, 2, 3]),
+      }),
+    );
+    const { id } = (await allocated.json()) as { id: string };
+
+    // Still refused without the credential, even here.
+    const anonymous = await call(
+      new Request(`http://localhost/api/persistence/assets/${id}`, { method: 'DELETE' }),
+    );
+    expect(anonymous.status).toBe(403);
+    expect(entries.has(id)).toBe(true);
+
+    const put = await call(
+      new Request(`http://localhost/api/persistence/assets/${id}/content`, {
+        method: 'PUT',
+        body: writeBody([9]),
+        headers: credential,
+      }),
+    );
+    expect(put.status).toBe(204);
+    expect(entries.get(id)?.revision).toBe(2);
+
+    const removed = await call(
+      new Request(`http://localhost/api/persistence/assets/${id}`, {
+        method: 'DELETE',
+        headers: credential,
+      }),
+    );
+    expect(removed.status).toBe(204);
+    expect(entries.has(id)).toBe(false);
+  });
+
   it('mounts an asset store on the document pool and transaction and ensures its schema', async () => {
     const sdkModuleResolved = vi.fn();
     const ensureSchema = vi.fn().mockResolvedValue(undefined);

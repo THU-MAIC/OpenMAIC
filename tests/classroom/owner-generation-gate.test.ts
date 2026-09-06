@@ -93,19 +93,26 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
   // The load is what brings a course into the server store the first time it is
   // opened, so asking beforehand asks about a course whose ownership row does
   // not exist yet - and a 404 locks its genuine author out for the mount.
-  it('asks the sidecar only after a document load succeeds, and after every later one', () => {
+  // Asserted as a property of where the call sites are, not of how the file is
+  // laid out: no renderer harness exists to drive the effect itself.
+  it('asks the sidecar only from inside the load, never before it', () => {
     const source = readFileSync(
       join(process.cwd(), 'components/classroom/ClassroomSurface.tsx'),
       'utf8',
     );
-    expect(source).toContain('const refreshOwnership = () => {');
-    // Called on the success branch, and no longer only after a retry.
-    expect(source).toMatch(/answered[\s\S]*?refreshOwnership\(\);/);
-    expect(source).not.toContain('availabilityAttempt > 0');
-    // Nothing calls it before the load starts.
     const definition = source.indexOf('const refreshOwnership = () => {');
     const loadStart = source.indexOf('const loadUntilAvailable = async () => {');
-    expect(source.slice(definition, loadStart)).not.toMatch(/^\s*refreshOwnership\(\);$/m);
+    expect(definition).toBeGreaterThan(0);
+    expect(loadStart).toBeGreaterThan(definition);
+
+    const callSites = [...source.matchAll(/(?<!const )\brefreshOwnership\(\)/g)].map(
+      (match) => match.index ?? -1,
+    );
+    // At least one, and every one of them inside the load routine.
+    expect(callSites.length).toBeGreaterThan(0);
+    for (const at of callSites) expect(at).toBeGreaterThan(loadStart);
+    // No longer conditional on an availability retry having happened.
+    expect(source).not.toContain('availabilityAttempt > 0');
   });
 
   it('clears parked media allocations when a course is (re)opened', () => {
@@ -119,28 +126,33 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
   });
 
   // Listening back to narration and seeing whether a line has any spend nothing,
-  // so the gate belongs on regeneration alone.
-  it('withholds narration regeneration from a viewer, and nothing else', () => {
+  // so the gate belongs on regeneration alone. The refusal half is behavioural
+  // (tests/audio/regenerate-speech-tts.test.ts); this guards the render half,
+  // which has no harness — as a property of what the flag is derived from.
+  it('keeps narration status and preview off the ownership gate', () => {
     const bar = readFileSync(
       join(process.cwd(), 'components/edit/ActionsBar/ActionsBar.tsx'),
       'utf8',
     );
-    expect(bar).not.toContain('managedTts && mayGenerate');
-    // Both regenerate affordances are withheld...
-    expect(bar).toContain('{mayRegenerate ? (');
-    expect(bar).toContain('{!lineMode && ttsActive && mayGenerate && (');
-    // ...while status and preview keep answering to managed TTS alone.
-    expect(bar).toMatch(/const ttsActive = useSettingsStore\(/);
-    const tts = readFileSync(join(process.cwd(), 'lib/audio/regenerate-speech-tts.ts'), 'utf8');
-    expect(tts).toContain('if (!mayGenerateForStage(stageId)) return null;');
+    const assignment = /const ttsActive =([\s\S]*?);\n/.exec(bar);
+    expect(assignment).not.toBeNull();
+    // The flag that shows status and preview answers to managed TTS alone.
+    expect(assignment?.[1]).not.toMatch(/mayGenerate|mayRegenerate/);
+    // Both regenerate affordances are withheld rather than merely refused.
+    expect(bar).toMatch(/\{mayRegenerate \?/);
+    expect(bar).toMatch(/ttsActive && mayGenerate &&/);
   });
 
-  // Replacing the controller without aborting it orphans a media loop that goes
-  // on calling providers and storing assets for a course the user has left.
+  // A pass that is superseded must stop, or it goes on calling providers and
+  // storing assets for a course the user has left. What happens once it stops
+  // is covered behaviourally in the orchestrator suite ("picks up every element
+  // an aborted pass never reached"); this guards only that the surface does
+  // stop it, which no harness here can drive.
   it('aborts the previous media pass before starting another', () => {
     const source = readFileSync(join(process.cwd(), 'lib/hooks/use-scene-generator.ts'), 'utf8');
-    expect(source).toMatch(
-      /mediaAbortRef\.current\?\.abort\(\);\s*\n\s*mediaAbortRef\.current = new AbortController\(\);/,
-    );
+    const abortAt = source.indexOf('mediaAbortRef.current?.abort()');
+    const installAt = source.indexOf('mediaAbortRef.current = new AbortController()');
+    expect(abortAt).toBeGreaterThan(0);
+    expect(installAt).toBeGreaterThan(abortAt);
   });
 });

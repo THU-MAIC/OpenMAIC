@@ -29,6 +29,7 @@ import { resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { putAsset, removeAsset } from '@/lib/media/asset-pool';
+import { forgetMediaAllocation } from '@/lib/media/pending-media-allocations';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
@@ -547,12 +548,21 @@ async function allocatePooledAudio(blob: Blob, duration: number | undefined): Pr
 
 export async function removeFreshTtsAllocations(assetIds: readonly string[]): Promise<void> {
   const serverBacked = isServerBackedMediaPersistence();
+  const stageId = useStageStore.getState().stage?.id;
   for (const assetId of new Set(assetIds)) {
     await db.audioFiles.delete(assetId).catch(() => undefined);
+    if (!serverBacked) continue;
+    // Narration is stamped straight onto the action, so its id is its own
+    // placeholder as far as the write boundary is concerned; forget it before
+    // dropping the bytes, or a later save could stamp an id that is gone.
+    if (stageId) forgetMediaAllocation(stageId, assetId);
     // Only ids this run allocated reach here, so the pool entry is this run's
     // to drop; a scene whose narration was rolled back must not leave paid-for
-    // bytes behind that nothing will ever reference.
-    if (serverBacked) await removeAsset(assetId).catch(() => undefined);
+    // bytes behind that nothing will ever reference. Best effort: a deployment
+    // that refuses the deletion leaves the bytes for server-side reclamation.
+    await removeAsset(assetId).catch((error: unknown) => {
+      log.warn(`Could not reclaim narration ${assetId}:`, error);
+    });
   }
 }
 

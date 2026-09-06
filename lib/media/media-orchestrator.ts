@@ -38,6 +38,7 @@ import {
   type MediaReferenceWriteBackResult,
 } from '@/lib/media/persist-media-reference';
 import {
+  forgetMediaAllocation,
   pendingMediaAllocation,
   type PendingMediaAllocation,
 } from '@/lib/media/pending-media-allocations';
@@ -52,15 +53,55 @@ const log = createLogger('MediaOrchestrator');
  *
  * Scoped to the pass, not to the task table: a task marked `pending` says only
  * that some pass once intended to generate it, and a pass that was aborted
- * leaves that intent behind with nobody acting on it. Membership here means a
- * pass is running right now and will reach this element, which is the only
- * reading that lets an overlapping pass stand down without stranding the work
- * of an abandoned one.
+ * leaves that intent behind with nobody acting on it. A claim means a pass is
+ * running right now and will reach this element, which is the only reading that
+ * lets an overlapping pass stand down without stranding the work of an
+ * abandoned one.
+ *
+ * Each claim carries its pass's signal, and an aborted signal retires the claim
+ * immediately. That is what makes the handoff safe: a replacement pass is
+ * started in the same synchronous block that aborts its predecessor, long
+ * before the predecessor's `finally` can run, so reading claim membership alone
+ * would make the replacement skip every element the aborted pass never reached
+ * — and nothing would ever come back for them. Releasing is identity-checked
+ * for the same reason: a pass must never drop a claim a newer pass has taken.
  */
-const claimedMediaRequests = new Set<string>();
+interface MediaRequestClaim {
+  readonly signal: AbortSignal | undefined;
+}
+
+const claimedMediaRequests = new Map<string, MediaRequestClaim>();
 
 function claimKey(stageId: string, elementId: string): string {
   return `${stageId}\u0000${elementId}`;
+}
+
+/** Whether a live pass owns this element right now. */
+function isMediaRequestClaimed(stageId: string, elementId: string): boolean {
+  const claim = claimedMediaRequests.get(claimKey(stageId, elementId));
+  if (!claim) return false;
+  if (claim.signal?.aborted !== true) return true;
+  // The owner is gone; the element is free again for whoever asks next.
+  claimedMediaRequests.delete(claimKey(stageId, elementId));
+  return false;
+}
+
+/** Take the element for this pass, unless a live pass already holds it. */
+function claimMediaRequest(
+  stageId: string,
+  elementId: string,
+  signal: AbortSignal | undefined,
+): MediaRequestClaim | undefined {
+  if (isMediaRequestClaimed(stageId, elementId)) return undefined;
+  const claim: MediaRequestClaim = { signal };
+  claimedMediaRequests.set(claimKey(stageId, elementId), claim);
+  return claim;
+}
+
+/** Release only a claim this pass still owns. */
+function releaseMediaRequest(stageId: string, elementId: string, claim: MediaRequestClaim): void {
+  const mapKey = claimKey(stageId, elementId);
+  if (claimedMediaRequests.get(mapKey) === claim) claimedMediaRequests.delete(mapKey);
 }
 
 /** Error with a structured errorCode from the API */
@@ -105,6 +146,7 @@ export async function generateMediaForOutlines(
 
   // Collect all media requests
   const allRequests: MediaGenerationRequest[] = [];
+  const reserved = new Map<string, MediaRequestClaim>();
   for (const outline of outlines) {
     if (!outline.mediaGenerations) continue;
     for (const mg of outline.mediaGenerations) {
@@ -128,23 +170,23 @@ export async function generateMediaForOutlines(
         // task status, is what says so: a pass that was aborted leaves its
         // tasks at `pending` forever, and reading that as "answered" would make
         // every later pass skip them with no retry affordance to recover them.
-        if (claimedMediaRequests.has(claimKey(stageId, mg.elementId))) continue;
+        if (isMediaRequestClaimed(stageId, mg.elementId)) continue;
         if (existing?.status === 'failed') continue;
       } else {
         // Skip already completed or permanently failed (restored from DB)
         if (existing?.status === 'done' || existing?.status === 'failed') continue;
       }
+      // Reserved for this whole pass, not only while its own call runs: the
+      // pass works serially, and an overlapping pass must stand down for the
+      // elements this one will reach later, not just the one it is on.
+      const reservation = claimMediaRequest(stageId, mg.elementId, abortSignal);
+      if (!reservation) continue;
+      reserved.set(mg.elementId, reservation);
       allRequests.push(mg);
     }
   }
 
   if (allRequests.length === 0) return;
-
-  // Claim them for the lifetime of this pass, and release them however it ends.
-  // An aborted pass must leave nothing claimed, or the elements it never got to
-  // would be unreachable for the rest of the session.
-  const claims = allRequests.map((req) => claimKey(stageId, req.elementId));
-  for (const claim of claims) claimedMediaRequests.add(claim);
 
   try {
     // Enqueue all as pending
@@ -153,10 +195,14 @@ export async function generateMediaForOutlines(
     // Process requests serially — image/video APIs have limited concurrency
     for (const req of allRequests) {
       if (abortSignal?.aborted) break;
-      await generateSingleMedia(req, stageId, abortSignal);
+      await generateSingleMedia(req, stageId, abortSignal, reserved.get(req.elementId));
     }
   } finally {
-    for (const claim of claims) claimedMediaRequests.delete(claim);
+    // Identity-checked, so a pass unwinding late can never drop a reservation
+    // its replacement has since taken.
+    for (const [elementId, reservation] of reserved) {
+      releaseMediaRequest(stageId, elementId, reservation);
+    }
   }
 }
 
@@ -295,8 +341,16 @@ async function commitPooledMedia(args: {
     if (error instanceof MediaReferenceWriteBackError && error.allocationRetained) throw error;
     URL.revokeObjectURL(objectUrl);
     if (posterObjectUrl) URL.revokeObjectURL(posterObjectUrl);
-    await removeAsset(assetId).catch(() => undefined);
-    if (posterAssetId) await removeAsset(posterAssetId).catch(() => undefined);
+    // Forgetting comes first, and unconditionally: the record outlives the
+    // parked queue, so leaving it behind would let a later save stamp an id
+    // whose bytes are gone — and the placeholder it replaced would be gone
+    // with it, which reads as "already generated" and stops any retry.
+    forgetMediaAllocation(stageId, req.elementId);
+    // Deleting is best effort. A deployment may refuse an asset mutation
+    // outright, and losing that argument must not cost the task its retry; the
+    // bytes are then left for server-side reclamation.
+    await reclaimAsset(assetId);
+    if (posterAssetId) await reclaimAsset(posterAssetId);
     throw error;
   }
 
@@ -336,6 +390,21 @@ async function commitPooledMedia(args: {
 }
 
 /**
+ * Give back bytes nothing can reference, without letting the attempt matter.
+ *
+ * A deployment may refuse an asset deletion — it is a mutation, and a mutation
+ * has to prove it holds the deployment's credential — and a browser may simply
+ * be offline. Neither is a reason to fail a generation task that has already
+ * been marked for retry, so a refusal is logged and the bytes are left for
+ * server-side reclamation.
+ */
+async function reclaimAsset(assetId: string): Promise<void> {
+  await removeAsset(assetId).catch((error: unknown) => {
+    log.warn(`Could not reclaim ${assetId}; leaving it for server-side reclamation:`, error);
+  });
+}
+
+/**
  * The content type to record for stored bytes.
  *
  * The generation routes declare no media type, so the only signal is whatever
@@ -349,6 +418,26 @@ function storedMediaType(blob: Blob, fallback: string): string {
 }
 
 async function generateSingleMedia(
+  req: MediaGenerationRequest,
+  stageId: string,
+  abortSignal?: AbortSignal,
+  reservation?: MediaRequestClaim,
+): Promise<void> {
+  // Every entry claims, so single-task retries participate in the same
+  // protocol a pass does; without that a retry awaiting its provider is
+  // invisible to a pass starting alongside it and both call it.
+  const claim = reservation ?? claimMediaRequest(stageId, req.elementId, abortSignal);
+  if (!claim) return;
+  try {
+    await generateSingleMediaClaimed(req, stageId, abortSignal);
+  } finally {
+    // A pass owns its reservations for its whole lifetime and releases them
+    // itself; a claim taken here belongs to this call alone.
+    if (!reservation) releaseMediaRequest(stageId, req.elementId, claim);
+  }
+}
+
+async function generateSingleMediaClaimed(
   req: MediaGenerationRequest,
   stageId: string,
   abortSignal?: AbortSignal,

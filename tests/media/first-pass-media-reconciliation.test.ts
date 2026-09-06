@@ -53,8 +53,10 @@ vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageData: mocks.saveStageData,
 }));
 
-import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
+import { generateMediaForOutlines, retryMediaTask } from '@/lib/media/media-orchestrator';
+import { noteStageGenerationOwnership } from '@/lib/classroom/generation-permission';
 import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
+import { applyKnownMediaAllocations } from '@/lib/media/reconcile-scene-media';
 import { resetProxyMediaFailureCache } from '@/lib/media/proxy-media-cache';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useStageStore } from '@/lib/store/stage';
@@ -284,6 +286,43 @@ describe('media that finishes before its scene exists', () => {
 
     expect(imageSrcOf(useStageStore.getState().scenes[0])).toBe('ast_first');
     expect(providerCalls()).toBe(1);
+  });
+
+  // The record outlives the parked queue, so a record left behind after a
+  // reclaim would let the write boundary stamp an id whose bytes are gone —
+  // and the placeholder it replaced would be gone with it, which reads as
+  // "already generated" and stops anything from retrying.
+  it('forgets an allocation whose bytes it reclaimed, so the placeholder survives', async () => {
+    // Nothing was ever written, and no slide exists, so the commit reclaims.
+    mocks.mutateDocument.mockRejectedValue(new Error('document lock unavailable'));
+    useStageStore.setState({ scenes: [] });
+
+    await generateMediaForOutlines([outline()], stageId);
+    expect(mocks.removeAsset).toHaveBeenCalledWith('ast_first');
+
+    // The slide arrives afterwards and is committed, then saved.
+    const scene = sceneWithImage(imageRef);
+    useStageStore.getState().addScene(scene);
+    const applied = applyKnownMediaAllocations(stageId, null, [scene]);
+
+    // Neither the commit nor the write boundary may resurrect the deleted id.
+    expect(imageSrcOf(useStageStore.getState().scenes[0])).toBe(imageRef);
+    expect(applied).toBeNull();
+
+    // And the request is recoverable: the task is failed without a structured
+    // code, which is what draws the Retry affordance.
+    const task = useMediaGenerationStore.getState().tasks[imageRef];
+    expect(task?.status).toBe('failed');
+    expect(task?.errorCode).toBeUndefined();
+
+    mocks.mutateDocument.mockImplementation(
+      async (_stageId: string, work: (doc: null, store: unknown) => Promise<void>) =>
+        work(null, { putScene: vi.fn(), putStage: vi.fn() }),
+    );
+    noteStageGenerationOwnership(stageId, 'owner');
+    await retryMediaTask(imageRef);
+
+    expect(providerCalls()).toBe(2);
   });
 
   it('does nothing in browser-only mode', async () => {

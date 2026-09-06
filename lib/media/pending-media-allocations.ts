@@ -108,6 +108,20 @@ export function takePendingMediaAllocations(
   return taken;
 }
 
+/**
+ * Forget an allocation whose bytes are gone.
+ *
+ * Called wherever a reclaim removes the asset. The record outlives the parked
+ * queue on purpose, so without this a later save would stamp a deleted id into
+ * the document — and the placeholder it replaced would be gone, which reads as
+ * "already generated" and stops anything from retrying.
+ */
+export function forgetMediaAllocation(stageId: string, placeholderRef: string): void {
+  const mapKey = key(stageId, placeholderRef);
+  pending.delete(mapKey);
+  allocated.delete(mapKey);
+}
+
 /** Drop a course's allocations, parked and recorded alike (switch, deletion, tests). */
 export function clearPendingMediaAllocations(stageId?: string): void {
   if (stageId === undefined) {
