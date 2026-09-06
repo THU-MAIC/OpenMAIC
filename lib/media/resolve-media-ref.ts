@@ -1,6 +1,8 @@
 'use client';
 
 import type { MediaTask } from '@/lib/store/media-generation';
+import { useMayGenerateForStage } from '@/lib/classroom/generation-permission';
+import { useMediaStageId } from '@/lib/contexts/media-stage-context';
 import { useAssetUrlLease, type AssetUrlLeaseState } from './use-asset-url';
 import { isGeneratedMediaPlaceholder } from './media-ref';
 
@@ -79,6 +81,22 @@ export function resolveMediaRef(
   return isConcreteMediaAddress(value) ? { kind: 'raw', value } : { kind: 'placeholder' };
 }
 
+/**
+ * Withdraw the retry affordance from a resolution this browser may not act on.
+ *
+ * `retryable` is what every renderer reads to decide whether to draw a Retry
+ * button, and retrying calls the provider. Clearing it here keeps the render
+ * condition identical to the action's precondition, so a viewer of a shared
+ * course is never shown a control that would bill the operator.
+ */
+export function withGenerationPermission(
+  state: MediaResolution,
+  mayGenerate: boolean,
+): MediaResolution {
+  if (mayGenerate || !('retryable' in state) || state.retryable !== true) return state;
+  return { ...state, retryable: false };
+}
+
 /** React wrapper that owns the pool lease and feeds the same pure state machine. */
 export function useResolvedMediaRef(
   ref: string | undefined,
@@ -86,11 +104,15 @@ export function useResolvedMediaRef(
   mediaGenerationDisabled = false,
 ): MediaResolution {
   const lease = useAssetUrlLease(ref && !isConcreteMediaAddress(ref) ? ref : undefined);
-  return resolveMediaRef(
-    ref,
-    task,
-    ref && !isConcreteMediaAddress(ref) ? lease : MISSING_ASSET_LEASE,
-    mediaGenerationDisabled,
+  const mayGenerate = useMayGenerateForStage(useMediaStageId());
+  return withGenerationPermission(
+    resolveMediaRef(
+      ref,
+      task,
+      ref && !isConcreteMediaAddress(ref) ? lease : MISSING_ASSET_LEASE,
+      mediaGenerationDisabled,
+    ),
+    mayGenerate,
   );
 }
 

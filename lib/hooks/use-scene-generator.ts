@@ -28,6 +28,9 @@ import {
 import { resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
+import { putAsset, removeAsset } from '@/lib/media/asset-pool';
+import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
+import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
 import { toast } from 'sonner';
@@ -470,8 +473,30 @@ export async function generateAndStoreTTS(
   // clip onto a timeline without re-decoding. null → leave undefined; the audio
   // still persists and plays.
   const duration = measureAudioDuration(bytes, data.format) ?? undefined;
-  const audioId = existingAudioId ?? requestId;
-  await db.audioFiles.put({
+  const serverBacked = isServerBackedMediaPersistence();
+  // Server-backed: the bytes go to the pool and the pool allocates the
+  // identity, so the id the speech action ends up holding names durable audio
+  // rather than this browser's local table. Bytes land BEFORE the caller
+  // stamps the action, so a document can never name narration that was not
+  // stored. Browser-only keeps the historical derived key: document and audio
+  // share one lifetime there, and nothing outside this browser reads either.
+  let audioId: string;
+  if (serverBacked) {
+    const allocated = await allocatePooledAudio(blob, duration).catch((error: unknown) => {
+      // Storing narration failed, not synthesizing it. A scene whose audio
+      // cannot be stored keeps its text and leaves the line unvoiced and
+      // retryable, exactly as an image that cannot be stored leaves its slide;
+      // reporting it as a TTS failure would pause the whole deck at its first
+      // slide over one clip's storage.
+      log.warn('Narration storage failed; leaving the line unvoiced:', error);
+      return null;
+    });
+    if (allocated === null) return null;
+    audioId = allocated;
+  } else {
+    audioId = existingAudioId ?? requestId;
+  }
+  const cacheWrite = db.audioFiles.put({
     id: audioId,
     stageId,
     blob,
@@ -481,12 +506,62 @@ export async function generateAndStoreTTS(
     voice: ttsVoice,
     createdAt: Date.now(),
   });
+  if (serverBacked) {
+    // A cache the pool already backs: a failed write costs a re-download.
+    await cacheWrite.catch((error: unknown) => {
+      log.warn('Local narration cache write failed for', audioId, error);
+    });
+  } else {
+    await cacheWrite;
+  }
   return audioId;
 }
 
+/**
+ * Store narration bytes in the asset pool and return the reference the
+ * document should hold.
+ *
+ * Regeneration always forks to a fresh id; the caller's `existingAudioId` is
+ * deliberately ignored here. Replacing bytes behind a live id requires proof
+ * that no other document holds it, and that proof is unavailable by
+ * construction once references can leave this browser — asking the pool who
+ * else holds an id would be exactly the existence oracle the asset contract
+ * forbids, so `proveExclusiveAssetOwnership` fails closed under server-backed
+ * persistence and every caller forks. Keeping a branch that can never be taken
+ * would only describe a capability this deployment shape does not have.
+ *
+ * The superseded id is NOT removed here. Nothing at this point has observed
+ * the new id reaching a durable document, so deleting the old bytes could
+ * leave a still-referenced action pointing at nothing if the save that follows
+ * fails; and the exclusivity that would make deletion safe is the same proof
+ * that is unavailable. Nothing reclaims it either: the stage-scoped registry
+ * sweep is written but deliberately not wired up, so a superseded clip's entry
+ * and bytes persist. Every regeneration therefore leaves one behind.
+ */
+async function allocatePooledAudio(blob: Blob, duration: number | undefined): Promise<string> {
+  return putAsset(blob, {
+    contentType: blob.type,
+    ...(duration === undefined ? {} : { durationSeconds: duration }),
+  });
+}
+
 export async function removeFreshTtsAllocations(assetIds: readonly string[]): Promise<void> {
+  const serverBacked = isServerBackedMediaPersistence();
   for (const assetId of new Set(assetIds)) {
     await db.audioFiles.delete(assetId).catch(() => undefined);
+    if (!serverBacked) continue;
+    // Only ids this run allocated reach here, so the pool entry is this run's
+    // to drop; a scene whose narration was rolled back must not leave paid-for
+    // bytes behind that nothing will ever reference.
+    //
+    // Best effort, and a refusal is the normal case: a deployment that has not
+    // opted into the development authenticator refuses every asset deletion.
+    // Those bytes then LEAK. The registry entry still names its blob, and the
+    // byte collector reclaims only blobs no entry names, so nothing collects
+    // them; the registry sweep that would is not wired up yet.
+    await removeAsset(assetId).catch((error: unknown) => {
+      log.warn(`Could not reclaim narration ${assetId}; its bytes now leak:`, error);
+    });
   }
 }
 
@@ -667,7 +742,16 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
       store.getState().setGeneratingOutlines(pending);
 
-      // Launch media generation in parallel — does not block content/action generation
+      // Launch media generation in parallel — does not block content/action generation.
+      // Under server-backed persistence, abort whatever the ref held first:
+      // replacing it would orphan that loop with a signal nothing can ever
+      // fire, leaving it calling providers and storing assets — real spend and
+      // real storage — for a course the user may already have left, and leaving
+      // `stop()` able to reach only the newest pass. The orchestrator then
+      // waits for the aborted pass to settle before collecting, so the two
+      // never overlap. Browser-only mode keeps its original behaviour, where an
+      // overlapping pass costs a duplicate download and nothing else.
+      if (isServerBackedMediaPersistence()) mediaAbortRef.current?.abort();
       mediaAbortRef.current = new AbortController();
       generateMediaForOutlines(outlines, stage.id, mediaAbortRef.current.signal).catch((err) => {
         log.warn('Media generation error:', err);
@@ -917,6 +1001,11 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       const outline = state.failedOutlines.find((o) => o.id === outlineId);
       const params = lastParamsRef.current;
       if (!outline || !state.stage || !params) return;
+      // A whole-outline retry runs content, actions and narration on the
+      // operator's keys. The surfaces already withhold the affordance when
+      // generation is not permitted; refusing here keeps the precondition and
+      // the render condition one rule.
+      if (!mayGenerateForStage(state.stage.id)) return;
       const retryEpoch = state.generationEpoch;
 
       // Regen-lock (#571): never silently replace a scene that is open in

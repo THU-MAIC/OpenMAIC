@@ -12,6 +12,7 @@ import { useStageStore } from '@/lib/store/stage';
 import { proveExclusiveAssetOwnership } from '@/lib/media/collect-stage-asset-refs';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 import { assetRefExists } from '@/lib/media/use-asset-url';
+import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 
 /** Legacy deterministic Dexie key used before pool allocation. */
 export function speechAudioId(sceneOrder: number, actionId: string): string {
@@ -73,9 +74,10 @@ export async function audioObjectUrl(audioId: string): Promise<string | null> {
  * line reads as "not voiced" until regenerated. Called when the user edits a
  * line's text: the cached audio is keyed by sceneOrder+actionId and the
  * stamped id, not the text, so without this the stale blob would keep
- * replaying for the new wording. Only the local Dexie compatibility copy is
- * removed here; the pool bytes are reclaimed later by the document-truth
- * sweep once the action no longer references them.
+ * replaying for the new wording. Only the local compatibility copy is removed
+ * here. The pool bytes are left in place and nothing reclaims them: the
+ * stage-scoped registry sweep is written but not wired up, so an unreferenced
+ * pool entry survives.
  */
 export async function discardSpeechAudio(
   sceneOrder: number,
@@ -122,6 +124,10 @@ export async function regenerateSpeechAudio(
   if (!text || !action.id) return null;
   const requestId = `tts_request_s${sceneOrder}_${action.id}`;
   const stageId = useStageStore.getState().stage?.id;
+  // Regenerating narration calls the TTS provider and allocates a fresh pool
+  // asset, so it is gated exactly like every other way generation starts. The
+  // surfaces withhold the control too; refusing here keeps the two one rule.
+  if (!mayGenerateForStage(stageId)) return null;
   const existingAudioId = await exclusivelyOwnedAudioId(action.audioId, stageId);
   return generateAndStoreTTS(
     requestId,

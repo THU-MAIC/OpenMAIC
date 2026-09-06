@@ -24,7 +24,7 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
+import { isServerPersistenceConfigured } from '@/lib/config/feature-flags';
 import { resolveStageAccess } from '@/lib/server/stage-access';
 import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
 
@@ -36,7 +36,15 @@ export const runtime = 'nodejs';
 type Params = { params: Promise<{ stageId: string }> };
 
 export async function GET(req: NextRequest, { params }: Params) {
-  if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
+  // Gated on server persistence, NOT on the agent runtime. Ownership is
+  // recorded by the persistence route (every request resolves an owner, and
+  // the owner-bound document store writes a meta row for every course), so a
+  // deployment running persistence without the runtime still has the fact this
+  // endpoint reports. Gating on the runtime made this endpoint 404 for every
+  // course in that configuration, which left its viewers with no ownership
+  // signal at all — indistinguishable, to a client, from "this course has no
+  // owner".
+  if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
 
   return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
     const { stageId } = await params;

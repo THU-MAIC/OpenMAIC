@@ -15,7 +15,10 @@ import {
   type DocumentAccess,
 } from '@/lib/persistence/document-access';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
-import { authenticatePersistenceRequest } from '@/lib/persistence/server-auth';
+import {
+  authenticatePersistenceRequest,
+  SHARED_ASSET_PRINCIPAL,
+} from '@/lib/persistence/server-auth';
 import {
   getServerPersistenceProvider,
   type PersistencePoolFactory,
@@ -92,10 +95,34 @@ async function createPersistenceHandler(
     validateScene: validateAppScene,
     validateStage: validateAppStage,
   });
-  // Runtime and asset requests retain the development authenticator, which
-  // takes their partition key from a client-supplied header. Document requests
-  // use the server-resolved anonymous owner below. Before runtime or asset
-  // routes carry production data, their authenticator must also be replaced
+  // The asset posture, precisely.
+  //
+  // Reading an asset and allocating one are open to any caller this deployment
+  // lets in, exactly as reading a document and creating one already are: assets
+  // live in a single shared partition by design (see the SHARED_ASSET_PRINCIPAL
+  // comment in lib/persistence/server-auth.ts), so there is nothing per-caller
+  // for the development authenticator to decide about them, and routing them
+  // through it made every asset request fail in a production build that had not
+  // opted into that authenticator — the build this project's own
+  // server-persistence recipe produces.
+  //
+  // Replacing and deleting are not. Those operations scope by principal key
+  // alone, and that key is the same constant for everyone, so an open PUT or
+  // DELETE would let any caller who learned an id — a document read hands out
+  // every id its slides name — overwrite or destroy another author's media.
+  // They therefore require the development authenticator to have actually
+  // authenticated the request, which in a production build without the opt-in
+  // means they are refused outright. Nothing in the app performs an asset PUT,
+  // and its only DELETE is a best-effort reclaim that tolerates refusal.
+  //
+  // What this is NOT: a per-caller access control. ACCESS_CODE is the
+  // deployment-level fence, and no per-principal storage quota is configured,
+  // so an admitted caller may allocate without bound. Both are properties of
+  // this development-auth deployment shape, not of the asset contract.
+  //
+  // Runtime requests still take their partition key from a client-supplied
+  // header, because a runtime session genuinely is per-learner state. Before
+  // runtime routes carry production data, their authenticator must be replaced
   // with real session verification.
   // Reclamation is not scheduled from here, and must not be: a route module
   // has no once-per-process guarantee and no shutdown hook. AssetCollector
@@ -106,10 +133,21 @@ async function createPersistenceHandler(
     configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
   );
   return createStorageHttpHandler(runtimeStore, documentStore, {
-    authenticate: async (request) =>
-      request.url?.startsWith('/documents')
-        ? { learnerKey: ownerId }
-        : authenticatePersistenceRequest(request),
+    authenticate: async (request) => {
+      if (request.url?.startsWith('/documents')) return { learnerKey: ownerId };
+      if (request.url?.startsWith('/assets')) {
+        return { key: SHARED_ASSET_PRINCIPAL, learnerKey: ownerId };
+      }
+      return authenticatePersistenceRequest(request);
+    },
+    authorizeAssets: async (_principal, request) => {
+      const method = (request.method ?? 'GET').toUpperCase();
+      if (method !== 'PUT' && method !== 'DELETE') return true;
+      // A mutation must prove it holds the deployment's credential. Without the
+      // development-auth opt-in there is no way to prove it, which is the
+      // refusal this posture wants.
+      return (await authenticatePersistenceRequest(request)) !== undefined;
+    },
     authorizeMerge: async () => false,
     authorizeAdmin: async () => false,
     authorizeDocuments: async () => access === 'allow',

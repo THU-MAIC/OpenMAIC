@@ -1,11 +1,19 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   settings: vi.fn(),
   mediaPut: vi.fn(),
   mediaDelete: vi.fn(),
+  putAsset: vi.fn(),
+  persistReference: vi.fn(),
+}));
+
+vi.mock('@/lib/media/asset-pool', () => ({
+  putAsset: mocks.putAsset,
+}));
+
+vi.mock('@/lib/media/persist-media-reference', () => ({
+  persistGeneratedMediaReference: mocks.persistReference,
 }));
 
 vi.mock('@/lib/store/settings', () => ({
@@ -70,6 +78,8 @@ describe('classic media orchestrator', () => {
     resetProxyMediaFailureCache();
     mocks.mediaPut.mockReset().mockResolvedValue(undefined);
     mocks.mediaDelete.mockReset().mockResolvedValue(undefined);
+    mocks.putAsset.mockReset().mockResolvedValue('ast_unexpected');
+    mocks.persistReference.mockReset().mockResolvedValue('written');
     mocks.settings.mockReset().mockReturnValue({
       imageGenerationEnabled: true,
       videoGenerationEnabled: true,
@@ -344,13 +354,25 @@ describe('classic media orchestrator', () => {
     expect(mocks.mediaPut).not.toHaveBeenCalled();
   });
 
-  it('does not import the asset pool or document mutation seams', () => {
-    const source = readFileSync(join(process.cwd(), 'lib/media/media-orchestrator.ts'), 'utf8');
-    expect(source).not.toMatch(/from ['"]@\/lib\/media\/asset-pool['"]/);
-    expect(source).not.toContain('putAsset(');
-    expect(source).not.toContain('replaceAsset(');
-    expect(source).not.toContain('mutateDocument(');
-    expect(source).not.toContain('.rekeyDone(');
+  // Browser-only mode is the default here: no persistence flag is stubbed, so
+  // the asset-pool seam is unconfigured and every case above ran through the
+  // local table. Nothing may have touched the pool or the document.
+  it('never reaches the asset pool or the document write-back in browser-only mode', async () => {
+    serveImage();
+    await generateMediaForOutlines(
+      [outlineWith({ type: 'image', prompt: 'A diagram', elementId: imageRef })],
+      stageId,
+    );
+    serveVideo();
+    await generateMediaForOutlines(
+      [outlineWith({ type: 'video', prompt: 'A clip', elementId: videoRef })],
+      stageId,
+    );
+
+    expect(useMediaGenerationStore.getState().tasks[imageRef]?.status).toBe('done');
+    expect(useMediaGenerationStore.getState().tasks[videoRef]?.status).toBe('done');
+    expect(mocks.putAsset).not.toHaveBeenCalled();
+    expect(mocks.persistReference).not.toHaveBeenCalled();
   });
 
   it('retains renderer retry targeting as a read-side compatibility seam', () => {

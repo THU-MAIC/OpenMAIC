@@ -1,5 +1,6 @@
 import '@/lib/persistence/bootstrap';
 
+import type { AssetMeta, BinaryBlob } from '@openmaic/dsl';
 import { BrowserAssetStore, toAssetId } from '@openmaic/storage';
 import {
   isAssetPoolServerBacked,
@@ -80,6 +81,17 @@ export function getAssetPool(): AssetPoolStore {
     }
     return new BrowserAssetStore({ dbName: ASSET_POOL_DATABASE_NAME });
   })());
+}
+
+/**
+ * Store bytes and get back the reference a document may hold.
+ *
+ * Callers go through this rather than through the pool object so URL leasing
+ * and release stay owned by `use-asset-url`, which is the only module allowed
+ * to hold a resolved URL's lifetime.
+ */
+export function putAsset(data: BinaryBlob, meta?: AssetMeta): Promise<string> {
+  return getAssetPool().put(data, meta);
 }
 
 export function removeAsset(ref: string): Promise<void> {

@@ -15,6 +15,8 @@
  * visitor path, so a plain per-stage last-write record is sufficient.
  */
 
+import type { StageMetaResult } from './stage-meta-client';
+
 export interface StageAccessSignal {
   isOwner: boolean;
 }
@@ -62,4 +64,47 @@ export function resolveStageFallbackAccess(stageId: string): StageAccessSignal {
 /** Test hook: forget every recorded outcome. */
 export function resetStageOwnershipSignals(): void {
   stageOwnership.clear();
+}
+
+/**
+ * What a load learned about the viewer, in the four states the sidecar's three
+ * outcomes actually produce.
+ *
+ * `'owner'` and `'not-owner'` are the two halves of a definite answer.
+ * `'ownerless'` is the sidecar's 404: no ownership record exists for this id,
+ * because the course was never persisted or because it was tombstoned. It is
+ * kept distinct from `'unresolved'` — the ABSENCE of an answer, whether not
+ * asked yet or asked and nothing usable came back — so the two cannot be
+ * silently collapsed, even though the gate refuses both.
+ */
+export type ClassroomGenerationOwnership = 'owner' | 'not-owner' | 'ownerless' | 'unresolved';
+
+/** Map a sidecar result onto the generation gate's view of the viewer. */
+export function classroomGenerationOwnership(
+  result: StageMetaResult,
+): ClassroomGenerationOwnership {
+  if (result.outcome === 'found') return result.meta.isOwner ? 'owner' : 'not-owner';
+  return result.outcome === 'absent' ? 'ownerless' : 'unresolved';
+}
+
+/**
+ * May this browser start generation for this course?
+ *
+ * Generation spends the operator's provider budget, and under server-backed
+ * persistence a course is shared and any visitor may open it, so the gate
+ * admits exactly one state: a viewer the sidecar named as the owner. Every
+ * other answer refuses, including the two that are not "somebody else owns
+ * this" — a 404 and a silent sidecar are both "this browser has no reason to
+ * believe it may spend", which is the only reading that keeps a visitor from
+ * billing the operator. A viewer therefore sees unresolved placeholders and no
+ * generation; the owner's own load, which does get an answer, converges them.
+ * Browser-only mode has one viewer who is by construction the author, so the
+ * gate is inert there and behaviour is unchanged.
+ */
+export function mayStartOwnerGeneration(
+  serverBackedMedia: boolean,
+  ownership: ClassroomGenerationOwnership,
+): boolean {
+  if (!serverBackedMedia) return true;
+  return ownership === 'owner';
 }

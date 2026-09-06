@@ -19,9 +19,11 @@
  *
  * The reference (live deployment) additionally runs non-owner visitor
  * hydration, a transport-persistence UI fence and a background uploader; all
- * three depend on server-side ownership/persistence machinery this workspace
- * does not have, so they are dropped and the load follows the ordinary
- * single-user path (`app/classroom/[id]/page.tsx`).
+ * three depend on server-side machinery this workspace does not have, so they
+ * are dropped and the load follows the ordinary path
+ * (`app/classroom/[id]/page.tsx`). The stage-meta sidecar IS consulted, for one
+ * purpose: gating generation on ownership so a viewer never spends the
+ * operator's provider budget.
  */
 
 import { Stage } from '@/components/stage';
@@ -33,6 +35,7 @@ import { loadImageMapping } from '@/lib/utils/image-storage';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
+import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { createLogger } from '@/lib/logger';
@@ -51,6 +54,13 @@ import {
   paneAvailabilityRetryDelay,
   shouldResumeClassroomGeneration,
 } from '@/lib/classroom/progressive-load-policy';
+import { fetchStageMeta } from '@/lib/classroom/stage-meta-client';
+import { classroomGenerationOwnership } from '@/lib/classroom/stage-ownership-signal';
+import {
+  noteStageGenerationOwnership,
+  useMayGenerateForStage,
+} from '@/lib/classroom/generation-permission';
+import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 
 const log = createLogger('Classroom');
 
@@ -88,6 +98,13 @@ export function ClassroomSurface({
    * deleted or never existed.
    */
   const [notFound, setNotFound] = useState(false);
+  /**
+   * Whether this browser may start generation for this course, from the shared
+   * permission store the stage-meta sidecar feeds. Gates the resume effect and
+   * the outline-retry affordance alike, so what is offered and what is allowed
+   * cannot diverge.
+   */
+  const mayGenerate = useMayGenerateForStage(classroomId);
 
   const generationStartedRef = useRef(false);
 
@@ -166,6 +183,9 @@ export function ClassroomSurface({
     setError(null);
     setNotFound(false);
     /* eslint-enable react-hooks/set-state-in-effect */
+    // Ownership belongs to the departing course; the new one must re-earn it
+    // before anything it holds may be generated.
+    noteStageGenerationOwnership(classroomId, 'unresolved');
     generationStartedRef.current = false;
 
     // Clear previous classroom's media tasks to prevent cross-classroom contamination.
@@ -174,6 +194,10 @@ export function ClassroomSurface({
     const mediaStore = useMediaGenerationStore.getState();
     mediaStore.revokeObjectUrls();
     useMediaGenerationStore.setState({ tasks: {} });
+    // Allocations parked by an interrupted run on THIS id must go with them.
+    // Classic placeholders are reused across runs of the same course, so a
+    // survivor would be handed to a different slide of the next deck.
+    clearPendingMediaAllocations(classroomId);
 
     // Clear whiteboard history to prevent snapshots from a previous course leaking in.
     useWhiteboardHistoryStore.getState().clearHistory();
@@ -186,6 +210,32 @@ export function ClassroomSurface({
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let availabilityAttempt = 0;
+
+    // The sidecar carries the per-viewer ownership fact the document seam does
+    // not. It feeds only the generation gate here, so the pane's read-only and
+    // edit behaviour is untouched by its answer, and it is skipped entirely in
+    // browser-only mode, where the gate is inert and the request would be new
+    // observable behaviour on a path this change must not touch.
+    //
+    // Asked only AFTER a document load succeeds, and again after every later
+    // one, mirroring the page route. The load is what brings a course into the
+    // server store the first time it is opened, so asking beforehand asks about
+    // a course whose ownership row does not exist yet: the 404 that comes back
+    // would lock its genuine author out of generation and of every retry
+    // control for the rest of the mount. The gate stays closed until an answer
+    // arrives, so asking again can only ever open it for someone entitled to it.
+    const refreshOwnership = () => {
+      if (cancelled || !isServerBackedMediaPersistence()) return;
+      void fetchStageMeta(classroomId)
+        .then((result) => {
+          if (cancelled) return;
+          noteStageGenerationOwnership(classroomId, classroomGenerationOwnership(result));
+        })
+        // The client reports transport failure as an outcome rather than
+        // throwing, so this only catches the unexpected. Ownership stays
+        // unresolved, which is the fail-closed answer.
+        .catch(() => undefined);
+    };
     const loadUntilAvailable = async () => {
       if (cancelled) return;
       // A previous pane attempt may have observed a transient read failure.
@@ -193,7 +243,13 @@ export function ClassroomSurface({
       // again, so an already mounted classroom never flashes away.
       if (variant === 'pane') setError(null);
       const outcome = await loadClassroom(() => !cancelled);
-      if (cancelled || variant !== 'pane' || outcome !== 'unavailable') return;
+      if (cancelled) return;
+      if (variant !== 'pane' || outcome !== 'unavailable') {
+        // The document answered, so the sidecar now has something to say about
+        // this course — whether or not an availability retry was needed.
+        refreshOwnership();
+        return;
+      }
 
       const delay = paneAvailabilityRetryDelay(availabilityAttempt);
       availabilityAttempt += 1;
@@ -214,13 +270,16 @@ export function ClassroomSurface({
     };
   }, [classroomId, loadClassroom, stop, variant]);
 
-  // Auto-resume generation for pending outlines (owner only). The reference
-  // additionally gates on a transport-persistence UI fence and the store's
-  // `isOwner`; neither exists here (single-user, no server persistence), so
-  // the fence is a constant false and ownership is expressed by
-  // `outlineProducer`: a course whose document a server job produced is
-  // server-owned, not client-authored, and therefore not this browser's to
-  // regenerate.
+  // Auto-resume generation for pending outlines (owner only). Two independent
+  // ownership facts gate it. The sidecar's per-viewer answer decides whether
+  // this browser may spend the operator's provider budget at all, and fails
+  // closed while unanswered; `generationStartedRef` is deliberately NOT
+  // latched while it refuses, so the effect starts once the answer arrives.
+  // `outlineProducer` then decides whether the browser is the producer: a
+  // course whose document a server job produced is server-owned, not
+  // client-authored, and therefore not this browser's to regenerate. The
+  // reference's transport-persistence UI fence has no counterpart here, so it
+  // stays a constant false.
   useEffect(() => {
     if (
       !shouldResumeClassroomGeneration({
@@ -228,6 +287,7 @@ export function ClassroomSurface({
         error,
         transportPersistenceFenced: false,
         generationStarted: generationStartedRef.current,
+        mayGenerate,
       })
     ) {
       return;
@@ -314,7 +374,7 @@ export function ClassroomSurface({
         log.warn('[Classroom] Media generation resume error:', err);
       });
     }
-  }, [loading, error, generateRemaining]);
+  }, [loading, error, mayGenerate, generateRemaining]);
 
   return (
     <ThemeProvider>
@@ -383,7 +443,10 @@ export function ClassroomSurface({
               </div>
             </div>
           ) : (
-            <Stage classroomId={classroomId} onRetryOutline={retrySingleOutline} />
+            <Stage
+              classroomId={classroomId}
+              onRetryOutline={mayGenerate ? retrySingleOutline : undefined}
+            />
           )}
         </div>
       </MediaStageProvider>
