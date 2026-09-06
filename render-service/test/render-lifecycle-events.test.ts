@@ -144,6 +144,58 @@ describe('render job lifecycle events', () => {
     });
   });
 
+  it('closes the lifecycle for a job cancelled before it ever started', async () => {
+    // Cancelling a queued job takes a different path from cancelling a running
+    // one. If it skipped the finished event, a submitted job would simply never
+    // be heard from again and any success rate built on these events would be
+    // silently wrong.
+    const events: RenderEvent[] = [];
+    let release!: () => void;
+    const parked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { coordinator, jobs } = coordinatorWith(
+      events,
+      async () => {
+        await parked;
+        return { status: 'succeeded', outputPath: 'out.mp4' };
+      },
+      // Two jobs in flight at once, so the second is genuinely queued rather
+      // than rejected by the per-identity guard.
+      { maxJobsPerUser: 0 },
+    );
+    const options = { fps: 24, quality: 'draft', format: 'mp4' } as const;
+
+    // The first job takes the only execution slot; the second stays queued.
+    const runningId = await coordinator.submit(
+      coordinator.reserve('tester'),
+      await projectDir(),
+      options,
+    );
+    await waitForJob(jobs, runningId, (job) => job.status === 'running');
+    const queuedId = await coordinator.submit(
+      coordinator.reserve('tester'),
+      await projectDir(),
+      options,
+    );
+
+    await coordinator.cancel(queuedId);
+    await waitForJob(jobs, queuedId, (job) => job.status === 'cancelled');
+
+    const finished = events.filter((event) => event.event === 'render_job_finished');
+    expect(finished).toContainEqual(
+      expect.objectContaining({ jobId: queuedId, outcome: 'cancelled' }),
+    );
+    // Every submitted job reported a terminal event — that is what makes the
+    // stream summable into a success rate.
+    const submitted = events.filter((event) => event.event === 'render_job_submitted');
+    expect(finished.map((event) => event.jobId)).toContain(queuedId);
+    expect(submitted.some((event) => event.jobId === queuedId)).toBe(true);
+
+    release();
+    await waitForJob(jobs, runningId, (job) => job.status === 'succeeded');
+  });
+
   it('does not retain per-job state after a job finishes', async () => {
     const events: RenderEvent[] = [];
     const { coordinator, jobs } = coordinatorWith(events, async () => ({

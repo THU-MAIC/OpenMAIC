@@ -235,6 +235,11 @@ export class RenderCoordinator {
         code: 'cancelled',
         message: 'Render cancelled',
       };
+      // Cancelling before the job ever started skips `finishNonSuccess`, so
+      // close the lifecycle here too. Without this a queued-then-cancelled job
+      // is submitted and then simply never heard from again, which would leave
+      // any success rate computed from these events quietly wrong.
+      this.finishEvent(id, 'cancelled');
       await this.jobs.update(id, {
         status: 'cancelled',
         currentStage: 'cancelled',
