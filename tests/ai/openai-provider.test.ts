@@ -228,6 +228,23 @@ describe('OpenAI provider defaults', () => {
     expect(openAiMock.chat).not.toHaveBeenCalled();
   });
 
+  it('converts named OpenAI-compatible providers to streaming for non-streaming SDK calls when enabled', async () => {
+    vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'true');
+
+    const body = await captureInjectedRequestBody('deepseek', 'deepseek-v4-flash');
+
+    expect(body.stream).toBe(true);
+    expect(body.stream_options).toMatchObject({ include_usage: true });
+  });
+
+  it('leaves named OpenAI-compatible providers non-streaming when compatibility is disabled', async () => {
+    vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'false');
+
+    const body = await captureInjectedRequestBody('deepseek', 'deepseek-v4-flash');
+
+    expect(body.stream).toBeUndefined();
+  });
+
   it('buffers custom OpenAI Chat streams for non-streaming SDK calls', async () => {
     vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'true');
     const originalFetch = globalThis.fetch;

@@ -4,6 +4,7 @@ import { apiSuccess, apiError, API_ERROR_CODES } from '@/lib/server/api-response
 import {
   buildRequestOrigin,
   isValidClassroomId,
+  loadClassroomFromDocumentStore,
   persistClassroom,
   readClassroom,
 } from '@/lib/server/classroom-storage';
@@ -65,11 +66,20 @@ export async function GET(request: NextRequest) {
     }
 
     const classroom = await readClassroom(id);
-    if (!classroom) {
-      return apiError(API_ERROR_CODES.INVALID_REQUEST, 404, 'Classroom not found');
+    if (classroom) {
+      return apiSuccess({ classroom });
     }
 
-    return apiSuccess({ classroom });
+    // Fallback: Pro workbench (agent-runtime) courses live in the PostgreSQL
+    // DocumentStore, not `data/classrooms/*.json`. A JSON miss is NOT a
+    // "course missing" verdict — consult the store before declaring 404, so a
+    // Postgres-only course opens by link like any JSON classroom.
+    const stored = await loadClassroomFromDocumentStore(id);
+    if (stored) {
+      return apiSuccess({ classroom: stored });
+    }
+
+    return apiError(API_ERROR_CODES.INVALID_REQUEST, 404, 'Classroom not found');
   } catch (error) {
     log.error(
       `Classroom retrieval failed [id=${request.nextUrl.searchParams.get('id') ?? 'unknown'}]:`,
