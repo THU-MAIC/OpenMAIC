@@ -290,6 +290,13 @@ async function generateOpenAITTS(
       input: text,
       voice: config.voice,
       speed: config.speed || 1.0,
+      // Ask for a container the browser can decode. OpenAI defaults to mp3, but
+      // this same function serves every custom OpenAI-compatible provider and
+      // their defaults differ — OpenRouter's /audio/speech defaults to raw
+      // `pcm`, which arrives headerless, gets labelled mp3 below, and fails in
+      // the client with "no supported source was found". Naming the format
+      // removes the guess. Providers that ignore the field are unaffected.
+      response_format: 'mp3',
     }),
     signal,
   });
@@ -441,6 +448,17 @@ function getAudioResponseFormat(contentType: string): string {
   if (contentType.includes('audio/flac')) return 'flac';
   if (contentType.includes('audio/ogg')) return 'ogg';
   if (contentType.includes('audio/webm')) return 'webm';
+  if (contentType.includes('audio/aac')) return 'aac';
+  if (contentType.includes('audio/opus')) return 'opus';
+  // `pcm`/`l16` is headerless: the client builds `data:audio/<format>` and no
+  // browser decodes bare samples, so say so plainly instead of calling it mp3
+  // and failing later with an opaque "no supported source was found".
+  if (contentType.includes('audio/pcm') || contentType.includes('audio/l16')) {
+    throw new Error(
+      'TTS provider returned raw PCM, which browsers cannot play. Configure the ' +
+        'provider to return mp3, wav, or ogg.',
+    );
+  }
   return 'mp3';
 }
 

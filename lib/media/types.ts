@@ -78,6 +78,7 @@ export type ImageProviderId =
   | 'minimax-image'
   | 'grok-image'
   | 'comfyui-image'
+  | 'openrouter-image'
   | 'lemonade';
 // Add new image providers below (uncomment and modify):
 // | 'dall-e'
@@ -197,6 +198,7 @@ export type VideoProviderId =
   | 'veo'
   | 'minimax-video'
   | 'grok-video'
+  | 'openrouter-video'
   | 'happyhorse';
 // Add new video providers below (uncomment and modify):
 // | 'runway'

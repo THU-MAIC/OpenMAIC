@@ -163,6 +163,7 @@ const IMAGE_PROVIDER_NAMES: Record<ImageProviderId, string> = {
   'minimax-image': 'providerMiniMaxImage',
   'grok-image': 'providerGrokImage',
   'comfyui-image': 'providerComfyUIImage',
+  'openrouter-image': 'providerOpenRouterImage',
   lemonade: 'providerLemonadeImage',
 };
 
@@ -174,6 +175,7 @@ const IMAGE_PROVIDER_ICONS: Record<ImageProviderId, string> = {
   'minimax-image': '/logos/minimax.svg',
   'grok-image': '/logos/grok.svg',
   'comfyui-image': '/logos/comfyui.svg',
+  'openrouter-image': '/logos/openrouter.svg',
   lemonade: '/logos/lemonade.svg',
 };
 
@@ -183,6 +185,7 @@ const VIDEO_PROVIDER_NAMES: Record<VideoProviderId, string> = {
   veo: 'providerVeo',
   'minimax-video': 'providerMiniMaxVideo',
   'grok-video': 'providerGrokVideo',
+  'openrouter-video': 'providerOpenRouterVideo',
   happyhorse: 'providerHappyHorse',
 };
 
@@ -192,6 +195,7 @@ const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
   veo: '/logos/gemini.svg',
   'minimax-video': '/logos/minimax.svg',
   'grok-video': '/logos/grok.svg',
+  'openrouter-video': '/logos/openrouter.svg',
   happyhorse: '/logos/qwen.svg',
 };
 
@@ -233,10 +237,19 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const [selectedPdfProviderId, setSelectedPdfProviderId] = useState<PDFProviderId>(pdfProviderId);
   const [selectedWebSearchProviderId, setSelectedWebSearchProviderId] =
     useState<WebSearchProviderId>(webSearchProviderId);
-  const [selectedImageProviderId, setSelectedImageProviderId] =
-    useState<ImageProviderId>(imageProviderId);
-  const [selectedVideoProviderId, setSelectedVideoProviderId] =
-    useState<VideoProviderId>(videoProviderId);
+  // `imageProviderId`/`videoProviderId` are empty until a provider is actually
+  // chosen (first-run auto-config leaves them blank when the server reports no
+  // media provider). Opening the panel on an empty id selected nothing: the
+  // header rendered the missing key as "settings.undefined", and Test
+  // Connection posted a blank `x-image-provider`/`x-video-provider`, so it
+  // failed with "No image/video provider configured" no matter what was typed.
+  // Fall back to the first catalog entry so the panel always has a selection.
+  const [selectedImageProviderId, setSelectedImageProviderId] = useState<ImageProviderId>(
+    imageProviderId || (Object.keys(IMAGE_PROVIDERS)[0] as ImageProviderId),
+  );
+  const [selectedVideoProviderId, setSelectedVideoProviderId] = useState<VideoProviderId>(
+    videoProviderId || (Object.keys(VIDEO_PROVIDERS)[0] as VideoProviderId),
+  );
   // Navigate to initialSection when dialog opens
   useEffect(() => {
     if (open && initialSection) {
