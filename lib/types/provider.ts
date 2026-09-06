@@ -21,6 +21,7 @@ export type BuiltInProviderId =
   | 'doubao'
   | 'openrouter'
   | 'grok'
+  | 'codex'
   | 'tencent-hunyuan'
   | 'xiaomi'
   | 'lemonade'
@@ -35,7 +36,7 @@ export type ProviderId = BuiltInProviderId | `custom-${string}`;
 /**
  * Provider API types
  */
-export type ProviderType = 'openai' | 'azure' | 'anthropic' | 'bedrock' | 'google';
+export type ProviderType = 'openai' | 'azure' | 'anthropic' | 'bedrock' | 'google' | 'codex';
 
 export type ThinkingControlType =
   | 'none'

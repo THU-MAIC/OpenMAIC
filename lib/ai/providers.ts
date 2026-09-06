@@ -67,7 +67,12 @@ const log = createLogger('AIProviders');
 export type { ProviderId, ProviderConfig, ModelInfo, ModelConfig };
 
 /** Provider IDs whose logos are monochrome-dark and need `dark:invert` in dark mode */
-export const MONO_LOGO_PROVIDERS: ReadonlySet<string> = new Set(['openai', 'openrouter', 'ollama']);
+export const MONO_LOGO_PROVIDERS: ReadonlySet<string> = new Set([
+  'openai',
+  'openrouter',
+  'ollama',
+  'codex',
+]);
 
 /**
  * Provider registry
@@ -207,6 +212,62 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
             budgetAdjustable: true,
             defaultEnabled: false,
           },
+        },
+      },
+    ],
+  },
+
+  codex: {
+    id: 'codex',
+    name: 'Codex Subscription',
+    type: 'codex',
+    requiresApiKey: false,
+    supportsModelDiscovery: false,
+    icon: '/logos/openai.svg',
+    models: [
+      {
+        id: 'gpt-5.6-sol',
+        name: 'GPT-5.6 Sol',
+        capabilities: {
+          streaming: true,
+          tools: false,
+          vision: true,
+        },
+      },
+      {
+        id: 'gpt-5.6-terra',
+        name: 'GPT-5.6 Terra',
+        capabilities: {
+          streaming: true,
+          tools: false,
+          vision: true,
+        },
+      },
+      {
+        id: 'gpt-5.6-luna',
+        name: 'GPT-5.6 Luna',
+        capabilities: {
+          streaming: true,
+          tools: false,
+          vision: true,
+        },
+      },
+      {
+        id: 'gpt-5.5',
+        name: 'GPT-5.5',
+        capabilities: {
+          streaming: true,
+          tools: false,
+          vision: true,
+        },
+      },
+      {
+        id: 'gpt-5.4',
+        name: 'GPT-5.4',
+        capabilities: {
+          streaming: true,
+          tools: false,
+          vision: true,
         },
       },
     ],

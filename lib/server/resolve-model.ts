@@ -6,8 +6,9 @@
  */
 
 import type { NextRequest } from 'next/server';
-import { getModel, getProvider, parseModelString, type ModelWithInfo } from '@/lib/ai/providers';
+import { getProvider, parseModelString, type ModelWithInfo } from '@/lib/ai/providers';
 import type { ProviderType, ThinkingConfig } from '@/lib/types/provider';
+import { createServerLanguageModel } from '@/lib/server/language-model-adapters';
 import {
   isServerConfiguredProvider,
   resolveApiKey,
@@ -116,7 +117,7 @@ export async function resolveModel(params: {
   const apiKey = resolveApiKey(providerId, clientApiKey || '');
   const baseUrl = resolveBaseUrl(providerId, clientBaseUrl);
   const proxy = resolveProxy(providerId);
-  const { model, modelInfo } = getModel({
+  const { model, modelInfo } = createServerLanguageModel({
     providerId,
     modelId,
     apiKey,
