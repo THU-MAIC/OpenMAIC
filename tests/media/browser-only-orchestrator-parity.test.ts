@@ -189,6 +189,51 @@ describe('browser-only media orchestration is untouched', () => {
     expect(prompts).toEqual([]);
   });
 
+  // The provider call has already been billed by the time the download starts,
+  // so a Stop or a course change during it must not throw the bytes away. It
+  // also must not reach the shared proxy cache: an aborted download is recorded
+  // there as a transient failure against the URL, and three of them block it
+  // for every consumer in the session.
+  it('keeps bytes whose download was still running when the pass was aborted', async () => {
+    let releaseDownload: (() => void) | undefined;
+    const downloadInFlight = new Promise<void>((resolve) => {
+      releaseDownload = resolve;
+    });
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/generate/image') {
+        prompts.push((JSON.parse(String(init?.body)) as { prompt: string }).prompt);
+        return new Response(
+          JSON.stringify({ success: true, result: { url: 'https://media.test/image' } }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url === '/api/proxy-media') {
+        // Held open past the abort, and deliberately not observing the signal:
+        // the download is not the caller's to cancel.
+        await downloadInFlight;
+        return new Response(new Blob(['image'], { type: 'image/png' }), { status: 200 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const controller = new AbortController();
+    const pass = generateMediaForOutlines(
+      [outlineWith(1, 'gen_img_1', 'one')],
+      stageId,
+      controller.signal,
+    );
+    for (let tick = 0; tick < 20; tick += 1) await Promise.resolve();
+    // Stop, unmount, or a course change — all abort the pass mid-download.
+    controller.abort();
+    releaseDownload?.();
+    await pass;
+
+    // The bytes are stored and the element is done, as it has always been.
+    expect(mocks.mediaPut).toHaveBeenCalledTimes(1);
+    expect(useMediaGenerationStore.getState().tasks.gen_img_1?.status).toBe('done');
+  });
+
   it('lets a Retry during a pass through, and finishes both', async () => {
     let releaseSecond: (() => void) | undefined;
     const secondInFlight = new Promise<void>((resolve) => {

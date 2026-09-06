@@ -63,6 +63,16 @@ const log = createLogger('MediaOrchestrator');
  * Three rounds of per-element claims taught the lesson this replaces: every
  * refinement of "who owns this element right now" created a new way to strand
  * one. Waiting has no such states.
+ *
+ * The wait is unbounded, and deliberately so. A commit is uncancellable — the
+ * asset client takes no signal and a document write cannot be half-undone — so
+ * a stalled upload holds this course's media queue until it settles or the page
+ * is reloaded. Abandoning the wait on a deadline was tried and reverted: it
+ * turns an element whose commit is still alive into a retryable one, and a
+ * Retry then runs a second commit for the same placeholder against the first —
+ * two provider calls, two allocations, and a placeholder-keyed record that the
+ * loser can erase from under the winner. That is precisely the overlap this
+ * design exists to remove, so the queue waits.
  */
 const passesByStage = new Map<string, Promise<void>>();
 
@@ -411,43 +421,6 @@ async function commitPooledMedia(args: {
 }
 
 /**
- * How long a commit may hold the course's media queue before it is abandoned.
- *
- * The commit is uncancellable by construction — the asset client's `put` takes
- * no signal, and a document write cannot be half-undone — and the next pass for
- * this course waits behind it. Without a ceiling one stalled upload freezes
- * generation for the rest of the session, with the element stuck on a skeleton
- * that draws no Retry.
- */
-const MEDIA_COMMIT_TIMEOUT_MS = 120_000;
-
-/**
- * Bound the wait on a commit, not the commit itself.
- *
- * This is a deadline on the caller's patience: the work carries on in the
- * background, because there is no way to stop it, and if it eventually
- * succeeds the document simply ends up correct — the reference it writes is
- * the one the next load would have wanted, and the allocation it records keeps
- * a later pass from paying twice. What the deadline buys is that the element
- * becomes retryable and the queue moves on.
- */
-function withCommitDeadline<T>(work: Promise<T>, elementId: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(
-      () =>
-        reject(
-          new Error(
-            `Storing generated media for ${elementId} did not finish in time; retry to try again`,
-          ),
-        ),
-      MEDIA_COMMIT_TIMEOUT_MS,
-    );
-  });
-  return Promise.race([work, deadline]).finally(() => clearTimeout(timer)) as Promise<T>;
-}
-
-/**
  * Give back bytes nothing can reference, without letting the attempt matter.
  *
  * A deployment may refuse an asset deletion — it is a mutation, and a mutation
@@ -504,18 +477,15 @@ async function generateSingleMedia(
         // A hosted URL is the provider's address, not a durable reference the
         // document may hold, so the bytes are fetched and put to the pool.
         throwIfAborted(abortSignal);
-        const blob = await fetchAsBlob(result.ossUrl || result.url, abortSignal);
+        const blob = await fetchAsBlob(result.ossUrl || result.url);
         throwIfAborted(abortSignal);
-        await withCommitDeadline(
-          commitPooledMedia({
-            req,
-            stageId,
-            paramsJson,
-            blob,
-            mimeType: storedMediaType(blob, 'image/png'),
-          }),
-          req.elementId,
-        );
+        await commitPooledMedia({
+          req,
+          stageId,
+          paramsJson,
+          blob,
+          mimeType: storedMediaType(blob, 'image/png'),
+        });
         return;
       }
 
@@ -540,7 +510,7 @@ async function generateSingleMedia(
 
       // Fallback: fetch blob via proxy-media
       throwIfAborted(abortSignal);
-      const blob = await fetchAsBlob(result.url, abortSignal);
+      const blob = await fetchAsBlob(result.url);
       await db.mediaFiles.put({
         id: mediaFileKey(stageId, req.elementId),
         stageId,
@@ -559,24 +529,21 @@ async function generateSingleMedia(
 
       if (serverBacked) {
         throwIfAborted(abortSignal);
-        const blob = await fetchAsBlob(result.ossUrl || result.url, abortSignal);
+        const blob = await fetchAsBlob(result.ossUrl || result.url);
         const posterSource = result.posterOssUrl || result.poster;
         const posterBlob = posterSource
-          ? await fetchAsBlob(posterSource, abortSignal).catch(() => undefined)
+          ? await fetchAsBlob(posterSource).catch(() => undefined)
           : undefined;
         throwIfAborted(abortSignal);
-        await withCommitDeadline(
-          commitPooledMedia({
-            req,
-            stageId,
-            paramsJson,
-            blob,
-            mimeType: storedMediaType(blob, 'video/mp4'),
-            posterBlob,
-            ...(posterBlob ? { posterMimeType: storedMediaType(posterBlob, 'image/jpeg') } : {}),
-          }),
-          req.elementId,
-        );
+        await commitPooledMedia({
+          req,
+          stageId,
+          paramsJson,
+          blob,
+          mimeType: storedMediaType(blob, 'video/mp4'),
+          posterBlob,
+          ...(posterBlob ? { posterMimeType: storedMediaType(posterBlob, 'image/jpeg') } : {}),
+        });
         return;
       }
 
@@ -604,9 +571,9 @@ async function generateSingleMedia(
 
       // Fallback: fetch blob via proxy-media
       throwIfAborted(abortSignal);
-      const blob = await fetchAsBlob(result.url, abortSignal);
+      const blob = await fetchAsBlob(result.url);
       const posterBlob = result.poster
-        ? await fetchAsBlob(result.poster, abortSignal).catch(() => undefined)
+        ? await fetchAsBlob(result.poster).catch(() => undefined)
         : undefined;
       await db.mediaFiles.put({
         id: mediaFileKey(stageId, req.elementId),
@@ -759,7 +726,7 @@ async function callVideoApi(
   };
 }
 
-async function fetchAsBlob(url: string, signal?: AbortSignal): Promise<Blob> {
+async function fetchAsBlob(url: string): Promise<Blob> {
   // For data URLs, convert directly
   if (url.startsWith('data:')) {
     const res = await fetch(url);
@@ -768,10 +735,15 @@ async function fetchAsBlob(url: string, signal?: AbortSignal): Promise<Blob> {
   // For remote URLs, proxy through our server to bypass CORS restrictions.
   // Routed through the shared proxy-media negative cache so a permanently
   // failed URL (4xx) is not re-fetched by retries or later generation passes.
-  // The pass's signal travels with it: a stalled download otherwise holds the
-  // course's whole media queue, because the next pass waits for this one.
+  //
+  // Deliberately unabortable. The provider call that produced this URL has
+  // already been billed, so cancelling the download throws away work that is
+  // paid for — and the shared proxy cache would record the cancellation as a
+  // transient failure against the URL, which after three aborts blocks it for
+  // every consumer in the session. Letting the download finish costs a few
+  // seconds after a Stop; cancelling it costs the image.
   if (url.startsWith('http://') || url.startsWith('https://')) {
-    const res = await fetchProxiedMediaUrl(url, signal ? { signal } : undefined);
+    const res = await fetchProxiedMediaUrl(url);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       throw new Error(data.error || `Proxy fetch failed: ${res.status}`);
@@ -779,7 +751,7 @@ async function fetchAsBlob(url: string, signal?: AbortSignal): Promise<Blob> {
     return res.blob();
   }
   // Relative URLs (shouldn't happen, but handle gracefully)
-  const res = await fetch(url, signal ? { signal } : undefined);
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch blob: ${res.status}`);
   return res.blob();
 }
