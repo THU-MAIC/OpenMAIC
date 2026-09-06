@@ -85,8 +85,12 @@ export class RenderCoordinator {
   private readonly jobDeadlineMs: number;
   private readonly executionGate: Semaphore;
   private readonly onEvent: RenderEventSink;
-  /** Submission time per in-flight job, so a start can report its queue wait. */
-  private readonly submittedAtMs = new Map<string, number>();
+  /**
+   * Timing per in-flight job, so a start can report its queue wait and a finish
+   * can separate that wait from the render itself. An entry is removed by
+   * `finishEvent`, which also makes the finish idempotent.
+   */
+  private readonly jobTiming = new Map<string, { submittedAt: number; startedAt?: number }>();
 
   constructor(
     private readonly executor: RenderExecutor,
@@ -209,11 +213,13 @@ export class RenderCoordinator {
     const abort = new AbortController();
     this.controllers.set(id, abort);
     this.queue.push({ record, options, abort });
-    this.submittedAtMs.set(id, now);
+    this.jobTiming.set(id, { submittedAt: now });
     this.onEvent({
       event: 'render_job_submitted',
       jobId: id,
-      queued: this.queue.length,
+      // Exclude this job, so an idle service reports queued: 0 and "queued > 0"
+      // is a usable backlog signal.
+      queued: this.queue.length - 1,
       running: this.running,
     });
     this.pump();
@@ -263,15 +269,33 @@ export class RenderCoordinator {
    * the map cannot grow without bound across a long-lived process.
    */
   private finishEvent(id: string, outcome: RenderOutcome, errorCode?: string): void {
-    const submittedAt = this.submittedAtMs.get(id);
-    this.submittedAtMs.delete(id);
+    // Deleting the timing entry is also what makes this idempotent. A terminal
+    // job-store write can reject *after* an outcome is known, which lands in the
+    // caller's catch and would otherwise close the same job a second time with a
+    // contradictory outcome — one render counted as both a success and a
+    // failure, which is precisely the corruption these events exist to rule out.
+    const timing = this.jobTiming.get(id);
+    if (!timing) return;
+    this.jobTiming.delete(id);
+    const now = Date.now();
     this.onEvent({
       event: 'render_job_finished',
       jobId: id,
       outcome,
-      ...(submittedAt === undefined ? {} : { durationMs: Date.now() - submittedAt }),
+      durationMs: now - timing.submittedAt,
+      ...(timing.startedAt === undefined
+        ? {}
+        : {
+            queueWaitMs: timing.startedAt - timing.submittedAt,
+            renderMs: now - timing.startedAt,
+          }),
       ...(errorCode === undefined ? {} : { errorCode }),
     });
+  }
+
+  /** In-flight jobs whose timing is still tracked. Exposed for tests. */
+  get trackedJobs(): number {
+    return this.jobTiming.size;
   }
 
   private async finishNonSuccess(
@@ -307,10 +331,13 @@ export class RenderCoordinator {
         // Inside the slot: the wait measured here is exactly the time this job
         // spent queued behind other renders, which is the signal a busy
         // deployment needs and the one nothing else exposes.
+        const timing = this.jobTiming.get(id);
+        const startedAt = Date.now();
+        if (timing) timing.startedAt = startedAt;
         this.onEvent({
           event: 'render_job_started',
           jobId: id,
-          queueWaitMs: Date.now() - (this.submittedAtMs.get(id) ?? Date.now()),
+          queueWaitMs: startedAt - (timing?.submittedAt ?? startedAt),
           queued: this.queue.length,
           running: this.running,
         });
@@ -351,7 +378,6 @@ export class RenderCoordinator {
       }
 
       await this.artifacts.put(id, outputPath);
-      this.finishEvent(id, 'succeeded');
       await this.jobs.update(id, {
         status: 'succeeded',
         progress: 1,
@@ -360,6 +386,9 @@ export class RenderCoordinator {
         ...(result.performance ? { performance: result.performance } : {}),
         ...(result.metrics ? { metrics: result.metrics } : {}),
       });
+      // Emitted last: until the terminal write lands, "succeeded" is not yet
+      // true, and the catch below would drop the artifact this event describes.
+      this.finishEvent(id, 'succeeded');
     } catch (error) {
       await this.artifacts.remove(id).catch(() => {});
       if (abort.signal.aborted) {

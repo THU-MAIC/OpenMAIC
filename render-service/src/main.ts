@@ -40,7 +40,7 @@ import { InProcessExecutor } from './render-executor.js';
 import { InvalidProjectError, unzipProject as defaultUnzipProject } from './unzip.js';
 import { capBodyStream } from './capped-stream.js';
 import { Semaphore } from './semaphore.js';
-import { emitRenderEvent } from './events.js';
+import { emitRenderEvent, type RenderEventSink } from './events.js';
 import { PreviewGate, PreviewRejectedError } from './preview-gate.js';
 import {
   ChromiumPreviewRenderer,
@@ -92,6 +92,12 @@ export interface AppDeps {
   unzipProject?: (zip: Uint8Array, destDir: string) => Promise<void>;
   /** Create a fresh per-render scratch dir. Overridable in tests. */
   makeProjectDir?: () => Promise<string>;
+  /**
+   * Where route-level events go. The coordinator takes its own sink; pass the
+   * same one here so an embedder that injects a sink receives every event type
+   * rather than silently losing the two the routes emit.
+   */
+  onEvent?: RenderEventSink;
   /** Runtime identity reported by health and copied into per-render metrics. */
   runtimeVersions?: RuntimeVersions;
 }
@@ -234,6 +240,7 @@ export function createApp(deps: AppDeps): Hono {
   const previewRenderer = deps.previewRenderer ?? new ChromiumPreviewRenderer();
   const previewDeadlineMs = deps.previewDeadlineMs ?? config.previewDeadlineMs;
   const previewMaxJsonBytes = deps.previewMaxJsonBytes ?? config.previewMaxJsonBytes;
+  const onEvent = deps.onEvent ?? emitRenderEvent;
   const previewGate =
     deps.previewGate ?? new PreviewGate(config.previewMaxInFlight, config.previewMaxPerUser);
 
@@ -271,7 +278,7 @@ export function createApp(deps: AppDeps): Hono {
       reservation = coordinator.reserve(identity);
     } catch (error) {
       if (error instanceof RenderRejectedError) {
-        emitRenderEvent({
+        onEvent({
           event: 'render_admission_rejected',
           route: '/render',
           reason: error.reason ?? 'unspecified',
@@ -335,7 +342,7 @@ export function createApp(deps: AppDeps): Hono {
       if (error instanceof BadRequestError) return c.json({ error: error.message }, 400);
       if (error instanceof InvalidProjectError) return c.json({ error: error.message }, 400);
       if (error instanceof RenderRejectedError) {
-        emitRenderEvent({
+        onEvent({
           event: 'render_admission_rejected',
           route: '/render',
           reason: error.reason ?? 'unspecified',
@@ -353,7 +360,7 @@ export function createApp(deps: AppDeps): Hono {
   app.use('/preview', async (c, next) => {
     const startedAt = Date.now();
     await next();
-    emitRenderEvent({
+    onEvent({
       event: 'preview_request',
       route: '/preview',
       status: c.res.status,
@@ -373,7 +380,7 @@ export function createApp(deps: AppDeps): Hono {
       release = previewGate.acquire(identity);
     } catch (error) {
       if (error instanceof PreviewRejectedError) {
-        emitRenderEvent({
+        onEvent({
           event: 'render_admission_rejected',
           route: '/preview',
           reason: (error as Error & { reason?: string }).reason ?? 'unspecified',
@@ -442,7 +449,7 @@ export function createApp(deps: AppDeps): Hono {
         return c.json({ error: error.message }, 422);
       }
       if (error instanceof PreviewRejectedError) {
-        emitRenderEvent({
+        onEvent({
           event: 'render_admission_rejected',
           route: '/preview',
           reason: (error as Error & { reason?: string }).reason ?? 'unspecified',

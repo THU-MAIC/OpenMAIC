@@ -144,6 +144,87 @@ describe('render job lifecycle events', () => {
     });
   });
 
+  it('closes a job exactly once when the terminal job-store write rejects', async () => {
+    // The JobStore is a seam — a Redis-backed one can reject a write that a
+    // memory one never would. If the success event were emitted before that
+    // write, the rejection would land in the catch and close the same job a
+    // second time as 'failed', so one render would be counted as both a success
+    // and a failure and every rate built on this stream would be wrong.
+    const events: RenderEvent[] = [];
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore().store;
+    const realUpdate = jobs.update.bind(jobs);
+    jobs.update = async (id, patch) => {
+      if (patch.status === 'succeeded') throw new Error('job store unavailable');
+      return realUpdate(id, patch);
+    };
+    const coordinator = new RenderCoordinator(
+      executor(async () => ({ status: 'succeeded', outputPath: 'out.mp4' })),
+      jobs,
+      artifacts,
+      { onEvent: (event) => events.push(event) },
+    );
+
+    const id = await coordinator.submit(coordinator.reserve('tester'), await projectDir(), {
+      fps: 24,
+      quality: 'draft',
+      format: 'mp4',
+    });
+    await waitForJob(jobs, id, (job) => job.status === 'failed');
+
+    const finished = events.filter((event) => event.event === 'render_job_finished');
+    expect(finished).toHaveLength(1);
+    expect(finished[0]).toMatchObject({ jobId: id, outcome: 'failed' });
+    expect(coordinator.trackedJobs).toBe(0);
+  });
+
+  it('separates the queue wait from the render itself on the finished event', async () => {
+    const events: RenderEvent[] = [];
+    const { coordinator, jobs } = coordinatorWith(events, async () => ({
+      status: 'succeeded',
+      outputPath: 'out.mp4',
+    }));
+
+    const id = await coordinator.submit(coordinator.reserve('tester'), await projectDir(), {
+      fps: 24,
+      quality: 'draft',
+      format: 'mp4',
+    });
+    await waitForJob(jobs, id, (job) => job.status === 'succeeded');
+
+    const finished = events.find((event) => event.event === 'render_job_finished')!;
+    // durationMs is submission-to-finish and therefore includes the wait; the
+    // two components are reported so a consumer never has to join events to
+    // tell a slow render from a long queue.
+    expect(finished.durationMs).toBeGreaterThanOrEqual(
+      (finished.queueWaitMs ?? 0) + (finished.renderMs ?? 0) - 2,
+    );
+    expect(typeof finished.queueWaitMs).toBe('number');
+    expect(typeof finished.renderMs).toBe('number');
+  });
+
+  it('reports an idle service as having nothing queued behind the new job', async () => {
+    const events: RenderEvent[] = [];
+    const { coordinator, jobs } = coordinatorWith(events, async () => ({
+      status: 'succeeded',
+      outputPath: 'out.mp4',
+    }));
+
+    const id = await coordinator.submit(coordinator.reserve('tester'), await projectDir(), {
+      fps: 24,
+      quality: 'draft',
+      format: 'mp4',
+    });
+    await waitForJob(jobs, id, (job) => job.status === 'succeeded');
+
+    // Counting the submitting job itself would make `queued` never reach 0 and
+    // break the obvious "alert when queued > 0" rule.
+    expect(events.find((event) => event.event === 'render_job_submitted')).toMatchObject({
+      queued: 0,
+      running: 0,
+    });
+  });
+
   it('closes the lifecycle for a job cancelled before it ever started', async () => {
     // Cancelling a queued job takes a different path from cancelling a running
     // one. If it skipped the finished event, a submitted job would simply never
@@ -212,11 +293,11 @@ describe('render job lifecycle events', () => {
       await waitForJob(jobs, id, (job) => job.status === 'succeeded');
     }
 
-    // Three complete lifecycles, and every finished event still carried a
-    // duration — the submission timestamps were consumed, not leaked.
     const finished = events.filter((event) => event.event === 'render_job_finished');
     expect(finished).toHaveLength(3);
-    for (const event of finished) expect(typeof event.durationMs).toBe('number');
+    // Observe the tracked state directly. Asserting only on the events would be
+    // satisfied just as well by an implementation that never releases them.
+    expect(coordinator.trackedJobs).toBe(0);
   });
 });
 
@@ -260,18 +341,13 @@ describe('admission and preview route events', () => {
     });
   }
 
+  /**
+   * Collect through the injected sink, not the console: that is the seam an
+   * embedder uses, and asserting on it is what proves the route events honour
+   * it rather than writing straight to stdout.
+   */
   function captureEmitted(): RenderEvent[] {
-    const emitted: RenderEvent[] = [];
-    for (const stream of ['log', 'error'] as const) {
-      vi.spyOn(console, stream).mockImplementation((line: unknown) => {
-        try {
-          emitted.push(JSON.parse(String(line)) as RenderEvent);
-        } catch {
-          /* the startup banner is not JSON */
-        }
-      });
-    }
-    return emitted;
+    return [];
   }
 
   it('records the preview route status and duration for a served preview', async () => {
@@ -287,8 +363,8 @@ describe('admission and preview route events', () => {
         artifacts,
       ),
       extractionGate: new Semaphore(1),
-      executionGate: new Semaphore(1),
       previewRenderer: { render: async () => new Uint8Array([137, 80, 78, 71]) },
+      onEvent: (event) => emitted.push(event),
     });
 
     const response = await app.fetch(previewRequest());
@@ -312,8 +388,8 @@ describe('admission and preview route events', () => {
         artifacts,
       ),
       extractionGate: new Semaphore(1),
-      executionGate: new Semaphore(1),
       previewRenderer: { render: async () => new Uint8Array([1]) },
+      onEvent: (event) => emitted.push(event),
     });
 
     const response = await app.fetch(
@@ -345,7 +421,7 @@ describe('admission and preview route events', () => {
       artifacts,
       coordinator,
       extractionGate: new Semaphore(1),
-      executionGate: new Semaphore(1),
+      onEvent: (event) => emitted.push(event),
     });
 
     const held = coordinator.reserve('exporter');

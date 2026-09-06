@@ -36,11 +36,23 @@ export interface RenderEvent {
   outcome?: RenderOutcome;
   /** Time from submission to being granted an execution slot. */
   queueWaitMs?: number;
-  /** Time spent in the state the event closes. */
+  /**
+   * Wall time the event closes: submission to completion on
+   * `render_job_finished`, and request to response on `preview_request`. On a
+   * finished job this INCLUDES `queueWaitMs`; subtract it, or use `renderMs`,
+   * to get the cost of the render itself.
+   */
   durationMs?: number;
-  /** Jobs queued (not yet started) when the event fired. */
+  /** Time from being granted an execution slot to finishing. */
+  renderMs?: number;
+  /** Other jobs still queued when the event fired, excluding this one. */
   queued?: number;
-  /** Jobs executing when the event fired. */
+  /**
+   * Jobs dequeued and not yet finished. These are usually executing, but a job
+   * is counted from the moment it leaves the queue, and it may still be waiting
+   * on the execution permit it shares with `/preview` — so read this as
+   * "admitted to run", not "currently rendering".
+   */
   running?: number;
   /** Fixed vocabulary — never a raw error message. */
   errorCode?: string;
@@ -54,9 +66,33 @@ export interface RenderEvent {
 /** Receives an event. Injectable so tests can assert without touching stdout. */
 export type RenderEventSink = (event: RenderEvent) => void;
 
+/**
+ * The exact fields allowed on the wire. Serializing an explicit list rather
+ * than `Object.entries(event)` makes the redaction promise in the header
+ * structural: a future caller that spreads a job record or a failure object
+ * into an event cannot leak it, because anything not named here is dropped.
+ * Excess-property checking alone would not catch that — spread properties are
+ * exempt from it.
+ */
+const SERIALIZED_FIELDS = [
+  'event',
+  'jobId',
+  'outcome',
+  'queueWaitMs',
+  'durationMs',
+  'renderMs',
+  'queued',
+  'running',
+  'errorCode',
+  'reason',
+  'route',
+  'status',
+] as const satisfies readonly (keyof RenderEvent)[];
+
 function nonEmpty(event: RenderEvent): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(event)) {
+  for (const key of SERIALIZED_FIELDS) {
+    const value = event[key];
     if (value !== undefined && value !== null) out[key] = value;
   }
   return out;
