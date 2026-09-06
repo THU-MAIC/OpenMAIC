@@ -34,11 +34,12 @@ import {
 import {
   MediaReferenceWriteBackError,
   persistGeneratedMediaReference,
+  placePendingMediaAllocations,
   type MediaReferenceWriteBackResult,
 } from '@/lib/media/persist-media-reference';
 import {
   pendingMediaAllocation,
-  recordPendingMediaAllocation,
+  type PendingMediaAllocation,
 } from '@/lib/media/pending-media-allocations';
 import { fetchProxiedMediaUrl } from '@/lib/media/proxy-media-cache';
 import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
@@ -75,6 +76,11 @@ export async function generateMediaForOutlines(
 ): Promise<void> {
   const settings = useSettingsStore.getState();
   const store = useMediaGenerationStore.getState();
+  // Before deciding anything: hand every parked allocation to the slide that
+  // now wants it. A held allocation whose scene has since arrived must become a
+  // rewrite, not an answer to the skip test — otherwise the placeholder it was
+  // waiting to replace would be treated as handled and never replaced.
+  if (isServerBackedMediaPersistence()) placePendingMediaAllocations(stageId);
   // Under server-backed persistence the document, not this browser's task
   // table, decides what still needs generating: the table is per-browser, so
   // reading it is exactly how every new browser re-ran (and re-billed) an
@@ -95,10 +101,16 @@ export async function generateMediaForOutlines(
         // policy, generation disabled) is still honoured: it is a refusal to
         // call the provider again, never a claim that media exists.
         if (isGeneratedMediaSatisfied(documentIndex, outline.order, mg.elementId)) continue;
-        // Stored, waiting for its slide to exist. Asking the provider again
-        // would pay twice for bytes this session already holds.
+        // Stored, waiting for its slide to exist. The drain above already gave
+        // away every allocation whose slide has arrived, so what is left here
+        // genuinely has nowhere to go yet; asking the provider again would pay
+        // twice for bytes this session already holds.
         if (pendingMediaAllocation(stageId, mg.elementId)) continue;
-        if (existing?.status === 'failed') continue;
+        // An overlapping pass — an outline retry re-enters generation with
+        // every outline while this one is still working — must not re-request
+        // an element whose provider call is already in flight. A task that is
+        // pending or generating is an answered request, not an unanswered one.
+        if (existing && existing.status !== 'done') continue;
       } else {
         // Skip already completed or permanently failed (restored from DB)
         if (existing?.status === 'done' || existing?.status === 'failed') continue;
@@ -229,22 +241,33 @@ async function commitPooledMedia(args: {
     }
   }
 
+  // Minted before the write-back, not after it, so the allocation the funnel
+  // may park in the same turn as its decision is complete: an entry drained a
+  // microtask later must carry the bytes this tab can already render.
+  const objectUrl = URL.createObjectURL(blob);
+  const posterObjectUrl = posterBlob ? URL.createObjectURL(posterBlob) : undefined;
+  const allocation: PendingMediaAllocation = {
+    stageId,
+    placeholderRef: req.elementId,
+    assetId,
+    posterAssetId,
+    objectUrl,
+    posterObjectUrl,
+  };
+
   let outcome: MediaReferenceWriteBackResult;
   try {
-    outcome = await persistGeneratedMediaReference(stageId, {
-      placeholderRef: req.elementId,
-      assetId,
-      ...(posterAssetId ? { posterAssetId } : {}),
-    });
+    outcome = await persistGeneratedMediaReference(allocation);
   } catch (error) {
-    // Nothing reached the document: the ids this commit allocated are named by
-    // nobody and would otherwise sit in the registry forever, where the byte
-    // collector cannot see them. A partial write is left alone — the document
-    // already names them.
-    if (!(error instanceof MediaReferenceWriteBackError) || !error.documentWritten) {
-      await removeAsset(assetId).catch(() => undefined);
-      if (posterAssetId) await removeAsset(posterAssetId).catch(() => undefined);
-    }
+    // The funnel places or parks the allocation whenever the ids could be
+    // referenced, and says so. Reclaiming is for the one case where nothing can
+    // possibly hold them — otherwise a lost response would take an asset the
+    // persisted document already names.
+    if (error instanceof MediaReferenceWriteBackError && error.allocationRetained) throw error;
+    URL.revokeObjectURL(objectUrl);
+    if (posterObjectUrl) URL.revokeObjectURL(posterObjectUrl);
+    await removeAsset(assetId).catch(() => undefined);
+    if (posterAssetId) await removeAsset(posterAssetId).catch(() => undefined);
     throw error;
   }
 
@@ -268,23 +291,12 @@ async function commitPooledMedia(args: {
       log.warn(`Local media cache write failed for ${assetId}:`, error);
     });
 
-  const objectUrl = URL.createObjectURL(blob);
-  const posterObjectUrl = posterBlob ? URL.createObjectURL(posterBlob) : undefined;
-
-  if (outcome === 'unmatched') {
+  if (outcome === 'held') {
     // The slide this media belongs to has not been built yet, which during a
-    // first pass is the ordinary case rather than an edge one. The allocation
-    // is held under the placeholder and applied when that scene is committed;
-    // until then the task stays keyed by the placeholder so the request is
-    // recognisably answered and the provider is not asked a second time.
-    recordPendingMediaAllocation({
-      stageId,
-      placeholderRef: req.elementId,
-      assetId,
-      posterAssetId,
-      objectUrl,
-      posterObjectUrl,
-    });
+    // first pass is the ordinary case rather than an edge one. The funnel holds
+    // the allocation; the task stays keyed by the placeholder the document
+    // still carries, so the request reads as answered and the provider is not
+    // asked a second time.
     useMediaGenerationStore.getState().markDone(req.elementId, objectUrl, posterObjectUrl);
     return;
   }

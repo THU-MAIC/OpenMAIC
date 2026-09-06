@@ -93,6 +93,7 @@ import {
   resolveLegacySpeechAudioId,
   resolveSpeechAudioId,
 } from '@/lib/audio/regenerate-speech-tts';
+import { useMayGenerateForStage } from '@/lib/classroom/generation-permission';
 
 const EMPTY: Action[] = [];
 const EMPTY_ELEMENTS: { id?: string; type: string; content?: string }[] = [];
@@ -1046,9 +1047,15 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     )?.canvas?.elements ?? EMPTY_ELEMENTS;
   const language = useStageStore((s) => s.stage?.languageDirective);
   // Managed TTS on → speech clips show audio status + preview / regenerate.
-  const ttsActive = useSettingsStore(
+  // Regenerating narration calls the provider and allocates a fresh pool asset,
+  // so it answers to the same permission every other generation affordance
+  // does: a viewer of a shared course is offered neither the per-line control
+  // nor the whole-timeline one, and `regenerateSpeechAudio` refuses in any case.
+  const managedTts = useSettingsStore(
     (s) => s.ttsEnabled && s.ttsProviderId !== 'browser-native-tts',
   );
+  const mayGenerate = useMayGenerateForStage(useStageStore((s) => s.stage?.id));
+  const ttsActive = managedTts && mayGenerate;
 
   // Agents a discussion can be initiated by — sourced from the user's currently
   // SELECTED agents, the exact set the playback engine gates on: it skips (and

@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   mediaDelete: vi.fn(),
   putAsset: vi.fn(),
   removeAsset: vi.fn(),
-  persistReference: vi.fn(),
+  mutateDocument: vi.fn(),
   serverBacked: vi.fn(),
   saveStageDataIncremental: vi.fn(),
   saveStageData: vi.fn(),
@@ -37,12 +37,12 @@ vi.mock('@/lib/media/asset-pool', () => ({
   removeAsset: mocks.removeAsset,
 }));
 
-vi.mock('@/lib/media/persist-media-reference', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/media/persist-media-reference')>(
-    '@/lib/media/persist-media-reference',
-  );
-  return { ...actual, persistGeneratedMediaReference: mocks.persistReference };
-});
+// The write-back funnel itself is REAL here: its own decision is what parks the
+// allocation, and the ordering between that decision and a scene arriving is
+// exactly what these tests exist to pin. Only the document store is doubled.
+vi.mock('@/lib/document-store', () => ({
+  mutateDocument: mocks.mutateDocument,
+}));
 
 vi.mock('@/lib/persistence/media-persistence', () => ({
   isServerBackedMediaPersistence: mocks.serverBacked,
@@ -108,8 +108,14 @@ describe('media that finishes before its scene exists', () => {
     mocks.mediaDelete.mockReset().mockResolvedValue(undefined);
     mocks.putAsset.mockReset().mockResolvedValue('ast_first');
     mocks.removeAsset.mockReset().mockResolvedValue(undefined);
-    // The scene does not exist yet, so the funnel finds nothing to rewrite.
-    mocks.persistReference.mockReset().mockResolvedValue('unmatched');
+    // No document yet: the funnel finds nothing to rewrite, exactly as it does
+    // while the first pass is still building the deck.
+    mocks.mutateDocument
+      .mockReset()
+      .mockImplementation(
+        async (_stageId: string, work: (doc: null, store: unknown) => Promise<void>) =>
+          work(null, { putScene: vi.fn(), putStage: vi.fn() }),
+      );
     mocks.serverBacked.mockReset().mockReturnValue(true);
     mocks.saveStageDataIncremental.mockReset().mockResolvedValue({ failedChanges: [] });
     mocks.saveStageData.mockReset().mockResolvedValue(undefined);
@@ -191,6 +197,42 @@ describe('media that finishes before its scene exists', () => {
     expect(tasks.ast_first).toMatchObject({ status: 'done', placeholderRef: imageRef });
   });
 
+  // The reported interleaving: the scene is committed while the commit is still
+  // inside its awaited cache write, so its own reconciliation ran against a
+  // registry that did not hold the entry yet.
+  it('reconciles a scene that arrives during the commit itself', async () => {
+    mocks.mediaPut.mockImplementation(async () => {
+      useStageStore.getState().addScene(sceneWithImage(imageRef));
+    });
+
+    await generateMediaForOutlines([outline()], stageId);
+
+    expect(providerCalls()).toBe(1);
+    expect(imageSrcOf(useStageStore.getState().scenes[0])).toBe('ast_first');
+    // Nothing is left parked for a scene that will never be added again.
+    await generateMediaForOutlines([outline()], stageId);
+    expect(providerCalls()).toBe(1);
+  });
+
+  // The other half of the same race: the scene lands while the document round
+  // trip is in flight, so its own reconciliation runs before the allocation
+  // exists. The funnel's live check, which runs after the round trip, is what
+  // catches it — the allocation is placed rather than parked.
+  it('places the allocation on a scene that arrived while the round trip was in flight', async () => {
+    mocks.mutateDocument.mockImplementation(
+      async (_stageId: string, work: (doc: null, store: unknown) => Promise<void>) => {
+        useStageStore.getState().addScene(sceneWithImage(imageRef));
+        await work(null, { putScene: vi.fn(), putStage: vi.fn() });
+      },
+    );
+
+    await generateMediaForOutlines([outline()], stageId);
+
+    expect(imageSrcOf(useStageStore.getState().scenes[0])).toBe('ast_first');
+    await generateMediaForOutlines([outline()], stageId);
+    expect(providerCalls()).toBe(1);
+  });
+
   it('leaves the allocation alone for a scene that does not carry its placeholder', async () => {
     await generateMediaForOutlines([outline()], stageId);
 
@@ -201,6 +243,46 @@ describe('media that finishes before its scene exists', () => {
     expect(imageSrcOf(useStageStore.getState().scenes[0])).toBe('gen_img_other');
     // Still held, so the slide it belongs to can still claim it.
     await generateMediaForOutlines([outline()], stageId);
+    expect(providerCalls()).toBe(1);
+  });
+
+  // An ambiguous write failure parks the allocation for a scene that already
+  // exists, so no `addScene` will ever drain it. The next pass's entry drain is
+  // what places it — and the provider is not asked again on the way.
+  it('places an allocation parked by a failed write-back on the next pass', async () => {
+    // The document holds the slide, so a write IS issued; its response is lost.
+    // A rejection proves nothing about what the server applied, so the id must
+    // survive.
+    mocks.mutateDocument.mockImplementation(
+      async (
+        _stageId: string,
+        work: (doc: unknown, store: unknown) => Promise<void>,
+      ): Promise<void> =>
+        work(
+          { stage: { id: stageId, whiteboard: [] }, scenes: [sceneWithImage(imageRef)] },
+          {
+            putScene: vi.fn().mockRejectedValue(new Error('socket hang up')),
+            putStage: vi.fn(),
+          },
+        ),
+    );
+    useStageStore.setState({ scenes: [] });
+
+    await generateMediaForOutlines([outline()], stageId);
+    expect(providerCalls()).toBe(1);
+    // Nothing was reclaimed: the write may well have landed.
+    expect(mocks.removeAsset).not.toHaveBeenCalled();
+
+    // The slide exists by the time the next pass runs.
+    useStageStore.setState({ scenes: [sceneWithImage(imageRef)] });
+    mocks.mutateDocument.mockImplementation(
+      async (_stageId: string, work: (doc: null, store: unknown) => Promise<void>) =>
+        work(null, { putScene: vi.fn(), putStage: vi.fn() }),
+    );
+
+    await generateMediaForOutlines([outline()], stageId);
+
+    expect(imageSrcOf(useStageStore.getState().scenes[0])).toBe('ast_first');
     expect(providerCalls()).toBe(1);
   });
 

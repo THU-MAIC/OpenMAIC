@@ -86,7 +86,39 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     );
     const fetchIndex = source.indexOf('void fetchStageMeta(');
     expect(fetchIndex).toBeGreaterThan(0);
-    const guardIndex = source.lastIndexOf('if (isServerBackedMediaPersistence()) {', fetchIndex);
+    const guardIndex = source.lastIndexOf('!isServerBackedMediaPersistence()) return;', fetchIndex);
     expect(guardIndex).toBeGreaterThan(0);
+  });
+
+  // A pane opened during the stage-link/document availability gap gets a 404
+  // for a course that is moments from existing. Asking once would leave the
+  // real owner locked out until the pane remounted.
+  it('re-asks the sidecar once the pane document becomes available', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'components/classroom/ClassroomSurface.tsx'),
+      'utf8',
+    );
+    expect(source).toContain('const refreshOwnership = () => {');
+    expect(source).toMatch(/if \(availabilityAttempt > 0\) refreshOwnership\(\);/);
+  });
+
+  it('clears parked media allocations when a course is (re)opened', () => {
+    for (const path of [
+      'app/classroom/[id]/page.tsx',
+      'components/classroom/ClassroomSurface.tsx',
+    ]) {
+      const source = readFileSync(join(process.cwd(), path), 'utf8');
+      expect(source).toContain('clearPendingMediaAllocations(classroomId)');
+    }
+  });
+
+  it('withholds narration regeneration from a viewer', () => {
+    const bar = readFileSync(
+      join(process.cwd(), 'components/edit/ActionsBar/ActionsBar.tsx'),
+      'utf8',
+    );
+    expect(bar).toContain('const ttsActive = managedTts && mayGenerate;');
+    const tts = readFileSync(join(process.cwd(), 'lib/audio/regenerate-speech-tts.ts'), 'utf8');
+    expect(tts).toContain('if (!mayGenerateForStage(stageId)) return null;');
   });
 });

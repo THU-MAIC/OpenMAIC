@@ -32,6 +32,7 @@ import type { ChatStorageOptions } from './chat-storage';
 import type { AppDocument } from '@/lib/document-store';
 import { BrowserKVStore } from '@openmaic/storage';
 import { clearAssetPool } from '@/lib/media/asset-pool';
+import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
 
 const log = createLogger('Database');
 
@@ -603,6 +604,7 @@ export async function clearDatabase(runtimeStore?: RuntimeStore): Promise<void> 
     await deleteAllDocuments();
     await clearDocumentStoreKeys();
     await db.delete();
+    clearPendingMediaAllocations();
     await clearAssetPool();
   });
   log.info('Database cleared');

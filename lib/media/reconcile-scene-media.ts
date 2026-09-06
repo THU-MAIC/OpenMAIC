@@ -19,16 +19,39 @@ import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import type { Scene } from '@/lib/types/stage';
 
 import { rewriteSceneMediaReference, sceneMediaPlaceholders } from './generated-media-references';
-import { takePendingMediaAllocations } from './pending-media-allocations';
+import { pendingMediaAllocation, takePendingMediaAllocations } from './pending-media-allocations';
+
+/** Whether any placeholder this scene carries has bytes waiting for it. */
+export function sceneHasPendingMediaAllocation(scene: Scene): boolean {
+  const stageId = scene.stageId;
+  if (!stageId) return false;
+  for (const ref of sceneMediaPlaceholders(scene)) {
+    if (pendingMediaAllocation(stageId, ref)) return true;
+  }
+  return false;
+}
 
 export function reconcileSceneMediaAllocations(scene: Scene): void {
   if (!isServerBackedMediaPersistence()) return;
+  applyPendingMediaAllocationsToScene(scene);
+}
+
+/**
+ * Drain every allocation this scene's placeholders claim, rewriting the scene
+ * in place. Returns whether anything changed.
+ *
+ * Unguarded by the persistence mode on purpose: callers that already know they
+ * are server-backed (the write-back funnel) must not pay for the check twice,
+ * and the registry is empty in browser-only mode anyway.
+ */
+export function applyPendingMediaAllocationsToScene(scene: Scene): boolean {
   const stageId = scene.stageId;
-  if (!stageId) return;
+  if (!stageId) return false;
 
   const placeholders = sceneMediaPlaceholders(scene);
-  if (placeholders.size === 0) return;
+  if (placeholders.size === 0) return false;
 
+  let changed = false;
   for (const allocation of takePendingMediaAllocations(stageId, placeholders)) {
     const rewrite = {
       placeholderRef: allocation.placeholderRef,
@@ -36,6 +59,7 @@ export function reconcileSceneMediaAllocations(scene: Scene): void {
       ...(allocation.posterAssetId ? { posterAssetId: allocation.posterAssetId } : {}),
     };
     if (!rewriteSceneMediaReference(scene, rewrite)) continue;
+    changed = true;
     // The task was held under the placeholder while the allocation waited.
     // Re-key it now that the document names the allocated id, so the renderer
     // resolves the same way it does for media whose slot already existed.
@@ -49,4 +73,5 @@ export function reconcileSceneMediaAllocations(scene: Scene): void {
         allocation.posterAssetId,
       );
   }
+  return changed;
 }

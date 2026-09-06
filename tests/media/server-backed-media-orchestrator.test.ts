@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
   serverBacked: vi.fn(),
   stageState: vi.fn(),
   pendingAllocation: vi.fn(),
-  recordPendingAllocation: vi.fn(),
+  placeAllocations: vi.fn(),
 }));
 
 vi.mock('@/lib/store/settings', () => ({
@@ -49,12 +49,15 @@ vi.mock('@/lib/media/persist-media-reference', async () => {
   const actual = await vi.importActual<typeof import('@/lib/media/persist-media-reference')>(
     '@/lib/media/persist-media-reference',
   );
-  return { ...actual, persistGeneratedMediaReference: mocks.persistReference };
+  return {
+    ...actual,
+    persistGeneratedMediaReference: mocks.persistReference,
+    placePendingMediaAllocations: mocks.placeAllocations,
+  };
 });
 
 vi.mock('@/lib/media/pending-media-allocations', () => ({
   pendingMediaAllocation: mocks.pendingAllocation,
-  recordPendingMediaAllocation: mocks.recordPendingAllocation,
 }));
 
 vi.mock('@/lib/persistence/media-persistence', () => ({
@@ -126,7 +129,7 @@ describe('server-backed classic media orchestrator', () => {
     mocks.removeAsset.mockReset().mockResolvedValue(undefined);
     mocks.persistReference.mockReset().mockResolvedValue('written');
     mocks.pendingAllocation.mockReset().mockReturnValue(undefined);
-    mocks.recordPendingAllocation.mockReset();
+    mocks.placeAllocations.mockReset().mockReturnValue(false);
     mocks.serverBacked.mockReset().mockReturnValue(true);
     mocks.stageState.mockReset().mockReturnValue({
       stage: { id: stageId },
@@ -218,10 +221,9 @@ describe('server-backed classic media orchestrator', () => {
     await expect(storedBlob.text()).resolves.toBe('server-image');
     expect(storedMeta).toEqual({ contentType: 'image/png' });
 
-    expect(mocks.persistReference).toHaveBeenCalledWith(stageId, {
-      placeholderRef: imageRef,
-      assetId: 'ast_generated',
-    });
+    expect(mocks.persistReference).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId, placeholderRef: imageRef, assetId: 'ast_generated' }),
+    );
 
     // The document holds the allocated id, so the task is re-keyed to it while
     // keeping the placeholder as the address the document used to carry.
@@ -347,7 +349,7 @@ describe('server-backed classic media orchestrator', () => {
     expect(providerCallCount()).toBe(1);
   });
 
-  it('reclaims the allocation when nothing of the write-back reached the document', async () => {
+  it('reclaims the allocation only when the funnel says nothing can hold it', async () => {
     serveImage();
     mocks.persistReference.mockRejectedValue(
       new MediaReferenceWriteBackError(new Error('document write rejected'), false),
@@ -360,7 +362,7 @@ describe('server-backed classic media orchestrator', () => {
     expect(mocks.removeAsset).toHaveBeenCalledWith('ast_generated');
   });
 
-  it('keeps an allocation a partial write-back already put into the document', async () => {
+  it('keeps an allocation the funnel says it retained', async () => {
     serveImage();
     mocks.persistReference.mockRejectedValue(
       new MediaReferenceWriteBackError(new Error('stage write rejected'), true),
@@ -371,18 +373,44 @@ describe('server-backed classic media orchestrator', () => {
     expect(mocks.removeAsset).not.toHaveBeenCalled();
   });
 
-  it('holds the allocation when no slot for it exists yet', async () => {
+  it('leaves a held allocation keyed by the placeholder the document still carries', async () => {
     serveImage();
-    mocks.persistReference.mockResolvedValue('unmatched');
+    mocks.persistReference.mockResolvedValue('held');
 
     await runImageGeneration();
 
-    expect(mocks.recordPendingAllocation).toHaveBeenCalledWith(
-      expect.objectContaining({ stageId, placeholderRef: imageRef, assetId: 'ast_generated' }),
-    );
-    // The task stays under the placeholder: the document still holds it, so
-    // re-keying would hide the request from the very lookup that answers it.
+    // Re-keying would hide the request from the very lookup that answers it.
     expect(Object.keys(useMediaGenerationStore.getState().tasks)).toEqual([imageRef]);
+    expect(useMediaGenerationStore.getState().tasks[imageRef]?.status).toBe('done');
+  });
+
+  it('hands parked allocations to their slides before deciding what to generate', async () => {
+    serveImage();
+
+    await runImageGeneration();
+
+    expect(mocks.placeAllocations).toHaveBeenCalledWith(stageId);
+  });
+
+  it('does not re-request an element whose provider call is already in flight', async () => {
+    serveImage();
+    useMediaGenerationStore.setState({
+      tasks: {
+        [imageRef]: {
+          elementId: imageRef,
+          type: 'image',
+          status: 'generating',
+          prompt: 'A diagram',
+          params: {},
+          retryCount: 0,
+          stageId,
+        },
+      },
+    });
+
+    await runImageGeneration();
+
+    expect(providerCallCount()).toBe(0);
   });
 
   it('does not call the provider again for a placeholder whose bytes are already held', async () => {
@@ -419,10 +447,9 @@ describe('server-backed classic media orchestrator', () => {
 
     // The most expensive call in the system must not be thrown away by a
     // decorative poster.
-    expect(mocks.persistReference).toHaveBeenCalledWith(stageId, {
-      placeholderRef: videoRef,
-      assetId: 'ast_video',
-    });
+    expect(mocks.persistReference).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId, placeholderRef: videoRef, assetId: 'ast_video' }),
+    );
     expect(useMediaGenerationStore.getState().tasks.ast_video?.status).toBe('done');
     expect(mocks.removeAsset).not.toHaveBeenCalled();
   });

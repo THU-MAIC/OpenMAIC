@@ -12,6 +12,7 @@ import { useStageStore } from '@/lib/store/stage';
 import { proveExclusiveAssetOwnership } from '@/lib/media/collect-stage-asset-refs';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 import { assetRefExists } from '@/lib/media/use-asset-url';
+import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 
 /** Legacy deterministic Dexie key used before pool allocation. */
 export function speechAudioId(sceneOrder: number, actionId: string): string {
@@ -122,6 +123,10 @@ export async function regenerateSpeechAudio(
   if (!text || !action.id) return null;
   const requestId = `tts_request_s${sceneOrder}_${action.id}`;
   const stageId = useStageStore.getState().stage?.id;
+  // Regenerating narration calls the TTS provider and allocates a fresh pool
+  // asset, so it is gated exactly like every other way generation starts. The
+  // surfaces withhold the control too; refusing here keeps the two one rule.
+  if (!mayGenerateForStage(stageId)) return null;
   const existingAudioId = await exclusivelyOwnedAudioId(action.audioId, stageId);
   return generateAndStoreTTS(
     requestId,

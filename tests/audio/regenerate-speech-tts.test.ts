@@ -14,6 +14,11 @@ const mocks = vi.hoisted(() => ({
   accessDocument: vi.fn(),
   assetRefExists: vi.fn(),
   proveExclusiveAssetOwnership: vi.fn(),
+  mayGenerate: vi.fn(),
+}));
+
+vi.mock('@/lib/classroom/generation-permission', () => ({
+  mayGenerateForStage: mocks.mayGenerate,
 }));
 
 vi.mock('@/lib/media/use-asset-url', () => ({ assetRefExists: mocks.assetRefExists }));
@@ -57,6 +62,7 @@ import {
 
 describe('allocated speech audio identities', () => {
   beforeEach(() => {
+    mocks.mayGenerate.mockReset().mockReturnValue(true);
     mocks.audioGet.mockReset();
     mocks.generateAndStoreTTS.mockReset();
     mocks.poolRemove.mockReset().mockResolvedValue(undefined);
@@ -96,6 +102,19 @@ describe('allocated speech audio identities', () => {
       resolveLegacySpeechAudioId(3, { id: 'speech-1', audioInvalidated: true }),
     ).resolves.toBeUndefined();
     expect(mocks.audioGet).not.toHaveBeenCalled();
+  });
+
+  // Regenerating narration calls the TTS provider and allocates a fresh pool
+  // asset, so it is one of the ways generation starts and answers to the same
+  // permission. The surfaces withhold the control; this is the precondition.
+  it('refuses regeneration for a viewer who may not start generation', async () => {
+    mocks.stageState = { stage: { id: 'stage-1' }, scenes: [] };
+    mocks.mayGenerate.mockReturnValue(false);
+
+    await expect(
+      regenerateSpeechAudio(3, { id: 'speech-1', text: 'New narration' }, 'English'),
+    ).resolves.toBeNull();
+    expect(mocks.generateAndStoreTTS).not.toHaveBeenCalled();
   });
 
   it('returns the freshly allocated id from regeneration', async () => {

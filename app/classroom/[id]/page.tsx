@@ -10,6 +10,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
+import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { createLogger } from '@/lib/logger';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
@@ -149,6 +150,10 @@ export default function ClassroomDetailPage() {
     const mediaStore = useMediaGenerationStore.getState();
     mediaStore.revokeObjectUrls();
     useMediaGenerationStore.setState({ tasks: {} });
+    // Allocations parked by an interrupted run on THIS id must go with them.
+    // Classic placeholders are reused across runs of the same course, so a
+    // survivor would be handed to a different slide of the next deck.
+    clearPendingMediaAllocations(classroomId);
 
     // Clear whiteboard history to prevent snapshots from a previous course leaking in.
     useWhiteboardHistoryStore.getState().clearHistory();

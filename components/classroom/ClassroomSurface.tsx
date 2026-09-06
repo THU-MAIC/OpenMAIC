@@ -35,6 +35,7 @@ import { loadImageMapping } from '@/lib/utils/image-storage';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
+import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { createLogger } from '@/lib/logger';
@@ -193,6 +194,10 @@ export function ClassroomSurface({
     const mediaStore = useMediaGenerationStore.getState();
     mediaStore.revokeObjectUrls();
     useMediaGenerationStore.setState({ tasks: {} });
+    // Allocations parked by an interrupted run on THIS id must go with them.
+    // Classic placeholders are reused across runs of the same course, so a
+    // survivor would be handed to a different slide of the next deck.
+    clearPendingMediaAllocations(classroomId);
 
     // Clear whiteboard history to prevent snapshots from a previous course leaking in.
     useWhiteboardHistoryStore.getState().clearHistory();
@@ -207,12 +212,19 @@ export function ClassroomSurface({
     let availabilityAttempt = 0;
 
     // The sidecar carries the per-viewer ownership fact the document seam does
-    // not. Asked once per course, in parallel with the load and without
-    // blocking it: it feeds only the generation gate here, so the pane's
-    // read-only and edit behaviour is untouched by its answer. Skipped
-    // entirely in browser-only mode, where the gate is inert and the request
-    // would be new observable behaviour on a path this change must not touch.
-    if (isServerBackedMediaPersistence()) {
+    // not. It feeds only the generation gate here, so the pane's read-only and
+    // edit behaviour is untouched by its answer, and it is skipped entirely in
+    // browser-only mode, where the gate is inert and the request would be new
+    // observable behaviour on a path this change must not touch.
+    //
+    // Asked again whenever the document becomes available. A pane opened during
+    // the stage-link/document availability gap gets a 404 for a course that is
+    // moments from existing; recording that once and never asking again would
+    // leave the real owner locked out of generation and of every retry control
+    // until the pane remounted. The gate stays closed until an answer arrives,
+    // so re-asking can only ever open it for someone entitled to it.
+    const refreshOwnership = () => {
+      if (cancelled || !isServerBackedMediaPersistence()) return;
       void fetchStageMeta(classroomId)
         .then((result) => {
           if (cancelled) return;
@@ -222,7 +234,9 @@ export function ClassroomSurface({
         // throwing, so this only catches the unexpected. Ownership stays
         // unresolved, which is the fail-closed answer.
         .catch(() => undefined);
-    }
+    };
+    refreshOwnership();
+
     const loadUntilAvailable = async () => {
       if (cancelled) return;
       // A previous pane attempt may have observed a transient read failure.
@@ -230,7 +244,13 @@ export function ClassroomSurface({
       // again, so an already mounted classroom never flashes away.
       if (variant === 'pane') setError(null);
       const outcome = await loadClassroom(() => !cancelled);
-      if (cancelled || variant !== 'pane' || outcome !== 'unavailable') return;
+      if (cancelled) return;
+      if (variant !== 'pane' || outcome !== 'unavailable') {
+        // The document answered. If the first probe raced the availability gap,
+        // this is the point at which the sidecar has something to say.
+        if (availabilityAttempt > 0) refreshOwnership();
+        return;
+      }
 
       const delay = paneAvailabilityRetryDelay(availabilityAttempt);
       availabilityAttempt += 1;

@@ -80,7 +80,8 @@ describe('generated media reference write-back', () => {
     const store = documentUnderMutation(document);
 
     await expect(
-      persistGeneratedMediaReference(stageId, {
+      persistGeneratedMediaReference({
+        stageId,
         placeholderRef: 'gen_img_1',
         assetId: 'ast_new',
       }),
@@ -120,7 +121,8 @@ describe('generated media reference write-back', () => {
     const store = documentUnderMutation(document);
 
     await expect(
-      persistGeneratedMediaReference(stageId, {
+      persistGeneratedMediaReference({
+        stageId,
         placeholderRef: 'gen_img_wb',
         assetId: 'ast_wb',
       }),
@@ -139,12 +141,12 @@ describe('generated media reference write-back', () => {
     store.putScene.mockRejectedValue(new Error('document write rejected'));
 
     await expect(
-      persistGeneratedMediaReference(stageId, { placeholderRef: 'gen_img_1', assetId: 'ast_new' }),
+      persistGeneratedMediaReference({ stageId, placeholderRef: 'gen_img_1', assetId: 'ast_new' }),
     ).rejects.toThrow('document write rejected');
     expect(mocks.stageSetState).not.toHaveBeenCalled();
   });
 
-  it('reports whether any part of a failed write-back reached the document', async () => {
+  it('retains the allocation whenever a store write was issued at all', async () => {
     const document = {
       stage: { id: stageId, whiteboard: [] },
       scenes: [sceneWithImage(1, 'gen_img_1'), sceneWithImage(2, 'gen_img_1')],
@@ -155,7 +157,8 @@ describe('generated media reference write-back', () => {
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error('second scene rejected'));
 
-    const failure = await persistGeneratedMediaReference(stageId, {
+    const failure = await persistGeneratedMediaReference({
+      stageId,
       placeholderRef: 'gen_img_1',
       assetId: 'ast_new',
     }).catch((error: unknown) => error);
@@ -163,7 +166,62 @@ describe('generated media reference write-back', () => {
     expect(failure).toBeInstanceOf(MediaReferenceWriteBackError);
     // One scene already names the id, so reclaiming its bytes would leave the
     // document pointing at nothing.
-    expect((failure as MediaReferenceWriteBackError).documentWritten).toBe(true);
+    expect((failure as MediaReferenceWriteBackError).allocationRetained).toBe(true);
+  });
+
+  it('retains the allocation when a lone write is rejected, because a rejection proves nothing', async () => {
+    const store = documentUnderMutation({
+      stage: { id: stageId, whiteboard: [] },
+      scenes: [sceneWithImage(1, 'gen_img_1')],
+    });
+    // A request whose response was lost rejects here while the server applied
+    // it. Deleting the asset would break the scene that now names it.
+    store.putScene.mockRejectedValue(new Error('socket hang up'));
+
+    const failure = await persistGeneratedMediaReference({
+      stageId,
+      placeholderRef: 'gen_img_1',
+      assetId: 'ast_new',
+    }).catch((error: unknown) => error);
+
+    expect((failure as MediaReferenceWriteBackError).allocationRetained).toBe(true);
+  });
+
+  it('permits reclamation only when no store write was ever issued', async () => {
+    mocks.mutateDocument.mockRejectedValue(new Error('document lock unavailable'));
+
+    const failure = await persistGeneratedMediaReference({
+      stageId,
+      placeholderRef: 'gen_img_1',
+      assetId: 'ast_new',
+    }).catch((error: unknown) => error);
+
+    expect((failure as MediaReferenceWriteBackError).allocationRetained).toBe(false);
+  });
+
+  it('brings the live store up to the half the document received before rethrowing', async () => {
+    const store = documentUnderMutation({
+      stage: { id: stageId, whiteboard: [] },
+      scenes: [sceneWithImage(1, 'gen_img_1')],
+    });
+    store.putScene.mockRejectedValue(new Error('stage write rejected'));
+    const liveScene = sceneWithImage(1, 'gen_img_1');
+    mocks.stageState.mockReturnValue({ stage: { id: stageId }, scenes: [liveScene] });
+
+    await expect(
+      persistGeneratedMediaReference({
+        stageId,
+        placeholderRef: 'gen_img_1',
+        assetId: 'ast_new',
+      }),
+    ).rejects.toThrow('stage write rejected');
+
+    // Otherwise the next ordinary flush would write the placeholder over the
+    // half the document did accept, and the id was deliberately not reclaimed.
+    expect(mocks.stageSetState).toHaveBeenCalledTimes(1);
+    const next = mocks.stageSetState.mock.calls[0]![0] as { scenes: Scene[] };
+    expect(imageSrcOf(next.scenes[0])).toBe('ast_new');
+    expect(mocks.markDirty).toHaveBeenCalledWith([{ kind: 'scene', sceneId: 'scene-1' }]);
   });
 
   it('reports unmatched when no surface of the course references the placeholder', async () => {
@@ -173,8 +231,8 @@ describe('generated media reference write-back', () => {
     });
 
     await expect(
-      persistGeneratedMediaReference(stageId, { placeholderRef: 'gen_img_1', assetId: 'ast_new' }),
-    ).resolves.toBe('unmatched');
+      persistGeneratedMediaReference({ stageId, placeholderRef: 'gen_img_1', assetId: 'ast_new' }),
+    ).resolves.toBe('held');
     expect(mocks.stageSetState).not.toHaveBeenCalled();
     expect(mocks.markDirty).not.toHaveBeenCalled();
   });
@@ -185,7 +243,7 @@ describe('generated media reference write-back', () => {
     mocks.stageState.mockReturnValue({ stage: { id: stageId }, scenes: [liveScene] });
 
     await expect(
-      persistGeneratedMediaReference(stageId, { placeholderRef: 'gen_img_1', assetId: 'ast_new' }),
+      persistGeneratedMediaReference({ stageId, placeholderRef: 'gen_img_1', assetId: 'ast_new' }),
     ).resolves.toBe('written');
 
     expect(mocks.stageSetState).toHaveBeenCalledTimes(1);
@@ -211,8 +269,8 @@ describe('generated media reference write-back', () => {
     });
 
     await expect(
-      persistGeneratedMediaReference(stageId, { placeholderRef: 'gen_img_1', assetId: 'ast_new' }),
-    ).resolves.toBe('unmatched');
+      persistGeneratedMediaReference({ stageId, placeholderRef: 'gen_img_1', assetId: 'ast_new' }),
+    ).resolves.toBe('held');
     expect(mocks.stageSetState).not.toHaveBeenCalled();
   });
 });

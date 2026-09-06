@@ -115,7 +115,7 @@ describe('a queued autosave cannot revert the write-back', () => {
 
     // The media commit lands while that round is still in flight.
     await expect(
-      persistGeneratedMediaReference(stageId, { placeholderRef: placeholder, assetId: 'ast_A' }),
+      persistGeneratedMediaReference({ stageId, placeholderRef: placeholder, assetId: 'ast_A' }),
     ).resolves.toBe('written');
     expect(imageSrcOf(useStageStore.getState().scenes[0])).toBe('ast_A');
 
@@ -135,8 +135,8 @@ describe('a queued autosave cannot revert the write-back', () => {
     useStageStore.setState({ scenes: [sceneWithImage('ast_other')] });
 
     await expect(
-      persistGeneratedMediaReference(stageId, { placeholderRef: placeholder, assetId: 'ast_A' }),
-    ).resolves.toBe('unmatched');
+      persistGeneratedMediaReference({ stageId, placeholderRef: placeholder, assetId: 'ast_A' }),
+    ).resolves.toBe('held');
 
     await vi.runAllTimersAsync();
     expect(mocks.saveStageDataIncremental).not.toHaveBeenCalled();

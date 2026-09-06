@@ -65,6 +65,7 @@ import {
   executeStageAssetReclamation,
   loadStageAssetInventory,
 } from '@/lib/media/reclaim-stage-assets';
+import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
 import {
   collectDocumentMediaElements,
   resolveMediaTaskForElement,
@@ -568,6 +569,9 @@ async function performStageDeletion(stageId: string): Promise<void> {
   // sitting in the debounce window must not even start a flush after the
   // delete.
   discardPendingStageChanges(stageId);
+  // Media allocations parked for slides this stage will never build now have
+  // no possible destination; the reclamation plan below owns their bytes.
+  clearPendingMediaAllocations(stageId);
   let documentDeleted = false;
   try {
     // storageSharedLockHeld: the cascade below holds the EXCLUSIVE epoch, which
