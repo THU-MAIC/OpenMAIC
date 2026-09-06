@@ -28,6 +28,8 @@ import {
 import { resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
+import { putAsset, removeAsset, replaceAsset } from '@/lib/media/asset-pool';
+import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
 import { toast } from 'sonner';
@@ -470,8 +472,17 @@ export async function generateAndStoreTTS(
   // clip onto a timeline without re-decoding. null → leave undefined; the audio
   // still persists and plays.
   const duration = measureAudioDuration(bytes, data.format) ?? undefined;
-  const audioId = existingAudioId ?? requestId;
-  await db.audioFiles.put({
+  const serverBacked = isServerBackedMediaPersistence();
+  // Server-backed: the bytes go to the pool and the pool allocates the
+  // identity, so the id the speech action ends up holding names durable audio
+  // rather than this browser's local table. Bytes land BEFORE the caller
+  // stamps the action, so a document can never name narration that was not
+  // stored. Browser-only keeps the historical derived key: document and audio
+  // share one lifetime there, and nothing outside this browser reads either.
+  const audioId = serverBacked
+    ? await allocatePooledAudio(blob, duration, existingAudioId)
+    : (existingAudioId ?? requestId);
+  const cacheWrite = db.audioFiles.put({
     id: audioId,
     stageId,
     blob,
@@ -481,12 +492,49 @@ export async function generateAndStoreTTS(
     voice: ttsVoice,
     createdAt: Date.now(),
   });
+  if (serverBacked) {
+    // A cache the pool already backs: a failed write costs a re-download.
+    await cacheWrite.catch((error: unknown) => {
+      log.warn('Local narration cache write failed for', audioId, error);
+    });
+  } else {
+    await cacheWrite;
+  }
   return audioId;
 }
 
+/**
+ * Store narration bytes in the asset pool and return the reference the
+ * document should hold.
+ *
+ * A clip the caller proved it exclusively owns keeps its id and has its bytes
+ * replaced, so every reference to it stays valid; anything else gets a fresh
+ * allocation.
+ */
+async function allocatePooledAudio(
+  blob: Blob,
+  duration: number | undefined,
+  existingAudioId: string | undefined,
+): Promise<string> {
+  const meta = {
+    contentType: blob.type,
+    ...(duration === undefined ? {} : { durationSeconds: duration }),
+  };
+  if (existingAudioId) {
+    await replaceAsset(existingAudioId, blob, meta);
+    return existingAudioId;
+  }
+  return putAsset(blob, meta);
+}
+
 export async function removeFreshTtsAllocations(assetIds: readonly string[]): Promise<void> {
+  const serverBacked = isServerBackedMediaPersistence();
   for (const assetId of new Set(assetIds)) {
     await db.audioFiles.delete(assetId).catch(() => undefined);
+    // Only ids this run allocated reach here, so the pool entry is this run's
+    // to drop; a scene whose narration was rolled back must not leave paid-for
+    // bytes behind that nothing will ever reference.
+    if (serverBacked) await removeAsset(assetId).catch(() => undefined);
   }
 }
 

@@ -63,3 +63,27 @@ export function resolveStageFallbackAccess(stageId: string): StageAccessSignal {
 export function resetStageOwnershipSignals(): void {
   stageOwnership.clear();
 }
+
+/**
+ * What a load learned about the viewer, in the three states the sidecar
+ * actually has: `'owner'` and `'not-owner'` are answers, `'unresolved'` covers
+ * both "not asked yet" and "asked, got no usable answer".
+ */
+export type ClassroomGenerationOwnership = 'owner' | 'not-owner' | 'unresolved';
+
+/**
+ * May this browser start generation for this course?
+ *
+ * Generation spends the operator's provider budget, so under server-backed
+ * persistence — where a course is shared and any visitor may open it — the gate
+ * fails closed: only a resolved `owner` starts anything, and a viewer with a
+ * document full of unresolved placeholders simply sees them. Browser-only mode
+ * has one viewer who is by construction the author, so the gate is inert there
+ * and behaviour is unchanged.
+ */
+export function mayStartOwnerGeneration(
+  serverBackedMedia: boolean,
+  ownership: ClassroomGenerationOwnership,
+): boolean {
+  return !serverBackedMedia || ownership === 'owner';
+}

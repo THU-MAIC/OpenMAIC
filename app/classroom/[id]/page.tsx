@@ -16,12 +16,17 @@ import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { fetchStageMeta } from '@/lib/classroom/stage-meta-client';
-import { noteStageOwnership } from '@/lib/classroom/stage-ownership-signal';
+import {
+  mayStartOwnerGeneration,
+  noteStageOwnership,
+  type ClassroomGenerationOwnership,
+} from '@/lib/classroom/stage-ownership-signal';
 import {
   applyClassroomStageAndScenes,
   defaultClassroomLoadDeps,
   runClassroomLoad,
 } from '@/lib/classroom/load-classroom';
+import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 
 const log = createLogger('Classroom');
 
@@ -33,6 +38,10 @@ export default function ClassroomDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Third state on purpose: `false` would say "this is a stranger's course",
+  // which is not what an unanswered sidecar means. Generation waits for a real
+  // answer rather than acting on the store's editable default.
+  const [ownership, setOwnership] = useState<ClassroomGenerationOwnership>('unresolved');
 
   const generationStartedRef = useRef(false);
 
@@ -91,6 +100,7 @@ export default function ClassroomDetailPage() {
               useStageStore.getState().setViewerAccess({
                 isOwner: result.meta.isOwner,
               });
+              setOwnership(result.meta.isOwner ? 'owner' : 'not-owner');
             } else if (result.outcome === 'unavailable') {
               // A silent sidecar is not "this is a stranger's course": record
               // the outage so nothing treats `isOwner === false` as a visitor
@@ -115,6 +125,9 @@ export default function ClassroomDetailPage() {
     /* eslint-disable react-hooks/set-state-in-effect -- Course switch must hide stale Stage before async load */
     setLoading(true);
     setError(null);
+    // Ownership belongs to the departing course; the new one must re-earn it
+    // before anything it holds may be generated.
+    setOwnership('unresolved');
     /* eslint-enable react-hooks/set-state-in-effect */
     generationStartedRef.current = false;
 
@@ -141,6 +154,11 @@ export default function ClassroomDetailPage() {
   // Auto-resume generation for pending outlines
   useEffect(() => {
     if (loading || error || generationStartedRef.current) return;
+    // Generation spends the operator's provider budget, and a server-backed
+    // course is readable by anyone it was shared with. Fail closed: only a
+    // resolved owner starts anything. `generationStartedRef` is deliberately
+    // NOT set here, so the effect re-runs and starts once the answer arrives.
+    if (!mayStartOwnerGeneration(isServerBackedMediaPersistence(), ownership)) return;
 
     const state = useStageStore.getState();
     const { outlines, scenes, stage, generationComplete } = state;
@@ -218,7 +236,7 @@ export default function ClassroomDetailPage() {
         log.warn('[Classroom] Media generation resume error:', err);
       });
     }
-  }, [loading, error, generateRemaining]);
+  }, [loading, error, ownership, generateRemaining]);
 
   return (
     <ThemeProvider>
