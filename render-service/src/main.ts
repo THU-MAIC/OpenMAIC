@@ -40,6 +40,7 @@ import { InProcessExecutor } from './render-executor.js';
 import { InvalidProjectError, unzipProject as defaultUnzipProject } from './unzip.js';
 import { capBodyStream } from './capped-stream.js';
 import { Semaphore } from './semaphore.js';
+import { emitRenderEvent } from './events.js';
 import { PreviewGate, PreviewRejectedError } from './preview-gate.js';
 import {
   ChromiumPreviewRenderer,
@@ -269,7 +270,15 @@ export function createApp(deps: AppDeps): Hono {
     try {
       reservation = coordinator.reserve(identity);
     } catch (error) {
-      if (error instanceof RenderRejectedError) return c.json(rejectionBody(error), 429);
+      if (error instanceof RenderRejectedError) {
+        emitRenderEvent({
+          event: 'render_admission_rejected',
+          route: '/render',
+          reason: error.reason ?? 'unspecified',
+          status: 429,
+        });
+        return c.json(rejectionBody(error), 429);
+      }
       throw error;
     }
 
@@ -325,9 +334,31 @@ export function createApp(deps: AppDeps): Hono {
       if (error instanceof UploadTooLargeError) return c.json({ error: error.message }, 413);
       if (error instanceof BadRequestError) return c.json({ error: error.message }, 400);
       if (error instanceof InvalidProjectError) return c.json({ error: error.message }, 400);
-      if (error instanceof RenderRejectedError) return c.json(rejectionBody(error), 429);
+      if (error instanceof RenderRejectedError) {
+        emitRenderEvent({
+          event: 'render_admission_rejected',
+          route: '/render',
+          reason: error.reason ?? 'unspecified',
+          status: 429,
+        });
+        return c.json(rejectionBody(error), 429);
+      }
       throw error;
     }
+  });
+
+  // Times every response the preview route produces — 200, 413, 429, 504, 500
+  // alike. A synchronous preview reports failure in its status, so this is the
+  // one place a deployment can see the route's real success rate and latency.
+  app.use('/preview', async (c, next) => {
+    const startedAt = Date.now();
+    await next();
+    emitRenderEvent({
+      event: 'preview_request',
+      route: '/preview',
+      status: c.res.status,
+      durationMs: Date.now() - startedAt,
+    });
   });
 
   app.post('/preview', async (c) => {
@@ -341,7 +372,15 @@ export function createApp(deps: AppDeps): Hono {
     try {
       release = previewGate.acquire(identity);
     } catch (error) {
-      if (error instanceof PreviewRejectedError) return c.json(rejectionBody(error), 429);
+      if (error instanceof PreviewRejectedError) {
+        emitRenderEvent({
+          event: 'render_admission_rejected',
+          route: '/preview',
+          reason: (error as Error & { reason?: string }).reason ?? 'unspecified',
+          status: 429,
+        });
+        return c.json(rejectionBody(error), 429);
+      }
       throw error;
     }
 
@@ -402,7 +441,15 @@ export function createApp(deps: AppDeps): Hono {
       if (error instanceof UnprocessablePreviewError) {
         return c.json({ error: error.message }, 422);
       }
-      if (error instanceof PreviewRejectedError) return c.json(rejectionBody(error), 429);
+      if (error instanceof PreviewRejectedError) {
+        emitRenderEvent({
+          event: 'render_admission_rejected',
+          route: '/preview',
+          reason: (error as Error & { reason?: string }).reason ?? 'unspecified',
+          status: 429,
+        });
+        return c.json(rejectionBody(error), 429);
+      }
       if (error instanceof PreviewTimeoutError || deadlineAbort.signal.aborted) {
         return c.json({ error: 'Preview exceeded the deadline' }, 504);
       }

@@ -13,6 +13,7 @@ import type { ArtifactStore } from './artifact-store.js';
 import { config } from './config.js';
 import type { JobStore } from './job-store.js';
 import type { RenderExecutor } from './render-executor.js';
+import { emitRenderEvent, type RenderEventSink, type RenderOutcome } from './events.js';
 import { Semaphore } from './semaphore.js';
 import type {
   RenderCancelledFailure,
@@ -68,6 +69,8 @@ export interface RenderCoordinatorOptions {
   maxQueue?: number;
   maxJobsPerUser?: number;
   jobDeadlineMs?: number;
+  /** Where lifecycle events go. Defaults to one JSON line per event on stdout. */
+  onEvent?: RenderEventSink;
 }
 
 export class RenderCoordinator {
@@ -81,6 +84,9 @@ export class RenderCoordinator {
   private readonly maxJobsPerUser: number;
   private readonly jobDeadlineMs: number;
   private readonly executionGate: Semaphore;
+  private readonly onEvent: RenderEventSink;
+  /** Submission time per in-flight job, so a start can report its queue wait. */
+  private readonly submittedAtMs = new Map<string, number>();
 
   constructor(
     private readonly executor: RenderExecutor,
@@ -93,6 +99,7 @@ export class RenderCoordinator {
     this.maxJobsPerUser = options.maxJobsPerUser ?? config.maxJobsPerUser;
     this.jobDeadlineMs = options.jobDeadlineMs ?? config.jobDeadlineMs;
     this.executionGate = new Semaphore(this.maxConcurrency);
+    this.onEvent = options.onEvent ?? emitRenderEvent;
   }
 
   /** Run Chromium-backed work within the service-wide execution budget. */
@@ -202,6 +209,13 @@ export class RenderCoordinator {
     const abort = new AbortController();
     this.controllers.set(id, abort);
     this.queue.push({ record, options, abort });
+    this.submittedAtMs.set(id, now);
+    this.onEvent({
+      event: 'render_job_submitted',
+      jobId: id,
+      queued: this.queue.length,
+      running: this.running,
+    });
     this.pump();
     return id;
   }
@@ -239,11 +253,33 @@ export class RenderCoordinator {
     }
   }
 
+  /**
+   * Close a job's lifecycle in the log. Also drops its submission timestamp so
+   * the map cannot grow without bound across a long-lived process.
+   */
+  private finishEvent(id: string, outcome: RenderOutcome, errorCode?: string): void {
+    const submittedAt = this.submittedAtMs.get(id);
+    this.submittedAtMs.delete(id);
+    this.onEvent({
+      event: 'render_job_finished',
+      jobId: id,
+      outcome,
+      ...(submittedAt === undefined ? {} : { durationMs: Date.now() - submittedAt }),
+      ...(errorCode === undefined ? {} : { errorCode }),
+    });
+  }
+
   private async finishNonSuccess(
     id: string,
     projectDir: string,
     result: Exclude<RenderExecutionResult, { status: 'succeeded' }>,
   ): Promise<void> {
+    // `failure.code` is a fixed vocabulary; the free-text message is not logged.
+    this.finishEvent(
+      id,
+      result.status,
+      result.status === 'failed' ? result.failure.code : undefined,
+    );
     try {
       await this.jobs.update(id, {
         status: result.status,
@@ -263,6 +299,16 @@ export class RenderCoordinator {
     const outputPath = join(projectDir, 'output.mp4');
     try {
       const result = await this.runWithExecutionSlot(async () => {
+        // Inside the slot: the wait measured here is exactly the time this job
+        // spent queued behind other renders, which is the signal a busy
+        // deployment needs and the one nothing else exposes.
+        this.onEvent({
+          event: 'render_job_started',
+          jobId: id,
+          queueWaitMs: Date.now() - (this.submittedAtMs.get(id) ?? Date.now()),
+          queued: this.queue.length,
+          running: this.running,
+        });
         await this.jobs.update(id, { status: 'running', currentStage: 'preparing' });
         return this.executor.execute({
           projectDir,
@@ -300,6 +346,7 @@ export class RenderCoordinator {
       }
 
       await this.artifacts.put(id, outputPath);
+      this.finishEvent(id, 'succeeded');
       await this.jobs.update(id, {
         status: 'succeeded',
         progress: 1,
