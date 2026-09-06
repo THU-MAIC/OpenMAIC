@@ -136,11 +136,11 @@
       "streamInterrupted": "Le flux s’est interrompu de façon inattendue ; la discussion n’a pas abouti. Veuillez réessayer."
     },
     "elementReference": {
-      "button": "Référencer la diapositive",
-      "unavailable": "Seule la diapositive PPT actuelle peut être référencée",
+      "button": "Référencer le contenu du cours",
+      "unavailable": "Seuls la diapositive PPT actuelle ou un composant interactif pris en charge peuvent être référencés",
       "instruction": "Cliquez sur un élément · Échap pour quitter",
       "fallback": "Autres éléments de la diapositive ({{count}})",
-      "clear": "Retirer la référence à la diapositive",
+      "clear": "Retirer la référence au contenu du cours",
       "summary": {
         "noText": "Sans texte",
         "emptyContent": "Aucun contenu",

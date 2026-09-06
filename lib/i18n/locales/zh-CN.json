@@ -137,7 +137,7 @@
     },
     "elementReference": {
       "button": "引用课件",
-      "unavailable": "仅可引用当前 PPT 页面",
+      "unavailable": "仅可引用当前 PPT 页面或受支持的互动组件",
       "instruction": "点击一个课件元素 · Esc 退出",
       "fallback": "其他课件元素（{{count}}）",
       "clear": "取消课件引用",

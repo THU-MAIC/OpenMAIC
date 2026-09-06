@@ -136,11 +136,11 @@
       "streamInterrupted": "Stream ended unexpectedly; discussion didn't complete. Please try again."
     },
     "elementReference": {
-      "button": "Reference slide",
-      "unavailable": "Only the current PPT slide can be referenced",
+      "button": "Reference courseware",
+      "unavailable": "Only the current PPT slide or a supported interactive component can be referenced",
       "instruction": "Click a slide element · Esc to exit",
       "fallback": "Other slide elements ({{count}})",
-      "clear": "Remove slide reference",
+      "clear": "Remove courseware reference",
       "summary": {
         "noText": "No text",
         "emptyContent": "No content",

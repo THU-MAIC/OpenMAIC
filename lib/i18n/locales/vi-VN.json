@@ -136,11 +136,11 @@
       "streamInterrupted": "Luồng dữ liệu dừng bất ngờ, thảo luận chưa hoàn tất. Vui lòng thử lại."
     },
     "elementReference": {
-      "button": "Tham chiếu trang chiếu",
-      "unavailable": "Chỉ có thể tham chiếu trang PPT hiện tại",
+      "button": "Tham chiếu học liệu",
+      "unavailable": "Chỉ có thể tham chiếu trang PPT hiện tại hoặc một thành phần tương tác được hỗ trợ",
       "instruction": "Nhấp vào một phần tử · Esc để thoát",
       "fallback": "Các phần tử khác ({{count}})",
-      "clear": "Xóa tham chiếu trang chiếu",
+      "clear": "Xóa tham chiếu học liệu",
       "summary": {
         "noText": "Không có văn bản",
         "emptyContent": "Không có nội dung",

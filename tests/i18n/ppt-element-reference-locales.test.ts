@@ -48,7 +48,7 @@ function getValue(source: unknown, path: string): unknown {
   }, source);
 }
 
-describe('PPT element reference locale coverage', () => {
+describe('courseware element reference locale coverage', () => {
   it.each(Object.entries(locales))('%s defines every user-facing reference label', (code, data) => {
     for (const key of referenceKeys) {
       const value = getValue(data.chat.elementReference, key);
@@ -64,5 +64,8 @@ describe('PPT element reference locale coverage', () => {
       expect(typeof value, `${code} missing edit.element.${key}`).toBe('string');
       expect((value as string).trim(), `${code} has an empty edit.element.${key}`).not.toBe('');
     }
+
+    expect(typeof data.edit.sceneType.interactive).toBe('string');
+    expect(data.edit.sceneType.interactive.trim()).not.toBe('');
   });
 });
