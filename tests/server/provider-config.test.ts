@@ -53,6 +53,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'VIDEO_SORA',
   'VIDEO_MINIMAX',
   'VIDEO_GROK',
+  'EXA',
   'BOCHA',
   'WEB_SEARCH_MINIMAX',
   'WEB_SEARCH_CLAUDE',
@@ -405,6 +406,17 @@ providers:
       expect(resolveWebSearchBaseUrl('bocha')).toBe('https://proxy.example.com/bocha');
       // The map exposes only the managed flag (presence) — not the base URL.
       expect(getServerWebSearchProviders().bocha).toEqual({});
+    });
+
+    it('resolves Exa API key and base URL from env vars', async () => {
+      vi.stubEnv('EXA_API_KEY', 'exa-env-key');
+      vi.stubEnv('EXA_BASE_URL', 'https://proxy.example.com/exa');
+      const { getServerWebSearchProviders, resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchApiKey('exa', undefined)).toBe('exa-env-key');
+      expect(resolveWebSearchBaseUrl('exa')).toBe('https://proxy.example.com/exa');
+      expect(getServerWebSearchProviders().exa).toEqual({});
     });
 
     it('ignores client key and base URL for a server-managed Bocha provider', async () => {
@@ -856,6 +868,13 @@ video:
       vi.stubEnv('TAVILY_ENABLED', 'false');
       const { getServerWebSearchProviders } = await import('@/lib/server/provider-config');
       expect(getServerWebSearchProviders()['tavily']).toEqual({ disabled: true });
+    });
+
+    it('web-search: force-disables Exa through EXA_ENABLED=false', async () => {
+      vi.stubEnv('EXA_API_KEY', 'exa-key');
+      vi.stubEnv('EXA_ENABLED', 'false');
+      const { getServerWebSearchProviders } = await import('@/lib/server/provider-config');
+      expect(getServerWebSearchProviders().exa).toEqual({ disabled: true });
     });
 
     it('web-search: force-disables the keyless SearXNG provider via env', async () => {

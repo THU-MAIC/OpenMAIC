@@ -21,6 +21,7 @@ poll, then download. Job ids are opaque.
 | Method + path                 | Purpose                                                                              |
 | ----------------------------- | ------------------------------------------------------------------------------------ |
 | `POST /render`                | multipart: `project` (the ZIP) + `fps`, `quality`, `format` fields → `202 { jobId }` |
+| `POST /preview`               | JSON: persisted `scene`, stage context, and viewport → synchronous PNG               |
 | `GET /render/:jobId`          | status/progress plus actual capture, worker, profile, and runtime metrics            |
 | `GET /render/:jobId/download` | stream the MP4 (or `302` to a presigned URL) once `succeeded`                        |
 | `DELETE /render/:jobId`       | cancel a queued/running job                                                          |
@@ -39,13 +40,38 @@ JSON body `{ error, reason }` where `reason` is one of:
 - `per_identity_limit` — this client identity already holds
   `RENDER_MAX_JOBS_PER_USER` active renders.
 
+`POST /preview` also answers `429` with `{ error, reason }`, where `reason` is
+one of:
+
+- `preview_queue_full` — `RENDER_PREVIEW_MAX_IN_FLIGHT` previews are already
+  live (buffering or executing).
+- `preview_per_user_limit` — this client identity already holds
+  `RENDER_PREVIEW_MAX_PER_USER` previews.
+- `capacity_busy` — the shared execution slot is occupied, including by a video
+  render. Previews never queue for this slot; retry later.
+
 `GET /health` reports `accepting: boolean` — whether the queue cap currently has
-room for another job — so callers and load balancers can shed traffic before
-probing with a real render. The flag is deliberately aggregate-only: no queue
-depths or occupancy counts, and never any per-identity data. Identity keys are
-client IPs when the service runs behind `TRUST_PROXY_HEADERS=true`, so exposing
-the per-identity map would publish the IP address of everyone currently
-rendering.
+room for another **video render** — it reflects the render queue only, not
+preview admission or execution-slot availability. Callers and load balancers
+can shed traffic before probing with a real render. The flag is deliberately
+aggregate-only: no queue depths or occupancy counts, and never any per-identity
+data. Identity keys are client IPs when the service runs behind
+`TRUST_PROXY_HEADERS=true`, so exposing the per-identity map would publish the
+IP address of everyone currently rendering.
+
+Previews share the service's single Chromium execution slot with video renders,
+but never wait in the video queue. Once a preview has passed its body and
+semantic checks, it renders immediately or fails with `capacity_busy`.
+
+`/preview` requires fully self-contained scenes (inline code and data: URLs
+only); network, blob:, and relative references are rejected. Slide media must
+use `data:` URLs, and interactive scenes must contain embedded HTML whose
+resource references are inline or `data:` URLs. Non-self-contained inputs fail
+with `422` instead of returning a misleading PNG. Detection is best-effort:
+some exotic external constructs (for example, `object data`, `track src`, and
+CSS `@import`) may pass validation; self-contained scenes are the caller's
+responsibility, and end-to-end fidelity for persisted scenes arrives with
+caller-side preparation (tracked separately).
 
 ## Environment
 
@@ -59,17 +85,16 @@ rendering.
 | `RENDER_MAX_QUEUE`                       | `20`                        | Max jobs in the system (reserved+queued+running) before new submits get `429`.                                                                                                                                                                                                                                                                                      |
 | `RENDER_JOB_TTL_MS`                      | `1800000`                   | How long finished jobs + artifacts live before cleanup.                                                                                                                                                                                                                                                                                                             |
 | `RENDER_JOB_DEADLINE_MS`                 | `2700000`                   | Hard per-job wall-clock deadline; overruns are aborted and marked **failed**.                                                                                                                                                                                                                                                                                       |
+| `RENDER_PREVIEW_TIMEOUT_MS`              | `20000`                     | Hard wall-clock deadline for a synchronous preview, including body parsing and Chromium cleanup.                                                                                                                                                                                                                                                                   |
+| `RENDER_PREVIEW_MAX_IN_FLIGHT`           | `8`                         | Maximum admitted previews across buffering and execution.                                                                                                                                                                                                                                                                                                          |
+| `RENDER_PREVIEW_MAX_PER_USER`            | `2`                         | Concurrent previews per owner identity; 0 disables the guard for deployments whose preview callers do not supply an owner identity (see note below).                                                                                                                                                                                                                |
+| `RENDER_PREVIEW_MAX_JSON_BYTES`          | `33554432`                  | Maximum preview JSON body size (32 MiB), enforced on declared length and streamed bytes independently of the ZIP upload cap.                                                                                                                                                                                                                                        |
 | `RENDER_CHUNK_EXECUTION`                 | `false`                     | Opt in to the bounded local `plan -> renderChunk -> assemble` executor. The HTTP API stays unchanged.                                                                                                                                                                                                                                                               |
 | `RENDER_CHUNK_COUNT`                     | `1`                         | Number of deterministic closed-GOP chunks planned for a render when chunk execution is enabled.                                                                                                                                                                                                                                                                    |
 | `RENDER_CHUNK_WORKERS`                   | profile: `1`                | Maximum producer capture workers inside one chunk. This remains explicit so chunk fan-out cannot multiply nested producer workers.                                                                                                                                                                                                                                  |
 | `RENDER_MAX_PARALLEL_CHUNKS`             | `1`                         | Maximum chunks executed concurrently in the local process. Chunks beyond the bound wait locally.                                                                                                                                                                                                                                                                   |
 | `RENDER_CHUNK_SIZE_FRAMES`               | unset                       | Optional fixed frame count per planned chunk.                                                                                                                                                                                                                                                                                                                       |
 | `RENDER_TARGET_CHUNK_FRAMES`             | unset                       | Optional target frame count used by the producer planner when deriving chunk boundaries.                                                                                                                                                                                                                                                                             |
-
-Chunk settings are profile-bounded: the standard profile allows at most one
-producer worker per chunk and four concurrent chunks; low-memory allows one of
-each. Values above the selected profile limit fail startup rather than
-silently multiplying browser, FFmpeg, and temporary-disk usage.
 | `RENDER_MAX_UPLOAD_BYTES`                | `314572800`                 | Max compressed archive size accepted (300 MB); enforced on real bytes, before buffering.                                                                                                                                                                                                                                                                            |
 | `RENDER_MAX_ENTRIES`                     | `5000`                      | Max entries allowed in the archive.                                                                                                                                                                                                                                                                                                                                 |
 | `RENDER_MAX_ENTRY_BYTES`                 | `209715200`                 | Max expanded size of any single entry (200 MB).                                                                                                                                                                                                                                                                                                                     |
@@ -88,6 +113,11 @@ silently multiplying browser, FFmpeg, and temporary-disk usage.
 | `RENDER_HOME`                            | `/app`                      | Writable home used after the entrypoint drops privileges. Producer font caches live under `$RENDER_HOME/.cache`, never `/root/.cache`.                                                                                                                                                                                                                              |
 | `PUPPETEER_EXECUTABLE_PATH`              | `/usr/bin/chromium-headless-shell` | System Chromium headless shell (set in the image).                                                                                                                                                                                                                                                                                                                   |
 
+Chunk settings are profile-bounded: the standard profile allows at most one
+producer worker per chunk and four concurrent chunks; low-memory allows one of
+each. Values above the selected profile limit fail startup rather than
+silently multiplying browser, FFmpeg, and temporary-disk usage.
+
 Client identity for the per-user guard is taken from the `x-openmaic-client`
 header, which the app's proxy sets. A client-supplied `userId` form field is
 ignored. The app derives that header from `x-forwarded-for`/`x-real-ip` **only
@@ -104,6 +134,11 @@ forwarding headers.
 > on `RENDER_MAX_CONCURRENCY` + `RENDER_MAX_QUEUE` (see the comment beside that
 > variable in the Compose file). Enable the per-user guard only behind a trusted
 > proxy that supplies a real per-user identity.
+>
+> Preview callers are different: the app sends the durable session owner id in
+> `x-openmaic-client`, so `RENDER_PREVIEW_MAX_PER_USER` stays enabled and
+> defaults to 2. Set it to 0 only for deployments that call `/preview` without
+> an owner identity.
 
 ## Security / isolation
 
