@@ -17,6 +17,7 @@ import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { fetchStageMeta } from '@/lib/classroom/stage-meta-client';
 import {
+  classroomGenerationOwnership,
   mayStartOwnerGeneration,
   noteStageOwnership,
   type ClassroomGenerationOwnership,
@@ -38,9 +39,10 @@ export default function ClassroomDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Third state on purpose: `false` would say "this is a stranger's course",
-  // which is not what an unanswered sidecar means. Generation waits for a real
-  // answer rather than acting on the store's editable default.
+  // Not a boolean on purpose: `false` would say "this is a stranger's course",
+  // which is neither what an unanswered sidecar nor what an ownerless course
+  // means. Generation reads the answer itself rather than the store's editable
+  // default.
   const [ownership, setOwnership] = useState<ClassroomGenerationOwnership>('unresolved');
 
   const generationStartedRef = useRef(false);
@@ -93,6 +95,9 @@ export default function ClassroomDetailPage() {
         void fetchStageMeta(classroomId)
           .then((result) => {
             if (!isEffectCurrent()) return;
+            // One mapping of the sidecar's three outcomes onto the generation
+            // gate, shared with every other classroom surface.
+            setOwnership(classroomGenerationOwnership(result));
             if (result.outcome === 'found') {
               noteStageOwnership(classroomId, true, {
                 isOwner: result.meta.isOwner,
@@ -100,7 +105,6 @@ export default function ClassroomDetailPage() {
               useStageStore.getState().setViewerAccess({
                 isOwner: result.meta.isOwner,
               });
-              setOwnership(result.meta.isOwner ? 'owner' : 'not-owner');
             } else if (result.outcome === 'unavailable') {
               // A silent sidecar is not "this is a stranger's course": record
               // the outage so nothing treats `isOwner === false` as a visitor
@@ -155,9 +159,9 @@ export default function ClassroomDetailPage() {
   useEffect(() => {
     if (loading || error || generationStartedRef.current) return;
     // Generation spends the operator's provider budget, and a server-backed
-    // course is readable by anyone it was shared with. Fail closed: only a
-    // resolved owner starts anything. `generationStartedRef` is deliberately
-    // NOT set here, so the effect re-runs and starts once the answer arrives.
+    // course is readable by anyone it was shared with, so a viewer must never
+    // start it. `generationStartedRef` is deliberately NOT set here, so the
+    // effect re-runs and starts once the sidecar's answer arrives.
     if (!mayStartOwnerGeneration(isServerBackedMediaPersistence(), ownership)) return;
 
     const state = useStageStore.getState();

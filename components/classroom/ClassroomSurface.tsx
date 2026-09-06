@@ -19,9 +19,11 @@
  *
  * The reference (live deployment) additionally runs non-owner visitor
  * hydration, a transport-persistence UI fence and a background uploader; all
- * three depend on server-side ownership/persistence machinery this workspace
- * does not have, so they are dropped and the load follows the ordinary
- * single-user path (`app/classroom/[id]/page.tsx`).
+ * three depend on server-side machinery this workspace does not have, so they
+ * are dropped and the load follows the ordinary path
+ * (`app/classroom/[id]/page.tsx`). The stage-meta sidecar IS consulted, for one
+ * purpose: gating generation on ownership so a viewer never spends the
+ * operator's provider budget.
  */
 
 import { Stage } from '@/components/stage';
@@ -51,6 +53,12 @@ import {
   paneAvailabilityRetryDelay,
   shouldResumeClassroomGeneration,
 } from '@/lib/classroom/progressive-load-policy';
+import { fetchStageMeta } from '@/lib/classroom/stage-meta-client';
+import {
+  classroomGenerationOwnership,
+  type ClassroomGenerationOwnership,
+} from '@/lib/classroom/stage-ownership-signal';
+import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 
 const log = createLogger('Classroom');
 
@@ -88,6 +96,12 @@ export function ClassroomSurface({
    * deleted or never existed.
    */
   const [notFound, setNotFound] = useState(false);
+  /**
+   * What the stage-meta sidecar says about this viewer, for the generation
+   * gate only. Not a boolean: "we could not ask" and "this course has no
+   * ownership fact" are different answers with opposite consequences.
+   */
+  const [ownership, setOwnership] = useState<ClassroomGenerationOwnership>('unresolved');
 
   const generationStartedRef = useRef(false);
 
@@ -165,6 +179,9 @@ export function ClassroomSurface({
     setLoading(true);
     setError(null);
     setNotFound(false);
+    // Ownership belongs to the departing course; the new one must re-earn it
+    // before anything it holds may be generated.
+    setOwnership('unresolved');
     /* eslint-enable react-hooks/set-state-in-effect */
     generationStartedRef.current = false;
 
@@ -186,6 +203,20 @@ export function ClassroomSurface({
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let availabilityAttempt = 0;
+
+    // The sidecar carries the per-viewer ownership fact the document seam does
+    // not. Asked once per course, in parallel with the load and without
+    // blocking it: it feeds only the generation gate here, so the pane's
+    // read-only and edit behaviour is untouched by its answer.
+    void fetchStageMeta(classroomId)
+      .then((result) => {
+        if (cancelled) return;
+        setOwnership(classroomGenerationOwnership(result));
+      })
+      // The client reports transport failure as an outcome rather than
+      // throwing, so this only catches the unexpected. Ownership stays
+      // unresolved, which is the fail-closed answer.
+      .catch(() => undefined);
     const loadUntilAvailable = async () => {
       if (cancelled) return;
       // A previous pane attempt may have observed a transient read failure.
@@ -214,13 +245,16 @@ export function ClassroomSurface({
     };
   }, [classroomId, loadClassroom, stop, variant]);
 
-  // Auto-resume generation for pending outlines (owner only). The reference
-  // additionally gates on a transport-persistence UI fence and the store's
-  // `isOwner`; neither exists here (single-user, no server persistence), so
-  // the fence is a constant false and ownership is expressed by
-  // `outlineProducer`: a course whose document a server job produced is
-  // server-owned, not client-authored, and therefore not this browser's to
-  // regenerate.
+  // Auto-resume generation for pending outlines (owner only). Two independent
+  // ownership facts gate it. The sidecar's per-viewer answer decides whether
+  // this browser may spend the operator's provider budget at all, and fails
+  // closed while unanswered; `generationStartedRef` is deliberately NOT
+  // latched while it refuses, so the effect starts once the answer arrives.
+  // `outlineProducer` then decides whether the browser is the producer: a
+  // course whose document a server job produced is server-owned, not
+  // client-authored, and therefore not this browser's to regenerate. The
+  // reference's transport-persistence UI fence has no counterpart here, so it
+  // stays a constant false.
   useEffect(() => {
     if (
       !shouldResumeClassroomGeneration({
@@ -228,6 +262,8 @@ export function ClassroomSurface({
         error,
         transportPersistenceFenced: false,
         generationStarted: generationStartedRef.current,
+        serverBackedMedia: isServerBackedMediaPersistence(),
+        ownership,
       })
     ) {
       return;
@@ -314,7 +350,7 @@ export function ClassroomSurface({
         log.warn('[Classroom] Media generation resume error:', err);
       });
     }
-  }, [loading, error, generateRemaining]);
+  }, [loading, error, ownership, generateRemaining]);
 
   return (
     <ThemeProvider>
