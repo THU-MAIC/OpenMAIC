@@ -117,15 +117,55 @@ describe('browser-only media orchestration is untouched', () => {
     expect(useMediaGenerationStore.getState().tasks.gen_img_1?.status).toBe('done');
   });
 
-  // No serialization: two passes run concurrently, exactly as before. The
-  // second one skips on task status alone, which is the historical rule.
-  it('skips an already-done element on task status, with no waiting', async () => {
+  it('skips an already-done element on task status', async () => {
     const outlines = [outlineWith(1, 'gen_img_1', 'one')];
 
     await generateMediaForOutlines(outlines, stageId);
     await generateMediaForOutlines(outlines, stageId);
 
     expect(prompts).toEqual(['one']);
+  });
+
+  // The property that distinguishes this mode: a second pass does NOT wait for
+  // the first. Serialization changes ordering, not end state, so only an
+  // ordering observation can catch it leaking in here — and this is the
+  // behaviour that has always existed, where an overlap costs a duplicate
+  // download rather than the operator's money.
+  it('starts a second pass without waiting for the first to settle', async () => {
+    let releaseFirst: (() => void) | undefined;
+    const firstInFlight = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/generate/image') {
+        const { prompt } = JSON.parse(String(init?.body)) as { prompt: string };
+        prompts.push(prompt);
+        if (prompt === 'one') await firstInFlight;
+        return new Response(
+          JSON.stringify({ success: true, result: { url: 'https://media.test/image' } }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url === '/api/proxy-media') {
+        return new Response(new Blob(['image'], { type: 'image/png' }), { status: 200 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    // The first pass is held on element one.
+    const first = generateMediaForOutlines([outlineWith(1, 'gen_img_1', 'one')], stageId);
+    for (let tick = 0; tick < 20; tick += 1) await Promise.resolve();
+    expect(prompts).toEqual(['one']);
+
+    // A second pass for the same course, for a different element, while the
+    // first is still open. It must reach its provider immediately.
+    const second = generateMediaForOutlines([outlineWith(2, 'gen_img_2', 'two')], stageId);
+    for (let tick = 0; tick < 20; tick += 1) await Promise.resolve();
+    expect(prompts).toEqual(['one', 'two']);
+
+    releaseFirst?.();
+    await Promise.all([first, second]);
   });
 
   it('skips a permanently failed element on task status', async () => {

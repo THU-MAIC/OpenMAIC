@@ -346,7 +346,12 @@ describe('server-backed classic media orchestrator', () => {
     expect(mocks.persistReference).toHaveBeenCalledTimes(1);
   });
 
-  it('does not let another open course answer for this stage', async () => {
+  // The document is the authority, and here it cannot be read: the live store
+  // has moved to another course. Falling back to the task table would demote
+  // "the document decides" to "this browser's table decides" on exactly the
+  // path where that table has just been cleared, so every element the previous
+  // pass committed would be generated again. Not deciding is the safe answer.
+  it('stands down when it cannot read the document for its own stage', async () => {
     serveImage();
     mocks.stageState.mockReturnValue({
       stage: { id: 'another-stage' },
@@ -356,7 +361,29 @@ describe('server-backed classic media orchestrator', () => {
 
     await runImageGeneration();
 
-    expect(providerCallCount()).toBe(1);
+    expect(providerCallCount()).toBe(0);
+    expect(mocks.putAsset).not.toHaveBeenCalled();
+    // Nothing was seeded into the arriving course's task table either.
+    expect(useMediaGenerationStore.getState().tasks).toEqual({});
+  });
+
+  // A pass deferred behind its predecessor can wake up after the user has left.
+  // Enqueueing then would seed the ARRIVING course's table — placeholder ids
+  // are not unique across courses — with tasks carrying this course's stage id,
+  // and a Retry routes by that id, into the wrong document.
+  it('touches nothing when it wakes up aborted', async () => {
+    serveImage();
+    const aborted = new AbortController();
+    aborted.abort();
+
+    await generateMediaForOutlines(
+      [outlineWith(1, { type: 'image', prompt: 'A diagram', elementId: imageRef })],
+      stageId,
+      aborted.signal,
+    );
+
+    expect(providerCallCount()).toBe(0);
+    expect(useMediaGenerationStore.getState().tasks).toEqual({});
   });
 
   it('reclaims the allocation only when the funnel says nothing can hold it', async () => {
@@ -434,108 +461,83 @@ describe('server-backed classic media orchestrator', () => {
     expect(mocks.placeAllocations).toHaveBeenCalledWith(stageId);
   });
 
-  // Passes for one course are serial: a second pass waits for the first to
-  // settle, and then sees a document whose reference has been rewritten.
-  it('does not re-request an element while another pass is still working', async () => {
-    serveImage();
-    let overlapping: Promise<void> | undefined;
-    // The retry path re-enters generation with every outline while the first
-    // pass is still working through its list.
-    mocks.putAsset.mockImplementation(async () => {
-      overlapping ??= runImageGeneration();
-      return 'ast_generated';
-    });
-    // The write-back rewrote the slide, so the waiting pass finds it resolved.
-    mocks.stageState.mockReturnValueOnce({
-      stage: { id: stageId },
-      scenes: [sceneWithImage(1, imageRef)],
-      generationComplete: false,
-    });
-    mocks.stageState.mockReturnValue({
-      stage: { id: stageId },
-      scenes: [sceneWithImage(1, 'ast_generated')],
-      generationComplete: false,
-    });
-
-    await runImageGeneration();
-    await overlapping;
-
-    expect(providerCallCount()).toBe(1);
-  });
-
-  // The handoff the retry path actually performs: abort the live pass and start
-  // its replacement in the same synchronous block, long before the aborted
-  // pass's cleanup can run. Reading claim membership alone would make the
-  // replacement skip every element the aborted pass never reached, and nothing
-  // would ever come back for them — the stranded-`pending` failure, through a
-  // different door.
-  it('picks up every element an aborted pass never reached', async () => {
-    const refs = ['gen_img_1', 'gen_img_2', 'gen_img_3'];
+  // Passes for one course are serial, and serialization is an ordering property:
+  // the assertion is that a second pass issues nothing at all while the first
+  // is still working. Counting calls at the end cannot distinguish waiting from
+  // being skipped for some other reason, so this observes the timing directly.
+  it('issues nothing while another pass for the same course is still working', async () => {
+    const refs = ['gen_img_1', 'gen_img_2'];
     mocks.stageState.mockReturnValue({
       stage: { id: stageId },
       scenes: refs.map((ref, index) => sceneWithImage(index + 1, ref)),
       generationComplete: false,
     });
     const outlines = refs.map((ref, index) =>
-      outlineWith(index + 1, { type: 'image', prompt: 'A diagram', elementId: ref }),
+      outlineWith(index + 1, { type: 'image', prompt: `p${index}`, elementId: ref }),
     );
+    serveImage();
 
-    let allocated = 0;
-    mocks.putAsset.mockImplementation(async () => `ast_${(allocated += 1)}`);
-    let releaseFirst: (() => void) | undefined;
-    const firstInFlight = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
+    let releaseCommit: (() => void) | undefined;
+    const commitInFlight = new Promise<void>((resolve) => {
+      releaseCommit = resolve;
     });
-    let calls = 0;
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === '/api/generate/image') {
-        calls += 1;
-        if (calls === 1) {
-          await firstInFlight;
-          throw Object.assign(new Error('Aborted'), { name: 'AbortError' });
-        }
-        return new Response(
-          JSON.stringify({ success: true, result: { url: 'https://media.test/image' } }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        );
+    let overlapping: Promise<void> | undefined;
+    let callsWhenOverlappingStarted = 0;
+    // The retry path re-enters generation while the first pass is mid-commit.
+    mocks.putAsset.mockImplementation(async () => {
+      if (!overlapping) {
+        // Captured BEFORE the second pass is launched: without serialization its
+        // collection loop is synchronous and would have fired by the time the
+        // call returns.
+        callsWhenOverlappingStarted = providerCallCount();
+        overlapping = generateMediaForOutlines(outlines, stageId);
+        await commitInFlight;
       }
-      if (url === '/api/proxy-media') {
-        return new Response(new Blob(['image'], { type: 'image/png' }), { status: 200 });
-      }
-      throw new Error(`Unexpected fetch: ${url}`);
+      return 'ast_generated';
     });
 
-    const first = new AbortController();
-    const pass1 = generateMediaForOutlines(outlines, stageId, first.signal).catch(() => undefined);
-    await Promise.resolve();
-    await Promise.resolve();
+    const first = generateMediaForOutlines(outlines, stageId);
+    // Give the second pass every chance to run: if it were not waiting, its
+    // collection loop is synchronous and element two is only `pending`, so it
+    // would have called the provider by now.
+    for (let tick = 0; tick < 50; tick += 1) await Promise.resolve();
+    expect(providerCallCount()).toBe(callsWhenOverlappingStarted);
 
-    // Verbatim what the retry path does, in one synchronous block.
-    first.abort();
-    const second = new AbortController();
-    const pass2 = generateMediaForOutlines(outlines, stageId, second.signal).catch(() => undefined);
-
-    releaseFirst?.();
-    await pass1;
-    await pass2;
-
-    // The replacement waited for the aborted pass to settle, then took the two
-    // elements it never reached. The one whose call was actually cancelled is
-    // failed and retryable — an affordance, not a strand — and nothing is left
-    // waiting on a pass that no longer exists.
-    expect(mocks.putAsset).toHaveBeenCalledTimes(2);
-    const tasks = useMediaGenerationStore.getState().tasks;
-    expect(Object.values(tasks).some((task) => task.status === 'pending')).toBe(false);
-    expect(tasks[refs[0]]).toMatchObject({ status: 'failed' });
-    expect(tasks[refs[0]]?.errorCode).toBeUndefined();
+    releaseCommit?.();
+    await first;
+    await overlapping;
   });
 
-  // The retry direction that used to strand: an element fails early in a serial
-  // pass, the user clicks Retry while the pass is still working on later ones.
-  // A pass never revisits an element it has processed, so the retry may simply
-  // run — and it must not be refused after it has already destroyed the failed
-  // state that draws the affordance.
+  // A commit is uncancellable — the asset client takes no signal and a document
+  // write cannot be half-undone — and the next pass for this course waits behind
+  // it. Without a ceiling one stalled upload freezes generation for the rest of
+  // the session, with the element on a skeleton that draws no Retry.
+  it('abandons a commit that never settles, and lets the queue move on', async () => {
+    vi.useFakeTimers();
+    try {
+      serveImage();
+      mocks.putAsset.mockImplementation(() => new Promise<string>(() => undefined));
+
+      const stalled = runImageGeneration();
+      await vi.advanceTimersByTimeAsync(130_000);
+      await stalled;
+
+      // Failed without a structured code, so the affordance is drawn.
+      const task = useMediaGenerationStore.getState().tasks[imageRef];
+      expect(task?.status).toBe('failed');
+      expect(task?.errorCode).toBeUndefined();
+      expect(task?.error).toContain('did not finish in time');
+
+      // And the course is not wedged: the next pass runs.
+      mocks.putAsset.mockResolvedValue('ast_generated');
+      useMediaGenerationStore.setState({ tasks: {} });
+      await runImageGeneration();
+      expect(providerCallCount()).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('honours a Retry clicked while the pass that failed the element is still running', async () => {
     const refs = ['gen_img_1', 'gen_img_2'];
     mocks.stageState.mockReturnValue({

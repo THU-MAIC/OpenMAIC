@@ -243,6 +243,50 @@ describe('the persistence write boundary rewrites stale placeholders', () => {
     expect(imageSrcOf(written.scenes[0])).toBe('ast_boundary');
   });
 
+  // The other half of the same guarantee: WHERE the reconciliation runs. A save
+  // that queues behind the document lock captured its snapshot before the
+  // write-back recorded anything, so reconciling at the top of the save — before
+  // it waits for the lock — reads an empty record and writes the placeholder.
+  // Only reconciling inside the locked callback sees a record that appeared
+  // while the save was waiting.
+  it.each([
+    ['aggregate', (data: never) => saveStageData(stageId, data, 0)],
+    [
+      'incremental',
+      (data: never) =>
+        saveStageDataIncremental(stageId, [{ kind: 'scene', sceneId: 'scene-1' }], data, 0),
+    ],
+  ])('reconciles inside the lock, not before it (%s save)', async (_name, save) => {
+    clearPendingMediaAllocations();
+    const written = captureWrites();
+    const realMutate = mocks.mutateDocument.getMockImplementation()!;
+
+    // The save reaches `mutateDocument` and then waits, exactly as it would for
+    // a lock another writer holds. The allocation appears during that wait.
+    let releaseLock: (() => void) | undefined;
+    const lockHeld = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    mocks.mutateDocument.mockImplementation(
+      async (
+        callStageId: string,
+        work: (document: unknown, store: unknown) => Promise<void>,
+      ): Promise<void> => {
+        await lockHeld;
+        return realMutate(callStageId, work);
+      },
+    );
+
+    const saving = save(snapshot([sceneWithImage(placeholder)]) as never);
+    for (let tick = 0; tick < 20; tick += 1) await Promise.resolve();
+    // Recorded only now — after the save captured its snapshot and queued.
+    recordMediaAllocation({ stageId, placeholderRef: placeholder, assetId: 'ast_late' });
+    releaseLock?.();
+    await saving;
+
+    expect(imageSrcOf(written.scenes[0])).toBe('ast_late');
+  });
+
   it('is inert in browser-only mode', async () => {
     mocks.serverBacked.mockReturnValue(false);
     const written = captureWrites();

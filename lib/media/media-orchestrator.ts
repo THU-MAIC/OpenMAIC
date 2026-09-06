@@ -105,7 +105,7 @@ export async function generateMediaForOutlines(
   abortSignal?: AbortSignal,
 ): Promise<void> {
   if (!isServerBackedMediaPersistence()) {
-    return collectAndGenerate(outlines, stageId, abortSignal);
+    return collectAndGenerate(outlines, stageId, abortSignal, false);
   }
   // Serial per stage. The caller aborts the previous pass before starting this
   // one; waiting for that pass to actually settle is what makes the handoff
@@ -113,7 +113,7 @@ export async function generateMediaForOutlines(
   // uncancellable — `putAsset` and the write-back run to completion — so
   // waiting is also what stops the replacement from paying for it twice.
   const pass = awaitCurrentPass(stageId).then(() =>
-    collectAndGenerate(outlines, stageId, abortSignal),
+    collectAndGenerate(outlines, stageId, abortSignal, true),
   );
   passesByStage.set(stageId, pass);
   try {
@@ -126,20 +126,51 @@ export async function generateMediaForOutlines(
 async function collectAndGenerate(
   outlines: SceneOutline[],
   stageId: string,
-  abortSignal?: AbortSignal,
+  abortSignal: AbortSignal | undefined,
+  serverBacked: boolean,
 ): Promise<void> {
+  // Everything below this point may be running long after the caller queued it:
+  // a server-backed pass waits for its predecessor, and a predecessor's
+  // uncancellable tail can outlast the user's stay on the course. So the pass
+  // re-earns its right to touch anything, twice.
+  //
+  // First, the signal. `enqueueTasks` writes into a table that is keyed by
+  // element id alone, and placeholder ids are not unique across courses, so an
+  // aborted pass that enqueued anyway would seed the ARRIVING course's table
+  // with tasks carrying the departing course's stage id — and a Retry routes by
+  // that id, into the wrong document.
+  //
+  // Second, the document. `documentSkipIndex` can only answer while the live
+  // store is on this stage; when it cannot, the pass has no way to tell what is
+  // already generated. Falling through to the task table would be a silent
+  // demotion from "the document is the authority" to "this browser's table is",
+  // on exactly the path where the table has just been cleared — so every
+  // element the predecessor committed would be generated again. Not deciding is
+  // the only safe answer, and a pass that cannot decide simply ends.
+  let documentIndex: GeneratedMediaDocumentIndex | undefined;
+  if (serverBacked) {
+    if (abortSignal?.aborted) return;
+    documentIndex = documentSkipIndex(stageId);
+    if (!documentIndex) {
+      log.info(`Media pass for ${stageId} stood down: the course is no longer open here.`);
+      return;
+    }
+    // Before deciding anything: hand every parked allocation to the slide that
+    // now wants it. A held allocation whose scene has since arrived must become
+    // a rewrite, not an answer to the skip test — otherwise the placeholder it
+    // was waiting to replace would be treated as handled and never replaced.
+    placePendingMediaAllocations(stageId);
+    // The drain may have resolved slides, so ask the document again.
+    documentIndex = documentSkipIndex(stageId);
+    if (!documentIndex) return;
+  }
+
   const settings = useSettingsStore.getState();
   const store = useMediaGenerationStore.getState();
-  // Before deciding anything: hand every parked allocation to the slide that
-  // now wants it. A held allocation whose scene has since arrived must become a
-  // rewrite, not an answer to the skip test — otherwise the placeholder it was
-  // waiting to replace would be treated as handled and never replaced.
-  if (isServerBackedMediaPersistence()) placePendingMediaAllocations(stageId);
   // Under server-backed persistence the document, not this browser's task
   // table, decides what still needs generating: the table is per-browser, so
   // reading it is exactly how every new browser re-ran (and re-billed) an
   // already-generated course.
-  const documentIndex = documentSkipIndex(stageId);
 
   // Collect all media requests
   const allRequests: MediaGenerationRequest[] = [];
@@ -256,12 +287,12 @@ export function mediaRetryTarget(
 // ==================== Internal ====================
 
 /**
- * The document's answer to "what still needs generating", or `undefined` in
- * browser-only mode, where the local task table remains the only answer there
- * is.
+ * The document's answer to "what still needs generating", or `undefined` when
+ * this browser cannot read it — the live store has moved to another course.
+ * Callers in server-backed mode must treat `undefined` as "cannot decide", not
+ * as an invitation to consult the task table instead.
  */
 function documentSkipIndex(stageId: string): GeneratedMediaDocumentIndex | undefined {
-  if (!isServerBackedMediaPersistence()) return undefined;
   const { stage, scenes, generationComplete } = useStageStore.getState();
   // Another course's scenes would answer for slides this stage does not own,
   // and a wrong "already generated" is a slide that never gets its media.
@@ -380,6 +411,43 @@ async function commitPooledMedia(args: {
 }
 
 /**
+ * How long a commit may hold the course's media queue before it is abandoned.
+ *
+ * The commit is uncancellable by construction — the asset client's `put` takes
+ * no signal, and a document write cannot be half-undone — and the next pass for
+ * this course waits behind it. Without a ceiling one stalled upload freezes
+ * generation for the rest of the session, with the element stuck on a skeleton
+ * that draws no Retry.
+ */
+const MEDIA_COMMIT_TIMEOUT_MS = 120_000;
+
+/**
+ * Bound the wait on a commit, not the commit itself.
+ *
+ * This is a deadline on the caller's patience: the work carries on in the
+ * background, because there is no way to stop it, and if it eventually
+ * succeeds the document simply ends up correct — the reference it writes is
+ * the one the next load would have wanted, and the allocation it records keeps
+ * a later pass from paying twice. What the deadline buys is that the element
+ * becomes retryable and the queue moves on.
+ */
+function withCommitDeadline<T>(work: Promise<T>, elementId: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `Storing generated media for ${elementId} did not finish in time; retry to try again`,
+          ),
+        ),
+      MEDIA_COMMIT_TIMEOUT_MS,
+    );
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer)) as Promise<T>;
+}
+
+/**
  * Give back bytes nothing can reference, without letting the attempt matter.
  *
  * A deployment may refuse an asset deletion — it is a mutation, and a mutation
@@ -436,15 +504,18 @@ async function generateSingleMedia(
         // A hosted URL is the provider's address, not a durable reference the
         // document may hold, so the bytes are fetched and put to the pool.
         throwIfAborted(abortSignal);
-        const blob = await fetchAsBlob(result.ossUrl || result.url);
+        const blob = await fetchAsBlob(result.ossUrl || result.url, abortSignal);
         throwIfAborted(abortSignal);
-        await commitPooledMedia({
-          req,
-          stageId,
-          paramsJson,
-          blob,
-          mimeType: storedMediaType(blob, 'image/png'),
-        });
+        await withCommitDeadline(
+          commitPooledMedia({
+            req,
+            stageId,
+            paramsJson,
+            blob,
+            mimeType: storedMediaType(blob, 'image/png'),
+          }),
+          req.elementId,
+        );
         return;
       }
 
@@ -469,7 +540,7 @@ async function generateSingleMedia(
 
       // Fallback: fetch blob via proxy-media
       throwIfAborted(abortSignal);
-      const blob = await fetchAsBlob(result.url);
+      const blob = await fetchAsBlob(result.url, abortSignal);
       await db.mediaFiles.put({
         id: mediaFileKey(stageId, req.elementId),
         stageId,
@@ -488,21 +559,24 @@ async function generateSingleMedia(
 
       if (serverBacked) {
         throwIfAborted(abortSignal);
-        const blob = await fetchAsBlob(result.ossUrl || result.url);
+        const blob = await fetchAsBlob(result.ossUrl || result.url, abortSignal);
         const posterSource = result.posterOssUrl || result.poster;
         const posterBlob = posterSource
-          ? await fetchAsBlob(posterSource).catch(() => undefined)
+          ? await fetchAsBlob(posterSource, abortSignal).catch(() => undefined)
           : undefined;
         throwIfAborted(abortSignal);
-        await commitPooledMedia({
-          req,
-          stageId,
-          paramsJson,
-          blob,
-          mimeType: storedMediaType(blob, 'video/mp4'),
-          posterBlob,
-          ...(posterBlob ? { posterMimeType: storedMediaType(posterBlob, 'image/jpeg') } : {}),
-        });
+        await withCommitDeadline(
+          commitPooledMedia({
+            req,
+            stageId,
+            paramsJson,
+            blob,
+            mimeType: storedMediaType(blob, 'video/mp4'),
+            posterBlob,
+            ...(posterBlob ? { posterMimeType: storedMediaType(posterBlob, 'image/jpeg') } : {}),
+          }),
+          req.elementId,
+        );
         return;
       }
 
@@ -530,9 +604,9 @@ async function generateSingleMedia(
 
       // Fallback: fetch blob via proxy-media
       throwIfAborted(abortSignal);
-      const blob = await fetchAsBlob(result.url);
+      const blob = await fetchAsBlob(result.url, abortSignal);
       const posterBlob = result.poster
-        ? await fetchAsBlob(result.poster).catch(() => undefined)
+        ? await fetchAsBlob(result.poster, abortSignal).catch(() => undefined)
         : undefined;
       await db.mediaFiles.put({
         id: mediaFileKey(stageId, req.elementId),
@@ -685,7 +759,7 @@ async function callVideoApi(
   };
 }
 
-async function fetchAsBlob(url: string): Promise<Blob> {
+async function fetchAsBlob(url: string, signal?: AbortSignal): Promise<Blob> {
   // For data URLs, convert directly
   if (url.startsWith('data:')) {
     const res = await fetch(url);
@@ -694,8 +768,10 @@ async function fetchAsBlob(url: string): Promise<Blob> {
   // For remote URLs, proxy through our server to bypass CORS restrictions.
   // Routed through the shared proxy-media negative cache so a permanently
   // failed URL (4xx) is not re-fetched by retries or later generation passes.
+  // The pass's signal travels with it: a stalled download otherwise holds the
+  // course's whole media queue, because the next pass waits for this one.
   if (url.startsWith('http://') || url.startsWith('https://')) {
-    const res = await fetchProxiedMediaUrl(url);
+    const res = await fetchProxiedMediaUrl(url, signal ? { signal } : undefined);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       throw new Error(data.error || `Proxy fetch failed: ${res.status}`);
@@ -703,7 +779,7 @@ async function fetchAsBlob(url: string): Promise<Blob> {
     return res.blob();
   }
   // Relative URLs (shouldn't happen, but handle gracefully)
-  const res = await fetch(url);
+  const res = await fetch(url, signal ? { signal } : undefined);
   if (!res.ok) throw new Error(`Failed to fetch blob: ${res.status}`);
   return res.blob();
 }
