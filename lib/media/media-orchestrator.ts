@@ -49,59 +49,32 @@ import { createLogger } from '@/lib/logger';
 const log = createLogger('MediaOrchestrator');
 
 /**
- * Elements a live generation pass has taken responsibility for.
+ * The pass currently running for a stage, if one is.
  *
- * Scoped to the pass, not to the task table: a task marked `pending` says only
- * that some pass once intended to generate it, and a pass that was aborted
- * leaves that intent behind with nobody acting on it. A claim means a pass is
- * running right now and will reach this element, which is the only reading that
- * lets an overlapping pass stand down without stranding the work of an
- * abandoned one.
+ * Media passes for one course are serial, and that is the whole concurrency
+ * model: there is no per-element bookkeeping, because there is nothing for it
+ * to arbitrate. A replacement pass aborts its predecessor and then waits for it
+ * to settle, so by the time it looks at the document nothing is in flight —
+ * a commit that had already started has finished (its bytes are stored and its
+ * reference written, so the new pass sees a resolved slide and skips it), and
+ * an element the aborted pass never reached is still a placeholder and gets
+ * collected like any other.
  *
- * Each claim carries its pass's signal, and an aborted signal retires the claim
- * immediately. That is what makes the handoff safe: a replacement pass is
- * started in the same synchronous block that aborts its predecessor, long
- * before the predecessor's `finally` can run, so reading claim membership alone
- * would make the replacement skip every element the aborted pass never reached
- * — and nothing would ever come back for them. Releasing is identity-checked
- * for the same reason: a pass must never drop a claim a newer pass has taken.
+ * Three rounds of per-element claims taught the lesson this replaces: every
+ * refinement of "who owns this element right now" created a new way to strand
+ * one. Waiting has no such states.
  */
-interface MediaRequestClaim {
-  readonly signal: AbortSignal | undefined;
+const passesByStage = new Map<string, Promise<void>>();
+
+/** Wait for the stage's current pass to settle, whatever it settles as. */
+async function awaitCurrentPass(stageId: string): Promise<void> {
+  const current = passesByStage.get(stageId);
+  if (current) await current.catch(() => undefined);
 }
 
-const claimedMediaRequests = new Map<string, MediaRequestClaim>();
-
-function claimKey(stageId: string, elementId: string): string {
-  return `${stageId}\u0000${elementId}`;
-}
-
-/** Whether a live pass owns this element right now. */
-function isMediaRequestClaimed(stageId: string, elementId: string): boolean {
-  const claim = claimedMediaRequests.get(claimKey(stageId, elementId));
-  if (!claim) return false;
-  if (claim.signal?.aborted !== true) return true;
-  // The owner is gone; the element is free again for whoever asks next.
-  claimedMediaRequests.delete(claimKey(stageId, elementId));
-  return false;
-}
-
-/** Take the element for this pass, unless a live pass already holds it. */
-function claimMediaRequest(
-  stageId: string,
-  elementId: string,
-  signal: AbortSignal | undefined,
-): MediaRequestClaim | undefined {
-  if (isMediaRequestClaimed(stageId, elementId)) return undefined;
-  const claim: MediaRequestClaim = { signal };
-  claimedMediaRequests.set(claimKey(stageId, elementId), claim);
-  return claim;
-}
-
-/** Release only a claim this pass still owns. */
-function releaseMediaRequest(stageId: string, elementId: string, claim: MediaRequestClaim): void {
-  const mapKey = claimKey(stageId, elementId);
-  if (claimedMediaRequests.get(mapKey) === claim) claimedMediaRequests.delete(mapKey);
+/** @internal Test-only: forget any pass a spec left un-settled. */
+export function resetMediaPassesForTests(): void {
+  passesByStage.clear();
 }
 
 /** Error with a structured errorCode from the API */
@@ -131,6 +104,30 @@ export async function generateMediaForOutlines(
   stageId: string,
   abortSignal?: AbortSignal,
 ): Promise<void> {
+  if (!isServerBackedMediaPersistence()) {
+    return collectAndGenerate(outlines, stageId, abortSignal);
+  }
+  // Serial per stage. The caller aborts the previous pass before starting this
+  // one; waiting for that pass to actually settle is what makes the handoff
+  // safe without tracking individual elements. A commit already under way is
+  // uncancellable — `putAsset` and the write-back run to completion — so
+  // waiting is also what stops the replacement from paying for it twice.
+  const pass = awaitCurrentPass(stageId).then(() =>
+    collectAndGenerate(outlines, stageId, abortSignal),
+  );
+  passesByStage.set(stageId, pass);
+  try {
+    await pass;
+  } finally {
+    if (passesByStage.get(stageId) === pass) passesByStage.delete(stageId);
+  }
+}
+
+async function collectAndGenerate(
+  outlines: SceneOutline[],
+  stageId: string,
+  abortSignal?: AbortSignal,
+): Promise<void> {
   const settings = useSettingsStore.getState();
   const store = useMediaGenerationStore.getState();
   // Before deciding anything: hand every parked allocation to the slide that
@@ -146,7 +143,6 @@ export async function generateMediaForOutlines(
 
   // Collect all media requests
   const allRequests: MediaGenerationRequest[] = [];
-  const reserved = new Map<string, MediaRequestClaim>();
   for (const outline of outlines) {
     if (!outline.mediaGenerations) continue;
     for (const mg of outline.mediaGenerations) {
@@ -164,45 +160,34 @@ export async function generateMediaForOutlines(
         // genuinely has nowhere to go yet; asking the provider again would pay
         // twice for bytes this session already holds.
         if (pendingMediaAllocation(stageId, mg.elementId)) continue;
-        // An overlapping pass — an outline retry re-enters generation with
-        // every outline while this one is still working — must not re-request
-        // an element another live pass has already taken. The claim, not the
-        // task status, is what says so: a pass that was aborted leaves its
-        // tasks at `pending` forever, and reading that as "answered" would make
-        // every later pass skip them with no retry affordance to recover them.
-        if (isMediaRequestClaimed(stageId, mg.elementId)) continue;
+        // A permanently failed task (content policy, generation disabled) is a
+        // refusal to call the provider again, never a claim that media exists.
         if (existing?.status === 'failed') continue;
+        // `generating` is the one status that means "something is working on
+        // this right now". Passes are serial, so it can only be a single-element
+        // retry running alongside this pass; letting the pass take it too would
+        // pay for the element twice. `pending` is deliberately NOT skipped: it
+        // means a pass once intended to reach this element, and an abandoned
+        // pass leaves that intent behind with nobody acting on it — reading it
+        // as answered is what stranded elements in earlier designs.
+        if (existing?.status === 'generating') continue;
       } else {
         // Skip already completed or permanently failed (restored from DB)
         if (existing?.status === 'done' || existing?.status === 'failed') continue;
       }
-      // Reserved for this whole pass, not only while its own call runs: the
-      // pass works serially, and an overlapping pass must stand down for the
-      // elements this one will reach later, not just the one it is on.
-      const reservation = claimMediaRequest(stageId, mg.elementId, abortSignal);
-      if (!reservation) continue;
-      reserved.set(mg.elementId, reservation);
       allRequests.push(mg);
     }
   }
 
   if (allRequests.length === 0) return;
 
-  try {
-    // Enqueue all as pending
-    useMediaGenerationStore.getState().enqueueTasks(stageId, allRequests);
+  // Enqueue all as pending
+  useMediaGenerationStore.getState().enqueueTasks(stageId, allRequests);
 
-    // Process requests serially — image/video APIs have limited concurrency
-    for (const req of allRequests) {
-      if (abortSignal?.aborted) break;
-      await generateSingleMedia(req, stageId, abortSignal, reserved.get(req.elementId));
-    }
-  } finally {
-    // Identity-checked, so a pass unwinding late can never drop a reservation
-    // its replacement has since taken.
-    for (const [elementId, reservation] of reserved) {
-      releaseMediaRequest(stageId, elementId, reservation);
-    }
+  // Process requests serially — image/video APIs have limited concurrency
+  for (const req of allRequests) {
+    if (abortSignal?.aborted) break;
+    await generateSingleMedia(req, stageId, abortSignal);
   }
 }
 
@@ -237,7 +222,12 @@ export async function retryMediaTask(
   const dbKey = mediaFileKey(task.stageId, elementId);
   await db.mediaFiles.delete(dbKey).catch(() => {});
 
-  store.markPendingForRetry(elementId);
+  // Re-read after the await: only a still-failed task may be retried, and the
+  // check has to come BEFORE the state is destroyed. Marking first and refusing
+  // afterwards is what turned a recoverable failure into a slide stuck at
+  // `pending` with no affordance left to recover it.
+  if (useMediaGenerationStore.getState().getTask(elementId)?.status !== 'failed') return;
+  useMediaGenerationStore.getState().markPendingForRetry(elementId);
   await generateSingleMedia(
     {
       type: task.type,
@@ -347,8 +337,8 @@ async function commitPooledMedia(args: {
     // with it, which reads as "already generated" and stops any retry.
     forgetMediaAllocation(stageId, req.elementId);
     // Deleting is best effort. A deployment may refuse an asset mutation
-    // outright, and losing that argument must not cost the task its retry; the
-    // bytes are then left for server-side reclamation.
+    // outright, and losing that argument must not cost the task its retry —
+    // the bytes then leak, which `reclaimAsset` spells out.
     await reclaimAsset(assetId);
     if (posterAssetId) await reclaimAsset(posterAssetId);
     throw error;
@@ -395,12 +385,18 @@ async function commitPooledMedia(args: {
  * A deployment may refuse an asset deletion — it is a mutation, and a mutation
  * has to prove it holds the deployment's credential — and a browser may simply
  * be offline. Neither is a reason to fail a generation task that has already
- * been marked for retry, so a refusal is logged and the bytes are left for
- * server-side reclamation.
+ * been marked for retry, so a refusal is logged and swallowed.
+ *
+ * What a refusal costs, plainly: those bytes leak. The registry entry survives
+ * and still names its blob, and the byte collector reclaims only blobs that no
+ * entry names, so nothing on the server picks them up either; the registry
+ * sweep that would is written but not wired up. In a deployment that has not
+ * opted into the development authenticator this is every reclaim, not an edge
+ * case.
  */
 async function reclaimAsset(assetId: string): Promise<void> {
   await removeAsset(assetId).catch((error: unknown) => {
-    log.warn(`Could not reclaim ${assetId}; leaving it for server-side reclamation:`, error);
+    log.warn(`Could not reclaim ${assetId}; its bytes now leak:`, error);
   });
 }
 
@@ -418,26 +414,6 @@ function storedMediaType(blob: Blob, fallback: string): string {
 }
 
 async function generateSingleMedia(
-  req: MediaGenerationRequest,
-  stageId: string,
-  abortSignal?: AbortSignal,
-  reservation?: MediaRequestClaim,
-): Promise<void> {
-  // Every entry claims, so single-task retries participate in the same
-  // protocol a pass does; without that a retry awaiting its provider is
-  // invisible to a pass starting alongside it and both call it.
-  const claim = reservation ?? claimMediaRequest(stageId, req.elementId, abortSignal);
-  if (!claim) return;
-  try {
-    await generateSingleMediaClaimed(req, stageId, abortSignal);
-  } finally {
-    // A pass owns its reservations for its whole lifetime and releases them
-    // itself; a claim taken here belongs to this call alone.
-    if (!reservation) releaseMediaRequest(stageId, req.elementId, claim);
-  }
-}
-
-async function generateSingleMediaClaimed(
   req: MediaGenerationRequest,
   stageId: string,
   abortSignal?: AbortSignal,

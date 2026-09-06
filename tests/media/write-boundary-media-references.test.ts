@@ -186,6 +186,63 @@ describe('the persistence write boundary rewrites stale placeholders', () => {
     expect(imageSrcOf(written.scenes[0])).toBe(placeholder);
   });
 
+  // The window the record must already be visible in: a save queued while the
+  // write-back's round trip is still open. It captured the placeholder, and if
+  // the course has been left there is no corrective flush to follow it.
+  it('reconciles a save that was queued while the write-back was in flight', async () => {
+    clearPendingMediaAllocations();
+    const written = captureWrites();
+    const documentStore = await import('@/lib/document-store');
+    const realMutate = mocks.mutateDocument.getMockImplementation()!;
+
+    let releaseWriteBack: (() => void) | undefined;
+    const writeBackInFlight = new Promise<void>((resolve) => {
+      releaseWriteBack = resolve;
+    });
+    let queuedSave: Promise<unknown> | undefined;
+    let writeBackClaimed = false;
+    // The write-back's own mutation: it issues a write, and the queued save
+    // starts while that write is still on the wire. Every later mutation —
+    // the queued save's own — goes to the ordinary capture.
+    mocks.mutateDocument.mockImplementation(
+      async (
+        callStageId: string,
+        work: (document: unknown, store: unknown) => Promise<void>,
+      ): Promise<void> => {
+        if (writeBackClaimed) return realMutate(callStageId, work);
+        writeBackClaimed = true;
+        return work(
+          { stage: { id: stageId, whiteboard: [] }, scenes: [sceneWithImage(placeholder)] },
+          {
+            putScene: async () => {
+              // The save is captured with the placeholder, exactly as a
+              // departing-course flush would be.
+              queuedSave = saveStageData(stageId, snapshot([sceneWithImage(placeholder)]), 0);
+              await writeBackInFlight;
+            },
+            putStage: async () => undefined,
+          },
+        );
+      },
+    );
+    expect(documentStore.mutateDocument).toBe(mocks.mutateDocument);
+
+    const { persistGeneratedMediaReference } = await import('@/lib/media/persist-media-reference');
+    const committing = persistGeneratedMediaReference({
+      stageId,
+      placeholderRef: placeholder,
+      assetId: 'ast_boundary',
+    });
+    for (let tick = 0; tick < 20; tick += 1) await Promise.resolve();
+    releaseWriteBack?.();
+    await committing;
+    await queuedSave;
+
+    // The queued save reconciled against a record that already existed, so the
+    // reference it wrote is the allocated id and not the placeholder it held.
+    expect(imageSrcOf(written.scenes[0])).toBe('ast_boundary');
+  });
+
   it('is inert in browser-only mode', async () => {
     mocks.serverBacked.mockReturnValue(false);
     const written = captureWrites();

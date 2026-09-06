@@ -178,6 +178,16 @@ export async function persistGeneratedMediaReference(
   // resolves: a rejected request does not prove the server did not apply it,
   // so an attempted write is enough to make the ids possibly-referenced.
   let writeIssued = false;
+  const issuingWrite = () => {
+    if (writeIssued) return;
+    writeIssued = true;
+    // Visible from the moment a write is on the wire, not once the round trip
+    // ends. A save that flushes during that trip carries a snapshot taken
+    // before the rewrite, and the write boundary can only reconcile it against
+    // a record that already exists — and a departing-course flush gets no
+    // corrective pass afterwards, because the live store has moved on.
+    recordMediaAllocation(allocation);
+  };
 
   try {
     await mutateDocument(stageId, async (document, store) => {
@@ -185,12 +195,12 @@ export async function persistGeneratedMediaReference(
       const now = Date.now();
       for (const scene of document.scenes) {
         if (!rewriteSceneMediaReference(scene, rewrite)) continue;
-        writeIssued = true;
+        issuingWrite();
         await store.putScene(stageId, { ...scene, updatedAt: now });
         documentMatched = true;
       }
       if (rewriteStageMediaReference(document.stage, rewrite)) {
-        writeIssued = true;
+        issuingWrite();
         await store.putStage(stageId, { ...document.stage, updatedAt: now });
         documentMatched = true;
       }
@@ -201,10 +211,12 @@ export async function persistGeneratedMediaReference(
     // snapshot still holding the placeholder would undo the half that landed.
     const placedLive = applyToLiveStage(stageId, rewrite);
     const retained = placedLive || writeIssued;
-    // Recorded only where the allocation survives. A record for bytes the
+    // Recorded only where the allocation survives — a record for bytes the
     // caller is about to reclaim would outlive them and let a later save stamp
-    // a deleted id into the document — where it reads as "already generated"
-    // and stops anything from retrying.
+    // a deleted id into the document, where it reads as "already generated" and
+    // stops anything from retrying. A write that was issued already recorded
+    // it above; this covers the branch where the live store took the rewrite
+    // without any write having gone out.
     if (placedLive) recordMediaAllocation(allocation);
     else if (writeIssued) recordPendingMediaAllocation(allocation);
     throw new MediaReferenceWriteBackError(error, retained);

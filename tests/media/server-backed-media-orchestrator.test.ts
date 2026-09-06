@@ -66,7 +66,11 @@ vi.mock('@/lib/persistence/media-persistence', () => ({
   isServerBackedMediaPersistence: mocks.serverBacked,
 }));
 
-import { generateMediaForOutlines, retryMediaTask } from '@/lib/media/media-orchestrator';
+import {
+  generateMediaForOutlines,
+  resetMediaPassesForTests,
+  retryMediaTask,
+} from '@/lib/media/media-orchestrator';
 import { noteStageGenerationOwnership } from '@/lib/classroom/generation-permission';
 import { MediaReferenceWriteBackError } from '@/lib/media/persist-media-reference';
 import { resetProxyMediaFailureCache } from '@/lib/media/proxy-media-cache';
@@ -125,6 +129,7 @@ describe('server-backed classic media orchestrator', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    resetMediaPassesForTests();
     resetProxyMediaFailureCache();
     mocks.mediaPut.mockReset().mockResolvedValue(undefined);
     mocks.mediaDelete.mockReset().mockResolvedValue(undefined);
@@ -161,6 +166,7 @@ describe('server-backed classic media orchestrator', () => {
   });
 
   afterEach(() => {
+    resetMediaPassesForTests();
     resetProxyMediaFailureCache();
     vi.unstubAllGlobals();
   });
@@ -369,6 +375,11 @@ describe('server-backed classic media orchestrator', () => {
     expect(mocks.forgetAllocation).toHaveBeenCalledWith(stageId, imageRef);
   });
 
+  // A refused deletion — the normal case in a deployment that has not opted into
+  // the development authenticator — must cost the task nothing. The refusal is
+  // swallowed by `reclaimAsset`, not by the caller's own catch, so a rejection
+  // that escaped it would surface as the task's error instead of the
+  // write-back's, and the retryable state would be about the wrong failure.
   it('does not fail the task when the deployment refuses the reclaim', async () => {
     serveImage();
     mocks.persistReference.mockRejectedValue(
@@ -378,13 +389,19 @@ describe('server-backed classic media orchestrator', () => {
 
     await runImageGeneration();
 
-    // The task keeps the write-back's own error, and stays retryable; losing an
-    // argument about deletion must not cost it that.
+    expect(mocks.removeAsset).toHaveBeenCalledWith('ast_generated');
+    // The task keeps the write-back's own error, not the reclaim's.
     expect(useMediaGenerationStore.getState().tasks[imageRef]).toMatchObject({
       status: 'failed',
       error: 'document write rejected',
     });
+    expect(useMediaGenerationStore.getState().tasks[imageRef]?.errorCode).toBeUndefined();
+    // Forgotten before the deletion is attempted, so a refusal still leaves the
+    // placeholder intact and the request open.
     expect(mocks.forgetAllocation).toHaveBeenCalledWith(stageId, imageRef);
+    expect(mocks.forgetAllocation.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.removeAsset.mock.invocationCallOrder[0],
+    );
   });
 
   it('keeps an allocation the funnel says it retained', async () => {
@@ -417,7 +434,9 @@ describe('server-backed classic media orchestrator', () => {
     expect(mocks.placeAllocations).toHaveBeenCalledWith(stageId);
   });
 
-  it('does not re-request an element a live pass has already claimed', async () => {
+  // Passes for one course are serial: a second pass waits for the first to
+  // settle, and then sees a document whose reference has been rewritten.
+  it('does not re-request an element while another pass is still working', async () => {
     serveImage();
     let overlapping: Promise<void> | undefined;
     // The retry path re-enters generation with every outline while the first
@@ -425,6 +444,17 @@ describe('server-backed classic media orchestrator', () => {
     mocks.putAsset.mockImplementation(async () => {
       overlapping ??= runImageGeneration();
       return 'ast_generated';
+    });
+    // The write-back rewrote the slide, so the waiting pass finds it resolved.
+    mocks.stageState.mockReturnValueOnce({
+      stage: { id: stageId },
+      scenes: [sceneWithImage(1, imageRef)],
+      generationComplete: false,
+    });
+    mocks.stageState.mockReturnValue({
+      stage: { id: stageId },
+      scenes: [sceneWithImage(1, 'ast_generated')],
+      generationComplete: false,
     });
 
     await runImageGeneration();
@@ -490,17 +520,120 @@ describe('server-backed classic media orchestrator', () => {
     await pass1;
     await pass2;
 
-    // Every element was generated and stored — the aborted one included, since
-    // its call produced nothing — and none was left waiting on a pass that no
-    // longer exists.
-    expect(mocks.putAsset).toHaveBeenCalledTimes(3);
-    expect(calls).toBeGreaterThanOrEqual(3);
+    // The replacement waited for the aborted pass to settle, then took the two
+    // elements it never reached. The one whose call was actually cancelled is
+    // failed and retryable — an affordance, not a strand — and nothing is left
+    // waiting on a pass that no longer exists.
+    expect(mocks.putAsset).toHaveBeenCalledTimes(2);
     const tasks = useMediaGenerationStore.getState().tasks;
     expect(Object.values(tasks).some((task) => task.status === 'pending')).toBe(false);
+    expect(tasks[refs[0]]).toMatchObject({ status: 'failed' });
+    expect(tasks[refs[0]]?.errorCode).toBeUndefined();
   });
 
-  // A single-task retry awaiting its provider must be visible to a pass that
-  // starts alongside it, or both call the provider for the same element.
+  // The retry direction that used to strand: an element fails early in a serial
+  // pass, the user clicks Retry while the pass is still working on later ones.
+  // A pass never revisits an element it has processed, so the retry may simply
+  // run — and it must not be refused after it has already destroyed the failed
+  // state that draws the affordance.
+  it('honours a Retry clicked while the pass that failed the element is still running', async () => {
+    const refs = ['gen_img_1', 'gen_img_2'];
+    mocks.stageState.mockReturnValue({
+      stage: { id: stageId },
+      scenes: refs.map((ref, index) => sceneWithImage(index + 1, ref)),
+      generationComplete: false,
+    });
+    let allocated = 0;
+    mocks.putAsset.mockImplementation(async () => `ast_${(allocated += 1)}`);
+    noteStageGenerationOwnership(stageId, 'owner');
+
+    let releaseSecond: (() => void) | undefined;
+    const secondInFlight = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    const prompts: string[] = [];
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/generate/image') {
+        const { prompt } = JSON.parse(String(init?.body)) as { prompt: string };
+        prompts.push(prompt);
+        // The first element fails transiently; the second holds the pass open.
+        if (prompt === 'one' && prompts.filter((p) => p === 'one').length === 1) {
+          return new Response(JSON.stringify({ success: false, error: 'transient' }), {
+            status: 500,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        if (prompt === 'two') await secondInFlight;
+        return new Response(
+          JSON.stringify({ success: true, result: { url: 'https://media.test/image' } }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url === '/api/proxy-media') {
+        return new Response(new Blob(['image'], { type: 'image/png' }), { status: 200 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const pass = generateMediaForOutlines(
+      [
+        outlineWith(1, { type: 'image', prompt: 'one', elementId: refs[0] }),
+        outlineWith(2, { type: 'image', prompt: 'two', elementId: refs[1] }),
+      ],
+      stageId,
+    );
+    // Let element one fail and element two start.
+    for (let tick = 0; tick < 40; tick += 1) await Promise.resolve();
+    expect(useMediaGenerationStore.getState().tasks[refs[0]]?.status).toBe('failed');
+
+    const retried = retryMediaTask(refs[0]);
+    releaseSecond?.();
+    await Promise.all([pass, retried]);
+
+    // The click produced exactly one extra provider call, and the element ended
+    // stored rather than stuck.
+    expect(prompts.filter((prompt) => prompt === 'one')).toHaveLength(2);
+    const tasks = useMediaGenerationStore.getState().tasks;
+    expect(Object.values(tasks).some((task) => task.status === 'pending')).toBe(false);
+    expect(Object.values(tasks).filter((task) => task.status === 'done')).toHaveLength(2);
+  });
+
+  // The retry reads the task again after its own await, and refuses BEFORE
+  // touching it. Marking first and refusing afterwards destroys the failed
+  // state that draws the affordance, leaving the element pending with nothing
+  // able to recover it.
+  it('refuses a stale retry without destroying the state that offers it', async () => {
+    serveImage();
+    noteStageGenerationOwnership(stageId, 'owner');
+    useMediaGenerationStore.setState({
+      tasks: {
+        [imageRef]: {
+          elementId: imageRef,
+          type: 'image',
+          status: 'failed',
+          prompt: 'A diagram',
+          params: {},
+          error: 'transient',
+          retryCount: 0,
+          stageId,
+        },
+      },
+    });
+    // Something else takes the element while the retry is clearing its row.
+    mocks.mediaDelete.mockImplementation(async () => {
+      useMediaGenerationStore.getState().markGenerating(imageRef);
+    });
+
+    await retryMediaTask(imageRef);
+
+    expect(providerCallCount()).toBe(0);
+    // Untouched: still owned by whoever is generating it.
+    expect(useMediaGenerationStore.getState().tasks[imageRef]?.status).toBe('generating');
+  });
+
+  // A retry that is actually running must be visible to a pass starting
+  // alongside it, or both call the provider for the same element.
   it('does not let an overlapping pass duplicate a retry already in flight', async () => {
     let releaseRetry: (() => void) | undefined;
     const retryInFlight = new Promise<void>((resolve) => {

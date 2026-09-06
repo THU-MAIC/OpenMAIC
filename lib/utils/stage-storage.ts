@@ -223,7 +223,6 @@ export async function saveStageData(
   data: StageStoreData,
   capturedEpoch: number,
 ): Promise<{ failedChanges: PendingChange[] } | StaleDroppedSave | undefined> {
-  data = withKnownMediaAllocations(stageId, data);
   if (isStageWriteStale(stageId, capturedEpoch)) {
     log.info(`Dropping save for deleted/stale stage: ${stageId}`);
     return 'stale-dropped';
@@ -235,6 +234,11 @@ export async function saveStageData(
     await mutateDocument(
       stageId,
       async (existing, store) => {
+        // Reconciled here, under the document lock, not before it: a write-back
+        // running when this save was queued may only have recorded its
+        // allocation while we waited for the lock, and a departing-course flush
+        // gets no corrective pass afterwards.
+        data = withKnownMediaAllocations(stageId, data);
         // Re-check inside the mutation: a deletion that started while this
         // save was waiting must win. With Web Locks this runs under the
         // per-stage document lock; without them the callback is lock-free
@@ -295,7 +299,6 @@ export async function saveStageDataIncremental(
   data: StageStoreData,
   capturedEpoch: number,
 ): Promise<{ failedChanges: PendingChange[] } | StaleDroppedSave> {
-  data = withKnownMediaAllocations(stageId, data);
   // `capturedEpoch` = the deletion epoch when `data` was captured (the flush
   // round / departing-stage snapshot); required so the capture point and the
   // validation point stay paired. See saveStageData for the fencing contract;
@@ -327,6 +330,8 @@ export async function saveStageDataIncremental(
     await mutateDocument(
       stageId,
       async (existing, store) => {
+        // Reconciled under the lock, for the reason saveStageData gives.
+        data = withKnownMediaAllocations(stageId, data);
         // Re-check inside the mutation: `existing === undefined` after a
         // deletion must not be mistaken for a legacy destination — the
         // full-save fallback below would otherwise rebuild the deleted

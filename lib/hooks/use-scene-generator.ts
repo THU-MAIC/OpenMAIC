@@ -29,7 +29,6 @@ import { resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { putAsset, removeAsset } from '@/lib/media/asset-pool';
-import { forgetMediaAllocation } from '@/lib/media/pending-media-allocations';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
@@ -548,20 +547,20 @@ async function allocatePooledAudio(blob: Blob, duration: number | undefined): Pr
 
 export async function removeFreshTtsAllocations(assetIds: readonly string[]): Promise<void> {
   const serverBacked = isServerBackedMediaPersistence();
-  const stageId = useStageStore.getState().stage?.id;
   for (const assetId of new Set(assetIds)) {
     await db.audioFiles.delete(assetId).catch(() => undefined);
     if (!serverBacked) continue;
-    // Narration is stamped straight onto the action, so its id is its own
-    // placeholder as far as the write boundary is concerned; forget it before
-    // dropping the bytes, or a later save could stamp an id that is gone.
-    if (stageId) forgetMediaAllocation(stageId, assetId);
     // Only ids this run allocated reach here, so the pool entry is this run's
     // to drop; a scene whose narration was rolled back must not leave paid-for
-    // bytes behind that nothing will ever reference. Best effort: a deployment
-    // that refuses the deletion leaves the bytes for server-side reclamation.
+    // bytes behind that nothing will ever reference.
+    //
+    // Best effort, and a refusal is the normal case: a deployment that has not
+    // opted into the development authenticator refuses every asset deletion.
+    // Those bytes then LEAK. The registry entry still names its blob, and the
+    // byte collector reclaims only blobs no entry names, so nothing collects
+    // them; the registry sweep that would is not wired up yet.
     await removeAsset(assetId).catch((error: unknown) => {
-      log.warn(`Could not reclaim narration ${assetId}:`, error);
+      log.warn(`Could not reclaim narration ${assetId}; its bytes now leak:`, error);
     });
   }
 }
@@ -744,11 +743,15 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       store.getState().setGeneratingOutlines(pending);
 
       // Launch media generation in parallel — does not block content/action generation.
-      // Abort whatever the ref held first: replacing it would orphan that loop
-      // with a signal nothing can ever fire, leaving it calling providers and
-      // storing assets for a course the user may already have left, and leaving
-      // `stop()` able to reach only the newest pass.
-      mediaAbortRef.current?.abort();
+      // Under server-backed persistence, abort whatever the ref held first:
+      // replacing it would orphan that loop with a signal nothing can ever
+      // fire, leaving it calling providers and storing assets — real spend and
+      // real storage — for a course the user may already have left, and leaving
+      // `stop()` able to reach only the newest pass. The orchestrator then
+      // waits for the aborted pass to settle before collecting, so the two
+      // never overlap. Browser-only mode keeps its original behaviour, where an
+      // overlapping pass costs a duplicate download and nothing else.
+      if (isServerBackedMediaPersistence()) mediaAbortRef.current?.abort();
       mediaAbortRef.current = new AbortController();
       generateMediaForOutlines(outlines, stage.id, mediaAbortRef.current.signal).catch((err) => {
         log.warn('Media generation error:', err);
