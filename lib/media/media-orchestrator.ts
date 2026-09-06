@@ -47,6 +47,22 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('MediaOrchestrator');
 
+/**
+ * Elements a live generation pass has taken responsibility for.
+ *
+ * Scoped to the pass, not to the task table: a task marked `pending` says only
+ * that some pass once intended to generate it, and a pass that was aborted
+ * leaves that intent behind with nobody acting on it. Membership here means a
+ * pass is running right now and will reach this element, which is the only
+ * reading that lets an overlapping pass stand down without stranding the work
+ * of an abandoned one.
+ */
+const claimedMediaRequests = new Set<string>();
+
+function claimKey(stageId: string, elementId: string): string {
+  return `${stageId}\u0000${elementId}`;
+}
+
 /** Error with a structured errorCode from the API */
 class MediaApiError extends Error {
   errorCode?: string;
@@ -108,9 +124,12 @@ export async function generateMediaForOutlines(
         if (pendingMediaAllocation(stageId, mg.elementId)) continue;
         // An overlapping pass — an outline retry re-enters generation with
         // every outline while this one is still working — must not re-request
-        // an element whose provider call is already in flight. A task that is
-        // pending or generating is an answered request, not an unanswered one.
-        if (existing && existing.status !== 'done') continue;
+        // an element another live pass has already taken. The claim, not the
+        // task status, is what says so: a pass that was aborted leaves its
+        // tasks at `pending` forever, and reading that as "answered" would make
+        // every later pass skip them with no retry affordance to recover them.
+        if (claimedMediaRequests.has(claimKey(stageId, mg.elementId))) continue;
+        if (existing?.status === 'failed') continue;
       } else {
         // Skip already completed or permanently failed (restored from DB)
         if (existing?.status === 'done' || existing?.status === 'failed') continue;
@@ -121,13 +140,23 @@ export async function generateMediaForOutlines(
 
   if (allRequests.length === 0) return;
 
-  // Enqueue all as pending
-  useMediaGenerationStore.getState().enqueueTasks(stageId, allRequests);
+  // Claim them for the lifetime of this pass, and release them however it ends.
+  // An aborted pass must leave nothing claimed, or the elements it never got to
+  // would be unreachable for the rest of the session.
+  const claims = allRequests.map((req) => claimKey(stageId, req.elementId));
+  for (const claim of claims) claimedMediaRequests.add(claim);
 
-  // Process requests serially — image/video APIs have limited concurrency
-  for (const req of allRequests) {
-    if (abortSignal?.aborted) break;
-    await generateSingleMedia(req, stageId, abortSignal);
+  try {
+    // Enqueue all as pending
+    useMediaGenerationStore.getState().enqueueTasks(stageId, allRequests);
+
+    // Process requests serially — image/video APIs have limited concurrency
+    for (const req of allRequests) {
+      if (abortSignal?.aborted) break;
+      await generateSingleMedia(req, stageId, abortSignal);
+    }
+  } finally {
+    for (const claim of claims) claimedMediaRequests.delete(claim);
   }
 }
 

@@ -16,10 +16,20 @@
  */
 import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
-import type { Scene } from '@/lib/types/stage';
+import type { Scene, Stage } from '@/lib/types/stage';
 
-import { rewriteSceneMediaReference, sceneMediaPlaceholders } from './generated-media-references';
-import { pendingMediaAllocation, takePendingMediaAllocations } from './pending-media-allocations';
+import {
+  rewriteSceneMediaReference,
+  rewriteStageMediaReference,
+  sceneMediaPlaceholders,
+  stageMediaPlaceholders,
+  type GeneratedMediaReferenceRewrite,
+} from './generated-media-references';
+import {
+  allocatedMediaReference,
+  pendingMediaAllocation,
+  takePendingMediaAllocations,
+} from './pending-media-allocations';
 
 /** Whether any placeholder this scene carries has bytes waiting for it. */
 export function sceneHasPendingMediaAllocation(scene: Scene): boolean {
@@ -74,4 +84,73 @@ export function applyPendingMediaAllocationsToScene(scene: Scene): boolean {
       );
   }
   return changed;
+}
+
+/**
+ * The persistence write boundary's last look at a snapshot before it is stored.
+ *
+ * Every route into durable storage — a queued autosave whose snapshot was taken
+ * before a rewrite landed, an editor-history entry replayed by an undo or a
+ * later `applyOp`, the departing save a course switch flushes — carries content
+ * captured at some earlier moment. Any of them can still hold a placeholder
+ * this session has already allocated for, and writing it would undo a
+ * successful write-back with no corrective flush left to follow. Point fixes at
+ * each producer would leave the next producer to rediscover the same bug, so
+ * the check lives here, where every producer must pass.
+ *
+ * The lookup is the session's allocation record, not the parked queue: a
+ * placeholder whose rewrite landed long ago is exactly the case this catches.
+ * Nothing is mutated in place; only the scenes and the stage that actually
+ * change are rebuilt, so an unchanged snapshot writes through untouched.
+ */
+export function applyKnownMediaAllocations(
+  stageId: string,
+  stage: Stage | null | undefined,
+  scenes: readonly Scene[],
+): { stage: Stage | null | undefined; scenes: readonly Scene[] } | null {
+  if (!isServerBackedMediaPersistence()) return null;
+
+  const rewritesFor = (refs: Iterable<string>): GeneratedMediaReferenceRewrite[] => {
+    const rewrites: GeneratedMediaReferenceRewrite[] = [];
+    for (const ref of refs) {
+      const allocation = allocatedMediaReference(stageId, ref);
+      if (!allocation) continue;
+      rewrites.push({
+        placeholderRef: allocation.placeholderRef,
+        assetId: allocation.assetId,
+        ...(allocation.posterAssetId ? { posterAssetId: allocation.posterAssetId } : {}),
+      });
+    }
+    return rewrites;
+  };
+
+  let changed = false;
+  const nextScenes = scenes.map((scene) => {
+    const rewrites = rewritesFor(sceneMediaPlaceholders(scene));
+    if (rewrites.length === 0) return scene;
+    const next = structuredClone(scene);
+    let sceneChanged = false;
+    for (const rewrite of rewrites) {
+      if (rewriteSceneMediaReference(next, rewrite)) sceneChanged = true;
+    }
+    if (!sceneChanged) return scene;
+    changed = true;
+    return next;
+  });
+
+  let nextStage = stage;
+  const stageRewrites = rewritesFor(stageMediaPlaceholders(stage));
+  if (stageRewrites.length > 0 && stage) {
+    const candidate = structuredClone(stage);
+    let stageChanged = false;
+    for (const rewrite of stageRewrites) {
+      if (rewriteStageMediaReference(candidate, rewrite)) stageChanged = true;
+    }
+    if (stageChanged) {
+      nextStage = candidate;
+      changed = true;
+    }
+  }
+
+  return changed ? { stage: nextStage, scenes: nextScenes } : null;
 }

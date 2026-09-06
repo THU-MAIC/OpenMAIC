@@ -66,6 +66,7 @@ import {
   loadStageAssetInventory,
 } from '@/lib/media/reclaim-stage-assets';
 import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
+import { applyKnownMediaAllocations } from '@/lib/media/reconcile-scene-media';
 import {
   collectDocumentMediaElements,
   resolveMediaTaskForElement,
@@ -187,6 +188,25 @@ async function saveStageChats(
 export type StaleDroppedSave = 'stale-dropped';
 
 /**
+ * The one place every durable write passes through.
+ *
+ * A snapshot reaches storage from several producers — the debounced autosave,
+ * the aggregate save, the departing-course flush, an editor-history entry
+ * replayed by undo — and each captures content at its own moment. Any of those
+ * moments can predate a media write-back, in which case the snapshot still
+ * carries a generation placeholder the document has already moved past, and
+ * writing it would silently undo a successful rewrite. Rewriting here, rather
+ * than at each producer, is what keeps the next producer from rediscovering the
+ * same bug. Inert outside server-backed persistence, and a no-op allocation for
+ * a snapshot that holds no stale placeholder.
+ */
+function withKnownMediaAllocations(stageId: string, data: StageStoreData): StageStoreData {
+  const applied = applyKnownMediaAllocations(stageId, data.stage, data.scenes);
+  if (!applied) return data;
+  return { ...data, stage: applied.stage as StageStoreData['stage'], scenes: [...applied.scenes] };
+}
+
+/**
  * Save stage data to IndexedDB.
  *
  * `capturedEpoch` is the stage's deletion epoch at the moment `data` was
@@ -203,6 +223,7 @@ export async function saveStageData(
   data: StageStoreData,
   capturedEpoch: number,
 ): Promise<{ failedChanges: PendingChange[] } | StaleDroppedSave | undefined> {
+  data = withKnownMediaAllocations(stageId, data);
   if (isStageWriteStale(stageId, capturedEpoch)) {
     log.info(`Dropping save for deleted/stale stage: ${stageId}`);
     return 'stale-dropped';
@@ -274,6 +295,7 @@ export async function saveStageDataIncremental(
   data: StageStoreData,
   capturedEpoch: number,
 ): Promise<{ failedChanges: PendingChange[] } | StaleDroppedSave> {
+  data = withKnownMediaAllocations(stageId, data);
   // `capturedEpoch` = the deletion epoch when `data` was captured (the flush
   // round / departing-stage snapshot); required so the capture point and the
   // validation point stay paired. See saveStageData for the fencing contract;

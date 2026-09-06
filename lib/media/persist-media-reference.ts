@@ -48,6 +48,7 @@ import {
   type GeneratedMediaReferenceRewrite,
 } from './generated-media-references';
 import {
+  recordMediaAllocation,
   recordPendingMediaAllocation,
   type PendingMediaAllocation,
 } from './pending-media-allocations';
@@ -62,6 +63,9 @@ const log = createLogger('MediaReferenceWriteBack');
  * `written` — at least one slot now holds the allocated id.
  * `held` — no surface of this course references the placeholder yet, so the
  * allocation is parked under it until the slide that wants it is committed.
+ *
+ * Either way the allocation is recorded for the course's session, so a snapshot
+ * captured before this call cannot write the placeholder back later.
  */
 export type MediaReferenceWriteBackResult = 'written' | 'held';
 
@@ -169,6 +173,11 @@ export async function persistGeneratedMediaReference(
 ): Promise<MediaReferenceWriteBackResult> {
   const { stageId } = allocation;
   const rewrite = rewriteOf(allocation);
+  // Recorded before the attempt, and kept whatever the attempt does with it.
+  // Every later snapshot that still carries this placeholder — a queued save,
+  // an editor-history entry, a departing-course flush — is rewritten from this
+  // record at the persistence write boundary.
+  recordMediaAllocation(allocation);
   let documentMatched = false;
   // Set immediately BEFORE handing a write to the store, never after it
   // resolves: a rejected request does not prove the server did not apply it,

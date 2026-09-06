@@ -156,15 +156,43 @@ describe('server-backed narration storage', () => {
     expect(mocks.poolRemove).not.toHaveBeenCalled();
   });
 
-  it('reports no reference when the pool refuses the bytes', async () => {
+  // Storing narration failed, not synthesizing it. Reporting that as a TTS
+  // failure would make `generateTTSForScene` fail the scene and pause the whole
+  // deck at its first slide over one clip's storage, which is not what an image
+  // that cannot be stored does to its slide.
+  it('leaves the line unvoiced rather than failing the scene when the pool refuses', async () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
     mockFetch.mockResolvedValueOnce(ttsResponse());
     mocks.poolPut.mockRejectedValue(new Error('asset store unavailable'));
 
-    await expect(generateAndStoreTTS('tts_s2_action_1', 'Hello class')).rejects.toThrow(
-      'asset store unavailable',
-    );
+    await expect(generateAndStoreTTS('tts_s2_action_1', 'Hello class')).resolves.toBeNull();
     expect(mocks.audioPut).not.toHaveBeenCalled();
+  });
+
+  it('does not stamp an action, and does not count a failure, for unstorable narration', async () => {
+    const { generateTTSForScene } = await import('@/lib/hooks/use-scene-generator');
+    mockFetch.mockResolvedValue(ttsResponse());
+    mocks.poolPut.mockRejectedValue(new Error('asset store unavailable'));
+
+    const scene = {
+      id: 'scene-1',
+      stageId: 'stage-1',
+      title: 'Scene',
+      order: 1,
+      type: 'slide',
+      content: { type: 'slide', canvas: { id: 'slide-1', elements: [] } },
+      actions: [{ id: 'speech-1', type: 'speech', text: 'Hello class' }],
+    } as never;
+
+    // The scene survives, so generation continues to the next slide.
+    await expect(generateTTSForScene(scene)).resolves.toMatchObject({
+      success: true,
+      failedCount: 0,
+    });
+    const actions = (scene as unknown as { actions: Array<{ audioId?: string }> }).actions;
+    // Unvoiced and therefore retryable, exactly like an image that could not be
+    // stored leaves its slide.
+    expect(actions[0].audioId).toBeUndefined();
   });
 
   it('reclaims pool bytes when a scene rolls its fresh narration back', async () => {

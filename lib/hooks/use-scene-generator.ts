@@ -480,9 +480,22 @@ export async function generateAndStoreTTS(
   // stamps the action, so a document can never name narration that was not
   // stored. Browser-only keeps the historical derived key: document and audio
   // share one lifetime there, and nothing outside this browser reads either.
-  const audioId = serverBacked
-    ? await allocatePooledAudio(blob, duration)
-    : (existingAudioId ?? requestId);
+  let audioId: string;
+  if (serverBacked) {
+    const allocated = await allocatePooledAudio(blob, duration).catch((error: unknown) => {
+      // Storing narration failed, not synthesizing it. A scene whose audio
+      // cannot be stored keeps its text and leaves the line unvoiced and
+      // retryable, exactly as an image that cannot be stored leaves its slide;
+      // reporting it as a TTS failure would pause the whole deck at its first
+      // slide over one clip's storage.
+      log.warn('Narration storage failed; leaving the line unvoiced:', error);
+      return null;
+    });
+    if (allocated === null) return null;
+    audioId = allocated;
+  } else {
+    audioId = existingAudioId ?? requestId;
+  }
   const cacheWrite = db.audioFiles.put({
     id: audioId,
     stageId,
@@ -521,8 +534,9 @@ export async function generateAndStoreTTS(
  * the new id reaching a durable document, so deleting the old bytes could
  * leave a still-referenced action pointing at nothing if the save that follows
  * fails; and the exclusivity that would make deletion safe is the same proof
- * that is unavailable. It is reclaimed by the stage-scoped document-truth
- * sweep instead, once no surviving document references it.
+ * that is unavailable. Nothing reclaims it either: the stage-scoped registry
+ * sweep is written but deliberately not wired up, so a superseded clip's entry
+ * and bytes persist. Every regeneration therefore leaves one behind.
  */
 async function allocatePooledAudio(blob: Blob, duration: number | undefined): Promise<string> {
   return putAsset(blob, {
@@ -719,7 +733,12 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
       store.getState().setGeneratingOutlines(pending);
 
-      // Launch media generation in parallel — does not block content/action generation
+      // Launch media generation in parallel — does not block content/action generation.
+      // Abort whatever the ref held first: replacing it would orphan that loop
+      // with a signal nothing can ever fire, leaving it calling providers and
+      // storing assets for a course the user may already have left, and leaving
+      // `stop()` able to reach only the newest pass.
+      mediaAbortRef.current?.abort();
       mediaAbortRef.current = new AbortController();
       generateMediaForOutlines(outlines, stage.id, mediaAbortRef.current.signal).catch((err) => {
         log.warn('Media generation error:', err);

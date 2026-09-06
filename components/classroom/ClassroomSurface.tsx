@@ -217,12 +217,13 @@ export function ClassroomSurface({
     // browser-only mode, where the gate is inert and the request would be new
     // observable behaviour on a path this change must not touch.
     //
-    // Asked again whenever the document becomes available. A pane opened during
-    // the stage-link/document availability gap gets a 404 for a course that is
-    // moments from existing; recording that once and never asking again would
-    // leave the real owner locked out of generation and of every retry control
-    // until the pane remounted. The gate stays closed until an answer arrives,
-    // so re-asking can only ever open it for someone entitled to it.
+    // Asked only AFTER a document load succeeds, and again after every later
+    // one, mirroring the page route. The load is what brings a course into the
+    // server store the first time it is opened, so asking beforehand asks about
+    // a course whose ownership row does not exist yet: the 404 that comes back
+    // would lock its genuine author out of generation and of every retry
+    // control for the rest of the mount. The gate stays closed until an answer
+    // arrives, so asking again can only ever open it for someone entitled to it.
     const refreshOwnership = () => {
       if (cancelled || !isServerBackedMediaPersistence()) return;
       void fetchStageMeta(classroomId)
@@ -235,8 +236,6 @@ export function ClassroomSurface({
         // unresolved, which is the fail-closed answer.
         .catch(() => undefined);
     };
-    refreshOwnership();
-
     const loadUntilAvailable = async () => {
       if (cancelled) return;
       // A previous pane attempt may have observed a transient read failure.
@@ -246,9 +245,9 @@ export function ClassroomSurface({
       const outcome = await loadClassroom(() => !cancelled);
       if (cancelled) return;
       if (variant !== 'pane' || outcome !== 'unavailable') {
-        // The document answered. If the first probe raced the availability gap,
-        // this is the point at which the sidecar has something to say.
-        if (availabilityAttempt > 0) refreshOwnership();
+        // The document answered, so the sidecar now has something to say about
+        // this course — whether or not an availability retry was needed.
+        refreshOwnership();
         return;
       }
 

@@ -392,25 +392,42 @@ describe('server-backed classic media orchestrator', () => {
     expect(mocks.placeAllocations).toHaveBeenCalledWith(stageId);
   });
 
-  it('does not re-request an element whose provider call is already in flight', async () => {
+  it('does not re-request an element a live pass has already claimed', async () => {
     serveImage();
-    useMediaGenerationStore.setState({
-      tasks: {
-        [imageRef]: {
-          elementId: imageRef,
-          type: 'image',
-          status: 'generating',
-          prompt: 'A diagram',
-          params: {},
-          retryCount: 0,
-          stageId,
-        },
-      },
+    let overlapping: Promise<void> | undefined;
+    // The retry path re-enters generation with every outline while the first
+    // pass is still working through its list.
+    mocks.putAsset.mockImplementation(async () => {
+      overlapping ??= runImageGeneration();
+      return 'ast_generated';
     });
 
     await runImageGeneration();
+    await overlapping;
 
+    expect(providerCallCount()).toBe(1);
+  });
+
+  // An aborted pass leaves its tasks at `pending` with nobody acting on them.
+  // Reading that as "answered" would make every later pass in the session skip
+  // them, with no Retry affordance to recover them either.
+  it('regenerates an element the previous pass was aborted before reaching', async () => {
+    serveImage();
+    const aborted = new AbortController();
+    aborted.abort();
+
+    await generateMediaForOutlines(
+      [outlineWith(1, { type: 'image', prompt: 'A diagram', elementId: imageRef })],
+      stageId,
+      aborted.signal,
+    );
     expect(providerCallCount()).toBe(0);
+    expect(useMediaGenerationStore.getState().tasks[imageRef]?.status).toBe('pending');
+
+    await runImageGeneration();
+
+    expect(providerCallCount()).toBe(1);
+    expect(useMediaGenerationStore.getState().tasks.ast_generated?.status).toBe('done');
   });
 
   it('does not call the provider again for a placeholder whose bytes are already held', async () => {

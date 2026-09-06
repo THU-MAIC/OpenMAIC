@@ -124,6 +124,83 @@ describe('embedded persistence route', () => {
     expect(hmrPoolFactory).not.toHaveBeenCalled();
   });
 
+  // The asset routes are the only durable home generated media has under
+  // server-backed persistence, and the deployment this project documents builds
+  // with NODE_ENV=production and does not opt into the development
+  // authenticator. Routing assets through it answered 401 for every store and
+  // every read, so nothing could be generated at all.
+  it('resolves the asset principal server-side, so assets work without the development auth opt-in', async () => {
+    const handlerOptions: unknown[] = [];
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.doMock('@openmaic/storage/server', () => ({
+      createStorageHttpHandler: vi.fn(
+        (_runtime: unknown, _documents: unknown, options: unknown) => {
+          handlerOptions.push(options);
+          return (
+            _request: unknown,
+            response: { writeHead: (status: number) => void; end: () => void },
+          ) => {
+            response.writeHead(204);
+            response.end();
+          };
+        },
+      ),
+    }));
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('PERSISTENCE_ALLOW_INSECURE_DEV_AUTH', '');
+    vi.stubEnv('DATABASE_URL', 'postgres://asset-auth-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const pool = { end: vi.fn().mockResolvedValue(undefined) };
+
+    await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/assets', { method: 'POST' }),
+      { poolFactory: () => pool as never },
+    );
+
+    const authenticate = (
+      handlerOptions[0] as {
+        authenticate: (request: {
+          url?: string;
+          headers: Record<string, string>;
+        }) => Promise<{ key?: string; learnerKey?: string } | undefined>;
+      }
+    ).authenticate;
+    const noCredentials = { headers: {} };
+
+    const documents = await authenticate({ url: '/documents', ...noCredentials });
+    const allocate = await authenticate({ url: '/assets', ...noCredentials });
+    const read = await authenticate({ url: '/assets/ast_example/content', ...noCredentials });
+
+    // One shared asset partition by design, and the owner the server resolved
+    // for this request — never a client-supplied credential.
+    expect(allocate).toEqual({ key: 'shared', learnerKey: documents?.learnerKey });
+    expect(read).toEqual(allocate);
+    expect(typeof documents?.learnerKey).toBe('string');
+    expect(documents?.learnerKey).not.toBe('');
+
+    // Runtime sessions are genuinely per-learner, so they keep the development
+    // authenticator — which refuses here, and the handler answers 401.
+    await expect(
+      authenticate({ url: '/runtime/sessions/example', ...noCredentials }),
+    ).resolves.toBeUndefined();
+  });
+
   it('mounts an asset store on the document pool and transaction and ensures its schema', async () => {
     const sdkModuleResolved = vi.fn();
     const ensureSchema = vi.fn().mockResolvedValue(undefined);

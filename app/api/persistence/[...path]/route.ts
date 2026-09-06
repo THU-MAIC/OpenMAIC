@@ -15,7 +15,10 @@ import {
   type DocumentAccess,
 } from '@/lib/persistence/document-access';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
-import { authenticatePersistenceRequest } from '@/lib/persistence/server-auth';
+import {
+  authenticatePersistenceRequest,
+  SHARED_ASSET_PRINCIPAL,
+} from '@/lib/persistence/server-auth';
 import {
   getServerPersistenceProvider,
   type PersistencePoolFactory,
@@ -92,10 +95,17 @@ async function createPersistenceHandler(
     validateScene: validateAppScene,
     validateStage: validateAppStage,
   });
-  // Runtime and asset requests retain the development authenticator, which
-  // takes their partition key from a client-supplied header. Document requests
-  // use the server-resolved anonymous owner below. Before runtime or asset
-  // routes carry production data, their authenticator must also be replaced
+  // Document and asset requests both use the server-resolved anonymous owner
+  // below. Assets live in a single shared partition by design (see the
+  // SHARED_ASSET_PRINCIPAL comment in lib/persistence/server-auth.ts), so there
+  // is nothing per-caller for the development authenticator to decide about
+  // them — and routing them through it made every asset request fail in a
+  // production build that had not opted into that authenticator, which is the
+  // build this project's own server-persistence recipe produces.
+  //
+  // Runtime requests still take their partition key from a client-supplied
+  // header, because a runtime session genuinely is per-learner state. Before
+  // runtime routes carry production data, their authenticator must be replaced
   // with real session verification.
   // Reclamation is not scheduled from here, and must not be: a route module
   // has no once-per-process guarantee and no shutdown hook. AssetCollector
@@ -106,10 +116,13 @@ async function createPersistenceHandler(
     configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
   );
   return createStorageHttpHandler(runtimeStore, documentStore, {
-    authenticate: async (request) =>
-      request.url?.startsWith('/documents')
-        ? { learnerKey: ownerId }
-        : authenticatePersistenceRequest(request),
+    authenticate: async (request) => {
+      if (request.url?.startsWith('/documents')) return { learnerKey: ownerId };
+      if (request.url?.startsWith('/assets')) {
+        return { key: SHARED_ASSET_PRINCIPAL, learnerKey: ownerId };
+      }
+      return authenticatePersistenceRequest(request);
+    },
     authorizeMerge: async () => false,
     authorizeAdmin: async () => false,
     authorizeDocuments: async () => access === 'allow',

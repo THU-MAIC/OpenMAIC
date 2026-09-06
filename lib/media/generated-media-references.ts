@@ -115,6 +115,20 @@ export function sceneMediaPlaceholders(scene: Scene): Set<string> {
   return refs;
 }
 
+/** Every generation placeholder the stage whiteboard currently carries. */
+export function stageMediaPlaceholders(
+  stage: Pick<Stage, 'whiteboard'> | null | undefined,
+): Set<string> {
+  const refs = new Set<string>();
+  for (const slide of stage?.whiteboard ?? []) {
+    for (const slot of slideMediaReferenceSlots(slide)) {
+      const ref = slot.read();
+      if (ref && isGeneratedMediaPlaceholder(ref)) refs.add(ref);
+    }
+  }
+  return refs;
+}
+
 /** Whether a scene still holds this placeholder in any of its media slots. */
 export function sceneCarriesMediaReference(scene: Scene, placeholderRef: string): boolean {
   return slidesOfScene(scene).some((slide) =>

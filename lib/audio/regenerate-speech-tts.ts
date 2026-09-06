@@ -74,9 +74,10 @@ export async function audioObjectUrl(audioId: string): Promise<string | null> {
  * line reads as "not voiced" until regenerated. Called when the user edits a
  * line's text: the cached audio is keyed by sceneOrder+actionId and the
  * stamped id, not the text, so without this the stale blob would keep
- * replaying for the new wording. Only the local Dexie compatibility copy is
- * removed here; the pool bytes are reclaimed later by the document-truth
- * sweep once the action no longer references them.
+ * replaying for the new wording. Only the local compatibility copy is removed
+ * here. The pool bytes are left in place and nothing reclaims them: the
+ * stage-scoped registry sweep is written but not wired up, so an unreferenced
+ * pool entry survives.
  */
 export async function discardSpeechAudio(
   sceneOrder: number,

@@ -90,16 +90,22 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     expect(guardIndex).toBeGreaterThan(0);
   });
 
-  // A pane opened during the stage-link/document availability gap gets a 404
-  // for a course that is moments from existing. Asking once would leave the
-  // real owner locked out until the pane remounted.
-  it('re-asks the sidecar once the pane document becomes available', () => {
+  // The load is what brings a course into the server store the first time it is
+  // opened, so asking beforehand asks about a course whose ownership row does
+  // not exist yet - and a 404 locks its genuine author out for the mount.
+  it('asks the sidecar only after a document load succeeds, and after every later one', () => {
     const source = readFileSync(
       join(process.cwd(), 'components/classroom/ClassroomSurface.tsx'),
       'utf8',
     );
     expect(source).toContain('const refreshOwnership = () => {');
-    expect(source).toMatch(/if \(availabilityAttempt > 0\) refreshOwnership\(\);/);
+    // Called on the success branch, and no longer only after a retry.
+    expect(source).toMatch(/answered[\s\S]*?refreshOwnership\(\);/);
+    expect(source).not.toContain('availabilityAttempt > 0');
+    // Nothing calls it before the load starts.
+    const definition = source.indexOf('const refreshOwnership = () => {');
+    const loadStart = source.indexOf('const loadUntilAvailable = async () => {');
+    expect(source.slice(definition, loadStart)).not.toMatch(/^\s*refreshOwnership\(\);$/m);
   });
 
   it('clears parked media allocations when a course is (re)opened', () => {
@@ -112,13 +118,29 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     }
   });
 
-  it('withholds narration regeneration from a viewer', () => {
+  // Listening back to narration and seeing whether a line has any spend nothing,
+  // so the gate belongs on regeneration alone.
+  it('withholds narration regeneration from a viewer, and nothing else', () => {
     const bar = readFileSync(
       join(process.cwd(), 'components/edit/ActionsBar/ActionsBar.tsx'),
       'utf8',
     );
-    expect(bar).toContain('const ttsActive = managedTts && mayGenerate;');
+    expect(bar).not.toContain('managedTts && mayGenerate');
+    // Both regenerate affordances are withheld...
+    expect(bar).toContain('{mayRegenerate ? (');
+    expect(bar).toContain('{!lineMode && ttsActive && mayGenerate && (');
+    // ...while status and preview keep answering to managed TTS alone.
+    expect(bar).toMatch(/const ttsActive = useSettingsStore\(/);
     const tts = readFileSync(join(process.cwd(), 'lib/audio/regenerate-speech-tts.ts'), 'utf8');
     expect(tts).toContain('if (!mayGenerateForStage(stageId)) return null;');
+  });
+
+  // Replacing the controller without aborting it orphans a media loop that goes
+  // on calling providers and storing assets for a course the user has left.
+  it('aborts the previous media pass before starting another', () => {
+    const source = readFileSync(join(process.cwd(), 'lib/hooks/use-scene-generator.ts'), 'utf8');
+    expect(source).toMatch(
+      /mediaAbortRef\.current\?\.abort\(\);\s*\n\s*mediaAbortRef\.current = new AbortController\(\);/,
+    );
   });
 });

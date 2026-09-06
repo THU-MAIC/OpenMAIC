@@ -16,8 +16,17 @@
  *
  * Entries are per stage and live only for the session that made them. One left
  * behind means the scene it was waiting for never arrived (a failed or
- * abandoned generation), and its bytes are reclaimed by the stage-scoped
- * document-truth sweep like any other unreferenced asset.
+ * abandoned generation); its bytes are then unreferenced, and nothing reclaims
+ * them today — the stage-scoped registry sweep is written but not wired up.
+ *
+ * Alongside the parked entries this module keeps a second, non-draining record:
+ * every placeholder this session has ever allocated for, and what it allocated.
+ * The parked map answers "does this reference have bytes waiting for a slide";
+ * the record answers "is this placeholder stale", which is what the persistence
+ * write boundary needs. A snapshot captured before a rewrite — a queued
+ * autosave, an editor-history entry, a departing-course save — still carries the
+ * placeholder, and without the record the write boundary has no way to know the
+ * document has moved past it.
  */
 
 export interface PendingMediaAllocation {
@@ -42,9 +51,30 @@ function key(stageId: string, placeholderRef: string): string {
 }
 
 const pending = new Map<string, PendingMediaAllocation>();
+const allocated = new Map<string, PendingMediaAllocation>();
+
+/**
+ * Record what this placeholder was allocated, whether or not it found a slide.
+ *
+ * Called for every allocation, placed or parked. The record never drains: a
+ * placeholder can reappear in a snapshot long after its rewrite landed.
+ */
+export function recordMediaAllocation(allocation: PendingMediaAllocation): void {
+  allocated.set(key(allocation.stageId, allocation.placeholderRef), allocation);
+}
 
 export function recordPendingMediaAllocation(allocation: PendingMediaAllocation): void {
+  recordMediaAllocation(allocation);
   pending.set(key(allocation.stageId, allocation.placeholderRef), allocation);
+}
+
+/** What this session allocated for a placeholder, parked or long since placed. */
+export function allocatedMediaReference(
+  stageId: string | undefined,
+  placeholderRef: string,
+): PendingMediaAllocation | undefined {
+  if (!stageId) return undefined;
+  return allocated.get(key(stageId, placeholderRef));
 }
 
 /** The allocation waiting for this placeholder, if one is. */
@@ -78,14 +108,17 @@ export function takePendingMediaAllocations(
   return taken;
 }
 
-/** Drop a course's waiting allocations (course switch, deletion, tests). */
+/** Drop a course's allocations, parked and recorded alike (switch, deletion, tests). */
 export function clearPendingMediaAllocations(stageId?: string): void {
   if (stageId === undefined) {
     pending.clear();
+    allocated.clear();
     return;
   }
   const prefix = `${stageId}\u0000`;
-  for (const mapKey of [...pending.keys()]) {
-    if (mapKey.startsWith(prefix)) pending.delete(mapKey);
+  for (const map of [pending, allocated]) {
+    for (const mapKey of [...map.keys()]) {
+      if (mapKey.startsWith(prefix)) map.delete(mapKey);
+    }
   }
 }
