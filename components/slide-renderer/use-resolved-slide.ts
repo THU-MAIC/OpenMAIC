@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import type { Slide } from '@openmaic/dsl';
 import type { MediaTask } from '@/lib/store/media-generation';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
+import { useMayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { useAssetUrlLeases, type AssetUrlLeaseState } from '@/lib/media/use-asset-url';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -12,6 +13,7 @@ import {
   isConcreteMediaAddress,
   renderableMediaUrl,
   resolveMediaRef,
+  withGenerationPermission,
   type MediaResolution,
 } from '@/lib/media/resolve-media-ref';
 import {
@@ -55,18 +57,24 @@ export function resolveSlideMediaState(
     assetLeases?: Readonly<Record<string, AssetUrlLeaseState>>;
     imageGenerationDisabled?: boolean;
     videoGenerationDisabled?: boolean;
+    /** Whether this browser may start generation; false withdraws retry. */
+    mayGenerate?: boolean;
   } = {},
 ): ResolvedSlideMedia {
+  const mayGenerate = options.mayGenerate ?? true;
   const byElementId: Record<string, ResolvedSlideMediaEntry> = {};
   const backgroundRef =
     slide.background?.type === 'image' ? slide.background.image?.src : undefined;
   const backgroundTask = resolveMediaTaskForRef(tasks, backgroundRef, stageId);
   const backgroundResolution = backgroundRef
-    ? resolveMediaRef(
-        backgroundRef,
-        backgroundTask,
-        leaseFor(backgroundRef, options.assetLeases, options.assetUrls),
-        options.imageGenerationDisabled,
+    ? withGenerationPermission(
+        resolveMediaRef(
+          backgroundRef,
+          backgroundTask,
+          leaseFor(backgroundRef, options.assetLeases, options.assetUrls),
+          options.imageGenerationDisabled,
+        ),
+        mayGenerate,
       )
     : undefined;
   const backgroundSrc = backgroundResolution
@@ -92,19 +100,27 @@ export function resolveSlideMediaState(
     const task =
       videoBinding?.task ??
       (element.type === 'image' ? resolveMediaTaskForElement(tasks, element, stageId) : undefined);
-    const resolution = resolveMediaRef(
-      sourceRef,
-      task,
-      leaseFor(sourceRef, options.assetLeases, options.assetUrls),
-      element.type === 'image' ? options.imageGenerationDisabled : options.videoGenerationDisabled,
+    const resolution = withGenerationPermission(
+      resolveMediaRef(
+        sourceRef,
+        task,
+        leaseFor(sourceRef, options.assetLeases, options.assetUrls),
+        element.type === 'image'
+          ? options.imageGenerationDisabled
+          : options.videoGenerationDisabled,
+      ),
+      mayGenerate,
     );
 
     let posterResolution: MediaResolution | undefined;
     if (element.type === 'video' && videoBinding?.posterRef !== undefined) {
-      posterResolution = resolveMediaRef(
-        videoBinding.posterRef,
-        videoBinding.posterTask,
-        leaseFor(videoBinding.posterRef, options.assetLeases, options.assetUrls),
+      posterResolution = withGenerationPermission(
+        resolveMediaRef(
+          videoBinding.posterRef,
+          videoBinding.posterTask,
+          leaseFor(videoBinding.posterRef, options.assetLeases, options.assetUrls),
+        ),
+        mayGenerate,
       );
     }
 
@@ -207,6 +223,7 @@ export function useResolvedSlideMedia(slide: Slide): ResolvedSlideMedia {
     return values;
   }, [slide, stageId]);
   const assetLeases = useAssetUrlLeases(refs);
+  const mayGenerate = useMayGenerateForStage(stageId);
 
   return useMemo(() => {
     if (!stageId) {
@@ -217,6 +234,7 @@ export function useResolvedSlideMedia(slide: Slide): ResolvedSlideMedia {
         {
           imageGenerationDisabled,
           videoGenerationDisabled,
+          mayGenerate,
         },
       );
     }
@@ -225,8 +243,17 @@ export function useResolvedSlideMedia(slide: Slide): ResolvedSlideMedia {
       assetLeases,
       imageGenerationDisabled,
       videoGenerationDisabled,
+      mayGenerate,
     });
-  }, [slide, stageId, signature, assetLeases, imageGenerationDisabled, videoGenerationDisabled]);
+  }, [
+    slide,
+    stageId,
+    signature,
+    assetLeases,
+    imageGenerationDisabled,
+    videoGenerationDisabled,
+    mayGenerate,
+  ]);
 }
 
 export function useResolvedSlide(slide: Slide): Slide {

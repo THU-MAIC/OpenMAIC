@@ -71,11 +71,11 @@ export function resetStageOwnershipSignals(): void {
  * outcomes actually produce.
  *
  * `'owner'` and `'not-owner'` are the two halves of a definite answer.
- * `'ownerless'` is also an answer — the sidecar replied that no ownership fact
- * exists for this course, which is what a deployment without the sidecar's
- * server-side prerequisites answers for every course, and what a course with no
- * ownership record answers. `'unresolved'` is the ABSENCE of an answer: not
- * asked yet, or asked and nothing usable came back.
+ * `'ownerless'` is the sidecar's 404: no ownership record exists for this id,
+ * because the course was never persisted or because it was tombstoned. It is
+ * kept distinct from `'unresolved'` — the ABSENCE of an answer, whether not
+ * asked yet or asked and nothing usable came back — so the two cannot be
+ * silently collapsed, even though the gate refuses both.
  */
 export type ClassroomGenerationOwnership = 'owner' | 'not-owner' | 'ownerless' | 'unresolved';
 
@@ -90,22 +90,21 @@ export function classroomGenerationOwnership(
 /**
  * May this browser start generation for this course?
  *
- * Generation spends the operator's provider budget, so under server-backed
- * persistence — where a course is shared and any visitor may open it — the gate
- * refuses everything except a viewer it has a reason to trust. That is `'owner'`
- * and, deliberately, `'ownerless'`: when the sidecar answers that this course
- * has no ownership fact at all there is nobody the budget needs protecting
- * from, and refusing would strand the course's own author forever behind a
- * question that can never be answered — so an ownerless course keeps the
- * behaviour it had before the gate existed. `'not-owner'` is a definite no, and
- * `'unresolved'` fails closed, because "we could not ask" must never be read as
- * "nobody owns this". Browser-only mode has one viewer who is by construction
- * the author, so the gate is inert there and behaviour is unchanged.
+ * Generation spends the operator's provider budget, and under server-backed
+ * persistence a course is shared and any visitor may open it, so the gate
+ * admits exactly one state: a viewer the sidecar named as the owner. Every
+ * other answer refuses, including the two that are not "somebody else owns
+ * this" — a 404 and a silent sidecar are both "this browser has no reason to
+ * believe it may spend", which is the only reading that keeps a visitor from
+ * billing the operator. A viewer therefore sees unresolved placeholders and no
+ * generation; the owner's own load, which does get an answer, converges them.
+ * Browser-only mode has one viewer who is by construction the author, so the
+ * gate is inert there and behaviour is unchanged.
  */
 export function mayStartOwnerGeneration(
   serverBackedMedia: boolean,
   ownership: ClassroomGenerationOwnership,
 ): boolean {
   if (!serverBackedMedia) return true;
-  return ownership === 'owner' || ownership === 'ownerless';
+  return ownership === 'owner';
 }

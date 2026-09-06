@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   mutateDocument: vi.fn(),
   stageState: vi.fn(),
   stageSetState: vi.fn(),
+  markDirty: vi.fn(),
 }));
 
 vi.mock('@/lib/document-store', () => ({
@@ -16,9 +17,13 @@ vi.mock('@/lib/document-store', () => ({
 
 vi.mock('@/lib/store/stage', () => ({
   useStageStore: { getState: mocks.stageState, setState: mocks.stageSetState },
+  markStagePersistenceDirty: mocks.markDirty,
 }));
 
-import { persistGeneratedMediaReference } from '@/lib/media/persist-media-reference';
+import {
+  MediaReferenceWriteBackError,
+  persistGeneratedMediaReference,
+} from '@/lib/media/persist-media-reference';
 import type { Scene } from '@/lib/types/stage';
 
 const stageId = 'stage-1';
@@ -63,6 +68,7 @@ describe('generated media reference write-back', () => {
   beforeEach(() => {
     mocks.mutateDocument.mockReset();
     mocks.stageSetState.mockReset();
+    mocks.markDirty.mockReset();
     mocks.stageState.mockReset().mockReturnValue({ stage: null, scenes: [] });
   });
 
@@ -138,6 +144,28 @@ describe('generated media reference write-back', () => {
     expect(mocks.stageSetState).not.toHaveBeenCalled();
   });
 
+  it('reports whether any part of a failed write-back reached the document', async () => {
+    const document = {
+      stage: { id: stageId, whiteboard: [] },
+      scenes: [sceneWithImage(1, 'gen_img_1'), sceneWithImage(2, 'gen_img_1')],
+    };
+    document.scenes[1].id = 'scene-2';
+    const store = documentUnderMutation(document);
+    store.putScene
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('second scene rejected'));
+
+    const failure = await persistGeneratedMediaReference(stageId, {
+      placeholderRef: 'gen_img_1',
+      assetId: 'ast_new',
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(MediaReferenceWriteBackError);
+    // One scene already names the id, so reclaiming its bytes would leave the
+    // document pointing at nothing.
+    expect((failure as MediaReferenceWriteBackError).documentWritten).toBe(true);
+  });
+
   it('reports unmatched when no surface of the course references the placeholder', async () => {
     documentUnderMutation({
       stage: { id: stageId, whiteboard: [] },
@@ -148,9 +176,10 @@ describe('generated media reference write-back', () => {
       persistGeneratedMediaReference(stageId, { placeholderRef: 'gen_img_1', assetId: 'ast_new' }),
     ).resolves.toBe('unmatched');
     expect(mocks.stageSetState).not.toHaveBeenCalled();
+    expect(mocks.markDirty).not.toHaveBeenCalled();
   });
 
-  it('carries the rewrite into the open course without marking it dirty', async () => {
+  it('carries the rewrite into the open course and queues a corrective save', async () => {
     documentUnderMutation({ stage: { id: stageId, whiteboard: [] }, scenes: [] });
     const liveScene = sceneWithImage(1, 'gen_img_1');
     mocks.stageState.mockReturnValue({ stage: { id: stageId }, scenes: [liveScene] });
@@ -165,6 +194,13 @@ describe('generated media reference write-back', () => {
     // The store's own object is replaced, never mutated in place.
     expect(next.scenes[0]).not.toBe(liveScene);
     expect(imageSrcOf(liveScene)).toBe('gen_img_1');
+    // Dirty, so an autosave round that captured the placeholder is followed by
+    // a corrective one. Marked after the state update, or the corrective round
+    // would capture the old scene again.
+    expect(mocks.markDirty).toHaveBeenCalledWith([{ kind: 'scene', sceneId: 'scene-1' }]);
+    expect(mocks.markDirty.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mocks.stageSetState.mock.invocationCallOrder[0],
+    );
   });
 
   it('leaves a different open course alone', async () => {

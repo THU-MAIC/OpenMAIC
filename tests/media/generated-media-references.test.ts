@@ -150,6 +150,29 @@ describe('generated media references', () => {
       expect(isGeneratedMediaSatisfied(index, 3, 'gen_img_future')).toBe(false);
     });
 
+    it('lets a finished deck answer from the placeholder alone', () => {
+      // Pro-mode insert and delete rebalance `order`, so on a finished deck an
+      // outline's order no longer names its scene. The deck being finished is
+      // what makes the placeholder's absence decisive on its own — otherwise a
+      // renumbered (or deleted) slide would be generated again.
+      const index = indexGeneratedMediaReferences({
+        ...document,
+        scenes: [slideScene(1, [imageElement('a', 'ast_generated')])],
+        generationComplete: true,
+      });
+      expect(isGeneratedMediaSatisfied(index, 7, 'gen_img_deleted')).toBe(true);
+      // A placeholder that is genuinely still there is still generated.
+      expect(isGeneratedMediaSatisfied(index, 7, 'gen_img_pending')).toBe(true);
+    });
+
+    it('still refuses to skip a placeholder the finished deck carries', () => {
+      const index = indexGeneratedMediaReferences({
+        ...document,
+        generationComplete: true,
+      });
+      expect(isGeneratedMediaSatisfied(index, 2, 'gen_img_pending')).toBe(false);
+    });
+
     it('counts a placeholder held only by the stage whiteboard', () => {
       const index = indexGeneratedMediaReferences({
         stage: { whiteboard: [slide([imageElement('a', 'gen_img_wb')])] } as unknown as Stage,

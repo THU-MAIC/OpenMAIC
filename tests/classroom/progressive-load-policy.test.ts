@@ -9,8 +9,7 @@ const settled = {
   error: null,
   transportPersistenceFenced: false,
   generationStarted: false,
-  serverBackedMedia: false,
-  ownership: 'owner',
+  mayGenerate: true,
 } as const;
 
 describe('progressive classroom policy', () => {
@@ -30,6 +29,7 @@ describe('progressive classroom policy', () => {
     { ...settled, error: 'failed' },
     { ...settled, transportPersistenceFenced: true },
     { ...settled, generationStarted: true },
+    { ...settled, mayGenerate: false },
   ])('blocks generation resume while progressive state is unsafe: %o', (state) => {
     expect(shouldResumeClassroomGeneration(state)).toBe(false);
   });
@@ -38,41 +38,11 @@ describe('progressive classroom policy', () => {
     expect(shouldResumeClassroomGeneration(settled)).toBe(true);
   });
 
-  it('applies the ownership gate on top of the progressive state', () => {
-    expect(
-      shouldResumeClassroomGeneration({
-        ...settled,
-        serverBackedMedia: true,
-        ownership: 'not-owner',
-      }),
-    ).toBe(false);
-    expect(
-      shouldResumeClassroomGeneration({
-        ...settled,
-        serverBackedMedia: true,
-        ownership: 'unresolved',
-      }),
-    ).toBe(false);
-    expect(
-      shouldResumeClassroomGeneration({ ...settled, serverBackedMedia: true, ownership: 'owner' }),
-    ).toBe(true);
-    expect(
-      shouldResumeClassroomGeneration({
-        ...settled,
-        serverBackedMedia: true,
-        ownership: 'ownerless',
-      }),
-    ).toBe(true);
+  it('refuses whenever generation is not permitted, however settled the load is', () => {
+    expect(shouldResumeClassroomGeneration({ ...settled, mayGenerate: false })).toBe(false);
   });
 
-  it('keeps an unsafe progressive state decisive even for an owner', () => {
-    expect(
-      shouldResumeClassroomGeneration({
-        ...settled,
-        loading: true,
-        serverBackedMedia: true,
-        ownership: 'owner',
-      }),
-    ).toBe(false);
+  it('keeps an unsafe progressive state decisive even when generation is permitted', () => {
+    expect(shouldResumeClassroomGeneration({ ...settled, loading: true })).toBe(false);
   });
 });

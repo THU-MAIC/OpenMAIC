@@ -21,16 +21,25 @@
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useStageStore } from '@/lib/store/stage';
+import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { db, mediaFileKey } from '@/lib/utils/database';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { MediaGenerationRequest } from '@/lib/media/types';
-import { putAsset } from '@/lib/media/asset-pool';
+import { putAsset, removeAsset } from '@/lib/media/asset-pool';
 import {
   indexGeneratedMediaReferences,
   isGeneratedMediaSatisfied,
   type GeneratedMediaDocumentIndex,
 } from '@/lib/media/generated-media-references';
-import { persistGeneratedMediaReference } from '@/lib/media/persist-media-reference';
+import {
+  MediaReferenceWriteBackError,
+  persistGeneratedMediaReference,
+  type MediaReferenceWriteBackResult,
+} from '@/lib/media/persist-media-reference';
+import {
+  pendingMediaAllocation,
+  recordPendingMediaAllocation,
+} from '@/lib/media/pending-media-allocations';
 import { fetchProxiedMediaUrl } from '@/lib/media/proxy-media-cache';
 import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { createLogger } from '@/lib/logger';
@@ -86,6 +95,9 @@ export async function generateMediaForOutlines(
         // policy, generation disabled) is still honoured: it is a refusal to
         // call the provider again, never a claim that media exists.
         if (isGeneratedMediaSatisfied(documentIndex, outline.order, mg.elementId)) continue;
+        // Stored, waiting for its slide to exist. Asking the provider again
+        // would pay twice for bytes this session already holds.
+        if (pendingMediaAllocation(stageId, mg.elementId)) continue;
         if (existing?.status === 'failed') continue;
       } else {
         // Skip already completed or permanently failed (restored from DB)
@@ -117,6 +129,11 @@ export async function retryMediaTask(
   const store = useMediaGenerationStore.getState();
   const task = store.getTask(elementId);
   if (!task || task.status !== 'failed') return;
+
+  // The affordance that calls this is already hidden when generation is not
+  // permitted; refusing here too is what makes the render condition and the
+  // action precondition the same rule rather than two that can drift.
+  if (!mayGenerateForStage(task.stageId)) return;
 
   // Check if the corresponding generation type is still enabled in global settings
   const settings = useSettingsStore.getState();
@@ -168,11 +185,11 @@ export function mediaRetryTarget(
  */
 function documentSkipIndex(stageId: string): GeneratedMediaDocumentIndex | undefined {
   if (!isServerBackedMediaPersistence()) return undefined;
-  const { stage, scenes } = useStageStore.getState();
+  const { stage, scenes, generationComplete } = useStageStore.getState();
   // Another course's scenes would answer for slides this stage does not own,
   // and a wrong "already generated" is a slide that never gets its media.
   if (stage?.id !== stageId) return undefined;
-  return indexGeneratedMediaReferences({ stage, scenes });
+  return indexGeneratedMediaReferences({ stage, scenes, generationComplete });
 }
 
 /**
@@ -197,15 +214,39 @@ async function commitPooledMedia(args: {
   const { req, stageId, paramsJson, blob, mimeType, posterBlob, posterMimeType } = args;
 
   const assetId = await putAsset(blob, { contentType: mimeType });
-  const posterAssetId = posterBlob
-    ? await putAsset(posterBlob, { contentType: posterMimeType ?? posterBlob.type })
-    : undefined;
+  // A poster is decorative: it is written only into a slot that has none of its
+  // own. Letting its upload fail the commit would discard a stored video and
+  // send the retry to submit the most expensive job in the system a second
+  // time, so a poster failure costs the poster and nothing else.
+  let posterAssetId: string | undefined;
+  if (posterBlob) {
+    try {
+      posterAssetId = await putAsset(posterBlob, {
+        contentType: posterMimeType ?? posterBlob.type,
+      });
+    } catch (error) {
+      log.warn(`Poster allocation failed for ${req.elementId}; keeping the video:`, error);
+    }
+  }
 
-  await persistGeneratedMediaReference(stageId, {
-    placeholderRef: req.elementId,
-    assetId,
-    ...(posterAssetId ? { posterAssetId } : {}),
-  });
+  let outcome: MediaReferenceWriteBackResult;
+  try {
+    outcome = await persistGeneratedMediaReference(stageId, {
+      placeholderRef: req.elementId,
+      assetId,
+      ...(posterAssetId ? { posterAssetId } : {}),
+    });
+  } catch (error) {
+    // Nothing reached the document: the ids this commit allocated are named by
+    // nobody and would otherwise sit in the registry forever, where the byte
+    // collector cannot see them. A partial write is left alone — the document
+    // already names them.
+    if (!(error instanceof MediaReferenceWriteBackError) || !error.documentWritten) {
+      await removeAsset(assetId).catch(() => undefined);
+      if (posterAssetId) await removeAsset(posterAssetId).catch(() => undefined);
+    }
+    throw error;
+  }
 
   // Local cache for this tab only. The document already points at the pool, so
   // a failed cache write costs a re-download, never the media.
@@ -229,9 +270,41 @@ async function commitPooledMedia(args: {
 
   const objectUrl = URL.createObjectURL(blob);
   const posterObjectUrl = posterBlob ? URL.createObjectURL(posterBlob) : undefined;
+
+  if (outcome === 'unmatched') {
+    // The slide this media belongs to has not been built yet, which during a
+    // first pass is the ordinary case rather than an edge one. The allocation
+    // is held under the placeholder and applied when that scene is committed;
+    // until then the task stays keyed by the placeholder so the request is
+    // recognisably answered and the provider is not asked a second time.
+    recordPendingMediaAllocation({
+      stageId,
+      placeholderRef: req.elementId,
+      assetId,
+      posterAssetId,
+      objectUrl,
+      posterObjectUrl,
+    });
+    useMediaGenerationStore.getState().markDone(req.elementId, objectUrl, posterObjectUrl);
+    return;
+  }
+
   useMediaGenerationStore
     .getState()
     .rekeyDone(req.elementId, assetId, objectUrl, posterObjectUrl, posterAssetId);
+}
+
+/**
+ * The content type to record for stored bytes.
+ *
+ * The generation routes declare no media type, so the only signal is whatever
+ * the transfer reported. A generic or empty value carries no information and
+ * must not become the asset's recorded type: the pool mints its object URL from
+ * it, and `<video>` will not play a source it is told is an octet stream.
+ */
+function storedMediaType(blob: Blob, fallback: string): string {
+  const declared = blob.type.trim();
+  return declared && declared !== 'application/octet-stream' ? declared : fallback;
 }
 
 async function generateSingleMedia(
@@ -264,7 +337,7 @@ async function generateSingleMedia(
           stageId,
           paramsJson,
           blob,
-          mimeType: blob.type || 'image/png',
+          mimeType: storedMediaType(blob, 'image/png'),
         });
         return;
       }
@@ -320,9 +393,9 @@ async function generateSingleMedia(
           stageId,
           paramsJson,
           blob,
-          mimeType: blob.type || 'video/mp4',
+          mimeType: storedMediaType(blob, 'video/mp4'),
           posterBlob,
-          posterMimeType: posterBlob?.type || 'image/jpeg',
+          ...(posterBlob ? { posterMimeType: storedMediaType(posterBlob, 'image/jpeg') } : {}),
         });
         return;
       }

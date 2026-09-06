@@ -15,7 +15,6 @@ const mocks = vi.hoisted(() => ({
   audioPut: vi.fn(),
   audioDelete: vi.fn(),
   poolPut: vi.fn(),
-  poolReplace: vi.fn(),
   poolRemove: vi.fn(),
   isTTSProviderEnabled: vi.fn(),
   pickNarratorAgent: vi.fn(),
@@ -41,7 +40,6 @@ vi.mock('@/lib/utils/database', () => ({
 
 vi.mock('@/lib/media/asset-pool', () => ({
   putAsset: mocks.poolPut,
-  replaceAsset: mocks.poolReplace,
   removeAsset: mocks.poolRemove,
 }));
 
@@ -82,7 +80,6 @@ describe('server-backed narration storage', () => {
     mocks.audioPut.mockReset().mockResolvedValue(undefined);
     mocks.audioDelete.mockReset().mockResolvedValue(undefined);
     mocks.poolPut.mockReset().mockResolvedValue('ast_audio_allocated');
-    mocks.poolReplace.mockReset().mockResolvedValue(undefined);
     mocks.poolRemove.mockReset().mockResolvedValue(undefined);
     mocks.serverBacked.mockReset().mockReturnValue(true);
     mocks.getCurrentModelConfig.mockReturnValue({});
@@ -133,7 +130,14 @@ describe('server-backed narration storage', () => {
     );
   });
 
-  it('replaces the bytes of a clip the caller proved it exclusively owns', async () => {
+  // Regeneration forks. Replacing bytes behind a live id needs proof that no
+  // other document holds it, and that proof is unavailable once references can
+  // leave this browser: `proveExclusiveAssetOwnership` refuses unconditionally
+  // in that mode (pinned by tests/media/prove-exclusive-ownership.test.ts), so
+  // the upstream caller supplies no existing id at all. The superseded clip is
+  // left for the stage-scoped document-truth sweep rather than deleted here,
+  // where nothing has yet observed the new id reaching a durable document.
+  it('forks to a fresh id even when handed the id it just superseded', async () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
     mockFetch.mockResolvedValueOnce(ttsResponse());
 
@@ -146,11 +150,10 @@ describe('server-backed narration storage', () => {
         undefined,
         'ast_owned_audio',
       ),
-    ).resolves.toBe('ast_owned_audio');
+    ).resolves.toBe('ast_audio_allocated');
 
-    expect(mocks.poolPut).not.toHaveBeenCalled();
-    expect(mocks.poolReplace).toHaveBeenCalledTimes(1);
-    expect(mocks.poolReplace.mock.calls[0]![0]).toBe('ast_owned_audio');
+    expect(mocks.poolPut).toHaveBeenCalledTimes(1);
+    expect(mocks.poolRemove).not.toHaveBeenCalled();
   });
 
   it('reports no reference when the pool refuses the bytes', async () => {
@@ -185,7 +188,6 @@ describe('server-backed narration storage', () => {
     await removeFreshTtsAllocations(['tts_s2_action_1']);
 
     expect(mocks.poolPut).not.toHaveBeenCalled();
-    expect(mocks.poolReplace).not.toHaveBeenCalled();
     expect(mocks.poolRemove).not.toHaveBeenCalled();
   });
 });

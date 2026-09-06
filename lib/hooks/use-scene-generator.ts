@@ -28,7 +28,8 @@ import {
 import { resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
-import { putAsset, removeAsset, replaceAsset } from '@/lib/media/asset-pool';
+import { putAsset, removeAsset } from '@/lib/media/asset-pool';
+import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
@@ -480,7 +481,7 @@ export async function generateAndStoreTTS(
   // stored. Browser-only keeps the historical derived key: document and audio
   // share one lifetime there, and nothing outside this browser reads either.
   const audioId = serverBacked
-    ? await allocatePooledAudio(blob, duration, existingAudioId)
+    ? await allocatePooledAudio(blob, duration)
     : (existingAudioId ?? requestId);
   const cacheWrite = db.audioFiles.put({
     id: audioId,
@@ -507,24 +508,27 @@ export async function generateAndStoreTTS(
  * Store narration bytes in the asset pool and return the reference the
  * document should hold.
  *
- * A clip the caller proved it exclusively owns keeps its id and has its bytes
- * replaced, so every reference to it stays valid; anything else gets a fresh
- * allocation.
+ * Regeneration always forks to a fresh id; the caller's `existingAudioId` is
+ * deliberately ignored here. Replacing bytes behind a live id requires proof
+ * that no other document holds it, and that proof is unavailable by
+ * construction once references can leave this browser — asking the pool who
+ * else holds an id would be exactly the existence oracle the asset contract
+ * forbids, so `proveExclusiveAssetOwnership` fails closed under server-backed
+ * persistence and every caller forks. Keeping a branch that can never be taken
+ * would only describe a capability this deployment shape does not have.
+ *
+ * The superseded id is NOT removed here. Nothing at this point has observed
+ * the new id reaching a durable document, so deleting the old bytes could
+ * leave a still-referenced action pointing at nothing if the save that follows
+ * fails; and the exclusivity that would make deletion safe is the same proof
+ * that is unavailable. It is reclaimed by the stage-scoped document-truth
+ * sweep instead, once no surviving document references it.
  */
-async function allocatePooledAudio(
-  blob: Blob,
-  duration: number | undefined,
-  existingAudioId: string | undefined,
-): Promise<string> {
-  const meta = {
+async function allocatePooledAudio(blob: Blob, duration: number | undefined): Promise<string> {
+  return putAsset(blob, {
     contentType: blob.type,
     ...(duration === undefined ? {} : { durationSeconds: duration }),
-  };
-  if (existingAudioId) {
-    await replaceAsset(existingAudioId, blob, meta);
-    return existingAudioId;
-  }
-  return putAsset(blob, meta);
+  });
 }
 
 export async function removeFreshTtsAllocations(assetIds: readonly string[]): Promise<void> {
@@ -965,6 +969,11 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       const outline = state.failedOutlines.find((o) => o.id === outlineId);
       const params = lastParamsRef.current;
       if (!outline || !state.stage || !params) return;
+      // A whole-outline retry runs content, actions and narration on the
+      // operator's keys. The surfaces already withhold the affordance when
+      // generation is not permitted; refusing here keeps the precondition and
+      // the render condition one rule.
+      if (!mayGenerateForStage(state.stage.id)) return;
       const retryEpoch = state.generationEpoch;
 
       // Regen-lock (#571): never silently replace a scene that is open in

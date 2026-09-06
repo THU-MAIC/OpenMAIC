@@ -14,9 +14,12 @@ const mocks = vi.hoisted(() => ({
   mediaPut: vi.fn(),
   mediaDelete: vi.fn(),
   putAsset: vi.fn(),
+  removeAsset: vi.fn(),
   persistReference: vi.fn(),
   serverBacked: vi.fn(),
   stageState: vi.fn(),
+  pendingAllocation: vi.fn(),
+  recordPendingAllocation: vi.fn(),
 }));
 
 vi.mock('@/lib/store/settings', () => ({
@@ -39,10 +42,19 @@ vi.mock('@/lib/utils/database', () => ({
 
 vi.mock('@/lib/media/asset-pool', () => ({
   putAsset: mocks.putAsset,
+  removeAsset: mocks.removeAsset,
 }));
 
-vi.mock('@/lib/media/persist-media-reference', () => ({
-  persistGeneratedMediaReference: mocks.persistReference,
+vi.mock('@/lib/media/persist-media-reference', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/media/persist-media-reference')>(
+    '@/lib/media/persist-media-reference',
+  );
+  return { ...actual, persistGeneratedMediaReference: mocks.persistReference };
+});
+
+vi.mock('@/lib/media/pending-media-allocations', () => ({
+  pendingMediaAllocation: mocks.pendingAllocation,
+  recordPendingMediaAllocation: mocks.recordPendingAllocation,
 }));
 
 vi.mock('@/lib/persistence/media-persistence', () => ({
@@ -50,6 +62,7 @@ vi.mock('@/lib/persistence/media-persistence', () => ({
 }));
 
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
+import { MediaReferenceWriteBackError } from '@/lib/media/persist-media-reference';
 import { resetProxyMediaFailureCache } from '@/lib/media/proxy-media-cache';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -57,6 +70,7 @@ import type { Scene } from '@/lib/types/stage';
 
 const stageId = 'server-stage';
 const imageRef = 'gen_img_server';
+const videoRef = 'gen_vid_server';
 
 function outlineWith(
   order: number,
@@ -109,11 +123,15 @@ describe('server-backed classic media orchestrator', () => {
     mocks.mediaPut.mockReset().mockResolvedValue(undefined);
     mocks.mediaDelete.mockReset().mockResolvedValue(undefined);
     mocks.putAsset.mockReset().mockResolvedValue('ast_generated');
+    mocks.removeAsset.mockReset().mockResolvedValue(undefined);
     mocks.persistReference.mockReset().mockResolvedValue('written');
+    mocks.pendingAllocation.mockReset().mockReturnValue(undefined);
+    mocks.recordPendingAllocation.mockReset();
     mocks.serverBacked.mockReset().mockReturnValue(true);
     mocks.stageState.mockReset().mockReturnValue({
       stage: { id: stageId },
       scenes: [sceneWithImage(1, imageRef)],
+      generationComplete: false,
     });
     mocks.settings.mockReset().mockReturnValue({
       imageGenerationEnabled: true,
@@ -150,6 +168,27 @@ describe('server-backed classic media orchestrator', () => {
       }
       if (String(input) === '/api/proxy-media') {
         return new Response(new Blob(['server-image'], { type: 'image/png' }), { status: 200 });
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    });
+  }
+
+  function serveVideo(): void {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/generate/video') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            result: { url: 'https://media.test/video', poster: 'https://media.test/poster' },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (String(input) === '/api/proxy-media') {
+        const requested = JSON.parse(String(init?.body)) as { url: string };
+        return requested.url.endsWith('/poster')
+          ? new Response(new Blob(['poster'], { type: 'image/jpeg' }), { status: 200 })
+          : new Response(new Blob(['video'], { type: 'video/mp4' }), { status: 200 });
       }
       throw new Error(`Unexpected fetch: ${String(input)}`);
     });
@@ -227,7 +266,9 @@ describe('server-backed classic media orchestrator', () => {
 
   it('keeps the placeholder and the task unfinished when the document write rejects', async () => {
     serveImage();
-    mocks.persistReference.mockRejectedValue(new Error('document write rejected'));
+    mocks.persistReference.mockRejectedValue(
+      new MediaReferenceWriteBackError(new Error('document write rejected'), false),
+    );
 
     await runImageGeneration();
 
@@ -247,6 +288,7 @@ describe('server-backed classic media orchestrator', () => {
     mocks.stageState.mockReturnValue({
       stage: { id: stageId },
       scenes: [sceneWithImage(1, 'ast_already_generated')],
+      generationComplete: false,
     });
 
     await runImageGeneration();
@@ -258,7 +300,11 @@ describe('server-backed classic media orchestrator', () => {
 
   it('still generates while the scene that will carry the placeholder does not exist yet', async () => {
     serveImage();
-    mocks.stageState.mockReturnValue({ stage: { id: stageId }, scenes: [] });
+    mocks.stageState.mockReturnValue({
+      stage: { id: stageId },
+      scenes: [],
+      generationComplete: false,
+    });
 
     await runImageGeneration();
 
@@ -293,11 +339,113 @@ describe('server-backed classic media orchestrator', () => {
     mocks.stageState.mockReturnValue({
       stage: { id: 'another-stage' },
       scenes: [sceneWithImage(1, 'ast_already_generated')],
+      generationComplete: false,
     });
 
     await runImageGeneration();
 
     expect(providerCallCount()).toBe(1);
+  });
+
+  it('reclaims the allocation when nothing of the write-back reached the document', async () => {
+    serveImage();
+    mocks.persistReference.mockRejectedValue(
+      new MediaReferenceWriteBackError(new Error('document write rejected'), false),
+    );
+
+    await runImageGeneration();
+
+    // The registry row would otherwise outlive every reference to it, and the
+    // byte collector only reclaims blobs that no row names.
+    expect(mocks.removeAsset).toHaveBeenCalledWith('ast_generated');
+  });
+
+  it('keeps an allocation a partial write-back already put into the document', async () => {
+    serveImage();
+    mocks.persistReference.mockRejectedValue(
+      new MediaReferenceWriteBackError(new Error('stage write rejected'), true),
+    );
+
+    await runImageGeneration();
+
+    expect(mocks.removeAsset).not.toHaveBeenCalled();
+  });
+
+  it('holds the allocation when no slot for it exists yet', async () => {
+    serveImage();
+    mocks.persistReference.mockResolvedValue('unmatched');
+
+    await runImageGeneration();
+
+    expect(mocks.recordPendingAllocation).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId, placeholderRef: imageRef, assetId: 'ast_generated' }),
+    );
+    // The task stays under the placeholder: the document still holds it, so
+    // re-keying would hide the request from the very lookup that answers it.
+    expect(Object.keys(useMediaGenerationStore.getState().tasks)).toEqual([imageRef]);
+  });
+
+  it('does not call the provider again for a placeholder whose bytes are already held', async () => {
+    serveImage();
+    mocks.pendingAllocation.mockReturnValue({
+      stageId,
+      placeholderRef: imageRef,
+      assetId: 'ast_generated',
+    });
+
+    await runImageGeneration();
+
+    expect(providerCallCount()).toBe(0);
+    expect(mocks.putAsset).not.toHaveBeenCalled();
+  });
+
+  it('keeps a stored video when only its poster fails to store', async () => {
+    serveVideo();
+    mocks.stageState.mockReturnValue({
+      stage: { id: stageId },
+      scenes: [sceneWithImage(1, videoRef)],
+      generationComplete: false,
+    });
+    mocks.putAsset.mockImplementation(async (blob: Blob) =>
+      (await blob.text()) === 'poster'
+        ? Promise.reject(new Error('poster store unavailable'))
+        : 'ast_video',
+    );
+
+    await generateMediaForOutlines(
+      [outlineWith(1, { type: 'video', prompt: 'A clip', elementId: videoRef })],
+      stageId,
+    );
+
+    // The most expensive call in the system must not be thrown away by a
+    // decorative poster.
+    expect(mocks.persistReference).toHaveBeenCalledWith(stageId, {
+      placeholderRef: videoRef,
+      assetId: 'ast_video',
+    });
+    expect(useMediaGenerationStore.getState().tasks.ast_video?.status).toBe('done');
+    expect(mocks.removeAsset).not.toHaveBeenCalled();
+  });
+
+  it('records a specific media type rather than a generic transfer type', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/generate/image') {
+        return new Response(
+          JSON.stringify({ success: true, result: { url: 'https://media.test/image' } }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (String(input) === '/api/proxy-media') {
+        return new Response(new Blob(['bytes'], { type: 'application/octet-stream' }), {
+          status: 200,
+        });
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    });
+
+    await runImageGeneration();
+
+    expect(mocks.putAsset.mock.calls[0]![1]).toEqual({ contentType: 'image/png' });
   });
 
   it('honours a permanently failed task as a refusal to call the provider again', async () => {

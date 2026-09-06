@@ -20,8 +20,11 @@ import {
   classroomGenerationOwnership,
   mayStartOwnerGeneration,
   noteStageOwnership,
-  type ClassroomGenerationOwnership,
 } from '@/lib/classroom/stage-ownership-signal';
+import {
+  noteStageGenerationOwnership,
+  useStageGenerationOwnership,
+} from '@/lib/classroom/generation-permission';
 import {
   applyClassroomStageAndScenes,
   defaultClassroomLoadDeps,
@@ -40,10 +43,14 @@ export default function ClassroomDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Not a boolean on purpose: `false` would say "this is a stranger's course",
-  // which is neither what an unanswered sidecar nor what an ownerless course
-  // means. Generation reads the answer itself rather than the store's editable
-  // default.
-  const [ownership, setOwnership] = useState<ClassroomGenerationOwnership>('unresolved');
+  // which is neither what an unanswered sidecar nor a 404 means. Held in the
+  // shared permission store rather than in local state, so the retry
+  // affordances read exactly the value this effect gates on.
+  const ownership = useStageGenerationOwnership(classroomId);
+  // Render condition and action precondition are the same value: an outline
+  // retry runs the whole content + actions + narration chain on the operator's
+  // keys, so a viewer must not even be offered it.
+  const mayGenerate = mayStartOwnerGeneration(isServerBackedMediaPersistence(), ownership);
 
   const generationStartedRef = useRef(false);
 
@@ -96,8 +103,9 @@ export default function ClassroomDetailPage() {
           .then((result) => {
             if (!isEffectCurrent()) return;
             // One mapping of the sidecar's three outcomes onto the generation
-            // gate, shared with every other classroom surface.
-            setOwnership(classroomGenerationOwnership(result));
+            // gate, shared with every other classroom surface and with every
+            // affordance that could start generation.
+            noteStageGenerationOwnership(classroomId, classroomGenerationOwnership(result));
             if (result.outcome === 'found') {
               noteStageOwnership(classroomId, true, {
                 isOwner: result.meta.isOwner,
@@ -129,10 +137,10 @@ export default function ClassroomDetailPage() {
     /* eslint-disable react-hooks/set-state-in-effect -- Course switch must hide stale Stage before async load */
     setLoading(true);
     setError(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
     // Ownership belongs to the departing course; the new one must re-earn it
     // before anything it holds may be generated.
-    setOwnership('unresolved');
-    /* eslint-enable react-hooks/set-state-in-effect */
+    noteStageGenerationOwnership(classroomId, 'unresolved');
     generationStartedRef.current = false;
 
     // Clear previous classroom's media tasks to prevent cross-classroom contamination.
@@ -162,7 +170,7 @@ export default function ClassroomDetailPage() {
     // course is readable by anyone it was shared with, so a viewer must never
     // start it. `generationStartedRef` is deliberately NOT set here, so the
     // effect re-runs and starts once the sidecar's answer arrives.
-    if (!mayStartOwnerGeneration(isServerBackedMediaPersistence(), ownership)) return;
+    if (!mayGenerate) return;
 
     const state = useStageStore.getState();
     const { outlines, scenes, stage, generationComplete } = state;
@@ -240,7 +248,7 @@ export default function ClassroomDetailPage() {
         log.warn('[Classroom] Media generation resume error:', err);
       });
     }
-  }, [loading, error, ownership, generateRemaining]);
+  }, [loading, error, mayGenerate, generateRemaining]);
 
   return (
     <ThemeProvider>
@@ -269,7 +277,7 @@ export default function ClassroomDetailPage() {
               </div>
             </div>
           ) : (
-            <Stage onRetryOutline={retrySingleOutline} />
+            <Stage onRetryOutline={mayGenerate ? retrySingleOutline : undefined} />
           )}
         </div>
       </MediaStageProvider>

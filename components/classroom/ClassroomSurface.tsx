@@ -54,10 +54,11 @@ import {
   shouldResumeClassroomGeneration,
 } from '@/lib/classroom/progressive-load-policy';
 import { fetchStageMeta } from '@/lib/classroom/stage-meta-client';
+import { classroomGenerationOwnership } from '@/lib/classroom/stage-ownership-signal';
 import {
-  classroomGenerationOwnership,
-  type ClassroomGenerationOwnership,
-} from '@/lib/classroom/stage-ownership-signal';
+  noteStageGenerationOwnership,
+  useMayGenerateForStage,
+} from '@/lib/classroom/generation-permission';
 import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 
 const log = createLogger('Classroom');
@@ -97,11 +98,12 @@ export function ClassroomSurface({
    */
   const [notFound, setNotFound] = useState(false);
   /**
-   * What the stage-meta sidecar says about this viewer, for the generation
-   * gate only. Not a boolean: "we could not ask" and "this course has no
-   * ownership fact" are different answers with opposite consequences.
+   * Whether this browser may start generation for this course, from the shared
+   * permission store the stage-meta sidecar feeds. Gates the resume effect and
+   * the outline-retry affordance alike, so what is offered and what is allowed
+   * cannot diverge.
    */
-  const [ownership, setOwnership] = useState<ClassroomGenerationOwnership>('unresolved');
+  const mayGenerate = useMayGenerateForStage(classroomId);
 
   const generationStartedRef = useRef(false);
 
@@ -179,10 +181,10 @@ export function ClassroomSurface({
     setLoading(true);
     setError(null);
     setNotFound(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
     // Ownership belongs to the departing course; the new one must re-earn it
     // before anything it holds may be generated.
-    setOwnership('unresolved');
-    /* eslint-enable react-hooks/set-state-in-effect */
+    noteStageGenerationOwnership(classroomId, 'unresolved');
     generationStartedRef.current = false;
 
     // Clear previous classroom's media tasks to prevent cross-classroom contamination.
@@ -207,16 +209,20 @@ export function ClassroomSurface({
     // The sidecar carries the per-viewer ownership fact the document seam does
     // not. Asked once per course, in parallel with the load and without
     // blocking it: it feeds only the generation gate here, so the pane's
-    // read-only and edit behaviour is untouched by its answer.
-    void fetchStageMeta(classroomId)
-      .then((result) => {
-        if (cancelled) return;
-        setOwnership(classroomGenerationOwnership(result));
-      })
-      // The client reports transport failure as an outcome rather than
-      // throwing, so this only catches the unexpected. Ownership stays
-      // unresolved, which is the fail-closed answer.
-      .catch(() => undefined);
+    // read-only and edit behaviour is untouched by its answer. Skipped
+    // entirely in browser-only mode, where the gate is inert and the request
+    // would be new observable behaviour on a path this change must not touch.
+    if (isServerBackedMediaPersistence()) {
+      void fetchStageMeta(classroomId)
+        .then((result) => {
+          if (cancelled) return;
+          noteStageGenerationOwnership(classroomId, classroomGenerationOwnership(result));
+        })
+        // The client reports transport failure as an outcome rather than
+        // throwing, so this only catches the unexpected. Ownership stays
+        // unresolved, which is the fail-closed answer.
+        .catch(() => undefined);
+    }
     const loadUntilAvailable = async () => {
       if (cancelled) return;
       // A previous pane attempt may have observed a transient read failure.
@@ -262,8 +268,7 @@ export function ClassroomSurface({
         error,
         transportPersistenceFenced: false,
         generationStarted: generationStartedRef.current,
-        serverBackedMedia: isServerBackedMediaPersistence(),
-        ownership,
+        mayGenerate,
       })
     ) {
       return;
@@ -350,7 +355,7 @@ export function ClassroomSurface({
         log.warn('[Classroom] Media generation resume error:', err);
       });
     }
-  }, [loading, error, ownership, generateRemaining]);
+  }, [loading, error, mayGenerate, generateRemaining]);
 
   return (
     <ThemeProvider>
@@ -419,7 +424,10 @@ export function ClassroomSurface({
               </div>
             </div>
           ) : (
-            <Stage classroomId={classroomId} onRetryOutline={retrySingleOutline} />
+            <Stage
+              classroomId={classroomId}
+              onRetryOutline={mayGenerate ? retrySingleOutline : undefined}
+            />
           )}
         </div>
       </MediaStageProvider>

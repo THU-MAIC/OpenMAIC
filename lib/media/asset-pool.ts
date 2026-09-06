@@ -98,15 +98,6 @@ export function removeAsset(ref: string): Promise<void> {
   return getAssetPool().remove(toAssetId(ref));
 }
 
-/**
- * Swap the bytes behind an existing reference. Callers must have established
- * that the reference is theirs alone to replace: every document holding it
- * sees the new bytes.
- */
-export function replaceAsset(ref: string, data: BinaryBlob, meta?: AssetMeta): Promise<void> {
-  return getAssetPool().replace(toAssetId(ref), data, meta);
-}
-
 function deleteAssetPoolDatabase(): Promise<void> {
   if (typeof indexedDB === 'undefined') return Promise.resolve();
   return new Promise((resolve, reject) => {
