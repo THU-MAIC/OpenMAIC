@@ -2007,7 +2007,11 @@
     "model": "モデル",
     "voice": "ボイス",
     "speed": "速度",
-    "language": "言語"
+    "language": "言語",
+    "tabImage": "画像",
+    "tabVideo": "動画",
+    "tabTts": "読み上げ",
+    "tabAsr": "音声入力"
   },
   "accessCode": {
     "title": "アクセスコードを入力",

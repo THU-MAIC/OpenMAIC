@@ -2007,7 +2007,11 @@
     "model": "模型",
     "voice": "音色",
     "speed": "语速",
-    "language": "语言"
+    "language": "语言",
+    "tabImage": "图片",
+    "tabVideo": "视频",
+    "tabTts": "朗读",
+    "tabAsr": "语音"
   },
   "accessCode": {
     "title": "请输入访问码",

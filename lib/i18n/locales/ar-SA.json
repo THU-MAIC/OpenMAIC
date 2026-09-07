@@ -2007,7 +2007,11 @@
     "model": "النموذج",
     "voice": "الصوت",
     "speed": "السرعة",
-    "language": "اللغة"
+    "language": "اللغة",
+    "tabImage": "صورة",
+    "tabVideo": "فيديو",
+    "tabTts": "نطق",
+    "tabAsr": "إملاء"
   },
   "accessCode": {
     "title": "أدخل رمز الوصول",

@@ -2007,7 +2007,11 @@
     "model": "Mô hình",
     "voice": "Giọng đọc",
     "speed": "Tốc độ",
-    "language": "Ngôn ngữ"
+    "language": "Ngôn ngữ",
+    "tabImage": "Ảnh",
+    "tabVideo": "Video",
+    "tabTts": "Đọc",
+    "tabAsr": "Giọng nói"
   },
   "accessCode": {
     "title": "Nhập mã truy cập",

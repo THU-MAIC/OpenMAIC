@@ -1992,7 +1992,11 @@
     "model": "模型",
     "voice": "聲線",
     "speed": "語速",
-    "language": "語言"
+    "language": "語言",
+    "tabImage": "圖片",
+    "tabVideo": "影片",
+    "tabTts": "朗讀",
+    "tabAsr": "語音"
   },
   "accessCode": {
     "title": "請輸入課堂碼",

@@ -2007,7 +2007,11 @@
     "model": "모델",
     "voice": "음성",
     "speed": "속도",
-    "language": "언어"
+    "language": "언어",
+    "tabImage": "이미지",
+    "tabVideo": "비디오",
+    "tabTts": "음성 출력",
+    "tabAsr": "음성 입력"
   },
   "accessCode": {
     "title": "접근 코드 입력",

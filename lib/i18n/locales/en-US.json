@@ -2007,7 +2007,11 @@
     "model": "Model",
     "voice": "Voice",
     "speed": "Speed",
-    "language": "Language"
+    "language": "Language",
+    "tabImage": "Image",
+    "tabVideo": "Video",
+    "tabTts": "Speech",
+    "tabAsr": "Voice"
   },
   "proMode": {
     "attach": "Attach material",

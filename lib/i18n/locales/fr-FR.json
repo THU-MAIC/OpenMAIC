@@ -2007,7 +2007,11 @@
     "model": "Modèle",
     "voice": "Voix",
     "speed": "Vitesse",
-    "language": "Langue"
+    "language": "Langue",
+    "tabImage": "Image",
+    "tabVideo": "Vidéo",
+    "tabTts": "Lecture",
+    "tabAsr": "Dictée"
   },
   "accessCode": {
     "title": "Saisissez le code d’accès",
