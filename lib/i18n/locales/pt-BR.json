@@ -644,6 +644,7 @@
     "exitFullscreen": "Sair da tela cheia",
     "editCourse": "Editar curso",
     "doneEditing": "Concluir edição",
+    "proMode": "Modo Pro",
     "proModeDisabledHint": "A edição não está disponível nesta página — abra um slide do curso para editar no modo Pro."
   },
   "classroomComplete": {

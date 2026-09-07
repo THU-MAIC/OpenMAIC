@@ -231,6 +231,7 @@
     "exitFullscreen": "Vollbild beenden",
     "editCourse": "Kurs bearbeiten",
     "doneEditing": "Bearbeitung abschließen",
+    "proMode": "Pro-Modus",
     "proModeDisabledHint": "Diese Seite kann nicht bearbeitet werden — öffne eine Kursfolie, um sie im Pro-Modus zu bearbeiten."
   },
   "edit": {

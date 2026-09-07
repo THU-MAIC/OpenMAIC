@@ -231,6 +231,7 @@
     "exitFullscreen": "Thoát toàn màn hình",
     "editCourse": "Sửa bài học",
     "doneEditing": "Sửa xong",
+    "proMode": "Chế độ Pro",
     "proModeDisabledHint": "Trang này không sửa được — hãy mở một slide bài học để dùng chế độ Pro."
   },
   "edit": {

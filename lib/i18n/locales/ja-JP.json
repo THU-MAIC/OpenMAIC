@@ -231,6 +231,7 @@
     "exitFullscreen": "全画面表示を終了",
     "editCourse": "コースを編集",
     "doneEditing": "編集を完了",
+    "proMode": "プロモード",
     "proModeDisabledHint": "このページでは編集できません。コースのスライドを開くと Pro モードで編集できます。"
   },
   "edit": {

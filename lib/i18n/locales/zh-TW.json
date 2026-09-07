@@ -231,6 +231,7 @@
     "exitFullscreen": "離開全螢幕",
     "editCourse": "編輯課程",
     "doneEditing": "完成編輯",
+    "proMode": "專業模式",
     "proModeDisabledHint": "此頁面無法編輯——開啟課程投影片以使用 Pro 模式編輯。"
   },
   "edit": {

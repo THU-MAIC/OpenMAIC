@@ -231,6 +231,7 @@
     "exitFullscreen": "Salir de pantalla completa",
     "editCourse": "Editar curso",
     "doneEditing": "Terminar edición",
+    "proMode": "Modo Pro",
     "proModeDisabledHint": "La edición no está disponible en esta página — abre una diapositiva del curso para editar con el modo Pro."
   },
   "edit": {

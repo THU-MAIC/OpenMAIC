@@ -231,6 +231,7 @@
     "exitFullscreen": "전체화면 종료",
     "editCourse": "강좌 편집",
     "doneEditing": "편집 완료",
+    "proMode": "프로 모드",
     "proModeDisabledHint": "이 페이지에서는 편집할 수 없습니다 — 코스 슬라이드를 열면 Pro 모드로 편집할 수 있습니다."
   },
   "edit": {
