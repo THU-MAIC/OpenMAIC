@@ -9,6 +9,13 @@
     "retry": "Повторить",
     "close": "Закрыть"
   },
+  "interactiveRuntime": {
+    "regenerateCode": "Перегенерировать код",
+    "regeneratingCode": "Код перегенерируется…",
+    "regenerateCodeSuccess": "Код перегенерирован",
+    "regenerateCodeFailed": "Не удалось перегенерировать код",
+    "regenerateCodeLocked": "Выйдите из режима редактирования перед перегенерацией кода"
+  },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Привет, {{name}}"

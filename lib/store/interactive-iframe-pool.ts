@@ -17,6 +17,7 @@
  */
 
 import { create } from 'zustand';
+import type { WidgetType } from '@openmaic/dsl';
 
 export const IFRAME_POOL_CAP = 3;
 
@@ -32,6 +33,8 @@ export interface IframePoolEntry {
   readonly srcDoc?: string;
   /** URL for `src`, when the scene points at an external page. */
   readonly src?: string;
+  /** Widget kind, used by host-owned recovery controls outside the sandbox. */
+  readonly widgetType?: WidgetType;
   /** Full available slot rect. The host contain-fits one fixed logical viewport inside it. */
   readonly rect: IframeRect | null;
   /** Visible intersection of the slot with overflow ancestors. The host clips to this. */
@@ -53,6 +56,7 @@ export interface IframePoolEntry {
 interface MountInput {
   readonly srcDoc?: string;
   readonly src?: string;
+  readonly widgetType?: WidgetType;
 }
 
 interface InteractiveIframePoolState {
@@ -108,7 +112,12 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
       // existing srcDoc/src reference so the host never re-sets it (which would
       // reload the iframe). String `===` is by value, so a remount that produces
       // an equal-but-new srcDoc string still hits this keep-alive fast path.
-      if (existing && existing.srcDoc === input.srcDoc && existing.src === input.src) {
+      if (
+        existing &&
+        existing.srcDoc === input.srcDoc &&
+        existing.src === input.src &&
+        existing.widgetType === input.widgetType
+      ) {
         const entries = { ...state.entries, [sceneId]: { ...existing, tick } };
         return { entries, tick };
       }
@@ -117,6 +126,7 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
       const entry: IframePoolEntry = {
         srcDoc: input.srcDoc,
         src: input.src,
+        widgetType: input.widgetType,
         rect: existing?.rect ?? null,
         clip: existing?.clip ?? null,
         owner: existing?.owner ?? null,

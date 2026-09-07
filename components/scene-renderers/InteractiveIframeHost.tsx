@@ -17,6 +17,10 @@ import { intersectClientBoxes } from '@/lib/edit/visible-client-rect';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useElementRefsStore } from '@/lib/store/element-refs';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
+import { regenerateCodeSceneContent } from '@/lib/interactive/regenerate-code-scene';
+import { useStageStore } from '@/lib/store/stage';
 import {
   ELEMENT_REF_SELECTOR_MAX,
   ELEMENT_SNAPSHOT_MAX,
@@ -155,11 +159,13 @@ interface PooledIframeProps {
  */
 function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
   const { t } = useI18n();
+  const [regeneratingCode, setRegeneratingCode] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const registerIframe = useWidgetIframeStore((s) => s.registerIframe);
   const getSendMessage = useWidgetIframeStore((s) => s.getSendMessage);
   const pickTarget = useCanvasStore.use.pickTarget();
   const refs = useElementRefsStore.use.refs();
+  const canRegenerate = useStageStore((s) => s.isOwner && !s.readOnly);
   const armed = pickTarget?.purpose === 'element-ref' && pickTarget.sceneId === sceneId;
   const selectors = useMemo(
     () =>
@@ -270,6 +276,29 @@ function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
     transformOrigin: 'top left',
   };
 
+  const handleRegenerateCode = async () => {
+    if (regeneratingCode) return;
+    setRegeneratingCode(true);
+    try {
+      const result = await regenerateCodeSceneContent(sceneId);
+      if (result.ok) {
+        toast.success(t('interactiveRuntime.regenerateCodeSuccess'));
+        return;
+      }
+      if (result.reason !== 'stale') {
+        toast.error(
+          result.reason === 'locked'
+            ? t('interactiveRuntime.regenerateCodeLocked')
+            : t('interactiveRuntime.regenerateCodeFailed'),
+        );
+      }
+    } catch {
+      toast.error(t('interactiveRuntime.regenerateCodeFailed'));
+    } finally {
+      setRegeneratingCode(false);
+    }
+  };
+
   return (
     <div style={wrapStyle}>
       <iframe
@@ -280,6 +309,23 @@ function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
         title={`Interactive Scene ${sceneId}`}
         sandbox="allow-scripts allow-forms allow-popups"
       />
+      {shown && canRegenerate && entry.widgetType === 'code' ? (
+        <button
+          type="button"
+          onClick={() => void handleRegenerateCode()}
+          disabled={regeneratingCode}
+          aria-label={t('interactiveRuntime.regenerateCode')}
+          title={t('interactiveRuntime.regenerateCode')}
+          className="absolute right-3 top-3 z-10 inline-flex h-9 items-center gap-2 rounded-md border border-border/80 bg-background/95 px-3 text-sm font-medium text-foreground shadow-md backdrop-blur transition-colors hover:bg-accent disabled:cursor-wait disabled:opacity-70"
+        >
+          <RefreshCw className={`h-4 w-4 ${regeneratingCode ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">
+            {regeneratingCode
+              ? t('interactiveRuntime.regeneratingCode')
+              : t('interactiveRuntime.regenerateCode')}
+          </span>
+        </button>
+      ) : null}
     </div>
   );
 }
