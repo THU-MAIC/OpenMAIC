@@ -19,7 +19,7 @@ vi.mock('@ai-sdk/azure', () => ({
   createAzure: azureMock.createAzure,
 }));
 
-import { getModel, getModelInfo, getProvider } from '@/lib/ai/providers';
+import { getModel, getModelInfo, getProvider, LLM_FETCH_TIMEOUT_MS } from '@/lib/ai/providers';
 import { normalizeAzureBaseUrl } from '@/lib/ai/azure';
 import type { ProviderId } from '@/lib/types/provider';
 
@@ -183,7 +183,10 @@ describe('OpenAI provider defaults', () => {
     const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
       | { fetch?: typeof fetch }
       | undefined;
-    expect(options?.fetch).toBeUndefined();
+    // Native transports always install the shared transport now (it carries
+    // the extended-timeout dispatcher); "no compat" is proven by the dialect
+    // assertions below.
+    expect(options?.fetch).toBeTypeOf('function');
     expect(openAiMock.responses).toHaveBeenCalledWith('gpt-5.6-sol');
     expect(openAiMock.chat).not.toHaveBeenCalled();
   });
@@ -223,7 +226,9 @@ describe('OpenAI provider defaults', () => {
     const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
       | { fetch?: typeof fetch }
       | undefined;
-    expect(options?.fetch).toBeUndefined();
+    // See above: the shared transport is always installed; the dialect
+    // assertions prove the compat path was not taken.
+    expect(options?.fetch).toBeTypeOf('function');
     expect(openAiMock.responses).toHaveBeenCalledWith('gpt-5.6-sol');
     expect(openAiMock.chat).not.toHaveBeenCalled();
   });
@@ -401,6 +406,7 @@ describe('OpenAI provider defaults', () => {
     expect(azureMock.createAzure).toHaveBeenCalledWith({
       apiKey: 'azure-key',
       baseURL: 'https://test-resource.openai.azure.com/openai',
+      fetch: expect.any(Function),
     });
     expect(azureMock.model).toHaveBeenCalledWith('course-generation');
     expect(model).toEqual({
@@ -420,6 +426,7 @@ describe('OpenAI provider defaults', () => {
     expect(azureMock.createAzure).toHaveBeenCalledWith({
       apiKey: 'azure-key',
       baseURL: 'https://fast-ai-resource.services.ai.azure.com/openai/v1',
+      fetch: expect.any(Function),
     });
   });
 
@@ -710,6 +717,79 @@ describe('OpenAI provider defaults', () => {
 
     expect(body).toMatchObject({ enable_thinking: false });
     expect(body).not.toHaveProperty('thinking_budget');
+  });
+
+  it('attaches the extended-timeout LLM dispatcher to compat-transport requests', async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => {
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    try {
+      globalThis.fetch = fetchMock as typeof fetch;
+
+      getModel({ providerId: 'glm', modelId: 'glm-5.2', apiKey: 'sk-test' });
+      const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+        | { fetch?: typeof fetch }
+        | undefined;
+      expect(options?.fetch).toBeTruthy();
+
+      await options?.fetch?.('https://example.test/v1/chat/completions', {
+        method: 'POST',
+        body: JSON.stringify({
+          model: 'glm-5.2',
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      });
+
+      // A non-streaming completion only receives headers once the whole
+      // (possibly 5+ minute thinking) completion exists, so the request must
+      // carry a dispatcher whose headers timeout outlives undici's 300 s
+      // default — otherwise "Headers Timeout Error" at exactly 5 minutes.
+      const init = fetchMock.mock.calls.at(-1)?.[1] as RequestInit & {
+        dispatcher?: unknown;
+      };
+      expect(init?.dispatcher).toBeTruthy();
+      expect(LLM_FETCH_TIMEOUT_MS).toBeGreaterThan(300_000);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('routes native OpenAI requests through the same dispatcher', async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => {
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    try {
+      globalThis.fetch = fetchMock as typeof fetch;
+
+      getModel({ providerId: 'openai', modelId: 'gpt-5.3', apiKey: 'sk-test' });
+      const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+        | { fetch?: typeof fetch }
+        | undefined;
+      // The native transport (no custom base URL, no config.fetchImpl) also
+      // installs the shared transport so long completions survive.
+      expect(options?.fetch).toBeTruthy();
+
+      await options?.fetch?.('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+      });
+
+      const init = fetchMock.mock.calls.at(-1)?.[1] as RequestInit & {
+        dispatcher?: unknown;
+      };
+      expect(init?.dispatcher).toBeTruthy();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it('disables Lemonade thinking by default for recognized local reasoning models', async () => {

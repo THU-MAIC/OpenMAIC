@@ -1894,6 +1894,30 @@ function openAIStreamErrorStatus(error: Record<string, unknown>): number {
   return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500;
 }
 
+/**
+ * Non-streaming LLM completions only receive response headers once the whole
+ * completion exists, and thinking models routinely think for more than five
+ * minutes on a large prompt (observed: glm-5.2 at reasoning_effort=max on
+ * scene generation). undici's default 300 s headers timeout turns that into
+ * `Cannot connect to API: Headers Timeout Error` at exactly 300 s, before the
+ * model ever answers. LLM-bound fetches attach this dispatcher instead, with
+ * a budget that covers the slowest thinking model.
+ */
+export const LLM_FETCH_TIMEOUT_MS = 15 * 60 * 1000;
+
+let llmDispatcherPromise: Promise<unknown> | undefined;
+
+function getLlmDispatcher(): Promise<unknown> {
+  llmDispatcherPromise ??= import(/* webpackIgnore: true */ 'undici').then(
+    ({ Agent }) =>
+      new Agent({
+        headersTimeout: LLM_FETCH_TIMEOUT_MS,
+        bodyTimeout: LLM_FETCH_TIMEOUT_MS,
+      }),
+  );
+  return llmDispatcherPromise;
+}
+
 async function fetchCustomOpenAIChat(
   input: RequestInfo | URL,
   init?: RequestInit,
@@ -2083,8 +2107,15 @@ export function getModel(config: ModelConfig): ModelWithInfo {
   // here so every hop of a request to a client-supplied base URL is re-checked;
   // without one, requests go through the global fetch exactly as before
   // (resolved at call time, so tests that stub it keep working).
-  const transportFetch: typeof fetch =
+  const baseTransportFetch: typeof fetch =
     config.fetchImpl ?? ((fetchInput, fetchInit) => globalThis.fetch(fetchInput, fetchInit));
+  // See LLM_FETCH_TIMEOUT_MS: every outbound LLM request — whatever transport
+  // it ends up on — carries the extended-timeout dispatcher.
+  const transportFetch: typeof fetch = async (fetchInput, fetchInit) =>
+    baseTransportFetch(fetchInput, {
+      ...fetchInit,
+      dispatcher: await getLlmDispatcher(),
+    } as RequestInit);
 
   let model: LanguageModel;
 
@@ -2094,7 +2125,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         apiKey: effectiveApiKey,
         baseURL: normalizeAzureBaseUrl(effectiveBaseUrl),
       };
-      if (config.fetchImpl) azureOptions.fetch = config.fetchImpl;
+      azureOptions.fetch = transportFetch;
       const azure = createAzure(azureOptions);
       model = azure(config.modelId);
       break;
@@ -2223,10 +2254,10 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           return response;
         };
         openaiOptions.fetch = compatFetch as typeof globalThis.fetch;
-      } else if (config.fetchImpl) {
-        // Native OpenAI / Responses transport with a validated fetch installed
-        // by the server: still route requests through it.
-        openaiOptions.fetch = config.fetchImpl;
+      } else {
+        // Native OpenAI / Responses transport: route requests through the
+        // shared transport so they carry the extended-timeout dispatcher too.
+        openaiOptions.fetch = transportFetch;
       }
 
       const openai = createOpenAI(openaiOptions);
@@ -2288,8 +2319,8 @@ export function getModel(config: ModelConfig): ModelWithInfo {
 
           return transportFetch(url, init);
         }) as typeof globalThis.fetch;
-      } else if (config.fetchImpl) {
-        anthropicOptions.fetch = config.fetchImpl;
+      } else {
+        anthropicOptions.fetch = transportFetch;
       }
 
       const anthropic = createAnthropic(anthropicOptions);
@@ -2333,8 +2364,8 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           });
           return response as Response;
         }) as typeof fetch;
-      } else if (config.fetchImpl) {
-        googleOptions.fetch = config.fetchImpl;
+      } else {
+        googleOptions.fetch = transportFetch;
       }
       const google = createGoogleGenerativeAI(googleOptions);
       model = google.chat(config.modelId);

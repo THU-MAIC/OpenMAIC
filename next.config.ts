@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
       'lib/server/agent-runtime/import-pptx-worker.mjs',
       'skills/openmaic/**',
       'skills/agent-runtime/**',
+      // Loaded through a runtime-only `import('undici')` (see the LLM
+      // dispatcher in lib/ai/providers.ts and the Google proxy transport), so
+      // the output tracer never sees it and standalone builds ship without it.
+      'node_modules/undici/**',
     ],
   },
   typescript: {
