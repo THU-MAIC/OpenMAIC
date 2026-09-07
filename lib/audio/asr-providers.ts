@@ -382,6 +382,16 @@ async function transcribeCustomOpenAICompatibleASR(
 /**
  * OpenAI Whisper implementation (using Vercel AI SDK)
  */
+/**
+ * Reduce a language setting to the ISO-639-1 code the OpenAI-compatible
+ * transcription API expects. `auto` (and anything empty) means "detect".
+ */
+function toISO6391(language: string | undefined): string | undefined {
+  if (!language || language === 'auto') return undefined;
+  const base = language.split('-')[0]?.trim().toLowerCase();
+  return base || undefined;
+}
+
 async function transcribeOpenAIWhisper(
   config: ASRModelConfig,
   audioBuffer: Buffer | Blob,
@@ -408,7 +418,12 @@ async function transcribeOpenAIWhisper(
       audio: audioData,
       providerOptions: {
         openai: {
-          language: config.language === 'auto' ? undefined : config.language,
+          // The transcription API takes ISO-639-1, but `asrLanguage` is a single
+          // global setting shared with browser-native ASR, whose catalogue is
+          // region-tagged (pt-BR, pt-PT, zh-CN...). Carrying such a value over
+          // to this provider fails the whole request with
+          // "unsupported language: pt-BR", so drop the region subtag.
+          language: toISO6391(config.language),
         },
       },
     });
