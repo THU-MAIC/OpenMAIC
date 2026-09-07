@@ -23,6 +23,14 @@ const MODELS_WITHOUT_CONFIGURABLE_THINKING = new Set<string>([
   'grok:grok-4-1-fast-non-reasoning',
   'grok:grok-code-fast-1',
   'atlascloud:qwen/qwen3.5-flash',
+  // Token Market's initial OpenAI-compatible integration deliberately does
+  // not expose provider-specific thinking controls without a verified adapter.
+  'tokensmarket:gpt-5.6-luna',
+  'tokensmarket:claude-sonnet-5',
+  'tokensmarket:gemini-3.5-flash',
+  'tokensmarket:deepseek-v4-pro',
+  'tokensmarket:glm-5.2',
+  'tokensmarket:kimi-k3',
   'ollama:llama3.3',
   'ollama:gemma3',
   'ollama:deepseek-r1',
