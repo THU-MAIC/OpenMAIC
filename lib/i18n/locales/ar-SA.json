@@ -1257,6 +1257,7 @@
     "addProvider": "إضافة",
     "importFromClipboard": "استيراد من الحافظة",
     "apiSecret": "مفتاح API",
+    "apiKeySecurityNotice": "Your API key will be sent to the server hosting this instance. Only enter it if you trust the deployment operator.",
     "apiHost": "العنوان الأساسي",
     "azureDeploymentHint": "أدخل نقطة نهاية Azure OpenAI أعلاه، ثم أضف اسم كل عملية نشر في Azure كنموذج.",
     "baseUrlRegion": {

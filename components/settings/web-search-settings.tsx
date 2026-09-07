@@ -21,6 +21,7 @@ import {
 } from '@/lib/web-search/constants';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 import { ExternalLink, Eye, EyeOff } from 'lucide-react';
+import { ApiKeySecurityNotice } from './api-key-security-notice';
 
 interface WebSearchSettingsProps {
   selectedProviderId: WebSearchProviderId;
@@ -79,6 +80,7 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
       {/* API Key + Base URL Configuration */}
       {showCredentialFields && (
         <>
+          {provider.requiresApiKey && <ApiKeySecurityNotice />}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-sm">{t('settings.webSearchApiKey')}</Label>

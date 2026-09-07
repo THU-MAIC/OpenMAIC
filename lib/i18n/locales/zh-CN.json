@@ -1257,6 +1257,7 @@
     "addProvider": "添加",
     "importFromClipboard": "从剪贴板导入",
     "apiSecret": "API 密钥",
+    "apiKeySecurityNotice": "你的 API 密钥将发送到托管此实例的服务器。请仅在信任部署运营者时输入。",
     "apiHost": "Base URL",
     "azureDeploymentHint": "请在上方填写 Azure OpenAI Endpoint，并将每个 Azure Deployment 名称添加为模型。",
     "baseUrlRegion": {

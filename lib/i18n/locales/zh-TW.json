@@ -1242,6 +1242,7 @@
     "addProvider": "新增",
     "importFromClipboard": "從剪貼簿匯入",
     "apiSecret": "API 密鑰",
+    "apiKeySecurityNotice": "Your API key will be sent to the server hosting this instance. Only enter it if you trust the deployment operator.",
     "apiHost": "Base URL",
     "azureDeploymentHint": "請在上方填寫 Azure OpenAI 端點，並將每個 Azure Deployment 名稱新增為模型。",
     "baseUrlRegion": {

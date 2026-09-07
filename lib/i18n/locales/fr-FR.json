@@ -1257,6 +1257,7 @@
     "addProvider": "Ajouter",
     "importFromClipboard": "Importer depuis le presse-papiers",
     "apiSecret": "Clé d’API",
+    "apiKeySecurityNotice": "Your API key will be sent to the server hosting this instance. Only enter it if you trust the deployment operator.",
     "apiHost": "URL de base",
     "azureDeploymentHint": "Saisissez ci-dessus le point d’accès de votre Azure OpenAI, puis ajoutez chaque nom de déploiement Azure comme un modèle.",
     "baseUrlRegion": {
