@@ -2046,5 +2046,17 @@
         "materialExtraction": null
       }
     }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "Не удалось распознать речь. Попробуйте ещё раз.",
+      "browserUnsupported": "Ваш браузер не поддерживает распознавание речи",
+      "noSpeech": "Речь не обнаружена",
+      "micUnavailable": "Нет доступа к микрофону",
+      "micPermissionDenied": "Доступ к микрофону запрещён",
+      "network": "Ошибка сети",
+      "micAccess": "Нет доступа к микрофону. Проверьте разрешения.",
+      "recognitionError": "Ошибка распознавания речи: {{code}}"
+    }
   }
 }

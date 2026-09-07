@@ -2046,5 +2046,17 @@
         "materialExtraction": null
       }
     }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "音声認識に失敗しました。もう一度お試しください。",
+      "browserUnsupported": "お使いのブラウザは音声認識に対応していません",
+      "noSpeech": "音声が検出されませんでした",
+      "micUnavailable": "マイクにアクセスできません",
+      "micPermissionDenied": "マイクの使用が許可されていません",
+      "network": "ネットワークエラー",
+      "micAccess": "マイクにアクセスできません。権限設定を確認してください。",
+      "recognitionError": "音声認識エラー: {{code}}"
+    }
   }
 }

@@ -2046,5 +2046,17 @@
         "materialExtraction": null
       }
     }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "Falló el reconocimiento de voz. Inténtalo de nuevo.",
+      "browserUnsupported": "Tu navegador no admite el reconocimiento de voz",
+      "noSpeech": "No se detectó voz",
+      "micUnavailable": "No se puede acceder al micrófono",
+      "micPermissionDenied": "Permiso de micrófono denegado",
+      "network": "Error de red",
+      "micAccess": "No se puede acceder al micrófono. Revisa los permisos.",
+      "recognitionError": "Error de reconocimiento de voz: {{code}}"
+    }
   }
 }

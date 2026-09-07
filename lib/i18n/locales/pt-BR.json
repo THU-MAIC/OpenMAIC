@@ -2046,5 +2046,17 @@
         "materialExtraction": null
       }
     }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "Falha no reconhecimento de fala. Tente novamente.",
+      "browserUnsupported": "Seu navegador não é compatível com reconhecimento de fala",
+      "noSpeech": "Nenhuma fala detectada",
+      "micUnavailable": "Não foi possível acessar o microfone",
+      "micPermissionDenied": "Permissão de microfone negada",
+      "network": "Erro de rede",
+      "micAccess": "Não foi possível acessar o microfone. Verifique as permissões.",
+      "recognitionError": "Erro de reconhecimento de fala: {{code}}"
+    }
   }
 }

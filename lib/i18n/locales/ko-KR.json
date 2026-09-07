@@ -2046,5 +2046,17 @@
         "materialExtraction": null
       }
     }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "음성 인식에 실패했습니다. 다시 시도하세요.",
+      "browserUnsupported": "이 브라우저는 음성 인식을 지원하지 않습니다",
+      "noSpeech": "음성이 감지되지 않았습니다",
+      "micUnavailable": "마이크에 접근할 수 없습니다",
+      "micPermissionDenied": "마이크 권한이 거부되었습니다",
+      "network": "네트워크 오류",
+      "micAccess": "마이크에 접근할 수 없습니다. 권한 설정을 확인하세요.",
+      "recognitionError": "음성 인식 오류: {{code}}"
+    }
   }
 }

@@ -2046,5 +2046,17 @@
         "materialExtraction": null
       }
     }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "Speech recognition failed. Please try again.",
+      "browserUnsupported": "Your browser does not support speech recognition",
+      "noSpeech": "No speech detected",
+      "micUnavailable": "Cannot access the microphone",
+      "micPermissionDenied": "Microphone permission denied",
+      "network": "Network error",
+      "micAccess": "Cannot access the microphone. Check your permission settings.",
+      "recognitionError": "Speech recognition error: {{code}}"
+    }
   }
 }

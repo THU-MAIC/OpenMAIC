@@ -2046,5 +2046,17 @@
         "materialExtraction": null
       }
     }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "Spracherkennung fehlgeschlagen. Bitte erneut versuchen.",
+      "browserUnsupported": "Dein Browser unterstützt keine Spracherkennung",
+      "noSpeech": "Keine Sprache erkannt",
+      "micUnavailable": "Kein Zugriff auf das Mikrofon",
+      "micPermissionDenied": "Mikrofonzugriff verweigert",
+      "network": "Netzwerkfehler",
+      "micAccess": "Kein Zugriff auf das Mikrofon. Prüfe die Berechtigungen.",
+      "recognitionError": "Spracherkennungsfehler: {{code}}"
+    }
   }
 }

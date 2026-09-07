@@ -2046,5 +2046,17 @@
         "materialExtraction": null
       }
     }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "Nhận dạng giọng nói thất bại. Vui lòng thử lại.",
+      "browserUnsupported": "Trình duyệt của bạn không hỗ trợ nhận dạng giọng nói",
+      "noSpeech": "Không phát hiện giọng nói",
+      "micUnavailable": "Không truy cập được micrô",
+      "micPermissionDenied": "Quyền truy cập micrô bị từ chối",
+      "network": "Lỗi mạng",
+      "micAccess": "Không truy cập được micrô. Hãy kiểm tra quyền truy cập.",
+      "recognitionError": "Lỗi nhận dạng giọng nói: {{code}}"
+    }
   }
 }

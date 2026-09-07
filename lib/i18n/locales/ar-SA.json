@@ -2046,5 +2046,17 @@
         "materialExtraction": null
       }
     }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "فشل التعرف على الكلام. يرجى المحاولة مرة أخرى.",
+      "browserUnsupported": "متصفحك لا يدعم التعرف على الكلام",
+      "noSpeech": "لم يتم اكتشاف أي كلام",
+      "micUnavailable": "تعذر الوصول إلى الميكروفون",
+      "micPermissionDenied": "تم رفض إذن الميكروفون",
+      "network": "خطأ في الشبكة",
+      "micAccess": "تعذر الوصول إلى الميكروفون. تحقق من إعدادات الأذونات.",
+      "recognitionError": "خطأ في التعرف على الكلام: {{code}}"
+    }
   }
 }

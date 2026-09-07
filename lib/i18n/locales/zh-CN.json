@@ -2046,5 +2046,17 @@
         "materialExtraction": null
       }
     }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "语音识别失败，请重试",
+      "browserUnsupported": "您的浏览器不支持语音识别功能",
+      "noSpeech": "未检测到语音输入",
+      "micUnavailable": "无法访问麦克风",
+      "micPermissionDenied": "麦克风权限被拒绝",
+      "network": "网络错误",
+      "micAccess": "无法访问麦克风，请检查权限设置",
+      "recognitionError": "语音识别错误：{{code}}"
+    }
   }
 }

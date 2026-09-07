@@ -2046,5 +2046,17 @@
         "materialExtraction": null
       }
     }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "Échec de la reconnaissance vocale. Veuillez réessayer.",
+      "browserUnsupported": "Votre navigateur ne prend pas en charge la reconnaissance vocale",
+      "noSpeech": "Aucune parole détectée",
+      "micUnavailable": "Impossible d’accéder au microphone",
+      "micPermissionDenied": "Accès au microphone refusé",
+      "network": "Erreur réseau",
+      "micAccess": "Impossible d’accéder au microphone. Vérifiez les autorisations.",
+      "recognitionError": "Erreur de reconnaissance vocale : {{code}}"
+    }
   }
 }

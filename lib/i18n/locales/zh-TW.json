@@ -2046,5 +2046,17 @@
         "materialExtraction": null
       }
     }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "語音辨識失敗，請重試",
+      "browserUnsupported": "您的瀏覽器不支援語音辨識功能",
+      "noSpeech": "未偵測到語音輸入",
+      "micUnavailable": "無法存取麥克風",
+      "micPermissionDenied": "麥克風權限遭拒",
+      "network": "網路錯誤",
+      "micAccess": "無法存取麥克風，請檢查權限設定",
+      "recognitionError": "語音辨識錯誤：{{code}}"
+    }
   }
 }
