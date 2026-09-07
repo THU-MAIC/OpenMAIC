@@ -29,6 +29,8 @@ function getStatusIcon(status: SessionStatus) {
   switch (status) {
     case 'active':
       return <Circle className="size-2.5 fill-green-500 text-green-500" />;
+    case 'waiting-user':
+      return <Circle className="size-2.5 fill-amber-500 text-amber-500 animate-pulse" />;
     case 'soft-closing':
       return <Circle className="size-2.5 fill-amber-500 text-amber-500 animate-pulse" />;
     case 'interrupted':
@@ -57,7 +59,10 @@ export function SessionList({
     <>
       {sessions.map((session) => {
         const isExpanded = expandedSessionIds.has(session.id);
-        const isActive = session.status === 'active' || session.status === 'soft-closing';
+        const isActive =
+          session.status === 'active' ||
+          session.status === 'waiting-user' ||
+          session.status === 'soft-closing';
         const dotColor =
           session.type === 'lecture'
             ? 'bg-purple-500'

@@ -173,6 +173,8 @@ export interface ChatSessionRecord {
   updatedAt: number;
   sceneId?: string;
   lastActionIndex?: number;
+  cueUser?: ChatSession['cueUser'];
+  directorState?: ChatSession['directorState'];
 }
 
 /** Compatibility-only shape for the retired editor right-rail table. The

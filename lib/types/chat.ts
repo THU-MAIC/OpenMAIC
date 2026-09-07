@@ -14,10 +14,20 @@ export type SessionType = 'qa' | 'discussion' | 'lecture';
 export type SessionStatus =
   | 'idle'
   | 'active'
+  | 'waiting-user'
   | 'soft-closing'
   | 'interrupted'
   | 'completed'
   | 'error';
+
+/** A durable hand-off from the classroom agents to the learner. */
+export interface CueUserState {
+  fromAgentId?: string;
+  prompt?: string;
+  /** Optional short replies rendered as one-tap actions. */
+  options?: string[];
+  parkedAt: number;
+}
 
 /**
  * Metadata attached to chat messages
@@ -63,6 +73,8 @@ export interface ChatSession {
   /** Absolute deadline for the client-side soft-closing grace window. */
   softCloseDeadline?: number;
   directorState?: DirectorState;
+  /** Present while the session is parked and waiting for the learner. */
+  cueUser?: CueUserState;
 }
 
 export interface PiSessionBoundaryContext {
@@ -470,7 +482,10 @@ export type StatelessEvent =
           }
         | { kind: 'projection'; stageId: string; lastSeq: number };
     }
-  | { type: 'cue_user'; data: { fromAgentId?: string; prompt?: string } }
+  | {
+      type: 'cue_user';
+      data: { fromAgentId?: string; prompt?: string; options?: string[] };
+    }
   | {
       type: 'done';
       data: {

@@ -9,6 +9,7 @@ import {
   getPiSingleRequestOutcome,
   isOpenLiveSession,
   normalizeStoredSessionsForRestore,
+  parkSessionForUser,
   retireLiveRequestResources,
   resumeSoftClosingSessionForFollowUp,
   resumeSoftClosingSessionWithoutMessage,
@@ -45,12 +46,18 @@ describe('normalizeStoredSessionsForRestore', () => {
   it('does not restore transient active or soft-closing statuses', () => {
     const restored = normalizeStoredSessionsForRestore([
       makeSession({ id: 'active', status: 'active' }),
+      makeSession({
+        id: 'waiting-user',
+        status: 'waiting-user',
+        cueUser: { prompt: 'Which example should we try?', parkedAt: 10 },
+      }),
       makeSession({ id: 'soft-closing', status: 'soft-closing', endReason: 'user_goodbye' }),
       makeSession({ id: 'completed', status: 'completed' }),
     ]);
 
     expect(restored.map((session) => [session.id, session.status, session.endReason])).toEqual([
       ['active', 'interrupted', undefined],
+      ['waiting-user', 'waiting-user', undefined],
       ['soft-closing', 'completed', 'user_goodbye'],
       ['completed', 'completed', undefined],
     ]);
@@ -134,9 +141,33 @@ describe('Pi live-session context lifecycle', () => {
 describe('isOpenLiveSession', () => {
   it('treats soft-closing QA/discussion sessions as still open for live controls', () => {
     expect(isOpenLiveSession({ type: 'qa', status: 'active' })).toBe(true);
+    expect(isOpenLiveSession({ type: 'qa', status: 'waiting-user' })).toBe(true);
     expect(isOpenLiveSession({ type: 'discussion', status: 'soft-closing' })).toBe(true);
     expect(isOpenLiveSession({ type: 'qa', status: 'completed' })).toBe(false);
     expect(isOpenLiveSession({ type: 'lecture', status: 'soft-closing' })).toBe(false);
+  });
+});
+
+describe('parkSessionForUser', () => {
+  it('persists a normalized learner hand-off with one-tap replies', () => {
+    const parked = parkSessionForUser(
+      makeSession(),
+      'default-1',
+      '  Which path should we explore?  ',
+      [' Examples ', 'Practice', 'Practice', ''],
+      99,
+    );
+
+    expect(parked).toMatchObject({
+      status: 'waiting-user',
+      updatedAt: 99,
+      cueUser: {
+        fromAgentId: 'default-1',
+        prompt: 'Which path should we explore?',
+        options: ['Examples', 'Practice'],
+        parkedAt: 99,
+      },
+    });
   });
 });
 
@@ -158,6 +189,7 @@ describe('resumeSoftClosingSessionForFollowUp', () => {
         status: 'soft-closing',
         endReason: 'user_done',
         softCloseDeadline: 123,
+        cueUser: { prompt: 'Continue?', parkedAt: 90 },
         messages: [wrapUpMessage],
       }),
       followUpMessage,
@@ -167,6 +199,7 @@ describe('resumeSoftClosingSessionForFollowUp', () => {
     expect(next.status).toBe('active');
     expect(next.endReason).toBeUndefined();
     expect(next.softCloseDeadline).toBeUndefined();
+    expect(next.cueUser).toBeUndefined();
     expect(next.updatedAt).toBe(99);
     expect(next.messages).toEqual([wrapUpMessage, followUpMessage]);
   });
