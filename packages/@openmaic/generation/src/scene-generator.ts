@@ -894,11 +894,14 @@ async function generateQuizContent(
   // Ensure each question has an ID and normalize options format
   const questions: QuizQuestion[] = generatedQuestions.map((q) => {
     const isText = q.type === 'short_answer';
+    const options = isText ? undefined : normalizeQuizOptions(q.options);
     return {
       ...q,
       id: q.id || `q_${nanoid(8)}`,
-      options: isText ? undefined : normalizeQuizOptions(q.options),
-      answer: isText ? undefined : normalizeQuizAnswer(q as unknown as Record<string, unknown>),
+      options,
+      answer: isText
+        ? undefined
+        : normalizeQuizAnswer(q as unknown as Record<string, unknown>, options),
       hasAnswer: isText ? false : true,
     };
   });
@@ -939,8 +942,17 @@ function normalizeQuizOptions(
  * Normalize quiz answer from AI response.
  * AI may generate correctAnswer as string or string[], under various field names.
  * This normalizes to string[] format matching option values.
+ *
+ * The LLM writes the answer key inconsistently: as option CONTENT ("(6, 2)"),
+ * as a LETTER ("A"), or as a formatting variant (full-width parens, extra
+ * spaces) of either. Grading compares exact option values, so every variant
+ * must be resolved to the matching option value here; unknown answers pass
+ * through untouched.
  */
-function normalizeQuizAnswer(question: Record<string, unknown>): string[] | undefined {
+export function normalizeQuizAnswer(
+  question: Record<string, unknown>,
+  options?: { value: string; label: string }[],
+): string[] | undefined {
   // AI might use "correctAnswer", "answer", or "correct_answer"
   const raw =
     question.answer ??
@@ -948,10 +960,25 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
     (question as Record<string, unknown>).correct_answer;
   if (!raw) return undefined;
 
-  if (Array.isArray(raw)) {
-    return raw.map(String);
+  const answers = (Array.isArray(raw) ? raw : [raw]).map(String);
+
+  if (!options || options.length === 0) {
+    return answers;
   }
-  return [String(raw)];
+
+  // Exact alignment only (per review): value or label must match the answer
+  // byte-for-byte; no case folding, whitespace/Unicode normalization, or
+  // wrapper interpretation. Fail closed on ambiguity: convert only when
+  // exactly one distinct option value matches.
+  return answers.map((a) => {
+    const valueMatches = options.filter((o) => o.value === a);
+    const labelMatches = options.filter((o) => o.label === a);
+    const candidates = new Set<string>();
+    for (const o of valueMatches) candidates.add(o.value);
+    for (const o of labelMatches) candidates.add(o.value);
+    if (candidates.size === 1) return [...candidates][0];
+    return a;
+  });
 }
 
 /**
