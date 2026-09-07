@@ -67,6 +67,19 @@ export class DocumentNotFoundError extends Error {
   }
 }
 
+/** A document was deleted (tombstoned) and is gone. */
+export class DocumentGoneError extends Error {
+  override readonly name = 'DocumentGoneError';
+
+  constructor(
+    readonly stageId: string,
+    readonly deletedAt?: string | undefined,
+    message = `@openmaic/storage: document ${JSON.stringify(stageId)} is gone`,
+  ) {
+    super(message);
+  }
+}
+
 /**
  * The portable, embedded form of a persisted course. Storage normalizes it into
  * per-entity rows on write and reassembles it on read.

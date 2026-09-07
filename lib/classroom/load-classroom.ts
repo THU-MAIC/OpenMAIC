@@ -18,6 +18,7 @@ import type { MediaFileRecord } from '@/lib/utils/database';
 import { unmarkStageDeleted } from '@/lib/utils/deleted-stages';
 import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
 import type { DocumentMigrationDeps } from '@/lib/document-store/migration';
+import { DocumentGoneError } from '@openmaic/storage';
 import type { PPTElement, Slide } from '@openmaic/dsl';
 import {
   collectDocumentMediaElements,
@@ -242,6 +243,12 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
       settings.setAgentSelectionIsUserSet(isUserSet);
     }
   } catch (error) {
+    if (
+      error instanceof DocumentGoneError ||
+      (error as { name?: string })?.name === 'DocumentGoneError'
+    ) {
+      throw error;
+    }
     log.error('Failed to load classroom:', error);
     if (isCurrent()) {
       setError(error instanceof Error ? error.message : 'Failed to load classroom');

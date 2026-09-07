@@ -9,10 +9,11 @@
  * content comes from the document seam and these come from here.
  */
 
-/** What the sidecar had to say — as THREE outcomes, not two. */
+/** What the sidecar had to say — as FOUR outcomes, not three. */
 export type StageMetaResult =
   | { outcome: 'found'; meta: StageMetaView }
   | { outcome: 'absent' }
+  | { outcome: 'gone'; deletedAt?: string | null }
   | { outcome: 'unavailable' };
 
 export interface StageMetaView {
@@ -30,9 +31,9 @@ export interface StageMetaView {
  * Never throws: transport failure is reported as `'unavailable'` so callers
  * decide what a silent sidecar costs them, rather than losing the classroom to
  * an exception. `'absent'` is an ANSWER (the endpoint replied 404, which it
- * does for a course that does not exist and for a tombstoned one alike);
- * `'unavailable'` is the ABSENCE of an answer (a 5xx, a network error, a
- * timeout).
+ * does for a course that does not exist); `'gone'` is an ANSWER (the endpoint
+ * replied 410, meaning the course was deleted/tombstoned); `'unavailable'`
+ * is the ABSENCE of an answer (a 5xx, a network error, a timeout).
  */
 export async function fetchStageMeta(
   stageId: string,
@@ -45,6 +46,17 @@ export async function fetchStageMeta(
     });
     if (!response.ok) {
       if (response.status === 404) return { outcome: 'absent' };
+      if (response.status === 410) {
+        try {
+          const body = (await response.json()) as { deleted_at?: unknown };
+          return {
+            outcome: 'gone',
+            deletedAt: typeof body?.deleted_at === 'string' ? body.deleted_at : null,
+          };
+        } catch {
+          return { outcome: 'gone', deletedAt: null };
+        }
+      }
       console.warn(`Stage meta fetch failed for ${stageId}: HTTP ${response.status}`);
       return { outcome: 'unavailable' };
     }

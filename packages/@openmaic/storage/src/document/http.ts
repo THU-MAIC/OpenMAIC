@@ -9,7 +9,7 @@ import type {
   SceneValidator,
   StageValidator,
 } from './types.js';
-import { DocumentVersionError } from './types.js';
+import { DocumentGoneError, DocumentVersionError } from './types.js';
 
 export interface HttpDocumentHeadersContext {
   method: string;
@@ -35,6 +35,7 @@ export interface HttpDocumentStoreOptions {
 
 interface ErrorResponseBody {
   error?: { code?: unknown; message?: unknown; details?: unknown };
+  deleted_at?: unknown;
 }
 
 interface DocumentVersionErrorDetails {
@@ -187,7 +188,19 @@ export class HttpDocumentStore<
           typeof details?.storedVersion === 'string' ? details.storedVersion : undefined;
         throw new DocumentVersionError(versionErrorStageId, 'future', storedVersion, message);
       }
-      throw new HttpDocumentStoreError(response.status, code, message, errorBody?.error?.details);
+      const rawError = errorBody?.error as Record<string, unknown> | undefined;
+      const rawDetails = rawError?.details as Record<string, unknown> | undefined;
+      const deletedAt =
+        rawDetails?.deleted_at ??
+        rawDetails?.deletedAt ??
+        rawError?.deleted_at ??
+        rawError?.deletedAt ??
+        errorBody?.deleted_at ??
+        (errorBody as Record<string, unknown> | undefined)?.deletedAt;
+      const details =
+        errorBody?.error?.details ??
+        (deletedAt !== undefined ? { deleted_at: deletedAt } : undefined);
+      throw new HttpDocumentStoreError(response.status, code, message, details);
     }
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
@@ -231,6 +244,19 @@ export class HttpDocumentStore<
       );
       return migrateDocument(document);
     } catch (error) {
+      if (
+        error instanceof HttpDocumentStoreError &&
+        (error.status === 410 || error.code === 'DOCUMENT_GONE')
+      ) {
+        const details = error.details as { deleted_at?: unknown; deletedAt?: unknown } | undefined;
+        const deletedAt =
+          typeof details?.deleted_at === 'string'
+            ? details.deleted_at
+            : typeof details?.deletedAt === 'string'
+              ? details.deletedAt
+              : undefined;
+        throw new DocumentGoneError(stageId, deletedAt);
+      }
       if (error instanceof HttpDocumentStoreError && error.code === 'DOCUMENT_NOT_FOUND') {
         return null;
       }
@@ -278,6 +304,19 @@ export class HttpDocumentStore<
         `/documents/${segment(stageId)}/scenes/${segment(sceneId)}`,
       );
     } catch (error) {
+      if (
+        error instanceof HttpDocumentStoreError &&
+        (error.status === 410 || error.code === 'DOCUMENT_GONE')
+      ) {
+        const details = error.details as { deleted_at?: unknown; deletedAt?: unknown } | undefined;
+        const deletedAt =
+          typeof details?.deleted_at === 'string'
+            ? details.deleted_at
+            : typeof details?.deletedAt === 'string'
+              ? details.deletedAt
+              : undefined;
+        throw new DocumentGoneError(stageId, deletedAt);
+      }
       if (
         error instanceof HttpDocumentStoreError &&
         (error.code === 'DOCUMENT_NOT_FOUND' || error.code === 'SCENE_NOT_FOUND')

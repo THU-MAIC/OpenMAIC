@@ -25,7 +25,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
-import { resolveStageAccess } from '@/lib/server/stage-access';
+import { readStageAccessIncludingDeleted } from '@/lib/server/stage-access';
 import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
 
 // Per-viewer and mutable on every publish/unpublish/delete: this response must
@@ -41,11 +41,19 @@ export async function GET(req: NextRequest, { params }: Params) {
   return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
     const { stageId } = await params;
     try {
-      const access = await resolveStageAccess(stageId);
+      const access = await readStageAccessIncludingDeleted(stageId);
 
-      // Absent or tombstoned — indistinguishable, deliberately.
+      // Absent — never existed.
       if (!access) {
         return NextResponse.json({ error: 'not_found' }, { status: 404, headers: responseHeaders });
+      }
+
+      // Tombstoned — existed and was deleted.
+      if (access.deletedAt !== null) {
+        return NextResponse.json(
+          { error: 'gone', deleted_at: access.deletedAt.toISOString() },
+          { status: 410, headers: responseHeaders },
+        );
       }
 
       // Identity comparison, and nothing else: this boolean is the client's
