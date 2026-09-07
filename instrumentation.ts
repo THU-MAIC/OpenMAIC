@@ -94,6 +94,7 @@ export async function register(): Promise<void> {
     return shutdownPromise;
   };
 
-  process.once('SIGTERM', () => void shutdown());
-  process.once('SIGINT', () => void shutdown());
+  // Imported dynamically so the Edge bundle never sees `process.once`.
+  const { registerShutdownSignals } = await import('@/lib/server/shutdown-signals');
+  registerShutdownSignals(() => void shutdown());
 }
