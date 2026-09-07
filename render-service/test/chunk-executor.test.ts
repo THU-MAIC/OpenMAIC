@@ -61,6 +61,7 @@ async function fakePlan(
   planDir: string,
 ): Promise<PlanResult> {
   await mkdir(join(planDir, 'meta'), { recursive: true });
+  await writeFile(join(planDir, 'plan.json'), JSON.stringify({ hasAudio: false }));
   await mkdir(join(planDir, 'compiled', 'assets', 'fonts'), { recursive: true });
   await writeFile(join(planDir, 'compiled', 'index.html'), '<html></html>');
   await writeFile(join(planDir, 'compiled', 'assets', 'fonts', 'test.woff2'), 'font');
@@ -128,6 +129,85 @@ function deps(overrides: Partial<ChunkExecutorDependencies> = {}): ChunkExecutor
 }
 
 describe('local bounded chunk executor', () => {
+  it.each(['audio.m4a', 'audio.aac', null])(
+    'passes the plan audio artifact %s to assembly',
+    async (filename) => {
+      const paths = setup();
+      await materializeProject(paths.projectDir);
+      let assembledAudio: string | null | undefined;
+      const dependencies = deps();
+      const assemble = dependencies.assemble!;
+      await executeRenderChunks(
+        { ...paths, options },
+        deps({
+          plan: async (...args) => {
+            const result = await fakePlan(...args);
+            await writeFile(
+              join(paths.planDir, 'plan.json'),
+              JSON.stringify({ hasAudio: filename !== null }),
+            );
+            if (filename) await writeFile(join(paths.planDir, filename), 'mixed-audio');
+            return result;
+          },
+          assemble: async (...args) => {
+            assembledAudio = args[2];
+            return assemble(...args);
+          },
+        }),
+      );
+      expect(assembledAudio).toBe(filename ? join(paths.planDir, filename) : null);
+    },
+  );
+
+  it('rejects a plan whose declared audio artifact is missing before assembly', async () => {
+    const paths = setup();
+    await materializeProject(paths.projectDir);
+    let assembled = false;
+    await expect(
+      executeRenderChunks(
+        { ...paths, options },
+        deps({
+          plan: async (...args) => {
+            const result = await fakePlan(...args);
+            await writeFile(join(paths.planDir, 'plan.json'), JSON.stringify({ hasAudio: true }));
+            return result;
+          },
+          assemble: async () => {
+            assembled = true;
+            throw new Error('Assembly should not be called');
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: 'assembly_failed',
+      message: expect.stringContaining('audio artifact is missing'),
+    });
+    expect(assembled).toBe(false);
+  });
+
+  it('ignores stale audio from a failed planning attempt when the current plan has no audio', async () => {
+    const paths = setup();
+    await materializeProject(paths.projectDir);
+    let assembledAudio: string | null | undefined;
+    const dependencies = deps();
+    const assemble = dependencies.assemble!;
+    await executeRenderChunks(
+      { ...paths, options },
+      deps({
+        plan: async (...args) => {
+          const result = await fakePlan(...args);
+          await writeFile(join(paths.planDir, 'audio.m4a'), 'stale-audio');
+          return result;
+        },
+        assemble: async (...args) => {
+          assembledAudio = args[2];
+          return assemble(...args);
+        },
+      }),
+    );
+    expect(assembledAudio).toBeNull();
+  });
+
   it('terminates a real child worker on deadline without crashing the parent', async () => {
     const controller = new AbortController();
     const fixture = join(
