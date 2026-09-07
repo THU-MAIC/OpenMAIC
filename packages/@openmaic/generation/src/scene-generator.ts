@@ -911,7 +911,14 @@ async function generateQuizContent(
  * AI may generate plain strings ["OptionA", "OptionB"] or QuizOption objects.
  * This normalizes to QuizOption[] format: { value: "A", label: "OptionA" }
  */
-function normalizeQuizOptions(
+const OPTION_LETTER_RE = /^[A-Za-z]$/;
+
+/** True for a bare selection letter such as "A" (whitespace tolerated). */
+function isOptionLetter(text: string): boolean {
+  return OPTION_LETTER_RE.test(text.trim());
+}
+
+export function normalizeQuizOptions(
   options: unknown[] | undefined,
 ): { value: string; label: string }[] | undefined {
   if (!options || !Array.isArray(options)) return undefined;
@@ -925,9 +932,30 @@ function normalizeQuizOptions(
 
     if (typeof opt === 'object' && opt !== null) {
       const obj = opt as Record<string, unknown>;
+      const value = typeof obj.value === 'string' ? obj.value : undefined;
+      const label = typeof obj.label === 'string' ? obj.label : undefined;
+
+      // Some generations fill the two fields the other way round: the
+      // selection letter lands in `label` and the option content in `value`.
+      // QuizView renders `value` as the badge and `label` as the body, so the
+      // swap surfaces as a badge full of content next to a body reading "A".
+      // Restore the documented contract only when the shape says so
+      // unambiguously — `label` is a bare letter and `value` is not. Two bare
+      // letters (an option whose content really is a letter) stay untouched.
+      // The letter is taken from `label` rather than from the index so the
+      // identity the model's answer key refers to is preserved.
+      if (
+        value !== undefined &&
+        label !== undefined &&
+        isOptionLetter(label) &&
+        !isOptionLetter(value)
+      ) {
+        return { value: label.trim(), label: value };
+      }
+
       return {
-        value: typeof obj.value === 'string' ? obj.value : letter,
-        label: typeof obj.label === 'string' ? obj.label : String(obj.value || obj.text || letter),
+        value: value ?? letter,
+        label: label ?? String(obj.value || obj.text || letter),
       };
     }
 
