@@ -109,6 +109,7 @@ const settingsState = {
   setChatAreaCollapsed: vi.fn(),
   setTTSMuted: vi.fn(),
   setTTSVolume: vi.fn(),
+  ensureBrowserNativeTTSEnabled: vi.fn(),
   selectedAgentIds: [],
   ttsMuted: false,
   ttsEnabled: false,
