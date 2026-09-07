@@ -105,6 +105,17 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Next.js standalone file tracing misses native shared libraries (.so) required by sharp.
+# Copy all prebuilt @img packages from deps to guarantee libvips and sharp native bindings are present.
+RUN --mount=type=bind,from=deps,source=/app/node_modules,target=/deps_node_modules \
+    if [ -d /deps_node_modules/.pnpm ]; then \
+      cp -a /deps_node_modules/.pnpm/@img* ./node_modules/.pnpm/ 2>/dev/null || true; \
+    fi && \
+    if [ -d /deps_node_modules/@img ]; then \
+      cp -a /deps_node_modules/@img ./node_modules/ 2>/dev/null || true; \
+    fi && \
+    chown -R nextjs:nodejs ./node_modules/.pnpm/@img* ./node_modules/@img 2>/dev/null || true
+
 USER nextjs
 
 EXPOSE 3000
