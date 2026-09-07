@@ -19,6 +19,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'SILICONFLOW',
   'DOUBAO',
   'OPENROUTER',
+  'TOKENSMARKET',
   'GROK',
   'TENCENT',
   'TENCENT_HUNYUAN',
@@ -272,6 +273,19 @@ providers:
         'deepseek/deepseek-v4-pro',
         'deepseek/deepseek-v4-flash',
       ]);
+    });
+
+    it('maps Token Market env vars to the built-in provider', async () => {
+      vi.stubEnv('TOKENSMARKET_API_KEY', 'sk-tokensmarket');
+      vi.stubEnv('TOKENSMARKET_BASE_URL', 'https://api.tokensmarket.ai/v1');
+      vi.stubEnv('TOKENSMARKET_MODELS', 'gpt-5.6-luna,claude-sonnet-5');
+      const { getServerProviders, resolveBaseUrl } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.tokensmarket.models).toEqual(['gpt-5.6-luna', 'claude-sonnet-5']);
+      expect(resolveBaseUrl('tokensmarket')).toBe('https://api.tokensmarket.ai/v1');
+      expect((providers.tokensmarket as Record<string, unknown>).apiKey).toBeUndefined();
+      expect((providers.tokensmarket as Record<string, unknown>).baseUrl).toBeUndefined();
     });
 
     it('maps Azure deployment names to the built-in provider', async () => {

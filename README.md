@@ -157,7 +157,18 @@ providers:
       - us.anthropic.claude-opus-4-8
 ```
 
-Supported providers: **OpenAI**, **Azure OpenAI**, **Anthropic**, **Amazon Bedrock**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), **Lemonade** (local LLM / image / TTS / ASR), **FunASR** (local ASR), and any OpenAI-compatible API.
+Supported providers: **OpenAI**, **Azure OpenAI**, **Anthropic**, **Amazon Bedrock**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **Token Market**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), **Lemonade** (local LLM / image / TTS / ASR), **FunASR** (local ASR), and any OpenAI-compatible API.
+
+Token Market quick example:
+
+```env
+TOKENSMARKET_API_KEY=...
+TOKENSMARKET_BASE_URL=https://api.tokensmarket.ai/v1
+DEFAULT_MODEL=tokensmarket:gpt-5.6-luna
+```
+
+The built-in provider can refresh the current text-model catalog from Token Market's
+OpenAI-compatible `/v1/models` endpoint. See the [Token Market text API documentation](https://www.tokensmarket.ai/docs/api-examples/text-models).
 
 Amazon Bedrock quick example:
 

@@ -22,6 +22,7 @@
  * - https://siliconflow.cn/models
  * - https://siliconflow.cn/pricing
  * - https://www.volcengine.com/docs/82379/1330310
+ * - https://www.tokensmarket.ai/docs/api-examples/text-models
  * - https://platform.xiaomimimo.com/static/docs/pricing.md
  * - https://platform.xiaomimimo.com/static/docs/tokenplan/quick-access.md
  */
@@ -67,7 +68,7 @@ const log = createLogger('AIProviders');
 export type { ProviderId, ProviderConfig, ModelInfo, ModelConfig };
 
 /** Provider IDs whose logos are monochrome-dark and need `dark:invert` in dark mode */
-export const MONO_LOGO_PROVIDERS: ReadonlySet<string> = new Set(['openai', 'openrouter', 'ollama']);
+export const MONO_LOGO_PROVIDERS: ReadonlySet<string> = new Set(['openai', 'openrouter', 'tokensmarket', 'ollama']);
 
 /**
  * Provider registry
@@ -1237,6 +1238,62 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         contextWindow: 1048576,
         outputWindow: 131072,
         capabilities: { streaming: true, tools: true, vision: false },
+      },
+    ],
+  },
+
+  tokensmarket: {
+    id: 'tokensmarket',
+    name: 'Token Market',
+    type: 'openai',
+    defaultBaseUrl: 'https://api.tokensmarket.ai/v1',
+    supportsModelDiscovery: true,
+    requiresApiKey: true,
+    icon: '/logos/tokensmarket.svg',
+    // Curated chat models from Token Market's catalog. Users can refresh the
+    // current text-model list through the provider's OpenAI-compatible /models endpoint.
+    models: [
+      {
+        id: 'gpt-5.6-luna',
+        name: 'GPT-5.6 Luna',
+        contextWindow: 1050000,
+        outputWindow: 128000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'claude-sonnet-5',
+        name: 'Claude Sonnet 5',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'gemini-3.5-flash',
+        name: 'Gemini 3.5 Flash',
+        contextWindow: 1048576,
+        outputWindow: 65536,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'deepseek-v4-pro',
+        name: 'DeepSeek V4 Pro',
+        contextWindow: 1048576,
+        outputWindow: 393216,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'glm-5.2',
+        name: 'GLM-5.2',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'kimi-k3',
+        name: 'Kimi K3',
+        contextWindow: 1048576,
+        outputWindow: 131072,
+        capabilities: { streaming: true, tools: true, vision: true },
       },
     ],
   },
