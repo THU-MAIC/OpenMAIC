@@ -29,18 +29,19 @@ describe('classroom availability retry and tombstone resolution', () => {
 
     it('HttpDocumentStore.loadDocument throws DocumentGoneError on 410 DOCUMENT_GONE', async () => {
       const deletedAt = '2026-03-01T12:00:00.000Z';
-      const fetchMock = vi.fn().mockImplementation(async () =>
-        new Response(
-          JSON.stringify({
-            error: {
-              code: 'DOCUMENT_GONE',
-              message: '@openmaic/storage: document is gone',
+      const fetchMock = vi.fn().mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                code: 'DOCUMENT_GONE',
+                message: '@openmaic/storage: document is gone',
+                deleted_at: deletedAt,
+              },
               deleted_at: deletedAt,
-            },
-            deleted_at: deletedAt,
-          }),
-          { status: 410, headers: { 'content-type': 'application/json' } },
-        ),
+            }),
+            { status: 410, headers: { 'content-type': 'application/json' } },
+          ),
       );
 
       const store = new HttpDocumentStore({
@@ -86,7 +87,9 @@ describe('classroom availability retry and tombstone resolution', () => {
 
   describe('startClassroomAvailabilityPolling', () => {
     it('(a) polling a never-created id retries and times out to not-found after schedule exhaustion', async () => {
-      const loadClassroom = vi.fn<() => Promise<ClassroomAvailabilityOutcome>>().mockResolvedValue('unavailable');
+      const loadClassroom = vi
+        .fn<() => Promise<ClassroomAvailabilityOutcome>>()
+        .mockResolvedValue('unavailable');
       const onSuccess = vi.fn();
       const onDeleted = vi.fn();
       const onNotFoundTimeout = vi.fn();
@@ -189,7 +192,9 @@ describe('classroom availability retry and tombstone resolution', () => {
     });
 
     it('(c) polling a deleted id returns 410 and immediately shows deleted state without retry timeout', async () => {
-      const loadClassroom = vi.fn<() => Promise<ClassroomAvailabilityOutcome>>().mockResolvedValue('deleted');
+      const loadClassroom = vi
+        .fn<() => Promise<ClassroomAvailabilityOutcome>>()
+        .mockResolvedValue('deleted');
       const onSuccess = vi.fn();
       const onDeleted = vi.fn();
       const onNotFoundTimeout = vi.fn();
@@ -216,7 +221,9 @@ describe('classroom availability retry and tombstone resolution', () => {
     });
 
     it('cancelling availability polling halts further calls', async () => {
-      const loadClassroom = vi.fn<() => Promise<ClassroomAvailabilityOutcome>>().mockResolvedValue('unavailable');
+      const loadClassroom = vi
+        .fn<() => Promise<ClassroomAvailabilityOutcome>>()
+        .mockResolvedValue('unavailable');
       const onNotFoundTimeout = vi.fn();
       const mockClearTimeout = vi.fn();
 

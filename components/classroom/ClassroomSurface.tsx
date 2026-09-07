@@ -106,9 +106,9 @@ export function ClassroomSurface({
       let outcome: ClassroomLoadOutcome = 'loaded';
 
       try {
-        const stageMetaPromise = fetchStageMeta(classroomId).catch(
-          () => ({ outcome: 'unavailable' as const }),
-        );
+        const stageMetaPromise = fetchStageMeta(classroomId).catch(() => ({
+          outcome: 'unavailable' as const,
+        }));
 
         await runClassroomLoad({
           classroomId,
