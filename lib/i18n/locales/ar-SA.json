@@ -44,7 +44,17 @@
     "ttsTitle": "تحويل النص إلى كلام",
     "ttsHint": "اختر صوتًا للمعلم الذكي",
     "ttsPreview": "معاينة",
-    "ttsPreviewing": "جارٍ التشغيل..."
+    "ttsPreviewing": "جارٍ التشغيل...",
+    "toggleSidebar": "إظهار الشريط الجانبي أو إخفاؤه",
+    "playbackSpeed": "سرعة التشغيل",
+    "previousScene": "المشهد السابق",
+    "nextScene": "المشهد التالي",
+    "autoPlay": "تشغيل تلقائي",
+    "toggleChat": "إظهار المحادثة أو إخفاؤها",
+    "play": "تشغيل",
+    "pause": "إيقاف مؤقت",
+    "mute": "كتم الصوت",
+    "unmute": "إلغاء كتم الصوت"
   },
   "export": {
     "pptx": "تصدير PPTX",

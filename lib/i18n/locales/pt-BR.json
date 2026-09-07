@@ -44,7 +44,17 @@
     "ttsPreview": "Pré-visualizar",
     "ttsPreviewing": "Reproduzindo...",
     "interactiveModeHint": "Ative o modo interativo para conteúdos mais práticos",
-    "interactiveModeLabel": "Modo Interativo"
+    "interactiveModeLabel": "Modo Interativo",
+    "toggleSidebar": "Mostrar ou ocultar a barra lateral",
+    "playbackSpeed": "Velocidade de reprodução",
+    "previousScene": "Cena anterior",
+    "nextScene": "Próxima cena",
+    "autoPlay": "Reprodução automática",
+    "toggleChat": "Mostrar ou ocultar o chat",
+    "play": "Reproduzir",
+    "pause": "Pausar",
+    "mute": "Silenciar",
+    "unmute": "Ativar o som"
   },
   "export": {
     "pptx": "Exportar PPTX",

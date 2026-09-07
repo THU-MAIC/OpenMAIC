@@ -44,7 +44,17 @@
     "ttsPreview": "Vorschau",
     "ttsPreviewing": "Wird abgespielt...",
     "interactiveModeHint": "Aktiviere den interaktiven Modus, damit bevorzugt interaktive Inhalte erzeugt werden",
-    "interactiveModeLabel": "Interaktiver Modus"
+    "interactiveModeLabel": "Interaktiver Modus",
+    "toggleSidebar": "Seitenleiste umschalten",
+    "playbackSpeed": "Wiedergabegeschwindigkeit",
+    "previousScene": "Vorherige Szene",
+    "nextScene": "Nächste Szene",
+    "autoPlay": "Automatische Wiedergabe",
+    "toggleChat": "Chat umschalten",
+    "play": "Abspielen",
+    "pause": "Pause",
+    "mute": "Stummschalten",
+    "unmute": "Stummschaltung aufheben"
   },
   "export": {
     "pptx": "PPTX exportieren",

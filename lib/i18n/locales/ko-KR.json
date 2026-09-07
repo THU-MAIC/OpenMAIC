@@ -44,7 +44,17 @@
     "ttsPreview": "미리 듣기",
     "ttsPreviewing": "재생 중...",
     "interactiveModeHint": "체험 중심 콘텐츠를 위해 인터랙티브 우선 모드를 사용하세요",
-    "interactiveModeLabel": "인터랙티브 모드"
+    "interactiveModeLabel": "인터랙티브 모드",
+    "toggleSidebar": "사이드바 전환",
+    "playbackSpeed": "재생 속도",
+    "previousScene": "이전 장면",
+    "nextScene": "다음 장면",
+    "autoPlay": "자동 재생",
+    "toggleChat": "채팅 전환",
+    "play": "재생",
+    "pause": "일시정지",
+    "mute": "음소거",
+    "unmute": "음소거 해제"
   },
   "export": {
     "pptx": "PPTX 내보내기",

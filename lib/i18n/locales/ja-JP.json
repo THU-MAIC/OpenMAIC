@@ -44,7 +44,17 @@
     "ttsPreview": "プレビュー",
     "ttsPreviewing": "再生中...",
     "interactiveModeHint": "インタラクティブ優先モードを有効にして、より実践的なコンテンツを生成",
-    "interactiveModeLabel": "インタラクティブモード"
+    "interactiveModeLabel": "インタラクティブモード",
+    "toggleSidebar": "サイドバーの表示切替",
+    "playbackSpeed": "再生速度",
+    "previousScene": "前のシーン",
+    "nextScene": "次のシーン",
+    "autoPlay": "自動再生",
+    "toggleChat": "チャットの表示切替",
+    "play": "再生",
+    "pause": "一時停止",
+    "mute": "ミュート",
+    "unmute": "ミュート解除"
   },
   "export": {
     "pptx": "PPTXエクスポート",

@@ -44,7 +44,17 @@
     "ttsPreview": "Nghe thử",
     "ttsPreviewing": "Đang phát…",
     "interactiveModeHint": "Bật chế độ ưu tiên tương tác để có nhiều nội dung thực hành hơn",
-    "interactiveModeLabel": "Chế độ tương tác"
+    "interactiveModeLabel": "Chế độ tương tác",
+    "toggleSidebar": "Bật/tắt thanh bên",
+    "playbackSpeed": "Tốc độ phát",
+    "previousScene": "Cảnh trước",
+    "nextScene": "Cảnh sau",
+    "autoPlay": "Tự động phát",
+    "toggleChat": "Bật/tắt trò chuyện",
+    "play": "Phát",
+    "pause": "Tạm dừng",
+    "mute": "Tắt tiếng",
+    "unmute": "Bật tiếng"
   },
   "export": {
     "pptx": "Xuất PPTX",

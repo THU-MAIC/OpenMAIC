@@ -44,7 +44,17 @@
     "ttsPreview": "Preview",
     "ttsPreviewing": "Playing...",
     "interactiveModeHint": "Enable interactive-first mode for more hands-on content",
-    "interactiveModeLabel": "Interactive Mode"
+    "interactiveModeLabel": "Interactive Mode",
+    "toggleSidebar": "Toggle sidebar",
+    "playbackSpeed": "Playback speed",
+    "previousScene": "Previous scene",
+    "nextScene": "Next scene",
+    "autoPlay": "Auto-play",
+    "toggleChat": "Toggle chat",
+    "play": "Play",
+    "pause": "Pause",
+    "mute": "Mute",
+    "unmute": "Unmute"
   },
   "export": {
     "pptx": "Export PPTX",

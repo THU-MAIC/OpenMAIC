@@ -44,7 +44,17 @@
     "ttsPreview": "试听",
     "ttsPreviewing": "播放中...",
     "interactiveModeHint": "开启深度交互模式，生成更多互动内容",
-    "interactiveModeLabel": "深度交互"
+    "interactiveModeLabel": "深度交互",
+    "toggleSidebar": "切换侧边栏",
+    "playbackSpeed": "播放速度",
+    "previousScene": "上一幕",
+    "nextScene": "下一幕",
+    "autoPlay": "自动播放",
+    "toggleChat": "切换聊天",
+    "play": "播放",
+    "pause": "暂停",
+    "mute": "静音",
+    "unmute": "取消静音"
   },
   "export": {
     "pptx": "导出 PPTX",

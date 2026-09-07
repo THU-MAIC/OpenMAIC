@@ -44,7 +44,17 @@
     "ttsPreview": "Прослушать",
     "ttsPreviewing": "Воспроизведение...",
     "interactiveModeHint": "Включить интерактивный режим для более практического контента",
-    "interactiveModeLabel": "Интерактивный режим"
+    "interactiveModeLabel": "Интерактивный режим",
+    "toggleSidebar": "Показать или скрыть боковую панель",
+    "playbackSpeed": "Скорость воспроизведения",
+    "previousScene": "Предыдущая сцена",
+    "nextScene": "Следующая сцена",
+    "autoPlay": "Автовоспроизведение",
+    "toggleChat": "Показать или скрыть чат",
+    "play": "Воспроизвести",
+    "pause": "Пауза",
+    "mute": "Выключить звук",
+    "unmute": "Включить звук"
   },
   "export": {
     "pptx": "Экспорт PPTX",
