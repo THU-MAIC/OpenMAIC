@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { createLogger } from '@/lib/logger';
+import { LLM_PROVIDER_ENV_MAP } from '@/lib/ai/providers/env';
 import {
   DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL,
   isQwenCatalogVoice,
@@ -74,7 +75,7 @@ export const LLM_ENV_MAP: Record<string, string> = {
   SILICONFLOW: 'siliconflow',
   DOUBAO: 'doubao',
   OPENROUTER: 'openrouter',
-  TOKENSMARKET: 'tokensmarket',
+  ...LLM_PROVIDER_ENV_MAP,
   GROK: 'grok',
   TENCENT: 'tencent-hunyuan',
   TENCENT_HUNYUAN: 'tencent-hunyuan',
