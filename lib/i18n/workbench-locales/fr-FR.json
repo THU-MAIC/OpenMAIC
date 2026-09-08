@@ -41,7 +41,9 @@
     "maxSelected": "Vous pouvez sélectionner au maximum {{count}} documents à la fois",
     "remove": "Retirer {{name}}",
     "removeFailed": "Retirer l'envoi échoué",
-    "uploadFailed": "Impossible d'envoyer {{name}}. Veuillez réessayer."
+    "uploadFailed": "Impossible d'envoyer {{name}}. Veuillez réessayer.",
+    "fileTooLarge": "Fichier trop volumineux. Compressez-le ou divisez-le, puis réessayez.",
+    "fileTooLargeWithLimit": "Fichier trop volumineux. Sélectionnez un fichier de {{limit}} Mo maximum."
   },
   "skill": {
     "listFailed": "Impossible de charger la liste des skills",

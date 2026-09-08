@@ -23,7 +23,11 @@
  */
 import { create } from 'zustand';
 import { isSkillLoadTool, skillLoadId } from './skill-load';
-import { defaultWorkbenchTranslator, type WorkbenchCopyKey } from '@/lib/i18n/workbench';
+import {
+  defaultWorkbenchTranslator,
+  type WorkbenchCopyKey,
+  type WorkbenchTranslator,
+} from '@/lib/i18n/workbench';
 import { parseElementRefs, type ElementRef } from './element-refs';
 import { parseCourseRefs, type CourseRef } from './course-refs';
 import { appendCourseSighting, courseSightingsOf } from './run-courses';
@@ -2126,9 +2130,17 @@ export class WorkbenchMaterialUploadError extends Error {
     message: string,
     readonly status: number,
     readonly requestId?: string,
+    readonly maxBytes?: number,
   ) {
     super(message);
     this.name = 'WorkbenchMaterialUploadError';
+  }
+
+  userMessage(t: WorkbenchTranslator): string {
+    if (this.status !== 413) return this.message;
+    return this.maxBytes === undefined
+      ? t('workbench.material.fileTooLarge')
+      : t('workbench.material.fileTooLargeWithLimit', { limit: this.maxBytes / 1024 / 1024 });
   }
 }
 
@@ -2152,6 +2164,7 @@ export async function uploadWorkbenchMaterial(file: File): Promise<WorkbenchMate
     extraction?: { status?: WorkbenchMaterial['extractionStatus'] };
     error?: string;
     message?: string;
+    maxBytes?: unknown;
   };
   if (!res.ok || !body.materialId) {
     const requestId = res.headers.get('x-request-id') ?? undefined;
@@ -2160,6 +2173,9 @@ export async function uploadWorkbenchMaterial(file: File): Promise<WorkbenchMate
       requestId ? `${message} [requestId=${requestId}]` : message,
       res.status,
       requestId,
+      typeof body.maxBytes === 'number' && Number.isFinite(body.maxBytes) && body.maxBytes > 0
+        ? body.maxBytes
+        : undefined,
     );
   }
   return {

@@ -88,6 +88,18 @@ export function ownerMaterialObjectKey(ownerId: string, materialId: string): str
 
 class MaterialPayloadTooLarge extends Error {}
 
+function materialTooLarge(maxBytes: number) {
+  return NextResponse.json(
+    {
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+      error: `upload exceeds ${maxBytes} bytes`,
+      maxBytes,
+    },
+    { status: 413 },
+  );
+}
+
 /** The `x-material-filename` header, sanitized to a bare file name. */
 function materialFilename(req: NextRequest): string | null {
   const raw = req.headers.get('x-material-filename');
@@ -202,11 +214,7 @@ export async function POST(req: NextRequest) {
 
       declaredBytes = Number(req.headers.get('content-length') ?? 0);
       if (Number.isFinite(declaredBytes) && declaredBytes > uploadLimit) {
-        return reject(
-          apiError('INVALID_REQUEST', 413, `upload exceeds ${uploadLimit} bytes`),
-          'declared_body_too_large',
-          responseHeaders,
-        );
+        return reject(materialTooLarge(uploadLimit), 'declared_body_too_large', responseHeaders);
       }
       if (!req.body) {
         return reject(
@@ -309,11 +317,7 @@ export async function POST(req: NextRequest) {
             provider.pool as unknown as ConnectableQueryable,
             createdMaterialId,
           ).catch(() => undefined);
-          return reject(
-            apiError('INVALID_REQUEST', 413, `upload exceeds ${uploadLimit} bytes`),
-            'streamed_body_too_large',
-            responseHeaders,
-          );
+          return reject(materialTooLarge(uploadLimit), 'streamed_body_too_large', responseHeaders);
         }
         failureLogged = true;
         await abandonOwnerMaterial(
