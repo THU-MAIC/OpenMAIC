@@ -41,7 +41,9 @@
     "maxSelected": "Du kannst höchstens {{count}} Materialien gleichzeitig auswählen",
     "remove": "{{name}} entfernen",
     "removeFailed": "Fehlgeschlagenen Upload entfernen",
-    "uploadFailed": "{{name}} konnte nicht hochgeladen werden. Bitte erneut versuchen."
+    "uploadFailed": "{{name}} konnte nicht hochgeladen werden. Bitte erneut versuchen.",
+    "fileTooLarge": "Die Datei ist zu groß. Komprimiere oder teile sie und versuche es erneut.",
+    "fileTooLargeWithLimit": "Die Datei ist zu groß. Wähle eine Datei mit höchstens {{limit}} MB aus."
   },
   "skill": {
     "listFailed": "Die Skill-Liste konnte nicht geladen werden",

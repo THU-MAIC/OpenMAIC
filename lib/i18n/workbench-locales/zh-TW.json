@@ -41,7 +41,9 @@
     "maxSelected": "一次最多選擇 {{count}} 個材料",
     "remove": "移除 {{name}}",
     "removeFailed": "移除上傳失敗的材料",
-    "uploadFailed": "{{name}} 上傳失敗，請重試"
+    "uploadFailed": "{{name}} 上傳失敗，請重試",
+    "fileTooLarge": "檔案過大，請壓縮或分割後重試。",
+    "fileTooLargeWithLimit": "檔案過大，請選擇不超過 {{limit}}MB 的檔案。"
   },
   "skill": {
     "listFailed": "Skill 清單載入失敗",
