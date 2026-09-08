@@ -91,7 +91,7 @@ describe('validateUrlForSSRF', () => {
       'http://172.16.5.4',
       'http://172.31.255.255',
       'http://192.168.1.10',
-      'http://169.254.169.254',
+      'http://169.254.1.1',
       'http://0.0.0.0',
     ];
 
@@ -389,28 +389,28 @@ describe('validateUrlForSSRF', () => {
   it('still blocks cloud metadata endpoints when ALLOW_LOCAL_NETWORKS is not set', async () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
-    // Link-local and ULA metadata literals are private, so they return the generic message.
-    await expect(validateUrlForSSRF('http://169.254.169.254/latest/meta-data/')).resolves.toBe(
+    // Metadata literals get the metadata message, not the one that suggests the flag.
+    for (const url of [
+      'http://169.254.169.254/latest/meta-data/',
+      'http://[::ffff:169.254.169.254]/',
+      'http://[fd00:ec2::254]/',
+      'http://100.100.100.200/',
+      'http://168.63.129.16/',
+      'http://192.0.0.192/',
+    ]) {
+      await expect(validateUrlForSSRF(url)).resolves.toBe(CLOUD_METADATA_BLOCK_MESSAGE);
+    }
+    // Other link-local targets still get the generic message.
+    await expect(validateUrlForSSRF('http://169.254.1.1/')).resolves.toBe(
       PRIVATE_NETWORK_BLOCK_MESSAGE,
     );
-    await expect(validateUrlForSSRF('http://[::ffff:169.254.169.254]/')).resolves.toBe(
-      PRIVATE_NETWORK_BLOCK_MESSAGE,
-    );
-    await expect(validateUrlForSSRF('http://[fd00:ec2::254]/')).resolves.toBe(
-      PRIVATE_NETWORK_BLOCK_MESSAGE,
-    );
-    // 100.100.100.200 is not RFC1918, but it is a metadata address and stays blocked.
-    expect(await validateUrlForSSRF('http://100.100.100.200/')).not.toBeNull();
 
-    // A metadata hostname resolves to a metadata address and is rejected via DNS.
-    lookupMock.mockResolvedValue([{ address: '169.254.169.254', family: 4 }]);
+    // The metadata hostname is rejected by name, before any DNS lookup.
+    lookupMock.mockResolvedValue([{ address: '8.8.8.8', family: 4 }]);
     await expect(validateUrlForSSRF('http://metadata.google.internal/')).resolves.toBe(
       CLOUD_METADATA_BLOCK_MESSAGE,
     );
-    expect(lookupMock).toHaveBeenCalledWith('metadata.google.internal', {
-      all: true,
-      verbatim: true,
-    });
+    expect(lookupMock).not.toHaveBeenCalled();
   });
 
   it('fails closed when DNS lookup errors', async () => {
@@ -492,6 +492,10 @@ describe('assertSafeIp', () => {
     expect(isPrivateIP('64:ff9b::192.168.1.10')).toBe(true);
     expect(isPrivateIP('64:ff9b::7f00:1')).toBe(true);
     expect(isPrivateIP('64:ff9b::8.8.8.8')).toBe(false);
+    // Decoder boundaries: only the exact tunnel prefixes carry an embedded IPv4.
+    expect(isPrivateIP('2001:db8:1:2:3:4:3f57:fef5')).toBe(false); // not Teredo (2001:0::/32)
+    expect(isPrivateIP('64:ff9b:1:2:3:4:c0a8:10a')).toBe(false); // not NAT64 (64:ff9b::/96)
+    expect(isPrivateIP('2003:c0a8:10a::')).toBe(false); // not 6to4 (2002::/16)
   });
 
   it('rejects ISATAP addresses that embed private IPv4 beneath a public IPv6 prefix', async () => {

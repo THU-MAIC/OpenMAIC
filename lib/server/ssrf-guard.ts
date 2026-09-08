@@ -328,12 +328,14 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
     process.env.ALLOW_LOCAL_NETWORKS === 'true' || process.env.ALLOW_LOCAL_NETWORKS === '1';
   const hostname = normalizeAddress(parsed.hostname);
 
+  // Cloud metadata endpoints are never allowed, with or without the flag.
+  if (CLOUD_METADATA_HOSTNAMES.has(hostname) || isCloudMetadataAddress(hostname)) {
+    return CLOUD_METADATA_BLOCK_MESSAGE;
+  }
+
   if (allowLocal) {
     // The flag is for loopback/RFC1918/.local targets (local Ollama, compose
-    // networks, split-horizon DNS). Cloud metadata endpoints are never allowed.
-    if (CLOUD_METADATA_HOSTNAMES.has(hostname) || isCloudMetadataAddress(hostname)) {
-      return CLOUD_METADATA_BLOCK_MESSAGE;
-    }
+    // networks, split-horizon DNS).
     if (isIP(hostname)) {
       return null;
     }
@@ -365,11 +367,6 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
   }
 
   if (isIP(hostname)) {
-    // Metadata addresses that are not RFC1918/link-local (e.g. 100.100.100.200)
-    // are caught here; the private ones were rejected just above.
-    if (isCloudMetadataAddress(hostname)) {
-      return CLOUD_METADATA_BLOCK_MESSAGE;
-    }
     return null;
   }
 
