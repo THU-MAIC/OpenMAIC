@@ -17,6 +17,10 @@ import type { IncomingMessage } from 'node:http';
 import type { AssetPrincipal } from '@openmaic/storage';
 import type { RuntimeHttpPrincipal } from '@openmaic/storage/server';
 
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('PersistenceAuth');
+
 type PersistencePrincipal = RuntimeHttpPrincipal & Partial<Pick<AssetPrincipal, 'key'>>;
 
 /**
@@ -24,6 +28,37 @@ type PersistencePrincipal = RuntimeHttpPrincipal & Partial<Pick<AssetPrincipal, 
  * ownership partition; assets get the same treatment until real auth lands.
  */
 const SHARED_ASSET_PRINCIPAL = 'shared';
+
+/**
+ * Whether the operator explicitly opted the development authenticator into
+ * production traffic (PERSISTENCE_ALLOW_INSECURE_DEV_AUTH=true/1). Both the
+ * startup warning and the runtime gate read the same opt-in through this one
+ * helper so the two copies of the parsing cannot drift.
+ */
+function insecureDevAuthOptInEnabled(): boolean {
+  const optIn = process.env.PERSISTENCE_ALLOW_INSECURE_DEV_AUTH;
+  return optIn === 'true' || optIn === '1';
+}
+
+/**
+ * The development authenticator must never serve production traffic unless the
+ * operator explicitly accepts the trade-off. This module provides no user
+ * isolation, so production defaults to refusing it entirely (returns undefined,
+ * which callers turn into a 401); PERSISTENCE_ALLOW_INSECURE_DEV_AUTH=true is
+ * the documented opt-in for trusted-network single-user deployments.
+ */
+function devAuthenticatorAllowedInCurrentEnvironment(): boolean {
+  if (process.env.NODE_ENV !== 'production') return true;
+  return insecureDevAuthOptInEnabled();
+}
+
+if (process.env.NODE_ENV === 'production' && insecureDevAuthOptInEnabled()) {
+  log.warn(
+    'Persistence is running the development authenticator in production: it provides no user ' +
+      'isolation, so this endpoint must only be reachable on a trusted network. Replace it with ' +
+      'real session verification before serving public traffic.',
+  );
+}
 
 function singleHeader(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -39,6 +74,8 @@ function authenticatePersistenceCredentials(
   authorization: string | undefined,
   learnerKey: string | undefined,
 ): PersistencePrincipal | undefined {
+  if (!devAuthenticatorAllowedInCurrentEnvironment()) return undefined;
+
   const token = process.env.PERSISTENCE_DEV_TOKEN;
   if (!token || !authorization || !secureEqual(authorization, `Bearer ${token}`)) return undefined;
 
