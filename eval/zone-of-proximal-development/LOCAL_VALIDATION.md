@@ -45,3 +45,16 @@ These checks verify loading/integration and repository consistency, not instruct
 - The skill does not measure a stable ZPD score, establish durable mastery, or turn static optional help into automatic adaptive instruction.
 - TTS is explicitly outside this validation scope, not an outstanding acceptance gate.
 - No real-student learning outcome study was performed. Local session links, machine paths, credentials, and private learner data are not included in this public summary.
+
+## CI follow-up: workbench names (2026-09-08)
+
+The initial [CI job](https://github.com/THU-MAIC/OpenMAIC/actions/runs/33969660170/job/101315805424) failed one root unit test: `workbench-i18n.test.ts` reported that `zone-of-proximal-development` had no `zh-CN` display title. Skill frontmatter discovery had passed, but the built-in menu uses a separate workbench translation registry. The earlier four-file check did not cover that registry, and the general i18n key-alignment check did not detect a key absent from every locale.
+
+The repair adds the title to both base languages and all ten locale overlays. It preserves the chosen Simplified Chinese name, the skill id, and the existing translation fallback behavior. The skill-specific regression now checks each locale's own copy and the actual menu-title resolver, so a missing overlay cannot pass by falling back to English or Simplified Chinese.
+
+- Reproduced the original failing test locally before the change; it passed after the repair.
+- Expanded focused check, including `workbench-i18n.test.ts`: **236 tests passed in 5 files**.
+- Repository formatting, focused lint, TypeScript, and general i18n alignment checks passed.
+- The first default-concurrency full local run had one failure in the unchanged material-search character-budget test; that test file passed all 31 tests when run alone. A subsequent full run with `--maxWorkers=4` passed. No search implementation, time budget, test exclusions, or CI workflow was changed to obtain this result.
+
+The original classroom evidence above remains dated to its actual runtime and has not been relabeled as a new classroom run.

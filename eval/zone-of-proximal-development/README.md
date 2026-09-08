@@ -4,6 +4,16 @@
 
 已有检查的范围、结果和限制见 [本地实测摘要](LOCAL_VALIDATION.md)。
 
+## 名称与加载集成检查
+
+内置 Skill 的菜单名称来自工作台多语言文案，不只来自 `SKILL.md` 的 `metadata.title`。新增或改名时同时核对 `lib/i18n/workbench.ts` 和各语言的 `workbench-locales` 文案，并运行以下检查；通用语言键对齐检查不能替代这项检查。
+
+```bash
+pnpm exec vitest run tests/workbench/workbench-i18n.test.ts tests/agent-runtime/zpd-skill-discovery.test.ts tests/agent-runtime/skills.test.ts tests/agent-runtime/skill-preload.test.ts tests/agent-runtime/skills-route.test.ts
+```
+
+除名称非空外，确认各语言有自己的文案，简体中文显示名保持“习题课（最近发展区）”。不要用修改翻译回退规则或跳过测试来掩盖缺失的名称。
+
 ## 对话：帮助后是否把任务交还学习者
 
 新会话选择本 Skill，发送：
