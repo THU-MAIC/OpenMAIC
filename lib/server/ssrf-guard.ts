@@ -27,25 +27,43 @@ function normalizeAddress(value: string): string {
 }
 
 /**
- * Assert that a connection address is globally routable unicast.
- * IPv4-mapped IPv6 is classified as IPv4 so ::ffff:127.0.0.1 cannot hide.
+ * Canonical textual form of an IP literal, unwrapping IPv4-mapped IPv6 so that
+ * `::ffff:169.254.169.254` compares equal to `169.254.169.254`. Returns null
+ * when the value is not a parseable IP literal.
  */
-export function assertSafeIp(value: string): void {
+function canonicalizeIp(value: string): string | null {
   const normalized = normalizeAddress(value);
   let address: ipaddr.IPv4 | ipaddr.IPv6;
   try {
     address = ipaddr.parse(normalized);
   } catch {
-    throw new UnsafeNetworkTargetError(`Unable to classify network address: ${value}`);
+    return null;
   }
   if (address.kind() === 'ipv6' && (address as ipaddr.IPv6).isIPv4MappedAddress()) {
     address = (address as ipaddr.IPv6).toIPv4Address();
   }
-  const canonical = address.toString().toLowerCase();
+  return address.toString().toLowerCase();
+}
+
+/** True when an IP literal (URL host or DNS answer) is a cloud metadata address. */
+function isCloudMetadataAddress(value: string): boolean {
+  const canonical = canonicalizeIp(value);
+  return canonical !== null && CLOUD_METADATA_ADDRESSES.has(canonical);
+}
+
+/**
+ * Assert that a connection address is globally routable unicast.
+ * IPv4-mapped IPv6 is classified as IPv4 so ::ffff:127.0.0.1 cannot hide.
+ */
+export function assertSafeIp(value: string): void {
+  const canonical = canonicalizeIp(value);
+  if (canonical === null) {
+    throw new UnsafeNetworkTargetError(`Unable to classify network address: ${value}`);
+  }
   if (
     CLOUD_METADATA_ADDRESSES.has(canonical) ||
     isPrivateIP(canonical) ||
-    address.range() !== 'unicast'
+    ipaddr.parse(canonical).range() !== 'unicast'
   ) {
     throw new UnsafeNetworkTargetError('Local/private/reserved network URLs are not allowed');
   }
@@ -243,6 +261,9 @@ export function isPrivateIP(ip: string): boolean {
   return false;
 }
 
+const CLOUD_METADATA_BLOCK_MESSAGE =
+  'Cloud instance metadata endpoints are never allowed as outbound targets, even with ALLOW_LOCAL_NETWORKS=true.';
+
 const LOCAL_NETWORK_BLOCK_MESSAGE =
   'Local/private network URLs are not allowed. If this is a self-hosted deployment or internal gateway (including split-horizon DNS), set ALLOW_LOCAL_NETWORKS=true to allow local network targets.';
 
@@ -262,13 +283,38 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
     return 'Only HTTP(S) URLs are allowed';
   }
 
-  // Self-hosted deployments can set ALLOW_LOCAL_NETWORKS=true to skip private-IP checks
-  const allowLocal = process.env.ALLOW_LOCAL_NETWORKS;
-  if (allowLocal === 'true' || allowLocal === '1') {
+  // Self-hosted deployments can set ALLOW_LOCAL_NETWORKS=true to skip private-IP
+  // checks. Cloud instance metadata endpoints stay blocked either way.
+  const allowLocal =
+    process.env.ALLOW_LOCAL_NETWORKS === 'true' || process.env.ALLOW_LOCAL_NETWORKS === '1';
+  const hostname = normalizeAddress(parsed.hostname);
+
+  if (allowLocal) {
+    // The flag is for loopback/RFC1918/.local targets (local Ollama, compose
+    // networks, split-horizon DNS). Cloud metadata endpoints are never allowed.
+    if (CLOUD_METADATA_HOSTNAMES.has(hostname) || isCloudMetadataAddress(hostname)) {
+      return CLOUD_METADATA_BLOCK_MESSAGE;
+    }
+    if (isIP(hostname)) {
+      return null;
+    }
+    // Non-IP hostname: fail open when DNS errors or returns nothing (split-horizon
+    // DNS is an explicit flag use case), but never when an answer is metadata.
+    let resolvedAddresses: Array<{ address: string; family: number }>;
+    try {
+      resolvedAddresses = await dns.lookup(hostname, { all: true, verbatim: true });
+    } catch {
+      return null;
+    }
+    if (
+      resolvedAddresses.length > 0 &&
+      resolvedAddresses.some(({ address }) => isCloudMetadataAddress(address))
+    ) {
+      return CLOUD_METADATA_BLOCK_MESSAGE;
+    }
     return null;
   }
 
-  const hostname = normalizeAddress(parsed.hostname);
   if (
     hostname === 'localhost' ||
     hostname.endsWith('.local') ||
@@ -280,6 +326,11 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
   }
 
   if (isIP(hostname)) {
+    // Metadata addresses that are not RFC1918/link-local (e.g. 100.100.100.200)
+    // are caught here; the private ones were rejected just above.
+    if (isCloudMetadataAddress(hostname)) {
+      return CLOUD_METADATA_BLOCK_MESSAGE;
+    }
     return null;
   }
 
@@ -292,6 +343,10 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
 
   if (resolvedAddresses.length === 0) {
     return 'Unable to verify hostname safety';
+  }
+
+  if (resolvedAddresses.some(({ address }) => isCloudMetadataAddress(address))) {
+    return CLOUD_METADATA_BLOCK_MESSAGE;
   }
 
   if (resolvedAddresses.some(({ address }) => isPrivateIP(address))) {

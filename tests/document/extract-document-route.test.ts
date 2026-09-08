@@ -508,7 +508,7 @@ describe('POST /api/extract-document (asset-id form)', () => {
       fileName: 'lesson.pdf',
       mimeType: 'application/pdf',
       providerId: 'mineru-cloud',
-      baseUrl: 'http://169.254.169.254/latest/meta-data/',
+      baseUrl: 'http://192.168.1.10/v1/',
     });
     const json = await res.json();
 
@@ -517,7 +517,7 @@ describe('POST /api/extract-document (asset-id form)', () => {
     expect(mocks.parseWithMinerUCloud).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: 'mineru-cloud',
-        baseUrl: 'http://169.254.169.254/latest/meta-data/',
+        baseUrl: 'http://192.168.1.10/v1/',
       }),
       expect.any(Buffer),
       'lesson.pdf',

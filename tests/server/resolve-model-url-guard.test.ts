@@ -53,7 +53,7 @@ describe('resolveModel — client-supplied base URL guard applies in every envir
     expect(mocks.getModelCalls).toHaveLength(0);
   });
 
-  it('still allows the same local base URL when ALLOW_LOCAL_NETWORKS=true', async () => {
+  it('still allows a private-network base URL when ALLOW_LOCAL_NETWORKS=true', async () => {
     vi.stubEnv('NODE_ENV', 'development');
     vi.stubEnv('ALLOW_LOCAL_NETWORKS', 'true');
     const { resolveModel } = await import('@/lib/server/resolve-model');
@@ -61,12 +61,12 @@ describe('resolveModel — client-supplied base URL guard applies in every envir
     const result = await resolveModel({
       modelString: 'openai:gpt-5.4-mini',
       apiKey: 'client-key',
-      baseUrl: 'http://169.254.169.254/latest/meta-data/',
+      baseUrl: 'http://192.168.1.10/v1/',
     });
 
     expect(result.modelId).toBe('gpt-5.4-mini');
     expect(mocks.getModelCalls.at(-1)).toMatchObject({
-      baseUrl: 'http://169.254.169.254/latest/meta-data/',
+      baseUrl: 'http://192.168.1.10/v1/',
     });
   });
 });

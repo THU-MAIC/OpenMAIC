@@ -12,6 +12,8 @@ vi.mock('node:dns', () => ({
 
 const PRIVATE_NETWORK_BLOCK_MESSAGE =
   'Local/private network URLs are not allowed. If this is a self-hosted deployment or internal gateway (including split-horizon DNS), set ALLOW_LOCAL_NETWORKS=true to allow local network targets.';
+const CLOUD_METADATA_BLOCK_MESSAGE =
+  'Cloud instance metadata endpoints are never allowed as outbound targets, even with ALLOW_LOCAL_NETWORKS=true.';
 const ALLOW_LOCAL_NETWORKS_GUIDANCE = 'ALLOW_LOCAL_NETWORKS=true';
 const originalAllowLocalNetworks = process.env.ALLOW_LOCAL_NETWORKS;
 
@@ -254,7 +256,108 @@ describe('validateUrlForSSRF', () => {
 
     await expect(validateUrlForSSRF('http://192.168.1.10')).resolves.toBeNull();
     await expect(validateUrlForSSRF('https://internal.example')).resolves.toBeNull();
+    // Private IP literals skip DNS; non-IP hostnames are resolved so metadata
+    // answers can still be caught while the flag is set.
+    expect(lookupMock).toHaveBeenCalledTimes(1);
+    expect(lookupMock).toHaveBeenCalledWith('internal.example', { all: true, verbatim: true });
+  });
+
+  it('still blocks cloud metadata literals when ALLOW_LOCAL_NETWORKS=true', async () => {
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    const urls = [
+      'http://169.254.169.254/latest/meta-data/',
+      'http://[::ffff:169.254.169.254]/',
+      'http://100.100.100.200/',
+      'http://[fd00:ec2::254]/',
+      'http://metadata.google.internal/computeMetadata/v1/',
+    ];
+
+    for (const url of urls) {
+      await expect(validateUrlForSSRF(url)).resolves.toBe(CLOUD_METADATA_BLOCK_MESSAGE);
+    }
+
+    // Literals and known metadata hostnames are classified without DNS.
     expect(lookupMock).not.toHaveBeenCalled();
+  });
+
+  it('blocks a hostname under ALLOW_LOCAL_NETWORKS=true when any DNS answer is metadata', async () => {
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    lookupMock.mockResolvedValue([
+      { address: '93.184.216.34', family: 4 },
+      { address: '169.254.169.254', family: 4 },
+      { address: '::ffff:100.100.100.200', family: 6 },
+    ]);
+
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    await expect(validateUrlForSSRF('https://metadata.example')).resolves.toBe(
+      CLOUD_METADATA_BLOCK_MESSAGE,
+    );
+    expect(lookupMock).toHaveBeenCalledWith('metadata.example', { all: true, verbatim: true });
+  });
+
+  it('still allows hostnames whose DNS answers are all RFC1918 when ALLOW_LOCAL_NETWORKS=true', async () => {
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    lookupMock.mockResolvedValue([
+      { address: '10.0.0.4', family: 4 },
+      { address: '192.168.1.10', family: 4 },
+    ]);
+
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    await expect(validateUrlForSSRF('http://ollama.internal')).resolves.toBeNull();
+    expect(lookupMock).toHaveBeenCalledWith('ollama.internal', { all: true, verbatim: true });
+  });
+
+  it('still allows loopback and private IP targets when ALLOW_LOCAL_NETWORKS=true', async () => {
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    lookupMock.mockResolvedValue([{ address: '127.0.0.1', family: 4 }]);
+
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    await expect(validateUrlForSSRF('http://localhost:11434/')).resolves.toBeNull();
+    await expect(validateUrlForSSRF('http://192.168.1.10/')).resolves.toBeNull();
+    expect(lookupMock).toHaveBeenCalledTimes(1);
+    expect(lookupMock).toHaveBeenCalledWith('localhost', { all: true, verbatim: true });
+  });
+
+  it('fails open when DNS lookup errors under ALLOW_LOCAL_NETWORKS=true', async () => {
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    lookupMock.mockRejectedValue(new Error('ENOTFOUND'));
+
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    await expect(validateUrlForSSRF('https://split-horizon.internal')).resolves.toBeNull();
+  });
+
+  it('still blocks cloud metadata endpoints when ALLOW_LOCAL_NETWORKS is not set', async () => {
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    // Link-local and ULA metadata literals are private, so they return the generic message.
+    await expect(validateUrlForSSRF('http://169.254.169.254/latest/meta-data/')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+    await expect(validateUrlForSSRF('http://[::ffff:169.254.169.254]/')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+    await expect(validateUrlForSSRF('http://[fd00:ec2::254]/')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+    // 100.100.100.200 is not RFC1918, but it is a metadata address and stays blocked.
+    expect(await validateUrlForSSRF('http://100.100.100.200/')).not.toBeNull();
+
+    // A metadata hostname resolves to a metadata address and is rejected via DNS.
+    lookupMock.mockResolvedValue([{ address: '169.254.169.254', family: 4 }]);
+    await expect(validateUrlForSSRF('http://metadata.google.internal/')).resolves.toBe(
+      CLOUD_METADATA_BLOCK_MESSAGE,
+    );
+    expect(lookupMock).toHaveBeenCalledWith('metadata.google.internal', {
+      all: true,
+      verbatim: true,
+    });
   });
 
   it('fails closed when DNS lookup errors', async () => {
