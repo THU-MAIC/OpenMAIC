@@ -51,6 +51,7 @@ import {
   runClassroomLoad,
 } from '@/lib/classroom/load-classroom';
 import {
+  paneAvailabilityRetryDelay,
   shouldResumeClassroomGeneration,
   startClassroomAvailabilityPolling,
   type ClassroomAvailabilityOutcome as ClassroomLoadOutcome,
@@ -71,13 +72,6 @@ export function ClassroomSurface({
   const { loadFromStorage } = useStageStore();
   const loadedClassroomId = useStageStore((s) => s.stage?.id ?? null);
   const { t } = useI18n();
-  // The retry loop below reads the message after async gaps, so it must see
-  // the CURRENT translation (a locale switch may have happened since mount).
-  // Written in an effect, not during render.
-  const notFoundMessageRef = useRef(t('classroom.notFound'));
-  useEffect(() => {
-    notFoundMessageRef.current = t('classroom.notFound');
-  }, [t]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -222,6 +216,7 @@ export function ClassroomSurface({
         setError(null);
         return loadClassroom(isCurrent);
       },
+      getRetryDelay: variant === 'pane' ? paneAvailabilityRetryDelay : () => null,
       onDeleted: () => {
         setNotFound(true);
         setLoading(false);
@@ -357,7 +352,8 @@ export function ClassroomSurface({
               : 'h-screen flex flex-col overflow-hidden'
           }
         >
-          {loading || (variant === 'pane' && !error && loadedClassroomId !== classroomId) ? (
+          {loading ||
+          (variant === 'pane' && !error && !notFound && loadedClassroomId !== classroomId) ? (
             <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
               <div className="flex flex-col items-center gap-3 text-muted-foreground">
                 <Loader2 className="h-8 w-8 animate-spin" />

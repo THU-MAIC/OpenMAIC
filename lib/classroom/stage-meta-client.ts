@@ -25,6 +25,8 @@ export interface StageMetaView {
   source?: string;
 }
 
+export const DEFAULT_STAGE_META_TIMEOUT_MS = 5_000;
+
 /**
  * Fetch a course's viewer-scoped metadata.
  *
@@ -34,15 +36,31 @@ export interface StageMetaView {
  * does for a course that does not exist); `'gone'` is an ANSWER (the endpoint
  * replied 410, meaning the course was deleted/tombstoned); `'unavailable'`
  * is the ABSENCE of an answer (a 5xx, a network error, a timeout).
+ *
+ * Enforces a bounded timeout (default 5 s) so stalled sidecar responses cannot
+ * block classroom loading indefinitely.
  */
 export async function fetchStageMeta(
   stageId: string,
   fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+  timeoutMs = DEFAULT_STAGE_META_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<StageMetaResult> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  if (timeoutMs > 0) {
+    timer = setTimeout(() => controller.abort(), timeoutMs);
+  }
+  const onAbort = () => controller.abort();
+  if (signal) {
+    signal.addEventListener('abort', onAbort, { once: true });
+  }
+
   try {
     const response = await fetchImpl(`/api/stage-meta/${encodeURIComponent(stageId)}`, {
       credentials: 'include',
       cache: 'no-store',
+      signal: controller.signal,
     });
     if (!response.ok) {
       if (response.status === 404) return { outcome: 'absent' };
@@ -76,5 +94,8 @@ export async function fetchStageMeta(
     // the endpoint answered nothing this client can act on.
     console.warn(`Stage meta fetch failed for ${stageId}`, error);
     return { outcome: 'unavailable' };
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onAbort);
   }
 }

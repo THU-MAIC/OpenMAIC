@@ -285,12 +285,14 @@ export function applyClassroomStageAndScenes(
     chatSnapshot?: ChatStorageSnapshot;
   } = {},
 ): void {
-  // Explicit document (re)creation point: deletion only removes client-side
-  // data, so revisiting the classroom URL restores the server copy under the
-  // SAME id. Lift any same-session deleted flag before the store write, or
-  // every subsequent edit of the restored classroom would be silently dropped
-  // until a reload. This is a deliberate restore, not an in-flight flush —
-  // exactly the distinction `deleted-stages.ts` requires. The deletion EPOCH
+  // Explicit document (re)creation point: for client-only / local storage,
+  // deletion removes local data so revisiting a URL could restore a share copy
+  // under the SAME id. Under server-backed persistence, an authoritative server
+  // tombstone (410 DOCUMENT_GONE) short-circuits loading before reaching this point (#1396).
+  // When this restore point IS reached, lift any same-session deleted flag before
+  // the store write, or every subsequent edit of the restored classroom would be
+  // silently dropped until a reload. This is a deliberate restore, not an in-flight
+  // flush — exactly the distinction `deleted-stages.ts` requires. The deletion EPOCH
   // stays bumped: a pre-delete flush still in flight remains permanently
   // stale and cannot overwrite the restored document, while the
   // `saveToStorage` below (and every later edit) captures the current epoch

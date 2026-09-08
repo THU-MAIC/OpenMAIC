@@ -307,6 +307,9 @@ export async function handlePersistenceRequest(
             error: {
               code: 'DOCUMENT_GONE',
               message: '@openmaic/storage: document is gone',
+              details: {
+                deleted_at: access.deletedAt.toISOString(),
+              },
               deleted_at: access.deletedAt.toISOString(),
             },
             deleted_at: access.deletedAt.toISOString(),

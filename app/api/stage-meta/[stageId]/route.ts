@@ -8,13 +8,13 @@
  * carries content, this sidecar carries tenancy, and the client fetches both
  * in parallel.
  *
- * ## Everything here is fail-closed on the tombstone
+ * ## Tombstone Handling (410 Gone)
  *
- * `resolveStageAccess` answers `null` for a deleted course exactly as it does
- * for one that never existed, so a deleted course 404s here too. This endpoint
- * is unauthenticated-friendly (any visitor may ask about any id), so if it
- * leaked `{isPublic: true}` for a tombstoned course it would be a public oracle
- * for "this course used to exist".
+ * A deleted course answers 410 Gone with `deleted_at` so the client can
+ * immediately terminate availability polling instead of retrying indefinitely
+ * under server-backed persistence (#1396). While this distinguishes a deleted
+ * course from a never-existed ID (which 404s), live course existence is already
+ * observable, and fast-failing tombstoned courses avoids infinite loading loops.
  *
  * ## No `ownerId` in the response, ever
  *

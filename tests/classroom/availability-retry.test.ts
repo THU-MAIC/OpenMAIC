@@ -36,9 +36,10 @@ describe('classroom availability retry and tombstone resolution', () => {
               error: {
                 code: 'DOCUMENT_GONE',
                 message: '@openmaic/storage: document is gone',
-                deleted_at: deletedAt,
+                details: {
+                  deleted_at: deletedAt,
+                },
               },
-              deleted_at: deletedAt,
             }),
             { status: 410, headers: { 'content-type': 'application/json' } },
           ),
