@@ -22,6 +22,8 @@ import {
   defaultClassroomLoadDeps,
   runClassroomLoad,
 } from '@/lib/classroom/load-classroom';
+import { recordViewEvent } from '@/lib/interactions/recorder';
+import { SessionUserBadge } from '@/components/auth/session-user-badge';
 
 const log = createLogger('Classroom');
 
@@ -220,10 +222,30 @@ export default function ClassroomDetailPage() {
     }
   }, [loading, error, generateRemaining]);
 
+  // Per-user viewing lifecycle record (SSO identity resolved server-side).
+  useEffect(() => {
+    if (!classroomId) return;
+    recordViewEvent(classroomId, 'enter');
+    let left = false;
+    const leave = () => {
+      if (left) return;
+      left = true;
+      recordViewEvent(classroomId, 'exit');
+    };
+    window.addEventListener('pagehide', leave);
+    window.addEventListener('beforeunload', leave);
+    return () => {
+      leave();
+      window.removeEventListener('pagehide', leave);
+      window.removeEventListener('beforeunload', leave);
+    };
+  }, [classroomId]);
+
   return (
     <ThemeProvider>
       <MediaStageProvider value={classroomId}>
         <div className="h-screen flex flex-col overflow-hidden">
+          <SessionUserBadge />
           {loading ? (
             <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
               <div className="text-center text-muted-foreground">

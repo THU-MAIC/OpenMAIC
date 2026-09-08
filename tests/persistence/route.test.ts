@@ -19,6 +19,12 @@ describe('embedded persistence route', () => {
     vi.doMock('@/lib/persistence/owner-materials', () => ({
       ensureOwnerMaterialSchema: vi.fn().mockResolvedValue(undefined),
     }));
+    vi.doMock('@/lib/persistence/user-accounts', () => ({
+      ensureUserAuthSchema: vi.fn().mockResolvedValue(undefined),
+    }));
+    vi.doMock('@/lib/persistence/user-interactions', () => ({
+      ensureUserInteractionsSchema: vi.fn().mockResolvedValue(undefined),
+    }));
   });
 
   it('returns a clear 404 when DATABASE_URL is unset', async () => {

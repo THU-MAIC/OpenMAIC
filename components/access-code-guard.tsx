@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState, ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
 import { AccessCodeModal } from '@/components/access-code-modal';
 import { useSettingsStore } from '@/lib/store/settings';
 
 export function AccessCodeGuard({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [status, setStatus] = useState<{
     enabled: boolean;
     authenticated: boolean;
@@ -13,7 +15,13 @@ export function AccessCodeGuard({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/access-code/status')
+    // Never trust the previous path's answer while switching routes.
+    /* eslint-disable react-hooks/set-state-in-effect -- a route change must clear the previous path's answer */
+    setStatus((s) => (s.loading ? s : { ...s, loading: true }));
+    /* eslint-enable react-hooks/set-state-in-effect */
+    // The path lets the server skip the modal for SSO-authenticated
+    // courseware viewers (teachers/students) and role-0 admins.
+    fetch(`/api/access-code/status?path=${encodeURIComponent(pathname ?? '')}`)
       .then((res) => res.json())
       .then((data) => {
         if (!cancelled) {
@@ -33,9 +41,12 @@ export function AccessCodeGuard({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pathname]);
 
-  const needsAuth = !status.loading && status.enabled && !status.authenticated;
+  // Login and forbidden pages are public: the password modal must never block
+  // the SSO login flow.
+  const isAuthPage = pathname === '/login' || pathname === '/forbidden';
+  const needsAuth = !status.loading && status.enabled && !status.authenticated && !isAuthPage;
 
   return (
     <>

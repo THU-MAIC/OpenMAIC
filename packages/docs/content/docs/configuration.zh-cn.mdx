@@ -198,6 +198,22 @@ ACCESS_CODE=your-secret-code
 
 访客只会被提示一次，密码存在 HTTP-only cookie 里。留空则关闭。
 
+## SSO 登录（Eduku）—— 课件观看与互动数据记录
+
+配置后，课件链接（`/classroom/<id>` 及观看所需接口）要求 SSO 会话：未登录访客会被重定向到 `/login`，登录页以 iframe 内嵌 Eduku 连接页（`https://www.eduku.cn/connect?appid=<appId>&redirect_uri=eduku.cn`，也提供“新窗口打开”兜底）。厂商页面通过 `postMessage` 回传一次性 code（`{ event: 'classai-login', data: CODE }`）；服务端以 `POST https://www.eduku.cn/api/v1/user/accesstoken`（表单参数 `code`、`appid`、`signature=MD5(appId + code + appSecret)`、`dataType=json`）换取用户信息，并签发 HTTP-only 会话 cookie。由于厂商 `redirect_uri` 是不带 www 的裸域名，消息源同时接受 `www.eduku.cn` 与 `eduku.cn`。
+
+课件生成主页（以及 workspace/workbench）保持管理员专属：Eduku 账号中 `usertype` 为 `1`（学校管理员）映射为内部管理员角色，可以进入；配置了 `ACCESS_CODE` 时它仍是管理员区的额外门槛。其余任何 usertype 都映射为观看角色——登录成功后即可观看任意课件。互动数据按账号写入 PostgreSQL —— 答题记录（逐题，含对错与得分）、课堂对话记录（用户与 AI 发言）、观看事件（进入/离开）：
+
+```bash
+EDUKU_APP_ID=ew56ca729808cb4927
+EDUKU_APP_SECRET=你的应用密钥
+
+# 会话与互动记录必需
+DATABASE_URL=postgres://openmaic:password@postgres:5432/openmaic
+```
+
+可选覆盖项（`EDUKU_CONNECT_URL`、`EDUKU_CONNECT_REDIRECT_URI`、`EDUKU_ACCESSTOKEN_URL`、`EDUKU_CONNECT_ORIGIN`、`SESSION_SECRET`、`SESSION_TTL_DAYS`）见 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)。签名是小写 MD5 十六进制；role 不在 `0`/`3`/`4` 之列的账号会被拒绝登录。课件页提供登录人徽章与退出按钮，教师/学生误入管理员区会看到 `/forbidden` 提示页。两个 SSO 凭据与 `ACCESS_CODE` 均未配置时，应用保持完全开放（开发模式）。
+
 ## 默认模型和模型路由
 
 服务端 API 没有收到客户端模型时，需要通过 `DEFAULT_MODEL` 指定默认模型。模型写法是 `provider:model-id`，例如：

@@ -198,6 +198,22 @@ ACCESS_CODE=your-secret-code
 
 Visitors are prompted only once; the password is stored in an HTTP-only cookie. Leave it empty to disable access control.
 
+## SSO login (Eduku) — courseware viewers and interaction recording
+
+When configured, courseware links (`/classroom/<id>` and the APIs the viewer uses) require an SSO session: an unauthenticated visitor is redirected to `/login`, which embeds the Eduku connect page (`https://www.eduku.cn/connect?appid=<appId>&redirect_uri=eduku.cn`) in an iframe (a popup fallback is offered too). The vendor page posts a one-time code via `postMessage` (`{ event: 'classai-login', data: CODE }`); the server exchanges it with `POST https://www.eduku.cn/api/v1/user/accesstoken` (form body `code`, `appid`, `signature=MD5(appId + code + appSecret)`, `dataType=json`) and mints an HTTP-only session cookie. Messages are accepted from both `www.eduku.cn` and the bare `eduku.cn` origin, since the vendor's `redirect_uri` is the bare domain.
+
+The generation homepage (and the workspace/workbench) stays admin-only: Eduku accounts with `usertype` `1` (学校管理员) map to the internal admin role and may enter; `ACCESS_CODE`, when set, remains an additional admin gate. Every other usertype maps to the viewer role — any logged-in user may watch courseware. Interactions are recorded per account in PostgreSQL — quiz submissions (per question, with correctness and score), classroom chat turns (user and assistant), and view events (enter/exit):
+
+```bash
+EDUKU_APP_ID=ew56ca729808cb4927
+EDUKU_APP_SECRET=your-app-secret
+
+# Required for sessions + interaction recording
+DATABASE_URL=postgres://openmaic:password@postgres:5432/openmaic
+```
+
+Optional overrides (`EDUKU_CONNECT_URL`, `EDUKU_CONNECT_REDIRECT_URI`, `EDUKU_ACCESSTOKEN_URL`, `EDUKU_CONNECT_ORIGIN`, `SESSION_SECRET`, `SESSION_TTL_DAYS`) are documented in [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example). The signature is lowercase MD5 hex; roles other than `0`/`3`/`4` are refused at login. A `/forbidden` page and a logout button on the courseware page let teachers and students leave the admin area cleanly. When neither SSO credential nor `ACCESS_CODE` is configured, the app stays fully open (development mode).
+
 ## Default model and model routing
 
 When the server API receives no client model, set the default with `DEFAULT_MODEL`. Use the format `provider:model-id`, for example:

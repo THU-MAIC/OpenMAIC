@@ -41,6 +41,7 @@ import {
   type QuizRuntimeGate,
   type QuizViewLifetime,
 } from '@/lib/quiz/view-state';
+import { recordQuizSubmission } from '@/lib/interactions/recorder';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -834,6 +835,9 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
         return;
       }
       if (cancelled) return;
+      // Per-user interaction record (SSO identity resolved server-side). Fire
+      // and forget — it must never block the review UI.
+      void recordQuizSubmission(stageId, sceneId, questions, answers, ordered, attemptId);
       setResults(ordered);
       setPhase('reviewing');
     })();

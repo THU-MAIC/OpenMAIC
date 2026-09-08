@@ -167,6 +167,38 @@ function validateAgentRuntime(): void {
 }
 
 /**
+ * The Eduku SSO login system switches on when both halves of the app
+ * credential are set. Its two classic partial configurations are dead-ends:
+ * one half alone keeps login disabled (silently, for everyone), and a
+ * configured pair without a database makes every login attempt fail at the
+ * session-insert step. Both deserve a boot warning because neither is
+ * visible from the login page.
+ */
+function validateSso(): void {
+  const appId = process.env.EDUKU_APP_ID?.trim();
+  const appSecret = process.env.EDUKU_APP_SECRET?.trim();
+  const hasId = Boolean(appId);
+  const hasSecret = Boolean(appSecret);
+  if (hasId !== hasSecret) {
+    warn(
+      'EDUKU_APP_ID and EDUKU_APP_SECRET must be set together — SSO login is disabled until both are configured.',
+    );
+    return;
+  }
+  if (!hasId) return;
+  if (!process.env.DATABASE_URL?.trim()) {
+    warn(
+      'Eduku SSO is configured but DATABASE_URL is not — login will exchange the vendor token but cannot persist users/sessions; set DATABASE_URL.',
+    );
+  }
+  if (!process.env.ACCESS_CODE?.trim()) {
+    warn(
+      'Eduku SSO is configured but ACCESS_CODE is not — the generation homepage is guarded only by SSO admin (role 0) accounts; set ACCESS_CODE for an additional admin layer.',
+    );
+  }
+}
+
+/**
  * Validate server model-routing config at boot. Warn-only, cheap, and
  * non-throwing: a broken config never prevents the server from starting.
  */
@@ -176,6 +208,7 @@ export function validateServerConfig(): void {
     validateDefaultModel();
     validateModelsEnvPins();
     validateAgentRuntime();
+    validateSso();
   } catch (err) {
     // Boot-time validation must never take the server down.
     const detail = err instanceof Error ? err.message : String(err);

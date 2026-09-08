@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { isAgentRuntimeConfigured, isProWorkbenchEnabled } from '@/lib/config/feature-flags';
+import { isAdminRole, isSsoConfigured } from '@/lib/config/sso';
+import { isApiPath, isClassroomPath, isPublicPath } from '@/lib/auth/path-gates';
+import { SESSION_COOKIE_NAME, verifySessionToken } from '@/lib/auth/session-token';
 
 /** Convert string to Uint8Array */
 function encode(str: string): Uint8Array {
@@ -43,6 +46,49 @@ async function verifyToken(token: string, accessCode: string): Promise<boolean> 
   return mismatch === 0;
 }
 
+async function hasValidAccessCookie(request: NextRequest): Promise<boolean> {
+  const accessCode = process.env.ACCESS_CODE;
+  if (!accessCode) return false;
+  const cookie = request.cookies.get('openmaic_access');
+  return Boolean(cookie?.value && (await verifyToken(cookie.value, accessCode)));
+}
+
+/**
+ * Role of the SSO session carried by the request, or null. The middleware
+ * runs at the edge with no database, so this trusts the signed cookie payload
+ * (HMAC + expiry); Node routes re-check the live session row.
+ */
+async function readSessionRole(request: NextRequest): Promise<string | null> {
+  if (!isSsoConfigured()) return null;
+  const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+  if (!token) return null;
+  const claims = await verifySessionToken(token);
+  return claims ? claims.role : null;
+}
+
+function loginRedirect(request: NextRequest): NextResponse {
+  const target = request.nextUrl.pathname + request.nextUrl.search;
+  return NextResponse.redirect(
+    new URL(`/login?redirect=${encodeURIComponent(target)}`, request.url),
+  );
+}
+
+const SESSION_UNAUTHENTICATED_BODY = {
+  success: false,
+  errorCode: 'UNAUTHENTICATED',
+  error: 'Login required',
+};
+const SESSION_FORBIDDEN_BODY = {
+  success: false,
+  errorCode: 'FORBIDDEN',
+  error: 'Admin access required',
+};
+const ACCESS_CODE_BODY = {
+  success: false,
+  errorCode: 'INVALID_REQUEST',
+  error: 'Access code required',
+};
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -57,31 +103,70 @@ export async function middleware(request: NextRequest) {
     return new NextResponse('Not found', { status: 404 });
   }
 
-  const accessCode = process.env.ACCESS_CODE;
-  if (!accessCode) {
+  // Whitelist: SSO endpoints, access-code endpoints, health check, and the
+  // login/forbidden pages themselves.
+  if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
-  // Whitelist: access-code endpoints, health check
-  if (pathname.startsWith('/api/access-code/') || pathname === '/api/health') {
+  const ssoConfigured = isSsoConfigured();
+  const accessCodeSet = Boolean(process.env.ACCESS_CODE);
+  const isApi = isApiPath(pathname);
+
+  // ── Courseware viewing zone ──────────────────────────────────────────────
+  // Gated by the SSO session, never by ACCESS_CODE, so teachers/students who
+  // were invited to watch a courseware link are not asked for the admin code.
+  if (isClassroomPath(pathname)) {
+    if (!ssoConfigured) {
+      // SSO disabled: keep the previous open behavior (no login system).
+      return NextResponse.next();
+    }
+    const role = await readSessionRole(request);
+    if (role) return NextResponse.next();
+    // Admins holding the access code may preview courseware without an SSO
+    // account; their interactions are simply not recorded.
+    if (await hasValidAccessCookie(request)) return NextResponse.next();
+
+    if (isApi) {
+      return NextResponse.json(SESSION_UNAUTHENTICATED_BODY, { status: 401 });
+    }
+    return loginRedirect(request);
+  }
+
+  // ── Admin zone (generation homepage, workspace, workbench, APIs) ─────────
+  // ACCESS_CODE, when set, remains the primary gate; an admin SSO session
+  // (role '0') also passes. Logged-in non-admins are sent to /forbidden
+  // instead of the password modal.
+  if (accessCodeSet) {
+    if (await hasValidAccessCookie(request)) return NextResponse.next();
+    if (ssoConfigured) {
+      const role = await readSessionRole(request);
+      if (role) {
+        if (isAdminRole(role)) return NextResponse.next();
+        if (isApi) return NextResponse.json(SESSION_FORBIDDEN_BODY, { status: 403 });
+        return NextResponse.redirect(new URL('/forbidden', request.url));
+      }
+    }
+    if (isApi) {
+      return NextResponse.json(ACCESS_CODE_BODY, { status: 401 });
+    }
+    // Page requests → let through, frontend shows modal
     return NextResponse.next();
   }
 
-  // Check cookie — validate HMAC signature, not just existence
-  const cookie = request.cookies.get('openmaic_access');
-  if (cookie?.value && (await verifyToken(cookie.value, accessCode))) {
-    return NextResponse.next();
+  // No ACCESS_CODE: the admin zone depends entirely on the SSO admin role.
+  if (ssoConfigured) {
+    const role = await readSessionRole(request);
+    if (isAdminRole(role)) return NextResponse.next();
+    if (role) {
+      if (isApi) return NextResponse.json(SESSION_FORBIDDEN_BODY, { status: 403 });
+      return NextResponse.redirect(new URL('/forbidden', request.url));
+    }
+    if (isApi) return NextResponse.json(SESSION_UNAUTHENTICATED_BODY, { status: 401 });
+    return loginRedirect(request);
   }
 
-  // API requests without valid cookie → 401
-  if (pathname.startsWith('/api/')) {
-    return NextResponse.json(
-      { success: false, errorCode: 'INVALID_REQUEST', error: 'Access code required' },
-      { status: 401 },
-    );
-  }
-
-  // Page requests → let through, frontend shows modal
+  // Neither gate configured: open development mode.
   return NextResponse.next();
 }
 

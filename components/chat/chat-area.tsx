@@ -12,10 +12,12 @@ import {
 import type { SessionType } from '@/lib/types/chat';
 import type { DiscussionRequest } from '@/components/roundtable';
 import type { Action } from '@/lib/types/action';
+import type { UIMessage } from 'ai';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store';
 import { buildLectureNotes } from '@/lib/chat/lecture-notes';
+import { recordChatMessage } from '@/lib/interactions/recorder';
 import { PanelRightClose, BookOpen, MessageSquare } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
@@ -83,6 +85,17 @@ export interface ChatAreaRef {
 const DEFAULT_WIDTH = 340;
 const MIN_WIDTH = 240;
 const MAX_WIDTH = 560;
+
+/** Concatenated text content of a chat message (only text parts). */
+function chatMessageText(message: UIMessage): string {
+  return message.parts
+    .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n');
+}
+
+/** An assistant message is "settled" after its content stays unchanged this long. */
+const CHAT_MESSAGE_STABILITY_MS = 2_000;
 
 export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
   (
@@ -169,6 +182,90 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       () => chatSessions.find((s) => s.status === 'soft-closing'),
       [chatSessions],
     );
+
+    // ── Per-user chat recording ─────────────────────────────────────────────
+    // User turns are recorded the moment they appear. Assistant turns stream
+    // part by part, so they are recorded once their text has been stable for
+    // CHAT_MESSAGE_STABILITY_MS, or immediately when the session ends. The
+    // recorder resolves the SSO identity server-side and no-ops when nobody
+    // is logged in.
+    const stageId = useStageStore((s) => s.stage?.id);
+    const recordedMessageIdsRef = useRef<Map<string, Set<string>>>(new Map());
+    const messageStabilityRef = useRef<Map<string, { hash: string; since: number }>>(new Map());
+
+    const flushChatRecordings = useCallback(() => {
+      if (!stageId) return;
+      const now = Date.now();
+      const recorded = recordedMessageIdsRef.current;
+      const stability = messageStabilityRef.current;
+      for (const session of sessions) {
+        let sessionRecorded = recorded.get(session.id);
+        if (!sessionRecorded) {
+          sessionRecorded = new Set<string>();
+          recorded.set(session.id, sessionRecorded);
+        }
+        const terminal =
+          session.status === 'completed' ||
+          session.status === 'interrupted' ||
+          session.status === 'error';
+        for (const message of session.messages) {
+          if (sessionRecorded.has(message.id)) continue;
+          if (message.role === 'user') {
+            sessionRecorded.add(message.id);
+            const content = chatMessageText(message);
+            if (content.trim() !== '') {
+              recordChatMessage(stageId, {
+                role: 'user',
+                content,
+                chatSessionId: session.id,
+                sceneId: session.sceneId,
+              });
+            }
+            continue;
+          }
+          if (message.role !== 'assistant') continue;
+          const key = `${session.id}:${message.id}`;
+          const content = chatMessageText(message);
+          if (terminal) {
+            sessionRecorded.add(message.id);
+            stability.delete(key);
+            if (content.trim() !== '') {
+              recordChatMessage(stageId, {
+                role: 'assistant',
+                content,
+                chatSessionId: session.id,
+                sceneId: session.sceneId,
+              });
+            }
+            continue;
+          }
+          const tracked = stability.get(key);
+          if (!tracked || tracked.hash !== content) {
+            stability.set(key, { hash: content, since: now });
+          } else if (now - tracked.since >= CHAT_MESSAGE_STABILITY_MS) {
+            sessionRecorded.add(message.id);
+            stability.delete(key);
+            if (content.trim() !== '') {
+              recordChatMessage(stageId, {
+                role: 'assistant',
+                content,
+                chatSessionId: session.id,
+                sceneId: session.sceneId,
+              });
+            }
+          }
+        }
+      }
+    }, [sessions, stageId]);
+
+    useEffect(() => {
+      flushChatRecordings();
+      // Streaming pauses mean no re-render fires while an assistant message
+      // sits stable, so a slow interval drives the stability deadline.
+      const interval = setInterval(flushChatRecordings, 1_000);
+      return () => clearInterval(interval);
+    }, [flushChatRecordings]);
+    // ── End per-user chat recording ─────────────────────────────────────────
 
     useEffect(() => {
       onSoftClosingChange?.(
