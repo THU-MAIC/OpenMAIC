@@ -30,6 +30,7 @@ export const EXAM_MAX_KNOWLEDGE_MAPPING_ARTIFACT_BYTES = 4 * 1024 * 1024;
 export const EXAM_MAX_OBSERVATION_ARTIFACT_BYTES = 4 * 1024 * 1024;
 export const EXAM_MAX_KNOWLEDGE_SUGGESTION_ARTIFACT_BYTES = 4 * 1024 * 1024;
 export const EXAM_MAX_ERROR_SUGGESTION_ARTIFACT_BYTES = 4 * 1024 * 1024;
+export const EXAM_MAX_ERROR_REVIEW_ARTIFACT_BYTES = 4 * 1024 * 1024;
 export const EXAM_MAX_EXTRACTED_PAGES = 200;
 export const EXAM_MAX_QUESTION_CANDIDATES = 500;
 export const EXAM_MAX_KNOWLEDGE_SUGGESTIONS_PER_QUESTION = 3;
@@ -157,6 +158,17 @@ export interface PublicExamErrorSuggestionsSummary {
   suggestionCount?: number;
 }
 
+export type PublicExamErrorReviewStatus = 'not_started' | 'confirming' | 'confirmed';
+
+export interface PublicExamErrorReviewSummary {
+  status: PublicExamErrorReviewStatus;
+  reviewedQuestionCount?: number;
+  reviewedCandidateCount?: number;
+  acceptedCandidateCount?: number;
+  rejectedCandidateCount?: number;
+  confirmedObservationCount?: number;
+}
+
 export interface PublicExamDocument {
   examDocumentId: string;
   role: ExamDocumentRole;
@@ -181,6 +193,7 @@ export interface PublicExamSession {
   grading: PublicExamGradingSummary;
   knowledgeSuggestions: PublicExamKnowledgeSuggestionsSummary;
   errorSuggestions: PublicExamErrorSuggestionsSummary;
+  errorReview: PublicExamErrorReviewSummary;
   knowledgeMapping: PublicExamKnowledgeMappingSummary;
   observationProjection: PublicExamObservationProjectionSummary;
 }

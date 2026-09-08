@@ -7,6 +7,7 @@ import {
   EXAM_MAX_CANDIDATE_ARTIFACT_BYTES,
   EXAM_MAX_DOCUMENT_ARTIFACT_BYTES,
   EXAM_MAX_ERROR_SUGGESTION_ARTIFACT_BYTES,
+  EXAM_MAX_ERROR_REVIEW_ARTIFACT_BYTES,
   EXAM_MAX_EXTRACTED_PAGES,
   EXAM_MAX_HUMAN_REVIEW_ARTIFACT_BYTES,
   EXAM_MAX_KNOWLEDGE_MAPPING_ARTIFACT_BYTES,
@@ -365,6 +366,35 @@ export interface ExamErrorSuggestionsCompletedEvent
   modelSuggestionCount: number;
 }
 
+export interface ExamErrorReviewPlanFacts {
+  errorReviewVersion: number;
+  expectedQuestionCount: number;
+  expectedCandidateCount: number;
+  sourceSuggestionGenerationVersion: number;
+  sourceSuggestionGenerationRef: string;
+  sourceSuggestionArtifactRef: string;
+  sourceSuggestionArtifactFingerprint: string;
+  sourceSuggestionSemanticFingerprint: string;
+  decisionSemanticFingerprint: string;
+  errorReviewRef: string;
+  errorReviewArtifactRef: string;
+}
+
+export interface ExamErrorReviewStartedEvent extends ExamEventBase, ExamErrorReviewPlanFacts {
+  eventType: 'exam_error_review_started';
+}
+
+export interface ExamErrorReviewCompletedEvent extends ExamEventBase, ExamErrorReviewPlanFacts {
+  eventType: 'exam_error_review_completed';
+  artifactByteLength: number;
+  artifactSha256: string;
+  reviewedQuestionCount: number;
+  reviewedCandidateCount: number;
+  acceptedCandidateCount: number;
+  rejectedCandidateCount: number;
+  confirmedObservationCount: number;
+}
+
 export interface ExamObservationProjectionPlanFacts {
   observationVersion: number;
   reviewVersion: number;
@@ -434,6 +464,8 @@ export type ExamEvent =
   | ExamKnowledgeSuggestionsCompletedEvent
   | ExamErrorSuggestionsStartedEvent
   | ExamErrorSuggestionsCompletedEvent
+  | ExamErrorReviewStartedEvent
+  | ExamErrorReviewCompletedEvent
   | ExamKnowledgeMappingStartedEvent
   | ExamKnowledgeMappingConfirmedEvent
   | ExamObservationProjectionStartedEvent
@@ -464,6 +496,8 @@ export const EXAM_EVENT_TYPES = [
   'exam_knowledge_suggestions_completed',
   'exam_error_suggestions_started',
   'exam_error_suggestions_completed',
+  'exam_error_review_started',
+  'exam_error_review_completed',
   'exam_knowledge_mapping_started',
   'exam_knowledge_mapping_confirmed',
   'exam_observation_projection_started',
@@ -578,6 +612,20 @@ const ERROR_SUGGESTIONS_PLAN_KEYS = [
   'sourceAssessmentSemanticFingerprint',
   'generationRef',
   'suggestionArtifactRef',
+] as const;
+
+const ERROR_REVIEW_PLAN_KEYS = [
+  'errorReviewVersion',
+  'expectedQuestionCount',
+  'expectedCandidateCount',
+  'sourceSuggestionGenerationVersion',
+  'sourceSuggestionGenerationRef',
+  'sourceSuggestionArtifactRef',
+  'sourceSuggestionArtifactFingerprint',
+  'sourceSuggestionSemanticFingerprint',
+  'decisionSemanticFingerprint',
+  'errorReviewRef',
+  'errorReviewArtifactRef',
 ] as const;
 
 const OBSERVATION_PROJECTION_PLAN_KEYS = [
@@ -767,6 +815,18 @@ const EVENT_KEYS: Readonly<Record<ExamEventType, ReadonlySet<string>>> = {
     'suggestionCount',
     'deterministicSuggestionCount',
     'modelSuggestionCount',
+  ]),
+  exam_error_review_started: new Set([...COMMON_KEYS, ...ERROR_REVIEW_PLAN_KEYS]),
+  exam_error_review_completed: new Set([
+    ...COMMON_KEYS,
+    ...ERROR_REVIEW_PLAN_KEYS,
+    'artifactByteLength',
+    'artifactSha256',
+    'reviewedQuestionCount',
+    'reviewedCandidateCount',
+    'acceptedCandidateCount',
+    'rejectedCandidateCount',
+    'confirmedObservationCount',
   ]),
   exam_knowledge_mapping_started: new Set([...COMMON_KEYS, ...KNOWLEDGE_MAPPING_PLAN_KEYS]),
   exam_knowledge_mapping_confirmed: new Set([
@@ -1173,6 +1233,66 @@ function validateErrorSuggestionsPlan(
   ];
   if (new Set(refs).size !== refs.length) {
     pushIssue(errors, '/suggestionArtifactRef', 'error-suggestion references must be distinct');
+  }
+}
+
+function validateErrorReviewPlan(
+  value: Record<string, unknown>,
+  errors: DomainValidationIssue[],
+): void {
+  if (value.errorReviewVersion !== 1) {
+    pushIssue(errors, '/errorReviewVersion', 'unsupported error-review version');
+  }
+  validateBoundedCount(
+    value.expectedQuestionCount,
+    '/expectedQuestionCount',
+    EXAM_MAX_QUESTION_CANDIDATES,
+    true,
+    errors,
+  );
+  validateBoundedCount(
+    value.expectedCandidateCount,
+    '/expectedCandidateCount',
+    EXAM_MAX_QUESTION_CANDIDATES * EXAM_MAX_KNOWLEDGE_SUGGESTIONS_PER_QUESTION,
+    true,
+    errors,
+  );
+  if (
+    Number.isSafeInteger(value.expectedQuestionCount) &&
+    Number.isSafeInteger(value.expectedCandidateCount) &&
+    (value.expectedCandidateCount as number) >
+      (value.expectedQuestionCount as number) * EXAM_MAX_KNOWLEDGE_SUGGESTIONS_PER_QUESTION
+  ) {
+    pushIssue(errors, '/expectedCandidateCount', 'error-review candidate count exceeds coverage');
+  }
+  validatePositiveVersion(
+    value.sourceSuggestionGenerationVersion,
+    '/sourceSuggestionGenerationVersion',
+    errors,
+  );
+  validateIdentifier(value.sourceSuggestionGenerationRef, '/sourceSuggestionGenerationRef', errors);
+  validateIdentifier(value.sourceSuggestionArtifactRef, '/sourceSuggestionArtifactRef', errors);
+  validateSha256(
+    value.sourceSuggestionArtifactFingerprint,
+    '/sourceSuggestionArtifactFingerprint',
+    errors,
+  );
+  validateSha256(
+    value.sourceSuggestionSemanticFingerprint,
+    '/sourceSuggestionSemanticFingerprint',
+    errors,
+  );
+  validateSha256(value.decisionSemanticFingerprint, '/decisionSemanticFingerprint', errors);
+  validateIdentifier(value.errorReviewRef, '/errorReviewRef', errors);
+  validateIdentifier(value.errorReviewArtifactRef, '/errorReviewArtifactRef', errors);
+  const refs = [
+    value.sourceSuggestionGenerationRef,
+    value.sourceSuggestionArtifactRef,
+    value.errorReviewRef,
+    value.errorReviewArtifactRef,
+  ];
+  if (new Set(refs).size !== refs.length) {
+    pushIssue(errors, '/errorReviewArtifactRef', 'error-review references must be distinct');
   }
 }
 
@@ -1650,6 +1770,79 @@ export function validateExamEvent(value: unknown): DomainValidationResult {
           errors,
           '/suggestionCount',
           'candidate questions must contain a bounded number of error suggestions',
+        );
+      }
+      break;
+    }
+    case 'exam_error_review_started':
+      validateErrorReviewPlan(value, errors);
+      break;
+    case 'exam_error_review_completed': {
+      validateErrorReviewPlan(value, errors);
+      validateArtifactByteLength(
+        value.artifactByteLength,
+        '/artifactByteLength',
+        EXAM_MAX_ERROR_REVIEW_ARTIFACT_BYTES,
+        errors,
+      );
+      validateSha256(value.artifactSha256, '/artifactSha256', errors);
+      if (value.reviewedQuestionCount !== value.expectedQuestionCount) {
+        pushIssue(
+          errors,
+          '/reviewedQuestionCount',
+          'error-review must cover every planned question',
+        );
+      }
+      if (value.reviewedCandidateCount !== value.expectedCandidateCount) {
+        pushIssue(
+          errors,
+          '/reviewedCandidateCount',
+          'error-review must cover every planned candidate',
+        );
+      }
+      validateBoundedCount(
+        value.reviewedQuestionCount,
+        '/reviewedQuestionCount',
+        EXAM_MAX_QUESTION_CANDIDATES,
+        true,
+        errors,
+      );
+      for (const field of [
+        'reviewedCandidateCount',
+        'acceptedCandidateCount',
+        'rejectedCandidateCount',
+        'confirmedObservationCount',
+      ] as const) {
+        validateBoundedCount(
+          value[field],
+          `/${field}`,
+          EXAM_MAX_QUESTION_CANDIDATES * EXAM_MAX_KNOWLEDGE_SUGGESTIONS_PER_QUESTION,
+          true,
+          errors,
+        );
+      }
+      if (
+        Number.isSafeInteger(value.reviewedCandidateCount) &&
+        Number.isSafeInteger(value.acceptedCandidateCount) &&
+        Number.isSafeInteger(value.rejectedCandidateCount) &&
+        value.reviewedCandidateCount !==
+          (value.acceptedCandidateCount as number) + (value.rejectedCandidateCount as number)
+      ) {
+        pushIssue(
+          errors,
+          '/reviewedCandidateCount',
+          'error-review decisions must cover every candidate',
+        );
+      }
+      if (
+        Number.isSafeInteger(value.acceptedCandidateCount) &&
+        Number.isSafeInteger(value.confirmedObservationCount) &&
+        value.acceptedCandidateCount !== value.confirmedObservationCount
+      ) {
+        pushIssue(
+          errors,
+          '/confirmedObservationCount',
+          'each accepted candidate must produce one confirmed observation',
         );
       }
       break;

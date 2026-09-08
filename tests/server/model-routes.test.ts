@@ -43,6 +43,14 @@ describe('model-routes', () => {
     expect(getStageModel('maic-agent')).toBe('anthropic:claude-opus-4');
   });
 
+  it('routes teacher student analysis independently', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'teacher-student-analysis': 'openai:fixture-model',
+    });
+    const { getStageModel } = await import('@/lib/server/model-routes');
+    expect(getStageModel('teacher-student-analysis')).toBe('openai:fixture-model');
+  });
+
   it('returns undefined for a routable stage that is not listed', async () => {
     process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': 'openai:gpt-5.4' });
     const { getStageModel } = await import('@/lib/server/model-routes');

@@ -203,6 +203,18 @@ export function examErrorSuggestionsObjectKey(
   )}diagnosis/error_suggestions_v${generationVersion}/exam_error_diagnosis_candidates_v1.json`;
 }
 
+export function examErrorReviewObjectKey(
+  examSessionId: string,
+  generationVersion: number,
+  errorReviewVersion: number,
+): string {
+  assertArtifactVersion(generationVersion);
+  assertArtifactVersion(errorReviewVersion);
+  return `${examSnapshotObjectPrefix(
+    examSessionId,
+  )}diagnosis/error_suggestions_v${generationVersion}/error_review_v${errorReviewVersion}/confirmed_exam_error_pattern_review_v1.json`;
+}
+
 export function examObservationsObjectKey(
   examSessionId: string,
   mappingVersion: number,

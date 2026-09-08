@@ -2,6 +2,8 @@ import { isChatMessageSkeleton, isQuizAttemptSkeleton } from '@openmaic/dsl';
 import type { RuntimePayloadValidator } from '@openmaic/storage';
 
 import { whiteboardRuntimePayloadValidator } from '@/lib/whiteboard/runtime/validate';
+import { TEACHER_ANALYSIS_KIND, validateTeacherAnalysis } from '@/lib/teacher/analysis';
+import { TEACHER_STUDENT_ROSTER_KIND, validateTeacherRosterEvent } from '@/lib/teacher/students';
 import { validateCoachEvent } from '@/lib/zhongkao/coach-event';
 import { validateExamEvent } from '@/lib/zhongkao/exam-event';
 import { validateStudentProfile } from '@/lib/zhongkao/profile';
@@ -48,6 +50,8 @@ export const APP_RUNTIME_PAYLOAD_VALIDATORS = Object.freeze({
   chat,
   quizAttempt,
   whiteboard: whiteboardRuntimePayloadValidator,
+  [TEACHER_STUDENT_ROSTER_KIND]: validateTeacherRosterEvent,
+  [TEACHER_ANALYSIS_KIND]: validateTeacherAnalysis,
   [ZHONGKAO_RUNTIME_KINDS.studentProfile]: zhongkaoStudentProfile,
   [ZHONGKAO_RUNTIME_KINDS.studyAttempt]: zhongkaoStudyAttempt,
   [ZHONGKAO_RUNTIME_KINDS.coachEvent]: zhongkaoCoachEvent,

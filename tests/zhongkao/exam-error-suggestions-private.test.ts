@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { detectExamObservableErrorSuggestions } from '@/lib/server/zhongkao/exam-error-observable-detector';
+import { deriveExamGradingRef } from '@/lib/server/zhongkao/exam-runtime';
 import {
   EXAM_ANSWER_KEY_AUTHORITY_SOURCE,
   EXAM_ANSWER_KEY_SCHEMA_VERSION,
@@ -449,13 +450,25 @@ describe('private Exam error suggestion artifact', () => {
         semanticFingerprint: input.answerKey.semanticFingerprint,
       },
       sourceAssessment: {
-        gradingRef: input.assessments.assessmentRef,
+        gradingRef: deriveExamGradingRef({
+          examSessionId: input.examSessionId,
+          gradingVersion: input.assessments.assessmentVersion,
+          gradingAlgorithmVersion: input.assessments.gradingAlgorithmVersion,
+          reviewVersion: input.confirmedReview.reviewVersion,
+          reviewArtifactRef: input.confirmedReview.reviewArtifactRef,
+          sourceReviewArtifactFingerprint: input.confirmedReviewArtifactSha256,
+          answerKeyVersion: input.answerKey.answerKeyVersion,
+          answerKeyRef: input.answerKey.answerKeyRef,
+          answerKeyArtifactRef: input.answerKeyArtifactRef,
+          sourceAnswerKeyArtifactFingerprint: input.answerKeyArtifactSha256,
+        }),
         assessmentArtifactRef: ASSESSMENT_ARTIFACT_REF,
         assessmentArtifactSha256: input.assessmentArtifactSha256,
         semanticFingerprint: input.assessments.semanticFingerprint,
       },
       generator: generatorDescriptor(),
     });
+    expect(first.sourceAssessment.gradingRef).not.toBe(input.assessments.assessmentRef);
     expect(first.questions.map((question) => question.confirmedQuestionId)).toEqual(
       [...first.questions.map((question) => question.confirmedQuestionId)].sort(),
     );

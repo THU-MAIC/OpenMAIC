@@ -16,6 +16,7 @@ import {
   type DocumentAccess,
 } from '@/lib/persistence/document-access';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
+import { isServerOnlyRuntimeSession } from '@/lib/persistence/runtime-access';
 import { authenticatePersistenceRequest } from '@/lib/persistence/server-auth';
 import {
   getServerPersistenceProvider,
@@ -24,7 +25,6 @@ import {
 import { readStageMeta } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
-import { isServerOnlyRuntimeKind } from '@/lib/zhongkao/runtime-kinds';
 
 export const runtime = 'nodejs';
 
@@ -43,7 +43,7 @@ export function createClientVisibleRuntimeStore(store: RuntimeStore): RuntimeSto
     get(target, property, receiver) {
       if (property === 'createSession') {
         return async (init: Parameters<RuntimeStore['createSession']>[0]) => {
-          if (isServerOnlyRuntimeKind(init.kind)) {
+          if (isServerOnlyRuntimeSession(init)) {
             throw new Error('@openmaic/storage: runtime session not found');
           }
           return target.createSession(init);
@@ -52,13 +52,13 @@ export function createClientVisibleRuntimeStore(store: RuntimeStore): RuntimeSto
       if (property === 'getSession') {
         return async (sessionId: string) => {
           const session = await target.getSession(sessionId);
-          return session && !isServerOnlyRuntimeKind(session.kind) ? session : undefined;
+          return session && !isServerOnlyRuntimeSession(session) ? session : undefined;
         };
       }
       if (property === 'listSessions') {
         return async (stageId: string, learnerKey: string) =>
           (await target.listSessions(stageId, learnerKey)).filter(
-            (session) => !isServerOnlyRuntimeKind(session.kind),
+            (session) => !isServerOnlyRuntimeSession(session),
           );
       }
       if (property === 'appendRecord') {
@@ -67,7 +67,7 @@ export function createClientVisibleRuntimeStore(store: RuntimeStore): RuntimeSto
           options?: Parameters<RuntimeStore['appendRecord']>[1],
         ) => {
           const session = await target.getSession(init.sessionId);
-          if (!session || isServerOnlyRuntimeKind(session.kind)) {
+          if (!session || isServerOnlyRuntimeSession(session)) {
             throw new Error('@openmaic/storage: runtime session not found');
           }
           return target.appendRecord(init, options);
@@ -76,7 +76,7 @@ export function createClientVisibleRuntimeStore(store: RuntimeStore): RuntimeSto
       if (property === 'setSessionStatus') {
         return async (...args: Parameters<RuntimeStore['setSessionStatus']>): Promise<void> => {
           const session = await target.getSession(args[0]);
-          if (!session || isServerOnlyRuntimeKind(session.kind)) {
+          if (!session || isServerOnlyRuntimeSession(session)) {
             throw new Error('@openmaic/storage: runtime session not found');
           }
           return target.setSessionStatus(...args);
@@ -85,14 +85,14 @@ export function createClientVisibleRuntimeStore(store: RuntimeStore): RuntimeSto
       if (property === 'deleteSession') {
         return async (sessionId: string): Promise<void> => {
           const session = await target.getSession(sessionId);
-          if (!session || isServerOnlyRuntimeKind(session.kind)) return;
+          if (!session || isServerOnlyRuntimeSession(session)) return;
           return target.deleteSession(sessionId);
         };
       }
       if (property === 'listRecords') {
         return async (...args: Parameters<RuntimeStore['listRecords']>) => {
           const session = await target.getSession(args[0]);
-          if (!session || isServerOnlyRuntimeKind(session.kind)) return [];
+          if (!session || isServerOnlyRuntimeSession(session)) return [];
           return target.listRecords(...args);
         };
       }
@@ -101,7 +101,7 @@ export function createClientVisibleRuntimeStore(store: RuntimeStore): RuntimeSto
           const sessions = await target.listSessions(stageId, learnerKey);
           await Promise.all(
             sessions
-              .filter((session) => !isServerOnlyRuntimeKind(session.kind))
+              .filter((session) => !isServerOnlyRuntimeSession(session))
               .map((session) => target.deleteSession(session.id)),
           );
         };
@@ -117,8 +117,8 @@ async function requestsServerOnlyRuntimeCreation(request: Request): Promise<bool
     return false;
   }
   try {
-    const body = (await request.clone().json()) as { kind?: unknown };
-    return isServerOnlyRuntimeKind(body?.kind);
+    const body: unknown = await request.clone().json();
+    return isServerOnlyRuntimeSession(body);
   } catch {
     return false;
   }

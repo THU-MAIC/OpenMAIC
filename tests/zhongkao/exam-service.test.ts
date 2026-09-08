@@ -671,6 +671,33 @@ function expectedOperationFingerprint(event: ExamEvent): string {
         deterministicSuggestionCount: event.deterministicSuggestionCount,
         modelSuggestionCount: event.modelSuggestionCount,
       });
+    case 'exam_error_review_started':
+    case 'exam_error_review_completed':
+      return createExamOperationFingerprint({
+        ...common,
+        errorReviewVersion: event.errorReviewVersion,
+        expectedQuestionCount: event.expectedQuestionCount,
+        expectedCandidateCount: event.expectedCandidateCount,
+        sourceSuggestionGenerationVersion: event.sourceSuggestionGenerationVersion,
+        sourceSuggestionGenerationRef: event.sourceSuggestionGenerationRef,
+        sourceSuggestionArtifactRef: event.sourceSuggestionArtifactRef,
+        sourceSuggestionArtifactFingerprint: event.sourceSuggestionArtifactFingerprint,
+        sourceSuggestionSemanticFingerprint: event.sourceSuggestionSemanticFingerprint,
+        decisionSemanticFingerprint: event.decisionSemanticFingerprint,
+        errorReviewRef: event.errorReviewRef,
+        errorReviewArtifactRef: event.errorReviewArtifactRef,
+        ...(event.eventType === 'exam_error_review_completed'
+          ? {
+              artifactByteLength: event.artifactByteLength,
+              artifactSha256: event.artifactSha256,
+              reviewedQuestionCount: event.reviewedQuestionCount,
+              reviewedCandidateCount: event.reviewedCandidateCount,
+              acceptedCandidateCount: event.acceptedCandidateCount,
+              rejectedCandidateCount: event.rejectedCandidateCount,
+              confirmedObservationCount: event.confirmedObservationCount,
+            }
+          : {}),
+      });
     case 'exam_knowledge_mapping_started':
       return createExamOperationFingerprint({
         ...common,

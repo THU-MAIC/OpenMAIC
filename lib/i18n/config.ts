@@ -4,6 +4,7 @@ import resourcesToBackend from 'i18next-resources-to-backend';
 import { supportedLocales } from './locales';
 import { defaultLocale } from './types';
 import { workbenchResourceFor } from './workbench';
+import { teacherResourceFor } from './teacher';
 
 type TranslationResource = Record<string, unknown>;
 
@@ -31,7 +32,10 @@ i18n
   .use(
     resourcesToBackend(async (language: string) => {
       const localeModule = await import(`./locales/${language}.json`);
-      return deepMerge(localeModule.default, { workbench: workbenchResourceFor(language) });
+      return deepMerge(localeModule.default, {
+        workbench: workbenchResourceFor(language),
+        teacher: teacherResourceFor(language),
+      });
     }),
   )
   .init({

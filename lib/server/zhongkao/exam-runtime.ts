@@ -14,6 +14,7 @@ import {
   assertExamEvent,
   type ExamAnswerKeyPlanFacts,
   type ExamCreatedEvent,
+  type ExamErrorReviewPlanFacts,
   type ExamErrorSuggestionsPlanFacts,
   type ExamEvent,
   type ExamGradingPlanFacts,
@@ -232,6 +233,28 @@ export function deriveExamErrorSuggestionsArtifactRef(generationRef: string): st
   return `exam-error-suggestions-artifact:v${EXAM_ID_VERSION}:${digest(
     'openmaic:zhongkao-exam-error-suggestions-artifact:v1',
     { generationRef },
+  )}`;
+}
+
+export type ExamErrorReviewRefInput = {
+  examSessionId: string;
+  profileId: string;
+} & Omit<
+  ExamErrorReviewPlanFacts,
+  'decisionSemanticFingerprint' | 'errorReviewRef' | 'errorReviewArtifactRef'
+>;
+
+export function deriveExamErrorReviewRef(input: ExamErrorReviewRefInput): string {
+  return `exam-error-review:v${input.errorReviewVersion}:${digest(
+    'openmaic:zhongkao-exam-error-review:v1',
+    input,
+  )}`;
+}
+
+export function deriveExamErrorReviewArtifactRef(errorReviewRef: string): string {
+  return `exam-error-review-artifact:v${EXAM_ID_VERSION}:${digest(
+    'openmaic:zhongkao-exam-error-review-artifact:v1',
+    { errorReviewRef },
   )}`;
 }
 
@@ -494,6 +517,20 @@ export function deriveExamErrorSuggestionsCompletedOperationId(
   generationVersion: number,
 ): string {
   return operationId('error-suggestions-completed', { examSessionId, generationVersion });
+}
+
+export function deriveExamErrorReviewStartedOperationId(
+  examSessionId: string,
+  errorReviewVersion: number,
+): string {
+  return operationId('error-review-started', { examSessionId, errorReviewVersion });
+}
+
+export function deriveExamErrorReviewCompletedOperationId(
+  examSessionId: string,
+  errorReviewVersion: number,
+): string {
+  return operationId('error-review-completed', { examSessionId, errorReviewVersion });
 }
 
 export function deriveExamKnowledgeMappingStartedOperationId(
@@ -829,6 +866,48 @@ function assertDerivedErrorSuggestionsPlan(event: ExamErrorSuggestionsPlanEvent)
   if (
     event.generationRef !== generationRef ||
     event.suggestionArtifactRef !== deriveExamErrorSuggestionsArtifactRef(generationRef)
+  ) {
+    throw new ExamError('EXAM_EVENT_CONFLICT');
+  }
+}
+
+type ExamErrorReviewPlanEvent = Extract<
+  ExamEvent,
+  { eventType: 'exam_error_review_started' | 'exam_error_review_completed' }
+>;
+
+function errorReviewPlanFacts(event: ExamErrorReviewPlanEvent): ExamErrorReviewPlanFacts {
+  return {
+    errorReviewVersion: event.errorReviewVersion,
+    expectedQuestionCount: event.expectedQuestionCount,
+    expectedCandidateCount: event.expectedCandidateCount,
+    sourceSuggestionGenerationVersion: event.sourceSuggestionGenerationVersion,
+    sourceSuggestionGenerationRef: event.sourceSuggestionGenerationRef,
+    sourceSuggestionArtifactRef: event.sourceSuggestionArtifactRef,
+    sourceSuggestionArtifactFingerprint: event.sourceSuggestionArtifactFingerprint,
+    sourceSuggestionSemanticFingerprint: event.sourceSuggestionSemanticFingerprint,
+    decisionSemanticFingerprint: event.decisionSemanticFingerprint,
+    errorReviewRef: event.errorReviewRef,
+    errorReviewArtifactRef: event.errorReviewArtifactRef,
+  };
+}
+
+function assertDerivedErrorReviewPlan(event: ExamErrorReviewPlanEvent): void {
+  const errorReviewRef = deriveExamErrorReviewRef({
+    examSessionId: event.examSessionId,
+    profileId: event.profileId,
+    errorReviewVersion: event.errorReviewVersion,
+    expectedQuestionCount: event.expectedQuestionCount,
+    expectedCandidateCount: event.expectedCandidateCount,
+    sourceSuggestionGenerationVersion: event.sourceSuggestionGenerationVersion,
+    sourceSuggestionGenerationRef: event.sourceSuggestionGenerationRef,
+    sourceSuggestionArtifactRef: event.sourceSuggestionArtifactRef,
+    sourceSuggestionArtifactFingerprint: event.sourceSuggestionArtifactFingerprint,
+    sourceSuggestionSemanticFingerprint: event.sourceSuggestionSemanticFingerprint,
+  });
+  if (
+    event.errorReviewRef !== errorReviewRef ||
+    event.errorReviewArtifactRef !== deriveExamErrorReviewArtifactRef(errorReviewRef)
   ) {
     throw new ExamError('EXAM_EVENT_CONFLICT');
   }
@@ -1372,6 +1451,41 @@ function assertDerivedExamEvent(event: ExamEvent): void {
         suggestionCount: event.suggestionCount,
         deterministicSuggestionCount: event.deterministicSuggestionCount,
         modelSuggestionCount: event.modelSuggestionCount,
+      });
+      break;
+    case 'exam_error_review_started':
+      assertDerivedErrorReviewPlan(event);
+      expectedOperationId = deriveExamErrorReviewStartedOperationId(
+        event.examSessionId,
+        event.errorReviewVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_error_review_started',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...errorReviewPlanFacts(event),
+      });
+      break;
+    case 'exam_error_review_completed':
+      assertDerivedErrorReviewPlan(event);
+      expectedOperationId = deriveExamErrorReviewCompletedOperationId(
+        event.examSessionId,
+        event.errorReviewVersion,
+      );
+      expectedOperationFingerprint = createExamOperationFingerprint({
+        action: 'exam_error_review_completed',
+        schemaVersion: event.schemaVersion,
+        examSessionId: event.examSessionId,
+        profileId: event.profileId,
+        ...errorReviewPlanFacts(event),
+        artifactByteLength: event.artifactByteLength,
+        artifactSha256: event.artifactSha256,
+        reviewedQuestionCount: event.reviewedQuestionCount,
+        reviewedCandidateCount: event.reviewedCandidateCount,
+        acceptedCandidateCount: event.acceptedCandidateCount,
+        rejectedCandidateCount: event.rejectedCandidateCount,
+        confirmedObservationCount: event.confirmedObservationCount,
       });
       break;
     case 'exam_knowledge_mapping_started':

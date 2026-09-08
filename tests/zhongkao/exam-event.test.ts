@@ -7,6 +7,7 @@ import {
   EXAM_MAX_DOCUMENT_BYTES,
   EXAM_MAX_DOCUMENT_ARTIFACT_BYTES,
   EXAM_MAX_ERROR_SUGGESTION_ARTIFACT_BYTES,
+  EXAM_MAX_ERROR_REVIEW_ARTIFACT_BYTES,
   EXAM_MAX_EXTRACTED_PAGES,
   EXAM_MAX_HUMAN_REVIEW_ARTIFACT_BYTES,
   EXAM_MAX_KNOWLEDGE_SUGGESTION_ARTIFACT_BYTES,
@@ -131,6 +132,19 @@ const KNOWLEDGE_MAPPING_PLAN = {
   mappingSemanticFingerprint: 'c'.repeat(64),
   mappingRef: 'exam-knowledge-mapping-v1',
   mappingArtifactRef: 'exam-knowledge-mapping-artifact-v1',
+} as const;
+const ERROR_REVIEW_PLAN = {
+  errorReviewVersion: 1,
+  expectedQuestionCount: 3,
+  expectedCandidateCount: 3,
+  sourceSuggestionGenerationVersion: 1,
+  sourceSuggestionGenerationRef: ERROR_SUGGESTIONS_PLAN.generationRef,
+  sourceSuggestionArtifactRef: ERROR_SUGGESTIONS_PLAN.suggestionArtifactRef,
+  sourceSuggestionArtifactFingerprint: 'c'.repeat(64),
+  sourceSuggestionSemanticFingerprint: 'd'.repeat(64),
+  decisionSemanticFingerprint: 'e'.repeat(64),
+  errorReviewRef: 'exam-error-review-v1',
+  errorReviewArtifactRef: 'exam-error-review-artifact-v1',
 } as const;
 const OBSERVATION_PROJECTION_PLAN = {
   observationVersion: 1,
@@ -379,6 +393,21 @@ function event(eventType: ExamEvent['eventType']): ExamEvent {
       };
     case 'exam_knowledge_mapping_started':
       return { ...base, eventType, ...KNOWLEDGE_MAPPING_PLAN };
+    case 'exam_error_review_started':
+      return { ...base, eventType, ...ERROR_REVIEW_PLAN };
+    case 'exam_error_review_completed':
+      return {
+        ...base,
+        eventType,
+        ...ERROR_REVIEW_PLAN,
+        artifactByteLength: 384,
+        artifactSha256: 'f'.repeat(64),
+        reviewedQuestionCount: 3,
+        reviewedCandidateCount: 3,
+        acceptedCandidateCount: 2,
+        rejectedCandidateCount: 1,
+        confirmedObservationCount: 2,
+      };
     case 'exam_knowledge_mapping_confirmed':
       return {
         ...base,
@@ -418,6 +447,73 @@ function event(eventType: ExamEvent['eventType']): ExamEvent {
 }
 
 describe('Exam event schema', () => {
+  it('requires v1 error review with bounded full-set expected counts', () => {
+    for (const change of [
+      { errorReviewVersion: 2 },
+      { expectedQuestionCount: undefined },
+      { expectedCandidateCount: undefined },
+      { expectedQuestionCount: EXAM_MAX_QUESTION_CANDIDATES + 1 },
+      { expectedCandidateCount: 1501 },
+      { expectedQuestionCount: 0, expectedCandidateCount: 1 },
+      { sourceSuggestionArtifactFingerprint: 'bad' },
+      { sourceSuggestionSemanticFingerprint: 'bad' },
+      { errorReviewRef: ERROR_SUGGESTIONS_PLAN.generationRef },
+    ]) {
+      expect(validateExamEvent({ ...event('exam_error_review_started'), ...change }).valid).toBe(
+        false,
+      );
+    }
+  });
+
+  it('requires completed error review to exactly cover the planned partition', () => {
+    for (const change of [
+      { artifactByteLength: EXAM_MAX_ERROR_REVIEW_ARTIFACT_BYTES + 1 },
+      { artifactSha256: 'bad' },
+      { reviewedQuestionCount: 2 },
+      { reviewedCandidateCount: 2 },
+      { acceptedCandidateCount: 1, confirmedObservationCount: 1 },
+      { rejectedCandidateCount: 0 },
+      { confirmedObservationCount: 3 },
+    ]) {
+      expect(validateExamEvent({ ...event('exam_error_review_completed'), ...change }).valid).toBe(
+        false,
+      );
+    }
+    expect(
+      validateExamEvent({
+        ...event('exam_error_review_completed'),
+        expectedQuestionCount: 1,
+        expectedCandidateCount: 0,
+        reviewedQuestionCount: 1,
+        reviewedCandidateCount: 0,
+        acceptedCandidateCount: 0,
+        rejectedCandidateCount: 0,
+        confirmedObservationCount: 0,
+      }).valid,
+    ).toBe(true);
+  });
+
+  it('keeps review decisions, pattern evidence and grading values out of error-review events', () => {
+    for (const eventType of ['exam_error_review_started', 'exam_error_review_completed'] as const) {
+      for (const field of [
+        'questions',
+        'candidateDecisions',
+        'patternKind',
+        'evidence',
+        'studentResponse',
+        'expectedAnswer',
+        'gradingSpec',
+        'observationId',
+        'authoritySource',
+        'objectKey',
+      ]) {
+        expect(validateExamEvent({ ...event(eventType), [field]: 'private-canary' }).valid).toBe(
+          false,
+        );
+      }
+    }
+  });
+
   it.each(EXAM_EVENT_TYPES)('accepts the closed %s event', (eventType) => {
     expect(validateExamEvent(event(eventType))).toEqual({ valid: true });
     expect(() => assertExamEvent(event(eventType))).not.toThrow();

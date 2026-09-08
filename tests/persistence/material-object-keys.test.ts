@@ -4,6 +4,7 @@ import {
   assertPortableMaterialObjectKey,
   examAuthoritativeAnswerKeyObjectKey,
   examDocumentArtifactObjectKey,
+  examErrorReviewObjectKey,
   examErrorSuggestionsObjectKey,
   examHumanReviewObjectKey,
   examKnowledgeMappingObjectKey,
@@ -200,6 +201,26 @@ describe('material object key contract', () => {
     expect(() => assertPortableMaterialObjectKey(first)).not.toThrow();
   });
 
+  it('derives a deterministic private error-review artifact from the exact suggestion generation', () => {
+    const first = examErrorReviewObjectKey('exam-alpha', 1, 2);
+    const replay = examErrorReviewObjectKey('exam-alpha', 1, 2);
+    const nextGeneration = examErrorReviewObjectKey('exam-alpha', 2, 2);
+    const nextReview = examErrorReviewObjectKey('exam-alpha', 1, 3);
+    const otherExam = examErrorReviewObjectKey('exam-beta', 1, 2);
+
+    expect(first).toBe(replay);
+    expect(first).toMatch(
+      /^materials\/v1\/exams\/exm_[a-f0-9]{64}\/diagnosis\/error_suggestions_v1\/error_review_v2\/confirmed_exam_error_pattern_review_v1\.json$/,
+    );
+    expect(first).not.toBe(nextGeneration);
+    expect(first).not.toBe(nextReview);
+    expect(first).not.toBe(otherExam);
+    expect(first).not.toContain('exam-alpha');
+    expect(isExamSnapshotObjectKey('exam-alpha', first)).toBe(true);
+    expect(isExamSnapshotObjectKey('exam-beta', first)).toBe(false);
+    expect(() => assertPortableMaterialObjectKey(first)).not.toThrow();
+  });
+
   it('rejects invalid Exam derivative versions', () => {
     expect(() => examDocumentArtifactObjectKey('exam', 'document', 0)).toThrow(
       'invalid exam artifact version',
@@ -230,6 +251,10 @@ describe('material object key contract', () => {
       'invalid exam artifact version',
     );
     expect(() => examErrorSuggestionsObjectKey('exam', 0)).toThrow('invalid exam artifact version');
+    expect(() => examErrorReviewObjectKey('exam', 0, 1)).toThrow('invalid exam artifact version');
+    expect(() => examErrorReviewObjectKey('exam', 1, Number.NaN)).toThrow(
+      'invalid exam artifact version',
+    );
     expect(() => examObservationsObjectKey('exam', 1, Number.NaN)).toThrow(
       'invalid exam artifact version',
     );
@@ -242,6 +267,7 @@ describe('material object key contract', () => {
         examSnapshotObjectKey(identity, identity),
         examKnowledgeSuggestionsObjectKey(identity, 1),
         examErrorSuggestionsObjectKey(identity, 1),
+        examErrorReviewObjectKey(identity, 1, 1),
         examKnowledgeMappingObjectKey(identity, 1),
         examObservationsObjectKey(identity, 1, 1),
       ];

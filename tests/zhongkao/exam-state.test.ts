@@ -9,6 +9,8 @@ import type {
   ExamCreatedEvent,
   ExamDocumentArtifactExtractedEvent,
   ExamDocumentSnapshottedEvent,
+  ExamErrorReviewCompletedEvent,
+  ExamErrorReviewStartedEvent,
   ExamErrorSuggestionsCompletedEvent,
   ExamErrorSuggestionsStartedEvent,
   ExamEvent,
@@ -136,6 +138,19 @@ const KNOWLEDGE_MAPPING_PLAN = {
   mappingSemanticFingerprint: 'c'.repeat(64),
   mappingRef: 'exam-knowledge-mapping-v1',
   mappingArtifactRef: 'exam-knowledge-mapping-artifact-v1',
+} as const;
+const ERROR_REVIEW_PLAN = {
+  errorReviewVersion: 1,
+  expectedQuestionCount: 1,
+  expectedCandidateCount: 2,
+  sourceSuggestionGenerationVersion: 1,
+  sourceSuggestionGenerationRef: ERROR_SUGGESTIONS_PLAN.generationRef,
+  sourceSuggestionArtifactRef: ERROR_SUGGESTIONS_PLAN.suggestionArtifactRef,
+  sourceSuggestionArtifactFingerprint: 'c'.repeat(64),
+  sourceSuggestionSemanticFingerprint: 'd'.repeat(64),
+  decisionSemanticFingerprint: 'e'.repeat(64),
+  errorReviewRef: 'exam-error-review-v1',
+  errorReviewArtifactRef: 'exam-error-review-artifact-v1',
 } as const;
 const OBSERVATION_PROJECTION_PLAN = {
   observationVersion: 1,
@@ -515,6 +530,37 @@ function errorSuggestionsCompleted(
   };
 }
 
+function errorReviewStarted(
+  seq: number,
+  overrides: Partial<ExamErrorReviewStartedEvent> = {},
+): ExamErrorReviewStartedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_error_review_started',
+    ...ERROR_REVIEW_PLAN,
+    ...overrides,
+  };
+}
+
+function errorReviewCompleted(
+  seq: number,
+  overrides: Partial<ExamErrorReviewCompletedEvent> = {},
+): ExamErrorReviewCompletedEvent {
+  return {
+    ...base(seq),
+    eventType: 'exam_error_review_completed',
+    ...ERROR_REVIEW_PLAN,
+    artifactByteLength: 384,
+    artifactSha256: 'f'.repeat(64),
+    reviewedQuestionCount: 1,
+    reviewedCandidateCount: 2,
+    acceptedCandidateCount: 1,
+    rejectedCandidateCount: 1,
+    confirmedObservationCount: 1,
+    ...overrides,
+  };
+}
+
 function knowledgeMappingStarted(
   seq: number,
   overrides: Partial<ExamKnowledgeMappingStartedEvent> = {},
@@ -666,6 +712,184 @@ function observationEvents(): ExamEvent[] {
 }
 
 describe('Exam event fold', () => {
+  it('keeps completed suggestions unconfirmed until the independent error review completes', () => {
+    const before = foldExamEvents(records(errorSuggestionEvents()));
+    expect(before.errorReview).toBeUndefined();
+    const started = foldExamEvents(records([...errorSuggestionEvents(), errorReviewStarted(20)]));
+    expect(started.errorReview).toMatchObject({
+      ...ERROR_REVIEW_PLAN,
+      status: 'confirming',
+      startedEventId: 'exam-event-20',
+    });
+    expect(started.errorReview).not.toHaveProperty('errorReviewArtifact');
+    const after = foldExamEvents(
+      records([...errorSuggestionEvents(), errorReviewStarted(20), errorReviewCompleted(21)]),
+    );
+    expect(after.errorReview).toMatchObject({
+      ...ERROR_REVIEW_PLAN,
+      status: 'confirmed',
+      errorReviewArtifact: {
+        reviewedQuestionCount: 1,
+        reviewedCandidateCount: 2,
+        confirmedObservationCount: 1,
+      },
+    });
+    expect(after.errorSuggestions).toEqual(before.errorSuggestions);
+    expect(after.grading).toEqual(before.grading);
+    expect(after.knowledgeMapping).toEqual(before.knowledgeMapping);
+    expect(after.observationProjection).toEqual(before.observationProjection);
+  });
+
+  it('requires completed suggestions and exact source-bound expected counts before review starts', () => {
+    expect(() => foldExamEvents(records([...gradingEvents(), errorReviewStarted(18)]))).toThrow(
+      ExamError,
+    );
+    expect(() =>
+      foldExamEvents(
+        records([...gradingEvents(), errorSuggestionsStarted(18), errorReviewStarted(19)]),
+      ),
+    ).toThrow(ExamError);
+    for (const change of [
+      { sourceSuggestionGenerationVersion: 2 },
+      { sourceSuggestionGenerationRef: 'other-generation' },
+      { sourceSuggestionArtifactRef: 'other-artifact' },
+      { sourceSuggestionArtifactFingerprint: '0'.repeat(64) },
+      { expectedQuestionCount: 2 },
+      { expectedCandidateCount: 3 },
+      { errorReviewRef: HUMAN_REVIEW_PLAN.reviewArtifactRef },
+      { errorReviewArtifactRef: GRADING_PLAN.assessmentArtifactRef },
+    ]) {
+      expect(() =>
+        foldExamEvents(records([...errorSuggestionEvents(), errorReviewStarted(20, change)])),
+      ).toThrow(ExamError);
+    }
+  });
+
+  it('rejects error-review plan drift, restarts, skips, incomplete counts and duplicated completion', () => {
+    const started = [...errorSuggestionEvents(), errorReviewStarted(20)];
+    expect(() =>
+      foldExamEvents(records([...errorSuggestionEvents(), errorReviewCompleted(20)])),
+    ).toThrow(ExamError);
+    expect(() => foldExamEvents(records([...started, errorReviewStarted(21)]))).toThrow(ExamError);
+    for (const change of [
+      { errorReviewVersion: 2 },
+      { sourceSuggestionGenerationVersion: 2 },
+      { sourceSuggestionGenerationRef: 'other-generation' },
+      { sourceSuggestionArtifactRef: 'other-artifact' },
+      { sourceSuggestionArtifactFingerprint: '0'.repeat(64) },
+      { sourceSuggestionSemanticFingerprint: '0'.repeat(64) },
+      { decisionSemanticFingerprint: '0'.repeat(64) },
+      { errorReviewRef: 'other-review' },
+      { errorReviewArtifactRef: 'other-review-artifact' },
+      { expectedQuestionCount: 2, reviewedQuestionCount: 2 },
+      { expectedCandidateCount: 3, reviewedCandidateCount: 3, rejectedCandidateCount: 2 },
+      { reviewedQuestionCount: 0 },
+      { reviewedCandidateCount: 1 },
+      { acceptedCandidateCount: 0 },
+      { confirmedObservationCount: 0 },
+    ]) {
+      expect(() => foldExamEvents(records([...started, errorReviewCompleted(21, change)]))).toThrow(
+        ExamError,
+      );
+    }
+    expect(() =>
+      foldExamEvents(records([...started, errorReviewCompleted(21), errorReviewCompleted(22)])),
+    ).toThrow(ExamError);
+  });
+
+  it('records zero accepted patterns without changing incorrect assessments', () => {
+    const before = foldExamEvents(records(errorSuggestionEvents()));
+    const rejected = foldExamEvents(
+      records([
+        ...errorSuggestionEvents(),
+        errorReviewStarted(20),
+        errorReviewCompleted(21, {
+          acceptedCandidateCount: 0,
+          rejectedCandidateCount: 2,
+          confirmedObservationCount: 0,
+        }),
+      ]),
+    );
+    expect(rejected.errorReview?.status).toBe('confirmed');
+    expect(rejected.grading).toEqual(before.grading);
+    const zeroCandidateChain = [
+      ...gradingEvents(),
+      errorSuggestionsStarted(18),
+      errorSuggestionsCompleted(19, {
+        candidateQuestionCount: 0,
+        noSuggestionQuestionCount: 1,
+        suggestionCount: 0,
+        deterministicSuggestionCount: 0,
+        modelSuggestionCount: 0,
+      }),
+      errorReviewStarted(20, { expectedCandidateCount: 0 }),
+      errorReviewCompleted(21, {
+        expectedCandidateCount: 0,
+        reviewedCandidateCount: 0,
+        acceptedCandidateCount: 0,
+        rejectedCandidateCount: 0,
+        confirmedObservationCount: 0,
+      }),
+    ];
+    const zero = foldExamEvents(records(zeroCandidateChain));
+    expect(zero.errorReview?.errorReviewArtifact).toMatchObject({
+      reviewedQuestionCount: 1,
+      confirmedObservationCount: 0,
+    });
+    expect(zero.grading).toEqual(before.grading);
+    expect(JSON.stringify(zero.errorReview)).not.toMatch(/no_error|no_cause|mastery/u);
+  });
+
+  it('keeps error review independent from knowledge mapping and observation projection order', () => {
+    const before = foldExamEvents(records(observationEvents()));
+    const after = foldExamEvents(
+      records([
+        ...observationEvents(),
+        errorSuggestionsStarted(22),
+        errorSuggestionsCompleted(23),
+        errorReviewStarted(24),
+        errorReviewCompleted(25),
+      ]),
+    );
+    expect(after.grading).toEqual(before.grading);
+    expect(after.knowledgeMapping).toEqual(before.knowledgeMapping);
+    expect(after.observationProjection).toEqual(before.observationProjection);
+    expect(
+      foldExamEvents(
+        records([
+          ...errorSuggestionEvents(),
+          errorReviewStarted(20),
+          errorReviewCompleted(21),
+          knowledgeMappingStarted(22),
+          knowledgeMappingConfirmed(23),
+          observationProjectionStarted(24),
+          observationsProjected(25),
+        ]),
+      ).observationProjection?.status,
+    ).toBe('completed');
+  });
+
+  it('allows partial and completed error reviews to delete and rejects late finalization', () => {
+    const baseChain = errorSuggestionEvents();
+    for (const suffix of [
+      [errorReviewStarted(20)],
+      [errorReviewStarted(20), errorReviewCompleted(21)],
+    ]) {
+      const chain = [...baseChain, ...suffix];
+      const requested = deleteRequested(chain.length);
+      const terminal = deleted(chain.length + 1, requested.eventId);
+      expect(foldExamEvents(records([...chain, requested, terminal])).status).toBe('deleted');
+      expect(() =>
+        foldExamEvents(records([...chain, requested, errorReviewCompleted(chain.length + 1)])),
+      ).toThrow(ExamError);
+      expect(() =>
+        foldExamEvents(
+          records([...chain, requested, terminal, errorReviewCompleted(chain.length + 2)]),
+        ),
+      ).toThrow(ExamError);
+    }
+  });
+
   it('starts as intake_pending with immutable private declarations', () => {
     const state = foldExamEvents(records([created()]));
     expect(state).toMatchObject({
@@ -1623,6 +1847,33 @@ describe('Exam event fold', () => {
 });
 
 describe('public Exam projection', () => {
+  it('exposes only error-review status and aggregate counts', () => {
+    expect(
+      toPublicExamSession(foldExamEvents(records(errorSuggestionEvents()))).errorReview,
+    ).toEqual({ status: 'not_started' });
+    expect(
+      toPublicExamSession(
+        foldExamEvents(records([...errorSuggestionEvents(), errorReviewStarted(20)])),
+      ).errorReview,
+    ).toEqual({ status: 'confirming' });
+    const publicExam = toPublicExamSession(
+      foldExamEvents(
+        records([...errorSuggestionEvents(), errorReviewStarted(20), errorReviewCompleted(21)]),
+      ),
+    );
+    expect(publicExam.errorReview).toEqual({
+      status: 'confirmed',
+      reviewedQuestionCount: 1,
+      reviewedCandidateCount: 2,
+      acceptedCandidateCount: 1,
+      rejectedCandidateCount: 1,
+      confirmedObservationCount: 1,
+    });
+    expect(JSON.stringify(publicExam)).not.toMatch(
+      /errorReviewRef|errorReviewArtifactRef|sourceSuggestion|decisionSemantic|sha256|eventId|operationId|patternKind|candidateId|evidence|"studentResponse"|expectedAnswer|gradingSpec/u,
+    );
+  });
+
   it('omits every private locator, digest, owner and operation field', () => {
     const publicExam = toPublicExamSession(foldExamEvents(records(readyEvents())));
     expect(publicExam).toMatchObject({

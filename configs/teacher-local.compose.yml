@@ -1,0 +1,5 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - '127.0.0.1:${TEACHER_POSTGRES_PORT:-55432}:5432'

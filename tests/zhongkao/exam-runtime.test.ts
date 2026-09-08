@@ -32,6 +32,10 @@ import {
   deriveExamErrorSuggestionsCompletedOperationId,
   deriveExamErrorSuggestionsGenerationRef,
   deriveExamErrorSuggestionsStartedOperationId,
+  deriveExamErrorReviewRef,
+  deriveExamErrorReviewArtifactRef,
+  deriveExamErrorReviewStartedOperationId,
+  deriveExamErrorReviewCompletedOperationId,
   deriveExamHumanReviewArtifactRef,
   deriveExamHumanReviewCompletedOperationId,
   deriveExamHumanReviewRef,
@@ -79,6 +83,9 @@ import type {
   ExamDeleteRequestedEvent,
   ExamDocumentArtifactExtractedEvent,
   ExamDocumentSnapshottedEvent,
+  ExamErrorReviewPlanFacts,
+  ExamErrorReviewCompletedEvent,
+  ExamErrorReviewStartedEvent,
   ExamErrorSuggestionsCompletedEvent,
   ExamErrorSuggestionsStartedEvent,
   ExamHumanReviewCompletedEvent,
@@ -952,6 +959,112 @@ function errorSuggestionEvents(
   return [started, completed];
 }
 
+function errorReviewEvents(
+  created: ExamCreatedEvent,
+  suggestions: ExamErrorSuggestionsCompletedEvent,
+  decisionSemanticFingerprint = '9'.repeat(64),
+): [ExamErrorReviewStartedEvent, ExamErrorReviewCompletedEvent] {
+  const source = {
+    errorReviewVersion: 1,
+    expectedQuestionCount: suggestions.eligibleQuestionCount,
+    expectedCandidateCount: suggestions.suggestionCount,
+    sourceSuggestionGenerationVersion: suggestions.generationVersion,
+    sourceSuggestionGenerationRef: suggestions.generationRef,
+    sourceSuggestionArtifactRef: suggestions.suggestionArtifactRef,
+    sourceSuggestionArtifactFingerprint: suggestions.artifactSha256,
+    sourceSuggestionSemanticFingerprint: '8'.repeat(64),
+  };
+  const errorReviewRef = deriveExamErrorReviewRef({
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+    ...source,
+  });
+  const plan: ExamErrorReviewPlanFacts = {
+    ...source,
+    decisionSemanticFingerprint,
+    errorReviewRef,
+    errorReviewArtifactRef: deriveExamErrorReviewArtifactRef(errorReviewRef),
+  };
+  const common = {
+    schemaVersion: 1 as const,
+    examSessionId: created.examSessionId,
+    profileId: created.profileId,
+  };
+  const startedOperationId = deriveExamErrorReviewStartedOperationId(created.examSessionId, 1);
+  const completedOperationId = deriveExamErrorReviewCompletedOperationId(created.examSessionId, 1);
+  const completion = {
+    artifactByteLength: 384,
+    artifactSha256: 'a'.repeat(64),
+    reviewedQuestionCount: suggestions.eligibleQuestionCount,
+    reviewedCandidateCount: suggestions.suggestionCount,
+    acceptedCandidateCount: 1,
+    rejectedCandidateCount: suggestions.suggestionCount - 1,
+    confirmedObservationCount: 1,
+  };
+  return [
+    {
+      ...common,
+      ...plan,
+      eventType: 'exam_error_review_started',
+      eventId: deriveExamEventId(startedOperationId),
+      operationId: startedOperationId,
+      createdAt: '2026-08-31T08:00:18.000Z',
+      operationFingerprint: createExamOperationFingerprint({
+        action: 'exam_error_review_started',
+        ...common,
+        ...plan,
+      }),
+    },
+    {
+      ...common,
+      ...plan,
+      ...completion,
+      eventType: 'exam_error_review_completed',
+      eventId: deriveExamEventId(completedOperationId),
+      operationId: completedOperationId,
+      createdAt: '2026-08-31T08:00:19.000Z',
+      operationFingerprint: createExamOperationFingerprint({
+        action: 'exam_error_review_completed',
+        ...common,
+        ...plan,
+        ...completion,
+      }),
+    },
+  ];
+}
+
+async function errorReviewHarness() {
+  const backing = store();
+  const created = createdEvent();
+  const deps = { store: backing, ownerId: OWNER_ID };
+  await ensureExamRuntimeCreated(deps, created);
+  const review = humanReviewEvents(created);
+  const answerKey = answerKeyEvents(created, review[1]);
+  const grading = gradingEvents(created, review[1], answerKey[1]);
+  const suggestions = errorSuggestionEvents(created, review[1], answerKey[1], grading[1]);
+  const chain = [
+    snapshotEvent(created),
+    completedEvent(created),
+    ...extractionEvents(created),
+    ...responseEvents(created),
+    ...review,
+    ...answerKey,
+    ...grading,
+    ...suggestions,
+  ];
+  for (const [index, event] of chain.entries()) {
+    await appendExamRuntimeEvent(deps, { event, expectedRevision: index });
+  }
+  return {
+    backing,
+    created,
+    deps,
+    suggestions,
+    revision: chain.length,
+    events: errorReviewEvents(created, suggestions[1]),
+  };
+}
+
 function knowledgeMappingEvents(
   created: ExamCreatedEvent,
   review: ExamHumanReviewCompletedEvent,
@@ -1126,6 +1239,147 @@ function observationProjectionEvents(
 }
 
 describe('Exam RuntimeStore adapter', () => {
+  it('appends and replays exactly one source-bound error review without changing other authority', async () => {
+    const { deps, created, events, revision } = await errorReviewHarness();
+    const before = await loadExamRuntime(deps, created.examSessionId);
+    expect(before.state.errorReview).toBeUndefined();
+    for (const [index, event] of events.entries()) {
+      const result = await appendExamRuntimeEvent(deps, {
+        event,
+        expectedRevision: revision + index,
+      });
+      expect(result).toMatchObject({ replayed: false, eventAppended: true });
+      const replay = await appendExamRuntimeEvent(deps, {
+        event,
+        expectedRevision: revision + index,
+      });
+      expect(replay).toMatchObject({ replayed: true, eventAppended: false });
+    }
+    const after = await loadExamRuntime(deps, created.examSessionId);
+    expect(after.state.errorReview).toMatchObject({
+      status: 'confirmed',
+      expectedQuestionCount: 1,
+      expectedCandidateCount: 2,
+      errorReviewArtifact: {
+        reviewedQuestionCount: 1,
+        reviewedCandidateCount: 2,
+        confirmedObservationCount: 1,
+      },
+    });
+    expect(after.records).toHaveLength(before.records.length + 2);
+    expect(after.state.grading).toEqual(before.state.grading);
+    expect(after.state.errorSuggestions).toEqual(before.state.errorSuggestions);
+    expect(after.state.knowledgeMapping).toEqual(before.state.knowledgeMapping);
+    expect(after.state.observationProjection).toEqual(before.state.observationProjection);
+  });
+
+  it('rejects a second decision set even though its immutable review operation identity matches', async () => {
+    const { deps, created, suggestions, events, revision } = await errorReviewHarness();
+    await appendExamRuntimeEvent(deps, { event: events[0], expectedRevision: revision });
+    const conflicting = errorReviewEvents(created, suggestions[1], 'b'.repeat(64));
+    expect(conflicting[0].operationId).toBe(events[0].operationId);
+    expect(conflicting[0].errorReviewRef).toBe(events[0].errorReviewRef);
+    expect(conflicting[0].operationFingerprint).not.toBe(events[0].operationFingerprint);
+    await expect(
+      appendExamRuntimeEvent(deps, { event: conflicting[0], expectedRevision: revision }),
+    ).rejects.toThrow('EXAM_EVENT_CONFLICT');
+    await expect(
+      appendExamRuntimeEvent(deps, { event: conflicting[1], expectedRevision: revision + 1 }),
+    ).rejects.toThrow('EXAM_EVENT_CONFLICT');
+    expect((await loadExamRuntime(deps, created.examSessionId)).state.errorReview?.status).toBe(
+      'confirming',
+    );
+  });
+
+  it('rejects recomputed operation fingerprints that forge error-review source or derived refs', async () => {
+    const { deps, events, revision } = await errorReviewHarness();
+    for (const change of [
+      { sourceSuggestionSemanticFingerprint: '0'.repeat(64) },
+      { sourceSuggestionArtifactFingerprint: '0'.repeat(64) },
+      { sourceSuggestionGenerationRef: 'forged-generation' },
+      { sourceSuggestionArtifactRef: 'forged-source-artifact' },
+      { expectedQuestionCount: 2 },
+      { expectedCandidateCount: 3 },
+      { errorReviewRef: 'forged-review' },
+      { errorReviewArtifactRef: 'forged-artifact' },
+    ]) {
+      const forged = { ...events[0], ...change };
+      const {
+        eventId: _eventId,
+        eventType,
+        createdAt: _createdAt,
+        operationId: _operationId,
+        operationFingerprint: _operationFingerprint,
+        ...facts
+      } = forged;
+      forged.operationFingerprint = createExamOperationFingerprint({ action: eventType, ...facts });
+      await expect(
+        appendExamRuntimeEvent(deps, { event: forged, expectedRevision: revision }),
+      ).rejects.toThrow('EXAM_EVENT_CONFLICT');
+    }
+  });
+
+  it.each(['exam_error_review_started', 'exam_error_review_completed'] as const)(
+    'recovers an identical %s CAS loser only after durable event read-back',
+    async (eventType) => {
+      const { backing, deps, created, events, revision } = await errorReviewHarness();
+      if (eventType === 'exam_error_review_completed') {
+        await appendExamRuntimeEvent(deps, { event: events[0], expectedRevision: revision });
+      }
+      const event = events.find((candidate) => candidate.eventType === eventType)!;
+      let injected = false;
+      const appendRecord: RuntimeStore['appendRecord'] = async (init, options = {}) => {
+        if (!injected && (init.payload as { eventType: string }).eventType === eventType) {
+          injected = true;
+          const winner = await backing.appendRecord(init, options);
+          throw new RuntimeAppendConflictError(
+            init.sessionId,
+            options.expectedLastSeq ?? null,
+            winner.seq,
+          );
+        }
+        return backing.appendRecord(init, options);
+      };
+      const expectedRevision = revision + (eventType === 'exam_error_review_completed' ? 1 : 0);
+      await expect(
+        appendExamRuntimeEvent(
+          { ...deps, store: withAppend(backing, appendRecord) },
+          { event, expectedRevision },
+        ),
+      ).resolves.toMatchObject({ replayed: true, eventAppended: false });
+      expect(injected).toBe(true);
+      const snapshot = await loadExamRuntime(deps, created.examSessionId);
+      expect(
+        snapshot.records.filter(
+          (record) => (record.payload as { eventType: string }).eventType === eventType,
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
+  it('rejects altered error-review counts when loading a persisted private history', async () => {
+    const { backing, deps, created, events, revision } = await errorReviewHarness();
+    await appendExamRuntimeEvent(deps, { event: events[0], expectedRevision: revision });
+    await appendExamRuntimeEvent(deps, { event: events[1], expectedRevision: revision + 1 });
+    const corruptStore = new Proxy(backing, {
+      get(target, property, receiver) {
+        if (property === 'listRecords') {
+          return async (...args: Parameters<RuntimeStore['listRecords']>) =>
+            (await target.listRecords(...args)).map((record) =>
+              record.id === events[1].eventId
+                ? { ...record, payload: { ...events[1], acceptedCandidateCount: 2 } }
+                : record,
+            );
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    await expect(
+      loadExamRuntime({ ...deps, store: corruptStore }, created.examSessionId),
+    ).rejects.toThrow('EXAM_EVENT_CONFLICT');
+  });
+
   it('derives stable partitioned Exam and document identities', () => {
     const learner = resolveZhongkaoLearnerKeyFromOwnerId(OWNER_ID);
     const first = deriveExamSessionId({

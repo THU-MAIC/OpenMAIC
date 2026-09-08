@@ -43,6 +43,7 @@ import {
   type ExamQuestionAssessmentsArtifactV1,
 } from './exam-grading-private';
 import {
+  deriveExamGradingRef,
   deriveExamErrorSuggestionsArtifactRef,
   deriveExamErrorSuggestionsGenerationRef,
 } from './exam-runtime';
@@ -493,7 +494,18 @@ export function buildExamErrorSuggestionsArtifact(
   const sourceAssessment: ExamErrorSuggestionAssessmentSourceV1 = {
     assessmentVersion: input.assessments.assessmentVersion,
     gradingAlgorithmVersion: input.assessments.gradingAlgorithmVersion,
-    gradingRef: input.assessments.assessmentRef,
+    gradingRef: deriveExamGradingRef({
+      examSessionId: input.examSessionId,
+      gradingVersion: input.assessments.assessmentVersion,
+      gradingAlgorithmVersion: input.assessments.gradingAlgorithmVersion,
+      reviewVersion: input.confirmedReview.reviewVersion,
+      reviewArtifactRef: input.confirmedReview.reviewArtifactRef,
+      sourceReviewArtifactFingerprint: input.confirmedReviewArtifactSha256,
+      answerKeyVersion: input.answerKey.answerKeyVersion,
+      answerKeyRef: input.answerKey.answerKeyRef,
+      answerKeyArtifactRef: input.answerKeyArtifactRef,
+      sourceAnswerKeyArtifactFingerprint: input.answerKeyArtifactSha256,
+    }),
     assessmentArtifactRef: input.assessmentArtifactRef,
     assessmentArtifactSha256: input.assessmentArtifactSha256,
     semanticFingerprint: input.assessments.semanticFingerprint,

@@ -41,6 +41,7 @@ import {
   examAuthoritativeAnswerKeyObjectKey,
   examDocumentArtifactObjectKey,
   examErrorSuggestionsObjectKey,
+  examErrorReviewObjectKey,
   examHumanReviewObjectKey,
   examKnowledgeMappingObjectKey,
   examKnowledgeSuggestionsObjectKey,
@@ -648,6 +649,16 @@ function examDerivativeObjectKeys(snapshot: ExamRuntimeSnapshot): string[] {
     );
   }
   const knowledgeMapping = snapshot.state.knowledgeMapping;
+  const errorReview = snapshot.state.errorReview;
+  if (errorReview) {
+    keys.push(
+      examErrorReviewObjectKey(
+        snapshot.state.examSessionId,
+        errorReview.sourceSuggestionGenerationVersion,
+        errorReview.errorReviewVersion,
+      ),
+    );
+  }
   if (knowledgeMapping) {
     keys.push(
       examKnowledgeMappingObjectKey(snapshot.state.examSessionId, knowledgeMapping.mappingVersion),

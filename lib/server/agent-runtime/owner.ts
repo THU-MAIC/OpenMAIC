@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
 const ANONYMOUS_COOKIE = 'anonymous_id';
-const ANONYMOUS_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+const ANONYMOUS_COOKIE_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
+const OWNER_RECOVERY_PREFIX = 'openmaic-teacher-v1:';
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type OwnerRequest = Pick<Request, 'headers'> & Partial<Pick<Request, 'url'>>;
 
 function readCookie(headers: Headers, name: string): string | undefined {
   const encoded = headers.get('cookie');
@@ -19,8 +22,19 @@ function readCookie(headers: Headers, name: string): string | undefined {
   return undefined;
 }
 
-function anonymousCookieHeader(id: string): string {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+function requestUsesHttps(req: OwnerRequest): boolean {
+  if (req.url) {
+    try {
+      return new URL(req.url).protocol === 'https:';
+    } catch {
+      // Older adapters only supply headers; preserve their production fallback.
+    }
+  }
+  return process.env.NODE_ENV === 'production';
+}
+
+function anonymousCookieHeader(req: OwnerRequest, id: string): string {
+  const secure = requestUsesHttps(req) ? '; Secure' : '';
   return (
     `${ANONYMOUS_COOKIE}=${id}; Path=/; HttpOnly; SameSite=Lax; ` +
     `Max-Age=${ANONYMOUS_COOKIE_MAX_AGE_SECONDS}${secure}`
@@ -41,7 +55,7 @@ function anonymousCookieHeader(id: string): string {
  * Otherwise the identity comes from a valid anonymous cookie, or a fresh UUID
  * is minted. A mint is only useful when it is persisted, so `responseHeaders`
  * — the headers the caller returns to the client — is required: it receives
- * the outgoing Set-Cookie header whenever a new cookie is issued.
+ * the outgoing Set-Cookie header whenever a cookie is issued or renewed.
  *
  * Current callers (the agent event-stream routes) pass no authenticated
  * owner: for them this slice resolves only the anonymous cookie identity. A
@@ -50,16 +64,36 @@ function anonymousCookieHeader(id: string): string {
  * unreachable by their own owner.
  */
 export function resolveRequestOwnerId(
-  req: Pick<Request, 'headers'>,
+  req: OwnerRequest,
   responseHeaders: Headers,
   authenticatedOwnerId?: string,
 ): string {
   if (authenticatedOwnerId) return authenticatedOwnerId;
 
   const existingId = readCookie(req.headers, ANONYMOUS_COOKIE);
-  if (existingId && UUID_V4.test(existingId)) return `anon:${existingId}`;
+  const id = existingId && UUID_V4.test(existingId) ? existingId : randomUUID();
+  responseHeaders.append('Set-Cookie', anonymousCookieHeader(req, id));
+  return `anon:${id}`;
+}
 
-  const id = randomUUID();
-  responseHeaders.append('Set-Cookie', anonymousCookieHeader(id));
+/** Recovery codes are bearer credentials for the existing owner partition. */
+export function createOwnerRecoveryCode(ownerId: string): string {
+  const id = ownerId.startsWith('anon:') ? ownerId.slice('anon:'.length) : '';
+  if (!UUID_V4.test(id)) throw new Error('Only anonymous owners support recovery codes');
+  return `${OWNER_RECOVERY_PREFIX}${id}`;
+}
+
+export function restoreRequestOwnerId(
+  req: OwnerRequest,
+  responseHeaders: Headers,
+  recoveryCode: unknown,
+): string | null {
+  if (typeof recoveryCode !== 'string' || !recoveryCode.startsWith(OWNER_RECOVERY_PREFIX)) {
+    return null;
+  }
+  const id = recoveryCode.slice(OWNER_RECOVERY_PREFIX.length);
+  if (!UUID_V4.test(id)) return null;
+
+  responseHeaders.append('Set-Cookie', anonymousCookieHeader(req, id));
   return `anon:${id}`;
 }

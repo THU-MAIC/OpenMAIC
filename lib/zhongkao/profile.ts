@@ -36,6 +36,7 @@ const PROFILE_KEYS = new Set([
   'weekendMinutes',
   'createdAt',
   'updatedAt',
+  'archivedAt',
 ]);
 
 const TEXTBOOK_KEYS = new Set(['publisher', 'title', 'volume']);
@@ -61,6 +62,7 @@ export interface StudentProfile {
   weekendMinutes: ObservedField<number>;
   createdAt: string;
   updatedAt: string;
+  archivedAt?: string;
 }
 
 export interface CreateInitialStudentProfileInput {
@@ -210,6 +212,9 @@ export function validateStudentProfile(value: unknown): DomainValidationResult {
   validateIdentifier(value.profileId, '/profileId', errors);
   validateIsoDateTime(value.createdAt, '/createdAt', errors);
   validateIsoDateTime(value.updatedAt, '/updatedAt', errors);
+  if (Object.hasOwn(value, 'archivedAt')) {
+    validateIsoDateTime(value.archivedAt, '/archivedAt', errors);
+  }
   appendObservedErrors(value.displayName, displayNameValue, '/displayName', errors);
   validateExplicitConfirmationBoundary(value.displayName, '/displayName', errors);
   appendObservedErrors(value.grade, positiveIntegerValue, '/grade', errors);

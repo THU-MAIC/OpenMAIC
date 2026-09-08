@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowUp,
@@ -27,6 +28,7 @@ import {
   X,
   Presentation,
   Loader2,
+  UsersRound,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -864,6 +866,13 @@ function HomePage() {
         >
           {t('home.slogan')}
         </motion.p>
+
+        <Button asChild variant="outline" className="mb-6">
+          <Link href="/teacher">
+            <UsersRound />
+            {t('teacher.title')}
+          </Link>
+        </Button>
 
         {/* ── Unified input area ── */}
         <motion.div

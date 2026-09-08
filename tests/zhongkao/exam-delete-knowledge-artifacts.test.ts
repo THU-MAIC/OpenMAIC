@@ -4,6 +4,7 @@ import type { RuntimeStore } from '@openmaic/storage';
 
 import {
   examErrorSuggestionsObjectKey,
+  examErrorReviewObjectKey,
   examKnowledgeMappingObjectKey,
   examKnowledgeSuggestionsObjectKey,
   examObservationsObjectKey,
@@ -39,6 +40,7 @@ const RAW_KEY = examSnapshotObjectKey(EXAM_ID, DOCUMENT_ID);
 const MAPPING_KEY = examKnowledgeMappingObjectKey(EXAM_ID, 1);
 const SUGGESTIONS_KEY = examKnowledgeSuggestionsObjectKey(EXAM_ID, 1);
 const ERROR_SUGGESTIONS_KEY = examErrorSuggestionsObjectKey(EXAM_ID, 1);
+const ERROR_REVIEW_KEY = examErrorReviewObjectKey(EXAM_ID, 1, 1);
 const OBSERVATIONS_KEY = examObservationsObjectKey(EXAM_ID, 1, 1);
 
 class ExactOnlyByteStore implements MaterialByteStore {
@@ -105,6 +107,11 @@ interface SyntheticExamState {
   documents: Array<{ examDocumentId: string }>;
   knowledgeSuggestions?: { generationVersion: number; status: 'generating' | 'completed' };
   errorSuggestions?: { generationVersion: number; status: 'generating' | 'completed' };
+  errorReview?: {
+    sourceSuggestionGenerationVersion: number;
+    errorReviewVersion: number;
+    status: 'confirming' | 'confirmed';
+  };
   knowledgeMapping?: { mappingVersion: number };
   observationProjection?: { mappingVersion: number; observationVersion: number };
   deleteRequestedEventId?: string;
@@ -208,6 +215,16 @@ function harness() {
         },
       };
     },
+    setErrorReviewPresent(status: 'confirming' | 'confirmed') {
+      current.state.errorSuggestions = { generationVersion: 1, status: 'completed' };
+      current.state.errorReview = {
+        sourceSuggestionGenerationVersion: 1,
+        errorReviewVersion: 1,
+        status,
+      };
+      current.state.knowledgeMapping = undefined;
+      current.state.observationProjection = undefined;
+    },
   };
 }
 
@@ -217,6 +234,35 @@ beforeEach(() => {
 });
 
 describe('Exam deletion of private knowledge artifacts', () => {
+  it.each(['confirming', 'confirmed'] as const)(
+    'deletes the exact %s error-review overlay and preserves other Exams',
+    async (status) => {
+      const h = harness();
+      h.setErrorReviewPresent(status);
+      const otherKey = examErrorReviewObjectKey(`exam:v1:${'f'.repeat(64)}`, 1, 1);
+      for (const key of [RAW_KEY, ERROR_SUGGESTIONS_KEY, ERROR_REVIEW_KEY, otherKey]) {
+        await h.byteStore.put(key, Buffer.from('fictional private artifact'));
+      }
+      await expect(deleteExam(h.deps, EXAM_ID)).resolves.toBe('deleted');
+      expect(h.byteStore.deleteCalls).toEqual([RAW_KEY, ERROR_SUGGESTIONS_KEY, ERROR_REVIEW_KEY]);
+      expect([...h.byteStore.objects.keys()]).toEqual([otherKey]);
+      await expect(deleteExam(h.deps, EXAM_ID)).resolves.toBe('already_deleted');
+    },
+  );
+
+  it('recovers a partial error-review cleanup with no prefix sweep', async () => {
+    const h = harness();
+    h.setErrorReviewPresent('confirming');
+    for (const key of [RAW_KEY, ERROR_SUGGESTIONS_KEY, ERROR_REVIEW_KEY]) {
+      await h.byteStore.put(key, Buffer.from('partial private artifact'));
+    }
+    h.byteStore.failDeleteKeyOnce = ERROR_REVIEW_KEY;
+    await expect(deleteExam(h.deps, EXAM_ID)).rejects.toMatchObject({ code: 'EXAM_DELETE_FAILED' });
+    expect(h.current.state.status).toBe('deleting');
+    expect(h.byteStore.objects.has(ERROR_REVIEW_KEY)).toBe(true);
+    await expect(deleteExam(h.deps, EXAM_ID)).resolves.toBe('deleted');
+    expect(h.byteStore.objects.size).toBe(0);
+  });
   it.each(['generating', 'completed'] as const)(
     'deletes the exact knowledge-suggestion key while generation is %s',
     async (status) => {

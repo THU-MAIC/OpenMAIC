@@ -11,6 +11,7 @@ import {
   EXAM_ERROR_SUGGESTION_SCHEMA_VERSION,
   canonicalizeExamErrorSuggestionDrafts,
   parseExamErrorSuggestionQuestionDraft,
+  isExamErrorSuggestionTextSpanGrounded,
   type ExamErrorSuggestionQuestionDraftV1,
   type PublicExamErrorSuggestionsBundleV1,
 } from '@/lib/zhongkao/exam-error-suggestions';
@@ -237,7 +238,7 @@ function createPlan(
     sourceAnswerKeySemanticFingerprint: sources.answerKey.semanticFingerprint,
     assessmentVersion: sources.assessments.assessmentVersion,
     gradingAlgorithmVersion: sources.assessments.gradingAlgorithmVersion,
-    gradingRef: sources.assessments.assessmentRef,
+    gradingRef: snapshot.state.grading!.gradingRef,
     assessmentArtifactRef: sources.assessmentArtifactRef,
     sourceAssessmentArtifactFingerprint: sources.assessmentArtifactSha256,
     sourceAssessmentSemanticFingerprint: sources.assessments.semanticFingerprint,
@@ -467,6 +468,114 @@ async function resolveCompletedFromRuntime(
   );
   if (!bytes) throw new ExamError('EXAM_ERROR_SUGGESTION_ARTIFACT_CORRUPT');
   return parseBoundArtifact(bytes, snapshot, sources);
+}
+
+/** Resolve the completed, source-bound candidate artifact while the caller owns the Exam lock. */
+export async function resolveExamErrorSuggestionsFromRuntime(
+  deps: ExamServiceDeps,
+  snapshot: ExamRuntimeSnapshot,
+): Promise<ExamErrorDiagnosisCandidatesArtifactV1> {
+  const sources = await resolveSources(deps, snapshot);
+  const state = snapshot.state.errorSuggestions;
+  const fact = state?.suggestionArtifact;
+  if (!state || state.status !== 'completed' || !fact) {
+    throw new ExamError('EXAM_ERROR_SUGGESTIONS_NOT_READY');
+  }
+  const bytes = await readOptionalObject(
+    deps,
+    objectKey(snapshot),
+    'EXAM_ERROR_SUGGESTION_ARTIFACT_CORRUPT',
+  );
+  if (!bytes || bytes.byteLength !== fact.byteLength || sha256(bytes) !== fact.sha256) {
+    throw new ExamError('EXAM_ERROR_SUGGESTION_ARTIFACT_CORRUPT');
+  }
+  let artifact: ExamErrorDiagnosisCandidatesArtifactV1;
+  try {
+    artifact = parseExamErrorSuggestionsArtifact(bytes);
+    if (!serializeExamErrorSuggestionsArtifact(artifact).equals(bytes)) {
+      throw new ExamError('EXAM_ERROR_SUGGESTION_ARTIFACT_CORRUPT');
+    }
+  } catch {
+    throw new ExamError('EXAM_ERROR_SUGGESTION_ARTIFACT_CORRUPT');
+  }
+  // A committed digest authenticates the generated set. Revalidate its sources and
+  // exact span grounding here without generating a replacement set for human review.
+  if (
+    !planMatches(state, createPlan(snapshot, sources)) ||
+    !artifactPlanMatches(artifact, snapshot, planFromState(state)) ||
+    artifact.sourceReview.reviewArtifactVersion !== sources.confirmedReview.artifactVersion ||
+    artifact.sourceReview.reviewRef !== sources.confirmedReview.reviewRef ||
+    artifact.eligibleQuestionCount !== fact.eligibleQuestionCount ||
+    artifact.candidateQuestionCount !== fact.candidateQuestionCount ||
+    artifact.noSuggestionQuestionCount !== fact.noSuggestionQuestionCount ||
+    artifact.inputTooLargeQuestionCount !== fact.inputTooLargeQuestionCount ||
+    artifact.suggestionCount !== fact.suggestionCount ||
+    artifact.deterministicSuggestionCount !== fact.deterministicSuggestionCount ||
+    artifact.modelSuggestionCount !== fact.modelSuggestionCount
+  )
+    throw new ExamError('EXAM_ERROR_SUGGESTION_SOURCE_CHANGED');
+  const incorrect = sources.assessments.assessments.filter(
+    (assessment) => assessment.status === 'evaluated' && assessment.outcome === 'incorrect',
+  );
+  const expectedIds = incorrect.map((assessment) => assessment.confirmedQuestionId).sort();
+  const actualIds = artifact.questions.map((question) => question.confirmedQuestionId).sort();
+  if (JSON.stringify(expectedIds) !== JSON.stringify(actualIds)) {
+    throw new ExamError('EXAM_ERROR_SUGGESTION_SOURCE_CHANGED');
+  }
+  for (const entry of artifact.questions) {
+    const assessment = incorrect.find(
+      (item) => item.confirmedQuestionId === entry.confirmedQuestionId,
+    );
+    const question = sources.confirmedReview.confirmedQuestions.find(
+      (item) => item.confirmedQuestionId === entry.confirmedQuestionId,
+    );
+    const response = sources.confirmedReview.confirmedResponses.find(
+      (item) => item.confirmedQuestionId === entry.confirmedQuestionId,
+    );
+    if (!assessment || entry.assessmentId !== assessment.assessmentId || !question || !response) {
+      throw new ExamError('EXAM_ERROR_SUGGESTION_SOURCE_CHANGED');
+    }
+    for (const candidate of entry.suggestions) {
+      if (
+        candidate.generationSource === 'model_candidate' &&
+        (candidate.kind !== 'unit_error_candidate' ||
+          response.answerStatus !== 'text' ||
+          !entry.suggestions.some(
+            (item) =>
+              item.generationSource === 'deterministic_candidate' &&
+              item.kind === 'response_format_mismatch_candidate' &&
+              item.evidence.some(
+                (evidence) =>
+                  evidence.evidenceType === 'format_observation' &&
+                  evidence.gradingType === 'numeric',
+              ),
+          ))
+      )
+        throw new ExamError('EXAM_ERROR_SUGGESTION_SOURCE_CHANGED');
+      for (const evidence of candidate.evidence) {
+        if (
+          evidence.evidenceType === 'text_span' &&
+          !isExamErrorSuggestionTextSpanGrounded(evidence, {
+            questionText: question.questionText,
+            parentContext: question.parentContext?.questionText,
+            responseText: response.rawAnswerText,
+          })
+        )
+          throw new ExamError('EXAM_ERROR_SUGGESTION_SOURCE_CHANGED');
+      }
+    }
+  }
+  return artifact;
+}
+
+export async function resolveExamErrorSuggestions(
+  deps: ExamServiceDeps,
+  examSessionId: string,
+): Promise<ExamErrorDiagnosisCandidatesArtifactV1> {
+  return deps.withExamMutationLock(examSessionId, async () => {
+    const snapshot = await loadExamRuntime(deps, examSessionId);
+    return resolveExamErrorSuggestionsFromRuntime(deps, snapshot);
+  });
 }
 
 function startedEvent(

@@ -165,6 +165,7 @@ describe('profile-wide KnowledgeProgress evidence collection', () => {
     const confirmedObservation = observation();
     const suggestionStateRead = vi.fn();
     const errorSuggestionStateRead = vi.fn();
+    const errorReviewStateRead = vi.fn();
     const active = snapshot(EXAM_ID);
     Object.assign(active.state, {
       knowledgeSuggestions: new Proxy(
@@ -187,6 +188,15 @@ describe('profile-wide KnowledgeProgress evidence collection', () => {
         {
           get(target, property, receiver) {
             errorSuggestionStateRead(property);
+            return Reflect.get(target, property, receiver);
+          },
+        },
+      ),
+      errorReview: new Proxy(
+        { status: 'confirmed', errorReviewArtifact: { sha256: 'corrupt', byteLength: -1 } },
+        {
+          get(target, property, receiver) {
+            errorReviewStateRead(property);
             return Reflect.get(target, property, receiver);
           },
         },
@@ -222,6 +232,7 @@ describe('profile-wide KnowledgeProgress evidence collection', () => {
 
     expect(suggestionStateRead).not.toHaveBeenCalled();
     expect(errorSuggestionStateRead).not.toHaveBeenCalled();
+    expect(errorReviewStateRead).not.toHaveBeenCalled();
     expect(suggestionArtifactRead).not.toHaveBeenCalled();
     expect(
       deriveKnowledgeProgressFromEvidence({ ...progressInput, evidence: result.evidence }),
