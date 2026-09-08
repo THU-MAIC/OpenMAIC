@@ -452,6 +452,12 @@ describe('Exam error review service with real RuntimeStore and complete source c
     const h = await fixture();
     const assessments = await resolveExamQuestionAssessments(h.deps, h.examSessionId);
     const request = await requestFor(h, 'reject');
+    // Exercise a noncanonical request order regardless of the PDF-derived candidate IDs.
+    for (const question of request.questions) {
+      question.candidateDecisions.sort((left, right) =>
+        right.candidateId.localeCompare(left.candidateId, 'en'),
+      );
+    }
     await confirmExamErrorReview(h.deps, h.examSessionId, request);
     const artifact = await resolveConfirmedExamErrorPatternReview(h.deps, h.examSessionId);
     expect(artifact.confirmedPatternObservations).toEqual([]);
@@ -459,7 +465,18 @@ describe('Exam error review service with real RuntimeStore and complete source c
     expect(
       artifact.questionResults.every((question) => question.hasConfirmedPattern === false),
     ).toBe(true);
-    expect(artifact.questions).toEqual(expect.arrayContaining(request.questions));
+    expect(artifact.questions).toHaveLength(request.questions.length);
+    for (const question of request.questions) {
+      const saved = artifact.questions.find(
+        (entry) => entry.confirmedQuestionId === question.confirmedQuestionId,
+      );
+      expect(saved?.candidateDecisions).toHaveLength(question.candidateDecisions.length);
+      expect(
+        new Map(saved!.candidateDecisions.map((entry) => [entry.candidateId, entry.decision])),
+      ).toEqual(
+        new Map(question.candidateDecisions.map((entry) => [entry.candidateId, entry.decision])),
+      );
+    }
     expect(await resolveExamQuestionAssessments(h.deps, h.examSessionId)).toEqual(assessments);
     expect(JSON.stringify(artifact)).not.toMatch(
       /no_error|no_cause|no_problem|careless|anxiety|intelligence/,
