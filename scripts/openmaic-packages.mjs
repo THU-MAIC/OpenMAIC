@@ -141,7 +141,6 @@ function describeSetDifference(expected, observed, subject) {
 function crossCheckPublishWorkflow(workflow) {
   const problems = [];
   const source = workflow
-    .replace(/\r\n/g, '\n')
     .split('\n')
     .filter((line) => !/^\s*#/.test(line))
     .join('\n');

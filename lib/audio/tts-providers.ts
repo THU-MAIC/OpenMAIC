@@ -104,6 +104,9 @@ import {
   normalizeVoxCPMBackend,
   type VoxCPMProviderOptions,
 } from './voxcpm';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('TTSProviders');
 
 /**
  * Result of TTS generation
@@ -320,12 +323,7 @@ async function generateOpenAITTS(
     throw new Error(`OpenAI TTS API error: ${error.error?.message || response.statusText}`);
   }
 
-  return await validateAndResolveTTSAudioResponse(response, {
-    provider: 'OpenAI',
-    baseUrl,
-    requestedFormat: config.format || 'mp3',
-    signal,
-  });
+  return await validateTTSAudioResponse(response, 'OpenAI');
 }
 
 /**
@@ -364,12 +362,7 @@ async function generateLemonadeTTS(
     throw new Error(`Lemonade TTS API error: ${await readTTSApiError(response)}`);
   }
 
-  return await validateAndResolveTTSAudioResponse(response, {
-    provider: 'Lemonade',
-    baseUrl,
-    requestedFormat: config.format || 'wav',
-    signal,
-  });
+  return await validateTTSAudioResponse(response, 'Lemonade', config.format || 'wav');
 }
 
 /**
@@ -436,12 +429,7 @@ async function generateVoxCPMTTS(
     throw new Error(`VoxCPM TTS API error: ${await readTTSApiError(response)}`);
   }
 
-  return await validateAndResolveTTSAudioResponse(response, {
-    provider: 'VoxCPM',
-    baseUrl,
-    requestedFormat: 'wav',
-    signal,
-  });
+  return await validateTTSAudioResponse(response, 'VoxCPM', 'wav');
 }
 
 function buildVoxCPMTargetText(text: string, voicePrompt?: string): string {
@@ -470,23 +458,20 @@ function findFirstNonWhitespaceByte(bytes: Uint8Array): number | null {
 }
 
 /**
- * Shared validator and resolver for TTS audio responses.
+ * Shared validator for TTS audio responses.
  *
- * Rejects 200 responses containing non-audio bodies (HTML pages, JSON error envelopes,
- * or empty responses) with a typed TTSInvalidResponseError (502) before bytes can be
- * treated as narration, billed, or saved.
+ * Rejects 200 responses containing non-audio bodies (HTML pages, JSON responses,
+ * text/plain, or empty/blank responses) with a typed TTSInvalidResponseError (502) before
+ * bytes can be treated as narration, billed, or saved.
  *
- * If the response is a JSON envelope containing an `audioUrl` / `audio_url`, follows the URL
- * and validates the downloaded audio bytes.
+ * Headerless audio formats like raw PCM, μ-law, and A-law have no magic numbers and ~1.2%
+ * of valid audio chunks start with '<', '{', or '['. Therefore, when the response
+ * Content-Type indicates audio/*, the leading-byte sniff is skipped entirely (#1395).
  */
-export async function validateAndResolveTTSAudioResponse(
+async function validateTTSAudioResponse(
   response: Response,
-  context: {
-    provider: string;
-    baseUrl?: string;
-    requestedFormat?: string;
-    signal?: AbortSignal;
-  },
+  provider: string,
+  fallbackFormat = 'mp3',
 ): Promise<TTSGenerationResult> {
   const contentType = response.headers.get('content-type') || '';
   const lowerContentType = contentType.toLowerCase();
@@ -495,16 +480,26 @@ export async function validateAndResolveTTSAudioResponse(
 
   if (bytes.byteLength === 0) {
     throw new TTSInvalidResponseError(
-      context.provider,
-      `${context.provider} TTS returned an empty audio response (0 bytes)`,
+      provider,
+      `${provider} TTS returned an empty audio response (0 bytes)`,
     );
+  }
+
+  // When Content-Type begins with audio/*, trust it as audio without inspecting
+  // leading bytes, avoiding false positives on headerless formats (PCM, μ-law, A-law)
+  // whose raw samples can start with '<', '{', or '[' (#1395).
+  if (lowerContentType.startsWith('audio/')) {
+    return {
+      audio: bytes,
+      format: getAudioResponseFormat(contentType, fallbackFormat),
+    };
   }
 
   const firstByte = findFirstNonWhitespaceByte(bytes);
   if (firstByte === null) {
     throw new TTSInvalidResponseError(
-      context.provider,
-      `${context.provider} TTS returned a blank/whitespace-only response`,
+      provider,
+      `${provider} TTS returned a blank/whitespace-only response`,
     );
   }
 
@@ -514,9 +509,11 @@ export async function validateAndResolveTTSAudioResponse(
     firstByte === 0x3c; // '<'
 
   if (isHtml) {
+    const textSnippet = new TextDecoder('utf-8').decode(bytes).slice(0, 300);
+    log.warn(`${provider} TTS returned HTML instead of audio: ${textSnippet}`);
     throw new TTSInvalidResponseError(
-      context.provider,
-      `${context.provider} TTS returned an HTML response instead of audio. Check provider base URL.`,
+      provider,
+      `${provider} TTS returned an HTML response instead of audio. Check provider base URL.`,
     );
   }
 
@@ -526,105 +523,37 @@ export async function validateAndResolveTTSAudioResponse(
     firstByte === 0x5b; // '['
 
   if (isJson) {
-    const text = new TextDecoder('utf-8').decode(bytes);
-    let json: Record<string, unknown> | null = null;
-    try {
-      const parsed = JSON.parse(text);
-      if (parsed && typeof parsed === 'object') {
-        json = parsed as Record<string, unknown>;
-      }
-    } catch {
-      throw new TTSInvalidResponseError(
-        context.provider,
-        `${context.provider} TTS returned an invalid non-audio response (malformed JSON)`,
-      );
-    }
-
-    const audioUrlCandidate =
-      json &&
-      (typeof json.audioUrl === 'string'
-        ? json.audioUrl
-        : typeof json.audio_url === 'string'
-          ? json.audio_url
-          : typeof (json.data as Record<string, unknown> | undefined)?.audioUrl === 'string'
-            ? ((json.data as Record<string, unknown>).audioUrl as string)
-            : typeof (json.data as Record<string, unknown> | undefined)?.audio_url === 'string'
-              ? ((json.data as Record<string, unknown>).audio_url as string)
-              : undefined);
-
-    if (audioUrlCandidate && audioUrlCandidate.trim()) {
-      let resolvedUrl: string;
-      try {
-        resolvedUrl = new URL(audioUrlCandidate.trim(), response.url || context.baseUrl).href;
-      } catch {
-        throw new TTSInvalidResponseError(
-          context.provider,
-          `${context.provider} TTS returned an invalid audio URL: ${audioUrlCandidate}`,
-        );
-      }
-
-      const audioResponse = await fetch(resolvedUrl, {
-        signal: context.signal,
-      });
-
-      if (!audioResponse.ok) {
-        throwIfTtsRateLimited(context.provider, audioResponse.status);
-        throw new TTSInvalidResponseError(
-          context.provider,
-          `${context.provider} TTS audioUrl fetch failed (HTTP ${audioResponse.status})`,
-        );
-      }
-
-      return await validateAndResolveTTSAudioResponse(audioResponse, {
-        provider: context.provider,
-        baseUrl: context.baseUrl,
-        requestedFormat: context.requestedFormat,
-        signal: context.signal,
-      });
-    }
-
-    const detail =
-      json &&
-      (typeof json.detail === 'string'
-        ? json.detail
-        : typeof json.message === 'string'
-          ? json.message
-          : typeof (json.error as Record<string, unknown> | undefined)?.message === 'string'
-            ? ((json.error as Record<string, unknown>).message as string)
-            : typeof json.error === 'string'
-              ? json.error
-              : undefined);
-
-    const suffix = detail ? `: ${detail}` : '';
+    const textSnippet = new TextDecoder('utf-8').decode(bytes).slice(0, 300);
+    log.warn(`${provider} TTS returned JSON instead of audio: ${textSnippet}`);
     throw new TTSInvalidResponseError(
-      context.provider,
-      `${context.provider} TTS returned a JSON response without an audio URL${suffix}`,
+      provider,
+      `${provider} TTS returned a JSON response instead of audio.`,
     );
   }
 
   if (lowerContentType.includes('text/plain')) {
-    const textSnippet = new TextDecoder('utf-8').decode(bytes).slice(0, 160).trim();
+    const textSnippet = new TextDecoder('utf-8').decode(bytes).slice(0, 300);
+    log.warn(`${provider} TTS returned text/plain instead of audio: ${textSnippet}`);
     throw new TTSInvalidResponseError(
-      context.provider,
-      `${context.provider} TTS returned text/plain instead of audio: ${textSnippet}`,
+      provider,
+      `${provider} TTS returned text/plain instead of audio.`,
     );
   }
 
-  const format = getAudioResponseFormat(contentType, context.requestedFormat);
   return {
     audio: bytes,
-    format,
+    format: getAudioResponseFormat(contentType, fallbackFormat),
   };
 }
 
-function getAudioResponseFormat(contentType: string, requestedFormat?: string): string {
+function getAudioResponseFormat(contentType: string, fallbackFormat = 'mp3'): string {
   const lower = contentType.toLowerCase();
   if (lower.includes('audio/wav') || lower.includes('audio/x-wav')) return 'wav';
   if (lower.includes('audio/mpeg') || lower.includes('audio/mp3')) return 'mp3';
   if (lower.includes('audio/flac')) return 'flac';
   if (lower.includes('audio/ogg')) return 'ogg';
   if (lower.includes('audio/webm')) return 'webm';
-  return requestedFormat || 'mp3';
+  return fallbackFormat;
 }
 
 function getVoxCPMAudioFormat(mimeType?: string, fileName?: string): string {
@@ -860,12 +789,7 @@ async function generateAzureTTS(
     throw new Error(`Azure TTS API error: ${response.statusText}`);
   }
 
-  return await validateAndResolveTTSAudioResponse(response, {
-    provider: 'Azure',
-    baseUrl,
-    requestedFormat: 'mp3',
-    signal,
-  });
+  return await validateTTSAudioResponse(response, 'Azure', 'mp3');
 }
 
 /**
@@ -910,12 +834,7 @@ async function generateGLMTTS(
     throw new Error(errorMessage);
   }
 
-  return await validateAndResolveTTSAudioResponse(response, {
-    provider: 'GLM',
-    baseUrl,
-    requestedFormat: 'wav',
-    signal,
-  });
+  return await validateTTSAudioResponse(response, 'GLM', 'wav');
 }
 
 /**
@@ -1131,12 +1050,7 @@ async function generateElevenLabsTTS(
     throw new Error(`ElevenLabs TTS API error: ${errorText || response.statusText}`);
   }
 
-  return await validateAndResolveTTSAudioResponse(response, {
-    provider: 'ElevenLabs',
-    baseUrl,
-    requestedFormat,
-    signal,
-  });
+  return await validateTTSAudioResponse(response, 'ElevenLabs', requestedFormat);
 }
 
 /**

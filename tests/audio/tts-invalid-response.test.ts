@@ -4,6 +4,11 @@ import { generateTTS, TTSInvalidResponseError } from '@/lib/audio/tts-providers'
 const mockFetch = vi.fn() as Mock;
 vi.stubGlobal('fetch', mockFetch);
 
+const mockRecordGenerationUsage = vi.fn();
+vi.mock('@/lib/server/usage-storage', () => ({
+  recordGenerationUsage: (...args: unknown[]) => mockRecordGenerationUsage(...args),
+}));
+
 function wavBytes(): ArrayBuffer {
   const data = new Uint8Array(16);
   data[0] = 0x52; // 'R'
@@ -25,6 +30,7 @@ function stringToBuffer(str: string): ArrayBuffer {
 describe('TTS Provider Response Validation (#1395)', () => {
   beforeEach(() => {
     mockFetch.mockReset();
+    mockRecordGenerationUsage.mockClear();
   });
 
   it('rejects 200 responses with text/html body as non-audio', async () => {
@@ -68,6 +74,7 @@ describe('TTS Provider Response Validation (#1395)', () => {
     ).rejects.toMatchObject({
       code: 'TTS_INVALID_RESPONSE',
       httpStatus: 502,
+      message: 'OpenAI TTS returned an HTML response instead of audio. Check provider base URL.',
     });
   });
 
@@ -113,29 +120,12 @@ describe('TTS Provider Response Validation (#1395)', () => {
     ).rejects.toThrow(TTSInvalidResponseError);
   });
 
-  it('rejects 200 responses with JSON body lacking an audioUrl', async () => {
+  it('rejects 200 responses with JSON body with a generic message without leaking details', async () => {
     const jsonBody = JSON.stringify({
-      error: 'Upstream quota exhausted',
+      error: 'Upstream quota exhausted / internal gateway secret',
       code: 'insufficient_quota',
+      audioUrl: 'http://169.254.169.254/latest/meta-data/',
     });
-
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'application/json' },
-      arrayBuffer: async () => stringToBuffer(jsonBody),
-    });
-
-    await expect(
-      generateTTS(
-        {
-          providerId: 'openai-tts',
-          apiKey: 'sk-test',
-          voice: 'alloy',
-        },
-        'Hello',
-      ),
-    ).rejects.toThrow(TTSInvalidResponseError);
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -156,7 +146,7 @@ describe('TTS Provider Response Validation (#1395)', () => {
     ).rejects.toMatchObject({
       code: 'TTS_INVALID_RESPONSE',
       httpStatus: 502,
-      message: expect.stringContaining('Upstream quota exhausted'),
+      message: 'OpenAI TTS returned a JSON response instead of audio.',
     });
   });
 
@@ -180,12 +170,12 @@ describe('TTS Provider Response Validation (#1395)', () => {
     ).rejects.toThrow(TTSInvalidResponseError);
   });
 
-  it('rejects 200 responses with text/plain body', async () => {
+  it('rejects 200 responses with text/plain body with a generic message', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
       headers: { get: () => 'text/plain' },
-      arrayBuffer: async () => stringToBuffer('Unauthorized: invalid token'),
+      arrayBuffer: async () => stringToBuffer('Unauthorized: internal auth gateway failed'),
     });
 
     await expect(
@@ -197,108 +187,35 @@ describe('TTS Provider Response Validation (#1395)', () => {
         },
         'Hello',
       ),
-    ).rejects.toThrow(TTSInvalidResponseError);
+    ).rejects.toMatchObject({
+      code: 'TTS_INVALID_RESPONSE',
+      httpStatus: 502,
+      message: 'OpenAI TTS returned text/plain instead of audio.',
+    });
   });
 
-  it('recognises JSON envelope with audioUrl, follows URL, and returns audio bytes', async () => {
-    const audioBytes = wavBytes();
-    const jsonEnvelope = JSON.stringify({
-      audioUrl: 'https://cdn.example.com/audio/clip-123.wav',
+  it('accepts audio responses starting with <, {, or [ when content-type starts with audio/ (e.g. PCM)', async () => {
+    // Headerless audio formats like raw PCM, μ-law, and A-law have no magic numbers;
+    // ~1.2% naturally start with '<' (0x3C), '{' (0x7B), or '[' (0x5B).
+    const pcmBytes = new Uint8Array([0x3c, 0x00, 0x7b, 0x12, 0x5b, 0x34]);
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'audio/pcm' },
+      arrayBuffer: async () => pcmBytes.buffer,
     });
-
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: { get: () => 'application/json' },
-        arrayBuffer: async () => stringToBuffer(jsonEnvelope),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: { get: () => 'audio/wav' },
-        arrayBuffer: async () => audioBytes,
-      });
 
     const result = await generateTTS(
       {
         providerId: 'openai-tts',
         apiKey: 'sk-test',
-        baseUrl: 'https://api.example.com/v1',
         voice: 'alloy',
       },
       'Hello',
     );
 
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    expect(mockFetch.mock.calls[1][0]).toBe('https://cdn.example.com/audio/clip-123.wav');
-    expect(result.audio).toEqual(new Uint8Array(audioBytes));
-    expect(result.format).toBe('wav');
-  });
-
-  it('recognises JSON envelope with audio_url (snake_case) and relative path', async () => {
-    const audioBytes = wavBytes();
-    const jsonEnvelope = JSON.stringify({
-      audio_url: '/v1/download/clip-456.wav',
-    });
-
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: { get: () => 'application/json' },
-        arrayBuffer: async () => stringToBuffer(jsonEnvelope),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: { get: () => 'audio/wav' },
-        arrayBuffer: async () => audioBytes,
-      });
-
-    const result = await generateTTS(
-      {
-        providerId: 'lemonade-tts',
-        baseUrl: 'http://localhost:13305/v1',
-        voice: 'af_heart',
-      },
-      'Hello',
-    );
-
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    expect(mockFetch.mock.calls[1][0]).toBe('http://localhost:13305/v1/download/clip-456.wav');
-    expect(result.audio).toEqual(new Uint8Array(audioBytes));
-    expect(result.format).toBe('wav');
-  });
-
-  it('rejects if audioUrl fetch itself fails with non-200 or non-audio', async () => {
-    const jsonEnvelope = JSON.stringify({
-      audioUrl: 'https://cdn.example.com/audio/dead-link.wav',
-    });
-
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: { get: () => 'application/json' },
-        arrayBuffer: async () => stringToBuffer(jsonEnvelope),
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-        statusText: 'Not Found',
-      });
-
-    await expect(
-      generateTTS(
-        {
-          providerId: 'openai-tts',
-          apiKey: 'sk-test',
-          voice: 'alloy',
-        },
-        'Hello',
-      ),
-    ).rejects.toThrow(TTSInvalidResponseError);
+    expect(result.audio).toEqual(pcmBytes);
+    expect(result.format).toBe('mp3');
   });
 
   it('protects custom OpenAI-compatible providers', async () => {
@@ -325,7 +242,12 @@ describe('TTS Provider Response Validation (#1395)', () => {
 });
 
 describe('POST /api/generate/tts route handling of invalid responses (#1395)', () => {
-  it('surfaces 502 TTS_INVALID_RESPONSE and does not return base64 audio on HTML response', async () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockRecordGenerationUsage.mockClear();
+  });
+
+  it('surfaces 502 TTS_INVALID_RESPONSE and never records billing usage on invalid response', async () => {
     const { NextRequest } = await import('next/server');
     const { POST } = await import('@/app/api/generate/tts/route');
 
@@ -357,5 +279,51 @@ describe('POST /api/generate/tts route handling of invalid responses (#1395)', (
       error: expect.stringContaining('HTML response instead of audio'),
     });
     expect(json.base64).toBeUndefined();
+
+    // Critical billing invariant: usage is never recorded when response is rejected as non-audio
+    expect(mockRecordGenerationUsage).not.toHaveBeenCalled();
+  });
+
+  it('records billing usage only when audio generation succeeds (200)', async () => {
+    const { NextRequest } = await import('next/server');
+    const { POST } = await import('@/app/api/generate/tts/route');
+
+    const audioData = wavBytes();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'audio/wav' },
+      arrayBuffer: async () => audioData,
+    });
+
+    const req = new NextRequest('http://localhost/api/generate/tts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        text: 'Hello world',
+        audioId: 'audio-test-456',
+        ttsProviderId: 'openai-tts',
+        ttsModelId: 'tts-1',
+        ttsVoice: 'alloy',
+        ttsApiKey: 'sk-test',
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.audioId).toBe('audio-test-456');
+    expect(json.base64).toBeDefined();
+
+    // Billing usage recorded on success
+    expect(mockRecordGenerationUsage).toHaveBeenCalledTimes(1);
+    expect(mockRecordGenerationUsage).toHaveBeenCalledWith({
+      kind: 'tts',
+      unit: 'character',
+      providerId: 'openai-tts',
+      modelId: 'tts-1',
+      quantity: 11,
+    });
   });
 });
