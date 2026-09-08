@@ -121,7 +121,7 @@ export function assertSafeIp(value: string): void {
     throw new UnsafeNetworkTargetError(`Unable to classify network address: ${value}`);
   }
   if (
-    CLOUD_METADATA_ADDRESSES.has(canonical) ||
+    isCloudMetadataAddress(canonical) ||
     isPrivateIP(canonical) ||
     ipaddr.parse(canonical).range() !== 'unicast'
   ) {
@@ -291,31 +291,10 @@ export function isPrivateIP(ip: string): boolean {
     return true;
   }
 
-  // 6to4 tunnel: 2002::/16 — embedded IPv4 sits in bits 16-47
-  if (ipv6FirstHextet === 0x2002) {
-    const hextets = expandIPv6(normalized);
-    if (hextets) {
-      const embedded = `${hextets[1] >> 8}.${hextets[1] & 0xff}.${hextets[2] >> 8}.${hextets[2] & 0xff}`;
-      if (isPrivateIP(embedded)) return true;
-    }
-  }
-
-  // Teredo tunnel: 2001:0000::/32 — client IPv4 in last 32 bits, XOR-inverted
-  if (ipv6FirstHextet === 0x2001) {
-    const hextets = expandIPv6(normalized);
-    if (hextets && hextets[1] === 0x0000) {
-      const high = hextets[6] ^ 0xffff;
-      const low = hextets[7] ^ 0xffff;
-      const embedded = `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
-      if (isPrivateIP(embedded)) return true;
-    }
-  }
-
-  // ISATAP interface ID: 0000:5efe:<IPv4> or 0200:5efe:<IPv4>
-  const hextets = expandIPv6(normalized);
-  if (hextets && (hextets[4] === 0x0000 || hextets[4] === 0x0200) && hextets[5] === 0x5efe) {
-    const embedded = `${hextets[6] >> 8}.${hextets[6] & 0xff}.${hextets[7] >> 8}.${hextets[7] & 0xff}`;
-    if (isPrivateIP(embedded)) return true;
+  // Transition mechanisms (6to4, Teredo, ISATAP, NAT64) carry an IPv4
+  // address inside the IPv6 literal; classify by the embedded address.
+  if (tunnelEmbeddedIPv4(normalized).some((embedded) => isPrivateIP(embedded))) {
+    return true;
   }
 
   return false;

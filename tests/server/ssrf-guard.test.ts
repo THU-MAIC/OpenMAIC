@@ -283,6 +283,11 @@ describe('validateUrlForSSRF', () => {
       'http://[2001:0:1234:5678::5601:5601]/',
       'http://[fe80::5efe:a9fe:a9fe]/',
       'http://[64:ff9b::a9fe:a9fe]/',
+      // ISATAP under a globally routable prefix carrying a non-private metadata
+      // address: only the tunnel decoder catches these.
+      'http://[2001:db8::5efe:168.63.129.16]/',
+      'http://[2001:db8::200:5efe:192.0.0.192]/',
+      'http://[2001:db8::5efe:100.100.100.200]/',
     ];
 
     for (const url of urls) {
@@ -290,6 +295,28 @@ describe('validateUrlForSSRF', () => {
     }
 
     // Literals and known metadata hostnames are classified without DNS.
+    expect(lookupMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps allowing tunnel literals that embed public or private IPv4 when ALLOW_LOCAL_NETWORKS=true', async () => {
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    const urls = [
+      'http://[2002:808:808::]/', // 6to4 8.8.8.8
+      'http://[2002:c0a8:10a::]/', // 6to4 192.168.1.10
+      'http://[2001:0:1234:5678::f7f7:f7f7]/', // Teredo 8.8.8.8
+      'http://[2001:0:1234:5678::3f57:fef5]/', // Teredo 192.168.1.10
+      'http://[2001:db8::5efe:8.8.8.8]/', // ISATAP 8.8.8.8
+      'http://[fe80::5efe:192.168.1.10]/', // ISATAP 192.168.1.10
+      'http://[64:ff9b::8.8.8.8]/', // NAT64 8.8.8.8
+      'http://[64:ff9b::192.168.1.10]/', // NAT64 192.168.1.10
+    ];
+
+    for (const url of urls) {
+      await expect(validateUrlForSSRF(url)).resolves.toBeNull();
+    }
     expect(lookupMock).not.toHaveBeenCalled();
   });
 
@@ -446,6 +473,25 @@ describe('assertSafeIp', () => {
     const { assertSafeIp } = await import('@/lib/server/ssrf-guard');
     expect(() => assertSafeIp('::ffff:127.0.0.1')).toThrow(STRICT_BLOCK_MESSAGE);
     expect(() => assertSafeIp('::ffff:8.8.8.8')).not.toThrow();
+  });
+
+  it('rejects ISATAP and NAT64 addresses that embed a metadata or private IPv4', async () => {
+    const { assertSafeIp, isPrivateIP, UnsafeNetworkTargetError } =
+      await import('@/lib/server/ssrf-guard');
+
+    expect(() => assertSafeIp('2001:470:1f0b:1:0:5efe:168.63.129.16')).toThrow(
+      UnsafeNetworkTargetError,
+    );
+    expect(() => assertSafeIp('2001:470:1f0b:1:200:5efe:192.0.0.192')).toThrow(
+      UnsafeNetworkTargetError,
+    );
+    expect(() => assertSafeIp('2001:470:1f0b:1:0:5efe:100.100.100.200')).toThrow(
+      UnsafeNetworkTargetError,
+    );
+    expect(() => assertSafeIp('2001:470:1f0b:1:0:5efe:8.8.8.8')).not.toThrow();
+    expect(isPrivateIP('64:ff9b::192.168.1.10')).toBe(true);
+    expect(isPrivateIP('64:ff9b::7f00:1')).toBe(true);
+    expect(isPrivateIP('64:ff9b::8.8.8.8')).toBe(false);
   });
 
   it('rejects ISATAP addresses that embed private IPv4 beneath a public IPv6 prefix', async () => {
