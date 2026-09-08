@@ -9,7 +9,22 @@ import { isIP } from 'node:net';
 import ipaddr from 'ipaddr.js';
 
 const CLOUD_METADATA_HOSTNAMES = new Set(['metadata.google.internal']);
-const CLOUD_METADATA_ADDRESSES = new Set(['169.254.169.254', '100.100.100.200', 'fd00:ec2::254']);
+// Instance metadata and credential endpoints. A fixed list, not a general
+// link-local block: AWS/Azure/GCP/OCI/DigitalOcean/Hetzner/OpenStack IMDS,
+// AWS ECS task credentials, EKS Pod Identity, AWS IMDS over IPv6, Alibaba
+// Cloud metadata, Azure WireServer and the legacy OCI IMDS address.
+const CLOUD_METADATA_ADDRESSES = new Set([
+  '169.254.169.254',
+  '169.254.170.2',
+  '169.254.170.23',
+  'fd00:ec2::254',
+  'fd00:ec2::23',
+  '100.100.100.200',
+  '168.63.129.16',
+  '192.0.0.192',
+]);
+/** Upper bound on the DNS lookup done under ALLOW_LOCAL_NETWORKS; on expiry the target is allowed. */
+const ALLOW_LOCAL_DNS_TIMEOUT_MS = 3_000;
 
 export class UnsafeNetworkTargetError extends Error {
   constructor(message: string) {
@@ -45,10 +60,55 @@ function canonicalizeIp(value: string): string | null {
   return address.toString().toLowerCase();
 }
 
-/** True when an IP literal (URL host or DNS answer) is a cloud metadata address. */
+/**
+ * IPv4 addresses carried inside an IPv6 literal by a transition mechanism:
+ * 6to4 (2002::/16), Teredo (2001:0::/32, XOR-inverted), ISATAP interface
+ * identifiers and NAT64 (64:ff9b::/96). Empty when none applies.
+ */
+function tunnelEmbeddedIPv4(normalized: string): string[] {
+  const hextets = expandIPv6(normalized);
+  if (!hextets) return [];
+  const dotted = (high: number, low: number) =>
+    `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+  const embedded: string[] = [];
+  if (hextets[0] === 0x2002) embedded.push(dotted(hextets[1], hextets[2]));
+  if (hextets[0] === 0x2001 && hextets[1] === 0x0000) {
+    embedded.push(dotted(hextets[6] ^ 0xffff, hextets[7] ^ 0xffff));
+  }
+  if ((hextets[4] === 0x0000 || hextets[4] === 0x0200) && hextets[5] === 0x5efe) {
+    embedded.push(dotted(hextets[6], hextets[7]));
+  }
+  if (hextets[0] === 0x0064 && hextets[1] === 0xff9b && hextets.slice(2, 6).every((h) => h === 0)) {
+    embedded.push(dotted(hextets[6], hextets[7]));
+  }
+  return embedded;
+}
+
+/**
+ * True when an IP literal (URL host or DNS answer) is a cloud metadata address,
+ * directly, as IPv4-mapped IPv6, or embedded through a tunnel prefix.
+ */
 function isCloudMetadataAddress(value: string): boolean {
   const canonical = canonicalizeIp(value);
-  return canonical !== null && CLOUD_METADATA_ADDRESSES.has(canonical);
+  if (canonical === null) return false;
+  if (CLOUD_METADATA_ADDRESSES.has(canonical)) return true;
+  return tunnelEmbeddedIPv4(canonical).some((embedded) => CLOUD_METADATA_ADDRESSES.has(embedded));
+}
+
+/** dns.lookup bounded by a timer; resolves to null on timeout so the caller decides. */
+async function lookupWithTimeout(
+  hostname: string,
+  timeoutMs: number,
+): Promise<Array<{ address: string; family: number }> | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), timeoutMs);
+  });
+  try {
+    return await Promise.race([dns.lookup(hostname, { all: true, verbatim: true }), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /**
@@ -298,18 +358,18 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
     if (isIP(hostname)) {
       return null;
     }
-    // Non-IP hostname: fail open when DNS errors or returns nothing (split-horizon
-    // DNS is an explicit flag use case), but never when an answer is metadata.
-    let resolvedAddresses: Array<{ address: string; family: number }>;
+    // Non-IP hostname: fail open when DNS errors, times out or returns nothing
+    // (split-horizon DNS is an explicit flag use case), but never when an
+    // answer is a metadata address. This is a best-effort check against
+    // misconfiguration, not a defence against DNS rebinding: the provider
+    // fetch resolves the name again.
+    let resolvedAddresses: Array<{ address: string; family: number }> | null;
     try {
-      resolvedAddresses = await dns.lookup(hostname, { all: true, verbatim: true });
+      resolvedAddresses = await lookupWithTimeout(hostname, ALLOW_LOCAL_DNS_TIMEOUT_MS);
     } catch {
       return null;
     }
-    if (
-      resolvedAddresses.length > 0 &&
-      resolvedAddresses.some(({ address }) => isCloudMetadataAddress(address))
-    ) {
+    if (resolvedAddresses?.some(({ address }) => isCloudMetadataAddress(address))) {
       return CLOUD_METADATA_BLOCK_MESSAGE;
     }
     return null;

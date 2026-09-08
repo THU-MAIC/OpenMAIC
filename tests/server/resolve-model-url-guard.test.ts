@@ -39,7 +39,7 @@ describe('resolveModel — client-supplied base URL guard applies in every envir
     mocks.serverManaged = false;
   });
 
-  it('rejects a metadata-address base URL when NODE_ENV is not production', async () => {
+  it('rejects a private-network base URL when NODE_ENV is not production', async () => {
     vi.stubEnv('NODE_ENV', 'development');
     const { resolveModel } = await import('@/lib/server/resolve-model');
 
@@ -47,7 +47,7 @@ describe('resolveModel — client-supplied base URL guard applies in every envir
       resolveModel({
         modelString: 'openai:gpt-5.4-mini',
         apiKey: 'client-key',
-        baseUrl: 'http://169.254.169.254/latest/meta-data/',
+        baseUrl: 'http://192.168.1.10/v1/',
       }),
     ).rejects.toThrow(/Local\/private network URLs are not allowed/);
     expect(mocks.getModelCalls).toHaveLength(0);

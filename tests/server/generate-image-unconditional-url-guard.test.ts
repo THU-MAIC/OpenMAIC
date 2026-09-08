@@ -64,7 +64,7 @@ describe('generate image — client-supplied base URL guard applies in every env
     mocks.generateImage.mockResolvedValue({ url: 'https://example.com/img.png' });
   });
 
-  it('rejects a metadata-address base URL when NODE_ENV is not production', async () => {
+  it('rejects a private-network base URL when NODE_ENV is not production', async () => {
     vi.stubEnv('NODE_ENV', 'development');
     const { POST } = await import('@/app/api/generate/image/route');
 
@@ -73,7 +73,7 @@ describe('generate image — client-supplied base URL guard applies in every env
         'x-image-provider': 'openai-image',
         'x-api-key': 'client-key',
         'x-image-model': 'gpt-image-2',
-        'x-base-url': 'http://169.254.169.254/latest/meta-data/',
+        'x-base-url': 'http://192.168.1.10/v1/',
       }),
     );
     const json = await res.json();

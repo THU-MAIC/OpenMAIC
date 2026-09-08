@@ -66,9 +66,9 @@ describe('transcription — client-supplied base URL guard applies in every envi
     mocks.serverDisabled = false;
   });
 
-  it('rejects a metadata-address base URL when NODE_ENV is not production', async () => {
+  it('rejects a private-network base URL when NODE_ENV is not production', async () => {
     vi.stubEnv('NODE_ENV', 'development');
-    const res = await postTranscription('http://169.254.169.254/latest/meta-data/');
+    const res = await postTranscription('http://192.168.1.10/v1/');
     const json = await res.json();
 
     expect(res.status).toBe(403);

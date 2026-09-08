@@ -270,9 +270,19 @@ describe('validateUrlForSSRF', () => {
     const urls = [
       'http://169.254.169.254/latest/meta-data/',
       'http://[::ffff:169.254.169.254]/',
+      'http://169.254.170.2/v2/credentials/',
+      'http://169.254.170.23/v1/credentials',
       'http://100.100.100.200/',
+      'http://168.63.129.16/',
+      'http://192.0.0.192/',
       'http://[fd00:ec2::254]/',
+      'http://[fd00:ec2::23]/',
       'http://metadata.google.internal/computeMetadata/v1/',
+      // Tunnel prefixes carrying 169.254.169.254: 6to4, Teredo, ISATAP, NAT64.
+      'http://[2002:a9fe:a9fe::]/',
+      'http://[2001:0:1234:5678::5601:5601]/',
+      'http://[fe80::5efe:a9fe:a9fe]/',
+      'http://[64:ff9b::a9fe:a9fe]/',
     ];
 
     for (const url of urls) {
@@ -322,6 +332,22 @@ describe('validateUrlForSSRF', () => {
     await expect(validateUrlForSSRF('http://192.168.1.10/')).resolves.toBeNull();
     expect(lookupMock).toHaveBeenCalledTimes(1);
     expect(lookupMock).toHaveBeenCalledWith('localhost', { all: true, verbatim: true });
+  });
+
+  it('fails open when DNS lookup hangs past the bound under ALLOW_LOCAL_NETWORKS=true', async () => {
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    vi.useFakeTimers();
+    try {
+      lookupMock.mockReturnValue(new Promise(() => {}));
+
+      const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+      const pending = validateUrlForSSRF('https://slow-resolver.internal');
+      await vi.advanceTimersByTimeAsync(3_000);
+      await expect(pending).resolves.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('fails open when DNS lookup errors under ALLOW_LOCAL_NETWORKS=true', async () => {
