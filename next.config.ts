@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
       'lib/server/agent-runtime/import-pptx-worker.mjs',
       'skills/openmaic/**',
       'skills/agent-runtime/**',
+      'node_modules/@openai/codex/**',
+      'node_modules/@openai/codex-*/**',
+      'node_modules/.pnpm/@openai+codex@*/**',
     ],
   },
   typescript: {
@@ -21,6 +24,7 @@ const nextConfig: NextConfig = {
   // Mark them server-external so Next loads them natively and the dynamic
   // import resolves as a real Node call.
   serverExternalPackages: [
+    '@openai/codex',
     '@earendil-works/pi-ai',
     '@earendil-works/pi-agent-core',
     '@openmaic/generation',

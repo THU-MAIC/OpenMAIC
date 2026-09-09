@@ -157,7 +157,21 @@ providers:
       - us.anthropic.claude-opus-4-8
 ```
 
-Supported providers: **OpenAI**, **Azure OpenAI**, **Anthropic**, **Amazon Bedrock**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), **Lemonade** (local LLM / image / TTS / ASR), **FunASR** (local ASR), and any OpenAI-compatible API.
+Supported providers: **OpenAI**, **Azure OpenAI**, **Anthropic**, **Amazon Bedrock**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Codex Subscription**, **Ollama** (local), **Lemonade** (local LLM / image / TTS / ASR), **FunASR** (local ASR), and any OpenAI-compatible API.
+
+### Optional: Codex Subscription (ChatGPT Sign-In)
+
+Self-hosted OpenMAIC can use the official Codex App Server as an LLM transport, so requests consume the server owner's ChatGPT Codex subscription quota instead of an OpenAI API key. The pinned official `@openai/codex` package owns OAuth, token refresh, model discovery, and quota reporting; OpenMAIC does not parse or store OAuth tokens itself.
+
+```env
+CODEX_PROVIDER_ENABLED=true
+# Required: use a dedicated absolute directory, not your interactive CLI home.
+CODEX_PROVIDER_HOME=/absolute/path/to/openmaic-codex-home
+```
+
+Restart OpenMAIC, then open **Settings → LLM → Codex Subscription** and sign in with ChatGPT. Use browser sign-in when the browser and OpenMAIC server run on the same machine; use the device-code option for a remote server. Available models and subscription rate-limit windows are read from Codex after login.
+
+This integration requires a persistent local Node.js server and is not supported on serverless hosts such as Vercel. The login belongs to the OpenMAIC server, not to each browser user: protect shared deployments with `ACCESS_CODE`, because all users consume the same account quota. `CODEX_PROVIDER_HOME` must be an absolute, dedicated directory and is passed to the Codex process as its isolated state directory. Generation turns disable Codex environment access, commands, file edits, plugins, MCP tools, and web access. The provider supports text, images, streaming, and structured JSON output; OpenMAIC tool calls are not yet forwarded through this transport.
 
 Amazon Bedrock quick example:
 

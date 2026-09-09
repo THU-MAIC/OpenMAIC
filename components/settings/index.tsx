@@ -39,6 +39,7 @@ import { cn } from '@/lib/utils';
 import { createCustomProviderSettings, getProviderTypeLabel, modelInfoFromId } from './utils';
 import { ProviderList } from './provider-list';
 import { ProviderConfigPanel } from './provider-config-panel';
+import { CodexProviderPanel } from './codex-provider-panel';
 import { PDFSettings } from './pdf-settings';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
@@ -66,6 +67,7 @@ import { AddAudioProviderDialog, type NewAudioProviderData } from './add-audio-p
 import { isCustomTTSProvider, isCustomASRProvider } from '@/lib/audio/types';
 import { resolveASRProviderName, resolveTTSProviderName } from '@/lib/audio/provider-display';
 import type { SettingsSection, EditingModel } from '@/lib/types/settings';
+import type { ModelInfo } from '@/lib/types/provider';
 
 // ─── Provider List Column (reusable) ───
 function ProviderListColumn<T extends string>({
@@ -406,19 +408,31 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   // of accumulating dead ids. Catalog and manually-added models are preserved.
   // `modelInfoFromId(id, pid)` keeps built-in thinking capability so the
   // thinking control isn't silently hidden for fetched built-in models.
-  const handleModelsFetched = (pid: ProviderId, fetchedIds: string[]): number => {
+  const handleModelsFetched = (pid: ProviderId, fetched: string[] | ModelInfo[]): number => {
     const currentModels = providersConfig[pid]?.models || [];
     const kept = currentModels.filter((m) => m.source !== 'probed');
     const keptIds = new Set(kept.map((m) => m.id));
-    const additions = fetchedIds
-      .filter((id) => !keptIds.has(id))
-      .map((id) => ({ ...modelInfoFromId(id, pid), source: 'probed' as const }));
+    const currentIds = new Set(currentModels.map((model) => model.id));
+    const additions = Array.from(
+      new Map(
+        fetched
+          .map((item) =>
+            typeof item === 'string'
+              ? { ...modelInfoFromId(item, pid), source: 'probed' as const }
+              : { ...item, source: 'probed' as const },
+          )
+          .filter((model) => !keptIds.has(model.id))
+          .map((model) => [model.id, model]),
+      ).values(),
+    );
     const next = [...kept, ...additions];
-    // Write when the set changed at all — additions, or stale probed ids pruned.
-    if (additions.length > 0 || next.length !== currentModels.length) {
+    const changed =
+      next.length !== currentModels.length ||
+      next.some((model, index) => JSON.stringify(model) !== JSON.stringify(currentModels[index]));
+    if (changed) {
       setProviderConfig(pid, { models: next });
     }
-    return additions.length;
+    return additions.filter((model) => !currentIds.has(model.id)).length;
   };
 
   const handleAutoSaveModel = () => {
@@ -1101,6 +1115,16 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                   modelsUrl={providersConfig[selectedProviderId]?.modelsUrl}
                   onResetToDefault={() => handleResetProvider(selectedProviderId)}
                   isBuiltIn={providersConfig[selectedProviderId]?.isBuiltIn ?? true}
+                  connectionPanel={
+                    selectedProviderId === 'codex' ? (
+                      <CodexProviderPanel
+                        onModelsFetched={(models) => handleModelsFetched('codex', models)}
+                        onConnectionChanged={() =>
+                          void useSettingsStore.getState().fetchServerProviders()
+                        }
+                      />
+                    ) : undefined
+                  }
                 />
               )}
 

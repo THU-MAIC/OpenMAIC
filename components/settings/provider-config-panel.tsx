@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,7 +33,7 @@ import {
   Download,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import type { ProviderConfig } from '@/lib/ai/providers';
+import type { ModelInfo, ProviderConfig } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { createVerifyModelRequest, formatContextWindow } from './utils';
 import { cn } from '@/lib/utils';
@@ -49,8 +49,9 @@ interface ProviderConfigPanelProps {
   onEditModel: (index: number) => void;
   onDeleteModel: (index: number) => void;
   onAddModel: () => void;
-  /** Merge probed model ids into the provider's list; returns the count added. */
-  onModelsFetched?: (ids: string[]) => number;
+  /** Merge discovered models into the provider's list; returns the count added. */
+  onModelsFetched?: (models: string[] | ModelInfo[]) => number;
+  connectionPanel?: ReactNode;
   /** Optional explicit /models URL override (from a preset). */
   modelsUrl?: string;
   onResetToDefault?: () => void; // Reset provider to default configuration
@@ -69,6 +70,7 @@ export function ProviderConfigPanel({
   onDeleteModel,
   onAddModel,
   onModelsFetched,
+  connectionPanel,
   modelsUrl,
   onResetToDefault,
   isBuiltIn,
@@ -210,8 +212,10 @@ export function ProviderConfigPanel({
 
   return (
     <div className="space-y-6 max-w-3xl">
+      {connectionPanel}
+
       {/* Server-configured notice */}
-      {isServerConfigured && (
+      {!connectionPanel && isServerConfigured && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm text-blue-700 dark:text-blue-300">
           {t('settings.serverConfiguredNotice')}
         </div>
@@ -219,7 +223,7 @@ export function ProviderConfigPanel({
 
       {/* Managed providers are admin-owned: the operator's key and base URL are
           authoritative and not overridable here, so the editing inputs are hidden. */}
-      {!isServerConfigured && (
+      {!connectionPanel && !isServerConfigured && (
         <>
           {/* API Key */}
           <div className="space-y-2">

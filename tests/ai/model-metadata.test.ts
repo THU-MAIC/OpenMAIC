@@ -79,4 +79,12 @@ describe('model metadata thinking capabilities', () => {
       getCatalogThinkingCapability('openai', 'gpt-5.6'),
     );
   });
+
+  it('routes Codex reasoning effort through the server adapter', () => {
+    expect(getCatalogThinkingCapability('codex', 'gpt-5.6-sol')).toMatchObject({
+      requestAdapter: 'none',
+      effortValues: ['low', 'medium', 'high', 'xhigh', 'max'],
+      defaultEffort: 'medium',
+    });
+  });
 });

@@ -261,6 +261,13 @@ const openaiGpt56Effort: ThinkingCapability = {
   defaultEnabled: true,
 };
 
+const codexGpt56Effort = effortCapability(
+  'none',
+  ['low', 'medium', 'high', 'xhigh', 'max'],
+  'medium',
+);
+const codexGpt55Effort = effortCapability('none', ['low', 'medium', 'high', 'xhigh'], 'medium');
+
 const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('openai', 'gpt-5.6')]: openaiGpt56Effort,
   [getModelMetadataKey('openai', 'gpt-5.6-terra')]: openaiGpt56Effort,
@@ -290,6 +297,12 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
     ['none', 'low', 'medium', 'high', 'xhigh'],
     'none',
   ),
+
+  [getModelMetadataKey('codex', 'gpt-5.6-sol')]: codexGpt56Effort,
+  [getModelMetadataKey('codex', 'gpt-5.6-terra')]: codexGpt56Effort,
+  [getModelMetadataKey('codex', 'gpt-5.6-luna')]: codexGpt56Effort,
+  [getModelMetadataKey('codex', 'gpt-5.5')]: codexGpt55Effort,
+  [getModelMetadataKey('codex', 'gpt-5.4')]: codexGpt55Effort,
 
   [getModelMetadataKey('anthropic', 'claude-fable-5')]: anthropicFable5Effort,
   [getModelMetadataKey('anthropic', 'claude-opus-5')]: anthropicClaude5Effort,
