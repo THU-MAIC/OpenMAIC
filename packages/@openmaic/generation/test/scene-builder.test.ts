@@ -32,6 +32,26 @@ describe('buildCompleteScene', () => {
     expect(first?.id).not.toBe(second?.id);
   });
 
+  it('carries the generated remark onto the canvas as speaker notes', () => {
+    const scene = buildCompleteScene(
+      slideOutline(),
+      { ...content, remark: 'Explain why constructor injection keeps tests honest.' },
+      [],
+      'stage-1',
+    );
+    expect(scene?.type).toBe('slide');
+    const canvas = scene?.content.type === 'slide' ? scene.content.canvas : undefined;
+    expect(canvas?.script).toBe('Explain why constructor injection keeps tests honest.');
+    expect(validateScene(scene)).toEqual({ valid: true });
+  });
+
+  it('leaves script unset when no remark was generated', () => {
+    const scene = buildCompleteScene(slideOutline(), content, [], 'stage-1');
+    const canvas = scene?.content.type === 'slide' ? scene.content.canvas : undefined;
+    expect(canvas).toBeDefined();
+    expect(canvas).not.toHaveProperty('script');
+  });
+
   it('honors an injected id across retries/upserts', () => {
     const first = buildCompleteScene(slideOutline(), content, [], 'stage-1', {
       sceneId: 'stable-scene-id',
