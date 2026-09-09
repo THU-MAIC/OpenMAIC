@@ -271,15 +271,14 @@ describe('discussion TTS synthesis lookahead', () => {
     expect(hook.shouldHold()).toEqual({ holding: true, segmentDone: 0 });
   });
 
-  it.each(['disable', 'mute', 'unmount'])('cancels speculative work on %s', async (change) => {
+  it.each(['disable', 'unmount'])('cancels speculative work on %s', async (change) => {
     await seal('A');
     await seal('B');
     await respond(0);
     act(() => {
       if (change === 'unmount') root.unmount();
       else {
-        if (change === 'disable') enabled = false;
-        else mocks.settings.ttsMuted = true;
+        enabled = false;
         root.render(createElement(Probe));
       }
     });
@@ -290,6 +289,31 @@ describe('discussion TTS synthesis lookahead', () => {
     expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 0 });
   });
 
+  it('cancels lookahead on mute while preserving the current clip for unmute', async () => {
+    await seal('A');
+    await seal('B');
+    await respond(0);
+    const audio = FakeAudio.instances[0];
+    mocks.settings.ttsMuted = true;
+    enabled = false; // The real caller also derives enabled from !ttsMuted.
+    act(() => root.render(createElement(Probe)));
+    expect(requests[1].signal.aborted).toBe(true);
+    expect(audio.paused).toBe(false);
+    expect(audio.volume).toBe(0);
+    expect(hook.shouldHold()).toEqual({ holding: true, segmentDone: 0 });
+    await respond(1); // A cancelled prefetch must never be consumed.
+    mocks.settings.ttsMuted = false;
+    enabled = true;
+    await act(async () => root.render(createElement(Probe)));
+    expect(audio.volume).toBe(0.7);
+    expect(audio.play).toHaveBeenCalledOnce();
+    expect(requests.map((r) => r.body.audioId)).toEqual(['A', 'B', 'B']);
+    await respond(2);
+    await act(async () => audio.end());
+    expect(FakeAudio.instances[1].src).toContain(btoa('audio-2'));
+    expect(FakeAudio.instances[1].play).toHaveBeenCalledOnce();
+  });
+
   it('does not send a request after cancellation during voice-option resolution', async () => {
     const options = deferred<undefined>();
     mocks.voiceOptions.mockReturnValueOnce(options.promise);
@@ -298,6 +322,20 @@ describe('discussion TTS synthesis lookahead', () => {
     await act(async () => options.resolve(undefined));
     expect(requests).toHaveLength(0);
     expect(FakeAudio.instances).toHaveLength(0);
+  });
+
+  it('honors a mute applied while the current segment is still generating', async () => {
+    await seal('A');
+    mocks.settings.ttsMuted = true;
+    enabled = false;
+    act(() => root.render(createElement(Probe)));
+    await respond(0);
+    expect(FakeAudio.instances[0].volume).toBe(0);
+    mocks.settings.ttsMuted = false;
+    enabled = true;
+    act(() => root.render(createElement(Probe)));
+    expect(FakeAudio.instances[0].volume).toBe(0.7);
+    expect(FakeAudio.instances[0].play).toHaveBeenCalledOnce();
   });
 
   it('handles a prefetched generation failure only at its turn and advances to C', async () => {

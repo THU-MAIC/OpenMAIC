@@ -56,6 +56,8 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
   const ttsVolume = useSettingsStore((s) => s.ttsVolume);
   const playbackSpeed = useSettingsStore((s) => s.playbackSpeed);
+  const playbackSettingsRef = useRef({ playbackSpeed, ttsMuted, ttsVolume });
+  playbackSettingsRef.current = { playbackSpeed, ttsMuted, ttsVolume };
   // Global lecture voice — used as fallback for teacher agent
   const globalTtsProviderId = useSettingsStore((s) => s.ttsProviderId);
   const globalTtsVoice = useSettingsStore((s) => s.ttsVoice);
@@ -325,8 +327,9 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       abortControllerRef.current = null;
       const audioUrl = result.audioUrl;
       const audio = new Audio(audioUrl);
-      audio.playbackRate = playbackSpeed;
-      audio.volume = ttsMuted ? 0 : ttsVolume;
+      const settings = playbackSettingsRef.current;
+      audio.playbackRate = settings.playbackSpeed;
+      audio.volume = settings.ttsMuted ? 0 : settings.ttsVolume;
       audioRef.current = audio;
       const finish = () => {
         if (audioRef.current !== audio) return;
@@ -402,7 +405,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         queueMicrotask(() => processQueueRef.current());
       }
     }
-  }, [enabled, t, ttsMuted, ttsVolume, playbackSpeed, generateAudio]);
+  }, [enabled, t, ttsMuted, generateAudio]);
 
   processQueueRef.current = processQueue;
 
@@ -526,9 +529,18 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
     }
   }, [ttsVolume, ttsMuted]);
 
-  // Stop speculative work too when discussion audio is disabled or muted.
+  // Muting keeps the current clip's position (the volume effect silences it).
+  // PlaybackChromeRoot also sets enabled=false while muted, so distinguish
+  // that from turning TTS off. Only speculative work is cancelled on mute.
   useEffect(() => {
-    if (!enabled || ttsMuted) cleanup();
+    if (ttsMuted) {
+      prefetchedRef.current?.controller.abort();
+      prefetchedRef.current = null;
+    } else if (!enabled) {
+      cleanup();
+    } else {
+      prefetchNextRef.current();
+    }
   }, [enabled, ttsMuted, cleanup]);
 
   useEffect(() => cleanup, [cleanup]);
