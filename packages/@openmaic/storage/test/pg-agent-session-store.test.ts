@@ -13,8 +13,9 @@ import {
   AgentSessionLeaseLostError,
   AGENT_SESSION_LIFECYCLE,
 } from '../src/agent-session/types.js';
-import type { AgentSessionTitleStore } from '../src/index.js';
+import type { AgentSessionAutomaticTitleStore, AgentSessionTitleStore } from '../src/index.js';
 import { runAgentSessionConcurrencyContract } from './agent-session-concurrency-contract.js';
+import { runAgentSessionAutomaticTitleContract } from './agent-session-automatic-title-contract.js';
 import { makeAgentSessionInput, runAgentSessionStoreContract } from './agent-session-contract.js';
 import { runAgentSessionUrlContract } from './agent-session-url-contract.js';
 
@@ -41,6 +42,15 @@ describe('PgAgentSessionStore with PGlite', () => {
   runAgentSessionConcurrencyContract('Postgres (PGlite)', () => store, {
     genuineConcurrency: false,
   });
+  runAgentSessionAutomaticTitleContract('Postgres (PGlite)', () => store, {
+    genuineConcurrency: false,
+    writeLegacyManualTitle: (sessionId, ownerId, title) =>
+      db.query(
+        `UPDATE agent_sessions SET title = $3, updated_at = clock_timestamp()
+         WHERE id = $1 AND owner_id = $2`,
+        [sessionId, ownerId, title],
+      ),
+  });
   runAgentSessionUrlContract('Postgres (PGlite)', () => store);
 
   test('provisions all six tables idempotently', async () => {
@@ -53,6 +63,63 @@ describe('PgAgentSessionStore with PGlite', () => {
     expect(result.rows.map((row) => row.table_name)).toEqual(
       Object.values(DEFAULT_AGENT_SESSION_TABLE_NAMES).sort(),
     );
+  });
+
+  test('does not replace validated title constraints on repeated ensure', async () => {
+    const readConstraints = () =>
+      db.query<{ conname: string; oid: number; convalidated: boolean }>(
+        `SELECT conname, oid, convalidated FROM pg_constraint
+         WHERE conrelid = 'agent_sessions'::regclass
+           AND conname = 'agent_sessions_title_state_known'
+         ORDER BY conname`,
+      );
+    const before = await readConstraints();
+
+    await ensureAgentSessionSchema(db);
+
+    await expect(readConstraints()).resolves.toEqual(before);
+    expect(before.rows).toEqual([
+      expect.objectContaining({
+        conname: 'agent_sessions_title_state_known',
+        convalidated: true,
+      }),
+    ]);
+  });
+
+  test('provisions manual title state with only the three lifecycle values', async () => {
+    const defaults = await db.query<{ column_default: string }>(
+      `SELECT column_default FROM information_schema.columns
+       WHERE table_name = 'agent_sessions' AND column_name = 'title_state'`,
+    );
+    expect(defaults.rows).toEqual([{ column_default: "'manual'::text" }]);
+
+    await expect(
+      db.query(
+        `INSERT INTO agent_sessions (id, owner_id, prompt, stage_id, title_state)
+         VALUES ('state-pending', 'owner-a', 'prompt', 'stage-pending', 'pending'),
+                ('state-automatic', 'owner-a', 'prompt', 'stage-automatic', 'automatic'),
+                ('state-manual', 'owner-a', 'prompt', 'stage-manual', 'manual')`,
+      ),
+    ).resolves.toBeDefined();
+    await expect(
+      db.query(
+        `INSERT INTO agent_sessions (id, owner_id, prompt, stage_id, title_state)
+         VALUES ('state-invalid', 'owner-a', 'prompt', 'stage-invalid', 'retry')`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  test('creates only explicitly requested automatic titles as pending', async () => {
+    await store.createSession(makeAgentSessionInput({ titleState: 'pending' }));
+    await store.createSession(makeAgentSessionInput({ id: 'session-2', stageId: 'stage-2' }));
+
+    const states = await db.query<{ id: string; title_state: string }>(
+      `SELECT id, title_state FROM agent_sessions ORDER BY id`,
+    );
+    expect(states.rows).toEqual([
+      { id: 'session-1', title_state: 'pending' },
+      { id: 'session-2', title_state: 'manual' },
+    ]);
   });
 
   test('persists a manual title in session detail and owner lists', async () => {
@@ -197,6 +264,17 @@ describe('PgAgentSessionStore with PGlite', () => {
     });
     expect(detail).not.toHaveProperty('title');
     await expect(
+      db.query<{ title_state: string }>(
+        `SELECT title_state FROM legacy_sessions WHERE id = 'legacy-1'`,
+      ),
+    ).resolves.toMatchObject({ rows: [{ title_state: 'manual' }] });
+    await expect(
+      db.query(
+        `INSERT INTO legacy_sessions (id, owner_id, prompt, stage_id, title_state)
+         VALUES ('legacy-invalid', 'owner-a', 'prompt', 'stage-invalid', 'retry')`,
+      ),
+    ).rejects.toThrow();
+    await expect(
       db.query<{ is_nullable: string }>(
         `SELECT is_nullable FROM information_schema.columns
          WHERE table_name = 'legacy_sessions' AND column_name = 'title'`,
@@ -283,6 +361,73 @@ describe('PgAgentSessionStore with PGlite', () => {
            AND conname = 'agent_owner_session_events_type_known_v2'`,
       ),
     ).resolves.toMatchObject({ rows: [{ convalidated: true }] });
+  });
+
+  test('projects nullable manual and automatic titles through JSON data and replay', async () => {
+    const ownerEvents: Array<{ type: string; title?: string | null }> = [];
+    const hooked = new PgAgentSessionStore(db, {
+      ...optionsFor(db),
+      onOwnerEventAppended: async (_tx, event) => {
+        ownerEvents.push({
+          type: event.type,
+          ...('title' in event ? { title: event.title } : {}),
+        });
+      },
+    });
+    const automatic: AgentSessionAutomaticTitleStore = hooked;
+    const manual: AgentSessionTitleStore = hooked;
+    await hooked.createSession(makeAgentSessionInput({ titleState: 'pending' }));
+    await automatic.claimAutomaticSessionTitle('session-1', 'owner-a');
+    await automatic.setAutomaticSessionTitle('session-1', 'owner-a', 'Generated title');
+    await manual.setManualSessionTitle('session-1', 'owner-a', null);
+
+    expect(ownerEvents).toEqual([
+      { type: 'session_created' },
+      { type: 'session_title', title: 'Generated title' },
+      { type: 'session_title', title: null },
+    ]);
+    await expect(hooked.readAfter('owner-a', BigInt(1))).resolves.toMatchObject([
+      { type: 'session_title', sessionId: 'session-1', title: 'Generated title' },
+      { type: 'session_title', sessionId: 'session-1', title: null },
+    ]);
+    const stored = await db.query<{ data: unknown }>(
+      `SELECT data FROM agent_owner_session_events
+       WHERE owner_id = 'owner-a' AND type = 'session_title' ORDER BY id`,
+    );
+    expect(stored.rows).toEqual([
+      { data: { title: 'Generated title' } },
+      { data: { title: null } },
+    ]);
+  });
+
+  test('keeps manual and automatic title writes when their projections fail', async () => {
+    const logged: unknown[] = [];
+    const titles = new PgAgentSessionStore(db, {
+      ...optionsFor(db),
+      logger: { error: (...args) => logged.push(args) },
+    });
+    await titles.createSession(makeAgentSessionInput({ titleState: 'pending' }));
+    await titles.createSession(
+      makeAgentSessionInput({ id: 'session-2', stageId: 'stage-2', titleState: 'pending' }),
+    );
+    await db.query(
+      `ALTER TABLE agent_owner_session_events
+       ADD CONSTRAINT reject_title_projection CHECK (type <> 'session_title')`,
+    );
+
+    await titles.claimAutomaticSessionTitle('session-1', 'owner-a');
+    await expect(
+      titles.setAutomaticSessionTitle('session-1', 'owner-a', 'Generated title'),
+    ).resolves.toMatchObject({ title: 'Generated title' });
+    await expect(
+      titles.setManualSessionTitle('session-2', 'owner-a', 'Manual title'),
+    ).resolves.toMatchObject({ title: 'Manual title' });
+    await expect(titles.listSessionsByOwner('owner-a')).resolves.toMatchObject([
+      { id: 'session-1', title: 'Generated title' },
+      { id: 'session-2', title: 'Manual title' },
+    ]);
+    expect(await titles.readMaxId('owner-a')).toBe(BigInt(2));
+    expect(logged).toHaveLength(2);
   });
 
   test('requires a correctly pinned transaction hook', () => {

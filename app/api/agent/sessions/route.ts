@@ -12,6 +12,7 @@ import { apiError } from '@/lib/server/api-response';
 import { MAX_SESSION_TEXT_LENGTH } from '@/lib/server/agent-runtime/limits';
 import { findSkill, inferSkillIdFromPrompt, listSkills } from '@/lib/server/agent-runtime/skills';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
+import { scheduleConversationTitle } from '@/lib/server/agent-runtime/conversation-title-task';
 import {
   bindOwnerMaterialsToSession,
   SessionMaterialBindingError,
@@ -55,8 +56,8 @@ export async function POST(req: NextRequest) {
     return apiError('INVALID_REQUEST', 400, 'existingCourse stageId has an invalid format');
   }
 
-  const prompt =
-    (body.prompt ?? '').toString().trim() || (existingCourse ? (stageId ?? 'existing-course') : '');
+  const explicitPrompt = (body.prompt ?? '').toString().trim();
+  const prompt = explicitPrompt || (existingCourse ? (stageId ?? 'existing-course') : '');
   if (!prompt) {
     return apiError('MISSING_REQUIRED_FIELD', 400, 'prompt is required');
   }
@@ -142,6 +143,7 @@ export async function POST(req: NextRequest) {
       ...(stageId ? { stageId } : {}),
       ...(skillId ? { skillId } : {}),
       existingCourse,
+      titleState: 'pending',
       origin: buildRequestOrigin(req),
       // Keep the runner from claiming the session until its opening materials
       // and references are durable. postUserMessage below atomically requeues it.
@@ -149,22 +151,25 @@ export async function POST(req: NextRequest) {
     });
 
     if (!hasOpeningContext) {
+      if (!existingCourse) scheduleConversationTitle(meta.id, ownerId);
       return NextResponse.json(meta, { status: 202, headers: responseHeaders });
     }
 
     try {
+      const openingText = existingCourse ? explicitPrompt : prompt;
       const materials = materialIds.length
         ? await bindOwnerMaterialsToSession(meta.id, ownerId, materialIds)
         : [];
       await store.postUserMessage(
         meta.id,
         {
-          text: prompt,
+          text: openingText,
           ...(materials.length ? { materials } : {}),
           ...(decodedCourseRefs.refs.length ? { courseRefs: decodedCourseRefs.refs } : {}),
         },
         { expectedOwnerId: ownerId },
       );
+      if (openingText) scheduleConversationTitle(meta.id, ownerId);
       return NextResponse.json(
         {
           ...meta,

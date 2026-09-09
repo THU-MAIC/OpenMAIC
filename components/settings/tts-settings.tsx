@@ -91,6 +91,8 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const setTTSSpeed = useSettingsStore((state) => state.setTTSSpeed);
+  const ttsEnabled = useSettingsStore((state) => state.ttsEnabled);
+  const setTTSEnabled = useSettingsStore((state) => state.setTTSEnabled);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
   const activeProviderId = useSettingsStore((state) => state.ttsProviderId);
@@ -248,6 +250,18 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
 
   return (
     <div className={cn('space-y-6', isVoxCPM ? 'max-w-5xl' : 'max-w-3xl')}>
+      <div className="flex items-center justify-between rounded-lg border border-border/60 bg-background px-3 py-2.5">
+        <div className="min-w-0 pr-3">
+          <p className="text-sm font-medium">{t('settings.enableTTS')}</p>
+          <p className="text-[11px] text-muted-foreground">{t('settings.ttsEnabledDescription')}</p>
+        </div>
+        <Switch
+          checked={ttsEnabled}
+          onCheckedChange={setTTSEnabled}
+          aria-label={t('settings.enableTTS')}
+        />
+      </div>
+
       {/* Browser-native TTS can't produce managed audio files, so the Pro-mode
           timeline's per-line audio (preview / regenerate / bulk voiceover) is
           unavailable on it — surface that when this provider is selected. */}

@@ -170,6 +170,7 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
             poster={resolvedPoster ?? undefined}
             preload="metadata"
             controls
+            playsInline
             onEnded={handleEnded}
           />
         ) : (

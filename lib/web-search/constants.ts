@@ -16,6 +16,13 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     endpointPath: '/search',
     icon: '/logos/tavily.svg',
   },
+  exa: {
+    id: 'exa',
+    name: 'Exa',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.exa.ai',
+    endpointPath: '/search',
+  },
   bocha: {
     id: 'bocha',
     name: 'Bocha',

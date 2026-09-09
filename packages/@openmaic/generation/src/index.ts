@@ -15,7 +15,12 @@ export {
   PBLGenerationError,
   resolveImageIds,
 } from './scene-generator.js';
-export type { SceneActionsOptions, SceneContentOptions } from './scene-generator.js';
+export type {
+  SceneActionsOptions,
+  SceneContentFailure,
+  SceneContentFailureCode,
+  SceneContentOptions,
+} from './scene-generator.js';
 export { buildCompleteScene } from './scene-builder.js';
 export type { BuildCompleteSceneOptions } from './scene-builder.js';
 export {

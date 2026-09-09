@@ -72,6 +72,12 @@ const INTERACTIVE_WIDGET_ACTIONS = [
 
 // ── Options interfaces for scene generation functions ──
 
+export type SceneContentFailureCode = 'prompt-unavailable' | 'invalid-model-output';
+
+export interface SceneContentFailure {
+  code: SceneContentFailureCode;
+}
+
 export interface SceneContentOptions {
   assignedImages?: PdfImage[];
   imageMapping?: ImageMapping;
@@ -108,6 +114,7 @@ export interface SceneContentOptions {
   baselineContent?: GeneratedSlideContent;
   /** Optional host fallback for the app-only loop planner. */
   pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>;
+  onFailure?: (failure: SceneContentFailure) => void;
   logger?: GenerationLogger;
 }
 
@@ -268,6 +275,7 @@ export async function generateSceneContent(
     return generateWidgetContent(outline, aiCall, languageDirective, {
       allowProceduralSkill,
       logger: log,
+      onFailure: options.onFailure,
     });
   }
 
@@ -286,9 +294,10 @@ export async function generateSceneContent(
         editDirective,
         baselineContent,
         log,
+        options.onFailure,
       );
     case 'quiz':
-      return generateQuizContent(outline, aiCall, languageDirective, log);
+      return generateQuizContent(outline, aiCall, languageDirective, log, options.onFailure);
     case 'pbl':
       return generatePBLSceneContent(
         outline,
@@ -603,6 +612,7 @@ async function generateSlideContent(
   editDirective?: string,
   baselineContent?: GeneratedSlideContent,
   log: GenerationLogger = noopGenerationLogger,
+  onFailure?: (failure: SceneContentFailure) => void,
 ): Promise<GeneratedSlideContent | null> {
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
@@ -714,6 +724,7 @@ async function generateSlideContent(
   });
 
   if (!prompts) {
+    onFailure?.({ code: 'prompt-unavailable' });
     return null;
   }
 
@@ -765,6 +776,7 @@ async function generateSlideContent(
 
   if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {
     log.error(`Failed to parse AI response for: ${outline.title}`);
+    onFailure?.({ code: 'invalid-model-output' });
     return null;
   }
 
@@ -844,6 +856,7 @@ async function generateQuizContent(
   aiCall: AICallFn,
   languageDirective?: string,
   log: GenerationLogger = noopGenerationLogger,
+  onFailure?: (failure: SceneContentFailure) => void,
 ): Promise<GeneratedQuizContent | null> {
   const quizConfig = outline.quizConfig || {
     questionCount: 3,
@@ -862,6 +875,7 @@ async function generateQuizContent(
   });
 
   if (!prompts) {
+    onFailure?.({ code: 'prompt-unavailable' });
     return null;
   }
 
@@ -871,6 +885,7 @@ async function generateQuizContent(
 
   if (!generatedQuestions || !Array.isArray(generatedQuestions)) {
     log.error(`Failed to parse AI response for: ${outline.title}`);
+    onFailure?.({ code: 'invalid-model-output' });
     return null;
   }
 
@@ -1103,7 +1118,11 @@ export async function generateWidgetContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   languageDirective?: string,
-  options: { allowProceduralSkill?: boolean; logger?: GenerationLogger } = {},
+  options: {
+    allowProceduralSkill?: boolean;
+    logger?: GenerationLogger;
+    onFailure?: (failure: SceneContentFailure) => void;
+  } = {},
 ): Promise<GeneratedInteractiveContent | null> {
   const log = options.logger ?? noopGenerationLogger;
   const widgetType = outline.widgetType;
@@ -1215,6 +1234,7 @@ export async function generateWidgetContent(
   const prompts = buildPrompt(promptId, variables);
   if (!prompts) {
     log.error(`Failed to build ${widgetType} prompt for: ${outline.title}`);
+    options.onFailure?.({ code: 'prompt-unavailable' });
     return null;
   }
 
@@ -1224,6 +1244,7 @@ export async function generateWidgetContent(
 
   if (!html) {
     log.error(`Failed to extract HTML from ${widgetType} response for: ${outline.title}`);
+    options.onFailure?.({ code: 'invalid-model-output' });
     return null;
   }
 

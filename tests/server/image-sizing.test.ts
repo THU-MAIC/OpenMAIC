@@ -27,6 +27,24 @@ describe('resolveImageSize', () => {
     expect(result.height).toBe(576);
   });
 
+  it('normalizes GPT Image 2 landscape requests to an accepted OpenAI Images size', () => {
+    const result = resolveImageSize(options({ aspectRatio: '16:9' }), {
+      providerId: 'openai-image',
+      modelId: 'gpt-image-2',
+    });
+
+    expect(result).toMatchObject({ width: 1536, height: 1024 });
+  });
+
+  it('normalizes GPT Image 2 snapshots as well as the model alias', () => {
+    const result = resolveImageSize(options({ aspectRatio: '9:16' }), {
+      providerId: 'openai-image',
+      modelId: 'gpt-image-2-2026-04-21',
+    });
+
+    expect(result).toMatchObject({ width: 1024, height: 1536 });
+  });
+
   it('leaves explicit width/height untouched (ratio ignored)', () => {
     const result = resolveImageSize(options({ width: 512, height: 768, aspectRatio: '16:9' }));
     expect(result).toMatchObject({ width: 512, height: 768 });

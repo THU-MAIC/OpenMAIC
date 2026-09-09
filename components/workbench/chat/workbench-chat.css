@@ -211,6 +211,13 @@
     text-wrap: pretty;
   }
 
+  /* ---------- math ---------- */
+  .wb-prose .katex-display {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
   /* ---------- headings ---------- */
   /* Ladder 22/20/18 against the 14px body, weight 600 — BELOW the 700 of
      inline <strong>. Hierarchy comes from the size ladder; weight is reserved

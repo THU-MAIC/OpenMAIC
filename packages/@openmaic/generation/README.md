@@ -16,6 +16,12 @@ and `generateSceneActions`, then assemble the DSL value with
 `buildCompleteScene`. Retrying consumers can supply `sceneId` to preserve scene
 identity across replays.
 
+`generateSceneContent` returns `null` when a non-PBL content prompt cannot be
+prepared or the model output cannot be parsed. Callers that need a stable cause
+may supply `onFailure`; it receives `{ code: 'prompt-unavailable' }` or
+`{ code: 'invalid-model-output' }` immediately before that `null` result.
+`generateWidgetContent` accepts the same callback in its options.
+
 PBL scenes use the same `AICallFn` seam for single-call planning. Hosts that
 need an agentic fallback may inject `pblLoopFallback`; provider selection and
 fallback execution remain caller-owned. The two planner templates ship under

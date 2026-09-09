@@ -16,28 +16,64 @@ export interface CappedBody {
   exceeded: () => boolean;
 }
 
-export function capBodyStream(body: ReadableStream<Uint8Array>, capBytes: number): CappedBody {
+export function capBodyStream(
+  body: ReadableStream<Uint8Array>,
+  capBytes: number,
+  signal?: AbortSignal,
+): CappedBody {
   let total = 0;
   let tripped = false;
+  let stopped = false;
   const reader = body.getReader();
+  let onAbort: (() => void) | undefined;
+
+  const cleanup = () => {
+    if (signal && onAbort) signal.removeEventListener('abort', onAbort);
+  };
 
   const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (!signal) return;
+      onAbort = () => {
+        if (stopped) return;
+        stopped = true;
+        cleanup();
+        controller.error(signal.reason ?? new Error('Operation aborted'));
+        void reader.cancel(signal.reason).catch(() => {});
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    },
     async pull(controller) {
-      const { done, value } = await reader.read();
-      if (done) {
-        controller.close();
-        return;
+      try {
+        const { done, value } = await reader.read();
+        if (stopped) return;
+        if (done) {
+          stopped = true;
+          cleanup();
+          controller.close();
+          return;
+        }
+        total += value.byteLength;
+        if (total > capBytes) {
+          tripped = true;
+          stopped = true;
+          cleanup();
+          controller.error(new Error('Upload exceeds the maximum allowed size'));
+          await reader.cancel().catch(() => {});
+          return;
+        }
+        controller.enqueue(value);
+      } catch (error) {
+        if (stopped) return;
+        stopped = true;
+        cleanup();
+        controller.error(error);
       }
-      total += value.byteLength;
-      if (total > capBytes) {
-        tripped = true;
-        controller.error(new Error('Upload exceeds the maximum allowed size'));
-        await reader.cancel().catch(() => {});
-        return;
-      }
-      controller.enqueue(value);
     },
     cancel(reason) {
+      stopped = true;
+      cleanup();
       void reader.cancel(reason).catch(() => {});
     },
   });

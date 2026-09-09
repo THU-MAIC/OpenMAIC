@@ -220,6 +220,42 @@ describe('generateMediaForClassroom model fallback', () => {
     expect(genBody.model).toBe('pinned-a');
   });
 
+  test('normalizes GPT Image 2 classroom media to an accepted landscape size', async () => {
+    vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-openai');
+    vi.stubEnv('IMAGE_OPENAI_MODELS', 'gpt-image-2');
+    vi.resetModules();
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: [{ url: 'https://cdn.example.com/gpt-image-2.png' }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { generateMediaForClassroom } = await import('@/lib/server/classroom-media-generation');
+    const outlines = [
+      {
+        id: 'outline_gpt_image_2',
+        type: 'slide',
+        title: 'Scene',
+        description: 'd',
+        order: 1,
+        mediaGenerations: [{ type: 'image', prompt: 'a plant', elementId: 'gen_img_gpt_image_2' }],
+      },
+    ] as unknown as SceneOutline[];
+
+    await generateMediaForClassroom(outlines, 'cls-gpt-image-2', 'http://localhost');
+
+    const genBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(genBody).toMatchObject({ model: 'gpt-image-2', size: '1536x1024' });
+  });
+
   test('falls back to the first catalog video model when the server pins no models', async () => {
     // Key-only managed provider (no VIDEO_SEEDANCE_MODELS pin): the resolver
     // yields no model, so the classroom path must fall back to the first

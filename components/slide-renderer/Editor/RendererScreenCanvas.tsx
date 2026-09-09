@@ -142,6 +142,7 @@ function PlaybackVideoContent({
           poster={resolvedPoster ?? undefined}
           preload="metadata"
           controls
+          playsInline
           onEnded={handleEnded}
         />
         {canRetry ? (

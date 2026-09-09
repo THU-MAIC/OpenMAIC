@@ -138,6 +138,16 @@ vi.mock('@/lib/media/image-providers', () => ({
       requiresApiKey: true,
       models: [{ id: 'qwen-image-max', name: 'Qwen Image Max' }],
     },
+    lemonade: {
+      id: 'lemonade',
+      requiresApiKey: false,
+      models: [{ id: 'Qwen-Image-GGUF', name: 'Qwen Image GGUF' }],
+    },
+    'comfyui-image': {
+      id: 'comfyui-image',
+      requiresApiKey: false,
+      models: [],
+    },
   },
 }));
 
@@ -1871,5 +1881,116 @@ describe('TTS provider enablement (#665)', () => {
     expect(config.isServerConfigured).toBe(true);
     expect(config.customModels).toBeUndefined();
     expect(config.replaceBuiltInModels).toBeUndefined();
+  });
+});
+
+describe('settings media enable flags (#1288)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    storage.clear();
+    mockFetch.mockReset();
+  });
+
+  async function getStore() {
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    await useSettingsStore.persist.rehydrate();
+    return useSettingsStore;
+  }
+
+  it('turns ttsEnabled on when a hosted TTS provider gets an API key', async () => {
+    const store = await getStore();
+    expect(store.getState().ttsEnabled).toBe(false);
+
+    store.getState().setTTSProviderConfig('openai-tts', { apiKey: 'sk-test' });
+
+    expect(store.getState().ttsEnabled).toBe(true);
+    expect(store.getState().ttsProvidersConfig['openai-tts'].apiKey).toBe('sk-test');
+  });
+
+  it('does not re-enable ttsEnabled when an already-usable provider is edited', async () => {
+    const store = await getStore();
+    store.getState().setTTSProviderConfig('openai-tts', { apiKey: 'sk-test' });
+    expect(store.getState().ttsEnabled).toBe(true);
+
+    store.getState().setTTSEnabled(false);
+    store.getState().setTTSProviderConfig('openai-tts', { apiKey: 'sk-other' });
+
+    expect(store.getState().ttsEnabled).toBe(false);
+  });
+
+  it('does not turn ttsEnabled on for an empty key or for browser-native TTS', async () => {
+    const store = await getStore();
+
+    store.getState().setTTSProviderConfig('openai-tts', { apiKey: '' });
+    expect(store.getState().ttsEnabled).toBe(false);
+
+    store.getState().setTTSProviderConfig('browser-native-tts', { enabled: true });
+    expect(store.getState().ttsEnabled).toBe(false);
+  });
+
+  it('turns imageGenerationEnabled on when an image provider gets an API key', async () => {
+    const store = await getStore();
+    expect(store.getState().imageGenerationEnabled).toBe(false);
+
+    store.getState().setImageProviderConfig('seedream', { apiKey: 'img-key', enabled: true });
+
+    expect(store.getState().imageGenerationEnabled).toBe(true);
+  });
+
+  it('does not turn imageGenerationEnabled on when a disabled provider gets a key', async () => {
+    const store = await getStore();
+    store.getState().setImageProviderConfig('seedream', { enabled: false });
+
+    store.getState().setImageProviderConfig('seedream', { apiKey: 'img-key' });
+
+    expect(store.getState().imageGenerationEnabled).toBe(false);
+    expect(store.getState().imageProvidersConfig.seedream.apiKey).toBe('img-key');
+  });
+
+  it('turns imageGenerationEnabled on when a keyless provider gets a baseUrl', async () => {
+    const store = await getStore();
+    expect(store.getState().imageGenerationEnabled).toBe(false);
+
+    store.getState().setImageProviderConfig('lemonade', {
+      baseUrl: 'http://127.0.0.1:13305/v1',
+      enabled: true,
+    });
+
+    expect(store.getState().imageGenerationEnabled).toBe(true);
+  });
+
+  it('does not turn imageGenerationEnabled on for whitespace-only credentials', async () => {
+    const store = await getStore();
+
+    store.getState().setImageProviderConfig('seedream', { apiKey: '   ', enabled: true });
+    expect(store.getState().imageGenerationEnabled).toBe(false);
+
+    store.getState().setImageProviderConfig('lemonade', { baseUrl: '   ', enabled: true });
+    expect(store.getState().imageGenerationEnabled).toBe(false);
+  });
+
+  it('turns videoGenerationEnabled on when a video provider gets an API key', async () => {
+    const store = await getStore();
+    expect(store.getState().videoGenerationEnabled).toBe(false);
+
+    store.getState().setVideoProviderConfig('seedance', { apiKey: 'vid-key', enabled: true });
+
+    expect(store.getState().videoGenerationEnabled).toBe(true);
+  });
+
+  it('leaves a user-disabled image flag off across later server syncs', async () => {
+    const store = await getStore();
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+
+    store.setState({
+      imageProviderId: 'seedream',
+      imageGenerationEnabled: false,
+    });
+
+    mockServerResponse({ image: { seedream: {} } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().imageGenerationEnabled).toBe(false);
   });
 });

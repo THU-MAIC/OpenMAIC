@@ -50,6 +50,9 @@ describe('POST /api/web-search', () => {
     delete process.env.TAVILY_API_KEY;
     delete process.env.TAVILY_BASE_URL;
     delete process.env.TAVILY_ENABLED;
+    delete process.env.EXA_API_KEY;
+    delete process.env.EXA_BASE_URL;
+    delete process.env.EXA_ENABLED;
     delete process.env.BOCHA_API_KEY;
     delete process.env.BOCHA_BASE_URL;
     delete process.env.BOCHA_ENABLED;
@@ -137,6 +140,34 @@ describe('POST /api/web-search', () => {
         baseUrl: 'http://internal-proxy.local/bocha',
       }),
     );
+  });
+
+  it('routes Exa web search with server-managed credentials', async () => {
+    vi.stubEnv('EXA_API_KEY', 'exa-server-key');
+    vi.stubEnv('EXA_BASE_URL', 'https://api.exa.ai');
+
+    const res = await postWebSearch({
+      query: 'test query',
+      providerId: 'exa',
+    });
+
+    expect(res.status).toBe(200);
+    expect(mocks.searchWeb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'exa',
+        apiKey: 'exa-server-key',
+        baseUrl: 'https://api.exa.ai',
+      }),
+    );
+  });
+
+  it('names EXA_API_KEY when Exa credentials are missing', async () => {
+    const res = await postWebSearch({ query: 'test query', providerId: 'exa' });
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json.error).toContain('EXA_API_KEY');
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
   });
 
   it('runs Brave Search without an API key', async () => {

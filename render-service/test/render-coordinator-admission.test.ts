@@ -6,15 +6,20 @@
  *  - the per-identity cap (`RENDER_MAX_JOBS_PER_USER`) can't be bypassed;
  *  - `release()` fully undoes a reservation (the leak the route fix depends on:
  *    if a post-reserve step like makeProjectDir throws, the slot must come back).
+ *  - rejections carry machine-readable `reason` codes (`queue_full` /
+ *    `per_identity_limit`) and the aggregate `accepting` flag flips with
+ *    occupancy, so 429s and `/health` stay observable without prose parsing.
  *
  * We drive the coordinator directly with in-memory stores so nothing invokes the
  * real Chromium/FFmpeg producer — this is pure counter arithmetic.
  */
 import { describe, it, expect } from 'vitest';
 import { RenderCoordinator, RenderRejectedError } from '../src/render-coordinator.js';
+import { waitUntil } from './support/async.js';
 import {
   createMemoryArtifactStore,
   createMemoryJobStore,
+  parkingExecutor,
   succeedingExecutor,
 } from './support/fakes.js';
 
@@ -24,6 +29,17 @@ function newCoordinator(): RenderCoordinator {
     createMemoryJobStore(),
     createMemoryArtifactStore().store,
   );
+}
+
+/** Run fn, return the thrown error (fails the test if fn doesn't throw). */
+async function captureRejection(fn: () => unknown): Promise<RenderRejectedError> {
+  try {
+    await fn();
+  } catch (error) {
+    expect(error).toBeInstanceOf(RenderRejectedError);
+    return error as RenderRejectedError;
+  }
+  throw new Error('expected fn to throw RenderRejectedError');
 }
 
 describe('RenderCoordinator admission control', () => {
@@ -88,5 +104,83 @@ describe('RenderCoordinator admission control', () => {
     ).rejects.toThrow('store down');
     // The slot must be free again: a fresh reserve for the same identity succeeds.
     expect(() => m.reserve('carol')).not.toThrow();
+  });
+
+  it('labels a queue-cap rejection with reason queue_full', async () => {
+    const m = new RenderCoordinator(
+      succeedingExecutor,
+      createMemoryJobStore(),
+      createMemoryArtifactStore().store,
+      { maxQueue: 1, maxJobsPerUser: 0 },
+    );
+    m.reserve('alice'); // fills the whole global cap
+    const rejection = await captureRejection(() => m.reserve('bob'));
+    expect(rejection.reason).toBe('queue_full');
+    // Distinct identity, so this is genuinely the global cap — not the per-user
+    // guard firing first.
+    expect(rejection.message).toMatch(/queue is full/i);
+  });
+
+  it('labels a per-identity rejection with reason per_identity_limit', async () => {
+    const m = new RenderCoordinator(
+      succeedingExecutor,
+      createMemoryJobStore(),
+      createMemoryArtifactStore().store,
+      { maxQueue: 10, maxJobsPerUser: 1 },
+    );
+    m.reserve('alice');
+    // The queue has plenty of room; only alice's own slot is exhausted.
+    const rejection = await captureRejection(() => m.reserve('alice'));
+    expect(rejection.reason).toBe('per_identity_limit');
+    // A different identity is still admitted.
+    expect(() => m.reserve('bob')).not.toThrow();
+  });
+
+  it('leaves the internal reservation invariant reason-less', async () => {
+    const m = newCoordinator();
+    const r = m.reserve('dave');
+    await m.submit(r, '/tmp/whatever', { fps: 30, quality: 'draft', format: 'mp4' });
+    // Re-submitting a consumed reservation is an internal invariant, not an
+    // admission-cap rejection: no reason code, so the HTTP layer omits `reason`
+    // rather than serialize `undefined`.
+    const rejection = await captureRejection(() =>
+      m.submit(r, '/tmp/whatever', { fps: 30, quality: 'draft', format: 'mp4' }),
+    );
+    expect(rejection.reason).toBeUndefined();
+  });
+
+  it('accepting flips false once inSystem reaches maxQueue and back true when jobs finish', async () => {
+    // An executor that parks until released, so submitted jobs hold their
+    // system slots open across the reserve → queued → running lifecycle.
+    const { executor, releaseRenders } = parkingExecutor();
+    const jobs = createMemoryJobStore();
+    const m = new RenderCoordinator(executor, jobs, createMemoryArtifactStore().store, {
+      maxQueue: 2,
+      maxConcurrency: 1,
+      maxJobsPerUser: 0,
+    });
+    expect(m.accepting).toBe(true);
+
+    const a = m.reserve('alice');
+    await m.submit(a, '/tmp/whatever', { fps: 30, quality: 'draft', format: 'mp4' });
+    // One running job below a cap of two: still accepting — the queued second
+    // job is what crosses the threshold, so running and queued both count.
+    expect(m.accepting).toBe(true);
+
+    const b = m.reserve('bob');
+    await m.submit(b, '/tmp/wherever', { fps: 30, quality: 'draft', format: 'mp4' });
+    expect(m.accepting).toBe(false);
+    await expect(captureRejection(() => m.reserve('carol'))).resolves.toMatchObject({
+      reason: 'queue_full',
+    });
+
+    releaseRenders();
+    // Both jobs drain through the (already-resolved) parked executor; once the
+    // system is empty the coordinator accepts again.
+    await waitUntil(
+      async () => ((await jobs.list()).every((job) => job.status === 'succeeded') ? true : null),
+      'all jobs to drain to succeeded',
+    );
+    expect(m.accepting).toBe(true);
   });
 });

@@ -33,6 +33,17 @@ describe('web search provider constants', () => {
     expect(getAllWebSearchProviders().map((provider) => provider.id)).toContain('minimax');
   });
 
+  it('registers Exa as an API-key web search provider', () => {
+    expect(WEB_SEARCH_PROVIDERS.exa).toMatchObject({
+      id: 'exa',
+      name: 'Exa',
+      requiresApiKey: true,
+      defaultBaseUrl: 'https://api.exa.ai',
+      endpointPath: '/search',
+    });
+    expect(getAllWebSearchProviders().map((provider) => provider.id)).toContain('exa');
+  });
+
   it('registers Claude as an API-key web search provider with a model list', () => {
     expect(WEB_SEARCH_PROVIDERS.claude).toMatchObject({
       id: 'claude',

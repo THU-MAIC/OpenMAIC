@@ -181,17 +181,8 @@ or `list_folder_stages` instead of keeping it alive by repetition.
 
 ## When something fails
 
-One bad page does not end a series. If a page or a whole stage will not
-generate:
-
-- retry it once — every tool is idempotent, and an interrupted step just needs
-  re-issuing;
-- if it still fails, note it, leave the rest of that stage intact, and move on
-  to the next one. Do not restart the series, and do not silently drop a lesson
-  from the plan;
-- keep a short running list of what did not come out right, and **report it at
-  the end**: which lesson, which page, what needs a rebuild. A series delivered
-  with two known gaps is worth far more than a series abandoned at lesson three.
+Page recovery follows `stage-design`; one failed page does not abort the rest of
+the series.
 
 ## Finishing
 

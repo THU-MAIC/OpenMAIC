@@ -59,6 +59,7 @@ export function BaseVideoElement({
             poster={elementInfo.poster}
             preload="metadata"
             controls={!!elementInfo.src}
+            playsInline
           />
         ) : (
           <div

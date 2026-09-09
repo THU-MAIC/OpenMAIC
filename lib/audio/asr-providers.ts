@@ -198,7 +198,7 @@ export async function transcribeAudio(
 
     default:
       if (isCustomASRProvider(config.providerId)) {
-        return await transcribeOpenAIWhisper(config, audioBuffer);
+        return await transcribeCustomOpenAICompatibleASR(config, audioBuffer);
       }
       throw new Error(`Unsupported ASR provider: ${config.providerId}`);
   }
@@ -299,6 +299,84 @@ function detectWavBytes(bytes: Uint8Array): boolean {
 function getOptionalBearerAuthHeaders(apiKey?: string): Record<string, string> {
   const key = apiKey?.trim();
   return key ? { Authorization: `Bearer ${key}` } : {};
+}
+
+/**
+ * Custom OpenAI-compatible ASR transcription via raw fetch.
+ *
+ * Used by all `custom-asr-*` providers (e.g. SiliconFlow, LocalAI, etc.).
+ *
+ * Unlike `transcribeOpenAIWhisper`, this bypasses the Vercel AI SDK so that
+ * provider responses with extra fields (e.g. SiliconFlow's `segments` array)
+ * are NOT rejected by the SDK's strict response-schema validation.  Only
+ * `data.text` is extracted, making it tolerant of any OpenAI-compatible
+ * provider that returns additional fields beyond the standard spec.
+ */
+async function transcribeCustomOpenAICompatibleASR(
+  config: ASRModelConfig,
+  audioBuffer: Buffer | Blob,
+): Promise<ASRTranscriptionResult> {
+  const baseUrl = (config.baseUrl || '').replace(/\/$/, '');
+  if (!baseUrl) {
+    throw new Error('Custom ASR provider requires a base URL (e.g. https://api.siliconflow.cn/v1)');
+  }
+
+  // Build a Blob with a sensible content-type so the remote API can detect
+  // the audio format without relying on a file extension.
+  let audioBlob: Blob;
+  if (audioBuffer instanceof Blob) {
+    audioBlob = audioBuffer;
+  } else {
+    const arrayBuffer = audioBuffer.buffer.slice(
+      audioBuffer.byteOffset,
+      audioBuffer.byteOffset + audioBuffer.byteLength,
+    ) as ArrayBuffer;
+    // Preserve existing type when converting from Buffer; fall back to webm
+    // (the default recording format used by the browser MediaRecorder API).
+    audioBlob = new Blob([arrayBuffer], { type: 'audio/webm' });
+  }
+
+  // Most OpenAI-compatible transcription endpoints treat `model` as a
+  // required field.  Custom providers have no built-in default, so we
+  // require the caller to supply one and fail fast with a clear message
+  // rather than sending a request that will almost certainly return a 400.
+  if (!config.modelId?.trim()) {
+    throw new Error(
+      'Custom ASR provider requires a model ID (e.g. FunAudioLLM/SenseVoiceSmall). ' +
+        'Please set the model in the provider settings.',
+    );
+  }
+
+  const formData = new FormData();
+  // Use 'file' key — required by the OpenAI audio/transcriptions spec.
+  formData.set('file', audioBlob, 'audio.webm');
+  formData.set('model', config.modelId);
+  formData.set('response_format', 'json');
+  if (config.language && config.language !== 'auto') {
+    formData.set('language', config.language);
+  }
+
+  const response = await fetch(`${baseUrl}/audio/transcriptions`, {
+    method: 'POST',
+    headers: getOptionalBearerAuthHeaders(config.apiKey),
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    if (errorText.includes('audio is empty') || errorText.includes('too short')) {
+      return { text: '' };
+    }
+    throw new Error(
+      `Custom ASR API error (${response.status}): ${errorText || response.statusText}`,
+    );
+  }
+
+  // Only extract `text` — extra provider-specific fields (e.g. SiliconFlow's
+  // `segments`, `duration`, `usage`) are intentionally ignored so that strict
+  // schema validators in the SDK never see them.
+  const data = await response.json();
+  return { text: typeof data.text === 'string' ? data.text : '' };
 }
 
 /**

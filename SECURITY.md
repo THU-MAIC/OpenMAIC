@@ -28,6 +28,16 @@ Instead, please report it privately using one of the following methods:
 
 We will acknowledge receipt of your vulnerability report within 48 hours and strive to send you regular updates about our progress.
 
+## Triage and Severity
+
+* Maintainers confirm the report, agree on the affected code paths, and assign a severity using CVSS v4.0. The published vector reflects the maintainers' assessment of the default deployment described in this repository (the shipped `Dockerfile`, `docker-compose.yml`, and `.env.example`); deployment-specific amplification is described in the advisory text rather than baked into the base score.
+* If you disagree with the proposed severity, say so in the advisory thread before publication. We will answer every severity objection in the thread before we publish, and we will not publish while a metric is still under active discussion.
+* Behaviour that an operator explicitly opts into and that is documented as unsafe for public deployments (for example `ALLOW_LOCAL_NETWORKS=true`) is evaluated against its documentation: we treat it as a hardening request when it does what the documentation says, and as a vulnerability when it is unsafe beyond that.
+
 ## Disclosure Process
 
 When a vulnerability is confirmed and patched, we will publish a GitHub Security Advisory detailing the issue, the impacted versions, and the fix. We will also credit the security researcher who reported the issue (unless they prefer to remain anonymous).
+
+* For every accepted advisory the maintainers request a CVE identifier through GitHub at publication time, so the CVE description, affected versions, and score match the advisory. Please do not request a CVE for an OpenMAIC advisory from another CNA; if one already exists, tell us and we will link it.
+* Publication happens after the fix is released. The advisory, the release notes, and the CVE record are published together.
+* Advisory collaborators should not edit a published advisory's severity or description without raising it in the thread first; maintainers keep the published advisory consistent with the CVE record.

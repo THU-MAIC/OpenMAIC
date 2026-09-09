@@ -4,10 +4,11 @@ import { extractWidgetConfig, generateWidgetContent } from '@openmaic/generation
 import type { AICallFn } from '@openmaic/generation';
 import type { SceneOutline } from '@openmaic/generation';
 
-const renderDiagramPrompt = async (widgetOutline: SceneOutline['widgetOutline']) => {
-  let capturedPrompt = '';
-  const aiCall: AICallFn = async (_system, user) => {
-    capturedPrompt = user;
+const renderDiagramPrompts = async (widgetOutline: SceneOutline['widgetOutline']) => {
+  const captured = { system: '', user: '' };
+  const aiCall: AICallFn = async (system, user) => {
+    captured.system = system;
+    captured.user = user;
     return `<!DOCTYPE html>
 <html>
   <body>
@@ -30,8 +31,11 @@ const renderDiagramPrompt = async (widgetOutline: SceneOutline['widgetOutline'])
   };
 
   await generateWidgetContent(outline, aiCall);
-  return capturedPrompt;
+  return captured;
 };
+
+const renderDiagramPrompt = async (widgetOutline: SceneOutline['widgetOutline']) =>
+  (await renderDiagramPrompts(widgetOutline)).user;
 
 describe('diagram widget node constraints', () => {
   test('forwards the requested count and prescribed nodes to the content prompt', async () => {
@@ -68,6 +72,18 @@ describe('diagram widget node constraints', () => {
     expect(prompt).not.toContain('## Node Count Constraint');
     expect(prompt).not.toContain('## Prescribed Nodes');
     expect(prompt).not.toContain('{{');
+  });
+});
+
+describe('diagram hover transform contract', () => {
+  test('keeps node positioning and hover animation on separate elements', async () => {
+    const { system } = await renderDiagramPrompts({ diagramType: 'flowchart' });
+
+    expect(system).toContain(
+      'Never apply a CSS `transform` to an element that already carries an SVG `transform` attribute',
+    );
+    expect(system).toContain('## Node Structure');
+    expect(system).toContain('.node:hover .node-body { transform: translateY(-4px); }');
   });
 });
 
