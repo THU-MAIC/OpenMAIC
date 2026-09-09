@@ -18,6 +18,11 @@ import {
 } from './adapters/minimax-video-adapter';
 import { generateWithGrokVideo, testGrokVideoConnectivity } from './adapters/grok-video-adapter';
 import { generateWithHappyHorse, testHappyHorseConnectivity } from './adapters/happyhorse-adapter';
+import {
+  generateWithOpenRouterVideo,
+  testOpenRouterVideoConnectivity,
+} from './adapters/openrouter-video-adapter';
+import { OPENROUTER_DEFAULT_BASE_URL } from './adapters/openrouter-image-adapter';
 
 export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   seedance: {
@@ -120,6 +125,23 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     supportedResolutions: ['720p', '1080p'],
     maxDuration: 15,
   },
+  'openrouter-video': {
+    id: 'openrouter-video',
+    name: 'OpenRouter Video',
+    requiresApiKey: true,
+    defaultBaseUrl: OPENROUTER_DEFAULT_BASE_URL,
+    // Model list is fetched live from GET /videos/models (see
+    // /api/openrouter-models); this seed keeps the picker usable offline.
+    models: [
+      { id: 'google/veo-3.1', name: 'Veo 3.1' },
+      { id: 'kwaivgi/kling-v3.0-pro', name: 'Kling v3.0 Pro' },
+      { id: 'bytedance/seedance-2.5', name: 'Seedance 2.5' },
+    ],
+    supportedAspectRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
+    supportedDurations: [4, 5, 6, 8, 10],
+    supportedResolutions: ['480p', '720p', '1080p'],
+    maxDuration: 10,
+  },
 };
 
 export async function testVideoConnectivity(
@@ -138,6 +160,8 @@ export async function testVideoConnectivity(
       return testGrokVideoConnectivity(config);
     case 'happyhorse':
       return testHappyHorseConnectivity(config);
+    case 'openrouter-video':
+      return testOpenRouterVideoConnectivity(config);
     default:
       return {
         success: false,
@@ -205,6 +229,8 @@ export async function generateVideo(
       return generateWithGrokVideo(config, options);
     case 'happyhorse':
       return generateWithHappyHorse(config, options);
+    case 'openrouter-video':
+      return generateWithOpenRouterVideo(config, options);
     default:
       throw new Error(`Unsupported video provider: ${config.providerId}`);
   }
