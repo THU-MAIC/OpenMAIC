@@ -436,7 +436,8 @@ function loadImageElement(dataUrl: string): Promise<HTMLImageElement | null> {
     img.onerror = () => finish(null);
     img.src = dataUrl;
     if (typeof img.decode === 'function') {
-      img.decode()
+      img
+        .decode()
         .then(() => finish(img))
         .catch(() => finish(null));
     } else {

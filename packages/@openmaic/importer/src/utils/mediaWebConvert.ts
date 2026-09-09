@@ -125,11 +125,7 @@ function hasUsable2dCanvas(): boolean {
     const canvas = document.createElement('canvas');
     if (!canvas || typeof canvas.getContext !== 'function') return false;
     const ctx = canvas.getContext('2d');
-    return (
-      !!ctx &&
-      typeof ctx.drawImage === 'function' &&
-      typeof canvas.toDataURL === 'function'
-    );
+    return !!ctx && typeof ctx.drawImage === 'function' && typeof canvas.toDataURL === 'function';
   } catch {
     return false;
   }
@@ -138,10 +134,7 @@ function hasUsable2dCanvas(): boolean {
 /** Per-call ceiling so a stuck pdfjs worker degrades instead of hanging forever. */
 const EMF_PDF_RENDER_DEADLINE_MS = 10_000;
 
-async function renderPdfPageToPngDataUrl(
-  pdfData: Uint8Array,
-  targetWidth = 1024,
-): Promise<string> {
+async function renderPdfPageToPngDataUrl(pdfData: Uint8Array, targetWidth = 1024): Promise<string> {
   const doc = await pdfjs.getDocument({ data: pdfData, verbosity: 0 }).promise;
   try {
     const page = await doc.getPage(1);
@@ -165,26 +158,26 @@ async function renderPdfPageToPngDataUrl(
 }
 
 async function emfPdfToPngDataUrl(pdfData: Uint8Array, targetWidth = 1024): Promise<string> {
-    if (!hasUsable2dCanvas()) {
-      // No real 2D canvas here (DOM shims), so pdfjs would hang; fall back.
-      return TRANSPARENT_PNG_DATA_URL;
-    }
+  if (!hasUsable2dCanvas()) {
+    // No real 2D canvas here (DOM shims), so pdfjs would hang; fall back.
+    return TRANSPARENT_PNG_DATA_URL;
+  }
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error('pdf rasterize exceeded its deadline')),
-        EMF_PDF_RENDER_DEADLINE_MS,
-      );
-    });
-    try {
-      return await Promise.race([renderPdfPageToPngDataUrl(pdfData, targetWidth), deadline]);
-    } catch (err) {
-      console.error('[emfPdfToPng] failed:', err);
-      return TRANSPARENT_PNG_DATA_URL;
-    } finally {
-      if (timer !== undefined) clearTimeout(timer);
-    }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error('pdf rasterize exceeded its deadline')),
+      EMF_PDF_RENDER_DEADLINE_MS,
+    );
+  });
+  try {
+    return await Promise.race([renderPdfPageToPngDataUrl(pdfData, targetWidth), deadline]);
+  } catch (err) {
+    console.error('[emfPdfToPng] failed:', err);
+    return TRANSPARENT_PNG_DATA_URL;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 // ---------------------------------------------------------------------------
