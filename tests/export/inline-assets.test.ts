@@ -894,3 +894,131 @@ describe('inlineHtmlAssets', () => {
     expect(out).toContain('src="data:text/javascript;base64,');
   });
 });
+
+describe('malformed authored CSS tolerance', () => {
+  // Regression for the stage-LHSa3TDAYh export failures: an LLM-authored
+  // <style> carried `-- crop-green: #22c55e;` (space after --). Browsers drop
+  // such declarations, but strict postcss parsing used to abort the whole
+  // resource-pack / classroom-zip export.
+  const malformedCss = `:root {\n  -- crop-green: #22c55e;\n}\nbody { color: red; }`;
+
+  it('collectAssetRefs does not throw on an unparsable <style> block', () => {
+    expect(() => collectAssetRefs(`<style>${malformedCss}</style>`)).not.toThrow();
+  });
+
+  it('inlineHtmlAssets keeps a malformed <style> block byte-for-byte and still succeeds', async () => {
+    const { html: out, report } = await inlineHtmlAssets(
+      `<style>${malformedCss}</style><img src="https://cdn.test/ok.png">`,
+      {
+        fetcher: async () => ({
+          bytes: new Uint8Array([1]),
+          contentType: 'image/png',
+        }),
+      },
+    );
+    expect(out).toContain(`-- crop-green: #22c55e;`);
+    expect(out).toContain('<img src="data:image/png;base64,');
+    expect(report.failed).toHaveLength(0);
+  });
+
+  it('inlineCssUrls returns the stylesheet untouched when it cannot parse', async () => {
+    const fetcher = async () => null as unknown as Awaited<ReturnType<typeof fetch>>;
+    const { css, failed, inlined } = await inlineCssUrls(
+      malformedCss,
+      'about:blank',
+      fetcher as never,
+    );
+    expect(css).toBe(malformedCss);
+    expect(failed).toHaveLength(0);
+    expect(inlined).toHaveLength(0);
+  });
+
+  it('collectCssAssetReferences still surfaces url() refs in malformed CSS', async () => {
+    const { collectCssAssetReferences } = await import('@/lib/export/css-asset-parser');
+    expect(
+      collectCssAssetReferences(
+        ':root { -- crop-green: #22c55e; } .a { background: url(https://x/a.png); }',
+      ),
+    ).toEqual([{ kind: 'css-url', url: 'https://x/a.png' }]);
+  });
+
+  it('ignores url() text inside quoted strings but keeps parenthesized quoted urls', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    expect(
+      collectCssAssetReferencesByRegex(
+        '.a { content: "url(https://x/text-only.png)"; } .b { src: url("https://x/font(foo).woff2"); }',
+      ),
+    ).toEqual([{ kind: 'css-url', url: 'https://x/font(foo).woff2' }]);
+  });
+
+  it('reports a malformed @import url() only once', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    expect(collectCssAssetReferencesByRegex('@import url(https://x/a.css);')).toEqual([
+      { kind: 'css-import', url: 'https://x/a.css' },
+    ]);
+  });
+
+  it('keeps collecting urls after a malformed unterminated @import', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    expect(
+      collectCssAssetReferencesByRegex(
+        '@import url(https://x/a.css) .a { background: url(https://x/b.png); }',
+      ),
+    ).toEqual([
+      { kind: 'css-import', url: 'https://x/a.css' },
+      { kind: 'css-url', url: 'https://x/b.png' },
+    ]);
+  });
+
+  it('ignores unterminated comments and non-url function names', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    expect(
+      collectCssAssetReferencesByRegex(
+        '.a { background: myurl(https://x/fake.png); } /* url(https://x/gone.png)',
+      ),
+    ).toEqual([]);
+  });
+
+  it('keeps an @import target across an interleaved comment', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    expect(collectCssAssetReferencesByRegex('@import /* x */ "https://x/a.css";')).toEqual([
+      { kind: 'css-import', url: 'https://x/a.css' },
+    ]);
+  });
+
+  it('surfaces absolute and relative url() refs of unparseable CSS as failures', async () => {
+    const { css, failed } = await inlineCssUrls(
+      ':root { -- crop-green: #22c55e; } .a { background: url(https://x/a.png) ; } .b { background: url(imgs/b.png); } /* url(https://x/comment.png) */',
+      'https://cdn.test/page.html',
+      (async () => null) as never,
+    );
+    expect(css).toContain('-- crop-green');
+    expect(failed).toContainEqual({ url: 'https://x/a.png', reason: 'css parse failed' });
+    expect(failed).toContainEqual({
+      url: 'https://cdn.test/imgs/b.png',
+      reason: 'css parse failed',
+    });
+    expect(failed).not.toContainEqual({
+      url: 'https://x/comment.png',
+      reason: 'css parse failed',
+    });
+  });
+
+  it('does not rethrow when an @import pulls malformed nested CSS', async () => {
+    const imported = ':root { -- crop-green: #22c55e; }';
+    const { css, inlined, failed } = await inlineCssUrls(
+      '@import url(https://cdn.test/bad.css); body { color: red; }',
+      'https://cdn.test/a.css',
+      (async (url: string) =>
+        url === 'https://cdn.test/bad.css'
+          ? { bytes: new TextEncoder().encode(imported), contentType: 'text/css' }
+          : null) as never,
+    );
+    expect(css).toContain('@import url(https://cdn.test/bad.css)');
+    expect(inlined).not.toContain('https://cdn.test/bad.css');
+    expect(failed).toContainEqual({
+      url: 'https://cdn.test/bad.css',
+      reason: 'css parse failed',
+    });
+  });
+});
