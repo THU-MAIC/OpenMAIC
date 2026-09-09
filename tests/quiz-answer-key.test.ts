@@ -15,13 +15,6 @@ const VECTOR_OPTIONS = [
   { value: 'D', label: '(6, -4)' },
 ];
 
-const RELATION_OPTIONS = [
-  { value: 'A', label: '平行' },
-  { value: 'B', label: '垂直' },
-  { value: 'C', label: '同向' },
-  { value: 'D', label: '反向' },
-];
-
 function q(options: { value: string; label: string }[], answer?: string[]): QuizQuestion {
   return {
     id: 'qx',
@@ -141,6 +134,23 @@ describe('gradeChoiceQuestions: consumer paths', () => {
     };
     const results = gradeChoiceQuestions([question], { q3: 'A' });
     expect(results[0].correct).toBe(false);
+  });
+
+  test('compatibility resolution applies to the persisted key only (negative)', () => {
+    // 键是值键 A；提交的却是该选项的 label。只有持久化键才做兼容解析，
+    // 提交按原值比较 —— label 提交必须判错，否则别名提交会被当成另一选项。
+    const question: QuizQuestion = {
+      id: 'q4',
+      type: 'single',
+      question: '?',
+      options: VECTOR_OPTIONS,
+      answer: ['A'],
+      hasAnswer: true,
+      points: 10,
+    };
+    expect(gradeChoiceQuestions([question], { q4: '(6, 2)' })[0].correct).toBe(false);
+    // 同一道题，提交选项值本身仍判对。
+    expect(gradeChoiceQuestions([question], { q4: 'A' })[0].correct).toBe(true);
   });
 });
 

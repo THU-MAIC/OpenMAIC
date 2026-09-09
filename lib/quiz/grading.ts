@@ -31,12 +31,17 @@ export function isShortAnswer(q: QuizQuestion): boolean {
 }
 
 /**
- * Resolve a stored answer-key entry to an option value. Exact, unique
+ * Resolve a PERSISTED answer-key entry to an option value. Exact, unique
  * alignment only (per review): an entry that exactly equals one option VALUE
  * resolves to it; one that exactly equals exactly one option LABEL resolves
  * to that option's value. Unknown or ambiguous entries stay unresolved —
  * no case folding, whitespace/Unicode normalization, or wrapper/prefix
  * interpretation is applied.
+ *
+ * This compatibility resolution exists for the stored key, whose form is
+ * whatever the generator wrote. A learner submission is produced by the UI
+ * from the option values themselves, so it is compared as-is — see
+ * `gradeChoiceQuestions`.
  */
 export function resolveAnswerKeyToValue(q: QuizQuestion, answer: string): string {
   const opts = q.options ?? [];
@@ -67,7 +72,11 @@ export function gradeChoiceQuestions(
     .filter((q) => !isShortAnswer(q))
     .map((q) => {
       const pts = q.points ?? 1;
-      const userAnswer = toArray(answers[q.id]).map((a) => resolveAnswerKeyToValue(q, a));
+      // Compatibility resolution applies to the persisted key only. The
+      // submission is a value the UI produced from the options, so resolving
+      // it too would let a label (or any alias the key accepts) be submitted
+      // and accepted as a different option.
+      const userAnswer = toArray(answers[q.id]);
       const correctAnswer = toArray(q.answer).map((a) => resolveAnswerKeyToValue(q, a));
       const correct = arraysEqual(userAnswer, correctAnswer);
       return {
