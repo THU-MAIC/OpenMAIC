@@ -152,6 +152,7 @@ async function runImport(
     bytes?: Buffer;
     mime?: string;
     parsePptx?: (buffer: ArrayBuffer, options?: ParsePptxOptions) => Promise<Slide[]>;
+    uploadImportedMedia?: (blob: Blob, filename: string) => Promise<string>;
   },
 ) {
   const checkpoints: { tool: string; detail: string }[] = [];
@@ -167,6 +168,7 @@ async function runImport(
       mime: args.mime ?? PPTX_MIME,
     }),
     parsePptx,
+    ...(args.uploadImportedMedia ? { uploadImportedMedia: args.uploadImportedMedia } : {}),
   });
   const tool = tools.find((item) => item.name === IMPORT_PPTX_TOOL_NAME);
   if (!tool) throw new Error('import_pptx missing');
@@ -812,5 +814,100 @@ describe('legacy receipt migration on first pptxImports write', () => {
     expect(a.result.details).toMatchObject({ reused: true, pages: 2, pageOrders: [1, 2] });
     const afterA = await store.loadDocument('stage-import');
     expect(afterA?.scenes).toHaveLength(3);
+  });
+});
+
+describe('import_pptx · placeholder media handling (importer primitives)', () => {
+  const TRANSPARENT_PLACEHOLDER =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNgAAIAAAUAAen63NgAAAAASUVORK5CYII=';
+
+  it('strips placeholder image elements and reports page + geometry', async () => {
+    const slide = {
+      ...textSlide('s1', '<p>安装间距</p>'),
+      elements: [
+        ...textSlide('s1', '<p>安装间距</p>').elements,
+        {
+          id: 'img-ph',
+          type: 'image',
+          src: TRANSPARENT_PLACEHOLDER,
+          left: 100,
+          top: 200,
+          width: 300,
+          height: 60,
+        },
+      ],
+    } as unknown as Slide;
+
+    const store = stageStore();
+    const { result, checkpoints } = await runImport(store, {
+      params: { materialId: 'mat_ppt' },
+      record: sourceRecord(),
+      bytes: Buffer.from('deck-with-formulas'),
+      slides: [slide],
+    });
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content.map((c) => c.text ?? '').join(' ');
+    expect(text).toContain('legacy vector format (WMF/EMF)');
+    expect(text).toContain('latex');
+    expect(result.details.unconvertibleMedia).toEqual([
+      {
+        order: 1,
+        kind: 'image',
+        elementId: 'img-ph',
+        box: { left: 100, top: 200, width: 300, height: 60 },
+      },
+    ]);
+    expect(checkpoints[0]?.detail).toContain('stripped 1 unconvertible media');
+
+    const doc = await store.loadDocument('stage-import');
+    const canvas = (doc?.scenes[0]?.content as { canvas?: { elements: unknown[] } })?.canvas;
+    expect((canvas?.elements as Array<{ id?: string }>).map((el) => el.id)).toEqual(['s1-title']);
+  });
+
+  it('surfaces importer onWarning codes in the tool result', async () => {
+    const store = stageStore();
+    const { result } = await runImport(store, {
+      params: { materialId: 'mat_ppt' },
+      record: sourceRecord(),
+      parsePptx: async (_b: ArrayBuffer, options?: ParsePptxOptions) => {
+        options?.onWarning?.({ code: 'media-unconvertible', slideIndex: 0, message: 'x' });
+        options?.onWarning?.({ code: 'media-unconvertible', slideIndex: 0, message: 'y' });
+        return [textSlide('s1', '<p>页</p>')];
+      },
+    });
+    expect(result.isError).toBeUndefined();
+    const text = result.content.map((c) => c.text ?? '').join(' ');
+    expect(text).toContain('media-unconvertible×2');
+    expect(result.details.importerWarnings).toHaveLength(2);
+  });
+
+  it('refuses placeholder bytes at the final upload (default or injected)', async () => {
+    const innerUploads: number[] = [];
+    const uploadImportedMedia = async (blob: Blob) => {
+      innerUploads.push(blob.size);
+      return 'https://cdn.example/uploaded';
+    };
+    const placeholderBytes = Buffer.from(
+      TRANSPARENT_PLACEHOLDER.slice(TRANSPARENT_PLACEHOLDER.indexOf(',') + 1),
+      'base64',
+    );
+    const parsePptx = async (_b: ArrayBuffer, options?: ParsePptxOptions): Promise<Slide[]> => {
+      const kept = await options?.upload?.(
+        new Blob([placeholderBytes], { type: 'image/png' }),
+        'math_1.png',
+      );
+      expect(kept).toBe(TRANSPARENT_PLACEHOLDER);
+      await options?.upload?.(new Blob([Buffer.alloc(999)], { type: 'image/png' }), 'r.png');
+      return [textSlide('s1', '<p>页</p>')];
+    };
+    const { result } = await runImport(stageStore(), {
+      params: { materialId: 'mat_ppt' },
+      record: sourceRecord(),
+      parsePptx,
+      uploadImportedMedia,
+    });
+    expect(result.isError).toBeUndefined();
+    expect(innerUploads).toEqual([999]); // placeholder refused, real media uploaded
   });
 });

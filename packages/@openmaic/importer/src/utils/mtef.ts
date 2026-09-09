@@ -523,8 +523,7 @@ const SYMBOL_FONT_LATEX: Record<number, string> = {
   0x59: '\\Psi ',
   0x5a: 'Z',
   // Adobe Symbol high half (~50 of ~70 defined 0xA0–0xFF positions from the
-  // URW AFM; excluded: suits, ®/©/™, fraktur, extrema pieces → throw); positions not listed
-  // here throw MtefParseError so the formula falls back to its picture. Font-local
+  // URW AFM; excluded: suits, ®/©/™, fraktur, extrema pieces → throw). Font-local
   // codes here are glyph indices into the Symbol font; unmapped ones must
   // NOT pass through as Latin-1 (0xF4 is integralex, not a blank). Structural
   // pieces (big-paren/large-op extenders) map to their base operators;

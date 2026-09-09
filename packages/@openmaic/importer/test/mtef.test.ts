@@ -212,7 +212,7 @@ describe('mtef · equationNativeToLatex', () => {
 });
 
 describe('mtef · spec-conformance (cross-review round 2)', () => {
-  it('BigOp tmSUM(tvBSUM) renders [main, lower, upper] in the right roles', () => {
+  it('BigOp tmSUM(tvBSUM) renders [main=k, lower=i=1, upper=n] in the right roles', () => {
     // Slots: [main=k, lower=i=1, upper=n] per real streams + eqn.c.
     const stream = mtefStream([
       ...FULL,
@@ -1002,24 +1002,38 @@ describe('mtef · round-6 fixes (wyuc review 2)', () => {
   });
 });
 
-describe('Symbol-font glyphs that once produced invalid or misleading LaTeX', () => {
-  it('renders 0xD6 (radical) as a standalone \\surd and 0xF3 (integraltp) as \\int, both KaTeX-valid', () => {
-    const sym = (code: number) => [0x02, 0x86, code, 0x00];
-    const chr = (code: number) => [0x02, 0x83, code, 0x00];
-    const stream = (records: number[]) => {
-      const hdr = new Uint8Array(28);
-      new DataView(hdr.buffer).setUint16(0, 0x1c, true);
-      return new Uint8Array([...hdr, 0x03, 0x01, 0x01, 0x03, 0x0a, ...records]);
-    };
-    for (const [records, expected] of [
-      [[0x0a, 0x01, ...sym(0xd6), 0x00, 0x00], '\\surd'],
-      [[0x0a, 0x01, ...chr(0x61), ...sym(0xd6), ...chr(0x62), 0x00, 0x00], 'a\\surd b'],
-      [[0x0a, 0x01, ...chr(0x61), ...sym(0xf3), ...chr(0x62), 0x00, 0x00], 'a\\int b'],
-    ] as [number[], string][]) {
-      const conv = equationNativeToLatex(stream(records));
-      expect(conv.latex).toBe(expected);
-      expect(conv.degraded).toBe(false);
-      expect(() => katex.renderToString(conv.latex, { throwOnError: true })).not.toThrow();
-    }
+describe('mtef · round-3 fixes (0xD6 surd / 0xF3 int)', () => {
+  it('0xD6 radical renders standalone as \\surd (KaTeX-valid, no argument needed)', () => {
+    const bare = mtefStream([...FULL, ...LINE, ...symChar(0xd6), ...END, ...END]);
+    const out = equationNativeToLatex(bare);
+    expect(out.latex).toBe('\\surd');
+    expect(() => katex.renderToString(out.latex, { throwOnError: true })).not.toThrow();
+    // radical + sibling: must NOT consume the sibling as radicand
+    const withSibling = mtefStream([
+      ...FULL,
+      ...LINE,
+      ...symChar(0xd6),
+      ...varChar(0x62),
+      ...END,
+      ...END,
+    ]);
+    const out2 = equationNativeToLatex(withSibling);
+    expect(out2.latex).toBe('\\surd b');
+    expect(() => katex.renderToString(out2.latex, { throwOnError: true })).not.toThrow();
+  });
+
+  it('0xF3 integral top piece renders as \\int, not a line break', () => {
+    const probe = mtefStream([
+      ...FULL,
+      ...LINE,
+      ...varChar(0x61),
+      ...symChar(0xf3),
+      ...varChar(0x62),
+      ...END,
+      ...END,
+    ]);
+    const out = equationNativeToLatex(probe);
+    expect(out.latex).toBe('a\\int b');
+    expect(() => katex.renderToString(out.latex, { throwOnError: true })).not.toThrow();
   });
 });

@@ -112,6 +112,7 @@ style.
 | Overlap or overflow                           | `patch_stage` `set` on that element's `/content/canvas/.../left` / `top` / `width` / `height`, one number per op                  |
 | Leftover empty boxes                          | `patch_stage` `delete_element`                                                                                                    |
 | Broken or missing image                       | `patch_stage` `set` on `/content/canvas/elements/N/src`, only if you have a real replacement URL; otherwise leave it and mention it |
+| Missing formula (WMF/EMF, stripped at import; see `unconvertibleMedia` in the import result) | Re-type the formula: `patch_stage` `add_element` with a `latex` element at the recorded `box` on that page; verify with `render_scene_preview`. The source deck used legacy OLE equations (Equation 3.0/MathType) whose preview images cannot be converted |
 | Garbled text, leftover font-substitution junk | `read_stage detail:"source"`, then `patch_stage` `set` on that element's rich-text path                                           |
 
 Rules:

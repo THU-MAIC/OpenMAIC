@@ -108,6 +108,29 @@ export function isPlaceholderDataUrl(src: string | undefined | null): boolean {
   return !!src && PLACEHOLDER_DATA_URLS.has(src);
 }
 
+function bytesFromBase64(base64: string): Uint8Array {
+  const binary =
+    typeof atob !== 'undefined' ? atob(base64) : Buffer.from(base64, 'base64').toString('binary');
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+const PLACEHOLDER_PNG_BYTES = [TRANSPARENT_PNG_DATA_URL, LEGACY_PLACEHOLDER_PNG_DATA_URL].map(
+  (url) => bytesFromBase64(url.slice(url.indexOf(',') + 1)),
+);
+
+/**
+ * Byte-level placeholder check for upload guards: the importer's upload path
+ * hands consumers a Blob of the placeholder PNG, not the data URL string
+ * that {@link isPlaceholderDataUrl} matches on.
+ */
+export function isPlaceholderPngBytes(bytes: Uint8Array): boolean {
+  return PLACEHOLDER_PNG_BYTES.some(
+    (known) => known.length === bytes.length && known.every((b, i) => bytes[i] === b),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // WDP (JPEG XR) → PNG
 // ---------------------------------------------------------------------------

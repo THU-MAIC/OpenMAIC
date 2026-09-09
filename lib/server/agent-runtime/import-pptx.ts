@@ -19,7 +19,9 @@ import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { Slide } from '@openmaic/dsl';
 import type { AgentSessionMaterial } from '@openmaic/storage';
-import type { OssUpload } from '@openmaic/importer';
+import type { OssUpload, ImportWarning } from '@openmaic/importer';
+
+import { guardOssUpload, stripUnconvertibleMedia } from './import-pptx-placeholder';
 
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
@@ -71,6 +73,8 @@ export interface ParsePptxOptions {
   /** Parse deadline; tests may inject a shorter value. */
   timeoutMs?: number;
   Worker?: new (filename: string | URL, options?: { workerData?: unknown }) => ParsePptxWorker;
+  /** Degrade-telemetry sink from the importer (media-unconvertible, formula-*). */
+  onWarning?: (warning: ImportWarning) => void;
 }
 
 export interface ImportPptxToolDeps extends CourseToolDeps {
@@ -270,55 +274,58 @@ export async function parsePptxIsolated(
   const copy = toArrayBuffer(new Uint8Array(buffer));
   const WorkerImpl = options.Worker ?? Worker;
   const timeoutMs = options.timeoutMs ?? PARSE_PPTX_TIMEOUT_MS;
-  const slides = await new Promise<Slide[]>((resolve, reject) => {
-    let worker: ParsePptxWorker;
-    try {
-      worker = new WorkerImpl(workerFile, { workerData: { buffer: copy } });
-    } catch (error) {
-      reject(asError(error));
-      return;
-    }
+  const result = await new Promise<{ slides: Slide[]; warnings?: ImportWarning[] }>(
+    (resolve, reject) => {
+      let worker: ParsePptxWorker;
+      try {
+        worker = new WorkerImpl(workerFile, { workerData: { buffer: copy } });
+      } catch (error) {
+        reject(asError(error));
+        return;
+      }
 
-    let settled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
 
-    const cleanup = () => {
-      if (timer !== undefined) clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
-      void worker.terminate();
-    };
+      const cleanup = () => {
+        if (timer !== undefined) clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        void worker.terminate();
+      };
 
-    const finish = (apply: () => void) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      apply();
-    };
+      const finish = (apply: () => void) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        apply();
+      };
 
-    const fail = (error: unknown) => {
-      finish(() => reject(asError(error)));
-    };
+      const fail = (error: unknown) => {
+        finish(() => reject(asError(error)));
+      };
 
-    const onAbort = () => fail(new Error('aborted'));
+      const onAbort = () => fail(new Error('aborted'));
 
-    if (signal?.aborted) {
-      onAbort();
-      return;
-    }
-    signal?.addEventListener('abort', onAbort, { once: true });
-    if (timeoutMs > 0) {
-      timer = setTimeout(() => fail(new Error(parseTimeoutMessage(timeoutMs))), timeoutMs);
-    }
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      signal?.addEventListener('abort', onAbort, { once: true });
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => fail(new Error(parseTimeoutMessage(timeoutMs))), timeoutMs);
+      }
 
-    worker.once('message', (message: unknown) => {
-      const payload = message as { slides?: Slide[]; error?: string };
-      if (payload?.error) fail(new Error(payload.error));
-      else finish(() => resolve(payload?.slides ?? []));
-    });
-    worker.once('error', fail);
-  });
-  if (!options.upload) return slides;
-  return (await rewriteDataUrls(slides, options.upload)) as Slide[];
+      worker.once('message', (message: unknown) => {
+        const payload = message as { slides?: Slide[]; warnings?: ImportWarning[]; error?: string };
+        if (payload?.error) fail(new Error(payload.error));
+        else finish(() => resolve({ slides: payload?.slides ?? [], warnings: payload?.warnings }));
+      });
+      worker.once('error', fail);
+    },
+  );
+  for (const warning of result.warnings ?? []) options.onWarning?.(warning);
+  if (!options.upload) return result.slides;
+  return (await rewriteDataUrls(result.slides, options.upload)) as Slide[];
 }
 
 export async function parsePptxBuffer(
@@ -351,7 +358,10 @@ export function buildImportPptxTool(
       return resolveSessionMaterialRawAsset(record.sessionId, record.rawAssetId);
     });
   const parsePptx = deps.parsePptx ?? parsePptxIsolated;
-  const upload = deps.uploadImportedMedia ?? defaultUploadImportedMedia;
+  // Placeholder media (unconvertible WMF/EMF, e.g. Equation.3 OLE formula
+  // previews) must never reach remote storage; refused blobs keep their
+  // data URL so stripUnconvertibleMedia can still remove them post-parse.
+  const { upload } = guardOssUpload(deps.uploadImportedMedia ?? defaultUploadImportedMedia);
 
   return {
     name: IMPORT_PPTX_TOOL_NAME,
@@ -482,11 +492,13 @@ export function buildImportPptxTool(
       throwIfAborted(signal ?? deps.abortSignal);
       const arrayBuffer = toArrayBuffer(raw.bytes);
 
+      const importerWarnings: ImportWarning[] = [];
       let slides: Slide[];
       try {
         slides = await parsePptx(arrayBuffer, {
           upload,
           signal: signal ?? deps.abortSignal,
+          onWarning: (warning) => importerWarnings.push(warning),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -525,7 +537,15 @@ export function buildImportPptxTool(
         ) + 1;
       const at =
         params.atOrder == null ? maxOrder + 1 : Math.max(1, Math.min(params.atOrder, maxOrder + 1));
-      const { scenes, outlines } = slidesToScenes(imported, stageId, {
+      // Placeholder media (WMF/EMF formula fallbacks) never becomes a page:
+      // strip it and report the exact spots so the agent can restore the
+      // content (formulas via patch_stage latex elements) instead of shipping
+      // blank blocks nobody can trace back to the source deck.
+      const { slides: cleanedSlides, removed: unconvertibleMedia } = await stripUnconvertibleMedia(
+        imported,
+        at,
+      );
+      const { scenes, outlines } = slidesToScenes(cleanedSlides, stageId, {
         firstOrder: at,
         firstPageSeq,
       });
@@ -605,16 +625,34 @@ export function buildImportPptxTool(
       deps.onCheckpoint({
         tool: IMPORT_PPTX_TOOL_NAME,
         stageId,
-        detail: `imported ${scenes.length} slides from ${record.title ?? record.id} at orders ${at}..${at + scenes.length - 1}`,
+        detail: `imported ${scenes.length} slides from ${record.title ?? record.id} at orders ${at}..${at + scenes.length - 1}${
+          unconvertibleMedia.length
+            ? `; stripped ${unconvertibleMedia.length} unconvertible media item(s) (WMF/EMF placeholder)`
+            : ''
+        }`,
       });
 
       const pageList = outlines.map((outline) => `${outline.order}. ${outline.title}`).join(' | ');
+      const unconvertibleOrders = [...new Set(unconvertibleMedia.map((item) => item.order))].sort(
+        (a, b) => a - b,
+      );
+      const importerWarningSummary = importerWarnings.length
+        ? `Importer reported ${importerWarnings.length} degradation warning(s): ${[
+            ...new Set(importerWarnings.map((warning) => warning.code)),
+          ]
+            .map((code) => `${code}×${importerWarnings.filter((w) => w.code === code).length}`)
+            .join(', ')}.`
+        : '';
       return toolResult(
         [
           `Imported ${scenes.length} page(s) from "${record.title ?? record.id}" into stage "${stage.name}" at orders ${at}${scenes.length > 1 ? `–${at + scenes.length - 1}` : ''}: ${pageList}.`,
           truncated
             ? `Only the first ${MAX_IMPORT_SLIDES} slides were imported; the file had ${slides.length}.`
             : '',
+          unconvertibleMedia.length
+            ? `${unconvertibleMedia.length} formula/media item(s) from the source deck use a legacy vector format (WMF/EMF) that cannot be converted and were NOT imported: page(s) ${unconvertibleOrders.join(', ')}. Restore them during inspection: add the formulas back as latex elements via patch_stage at the recorded positions (see unconvertibleMedia details).`
+            : '',
+          importerWarningSummary,
           notesPages
             ? `${notesPages} page(s) received narration from speaker notes.`
             : 'No speaker notes were found; pages have no narration yet.',
@@ -635,6 +673,8 @@ export function buildImportPptxTool(
           notesPages,
           firstOrder: at,
           pageOrders: scenes.map((scene) => scene.order),
+          ...(unconvertibleMedia.length ? { unconvertibleMedia } : {}),
+          ...(importerWarnings.length ? { importerWarnings } : {}),
         },
       );
     },
