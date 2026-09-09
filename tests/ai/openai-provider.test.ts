@@ -792,6 +792,40 @@ describe('OpenAI provider defaults', () => {
     }
   });
 
+  it('keeps a caller-supplied dispatcher instead of replacing it', async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => {
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    try {
+      globalThis.fetch = fetchMock as typeof fetch;
+
+      getModel({ providerId: 'openai', modelId: 'gpt-5.3', apiKey: 'sk-test' });
+      const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+        | { fetch?: typeof fetch }
+        | undefined;
+
+      // A transport that brings its own dispatcher (config.fetchImpl can)
+      // must not have it silently swapped for the shared LLM dispatcher.
+      const callerDispatcher = { caller: true };
+      await options?.fetch?.('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        dispatcher: callerDispatcher,
+      } as RequestInit & { dispatcher: unknown });
+
+      const init = fetchMock.mock.calls.at(-1)?.[1] as RequestInit & {
+        dispatcher?: unknown;
+      };
+      expect(init?.dispatcher).toBe(callerDispatcher);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('disables Lemonade thinking by default for recognized local reasoning models', async () => {
     const body = await captureInjectedRequestBody('lemonade', 'Gemma-4-26B-A4B-it-GGUF');
 
