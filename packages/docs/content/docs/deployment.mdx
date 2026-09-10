@@ -33,6 +33,12 @@ docker compose up --build
 
 The default Compose deployment starts the OpenMAIC app and mounts the `openmaic-data` volume. Configure other providers and features as needed; see [Configuration](./configuration.mdx).
 
+The image creates the volume's data directory with the runtime user's ownership, so fresh volumes persist classrooms and usage records out of the box. A volume created by an older image may be root-owned, which makes every server-side save fail with `EACCES` while the app keeps serving normally (classrooms silently never reach disk; the log shows `Failed to record usage ... EACCES: permission denied`). Repair such a volume once, then restart the app:
+
+```bash
+docker exec -u root <container> chown -R 1001:1001 /app/data
+```
+
 `NEXT_PUBLIC_*` feature flags are injected at Docker build time and cannot be set only in the runtime `.env.local`. For example, to enable video export and experimental PPTX import:
 
 ```bash
