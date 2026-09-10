@@ -4,13 +4,15 @@ This workflow reads an issue, its discussion, cross-references, related issues/P
 
 ## Enable and roll out
 
-1. Merge the workflow into the default branch. Configure the repository Actions secret `ISSUE_TRIAGE_OPENAI_API_KEY` with a dedicated OpenAI project credential. Configure that project's usage limits; model calls consume API usage even in dry-run mode. Allow the SHA-pinned actions in the organization's Actions policy if necessary.
-2. Optionally set the repository variable `ISSUE_TRIAGE_MODEL` to an API model available to the project. When unset, the pinned Codex CLI chooses its default model. The action and CLI are pinned separately; update and smoke-test them together.
+1. Merge the workflow into the default branch. Configure the repository Actions secret `ISSUE_TRIAGE_OPENAI_API_KEY` with a dedicated API credential for the selected provider (OpenAI by default). Configure usage limits with that provider; model calls consume API usage even in dry-run mode. Allow the SHA-pinned actions in the organization's Actions policy if necessary.
+2. Optionally set the repository variable `ISSUE_TRIAGE_MODEL` to an API model available to the project. When unset, the pinned Codex CLI chooses its default model. For a compatible gateway, also set `ISSUE_TRIAGE_RESPONSES_ENDPOINT` to its **full HTTPS Responses endpoint**, for example `https://gateway.example.com/v1/responses`, and explicitly select a model served by that gateway. Leave the endpoint variable unset for OpenAI. The credential must belong to the selected endpoint. The action and CLI are pinned separately; update and smoke-test them together.
 3. In **Actions → Issue Triage → Run workflow**, select the default branch, enter a positive issue number and leave **publish** unchecked. Inspect the job summary and the `issue-triage-report-<attempt>` artifact. `report.json` contains the assessment and exact proposed changes, including suggestions that are ineligible for automatic application. `comment.md` is the proposed public comment. Context and reports expire after seven days.
 4. Sample 20–30 historical issues across areas, languages, incomplete reports, existing maintainer responses, and linked PRs. Check classification, useful questions, false duplicate/PR associations and comment suppression against maintainer judgment. Suggested initial cases: #1362 (maintainer already requested details), #1434 (PR #1435 already exists), #1438 (maintainer already invited a PR). These are examples, not claims that a live model evaluation has passed.
 5. Set `ISSUE_TRIAGE_MODE=dry-run` to generate reports automatically for newly opened human-authored issues. After reviewing quality and usage, change it to `apply` to enable automatic publication. Unset the variable or set it to `off` to stop new automatic runs. Cancel any already running publication jobs when stopping an active rollout.
 
 Manual runs default to report-only even when the repository mode is `apply`. Checking **publish** explicitly applies eligible changes for that one issue, including when automatic mode is off. Manual dispatch requires GitHub repository write access. The workflow only operates in `THU-MAIC/OpenMAIC` on the default branch. Forks, bot-authored automatic events, closed issues and locked issues do not run analysis. To re-evaluate an edited issue or reporter reply, dispatch manually; issue edits, comments, labels and PR events do not trigger this first version.
+
+Model compatibility requires streaming Responses API support, tool-call/result round trips (including Codex custom tools with grammar definitions), JSON Schema output and the configured `low` reasoning effort. A successful `/v1/models` request or Chat Completions call alone does not establish Codex compatibility. Test the chosen gateway/model combination with the pinned CLI before running real issues. A gateway receives the issue context and source excerpts used by the agent, so select a provider approved for this repository's data.
 
 ## Publication rules
 
@@ -35,6 +37,6 @@ Candidate retrieval is bounded to recent issues/PRs, two title searches and expl
 node --test .github/scripts/issue-triage.test.mjs
 ```
 
-These dependency-free tests exercise context collection and mocked GitHub publication, including malformed output, unexpected fields, hallucinated references, human-label preservation, comment spoofing, reruns and stale discussions. CI runs them independently of the application tests. They do not call OpenAI or modify GitHub issues. A real GitHub Actions/model smoke test requires the configured secret after merge.
+These dependency-free tests exercise context collection and mocked GitHub publication, including malformed output, unexpected fields, hallucinated references, human-label preservation, comment spoofing, reruns and stale discussions. CI runs them independently of the application tests. They do not call a model provider or modify GitHub issues. A full issue-triage GitHub Actions smoke test requires the configured secret after merge.
 
 Reference: [Codex GitHub Action documentation](https://learn.chatgpt.com/docs/github-action).

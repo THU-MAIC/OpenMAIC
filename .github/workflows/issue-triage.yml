@@ -99,6 +99,7 @@ jobs:
         uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e # v1
         with:
           openai-api-key: ${{ secrets.ISSUE_TRIAGE_OPENAI_API_KEY }}
+          responses-api-endpoint: ${{ vars.ISSUE_TRIAGE_RESPONSES_ENDPOINT }}
           codex-version: '0.154.0'
           model: ${{ vars.ISSUE_TRIAGE_MODEL }}
           effort: low
