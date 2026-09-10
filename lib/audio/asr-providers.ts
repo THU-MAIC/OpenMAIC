@@ -380,6 +380,26 @@ async function transcribeCustomOpenAICompatibleASR(
 }
 
 /**
+ * Normalize an ASR language setting for OpenAI Whisper.
+ *
+ * The OpenAI Whisper transcription API expects an ISO-639-1 two-letter language code
+ * (e.g. 'pt', 'zh', 'en'). The app's global ASR language setting may carry region or
+ * script subtags (e.g. 'pt-BR', 'zh-CN', 'en-US') from browser-native ASR, which
+ * causes OpenAI to reject the request with "unsupported language" (#1082).
+ *
+ * Reduces region-tagged codes to their base language, maps Cantonese ('yue') to
+ * Chinese ('zh'), and maps 'auto' to undefined for Whisper auto-detection.
+ */
+export function normalizeWhisperLanguage(language?: string): string | undefined {
+  if (!language) return undefined;
+  const trimmed = language.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'auto') return undefined;
+  const base = trimmed.split(/[-_]/)[0].toLowerCase();
+  if (base === 'yue') return 'zh';
+  return base || undefined;
+}
+
+/**
  * OpenAI Whisper implementation (using Vercel AI SDK)
  */
 async function transcribeOpenAIWhisper(
@@ -408,7 +428,7 @@ async function transcribeOpenAIWhisper(
       audio: audioData,
       providerOptions: {
         openai: {
-          language: config.language === 'auto' ? undefined : config.language,
+          language: normalizeWhisperLanguage(config.language),
         },
       },
     });
