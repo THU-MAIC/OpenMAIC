@@ -943,11 +943,14 @@ function normalizeQuizOptions(
  * AI may generate correctAnswer as string or string[], under various field names.
  * This normalizes to string[] format matching option values.
  *
- * The LLM writes the answer key inconsistently: as option CONTENT ("(6, 2)"),
- * as a LETTER ("A"), or as a formatting variant (full-width parens, extra
- * spaces) of either. Grading compares exact option values, so every variant
- * must be resolved to the matching option value here; unknown answers pass
- * through untouched.
+ * The LLM writes the answer key inconsistently, as option CONTENT ("(6, 2)")
+ * or as a LETTER ("A"). Only exact, unique alignment is resolved: an entry
+ * that equals exactly one option value, or exactly one option label, becomes
+ * that option's value. Formatting variants (case, whitespace, full-width
+ * forms, wrapper punctuation) are NOT normalized, and ambiguous entries (two
+ * options sharing a value or a label) are left untouched — consistent with
+ * the grading-side resolver, which must not accept a variant a stored key
+ * would never resolve to.
  */
 export function normalizeQuizAnswer(
   question: Record<string, unknown>,
