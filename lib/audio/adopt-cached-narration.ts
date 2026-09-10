@@ -40,6 +40,7 @@
 import { putAsset } from '@/lib/media/asset-pool';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { clearAssetStorageFull } from '@/lib/media/asset-storage-full';
+import { isStorageFullFailure } from '@/lib/media/media-failure';
 import { createLogger } from '@/lib/logger';
 import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
@@ -169,6 +170,13 @@ const DERIVED_KEY_ACTION_ID = /^tts_(?:request_)?s-?\d+_(.+)$/;
  * minting the id unconditionally for speech, not here.
  */
 const UNIQUE_ACTION_ID = /^action_[A-Za-z0-9_-]{8,}$/;
+
+/** The contract code an upload failure declares, if it declares one. */
+function storageErrorCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+}
 
 function derivedKeyIsUnique(derivedRef: string): boolean {
   const actionId = DERIVED_KEY_ACTION_ID.exec(derivedRef)?.[1];
@@ -335,10 +343,26 @@ async function adoptCachedNarrationRun(
   // The marker is now written only by the paths whose refusal cost a provider
   // call.
   //
-  // The noise this coupling was meant to avoid is not there to avoid: under
-  // per-clip semantics the clips still outstanding on a full store are exactly
-  // the ones that did not fit, which after the first load is normally none or
-  // one.
+  // What keeps a load bounded is not memory of an earlier load but the store's
+  // own arithmetic, applied within this one. The rule is
+  // `used + addedBytes > quotaBytes`, and `used` only grows while a run is
+  // uploading, so a clip of size s refused for want of room implies every clip
+  // of size >= s is refused for the rest of this run. That is an implication,
+  // not a guess about the deployment: it needs no flag, no key and nothing
+  // carried across loads.
+  //
+  // So the run remembers the smallest size it has been refused, and skips
+  // anything at least that large without uploading it. A smaller clip is still
+  // attempted, because it may fit. On a deck the store refuses entirely that
+  // costs one upload per successive size minimum -- at most a handful, and the
+  // first load pays the most; on a deck the store has room for it costs
+  // nothing, because nothing is refused.
+  //
+  // The inference is one-directional by design. A collector reclaiming space
+  // mid-load would make it conservative -- a clip skipped here that would now
+  // fit is simply attempted on the next load -- and a concurrent writer only
+  // makes it more true.
+  let smallestRefusedForRoom = Number.POSITIVE_INFINITY;
 
   let adopted = 0;
   let unbacked = 0;
@@ -358,6 +382,12 @@ async function adoptCachedNarrationRun(
       unbacked += 1;
       continue;
     }
+    // Already known not to fit: something no larger than this was refused
+    // earlier in this same run, and the store has only filled up since.
+    if (row.blob.size >= smallestRefusedForRoom) {
+      unbacked += 1;
+      continue;
+    }
     // Re-checked after the read and before anything is spent.
     if (abortSignal?.aborted || !onThisCourse()) break;
 
@@ -372,18 +402,31 @@ async function adoptCachedNarrationRun(
     } catch (error) {
       // One clip's storage failure costs that clip and nothing else. The action
       // keeps its derived id, the deck carries on, and a later load tries
-      // again -- including on a store with no room, where the cost of being
-      // wrong is one refused upload and the cost of being right is a clip that
-      // converges the moment the ceiling moves.
+      // again -- which is how a course converges the moment the ceiling moves,
+      // with nothing to click and nothing to remember.
       log.warn(`Could not store cached narration ${action.derivedRef}:`, error);
       unbacked += 1;
+      // A refusal for room, and only that, lowers the bar for the rest of this
+      // run. Any other failure -- a dropped connection, a 500 -- says nothing
+      // about how much room there is, so it must not stop the next clip being
+      // attempted.
+      if (isStorageFullFailure(storageErrorCode(error))) {
+        smallestRefusedForRoom = Math.min(smallestRefusedForRoom, row.blob.size);
+      }
       continue;
     }
     // A write that went through disproves the condition the media pass stands
-    // down on, and it is the only path that can say so for a course whose
-    // media needs nothing. Clearing is safe from here in a way that marking
-    // never was: it is a fact this run just established, not an inference
-    // about what some other write would cost.
+    // down on, and together with generated narration this is the only path that
+    // can say so for a course whose media needs nothing. Clearing is safe from
+    // here in a way that marking never was: it is a fact this run just
+    // established, not an inference about what some other write would cost.
+    //
+    // It does have a price, and it is worth naming rather than hiding. A few
+    // hundred bytes of narration fit in headroom an image does not, so lifting
+    // the marker can let the next pass pay a provider for an image that is then
+    // refused again. Bounded at one such generation, because that pass re-marks
+    // and adoption converts everything that fits in a single load, and it is
+    // the price of the alternative being a course that never generates again.
     await clearAssetStorageFull(stageId);
 
     // The allocation is uncancellable, so it may finish after the course was

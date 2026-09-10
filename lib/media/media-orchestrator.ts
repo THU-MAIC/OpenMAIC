@@ -303,10 +303,15 @@ async function collectAndGenerate(
     if (abortSignal?.aborted) break;
     const attempt = await generateSingleMedia(req, stageId, abortSignal);
     if (!attempt.storageFull) continue;
-    // The asset store's ceiling is deployment-wide, not per element: once a
-    // write is refused for want of room, every remaining element of the deck
-    // would pay a provider and be refused at exactly the same point. So the
-    // pass stops here and says why. The elements it never reached keep their
+    // The store checks each write against the headroom it has left, so a
+    // refusal is evidence about one blob and only weak evidence about the next.
+    // The pass stops the deck anyway, and that is a judgement about cost rather
+    // than about certainty: every element it attempts costs a provider call
+    // before the store is asked, so continuing to pay for elements that will
+    // probably be refused is the worse bet. A path whose refusals are free
+    // makes the opposite call -- narration adoption attempts every clip it
+    // holds, bounded only by what an earlier refusal in the same run already
+    // implies. So the pass stops here and says why. The elements it never reached keep their
     // placeholders and are NOT recorded as failures — nothing was attempted
     // for them, so a later load may still generate them once — but they show
     // the same "storage is full" state as the one that was refused, because

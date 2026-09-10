@@ -87,6 +87,39 @@ function twoLineScene(): Scene {
 
 const bigRef = 'tts_s1_action_cccccccc';
 
+/** A derived key for the nth clip of a sized deck. */
+function sizedRef(index: number): string {
+  return `tts_s1_action_size${String(index).padStart(4, '0')}`;
+}
+
+function sizedBlob(size: number): Blob {
+  return new Blob(['z'.repeat(size)], { type: 'audio/mp3' });
+}
+
+/** The size the sized deck gives this derived key. */
+function sizeOfRef(id: string, sizes: readonly number[]): number {
+  const index = sizes.findIndex((_size, position) => sizedRef(position) === id);
+  return index >= 0 ? sizes[index] : 1;
+}
+
+/** A course whose clips have the given byte sizes, in document order. */
+function sizedScene(sizes: readonly number[]): Scene {
+  return {
+    id: 'scene-1',
+    stageId,
+    title: 'Scene',
+    order: 1,
+    type: 'slide',
+    content: { type: 'slide', canvas: { id: 'slide-1', elements: [] } },
+    actions: sizes.map((_size, index) => ({
+      id: `action_size${String(index).padStart(4, '0')}`,
+      type: 'speech',
+      text: `Line ${index}`,
+      audioId: sizedRef(index),
+    })),
+  } as unknown as Scene;
+}
+
 /** A course whose opening clip is long and whose other two are short. */
 function threeLineScene(
   first: string = bigRef,
@@ -680,6 +713,79 @@ describe('adopting cached narration', () => {
     expect(mocks.putAsset).toHaveBeenCalledTimes(1);
   });
 
+  // A store that refuses everything used to cost one upload per clip per load,
+  // for ever -- thirty clips, thirty full POSTs, on every load. The bound comes
+  // from the store's own arithmetic rather than from anything remembered: usage
+  // only grows during a run, so a clip refused for room implies every clip at
+  // least that large is refused for the rest of it.
+  it('stops re-uploading clips a refusal in the same load already answered for', async () => {
+    // Sizes in document order. Each successive minimum is one upload; the
+    // clips behind it that are no smaller are skipped without one.
+    const sizes = [5000, 5000, 4000, 6000, 3000, 3000];
+    useStageStore.setState({ scenes: [sizedScene(sizes)] });
+    serveDocument();
+    mocks.audioGet.mockImplementation(async (id: string) =>
+      cachedRow({ id, blob: sizedBlob(sizeOfRef(id, sizes)) }),
+    );
+    mocks.putAsset.mockRejectedValue(quotaRefusal());
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({
+      adopted: 0,
+      unbacked: sizes.length,
+    });
+
+    const attempted = mocks.putAsset.mock.calls.map(([blob]) => (blob as Blob).size);
+    expect(attempted).toEqual([5000, 4000, 3000]);
+    // Every clip the bound skipped is still counted and still carries its
+    // derived id, so the next load -- or a bigger ceiling -- picks it up.
+    expect(liveAudioIds()).toEqual(sizes.map((_size, index) => sizedRef(index)));
+  });
+
+  // The bound must not become a stand-down: a clip smaller than anything that
+  // has been refused may well fit, and on the store this branch exists for it
+  // usually does.
+  it('still attempts a clip smaller than the one that was refused', async () => {
+    const sizes = [900, 100, 950];
+    useStageStore.setState({ scenes: [sizedScene(sizes)] });
+    serveDocument();
+    mocks.audioGet.mockImplementation(async (id: string) =>
+      cachedRow({ id, blob: sizedBlob(sizeOfRef(id, sizes)) }),
+    );
+    // Room for the small clip and nothing else.
+    let used = 0;
+    mocks.putAsset.mockImplementation(async (blob: Blob) => {
+      if (used + blob.size > 500) throw quotaRefusal();
+      used += blob.size;
+      return 'ast_small';
+    });
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 1, unbacked: 2 });
+
+    // 900 refused, 100 attempted and stored, 950 skipped: it is no smaller than
+    // the 900 that was already refused.
+    expect(mocks.putAsset.mock.calls.map(([blob]) => (blob as Blob).size)).toEqual([900, 100]);
+    expect(liveAudioIds()).toEqual([sizedRef(0), 'ast_small', sizedRef(2)]);
+  });
+
+  // Only a refusal for room says anything about how much room there is.
+  it('does not let an unrelated failure stop the next clip being attempted', async () => {
+    const sizes = [500, 900];
+    useStageStore.setState({ scenes: [sizedScene(sizes)] });
+    serveDocument();
+    mocks.audioGet.mockImplementation(async (id: string) =>
+      cachedRow({ id, blob: sizedBlob(sizeOfRef(id, sizes)) }),
+    );
+    mocks.putAsset.mockRejectedValueOnce(new Error('asset registry put failed'));
+    mocks.putAsset.mockResolvedValue('ast_second');
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 1, unbacked: 1 });
+
+    // The larger clip is attempted, and stored: a dropped connection is not
+    // evidence about the ceiling.
+    expect(mocks.putAsset.mock.calls.map(([blob]) => (blob as Blob).size)).toEqual([500, 900]);
+    expect(liveAudioIds()).toEqual([sizedRef(0), 'ast_second']);
+  });
+
   // Adoption reads no marker and writes none. It spends no provider money, so
   // it has nothing to protect with a deck-wide memory of a refusal -- and the
   // marker it used to write is the media pass's instruction not to spend, which
@@ -693,9 +799,10 @@ describe('adopting cached narration', () => {
 
     await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 2 });
 
-    // Every clip attempted once, and nothing remembered: the next load asks
-    // again, and the media pass is left to discover its own conditions.
-    expect(mocks.putAsset).toHaveBeenCalledTimes(2);
+    // One upload: the two clips are the same size, so the first refusal already
+    // answers for the second. Nothing is remembered past the load, so the next
+    // one asks again and the media pass is left to discover its own conditions.
+    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
     await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
   });
 
@@ -731,8 +838,17 @@ describe('adopting cached narration', () => {
       cachedRow({ id, text: id === derivedRef ? 'Welcome' : 'And then' }),
     );
     await kv.store.set(`asset-storage-full:${stageId}`, Date.now());
-    // The first clip is refused for room; a media commit lands in between and
-    // clears the marker; the second clip is refused too.
+    // The first clip is long and is refused for room; the second is short
+    // enough to still be worth attempting. A media commit lands in between and
+    // clears the marker; the short clip is then refused too.
+    mocks.audioGet.mockImplementation(async (id: string) =>
+      cachedRow({
+        id,
+        blob: new Blob([id === derivedRef ? 'x'.repeat(500) : 'y'.repeat(50)], {
+          type: 'audio/mp3',
+        }),
+      }),
+    );
     mocks.putAsset.mockImplementationOnce(async () => {
       throw quotaRefusal();
     });
