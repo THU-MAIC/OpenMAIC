@@ -1,0 +1,182 @@
+name: Issue Triage
+
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: 'Issue number to triage'
+        type: string
+        required: true
+      publish:
+        description: 'Apply eligible labels and update the triage comment (default: report only)'
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    if: >-
+      github.repository == 'THU-MAIC/OpenMAIC' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.issue.user.type != 'Bot' &&
+        contains(fromJSON('["dry-run", "apply"]'), vars.ISSUE_TRIAGE_MODE)))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      issue: ${{ steps.collect.outputs.issue }}
+      publish: ${{ steps.collect.outputs.publish }}
+      artifact: ${{ steps.collect.outputs.artifact }}
+      result: ${{ steps.codex.outputs.final-message }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Collect issue, discussion and candidate context
+        id: collect
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          ISSUE_INPUT: ${{ inputs.issue }}
+          PUBLISH_INPUT: ${{ inputs.publish }}
+          TRIAGE_MODE: ${{ vars.ISSUE_TRIAGE_MODE }}
+        with:
+          script: |
+            const { mkdir, writeFile } = require('node:fs/promises');
+            const { pathToFileURL } = require('node:url');
+            const triage = await import(pathToFileURL(`${process.cwd()}/.github/scripts/issue-triage.mjs`));
+            const issueNumber = triage.parseIssueNumber(
+              context.eventName === 'workflow_dispatch' ? process.env.ISSUE_INPUT : context.payload.issue.number
+            );
+            const data = await triage.collectContext({ github, repo: context.repo, issueNumber, sha: context.sha });
+            if (!data) {
+              core.notice('Closed or locked issue: nothing to triage.');
+              return;
+            }
+            await mkdir('triage-context', { recursive: true });
+            await writeFile('triage-context/context.json', JSON.stringify(data));
+            core.setOutput('issue', issueNumber);
+            core.setOutput('publish', triage.shouldPublish(context.eventName, process.env.TRIAGE_MODE, process.env.PUBLISH_INPUT === 'true'));
+            core.setOutput('artifact', `issue-triage-context-${process.env.GITHUB_RUN_ATTEMPT}`);
+
+      # Upload before the model runs. The write-capable job uses this original
+      # snapshot, never a context file produced or modified by the model.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.collect.outputs.issue != ''
+        with:
+          name: ${{ steps.collect.outputs.artifact }}
+          path: triage-context/context.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Check model credential configuration
+        if: steps.collect.outputs.issue != ''
+        env:
+          HAS_TRIAGE_KEY: ${{ secrets.ISSUE_TRIAGE_OPENAI_API_KEY != '' }}
+        run: |
+          if [ "$HAS_TRIAGE_KEY" != 'true' ]; then
+            echo '::error::Configure ISSUE_TRIAGE_OPENAI_API_KEY before running issue triage.'
+            exit 1
+          fi
+
+      # Keep Codex last, without a GitHub token in its environment. Public issue
+      # authors are explicitly allowed only after the repository opt-in above.
+      - name: Analyze with Codex
+        id: codex
+        if: steps.collect.outputs.issue != ''
+        uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e # v1
+        with:
+          openai-api-key: ${{ secrets.ISSUE_TRIAGE_OPENAI_API_KEY }}
+          codex-version: '0.154.0'
+          model: ${{ vars.ISSUE_TRIAGE_MODEL }}
+          effort: low
+          sandbox: read-only
+          safety-strategy: drop-sudo
+          allow-users: '*'
+          codex-home: ${{ runner.temp }}/issue-triage-codex
+          prompt-file: .github/triage/prompt.md
+          codex-args: '["--ephemeral", "--output-schema", ".github/triage/output.schema.json"]'
+
+  report:
+    needs: analyze
+    if: needs.analyze.outputs.issue != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.analyze.outputs.artifact }}
+          path: triage-context
+      - name: Validate and save proposed changes
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          TRIAGE_RESULT: ${{ needs.analyze.outputs.result }}
+        with:
+          script: |
+            const { readFile, mkdir, writeFile } = require('node:fs/promises');
+            const { pathToFileURL } = require('node:url');
+            const triage = await import(pathToFileURL(`${process.cwd()}/.github/scripts/issue-triage.mjs`));
+            const snapshot = JSON.parse(await readFile('triage-context/context.json', 'utf8'));
+            const result = triage.validateResult(process.env.TRIAGE_RESULT, snapshot, triage.trackedFiles());
+            const plan = triage.buildPlan(result, snapshot);
+            await mkdir('triage-report', { recursive: true });
+            await writeFile('triage-report/report.json', JSON.stringify({ issue: snapshot.issue.number, sha: snapshot.sha, result, plan }, null, 2));
+            await writeFile('triage-report/comment.md', plan.comment || 'No public comment proposed.\n');
+            await core.summary.addHeading(`Issue #${snapshot.issue.number}: triage proposal`)
+              .addRaw(`Suggested labels: ${plan.labels.map(triage.safeText).join(', ') || '(none)'}\n\n`)
+              .addRaw(plan.comment || 'No public comment proposed. See report.json for the assessment.\n').write();
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: issue-triage-report-${{ github.run_attempt }}
+          path: triage-report/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [analyze, report]
+    if: needs.analyze.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.analyze.outputs.artifact }}
+          path: triage-context
+      - name: Recheck discussion and apply eligible changes
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          TRIAGE_RESULT: ${{ needs.analyze.outputs.result }}
+        with:
+          script: |
+            const { readFile } = require('node:fs/promises');
+            const { pathToFileURL } = require('node:url');
+            const triage = await import(pathToFileURL(`${process.cwd()}/.github/scripts/issue-triage.mjs`));
+            const snapshot = JSON.parse(await readFile('triage-context/context.json', 'utf8'));
+            const applied = await triage.publishResult({ github, repo: context.repo, context: snapshot, raw: process.env.TRIAGE_RESULT, files: triage.trackedFiles() });
+            core.info(JSON.stringify(applied));
+            await core.summary.addHeading('Publication result').addCodeBlock(JSON.stringify(applied, null, 2), 'json').write();
