@@ -49,8 +49,9 @@ export async function searchWithBocha(params: {
   apiKey: string;
   maxResults?: number;
   baseUrl?: string;
+  signal?: AbortSignal;
 }): Promise<WebSearchResult> {
-  const { query, apiKey, maxResults = 10, baseUrl } = params;
+  const { query, apiKey, maxResults = 10, baseUrl, signal } = params;
   const startedAt = Date.now();
 
   const res = await proxyFetch(buildBochaWebSearchUrl(baseUrl), {
@@ -65,6 +66,7 @@ export async function searchWithBocha(params: {
       summary: true,
       count: clampCount(maxResults),
     }),
+    ...(signal ? { signal } : {}),
   });
 
   if (!res.ok) {

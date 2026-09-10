@@ -15,6 +15,8 @@ import {
   BookOpen,
   Loader2,
   Volume2,
+  Quote,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { AudioIndicatorState } from './audio-indicator';
@@ -98,6 +100,16 @@ interface RoundtableProps {
   /** Ref to the fullscreen container — passed to ProactiveCard so its portal
    *  renders inside the top-layer during presentation mode. */
   readonly fullscreenContainerRef?: React.RefObject<HTMLDivElement | null>;
+  readonly showElementReference?: boolean;
+  readonly canPickSlideElement?: boolean;
+  readonly elementPickActive?: boolean;
+  readonly onToggleElementPick?: () => void;
+  readonly elementReferencePill?: {
+    sceneLabel: string;
+    elementType: string;
+    displaySummary: string;
+  };
+  readonly onClearElementReference?: () => void;
 }
 
 // This must stay in sync with the non-presentation textarea's max-h-[100px] class.
@@ -188,6 +200,12 @@ export function Roundtable({
   onTogglePresentation,
   onPresentationInteractionChange,
   fullscreenContainerRef,
+  showElementReference,
+  canPickSlideElement,
+  elementPickActive,
+  onToggleElementPick,
+  elementReferencePill,
+  onClearElementReference,
 }: RoundtableProps) {
   const { t } = useI18n();
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
@@ -685,8 +703,35 @@ export function Roundtable({
       onToggleAutoPlay={() => setAutoPlayLecture(!autoPlayLecture)}
       playbackSpeed={playbackSpeed}
       onCycleSpeed={handleCycleSpeed}
+      showElementReference={showElementReference}
+      canPickSlideElement={canPickSlideElement}
+      elementPickActive={elementPickActive}
+      onToggleElementPick={onToggleElementPick}
     />
   );
+  const referencePill = elementReferencePill ? (
+    <div
+      data-testid="slide-element-reference-pill"
+      className="pointer-events-auto flex max-w-[min(520px,calc(100vw-3rem))] items-center gap-2 rounded-full border border-violet-200 bg-white/95 px-3 py-1.5 text-xs shadow-lg backdrop-blur dark:border-violet-700 dark:bg-gray-900/95"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <Quote className="h-3.5 w-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
+      <span className="shrink-0 font-semibold text-violet-700 dark:text-violet-300">
+        {elementReferencePill.sceneLabel} · {elementReferencePill.elementType} ·
+      </span>
+      <span className="min-w-0 truncate text-gray-600 dark:text-gray-300">
+        {elementReferencePill.displaySummary}
+      </span>
+      <button
+        type="button"
+        onClick={onClearElementReference}
+        className="-mr-1 rounded-full p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        aria-label={t('chat.elementReference.clear')}
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  ) : null;
 
   if (isPresenting) {
     return (
@@ -762,6 +807,7 @@ export function Roundtable({
           className="fixed bottom-14 left-0 z-[50] flex flex-col items-center justify-center gap-3 pointer-events-none transition-[right] duration-300"
           style={{ right: chatCollapsed === false ? (chatAreaWidth ?? 320) : 0 }}
         >
+          {referencePill}
           {/* Input panel */}
           <AnimatePresence>
             {isInputOpen && (
@@ -1274,6 +1320,9 @@ export function Roundtable({
             }}
             className="relative w-full h-full rounded-[2.5rem] bg-gradient-to-b from-white/40 to-white/80 dark:from-gray-800/40 dark:to-gray-800/80 backdrop-blur-xl border border-white/50 dark:border-gray-700/50 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05),inset_0_1px_0_0_rgba(255,255,255,0.9)] dark:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] flex flex-col justify-center px-6 overflow-hidden group transition-all duration-700 cursor-default"
           >
+            {elementReferencePill && (
+              <div className="absolute left-1/2 top-2 z-30 -translate-x-1/2">{referencePill}</div>
+            )}
             {/* Text input box */}
             <AnimatePresence>
               {isInputOpen && (

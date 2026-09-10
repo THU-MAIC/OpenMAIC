@@ -1,0 +1,10 @@
+{
+  "$comment": "Structural constraints for the lecture-style skill. The style's whole claim is a slide-carried, continuously explained course, so the machine-checkable half is the page mix: slides in the clear majority, checkpoints rare, and interaction reserved for the one concept that genuinely needs it. Narration length and register — the loudest part of this style — are not structural and cannot be checked here; they ride in via keyPoints, the roster persona and per-page materialFacts. Rendered into the outline prompt AND checked against the model's output; violations come back to the agent as a tool-result diagnostic so it can re-plan. See lib/server/agent-runtime/skills.ts.",
+  "allowedTypes": ["slide", "quiz", "interactive"],
+  "firstSceneType": "slide",
+  "typeMix": [
+    { "type": "slide", "minRatio": 0.65 },
+    { "type": "quiz", "min": 1, "max": 3 },
+    { "type": "interactive", "max": 2 }
+  ]
+}

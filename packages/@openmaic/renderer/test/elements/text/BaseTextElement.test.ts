@@ -18,6 +18,38 @@ const textElement: PPTTextElement = {
 };
 
 describe('BaseTextElement', () => {
+  it('preserves literal line endings in static text content', () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(BaseTextElement, {
+        elementInfo: { ...textElement, content: 'First line\nSecond line' },
+      }),
+    );
+
+    expect(markup).toContain('white-space:pre-line');
+  });
+
+  it('does not preserve source-formatting line endings in rich HTML content', () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(BaseTextElement, {
+        elementInfo: { ...textElement, content: '<p>First line</p>\n<p>Second line</p>' },
+      }),
+    );
+
+    expect(markup).not.toContain('white-space:pre-line');
+  });
+
+  it('does not apply literal-line-ending styling to injected editable content', () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(BaseTextElement, {
+        elementInfo: textElement,
+        renderContent: () => React.createElement('div', { 'data-text-editor': '' }),
+      }),
+    );
+
+    expect(markup).toContain('data-text-editor=""');
+    expect(markup).not.toContain('white-space:pre-line');
+  });
+
   it('top-aligns text when vAlign is omitted', () => {
     const markup = renderToStaticMarkup(
       React.createElement(BaseTextElement, { elementInfo: textElement }),

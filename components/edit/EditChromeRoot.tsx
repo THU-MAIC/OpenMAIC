@@ -1,17 +1,18 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { EditShell } from '@/components/edit/EditShell';
 import { SlideNavRail } from '@/components/edit/SlideNavRail';
-import { ActionsBar } from '@/components/edit/ActionsBar/ActionsBar';
+import { EditDock } from '@/components/edit/EditDock/EditDock';
 import { HeaderControls } from '@/components/stage/header-controls';
-import { useAgentRuntime } from '@/lib/agent/client/use-agent-runtime';
 import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { preloadEditor } from '@/lib/edit/preload-editor';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
+import { getScenePagerState } from '@/lib/edit/scene-pager';
+import { useStageStore } from '@/lib/store/stage';
+import { useInWorkbenchPanel } from '@/lib/workbench/panel-context';
 import { supportsNarrationTimeline } from './scene-timeline';
 import type { Scene } from '@/lib/types/stage';
-import { RightRailTabs } from '@/components/edit/RightRailTabs';
 
 interface EditChromeRootProps {
   readonly scene: Scene;
@@ -25,22 +26,45 @@ interface EditChromeRootProps {
  * 13-line inline JSX with three children.
  *
  * Owned here: `EditShell` (Frame + CommandBar + canvas + overlays),
- * `SlideNavRail` (leftRail slot), the `HeaderControls` trailing
- * (settings pill + Pro Switch) that rides in CommandBar's right slot,
- * and the tabbed `RightRailTabs` (Edit with AI + 角色 roster).
- *
- * NOT owned here:
- * - `MultiTabEditConflictPrompt` — must mount even in playback mode so
- *   the lock-conflict dialog can be shown when entering edit mode is
- *   refused (mode is still 'playback' at that point).
- * - `useEditModeLock` — the lock is acquired by the Pro toggle in
- *   stage.tsx BEFORE the live session is torn down, so it can't live
- *   in a component that only mounts after the switch.
+ * `SlideNavRail` (leftRail slot), the standalone-only `HeaderControls`
+ * trailing that rides in CommandBar's right slot,
+ * The legacy Edit-with-AI right rail has been retired: agentic edits live
+ * exclusively in the Pro workspace conversation, and the classroom roster is
+ * edited from a dialog opened off the edit dock's global bar.
  *
  * `scene` is required (non-null). The parent gates mounting on
  * `mode === 'edit' && currentScene` to satisfy this contract.
  */
 export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChromeRootProps) {
+  // Hosted inside the workbench panel? Then two pieces of chrome are
+  // meaningless here: the Pro Switch (the panel is Pro-locked; there is
+  // nowhere to toggle to) and the Edit-with-AI right rail (the workbench
+  // conversation on the left is its successor — the agent it would talk to
+  // is the one building this course).
+  const inWorkbenchPanel = useInWorkbenchPanel();
+
+  // Deck paging (‹ n/m ›). Same state source and setter the SlideNavRail
+  // thumbnails use — `currentSceneId` / `setCurrentSceneId` — so flipping pages
+  // from the dock and clicking a rail thumbnail can never disagree about which
+  // page is open.
+  const scenes = useStageStore.use.scenes();
+  const currentSceneId = useStageStore.use.currentSceneId();
+  const setCurrentSceneId = useStageStore.use.setCurrentSceneId();
+  const pagerState = useMemo(
+    () => getScenePagerState(scenes, currentSceneId),
+    [scenes, currentSceneId],
+  );
+  const pager = pagerState
+    ? {
+        ...pagerState,
+        onPrev: () => {
+          if (pagerState.prevSceneId) setCurrentSceneId(pagerState.prevSceneId);
+        },
+        onNext: () => {
+          if (pagerState.nextSceneId) setCurrentSceneId(pagerState.nextSceneId);
+        },
+      }
+    : undefined;
   // Mark the body while edit mode is mounted, so the editor-scoped CSS
   // rule in globals.css that pins `body.padding-right` to 0 only fires
   // in Pro mode — not on non-editor pages where Radix's
@@ -68,29 +92,18 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
   // Whether this scene type has a registered canvas editor surface (slide/quiz).
   // Authoring surface is separate from narration timeline availability.
   const authoringEnabled = !!sceneEditorRegistry.resolve(scene.type);
-  // The narration timeline (ActionsBar) is decoupled from the canvas editor surface
-  // (like agentEnabled below): it applies to registered surfaces (slide/quiz) AND
-  // view-only canvases that still carry a spoken script (interactive/pbl).
+  // The narration timeline is decoupled from the canvas editor surface (like
+  // agentEnabled below): it applies to registered surfaces (slide/quiz) AND
+  // view-only canvases that still carry a spoken script (interactive/pbl). It is
+  // also the dock's gate: the timeline is the dock's first tool, so where there
+  // is no timeline there is no bench to hang other tools off either.
   const timelineEnabled = supportsNarrationTimeline(scene.type, authoringEnabled);
 
-  // The AI edit panel is decoupled from the canvas surface: it renders wherever
-  // the agent has an edit capability — slides (regenerate) AND interactive scenes
-  // (edit_interactive_html), even though the interactive canvas itself stays view-only.
-  const agentEnabled = authoringEnabled || scene.type === 'interactive';
-
-  // Keep the runtime owned by Pro mode chrome, not by the scene-capability gated
-  // panel. Unsupported scene switches can hide/disable the composer without
-  // destroying an in-flight run or the messages that still need to settle/save.
-  const agentRuntime = useAgentRuntime({
-    scene: agentEnabled ? { id: scene.id, title: scene.title } : undefined,
-    isSendDisabled: !agentEnabled,
-  });
-
-  const headerControls = (
+  const headerControls = inWorkbenchPanel ? undefined : (
     <HeaderControls
       mode="edit"
       canEdit={isEditable}
-      onToggleEditMode={isMaicEditorEnabled() ? onToggleEditMode : undefined}
+      onToggleEditMode={isMaicEditorEnabled() && !inWorkbenchPanel ? onToggleEditMode : undefined}
     />
   );
 
@@ -98,24 +111,17 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
     <EditShell
       scene={scene}
       leftRail={<SlideNavRail />}
-      rightRail={
-        <RightRailTabs
-          scene={{ id: scene.id, title: scene.title, type: scene.type }}
-          runtime={agentRuntime.runtime}
-          clearThread={agentRuntime.clearThread}
-          hasMessages={agentRuntime.hasMessages}
-          canSend={agentEnabled}
-          agentEnabled={agentEnabled}
-          isRunning={agentRuntime.isRunning}
-          sessions={agentRuntime.sessions}
-          activeSessionId={agentRuntime.activeSessionId}
-          switchSession={agentRuntime.switchSession}
-          deleteSessionAndRefresh={agentRuntime.deleteSessionAndRefresh}
-          refreshSessions={agentRuntime.refreshSessions}
-        />
+      bottomRail={
+        timelineEnabled ? (
+          <EditDock sceneId={scene.id} sceneType={scene.type} pager={pager} />
+        ) : undefined
       }
-      bottomRail={timelineEnabled ? <ActionsBar sceneId={scene.id} /> : undefined}
       commandTrailing={headerControls}
+      // The pager normally lives in the dock's global edit bar (handed to `EditDock`
+      // above). Only a scene type that gets no dock at all keeps the floating
+      // form — otherwise those scenes would lose paging entirely.
+      pager={timelineEnabled ? undefined : pager}
+      hideCommandBar={inWorkbenchPanel}
     />
   );
 }

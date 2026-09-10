@@ -10,6 +10,11 @@
 // existing `import { … } from '@/lib/types/action'` callers keep working
 // unchanged.
 
+import type { SpeechAction as DslSpeechAction } from '@openmaic/dsl';
+
+/** Compatibility shape for server classroom payloads created before audioUrl was removed. */
+export type LegacySpeechAction = DslSpeechAction & { audioUrl?: string };
+
 export type {
   ActionBase,
   SpotlightAction,

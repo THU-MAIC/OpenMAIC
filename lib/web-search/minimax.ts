@@ -63,8 +63,9 @@ export async function searchWithMiniMax(params: {
   apiKey: string;
   maxResults?: number;
   baseUrl?: string;
+  signal?: AbortSignal;
 }): Promise<WebSearchResult> {
-  const { query, apiKey, maxResults = 10, baseUrl } = params;
+  const { query, apiKey, maxResults = 10, baseUrl, signal } = params;
   const startedAt = Date.now();
 
   const res = await proxyFetch(buildMiniMaxWebSearchUrl(baseUrl), {
@@ -75,6 +76,7 @@ export async function searchWithMiniMax(params: {
       'MM-API-Source': 'OpenMAIC',
     },
     body: JSON.stringify({ q: query }),
+    ...(signal ? { signal } : {}),
   });
 
   if (!res.ok) {

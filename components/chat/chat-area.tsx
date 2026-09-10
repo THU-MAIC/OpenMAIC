@@ -23,6 +23,7 @@ import {
   MANUAL_STOP_END_OPTIONS,
   type EndSessionOptions,
   type SessionCleanupPayload,
+  type ChatMessageSendOptions,
 } from './use-chat-sessions';
 import { SessionList } from './session-list';
 import { LectureNotesView } from './lecture-notes-view';
@@ -65,7 +66,7 @@ export interface ChatAreaRef {
   continueActiveSoftClosingSession: () => boolean;
   softPauseActiveSession: () => Promise<void>;
   resumeActiveSession: () => Promise<void>;
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (content: string, options?: ChatMessageSendOptions) => Promise<void>;
   startDiscussion: (request: DiscussionRequest) => Promise<void>;
   startLecture: (sceneId: string) => Promise<string>;
   addLectureMessage: (sessionId: string, action: Action, actionIndex: number) => void;

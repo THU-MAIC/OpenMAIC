@@ -28,6 +28,7 @@ import type {
   VideoGenerationResult,
 } from '../types';
 import { runPolledTask, type TerminalResult } from '../polled-task';
+import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'veo-3.0-generate-001';
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com';
@@ -237,7 +238,7 @@ export async function generateWithVeo(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
 ): Promise<VideoGenerationResult> {
-  const model = config.model || DEFAULT_MODEL;
+  const model = requireModel(config.model, 'Veo');
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
 
   return runPolledTask<VideoGenerationResult>({

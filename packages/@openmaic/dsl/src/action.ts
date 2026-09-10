@@ -48,19 +48,15 @@ export interface SpeechAction extends ActionBase {
   type: 'speech';
   text: string;
   /**
-   * An asset reference for narration audio. Legacy documents and TTS paths also store TTS-derived
-   * ids here; such values are foreign to the asset pool and are addressed by later delivery-plan
-   * steps.
+   * An asset reference for narration audio. Documents converted by the app-side
+   * reference converter (#1007 part 2, step c) hold allocated asset ids here.
+   * Unconverted legacy documents may still carry TTS-derived ids until they are
+   * opened and converted; such values are foreign to the asset pool and resolve
+   * through the app's legacy read fallbacks.
    */
   audioId?: AssetRef;
   /** Prevent legacy derived-id fallback after an edit invalidates old narration. */
   audioInvalidated?: boolean;
-  /**
-   * Deprecated: A transitional server-provided playback URL. Use `audioId` instead. Removed
-   * together with the byte-ingestion step of #1007 part 2, which rewrites speech references to
-   * allocated asset ids; new writers should not add it.
-   */
-  audioUrl?: string;
   voice?: string;
   speed?: number; // default 1.0
 }

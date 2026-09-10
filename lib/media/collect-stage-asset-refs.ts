@@ -1,8 +1,9 @@
-import type { Slide } from '@openmaic/dsl';
+import { enumerateAssetManifest, type Slide } from '@openmaic/dsl';
 import { getDocumentStore } from '@/lib/document-store';
 import { createLogger } from '@/lib/logger';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { useStageStore } from '@/lib/store/stage';
+import { isAssetPoolServerBacked } from './asset-pool-config';
 import { slideMediaReferenceSlots } from './slide-media-slots';
 import { probeStageRealmPresence } from './stage-realm-presence';
 
@@ -26,6 +27,7 @@ export interface StageAudioRow {
 
 export interface StageAssetRefs {
   readonly imageSrc: ReadonlySet<string>;
+  readonly slideAudioSrc: ReadonlySet<string>;
   readonly videoSrc: ReadonlySet<string>;
   readonly videoMediaRef: ReadonlySet<string>;
   readonly poster: ReadonlySet<string>;
@@ -87,6 +89,7 @@ export function collectStageAssetRefs(
   },
 ): StageAssetRefs {
   const imageSrc = new Set<string>();
+  const slideAudioSrc = new Set<string>();
   const videoSrc = new Set<string>();
   const videoMediaRef = new Set<string>();
   const poster = new Set<string>();
@@ -96,23 +99,9 @@ export function collectStageAssetRefs(
   const speechAudioId = new Set<string>();
   const videoManifestKey = new Set<string>();
   const referenced = new Set<string>();
-  const ownerKeysByRef = new Map<string, Set<string>>();
-
-  const own = (ref: string | undefined, ownerKey: string) => {
-    if (!ref) return;
-    referenced.add(ref);
-    let owners = ownerKeysByRef.get(ref);
-    if (!owners) {
-      owners = new Set<string>();
-      ownerKeysByRef.set(ref, owners);
-    }
-    owners.add(ownerKey);
-  };
-
   const visitSlide = (
     slide: Pick<Slide, 'id' | 'elements' | 'background'>,
     scope: 'scene' | 'stage-whiteboard' | 'scene-whiteboard',
-    scopeId: string,
   ) => {
     for (const slot of slideMediaReferenceSlots(slide)) {
       const ref = slot.read();
@@ -124,15 +113,13 @@ export function collectStageAssetRefs(
             ? sceneWhiteboard
             : undefined;
 
-      const ownerKey = slot.element
-        ? `${scope}:${scopeId}:${slot.element.id || slot.elementIndex}`
-        : `${scope}:${scopeId}:background`;
       if (slot.kind === 'background-image') addValue(backgroundImage, ref);
       else if (slot.kind === 'image-src') addValue(imageSrc, ref);
+      else if (slot.kind === 'audio-src') addValue(slideAudioSrc, ref);
       else if (slot.kind === 'video-src') addValue(videoSrc, ref);
       else if (slot.kind === 'video-media-ref') addValue(videoMediaRef, ref);
       else addValue(poster, ref);
-      own(ref, slot.kind === 'video-poster' ? `${ownerKey}:poster` : ownerKey);
+      referenced.add(ref);
       whiteboardCategory?.add(ref);
     }
   };
@@ -140,22 +127,22 @@ export function collectStageAssetRefs(
   if (document) {
     for (let index = 0; index < (document.stage.whiteboard ?? []).length; index += 1) {
       const slide = document.stage.whiteboard![index];
-      visitSlide(slide, 'stage-whiteboard', slide.id || String(index));
+      visitSlide(slide, 'stage-whiteboard');
     }
 
     for (const scene of document.scenes) {
       if (scene.content.type === 'slide') {
-        visitSlide(scene.content.canvas, 'scene', scene.id);
+        visitSlide(scene.content.canvas, 'scene');
       }
       for (let index = 0; index < (scene.whiteboards ?? []).length; index += 1) {
         const slide = scene.whiteboards![index];
-        visitSlide(slide, 'scene-whiteboard', `${scene.id}:${slide.id || index}`);
+        visitSlide(slide, 'scene-whiteboard');
       }
       for (let index = 0; index < (scene.actions ?? []).length; index += 1) {
         const action = scene.actions![index];
         if (action.type !== 'speech' || !action.audioId) continue;
         speechAudioId.add(action.audioId);
-        own(action.audioId, `speech:${scene.id}:${action.id || index}`);
+        referenced.add(action.audioId);
       }
     }
 
@@ -180,12 +167,16 @@ export function collectStageAssetRefs(
   const audioOrphans = new Set([...audioRow].filter((ref) => !documentRefs.has(ref)));
   const all = new Set([...documentRefs, ...mediaRow, ...audioRow]);
   const poolOwned = new Set([...mediaRow, ...audioRow]);
-  const referenceCounts = new Map(
-    [...ownerKeysByRef].map(([ref, owners]) => [ref, owners.size] as const),
-  );
+  // Consume the DSL's position-keyed ownership accounting directly. Keeping
+  // one implementation prevents user-controlled duplicate scene/slide/
+  // element/action ids from collapsing distinct owners here.
+  const referenceCounts = document
+    ? new Map(enumerateAssetManifest(document).referenceCounts)
+    : new Map<string, number>();
 
   return {
     imageSrc,
+    slideAudioSrc,
     videoSrc,
     videoMediaRef,
     poster,
@@ -265,6 +256,13 @@ export async function proveExclusiveAssetOwnership(
   assetId: string,
   stageId: string,
 ): Promise<{ readonly exclusive: boolean; readonly activePersistedRefs?: StageAssetRefs }> {
+  // A server-backed id can be referenced by another device, outside the local
+  // document snapshot, unflushed Zustand state, and cross-tab presence probe.
+  // Asking which other principals hold it would create the existence oracle
+  // the asset contract forbids. The proof therefore cannot be strengthened:
+  // fail closed and let the existing regeneration path fork to a fresh id.
+  if (isAssetPoolServerBacked()) return { exclusive: false };
+
   let activePersistedRefs: StageAssetRefs | undefined;
   try {
     const document = await getDocumentStore().loadDocument(stageId);

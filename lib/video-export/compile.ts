@@ -3,7 +3,7 @@
  *
  * Composes the ordered passes into the `VideoTimeline` IR:
  *
- *   normalize → probe → timeline → visuals → geometry → assets → (unsupported) → assemble
+ *   normalize → probe → timeline → visuals → interactive → reflow → geometry → assets → (unsupported) → assemble
  *
  * Every pass is a pure function; live app state enters only through the injected
  * {@link TimingProbe} / {@link AssetSource} (issue #864 DI boundary), so the whole
@@ -19,7 +19,14 @@
  * Pure: no IO beyond the injected dependencies.
  */
 import type { SceneType, PlayVideoAction, Action } from '@openmaic/dsl';
-import type { AssetSource, CompileConfig, CompilerScene, GeometryProbe, TimingProbe } from './deps';
+import type {
+  AssetSource,
+  CompileConfig,
+  CompilerScene,
+  GeometryProbe,
+  QuizLayoutProbe,
+  TimingProbe,
+} from './deps';
 import {
   CANVAS,
   VIDEO_TIMELINE_COMPILER,
@@ -33,6 +40,8 @@ import { normalizeScenes } from './passes/normalize';
 import { buildTimelineOptions } from './passes/probe';
 import { buildTimeline } from './passes/timeline';
 import { applyVisuals } from './passes/visuals';
+import { applyInteractiveHtml } from './passes/interactive';
+import { reflowQuizTimelines } from './passes/reflow';
 import { applyGeometry } from './passes/geometry';
 import { planAssets } from './passes/assets';
 
@@ -53,6 +62,10 @@ export interface CompileDeps {
    * the deterministic authored-box calc.
    */
   geometry?: GeometryProbe;
+  /** Optional prepared-HTML adapter; omitted callers degrade interactive scenes. */
+  interactive?: import('./deps').InteractiveHtmlSource;
+  /** Optional app-premeasured Quiz question-list layouts. */
+  quizLayout?: QuizLayoutProbe;
   config?: CompileConfig;
 }
 
@@ -60,7 +73,7 @@ export interface CompileDeps {
 function unsupportedReason(type: SceneType): string {
   switch (type) {
     case 'interactive':
-      return 'Interactive/widget scenes require runtime playback; represented by markers in this slice.';
+      return 'Interactive HTML was not prepared for static rendering; represented by markers.';
     default:
       return 'This scene family is preserved as markers but is not rendered by this compiler slice.';
   }
@@ -77,7 +90,10 @@ function markUnsupported(
 ): VideoTimelineScene[] {
   return scenes.map((scene) => {
     if (scene.supported) return scene;
-    const reason = unsupportedReason(scene.type);
+    const reason =
+      scene.base.kind === 'placeholder' && scene.base.reason
+        ? scene.base.reason
+        : unsupportedReason(scene.type);
     diagnostics.push({
       severity: 'warn',
       code: 'unsupported-scene',
@@ -150,16 +166,28 @@ export function compileVideoTimeline(input: CompileInput, deps: CompileDeps): Vi
   const timeline = buildTimeline(normalized.scenes, opts);
 
   // 4. visuals — turn Quiz/PBL authored data into whole-scene static covers.
-  const visuals = applyVisuals(timeline.scenes, normalized.scenes);
+  const visuals = applyVisuals(timeline.scenes, normalized.scenes, deps.quizLayout);
 
-  // 5. geometry — resolve effect + video element placement (degrade on miss).
+  // 5. interactive HTML — promote successfully prepared pages to a first-class base.
+  const interactive = applyInteractiveHtml(visuals.scenes, normalized.scenes, deps.interactive);
+
+  // 6. reflow — compiler-added Quiz tails shift every later absolute timestamp,
+  //    including first-class interactive bases prepared by the preceding pass.
+  const reflow = reflowQuizTimelines(
+    interactive.scenes,
+    timeline.subtitles,
+    timeline.totalDurationMs,
+    visuals.extensionsMs,
+  );
+
+  // 7. geometry — resolve effect + video element placement (degrade on miss).
   //    Prefers measured content-box geometry when a GeometryProbe is supplied.
-  const geometry = applyGeometry(visuals.scenes, normalized.scenes, deps.geometry);
+  const geometry = applyGeometry(reflow.scenes, normalized.scenes, deps.geometry);
 
-  // 6. assets — dedup + naming plan; stamp asset refs onto segments.
+  // 8. assets — dedup + naming plan; stamp asset refs onto segments.
   const assets = planAssets(normalized.scenes, geometry.scenes, deps.assets);
 
-  // 7. remaining unsupported scene families → markers + diagnostics.
+  // 9. remaining unsupported scene families → markers + diagnostics.
   const unsupportedDiagnostics: Diagnostic[] = [];
   const scenes = markUnsupported(assets.scenes, unsupportedDiagnostics);
 
@@ -167,6 +195,7 @@ export function compileVideoTimeline(input: CompileInput, deps: CompileDeps): Vi
     ...normalized.diagnostics,
     ...timeline.diagnostics,
     ...visuals.diagnostics,
+    ...interactive.diagnostics,
     ...geometry.diagnostics,
     ...assets.diagnostics,
     ...unsupportedDiagnostics,
@@ -183,9 +212,9 @@ export function compileVideoTimeline(input: CompileInput, deps: CompileDeps): Vi
       ttsEnabled: timeline.ttsEnabled,
       whiteboardInitiallyOpen: config.whiteboardInitiallyOpen ?? false,
     },
-    totalDurationMs: timeline.totalDurationMs,
+    totalDurationMs: reflow.totalDurationMs,
     scenes,
-    subtitles: timeline.subtitles,
+    subtitles: reflow.subtitles,
     assets: assets.plan,
     diagnostics,
   };

@@ -4,6 +4,67 @@ import { listItem as _listItem } from 'prosemirror-schema-list';
 
 type Attr = Record<string, number | string>;
 
+const CSS_LENGTH_PATTERN =
+  /^-?(?:\d+|\d*\.\d+)(?:px|pt|pc|mm|cm|in|rem|em|ex|ch|vw|vh|vmin|vmax|%)$/i;
+const WHITE_SPACE_VALUES = new Set([
+  'normal',
+  'nowrap',
+  'pre',
+  'pre-wrap',
+  'pre-line',
+  'break-spaces',
+]);
+
+const inlineSpacer: NodeSpec = {
+  inline: true,
+  group: 'inline',
+  atom: true,
+  selectable: false,
+  attrs: {
+    width: { default: '' },
+  },
+  parseDOM: [
+    {
+      tag: 'span',
+      getAttrs: (dom) => {
+        const element = dom as HTMLElement;
+        const { display, width } = element.style;
+        if (
+          element.textContent?.trim() ||
+          display !== 'inline-block' ||
+          !CSS_LENGTH_PATTERN.test(width)
+        ) {
+          return false;
+        }
+        return { width };
+      },
+    },
+  ],
+  toDOM: (node: Node) => ['span', { style: `display: inline-block; width: ${node.attrs.width};` }],
+};
+
+const textContainer: NodeSpec = {
+  group: 'block',
+  content: 'block+',
+  attrs: {
+    padding: { default: '' },
+  },
+  parseDOM: [
+    {
+      tag: 'div',
+      getAttrs: (dom) => {
+        const padding = (dom as HTMLElement).style.padding;
+        return padding ? { padding } : false;
+      },
+    },
+  ],
+  toDOM: (node: Node) => [
+    'div',
+    node.attrs.padding ? { style: `padding: ${node.attrs.padding};` } : {},
+    0,
+  ],
+};
+
 const orderedList: NodeSpec = {
   attrs: {
     order: {
@@ -111,10 +172,31 @@ const paragraph: NodeSpec = {
     textIndent: {
       default: 0,
     },
+    // PPTX import serializes first-line indentation in px. Keep that exact
+    // CSS length while editing so it does not drift when the paragraph uses a
+    // font size other than the editor's historical 16px conversion base.
+    textIndentCss: {
+      default: '',
+    },
     fontsize: {
       default: '',
     },
     lineHeight: {
+      default: '',
+    },
+    marginLeft: {
+      default: '',
+    },
+    marginTop: {
+      default: '',
+    },
+    marginBottom: {
+      default: '',
+    },
+    paddingTop: {
+      default: '',
+    },
+    whiteSpace: {
       default: '',
     },
   },
@@ -124,18 +206,32 @@ const paragraph: NodeSpec = {
     {
       tag: 'p',
       getAttrs: (dom) => {
-        const { textAlign, textIndent, fontSize, lineHeight } = (dom as HTMLElement).style;
+        const {
+          textAlign,
+          textIndent,
+          fontSize,
+          lineHeight,
+          marginLeft,
+          marginTop,
+          marginBottom,
+          paddingTop,
+          whiteSpace,
+        } = (dom as HTMLElement).style;
 
         let align = (dom as HTMLElement).getAttribute('align') || textAlign || '';
         align = /(left|right|center|justify)/.test(align) ? align : '';
 
         let textIndentLevel = 0;
+        let textIndentCss = '';
         if (textIndent) {
-          if (/em/.test(textIndent)) {
-            textIndentLevel = parseInt(textIndent);
+          if (/^-?(?:\d+|\d*\.\d+)em$/i.test(textIndent)) {
+            textIndentLevel = parseFloat(textIndent);
           } else if (/px/.test(textIndent)) {
-            textIndentLevel = Math.floor(parseInt(textIndent) / 16);
+            textIndentLevel = Math.floor(parseFloat(textIndent) / 16);
             if (!textIndentLevel) textIndentLevel = 1;
+            textIndentCss = textIndent;
+          } else if (CSS_LENGTH_PATTERN.test(textIndent)) {
+            textIndentCss = textIndent;
           }
         }
 
@@ -145,8 +241,14 @@ const paragraph: NodeSpec = {
           align,
           indent,
           textIndent: textIndentLevel,
+          textIndentCss,
           fontsize: fontSize,
           lineHeight,
+          marginLeft,
+          marginTop,
+          marginBottom,
+          paddingTop,
+          whiteSpace: WHITE_SPACE_VALUES.has(whiteSpace) ? whiteSpace : '',
         };
       },
     },
@@ -160,12 +262,30 @@ const paragraph: NodeSpec = {
     },
   ],
   toDOM: (node: Node) => {
-    const { align, indent, textIndent, fontsize, lineHeight } = node.attrs;
+    const {
+      align,
+      indent,
+      textIndent,
+      textIndentCss,
+      fontsize,
+      lineHeight,
+      marginLeft,
+      marginTop,
+      marginBottom,
+      paddingTop,
+      whiteSpace,
+    } = node.attrs;
     let style = '';
     if (align && align !== 'left') style += `text-align: ${align};`;
-    if (textIndent) style += `text-indent: ${textIndent}em;`;
+    if (textIndentCss) style += `text-indent: ${textIndentCss};`;
+    else if (textIndent) style += `text-indent: ${textIndent}em;`;
     if (fontsize) style += `font-size: ${fontsize};`;
     if (lineHeight) style += `line-height: ${lineHeight};`;
+    if (marginLeft) style += `margin-left: ${marginLeft};`;
+    if (marginTop) style += `margin-top: ${marginTop};`;
+    if (marginBottom) style += `margin-bottom: ${marginBottom};`;
+    if (paddingTop) style += `padding-top: ${paddingTop};`;
+    if (whiteSpace) style += `white-space: ${whiteSpace};`;
 
     const attr: Attr = { style };
     if (indent) attr['data-indent'] = indent;
@@ -174,16 +294,19 @@ const paragraph: NodeSpec = {
   },
 };
 
-const { doc, blockquote, text } = nodes;
+const { doc, blockquote, hard_break, text } = nodes;
 
 const schemaNodes = {
   doc,
   paragraph,
   blockquote,
+  hard_break,
   text,
+  text_container: textContainer,
   ordered_list: orderedList,
   bullet_list: bulletList,
   list_item: listItem,
+  inline_spacer: inlineSpacer,
 };
 
 export default schemaNodes;

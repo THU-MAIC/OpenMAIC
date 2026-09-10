@@ -7,6 +7,7 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import type { SlideContent } from '@/lib/types/stage';
 import type { PPTElement } from '@openmaic/dsl';
 import { LaserOverlay } from './LaserOverlay';
+import { SCREEN_ELEMENT_ID_PREFIX } from '../element-dom';
 
 interface LaserPointerOverlayProps {
   /**
@@ -28,7 +29,7 @@ interface LaserPointerOverlayProps {
  * were collapsed into a spotlight instead.
  */
 export function LaserPointerOverlay({
-  domIdPrefix = 'screen-element-',
+  domIdPrefix = SCREEN_ELEMENT_ID_PREFIX,
 }: LaserPointerOverlayProps = {}) {
   const laserElementId = useCanvasStore.use.laserElementId();
   const laserOptions = useCanvasStore.use.laserOptions();

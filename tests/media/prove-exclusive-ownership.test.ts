@@ -8,6 +8,11 @@ const mocks = vi.hoisted(() => ({
     scenes: unknown[];
   },
   probeStageRealmPresence: vi.fn(),
+  serverBacked: false,
+}));
+
+vi.mock('@/lib/media/asset-pool-config', () => ({
+  isAssetPoolServerBacked: () => mocks.serverBacked,
 }));
 
 vi.mock('@/lib/document-store', () => ({
@@ -57,12 +62,21 @@ describe('exclusive asset ownership', () => {
     mocks.listDocuments.mockResolvedValue([{ id: 'stage-1' }]);
     mocks.stageState = { stage: null, scenes: [] };
     mocks.probeStageRealmPresence.mockResolvedValue('absent');
+    mocks.serverBacked = false;
   });
 
   it('is exclusive with a single owner and no peer realm', async () => {
     const { exclusive } = await proveExclusiveAssetOwnership(ASSET, 'stage-1');
 
     expect(exclusive).toBe(true);
+  });
+
+  it('is never exclusive in server mode even when every browser-local signal is exclusive', async () => {
+    mocks.serverBacked = true;
+
+    const { exclusive } = await proveExclusiveAssetOwnership(ASSET, 'stage-1');
+
+    expect(exclusive).toBe(false);
   });
 
   /**
@@ -100,6 +114,17 @@ describe('exclusive asset ownership', () => {
 
     const { exclusive } = await proveExclusiveAssetOwnership(ASSET, 'stage-1');
 
+    expect(exclusive).toBe(false);
+  });
+
+  it('is not exclusive when duplicate user-controlled ids hide a second owner', async () => {
+    const duplicateOwners = documentWithOneOwner('stage-1');
+    duplicateOwners.scenes.push(structuredClone(duplicateOwners.scenes[0]));
+    mocks.loadDocument.mockResolvedValue(duplicateOwners);
+
+    const { exclusive, activePersistedRefs } = await proveExclusiveAssetOwnership(ASSET, 'stage-1');
+
+    expect(activePersistedRefs?.referenceCounts.get(ASSET)).toBe(2);
     expect(exclusive).toBe(false);
   });
 

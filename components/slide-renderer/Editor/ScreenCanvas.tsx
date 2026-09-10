@@ -7,6 +7,7 @@ import { LaserOverlay } from './LaserOverlay';
 import { RendererScreenCanvas } from './RendererScreenCanvas';
 import { useSlideBackgroundStyle } from '@/lib/hooks/use-slide-background-style';
 import { useCanvasStore } from '@/lib/store';
+import { useSyncCanvasViewportFromSlide } from '@/lib/store/sync-canvas-viewport';
 import { useSceneSelector } from '@/lib/contexts/scene-context';
 import { findElementGeometry } from '@/lib/utils/geometry';
 import type { SlideContent } from '@/lib/types/stage';
@@ -18,6 +19,7 @@ import { AnimatePresence } from 'motion/react';
 import { isPlaybackRendererEnabled } from '@/lib/config/feature-flags';
 
 export function ScreenCanvas() {
+  useSyncCanvasViewportFromSlide();
   const canvasScale = useCanvasStore.use.canvasScale();
   const elements = useSceneSelector<SlideContent, PPTElement[]>(
     (content) => content.canvas.elements,

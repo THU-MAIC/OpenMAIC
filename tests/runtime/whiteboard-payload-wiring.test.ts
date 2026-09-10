@@ -11,6 +11,10 @@ import { createStorageHttpHandler } from '@openmaic/storage/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
+import type {
+  WhiteboardRuntimeOperationV1,
+  WhiteboardRuntimePayloadV1,
+} from '@/lib/whiteboard/runtime/types';
 
 const NOW = '2026-08-06T00:00:00.000Z';
 
@@ -54,6 +58,13 @@ function validElementPayload(operationId = 'element-add:valid') {
       },
     },
   } as const;
+}
+
+function operationPayload(
+  operationId: string,
+  operation: WhiteboardRuntimeOperationV1,
+): WhiteboardRuntimePayloadV1 {
+  return { payloadVersion: 1, operationId, operation };
 }
 
 function handlerFetch(handler: RequestListener): typeof globalThis.fetch {
@@ -161,6 +172,53 @@ describe('default BrowserRuntimeStore app payload wiring', () => {
     await expect(
       store.appendRecord(
         {
+          id: 'code-edit:valid',
+          sessionId: 'whiteboard-session',
+          createdAt: now,
+          payload: operationPayload('code-edit:valid', {
+            kind: 'code_lines_edited',
+            elementId: 'code-1',
+            edit: {
+              kind: 'replace_lines',
+              lineIds: ['L2', 'L1'],
+              lines: [
+                { id: 'host-A', content: '' },
+                { id: 'host-B', content: 'replacement' },
+              ],
+            },
+          }),
+        },
+        { expectedLastSeq: 0 },
+      ),
+    ).resolves.toMatchObject({ seq: 1 });
+    await expect(
+      store.appendRecord(
+        {
+          id: 'element-delete:valid',
+          sessionId: 'whiteboard-session',
+          createdAt: now,
+          payload: operationPayload('element-delete:valid', {
+            kind: 'element_deleted',
+            elementId: 'text-added',
+          }),
+        },
+        { expectedLastSeq: 1 },
+      ),
+    ).resolves.toMatchObject({ seq: 2 });
+    await expect(
+      store.appendRecord(
+        {
+          id: 'elements-clear:valid',
+          sessionId: 'whiteboard-session',
+          createdAt: now,
+          payload: operationPayload('elements-clear:valid', { kind: 'elements_cleared' }),
+        },
+        { expectedLastSeq: 2 },
+      ),
+    ).resolves.toMatchObject({ seq: 3 });
+    await expect(
+      store.appendRecord(
+        {
           id: 'element-add:invalid-target',
           sessionId: 'whiteboard-session',
           createdAt: now,
@@ -172,7 +230,22 @@ describe('default BrowserRuntimeStore app payload wiring', () => {
             },
           },
         },
-        { expectedLastSeq: 0 },
+        { expectedLastSeq: 3 },
+      ),
+    ).rejects.toThrow('invalid runtime record');
+    await expect(
+      store.appendRecord(
+        {
+          id: 'code-edit:invalid-lines',
+          sessionId: 'whiteboard-session',
+          createdAt: now,
+          payload: operationPayload('code-edit:invalid-lines', {
+            kind: 'code_lines_edited',
+            elementId: 'code-1',
+            edit: { kind: 'delete_lines', lineIds: [] },
+          }),
+        },
+        { expectedLastSeq: 3 },
       ),
     ).rejects.toThrow('invalid runtime record');
   });
@@ -251,6 +324,50 @@ describe('default BrowserRuntimeStore app payload wiring', () => {
     await expect(
       client.appendRecord(
         {
+          id: 'code-edit:http',
+          sessionId: 'http-whiteboard-element',
+          createdAt: NOW,
+          payload: operationPayload('code-edit:http', {
+            kind: 'code_lines_edited',
+            elementId: 'code-1',
+            edit: {
+              kind: 'insert_after',
+              lineId: 'L1',
+              lines: [{ id: 'host-line', content: '' }],
+            },
+          }),
+        },
+        { expectedLastSeq: 0 },
+      ),
+    ).resolves.toMatchObject({ seq: 1 });
+    await expect(
+      client.appendRecord(
+        {
+          id: 'element-delete:http',
+          sessionId: 'http-whiteboard-element',
+          createdAt: NOW,
+          payload: operationPayload('element-delete:http', {
+            kind: 'element_deleted',
+            elementId: 'text-added',
+          }),
+        },
+        { expectedLastSeq: 1 },
+      ),
+    ).resolves.toMatchObject({ seq: 2 });
+    await expect(
+      client.appendRecord(
+        {
+          id: 'elements-clear:http',
+          sessionId: 'http-whiteboard-element',
+          createdAt: NOW,
+          payload: operationPayload('elements-clear:http', { kind: 'elements_cleared' }),
+        },
+        { expectedLastSeq: 2 },
+      ),
+    ).resolves.toMatchObject({ seq: 3 });
+    await expect(
+      client.appendRecord(
+        {
           id: 'element-add:http-invalid',
           sessionId: 'http-whiteboard-element',
           createdAt: NOW,
@@ -262,7 +379,30 @@ describe('default BrowserRuntimeStore app payload wiring', () => {
             },
           },
         },
-        { expectedLastSeq: 0 },
+        { expectedLastSeq: 3 },
+      ),
+    ).rejects.toMatchObject({
+      name: HttpRuntimeStoreError.name,
+      status: 400,
+      code: 'VALIDATION_FAILED',
+    });
+    await expect(
+      client.appendRecord(
+        {
+          id: 'code-edit:http-invalid',
+          sessionId: 'http-whiteboard-element',
+          createdAt: NOW,
+          payload: operationPayload('code-edit:http-invalid', {
+            kind: 'code_lines_edited',
+            elementId: 'code-1',
+            edit: {
+              kind: 'replace_lines',
+              lineIds: ['L1', 'L1'],
+              lines: [{ id: 'host-line', content: 'replacement' }],
+            },
+          }),
+        },
+        { expectedLastSeq: 3 },
       ),
     ).rejects.toMatchObject({
       name: HttpRuntimeStoreError.name,

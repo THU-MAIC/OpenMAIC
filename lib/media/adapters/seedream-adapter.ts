@@ -20,6 +20,7 @@ import type {
   ImageGenerationResult,
 } from '../types';
 import { probeAuth } from '../probe-auth';
+import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'doubao-seedream-5-0-260128';
 const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
@@ -96,7 +97,7 @@ export async function generateWithSeedream(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify({
-      model: config.model || DEFAULT_MODEL,
+      model: requireModel(config.model, 'Seedream'),
       prompt: options.prompt,
       size: resolveSeedreamSize(options),
       watermark: false,

@@ -23,8 +23,35 @@ Generate a self-contained HTML diagram with connected nodes.
 3. **High contrast**: White nodes on dark background, light edge labels
 4. **Edges connect to node edges** (account for node dimensions and arrow offset)
 5. **Mobile**: Sidebar/panel collapsible, doesn't block diagram
-6. **No jitter**: Avoid hover transform conflicts on click
+6. **No jitter**: Never apply a CSS `transform` to an element that already carries an SVG `transform` attribute
 7. **All nodes connected**: No orphan nodes
+
+## Node Structure
+
+Positioning and animation MUST live on separate elements.
+
+```html
+<!-- Outer <g>: position only. Never target this element with a CSS transform. -->
+<g id="node-n1" class="node" transform="translate(320, 180)">
+  <!-- Inner <g>: every hover/active animation goes here. -->
+  <g class="node-body">
+    <rect x="-90" y="-35" width="180" height="70" rx="12"></rect>
+    <text text-anchor="middle" dy="6">Label</text>
+  </g>
+</g>
+```
+
+```css
+/* Correct: animates the inner group, so the node keeps its position. */
+.node:hover .node-body { transform: translateY(-4px); }
+.node:active .node-body { transform: scale(0.98); }
+
+/* WRONG: wipes out translate(320, 180) and snaps the node to the origin. */
+.node:hover { transform: translateY(-4px); }
+```
+
+The `<rect>` is centred on the group origin, so each node's `translate()` is its
+centre — which is what the edge maths below expects for `from.x`/`from.y`.
 
 ## Edge Connection Code
 

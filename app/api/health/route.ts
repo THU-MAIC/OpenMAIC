@@ -13,9 +13,11 @@ export async function GET() {
     status: 'ok',
     version,
     capabilities: {
-      webSearch: Object.keys(getServerWebSearchProviders()).length > 0,
-      imageGeneration: Object.keys(getServerImageProviders()).length > 0,
-      videoGeneration: Object.keys(getServerVideoProviders()).length > 0,
+      // A capability is available only when at least one provider is enabled —
+      // force-disabled providers (disabled: true) do not count (#665).
+      webSearch: Object.values(getServerWebSearchProviders()).some((info) => !info.disabled),
+      imageGeneration: Object.values(getServerImageProviders()).some((info) => !info.disabled),
+      videoGeneration: Object.values(getServerVideoProviders()).some((info) => !info.disabled),
       tts: Object.values(getServerTTSProviders()).some((info) => !info.disabled),
     },
   });

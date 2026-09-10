@@ -22,6 +22,7 @@ import type {
 } from '../types';
 import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
+import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'grok-imagine-video';
 const DEFAULT_BASE_URL = 'https://api.x.ai/v1';
@@ -165,7 +166,7 @@ export async function generateWithGrokVideo(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
 ): Promise<VideoGenerationResult> {
-  const model = config.model || DEFAULT_MODEL;
+  const model = requireModel(config.model, 'Grok Video');
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
 
   return runPolledTask<VideoGenerationResult>({

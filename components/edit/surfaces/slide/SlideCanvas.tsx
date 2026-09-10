@@ -10,6 +10,7 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { AnchoredTextBar } from './AnchoredTextBar';
 import { AnchoredElementBar } from './AnchoredElementBar';
 import { ElementPickLayer } from './ElementPickLayer';
+import { ElementRefPinLayer } from './ElementRefPinLayer';
 import { EDITABLE_ELEMENT_ID_PREFIX } from './renderer-element-dom';
 import {
   useEditingTextElementId,
@@ -49,6 +50,7 @@ export function SlideCanvas() {
       </SceneProvider>
       {!useRendererEditor && <AnchoredTextBar editingElementId={editingElementId} />}
       {!useRendererEditor && <AnchoredElementBar element={nonTextElement} />}
+      <ElementRefPinLayer />
       <ElementPickLayer />
     </div>
   );

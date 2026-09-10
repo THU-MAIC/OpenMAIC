@@ -9,6 +9,7 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { requireModel } from '../require-model';
 
 const BASE_URL = 'https://api.minimaxi.com';
 
@@ -18,7 +19,7 @@ export async function generateWithMiniMaxImage(
 ): Promise<ImageGenerationResult> {
   const baseUrl = (config.baseUrl || BASE_URL).replace(/\/$/, '');
 
-  const model = config.model || 'image-01';
+  const model = requireModel(config.model, 'MiniMax Image');
 
   const aspectRatio = options.aspectRatio || '1:1';
 

@@ -105,6 +105,70 @@ export interface DocumentSummary {
   createdAt: number;
   updatedAt: number;
   sceneCount: number;
+  /** Owner-scoped folder membership. Omitted when the document is unfiled. */
+  folderId?: string;
+}
+
+/** A durable owner-scoped folder, including folders that currently have no documents. */
+export interface DocumentFolder {
+  id: string;
+  name: string;
+  /** Sort order within the owner's folder list (ascending; mirrors the local model's `FolderRecord.order`). */
+  order: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Creating a folder would exceed the owner-scoped folder limit. */
+export class DocumentFolderLimitError extends Error {
+  override readonly name = 'DocumentFolderLimitError';
+
+  constructor(readonly limit: number) {
+    super(`@openmaic/storage: document folder limit reached (${limit})`);
+  }
+}
+
+/**
+ * Owner-scoped folder organization layered beside document storage. These
+ * methods are intentionally available only on a bound server store: callers
+ * choose the trusted owner with `forOwner`, never with method parameters.
+ */
+export interface DocumentFolderStore {
+  createFolder(
+    folderId: string,
+    name: string,
+    limit?: number,
+  ): Promise<{ folder: DocumentFolder; reused: boolean }>;
+  listFolders(): Promise<DocumentFolder[]>;
+  /**
+   * Rename an owned folder. `null` when the folder does not exist in this
+   * owner's scope. A case-insensitive duplicate name (other than the folder
+   * itself) surfaces as the unique-constraint violation of the rename UPDATE.
+   */
+  renameFolder(id: string, name: string): Promise<DocumentFolder | null>;
+  /**
+   * Delete an owned folder. `null` when the folder does not exist in this
+   * owner's scope.
+   *
+   * - `'ungroup'`: the folder is dropped and its filed documents become
+   *   unfiled (folder_id cleared, documents kept).
+   * - `'remove'`: the folder is dropped AND the ids of the documents that
+   *   were filed in it are returned, so the caller can run its own cascade.
+   */
+  deleteFolder(
+    id: string,
+    mode: 'ungroup' | 'remove',
+  ): Promise<{ removedStageIds: string[] } | null>;
+  /** File an owned document into an owned folder; the folder must exist and belong to this owner. */
+  moveDocumentToFolder(stageId: string, folderId: string): Promise<boolean>;
+  /**
+   * Set a document's folder membership (idempotent). `folderId` non-null
+   * behaves exactly like {@link moveDocumentToFolder}; `folderId` null un-files
+   * the document and always succeeds (a missing membership already means
+   * unfiled).
+   */
+  setStageFolder(stageId: string, folderId: string | null): Promise<boolean>;
+  listDocuments(folderId?: string): Promise<DocumentSummary[]>;
 }
 
 /**
@@ -179,4 +243,41 @@ export interface DocumentStore<TScene extends SceneLike = Scene, TStage extends 
    * document to be current, so it throws on a stale or newer-versioned document.
    */
   deleteScene(stageId: string, sceneId: string): Promise<void>;
+}
+
+/** One scene's entry in a stage freshness manifest. */
+export interface StageSceneManifest {
+  id: string;
+  /** `document_scenes.scene_order`, the presentation order. */
+  order: number;
+  /** Monotonic per-(stage, scene) revision; 0 when the trigger never bumped it. */
+  rev: number;
+}
+
+/**
+ * The freshness manifest for one stage: a stage-level monotonic revision plus
+ * each live scene's own revision. Both are maintained by the DB triggers on
+ * `document_stages` / `document_scenes` (provisioned by `DOCUMENT_PG_SCHEMA`),
+ * so every write seam — HTTP routes, agent tools, jobs, manual SQL — moves
+ * them without application cooperation.
+ */
+export interface StageFreshnessManifest {
+  /** Monotonic per-stage revision; 0 when the trigger never bumped it. */
+  rev: number;
+  scenes: StageSceneManifest[];
+}
+
+/**
+ * The trigger-maintained freshness manifest read. Available only on DB-backed
+ * stores whose schema provisions the revision companion tables (the PG
+ * backend) — never on the browser or HTTP backends — mirroring
+ * `DocumentFolderStore`'s "bound server store only" rule.
+ */
+export interface StageFreshnessManifestStore {
+  /**
+   * Read the owner-scoped freshness manifest for one stage. `null` when the
+   * stage is absent from this store's scope (the same no-existence-oracle
+   * posture as `loadDocument`).
+   */
+  readFreshnessManifest(stageId: string): Promise<StageFreshnessManifest | null>;
 }

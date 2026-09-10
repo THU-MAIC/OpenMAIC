@@ -24,13 +24,17 @@ import type { Scene, Stage } from '@openmaic/dsl';
 import { reassembleDocument, splitDocument, type OutlineRow, type StageRow } from './adapter.js';
 import type {
   DocumentStore,
+  DocumentFolder,
+  DocumentFolderStore,
   DocumentSummary,
   MaicDocument,
   SceneLike,
   SceneValidator,
+  StageFreshnessManifest,
+  StageFreshnessManifestStore,
   StageValidator,
 } from './types.js';
-import { DocumentNotFoundError, DocumentVersionError } from './types.js';
+import { DocumentFolderLimitError, DocumentNotFoundError, DocumentVersionError } from './types.js';
 import { assertJsonValue, isLosslessJsonString } from '../runtime/json-value.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
@@ -46,10 +50,29 @@ export interface PgDocumentStoreOptions {
   validateScene?: SceneValidator;
   /** Stage write-boundary validator. Defaults to the DSL validateStage. */
   validateStage?: StageValidator;
+  /** Restrict writes, listings, and folders to this owner. Reads remain id-capable. */
+  ownerId?: string;
 }
 
 /** Idempotent schema for the PostgreSQL document backend. */
 export const DOCUMENT_PG_SCHEMA = `
+CREATE TABLE IF NOT EXISTS document_folders (
+  owner_id TEXT NOT NULL,
+  id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  normalized_name TEXT NOT NULL,
+  created_at DOUBLE PRECISION NOT NULL,
+  updated_at DOUBLE PRECISION NOT NULL,
+  PRIMARY KEY (owner_id, id),
+  UNIQUE (owner_id, normalized_name)
+);
+
+ALTER TABLE document_folders
+  ADD COLUMN IF NOT EXISTS folder_order DOUBLE PRECISION NOT NULL DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS document_folders_owner_order_idx
+  ON document_folders (owner_id, folder_order, id);
+
 CREATE TABLE IF NOT EXISTS document_stages (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -58,8 +81,23 @@ CREATE TABLE IF NOT EXISTS document_stages (
   task_engine_mode BOOLEAN,
   created_at DOUBLE PRECISION NOT NULL,
   updated_at DOUBLE PRECISION NOT NULL,
+  owner_id TEXT,
+  folder_id TEXT,
   data JSONB NOT NULL
 );
+
+ALTER TABLE document_stages
+  ADD COLUMN IF NOT EXISTS owner_id TEXT;
+
+ALTER TABLE document_stages
+  ADD COLUMN IF NOT EXISTS folder_id TEXT;
+
+CREATE INDEX IF NOT EXISTS document_stages_owner_idx
+  ON document_stages (owner_id, id) WHERE owner_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS document_stages_owner_folder_idx
+  ON document_stages (owner_id, folder_id, id)
+  WHERE owner_id IS NOT NULL AND folder_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS document_scenes (
   stage_id TEXT NOT NULL REFERENCES document_stages(id) ON DELETE CASCADE,
@@ -76,7 +114,187 @@ CREATE TABLE IF NOT EXISTS document_outlines (
   stage_id TEXT PRIMARY KEY REFERENCES document_stages(id) ON DELETE CASCADE,
   data JSONB NOT NULL
 );
+
+-- Per-scene monotonic revision signal, at the DB layer (ported from the
+-- reference implementation's migration 0071).
+--
+-- WHY THE DB LAYER: course content has several write seams that share no
+-- application-level signal (HTTP routes, agent tools, jobs, migration
+-- scripts, manual psql). Only a trigger can make "wrote but never signaled"
+-- unexpressible. These companion tables and triggers keep a monotonic
+-- per-stage revision and a per-scene revision on every insert/update/delete
+-- of document_stages / document_scenes. Companion tables instead of columns
+-- keep the document tables' authoritative DDL untouched.
+--
+-- LOCK ORDER INVARIANT: the scene trigger bumps document_stage_revision (SR)
+-- BEFORE document_scene_revision (SCR) — the same order saveDocument uses
+-- (stage upsert first, then per-scene upserts). Any future code that writes
+-- these two companion tables must take SR before SCR, or the deadlock (40P01)
+-- between concurrent stage-first and scene-first writers comes back.
+--
+-- NOTIFY: each bump emits a JSON route {kind:'stage',stageId} on the
+-- agent-event wakeup channel (the same channel the reference's agent event
+-- notify bus LISTENs on), so a stage notification wakes exactly the
+-- subscribers listening for that stage. The payload is built with
+-- json_build_object — never hand-concatenated, because a stageId containing
+-- quotes or backslashes would yield invalid JSON.
+--
+-- NOTIFY SUPPRESSION SWITCH: both triggers check
+-- current_setting('openmaic.suppress_stage_notify', true) before pg_notify.
+-- Batch/backfill writers MUST run SET LOCAL openmaic.suppress_stage_notify =
+-- 'on' inside each batch transaction: the revision still bumps, only the
+-- notification is skipped. NOTE: SET LOCAL outside a transaction block only
+-- emits a warning and has NO effect.
+--
+-- TRUNCATE DOES NOT FIRE ROW TRIGGERS: a TRUNCATE reset of document_scenes /
+-- document_stages leaves the companion revision rows behind, so any TRUNCATE
+-- reset must also truncate document_scene_revision and
+-- document_stage_revision.
+--
+-- IDEMPOTENT BY CONSTRUCTION: CREATE TABLE IF NOT EXISTS, CREATE OR REPLACE
+-- FUNCTION, DROP TRIGGER IF EXISTS — replayable in any environment.
+
+CREATE TABLE IF NOT EXISTS document_stage_revision (
+  stage_id TEXT PRIMARY KEY NOT NULL,
+  rev BIGINT DEFAULT 0 NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS document_scene_revision (
+  stage_id TEXT NOT NULL,
+  scene_id TEXT NOT NULL,
+  rev BIGINT DEFAULT 0 NOT NULL,
+  CONSTRAINT document_scene_revision_pkey PRIMARY KEY (stage_id, scene_id)
+);
+
+CREATE OR REPLACE FUNCTION openmaic_bump_scene_revision() RETURNS trigger AS $$
+DECLARE
+  v_stage_id text;
+  v_scene_id text;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    v_stage_id := OLD.stage_id;
+    v_scene_id := OLD.id;
+  ELSE
+    v_stage_id := NEW.stage_id;
+    v_scene_id := NEW.id;
+  END IF;
+  -- LOCK ORDER INVARIANT: SR row BEFORE the SCR row (see the header comment).
+  INSERT INTO document_stage_revision (stage_id, rev)
+  VALUES (v_stage_id, 1)
+  ON CONFLICT (stage_id) DO UPDATE SET rev = document_stage_revision.rev + 1;
+  INSERT INTO document_scene_revision (stage_id, scene_id, rev)
+  VALUES (v_stage_id, v_scene_id, 1)
+  ON CONFLICT (stage_id, scene_id) DO UPDATE SET rev = document_scene_revision.rev + 1;
+  IF coalesce(current_setting('openmaic.suppress_stage_notify', true), '') <> 'on' THEN
+    PERFORM pg_notify('openmaic_agent_event_wakeup', json_build_object('kind', 'stage', 'stageId', v_stage_id)::text);
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION openmaic_bump_stage_revision() RETURNS trigger AS $$
+DECLARE
+  v_stage_id text;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    v_stage_id := OLD.id;
+  ELSE
+    v_stage_id := NEW.id;
+  END IF;
+  INSERT INTO document_stage_revision (stage_id, rev)
+  VALUES (v_stage_id, 1)
+  ON CONFLICT (stage_id) DO UPDATE SET rev = document_stage_revision.rev + 1;
+  IF coalesce(current_setting('openmaic.suppress_stage_notify', true), '') <> 'on' THEN
+    PERFORM pg_notify('openmaic_agent_event_wakeup', json_build_object('kind', 'stage', 'stageId', v_stage_id)::text);
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS openmaic_scene_revision_trigger ON document_scenes;
+
+CREATE TRIGGER openmaic_scene_revision_trigger
+AFTER INSERT OR UPDATE OR DELETE ON document_scenes
+FOR EACH ROW EXECUTE FUNCTION openmaic_bump_scene_revision();
+
+DROP TRIGGER IF EXISTS openmaic_stage_revision_trigger ON document_stages;
+
+CREATE TRIGGER openmaic_stage_revision_trigger
+AFTER INSERT OR UPDATE OR DELETE ON document_stages
+FOR EACH ROW EXECUTE FUNCTION openmaic_bump_stage_revision();
 `;
+
+/**
+ * Split a DDL string into individual statements. A plain `split(';')` would
+ * carve the `BEGIN ... END;` blocks inside the dollar-quoted plpgsql trigger
+ * bodies into bogus statements, so the splitter skips over single-quoted
+ * strings, double-quoted identifiers, `$$...$$` / `$tag$...$tag$` bodies, and
+ * `--` line comments and slash-star block comments.
+ */
+export function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = '';
+  let i = 0;
+  const end = sql.length;
+  while (i < end) {
+    const rest = sql.slice(i);
+    const ch = sql[i];
+    if (ch === ';') {
+      statements.push(current);
+      current = '';
+      i += 1;
+      continue;
+    }
+    if (ch === '-' && rest.startsWith('--')) {
+      const newline = rest.indexOf('\n');
+      const lineEnd = newline === -1 ? end : i + newline + 1;
+      current += sql.slice(i, lineEnd);
+      i = lineEnd;
+      continue;
+    }
+    if (ch === '/' && rest.startsWith('/*')) {
+      const close = rest.indexOf('*/', 2);
+      const blockEnd = close === -1 ? end : i + close + 2;
+      current += sql.slice(i, blockEnd);
+      i = blockEnd;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      // Single-quoted string literal or double-quoted identifier; the quote
+      // is escaped by doubling, and an unterminated run consumes the rest.
+      current += ch;
+      i += 1;
+      while (i < end) {
+        current += sql[i];
+        if (sql[i] === ch) {
+          if (sql[i + 1] === ch) {
+            current += sql[i + 1];
+            i += 2;
+            continue;
+          }
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === '$') {
+      const tag = /^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/.exec(rest)?.[0];
+      if (tag) {
+        const close = rest.indexOf(tag, tag.length);
+        if (close !== -1) {
+          current += rest.slice(0, close + tag.length);
+          i += close + tag.length;
+          continue;
+        }
+      }
+    }
+    current += ch;
+    i += 1;
+  }
+  return statements.map((statement) => statement.trim()).filter((statement) => statement !== '');
+}
 
 /**
  * Create the tables owned by this backend when absent. Safe to call repeatedly;
@@ -84,10 +302,59 @@ CREATE TABLE IF NOT EXISTS document_outlines (
  */
 export async function ensureDocumentSchema(queryable: Queryable): Promise<void> {
   // Keep Queryable minimal and PGlite-compatible: issue one statement at a time.
-  for (const sql of DOCUMENT_PG_SCHEMA.split(';')) {
-    const statement = sql.trim();
-    if (statement !== '') await queryable.query(statement);
+  for (const statement of splitSqlStatements(DOCUMENT_PG_SCHEMA)) {
+    await queryable.query(statement);
   }
+}
+
+const STAGE_REV_SQL = `
+  SELECT rev
+    FROM document_stage_revision
+   WHERE stage_id = $1
+`;
+
+const SCENES_SQL = `
+  SELECT s.id,
+         s.scene_order,
+         COALESCE(sr.rev, 0) AS rev
+    FROM document_scenes s
+    LEFT JOIN document_scene_revision sr
+      ON sr.stage_id = s.stage_id
+     AND sr.scene_id = s.id
+   WHERE s.stage_id = $1
+   ORDER BY s.scene_order ASC, s.id ASC
+`;
+
+/**
+ * Read the freshness manifest for one stage: the stage's monotonic revision
+ * plus every live scene's id/order/rev, produced by the triggers provisioned
+ * in `DOCUMENT_PG_SCHEMA`. A stage with no revision row yet reads as `rev: 0`
+ * (written before the triggers existed, or never written since); a scene the
+ * trigger never bumped also reads 0. Callers gate existence/visibility first
+ * (the owner-bound store method does), so this function assumes the stage
+ * exists and does not re-check it. Kept free of driver imports so the whole
+ * read is unit-testable against any queryable.
+ */
+export async function readStageFreshnessManifest(
+  stageId: string,
+  queryable: Queryable,
+): Promise<StageFreshnessManifest> {
+  const [stageRows, sceneRows] = await Promise.all([
+    queryable.query<{ rev: number | string }>(STAGE_REV_SQL, [stageId]),
+    queryable.query<{ id: string; scene_order: number | string; rev: number | string }>(
+      SCENES_SQL,
+      [stageId],
+    ),
+  ]);
+
+  return {
+    rev: stageRows.rows[0] === undefined ? 0 : Number(stageRows.rows[0].rev),
+    scenes: sceneRows.rows.map((row) => ({
+      id: row.id,
+      order: Number(row.scene_order),
+      rev: Number(row.rev),
+    })),
+  };
 }
 
 interface StoredJsonRow extends Record<string, unknown> {
@@ -107,6 +374,15 @@ interface SummaryRow extends Record<string, unknown> {
   created_at: number | string;
   updated_at: number | string;
   scene_count: number | string;
+  folder_id: string | null;
+}
+
+interface FolderRow extends Record<string, unknown> {
+  id: string;
+  name: string;
+  folder_order: number | string;
+  created_at: number | string;
+  updated_at: number | string;
 }
 
 function assertValid(
@@ -183,14 +459,15 @@ function isPgQueryableKey(value: string): boolean {
   return isLosslessJsonString(value);
 }
 
-export class PgDocumentStore<
-  TScene extends SceneLike = Scene,
-  TStage extends Stage = Stage,
-> implements DocumentStore<TScene, TStage> {
+export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends Stage = Stage>
+  implements DocumentStore<TScene, TStage>, DocumentFolderStore, StageFreshnessManifestStore
+{
   private readonly queryable: Queryable;
   private readonly transactionHook: WithTransaction;
   private readonly validateScene: SceneValidator;
   private readonly validateStage: StageValidator;
+  private readonly ownerId: string | null;
+  private readonly options: PgDocumentStoreOptions;
 
   constructor(queryable: Queryable, options: PgDocumentStoreOptions) {
     if (typeof options?.withTransaction !== 'function') {
@@ -204,10 +481,42 @@ export class PgDocumentStore<
     this.transactionHook = options.withTransaction;
     this.validateScene = options.validateScene ?? validateScene;
     this.validateStage = options.validateStage ?? validateStage;
+    if (options.ownerId !== undefined && !isPgQueryableKey(options.ownerId)) {
+      throw new Error('@openmaic/storage: PgDocumentStore ownerId must be lossless JSON text');
+    }
+    this.ownerId = options.ownerId ?? null;
+    this.options = options;
+  }
+
+  /** Bind document writes, listings, and folders to one trusted owner identity. */
+  forOwner(ownerId: string): PgDocumentStore<TScene, TStage> {
+    return new PgDocumentStore(this.queryable, { ...this.options, ownerId });
+  }
+
+  private scopePredicate(alias = '', ownerParameter = 1): string {
+    const column = alias === '' ? 'owner_id' : `${alias}.owner_id`;
+    return this.ownerId === null ? `${column} IS NULL` : `${column} = $${ownerParameter}`;
+  }
+
+  private scopeParams(stageId?: string): unknown[] {
+    return this.ownerId === null
+      ? stageId === undefined
+        ? []
+        : [stageId]
+      : stageId === undefined
+        ? [this.ownerId]
+        : [stageId, this.ownerId];
   }
 
   private async transaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
     return this.transactionHook(body);
+  }
+
+  private requireOwner(operation: string): string {
+    if (this.ownerId === null) {
+      throw new Error(`@openmaic/storage: ${operation} requires an owner-bound document store`);
+    }
+    return this.ownerId;
   }
 
   private async loadStage(
@@ -307,10 +616,11 @@ export class PgDocumentStore<
   }
 
   private async persistStage(queryable: Queryable, stageRow: StageRow<TStage>): Promise<void> {
-    await queryable.query(
+    const result = await queryable.query<{ id: string }>(
       `INSERT INTO document_stages
-         (id, name, description, interactive_mode, task_engine_mode, created_at, updated_at, data)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+         (id, name, description, interactive_mode, task_engine_mode, created_at, updated_at,
+          owner_id, data)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
        ON CONFLICT (id) DO UPDATE
          SET name = EXCLUDED.name,
              description = EXCLUDED.description,
@@ -318,7 +628,9 @@ export class PgDocumentStore<
              task_engine_mode = EXCLUDED.task_engine_mode,
              created_at = EXCLUDED.created_at,
              updated_at = EXCLUDED.updated_at,
-             data = EXCLUDED.data`,
+             data = EXCLUDED.data
+       WHERE document_stages.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id
+       RETURNING id`,
       [
         stageRow.id,
         stageRow.name,
@@ -327,9 +639,16 @@ export class PgDocumentStore<
         stageRow.taskEngineMode ?? null,
         stageRow.createdAt,
         stageRow.updatedAt,
+        this.ownerId,
         encodeJson(stageRow, `document stage ${JSON.stringify(stageRow.id)}`),
       ],
     );
+    if (result.rows.length === 0) {
+      throw new DocumentNotFoundError(
+        stageRow.id,
+        `@openmaic/storage: document ${JSON.stringify(stageRow.id)} belongs to another scope`,
+      );
+    }
   }
 
   async saveDocument(doc: MaicDocument<TScene, TStage>): Promise<void> {
@@ -412,7 +731,213 @@ export class PgDocumentStore<
     return migrateDocument(reassembleDocument(rows.stageRow, rows.sceneRows, rows.outlineRow));
   }
 
-  async listDocuments(): Promise<DocumentSummary[]> {
+  async readFreshnessManifest(stageId: string): Promise<StageFreshnessManifest | null> {
+    if (!isPgQueryableKey(stageId)) return null;
+    return this.transaction(async (queryable) => {
+      // Existence and ownership gate, exactly like loadDocument: a foreign or
+      // missing stage answers the same null. The revision read itself is
+      // un-scoped (readStageFreshnessManifest assumes the stage exists).
+      const scoped = await queryable.query<{ id: string }>(
+        `SELECT id
+           FROM document_stages
+          WHERE id = $1 AND ${this.scopePredicate('', 2)}`,
+        this.scopeParams(stageId),
+      );
+      if (scoped.rows.length === 0) return null;
+      return readStageFreshnessManifest(stageId, queryable);
+    });
+  }
+
+  async createFolder(
+    folderId: string,
+    name: string,
+    limit = 50,
+  ): Promise<{ folder: DocumentFolder; reused: boolean }> {
+    const ownerId = this.requireOwner('createFolder');
+    if (!isPgQueryableKey(folderId) || !isPgQueryableKey(name)) {
+      throw new Error('@openmaic/storage: folder id and name must be lossless JSON text');
+    }
+    const normalizedName = name.toLocaleLowerCase('en-US');
+    return this.transaction(async (queryable) => {
+      const existing = await queryable.query<FolderRow>(
+        `SELECT id, name, folder_order, created_at, updated_at
+           FROM document_folders
+          WHERE owner_id = $1 AND normalized_name = $2
+          LIMIT 1`,
+        [ownerId, normalizedName],
+      );
+      if (existing.rows[0]) {
+        const row = existing.rows[0];
+        return {
+          folder: {
+            id: row.id,
+            name: row.name,
+            order: Number(row.folder_order),
+            createdAt: Number(row.created_at),
+            updatedAt: Number(row.updated_at),
+          },
+          reused: true,
+        };
+      }
+      const count = await queryable.query<{ count: number | string }>(
+        'SELECT COUNT(*)::text AS count FROM document_folders WHERE owner_id = $1',
+        [ownerId],
+      );
+      if (Number(count.rows[0]?.count ?? 0) >= limit) throw new DocumentFolderLimitError(limit);
+      const now = Date.now();
+      // Same order rule as the local model: a new folder goes after the
+      // current maximum (folders are displayed by `order` ascending).
+      const maxOrder = await queryable.query<{ max: number | string | null }>(
+        `SELECT MAX(folder_order)::text AS max
+           FROM document_folders
+          WHERE owner_id = $1`,
+        [ownerId],
+      );
+      const order = Number(maxOrder.rows[0]?.max ?? -1) + 1;
+      const inserted = await queryable.query<FolderRow>(
+        `INSERT INTO document_folders
+           (owner_id, id, name, normalized_name, folder_order, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $6)
+         ON CONFLICT (owner_id, normalized_name) DO UPDATE
+           SET normalized_name = EXCLUDED.normalized_name
+         RETURNING id, name, folder_order, created_at, updated_at`,
+        [ownerId, folderId, name, normalizedName, order, now],
+      );
+      const row = inserted.rows[0]!;
+      return {
+        folder: {
+          id: row.id,
+          name: row.name,
+          order: Number(row.folder_order),
+          createdAt: Number(row.created_at),
+          updatedAt: Number(row.updated_at),
+        },
+        reused: row.id !== folderId,
+      };
+    });
+  }
+
+  async listFolders(): Promise<DocumentFolder[]> {
+    const ownerId = this.requireOwner('listFolders');
+    const result = await this.queryable.query<FolderRow>(
+      `SELECT id, name, folder_order, created_at, updated_at
+         FROM document_folders
+        WHERE owner_id = $1
+        ORDER BY folder_order ASC, id ASC`,
+      [ownerId],
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      order: Number(row.folder_order),
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+    }));
+  }
+
+  async renameFolder(id: string, name: string): Promise<DocumentFolder | null> {
+    const ownerId = this.requireOwner('renameFolder');
+    if (!isPgQueryableKey(id) || !isPgQueryableKey(name)) {
+      throw new Error('@openmaic/storage: folder id and name must be lossless JSON text');
+    }
+    const normalizedName = name.toLocaleLowerCase('en-US');
+    const updated = await this.queryable.query<FolderRow>(
+      `UPDATE document_folders
+          SET name = $3, normalized_name = $4, updated_at = $5
+        WHERE owner_id = $1 AND id = $2
+        RETURNING id, name, folder_order, created_at, updated_at`,
+      [ownerId, id, name, normalizedName, Date.now()],
+    );
+    const row = updated.rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      order: Number(row.folder_order),
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+    };
+  }
+
+  async deleteFolder(
+    id: string,
+    mode: 'ungroup' | 'remove',
+  ): Promise<{ removedStageIds: string[] } | null> {
+    const ownerId = this.requireOwner('deleteFolder');
+    if (!isPgQueryableKey(id)) return null;
+    return this.transaction(async (queryable) => {
+      // Capture the filed documents before the folder row goes away. Every
+      // document in this folder is owner-scoped (the folder is owner-scoped),
+      // so the captured ids are exactly the caller's own courses.
+      let removedStageIds: string[] = [];
+      if (mode === 'remove') {
+        const members = await queryable.query<{ id: string }>(
+          `SELECT id
+             FROM document_stages
+            WHERE owner_id = $1 AND folder_id = $2
+            ORDER BY id ASC`,
+          [ownerId, id],
+        );
+        removedStageIds = members.rows.map((row) => row.id);
+      }
+      // Clear the membership of every filed document: 'ungroup' keeps the
+      // courses (they become unfiled), 'remove' hands them to the caller's
+      // cascade without leaving dangling folder pointers behind.
+      await queryable.query(
+        `UPDATE document_stages
+            SET folder_id = NULL
+          WHERE owner_id = $1 AND folder_id = $2`,
+        [ownerId, id],
+      );
+      const deleted = await queryable.query<{ id: string }>(
+        `DELETE FROM document_folders
+          WHERE owner_id = $1 AND id = $2
+          RETURNING id`,
+        [ownerId, id],
+      );
+      if (deleted.rows.length === 0) return null;
+      return { removedStageIds };
+    });
+  }
+
+  async moveDocumentToFolder(stageId: string, folderId: string): Promise<boolean> {
+    return this.setStageFolder(stageId, folderId);
+  }
+
+  async setStageFolder(stageId: string, folderId: string | null): Promise<boolean> {
+    const ownerId = this.requireOwner('setStageFolder');
+    if (!isPgQueryableKey(stageId)) return false;
+    if (folderId === null) {
+      // Un-file: a missing membership row already means unfiled, so this is
+      // idempotent and never refuses (the route's contract for folderId null).
+      await this.queryable.query(
+        `UPDATE document_stages
+            SET folder_id = NULL
+          WHERE id = $1 AND owner_id = $2`,
+        [stageId, ownerId],
+      );
+      return true;
+    }
+    if (!isPgQueryableKey(folderId)) return false;
+    const result = await this.queryable.query<{ id: string }>(
+      `UPDATE document_stages AS stages
+          SET folder_id = $2
+        WHERE stages.id = $1
+          AND stages.owner_id = $3
+          AND EXISTS (
+            SELECT 1
+              FROM document_folders AS folders
+             WHERE folders.owner_id = $3 AND folders.id = $2
+          )
+      RETURNING stages.id`,
+      [stageId, folderId, ownerId],
+    );
+    return result.rows.length === 1;
+  }
+
+  async listDocuments(folderId?: string): Promise<DocumentSummary[]> {
+    if (folderId !== undefined && (!isPgQueryableKey(folderId) || this.ownerId === null)) return [];
+    const folderFilter = folderId === undefined ? '' : ` AND stages.folder_id = $2`;
     const result = await this.queryable.query<SummaryRow>(
       `SELECT stages.id,
               stages.name,
@@ -421,11 +946,14 @@ export class PgDocumentStore<
               stages.task_engine_mode,
               stages.created_at,
               stages.updated_at,
+              stages.folder_id,
               COUNT(scenes.id)::text AS scene_count
          FROM document_stages AS stages
          LEFT JOIN document_scenes AS scenes ON scenes.stage_id = stages.id
+        WHERE ${this.scopePredicate('stages')}${folderFilter}
         GROUP BY stages.id
         ORDER BY stages.id ASC`,
+      folderId === undefined ? this.scopeParams() : [this.ownerId, folderId],
     );
     return result.rows.map((row) => ({
       id: row.id,
@@ -436,13 +964,17 @@ export class PgDocumentStore<
       createdAt: Number(row.created_at),
       updatedAt: Number(row.updated_at),
       sceneCount: Number(row.scene_count),
+      ...(row.folder_id === null ? {} : { folderId: row.folder_id }),
     }));
   }
 
   async deleteDocument(stageId: string): Promise<void> {
     if (!isPgQueryableKey(stageId)) return;
     // One statement; both child tables are removed by their FK cascades.
-    await this.queryable.query('DELETE FROM document_stages WHERE id = $1', [stageId]);
+    await this.queryable.query(
+      `DELETE FROM document_stages WHERE id = $1 AND ${this.scopePredicate('', 2)}`,
+      this.scopeParams(stageId),
+    );
   }
 
   async putStage(stageId: string, stage: TStage): Promise<void> {

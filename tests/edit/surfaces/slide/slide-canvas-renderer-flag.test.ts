@@ -68,6 +68,8 @@ vi.mock('@/components/slide-renderer/Editor/LaserPointerOverlay', () => ({
 
 vi.mock('@/lib/contexts/scene-context', () => ({
   SceneProvider: ({ children }: { children: ReactNode }) => children,
+  useSceneData: () => ({ sceneId: 'scene-1' }),
+  useSceneSelector: () => undefined,
 }));
 
 vi.mock('@/components/edit/surfaces/slide/AnchoredTextBar', () => ({
@@ -122,6 +124,7 @@ vi.mock('@/lib/store/canvas', () => ({
       activeElementIdList: () => ['text-1'],
       hiddenElementIdList: () => [],
       editingElementId: () => 'text-1',
+      canvasScale: () => 1,
       pickTarget: () => state.pickTarget,
       setActiveElementIdList: () => state.setActiveElementIdList,
       setEditingElementId: () => state.setEditingElementId,

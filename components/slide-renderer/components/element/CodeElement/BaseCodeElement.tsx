@@ -224,6 +224,10 @@ function CodeLineRow({
   const [mounted, setMounted] = useState(!isNewLine || typingDelay === 0);
 
   useEffect(() => {
+    if (!isNewLine) {
+      const timer = setTimeout(() => setMounted(true), 0);
+      return () => clearTimeout(timer);
+    }
     if (isNewLine && typingDelay > 0) {
       const timer = setTimeout(() => setMounted(true), typingDelay);
       return () => clearTimeout(timer);

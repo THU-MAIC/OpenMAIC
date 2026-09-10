@@ -32,8 +32,10 @@ export interface IframePoolEntry {
   readonly srcDoc?: string;
   /** URL for `src`, when the scene points at an external page. */
   readonly src?: string;
-  /** Live screen rect the host positions the iframe over, or null until measured. */
+  /** Full available slot rect. The host contain-fits one fixed logical viewport inside it. */
   readonly rect: IframeRect | null;
+  /** Visible intersection of the slot with overflow ancestors. The host clips to this. */
+  readonly clip: IframeRect | null;
   /**
    * Id of the placeholder instance that currently owns visibility, or null when
    * no placeholder is mounted. The iframe shows iff this is non-null. Ownership
@@ -59,7 +61,7 @@ interface InteractiveIframePoolState {
   /** Monotonic counter; each mount/touch takes the next value. */
   tick: number;
   mount: (sceneId: string, input: MountInput) => void;
-  setRect: (sceneId: string, rect: IframeRect) => void;
+  setRect: (sceneId: string, rect: IframeRect, clip?: IframeRect) => void;
   /** A placeholder claims visibility for its scene, recording its owner id. */
   claim: (sceneId: string, owner: string) => void;
   /** Release visibility, but only if `owner` still owns it (stale = no-op). */
@@ -116,6 +118,7 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
         srcDoc: input.srcDoc,
         src: input.src,
         rect: existing?.rect ?? null,
+        clip: existing?.clip ?? null,
         owner: existing?.owner ?? null,
         tick,
       };
@@ -123,21 +126,27 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
       return { entries, tick };
     }),
 
-  setRect: (sceneId, rect) =>
+  setRect: (sceneId, rect, clip = rect) =>
     set((state) => {
       const existing = state.entries[sceneId];
       if (!existing) return {};
       const r = existing.rect;
+      const c = existing.clip;
       if (
         r &&
+        c &&
         r.left === rect.left &&
         r.top === rect.top &&
         r.width === rect.width &&
-        r.height === rect.height
+        r.height === rect.height &&
+        c.left === clip.left &&
+        c.top === clip.top &&
+        c.width === clip.width &&
+        c.height === clip.height
       ) {
         return {};
       }
-      return { entries: { ...state.entries, [sceneId]: { ...existing, rect } } };
+      return { entries: { ...state.entries, [sceneId]: { ...existing, rect, clip } } };
     }),
 
   claim: (sceneId, owner) =>

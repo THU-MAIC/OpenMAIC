@@ -88,6 +88,15 @@ describe('Stage API persistence injection', () => {
     expect(incrementalSave.mock.calls[2]![1]).toEqual([{ kind: 'structure' }]);
   });
 
+  it('creates a 16:9 landscape whiteboard (viewportRatio is height/width)', () => {
+    const api = createStageAPI(useStageStore);
+    const result = api.whiteboard.create();
+    expect(result.success).toBe(true);
+    // The 1000px-wide sheet must render 1000 x 562.5, never 1000 x 1778.
+    expect(result.data?.viewportRatio).toBe(9 / 16);
+    expect(result.data?.viewportRatio).toBeLessThan(1);
+  });
+
   it('routes every raw-setState Stage API module through the guarded store', () => {
     const apiDir = path.join(process.cwd(), 'lib/api');
     const modules = [

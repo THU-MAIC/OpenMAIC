@@ -1,5 +1,6 @@
 import type { Locale } from '@/lib/i18n';
 import arSA from '@/lib/i18n/locales/ar-SA.json';
+import deDE from '@/lib/i18n/locales/de-DE.json';
 import enUS from '@/lib/i18n/locales/en-US.json';
 import esMX from '@/lib/i18n/locales/es-MX.json';
 import frFR from '@/lib/i18n/locales/fr-FR.json';
@@ -7,9 +8,10 @@ import jaJP from '@/lib/i18n/locales/ja-JP.json';
 import koKR from '@/lib/i18n/locales/ko-KR.json';
 import ptBR from '@/lib/i18n/locales/pt-BR.json';
 import ruRU from '@/lib/i18n/locales/ru-RU.json';
+import viVN from '@/lib/i18n/locales/vi-VN.json';
 import zhCN from '@/lib/i18n/locales/zh-CN.json';
 import zhTW from '@/lib/i18n/locales/zh-TW.json';
-import type { CoverCardLabels, VideoExportCta } from '@/lib/video-export';
+import type { VideoExportLabels, VideoExportCta } from '@/lib/video-export';
 
 const DEFAULT_DESTINATION = 'open.maic.chat';
 const MAX_RAW_DESTINATION_LENGTH = 96;
@@ -50,9 +52,11 @@ const LOCALE_RESOURCES: Record<Locale, Record<string, unknown>> = {
   'ko-KR': koKR,
   'es-MX': esMX,
   'fr-FR': frFR,
+  'vi-VN': viVN,
   'pt-BR': ptBR,
   'ru-RU': ruRU,
   'ar-SA': arSA,
+  'de-DE': deDE,
 };
 
 /**
@@ -173,7 +177,7 @@ export function resolveVideoExportCta(raw: string | undefined): VideoExportCta |
 }
 
 /** Resolve every learner-facing cover label synchronously for one export locale. */
-export function getVideoExportCoverLabels(locale: Locale): CoverCardLabels {
+export function getVideoExportCoverLabels(locale: Locale): VideoExportLabels {
   const resource = LOCALE_RESOURCES[locale];
   const at = (key: string): string => {
     const value = key.split('.').reduce<unknown>((current, part) => {
@@ -189,6 +193,10 @@ export function getVideoExportCoverLabels(locale: Locale): CoverCardLabels {
     quiz: at('quiz.title'),
     questions: at('quiz.questionsCount'),
     points: at('quiz.pointsSuffix'),
+    singleChoice: at('quiz.singleChoice'),
+    multipleChoice: at('quiz.multipleChoice'),
+    shortAnswer: at('quiz.shortAnswer'),
+    answerPlaceholder: at('quiz.inputPlaceholder'),
     pbl: at('pbl.v2.hero.title'),
     stages: at('pbl.v2.hero.stage'),
     tasks: at('pbl.v2.hero.task'),
@@ -200,5 +208,12 @@ export function getVideoExportCoverLabels(locale: Locale): CoverCardLabels {
     quizCtaPrompt: at('export.videoQuizCtaPrompt'),
     pblCtaPrompt: at('export.videoPblCtaPrompt'),
     ctaVisit: at('export.videoCtaVisit'),
+    interactive: {
+      fallback: at('export.videoFailed'),
+      readyTimeout: at('export.videoRendering'),
+      loadFailure: at('export.videoFailed'),
+      readyFailure: at('export.videoFailed'),
+      runtimeFailure: at('export.videoFailed'),
+    },
   };
 }

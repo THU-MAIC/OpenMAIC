@@ -6,6 +6,10 @@ import {
   type Queryable,
   type WithTransaction,
 } from '../src/document/pg.js';
+import {
+  acquireDocumentPgContractLock,
+  truncateDocumentTables,
+} from './pg-document-contract-helpers.js';
 import { runDocumentStoreContract } from './document-contract.js';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
@@ -41,18 +45,24 @@ function transactionFor(pool: Pool): WithTransaction {
 describe.skipIf(!contractUrl)('PgDocumentStore with PostgreSQL 16', () => {
   let pool: Pool;
   let store: PgDocumentStore;
+  let releaseContractLock: (() => Promise<void>) | undefined;
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: contractUrl, max: 16 });
+    // Same shared-database lock as the scene-revision suite: both suites
+    // provision the same document schema (functions and triggers included),
+    // so they must never run at the same time.
+    releaseContractLock = await acquireDocumentPgContractLock(pool);
     await ensureDocumentSchema(pool as Queryable);
-  });
+  }, 60_000);
 
   beforeEach(async () => {
-    await pool.query('TRUNCATE document_outlines, document_scenes, document_stages');
+    await truncateDocumentTables(pool as Queryable);
     store = new PgDocumentStore(pool as Queryable, { withTransaction: transactionFor(pool) });
   });
 
   afterAll(async () => {
+    await releaseContractLock?.();
     await pool.end();
   });
 

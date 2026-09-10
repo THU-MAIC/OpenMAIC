@@ -79,7 +79,7 @@ describe('applyGeneratedAgentsToRegistry', () => {
     const ids = applyGeneratedAgentsToRegistry('stage-1', [
       makeConfig('gen-a', {
         voiceDesign,
-        voiceConfig: { providerId: 'qwen-tts', voiceId: 'voice-1' },
+        voiceConfig: { providerId: 'qwen-tts', modelId: 'qwen3-tts-vc-test', voiceId: 'voice-1' },
       }),
       makeConfig('gen-b', { role: 'student' }),
     ]);
@@ -91,7 +91,11 @@ describe('applyGeneratedAgentsToRegistry', () => {
       isDefault: false,
       boundStageId: 'stage-1',
       voiceDesign,
-      voiceConfig: { providerId: 'qwen-tts', voiceId: 'voice-1' },
+      voiceConfig: {
+        providerId: 'qwen-tts',
+        modelId: 'qwen3-tts-vc-test',
+        voiceId: 'voice-1',
+      },
     });
     const agentB = useAgentRegistry.getState().getAgent('gen-b');
     expect(agentB?.voiceConfig).toBeUndefined();

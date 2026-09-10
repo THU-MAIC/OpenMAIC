@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Office PowerPoint(.pptx) file to JSON | 将 PPTX 文件转为可读的 JSON 数据"
+      content="Office PowerPoint(.pptx) file to JSON | 將 PPTX 檔案轉為可讀的 JSON 資料"
     />
     <meta name="keywords" content="pptx2json,pptxtojson,ppt,powerpoint,json,PPT解析,PPT转JSON" />
     <link rel="icon" href="favicon.ico" />
@@ -339,7 +339,7 @@
     <div class="loading-overlay" id="loadingOverlay">
       <div class="loading-content">
         <div class="loading-spinner"></div>
-        <div class="loading-text">正在解析PPTX文件...</div>
+        <div class="loading-text">正在解析PPTX檔案...</div>
       </div>
     </div>
 
@@ -348,42 +348,42 @@
       <div class="left-panel">
         <div class="header">
           <div class="logo">PPTX<span>TO</span>JSON</div>
-          <p class="tagline">将 PPTX 文件转为可读的 JSON 数据</p>
+          <p class="tagline">將 PPTX 檔案轉為可讀的 JSON 資料</p>
         </div>
 
         <div class="upload-section">
           <div class="upload-icon">📤</div>
-          <h3 class="upload-title">上传PPTX文件</h3>
-          <p class="upload-desc">「点击选择文件」或「将文件拖放到区域内」上传</p>
-          <button class="upload-btn">选择文件</button>
+          <h3 class="upload-title">上傳PPTX檔案</h3>
+          <p class="upload-desc">「點擊選擇檔案」或「將檔案拖放到區域內」上傳</p>
+          <button class="upload-btn">選擇檔案</button>
         </div>
 
         <div class="features">
-          <h3 class="features-title">功能介绍</h3>
+          <h3 class="features-title">功能介紹</h3>
           <div class="feature-item">
             <span class="feature-icon">✓</span>
             <p class="feature-text">
-              解析PPTX数据，包括幻灯片主题、尺寸、背景、备注、母版、切页动画、页内元素及布局信息等
+              解析PPTX資料，包括幻燈片主題、尺寸、背景、備註、母版、切頁動畫、頁內元素及佈局資訊等
             </p>
           </div>
           <div class="feature-item">
             <span class="feature-icon">✓</span>
             <p class="feature-text">
-              支持页内元素包括：文字（HTML富文本）、图片、形状、线条、表格、图表、音视频、公式等复杂元素
+              支援頁內元素包括：文字（HTML富文本）、圖片、形狀、線條、表格、圖表、音視頻、公式等複雜元素
             </p>
           </div>
           <div class="feature-item">
             <span class="feature-icon">✓</span>
-            <p class="feature-text">易读易写的结构化 JSON 数据格式</p>
+            <p class="feature-text">易读易写的结构化 JSON 資料格式</p>
           </div>
           <div class="feature-item">
             <span class="feature-icon">✓</span>
-            <p class="feature-text">不依赖任何服务器端环境，直接在浏览器端运行</p>
+            <p class="feature-text">不依賴任何伺服器端環境，直接在瀏覽器端執行</p>
           </div>
         </div>
 
         <div class="features">
-          <h3 class="features-title">相关链接</h3>
+          <h3 class="features-title">相關鏈接</h3>
           <div class="feature-item link">
             <span class="feature-icon">📦</span>
             <p class="feature-text">
@@ -404,10 +404,10 @@
       <!-- 右侧面板 -->
       <div class="right-panel">
         <div class="result-header">
-          <h2 class="result-title">解析结果</h2>
+          <h2 class="result-title">解析結果</h2>
           <div class="result-actions">
-            <button class="copy-btn">复制</button>
-            <button class="download-btn">下载</button>
+            <button class="copy-btn">複製</button>
+            <button class="download-btn">下載</button>
           </div>
         </div>
 
@@ -503,7 +503,7 @@
       copyBtnRef.addEventListener('click', () => {
         if (!jsonString) {
           Toastify({
-            text: '请先上传文件',
+            text: '請先上傳檔案',
             duration: 1000,
             gravity: 'top',
             position: 'center',
@@ -518,7 +518,7 @@
 
         navigator.clipboard.writeText(jsonString);
         Toastify({
-          text: '已复制到剪贴板',
+          text: '已複製到剪貼板',
           duration: 1000,
           gravity: 'top',
           position: 'center',
@@ -533,7 +533,7 @@
       downloadBtnRef.addEventListener('click', () => {
         if (!jsonString) {
           Toastify({
-            text: '请先上传文件',
+            text: '請先上傳檔案',
             duration: 1000,
             gravity: 'top',
             position: 'center',

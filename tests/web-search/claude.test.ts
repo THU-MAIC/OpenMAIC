@@ -57,6 +57,18 @@ describe('searchWithClaude', () => {
     mockProvider.tools.webSearch_20250305.mockClear();
   });
 
+  it('passes the caller signal to the underlying AI SDK request', async () => {
+    const signal = new AbortController().signal;
+    mockAIResponse();
+
+    await searchWithClaude({ query: 'test', apiKey: 'sk-test', signal });
+
+    expect(mockGenerateText).toHaveBeenCalledWith(
+      expect.objectContaining({ abortSignal: signal }),
+      'web-search-claude',
+    );
+  });
+
   // ── fetch interceptor: allowed_callers injection ──────────────────────────
 
   it('injects allowed_callers=["direct"] on the basic tool (Haiku 4.5 request body)', async () => {

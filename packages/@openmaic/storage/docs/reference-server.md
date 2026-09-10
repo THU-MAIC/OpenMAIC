@@ -56,7 +56,7 @@ semantics are specified in the
 
 ## Asset endpoints
 
-Every asset route requires an authenticated principal with an asset partition key. Supplying `assetStore` adds these routes to the composed server; `authorizeAssets` can apply an additional deployment policy before any registry entry is read.
+Every asset route requires an authenticated principal with an asset partition key. Supplying `assetStore` adds these routes to the composed server; `authorizeAssets` can apply an additional deployment policy before any registry entry is read. Supplying `byteEgress` forwards the option unchanged to the composed asset handler: `{ mode: 'redirect', collectionGraceMs }` opts into indirect byte egress for `GET /assets/{id}/content`, and omitting it keeps direct egress. The full tradeoff is specified under [Indirect byte egress](./asset-http-contract.md) in the asset HTTP contract.
 
 | Method | Path | Purpose |
 | --- | --- | --- |

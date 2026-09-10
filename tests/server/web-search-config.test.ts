@@ -6,6 +6,8 @@ describe('server web search config', () => {
     vi.unstubAllEnvs();
     delete process.env.TAVILY_API_KEY;
     delete process.env.TAVILY_BASE_URL;
+    delete process.env.EXA_API_KEY;
+    delete process.env.EXA_BASE_URL;
     delete process.env.BOCHA_API_KEY;
     delete process.env.BOCHA_BASE_URL;
     delete process.env.BRAVE_API_KEY;
@@ -36,6 +38,38 @@ describe('server web search config', () => {
     );
   });
 
+  it('allows official Exa client base URLs and resolves client credentials', async () => {
+    const { resolveClassroomWebSearchConfig, resolveSafeClientWebSearchBaseUrl } =
+      await import('@/lib/server/web-search-config');
+
+    expect(resolveSafeClientWebSearchBaseUrl('exa', 'https://api.exa.ai/search')).toBe(
+      'https://api.exa.ai/search',
+    );
+    expect(
+      resolveClassroomWebSearchConfig({
+        webSearchProviderId: 'exa',
+        webSearchApiKey: 'exa-client-key',
+        webSearchBaseUrl: 'https://api.exa.ai',
+      }),
+    ).toEqual({
+      providerId: 'exa',
+      apiKey: 'exa-client-key',
+      baseUrl: 'https://api.exa.ai',
+    });
+  });
+
+  it('resolves Exa classroom config from server environment variables', async () => {
+    vi.stubEnv('EXA_API_KEY', 'exa-server-key');
+    vi.stubEnv('EXA_BASE_URL', 'https://proxy.example.com/exa');
+    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
+
+    expect(resolveClassroomWebSearchConfig({ webSearchProviderId: 'exa' })).toEqual({
+      providerId: 'exa',
+      apiKey: 'exa-server-key',
+      baseUrl: 'https://proxy.example.com/exa',
+    });
+  });
+
   it('allows official MiniMax client base URLs', async () => {
     const { resolveSafeClientWebSearchBaseUrl } = await import('@/lib/server/web-search-config');
 
@@ -54,12 +88,25 @@ describe('server web search config', () => {
       resolveClassroomWebSearchConfig({
         webSearchProviderId: 'bocha',
         webSearchApiKey: 'bocha-client-key',
+        webSearchBaseUrl: 'https://api.bochaai.com/v1',
       }),
     ).toEqual({
       providerId: 'bocha',
       apiKey: 'bocha-client-key',
-      baseUrl: undefined,
+      baseUrl: 'https://api.bochaai.com/v1',
     });
+  });
+
+  it('rejects unsupported client base URLs at the classroom server boundary', async () => {
+    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
+
+    expect(() =>
+      resolveClassroomWebSearchConfig({
+        webSearchProviderId: 'bocha',
+        webSearchApiKey: 'bocha-client-key',
+        webSearchBaseUrl: 'https://evil.example.com/steal-key',
+      }),
+    ).toThrow('Unsupported Bocha base URL');
   });
 
   it('uses server base URL for classroom web search config instead of client-controlled URLs', async () => {
@@ -68,7 +115,13 @@ describe('server web search config', () => {
 
     const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
 
-    expect(resolveClassroomWebSearchConfig({ webSearchProviderId: 'bocha' })).toEqual({
+    expect(
+      resolveClassroomWebSearchConfig({
+        webSearchProviderId: 'bocha',
+        webSearchApiKey: 'stale-client-key',
+        webSearchBaseUrl: 'https://api.bochaai.com/v1',
+      }),
+    ).toEqual({
       providerId: 'bocha',
       apiKey: 'bocha-server-key',
       baseUrl: 'http://internal-proxy.local/bocha',

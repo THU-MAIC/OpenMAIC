@@ -213,10 +213,18 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
             stageId,
           };
         } else {
-          // Re-wrap blob with stored mimeType — IndexedDB may drop Blob.type
-          const blob = rec.blob.type ? rec.blob : new Blob([rec.blob], { type: rec.mimeType });
-          const objectUrl = URL.createObjectURL(blob);
-          const poster = rec.poster ? URL.createObjectURL(rec.poster) : undefined;
+          // Prefer a durable hosted URL when present; otherwise materialize
+          // the classic IndexedDB bytes as browser object URLs.
+          const objectUrl = rec.ossKey
+            ? rec.ossKey
+            : URL.createObjectURL(
+                rec.blob.type ? rec.blob : new Blob([rec.blob], { type: rec.mimeType }),
+              );
+          const poster = rec.posterOssKey
+            ? rec.posterOssKey
+            : rec.poster
+              ? URL.createObjectURL(rec.poster)
+              : undefined;
           restored[elementId] = {
             elementId,
             placeholderRef: rec.placeholderRef,

@@ -29,6 +29,7 @@ export {
   withDocumentLock,
   DocumentLockUnavailableError,
   DocumentStorageGenerationChangedError,
+  type AssetRefConverter,
   type DocumentAccessResult,
   type DocumentMigrationDeps,
   type LegacyDocumentSnapshot,

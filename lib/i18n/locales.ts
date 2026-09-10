@@ -24,4 +24,6 @@ export const supportedLocales = [
   { code: 'ko-KR', label: '한국어', shortLabel: 'KO' },
   { code: 'es-MX', label: 'Español (México)', shortLabel: 'ES' },
   { code: 'fr-FR', label: 'Français', shortLabel: 'FR' },
+  { code: 'vi-VN', label: 'Tiếng Việt', shortLabel: 'VI' },
+  { code: 'de-DE', label: 'Deutsch', shortLabel: 'DE' },
 ] as const satisfies readonly LocaleEntry[];

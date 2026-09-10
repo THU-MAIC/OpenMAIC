@@ -28,16 +28,16 @@ import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import type { MediaFileRecord } from '@/lib/utils/database';
 import type { VideoTimelineRecords } from './timeline-deps';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
-import { withAssetUrl, type AssetUrlLeaseState } from '@/lib/media/use-asset-url';
+import type { AssetUrlLeaseState } from '@/lib/media/use-asset-url';
 import {
   MISSING_ASSET_LEASE,
-  isConcreteMediaAddress,
   renderableMediaUrl,
   resolveMediaRef,
   type MediaTaskState,
 } from '@/lib/media/resolve-media-ref';
+import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
 import { slideMediaReferenceSlots } from '@/lib/media/slide-media-slots';
-import { resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
+import { lookupMediaTask, resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
 
 export interface CollectOptions {
   /** Slide-snapshot render width in px (frame height follows the slide ratio). Default 1920. */
@@ -147,10 +147,6 @@ async function resolveBytes(
   }
 }
 
-function mediaRefFromRecordId(recordId: string): string {
-  return recordId.includes(':') ? recordId.split(':').slice(1).join(':') : recordId;
-}
-
 export function resolveVideoExportMediaBinding(
   ref: string | undefined,
   task: MediaTaskState | undefined,
@@ -161,47 +157,25 @@ export function resolveVideoExportMediaBinding(
   return { resolution, src: renderableMediaUrl(resolution) ?? '' };
 }
 
+/**
+ * Resolve one media asset's bytes: pool first, then the Dexie compatibility
+ * row (with its CDN `ossKey` as a byte source when the local blob is empty),
+ * then the task's resolved URL -- every level gated on the media-resolution
+ * state machine so an in-flight regeneration suppresses stale bytes.
+ */
 async function resolveMediaBytesWithFallback(
   assetId: string,
   record: MediaFileRecord | undefined,
   stageId?: string,
 ): Promise<Blob | null> {
-  const usableRecord = record && !record.error ? record : undefined;
-  const ref = record ? mediaRefFromRecordId(record.id) : assetId;
-  const tasks = useMediaGenerationStore.getState().tasks;
-  const task =
-    tasks[ref] ??
-    Object.values(tasks).find(
-      (candidate) =>
-        candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
-    );
-  const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
-  if (!isConcreteMediaAddress(ref)) {
-    try {
-      const pooled = await withAssetUrl(ref, async (url) => {
-        if (!url) return null;
-        const binding = resolveVideoExportMediaBinding(ref, effectiveTask, {
-          status: 'resolved',
-          url,
-        });
-        return binding.src ? resolveBytes(undefined, binding.src) : null;
-      });
-      if (pooled) return pooled;
-    } catch {
-      // The compatibility record remains the fallback when pool access fails.
-    }
-  }
-  const stored = await resolveBytes(usableRecord?.blob, usableRecord?.ossKey);
-  if (stored) {
-    const state = resolveVideoExportMediaBinding(ref, effectiveTask, {
-      status: 'resolved',
-      url: 'dexie:media',
-    }).resolution;
-    if (state.kind === 'url') return stored;
-  }
-
-  const resolved = resolveVideoExportMediaBinding(ref, effectiveTask).src;
-  return resolved ? resolveBytes(undefined, resolved) : null;
+  return resolveStoredBytes(assetId, {
+    stageId,
+    record,
+    resolutionGating: true,
+    compatRowCdnFallback: true,
+    taskUrlFallback: true,
+    fetchPolicy: { requireOk: true, requireNonEmpty: true },
+  });
 }
 
 /** The generated-image ref an element points at, when it is an unresolved placeholder. */
@@ -244,14 +218,7 @@ async function resolveGeneratedMedia(
       backgroundSlot.write(url);
     } else {
       const tasks = useMediaGenerationStore.getState().tasks;
-      const task =
-        tasks[backgroundRef] ??
-        Object.values(tasks).find(
-          (candidate) =>
-            candidate.placeholderRef === backgroundRef &&
-            (!stageId || candidate.stageId === stageId),
-        );
-      const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
+      const effectiveTask = lookupMediaTask(tasks, backgroundRef, stageId);
       if (!renderableMediaUrl(resolveMediaRef(backgroundRef, effectiveTask))) {
         backgroundSlot.write('');
       }
@@ -293,13 +260,7 @@ async function resolveGeneratedMedia(
     const record = mediaByElementId.get(ref);
     const bytes = await resolveMediaBytesWithFallback(ref, record, stageId);
     if (!bytes) {
-      const task =
-        tasks[ref] ??
-        Object.values(tasks).find(
-          (candidate) =>
-            candidate.placeholderRef === ref && (!stageId || candidate.stageId === stageId),
-        );
-      const effectiveTask = task && (!stageId || task.stageId === stageId) ? task : undefined;
+      const effectiveTask = lookupMediaTask(tasks, ref, stageId);
       if (!renderableMediaUrl(resolveMediaRef(ref, effectiveTask))) element.src = '';
       continue;
     }
@@ -416,6 +377,10 @@ export async function collectVideoAssets(
         const record = mediaById.get(entry.assetId);
         const bytes = await resolveBytes(record?.poster, record?.posterOssKey);
         if (bytes) blobs.set(entry.path, bytes);
+        else missing.push(entry.path);
+      } else if (entry.kind === 'html') {
+        const html = records.interactiveHtml.content(entry.assetId);
+        if (html) blobs.set(entry.path, new Blob([html], { type: 'text/html;charset=utf-8' }));
         else missing.push(entry.path);
       }
     } catch {

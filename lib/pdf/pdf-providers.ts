@@ -217,7 +217,7 @@ export async function parsePDF(
 
   switch (config.providerId) {
     case 'unpdf':
-      result = await parseWithUnpdf(pdfBuffer);
+      result = await parseWithUnpdf(pdfBuffer, config.textOnly === true);
       break;
 
     case 'mineru':
@@ -247,9 +247,17 @@ export async function parsePDF(
 /**
  * Parse PDF using unpdf (existing implementation)
  */
-async function parseWithUnpdf(pdfBuffer: Buffer): Promise<ParsedPdfContent> {
+async function parseWithUnpdf(pdfBuffer: Buffer, textOnly = false): Promise<ParsedPdfContent> {
   const uint8Array = new Uint8Array(pdfBuffer);
-  const pdf = await getDocumentProxy(uint8Array);
+  const pdf = await getDocumentProxy(
+    uint8Array,
+    textOnly
+      ? {
+          // Refuse pathological raster dimensions in the untrusted text-only path.
+          maxImageSize: 16_000_000,
+        }
+      : {},
+  );
   const numPages = pdf.numPages;
 
   // Extract text using the document proxy
@@ -268,7 +276,7 @@ async function parseWithUnpdf(pdfBuffer: Buffer): Promise<ParsedPdfContent> {
   }> = [];
   let imageCounter = 0;
 
-  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+  for (let pageNum = 1; !textOnly && pageNum <= numPages; pageNum++) {
     try {
       const pageImages = await extractImages(pdf, pageNum);
       for (let i = 0; i < pageImages.length; i++) {

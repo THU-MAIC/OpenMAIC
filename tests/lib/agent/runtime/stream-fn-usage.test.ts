@@ -13,12 +13,19 @@ describe('createCallLlmStreamFn usage', () => {
     mocks.streamLLM.mockReturnValue({
       fullStream: (async function* () {
         yield { type: 'text-delta', text: 'answer' };
+        yield {
+          type: 'finish',
+          finishReason: 'stop',
+          totalUsage: {
+            inputTokens: 120,
+            outputTokens: 30,
+            inputTokenDetails: { cacheReadTokens: 10, cacheWriteTokens: 5 },
+          },
+        };
       })(),
-      usage: Promise.resolve({
-        inputTokens: 120,
-        outputTokens: 30,
-        inputTokenDetails: { cacheReadTokens: 10, cacheWriteTokens: 5 },
-      }),
+      // The adapter deliberately takes terminal usage from fullStream.finish,
+      // not from a separately resolving result promise.
+      usage: new Promise(() => {}),
     });
     const streamFn = createCallLlmStreamFn({ languageModel: {} as never });
 

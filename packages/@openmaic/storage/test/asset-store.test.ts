@@ -999,6 +999,15 @@ test('the package entry does not expose internal asset-layer symbols', () => {
   }
 });
 
+test('the package entry exposes the asset descriptor media type', () => {
+  // The vendor media type is the public discriminator of an indirect-egress
+  // descriptor answer; consumers negotiate through it, so it ships from the
+  // package entry rather than living only inside the asset HTTP client.
+  expect(storageExports.ASSET_DESCRIPTOR_MEDIA_TYPE).toBe(
+    'application/vnd.openmaic.asset-descriptor+json',
+  );
+});
+
 test('BrowserAssetStore mints an object URL only after its read transaction commits', async () => {
   const pool = makePool('mint-after-commit');
   const id = await pool.store.put(blob('transaction ordering'));

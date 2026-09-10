@@ -1,6 +1,9 @@
 import { marks } from 'prosemirror-schema-basic';
 import type { MarkSpec } from 'prosemirror-model';
 
+const CSS_LENGTH_PATTERN =
+  /^-?(?:\d+|\d*\.\d+)(?:px|pt|pc|mm|cm|in|rem|em|ex|ch|vw|vh|vmin|vmax|%)$/i;
+
 const subscript: MarkSpec = {
   excludes: 'subscript',
   parseDOM: [
@@ -115,6 +118,108 @@ const fontsize: MarkSpec = {
   },
 };
 
+const letterSpacing: MarkSpec = {
+  attrs: {
+    letterSpacing: {},
+  },
+  inline: true,
+  group: 'inline',
+  parseDOM: [
+    {
+      style: 'letter-spacing',
+      getAttrs: (letterSpacing) => (letterSpacing ? { letterSpacing } : {}),
+    },
+  ],
+  toDOM: (mark) => ['span', { style: `letter-spacing: ${mark.attrs.letterSpacing};` }, 0],
+};
+
+const inlineBlock: MarkSpec = {
+  attrs: {
+    width: {},
+    height: { default: '' },
+    verticalAlign: { default: '' },
+    margin: { default: '' },
+    marginTop: { default: '' },
+    marginRight: { default: '' },
+    marginBottom: { default: '' },
+    marginLeft: { default: '' },
+    padding: { default: '' },
+    paddingTop: { default: '' },
+    paddingRight: { default: '' },
+    paddingBottom: { default: '' },
+    paddingLeft: { default: '' },
+    textIndent: { default: '' },
+    boxSizing: { default: '' },
+  },
+  parseDOM: [
+    {
+      tag: 'span',
+      getAttrs: (dom) => {
+        const element = dom as HTMLElement;
+        const {
+          display,
+          width,
+          height,
+          verticalAlign,
+          margin,
+          marginTop,
+          marginRight,
+          marginBottom,
+          marginLeft,
+          padding,
+          paddingTop,
+          paddingRight,
+          paddingBottom,
+          paddingLeft,
+          textIndent,
+          boxSizing,
+        } = element.style;
+        if (
+          !element.textContent?.trim() ||
+          display !== 'inline-block' ||
+          !CSS_LENGTH_PATTERN.test(width)
+        )
+          return false;
+        return {
+          width,
+          height,
+          verticalAlign,
+          margin,
+          marginTop,
+          marginRight,
+          marginBottom,
+          marginLeft,
+          padding,
+          paddingTop,
+          paddingRight,
+          paddingBottom,
+          paddingLeft,
+          textIndent: textIndent === '0px' || textIndent === '0' ? '0' : '',
+          boxSizing: boxSizing === 'border-box' ? boxSizing : '',
+        };
+      },
+    },
+  ],
+  toDOM: (mark) => {
+    let style = `display: inline-block; width: ${mark.attrs.width};`;
+    if (mark.attrs.height) style += `height: ${mark.attrs.height};`;
+    if (mark.attrs.verticalAlign) style += `vertical-align: ${mark.attrs.verticalAlign};`;
+    if (mark.attrs.margin) style += `margin: ${mark.attrs.margin};`;
+    if (mark.attrs.marginTop) style += `margin-top: ${mark.attrs.marginTop};`;
+    if (mark.attrs.marginRight) style += `margin-right: ${mark.attrs.marginRight};`;
+    if (mark.attrs.marginBottom) style += `margin-bottom: ${mark.attrs.marginBottom};`;
+    if (mark.attrs.marginLeft) style += `margin-left: ${mark.attrs.marginLeft};`;
+    if (mark.attrs.padding) style += `padding: ${mark.attrs.padding};`;
+    if (mark.attrs.paddingTop) style += `padding-top: ${mark.attrs.paddingTop};`;
+    if (mark.attrs.paddingRight) style += `padding-right: ${mark.attrs.paddingRight};`;
+    if (mark.attrs.paddingBottom) style += `padding-bottom: ${mark.attrs.paddingBottom};`;
+    if (mark.attrs.paddingLeft) style += `padding-left: ${mark.attrs.paddingLeft};`;
+    if (mark.attrs.textIndent) style += 'text-indent: 0;';
+    if (mark.attrs.boxSizing) style += `box-sizing: ${mark.attrs.boxSizing};`;
+    return ['span', { style }, 0];
+  },
+};
+
 const fontname: MarkSpec = {
   attrs: {
     fontname: {},
@@ -189,6 +294,8 @@ const schemaMarks = {
   em,
   strong,
   fontsize,
+  letterSpacing,
+  inlineBlock,
   fontname,
   code,
   forecolor,

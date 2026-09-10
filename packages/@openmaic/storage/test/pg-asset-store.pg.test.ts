@@ -64,6 +64,10 @@ class BlockingReadByteStore implements AssetByteStore {
   private readonly mayFinishRead = new Promise<void>((resolve) => {
     this.allowReadToFinish = resolve;
   });
+  // Bytes live in a process-local map, never in the registry's PostgreSQL, so
+  // the plain methods cannot contend for its row locks (see
+  // AssetByteStore.writesOutsideRegistryDatabase).
+  readonly writesOutsideRegistryDatabase = true as const;
 
   async write(hash: ContentHash, value: Uint8Array): Promise<void> {
     this.values.set(hash, new Uint8Array(value));

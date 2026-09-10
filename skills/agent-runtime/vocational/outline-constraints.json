@@ -1,0 +1,12 @@
+{
+  "$comment": "Structural constraints for the vocational skill. Rendered into the outline prompt AND checked against the model's output; violations come back to the agent as a tool-result diagnostic so it can re-plan. See lib/server/agent-runtime/skills.ts.",
+  "allowedTypes": ["slide", "quiz", "interactive"],
+  "firstSceneType": "slide",
+  "typeMix": [
+    { "type": "interactive", "min": 3 },
+    { "type": "quiz", "min": 1 },
+    { "type": "slide", "max": 3 }
+  ],
+  "requiredWidgetTypes": ["procedural-skill"],
+  "requiredWidgetOutlineFields": ["task", "steps", "successCriteria"]
+}

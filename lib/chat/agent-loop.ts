@@ -27,6 +27,7 @@ export interface AgentLoopStoreState {
   currentSceneId: string | null;
   mode: string;
   whiteboardOpen: boolean;
+  whiteboardManualVisibilityRevision?: number;
   /**
    * Post-submit quiz state for the current scene. Hydrated from RuntimeStore
    * client-side; absent when the active scene is not a graded quiz or the

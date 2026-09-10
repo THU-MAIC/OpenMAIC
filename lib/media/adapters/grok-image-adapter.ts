@@ -19,6 +19,7 @@ import type {
   ImageGenerationResult,
 } from '../types';
 import { probeAuth } from '../probe-auth';
+import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'grok-imagine-image';
 const DEFAULT_BASE_URL = 'https://api.x.ai/v1';
@@ -63,7 +64,7 @@ export async function generateWithGrokImage(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify({
-      model: config.model || DEFAULT_MODEL,
+      model: requireModel(config.model, 'Grok Image'),
       prompt: options.prompt,
       n: 1,
       response_format: 'url',

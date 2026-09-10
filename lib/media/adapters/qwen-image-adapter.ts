@@ -17,6 +17,7 @@ import type {
   ImageGenerationResult,
 } from '../types';
 import { probeAuth } from '../probe-auth';
+import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'qwen-image-max';
 const DEFAULT_BASE_URL = 'https://dashscope.aliyuncs.com';
@@ -71,7 +72,7 @@ export async function generateWithQwenImage(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify({
-      model: config.model || DEFAULT_MODEL,
+      model: requireModel(config.model, 'Qwen Image'),
       input: {
         messages: [
           {

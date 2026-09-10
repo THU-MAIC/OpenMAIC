@@ -72,8 +72,9 @@ export async function searchWithDoubao(params: {
   apiKey: string;
   maxResults?: number;
   baseUrl?: string;
+  signal?: AbortSignal;
 }): Promise<WebSearchResult> {
-  const { query, apiKey, maxResults = 10, baseUrl } = params;
+  const { query, apiKey, maxResults = 10, baseUrl, signal } = params;
   const startedAt = Date.now();
   const limit = Math.max(Math.floor(maxResults), 1);
 
@@ -89,6 +90,7 @@ export async function searchWithDoubao(params: {
       Count: Math.min(limit, 50),
       NeedSummary: true,
     }),
+    ...(signal ? { signal } : {}),
   });
 
   if (!res.ok) {

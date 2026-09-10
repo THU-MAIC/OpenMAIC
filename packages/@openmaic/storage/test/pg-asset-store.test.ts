@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import type { AssetMeta, AssetRef, BinaryBlob, StorageProvider } from '@openmaic/dsl';
 import { contentHashOf, ObjectUrlCache, type ContentHash } from '../src/asset/blob.js';
-import type { AssetByteStore } from '../src/asset/byte-store.js';
+import type { AssetByteStore, AssetSignedReadHeaders } from '../src/asset/byte-store.js';
 import { AssetCollector } from '../src/asset/collector.js';
 import { __setAssetIdFactoryForTesting, type AssetId } from '../src/asset/id.js';
 import { PgAssetByteStore } from '../src/asset/pg-bytes.js';
@@ -157,6 +157,10 @@ function recordingTransactions(db: PGlite, statements: string[]): WithTransactio
 class MemoryByteStore implements AssetByteStore {
   readonly values = new Map<ContentHash, Uint8Array>();
   onWrite?: () => void;
+  // Bytes live in a process-local map, never in the registry's PostgreSQL, so
+  // the plain methods cannot contend for its row locks (see
+  // AssetByteStore.writesOutsideRegistryDatabase).
+  readonly writesOutsideRegistryDatabase = true as const;
 
   async write(hash: ContentHash, value: Uint8Array): Promise<void> {
     this.values.set(hash, new Uint8Array(value));
@@ -190,6 +194,42 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     __setAssetIdFactoryForTesting(null);
     await db.close();
   });
+
+  /** Store each value, drop the entry that references it, and age the blob out of any grace. */
+  async function unreference(values: readonly string[]): Promise<ContentHash[]> {
+    const hashes: ContentHash[] = [];
+    for (const value of values) {
+      const id = await store.put(PRINCIPAL, blob(value));
+      const { contentHash } = await contentHashOf(blob(value));
+      await store.remove(PRINCIPAL, id);
+      await stampUnreferencedAt(contentHash, '2000-01-01T00:00:00.000Z');
+      hashes.push(contentHash);
+    }
+    return hashes;
+  }
+
+  async function stampUnreferencedAt(hash: ContentHash, at: string): Promise<void> {
+    await db.query(
+      'UPDATE asset_blobs SET unreferenced_at = $2::timestamptz WHERE content_hash = $1',
+      [hash, at],
+    );
+  }
+
+  async function remainingBlobs(): Promise<ContentHash[]> {
+    const result = await db.query<{ content_hash: ContentHash }>(
+      'SELECT content_hash FROM asset_blobs',
+    );
+    return result.rows.map((row) => row.content_hash).sort();
+  }
+
+  function boundedCollector(batchSize: number, queryable: Queryable = db): AssetCollector {
+    return new AssetCollector(queryable, byteStore, {
+      withTransaction: transactions(db),
+      graceMs: 0,
+      batchSize,
+      now: () => new Date('2026-01-01T00:00:00.000Z'),
+    });
+  }
 
   test('schema is idempotent and has one PGlite-compatible statement per entry', async () => {
     const statements: string[] = [];
@@ -347,6 +387,9 @@ describe('PgAssetStore registry behavior with PGlite', () => {
   test('logical quota counts every principal entry and runs before byte writes', async () => {
     const writes: string[] = [];
     const observingBytes: AssetByteStore = {
+      // Out-of-registry, like the object store: the write is a counter, and
+      // nothing here can contend for the registry's row locks.
+      writesOutsideRegistryDatabase: true,
       write: async () => {
         writes.push('write');
       },
@@ -382,6 +425,10 @@ describe('PgAssetStore registry behavior with PGlite', () => {
   test('byte-layer quota errors collapse to generic registry failures', async () => {
     const internalDetail = 'internal byte-layer detail';
     const failingBytes: AssetByteStore = {
+      // The failure under test is a byte-layer failure, not the registry's
+      // coordination guard; declare the layer out-of-registry like an object
+      // store so the guard lets the write through.
+      writesOutsideRegistryDatabase: true,
       write: async () => {
         throw new AssetQuotaExceededError(internalDetail);
       },
@@ -442,8 +489,16 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     expect(existing).toEqual(fresh);
     // Blob row claimed, then bytes, then the entry. The byte write sits between
     // the two registry writes deliberately: it must follow the upsert that takes
-    // the blob row's lock, and precede the entry that references it.
-    expect(existing.map((sql) => sql.split(' ')[0])).toEqual(['INSERT', 'UPDATE', 'INSERT']);
+    // the blob row's lock, and precede the entry that references it. The write
+    // transaction also pins a lock-wait budget first, so a future
+    // lock-contention variant of a registry write fails loudly instead of
+    // hanging.
+    expect(existing.map((sql) => sql.split(' ')[0])).toEqual(['SET', 'INSERT', 'UPDATE', 'INSERT']);
+    // The bound is on the write transaction's lock waits, not a silent
+    // statement timeout: the wait that must fail loudly is the row-lock wait
+    // (the self-deadlock variant), while a long byte write is still allowed to
+    // run to completion.
+    expect(existing[0]).toContain('lock_timeout');
   });
 
   test('remove emits the same statements with and without another principal reference', async () => {
@@ -532,6 +587,84 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     await local.close();
   });
 
+  test('a non-transactional byte layer that does not declare out-of-registry writes fails loudly instead of issuing a conflicting write', async () => {
+    // The deadlock configuration: a byte store without writeWith whose plain
+    // write could hit the same PostgreSQL as the registry. On a real pool the
+    // plain write would block forever on the blob-row lock this transaction
+    // just took; the guard must refuse the configuration up front, before any
+    // row is claimed, so the failure is a loud configuration error instead of
+    // a hang. PGlite cannot reproduce the hang (single connection), which is
+    // exactly why this must fail at the guard rather than at the database.
+    const local = new PGlite();
+    await local.waitReady;
+    await ensureAssetSchema(local);
+    let writes = 0;
+    const uncoordinated: AssetByteStore = {
+      // Deliberately no writeWith and no writesOutsideRegistryDatabase: this
+      // is the broken-wrapper shape that used to deadlock production.
+      write: async () => {
+        writes += 1;
+      },
+      read: async () => null,
+      delete: async () => undefined,
+    };
+    const registry = new PgAssetStore(local, options(local, uncoordinated));
+    const data = blob('self-deadlock');
+
+    let thrown: unknown;
+    try {
+      await registry.put(PRINCIPAL, data);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toContain('cannot coordinate byte writes with the registry');
+    // The guard fired before the transaction opened: no byte reached the byte
+    // store and no blob row was claimed.
+    expect(writes).toBe(0);
+    expect((await local.query('SELECT * FROM asset_blobs')).rows).toEqual([]);
+
+    // replace is refused the same way.
+    const id = await new PgAssetStore(local, options(local, new MemoryByteStore())).put(
+      PRINCIPAL,
+      blob('existing'),
+    );
+    const replacing = new PgAssetStore(local, options(local, uncoordinated));
+    await expect(replacing.replace(PRINCIPAL, id, data)).rejects.toThrow(
+      /cannot coordinate byte writes with the registry/,
+    );
+    await local.close();
+  });
+
+  test('a collector with a non-declaring non-transactional byte layer fails loudly instead of deadlocking', async () => {
+    // Same class of trap as the registry write guard, on the collector's
+    // delete: a plain delete on the layer's own connection while the
+    // collector's transaction holds the blob-row lock would block forever.
+    const local = new PGlite();
+    await local.waitReady;
+    await ensureAssetSchema(local);
+    const seed = new PgAssetStore(local, options(local, new MemoryByteStore()));
+    const id = await seed.put(PRINCIPAL, blob('collector deadlock'));
+    await seed.remove(PRINCIPAL, id);
+    await local.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+
+    const uncoordinated: AssetByteStore = {
+      // No deleteWith, no writesOutsideRegistryDatabase: the broken shape.
+      write: async () => undefined,
+      read: async () => null,
+      delete: async () => undefined,
+    };
+    const collector = new AssetCollector(local, uncoordinated, {
+      withTransaction: transactions(local),
+      graceMs: 0,
+      now: () => new Date('2026-01-01T00:00:00.000Z'),
+    });
+    await expect(collector.collect()).rejects.toThrow(
+      /cannot coordinate collection with the registry/,
+    );
+    await local.close();
+  });
+
   test('collector observes grace, re-checks references, and is re-runnable', async () => {
     const oldId = await store.put(PRINCIPAL, blob('old unreferenced'));
     const referencedId = await store.put(PRINCIPAL, blob('still referenced'));
@@ -566,6 +699,77 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     expect((await store.resolve(PRINCIPAL, referencedId))?.bytes).toEqual(
       bytes('still referenced'),
     );
+  });
+
+  test('a pass takes at most its batch size and leaves the rest for the next one', async () => {
+    // The first pass over a deployment that accumulated before collection was
+    // scheduled is the one whose size is set by history rather than by the
+    // interval, and it is the pass this cap exists for.
+    await unreference(['batch-a', 'batch-b', 'batch-c', 'batch-d', 'batch-e']);
+    const collector = boundedCollector(2);
+
+    expect(await collector.collectPass()).toEqual({ collected: 2, capped: true });
+    expect(await remainingBlobs()).toHaveLength(3);
+  });
+
+  test('following passes take the remainder, so a capped pass strands nothing', async () => {
+    await unreference(['drain-a', 'drain-b', 'drain-c', 'drain-d', 'drain-e']);
+    const collector = boundedCollector(2);
+
+    // What a caller draining the backlog does: run while the batch comes back
+    // full. `collected` alone cannot say that, which is why `capped` exists.
+    const passes: Array<{ collected: number; capped: boolean }> = [];
+    do {
+      passes.push(await collector.collectPass());
+    } while (passes[passes.length - 1]?.capped);
+
+    expect(passes).toEqual([
+      { collected: 2, capped: true },
+      { collected: 2, capped: true },
+      { collected: 1, capped: false },
+    ]);
+    expect(await remainingBlobs()).toEqual([]);
+  });
+
+  test('a bounded pass takes the oldest unreferenced blob, however its digest sorts', async () => {
+    // Ordering by content hash would starve this blob: its digest sorts above
+    // every other one here, so a bounded pass ordered that way would never
+    // reach it while lower digests keep arriving.
+    const values = ['sorting-one', 'sorting-two', 'sorting-three', 'sorting-four'];
+    const hashes = new Map<string, ContentHash>();
+    for (const value of values) hashes.set(value, (await contentHashOf(blob(value))).contentHash);
+    const hashOf = (value: string): ContentHash => hashes.get(value) as ContentHash;
+    const sortsLast = values.reduce((left, right) => (hashOf(left) > hashOf(right) ? left : right));
+    const queue = values.filter((value) => value !== sortsLast);
+
+    await unreference([...queue, sortsLast]);
+    // Stamp the newer blobs first and the oldest one last, so heap order --
+    // which is what a pass that dropped its ORDER BY would see -- puts the
+    // blob that must be collected first anywhere but first.
+    for (const [index, value] of queue.entries()) {
+      await stampUnreferencedAt(hashOf(value), `200${index + 1}-01-01T00:00:00.000Z`);
+    }
+    await stampUnreferencedAt(hashOf(sortsLast), '2000-01-01T00:00:00.000Z');
+
+    const statements: string[] = [];
+    const collector = boundedCollector(1, recordingQueryable(db, statements));
+    expect(await collector.collectPass()).toEqual({ collected: 1, capped: true });
+    expect(await remainingBlobs()).toEqual(queue.map(hashOf).sort());
+
+    // The order is asked of the database rather than inherited from a plan.
+    // PGlite answers this shape from the partial index on `unreferenced_at`,
+    // so a pass that simply dropped its ORDER BY would return these same rows
+    // here while starving a real deployment whose planner chose otherwise.
+    expect(statements[0]).toContain('ORDER BY unreferenced_at ASC, content_hash ASC LIMIT $2');
+
+    // A blob unreferenced after the queue formed joins its back, so it cannot
+    // push the waiting ones further out: the next pass still takes the oldest.
+    const { contentHash: newcomer } = await contentHashOf(blob('sorting-newcomer'));
+    await unreference(['sorting-newcomer']);
+    await stampUnreferencedAt(newcomer, '2004-01-01T00:00:00.000Z');
+
+    expect(await collector.collect()).toBe(1);
+    expect(await remainingBlobs()).toEqual([...queue.slice(1).map(hashOf), newcomer].sort());
   });
 
   test('put writes bytes unconditionally, even when they are already stored', async () => {
@@ -626,6 +830,9 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     expect(await commonDigestEncodings(data)).toHaveLength(5);
 
     const digestFailureBytes: AssetByteStore = {
+      // Out-of-registry so the coordination guard does not mask the digest
+      // propagation under test.
+      writesOutsideRegistryDatabase: true,
       write: async () => {
         throw new Error(contentHash);
       },
@@ -697,6 +904,9 @@ describe('PgAssetStore registry behavior with PGlite', () => {
 
     await db.query('TRUNCATE asset_entries, asset_blobs');
     const collectorBytes: AssetByteStore = {
+      // Out-of-registry so the collector's deletion guard lets the failing
+      // delete through, keeping the digest propagation under test.
+      writesOutsideRegistryDatabase: true,
       write: async () => undefined,
       read: async () => null,
       delete: async () => {
@@ -720,5 +930,112 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     }
     expect(collectorError).toBeInstanceOf(Error);
     await expectNoDigestSubstring(String(collectorError), data);
+  });
+});
+
+describe('PgAssetStore indirect resolution with PGlite', () => {
+  let db: PGlite;
+
+  class SigningByteStore extends MemoryByteStore {
+    readonly signed: Array<{ hash: ContentHash; headers: AssetSignedReadHeaders }> = [];
+    decline = false;
+
+    async signReadUrl(
+      hash: ContentHash,
+      headers: AssetSignedReadHeaders,
+    ): Promise<string | undefined> {
+      this.signed.push({ hash, headers });
+      return this.decline ? undefined : 'https://objects.example/signed-url';
+    }
+  }
+
+  const request = (onLabel?: (mime: string) => void) => ({
+    label: (mime: string) => {
+      onLabel?.(mime);
+      return { contentType: 'application/octet-stream', contentDisposition: 'attachment' };
+    },
+    cacheControl: 'private, no-store',
+    expiresInSeconds: 60,
+  });
+
+  beforeEach(async () => {
+    db = new PGlite();
+    await db.waitReady;
+    await ensureAssetSchema(db);
+  });
+
+  afterEach(async () => {
+    __setAssetIdFactoryForTesting(null);
+    await db.close();
+  });
+
+  test('a byte store without a signer declines indirect resolution', async () => {
+    const store = new PgAssetStore(db, options(db, new MemoryByteStore()));
+    const id = await store.put(PRINCIPAL, blob('unsigned'));
+
+    await expect(store.resolveIndirect(PRINCIPAL, id, request())).resolves.toBeUndefined();
+  });
+
+  test('mints the signed URL from the same ownership-checked read', async () => {
+    const byteStore = new SigningByteStore();
+    const store = new PgAssetStore(db, options(db, byteStore));
+    const data = blob('indirect bytes');
+    const id = await store.put(PRINCIPAL, data, { contentType: 'image/png' });
+    const { contentHash } = await contentHashOf(data);
+    let labelled: string | undefined;
+
+    const result = await store.resolveIndirect(
+      PRINCIPAL,
+      id,
+      request((mime) => {
+        labelled = mime;
+      }),
+    );
+
+    expect(result).toEqual({ url: 'https://objects.example/signed-url', revision: 1 });
+    // The signer saw the entry's content hash and the merged headers: the
+    // label ran on the recorded media type inside the read.
+    expect(byteStore.signed).toHaveLength(1);
+    expect(byteStore.signed[0]?.hash).toBe(contentHash);
+    expect(byteStore.signed[0]?.headers).toEqual({
+      contentType: 'application/octet-stream',
+      contentDisposition: 'attachment',
+      cacheControl: 'private, no-store',
+      expiresInSeconds: 60,
+    });
+    expect(labelled).toBe('image/png');
+  });
+
+  test('unknown and foreign ids miss exactly as resolve does', async () => {
+    const byteStore = new SigningByteStore();
+    const store = new PgAssetStore(db, options(db, byteStore));
+    const id = await store.put(PRINCIPAL, blob('owned'));
+
+    await expect(store.resolveIndirect(PRINCIPAL, 'ast_absent', request())).resolves.toBeNull();
+    await expect(store.resolveIndirect(OTHER_PRINCIPAL, id, request())).resolves.toBeNull();
+    expect(byteStore.signed).toHaveLength(0);
+  });
+
+  test('a signer that declines at call time falls back to direct bytes', async () => {
+    const byteStore = new SigningByteStore();
+    byteStore.decline = true;
+    const store = new PgAssetStore(db, options(db, byteStore));
+    const id = await store.put(PRINCIPAL, blob('declined'));
+
+    await expect(store.resolveIndirect(PRINCIPAL, id, request())).resolves.toBeUndefined();
+  });
+
+  test('the reported revision follows replace', async () => {
+    const byteStore = new SigningByteStore();
+    const store = new PgAssetStore(db, options(db, byteStore));
+    const id = await store.put(PRINCIPAL, blob('first'));
+    await store.replace(PRINCIPAL, id, blob('second'));
+
+    await expect(store.resolveIndirect(PRINCIPAL, id, request())).resolves.toEqual({
+      url: 'https://objects.example/signed-url',
+      revision: 2,
+    });
+    const { contentHash } = await contentHashOf(blob('second'));
+    expect(byteStore.signed[0]?.hash).toBe(contentHash);
   });
 });

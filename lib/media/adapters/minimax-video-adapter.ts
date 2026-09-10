@@ -11,6 +11,7 @@ import type {
   VideoGenerationResult,
 } from '../types';
 import { runPolledTask } from '../polled-task';
+import { requireModel } from '../require-model';
 
 const BASE_URL = 'https://api.minimaxi.com';
 const POLL_INTERVAL_MS = 5000;
@@ -54,7 +55,7 @@ async function submitTask(
 ): Promise<string> {
   const baseUrl = (config.baseUrl || BASE_URL).replace(/\/$/, '');
 
-  const model = config.model || 'MiniMax-Hailuo-2.3';
+  const model = requireModel(config.model, 'MiniMax Video');
   const duration = options.duration || 6;
   // Map OpenMAIC resolution to MiniMax format. MiniMax's mid tier is 768P, not
   // 720P — Hailuo 2.3 rejects 720P with "2013 ... does not support resolution

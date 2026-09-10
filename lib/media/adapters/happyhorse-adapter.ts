@@ -13,8 +13,8 @@ import type {
 } from '../types';
 import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
+import { requireModel } from '../require-model';
 
-const DEFAULT_MODEL = 'happyhorse-1.0-t2v';
 const DEFAULT_BASE_URL = 'https://dashscope.aliyuncs.com';
 const POLL_INTERVAL_MS = 15000;
 const MAX_POLL_ATTEMPTS = 40; // 10 minutes max
@@ -102,7 +102,7 @@ export async function submitHappyHorseTask(
       'X-DashScope-Async': 'enable',
     },
     body: JSON.stringify({
-      model: config.model || DEFAULT_MODEL,
+      model: requireModel(config.model, 'HappyHorse'),
       input: {
         prompt: options.prompt,
       },

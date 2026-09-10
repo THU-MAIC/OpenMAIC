@@ -1,5 +1,12 @@
 import type { Action, PPTElement } from '@openmaic/dsl';
-import type { AssetMeta, AssetSource, CompilerScene, TimingProbe } from '@/lib/video-export';
+import type {
+  AssetMeta,
+  AssetSource,
+  CompilerScene,
+  InteractiveHtmlMeta,
+  InteractiveHtmlSource,
+  TimingProbe,
+} from '@/lib/video-export';
 
 /** Build an action-like object with a stable id (accepts invalid types for validation tests). */
 export const act = (a: { id: string; type: string; [k: string]: unknown }): Action =>
@@ -54,6 +61,23 @@ export function quiz(id: string, actions: Action[] = [], order = 0): CompilerSce
   } as CompilerScene;
 }
 
+export function interactive(
+  id: string,
+  html: string | undefined,
+  actions: Action[] = [],
+  order = 0,
+): CompilerScene {
+  return {
+    id,
+    stageId: 'stage',
+    title: id,
+    order,
+    type: 'interactive',
+    content: { type: 'interactive', html },
+    actions,
+  } as CompilerScene;
+}
+
 /** TimingProbe stub: audio/video durations keyed by action id; anything else → estimate/null. */
 export function stubProbe(
   audioMs: Record<string, number> = {},
@@ -78,3 +102,11 @@ export function stubAssets(
 
 export const NO_PROBE: TimingProbe = { audioDurationMs: () => null, videoDurationMs: () => null };
 export const NO_ASSETS: AssetSource = { audio: () => null, media: () => null };
+
+export function stubInteractiveHtml(
+  bySceneId: Record<string, InteractiveHtmlMeta> = {},
+): InteractiveHtmlSource {
+  return { html: (scene) => bySceneId[scene.id] ?? null };
+}
+
+export const NO_INTERACTIVE_HTML: InteractiveHtmlSource = { html: () => null };

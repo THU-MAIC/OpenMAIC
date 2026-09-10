@@ -13,6 +13,7 @@ import {
   normalizeVoxCPMBackend,
   voxCPMBackendSupportsVoiceRegistration,
 } from '@/lib/audio/voxcpm';
+import { resolveTTSModel } from '@/lib/server/provider-config';
 import type {
   VoiceRegistrationAdapter,
   VoiceRegistrationConfig,
@@ -127,6 +128,12 @@ export async function bootstrapVoxCPMReferenceClip(
 export const voxcpmVoiceRegistrationAdapter: VoiceRegistrationAdapter = {
   supportsRegistration(options) {
     return voxCPMBackendSupportsVoiceRegistration(normalizeVoxCPMBackend(options?.backend));
+  },
+  // The registration call itself is model-less (multipart name + consent +
+  // audio_sample); the model only feeds the bootstrap reference-clip synthesis,
+  // so resolve it the same way the TTS route does (server pin wins, else client).
+  resolveRegistrationModel(clientModel) {
+    return resolveTTSModel('voxcpm-tts', clientModel);
   },
   voiceExists: voxCPMVoiceExists,
   registerVoice: registerVoxCPMVoice,

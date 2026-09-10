@@ -60,6 +60,7 @@ async function fetchWebSearch(
   apiKey: string,
   maxResults: number,
   baseUrl?: string,
+  signal?: AbortSignal,
 ): Promise<WebSearchSource[]> {
   try {
     const res = await proxyFetch(buildQianfanUrl(BAIDU_WEB_SEARCH_PATH, baseUrl), {
@@ -70,6 +71,7 @@ async function fetchWebSearch(
         search_source: 'baidu_search_v2',
         resource_type_filter: [{ type: 'web', top_k: maxResults }],
       }),
+      ...(signal ? { signal } : {}),
     });
 
     if (!res.ok) {
@@ -94,16 +96,22 @@ async function fetchWebSearch(
         score: Number((0.9 - index * 0.05).toFixed(2)),
       }));
   } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? error;
     log.warn('[Baidu Web] Failed:', error);
     return [];
   }
 }
 
-async function fetchBaike(query: string, apiKey: string): Promise<WebSearchSource[]> {
+async function fetchBaike(
+  query: string,
+  apiKey: string,
+  signal?: AbortSignal,
+): Promise<WebSearchSource[]> {
   try {
     const res = await proxyFetch(buildBaikeUrl(query), {
       method: 'GET',
       headers: baiduHeaders(apiKey),
+      ...(signal ? { signal } : {}),
     });
 
     if (!res.ok) {
@@ -126,6 +134,7 @@ async function fetchBaike(query: string, apiKey: string): Promise<WebSearchSourc
       },
     ];
   } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? error;
     log.warn('[Baidu Baike] Failed:', error);
     return [];
   }
@@ -136,11 +145,13 @@ async function fetchScholar(
   apiKey: string,
   maxResults: number,
   baseUrl?: string,
+  signal?: AbortSignal,
 ): Promise<WebSearchSource[]> {
   try {
     const res = await proxyFetch(buildScholarUrl(query, baseUrl), {
       method: 'GET',
       headers: baiduHeaders(apiKey),
+      ...(signal ? { signal } : {}),
     });
 
     if (!res.ok) {
@@ -169,6 +180,7 @@ async function fetchScholar(
         score: Number((0.85 - index * 0.05).toFixed(2)),
       }));
   } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? error;
     log.warn('[Baidu Scholar] Failed:', error);
     return [];
   }
@@ -180,8 +192,9 @@ export async function searchWithBaidu(params: {
   maxResults?: number;
   baseUrl?: string;
   subSources?: Partial<BaiduSubSources>;
+  signal?: AbortSignal;
 }): Promise<WebSearchResult> {
-  const { query: rawQuery, apiKey, maxResults = 10, baseUrl } = params;
+  const { query: rawQuery, apiKey, maxResults = 10, baseUrl, signal } = params;
   if (!apiKey) throw new Error('Baidu API key is required');
 
   const query = normalizeWebSearchQuery(rawQuery);
@@ -189,9 +202,11 @@ export async function searchWithBaidu(params: {
   const startedAt = Date.now();
 
   const [webResults, baikeResults, scholarResults] = await Promise.all([
-    subSources.webSearch ? fetchWebSearch(query, apiKey, maxResults, baseUrl) : Promise.resolve([]),
-    subSources.baike ? fetchBaike(query, apiKey) : Promise.resolve([]),
-    subSources.scholar ? fetchScholar(query, apiKey, 3, baseUrl) : Promise.resolve([]),
+    subSources.webSearch
+      ? fetchWebSearch(query, apiKey, maxResults, baseUrl, signal)
+      : Promise.resolve([]),
+    subSources.baike ? fetchBaike(query, apiKey, signal) : Promise.resolve([]),
+    subSources.scholar ? fetchScholar(query, apiKey, 3, baseUrl, signal) : Promise.resolve([]),
   ]);
 
   const seen = new Set<string>();

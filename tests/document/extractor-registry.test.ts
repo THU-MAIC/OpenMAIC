@@ -3,11 +3,24 @@ import { describe, expect, it } from 'vitest';
 import {
   getDocumentExtractorProvider,
   getDocumentExtractorProviders,
+  getMediaExtractorProviders,
   selectDocumentExtractorProvider,
 } from '@/lib/document';
+import {
+  getDocumentExtractorManifestEntries,
+  getMediaExtractorManifestEntries,
+} from '@/lib/document/extractors/manifest';
 import { PROVIDER_SUPPORTED_MIME_TYPES } from '@/lib/document/mime';
 
 describe('document extractor registry', () => {
+  it('declares a non-empty version on every registered document and media provider', () => {
+    const providers = [...getDocumentExtractorProviders(), ...getMediaExtractorProviders()];
+
+    expect(providers.length).toBeGreaterThan(0);
+    for (const provider of providers) {
+      expect(provider.version, `provider ${provider.id} must declare a version`).toBeTruthy();
+    }
+  });
   it('exposes existing PDF providers through the document extractor boundary', () => {
     const providers = getDocumentExtractorProviders();
 
@@ -193,5 +206,68 @@ describe('document extractor registry', () => {
       ocr: true,
       async: true,
     });
+  });
+
+  it('keeps the client-safe manifest in exact sync with both registries (RFC #1153 part 1)', () => {
+    // The derivation cache resolves the expected extractor client-side from
+    // the browser-safe manifest (`lib/document/extractors/manifest.ts`) so the
+    // provider implementations (and their server-only dependency chains) never
+    // enter the client bundle. The implementations spread their manifest
+    // entries, so drift is impossible by construction — this test pins BOTH
+    // directions anyway: every registered provider has an exact manifest
+    // entry, and the manifest declares no orphan entries. Document and media
+    // are compared per-domain because `alidocmind` legitimately exists in both
+    // registries at the same version.
+    interface IdentityFields {
+      id: string;
+      displayName: string;
+      version: string;
+      supportedMimeTypes: readonly string[];
+      capabilities: unknown;
+    }
+    const expectExactSync = (
+      providers: IdentityFields[],
+      manifest: IdentityFields[],
+      domain: string,
+    ) => {
+      const manifestById = new Map(manifest.map((entry) => [entry.id, entry]));
+      for (const provider of providers) {
+        const entry = manifestById.get(provider.id);
+        expect(
+          entry,
+          `[${domain}] manifest must declare an entry for registered provider ${provider.id}`,
+        ).toBeDefined();
+        expect(
+          {
+            id: entry!.id,
+            displayName: entry!.displayName,
+            version: entry!.version,
+            supportedMimeTypes: entry!.supportedMimeTypes,
+            capabilities: entry!.capabilities,
+          },
+          `[${domain}] manifest entry for ${provider.id} must match the registered provider exactly`,
+        ).toEqual({
+          id: provider.id,
+          displayName: provider.displayName,
+          version: provider.version,
+          supportedMimeTypes: provider.supportedMimeTypes,
+          capabilities: provider.capabilities,
+        });
+      }
+      const registeredIds = new Set(providers.map((provider) => provider.id));
+      for (const entry of manifest) {
+        expect(
+          registeredIds.has(entry.id),
+          `[${domain}] manifest entry ${entry.id} must be backed by a registered provider (no orphans)`,
+        ).toBe(true);
+      }
+    };
+
+    expectExactSync(
+      getDocumentExtractorProviders(),
+      getDocumentExtractorManifestEntries(),
+      'document',
+    );
+    expectExactSync(getMediaExtractorProviders(), getMediaExtractorManifestEntries(), 'media');
   });
 });

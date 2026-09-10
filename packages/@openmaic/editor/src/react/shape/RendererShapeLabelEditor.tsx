@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, type CSSProperties } from 'react';
 import type { PPTShapeElement, ShapeText } from '@openmaic/dsl';
 
 import { useElementFlip } from '@openmaic/renderer/elements';
@@ -11,6 +11,7 @@ import type { EditIntent } from '../types';
 
 export interface RendererShapeLabelEditorProps {
   element: PPTShapeElement;
+  initialFocusPoint?: { left: number; top: number };
   onContentChange?: (change: TextContentChange) => void;
   onFormatChange?: (elementId: string, state: TextFormatState) => void;
   onControllerChange?: (controller: TextEditorController | null) => void;
@@ -33,6 +34,7 @@ function shapeText(element: PPTShapeElement): ShapeText {
 /** Inline ProseMirror label editor for a Shape selected in the renderer canvas. */
 export function RendererShapeLabelEditor({
   element,
+  initialFocusPoint,
   onContentChange,
   onFormatChange,
   onControllerChange,
@@ -72,7 +74,7 @@ export function RendererShapeLabelEditor({
   return (
     <div
       data-renderer-shape-label-editor={element.id}
-      className="shape-text"
+      className="shape-text slide-renderer-prose"
       style={{
         position: 'absolute',
         inset: 0,
@@ -82,6 +84,11 @@ export function RendererShapeLabelEditor({
         overflowWrap: 'break-word',
         lineHeight: text.lineHeight,
         letterSpacing: `${text.wordSpace || 0}px`,
+        // Match BaseShapeElement: paragraph margins affect the content height,
+        // which in turn affects vertically centered Shape labels.
+        ...({
+          '--paragraphSpace': `${text.paragraphSpace === undefined ? 5 : text.paragraphSpace}px`,
+        } as CSSProperties),
         transform: flipStyle,
       }}
     >
@@ -92,6 +99,7 @@ export function RendererShapeLabelEditor({
         defaultColor={text.defaultColor}
         defaultFontName={text.defaultFontName}
         autoFocus
+        initialFocusPoint={initialFocusPoint}
         onContentChange={onContentChange}
         onFormatChange={onFormatChange}
         onControllerChange={handleControllerChange}

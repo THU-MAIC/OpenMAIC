@@ -101,8 +101,9 @@ export function duplicateSlideScene(source: Scene, copySuffix: string, order: nu
     const next: Record<string, unknown> = { ...structuredClone(action), id: nanoid() };
     const elId = next.elementId;
     if (typeof elId === 'string' && elIdMap[elId]) next.elementId = elIdMap[elId];
-    // Drop both audio refs — playback prefers audioUrl, so leaving it would make
-    // the copy keep playing the source's server-generated TTS.
+    // Drop the audio ref so the copy re-derives / regenerates its own narration
+    // audio instead of playing the source's. The legacy URL of an unconverted
+    // pair points at the source's narration just as much as the id does.
     delete next.audioId;
     delete next.audioUrl;
     return next as unknown as Action;

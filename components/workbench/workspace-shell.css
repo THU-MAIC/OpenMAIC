@@ -1,0 +1,1987 @@
+/**
+ * The Pro workspace's visual layer.
+ *
+ * Scoped under `.ws-root` and imported only by `WorkspaceShell.tsx`, so `/`
+ * never receives a byte of it. Nothing here changes behaviour: every rule is
+ * colour, type, light, shadow or motion.
+ *
+ * INHERITANCE IS THE BRIEF. This is the Pro surface of OpenMAIC, not a second
+ * brand, so the vocabulary is lifted from what the product already uses:
+ *
+ *   - the canvas is the homepage's own `slate-50 → slate-100` gradient, not
+ *     the flat `bg-white` v2 shipped (the flat white was the departure);
+ *   - the composer keeps the classic face's chrome — `rounded-2xl`, a
+ *     `border/60` hairline, `bg-white/80` over `backdrop-blur-xl`;
+ *   - the accent is brand violet, spent where the product already spends it:
+ *     focus, active state, the Pro badge;
+ *   - the neutral ramp is slate, the same one `ClassroomCard` and the home
+ *     chrome use.
+ *
+ * What is NEW is craft, not vocabulary:
+ *
+ *   - shadows are layered (contact → mid → wide) instead of one `shadow-xl`
+ *     blur, which is most of why v2 read as unstyled;
+ *   - the composer gets a real focused state — a violet thread, a widened
+ *     violet-tinted cast, and a 1px lift — so the page has one object that
+ *     obviously had attention paid to it;
+ *   - the canvas is lit rather than blank: a very low-contrast violet-white
+ *     pool behind the hero plus a grain wash, both at the edge of visible;
+ *   - rail rows hover into one soft neutral pill and nothing else;
+ *   - one staggered entrance on load, then nothing animates unprompted.
+ *
+ * Type stays on the product's Inter stack. The hero's problem was never the
+ * typeface, it was that 22px/semibold is body copy in a headline's seat; it is
+ * set properly here (larger, tighter tracking, optical spacing) and left alone.
+ */
+
+/* ── Tokens ──────────────────────────────────────────────────────────────
+   Slate ramp + brand violet, matching the rest of the product. */
+.ws-root {
+  --ws-canvas-top: #f8fafc; /* slate-50  */
+  --ws-canvas-bottom: #f1f5f9; /* slate-100 */
+  --ws-rail: rgba(255, 255, 255, 0.72);
+  --ws-surface: rgba(255, 255, 255, 0.82);
+
+  /* The ink ramp, re-cut. Every step used to sit within one slate shade of its
+     neighbour, so the rail read as one grey band: the counts (slate-300) came
+     out at 1.5:1 on the rail and the section labels and metadata (slate-400) at
+     2.5:1 — below AA, which is why nothing announced itself. Each step is now a
+     full role with a ratio to defend, measured against the rail's own blended
+     background (#fbfcfd), not against pure white:
+
+       ink    16.5:1  course names, folder names, the active row
+       soft   10.0:1  chat names, section labels — legible, still not black
+       mute    4.7:1  metadata, counts, glyphs, buttons at rest (AA)
+       faint   2.5:1  DECORATION ONLY — separators, rules. Never text.
+
+     The palette is unchanged: these are all slate steps, just further apart. */
+  --ws-ink: #0f172a; /* slate-900 */
+  --ws-ink-soft: #334155; /* slate-700 */
+  --ws-ink-mute: #64748b; /* slate-500 */
+  --ws-ink-faint: #94a3b8; /* slate-400 */
+
+  --ws-line: rgba(15, 23, 42, 0.11);
+  --ws-line-soft: rgba(15, 23, 42, 0.065);
+  --ws-tint: rgba(15, 23, 42, 0.055);
+  --ws-tint-strong: rgba(15, 23, 42, 0.09);
+
+  /* The `@` course menu's row, and how many of them its window shows.
+     The window is a WHOLE NUMBER of rows so the resting state never cuts one in
+     half — which is what the old fixed `max-h` did, and with no scroll on the
+     container that half row was simply unreachable. */
+  --ws-cmenu-row-h: 30px;
+  --ws-cmenu-rows: 8;
+
+  /* ── The rail's row template ────────────────────────────────────────────
+     A name in this rail starts at the row's own 8px padding. That is the whole
+     rule, and it is why the tree finally reads as flush with the panel: an empty
+     leading slot reserved on every row (so that a folder's chevron would have a
+     column of its own) pushed all 139 names inward and made the column look
+     indented from nothing. Before that it was worse — five numbers reached a
+     nested name: 8px padding, a 16px slot, an 8px gap, a 14px nest margin, 6px
+     of nest padding and a 1px guide line, 51px in at 21px per level.
+
+       LEAD (+GAP)  a glyph slot for the ONLY row kind that has a glyph: a
+                    folder. Its name therefore sits one glyph in, and that offset
+                    IS the hierarchy. Courses, chats and pager rows carry no
+                    leading element, so their names sit at the panel edge.
+       INDENT       the ONE nesting step, as a margin and nothing else. Folders
+                    do not nest inside folders, so it is applied exactly once.
+
+     They are tokens because this list will grow row kinds (favourites,
+     recents), and a value written twice is the next misalignment. */
+  --ws-tree-indent: 12px;
+  /* One row height for BOTH tabs. A chat row and a course row are the same kind
+     of object — a single line you scan — so switching tabs must not reflow the
+     column. Depth is carried by whitespace alone (no rule, no guide line, no
+     card), and this is the whitespace. */
+  --ws-tree-row-h: 32px;
+  /* A leading GLYPH slot, for the rows that actually have a glyph: a folder.
+     Rows without one (courses, chats, pagers) do not reserve it — an empty slot
+     on every row is what pushed the whole tree right of the panel's own edge.
+     16px box + 8px of air, stated once. */
+  --ws-tree-lead: 16px;
+  --ws-tree-lead-gap: 8px;
+
+  /* THE height of a pane header, for every pane. It is a token rather than a
+     number in each rule because the two headers' bottom hairlines have to be
+     ONE line across the seam: the conversation's header and the classroom's
+     header are different objects (a title and a status word; a tab strip and a
+     button) and the moment either owns its own height they drift apart by a
+     pixel or two and the hairline visibly steps at the seam — which is exactly
+     what happened while the chat header sat at 44px and the classroom's at 42.
+     The value is the classroom's, because that one is DERIVED: 6px of strip
+     inset + a 31px tab + the 5px tail that joins the selected tab to the pane
+     below it. Change it here and both panes move together. */
+  --ws-pane-head-h: 42px;
+
+  /* Floating menus sit OVER the tree, so they are opaque where the rail is
+     translucent: a popover you can read the list through is not a popover. */
+  --ws-raised: #ffffff;
+
+  --ws-accent: #7c3aed; /* violet-600, the product's accent */
+  --ws-accent-thread: rgba(124, 58, 237, 0.32);
+  --ws-accent-wash: rgba(124, 58, 237, 0.08);
+
+  --ws-live: #10b981; /* emerald-500, as v2 */
+  --ws-fail: #f43f5e; /* rose-500,   as v2 */
+
+  --ws-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* Layered, not blurred. A contact shadow seats the card, then two wider and
+     softer casts carry it off the page. */
+  --ws-lift:
+    0 1px 1px rgba(15, 23, 42, 0.035), 0 3px 6px -2px rgba(15, 23, 42, 0.04),
+    0 10px 20px -8px rgba(15, 23, 42, 0.05), 0 26px 46px -22px rgba(15, 23, 42, 0.07);
+  /* Focus adds the violet thread the classic composer only hints at
+     (`focus-within:shadow-violet-500/[0.06]`), and commits to it. */
+  --ws-lift-focus:
+    0 0 0 1px var(--ws-accent-thread), 0 0 0 4px var(--ws-accent-wash),
+    0 2px 3px -1px rgba(15, 23, 42, 0.04), 0 8px 16px -4px rgba(15, 23, 42, 0.055),
+    0 22px 40px -14px rgba(15, 23, 42, 0.08), 0 40px 70px -34px rgba(124, 58, 237, 0.14);
+  --ws-lift-sm:
+    0 1px 1px rgba(15, 23, 42, 0.03), 0 2px 4px -1px rgba(15, 23, 42, 0.035),
+    0 6px 12px -6px rgba(15, 23, 42, 0.045);
+  --ws-lift-sm-hover:
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 8px -2px rgba(15, 23, 42, 0.055),
+    0 10px 18px -8px rgba(15, 23, 42, 0.06);
+
+  /* Grain. One inline SVG, tiled — no request, alpha baked in so it works over
+     any background. Tuned to be invisible on a bad panel. */
+  --ws-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.04'/%3E%3C/svg%3E");
+
+  background: linear-gradient(180deg, var(--ws-canvas-top) 0%, var(--ws-canvas-bottom) 100%);
+  color: var(--ws-ink);
+}
+
+.dark .ws-root {
+  --ws-canvas-top: #020617; /* slate-950 */
+  --ws-canvas-bottom: #0f172a; /* slate-900 */
+  --ws-rail: rgba(15, 23, 42, 0.62);
+  --ws-surface: rgba(15, 23, 42, 0.78);
+
+  /* Dark's ramp was already the better of the two — it cleared AA at every step
+     that carries text — so it is lifted only at the top and the bottom, to keep
+     the ROLES the same distance apart in both themes:
+
+       ink    16.8:1  soft  11.7:1  mute  6.8:1  faint  3.6:1 (decoration)
+
+     Everything dark gains from this pass it gains from usage, not from the
+     ramp: counts and labels moved off `faint`, and the rail's buttons stopped
+     resting at 45% opacity. */
+  --ws-ink: #f8fafc; /* slate-50  */
+  --ws-ink-soft: #cbd5e1; /* slate-300 */
+  --ws-ink-mute: #94a3b8; /* slate-400 */
+  --ws-ink-faint: #64748b; /* slate-500 — decoration only */
+
+  --ws-line: rgba(255, 255, 255, 0.12);
+  --ws-line-soft: rgba(255, 255, 255, 0.07);
+  --ws-tint: rgba(255, 255, 255, 0.06);
+  --ws-tint-strong: rgba(255, 255, 255, 0.1);
+
+  --ws-raised: #1e293b; /* slate-800 — one step above the slate-900 canvas */
+
+  --ws-accent: #a78bfa; /* violet-400 reads on slate-950 */
+  --ws-accent-thread: rgba(167, 139, 250, 0.36);
+  --ws-accent-wash: rgba(167, 139, 250, 0.1);
+
+  --ws-lift:
+    0 1px 1px rgba(0, 0, 0, 0.3), 0 4px 10px -3px rgba(0, 0, 0, 0.32),
+    0 14px 28px -12px rgba(0, 0, 0, 0.38), 0 30px 54px -26px rgba(0, 0, 0, 0.44);
+  --ws-lift-focus:
+    0 0 0 1px var(--ws-accent-thread), 0 0 0 4px var(--ws-accent-wash),
+    0 2px 4px -1px rgba(0, 0, 0, 0.3), 0 10px 20px -5px rgba(0, 0, 0, 0.36),
+    0 26px 48px -16px rgba(0, 0, 0, 0.44), 0 44px 76px -36px rgba(167, 139, 250, 0.2);
+  --ws-lift-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 10px -4px rgba(0, 0, 0, 0.34);
+  --ws-lift-sm-hover: 0 2px 4px rgba(0, 0, 0, 0.34), 0 8px 16px -6px rgba(0, 0, 0, 0.4);
+
+  --ws-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.085'/%3E%3C/svg%3E");
+}
+
+/* ── Atmosphere ──────────────────────────────────────────────────────────
+   The lamp rides on the scrolling column itself: `background-attachment` is
+   `scroll` by default, which pins a background to the element's own border
+   box, so it stays put while the content scrolls under it. No overlay layer,
+   no z-index ladder, nothing to intercept a click.
+
+   Its box is the FIRST SCREEN — one `100dvh` band, not a fixed 700px — and the
+   pool sits a little above that band's middle, where the lockup and composer
+   now are. The earlier cut lit the top 700px from `50% 1%`, which was right
+   while the hero was pinned to the top and wrong the moment it moved to the
+   centre: a light whose brightest point falls on empty space is a light
+   pointing at nothing. */
+.ws-canvas {
+  background-image:
+    /* the pool behind hero + composer — violet-white, so the brand tints the
+       light rather than sitting in a swatch somewhere */
+    radial-gradient(58% 34% at 50% 43%, rgba(124, 58, 237, 0.062), rgba(124, 58, 237, 0) 72%),
+    /* a white core inside the pool, so the falloff is not one flat cone and
+       the composer sits in the brightest part of the canvas */
+    radial-gradient(40% 24% at 50% 47%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 74%),
+    var(--ws-grain);
+  background-repeat: no-repeat, no-repeat, repeat;
+  background-size:
+    100% 100dvh,
+    100% 100dvh,
+    160px 160px;
+  background-position:
+    top center,
+    top center,
+    top left;
+}
+
+.dark .ws-canvas {
+  background-image:
+    radial-gradient(62% 36% at 50% 43%, rgba(167, 139, 250, 0.075), rgba(167, 139, 250, 0) 70%),
+    radial-gradient(36% 22% at 50% 47%, rgba(226, 232, 240, 0.045), rgba(226, 232, 240, 0) 72%),
+    var(--ws-grain);
+}
+
+/* The rail is the product's chrome material — translucent white over the
+   canvas gradient, blurred, hairline edge. Same glass as the home's floating
+   toolbars, given a full-height panel to be. */
+.ws-rail {
+  background-color: var(--ws-rail);
+  background-image: var(--ws-grain);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: inset -1px 0 0 0 var(--ws-line-soft);
+}
+
+/* ── Type ────────────────────────────────────────────────────────────────
+   Same Inter stack as the rest of the product; the change is that the hero is
+   now set at headline size with headline tracking instead of at body size. */
+.ws-display {
+  font-size: clamp(26px, 2.7vw, 33px);
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -0.021em;
+  color: var(--ws-ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.ws-subtitle {
+  font-size: 13.5px;
+  line-height: 1.55;
+  letter-spacing: 0.005em;
+  color: var(--ws-ink-mute);
+}
+
+/* Section labels. Wider tracking is what makes 10px read as a label rather
+   than as a very small heading — and 10px uppercase needs MORE contrast than
+   body text, not less, so the label sits at `soft` while its size and case do
+   the work of saying "this is a heading, not a row". */
+.ws-label {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.145em;
+  color: var(--ws-ink-soft);
+}
+
+/* Counts are information — how many courses a folder holds — so they are read
+   at AA, not left at the 1.5:1 they used to sit at. */
+.ws-count {
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
+  color: var(--ws-ink-mute);
+}
+
+/* Hairlines that fade out, so panels dissolve into the canvas instead of
+   ending on a hard tick. */
+.ws-seam-rail {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(90deg, var(--ws-line) 0%, var(--ws-line) 58%, transparent 100%);
+}
+
+/* ── Rail rows ───────────────────────────────────────────────────────────
+   One soft neutral pill, filling the whole row, for hover / focus / selection.
+   That is the ENTIRE resting vocabulary: no left edge bar, no border, no
+   shadow, no separator. The violet bar that used to grow from the row's centre
+   line on hover and stay out on the selected row is gone — it was the loudest
+   mark in a column whose job is to be read past, and being the only thing at
+   the very left edge it also made the left edge look ragged. Selection is the
+   same pill one step stronger, which is a difference you can see without
+   introducing a second colour. */
+.ws-row {
+  color: var(--ws-ink-soft);
+  border-radius: 8px;
+  transition:
+    background-color 160ms var(--ws-ease),
+    color 160ms var(--ws-ease),
+    box-shadow 160ms var(--ws-ease);
+}
+
+.ws-row:hover {
+  background-color: var(--ws-tint);
+  color: var(--ws-ink);
+}
+
+.ws-row:active {
+  background-color: var(--ws-tint-strong);
+}
+
+/* Focus is as visible as hover, and then some — same fill plus a ring. */
+.ws-row:focus-visible {
+  outline: none;
+  background-color: var(--ws-tint);
+  box-shadow: 0 0 0 1px var(--ws-accent-thread);
+}
+
+/* Trailing metadata: a page count, a folder's size, a timestamp. Deliberately
+   the quietest type in the row — it is there to be glanced at, never read, and
+   at 11px in the metadata ink it was competing with the names on all 139 rows
+   at once.
+   `min-width` is the ⋯ button's own width: the action overlays this slot on
+   hover (see `.ws-row-wrap-actionable`), so reserving the same footprint means
+   the swap cannot change what the name has to work with. The margin stands in
+   for the flex gap the tree rows no longer carry — the leading slot is the
+   only gap in the row now, so the trailing one is stated here, once. */
+.ws-row-meta {
+  color: var(--ws-ink-mute);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  letter-spacing: 0.01em;
+  min-width: 24px;
+  margin-left: 8px;
+  text-align: right;
+  transition: opacity 160ms var(--ws-ease);
+}
+
+/* ── Course rows vs. chat rows ───────────────────────────────────────────
+   Both populations are compact, single-line lists. Course entries retain the
+   stronger 13px artifact name and put their page count at the far edge; chat
+   entries stay lighter and put time/status there. The surrounding tree vs.
+   stream structure supplies the remaining distinction without spending a
+   second line per course. */
+
+.ws-course {
+  min-height: var(--ws-tree-row-h);
+}
+
+/* The darkest, heaviest text in the rail body — at REST, not on hover. This is
+   the thing the user came to the rail to find; making it wait for a pointer is
+   what made the whole column read as grey. */
+.ws-course-name {
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.25;
+  letter-spacing: -0.006em;
+  color: var(--ws-ink);
+}
+
+.ws-meta-sep {
+  color: var(--ws-ink-faint);
+}
+
+/* A folder heads its group: same ink as the courses under it, a shade heavier,
+   so the hierarchy reads without a second label style. */
+.ws-folder-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.004em;
+  color: var(--ws-ink);
+}
+
+/* Chats: one step back from the courses, in weight and in ink. Deliberately
+   NOT faint — a chat you can barely read is not "quiet", it is broken. */
+.ws-chat-row {
+  /* No height of its own: a chat row is the same object as a course row, and
+     two numbers here is how the two tabs drifted apart. */
+}
+
+.ws-chat-name {
+  font-size: 13px;
+  font-weight: 450;
+  line-height: 1.2;
+  letter-spacing: 0.002em;
+  color: var(--ws-ink-soft);
+}
+
+.ws-row:hover .ws-chat-name,
+.ws-row-active .ws-chat-name {
+  color: var(--ws-ink);
+}
+
+/* ── Rail actions ────────────────────────────────────────────────────── */
+.ws-new {
+  background-color: var(--ws-surface);
+  border: 1px solid var(--ws-line);
+  color: var(--ws-ink-soft);
+  box-shadow: var(--ws-lift-sm);
+  letter-spacing: 0.005em;
+  transition:
+    border-color 180ms var(--ws-ease),
+    color 180ms var(--ws-ease),
+    box-shadow 180ms var(--ws-ease),
+    transform 180ms var(--ws-ease);
+}
+
+.ws-new:hover {
+  border-color: rgba(15, 23, 42, 0.16);
+  color: var(--ws-ink);
+  transform: translateY(-1px);
+  box-shadow: var(--ws-lift-sm-hover);
+}
+
+.dark .ws-new:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.ws-new:focus-visible {
+  outline: none;
+  border-color: var(--ws-accent-thread);
+  box-shadow: 0 0 0 3px var(--ws-accent-wash);
+}
+
+.ws-quiet {
+  color: var(--ws-ink-mute);
+  transition: color 160ms var(--ws-ease);
+}
+
+.ws-quiet:hover {
+  color: var(--ws-ink);
+}
+
+.ws-skeleton {
+  background-color: var(--ws-tint-strong);
+}
+
+/* ── Status dots ─────────────────────────────────────────────────────────
+   Same emerald/rose/neutral the v2 shell used; a running session gets a
+   small spinner instead of the old breathing halo — live states spin, static
+   states stay put. Every session row reserves the SAME slot for its mark, so
+   the 12px spinner and the 6px dot hold identical layout width and the names
+   in the list line up column-to-column whichever state a row is in. */
+.ws-status-slot {
+  /* A TRAILING mark now, beside the timestamp — not a leading one. A chat's
+     status is metadata like its time, and putting it at the head of the row was
+     what made every chat name start a slot right of every course name. The box
+     stays fixed so the 12px spinner and the 6px dot hold identical width and a
+     running row does not shift its neighbours. */
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+
+.ws-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  /* A 6px graphic still has to be seen: `faint` is for rules, not for the mark
+     that tells you a chat finished. */
+  background: var(--ws-ink-mute);
+}
+
+.ws-spin-live {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: var(--ws-live);
+  animation: ws-spin 0.9s linear infinite;
+}
+
+.ws-dot-fail {
+  background: var(--ws-fail);
+}
+
+@keyframes ws-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── The composer ────────────────────────────────────────────────────────
+   The classic face's chrome, given a focused state worth having. Applied
+   through ProLaunchPanel's existing `workspace` variant, so `/` is untouched. */
+.ws-composer {
+  background-color: var(--ws-surface);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid var(--ws-line);
+  border-radius: 16px;
+  box-shadow: var(--ws-lift);
+  transition:
+    border-color 220ms var(--ws-ease),
+    box-shadow 260ms var(--ws-ease),
+    transform 260ms var(--ws-ease);
+}
+
+.ws-composer:hover {
+  border-color: rgba(15, 23, 42, 0.15);
+}
+
+.dark .ws-composer:hover {
+  border-color: rgba(255, 255, 255, 0.17);
+}
+
+.ws-composer:focus-within {
+  border-color: transparent;
+  box-shadow: var(--ws-lift-focus);
+  transform: translateY(-1px);
+}
+
+.ws-composer textarea::placeholder {
+  color: var(--ws-ink-mute);
+  opacity: 0.75;
+}
+
+/* ── Entrance ────────────────────────────────────────────────────────────
+   One orchestrated load, four beats. `both` holds the from-state through the
+   delay, which is why the reduced-motion block has to hand opacity back. */
+@keyframes ws-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ws-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.ws-enter {
+  animation: ws-rise 620ms var(--ws-ease) both;
+}
+
+.ws-enter-rail {
+  animation: ws-fade 500ms var(--ws-ease) both;
+}
+
+.ws-d1 {
+  animation-delay: 40ms;
+}
+.ws-d2 {
+  animation-delay: 150ms;
+}
+.ws-d3 {
+  animation-delay: 260ms;
+}
+.ws-d4 {
+  animation-delay: 380ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-enter,
+  .ws-enter-rail {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .ws-spin-live {
+    animation: none;
+  }
+
+  .ws-composer:focus-within,
+  .ws-new:hover {
+    transform: none;
+  }
+}
+
+/* ── The opening block ──────────────────────────────────────────────────
+   Lockup and composer, and then the feed right under them. Not a screen: a
+   block that ends where its content ends.
+
+   Two earlier rounds are buried in this rule. The first packed the whole feed
+   into one viewport and made the front door read as a page with a search box
+   on it. The second gave the group a full viewport of its own — `min-height:
+   100dvh` and `justify-content: center` — which fixed the hero and created a
+   worse problem underneath it: ~250px of reserved nothing between the composer
+   and the section head, there for no reason except that the box had promised
+   to be a screen tall.
+
+   So the group keeps the POSITION that centring gave it and loses the box that
+   reserved the space. `48vh - 127px` is not a magic number: it is what
+   `(100dvh - lift - content)/2` evaluates to for this content, algebraically,
+   across every window between roughly 600px and 1100px tall. Stating it as a
+   top offset rather than as centring buys two things — the block stops
+   reserving height it does not use, and a composer that grows while you type
+   pushes DOWN instead of dragging the lockup up the screen.
+
+   `max()` is the short-window floor: under about 320px of window the formula
+   goes negative, and the lockup must not be pushed off the top of the scroll
+   origin. Below `md` the compact exit bar takes 48px off the column, and
+   `--ws-home-chrome` gives it back so the group does not sit lower there. */
+.ws-home-first {
+  --ws-home-pad: clamp(24px, 4vh, 48px);
+  /* Ordinary section spacing, in tens of pixels. This is the whole gap between
+     the composer and the discover head now — the feed follows the composer
+     rather than waiting a screen for it. */
+  --ws-home-gap: clamp(48px, 7vh, 88px);
+
+  display: flex;
+  flex-direction: column;
+  padding-top: max(var(--ws-home-pad), calc(48vh - 127px - var(--ws-home-chrome, 0px) / 2));
+  padding-bottom: var(--ws-home-gap);
+}
+
+@media (max-width: 767px) {
+  .ws-home-first {
+    --ws-home-chrome: 48px;
+  }
+}
+
+/* ── Featured seam ───────────────────────────────────────────────────────
+   Nothing to draw and nothing to correct. The feed starts one ordinary section
+   gap under the composer (`--ws-home-gap` above), so the head is on screen
+   without scrolling and says for itself what is below it. The chevron that
+   used to point across the old gap went with the gap: an arrow aimed at
+   content the reader can already see is a caption on a photograph of itself.
+   What is left here is the positioning context. */
+.ws-featured {
+  position: relative;
+}
+
+/* ── The hero lockup ─────────────────────────────────────────────────────
+   The workspace's identity mark, not its billboard. `logo-horizontal.png` is
+   1232×269, so an unsized `<img>` renders at 269px tall and turns the page
+   into a splash screen — the height below is what keeps the composer the
+   protagonist. Fixed pixels, deliberately: a viewport-relative hero grows on
+   a wide monitor, which is exactly where a 760px column can least afford it.
+
+   For scale: the rail's wordmark is 21px, the classic homepage hero is 48–64px
+   (a full page with nothing under it). The first cut of this surface took the
+   bottom of that range and went under it — 40px is a browser-tab favicon, and
+   a page whose masthead weighs nothing is top-light no matter what sits below.
+   46/56px is the correction: at 4.58:1 the wordmark lands 256px wide against a
+   760px composer, about a third of it, which is the proportion that makes the
+   two read as one lockup instead of a caption over a box. */
+.ws-hero-logo {
+  height: 46px;
+  width: auto;
+  max-width: 100%;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+@media (min-width: 768px) {
+  .ws-hero-logo {
+    height: 56px;
+  }
+}
+
+/* One line under the mark, at the ink ramp's quiet step — a subtitle, not a
+   second headline. It steps up with the mark: 13px under a 56px wordmark reads
+   as fine print rather than as the lockup's own line. */
+.ws-tagline {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ws-ink-mute);
+}
+
+/* ── The hero mark ───────────────────────────────────────────────────────
+   The wordmark already sits in the rail, so the hero takes the mark alone:
+   the page gets the weight it was missing without saying the product's name
+   twice. Modest — roughly two line-heights of the headline — and lit from
+   below by the same violet the canvas pool uses, so it belongs to the light
+   rather than sitting on top of it. */
+.ws-hero-mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  filter: drop-shadow(0 6px 14px rgba(124, 58, 237, 0.22))
+    drop-shadow(0 1px 2px rgba(15, 23, 42, 0.1));
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.dark .ws-hero-mark {
+  filter: drop-shadow(0 6px 18px rgba(167, 139, 250, 0.26))
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+}
+
+/* ── The tab switch ──────────────────────────────────────────────────────
+   Chat | courses, over one body — a SEGMENTED CONTROL of two equal halves.
+
+   It used to be an underline strip sized to its labels and parked at the left,
+   because a filled segment "reads as a mode" while tabs read as views. Two
+   lists that take turns owning the whole body ARE a mode, and at rail width
+   the underline was the quietest mark in a column of louder ones: the selected
+   tab took a 2px hairline while every row below it could take a filled pill.
+   So the switch spends the width it has — one tinted track, two equal halves,
+   the selected half lifted onto a solid ground with a hairline and a contact
+   shadow. Same materials as the compose button above it (surface + line +
+   `lift-sm`), one notch of the accent kept for the selected count, so the
+   strip is louder without introducing a colour the rail does not already own.
+
+   The track is `mx-3`, flush with the compose button and the findrow, so the
+   three stack as one control column.
+
+   Equal halves cost the wider label its last characters — that was the whole
+   objection to them — and the fix is TYPE, not width (see `.ws-navtab-label`
+   below), which buys back roughly a third of the label's box. */
+.ws-navtabs {
+  height: 34px;
+  padding: 3px;
+  gap: 3px;
+  border-radius: 10px;
+  background-color: var(--ws-tint);
+  box-shadow: inset 0 0 0 1px var(--ws-line-soft);
+}
+
+/* Two halves, always: `flex: 1 1 0` (not `auto`) so the wider label cannot
+   claim more of the track than the narrower one, and `min-width: 0` so it
+   truncates inside its own half instead of pushing the track open. */
+.ws-navtab {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--ws-ink-mute);
+  transition:
+    color 160ms var(--ws-ease),
+    background-color 160ms var(--ws-ease),
+    box-shadow 160ms var(--ws-ease);
+}
+
+/* The unselected half stays quiet — it is the other view, not a second
+   destination competing with the one you are reading. */
+.ws-navtab:hover:not([aria-selected='true']) {
+  color: var(--ws-ink-soft);
+  background-color: var(--ws-tint);
+}
+
+.ws-navtab:focus-visible {
+  outline: none;
+  color: var(--ws-ink);
+  box-shadow:
+    0 0 0 1px var(--ws-accent-thread),
+    0 0 0 3px var(--ws-accent-wash);
+}
+
+/* The selected half. A solid ground rather than a mark drawn under the label:
+   at 200px a 2px underline is the quietest mark in a column of louder ones. */
+.ws-navtab[aria-selected='true'] {
+  color: var(--ws-ink);
+  background-color: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    inset 0 0 0 1px var(--ws-line-soft),
+    var(--ws-lift-sm);
+}
+
+/* Dark inverts which way "raised" points: a chip that is DARKER than its track
+   reads as a hole, so the selected half goes up the white ramp instead, and
+   drops the cast shadow (a shadow on slate-900 is noise, not lift). */
+.dark .ws-navtab[aria-selected='true'] {
+  background-color: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px var(--ws-line);
+}
+
+.ws-navtab[aria-selected='true'] .ws-navtab-label {
+  font-weight: 600;
+}
+
+/* Sentence case at 11px, no tracking — NOT the rail's 10px uppercase section
+   label. That label was built for a full-width heading with the whole rail to
+   spread over; inside half of a 200px track, 0.145em of tracking on seven
+   uppercase characters is the difference between "Courses" and "COU…".
+   It stays a label by size and by ink, not by case. */
+.ws-navtab-label {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.005em;
+  color: inherit;
+}
+
+/* ── Find, under the tabs ────────────────────────────────────────────────
+   The prototype's findrow, copied in form and density: one always-visible
+   icon+input row heading the tab content, filtering whichever list the
+   active tab shows. 30px, tint ground, radius 8 — and the focus state lifts
+   it onto the panel surface with the violet thread and wash, the same
+   sentence the composer speaks. */
+.ws-find {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 8px;
+  background-color: var(--ws-tint);
+  border: 1px solid transparent;
+  color: var(--ws-ink-mute);
+  transition:
+    background-color 160ms var(--ws-ease),
+    border-color 160ms var(--ws-ease),
+    box-shadow 160ms var(--ws-ease);
+}
+
+.ws-find:focus-within {
+  background-color: var(--ws-surface);
+  border-color: var(--ws-accent-thread);
+  box-shadow: 0 0 0 3px var(--ws-accent-wash);
+}
+
+.ws-find-input {
+  border: 0;
+  background: none;
+  outline: none;
+  width: 100%;
+  font-size: 13px;
+  color: var(--ws-ink);
+}
+
+.ws-find-input::placeholder {
+  color: var(--ws-ink-mute);
+}
+
+/* The header row's icon button — the new-folder button on the courses tab. The
+   find input's own height, so the two read as one control group. */
+.ws-find-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--ws-ink-mute);
+  transition:
+    background-color 160ms var(--ws-ease),
+    color 160ms var(--ws-ease);
+}
+
+.ws-find-icon:hover {
+  background-color: var(--ws-tint);
+  color: var(--ws-ink);
+}
+
+.ws-find-icon:focus-visible {
+  outline: none;
+  color: var(--ws-ink);
+  box-shadow: 0 0 0 1px var(--ws-accent-thread);
+}
+
+/* Folder creation and renaming are one row in the tree, with the input starting
+   in the same column as the names around it (the row reserves the rail's
+   leading slot). Focus stays inside that row instead of promoting it into a
+   detached input card. */
+.ws-inline-folder {
+  color: var(--ws-ink-mute);
+  transition:
+    background-color 160ms var(--ws-ease),
+    box-shadow 160ms var(--ws-ease);
+}
+
+.ws-inline-folder:focus-within {
+  background-color: var(--ws-tint);
+  box-shadow: inset 0 0 0 1px var(--ws-accent-thread);
+}
+
+.ws-inline-folder-input {
+  width: 100%;
+  border: 0;
+  background: none;
+  outline: none;
+  font-size: 12.5px;
+  color: var(--ws-ink);
+  caret-color: var(--ws-accent);
+}
+
+.ws-inline-folder-input::placeholder {
+  color: var(--ws-ink-mute);
+}
+
+.ws-inline-folder-input:disabled {
+  cursor: wait;
+}
+
+.ws-inline-folder-action {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  /* The tree rows carry no flex gap (the leading slot is the row's only one),
+     so the confirm/cancel pair states its own spacing here. */
+  margin-left: 4px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--ws-ink-mute);
+  transition:
+    background-color 160ms var(--ws-ease),
+    color 160ms var(--ws-ease),
+    opacity 160ms var(--ws-ease);
+}
+
+.ws-inline-folder-action:hover:not(:disabled) {
+  background-color: var(--ws-tint);
+  color: var(--ws-ink);
+}
+
+.ws-inline-folder-action:focus-visible {
+  outline: none;
+  color: var(--ws-ink);
+  box-shadow: 0 0 0 1px var(--ws-accent-thread);
+}
+
+.ws-inline-folder-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.ws-inline-folder-error {
+  /* Under the input it belongs to, starting in the same column as the folder
+     name above it: `0.5rem` is the row's own `px-2`, then the leading glyph slot
+     and its air. */
+  padding-left: calc(0.5rem + var(--ws-tree-lead) + var(--ws-tree-lead-gap));
+  color: var(--ws-fail);
+  font-size: 10.5px;
+  line-height: 14px;
+}
+
+/* Folder glyphs: present, never loud. */
+.ws-glyph {
+  color: var(--ws-ink-mute);
+}
+
+/* ── The classroom picker ────────────────────────────────────────────────── */
+.ws-cmenu-row {
+  height: var(--ws-cmenu-row-h);
+}
+
+/* One flat list, so the window is exactly N rows tall — no sticky section
+   labels eating a row, and no half-row at rest. */
+.ws-cmenu-scroll {
+  max-height: calc(var(--ws-cmenu-row-h) * var(--ws-cmenu-rows));
+  scrollbar-width: thin;
+}
+
+.ws-cmenu-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.ws-cmenu-scroll::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--ws-line);
+}
+
+.ws-cmenu-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* The leading glyph slot — only on rows that carry a glyph (a folder, a folder
+   being created). Courses, chats and pager rows have no leading element at all,
+   so their names begin at the row's own `px-2`: the panel edge, which is where
+   the eye already is. A folder's name sits one glyph further in, and that offset
+   IS the hierarchy — it is not a misalignment to be padded away on every other
+   row. */
+.ws-tree-lead {
+  display: grid;
+  place-items: center;
+  flex: 0 0 var(--ws-tree-lead);
+  width: var(--ws-tree-lead);
+  margin-right: var(--ws-tree-lead-gap);
+  color: var(--ws-ink-mute);
+}
+
+/* Every row in the tree, folders and courses alike. */
+.ws-tree-row {
+  height: var(--ws-tree-row-h);
+}
+
+/* Nested rows sit ONE step in, and the step is a margin — nothing else. There
+   used to be a guide line here (a `border-left`, plus the 6px of padding that
+   held it off the names), which is exactly the kind of vertical rule this tree
+   does not use: depth is one modest inset under the folder row that owns it. */
+.ws-nest {
+  margin-left: var(--ws-tree-indent);
+}
+
+/* The tree's top level holds two kinds of row: folders, and the courses that
+   are in no folder. The loose run takes no indent — an inset would put it at a
+   folder member's depth and read as membership in the folder above it — so the
+   only thing marking the change of kind is space, and enough of it to read as a
+   break rather than a nudge. Padding, not a margin: this div is a child of a
+   `space-y-px` list, whose own margin rule outranks a single class. */
+.ws-loose {
+  padding-top: 10px;
+}
+
+/* Show-more / collapse — a plain line of quiet text belonging to the list it
+   extends, NOT a control with a glyph on it. It used to carry a chevron, which
+   made a pager row look like a third kind of disclosure in a tree that already
+   has one, and put its label in a column of its own. It reserves the rail's
+   leading slot instead, so the label starts exactly where the names above it
+   do. */
+.ws-more {
+  color: var(--ws-ink-mute);
+  font-weight: 500;
+  border-radius: 8px;
+  transition:
+    background-color 160ms var(--ws-ease),
+    color 160ms var(--ws-ease);
+}
+
+.ws-more:hover {
+  background-color: var(--ws-tint);
+  color: var(--ws-ink);
+}
+
+.ws-more:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ws-accent-thread);
+}
+
+/* ── Row + its hover-revealed action ─────────────────────────────────────
+   The action is a SIBLING of the row button (no nested buttons), so the wrap
+   carries the hover state for both. */
+.ws-row-wrap:hover .ws-row,
+.ws-row-wrap:focus-within .ws-row {
+  background-color: var(--ws-tint);
+  color: var(--ws-ink);
+}
+
+.ws-row-wrap {
+  transform-origin: center;
+  transition:
+    transform 160ms var(--ws-ease),
+    box-shadow 160ms var(--ws-ease);
+}
+
+/* The action takes the metadata's slot rather than pushing it: re-truncating
+   the name on hover would make every row twitch as the pointer crossed it. The
+   two occupy the same reserved footprint (`.ws-row-meta`'s `min-width` is this
+   button's width) and the action is out of flow entirely, so the name's usable
+   width is identical at rest and on hover.
+   Scoped to rows that HAVE an action — a chat row in the read-only drawer has
+   none, so its metadata would otherwise vanish on hover for nothing. */
+.ws-row-wrap-actionable:hover .ws-row-meta,
+.ws-row-wrap-actionable:focus-within .ws-row-meta {
+  opacity: 0;
+}
+
+.ws-row-trailing {
+  opacity: 0;
+  transition: opacity 160ms var(--ws-ease);
+}
+
+.ws-row-wrap:hover .ws-row-trailing,
+.ws-row-trailing:focus-within {
+  opacity: 1;
+}
+
+/* Revealed on hover — a per-row ⋯ shown on all 139 rows at once would be a
+   column of noise — but once revealed it has to look pressable, which a bare
+   grey glyph did not. It gets the rail's own surface and a hairline. */
+.ws-row-action {
+  color: var(--ws-ink-mute);
+  background-color: var(--ws-raised);
+  box-shadow: 0 0 0 1px var(--ws-line);
+  transition:
+    background-color 160ms var(--ws-ease),
+    color 160ms var(--ws-ease);
+}
+
+.ws-row-action:hover {
+  background-color: var(--ws-raised);
+  color: var(--ws-ink);
+  box-shadow:
+    0 0 0 1px var(--ws-line),
+    var(--ws-lift-sm);
+}
+
+.ws-row-action:focus-visible {
+  outline: none;
+  color: var(--ws-ink);
+  box-shadow: 0 0 0 1px var(--ws-accent-thread);
+}
+
+/* ── Rail foot ───────────────────────────────────────────────────────────
+   SiteHeader's own widgets, dropped into the rail. They bring their own
+   (grey-ramp) styling; this only quiets them to the rail's contrast and gives
+   the cluster a divider of the rail's own kind. */
+.ws-utils {
+  color: var(--ws-ink-mute);
+}
+
+.ws-utils-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--ws-line);
+}
+
+/* ── Resize handle ───────────────────────────────────────────────────────
+   A 6px hit strip straddles each pane edge, but the only visible affordance is
+   the seam itself: a fine resting thread that strengthens on hover. On a seam
+   that can collapse from its seam — the navigation rail, and only it — the same
+   hover reveals its sibling grip. Everything else folds from its own pane
+   header (`PaneFoldButton`): a seam between two collapsible panes can only ever
+   speak for one of them, and carrying both put two reversed chevrons at one
+   height next to a third. */
+.ws-resize {
+  touch-action: none;
+}
+
+.ws-resize-thread {
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--ws-line);
+  transition:
+    width 140ms var(--ws-ease),
+    background-color 140ms var(--ws-ease),
+    box-shadow 160ms var(--ws-ease);
+}
+
+.ws-resize:hover .ws-resize-thread,
+.ws-resize:focus-within .ws-resize-thread {
+  width: 2px;
+  background: var(--ws-ink-faint);
+}
+
+/* In flight. `data-ws-drag` is set on the handle being dragged, not on the
+   document — the document flag below is shared by every seam on the page, and
+   lighting all of them up while one is moving is a lie about what is
+   happening. Released, both attributes go and the seam settles back. */
+.ws-resize[data-ws-drag='true'] .ws-resize-thread {
+  width: 2px;
+  background: var(--ws-accent);
+  box-shadow: 0 0 0 3px var(--ws-accent-wash);
+}
+
+/* While dragging, the cursor must not flicker as the pointer crosses elements
+   and nothing may select under it — both are set on the document, because the
+   pointer is captured and can travel far outside the handle. */
+[data-ws-resizing] {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+/* A narrow workspace shows one content pane at a time. When the classroom is
+   the visible pane, its chat-return tab lands on the navigation edge: that is
+   the nav/classroom seam, not a second strip beside it. Centre the existing
+   right-pointing return control on the thread; clicking it switches focus to
+   chat, which is the narrow-layout form of folding the classroom on the right.
+   Nothing has to be suppressed alongside it any more — the rail's fold moved
+   into its own header, so the seam carries only the resize thread. */
+.ws-root:has(> .ws-tab:not(.ws-pane-last)) > .ws-tab:not(.ws-pane-last) {
+  z-index: 30;
+  margin-inline: -15px;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+
+.ws-root:has(> .ws-tab:not(.ws-pane-last)) > .ws-tab:not(.ws-pane-last):hover {
+  background-color: transparent;
+}
+
+.ws-root:has(> .ws-tab:not(.ws-pane-last):hover) > .ws-rail .ws-resize-thread,
+.ws-root:has(> .ws-tab:not(.ws-pane-last):focus-visible) > .ws-rail .ws-resize-thread {
+  width: 2px;
+  background: var(--ws-ink-faint);
+}
+
+/* No transition on the rail's width: it is driven straight from the pointer,
+   and easing a value that already tracks the cursor only adds lag. */
+@media (prefers-reduced-motion: reduce) {
+  .ws-row-wrap,
+  .ws-row-trailing,
+  .ws-navtab::after {
+    transition: none;
+  }
+}
+
+/* The open course / the attached conversation: the SAME neutral pill hover
+   draws, one step stronger and permanent. No accent bar, no border, no second
+   colour — "what am I looking at" is answered by one fill that covers the whole
+   row, which is also why selection cannot shift a single pixel of the text. */
+.ws-row-active {
+  color: var(--ws-ink);
+  background: var(--ws-tint-strong);
+}
+
+/* ── Panes ───────────────────────────────────────────────────────────────
+   The three-pane surface: navigation, conversation, classroom. Each is an
+   independent column with its own header and its own collapse, and each is
+   made of the SAME materials the rail already uses — glass over the canvas
+   gradient, a hairline seam, the slate ramp. Nothing here is a new visual
+   idea; the pane is a rail that happens to be wide.
+
+   The seam is `inset box-shadow` rather than `border`, for the reason the
+   rail's is: a border participates in layout, so a resizing column would
+   twitch by a pixel as it is dragged. */
+.ws-pane {
+  position: relative;
+  min-height: 0;
+  background-color: var(--ws-surface);
+  background-image: var(--ws-grain);
+  box-shadow: inset -1px 0 0 0 var(--ws-line-soft);
+}
+
+/* The last column carries no right seam — it ends at the window. */
+.ws-pane-last {
+  box-shadow: none;
+}
+
+/* Pane headers. One row, one height for every pane (`--ws-pane-head-h`), the
+   same label/ink ramp as a rail section head: the panes are chrome, and chrome
+   that competes with the content it frames is the thing this pass keeps
+   removing.
+
+   The height lives ONLY here. A pane that sets its own would break the one
+   thing this row has to get right — the bottom hairline running unbroken across
+   the seam, with both fold chevrons on one baseline. */
+.ws-pane-head {
+  height: var(--ws-pane-head-h);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0));
+  box-shadow: inset 0 -1px 0 0 var(--ws-line-soft);
+}
+
+.dark .ws-pane-head {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0));
+}
+
+/* The classroom's controls share one compact browser-chrome row. Its body then
+   starts on the 4px spacing scale instead of inheriting a roomy studio top
+   inset on top of the pane header.
+
+   The studio frame keeps `ContainBox`'s default centre-centre fit, so the
+   16:9 slide and the pager that rides its lower edge hang together as one
+   group in the middle of the pane. Top-aligning the host here was a dead-band
+   workaround (975032d594) whose real culprit — a redundant header — is gone:
+   with the slide top-aligned and the pager frame-anchored, a tall pane put
+   the slide at the top and the pager at the bottom, scattering one page's
+   chrome across the pane. The 12px frame padding stays the only gap between
+   pane chrome and content. */
+.ws-classroom-head {
+  gap: 6px;
+}
+
+.ws-classroom-body [data-maic-studio-frame='true'] {
+  padding-top: 12px;
+}
+
+/* SlideNavRail inside the workbench panel drops its standalone-classroom
+   header (`h-10 + mt-3 + mb-1`) entirely — the header's only panel child was
+   the collapse control, which now lives as a chevron on the rail/slide
+   boundary (see SlideNavRail.tsx) — so the first thumbnail starts on the same
+   12px rhythm as the canvas with no overlay positioning needed. The chevron
+   is styled in the component: a bare faint 12px mark at the rail's right
+   edge, vertically centred, deliberately lighter than the pane-seam grip
+   above (no pill, no border, no boxed glyph — a whisper of ground on hover
+   only), because it marks a boundary INSIDE a pane, not a pane seam. */
+
+.ws-pane-eyebrow {
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ws-ink-mute);
+}
+
+.ws-pane-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--ws-ink);
+}
+
+.ws-pane-sub {
+  font-weight: 400;
+  color: var(--ws-ink-mute);
+}
+
+/* The read-only tell on a saved course. A chip, not a banner: the absence of
+   edit affordances is the real signal — this only names it. */
+.ws-readonly {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+  color: var(--ws-ink-soft);
+  background: var(--ws-tint);
+  box-shadow: inset 0 0 0 1px var(--ws-line-soft);
+}
+
+/* ── The right pane's tab strip ───────────────────────────────────────────
+   The header's name half, turned into a tablist. Multiple open courses cost no
+   new row of chrome: a persistent shelf was refused in the rail, and a second
+   row here would be the same mistake in a different pane. A hairline marks
+   where scope changes — everything LEFT of it acts on one tab, everything
+   RIGHT of it acts on the whole pane. That is the whole answer to the
+   ×-means-two-things problem browsers never solved.
+
+   SHRINK TO A FLOOR, THEN SCROLL. There is no cap on tabs, so the strip has to
+   degrade gracefully forever: a `min-width` floor below which a tab will not
+   compress, and `overflow-x` past it. The drawn scrollbar lives in the
+   header's existing height, so the header does not grow a row for it. The
+   native scrollbar is an overlay scrollbar here — 0px reserved, nothing painted until you are
+   already scrolling — hence suppressed and redrawn. */
+.ws-ctabs {
+  display: flex;
+  align-items: flex-start;
+  align-self: stretch;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  padding-top: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-behavior: smooth;
+  /* The fade is 26px wide, so scrolling a tab "into view" has to clear 26px or
+     it lands under the fade and arrives half-erased. */
+  scroll-padding-inline: 26px;
+  scrollbar-width: none;
+  background-repeat: no-repeat, no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.ws-ctabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* The drawn scrollbar: thumb layer over track layer. Only the size and the x
+   offset are set from JS; everything else stays here. The thumb is on the
+   `faint` step rather than a tint — it is 3px of decoration whose entire job is
+   to be NOTICED, and at a tint's 9% it measured invisible on screen. */
+.ws-ctabs:not([data-more='none']) {
+  background-image:
+    linear-gradient(var(--ws-ink-faint), var(--ws-ink-faint)),
+    linear-gradient(var(--ws-line), var(--ws-line));
+}
+
+/* A hard clip reads as damage; a fade reads as continuation. */
+.ws-ctabs[data-more='right'] {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent);
+}
+
+.ws-ctabs[data-more='left'] {
+  -webkit-mask-image: linear-gradient(270deg, #000 calc(100% - 26px), transparent);
+  mask-image: linear-gradient(270deg, #000 calc(100% - 26px), transparent);
+}
+
+.ws-ctabs[data-more='both'] {
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent,
+    #000 26px,
+    #000 calc(100% - 26px),
+    transparent
+  );
+  mask-image: linear-gradient(90deg, transparent, #000 26px, #000 calc(100% - 26px), transparent);
+}
+
+/* The floor is 86px, and it is derived, not guessed: 15px of padding leaves
+   71px of name, which is five CJK glyphs at 13px — four once the run dot has
+   taken its 12px. At 70px the name gets 32px, i.e. one character and an
+   apology. */
+.ws-ctab {
+  position: relative;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 86px;
+  max-width: 250px;
+  height: 31px;
+  padding: 0 6px 0 9px;
+  border-radius: 7px 7px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ws-ink-mute);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background-color 140ms var(--ws-ease),
+    color 140ms var(--ws-ease);
+}
+
+/* Browser tabs communicate selection through topology, not a louder chip. The
+   selected surface rises to the header edge and its short tail covers the
+   header hairline, visually joining the classroom below. It still gets more of
+   the row than the tabs you are not reading.
+
+   Its floor is 113px, not 86px: its × is permanently visible and permanently in
+   the name's padding, so 86 + 27 is what leaves it the same five glyphs its
+   neighbours get. At a uniform 86px every tab showed five characters except the
+   one you were reading, which showed two — the active tab must never identify
+   itself less well than the tabs beside it. */
+.ws-ctab-on {
+  flex: 1.6 1 auto;
+  min-width: 113px;
+  z-index: 1;
+  background: var(--ws-raised);
+  color: var(--ws-accent);
+  font-weight: 600;
+  box-shadow:
+    inset 1px 0 0 var(--ws-line),
+    inset -1px 0 0 var(--ws-line),
+    inset 0 1px 0 var(--ws-line),
+    0 -2px 7px -5px var(--ws-ink-faint);
+}
+
+.ws-ctab-on::after {
+  position: absolute;
+  right: 0;
+  bottom: -5px;
+  left: 0;
+  height: 5px;
+  content: '';
+  background: var(--ws-raised);
+  box-shadow:
+    inset 1px 0 0 var(--ws-line),
+    inset -1px 0 0 var(--ws-line);
+}
+
+/* Only background tabs divide from one another. The active surface already
+   supplies a stronger, structural boundary at either edge. */
+.ws-ctab:not(.ws-ctab-on) + .ws-ctab:not(.ws-ctab-on)::before {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  width: 1px;
+  content: '';
+  background: var(--ws-line);
+}
+
+.ws-ctab:not(.ws-ctab-on):hover {
+  background: var(--ws-tint-strong);
+  color: var(--ws-ink-soft);
+}
+
+.ws-ctab:focus-visible {
+  outline: 2px solid var(--ws-accent);
+  outline-offset: -2px;
+}
+
+.ws-ctab-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* Per-tab close. It is OUT OF FLOW, which is a stronger guarantee than
+   reserving space for it: out-of-flow cannot affect any width, so the invariant
+   "revealing × never moves a tab" holds by construction rather than by
+   discipline, and every tab spends those 23px on its name instead.
+   A PERMANENT CONTROL GETS A PERMANENT SLOT; A TRANSIENT ONE BORROWS. On the
+   selected tab the × is always visible, so the name reserves 23px of padding
+   and text never runs beneath it. On the others it appears only under hover or
+   focus and borrows the tail of the name for as long as it is there.
+   Selectedness does not change on hover, so neither geometry does.
+
+   THE × MUST NOT SHOUT. It is an exit affordance, not a label — on the
+   selected tab, where it is permanently visible, it rests at MUTED ink pulled
+   down to 60% opacity with no chip, so the eye lands on the course name, not
+   on the way out. Hovering the tab, either tab, is what arms it: soft ink at
+   90% on a raised chip. Pointing directly at the × goes to full ink at full
+   opacity. One register for every tab, active or not — the accent belongs to
+   the tab's identity, never to its close glyph. */
+.ws-ctab-x {
+  position: absolute;
+  z-index: 2;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: inherit;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    background-color 130ms var(--ws-ease),
+    color 130ms var(--ws-ease),
+    opacity 130ms var(--ws-ease);
+}
+
+.ws-ctab-on .ws-ctab-name {
+  padding-right: 27px;
+}
+
+.ws-ctab-on .ws-ctab-x {
+  color: var(--ws-ink-mute);
+  opacity: 0.6;
+  pointer-events: auto;
+}
+
+/* Because it can sit on top of the name, a visible × carries its own chip so it
+   never reads as a glyph in the title. The chip has to read RAISED in both
+   themes: white is a step up from the light tab's tint, but in dark mode the
+   panel colour is DARKER than the tab's hover tint and reads recessed, so dark
+   mode lifts with light instead of painting a surface. */
+.ws-ctab:hover .ws-ctab-x,
+.ws-ctab:focus-within .ws-ctab-x {
+  color: var(--ws-ink-soft);
+  opacity: 0.9;
+  pointer-events: auto;
+  background: var(--ws-raised);
+  box-shadow: 0 0 0 1px var(--ws-line-soft);
+}
+
+.dark .ws-ctab:hover .ws-ctab-x,
+.dark .ws-ctab:focus-within .ws-ctab-x {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+/* Directly over the × it goes to full ink at full opacity — still on a chip.
+   The scope is repeated so this outranks the armed state above (4 classes to
+   3): pointing at the × is the one action that must read as unmistakably
+   armed. */
+.ws-ctab:hover .ws-ctab-x:hover,
+.ws-ctab:focus-within .ws-ctab-x:hover {
+  color: var(--ws-ink);
+  opacity: 1;
+}
+
+.dark .ws-ctab:hover .ws-ctab-x:hover,
+.dark .ws-ctab:focus-within .ws-ctab-x:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* Where the strip's scope ends and the pane's begins. */
+.ws-ctabs-rule {
+  flex: 0 0 1px;
+  width: 1px;
+  height: 20px;
+  margin: 0 2px;
+  background: var(--ws-line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-ctabs {
+    scroll-behavior: auto;
+  }
+
+  .ws-ctab,
+  .ws-ctab-x {
+    transition: none;
+  }
+}
+
+/* ── Collapse tabs ───────────────────────────────────────────────────────
+   A collapsed pane leaves one narrow button with the same 30px surface pill
+   and reversed chevron permanently visible. The strip remains the generous
+   hit target; the pill makes that single action unmistakable. */
+.ws-tab {
+  position: relative;
+  width: 30px;
+  background-color: var(--ws-rail);
+  background-image: var(--ws-grain);
+  box-shadow: inset -1px 0 0 0 var(--ws-line-soft);
+  color: var(--ws-ink-mute);
+  transition:
+    background-color 160ms var(--ws-ease),
+    color 160ms var(--ws-ease);
+}
+
+.ws-tab::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-top: 1.75px solid currentColor;
+  border-right: 1.75px solid currentColor;
+  opacity: 0.72;
+  transform: translate(-65%, -50%) rotate(45deg);
+  transition:
+    color 160ms var(--ws-ease),
+    opacity 160ms var(--ws-ease);
+}
+
+.ws-tab::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 30px;
+  border: 1px solid var(--ws-line);
+  border-radius: 9px;
+  transform: translate(-50%, -50%);
+  background: var(--ws-raised);
+  box-shadow: var(--ws-lift-sm);
+  transition:
+    border-color 160ms var(--ws-ease),
+    box-shadow 160ms var(--ws-ease),
+    transform 160ms var(--ws-ease);
+}
+
+.ws-tab.ws-pane-last::after {
+  transform: translate(-35%, -50%) rotate(-135deg);
+}
+
+.ws-tab:hover {
+  background-color: var(--ws-tint);
+  color: var(--ws-ink);
+}
+
+.ws-tab:hover::after,
+.ws-tab:focus-visible::after {
+  color: var(--ws-ink-soft);
+  opacity: 1;
+}
+
+.ws-tab:focus-visible::before {
+  border-color: var(--ws-accent-thread);
+  box-shadow:
+    0 0 0 3px var(--ws-accent-wash),
+    var(--ws-lift-sm);
+}
+
+.ws-tab:active::after {
+  color: var(--ws-accent);
+}
+
+.ws-tab:active::before {
+  border-color: var(--ws-accent-thread);
+  transform: translate(-50%, -50%) scale(0.96);
+}
+
+.ws-tab:focus-visible {
+  outline: none;
+  box-shadow:
+    inset -1px 0 0 0 var(--ws-line-soft),
+    inset 0 0 0 1px var(--ws-accent-thread);
+}
+
+.ws-tab-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+/* Full-screen classroom playback hosts this existing control inside the
+   classroom chrome. It inherits the rail row's quiet ghost language: compact
+   by default, a soft tint only on hover. The ArrowLeft's shaft is hidden so
+   the visible mark is the requested chevron-left from the same Lucide path. */
+.ws-root [data-testid='workbench-return'] {
+  height: 28px;
+  gap: 4px;
+  padding: 0 7px;
+  border-radius: 7px;
+  color: var(--ws-ink-mute);
+  background: transparent;
+  transition:
+    background-color 160ms var(--ws-ease),
+    color 160ms var(--ws-ease);
+}
+
+.ws-root [data-testid='workbench-return']:hover {
+  color: var(--ws-ink);
+  background: var(--ws-tint);
+}
+
+.ws-root [data-testid='workbench-return']:focus-visible {
+  outline: none;
+  color: var(--ws-ink);
+  background: var(--ws-tint);
+  box-shadow: 0 0 0 1px var(--ws-accent-thread);
+}
+
+.ws-root [data-testid='workbench-return'] svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ws-root [data-testid='workbench-return'] svg path:last-child {
+  display: none;
+}
+
+/* ── Slim navigation rail ────────────────────────────────────────────────
+   The collapsed navigation: icons only, same glass, same hover pill. */
+.ws-mini {
+  width: 60px;
+}
+
+.ws-mini-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  color: var(--ws-ink-mute);
+  transition:
+    background-color 160ms var(--ws-ease),
+    color 160ms var(--ws-ease);
+}
+
+.ws-mini-btn:hover {
+  background: var(--ws-tint);
+  color: var(--ws-ink);
+}
+
+.ws-mini-btn[aria-current='true'] {
+  background: var(--ws-accent-wash);
+  color: var(--ws-accent);
+}
+
+.ws-mini-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ws-accent-thread);
+}
+
+/* ── The wordmark, as a link ─────────────────────────────────────────────
+   It has to read as pressable without becoming a button beside the PRO pill,
+   so the affordance is the rail's own hover tint and nothing else. */
+.ws-home {
+  border-radius: 8px;
+  transition: background-color 160ms var(--ws-ease);
+}
+
+.ws-home:hover {
+  background: var(--ws-tint);
+}
+
+.ws-home:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ws-accent-thread);
+}
+
+/* ── Utility overflow ────────────────────────────────────────────────────
+   The ⋯ matches its neighbours in the foot, which are SiteHeader's 32px
+   round ghost buttons — a differently-shaped sibling would read as a
+   different kind of thing. */
+.ws-util-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9999px;
+  color: var(--ws-ink-mute);
+  transition:
+    background-color 160ms var(--ws-ease),
+    color 160ms var(--ws-ease);
+}
+
+.ws-util-btn:hover {
+  background: var(--ws-tint);
+  color: var(--ws-ink);
+}
+
+.ws-util-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ws-accent-thread);
+}
+
+/* The panel is portalled to `.ws-root` and positioned against the viewport,
+   so it is never clipped by the rail's scrolling body nor re-based by the
+   rail's backdrop-filter. `z-index` clears the rail (10) and the panes. */
+.ws-pop {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: max-content;
+  padding: 4px 6px;
+  border-radius: 12px;
+  border: 1px solid var(--ws-line);
+  background-color: var(--ws-raised);
+  background-image: var(--ws-grain);
+  box-shadow: var(--ws-lift);
+  animation: ws-pop-in 140ms var(--ws-ease) both;
+}
+
+.ws-pop:focus {
+  outline: none;
+}
+
+/* One row, in the same order and at the same size as the foot cluster it
+   continues — the overflow is the rest of that cluster, not a second kind of
+   menu. */
+.ws-pop-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+@keyframes ws-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* SiteHeader's own dropdowns open downward and are right-aligned, which at the
+   foot of a full-height rail is off the bottom of the window and — for a
+   control sitting 100px from the left edge — off the left of it too. Inside
+   the rail's utility clusters they open upward and hang to the right instead.
+   Radix-based menus position themselves and are unaffected. */
+.ws-utils [class~='top-full'] {
+  top: auto;
+  bottom: 100%;
+  left: 0;
+  right: auto;
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+/* ── Drag to reorder ─────────────────────────────────────────────────────
+   The drop affordance is one accent line where the row will land — not a ghost
+   card, not a gap that opens: the tree must not reflow under a pointer that
+   has not committed to anything yet. */
+.ws-row-wrap.ws-drop-before::after,
+.ws-row-wrap.ws-drop-after::after {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  left: 2px;
+  right: 2px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--ws-accent);
+  box-shadow: 0 0 0 3px var(--ws-accent-wash);
+  pointer-events: none;
+}
+
+.ws-row-wrap.ws-drop-before::after {
+  top: -1px;
+}
+
+.ws-row-wrap.ws-drop-after::after {
+  bottom: -1px;
+}
+
+/* The carried row lifts above the tree without opening a layout gap. Transform
+   keeps the gesture compositor-only; the opaque raised surface lets the
+   shadow read against both the light and dark rails. */
+.ws-row-dragging {
+  z-index: 4;
+  border-radius: 8px;
+  transform: scale(1.018);
+  box-shadow: var(--ws-lift-sm-hover);
+}
+
+.ws-row-dragging .ws-row {
+  background-color: var(--ws-raised);
+  color: var(--ws-ink);
+}
+
+/* A folder is not an insertion point, it is a container: it lights up whole
+   rather than growing a line. */
+.ws-drop-into {
+  background-color: var(--ws-accent-wash);
+  box-shadow:
+    inset 0 0 0 1px var(--ws-accent-thread),
+    0 0 0 3px var(--ws-accent-wash);
+}
+
+/* The blank ground under the tree, as the "leave the folder" destination.
+   Invisible at rest — it reads as the list's own breathing room — and stated
+   only while a course is actually being carried. Finder's rule: you can always
+   drop something back out into the window's empty space, but the space does not
+   advertise itself when there is nothing in your hand.
+
+   STICKY, and inert until armed. On this account the tree is 139 rows deep, so
+   a zone that only existed at the end of the scrolled content would be
+   unreachable mid-drag (nothing auto-scrolls under a carried row) — the gesture
+   would exist for short lists only. Pinned to the panel's foot it is always
+   where the hand already is. It therefore overlaps the last rows, which is
+   exactly why it takes no pointer events at rest: a transparent band that ate
+   their clicks would be a bug wearing an affordance's clothes. Armed, it takes
+   the pointer AND an opaque ground, so it reads against whatever scrolled
+   under it. */
+.ws-ground-drop {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  flex: 1 1 auto;
+  min-height: 44px;
+  margin: 6px 2px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed transparent;
+  border-radius: 10px;
+  pointer-events: none;
+  transition:
+    background-color 160ms var(--ws-ease),
+    border-color 160ms var(--ws-ease);
+}
+
+.ws-ground-drop-armed {
+  pointer-events: auto;
+  border-color: var(--ws-line);
+  background-color: var(--ws-raised);
+}
+
+/* Two classes, so the destination's own accent wash outranks the armed ground
+   above rather than losing to it on source order. */
+.ws-ground-drop.ws-drop-into {
+  background-color: var(--ws-accent-wash);
+}
+
+.ws-ground-drop-label {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--ws-ink-mute);
+}
+
+/* Cursor and selection are locked on the document while a drag is in flight,
+   because the pointer travels far outside the row it started on. */
+[data-ws-dragging] {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-pop {
+    animation: none;
+  }
+
+  .ws-home,
+  .ws-util-btn {
+    transition: none;
+  }
+
+  .ws-resize-thread,
+  .ws-resize-thread::after {
+    transition: none;
+  }
+}

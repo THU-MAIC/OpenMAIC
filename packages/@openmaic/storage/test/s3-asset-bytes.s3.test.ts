@@ -1,5 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { HeadBucketCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { contentHashOf, type ContentHash } from '../src/asset/blob.js';
 import { S3AssetByteStore } from '../src/asset/s3-bytes.js';
 
@@ -32,7 +38,15 @@ describe.skipIf(!configured)('S3AssetByteStore with an S3-compatible server', ()
           : undefined,
     });
     await client.send(new HeadBucketCommand({ Bucket: bucket! }));
-    store = new S3AssetByteStore({ client, bucket: bucket! });
+    store = new S3AssetByteStore({
+      client: client as never,
+      commands: {
+        put: (input) => new PutObjectCommand(input),
+        get: (input) => new GetObjectCommand(input),
+        delete: (input) => new DeleteObjectCommand(input),
+      },
+      bucket: bucket!,
+    });
   });
 
   afterAll(async () => {

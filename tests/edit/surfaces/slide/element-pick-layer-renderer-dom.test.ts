@@ -3,7 +3,10 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ElementPickLayer } from '@/components/edit/surfaces/slide/ElementPickLayer';
-import { editableElementDomId } from '@/components/edit/surfaces/slide/renderer-element-dom';
+import {
+  editableElementDomId,
+  maicElementIdAttributes,
+} from '@/components/edit/surfaces/slide/renderer-element-dom';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
 import type { Scene } from '@/lib/types/stage';
@@ -45,15 +48,21 @@ const scene = {
 
 afterEach(() => {
   useCanvasStore.getState().resetCanvasState();
-  useStageStore.setState({ scenes: [], currentSceneId: null });
+  useStageStore.setState({ stage: null, scenes: [], currentSceneId: null });
   document.body.innerHTML = '';
   vi.unstubAllGlobals();
 });
 
 describe('ElementPickLayer renderer DOM integration', () => {
   it('measures a renderer element host and binds the picked id to the timeline action', async () => {
-    useStageStore.setState({ scenes: [scene], currentSceneId: scene.id });
+    useStageStore.setState({
+      stage: { id: 'stage-1' } as never,
+      scenes: [scene],
+      currentSceneId: scene.id,
+    });
     useCanvasStore.getState().setPickTarget({
+      purpose: 'cue',
+      stageId: 'stage-1',
       sceneId: scene.id,
       actionId: 'spotlight-1',
       cueType: 'spotlight',
@@ -61,6 +70,9 @@ describe('ElementPickLayer renderer DOM integration', () => {
 
     const rendererHost = document.createElement('div');
     rendererHost.id = editableElementDomId('title-1');
+    for (const [name, value] of Object.entries(maicElementIdAttributes('title-1'))) {
+      rendererHost.setAttribute(name, value);
+    }
     rendererHost.getBoundingClientRect = () =>
       ({ left: 0, top: 0, width: 1000, height: 562.5, right: 1000, bottom: 562.5 }) as DOMRect;
     const hitTarget = document.createElement('div');
@@ -72,12 +84,9 @@ describe('ElementPickLayer renderer DOM integration', () => {
     hitTarget.appendChild(paintNode);
     rendererHost.appendChild(hitTarget);
     document.body.appendChild(rendererHost);
-    const interactionTarget = document.createElement('div');
-    interactionTarget.dataset.selectElementId = 'title-1';
-    document.body.appendChild(interactionTarget);
     Object.defineProperty(document, 'elementsFromPoint', {
       configurable: true,
-      value: () => [interactionTarget],
+      value: () => [paintNode],
     });
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
@@ -91,18 +100,22 @@ describe('ElementPickLayer renderer DOM integration', () => {
       root.render(createElement(ElementPickLayer));
     });
 
-    const outline = container.querySelector('.ring-violet-400\\/40') as HTMLElement;
-    expect(outline.style.left).toBe('40px');
-    expect(outline.style.top).toBe('30px');
-    expect(outline.style.width).toBe('120px');
-    expect(outline.style.height).toBe('50px');
-
-    const clickCatcher = container.querySelector('.cursor-crosshair') as HTMLElement;
+    const clickCatcher = document.querySelector('.cursor-crosshair') as HTMLElement;
+    // Pick mode leaves the slide alone until the pointer names an element.
+    expect(document.querySelector('.ring-violet-500')).toBeNull();
     await act(async () => {
       clickCatcher.dispatchEvent(
         new MouseEvent('mousemove', { bubbles: true, clientX: 60, clientY: 50 }),
       );
     });
+
+    // The ring is measured off the renderer's paint node, 2px outside it.
+    const ring = document.querySelector('.ring-violet-500') as HTMLElement;
+    expect(ring.style.left).toBe('38px');
+    expect(ring.style.top).toBe('28px');
+    expect(ring.style.width).toBe('124px');
+    expect(ring.style.height).toBe('54px');
+
     await act(async () => {
       clickCatcher.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });

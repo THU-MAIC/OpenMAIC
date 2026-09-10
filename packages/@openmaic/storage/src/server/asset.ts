@@ -1,11 +1,14 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import type { AssetMeta } from '@openmaic/dsl';
 import type { AssetId } from '../asset/id.js';
+import { assertSignedUrlTtlWithinGrace } from '../asset/collector.js';
 import {
+  ASSET_DESCRIPTOR_MEDIA_TYPE,
   AssetNotFoundError,
   AssetQuotaExceededError,
   DEFAULT_RENDERABLE_TYPES,
   EXCLUDED_RENDERABLE_TYPES,
+  type AssetIndirectRead,
   type AssetPrincipal,
   type AssetStore,
 } from '../asset/types.js';
@@ -18,6 +21,66 @@ export type AssetHttpAuthorize = (
   principal: AssetPrincipal,
   req: IncomingMessage,
 ) => boolean | Promise<boolean>;
+
+/**
+ * How byte `GET`s are answered.
+ *
+ * `direct` -- the default -- serves the bytes in the response body, exactly as
+ * this contract has always done. `redirect` opts the deployment into indirect
+ * byte egress: when the asset store can mint signed read URLs, a byte `GET` is
+ * answered `302 Found` to a short-lived signed URL instead. A store that
+ * cannot sign still answers directly, so the option is a preference, not a
+ * requirement. The disclosure tradeoff this accepts -- the `Location` names
+ * the object, and objects are hash-keyed -- is specified in the asset HTTP
+ * contract; read it before enabling this.
+ */
+export type AssetByteEgress = 'direct' | AssetIndirectByteEgress;
+
+/**
+ * Indirect byte egress, together with the reclamation grace it must stay
+ * below.
+ *
+ * `collectionGraceMs` is required, and that is the whole point of this shape.
+ * A signed URL must expire far earlier than the bytes it names can be
+ * collected, or a reader authorized at mint time errors at the object store:
+ * the last reference goes, the grace elapses, the collector deletes the
+ * object, and the still-valid URL now points at nothing. The handler and the
+ * collector are configured separately, so nothing else on this side knows the
+ * grace a deployment runs. Carrying it here lets the handler check the
+ * invariant at construction, with both numbers in hand, which makes the
+ * unsafe combination unrepresentable rather than merely detectable by a
+ * consumer who remembers to look.
+ */
+export interface AssetIndirectByteEgress {
+  readonly mode: 'redirect';
+  /**
+   * Lifetime of a minted signed URL, in seconds. Defaults to
+   * {@link DEFAULT_SIGNED_URL_TTL_SECONDS}, and deliberately short: the signed
+   * URL is a bearer credential for its whole lifetime. Must be at most a tenth
+   * of `collectionGraceMs`, and at most {@link MAX_SIGNED_URL_TTL_SECONDS}.
+   */
+  readonly signedUrlTtlSeconds?: number;
+  /**
+   * The reclamation grace this deployment runs its {@link AssetCollector}
+   * with, in milliseconds. Must be the same value the collector receives; a
+   * number invented here would validate the invariant against a grace nothing
+   * enforces.
+   */
+  readonly collectionGraceMs: number;
+}
+
+/** The shortest signed URL lifetime that still covers a redirect round trip. */
+export const DEFAULT_SIGNED_URL_TTL_SECONDS = 60;
+
+/**
+ * Fifteen minutes: the longest lifetime the handler will mint, whatever the
+ * grace allows. This ceiling is about the signer rather than the collector --
+ * a signed URL is a bearer credential for its whole lifetime, and the shipped
+ * SigV4 signer has its own bounds -- so it stands alongside the grace ratio
+ * rather than in place of it. The two bite in different deployments: the ratio
+ * constrains a short grace, this ceiling constrains a long one.
+ */
+export const MAX_SIGNED_URL_TTL_SECONDS = 900;
 
 /** Options for the asset registry HTTP contract handler. */
 export interface AssetHttpHandlerOptions {
@@ -34,6 +97,12 @@ export interface AssetHttpHandlerOptions {
   maxMetaBytes?: number;
   /** Multipart frame-count limit. Defaults to 8. */
   maxParts?: number;
+  /**
+   * Byte `GET` egress. Defaults to `direct`; see {@link AssetByteEgress}. The
+   * signed URL lifetime lives inside the indirect variant rather than beside
+   * it, so it cannot be set without the grace that bounds it.
+   */
+  byteEgress?: AssetByteEgress;
 }
 
 export const DEFAULT_MAX_ASSET_REQUEST_BYTES = 33 * 1024 * 1024;
@@ -64,6 +133,57 @@ class AssetHttpError extends Error {
 
 function validationFailure(message: string): AssetHttpError {
   return new AssetHttpError(400, 'VALIDATION_FAILED', message);
+}
+
+/** Whether a value is an absolute http(s) URL a client may fetch. */
+function isAbsoluteHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/** Whether the caller asked for a descriptor answer over a redirect. */
+function requestsDescriptor(req: IncomingMessage): boolean {
+  const accept = req.headers.accept;
+  if (typeof accept !== 'string') return false;
+  return accept.split(',').some((range) => {
+    // Media types are case-insensitive; the constant is lowercase.
+    const [type, ...params] = range.split(';');
+    if (type?.trim().toLowerCase() !== ASSET_DESCRIPTOR_MEDIA_TYPE) return false;
+    // An explicit q=0 rejects the descriptor even though the range matches.
+    const quality = params
+      .map((param) => param.split('='))
+      .find(([name]) => name?.trim().toLowerCase() === 'q');
+    return quality === undefined || Number(quality[1]) > 0;
+  });
+}
+
+/**
+ * The descriptor answer to an indirect byte read: the signed URL and the
+ * revision in a JSON body, under the vendor media type that both identifies
+ * the shape and, being CORS-safelisted in `Accept`, costs no preflight.
+ */
+function sendDescriptor(
+  req: IncomingMessage,
+  res: ServerResponse,
+  indirect: AssetIndirectRead,
+): void {
+  res.sendDate = false;
+  const encoded = JSON.stringify({ url: indirect.url, revision: indirect.revision });
+  res.writeHead(200, {
+    'content-type': ASSET_DESCRIPTOR_MEDIA_TYPE,
+    ...(req.method === 'GET' || req.method === 'HEAD'
+      ? { 'content-length': String(Buffer.byteLength(encoded)) }
+      : {}),
+    'x-asset-revision': String(indirect.revision),
+    'cache-control': 'private, no-store',
+    vary: 'Cookie, Authorization, Accept',
+    'access-control-expose-headers': 'X-Asset-Revision, X-Error-Code',
+  });
+  res.end(req.method === 'HEAD' ? undefined : encoded);
 }
 
 function payloadTooLarge(message: string): AssetHttpError {
@@ -329,6 +449,25 @@ function missingAsset(): AssetHttpError {
   );
 }
 
+/**
+ * The headers a byte response is served with, computed from the recorded type.
+ *
+ * Shared by the direct response and the signed-URL labeller, so a type that is
+ * relabelled on the direct path is pinned into the signature relabelled on the
+ * redirect path -- the allowlist outcome must not depend on the egress mode.
+ */
+function servedLabel(
+  renderableTypes: ReadonlySet<string>,
+  mime: unknown,
+): { contentType: string; contentDisposition?: string } {
+  const recordedType = typeof mime === 'string' ? mime.toLowerCase() : '';
+  const inline = renderableTypes.has(recordedType);
+  return {
+    contentType: inline ? recordedType : 'application/octet-stream',
+    ...(inline ? {} : { contentDisposition: 'attachment' }),
+  };
+}
+
 function classifyStoreError(error: unknown): never {
   if (error instanceof AssetNotFoundError) throw missingAsset();
   if (error instanceof AssetQuotaExceededError) {
@@ -379,6 +518,10 @@ async function route(
     maxAssetBytes: number;
     maxMetaBytes: number;
     maxParts: number;
+    // Resolved: the option's grace has already been checked against the
+    // lifetime, so the routing path only needs the mode.
+    byteEgress: 'direct' | 'redirect';
+    signedUrlTtlSeconds: number;
   },
 ): Promise<void> {
   const parts = parsePath(req);
@@ -467,6 +610,71 @@ async function route(
     return;
   }
 
+  if (method === 'GET' && config.byteEgress === 'redirect') {
+    // Indirect egress. The store feature-detect is per call rather than at
+    // construction: a deployment toggling the option must degrade to direct
+    // bytes, never fail, when its byte layer has no signer.
+    const resolveIndirect = store.resolveIndirect;
+    if (typeof resolveIndirect === 'function') {
+      let indirect: AssetIndirectRead | null | undefined;
+      try {
+        indirect = await resolveIndirect.call(store, principal, id, {
+          label: (mime) => servedLabel(config.renderableTypes, mime),
+          cacheControl: 'private, no-store',
+          expiresInSeconds: config.signedUrlTtlSeconds,
+        });
+      } catch (error) {
+        classifyStoreError(error);
+      }
+      if (indirect === null) throw missingAsset();
+      if (indirect !== undefined) {
+        if (typeof indirect.url !== 'string' || indirect.url === '') {
+          throw new Error('@openmaic/storage: asset store returned a malformed signed URL');
+        }
+        if (!isAbsoluteHttpUrl(indirect.url)) {
+          // Only an absolute http(s) URL may be emitted as a signed object
+          // URL: anything else fails internally before a descriptor body or a
+          // Location header is produced, so a client never fetches it.
+          throw new Error('@openmaic/storage: asset store returned a non-http(s) signed URL');
+        }
+        if (!Number.isSafeInteger(indirect.revision) || indirect.revision < 1) {
+          throw new Error('@openmaic/storage: asset store returned a malformed revision');
+        }
+        if (requestsDescriptor(req)) {
+          // A descriptor answer instead of the redirect. A platform fetch
+          // follows a 302 with the original request's headers -- only
+          // Authorization is stripped across origins -- so following one
+          // would forward this deployment's custom credential headers to the
+          // object store's origin. The client asks for this shape through
+          // Accept, a CORS-safelisted header that adds no preflight, fetches
+          // the signed URL itself with none of those headers, and takes the
+          // revision from the descriptor body.
+          sendDescriptor(req, res, indirect);
+          return;
+        }
+        // The 302 repeats the read route's posture: it is as per-principal and
+        // as uncacheable as the bytes it points at. The revision travels on
+        // the redirect itself; the signed URL pins the served media type,
+        // disposition, and cache posture, so the follow-up response reproduces
+        // the direct response's labels. Generic HTTP consumers follow the
+        // redirect as-is; the packaged client never sees this branch, because
+        // it asks for the descriptor above rather than risk its credential
+        // headers being forwarded across origins by redirect handling.
+        res.sendDate = false;
+        res.writeHead(302, {
+          location: indirect.url,
+          'x-asset-revision': String(indirect.revision),
+          'cache-control': 'private, no-store',
+          vary: 'Cookie, Authorization, Accept',
+          'access-control-expose-headers': 'X-Asset-Revision, X-Error-Code',
+        });
+        res.end();
+        return;
+      }
+      // The byte layer cannot sign after all: fall through to direct bytes.
+    }
+  }
+
   let asset;
   try {
     asset =
@@ -481,18 +689,18 @@ async function route(
   if ('byteLength' in asset && (!Number.isSafeInteger(asset.byteLength) || asset.byteLength < 0)) {
     throw new Error('@openmaic/storage: asset store returned a malformed byte length');
   }
-  const recordedType = typeof asset.mime === 'string' ? asset.mime.toLowerCase() : '';
-  const inline = config.renderableTypes.has(recordedType);
-  const servedType = inline ? recordedType : 'application/octet-stream';
+  const label = servedLabel(config.renderableTypes, asset.mime);
   const headers: Record<string, string> = {
-    'content-type': servedType,
+    'content-type': label.contentType,
     'content-length': String('byteLength' in asset ? asset.byteLength : asset.bytes.byteLength),
     'x-asset-revision': String(asset.revision),
     'x-content-type-options': 'nosniff',
     'cache-control': 'private, no-store',
     vary: 'Cookie, Authorization',
     'access-control-expose-headers': 'X-Asset-Revision, X-Error-Code',
-    ...(inline ? {} : { 'content-disposition': 'attachment' }),
+    ...(label.contentDisposition === undefined
+      ? {}
+      : { 'content-disposition': label.contentDisposition }),
   };
   res.sendDate = false;
   res.writeHead(200, headers);
@@ -535,8 +743,40 @@ export function createAssetHttpHandler(
   if (configuredTypes.some((value) => excluded.has(value.toLowerCase()))) {
     throw new Error('@openmaic/storage: renderableTypes contains an excluded executable type');
   }
+  if (configuredTypes.some((value) => value.toLowerCase() === ASSET_DESCRIPTOR_MEDIA_TYPE)) {
+    // Reserved: the client identifies a descriptor answer by this exact
+    // Content-Type, so no served asset may ever carry it.
+    throw new Error(
+      '@openmaic/storage: renderableTypes must not contain the asset descriptor media type',
+    );
+  }
   if (configuredTypes.some((value) => value !== value.trim() || value.includes(';'))) {
     throw new Error('@openmaic/storage: renderableTypes must contain exact media types');
+  }
+
+  const egress = options.byteEgress ?? 'direct';
+  let byteEgress: 'direct' | 'redirect' = 'direct';
+  let signedUrlTtlSeconds = DEFAULT_SIGNED_URL_TTL_SECONDS;
+  if (egress !== 'direct') {
+    if (typeof egress !== 'object' || egress === null || egress.mode !== 'redirect') {
+      throw new Error(
+        '@openmaic/storage: byteEgress must be "direct" or { mode: "redirect", collectionGraceMs }',
+      );
+    }
+    byteEgress = 'redirect';
+    if (egress.signedUrlTtlSeconds !== undefined) {
+      assertPositiveSafeInteger(egress.signedUrlTtlSeconds, 'signedUrlTtlSeconds');
+      if (egress.signedUrlTtlSeconds > MAX_SIGNED_URL_TTL_SECONDS) {
+        throw new Error(
+          `@openmaic/storage: signedUrlTtlSeconds must not exceed ${MAX_SIGNED_URL_TTL_SECONDS}`,
+        );
+      }
+      signedUrlTtlSeconds = egress.signedUrlTtlSeconds;
+    }
+    // Both numbers are in hand here, which is why the grace is a required
+    // field: the invariant is enforced where the feature is enabled, not
+    // delegated to a helper the consumer has to remember to call.
+    assertSignedUrlTtlWithinGrace(signedUrlTtlSeconds, egress.collectionGraceMs);
   }
 
   const config = {
@@ -545,6 +785,8 @@ export function createAssetHttpHandler(
     maxAssetBytes,
     maxMetaBytes,
     maxParts,
+    byteEgress,
+    signedUrlTtlSeconds,
   };
   return (req, res) => {
     void route(req, res, store, options, config).catch((error: unknown) => {

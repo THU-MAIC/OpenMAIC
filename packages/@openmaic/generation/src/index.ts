@@ -13,8 +13,14 @@ export {
   generateSceneContent,
   generateWidgetContent,
   PBLGenerationError,
+  resolveImageIds,
 } from './scene-generator.js';
-export type { SceneActionsOptions, SceneContentOptions } from './scene-generator.js';
+export type {
+  SceneActionsOptions,
+  SceneContentFailure,
+  SceneContentFailureCode,
+  SceneContentOptions,
+} from './scene-generator.js';
 export { buildCompleteScene } from './scene-builder.js';
 export type { BuildCompleteSceneOptions } from './scene-builder.js';
 export {
@@ -80,6 +86,8 @@ export type {
 } from './outline-generator.js';
 export { changeOutlineType } from './outline-type.js';
 export { uniquifyMediaElementIds } from './outline-media.js';
+export { partitionImagesForVision } from './outline-formatters.js';
+export type { VisionImagePartition } from './outline-formatters.js';
 export { parseJsonResponse } from './json-repair.js';
 export type { JsonParsingOptions } from './json-repair.js';
 export { noopGenerationLogger } from './logger.js';

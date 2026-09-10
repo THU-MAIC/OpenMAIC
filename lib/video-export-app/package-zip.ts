@@ -25,6 +25,8 @@ export interface PackageOptions {
    * fetch (e.g. in tests).
    */
   gsapSource?: string;
+  /** Load one app-local vendored binary. Injectable for deterministic unit tests. */
+  loadVendorAsset?: (sourceUrl: string) => Promise<Blob>;
   onProgress?: (message: string) => void;
 }
 
@@ -34,6 +36,12 @@ async function loadGsapSource(): Promise<string> {
   if (!res.ok)
     throw new Error(`Failed to load vendored GSAP from ${GSAP_PUBLIC_URL} (${res.status})`);
   return res.text();
+}
+
+async function loadVendorAsset(sourceUrl: string): Promise<Blob> {
+  const res = await fetch(sourceUrl);
+  if (!res.ok) throw new Error(`Failed to load vendored export asset ${sourceUrl} (${res.status})`);
+  return res.blob();
 }
 
 /**
@@ -57,7 +65,22 @@ export async function packageVideoZip(
 
   // Collected binary assets under assets/<planPath>.
   for (const [planPath, blob] of assetBlobs) {
-    zip.file(assetUrl(planPath), blob);
+    // JSZip's Node build cannot reliably consume a web Blob directly; an
+    // ArrayBuffer works in both browser and Node and preserves the exact bytes.
+    zip.file(assetUrl(planPath), await blob.arrayBuffer());
+  }
+
+  // Quiz fonts are project-declared: cover-only/no-Quiz exports never fetch or
+  // parse their bytes, while Quiz projects keep every font local to the ZIP.
+  const vendorAssetLoader = options.loadVendorAsset ?? loadVendorAsset;
+  const vendorAssets = await Promise.all(
+    project.vendorAssets.map(async (asset) => ({
+      path: asset.path,
+      bytes: await (await vendorAssetLoader(asset.sourceUrl)).arrayBuffer(),
+    })),
+  );
+  for (const asset of vendorAssets) {
+    zip.file(asset.path, asset.bytes);
   }
 
   // Vendored GSAP at the path the HTML loads it from.

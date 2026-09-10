@@ -124,3 +124,41 @@ describe('agentSelectionIsUserSet', () => {
     expect(store.getState().agentSelectionIsUserSet).toBe(false);
   });
 });
+
+describe('Qwen voice/model self-healing', () => {
+  it('repairs a persisted VC-model plus catalog-voice wedge', async () => {
+    const store = await freshStore();
+    store.setState((state) => ({
+      ttsProviderId: 'qwen-tts',
+      ttsVoice: 'vendor-clone-id',
+      ttsProvidersConfig: {
+        ...state.ttsProvidersConfig,
+        'qwen-tts': {
+          ...state.ttsProvidersConfig['qwen-tts'],
+          modelId: 'qwen3-tts-vc-2026-01-22',
+        },
+      },
+    }));
+
+    store.getState().setTTSVoice('Cherry');
+    expect(store.getState().ttsVoice).toBe('Cherry');
+    expect(store.getState().ttsProvidersConfig['qwen-tts']?.modelId).toBe('qwen3-tts-flash');
+  });
+
+  it('does not pin the provider model when selecting a clone voice', async () => {
+    const store = await freshStore();
+    store.setState((state) => ({
+      ttsProviderId: 'qwen-tts',
+      ttsProvidersConfig: {
+        ...state.ttsProvidersConfig,
+        'qwen-tts': {
+          ...state.ttsProvidersConfig['qwen-tts'],
+          modelId: 'qwen3-tts-flash',
+        },
+      },
+    }));
+
+    store.getState().setTTSVoice('vendor-clone-id');
+    expect(store.getState().ttsProvidersConfig['qwen-tts']?.modelId).toBe('qwen3-tts-flash');
+  });
+});

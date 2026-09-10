@@ -1,7 +1,8 @@
-import { promises as fs, createReadStream } from 'fs';
+import { promises as fs, createReadStream, type ReadStream } from 'fs';
 import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 import { CLASSROOMS_DIR, isValidClassroomId } from '@/lib/server/classroom-storage';
+import { parseRangeHeader } from '@/lib/server/http-range';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ClassroomMedia');
@@ -20,8 +21,24 @@ const MIME_TYPES: Record<string, string> = {
   '.aac': 'audio/aac',
 };
 
+const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=86400, immutable' } as const;
+
+/** Bridge a fs ReadStream into a web ReadableStream, propagating errors and cancel. */
+function toWebStream(stream: ReadStream): ReadableStream {
+  return new ReadableStream({
+    start(controller) {
+      stream.on('data', (chunk: Buffer | string) => controller.enqueue(chunk));
+      stream.on('end', () => controller.close());
+      stream.on('error', (err) => controller.error(err));
+    },
+    cancel() {
+      stream.destroy();
+    },
+  });
+}
+
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ classroomId: string; path: string[] }> },
 ) {
   const { classroomId, path: pathSegments } = await params;
@@ -61,25 +78,44 @@ export async function GET(
     const ext = path.extname(realPath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
-    // Stream the file to avoid loading large videos into memory
-    const stream = createReadStream(realPath);
-    const webStream = new ReadableStream({
-      start(controller) {
-        stream.on('data', (chunk: Buffer | string) => controller.enqueue(chunk));
-        stream.on('end', () => controller.close());
-        stream.on('error', (err) => controller.error(err));
-      },
-      cancel() {
-        stream.destroy();
-      },
-    });
+    // Range requests enable progressive playback and seeking for hosted media
+    // (e.g. <video> streams the moov atom first, then fetches on seek).
+    const range = parseRangeHeader(req.headers.get('range'), stat.size);
 
-    return new NextResponse(webStream, {
+    if (range.kind === 'unsatisfiable') {
+      // Never cache a range error: an immutable/public 416 would poison the
+      // media URL in shared and browser caches, breaking later valid requests.
+      return new NextResponse(null, {
+        status: 416,
+        headers: {
+          'Cache-Control': 'no-store',
+          'Content-Range': `bytes */${stat.size}`,
+        },
+      });
+    }
+
+    if (range.kind === 'range') {
+      const stream = createReadStream(realPath, { start: range.start, end: range.end });
+      return new NextResponse(toWebStream(stream), {
+        status: 206,
+        headers: {
+          ...CACHE_HEADERS,
+          'Content-Type': contentType,
+          'Content-Length': String(range.end - range.start + 1),
+          'Content-Range': `bytes ${range.start}-${range.end}/${stat.size}`,
+          'Accept-Ranges': 'bytes',
+        },
+      });
+    }
+
+    // Stream the file to avoid loading large videos into memory
+    return new NextResponse(toWebStream(createReadStream(realPath)), {
       status: 200,
       headers: {
+        ...CACHE_HEADERS,
         'Content-Type': contentType,
         'Content-Length': String(stat.size),
-        'Cache-Control': 'public, max-age=86400, immutable',
+        'Accept-Ranges': 'bytes',
       },
     });
   } catch (error) {

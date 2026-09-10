@@ -20,7 +20,7 @@ import { MAX_VISION_IMAGES } from './constants.js';
 import {
   formatImageDescription,
   formatImagePlaceholder,
-  sortDocumentImagesForVision,
+  partitionImagesForVision,
 } from './outline-formatters.js';
 import type {
   ImageMapping,
@@ -72,11 +72,27 @@ const INTERACTIVE_WIDGET_ACTIONS = [
 
 // ── Options interfaces for scene generation functions ──
 
+export type SceneContentFailureCode = 'prompt-unavailable' | 'invalid-model-output';
+
+export interface SceneContentFailure {
+  code: SceneContentFailureCode;
+}
+
 export interface SceneContentOptions {
   assignedImages?: PdfImage[];
   imageMapping?: ImageMapping;
   visionEnabled?: boolean;
   generatedMediaMapping?: ImageMapping;
+  /**
+   * Pre-resolved bytes for the vision slice (RFC #1153 part 2, N3). The app's
+   * scene-content route resolves the slice's allocated asset ids server-side
+   * BEFORE calling the generator so the attachment bytes are settled before
+   * prompt assembly; when provided, the LLM message's vision images are built
+   * from these (matched to the slice ids), so the caller's aiCall resolution
+   * becomes a defensive no-op. Absent (package consumers, browser-backed
+   * runs), the srcs are derived from `imageMapping` exactly as before.
+   */
+  resolvedVisionImages?: Array<{ id: string; src: string; width?: number; height?: number }>;
   agents?: AgentInfo[];
   languageDirective?: string;
   /** Authoritative UI locale selected by the user, consumed by the PBL v2 planner. */
@@ -98,6 +114,7 @@ export interface SceneContentOptions {
   baselineContent?: GeneratedSlideContent;
   /** Optional host fallback for the app-only loop planner. */
   pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>;
+  onFailure?: (failure: SceneContentFailure) => void;
   logger?: GenerationLogger;
 }
 
@@ -224,6 +241,7 @@ export async function generateSceneContent(
     imageMapping,
     visionEnabled,
     generatedMediaMapping,
+    resolvedVisionImages,
     agents,
     languageDirective,
     targetLanguage,
@@ -257,6 +275,7 @@ export async function generateSceneContent(
     return generateWidgetContent(outline, aiCall, languageDirective, {
       allowProceduralSkill,
       logger: log,
+      onFailure: options.onFailure,
     });
   }
 
@@ -269,14 +288,16 @@ export async function generateSceneContent(
         imageMapping,
         visionEnabled,
         generatedMediaMapping,
+        resolvedVisionImages,
         agents,
         languageDirective,
         editDirective,
         baselineContent,
         log,
+        options.onFailure,
       );
     case 'quiz':
-      return generateQuizContent(outline, aiCall, languageDirective, log);
+      return generateQuizContent(outline, aiCall, languageDirective, log, options.onFailure);
     case 'pbl':
       return generatePBLSceneContent(
         outline,
@@ -313,18 +334,25 @@ function isImageIdReference(value: string): boolean {
 }
 
 /**
- * Resolve image ID references in src field to actual base64 URLs
+ * Resolve image ID references in src field to the mapping's payload.
  *
  * AI generates: { type: "image", src: "img_1", ... }
- * This function replaces: { type: "image", src: "data:image/png;base64,...", ... }
+ * This function replaces: { type: "image", src: "<imageMapping[src]>", ... }
  *
  * Design rationale (Plan B):
  * - Simpler: AI only needs to know one field (src)
  * - Consistent: Generated JSON structure matches final PPTImageElement
  * - Intuitive: src is the image source, first as ID then as actual URL
  * - Less prompt complexity: No need to explain imageId vs src distinction
+ *
+ * The mapping VALUE is written verbatim, so the transport is decided entirely
+ * by the caller's `imageMapping` shape — no flag threading into this package
+ * (RFC #1153 part 2 B): a browser-backed mapping carries base64 data URLs and
+ * the element src becomes the data URL exactly as before; a server-backed
+ * mapping carries allocated pool asset ids and the element src becomes the
+ * asset id, which the renderer resolves through the pool registry.
  */
-function resolveImageIds(
+export function resolveImageIds(
   elements: GeneratedSlideData['elements'],
   imageMapping?: ImageMapping,
   generatedMediaMapping?: ImageMapping,
@@ -345,7 +373,7 @@ function resolveImageIds(
             log.warn(`No mapping for image ID: ${src}, removing element`);
             return null; // Remove invalid image elements
           }
-          log.debug(`Resolved image ID "${src}" to base64 URL`);
+          log.debug(`Resolved image ID "${src}" to its mapped source`);
           return { ...el, src: imageMapping[src] };
         }
 
@@ -578,41 +606,61 @@ async function generateSlideContent(
   imageMapping?: ImageMapping,
   visionEnabled?: boolean,
   generatedMediaMapping?: ImageMapping,
+  resolvedVisionImages?: Array<{ id: string; src: string; width?: number; height?: number }>,
   agents?: AgentInfo[],
   languageDirective?: string,
   editDirective?: string,
   baselineContent?: GeneratedSlideContent,
   log: GenerationLogger = noopGenerationLogger,
+  onFailure?: (failure: SceneContentFailure) => void,
 ): Promise<GeneratedSlideContent | null> {
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (assignedImages && assignedImages.length > 0) {
-    const sortedAssignedImages = sortDocumentImagesForVision(assignedImages);
+    // The partition is the shared ordering (RFC #1153 part 2, N3): the app's
+    // scene-content route pre-resolves the SAME `withSrc` candidates in this
+    // order, so the slice below can never admit an image the route has not
+    // resolved. `visionEnabled && imageMapping` off → every image is a plain
+    // text description listed in the ORIGINAL full vision-priority
+    // interleaved order (`sorted` — the pre-partition `sortedAssignedImages`
+    // order), NOT the slices-concatenated order, so a non-vision run with a
+    // mapping present (a non-vision model on a server-backed deployment) sees
+    // exactly the text ordering it saw before the partition refactor.
+    const { sorted, visionSlice, textOnlySlice, noSrcImages } = partitionImagesForVision(
+      assignedImages,
+      imageMapping,
+      MAX_VISION_IMAGES,
+    );
     if (visionEnabled && imageMapping) {
       // Vision mode: split into vision images and text-only
-      const withSrc = sortedAssignedImages.filter((img) => imageMapping[img.id]);
-      const visionSlice = withSrc.slice(0, MAX_VISION_IMAGES);
-      const textOnlySlice = withSrc.slice(MAX_VISION_IMAGES);
-      const noSrcImages = sortedAssignedImages.filter((img) => !imageMapping[img.id]);
-
       const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
       const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
         formatImageDescription(img),
       );
       assignedImagesText = [...visionDescriptions, ...textDescriptions].join('\n');
 
-      visionImages = visionSlice.map((img) => ({
-        id: img.id,
-        src: imageMapping[img.id],
-        width: img.width,
-        height: img.height,
-      }));
+      // When the route pre-resolved the slice, its resolved bytes are used
+      // verbatim (matched to the slice ids), so the caller's aiCall resolution
+      // is a defensive no-op; otherwise fall back to the mapping src (an
+      // allocated id the caller's aiCall resolves at prompt-assembly time).
+      const resolvedById = new Map(
+        (resolvedVisionImages ?? []).map((img) => [img.id, img] as const),
+      );
+      visionImages = visionSlice.map((img) => {
+        const resolved = resolvedById.get(img.id);
+        return (
+          resolved ?? {
+            id: img.id,
+            src: imageMapping[img.id],
+            width: img.width,
+            height: img.height,
+          }
+        );
+      });
     } else {
-      assignedImagesText = sortedAssignedImages
-        .map((img) => formatImageDescription(img))
-        .join('\n');
+      assignedImagesText = sorted.map((img) => formatImageDescription(img)).join('\n');
     }
   }
 
@@ -676,6 +724,7 @@ async function generateSlideContent(
   });
 
   if (!prompts) {
+    onFailure?.({ code: 'prompt-unavailable' });
     return null;
   }
 
@@ -727,6 +776,7 @@ async function generateSlideContent(
 
   if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {
     log.error(`Failed to parse AI response for: ${outline.title}`);
+    onFailure?.({ code: 'invalid-model-output' });
     return null;
   }
 
@@ -806,6 +856,7 @@ async function generateQuizContent(
   aiCall: AICallFn,
   languageDirective?: string,
   log: GenerationLogger = noopGenerationLogger,
+  onFailure?: (failure: SceneContentFailure) => void,
 ): Promise<GeneratedQuizContent | null> {
   const quizConfig = outline.quizConfig || {
     questionCount: 3,
@@ -824,6 +875,7 @@ async function generateQuizContent(
   });
 
   if (!prompts) {
+    onFailure?.({ code: 'prompt-unavailable' });
     return null;
   }
 
@@ -833,6 +885,7 @@ async function generateQuizContent(
 
   if (!generatedQuestions || !Array.isArray(generatedQuestions)) {
     log.error(`Failed to parse AI response for: ${outline.title}`);
+    onFailure?.({ code: 'invalid-model-output' });
     return null;
   }
 
@@ -1065,7 +1118,11 @@ export async function generateWidgetContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   languageDirective?: string,
-  options: { allowProceduralSkill?: boolean; logger?: GenerationLogger } = {},
+  options: {
+    allowProceduralSkill?: boolean;
+    logger?: GenerationLogger;
+    onFailure?: (failure: SceneContentFailure) => void;
+  } = {},
 ): Promise<GeneratedInteractiveContent | null> {
   const log = options.logger ?? noopGenerationLogger;
   const widgetType = outline.widgetType;
@@ -1177,6 +1234,7 @@ export async function generateWidgetContent(
   const prompts = buildPrompt(promptId, variables);
   if (!prompts) {
     log.error(`Failed to build ${widgetType} prompt for: ${outline.title}`);
+    options.onFailure?.({ code: 'prompt-unavailable' });
     return null;
   }
 
@@ -1186,6 +1244,7 @@ export async function generateWidgetContent(
 
   if (!html) {
     log.error(`Failed to extract HTML from ${widgetType} response for: ${outline.title}`);
+    options.onFailure?.({ code: 'invalid-model-output' });
     return null;
   }
 

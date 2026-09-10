@@ -7,6 +7,7 @@ const searchWithBaiduMock = vi.hoisted(() => vi.fn());
 const searchWithTavilyMock = vi.hoisted(() => vi.fn());
 const searchWithMiniMaxMock = vi.hoisted(() => vi.fn());
 const searchWithDoubaoMock = vi.hoisted(() => vi.fn());
+const searchWithExaMock = vi.hoisted(() => vi.fn());
 const searchWithSearxngMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/web-search/bocha', () => ({
@@ -37,6 +38,10 @@ vi.mock('@/lib/web-search/doubao', () => ({
   searchWithDoubao: searchWithDoubaoMock,
 }));
 
+vi.mock('@/lib/web-search/exa', () => ({
+  searchWithExa: searchWithExaMock,
+}));
+
 vi.mock('@/lib/web-search/searxng', () => ({
   searchWithSearxng: searchWithSearxngMock,
 }));
@@ -52,6 +57,7 @@ describe('searchWeb', () => {
     searchWithTavilyMock.mockReset();
     searchWithMiniMaxMock.mockReset();
     searchWithDoubaoMock.mockReset();
+    searchWithExaMock.mockReset();
     searchWithSearxngMock.mockReset();
   });
 
@@ -107,6 +113,36 @@ describe('searchWeb', () => {
       baseUrl: 'https://api.bocha.cn',
     });
     expect(searchWithTavilyMock).not.toHaveBeenCalled();
+  });
+
+  it('dispatches Exa provider requests', async () => {
+    searchWithExaMock.mockResolvedValueOnce({
+      answer: '',
+      sources: [],
+      query: 'q',
+      responseTime: 0.2,
+    });
+
+    await expect(
+      searchWeb({
+        providerId: 'exa',
+        query: 'q',
+        apiKey: 'exa-key',
+        maxResults: 8,
+        baseUrl: 'https://api.exa.ai',
+      }),
+    ).resolves.toEqual({
+      answer: '',
+      sources: [],
+      query: 'q',
+      responseTime: 0.2,
+    });
+    expect(searchWithExaMock).toHaveBeenCalledWith({
+      query: 'q',
+      apiKey: 'exa-key',
+      maxResults: 8,
+      baseUrl: 'https://api.exa.ai',
+    });
   });
 
   it('dispatches Claude provider requests with the selected model', async () => {
@@ -298,5 +334,41 @@ describe('searchWeb', () => {
       maxResults: 8,
       baseUrl: 'http://192.168.161.100:6060',
     });
+  });
+
+  it('threads the caller AbortSignal through every registered provider adapter', async () => {
+    const signal = new AbortController().signal;
+    const result = { answer: '', sources: [], query: 'q', responseTime: 0.1 };
+    const cases: Array<{
+      providerId: Parameters<typeof searchWeb>[0]['providerId'];
+      adapter: ReturnType<typeof vi.fn>;
+      baseUrl?: string;
+    }> = [
+      { providerId: 'tavily', adapter: searchWithTavilyMock },
+      { providerId: 'exa', adapter: searchWithExaMock },
+      { providerId: 'bocha', adapter: searchWithBochaMock },
+      { providerId: 'brave', adapter: searchWithBraveMock },
+      { providerId: 'baidu', adapter: searchWithBaiduMock },
+      { providerId: 'claude', adapter: searchWithClaudeMock },
+      { providerId: 'minimax', adapter: searchWithMiniMaxMock },
+      { providerId: 'doubao', adapter: searchWithDoubaoMock },
+      {
+        providerId: 'searxng',
+        adapter: searchWithSearxngMock,
+        baseUrl: 'http://192.168.161.100:6060',
+      },
+    ];
+
+    for (const testCase of cases) {
+      testCase.adapter.mockResolvedValueOnce(result);
+      await searchWeb({
+        providerId: testCase.providerId,
+        query: 'q',
+        apiKey: 'key',
+        baseUrl: testCase.baseUrl,
+        signal,
+      });
+      expect(testCase.adapter).toHaveBeenLastCalledWith(expect.objectContaining({ signal }));
+    }
   });
 });

@@ -34,12 +34,16 @@ export const getChartOption = ({
   const textStyle = textColor ? { color: textColor } : {};
 
   const axisLine = textColor ? { lineStyle: { color: textColor } } : undefined;
-  const axisLabel = textColor ? { color: textColor } : undefined;
+  const axisLabel = { show: true, color: textColor ?? '#333333' };
   const splitLine = lineColor ? { lineStyle: { color: lineColor } } : {};
 
-  if (!Array.isArray(data?.series) || data.series.length === 0) {
+  if (!Array.isArray(data?.series) || data.series.length === 0 || !Array.isArray(data.labels)) {
     return null;
   }
+  const categoryAxisLabel = {
+    ...axisLabel,
+    interval: data.labels.length <= 8 ? 0 : ('auto' as const),
+  };
 
   const legend = data.series.length > 1 ? { top: 'bottom' as const, textStyle } : undefined;
 
@@ -48,7 +52,7 @@ export const getChartOption = ({
       color: themeColors,
       textStyle,
       legend,
-      xAxis: { type: 'category', data: data.labels, axisLine, axisLabel },
+      xAxis: { type: 'category', data: data.labels, axisLine, axisLabel: categoryAxisLabel },
       yAxis: { type: 'value', axisLine, axisLabel, splitLine },
       series: data.series.map((item, index) => {
         const seriesItem: BarSeriesOption = {
@@ -68,7 +72,7 @@ export const getChartOption = ({
       color: themeColors,
       textStyle,
       legend,
-      yAxis: { type: 'category', data: data.labels, axisLine, axisLabel },
+      yAxis: { type: 'category', data: data.labels, axisLine, axisLabel: categoryAxisLabel },
       xAxis: { type: 'value', axisLine, axisLabel, splitLine },
       series: data.series.map((item, index) => {
         const seriesItem: BarSeriesOption = {
@@ -88,7 +92,7 @@ export const getChartOption = ({
       color: themeColors,
       textStyle,
       legend,
-      xAxis: { type: 'category', data: data.labels, axisLine, axisLabel },
+      xAxis: { type: 'category', data: data.labels, axisLine, axisLabel: categoryAxisLabel },
       yAxis: { type: 'value', axisLine, axisLabel, splitLine },
       series: data.series.map((item, index) => {
         const seriesItem: LineSeriesOption = {
@@ -150,7 +154,13 @@ export const getChartOption = ({
       color: themeColors,
       textStyle,
       legend,
-      xAxis: { type: 'category', boundaryGap: false, data: data.labels, axisLine, axisLabel },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: data.labels,
+        axisLine,
+        axisLabel: categoryAxisLabel,
+      },
       yAxis: { type: 'value', axisLine, axisLabel, splitLine },
       series: data.series.map((item, index) => {
         const seriesItem: LineSeriesOption = {

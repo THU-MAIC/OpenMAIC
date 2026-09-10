@@ -19,8 +19,14 @@ import {
 import {
   LEGACY_WHITEBOARD_SOURCE_KIND,
   WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
+  WhiteboardRuntimeCodeLineIdConflictError,
+  WhiteboardRuntimeCodeLineNotFoundError,
+  WhiteboardRuntimeElementNotFoundError,
+  WhiteboardRuntimeElementTypeMismatchError,
+  WhiteboardRuntimeNoChangeError,
   type LegacySnapshotImportedOperation,
   type WhiteboardElementAddedOperation,
+  type WhiteboardRuntimeOperationV1,
   type WhiteboardRuntimePayloadV1,
 } from '@/lib/whiteboard/runtime/types';
 
@@ -55,6 +61,30 @@ function textElement(id = 'text-added', content = 'learner text'): PPTElement {
   };
 }
 
+function codeElement(
+  id = 'code-1',
+  lines = [
+    { id: 'L1', content: 'const one = 1;' },
+    { id: 'L2', content: 'const two = 2;' },
+    { id: 'L3', content: '' },
+  ],
+): PPTElement {
+  return {
+    id,
+    type: 'code',
+    language: 'typescript',
+    lines,
+    fileName: 'example.ts',
+    showLineNumbers: true,
+    fontSize: 14,
+    left: 100,
+    top: 120,
+    width: 500,
+    height: 300,
+    rotate: 0,
+  };
+}
+
 function payload(id = 'operation-1', boardId = 'board-1'): LegacyPayload {
   return {
     payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
@@ -76,6 +106,13 @@ function elementPayload(id = 'element-operation-1', element = textElement()): El
     operationId: id,
     operation: { kind: 'element_added', element },
   };
+}
+
+function operationPayload(
+  operationId: string,
+  operation: WhiteboardRuntimeOperationV1,
+): WhiteboardRuntimePayloadV1 {
+  return { payloadVersion: WHITEBOARD_RUNTIME_PAYLOAD_VERSION, operationId, operation };
 }
 
 function runtimeStore(): BrowserRuntimeStore {
@@ -248,6 +285,373 @@ describe('whiteboard RuntimeStore service', () => {
       'legacy-text',
       'text-added',
     ]);
+  });
+
+  it('deletes exactly one element and exact replay cannot delete a later reused ID', async () => {
+    const store = runtimeStore();
+    const runtime = service(store);
+    const imported = payload();
+    imported.operation.whiteboard = {
+      ...board(),
+      elements: [textElement('reused-id', 'first'), codeElement()],
+      script: 'keep metadata',
+    };
+    await runtime.append({ stageId: 'stage-1', expectedLastSeq: null, payload: imported });
+
+    const deletion = operationPayload('delete:reused', {
+      kind: 'element_deleted',
+      elementId: 'reused-id',
+    });
+    await expect(
+      runtime.append({ stageId: 'stage-1', expectedLastSeq: 0, payload: deletion }),
+    ).resolves.toMatchObject({ committedSeq: 1, replayed: false });
+    await runtime.append({
+      stageId: 'stage-1',
+      expectedLastSeq: 1,
+      payload: elementPayload('add:reused', textElement('reused-id', 'second')),
+    });
+
+    await expect(
+      runtime.append({ stageId: 'stage-1', expectedLastSeq: 0, payload: deletion }),
+    ).resolves.toMatchObject({
+      committedSeq: 1,
+      replayed: true,
+      state: { lastSeq: 2, whiteboard: { script: 'keep metadata' } },
+    });
+    await expect(
+      runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: 2,
+        payload: operationPayload('delete:reused', {
+          kind: 'element_deleted',
+          elementId: 'code-1',
+        }),
+      }),
+    ).rejects.toThrow('WHITEBOARD_RUNTIME_OPERATION_CONFLICT');
+    expect((await runtime.read('stage-1')).whiteboard?.elements).toEqual([
+      codeElement(),
+      textElement('reused-id', 'second'),
+    ]);
+    expect(
+      await store.listRecords(whiteboardRuntimeSessionId('stage-1', 'learner-1')),
+    ).toHaveLength(3);
+  });
+
+  it('reports missing delete targets before append while stale CAS wins first', async () => {
+    const backing = runtimeStore();
+    const appendRecord = vi.fn(backing.appendRecord.bind(backing));
+    const tracked = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'appendRecord') return appendRecord;
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as RuntimeStore;
+    const runtime = service(tracked);
+    await runtime.append({
+      stageId: 'stage-1',
+      expectedLastSeq: null,
+      payload: elementPayload(),
+    });
+    const missing = operationPayload('delete:missing', {
+      kind: 'element_deleted',
+      elementId: 'not-there',
+    });
+
+    await expect(
+      runtime.append({ stageId: 'stage-1', expectedLastSeq: null, payload: missing }),
+    ).rejects.toBeInstanceOf(RuntimeAppendConflictError);
+    await expect(
+      runtime.append({ stageId: 'stage-1', expectedLastSeq: 0, payload: missing }),
+    ).rejects.toMatchObject({
+      name: WhiteboardRuntimeElementNotFoundError.name,
+      code: 'WHITEBOARD_RUNTIME_ELEMENT_NOT_FOUND',
+      elementId: 'not-there',
+    });
+    expect(appendRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats clear missing/empty state as an atomic typed no-op with zero appends', async () => {
+    const backing = runtimeStore();
+    const appendRecord = vi.fn(backing.appendRecord.bind(backing));
+    const tracked = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'appendRecord') return appendRecord;
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as RuntimeStore;
+    const runtime = service(tracked);
+    const missingClear = operationPayload('clear:missing', { kind: 'elements_cleared' });
+    const missingError = await runtime
+      .append({ stageId: 'stage-1', expectedLastSeq: null, payload: missingClear })
+      .catch((error: unknown) => error);
+    expect(missingError).toMatchObject({
+      name: WhiteboardRuntimeNoChangeError.name,
+      code: 'WHITEBOARD_RUNTIME_NO_CHANGE',
+      reason: 'whiteboard_missing',
+      state: {
+        sessionId: whiteboardRuntimeSessionId('stage-1', 'learner-1'),
+        whiteboard: null,
+        lastSeq: null,
+      },
+    });
+    expect(appendRecord).not.toHaveBeenCalled();
+
+    await runtime.append({
+      stageId: 'stage-1',
+      expectedLastSeq: null,
+      payload: elementPayload(),
+    });
+    const committedClear = operationPayload('clear:committed', { kind: 'elements_cleared' });
+    const cleared = await runtime.append({
+      stageId: 'stage-1',
+      expectedLastSeq: 0,
+      payload: committedClear,
+    });
+    expect(cleared).toMatchObject({
+      committedSeq: 1,
+      replayed: false,
+      state: { lastSeq: 1, whiteboard: { elements: [] } },
+    });
+
+    await expect(
+      runtime.append({ stageId: 'stage-1', expectedLastSeq: 99, payload: committedClear }),
+    ).resolves.toMatchObject({ committedSeq: 1, replayed: true });
+    const distinctClear = operationPayload('clear:already-empty', { kind: 'elements_cleared' });
+    await expect(
+      runtime.append({ stageId: 'stage-1', expectedLastSeq: 0, payload: distinctClear }),
+    ).rejects.toBeInstanceOf(RuntimeAppendConflictError);
+    await expect(
+      runtime.append({ stageId: 'stage-1', expectedLastSeq: 1, payload: distinctClear }),
+    ).rejects.toMatchObject({
+      name: WhiteboardRuntimeNoChangeError.name,
+      code: 'WHITEBOARD_RUNTIME_NO_CHANGE',
+      reason: 'whiteboard_empty',
+      state: { lastSeq: 1, whiteboard: { elements: [] } },
+    });
+    expect(appendRecord).toHaveBeenCalledTimes(2);
+    expect(
+      await backing.listRecords(whiteboardRuntimeSessionId('stage-1', 'learner-1')),
+    ).toHaveLength(2);
+  });
+
+  it('clears elements while preserving the materialized board identity and metadata', async () => {
+    const runtime = service(runtimeStore());
+    const imported = payload();
+    imported.operation.whiteboard = {
+      id: 'metadata-board',
+      viewportSize: 2048,
+      viewportRatio: 0.75,
+      elements: [textElement(), codeElement()],
+      background: { type: 'solid', color: '#123456' },
+      animations: [],
+      script: 'preserve this script',
+    };
+    await runtime.append({ stageId: 'stage-1', expectedLastSeq: null, payload: imported });
+    const result = await runtime.append({
+      stageId: 'stage-1',
+      expectedLastSeq: 0,
+      payload: operationPayload('clear:metadata', { kind: 'elements_cleared' }),
+    });
+    expect(result.state.whiteboard).toEqual({ ...imported.operation.whiteboard, elements: [] });
+    expect(result.state.whiteboard).not.toBeNull();
+  });
+
+  it.each([
+    {
+      label: 'delete',
+      payload: operationPayload('delete:lost-response', {
+        kind: 'element_deleted',
+        elementId: 'text-added',
+      }),
+    },
+    {
+      label: 'clear',
+      payload: operationPayload('clear:lost-response', { kind: 'elements_cleared' }),
+    },
+  ])('recovers a lost $label response with exactly one underlying append', async ({ payload }) => {
+    const backing = runtimeStore();
+    await service(backing).append({
+      stageId: 'stage-1',
+      expectedLastSeq: null,
+      payload: elementPayload(),
+    });
+    const appendRecord = vi.fn(async (...args: Parameters<RuntimeStore['appendRecord']>) => {
+      await backing.appendRecord(...args);
+      throw new Error('response lost');
+    });
+    const lossy = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'appendRecord') return appendRecord;
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as RuntimeStore;
+
+    await expect(
+      service(lossy).append({ stageId: 'stage-1', expectedLastSeq: 0, payload }),
+    ).resolves.toMatchObject({
+      committedSeq: 1,
+      replayed: true,
+      state: { lastSeq: 1, whiteboard: { elements: [] } },
+    });
+    expect(appendRecord).toHaveBeenCalledTimes(1);
+    expect(
+      await backing.listRecords(whiteboardRuntimeSessionId('stage-1', 'learner-1')),
+    ).toHaveLength(2);
+  });
+
+  it('returns distinct typed code target, type, line, and ID-conflict failures pre-append', async () => {
+    const backing = runtimeStore();
+    const appendRecord = vi.fn(backing.appendRecord.bind(backing));
+    const tracked = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'appendRecord') return appendRecord;
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as RuntimeStore;
+    const runtime = service(tracked);
+    const imported = payload();
+    imported.operation.whiteboard = {
+      ...board(),
+      elements: [textElement('text-target'), codeElement()],
+    };
+    await runtime.append({ stageId: 'stage-1', expectedLastSeq: null, payload: imported });
+
+    const edit = (operationId: string, elementId: string, lineId: string, newLineId: string) =>
+      operationPayload(operationId, {
+        kind: 'code_lines_edited',
+        elementId,
+        edit: {
+          kind: 'insert_after',
+          lineId,
+          lines: [{ id: newLineId, content: 'new' }],
+        },
+      });
+    await expect(
+      runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: 0,
+        payload: edit('edit:missing-element', 'missing', 'L1', 'new-1'),
+      }),
+    ).rejects.toBeInstanceOf(WhiteboardRuntimeElementNotFoundError);
+    await expect(
+      runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: 0,
+        payload: edit('edit:wrong-type', 'text-target', 'L1', 'new-2'),
+      }),
+    ).rejects.toMatchObject({
+      name: WhiteboardRuntimeElementTypeMismatchError.name,
+      code: 'WHITEBOARD_RUNTIME_ELEMENT_TYPE_MISMATCH',
+      expectedType: 'code',
+      actualType: 'text',
+    });
+    await expect(
+      runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: 0,
+        payload: edit('edit:missing-line', 'code-1', 'L99', 'new-3'),
+      }),
+    ).rejects.toMatchObject({
+      name: WhiteboardRuntimeCodeLineNotFoundError.name,
+      code: 'WHITEBOARD_RUNTIME_CODE_LINE_NOT_FOUND',
+      elementId: 'code-1',
+      lineId: 'L99',
+    });
+    await expect(
+      runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: null,
+        payload: edit('edit:stale-before-line', 'code-1', 'L99', 'new-4'),
+      }),
+    ).rejects.toBeInstanceOf(RuntimeAppendConflictError);
+    await expect(
+      runtime.append({
+        stageId: 'stage-1',
+        expectedLastSeq: 0,
+        payload: edit('edit:line-conflict', 'code-1', 'L1', 'L2'),
+      }),
+    ).rejects.toBeInstanceOf(WhiteboardRuntimeCodeLineIdConflictError);
+    expect(appendRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers a lost code-edit response with one append and exact replay survives target deletion', async () => {
+    const backing = runtimeStore();
+    const initial = service(backing);
+    const imported = payload();
+    imported.operation.whiteboard = { ...board(), elements: [codeElement()] };
+    await initial.append({ stageId: 'stage-1', expectedLastSeq: null, payload: imported });
+
+    let loseResponse = true;
+    const appendRecord = vi.fn(async (...args: Parameters<RuntimeStore['appendRecord']>) => {
+      const committed = await backing.appendRecord(...args);
+      if (loseResponse) {
+        loseResponse = false;
+        throw new Error('response lost');
+      }
+      return committed;
+    });
+    const lossy = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'appendRecord') return appendRecord;
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as RuntimeStore;
+    const runtime = service(lossy);
+    const edited = operationPayload('edit:lost-response', {
+      kind: 'code_lines_edited',
+      elementId: 'code-1',
+      edit: {
+        kind: 'replace_lines',
+        lineIds: ['L3', 'L1'],
+        lines: [
+          { id: 'host-A', content: '' },
+          { id: 'host-B', content: 'replacement' },
+        ],
+      },
+    });
+    await expect(
+      runtime.append({ stageId: 'stage-1', expectedLastSeq: 0, payload: edited }),
+    ).resolves.toMatchObject({
+      committedSeq: 1,
+      replayed: true,
+      state: {
+        whiteboard: {
+          elements: [
+            {
+              id: 'code-1',
+              lines: [
+                { id: 'L2', content: 'const two = 2;' },
+                { id: 'host-A', content: '' },
+                { id: 'host-B', content: 'replacement' },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    expect(appendRecord).toHaveBeenCalledTimes(1);
+
+    await runtime.append({
+      stageId: 'stage-1',
+      expectedLastSeq: 1,
+      payload: operationPayload('delete:code-after-edit', {
+        kind: 'element_deleted',
+        elementId: 'code-1',
+      }),
+    });
+    await expect(
+      runtime.append({ stageId: 'stage-1', expectedLastSeq: 0, payload: edited }),
+    ).resolves.toMatchObject({
+      committedSeq: 1,
+      replayed: true,
+      state: { lastSeq: 2, whiteboard: { elements: [] } },
+    });
+    expect(appendRecord).toHaveBeenCalledTimes(2);
   });
 
   it('detaches a learner element before the first async boundary', async () => {

@@ -18,7 +18,13 @@ import { getThinkingConfigKey, supportsConfigurableThinking } from '@/lib/ai/thi
 import type { TTSProviderId, ASRProviderId, BuiltInTTSProviderId } from '@/lib/audio/types';
 import type { AgentVoiceOverride } from '@/lib/audio/voice-resolver';
 import { isCustomTTSProvider, isCustomASRProvider } from '@/lib/audio/types';
-import { ASR_PROVIDERS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
+import {
+  ASR_PROVIDERS,
+  DEFAULT_TTS_VOICES,
+  isQwenCatalogVoice,
+  isQwenVoiceCloneModel,
+  TTS_PROVIDERS,
+} from '@/lib/audio/constants';
 import { DEFAULT_VOXCPM_BACKEND, VOXCPM_MODEL_ID, VOXCPM_VLLM_MODEL_ID } from '@/lib/audio/voxcpm';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
@@ -34,6 +40,7 @@ import {
   isLLMProviderConfigured,
 } from '@/lib/store/settings-validation';
 import { createKVPersistStorage, purgeLegacyPersistKey } from '@/lib/store/kv-persist';
+import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 
 const log = createLogger('Settings');
 
@@ -122,6 +129,8 @@ export interface SettingsState {
       customModels?: Array<{ id: string; name: string }>;
       providerOptions?: Record<string, unknown>;
       isServerConfigured?: boolean;
+      /** Admin/server-level force-off (server-providers.yml / env). Overrides `enabled`. */
+      serverDisabled?: boolean;
       // Custom provider fields
       customName?: string;
       customDefaultBaseUrl?: string;
@@ -158,6 +167,8 @@ export interface SettingsState {
       baseUrl: string;
       enabled: boolean;
       isServerConfigured?: boolean;
+      /** Admin/server-level force-off (server-providers.yml / env). Overrides `enabled`. */
+      serverDisabled?: boolean;
       customModels?: Array<{ id: string; name: string }>;
       replaceBuiltInModels?: boolean;
     }
@@ -173,6 +184,8 @@ export interface SettingsState {
       baseUrl: string;
       enabled: boolean;
       isServerConfigured?: boolean;
+      /** Admin/server-level force-off (server-providers.yml / env). Overrides `enabled`. */
+      serverDisabled?: boolean;
       customModels?: Array<{ id: string; name: string }>;
       replaceBuiltInModels?: boolean;
     }
@@ -193,6 +206,8 @@ export interface SettingsState {
       enabled: boolean;
       requiresApiKey?: boolean;
       isServerConfigured?: boolean;
+      /** Admin/server-level force-off (server-providers.yml / env). Overrides `enabled`. */
+      serverDisabled?: boolean;
       /** Model-based providers only (Claude): the model that runs the search. */
       modelId?: string;
     }
@@ -451,12 +466,29 @@ function resolveMediaModels<T extends { id: string; name: string }>(
     : [...builtInModels, ...customModels];
 }
 
+function hasMediaCredential(value: string | undefined): boolean {
+  return !!value && value.trim().length > 0;
+}
+
 function isUsableMediaProvider(
   provider: { requiresApiKey: boolean } | undefined,
-  config: { apiKey?: string; enabled?: boolean; isServerConfigured?: boolean } | undefined,
+  config:
+    | {
+        apiKey?: string;
+        baseUrl?: string;
+        enabled?: boolean;
+        isServerConfigured?: boolean;
+      }
+    | undefined,
 ): boolean {
   if (!provider || config?.enabled === false) return false;
-  return !provider.requiresApiKey || !!config?.apiKey || !!config?.isServerConfigured;
+  if (config?.isServerConfigured) return true;
+  if (provider.requiresApiKey) return hasMediaCredential(config?.apiKey);
+  return hasMediaCredential(config?.baseUrl);
+}
+
+function shouldTurnOn(currentlyEnabled: boolean, usable: boolean): boolean {
+  return !currentlyEnabled && usable;
 }
 
 // Initialize default audio config
@@ -552,7 +584,6 @@ const getDefaultVideoConfig = () => ({
     seedance: { apiKey: '', baseUrl: '', enabled: false },
     kling: { apiKey: '', baseUrl: '', enabled: false },
     veo: { apiKey: '', baseUrl: '', enabled: false },
-    sora: { apiKey: '', baseUrl: '', enabled: false },
     'minimax-video': { apiKey: '', baseUrl: '', enabled: false },
     'grok-video': { apiKey: '', baseUrl: '', enabled: false },
     happyhorse: { apiKey: '', baseUrl: '', enabled: false },
@@ -564,6 +595,12 @@ const getDefaultWebSearchConfig = () => ({
   webSearchProviderId: 'tavily' as WebSearchProviderId,
   webSearchProvidersConfig: {
     tavily: { apiKey: '', baseUrl: '', enabled: true, requiresApiKey: true },
+    exa: {
+      apiKey: '',
+      baseUrl: WEB_SEARCH_PROVIDERS.exa.defaultBaseUrl || '',
+      enabled: true,
+      requiresApiKey: true,
+    },
     bocha: { apiKey: '', baseUrl: '', enabled: true, requiresApiKey: true },
     brave: {
       apiKey: '',
@@ -1033,10 +1070,39 @@ export const useSettingsStore = create<SettingsState>()(
             return {
               ttsProviderId: providerId,
               ...(shouldUpdateVoice && { ttsVoice: defaultVoice }),
+              ...(providerId === 'qwen-tts' &&
+              isQwenCatalogVoice(defaultVoice) &&
+              isQwenVoiceCloneModel(state.ttsProvidersConfig['qwen-tts']?.modelId)
+                ? {
+                    ttsProvidersConfig: {
+                      ...state.ttsProvidersConfig,
+                      'qwen-tts': {
+                        ...state.ttsProvidersConfig['qwen-tts'],
+                        modelId: TTS_PROVIDERS['qwen-tts'].defaultModelId,
+                      },
+                    },
+                  }
+                : {}),
             };
           }),
 
-        setTTSVoice: (voice) => set({ ttsVoice: voice }),
+        setTTSVoice: (voice) =>
+          set((state) => ({
+            ttsVoice: voice,
+            ...(state.ttsProviderId === 'qwen-tts' &&
+            isQwenCatalogVoice(voice) &&
+            isQwenVoiceCloneModel(state.ttsProvidersConfig['qwen-tts']?.modelId)
+              ? {
+                  ttsProvidersConfig: {
+                    ...state.ttsProvidersConfig,
+                    'qwen-tts': {
+                      ...state.ttsProvidersConfig['qwen-tts'],
+                      modelId: TTS_PROVIDERS['qwen-tts'].defaultModelId,
+                    },
+                  },
+                }
+              : {}),
+          })),
 
         setTTSSpeed: (speed) => set({ ttsSpeed: speed }),
 
@@ -1062,12 +1128,13 @@ export const useSettingsStore = create<SettingsState>()(
 
         setTTSProviderConfig: (providerId, config) =>
           set((state) => {
+            const mergedProvider = {
+              ...state.ttsProvidersConfig[providerId],
+              ...config,
+            };
             const ttsProvidersConfig = {
               ...state.ttsProvidersConfig,
-              [providerId]: {
-                ...state.ttsProvidersConfig[providerId],
-                ...config,
-              },
+              [providerId]: mergedProvider,
             };
             // Disabling the active provider (e.g. removing a token plan) switches
             // the selection back to the always-available browser TTS so playback
@@ -1079,7 +1146,22 @@ export const useSettingsStore = create<SettingsState>()(
                 ttsVoice: 'default',
               };
             }
-            return { ttsProvidersConfig };
+            // Settings can configure a hosted provider after first-run auto-config
+            // has already run. The global flag has no control on that page, so
+            // becoming usable (empty -> key) must also turn narration on (#1288).
+            // Do not re-enable on later edits if the user turned the flag off.
+            const wasUsable = isTTSProviderEnabled(
+              providerId,
+              state.ttsProvidersConfig[providerId],
+            );
+            const nowUsable = isTTSProviderEnabled(providerId, mergedProvider);
+            const turnOnNarration =
+              providerId !== 'browser-native-tts' &&
+              shouldTurnOn(state.ttsEnabled, !wasUsable && nowUsable);
+            return {
+              ttsProvidersConfig,
+              ...(turnOnNarration ? { ttsEnabled: true } : {}),
+            };
           }),
 
         setASRProviderConfig: (providerId, config) =>
@@ -1131,7 +1213,20 @@ export const useSettingsStore = create<SettingsState>()(
               ...state.imageProvidersConfig,
               [providerId]: mergedProvider,
             };
-            const base = { imageProvidersConfig };
+            // Same usable-transition as TTS: empty -> usable turns the global
+            // flag on. A force-disabled provider (enabled: false) stays unused,
+            // and keyless providers (comfyui-image, lemonade) become usable
+            // from a baseUrl, not an API key.
+            const wasUsable = isUsableMediaProvider(
+              IMAGE_PROVIDERS[providerId],
+              state.imageProvidersConfig[providerId],
+            );
+            const nowUsable = isUsableMediaProvider(IMAGE_PROVIDERS[providerId], mergedProvider);
+            const turnOnImage = shouldTurnOn(state.imageGenerationEnabled, !wasUsable && nowUsable);
+            const base = {
+              imageProvidersConfig,
+              ...(turnOnImage ? { imageGenerationEnabled: true } : {}),
+            };
             if (state.imageProviderId === providerId) {
               // Disabling the active provider (e.g. removing a token plan) must
               // switch the selection away to the default, or generation paths
@@ -1195,7 +1290,16 @@ export const useSettingsStore = create<SettingsState>()(
               ...state.videoProvidersConfig,
               [providerId]: mergedProvider,
             };
-            const base = { videoProvidersConfig };
+            const wasUsable = isUsableMediaProvider(
+              VIDEO_PROVIDERS[providerId],
+              state.videoProvidersConfig[providerId],
+            );
+            const nowUsable = isUsableMediaProvider(VIDEO_PROVIDERS[providerId], mergedProvider);
+            const turnOnVideo = shouldTurnOn(state.videoGenerationEnabled, !wasUsable && nowUsable);
+            const base = {
+              videoProvidersConfig,
+              ...(turnOnVideo ? { videoGenerationEnabled: true } : {}),
+            };
             if (state.videoProviderId === providerId) {
               // Symmetric with image: disabling the active provider switches the
               // selection back to the default so nothing keeps pointing at a
@@ -1359,17 +1463,17 @@ export const useSettingsStore = create<SettingsState>()(
             const res = await fetch('/api/server-providers');
             if (!res.ok) return;
             // Managed providers expose only their allowed model list (LLM/image)
-            // and presence (the "managed" flag) — never a base URL.
+            // and presence (the "managed" flag) — never a base URL. Every
+            // capability section carries an optional `disabled` flag for
+            // admin/server-level force-off (#665).
             const data = (await res.json()) as {
               providers: Record<string, { models?: string[] }>;
-              // TTS additionally carries an optional `disabled` flag for
-              // admin/server-level force-off (#665).
               tts: Record<string, { disabled?: boolean }>;
-              asr: Record<string, Record<string, never>>;
+              asr: Record<string, { disabled?: boolean }>;
               pdf: Record<string, Record<string, never>>;
-              image: Record<string, { models?: string[] }>;
-              video: Record<string, Record<string, never>>;
-              webSearch: Record<string, Record<string, never>>;
+              image: Record<string, { models?: string[]; disabled?: boolean }>;
+              video: Record<string, { models?: string[]; disabled?: boolean }>;
+              webSearch: Record<string, { disabled?: boolean }>;
               generation?: { parallelSceneConcurrency?: number };
             };
 
@@ -1450,7 +1554,9 @@ export const useSettingsStore = create<SettingsState>()(
                 }
               }
 
-              // Merge ASR providers
+              // Merge ASR providers. Reset both server flags first, then apply:
+              // an entry with `disabled` is force-off (server precedence) and is
+              // NOT treated as managed/configured, mirroring the TTS merge.
               const newASRConfig = { ...state.asrProvidersConfig };
               for (const pid of Object.keys(newASRConfig)) {
                 const key = pid as ASRProviderId;
@@ -1458,15 +1564,17 @@ export const useSettingsStore = create<SettingsState>()(
                   newASRConfig[key] = {
                     ...newASRConfig[key],
                     isServerConfigured: false,
+                    serverDisabled: false,
                   };
                 }
               }
-              for (const pid of Object.keys(data.asr)) {
+              for (const [pid, info] of Object.entries(data.asr)) {
                 const key = pid as ASRProviderId;
                 if (newASRConfig[key]) {
                   newASRConfig[key] = {
                     ...newASRConfig[key],
-                    isServerConfigured: true,
+                    isServerConfigured: !info.disabled,
+                    serverDisabled: info.disabled === true,
                   };
                 }
               }
@@ -1492,7 +1600,9 @@ export const useSettingsStore = create<SettingsState>()(
                 }
               }
 
-              // Merge Image providers
+              // Merge Image providers. Reset both server flags first, then
+              // apply: `disabled` is force-off (server precedence), mirroring
+              // the TTS merge.
               const newImageConfig = { ...state.imageProvidersConfig };
               for (const pid of Object.keys(newImageConfig)) {
                 const key = pid as ImageProviderId;
@@ -1500,20 +1610,30 @@ export const useSettingsStore = create<SettingsState>()(
                   newImageConfig[key] = {
                     ...newImageConfig[key],
                     isServerConfigured: false,
+                    serverDisabled: false,
                   };
                 }
               }
-              for (const pid of Object.keys(data.image)) {
+              for (const [pid, info] of Object.entries(data.image)) {
                 const key = pid as ImageProviderId;
                 if (newImageConfig[key]) {
                   newImageConfig[key] = {
                     ...newImageConfig[key],
-                    isServerConfigured: true,
+                    isServerConfigured: !info.disabled,
+                    serverDisabled: info.disabled === true,
+                    ...(info.models?.length
+                      ? {
+                          customModels: info.models.map((id) => ({ id, name: id })),
+                          replaceBuiltInModels: true,
+                        }
+                      : {}),
                   };
                 }
               }
 
-              // Merge Video providers
+              // Merge Video providers. Reset both server flags first, then
+              // apply: `disabled` is force-off (server precedence), mirroring
+              // the TTS merge.
               const newVideoConfig = { ...state.videoProvidersConfig };
               for (const pid of Object.keys(newVideoConfig)) {
                 const key = pid as VideoProviderId;
@@ -1521,36 +1641,48 @@ export const useSettingsStore = create<SettingsState>()(
                   newVideoConfig[key] = {
                     ...newVideoConfig[key],
                     isServerConfigured: false,
+                    serverDisabled: false,
                   };
                 }
               }
               if (data.video) {
-                for (const pid of Object.keys(data.video)) {
+                for (const [pid, info] of Object.entries(data.video)) {
                   const key = pid as VideoProviderId;
                   if (newVideoConfig[key]) {
                     newVideoConfig[key] = {
                       ...newVideoConfig[key],
-                      isServerConfigured: true,
+                      isServerConfigured: !info.disabled,
+                      serverDisabled: info.disabled === true,
+                      ...(info.models?.length
+                        ? {
+                            customModels: info.models.map((id) => ({ id, name: id })),
+                            replaceBuiltInModels: true,
+                          }
+                        : {}),
                     };
                   }
                 }
               }
 
-              // Merge Web Search config — reset all first, then mark server-configured
+              // Merge Web Search config — reset all first, then mark
+              // server-configured; `disabled` is force-off (server precedence),
+              // mirroring the TTS merge.
               const newWebSearchConfig = { ...state.webSearchProvidersConfig };
               for (const key of Object.keys(newWebSearchConfig) as WebSearchProviderId[]) {
                 newWebSearchConfig[key] = {
                   ...newWebSearchConfig[key],
                   isServerConfigured: false,
+                  serverDisabled: false,
                 };
               }
               if (data.webSearch) {
-                for (const pid of Object.keys(data.webSearch)) {
+                for (const [pid, info] of Object.entries(data.webSearch)) {
                   const key = pid as WebSearchProviderId;
                   if (newWebSearchConfig[key]) {
                     newWebSearchConfig[key] = {
                       ...newWebSearchConfig[key],
-                      isServerConfigured: true,
+                      isServerConfigured: !info.disabled,
+                      serverDisabled: info.disabled === true,
                     };
                   }
                 }
@@ -1564,7 +1696,7 @@ export const useSettingsStore = create<SettingsState>()(
                   { isServerConfigured?: boolean; apiKey?: string; serverDisabled?: boolean }
                 >,
               ): T[] => [
-                // Server-disabled providers (TTS only) are never fallback targets.
+                // Server-disabled providers are never fallback targets.
                 ...Object.entries(config)
                   .filter(([, c]) => c.isServerConfigured && !c.serverDisabled)
                   .map(([id]) => id as T),
@@ -1714,8 +1846,12 @@ export const useSettingsStore = create<SettingsState>()(
                   autoTtsEnabled = true;
                 }
 
-                // ASR: select first server provider if current is not server-configured
-                const serverAsrIds = Object.keys(data.asr) as ASRProviderId[];
+                // ASR: select first server provider if current is not
+                // server-configured. Skip server-disabled entries — they are
+                // force-off, not selectable.
+                const serverAsrIds = Object.entries(data.asr)
+                  .filter(([, info]) => !info.disabled)
+                  .map(([id]) => id) as ASRProviderId[];
                 if (
                   serverAsrIds.length > 0 &&
                   !newASRConfig[state.asrProviderId]?.isServerConfigured
@@ -1723,8 +1859,11 @@ export const useSettingsStore = create<SettingsState>()(
                   autoAsrProvider = serverAsrIds[0];
                 }
 
-                // Image: first server provider
-                const serverImageIds = Object.keys(data.image) as ImageProviderId[];
+                // Image: first server provider. Skip server-disabled entries —
+                // they are force-off, not selectable.
+                const serverImageIds = Object.entries(data.image)
+                  .filter(([, info]) => !info.disabled)
+                  .map(([id]) => id) as ImageProviderId[];
                 if (
                   serverImageIds.length > 0 &&
                   !newImageConfig[state.imageProviderId]?.isServerConfigured
@@ -1737,8 +1876,11 @@ export const useSettingsStore = create<SettingsState>()(
                   autoImageEnabled = true;
                 }
 
-                // Video: first server provider
-                const serverVideoIds = Object.keys(data.video || {}) as VideoProviderId[];
+                // Video: first server provider. Skip server-disabled entries —
+                // they are force-off, not selectable.
+                const serverVideoIds = Object.entries(data.video || {})
+                  .filter(([, info]) => !info.disabled)
+                  .map(([id]) => id) as VideoProviderId[];
                 if (
                   serverVideoIds.length > 0 &&
                   !newVideoConfig[state.videoProviderId]?.isServerConfigured
@@ -1995,6 +2137,12 @@ export const useSettingsStore = create<SettingsState>()(
               enabled: true,
               requiresApiKey: true,
               isServerConfigured: oldIsServerConfigured,
+            },
+            exa: {
+              apiKey: '',
+              baseUrl: WEB_SEARCH_PROVIDERS.exa.defaultBaseUrl || '',
+              enabled: true,
+              requiresApiKey: true,
             },
             bocha: {
               apiKey: '',

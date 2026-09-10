@@ -3,31 +3,42 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, Reorder, motion, useReducedMotion } from 'motion/react';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { markStagePersistenceDirty, useStageStore } from '@/lib/store/stage';
+import { useBrand, useIsDesktop } from '@/lib/brand/brand-context';
+import { useStageStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
-import { createBlankSlideScene, duplicateSlideScene } from '@/lib/edit/slide-defaults';
+import { useDeletedSceneRecycle } from '@/lib/edit/deleted-scene-recycle';
+import { duplicateSlideScene } from '@/lib/edit/slide-defaults';
+import {
+  createBlankEditableScene,
+  insertSceneAtIndex,
+  type EditableSceneType,
+} from '@/lib/edit/scene-defaults';
 import { SCENE_CREATION_ENABLED } from '@/lib/edit/scene-creation-enabled';
 import { CHROME_DURATION_MS, CHROME_EASE, CHROME_EASE_CSS } from '@/lib/edit/transitions';
+import { useInWorkbenchPanel } from '@/lib/workbench/panel-context';
 import type { Scene } from '@/lib/types/stage';
 import { ThumbItem } from './ThumbItem';
 import { InsertionZone } from './InsertionZone';
 
-const RAIL_COLLAPSED_PX = 56;
+// Collapsed, the rail is a slim edge handle — just wide enough to hold the
+// expand chevron — rather than a narrow column of page numbers. The point of
+// collapsing is to give the horizontal space back to the canvas, so it keeps
+// almost none; the handle is the only thing that survives, so the rail can be
+// brought back.
+const RAIL_HANDLE_PX = 16;
 const RAIL_MIN_PX = 180;
 const RAIL_MAX_PX = 360;
-const DELETED_SCENE_UNDO_MS = 5000;
 
 /**
  * Pro mode slide-navigation left rail (Studio Editor aesthetic).
  *
  * Layout: a vertical thumbnail strip with monospaced index captions
  * below each tile, inter-thumb "+" insertion zones revealed on hover,
- * and a collapse toggle at the rail head. All scene types are
+ * and a collapse chevron on the rail/slide boundary. All scene types are
  * first-class — slides render a live `ThumbnailSlide`, non-slide scenes
  * get a type-icon stub but stay clickable, draggable, and right-clickable
  * so page-level management is uniform across the deck.
@@ -40,6 +51,9 @@ const DELETED_SCENE_UNDO_MS = 5000;
 export function SlideNavRail() {
   const { t } = useI18n();
   const router = useRouter();
+  const brand = useBrand();
+  const isDesktop = useIsDesktop();
+  const inWorkbenchPanel = useInWorkbenchPanel();
   const scenes = useStageStore.use.scenes();
   const currentSceneId = useStageStore.use.currentSceneId();
   const setCurrentSceneId = useStageStore.use.setCurrentSceneId();
@@ -164,11 +178,6 @@ export function SlideNavRail() {
   // more than one scene overall — otherwise the deck would become empty.
   const totalScenes = scenes.length;
 
-  const currentScene = useMemo(
-    () => scenes.find((s) => s.id === currentSceneId) ?? null,
-    [scenes, currentSceneId],
-  );
-
   const onReorderIds = useCallback(
     (newOrder: string[]) => {
       const byId = new Map(scenes.map((s) => [s.id, s] as const));
@@ -185,53 +194,22 @@ export function SlideNavRail() {
   const handleActivate = useCallback(
     (sceneId: string) => {
       if (sceneId === currentSceneId) return;
-      // Switching to a non-slide scene is fine — useEditModeLock will
-      // auto-exit Pro mode the moment the new scene is uneditable.
+      // Switching to a non-slide scene is fine — Stage will auto-exit Pro
+      // mode the moment the new scene is uneditable.
       setCurrentSceneId(sceneId);
     },
     [currentSceneId, setCurrentSceneId],
   );
 
-  /**
-   * Insert a fresh blank slide *before* the given scene. The first
-   * InsertionZone (above the first thumb) calls this with `scenes[0]`
-   * so it ends up at index 0 — `setScenes([blank, ...scenes])` is
-   * used directly there since the `insertSceneAfter` API only supports
-   * insertion after an existing anchor.
-   */
-  const handleInsertBefore = useCallback(
-    (beforeSceneId: string) => {
-      if (!stage) return;
-      const beforeIndex = scenes.findIndex((s) => s.id === beforeSceneId);
-      if (beforeIndex < 0) return;
-      const blank = createBlankSlideScene(stage.id, t('edit.nav.untitledSlide'), beforeIndex + 1);
-      if (beforeIndex === 0) {
-        // Prepend: setScenes rebalances `order` to match the array index.
-        setScenes([blank, ...scenes]);
-        setCurrentSceneId(blank.id);
-        return;
-      }
-      const anchor = scenes[beforeIndex - 1];
-      insertSceneAfter(anchor.id, blank);
-      setCurrentSceneId(blank.id);
-    },
-    [insertSceneAfter, scenes, setCurrentSceneId, setScenes, stage, t],
-  );
-
   const handleInsertAt = useCallback(
-    (afterSceneId: string | null) => {
+    (insertIndex: number, type: EditableSceneType) => {
       if (!stage) return;
-      const anchor = afterSceneId
-        ? scenes.find((s) => s.id === afterSceneId)
-        : (currentScene ?? scenes[scenes.length - 1]);
-      if (!anchor) return;
-      const anchorIndex = scenes.findIndex((s) => s.id === anchor.id);
-      const newOrder = anchorIndex + 2;
-      const blank = createBlankSlideScene(stage.id, t('edit.nav.untitledSlide'), newOrder);
-      insertSceneAfter(anchor.id, blank);
-      setCurrentSceneId(blank.id);
+      const title = type === 'slide' ? t('edit.nav.untitledSlide') : t('edit.sceneType.quiz');
+      const scene = createBlankEditableScene(type, stage.id, title, insertIndex + 1);
+      setScenes(insertSceneAtIndex(scenes, scene, insertIndex));
+      setCurrentSceneId(scene.id);
     },
-    [currentScene, insertSceneAfter, scenes, setCurrentSceneId, stage, t],
+    [scenes, setCurrentSceneId, setScenes, stage, t],
   );
 
   const handleDuplicate = useCallback(
@@ -262,43 +240,29 @@ export function SlideNavRail() {
   const handleDelete = useCallback(
     (sceneId: string) => {
       const source = scenes.find((s) => s.id === sceneId);
-      if (!source || !stage) return;
+      if (!source) return;
       // Hold deck-empty guard at the rail layer; the store doesn't enforce.
       if (source.type === 'slide' && slideCount <= 1) return;
       if (totalScenes <= 1) return;
       const index = scenes.findIndex((s) => s.id === sceneId);
-      const sourceRefs = collectStageAssetRefs(
-        { stage: { ...stage, videoManifest: undefined }, scenes: [source] },
-        { mediaRows: [], audioRows: [] },
-      ).referenced;
-      const manifestEntries = Object.fromEntries(
-        Object.entries(stage.videoManifest ?? {}).filter(([ref]) => sourceRefs.has(ref)),
-      );
+      useDeletedSceneRecycle.getState().capture(source, index);
       deleteScene(sceneId);
       toast(t('edit.nav.deleted'), {
         description: source.title,
-        duration: DELETED_SCENE_UNDO_MS,
+        duration: 5000,
         action: {
           label: t('edit.nav.undo'),
           onClick: () => {
+            const entry = useDeletedSceneRecycle.getState().consume();
+            if (!entry) return;
             // Stage-scope guard: if the user has navigated to a
-            // different stage while the toast was up, the deleted scene
-            // belongs to the previous stage. Drop the undo rather than
-            // inserting it into the wrong deck.
+            // different stage while the toast was up, the recycle
+            // entry belongs to the previous stage and `insertSceneAfter`
+            // would reject it on stage-id mismatch (silently losing the
+            // deleted scene). Drop the undo when stages don't match
+            // rather than blasting the entry into the wrong deck.
             const currentStage = useStageStore.getState().stage;
-            if (!currentStage || currentStage.id !== source.stageId) return;
-            if (Object.keys(manifestEntries).length > 0) {
-              useStageStore.setState({
-                stage: {
-                  ...currentStage,
-                  videoManifest: {
-                    ...currentStage.videoManifest,
-                    ...manifestEntries,
-                  },
-                },
-              });
-              markStagePersistenceDirty([{ kind: 'stage' }]);
-            }
+            if (!currentStage || currentStage.id !== entry.stageId) return;
             const live = useStageStore.getState().scenes;
             // Prepend path — `insertSceneAfter` requires an anchor, but
             // restoring index 0 (the previously-first slide) has no
@@ -306,20 +270,22 @@ export function SlideNavRail() {
             // and inserting after `live[0]` would land the entry at
             // position 1 instead of 0. setScenes-with-rebalance
             // preserves the original "first slide" semantics.
-            if (index === 0 || live.length === 0) {
-              useStageStore.getState().setScenes([source, ...live]);
-              useStageStore.getState().setCurrentSceneId(source.id);
+            if (entry.index === 0 || live.length === 0) {
+              useStageStore.getState().setScenes([entry.scene, ...live]);
+              useStageStore.getState().setCurrentSceneId(entry.scene.id);
               return;
             }
-            const anchorIndex = Math.min(index - 1, live.length - 1);
+            const anchorIndex = Math.min(entry.index - 1, live.length - 1);
             const anchor = live[anchorIndex];
-            useStageStore.getState().insertSceneAfter(anchor.id, source);
-            useStageStore.getState().setCurrentSceneId(source.id);
+            useStageStore.getState().insertSceneAfter(anchor.id, entry.scene);
+            useStageStore.getState().setCurrentSceneId(entry.scene.id);
           },
         },
+        onDismiss: () => useDeletedSceneRecycle.getState().clear(),
+        onAutoClose: () => useDeletedSceneRecycle.getState().clear(),
       });
     },
-    [deleteScene, scenes, slideCount, stage, totalScenes, t],
+    [deleteScene, scenes, slideCount, totalScenes, t],
   );
 
   const canDeleteAny = totalScenes > 1;
@@ -359,7 +325,7 @@ export function SlideNavRail() {
         'shadow-[2px_0_24px_rgba(0,0,0,0.02)]',
       )}
       style={{
-        width: collapsed ? RAIL_COLLAPSED_PX : persistedWidth,
+        width: collapsed ? RAIL_HANDLE_PX : persistedWidth,
         transition: widthTransitionCss,
       }}
     >
@@ -380,63 +346,79 @@ export function SlideNavRail() {
           <div className="absolute right-0.5 top-1/2 -translate-y-1/2 w-0.5 h-8 rounded-full bg-gray-300 dark:bg-gray-600 group-hover:bg-violet-400 dark:group-hover:bg-violet-500 transition-colors" />
         </div>
       )}
-      {/* Header band — mirrors playback `SceneSidebar`: OpenMAIC logo
-          on the left (click → home), action cluster on the right.
-          Height (h-10 + mt-3 mb-1 = ~56px) matches playback so the
-          chrome top edge stays at the same screen pixel across the
-          mode swap. */}
-      <div
-        className={cn(
-          'shrink-0 px-3 mt-3 mb-1 h-10',
-          collapsed ? 'flex flex-col items-center gap-1' : 'flex items-center justify-between',
-        )}
-      >
-        {!collapsed && (
-          <button
-            type="button"
-            onClick={() => router.push('/')}
-            title={t('generation.backToHome')}
-            className="flex items-center gap-2 cursor-pointer rounded-lg px-1.5 -mx-1.5 py-1 -my-1 hover:bg-gray-100/80 dark:hover:bg-gray-800/60 active:scale-[0.97] transition-all duration-150"
-          >
-            <img src="/logo-horizontal.png" alt="OpenMAIC" className="h-6" />
-          </button>
-        )}
-        <div className={cn('flex items-center gap-1', collapsed && 'flex-col')}>
-          {/* Insertion lives in the `InsertionZone` strips between (and
-              before/after) thumbs now — no header `+` button. */}
-          <button
-            type="button"
-            onClick={() => setCollapsed(!collapsed)}
-            aria-label={collapsed ? t('edit.nav.expand') : t('edit.nav.collapse')}
-            title={collapsed ? t('edit.nav.expand') : t('edit.nav.collapse')}
-            className={cn(
-              'inline-flex h-7 w-7 items-center justify-center rounded-lg',
-              'bg-gray-100/80 text-gray-500 ring-1 ring-black/[0.04]',
-              'dark:bg-gray-800/80 dark:text-gray-400 dark:ring-white/[0.06]',
-              'hover:bg-gray-200/90 hover:text-gray-700',
-              'dark:hover:bg-gray-700/90 dark:hover:text-gray-200',
-              'active:scale-90 transition-all duration-200',
-            )}
-          >
-            {collapsed ? (
-              <PanelLeftOpen className="h-4 w-4" />
-            ) : (
-              <PanelLeftClose className="h-4 w-4" />
-            )}
-          </button>
+      {/* Collapse / expand control. Two forms of one toggle (stable testid):
+          - EXPANDED: a faint chevron on the rail/slide boundary, one register
+            lighter than a pane seam because this is a boundary inside a pane.
+          - COLLAPSED: the whole slim handle IS the control — a full-height edge
+            strip with a centred chevron — so the rail that gave its width back to
+            the canvas is still easy to find and bring back. */}
+      {collapsed ? (
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          aria-label={t('edit.nav.expand')}
+          title={t('edit.nav.expand')}
+          data-testid="slide-nav-rail-collapse"
+          className={cn(
+            'absolute inset-0 z-10 flex items-center justify-center',
+            'text-zinc-400/70 dark:text-zinc-500/70',
+            'hover:bg-gray-100/80 hover:text-zinc-600 dark:hover:bg-gray-800/80 dark:hover:text-zinc-300',
+            'focus-visible:outline-none focus-visible:bg-gray-100/80 focus-visible:text-zinc-600 focus-visible:ring-1 focus-visible:ring-violet-400/50 dark:focus-visible:bg-gray-800/80 dark:focus-visible:text-zinc-300',
+            'active:bg-gray-200/90 active:text-zinc-700 dark:active:bg-gray-700/90 dark:active:text-zinc-200',
+            'transition-colors duration-150',
+          )}
+        >
+          <ChevronRight className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setCollapsed(true)}
+          aria-label={t('edit.nav.collapse')}
+          title={t('edit.nav.collapse')}
+          data-testid="slide-nav-rail-collapse"
+          className={cn(
+            'absolute right-0 top-1/2 z-10 flex h-8 w-6 -translate-y-1/2 items-center justify-center rounded-l-md',
+            'text-zinc-400/70 dark:text-zinc-500/70',
+            'hover:bg-gray-100/80 hover:text-zinc-600 dark:hover:bg-gray-800/80 dark:hover:text-zinc-300',
+            'focus-visible:outline-none focus-visible:bg-gray-100/80 focus-visible:text-zinc-600 focus-visible:ring-1 focus-visible:ring-violet-400/50 dark:focus-visible:bg-gray-800/80 dark:focus-visible:text-zinc-300',
+            'active:bg-gray-200/90 active:text-zinc-700 dark:active:bg-gray-700/90 dark:active:text-zinc-200',
+            'transition-colors duration-150',
+          )}
+        >
+          <ChevronLeft className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
+        </button>
+      )}
+
+      {/* Header band — mirrors playback `SceneSidebar`: OpenMAIC logo on
+          the left (click → home). Height (h-10 + mt-3 + mb-1 = ~56px)
+          matches playback so the chrome top edge stays at the same screen
+          pixel across the mode swap. Inside the workbench panel the band
+          is dropped entirely — its only other occupant, the collapse
+          control, now lives on the rail/slide boundary — so the first
+          thumbnail starts on the same 12px rhythm as the canvas. */}
+      {!inWorkbenchPanel && !collapsed && (
+        <div className="shrink-0 px-3 mt-3 mb-1 h-10 flex items-center">
+          {!collapsed && !isDesktop && (
+            <button
+              type="button"
+              onClick={() => router.push('/')}
+              title={t('generation.backToHome')}
+              className="flex items-center gap-2 cursor-pointer rounded-lg px-1.5 -mx-1.5 py-1 -my-1 hover:bg-gray-100/80 dark:hover:bg-gray-800/60 active:scale-[0.97] transition-all duration-150"
+            >
+              {/* Desktop client: the Electron title bar already shows the brand icon + name, so the edit rail doesn't repeat it;
+                  returning home is handled by the edit bar's CommandBar back arrow. */}
+              <img src={brand.logoSrc} alt={brand.productName} className="h-6 w-auto" />
+            </button>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Body — list padding (p-2 space-y-2) matches playback's scene
-          list so spacing/density read the same. */}
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide pt-1">
-        {collapsed ? (
-          <CollapsedList
-            scenes={scenes}
-            currentSceneId={currentSceneId}
-            onActivate={handleActivate}
-          />
-        ) : (
+          list so spacing/density read the same. Collapsed, there is no body at
+          all: the slim handle above is the whole rail. */}
+      {!collapsed && (
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide pt-1">
           <AnimatePresence initial={false}>
             <motion.div
               key="expanded-list"
@@ -457,8 +439,10 @@ export function SlideNavRail() {
                     case the user called out. */}
                 {SCENE_CREATION_ENABLED && scenes[0] ? (
                   <InsertionZone
-                    label={t('edit.nav.addSlide')}
-                    onInsert={() => handleInsertBefore(scenes[0].id)}
+                    label={t('edit.nav.addPage')}
+                    slideLabel={t('edit.sceneType.slide')}
+                    quizLabel={t('edit.sceneType.quiz')}
+                    onInsert={(type) => handleInsertAt(0, type)}
                   />
                 ) : null}
                 {scenes.map((scene, index) => (
@@ -474,8 +458,10 @@ export function SlideNavRail() {
                     />
                     {SCENE_CREATION_ENABLED && (
                       <InsertionZone
-                        label={t('edit.nav.addSlide')}
-                        onInsert={() => handleInsertAt(scene.id)}
+                        label={t('edit.nav.addPage')}
+                        slideLabel={t('edit.sceneType.slide')}
+                        quizLabel={t('edit.sceneType.quiz')}
+                        onInsert={(type) => handleInsertAt(index + 1, type)}
                       />
                     )}
                   </Fragment>
@@ -483,46 +469,8 @@ export function SlideNavRail() {
               </Reorder.Group>
             </motion.div>
           </AnimatePresence>
-        )}
-      </div>
+        </div>
+      )}
     </aside>
-  );
-}
-
-interface CollapsedListProps {
-  readonly scenes: readonly Scene[];
-  readonly currentSceneId: string | null;
-  readonly onActivate: (sceneId: string) => void;
-}
-
-function CollapsedList({ scenes, currentSceneId, onActivate }: CollapsedListProps) {
-  return (
-    <ol className="m-0 flex flex-col items-stretch gap-0.5 py-2 px-1.5 list-none">
-      {scenes.map((scene, index) => {
-        const active = scene.id === currentSceneId;
-        const isSlide = scene.type === 'slide';
-        return (
-          <li key={scene.id}>
-            <button
-              type="button"
-              onClick={() => onActivate(scene.id)}
-              title={scene.title || `${index + 1}`}
-              data-active={active}
-              data-scene-type={scene.type}
-              className={cn(
-                'group/cl flex h-7 w-full items-center justify-center rounded-md',
-                'font-mono text-[10px] leading-none tabular-nums tracking-wide transition-colors',
-                active
-                  ? 'bg-violet-500 text-white shadow-sm shadow-violet-500/40'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-200',
-                !isSlide && !active && 'text-zinc-400/80 dark:text-zinc-500/80',
-              )}
-            >
-              {String(index + 1).padStart(2, '0')}
-            </button>
-          </li>
-        );
-      })}
-    </ol>
   );
 }

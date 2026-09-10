@@ -51,6 +51,8 @@ export interface ReferenceRuntimeServerOptions<
   /** When supplied, the same server also exposes the `/assets` contract. */
   assetStore?: AssetStore;
   authorizeAssets?: AssetHttpAuthorize;
+  /** Byte `GET` egress for the optional asset contract. Defaults to direct. */
+  byteEgress?: StorageHttpHandlerOptions['byteEgress'];
   /** Pass the same validators configured on documentStore. */
   validateScene?: SceneValidator;
   validateStage?: StageValidator;
@@ -123,6 +125,7 @@ export async function createReferenceRuntimeServer<
       : { authorizeDocuments: options.authorizeDocuments }),
     ...(options.assetStore === undefined ? {} : { assetStore: options.assetStore }),
     ...(options.authorizeAssets === undefined ? {} : { authorizeAssets: options.authorizeAssets }),
+    ...(options.byteEgress === undefined ? {} : { byteEgress: options.byteEgress }),
     ...(options.validateScene === undefined ? {} : { validateScene: options.validateScene }),
     ...(options.validateStage === undefined ? {} : { validateStage: options.validateStage }),
     ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes }),

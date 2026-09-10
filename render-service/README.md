@@ -21,25 +21,80 @@ poll, then download. Job ids are opaque.
 | Method + path                 | Purpose                                                                              |
 | ----------------------------- | ------------------------------------------------------------------------------------ |
 | `POST /render`                | multipart: `project` (the ZIP) + `fps`, `quality`, `format` fields → `202 { jobId }` |
-| `GET /render/:jobId`          | `{ status, progress, currentStage, framesRendered, totalFrames, done, error }`       |
+| `POST /preview`               | JSON: persisted `scene`, stage context, and viewport → synchronous PNG               |
+| `GET /render/:jobId`          | status/progress plus actual capture, worker, profile, and runtime metrics            |
 | `GET /render/:jobId/download` | stream the MP4 (or `302` to a presigned URL) once `succeeded`                        |
 | `DELETE /render/:jobId`       | cancel a queued/running job                                                          |
-| `GET /health`                 | `{ ok: true }`                                                                       |
+| `GET /health`                 | resource profile, observed runtime versions, and whether renders are being admitted |
 
 `status` is one of `queued | running | succeeded | failed | cancelled`;
 `progress` is `0..1`.
+
+### Admission: 429s and `/health`
+
+Admission rejections are machine-readable. `POST /render` answers `429` with a
+JSON body `{ error, reason }` where `reason` is one of:
+
+- `queue_full` — the deployment-wide cap `RENDER_MAX_QUEUE` (reserved + queued +
+  running jobs) is exhausted; back off and retry.
+- `per_identity_limit` — this client identity already holds
+  `RENDER_MAX_JOBS_PER_USER` active renders.
+
+`POST /preview` also answers `429` with `{ error, reason }`, where `reason` is
+one of:
+
+- `preview_queue_full` — `RENDER_PREVIEW_MAX_IN_FLIGHT` previews are already
+  live (buffering or executing).
+- `preview_per_user_limit` — this client identity already holds
+  `RENDER_PREVIEW_MAX_PER_USER` previews.
+- `capacity_busy` — the shared execution slot is occupied, including by a video
+  render. Previews never queue for this slot; retry later.
+
+`GET /health` reports `accepting: boolean` — whether the queue cap currently has
+room for another **video render** — it reflects the render queue only, not
+preview admission or execution-slot availability. Callers and load balancers
+can shed traffic before probing with a real render. The flag is deliberately
+aggregate-only: no queue depths or occupancy counts, and never any per-identity
+data. Identity keys are client IPs when the service runs behind
+`TRUST_PROXY_HEADERS=true`, so exposing the per-identity map would publish the
+IP address of everyone currently rendering.
+
+Previews share the service's single Chromium execution slot with video renders,
+but never wait in the video queue. Once a preview has passed its body and
+semantic checks, it renders immediately or fails with `capacity_busy`.
+
+`/preview` requires fully self-contained scenes (inline code and data: URLs
+only); network, blob:, and relative references are rejected. Slide media must
+use `data:` URLs, and interactive scenes must contain embedded HTML whose
+resource references are inline or `data:` URLs. Non-self-contained inputs fail
+with `422` instead of returning a misleading PNG. Detection is best-effort:
+some exotic external constructs (for example, `object data`, `track src`, and
+CSS `@import`) may pass validation; self-contained scenes are the caller's
+responsibility, and end-to-end fidelity for persisted scenes arrives with
+caller-side preparation (tracked separately).
 
 ## Environment
 
 | Var                                      | Default                     | Meaning                                                                                                                                                                                                                                                                                                                                                             |
 | ---------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PORT`                                   | `9000`                      | Listen port.                                                                                                                                                                                                                                                                                                                                                        |
-| `RENDER_MAX_CONCURRENCY`                 | `1`                         | Renders that execute simultaneously; extras queue FIFO. The default is latency-oriented because one render may drive several Chromium instances.                                                                                                                                                                                                                    |
-| `RENDER_MAX_CONCURRENT_EXTRACTIONS`      | `1`                         | Archives expanded simultaneously; bounds the RAM multiplier (≈ this × max expanded size).                                                                                                                                                                                                                                                                           |
+| `RENDER_RESOURCE_PROFILE`                | `standard`                  | `standard` prefers BeginFrame, permits producer compatibility fallback to screenshot, and requires 8 GiB; `low-memory` forces screenshot capture and requires 4 GiB. Both fix one producer worker, one render, and one extraction.                                                                                                                                     |
+| `RENDER_MAX_CONCURRENCY`                 | profile: `1`                | Must match the selected profile. Renders beyond the single execution slot queue FIFO.                                                                                                                                                                                                                                                                               |
+| `RENDER_MAX_CONCURRENT_EXTRACTIONS`      | profile: `1`                | Must match the selected profile; bounds archive expansion to one 512 MiB expanded archive at a time.                                                                                                                                                                                                                                                                |
 | `RENDER_MAX_JOBS_PER_USER`               | `1`                         | Active jobs allowed per client identity (0 disables the guard — see note below).                                                                                                                                                                                                                                                                                    |
 | `RENDER_MAX_QUEUE`                       | `20`                        | Max jobs in the system (reserved+queued+running) before new submits get `429`.                                                                                                                                                                                                                                                                                      |
 | `RENDER_JOB_TTL_MS`                      | `1800000`                   | How long finished jobs + artifacts live before cleanup.                                                                                                                                                                                                                                                                                                             |
 | `RENDER_JOB_DEADLINE_MS`                 | `2700000`                   | Hard per-job wall-clock deadline; overruns are aborted and marked **failed**.                                                                                                                                                                                                                                                                                       |
+| `RENDER_PREVIEW_TIMEOUT_MS`              | `20000`                     | Hard wall-clock deadline for a synchronous preview, including body parsing and Chromium cleanup.                                                                                                                                                                                                                                                                   |
+| `RENDER_PREVIEW_MAX_IN_FLIGHT`           | `8`                         | Maximum admitted previews across buffering and execution.                                                                                                                                                                                                                                                                                                          |
+| `RENDER_PREVIEW_MAX_PER_USER`            | `2`                         | Concurrent previews per owner identity; 0 disables the guard for deployments whose preview callers do not supply an owner identity (see note below).                                                                                                                                                                                                                |
+| `RENDER_PREVIEW_MAX_JSON_BYTES`          | `33554432`                  | Maximum preview JSON body size (32 MiB), enforced on declared length and streamed bytes independently of the ZIP upload cap.                                                                                                                                                                                                                                        |
+| `RENDER_CHUNK_EXECUTION`                 | `false`                     | Opt in to the bounded local `plan -> renderChunk -> assemble` executor. The HTTP API stays unchanged.                                                                                                                                                                                                                                                               |
+| `RENDER_CHUNK_COUNT`                     | `1`                         | Number of deterministic closed-GOP chunks planned for a render when chunk execution is enabled.                                                                                                                                                                                                                                                                    |
+| `RENDER_CHUNK_WORKERS`                   | profile: `1`                | Maximum producer capture workers inside one chunk. This remains explicit so chunk fan-out cannot multiply nested producer workers.                                                                                                                                                                                                                                  |
+| `RENDER_MAX_PARALLEL_CHUNKS`             | `1`                         | Maximum chunks executed concurrently in the local process. Chunks beyond the bound wait locally.                                                                                                                                                                                                                                                                   |
+| `RENDER_CHUNK_SIZE_FRAMES`               | unset                       | Optional fixed frame count per planned chunk.                                                                                                                                                                                                                                                                                                                       |
+| `RENDER_TARGET_CHUNK_FRAMES`             | unset                       | Optional target frame count used by the producer planner when deriving chunk boundaries.                                                                                                                                                                                                                                                                             |
 | `RENDER_MAX_UPLOAD_BYTES`                | `314572800`                 | Max compressed archive size accepted (300 MB); enforced on real bytes, before buffering.                                                                                                                                                                                                                                                                            |
 | `RENDER_MAX_ENTRIES`                     | `5000`                      | Max entries allowed in the archive.                                                                                                                                                                                                                                                                                                                                 |
 | `RENDER_MAX_ENTRY_BYTES`                 | `209715200`                 | Max expanded size of any single entry (200 MB).                                                                                                                                                                                                                                                                                                                     |
@@ -47,16 +102,21 @@ poll, then download. Job ids are opaque.
 | `RENDER_MAX_COMPRESSION_RATIO`           | `200`                       | Max expanded:compressed ratio per entry (ZIP-bomb guard).                                                                                                                                                                                                                                                                                                           |
 | `RENDER_EGRESS_LOCKDOWN`                 | `true`                      | Install the iptables egress lockdown at startup (needs root + `CAP_NET_ADMIN`); **fails closed** — the container exits if the rules can't be applied. Set `false` to run unisolated.                                                                                                                                                                                |
 | `PRODUCER_TMP_PROJECT_DIR`               | `/tmp/openmaic-renders`     | Scratch dir for unzipped projects + outputs.                                                                                                                                                                                                                                                                                                                        |
-| `PRODUCER_BROWSER_GPU_MODE`              | `hardware` (container)      | Capture path selector. Producer's own default is `software`, which force-enables the CPU-bound `Page.captureScreenshot` fallback. `hardware` keeps beginFrame eligible when the memory profile permits it; low-memory mode still safely forces screenshot capture. No real GPU is required.                                                                                       |
-| `PRODUCER_LOW_MEMORY_MODE`               | auto                        | Producer detects the cgroup limit. At ≤8 GiB it selects its low-memory path (screenshot capture and one worker), preventing unvalidated high-resolution renders from multiplying Chromium memory.                                                                                                                                                                      |
-| `PRODUCER_MAX_WORKERS`                   | unset (producer auto-sizing) | Optional explicit per-job capture worker count. The default Compose profile leaves it unset so producer 0.7.60 keeps its CPU, memory, low-memory, small-job, and capture-cost guards.                                                                                                                                                                                    |
-| `PRODUCER_ENABLE_BROWSER_POOL`           | `false` (set in Compose)    | Gives parallel frame workers independent Chromium instances instead of sharing a compositor-bound browser pool. Raises memory use; the 720p reference peaked around 1.6 GiB with four workers.                                                                                                                                                                      |
+| `PRODUCER_BROWSER_GPU_MODE`              | profile-controlled          | Both profiles use the software/SwiftShader selector; `standard` keeps BeginFrame eligible with `PRODUCER_FORCE_SCREENSHOT=false`, while `low-memory` forces screenshot capture. This is not a host GPU requirement. Do not override it directly.                                                                                                            |
+| `PRODUCER_LOW_MEMORY_MODE`               | profile-controlled          | Explicitly `false` for `standard` and `true` for `low-memory`; cgroup heuristics cannot silently switch the selected profile.                                                                                                                                                                                                                                        |
+| `PRODUCER_MAX_WORKERS`                   | profile: `1`                | Explicit for both supported profiles so producer auto-sizing cannot raise the worker count.                                                                                                                                                                                                                                                                        |
+| `PRODUCER_ENABLE_BROWSER_POOL`           | profile: `false`            | Disabled because both supported profiles use one worker; no additional Chromium instances are admitted.                                                                                                                                                                                                                                                            |
 | `PRODUCER_HEADLESS_SHELL_PATH`           | `/usr/bin/chromium-headless-shell` (container) | Chromium **headless shell** executable used by producer's beginFrame resolver. Regular Chromium is not equivalent: it may resolve as beginFrame-capable and then reject `HeadlessExperimental.beginFrame`, causing a screenshot fallback.                                                                                                                                |
-| `RENDER_REQUIRE_BEGINFRAME`              | `false`                     | When explicitly enabled, fail startup/jobs unless producer's worker performance data reports exactly `beginframe`. Use this only in a memory-sized beginFrame profile; the 4 GiB Compose default intentionally permits producer's low-memory screenshot path.                                                                                                            |
+| `RENDER_REQUIRE_BEGINFRAME`              | profile-controlled          | `false` for both supported profiles. `standard` requests BeginFrame but accepts producer compatibility fallback; `low-memory` forces screenshot. This internal compatibility knob must not be overridden independently.                                                                                                                                            |
 | `PRODUCER_PUPPETEER_PROTOCOL_TIMEOUT_MS` | `900000` (set in Compose)   | CDP timeout headroom for long frame ranges. The producer default of 300 seconds caused long jobs to fall back from four workers to two.                                                                                                                                                                                                                             |
 | `HF_STATIC_DEDUP`                        | `false` (set in Compose)    | Temporary OpenMAIC-export workaround: these long slide compositions currently exhaust producer's 15-second verification budget and disable dedup anyway. Skipping the doomed verification removes the fixed startup cost without changing frames.                                                                                                                   |
 | `RENDER_HOME`                            | `/app`                      | Writable home used after the entrypoint drops privileges. Producer font caches live under `$RENDER_HOME/.cache`, never `/root/.cache`.                                                                                                                                                                                                                              |
 | `PUPPETEER_EXECUTABLE_PATH`              | `/usr/bin/chromium-headless-shell` | System Chromium headless shell (set in the image).                                                                                                                                                                                                                                                                                                                   |
+
+Chunk settings are profile-bounded: the standard profile allows at most one
+producer worker per chunk and four concurrent chunks; low-memory allows one of
+each. Values above the selected profile limit fail startup rather than
+silently multiplying browser, FFmpeg, and temporary-disk usage.
 
 Client identity for the per-user guard is taken from the `x-openmaic-client`
 header, which the app's proxy sets. A client-supplied `userId` form field is
@@ -66,12 +126,19 @@ overwrites those headers); otherwise all callers share one `direct` identity, so
 the default directly-exposed Compose topology can't be gamed by spoofing
 forwarding headers.
 
-> **Per-user guard vs. shared identity.** When identity can't be trusted (no
-> reverse proxy → everyone is `direct`), a `RENDER_MAX_JOBS_PER_USER` of 1 would
-> throttle the _whole deployment_ to one render at a time. The default Compose
-> therefore sets `RENDER_MAX_JOBS_PER_USER=0` (guard off) and relies on
-> `RENDER_MAX_CONCURRENCY` + `RENDER_MAX_QUEUE`. Enable the per-user guard only
-> behind a trusted proxy that supplies a real per-user identity.
+> **Per-user guard vs. shared identity.** Without `TRUST_PROXY_HEADERS=true`
+> every caller collapses into one shared `direct` identity bucket, so any
+> _nonzero_ `RENDER_MAX_JOBS_PER_USER` throttles the whole deployment to that
+> many concurrent renders — not just one user. This is why the default
+> `docker-compose.yml` sets `RENDER_MAX_JOBS_PER_USER=0` (guard off) and relies
+> on `RENDER_MAX_CONCURRENCY` + `RENDER_MAX_QUEUE` (see the comment beside that
+> variable in the Compose file). Enable the per-user guard only behind a trusted
+> proxy that supplies a real per-user identity.
+>
+> Preview callers are different: the app sends the durable session owner id in
+> `x-openmaic-client`, so `RENDER_PREVIEW_MAX_PER_USER` stays enabled and
+> defaults to 2. Set it to 0 only for deployments that call `/preview` without
+> an owner identity.
 
 ## Security / isolation
 
@@ -117,75 +184,74 @@ docker compose --profile video-export up --build
 
 ### Standalone (development)
 
-Requires Node ≥ 22, Chromium's old headless shell, and FFmpeg on `PATH`:
+Requires Node 22, Chromium's old headless shell, and FFmpeg on `PATH`. The
+standard profile checks for 8 GiB of available host/cgroup memory before
+listening:
 
 ```bash
 cd render-service
 npm install
 PUPPETEER_EXECUTABLE_PATH=$(which chromium-headless-shell) \
-PRODUCER_BROWSER_GPU_MODE=hardware \
-PRODUCER_LOW_MEMORY_MODE=false \
-PRODUCER_ENABLE_BROWSER_POOL=false \
 PRODUCER_HEADLESS_SHELL_PATH=$(which chromium-headless-shell) \
-RENDER_REQUIRE_BEGINFRAME=true \
-PRODUCER_MAX_WORKERS=4 \
+RENDER_RESOURCE_PROFILE=standard \
 PRODUCER_PUPPETEER_PROTOCOL_TIMEOUT_MS=900000 \
 HF_STATIC_DEDUP=false \
 npm start
 ```
 
-## Performance profiles
+## Resource profiles
 
-The default Compose service is a **single-job adaptive safety profile**. It
-leaves both `PRODUCER_MAX_WORKERS` and `PRODUCER_LOW_MEMORY_MODE` unset, so
-producer observes the 4 GiB cgroup and selects its low-memory path: one capture
-worker with screenshot capture. This avoids multiplying Chromium memory for the
-product's default 1080p and selectable 4K exports, whose four-worker peak memory
-has not been validated. One render and one extraction are admitted at a time.
+The default `standard` CPU profile is the intended 1080p / 30 fps / standard
+quality path: it prefers BeginFrame, while allowing producer to select screenshot
+for compatibility-sensitive compositions such as iframe GenUI. Producer workers
+are fixed at one, and the service admits one render plus one archive extraction
+at a time. It requires at least 8 GiB of host/cgroup memory and an existing
+headless shell so ordinary compositions remain BeginFrame-eligible. No host GPU
+is required or requested; Chromium uses its software/SwiftShader selector.
 
-For a controlled **1280×720 single-job latency profile**, the reference export
-was measured below 2 GiB resident memory with four independent beginFrame
-workers. Opt into that bounded profile explicitly:
+Use the safe `low-memory` profile only when BeginFrame latency is less important
+than a smaller memory ceiling. It fixes screenshot capture, one worker, one
+render, and one extraction, and requires at least 4 GiB:
 
-```yaml
-environment:
-  - PRODUCER_LOW_MEMORY_MODE=false
-  - PRODUCER_MAX_WORKERS=4
-  - RENDER_REQUIRE_BEGINFRAME=true
+```bash
+RENDER_RESOURCE_PROFILE=low-memory \
+RENDER_SERVICE_MEMORY_LIMIT=4g \
+docker compose --profile video-export up --build
 ```
 
-Do not apply this override to 1080p or 4K workloads until their peak cgroup
-memory has been measured; raise `mem_limit` from evidence rather than assuming
-the 720p bound scales safely.
+Both `/health` and `GET /render/:jobId` make the selection observable. Health
+reports the capture policy, requested mode, worker/concurrency bounds, minimum
+memory, and observed Node, producer, Chromium, and FFmpeg versions. A completed
+job reports requested versus actual capture mode and worker count with the same
+version record, so a standard-profile screenshot fallback remains explicit.
 
-For a **multi-job throughput profile**, prefer one producer worker per job and
-raise service concurrency instead of nesting both forms of parallelism:
+The previous fixed 720p short-sample comparison that motivated these profiles was:
 
-```yaml
-environment:
-  - PRODUCER_MAX_WORKERS=1
-  - PRODUCER_ENABLE_BROWSER_POOL=false
-  - RENDER_MAX_CONCURRENCY=2
-  - RENDER_MAX_CONCURRENT_EXTRACTIONS=2
-```
+| Capture path | Workers | Result |
+| --- | ---: | --- |
+| screenshot | 1 | 28.7 s baseline |
+| BeginFrame | 1 | 16.3 s, about 43% faster |
+| BeginFrame | 2 | only a small improvement beyond one worker |
+| BeginFrame | 4 | no improvement on four vCPU; higher resource pressure |
 
-Size memory for the number of simultaneous archives and Chromium/FFmpeg pairs.
-Do not raise both producer workers and render concurrency without measuring the
-combined CPU and RAM multiplier. This example keeps beginFrame optional so the
-cgroup-aware low-memory fallback remains valid; require beginFrame only after
-sizing memory for every concurrent job.
+These measurements justify the one-worker standard, not a general latency SLA.
+The full 1080p sample took 696.9 s with one worker, with capture about 75.5% and
+encode about 20.6% of runtime. Four-worker 1080p/4K and multi-job profiles remain
+unsupported until their combined correctness and memory bounds are validated.
 
-Long single jobs still benefit from producer-side bounded chunking/distributed
-rendering. The extended CDP timeout prevents the known 300-second fallback, but
-it is a guardrail rather than a substitute for splitting work into ranges whose
-completion time is independently bounded.
+Output parity must be verified separately for each validated profile before
+claiming parity acceptance.
 
 ## Scalability
 
-The service is built with two swap points so it can move from a single OSS host
+The service is built with three swap points so it can move from a single OSS host
 to a horizontally-scaled demo deployment without changing the HTTP contract or
 the app:
 
+- **`RenderExecutor`** (`src/render-executor.ts`) — `InProcessExecutor` adapts
+  the current HyperFrames producer to stable progress, cancellation, deadline,
+  failure, and performance types. A bounded local or remote executor can replace
+  it without changing `RenderCoordinator` or the routes.
 - **`JobStore`** (`src/job-store.ts`) — Part A ships `InMemoryJobStore`. A
   `RedisJobStore` implementing the same interface lets any replica serve poll /
   download requests.
@@ -194,7 +260,13 @@ the app:
   whose `locate` returns a presigned URL makes the download route `302` the
   browser straight to object storage, bypassing the proxy.
 
-Chunked distributed rendering (`@hyperframes/producer/distributed`) to cut
-single-job latency is a further, separate follow-up.
+`RenderCoordinator` owns admission, queueing, job state, artifact registration,
+and cleanup while depending only on those three interfaces.
+
+The opt-in local chunk executor uses `@hyperframes/producer/distributed` without
+adding a queue or changing the HTTP contract. It freezes the producer plan and
+runtime versions, bounds chunk fan-out and nested producer workers, verifies
+chunk bytes and sidecar hashes before ordered assembly, and reuses only a valid
+result for an idempotent retry. The default remains the in-process executor.
 
 [`@hyperframes/producer`]: https://www.npmjs.com/package/@hyperframes/producer

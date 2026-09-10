@@ -7,7 +7,7 @@
  * POST /api/generate/video
  *
  * Headers:
- *   x-video-provider: VideoProviderId (default: 'seedance')
+ *   x-video-provider: VideoProviderId (optional, server-configured default)
  *   x-video-model: string (optional model override)
  *   x-api-key: string (optional, server fallback)
  *   x-base-url: string (optional, server fallback)
@@ -21,8 +21,11 @@ import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import { generateVideo, normalizeVideoOptions } from '@/lib/media/video-providers';
 import {
   isServerConfiguredProvider,
+  isServerProviderDisabled,
   resolveVideoApiKey,
   resolveVideoBaseUrl,
+  resolveVideoModel,
+  resolveServerVideoProviderId,
 } from '@/lib/server/provider-config';
 import type { VideoProviderId, VideoGenerationOptions } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
@@ -41,14 +44,25 @@ export async function POST(request: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing prompt');
     }
 
-    const providerId = (request.headers.get('x-video-provider') || 'seedance') as VideoProviderId;
+    // The client may express no provider preference (empty header) — fall back
+    // to the first server-configured video provider, else fail loud.
+    const providerId = (request.headers.get('x-video-provider')?.trim() ||
+      resolveServerVideoProviderId()) as VideoProviderId;
+    if (!providerId) {
+      return apiError('MISSING_PROVIDER', 400, 'No video provider configured');
+    }
+    // Enforce server precedence: a force-disabled provider is off for everyone,
+    // regardless of any client key/selection — mirror the TTS contract (#665).
+    if (isServerProviderDisabled('video', providerId)) {
+      return apiError('PROVIDER_DISABLED', 403, 'This video provider is disabled by the server');
+    }
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
     const managed = isServerConfiguredProvider('video', providerId);
     const clientApiKey = managed ? undefined : request.headers.get('x-api-key') || undefined;
     const clientBaseUrl = managed ? undefined : request.headers.get('x-base-url') || undefined;
-    const clientModel = request.headers.get('x-video-model') || undefined;
+    const clientModel = request.headers.get('x-video-model')?.trim() || undefined;
 
-    if (clientBaseUrl && process.env.NODE_ENV === 'production') {
+    if (clientBaseUrl) {
       const ssrfError = await validateUrlForSSRF(clientBaseUrl);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
@@ -66,19 +80,29 @@ export async function POST(request: NextRequest) {
 
     const baseUrl = resolveVideoBaseUrl(providerId, clientBaseUrl);
 
+    // A managed provider may pin its model list server-side
+    // (VIDEO_<PREFIX>_MODELS): an allowlisted client choice wins, otherwise the
+    // first pinned entry is the managed default; unmanaged providers use the
+    // client header directly.
+    const model = resolveVideoModel(providerId, clientModel);
+    if (!model) {
+      return apiError(
+        'MISSING_MODEL',
+        400,
+        `No model configured for video provider: ${providerId}`,
+      );
+    }
+
     // Normalize options against provider capabilities
     const options = normalizeVideoOptions(providerId, body);
 
     log.info(
-      `Generating video: provider=${providerId}, model=${clientModel || 'default'}, ` +
+      `Generating video: provider=${providerId}, model=${model || 'default'}, ` +
         `prompt="${body.prompt.slice(0, 80)}...", duration=${options.duration ?? 'auto'}, ` +
         `aspect=${options.aspectRatio ?? 'auto'}, resolution=${options.resolution ?? 'auto'}`,
     );
 
-    const result = await generateVideo(
-      { providerId, apiKey, baseUrl, model: clientModel },
-      options,
-    );
+    const result = await generateVideo({ providerId, apiKey, baseUrl, model }, options);
 
     log.info(
       `Video generated: url=${result.url ? 'yes' : 'no'}, ${result.width}x${result.height}, ${result.duration}s`,
@@ -88,7 +112,7 @@ export async function POST(request: NextRequest) {
       kind: 'video',
       unit: 'second',
       providerId,
-      modelId: clientModel,
+      modelId: model,
       quantity: result.duration,
     });
 
@@ -100,10 +124,7 @@ export async function POST(request: NextRequest) {
       log.warn(`Video blocked by content safety filter: ${message}`);
       return apiError('CONTENT_SENSITIVE', 400, message);
     }
-    log.error(
-      `Video generation failed [provider=${request.headers.get('x-video-provider') ?? 'kling'}, model=${request.headers.get('x-video-model') ?? 'default'}]:`,
-      error,
-    );
+    log.error(`Video generation failed: ${message}`, error);
     return apiError('INTERNAL_ERROR', 500, message);
   }
 }

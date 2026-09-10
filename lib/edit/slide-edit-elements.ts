@@ -1,3 +1,4 @@
+import katex from 'katex';
 import type {
   ChartType,
   PPTChartElement,
@@ -38,6 +39,32 @@ export function createDefaultTextElement(id: string): PPTTextElement {
     content: '<p>New text</p>',
     defaultFontName: 'Inter',
     defaultColor: '#111827',
+    lineHeight: 1.4,
+  };
+}
+
+export function createTextElementAtCanvasPoint(
+  id: string,
+  point: { x: number; y: number },
+  viewportOrigin: { left: number; top: number },
+  canvasScale = 1,
+): PPTTextElement {
+  const width = 300;
+  const height = 60;
+  const left = (point.x - viewportOrigin.left) / canvasScale;
+  const top = (point.y - viewportOrigin.top) / canvasScale;
+
+  return {
+    id,
+    type: 'text',
+    left,
+    top,
+    width,
+    height,
+    rotate: 0,
+    content: '<p style="text-align: center"><br></p>',
+    defaultFontName: 'Inter',
+    defaultColor: '#333',
     lineHeight: 1.4,
   };
 }
@@ -114,6 +141,26 @@ export function createDefaultLatexElement(id: string, result: LatexEditorResult)
     align: 'center',
     fixedRatio: true,
   };
+}
+
+/**
+ * Render LaTeX source to the KaTeX HTML snapshot a latex element persists in
+ * `html`. Mirrors the prod generation path (processLatexElements) and the
+ * whiteboard draw action (lib/action/engine.ts): display-mode block markup,
+ * never throw on bad TeX (KaTeX emits error markup instead). Returns null only
+ * on an unexpected renderer throw, so a write boundary can drop the snapshot
+ * rather than persist a stale one.
+ */
+export function renderLatexElementHtml(latex: string): string | null {
+  try {
+    return katex.renderToString(latex, {
+      throwOnError: false,
+      displayMode: true,
+      output: 'html',
+    });
+  } catch {
+    return null;
+  }
 }
 
 /** Create a renderer-editor chart with data that is valid for every chart type. */

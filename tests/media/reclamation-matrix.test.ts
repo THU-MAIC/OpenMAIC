@@ -163,6 +163,25 @@ function documentWithImage(id: string, ref: string): StageAssetDocument {
   } as unknown as StageAssetDocument;
 }
 
+function documentWithSlideAudio(id: string, ref: string): StageAssetDocument {
+  return {
+    stage: { id, name: id, createdAt: 1, updatedAt: 1 },
+    scenes: [
+      {
+        id: `${id}-scene`,
+        stageId: id,
+        type: 'slide',
+        title: id,
+        order: 1,
+        content: {
+          type: 'slide',
+          canvas: slide(`${id}-slide`, [{ id: `${id}-audio`, type: 'audio', src: ref }]),
+        },
+      },
+    ],
+  } as unknown as StageAssetDocument;
+}
+
 function documentWithManifestRef(id: string, ref: string): StageAssetDocument {
   return {
     stage: {
@@ -301,7 +320,7 @@ describe('stage asset reference and reclamation matrix', () => {
 
     await executeStageAssetReclamation(plan, null);
 
-    expect(mocks.removeAsset).toHaveBeenCalledTimes(plan.poolRefs.length);
+    expect(mocks.removeAsset).not.toHaveBeenCalled();
     expect(mocks.mediaRows).toEqual([
       { id: 'other-stage:foreign-course-ref', stageId: 'other-stage' },
     ]);
@@ -343,6 +362,33 @@ describe('stage asset reference and reclamation matrix', () => {
     expect(mocks.removeAsset).not.toHaveBeenCalledWith(sharedRef);
     expect(mocks.mediaRows).toEqual([]);
     expect(await resolveImageBytes(survivingDocument)).toBe('shared-surviving-bytes');
+  });
+
+  it('preserves a shared ref referenced by a surviving slide-audio element', async () => {
+    const sharedRef = 'ast_cross_role_alias';
+    const deletedStageId = 'stage-deleted';
+    const deletedDocument = documentWithImage(deletedStageId, sharedRef);
+    const survivingDocument = documentWithSlideAudio('stage-surviving', sharedRef);
+    mocks.mediaRows.splice(0, mocks.mediaRows.length, {
+      id: `${deletedStageId}:${sharedRef}`,
+      stageId: deletedStageId,
+    });
+    mocks.audioRows.splice(0, mocks.audioRows.length);
+    mocks.poolBytes.set(sharedRef, new Blob(['shared-surviving-bytes']));
+    mocks.documents.set(deletedDocument.stage.id, deletedDocument);
+    mocks.documents.set(survivingDocument.stage.id, survivingDocument);
+    const inventory = await loadStageAssetInventory(deletedDocument);
+    const plan = buildStageAssetReclamationPlan(
+      deletedStageId,
+      inventory.refs,
+      inventory.mediaRows,
+      inventory.audioRows,
+    );
+    mocks.documents.delete(deletedStageId);
+
+    await executeStageAssetReclamation(plan, null);
+
+    expect(mocks.removeAsset).not.toHaveBeenCalledWith(sharedRef);
   });
 
   it('preserves the compatibility row of an audio ref a surviving document shares', async () => {
@@ -502,7 +548,7 @@ describe('stage asset reference and reclamation matrix', () => {
     );
   });
 
-  it('continues row cleanup after one pool removal fails', async () => {
+  it('cleans compatibility rows without touching the asset pool', async () => {
     const inventory = await loadStageAssetInventory(matrixDocument());
     const plan = buildStageAssetReclamationPlan(
       stageId,
@@ -514,7 +560,7 @@ describe('stage asset reference and reclamation matrix', () => {
 
     await executeStageAssetReclamation(plan, null);
 
-    expect(mocks.removeAsset).toHaveBeenCalledTimes(plan.poolRefs.length);
+    expect(mocks.removeAsset).not.toHaveBeenCalled();
     expect(mocks.mediaRows.every((row) => row.stageId !== stageId)).toBe(true);
     expect(mocks.audioRows.every((row) => row.stageId !== stageId)).toBe(true);
   });

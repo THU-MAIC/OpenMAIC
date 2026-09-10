@@ -42,7 +42,7 @@ describe('polled video adapter compatibility', () => {
     );
 
     const promise = generateWithSeedance(
-      { providerId: 'seedance', apiKey: 'seed-key' },
+      { providerId: 'seedance', apiKey: 'seed-key', model: 'doubao-seedance-2-0-260128' },
       { prompt: 'a paper city', aspectRatio: '16:9', resolution: '720p', duration: 5 },
     );
 
@@ -72,7 +72,7 @@ describe('polled video adapter compatibility', () => {
       ),
     );
     const promise = generateWithSeedance(
-      { providerId: 'seedance', apiKey: 'seed-key' },
+      { providerId: 'seedance', apiKey: 'seed-key', model: 'doubao-seedance-2-0-260128' },
       { prompt: 'a paper city' },
     );
     const rejection = expect(promise).rejects.toThrow(
@@ -115,7 +115,12 @@ describe('polled video adapter compatibility', () => {
       );
 
     const promise = generateWithKling(
-      { providerId: 'kling', apiKey: 'access:secret', baseUrl: 'https://kling.example' },
+      {
+        providerId: 'kling',
+        apiKey: 'access:secret',
+        baseUrl: 'https://kling.example',
+        model: 'kling-v2-6',
+      },
       { prompt: 'a paper city', aspectRatio: '16:9', duration: 5 },
     );
 
@@ -153,7 +158,12 @@ describe('polled video adapter compatibility', () => {
         ),
       );
     const promise = generateWithKling(
-      { providerId: 'kling', apiKey: 'access:secret', baseUrl: 'https://kling.example' },
+      {
+        providerId: 'kling',
+        apiKey: 'access:secret',
+        baseUrl: 'https://kling.example',
+        model: 'kling-v2-6',
+      },
       { prompt: 'a paper city' },
     );
     const rejection = expect(promise).rejects.toThrow(
@@ -187,7 +197,12 @@ describe('polled video adapter compatibility', () => {
         }),
       );
     const promise = generateWithKling(
-      { providerId: 'kling', apiKey: 'access:secret', baseUrl: 'https://kling.example' },
+      {
+        providerId: 'kling',
+        apiKey: 'access:secret',
+        baseUrl: 'https://kling.example',
+        model: 'kling-v2-6',
+      },
       { prompt: 'a paper city' },
     );
     const rejection = expect(promise).rejects.toThrow(
@@ -212,7 +227,12 @@ describe('polled video adapter compatibility', () => {
       );
 
     const promise = generateWithGrokVideo(
-      { providerId: 'grok-video', apiKey: 'grok-key', baseUrl: 'https://grok.example/v1' },
+      {
+        providerId: 'grok-video',
+        apiKey: 'grok-key',
+        baseUrl: 'https://grok.example/v1',
+        model: 'grok-imagine-video',
+      },
       { prompt: 'a paper city', aspectRatio: '16:9', duration: 6 },
     );
 
@@ -234,7 +254,12 @@ describe('polled video adapter compatibility', () => {
       .mockResolvedValueOnce(jsonResponse({ request_id: 'grok-timeout' }))
       .mockImplementation(() => Promise.resolve(jsonResponse({ status: 'pending', progress: 50 })));
     const promise = generateWithGrokVideo(
-      { providerId: 'grok-video', apiKey: 'grok-key', baseUrl: 'https://grok.example/v1' },
+      {
+        providerId: 'grok-video',
+        apiKey: 'grok-key',
+        baseUrl: 'https://grok.example/v1',
+        model: 'grok-imagine-video',
+      },
       { prompt: 'a paper city' },
     );
     const rejection = expect(promise).rejects.toThrow(
@@ -254,7 +279,12 @@ describe('polled video adapter compatibility', () => {
         jsonResponse({ status: 'failed', progress: 42, model: 'grok-imagine-video' }),
       );
     const promise = generateWithGrokVideo(
-      { providerId: 'grok-video', apiKey: 'grok-key', baseUrl: 'https://grok.example/v1' },
+      {
+        providerId: 'grok-video',
+        apiKey: 'grok-key',
+        baseUrl: 'https://grok.example/v1',
+        model: 'grok-imagine-video',
+      },
       { prompt: 'a paper city' },
     );
     const rejection = expect(promise).rejects.toThrow(
@@ -287,7 +317,7 @@ describe('polled video adapter compatibility', () => {
       );
 
     const promise = generateWithHappyHorse(
-      { providerId: 'happyhorse', apiKey: 'horse-key' },
+      { providerId: 'happyhorse', apiKey: 'horse-key', model: 'happyhorse-1.0-t2v' },
       { prompt: 'a paper city', aspectRatio: '16:9', resolution: '720p', duration: 5 },
     );
 
@@ -317,7 +347,7 @@ describe('polled video adapter compatibility', () => {
         ),
       );
     const promise = generateWithHappyHorse(
-      { providerId: 'happyhorse', apiKey: 'horse-key' },
+      { providerId: 'happyhorse', apiKey: 'horse-key', model: 'happyhorse-1.0-t2v' },
       { prompt: 'a paper city' },
     );
     const rejection = expect(promise).rejects.toThrow(
@@ -342,7 +372,12 @@ describe('polled video adapter compatibility', () => {
     );
 
     const result = await generateWithVeo(
-      { providerId: 'veo', apiKey: 'veo-key', baseUrl: 'https://veo.example' },
+      {
+        providerId: 'veo',
+        apiKey: 'veo-key',
+        baseUrl: 'https://veo.example',
+        model: 'veo-3.0-generate-001',
+      },
       { prompt: 'a paper city', aspectRatio: '16:9', duration: 8 },
     );
 
@@ -367,7 +402,12 @@ describe('polled video adapter compatibility', () => {
 
     await expect(
       generateWithVeo(
-        { providerId: 'veo', apiKey: 'veo-key', baseUrl: 'https://veo.example' },
+        {
+          providerId: 'veo',
+          apiKey: 'veo-key',
+          baseUrl: 'https://veo.example',
+          model: 'veo-3.0-generate-001',
+        },
         { prompt: 'a paper city' },
       ),
     ).rejects.toThrow('Veo generation failed: 13 - render failed');
@@ -389,7 +429,12 @@ describe('polled video adapter compatibility', () => {
       );
 
     const promise = generateWithVeo(
-      { providerId: 'veo', apiKey: 'veo-key', baseUrl: 'https://veo.example' },
+      {
+        providerId: 'veo',
+        apiKey: 'veo-key',
+        baseUrl: 'https://veo.example',
+        model: 'veo-3.0-generate-001',
+      },
       { prompt: 'a paper city', aspectRatio: '9:16', duration: 8 },
     );
 
@@ -415,7 +460,12 @@ describe('polled video adapter compatibility', () => {
         Promise.resolve(jsonResponse({ name: 'operations/veo-timeout', done: false })),
       );
     const promise = generateWithVeo(
-      { providerId: 'veo', apiKey: 'veo-key', baseUrl: 'https://veo.example' },
+      {
+        providerId: 'veo',
+        apiKey: 'veo-key',
+        baseUrl: 'https://veo.example',
+        model: 'veo-3.0-generate-001',
+      },
       { prompt: 'a paper city' },
     );
     const rejection = expect(promise).rejects.toThrow(
@@ -441,7 +491,7 @@ describe('polled video adapter compatibility', () => {
         }),
       );
     const promise = generateWithMiniMaxVideo(
-      { providerId: 'minimax-video', apiKey: 'minimax-key' },
+      { providerId: 'minimax-video', apiKey: 'minimax-key', model: 'MiniMax-Hailuo-2.3' },
       { prompt: 'a paper city' },
     );
     const rejection = expect(promise).rejects.toThrow(
@@ -469,7 +519,7 @@ describe('polled video adapter compatibility', () => {
         ),
       );
     const promise = generateWithMiniMaxVideo(
-      { providerId: 'minimax-video', apiKey: 'minimax-key' },
+      { providerId: 'minimax-video', apiKey: 'minimax-key', model: 'MiniMax-Hailuo-2.3' },
       { prompt: 'a paper city' },
     );
     const rejection = expect(promise).rejects.toThrow(

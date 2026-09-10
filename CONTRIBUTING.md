@@ -24,7 +24,7 @@ To avoid duplicate effort, please **comment on an issue** to claim it before you
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) >= 20.9.0
+- [Node.js](https://nodejs.org/) >= 22.19.0
 - [pnpm](https://pnpm.io/) (latest)
 - A copy of `.env.local` — see [`.env.example`](.env.example) for reference
 
@@ -59,6 +59,15 @@ pnpm dev
 3. Make your changes and **test locally**.
 4. Run **all CI checks** before committing (see below).
 5. Open a **Pull Request** against `main`.
+
+### Environment Variable Changes
+
+When adding or renaming an operator-facing environment variable, update
+[`.env.example`](.env.example) in the same PR. Document whether it is optional,
+its safe default or example value, and whether it is read at build time or
+runtime. Variables used only by tests, CI, or internal development scripts do
+not need to be added to the template, but their owning file or documentation
+must make that limited scope clear.
 
 ## Before You Submit a PR
 

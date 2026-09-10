@@ -138,6 +138,16 @@ vi.mock('@/lib/media/image-providers', () => ({
       requiresApiKey: true,
       models: [{ id: 'qwen-image-max', name: 'Qwen Image Max' }],
     },
+    lemonade: {
+      id: 'lemonade',
+      requiresApiKey: false,
+      models: [{ id: 'Qwen-Image-GGUF', name: 'Qwen Image GGUF' }],
+    },
+    'comfyui-image': {
+      id: 'comfyui-image',
+      requiresApiKey: false,
+      models: [],
+    },
   },
 }));
 
@@ -206,11 +216,11 @@ async function readPersistedState(): Promise<Record<string, unknown>> {
 interface MockServerResponse {
   providers?: Record<string, { models?: string[]; baseUrl?: string }>;
   tts?: Record<string, { baseUrl?: string; disabled?: boolean }>;
-  asr?: Record<string, { baseUrl?: string }>;
+  asr?: Record<string, { baseUrl?: string; disabled?: boolean }>;
   pdf?: Record<string, { baseUrl?: string }>;
-  image?: Record<string, { baseUrl?: string }>;
-  video?: Record<string, { baseUrl?: string }>;
-  webSearch?: Record<string, { baseUrl?: string }>;
+  image?: Record<string, { models?: string[]; baseUrl?: string; disabled?: boolean }>;
+  video?: Record<string, { models?: string[]; baseUrl?: string; disabled?: boolean }>;
+  webSearch?: Record<string, { baseUrl?: string; disabled?: boolean }>;
 }
 
 function mockServerResponse(overrides: MockServerResponse = {}) {
@@ -820,6 +830,20 @@ describe('fetchServerProviders — ASR stale selection', () => {
 
     expect(store.getState().asrProviderId).toBe('openai-whisper');
   });
+
+  it('marks a force-disabled ASR provider and re-points the stale selection', async () => {
+    const store = await getStore();
+    store.setState({ asrProviderId: 'openai-whisper' });
+    mockServerResponse({ asr: { 'openai-whisper': { disabled: true } } });
+
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().asrProvidersConfig['openai-whisper']).toMatchObject({
+      isServerConfigured: false,
+      serverDisabled: true,
+    });
+    expect(store.getState().asrProviderId).toBe('browser-native');
+  });
 });
 
 describe('fetchServerProviders — Web Search provider sync', () => {
@@ -893,6 +917,22 @@ describe('fetchServerProviders — Web Search provider sync', () => {
     });
     await store.getState().fetchServerProviders();
 
+    expect(store.getState().webSearchProviderId).toBe('bocha');
+  });
+
+  it('marks a force-disabled web-search provider and re-points the stale selection', async () => {
+    const store = await getStore();
+    store.setState({ webSearchProviderId: 'tavily' });
+    mockServerResponse({
+      webSearch: { tavily: { disabled: true }, bocha: {} },
+    });
+
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().webSearchProvidersConfig.tavily).toMatchObject({
+      isServerConfigured: false,
+      serverDisabled: true,
+    });
     expect(store.getState().webSearchProviderId).toBe('bocha');
   });
 
@@ -1042,6 +1082,20 @@ describe('fetchServerProviders — Image stale selection', () => {
     expect(store.getState().imageModelId).toBe('qwen-image-max');
   });
 
+  it('marks a force-disabled image provider and re-points the stale selection', async () => {
+    const store = await getStore();
+    store.setState({ imageProviderId: 'seedream' });
+    mockServerResponse({ image: { seedream: { disabled: true }, 'qwen-image': {} } });
+
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().imageProvidersConfig.seedream).toMatchObject({
+      isServerConfigured: false,
+      serverDisabled: true,
+    });
+    expect(store.getState().imageProviderId).toBe('qwen-image');
+  });
+
   it('auto-selects provider and model when server adds image provider after empty state', async () => {
     const store = await getStore();
 
@@ -1166,6 +1220,20 @@ describe('fetchServerProviders — Video stale selection', () => {
 
     expect(store.getState().videoProviderId).toBe('kling');
     expect(store.getState().videoModelId).toBe('kling-v2-6');
+  });
+
+  it('marks a force-disabled video provider and re-points the stale selection', async () => {
+    const store = await getStore();
+    store.setState({ videoProviderId: 'seedance' });
+    mockServerResponse({ video: { seedance: { disabled: true }, kling: {} } });
+
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().videoProvidersConfig.seedance).toMatchObject({
+      isServerConfigured: false,
+      serverDisabled: true,
+    });
+    expect(store.getState().videoProviderId).toBe('kling');
   });
 
   it('auto-selects provider and model when server adds video provider after empty state', async () => {
@@ -1769,5 +1837,160 @@ describe('TTS provider enablement (#665)', () => {
     mockServerResponse({ tts: {} });
     await store.getState().fetchServerProviders();
     expect(store.getState().ttsProvidersConfig['openai-tts'].serverDisabled).toBe(false);
+  });
+
+  it('applies server-pinned image models as customModels with replaceBuiltInModels', async () => {
+    const store = await getStore();
+    mockServerResponse({
+      image: { seedream: { models: ['doubao-seedream-5.0-lite'] } },
+    });
+    await store.getState().fetchServerProviders();
+
+    const config = store.getState().imageProvidersConfig.seedream;
+    expect(config.isServerConfigured).toBe(true);
+    expect(config.customModels).toEqual([
+      { id: 'doubao-seedream-5.0-lite', name: 'doubao-seedream-5.0-lite' },
+    ]);
+    expect(config.replaceBuiltInModels).toBe(true);
+  });
+
+  it('applies server-pinned video models as customModels with replaceBuiltInModels', async () => {
+    const store = await getStore();
+    mockServerResponse({
+      video: { seedance: { models: ['doubao-seedance-2-0', 'doubao-seedance-3-0'] } },
+    });
+    await store.getState().fetchServerProviders();
+
+    const config = store.getState().videoProvidersConfig.seedance;
+    expect(config.isServerConfigured).toBe(true);
+    expect(config.customModels).toEqual([
+      { id: 'doubao-seedance-2-0', name: 'doubao-seedance-2-0' },
+      { id: 'doubao-seedance-3-0', name: 'doubao-seedance-3-0' },
+    ]);
+    expect(config.replaceBuiltInModels).toBe(true);
+  });
+
+  it('does not set customModels when server reports no models for image provider', async () => {
+    const store = await getStore();
+    mockServerResponse({
+      image: { seedream: {} },
+    });
+    await store.getState().fetchServerProviders();
+
+    const config = store.getState().imageProvidersConfig.seedream;
+    expect(config.isServerConfigured).toBe(true);
+    expect(config.customModels).toBeUndefined();
+    expect(config.replaceBuiltInModels).toBeUndefined();
+  });
+});
+
+describe('settings media enable flags (#1288)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    storage.clear();
+    mockFetch.mockReset();
+  });
+
+  async function getStore() {
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    await useSettingsStore.persist.rehydrate();
+    return useSettingsStore;
+  }
+
+  it('turns ttsEnabled on when a hosted TTS provider gets an API key', async () => {
+    const store = await getStore();
+    expect(store.getState().ttsEnabled).toBe(false);
+
+    store.getState().setTTSProviderConfig('openai-tts', { apiKey: 'sk-test' });
+
+    expect(store.getState().ttsEnabled).toBe(true);
+    expect(store.getState().ttsProvidersConfig['openai-tts'].apiKey).toBe('sk-test');
+  });
+
+  it('does not re-enable ttsEnabled when an already-usable provider is edited', async () => {
+    const store = await getStore();
+    store.getState().setTTSProviderConfig('openai-tts', { apiKey: 'sk-test' });
+    expect(store.getState().ttsEnabled).toBe(true);
+
+    store.getState().setTTSEnabled(false);
+    store.getState().setTTSProviderConfig('openai-tts', { apiKey: 'sk-other' });
+
+    expect(store.getState().ttsEnabled).toBe(false);
+  });
+
+  it('does not turn ttsEnabled on for an empty key or for browser-native TTS', async () => {
+    const store = await getStore();
+
+    store.getState().setTTSProviderConfig('openai-tts', { apiKey: '' });
+    expect(store.getState().ttsEnabled).toBe(false);
+
+    store.getState().setTTSProviderConfig('browser-native-tts', { enabled: true });
+    expect(store.getState().ttsEnabled).toBe(false);
+  });
+
+  it('turns imageGenerationEnabled on when an image provider gets an API key', async () => {
+    const store = await getStore();
+    expect(store.getState().imageGenerationEnabled).toBe(false);
+
+    store.getState().setImageProviderConfig('seedream', { apiKey: 'img-key', enabled: true });
+
+    expect(store.getState().imageGenerationEnabled).toBe(true);
+  });
+
+  it('does not turn imageGenerationEnabled on when a disabled provider gets a key', async () => {
+    const store = await getStore();
+    store.getState().setImageProviderConfig('seedream', { enabled: false });
+
+    store.getState().setImageProviderConfig('seedream', { apiKey: 'img-key' });
+
+    expect(store.getState().imageGenerationEnabled).toBe(false);
+    expect(store.getState().imageProvidersConfig.seedream.apiKey).toBe('img-key');
+  });
+
+  it('turns imageGenerationEnabled on when a keyless provider gets a baseUrl', async () => {
+    const store = await getStore();
+    expect(store.getState().imageGenerationEnabled).toBe(false);
+
+    store.getState().setImageProviderConfig('lemonade', {
+      baseUrl: 'http://127.0.0.1:13305/v1',
+      enabled: true,
+    });
+
+    expect(store.getState().imageGenerationEnabled).toBe(true);
+  });
+
+  it('does not turn imageGenerationEnabled on for whitespace-only credentials', async () => {
+    const store = await getStore();
+
+    store.getState().setImageProviderConfig('seedream', { apiKey: '   ', enabled: true });
+    expect(store.getState().imageGenerationEnabled).toBe(false);
+
+    store.getState().setImageProviderConfig('lemonade', { baseUrl: '   ', enabled: true });
+    expect(store.getState().imageGenerationEnabled).toBe(false);
+  });
+
+  it('turns videoGenerationEnabled on when a video provider gets an API key', async () => {
+    const store = await getStore();
+    expect(store.getState().videoGenerationEnabled).toBe(false);
+
+    store.getState().setVideoProviderConfig('seedance', { apiKey: 'vid-key', enabled: true });
+
+    expect(store.getState().videoGenerationEnabled).toBe(true);
+  });
+
+  it('leaves a user-disabled image flag off across later server syncs', async () => {
+    const store = await getStore();
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+
+    store.setState({
+      imageProviderId: 'seedream',
+      imageGenerationEnabled: false,
+    });
+
+    mockServerResponse({ image: { seedream: {} } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().imageGenerationEnabled).toBe(false);
   });
 });

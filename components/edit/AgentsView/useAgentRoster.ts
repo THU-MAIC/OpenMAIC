@@ -1,5 +1,24 @@
 'use client';
 
+/**
+ * useAgentRoster — the roster editor's state, and its one way into the stage.
+ *
+ * The roster is materialized from the stage document ONCE, at mount, and every
+ * edit is applied to that local history (undo / redo included) before being
+ * committed back through `setStageAgents`. Mount-time materialization is why the
+ * dialog that hosts this hook must stay unmounted while closed: each open then
+ * starts from the current cast instead of a snapshot taken hours ago. Within one
+ * open session the local history is authoritative, so an agent run that rewrites
+ * the roster in the same seconds loses to the next local commit — the dialog is a
+ * short-lived, deliberate edit, and reconciling two authors mid-keystroke would
+ * cost more than it buys.
+ *
+ * `setStageAgents` writes the stage document through the shared pending-change
+ * scheduler (a granular `{kind:'stage'}` change), NOT through the whole-document
+ * aggregate save — so a roster edit persists normally even while an agent session
+ * holds the aggregate-save veto for the course on screen.
+ */
+
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { nanoid } from 'nanoid';
 import { materializeRoster } from '@/lib/edit/agent-roster';
@@ -38,6 +57,8 @@ function resolvePreset(id: string): GeneratedAgentConfig | undefined {
     avatar: cfg.avatar,
     color: cfg.color,
     priority: cfg.priority,
+    voiceConfig: cfg.voiceConfig,
+    voiceDesign: cfg.voiceDesign,
   };
 }
 
@@ -66,10 +87,10 @@ export interface AgentRosterController {
 // ---------------------------------------------------------------------------
 
 export function useAgentRoster(): AgentRosterController {
-  const stage = useStageStore.use.stage();
   const setStageAgents = useStageStore.use.setStageAgents();
 
   const [histState, setHistState] = useState<AgentRosterHistory>(() => {
+    const stage = useStageStore.getState().stage;
     const roster: AgentRoster = stage
       ? materializeRoster(stage, resolvePreset, makeId, isGlobalDefault)
       : [];
@@ -88,10 +109,9 @@ export function useAgentRoster(): AgentRosterController {
   // Commit roster edits to the stage store. setStageAgents updates the stage
   // document (persisted through the shared pending-change scheduler) and
   // synchronously mirrors the roster into the agent registry + selection.
-  // Depends only on `histState.present`; `stage` is intentionally excluded:
-  // setStageAgents replaces `stage`, so depending on it would re-trigger this
-  // effect in an infinite loop (React #185). setStageAgents already no-ops
-  // when there is no stage.
+  // Depends only on `histState.present`: setStageAgents replaces `stage`, so
+  // depending on the stage would re-trigger this effect in an infinite loop
+  // (React #185). setStageAgents already no-ops when there is no stage.
   useEffect(() => {
     if (!isDirtyRef.current) return;
     setStageAgents(histState.present);

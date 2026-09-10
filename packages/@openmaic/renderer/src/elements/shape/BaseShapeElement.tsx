@@ -8,6 +8,7 @@ import { useElementFlip } from '../shared/useElementFlip';
 import { useElementFill } from '../shared/useElementFill';
 import { GradientDefs } from './GradientDefs';
 import { PatternDefs } from './PatternDefs';
+import { preservesPlainTextLineBreaks } from '../../utils/richText';
 
 export interface BaseShapeElementProps {
   elementInfo: PPTShapeElement;
@@ -130,6 +131,7 @@ export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementP
         style={{
           // @ts-expect-error CSS custom properties
           '--paragraphSpace': `${text.paragraphSpace === undefined ? 5 : text.paragraphSpace}px`,
+          whiteSpace: preservesPlainTextLineBreaks(text.content) ? 'pre-line' : undefined,
         }}
         dangerouslySetInnerHTML={{ __html: text.content }}
       />

@@ -203,8 +203,21 @@ export const ALIDOCMIND_MEDIA_MIMES: readonly string[] = [
   M.aac,
 ];
 
+/** Media formats accepted by the optional local ffmpeg pipeline. */
+export const LOCAL_FFMPEG_MEDIA_MIMES: readonly string[] = [
+  M.mp4,
+  M.mov,
+  'video/webm',
+  M.mp3,
+  M.wav,
+  M.m4a,
+  M.aac,
+  'audio/webm',
+];
+
 export const MEDIA_PROVIDER_SUPPORTED_MIME_TYPES: Record<string, readonly string[]> = {
   alidocmind: ALIDOCMIND_MEDIA_MIMES,
+  'local-ffmpeg': LOCAL_FFMPEG_MEDIA_MIMES,
 };
 
 /** All audio/video MIME types any media provider accepts. */

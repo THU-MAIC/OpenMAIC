@@ -61,6 +61,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const REQUIRED_SUITES = [
   'packages/@openmaic/storage/test/pg-document-store.pg.test.ts',
   'packages/@openmaic/storage/test/pg-runtime-store.pg.test.ts',
+  'packages/@openmaic/storage/test/pg-scene-revision.pg.test.ts',
 ];
 
 /**
@@ -73,6 +74,8 @@ const REQUIRED_TABLES = [
   'document_stages',
   'document_scenes',
   'document_outlines',
+  'document_stage_revision',
+  'document_scene_revision',
   'runtime_sessions',
   'runtime_records',
 ];
@@ -309,8 +312,8 @@ if (databaseFailures.length > 0) {
 }
 
 console.log(
-  `Verified: both contract suite files ran and passed, and all ${REQUIRED_TABLES.length} tables ` +
-    'the two PostgreSQL backends own gained inserts in a real database during this run. ' +
+  `Verified: the required contract suite files ran and passed, and all ${REQUIRED_TABLES.length} ` +
+    'tables the PostgreSQL backends own gained inserts in a real database during this run. ' +
     'This does not attribute those inserts to the built PgDocumentStore / PgRuntimeStore ' +
     'specifically — see the threat model at the top of this script.',
 );

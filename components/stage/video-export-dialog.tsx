@@ -38,7 +38,7 @@ import {
   VIDEO_QUALITIES,
   VIDEO_RESOLUTIONS,
   type VideoResolution,
-} from '@/lib/video-export-app/build-export-zip';
+} from '@/lib/video-export-app/export-options';
 
 const RESOLUTIONS = Object.keys(VIDEO_RESOLUTIONS) as VideoResolution[];
 

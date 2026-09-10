@@ -4,6 +4,8 @@ import type {
   GeneratedPBLContent,
   PBLPlannerV2Input,
   SceneActionsOptions,
+  SceneContentFailure,
+  SceneContentFailureCode,
   SceneContentOptions,
 } from '@openmaic/generation';
 
@@ -18,6 +20,7 @@ type _SceneContentKeys = Assert<
     | 'imageMapping'
     | 'visionEnabled'
     | 'generatedMediaMapping'
+    | 'resolvedVisionImages'
     | 'agents'
     | 'languageDirective'
     | 'targetLanguage'
@@ -26,6 +29,7 @@ type _SceneContentKeys = Assert<
     | 'editDirective'
     | 'baselineContent'
     | 'pblLoopFallback'
+    | 'onFailure'
     | 'logger'
   >
 >;
@@ -45,6 +49,8 @@ type _PBLInputKeys = Assert<
 
 it('keeps new public option and generated-content surfaces narrow', () => {
   const contentOptions: SceneContentOptions = {};
+  const failureCode: SceneContentFailureCode = 'prompt-unavailable';
+  const failure: SceneContentFailure = { code: failureCode };
   const actionOptions: SceneActionsOptions = {};
   const buildOptions: BuildCompleteSceneOptions = { sceneId: 'stable' };
 
@@ -55,6 +61,7 @@ it('keeps new public option and generated-content surfaces narrow', () => {
   const invalidPBL: GeneratedPBLContent = { projectV2: { title: 'incomplete' } };
 
   expect(contentOptions).toEqual({});
+  expect(failure).toEqual({ code: 'prompt-unavailable' });
   expect(actionOptions).toEqual({});
   expect(buildOptions.sceneId).toBe('stable');
   expect(providerLeak).toBeTruthy();

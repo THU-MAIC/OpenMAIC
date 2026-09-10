@@ -1,0 +1,5 @@
+{
+  "$comment": "Structural constraints for the deep-research skill. Deliberately thin: research grounding constrains where page content comes from, not what scene types carry it — the honest structure is only that a researched course opens by framing the question. See lib/server/agent-runtime/skills.ts.",
+  "allowedTypes": ["slide", "quiz", "interactive"],
+  "firstSceneType": "slide"
+}

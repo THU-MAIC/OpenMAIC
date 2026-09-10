@@ -21,17 +21,19 @@ describe('persistence client bootstrap', () => {
     vi.unstubAllGlobals();
   });
 
-  it('leaves both sealed storage seams untouched when the flag is unset', async () => {
+  it('leaves all sealed storage seams untouched when the flag is unset', async () => {
     vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '');
 
     const runtime = await import('@/lib/runtime/store');
     const documents = await import('@/lib/document-store');
+    const assets = await import('@/lib/media/asset-pool-config');
 
     expect(runtime.isRuntimeStorageConfigured()).toBe(false);
     expect(documents.isDocumentStorageConfigured()).toBe(false);
+    expect(assets.isAssetPoolStorageConfigured()).toBe(false);
   });
 
-  it('configures both HTTP stores and passes app validators through', async () => {
+  it('configures runtime and document HTTP stores without wiring the asset pool', async () => {
     vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
     vi.stubEnv('NEXT_PUBLIC_PERSISTENCE_TOKEN', 'test-dev-token');
     vi.stubGlobal('window', {});
@@ -43,9 +45,11 @@ describe('persistence client bootstrap', () => {
     // resolve its default store.
     const runtime = await import('@/lib/runtime/store');
     const documents = await import('@/lib/document-store');
+    const assets = await import('@/lib/media/asset-pool-config');
 
     expect(runtime.isRuntimeStorageConfigured()).toBe(true);
     expect(documents.isDocumentStorageConfigured()).toBe(true);
+    expect(assets.isAssetPoolStorageConfigured()).toBe(false);
 
     const runtimeStore = runtime.getRuntimeStore();
     const documentStore = documents.getDocumentStore();
@@ -71,6 +75,7 @@ describe('persistence client bootstrap', () => {
     documents.resetDocumentStorageForTests();
     expect(runtime.isRuntimeStorageConfigured()).toBe(false);
     expect(documents.isDocumentStorageConfigured()).toBe(false);
+    expect(assets.isAssetPoolStorageConfigured()).toBe(false);
   });
 
   it('does not run client configuration during server module evaluation', async () => {
@@ -78,12 +83,14 @@ describe('persistence client bootstrap', () => {
 
     const runtime = await import('@/lib/runtime/store');
     const documents = await import('@/lib/document-store');
+    const assets = await import('@/lib/media/asset-pool-config');
 
     expect(runtime.isRuntimeStorageConfigured()).toBe(false);
     expect(documents.isDocumentStorageConfigured()).toBe(false);
+    expect(assets.isAssetPoolStorageConfigured()).toBe(false);
   });
 
-  it('preflights both seams so a failure cannot partially configure bootstrap', async () => {
+  it('preflights both configured seams so a failure cannot partially configure bootstrap', async () => {
     vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
     vi.stubGlobal('window', {});
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -91,9 +98,11 @@ describe('persistence client bootstrap', () => {
     documents.configureDocumentStorage({});
 
     const runtime = await import('@/lib/runtime/store');
+    const assets = await import('@/lib/media/asset-pool-config');
 
     expect(runtime.isRuntimeStorageConfigured()).toBe(false);
     expect(documents.isDocumentStorageConfigured()).toBe(true);
+    expect(assets.isAssetPoolStorageConfigured()).toBe(false);
     expect(errorSpy).toHaveBeenCalledOnce();
     expect(errorSpy.mock.calls[0]?.[0]).toContain('FATAL');
   });

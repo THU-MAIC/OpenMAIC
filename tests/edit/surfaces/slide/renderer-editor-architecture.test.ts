@@ -8,12 +8,6 @@ const sourcePath = resolve(
 );
 const editorReadmePath = resolve(process.cwd(), 'packages/@openmaic/editor/README.md');
 const packageSmokePath = resolve(process.cwd(), 'scripts/smoke-test-package-tarballs.mjs');
-const agentEditorTypePaths = [
-  'lib/agent/client/apply-edit-elements.ts',
-  'lib/agent/tools/edit-elements-gate.ts',
-  'lib/agent/tools/edit-elements-patch.ts',
-  'lib/agent/tools/edit-elements.ts',
-].map((path) => resolve(process.cwd(), path));
 
 describe('renderer editor app boundary', () => {
   it('uses one generic host bridge without element-specific editor configuration', () => {
@@ -69,12 +63,5 @@ describe('renderer editor app boundary', () => {
     expect(smoke).toContain("from '@openmaic/editor/core';");
     expect(smoke).toContain("from '@openmaic/editor/react';");
     expect(smoke).toContain("from '@openmaic/editor/ui';");
-  });
-
-  it('keeps agent document semantics on the editor core entry', () => {
-    for (const path of agentEditorTypePaths) {
-      const source = readFileSync(path, 'utf8');
-      expect(source, path).not.toContain("from '@openmaic/editor/react'");
-    }
   });
 });

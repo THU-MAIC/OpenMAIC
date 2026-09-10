@@ -10,13 +10,16 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Locale } from '@/lib/i18n';
+import type { Scene } from '@/lib/types/stage';
 import { compileVideoTimeline, emitHyperframes } from '@/lib/video-export';
 import type { CompilerScene } from '@/lib/video-export';
+import { prepareInteractiveHtmlScenes } from '@/lib/video-export-app/prepare-interactive-html';
 import {
   getVideoExportCoverLabels,
   resolveVideoExportCta,
 } from '@/lib/video-export-app/cover-config';
-import { NO_ASSETS, NO_PROBE, slide, speech } from './helpers';
+import { NO_ASSETS, NO_PROBE, interactive, slide, speech } from './helpers';
+import { QUIZ_SCROLL_LAYOUT_720P, quizScrollScene } from './quiz-scroll-fixture';
 
 /**
  * Materializes a fully-emitted Hyperframes project (index.html + manifest +
@@ -36,29 +39,6 @@ const PNG_1x1 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
   'base64',
 );
-
-function quizCard(order = 0): CompilerScene {
-  return {
-    id: `quiz-${order}`,
-    stageId: 'stage',
-    title: 'Quiz：确定性导出与超长标题排版验证 SupercalifragilisticexpialidociousWithoutBreaks',
-    order,
-    type: 'quiz',
-    content: {
-      type: 'quiz',
-      questions: [
-        { id: 'q1', type: 'single', question: 'Hidden', points: 3 },
-        { id: 'q2', type: 'short_answer', question: 'Hidden' },
-      ],
-    },
-    actions: [
-      speech(
-        `quiz-narration-${order}`,
-        '字幕与 Quiz 封面同时显示，用于验证长文本卡片不会遮挡底部字幕。',
-      ),
-    ],
-  } as CompilerScene;
-}
 
 function pblV2Card(order = 0): CompilerScene {
   return {
@@ -230,6 +210,7 @@ interface MaterializedSample {
   height?: number;
   locale?: Locale;
   marker: string;
+  quizQuestionList?: boolean;
 }
 
 const DEFAULT_SAMPLE_LOCALE: Locale = 'en-US';
@@ -253,6 +234,7 @@ const EXPECTED_SAMPLE_NAMES = [
   'pbl-dense',
   'mixed',
   'arabic',
+  'interactive-static',
 ] as const;
 
 const COMPLETE_PROJECT_FILES = [
@@ -265,11 +247,24 @@ const COMPLETE_PROJECT_FILES = [
   'subtitles.vtt',
 ].sort();
 
+const QUIZ_PROJECT_FILES = [
+  ...COMPLETE_PROJECT_FILES,
+  'LICENSES/KaTeX-MIT.txt',
+  'LICENSES/Noto-Sans-KR-OFL-1.1.txt',
+  'LICENSES/Noto-Sans-SC-OFL-1.1.txt',
+].sort();
+const MIXED_SCRIPT_QUIZ_PROJECT_FILES = [
+  ...QUIZ_PROJECT_FILES,
+  'LICENSES/Noto-Sans-Arabic-OFL-1.1.txt',
+  'LICENSES/Noto-Sans-OFL-1.1.txt',
+].sort();
+
 const samples: MaterializedSample[] = [
   {
     name: 'quiz',
-    scenes: [quizCard()],
+    scenes: [quizScrollScene()],
     marker: 'Quiz：确定性导出与超长标题排版验证',
+    quizQuestionList: true,
   },
   {
     name: 'pbl-v2',
@@ -296,7 +291,7 @@ const samples: MaterializedSample[] = [
         order: 0,
         elements: [],
       }),
-      quizCard(1),
+      quizScrollScene(1),
       pblV2Card(2),
     ],
     marker: 'Mixed direction: English ثم العربية',
@@ -307,10 +302,23 @@ const samples: MaterializedSample[] = [
     locale: 'ar-SA',
     marker: 'إنشاء مشروع تعليمي قابل للتصدير والتحقق دون اتصال',
   },
+  {
+    name: 'interactive-static',
+    scenes: [
+      {
+        ...interactive(
+          'interactive-static-fixture',
+          '<!doctype html><html><head></head><body><h1>Frozen interactive fixture</h1></body></html>',
+        ),
+        title: 'Frozen interactive fixture',
+      },
+    ],
+    marker: 'Frozen interactive fixture',
+  },
 ];
 
 describe('Hyperframes materialized sample contract', () => {
-  it('defines the exact six distinguishable sample directories', () => {
+  it('defines the exact seven distinguishable sample directories', () => {
     expect(samples.map((sample) => sample.name)).toEqual(EXPECTED_SAMPLE_NAMES);
   });
 
@@ -318,6 +326,9 @@ describe('Hyperframes materialized sample contract', () => {
     const byName = new Map(samples.map((sample) => [sample.name, sample]));
     const legacyContent = byName.get('pbl-legacy')!.scenes[0]!.content as Record<string, unknown>;
 
+    expect(JSON.stringify(byName.get('quiz')!.scenes)).toContain('a^2+b^2=c^2');
+    expect(JSON.stringify(byName.get('quiz')!.scenes)).toContain('Русский');
+    expect(JSON.stringify(byName.get('quiz')!.scenes)).toContain('العربية');
     expect(legacyContent).toHaveProperty('projectConfig');
     expect(legacyContent).not.toHaveProperty('projectV2');
     expect(byName.get('pbl-dense')).toMatchObject({ width: 854, height: 480 });
@@ -330,15 +341,30 @@ describe('Hyperframes materialized sample contract', () => {
 });
 
 describe.skipIf(!OUT_DIR)('materialize a Hyperframes project for real-CLI E2E', () => {
-  it('writes a complete, self-contained project', () => {
+  it('writes a complete, self-contained project', async () => {
     const root = OUT_DIR!;
 
     rmSync(root, { recursive: true, force: true });
     for (const sample of samples) {
       const dir = join(root, sample.name);
+      const preparedInteractive = await prepareInteractiveHtmlScenes(sample.scenes as Scene[]);
       const ir = compileVideoTimeline(
         { stage: { id: 'stage', name: `E2E ${sample.name}` }, scenes: sample.scenes },
-        { timing: NO_PROBE, assets: NO_ASSETS },
+        {
+          timing: NO_PROBE,
+          assets: NO_ASSETS,
+          interactive: preparedInteractive,
+          ...(sample.quizQuestionList
+            ? {
+                quizLayout: {
+                  // This exact shared fixture is asserted against Chromium in
+                  // cover-card-layout.browser.test.ts. Production exports use
+                  // createQuizLayoutProbe instead of this pinned E2E geometry.
+                  measureQuestionList: () => QUIZ_SCROLL_LAYOUT_720P,
+                },
+              }
+            : {}),
+        },
       );
       const project = emitHyperframes(ir, effectiveSampleOptions(sample));
       mkdirSync(dir, { recursive: true });
@@ -355,7 +381,23 @@ describe.skipIf(!OUT_DIR)('materialize a Hyperframes project for real-CLI E2E', 
         if (!entry.present || entry.dedupOf) continue;
         const target = join(dir, 'assets', entry.path);
         mkdirSync(dirname(target), { recursive: true });
-        writeFileSync(target, entry.kind === 'frame' ? PNG_1x1 : Buffer.from(''));
+        writeFileSync(
+          target,
+          entry.kind === 'frame'
+            ? PNG_1x1
+            : entry.kind === 'html'
+              ? Buffer.from(preparedInteractive.content(entry.assetId) ?? '')
+              : Buffer.from(''),
+        );
+      }
+
+      // Vendored Quiz fonts use the same committed public bytes as the app-side
+      // measurement surface, then land at the project-relative CSS paths.
+      for (const asset of project.vendorAssets) {
+        const source = join(process.cwd(), 'public', asset.sourceUrl.replace(/^\//, ''));
+        const target = join(dir, asset.path);
+        mkdirSync(dirname(target), { recursive: true });
+        cpSync(source, target);
       }
 
       // Vendored GSAP from the committed public copy.
@@ -364,10 +406,22 @@ describe.skipIf(!OUT_DIR)('materialize a Hyperframes project for real-CLI E2E', 
       mkdirSync(dirname(gsapDst), { recursive: true });
       cpSync(gsapSrc, gsapDst);
 
-      expect([...project.files.map((file) => file.path), project.gsapVendorPath].sort()).toEqual(
-        COMPLETE_PROJECT_FILES,
-      );
-      for (const path of COMPLETE_PROJECT_FILES) {
+      const expectedFiles = [
+        ...(sample.name === 'quiz'
+          ? MIXED_SCRIPT_QUIZ_PROJECT_FILES
+          : sample.quizQuestionList
+            ? QUIZ_PROJECT_FILES
+            : COMPLETE_PROJECT_FILES),
+        ...project.vendorAssets.map((asset) => asset.path),
+      ].sort();
+      expect(
+        [
+          ...project.files.map((file) => file.path),
+          ...project.vendorAssets.map((asset) => asset.path),
+          project.gsapVendorPath,
+        ].sort(),
+      ).toEqual(expectedFiles);
+      for (const path of expectedFiles) {
         expect(existsSync(join(dir, path)), `${sample.name}/${path}`).toBe(true);
       }
       expect(
@@ -377,11 +431,14 @@ describe.skipIf(!OUT_DIR)('materialize a Hyperframes project for real-CLI E2E', 
     }
     expect(readdirSync(root).sort()).toEqual([...EXPECTED_SAMPLE_NAMES].sort());
     const mixedHtml = readFileSync(join(root, 'mixed/index.html'), 'utf8');
+    const quizHtml = readFileSync(join(root, 'quiz/index.html'), 'utf8');
     const arabicHtml = readFileSync(join(root, 'arabic/index.html'), 'utf8');
     const mixedLabels = getVideoExportCoverLabels('en-US');
     const arabicLabels = getVideoExportCoverLabels('ar-SA');
 
     expect(DEFAULT_SAMPLE_CTA).toEqual({ destination: 'open.maic.chat' });
+    expect(quizHtml).toContain('data-visual-kind="quiz-question-list"');
+    expect(quizHtml).not.toContain('SECRET_SAMPLE_ANALYSIS');
     for (const expected of [
       mixedLabels.quizCtaPrompt,
       mixedLabels.pblCtaPrompt,

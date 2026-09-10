@@ -133,6 +133,27 @@ describe('dormant Legacy whiteboard import seam', () => {
     expect((await service.read('stage-1')).whiteboard?.id).toBe('legacy-board');
   });
 
+  it('imports an inverted legacy viewportRatio as 9/16 (height/width)', async () => {
+    const { service } = harness();
+    const run = createLegacyWhiteboardImporterForTests({
+      service,
+      provenanceEligible: () => true,
+      loadDocument: async () =>
+        document([
+          {
+            id: 'legacy-board',
+            viewportSize: 1000,
+            viewportRatio: 16 / 9,
+            elements: [],
+          },
+        ]),
+    });
+    await expect(run('stage-1')).resolves.toMatchObject({ status: 'imported' });
+    // The old stage API wrote the 16:9 landscape as width/height; the import
+    // must project the sheet at 9/16 so it renders 1000 x 562.5, not portrait.
+    expect((await service.read('stage-1')).whiteboard?.viewportRatio).toBe(9 / 16);
+  });
+
   it('reports exact replay when commit response loss is followed by one failed recovery read', async () => {
     const backing = new BrowserRuntimeStore({
       indexedDB: new IDBFactory(),

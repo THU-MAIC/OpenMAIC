@@ -41,13 +41,13 @@ export interface AgentVoiceResolveOptions {
  * Pick the agent whose voice narration should use (the teacher).
  *
  * The registry is always seeded with the DEFAULT agents, so a plain
- * `find(role === 'teacher')` returns the default teacher (no voiceDesign) even
- * when a generated classroom is active. Prefer a teacher that actually carries a
- * voiceDesign (the generated one) so narration registers a real voice instead of
- * drifting on the inline prompt; fall back to any teacher.
+ * `find(role === 'teacher')` returns the default teacher (no voice binding or
+ * design) even when a generated classroom is active. Prefer an explicit
+ * voiceConfig first, then a teacher carrying voiceDesign, and finally any teacher.
  */
 export function pickNarratorAgent(agents: AgentConfig[]): AgentConfig | undefined {
   return (
+    agents.find((a) => a.role === 'teacher' && a.voiceConfig) ??
     agents.find((a) => a.role === 'teacher' && a.voiceDesign) ??
     agents.find((a) => a.role === 'teacher')
   );

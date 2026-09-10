@@ -62,7 +62,7 @@ function createActionEngine() {
   };
 }
 
-function createAudioPlayer(play?: (audioId: string, audioUrl?: string) => Promise<boolean>) {
+function createAudioPlayer(play?: (audioId: string) => Promise<boolean>) {
   let ended: (() => void) | null = null;
   return {
     player: {

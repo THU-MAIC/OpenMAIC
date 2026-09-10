@@ -13,7 +13,7 @@ vi.mock('@/lib/utils/stage-storage', () => ({
 }));
 
 import { flushStageSave, restorePendingStageChanges, useStageStore } from '@/lib/store/stage';
-import { clearAssetPool, getAssetPool, putAsset } from '@/lib/media/asset-pool';
+import { clearAssetPool, getAssetPool } from '@/lib/media/asset-pool';
 import type { ChatSession } from '@/lib/types/chat';
 import type { Scene, Stage } from '@/lib/types/stage';
 
@@ -105,7 +105,7 @@ describe('incremental stage flush', () => {
   it('keeps allocated bytes intact across scene deletion and undo', async () => {
     vi.useRealTimers();
     vi.stubGlobal('indexedDB', new IDBFactory());
-    const ref = await putAsset(new Blob(['undo-safe-media'], { type: 'image/png' }));
+    const ref = await getAssetPool().put(new Blob(['undo-safe-media'], { type: 'image/png' }));
     const deleted = scene('scene-media');
     if (deleted.content.type !== 'slide') throw new Error('Expected a slide scene');
     deleted.content.canvas.elements = [
@@ -326,8 +326,40 @@ describe('incremental stage flush', () => {
 
     await flushStageSave();
     await vi.advanceTimersByTimeAsync(500);
+    expect(incrementalSave).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(500);
     expect(incrementalSave).toHaveBeenCalledTimes(2);
     expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'chats' }]);
+  });
+
+  it('coalesces streaming chat deltas behind the reference implementation retry cadence', async () => {
+    incrementalSave
+      .mockResolvedValueOnce({ failedChanges: [{ kind: 'chats' }] })
+      .mockResolvedValueOnce({ failedChanges: [] });
+    const base: ChatSession = {
+      id: 'chat-stream',
+      type: 'qa',
+      title: 'Streaming',
+      status: 'active',
+      messages: [],
+      config: { agentIds: [] },
+      toolCalls: [],
+      pendingToolCalls: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    useStageStore.getState().setChats([base]);
+    await flushStageSave();
+
+    for (let delta = 1; delta <= 64; delta += 1) {
+      useStageStore.getState().setChats([{ ...base, updatedAt: delta + 1 }]);
+    }
+    await vi.advanceTimersByTimeAsync(999);
+    expect(incrementalSave).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+
+    // Sixty-four deltas produce one retry, not one runtime/session/KV cycle per delta.
+    expect(incrementalSave).toHaveBeenCalledTimes(2);
   });
 
   it('clears document dirt but retains and retries chat dirt after a split full save', async () => {

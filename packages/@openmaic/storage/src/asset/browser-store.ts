@@ -359,6 +359,26 @@ export class BrowserAssetStore implements StorageProvider {
     await this.urls.release(ref);
   }
 
+  /** Retire this instance's cached snapshot without revoking any issued URL. */
+  async invalidate(ref: AssetRef): Promise<void> {
+    this.assertOpen();
+    await this.openDb();
+    await this.urls.invalidate(ref);
+  }
+
+  /**
+   * Metadata-only existence probe: the registry entry lookup alone, with no
+   * blob read and no URL minted. This is what migration-time checks should
+   * use; resolve downloads and pins.
+   */
+  async exists(ref: AssetRef): Promise<boolean> {
+    this.assertOpen();
+    const entry = await this.tx('readonly', async ({ assets }) => {
+      return reqP<AssetEntry | undefined>(assets.get(ref));
+    });
+    return entry !== undefined;
+  }
+
   /**
    * Replace the bytes behind an allocated id without changing that id.
    *

@@ -4,6 +4,7 @@ import { useId, useMemo, useRef, useEffect } from 'react';
 import type { InteractiveContent } from '@/lib/types/stage';
 import { useInteractiveIframePool } from '@/lib/store/interactive-iframe-pool';
 import { patchHtmlForIframe } from '@/lib/utils/iframe';
+import { visibleClientRect } from '@/lib/edit/visible-client-rect';
 
 interface InteractiveRendererProps {
   readonly content: InteractiveContent;
@@ -57,7 +58,8 @@ export function InteractiveRenderer({ content, sceneId }: InteractiveRendererPro
       const node = slotRef.current;
       if (node) {
         const r = node.getBoundingClientRect();
-        setRect(sceneId, { left: r.left, top: r.top, width: r.width, height: r.height });
+        const clip = visibleClientRect(node);
+        setRect(sceneId, { left: r.left, top: r.top, width: r.width, height: r.height }, clip);
       }
       raf = requestAnimationFrame(measure);
     };

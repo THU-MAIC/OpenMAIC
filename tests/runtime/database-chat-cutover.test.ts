@@ -1,5 +1,6 @@
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DSL_VERSION } from '@openmaic/dsl';
 import { BrowserRuntimeStore, type KVStore, type RuntimeStore } from '@openmaic/storage';
 
 import type { ChatSession } from '@/lib/types/chat';
@@ -1638,7 +1639,7 @@ describe('database runtime chat integration', () => {
     ).toHaveLength(1);
 
     expect(exportedDocument).toMatchObject({
-      dslVersion: '0.1.0',
+      dslVersion: DSL_VERSION,
       stage: { id: stage.id, name: 'Legacy-only export' },
       scenes: [
         {
@@ -1651,6 +1652,77 @@ describe('database runtime chat integration', () => {
     expect(exportedDocument!.stage).not.toHaveProperty('currentSceneId');
     await expect(getDocumentStore().loadDocument(stage.id)).resolves.toBeNull();
     await expect(db.stages.get(stage.id)).resolves.toEqual(stage);
+    await expect(db.scenes.get(scene.id)).resolves.toEqual(scene);
+  });
+
+  it('runs the DSL ladder over a legacy-only export instead of hand-stamping it', async () => {
+    vi.stubGlobal('navigator', {});
+    stubMemoryLocalStorage();
+    const runtimeStore = new BrowserRuntimeStore({
+      indexedDB: globalThis.indexedDB,
+      dbName: 'legacy-only-export-migrates',
+    });
+    const { db, exportDatabase } = await import('@/lib/utils/database');
+    const stage = {
+      id: 'stage-legacy-export-migrates',
+      name: 'Legacy-only export (migrates)',
+      createdAt: 1_000,
+      updatedAt: 2_000,
+      currentSceneId: 'scene-legacy-export-migrates',
+    };
+    const dirtyLine = {
+      id: 'line-dirty',
+      type: 'line' as const,
+      left: 10,
+      top: 20,
+      width: 100,
+      rotate: 45,
+      start: [0, 0],
+      end: [100, 0],
+      style: 'solid',
+      color: '#333333',
+      points: ['', ''],
+    };
+    const scene = {
+      id: 'scene-legacy-export-migrates',
+      stageId: stage.id,
+      type: 'slide' as const,
+      title: 'Legacy slide',
+      order: 0,
+      content: {
+        type: 'slide' as const,
+        canvas: { id: 'canvas-legacy', elements: [dirtyLine] } as never,
+      },
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    };
+    await db.stages.put(stage);
+    await db.scenes.put(scene);
+
+    const backup = await exportDatabase({ store: runtimeStore, learnerKey });
+    const exportedDocument = backup.documents.find((document) => document.stage.id === stage.id);
+    // the stamp reflects an actually-run migration: the stray rotate is gone
+    expect(exportedDocument).toMatchObject({
+      dslVersion: DSL_VERSION,
+      scenes: [
+        {
+          id: scene.id,
+          content: {
+            canvas: {
+              elements: [{ id: 'line-dirty', type: 'line', start: [0, 0] }],
+            },
+          },
+        },
+      ],
+    });
+    expect(exportedDocument!.scenes[0].content).toMatchObject({
+      canvas: { elements: [{ id: 'line-dirty', type: 'line' }] },
+    });
+    expect(
+      (exportedDocument!.scenes[0].content as { canvas: { elements: unknown[] } }).canvas
+        .elements[0],
+    ).not.toHaveProperty('rotate');
+    // the legacy rows themselves stay untouched (read-only fallback)
     await expect(db.scenes.get(scene.id)).resolves.toEqual(scene);
   });
 
@@ -1785,7 +1857,7 @@ describe('database runtime chat integration', () => {
       dbName: 'clear-without-web-locks',
     });
     const { clearDatabase, db } = await import('@/lib/utils/database');
-    const { putAsset } = await import('@/lib/media/asset-pool');
+    const { getAssetPool } = await import('@/lib/media/asset-pool');
     const { getDocumentStore } = await import('@/lib/document-store');
     await db.stages.put({
       id: 'stage-clear-no-lock',
@@ -1813,7 +1885,7 @@ describe('database runtime chat integration', () => {
     });
     localStorage.setItem('maic:device:document-migration:stage-clear-document', '{}');
     localStorage.setItem('maic:device:editor-current-scene:stage-clear-document', '{}');
-    await putAsset(new Blob(['private generated media'], { type: 'text/plain' }));
+    await getAssetPool().put(new Blob(['private generated media'], { type: 'text/plain' }));
     expect((await indexedDB.databases()).map((entry) => entry.name)).toContain('maic-asset-pool');
 
     await expect(clearDatabase(runtimeStore)).resolves.toBeUndefined();
@@ -1853,7 +1925,7 @@ describe('database runtime chat integration', () => {
       {
         stage: { id: 'stage-document-backup', name: 'Aggregate backup' },
         outline: { generationComplete: true },
-        dslVersion: '0.1.0',
+        dslVersion: DSL_VERSION,
       },
     ]);
 
@@ -1862,7 +1934,7 @@ describe('database runtime chat integration', () => {
     await expect(documentStore.loadDocument('stage-document-backup')).resolves.toMatchObject({
       stage: { name: 'Aggregate backup' },
       outline: { generationComplete: true },
-      dslVersion: '0.1.0',
+      dslVersion: DSL_VERSION,
     });
   });
 

@@ -94,6 +94,7 @@ exports[`emitHyperframes > matches the HTML snapshot 1`] = `
   </div>
 </div>
 
+<script type="application/json" data-openmaic-runtime-diagnostics>[]</script>
 </div>
 <script src="assets/vendor/gsap.min.js"></script>
 <script>
@@ -142,6 +143,7 @@ tl.to('#fx-0-2',{autoAlpha:0,x:-1056,y:-591.6,duration:0.25,ease:EASE_IN},4.75);
 tl.set('#fx-0-2',{autoAlpha:0},5);
 tl.set('#fx-0-2-ring',{opacity:0},5);
 tl.set({}, {}, 7);
+window.__openmaicVideoManifest = { runtimeDiagnostics: [], manifestPath: "openmaic-video-manifest.json" };
 window.__timelines = window.__timelines || {};
 window.__timelines["openmaic"] = tl;
 </script>
