@@ -834,16 +834,21 @@ describe('adopting cached narration', () => {
   it('does not re-arm a marker a media write cleared mid-load', async () => {
     useStageStore.setState({ scenes: [twoLineScene()] });
     serveDocument();
-    mocks.audioGet.mockImplementation(async (id: string) =>
-      cachedRow({ id, text: id === derivedRef ? 'Welcome' : 'And then' }),
-    );
     await kv.store.set(`asset-storage-full:${stageId}`, Date.now());
     // The first clip is long and is refused for room; the second is short
     // enough to still be worth attempting. A media commit lands in between and
     // clears the marker; the short clip is then refused too.
+    //
+    // Both rows state their text rather than leaning on the fixture's default.
+    // The first clip's key is import-shaped, so a stage-less row under it is
+    // admitted only when its recorded text is the text of the action being
+    // converted -- and the default happens to be that text, which would leave
+    // this case passing on a coincidence that the fixture's first line could
+    // break at any time.
     mocks.audioGet.mockImplementation(async (id: string) =>
       cachedRow({
         id,
+        text: id === derivedRef ? 'Welcome' : 'And then',
         blob: new Blob([id === derivedRef ? 'x'.repeat(500) : 'y'.repeat(50)], {
           type: 'audio/mp3',
         }),

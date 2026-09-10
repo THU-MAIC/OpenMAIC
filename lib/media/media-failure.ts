@@ -64,8 +64,10 @@ export function isRetryableMediaFailure(task: { readonly errorCode?: string }): 
  * costs a provider call, so continuing to pay for elements that will probably
  * be refused is the worse bet, and the elements it never reached keep their
  * placeholders and their Retry. A path whose refusals are free makes the
- * opposite call -- narration adoption attempts every clip it holds, because
- * one clip that does not fit says nothing about the shorter one behind it.
+ * opposite call -- narration adoption attempts every clip smaller than the
+ * smallest one already refused in the same run, because one clip that does not
+ * fit says nothing about a shorter one behind it, while saying everything about
+ * one at least as long.
  */
 export function isStorageFullFailure(errorCode: string | undefined): boolean {
   return errorCode === ASSET_QUOTA_EXCEEDED;

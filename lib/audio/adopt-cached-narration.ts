@@ -332,8 +332,9 @@ async function adoptCachedNarrationRun(
   // No marker is read here, and none is written. The store checks each write
   // against the headroom it has left, so "refused for want of room" is a fact
   // about one blob; adoption pays no provider for a refusal, so it needs no
-  // deck-wide memory of one either. It simply attempts every clip it holds,
-  // every load, and lets the ones that do not fit wait for a bigger ceiling.
+  // deck-wide memory of one either. It attempts, every load, every clip it
+  // holds that an earlier refusal in the same run has not already answered for,
+  // and lets the ones that do not fit wait for a bigger ceiling.
   //
   // Sharing the media pass's marker was tried across several rounds and the
   // coupling is what kept failing: the flag means "do not spend money here",
@@ -353,15 +354,31 @@ async function adoptCachedNarrationRun(
   //
   // So the run remembers the smallest size it has been refused, and skips
   // anything at least that large without uploading it. A smaller clip is still
-  // attempted, because it may fit. On a deck the store refuses entirely that
-  // costs one upload per successive size minimum -- at most a handful, and the
-  // first load pays the most; on a deck the store has room for it costs
-  // nothing, because nothing is refused.
+  // attempted, because it may fit.
   //
-  // The inference is one-directional by design. A collector reclaiming space
-  // mid-load would make it conservative -- a clip skipped here that would now
-  // fit is simply attempted on the next load -- and a concurrent writer only
-  // makes it more true.
+  // The exact cost, since an approximation here is what the previous version of
+  // this comment got wrong: on a deck the store refuses entirely, one upload
+  // per successive size minimum IN DOCUMENT ORDER. That is one for a deck whose
+  // clips grow, about ln N for an arbitrary one, and N for a deck whose clips
+  // only shrink -- a long opener followed by terser lines is exactly that
+  // shape. The bound resets per run and a refused clip stays outstanding, so
+  // every fully-refused load costs the same; no load is cheaper than the first.
+  // On a deck the store has room for it costs nothing, because nothing is
+  // refused.
+  //
+  // Making that one upload for ANY ordering needs a fact only the store has:
+  // its remaining headroom. The 507 already carries a `details` channel that
+  // the client surfaces and the server leaves empty, so putting the headroom
+  // there would let this skip everything above it after a single refusal. That
+  // is a cross-package change and a follow-up, not something to fake here.
+  //
+  // The implication itself is exact, not merely conservative. Quota is charged
+  // at the blob's full length with no discount for a duplicate, the sum it is
+  // checked against joins entries to blobs -- so the byte collector, which only
+  // removes blobs no entry names, cannot lower it -- and the check takes a
+  // per-principal lock before summing, so it never reads an uncommitted or
+  // rolled-back row. Replace and delete are refused to every browser. Nothing a
+  // run can do makes room appear inside it.
   let smallestRefusedForRoom = Number.POSITIVE_INFINITY;
 
   let adopted = 0;
