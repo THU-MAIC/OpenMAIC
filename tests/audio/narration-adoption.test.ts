@@ -680,55 +680,81 @@ describe('adopting cached narration', () => {
     expect(mocks.putAsset).toHaveBeenCalledTimes(1);
   });
 
-  // Adoption spends no provider money, so a full store costs it only network
-  // and log noise -- but a thirty-clip course would issue thirty refused
-  // uploads on every load, against a ceiling that is deployment-wide anyway.
-  // One is enough to find out whether it still is.
-  it('probes with a single clip when the store is known to be full', async () => {
+  // Adoption reads no marker and writes none. It spends no provider money, so
+  // it has nothing to protect with a deck-wide memory of a refusal -- and the
+  // marker it used to write is the media pass's instruction not to spend, which
+  // adoption is in no position to give. One over-large clip is not evidence
+  // that a slide's image will not fit.
+  it('never tells the media pass a store is full', async () => {
     useStageStore.setState({ scenes: [twoLineScene()] });
     serveDocument();
     mocks.audioGet.mockImplementation(async (id: string) => cachedRow({ id, text: 'Welcome' }));
     mocks.putAsset.mockRejectedValue(quotaRefusal());
-    await kv.store.set(`asset-storage-full:${stageId}`, Date.now());
 
     await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 2 });
 
-    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
-    // The condition is still what it was, so the next load probes too.
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
-    expect(audioIdOf(useStageStore.getState().scenes[0])).toBe(derivedRef);
+    // Every clip attempted once, and nothing remembered: the next load asks
+    // again, and the media pass is left to discover its own conditions.
+    expect(mocks.putAsset).toHaveBeenCalledTimes(2);
+    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
   });
 
-  // One upload per load, whatever it answers: a probe that fails for some other
-  // reason has disproved nothing, so the rest of the deck still waits.
-  it('spends only the probe when it fails for an unrelated reason', async () => {
+  // A marker the media pass DID set does not gate adoption either. Adoption is
+  // free, so standing it down buys nothing, and standing it down was what left
+  // narration-only courses unrecoverable.
+  it('attempts its clips on a course the media pass marked, and lifts the marker', async () => {
     useStageStore.setState({ scenes: [twoLineScene()] });
     serveDocument();
-    mocks.audioGet.mockImplementation(async (id: string) => cachedRow({ id, text: 'Welcome' }));
-    mocks.putAsset.mockRejectedValue(new Error('asset registry put failed'));
+    mocks.audioGet.mockImplementation(async (id: string) =>
+      cachedRow({ id, text: id === derivedRef ? 'Welcome' : 'And then' }),
+    );
+    let allocations = 0;
+    mocks.putAsset.mockImplementation(async () => `ast_narration_${(allocations += 1)}`);
     await kv.store.set(`asset-storage-full:${stageId}`, Date.now());
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 2, unbacked: 0 });
+
+    expect(mocks.putAsset).toHaveBeenCalledTimes(2);
+    // A write that went through is a fact, and it is the one the media pass
+    // needs: it disproves the condition it stood down on.
+    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
+  });
+
+  // The ordering hazard the end-of-load write created: a media commit clears
+  // the marker while adoption is running, and adoption then ends with a clip it
+  // could not fit. Writing a marker at that point would clobber a fact a
+  // successful media write had just established.
+  it('does not re-arm a marker a media write cleared mid-load', async () => {
+    useStageStore.setState({ scenes: [twoLineScene()] });
+    serveDocument();
+    mocks.audioGet.mockImplementation(async (id: string) =>
+      cachedRow({ id, text: id === derivedRef ? 'Welcome' : 'And then' }),
+    );
+    await kv.store.set(`asset-storage-full:${stageId}`, Date.now());
+    // The first clip is refused for room; a media commit lands in between and
+    // clears the marker; the second clip is refused too.
+    mocks.putAsset.mockImplementationOnce(async () => {
+      throw quotaRefusal();
+    });
+    mocks.putAsset.mockImplementationOnce(async () => {
+      await kv.store.remove(`asset-storage-full:${stageId}`);
+      throw quotaRefusal();
+    });
 
     await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 2 });
 
-    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
+    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
   });
 
-  // The way out, and the reason the gate is a probe rather than a stand-down.
-  // Adoption has no button, no message and no task row, so a course it stood
-  // down on could only be released by a media Retry -- and a narration-only
-  // deck, or one whose slides are already satisfied, has none to click. The
-  // marker was permanent and the narration was lost for good.
   it('converts the whole course on the first load after the ceiling is raised', async () => {
     useStageStore.setState({ scenes: [twoLineScene()] });
     serveDocument();
     mocks.audioGet.mockImplementation(async (id: string) => cachedRow({ id, text: 'Welcome' }));
     mocks.putAsset.mockRejectedValue(quotaRefusal());
     await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 2 });
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
 
-    // The operator raises the ceiling. Nothing tells this browser; the probe
-    // is how it finds out.
+    // The operator raises the ceiling. Nothing tells this browser; the next
+    // load simply asks again, which is all it ever does.
     let allocations = 0;
     mocks.putAsset
       .mockReset()
@@ -737,31 +763,10 @@ describe('adopting cached narration', () => {
     await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 2, unbacked: 0 });
 
     expect(mocks.putAsset).toHaveBeenCalledTimes(2);
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
-  });
-
-  // "Refused for want of room" is a fact about one blob: the store checks each
-  // write against the headroom it has left. So an unmarked load attempts every
-  // clip -- one refused upload per clip is the entire cost of being wrong, and
-  // no provider is called either way -- and remembers the condition only if it
-  // ends with clips it still could not fit.
-  it('attempts every clip and remembers the ones that did not fit', async () => {
-    useStageStore.setState({ scenes: [twoLineScene()] });
-    serveDocument();
-    mocks.audioGet.mockImplementation(async (id: string) => cachedRow({ id, text: 'Welcome' }));
-    mocks.putAsset.mockRejectedValue(quotaRefusal());
-
-    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 2 });
-
-    expect(mocks.putAsset).toHaveBeenCalledTimes(2);
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
   });
 
   // The population the deck-wide reading lost: a store with a little headroom
-  // refuses the long opening clip and holds every short one behind it. Stopping
-  // at the first refusal left those permanently unconverted, with no
-  // affordance -- exactly the state the probe exists to prevent, reached
-  // through a narrower door.
+  // refuses the long opening clip and holds every short one behind it.
   it('converts the clips that fit behind one that does not', async () => {
     useStageStore.setState({ scenes: [threeLineScene()] });
     serveDocument();
@@ -774,14 +779,14 @@ describe('adopting cached narration', () => {
     expect(ids[0]).toBe(bigRef);
     expect(ids[1]).toBe('ast_small_1');
     expect(ids[2]).toBe('ast_small_2');
-    // The long clip is still outstanding, so the condition is remembered.
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
+    // And the one clip that did not fit is not turned into a claim about the
+    // deck, or about the course's images.
+    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
   });
 
-  // And the next load spends its one upload on the smallest clip left, which
-  // here is the only clip left. Retrying the opener because the document names
-  // it first is what made the deck above unrecoverable.
-  it('probes the smallest clip left rather than the first one named', async () => {
+  // The clip left outstanding is attempted again, once, on the next load --
+  // which after the first load is normally the whole cost of a full store.
+  it('re-attempts only the clip that did not fit, once per load', async () => {
     useStageStore.setState({ scenes: [threeLineScene()] });
     serveDocument();
     servePartiallyFullStore();
@@ -792,65 +797,27 @@ describe('adopting cached narration', () => {
     useStageStore.setState({
       scenes: [threeLineScene(bigRef, 'ast_small_1', 'ast_small_2')],
     });
+
     await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 1 });
 
     expect(mocks.putAsset).toHaveBeenCalledTimes(1);
-    const [probed] = mocks.putAsset.mock.calls[0] as [Blob];
-    expect(probed.size).toBe(5000);
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
+    const [attempted] = mocks.putAsset.mock.calls[0] as [Blob];
+    expect(attempted.size).toBe(5000);
   });
 
-  // Nothing fits at all: one probe per load, on the smallest, and it is the
-  // smallest that answers whether the ceiling has moved.
-  it('probes the smallest of a deck the store refused entirely', async () => {
-    useStageStore.setState({ scenes: [threeLineScene()] });
-    serveDocument();
-    serveSizedRows();
-    mocks.putAsset.mockRejectedValue(quotaRefusal());
-    await adoptCachedNarration(stageId);
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
-    mocks.putAsset.mockClear();
-
-    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 3 });
-
-    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
-    const [probed] = mocks.putAsset.mock.calls[0] as [Blob];
-    expect(probed.size).toBe(100);
-  });
-
-  it('converts the deck in the load whose probe succeeds', async () => {
-    useStageStore.setState({ scenes: [threeLineScene()] });
-    serveDocument();
-    serveSizedRows();
-    mocks.putAsset.mockRejectedValue(quotaRefusal());
-    await adoptCachedNarration(stageId);
-    mocks.putAsset.mockClear();
-
-    // The operator raises the ceiling.
-    let allocations = 0;
-    mocks.putAsset.mockReset().mockImplementation(async () => `ast_raised_${(allocations += 1)}`);
-
-    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 3, unbacked: 0 });
-
-    expect(mocks.putAsset).toHaveBeenCalledTimes(3);
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
-  });
-
-  // A row the ownership rule refuses never reaches the store, so it cannot be
-  // what the probe spends its one upload on.
-  it('does not spend the probe on a clip it would refuse anyway', async () => {
+  // A row the ownership rule refuses never reaches the store at all, so the
+  // clips behind it are unaffected by it.
+  it('skips a clip that belongs elsewhere and converts the rest', async () => {
     useStageStore.setState({ scenes: [twoLineScene()] });
     serveDocument();
     // The first clip's row names another course; the second is this course's.
     mocks.audioGet.mockImplementation(async (id: string) =>
       cachedRow({ id, stageId: id === derivedRef ? 'another-course' : stageId }),
     );
-    await kv.store.set(`asset-storage-full:${stageId}`, Date.now());
 
     await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 1, unbacked: 1 });
 
     expect(mocks.putAsset).toHaveBeenCalledTimes(1);
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
   });
 
   // The marker is set before the run, or this asserts nothing: a fresh device

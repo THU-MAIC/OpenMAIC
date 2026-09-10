@@ -53,11 +53,19 @@ export function isRetryableMediaFailure(task: { readonly errorCode?: string }): 
 }
 
 /**
- * Whether this failure means the asset store had no room.
+ * Whether this failure means the asset store had no room for THIS write.
  *
- * Read by the generation pass, which stops at the first one: the store is a
- * deployment-wide ceiling, so once it is full every remaining element of the
- * deck would pay a provider and be refused at exactly the same point.
+ * The ceiling is deployment-wide but the check is per write -- the store asks
+ * whether the bytes in hand fit in the headroom that is left -- so a refusal is
+ * evidence about one blob, and only weak evidence about the next one.
+ *
+ * The generation pass stops the deck at the first one anyway, and that is a
+ * judgement about cost rather than about certainty: every element it attempts
+ * costs a provider call, so continuing to pay for elements that will probably
+ * be refused is the worse bet, and the elements it never reached keep their
+ * placeholders and their Retry. A path whose refusals are free makes the
+ * opposite call -- narration adoption attempts every clip it holds, because
+ * one clip that does not fit says nothing about the shorter one behind it.
  */
 export function isStorageFullFailure(errorCode: string | undefined): boolean {
   return errorCode === ASSET_QUOTA_EXCEEDED;

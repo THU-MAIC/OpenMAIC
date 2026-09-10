@@ -39,12 +39,7 @@
  */
 import { putAsset } from '@/lib/media/asset-pool';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
-import {
-  clearAssetStorageFull,
-  isAssetStorageFull,
-  markAssetStorageFull,
-} from '@/lib/media/asset-storage-full';
-import { isStorageFullFailure } from '@/lib/media/media-failure';
+import { clearAssetStorageFull } from '@/lib/media/asset-storage-full';
 import { createLogger } from '@/lib/logger';
 import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
@@ -174,26 +169,6 @@ const DERIVED_KEY_ACTION_ID = /^tts_(?:request_)?s-?\d+_(.+)$/;
  * minting the id unconditionally for speech, not here.
  */
 const UNIQUE_ACTION_ID = /^action_[A-Za-z0-9_-]{8,}$/;
-
-/** The same clips, with the smallest one first. */
-function smallestFirst<T extends { readonly row: AudioFileRecord }>(entries: readonly T[]): T[] {
-  if (entries.length < 2) return [...entries];
-  let smallest = entries[0];
-  for (const entry of entries) {
-    if (entry.row.blob.size < smallest.row.blob.size) smallest = entry;
-  }
-  // Only the head moves: everything behind it keeps document order, which is
-  // the order a reader hears it in and the order a partial conversion should
-  // make progress in.
-  return [smallest, ...entries.filter((entry) => entry !== smallest)];
-}
-
-/** The contract code an upload failure declares, if it declares one. */
-function storageErrorCode(error: unknown): string | undefined {
-  if (typeof error !== 'object' || error === null) return undefined;
-  const code = (error as { code?: unknown }).code;
-  return typeof code === 'string' ? code : undefined;
-}
 
 function derivedKeyIsUnique(derivedRef: string): boolean {
   const actionId = DERIVED_KEY_ACTION_ID.exec(derivedRef)?.[1];
@@ -346,37 +321,30 @@ async function adoptCachedNarrationRun(
   const actions = derivedNarrationRefs(useStageStore.getState().scenes);
   if (actions.length === 0) return idle;
 
-  // The store had no room the last time this browser wrote to it, so this load
-  // spends ONE upload finding out whether that is still true instead of the
-  // whole deck. A thirty-clip course would otherwise issue thirty refused
-  // uploads per load against a ceiling that is deployment-wide anyway.
+  // No marker is read here, and none is written. The store checks each write
+  // against the headroom it has left, so "refused for want of room" is a fact
+  // about one blob; adoption pays no provider for a refusal, so it needs no
+  // deck-wide memory of one either. It simply attempts every clip it holds,
+  // every load, and lets the ones that do not fit wait for a bigger ceiling.
   //
-  // A probe rather than a stand-down, deliberately. Adoption has no affordance
-  // of its own: no button, no message, no task row. A course it stood down on
-  // could only be released by a media Retry, and a course whose media needs
-  // nothing -- a narration-only deck, or one whose slides are already
-  // satisfied -- has none to click, so the marker became permanent and the
-  // narration was lost for good. Adoption also spends no provider money, so
-  // the entire cost of probing a store that is still full is one refused
-  // upload; the entire cost of not probing was an unrecoverable course.
-  let probing = await isAssetStorageFull(stageId);
-  if (probing) {
-    log.info(`Asset storage was full for ${stageId}; probing with a single clip.`);
-  }
+  // Sharing the media pass's marker was tried across several rounds and the
+  // coupling is what kept failing: the flag means "do not spend money here",
+  // which is a claim adoption is in no position to make. One clip larger than
+  // current headroom was enough to stand a course's whole image pass down
+  // indefinitely -- on a store that had just accepted adoption's other clips.
+  // The marker is now written only by the paths whose refusal cost a provider
+  // call.
+  //
+  // The noise this coupling was meant to avoid is not there to avoid: under
+  // per-clip semantics the clips still outstanding on a full store are exactly
+  // the ones that did not fit, which after the first load is normally none or
+  // one.
 
-  // Every clip this browser holds for the open course, with the rows the
-  // ownership rule refuses already dropped, read before anything is spent.
-  //
-  // Read up front because the probe below has to choose by size, and because
-  // the rows are handles: `blob.size` is metadata, so gathering them costs a
-  // local lookup per clip, which adoption performs anyway.
-  const adoptable: { readonly action: DerivedNarration; readonly row: AudioFileRecord }[] = [];
   let adopted = 0;
   let unbacked = 0;
   for (const action of actions) {
-    // A course left mid-scan must not have the rest of its deck allocated
-    // against it. Nothing has been spent yet, so the clips never reached are
-    // not counted as anything: this run simply did not look at them.
+    // A course left mid-loop must not have the rest of its deck allocated
+    // against it, or its document lock taken for them.
     if (abortSignal?.aborted || !onThisCourse()) break;
     // The derived id IS the local key: that is what made it usable before
     // allocation existed.
@@ -390,30 +358,7 @@ async function adoptCachedNarrationRun(
       unbacked += 1;
       continue;
     }
-    adoptable.push({ action, row });
-  }
-
-  // The probe spends its single upload on the SMALLEST clip, not the first one
-  // the document happens to name.
-  //
-  // "Refused for want of room" is a fact about one blob, not about the deck:
-  // the store checks each write against the headroom it has left, so a store
-  // that refuses a long opening clip can still hold every short clip behind it.
-  // A probe that always retried the opener would leave such a deck permanently
-  // unconverted -- the same unrecoverable state the probe was introduced to
-  // remove, reached through a narrower door. The smallest clip is the one that
-  // answers the question the marker asks: if that does not fit, nothing does.
-  const queue = probing ? smallestFirst(adoptable) : adoptable;
-
-  // Clips this load could not store for want of room, and did not get to store
-  // afterwards. The marker is written from this at the end rather than at the
-  // refusal, because a later clip in the same load may prove the store has
-  // room after all.
-  let refusedForRoom = 0;
-
-  for (const { action, row } of queue) {
-    // Re-checked before every upload: a course left in the meantime must not
-    // have its remaining clips allocated against it.
+    // Re-checked after the read and before anything is spent.
     if (abortSignal?.aborted || !onThisCourse()) break;
 
     let assetId: string;
@@ -425,38 +370,21 @@ async function adoptCachedNarrationRun(
         ...(row.duration === undefined ? {} : { durationSeconds: row.duration }),
       });
     } catch (error) {
-      // One clip's storage failure costs that clip. The action keeps its
-      // derived id and is adopted on a later load.
+      // One clip's storage failure costs that clip and nothing else. The action
+      // keeps its derived id, the deck carries on, and a later load tries
+      // again -- including on a store with no room, where the cost of being
+      // wrong is one refused upload and the cost of being right is a clip that
+      // converges the moment the ceiling moves.
       log.warn(`Could not store cached narration ${action.derivedRef}:`, error);
       unbacked += 1;
-      if (isStorageFullFailure(storageErrorCode(error))) {
-        refusedForRoom += 1;
-        // The deck is NOT abandoned here. This blob did not fit; a smaller one
-        // behind it still might, and the whole cost of being wrong about that
-        // is one refused upload per remaining clip -- no provider is called
-        // either way. The media pass does stop at its first refusal, because
-        // every element it attempts costs money.
-        //
-        // A probe is the exception: it was already the smallest clip, so
-        // nothing else in this deck can fit.
-        if (probing) {
-          unbacked = actions.length - adopted;
-          break;
-        }
-        continue;
-      }
-      // A probe is one upload, whatever it answers. Nothing here disproves the
-      // marker, so the rest of the deck waits for the next load.
-      if (probing) {
-        unbacked = actions.length - adopted;
-        break;
-      }
       continue;
     }
-    // The store took a write, so whatever was full is not full any more --
-    // including for the media pass, which has no other way to learn it.
+    // A write that went through disproves the condition the media pass stands
+    // down on, and it is the only path that can say so for a course whose
+    // media needs nothing. Clearing is safe from here in a way that marking
+    // never was: it is a fact this run just established, not an inference
+    // about what some other write would cost.
     await clearAssetStorageFull(stageId);
-    probing = false;
 
     // The allocation is uncancellable, so it may finish after the course was
     // left. Its write-back is not: a document this browser no longer has open
@@ -487,12 +415,6 @@ async function adoptCachedNarrationRun(
       });
     adopted += 1;
   }
-
-  // Remembered only when the load ends with clips still refused for room. A
-  // load that was refused and then stored something has disproved the
-  // condition for the clips that fit and confirmed it for the ones that did
-  // not, and the next load is the one that probes for those.
-  if (refusedForRoom > 0) await markAssetStorageFull(stageId);
 
   if (adopted > 0) {
     log.info(`Adopted ${adopted} cached narration clip(s) for ${stageId}; no provider call.`);
