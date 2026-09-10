@@ -74,19 +74,27 @@ const log = createLogger('NarrationAdoption');
  * course that has nothing left, and finishes the clips the abort cut off on one
  * that does.
  *
- * At most ONE rescan is queued at a time. A chain of them would be pointless —
- * the first rescan converts whatever is left, and every later one finds an
- * allocated id on every action — and it would turn a single stalled upload,
- * which the loop is deliberately unable to cancel, into a course that never
- * adopts again for the rest of the session. Callers that arrive while a rescan
- * is waiting share it, and it starts with the most recent caller's signal,
- * because that is the one whose course is actually open.
+ * At most ONE rescan is queued at a time, and it belongs to every caller waiting
+ * for it. A chain would be pointless — the first rescan converts whatever is
+ * left, and every later one would find an allocated id on every action — so
+ * what coalescing buys is precisely a bounded queue: N callers no longer build
+ * N sequential runs, and the rescan starts with a signal that is aborted only
+ * once every caller sharing it has left, so a surface that closes cannot stop
+ * work another surface is still waiting for.
+ *
+ * What it does NOT buy, and this is worth stating because it looks like it
+ * should: it is no protection against a stalled upload. The queued rescan is
+ * chained off the run in flight, so a `putAsset` that never settles leaves the
+ * rescan unstarted and every waiting caller pending, exactly as a chain would.
+ * That is the same uncancellable tail the media pass has, recorded as a known
+ * limitation rather than solved here.
  */
 const runsByStage = new Map<string, Promise<unknown>>();
 
-/** A rescan that has not started yet, and the signal it will start with. */
+/** A rescan that has not started yet, and the callers waiting for it. */
 interface QueuedAdoption {
-  signal: AbortSignal | undefined;
+  /** One entry per caller sharing this rescan. `undefined` means "never leaves". */
+  readonly signals: (AbortSignal | undefined)[];
   readonly outcome: Promise<NarrationAdoptionOutcome>;
 }
 
@@ -167,6 +175,19 @@ const DERIVED_KEY_ACTION_ID = /^tts_(?:request_)?s-?\d+_(.+)$/;
  */
 const UNIQUE_ACTION_ID = /^action_[A-Za-z0-9_-]{8,}$/;
 
+/** The same clips, with the smallest one first. */
+function smallestFirst<T extends { readonly row: AudioFileRecord }>(entries: readonly T[]): T[] {
+  if (entries.length < 2) return [...entries];
+  let smallest = entries[0];
+  for (const entry of entries) {
+    if (entry.row.blob.size < smallest.row.blob.size) smallest = entry;
+  }
+  // Only the head moves: everything behind it keeps document order, which is
+  // the order a reader hears it in and the order a partial conversion should
+  // make progress in.
+  return [smallest, ...entries.filter((entry) => entry !== smallest)];
+}
+
 /** The contract code an upload failure declares, if it declares one. */
 function storageErrorCode(error: unknown): string | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
@@ -236,25 +257,63 @@ export async function adoptCachedNarration(
   if (!running) return startAdoptionRun(stageId, abortSignal);
 
   // A rescan is already waiting for that run. One is all any number of callers
-  // need, so they share it -- and it takes this caller's signal, which is more
-  // recent than the one it was created with.
+  // need, so this caller joins it rather than queueing another.
   const waiting = queuedByStage.get(stageId);
   if (waiting) {
-    waiting.signal = abortSignal;
+    waiting.signals.push(abortSignal);
     return waiting.outcome;
   }
 
   const queued: QueuedAdoption = {
-    signal: abortSignal,
+    signals: [abortSignal],
     outcome: running
       .catch(() => undefined)
       .then(() => {
         queuedByStage.delete(stageId);
-        return startAdoptionRun(stageId, queued.signal);
+        const shared = whileAnyCallerStays(queued.signals);
+        return startAdoptionRun(stageId, shared.signal).finally(shared.release);
       }),
   };
   queuedByStage.set(stageId, queued);
   return queued.outcome;
+}
+
+/**
+ * One signal for a run several callers share, aborted only once they have all
+ * left.
+ *
+ * Taking the newest caller's signal was tried and is a quieter version of the
+ * defect the queue exists to prevent: the caller that arrived last is not
+ * necessarily the caller that is still there, so a surface that opens a course
+ * and closes it again would stop a rescan the surface still showing that course
+ * is waiting for -- and that surface is latched, so it would not ask again.
+ *
+ * A caller that passed no signal never leaves, which makes the composite
+ * uncancellable; that is the correct reading of "someone is still here".
+ */
+function whileAnyCallerStays(signals: readonly (AbortSignal | undefined)[]): {
+  readonly signal: AbortSignal | undefined;
+  readonly release: () => void;
+} {
+  if (signals.some((candidate) => candidate === undefined)) {
+    return { signal: undefined, release: () => undefined };
+  }
+  const callers = signals as readonly AbortSignal[];
+  const composite = new AbortController();
+  const abortOnceEveryoneHasLeft = (): void => {
+    if (callers.every((caller) => caller.aborted)) composite.abort();
+  };
+  for (const caller of callers) caller.addEventListener('abort', abortOnceEveryoneHasLeft);
+  // The last caller may already have left before the run got its turn.
+  abortOnceEveryoneHasLeft();
+  return {
+    signal: composite.signal,
+    // Listeners on a course's own controllers outlive the run otherwise, and a
+    // long workbench session opens many courses.
+    release: () => {
+      for (const caller of callers) caller.removeEventListener('abort', abortOnceEveryoneHasLeft);
+    },
+  };
 }
 
 /** Run adoption now, and hold the course's slot for exactly as long as it runs. */
@@ -305,10 +364,20 @@ async function adoptCachedNarrationRun(
     log.info(`Asset storage was full for ${stageId}; probing with a single clip.`);
   }
 
+  // Every clip this browser holds for the open course, with the rows the
+  // ownership rule refuses already dropped, read before anything is spent.
+  //
+  // Read up front because the probe below has to choose by size, and because
+  // the rows are handles: `blob.size` is metadata, so gathering them costs a
+  // local lookup per clip, which adoption performs anyway.
+  const adoptable: { readonly action: DerivedNarration; readonly row: AudioFileRecord }[] = [];
   let adopted = 0;
   let unbacked = 0;
   for (const action of actions) {
-    if (abortSignal?.aborted) break;
+    // A course left mid-scan must not have the rest of its deck allocated
+    // against it. Nothing has been spent yet, so the clips never reached are
+    // not counted as anything: this run simply did not look at them.
+    if (abortSignal?.aborted || !onThisCourse()) break;
     // The derived id IS the local key: that is what made it usable before
     // allocation existed.
     const row = await db.audioFiles.get(action.derivedRef).catch(() => undefined);
@@ -321,8 +390,30 @@ async function adoptCachedNarrationRun(
       unbacked += 1;
       continue;
     }
-    // Re-checked after the read and before anything is spent: a course left in
-    // the meantime must not have its remaining clips allocated against it.
+    adoptable.push({ action, row });
+  }
+
+  // The probe spends its single upload on the SMALLEST clip, not the first one
+  // the document happens to name.
+  //
+  // "Refused for want of room" is a fact about one blob, not about the deck:
+  // the store checks each write against the headroom it has left, so a store
+  // that refuses a long opening clip can still hold every short clip behind it.
+  // A probe that always retried the opener would leave such a deck permanently
+  // unconverted -- the same unrecoverable state the probe was introduced to
+  // remove, reached through a narrower door. The smallest clip is the one that
+  // answers the question the marker asks: if that does not fit, nothing does.
+  const queue = probing ? smallestFirst(adoptable) : adoptable;
+
+  // Clips this load could not store for want of room, and did not get to store
+  // afterwards. The marker is written from this at the end rather than at the
+  // refusal, because a later clip in the same load may prove the store has
+  // room after all.
+  let refusedForRoom = 0;
+
+  for (const { action, row } of queue) {
+    // Re-checked before every upload: a course left in the meantime must not
+    // have its remaining clips allocated against it.
     if (abortSignal?.aborted || !onThisCourse()) break;
 
     let assetId: string;
@@ -338,18 +429,24 @@ async function adoptCachedNarrationRun(
       // derived id and is adopted on a later load.
       log.warn(`Could not store cached narration ${action.derivedRef}:`, error);
       unbacked += 1;
-      // Unless there is no room at all, in which case every clip after this one
-      // would be refused at the same point. Remembered per course, exactly as
-      // the media pass remembers it, so the next load probes with one clip
-      // instead of repeating the whole deck.
       if (isStorageFullFailure(storageErrorCode(error))) {
-        await markAssetStorageFull(stageId);
-        unbacked = actions.length - adopted;
-        break;
+        refusedForRoom += 1;
+        // The deck is NOT abandoned here. This blob did not fit; a smaller one
+        // behind it still might, and the whole cost of being wrong about that
+        // is one refused upload per remaining clip -- no provider is called
+        // either way. The media pass does stop at its first refusal, because
+        // every element it attempts costs money.
+        //
+        // A probe is the exception: it was already the smallest clip, so
+        // nothing else in this deck can fit.
+        if (probing) {
+          unbacked = actions.length - adopted;
+          break;
+        }
+        continue;
       }
       // A probe is one upload, whatever it answers. Nothing here disproves the
-      // marker, so the rest of the deck waits for the next load exactly as it
-      // would have on a refusal.
+      // marker, so the rest of the deck waits for the next load.
       if (probing) {
         unbacked = actions.length - adopted;
         break;
@@ -390,6 +487,12 @@ async function adoptCachedNarrationRun(
       });
     adopted += 1;
   }
+
+  // Remembered only when the load ends with clips still refused for room. A
+  // load that was refused and then stored something has disproved the
+  // condition for the clips that fit and confirmed it for the ones that did
+  // not, and the next load is the one that probes for those.
+  if (refusedForRoom > 0) await markAssetStorageFull(stageId);
 
   if (adopted > 0) {
     log.info(`Adopted ${adopted} cached narration clip(s) for ${stageId}; no provider call.`);

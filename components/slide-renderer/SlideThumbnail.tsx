@@ -69,14 +69,18 @@ function renderThumbnailVideo(
           {disabledMessage}
         </div>
       ) : failed ? (
-        <div
-          className="flex h-full w-full items-center justify-center rounded bg-red-50 px-2 text-center"
-          data-media-state="failed"
-        >
-          {failureMessage ? (
+        failureMessage ? (
+          <div
+            className="flex h-full w-full items-center justify-center rounded bg-red-50 px-2 text-center"
+            data-media-state="failed"
+          >
             <span className="text-[10px] font-medium text-amber-600">{failureMessage}</span>
-          ) : null}
-        </div>
+          </div>
+        ) : (
+          // The box this has always been, unchanged for a failure with nothing
+          // to say -- which is every failure browser-only mode can produce.
+          <div className="h-full w-full rounded bg-red-50" data-media-state="failed" />
+        )
       ) : src ? (
         <video
           className="w-full h-full"

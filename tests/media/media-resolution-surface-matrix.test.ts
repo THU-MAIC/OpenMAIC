@@ -616,8 +616,13 @@ describe('a failed media task explains itself beside a Retry, and only there', (
       createElement(VideoElement, { elementInfo: element }),
     );
 
-    // The failed state is painted; it just says nothing, as it always has.
-    expect(markup).toContain('bg-red-50');
+    // The failed state is painted, and it is the box it has always been --
+    // asserted as the exact class attribute, because a notice-shaped container
+    // with nothing in it would render identically and still be a change to
+    // browser-only output.
+    expect(markup).toContain(
+      'class="flex h-full w-full items-center justify-center rounded bg-red-50 dark:bg-red-900/20"',
+    );
     expect(markup).not.toContain('settings.mediaContentSensitive');
     expect(markup).not.toContain('settings.mediaRetry');
   });
@@ -648,7 +653,9 @@ describe('a failed media task explains itself beside a Retry, and only there', (
       createElement(ImageElement, { elementInfo: element }),
     );
 
-    expect(markup).toContain('data-media-state="failed"');
+    expect(markup).toContain(
+      '<div class="flex h-full w-full items-center justify-center bg-red-50" data-media-state="failed">',
+    );
     expect(markup).not.toContain('settings.mediaContentSensitive');
     expect(markup).not.toContain('settings.mediaRetry');
   });
@@ -685,7 +692,32 @@ describe('a failed media task explains itself beside a Retry, and only there', (
       ),
     );
 
-    expect(markup).toContain('data-media-state="failed"');
+    expect(markup).toContain(
+      '<div class="relative h-full w-full bg-red-50" data-media-state="failed">',
+    );
+    expect(markup).not.toContain('settings.mediaContentSensitive');
+    expect(markup).not.toContain('settings.mediaRetry');
+  });
+
+  it('the video thumbnail draws neither for a refusal a retry cannot change', () => {
+    const ref = 'gen_vid_thumb_refused';
+    const element = videoElement(ref);
+    useSettingsStore.setState({ videoGenerationEnabled: true });
+    useMediaGenerationStore.setState({ tasks: { [ref]: requireTask(refusedTask(ref, 'video')) } });
+
+    const markup = renderToStaticMarkup(
+      createElement(
+        MediaStageProvider,
+        { value: stageId },
+        createElement(SlideThumbnail, { slide: slideWith(element), viewportRatio: 0.5625 }),
+      ),
+    );
+
+    // Self-closing, as it was: a container with a conditional child that is
+    // never present would emit `<div …></div>` instead.
+    expect(markup).toContain(
+      '<div class="h-full w-full rounded bg-red-50" data-media-state="failed"></div>',
+    );
     expect(markup).not.toContain('settings.mediaContentSensitive');
     expect(markup).not.toContain('settings.mediaRetry');
   });

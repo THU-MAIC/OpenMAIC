@@ -78,7 +78,15 @@ export function VideoElement({ elementInfo, selectElement }: VideoElementProps) 
               <span>{t('settings.mediaGenerationDisabled')}</span>
             </div>
           ) : resolution.kind === 'failed' ? (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 rounded bg-red-50 dark:bg-red-900/20">
+            <div
+              // Stacked only when there is something to stack; see the image
+              // element's note.
+              className={
+                failureNotice
+                  ? 'flex h-full w-full flex-col items-center justify-center gap-1.5 rounded bg-red-50 dark:bg-red-900/20'
+                  : 'flex h-full w-full items-center justify-center rounded bg-red-50 dark:bg-red-900/20'
+              }
+            >
               {failureNotice ? (
                 <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
                   <ShieldAlert className="h-3 w-3 shrink-0" />

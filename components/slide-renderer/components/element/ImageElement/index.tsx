@@ -170,7 +170,14 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
                 </div>
               ) : resolution.kind === 'failed' ? (
                 <div
-                  className="flex h-full w-full flex-col items-center justify-center gap-1.5 bg-red-50"
+                  // Stacked only when there is something to stack. With no
+                  // notice this is the box it has always been, down to the
+                  // class attribute: browser-only markup does not change here.
+                  className={
+                    failureNotice
+                      ? 'flex h-full w-full flex-col items-center justify-center gap-1.5 bg-red-50'
+                      : 'flex h-full w-full items-center justify-center bg-red-50'
+                  }
                   data-media-state="failed"
                 >
                   {failureNotice ? (

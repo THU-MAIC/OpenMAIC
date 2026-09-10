@@ -85,6 +85,62 @@ function twoLineScene(): Scene {
   } as unknown as Scene;
 }
 
+const bigRef = 'tts_s1_action_cccccccc';
+
+/** A course whose opening clip is long and whose other two are short. */
+function threeLineScene(
+  first: string = bigRef,
+  second: string = derivedRef,
+  third: string = secondRef,
+): Scene {
+  return {
+    id: 'scene-1',
+    stageId,
+    title: 'Scene',
+    order: 1,
+    type: 'slide',
+    content: { type: 'slide', canvas: { id: 'slide-1', elements: [] } },
+    actions: [
+      { id: 'speech-0', type: 'speech', text: 'A long opening line', audioId: first },
+      { id: 'speech-1', type: 'speech', text: 'Welcome', audioId: second },
+      { id: 'speech-2', type: 'speech', text: 'And then', audioId: third },
+    ],
+  } as unknown as Scene;
+}
+
+/** The audio ids the live store's speech actions currently carry. */
+function liveAudioIds(): (string | undefined)[] {
+  const [scene] = useStageStore.getState().scenes as unknown as {
+    actions: { audioId?: string }[];
+  }[];
+  return (scene?.actions ?? []).map((action) => action.audioId);
+}
+
+/** Rows whose blobs differ in size the way a deck's narration does. */
+function serveSizedRows(): void {
+  mocks.audioGet.mockImplementation(async (id: string) =>
+    cachedRow({
+      id,
+      blob: new Blob([id === bigRef ? 'x'.repeat(5000) : 'y'.repeat(100)], { type: 'audio/mp3' }),
+    }),
+  );
+}
+
+/**
+ * A store with a little headroom, refusing each write on its own size --
+ * `used + addedBytes > quotaBytes`, which is the registry's actual rule.
+ */
+function servePartiallyFullStore(headroom = 1000): void {
+  serveSizedRows();
+  let used = 0;
+  let stored = 0;
+  mocks.putAsset.mockImplementation(async (blob: Blob) => {
+    if (used + blob.size > headroom) throw quotaRefusal();
+    used += blob.size;
+    return `ast_small_${(stored += 1)}`;
+  });
+}
+
 /** What the store answers when it has no room. */
 function quotaRefusal(): Error {
   return Object.assign(new Error('asset quota exceeded for this principal'), {
@@ -545,6 +601,85 @@ describe('adopting cached narration', () => {
     expect(c).toBe(a);
   });
 
+  // Sharing one rescan means the callers' signals have to be composed, not
+  // overwritten: the caller that arrived last is not necessarily the caller
+  // that is still there. A surface that opens a course and closes it again must
+  // not stop the rescan a surface still showing that course is waiting for --
+  // and that surface is latched, so it would never ask again.
+  it('runs the shared rescan while any of its callers is still there', async () => {
+    useStageStore.setState({ scenes: [twoLineScene()] });
+    serveDocument();
+    mocks.audioGet.mockImplementation(async (id: string) =>
+      cachedRow({ id, text: id === derivedRef ? 'Welcome' : 'And then' }),
+    );
+    let release!: () => void;
+    const inFlight = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // The run in flight is cut off after its first clip, so the rescan has work.
+    const first = new AbortController();
+    mocks.putAsset.mockImplementationOnce(async () => {
+      await inFlight;
+      first.abort();
+      return 'ast_clip_1';
+    });
+    mocks.putAsset.mockImplementation(async () => 'ast_clip_2');
+
+    const running = adoptCachedNarration(stageId, first.signal);
+    // Two surfaces wait for the rescan, and the one that closes is the one that
+    // arrived LAST -- otherwise "take the newest signal" would pass this too.
+    const staying = new AbortController();
+    const leaving = new AbortController();
+    const stayed = adoptCachedNarration(stageId, staying.signal);
+    const left = adoptCachedNarration(stageId, leaving.signal);
+    leaving.abort();
+    release();
+
+    await expect(running).resolves.toEqual({ adopted: 1, unbacked: 0 });
+    await expect(stayed).resolves.toEqual({ adopted: 1, unbacked: 0 });
+    await expect(left).resolves.toEqual({ adopted: 1, unbacked: 0 });
+    expect(mocks.putAsset).toHaveBeenCalledTimes(2);
+    expect(liveAudioIds().slice(0, 2)).toEqual(['ast_clip_1', 'ast_clip_2']);
+  });
+
+  it('stops the shared rescan once every caller has left', async () => {
+    useStageStore.setState({ scenes: [twoLineScene()] });
+    serveDocument();
+    mocks.audioGet.mockImplementation(async (id: string) =>
+      cachedRow({ id, text: id === derivedRef ? 'Welcome' : 'And then' }),
+    );
+    let release!: () => void;
+    const inFlight = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = new AbortController();
+    mocks.putAsset.mockImplementationOnce(async () => {
+      await inFlight;
+      first.abort();
+      return 'ast_clip_1';
+    });
+    mocks.putAsset.mockImplementation(async () => 'ast_clip_2');
+
+    const running = adoptCachedNarration(stageId, first.signal);
+    const one = new AbortController();
+    const two = new AbortController();
+    const waiting = [
+      adoptCachedNarration(stageId, one.signal),
+      adoptCachedNarration(stageId, two.signal),
+    ];
+    one.abort();
+    two.abort();
+    release();
+
+    await expect(running).resolves.toEqual({ adopted: 1, unbacked: 0 });
+    await expect(Promise.all(waiting)).resolves.toEqual([
+      { adopted: 0, unbacked: 0 },
+      { adopted: 0, unbacked: 0 },
+    ]);
+    // Nobody is looking at the course, so nothing more is allocated against it.
+    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
+  });
+
   // Adoption spends no provider money, so a full store costs it only network
   // and log noise -- but a thirty-clip course would issue thirty refused
   // uploads on every load, against a ceiling that is deployment-wide anyway.
@@ -605,7 +740,12 @@ describe('adopting cached narration', () => {
     await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
   });
 
-  it('stops at the first refusal for room, and remembers it for the next load', async () => {
+  // "Refused for want of room" is a fact about one blob: the store checks each
+  // write against the headroom it has left. So an unmarked load attempts every
+  // clip -- one refused upload per clip is the entire cost of being wrong, and
+  // no provider is called either way -- and remembers the condition only if it
+  // ends with clips it still could not fit.
+  it('attempts every clip and remembers the ones that did not fit', async () => {
     useStageStore.setState({ scenes: [twoLineScene()] });
     serveDocument();
     mocks.audioGet.mockImplementation(async (id: string) => cachedRow({ id, text: 'Welcome' }));
@@ -613,8 +753,104 @@ describe('adopting cached narration', () => {
 
     await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 2 });
 
-    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
+    expect(mocks.putAsset).toHaveBeenCalledTimes(2);
     await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
+  });
+
+  // The population the deck-wide reading lost: a store with a little headroom
+  // refuses the long opening clip and holds every short one behind it. Stopping
+  // at the first refusal left those permanently unconverted, with no
+  // affordance -- exactly the state the probe exists to prevent, reached
+  // through a narrower door.
+  it('converts the clips that fit behind one that does not', async () => {
+    useStageStore.setState({ scenes: [threeLineScene()] });
+    serveDocument();
+    servePartiallyFullStore();
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 2, unbacked: 1 });
+
+    expect(mocks.putAsset).toHaveBeenCalledTimes(3);
+    const ids = liveAudioIds();
+    expect(ids[0]).toBe(bigRef);
+    expect(ids[1]).toBe('ast_small_1');
+    expect(ids[2]).toBe('ast_small_2');
+    // The long clip is still outstanding, so the condition is remembered.
+    await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
+  });
+
+  // And the next load spends its one upload on the smallest clip left, which
+  // here is the only clip left. Retrying the opener because the document names
+  // it first is what made the deck above unrecoverable.
+  it('probes the smallest clip left rather than the first one named', async () => {
+    useStageStore.setState({ scenes: [threeLineScene()] });
+    serveDocument();
+    servePartiallyFullStore();
+    await adoptCachedNarration(stageId);
+    mocks.putAsset.mockClear();
+
+    // A reload: the same document, minus the two clips that converted.
+    useStageStore.setState({
+      scenes: [threeLineScene(bigRef, 'ast_small_1', 'ast_small_2')],
+    });
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 1 });
+
+    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
+    const [probed] = mocks.putAsset.mock.calls[0] as [Blob];
+    expect(probed.size).toBe(5000);
+    await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
+  });
+
+  // Nothing fits at all: one probe per load, on the smallest, and it is the
+  // smallest that answers whether the ceiling has moved.
+  it('probes the smallest of a deck the store refused entirely', async () => {
+    useStageStore.setState({ scenes: [threeLineScene()] });
+    serveDocument();
+    serveSizedRows();
+    mocks.putAsset.mockRejectedValue(quotaRefusal());
+    await adoptCachedNarration(stageId);
+    await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
+    mocks.putAsset.mockClear();
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 3 });
+
+    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
+    const [probed] = mocks.putAsset.mock.calls[0] as [Blob];
+    expect(probed.size).toBe(100);
+  });
+
+  it('converts the deck in the load whose probe succeeds', async () => {
+    useStageStore.setState({ scenes: [threeLineScene()] });
+    serveDocument();
+    serveSizedRows();
+    mocks.putAsset.mockRejectedValue(quotaRefusal());
+    await adoptCachedNarration(stageId);
+    mocks.putAsset.mockClear();
+
+    // The operator raises the ceiling.
+    let allocations = 0;
+    mocks.putAsset.mockReset().mockImplementation(async () => `ast_raised_${(allocations += 1)}`);
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 3, unbacked: 0 });
+
+    expect(mocks.putAsset).toHaveBeenCalledTimes(3);
+    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
+  });
+
+  // A row the ownership rule refuses never reaches the store, so it cannot be
+  // what the probe spends its one upload on.
+  it('does not spend the probe on a clip it would refuse anyway', async () => {
+    useStageStore.setState({ scenes: [twoLineScene()] });
+    serveDocument();
+    // The first clip's row names another course; the second is this course's.
+    mocks.audioGet.mockImplementation(async (id: string) =>
+      cachedRow({ id, stageId: id === derivedRef ? 'another-course' : stageId }),
+    );
+    await kv.store.set(`asset-storage-full:${stageId}`, Date.now());
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 1, unbacked: 1 });
+
+    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
+    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
   });
 
   // The marker is set before the run, or this asserts nothing: a fresh device
