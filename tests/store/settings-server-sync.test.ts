@@ -104,7 +104,7 @@ vi.mock('@/lib/audio/constants', () => ({
       requiresApiKey: false,
       defaultModelId: '',
       models: [],
-      supportedLanguages: ['zh'],
+      supportedLanguages: ['zh-CN', 'zh', 'pt-BR'],
       supportedFormats: ['browser'],
     },
   },
@@ -115,8 +115,8 @@ vi.mock('@/lib/audio/constants', () => ({
 }));
 
 vi.mock('@/lib/audio/types', () => ({
-  isCustomTTSProvider: (id: string) => id.startsWith('custom-tts-'),
-  isCustomASRProvider: (id: string) => id.startsWith('custom-asr-'),
+  isCustomTTSProvider: (id: string) => typeof id === 'string' && id.startsWith('custom-tts-'),
+  isCustomASRProvider: (id: string) => typeof id === 'string' && id.startsWith('custom-asr-'),
 }));
 
 vi.mock('@/lib/pdf/constants', () => ({
@@ -843,6 +843,378 @@ describe('fetchServerProviders — ASR stale selection', () => {
       serverDisabled: true,
     });
     expect(store.getState().asrProviderId).toBe('browser-native');
+  });
+});
+
+describe('fetchServerProviders — ASR provider-language invariant (#1082)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    storage.clear();
+    mockFetch.mockReset();
+  });
+
+  async function getStore() {
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    await useSettingsStore.persist.rehydrate();
+    return useSettingsStore;
+  }
+
+  it('resets incompatible asrLanguage from pt-BR to target provider default (auto) on auto-selection', async () => {
+    const store = await getStore();
+    store.setState({ asrProviderId: 'browser-native', asrLanguage: 'pt-BR' });
+
+    mockServerResponse({ asr: { 'openai-whisper': {} } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().asrProviderId).toBe('openai-whisper');
+    expect(store.getState().asrLanguage).toBe('auto');
+  });
+
+  it('resets incompatible asrLanguage from zh-CN to target provider default (auto) on auto-selection', async () => {
+    const store = await getStore();
+    store.setState({ asrProviderId: 'browser-native', asrLanguage: 'zh-CN' });
+
+    mockServerResponse({ asr: { 'openai-whisper': {} } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().asrProviderId).toBe('openai-whisper');
+    expect(store.getState().asrLanguage).toBe('auto');
+  });
+
+  it('preserves compatible asrLanguage (zh) when auto-selecting target provider that supports it', async () => {
+    const store = await getStore();
+    store.setState({ asrProviderId: 'browser-native', asrLanguage: 'zh' });
+
+    mockServerResponse({ asr: { 'openai-whisper': {} } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().asrProviderId).toBe('openai-whisper');
+    expect(store.getState().asrLanguage).toBe('zh');
+  });
+
+  it('resets incompatible asrLanguage to target default (zh-CN) when validASRProvider falls back to browser-native', async () => {
+    const store = await getStore();
+    // First sync: auto-selects openai-whisper and sets autoConfigApplied
+    mockServerResponse({ asr: { 'openai-whisper': {} } });
+    await store.getState().fetchServerProviders();
+    store.getState().setASRProvider('openai-whisper');
+    store.getState().setASRLanguage('auto');
+    expect(store.getState().asrProviderId).toBe('openai-whisper');
+    expect(store.getState().asrLanguage).toBe('auto');
+
+    // Second sync: openai-whisper is no longer provided by server
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().asrProviderId).toBe('browser-native');
+    expect(store.getState().asrLanguage).toBe('zh-CN');
+  });
+
+  it('preserves compatible asrLanguage (zh) when validASRProvider falls back to browser-native', async () => {
+    const store = await getStore();
+    mockServerResponse({ asr: { 'openai-whisper': {} } });
+    await store.getState().fetchServerProviders();
+    store.getState().setASRProvider('openai-whisper');
+    store.getState().setASRLanguage('zh');
+
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().asrProviderId).toBe('browser-native');
+    expect(store.getState().asrLanguage).toBe('zh');
+  });
+
+  it('resets asrLanguage to auto when adding a custom ASR provider with incompatible language', async () => {
+    const store = await getStore();
+    store.setState({ asrProviderId: 'browser-native', asrLanguage: 'zh-CN' });
+
+    store
+      .getState()
+      .addCustomASRProvider('custom-asr-test', 'Test ASR', 'http://localhost:8000', false);
+
+    expect(store.getState().asrProviderId).toBe('custom-asr-test');
+    expect(store.getState().asrLanguage).toBe('auto');
+  });
+
+  it('preserves asrLanguage when adding a custom ASR provider if already auto', async () => {
+    const store = await getStore();
+    store.setState({ asrProviderId: 'browser-native', asrLanguage: 'auto' });
+
+    store
+      .getState()
+      .addCustomASRProvider('custom-asr-test', 'Test ASR', 'http://localhost:8000', false);
+
+    expect(store.getState().asrProviderId).toBe('custom-asr-test');
+    expect(store.getState().asrLanguage).toBe('auto');
+  });
+
+  it('resets asrLanguage to fallback provider default (zh-CN) when removing active custom ASR provider', async () => {
+    const store = await getStore();
+    store
+      .getState()
+      .addCustomASRProvider('custom-asr-test', 'Test ASR', 'http://localhost:8000', false);
+    expect(store.getState().asrProviderId).toBe('custom-asr-test');
+    expect(store.getState().asrLanguage).toBe('auto');
+
+    store.getState().removeCustomASRProvider('custom-asr-test');
+
+    expect(store.getState().asrProviderId).toBe('browser-native');
+    expect(store.getState().asrLanguage).toBe('zh-CN');
+  });
+
+  it('does not reset asrProviderId or asrLanguage when removing non-active custom ASR provider', async () => {
+    const store = await getStore();
+    store.getState().addCustomASRProvider('custom-asr-1', 'ASR 1', 'http://localhost:8001', false);
+    store.getState().addCustomASRProvider('custom-asr-2', 'ASR 2', 'http://localhost:8002', false);
+    expect(store.getState().asrProviderId).toBe('custom-asr-2');
+
+    store.getState().removeCustomASRProvider('custom-asr-1');
+
+    expect(store.getState().asrProviderId).toBe('custom-asr-2');
+    expect(store.getState().asrLanguage).toBe('auto');
+  });
+
+  it('enforces language validity on manual provider switching (setASRProvider)', async () => {
+    const store = await getStore();
+    store.setState({ asrProviderId: 'browser-native', asrLanguage: 'zh-CN' });
+
+    // Switching to openai-whisper resets zh-CN to default (auto)
+    store.getState().setASRProvider('openai-whisper');
+    expect(store.getState().asrProviderId).toBe('openai-whisper');
+    expect(store.getState().asrLanguage).toBe('auto');
+
+    // Switching back to browser-native resets auto to zh-CN
+    store.getState().setASRProvider('browser-native');
+    expect(store.getState().asrProviderId).toBe('browser-native');
+    expect(store.getState().asrLanguage).toBe('zh-CN');
+
+    // Setting compatible language (zh) and switching preserves it
+    store.getState().setASRLanguage('zh');
+    store.getState().setASRProvider('openai-whisper');
+    expect(store.getState().asrLanguage).toBe('zh');
+  });
+
+  it('safely handles unregistered provider in server sync data without throwing', async () => {
+    const store = await getStore();
+    store.setState({ asrProviderId: 'browser-native', asrLanguage: 'zh-CN' });
+
+    // Server returns an unregistered provider ID
+    mockServerResponse({ asr: { 'unregistered-asr-provider': {} } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().asrProviderId).toBe('unregistered-asr-provider');
+    expect(store.getState().asrLanguage).toBe('auto');
+  });
+
+  it('rehydrates removed/stale custom ASR provider and resets asrLanguage to fallback default', async () => {
+    // Seed storage with removed custom ASR provider and 'auto' language
+    storage.set(
+      SETTINGS_KV_KEY,
+      JSON.stringify({
+        state: {
+          asrProviderId: 'custom-asr-deleted',
+          asrLanguage: 'auto',
+          asrProvidersConfig: {},
+          autoConfigApplied: true,
+        },
+        version: 4,
+      }),
+    );
+
+    const store = await getStore();
+    expect(store.getState().asrProviderId).toBe('browser-native');
+    expect(store.getState().asrLanguage).toBe('zh-CN');
+  });
+
+  it('getValidASRLanguage correctly handles boundary inputs and edge cases', async () => {
+    const { getValidASRLanguage } = await import('@/lib/store/settings');
+
+    // Falsy / non-string providerId defaults to 'auto' without throwing
+    expect(getValidASRLanguage('' as unknown as ASRProviderId, 'en')).toBe('auto');
+    expect(getValidASRLanguage(undefined as unknown as ASRProviderId, 'en')).toBe('auto');
+    expect(getValidASRLanguage(null as unknown as ASRProviderId, 'en')).toBe('auto');
+
+    // Unknown providerId defaults to 'auto'
+    expect(getValidASRLanguage('unknown-provider' as unknown as ASRProviderId, 'en')).toBe('auto');
+
+    // Falsy / empty / non-string language falls back to provider default
+    expect(getValidASRLanguage('openai-whisper', '')).toBe('auto');
+    expect(getValidASRLanguage('openai-whisper', undefined)).toBe('auto');
+    expect(getValidASRLanguage('openai-whisper', null as unknown as string)).toBe('auto');
+    expect(getValidASRLanguage('openai-whisper', 123 as unknown as string)).toBe('auto');
+    expect(getValidASRLanguage('openai-whisper', {} as unknown as string)).toBe('auto');
+    expect(getValidASRLanguage('browser-native', '')).toBe('zh-CN');
+    expect(getValidASRLanguage('browser-native', undefined)).toBe('zh-CN');
+    expect(getValidASRLanguage('browser-native', null as unknown as string)).toBe('zh-CN');
+    expect(getValidASRLanguage('browser-native', 123 as unknown as string)).toBe('zh-CN');
+
+    // Custom provider with any language other than auto falls back to auto
+    expect(getValidASRLanguage('custom-asr-1', 'zh-CN')).toBe('auto');
+    expect(getValidASRLanguage('custom-asr-1', 'auto')).toBe('auto');
+    expect(getValidASRLanguage('custom-asr-1', null as unknown as string)).toBe('auto');
+  });
+
+  it('initial store state and defaultAudioConfig satisfy provider-language invariant', async () => {
+    const store = await getStore();
+    const state = store.getState();
+    expect(state.asrProviderId).toBe('browser-native');
+    expect(state.asrLanguage).toBe('zh-CN');
+  });
+
+  it('rehydrates valid provider with incompatible language and resets to target default', async () => {
+    // 1. Valid openai-whisper with incompatible browser-native language (pt-BR)
+    storage.set(
+      SETTINGS_KV_KEY,
+      JSON.stringify({
+        state: {
+          asrProviderId: 'openai-whisper',
+          asrLanguage: 'pt-BR',
+          asrProvidersConfig: {},
+          autoConfigApplied: true,
+        },
+        version: 4,
+      }),
+    );
+    const store1 = await getStore();
+    expect(store1.getState().asrProviderId).toBe('openai-whisper');
+    expect(store1.getState().asrLanguage).toBe('auto');
+
+    // 2. Valid browser-native with incompatible whisper/custom language (auto)
+    storage.set(
+      SETTINGS_KV_KEY,
+      JSON.stringify({
+        state: {
+          asrProviderId: 'browser-native',
+          asrLanguage: 'auto',
+          asrProvidersConfig: {},
+          autoConfigApplied: true,
+        },
+        version: 4,
+      }),
+    );
+    vi.resetModules();
+    const store2 = await getStore();
+    expect(store2.getState().asrProviderId).toBe('browser-native');
+    expect(store2.getState().asrLanguage).toBe('zh-CN');
+  });
+
+  it('resets prototype-polluting provider IDs (toString, constructor) on rehydration', async () => {
+    storage.set(
+      SETTINGS_KV_KEY,
+      JSON.stringify({
+        state: {
+          asrProviderId: 'toString',
+          asrLanguage: 'auto',
+          asrProvidersConfig: {},
+          autoConfigApplied: true,
+        },
+        version: 4,
+      }),
+    );
+    const store1 = await getStore();
+    expect(store1.getState().asrProviderId).toBe('browser-native');
+    expect(store1.getState().asrLanguage).toBe('zh-CN');
+
+    storage.set(
+      SETTINGS_KV_KEY,
+      JSON.stringify({
+        state: {
+          asrProviderId: 'constructor',
+          asrLanguage: 'auto',
+          asrProvidersConfig: {},
+          autoConfigApplied: true,
+        },
+        version: 4,
+      }),
+    );
+    vi.resetModules();
+    const store2 = await getStore();
+    expect(store2.getState().asrProviderId).toBe('browser-native');
+    expect(store2.getState().asrLanguage).toBe('zh-CN');
+  });
+
+  it('resets invalid asrLanguage during server sync even when validASRProvider does not change provider', async () => {
+    const store = await getStore();
+    // User is on browser-native, but asrLanguage somehow became 'auto'
+    store.setState({ asrProviderId: 'browser-native', asrLanguage: 'auto' });
+
+    // Server returns empty config; validASRProvider remains browser-native
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().asrProviderId).toBe('browser-native');
+    expect(store.getState().asrLanguage).toBe('zh-CN');
+  });
+
+  it('safely handles partial server response with missing asr and tts properties without throwing', async () => {
+    const store = await getStore();
+    store.setState({ asrProviderId: 'browser-native', asrLanguage: 'zh-CN' });
+
+    // Server response completely omits asr and tts sections
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ providers: {} }),
+    });
+
+    await expect(store.getState().fetchServerProviders()).resolves.not.toThrow();
+    expect(store.getState().asrProviderId).toBe('browser-native');
+    expect(store.getState().asrLanguage).toBe('zh-CN');
+  });
+
+  it('maintains invariant when adding, switching, and removing multiple custom providers with unusual characters', async () => {
+    const store = await getStore();
+    store.setState({ asrProviderId: 'browser-native', asrLanguage: 'zh-CN' });
+
+    // Add first custom provider with unusual characters
+    const customId1 = 'custom-asr-test_123#special!';
+    store
+      .getState()
+      .addCustomASRProvider(customId1, 'Special ASR 1', 'http://localhost:8001', false);
+    expect(store.getState().asrProviderId).toBe(customId1);
+    expect(store.getState().asrLanguage).toBe('auto');
+
+    // Add second custom provider with unusual characters
+    const customId2 = 'custom-asr-2/another-one';
+    store
+      .getState()
+      .addCustomASRProvider(customId2, 'Special ASR 2', 'http://localhost:8002', false);
+    expect(store.getState().asrProviderId).toBe(customId2);
+    expect(store.getState().asrLanguage).toBe('auto');
+
+    // Switch back and forth between them
+    store.getState().setASRProvider(customId1);
+    expect(store.getState().asrProviderId).toBe(customId1);
+    expect(store.getState().asrLanguage).toBe('auto');
+
+    store.getState().setASRProvider(customId2);
+    expect(store.getState().asrProviderId).toBe(customId2);
+    expect(store.getState().asrLanguage).toBe('auto');
+
+    // Remove active provider
+    store.getState().removeCustomASRProvider(customId2);
+    expect(store.getState().asrProviderId).toBe('browser-native');
+    expect(store.getState().asrLanguage).toBe('zh-CN');
+  });
+
+  it('isCustomASRProvider and isCustomTTSProvider safely handle non-string arguments', async () => {
+    const { isCustomASRProvider, isCustomTTSProvider } = await import('@/lib/audio/types');
+    const actual = await vi.importActual<typeof import('@/lib/audio/types')>('@/lib/audio/types');
+
+    for (const fn of [isCustomASRProvider, actual.isCustomASRProvider]) {
+      expect(fn(undefined as unknown as string)).toBe(false);
+      expect(fn(null as unknown as string)).toBe(false);
+      expect(fn(123 as unknown as string)).toBe(false);
+      expect(fn({} as unknown as string)).toBe(false);
+      expect(fn([] as unknown as string)).toBe(false);
+    }
+
+    for (const fn of [isCustomTTSProvider, actual.isCustomTTSProvider]) {
+      expect(fn(undefined as unknown as string)).toBe(false);
+      expect(fn(null as unknown as string)).toBe(false);
+      expect(fn(123 as unknown as string)).toBe(false);
+      expect(fn({} as unknown as string)).toBe(false);
+      expect(fn([] as unknown as string)).toBe(false);
+    }
   });
 });
 
