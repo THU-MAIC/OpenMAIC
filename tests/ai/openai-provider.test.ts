@@ -440,6 +440,28 @@ describe('OpenAI provider defaults', () => {
   });
 
   it('includes latest official GLM and Kimi models', () => {
+    expect(getModelInfo('glm', 'glm-5.3')).toMatchObject({
+      id: 'glm-5.3',
+      name: 'GLM-5.3',
+      contextWindow: 1000000,
+      outputWindow: 128000,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: false,
+      },
+    });
+    expect(getModelInfo('glm', 'glm-5.3-flash')).toMatchObject({
+      id: 'glm-5.3-flash',
+      name: 'GLM-5.3-Flash',
+      contextWindow: 1000000,
+      outputWindow: 128000,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+      },
+    });
     expect(getModelInfo('glm', 'glm-5.2')).toMatchObject({
       id: 'glm-5.2',
       name: 'GLM-5.2',
@@ -583,6 +605,26 @@ describe('OpenAI provider defaults', () => {
       { thinking: { type: 'enabled' }, reasoning_effort: 'xhigh' },
     ],
     ['glm', 'glm-5.2', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],
+    [
+      'glm',
+      'glm-5.3',
+      { mode: 'enabled', effort: 'low' },
+      { thinking: { type: 'enabled' }, reasoning_effort: 'low' },
+    ],
+    // GLM-5.3 always thinks; a "disabled" request degrades to the lightest
+    // effort instead of the API-rejected thinking {type: 'disabled'}.
+    [
+      'glm',
+      'glm-5.3',
+      { mode: 'disabled' },
+      { thinking: { type: 'enabled' }, reasoning_effort: 'low' },
+    ],
+    [
+      'glm',
+      'glm-5.3-flash',
+      { mode: 'disabled' },
+      { thinking: { type: 'enabled' }, reasoning_effort: 'low' },
+    ],
     ['xiaomi', 'mimo-v2.5', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],
     [
       'deepseek',
