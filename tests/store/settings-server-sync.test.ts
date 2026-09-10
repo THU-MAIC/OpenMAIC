@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { BrowserKVStore } from '@openmaic/storage';
 import { isProviderUsable } from '@/lib/store/settings-validation';
+import type { ASRProviderId } from '@/lib/audio/types';
 
 // ---------------------------------------------------------------------------
 // Mocks — must be defined before importing the store
