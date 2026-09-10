@@ -49,6 +49,19 @@ import { persistNarrationReference } from './persist-narration-reference';
 
 const log = createLogger('NarrationAdoption');
 
+/**
+ * The adoption running for a course, if one is.
+ *
+ * A run is a loop of uncancellable uploads: aborting it stops the loop between
+ * clips, but the upload already in flight still finishes and still writes back,
+ * because abandoning it would orphan the asset it just paid for. A second run
+ * started while that tail is settling — a surface that re-enters the course, or
+ * two surfaces mounted at once — could hand the same clip a second allocation
+ * and leave one of them referenced by nothing. So a course adopts once at a
+ * time, and a second caller is told there is nothing for it to do.
+ */
+const runsByStage = new Map<string, Promise<NarrationAdoptionOutcome>>();
+
 export interface NarrationAdoptionOutcome {
   /** Speech actions whose bytes were stored and whose reference was rewritten. */
   readonly adopted: number;
@@ -124,6 +137,21 @@ function rowBelongsToAction(
  * and, with the live store moved on, produces an allocation nothing references.
  */
 export async function adoptCachedNarration(
+  stageId: string,
+  abortSignal?: AbortSignal,
+): Promise<NarrationAdoptionOutcome> {
+  const running = runsByStage.get(stageId);
+  if (running) return running;
+  const run = adoptCachedNarrationRun(stageId, abortSignal);
+  runsByStage.set(stageId, run);
+  try {
+    return await run;
+  } finally {
+    if (runsByStage.get(stageId) === run) runsByStage.delete(stageId);
+  }
+}
+
+async function adoptCachedNarrationRun(
   stageId: string,
   abortSignal?: AbortSignal,
 ): Promise<NarrationAdoptionOutcome> {

@@ -47,6 +47,11 @@ import {
   pendingMediaAllocation,
   type PendingMediaAllocation,
 } from '@/lib/media/pending-media-allocations';
+import {
+  clearAssetStorageFull,
+  isAssetStorageFull,
+  markAssetStorageFull,
+} from '@/lib/media/asset-storage-full';
 import { fetchProxiedMediaUrl } from '@/lib/media/proxy-media-cache';
 import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { createLogger } from '@/lib/logger';
@@ -281,6 +286,18 @@ async function collectAndGenerate(
   // Enqueue all as pending
   useMediaGenerationStore.getState().enqueueTasks(stageId, allRequests);
 
+  // The store had no room the last time this browser tried. That is a property
+  // of the deployment, not of any slide, so it is remembered once per course:
+  // without it, every reload would call a provider for the next placeholder and
+  // be refused at exactly the same point. The elements are shown the condition
+  // they are waiting on, each with its Retry; the first upload that succeeds
+  // clears the marker and the next pass runs normally.
+  if (serverBacked && (await isAssetStorageFull(stageId))) {
+    log.info(`Asset storage was full for ${stageId}; standing down without generating.`);
+    markStorageFull(allRequests);
+    return;
+  }
+
   // Process requests serially — image/video APIs have limited concurrency
   for (const [index, req] of allRequests.entries()) {
     if (abortSignal?.aborted) break;
@@ -295,18 +312,30 @@ async function collectAndGenerate(
     // the same "storage is full" state as the one that was refused, because
     // that is the condition they are waiting on.
     log.warn(`Asset storage is full; stopping the media pass for ${stageId}.`);
-    const remaining = allRequests.slice(index + 1);
-    const store = useMediaGenerationStore.getState();
-    for (const skipped of remaining) {
-      store.markFailed(skipped.elementId, storageFullMessage(skipped.type), ASSET_QUOTA_EXCEEDED);
-    }
+    await markAssetStorageFull(stageId);
+    markStorageFull(allRequests.slice(index + 1));
     break;
   }
 }
 
-/** What an element that was never attempted is waiting on. */
-function storageFullMessage(type: MediaGenerationRequest['type']): string {
-  return `Asset storage is full; the ${type} was not generated`;
+/**
+ * Show a set of unattempted elements the condition they are waiting on.
+ *
+ * In memory only, and deliberately: nothing was attempted for them, so a
+ * persisted record would be a record of something that never happened — and
+ * once the ceiling is raised, an element with no record is one ordinary
+ * generation rather than a permanently refused one. What stops the next pass
+ * from spending on them is the per-course marker, not a record per element.
+ */
+function markStorageFull(requests: readonly MediaGenerationRequest[]): void {
+  const store = useMediaGenerationStore.getState();
+  for (const request of requests) {
+    store.markFailed(
+      request.elementId,
+      `Asset storage is full; the ${request.type} was not generated`,
+      ASSET_QUOTA_EXCEEDED,
+    );
+  }
 }
 
 /**
@@ -342,18 +371,26 @@ export async function retryMediaTask(
     return;
   }
 
-  // Bytes a full store refused are the whole point of this retry: they were
-  // kept precisely so that an author whose operator has raised the ceiling gets
-  // the element back without paying for it again. Read BEFORE the row is
-  // removed. An element that was never attempted -- the rest of a deck the pass
-  // stopped -- has no bytes here and falls through to one ordinary generation.
-  const refused = isStorageFullFailure(task.errorCode)
+  // Bytes this browser already holds for the element, whatever put them there:
+  // a store that refused the upload and kept them, or a course generated before
+  // this application stored media server-side. A retry adopts them for the same
+  // reason a pass does -- they are paid for -- so it re-attempts the upload
+  // rather than buying the media again. The condition is the bytes, not the
+  // error code: an upload refused for room and then retried into a network
+  // failure has lost its code but not its bytes, and asking a provider for them
+  // a third time would be the second thing that costs money for nothing.
+  //
+  // Read BEFORE anything is removed, and the row is NOT removed first: it is
+  // the only copy until an upload succeeds.
+  const dbKey = mediaFileKey(task.stageId, elementId);
+  const refused = isServerBackedMediaPersistence()
     ? await refusedMediaBytes(task.stageId, elementId, task.type)
     : undefined;
-
-  // Remove persisted failure record from DB so a fresh result can be written
-  const dbKey = mediaFileKey(task.stageId, elementId);
-  await db.mediaFiles.delete(dbKey).catch(() => {});
+  if (!refused) {
+    // Nothing to keep. Clearing the persisted failure is what lets a fresh
+    // result be written under this key.
+    await db.mediaFiles.delete(dbKey).catch(() => {});
+  }
 
   // Re-read after the await: only a still-failed task may be retried, and the
   // check has to come BEFORE the state is destroyed. Marking first and refusing
@@ -373,6 +410,14 @@ export async function retryMediaTask(
     undefined,
     refused,
   );
+
+  // The retry landed: the task is either gone from this key (re-keyed to the
+  // allocated id) or no longer failed. Its bytes live under the allocated id
+  // now, so the row kept under the placeholder is a stale duplicate carrying a
+  // failure that no longer happened.
+  if (refused && useMediaGenerationStore.getState().getTask(elementId)?.status !== 'failed') {
+    await db.mediaFiles.delete(dbKey).catch(() => {});
+  }
 }
 
 /**
@@ -450,6 +495,10 @@ async function commitPooledMedia(args: {
   let assetId: string;
   try {
     assetId = await putAsset(blob, { contentType: mimeType });
+    // The store took a write, so whatever was full is not full any more. Doing
+    // this here rather than at the end of the commit means a write-back that
+    // fails for its own reasons does not leave the course standing down.
+    await clearAssetStorageFull(stageId);
   } catch (error) {
     // A full store keeps its bytes. Everything else is an ordinary failure and
     // is retried from the provider, as it always was.
@@ -856,11 +905,17 @@ async function generateSingleMedia(
     // freshly generated element these are bytes already paid for. Either way a
     // Retry after the ceiling is raised re-attempts the upload and calls no
     // provider.
-    const refused = err instanceof MediaStorageRefusalError ? err.refused : undefined;
+    // A retry that was handed bytes still holds them when it fails for some
+    // other reason -- a dropped connection, a 500 -- and that failure must not
+    // be the thing that finally throws them away.
+    const refused =
+      err instanceof MediaStorageRefusalError ? err.refused : (refusedBytes ?? undefined);
 
     // Persist the failure so it survives a page refresh: a restored task
-    // carrying an error is a `failed` task, and a pass never re-runs one.
-    if (errorCode) {
+    // carrying an error is a `failed` task, and a pass never re-runs one. A
+    // failure with bytes to keep is recorded for that reason alone, so the row
+    // that holds them survives too.
+    if (errorCode || refused) {
       await db.mediaFiles
         .put({
           id: mediaFileKey(stageId, req.elementId),

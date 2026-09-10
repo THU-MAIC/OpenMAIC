@@ -48,6 +48,15 @@ export function useNarrationAdoption(
     void adoptCachedNarration(stageId, controller.signal).catch((error: unknown) => {
       log.warn('[Classroom] Narration adoption error:', error);
     });
-    return () => controller.abort();
+    return () => {
+      // Leaving the course aborts the loop, which may have clips left. The
+      // latch has to go with it, or returning to this course — on a surface
+      // that stays mounted across a switch, which the workbench pane does —
+      // would skip the ones the abort cut off. Re-entering a course whose
+      // adoption did finish costs a scan that finds nothing to do, because
+      // every converted action now carries an allocated id.
+      controller.abort();
+      if (adoptedRef.current === stageId) adoptedRef.current = undefined;
+    };
   }, [stageId, ready, mayGenerate]);
 }

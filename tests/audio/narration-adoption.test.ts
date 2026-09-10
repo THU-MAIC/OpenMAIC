@@ -283,6 +283,86 @@ describe('adopting cached narration', () => {
     expect(mocks.putAsset).not.toHaveBeenCalled();
   });
 
+  // Leaving a course aborts the loop between clips, which is what keeps the
+  // rest of a deck from being allocated against a course nobody is looking at.
+  // The clips it did not reach still have to be converted eventually, and
+  // adoption is the only path a finished speech action has.
+  it('finishes the clips a previous run was cut off before reaching', async () => {
+    const secondRef = 'tts_s1_speech-2';
+    const twoLines = {
+      id: 'scene-1',
+      stageId,
+      title: 'Scene',
+      order: 1,
+      type: 'slide',
+      content: { type: 'slide', canvas: { id: 'slide-1', elements: [] } },
+      actions: [
+        { id: 'speech-1', type: 'speech', text: 'Welcome', audioId: derivedRef },
+        { id: 'speech-2', type: 'speech', text: 'And then', audioId: secondRef },
+      ],
+    } as unknown as Scene;
+    const documentScenes = [structuredClone(twoLines)];
+    const putScene = vi.fn().mockResolvedValue(undefined);
+    mocks.mutateDocument.mockImplementation(
+      async (_stageId: string, work: (document: unknown, store: unknown) => Promise<void>) => {
+        await work({ scenes: documentScenes, stage: { id: stageId } }, { putScene });
+      },
+    );
+    useStageStore.setState({ scenes: [twoLines] });
+    mocks.audioGet.mockImplementation(async (id: string) =>
+      cachedRow({ id, text: id === derivedRef ? 'Welcome' : 'And then' }),
+    );
+    let allocated = 0;
+    mocks.putAsset.mockImplementation(async () => `ast_clip_${(allocated += 1)}`);
+
+    // The author leaves as the first clip is stored.
+    const controller = new AbortController();
+    mocks.putAsset.mockImplementationOnce(async () => {
+      controller.abort();
+      return `ast_clip_${(allocated += 1)}`;
+    });
+
+    await expect(adoptCachedNarration(stageId, controller.signal)).resolves.toEqual({
+      adopted: 1,
+      unbacked: 0,
+    });
+    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
+
+    // Coming back finishes the rest.
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 1, unbacked: 0 });
+
+    expect(mocks.putAsset).toHaveBeenCalledTimes(2);
+    const audioIds = (
+      useStageStore.getState().scenes[0] as unknown as {
+        actions: Array<{ audioId?: string }>;
+      }
+    ).actions.map((action) => action.audioId);
+    expect(audioIds).toEqual(['ast_clip_1', 'ast_clip_2']);
+  });
+
+  // A run's tail is uncancellable, so a second run started while it settles
+  // could hand the same clip a second allocation and orphan one of them.
+  it('runs one adoption per course at a time', async () => {
+    serveDocument();
+    mocks.audioGet.mockResolvedValue(cachedRow());
+    let release!: () => void;
+    const inFlight = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mocks.putAsset.mockImplementation(async () => {
+      await inFlight;
+      return 'ast_narration';
+    });
+
+    const first = adoptCachedNarration(stageId);
+    const second = adoptCachedNarration(stageId);
+    release();
+
+    await expect(first).resolves.toEqual({ adopted: 1, unbacked: 0 });
+    await expect(second).resolves.toEqual({ adopted: 1, unbacked: 0 });
+    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
+  });
+
   it('counts a clip whose storage fails as unbacked, and keeps its derived id', async () => {
     serveDocument();
     mocks.audioGet.mockResolvedValue(cachedRow());
