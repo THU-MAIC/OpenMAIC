@@ -66,9 +66,9 @@ describe('transcription — client-supplied base URL guard applies in every envi
     mocks.serverDisabled = false;
   });
 
-  it('rejects a metadata-address base URL when NODE_ENV is not production', async () => {
+  it('rejects a private-network base URL when NODE_ENV is not production', async () => {
     vi.stubEnv('NODE_ENV', 'development');
-    const res = await postTranscription('http://169.254.169.254/latest/meta-data/');
+    const res = await postTranscription('http://192.168.1.10/v1/');
     const json = await res.json();
 
     expect(res.status).toBe(403);
@@ -76,10 +76,10 @@ describe('transcription — client-supplied base URL guard applies in every envi
     expect(mocks.transcribeAudio).not.toHaveBeenCalled();
   });
 
-  it('still lets the same local base URL through when ALLOW_LOCAL_NETWORKS=true', async () => {
+  it('still lets a private-network base URL through when ALLOW_LOCAL_NETWORKS=true', async () => {
     vi.stubEnv('NODE_ENV', 'development');
     vi.stubEnv('ALLOW_LOCAL_NETWORKS', 'true');
-    const res = await postTranscription('http://169.254.169.254/latest/meta-data/');
+    const res = await postTranscription('http://192.168.1.10/v1/');
     const json = await res.json();
 
     expect(res.status).toBe(200);
@@ -87,7 +87,7 @@ describe('transcription — client-supplied base URL guard applies in every envi
     expect(mocks.transcribeAudio).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: 'openai',
-        baseUrl: 'http://169.254.169.254/latest/meta-data/',
+        baseUrl: 'http://192.168.1.10/v1/',
       }),
       expect.any(File),
     );
