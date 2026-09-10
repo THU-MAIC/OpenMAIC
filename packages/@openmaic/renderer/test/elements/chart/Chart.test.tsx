@@ -3,8 +3,9 @@ import { render, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Chart } from '../../../src/elements/chart/Chart';
 
+const setOption = vi.fn();
 const init = vi.fn(() => ({
-  setOption: vi.fn(),
+  setOption,
   resize: vi.fn(),
   dispose: vi.fn(),
 }));
@@ -30,5 +31,6 @@ describe('Chart', () => {
       expect(container.firstElementChild?.getAttribute('data-chart-state')).toBe('ready');
     });
     expect(init).toHaveBeenCalledTimes(1);
+    expect(setOption).toHaveBeenCalledOnce();
   });
 });
