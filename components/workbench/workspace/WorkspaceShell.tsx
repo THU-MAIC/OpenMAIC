@@ -952,6 +952,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const courseOptions = useMemo(
     () =>
       [...courses.classrooms]
+        .filter((course) => course.isOwner !== false)
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map((course) => ({ id: course.id, name: course.name })),
     [courses.classrooms],
