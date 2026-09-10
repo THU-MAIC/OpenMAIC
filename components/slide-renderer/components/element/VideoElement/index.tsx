@@ -36,8 +36,10 @@ export function VideoElement({ elementInfo, selectElement }: VideoElementProps) 
     mediaGenerationDisabled,
   );
   const canRetry = mediaResolutionCanRetry(resolution);
-  // A refusal says why, next to the Retry rather than instead of it.
-  const failureNotice = mediaFailureNoticeKey(task?.errorCode);
+  // A refusal says why, next to the Retry rather than instead of it -- and only
+  // next to one, so a permanent refusal still paints exactly what it painted
+  // before this branch. See the note in the image element.
+  const failureNotice = canRetry ? mediaFailureNoticeKey(task?.errorCode) : undefined;
   const retryRef = mediaRef;
 
   const handleSelectElement = (e: React.MouseEvent | React.TouchEvent) => {

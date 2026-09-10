@@ -212,7 +212,12 @@ export function SlideThumbnail({
   // store is one of those. Without the reason beside it, that button reads as
   // an ordinary failure the author should keep clicking; the message is short
   // enough to sit where the "generation is off" message already does.
+  //
+  // Beside a Retry and nowhere else: a thumbnail has never explained a failure
+  // it offers no action for, and a permanent refusal must keep painting what it
+  // painted before this branch, which changes nothing in browser-only mode.
   const thumbnailFailureMessage = (media: ResolvedSlideMediaEntry | undefined) => {
+    if (!mediaResolutionCanRetry(media?.resolution)) return undefined;
     const key = mediaFailureNoticeKey(media?.task?.errorCode);
     return key ? t(key) : undefined;
   };

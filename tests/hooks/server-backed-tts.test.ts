@@ -74,6 +74,12 @@ function ttsResponse() {
   };
 }
 
+import {
+  isAssetStorageFull,
+  markAssetStorageFull,
+  setAssetStorageFullStoreForTests,
+} from '@/lib/media/asset-storage-full';
+
 describe('server-backed narration storage', () => {
   beforeEach(() => {
     mockFetch.mockReset();
@@ -206,6 +212,47 @@ describe('server-backed narration storage', () => {
 
     expect(mocks.audioDelete).toHaveBeenCalledTimes(2);
     expect(mocks.poolRemove).not.toHaveBeenCalled();
+  });
+
+  // The pass and the retry learn a full store is no longer full from their own
+  // successful upload. Narration generated rather than adopted goes to the pool
+  // directly, so it is the only thing that can say so for a course whose media
+  // needs nothing -- and a marker nothing lifts is a course whose remaining
+  // cached narration is never converted.
+  it('lifts a full-store marker when narration reaches the pool', async () => {
+    const entries = new Map<string, unknown>();
+    setAssetStorageFullStoreForTests({
+      get: async <T>(key: string) => (entries.get(key) as T) ?? null,
+      set: async (key: string, value: unknown) => {
+        entries.set(key, value);
+      },
+      remove: async (key: string) => {
+        entries.delete(key);
+      },
+      keys: async (prefix = '') => [...entries.keys()].filter((key) => key.startsWith(prefix)),
+    });
+    try {
+      await markAssetStorageFull('course-1');
+      await expect(isAssetStorageFull('course-1')).resolves.toBe(true);
+      const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
+      mockFetch.mockResolvedValueOnce(ttsResponse());
+
+      await expect(
+        generateAndStoreTTS(
+          'tts_s2_action_1',
+          'Hello class',
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          'course-1',
+        ),
+      ).resolves.toBe('ast_audio_allocated');
+
+      await expect(isAssetStorageFull('course-1')).resolves.toBe(false);
+    } finally {
+      setAssetStorageFullStoreForTests(undefined);
+    }
   });
 
   it('leaves the pool untouched when media persistence is browser-only', async () => {

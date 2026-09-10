@@ -29,6 +29,7 @@ import { resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { putAsset } from '@/lib/media/asset-pool';
+import { clearAssetStorageFull } from '@/lib/media/asset-storage-full';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
@@ -493,6 +494,12 @@ export async function generateAndStoreTTS(
     });
     if (allocated === null) return null;
     audioId = allocated;
+    // The store took a write, so whatever was full is not full any more. This
+    // path allocates directly rather than through the media commit, so it is
+    // the only place that can say so for a course whose narration is being
+    // generated rather than adopted -- and a marker nothing lifts is a course
+    // whose remaining cached narration is never converted.
+    if (stageId) await clearAssetStorageFull(stageId);
   } else {
     audioId = existingAudioId ?? requestId;
   }

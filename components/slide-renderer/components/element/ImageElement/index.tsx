@@ -50,7 +50,13 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
   // A refusal says why, next to the Retry rather than instead of it: a full
   // store is worth retrying once an operator has raised the ceiling, but a bare
   // Retry would read as an ordinary failure.
-  const failureNotice = mediaFailureNoticeKey(task?.errorCode);
+  //
+  // Only next to one. This surface has never explained a failure it offers no
+  // action for, and the read-only renderers that do have always done it here
+  // instead of a Retry rather than as well as one. Painting one here for a
+  // permanent refusal would change what a browser-only deck looks like, and
+  // this branch changes nothing in browser-only mode.
+  const failureNotice = canRetry ? mediaFailureNoticeKey(task?.errorCode) : undefined;
 
   const isCliping = clipingImageElementId === elementInfo.id;
 

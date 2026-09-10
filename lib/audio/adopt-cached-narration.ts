@@ -73,8 +73,24 @@ const log = createLogger('NarrationAdoption');
  * told the work is done. Waiting and then scanning again costs a lookup on a
  * course that has nothing left, and finishes the clips the abort cut off on one
  * that does.
+ *
+ * At most ONE rescan is queued at a time. A chain of them would be pointless —
+ * the first rescan converts whatever is left, and every later one finds an
+ * allocated id on every action — and it would turn a single stalled upload,
+ * which the loop is deliberately unable to cancel, into a course that never
+ * adopts again for the rest of the session. Callers that arrive while a rescan
+ * is waiting share it, and it starts with the most recent caller's signal,
+ * because that is the one whose course is actually open.
  */
 const runsByStage = new Map<string, Promise<unknown>>();
+
+/** A rescan that has not started yet, and the signal it will start with. */
+interface QueuedAdoption {
+  signal: AbortSignal | undefined;
+  readonly outcome: Promise<NarrationAdoptionOutcome>;
+}
+
+const queuedByStage = new Map<string, QueuedAdoption>();
 
 export interface NarrationAdoptionOutcome {
   /** Speech actions whose bytes were stored and whose reference was rewritten. */
@@ -128,14 +144,26 @@ function derivedNarrationRefs(
 const DERIVED_KEY_ACTION_ID = /^tts_(?:request_)?s-?\d+_(.+)$/;
 
 /**
- * An action id that cannot be minted twice.
+ * An action id the generator would not mint twice.
  *
- * Generated speech actions are `action_` plus a nanoid
- * (`@openmaic/generation`'s action parser), so two courses cannot produce the
- * same one and a derived key built from it names exactly one clip. Every other
- * shape has to be treated as reproducible -- an import mints its actions from
- * the slide's position (`speech-scene-p<n>`), which makes the first slide of
- * every imported deck carry the same key.
+ * A generated speech action is `action_` plus a nanoid, so two courses do not
+ * produce the same one and a derived key built from it names exactly one clip.
+ * Every other shape has to be treated as reproducible -- an import mints its
+ * actions from the slide's position (`speech-scene-p<n>`), which makes the
+ * first slide of every imported deck carry the same key.
+ *
+ * This is a statement about what the generator produces, not an invariant the
+ * parser enforces: the action parser accepts an `action_id` supplied by the
+ * model and only falls back to a nanoid, so a model that echoed the same id
+ * into two courses at the same scene order would make a key this predicate
+ * calls unique. Nothing in the prompts asks for that field and no other
+ * producer of speech actions supplies one, so it is a narrow residual -- and
+ * it is one the alternative shares, because the rule it replaced (require the
+ * row's recorded text to match) offers no protection in the likeliest
+ * collision either: the same deck imported twice has identical notes. The
+ * alternative's actual cost is much larger, since it refuses every real
+ * pre-allocation course. Closing this properly belongs in the parser, by
+ * minting the id unconditionally for speech, not here.
  */
 const UNIQUE_ACTION_ID = /^action_[A-Za-z0-9_-]{8,}$/;
 
@@ -204,10 +232,37 @@ export async function adoptCachedNarration(
   stageId: string,
   abortSignal?: AbortSignal,
 ): Promise<NarrationAdoptionOutcome> {
-  const queued = runsByStage.get(stageId) ?? Promise.resolve();
-  const run = queued
-    .catch(() => undefined)
-    .then(() => adoptCachedNarrationRun(stageId, abortSignal));
+  const running = runsByStage.get(stageId);
+  if (!running) return startAdoptionRun(stageId, abortSignal);
+
+  // A rescan is already waiting for that run. One is all any number of callers
+  // need, so they share it -- and it takes this caller's signal, which is more
+  // recent than the one it was created with.
+  const waiting = queuedByStage.get(stageId);
+  if (waiting) {
+    waiting.signal = abortSignal;
+    return waiting.outcome;
+  }
+
+  const queued: QueuedAdoption = {
+    signal: abortSignal,
+    outcome: running
+      .catch(() => undefined)
+      .then(() => {
+        queuedByStage.delete(stageId);
+        return startAdoptionRun(stageId, queued.signal);
+      }),
+  };
+  queuedByStage.set(stageId, queued);
+  return queued.outcome;
+}
+
+/** Run adoption now, and hold the course's slot for exactly as long as it runs. */
+async function startAdoptionRun(
+  stageId: string,
+  abortSignal: AbortSignal | undefined,
+): Promise<NarrationAdoptionOutcome> {
+  const run = adoptCachedNarrationRun(stageId, abortSignal);
   runsByStage.set(stageId, run);
   try {
     return await run;
@@ -232,14 +287,22 @@ async function adoptCachedNarrationRun(
   const actions = derivedNarrationRefs(useStageStore.getState().scenes);
   if (actions.length === 0) return idle;
 
-  // The store had no room the last time this browser wrote to it. Adoption
-  // spends no provider money, so this costs nothing but network and log noise
-  // — but a thirty-clip course would issue thirty refused uploads on every
-  // load, and the ceiling is deployment-wide either way. The marker is lifted
-  // by the same successful write that lifts it for the media pass.
-  if (await isAssetStorageFull(stageId)) {
-    log.info(`Asset storage was full for ${stageId}; not adopting narration yet.`);
-    return { adopted: 0, unbacked: actions.length };
+  // The store had no room the last time this browser wrote to it, so this load
+  // spends ONE upload finding out whether that is still true instead of the
+  // whole deck. A thirty-clip course would otherwise issue thirty refused
+  // uploads per load against a ceiling that is deployment-wide anyway.
+  //
+  // A probe rather than a stand-down, deliberately. Adoption has no affordance
+  // of its own: no button, no message, no task row. A course it stood down on
+  // could only be released by a media Retry, and a course whose media needs
+  // nothing -- a narration-only deck, or one whose slides are already
+  // satisfied -- has none to click, so the marker became permanent and the
+  // narration was lost for good. Adoption also spends no provider money, so
+  // the entire cost of probing a store that is still full is one refused
+  // upload; the entire cost of not probing was an unrecoverable course.
+  let probing = await isAssetStorageFull(stageId);
+  if (probing) {
+    log.info(`Asset storage was full for ${stageId}; probing with a single clip.`);
   }
 
   let adopted = 0;
@@ -277,17 +340,26 @@ async function adoptCachedNarrationRun(
       unbacked += 1;
       // Unless there is no room at all, in which case every clip after this one
       // would be refused at the same point. Remembered per course, exactly as
-      // the media pass remembers it, so the next load stands down instead of
-      // repeating the whole deck.
+      // the media pass remembers it, so the next load probes with one clip
+      // instead of repeating the whole deck.
       if (isStorageFullFailure(storageErrorCode(error))) {
         await markAssetStorageFull(stageId);
         unbacked = actions.length - adopted;
         break;
       }
+      // A probe is one upload, whatever it answers. Nothing here disproves the
+      // marker, so the rest of the deck waits for the next load exactly as it
+      // would have on a refusal.
+      if (probing) {
+        unbacked = actions.length - adopted;
+        break;
+      }
       continue;
     }
-    // The store took a write, so whatever was full is not full any more.
+    // The store took a write, so whatever was full is not full any more --
+    // including for the media pass, which has no other way to learn it.
     await clearAssetStorageFull(stageId);
+    probing = false;
 
     // The allocation is uncancellable, so it may finish after the course was
     // left. Its write-back is not: a document this browser no longer has open
