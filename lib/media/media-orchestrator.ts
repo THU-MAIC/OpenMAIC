@@ -301,8 +301,8 @@ async function collectAndGenerate(
   // Process requests serially — image/video APIs have limited concurrency
   for (const [index, req] of allRequests.entries()) {
     if (abortSignal?.aborted) break;
-    const storeIsFull = await generateSingleMedia(req, stageId, abortSignal);
-    if (!storeIsFull) continue;
+    const attempt = await generateSingleMedia(req, stageId, abortSignal);
+    if (!attempt.storageFull) continue;
     // The asset store's ceiling is deployment-wide, not per element: once a
     // write is refused for want of room, every remaining element of the deck
     // would pay a provider and be refused at exactly the same point. So the
@@ -398,7 +398,7 @@ export async function retryMediaTask(
   // `pending` with no affordance left to recover it.
   if (useMediaGenerationStore.getState().getTask(elementId)?.status !== 'failed') return;
   useMediaGenerationStore.getState().markPendingForRetry(elementId);
-  await generateSingleMedia(
+  const attempt = await generateSingleMedia(
     {
       type: task.type,
       prompt: task.prompt,
@@ -411,11 +411,22 @@ export async function retryMediaTask(
     refused,
   );
 
-  // The retry landed: the task is either gone from this key (re-keyed to the
-  // allocated id) or no longer failed. Its bytes live under the allocated id
-  // now, so the row kept under the placeholder is a stale duplicate carrying a
-  // failure that no longer happened.
-  if (refused && useMediaGenerationStore.getState().getTask(elementId)?.status !== 'failed') {
+  if (attempt.storageFull) {
+    // A deliberate Retry is always allowed to try, even on a store this browser
+    // believes is full: the author may know something it does not, and the
+    // ceiling is exactly the kind of thing an operator has just changed. But a
+    // refusal is an answer, and the next pass must have it — otherwise the
+    // deck's other elements each pay a provider to rediscover it.
+    await markAssetStorageFull(task.stageId);
+    return;
+  }
+
+  // The retry landed. Its bytes live under the allocated id now, so the row
+  // kept under the placeholder is a stale duplicate carrying a failure that no
+  // longer happened. Read from what the attempt reported, never from the task
+  // table: a course switch clears that table, and reading "no failed task" as
+  // "it worked" is how the only copy of the bytes gets deleted after a refusal.
+  if (refused && attempt.committed) {
     await db.mediaFiles.delete(dbKey).catch(() => {});
   }
 }
@@ -712,10 +723,25 @@ function storedMediaType(blob: Blob, fallback: string): string {
   return declared && declared !== 'application/octet-stream' ? declared : fallback;
 }
 
+/** What one attempt at an element settled as. */
+interface MediaAttemptOutcome {
+  /** The store refused the write for want of room: the deck-wide condition. */
+  readonly storageFull: boolean;
+  /** Bytes reached the store and the element is finished. */
+  readonly committed: boolean;
+}
+
+const ATTEMPT_FAILED: MediaAttemptOutcome = { storageFull: false, committed: false };
+const ATTEMPT_COMMITTED: MediaAttemptOutcome = { storageFull: false, committed: true };
+
 /**
- * Generate (or re-store) one element. Returns whether the asset store refused
- * the write for want of room, which is the deck-wide condition its caller stops
- * on.
+ * Generate (or re-store) one element, and say what happened.
+ *
+ * Both halves of the answer are read by callers that must not infer them from
+ * anywhere else. The pass stops the deck on `storageFull`; a retry deletes the
+ * row that was holding the only copy of the bytes only on `committed`, because
+ * the obvious substitute -- "the task is no longer failed" -- is a fact about a
+ * table a course switch clears out from under it.
  *
  * `refusedBytes` short-circuits the provider entirely: it is what a Retry hands
  * back after a full store kept the bytes, so the retry re-attempts the upload
@@ -726,7 +752,7 @@ async function generateSingleMedia(
   stageId: string,
   abortSignal?: AbortSignal,
   refusedBytes?: RefusedMediaBytes,
-): Promise<boolean> {
+): Promise<MediaAttemptOutcome> {
   const store = useMediaGenerationStore.getState();
   store.markGenerating(req.elementId);
 
@@ -748,7 +774,7 @@ async function generateSingleMedia(
         ...(refusedBytes.poster ? { posterBlob: refusedBytes.poster } : {}),
         ...(refusedBytes.posterMimeType ? { posterMimeType: refusedBytes.posterMimeType } : {}),
       });
-      return false;
+      return ATTEMPT_COMMITTED;
     }
 
     // A course generated before this application stored media server-side holds
@@ -756,7 +782,7 @@ async function generateSingleMedia(
     // tables. Those bytes are already paid for, so the author's first
     // server-backed load converts them instead of buying them again.
     if (serverBacked && (await commitCachedMedia(req, stageId, paramsJson, abortSignal))) {
-      return false;
+      return ATTEMPT_COMMITTED;
     }
 
     if (req.type === 'image') {
@@ -775,7 +801,7 @@ async function generateSingleMedia(
           blob,
           mimeType: storedMediaType(blob, 'image/png'),
         });
-        return false;
+        return ATTEMPT_COMMITTED;
       }
 
       // CDN path: server already uploaded to OSS
@@ -794,7 +820,7 @@ async function generateSingleMedia(
           createdAt: Date.now(),
         });
         useMediaGenerationStore.getState().markDone(req.elementId, result.ossUrl);
-        return false;
+        return ATTEMPT_COMMITTED;
       }
 
       // Fallback: fetch blob via proxy-media
@@ -833,7 +859,7 @@ async function generateSingleMedia(
           posterBlob,
           ...(posterBlob ? { posterMimeType: storedMediaType(posterBlob, 'image/jpeg') } : {}),
         });
-        return false;
+        return ATTEMPT_COMMITTED;
       }
 
       // CDN path: server already uploaded to OSS
@@ -855,7 +881,7 @@ async function generateSingleMedia(
         useMediaGenerationStore
           .getState()
           .markDone(req.elementId, result.ossUrl, result.posterOssUrl);
-        return false;
+        return ATTEMPT_COMMITTED;
       }
 
       // Fallback: fetch blob via proxy-media
@@ -880,7 +906,7 @@ async function generateSingleMedia(
       const posterObjectUrl = posterBlob ? URL.createObjectURL(posterBlob) : undefined;
       useMediaGenerationStore.getState().markDone(req.elementId, objectUrl, posterObjectUrl);
     }
-    return false;
+    return ATTEMPT_COMMITTED;
   } catch (err) {
     if (abortSignal?.aborted) {
       // A submitted video MaaS task keeps running to a billable terminal state
@@ -892,7 +918,7 @@ async function generateSingleMedia(
           ? 'Video generation polling was aborted; retry to submit a new job'
           : 'Image generation was aborted; retry to submit a new request';
       useMediaGenerationStore.getState().markFailed(req.elementId, abortedMessage);
-      return false;
+      return ATTEMPT_FAILED;
     }
     const message = err instanceof Error ? err.message : String(err);
     const errorCode = mediaFailureCode(err);
@@ -934,7 +960,7 @@ async function generateSingleMedia(
         })
         .catch(() => {}); // best-effort
     }
-    return isStorageFullFailure(errorCode);
+    return { storageFull: isStorageFullFailure(errorCode), committed: false };
   }
 }
 

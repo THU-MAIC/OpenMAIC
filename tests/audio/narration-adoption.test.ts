@@ -39,6 +39,10 @@ vi.mock('@/lib/persistence/media-persistence', () => ({
 
 import { adoptCachedNarration } from '@/lib/audio/adopt-cached-narration';
 import {
+  isAssetStorageFull,
+  setAssetStorageFullStoreForTests,
+} from '@/lib/media/asset-storage-full';
+import {
   noteStageGenerationOwnership,
   resetGenerationPermissionsForTests,
 } from '@/lib/classroom/generation-permission';
@@ -81,8 +85,30 @@ function cachedRow(overrides: Record<string, unknown> = {}): Record<string, unkn
   };
 }
 
+/** The device KV the storage-full marker lives in, in memory. */
+function memoryKv() {
+  const entries = new Map<string, unknown>();
+  return {
+    entries,
+    store: {
+      get: async <T>(key: string) => (entries.get(key) as T) ?? null,
+      set: async (key: string, value: unknown) => {
+        entries.set(key, value);
+      },
+      remove: async (key: string) => {
+        entries.delete(key);
+      },
+      keys: async (prefix = '') => [...entries.keys()].filter((key) => key.startsWith(prefix)),
+    },
+  };
+}
+
 describe('adopting cached narration', () => {
+  let kv: ReturnType<typeof memoryKv>;
+
   beforeEach(() => {
+    kv = memoryKv();
+    setAssetStorageFullStoreForTests(kv.store);
     resetGenerationPermissionsForTests();
     mocks.mutateDocument.mockReset();
     mocks.saveStageData.mockReset().mockResolvedValue(undefined);
@@ -99,13 +125,17 @@ describe('adopting cached narration', () => {
   });
 
   afterEach(() => {
+    setAssetStorageFullStoreForTests(undefined);
     useStageStore.setState({ stage: null, scenes: [] });
     resetGenerationPermissionsForTests();
   });
 
   /** Run the funnel against a document that holds the same derived reference. */
-  function serveDocument(): { putScene: ReturnType<typeof vi.fn>; scenes: Scene[] } {
-    const scenes = [sceneWithSpeech(derivedRef)];
+  function serveDocument(ref: string = derivedRef): {
+    putScene: ReturnType<typeof vi.fn>;
+    scenes: Scene[];
+  } {
+    const scenes = [sceneWithSpeech(ref)];
     const putScene = vi.fn().mockResolvedValue(undefined);
     mocks.mutateDocument.mockImplementation(
       async (_stageId: string, work: (document: unknown, store: unknown) => Promise<void>) => {
@@ -168,18 +198,94 @@ describe('adopting cached narration', () => {
     expect(audioIdOf(useStageStore.getState().scenes[0])).toBe('ast_narration');
   });
 
-  it.each([
-    ['whose text is another line', { stageId: undefined, text: 'A different line entirely' }],
-    ['that records no text at all', { stageId: undefined, text: undefined }],
-    ['whose text is blank', { stageId: undefined, text: '   ' }],
-  ])('refuses a legacy row %s', async (_name, overrides) => {
-    serveDocument();
-    mocks.audioGet.mockResolvedValue(cachedRow(overrides));
+  // The shape a real pre-allocation row actually has. `stageId` and `text` were
+  // added to these rows by the very change that moved narration onto allocated
+  // ids, so a row still carrying a derived key has neither -- which is the
+  // whole population this feature exists for. What the row cannot say, the key
+  // can: `action_<nanoid>` is minted by the generator and cannot be produced
+  // twice.
+  it('adopts a row of the real legacy shape when its key cannot collide', async () => {
+    const uniqueRef = 'tts_s1_action_a1b2c3d4';
+    useStageStore.setState({ scenes: [sceneWithSpeech(uniqueRef)] });
+    serveDocument(uniqueRef);
+    mocks.audioGet.mockResolvedValue({
+      id: uniqueRef,
+      blob: new Blob(['real-legacy-narration'], { type: 'audio/mp3' }),
+      duration: 2.5,
+      format: 'mp3',
+      createdAt: 1_752_000_000_000,
+    });
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 1, unbacked: 0 });
+
+    expect(audioIdOf(useStageStore.getState().scenes[0])).toBe('ast_narration');
+    const [stored] = mocks.putAsset.mock.calls[0] as [Blob];
+    await expect(stored.text()).resolves.toBe('real-legacy-narration');
+  });
+
+  // An import numbers its actions by slide position, so the first slide of
+  // every imported deck carries the same key. A text-less row under one of
+  // those could be any of them.
+  it('refuses a text-less legacy row whose key an import could have minted', async () => {
+    const importedRef = 'tts_s1_speech-scene-p1';
+    useStageStore.setState({ scenes: [sceneWithSpeech(importedRef)] });
+    serveDocument(importedRef);
+    mocks.audioGet.mockResolvedValue({
+      id: importedRef,
+      blob: new Blob(['someone-elses-narration'], { type: 'audio/mp3' }),
+      duration: 2.5,
+      format: 'mp3',
+      createdAt: 1_752_000_000_000,
+    });
 
     await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 1 });
 
     expect(mocks.putAsset).not.toHaveBeenCalled();
-    expect(audioIdOf(useStageStore.getState().scenes[0])).toBe(derivedRef);
+    expect(audioIdOf(useStageStore.getState().scenes[0])).toBe(importedRef);
+  });
+
+  it('adopts a collidable key when the row does record the matching text', async () => {
+    const importedRef = 'tts_s1_speech-scene-p1';
+    useStageStore.setState({ scenes: [sceneWithSpeech(importedRef)] });
+    serveDocument(importedRef);
+    mocks.audioGet.mockResolvedValue(
+      cachedRow({ id: importedRef, stageId: undefined, text: 'Welcome' }),
+    );
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 1, unbacked: 0 });
+
+    expect(audioIdOf(useStageStore.getState().scenes[0])).toBe('ast_narration');
+  });
+
+  it.each([
+    ['whose text is another line', { text: 'A different line entirely' }],
+    ['whose text is blank', { text: '   ' }],
+  ])('refuses a collidable legacy row %s', async (_name, overrides) => {
+    const importedRef = 'tts_s1_speech-scene-p1';
+    useStageStore.setState({ scenes: [sceneWithSpeech(importedRef)] });
+    serveDocument(importedRef);
+    mocks.audioGet.mockResolvedValue(
+      cachedRow({ id: importedRef, stageId: undefined, ...overrides }),
+    );
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 1 });
+
+    expect(mocks.putAsset).not.toHaveBeenCalled();
+    expect(audioIdOf(useStageStore.getState().scenes[0])).toBe(importedRef);
+  });
+
+  // Ownership still wins over the key's shape: a row that names another course
+  // is refused however unique its key looks.
+  it('refuses another course\u2019s row even under an uncollidable key', async () => {
+    const uniqueRef = 'tts_s1_action_a1b2c3d4';
+    useStageStore.setState({ scenes: [sceneWithSpeech(uniqueRef)] });
+    serveDocument(uniqueRef);
+    mocks.audioGet.mockResolvedValue(cachedRow({ id: uniqueRef, stageId: 'another-course' }));
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 1 });
+
+    expect(mocks.putAsset).not.toHaveBeenCalled();
+    expect(audioIdOf(useStageStore.getState().scenes[0])).toBe(uniqueRef);
   });
 
   it('leaves a concrete address alone rather than treating it as a local key', async () => {
@@ -341,8 +447,11 @@ describe('adopting cached narration', () => {
   });
 
   // A run's tail is uncancellable, so a second run started while it settles
-  // could hand the same clip a second allocation and orphan one of them.
-  it('runs one adoption per course at a time', async () => {
+  // could hand the same clip a second allocation and orphan one of them. The
+  // second caller therefore queues behind the tail and then looks again --
+  // rather than being handed the first run, whose signal may be the one that
+  // was just aborted.
+  it('queues a second caller behind the run in flight', async () => {
     serveDocument();
     mocks.audioGet.mockResolvedValue(cachedRow());
     let release!: () => void;
@@ -359,8 +468,63 @@ describe('adopting cached narration', () => {
     release();
 
     await expect(first).resolves.toEqual({ adopted: 1, unbacked: 0 });
-    await expect(second).resolves.toEqual({ adopted: 1, unbacked: 0 });
+    // The rescan finds the action already allocated, so there is nothing left
+    // to do and nothing is allocated twice.
+    await expect(second).resolves.toEqual({ adopted: 0, unbacked: 0 });
     expect(mocks.putAsset).toHaveBeenCalledTimes(1);
+  });
+
+  // Adoption spends no provider money, so a full store costs it only network
+  // and log noise -- but a thirty-clip course would issue thirty refused
+  // uploads on every load, against a ceiling that is deployment-wide anyway.
+  it('stands down when the store is already known to be full', async () => {
+    serveDocument();
+    mocks.audioGet.mockResolvedValue(cachedRow());
+    await kv.store.set(`asset-storage-full:${stageId}`, Date.now());
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 1 });
+
+    expect(mocks.putAsset).not.toHaveBeenCalled();
+    expect(mocks.audioGet).not.toHaveBeenCalled();
+  });
+
+  it('stops at the first refusal for room, and remembers it for the next load', async () => {
+    const secondRef = 'tts_s1_action_b2c3d4e5';
+    const twoLines = {
+      id: 'scene-1',
+      stageId,
+      title: 'Scene',
+      order: 1,
+      type: 'slide',
+      content: { type: 'slide', canvas: { id: 'slide-1', elements: [] } },
+      actions: [
+        { id: 'speech-1', type: 'speech', text: 'Welcome', audioId: derivedRef },
+        { id: 'speech-2', type: 'speech', text: 'And then', audioId: secondRef },
+      ],
+    } as unknown as Scene;
+    useStageStore.setState({ scenes: [twoLines] });
+    serveDocument();
+    mocks.audioGet.mockImplementation(async (id: string) => cachedRow({ id, text: 'Welcome' }));
+    mocks.putAsset.mockRejectedValue(
+      Object.assign(new Error('asset quota exceeded for this principal'), {
+        status: 507,
+        code: 'ASSET_QUOTA_EXCEEDED',
+      }),
+    );
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 2 });
+
+    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
+    await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
+  });
+
+  it('lifts the marker as soon as a clip is stored', async () => {
+    serveDocument();
+    mocks.audioGet.mockResolvedValue(cachedRow());
+
+    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 1, unbacked: 0 });
+
+    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
   });
 
   it('counts a clip whose storage fails as unbacked, and keeps its derived id', async () => {

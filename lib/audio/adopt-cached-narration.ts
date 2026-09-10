@@ -39,6 +39,12 @@
  */
 import { putAsset } from '@/lib/media/asset-pool';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
+import {
+  clearAssetStorageFull,
+  isAssetStorageFull,
+  markAssetStorageFull,
+} from '@/lib/media/asset-storage-full';
+import { isStorageFullFailure } from '@/lib/media/media-failure';
 import { createLogger } from '@/lib/logger';
 import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
@@ -57,10 +63,18 @@ const log = createLogger('NarrationAdoption');
  * because abandoning it would orphan the asset it just paid for. A second run
  * started while that tail is settling — a surface that re-enters the course, or
  * two surfaces mounted at once — could hand the same clip a second allocation
- * and leave one of them referenced by nothing. So a course adopts once at a
- * time, and a second caller is told there is nothing for it to do.
+ * and leave one of them referenced by nothing. So a course adopts one run at a
+ * time.
+ *
+ * A later caller QUEUES behind the tail rather than being handed it. Handing it
+ * over was tried and is the same bug from the other side: the run a re-entry
+ * inherits is bound to the signal that was just aborted, so it stops at its
+ * next clip and the caller — which has a live signal and a course open — is
+ * told the work is done. Waiting and then scanning again costs a lookup on a
+ * course that has nothing left, and finishes the clips the abort cut off on one
+ * that does.
  */
-const runsByStage = new Map<string, Promise<NarrationAdoptionOutcome>>();
+const runsByStage = new Map<string, Promise<unknown>>();
 
 export interface NarrationAdoptionOutcome {
   /** Speech actions whose bytes were stored and whose reference was rewritten. */
@@ -106,13 +120,62 @@ function derivedNarrationRefs(
 }
 
 /**
+ * The action id inside a derived narration key.
+ *
+ * The key is `tts_s<sceneOrder>_<actionId>`, with a `tts_request_s…` variant.
+ * Everything after the scene order is the action's own id.
+ */
+const DERIVED_KEY_ACTION_ID = /^tts_(?:request_)?s-?\d+_(.+)$/;
+
+/**
+ * An action id that cannot be minted twice.
+ *
+ * Generated speech actions are `action_` plus a nanoid
+ * (`@openmaic/generation`'s action parser), so two courses cannot produce the
+ * same one and a derived key built from it names exactly one clip. Every other
+ * shape has to be treated as reproducible -- an import mints its actions from
+ * the slide's position (`speech-scene-p<n>`), which makes the first slide of
+ * every imported deck carry the same key.
+ */
+const UNIQUE_ACTION_ID = /^action_[A-Za-z0-9_-]{8,}$/;
+
+/** The contract code an upload failure declares, if it declares one. */
+function storageErrorCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+function derivedKeyIsUnique(derivedRef: string): boolean {
+  const actionId = DERIVED_KEY_ACTION_ID.exec(derivedRef)?.[1];
+  return actionId !== undefined && UNIQUE_ACTION_ID.test(actionId);
+}
+
+/**
  * Whether this row can be shown to hold the narration of this action.
  *
- * A row that names a course names the only course it may be adopted into. A
- * legacy row predates that column -- and legacy rows are exactly the population
- * this feature exists for -- so it is admitted on the other evidence the row
- * carries: the text that was synthesized. No text, no adoption; a row that
- * cannot be tied to the action is indistinguishable from another course's.
+ * A row that names a course names the only course it may be adopted into.
+ *
+ * A row that names none predates the column -- and that is not an edge case,
+ * it is the entire population this feature exists for. `stageId` and `text`
+ * were added to these rows by the same change that moved narration onto
+ * allocated ids, so a row still carrying a derived key has neither. A rule
+ * that required the text therefore refused every real pre-allocation course
+ * while admitting only fixtures built from post-allocation rows.
+ *
+ * What the row cannot tell us, the key can. A derived key collides only when
+ * two courses share both a scene order and an action id, and action ids are
+ * reproducible only when something other than the generator minted them --
+ * an import, which numbers them by slide position. So a key whose action id is
+ * a generated one names exactly one clip and is adopted on that basis; a key
+ * whose action id could have been minted twice is adopted only when the row
+ * does carry text and that text matches the action being converted.
+ *
+ * That last case is deliberately strict, and it is worth naming what it does
+ * not cover: two imports of the *same* deck produce identical notes, so
+ * matching text proves nothing there. Refusing such a row costs one course its
+ * cached narration; adopting the wrong one writes another course's audio into
+ * a shared document permanently.
  */
 function rowBelongsToAction(
   row: AudioFileRecord,
@@ -120,6 +183,7 @@ function rowBelongsToAction(
   action: DerivedNarration,
 ): boolean {
   if (row.stageId !== undefined) return row.stageId === stageId;
+  if (derivedKeyIsUnique(action.derivedRef)) return true;
   const recorded = row.text?.trim();
   return recorded !== undefined && recorded !== '' && recorded === action.text.trim();
 }
@@ -140,9 +204,10 @@ export async function adoptCachedNarration(
   stageId: string,
   abortSignal?: AbortSignal,
 ): Promise<NarrationAdoptionOutcome> {
-  const running = runsByStage.get(stageId);
-  if (running) return running;
-  const run = adoptCachedNarrationRun(stageId, abortSignal);
+  const queued = runsByStage.get(stageId) ?? Promise.resolve();
+  const run = queued
+    .catch(() => undefined)
+    .then(() => adoptCachedNarrationRun(stageId, abortSignal));
   runsByStage.set(stageId, run);
   try {
     return await run;
@@ -166,6 +231,16 @@ async function adoptCachedNarrationRun(
 
   const actions = derivedNarrationRefs(useStageStore.getState().scenes);
   if (actions.length === 0) return idle;
+
+  // The store had no room the last time this browser wrote to it. Adoption
+  // spends no provider money, so this costs nothing but network and log noise
+  // — but a thirty-clip course would issue thirty refused uploads on every
+  // load, and the ceiling is deployment-wide either way. The marker is lifted
+  // by the same successful write that lifts it for the media pass.
+  if (await isAssetStorageFull(stageId)) {
+    log.info(`Asset storage was full for ${stageId}; not adopting narration yet.`);
+    return { adopted: 0, unbacked: actions.length };
+  }
 
   let adopted = 0;
   let unbacked = 0;
@@ -200,8 +275,19 @@ async function adoptCachedNarrationRun(
       // derived id and is adopted on a later load.
       log.warn(`Could not store cached narration ${action.derivedRef}:`, error);
       unbacked += 1;
+      // Unless there is no room at all, in which case every clip after this one
+      // would be refused at the same point. Remembered per course, exactly as
+      // the media pass remembers it, so the next load stands down instead of
+      // repeating the whole deck.
+      if (isStorageFullFailure(storageErrorCode(error))) {
+        await markAssetStorageFull(stageId);
+        unbacked = actions.length - adopted;
+        break;
+      }
       continue;
     }
+    // The store took a write, so whatever was full is not full any more.
+    await clearAssetStorageFull(stageId);
 
     // The allocation is uncancellable, so it may finish after the course was
     // left. Its write-back is not: a document this browser no longer has open

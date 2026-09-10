@@ -82,7 +82,11 @@ import {
   retryMediaTask,
 } from '@/lib/media/media-orchestrator';
 import { noteStageGenerationOwnership } from '@/lib/classroom/generation-permission';
-import { setAssetStorageFullStoreForTests } from '@/lib/media/asset-storage-full';
+import {
+  isAssetStorageFull,
+  setAssetStorageFullStoreForTests,
+} from '@/lib/media/asset-storage-full';
+import { isRetryableMediaFailure } from '@/lib/media/media-failure';
 import { MediaReferenceWriteBackError } from '@/lib/media/persist-media-reference';
 import { resetProxyMediaFailureCache } from '@/lib/media/proxy-media-cache';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
@@ -612,6 +616,44 @@ describe('server-backed classic media orchestrator', () => {
         code: 'ASSET_QUOTA_EXCEEDED',
       });
 
+    /**
+     * The local media table, modelled for real.
+     *
+     * Several of these cases are about what the row lifecycle does BETWEEN two
+     * attempts -- whether a row is removed, restored or written over -- which a
+     * per-call mock cannot show.
+     */
+    function modelLocalMediaTable(): Map<string, Record<string, unknown>> {
+      const rows = new Map<string, Record<string, unknown>>();
+      mocks.mediaPut.mockImplementation(async (row: Record<string, unknown>) => {
+        rows.set(row.id as string, row);
+      });
+      mocks.mediaGet.mockImplementation(async (id: string) => rows.get(id));
+      mocks.mediaDelete.mockImplementation(async (id: string) => {
+        rows.delete(id);
+      });
+      return rows;
+    }
+
+    /** The failed task a reload restores from a persisted refusal. */
+    function restoreFailedTask(elementId: string): void {
+      useMediaGenerationStore.setState({
+        tasks: {
+          [elementId]: {
+            elementId,
+            type: 'image',
+            status: 'failed',
+            prompt: 'A diagram',
+            params: {},
+            retryCount: 0,
+            stageId,
+            error: 'Asset storage is full; the image was not generated',
+            errorCode: 'ASSET_QUOTA_EXCEEDED',
+          },
+        },
+      });
+    }
+
     it('keeps the bytes it refused, so nothing has to be generated twice', async () => {
       serveImage();
       noteStageGenerationOwnership(stageId, 'owner');
@@ -890,6 +932,191 @@ describe('server-backed classic media orchestrator', () => {
       expect(mocks.persistReference).toHaveBeenCalledWith(
         expect.objectContaining({ placeholderRef: imageRef, assetId: 'ast_generated' }),
       );
+    });
+
+    // Leaving the course clears the task table. A retry still in flight then
+    // lands in a session that has no record of it, and "there is no failed task
+    // for this element" is not evidence that anything worked -- it is evidence
+    // that the table was emptied. Reading it as success deletes the row that is
+    // holding the only copy of the media.
+    it('keeps the retained bytes when a course switch clears the task table', async () => {
+      serveImage();
+      noteStageGenerationOwnership(stageId, 'owner');
+      const rows = modelLocalMediaTable();
+      const rowKey = `${stageId}:${imageRef}`;
+
+      mocks.putAsset.mockRejectedValue(quotaRefusal());
+      await runImageGeneration();
+      await expect((rows.get(rowKey)?.blob as Blob).text()).resolves.toBe('server-image');
+
+      // The author leaves the course while the retry's upload is in the air,
+      // and the store is still full when it answers.
+      mocks.putAsset.mockReset().mockImplementation(async () => {
+        useMediaGenerationStore.setState({ tasks: {} });
+        throw quotaRefusal();
+      });
+
+      await retryMediaTask(imageRef);
+
+      expect(providerCallCount()).toBe(1);
+      await expect((rows.get(rowKey)?.blob as Blob).text()).resolves.toBe('server-image');
+
+      // The same switch, with the retry failing for an ordinary reason instead:
+      // the attempt says it committed nothing, and nothing else is consulted.
+      restoreFailedTask(imageRef);
+      mocks.putAsset.mockReset().mockImplementation(async () => {
+        useMediaGenerationStore.setState({ tasks: {} });
+        throw Object.assign(new Error('asset registry put failed'), { status: 500 });
+      });
+
+      await retryMediaTask(imageRef);
+
+      expect(providerCallCount()).toBe(1);
+      await expect((rows.get(rowKey)?.blob as Blob).text()).resolves.toBe('server-image');
+    });
+
+    // A deliberate Retry is allowed to try on a store this browser believes is
+    // full -- the ceiling is exactly the kind of thing an operator has just
+    // changed -- and when the bytes were kept, trying costs nothing at all.
+    it('retries from the kept bytes on a store it believes is full, and lifts the marker', async () => {
+      serveImage();
+      noteStageGenerationOwnership(stageId, 'owner');
+      modelLocalMediaTable();
+
+      mocks.putAsset.mockRejectedValue(quotaRefusal());
+      await runImageGeneration();
+      expect(providerCallCount()).toBe(1);
+      await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
+
+      mocks.putAsset.mockReset().mockResolvedValue('ast_after_raise');
+
+      await retryMediaTask(imageRef);
+
+      // No second provider call: the retry re-attempts the upload, not the
+      // generation.
+      expect(providerCallCount()).toBe(1);
+      expect(mocks.putAsset).toHaveBeenCalledTimes(1);
+      const [stored] = mocks.putAsset.mock.calls[0] as [Blob];
+      await expect(stored.text()).resolves.toBe('server-image');
+      expect(mocks.persistReference).toHaveBeenCalledWith(
+        expect.objectContaining({ placeholderRef: imageRef, assetId: 'ast_after_raise' }),
+      );
+      // The store took a write, so the next pass has no reason to stand down.
+      await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
+    });
+
+    // The other kind of element: one the stopped pass never reached, so it has
+    // a failed task and no bytes anywhere. Its Retry is one ordinary
+    // generation, and if the store refuses it the deck's remaining elements
+    // must not each pay a provider to rediscover that.
+    it('re-sets the marker when a retry with no bytes to re-upload is refused again', async () => {
+      serveImage();
+      noteStageGenerationOwnership(stageId, 'owner');
+      modelLocalMediaTable();
+      restoreFailedTask(imageRef);
+      // Lifted by some earlier successful write; the condition has to be
+      // rediscovered, and remembered again.
+      await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
+      mocks.putAsset.mockRejectedValue(quotaRefusal());
+
+      await retryMediaTask(imageRef);
+
+      // Exactly one: the retry is allowed to ask, once, at the author's
+      // request.
+      expect(providerCallCount()).toBe(1);
+      expect(mocks.putAsset).toHaveBeenCalledTimes(1);
+      await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
+
+      // And the element is back where it was, with the reason and the way out.
+      const task = useMediaGenerationStore.getState().tasks[imageRef];
+      expect(task?.status).toBe('failed');
+      expect(task?.errorCode).toBe('ASSET_QUOTA_EXCEEDED');
+      expect(isRetryableMediaFailure(task!)).toBe(true);
+    });
+
+    it('leaves the next pass standing down after a refused retry', async () => {
+      serveImage();
+      noteStageGenerationOwnership(stageId, 'owner');
+      modelLocalMediaTable();
+      restoreFailedTask(imageRef);
+      mocks.putAsset.mockRejectedValue(quotaRefusal());
+
+      await retryMediaTask(imageRef);
+      expect(providerCallCount()).toBe(1);
+
+      // A reload: the task table is gone and the document still holds the
+      // placeholder. Only the marker the retry left behind stops the pass.
+      resetMediaPassesForTests();
+      useMediaGenerationStore.setState({ tasks: {} });
+
+      await runImageGeneration();
+
+      expect(providerCallCount()).toBe(1);
+      expect(mocks.putAsset).toHaveBeenCalledTimes(1);
+      const task = useMediaGenerationStore.getState().tasks[imageRef];
+      expect(task?.status).toBe('failed');
+      expect(task?.errorCode).toBe('ASSET_QUOTA_EXCEEDED');
+    });
+
+    // Two independent defences keep the retained bytes: the row is not removed
+    // before the attempt, and the attempt's failure record is written around
+    // whatever bytes it was given rather than over them. Together they pass any
+    // test either one would pass, which is how a refactor deletes one of them
+    // without a single case turning red. These two cases each need exactly one.
+
+    // Only the first defence is in play: the failure record cannot be written
+    // at all, so nothing restores a row that was removed up front.
+    it('keeps the only copy when the failure record cannot be written', async () => {
+      serveImage();
+      noteStageGenerationOwnership(stageId, 'owner');
+      const rows = modelLocalMediaTable();
+      const rowKey = `${stageId}:${imageRef}`;
+
+      mocks.putAsset.mockRejectedValue(quotaRefusal());
+      await runImageGeneration();
+      await expect((rows.get(rowKey)?.blob as Blob).text()).resolves.toBe('server-image');
+
+      // The ceiling was raised, the upload failed for its own reasons, and this
+      // browser can no longer write to its own cache either.
+      mocks.putAsset
+        .mockReset()
+        .mockRejectedValue(Object.assign(new Error('asset registry put failed'), { status: 500 }));
+      mocks.mediaPut.mockRejectedValue(new Error('local media cache write failed'));
+
+      await retryMediaTask(imageRef);
+
+      expect(providerCallCount()).toBe(1);
+      await expect((rows.get(rowKey)?.blob as Blob).text()).resolves.toBe('server-image');
+    });
+
+    // Only the second defence is in play: the row survives the attempt, so what
+    // matters is what the failure record does to it. Written from the bytes the
+    // attempt was given, it replaces the row with itself and records the new
+    // failure; written from a refusal that carries none, it replaces the media
+    // with an empty blob.
+    it('records the new failure around the bytes rather than over them', async () => {
+      serveImage();
+      noteStageGenerationOwnership(stageId, 'owner');
+      const rows = modelLocalMediaTable();
+      const rowKey = `${stageId}:${imageRef}`;
+
+      mocks.putAsset.mockRejectedValue(quotaRefusal());
+      await runImageGeneration();
+
+      mocks.putAsset
+        .mockReset()
+        .mockRejectedValue(Object.assign(new Error('asset registry put failed'), { status: 500 }));
+
+      await retryMediaTask(imageRef);
+
+      expect(providerCallCount()).toBe(1);
+      const row = rows.get(rowKey);
+      await expect((row?.blob as Blob).text()).resolves.toBe('server-image');
+      expect(row?.size).toBe((row?.blob as Blob).size);
+      // And it is this attempt's failure that the reload will read, not the
+      // refusal two attempts ago.
+      expect(row?.error).toBe('asset registry put failed');
+      expect(row?.errorCode).toBeUndefined();
     });
   });
 

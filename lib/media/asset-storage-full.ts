@@ -36,8 +36,13 @@ let kvOverride: KVStore | undefined;
 
 function resolveKv(): KVStore | undefined {
   if (kvOverride) return kvOverride;
-  if (typeof localStorage === 'undefined') return undefined;
   try {
+    // Inside the guard, deliberately. A browser whose storage is denied by
+    // policy throws `SecurityError` on the property access itself — `typeof`
+    // included — so an availability check outside the try is the one line that
+    // can turn best-effort device metadata into a rejected promise, and this
+    // one is awaited by a generation pass that has already enqueued its tasks.
+    if (typeof localStorage === 'undefined') return undefined;
     return (defaultKv ??= new BrowserKVStore());
   } catch {
     return undefined;
