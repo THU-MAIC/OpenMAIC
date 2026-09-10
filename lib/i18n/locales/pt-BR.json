@@ -88,6 +88,7 @@
     "videoRenderMp4": "Renderizar MP4",
     "videoDownloadZip": "Baixar ZIP do projeto",
     "videoServiceHint": "A renderização de MP4 requer o serviço de renderização. Baixe o ZIP para renderizar localmente.",
+    "videoQueueBusy": "A fila de renderização está cheia no momento. Tente novamente em instantes ou baixe o ZIP.",
     "videoBurnSubtitles": "Gravar legendas no vídeo",
     "videoBurnSubtitlesDesc": "Desligado: exporte um vídeo limpo e adicione o arquivo de legenda no seu editor.",
     "videoQuizCtaPrompt": "Quer experimentar um quiz interativo?",

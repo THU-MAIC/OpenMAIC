@@ -88,6 +88,7 @@
     "videoRenderMp4": "渲染 MP4",
     "videoDownloadZip": "下載專案 ZIP",
     "videoServiceHint": "渲染 MP4 需要渲染服務。可下載 ZIP 在本機渲染。",
+    "videoQueueBusy": "渲染佇列已滿，請稍後再試，或下載 ZIP。",
     "videoBurnSubtitles": "燒錄字幕",
     "videoBurnSubtitlesDesc": "關閉時匯出無字幕的乾淨影片，可在剪輯軟體中自行加入字幕檔。",
     "videoQuizCtaPrompt": "想親自體驗互動測驗？",

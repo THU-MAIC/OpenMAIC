@@ -107,17 +107,25 @@ export function VideoExportDialog({
   const { resolution, fps, quality, burnInSubtitles } = options;
   // undefined = unknown (still probing); true/false = capability answer.
   const [serviceEnabled, setServiceEnabled] = useState<boolean | undefined>(undefined);
+  // Whether the render service's queue has room (#1350). Advisory only — while
+  // unknown (still probing, or an older service that does not report it) we
+  // assume room so the button stays usable, and a 429 stays authoritative.
+  const [serviceAccepting, setServiceAccepting] = useState(true);
 
   useEffect(() => {
     if (!open) return;
     let active = true;
     fetch('/api/export-video/capability')
       .then((r) => r.json())
-      .then((d: { enabled?: boolean }) => {
-        if (active) setServiceEnabled(Boolean(d.enabled));
+      .then((d: { enabled?: boolean; accepting?: boolean }) => {
+        if (!active) return;
+        setServiceEnabled(Boolean(d.enabled));
+        setServiceAccepting(d.accepting !== false);
       })
       .catch(() => {
-        if (active) setServiceEnabled(false);
+        if (!active) return;
+        setServiceEnabled(false);
+        setServiceAccepting(true);
       });
     return () => {
       active = false;
@@ -218,12 +226,17 @@ export function VideoExportDialog({
             {serviceEnabled && (
               <button
                 onClick={() => renderVideo()}
-                disabled={busy}
+                disabled={busy || !serviceAccepting}
                 className="w-full px-2 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
                 {rendering && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 {t('export.videoRenderMp4')}
               </button>
+            )}
+            {serviceEnabled && !serviceAccepting && (
+              <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                {t('export.videoQueueBusy')}
+              </div>
             )}
             <button
               onClick={() => exportVideo(resolution, burnInSubtitles)}

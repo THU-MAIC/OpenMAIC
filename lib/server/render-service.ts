@@ -39,22 +39,49 @@ export function resolveRenderServiceUrl(): { url: string } | { error: 'not_confi
 }
 
 /**
- * Whether the configured render service is actually reachable and healthy.
- * Probes `GET /health` with a short timeout. Returns false (rather than
- * throwing) when unconfigured or unreachable, so the capability endpoint can
- * report a truthful enabled/disabled state and the UI degrades cleanly.
+ * The render service's answer to `GET /health`, reduced to what callers need.
+ *
+ * `accepting` mirrors the service's aggregate-only flag: whether its render
+ * queue cap currently has room for another video render (#1348). It is
+ * advisory — the service's own 429 remains authoritative — so it is `true`
+ * whenever the probe cannot read the flag (older service build, non-JSON body),
+ * which keeps the button enabled rather than blocking a render that would have
+ * succeeded. It is only ever `false` when the service explicitly said so.
  */
-export async function checkRenderServiceHealth(): Promise<boolean> {
+export interface RenderServiceHealth {
+  /** The service is configured AND its `/health` responded OK. */
+  enabled: boolean;
+  /** The service's queue cap has room for another video render. */
+  accepting: boolean;
+}
+
+/**
+ * Probe the configured render service's `GET /health`.
+ *
+ * Never throws: unconfigured, unreachable, or non-OK responses come back as
+ * `enabled: false` so the capability endpoint can report a truthful state and
+ * the UI degrades cleanly to the ZIP path (#866). A reachable service that
+ * omits `accepting` is reported as accepting, per {@link RenderServiceHealth}.
+ */
+export async function checkRenderServiceHealth(): Promise<RenderServiceHealth> {
   const url = getRenderServiceUrl();
-  if (!url) return false;
+  if (!url) return { enabled: false, accepting: true };
   try {
     const res = await proxyFetch(`${url}/health`, {
       method: 'GET',
       signal: AbortSignal.timeout(3000),
     });
-    return res.ok;
+    if (!res.ok) return { enabled: false, accepting: true };
+    // The body is read best-effort: `enabled` comes from the status alone, so a
+    // malformed or unreadable body must not turn a healthy service into a
+    // disabled one.
+    const body = (await res.json().catch(() => null)) as { accepting?: unknown } | null;
+    return {
+      enabled: true,
+      accepting: typeof body?.accepting === 'boolean' ? body.accepting : true,
+    };
   } catch (error) {
     log.info('Render service health check failed:', error instanceof Error ? error.message : error);
-    return false;
+    return { enabled: false, accepting: true };
   }
 }

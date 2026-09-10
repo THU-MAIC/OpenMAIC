@@ -88,6 +88,7 @@
     "videoRenderMp4": "Renderizar MP4",
     "videoDownloadZip": "Descargar ZIP del proyecto",
     "videoServiceHint": "Renderizar a MP4 necesita el servicio de renderizado. Descarga el ZIP para renderizar en tu equipo.",
+    "videoQueueBusy": "La cola de renderizado está llena en este momento. Inténtalo de nuevo en un momento o descarga el ZIP.",
     "videoBurnSubtitles": "Incrustar subtítulos",
     "videoBurnSubtitlesDesc": "Desactivado: exporta un video limpio y agrega el archivo de subtítulos en tu editor.",
     "videoQuizCtaPrompt": "¿Quieres probar un cuestionario interactivo?",

@@ -88,6 +88,7 @@
     "videoRenderMp4": "Générer le MP4",
     "videoDownloadZip": "Télécharger le ZIP du projet",
     "videoServiceHint": "Le rendu MP4 nécessite le service de rendu. Téléchargez le ZIP pour un rendu local.",
+    "videoQueueBusy": "La file de rendu est saturée. Réessayez bientôt ou téléchargez le ZIP.",
     "videoBurnSubtitles": "Incruster les sous-titres",
     "videoBurnSubtitlesDesc": "Désactivé : exportez une vidéo propre et ajoutez le fichier de sous-titres dans votre logiciel de montage.",
     "videoQuizCtaPrompt": "Envie d’essayer un quiz interactif ?",

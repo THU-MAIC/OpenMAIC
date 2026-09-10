@@ -88,6 +88,7 @@
     "videoRenderMp4": "MP4 をレンダリング",
     "videoDownloadZip": "プロジェクト ZIP をダウンロード",
     "videoServiceHint": "MP4 レンダリングにはレンダーサービスが必要です。ZIP をダウンロードしてローカルでレンダリングできます。",
+    "videoQueueBusy": "レンダーキューが満杯です。しばらくして再試行するか、ZIP をダウンロードしてください。",
     "videoBurnSubtitles": "字幕を焼き込む",
     "videoBurnSubtitlesDesc": "オフ：字幕なしの動画を書き出し、字幕ファイルは編集ソフトで追加します。",
     "videoQuizCtaPrompt": "インタラクティブなクイズを体験しませんか？",

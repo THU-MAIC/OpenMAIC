@@ -88,6 +88,7 @@
     "videoRenderMp4": "MP4 렌더링",
     "videoDownloadZip": "프로젝트 ZIP 다운로드",
     "videoServiceHint": "MP4 렌더링에는 렌더 서비스가 필요합니다. ZIP을 다운로드하여 로컬에서 렌더링하세요.",
+    "videoQueueBusy": "렌더 큐가 가득 찼습니다. 잠시 후 다시 시도하거나 ZIP을 다운로드하세요.",
     "videoBurnSubtitles": "자막 굽기",
     "videoBurnSubtitlesDesc": "끄면 자막 없는 깨끗한 영상을 내보내고, 자막 파일은 편집 프로그램에서 추가합니다.",
     "videoQuizCtaPrompt": "인터랙티브 퀴즈를 직접 체험해 보세요",

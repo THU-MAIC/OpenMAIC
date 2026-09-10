@@ -88,6 +88,7 @@
     "videoRenderMp4": "Render MP4",
     "videoDownloadZip": "Download project ZIP",
     "videoServiceHint": "MP4 rendering needs the render service. Download the ZIP to render locally.",
+    "videoQueueBusy": "The render queue is full right now. Try again shortly, or download the ZIP.",
     "videoBurnSubtitles": "Burn in subtitles",
     "videoBurnSubtitlesDesc": "Off: export a clean video and add the subtitle file in your editor.",
     "videoQuizCtaPrompt": "Want to try an interactive quiz?",

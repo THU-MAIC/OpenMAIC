@@ -88,6 +88,7 @@
     "videoRenderMp4": "Kết xuất MP4",
     "videoDownloadZip": "Tải ZIP dự án",
     "videoServiceHint": "Kết xuất MP4 cần dịch vụ kết xuất. Hãy tải ZIP về để kết xuất tại máy.",
+    "videoQueueBusy": "Hàng đợi kết xuất hiện đang đầy. Hãy thử lại sau hoặc tải ZIP về.",
     "videoBurnSubtitles": "Ghi phụ đề vào hình",
     "videoBurnSubtitlesDesc": "Tắt: xuất video sạch, bạn tự thêm tệp phụ đề trong trình dựng phim.",
     "videoQuizCtaPrompt": "Muốn thử một bài trắc nghiệm tương tác?",

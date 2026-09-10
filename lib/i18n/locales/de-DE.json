@@ -88,6 +88,7 @@
     "videoRenderMp4": "MP4 rendern",
     "videoDownloadZip": "Projekt-ZIP herunterladen",
     "videoServiceHint": "Zum Rendern als MP4 ist der Renderdienst erforderlich. Lade das ZIP zum lokalen Rendern herunter.",
+    "videoQueueBusy": "Die Render-Warteschlange ist derzeit voll. Versuche es später erneut oder lade das ZIP herunter.",
     "videoBurnSubtitles": "Untertitel einbrennen",
     "videoBurnSubtitlesDesc": "Aus: Exportiere ein Video ohne Untertitel und füge die Untertiteldatei im Editor hinzu.",
     "videoQuizCtaPrompt": "Möchtest du ein interaktives Quiz ausprobieren?",
