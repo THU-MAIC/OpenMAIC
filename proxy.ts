@@ -43,16 +43,13 @@ async function verifyToken(token: string, accessCode: string): Promise<boolean> 
   return mismatch === 0;
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Return an actual server-side 404 when either half of the workbench is off.
-  // Edge middleware cannot reliably inspect server-only deployment variables,
-  // so it enforces the public gate and leaves the complete runtime/database
-  // check to Node. A Node-hosted middleware uses the same gate as startup.
-  const canInspectServerRuntime = process.env.NEXT_RUNTIME !== 'edge';
-  const workbenchEnabled =
-    isProWorkbenchEnabled() && (!canInspectServerRuntime || isAgentRuntimeConfigured());
+  // Proxy runs on Node.js in Next.js 16, so both the public workbench flag and
+  // the server-only runtime/database gate are available here.
+  const workbenchEnabled = isProWorkbenchEnabled() && isAgentRuntimeConfigured();
   if (!workbenchEnabled && (pathname === '/workbench' || pathname.startsWith('/workbench/'))) {
     return new NextResponse('Not found', { status: 404 });
   }
