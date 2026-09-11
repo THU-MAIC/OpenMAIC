@@ -16,8 +16,12 @@
  *
  * Entries are per stage and live only for the session that made them. One left
  * behind means the scene it was waiting for never arrived (a failed or
- * abandoned generation); its bytes are then unreferenced, and nothing reclaims
- * them today — the stage-scoped registry sweep is written but not wired up.
+ * abandoned generation), so no document will ever name its id. Under
+ * server-backed persistence the server expires exactly that: an allocation is
+ * pending until the first document write commits it, and one no document
+ * commits within `ASSET_PENDING_TTL_MS` is released by the collector's entry
+ * pass, taking its bytes with it after the grace period. Losing this map on a
+ * tab close therefore loses the record, not the storage.
  *
  * Alongside the parked entries this module keeps a second, non-draining record:
  * every placeholder this session has ever allocated for, and what it allocated.
