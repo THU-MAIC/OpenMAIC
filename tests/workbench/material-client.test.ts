@@ -7,6 +7,7 @@ import {
   WorkbenchMaterialUploadError,
 } from '@/lib/workbench/session-store';
 import { WORKBENCH_MATERIAL_ACCEPT } from '@/lib/workbench/material-upload-policy';
+import { createWorkbenchTranslator } from '@/lib/i18n/workbench';
 
 const material = {
   materialId: 'mat_00000000000000000000000000',
@@ -85,6 +86,66 @@ describe('workbench material client', () => {
       status: 500,
       requestId: 'upload-trace-123',
     });
+  });
+
+  it.each([50, 100, 12.5])(
+    'shows the configured %s MB limit without diagnostic details',
+    async (mb) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          Response.json(
+            { error: `upload exceeds ${mb * 1024 * 1024} bytes`, maxBytes: mb * 1024 * 1024 },
+            { status: 413, headers: { 'x-request-id': 'upload-trace-123' } },
+          ),
+        ),
+      );
+      const error = await uploadWorkbenchMaterial(new File(['x'], material.name)).catch(
+        (err) => err,
+      );
+      expect(error).toBeInstanceOf(WorkbenchMaterialUploadError);
+      expect(error.requestId).toBe('upload-trace-123');
+      expect(error.message).toContain('upload-trace-123');
+      expect(error.userMessage(createWorkbenchTranslator('zh-CN'))).toBe(
+        `文件过大，请选择不超过 ${mb}MB 的文件。`,
+      );
+      expect(error.userMessage(createWorkbenchTranslator('en-US'))).toBe(
+        `File too large. Please select a file no larger than ${mb} MB.`,
+      );
+    },
+  );
+
+  it.each([undefined, 0, -1, '52428800'])(
+    'uses a friendly fallback for invalid limit %s',
+    async (maxBytes) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => Response.json({ error: 'upload too large', maxBytes }, { status: 413 })),
+      );
+      const error = await uploadWorkbenchMaterial(new File(['x'], material.name)).catch(
+        (err) => err,
+      );
+      expect(error.maxBytes).toBeUndefined();
+      expect(error.userMessage(createWorkbenchTranslator('zh-CN'))).toBe(
+        '文件过大，请压缩或拆分后重试。',
+      );
+    },
+  );
+
+  it('handles a proxy HTML 413 without exposing its body or a request ID', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('<html>Request Entity Too Large</html>', { status: 413 })),
+    );
+    const error = await uploadWorkbenchMaterial(new File(['x'], material.name)).catch((err) => err);
+    expect(error.userMessage(createWorkbenchTranslator('en-US'))).toBe(
+      'File too large. Compress or split the file and try again.',
+    );
+  });
+
+  it('preserves other upload errors for the existing error handling', () => {
+    const error = new WorkbenchMaterialUploadError('slow down', 429);
+    expect(error.userMessage(createWorkbenchTranslator('zh-CN'))).toBe('slow down');
   });
 
   it('sends only materialIds when creating a session', async () => {

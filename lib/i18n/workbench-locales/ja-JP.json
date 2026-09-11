@@ -41,7 +41,9 @@
     "maxSelected": "一度に選べる素材は {{count}} 件までです",
     "remove": "{{name}} を削除",
     "removeFailed": "アップロードに失敗した素材を削除",
-    "uploadFailed": "{{name}} をアップロードできませんでした。もう一度お試しください。"
+    "uploadFailed": "{{name}} をアップロードできませんでした。もう一度お試しください。",
+    "fileTooLarge": "ファイルが大きすぎます。圧縮または分割して、もう一度お試しください。",
+    "fileTooLargeWithLimit": "ファイルが大きすぎます。{{limit}} MB 以下のファイルを選択してください。"
   },
   "skill": {
     "listFailed": "スキル一覧を読み込めませんでした",
