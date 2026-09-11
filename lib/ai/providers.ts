@@ -631,6 +631,42 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/glm.svg',
     models: [
+      // GLM-5.3 Series - Flagship; thinking cannot be disabled, only scaled
+      // via reasoning_effort low/high/max (the API rejects "disabled").
+      {
+        id: 'glm-5.3',
+        name: 'GLM-5.3',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+      // GLM-5.3-Flash - Native multimodal (320B MoE, 18B active); thinking is
+      // always on with the same low/high/max effort scale as GLM-5.3.
+      {
+        id: 'glm-5.3-flash',
+        name: 'GLM-5.3-Flash',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
       // GLM-5.2 Series - Long-horizon coding model
       {
         id: 'glm-5.2',
@@ -1649,6 +1685,15 @@ function getCompatThinkingBodyParams(
     case 'glm': {
       if (capability.control === 'effort') {
         if (mode === 'disabled' || config.effort === 'none') {
+          // Forced-thinking models (GLM-5.3/5.3-Flash) reject
+          // {type:'disabled'} ("该模型始终思考,不支持关闭思考"); use the
+          // lightest effort instead of failing the whole request.
+          if (capability.toggleable === false) {
+            const lightest = capability.effortValues?.[0];
+            return lightest
+              ? { thinking: { type: 'enabled' }, reasoning_effort: lightest }
+              : undefined;
+          }
           return { thinking: { type: 'disabled' } };
         }
 
