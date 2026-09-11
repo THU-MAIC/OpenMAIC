@@ -15,6 +15,7 @@ import {
 import { AssetCollectionFailure } from '../src/asset/collector.js';
 import { backfillDocumentAssetReferences, sceneAssetScope } from '../src/asset/references.js';
 import {
+  DocumentAssetReferencesDisabledError,
   PgDocumentStore,
   StorageLockUnavailableError,
   ensureDocumentSchema,
@@ -913,6 +914,132 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
       [legacy],
     );
     expect(entry.rows[0]?.committed_at).toBeNull();
+  });
+
+  describe('withdrawing references from a tombstoned document', () => {
+    const refsOf = async (stageId: string): Promise<string[]> => {
+      const rows = await pool.query<{ asset_id: string }>(
+        'SELECT asset_id FROM document_asset_refs WHERE stage_id = $1 ORDER BY asset_id',
+        [stageId],
+      );
+      return rows.rows.map((row) => row.asset_id);
+    };
+    const stampOf = async (id: string): Promise<Date | null> => {
+      const rows = await pool.query<{ unreferenced_at: Date | null }>(
+        'SELECT unreferenced_at FROM asset_entries WHERE id = $1',
+        [id],
+      );
+      return rows.rows[0]?.unreferenced_at ?? null;
+    };
+
+    test('releases the document s references and stamps what loses its last one', async () => {
+      const id = await assets.put(principal, new Blob(['tombstoned bytes']));
+      await documents.saveDocument(stageWithImage('tomb-stage', 'tomb-scene', id));
+      expect(await refsOf('tomb-stage')).toEqual([id]);
+
+      await expect(documents.withdrawAssetReferences('tomb-stage')).resolves.toBe(true);
+
+      expect(await refsOf('tomb-stage')).toEqual([]);
+      expect(await stampOf(id)).not.toBeNull();
+      // The document is untouched: this is the half of deleteDocument that
+      // releases assets, and a host that keeps its rows keeps its rows.
+      expect(
+        (await pool.query('SELECT id FROM document_stages WHERE id = $1', ['tomb-stage'])).rows,
+      ).toHaveLength(1);
+      expect(await documents.loadDocument('tomb-stage')).not.toBeNull();
+    });
+
+    test('is idempotent, and says it found the document either time', async () => {
+      const id = await assets.put(principal, new Blob(['twice withdrawn']));
+      await documents.saveDocument(stageWithImage('twice-stage', 'twice-scene', id));
+
+      expect(await documents.withdrawAssetReferences('twice-stage')).toBe(true);
+      const first = await stampOf(id);
+      expect(await documents.withdrawAssetReferences('twice-stage')).toBe(true);
+
+      // `true` is "this store found the document", not "something changed" --
+      // the document is still there. And the second call must not push the
+      // grace period out by re-stamping.
+      expect(await stampOf(id)).toEqual(first);
+      expect(await refsOf('twice-stage')).toEqual([]);
+    });
+
+    test('an asset another document still names is not stamped', async () => {
+      const shared = await assets.put(principal, new Blob(['shared bytes']));
+      await documents.saveDocument(stageWithImage('shared-a', 'shared-scene', shared));
+      await documents.saveDocument(stageWithImage('shared-b', 'shared-scene', shared));
+
+      expect(await documents.withdrawAssetReferences('shared-a')).toBe(true);
+
+      expect(await refsOf('shared-a')).toEqual([]);
+      expect(await refsOf('shared-b')).toEqual([shared]);
+      expect(await stampOf(shared)).toBeNull();
+    });
+
+    test('a document in another scope is withdrawn from nothing, and is not distinguishable from an absent one', async () => {
+      const id = await assets.put(principal, new Blob(['owned bytes']));
+      const owned = new PgDocumentStore(pool as Queryable, {
+        withTransaction: transactionFor(pool),
+        trackAssetReferences: true,
+      }).forOwner('withdraw-owner-a');
+      await owned.saveDocument(stageWithImage('owner-stage', 'owner-scene', id));
+      const foreign = new PgDocumentStore(pool as Queryable, {
+        withTransaction: transactionFor(pool),
+        trackAssetReferences: true,
+      }).forOwner('withdraw-owner-b');
+
+      expect(await foreign.withdrawAssetReferences('owner-stage')).toBe(false);
+      expect(await foreign.withdrawAssetReferences('no-such-stage')).toBe(false);
+
+      // Nothing of the owner's was touched by either answer.
+      expect(await refsOf('owner-stage')).toEqual([id]);
+      expect(await stampOf(id)).toBeNull();
+      expect(await owned.withdrawAssetReferences('owner-stage')).toBe(true);
+      expect(await stampOf(id)).not.toBeNull();
+    });
+
+    test('a store that does not maintain references refuses rather than answering', async () => {
+      const id = await assets.put(principal, new Blob(['untracked bytes']));
+      await documents.saveDocument(stageWithImage('untracked-stage', 'untracked-scene', id));
+      const untracked = new PgDocumentStore(pool as Queryable, {
+        withTransaction: transactionFor(pool),
+      });
+
+      await expect(untracked.withdrawAssetReferences('untracked-stage')).rejects.toBeInstanceOf(
+        DocumentAssetReferencesDisabledError,
+      );
+
+      // Answering "nothing to withdraw" instead would let a host retire the
+      // document believing its assets were released.
+      expect(await refsOf('untracked-stage')).toEqual([id]);
+      expect(await stampOf(id)).toBeNull();
+    });
+
+    test('saving the stage again re-establishes its references', async () => {
+      // How a host un-retires a course: no special path, just a write.
+      const id = await assets.put(principal, new Blob(['restored bytes']));
+      const document = stageWithImage('restore-stage', 'restore-scene', id);
+      await documents.saveDocument(document);
+      await documents.withdrawAssetReferences('restore-stage');
+      expect(await stampOf(id)).not.toBeNull();
+
+      await documents.saveDocument(document);
+
+      expect(await refsOf('restore-stage')).toEqual([id]);
+      expect(await stampOf(id)).toBeNull();
+    });
+
+    test('an incremental write after a withdrawal re-references only its own scope', async () => {
+      const id = await assets.put(principal, new Blob(['scene bytes']));
+      const document = stageWithImage('partial-stage', 'partial-scene', id);
+      await documents.saveDocument(document);
+      await documents.withdrawAssetReferences('partial-stage');
+
+      await documents.putScene('partial-stage', document.scenes[0]);
+
+      expect(await refsOf('partial-stage')).toEqual([id]);
+      expect(await stampOf(id)).toBeNull();
+    });
   });
 
   test('removing the entry cascades its reference rows away', async () => {

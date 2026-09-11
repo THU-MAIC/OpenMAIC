@@ -118,6 +118,7 @@ export {
 export {
   PgDocumentStore,
   DOCUMENT_PG_SCHEMA,
+  DocumentAssetReferencesDisabledError,
   StorageLockUnavailableError,
   ensureDocumentSchema,
   readStageFreshnessManifest,

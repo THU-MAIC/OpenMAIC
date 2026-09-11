@@ -90,6 +90,28 @@ export interface PgDocumentStoreOptions {
  */
 const DOCUMENT_WRITE_LOCK_TIMEOUT_SQL = `SET LOCAL lock_timeout = '30s'`;
 
+/**
+ * A reference-maintaining operation was called on a store that does not
+ * maintain references.
+ *
+ * Thrown rather than answered, because there is no answer that is not a lie.
+ * Returning "nothing to withdraw" from a store that never recorded anything
+ * would let a host retire a document believing its assets were released while
+ * they sit referenced forever -- the failure this whole level exists to close.
+ * Reaching it means a store was constructed without `trackAssetReferences` and
+ * then asked to do something only a tracking store can do: a programming
+ * error, not a state a deployment can be in.
+ */
+export class DocumentAssetReferencesDisabledError extends Error {
+  constructor(operation: string) {
+    super(
+      `@openmaic/storage: ${operation} requires a document store constructed with ` +
+        'trackAssetReferences: true; this store does not maintain asset references',
+    );
+    this.name = 'DocumentAssetReferencesDisabledError';
+  }
+}
+
 /** Idempotent schema for the PostgreSQL document backend. */
 export const DOCUMENT_PG_SCHEMA = `
 CREATE TABLE IF NOT EXISTS document_folders (
@@ -1044,6 +1066,63 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
       sceneCount: Number(row.scene_count),
       ...(row.folder_id === null ? {} : { folderId: row.folder_id }),
     }));
+  }
+
+  /**
+   * Withdraw every asset reference a document holds, without deleting the
+   * document.
+   *
+   * For a host that retires a document by TOMBSTONE rather than by deletion:
+   * one whose own table marks the id as permanently retired, and whose
+   * tombstone has to outlive the document row it points at. Such a host can
+   * never call {@link deleteDocument} -- doing so would take the tombstone
+   * with it and let the retired id be claimed again -- so its retired
+   * documents would otherwise keep every asset they name alive forever. This
+   * is the half of `deleteDocument` that releases assets, on its own.
+   *
+   * Answers whether this store found the document: `false` for an id that is
+   * absent or belongs to another scope, which are indistinguishable here for
+   * the same reason they are in `deleteDocument`. It is NOT "something
+   * changed" -- the document row is untouched, so a second call finds the same
+   * document and answers **`true`** again with nothing left to remove. The
+   * operation is idempotent in effect, which is what a retirement path needs:
+   * a host that retries after a crash cannot tell, and does not need to tell,
+   * whether the first attempt got there.
+   *
+   * The document rows themselves are deliberately left alone, so re-saving the
+   * stage re-establishes its references exactly as any other write does. A
+   * host that un-retires a document by saving it again gets its assets
+   * recommitted, with no special path.
+   *
+   * Requires `trackAssetReferences`; see
+   * {@link DocumentAssetReferencesDisabledError} for why calling it without
+   * that throws instead of answering.
+   */
+  async withdrawAssetReferences(stageId: string): Promise<boolean> {
+    if (!this.trackAssetReferences) {
+      throw new DocumentAssetReferencesDisabledError('withdrawAssetReferences');
+    }
+    if (!isPgQueryableKey(stageId)) return false;
+    return this.writeTransaction(async (queryable) => {
+      // Same gate, in the same order, as deleteDocument: the scoped stage row
+      // is locked first, so a foreign or missing stage withdraws nothing and
+      // cannot drop another scope's reference rows. Holding that lock also
+      // serializes this against a concurrent write to the same stage, which
+      // would otherwise re-insert the rows this is removing.
+      const scoped = await queryable.query<{ id: string }>(
+        `SELECT id FROM document_stages
+          WHERE id = $1 AND ${this.scopePredicate('', 2)}
+          FOR UPDATE`,
+        this.scopeParams(stageId),
+      );
+      if (scoped.rows.length === 0) return false;
+      // Every scope of the stage -- stage-level rows and every scene's -- and
+      // the same stamping deleteDocument does, so an entry that loses its last
+      // reference drains after the collector's grace period rather than
+      // immediately.
+      await removeDocumentAssetReferences(queryable, { stageId });
+      return true;
+    });
   }
 
   async deleteDocument(stageId: string): Promise<void> {
