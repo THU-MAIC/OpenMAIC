@@ -914,6 +914,7 @@ export async function transformParsedToSlides(
             autoplay: false,
             poster: el.src || '',
           };
+          warnUnconvertibleMedia(ctx, slideIndex, 'A video poster', el.src);
           slide.elements.push(videoElement);
 
           // 上传到 OSS
