@@ -67,7 +67,10 @@ export async function generateWithGrokImage(
       model: requireModel(config.model, 'Grok Image'),
       prompt: options.prompt,
       n: 1,
-      response_format: 'url',
+      // Request base64 instead of a URL: the relay/CDN host (imgen.x.ai) may
+      // be unreachable from the server's network, so inline data avoids a
+      // second fetch through /api/proxy-media entirely.
+      response_format: 'b64_json',
     }),
   });
 

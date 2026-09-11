@@ -15,6 +15,19 @@ export async function register(): Promise<void> {
   // want; the persistence stack is Node-only.
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
+  // undici's default headers timeout is 5 minutes. Slow LLM providers can take
+  // longer than that to return the first byte on big generations (e.g. scene
+  // content), which surfaces as "AI_APICallError: Headers Timeout Error".
+  // Raise it process-wide. The npm undici package's setGlobalDispatcher targets
+  // the same global symbol that Node's built-in fetch reads, so this applies to
+  // every global fetch call in the server.
+  try {
+    const { Agent, setGlobalDispatcher } = await import('undici');
+    setGlobalDispatcher(new Agent({ headersTimeout: 15 * 60_000, bodyTimeout: 15 * 60_000 }));
+  } catch (error) {
+    console.warn('[instrumentation] Failed to raise fetch timeouts', error);
+  }
+
   // Imported dynamically so the Edge bundle never pulls in `pg`.
   const { startAssetCollectorSchedule } =
     await import('@/lib/persistence/asset-collector-schedule');
