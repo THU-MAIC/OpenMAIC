@@ -117,10 +117,13 @@ export const DEFAULT_ASSET_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
  * `document_asset_withdrawals` records that a host has retired a document
  * while keeping its rows, so the collector's one-time backfill does not walk
  * that document's stored JSON and re-reference what the retirement released.
- * A row here is the only durable trace of a retirement: the document itself
+ * A row here is the only durable trace of a retirement -- the document itself
  * looks exactly like a live one, by design, because the retirement belongs to
- * the host's own tombstone and not to this schema. A write that re-establishes
- * the document's references removes the row again (see `./references.ts`).
+ * the host's own tombstone and not to this schema -- and therefore the only
+ * thing that may make that walk skip a document. A write that re-establishes
+ * the document's references removes the row, and so does deleting the
+ * document, so the record never outlives what it describes (see
+ * `./references.ts`).
  */
 export const ASSET_PG_SCHEMA: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS asset_blobs (

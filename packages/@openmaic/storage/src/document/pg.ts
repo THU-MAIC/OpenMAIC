@@ -37,6 +37,7 @@ import type {
 import { DocumentFolderLimitError, DocumentNotFoundError, DocumentVersionError } from './types.js';
 import {
   documentAssetScopes,
+  forgetDocumentAssetWithdrawal,
   recordAssetReferenceTracking,
   recordDocumentAssetWithdrawal,
   removeDocumentAssetReferences,
@@ -1136,11 +1137,10 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
    *
    * **A withdrawal that races the collector's one-time backfill is honoured.**
    * That walk reads stored JSON, which a retirement does not change, so it
-   * would otherwise re-reference what this released: it is held off by the
-   * released entries' own stamps and, for a document that predates tracking
-   * and so had no rows to release, by the withdrawal this records. There is no
-   * ordering a host has to observe between retiring a document and finishing
-   * an upgrade.
+   * would otherwise re-reference what this released; the record this writes is
+   * what holds it off, and is the only reason the walk ever skips a document
+   * whose row is still there. There is no ordering a host has to observe
+   * between retiring a document and finishing an upgrade.
    *
    * Requires `trackAssetReferences`; see
    * {@link DocumentAssetReferencesDisabledError} for why calling it without
@@ -1200,6 +1200,11 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         );
         if (scoped.rows.length === 0) return;
         await removeDocumentAssetReferences(queryable, { stageId });
+        // A retirement record must not outlive the document it describes. Left
+        // behind, it would be inherited by whatever later claims this id: the
+        // walk would skip that document, and on a deployment where some writer
+        // does not track references there would be no write to clear it.
+        await forgetDocumentAssetWithdrawal(queryable, stageId);
         await queryable.query(
           `DELETE FROM document_stages WHERE id = $1 AND ${this.scopePredicate('', 2)}`,
           this.scopeParams(stageId),

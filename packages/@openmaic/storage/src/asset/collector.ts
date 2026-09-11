@@ -606,12 +606,14 @@ export class AssetCollector {
           // the delete already released whatever it held.
           if (!stageRow) return;
           // Retired with its rows kept. Its stored JSON still names everything
-          // it ever named, so walking it would re-reference assets the
-          // retirement released -- and, for a document that predates tracking,
-          // assets the retirement could not stamp because there were no rows
-          // to remove. Asked AFTER the stage row is locked, so a withdrawal
-          // racing this walk resolves either way: it commits first and is seen
-          // here, or it waits and then removes the rows this inserted.
+          // it ever named, so walking it would re-reference what the
+          // retirement released. This record is the ONLY reason the walk skips
+          // a document whose row is still there: a stamped entry is not a
+          // reason, because while this walk is behind, an entry an unwalked
+          // LIVE document names looks unreferenced to every other writer too.
+          // Asked AFTER the stage row is locked, so a withdrawal racing this
+          // walk resolves either way: it commits first and is seen here, or it
+          // waits and then removes the rows this inserted.
           if (await documentAssetReferencesWithdrawn(queryable, stageId)) return;
           const scenes = await queryable.query<SceneWalkRow>(
             'SELECT stage_id, id, data FROM document_scenes WHERE stage_id = $1',

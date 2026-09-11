@@ -993,6 +993,12 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
       );
       return rows.rows.map((row) => row.asset_id);
     };
+    const withdrawals = async (): Promise<string[]> => {
+      const rows = await pool.query<{ stage_id: string }>(
+        'SELECT stage_id FROM document_asset_withdrawals ORDER BY stage_id',
+      );
+      return rows.rows.map((row) => row.stage_id);
+    };
     const stampOf = async (id: string): Promise<Date | null> => {
       const rows = await pool.query<{ unreferenced_at: Date | null }>(
         'SELECT unreferenced_at FROM asset_entries WHERE id = $1',
@@ -1140,21 +1146,39 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
       ).toEqual([]);
     });
 
-    test('the backfill does not re-reference an entry any other write released', async () => {
-      // The predicate on the backfill's insert, on its own. Here the document
-      // the walk reads is NOT retired -- it was written by a store with
-      // tracking off, so it has no rows -- and the entry it names was released
-      // by a different document's deletion. Re-referencing it would leave the
-      // entry both referenced and stamped, which nothing ever clears.
-      const shared = await assets.put(principal, new Blob(['released elsewhere']));
-      await documents.saveDocument(stageWithImage('releaser-stage', 'releaser-scene', shared));
+    /**
+     * The walk must re-reference whatever a live, unwalked document names,
+     * stamp or no stamp.
+     *
+     * While the walk is behind, a stamp says only "no reference ROW exists",
+     * and an unwalked pre-tracking document has no rows by definition -- so an
+     * entry it names looks unreferenced to every other writer, and any write
+     * that drops that entry elsewhere stamps it. A walk that refused to
+     * re-reference a stamped entry would leave the live document with no row
+     * and the entry pass would delete its media. Re-referencing is the safe
+     * direction: `releaseEntries` skips a referenced entry, and if the live
+     * document later drops it for real, the stamp it already carries is past
+     * grace and it goes then.
+     *
+     * Both cases below set the stamp from a DIFFERENT document's ordinary
+     * write, which is why the withdrawal record cannot help: the live document
+     * was never retired.
+     */
+    const liveSharerKeepsItsAsset = async (
+      label: string,
+      dropTheOtherHolder: (stageId: string, sceneId: string, ref: string) => Promise<void>,
+    ): Promise<void> => {
+      const shared = await assets.put(principal, new Blob([`${label} bytes`]));
       const untracked = new PgDocumentStore(pool as Queryable, {
         withTransaction: transactionFor(pool),
       });
-      await untracked.saveDocument(stageWithImage('stale-stage', 'stale-scene', shared));
-      await documents.deleteDocument('releaser-stage');
+      // Pre-tracking and still live: named in stored JSON, no reference row.
+      await untracked.saveDocument(stageWithImage(`${label}-live`, `${label}-scene`, shared));
+      // A tracked document that also names it, and then stops.
+      await documents.saveDocument(stageWithImage(`${label}-other`, `${label}-scene`, shared));
+      await dropTheOtherHolder(`${label}-other`, `${label}-scene`, shared);
       expect(await stampOf(shared)).not.toBeNull();
-      const legacy = await assets.put(principal, new Blob(['legacy company two']));
+      const legacy = await assets.put(principal, new Blob([`${label} legacy`]));
       await pool.query(
         `UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = $1`,
         [legacy],
@@ -1169,8 +1193,29 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
         });
       expect((await collector().collectPass()).backfilledDocuments).toBeGreaterThan(0);
 
-      // The walk read `stale-stage` and left the released entry alone.
-      expect(await refsOf('stale-stage')).toEqual([]);
+      // The live document got its row back. The stamp is still there -- the
+      // backfill inserts rows and touches no lifecycle column -- so the entry
+      // is referenced AND stamped, which is precisely the state that is safe:
+      // being referenced is what protects it, and the stale stamp only decides
+      // how soon it goes once it stops being referenced.
+      expect(await refsOf(`${label}-live`)).toEqual([shared]);
+      expect(await stampOf(shared)).not.toBeNull();
+      await pool.query(
+        `UPDATE asset_entries SET unreferenced_at = now() - interval '2 hours' WHERE id = $1`,
+        [shared],
+      );
+
+      expect((await collector().collectPass()).entriesCollected).toBe(0);
+      expect((await assets.resolve(principal, shared))?.bytes).toEqual(
+        new TextEncoder().encode(`${label} bytes`),
+      );
+
+      // The other half of "safe direction": once the live document really
+      // stops naming it, the row goes and it is collected on the next pass.
+      await documents.saveDocument(
+        stageWithImage(`${label}-live`, `${label}-scene`, 'unallocated'),
+      );
+      expect(await refsOf(`${label}-live`)).toEqual([]);
       await pool.query(
         `UPDATE asset_entries SET unreferenced_at = now() - interval '2 hours' WHERE id = $1`,
         [shared],
@@ -1179,6 +1224,22 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
       expect(
         (await pool.query('SELECT id FROM asset_entries WHERE id = $1', [shared])).rows,
       ).toEqual([]);
+    };
+
+    test('a live unwalked document keeps an asset another document s deletion stamped', async () => {
+      await liveSharerKeepsItsAsset('d2', async (stageId) => {
+        await documents.deleteDocument(stageId);
+      });
+    });
+
+    test('a live unwalked document keeps an asset another document s edit stamped', async () => {
+      await liveSharerKeepsItsAsset('d3', async (stageId, sceneId) => {
+        // Same stage, same scene, no longer naming the asset.
+        await documents.putScene(
+          stageId,
+          stageWithImage(stageId, sceneId, 'unallocated').scenes[0],
+        );
+      });
     });
 
     test('withdrawing a document that predates tracking is honoured too', async () => {
@@ -1263,6 +1324,24 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
       expect(released.entriesCollected).toBe(0);
     });
 
+    test('deleting a withdrawn document takes its withdrawal record with it', async () => {
+      // The record is a fact about a document. Left behind, it would be
+      // inherited by whatever later claims the id -- the walk would skip that
+      // document, and on a deployment where some writer does not track
+      // references there would be no write to clear it.
+      const id = await assets.put(principal, new Blob(['deleted after withdrawal']));
+      await documents.saveDocument(stageWithImage('gone-stage', 'gone-scene', id));
+      await documents.withdrawAssetReferences('gone-stage');
+      expect(await withdrawals()).toEqual(['gone-stage']);
+
+      await documents.deleteDocument('gone-stage');
+
+      expect(await withdrawals()).toEqual([]);
+      expect(
+        (await pool.query('SELECT id FROM document_stages WHERE id = $1', ['gone-stage'])).rows,
+      ).toEqual([]);
+    });
+
     test('saving the stage again re-establishes its references', async () => {
       // How a host un-retires a course: no special path, just a write.
       const id = await assets.put(principal, new Blob(['restored bytes']));
@@ -1276,13 +1355,7 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
       expect(await refsOf('restore-stage')).toEqual([id]);
       expect(await stampOf(id)).toBeNull();
       // And the withdrawal is forgotten, so the walk may read it again.
-      expect(
-        (
-          await pool.query('SELECT 1 FROM document_asset_withdrawals WHERE stage_id = $1', [
-            'restore-stage',
-          ])
-        ).rows,
-      ).toEqual([]);
+      expect(await withdrawals()).toEqual([]);
     });
 
     test('an incremental write after a withdrawal re-references only its own scope', async () => {
