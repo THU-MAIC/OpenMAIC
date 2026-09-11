@@ -35,10 +35,23 @@ import type {
   StageValidator,
 } from './types.js';
 import { DocumentFolderLimitError, DocumentNotFoundError, DocumentVersionError } from './types.js';
+import {
+  documentAssetScopes,
+  forgetDocumentAssetWithdrawal,
+  recordAssetReferenceTracking,
+  recordDocumentAssetWithdrawal,
+  removeDocumentAssetReferences,
+  sceneAssetScope,
+  stageAssetScope,
+  syncDocumentAssetReferences,
+  syncStageAssetReferences,
+} from '../asset/references.js';
 import { assertJsonValue, isLosslessJsonString } from '../runtime/json-value.js';
+import { asStorageLockUnavailable } from '../runtime/pg.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
 export type { QueryResult, Queryable, WithTransaction } from '../runtime/pg.js';
+export { StorageLockUnavailableError, type StorageLockUnavailableReason } from '../runtime/pg.js';
 
 export interface PgDocumentStoreOptions {
   /**
@@ -52,6 +65,54 @@ export interface PgDocumentStoreOptions {
   validateStage?: StageValidator;
   /** Restrict writes, listings, and folders to this owner. Reads remain id-capable. */
   ownerId?: string;
+  /**
+   * Maintain the `document_asset_refs` table and the `asset_entries` lifecycle
+   * columns as a side effect of every write route. Defaults to `false`.
+   *
+   * Off by default because those are the ASSET backend's tables: a deployment
+   * that provisions documents without `ensureAssetSchema` has no such tables,
+   * and a write that referenced them would fail. A deployment that provisions
+   * both and turns this on gets server-owned asset reclamation; one that does
+   * not is byte-for-byte unaffected.
+   *
+   * Nothing about request or response shapes changes either way. The
+   * maintenance runs inside the write transactions this store already opens,
+   * so a reference row and the document write that implies it commit together
+   * or not at all.
+   */
+  trackAssetReferences?: boolean;
+}
+
+/**
+ * Bound on how long one document write transaction may wait on a lock.
+ *
+ * Mirrors the asset registry's budget, and exists for the same reason: these
+ * transactions take the stage row's `FOR UPDATE` lock, and -- when reference
+ * tracking is on -- rows the offline asset collector locks too, so an
+ * unbounded wait would let one stuck holder hang writes indefinitely.
+ */
+const DOCUMENT_WRITE_LOCK_TIMEOUT_SQL = `SET LOCAL lock_timeout = '30s'`;
+
+/**
+ * A reference-maintaining operation was called on a store that does not
+ * maintain references.
+ *
+ * Thrown rather than answered, because there is no answer that is not a lie.
+ * Returning "nothing to withdraw" from a store that never recorded anything
+ * would let a host retire a document believing its assets were released while
+ * they sit referenced forever -- the failure this whole level exists to close.
+ * Reaching it means a store was constructed without `trackAssetReferences` and
+ * then asked to do something only a tracking store can do: a programming
+ * error, not a state a deployment can be in.
+ */
+export class DocumentAssetReferencesDisabledError extends Error {
+  constructor(operation: string) {
+    super(
+      `@openmaic/storage: ${operation} requires a document store constructed with ` +
+        'trackAssetReferences: true; this store does not maintain asset references',
+    );
+    this.name = 'DocumentAssetReferencesDisabledError';
+  }
 }
 
 /** Idempotent schema for the PostgreSQL document backend. */
@@ -467,6 +528,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
   private readonly validateScene: SceneValidator;
   private readonly validateStage: StageValidator;
   private readonly ownerId: string | null;
+  private readonly trackAssetReferences: boolean;
   private readonly options: PgDocumentStoreOptions;
 
   constructor(queryable: Queryable, options: PgDocumentStoreOptions) {
@@ -485,6 +547,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
       throw new Error('@openmaic/storage: PgDocumentStore ownerId must be lossless JSON text');
     }
     this.ownerId = options.ownerId ?? null;
+    this.trackAssetReferences = options.trackAssetReferences === true;
     this.options = options;
   }
 
@@ -510,6 +573,35 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
 
   private async transaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
     return this.transactionHook(body);
+  }
+
+  /**
+   * A write transaction: the same fresh pinned connection as
+   * {@link transaction}, plus a lock-wait budget.
+   *
+   * Every write path here locks the stage row (`FOR UPDATE`) and, with
+   * reference tracking on, entry rows the asset collector also locks. A wait
+   * that outlives this bound is a stuck transaction or a lock-contention bug,
+   * and must surface as a loud error rather than hang a request for as long
+   * as the holder stays stuck. The same budget, for the same reason, as the
+   * asset registry's write transactions.
+   */
+  private async writeTransaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
+    try {
+      return await this.transactionHook(async (queryable) => {
+        await queryable.query(DOCUMENT_WRITE_LOCK_TIMEOUT_SQL);
+        return body(queryable);
+      });
+    } catch (error) {
+      // The budget above manufactures this failure, so this layer owes the
+      // caller a type for it: a host retries or alerts on contention and does
+      // neither on a genuine write error, and telling them apart should not
+      // require matching a driver's SQLSTATE. The driver's error stays as
+      // `cause`, and everything else propagates untouched.
+      const contention = asStorageLockUnavailable(error);
+      if (contention) throw contention;
+      throw error;
+    }
   }
 
   private requireOwner(operation: string): string {
@@ -666,7 +758,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     const { stageRow, sceneRows, outlineRow } = this.validateForSave(normalized);
     const stageId = stageRow.id;
 
-    await this.transaction(async (queryable) => {
+    await this.writeTransaction(async (queryable) => {
       const existingStage = await this.loadStage(queryable, stageId, 'update');
       if (existingStage && isFutureVersioned(existingStage)) {
         throw new DocumentVersionError(
@@ -720,6 +812,17 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         );
       } else {
         await queryable.query('DELETE FROM document_outlines WHERE stage_id = $1', [stageId]);
+      }
+
+      // A full save is authoritative over the whole stage, so it replaces
+      // every reference row the stage had -- including the rows of scenes this
+      // save removed above, which contribute no scope and therefore do not
+      // come back. In the same transaction as the rows it describes.
+      if (this.trackAssetReferences) {
+        await syncStageAssetReferences(queryable, {
+          stageId,
+          scopes: documentAssetScopes({ stage: stageRow, scenes: sceneRows }),
+        });
       }
     });
   }
@@ -968,8 +1071,147 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     }));
   }
 
+  /**
+   * Declare that every document writer on this database maintains asset
+   * references, without waiting for a write to prove it.
+   *
+   * The collector refuses its entry level until something has recorded that a
+   * reference-maintaining store exists, because an empty reference table
+   * cannot be told apart from documents that reference nothing. That marker is
+   * otherwise written only as a side effect of a reference-maintaining
+   * document write -- never by `ensureAssetSchema` and never by the backfill --
+   * so a freshly installed deployment, or an existing one that has just turned
+   * tracking on, refuses on every scheduled pass until somebody happens to
+   * save a document. The backfill cannot even start, nothing is reclaimed, and
+   * a host watching for that refusal reads a healthy deployment as a broken
+   * configuration.
+   *
+   * Calling this at startup, once the schemas are ensured, makes the entry
+   * level and the backfill eligible immediately. It is a **statement about the
+   * deployment**, not about this store: it says that every writer against this
+   * database is configured to maintain references, which only the host
+   * assembling them can know. A host that cannot say that must not call it --
+   * the refusal it would silence is the one thing standing between a
+   * half-configured deployment and deleting live media.
+   *
+   * Idempotent, and it has no other effect: no reference row, no lifecycle
+   * column, no document. Requires `trackAssetReferences`, because a store that
+   * does not maintain references cannot honestly declare that anything does.
+   */
+  async declareAssetReferenceTracking(): Promise<void> {
+    if (!this.trackAssetReferences) {
+      throw new DocumentAssetReferencesDisabledError('declareAssetReferenceTracking');
+    }
+    // The same upsert the write paths run, in the same shape of transaction --
+    // one statement, and the write paths' lock-wait budget, so two hosts
+    // starting at once cannot leave one of them waiting unboundedly on a row
+    // that is contended for a moment at boot.
+    await this.writeTransaction((queryable) => recordAssetReferenceTracking(queryable));
+  }
+
+  /**
+   * Withdraw every asset reference a document holds, without deleting the
+   * document.
+   *
+   * For a host that retires a document by TOMBSTONE rather than by deletion:
+   * one whose own table marks the id as permanently retired, and whose
+   * tombstone has to outlive the document row it points at. Such a host can
+   * never call {@link deleteDocument} -- doing so would take the tombstone
+   * with it and let the retired id be claimed again -- so its retired
+   * documents would otherwise keep every asset they name alive forever. This
+   * is the half of `deleteDocument` that releases assets, on its own.
+   *
+   * Answers whether this store found the document: `false` for an id that is
+   * absent or belongs to another scope, which are indistinguishable here for
+   * the same reason they are in `deleteDocument`. It is NOT "something
+   * changed" -- the document row is untouched, so a second call finds the same
+   * document and answers **`true`** again with nothing left to remove. The
+   * operation is idempotent in effect, which is what a retirement path needs:
+   * a host that retries after a crash cannot tell, and does not need to tell,
+   * whether the first attempt got there.
+   *
+   * The document rows themselves are deliberately left alone, so re-saving the
+   * stage re-establishes its references exactly as any other write does. A
+   * host that un-retires a document by saving it again gets its assets
+   * recommitted, with no special path.
+   *
+   * **A withdrawal that races the collector's one-time backfill is honoured.**
+   * That walk reads stored JSON, which a retirement does not change, so it
+   * would otherwise re-reference what this released; the record this writes is
+   * what holds it off, and is the only reason the walk ever skips a document
+   * whose row is still there. There is no ordering a host has to observe
+   * between retiring a document and finishing an upgrade.
+   *
+   * Requires `trackAssetReferences`; see
+   * {@link DocumentAssetReferencesDisabledError} for why calling it without
+   * that throws instead of answering.
+   */
+  async withdrawAssetReferences(stageId: string): Promise<boolean> {
+    if (!this.trackAssetReferences) {
+      throw new DocumentAssetReferencesDisabledError('withdrawAssetReferences');
+    }
+    if (!isPgQueryableKey(stageId)) return false;
+    return this.writeTransaction(async (queryable) => {
+      // Same gate, in the same order, as deleteDocument: the scoped stage row
+      // is locked first, so a foreign or missing stage withdraws nothing and
+      // cannot drop another scope's reference rows. Holding that lock also
+      // serializes this against a concurrent write to the same stage, which
+      // would otherwise re-insert the rows this is removing.
+      const scoped = await queryable.query<{ id: string }>(
+        `SELECT id FROM document_stages
+          WHERE id = $1 AND ${this.scopePredicate('', 2)}
+          FOR UPDATE`,
+        this.scopeParams(stageId),
+      );
+      if (scoped.rows.length === 0) return false;
+      // Every scope of the stage -- stage-level rows and every scene's -- and
+      // the same stamping deleteDocument does, so an entry that loses its last
+      // reference drains after the collector's grace period rather than
+      // immediately.
+      await removeDocumentAssetReferences(queryable, { stageId });
+      // The document stays, which is the whole point, so the retirement needs
+      // a trace of its own: the collector's one-time backfill reads stored
+      // JSON, and a retired document's JSON still names everything it ever
+      // named. Recorded under the stage lock taken above, so a withdrawal and
+      // that walk cannot interleave into a re-reference.
+      await recordDocumentAssetWithdrawal(queryable, stageId);
+      return true;
+    });
+  }
+
   async deleteDocument(stageId: string): Promise<void> {
     if (!isPgQueryableKey(stageId)) return;
+    if (this.trackAssetReferences) {
+      await this.writeTransaction(async (queryable) => {
+        // Asset reference rows carry no foreign key to `document_stages` --
+        // they belong to the asset backend, which a deployment may not even
+        // provision -- so nothing cascades them away and this delete has to
+        // remove them itself. It also has to STAMP the entries that lose their
+        // last reference, which a cascade could never do: without the stamp a
+        // deleted course's entries would sit referenced-by-nothing forever.
+        //
+        // Gated on the scoped stage first: a foreign or missing stage deletes
+        // no document, and must not drop another scope's reference rows.
+        const scoped = await queryable.query<{ id: string }>(
+          `SELECT id FROM document_stages
+            WHERE id = $1 AND ${this.scopePredicate('', 2)}
+            FOR UPDATE`,
+          this.scopeParams(stageId),
+        );
+        if (scoped.rows.length === 0) return;
+        await removeDocumentAssetReferences(queryable, { stageId });
+        // A retirement record must not outlive the document it describes. Left
+        // behind, it would be inherited by whatever later claims this id: the
+        // walk would skip that document, and on a deployment where some writer
+        // does not track references there would be no write to clear it.
+        await forgetDocumentAssetWithdrawal(queryable, stageId);
+        await queryable.query(
+          `DELETE FROM document_stages WHERE id = $1 AND ${this.scopePredicate('', 2)}`,
+          this.scopeParams(stageId),
+        );
+      });
+      return;
+    }
     // One statement; both child tables are removed by their FK cascades.
     await this.queryable.query(
       `DELETE FROM document_stages WHERE id = $1 AND ${this.scopePredicate('', 2)}`,
@@ -987,7 +1229,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     }
     const stageRow = { ...stage, [DSL_VERSION_KEY]: DSL_VERSION } as StageRow<TStage>;
     assertJsonValue(stageRow, `document stage ${JSON.stringify(stageId)}`);
-    await this.transaction(async (queryable) => {
+    await this.writeTransaction(async (queryable) => {
       const stored = await this.loadStage(queryable, stageId, 'update');
       if (!stored) {
         throw new DocumentNotFoundError(
@@ -999,6 +1241,15 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         throw this.currentVersionError('putStage into', stageId, stored);
       }
       await this.persistStage(queryable, stageRow);
+      // Stage-level rows only: this write cannot have changed what any scene
+      // holds, so touching a scene's rows here would drop references the
+      // scenes still carry.
+      if (this.trackAssetReferences) {
+        await syncDocumentAssetReferences(queryable, {
+          stageId,
+          scope: stageAssetScope(stageRow),
+        });
+      }
     });
   }
 
@@ -1006,7 +1257,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     assertValid(this.validateScene(scene), `scene ${scene.id}`);
     assertStorableScene(scene, stageId);
     assertJsonValue(scene, `document scene ${JSON.stringify(scene.id)}`);
-    await this.transaction(async (queryable) => {
+    await this.writeTransaction(async (queryable) => {
       const stored = await this.loadStage(queryable, stageId, 'update');
       if (!stored) {
         throw new DocumentNotFoundError(
@@ -1030,6 +1281,15 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
           encodeJson(scene, `document scene ${JSON.stringify(scene.id)}`),
         ],
       );
+      // This scene's rows only. The media write-back path writes one scene at
+      // a time, so this is the write that first names a freshly allocated id
+      // and therefore the write that commits its entry.
+      if (this.trackAssetReferences) {
+        await syncDocumentAssetReferences(queryable, {
+          stageId,
+          scope: sceneAssetScope(scene.id, scene),
+        });
+      }
     });
   }
 
@@ -1074,7 +1334,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
 
   async deleteScene(stageId: string, sceneId: string): Promise<void> {
     if (!isPgQueryableKey(stageId) || !isPgQueryableKey(sceneId)) return;
-    await this.transaction(async (queryable) => {
+    await this.writeTransaction(async (queryable) => {
       const stored = await this.loadStage(queryable, stageId, 'update');
       if (!stored) return;
       if (dslVersionOf(stored) !== DSL_VERSION) {
@@ -1084,6 +1344,9 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         stageId,
         sceneId,
       ]);
+      if (this.trackAssetReferences) {
+        await removeDocumentAssetReferences(queryable, { stageId, sceneId });
+      }
     });
   }
 }
