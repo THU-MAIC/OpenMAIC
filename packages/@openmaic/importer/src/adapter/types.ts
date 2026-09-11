@@ -298,6 +298,9 @@ export interface Math {
   picBase64: string;
   order: number;
   text?: string;
+  /** MTEF conversion succeeded but approximated a construct (PILE/MATRIX …);
+   *  the LaTeX renders but is semantically flattened — surfaces a warning. */
+  degraded?: boolean;
 }
 
 export type BaseElement = Shape | Text | Image | Table | Chart | Video | Audio | Diagram | Math;

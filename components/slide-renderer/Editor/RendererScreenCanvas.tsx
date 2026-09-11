@@ -12,6 +12,7 @@ import { useResolvedSlideMedia, type ResolvedSlideMediaEntry } from '../use-reso
 import { retryMediaTask } from '@/lib/media/media-orchestrator';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
+import { mediaFailureNoticeKey } from '@/lib/media/media-failure';
 import { mediaResolutionCanRetry, type MediaResolution } from '@/lib/media/resolve-media-ref';
 import { SCREEN_ELEMENT_ID_PREFIX } from '../element-dom';
 
@@ -43,6 +44,8 @@ function PlaybackVideoContent({
   const showDisabled = media?.resolution.kind === 'disabled';
   const showError = media?.resolution.kind === 'failed';
   const canRetry = mediaResolutionCanRetry(media?.resolution);
+  // A refusal shows why instead of a Retry that would fail the same way.
+  const failureNotice = mediaFailureNoticeKey(task?.errorCode);
 
   useEffect(() => {
     videoRef.current?.pause();
@@ -107,12 +110,13 @@ function PlaybackVideoContent({
   if (showError && media?.resolution.kind === 'failed') {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 rounded bg-red-50 dark:bg-red-900/20">
-        {task?.errorCode === 'CONTENT_SENSITIVE' ? (
+        {failureNotice ? (
           <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
             <ShieldAlert className="h-3 w-3 shrink-0" />
-            <span>{t('settings.mediaContentSensitive')}</span>
+            <span>{t(failureNotice)}</span>
           </div>
-        ) : canRetry ? (
+        ) : null}
+        {canRetry ? (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -207,6 +211,8 @@ export function PlaybackImageContent({
   const task = media?.task;
   const state = getPlaybackImageState(media?.resolution ?? { kind: 'placeholder' });
   const canRetry = mediaResolutionCanRetry(media?.resolution);
+  // A refusal shows why instead of a Retry that would fail the same way.
+  const failureNotice = mediaFailureNoticeKey(task?.errorCode);
 
   if (state === 'pending') {
     return (
@@ -245,12 +251,13 @@ export function PlaybackImageContent({
         className="flex h-full w-full flex-col items-center justify-center gap-1.5 bg-red-50 dark:bg-red-900/20"
         data-media-state="failed"
       >
-        {task?.errorCode === 'CONTENT_SENSITIVE' ? (
+        {failureNotice ? (
           <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
             <ShieldAlert className="h-3 w-3 shrink-0" />
-            <span>{t('settings.mediaContentSensitive')}</span>
+            <span>{t(failureNotice)}</span>
           </div>
-        ) : canRetry ? (
+        ) : null}
+        {canRetry ? (
           <button
             onClick={(event) => {
               event.stopPropagation();

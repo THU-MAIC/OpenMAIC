@@ -9,8 +9,8 @@ export interface ProHomeSessionItem {
   readonly stageId: string;
   readonly prompt: string;
   /**
-   * The name the user gave this chat, if any. An override over the title
-   * derived from `prompt` — see `lib/workbench/session-title`.
+   * The stored automatic or manual title, if any. It takes precedence over the
+   * fallback derived from `prompt` — see `lib/workbench/session-title`.
    */
   readonly title?: string | null;
   readonly status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';

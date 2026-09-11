@@ -1,6 +1,7 @@
 /** Package installed skills for portable download. */
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { inflateRawSync } from 'node:zlib';
 import JSZip from 'jszip';
 import { dump as dumpYaml, load as loadYaml } from 'js-yaml';
 import { UserSkillError, validateUserSkillInput, type UserSkillFields } from '@openmaic/storage';
@@ -107,6 +108,56 @@ export function parseUserSkillMarkdown(markdown: string): UserSkillUpload {
   }
 }
 
+/** SKILL.md byte ceiling: the 64 KiB content column plus frontmatter headroom. */
+const maxSkillMdBytes = 70_000;
+
+/**
+ * The JSZip internals surface of one loaded entry — the same surface the
+ * declared-size check below reads. `loadAsync` trusts the central directory
+ * only (the local header's size copies are skipped) and eagerly slices the
+ * entry's compressed bytes into `compressedContent` (jszip 3.10.1
+ * `zipEntry.js`/`compressedObject.js`), so the raw stream is available without
+ * inflating it. In a hand-built zip every field here is attacker controlled.
+ */
+type LoadedZipEntryData = {
+  uncompressedSize?: number;
+  compression?: { magic?: string };
+  compressedContent?: Uint8Array;
+};
+
+/**
+ * Decode the SKILL.md entry with a hard output cap instead of `async()`.
+ * `uncompressedSize` is a declaration, not a measurement: a malicious zip
+ * states a tiny size while its deflate stream expands arbitrarily, and JSZip
+ * inflates the real stream first (its own length comparison fires only on the
+ * stream's end event, after the memory is spent). The upload route caps the
+ * archive at 1 MiB and deflate expands up to ~1032:1, so one request could
+ * otherwise grow ~1 GiB in the server process. `maxOutputLength` makes zlib
+ * abort the moment output crosses the cap, bounding expansion no matter what
+ * the headers claim. STORE entries (the only other method JSZip registers,
+ * magic `\x00\x00`) carry the content verbatim in `compressedContent`, so they
+ * are length checked directly, never inflated.
+ */
+function decodeSkillMdEntry(entry: JSZip.JSZipObject): string {
+  const data = (entry as unknown as { _data?: LoadedZipEntryData })._data;
+  const compressed = data?.compressedContent;
+  if (!compressed) throw new UserSkillUploadError('The skill archive is not a valid zip file.');
+  if (data.compression?.magic === '\u0008\u0000') {
+    try {
+      return inflateRawSync(compressed, { maxOutputLength: maxSkillMdBytes }).toString('utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE') {
+        throw new UserSkillUploadError('The archive SKILL.md is too large.');
+      }
+      throw error; // corrupt stream — the caller reports it as an invalid zip
+    }
+  }
+  if (compressed.byteLength > maxSkillMdBytes) {
+    throw new UserSkillUploadError('The archive SKILL.md is too large.');
+  }
+  return Buffer.from(compressed).toString('utf8');
+}
+
 /** Read the single SKILL.md from an exported owner-skill zip. */
 export async function parseUserSkillZip(bytes: Buffer): Promise<UserSkillUpload> {
   try {
@@ -117,11 +168,13 @@ export async function parseUserSkillZip(bytes: Buffer): Promise<UserSkillUpload>
     if (skillFiles.length !== 1) {
       throw new UserSkillUploadError('The archive must contain exactly one SKILL.md file.');
     }
-    const metadata = (skillFiles[0] as unknown as { _data?: { uncompressedSize?: number } })._data;
-    if ((metadata?.uncompressedSize ?? 0) > 70_000) {
+    const metadata = (skillFiles[0] as unknown as { _data?: LoadedZipEntryData })._data;
+    // Honest zips are refused here without inflating; the decode below bounds
+    // the ones whose declared size lies.
+    if ((metadata?.uncompressedSize ?? 0) > maxSkillMdBytes) {
       throw new UserSkillUploadError('The archive SKILL.md is too large.');
     }
-    return parseUserSkillMarkdown(await skillFiles[0]!.async('string'));
+    return parseUserSkillMarkdown(decodeSkillMdEntry(skillFiles[0]!));
   } catch (error) {
     if (error instanceof UserSkillError || error instanceof UserSkillUploadError) throw error;
     throw new UserSkillUploadError('The skill archive is not a valid zip file.');

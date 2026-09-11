@@ -1,6 +1,7 @@
 import '@/lib/persistence/bootstrap';
 
-import { BrowserAssetStore, toAssetId } from '@openmaic/storage';
+import type { AssetMeta, BinaryBlob } from '@openmaic/dsl';
+import { BrowserAssetStore } from '@openmaic/storage';
 import {
   isAssetPoolServerBacked,
   registerAssetPoolStorageResetHook,
@@ -12,6 +13,7 @@ import {
   releaseStageRealmPresenceBinding,
 } from './stage-realm-presence';
 import { bindAssetReplacementChannel, observeAssetReplacements } from './asset-replacement-events';
+import { clearAssetStorageFull } from './asset-storage-full';
 
 const ASSET_POOL_DATABASE_NAME = 'maic-asset-pool';
 let pool: AssetPoolStore | undefined;
@@ -82,8 +84,42 @@ export function getAssetPool(): AssetPoolStore {
   })());
 }
 
-export function removeAsset(ref: string): Promise<void> {
-  return getAssetPool().remove(toAssetId(ref));
+export interface PutAssetOptions {
+  /**
+   * The course these bytes belong to.
+   *
+   * Supplied so a write that goes through can retire that course's "the store
+   * had no room" note. Optional because a caller outside a course has nothing
+   * to retire, not because it is discretionary.
+   */
+  readonly stageId?: string;
+}
+
+/**
+ * Store bytes and get back the reference a document may hold.
+ *
+ * Callers go through this rather than through the pool object so URL leasing
+ * and release stay owned by `use-asset-url`, which is the only module allowed
+ * to hold a resolved URL's lifetime.
+ *
+ * A write that the store accepted is also the one thing that disproves "the
+ * store is full", and that is stated here rather than at each caller. It used
+ * to be enforced at three separate sites under slightly different conditions,
+ * which made it a convention: the next path that writes to the pool and forgets
+ * would leave every course standing down its generation while the store had
+ * room. There is one place a successful write can happen, so there is one place
+ * the note is retired.
+ */
+export async function putAsset(
+  data: BinaryBlob,
+  meta?: AssetMeta,
+  options?: PutAssetOptions,
+): Promise<string> {
+  const ref = await getAssetPool().put(data, meta);
+  // Best-effort device metadata, and never allowed to turn a stored asset into
+  // a failed one: the bytes are in the pool either way.
+  if (options?.stageId) await clearAssetStorageFull(options.stageId);
+  return ref;
 }
 
 function deleteAssetPoolDatabase(): Promise<void> {

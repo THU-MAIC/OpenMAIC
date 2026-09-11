@@ -100,6 +100,29 @@ describe('buildExportZip CTA boundary', () => {
 });
 
 describe('buildExportZip app boundary', () => {
+  it.each([
+    ['persisted name', { document: { stage: { name: 'Renamed course' } } }, 'Renamed course'],
+    ['missing document', undefined, 'Stage'],
+    ['empty persisted name', { document: { stage: { name: '' } } }, 'Stage'],
+  ])(
+    'uses the same resolved name for the compiler and download: %s',
+    async (_case, document, name) => {
+      mocks.accessDocument.mockResolvedValue(document);
+      const result = await buildExportZip({ resolution: '720p', locale: 'en-US' });
+      expect(result.stageName).toBe(name);
+      expect(mocks.compileVideoTimeline).toHaveBeenCalledWith(
+        expect.objectContaining({ stage: { id: 'stage-1', name } }),
+        expect.anything(),
+      );
+    },
+  );
+
+  it('preserves the in-memory name fallback when document storage is unavailable', async () => {
+    mocks.accessDocument.mockRejectedValue(new Error('offline'));
+    const result = await buildExportZip({ resolution: '720p', locale: 'en-US' });
+    expect(result.stageName).toBe('Stage');
+  });
+
   it('premeasures Quiz layout with the selected resolution/locale and injects the sync probe', async () => {
     mocks.accessDocument.mockResolvedValue(undefined);
     const quizLayout = { measureQuestionList: vi.fn() };

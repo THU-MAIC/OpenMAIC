@@ -631,6 +631,42 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/glm.svg',
     models: [
+      // GLM-5.3 Series - Flagship; thinking cannot be disabled, only scaled
+      // via reasoning_effort low/high/max (the API rejects "disabled").
+      {
+        id: 'glm-5.3',
+        name: 'GLM-5.3',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+      // GLM-5.3-Flash - Native multimodal (320B MoE, 18B active); thinking is
+      // always on with the same low/high/max effort scale as GLM-5.3.
+      {
+        id: 'glm-5.3-flash',
+        name: 'GLM-5.3-Flash',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
       // GLM-5.2 Series - Long-horizon coding model
       {
         id: 'glm-5.2',
@@ -918,6 +954,22 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           streaming: true,
           tools: true,
           vision: false,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'deepseek-v4-flash-vision-exp',
+        name: 'DeepSeek V4 Flash Vision (Exp)',
+        contextWindow: 1048576,
+        outputWindow: 393216,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
           thinking: {
             toggleable: true,
             budgetAdjustable: true,
@@ -1633,6 +1685,15 @@ function getCompatThinkingBodyParams(
     case 'glm': {
       if (capability.control === 'effort') {
         if (mode === 'disabled' || config.effort === 'none') {
+          // Forced-thinking models (GLM-5.3/5.3-Flash) reject
+          // {type:'disabled'} ("该模型始终思考,不支持关闭思考"); use the
+          // lightest effort instead of failing the whole request.
+          if (capability.toggleable === false) {
+            const lightest = capability.effortValues?.[0];
+            return lightest
+              ? { thinking: { type: 'enabled' }, reasoning_effort: lightest }
+              : undefined;
+          }
           return { thinking: { type: 'disabled' } };
         }
 
@@ -1878,23 +1939,58 @@ function openAIStreamErrorStatus(error: Record<string, unknown>): number {
   return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500;
 }
 
+/**
+ * Non-streaming LLM completions only receive response headers once the whole
+ * completion exists, and thinking models routinely think for more than five
+ * minutes on a large prompt (observed: glm-5.2 at reasoning_effort=max on
+ * scene generation). undici's default 300 s headers timeout turns that into
+ * `Cannot connect to API: Headers Timeout Error` at exactly 300 s, before the
+ * model ever answers. LLM-bound fetches attach this dispatcher instead, with
+ * a budget that covers the slowest thinking model.
+ */
+export const LLM_FETCH_TIMEOUT_MS = 15 * 60 * 1000;
+
+let llmDispatcherPromise: Promise<unknown> | undefined;
+let warnedLlmDispatcherFailure = false;
+
+function getLlmDispatcher(): Promise<unknown> {
+  // `??=` caches whatever promise this produces — including a rejected one.
+  // Drop the cache on failure so a single transient undici import (or Agent
+  // construction) error can't brick every transportFetch call for the life
+  // of the worker; the next call retries instead of reusing the rejection.
+  llmDispatcherPromise ??= import(/* webpackIgnore: true */ 'undici')
+    .then(
+      ({ Agent }) =>
+        new Agent({
+          headersTimeout: LLM_FETCH_TIMEOUT_MS,
+          bodyTimeout: LLM_FETCH_TIMEOUT_MS,
+        }),
+    )
+    .catch((error: unknown) => {
+      llmDispatcherPromise = undefined;
+      throw error;
+    });
+  return llmDispatcherPromise;
+}
+
 async function fetchCustomOpenAIChat(
   input: RequestInfo | URL,
   init?: RequestInit,
+  fetchImpl: typeof fetch = (fetchInput, fetchInit) => globalThis.fetch(fetchInput, fetchInit),
 ): Promise<Response> {
   const requestUrl = requestUrlString(input);
   if (!requestUrl.includes('/chat/completions') || !init?.body || typeof init.body !== 'string') {
-    return globalThis.fetch(input, init);
+    return fetchImpl(input, init);
   }
 
   let requestBody: Record<string, unknown>;
   try {
     requestBody = JSON.parse(init.body) as Record<string, unknown>;
   } catch {
-    return globalThis.fetch(input, init);
+    return fetchImpl(input, init);
   }
 
-  if (requestBody.stream === true) return globalThis.fetch(input, init);
+  if (requestBody.stream === true) return fetchImpl(input, init);
 
   const streamOptions =
     requestBody.stream_options &&
@@ -1903,7 +1999,7 @@ async function fetchCustomOpenAIChat(
       ? (requestBody.stream_options as Record<string, unknown>)
       : {};
 
-  const response = await globalThis.fetch(input, {
+  const response = await fetchImpl(input, {
     ...init,
     body: JSON.stringify({
       ...requestBody,
@@ -2062,14 +2158,55 @@ export function getModel(config: ModelConfig): ModelWithInfo {
     config.baseUrl || provider?.defaultBaseUrl || undefined,
   );
 
+  // The outbound transport. resolveModel installs a redirect-validating fetch
+  // here so every hop of a request to a client-supplied base URL is re-checked;
+  // without one, requests go through the global fetch exactly as before
+  // (resolved at call time, so tests that stub it keep working).
+  const baseTransportFetch: typeof fetch =
+    config.fetchImpl ?? ((fetchInput, fetchInit) => globalThis.fetch(fetchInput, fetchInit));
+  // See LLM_FETCH_TIMEOUT_MS: every outbound LLM request — whatever transport
+  // it ends up on — carries the extended-timeout dispatcher.
+  const transportFetch: typeof fetch = async (fetchInput, fetchInit) => {
+    // A caller-supplied dispatcher (config.fetchImpl may carry one) wins over
+    // ours; only inject ours when the request doesn't already carry one.
+    if ((fetchInit as (RequestInit & { dispatcher?: unknown }) | undefined)?.dispatcher) {
+      return baseTransportFetch(fetchInput, fetchInit);
+    }
+    let dispatcher: unknown;
+    try {
+      dispatcher = await getLlmDispatcher();
+      warnedLlmDispatcherFailure = false;
+    } catch (error) {
+      // No dispatcher still beats failing the call outright — the request
+      // just rides undici's default 300 s cap, as it did before this seam.
+      // Warn once per failure episode so a persistent failure (not just a
+      // transient one) stays visible: this mitigation silently disengaging
+      // looks exactly like the original 300 s incident.
+      if (!warnedLlmDispatcherFailure) {
+        warnedLlmDispatcherFailure = true;
+        log.warn(
+          '[LLM transport] dispatcher unavailable — requests fall back to undici defaults (300 s headers timeout):',
+          error,
+        );
+      }
+      return baseTransportFetch(fetchInput, fetchInit);
+    }
+    return baseTransportFetch(fetchInput, {
+      ...fetchInit,
+      dispatcher,
+    } as RequestInit);
+  };
+
   let model: LanguageModel;
 
   switch (providerType) {
     case 'azure': {
-      const azure = createAzure({
+      const azureOptions: Parameters<typeof createAzure>[0] = {
         apiKey: effectiveApiKey,
         baseURL: normalizeAzureBaseUrl(effectiveBaseUrl),
-      });
+      };
+      azureOptions.fetch = transportFetch;
+      const azure = createAzure(azureOptions);
       model = azure(config.modelId);
       break;
     }
@@ -2138,8 +2275,8 @@ export function getModel(config: ModelConfig): ModelWithInfo {
             }
           }
           const response = useStreamingChatCompat
-            ? await fetchCustomOpenAIChat(url, init)
-            : await globalThis.fetch(url, init);
+            ? await fetchCustomOpenAIChat(url, init, transportFetch)
+            : await transportFetch(url, init);
 
           // Recover reasoning that @ai-sdk/openai's chat schema drops: rewrite
           // streamed `reasoning_content` deltas into an inline <think> block
@@ -2197,6 +2334,10 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           return response;
         };
         openaiOptions.fetch = compatFetch as typeof globalThis.fetch;
+      } else {
+        // Native OpenAI / Responses transport: route requests through the
+        // shared transport so they carry the extended-timeout dispatcher too.
+        openaiOptions.fetch = transportFetch;
       }
 
       const openai = createOpenAI(openaiOptions);
@@ -2256,8 +2397,10 @@ export function getModel(config: ModelConfig): ModelWithInfo {
             }
           }
 
-          return globalThis.fetch(url, init);
+          return transportFetch(url, init);
         }) as typeof globalThis.fetch;
+      } else {
+        anthropicOptions.fetch = transportFetch;
       }
 
       const anthropic = createAnthropic(anthropicOptions);
@@ -2271,6 +2414,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         region: resolveBedrockRegion(),
         baseURL: effectiveBaseUrl,
         credentialProvider: createBedrockCredentialProvider(),
+        fetch: transportFetch,
       });
       model = bedrock(config.modelId);
       break;
@@ -2288,19 +2432,29 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           const { ProxyAgent, fetch: undiciFetch } = (await import(
             /* webpackIgnore: true */ 'undici'
           )) as {
-            ProxyAgent: new (proxyUrl: string) => unknown;
+            ProxyAgent: new (options: { uri: string } & Record<string, unknown>) => unknown;
             fetch: (
               input: string | URL | Request,
               init?: Record<string, unknown>,
             ) => Promise<unknown>;
           };
-          agent ??= new ProxyAgent(proxy);
+          // Same budget as the direct dispatcher: proxied or not, this is an
+          // LLM request whose headers may only arrive after minutes of thinking.
+          // (http/https proxies only — undici's Socks5ProxyAgent drops these
+          // options, so socks5:// proxies keep undici's default 300 s cap.)
+          agent ??= new ProxyAgent({
+            uri: proxy,
+            headersTimeout: LLM_FETCH_TIMEOUT_MS,
+            bodyTimeout: LLM_FETCH_TIMEOUT_MS,
+          });
           const response = await undiciFetch(input, {
             ...(init as Record<string, unknown>),
             dispatcher: agent,
           });
           return response as Response;
         }) as typeof fetch;
+      } else {
+        googleOptions.fetch = transportFetch;
       }
       const google = createGoogleGenerativeAI(googleOptions);
       model = google.chat(config.modelId);

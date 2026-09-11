@@ -418,12 +418,32 @@ function bytesToDataUrl(bytes: Uint8Array, mediaPath: string): string {
   return toDataUrl(base64, getMimeType(mediaPath));
 }
 
+/**
+ * Load a data-URL image, resolving to `null` when it can't be decoded.
+ * Server-side DOM shims (linkedom) never fire `load`/`error`, which would hang the import,
+ * so prefer `decode()` and fall back to a timeout when absent.
+ */
 function loadImageElement(dataUrl: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const img = document.createElement('img');
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
+    let settled = false;
+    const finish = (value: HTMLImageElement | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    img.onload = () => finish(img);
+    img.onerror = () => finish(null);
     img.src = dataUrl;
+    if (typeof img.decode === 'function') {
+      img
+        .decode()
+        .then(() => finish(img))
+        .catch(() => finish(null));
+    } else {
+      // No decode(): give load/error a short window, then resolve null (shims fire neither).
+      setTimeout(() => finish(null), 250);
+    }
   });
 }
 

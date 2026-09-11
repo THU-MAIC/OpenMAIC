@@ -24,6 +24,39 @@ function walkRelative(dir: string, base = dir): string[] {
   return out;
 }
 
+/**
+ * Offset of `name`'s record in the zip central directory. JSZip reads entry
+ * sizes only from there (never from the local header), so tests forge declared
+ * sizes at this offset to simulate the lying-header attack.
+ */
+function centralDirectoryEntry(bytes: Buffer, name: string): number {
+  let eocd = -1;
+  for (let i = bytes.length - 22; i >= 0; i -= 1) {
+    if (bytes.readUInt32LE(i) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd === -1) throw new Error('test zip has no end-of-central-directory record');
+  let offset = bytes.readUInt32LE(eocd + 16);
+  const count = bytes.readUInt16LE(eocd + 10);
+  for (let entry = 0; entry < count; entry += 1) {
+    if (bytes.readUInt32LE(offset) !== 0x02014b50) {
+      throw new Error('test zip has a broken central directory');
+    }
+    const nameLength = bytes.readUInt16LE(offset + 28);
+    const extraLength = bytes.readUInt16LE(offset + 30);
+    const commentLength = bytes.readUInt16LE(offset + 32);
+    if (bytes.toString('utf8', offset + 46, offset + 46 + nameLength) === name) return offset;
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  throw new Error(`test zip has no central-directory entry for ${name}`);
+}
+
+function skillMarkdown(body: string): string {
+  return `---\nname: my-skill\ntitle: Title\ndescription: Description\n---\n\n${body}`;
+}
+
 describe('skill export zips', () => {
   it('packages the shipped OpenMAIC skill verbatim under openmaic/', async () => {
     const zip = await buildOpenClawSkillZip();
@@ -88,5 +121,76 @@ describe('skill export zips', () => {
     await expect(
       parseUserSkillZip(await ambiguous.generateAsync({ type: 'nodebuffer' })),
     ).rejects.toThrow(/exactly one SKILL\.md/);
+  });
+
+  it('rejects an honest zip whose SKILL.md exceeds the size cap', async () => {
+    const zip = new JSZip();
+    zip.file('my-skill/SKILL.md', skillMarkdown('x'.repeat(75_000)));
+    await expect(
+      parseUserSkillZip(await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })),
+    ).rejects.toThrow('The archive SKILL.md is too large.');
+  });
+
+  it('rejects a forged-header zip bomb whose declared size hides the real inflation', async () => {
+    // ~100 KB of body compresses to a few hundred bytes, so the bomb itself
+    // slips under the upload route's 1 MiB archive cap with room to spare.
+    const zip = new JSZip();
+    zip.file('my-skill/SKILL.md', skillMarkdown('x'.repeat(100 * 1024)));
+    const bomb = Buffer.from(
+      await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }),
+    );
+    // Forge the central directory's declared uncompressedSize (offset 24 in the
+    // entry record) to a small honest-looking value.
+    bomb.writeUInt32LE(123, centralDirectoryEntry(bomb, 'my-skill/SKILL.md') + 24);
+    // The forgery must take, or the test no longer exercises the attack path.
+    const reloaded = await JSZip.loadAsync(bomb);
+    const forged = reloaded.file('my-skill/SKILL.md') as unknown as {
+      _data: { uncompressedSize: number };
+    };
+    expect(forged._data.uncompressedSize).toBe(123);
+    await expect(parseUserSkillZip(bomb)).rejects.toThrow('The archive SKILL.md is too large.');
+  });
+
+  it('parses STORE (uncompressed) skill zips', async () => {
+    const zip = new JSZip();
+    zip.file('my-skill/SKILL.md', skillMarkdown('Stored instructions.'));
+    const stored = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' });
+    await expect(parseUserSkillZip(stored)).resolves.toEqual({
+      name: 'my-skill',
+      title: 'Title',
+      description: 'Description',
+      content: 'Stored instructions.',
+    });
+  });
+
+  it('rejects a forged STORE entry whose declared size hides real bytes', async () => {
+    // STORE never inflates, so its only guard is the byte-length check on the
+    // actual slice — the forgery below must not make that check read 123.
+    const zip = new JSZip();
+    zip.file('my-skill/SKILL.md', skillMarkdown('x'.repeat(80_000)));
+    const bomb = Buffer.from(await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' }));
+    bomb.writeUInt32LE(123, centralDirectoryEntry(bomb, 'my-skill/SKILL.md') + 24);
+    const reloaded = await JSZip.loadAsync(bomb);
+    const forged = reloaded.file('my-skill/SKILL.md') as unknown as {
+      _data: { uncompressedSize: number };
+    };
+    expect(forged._data.uncompressedSize).toBe(123);
+    await expect(parseUserSkillZip(bomb)).rejects.toThrow('The archive SKILL.md is too large.');
+  });
+
+  it('reports a corrupt deflate stream as an invalid zip, not a size refusal', async () => {
+    // Declare DEFLATE over stored markdown bytes: inflateRawSync throws a
+    // plain zlib error (not ERR_BUFFER_TOO_LARGE), which the decoder rethrows
+    // for the outer catch to map — pinning that contract keeps a future
+    // refactor from swallowing every zlib failure as "too large".
+    const zip = new JSZip();
+    zip.file('my-skill/SKILL.md', skillMarkdown('Plainly stored text.'));
+    const lying = Buffer.from(
+      await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' }),
+    );
+    lying.writeUInt16LE(8, centralDirectoryEntry(lying, 'my-skill/SKILL.md') + 10);
+    await expect(parseUserSkillZip(lying)).rejects.toThrow(
+      'The skill archive is not a valid zip file.',
+    );
   });
 });

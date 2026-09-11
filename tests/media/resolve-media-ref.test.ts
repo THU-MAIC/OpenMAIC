@@ -170,6 +170,25 @@ describe('resolveMediaRef truth table', () => {
     },
   );
 
+  // The one place browser-only behaviour deliberately changed. A placeholder
+  // with no task used to be leased like any other reference, so the first
+  // render saw a lease still in flight and painted `pending` before settling;
+  // the pool cannot hold a placeholder in either mode, so the lookup is now
+  // skipped and the same answer arrives at once. Asserted here as the pair of
+  // inputs the two versions feed the state machine, because the substitution
+  // itself lives in the hook and there is no render harness for it.
+  it('settles an untracked placeholder at once instead of painting a transient pending', () => {
+    expect(resolveMediaRef('gen_img_untracked', undefined, pendingLease, true)).toEqual({
+      kind: 'pending',
+    });
+    expect(resolveMediaRef('gen_img_untracked', undefined, missing, true)).toEqual({
+      kind: 'disabled',
+    });
+    expect(resolveMediaRef('gen_img_untracked', undefined, missing)).toEqual({
+      kind: 'placeholder',
+    });
+  });
+
   it.each([
     { kind: 'url', url: 'ast_accidental' } as const,
     { kind: 'raw', value: 'opaque_accidental' } as const,

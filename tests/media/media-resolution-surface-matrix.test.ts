@@ -7,6 +7,8 @@ import {
   resolveImageSrc,
   useResolvedImageSrc,
 } from '@/components/slide-renderer/components/element/ImageElement/useResolvedImageSrc';
+import { ImageElement } from '@/components/slide-renderer/components/element/ImageElement';
+import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import { BaseVideoElement } from '@/components/slide-renderer/components/element/VideoElement/BaseVideoElement';
 import { VideoElement } from '@/components/slide-renderer/components/element/VideoElement';
 import { resolveSlideMediaState } from '@/components/slide-renderer/use-resolved-slide';
@@ -563,5 +565,160 @@ describe('real media consumer matrix', () => {
       entry.disabled,
     );
     expectSafeBinding(binding.src, binding.resolution, entry.expected, entry.retryable);
+  });
+});
+
+/**
+ * What a failed media task says, on the three surfaces that draw a Retry.
+ *
+ * A full asset store is retryable — an operator raises the ceiling and the
+ * Retry re-attempts the upload from bytes that were kept — so those surfaces
+ * say which condition they are waiting on; a bare Retry would read as an
+ * ordinary failure. A refusal a retry cannot change draws neither, exactly as
+ * it did before: these surfaces have never explained a failure they offer no
+ * action for, and a notice here would change what a browser-only deck looks
+ * like, which nothing in this work is allowed to do.
+ */
+describe('a failed media task explains itself beside a Retry, and only there', () => {
+  const quotaTask = (ref: string, type: 'image' | 'video') =>
+    fullTask(ref, task('failed', { errorCode: 'ASSET_QUOTA_EXCEEDED' }), type);
+  const refusedTask = (ref: string, type: 'image' | 'video') =>
+    fullTask(ref, task('failed', { errorCode: 'CONTENT_SENSITIVE' }), type);
+
+  function requireTask(value: MediaTask | undefined): MediaTask {
+    if (!value) throw new Error('Expected a failed media task');
+    return value;
+  }
+
+  it('VideoElement pairs the storage-full notice with the Retry', () => {
+    const ref = 'gen_vid_quota';
+    const element = videoElement(ref);
+    useSettingsStore.setState({ videoGenerationEnabled: true });
+    useMediaGenerationStore.setState({ tasks: { [ref]: requireTask(quotaTask(ref, 'video')) } });
+
+    const markup = renderInMediaScene(
+      element,
+      createElement(VideoElement, { elementInfo: element }),
+    );
+
+    expect(markup).toContain('settings.mediaStorageFull');
+    expect(markup).toContain('settings.mediaRetry');
+  });
+
+  it('VideoElement draws neither for a refusal a retry cannot change', () => {
+    const ref = 'gen_vid_refused';
+    const element = videoElement(ref);
+    useSettingsStore.setState({ videoGenerationEnabled: true });
+    useMediaGenerationStore.setState({ tasks: { [ref]: requireTask(refusedTask(ref, 'video')) } });
+
+    const markup = renderInMediaScene(
+      element,
+      createElement(VideoElement, { elementInfo: element }),
+    );
+
+    // The failed state is painted, and it is the box it has always been --
+    // asserted as the exact class attribute, because a notice-shaped container
+    // with nothing in it would render identically and still be a change to
+    // browser-only output.
+    expect(markup).toContain(
+      'class="flex h-full w-full items-center justify-center rounded bg-red-50 dark:bg-red-900/20"',
+    );
+    expect(markup).not.toContain('settings.mediaContentSensitive');
+    expect(markup).not.toContain('settings.mediaRetry');
+  });
+
+  it('ImageElement pairs the storage-full notice with the Retry', () => {
+    const ref = 'gen_img_quota';
+    const element = imageElement(ref);
+    useSettingsStore.setState({ imageGenerationEnabled: true });
+    useMediaGenerationStore.setState({ tasks: { [ref]: requireTask(quotaTask(ref, 'image')) } });
+
+    const markup = renderInMediaScene(
+      element,
+      createElement(ImageElement, { elementInfo: element }),
+    );
+
+    expect(markup).toContain('settings.mediaStorageFull');
+    expect(markup).toContain('settings.mediaRetry');
+  });
+
+  it('ImageElement draws neither for a refusal a retry cannot change', () => {
+    const ref = 'gen_img_refused';
+    const element = imageElement(ref);
+    useSettingsStore.setState({ imageGenerationEnabled: true });
+    useMediaGenerationStore.setState({ tasks: { [ref]: requireTask(refusedTask(ref, 'image')) } });
+
+    const markup = renderInMediaScene(
+      element,
+      createElement(ImageElement, { elementInfo: element }),
+    );
+
+    expect(markup).toContain(
+      '<div class="flex h-full w-full items-center justify-center bg-red-50" data-media-state="failed">',
+    );
+    expect(markup).not.toContain('settings.mediaContentSensitive');
+    expect(markup).not.toContain('settings.mediaRetry');
+  });
+
+  it('the thumbnail pairs the storage-full notice with the Retry', () => {
+    const ref = 'gen_img_thumb_quota';
+    const element = imageElement(ref);
+    useSettingsStore.setState({ imageGenerationEnabled: true });
+    useMediaGenerationStore.setState({ tasks: { [ref]: requireTask(quotaTask(ref, 'image')) } });
+
+    const markup = renderToStaticMarkup(
+      createElement(
+        MediaStageProvider,
+        { value: stageId },
+        createElement(SlideThumbnail, { slide: slideWith(element), viewportRatio: 0.5625 }),
+      ),
+    );
+
+    expect(markup).toContain('settings.mediaStorageFull');
+    expect(markup).toContain('settings.mediaRetry');
+  });
+
+  it('the thumbnail draws neither for a refusal a retry cannot change', () => {
+    const ref = 'gen_img_thumb_refused';
+    const element = imageElement(ref);
+    useSettingsStore.setState({ imageGenerationEnabled: true });
+    useMediaGenerationStore.setState({ tasks: { [ref]: requireTask(refusedTask(ref, 'image')) } });
+
+    const markup = renderToStaticMarkup(
+      createElement(
+        MediaStageProvider,
+        { value: stageId },
+        createElement(SlideThumbnail, { slide: slideWith(element), viewportRatio: 0.5625 }),
+      ),
+    );
+
+    expect(markup).toContain(
+      '<div class="relative h-full w-full bg-red-50" data-media-state="failed">',
+    );
+    expect(markup).not.toContain('settings.mediaContentSensitive');
+    expect(markup).not.toContain('settings.mediaRetry');
+  });
+
+  it('the video thumbnail draws neither for a refusal a retry cannot change', () => {
+    const ref = 'gen_vid_thumb_refused';
+    const element = videoElement(ref);
+    useSettingsStore.setState({ videoGenerationEnabled: true });
+    useMediaGenerationStore.setState({ tasks: { [ref]: requireTask(refusedTask(ref, 'video')) } });
+
+    const markup = renderToStaticMarkup(
+      createElement(
+        MediaStageProvider,
+        { value: stageId },
+        createElement(SlideThumbnail, { slide: slideWith(element), viewportRatio: 0.5625 }),
+      ),
+    );
+
+    // Self-closing, as it was: a container with a conditional child that is
+    // never present would emit `<div …></div>` instead.
+    expect(markup).toContain(
+      '<div class="h-full w-full rounded bg-red-50" data-media-state="failed"></div>',
+    );
+    expect(markup).not.toContain('settings.mediaContentSensitive');
+    expect(markup).not.toContain('settings.mediaRetry');
   });
 });

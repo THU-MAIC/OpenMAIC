@@ -96,9 +96,7 @@ function validateModelRoutes(): void {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    warn(
-      'MODEL_ROUTES is not valid JSON — check the value (model routing falls back to DEFAULT_MODEL).',
-    );
+    warn('MODEL_ROUTES is not valid JSON — check the value (configured routes are ignored).');
     return;
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
