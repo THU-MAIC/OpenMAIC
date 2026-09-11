@@ -44,9 +44,11 @@ import {
   syncStageAssetReferences,
 } from '../asset/references.js';
 import { assertJsonValue, isLosslessJsonString } from '../runtime/json-value.js';
+import { asStorageLockUnavailable } from '../runtime/pg.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
 export type { QueryResult, Queryable, WithTransaction } from '../runtime/pg.js';
+export { StorageLockUnavailableError, type StorageLockUnavailableReason } from '../runtime/pg.js';
 
 export interface PgDocumentStoreOptions {
   /**
@@ -559,11 +561,22 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
    * as the holder stays stuck. The same budget, for the same reason, as the
    * asset registry's write transactions.
    */
-  private writeTransaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
-    return this.transactionHook(async (queryable) => {
-      await queryable.query(DOCUMENT_WRITE_LOCK_TIMEOUT_SQL);
-      return body(queryable);
-    });
+  private async writeTransaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
+    try {
+      return await this.transactionHook(async (queryable) => {
+        await queryable.query(DOCUMENT_WRITE_LOCK_TIMEOUT_SQL);
+        return body(queryable);
+      });
+    } catch (error) {
+      // The budget above manufactures this failure, so this layer owes the
+      // caller a type for it: a host retries or alerts on contention and does
+      // neither on a genuine write error, and telling them apart should not
+      // require matching a driver's SQLSTATE. The driver's error stays as
+      // `cause`, and everything else propagates untouched.
+      const contention = asStorageLockUnavailable(error);
+      if (contention) throw contention;
+      throw error;
+    }
   }
 
   private requireOwner(operation: string): string {

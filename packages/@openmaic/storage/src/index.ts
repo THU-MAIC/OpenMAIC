@@ -72,6 +72,7 @@ export {
 // everything a host needs to run the feature.
 export { PgAssetByteStore } from './asset/pg-bytes.js';
 export {
+  AssetCollectionFailure,
   AssetCollector,
   AssetReferenceTrackingNotEnabledError,
   assertSignedUrlTtlWithinGrace,
@@ -117,10 +118,12 @@ export {
 export {
   PgDocumentStore,
   DOCUMENT_PG_SCHEMA,
+  StorageLockUnavailableError,
   ensureDocumentSchema,
   readStageFreshnessManifest,
   splitSqlStatements,
   type PgDocumentStoreOptions,
+  type StorageLockUnavailableReason,
 } from './document/pg.js';
 
 export type {

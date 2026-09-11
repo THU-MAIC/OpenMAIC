@@ -12,7 +12,13 @@ import {
   type Queryable,
   type WithTransaction,
 } from '../src/asset/pg.js';
-import { PgDocumentStore, ensureDocumentSchema } from '../src/document/pg.js';
+import { AssetCollectionFailure } from '../src/asset/collector.js';
+import { backfillDocumentAssetReferences, sceneAssetScope } from '../src/asset/references.js';
+import {
+  PgDocumentStore,
+  StorageLockUnavailableError,
+  ensureDocumentSchema,
+} from '../src/document/pg.js';
 import type { MaicDocument } from '../src/document/types.js';
 import {
   acquireDocumentPgContractLock,
@@ -33,6 +39,46 @@ function transactionFor(pool: Pool): WithTransaction {
     try {
       await client.query('BEGIN');
       const result = await body(client as Queryable);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // Preserve the transaction body's original error.
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  };
+}
+
+/**
+ * The package's write transactions, with a lock-wait budget a test can wait
+ * for.
+ *
+ * The production budget is thirty seconds, which is the right number and the
+ * wrong test. The hook rewrites only that statement, so what runs is the real
+ * transaction shape and the real mapping from a fired `lock_timeout` to the
+ * package's typed error.
+ */
+function impatientTransaction(pool: Pool): WithTransaction {
+  return async (body) => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await body({
+        async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+          text: string,
+          params?: unknown[],
+        ): Promise<QueryResult<TRow>> {
+          const statement = text.startsWith('SET LOCAL lock_timeout')
+            ? `SET LOCAL lock_timeout = '150ms'`
+            : text;
+          return (client as Queryable).query<TRow>(statement, params);
+        },
+      });
       await client.query('COMMIT');
       return result;
     } catch (error) {
@@ -559,6 +605,146 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
       [stale],
     );
     expect(released.rows[0]?.unreferenced_at).not.toBeNull();
+  });
+
+  test('an insert-only reference writer on another instance is not swept past', async () => {
+    // The entry pass's re-check used to fold "no reference row" into its
+    // locking SELECT. That is snapshot-stale against a writer that inserts a
+    // reference row WITHOUT updating the entry row: the statement blocks on
+    // the FK's KEY SHARE, is granted it when that writer commits, finds the
+    // entry row unchanged -- so no EvalPlanQual -- and keeps its own
+    // statement-start answer of "no reference". The entry was deleted and the
+    // cascade took the just-committed reference row with it, leaving the
+    // document naming bytes that no longer exist.
+    //
+    // The backfill is exactly such a writer, and two collector instances are
+    // enough: within one instance the backfill and the entry pass are
+    // sequential.
+    // Some store on this database tracks, which is all the marker proves --
+    // and is the mixed deployment this scenario needs.
+    await documents.saveDocument(stageWithImage('tracked-stage', 'tracked-scene', 'unallocated'));
+    const id = await assets.put(principal, new Blob(['racing bytes']));
+    // Eligible: pending and past its expiry. Written by a store with tracking
+    // off, so no reference row exists yet -- the document a later instance's
+    // backfill will find.
+    const document = stageWithImage('insert-race-stage', 'insert-race-scene', id);
+    await new PgDocumentStore(pool as Queryable, {
+      withTransaction: transactionFor(pool),
+    }).saveDocument(document);
+    await pool.query(
+      `UPDATE asset_entries SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = $1`,
+      [id],
+    );
+
+    // Instance B: the backfill's insert, held open so its KEY SHARE is.
+    const backfilling = await pool.connect();
+    try {
+      await backfilling.query('BEGIN');
+      await backfillDocumentAssetReferences(backfilling as Queryable, {
+        stageId: 'insert-race-stage',
+        scope: sceneAssetScope('insert-race-scene', document.scenes[0]),
+      });
+
+      // Instance A: the entry pass, which must block on that KEY SHARE.
+      const releasing = new AssetCollector(pool as Queryable, bytes, {
+        withTransaction: transactionFor(pool),
+        documentReferences: true,
+        graceMs: 0,
+      }).collectPass();
+      await waitForLockWaiter(pool);
+
+      await backfilling.query('COMMIT');
+      const pass = await releasing;
+
+      expect(pass.entriesCollected).toBe(0);
+    } finally {
+      backfilling.release();
+    }
+
+    // Both rows survived: the entry the document names, and the reference row
+    // the backfill committed.
+    expect((await assets.resolve(principal, id))?.bytes).toEqual(
+      new TextEncoder().encode('racing bytes'),
+    );
+    expect(
+      (await pool.query('SELECT 1 FROM document_asset_refs WHERE asset_id = $1', [id])).rows,
+    ).toHaveLength(1);
+  });
+
+  test('a document write that cannot get the stage lock fails as lock contention', async () => {
+    // Fired rather than described: the budget is 30 s in production, and the
+    // hook below rewrites it to a value a test can wait for. What is under
+    // test is the mapping, not the number.
+    await documents.saveDocument(stageWithImage('lock-stage', 'lock-scene', 'unallocated'));
+    const holder = await pool.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT data FROM document_stages WHERE id = $1 FOR UPDATE', [
+        'lock-stage',
+      ]);
+
+      const blocked = new PgDocumentStore(pool as Queryable, {
+        withTransaction: impatientTransaction(pool),
+        trackAssetReferences: true,
+      });
+      const renamed = stageWithImage('lock-stage', 'lock-scene', 'unallocated').stage;
+      const failure = await blocked
+        .putStage('lock-stage', { ...renamed, name: 'Renamed' })
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(StorageLockUnavailableError);
+      expect((failure as StorageLockUnavailableError).reason).toBe('lock-timeout');
+      expect(((failure as StorageLockUnavailableError).cause as { code?: string }).code).toBe(
+        '55P03',
+      );
+    } finally {
+      await holder.query('ROLLBACK');
+      holder.release();
+    }
+
+    // The write rolled back: the name is the one the first save wrote.
+    const stored = await pool.query<{ name: string }>(
+      'SELECT name FROM document_stages WHERE id = $1',
+      ['lock-stage'],
+    );
+    expect(stored.rows[0]?.name).toBe('Referenced Course');
+  });
+
+  test('an entry pass that cannot get the entry lock fails as lock contention', async () => {
+    const id = await assets.put(principal, new Blob(['locked entry']));
+    await pool.query(
+      `UPDATE asset_entries SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = $1`,
+      [id],
+    );
+    await documents.saveDocument(
+      stageWithImage('lock-entry-stage', 'lock-entry-scene', 'unallocated'),
+    );
+    const holder = await pool.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT id FROM asset_entries WHERE id = $1 FOR UPDATE', [id]);
+
+      const failure = await new AssetCollector(pool as Queryable, bytes, {
+        withTransaction: impatientTransaction(pool),
+        documentReferences: true,
+        graceMs: 0,
+      })
+        .collectPass()
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(StorageLockUnavailableError);
+      expect((failure as StorageLockUnavailableError).reason).toBe('lock-timeout');
+      // Contention keeps its own type rather than flattening into the generic
+      // collection failure: a host retries on this and investigates the other.
+      expect(failure).not.toBeInstanceOf(AssetCollectionFailure);
+    } finally {
+      await holder.query('ROLLBACK');
+      holder.release();
+    }
+
+    expect((await assets.resolve(principal, id))?.bytes).toEqual(
+      new TextEncoder().encode('locked entry'),
+    );
   });
 
   test('removing the entry cascades its reference rows away', async () => {

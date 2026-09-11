@@ -7,6 +7,7 @@ import {
   sceneAssetScope,
   stageAssetScope,
 } from './references.js';
+import { asStorageLockUnavailable } from '../runtime/pg.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
 /** One hour. A deployment may choose a longer retention window. */
@@ -77,6 +78,17 @@ export interface AssetCollectorOptions {
    * records the references this pass reads. Enabling the pass without it
    * leaves every entry pending, and every pending entry is released when its
    * TTL expires -- while the documents naming them are still there.
+   *
+   * That pairing is enforced on the way in and NOT on the way out. The marker
+   * a tracking document store writes is never removed, so turning
+   * `trackAssetReferences` back off while leaving this on passes the check and
+   * re-opens exactly the failure the marker exists to prevent: allocations
+   * from the now-untracked store never commit, and each is released on its
+   * TTL. **Roll the two back together.** The marker is not a heartbeat on
+   * purpose -- an idle deployment would then be refused the reclamation of its
+   * expired pending entries for being idle, which is the wrong answer to a
+   * quiet week -- so a host that can configure the halves separately owns
+   * keeping them in step.
    */
   documentReferences?: boolean;
   /** Most documents one reference-backfill chunk reads. Defaults to fifty. */
@@ -163,20 +175,36 @@ const EMPTY_ENTRY_LEVEL: EntryLevelPass = {
  * is the value that escapes: this package's egress rule keeps caller-derived
  * strings out of thrown text, and a stage id is caller-derived. A host that
  * wants to know which document stalls its backfill reads `stageId`; a log line
- * that prints the error alone still discloses nothing.
+ * that prints the error alone still discloses nothing. Exported so that
+ * reading it is a type rather than a cast.
  */
-class AssetCollectionFailure extends Error {
+export class AssetCollectionFailure extends Error {
+  /** The document the pass was enumerating, when it was enumerating one. */
   readonly stageId?: string;
 
-  constructor(stageId?: string) {
-    super('@openmaic/storage: asset collection failed');
+  constructor(stageId?: string, cause?: unknown) {
+    super(
+      '@openmaic/storage: asset collection failed',
+      cause === undefined ? undefined : { cause },
+    );
     this.name = 'AssetCollectionFailure';
     if (stageId !== undefined) this.stageId = stageId;
   }
 }
 
-function collectorFailure(stageId?: string): Error {
-  return new AssetCollectionFailure(stageId);
+/**
+ * Wrap a caught failure, keeping it as `cause`.
+ *
+ * Lock contention passes through with its own type instead: it is the one
+ * failure this collector manufactures on purpose (through its `lock_timeout`
+ * budget), a host's response to it is to retry rather than to investigate, and
+ * flattening it into the generic failure would leave that decision to string
+ * matching.
+ */
+function collectorFailure(stageId?: string, cause?: unknown): Error {
+  const contention = asStorageLockUnavailable(cause);
+  if (contention) return contention;
+  return new AssetCollectionFailure(stageId, cause);
 }
 
 /**
@@ -386,8 +414,8 @@ export class AssetCollector {
           LIMIT $2`,
         [cutoff, this.batchSize],
       );
-    } catch {
-      throw collectorFailure();
+    } catch (error) {
+      throw collectorFailure(undefined, error);
     }
 
     let collected = 0;
@@ -421,8 +449,8 @@ export class AssetCollector {
           return true;
         });
         if (didCollect) collected += 1;
-      } catch {
-        throw collectorFailure();
+      } catch (error) {
+        throw collectorFailure(undefined, error);
       }
     }
     if (trackingFailure) throw trackingFailure;
@@ -436,8 +464,8 @@ export class AssetCollector {
   private async referenceTrackingEnabled(): Promise<boolean> {
     try {
       return await assetReferenceTrackingEnabled(this.queryable);
-    } catch {
-      throw collectorFailure();
+    } catch (error) {
+      throw collectorFailure(undefined, error);
     }
   }
 
@@ -501,8 +529,8 @@ export class AssetCollector {
           LIMIT 1`,
       );
       return result.rows.length > 0;
-    } catch {
-      throw collectorFailure();
+    } catch (error) {
+      throw collectorFailure(undefined, error);
     }
   }
 
@@ -543,8 +571,8 @@ export class AssetCollector {
           : `SELECT id FROM document_stages WHERE id > $2 ORDER BY id ASC LIMIT $1`,
         this.backfillCursor === null ? [limit + 1] : [limit + 1, this.backfillCursor],
       );
-    } catch {
-      throw collectorFailure();
+    } catch (error) {
+      throw collectorFailure(undefined, error);
     }
     const hasMore = page.rows.length > limit;
     const ids = page.rows.slice(0, limit).map((row) => row.id);
@@ -577,12 +605,12 @@ export class AssetCollector {
             });
           }
         });
-      } catch {
+      } catch (error) {
         // Named, but only as a property: see AssetCollectionFailure. The walk
         // stops here and the cursor stays behind this document, so nothing is
         // marked and invariant (i) keeps the entry pass from releasing
         // anything -- a stalled backfill is safe, just stalled.
-        throw collectorFailure(stageId);
+        throw collectorFailure(stageId, error);
       }
       this.backfillCursor = stageId;
     }
@@ -631,8 +659,8 @@ export class AssetCollector {
         );
         return Number(marked.rows[0]?.marked ?? 0);
       });
-    } catch {
-      throw collectorFailure();
+    } catch (error) {
+      throw collectorFailure(undefined, error);
     }
   }
 
@@ -658,39 +686,64 @@ export class AssetCollector {
           LIMIT $3`,
         [now, cutoff, this.batchSize],
       );
-    } catch {
-      throw collectorFailure();
+    } catch (error) {
+      throw collectorFailure(undefined, error);
     }
 
     let entriesCollected = 0;
     for (const candidate of candidates.rows) {
       try {
         const didCollect = await this.lockBoundedTransaction(async (queryable) => {
-          // Re-checked under the row lock, including the "no reference row"
-          // condition. A document write between the candidate query and this
-          // lock is exactly the case that must not be swept: it cleared
-          // `expires_at` / `unreferenced_at` and inserted a row, and either
-          // half of that alone would fail this predicate. The reference check
-          // is not redundant with the timestamps -- it is what makes "eligible"
-          // mean "no document names it" rather than "a column says so".
+          // TWO statements, deliberately, and the split is load-bearing.
+          //
+          // The first one locks: it re-checks the entry's own timestamps and
+          // takes `FOR UPDATE`. A document write racing the candidate query
+          // above both clears those timestamps and inserts a reference row, so
+          // when this statement waits on that writer's lock PostgreSQL
+          // re-evaluates the predicate against the updated row (EvalPlanQual)
+          // and the entry is skipped.
+          //
+          // The second one asks about references, and it has to be its own
+          // statement because that re-evaluation only happens when the LOCKED
+          // row changed. The backfill is an insert-only reference writer: it
+          // inserts into `document_asset_refs`, which takes `KEY SHARE` on the
+          // entry row but never updates it. A `NOT EXISTS` folded into the
+          // statement above would therefore block on that lock, be granted it
+          // when the backfill commits, find the entry row unchanged, and keep
+          // the answer it computed from its own statement-start snapshot --
+          // "no reference" -- while a committed reference row existed. The
+          // entry would be deleted and the cascade would take the backfill's
+          // row with it, leaving a document naming bytes that are gone. Under
+          // READ COMMITTED a separate statement takes a fresh snapshot, so it
+          // sees that row. (Two collector instances are needed to reach this:
+          // one instance runs its backfill and its entry pass in sequence.)
+          //
+          // Holding `FOR UPDATE` across the second statement is what makes the
+          // answer stay true: a reference insert arriving after it needs
+          // `KEY SHARE` on this row and blocks until this transaction ends.
           const locked = await queryable.query<EntryLockRow>(
             `SELECT id, content_hash
                FROM asset_entries
               WHERE id = $1
                 AND ((expires_at IS NOT NULL AND expires_at < $2::timestamptz)
                   OR (unreferenced_at IS NOT NULL AND unreferenced_at < $3::timestamptz))
-                AND NOT EXISTS (
-                      SELECT 1 FROM document_asset_refs WHERE asset_id = $1
-                    )
               FOR UPDATE`,
             [candidate.id, now, cutoff],
           );
           const entry = locked.rows[0];
           if (!entry) return false;
+          const referenced = await queryable.query(
+            'SELECT 1 FROM document_asset_refs WHERE asset_id = $1 LIMIT 1',
+            [entry.id],
+          );
+          // What makes "eligible" mean "no document names it" rather than "a
+          // column says so".
+          if (referenced.rows.length > 0) return false;
           // Exactly what `remove` does, in the same order: delete the one row,
           // then stamp the blob when no entry names those bytes any more. Any
           // reference row would go with it through the table's cascade; the
-          // re-check above proves there is none.
+          // fresh-snapshot check above proves there is none, and the lock held
+          // since then proves none has arrived.
           await queryable.query('DELETE FROM asset_entries WHERE id = $1', [entry.id]);
           await queryable.query(
             `UPDATE asset_blobs
@@ -704,8 +757,8 @@ export class AssetCollector {
           return true;
         });
         if (didCollect) entriesCollected += 1;
-      } catch {
-        throw collectorFailure();
+      } catch (error) {
+        throw collectorFailure(undefined, error);
       }
     }
     return {
@@ -717,3 +770,4 @@ export class AssetCollector {
 
 export type { AssetByteStore } from './byte-store.js';
 export type { Queryable, WithTransaction } from '../runtime/pg.js';
+export { StorageLockUnavailableError, type StorageLockUnavailableReason } from '../runtime/pg.js';
