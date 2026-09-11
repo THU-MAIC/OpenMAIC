@@ -113,6 +113,14 @@ export const DEFAULT_ASSET_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
  * the failure mode of enabling only the second is silent deletion of live
  * media: an empty `document_asset_refs` cannot be told apart from documents
  * that reference nothing, but the absence of this marker can.
+ *
+ * `document_asset_withdrawals` records that a host has retired a document
+ * while keeping its rows, so the collector's one-time backfill does not walk
+ * that document's stored JSON and re-reference what the retirement released.
+ * A row here is the only durable trace of a retirement: the document itself
+ * looks exactly like a live one, by design, because the retirement belongs to
+ * the host's own tombstone and not to this schema. A write that re-establishes
+ * the document's references removes the row again (see `./references.ts`).
  */
 export const ASSET_PG_SCHEMA: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS asset_blobs (
@@ -160,6 +168,10 @@ export const ASSET_PG_SCHEMA: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS asset_reference_tracking (
      singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
      enabled_at TIMESTAMPTZ NOT NULL
+   )`,
+  `CREATE TABLE IF NOT EXISTS document_asset_withdrawals (
+     stage_id TEXT NOT NULL PRIMARY KEY,
+     withdrawn_at TIMESTAMPTZ NOT NULL
    )`,
 ];
 

@@ -633,6 +633,10 @@ const EXPECTED_ASSET_PG_SCHEMA: readonly string[] = [
      singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
      enabled_at TIMESTAMPTZ NOT NULL
    )`,
+  `CREATE TABLE IF NOT EXISTS document_asset_withdrawals (
+     stage_id TEXT NOT NULL PRIMARY KEY,
+     withdrawn_at TIMESTAMPTZ NOT NULL
+   )`,
 ];
 
 describe('ASSET_PG_SCHEMA is a pinned contract', () => {

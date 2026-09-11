@@ -247,7 +247,7 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     await ensureAssetSchema(recordingQueryable(db, statements));
     await ensureAssetSchema(recordingQueryable(db, statements));
     expect(statements).toEqual([...ASSET_PG_SCHEMA, ...ASSET_PG_SCHEMA].map(normalizeSql));
-    expect(ASSET_PG_SCHEMA).toHaveLength(14);
+    expect(ASSET_PG_SCHEMA).toHaveLength(15);
     expect(ASSET_PG_SCHEMA.every((statement) => !statement.includes(';'))).toBe(true);
   });
 
@@ -924,7 +924,7 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     // document_asset_refs references asset_entries, so PostgreSQL refuses to
     // truncate the entries without it.
     await db.query('TRUNCATE document_asset_refs, asset_entries, asset_blobs');
-    await db.query('TRUNCATE asset_reference_tracking');
+    await db.query('TRUNCATE asset_reference_tracking, document_asset_withdrawals');
     const collectorBytes: AssetByteStore = {
       // Out-of-registry so the collector's deletion guard lets the failing
       // delete through, keeping the digest propagation under test.

@@ -404,7 +404,7 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
   beforeEach(async () => {
     await truncateDocumentTables(pool as Queryable);
     await pool.query('TRUNCATE document_asset_refs, asset_entries, asset_blobs');
-    await pool.query('TRUNCATE asset_reference_tracking');
+    await pool.query('TRUNCATE asset_reference_tracking, document_asset_withdrawals');
     bytes = new PgAssetByteStore(pool as Queryable);
     assets = new PgAssetStore(pool as Queryable, {
       byteStore: bytes,
@@ -1015,6 +1015,185 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
       expect(await stampOf(id)).toBeNull();
     });
 
+    test('the backfill does not re-reference what a withdrawal released', async () => {
+      // The document rows stay, so the stored JSON still names the asset. A
+      // one-time backfill that walked it afterwards used to re-insert the
+      // reference row, leaving the entry both referenced (so the entry pass
+      // skips it) and stamped (and nothing rewrites a retired document to
+      // clear that) -- a permanent leak, which is the failure withdrawing was
+      // added to prevent.
+      const id = await assets.put(principal, new Blob(['withdrawn bytes']));
+      const hash = (await contentHashOf(new Blob(['withdrawn bytes']))).contentHash;
+      await documents.saveDocument(stageWithImage('race-tomb-stage', 'race-tomb-scene', id));
+      await documents.withdrawAssetReferences('race-tomb-stage');
+      // A legacy entry, so the walk runs at all.
+      const legacy = await assets.put(principal, new Blob(['legacy company']));
+      await pool.query(
+        `UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = $1`,
+        [legacy],
+      );
+
+      // A pass that completes the walk. The document must come out of it with
+      // no reference row: that is the regression.
+      const hour = 60 * 60 * 1000;
+      const collector = (): AssetCollector =>
+        new AssetCollector(pool as Queryable, bytes, {
+          withTransaction: transactionFor(pool),
+          documentReferences: true,
+          graceMs: hour,
+        });
+      const walked = await collector().collectPass();
+      expect(walked.backfilledDocuments).toBeGreaterThan(0);
+      expect(await refsOf('race-tomb-stage')).toEqual([]);
+      expect(await stampOf(id)).not.toBeNull();
+
+      // Past the grace period, explicitly rather than by clock luck.
+      await pool.query(
+        `UPDATE asset_entries SET unreferenced_at = now() - interval '2 hours' WHERE id = $1`,
+        [id],
+      );
+      const released = await collector().collectPass();
+
+      expect(released.entriesCollected).toBe(1);
+      expect((await pool.query('SELECT id FROM asset_entries WHERE id = $1', [id])).rows).toEqual(
+        [],
+      );
+      // And the blob follows, which is the point of releasing the entry.
+      await pool.query(
+        `UPDATE asset_blobs SET unreferenced_at = now() - interval '2 hours'
+          WHERE content_hash = $1`,
+        [hash],
+      );
+      expect((await collector().collectPass()).collected).toBe(1);
+      expect(
+        (await pool.query('SELECT content_hash FROM asset_blobs WHERE content_hash = $1', [hash]))
+          .rows,
+      ).toEqual([]);
+    });
+
+    test('the backfill does not re-reference an entry any other write released', async () => {
+      // The predicate on the backfill's insert, on its own. Here the document
+      // the walk reads is NOT retired -- it was written by a store with
+      // tracking off, so it has no rows -- and the entry it names was released
+      // by a different document's deletion. Re-referencing it would leave the
+      // entry both referenced and stamped, which nothing ever clears.
+      const shared = await assets.put(principal, new Blob(['released elsewhere']));
+      await documents.saveDocument(stageWithImage('releaser-stage', 'releaser-scene', shared));
+      const untracked = new PgDocumentStore(pool as Queryable, {
+        withTransaction: transactionFor(pool),
+      });
+      await untracked.saveDocument(stageWithImage('stale-stage', 'stale-scene', shared));
+      await documents.deleteDocument('releaser-stage');
+      expect(await stampOf(shared)).not.toBeNull();
+      const legacy = await assets.put(principal, new Blob(['legacy company two']));
+      await pool.query(
+        `UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = $1`,
+        [legacy],
+      );
+
+      const hour = 60 * 60 * 1000;
+      const collector = (): AssetCollector =>
+        new AssetCollector(pool as Queryable, bytes, {
+          withTransaction: transactionFor(pool),
+          documentReferences: true,
+          graceMs: hour,
+        });
+      expect((await collector().collectPass()).backfilledDocuments).toBeGreaterThan(0);
+
+      // The walk read `stale-stage` and left the released entry alone.
+      expect(await refsOf('stale-stage')).toEqual([]);
+      await pool.query(
+        `UPDATE asset_entries SET unreferenced_at = now() - interval '2 hours' WHERE id = $1`,
+        [shared],
+      );
+      expect((await collector().collectPass()).entriesCollected).toBe(1);
+      expect(
+        (await pool.query('SELECT id FROM asset_entries WHERE id = $1', [shared])).rows,
+      ).toEqual([]);
+    });
+
+    test('withdrawing a document that predates tracking is honoured too', async () => {
+      // The mirror case, and the one a stamp alone cannot cover: this document
+      // has no reference rows to remove, so the withdrawal stamps nothing, and
+      // only the recorded withdrawal can keep the walk from reading its JSON
+      // and referencing the entry it names.
+      const legacy = await assets.put(principal, new Blob(['pre-tracking bytes']));
+      const untracked = new PgDocumentStore(pool as Queryable, {
+        withTransaction: transactionFor(pool),
+      });
+      await untracked.saveDocument(stageWithImage('pre-stage', 'pre-scene', legacy));
+      await pool.query(
+        `UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = $1`,
+        [legacy],
+      );
+      expect(await refsOf('pre-stage')).toEqual([]);
+
+      expect(await documents.withdrawAssetReferences('pre-stage')).toBe(true);
+
+      // The walk must skip it, so the legacy marking finds the entry
+      // referenced by nothing and stamps it.
+      const hour = 60 * 60 * 1000;
+      const collector = (): AssetCollector =>
+        new AssetCollector(pool as Queryable, bytes, {
+          withTransaction: transactionFor(pool),
+          documentReferences: true,
+          graceMs: hour,
+        });
+      const walked = await collector().collectPass();
+      expect(walked.legacyEntriesCommitted).toBeGreaterThan(0);
+      expect(await refsOf('pre-stage')).toEqual([]);
+      expect(await stampOf(legacy)).not.toBeNull();
+
+      // (iii) again: the stamp is `now()`, so the entry drains after grace and
+      // not on the pass that stamped it.
+      expect((await collector().collectPass()).entriesCollected).toBe(0);
+      await pool.query(
+        `UPDATE asset_entries SET unreferenced_at = now() - interval '2 hours' WHERE id = $1`,
+        [legacy],
+      );
+      const released = await collector().collectPass();
+
+      expect(released.entriesCollected).toBe(1);
+      expect(
+        (await pool.query('SELECT id FROM asset_entries WHERE id = $1', [legacy])).rows,
+      ).toEqual([]);
+    });
+
+    test('a live document keeps an asset a retired one also named', async () => {
+      // The reason the withdrawal does not stamp by enumerating the retired
+      // document's JSON: a shared id whose other holder the walk had not
+      // reached yet would be released out from under it. The withdrawal stamps
+      // only what actually lost its last row, and the walk settles the rest.
+      const shared = await assets.put(principal, new Blob(['shared pre-tracking']));
+      const untracked = new PgDocumentStore(pool as Queryable, {
+        withTransaction: transactionFor(pool),
+      });
+      await untracked.saveDocument(stageWithImage('live-share', 'live-scene', shared));
+      await untracked.saveDocument(stageWithImage('retired-share', 'retired-scene', shared));
+      await pool.query(
+        `UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = $1`,
+        [shared],
+      );
+
+      expect(await documents.withdrawAssetReferences('retired-share')).toBe(true);
+      await new AssetCollector(pool as Queryable, bytes, {
+        withTransaction: transactionFor(pool),
+        documentReferences: true,
+        graceMs: 60 * 60 * 1000,
+      }).collectPass();
+
+      // The live document's walk referenced it; the retired one's was skipped.
+      expect(await refsOf('live-share')).toEqual([shared]);
+      expect(await refsOf('retired-share')).toEqual([]);
+      expect(await stampOf(shared)).toBeNull();
+      const released = await new AssetCollector(pool as Queryable, bytes, {
+        withTransaction: transactionFor(pool),
+        documentReferences: true,
+        graceMs: 0,
+      }).collectPass();
+      expect(released.entriesCollected).toBe(0);
+    });
+
     test('saving the stage again re-establishes its references', async () => {
       // How a host un-retires a course: no special path, just a write.
       const id = await assets.put(principal, new Blob(['restored bytes']));
@@ -1027,6 +1206,14 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
 
       expect(await refsOf('restore-stage')).toEqual([id]);
       expect(await stampOf(id)).toBeNull();
+      // And the withdrawal is forgotten, so the walk may read it again.
+      expect(
+        (
+          await pool.query('SELECT 1 FROM document_asset_withdrawals WHERE stage_id = $1', [
+            'restore-stage',
+          ])
+        ).rows,
+      ).toEqual([]);
     });
 
     test('an incremental write after a withdrawal re-references only its own scope', async () => {

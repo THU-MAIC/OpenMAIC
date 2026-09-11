@@ -92,6 +92,7 @@ const REQUIRED_TABLES = [
   'asset_entries',
   'document_asset_refs',
   'asset_reference_tracking',
+  'document_asset_withdrawals',
 ];
 
 const usage = [

@@ -394,6 +394,7 @@ export async function syncDocumentAssetReferences(
   const { stageId, scope } = input;
   const previous = await referencedAssetIds(queryable, stageId, scope);
   await recordReferenceTracking(queryable);
+  await forgetDocumentAssetWithdrawal(queryable, stageId);
   await replaceScopeRows(queryable, stageId, scope);
   await commitReferencedEntries(queryable, stageId, scope);
   await stampUnreferencedEntries(queryable, previous);
@@ -422,6 +423,7 @@ export async function syncStageAssetReferences(
   const { stageId, scopes } = input;
   const previous = await referencedAssetIds(queryable, stageId);
   await recordReferenceTracking(queryable);
+  await forgetDocumentAssetWithdrawal(queryable, stageId);
   await queryable.query('DELETE FROM document_asset_refs WHERE stage_id = $1', [stageId]);
   for (const scope of scopes) {
     await insertScopeRows(queryable, stageId, scope);
@@ -481,12 +483,85 @@ export async function removeDocumentAssetReferences(
  * responsible for reading the document inside the same transaction as this
  * insert -- see `AssetCollector.backfillChunk` -- or a concurrent write could
  * make these rows a superset after all.
+ *
+ * Unlike the sync paths, this one refuses to reference an entry that has
+ * already been RELEASED (`unreferenced_at IS NOT NULL`). The backfill reads
+ * stored JSON, which says what a document named and not whether anything still
+ * stands behind it: a document retired through `withdrawAssetReferences` keeps
+ * its rows, so a walk that had not yet reached it would otherwise re-insert
+ * every id it names, leaving entries that are both referenced and stamped --
+ * referenced, so the entry pass skips them; stamped, and nothing rewrites a
+ * retired document to clear it. That is a permanent leak, and it is exactly
+ * what the retirement was supposed to prevent. The predicate belongs here and
+ * NOT in `insertScopeRows`: a real document write legitimately re-references a
+ * released entry (an undo, a restore, a re-save), and clears the stamp itself
+ * a moment later in {@link commitReferencedEntries}.
  */
 export async function backfillDocumentAssetReferences(
   queryable: Queryable,
   input: SyncDocumentAssetReferencesInput,
 ): Promise<void> {
-  await insertScopeRows(queryable, input.stageId, input.scope);
+  const ids = queryableCandidates(input.scope.candidates);
+  if (ids.length === 0) return;
+  await queryable.query(
+    `INSERT INTO document_asset_refs (stage_id, scope, scene_id, asset_id)
+     SELECT $1, $2, $3, entries.id
+       FROM asset_entries AS entries
+      WHERE entries.id = ANY($4::text[])
+        AND entries.unreferenced_at IS NULL
+     ON CONFLICT DO NOTHING`,
+    [input.stageId, input.scope.scope, input.scope.sceneId, ids],
+  );
+}
+
+/**
+ * Record that a document has been retired with its rows kept, so the
+ * collector's backfill leaves its stored JSON alone.
+ *
+ * The reference table alone cannot express this. A retired document is
+ * byte-identical to a live one that happens to reference nothing -- which is
+ * deliberate, since the retirement is the host's tombstone and not this
+ * schema's business -- so a walk reading only the documents would re-reference
+ * it. For an entry the retirement released, the stamp is enough to stop the
+ * backfill (see {@link backfillDocumentAssetReferences}); for one it could not
+ * release, because the document predates tracking and had no rows to remove,
+ * nothing was stamped and only this record can tell the walk to skip it.
+ */
+export async function recordDocumentAssetWithdrawal(
+  queryable: Queryable,
+  stageId: string,
+): Promise<void> {
+  await queryable.query(
+    `INSERT INTO document_asset_withdrawals (stage_id, withdrawn_at)
+     VALUES ($1, now())
+     ON CONFLICT (stage_id) DO NOTHING`,
+    [stageId],
+  );
+}
+
+/** True when this document was retired with its rows kept and not written since. */
+export async function documentAssetReferencesWithdrawn(
+  queryable: Queryable,
+  stageId: string,
+): Promise<boolean> {
+  const result = await queryable.query(
+    'SELECT 1 FROM document_asset_withdrawals WHERE stage_id = $1',
+    [stageId],
+  );
+  return result.rows.length > 0;
+}
+
+/**
+ * Forget a withdrawal, because the document's references are being
+ * re-established.
+ *
+ * A host that un-retires a course writes it again, and that write is the
+ * authority on what the document holds: from then on the backfill may read it
+ * like any other. Called from the sync paths rather than from the store, so no
+ * write path can re-reference a document and leave it marked withdrawn.
+ */
+async function forgetDocumentAssetWithdrawal(queryable: Queryable, stageId: string): Promise<void> {
+  await queryable.query('DELETE FROM document_asset_withdrawals WHERE stage_id = $1', [stageId]);
 }
 
 /** True when some document store on this database maintains reference rows. */

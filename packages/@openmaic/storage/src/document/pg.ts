@@ -37,6 +37,7 @@ import type {
 import { DocumentFolderLimitError, DocumentNotFoundError, DocumentVersionError } from './types.js';
 import {
   documentAssetScopes,
+  recordDocumentAssetWithdrawal,
   removeDocumentAssetReferences,
   sceneAssetScope,
   stageAssetScope,
@@ -1094,6 +1095,14 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
    * host that un-retires a document by saving it again gets its assets
    * recommitted, with no special path.
    *
+   * **A withdrawal that races the collector's one-time backfill is honoured.**
+   * That walk reads stored JSON, which a retirement does not change, so it
+   * would otherwise re-reference what this released: it is held off by the
+   * released entries' own stamps and, for a document that predates tracking
+   * and so had no rows to release, by the withdrawal this records. There is no
+   * ordering a host has to observe between retiring a document and finishing
+   * an upgrade.
+   *
    * Requires `trackAssetReferences`; see
    * {@link DocumentAssetReferencesDisabledError} for why calling it without
    * that throws instead of answering.
@@ -1121,6 +1130,12 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
       // reference drains after the collector's grace period rather than
       // immediately.
       await removeDocumentAssetReferences(queryable, { stageId });
+      // The document stays, which is the whole point, so the retirement needs
+      // a trace of its own: the collector's one-time backfill reads stored
+      // JSON, and a retired document's JSON still names everything it ever
+      // named. Recorded under the stage lock taken above, so a withdrawal and
+      // that walk cannot interleave into a re-reference.
+      await recordDocumentAssetWithdrawal(queryable, stageId);
       return true;
     });
   }
