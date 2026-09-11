@@ -201,6 +201,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           providerConfig?.customDefaultBaseUrl ||
           '',
         providerOptions,
+        locale,
       });
       setTestStatus('success');
       setTestMessage(t('settings.ttsTestSuccess'));
@@ -898,6 +899,7 @@ function VoxCPMVoiceManager() {
           ...(providerConfig?.providerOptions || {}),
           ...providerOptions,
         },
+        locale,
       });
     } catch (error) {
       setPreviewingVoiceId(null);
