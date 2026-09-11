@@ -6,9 +6,14 @@
  * this database's writers maintain references, and until it runs, the one-time
  * backfill does not either. Nothing on a request path answers that question for
  * an idle deployment, so the persistence provider answers it while it
- * initializes. This file is the proof that the answer arrives early enough:
- * legacy rows first, provider second, and the very first collector pass
- * backfills and marks rather than refusing.
+ * initializes, and the collector schedule awaits that provider before it builds
+ * a collector at all (`asset-collector-schedule.ts`, pinned by "brings the
+ * persistence provider up before it collects anything").
+ *
+ * This file is the database half of that: the provider call below stands in for
+ * the one the schedule makes, and what is asserted is that the declaration
+ * really does land early enough. Legacy rows first, provider second, and the
+ * very first collector pass backfills and marks rather than refusing.
  */
 import { AssetCollector } from '@openmaic/storage/asset/collector';
 import type { Scene, Stage } from '@openmaic/dsl';

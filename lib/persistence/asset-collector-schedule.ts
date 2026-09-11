@@ -38,6 +38,7 @@ import { Pool } from 'pg';
 
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import { configuredS3Bucket, createAssetByteStore } from '@/lib/persistence/asset-byte-store';
+import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
 /**
  * Fifteen minutes. Short enough that a deleted asset's bytes go the same day,
@@ -140,6 +141,30 @@ export function startAssetCollectorSchedule(
   // failure is logged and retried instead of escaping into server startup.
   let prepared: Promise<AssetCollector> | undefined;
   const prepare = async (): Promise<AssetCollector> => {
+    // The provider first, and awaited, because it is what declares that this
+    // database's document writers maintain asset references -- the thing the
+    // entry level refuses to run without.
+    //
+    // Nothing else here would have brought it up. `register` starts this
+    // schedule and does not touch the provider, and the provider is lazy: it
+    // initializes on the first persistence request. An instance that serves
+    // none -- a cold install, an upgraded deployment, an idle replica behind a
+    // health check -- would otherwise reach this pass with nothing declared,
+    // refuse the entry level and the one-time backfill, and say so every
+    // interval. Awaiting it here makes the declaration part of preparing a
+    // collector rather than a race against traffic.
+    //
+    // A failure propagates like any other preparation failure: `collector()`
+    // drops the memoised promise, `collectNow` logs it, and the next interval
+    // tries again. The schedule is never taken down by it, and the provider
+    // has its own retry on the request path regardless.
+    //
+    // The collector keeps its own small pool rather than borrowing the
+    // provider's. A background pass that competes for request connections is a
+    // pass that makes request latency its problem, and this pool's lifetime is
+    // the schedule's -- `stop()` ends it, while the provider's is ended by the
+    // shutdown hook that owns it.
+    await getServerPersistenceProvider(connectionString);
     await ensureAssetSchema(queryable);
     const byteStore = await createAssetByteStore(
       configuredS3Bucket(process.env.ASSET_S3_BUCKET),
@@ -198,27 +223,27 @@ export function startAssetCollectorSchedule(
     } catch (error) {
       if (error instanceof AssetReferenceTrackingNotEnabledError) {
         // The package's gate is "has anything declared that this database's
-        // writers maintain references". The persistence provider declares it
-        // while it initializes, before it hands out a store, so the cold and
-        // freshly-upgraded windows this used to sit in are closed: by the time
-        // a collector exists in this process, a provider has come up.
+        // writers maintain references". Preparing this collector awaits the
+        // persistence provider, which declares exactly that, so a pass only
+        // reaches here on a database where the declaration was made and did
+        // not take -- not on one that is merely new or idle.
         //
-        // What is left is a real defect, and only that. Either the declaration
-        // failed and the provider was never reached again -- the collector
-        // opens its own pool and does not need one, so this schedule can
-        // outlive a persistence stack that never initialized -- or something
-        // writes documents to this database through a store built without
-        // `trackAssetReferences`, which is what the pairing exists to prevent.
-        // Only the entry level is refused while it holds, and nothing is
-        // released while refused, so it cannot lose data; it does mean nothing
-        // is being reclaimed either.
+        // Two causes are left. The declaration may have failed, in which case
+        // preparation failed with it and the previous line in this log is the
+        // failed pass that says why. Or something writes documents to this
+        // database through a store built without `trackAssetReferences`, which
+        // is the pairing this refusal exists to protect. Only the entry level
+        // is refused either way -- the blob level already ran, and nothing is
+        // released while refused, so it cannot lose data. It does mean no
+        // entry is being reclaimed until someone acts.
         console.error(
           'Asset collection is configured to reclaim registry entries, but nothing has ' +
             'declared that this database maintains them, so entry reclamation (including the ' +
-            'one-time backfill) is refused. Byte reclamation is unaffected. The persistence ' +
-            'provider declares it at startup, so either that initialization is failing -- ' +
-            'check for an earlier provider error -- or documents on this database are being ' +
-            'written by a store built without trackAssetReferences.',
+            'one-time backfill) is refused. Byte reclamation is unaffected. Preparing this ' +
+            'collector awaits the persistence provider, which makes that declaration, so ' +
+            'either that provider initialization failed -- the failed pass logged just above ' +
+            'says why -- or documents on this database are being written by a store built ' +
+            'without trackAssetReferences.',
           error,
         );
       } else if (error instanceof StorageLockUnavailableError) {

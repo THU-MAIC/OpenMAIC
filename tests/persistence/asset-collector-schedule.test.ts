@@ -66,6 +66,10 @@ interface Harness {
   loadS3AssetByteStore: ReturnType<typeof vi.fn>;
   pools: Array<{ end: ReturnType<typeof vi.fn> }>;
   poolOptions: unknown[];
+  /** The provider the schedule awaits before it builds a collector. */
+  getServerPersistenceProvider: ReturnType<typeof vi.fn>;
+  /** What happened, in the order it happened, across both seams. */
+  order: string[];
 }
 
 /**
@@ -74,15 +78,32 @@ interface Harness {
  * to a failed pass — as the only real behavior under test.
  */
 function mockStorage(collect: () => Promise<Partial<CollectionPass>>): Harness {
+  const order: string[] = [];
   const harness: Harness = {
-    collectPass: vi.fn(async () => pass(await collect())),
+    collectPass: vi.fn(async () => {
+      order.push('pass');
+      return pass(await collect());
+    }),
     collectors: [],
     ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
     pgByteStores: [],
     loadS3AssetByteStore: vi.fn().mockResolvedValue({ kind: 's3' }),
     pools: [],
     poolOptions: [],
+    getServerPersistenceProvider: vi.fn(async () => {
+      order.push('provider');
+      return { pool: {} };
+    }),
+    order,
   };
+
+  // The seam that declares this database maintains asset references. The
+  // schedule has to have brought it up before the entry level can run, so it is
+  // mocked rather than stubbed away: every case here would otherwise be
+  // exercising a collector prepared in an order production never uses.
+  vi.doMock('@/lib/persistence/server-provider', () => ({
+    getServerPersistenceProvider: harness.getServerPersistenceProvider,
+  }));
 
   vi.doMock('@openmaic/storage/asset/collector', () => ({
     DEFAULT_ASSET_COLLECTION_GRACE_MS: 60 * 60 * 1000,
@@ -182,6 +203,44 @@ describe('asset collector schedule', () => {
     info.mockRestore();
   });
 
+  it('brings the persistence provider up before it collects anything', async () => {
+    // The provider is what declares that this database's document writers
+    // maintain asset references, and it is lazy: nothing else in a server
+    // process brings it up until the first persistence request. An instance
+    // that serves none before the first tick -- a cold install, an upgraded
+    // deployment, an idle replica behind a health check -- would otherwise run
+    // its first pass against a database where nothing had declared anything,
+    // and refuse the entry level and the one-time backfill for as long as the
+    // instance stayed quiet.
+    const harness = mockStorage(async () => ({}));
+    let letProviderFinish = (): void => {};
+    const providerReady = new Promise<void>((resolve) => {
+      letProviderFinish = resolve;
+    });
+    harness.getServerPersistenceProvider.mockImplementation(async () => {
+      harness.order.push('provider');
+      await providerReady;
+      return { pool: {} };
+    });
+    vi.stubEnv('DATABASE_URL', 'postgres://collector-declares-first');
+
+    schedule = await startSchedule();
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+
+    // Held open: the pass has started and is waiting on the provider, which is
+    // the assertion. A fire-and-forget call, or no call at all, collects here.
+    expect(harness.getServerPersistenceProvider).toHaveBeenCalledWith(
+      'postgres://collector-declares-first',
+    );
+    expect(harness.collectPass).not.toHaveBeenCalled();
+
+    letProviderFinish();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(harness.collectPass).toHaveBeenCalledTimes(1);
+    expect(harness.order).toEqual(['provider', 'pass']);
+  });
+
   it('logs the entry counts next to the blob count', async () => {
     const harness = mockStorage(async () => ({ collected: 2, entriesCollected: 7 }));
     vi.stubEnv('DATABASE_URL', 'postgres://collector-entry-counts');
@@ -240,17 +299,18 @@ describe('asset collector schedule', () => {
     await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
     await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
 
-    // The persistence provider declares the pairing while it initializes, so
-    // this is no longer the cold-start window it used to be: it is either a
-    // provider that never came up or a writer built without tracking, and the
-    // message names both places to look. Its own line rather than the
-    // transient wording, and the schedule keeps running either way, because
-    // only the entry level is refused and the blob level already ran.
+    // Preparing a collector awaits the provider that makes the declaration, so
+    // a pass only reaches here on a database where it was made and did not
+    // take -- never on one that is merely new or idle. Two causes are left and
+    // the message names both. Its own line rather than the transient wording,
+    // and the schedule keeps running either way, because only the entry level
+    // is refused and the blob level already ran.
     expect(harness.collectPass).toHaveBeenCalledTimes(2);
     expect(error).toHaveBeenCalledTimes(2);
     const alarm = String(error.mock.calls[0]?.[0]);
     expect(alarm).toContain('trackAssetReferences');
-    expect(alarm).toContain('persistence provider declares it at startup');
+    expect(alarm).toContain('awaits the persistence provider');
+    expect(alarm).toContain('provider initialization failed');
     expect(alarm).not.toContain('retrying on the next interval');
     expect(warn).not.toHaveBeenCalled();
     error.mockRestore();
