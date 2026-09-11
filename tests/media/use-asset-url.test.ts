@@ -112,7 +112,10 @@ describe('asset URL ownership', () => {
 
   it('publishes same-id replacement bytes to an active lease', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory());
-    const pool = getAssetPool();
+    // Same-id replacement is a store capability, not an application one: the
+    // browser-facing `AssetPoolStore` surface deliberately does not expose it,
+    // so the concrete store is what this reaches through.
+    const pool = getAssetPool() as unknown as BrowserAssetStore;
     const ref = await pool.put(new Blob(['old'], { type: 'text/plain' }));
     const urls: string[] = [];
     let resolveFirst!: () => void;

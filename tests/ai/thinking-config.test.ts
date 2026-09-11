@@ -307,6 +307,22 @@ describe('thinking config normalization', () => {
     });
   });
 
+  it('normalizes GLM-5.3 thinking as forced low/high/max effort levels', () => {
+    for (const modelId of ['glm-5.3', 'glm-5.3-flash']) {
+      const thinking = getThinking('glm', modelId);
+
+      expect(supportsConfigurableThinking(thinking)).toBe(true);
+      expect(thinking?.control).toBe('effort');
+      expect(thinking?.requestAdapter).toBe('glm');
+      expect(thinking?.toggleable).toBe(false);
+      expect(thinking?.effortValues).toEqual(['low', 'high', 'max']);
+      expect(getDefaultThinkingConfig(thinking)).toEqual({
+        mode: 'enabled',
+        effort: 'max',
+      });
+    }
+  });
+
   it('normalizes Tencent HY3 thinking as no_think/low/high effort levels', () => {
     const thinking = getThinking('tencent-hunyuan', 'hy3-preview');
 

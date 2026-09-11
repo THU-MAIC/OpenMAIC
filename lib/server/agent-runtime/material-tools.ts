@@ -402,7 +402,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
         throw new Error('search_material query must contain 1 to 200 characters');
       }
       const needle = foldCase(params.query);
-      const deadline = performance.now() + SEARCH_TIME_BUDGET_MS;
+      const deadline = now() + SEARCH_TIME_BUDGET_MS;
       let scannedChars = 0;
       let truncated = false;
       const hits: Array<{
@@ -417,7 +417,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
       for (const record of records) {
         throwIfAborted(signal);
         if (!isSearchableTextRecord(record)) continue;
-        if (scannedChars >= MAX_SEARCH_CHARS_PER_EXEC || performance.now() >= deadline) {
+        if (scannedChars >= MAX_SEARCH_CHARS_PER_EXEC || now() >= deadline) {
           truncated = true;
           break;
         }
@@ -430,7 +430,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
         const maxDecodeBytes = Math.min(raw.length, remainingCharsBeforeRead * 4);
         const text = raw.toString('utf8', 0, maxDecodeBytes);
         const sourceWasByteTruncated = maxDecodeBytes < raw.length;
-        if (performance.now() >= deadline) {
+        if (now() >= deadline) {
           truncated = true;
           break;
         }
@@ -443,7 +443,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
         ) {
           throwIfAborted(signal);
           const remainingChars = MAX_SEARCH_CHARS_PER_EXEC - scannedChars;
-          if (remainingChars <= 0 || performance.now() >= deadline) {
+          if (remainingChars <= 0 || now() >= deadline) {
             truncated = true;
             break;
           }
