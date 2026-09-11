@@ -9,6 +9,7 @@ import { Pool } from 'pg';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { lazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
+import { resolveAssetPendingTtlMs } from '@/lib/persistence/asset-pending-ttl';
 import { resolveAssetQuotaBytes } from '@/lib/persistence/asset-quota';
 import { ensureOwnerMaterialSchema } from '@/lib/persistence/owner-materials';
 import { ensureStageMetaSchema } from '@/lib/persistence/stage-meta';
@@ -43,6 +44,9 @@ async function createServerPersistenceProvider(
   // Allocation is reachable by any caller this deployment admits, so the
   // store's own quota is what keeps it from growing without bound.
   const quotaBytes = resolveAssetQuotaBytes();
+  // Same reason, same moment: the window an allocation has to be claimed by a
+  // document before the collector expires it.
+  const pendingTtlMs = resolveAssetPendingTtlMs();
   const pool = poolFactory(connectionString);
   const queryable = pool as unknown as ConnectableQueryable;
   try {
@@ -63,10 +67,17 @@ async function createServerPersistenceProvider(
         withTransaction,
         validateScene: validateAppScene,
         validateStage: validateAppStage,
+        // Unconditional, and it has to be: this function is the only place
+        // that decides what server-backed persistence is, and it always
+        // ensures the asset schema and always leaves the collector's entry
+        // pass on. A document store that did not record references would let
+        // that pass expire allocations live documents name.
+        trackAssetReferences: true,
       }),
       assetStore: new PgAssetStore(queryable, {
         withTransaction,
         byteStore,
+        pendingTtlMs,
         ...(quotaBytes === undefined ? {} : { quotaBytes }),
       }),
     };

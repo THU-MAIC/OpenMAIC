@@ -242,6 +242,13 @@ export function createOwnerBoundDocumentStore<
     ownerId: options.ownerId,
     validateScene: options.validateScene,
     validateStage: options.validateStage,
+    // The reference half of the asset lifecycle, on for the same reason the
+    // asset schema is always ensured: this store is the write path that commits
+    // an allocation and records what a document claims, and the collector's
+    // entry pass -- always scheduled where server persistence exists -- reads
+    // exactly that. There is no configuration in this application where one
+    // runs without the other.
+    trackAssetReferences: true,
   });
   return new OwnerBoundDocumentStore(inner, pending, withTransaction, queryable, options.ownerId);
 }
