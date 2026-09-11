@@ -305,23 +305,25 @@ type AssetDocument = Page | Frame;
 
 /** Wait for fonts, images, client effects, and layout mutations to settle. */
 export async function waitForDocumentAssets(document: AssetDocument): Promise<void> {
-  await document.evaluate(async () => {
+  // tsx/esbuild can add module-scoped helpers to nested functions. Keep the
+  // browser program as source so Page and Frame evaluate it without those closures.
+  await document.evaluate(`(async () => {
     await globalThis.document.fonts?.ready.catch(() => undefined);
     await Promise.all(
       Array.from(globalThis.document.images, (image) =>
         image.complete
           ? Promise.resolve()
-          : new Promise<void>((resolve) => {
+          : new Promise((resolve) => {
               image.addEventListener('load', () => resolve(), { once: true });
               image.addEventListener('error', () => resolve(), { once: true });
               setTimeout(resolve, 2_000);
             }),
       ),
     );
-    await new Promise<void>((resolve) =>
+    await new Promise((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
-    await new Promise<void>((resolve) => {
+    await new Promise((resolve) => {
       let quietTimer = setTimeout(done, 100);
       const maximumTimer = setTimeout(done, 2_000);
       const observer = new MutationObserver(() => {
@@ -340,7 +342,7 @@ export async function waitForDocumentAssets(document: AssetDocument): Promise<vo
         subtree: true,
       });
     });
-  });
+  })()`);
 }
 
 /** Wait for a srcDoc iframe and the assets inside its browsing context. */
