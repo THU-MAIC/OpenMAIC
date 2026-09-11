@@ -765,9 +765,14 @@ async function generateAzureTTS(
 
   // Build SSML
   const rate = config.speed ? `${((config.speed - 1) * 100).toFixed(0)}%` : '0%';
+  // An Azure voice id carries the locale it speaks (`en-US-JennyNeural`), so the
+  // first two segments say which language to pronounce. Hardcoding zh-CN made
+  // Azure read every other voice in the catalog — `en-US-JennyNeural` and
+  // `en-US-GuyNeural` are both offered above — with Chinese phonetics.
+  const voiceLocale = /^[a-z]{2,3}-[A-Za-z]{2,4}/.exec(config.voice ?? '')?.[0] ?? 'en-US';
   const ssml = `
-    <speak version='1.0' xml:lang='zh-CN'>
-      <voice xml:lang='zh-CN' name='${config.voice}'>
+    <speak version='1.0' xml:lang='${voiceLocale}'>
+      <voice xml:lang='${voiceLocale}' name='${config.voice}'>
         <prosody rate='${rate}'>${escapeXml(text)}</prosody>
       </voice>
     </speak>
