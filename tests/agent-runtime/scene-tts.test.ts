@@ -2,18 +2,35 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   providers: vi.fn(),
+  baseUrl: vi.fn(),
+  model: vi.fn(),
   generate: vi.fn(),
   persist: vi.fn(),
+  voiceId: vi.fn(),
+  getAdapter: vi.fn(),
+  adapter: {
+    supportsRegistration: vi.fn(),
+    voiceExists: vi.fn(),
+    bootstrapReferenceClip: vi.fn(),
+    registerVoice: vi.fn(),
+  },
 }));
 
 vi.mock('@/lib/server/provider-config', () => ({
   getServerTTSProviders: mocks.providers,
   resolveTTSApiKey: vi.fn(() => ''),
-  resolveTTSBaseUrl: vi.fn(() => undefined),
-  resolveTTSModel: vi.fn(() => ''),
+  resolveTTSBaseUrl: mocks.baseUrl,
+  resolveTTSModel: mocks.model,
 }));
 
 vi.mock('@/lib/audio/tts-providers', () => ({ generateTTS: mocks.generate }));
+vi.mock('@/lib/audio/voice-design', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/audio/voice-design')>()),
+  getDeterministicVoiceId: mocks.voiceId,
+}));
+vi.mock('@/lib/audio/voice-registration', () => ({
+  getVoiceRegistrationAdapter: mocks.getAdapter,
+}));
 
 vi.mock('@/lib/server/classroom-media-bytes', () => ({
   persistClassroomMediaBytes: mocks.persist,
@@ -33,7 +50,12 @@ const scene = {
 } as Scene;
 
 describe('scene TTS capability routing', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.baseUrl.mockReturnValue(undefined);
+    mocks.model.mockReturnValue('');
+    mocks.getAdapter.mockReturnValue(undefined);
+  });
 
   it('honors the server capability force-off before synthesis', async () => {
     mocks.providers.mockReturnValue({ 'configured-tts': { disabled: true } });
@@ -64,6 +86,59 @@ describe('scene TTS capability routing', () => {
     });
     expect(mocks.persist).toHaveBeenCalledWith(
       expect.objectContaining({ stageId: 'stage-a', mime: 'audio/mpeg' }),
+    );
+  });
+
+  it('registers and reuses VoxCPM Auto Voice from the server-side roster', async () => {
+    mocks.providers.mockReturnValue({ 'voxcpm-tts': {} });
+    mocks.baseUrl.mockReturnValue('http://voxcpm.test/v1');
+    mocks.model.mockReturnValue('voxcpm2');
+    mocks.voiceId.mockResolvedValue('auto-stable-voice');
+    mocks.getAdapter.mockReturnValue(mocks.adapter);
+    mocks.adapter.supportsRegistration.mockReturnValue(true);
+    mocks.adapter.voiceExists.mockResolvedValue(false);
+    mocks.adapter.bootstrapReferenceClip.mockResolvedValue({
+      referenceAudioBase64: 'UklGRg==',
+      mimeType: 'audio/wav',
+    });
+    mocks.adapter.registerVoice.mockResolvedValue('auto-stable-voice');
+    mocks.generate.mockResolvedValue({ audio: new Uint8Array([1, 2]), format: 'wav' });
+    mocks.persist.mockResolvedValue('/api/classroom-media/stage-a/media/tts-speech-a.wav');
+
+    const summary = await synthesizeSceneNarration({
+      scene: structuredClone(scene),
+      force: false,
+      roster: [
+        {
+          id: 'teacher',
+          name: 'Teacher',
+          role: 'teacher',
+          persona: 'patient mentor',
+          avatar: '',
+          color: '',
+          priority: 10,
+          voiceConfig: { providerId: 'voxcpm-tts', voiceId: 'voxcpm:auto' },
+          voiceDesign: {
+            identity: 'adult teacher',
+            texture: 'clear and warm',
+            delivery: 'calm and steady',
+          },
+        },
+      ],
+    });
+
+    expect(summary).toMatchObject({ changed: true, generated: 1, failed: [] });
+    expect(mocks.adapter.registerVoice).toHaveBeenCalledWith(
+      expect.objectContaining({ baseUrl: 'http://voxcpm.test/v1', model: 'voxcpm2' }),
+      expect.objectContaining({ voiceId: 'auto-stable-voice' }),
+      undefined,
+    );
+    expect(mocks.generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        voice: 'voxcpm:auto',
+        providerOptions: { registeredVoiceId: 'auto-stable-voice' },
+      }),
+      'Hello',
     );
   });
 });
