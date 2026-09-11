@@ -68,6 +68,20 @@ Every asset route requires an authenticated principal with an asset partition ke
 
 Writes use bounded `multipart/form-data`; reads are private and uncached. The full media-type allowlist, size limits, response headers, and client snapshot rules are specified in the [AssetStore HTTP contract](./asset-http-contract.md).
 
+## Asset reclamation a host must schedule
+
+**Nothing in this package runs on a timer.** `AssetCollector` is a re-runnable pass a host has to schedule; left unscheduled, unreferenced entries and bytes grow without bound. A host composing this server owns that schedule — a periodic call to `collect()` in-process, a cron job against the same database, whatever fits the deployment. `collect()` is bounded per call and answers how many blobs it deleted; `collectPass()` answers that plus whether the batch was full, which is exactly "run again", and the entry counts below.
+
+Three options decide how much of the [two-level reclamation](./asset-http-contract.md) a deployment gets. All three are off or generous by default, so an existing deployment behaves as it did:
+
+- **`PgDocumentStore`'s `trackAssetReferences`** (default `false`) makes the document store maintain the `document_asset_refs` table and the entry lifecycle columns inside the write transactions it already opens. It is off by default because those are the asset backend's tables: a deployment that provisions documents without `ensureAssetSchema()` has none of them. Enable it by constructing the store you inject as `documentStore` with the option set; nothing about the document routes changes either way.
+- **`PgAssetStore`'s `pendingTtlMs`** (default one day) is how long an allocated entry stays pending before it expires. The window it has to cover is "the bytes were stored, and then the document naming them was saved", which nothing on the wire leases, so a generous default is deliberate: unreclaimed bytes cost storage, while an expiry that fires before the document write costs a document its media. It is written on every allocation and only ever acted on by the entry pass below.
+- **`AssetCollector`'s `documentReferences`** (default `false`) adds the entry pass, run ahead of the byte pass under the same batch cap and the same lock-and-re-check discipline. With it, the collector also backfills the reference table for a deployment upgrading into this level, in bounded chunks (`referenceBackfillBatchSize`, default fifty documents), and releases nothing until that walk has covered every document.
+
+**Enable `documentReferences` only together with `trackAssetReferences`.** They are two halves of one mechanism: the document store is what commits an entry and what records the references the pass reads. A collector running the entry pass against a document store that maintains nothing sees every entry as pending, and releases each one when its TTL expires — while the documents naming them are still there.
+
+One grace period (`graceMs`, default one hour) governs both levels: an entry and its bytes are two rows describing one asset, and separate windows would only let them disagree about how long an undo has. A deployment using indirect byte egress must keep its signed-URL lifetime far below that grace; `assertSignedUrlTtlWithinGrace` states the rule, and the asset handler applies it already.
+
 ## Endpoint authorization matrix
 
 The matrix treats learner, merge, and admin credentials as separate capabilities. An admin-only or merge-only credential does not implicitly own a learner partition; a deployment may combine capabilities, but every applicable check still has to pass.

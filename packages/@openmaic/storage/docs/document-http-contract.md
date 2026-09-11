@@ -63,3 +63,7 @@ Only the machine-readable not-found codes are translated to `null`. Status alone
 ## Retry and atomicity guarantees
 
 Full saves are atomic: validation or any failed child write leaves the previous aggregate untouched. `DELETE /documents/{stageId}` and scene deletion are safely retryable. Stage and scene puts are idempotent for the same body, subject to the current-version guard. The contract does not add conditional requests or idempotency keys; deployments that retry an ambiguous full save must rely on the caller-owned `stageId` and replacement semantics.
+
+## Asset references, where a deployment maintains them
+
+A server whose asset backend tracks document references maintains them as a side effect of these write routes, inside the same transactions: a save replaces the stage's reference rows, a stage or scene put replaces that scope's, and a delete removes them and marks the entries that lost their last reference. **Nothing about this contract changes** — not a request shape, not a response shape, not a status code, not an error — and a document write is never refused, delayed, or altered by what it references. An id the asset registry does not hold simply records no reference, exactly as an unknown id is a miss on the asset routes. The mechanism, and the reclamation it enables, is specified in the [AssetStore HTTP contract](./asset-http-contract.md).
