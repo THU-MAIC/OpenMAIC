@@ -1,0 +1,89 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "areas",
+    "confidence",
+    "summary",
+    "next_action",
+    "questions",
+    "related_issues",
+    "related_prs",
+    "evidence",
+    "should_comment"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["bug", "enhancement", "documentation", "question", "unknown"]
+    },
+    "areas": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "string",
+        "enum": [
+          "area:generation",
+          "area:playback",
+          "area:editor",
+          "area:providers",
+          "area:import-export",
+          "area:storage",
+          "area:infra"
+        ]
+      }
+    },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 1200 },
+    "next_action": {
+      "type": "string",
+      "enum": ["needs-info", "review-pr", "investigate", "maintainer-review", "none"]
+    },
+    "questions": {
+      "type": "array",
+      "maxItems": 3,
+      "items": { "type": "string", "minLength": 1, "maxLength": 400 }
+    },
+    "related_issues": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["number", "reason"],
+        "properties": {
+          "number": { "type": "integer", "minimum": 1 },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 400 }
+        }
+      }
+    },
+    "related_prs": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["number", "reason"],
+        "properties": {
+          "number": { "type": "integer", "minimum": 1 },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 400 }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "reason"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1, "maxLength": 240 },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 400 }
+        }
+      }
+    },
+    "should_comment": { "type": "boolean" }
+  }
+}
