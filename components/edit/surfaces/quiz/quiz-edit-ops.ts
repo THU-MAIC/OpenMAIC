@@ -21,6 +21,7 @@
  */
 
 import type { QuizContent, QuizQuestion, QuizQuestionType } from '@/lib/types/stage';
+import { answerIncludesOption } from '@/lib/quiz/grading';
 import { createElementId } from '@/lib/edit/element-id';
 
 // ---------------------------------------------------------------------------
@@ -86,8 +87,14 @@ export function optionLetter(index: number): string {
 }
 
 export function toRows(q: QuizQuestion): OptionRow[] {
-  const answer = q.answer ?? [];
-  return (q.options ?? []).map((o) => ({ label: o.label, correct: answer.includes(o.value) }));
+  return (q.options ?? []).map((o) => ({
+    label: o.label,
+    // The same resolved projection the review UI and the grader use: a key
+    // stored as an option label must read as correct here too. Raw value
+    // equality would report every row as incorrect, and the next mutation
+    // would rebuild `answer` from those rows and silently drop the key.
+    correct: answerIncludesOption(q, o.value),
+  }));
 }
 
 /** Re-derive `options` (value = positional letter) + `answer` from rows. */
