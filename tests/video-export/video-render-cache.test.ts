@@ -5,11 +5,13 @@ import { EventEmitter } from 'node:events';
 
 const mocks = vi.hoisted(() => ({
   build: vi.fn(),
+  accessDocument: vi.fn(),
   fetch: vi.fn(),
   saveAs: vi.fn(),
   toast: { loading: vi.fn(), success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 vi.mock('@/lib/video-export-app/build-export-zip', () => ({ buildExportZip: mocks.build }));
+vi.mock('@/lib/document-store', () => ({ accessDocument: mocks.accessDocument }));
 vi.mock('file-saver', () => ({ saveAs: mocks.saveAs }));
 vi.mock('sonner', () => ({ toast: mocks.toast }));
 vi.mock('@/lib/store/stage', async () => {
@@ -88,6 +90,7 @@ beforeEach(async () => {
   );
   vi.clearAllMocks();
   mocks.fetch.mockReset();
+  mocks.accessDocument.mockReset().mockResolvedValue(undefined);
   mocks.build.mockReset().mockImplementation(async () => makeZip());
   vi.stubGlobal('fetch', mocks.fetch);
 });
@@ -143,6 +146,80 @@ describe('video render ZIP retry cache', () => {
     change();
     await start();
     expect(mocks.build).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['resolution', 'burnInSubtitles'] as const)(
+    'releases the ZIP when %s changes and changes back before retry',
+    async (key) => {
+      const unsubscribe = vi.spyOn(Dexie.on('storagemutated'), 'unsubscribe');
+      rejectSubmit();
+      await start();
+      const previous = options().options;
+      options().setOptions(
+        key === 'resolution' ? { resolution: '720p' } : { burnInSubtitles: true },
+      );
+      expect(unsubscribe).toHaveBeenCalledOnce();
+      options().setOptions(previous);
+      await start();
+      expect(mocks.build).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('recompiles a document-only rename and downloads with the new name', async () => {
+    const originalStage = useStageStore.getState().stage;
+    rejectSubmit();
+    await start();
+    mocks.accessDocument.mockResolvedValue({ document: { stage: { name: 'Renamed course' } } });
+    mocks.build.mockResolvedValueOnce({ ...makeZip(), stageName: 'Renamed course' });
+    await start(); // Another 429 retains the freshly renamed ZIP.
+    expect(mocks.build).toHaveBeenCalledTimes(2);
+    expect(useStageStore.getState().stage).toBe(originalStage);
+    acceptAndFinish();
+    await start();
+    expect(mocks.build).toHaveBeenCalledTimes(2);
+    expect(mocks.accessDocument).toHaveBeenCalledWith('stage-a');
+    expect(mocks.saveAs).toHaveBeenCalledWith(expect.any(Blob), 'Renamed course.mp4');
+  });
+
+  it('rechecks a document rename that happened during the preceding compilation', async () => {
+    let finish!: (result: ReturnType<typeof makeZip>) => void;
+    mocks.build.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    rejectSubmit();
+    const pending = start();
+    await vi.waitFor(() => expect(mocks.build).toHaveBeenCalledOnce());
+    await start();
+    expect(mocks.build).toHaveBeenCalledOnce();
+    mocks.accessDocument.mockResolvedValue({ document: { stage: { name: 'Renamed course' } } });
+    finish(makeZip());
+    await pending;
+    mocks.build.mockResolvedValueOnce({ ...makeZip(), stageName: 'Renamed course' });
+    await start();
+    expect(mocks.build).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores duplicate starts while a cached name check is pending, and rejects an invalidated slot', async () => {
+    rejectSubmit();
+    await start();
+    let finish!: (value: undefined) => void;
+    mocks.accessDocument.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const pending = start();
+    await start();
+    expect(mocks.accessDocument).toHaveBeenCalledOnce();
+    expect(mocks.build).toHaveBeenCalledOnce();
+    expect(mocks.fetch).toHaveBeenCalledOnce();
+    useStageStore.setState({ scenes: [] });
+    finish(undefined);
+    await pending;
+    expect(mocks.build).toHaveBeenCalledTimes(2);
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
   });
 
   it('also compares the passed export locale, and keeps identical options reusable', async () => {
@@ -229,6 +306,7 @@ describe('video render ZIP retry cache', () => {
   it.each(['edit', 'switch-back', 'reset', 'options'])(
     'does not repopulate a cache invalidated during compilation: %s',
     async (change) => {
+      const unsubscribe = vi.spyOn(Dexie.on('storagemutated'), 'unsubscribe');
       let finish!: (result: ReturnType<typeof makeZip>) => void;
       mocks.build.mockImplementationOnce(
         () =>
@@ -251,6 +329,8 @@ describe('video render ZIP retry cache', () => {
       }
       finish(makeZip());
       await pending;
+      // A stale compile must not retain a ZIP or its listeners at all.
+      expect(unsubscribe).toHaveBeenCalledOnce();
       await start();
       expect(mocks.build).toHaveBeenCalledTimes(2);
     },

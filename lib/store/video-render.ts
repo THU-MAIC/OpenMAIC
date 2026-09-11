@@ -31,6 +31,7 @@ import {
 import type { Locale } from '@/lib/i18n';
 import { useStageStore } from '@/lib/store/stage';
 import { observeExportChanges } from '@/lib/video-export-app/observe-export-changes';
+import { resolveExportStageName } from '@/lib/video-export-app/resolve-stage-name';
 
 type BuildExportZipResult = import('@/lib/video-export-app/build-export-zip').BuildExportZipResult;
 
@@ -114,7 +115,6 @@ let cachedZip: {
   resolution: VideoResolution;
   burnInSubtitles: boolean;
   locale: Locale;
-  revision: number;
   result: BuildExportZipResult;
 } | null = null;
 let exportRevision = 0;
@@ -167,17 +167,16 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
     activeRenders += 1;
     stopObserving ??= observeExportChanges(invalidateCachedZip);
     const { resolution, fps, quality, burnInSubtitles } = get().options;
-    const stageId = useStageStore.getState().stage?.id;
+    const { stage } = useStageStore.getState();
+    const stageId = stage?.id;
     if (
       cachedZip &&
       (cachedZip.stageId !== stageId ||
         cachedZip.resolution !== resolution ||
         cachedZip.burnInSubtitles !== burnInSubtitles ||
-        cachedZip.locale !== locale ||
-        cachedZip.revision !== exportRevision)
+        cachedZip.locale !== locale)
     )
       invalidateCachedZip();
-    const revision = exportRevision;
     const cached = cachedZip?.result;
 
     set({
@@ -195,13 +194,32 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
     let errorCount = 0;
     try {
       let built = cached;
+      if (built && stage) {
+        const currentName = await resolveExportStageName(stage);
+        // The async name read can overlap an edit/reset. Never reuse a slot
+        // that was released while reading, even when the name still matches.
+        if (cachedZip?.result !== built || currentName !== built.stageName) {
+          invalidateCachedZip();
+          built = undefined;
+          set({ status: 'compiling' });
+          toast.loading(t('export.videoCompiling'), { id: toastId });
+        }
+      }
       if (!built) {
+        const revision = exportRevision;
+        const compileStageId = useStageStore.getState().stage?.id;
         const { buildExportZip } = await import('@/lib/video-export-app/build-export-zip');
         built = await buildExportZip({ resolution, burnInSubtitles, locale });
         // Changes during compilation (including reset or switching away and
         // back) cannot repopulate the retry slot with an obsolete snapshot.
-        if (stageId && revision === exportRevision) {
-          cachedZip = { stageId, resolution, burnInSubtitles, locale, revision, result: built };
+        if (compileStageId && revision === exportRevision) {
+          cachedZip = {
+            stageId: compileStageId,
+            resolution,
+            burnInSubtitles,
+            locale,
+            result: built,
+          };
         }
       }
       ({ zipBlob, stageName, missingCount, errorCount } = built);
