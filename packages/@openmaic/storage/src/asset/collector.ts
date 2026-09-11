@@ -177,6 +177,13 @@ const EMPTY_ENTRY_LEVEL: EntryLevelPass = {
  * wants to know which document stalls its backfill reads `stageId`; a log line
  * that prints the error alone still discloses nothing. Exported so that
  * reading it is a type rather than a cast.
+ *
+ * `cause` is whatever the pass caught, including a
+ * {@link StorageLockUnavailableError} when the document this names could not
+ * be locked -- so a host can have both facts at once: `instanceof` on the
+ * cause says "contention, retry", and `stageId` says which document to look
+ * at. Contention with no document to name is not wrapped at all; it is thrown
+ * as the typed error itself (see {@link collectorFailure}).
  */
 export class AssetCollectionFailure extends Error {
   /** The document the pass was enumerating, when it was enumerating one. */
@@ -195,16 +202,23 @@ export class AssetCollectionFailure extends Error {
 /**
  * Wrap a caught failure, keeping it as `cause`.
  *
- * Lock contention passes through with its own type instead: it is the one
- * failure this collector manufactures on purpose (through its `lock_timeout`
- * budget), a host's response to it is to retry rather than to investigate, and
- * flattening it into the generic failure would leave that decision to string
- * matching.
+ * Lock contention is the one failure this collector manufactures on purpose
+ * (through its `lock_timeout` budget), and a host's response to it is to retry
+ * rather than to investigate, so it must stay identifiable rather than being
+ * flattened into the generic failure and left to string matching. How it is
+ * surfaced depends on whether there is a document to name:
+ *
+ * - No stage id (every pass except the backfill's per-document step): the
+ *   typed error is thrown as it is. There is nothing to add to it.
+ * - A stage id (the backfill): the typed error becomes the `cause` of an
+ *   {@link AssetCollectionFailure} carrying that id, because both facts are
+ *   useful and dropping either is a worse answer. `instanceof` on the cause
+ *   still identifies contention.
  */
 function collectorFailure(stageId?: string, cause?: unknown): Error {
   const contention = asStorageLockUnavailable(cause);
-  if (contention) return contention;
-  return new AssetCollectionFailure(stageId, cause);
+  if (contention && stageId === undefined) return contention;
+  return new AssetCollectionFailure(stageId, contention ?? cause);
 }
 
 /**
@@ -622,16 +636,41 @@ export class AssetCollector {
    * Mark every legacy entry committed, then stamp the marked ones no document
    * names.
    *
-   * Two statements rather than one data-modifying CTE: PostgreSQL does not
-   * support updating the same row twice in one statement, and every row the
-   * first statement marks is a row the second one may stamp.
+   * THREE statements, and the shape is the same discipline `releaseEntries`
+   * uses, for the same reason.
    *
-   * The second statement's predicate is "committed, unreferenced_at NULL, and
-   * no reference row", which is deliberately broader than "was legacy a moment
+   * (1) Mark. Separate from the stamp rather than one data-modifying CTE:
+   *     PostgreSQL does not support updating the same row twice in one
+   *     statement, and every row this marks is a row the stamp may touch.
+   *
+   * (2) Lock the stamping candidates with `FOR UPDATE`. An `UPDATE` takes
+   *     `FOR NO KEY UPDATE`, which does NOT conflict with the `KEY SHARE` an
+   *     insert into `document_asset_refs` takes on the entry it names -- so an
+   *     `UPDATE … WHERE NOT EXISTS (refs)` neither waits for a concurrent
+   *     insert-only reference writer nor sees it, and would stamp an entry a
+   *     backfill on another instance had just given a reference. That is not a
+   *     loss (`releaseEntries` re-checks references before deleting anything),
+   *     but it under-counts the principal's live bytes and starts a grace
+   *     period that should not have started. `FOR UPDATE` does conflict with
+   *     `KEY SHARE`, so this waits.
+   *
+   * (3) Stamp, restricted to the ids just locked. A separate statement takes a
+   *     fresh snapshot under READ COMMITTED, so it sees any reference row that
+   *     committed while (2) was waiting, and the locks held since (2) keep a
+   *     later one from arriving.
+   *
+   * The stamp's predicate is "committed, unreferenced_at NULL, and no
+   * reference row", which is deliberately broader than "was legacy a moment
    * ago": the document store stamps an entry the moment it loses its last
    * reference, so the only other rows this can reach are ones whose reference
    * rows went missing out of band -- which genuinely are unreferenced, and
    * which the grace period protects exactly as it protects the rest.
+   *
+   * The candidate ids are materialized, which this one pass can afford: it
+   * runs once per deployment, over a backlog it is already walking document by
+   * document, and the alternative -- repeating the predicate in (3) instead of
+   * naming the locked rows -- would leave any row that became committed after
+   * (2)'s snapshot unlocked and back in the stale window.
    */
   private async markLegacyEntries(): Promise<number> {
     try {
@@ -648,15 +687,29 @@ export class AssetCollector {
            )
            SELECT count(*)::text AS marked FROM marked`,
         );
-        await queryable.query(
-          `UPDATE asset_entries AS entries
-              SET unreferenced_at = now()
-            WHERE entries.committed_at IS NOT NULL
-              AND entries.unreferenced_at IS NULL
-              AND NOT EXISTS (
-                    SELECT 1 FROM document_asset_refs AS refs WHERE refs.asset_id = entries.id
-                  )`,
+        const locked = await queryable.query<EntryCandidateRow>(
+          // Ordered so two collectors racing this statement queue in the same
+          // direction. Nothing else is held while it waits, and the entry pass
+          // locks one row at a time, so no cycle is possible either way.
+          `SELECT id
+             FROM asset_entries
+            WHERE committed_at IS NOT NULL AND unreferenced_at IS NULL
+            ORDER BY id ASC
+              FOR UPDATE`,
         );
+        const candidates = locked.rows.map((row) => row.id);
+        if (candidates.length > 0) {
+          await queryable.query(
+            `UPDATE asset_entries AS entries
+                SET unreferenced_at = now()
+              WHERE entries.id = ANY($1::text[])
+                AND entries.unreferenced_at IS NULL
+                AND NOT EXISTS (
+                      SELECT 1 FROM document_asset_refs AS refs WHERE refs.asset_id = entries.id
+                    )`,
+            [candidates],
+          );
+        }
         return Number(marked.rows[0]?.marked ?? 0);
       });
     } catch (error) {

@@ -55,6 +55,26 @@ function transactionFor(pool: Pool): WithTransaction {
 }
 
 /**
+ * Wait a short while for some backend to block on a lock, and carry on either
+ * way.
+ *
+ * Unlike {@link waitForLockWaiter}, the absence of a waiter is not a failure
+ * here: it is the state a test wants to go on and make an assertion about, and
+ * throwing (or hanging) instead would replace that assertion with a timeout.
+ */
+async function settleForLockWaiter(pool: { query: Queryable['query'] }): Promise<boolean> {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const waiting = await pool.query(
+      `SELECT 1 FROM pg_stat_activity
+        WHERE wait_event_type = 'Lock' AND datname = current_database()`,
+    );
+    if (waiting.rows.length > 0) return true;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return false;
+}
+
+/**
  * The package's write transactions, with a lock-wait budget a test can wait
  * for.
  *
@@ -745,6 +765,154 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
     expect((await assets.resolve(principal, id))?.bytes).toEqual(
       new TextEncoder().encode('locked entry'),
     );
+  });
+
+  test('legacy marking does not stamp an entry a concurrent backfill just referenced', async () => {
+    // `markLegacyEntries` stamps the entries its walk found unreferenced. An
+    // `UPDATE ... WHERE NOT EXISTS (refs)` takes FOR NO KEY UPDATE, which does
+    // not conflict with the KEY SHARE an insert into document_asset_refs takes
+    // on the entry it names -- so it neither waits for an insert-only writer
+    // nor sees one that commits after its snapshot, and would stamp an entry
+    // another instance's backfill had just given a reference. Not a loss, since
+    // releaseEntries re-checks, but it under-counts the principal's live bytes
+    // and starts a grace period that should not have started.
+    await documents.saveDocument(stageWithImage('marker-stage', 'marker-scene', 'unallocated'));
+    const legacy = await assets.put(principal, new Blob(['legacy bytes']));
+    await pool.query(
+      `UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = $1`,
+      [legacy],
+    );
+    const untracked = new PgDocumentStore(pool as Queryable, {
+      withTransaction: transactionFor(pool),
+    });
+    // One document for the walk to read, so its page is fixed before the
+    // document below exists.
+    await untracked.saveDocument(stageWithImage('walked-stage', 'walked-scene', 'unallocated'));
+
+    let reachedDocument!: () => void;
+    const atDocument = new Promise<void>((resolve) => {
+      reachedDocument = resolve;
+    });
+    let releaseDocument!: () => void;
+    const mayFinishWalk = new Promise<void>((resolve) => {
+      releaseDocument = resolve;
+    });
+    let paused = false;
+    const pausingTransaction: WithTransaction = async (body) => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const result = await body({
+          async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+            text: string,
+            params?: unknown[],
+          ): Promise<QueryResult<TRow>> {
+            const answer = await (client as Queryable).query<TRow>(text, params);
+            if (!paused && text.includes('document_stages') && text.includes('FOR SHARE')) {
+              paused = true;
+              reachedDocument();
+              await mayFinishWalk;
+            }
+            return answer;
+          },
+        });
+        await client.query('COMMIT');
+        return result;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    };
+
+    // Instance A: its walk has already read its page of stage ids, and is now
+    // inside the first document's transaction.
+    const marking = new AssetCollector(pool as Queryable, bytes, {
+      withTransaction: pausingTransaction,
+      documentReferences: true,
+      graceMs: 60 * 60 * 1000,
+    }).collectPass();
+    await atDocument;
+
+    // A document A's page cannot contain, and instance B's insert-only
+    // backfill of it, held open so its KEY SHARE is.
+    const late = stageWithImage('late-stage', 'late-scene', legacy);
+    await untracked.saveDocument(late);
+    const backfilling = await pool.connect();
+    try {
+      await backfilling.query('BEGIN');
+      await backfillDocumentAssetReferences(backfilling as Queryable, {
+        stageId: 'late-stage',
+        scope: sceneAssetScope('late-scene', late.scenes[0]),
+      });
+
+      releaseDocument();
+      // A finishes its walk and reaches the marking, whose lock must wait for
+      // the KEY SHARE held above. Tolerant of no waiter on purpose: a marking
+      // that does not wait races ahead and stamps, which is the regression,
+      // and the assertions below are what must catch it.
+      expect(await settleForLockWaiter(pool)).toBe(true);
+      await backfilling.query('COMMIT');
+    } finally {
+      backfilling.release();
+    }
+    const pass = await marking;
+
+    expect(pass.legacyEntriesCommitted).toBe(1);
+    const entry = await pool.query<{ committed_at: Date | null; unreferenced_at: Date | null }>(
+      'SELECT committed_at, unreferenced_at FROM asset_entries WHERE id = $1',
+      [legacy],
+    );
+    // Marked committed, and NOT stamped: a document names it.
+    expect(entry.rows[0]?.committed_at).not.toBeNull();
+    expect(entry.rows[0]?.unreferenced_at).toBeNull();
+    expect(
+      (await pool.query('SELECT 1 FROM document_asset_refs WHERE asset_id = $1', [legacy])).rows,
+    ).toHaveLength(1);
+  });
+
+  test('a backfill that cannot lock its document reports both the contention and the document', async () => {
+    // Contention with a document to name keeps both facts: the typed error is
+    // the cause, so `instanceof` still answers "retry", and `stageId` says
+    // which document stalled the walk.
+    await documents.saveDocument(stageWithImage('stalled-stage', 'stalled-scene', 'unallocated'));
+    const legacy = await assets.put(principal, new Blob(['stalled legacy'])); // gives the walk a reason
+    await pool.query(
+      `UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = $1`,
+      [legacy],
+    );
+    const holder = await pool.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT data FROM document_stages WHERE id = $1 FOR UPDATE', [
+        'stalled-stage',
+      ]);
+
+      const failure = await new AssetCollector(pool as Queryable, bytes, {
+        withTransaction: impatientTransaction(pool),
+        documentReferences: true,
+        graceMs: 0,
+      })
+        .collectPass()
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(AssetCollectionFailure);
+      expect((failure as AssetCollectionFailure).stageId).toBe('stalled-stage');
+      const cause = (failure as AssetCollectionFailure).cause;
+      expect(cause).toBeInstanceOf(StorageLockUnavailableError);
+      expect((cause as StorageLockUnavailableError).reason).toBe('lock-timeout');
+    } finally {
+      await holder.query('ROLLBACK');
+      holder.release();
+    }
+
+    // Nothing was marked, so the entry level released nothing.
+    const entry = await pool.query<{ committed_at: Date | null }>(
+      'SELECT committed_at FROM asset_entries WHERE id = $1',
+      [legacy],
+    );
+    expect(entry.rows[0]?.committed_at).toBeNull();
   });
 
   test('removing the entry cascades its reference rows away', async () => {
