@@ -7,6 +7,9 @@ export interface CssUrlReference {
   end: number;
 }
 
+/** CSS drops an escaped newline from a token value: url("a\<LF>b") is "ab". */
+const stripEscapedNewlines = (value: string) => value.replace(/\\\r\n|\\\n|\\\r|\\\f/g, '');
+
 export function cssUrlReferences(value: string): CssUrlReference[] {
   const refs: CssUrlReference[] = [];
   valueParser(value).walk((node: CssValueNode) => {
@@ -16,7 +19,11 @@ export function cssUrlReferences(value: string): CssUrlReference[] {
       (raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))
         ? raw.slice(1, -1)
         : raw;
-    refs.push({ raw: unquoted, start: node.sourceIndex, end: node.sourceEndIndex });
+    refs.push({
+      raw: stripEscapedNewlines(unquoted),
+      start: node.sourceIndex,
+      end: node.sourceEndIndex,
+    });
     return false;
   });
   return refs;
@@ -52,7 +59,10 @@ export function cssImportReference(rule: AtRule): { url: string; conditions: str
         : raw;
   }
   if (!url) return null;
-  return { url, conditions: rule.params.slice(node.sourceEndIndex).trim() };
+  return {
+    url: stripEscapedNewlines(url),
+    conditions: rule.params.slice(node.sourceEndIndex).trim(),
+  };
 }
 
 export function parseCss(css: string, cssUrl: string): Root {
@@ -91,14 +101,28 @@ export function collectCssAssetReferencesByRegex(
       continue;
     }
     if (ch === '"' || ch === "'") {
+      // An unescaped \n/\r/\f ends the string as a bad-string token and the
+      // browser recovers right there; scanning must too, or everything after
+      // an unterminated string is swallowed and browser-active assets hidden.
       let j = i + 1;
-      while (j < n && css[j] !== ch) {
-        if (css[j] === '\\') j++;
+      let terminated = false;
+      while (j < n) {
+        if (css[j] === '\\') {
+          // An escaped newline continues the string; \r\n is one newline.
+          j += css[j + 1] === '\r' && css[j + 2] === '\n' ? 3 : 2;
+          continue;
+        }
+        if (css[j] === ch) {
+          terminated = true;
+          break;
+        }
+        if (css[j] === '\n' || css[j] === '\r' || css[j] === '\f') break;
         j++;
       }
-      if (importNext) refs.push({ kind: 'css-import', url: css.slice(i + 1, j) });
+      if (terminated && importNext)
+        refs.push({ kind: 'css-import', url: stripEscapedNewlines(css.slice(i + 1, j)) });
       importNext = false;
-      i = j + 1;
+      i = terminated ? j + 1 : j;
       continue;
     }
     if (ch === '@') {
@@ -124,16 +148,32 @@ export function collectCssAssetReferencesByRegex(
       const quote = css[k] === '"' || css[k] === "'" ? css[k] : null;
       if (quote) {
         let m = k + 1;
-        while (m < n && css[m] !== quote) {
-          if (css[m] === '\\') m++;
+        let terminated = false;
+        while (m < n) {
+          if (css[m] === '\\') {
+            m += css[m + 1] === '\r' && css[m + 2] === '\n' ? 3 : 2;
+            continue;
+          }
+          if (css[m] === quote) {
+            terminated = true;
+            break;
+          }
+          if (css[m] === '\n' || css[m] === '\r' || css[m] === '\f') break;
           m++;
         }
-        refs.push({ kind: importNext ? 'css-import' : 'css-url', url: css.slice(k + 1, m) });
-        i = m + 1;
+        // An unterminated url("... string is a bad-string token: no URL is
+        // taken from it and scanning resumes at the offending character.
+        if (terminated) {
+          refs.push({
+            kind: importNext ? 'css-import' : 'css-url',
+            url: stripEscapedNewlines(css.slice(k + 1, m)),
+          });
+        }
+        i = terminated ? m + 1 : m;
       } else {
         let m = k;
         while (m < n && css[m] !== ')') m++;
-        const raw = css.slice(k, m).trim();
+        const raw = stripEscapedNewlines(css.slice(k, m).trim());
         if (raw) refs.push({ kind: importNext ? 'css-import' : 'css-url', url: raw });
         i = m + 1;
       }

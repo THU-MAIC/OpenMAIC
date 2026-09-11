@@ -986,6 +986,77 @@ describe('malformed authored CSS tolerance', () => {
     ]);
   });
 
+  it('recovers at a bad-string token and still collects later urls', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    // An unescaped newline ends the string; the browser applies .ok below.
+    expect(
+      collectCssAssetReferencesByRegex(
+        '.bad { content: "oops\n;}\n.ok { background: url(https://x/ok.png) }',
+      ),
+    ).toEqual([{ kind: 'css-url', url: 'https://x/ok.png' }]);
+    // Same for a quoted url( whose string is unterminated.
+    expect(
+      collectCssAssetReferencesByRegex(
+        '.bad { src: url("oops\n;}\n.ok { background: url(https://x/ok.png) }',
+      ),
+    ).toEqual([{ kind: 'css-url', url: 'https://x/ok.png' }]);
+  });
+
+  it('handles escaped and unescaped newlines per CSS string semantics', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    const tail = '.ok { background: url(https://x/ok.png) }';
+    // Escaped \n / \r\n continue the string; the url inside is taken.
+    expect(
+      collectCssAssetReferencesByRegex(`.a { content: "esc\\
+line" }
+.ok2 { src: url(https://x/a.png) }`),
+    ).toContainEqual({ kind: 'css-url', url: 'https://x/a.png' });
+    // Backslash + CR + LF is one escaped newline in CSS: string continues.
+    expect(
+      collectCssAssetReferencesByRegex('.a { content: "crlf\\\r\nend" }\n' + tail),
+    ).toContainEqual({ kind: 'css-url', url: 'https://x/ok.png' });
+    // Unescaped \r and \f are bad-string terminators like \n.
+    expect(
+      collectCssAssetReferencesByRegex(`.bad { content: "oops
+}
+${tail}`),
+    ).toEqual([{ kind: 'css-url', url: 'https://x/ok.png' }]);
+    expect(
+      collectCssAssetReferencesByRegex(`.bad { content: "oops}
+${tail}`),
+    ).toEqual([{ kind: 'css-url', url: 'https://x/ok.png' }]);
+    // Unterminated at EOF swallows nothing real afterwards (there is none).
+    expect(collectCssAssetReferencesByRegex('.bad { content: "oops')).toEqual([]);
+  });
+
+  it('continues a quoted url() string across escaped newlines', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    // Escaped LF inside a double-quoted url(): CSS drops the escape, so the
+    // dependency URL is the concatenation across the line break.
+    expect(collectCssAssetReferencesByRegex('.a { src: url("https://x/a\\\nb.png") }')).toEqual([
+      { kind: 'css-url', url: 'https://x/ab.png' },
+    ]);
+    // Escaped CRLF inside a single-quoted url(): skip-3 continues the string.
+    expect(collectCssAssetReferencesByRegex(".a { src: url('https://x/c\\\r\nd.png') }")).toEqual([
+      { kind: 'css-url', url: 'https://x/cd.png' },
+    ]);
+    // Unescaped newline inside url("...") is a bad string: no URL taken,
+    // scanning resumes and the later dependency is still collected.
+    expect(
+      collectCssAssetReferencesByRegex(
+        '.bad { src: url("oops\n) }\n.ok { src: url(https://x/ok.png) }',
+      ),
+    ).toEqual([{ kind: 'css-url', url: 'https://x/ok.png' }]);
+    // Unescaped \r / \f inside a quoted url(...) are bad strings too.
+    const tail = '.ok { src: url(https://x/ok.png) }';
+    expect(collectCssAssetReferencesByRegex('.bad { src: url("oops\r) }\n' + tail)).toEqual([
+      { kind: 'css-url', url: 'https://x/ok.png' },
+    ]);
+    expect(collectCssAssetReferencesByRegex('.bad { src: url("oops\f) }\n' + tail)).toEqual([
+      { kind: 'css-url', url: 'https://x/ok.png' },
+    ]);
+  });
+
   it('surfaces absolute and relative url() refs of unparseable CSS as failures', async () => {
     const { css, failed } = await inlineCssUrls(
       ':root { -- crop-green: #22c55e; } .a { background: url(https://x/a.png) ; } .b { background: url(imgs/b.png); } /* url(https://x/comment.png) */',
