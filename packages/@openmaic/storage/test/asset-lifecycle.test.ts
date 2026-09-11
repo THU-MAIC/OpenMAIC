@@ -11,10 +11,12 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
+import { DSL_VERSION } from '@openmaic/dsl';
 import type { Scene } from '@openmaic/dsl';
 import type { AssetByteStore } from '../src/asset/byte-store.js';
 import {
   AssetCollector,
+  AssetReferenceTrackingNotEnabledError,
   type AssetCollectionPass,
   type AssetCollectorOptions,
 } from '../src/asset/collector.js';
@@ -73,6 +75,7 @@ interface LifecycleRow extends Record<string, unknown> {
 
 interface RefRow extends Record<string, unknown> {
   stage_id: string;
+  scope: string;
   scene_id: string;
   asset_id: string;
 }
@@ -135,13 +138,45 @@ describe('asset entry lifecycle with PGlite', () => {
 
   const refRows = async (): Promise<RefRow[]> => {
     const result = await db.query<RefRow>(
-      'SELECT stage_id, scene_id, asset_id FROM document_asset_refs ORDER BY stage_id, scene_id, asset_id',
+      // Stage-level rows first, then scenes: document order, so an expected
+      // array reads the way the document does.
+      `SELECT stage_id, scope, scene_id, asset_id
+         FROM document_asset_refs
+        ORDER BY stage_id, (scope <> 'stage'), scene_id, asset_id`,
     );
     return result.rows;
   };
 
   const documentStore = (trackAssetReferences: boolean): PgDocumentStore =>
     new PgDocumentStore(db, { withTransaction: transactions(db), trackAssetReferences });
+
+  const trackingMarkers = async (): Promise<number> =>
+    (await db.query('SELECT singleton FROM asset_reference_tracking')).rows.length;
+
+  /** The sum the quota bounds: logical bytes over this principal's live entries. */
+  const liveBytes = async (): Promise<number> => {
+    const result = await db.query<{ total: string }>(
+      `SELECT COALESCE(SUM(blobs.byte_size), 0)::text AS total
+         FROM asset_entries AS entries
+         JOIN asset_blobs AS blobs ON blobs.content_hash = entries.content_hash
+        WHERE entries.principal = $1 AND entries.unreferenced_at IS NULL`,
+      [PRINCIPAL.key],
+    );
+    return Number(result.rows[0]?.total ?? 0);
+  };
+
+  /**
+   * Write the marker a reference-maintaining document store writes.
+   *
+   * Seeded directly rather than by saving a document, so a test can exercise
+   * the collector without also exercising the document store.
+   */
+  const enableReferenceTracking = async (): Promise<void> => {
+    await db.query(
+      `INSERT INTO asset_reference_tracking (singleton, enabled_at)
+       VALUES (TRUE, now()) ON CONFLICT DO NOTHING`,
+    );
+  };
 
   const collector = (options: Partial<AssetCollectorOptions> = {}): AssetCollector =>
     new AssetCollector(db, byteStore, {
@@ -211,17 +246,43 @@ describe('asset entry lifecycle with PGlite', () => {
         revision: 1,
         byteLength: 10,
       });
-      // And no read path mentions a lifecycle column at all.
+      // And no read path mentions a lifecycle column at all. Both surfaces
+      // have to be recorded: `identify` queries the store's own queryable
+      // while `resolve` and `resolveIndirect` run through `withTransaction`,
+      // so recording only the former would leave the two paths that read
+      // bytes unexamined.
       const statements: string[] = [];
-      const recording: Queryable = {
-        query: async (text: string, params?: unknown[]) => {
+      const record = (queryable: Queryable): Queryable => ({
+        query: async (text, params) => {
           statements.push(text);
-          return db.query(text, params);
+          return queryable.query(text, params);
         },
+      });
+      const signing: AssetByteStore = {
+        ...byteStore,
+        write: (hash, value) => byteStore.write(hash, value),
+        read: (hash) => byteStore.read(hash),
+        delete: (hash) => byteStore.delete(hash),
+        signReadUrl: async () => 'https://objects.example/signed',
       };
-      const recorded = new PgAssetStore(recording, assetOptions());
-      await recorded.resolve(PRINCIPAL, pending);
-      await recorded.identify(PRINCIPAL, pending);
+      const recorded = new PgAssetStore(record(db), {
+        withTransaction: (body) => db.transaction((tx: Queryable) => body(record(tx))),
+        byteStore: signing,
+      });
+
+      expect((await recorded.resolve(PRINCIPAL, pending))?.mime).toBe('image/png');
+      expect(await recorded.identify(PRINCIPAL, pending)).not.toBeNull();
+      expect(
+        await recorded.resolveIndirect(PRINCIPAL, pending, {
+          label: () => ({ contentType: 'image/png', contentDisposition: 'inline' }),
+          cacheControl: 'private, no-store',
+          expiresInSeconds: 60,
+        }),
+      ).toEqual({ url: 'https://objects.example/signed', revision: 1 });
+
+      // All three really reached the recorder, so "no lifecycle column" is a
+      // statement about statements that ran, not about an empty list.
+      expect(statements.filter((statement) => statement.includes('asset_entries')).length).toBe(3);
       for (const statement of statements) {
         expect(statement).not.toMatch(/committed_at|expires_at|unreferenced_at/);
       }
@@ -251,19 +312,40 @@ describe('asset entry lifecycle with PGlite', () => {
       await expect(quotaStore.put(PRINCIPAL, new Blob(['123456']))).resolves.toBeTruthy();
     });
 
-    test('replacing an unreferenced entry neither frees nor double-counts its bytes', async () => {
+    test('replacing an unreferenced entry cannot move the live sum, so the quota ignores it', async () => {
       const quotaStore = new PgAssetStore(db, assetOptions({ quotaBytes: 10 }));
-      const spent = await quotaStore.put(PRINCIPAL, new Blob(['12345']));
+      await quotaStore.put(PRINCIPAL, new Blob(['12345']));
       const stale = await quotaStore.put(PRINCIPAL, new Blob(['abcde']));
       await db.query('UPDATE asset_entries SET unreferenced_at = now() WHERE id = $1', [stale]);
+      expect(await liveBytes()).toBe(5);
 
-      // Live usage is five bytes. Replacing the unreferenced entry with six
-      // adds six to that, because its own five were never in the sum.
+      // `replace` leaves the lifecycle columns alone, so this entry is outside
+      // the live sum before the write and still outside it after: neither its
+      // old nor its new bytes can move the total the quota bounds, and the
+      // check is therefore a no-op. Charging the replacement instead would
+      // refuse a write whose post-state is comfortably under quota.
+      await expect(quotaStore.replace(PRINCIPAL, stale, new Blob(['x'.repeat(50)]))).resolves.toBe(
+        2,
+      );
+
+      expect(await liveBytes()).toBe(5);
+      // And the live entry is still bounded: five live bytes plus six is over.
+      await expect(quotaStore.put(PRINCIPAL, new Blob(['123456']))).rejects.toBeInstanceOf(
+        AssetQuotaExceededError,
+      );
+    });
+
+    test('a referenced entry is still charged for its replacement bytes', async () => {
+      const quotaStore = new PgAssetStore(db, assetOptions({ quotaBytes: 10 }));
+      const live = await quotaStore.put(PRINCIPAL, new Blob(['12345']));
+
       await expect(
-        quotaStore.replace(PRINCIPAL, stale, new Blob(['123456'])),
+        quotaStore.replace(PRINCIPAL, live, new Blob(['x'.repeat(11)])),
       ).rejects.toBeInstanceOf(AssetQuotaExceededError);
-      await expect(quotaStore.replace(PRINCIPAL, stale, new Blob(['12345']))).resolves.toBe(2);
-      expect(spent).not.toBe(stale);
+      await expect(quotaStore.replace(PRINCIPAL, live, new Blob(['x'.repeat(10)]))).resolves.toBe(
+        2,
+      );
+      expect(await liveBytes()).toBe(10);
     });
   });
 
@@ -273,19 +355,22 @@ describe('asset entry lifecycle with PGlite', () => {
 
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-1',
-        sceneId: 'scene-a',
-        candidates: [
-          allocated,
-          'gen_img_placeholder',
-          'data:image/png;base64,AAA',
-          'https://example.test/legacy.png',
-          './relative/path.png',
-          'ast_never_allocated',
-        ],
+        scope: {
+          scope: 'scene',
+          sceneId: 'scene-a',
+          candidates: [
+            allocated,
+            'gen_img_placeholder',
+            'data:image/png;base64,AAA',
+            'https://example.test/legacy.png',
+            './relative/path.png',
+            'ast_never_allocated',
+          ],
+        },
       });
 
       expect(await refRows()).toEqual([
-        { stage_id: 'stage-1', scene_id: 'scene-a', asset_id: allocated },
+        { stage_id: 'stage-1', scope: 'scene', scene_id: 'scene-a', asset_id: allocated },
       ]);
     });
 
@@ -301,11 +386,12 @@ describe('asset entry lifecycle with PGlite', () => {
 
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-1',
-        sceneId: '',
-        candidates: ['42'],
+        scope: { scope: 'stage', sceneId: '', candidates: ['42'] },
       });
 
-      expect(await refRows()).toEqual([{ stage_id: 'stage-1', scene_id: '', asset_id: '42' }]);
+      expect(await refRows()).toEqual([
+        { stage_id: 'stage-1', scope: 'stage', scene_id: '', asset_id: '42' },
+      ]);
       expect((await lifecycleOf('42'))?.committed_at).not.toBeNull();
     });
 
@@ -314,8 +400,7 @@ describe('asset entry lifecycle with PGlite', () => {
 
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-1',
-        sceneId: 'scene-a',
-        candidates: [id],
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [id] },
       });
       const committed = await lifecycleOf(id);
       expect(committed?.committed_at).not.toBeNull();
@@ -326,8 +411,7 @@ describe('asset entry lifecycle with PGlite', () => {
       // commit is "a document has named this", which happens once.
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-2',
-        sceneId: 'scene-z',
-        candidates: [id],
+        scope: { scope: 'scene', sceneId: 'scene-z', candidates: [id] },
       });
       expect((await lifecycleOf(id))?.committed_at).toEqual(committed?.committed_at);
     });
@@ -337,20 +421,17 @@ describe('asset entry lifecycle with PGlite', () => {
       const lonely = await store.put(PRINCIPAL, new Blob(['lonely']));
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-1',
-        sceneId: 'scene-a',
-        candidates: [shared, lonely],
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [shared, lonely] },
       });
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-1',
-        sceneId: 'scene-b',
-        candidates: [shared],
+        scope: { scope: 'scene', sceneId: 'scene-b', candidates: [shared] },
       });
 
       // scene-a drops both. `shared` survives on scene-b's row.
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-1',
-        sceneId: 'scene-a',
-        candidates: [],
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [] },
       });
 
       expect((await lifecycleOf(shared))?.unreferenced_at).toBeNull();
@@ -361,20 +442,17 @@ describe('asset entry lifecycle with PGlite', () => {
       const id = await store.put(PRINCIPAL, new Blob(['restored']));
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-1',
-        sceneId: 'scene-a',
-        candidates: [id],
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [id] },
       });
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-1',
-        sceneId: 'scene-a',
-        candidates: [],
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [] },
       });
       expect((await lifecycleOf(id))?.unreferenced_at).not.toBeNull();
 
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-1',
-        sceneId: 'scene-a',
-        candidates: [id],
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [id] },
       });
 
       expect((await lifecycleOf(id))?.unreferenced_at).toBeNull();
@@ -384,17 +462,16 @@ describe('asset entry lifecycle with PGlite', () => {
       const id = await store.put(PRINCIPAL, new Blob(['draining']));
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-1',
-        sceneId: 'scene-a',
-        candidates: [id],
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [id] },
       });
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-1',
-        sceneId: 'scene-a',
-        candidates: [],
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [] },
       });
       const stamped = (await lifecycleOf(id))?.unreferenced_at;
       await db.query(
-        `INSERT INTO document_asset_refs (stage_id, scene_id, asset_id) VALUES ('stage-9', '', $1)`,
+        `INSERT INTO document_asset_refs (stage_id, scope, scene_id, asset_id)
+         VALUES ('stage-9', 'stage', '', $1)`,
         [id],
       );
       await db.query(`DELETE FROM document_asset_refs WHERE stage_id = 'stage-9'`);
@@ -410,8 +487,7 @@ describe('asset entry lifecycle with PGlite', () => {
       const id = await store.put(PRINCIPAL, new Blob(['cascading']));
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-1',
-        sceneId: 'scene-a',
-        candidates: [id],
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [id] },
       });
 
       await store.remove(PRINCIPAL, id);
@@ -423,10 +499,321 @@ describe('asset entry lifecycle with PGlite', () => {
     });
   });
 
+  describe('a scene cannot impersonate the stage scope', () => {
+    test('a scene whose id is empty leaves the stage-level references alone', async () => {
+      // The reserved-sentinel version of this table keyed stage rows on
+      // `scene_id = ''`. Scene ids are opaque and unvalidated, so a scene
+      // could be stored under that id, and its scope write would then delete
+      // the stage's rows and stamp the stage's assets unreferenced -- silent
+      // permanent media loss through the ordinary document write path. The
+      // scope column makes the two keys disjoint by construction.
+      const stageAsset = await store.put(PRINCIPAL, new Blob(['stage asset']));
+      const sceneAsset = await store.put(PRINCIPAL, new Blob(['scene asset']));
+      const emptyIdAsset = await store.put(PRINCIPAL, new Blob(['empty id asset']));
+      const documents = documentStore(true);
+      await documents.saveDocument(
+        documentWith(
+          'stage-1',
+          [sceneWithImages('stage-1', 'scene-a', 0, [sceneAsset])],
+          [stageAsset],
+        ),
+      );
+
+      await documents.saveDocument(
+        documentWith('stage-1', [sceneWithImages('stage-1', '', 0, [emptyIdAsset])], [stageAsset]),
+      );
+
+      expect(await refRows()).toEqual([
+        { stage_id: 'stage-1', scope: 'stage', scene_id: '', asset_id: stageAsset },
+        { stage_id: 'stage-1', scope: 'scene', scene_id: '', asset_id: emptyIdAsset },
+      ]);
+      // The stage whiteboard still names it, so it must still be live.
+      expect((await lifecycleOf(stageAsset))?.unreferenced_at).toBeNull();
+      expect((await lifecycleOf(emptyIdAsset))?.unreferenced_at).toBeNull();
+      // Only the scene that really went is released.
+      expect((await lifecycleOf(sceneAsset))?.unreferenced_at).not.toBeNull();
+    });
+
+    test('an incremental write to the empty-id scene touches neither the stage nor another scene', async () => {
+      const stageAsset = await store.put(PRINCIPAL, new Blob(['stage asset']));
+      const otherAsset = await store.put(PRINCIPAL, new Blob(['other scene asset']));
+      const arriving = await store.put(PRINCIPAL, new Blob(['arriving asset']));
+      const documents = documentStore(true);
+      await documents.saveDocument(
+        documentWith(
+          'stage-1',
+          [
+            sceneWithImages('stage-1', '', 0, []),
+            sceneWithImages('stage-1', 'scene-b', 1, [otherAsset]),
+          ],
+          [stageAsset],
+        ),
+      );
+
+      await documents.putScene('stage-1', sceneWithImages('stage-1', '', 0, [arriving]));
+
+      expect(await refRows()).toEqual([
+        { stage_id: 'stage-1', scope: 'stage', scene_id: '', asset_id: stageAsset },
+        { stage_id: 'stage-1', scope: 'scene', scene_id: '', asset_id: arriving },
+        { stage_id: 'stage-1', scope: 'scene', scene_id: 'scene-b', asset_id: otherAsset },
+      ]);
+      for (const id of [stageAsset, otherAsset, arriving]) {
+        expect((await lifecycleOf(id))?.unreferenced_at).toBeNull();
+      }
+    });
+
+    test('deleting the empty-id scene leaves the stage-level rows in place', async () => {
+      const stageAsset = await store.put(PRINCIPAL, new Blob(['stage asset']));
+      const sceneAsset = await store.put(PRINCIPAL, new Blob(['scene asset']));
+      const documents = documentStore(true);
+      await documents.saveDocument(
+        documentWith('stage-1', [sceneWithImages('stage-1', '', 0, [sceneAsset])], [stageAsset]),
+      );
+
+      await documents.deleteScene('stage-1', '');
+
+      expect(await refRows()).toEqual([
+        { stage_id: 'stage-1', scope: 'stage', scene_id: '', asset_id: stageAsset },
+      ]);
+      expect((await lifecycleOf(stageAsset))?.unreferenced_at).toBeNull();
+      expect((await lifecycleOf(sceneAsset))?.unreferenced_at).not.toBeNull();
+    });
+  });
+
+  describe('documents the enumerator cannot fully read', () => {
+    /**
+     * A scene the DSL validates but whose canvas holds members the slot
+     * enumerator cannot read. `validateScene` never inspects
+     * `content.canvas.elements`, so this really does go through the ordinary
+     * write path -- unlike `actions`, which it does validate.
+     */
+    const sceneWithNullElements = (stageId: string, id: string, refs: string[]): Scene =>
+      ({
+        id,
+        stageId,
+        title: id,
+        order: 0,
+        type: 'slide',
+        content: {
+          type: 'slide',
+          canvas: {
+            id: `canvas-${id}`,
+            elements: [null, 'not an element', 7, ...refs.map((src) => ({ type: 'image', src }))],
+          },
+        },
+      }) as unknown as Scene;
+
+    test('unreadable canvas members are skipped rather than thrown at', () => {
+      expect(
+        sceneAssetScope('scene-a', sceneWithNullElements('stage-1', 'scene-a', ['a'])),
+      ).toEqual({ scope: 'scene', sceneId: 'scene-a', candidates: ['a'] });
+    });
+
+    test('unreadable stage whiteboard members are skipped too', () => {
+      expect(
+        stageAssetScope({
+          whiteboard: [null, { id: 'wb', elements: [null, { type: 'image', src: 'w' }] }],
+        }),
+      ).toEqual({ scope: 'stage', sceneId: '', candidates: ['w'] });
+    });
+
+    test('the document write that names an asset is not refused by such a scene', async () => {
+      // The contract promises a document write is never refused by what it
+      // references. An enumerator that threw here would break that promise on
+      // content the DSL accepts, and only when tracking is on.
+      const id = await store.put(PRINCIPAL, new Blob(['reachable']));
+      const documents = documentStore(true);
+
+      await expect(
+        documents.saveDocument(
+          documentWith('stage-1', [sceneWithNullElements('stage-1', 'scene-a', [id])]),
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(await refRows()).toEqual([
+        { stage_id: 'stage-1', scope: 'scene', scene_id: 'scene-a', asset_id: id },
+      ]);
+    });
+
+    test('the backfill walks past a stored document it cannot fully read', async () => {
+      // Written straight to the tables, which is the case that matters: rows
+      // an older release stored, including the `actions` shapes today's
+      // validator would refuse. The dangerous version of this is the walk
+      // throwing on the offending row -- the cursor never advances past it,
+      // every later pass fails in the same place, and no legacy entry is ever
+      // marked, so the entry level is dead for the whole deployment.
+      await db.query(
+        `INSERT INTO document_stages (id, name, created_at, updated_at, data)
+         VALUES ('stage-1', 'Legacy', 1000, 2000, $1::jsonb)`,
+        [
+          JSON.stringify({
+            id: 'stage-1',
+            name: 'Legacy',
+            createdAt: 1000,
+            updatedAt: 2000,
+            dslVersion: DSL_VERSION,
+            whiteboard: [null, { id: 'wb', elements: [null] }],
+          }),
+        ],
+      );
+      await db.query(
+        `INSERT INTO document_scenes (stage_id, id, scene_order, data)
+         VALUES ('stage-1', 'scene-a', 0, $1::jsonb)`,
+        [
+          JSON.stringify({
+            id: 'scene-a',
+            stageId: 'stage-1',
+            title: 'scene-a',
+            order: 0,
+            type: 'slide',
+            content: {
+              type: 'slide',
+              canvas: { id: 'canvas', elements: [null, { type: 'image', src: 'legacy-null' }] },
+            },
+            whiteboards: [null],
+            actions: [null, { type: 'speech', audioId: 'legacy-null' }],
+          }),
+        ],
+      );
+      await db.query(`INSERT INTO asset_blobs (content_hash, byte_size) VALUES ('hash-null', 3)`);
+      await db.query(
+        `INSERT INTO asset_entries (id, principal, content_hash, mime, meta, revision, created_at)
+         VALUES ('legacy-null', $1, 'hash-null', 'image/png', '{}'::jsonb, 1, 0)`,
+        [PRINCIPAL.key],
+      );
+      await enableReferenceTracking();
+
+      const pass = await collector({ graceMs: 60 * 60 * 1000 }).collectPass();
+
+      expect(pass.backfilledDocuments).toBe(1);
+      expect(pass.legacyEntriesCommitted).toBe(1);
+      expect(await refRows()).toEqual([
+        { stage_id: 'stage-1', scope: 'scene', scene_id: 'scene-a', asset_id: 'legacy-null' },
+      ]);
+      expect((await lifecycleOf('legacy-null'))?.unreferenced_at).toBeNull();
+    });
+
+    test('a genuine failure names the document as a property, never in the message', async () => {
+      // Fail-loud is kept for anything that is not a shape the enumerator can
+      // be taught to skip: the walk stops, nothing is marked, and invariant
+      // (i) keeps the entry pass from releasing. The stage id rides as a
+      // property because the message is the value that escapes into logs.
+      const documents = documentStore(false);
+      await documents.saveDocument(documentWith('stage-a', []));
+      await documents.saveDocument(documentWith('stage-b', []));
+      await db.query(`INSERT INTO asset_blobs (content_hash, byte_size) VALUES ('hash-x', 3)`);
+      await db.query(
+        `INSERT INTO asset_entries (id, principal, content_hash, mime, meta, revision, created_at)
+         VALUES ('legacy-x', $1, 'hash-x', 'image/png', '{}'::jsonb, 1, 0)`,
+        [PRINCIPAL.key],
+      );
+      await enableReferenceTracking();
+      // The document read now happens inside the per-document transaction, so
+      // that is where the failure has to be injected.
+      const failingTransaction: WithTransaction = (body) =>
+        db.transaction((tx: Queryable) =>
+          body({
+            query: async (text, params) => {
+              if (text.includes('document_scenes') && params?.[0] === 'stage-b') {
+                throw new Error('injected read failure');
+              }
+              return tx.query(text, params);
+            },
+          }),
+        );
+
+      const failure = await new AssetCollector(db, byteStore, {
+        withTransaction: failingTransaction,
+        documentReferences: true,
+        graceMs: 0,
+      })
+        .collectPass()
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as { stageId?: string }).stageId).toBe('stage-b');
+      expect((failure as Error).message).not.toContain('stage-b');
+      // Nothing was marked, so the entry level released nothing.
+      expect((await lifecycleOf('legacy-x'))?.committed_at).toBeNull();
+    });
+  });
+
+  describe('reference tracking marker', () => {
+    test('a tracking document store records the marker on its write', async () => {
+      expect(await trackingMarkers()).toBe(0);
+
+      await documentStore(true).saveDocument(documentWith('stage-1', []));
+
+      expect(await trackingMarkers()).toBe(1);
+    });
+
+    test('an untracked document store records nothing', async () => {
+      await documentStore(false).saveDocument(documentWith('stage-1', []));
+
+      expect(await trackingMarkers()).toBe(0);
+    });
+
+    test('the entry pass refuses without the marker, and the blob pass still runs', async () => {
+      // The failure this prevents: no document store maintains references, so
+      // every entry looks pending and the pass deletes each on its TTL while
+      // the documents naming them are still there.
+      const id = await store.put(PRINCIPAL, new Blob(['live media']));
+      await documentStore(false).saveDocument(
+        documentWith('stage-1', [sceneWithImages('stage-1', 'scene-a', 0, [id])]),
+      );
+      await db.query(
+        `UPDATE asset_entries SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = $1`,
+        [id],
+      );
+      // An unrelated blob waiting for the byte pass.
+      const doomed = await store.put(PRINCIPAL, new Blob(['unreferenced bytes']));
+      await store.remove(PRINCIPAL, doomed);
+      await db.query(
+        `UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'
+          WHERE NOT EXISTS (SELECT 1 FROM asset_entries WHERE content_hash = asset_blobs.content_hash)`,
+      );
+
+      const failure = await collector()
+        .collectPass()
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(AssetReferenceTrackingNotEnabledError);
+      expect((failure as Error).message).toMatch(/trackAssetReferences/);
+      // The media is untouched...
+      expect((await store.resolve(PRINCIPAL, id))?.bytes).toEqual(
+        new TextEncoder().encode('live media'),
+      );
+      // ...and the byte level, which needs no reference writer, still ran.
+      expect((await db.query('SELECT content_hash FROM asset_blobs')).rows).toHaveLength(1);
+    });
+
+    test('one document write through a tracking store is enough to let the pass run', async () => {
+      const id = await store.put(PRINCIPAL, new Blob(['expired pending']));
+      await documentStore(true).saveDocument(documentWith('stage-1', []));
+      await db.query(
+        `UPDATE asset_entries SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = $1`,
+        [id],
+      );
+
+      expect((await collector().collectPass()).entriesCollected).toBe(1);
+    });
+
+    test('the blob pass alone never asks about the marker', async () => {
+      const doomed = await store.put(PRINCIPAL, new Blob(['bytes only']));
+      await store.remove(PRINCIPAL, doomed);
+      await db.query(`UPDATE asset_blobs SET unreferenced_at = '2000-01-01T00:00:00.000Z'`);
+
+      const pass = await collector({ documentReferences: false }).collectPass();
+
+      expect(pass.collected).toBe(1);
+    });
+  });
+
   describe('scope enumeration', () => {
     test('a scene scope holds its own slots and the stage scope holds the stage slots', async () => {
       const scene = sceneWithImages('stage-1', 'scene-a', 0, ['a', 'b']);
       expect(sceneAssetScope('scene-a', scene)).toEqual({
+        scope: 'scene',
         sceneId: 'scene-a',
         candidates: ['a', 'b'],
       });
@@ -435,7 +822,7 @@ describe('asset entry lifecycle with PGlite', () => {
           whiteboard: [{ id: 'wb', elements: [{ type: 'image', src: 'w' }] }],
           videoManifest: { 'video-key': { any: 'shape' } },
         }),
-      ).toEqual({ sceneId: '', candidates: ['w', 'video-key'] });
+      ).toEqual({ scope: 'stage', sceneId: '', candidates: ['w', 'video-key'] });
     });
 
     test('every scene contributes its own scope, and an unreadable row contributes none', () => {
@@ -448,9 +835,9 @@ describe('asset entry lifecycle with PGlite', () => {
       });
 
       expect(scopes).toEqual([
-        { sceneId: '', candidates: [] },
-        { sceneId: 'scene-a', candidates: ['a'] },
-        { sceneId: 'scene-broken', candidates: [] },
+        { scope: 'stage', sceneId: '', candidates: [] },
+        { scope: 'scene', sceneId: 'scene-a', candidates: ['a'] },
+        { scope: 'scene', sceneId: 'scene-broken', candidates: [] },
       ]);
     });
 
@@ -465,6 +852,7 @@ describe('asset entry lifecycle with PGlite', () => {
       } as unknown as Scene;
 
       expect(sceneAssetScope('scene-legacy', scene)).toEqual({
+        scope: 'scene',
         sceneId: 'scene-legacy',
         candidates: [],
       });
@@ -489,9 +877,9 @@ describe('asset entry lifecycle with PGlite', () => {
       );
 
       expect(await refRows()).toEqual([
-        { stage_id: 'stage-1', scene_id: '', asset_id: stageAsset },
-        { stage_id: 'stage-1', scene_id: 'scene-a', asset_id: first },
-        { stage_id: 'stage-1', scene_id: 'scene-b', asset_id: second },
+        { stage_id: 'stage-1', scope: 'stage', scene_id: '', asset_id: stageAsset },
+        { stage_id: 'stage-1', scope: 'scene', scene_id: 'scene-a', asset_id: first },
+        { stage_id: 'stage-1', scope: 'scene', scene_id: 'scene-b', asset_id: second },
       ]);
       for (const id of [first, second, stageAsset]) {
         const row = await lifecycleOf(id);
@@ -516,7 +904,7 @@ describe('asset entry lifecycle with PGlite', () => {
       );
 
       expect(await refRows()).toEqual([
-        { stage_id: 'stage-1', scene_id: 'scene-a', asset_id: kept },
+        { stage_id: 'stage-1', scope: 'scene', scene_id: 'scene-a', asset_id: kept },
       ]);
       expect((await lifecycleOf(kept))?.unreferenced_at).toBeNull();
       expect((await lifecycleOf(dropped))?.unreferenced_at).not.toBeNull();
@@ -538,8 +926,8 @@ describe('asset entry lifecycle with PGlite', () => {
       await documents.putScene('stage-1', sceneWithImages('stage-1', 'scene-b', 1, [arriving]));
 
       expect(await refRows()).toEqual([
-        { stage_id: 'stage-1', scene_id: 'scene-a', asset_id: existing },
-        { stage_id: 'stage-1', scene_id: 'scene-b', asset_id: arriving },
+        { stage_id: 'stage-1', scope: 'scene', scene_id: 'scene-a', asset_id: existing },
+        { stage_id: 'stage-1', scope: 'scene', scene_id: 'scene-b', asset_id: arriving },
       ]);
       expect((await lifecycleOf(arriving))?.expires_at).toBeNull();
       expect((await lifecycleOf(existing))?.unreferenced_at).toBeNull();
@@ -557,8 +945,8 @@ describe('asset entry lifecycle with PGlite', () => {
       await documents.putStage('stage-1', document.stage);
 
       expect(await refRows()).toEqual([
-        { stage_id: 'stage-1', scene_id: '', asset_id: stageAsset },
-        { stage_id: 'stage-1', scene_id: 'scene-a', asset_id: sceneAsset },
+        { stage_id: 'stage-1', scope: 'stage', scene_id: '', asset_id: stageAsset },
+        { stage_id: 'stage-1', scope: 'scene', scene_id: 'scene-a', asset_id: sceneAsset },
       ]);
       expect((await lifecycleOf(sceneAsset))?.unreferenced_at).toBeNull();
     });
@@ -609,7 +997,9 @@ describe('asset entry lifecycle with PGlite', () => {
       }).forOwner('owner-b');
       await foreign.deleteDocument('stage-1');
 
-      expect(await refRows()).toEqual([{ stage_id: 'stage-1', scene_id: 'scene-a', asset_id: id }]);
+      expect(await refRows()).toEqual([
+        { stage_id: 'stage-1', scope: 'scene', scene_id: 'scene-a', asset_id: id },
+      ]);
       expect((await lifecycleOf(id))?.unreferenced_at).toBeNull();
     });
 
@@ -636,6 +1026,15 @@ describe('asset entry lifecycle with PGlite', () => {
   });
 
   describe('collector entry pass', () => {
+    // The entry pass refuses without the marker a reference-maintaining
+    // document store writes. Tests that do not write through such a store
+    // seed it here, deliberately, so the refusal is tested on its own (see
+    // the 'reference tracking marker' block) rather than by accident
+    // everywhere else.
+    beforeEach(async () => {
+      await enableReferenceTracking();
+    });
+
     const expired = async (id: string): Promise<void> => {
       await db.query(
         `UPDATE asset_entries SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = $1`,
@@ -676,8 +1075,7 @@ describe('asset entry lifecycle with PGlite', () => {
       const id = await store.put(PRINCIPAL, new Blob(['released']));
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-1',
-        sceneId: 'scene-a',
-        candidates: [id],
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [id] },
       });
       await removeDocumentAssetReferences(db, { stageId: 'stage-1', sceneId: 'scene-a' });
 
@@ -696,8 +1094,7 @@ describe('asset entry lifecycle with PGlite', () => {
       const id = await store.put(PRINCIPAL, new Blob(['still named']));
       await syncDocumentAssetReferences(db, {
         stageId: 'stage-1',
-        sceneId: 'scene-a',
-        candidates: [id],
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [id] },
       });
       // The pathological case the per-row re-check exists for: a stale stamp
       // left behind while a document still names the entry.
@@ -767,6 +1164,10 @@ describe('asset entry lifecycle with PGlite', () => {
     // backfill finds unreferenced must wait rather than go on the same pass.
     const GRACE_MS = 60 * 60 * 1000;
 
+    beforeEach(async () => {
+      await enableReferenceTracking();
+    });
+
     /** An entry as a pre-lifecycle deployment left it: no lifecycle columns. */
     const legacyEntry = async (id: string, value: string): Promise<void> => {
       const minted = await store.put(PRINCIPAL, new Blob([value]));
@@ -820,7 +1221,7 @@ describe('asset entry lifecycle with PGlite', () => {
       expect(second.backfilledDocuments).toBe(1);
       expect(second.legacyEntriesCommitted).toBe(2);
       expect(await refRows()).toEqual([
-        { stage_id: 'stage-1', scene_id: 'scene-a', asset_id: 'legacy-referenced' },
+        { stage_id: 'stage-1', scope: 'scene', scene_id: 'scene-a', asset_id: 'legacy-referenced' },
       ]);
       const referenced = await lifecycleOf('legacy-referenced');
       expect(referenced?.committed_at).not.toBeNull();
@@ -876,7 +1277,7 @@ describe('asset entry lifecycle with PGlite', () => {
       await collector({ graceMs: GRACE_MS }).collectPass();
 
       expect(await refRows()).toEqual([
-        { stage_id: 'stage-1', scene_id: '', asset_id: 'legacy-stage' },
+        { stage_id: 'stage-1', scope: 'stage', scene_id: '', asset_id: 'legacy-stage' },
       ]);
       expect((await lifecycleOf('legacy-stage'))?.unreferenced_at).toBeNull();
     });

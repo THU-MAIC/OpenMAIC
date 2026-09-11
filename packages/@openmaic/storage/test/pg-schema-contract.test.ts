@@ -616,9 +616,10 @@ const EXPECTED_ASSET_PG_SCHEMA: readonly string[] = [
      ADD COLUMN IF NOT EXISTS unreferenced_at TIMESTAMPTZ`,
   `CREATE TABLE IF NOT EXISTS document_asset_refs (
      stage_id TEXT NOT NULL,
+     scope TEXT NOT NULL CHECK (scope IN ('stage', 'scene')),
      scene_id TEXT NOT NULL,
      asset_id TEXT NOT NULL REFERENCES asset_entries(id) ON DELETE CASCADE,
-     PRIMARY KEY (stage_id, scene_id, asset_id)
+     PRIMARY KEY (stage_id, scope, scene_id, asset_id)
    )`,
   `CREATE INDEX IF NOT EXISTS document_asset_refs_asset_idx
      ON document_asset_refs (asset_id)`,
@@ -626,6 +627,12 @@ const EXPECTED_ASSET_PG_SCHEMA: readonly string[] = [
      ON asset_entries (expires_at) WHERE expires_at IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS asset_entries_unreferenced_idx
      ON asset_entries (unreferenced_at) WHERE unreferenced_at IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS asset_entries_legacy_idx
+     ON asset_entries (id) WHERE committed_at IS NULL AND expires_at IS NULL`,
+  `CREATE TABLE IF NOT EXISTS asset_reference_tracking (
+     singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+     enabled_at TIMESTAMPTZ NOT NULL
+   )`,
 ];
 
 describe('ASSET_PG_SCHEMA is a pinned contract', () => {
@@ -664,6 +671,28 @@ describe('ASSET_PG_SCHEMA is a pinned contract', () => {
         `ASSET_PG_SCHEMA statement is not an idempotent create or additive migration: ${statement}`,
       ).toBe(true);
     }
+  });
+
+  it('keys the reference table on a scope column rather than a reserved scene id', () => {
+    // The stage-level and scene-level rows must be distinguishable by a column
+    // the document cannot forge. Keying on `scene_id` alone would let a scene
+    // whose id equals the stage sentinel share a key with the stage's rows,
+    // and the scope written second would delete the other's.
+    const refs = ASSET_PG_SCHEMA.find((statement) =>
+      statement.startsWith('CREATE TABLE IF NOT EXISTS document_asset_refs'),
+    );
+
+    expect(refs).toContain(`scope TEXT NOT NULL CHECK (scope IN ('stage', 'scene'))`);
+    expect(refs).toContain('PRIMARY KEY (stage_id, scope, scene_id, asset_id)');
+  });
+
+  it('indexes the legacy-entry gate the collector asks on every pass', () => {
+    // Without this the steady-state pass sequentially scans every entry,
+    // forever, to answer a question whose answer is almost always "none".
+    expect(ASSET_PG_SCHEMA).toContain(
+      `CREATE INDEX IF NOT EXISTS asset_entries_legacy_idx
+     ON asset_entries (id) WHERE committed_at IS NULL AND expires_at IS NULL`,
+    );
   });
 
   it('creates every table before the statements that reference it', () => {

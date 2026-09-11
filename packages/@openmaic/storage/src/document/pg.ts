@@ -78,6 +78,16 @@ export interface PgDocumentStoreOptions {
   trackAssetReferences?: boolean;
 }
 
+/**
+ * Bound on how long one document write transaction may wait on a lock.
+ *
+ * Mirrors the asset registry's budget, and exists for the same reason: these
+ * transactions take the stage row's `FOR UPDATE` lock, and -- when reference
+ * tracking is on -- rows the offline asset collector locks too, so an
+ * unbounded wait would let one stuck holder hang writes indefinitely.
+ */
+const DOCUMENT_WRITE_LOCK_TIMEOUT_SQL = `SET LOCAL lock_timeout = '30s'`;
+
 /** Idempotent schema for the PostgreSQL document backend. */
 export const DOCUMENT_PG_SCHEMA = `
 CREATE TABLE IF NOT EXISTS document_folders (
@@ -538,6 +548,24 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     return this.transactionHook(body);
   }
 
+  /**
+   * A write transaction: the same fresh pinned connection as
+   * {@link transaction}, plus a lock-wait budget.
+   *
+   * Every write path here locks the stage row (`FOR UPDATE`) and, with
+   * reference tracking on, entry rows the asset collector also locks. A wait
+   * that outlives this bound is a stuck transaction or a lock-contention bug,
+   * and must surface as a loud error rather than hang a request for as long
+   * as the holder stays stuck. The same budget, for the same reason, as the
+   * asset registry's write transactions.
+   */
+  private writeTransaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
+    return this.transactionHook(async (queryable) => {
+      await queryable.query(DOCUMENT_WRITE_LOCK_TIMEOUT_SQL);
+      return body(queryable);
+    });
+  }
+
   private requireOwner(operation: string): string {
     if (this.ownerId === null) {
       throw new Error(`@openmaic/storage: ${operation} requires an owner-bound document store`);
@@ -692,7 +720,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     const { stageRow, sceneRows, outlineRow } = this.validateForSave(normalized);
     const stageId = stageRow.id;
 
-    await this.transaction(async (queryable) => {
+    await this.writeTransaction(async (queryable) => {
       const existingStage = await this.loadStage(queryable, stageId, 'update');
       if (existingStage && isFutureVersioned(existingStage)) {
         throw new DocumentVersionError(
@@ -1008,7 +1036,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
   async deleteDocument(stageId: string): Promise<void> {
     if (!isPgQueryableKey(stageId)) return;
     if (this.trackAssetReferences) {
-      await this.transaction(async (queryable) => {
+      await this.writeTransaction(async (queryable) => {
         // Asset reference rows carry no foreign key to `document_stages` --
         // they belong to the asset backend, which a deployment may not even
         // provision -- so nothing cascades them away and this delete has to
@@ -1050,7 +1078,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     }
     const stageRow = { ...stage, [DSL_VERSION_KEY]: DSL_VERSION } as StageRow<TStage>;
     assertJsonValue(stageRow, `document stage ${JSON.stringify(stageId)}`);
-    await this.transaction(async (queryable) => {
+    await this.writeTransaction(async (queryable) => {
       const stored = await this.loadStage(queryable, stageId, 'update');
       if (!stored) {
         throw new DocumentNotFoundError(
@@ -1066,11 +1094,9 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
       // holds, so touching a scene's rows here would drop references the
       // scenes still carry.
       if (this.trackAssetReferences) {
-        const scope = stageAssetScope(stageRow);
         await syncDocumentAssetReferences(queryable, {
           stageId,
-          sceneId: scope.sceneId,
-          candidates: scope.candidates,
+          scope: stageAssetScope(stageRow),
         });
       }
     });
@@ -1080,7 +1106,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     assertValid(this.validateScene(scene), `scene ${scene.id}`);
     assertStorableScene(scene, stageId);
     assertJsonValue(scene, `document scene ${JSON.stringify(scene.id)}`);
-    await this.transaction(async (queryable) => {
+    await this.writeTransaction(async (queryable) => {
       const stored = await this.loadStage(queryable, stageId, 'update');
       if (!stored) {
         throw new DocumentNotFoundError(
@@ -1108,11 +1134,9 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
       // a time, so this is the write that first names a freshly allocated id
       // and therefore the write that commits its entry.
       if (this.trackAssetReferences) {
-        const scope = sceneAssetScope(scene.id, scene);
         await syncDocumentAssetReferences(queryable, {
           stageId,
-          sceneId: scope.sceneId,
-          candidates: scope.candidates,
+          scope: sceneAssetScope(scene.id, scene),
         });
       }
     });
@@ -1159,7 +1183,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
 
   async deleteScene(stageId: string, sceneId: string): Promise<void> {
     if (!isPgQueryableKey(stageId) || !isPgQueryableKey(sceneId)) return;
-    await this.transaction(async (queryable) => {
+    await this.writeTransaction(async (queryable) => {
       const stored = await this.loadStage(queryable, stageId, 'update');
       if (!stored) return;
       if (dslVersionOf(stored) !== DSL_VERSION) {

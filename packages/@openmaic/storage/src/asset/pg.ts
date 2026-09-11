@@ -93,12 +93,26 @@ export const DEFAULT_ASSET_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
  *   last reference row and cleared when a write adds one back, so an entry
  *   drains after a grace period instead of immediately.
  *
- * `document_asset_refs.scene_id = ''` is the stage-level slot (stage
- * whiteboards and the stage video manifest), which no scene owns. The table
- * deliberately carries no foreign key to `document_stages`: the document
- * schema is a different backend that a deployment may not provision at all,
- * and the reference rows are maintained explicitly by the document store (see
- * `./references.ts`) rather than by a cascade.
+ * `document_asset_refs.scope` separates the stage-level slot -- stage
+ * whiteboards and the stage video manifest, which no scene owns -- from a
+ * scene's own slots, and is part of the primary key. It is a column rather
+ * than a reserved `scene_id` value because scene ids are opaque and
+ * unconstrained: a scene whose id happened to equal any sentinel would
+ * otherwise share a key with the stage-level rows, and one scope's write
+ * would silently delete the other's. Stage rows carry `scene_id = ''`, which
+ * is then a value nothing keys on rather than a reservation.
+ *
+ * The table deliberately carries no foreign key to `document_stages`: the
+ * document schema is a different backend that a deployment may not provision
+ * at all, and the reference rows are maintained explicitly by the document
+ * store (see `./references.ts`) rather than by a cascade.
+ *
+ * `asset_reference_tracking` is a one-row marker, written by a document store
+ * configured to maintain references and read by the collector before its
+ * entry pass. It exists because the two halves are separately configured and
+ * the failure mode of enabling only the second is silent deletion of live
+ * media: an empty `document_asset_refs` cannot be told apart from documents
+ * that reference nothing, but the absence of this marker can.
  */
 export const ASSET_PG_SCHEMA: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS asset_blobs (
@@ -130,9 +144,10 @@ export const ASSET_PG_SCHEMA: readonly string[] = [
      ADD COLUMN IF NOT EXISTS unreferenced_at TIMESTAMPTZ`,
   `CREATE TABLE IF NOT EXISTS document_asset_refs (
      stage_id TEXT NOT NULL,
+     scope TEXT NOT NULL CHECK (scope IN ('stage', 'scene')),
      scene_id TEXT NOT NULL,
      asset_id TEXT NOT NULL REFERENCES asset_entries(id) ON DELETE CASCADE,
-     PRIMARY KEY (stage_id, scene_id, asset_id)
+     PRIMARY KEY (stage_id, scope, scene_id, asset_id)
    )`,
   `CREATE INDEX IF NOT EXISTS document_asset_refs_asset_idx
      ON document_asset_refs (asset_id)`,
@@ -140,6 +155,12 @@ export const ASSET_PG_SCHEMA: readonly string[] = [
      ON asset_entries (expires_at) WHERE expires_at IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS asset_entries_unreferenced_idx
      ON asset_entries (unreferenced_at) WHERE unreferenced_at IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS asset_entries_legacy_idx
+     ON asset_entries (id) WHERE committed_at IS NULL AND expires_at IS NULL`,
+  `CREATE TABLE IF NOT EXISTS asset_reference_tracking (
+     singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+     enabled_at TIMESTAMPTZ NOT NULL
+   )`,
 ];
 
 export async function ensureAssetSchema(queryable: Queryable): Promise<void> {
@@ -387,10 +408,9 @@ export class PgAssetStore implements AssetStore {
       result = await queryable.query<ReplaceUsageRow>(
         // Same live-entry sum as assertPutQuota. `current_counts` says whether
         // the entry being replaced is part of that sum: replace leaves the
-        // lifecycle columns alone, so replacing an entry that has already lost
-        // its last reference neither frees nor spends its predecessor's bytes,
-        // and subtracting them unconditionally would credit bytes the sum
-        // never included.
+        // lifecycle columns alone, so an entry that has already lost its last
+        // reference is outside the sum before the replace and still outside it
+        // after, and neither its old nor its new bytes may move the total.
         `SELECT current_blob.byte_size::text AS current_bytes,
                 current_entry.unreferenced_at IS NULL AS current_counts,
                 usage.logical_bytes
@@ -411,10 +431,17 @@ export class PgAssetStore implements AssetStore {
     }
     const row = result.rows[0];
     if (!row) throw new RegistryAssetNotFound();
-    const releasedBytes = row.current_counts ? Number(row.current_bytes) : 0;
-    if (Number(row.logical_bytes) - releasedBytes + replacementBytes > this.quotaBytes) {
-      throw new RegistryAssetQuotaExceeded();
-    }
+    // The post-state of the live sum, which is what a quota bounds. An entry
+    // outside the sum contributes neither term, so replacing it is a no-op
+    // against the quota rather than a charge for bytes that will not be
+    // counted -- a check whose own refusal could not be explained by the
+    // total it protects.
+    const countsLive = row.current_counts;
+    const liveAfterBytes =
+      Number(row.logical_bytes) -
+      (countsLive ? Number(row.current_bytes) : 0) +
+      (countsLive ? replacementBytes : 0);
+    if (liveAfterBytes > this.quotaBytes) throw new RegistryAssetQuotaExceeded();
   }
 
   async put(principal: AssetPrincipal, data: BinaryBlob, meta?: AssetMeta): Promise<AssetId> {
@@ -454,10 +481,13 @@ export class PgAssetStore implements AssetStore {
         await this.coordinatedWrite(queryable, contentHash, bytes);
         // The entry is allocated PENDING: `committed_at` stays NULL until the
         // first document write names this id, and `expires_at` is the deadline
-        // for that write to arrive. The columns are written on every put and
-        // read on no request path, so the two states stay indistinguishable to
-        // a caller (see `resolve` / `identify` / `resolveIndirect`, none of
-        // which mention them).
+        // for that write to arrive. The columns are written unconditionally on
+        // every put, and no READ path reads them -- see `resolve` / `identify`
+        // / `resolveIndirect`, none of which mention them -- so the pending and
+        // committed states are indistinguishable to a caller. The one
+        // deliberate exception is `unreferenced_at`, which the quota checks on
+        // `put` and `replace` read: quota is accounted on live logical bytes,
+        // and the asset contract states that branch explicitly.
         await queryable.query(
           `INSERT INTO asset_entries
              (id, principal, content_hash, mime, meta, revision, created_at,

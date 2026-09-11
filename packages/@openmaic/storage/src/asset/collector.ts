@@ -1,7 +1,12 @@
 /** Offline reclamation for unreferenced server asset entries and bytes. */
 import type { ContentHash } from './blob.js';
 import type { AssetByteStore } from './byte-store.js';
-import { backfillDocumentAssetReferences, sceneAssetScope, stageAssetScope } from './references.js';
+import {
+  assetReferenceTrackingEnabled,
+  backfillDocumentAssetReferences,
+  sceneAssetScope,
+  stageAssetScope,
+} from './references.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
 /** One hour. A deployment may choose a longer retention window. */
@@ -116,8 +121,11 @@ interface EntryLockRow extends EntryCandidateRow {
   content_hash: ContentHash;
 }
 
-interface StageWalkRow extends Record<string, unknown> {
+interface StageIdRow extends Record<string, unknown> {
   id: string;
+}
+
+interface StageWalkRow extends StageIdRow {
   data: unknown;
 }
 
@@ -148,9 +156,62 @@ const EMPTY_ENTRY_LEVEL: EntryLevelPass = {
   legacyEntriesCommitted: 0,
 };
 
-function collectorFailure(): Error {
-  return new Error('@openmaic/storage: asset collection failed');
+/**
+ * A collection failure, optionally naming the document it happened on.
+ *
+ * The id travels as a property rather than in the message because the message
+ * is the value that escapes: this package's egress rule keeps caller-derived
+ * strings out of thrown text, and a stage id is caller-derived. A host that
+ * wants to know which document stalls its backfill reads `stageId`; a log line
+ * that prints the error alone still discloses nothing.
+ */
+class AssetCollectionFailure extends Error {
+  readonly stageId?: string;
+
+  constructor(stageId?: string) {
+    super('@openmaic/storage: asset collection failed');
+    this.name = 'AssetCollectionFailure';
+    if (stageId !== undefined) this.stageId = stageId;
+  }
 }
+
+function collectorFailure(stageId?: string): Error {
+  return new AssetCollectionFailure(stageId);
+}
+
+/**
+ * The entry pass was enabled on a database no document store maintains
+ * references on.
+ *
+ * Refusing is the whole point. Running anyway would find every entry pending
+ * -- because nothing ever commits one -- and delete each on its TTL, while the
+ * documents naming them are still there. That is silent, permanent media loss,
+ * indistinguishable from correct operation until a user opens an old course.
+ * The blob pass is unaffected and still runs; only the entry level refuses.
+ */
+export class AssetReferenceTrackingNotEnabledError extends Error {
+  constructor() {
+    super(
+      '@openmaic/storage: the asset collector is configured with documentReferences, but no ' +
+        'document store on this database has written a reference row. Construct the ' +
+        'PgDocumentStore with trackAssetReferences: true (both halves are one mechanism), or ' +
+        'turn documentReferences off. Releasing entries without a reference writer would delete ' +
+        'assets live documents still name.',
+    );
+    this.name = 'AssetReferenceTrackingNotEnabledError';
+  }
+}
+
+/**
+ * Bound on how long one collection transaction may wait on a lock.
+ *
+ * Every transaction below takes a row lock a request path also takes -- the
+ * blob row a write claims, the entry row a document write commits, the stage
+ * row a save locks -- so an unbounded wait lets one stuck holder park the
+ * collector for as long as it stays stuck, on a schedule nothing is watching.
+ * The same budget, for the same reason, as the registry's write transactions.
+ */
+const COLLECTION_LOCK_TIMEOUT_SQL = `SET LOCAL lock_timeout = '30s'`;
 
 function collectorConfigurationFailure(): Error {
   return new Error(
@@ -245,6 +306,14 @@ export class AssetCollector {
     this.referenceBackfillBatchSize = referenceBackfillBatchSize;
   }
 
+  /** Every collection transaction: a fresh pinned one, plus a lock-wait budget. */
+  private lockBoundedTransaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
+    return this.transactionHook(async (queryable) => {
+      await queryable.query(COLLECTION_LOCK_TIMEOUT_SQL);
+      return body(queryable);
+    });
+  }
+
   /**
    * Run one bounded pass and resolve to the number of BLOBS it deleted, which
    * is never above `batchSize`.
@@ -280,9 +349,22 @@ export class AssetCollector {
     // The entry level runs first: releasing an entry is what stamps its blob
     // unreferenced, and doing it before the blob pass means a blob freed here
     // starts its own grace period now instead of one interval from now.
-    const entries = this.documentReferences
-      ? await this.entryLevelPass(now, cutoff)
-      : EMPTY_ENTRY_LEVEL;
+    //
+    // The tracking marker is checked before any of it. A missing marker is a
+    // misconfiguration whose consequence is deleting live media, so the pass
+    // refuses -- but only the ENTRY level refuses. The blob pass below is
+    // correct with or without a reference writer and still runs, so a
+    // deployment that trips this does not also stop reclaiming bytes; the
+    // refusal is raised after it.
+    let trackingFailure: AssetReferenceTrackingNotEnabledError | undefined;
+    let entries = EMPTY_ENTRY_LEVEL;
+    if (this.documentReferences) {
+      if (await this.referenceTrackingEnabled()) {
+        entries = await this.entryLevelPass(now, cutoff);
+      } else {
+        trackingFailure = new AssetReferenceTrackingNotEnabledError();
+      }
+    }
     let candidates;
     try {
       candidates = await this.queryable.query<CandidateRow>(
@@ -311,7 +393,7 @@ export class AssetCollector {
     let collected = 0;
     for (const candidate of candidates.rows) {
       try {
-        const didCollect = await this.transactionHook(async (queryable) => {
+        const didCollect = await this.lockBoundedTransaction(async (queryable) => {
           const locked = await queryable.query<CandidateRow>(
             `SELECT content_hash
                FROM asset_blobs
@@ -343,11 +425,20 @@ export class AssetCollector {
         throw collectorFailure();
       }
     }
+    if (trackingFailure) throw trackingFailure;
     return {
       collected,
       capped: candidates.rows.length >= this.batchSize,
       ...entries,
     };
+  }
+
+  private async referenceTrackingEnabled(): Promise<boolean> {
+    try {
+      return await assetReferenceTrackingEnabled(this.queryable);
+    } catch {
+      throw collectorFailure();
+    }
   }
 
   /**
@@ -426,7 +517,16 @@ export class AssetCollector {
    * a stage inserted behind the cursor is not read by this walk, and does not
    * need to be, because the document store maintains its rows itself.
    *
-   * One row more than the chunk is read and then discarded, purely to learn
+   * Only the ids are paged outside a transaction. Each document is then RE-READ
+   * inside the transaction that inserts its rows, under the stage row's
+   * `FOR SHARE` lock -- the same row every tracking write path takes `FOR
+   * UPDATE` on. Reading outside and inserting inside would let a concurrent
+   * save replace a stage between the two and leave this insert resurrecting a
+   * row that save had just deleted: not a lost reference, but a leaked entry
+   * and its quota, held forever by a walk that runs once. The lock makes
+   * "a subset of the truth, never a superset" true rather than nearly true.
+   *
+   * One id more than the chunk is read and then discarded, purely to learn
    * whether more documents follow. `rows.length < limit` alone cannot say so
    * when the chunk is exactly full, which would cost every backfill one extra
    * empty pass before it could mark -- and, on a deployment whose document
@@ -434,47 +534,60 @@ export class AssetCollector {
    * passes before reclamation starts depend on that coincidence.
    */
   private async backfillChunk(): Promise<number> {
+    const limit = this.referenceBackfillBatchSize;
+    let page;
     try {
-      const limit = this.referenceBackfillBatchSize;
-      const page = await this.queryable.query<StageWalkRow>(
+      page = await this.queryable.query<StageIdRow>(
         this.backfillCursor === null
-          ? `SELECT id, data FROM document_stages ORDER BY id ASC LIMIT $1`
-          : `SELECT id, data FROM document_stages WHERE id > $2 ORDER BY id ASC LIMIT $1`,
+          ? `SELECT id FROM document_stages ORDER BY id ASC LIMIT $1`
+          : `SELECT id FROM document_stages WHERE id > $2 ORDER BY id ASC LIMIT $1`,
         this.backfillCursor === null ? [limit + 1] : [limit + 1, this.backfillCursor],
       );
-      const hasMore = page.rows.length > limit;
-      const stages = { rows: page.rows.slice(0, limit) };
-      for (const stage of stages.rows) {
-        const scenes = await this.queryable.query<SceneWalkRow>(
-          'SELECT stage_id, id, data FROM document_scenes WHERE stage_id = $1',
-          [stage.id],
-        );
-        // One transaction per document: a chunk that fails part-way leaves
-        // whole documents backfilled rather than half of one, and the walk is
-        // restarted from scratch anyway.
-        await this.transactionHook(async (queryable) => {
-          const stageScope = stageAssetScope(stage.data);
-          await backfillDocumentAssetReferences(queryable, {
-            stageId: stage.id,
-            sceneId: stageScope.sceneId,
-            candidates: stageScope.candidates,
-          });
-          for (const scene of scenes.rows) {
-            const scope = sceneAssetScope(scene.id, scene.data);
-            await backfillDocumentAssetReferences(queryable, {
-              stageId: stage.id,
-              sceneId: scope.sceneId,
-              candidates: scope.candidates,
-            });
-          }
-        });
-        this.backfillCursor = stage.id;
-      }
-      if (!hasMore) this.backfillCursor = null;
-      return stages.rows.length;
     } catch {
       throw collectorFailure();
     }
+    const hasMore = page.rows.length > limit;
+    const ids = page.rows.slice(0, limit).map((row) => row.id);
+    for (const stageId of ids) {
+      try {
+        // One transaction per document: a chunk that fails part-way leaves
+        // whole documents backfilled rather than half of one, and the walk is
+        // restarted from scratch anyway.
+        await this.lockBoundedTransaction(async (queryable) => {
+          const stage = await queryable.query<StageWalkRow>(
+            `SELECT id, data FROM document_stages WHERE id = $1 FOR SHARE`,
+            [stageId],
+          );
+          const stageRow = stage.rows[0];
+          // Deleted since the page was read: it holds no references now, and
+          // the delete already released whatever it held.
+          if (!stageRow) return;
+          const scenes = await queryable.query<SceneWalkRow>(
+            'SELECT stage_id, id, data FROM document_scenes WHERE stage_id = $1',
+            [stageId],
+          );
+          await backfillDocumentAssetReferences(queryable, {
+            stageId,
+            scope: stageAssetScope(stageRow.data),
+          });
+          for (const scene of scenes.rows) {
+            await backfillDocumentAssetReferences(queryable, {
+              stageId,
+              scope: sceneAssetScope(scene.id, scene.data),
+            });
+          }
+        });
+      } catch {
+        // Named, but only as a property: see AssetCollectionFailure. The walk
+        // stops here and the cursor stays behind this document, so nothing is
+        // marked and invariant (i) keeps the entry pass from releasing
+        // anything -- a stalled backfill is safe, just stalled.
+        throw collectorFailure(stageId);
+      }
+      this.backfillCursor = stageId;
+    }
+    if (!hasMore) this.backfillCursor = null;
+    return ids.length;
   }
 
   /**
@@ -494,7 +607,7 @@ export class AssetCollector {
    */
   private async markLegacyEntries(): Promise<number> {
     try {
-      return await this.transactionHook(async (queryable) => {
+      return await this.lockBoundedTransaction(async (queryable) => {
         const marked = await queryable.query<{ marked: string }>(
           // Counted through a data-modifying CTE rather than by returning
           // every id: this runs once over a whole deployment's backlog, and
@@ -552,7 +665,7 @@ export class AssetCollector {
     let entriesCollected = 0;
     for (const candidate of candidates.rows) {
       try {
-        const didCollect = await this.transactionHook(async (queryable) => {
+        const didCollect = await this.lockBoundedTransaction(async (queryable) => {
           // Re-checked under the row lock, including the "no reference row"
           // condition. A document write between the candidate query and this
           // lock is exactly the case that must not be swept: it cleared

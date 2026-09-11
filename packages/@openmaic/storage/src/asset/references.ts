@@ -1,12 +1,23 @@
 /**
  * Document -> asset reference maintenance.
  *
- * This module is the ONLY code that writes `document_asset_refs` or the
- * lifecycle columns on `asset_entries`. Everything here takes a `Queryable`
- * and runs inside a transaction the caller already owns -- the document
- * store's write transactions and the collector's backfill -- so a reference
- * row and the document write that implies it commit or roll back together.
- * There is no HTTP route and no scheduled walk over documents.
+ * **Internal to the package.** These are transaction-scoped maintenance
+ * primitives, not API: called outside a document write they would replace or
+ * delete reference rows nothing else knows about. The supported switches are
+ * `PgDocumentStoreOptions.trackAssetReferences` and
+ * `AssetCollectorOptions.documentReferences`; nothing here is re-exported
+ * from the package root.
+ *
+ * This module is the only place that maintains `document_asset_refs` and the
+ * lifecycle columns on `asset_entries` **as part of a document write**. Two
+ * other writers exist by design and are named so this docstring cannot go
+ * stale: `PgAssetStore.put` writes all three lifecycle columns when it
+ * allocates an entry, and `AssetCollector` marks legacy entries and deletes
+ * released ones. Everything here takes a `Queryable` and runs inside a
+ * transaction the caller already owns -- the document store's write
+ * transactions and the collector's backfill -- so a reference row and the
+ * document write that implies it commit or roll back together. There is no
+ * HTTP route and no scheduled walk over documents.
  *
  * Two halves, deliberately separated:
  *
@@ -17,8 +28,13 @@
  * - The **SQL** half replaces the rows of one scope and stamps the lifecycle
  *   columns of the entries that gained or lost their last reference.
  *
- * A scope is `(stage_id, scene_id)`, where `scene_id = ''` is the stage-level
- * slot -- stage whiteboards and the stage video manifest, which no scene owns.
+ * A scope is `(stage_id, scope, scene_id)`: `scope = 'stage'` is the
+ * stage-level slot -- stage whiteboards and the stage video manifest, which no
+ * scene owns -- and `scope = 'scene'` is one scene's own slots. The
+ * distinction is a column rather than a reserved `scene_id` value because
+ * scene ids are opaque: a scene whose id matched the sentinel would share a
+ * key with the stage-level rows, and whichever scope was written second would
+ * silently delete the other's rows and stamp its entries unreferenced.
  * Scopes match the granularity of the document store's writes: `putScene`
  * touches one scene's rows, `putStage` the stage-level rows, a full save all
  * of them. That is not a detail: the media write-back path writes scenes and
@@ -39,16 +55,21 @@ import type { Queryable } from '../runtime/pg.js';
 
 export type { Queryable } from '../runtime/pg.js';
 
+/** Which half of a document a reference row belongs to. */
+export type DocumentAssetScopeKind = 'stage' | 'scene';
+
 /**
- * The `scene_id` of the stage-level scope. Empty rather than NULL so the
- * primary key covers it: a nullable column would let the same stage-level
- * reference be inserted twice.
+ * The `scene_id` stage-level rows carry. Empty rather than NULL so the primary
+ * key covers it (a nullable column would admit the same stage-level reference
+ * twice); it is not a reserved value, because `scope` is what distinguishes
+ * the two halves.
  */
-export const STAGE_ASSET_SCOPE_SCENE_ID = '';
+const STAGE_SCOPE_SCENE_ID = '';
 
 /** One reference scope of one stage: which rows to replace, and with what. */
 export interface DocumentAssetScope {
-  /** The scene these candidates belong to, or `''` for the stage-level slot. */
+  readonly scope: DocumentAssetScopeKind;
+  /** The scene these candidates belong to; `''` on a stage-level scope. */
   readonly sceneId: string;
   /** References the document holds in this scope, exactly as it holds them. */
   readonly candidates: readonly string[];
@@ -101,6 +122,24 @@ function refsOf(stage: ScopedStage, scenes: readonly ScopedScene[]): string[] {
 }
 
 /**
+ * Keep only the members a slot enumerator can dereference.
+ *
+ * `slideMediaSlotDescriptors` reads `element.type` and the manifest reads
+ * `action.type`, so a `null` (or primitive) member throws a raw `TypeError`
+ * mid-enumeration. That matters because nothing rejects such a document:
+ * `validateScene` never inspects `canvas.elements`, so `elements: [null]` is
+ * storable through the ordinary write path and may already be on disk. Left
+ * unfiltered it would fail the document write that names an asset and, worse,
+ * stall the backfill on the same row forever -- which blocks the entry level
+ * for the whole deployment. Dropping an unreadable member cannot lose a
+ * reference, because a member that is not an object holds none.
+ */
+function enumerableMembers(value: unknown): unknown[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((member) => typeof member === 'object' && member !== null);
+}
+
+/**
  * Normalize one slide for the enumerator.
  *
  * `slideMediaSlotDescriptors` reads `slide.elements.length`, so a row that
@@ -115,7 +154,7 @@ function scopedSlide(slide: unknown): Slide {
   >;
   return {
     ...value,
-    elements: Array.isArray(value.elements) ? value.elements : [],
+    elements: enumerableMembers(value.elements),
   } as unknown as Slide;
 }
 
@@ -129,8 +168,8 @@ function scopedScene(row: unknown): ScopedScene | null {
     content: isSlideContent(storedContent)
       ? { ...storedContent, canvas: scopedSlide((storedContent as SlideContent).canvas) }
       : storedContent,
-    whiteboards: Array.isArray(scene.whiteboards) ? scene.whiteboards.map(scopedSlide) : [],
-    actions: Array.isArray(scene.actions) ? scene.actions : [],
+    whiteboards: enumerableMembers(scene.whiteboards).map(scopedSlide),
+    actions: enumerableMembers(scene.actions),
   } as unknown as ScopedScene;
 }
 
@@ -138,9 +177,7 @@ function scopedStage(row: unknown): ScopedStage {
   if (typeof row !== 'object' || row === null) return NO_STAGE_SLOTS;
   const stage = row as { whiteboard?: unknown; videoManifest?: unknown };
   return {
-    whiteboard: (Array.isArray(stage.whiteboard)
-      ? stage.whiteboard.map(scopedSlide)
-      : []) as Stage['whiteboard'],
+    whiteboard: enumerableMembers(stage.whiteboard).map(scopedSlide) as Stage['whiteboard'],
     videoManifest:
       typeof stage.videoManifest === 'object' && stage.videoManifest !== null
         ? (stage.videoManifest as Stage['videoManifest'])
@@ -160,7 +197,8 @@ function scopedStage(row: unknown): ScopedStage {
  */
 export function stageAssetScope(stage: unknown): DocumentAssetScope {
   return {
-    sceneId: STAGE_ASSET_SCOPE_SCENE_ID,
+    scope: 'stage',
+    sceneId: STAGE_SCOPE_SCENE_ID,
     candidates: refsOf(scopedStage(stage), []),
   };
 }
@@ -174,7 +212,11 @@ export function stageAssetScope(stage: unknown): DocumentAssetScope {
  */
 export function sceneAssetScope(sceneId: string, scene: unknown): DocumentAssetScope {
   const scoped = scopedScene(scene);
-  return { sceneId, candidates: scoped === null ? [] : refsOf(NO_STAGE_SLOTS, [scoped]) };
+  return {
+    scope: 'scene',
+    sceneId,
+    candidates: scoped === null ? [] : refsOf(NO_STAGE_SLOTS, [scoped]),
+  };
 }
 
 /** Every scope of one document: the stage-level slot plus one per scene. */
@@ -206,23 +248,43 @@ function queryableCandidates(candidates: readonly string[]): string[] {
 async function referencedAssetIds(
   queryable: Queryable,
   stageId: string,
-  sceneId?: string,
+  scope?: DocumentAssetScope,
 ): Promise<string[]> {
   const result =
-    sceneId === undefined
+    scope === undefined
       ? await queryable.query<{ asset_id: string }>(
           'SELECT DISTINCT asset_id FROM document_asset_refs WHERE stage_id = $1',
           [stageId],
         )
       : await queryable.query<{ asset_id: string }>(
-          'SELECT asset_id FROM document_asset_refs WHERE stage_id = $1 AND scene_id = $2',
-          [stageId, sceneId],
+          `SELECT asset_id
+             FROM document_asset_refs
+            WHERE stage_id = $1 AND scope = $2 AND scene_id = $3`,
+          [stageId, scope.scope, scope.sceneId],
         );
   return result.rows.map((row) => row.asset_id);
 }
 
 /**
- * Commit every entry the given scopes of this stage now reference.
+ * Record that a document store on this database maintains reference rows.
+ *
+ * Written by every reference-maintaining transaction rather than once at
+ * construction, so the marker can only exist if a write really happened: a
+ * store constructed with the option and never used claims nothing. The
+ * collector refuses its entry pass without it, because an empty
+ * `document_asset_refs` cannot be told apart from documents that reference
+ * nothing, while the absence of this row can.
+ */
+async function recordReferenceTracking(queryable: Queryable): Promise<void> {
+  await queryable.query(
+    `INSERT INTO asset_reference_tracking (singleton, enabled_at)
+     VALUES (TRUE, now())
+     ON CONFLICT DO NOTHING`,
+  );
+}
+
+/**
+ * Commit every entry the given scope of this stage now references.
  *
  * `COALESCE(committed_at, now())` keeps the first document write's timestamp:
  * commit is "a document has named this id", which happens once. Clearing
@@ -234,7 +296,7 @@ async function referencedAssetIds(
 async function commitReferencedEntries(
   queryable: Queryable,
   stageId: string,
-  sceneId: string,
+  scope: DocumentAssetScope,
 ): Promise<void> {
   await queryable.query(
     `UPDATE asset_entries
@@ -244,9 +306,9 @@ async function commitReferencedEntries(
       WHERE id IN (
               SELECT asset_id
                 FROM document_asset_refs
-               WHERE stage_id = $1 AND scene_id = $2
+               WHERE stage_id = $1 AND scope = $2 AND scene_id = $3
             )`,
-    [stageId, sceneId],
+    [stageId, scope.scope, scope.sceneId],
   );
 }
 
@@ -280,52 +342,60 @@ async function stampUnreferencedEntries(
 async function replaceScopeRows(
   queryable: Queryable,
   stageId: string,
-  sceneId: string,
-  candidates: readonly string[],
+  scope: DocumentAssetScope,
 ): Promise<void> {
-  await queryable.query('DELETE FROM document_asset_refs WHERE stage_id = $1 AND scene_id = $2', [
-    stageId,
-    sceneId,
-  ]);
-  const ids = queryableCandidates(candidates);
+  await queryable.query(
+    `DELETE FROM document_asset_refs
+      WHERE stage_id = $1 AND scope = $2 AND scene_id = $3`,
+    [stageId, scope.scope, scope.sceneId],
+  );
+  await insertScopeRows(queryable, stageId, scope);
+}
+
+async function insertScopeRows(
+  queryable: Queryable,
+  stageId: string,
+  scope: DocumentAssetScope,
+): Promise<void> {
+  const ids = queryableCandidates(scope.candidates);
   if (ids.length === 0) return;
   // The join is what keeps ids opaque: a candidate with no entry contributes
   // no row and no error. Bytes are stored before any document can name the id
   // they were stored under, so this join loses nothing a document really
   // holds.
   await queryable.query(
-    `INSERT INTO document_asset_refs (stage_id, scene_id, asset_id)
-     SELECT $1, $2, entries.id
+    `INSERT INTO document_asset_refs (stage_id, scope, scene_id, asset_id)
+     SELECT $1, $2, $3, entries.id
        FROM asset_entries AS entries
-      WHERE entries.id = ANY($3::text[])
+      WHERE entries.id = ANY($4::text[])
      ON CONFLICT DO NOTHING`,
-    [stageId, sceneId, ids],
+    [stageId, scope.scope, scope.sceneId, ids],
   );
 }
 
-/** What scope to replace, and with which candidate references. */
+/** One scope of one stage to replace. */
 export interface SyncDocumentAssetReferencesInput {
   readonly stageId: string;
-  /** `''` for the stage-level scope. */
-  readonly sceneId: string;
-  readonly candidates: readonly string[];
+  readonly scope: DocumentAssetScope;
 }
 
 /**
  * Replace one scope's reference rows and stamp the entries it affected.
  *
- * Exactly the rows of `(stageId, sceneId)` change. A scene's write cannot
- * disturb another scene's rows, which is what lets the incremental write paths
- * maintain references correctly without re-reading the whole document.
+ * Exactly the rows of `(stageId, scope, sceneId)` change. A scene's write
+ * cannot disturb another scene's rows -- or the stage-level rows, whatever the
+ * scene is called -- which is what lets the incremental write paths maintain
+ * references correctly without re-reading the whole document.
  */
 export async function syncDocumentAssetReferences(
   queryable: Queryable,
   input: SyncDocumentAssetReferencesInput,
 ): Promise<void> {
-  const { stageId, sceneId, candidates } = input;
-  const previous = await referencedAssetIds(queryable, stageId, sceneId);
-  await replaceScopeRows(queryable, stageId, sceneId, candidates);
-  await commitReferencedEntries(queryable, stageId, sceneId);
+  const { stageId, scope } = input;
+  const previous = await referencedAssetIds(queryable, stageId, scope);
+  await recordReferenceTracking(queryable);
+  await replaceScopeRows(queryable, stageId, scope);
+  await commitReferencedEntries(queryable, stageId, scope);
   await stampUnreferencedEntries(queryable, previous);
 }
 
@@ -341,7 +411,9 @@ export interface SyncStageAssetReferencesInput {
  *
  * Deleting the stage's rows and re-inserting from the scopes is what makes a
  * full save authoritative, including for scenes the save removed -- those
- * simply contribute no scope, so their rows do not come back.
+ * simply contribute no scope, so their rows do not come back. Rows are
+ * inserted for every scope before any entry is committed, so two scopes naming
+ * the same id cannot have one of them stamp it unreferenced.
  */
 export async function syncStageAssetReferences(
   queryable: Queryable,
@@ -349,12 +421,13 @@ export async function syncStageAssetReferences(
 ): Promise<void> {
   const { stageId, scopes } = input;
   const previous = await referencedAssetIds(queryable, stageId);
+  await recordReferenceTracking(queryable);
   await queryable.query('DELETE FROM document_asset_refs WHERE stage_id = $1', [stageId]);
   for (const scope of scopes) {
-    await replaceScopeRows(queryable, stageId, scope.sceneId, scope.candidates);
+    await insertScopeRows(queryable, stageId, scope);
   }
   for (const scope of scopes) {
-    await commitReferencedEntries(queryable, stageId, scope.sceneId);
+    await commitReferencedEntries(queryable, stageId, scope);
   }
   await stampUnreferencedEntries(queryable, previous);
 }
@@ -381,39 +454,43 @@ export async function removeDocumentAssetReferences(
   input: RemoveDocumentAssetReferencesInput,
 ): Promise<void> {
   const { stageId, sceneId } = input;
-  const previous = await referencedAssetIds(queryable, stageId, sceneId);
-  if (sceneId === undefined) {
+  const scope: DocumentAssetScope | undefined =
+    sceneId === undefined ? undefined : { scope: 'scene', sceneId, candidates: [] };
+  const previous = await referencedAssetIds(queryable, stageId, scope);
+  await recordReferenceTracking(queryable);
+  if (scope === undefined) {
     await queryable.query('DELETE FROM document_asset_refs WHERE stage_id = $1', [stageId]);
   } else {
-    await queryable.query('DELETE FROM document_asset_refs WHERE stage_id = $1 AND scene_id = $2', [
-      stageId,
-      sceneId,
-    ]);
+    await queryable.query(
+      `DELETE FROM document_asset_refs
+        WHERE stage_id = $1 AND scope = $2 AND scene_id = $3`,
+      [stageId, scope.scope, scope.sceneId],
+    );
   }
   await stampUnreferencedEntries(queryable, previous);
 }
 
 /**
  * Insert the reference rows of one scope without removing anything, and
- * without touching a lifecycle column.
+ * without touching a lifecycle column or the tracking marker.
  *
  * The collector's backfill only ever adds, which is what makes a partial walk
  * safe: an interrupted backfill leaves the reference table a subset of the
  * truth, never a superset, and the entries it would have covered stay legacy
- * (and therefore uncollectable) until a walk finishes.
+ * (and therefore uncollectable) until a walk finishes. The caller is
+ * responsible for reading the document inside the same transaction as this
+ * insert -- see `AssetCollector.backfillChunk` -- or a concurrent write could
+ * make these rows a superset after all.
  */
 export async function backfillDocumentAssetReferences(
   queryable: Queryable,
   input: SyncDocumentAssetReferencesInput,
 ): Promise<void> {
-  const ids = queryableCandidates(input.candidates);
-  if (ids.length === 0) return;
-  await queryable.query(
-    `INSERT INTO document_asset_refs (stage_id, scene_id, asset_id)
-     SELECT $1, $2, entries.id
-       FROM asset_entries AS entries
-      WHERE entries.id = ANY($3::text[])
-     ON CONFLICT DO NOTHING`,
-    [input.stageId, input.sceneId, ids],
-  );
+  await insertScopeRows(queryable, input.stageId, input.scope);
+}
+
+/** True when some document store on this database maintains reference rows. */
+export async function assetReferenceTrackingEnabled(queryable: Queryable): Promise<boolean> {
+  const result = await queryable.query('SELECT 1 FROM asset_reference_tracking LIMIT 1');
+  return result.rows.length > 0;
 }

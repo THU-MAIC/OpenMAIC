@@ -337,6 +337,7 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
   beforeEach(async () => {
     await truncateDocumentTables(pool as Queryable);
     await pool.query('TRUNCATE document_asset_refs, asset_entries, asset_blobs');
+    await pool.query('TRUNCATE asset_reference_tracking');
     bytes = new PgAssetByteStore(pool as Queryable);
     assets = new PgAssetStore(pool as Queryable, {
       byteStore: bytes,
@@ -353,15 +354,43 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
     await pool.end();
   });
 
-  test('provisions the cascading reference foreign key', async () => {
+  test('provisions the cascading reference foreign key and the scoped primary key', async () => {
     const foreignKey = await pool.query<{ delete_rule: string }>(
       `SELECT delete_rule
          FROM information_schema.referential_constraints
         WHERE constraint_schema = current_schema()
           AND constraint_name = 'document_asset_refs_asset_id_fkey'`,
     );
-
     expect(foreignKey.rows).toEqual([{ delete_rule: 'CASCADE' }]);
+
+    // The server itself, not the pin, says the scope is part of the key: this
+    // is what makes a scene id equal to the stage sentinel a different row
+    // rather than the same one.
+    const key = await pool.query<{ column_name: string }>(
+      `SELECT key.column_name
+         FROM information_schema.table_constraints AS constraints
+         JOIN information_schema.key_column_usage AS key
+           ON key.constraint_name = constraints.constraint_name
+        WHERE constraints.table_name = 'document_asset_refs'
+          AND constraints.constraint_type = 'PRIMARY KEY'
+        ORDER BY key.ordinal_position`,
+    );
+    expect(key.rows.map((row) => row.column_name)).toEqual([
+      'stage_id',
+      'scope',
+      'scene_id',
+      'asset_id',
+    ]);
+
+    // Two rows differing only in scope coexist -- the P1 collision, closed.
+    const id = await assets.put(principal, new Blob(['scoped']));
+    await pool.query(
+      `INSERT INTO document_asset_refs (stage_id, scope, scene_id, asset_id)
+       VALUES ('key-stage', 'stage', '', $1), ('key-stage', 'scene', '', $1)`,
+      [id],
+    );
+    const rows = await pool.query(`SELECT 1 FROM document_asset_refs WHERE stage_id = 'key-stage'`);
+    expect(rows.rows).toHaveLength(2);
   });
 
   test('a save records the reference and commits the entry', async () => {
@@ -369,12 +398,17 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
 
     await documents.saveDocument(stageWithImage('ref-stage', 'ref-scene', id));
 
-    const rows = await pool.query<{ stage_id: string; scene_id: string; asset_id: string }>(
-      'SELECT stage_id, scene_id, asset_id FROM document_asset_refs ORDER BY scene_id',
-    );
+    const rows = await pool.query<{
+      stage_id: string;
+      scope: string;
+      scene_id: string;
+      asset_id: string;
+    }>('SELECT stage_id, scope, scene_id, asset_id FROM document_asset_refs ORDER BY scene_id');
     // One row: the scene that names it. The stage of this fixture carries no
     // whiteboard and no video manifest, so the stage-level scope is empty.
-    expect(rows.rows).toEqual([{ stage_id: 'ref-stage', scene_id: 'ref-scene', asset_id: id }]);
+    expect(rows.rows).toEqual([
+      { stage_id: 'ref-stage', scope: 'scene', scene_id: 'ref-scene', asset_id: id },
+    ]);
     const entry = await pool.query<{ committed_at: Date | null; expires_at: Date | null }>(
       'SELECT committed_at, expires_at FROM asset_entries WHERE id = $1',
       [id],
@@ -445,6 +479,86 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
     expect((await assets.resolve(principal, id))?.bytes).toEqual(
       new TextEncoder().encode('kept bytes'),
     );
+  });
+
+  test('a concurrent save cannot make the backfill resurrect the row it just removed', async () => {
+    // The backfill pages stage ids outside a transaction, so the document it
+    // enumerates could have been replaced between the page and the insert.
+    // Re-reading the stage inside the transaction under FOR SHARE closes it:
+    // the same row every tracking write path takes FOR UPDATE on, so the save
+    // below must wait for the backfill's transaction to finish, and what the
+    // backfill then inserts is the document the save wrote.
+    const stale = await assets.put(principal, new Blob(['stale reference']));
+    const fresh = await assets.put(principal, new Blob(['fresh reference']));
+    await documents.saveDocument(stageWithImage('race-stage', 'race-scene', stale));
+    // Made legacy after the save, so the collector has a reason to backfill at
+    // all -- the save would otherwise have committed the entry and left
+    // nothing for the walk to do.
+    await pool.query(
+      `UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = $1`,
+      [stale],
+    );
+
+    let reachedLock!: () => void;
+    const atLock = new Promise<void>((resolve) => {
+      reachedLock = resolve;
+    });
+    let release!: () => void;
+    const mayProceed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pausingTransaction: WithTransaction = async (body) => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const result = await body({
+          async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+            text: string,
+            params?: unknown[],
+          ): Promise<QueryResult<TRow>> {
+            const answer = await (client as Queryable).query<TRow>(text, params);
+            if (text.includes('document_stages') && text.includes('FOR SHARE')) {
+              reachedLock();
+              await mayProceed;
+            }
+            return answer;
+          },
+        });
+        await client.query('COMMIT');
+        return result;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    };
+
+    const backfilling = new AssetCollector(pool as Queryable, bytes, {
+      withTransaction: pausingTransaction,
+      documentReferences: true,
+      graceMs: 60 * 60 * 1000,
+    }).collectPass();
+    await atLock;
+
+    // The save replaces the document while the backfill holds the stage row.
+    const saving = documents.saveDocument(stageWithImage('race-stage', 'race-scene', fresh));
+    await waitForLockWaiter(pool);
+    release();
+    await backfilling;
+    await saving;
+
+    // Exactly what the document holds: the backfill's older read did not come
+    // back as a row, and the stale entry is released rather than pinned.
+    const rows = await pool.query<{ asset_id: string }>(
+      `SELECT asset_id FROM document_asset_refs WHERE stage_id = 'race-stage'`,
+    );
+    expect(rows.rows.map((row) => row.asset_id)).toEqual([fresh]);
+    const released = await pool.query<{ unreferenced_at: Date | null }>(
+      'SELECT unreferenced_at FROM asset_entries WHERE id = $1',
+      [stale],
+    );
+    expect(released.rows[0]?.unreferenced_at).not.toBeNull();
   });
 
   test('removing the entry cascades its reference rows away', async () => {

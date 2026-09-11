@@ -75,7 +75,10 @@ const REQUIRED_SUITES = [
  * `document_asset_refs` is the one table two backends meet on -- the asset
  * schema owns it, the document store writes it -- so an insert into it during
  * the run is the evidence that the reference level ran against a real server
- * rather than only against PGlite.
+ * rather than only against PGlite. `asset_reference_tracking` is the marker
+ * the collector refuses to run its entry pass without, so requiring an insert
+ * keeps the suite that exercises that refusal honest: a run where the tracking
+ * document store never wrote would satisfy nothing here.
  */
 const REQUIRED_TABLES = [
   'document_stages',
@@ -88,6 +91,7 @@ const REQUIRED_TABLES = [
   'asset_blobs',
   'asset_entries',
   'document_asset_refs',
+  'asset_reference_tracking',
 ];
 
 const usage = [
