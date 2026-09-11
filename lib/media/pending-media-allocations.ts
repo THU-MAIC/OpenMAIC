@@ -118,21 +118,51 @@ export function takePendingMediaAllocations(
  */
 export function forgetMediaAllocation(stageId: string, placeholderRef: string): void {
   const mapKey = key(stageId, placeholderRef);
+  const parked = pending.get(mapKey);
   pending.delete(mapKey);
   allocated.delete(mapKey);
+  releaseParkedObjectUrls(parked);
+}
+
+/**
+ * Release the object URLs an entry that is still parked owns.
+ *
+ * The commit path deliberately does not revoke them when a write-back fails
+ * with the allocation retained: the parked entry becomes the only thing holding
+ * the bytes this tab can render, and the failed task carries no URL of its own.
+ * So dropping the entry without revoking pins the whole blob -- a video and its
+ * poster -- for the life of the tab, and repeated failures accumulate.
+ *
+ * Only for an entry that is still in the parked queue. Once
+ * `takePendingMediaAllocations` has handed it out, the task table is displaying
+ * those URLs, and revoking one out from under a slide that is showing it is a
+ * worse bug than the leak. An entry that survives only in the non-draining
+ * record is in exactly that state.
+ */
+function releaseParkedObjectUrls(allocation: PendingMediaAllocation | undefined): void {
+  if (!allocation) return;
+  // Absent in a non-browser realm, and this module is loaded by server-side
+  // code paths that never park anything.
+  if (typeof URL === 'undefined' || typeof URL.revokeObjectURL !== 'function') return;
+  if (allocation.objectUrl) URL.revokeObjectURL(allocation.objectUrl);
+  if (allocation.posterObjectUrl) URL.revokeObjectURL(allocation.posterObjectUrl);
 }
 
 /** Drop a course's allocations, parked and recorded alike (switch, deletion, tests). */
 export function clearPendingMediaAllocations(stageId?: string): void {
   if (stageId === undefined) {
+    for (const allocation of pending.values()) releaseParkedObjectUrls(allocation);
     pending.clear();
     allocated.clear();
     return;
   }
   const prefix = `${stageId}\u0000`;
-  for (const map of [pending, allocated]) {
-    for (const mapKey of [...map.keys()]) {
-      if (mapKey.startsWith(prefix)) map.delete(mapKey);
-    }
+  for (const [mapKey, allocation] of [...pending.entries()]) {
+    if (!mapKey.startsWith(prefix)) continue;
+    pending.delete(mapKey);
+    releaseParkedObjectUrls(allocation);
+  }
+  for (const mapKey of [...allocated.keys()]) {
+    if (mapKey.startsWith(prefix)) allocated.delete(mapKey);
   }
 }

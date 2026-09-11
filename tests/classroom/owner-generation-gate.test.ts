@@ -1,12 +1,24 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// The gate is inert in browser-only mode, where one viewer is by construction
+// the author. These cases are about the server-backed reading.
+vi.mock('@/lib/persistence/media-persistence', () => ({
+  isServerBackedMediaPersistence: () => true,
+}));
 
 import {
   classroomGenerationOwnership,
   mayStartOwnerGeneration,
+  retryWhileOwnershipUnresolved,
   type ClassroomGenerationOwnership,
 } from '@/lib/classroom/stage-ownership-signal';
+import {
+  mayGenerateForStage,
+  noteStageGenerationOwnership,
+  resetGenerationPermissionsForTests,
+} from '@/lib/classroom/generation-permission';
 import type { StageMetaResult } from '@/lib/classroom/stage-meta-client';
 
 const OWNERSHIPS: readonly ClassroomGenerationOwnership[] = [
@@ -62,6 +74,96 @@ describe('classroom generation owner gate', () => {
 // checked statically: a surface that forgot to feed the sidecar's answer into
 // the shared permission store would keep every unit test above green while
 // spending the operator's budget for any visitor.
+/**
+ * One transient 5xx from the sidecar must not cost the owner the whole load.
+ *
+ * Every non-answer fails closed, which is right, and it means the answer has to
+ * be asked for until it arrives: a single blip otherwise leaves the genuine
+ * author with no resume, no Retry affordance and no legacy narration converted,
+ * with nothing to change it short of a full reload.
+ */
+describe('asking the sidecar until it answers', () => {
+  const stageId = 'retry-course';
+
+  beforeEach(() => resetGenerationPermissionsForTests());
+  afterEach(() => resetGenerationPermissionsForTests());
+
+  /** Run without waiting: the policy under test is what it retries, not when. */
+  const immediately = (run: () => void) => run();
+
+  it('re-asks after a transient failure, and the owner generates once it lands', async () => {
+    const answers: StageMetaResult[] = [{ outcome: 'unavailable' }, found(true)];
+    const seen: boolean[] = [];
+    const ask = async () => {
+      const result = answers.shift() ?? found(true);
+      const ownership = classroomGenerationOwnership(result);
+      noteStageGenerationOwnership(stageId, ownership);
+      seen.push(mayStartOwnerGeneration(true, ownership));
+      return ownership;
+    };
+
+    await retryWhileOwnershipUnresolved(ask, {
+      isCurrent: () => true,
+      schedule: immediately,
+    });
+
+    // Blocked on the first answer, allowed on the second, and asked exactly
+    // twice: the gate is never opened by the absence of an answer.
+    expect(seen).toEqual([false, true]);
+    expect(mayGenerateForStage(stageId)).toBe(true);
+  });
+
+  it('stops at the first real answer, however unwelcome', async () => {
+    const ask = vi.fn(async () => {
+      noteStageGenerationOwnership(stageId, 'not-owner');
+      return 'not-owner' as const;
+    });
+
+    await retryWhileOwnershipUnresolved(ask, { isCurrent: () => true, schedule: immediately });
+
+    // A visitor is an answer. Asking again would not change it, and the gate
+    // stays shut throughout.
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(mayGenerateForStage(stageId)).toBe(false);
+  });
+
+  it('gives up rather than asking for ever, and leaves the gate shut', async () => {
+    const ask = vi.fn(async () => {
+      noteStageGenerationOwnership(stageId, 'unresolved');
+      return 'unresolved' as const;
+    });
+
+    await retryWhileOwnershipUnresolved(ask, { isCurrent: () => true, schedule: immediately });
+
+    expect(ask.mock.calls.length).toBeGreaterThan(1);
+    expect(ask.mock.calls.length).toBeLessThan(10);
+    expect(mayGenerateForStage(stageId)).toBe(false);
+  });
+
+  it('stops asking about a course this browser has moved away from', async () => {
+    const ask = vi.fn(async () => 'unresolved' as const);
+
+    await retryWhileOwnershipUnresolved(ask, { isCurrent: () => false, schedule: immediately });
+
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('treats an unexpected throw as the fail-closed answer and asks again', async () => {
+    let asked = 0;
+    const ask = async () => {
+      asked += 1;
+      if (asked === 1) throw new Error('network down');
+      noteStageGenerationOwnership(stageId, 'owner');
+      return 'owner' as const;
+    };
+
+    await retryWhileOwnershipUnresolved(ask, { isCurrent: () => true, schedule: immediately });
+
+    expect(asked).toBe(2);
+    expect(mayGenerateForStage(stageId)).toBe(true);
+  });
+});
+
 describe('classroom surfaces feed the sidecar into the gate', () => {
   it.each(['app/classroom/[id]/page.tsx', 'components/classroom/ClassroomSurface.tsx'])(
     '%s asks the sidecar and gates on the shared permission',
@@ -74,6 +176,10 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
       expect(source).toContain("noteStageGenerationOwnership(classroomId, 'unresolved')");
       // The resume effect re-runs when the answer lands.
       expect(source).toMatch(/\}, \[loading, error, mayGenerate, generateRemaining\]\);/);
+      // An unresolved answer is asked again rather than accepted for the load:
+      // both surfaces recover from a transient sidecar failure without a
+      // reload, the pane by re-asking after every settled load.
+      expect(source).toMatch(/retryWhileOwnershipUnresolved|refreshOwnership/);
       // The outline-retry affordance is withheld, not merely refused.
       expect(source).toMatch(/onRetryOutline=\{mayGenerate \? retrySingleOutline : undefined\}/);
     },

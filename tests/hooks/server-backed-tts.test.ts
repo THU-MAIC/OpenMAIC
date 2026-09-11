@@ -38,10 +38,20 @@ vi.mock('@/lib/utils/database', () => ({
   },
 }));
 
-vi.mock('@/lib/media/asset-pool', () => ({
-  putAsset: mocks.poolPut,
-  removeAsset: mocks.poolRemove,
-}));
+/**
+ * The pool is doubled at the store rather than at `putAsset`, so the real
+ * wrapper runs: retiring this course's "store is full" note on a successful
+ * write lives there now, and a suite that replaced `putAsset` wholesale would
+ * be asserting that behaviour against its own double.
+ */
+vi.mock('@/lib/media/asset-pool-config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/media/asset-pool-config')>();
+  return {
+    ...actual,
+    resolveConfiguredAssetPoolStore: () =>
+      ({ put: mocks.poolPut }) as unknown as import('@/lib/media/asset-pool-config').AssetPoolStore,
+  };
+});
 
 vi.mock('@/lib/persistence/media-persistence', () => ({
   isServerBackedMediaPersistence: mocks.serverBacked,

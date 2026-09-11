@@ -76,6 +76,7 @@ vi.mock('@/lib/media/persist-media-reference', async () => {
 vi.mock('@/lib/media/pending-media-allocations', () => ({
   pendingMediaAllocation: mocks.pendingAllocation,
   forgetMediaAllocation: mocks.forgetAllocation,
+  takePendingMediaAllocations: vi.fn(() => []),
 }));
 
 import { adoptCachedNarration } from '@/lib/audio/adopt-cached-narration';

@@ -108,3 +108,58 @@ export function mayStartOwnerGeneration(
   if (!serverBackedMedia) return true;
   return ownership === 'owner';
 }
+
+/**
+ * How long to wait before asking the sidecar again, or `null` to stop.
+ *
+ * Only an unresolved answer is worth repeating. `not-owner` and `ownerless` are
+ * answers -- they refuse, and asking again would not change that -- while
+ * `unresolved` is the absence of one, and it is indistinguishable from a 5xx or
+ * a dropped connection. A surface that asks once per load turns one such blip
+ * into a load with no owner at all: no resume, no Retry affordance, no legacy
+ * narration converted, and nothing to change it short of a full reload.
+ *
+ * Bounded, and short. The gate stays closed the whole time, so asking again can
+ * only ever open it for someone who is entitled to it; and a sidecar that is
+ * still silent after a few seconds is an outage rather than a blip, which the
+ * next load will discover anyway.
+ */
+const OWNERSHIP_RETRY_DELAYS_MS = [500, 2_000, 5_000] as const;
+
+export function stageOwnershipRetryDelay(
+  ownership: ClassroomGenerationOwnership,
+  attempt: number,
+): number | null {
+  if (ownership !== 'unresolved') return null;
+  return OWNERSHIP_RETRY_DELAYS_MS[attempt] ?? null;
+}
+
+export interface OwnershipRetryOptions {
+  /** False once the course this was asked for is no longer the one on screen. */
+  readonly isCurrent: () => boolean;
+  /** @internal Test seam for the timer. */
+  readonly schedule?: (run: () => void, delayMs: number) => void;
+}
+
+/**
+ * Ask until the sidecar says something, or until the attempts run out.
+ *
+ * `ask` performs one round trip and records whatever it learned; it returns the
+ * generation ownership that round trip established so this can decide whether
+ * there is anything left to find out. An `ask` that throws is treated as
+ * unresolved, which is the same fail-closed reading every other non-answer
+ * gets.
+ */
+export async function retryWhileOwnershipUnresolved(
+  ask: () => Promise<ClassroomGenerationOwnership>,
+  { isCurrent, schedule = (run, delayMs) => void setTimeout(run, delayMs) }: OwnershipRetryOptions,
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    if (!isCurrent()) return;
+    const ownership = await ask().catch(() => 'unresolved' as const);
+    if (!isCurrent()) return;
+    const delay = stageOwnershipRetryDelay(ownership, attempt);
+    if (delay === null) return;
+    await new Promise<void>((resolve) => schedule(resolve, delay));
+  }
+}

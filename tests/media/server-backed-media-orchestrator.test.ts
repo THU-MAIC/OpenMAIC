@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   stageState: vi.fn(),
   pendingAllocation: vi.fn(),
   forgetAllocation: vi.fn(),
+  takeAllocations: vi.fn(),
+  mediaWhere: vi.fn(),
   placeAllocations: vi.fn(),
 }));
 
@@ -41,20 +43,29 @@ vi.mock('@/lib/utils/database', () => ({
       delete: mocks.mediaDelete,
       get: mocks.mediaGet,
       // The stage-scoped fallback the placeholder-keyed lookup falls back to.
-      where: (index: string) => ({
-        equals: (value: unknown) => ({
-          toArray: async () =>
-            mocks.mediaRows.filter((row) => (row as Record<string, unknown>)[index] === value),
-        }),
-      }),
+      // A spy, because how OFTEN a pass reaches for it is the subject of one of
+      // the cases below.
+      where: mocks.mediaWhere,
     },
   },
 }));
 
-vi.mock('@/lib/media/asset-pool', () => ({
-  putAsset: mocks.putAsset,
-  removeAsset: mocks.removeAsset,
-}));
+/**
+ * The pool is doubled at the store rather than at `putAsset`, so the real
+ * wrapper runs: retiring this course's "store is full" note on a successful
+ * write lives there now, and a suite that replaced `putAsset` wholesale would
+ * be asserting that behaviour against its own double.
+ */
+vi.mock('@/lib/media/asset-pool-config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/media/asset-pool-config')>();
+  return {
+    ...actual,
+    resolveConfiguredAssetPoolStore: () =>
+      ({
+        put: mocks.putAsset,
+      }) as unknown as import('@/lib/media/asset-pool-config').AssetPoolStore,
+  };
+});
 
 vi.mock('@/lib/media/persist-media-reference', async () => {
   const actual = await vi.importActual<typeof import('@/lib/media/persist-media-reference')>(
@@ -70,6 +81,7 @@ vi.mock('@/lib/media/persist-media-reference', async () => {
 vi.mock('@/lib/media/pending-media-allocations', () => ({
   pendingMediaAllocation: mocks.pendingAllocation,
   forgetMediaAllocation: mocks.forgetAllocation,
+  takePendingMediaAllocations: mocks.takeAllocations,
 }));
 
 vi.mock('@/lib/persistence/media-persistence', () => ({
@@ -176,6 +188,13 @@ describe('server-backed classic media orchestrator', () => {
     mocks.persistReference.mockReset().mockResolvedValue('written');
     mocks.pendingAllocation.mockReset().mockReturnValue(undefined);
     mocks.forgetAllocation.mockReset();
+    mocks.takeAllocations.mockReset().mockReturnValue([]);
+    mocks.mediaWhere.mockReset().mockImplementation((index: string) => ({
+      equals: (value: unknown) => ({
+        toArray: async () =>
+          mocks.mediaRows.filter((row) => (row as Record<string, unknown>)[index] === value),
+      }),
+    }));
     mocks.placeAllocations.mockReset().mockReturnValue(false);
     mocks.serverBacked.mockReset().mockReturnValue(true);
     mocks.stageState.mockReset().mockReturnValue({
@@ -244,6 +263,20 @@ describe('server-backed classic media orchestrator', () => {
       }
       throw new Error(`Unexpected fetch: ${String(input)}`);
     });
+  }
+
+  /** The failed, retryable task a Retry acts on. */
+  function failedTask() {
+    return {
+      elementId: imageRef,
+      type: 'image' as const,
+      status: 'failed' as const,
+      prompt: 'A diagram',
+      params: {},
+      retryCount: 0,
+      stageId,
+      error: 'The document write failed',
+    };
   }
 
   function providerCallCount(): number {
@@ -1118,6 +1151,124 @@ describe('server-backed classic media orchestrator', () => {
       expect(row?.error).toBe('asset registry put failed');
       expect(row?.errorCode).toBeUndefined();
     });
+  });
+
+  // Bytes reached the pool and the write-back did not reach the document, in a
+  // way that kept the allocation: it is parked. Nothing is in the local media
+  // table, because that row is written only after a successful write-back, so a
+  // Retry that went to the provider from here would pay for the media a second
+  // time and allocate a second asset for bytes the pool already holds.
+  it('retries a parked write-back instead of buying the media again', async () => {
+    serveImage();
+    noteStageGenerationOwnership(stageId, 'owner');
+    const parked = {
+      stageId,
+      placeholderRef: imageRef,
+      assetId: 'ast_parked',
+      objectUrl: 'blob:parked',
+    };
+    mocks.pendingAllocation.mockImplementation((stage: string, ref: string) =>
+      stage === stageId && ref === imageRef ? parked : undefined,
+    );
+    useMediaGenerationStore.setState({ tasks: { [imageRef]: failedTask() } });
+
+    await retryMediaTask(imageRef);
+
+    expect(providerCallCount()).toBe(0);
+    expect(mocks.putAsset).not.toHaveBeenCalled();
+    expect(mocks.persistReference).toHaveBeenCalledWith(parked);
+    // Drained, so a later rewrite of an already-rewritten slot cannot look
+    // possible; the non-draining record stays for the write boundary.
+    expect(mocks.takeAllocations).toHaveBeenCalledWith(stageId, [imageRef]);
+    expect(useMediaGenerationStore.getState().tasks.ast_parked?.status).toBe('done');
+  });
+
+  it('keeps a parked allocation parked when its slide still does not exist', async () => {
+    serveImage();
+    noteStageGenerationOwnership(stageId, 'owner');
+    mocks.pendingAllocation.mockReturnValue({
+      stageId,
+      placeholderRef: imageRef,
+      assetId: 'ast_parked',
+      objectUrl: 'blob:parked',
+    });
+    mocks.persistReference.mockResolvedValue('held');
+    useMediaGenerationStore.setState({ tasks: { [imageRef]: failedTask() } });
+
+    await retryMediaTask(imageRef);
+
+    expect(providerCallCount()).toBe(0);
+    expect(mocks.takeAllocations).not.toHaveBeenCalled();
+    // Keyed by the placeholder the document still carries, so the request reads
+    // as answered and nothing asks a provider again.
+    expect(useMediaGenerationStore.getState().tasks[imageRef]?.status).toBe('done');
+  });
+
+  it('leaves a parked allocation retryable when the write-back fails again', async () => {
+    serveImage();
+    noteStageGenerationOwnership(stageId, 'owner');
+    mocks.pendingAllocation.mockReturnValue({
+      stageId,
+      placeholderRef: imageRef,
+      assetId: 'ast_parked',
+      objectUrl: 'blob:parked',
+    });
+    mocks.persistReference.mockRejectedValue(
+      new MediaReferenceWriteBackError(new Error('500'), true),
+    );
+    useMediaGenerationStore.setState({ tasks: { [imageRef]: failedTask() } });
+
+    await retryMediaTask(imageRef);
+
+    expect(providerCallCount()).toBe(0);
+    expect(mocks.putAsset).not.toHaveBeenCalled();
+    const task = useMediaGenerationStore.getState().tasks[imageRef];
+    expect(task?.status).toBe('failed');
+    expect(isRetryableMediaFailure(task!)).toBe(true);
+  });
+
+  // `placeholderRef` is not indexed, and the keyed lookup misses for every row
+  // the commit path writes, so the fallback is a stage-scoped scan. Doing it per
+  // element made a pass materialize and sort the course's whole media table once
+  // per element.
+  it('reads the stage’s media table once for a whole pass, not once per element', async () => {
+    serveImage();
+    const refs = ['gen_img_1', 'gen_img_2', 'gen_img_3'];
+    mocks.stageState.mockReturnValue({
+      stage: { id: stageId },
+      scenes: refs.map((ref, index) => sceneWithImage(index + 1, ref)),
+      generationComplete: false,
+    });
+
+    await generateMediaForOutlines(
+      refs.map((ref, index) =>
+        outlineWith(index + 1, { type: 'image', prompt: 'A diagram', elementId: ref }),
+      ),
+      stageId,
+    );
+
+    expect(providerCallCount()).toBe(3);
+    expect(mocks.mediaWhere).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads it not at all when every element has a keyed row', async () => {
+    serveImage();
+    mocks.mediaGet.mockResolvedValue({
+      id: `${stageId}:${imageRef}`,
+      stageId,
+      type: 'image' as const,
+      blob: new Blob(['cached'], { type: 'image/png' }),
+      mimeType: 'image/png',
+      size: 6,
+      prompt: 'A diagram',
+      params: '{}',
+      createdAt: 0,
+    });
+
+    await runImageGeneration();
+
+    expect(providerCallCount()).toBe(0);
+    expect(mocks.mediaWhere).not.toHaveBeenCalled();
   });
 
   it('leaves an ordinary asset failure retryable', async () => {

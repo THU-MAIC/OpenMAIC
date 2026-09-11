@@ -6,10 +6,11 @@
  * a different slide of the next one — the previous deck's picture, silently, on
  * a slide whose provider was never asked.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   clearPendingMediaAllocations,
+  forgetMediaAllocation,
   pendingMediaAllocation,
   recordPendingMediaAllocation,
   takePendingMediaAllocations,
@@ -67,5 +68,74 @@ describe('pending media allocations', () => {
     clearPendingMediaAllocations('stage-1');
 
     expect(pendingMediaAllocation('stage-10', 'gen_img_1')).toMatchObject({ assetId: 'ast_ten' });
+  });
+});
+
+/**
+ * A parked entry owns its object URLs.
+ *
+ * When a write-back fails with the allocation retained, the commit path
+ * deliberately does not revoke them: the entry becomes the only thing holding
+ * bytes this tab can render, and the failed task carries no URL of its own.
+ * Dropping the entry without revoking therefore pins the whole blob -- a video
+ * and its poster -- for the life of the tab, and repeated failures accumulate.
+ */
+describe('the object URLs a parked allocation holds', () => {
+  const revoke = vi.fn();
+  const withUrls = {
+    stageId: 'stage-1',
+    placeholderRef: 'gen_vid_1',
+    assetId: 'ast_video',
+    posterAssetId: 'ast_poster',
+    objectUrl: 'blob:video',
+    posterObjectUrl: 'blob:poster',
+  };
+
+  beforeEach(() => {
+    clearPendingMediaAllocations();
+    revoke.mockReset();
+    vi.stubGlobal('URL', { createObjectURL: vi.fn(), revokeObjectURL: revoke });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('releases them when the course is cleared', () => {
+    recordPendingMediaAllocation(withUrls);
+
+    clearPendingMediaAllocations('stage-1');
+
+    expect(revoke.mock.calls.map(([url]) => url)).toEqual(['blob:video', 'blob:poster']);
+  });
+
+  it('releases them when every course is cleared', () => {
+    recordPendingMediaAllocation(withUrls);
+
+    clearPendingMediaAllocations();
+
+    expect(revoke.mock.calls.map(([url]) => url)).toEqual(['blob:video', 'blob:poster']);
+  });
+
+  it('releases them when the allocation is forgotten', () => {
+    recordPendingMediaAllocation(withUrls);
+
+    forgetMediaAllocation('stage-1', 'gen_vid_1');
+
+    expect(revoke.mock.calls.map(([url]) => url)).toEqual(['blob:video', 'blob:poster']);
+  });
+
+  // Once the entry is drained the task table is displaying those URLs. Revoking
+  // one out from under a slide that is showing it is a worse bug than the leak,
+  // and an entry that survives only in the non-draining record is in exactly
+  // that state.
+  it('leaves them alone once a slide has taken them', () => {
+    recordPendingMediaAllocation(withUrls);
+    expect(takePendingMediaAllocations('stage-1', ['gen_vid_1'])).toHaveLength(1);
+
+    clearPendingMediaAllocations('stage-1');
+    forgetMediaAllocation('stage-1', 'gen_vid_1');
+
+    expect(revoke).not.toHaveBeenCalled();
   });
 });

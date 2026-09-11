@@ -12,13 +12,23 @@
  * reload, forever, on a store the deployment already knows is full.
  *
  * So the condition is remembered once per course rather than once per element.
- * It is a property of the deployment, not of any slide, and it changes for
- * reasons the document knows nothing about: an operator raising the ceiling, a
- * collector reclaiming space. A pass that finds the marker stands down before
- * spending anything and leaves every placeholder in the "storage is full" state
- * with its Retry; the first upload that succeeds — an author's Retry from the
- * bytes that were kept, or any other store write that goes through — clears it,
- * and the next pass runs normally.
+ * It is not a property of any slide: it changes for reasons the document knows
+ * nothing about — an operator raising the ceiling, a collector reclaiming space
+ * — and the store checks each write against the headroom it has left, so it is
+ * not a property of the deployment either. Per course is the granularity that
+ * matches what it is used for: one course's pass standing down before it spends
+ * the operator's money again. The cost of that choice is that another course
+ * rediscovers the same ceiling at one provider call, which is the price of
+ * never standing a course down on a condition nothing in that course
+ * established. A pass that finds the marker stands down before spending
+ * anything and leaves every placeholder in the "storage is full" state with its
+ * Retry.
+ *
+ * It is retired in exactly one place: `putAsset` clears it for the course whose
+ * bytes it just stored. A write the store accepted is the only evidence that
+ * disproves "no room", and stating it at the seam rather than at each caller is
+ * what keeps the next pool write path from silently leaving a course standing
+ * down while the store has room.
  *
  * Device-local metadata, so it lives in the same browser KV as the rest of it
  * rather than in the media table, whose rows are scanned by half a dozen

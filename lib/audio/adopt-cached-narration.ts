@@ -39,7 +39,6 @@
  */
 import { putAsset } from '@/lib/media/asset-pool';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
-import { clearAssetStorageFull } from '@/lib/media/asset-storage-full';
 import { isStorageFullFailure } from '@/lib/media/media-failure';
 import { createLogger } from '@/lib/logger';
 import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
@@ -412,10 +411,23 @@ async function adoptCachedNarrationRun(
     try {
       // Bytes first, exactly as the media path does it: a document may never
       // name narration that was not stored.
-      assetId = await putAsset(row.blob, {
-        contentType: row.blob.type || `audio/${row.format}`,
-        ...(row.duration === undefined ? {} : { durationSeconds: row.duration }),
-      });
+      assetId = await putAsset(
+        row.blob,
+        {
+          contentType: row.blob.type || `audio/${row.format}`,
+          ...(row.duration === undefined ? {} : { durationSeconds: row.duration }),
+        },
+        // A write that goes through retires this course's "no room" note, at
+        // the seam rather than here. Together with generated narration this is
+        // the only path that can establish that for a course whose media needs
+        // nothing, and it is worth naming what it costs: a few hundred bytes of
+        // narration fit in headroom an image does not, so retiring the note can
+        // let the next pass pay a provider for an image that is refused again.
+        // Bounded at one such generation, because that pass re-marks and
+        // adoption converts everything that fits in a single load, and the
+        // alternative is a course whose media never generates again.
+        { stageId },
+      );
     } catch (error) {
       // One clip's storage failure costs that clip and nothing else. The action
       // keeps its derived id, the deck carries on, and a later load tries
@@ -432,20 +444,6 @@ async function adoptCachedNarrationRun(
       }
       continue;
     }
-    // A write that went through disproves the condition the media pass stands
-    // down on, and together with generated narration this is the only path that
-    // can say so for a course whose media needs nothing. Clearing is safe from
-    // here in a way that marking never was: it is a fact this run just
-    // established, not an inference about what some other write would cost.
-    //
-    // It does have a price, and it is worth naming rather than hiding. A few
-    // hundred bytes of narration fit in headroom an image does not, so lifting
-    // the marker can let the next pass pay a provider for an image that is then
-    // refused again. Bounded at one such generation, because that pass re-marks
-    // and adoption converts everything that fits in a single load, and it is
-    // the price of the alternative being a course that never generates again.
-    await clearAssetStorageFull(stageId);
-
     // The allocation is uncancellable, so it may finish after the course was
     // left. Its write-back is not: a document this browser no longer has open
     // would take a lock for a rewrite the live store cannot mirror.

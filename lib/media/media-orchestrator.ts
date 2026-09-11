@@ -45,13 +45,10 @@ import {
 import {
   forgetMediaAllocation,
   pendingMediaAllocation,
+  takePendingMediaAllocations,
   type PendingMediaAllocation,
 } from '@/lib/media/pending-media-allocations';
-import {
-  clearAssetStorageFull,
-  isAssetStorageFull,
-  markAssetStorageFull,
-} from '@/lib/media/asset-storage-full';
+import { isAssetStorageFull, markAssetStorageFull } from '@/lib/media/asset-storage-full';
 import { fetchProxiedMediaUrl } from '@/lib/media/proxy-media-cache';
 import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { createLogger } from '@/lib/logger';
@@ -298,10 +295,14 @@ async function collectAndGenerate(
     return;
   }
 
+  // One read of the stage's media table for the whole pass, built on the first
+  // element that needs it.
+  const scan = createCachedMediaScan();
+
   // Process requests serially — image/video APIs have limited concurrency
   for (const [index, req] of allRequests.entries()) {
     if (abortSignal?.aborted) break;
-    const attempt = await generateSingleMedia(req, stageId, abortSignal);
+    const attempt = await generateSingleMedia(req, stageId, abortSignal, undefined, scan);
     if (!attempt.storageFull) continue;
     // The store checks each write against the headroom it has left, so a
     // refusal is evidence about one blob and only weak evidence about the next.
@@ -373,6 +374,58 @@ export async function retryMediaTask(
   }
   if (task.type === 'video' && !settings.videoGenerationEnabled) {
     store.markFailed(elementId, 'Generation disabled', 'GENERATION_DISABLED');
+    return;
+  }
+
+  // Bytes that reached the pool but whose reference never reached the document.
+  //
+  // A write-back that fails with the allocation retained parks it, and nothing
+  // is written to the local media table, because that write only happens after
+  // a successful write-back. So the bytes are in the pool, the document still
+  // carries the placeholder, and this browser holds no cached copy -- a Retry
+  // that went to the provider from here would pay for the media a second time
+  // and allocate a second asset for bytes the pool already has, with the first
+  // one left for server-side reclamation. The pass has refused that since it
+  // learned to read the parked queue; this is the same gate on the affordance.
+  const parked = pendingMediaAllocation(task.stageId, elementId);
+  if (parked) {
+    useMediaGenerationStore.getState().markPendingForRetry(elementId);
+    let outcome: MediaReferenceWriteBackResult;
+    try {
+      outcome = await persistGeneratedMediaReference(parked);
+    } catch (error) {
+      // Still parked, still retryable, and still no provider call: the next
+      // Retry -- or the next pass -- comes back through here.
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn(`Write-back retry failed for ${elementId}:`, message);
+      useMediaGenerationStore.getState().markFailed(elementId, message);
+      return;
+    }
+    // The object URL is minted by the commit that parked this, so it is present
+    // in practice; an allocation without one degrades to resolving the
+    // allocated id through the asset lease, which is what a fresh browser does.
+    const objectUrl = parked.objectUrl ?? '';
+    if (outcome === 'held') {
+      // The slide this belongs to still has not been built. The allocation
+      // stays parked and the task stays keyed by the placeholder the document
+      // carries, so the request reads as answered and nothing asks again.
+      useMediaGenerationStore.getState().markDone(elementId, objectUrl, parked.posterObjectUrl);
+      return;
+    }
+    // Placed. Taking the entry is what keeps a later rewrite of an
+    // already-rewritten slot from looking possible; the non-draining record
+    // stays, because a snapshot captured before this rewrite still has to be
+    // corrected at the write boundary.
+    takePendingMediaAllocations(task.stageId, [elementId]);
+    useMediaGenerationStore
+      .getState()
+      .rekeyDone(
+        elementId,
+        parked.assetId,
+        objectUrl,
+        parked.posterObjectUrl,
+        parked.posterAssetId,
+      );
     return;
   }
 
@@ -510,11 +563,11 @@ async function commitPooledMedia(args: {
 
   let assetId: string;
   try {
-    assetId = await putAsset(blob, { contentType: mimeType });
-    // The store took a write, so whatever was full is not full any more. Doing
-    // this here rather than at the end of the commit means a write-back that
-    // fails for its own reasons does not leave the course standing down.
-    await clearAssetStorageFull(stageId);
+    // The stage is handed to the seam, which is where a successful write
+    // retires this course's "no room" note -- one place rather than one per
+    // caller. A write-back that fails for its own reasons afterwards therefore
+    // does not leave the course standing down.
+    assetId = await putAsset(blob, { contentType: mimeType }, { stageId });
   } catch (error) {
     // A full store keeps its bytes. Everything else is an ordinary failure and
     // is retried from the provider, as it always was.
@@ -533,9 +586,11 @@ async function commitPooledMedia(args: {
   let posterAssetId: string | undefined;
   if (posterBlob) {
     try {
-      posterAssetId = await putAsset(posterBlob, {
-        contentType: posterMimeType ?? posterBlob.type,
-      });
+      posterAssetId = await putAsset(
+        posterBlob,
+        { contentType: posterMimeType ?? posterBlob.type },
+        { stageId },
+      );
     } catch (error) {
       log.warn(`Poster allocation failed for ${req.elementId}; keeping the video:`, error);
     }
@@ -636,6 +691,9 @@ async function commitPooledMedia(args: {
 async function adoptableCachedMedia(
   stageId: string,
   placeholderRef: string,
+  // A caller with no pass -- a single-element Retry -- gets a scan of its own,
+  // which is one read for its one lookup: the same cost as before.
+  scan: CachedMediaScan = createCachedMediaScan(),
 ): Promise<{ blob: Blob; poster?: Blob } | undefined> {
   const usable = (row: MediaFileRecord | undefined): { blob: Blob; poster?: Blob } | undefined => {
     if (!row || row.error || !row.blob || row.blob.size === 0) return undefined;
@@ -647,26 +705,70 @@ async function adoptableCachedMedia(
   );
   if (direct) return direct;
 
-  // Stage-scoped, and only after the keyed lookup missed: `placeholderRef` is
-  // not indexed, and a course's media table is small, but there is no reason
-  // to scan it on the ordinary path.
+  for (const row of await scan.candidatesFor(stageId, placeholderRef)) {
+    const adoptable = usable(row);
+    if (adoptable) return adoptable;
+  }
+  return undefined;
+}
+
+/** A pass's view of the stage's cached media rows, indexed by placeholder. */
+interface CachedMediaScan {
+  candidatesFor(stageId: string, placeholderRef: string): Promise<readonly MediaFileRecord[]>;
+}
+
+/**
+ * Read the stage's media table at most once, however many elements ask.
+ *
+ * `placeholderRef` is not indexed, so the fallback is a stage-scoped scan --
+ * and the keyed lookup misses for every row the commit path writes, since those
+ * are keyed by the allocated id. Doing that per element made a pass materialize
+ * and sort the course's whole media table once per element, which is quadratic
+ * in the deck on the author's hot path.
+ *
+ * One snapshot per pass is enough, and not merely cheaper: an element only ever
+ * asks for its own placeholder, and every row a pass writes carries the
+ * placeholder of the element that wrote it, so no lookup in a pass can need a
+ * row that same pass produced. The scan is built on the first miss, so a pass
+ * whose elements all hit the keyed lookup never reads the table at all. It is
+ * scoped to one pass, which bounds how stale it can get if some other writer
+ * adds a row mid-pass -- the cost of that being one element regenerated instead
+ * of adopted, on the next pass rather than never.
+ */
+function createCachedMediaScan(): CachedMediaScan {
+  let rows: Promise<Map<string, MediaFileRecord[]>> | undefined;
+  return {
+    async candidatesFor(stageId, placeholderRef) {
+      return (rows ??= loadCachedMediaByPlaceholder(stageId)).then(
+        (index) => index.get(placeholderRef) ?? [],
+      );
+    },
+  };
+}
+
+async function loadCachedMediaByPlaceholder(
+  stageId: string,
+): Promise<Map<string, MediaFileRecord[]>> {
   const rows = await db.mediaFiles
     .where('stageId')
     .equals(stageId)
     .toArray()
     .catch(() => [] as MediaFileRecord[]);
+  const index = new Map<string, MediaFileRecord[]>();
+  for (const row of rows) {
+    if (!row.placeholderRef) continue;
+    const existing = index.get(row.placeholderRef);
+    if (existing) existing.push(row);
+    else index.set(row.placeholderRef, [row]);
+  }
   // Newest first. A regenerated element forks to a fresh id and its
   // predecessor's row is retained, so several rows can name the same
   // placeholder; adopting whichever one the index happened to return first
   // would restore the superseded image.
-  const candidates = rows
-    .filter((row) => row.placeholderRef === placeholderRef)
-    .sort((left, right) => (right.createdAt ?? 0) - (left.createdAt ?? 0));
-  for (const row of candidates) {
-    const adoptable = usable(row);
-    if (adoptable) return adoptable;
+  for (const candidates of index.values()) {
+    candidates.sort((left, right) => (right.createdAt ?? 0) - (left.createdAt ?? 0));
   }
-  return undefined;
+  return index;
 }
 
 /**
@@ -690,8 +792,9 @@ async function commitCachedMedia(
   stageId: string,
   paramsJson: string,
   abortSignal?: AbortSignal,
+  scan?: CachedMediaScan,
 ): Promise<boolean> {
-  const cached = await adoptableCachedMedia(stageId, req.elementId);
+  const cached = await adoptableCachedMedia(stageId, req.elementId, scan);
   const blob = cached?.blob;
   if (!cached || !blob || blob.size === 0) return false;
   // The read above is the only thing that has happened so far, and it is
@@ -757,6 +860,7 @@ async function generateSingleMedia(
   stageId: string,
   abortSignal?: AbortSignal,
   refusedBytes?: RefusedMediaBytes,
+  scan?: CachedMediaScan,
 ): Promise<MediaAttemptOutcome> {
   const store = useMediaGenerationStore.getState();
   store.markGenerating(req.elementId);
@@ -786,7 +890,7 @@ async function generateSingleMedia(
     // placeholders in its document and its bytes only in the author's local
     // tables. Those bytes are already paid for, so the author's first
     // server-backed load converts them instead of buying them again.
-    if (serverBacked && (await commitCachedMedia(req, stageId, paramsJson, abortSignal))) {
+    if (serverBacked && (await commitCachedMedia(req, stageId, paramsJson, abortSignal, scan))) {
       return ATTEMPT_COMMITTED;
     }
 

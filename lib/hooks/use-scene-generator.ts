@@ -29,7 +29,6 @@ import { resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { putAsset } from '@/lib/media/asset-pool';
-import { clearAssetStorageFull } from '@/lib/media/asset-storage-full';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
@@ -483,7 +482,7 @@ export async function generateAndStoreTTS(
   // share one lifetime there, and nothing outside this browser reads either.
   let audioId: string;
   if (serverBacked) {
-    const allocated = await allocatePooledAudio(blob, duration).catch((error: unknown) => {
+    const allocated = await allocatePooledAudio(blob, duration, stageId).catch((error: unknown) => {
       // Storing narration failed, not synthesizing it. A scene whose audio
       // cannot be stored keeps its text and leaves the line unvoiced and
       // retryable, exactly as an image that cannot be stored leaves its slide;
@@ -494,12 +493,6 @@ export async function generateAndStoreTTS(
     });
     if (allocated === null) return null;
     audioId = allocated;
-    // The store took a write, so whatever was full is not full any more. This
-    // path allocates directly rather than through the media commit, so it is
-    // the only place that can say so for a course whose narration is being
-    // generated rather than adopted -- and a marker nothing lifts is a course
-    // whose remaining cached narration is never converted.
-    if (stageId) await clearAssetStorageFull(stageId);
   } else {
     audioId = existingAudioId ?? requestId;
   }
@@ -545,11 +538,23 @@ export async function generateAndStoreTTS(
  * sweep is written but deliberately not wired up, so a superseded clip's entry
  * and bytes persist. Every regeneration therefore leaves one behind.
  */
-async function allocatePooledAudio(blob: Blob, duration: number | undefined): Promise<string> {
-  return putAsset(blob, {
-    contentType: blob.type,
-    ...(duration === undefined ? {} : { durationSeconds: duration }),
-  });
+async function allocatePooledAudio(
+  blob: Blob,
+  duration: number | undefined,
+  stageId: string | undefined,
+): Promise<string> {
+  return putAsset(
+    blob,
+    {
+      contentType: blob.type,
+      ...(duration === undefined ? {} : { durationSeconds: duration }),
+    },
+    // A write that goes through retires this course's "no room" note. This path
+    // allocates directly rather than through the media commit, so without it a
+    // course whose narration is generated rather than adopted has nothing that
+    // can establish that.
+    { ...(stageId ? { stageId } : {}) },
+  );
 }
 
 /**
