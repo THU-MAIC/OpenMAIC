@@ -116,13 +116,13 @@ export async function readStageAccessIncludingDeleted(
 }
 
 /**
- * Resolve a course's ownership/visibility for a product read gate.
+ * Resolve a course's ownership/visibility for an active product read gate.
  *
- * `null` means "no such course, as far as this caller is concerned" — absent,
- * or tombstoned. Callers must not distinguish the two: a deleted course that
- * answered 410 would still confirm the id existed, and the whole point of the
- * tombstone is that a deleted course is gone from the product's point of view
- * while its rows stay on disk.
+ * Returns `null` when absent or tombstoned so standard product read gates
+ * treat deleted courses as non-existent. Callers that need to distinguish
+ * tombstoned courses (e.g. stage-meta or document persistence answering 410
+ * DOCUMENT_GONE to fast-fail availability polling loops, #1396) should call
+ * `readStageAccessIncludingDeleted` instead.
  */
 export async function resolveStageAccess(
   stageId: string,

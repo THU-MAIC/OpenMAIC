@@ -42,6 +42,9 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { FileQuestion, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import { DocumentGoneError } from '@openmaic/storage';
+import { fetchStageMeta } from '@/lib/classroom/stage-meta-client';
+import { noteStageOwnership } from '@/lib/classroom/stage-ownership-signal';
 import {
   applyClassroomStageAndScenes,
   defaultClassroomLoadDeps,
@@ -50,11 +53,11 @@ import {
 import {
   paneAvailabilityRetryDelay,
   shouldResumeClassroomGeneration,
+  startClassroomAvailabilityPolling,
+  type ClassroomAvailabilityOutcome as ClassroomLoadOutcome,
 } from '@/lib/classroom/progressive-load-policy';
 
 const log = createLogger('Classroom');
-
-type ClassroomLoadOutcome = 'loaded' | 'unavailable' | 'failed' | 'cancelled';
 
 // stage_link can become visible shortly before its document. Probe only that
 // explicit availability gap, with a small bounded backoff; media conversion
@@ -69,13 +72,6 @@ export function ClassroomSurface({
   const { loadFromStorage } = useStageStore();
   const loadedClassroomId = useStageStore((s) => s.stage?.id ?? null);
   const { t } = useI18n();
-  // The retry loop below reads the message after async gaps, so it must see
-  // the CURRENT translation (a locale switch may have happened since mount).
-  // Written in an effect, not during render.
-  const notFoundMessageRef = useRef(t('classroom.notFound'));
-  useEffect(() => {
-    notFoundMessageRef.current = t('classroom.notFound');
-  }, [t]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +100,10 @@ export function ClassroomSurface({
       let outcome: ClassroomLoadOutcome = 'loaded';
 
       try {
+        const stageMetaPromise = fetchStageMeta(classroomId).catch(() => ({
+          outcome: 'unavailable' as const,
+        }));
+
         await runClassroomLoad({
           classroomId,
           loadToken,
@@ -132,21 +132,49 @@ export function ClassroomSurface({
           log,
         });
         if (!isCurrent()) return 'cancelled';
+
+        const metaResult = await stageMetaPromise;
+        if (!isCurrent()) return 'cancelled';
+
+        if (metaResult.outcome === 'gone') {
+          setNotFound(true);
+          setLoading(false);
+          setError(null);
+          return 'deleted';
+        }
+
+        if (metaResult.outcome === 'found') {
+          noteStageOwnership(classroomId, true, {
+            isOwner: metaResult.meta.isOwner,
+          });
+          useStageStore.getState().setViewerAccess({
+            isOwner: metaResult.meta.isOwner,
+          });
+        } else if (metaResult.outcome === 'unavailable') {
+          noteStageOwnership(classroomId, false, null);
+        } else if (metaResult.outcome === 'absent') {
+          noteStageOwnership(classroomId, true, null);
+        }
+
         // The load completed without landing this course in the store. The
         // reference learns the same fact from a server 404; here the absence
-        // of a stage after every source answered is the equivalent signal. A
-        // standalone URL can give a definitive answer; inside the workspace
-        // the pane treats it as the bounded availability gap instead of
-        // replacing its lifecycle.
+        // of a stage after every source answered is the equivalent signal.
         if (useStageStore.getState().stage?.id !== classroomId) {
-          if (variant === 'page') {
-            setNotFound(true);
-            return 'loaded';
-          }
           outcome = 'unavailable';
         }
         return isCurrent() ? outcome : 'cancelled';
       } catch (error) {
+        if (
+          error instanceof DocumentGoneError ||
+          (error as { name?: string })?.name === 'DocumentGoneError'
+        ) {
+          if (isCurrent()) {
+            setNotFound(true);
+            setLoading(false);
+            setError(null);
+          }
+          return isCurrent() ? 'deleted' : 'cancelled';
+        }
         log.error('Failed to load classroom:', error);
         if (isCurrent()) {
           setError(error instanceof Error ? error.message : 'Failed to load classroom');
@@ -155,7 +183,7 @@ export function ClassroomSurface({
         return isCurrent() ? 'failed' : 'cancelled';
       }
     },
-    [classroomId, loadFromStorage, variant],
+    [classroomId, loadFromStorage],
   );
 
   useEffect(() => {
@@ -183,33 +211,27 @@ export function ClassroomSurface({
     // session in the previous course wouldn't otherwise clear its canvas state.
     useCanvasStore.getState().resetCanvasState();
 
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let availabilityAttempt = 0;
-    const loadUntilAvailable = async () => {
-      if (cancelled) return;
-      // A previous pane attempt may have observed a transient read failure.
-      // Clear only its presentation before retrying; do not raise `loading`
-      // again, so an already mounted classroom never flashes away.
-      if (variant === 'pane') setError(null);
-      const outcome = await loadClassroom(() => !cancelled);
-      if (cancelled || variant !== 'pane' || outcome !== 'unavailable') return;
-
-      const delay = paneAvailabilityRetryDelay(availabilityAttempt);
-      availabilityAttempt += 1;
-      if (delay !== null) {
-        retryTimer = setTimeout(loadUntilAvailable, delay);
-      } else {
+    const cancelPolling = startClassroomAvailabilityPolling({
+      loadClassroom: (isCurrent) => {
+        setError(null);
+        return loadClassroom(isCurrent);
+      },
+      getRetryDelay: variant === 'pane' ? paneAvailabilityRetryDelay : () => null,
+      onDeleted: () => {
+        setNotFound(true);
         setLoading(false);
-        setError(notFoundMessageRef.current);
-      }
-    };
-    void loadUntilAvailable();
+        setError(null);
+      },
+      onNotFoundTimeout: () => {
+        setLoading(false);
+        setNotFound(true);
+        setError(null);
+      },
+    });
 
     // Cancel ongoing generation when classroomId changes or component unmounts
     return () => {
-      cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
+      cancelPolling();
       stop();
     };
   }, [classroomId, loadClassroom, stop, variant]);
@@ -330,7 +352,8 @@ export function ClassroomSurface({
               : 'h-screen flex flex-col overflow-hidden'
           }
         >
-          {loading || (variant === 'pane' && !error && loadedClassroomId !== classroomId) ? (
+          {loading ||
+          (variant === 'pane' && !error && !notFound && loadedClassroomId !== classroomId) ? (
             <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
               <div className="flex flex-col items-center gap-3 text-muted-foreground">
                 <Loader2 className="h-8 w-8 animate-spin" />
@@ -369,10 +392,12 @@ export function ClassroomSurface({
                   onClick={() => {
                     setError(null);
                     setLoading(true);
+                    setNotFound(false);
                     void loadClassroom().then((outcome) => {
-                      if (variant === 'pane' && outcome === 'unavailable') {
+                      if (outcome === 'deleted' || outcome === 'unavailable') {
                         setLoading(false);
-                        setError(t('classroom.notFound'));
+                        setNotFound(true);
+                        setError(null);
                       }
                     });
                   }}

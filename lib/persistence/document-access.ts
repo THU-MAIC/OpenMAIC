@@ -8,7 +8,11 @@ export type DocumentAction =
   | { kind: 'delete'; stageId: string }
   | { kind: 'unknown' };
 
-export type DocumentAccess = 'allow' | 'forbid' | 'not-found';
+export type DocumentAccess =
+  | 'allow'
+  | 'forbid'
+  | 'not-found'
+  | { outcome: 'gone'; deletedAt: Date };
 export type StageMetaReader = (stageId: string) => Promise<StageMetaRow | null>;
 export type DocumentExistenceReader = (stageId: string) => Promise<boolean>;
 
@@ -70,7 +74,7 @@ export async function decideDocumentAccess(
     case 'read': {
       const meta = await readMeta(action.stageId);
       if (!meta) return 'not-found';
-      return meta.deletedAt === null ? 'allow' : 'not-found';
+      return meta.deletedAt === null ? 'allow' : { outcome: 'gone', deletedAt: meta.deletedAt };
     }
     case 'write': {
       const meta = await readMeta(action.stageId);

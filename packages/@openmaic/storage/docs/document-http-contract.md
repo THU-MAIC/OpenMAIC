@@ -45,11 +45,12 @@ Every non-2xx response has a machine-readable JSON body:
 }
 ```
 
-`details` is optional. Messages retain backing-store semantics so the client exposes the same useful wording as `BrowserDocumentStore`.
+`details` is optional (for `DOCUMENT_GONE` responses, `details` may contain `deleted_at` as an ISO-8601 timestamp string). Messages retain backing-store semantics so the client exposes the same useful wording as `BrowserDocumentStore`.
 
 | Condition | HTTP status | Error code | Client behavior |
 | --- | --- | --- | --- |
 | Malformed JSON, invalid stage/scene/document, body/path mismatch, non-JSON value, duplicate scene id, or stale incremental write | `400` | `VALIDATION_FAILED` | Throw `HttpDocumentStoreError` with the server message |
+| Document was deleted (tombstoned) | `410` | `DOCUMENT_GONE` | Throw `DocumentGoneError` with `details.deleted_at` timestamp if present |
 | Request body exceeds `maxBodyBytes` | `413` | `PAYLOAD_TOO_LARGE` | Throw `HttpDocumentStoreError` |
 | Document does not exist | `404` | `DOCUMENT_NOT_FOUND` | `loadDocument` returns `null`; required-parent writes throw with `missing document` semantics |
 | Scene does not exist | `404` | `SCENE_NOT_FOUND` | `getScene` returns `null` |

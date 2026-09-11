@@ -175,5 +175,32 @@ describe('reference-fidelity stage access', () => {
       [stageId],
     );
     expect((rows.rows[0] as StageMetaTombstoneRow | undefined)?.deleted_at).not.toBeNull();
+
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const tombstoneRead = await handlePersistenceRequest(
+      new Request(`http://localhost/api/persistence/documents/${stageId}`, {
+        headers: { cookie: `anonymous_id=${ownerCookie}` },
+      }),
+      { poolFactory: () => pool as never },
+    );
+    expect(tombstoneRead.status).toBe(410);
+    await expect(tombstoneRead.json()).resolves.toMatchObject({
+      error: {
+        code: 'DOCUMENT_GONE',
+        deleted_at: expect.any(String),
+      },
+      deleted_at: expect.any(String),
+    });
+
+    const neverExistedRead = await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/documents/stage-never-existed', {
+        headers: { cookie: `anonymous_id=${ownerCookie}` },
+      }),
+      { poolFactory: () => pool as never },
+    );
+    expect(neverExistedRead.status).toBe(404);
+    await expect(neverExistedRead.json()).resolves.toMatchObject({
+      error: { code: 'DOCUMENT_NOT_FOUND' },
+    });
   });
 });

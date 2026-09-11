@@ -85,7 +85,7 @@ describe('GET /api/stage-meta/[stageId]', () => {
     await expect(response.json()).resolves.toMatchObject({ isOwner: false });
   });
 
-  it('answers 404 for an absent or tombstoned course', async () => {
+  it('answers 404 for an absent course', async () => {
     mocks.accessRow = {
       meta_owner_id: null,
       meta_is_public: false,
@@ -100,6 +100,27 @@ describe('GET /api/stage-meta/[stageId]', () => {
     );
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toEqual({ error: 'not_found' });
+  });
+
+  it('answers 410 with deleted_at for a tombstoned course', async () => {
+    const deletedAt = new Date('2026-03-01T12:00:00Z');
+    mocks.accessRow = {
+      meta_owner_id: 'owner-1',
+      meta_is_public: false,
+      meta_published_at: null,
+      meta_generation_complete: false,
+      meta_deleted_at: deletedAt,
+      document_name: 'Course',
+    };
+    const response = await getStageMeta(
+      new NextRequest(`http://localhost/api/stage-meta/${STAGE_ID}`),
+      stageMetaParams(STAGE_ID),
+    );
+    expect(response.status).toBe(410);
+    await expect(response.json()).resolves.toEqual({
+      error: 'gone',
+      deleted_at: deletedAt.toISOString(),
+    });
   });
 
   it('gates on the configured runtime', async () => {

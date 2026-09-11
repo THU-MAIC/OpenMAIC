@@ -94,6 +94,7 @@ export type {
 } from './document/types.js';
 export {
   DocumentFolderLimitError,
+  DocumentGoneError,
   DocumentNotFoundError,
   DocumentVersionError,
 } from './document/types.js';

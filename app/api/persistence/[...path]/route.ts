@@ -300,13 +300,30 @@ export async function handlePersistenceRequest(
         );
       }
 
-      const response =
-        access === 'not-found'
-          ? jsonError(404, 'DOCUMENT_NOT_FOUND', '@openmaic/storage: document not found')
-          : await runNodeHandler(
-              await createPersistenceHandler(connectionString, ownerId, access, deps.poolFactory),
-              request,
-            );
+      let response: Response;
+      if (typeof access === 'object' && access.outcome === 'gone') {
+        response = Response.json(
+          {
+            error: {
+              code: 'DOCUMENT_GONE',
+              message: '@openmaic/storage: document is gone',
+              details: {
+                deleted_at: access.deletedAt.toISOString(),
+              },
+              deleted_at: access.deletedAt.toISOString(),
+            },
+            deleted_at: access.deletedAt.toISOString(),
+          },
+          { status: 410 },
+        );
+      } else if (access === 'not-found') {
+        response = jsonError(404, 'DOCUMENT_NOT_FOUND', '@openmaic/storage: document not found');
+      } else {
+        response = await runNodeHandler(
+          await createPersistenceHandler(connectionString, ownerId, access, deps.poolFactory),
+          request,
+        );
+      }
       for (const [name, value] of responseHeaders.entries()) response.headers.append(name, value);
       return response;
     } catch (error) {
