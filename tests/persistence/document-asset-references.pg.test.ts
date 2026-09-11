@@ -24,6 +24,23 @@ const FIXED_NOW = 1_700_000_000_000;
 const contractUrl = process.env.PG_CONTRACT_URL;
 const OWNER = 'anon:11111111-1111-4111-8111-111111111111';
 
+/**
+ * Every table this file provisions lives in a schema of its own.
+ *
+ * The CI job that supplies `PG_CONTRACT_URL` points the storage package's
+ * contract suite and the app-domain run at one database, and this file
+ * provisions `stage_meta`, whose foreign key to `document_stages` makes the
+ * package suite's non-cascading `TRUNCATE document_stages` fail with "cannot
+ * truncate a table referenced in a foreign key constraint". Rather than depend
+ * on the two running in a particular order, this file puts its own tables
+ * somewhere the other suite never looks and drops them afterwards.
+ *
+ * The search path is this schema and nothing else, deliberately: with `public`
+ * on it, `CREATE TABLE IF NOT EXISTS document_stages` would resolve the name to
+ * the package suite's table and provision nothing here.
+ */
+const TEST_SCHEMA = 'openmaic_asset_lifecycle_app_test';
+
 interface EntryLifecycleRow extends Record<string, unknown> {
   committed_at: Date | null;
   expires_at: Date | null;
@@ -38,11 +55,20 @@ interface ReferenceRow extends Record<string, unknown> {
 }
 
 describe.skipIf(!contractUrl)('document asset references through the app stores', () => {
+  let admin: Pool;
   let pool: Pool;
   let allocate: (bytes: string) => Promise<string>;
 
   beforeAll(async () => {
-    pool = new Pool({ connectionString: contractUrl });
+    admin = new Pool({ connectionString: contractUrl });
+    // Dropped first as well as last: a run killed before its teardown must not
+    // hand the next one a half-provisioned schema.
+    await admin.query(`DROP SCHEMA IF EXISTS ${TEST_SCHEMA} CASCADE`);
+    await admin.query(`CREATE SCHEMA ${TEST_SCHEMA}`);
+    pool = new Pool({
+      connectionString: contractUrl,
+      options: `-c search_path=${TEST_SCHEMA}`,
+    });
     // The app's own bootstrap: it is what ensures the asset schema alongside
     // the document schema, and what decides the store options under test.
     const provider = await getServerPersistenceProvider(contractUrl!, () => pool);
@@ -53,6 +79,8 @@ describe.skipIf(!contractUrl)('document asset references through the app stores'
   });
 
   beforeEach(async () => {
+    // Every name here resolves inside the test schema, and every table that
+    // references one of them is listed, so the truncation is self-contained.
     await pool.query(
       'TRUNCATE document_asset_refs, asset_entries, asset_blobs, stage_meta, document_stages CASCADE',
     );
@@ -60,6 +88,19 @@ describe.skipIf(!contractUrl)('document asset references through the app stores'
 
   afterAll(async () => {
     await pool.end();
+    // `CASCADE` on the schema, not on a table: it drops this file's tables and
+    // their foreign keys together and leaves the database as it was found.
+    await admin.query(`DROP SCHEMA IF EXISTS ${TEST_SCHEMA} CASCADE`);
+    await admin.end();
+  });
+
+  it('provisioned its tables in its own schema, not the one the package suite uses', async () => {
+    const result = await admin.query<{ table_schema: string }>(
+      `SELECT table_schema FROM information_schema.tables
+        WHERE table_name = 'document_asset_refs' ORDER BY table_schema`,
+      [],
+    );
+    expect(result.rows.map((row) => row.table_schema)).toContain(TEST_SCHEMA);
   });
 
   function store() {
@@ -195,8 +236,11 @@ describe.skipIf(!contractUrl)('document asset references through the app stores'
     // purge pass exists to remove it later. So the reference rows stay and the
     // entry stays live -- the amendment's "course deletion needs no special
     // path" holds for the package's own delete, not for this tombstone.
+    //
     // Pinned here rather than left implicit: whoever makes deletion reclaim
-    // storage should see this expectation invert.
+    // storage should see this expectation invert. The case below says why it
+    // cannot be done by simply calling the package's delete, and the route is
+    // a withdrawal that leaves `document_stages` alone.
     expect(await references(stageId)).toEqual([
       { stage_id: stageId, scope: 'scene', scene_id: 'scene-1', asset_id: assetId },
     ]);
@@ -224,6 +268,44 @@ describe.skipIf(!contractUrl)('document asset references through the app stores'
     const stamped = await lifecycle(assetId);
     expect(stamped.unreferenced_at).not.toBeNull();
     expect((await lifecycle(replacement)).unreferenced_at).toBeNull();
+  });
+
+  it('cannot have its reference rows removed by deleting the document, because that destroys the tombstone', async () => {
+    // Why the case above is written the way it is, as a fact rather than a
+    // claim. Making deletion release the references by calling the package's
+    // own `deleteDocument` looks like a one-line change and is not: `stage_meta`
+    // references `document_stages(id) ON DELETE CASCADE`, so removing the
+    // document row removes the tombstone with it -- and the tombstone is what
+    // retires the stage id, what `probeStageAccess` reads, and what the whole
+    // delete path is about. Withdrawing the references has to happen without
+    // touching `document_stages`.
+    const stageId = 'stage-refs-cascade';
+    const assetId = await allocate('cascade-bytes');
+    await store().saveDocument(
+      documentWith(stageId, 'Cascade', [sceneNaming(stageId, 'scene-1', assetId)]),
+    );
+    await store().deleteDocument(stageId);
+
+    const tombstoned = await pool.query('SELECT deleted_at FROM stage_meta WHERE stage_id = $1', [
+      stageId,
+    ]);
+    expect(tombstoned.rows[0]?.deleted_at).not.toBeNull();
+
+    await pool.query('DELETE FROM document_stages WHERE id = $1', [stageId]);
+
+    const surviving = await pool.query('SELECT 1 FROM stage_meta WHERE stage_id = $1', [stageId]);
+    expect(surviving.rows).toEqual([]);
+
+    // And it does not even buy the reclamation it was meant to buy:
+    // `document_asset_refs` carries no foreign key to `document_stages` (the
+    // package documents that as the safe direction), so a document row removed
+    // out from under it leaves its rows exactly where they were, still keeping
+    // the entries alive. A raw hard delete is the worst of both -- tombstone
+    // gone, references kept.
+    expect(await references(stageId)).toEqual([
+      { stage_id: stageId, scope: 'scene', scene_id: 'scene-1', asset_id: assetId },
+    ]);
+    expect((await lifecycle(assetId)).unreferenced_at).toBeNull();
   });
 
   it('records nothing for a slot value the registry never allocated', async () => {

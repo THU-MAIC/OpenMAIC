@@ -63,5 +63,14 @@ jobs:
           node scripts/assert-pg-contract-suites.mjs "$STORAGE_VITEST_RESULTS" \
             --baseline "$STORAGE_PG_BASELINE"
 
-      - name: Whiteboard RuntimeStore PostgreSQL app-domain contract
-        run: pnpm exec vitest run tests/lib/whiteboard/runtime-store.pg.test.ts
+      # App-domain PostgreSQL contracts, in the same database as the package
+      # suite above. Each of these files is responsible for not colliding with
+      # it: the asset-reference one provisions `stage_meta`, whose foreign key
+      # to `document_stages` would break the package suite's non-cascading
+      # TRUNCATE, so it works inside a schema of its own and drops it again.
+      # Both orders were checked, because nothing here guarantees one.
+      - name: App-domain PostgreSQL contracts
+        run: |
+          pnpm exec vitest run \
+            tests/lib/whiteboard/runtime-store.pg.test.ts \
+            tests/persistence/document-asset-references.pg.test.ts
