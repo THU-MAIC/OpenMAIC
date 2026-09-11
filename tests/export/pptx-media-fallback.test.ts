@@ -187,7 +187,11 @@ describe('PPTX media fallback chains', () => {
       const blob = await buildPptxBlob([slide], [sceneFor(slide)], 0.5625, 1000, 100, 1, 'stage-1');
       const media = await pptxMediaBytes(blob);
 
-      expect(mocks.poolResolve).toHaveBeenCalledWith(ref);
+      // The pool is never asked about a reference it could not have issued —
+      // these are prototype keys, not allocated ids — so the chain starts at
+      // the stage-scoped row and ends at the task URL. The point of the case is
+      // that an adversarial key survives the whole chain intact.
+      expect(mocks.poolResolve).not.toHaveBeenCalledWith(ref);
       expect(mocks.mediaGet).toHaveBeenCalledWith(`stage-1:${ref}`);
       expect(fetchSpy).toHaveBeenCalledWith(taskUrl);
       expect(media.some((bytes) => Buffer.from(bytes).equals(Buffer.from(PNG_BYTES)))).toBe(true);

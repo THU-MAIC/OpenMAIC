@@ -4,6 +4,14 @@ import {
   shouldResumeClassroomGeneration,
 } from '@/lib/classroom/progressive-load-policy';
 
+const settled = {
+  loading: false,
+  error: null,
+  transportPersistenceFenced: false,
+  generationStarted: false,
+  mayGenerate: true,
+} as const;
+
 describe('progressive classroom policy', () => {
   it('uses a bounded pane availability backoff', () => {
     expect(Array.from({ length: 6 }, (_, attempt) => paneAvailabilityRetryDelay(attempt))).toEqual([
@@ -17,27 +25,24 @@ describe('progressive classroom policy', () => {
   });
 
   it.each([
-    { loading: true, error: null, transportPersistenceFenced: false, generationStarted: false },
-    {
-      loading: false,
-      error: 'failed',
-      transportPersistenceFenced: false,
-      generationStarted: false,
-    },
-    { loading: false, error: null, transportPersistenceFenced: true, generationStarted: false },
-    { loading: false, error: null, transportPersistenceFenced: false, generationStarted: true },
+    { ...settled, loading: true },
+    { ...settled, error: 'failed' },
+    { ...settled, transportPersistenceFenced: true },
+    { ...settled, generationStarted: true },
+    { ...settled, mayGenerate: false },
   ])('blocks generation resume while progressive state is unsafe: %o', (state) => {
     expect(shouldResumeClassroomGeneration(state)).toBe(false);
   });
 
   it('allows generation resume only after loading and transport fencing settle', () => {
-    expect(
-      shouldResumeClassroomGeneration({
-        loading: false,
-        error: null,
-        transportPersistenceFenced: false,
-        generationStarted: false,
-      }),
-    ).toBe(true);
+    expect(shouldResumeClassroomGeneration(settled)).toBe(true);
+  });
+
+  it('refuses whenever generation is not permitted, however settled the load is', () => {
+    expect(shouldResumeClassroomGeneration({ ...settled, mayGenerate: false })).toBe(false);
+  });
+
+  it('keeps an unsafe progressive state decisive even when generation is permitted', () => {
+    expect(shouldResumeClassroomGeneration({ ...settled, loading: true })).toBe(false);
   });
 });

@@ -1749,6 +1749,7 @@
     "videoGenerationWarning": "توليد الفيديو يستغرق عادةً 1-2 دقيقة، يرجى الصبر",
     "mediaRetry": "إعادة المحاولة",
     "mediaContentSensitive": "عذرًا، هذا المحتوى لم يجتز فحص السلامة.",
+    "mediaStorageFull": "مساحة التخزين ممتلئة، لذا تعذّر حفظ هذه الوسائط.",
     "mediaGenerationDisabled": "التوليد معطّل في الإعدادات",
     "singleAgent": "وكيل فردي",
     "multiAgent": "وكلاء متعددون",

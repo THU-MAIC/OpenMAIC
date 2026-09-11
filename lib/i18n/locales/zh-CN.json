@@ -1749,6 +1749,7 @@
     "videoGenerationWarning": "视频生成通常需要1-2分钟，请耐心等待",
     "mediaRetry": "重试",
     "mediaContentSensitive": "抱歉，该内容触发了安全检查",
+    "mediaStorageFull": "存储空间已满，无法保存该媒体。",
     "mediaGenerationDisabled": "已在设置中关闭生成",
     "singleAgent": "单智能体模式",
     "multiAgent": "多智能体模式",

@@ -1749,6 +1749,7 @@
     "videoGenerationWarning": "Việc tạo video thường mất 1–2 phút, vui lòng kiên nhẫn",
     "mediaRetry": "Thử lại",
     "mediaContentSensitive": "Rất tiếc, nội dung này vướng bộ kiểm tra an toàn.",
+    "mediaStorageFull": "Bộ nhớ đã đầy nên không thể lưu nội dung này.",
     "mediaGenerationDisabled": "Đã tắt chức năng tạo trong cài đặt",
     "singleAgent": "Một tác nhân",
     "multiAgent": "Nhiều tác nhân",

@@ -1749,6 +1749,7 @@
     "videoGenerationWarning": "動画の生成には通常1〜2分かかります。しばらくお待ちください",
     "mediaRetry": "やり直す",
     "mediaContentSensitive": "申し訳ありません。このコンテンツは安全性チェックに該当しました。",
+    "mediaStorageFull": "ストレージが満杯のため、このメディアを保存できませんでした。",
     "mediaGenerationDisabled": "設定で生成が無効になっています",
     "singleAgent": "シングルエージェント",
     "multiAgent": "マルチエージェント",

@@ -83,9 +83,30 @@ function tiffToRgba(
   }
 }
 
-/** 1×1 transparent PNG — fallback when conversion is not possible */
+/**
+ * 1×1 fully transparent PNG — fallback when conversion is not possible.
+ * Decodes to RGBA(0,0,0,0): unlike a colored pixel, stretching it over the
+ * original frame's geometry renders as nothing instead of a colored block.
+ */
 const TRANSPARENT_PNG_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNgAAIAAAUAAen63NgAAAAASUVORK5CYII=';
+
+/**
+ * The placeholder shipped through 0.1.4: a 1×1 PNG whose single pixel is
+ * RGBA(255,0,0,127) — 50%-alpha red, despite the "transparent" name. Stretched
+ * over a formula frame it renders as a pink block. Kept so placeholder
+ * detection also matches data URLs produced by those versions (and decks
+ * re-imported from them).
+ */
+const LEGACY_PLACEHOLDER_PNG_DATA_URL =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+const PLACEHOLDER_DATA_URLS = new Set([TRANSPARENT_PNG_DATA_URL, LEGACY_PLACEHOLDER_PNG_DATA_URL]);
+
+/** Whether a media src is an unconvertible-format placeholder emitted by this module. */
+export function isPlaceholderDataUrl(src: string | undefined | null): boolean {
+  return !!src && PLACEHOLDER_DATA_URLS.has(src);
+}
 
 // ---------------------------------------------------------------------------
 // WDP (JPEG XR) → PNG

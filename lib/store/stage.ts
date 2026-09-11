@@ -24,6 +24,7 @@ import type { ChatStorageSnapshot } from '@/lib/utils/chat-storage';
 import type { DocumentProducer } from '@/lib/document-store/persistence-types';
 import type { PendingChange, StaleDroppedSave } from '@/lib/utils/stage-storage';
 import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
+import { reconcileSceneMediaAllocations } from '@/lib/media/reconcile-scene-media';
 import {
   isStageDeleted,
   isStageDeletionInFlight,
@@ -585,6 +586,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       );
       return;
     }
+    // Before anything else: a scene whose media was stored while it was still
+    // being built carries placeholders that already have allocated ids waiting
+    // for them. Applying them here, ahead of the structure mark below, is what
+    // keeps the placeholder out of the scene's very first save.
+    reconcileSceneMediaAllocations(scene);
     const scenes = [...get().scenes, migrateScene(scene)];
     // Remove the matching outline from generatingOutlines (match by order)
     const generatingOutlines = get().generatingOutlines.filter((o) => o.order !== scene.order);

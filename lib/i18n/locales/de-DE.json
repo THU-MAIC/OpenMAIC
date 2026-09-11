@@ -1749,6 +1749,7 @@
     "videoGenerationWarning": "Die Videogenerierung dauert normalerweise 1–2 Minuten. Bitte hab etwas Geduld.",
     "mediaRetry": "Erneut versuchen",
     "mediaContentSensitive": "Dieser Inhalt hat leider eine Sicherheitsprüfung ausgelöst.",
+    "mediaStorageFull": "Der Speicher ist voll, daher konnte dieses Medium nicht gespeichert werden.",
     "mediaGenerationDisabled": "Generierung in den Einstellungen deaktiviert",
     "singleAgent": "Einzelagent",
     "multiAgent": "Mehrere Agenten",

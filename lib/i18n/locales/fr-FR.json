@@ -1749,6 +1749,7 @@
     "videoGenerationWarning": "La génération vidéo prend généralement 1 à 2 minutes, merci de patienter",
     "mediaRetry": "Réessayer",
     "mediaContentSensitive": "Désolé, ce contenu a déclenché un contrôle de sécurité.",
+    "mediaStorageFull": "L'espace de stockage est plein : ce média n'a pas pu être enregistré.",
     "mediaGenerationDisabled": "Génération désactivée dans les paramètres",
     "singleAgent": "Agent unique",
     "multiAgent": "Multi-agents",

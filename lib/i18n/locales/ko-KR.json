@@ -1749,6 +1749,7 @@
     "videoGenerationWarning": "동영상 생성은 보통 1~2분이 소요됩니다. 잠시 기다려 주세요",
     "mediaRetry": "재시도",
     "mediaContentSensitive": "죄송합니다. 이 콘텐츠가 안전 검사를 통과하지 못했습니다.",
+    "mediaStorageFull": "저장 공간이 가득 차서 이 미디어를 저장할 수 없습니다.",
     "mediaGenerationDisabled": "설정에서 생성이 비활성화되어 있습니다",
     "singleAgent": "단일 에이전트",
     "multiAgent": "멀티 에이전트",

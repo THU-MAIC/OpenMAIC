@@ -1749,6 +1749,7 @@
     "videoGenerationWarning": "Video generation usually takes 1-2 minutes, please be patient",
     "mediaRetry": "Retry",
     "mediaContentSensitive": "Sorry, this content triggered a safety check.",
+    "mediaStorageFull": "Storage is full, so this media could not be saved.",
     "mediaGenerationDisabled": "Generation disabled in settings",
     "singleAgent": "Single Agent",
     "multiAgent": "Multi-Agent",

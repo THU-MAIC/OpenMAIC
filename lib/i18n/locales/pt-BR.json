@@ -1749,6 +1749,7 @@
     "videoGenerationWarning": "A geração de vídeo geralmente leva 1-2 minutos. Aguarde com paciência",
     "mediaRetry": "Tentar novamente",
     "mediaContentSensitive": "Desculpe, este conteúdo acionou uma verificação de segurança.",
+    "mediaStorageFull": "O armazenamento está cheio, então esta mídia não pôde ser salva.",
     "mediaGenerationDisabled": "Geração desabilitada nas configurações",
     "singleAgent": "Agente Único",
     "multiAgent": "Multi-Agente",
