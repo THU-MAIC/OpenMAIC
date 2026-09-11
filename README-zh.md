@@ -345,7 +345,13 @@ NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docke
 
 `PERSISTENCE_POSTGRES_PASSWORD` 只在数据目录为空时初始化 PostgreSQL 角色，之后再修改不会轮换已有的 `openmaic-postgres` 卷。一次性本地库可以直接 `docker compose --profile server-persistence down -v` 后换密码重启；要保留数据则需以管理员执行 `ALTER ROLE openmaic WITH PASSWORD 'new-password';` 并更新 `DATABASE_URL`。
 
-资产的删除/替换只移除注册中心条目，底层字节随后由离线回收器清理。**本部署默认开启回收器**，资产存储不会无限增长：每 `ASSET_COLLECTION_INTERVAL_MS`（默认 15 分钟）执行一轮，清理已解除引用超过 `ASSET_COLLECTION_GRACE_MS`（默认 1 小时）的字节——grace period 就是用户删除的字节实际的保留窗口，调大请谨慎。设置 `ASSET_COLLECTION_ENABLED=0` 可在某个进程中关闭回收。多实例部署可以在每个实例上开启（每个 blob 行在被清理前会加锁并复查，并发回收器会串行化而非竞争），也可以全部关闭后单独运行。
+资产的回收由离线回收器完成，不在请求路径上。**本部署默认开启回收器**，资产存储不会无限增长：每 `ASSET_COLLECTION_INTERVAL_MS`（默认 15 分钟）执行一轮，一轮分两级——先释放注册中心条目（在待定窗口内始终没有文档引用的分配，以及最后一处文档引用消失已超过 `ASSET_COLLECTION_GRACE_MS`（默认 1 小时）的条目），再按同一 grace 清理失去最后一个条目的字节。grace period 就是用户删除的媒体实际的保留窗口，调大请谨慎。设置 `ASSET_COLLECTION_ENABLED=0` 可在某个进程中关闭回收。多实例部署可以在每个实例上开启（每一行在被清理前都会加锁并复查，并发回收器会串行化而非竞争），也可以全部关闭后单独运行。
+
+这套账目完全由服务端维护，且无需任何配置——因为在这里它不是可选项：每次文档写入都会记录该文档引用了哪些资产，并提交它所引用的分配，而这正是回收器读取的数据。浏览器从不删除资产，也不会被要求这么做。
+
+`ASSET_PENDING_TTL_MS`（默认 24 小时）是一次分配处于**待定**状态的时长——字节已入库，但还没有任何文档引用它的 id。客户端先存字节、之后才把 id 写进文档，这段间隙没有任何租约，因此该窗口必须长于一整轮生成过程加上一次仍在等待所属幻灯片的回写：媒体常常在那张幻灯片存在之前就已完成。默认给一天是刻意从宽的——未被引用的字节只是占用存储，而过早过期会让一门课丢掉自己的媒体。取值不是正整数时服务端会拒绝启动，理由与 `ASSET_QUOTA_BYTES` 相同。
+
+单个资产 principal 最多可持有 `ASSET_QUOTA_BYTES`（默认 10 GiB）的**存活**资产——待定且未过期的，或仍被某个文档引用的——超出后拒绝新的分配；该上限由存储层在写事务内、按 principal 的 advisory lock 强制执行，并发上传无法越过。在按用户划分的资产 principal 落地之前，所有调用方共享同一个 principal，因此这是一个部署级而非用户级的上限——而它值得存在，因为本部署放行的任何调用方都能触达分配。设置 `ASSET_QUOTA_BYTES=0` 可完全关闭配额并在别处限制存储，零的任何写法都有效。取值不是非负整数时服务端会拒绝启动，而不是退回默认值，这样写错的上限会让进程停下，而不是悄悄跑在一个没人选择的限制上。
 
 资产字节默认直接出站（内嵌路由把字节写入响应体）。设置 `ASSET_BYTE_EGRESS=redirect` 可选择**间接出站**：字节 `GET` 会在字节层支持签名（S3 支持；PostgreSQL 字节列不支持，回退为直接返回字节）时返回一个短时效的签名 S3 URL。间接出站有两个对象存储前提：bucket 的 CORS 需允许本应用来源并在签名响应上暴露 `Content-Type`；签名身份需持有 bucket 的 `s3:ListBucket`，缺失的 key 才能以 `404 NoSuchKey` 而非 `403` 返回。相关取舍见[资产 HTTP 契约](packages/@openmaic/storage/docs/asset-http-contract.md)。
 
