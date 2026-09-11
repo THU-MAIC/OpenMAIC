@@ -558,10 +558,18 @@ export async function documentAssetReferencesWithdrawn(
  *
  * A host that un-retires a course writes it again, and that write is the
  * authority on what the document holds: from then on the backfill may read it
- * like any other. Called from the sync paths, so no write path can
- * re-reference a document and leave it marked withdrawn, and from
- * `deleteDocument`, so a record cannot outlive the document it describes and
- * be inherited by whatever later claims that id.
+ * like any other. Called from every write path that maintains references --
+ * the sync paths, so no write can re-reference a document and leave it marked
+ * withdrawn, and the tracking-on `deleteDocument`, so a record does not
+ * outlive the document it describes and get inherited by whatever later
+ * claims that id.
+ *
+ * A `deleteDocument` on a store with tracking OFF does not reach this: such a
+ * store may be running against a database with no asset schema, so it cannot
+ * touch this table at all. A record left that way survives its document, and
+ * the walk would skip whatever next takes the id. That is not worked around
+ * here -- it is one more consequence of mixing tracking states on one
+ * database, which `docs/reference-server.md` already tells hosts not to do.
  */
 export async function forgetDocumentAssetWithdrawal(
   queryable: Queryable,

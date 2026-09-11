@@ -90,8 +90,14 @@ export const DEFAULT_ASSET_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
  * - `committed_at` is stamped by that same first document write. `NULL` means
  *   pending; it is never read on a request path.
  * - `unreferenced_at` is stamped when a document write removes the entry's
- *   last reference row and cleared when a write adds one back, so an entry
- *   drains after a grace period instead of immediately.
+ *   last reference row, so an entry drains after a grace period instead of
+ *   immediately, and cleared by the document write paths when a reference
+ *   arrives back. The collector's backfill is the one reference-adding writer
+ *   that does NOT clear it: it deliberately touches no lifecycle column, so a
+ *   walk that re-references a stamped entry leaves it referenced AND stamped.
+ *   That is a normal intermediate state and a safe one -- the entry pass never
+ *   releases a referenced entry, and the next document write to that document
+ *   normalizes the columns.
  *
  * `document_asset_refs.scope` separates the stage-level slot -- stage
  * whiteboards and the stage video manifest, which no scene owns -- from a
@@ -120,10 +126,16 @@ export const DEFAULT_ASSET_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
  * A row here is the only durable trace of a retirement -- the document itself
  * looks exactly like a live one, by design, because the retirement belongs to
  * the host's own tombstone and not to this schema -- and therefore the only
- * thing that may make that walk skip a document. A write that re-establishes
- * the document's references removes the row, and so does deleting the
- * document, so the record never outlives what it describes (see
- * `./references.ts`).
+ * thing that may make that walk skip a document. Every write path that
+ * maintains references removes the row -- a write that re-establishes the
+ * document's references, and a delete on a store that tracks them -- so under
+ * a single, consistent configuration the record never outlives what it
+ * describes. A delete issued by a store with tracking OFF cannot clear it,
+ * because that store may be running against a database with no asset schema
+ * at all; a stale record then survives its document and would make the walk
+ * skip whatever later claims that id. That is one more reason for the rule
+ * `docs/reference-server.md` already gives: do not mix tracking states on one
+ * database (see `./references.ts`).
  */
 export const ASSET_PG_SCHEMA: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS asset_blobs (
@@ -393,10 +405,14 @@ export class PgAssetStore implements AssetStore {
     let result;
     try {
       result = await queryable.query<UsageRow>(
-        // Live entries only: an entry whose last document reference is gone is
-        // on its way out, so counting it would make a regeneration cost quota
-        // forever instead of until the collector's grace period passes.
-        // Pending entries do count -- they are live until they expire.
+        // Everything not yet stamped unreferenced. An entry whose last
+        // document reference is gone is on its way out, so counting it would
+        // make a regeneration cost quota forever instead of only until the
+        // collector's grace period passes. The predicate is exactly that and
+        // nothing more: a pending entry counts whether or not its expiry has
+        // passed, because only the entry pass removes it, and a quota that
+        // over-counts for one collection interval refuses a write slightly
+        // early rather than admitting one it should not.
         `SELECT COALESCE(SUM(blobs.byte_size), 0)::text AS logical_bytes
            FROM asset_entries AS entries
            JOIN asset_blobs AS blobs ON blobs.content_hash = entries.content_hash
