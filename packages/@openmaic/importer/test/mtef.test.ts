@@ -213,7 +213,7 @@ describe('mtef · equationNativeToLatex', () => {
 
 describe('mtef · spec-conformance (cross-review round 2)', () => {
   it('BigOp tmSUM(tvBSUM) renders [main, upper, lower] in the right roles', () => {
-    // Slots per real streams: [main=k, lower=i=1, upper=n].
+    // Slots: [main=k, lower=i=1, upper=n] per real streams + eqn.c.
     const stream = mtefStream([
       ...FULL,
       ...LINE,
@@ -472,7 +472,39 @@ describe('mtef · spec-conformance (cross-review round 2)', () => {
     expect(() => katex.renderToString(brace.latex, { throwOnError: true })).not.toThrow();
   });
 
-  it('tmDIRAC renders ⟨left|right⟩ and degrades on a missing right slot', () => {
+  it('tmDIRAC: var1 = bra ⟨L|, var2 = ket |R⟩ (reference semantics)', () => {
+    const bra = mtefStream([
+      ...FULL,
+      ...LINE,
+      0x03,
+      45,
+      1,
+      0,
+      ...LINE,
+      ...varChar(0x61),
+      ...END,
+      ...END,
+      ...END,
+      ...END,
+      ...END,
+    ]);
+    expect(equationNativeToLatex(bra).latex).toBe('\\left\\langle a\\right|');
+    const ket = mtefStream([
+      ...FULL,
+      ...LINE,
+      0x03,
+      45,
+      2,
+      0,
+      ...LINE,
+      ...varChar(0x61),
+      ...END,
+      ...END,
+      ...END,
+      ...END,
+      ...END,
+    ]);
+    expect(equationNativeToLatex(ket).latex).toBe('\\left| a\\right\\rangle');
     const both = mtefStream([
       ...FULL,
       ...LINE,
@@ -489,10 +521,11 @@ describe('mtef · spec-conformance (cross-review round 2)', () => {
       ...END,
       ...END,
       ...END,
+      ...END,
     ]);
-    const conv = equationNativeToLatex(both);
-    expect(conv.latex).toBe('\\langle x \\mid y\\rangle');
-    expect(() => katex.renderToString(conv.latex, { throwOnError: true })).not.toThrow();
+    const outB = equationNativeToLatex(both);
+    expect(outB.latex).toBe('\\left\\langle x\\mid y\\right\\rangle');
+    expect(() => katex.renderToString(outB.latex, { throwOnError: true })).not.toThrow();
   });
 
   it('tmLSCRIPT emits only the leading scripts; the base is the next sibling', () => {
@@ -715,8 +748,10 @@ describe('mtef · round-3 fixes', () => {
 describe('mtef · real Equation 3.0 fixtures (round-tripped from a legacy deck)', () => {
   // Raw `Equation Native` streams from a real 消防 courseware deck
   // (Equation.3 OLE objects), base64-encoded. These pin the font-local
-  // Symbol encoding and the [main, lower, upper] big-op claims against
-  // bytes a real writer produced.
+  // Symbol encoding (fnSYMBOL = / + / ⋅ / ≤ as real writers emit them)
+  // against bytes a real writer produced. None of the three contains a
+  // big-operator selector (21–43); that reading is pinned by the
+  // spec-conformance tests above instead.
   const OLE_A_EQ_A_DOT_B =
     'HAAAAAIA5sEdAAAAAAAAAFAlGACMMBgAAAAAAAMBAQMKCgESg0EAAoY9ABKDYQAChsUiEoNiAAAA';
   const OLE_R_PRIME_LE_R =
@@ -753,45 +788,95 @@ describe('mtef · real Equation 3.0 fixtures (round-tripped from a legacy deck)'
 });
 
 describe('mtef · review round fixes', () => {
-  it('tmLIM variations map roles correctly (0=upper, 1=lower)', () => {
-    // Single-limit writers emit two slots [main, limit]; the role comes from
-    // the variation, not the position (spec + rtf2latex2e eqn.c).
-    const upperOnly = mtefStream([
-      ...FULL,
-      ...LINE,
-      0x03,
-      39,
-      0,
-      0, // tmLIM tvULIM
-      ...LINE,
-      ...varChar(0x78),
-      ...END, // main: x
-      ...LINE,
-      ...varChar(0x6e),
-      ...END, // the lone limit
-      ...END,
-      ...END,
-      ...END,
-    ]);
-    expect(equationNativeToLatex(upperOnly).latex).toBe('\\lim^{n}x');
-    const lowerOnly = mtefStream([
+  it('tmLIM: main slot first, no injected operator name; empty main gets \lim', () => {
+    // Reference emits `main` followed by limits and injects NO function
+    // name — the function lives in the main slot (probes from review).
+    const limLower = mtefStream([
       ...FULL,
       ...LINE,
       0x03,
       39,
       1,
-      0, // tmLIM tvLLIM
+      0,
+      ...LINE,
+      ...varChar(0x6c),
+      ...varChar(0x69),
+      ...varChar(0x6d),
+      ...END, // main: "lim"
+      ...LINE,
+      ...varChar(0x6e),
+      ...END, // lower: n
+      ...END,
+      ...END,
+      ...END,
+    ]);
+    const outL = equationNativeToLatex(limLower);
+    expect(outL.latex).toBe('lim_{n}');
+    expect(() => katex.renderToString(outL.latex, { throwOnError: true })).not.toThrow();
+    const maxLower = mtefStream([
+      ...FULL,
+      ...LINE,
+      0x03,
+      39,
+      1,
+      0,
+      ...LINE,
+      ...varChar(0x6d),
+      ...varChar(0x61),
+      ...varChar(0x78),
+      ...END, // main: "max"
+      ...LINE,
+      ...varChar(0x69),
+      ...END, // lower: i
+      ...END,
+      ...END,
+      ...END,
+    ]);
+    expect(equationNativeToLatex(maxLower).latex).toBe('max_{i}');
+    // Empty main slot + letter-leading content must not glue to \lim.
+    const emptyMain = mtefStream([
+      ...FULL,
+      ...LINE,
+      0x03,
+      39,
+      1,
+      0,
+      ...LINE,
+      ...END, // main: empty
       ...LINE,
       ...varChar(0x78),
+      ...END, // lower: x
+      ...END,
+      ...END,
+      ...END,
+    ]);
+    const outE = equationNativeToLatex(emptyMain);
+    expect(outE.latex).toBe('\\lim _{x}');
+    expect(() => katex.renderToString(outE.latex, { throwOnError: true })).not.toThrow();
+    // Both limits.
+    const both = mtefStream([
+      ...FULL,
+      ...LINE,
+      0x03,
+      39,
+      2,
+      0,
+      ...LINE,
+      ...varChar(0x6c),
+      ...varChar(0x69),
+      ...varChar(0x6d),
       ...END,
       ...LINE,
       ...varChar(0x6e),
+      ...END,
+      ...LINE,
+      ...varChar(0x32),
       ...END,
       ...END,
       ...END,
       ...END,
     ]);
-    expect(equationNativeToLatex(lowerOnly).latex).toBe('\\lim_{n}x');
+    expect(equationNativeToLatex(both).latex).toBe('lim_{n}^{2}');
   });
 
   it('Adobe Symbol operator block maps correctly (≤ × → ∞ ≠)', () => {
@@ -823,5 +908,96 @@ describe('mtef · review round fixes', () => {
       return [...FULL, ...LINE, ...rec, ...END, ...END];
     }
     expect(() => equationNativeToLatex(mtefStream(nestedFences(500)))).toThrow(MtefParseError);
+  });
+});
+
+describe('mtef · round-6 fixes (wyuc review 2)', () => {
+  it('unmapped Symbol high-half codes throw MtefParseError (picture fallback), not Latin-1', () => {
+    // 0xF7 is parenrightex (a big-paren extender). Before the full-table fix
+    // it passed through as ÷ — wrong but plausible-looking math.
+    const probe = (code: number) =>
+      mtefStream([...FULL, ...LINE, ...symChar(code), ...END, ...END]);
+    // 0xA0 = Euro (unmapped — excluded category)
+    expect(() => equationNativeToLatex(probe(0xa0))).toThrow(MtefParseError);
+    // 0xC1 Ifraktur (unmapped)
+    expect(() => equationNativeToLatex(probe(0xc1))).toThrow(MtefParseError);
+  });
+
+  it('previously-dangerous unmapped codes now map correctly from the AFM', () => {
+    const mk = (code: number) =>
+      equationNativeToLatex(mtefStream([...FULL, ...LINE, ...symChar(code), ...END, ...END])).latex;
+    expect(mk(0xf2)).toBe('\\int'); // was ÷
+    expect(mk(0xd7)).toBe('\\cdot'); // was ×
+    expect(mk(0xe5)).toBe('\\sum'); // was å
+    expect(mk(0xd5)).toBe('\\prod'); // was Õ
+    expect(mk(0xce)).toBe('\\in'); // was Î
+    expect(mk(0xe1)).toBe('\\langle'); // was á
+    expect(mk(0xf1)).toBe('\\rangle'); // was ö
+    expect(mk(0xb6)).toBe('\\partial'); // was ¶
+    expect(mk(0xd1)).toBe('\\nabla'); // was Ñ
+    expect(mk(0xde)).toBe('\\Rightarrow'); // was Þ
+    expect(mk(0xdb)).toBe('\\Leftrightarrow'); // was Û
+    expect(mk(0xa2)).toBe("'"); // was ¢
+    for (const code of [0xf2, 0xd7, 0xe5, 0xd5, 0xce, 0xe1, 0xf1, 0xb6, 0xd1, 0xde, 0xdb, 0xa2]) {
+      const latex = mk(code);
+      expect(() => katex.renderToString(latex, { throwOnError: true })).not.toThrow();
+    }
+  });
+
+  it('MAX_LATEX_LENGTH: 15,000 sibling macro CHARs throw (width case)', () => {
+    const records: number[] = [...FULL, ...LINE];
+    // Each CHAR is 4 bytes; macro commands like \alpha produce ~7 chars of
+    // LaTeX from 4 input bytes — 15k of them exceeds the 64 KiB output cap.
+    for (let i = 0; i < 15_000; i++) records.push(...[0x02, 0x84, 0x61, 0x00]);
+    records.push(...END, ...END);
+    expect(() => equationNativeToLatex(mtefStream(records))).toThrow(
+      'MTEF stream produced oversized LaTeX output',
+    );
+    // A small count passes.
+    const small: number[] = [...FULL, ...LINE];
+    for (let i = 0; i < 100; i++) small.push(...[0x02, 0x84, 0x61, 0x00]);
+    small.push(...END, ...END);
+    expect(() => equationNativeToLatex(mtefStream(small))).not.toThrow();
+  });
+
+  it('MAX_RECORDS: 20,001 sibling CHARs throw', () => {
+    const records: number[] = [...FULL, ...LINE];
+    for (let i = 0; i < 20_001; i++) records.push(...varChar(0x61));
+    records.push(...END, ...END);
+    expect(() => equationNativeToLatex(mtefStream(records))).toThrow('MTEF stream too large');
+  });
+
+  it('embellishment records count against the budget (P3)', () => {
+    // One CHAR with >MAX_RECORDS embellishments.
+    const records: number[] = [...FULL, ...LINE, 0x22, 0x83, 0x61, 0x00]; // CHAR xfEMBELL 'a'
+    for (let i = 0; i < 20_001; i++) records.push(0x06, 0x11); // EMBELL (bar)
+    records.push(0x00, ...END, ...END);
+    expect(() => equationNativeToLatex(mtefStream(records))).toThrow('MTEF stream too large');
+  });
+
+  it('tmDIRAC KaTeX-validity for all variations', () => {
+    for (const v of [0, 1, 2]) {
+      const conv = equationNativeToLatex(
+        mtefStream([
+          ...FULL,
+          ...LINE,
+          0x03,
+          45,
+          v,
+          0,
+          ...LINE,
+          ...varChar(0x61),
+          ...END,
+          ...LINE,
+          ...varChar(0x62),
+          ...END,
+          ...END,
+          ...END,
+          ...END,
+          ...END,
+        ]),
+      );
+      expect(() => katex.renderToString(conv.latex, { throwOnError: true })).not.toThrow();
+    }
   });
 });

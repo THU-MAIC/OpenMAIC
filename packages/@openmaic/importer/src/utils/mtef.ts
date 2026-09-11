@@ -346,6 +346,7 @@ function parseObjectList(cur: Cursor, budget: { count: number }, depth = 0): Nod
         const embellishments: number[] = [];
         if (options & OPT_EMBELL) {
           for (;;) {
+            if (++budget.count > MAX_RECORDS) throw new MtefParseError('MTEF stream too large');
             const etag = cur.byte();
             const etype = etag & 0x0f;
             const eopts = (etag >> 4) & 0x0f;
@@ -521,19 +522,86 @@ const SYMBOL_FONT_LATEX: Record<number, string> = {
   0x58: '\\Xi ',
   0x59: '\\Psi ',
   0x5a: 'Z',
-  // Adobe Symbol high half: the operator block real Equation 3.0 decks use.
+  // Adobe Symbol high half, complete (0xA0–0xFF from the URW AFM). Font-local
+  // codes here are glyph indices into the Symbol font; unmapped ones must
+  // NOT pass through as Latin-1 (0xF7 is ∫-extension, not ÷). Structural
+  // pieces (big-paren/large-op extenders) map to their base operators;
+  // playing-card suits and serif-mark glyphs are excluded — they flag
+  // degraded via the unmapped path.
+  0xa2: "' ",
   0xa3: '\\le ',
+  0xa4: '/',
+  0xa5: '\\infty ',
+  0xa6: 'f',
+  0xab: '\\leftrightarrow ',
+  0xac: '\\leftarrow ',
+  0xad: '\\uparrow ',
+  0xae: '\\to ',
+  0xaf: '\\downarrow ',
+  0xb0: '^{\\circ}',
+  0xb1: '\\pm ',
+  0xb2: "''",
   0xb3: '\\ge ',
   0xb4: '\\times ',
+  0xb5: '\\propto ',
+  0xb6: '\\partial ',
+  0xb7: '\\bullet ',
   0xb8: '\\div ',
-  0xa5: '\\infty ',
-  0xae: '\\to ',
   0xb9: '\\ne ',
-  0xd6: '\\surd ',
-  0xb1: '\\pm ',
-  0xac: '\\leftarrow ',
-  0xbb: '\\approx ',
   0xba: '\\equiv ',
+  0xbb: '\\approx ',
+  0xbc: '\\ldots ',
+  0xc0: '\\aleph ',
+  0xc4: '\\otimes ',
+  0xc5: '\\oplus ',
+  0xc6: '\\emptyset ',
+  0xc7: '\\cap ',
+  0xc8: '\\cup ',
+  0xc9: '\\supset ',
+  0xca: '\\supseteq ',
+  0xcb: '\\not\\subset ',
+  0xcc: '\\subset ',
+  0xcd: '\\subseteq ',
+  0xce: '\\in ',
+  0xcf: '\\notin ',
+  0xd0: '\\angle ',
+  0xd1: '\\nabla ',
+  0xd5: '\\prod ',
+  0xd6: '\\surd ',
+  0xd7: '\\cdot ',
+  0xd8: '\\neg ',
+  0xd9: '\\wedge ',
+  0xda: '\\vee ',
+  0xdb: '\\Leftrightarrow ',
+  0xdc: '\\Leftarrow ',
+  0xdd: '\\Uparrow ',
+  0xde: '\\Rightarrow ',
+  0xdf: '\\Downarrow ',
+  0xe0: '\\lozenge ',
+  0xe1: '\\langle ',
+  0xe5: '\\sum ',
+  0xf1: '\\rangle ',
+  0xf2: '\\int ',
+  0xf3: '\\int ',
+  0xe6: '(',
+  0xe7: '|',
+  0xe8: '(',
+  0xe9: '[',
+  0xea: '|',
+  0xeb: '[',
+  0xec: '\\{ ',
+  0xed: '\\{ ',
+  0xee: '\\{ ',
+  0xef: '|',
+  0xf6: ')',
+  0xf7: ')',
+  0xf8: ')',
+  0xf9: ']',
+  0xfa: '|',
+  0xfb: ']',
+  0xfc: '\\} ',
+  0xfd: '\\} ',
+  0xfe: '\\} ',
 };
 
 const TF_LCGREEK = 4;
@@ -547,10 +615,19 @@ function charLatex(node: CharNode, state: RenderState): string {
     (node.typeface === TF_LCGREEK + 128 ||
       node.typeface === TF_UCGREEK + 128 ||
       node.typeface === TF_SYMBOL + 128);
-  if (fontLocal && node.code >= 0xa0 && SYMBOL_FONT_LATEX[node.code] === undefined) {
-    // Unmapped Symbol operator position: passing the raw Latin-1 byte through
-    // is at best approximate — flag it so callers can warn.
-    state.degraded = true;
+  // Unmapped font-local Symbol glyph. Codes >= 0xA0 and the known-divergent
+  // low positions must NOT pass through as Latin-1 (0xF7 is an integral
+  // extender, not ÷; 0x60 is radicalex, not a backtick; 0x80-0x9F are C1
+  // controls) — refuse the conversion so the picture fallback takes over.
+  // Printable ASCII positions where Symbol matches ASCII (= + ( ) etc.) are
+  // safe to pass through.
+  const FONT_LOCAL_PASSTHROUGH = node.code >= 0x20 && node.code < 0x7f;
+  if (fontLocal && SYMBOL_FONT_LATEX[node.code] === undefined && !FONT_LOCAL_PASSTHROUGH) {
+    throw new MtefParseError(`unmapped Symbol font glyph 0x${node.code.toString(16)}`);
+  }
+  if (fontLocal && node.code === 0x60) {
+    // radicalex — the radical extension bar, not renderable standalone.
+    throw new MtefParseError('unmapped Symbol font glyph 0x60 (radicalex)');
   }
   const symbol = fontLocal
     ? (SYMBOL_FONT_LATEX[node.code] ?? escapeLatexChar(node.code))
@@ -675,14 +752,20 @@ function renderTmpl(node: TmplNode, state: RenderState): Rendered {
   const { selector, variation, children } = node;
 
   if (selector === TM_DIRAC) {
-    // DiracBox: [left slot, right slot, ⟨ | ⟩ chars]. Variations 0/1/2 =
-    // both / left-only / right-only.
+    // DiracBox: [left slot, right slot, ⟨ | ⟩ chars]. Variations per the
+    // rtf2latex2e reference: 0 = ⟨L|R⟩, 1 = bra ⟨L|, 2 = ket |R⟩.
     const parts = lineContents(children, state);
     const left = parts[0]?.latex ?? '';
     const right = variation === 2 ? '' : (parts[1]?.latex ?? '');
     if (variation === 0 && !right) state.degraded = true;
+    const body =
+      variation === 1
+        ? `\\left\\langle ${left}\\right| `
+        : variation === 2
+          ? `\\left| ${right || left}\\right\\rangle `
+          : `\\left\\langle ${left}\\mid ${right}\\right\\rangle `;
     return {
-      latex: `\\langle ${variation === 1 ? left : `${left} \\mid ${right}`}\\rangle `,
+      latex: body,
       plainText: `<${parts.map((p) => p.plainText).join('|')}>`,
     };
   }
@@ -796,8 +879,12 @@ function renderTmpl(node: TmplNode, state: RenderState): Rendered {
   if (selector === TM_LIM) {
     // Slots [main, lower, upper]. Variations (spec + rtf2latex2e eqn.c):
     // 0 = tvULIM upper limit, 1 = tvLLIM lower limit, 2 = tvBLIM both.
-    // Single-limit writers emit two slots — the lone limit sits at position 1
-    // regardless of role — fall back like the big-operator branch does.
+    // The reference emits `main` FIRST, then the limits, and injects NO
+    // function name — Equation Editor users type the function ("lim", "max",
+    // "min"…) into the main slot, so hardcoding \lim both duplicates it and
+    // glues to a letter-leading main slot (\limx → KaTeX undefined control
+    // sequence). Single-limit writers emit two slots — the lone limit sits at
+    // position 1 regardless of role — falling back like the big-op branch.
     const parts = lineContents(children, state);
     const sub = variation === 1 || variation === 2 ? (parts[1]?.latex ?? '') : '';
     const sup =
@@ -806,9 +893,13 @@ function renderTmpl(node: TmplNode, state: RenderState): Rendered {
         : variation === 2
           ? (parts[2]?.latex ?? '')
           : '';
+    const main = parts[0]?.latex ?? '';
+    // KaTeX needs a base before the scripts: an empty main slot (writer put
+    // the function in the limit slots only) gets \lim as a neutral default.
+    const base = main || '\\lim ';
     return {
-      latex: `\\lim${sub ? `_{${sub}}` : ''}${sup ? `^{${sup}}` : ''}${parts[0]?.latex ?? ''}`,
-      plainText: `lim${parts.map((p) => p.plainText).join('')}`,
+      latex: `${base}${sub ? `_{${sub}}` : ''}${sup ? `^{${sup}}` : ''}`,
+      plainText: parts.map((p) => p.plainText).join(''),
     };
   }
 
