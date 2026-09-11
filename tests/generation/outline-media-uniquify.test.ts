@@ -6,16 +6,15 @@ import type { SceneOutline } from '@openmaic/generation';
 function makeOutline(mediaGenerations?: unknown): SceneOutline {
   return {
     id: 'scene-1',
-    order: 1,
-    sceneType: 'slide',
+    type: 'slide',
     title: 'Scene',
     description: '',
     keyPoints: [],
-    estimatedDuration: 60,
+    order: 1,
     ...(mediaGenerations !== undefined
       ? { mediaGenerations: mediaGenerations as SceneOutline['mediaGenerations'] }
       : {}),
-  } as SceneOutline;
+  };
 }
 
 describe('uniquifyMediaElementIds', () => {
