@@ -59,16 +59,33 @@ export {
 export type { AssetByteStore, AssetSignedReadHeaders } from './asset/byte-store.js';
 export {
   ASSET_PG_SCHEMA,
+  DEFAULT_ASSET_PENDING_TTL_MS,
   PgAssetStore,
   ensureAssetSchema,
   type PgAssetStoreOptions,
 } from './asset/pg.js';
+export {
+  STAGE_ASSET_SCOPE_SCENE_ID,
+  backfillDocumentAssetReferences,
+  documentAssetScopes,
+  removeDocumentAssetReferences,
+  sceneAssetScope,
+  stageAssetScope,
+  syncDocumentAssetReferences,
+  syncStageAssetReferences,
+  type DocumentAssetScope,
+  type RemoveDocumentAssetReferencesInput,
+  type ScopedDocumentInput,
+  type SyncDocumentAssetReferencesInput,
+  type SyncStageAssetReferencesInput,
+} from './asset/references.js';
 export { PgAssetByteStore } from './asset/pg-bytes.js';
 export {
   AssetCollector,
   assertSignedUrlTtlWithinGrace,
   DEFAULT_ASSET_COLLECTION_BATCH_SIZE,
   DEFAULT_ASSET_COLLECTION_GRACE_MS,
+  DEFAULT_ASSET_REFERENCE_BACKFILL_BATCH_SIZE,
   type AssetCollectionPass,
   type AssetCollectorOptions,
 } from './asset/collector.js';

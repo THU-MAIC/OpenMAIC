@@ -1,6 +1,7 @@
-/** Offline reclamation for unreferenced server asset bytes. */
+/** Offline reclamation for unreferenced server asset entries and bytes. */
 import type { ContentHash } from './blob.js';
 import type { AssetByteStore } from './byte-store.js';
+import { backfillDocumentAssetReferences, sceneAssetScope, stageAssetScope } from './references.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
 /** One hour. A deployment may choose a longer retention window. */
@@ -42,6 +43,16 @@ export function assertSignedUrlTtlWithinGrace(ttlSeconds: number, graceMs: numbe
  */
 export const DEFAULT_ASSET_COLLECTION_BATCH_SIZE = 1000;
 
+/**
+ * Fifty documents per backfill chunk.
+ *
+ * Far smaller than the blob and entry batches because a backfill step reads a
+ * whole document -- a stage row and all of its scene rows, content included --
+ * rather than one narrow row, and the walk exists to be spread over passes
+ * instead of finished in one.
+ */
+export const DEFAULT_ASSET_REFERENCE_BACKFILL_BATCH_SIZE = 50;
+
 export interface AssetCollectorOptions {
   /** Pin each per-blob callback to a fresh PostgreSQL transaction. */
   withTransaction: WithTransaction;
@@ -51,6 +62,20 @@ export interface AssetCollectorOptions {
   batchSize?: number;
   /** Clock override for deterministic hosts and tests. */
   now?: () => Date;
+  /**
+   * Reclaim unreferenced `asset_entries` as well as unreferenced bytes,
+   * using the `document_asset_refs` table. Defaults to `false`.
+   *
+   * **A deployment that turns this on MUST also construct its
+   * `PgDocumentStore` with `trackAssetReferences: true`.** The two halves are
+   * one mechanism: the document store is what commits an entry and what
+   * records the references this pass reads. Enabling the pass without it
+   * leaves every entry pending, and every pending entry is released when its
+   * TTL expires -- while the documents naming them are still there.
+   */
+  documentReferences?: boolean;
+  /** Most documents one reference-backfill chunk reads. Defaults to fifty. */
+  referenceBackfillBatchSize?: number;
 }
 
 /** What one bounded pass did, for a caller that needs more than the count. */
@@ -62,10 +87,42 @@ export interface AssetCollectionPass {
    * pass saw the end of the eligible set and there is nothing left to drain.
    */
   capped: boolean;
+  /**
+   * Registry entries this pass deleted: expired pending allocations and
+   * committed entries whose last document reference left longer ago than the
+   * grace period. Always zero when `documentReferences` is off.
+   */
+  entriesCollected: number;
+  /** The entry pass filled its own batch, so more entries may be eligible. */
+  entriesCapped: boolean;
+  /** Documents this pass enumerated while backfilling the reference table. */
+  backfilledDocuments: number;
+  /**
+   * Pre-lifecycle entries this pass marked committed, which happens once, on
+   * the pass that completes the backfill walk.
+   */
+  legacyEntriesCommitted: number;
 }
 
 interface CandidateRow extends Record<string, unknown> {
   content_hash: ContentHash;
+}
+
+interface EntryCandidateRow extends Record<string, unknown> {
+  id: string;
+}
+
+interface EntryLockRow extends EntryCandidateRow {
+  content_hash: ContentHash;
+}
+
+interface StageWalkRow extends Record<string, unknown> {
+  id: string;
+  data: unknown;
+}
+
+interface SceneWalkRow extends StageWalkRow {
+  stage_id: string;
 }
 
 interface TransactionalByteDeleter extends AssetByteStore {
@@ -75,6 +132,21 @@ interface TransactionalByteDeleter extends AssetByteStore {
 function hasTransactionalDeleter(store: AssetByteStore): store is TransactionalByteDeleter {
   return 'deleteWith' in store && typeof store.deleteWith === 'function';
 }
+
+type ReleasedEntries = Pick<AssetCollectionPass, 'entriesCollected' | 'entriesCapped'>;
+
+type EntryLevelPass = Pick<
+  AssetCollectionPass,
+  'entriesCollected' | 'entriesCapped' | 'backfilledDocuments' | 'legacyEntriesCommitted'
+>;
+
+/** What the entry level reports when a deployment has not enabled it. */
+const EMPTY_ENTRY_LEVEL: EntryLevelPass = {
+  entriesCollected: 0,
+  entriesCapped: false,
+  backfilledDocuments: 0,
+  legacyEntriesCommitted: 0,
+};
 
 function collectorFailure(): Error {
   return new Error('@openmaic/storage: asset collection failed');
@@ -92,11 +164,19 @@ function collectorConfigurationFailure(): Error {
 }
 
 /**
- * Re-runnable collector for the byte rows left behind by request operations.
+ * Re-runnable collector for the rows left behind by request operations.
  *
- * This is the only component that calls `AssetByteStore.delete`. Hosts must
- * schedule it: leaving it unscheduled lets unreferenced storage grow without
- * bound.
+ * This is the only component that calls `AssetByteStore.delete`, and -- with
+ * `documentReferences` enabled -- the only server-side path that deletes a
+ * registry entry outside `remove`. Hosts must schedule it: leaving it
+ * unscheduled lets unreferenced storage grow without bound, at both levels.
+ *
+ * With `documentReferences` enabled a pass has two levels, run in that order:
+ * entries first (backfill if the reference table is incomplete, then release
+ * expired pending and long-unreferenced committed entries), then the bytes
+ * whose last entry left. The levels share one grace period: an entry and its
+ * bytes are two rows describing one asset, and giving them separate windows
+ * would only invite them to disagree about how long an undo has.
  *
  * A pass is **bounded**: it takes at most `batchSize` blobs and returns. An
  * unbounded pass would be sized by however long the deployment ran before
@@ -117,6 +197,22 @@ export class AssetCollector {
   private readonly graceMs: number;
   private readonly batchSize: number;
   private readonly now: () => Date;
+  private readonly documentReferences: boolean;
+  private readonly referenceBackfillBatchSize: number;
+  /**
+   * Where the reference backfill walk has got to, as the id of the last stage
+   * enumerated; `null` means "no walk in progress".
+   *
+   * In memory, and therefore per collector instance: a process that restarts
+   * mid-walk starts the walk again. That is safe rather than merely tolerable,
+   * because of the order the two halves run in. The walk only ever INSERTS
+   * reference rows (`ON CONFLICT DO NOTHING`, so repeating it is free), and
+   * legacy entries are marked committed only by the pass that reaches the end
+   * of the walk. Until that happens, invariant (i) below stops the entry pass
+   * from releasing anything at all -- so an interrupted walk can never have
+   * released an entry the documents it had not reached still reference.
+   */
+  private backfillCursor: string | null = null;
 
   constructor(
     private readonly queryable: Queryable,
@@ -134,15 +230,29 @@ export class AssetCollector {
     if (!Number.isSafeInteger(batchSize) || batchSize < 1) {
       throw new Error('@openmaic/storage: batchSize must be a positive safe integer');
     }
+    const referenceBackfillBatchSize =
+      options.referenceBackfillBatchSize ?? DEFAULT_ASSET_REFERENCE_BACKFILL_BATCH_SIZE;
+    if (!Number.isSafeInteger(referenceBackfillBatchSize) || referenceBackfillBatchSize < 1) {
+      throw new Error(
+        '@openmaic/storage: referenceBackfillBatchSize must be a positive safe integer',
+      );
+    }
     this.transactionHook = options.withTransaction;
     this.graceMs = graceMs;
     this.batchSize = batchSize;
     this.now = options.now ?? (() => new Date());
+    this.documentReferences = options.documentReferences === true;
+    this.referenceBackfillBatchSize = referenceBackfillBatchSize;
   }
 
   /**
-   * Run one bounded pass and resolve to the number of blobs it deleted, which
+   * Run one bounded pass and resolve to the number of BLOBS it deleted, which
    * is never above `batchSize`.
+   *
+   * Deliberately still the blob count with the entry level enabled: this is
+   * the number a host logs as "bytes reclaimed", and widening it into a total
+   * would silently change what every existing caller reports. `collectPass`
+   * carries the entry counts.
    *
    * A caller that needs to tell "the backlog is drained" from "this pass filled
    * its batch and more is waiting" must use `collectPass`; this count cannot
@@ -165,7 +275,14 @@ export class AssetCollector {
     ) {
       throw collectorConfigurationFailure();
     }
+    const now = this.now().toISOString();
     const cutoff = new Date(this.now().getTime() - this.graceMs).toISOString();
+    // The entry level runs first: releasing an entry is what stamps its blob
+    // unreferenced, and doing it before the blob pass means a blob freed here
+    // starts its own grace period now instead of one interval from now.
+    const entries = this.documentReferences
+      ? await this.entryLevelPass(now, cutoff)
+      : EMPTY_ENTRY_LEVEL;
     let candidates;
     try {
       candidates = await this.queryable.query<CandidateRow>(
@@ -226,7 +343,262 @@ export class AssetCollector {
         throw collectorFailure();
       }
     }
-    return { collected, capped: candidates.rows.length >= this.batchSize };
+    return {
+      collected,
+      capped: candidates.rows.length >= this.batchSize,
+      ...entries,
+    };
+  }
+
+  /**
+   * The entry level: backfill what the reference table is missing, then
+   * release the entries nothing references.
+   *
+   * Three invariants hold this together, and each is enforced below rather
+   * than assumed:
+   *
+   * (i)   **Nothing is released while any legacy entry exists.** A legacy
+   *       entry -- one written before the lifecycle columns existed, so
+   *       `committed_at` and `expires_at` are both NULL -- has no reference
+   *       rows either, which would make it look eligible while documents still
+   *       name it. The gate is re-asked of the database on every pass rather
+   *       than remembered, so it cannot be defeated by a restart or by a
+   *       deployment that briefly wrote with older code.
+   * (ii)  **Legacy entries are marked committed only after every
+   *       `document_stages` row has been enumerated.** The walk is bounded per
+   *       pass and resumable, and only the pass that reaches its end marks.
+   * (iii) **A marked legacy entry that no document names gets
+   *       `unreferenced_at = now()`,** not a backdated stamp, so it drains
+   *       after the grace period rather than on the same pass -- which leaves
+   *       a window for a document write, an undo or a restore to claim it
+   *       back.
+   */
+  private async entryLevelPass(now: string, cutoff: string): Promise<EntryLevelPass> {
+    let backfilledDocuments = 0;
+    let legacyEntriesCommitted = 0;
+    let legacyEntriesRemain = await this.hasLegacyEntries();
+    if (legacyEntriesRemain) {
+      backfilledDocuments = await this.backfillChunk();
+      if (this.backfillCursor === null) {
+        // The walk reached the end on this pass: (ii) is satisfied, so the
+        // entries it covered can be marked, and (iii) stamps the ones no
+        // document turned out to name.
+        legacyEntriesCommitted = await this.markLegacyEntries();
+        legacyEntriesRemain = false;
+      }
+    }
+    if (legacyEntriesRemain) {
+      // (i): the walk is unfinished, so the reference table is still a subset
+      // of the truth and no entry may be released yet.
+      return {
+        entriesCollected: 0,
+        entriesCapped: false,
+        backfilledDocuments,
+        legacyEntriesCommitted,
+      };
+    }
+    const released = await this.releaseEntries(now, cutoff);
+    return { ...released, backfilledDocuments, legacyEntriesCommitted };
+  }
+
+  private async hasLegacyEntries(): Promise<boolean> {
+    try {
+      const result = await this.queryable.query(
+        `SELECT 1
+           FROM asset_entries
+          WHERE committed_at IS NULL AND expires_at IS NULL
+          LIMIT 1`,
+      );
+      return result.rows.length > 0;
+    } catch {
+      throw collectorFailure();
+    }
+  }
+
+  /**
+   * Enumerate the next chunk of documents and insert the reference rows they
+   * imply, leaving {@link backfillCursor} at the last stage read -- or back at
+   * `null` when the chunk saw the end of the table.
+   *
+   * Additive only: a chunk never deletes a reference row, so a walk that stops
+   * halfway leaves the table a subset of the truth. Ordered by stage id, which
+   * is the table's primary key and therefore stable under concurrent writes;
+   * a stage inserted behind the cursor is not read by this walk, and does not
+   * need to be, because the document store maintains its rows itself.
+   *
+   * One row more than the chunk is read and then discarded, purely to learn
+   * whether more documents follow. `rows.length < limit` alone cannot say so
+   * when the chunk is exactly full, which would cost every backfill one extra
+   * empty pass before it could mark -- and, on a deployment whose document
+   * count happens to be a multiple of the chunk size, make the number of
+   * passes before reclamation starts depend on that coincidence.
+   */
+  private async backfillChunk(): Promise<number> {
+    try {
+      const limit = this.referenceBackfillBatchSize;
+      const page = await this.queryable.query<StageWalkRow>(
+        this.backfillCursor === null
+          ? `SELECT id, data FROM document_stages ORDER BY id ASC LIMIT $1`
+          : `SELECT id, data FROM document_stages WHERE id > $2 ORDER BY id ASC LIMIT $1`,
+        this.backfillCursor === null ? [limit + 1] : [limit + 1, this.backfillCursor],
+      );
+      const hasMore = page.rows.length > limit;
+      const stages = { rows: page.rows.slice(0, limit) };
+      for (const stage of stages.rows) {
+        const scenes = await this.queryable.query<SceneWalkRow>(
+          'SELECT stage_id, id, data FROM document_scenes WHERE stage_id = $1',
+          [stage.id],
+        );
+        // One transaction per document: a chunk that fails part-way leaves
+        // whole documents backfilled rather than half of one, and the walk is
+        // restarted from scratch anyway.
+        await this.transactionHook(async (queryable) => {
+          const stageScope = stageAssetScope(stage.data);
+          await backfillDocumentAssetReferences(queryable, {
+            stageId: stage.id,
+            sceneId: stageScope.sceneId,
+            candidates: stageScope.candidates,
+          });
+          for (const scene of scenes.rows) {
+            const scope = sceneAssetScope(scene.id, scene.data);
+            await backfillDocumentAssetReferences(queryable, {
+              stageId: stage.id,
+              sceneId: scope.sceneId,
+              candidates: scope.candidates,
+            });
+          }
+        });
+        this.backfillCursor = stage.id;
+      }
+      if (!hasMore) this.backfillCursor = null;
+      return stages.rows.length;
+    } catch {
+      throw collectorFailure();
+    }
+  }
+
+  /**
+   * Mark every legacy entry committed, then stamp the marked ones no document
+   * names.
+   *
+   * Two statements rather than one data-modifying CTE: PostgreSQL does not
+   * support updating the same row twice in one statement, and every row the
+   * first statement marks is a row the second one may stamp.
+   *
+   * The second statement's predicate is "committed, unreferenced_at NULL, and
+   * no reference row", which is deliberately broader than "was legacy a moment
+   * ago": the document store stamps an entry the moment it loses its last
+   * reference, so the only other rows this can reach are ones whose reference
+   * rows went missing out of band -- which genuinely are unreferenced, and
+   * which the grace period protects exactly as it protects the rest.
+   */
+  private async markLegacyEntries(): Promise<number> {
+    try {
+      return await this.transactionHook(async (queryable) => {
+        const marked = await queryable.query<{ marked: string }>(
+          // Counted through a data-modifying CTE rather than by returning
+          // every id: this runs once over a whole deployment's backlog, and
+          // the count is all the caller reports.
+          `WITH marked AS (
+             UPDATE asset_entries
+                SET committed_at = now()
+              WHERE committed_at IS NULL AND expires_at IS NULL
+             RETURNING 1
+           )
+           SELECT count(*)::text AS marked FROM marked`,
+        );
+        await queryable.query(
+          `UPDATE asset_entries AS entries
+              SET unreferenced_at = now()
+            WHERE entries.committed_at IS NOT NULL
+              AND entries.unreferenced_at IS NULL
+              AND NOT EXISTS (
+                    SELECT 1 FROM document_asset_refs AS refs WHERE refs.asset_id = entries.id
+                  )`,
+        );
+        return Number(marked.rows[0]?.marked ?? 0);
+      });
+    } catch {
+      throw collectorFailure();
+    }
+  }
+
+  /**
+   * Release at most `batchSize` eligible entries, each locked and re-checked
+   * in its own transaction, exactly as the blob pass does.
+   *
+   * Eligible means pending and past its expiry, or committed and unreferenced
+   * for longer than the grace period. Oldest first on whichever of the two
+   * timestamps made it eligible, for the same anti-starvation reason the blob
+   * pass orders by `unreferenced_at`: both are arrival stamps, so this is
+   * arrival order, and the id breaks ties within one timestamp only.
+   */
+  private async releaseEntries(now: string, cutoff: string): Promise<ReleasedEntries> {
+    let candidates;
+    try {
+      candidates = await this.queryable.query<EntryCandidateRow>(
+        `SELECT id
+           FROM asset_entries
+          WHERE (expires_at IS NOT NULL AND expires_at < $1::timestamptz)
+             OR (unreferenced_at IS NOT NULL AND unreferenced_at < $2::timestamptz)
+          ORDER BY COALESCE(expires_at, unreferenced_at) ASC, id ASC
+          LIMIT $3`,
+        [now, cutoff, this.batchSize],
+      );
+    } catch {
+      throw collectorFailure();
+    }
+
+    let entriesCollected = 0;
+    for (const candidate of candidates.rows) {
+      try {
+        const didCollect = await this.transactionHook(async (queryable) => {
+          // Re-checked under the row lock, including the "no reference row"
+          // condition. A document write between the candidate query and this
+          // lock is exactly the case that must not be swept: it cleared
+          // `expires_at` / `unreferenced_at` and inserted a row, and either
+          // half of that alone would fail this predicate. The reference check
+          // is not redundant with the timestamps -- it is what makes "eligible"
+          // mean "no document names it" rather than "a column says so".
+          const locked = await queryable.query<EntryLockRow>(
+            `SELECT id, content_hash
+               FROM asset_entries
+              WHERE id = $1
+                AND ((expires_at IS NOT NULL AND expires_at < $2::timestamptz)
+                  OR (unreferenced_at IS NOT NULL AND unreferenced_at < $3::timestamptz))
+                AND NOT EXISTS (
+                      SELECT 1 FROM document_asset_refs WHERE asset_id = $1
+                    )
+              FOR UPDATE`,
+            [candidate.id, now, cutoff],
+          );
+          const entry = locked.rows[0];
+          if (!entry) return false;
+          // Exactly what `remove` does, in the same order: delete the one row,
+          // then stamp the blob when no entry names those bytes any more. Any
+          // reference row would go with it through the table's cascade; the
+          // re-check above proves there is none.
+          await queryable.query('DELETE FROM asset_entries WHERE id = $1', [entry.id]);
+          await queryable.query(
+            `UPDATE asset_blobs
+                SET unreferenced_at = now()
+              WHERE content_hash = $1
+                AND NOT EXISTS (
+                      SELECT 1 FROM asset_entries WHERE content_hash = $1
+                    )`,
+            [entry.content_hash],
+          );
+          return true;
+        });
+        if (didCollect) entriesCollected += 1;
+      } catch {
+        throw collectorFailure();
+      }
+    }
+    return {
+      entriesCollected,
+      entriesCapped: candidates.rows.length >= this.batchSize,
+    };
   }
 }
 

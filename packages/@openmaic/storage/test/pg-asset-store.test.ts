@@ -3,7 +3,7 @@ import { PGlite } from '@electric-sql/pglite';
 import type { AssetMeta, AssetRef, BinaryBlob, StorageProvider } from '@openmaic/dsl';
 import { contentHashOf, ObjectUrlCache, type ContentHash } from '../src/asset/blob.js';
 import type { AssetByteStore, AssetSignedReadHeaders } from '../src/asset/byte-store.js';
-import { AssetCollector } from '../src/asset/collector.js';
+import { AssetCollector, type AssetCollectionPass } from '../src/asset/collector.js';
 import { __setAssetIdFactoryForTesting, type AssetId } from '../src/asset/id.js';
 import { PgAssetByteStore } from '../src/asset/pg-bytes.js';
 import {
@@ -24,6 +24,17 @@ import {
 import { blobForObjectUrl } from './setup.js';
 
 const PRINCIPAL = { key: 'principal-a' } as const;
+/**
+ * What a pass reports for the entry level when `documentReferences` is off,
+ * which is the default every collector in this file uses. Pinned so the
+ * default really is "the blob pass and nothing else".
+ */
+const NO_ENTRY_LEVEL = {
+  entriesCollected: 0,
+  entriesCapped: false,
+  backfilledDocuments: 0,
+  legacyEntriesCommitted: 0,
+} as const;
 const OTHER_PRINCIPAL = { key: 'principal-b' } as const;
 const bytes = (value: string): Uint8Array => new TextEncoder().encode(value);
 const blob = (value: string, type = 'text/plain'): Blob => new Blob([value], { type });
@@ -236,7 +247,7 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     await ensureAssetSchema(recordingQueryable(db, statements));
     await ensureAssetSchema(recordingQueryable(db, statements));
     expect(statements).toEqual([...ASSET_PG_SCHEMA, ...ASSET_PG_SCHEMA].map(normalizeSql));
-    expect(ASSET_PG_SCHEMA).toHaveLength(5);
+    expect(ASSET_PG_SCHEMA).toHaveLength(12);
     expect(ASSET_PG_SCHEMA.every((statement) => !statement.includes(';'))).toBe(true);
   });
 
@@ -708,7 +719,11 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     await unreference(['batch-a', 'batch-b', 'batch-c', 'batch-d', 'batch-e']);
     const collector = boundedCollector(2);
 
-    expect(await collector.collectPass()).toEqual({ collected: 2, capped: true });
+    expect(await collector.collectPass()).toEqual({
+      collected: 2,
+      capped: true,
+      ...NO_ENTRY_LEVEL,
+    });
     expect(await remainingBlobs()).toHaveLength(3);
   });
 
@@ -718,15 +733,15 @@ describe('PgAssetStore registry behavior with PGlite', () => {
 
     // What a caller draining the backlog does: run while the batch comes back
     // full. `collected` alone cannot say that, which is why `capped` exists.
-    const passes: Array<{ collected: number; capped: boolean }> = [];
+    const passes: AssetCollectionPass[] = [];
     do {
       passes.push(await collector.collectPass());
     } while (passes[passes.length - 1]?.capped);
 
     expect(passes).toEqual([
-      { collected: 2, capped: true },
-      { collected: 2, capped: true },
-      { collected: 1, capped: false },
+      { collected: 2, capped: true, ...NO_ENTRY_LEVEL },
+      { collected: 2, capped: true, ...NO_ENTRY_LEVEL },
+      { collected: 1, capped: false, ...NO_ENTRY_LEVEL },
     ]);
     expect(await remainingBlobs()).toEqual([]);
   });
@@ -753,7 +768,11 @@ describe('PgAssetStore registry behavior with PGlite', () => {
 
     const statements: string[] = [];
     const collector = boundedCollector(1, recordingQueryable(db, statements));
-    expect(await collector.collectPass()).toEqual({ collected: 1, capped: true });
+    expect(await collector.collectPass()).toEqual({
+      collected: 1,
+      capped: true,
+      ...NO_ENTRY_LEVEL,
+    });
     expect(await remainingBlobs()).toEqual(queue.map(hashOf).sort());
 
     // The order is asked of the database rather than inherited from a plan.
@@ -902,7 +921,9 @@ describe('PgAssetStore registry behavior with PGlite', () => {
       await expectNoDigestSubstring(String(thrown), data);
     }
 
-    await db.query('TRUNCATE asset_entries, asset_blobs');
+    // document_asset_refs references asset_entries, so PostgreSQL refuses to
+    // truncate the entries without it.
+    await db.query('TRUNCATE document_asset_refs, asset_entries, asset_blobs');
     const collectorBytes: AssetByteStore = {
       // Out-of-registry so the collector's deletion guard lets the failing
       // delete through, keeping the digest propagation under test.

@@ -17,15 +17,15 @@ import { readFileSync, writeFileSync } from 'node:fs';
  * test CASES, not `expect()` calls, so a file named `pg-document-store.pg.test.ts`
  * containing nothing but `test('x', () => {})` satisfies every check in phase 1
  * below. And because `test/setup.ts` is already wired as `setupFiles`, a single
- * `vi.mock('pg', ...)` there makes both suites collect, run and pass green
+ * `vi.mock('pg', ...)` there makes every suite collect, run and pass green
  * against an in-memory fake. Both edits are one line, in `test/`, and need no
- * version bump. Phase 1 therefore proves only that two files with those names
- * ran and reported passing cases — nothing whatsoever about a database.
+ * version bump. Phase 1 therefore proves only that files with those names ran
+ * and reported passing cases — nothing whatsoever about a database.
  *
  * WHAT PHASE 2 ADDS. It connects to the contract database from OUTSIDE the
- * vitest process and asks PostgreSQL itself what happened: the five tables
- * these two backends own must exist, and each must have gained inserts DURING
- * the run. Nothing inside `test/` can forge that, because producing it requires
+ * vitest process and asks PostgreSQL itself what happened: every table these
+ * backends own must exist, and each must have gained inserts DURING the run.
+ * Nothing inside `test/` can forge that, because producing it requires
  * actually writing to the database this script independently connects to.
  *
  * Insert counters rather than surviving rows: the suites clean up after
@@ -38,12 +38,12 @@ import { readFileSync, writeFileSync } from 'node:fs';
  *
  * ── THREAT MODEL, STATED HONESTLY ────────────────────────────────────────────
  *
- * What this proves: during this run, rows were inserted into those five tables
- * in a real PostgreSQL, and two files with the contract suites' names ran and
- * passed.
+ * What this proves: during this run, rows were inserted into every one of
+ * those tables in a real PostgreSQL, and files with the contract suites' names
+ * ran and passed.
  *
- * What it does NOT prove: that the built `PgDocumentStore` and `PgRuntimeStore`
- * were the code that inserted them. The whole `test/` directory is on the
+ * What it does NOT prove: that the built `PgDocumentStore`, `PgRuntimeStore`
+ * and `PgAssetStore` were the code that inserted them. The whole `test/` directory is on the
  * publishable-input ignore list, so test code can create the schema and insert
  * directly, and this audit would read the same either way. Closing that needs a
  * harness living outside the ignored `test/` surface — separate work, not
@@ -62,13 +62,20 @@ const REQUIRED_SUITES = [
   'packages/@openmaic/storage/test/pg-document-store.pg.test.ts',
   'packages/@openmaic/storage/test/pg-runtime-store.pg.test.ts',
   'packages/@openmaic/storage/test/pg-scene-revision.pg.test.ts',
+  'packages/@openmaic/storage/test/pg-asset-store.pg.test.ts',
 ];
 
 /**
- * The tables created by `DOCUMENT_PG_SCHEMA` and `RUNTIME_PG_SCHEMA`. Kept
- * explicit rather than parsed out of those sources: this list is the
- * independent statement of what the contract must have touched, and deriving it
- * from the code under test would let that code narrow its own audit.
+ * The tables created by `DOCUMENT_PG_SCHEMA`, `RUNTIME_PG_SCHEMA` and
+ * `ASSET_PG_SCHEMA`. Kept explicit rather than parsed out of those sources:
+ * this list is the independent statement of what the contract must have
+ * touched, and deriving it from the code under test would let that code narrow
+ * its own audit.
+ *
+ * `document_asset_refs` is the one table two backends meet on -- the asset
+ * schema owns it, the document store writes it -- so an insert into it during
+ * the run is the evidence that the reference level ran against a real server
+ * rather than only against PGlite.
  */
 const REQUIRED_TABLES = [
   'document_stages',
@@ -78,6 +85,9 @@ const REQUIRED_TABLES = [
   'document_scene_revision',
   'runtime_sessions',
   'runtime_records',
+  'asset_blobs',
+  'asset_entries',
+  'document_asset_refs',
 ];
 
 const usage = [
@@ -200,7 +210,7 @@ if (capturingBaseline) {
 }
 
 // Phase 1 ---------------------------------------------------------------------
-// The two suite files were collected and reported passing cases.
+// Every required suite file was collected and reported passing cases.
 
 let results;
 try {

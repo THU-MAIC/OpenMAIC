@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { AGENT_SESSION_PG_SCHEMA, ensureAgentSessionSchema } from '../src/agent-session/pg.js';
+import { ASSET_PG_SCHEMA, ensureAssetSchema } from '../src/asset/pg.js';
 import {
   DOCUMENT_PG_SCHEMA,
   ensureDocumentSchema,
@@ -15,7 +16,7 @@ import {
 import type { Queryable } from '../src/runtime/pg.js';
 
 /**
- * Golden pins for the two PostgreSQL schemas this package exports.
+ * Golden pins for the PostgreSQL schemas this package exports.
  *
  * Both constants are public API. A deployment that provisions these tables with
  * its own migration tooling — rather than by calling `ensureDocumentSchema()` /
@@ -576,6 +577,113 @@ describe('agent-session constraint migrations', () => {
     expect(validation).toMatch(
       /ALTER TABLE agent_owner_session_events\s+VALIDATE CONSTRAINT agent_owner_session_events_type_known_v2/,
     );
+  });
+});
+
+/**
+ * The asset schema is an ARRAY of one-statement strings rather than one DDL
+ * string, because its statements must reach PGlite one at a time. It gets its
+ * own pin for that reason alone; the obligations are identical to the ones the
+ * shared block below asserts.
+ */
+const EXPECTED_ASSET_PG_SCHEMA: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS asset_blobs (
+     content_hash TEXT PRIMARY KEY,
+     byte_size BIGINT NOT NULL,
+     bytes BYTEA,
+     unreferenced_at TIMESTAMPTZ
+   )`,
+  `CREATE TABLE IF NOT EXISTS asset_entries (
+     id TEXT PRIMARY KEY,
+     principal TEXT NOT NULL,
+     content_hash TEXT NOT NULL REFERENCES asset_blobs(content_hash),
+     mime TEXT NOT NULL,
+     meta JSONB NOT NULL,
+     revision INTEGER NOT NULL DEFAULT 1,
+     created_at DOUBLE PRECISION NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS asset_entries_principal_idx
+     ON asset_entries (principal, id)`,
+  `CREATE INDEX IF NOT EXISTS asset_entries_content_hash_idx
+     ON asset_entries (content_hash)`,
+  `CREATE INDEX IF NOT EXISTS asset_blobs_unreferenced_idx
+     ON asset_blobs (unreferenced_at) WHERE unreferenced_at IS NOT NULL`,
+  `ALTER TABLE asset_entries
+     ADD COLUMN IF NOT EXISTS committed_at TIMESTAMPTZ`,
+  `ALTER TABLE asset_entries
+     ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`,
+  `ALTER TABLE asset_entries
+     ADD COLUMN IF NOT EXISTS unreferenced_at TIMESTAMPTZ`,
+  `CREATE TABLE IF NOT EXISTS document_asset_refs (
+     stage_id TEXT NOT NULL,
+     scene_id TEXT NOT NULL,
+     asset_id TEXT NOT NULL REFERENCES asset_entries(id) ON DELETE CASCADE,
+     PRIMARY KEY (stage_id, scene_id, asset_id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS document_asset_refs_asset_idx
+     ON document_asset_refs (asset_id)`,
+  `CREATE INDEX IF NOT EXISTS asset_entries_expires_idx
+     ON asset_entries (expires_at) WHERE expires_at IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS asset_entries_unreferenced_idx
+     ON asset_entries (unreferenced_at) WHERE unreferenced_at IS NOT NULL`,
+];
+
+describe('ASSET_PG_SCHEMA is a pinned contract', () => {
+  it('is exactly what ensureAssetSchema provisions', async () => {
+    const { statements, queryable } = recordingQueryable();
+    await ensureAssetSchema(queryable);
+
+    expect(statements).toEqual([...EXPECTED_ASSET_PG_SCHEMA]);
+  });
+
+  it('provisions idempotently on a second call', async () => {
+    const { statements, queryable } = recordingQueryable();
+    await ensureAssetSchema(queryable);
+    await ensureAssetSchema(queryable);
+
+    expect(statements).toEqual([...EXPECTED_ASSET_PG_SCHEMA, ...EXPECTED_ASSET_PG_SCHEMA]);
+  });
+
+  it('matches the published DDL verbatim', () => {
+    // A failure here is not a broken test: it means the schema changed. Update
+    // this pin in the same change, and treat it as a breaking change for any
+    // deployment that provisions these tables through its own migrations.
+    expect(ASSET_PG_SCHEMA).toEqual(EXPECTED_ASSET_PG_SCHEMA);
+  });
+
+  it('keeps every statement guarded, single, and PGlite-compatible', () => {
+    expect(ASSET_PG_SCHEMA.length).toBeGreaterThan(0);
+    for (const statement of ASSET_PG_SCHEMA) {
+      // One statement per entry: the ensure function issues them individually,
+      // so an embedded semicolon would send two statements as one query.
+      expect(statement.includes(';'), `not a single statement: ${statement}`).toBe(false);
+      const sql = statement.trim();
+      expect(
+        /^CREATE (TABLE|INDEX|UNIQUE INDEX) IF NOT EXISTS /.test(sql) ||
+          /^ALTER TABLE [a-z_]+\s+ADD COLUMN IF NOT EXISTS /.test(sql),
+        `ASSET_PG_SCHEMA statement is not an idempotent create or additive migration: ${statement}`,
+      ).toBe(true);
+    }
+  });
+
+  it('creates every table before the statements that reference it', () => {
+    // The array is in dependency order, and document_asset_refs' foreign key
+    // is the one dependency a reordering could break silently: PostgreSQL
+    // would refuse the CREATE TABLE, but only against a database that had not
+    // already been provisioned by an earlier release.
+    const entries = ASSET_PG_SCHEMA.findIndex((statement) =>
+      statement.startsWith('CREATE TABLE IF NOT EXISTS asset_entries'),
+    );
+    const blobs = ASSET_PG_SCHEMA.findIndex((statement) =>
+      statement.startsWith('CREATE TABLE IF NOT EXISTS asset_blobs'),
+    );
+    const refs = ASSET_PG_SCHEMA.findIndex((statement) =>
+      statement.startsWith('CREATE TABLE IF NOT EXISTS document_asset_refs'),
+    );
+
+    expect(blobs).toBeGreaterThanOrEqual(0);
+    expect(entries).toBeGreaterThan(blobs);
+    expect(refs).toBeGreaterThan(entries);
   });
 });
 

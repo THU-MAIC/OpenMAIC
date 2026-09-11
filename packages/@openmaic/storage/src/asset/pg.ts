@@ -57,9 +57,49 @@ export interface PgAssetStoreOptions {
   byteStore: AssetByteStore;
   /** Optional logical-byte ceiling for each principal. */
   quotaBytes?: number;
+  /**
+   * How long an allocated entry stays pending before it expires.
+   *
+   * The window this has to cover is "the bytes were stored, and then the
+   * document that names them was saved". A client stores bytes first and
+   * writes the id into the document afterwards, and nothing on the wire leases
+   * that gap, so the default is deliberately generous rather than tight: a day
+   * of unreclaimed bytes costs storage, while an expiry that fires before the
+   * document write costs the document its media.
+   *
+   * Expiry only matters to a deployment that runs the collector's entry pass
+   * (`AssetCollector`'s `documentReferences` option); without it the column is
+   * written and never read.
+   */
+  pendingTtlMs?: number;
 }
 
-/** One PGlite-compatible statement per entry, in dependency order. */
+/** One day. A deployment may choose a longer window. */
+export const DEFAULT_ASSET_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * One PGlite-compatible statement per entry, in dependency order.
+ *
+ * The three lifecycle columns on `asset_entries` and the `document_asset_refs`
+ * table carry the entry level of reference counting, mirroring one level up
+ * what `asset_blobs.unreferenced_at` already does for bytes:
+ *
+ * - `expires_at` is set when an entry is allocated and cleared when a document
+ *   first names it. An entry no document ever names therefore has a deadline
+ *   rather than living forever.
+ * - `committed_at` is stamped by that same first document write. `NULL` means
+ *   pending; it is never read on a request path.
+ * - `unreferenced_at` is stamped when a document write removes the entry's
+ *   last reference row and cleared when a write adds one back, so an entry
+ *   drains after a grace period instead of immediately.
+ *
+ * `document_asset_refs.scene_id = ''` is the stage-level slot (stage
+ * whiteboards and the stage video manifest), which no scene owns. The table
+ * deliberately carries no foreign key to `document_stages`: the document
+ * schema is a different backend that a deployment may not provision at all,
+ * and the reference rows are maintained explicitly by the document store (see
+ * `./references.ts`) rather than by a cascade.
+ */
 export const ASSET_PG_SCHEMA: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS asset_blobs (
      content_hash TEXT PRIMARY KEY,
@@ -82,6 +122,24 @@ export const ASSET_PG_SCHEMA: readonly string[] = [
      ON asset_entries (content_hash)`,
   `CREATE INDEX IF NOT EXISTS asset_blobs_unreferenced_idx
      ON asset_blobs (unreferenced_at) WHERE unreferenced_at IS NOT NULL`,
+  `ALTER TABLE asset_entries
+     ADD COLUMN IF NOT EXISTS committed_at TIMESTAMPTZ`,
+  `ALTER TABLE asset_entries
+     ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`,
+  `ALTER TABLE asset_entries
+     ADD COLUMN IF NOT EXISTS unreferenced_at TIMESTAMPTZ`,
+  `CREATE TABLE IF NOT EXISTS document_asset_refs (
+     stage_id TEXT NOT NULL,
+     scene_id TEXT NOT NULL,
+     asset_id TEXT NOT NULL REFERENCES asset_entries(id) ON DELETE CASCADE,
+     PRIMARY KEY (stage_id, scene_id, asset_id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS document_asset_refs_asset_idx
+     ON document_asset_refs (asset_id)`,
+  `CREATE INDEX IF NOT EXISTS asset_entries_expires_idx
+     ON asset_entries (expires_at) WHERE expires_at IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS asset_entries_unreferenced_idx
+     ON asset_entries (unreferenced_at) WHERE unreferenced_at IS NOT NULL`,
 ];
 
 export async function ensureAssetSchema(queryable: Queryable): Promise<void> {
@@ -94,6 +152,7 @@ interface UsageRow extends Record<string, unknown> {
 
 interface ReplaceUsageRow extends UsageRow {
   current_bytes: number | string;
+  current_counts: boolean;
 }
 
 interface EntryRow extends Record<string, unknown> {
@@ -173,6 +232,7 @@ export class PgAssetStore implements AssetStore {
   private readonly transactionHook: WithTransaction;
   private readonly byteStore: AssetByteStore;
   private readonly quotaBytes?: number;
+  private readonly pendingTtlMs: number;
 
   constructor(
     private readonly queryable: Queryable,
@@ -192,9 +252,16 @@ export class PgAssetStore implements AssetStore {
     ) {
       throw new Error('@openmaic/storage: quotaBytes must be a non-negative safe integer');
     }
+    if (
+      options.pendingTtlMs !== undefined &&
+      (!Number.isSafeInteger(options.pendingTtlMs) || options.pendingTtlMs < 1)
+    ) {
+      throw new Error('@openmaic/storage: pendingTtlMs must be a positive safe integer');
+    }
     this.transactionHook = options.withTransaction;
     this.byteStore = options.byteStore;
     this.quotaBytes = options.quotaBytes;
+    this.pendingTtlMs = options.pendingTtlMs ?? DEFAULT_ASSET_PENDING_TTL_MS;
   }
 
   private transaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
@@ -290,10 +357,14 @@ export class PgAssetStore implements AssetStore {
     let result;
     try {
       result = await queryable.query<UsageRow>(
+        // Live entries only: an entry whose last document reference is gone is
+        // on its way out, so counting it would make a regeneration cost quota
+        // forever instead of until the collector's grace period passes.
+        // Pending entries do count -- they are live until they expire.
         `SELECT COALESCE(SUM(blobs.byte_size), 0)::text AS logical_bytes
            FROM asset_entries AS entries
            JOIN asset_blobs AS blobs ON blobs.content_hash = entries.content_hash
-          WHERE entries.principal = $1`,
+          WHERE entries.principal = $1 AND entries.unreferenced_at IS NULL`,
         [principal.key],
       );
     } catch {
@@ -314,7 +385,14 @@ export class PgAssetStore implements AssetStore {
     let result;
     try {
       result = await queryable.query<ReplaceUsageRow>(
+        // Same live-entry sum as assertPutQuota. `current_counts` says whether
+        // the entry being replaced is part of that sum: replace leaves the
+        // lifecycle columns alone, so replacing an entry that has already lost
+        // its last reference neither frees nor spends its predecessor's bytes,
+        // and subtracting them unconditionally would credit bytes the sum
+        // never included.
         `SELECT current_blob.byte_size::text AS current_bytes,
+                current_entry.unreferenced_at IS NULL AS current_counts,
                 usage.logical_bytes
            FROM asset_entries AS current_entry
            JOIN asset_blobs AS current_blob
@@ -323,7 +401,7 @@ export class PgAssetStore implements AssetStore {
              SELECT COALESCE(SUM(blobs.byte_size), 0)::text AS logical_bytes
                FROM asset_entries AS entries
                JOIN asset_blobs AS blobs ON blobs.content_hash = entries.content_hash
-              WHERE entries.principal = $2
+              WHERE entries.principal = $2 AND entries.unreferenced_at IS NULL
            ) AS usage
           WHERE current_entry.id = $1 AND current_entry.principal = $2`,
         [ref, principal.key],
@@ -333,10 +411,8 @@ export class PgAssetStore implements AssetStore {
     }
     const row = result.rows[0];
     if (!row) throw new RegistryAssetNotFound();
-    if (
-      Number(row.logical_bytes) - Number(row.current_bytes) + replacementBytes >
-      this.quotaBytes
-    ) {
+    const releasedBytes = row.current_counts ? Number(row.current_bytes) : 0;
+    if (Number(row.logical_bytes) - releasedBytes + replacementBytes > this.quotaBytes) {
       throw new RegistryAssetQuotaExceeded();
     }
   }
@@ -376,11 +452,19 @@ export class PgAssetStore implements AssetStore {
         // sequence. The entry is inserted after it, so no row ever references
         // bytes that were not stored first.
         await this.coordinatedWrite(queryable, contentHash, bytes);
+        // The entry is allocated PENDING: `committed_at` stays NULL until the
+        // first document write names this id, and `expires_at` is the deadline
+        // for that write to arrive. The columns are written on every put and
+        // read on no request path, so the two states stay indistinguishable to
+        // a caller (see `resolve` / `identify` / `resolveIndirect`, none of
+        // which mention them).
         await queryable.query(
           `INSERT INTO asset_entries
-             (id, principal, content_hash, mime, meta, revision, created_at)
-           VALUES ($1, $2, $3, $4, $5::jsonb, 1, $6)`,
-          [id, principal.key, contentHash, mime, encodedMeta, Date.now()],
+             (id, principal, content_hash, mime, meta, revision, created_at,
+              committed_at, expires_at, unreferenced_at)
+           VALUES ($1, $2, $3, $4, $5::jsonb, 1, $6,
+                   NULL, now() + ($7::double precision * interval '1 millisecond'), NULL)`,
+          [id, principal.key, contentHash, mime, encodedMeta, Date.now(), this.pendingTtlMs],
         );
       });
     } catch (error) {
@@ -511,6 +595,15 @@ export class PgAssetStore implements AssetStore {
     }
   }
 
+  /**
+   * Delete one entry, and stamp the blob when no entry names it any more.
+   *
+   * Unchanged by the entry lifecycle: any `document_asset_refs` rows naming
+   * this id go with the row through the table's `ON DELETE CASCADE`, which
+   * needs no statement here and cannot change the contract that an unknown id
+   * -- or another principal's id -- is the same no-op, because a delete that
+   * matches no row cascades to nothing.
+   */
   async remove(principal: AssetPrincipal, ref: AssetRef): Promise<void> {
     if (!isLosslessJsonString(ref) || !isLosslessJsonString(principal.key)) return;
     try {
@@ -576,6 +669,10 @@ export class PgAssetStore implements AssetStore {
         );
         await this.coordinatedWrite(queryable, contentHash, bytes);
 
+        // The lifecycle columns are deliberately absent from both branches
+        // below: replacing bytes under an existing id changes neither what
+        // names that id nor when it was first named, so a pending entry stays
+        // pending and an unreferenced one stays unreferenced.
         let updated;
         if (storedMeta === undefined) {
           updated = await queryable.query<{ revision: number | string }>(

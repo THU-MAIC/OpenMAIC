@@ -12,6 +12,12 @@ import {
   type Queryable,
   type WithTransaction,
 } from '../src/asset/pg.js';
+import { PgDocumentStore, ensureDocumentSchema } from '../src/document/pg.js';
+import type { MaicDocument } from '../src/document/types.js';
+import {
+  acquireDocumentPgContractLock,
+  truncateDocumentTables,
+} from './pg-document-contract-helpers.js';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
 
@@ -101,7 +107,7 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
   });
 
   beforeEach(async () => {
-    await pool.query('TRUNCATE asset_entries, asset_blobs');
+    await pool.query('TRUNCATE document_asset_refs, asset_entries, asset_blobs');
     bytes = new PgAssetByteStore(pool as Queryable);
     store = new PgAssetStore(pool as Queryable, {
       byteStore: bytes,
@@ -283,5 +289,170 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
     expect((await pool.query('SELECT * FROM asset_entries')).rows).toEqual([]);
     expect((await pool.query('SELECT * FROM asset_blobs')).rows).toEqual([]);
     expect(await bytes.read(contentHash)).toBeNull();
+  });
+});
+
+/**
+ * The document -> asset reference level against a real server.
+ *
+ * Separate from the suite above because it provisions the DOCUMENT schema as
+ * well, which every suite that does must serialize on the shared contract
+ * lock: `CREATE OR REPLACE FUNCTION` / `CREATE TRIGGER` from two vitest
+ * processes at once races on the catalog. The lock is taken for this block
+ * only, so the asset suite above is unaffected.
+ */
+describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', () => {
+  let pool: Pool;
+  let bytes: PgAssetByteStore;
+  let assets: PgAssetStore;
+  let documents: PgDocumentStore;
+  let releaseContractLock: (() => Promise<void>) | undefined;
+  const principal = { key: 'postgres-reference-principal' };
+
+  const stageWithImage = (stageId: string, sceneId: string, ref: string): MaicDocument =>
+    ({
+      stage: { id: stageId, name: 'Referenced Course', createdAt: 1000, updatedAt: 2000 },
+      scenes: [
+        {
+          id: sceneId,
+          stageId,
+          title: sceneId,
+          order: 0,
+          type: 'slide',
+          content: {
+            type: 'slide',
+            canvas: { id: `canvas-${sceneId}`, elements: [{ type: 'image', src: ref }] },
+          },
+        },
+      ],
+    }) as unknown as MaicDocument;
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: contractUrl, max: 8 });
+    releaseContractLock = await acquireDocumentPgContractLock(pool);
+    await ensureAssetSchema(pool as Queryable);
+    await ensureDocumentSchema(pool as Queryable);
+  }, 60_000);
+
+  beforeEach(async () => {
+    await truncateDocumentTables(pool as Queryable);
+    await pool.query('TRUNCATE document_asset_refs, asset_entries, asset_blobs');
+    bytes = new PgAssetByteStore(pool as Queryable);
+    assets = new PgAssetStore(pool as Queryable, {
+      byteStore: bytes,
+      withTransaction: transactionFor(pool),
+    });
+    documents = new PgDocumentStore(pool as Queryable, {
+      withTransaction: transactionFor(pool),
+      trackAssetReferences: true,
+    });
+  });
+
+  afterAll(async () => {
+    await releaseContractLock?.();
+    await pool.end();
+  });
+
+  test('provisions the cascading reference foreign key', async () => {
+    const foreignKey = await pool.query<{ delete_rule: string }>(
+      `SELECT delete_rule
+         FROM information_schema.referential_constraints
+        WHERE constraint_schema = current_schema()
+          AND constraint_name = 'document_asset_refs_asset_id_fkey'`,
+    );
+
+    expect(foreignKey.rows).toEqual([{ delete_rule: 'CASCADE' }]);
+  });
+
+  test('a save records the reference and commits the entry', async () => {
+    const id = await assets.put(principal, new Blob(['referenced bytes']));
+
+    await documents.saveDocument(stageWithImage('ref-stage', 'ref-scene', id));
+
+    const rows = await pool.query<{ stage_id: string; scene_id: string; asset_id: string }>(
+      'SELECT stage_id, scene_id, asset_id FROM document_asset_refs ORDER BY scene_id',
+    );
+    // One row: the scene that names it. The stage of this fixture carries no
+    // whiteboard and no video manifest, so the stage-level scope is empty.
+    expect(rows.rows).toEqual([{ stage_id: 'ref-stage', scene_id: 'ref-scene', asset_id: id }]);
+    const entry = await pool.query<{ committed_at: Date | null; expires_at: Date | null }>(
+      'SELECT committed_at, expires_at FROM asset_entries WHERE id = $1',
+      [id],
+    );
+    expect(entry.rows[0]?.committed_at).not.toBeNull();
+    expect(entry.rows[0]?.expires_at).toBeNull();
+  });
+
+  test('deleting the course stamps the entry, and the collector takes it after grace', async () => {
+    const id = await assets.put(principal, new Blob(['course bytes']));
+    await documents.saveDocument(stageWithImage('drained-stage', 'drained-scene', id));
+
+    await documents.deleteDocument('drained-stage');
+
+    expect(
+      (await pool.query('SELECT 1 FROM document_asset_refs WHERE asset_id = $1', [id])).rows,
+    ).toEqual([]);
+    const stamped = await pool.query<{ unreferenced_at: Date | null }>(
+      'SELECT unreferenced_at FROM asset_entries WHERE id = $1',
+      [id],
+    );
+    expect(stamped.rows[0]?.unreferenced_at).not.toBeNull();
+
+    // Within the grace period nothing moves; past it the entry goes and its
+    // blob is stamped in turn.
+    const hour = 60 * 60 * 1000;
+    const entryCollector = (now: Date): AssetCollector =>
+      new AssetCollector(pool as Queryable, bytes, {
+        withTransaction: transactionFor(pool),
+        documentReferences: true,
+        graceMs: hour,
+        now: () => now,
+      });
+    expect((await entryCollector(new Date()).collectPass()).entriesCollected).toBe(0);
+
+    const past = await pool.query<{ unreferenced_at: Date }>(
+      `UPDATE asset_entries SET unreferenced_at = now() - interval '2 hours'
+        WHERE id = $1 RETURNING unreferenced_at`,
+      [id],
+    );
+    expect(past.rows).toHaveLength(1);
+    const pass = await entryCollector(new Date()).collectPass();
+    expect(pass.entriesCollected).toBe(1);
+    expect((await pool.query('SELECT id FROM asset_entries WHERE id = $1', [id])).rows).toEqual([]);
+    const blob = await pool.query<{ unreferenced_at: Date | null }>(
+      'SELECT unreferenced_at FROM asset_blobs',
+    );
+    expect(blob.rows[0]?.unreferenced_at).not.toBeNull();
+  });
+
+  test('an entry a document still names survives a pass that considers it', async () => {
+    const id = await assets.put(principal, new Blob(['kept bytes']));
+    await documents.saveDocument(stageWithImage('kept-stage', 'kept-scene', id));
+    // A stale stamp with the reference still in place: the per-row re-check
+    // under FOR UPDATE is the only thing standing between this and data loss.
+    await pool.query(
+      `UPDATE asset_entries SET unreferenced_at = now() - interval '2 days' WHERE id = $1`,
+      [id],
+    );
+
+    const pass = await new AssetCollector(pool as Queryable, bytes, {
+      withTransaction: transactionFor(pool),
+      documentReferences: true,
+      graceMs: 0,
+    }).collectPass();
+
+    expect(pass.entriesCollected).toBe(0);
+    expect((await assets.resolve(principal, id))?.bytes).toEqual(
+      new TextEncoder().encode('kept bytes'),
+    );
+  });
+
+  test('removing the entry cascades its reference rows away', async () => {
+    const id = await assets.put(principal, new Blob(['cascade bytes']));
+    await documents.saveDocument(stageWithImage('cascade-stage', 'cascade-scene', id));
+
+    await assets.remove(principal, id);
+
+    expect((await pool.query('SELECT 1 FROM document_asset_refs')).rows).toEqual([]);
   });
 });

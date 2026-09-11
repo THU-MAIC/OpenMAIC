@@ -35,6 +35,14 @@ import type {
   StageValidator,
 } from './types.js';
 import { DocumentFolderLimitError, DocumentNotFoundError, DocumentVersionError } from './types.js';
+import {
+  documentAssetScopes,
+  removeDocumentAssetReferences,
+  sceneAssetScope,
+  stageAssetScope,
+  syncDocumentAssetReferences,
+  syncStageAssetReferences,
+} from '../asset/references.js';
 import { assertJsonValue, isLosslessJsonString } from '../runtime/json-value.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
@@ -52,6 +60,22 @@ export interface PgDocumentStoreOptions {
   validateStage?: StageValidator;
   /** Restrict writes, listings, and folders to this owner. Reads remain id-capable. */
   ownerId?: string;
+  /**
+   * Maintain the `document_asset_refs` table and the `asset_entries` lifecycle
+   * columns as a side effect of every write route. Defaults to `false`.
+   *
+   * Off by default because those are the ASSET backend's tables: a deployment
+   * that provisions documents without `ensureAssetSchema` has no such tables,
+   * and a write that referenced them would fail. A deployment that provisions
+   * both and turns this on gets server-owned asset reclamation; one that does
+   * not is byte-for-byte unaffected.
+   *
+   * Nothing about request or response shapes changes either way. The
+   * maintenance runs inside the write transactions this store already opens,
+   * so a reference row and the document write that implies it commit together
+   * or not at all.
+   */
+  trackAssetReferences?: boolean;
 }
 
 /** Idempotent schema for the PostgreSQL document backend. */
@@ -467,6 +491,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
   private readonly validateScene: SceneValidator;
   private readonly validateStage: StageValidator;
   private readonly ownerId: string | null;
+  private readonly trackAssetReferences: boolean;
   private readonly options: PgDocumentStoreOptions;
 
   constructor(queryable: Queryable, options: PgDocumentStoreOptions) {
@@ -485,6 +510,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
       throw new Error('@openmaic/storage: PgDocumentStore ownerId must be lossless JSON text');
     }
     this.ownerId = options.ownerId ?? null;
+    this.trackAssetReferences = options.trackAssetReferences === true;
     this.options = options;
   }
 
@@ -720,6 +746,17 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         );
       } else {
         await queryable.query('DELETE FROM document_outlines WHERE stage_id = $1', [stageId]);
+      }
+
+      // A full save is authoritative over the whole stage, so it replaces
+      // every reference row the stage had -- including the rows of scenes this
+      // save removed above, which contribute no scope and therefore do not
+      // come back. In the same transaction as the rows it describes.
+      if (this.trackAssetReferences) {
+        await syncStageAssetReferences(queryable, {
+          stageId,
+          scopes: documentAssetScopes({ stage: stageRow, scenes: sceneRows }),
+        });
       }
     });
   }
@@ -970,6 +1007,32 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
 
   async deleteDocument(stageId: string): Promise<void> {
     if (!isPgQueryableKey(stageId)) return;
+    if (this.trackAssetReferences) {
+      await this.transaction(async (queryable) => {
+        // Asset reference rows carry no foreign key to `document_stages` --
+        // they belong to the asset backend, which a deployment may not even
+        // provision -- so nothing cascades them away and this delete has to
+        // remove them itself. It also has to STAMP the entries that lose their
+        // last reference, which a cascade could never do: without the stamp a
+        // deleted course's entries would sit referenced-by-nothing forever.
+        //
+        // Gated on the scoped stage first: a foreign or missing stage deletes
+        // no document, and must not drop another scope's reference rows.
+        const scoped = await queryable.query<{ id: string }>(
+          `SELECT id FROM document_stages
+            WHERE id = $1 AND ${this.scopePredicate('', 2)}
+            FOR UPDATE`,
+          this.scopeParams(stageId),
+        );
+        if (scoped.rows.length === 0) return;
+        await removeDocumentAssetReferences(queryable, { stageId });
+        await queryable.query(
+          `DELETE FROM document_stages WHERE id = $1 AND ${this.scopePredicate('', 2)}`,
+          this.scopeParams(stageId),
+        );
+      });
+      return;
+    }
     // One statement; both child tables are removed by their FK cascades.
     await this.queryable.query(
       `DELETE FROM document_stages WHERE id = $1 AND ${this.scopePredicate('', 2)}`,
@@ -999,6 +1062,17 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         throw this.currentVersionError('putStage into', stageId, stored);
       }
       await this.persistStage(queryable, stageRow);
+      // Stage-level rows only: this write cannot have changed what any scene
+      // holds, so touching a scene's rows here would drop references the
+      // scenes still carry.
+      if (this.trackAssetReferences) {
+        const scope = stageAssetScope(stageRow);
+        await syncDocumentAssetReferences(queryable, {
+          stageId,
+          sceneId: scope.sceneId,
+          candidates: scope.candidates,
+        });
+      }
     });
   }
 
@@ -1030,6 +1104,17 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
           encodeJson(scene, `document scene ${JSON.stringify(scene.id)}`),
         ],
       );
+      // This scene's rows only. The media write-back path writes one scene at
+      // a time, so this is the write that first names a freshly allocated id
+      // and therefore the write that commits its entry.
+      if (this.trackAssetReferences) {
+        const scope = sceneAssetScope(scene.id, scene);
+        await syncDocumentAssetReferences(queryable, {
+          stageId,
+          sceneId: scope.sceneId,
+          candidates: scope.candidates,
+        });
+      }
     });
   }
 
@@ -1084,6 +1169,9 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         stageId,
         sceneId,
       ]);
+      if (this.trackAssetReferences) {
+        await removeDocumentAssetReferences(queryable, { stageId, sceneId });
+      }
     });
   }
 }
