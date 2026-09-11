@@ -7,6 +7,20 @@ const nextConfig: NextConfig = {
       'lib/server/agent-runtime/import-pptx-worker.mjs',
       'skills/openmaic/**',
       'skills/agent-runtime/**',
+      // Loaded through a runtime-only `import('undici')` (see the LLM
+      // dispatcher in lib/ai/providers.ts and the Google proxy transport), so
+      // the output tracer never sees it and standalone builds ship without it.
+      'node_modules/undici/**',
+      // sharp's native libvips libraries are loaded via dlopen and are not
+      // statically analyzable, so Next.js standalone tracing omits them. Two
+      // sharp versions resolve in the tree (0.34.5 transitive -> libvips
+      // 1.2.4, 0.35.4 direct -> libvips 1.3.3); tracing picked the wrong one
+      // and the runtime dlopen of sharp 0.35.4 failed with
+      // "libvips-cpp.so.8.18.6: No such file or directory" on self-hosted
+      // Docker (Alpine/musl) deployments. Force-include every sharp-libvips
+      // native lib dir so the version matching the loaded sharp binary is
+      // always present, across platforms and sharp versions.
+      'node_modules/.pnpm/@img+sharp-libvips-*/node_modules/@img/sharp-libvips-*/lib/**',
     ],
   },
   typescript: {
