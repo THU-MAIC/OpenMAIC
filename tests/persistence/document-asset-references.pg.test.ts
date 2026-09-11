@@ -16,6 +16,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
+import { StageAccessError } from '@/lib/persistence/stage-meta';
 import { SHARED_ASSET_PRINCIPAL } from '@/lib/persistence/server-auth';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
@@ -174,6 +175,18 @@ describe.skipIf(!contractUrl)('document asset references through the app stores'
     return row;
   }
 
+  /** The exact sum `PgAssetStore` charges the principal's quota against. */
+  async function liveQuotaBytes(): Promise<number> {
+    const result = await pool.query<{ logical_bytes: string }>(
+      `SELECT COALESCE(SUM(blobs.byte_size), 0)::text AS logical_bytes
+         FROM asset_entries AS entries
+         JOIN asset_blobs AS blobs ON blobs.content_hash = entries.content_hash
+        WHERE entries.principal = $1 AND entries.unreferenced_at IS NULL`,
+      [SHARED_ASSET_PRINCIPAL],
+    );
+    return Number(result.rows[0]?.logical_bytes ?? '0');
+  }
+
   async function references(stageId: string): Promise<ReferenceRow[]> {
     const result = await pool.query<ReferenceRow>(
       'SELECT stage_id, scope, scene_id, asset_id FROM document_asset_refs WHERE stage_id = $1',
@@ -222,31 +235,104 @@ describe.skipIf(!contractUrl)('document asset references through the app stores'
     expect((await lifecycle(assetId)).committed_at).not.toBeNull();
   });
 
-  it('keeps the reference standing when a course is deleted, because the delete is a tombstone', async () => {
+  it('releases a deleted course\u2019s references while the tombstone survives', async () => {
     const stageId = 'stage-refs-deleted';
-    const assetId = await allocate('deleted-course-bytes');
+    const bytes = 'deleted-course-bytes';
+    const assetId = await allocate(bytes);
     await store().saveDocument(
       documentWith(stageId, 'Deleted course', [sceneNaming(stageId, 'scene-1', assetId)]),
     );
+    expect(await liveQuotaBytes()).toBe(bytes.length);
 
     await store().deleteDocument(stageId);
 
-    // This application's `deleteDocument` stamps `stage_meta.deleted_at` and
-    // clears the folder; it never removes the `document_stages` row, and no
-    // purge pass exists to remove it later. So the reference rows stay and the
-    // entry stays live -- the amendment's "course deletion needs no special
-    // path" holds for the package's own delete, not for this tombstone.
-    //
-    // Pinned here rather than left implicit: whoever makes deletion reclaim
-    // storage should see this expectation invert. The case below says why it
-    // cannot be done by simply calling the package's delete, and the route is
-    // a withdrawal that leaves `document_stages` alone.
+    // The two facts this application's deletion has to record at once: the id
+    // is retired, and the assets it was holding are free.
+    expect(await references(stageId)).toEqual([]);
+    const stamped = await lifecycle(assetId);
+    expect(stamped.unreferenced_at).not.toBeNull();
+    expect(stamped.committed_at).not.toBeNull();
+    // The grace period is the undo. Until it elapses the entry is still there
+    // and still resolvable; what has changed is that it no longer costs the
+    // principal any quota.
+    expect(await liveQuotaBytes()).toBe(0);
+
+    // And the tombstone is intact, so the id stays retired: the document rows
+    // are deliberately untouched, which is what makes the withdrawal possible
+    // in the first place.
+    const tombstone = await pool.query<{ deleted_at: Date | null }>(
+      `SELECT meta.deleted_at
+         FROM stage_meta AS meta
+         JOIN document_stages AS stages ON stages.id = meta.stage_id
+        WHERE meta.stage_id = $1`,
+      [stageId],
+    );
+    expect(tombstone.rows[0]?.deleted_at).not.toBeNull();
+    await expect(
+      store().saveDocument(documentWith(stageId, 'Resurrection', [])),
+    ).rejects.toBeInstanceOf(StageAccessError);
+  });
+
+  it('withdraws nothing a second time, and does not re-stamp what it already released', async () => {
+    // A retirement path has to be safe to retry after a crash, and re-stamping
+    // would restart the grace period every time someone pressed delete again.
+    const stageId = 'stage-refs-deleted-twice';
+    const assetId = await allocate('twice-bytes');
+    await store().saveDocument(
+      documentWith(stageId, 'Twice', [sceneNaming(stageId, 'scene-1', assetId)]),
+    );
+    await store().deleteDocument(stageId);
+    const first = (await lifecycle(assetId)).unreferenced_at;
+
+    await expect(store().deleteDocument(stageId)).resolves.toBeUndefined();
+
+    expect(await references(stageId)).toEqual([]);
+    expect((await lifecycle(assetId)).unreferenced_at).toEqual(first);
+  });
+
+  it('withdraws nothing for another owner, and leaves their assets alone', async () => {
+    const stageId = 'stage-refs-foreign';
+    const assetId = await allocate('foreign-bytes');
+    await store().saveDocument(
+      documentWith(stageId, 'Owned by someone else', [sceneNaming(stageId, 'scene-1', assetId)]),
+    );
+
+    const stranger = createOwnerBoundDocumentStore({
+      pool,
+      ownerId: 'anon:22222222-2222-4222-8222-222222222222',
+      validateScene: validateAppScene,
+      validateStage: validateAppStage,
+    });
+    await expect(stranger.deleteDocument(stageId)).rejects.toBeInstanceOf(StageAccessError);
+
+    // Refused before anything was written, so the owner's course still holds
+    // its reference and still counts against the quota.
     expect(await references(stageId)).toEqual([
       { stage_id: stageId, scope: 'scene', scene_id: 'scene-1', asset_id: assetId },
     ]);
-    const stamped = await lifecycle(assetId);
-    expect(stamped.unreferenced_at).toBeNull();
-    expect(stamped.committed_at).not.toBeNull();
+    expect((await lifecycle(assetId)).unreferenced_at).toBeNull();
+  });
+
+  it('re-references the assets of a course saved again under the retired id', async () => {
+    // The document rows survive the withdrawal, so a write is all it takes to
+    // put the references back. Nothing in this application can reach that
+    // today -- the id is retired -- but it is the property that makes leaving
+    // the rows alone the safe choice rather than a lucky one.
+    const stageId = 'stage-refs-resaved';
+    const assetId = await allocate('resaved-bytes');
+    await store().saveDocument(
+      documentWith(stageId, 'Resaved', [sceneNaming(stageId, 'scene-1', assetId)]),
+    );
+    await store().deleteDocument(stageId);
+    expect((await lifecycle(assetId)).unreferenced_at).not.toBeNull();
+
+    await pool.query('UPDATE stage_meta SET deleted_at = NULL WHERE stage_id = $1', [stageId]);
+    await store().putScene(stageId, sceneNaming(stageId, 'scene-1', assetId));
+
+    expect(await references(stageId)).toEqual([
+      { stage_id: stageId, scope: 'scene', scene_id: 'scene-1', asset_id: assetId },
+    ]);
+    expect((await lifecycle(assetId)).unreferenced_at).toBeNull();
   });
 
   it('withdraws the reference and stamps the entry when a scene stops naming the id', async () => {
@@ -270,38 +356,34 @@ describe.skipIf(!contractUrl)('document asset references through the app stores'
     expect((await lifecycle(replacement)).unreferenced_at).toBeNull();
   });
 
-  it('cannot have its reference rows removed by deleting the document, because that destroys the tombstone', async () => {
-    // Why the case above is written the way it is, as a fact rather than a
-    // claim. Making deletion release the references by calling the package's
-    // own `deleteDocument` looks like a one-line change and is not: `stage_meta`
-    // references `document_stages(id) ON DELETE CASCADE`, so removing the
-    // document row removes the tombstone with it -- and the tombstone is what
-    // retires the stage id, what `probeStageAccess` reads, and what the whole
-    // delete path is about. Withdrawing the references has to happen without
-    // touching `document_stages`.
+  it('is why the document row is never deleted: that loses the claim and keeps the references', async () => {
+    // Documentation, as a fact rather than a comment, of the road not taken.
+    // Withdrawing references by calling the package's `deleteDocument` looks
+    // like the obvious implementation and is wrong twice over, both of which
+    // this case exercises against the real schema with a raw delete:
+    //
+    //  1. `stage_meta` references `document_stages(id) ON DELETE CASCADE`, so
+    //     the document row takes the ownership claim -- and therefore any
+    //     tombstone on it -- with it. The retired id becomes claimable again.
+    //  2. `document_asset_refs` carries NO foreign key to `document_stages`
+    //     (the package documents that as the safe direction), so the reference
+    //     rows do not go anywhere and the entries stay live.
+    //
+    // Tombstone gone, references kept: worse in both directions than doing
+    // nothing. `withdrawAssetReferences` exists precisely so the release can
+    // happen without touching `document_stages`.
     const stageId = 'stage-refs-cascade';
     const assetId = await allocate('cascade-bytes');
     await store().saveDocument(
       documentWith(stageId, 'Cascade', [sceneNaming(stageId, 'scene-1', assetId)]),
     );
-    await store().deleteDocument(stageId);
-
-    const tombstoned = await pool.query('SELECT deleted_at FROM stage_meta WHERE stage_id = $1', [
-      stageId,
-    ]);
-    expect(tombstoned.rows[0]?.deleted_at).not.toBeNull();
+    const claimed = await pool.query('SELECT 1 FROM stage_meta WHERE stage_id = $1', [stageId]);
+    expect(claimed.rows).toHaveLength(1);
 
     await pool.query('DELETE FROM document_stages WHERE id = $1', [stageId]);
 
     const surviving = await pool.query('SELECT 1 FROM stage_meta WHERE stage_id = $1', [stageId]);
     expect(surviving.rows).toEqual([]);
-
-    // And it does not even buy the reclamation it was meant to buy:
-    // `document_asset_refs` carries no foreign key to `document_stages` (the
-    // package documents that as the safe direction), so a document row removed
-    // out from under it leaves its rows exactly where they were, still keeping
-    // the entries alive. A raw hard delete is the worst of both -- tombstone
-    // gone, references kept.
     expect(await references(stageId)).toEqual([
       { stage_id: stageId, scope: 'scene', scene_id: 'scene-1', asset_id: assetId },
     ]);

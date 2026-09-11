@@ -64,6 +64,8 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
     private readonly runTransaction: WithTransaction,
     private readonly queryable: Queryable,
     private readonly ownerId: string,
+    /** The same store, pinned to one already-open transaction. See its use. */
+    private readonly pinnedToTransaction: (queryable: Queryable) => PgDocumentStore<TScene, TStage>,
   ) {}
 
   private async tagged<T>(operation: PendingOperation, body: () => Promise<T>): Promise<T> {
@@ -93,13 +95,71 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
     return this.tagged({ stageId, mode: 'mutate' }, () => this.inner.deleteScene(stageId, sceneId));
   }
 
+  /**
+   * Retire a course: tombstone it, and release the assets it was holding.
+   *
+   * Deletion here is a tombstone, not a delete. `stage_meta` is what records
+   * that the id is permanently retired, and it references
+   * `document_stages(id) ON DELETE CASCADE`, so removing the document row
+   * would take the tombstone with it and let the retired id be claimed again.
+   * The document rows therefore stay, and the package's `deleteDocument` can
+   * never be called from here.
+   *
+   * What the document rows must NOT keep is the assets they name. Reference
+   * rows carry no foreign key to `document_stages`, so nothing releases them
+   * on their own: a retired course would hold every asset it ever named alive
+   * forever, and against the principal's quota. `withdrawAssetReferences` is
+   * the half of the package's delete that releases assets without deleting
+   * anything, so the two facts — the id is retired, and its assets are free —
+   * are recorded together.
+   *
+   * All of it in one transaction, deliberately. A withdrawal that committed
+   * beside a tombstone that did not would free the assets of a course still
+   * live and still naming them; the rollback is what makes that unreachable.
+   */
   async deleteDocument(stageId: string): Promise<void> {
     await this.tagged({ stageId, mode: 'delete' }, () =>
       this.runTransaction(async (queryable) => {
+        // By the time this body runs, `runTransaction` has already taken the
+        // `stage_meta` row `FOR UPDATE` and refused a foreign owner, so the
+        // delete is decided before anything below is written.
         await tombstoneStageMeta(queryable, stageId);
         await queryable.query('UPDATE document_stages SET folder_id = NULL WHERE id = $1', [
           stageId,
         ]);
+        // Pinned to this transaction rather than called on `this.inner`.
+        //
+        // `withdrawAssetReferences` opens its own write transaction through
+        // the hook its store was built with, and ours checks out a fresh
+        // connection and re-runs the ownership gate on it. From inside this
+        // transaction that second connection would contend for the very rows
+        // this one already holds — the stage row just updated, and the
+        // `stage_meta` row the gate locked — so it would wait out the
+        // package's lock budget and fail as contention every single time,
+        // while this transaction sat idle waiting for it. PostgreSQL cannot
+        // see that cycle: one backend is blocked, the other is merely
+        // idle-in-transaction.
+        //
+        // The package warns that a pass-through hook is invalid because
+        // concurrent calls would interleave inside one transaction. That is
+        // not this: the store below is constructed here, used for exactly one
+        // call, and dropped, on a connection no one else holds.
+        const released = await this.pinnedToTransaction(queryable).withdrawAssetReferences(stageId);
+        if (!released) {
+          // Unreachable as the schema stands: the gate above found a
+          // `stage_meta` row for this owner, that table's foreign key
+          // guarantees the document row exists, and both are written with the
+          // same owner in the same transaction. So this means the tombstone
+          // and the document disagree about who owns the stage. The tombstone
+          // is still correct and must stand — rolling it back over a
+          // bookkeeping mismatch would leave the course undeletable — but the
+          // assets stayed behind and someone should know.
+          console.warn(
+            `Tombstoned stage ${stageId} but withdrew no asset references: the document row is ` +
+              `absent or not owned by ${this.ownerId}. Its registry entries will not be ` +
+              `reclaimed.`,
+          );
+        }
       }),
     );
   }
@@ -237,8 +297,7 @@ export function createOwnerBoundDocumentStore<
       }
     },
   };
-  const inner = new PgDocumentStore<TScene, TStage>(queryable, {
-    withTransaction,
+  const innerOptions = {
     ownerId: options.ownerId,
     validateScene: options.validateScene,
     validateStage: options.validateStage,
@@ -247,8 +306,30 @@ export function createOwnerBoundDocumentStore<
     // an allocation and records what a document claims, and the collector's
     // entry pass -- always scheduled where server persistence exists -- reads
     // exactly that. There is no configuration in this application where one
-    // runs without the other.
+    // runs without the other. It is also what `withdrawAssetReferences`
+    // requires, and `deleteDocument` calls that on every retirement.
     trackAssetReferences: true,
+  };
+  const inner = new PgDocumentStore<TScene, TStage>(queryable, {
+    ...innerOptions,
+    withTransaction,
   });
-  return new OwnerBoundDocumentStore(inner, pending, withTransaction, queryable, options.ownerId);
+  /**
+   * The same store over one already-open transaction, for a caller that is
+   * inside one and needs a package write to join it rather than open its own.
+   * Single-use by construction; see the call in `deleteDocument`.
+   */
+  const pinnedToTransaction = (pinned: Queryable): PgDocumentStore<TScene, TStage> =>
+    new PgDocumentStore<TScene, TStage>(pinned, {
+      ...innerOptions,
+      withTransaction: (body) => body(pinned),
+    });
+  return new OwnerBoundDocumentStore(
+    inner,
+    pending,
+    withTransaction,
+    queryable,
+    options.ownerId,
+    pinnedToTransaction,
+  );
 }

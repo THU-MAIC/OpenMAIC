@@ -422,6 +422,13 @@ because it is not optional here: every document write records which assets the
 document names and commits the allocations it names, which is exactly what the
 collector reads. A browser never deletes an asset and is never asked to.
 
+Deleting a course releases the assets it was holding. The course id itself is
+retired permanently rather than removed — that is what keeps a deleted id from
+being claimed again — but the references it held are withdrawn in the same
+transaction, so its media stops counting against the quota immediately and its
+bytes go once the grace period has passed. The grace period is the undo: within
+it the assets are still there.
+
 `ASSET_PENDING_TTL_MS` (default 24 hours) is how long an allocation stays
 *pending* — its bytes are stored, but no document names its id yet. A client
 stores bytes first and writes the id into the document afterwards, and nothing
