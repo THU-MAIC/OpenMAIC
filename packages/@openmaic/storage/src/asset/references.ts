@@ -268,14 +268,19 @@ async function referencedAssetIds(
 /**
  * Record that a document store on this database maintains reference rows.
  *
- * Written by every reference-maintaining transaction rather than once at
- * construction, so the marker can only exist if a write really happened: a
- * store constructed with the option and never used claims nothing. The
- * collector refuses its entry pass without it, because an empty
- * `document_asset_refs` cannot be told apart from documents that reference
- * nothing, while the absence of this row can.
+ * Written by every reference-maintaining transaction, so the marker appears as
+ * a side effect of the first such write and cannot be claimed by a store that
+ * was configured and then never used. The collector refuses its entry pass
+ * without it, because an empty `document_asset_refs` cannot be told apart from
+ * documents that reference nothing, while the absence of this row can.
+ *
+ * A host that knows every writer on this database tracks references can also
+ * write it deliberately at startup, rather than waiting for a first write
+ * that may be days away on a quiet deployment -- see
+ * `PgDocumentStore.declareAssetReferenceTracking`, which is the only caller
+ * that is not itself maintaining references.
  */
-async function recordReferenceTracking(queryable: Queryable): Promise<void> {
+export async function recordAssetReferenceTracking(queryable: Queryable): Promise<void> {
   await queryable.query(
     `INSERT INTO asset_reference_tracking (singleton, enabled_at)
      VALUES (TRUE, now())
@@ -393,7 +398,7 @@ export async function syncDocumentAssetReferences(
 ): Promise<void> {
   const { stageId, scope } = input;
   const previous = await referencedAssetIds(queryable, stageId, scope);
-  await recordReferenceTracking(queryable);
+  await recordAssetReferenceTracking(queryable);
   await forgetDocumentAssetWithdrawal(queryable, stageId);
   await replaceScopeRows(queryable, stageId, scope);
   await commitReferencedEntries(queryable, stageId, scope);
@@ -422,7 +427,7 @@ export async function syncStageAssetReferences(
 ): Promise<void> {
   const { stageId, scopes } = input;
   const previous = await referencedAssetIds(queryable, stageId);
-  await recordReferenceTracking(queryable);
+  await recordAssetReferenceTracking(queryable);
   await forgetDocumentAssetWithdrawal(queryable, stageId);
   await queryable.query('DELETE FROM document_asset_refs WHERE stage_id = $1', [stageId]);
   for (const scope of scopes) {
@@ -459,7 +464,7 @@ export async function removeDocumentAssetReferences(
   const scope: DocumentAssetScope | undefined =
     sceneId === undefined ? undefined : { scope: 'scene', sceneId, candidates: [] };
   const previous = await referencedAssetIds(queryable, stageId, scope);
-  await recordReferenceTracking(queryable);
+  await recordAssetReferenceTracking(queryable);
   if (scope === undefined) {
     await queryable.query('DELETE FROM document_asset_refs WHERE stage_id = $1', [stageId]);
   } else {

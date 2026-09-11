@@ -37,6 +37,7 @@ import type {
 import { DocumentFolderLimitError, DocumentNotFoundError, DocumentVersionError } from './types.js';
 import {
   documentAssetScopes,
+  recordAssetReferenceTracking,
   recordDocumentAssetWithdrawal,
   removeDocumentAssetReferences,
   sceneAssetScope,
@@ -1067,6 +1068,44 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
       sceneCount: Number(row.scene_count),
       ...(row.folder_id === null ? {} : { folderId: row.folder_id }),
     }));
+  }
+
+  /**
+   * Declare that every document writer on this database maintains asset
+   * references, without waiting for a write to prove it.
+   *
+   * The collector refuses its entry level until something has recorded that a
+   * reference-maintaining store exists, because an empty reference table
+   * cannot be told apart from documents that reference nothing. That marker is
+   * otherwise written only as a side effect of a reference-maintaining
+   * document write -- never by `ensureAssetSchema` and never by the backfill --
+   * so a freshly installed deployment, or an existing one that has just turned
+   * tracking on, refuses on every scheduled pass until somebody happens to
+   * save a document. The backfill cannot even start, nothing is reclaimed, and
+   * a host watching for that refusal reads a healthy deployment as a broken
+   * configuration.
+   *
+   * Calling this at startup, once the schemas are ensured, makes the entry
+   * level and the backfill eligible immediately. It is a **statement about the
+   * deployment**, not about this store: it says that every writer against this
+   * database is configured to maintain references, which only the host
+   * assembling them can know. A host that cannot say that must not call it --
+   * the refusal it would silence is the one thing standing between a
+   * half-configured deployment and deleting live media.
+   *
+   * Idempotent, and it has no other effect: no reference row, no lifecycle
+   * column, no document. Requires `trackAssetReferences`, because a store that
+   * does not maintain references cannot honestly declare that anything does.
+   */
+  async declareAssetReferenceTracking(): Promise<void> {
+    if (!this.trackAssetReferences) {
+      throw new DocumentAssetReferencesDisabledError('declareAssetReferenceTracking');
+    }
+    // The same upsert the write paths run, in the same shape of transaction --
+    // one statement, and the write paths' lock-wait budget, so two hosts
+    // starting at once cannot leave one of them waiting unboundedly on a row
+    // that is contended for a moment at boot.
+    await this.writeTransaction((queryable) => recordAssetReferenceTracking(queryable));
   }
 
   /**

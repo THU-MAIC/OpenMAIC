@@ -12,7 +12,10 @@ import {
   type Queryable,
   type WithTransaction,
 } from '../src/asset/pg.js';
-import { AssetCollectionFailure } from '../src/asset/collector.js';
+import {
+  AssetCollectionFailure,
+  AssetReferenceTrackingNotEnabledError,
+} from '../src/asset/collector.js';
 import { backfillDocumentAssetReferences, sceneAssetScope } from '../src/asset/references.js';
 import {
   DocumentAssetReferencesDisabledError,
@@ -914,6 +917,72 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
       [legacy],
     );
     expect(entry.rows[0]?.committed_at).toBeNull();
+  });
+
+  describe('declaring that this deployment maintains references', () => {
+    const markers = async (): Promise<number> =>
+      (await pool.query('SELECT singleton FROM asset_reference_tracking')).rows.length;
+
+    test('a deployment that has not written yet is refused, and the declaration lifts it', async () => {
+      // The state a cold install is in: schemas ensured, documents present,
+      // nobody has saved anything since the deploy. Nothing has written the
+      // marker, so the entry level refuses on every interval -- the backfill
+      // cannot even start -- and a host watching for that refusal reads a
+      // healthy deployment as a broken pairing.
+      const legacy = await assets.put(principal, new Blob(['cold install bytes']));
+      const untracked = new PgDocumentStore(pool as Queryable, {
+        withTransaction: transactionFor(pool),
+      });
+      await untracked.saveDocument(stageWithImage('cold-stage', 'cold-scene', legacy));
+      await pool.query(
+        `UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = $1`,
+        [legacy],
+      );
+      const collector = (): AssetCollector =>
+        new AssetCollector(pool as Queryable, bytes, {
+          withTransaction: transactionFor(pool),
+          documentReferences: true,
+          graceMs: 60 * 60 * 1000,
+        });
+
+      await expect(collector().collectPass()).rejects.toBeInstanceOf(
+        AssetReferenceTrackingNotEnabledError,
+      );
+      expect(await markers()).toBe(0);
+
+      await documents.declareAssetReferenceTracking();
+
+      // Eligible immediately, rather than after the first write that happens
+      // to arrive: the walk runs and the legacy entry is marked.
+      const pass = await collector().collectPass();
+      expect(pass.backfilledDocuments).toBeGreaterThan(0);
+      expect(pass.legacyEntriesCommitted).toBe(1);
+    });
+
+    test('is idempotent and writes nothing else', async () => {
+      await documents.declareAssetReferenceTracking();
+      await documents.declareAssetReferenceTracking();
+
+      expect(await markers()).toBe(1);
+      // No reference row, no document, no lifecycle column touched.
+      expect((await pool.query('SELECT 1 FROM document_asset_refs')).rows).toEqual([]);
+      expect((await pool.query('SELECT 1 FROM document_stages')).rows).toEqual([]);
+      expect((await pool.query('SELECT 1 FROM asset_entries')).rows).toEqual([]);
+    });
+
+    test('a store that does not maintain references cannot declare that anything does', async () => {
+      const untracked = new PgDocumentStore(pool as Queryable, {
+        withTransaction: transactionFor(pool),
+      });
+
+      await expect(untracked.declareAssetReferenceTracking()).rejects.toBeInstanceOf(
+        DocumentAssetReferencesDisabledError,
+      );
+
+      // Refused before any write: the marker it would have silenced the
+      // collector with is not there.
+      expect(await markers()).toBe(0);
+    });
   });
 
   describe('withdrawing references from a tombstoned document', () => {
