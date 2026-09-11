@@ -1001,7 +1001,7 @@ video:
       expect(resolveTTSBaseUrl('qwen-tts')).toBe('https://dashscope.aliyuncs.com/api/v1');
     });
 
-    it('maps VC sentinels to the resolved model and rejects pin bypasses', async () => {
+    it('maps VC sentinels and stale catalog models to their server-resolved models', async () => {
       vi.stubEnv('TTS_QWEN_API_KEY', 'key');
       vi.stubEnv('TTS_QWEN_MODELS', 'qwen3-tts-flash');
       vi.stubEnv('TTS_QWEN_VOICE_CLONE_MODEL', 'operator-vc-model');
@@ -1009,8 +1009,8 @@ video:
       expect(resolveTTSModel('qwen-tts', 'qwen3-tts-vc-custom', 'clone-1')).toBe(
         'operator-vc-model',
       );
-      expect(() => resolveTTSModel('qwen-tts', 'qwen3-tts-flash-other', 'Cherry')).toThrow(
-        'not allowed',
+      expect(resolveTTSModel('qwen-tts', 'qwen3-tts-flash-other', 'Cherry')).toBe(
+        'qwen3-tts-flash',
       );
       expect(resolveTTSModel('qwen-tts', 'operator-vc-model', 'Cherry')).toBe('qwen3-tts-flash');
     });

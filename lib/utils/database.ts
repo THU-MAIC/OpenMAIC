@@ -267,7 +267,7 @@ export interface GeneratedAgentRecord {
 export interface VoiceProfileRecord {
   id: string;
   providerId: string;
-  kind: 'prompt' | 'clone';
+  kind: 'prompt' | 'clone' | 'imported';
   name: string;
   voicePrompt?: string;
   promptText?: string;

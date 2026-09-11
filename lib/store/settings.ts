@@ -105,6 +105,8 @@ export interface SettingsState {
       baseUrl: string;
       enabled: boolean;
       modelId?: string;
+      /** Models pinned by the server for managed providers. */
+      serverModels?: string[];
       customModels?: Array<{ id: string; name: string }>;
       providerOptions?: Record<string, unknown>;
       isServerConfigured?: boolean;
@@ -1468,7 +1470,7 @@ export const useSettingsStore = create<SettingsState>()(
             // admin/server-level force-off (#665).
             const data = (await res.json()) as {
               providers: Record<string, { models?: string[] }>;
-              tts: Record<string, { disabled?: boolean }>;
+              tts: Record<string, { disabled?: boolean; models?: string[] }>;
               asr: Record<string, { disabled?: boolean }>;
               pdf: Record<string, Record<string, never>>;
               image: Record<string, { models?: string[]; disabled?: boolean }>;
@@ -1550,6 +1552,9 @@ export const useSettingsStore = create<SettingsState>()(
                     ...newTTSConfig[key],
                     isServerConfigured: !info.disabled,
                     serverDisabled: info.disabled === true,
+                    ...(info.models?.length
+                      ? { serverModels: info.models, modelId: info.models[0] }
+                      : { serverModels: undefined }),
                   };
                 }
               }

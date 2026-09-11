@@ -664,10 +664,12 @@ export function resolveProxy(providerId: string): string | undefined {
  * providers (`{ disabled: true }`). A force-disabled provider is reported as
  * disabled even when it is otherwise configured — disable wins (#665).
  */
-export function getServerTTSProviders(): Record<string, { disabled?: boolean }> {
+export function getServerTTSProviders(): Record<string, { disabled?: boolean; models?: string[] }> {
   const cfg = getConfig();
-  const result: Record<string, { disabled?: boolean }> = {};
-  for (const id of Object.keys(cfg.tts)) result[id] = {};
+  const result: Record<string, { disabled?: boolean; models?: string[] }> = {};
+  for (const [id, entry] of Object.entries(cfg.tts)) {
+    result[id] = entry.models?.length ? { models: entry.models } : {};
+  }
   for (const id of cfg.disabled.tts) result[id] = { disabled: true };
   return result;
 }
@@ -732,15 +734,6 @@ export function resolveTTSModel(
     const vcModel = resolveQwenVoiceCloneModel();
     const requestedIsVCSentinel = !!clientModel && isQwenVoiceCloneModel(clientModel, vcModel);
     const normalizedClientModel = requestedIsVCSentinel ? vcModel : clientModel;
-    const allowedModels = new Set([...pinnedModels, vcModel]);
-
-    if (
-      pinnedModels.length > 0 &&
-      normalizedClientModel &&
-      !allowedModels.has(normalizedClientModel)
-    ) {
-      throw new TTSModelNotAllowedError(providerId, normalizedClientModel);
-    }
 
     if (voiceId) {
       if (!isQwenCatalogVoice(voiceId)) return vcModel;
@@ -748,11 +741,30 @@ export function resolveTTSModel(
       if (pinnedModels.length > 0 && !pinnedCatalogModel) {
         throw new TTSModelNotAllowedError(providerId, TTS_PROVIDERS['qwen-tts'].defaultModelId);
       }
-      // Self-heal persisted VC-model + catalog-voice wedges. Prefer the first
-      // operator-pinned non-VC model, otherwise the catalog default.
-      if (normalizedClientModel === vcModel) {
-        return pinnedCatalogModel || TTS_PROVIDERS['qwen-tts'].defaultModelId;
+      // A catalog voice is always synthesized through an operator-pinned
+      // catalog model. This deliberately repairs persisted browser defaults
+      // (for example qwen3-tts-flash after the deployment moved to a snapshot)
+      // instead of dropping an entire course's audio generation on the floor.
+      if (pinnedCatalogModel) {
+        return pinnedModels.includes(normalizedClientModel || '')
+          ? normalizedClientModel
+          : pinnedCatalogModel;
       }
+      // A persisted VC model must never be used for a catalog voice, even
+      // when this provider is not server-pinned. Keep an explicitly selected
+      // catalog model, but repair the stale VC sentinel to the catalog default.
+      if (normalizedClientModel === vcModel) {
+        return TTS_PROVIDERS['qwen-tts'].defaultModelId;
+      }
+    }
+
+    const allowedModels = new Set([...pinnedModels, vcModel]);
+    if (
+      pinnedModels.length > 0 &&
+      normalizedClientModel &&
+      !allowedModels.has(normalizedClientModel)
+    ) {
+      throw new TTSModelNotAllowedError(providerId, normalizedClientModel);
     }
 
     if (normalizedClientModel) return normalizedClientModel;

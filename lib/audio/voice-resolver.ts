@@ -273,7 +273,8 @@ export function getEnabledProvidersWithVoices(
 
     const providerProfiles = voiceProfiles.filter(
       (profile) =>
-        (profile.providerId || VOXCPM_TTS_PROVIDER_ID) === providerId && profile.kind === 'clone',
+        (profile.providerId || VOXCPM_TTS_PROVIDER_ID) === providerId &&
+        (profile.kind === 'clone' || profile.kind === 'imported'),
     );
     const visibleVoxCPMProfiles =
       providerId === VOXCPM_TTS_PROVIDER_ID

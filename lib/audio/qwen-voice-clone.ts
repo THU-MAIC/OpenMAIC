@@ -33,6 +33,7 @@ export class QwenVoiceCloneError extends Error {
     readonly code: QwenVoiceCloneErrorCode,
     readonly httpStatus?: number,
     readonly vendorCode?: string,
+    readonly vendorMessage?: string,
   ) {
     super(code);
     this.name = 'QwenVoiceCloneError';
@@ -49,7 +50,7 @@ interface QwenResponse {
   output?: {
     voice?: unknown;
     audio?: { url?: unknown; format?: unknown };
-    voice_list?: Array<{ voice?: unknown; target_model?: unknown }>;
+    voice_list?: Array<{ voice?: unknown; target_model?: unknown; gmt_create?: unknown }>;
     page_index?: unknown;
     page_size?: unknown;
     total_count?: unknown;
@@ -79,7 +80,10 @@ const ERROR_MESSAGES: Record<QwenVoiceCloneErrorCode, string> = {
 };
 
 export function qwenVoiceCloneErrorMessage(error: QwenVoiceCloneError): string {
-  return ERROR_MESSAGES[error.code];
+  const vendorDetail = error.vendorMessage?.trim();
+  return vendorDetail
+    ? `${ERROR_MESSAGES[error.code]} ${vendorDetail}`
+    : ERROR_MESSAGES[error.code];
 }
 
 function isUnknownVoiceResponse(body: QwenResponse): boolean {
@@ -124,6 +128,12 @@ function resolveConfig(config: QwenVoiceCloneConfig): {
   }
   if (baseUrl.protocol !== 'https:' && baseUrl.hostname !== 'localhost') {
     throw new QwenVoiceCloneError('QWEN_VC_ENDPOINT_INVALID', 400);
+  }
+  // Workspace API hosts are often configured with OpenAI-compatible paths.
+  // Qwen voice enrollment/listing is a native DashScope endpoint on the same
+  // host, under /api/v1.
+  if (/\/(?:compatible-mode\/v1|apps\/anthropic)\/?$/iu.test(baseUrl.pathname)) {
+    baseUrl.pathname = '/api/v1';
   }
   return { apiKey, baseUrl, targetModel };
 }
@@ -210,10 +220,12 @@ async function postJson(
     }
     if (!response.ok) {
       const vendorCode = typeof parsed.code === 'string' ? parsed.code : undefined;
+      const vendorMessage = typeof parsed.message === 'string' ? parsed.message : undefined;
       throw new QwenVoiceCloneError(
         isUnknownVoiceResponse(parsed) ? 'QWEN_VC_VOICE_NOT_FOUND' : 'QWEN_VC_HTTP_ERROR',
         response.status,
         vendorCode,
+        vendorMessage,
       );
     }
     return parsed;
@@ -263,6 +275,53 @@ export async function deleteQwenVoice(
     { model: QWEN_VOICE_ENROLLMENT_MODEL, input: { action: 'delete', voice } },
     signal,
   );
+}
+
+export interface QwenRemoteVoice {
+  id: string;
+  targetModel?: string;
+  createdAt?: string;
+}
+
+/** List voice-clone IDs already registered in the current Qwen account. */
+export async function listQwenVoices(
+  config: QwenVoiceCloneConfig,
+  signal?: AbortSignal,
+): Promise<QwenRemoteVoice[]> {
+  const resolved = resolveConfig(config);
+  const voices: QwenRemoteVoice[] = [];
+  const pageSize = 100;
+  for (let pageIndex = 0; pageIndex < 100; pageIndex++) {
+    const body = await postJson(
+      endpoint(resolved.baseUrl, ENROLLMENT_PATH),
+      resolved.apiKey,
+      {
+        model: QWEN_VOICE_ENROLLMENT_MODEL,
+        input: { action: 'list', page_size: pageSize, page_index: pageIndex },
+      },
+      signal,
+    );
+    const page = Array.isArray(body.output?.voice_list) ? body.output.voice_list : [];
+    for (const entry of page) {
+      const id = typeof entry.voice === 'string' ? entry.voice.trim() : '';
+      if (!id) continue;
+      voices.push({
+        id,
+        ...(typeof entry.target_model === 'string' ? { targetModel: entry.target_model } : {}),
+        ...(typeof entry.gmt_create === 'string' ? { createdAt: entry.gmt_create } : {}),
+      });
+    }
+    const total =
+      typeof body.output?.total_count === 'number' ? body.output.total_count : undefined;
+    if (
+      page.length === 0 ||
+      (total !== undefined && voices.length >= total) ||
+      page.length < pageSize
+    ) {
+      break;
+    }
+  }
+  return voices;
 }
 
 /** Query the paginated Qwen-TTS voice list for a specific enrolled voice. */
@@ -344,10 +403,13 @@ export async function downloadAudio(
   } catch {
     throw new QwenVoiceCloneError('QWEN_VC_AUDIO_URL_INVALID', 502);
   }
-  // This strict result-host allowlist has been verified against live vendor responses.
-  const trustedHost = /^dashscope-result-[a-z0-9-]+\.oss-[a-z]{2}-[a-z0-9-]+\.aliyuncs\.com$/u.test(
-    url.hostname,
-  );
+  // DashScope may return either the legacy `dashscope-result-*` host or a
+  // region/account-sharded `dashscope-*` OSS host for synthesized audio.
+  // Keep the allowlist narrow to DashScope-owned OSS virtual-host names.
+  const trustedHost =
+    /^dashscope(?:-result)?-[a-z0-9-]+\.oss-[a-z]{2}-[a-z0-9-]+\.aliyuncs\.com$/u.test(
+      url.hostname,
+    );
   let trustedCustomEndpoint = false;
   if (effectiveBaseUrl) {
     try {
