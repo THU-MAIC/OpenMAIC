@@ -1,5 +1,5 @@
 import { apiSuccess } from '@/lib/server/api-response';
-import { checkRenderServiceHealth } from '@/lib/server/render-service';
+import { getRenderServiceCapability } from '@/lib/server/render-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +11,6 @@ export const dynamic = 'force-dynamic';
  * MP4 export that would then fail. Never leaks the service URL to the client.
  */
 export async function GET() {
-  const enabled = await checkRenderServiceHealth();
-  return apiSuccess({ enabled });
+  const capability = await getRenderServiceCapability();
+  return apiSuccess({ ...capability });
 }

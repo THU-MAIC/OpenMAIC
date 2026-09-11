@@ -99,32 +99,44 @@ describe('resolveSlideMedia', () => {
     });
   });
 
+  // Pool bytes belong to an allocated reference. A placeholder is never leased
+  // -- nothing put it in the pool, so asking would only answer 404 -- which is
+  // why the fixtures below carry `ast_` references rather than pinning a pool
+  // hit for a `gen_vid_*` id that could not produce one.
+  const allocatedSlide: Slide = {
+    ...slide,
+    elements: [
+      {
+        ...(slide.elements[0] as PPTVideoElement),
+        src: 'ast_video_ref',
+        mediaRef: 'ast_video_ref',
+        poster: 'ast_poster_ref',
+      },
+    ],
+  };
+  const allocatedTask = (status: MediaTask['status'], overrides: Partial<MediaTask> = {}) => ({
+    ast_video_ref: task({ elementId: 'ast_video_ref', status, ...overrides }),
+  });
+
   it('uses the shared lease once it settles after a task completes', () => {
     const resolved = resolveSlideMedia(
-      slide,
+      allocatedSlide,
       'stage-1',
-      {
-        gen_vid_1: task({ status: 'done', objectUrl: 'blob:task-video' }),
-      },
-      { assetUrls: { gen_vid_1: 'blob:pool-video' } },
+      allocatedTask('done', { objectUrl: 'blob:task-video' }),
+      { assetUrls: { ast_video_ref: 'blob:pool-video' } },
     );
 
     expect(resolved.elements[0]).toMatchObject({ src: 'blob:pool-video' });
   });
 
   it('keeps a pending task hidden even when stale pool bytes exist', () => {
-    const baseVideo = slide.elements[0] as PPTVideoElement;
-    const withPoster: Slide = {
-      ...slide,
-      elements: [{ ...baseVideo, poster: 'ast_poster_ref' }],
-    };
     const resolved = resolveSlideMedia(
-      withPoster,
+      allocatedSlide,
       'stage-1',
-      { gen_vid_1: task({ status: 'pending', objectUrl: undefined }) },
+      allocatedTask('pending', { objectUrl: undefined }),
       {
         assetUrls: {
-          gen_vid_1: 'blob:pool-video',
+          ast_video_ref: 'blob:pool-video',
           ast_poster_ref: 'blob:pool-poster',
         },
       },
@@ -138,13 +150,24 @@ describe('resolveSlideMedia', () => {
 
   it('shows last-good pool bytes after a failed regeneration', () => {
     const resolved = resolveSlideMedia(
-      slide,
+      allocatedSlide,
       'stage-1',
-      { gen_vid_1: task({ status: 'failed', objectUrl: undefined }) },
-      { assetUrls: { gen_vid_1: 'blob:pool-video' } },
+      allocatedTask('failed', { objectUrl: undefined }),
+      { assetUrls: { ast_video_ref: 'blob:pool-video' } },
     );
 
     expect(resolved.elements[0]).toMatchObject({ src: 'blob:pool-video' });
+  });
+
+  it('has no pool bytes to fall back to when a placeholder fails', () => {
+    // The other half of the rule above: a failed placeholder has nothing in the
+    // pool by construction, so the element clears rather than showing bytes a
+    // lease could never have fetched.
+    const resolved = resolveSlideMedia(slide, 'stage-1', {
+      gen_vid_1: task({ status: 'failed', objectUrl: undefined }),
+    });
+
+    expect(resolved.elements[0]).toMatchObject({ src: '' });
   });
 
   it('uses a pool URL when an allocated ref has no task after reload', () => {

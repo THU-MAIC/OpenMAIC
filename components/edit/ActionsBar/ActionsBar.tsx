@@ -93,6 +93,7 @@ import {
   resolveLegacySpeechAudioId,
   resolveSpeechAudioId,
 } from '@/lib/audio/regenerate-speech-tts';
+import { useMayGenerateForStage } from '@/lib/classroom/generation-permission';
 
 const EMPTY: Action[] = [];
 const EMPTY_ELEMENTS: { id?: string; type: string; content?: string }[] = [];
@@ -428,6 +429,10 @@ export function SpeechTtsBar({
     }
   };
 
+  // The control that spends is withheld from a viewer; the ones that only listen
+  // and report stay. `regenerateSpeechAudio` refuses in any case.
+  const mayRegenerate = useMayGenerateForStage(useStageStore((state) => state.stage?.id));
+
   const regenerate = async () => {
     setStatus('generating');
     try {
@@ -495,16 +500,18 @@ export function SpeechTtsBar({
       >
         <PreviewIcon className={cn('size-3', previewPhase === 'loading' && 'animate-spin')} />
       </button>
-      <button
-        type="button"
-        onClick={regenerate}
-        disabled={effStatus === 'generating' || !text.trim()}
-        className="grid size-5 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
-        aria-label={t('edit.tts.regenerate')}
-        title={t('edit.tts.regenerate')}
-      >
-        <RefreshCw className={cn('size-3', effStatus === 'generating' && 'animate-spin')} />
-      </button>
+      {mayRegenerate ? (
+        <button
+          type="button"
+          onClick={regenerate}
+          disabled={effStatus === 'generating' || !text.trim()}
+          className="grid size-5 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+          aria-label={t('edit.tts.regenerate')}
+          title={t('edit.tts.regenerate')}
+        >
+          <RefreshCw className={cn('size-3', effStatus === 'generating' && 'animate-spin')} />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -1046,9 +1053,14 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     )?.canvas?.elements ?? EMPTY_ELEMENTS;
   const language = useStageStore((s) => s.stage?.languageDirective);
   // Managed TTS on → speech clips show audio status + preview / regenerate.
+  // The ownership gate belongs on regeneration alone: listening back to
+  // narration that already exists, and seeing whether a line has any, spend
+  // nothing, and a course with no ownership record must not lose its playback
+  // controls the way it must lose its ability to bill the operator.
   const ttsActive = useSettingsStore(
     (s) => s.ttsEnabled && s.ttsProviderId !== 'browser-native-tts',
   );
+  const mayGenerate = useMayGenerateForStage(useStageStore((s) => s.stage?.id));
 
   // Agents a discussion can be initiated by — sourced from the user's currently
   // SELECTED agents, the exact set the playback engine gates on: it skips (and
@@ -1227,7 +1239,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
         </button>
       )}
 
-      {!lineMode && ttsActive && (
+      {!lineMode && ttsActive && mayGenerate && (
         <button
           type="button"
           onClick={regenerateAllAudio}

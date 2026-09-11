@@ -1,4 +1,3 @@
-import type { AssetId } from '@openmaic/storage';
 import type { AssetMeta, AssetRef, BinaryBlob } from '@openmaic/dsl';
 
 /** Common browser-facing surface implemented by local and HTTP asset stores. */
@@ -7,7 +6,6 @@ export interface AssetPoolStore {
   resolve(ref: AssetRef): Promise<string | null>;
   invalidate(ref: AssetRef): Promise<void>;
   remove(ref: AssetRef): Promise<void>;
-  replace(ref: AssetId, data: BinaryBlob, meta?: AssetMeta): Promise<void>;
   release(ref: AssetRef): Promise<void>;
   /**
    * Metadata-only existence probe. Optional for test doubles; production

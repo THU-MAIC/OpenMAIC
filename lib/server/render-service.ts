@@ -38,23 +38,36 @@ export function resolveRenderServiceUrl(): { url: string } | { error: 'not_confi
   return url ? { url } : { error: 'not_configured' };
 }
 
+export interface RenderServiceCapability {
+  enabled: boolean;
+  /** Omitted for older services that do not report admission state. */
+  accepting?: boolean;
+}
+
 /**
  * Whether the configured render service is actually reachable and healthy.
- * Probes `GET /health` with a short timeout. Returns false (rather than
+ * Probes `GET /health` with a short timeout. Returns disabled (rather than
  * throwing) when unconfigured or unreachable, so the capability endpoint can
  * report a truthful enabled/disabled state and the UI degrades cleanly.
  */
-export async function checkRenderServiceHealth(): Promise<boolean> {
+export async function getRenderServiceCapability(): Promise<RenderServiceCapability> {
   const url = getRenderServiceUrl();
-  if (!url) return false;
+  if (!url) return { enabled: false };
   try {
     const res = await proxyFetch(`${url}/health`, {
       method: 'GET',
       signal: AbortSignal.timeout(3000),
     });
-    return res.ok;
+    if (!res.ok) return { enabled: false };
+    // A healthy older service may not expose admission state. Only a boolean
+    // is authoritative; an absent/unreadable body retains the old behavior.
+    const body = (await res.json().catch(() => null)) as { accepting?: unknown } | null;
+    return {
+      enabled: true,
+      ...(typeof body?.accepting === 'boolean' ? { accepting: body.accepting } : {}),
+    };
   } catch (error) {
     log.info('Render service health check failed:', error instanceof Error ? error.message : error);
-    return false;
+    return { enabled: false };
   }
 }

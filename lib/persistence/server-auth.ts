@@ -26,8 +26,14 @@ type PersistencePrincipal = RuntimeHttpPrincipal & Partial<Pick<AssetPrincipal, 
 /**
  * The single asset partition for this deployment shape. Documents have no
  * ownership partition; assets get the same treatment until real auth lands.
+ *
+ * Exported because the persistence route resolves the asset principal itself,
+ * server-side, rather than through this module's client-supplied credentials:
+ * assets are one shared partition by design, so there is nothing per-caller for
+ * the development authenticator to decide, and routing them through it made
+ * every asset request fail in a production build that had not opted into it.
  */
-const SHARED_ASSET_PRINCIPAL = 'shared';
+export const SHARED_ASSET_PRINCIPAL = 'shared';
 
 /**
  * Whether the operator explicitly opted the development authenticator into
