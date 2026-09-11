@@ -197,18 +197,27 @@ export function startAssetCollectorSchedule(
       }
     } catch (error) {
       if (error instanceof AssetReferenceTrackingNotEnabledError) {
-        // Unreachable from this application: the same persistence bootstrap
-        // that makes a collector also makes every document store a reference
-        // writer. Reaching it means something outside this file changed that
-        // pairing, so it is a misconfiguration alarm rather than a transient
-        // failure -- and it will repeat every interval until someone acts. The
-        // blob level still ran; only entry reclamation is refused.
+        // The package's gate is "has any document write ever recorded a
+        // reference on this database", and only a document write can answer
+        // yes -- `ensureAssetSchema` creates the marker table empty and the
+        // backfill deliberately does not write it. So a cold install, and an
+        // upgraded database that already holds documents, both sit in this
+        // state until the first write after deployment, with every document
+        // store correctly built as a reference writer the whole time.
+        //
+        // That makes this two signals in one, and the message says so rather
+        // than guessing: quiet and self-clearing on a new deployment, a real
+        // misconfiguration if writes are happening and it keeps repeating.
+        // Either way only the entry level is refused -- the blob level ran --
+        // and nothing is released while it is refused, so it cannot lose data.
         console.error(
-          'Asset collection is configured to reclaim registry entries, but no document store ' +
-            'on this database has ever recorded a reference. Entry reclamation is refused ' +
-            'until a document store runs with trackAssetReferences; byte reclamation is ' +
-            'unaffected. This deployment sets both together, so this means the pairing in ' +
-            'lib/persistence has been broken.',
+          'Asset collection is configured to reclaim registry entries, but no document write ' +
+            'on this database has recorded a reference yet, so entry reclamation (including ' +
+            'the one-time backfill) is refused. Byte reclamation is unaffected. On a cold or ' +
+            'freshly upgraded deployment this is expected and clears itself on the first ' +
+            'document write. If documents are being written and this keeps repeating, the ' +
+            'pairing in lib/persistence is broken: the collector runs with documentReferences ' +
+            'while some document store no longer runs with trackAssetReferences.',
           error,
         );
       } else if (error instanceof StorageLockUnavailableError) {

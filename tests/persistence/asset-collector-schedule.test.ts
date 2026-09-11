@@ -229,7 +229,7 @@ describe('asset collector schedule', () => {
     info.mockRestore();
   });
 
-  it('treats a missing reference writer as a misconfiguration alarm, not a failed pass', async () => {
+  it('names both readings of a missing reference writer, and keeps collecting', async () => {
     const harness = mockStorage(async () => ({}));
     harness.collectPass.mockRejectedValue(new MockReferenceTrackingNotEnabled());
     vi.stubEnv('DATABASE_URL', 'postgres://collector-unpaired');
@@ -240,14 +240,19 @@ describe('asset collector schedule', () => {
     await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
     await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
 
-    // Unreachable from this application, which is exactly why it gets its own
-    // line: it can only mean the pairing in lib/persistence was broken, and it
-    // will say so every interval until someone acts. The schedule keeps
-    // running, because the blob level is unaffected.
+    // The same state means two different things, and the operator cannot tell
+    // them apart from the code: nobody has written a document yet on a cold or
+    // freshly upgraded deployment, or a store stopped being a reference writer.
+    // The message has to carry both, so it gets its own line rather than the
+    // transient wording. The schedule keeps running either way, because only
+    // the entry level is refused and the blob level already ran.
     expect(harness.collectPass).toHaveBeenCalledTimes(2);
     expect(error).toHaveBeenCalledTimes(2);
-    expect(String(error.mock.calls[0]?.[0])).toContain('trackAssetReferences');
-    expect(String(error.mock.calls[0]?.[0])).not.toContain('retrying on the next interval');
+    const alarm = String(error.mock.calls[0]?.[0]);
+    expect(alarm).toContain('trackAssetReferences');
+    expect(alarm).toContain('cold or freshly upgraded deployment');
+    expect(alarm).toContain('clears itself on the first document write');
+    expect(alarm).not.toContain('retrying on the next interval');
     expect(warn).not.toHaveBeenCalled();
     error.mockRestore();
     warn.mockRestore();

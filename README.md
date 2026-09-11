@@ -410,8 +410,12 @@ configured for asset storage to stop growing. A pass runs every
 releases registry entries — an allocation no document claimed before its pending
 window ran out, and an entry whose last document reference left longer ago than
 `ASSET_COLLECTION_GRACE_MS` (default 1 hour) — and then deletes the bytes whose
-last entry left, after the same grace. The grace period is the retention window
-a user's deleted media actually gets, so raise it deliberately. Set
+last entry left, after the same grace. The two levels wait in sequence:
+releasing an entry is what leaves its bytes unreferenced, so the bytes start
+their own grace only once the entry has served its. The worst case from "the
+last document stopped naming this" to "the bytes are gone" is therefore two
+grace periods, not one. That window is the retention a user's deleted media
+actually gets, so raise it deliberately. Set
 `ASSET_COLLECTION_ENABLED=0` to switch collection off in a process. A
 horizontally scaled deployment may leave it on in every instance — each row is
 locked and re-checked before anything goes, so concurrent collectors serialize
@@ -425,9 +429,9 @@ collector reads. A browser never deletes an asset and is never asked to.
 Deleting a course releases the assets it was holding. The course id itself is
 retired permanently rather than removed — that is what keeps a deleted id from
 being claimed again — but the references it held are withdrawn in the same
-transaction, so its media stops counting against the quota immediately and its
-bytes go once the grace period has passed. The grace period is the undo: within
-it the assets are still there.
+transaction, so its media stops counting against the quota immediately. The
+entry is released after one grace period and its bytes after a second, as
+above. The grace period is the undo: within it the assets are still there.
 
 `ASSET_PENDING_TTL_MS` (default 24 hours) is how long an allocation stays
 *pending* — its bytes are stored, but no document names its id yet. A client

@@ -76,9 +76,14 @@ export async function audioObjectUrl(audioId: string): Promise<string | null> {
  * line's text: the cached audio is keyed by sceneOrder+actionId and the
  * stamped id, not the text, so without this the stale blob would keep
  * replaying for the new wording. Only the local compatibility copy is removed
- * here. The pool bytes are left in place and nothing reclaims them: the
- * stage-scoped registry sweep is written but not wired up, so an unreferenced
- * pool entry survives.
+ * here. The pool entry is left alone on purpose, and it does not need a
+ * browser to release it: the same edit clears the action's audio fields
+ * (`setSpeechTextClearAudioById`), so the next document write stops naming the
+ * id, the server stamps the entry that just lost its last reference, and the
+ * collector releases it after the grace period — the bytes following after
+ * their own. An id nothing ever named is expired on `ASSET_PENDING_TTL_MS`
+ * instead. Deleting from here would be refused anyway, and would race that
+ * write.
  */
 export async function discardSpeechAudio(
   sceneOrder: number,

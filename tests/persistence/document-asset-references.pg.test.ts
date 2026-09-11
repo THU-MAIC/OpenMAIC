@@ -11,10 +11,12 @@
  */
 import type { Scene, Stage } from '@openmaic/dsl';
 import type { MaicDocument } from '@openmaic/storage';
+import { StorageLockUnavailableError } from '@openmaic/storage';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
+import type { TransactionSource } from '@/lib/persistence/owner-bound-document-store';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
 import { StageAccessError } from '@/lib/persistence/stage-meta';
 import { SHARED_ASSET_PRINCIPAL } from '@/lib/persistence/server-auth';
@@ -104,13 +106,56 @@ describe.skipIf(!contractUrl)('document asset references through the app stores'
     expect(result.rows.map((row) => row.table_schema)).toContain(TEST_SCHEMA);
   });
 
-  function store() {
+  function store(source: TransactionSource = pool) {
     return createOwnerBoundDocumentStore({
-      pool,
+      pool: source,
       ownerId: OWNER,
       validateScene: validateAppScene,
       validateStage: validateAppStage,
     });
+  }
+
+  /**
+   * The same pool, with the package's own lock budget rewritten shorter.
+   *
+   * The withdrawal runs on a store pinned to the delete's transaction, and that
+   * store opens with `SET LOCAL lock_timeout = '30s'`. Waiting thirty real
+   * seconds to observe contention is not a test; rewriting that one statement
+   * on the way through leaves the real transaction shape, the real mapping and
+   * the real rollback, and only changes how long the wait is.
+   */
+  function shortLockBudget(timeout: string): TransactionSource {
+    return {
+      async connect() {
+        const client = await pool.connect();
+        return {
+          query: (text: string, params?: unknown[]) =>
+            client.query(
+              text === `SET LOCAL lock_timeout = '30s'`
+                ? `SET LOCAL lock_timeout = '${timeout}'`
+                : text,
+              params,
+            ),
+          release: () => client.release(),
+        };
+      },
+    };
+  }
+
+  async function tombstoneOf(stageId: string): Promise<Date | null> {
+    const result = await pool.query<{ deleted_at: Date | null }>(
+      'SELECT deleted_at FROM stage_meta WHERE stage_id = $1',
+      [stageId],
+    );
+    return result.rows[0]?.deleted_at ?? null;
+  }
+
+  async function folderOf(stageId: string): Promise<string | null> {
+    const result = await pool.query<{ folder_id: string | null }>(
+      'SELECT folder_id FROM document_stages WHERE id = $1',
+      [stageId],
+    );
+    return result.rows[0]?.folder_id ?? null;
   }
 
   /** A structurally valid slide scene whose only media slot names `assetId`. */
@@ -288,6 +333,85 @@ describe.skipIf(!contractUrl)('document asset references through the app stores'
 
     expect(await references(stageId)).toEqual([]);
     expect((await lifecycle(assetId)).unreferenced_at).toEqual(first);
+  });
+
+  it('rolls the tombstone back when the withdrawal fails', async () => {
+    // The reason the withdrawal is done on a store pinned to this
+    // transaction rather than on its own connection. A release that committed
+    // beside a tombstone that did not would free the assets of a course still
+    // live and still naming them, so the failure has to take the whole delete
+    // with it.
+    const stageId = 'stage-refs-rollback';
+    const assetId = await allocate('rollback-bytes');
+    await store().saveDocument(
+      documentWith(stageId, 'Rollback', [sceneNaming(stageId, 'scene-1', assetId)]),
+    );
+    await pool.query('UPDATE document_stages SET folder_id = $2 WHERE id = $1', [
+      stageId,
+      'keep-me',
+    ]);
+
+    // Renaming the marker table makes the withdrawal's own marker upsert fail
+    // on a real statement inside the real transaction, rather than simulating
+    // the failure from outside it.
+    await pool.query('ALTER TABLE asset_reference_tracking RENAME TO tracking_hidden');
+    try {
+      await expect(store().deleteDocument(stageId)).rejects.toThrow();
+    } finally {
+      await pool.query('ALTER TABLE tracking_hidden RENAME TO asset_reference_tracking');
+    }
+
+    // Nothing from the transaction survived: not the tombstone, not the
+    // folder clear, not the release.
+    expect(await tombstoneOf(stageId)).toBeNull();
+    expect(await folderOf(stageId)).toBe('keep-me');
+    expect(await references(stageId)).toEqual([
+      { stage_id: stageId, scope: 'scene', scene_id: 'scene-1', asset_id: assetId },
+    ]);
+    expect((await lifecycle(assetId)).unreferenced_at).toBeNull();
+
+    // And the course is still deletable once the cause is gone.
+    await store().deleteDocument(stageId);
+    expect(await tombstoneOf(stageId)).not.toBeNull();
+    expect(await references(stageId)).toEqual([]);
+  });
+
+  it('rolls the tombstone back when the withdrawal cannot get its lock', async () => {
+    // The same rollback through the failure the package manufactures on
+    // purpose. The budget is rewritten shorter on the way through so this
+    // costs milliseconds rather than the real thirty seconds; everything
+    // else -- the transaction, the mapping to a typed error, the rollback --
+    // is the production path.
+    const stageId = 'stage-refs-rollback-lock';
+    const assetId = await allocate('rollback-lock-bytes');
+    await store().saveDocument(
+      documentWith(stageId, 'Rollback on lock', [sceneNaming(stageId, 'scene-1', assetId)]),
+    );
+
+    const blocker = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      // `asset_entries` and nothing earlier: the tombstone and the folder
+      // clear must both get through, so that what rolls back is a
+      // transaction that had already written something. The lock is never
+      // released during the wait, so the budget is spent in full every run --
+      // half a second rather than a tighter number only to leave margin on a
+      // loaded machine.
+      await blocker.query('LOCK TABLE asset_entries IN ACCESS EXCLUSIVE MODE');
+
+      await expect(store(shortLockBudget('500ms')).deleteDocument(stageId)).rejects.toBeInstanceOf(
+        StorageLockUnavailableError,
+      );
+    } finally {
+      await blocker.query('ROLLBACK');
+      blocker.release();
+    }
+
+    expect(await tombstoneOf(stageId)).toBeNull();
+    expect(await references(stageId)).toEqual([
+      { stage_id: stageId, scope: 'scene', scene_id: 'scene-1', asset_id: assetId },
+    ]);
+    expect((await lifecycle(assetId)).unreferenced_at).toBeNull();
   });
 
   it('withdraws nothing for another owner, and leaves their assets alone', async () => {
