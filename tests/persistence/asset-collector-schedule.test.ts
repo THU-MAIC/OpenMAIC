@@ -229,7 +229,7 @@ describe('asset collector schedule', () => {
     info.mockRestore();
   });
 
-  it('names both readings of a missing reference writer, and keeps collecting', async () => {
+  it('reports a missing reference declaration as a defect, and keeps collecting', async () => {
     const harness = mockStorage(async () => ({}));
     harness.collectPass.mockRejectedValue(new MockReferenceTrackingNotEnabled());
     vi.stubEnv('DATABASE_URL', 'postgres://collector-unpaired');
@@ -240,18 +240,17 @@ describe('asset collector schedule', () => {
     await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
     await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
 
-    // The same state means two different things, and the operator cannot tell
-    // them apart from the code: nobody has written a document yet on a cold or
-    // freshly upgraded deployment, or a store stopped being a reference writer.
-    // The message has to carry both, so it gets its own line rather than the
-    // transient wording. The schedule keeps running either way, because only
-    // the entry level is refused and the blob level already ran.
+    // The persistence provider declares the pairing while it initializes, so
+    // this is no longer the cold-start window it used to be: it is either a
+    // provider that never came up or a writer built without tracking, and the
+    // message names both places to look. Its own line rather than the
+    // transient wording, and the schedule keeps running either way, because
+    // only the entry level is refused and the blob level already ran.
     expect(harness.collectPass).toHaveBeenCalledTimes(2);
     expect(error).toHaveBeenCalledTimes(2);
     const alarm = String(error.mock.calls[0]?.[0]);
     expect(alarm).toContain('trackAssetReferences');
-    expect(alarm).toContain('cold or freshly upgraded deployment');
-    expect(alarm).toContain('clears itself on the first document write');
+    expect(alarm).toContain('persistence provider declares it at startup');
     expect(alarm).not.toContain('retrying on the next interval');
     expect(warn).not.toHaveBeenCalled();
     error.mockRestore();

@@ -57,23 +57,42 @@ async function createServerPersistenceProvider(
     await ensureAssetSchema(queryable);
     const withTransaction = nodePostgresTransaction(queryable);
     const byteStore = lazyAssetByteStore(process.env.ASSET_S3_BUCKET, queryable);
+    const documentStore = new PgDocumentStore(queryable, {
+      withTransaction,
+      validateScene: validateAppScene,
+      validateStage: validateAppStage,
+      // Unconditional, and it has to be: this function is the only place
+      // that decides what server-backed persistence is, and it always
+      // ensures the asset schema and always leaves the collector's entry
+      // pass on. A document store that did not record references would let
+      // that pass expire allocations live documents name.
+      trackAssetReferences: true,
+    });
+    // Say so on the database, rather than waiting for a document write to say
+    // it by accident.
+    //
+    // The collector's entry level refuses to run until some write has recorded
+    // a reference, which is the right refusal: releasing entries on a database
+    // no writer maintains would delete assets live documents name. But the
+    // only thing that used to answer it was a document write, so a cold
+    // install -- and an upgraded database that already holds documents, which
+    // is the case that matters -- sat refused until someone happened to save a
+    // course, and the one-time backfill sat with it. Every store this function
+    // builds is a reference writer, and this function is the only thing that
+    // builds them, so it is exactly the thing entitled to declare it.
+    //
+    // Not swallowed: the same posture as the schema work above. If this fails
+    // the provider fails, the pool is closed, and the next request retries a
+    // fresh initialization -- because a provider that came up without the
+    // declaration would leave reclamation refused with nothing to notice it.
+    await documentStore.declareAssetReferenceTracking();
     return {
       pool,
       runtimeStore: new PgRuntimeStore(queryable, {
         withTransaction,
         payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
       }),
-      documentStore: new PgDocumentStore(queryable, {
-        withTransaction,
-        validateScene: validateAppScene,
-        validateStage: validateAppStage,
-        // Unconditional, and it has to be: this function is the only place
-        // that decides what server-backed persistence is, and it always
-        // ensures the asset schema and always leaves the collector's entry
-        // pass on. A document store that did not record references would let
-        // that pass expire allocations live documents name.
-        trackAssetReferences: true,
-      }),
+      documentStore,
       assetStore: new PgAssetStore(queryable, {
         withTransaction,
         byteStore,

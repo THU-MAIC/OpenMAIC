@@ -197,27 +197,28 @@ export function startAssetCollectorSchedule(
       }
     } catch (error) {
       if (error instanceof AssetReferenceTrackingNotEnabledError) {
-        // The package's gate is "has any document write ever recorded a
-        // reference on this database", and only a document write can answer
-        // yes -- `ensureAssetSchema` creates the marker table empty and the
-        // backfill deliberately does not write it. So a cold install, and an
-        // upgraded database that already holds documents, both sit in this
-        // state until the first write after deployment, with every document
-        // store correctly built as a reference writer the whole time.
+        // The package's gate is "has anything declared that this database's
+        // writers maintain references". The persistence provider declares it
+        // while it initializes, before it hands out a store, so the cold and
+        // freshly-upgraded windows this used to sit in are closed: by the time
+        // a collector exists in this process, a provider has come up.
         //
-        // That makes this two signals in one, and the message says so rather
-        // than guessing: quiet and self-clearing on a new deployment, a real
-        // misconfiguration if writes are happening and it keeps repeating.
-        // Either way only the entry level is refused -- the blob level ran --
-        // and nothing is released while it is refused, so it cannot lose data.
+        // What is left is a real defect, and only that. Either the declaration
+        // failed and the provider was never reached again -- the collector
+        // opens its own pool and does not need one, so this schedule can
+        // outlive a persistence stack that never initialized -- or something
+        // writes documents to this database through a store built without
+        // `trackAssetReferences`, which is what the pairing exists to prevent.
+        // Only the entry level is refused while it holds, and nothing is
+        // released while refused, so it cannot lose data; it does mean nothing
+        // is being reclaimed either.
         console.error(
-          'Asset collection is configured to reclaim registry entries, but no document write ' +
-            'on this database has recorded a reference yet, so entry reclamation (including ' +
-            'the one-time backfill) is refused. Byte reclamation is unaffected. On a cold or ' +
-            'freshly upgraded deployment this is expected and clears itself on the first ' +
-            'document write. If documents are being written and this keeps repeating, the ' +
-            'pairing in lib/persistence is broken: the collector runs with documentReferences ' +
-            'while some document store no longer runs with trackAssetReferences.',
+          'Asset collection is configured to reclaim registry entries, but nothing has ' +
+            'declared that this database maintains them, so entry reclamation (including the ' +
+            'one-time backfill) is refused. Byte reclamation is unaffected. The persistence ' +
+            'provider declares it at startup, so either that initialization is failing -- ' +
+            'check for an earlier provider error -- or documents on this database are being ' +
+            'written by a store built without trackAssetReferences.',
           error,
         );
       } else if (error instanceof StorageLockUnavailableError) {

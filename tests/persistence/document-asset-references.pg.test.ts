@@ -84,8 +84,11 @@ describe.skipIf(!contractUrl)('document asset references through the app stores'
   beforeEach(async () => {
     // Every name here resolves inside the test schema, and every table that
     // references one of them is listed, so the truncation is self-contained.
+    // `document_asset_withdrawals` is keyed by stage id and carries no foreign
+    // key, so nothing cascades it away and it has to be named outright.
     await pool.query(
-      'TRUNCATE document_asset_refs, asset_entries, asset_blobs, stage_meta, document_stages CASCADE',
+      'TRUNCATE document_asset_refs, document_asset_withdrawals, asset_entries, asset_blobs, ' +
+        'stage_meta, document_stages CASCADE',
     );
   });
 
