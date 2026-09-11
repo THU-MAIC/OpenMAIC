@@ -44,7 +44,17 @@
     "ttsPreview": "Probar",
     "ttsPreviewing": "Reproduciendo...",
     "interactiveModeHint": "Activa el modo interactivo para obtener contenido más práctico",
-    "interactiveModeLabel": "Modo interactivo"
+    "interactiveModeLabel": "Modo interactivo",
+    "toggleSidebar": "Mostrar u ocultar la barra lateral",
+    "playbackSpeed": "Velocidad de reproducción",
+    "previousScene": "Escena anterior",
+    "nextScene": "Escena siguiente",
+    "autoPlay": "Reproducción automática",
+    "toggleChat": "Mostrar u ocultar el chat",
+    "play": "Reproducir",
+    "pause": "Pausar",
+    "mute": "Silenciar",
+    "unmute": "Activar el sonido"
   },
   "export": {
     "pptx": "Exportar PPTX",
@@ -234,6 +244,7 @@
     "exitFullscreen": "Salir de pantalla completa",
     "editCourse": "Editar curso",
     "doneEditing": "Terminar edición",
+    "proMode": "Modo Pro",
     "proModeDisabledHint": "La edición no está disponible en esta página — abre una diapositiva del curso para editar con el modo Pro."
   },
   "edit": {
@@ -2000,7 +2011,11 @@
     "model": "Modelo",
     "voice": "Voz",
     "speed": "Velocidad",
-    "language": "Idioma"
+    "language": "Idioma",
+    "tabImage": "Imagen",
+    "tabVideo": "Video",
+    "tabTts": "Voz",
+    "tabAsr": "Dictado"
   },
   "accessCode": {
     "title": "Ingresa el código de acceso",
@@ -2034,6 +2049,18 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "Falló el reconocimiento de voz. Inténtalo de nuevo.",
+      "browserUnsupported": "Tu navegador no admite el reconocimiento de voz",
+      "noSpeech": "No se detectó voz",
+      "micUnavailable": "No se puede acceder al micrófono",
+      "micPermissionDenied": "Permiso de micrófono denegado",
+      "network": "Error de red",
+      "micAccess": "No se puede acceder al micrófono. Revisa los permisos.",
+      "recognitionError": "Error de reconocimiento de voz: {{code}}"
     }
   }
 }

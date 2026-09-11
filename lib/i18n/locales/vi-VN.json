@@ -44,7 +44,17 @@
     "ttsPreview": "Nghe thử",
     "ttsPreviewing": "Đang phát…",
     "interactiveModeHint": "Bật chế độ ưu tiên tương tác để có nhiều nội dung thực hành hơn",
-    "interactiveModeLabel": "Chế độ tương tác"
+    "interactiveModeLabel": "Chế độ tương tác",
+    "toggleSidebar": "Bật/tắt thanh bên",
+    "playbackSpeed": "Tốc độ phát",
+    "previousScene": "Cảnh trước",
+    "nextScene": "Cảnh sau",
+    "autoPlay": "Tự động phát",
+    "toggleChat": "Bật/tắt trò chuyện",
+    "play": "Phát",
+    "pause": "Tạm dừng",
+    "mute": "Tắt tiếng",
+    "unmute": "Bật tiếng"
   },
   "export": {
     "pptx": "Xuất PPTX",
@@ -234,6 +244,7 @@
     "exitFullscreen": "Thoát toàn màn hình",
     "editCourse": "Sửa bài học",
     "doneEditing": "Sửa xong",
+    "proMode": "Chế độ Pro",
     "proModeDisabledHint": "Trang này không sửa được — hãy mở một slide bài học để dùng chế độ Pro."
   },
   "edit": {
@@ -2000,7 +2011,11 @@
     "model": "Mô hình",
     "voice": "Giọng đọc",
     "speed": "Tốc độ",
-    "language": "Ngôn ngữ"
+    "language": "Ngôn ngữ",
+    "tabImage": "Ảnh",
+    "tabVideo": "Video",
+    "tabTts": "Đọc",
+    "tabAsr": "Giọng nói"
   },
   "accessCode": {
     "title": "Nhập mã truy cập",
@@ -2034,6 +2049,18 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "Nhận dạng giọng nói thất bại. Vui lòng thử lại.",
+      "browserUnsupported": "Trình duyệt của bạn không hỗ trợ nhận dạng giọng nói",
+      "noSpeech": "Không phát hiện giọng nói",
+      "micUnavailable": "Không truy cập được micrô",
+      "micPermissionDenied": "Quyền truy cập micrô bị từ chối",
+      "network": "Lỗi mạng",
+      "micAccess": "Không truy cập được micrô. Hãy kiểm tra quyền truy cập.",
+      "recognitionError": "Lỗi nhận dạng giọng nói: {{code}}"
     }
   }
 }

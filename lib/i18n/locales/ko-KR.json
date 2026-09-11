@@ -44,7 +44,17 @@
     "ttsPreview": "미리 듣기",
     "ttsPreviewing": "재생 중...",
     "interactiveModeHint": "체험 중심 콘텐츠를 위해 인터랙티브 우선 모드를 사용하세요",
-    "interactiveModeLabel": "인터랙티브 모드"
+    "interactiveModeLabel": "인터랙티브 모드",
+    "toggleSidebar": "사이드바 전환",
+    "playbackSpeed": "재생 속도",
+    "previousScene": "이전 장면",
+    "nextScene": "다음 장면",
+    "autoPlay": "자동 재생",
+    "toggleChat": "채팅 전환",
+    "play": "재생",
+    "pause": "일시정지",
+    "mute": "음소거",
+    "unmute": "음소거 해제"
   },
   "export": {
     "pptx": "PPTX 내보내기",
@@ -234,6 +244,7 @@
     "exitFullscreen": "전체화면 종료",
     "editCourse": "강좌 편집",
     "doneEditing": "편집 완료",
+    "proMode": "프로 모드",
     "proModeDisabledHint": "이 페이지에서는 편집할 수 없습니다 — 코스 슬라이드를 열면 Pro 모드로 편집할 수 있습니다."
   },
   "edit": {
@@ -2000,7 +2011,11 @@
     "model": "모델",
     "voice": "음성",
     "speed": "속도",
-    "language": "언어"
+    "language": "언어",
+    "tabImage": "이미지",
+    "tabVideo": "비디오",
+    "tabTts": "음성 출력",
+    "tabAsr": "음성 입력"
   },
   "accessCode": {
     "title": "접근 코드 입력",
@@ -2034,6 +2049,18 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "음성 인식에 실패했습니다. 다시 시도하세요.",
+      "browserUnsupported": "이 브라우저는 음성 인식을 지원하지 않습니다",
+      "noSpeech": "음성이 감지되지 않았습니다",
+      "micUnavailable": "마이크에 접근할 수 없습니다",
+      "micPermissionDenied": "마이크 권한이 거부되었습니다",
+      "network": "네트워크 오류",
+      "micAccess": "마이크에 접근할 수 없습니다. 권한 설정을 확인하세요.",
+      "recognitionError": "음성 인식 오류: {{code}}"
     }
   }
 }

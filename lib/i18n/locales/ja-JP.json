@@ -44,7 +44,17 @@
     "ttsPreview": "プレビュー",
     "ttsPreviewing": "再生中...",
     "interactiveModeHint": "インタラクティブ優先モードを有効にして、より実践的なコンテンツを生成",
-    "interactiveModeLabel": "インタラクティブモード"
+    "interactiveModeLabel": "インタラクティブモード",
+    "toggleSidebar": "サイドバーの表示切替",
+    "playbackSpeed": "再生速度",
+    "previousScene": "前のシーン",
+    "nextScene": "次のシーン",
+    "autoPlay": "自動再生",
+    "toggleChat": "チャットの表示切替",
+    "play": "再生",
+    "pause": "一時停止",
+    "mute": "ミュート",
+    "unmute": "ミュート解除"
   },
   "export": {
     "pptx": "PPTXエクスポート",
@@ -234,6 +244,7 @@
     "exitFullscreen": "全画面表示を終了",
     "editCourse": "コースを編集",
     "doneEditing": "編集を完了",
+    "proMode": "プロモード",
     "proModeDisabledHint": "このページでは編集できません。コースのスライドを開くと Pro モードで編集できます。"
   },
   "edit": {
@@ -2000,7 +2011,11 @@
     "model": "モデル",
     "voice": "ボイス",
     "speed": "速度",
-    "language": "言語"
+    "language": "言語",
+    "tabImage": "画像",
+    "tabVideo": "動画",
+    "tabTts": "読み上げ",
+    "tabAsr": "音声入力"
   },
   "accessCode": {
     "title": "アクセスコードを入力",
@@ -2034,6 +2049,18 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "音声認識に失敗しました。もう一度お試しください。",
+      "browserUnsupported": "お使いのブラウザは音声認識に対応していません",
+      "noSpeech": "音声が検出されませんでした",
+      "micUnavailable": "マイクにアクセスできません",
+      "micPermissionDenied": "マイクの使用が許可されていません",
+      "network": "ネットワークエラー",
+      "micAccess": "マイクにアクセスできません。権限設定を確認してください。",
+      "recognitionError": "音声認識エラー: {{code}}"
     }
   }
 }

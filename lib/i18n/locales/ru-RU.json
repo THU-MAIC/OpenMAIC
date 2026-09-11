@@ -44,7 +44,17 @@
     "ttsPreview": "Прослушать",
     "ttsPreviewing": "Воспроизведение...",
     "interactiveModeHint": "Включить интерактивный режим для более практического контента",
-    "interactiveModeLabel": "Интерактивный режим"
+    "interactiveModeLabel": "Интерактивный режим",
+    "toggleSidebar": "Показать или скрыть боковую панель",
+    "playbackSpeed": "Скорость воспроизведения",
+    "previousScene": "Предыдущая сцена",
+    "nextScene": "Следующая сцена",
+    "autoPlay": "Автовоспроизведение",
+    "toggleChat": "Показать или скрыть чат",
+    "play": "Воспроизвести",
+    "pause": "Пауза",
+    "mute": "Выключить звук",
+    "unmute": "Включить звук"
   },
   "export": {
     "pptx": "Экспорт PPTX",
@@ -234,6 +244,7 @@
     "exitFullscreen": "Свернуть",
     "editCourse": "Редактировать курс",
     "doneEditing": "Завершить редактирование",
+    "proMode": "Профи-режим",
     "proModeDisabledHint": "Редактирование недоступно на этой странице — откройте слайд курса, чтобы редактировать в Pro-режиме."
   },
   "edit": {
@@ -2000,7 +2011,11 @@
     "model": "Модель",
     "voice": "Голос",
     "speed": "Скорость",
-    "language": "Язык"
+    "language": "Язык",
+    "tabImage": "Изображение",
+    "tabVideo": "Видео",
+    "tabTts": "Озвучка",
+    "tabAsr": "Голос"
   },
   "accessCode": {
     "title": "Введите код доступа",
@@ -2034,6 +2049,18 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "Не удалось распознать речь. Попробуйте ещё раз.",
+      "browserUnsupported": "Ваш браузер не поддерживает распознавание речи",
+      "noSpeech": "Речь не обнаружена",
+      "micUnavailable": "Нет доступа к микрофону",
+      "micPermissionDenied": "Доступ к микрофону запрещён",
+      "network": "Ошибка сети",
+      "micAccess": "Нет доступа к микрофону. Проверьте разрешения.",
+      "recognitionError": "Ошибка распознавания речи: {{code}}"
     }
   }
 }

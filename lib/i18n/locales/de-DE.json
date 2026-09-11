@@ -44,7 +44,17 @@
     "ttsPreview": "Vorschau",
     "ttsPreviewing": "Wird abgespielt...",
     "interactiveModeHint": "Aktiviere den interaktiven Modus, damit bevorzugt interaktive Inhalte erzeugt werden",
-    "interactiveModeLabel": "Interaktiver Modus"
+    "interactiveModeLabel": "Interaktiver Modus",
+    "toggleSidebar": "Seitenleiste umschalten",
+    "playbackSpeed": "Wiedergabegeschwindigkeit",
+    "previousScene": "Vorherige Szene",
+    "nextScene": "Nächste Szene",
+    "autoPlay": "Automatische Wiedergabe",
+    "toggleChat": "Chat umschalten",
+    "play": "Abspielen",
+    "pause": "Pause",
+    "mute": "Stummschalten",
+    "unmute": "Stummschaltung aufheben"
   },
   "export": {
     "pptx": "PPTX exportieren",
@@ -234,6 +244,7 @@
     "exitFullscreen": "Vollbild beenden",
     "editCourse": "Kurs bearbeiten",
     "doneEditing": "Bearbeitung abschließen",
+    "proMode": "Pro-Modus",
     "proModeDisabledHint": "Diese Seite kann nicht bearbeitet werden — öffne eine Kursfolie, um sie im Pro-Modus zu bearbeiten."
   },
   "edit": {
@@ -2000,7 +2011,11 @@
     "model": "Modell",
     "voice": "Stimme",
     "speed": "Geschwindigkeit",
-    "language": "Sprache"
+    "language": "Sprache",
+    "tabImage": "Bild",
+    "tabVideo": "Video",
+    "tabTts": "Sprache",
+    "tabAsr": "Spracheingabe"
   },
   "accessCode": {
     "title": "Zugangscode eingeben",
@@ -2034,6 +2049,18 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "Spracherkennung fehlgeschlagen. Bitte erneut versuchen.",
+      "browserUnsupported": "Dein Browser unterstützt keine Spracherkennung",
+      "noSpeech": "Keine Sprache erkannt",
+      "micUnavailable": "Kein Zugriff auf das Mikrofon",
+      "micPermissionDenied": "Mikrofonzugriff verweigert",
+      "network": "Netzwerkfehler",
+      "micAccess": "Kein Zugriff auf das Mikrofon. Prüfe die Berechtigungen.",
+      "recognitionError": "Spracherkennungsfehler: {{code}}"
     }
   }
 }

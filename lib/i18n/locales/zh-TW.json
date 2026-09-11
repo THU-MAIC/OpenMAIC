@@ -44,7 +44,17 @@
     "ttsPreview": "試聽",
     "ttsPreviewing": "播放中...",
     "interactiveModeHint": "啟用互動優先模式以獲得更多實作內容",
-    "interactiveModeLabel": "互動模式"
+    "interactiveModeLabel": "互動模式",
+    "toggleSidebar": "切換側邊欄",
+    "playbackSpeed": "播放速度",
+    "previousScene": "上一幕",
+    "nextScene": "下一幕",
+    "autoPlay": "自動播放",
+    "toggleChat": "切換聊天",
+    "play": "播放",
+    "pause": "暫停",
+    "mute": "靜音",
+    "unmute": "取消靜音"
   },
   "export": {
     "pptx": "匯出 PPTX",
@@ -234,6 +244,7 @@
     "exitFullscreen": "離開全螢幕",
     "editCourse": "編輯課程",
     "doneEditing": "完成編輯",
+    "proMode": "專業模式",
     "proModeDisabledHint": "此頁面無法編輯——開啟課程投影片以使用 Pro 模式編輯。"
   },
   "edit": {
@@ -1985,7 +1996,11 @@
     "model": "模型",
     "voice": "聲線",
     "speed": "語速",
-    "language": "語言"
+    "language": "語言",
+    "tabImage": "圖片",
+    "tabVideo": "影片",
+    "tabTts": "朗讀",
+    "tabAsr": "語音"
   },
   "accessCode": {
     "title": "請輸入課堂碼",
@@ -2034,6 +2049,18 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "語音辨識失敗，請重試",
+      "browserUnsupported": "您的瀏覽器不支援語音辨識功能",
+      "noSpeech": "未偵測到語音輸入",
+      "micUnavailable": "無法存取麥克風",
+      "micPermissionDenied": "麥克風權限遭拒",
+      "network": "網路錯誤",
+      "micAccess": "無法存取麥克風，請檢查權限設定",
+      "recognitionError": "語音辨識錯誤：{{code}}"
     }
   }
 }

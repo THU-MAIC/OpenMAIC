@@ -44,7 +44,17 @@
     "ttsPreview": "试听",
     "ttsPreviewing": "播放中...",
     "interactiveModeHint": "开启深度交互模式，生成更多互动内容",
-    "interactiveModeLabel": "深度交互"
+    "interactiveModeLabel": "深度交互",
+    "toggleSidebar": "切换侧边栏",
+    "playbackSpeed": "播放速度",
+    "previousScene": "上一幕",
+    "nextScene": "下一幕",
+    "autoPlay": "自动播放",
+    "toggleChat": "切换聊天",
+    "play": "播放",
+    "pause": "暂停",
+    "mute": "静音",
+    "unmute": "取消静音"
   },
   "export": {
     "pptx": "导出 PPTX",
@@ -234,6 +244,7 @@
     "exitFullscreen": "退出全屏",
     "editCourse": "编辑课程",
     "doneEditing": "完成编辑",
+    "proMode": "专业模式",
     "proModeDisabledHint": "本页不支持编辑——打开任意课程页即可使用 Pro 模式编辑。"
   },
   "edit": {
@@ -2000,7 +2011,11 @@
     "model": "模型",
     "voice": "音色",
     "speed": "语速",
-    "language": "语言"
+    "language": "语言",
+    "tabImage": "图片",
+    "tabVideo": "视频",
+    "tabTts": "朗读",
+    "tabAsr": "语音"
   },
   "accessCode": {
     "title": "请输入访问码",
@@ -2034,6 +2049,18 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "语音识别失败，请重试",
+      "browserUnsupported": "您的浏览器不支持语音识别功能",
+      "noSpeech": "未检测到语音输入",
+      "micUnavailable": "无法访问麦克风",
+      "micPermissionDenied": "麦克风权限被拒绝",
+      "network": "网络错误",
+      "micAccess": "无法访问麦克风，请检查权限设置",
+      "recognitionError": "语音识别错误：{{code}}"
     }
   }
 }

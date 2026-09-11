@@ -44,7 +44,17 @@
     "ttsPreview": "Pré-visualizar",
     "ttsPreviewing": "Reproduzindo...",
     "interactiveModeHint": "Ative o modo interativo para conteúdos mais práticos",
-    "interactiveModeLabel": "Modo Interativo"
+    "interactiveModeLabel": "Modo Interativo",
+    "toggleSidebar": "Mostrar ou ocultar a barra lateral",
+    "playbackSpeed": "Velocidade de reprodução",
+    "previousScene": "Cena anterior",
+    "nextScene": "Próxima cena",
+    "autoPlay": "Reprodução automática",
+    "toggleChat": "Mostrar ou ocultar o chat",
+    "play": "Reproduzir",
+    "pause": "Pausar",
+    "mute": "Silenciar",
+    "unmute": "Ativar o som"
   },
   "export": {
     "pptx": "Exportar PPTX",
@@ -647,6 +657,7 @@
     "exitFullscreen": "Sair da tela cheia",
     "editCourse": "Editar curso",
     "doneEditing": "Concluir edição",
+    "proMode": "Modo Pro",
     "proModeDisabledHint": "A edição não está disponível nesta página — abra um slide do curso para editar no modo Pro."
   },
   "classroomComplete": {
@@ -2000,7 +2011,11 @@
     "model": "Modelo",
     "voice": "Voz",
     "speed": "Velocidade",
-    "language": "Idioma"
+    "language": "Idioma",
+    "tabImage": "Imagem",
+    "tabVideo": "Vídeo",
+    "tabTts": "Fala",
+    "tabAsr": "Ditado"
   },
   "accessCode": {
     "title": "Digite o Código de Acesso",
@@ -2034,6 +2049,18 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "Falha no reconhecimento de fala. Tente novamente.",
+      "browserUnsupported": "Seu navegador não é compatível com reconhecimento de fala",
+      "noSpeech": "Nenhuma fala detectada",
+      "micUnavailable": "Não foi possível acessar o microfone",
+      "micPermissionDenied": "Permissão de microfone negada",
+      "network": "Erro de rede",
+      "micAccess": "Não foi possível acessar o microfone. Verifique as permissões.",
+      "recognitionError": "Erro de reconhecimento de fala: {{code}}"
     }
   }
 }

@@ -44,7 +44,17 @@
     "ttsPreview": "Écouter",
     "ttsPreviewing": "Lecture…",
     "interactiveModeHint": "Activez le mode interactif pour obtenir un contenu plus pratique",
-    "interactiveModeLabel": "Mode interactif"
+    "interactiveModeLabel": "Mode interactif",
+    "toggleSidebar": "Afficher ou masquer la barre latérale",
+    "playbackSpeed": "Vitesse de lecture",
+    "previousScene": "Scène précédente",
+    "nextScene": "Scène suivante",
+    "autoPlay": "Lecture automatique",
+    "toggleChat": "Afficher ou masquer le chat",
+    "play": "Lire",
+    "pause": "Pause",
+    "mute": "Couper le son",
+    "unmute": "Rétablir le son"
   },
   "export": {
     "pptx": "Exporter en PPTX",
@@ -234,6 +244,7 @@
     "exitFullscreen": "Quitter le plein écran",
     "editCourse": "Modifier le cours",
     "doneEditing": "Terminer les modifications",
+    "proMode": "Mode Pro",
     "proModeDisabledHint": "L’édition n’est pas disponible sur cette page. Ouvrez une diapositive de cours pour la modifier en mode Pro."
   },
   "edit": {
@@ -2000,7 +2011,11 @@
     "model": "Modèle",
     "voice": "Voix",
     "speed": "Vitesse",
-    "language": "Langue"
+    "language": "Langue",
+    "tabImage": "Image",
+    "tabVideo": "Vidéo",
+    "tabTts": "Lecture",
+    "tabAsr": "Dictée"
   },
   "accessCode": {
     "title": "Saisissez le code d’accès",
@@ -2034,6 +2049,18 @@
       "error": {
         "materialExtraction": null
       }
+    }
+  },
+  "audio": {
+    "error": {
+      "recognitionFailed": "Échec de la reconnaissance vocale. Veuillez réessayer.",
+      "browserUnsupported": "Votre navigateur ne prend pas en charge la reconnaissance vocale",
+      "noSpeech": "Aucune parole détectée",
+      "micUnavailable": "Impossible d’accéder au microphone",
+      "micPermissionDenied": "Accès au microphone refusé",
+      "network": "Erreur réseau",
+      "micAccess": "Impossible d’accéder au microphone. Vérifiez les autorisations.",
+      "recognitionError": "Erreur de reconnaissance vocale : {{code}}"
     }
   }
 }
