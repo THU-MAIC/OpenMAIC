@@ -522,7 +522,8 @@ const SYMBOL_FONT_LATEX: Record<number, string> = {
   0x58: '\\Xi ',
   0x59: '\\Psi ',
   0x5a: 'Z',
-  // Adobe Symbol high half, complete (0xA0–0xFF from the URW AFM). Font-local
+  // Adobe Symbol high half (0xA0–0xFF from the URW AFM); positions not listed
+  // here throw MtefParseError so the formula falls back to its picture. Font-local
   // codes here are glyph indices into the Symbol font; unmapped ones must
   // NOT pass through as Latin-1 (0xF7 is ∫-extension, not ÷). Structural
   // pieces (big-paren/large-op extenders) map to their base operators;
