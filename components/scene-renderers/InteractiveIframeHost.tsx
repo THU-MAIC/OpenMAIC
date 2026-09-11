@@ -375,6 +375,14 @@ function PooledIframe({
         title={`Interactive Scene ${sceneId}`}
         sandbox="allow-scripts allow-forms allow-popups"
       />
+      {playbackArmed && (
+        <div
+          data-testid="interactive-element-pick-instruction"
+          className="pointer-events-none absolute top-3 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-gray-950/80 px-3 py-1.5 text-xs font-medium text-white shadow-lg"
+        >
+          {t('chat.elementReference.instruction')}
+        </div>
+      )}
     </div>
   );
 }

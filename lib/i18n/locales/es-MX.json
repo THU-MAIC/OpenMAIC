@@ -138,7 +138,7 @@
     "elementReference": {
       "button": "Referenciar contenido del curso",
       "unavailable": "Solo se puede referenciar la diapositiva PPT actual o un componente interactivo compatible",
-      "instruction": "Haz clic en un elemento · Esc para salir",
+      "instruction": "Haz clic en un elemento del material del curso · Esc para salir",
       "fallback": "Otros elementos de la diapositiva ({{count}})",
       "clear": "Quitar referencia del contenido del curso",
       "summary": {

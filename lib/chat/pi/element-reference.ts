@@ -25,6 +25,7 @@ import type {
   SlideElementReference,
   StatelessChatRequest,
 } from '@/lib/types/chat';
+import { isInteractiveReferenceExcludedTag } from '@/lib/interactive/element-reference-policy';
 
 const ID_LIMIT = 256;
 const METADATA_LIMIT = 256;
@@ -72,23 +73,6 @@ const INTERACTIVE_PACKET_LIMIT = 24_000;
 const INTERACTIVE_HINT_LIMIT = 240;
 const INTERACTIVE_HINT_SEMANTIC_LIMIT = 200;
 const STABLE_ID_SELECTOR = /^#[A-Za-z][A-Za-z0-9_-]{0,126}$/u;
-const EXCLUDED_INTERACTIVE_TAGS = new Set([
-  'html',
-  'head',
-  'body',
-  'script',
-  'style',
-  'link',
-  'meta',
-  'noscript',
-  'template',
-  'iframe',
-  'canvas',
-  'noembed',
-  'noframes',
-  'plaintext',
-  'xmp',
-]);
 const SANITIZED_SUBTREE_TAGS = new Set(['script', 'style', 'noscript', 'template', 'iframe']);
 const TEXT_SEPARATOR_TAGS = new Set([
   'address',
@@ -299,7 +283,7 @@ function compactInteractiveSourceHtml(sourceHtml: string): string {
 
   const isExcludedParent = (node: DefaultTreeAdapterMap['parentNode']): boolean =>
     defaultTreeAdapter.isElementNode(node) &&
-    EXCLUDED_INTERACTIVE_TAGS.has(defaultTreeAdapter.getTagName(node).toLowerCase());
+    isInteractiveReferenceExcludedTag(defaultTreeAdapter.getTagName(node));
 
   const accountNode = (): void => {
     retainedNodes += 1;
@@ -384,7 +368,7 @@ function compactInteractiveSourceHtml(sourceHtml: string): string {
     tagName: string,
     attrs: DefaultTreeAdapterMap['element']['attrs'],
   ): DefaultTreeAdapterMap['element']['attrs'] => {
-    const retained = EXCLUDED_INTERACTIVE_TAGS.has(tagName.toLowerCase())
+    const retained = isInteractiveReferenceExcludedTag(tagName)
       ? attrs.filter((attribute) => attribute.name.toLowerCase() === 'id')
       : attrs;
     return retained.filter((attribute) => !containsInlineBase64(attribute.value));
@@ -397,8 +381,6 @@ function compactInteractiveSourceHtml(sourceHtml: string): string {
       accountSourceAttributes(attrs.length);
       accountInspectedAttributeUnits(attrs);
       const retainedAttributes = retainedAttributesFor(tagName, attrs);
-      accountRetainedUnits(tagName.length);
-      accountRetainedAttributes(retainedAttributes);
       return defaultTreeAdapter.createElement(tagName, namespaceURI, retainedAttributes);
     },
     adoptAttributes(recipient, attrs) {
@@ -408,7 +390,6 @@ function compactInteractiveSourceHtml(sourceHtml: string): string {
         defaultTreeAdapter.getTagName(recipient),
         attrs,
       );
-      accountRetainedAttributes(retainedAttributes);
       defaultTreeAdapter.adoptAttributes(recipient, retainedAttributes);
     },
     createCommentNode() {
@@ -421,17 +402,18 @@ function compactInteractiveSourceHtml(sourceHtml: string): string {
     },
     insertText(parentNode, text) {
       if (isExcludedParent(parentNode)) return;
-      accountRetainedUnits(text.length);
       defaultTreeAdapter.insertText(parentNode, text);
     },
     insertTextBefore(parentNode, text, referenceNode) {
       if (isExcludedParent(parentNode)) return;
-      accountRetainedUnits(text.length);
       defaultTreeAdapter.insertTextBefore(parentNode, text, referenceNode);
     },
   };
 
   const compactDocument = parseSourceHtml(sourceHtml, { treeAdapter });
+  // Settle retained-content work once against the compact tree that will reach
+  // linkedom. Template payloads are removed here, so neither their text nor their
+  // attributes consume the budget for content that is actually retained.
   const pendingNodes: Array<{ node: DefaultTreeAdapterMap['node']; depth: number }> = [
     { node: compactDocument, depth: 0 },
   ];
@@ -442,10 +424,16 @@ function compactInteractiveSourceHtml(sourceHtml: string): string {
         `interactive elementReference source document exceeds the ${INTERACTIVE_SOURCE_DEPTH_LIMIT}-level structural depth limit`,
       );
     }
-    if (
-      defaultTreeAdapter.isElementNode(current.node) &&
-      defaultTreeAdapter.getTagName(current.node).toLowerCase() === 'template'
-    ) {
+    if (defaultTreeAdapter.isElementNode(current.node)) {
+      const tagName = defaultTreeAdapter.getTagName(current.node);
+      accountRetainedUnits(tagName.length);
+      accountRetainedAttributes(defaultTreeAdapter.getAttrList(current.node));
+      if (tagName.toLowerCase() !== 'template') {
+        for (const child of defaultTreeAdapter.getChildNodes(current.node)) {
+          pendingNodes.push({ node: child, depth: current.depth + 1 });
+        }
+        continue;
+      }
       // HTML templates store descendants in a detached DocumentFragment; foreign
       // namespace elements named `template` keep ordinary childNodes. Both are
       // excluded evidence, so remove the correct payload before recursive
@@ -461,6 +449,10 @@ function compactInteractiveSourceHtml(sourceHtml: string): string {
     }
     if (defaultTreeAdapter.isCommentNode(current.node)) {
       defaultTreeAdapter.detachNode(current.node);
+      continue;
+    }
+    if (defaultTreeAdapter.isTextNode(current.node)) {
+      accountRetainedUnits(defaultTreeAdapter.getTextNodeContent(current.node).length);
       continue;
     }
     if (!('childNodes' in current.node)) continue;
@@ -1383,7 +1375,7 @@ export function resolveInteractiveComponentReference(
   if (
     !tagName ||
     codePointLength(tagName) > INTERACTIVE_TAG_NAME_LIMIT ||
-    EXCLUDED_INTERACTIVE_TAGS.has(tagName)
+    isInteractiveReferenceExcludedTag(tagName)
   ) {
     throw new ElementReferenceValidationError(
       'interactive elementReference resolved to an excluded or invalid source node',

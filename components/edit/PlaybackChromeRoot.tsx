@@ -1245,6 +1245,21 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     );
     const canPickElement = canPickSlideElement || canPickInteractiveComponent;
 
+    useEffect(() => {
+      if (!elementPickActive || !canPickInteractiveComponent) return;
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        event.stopPropagation();
+        setElementPickActive(false);
+      };
+      // An event focused inside the sandboxed iframe is handled by its picker
+      // shim. This listener covers the same Escape affordance while focus is
+      // still in playback chrome after the reference button arms the iframe.
+      window.addEventListener('keydown', onKeyDown, true);
+      return () => window.removeEventListener('keydown', onKeyDown, true);
+    }, [canPickInteractiveComponent, elementPickActive, setElementPickActive]);
+
     const handlePickElement = useCallback(
       (element: PPTElement) => {
         if (

@@ -1,17 +1,30 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
+import { act, createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  InteractiveIframeHost,
   handleInteractivePickerMessage,
   handlePlaybackInteractivePickerMessage,
   resolveInteractivePickerMode,
 } from '@/components/scene-renderers/InteractiveIframeHost';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useElementRefsStore } from '@/lib/store/element-refs';
+import { useInteractiveIframePool } from '@/lib/store/interactive-iframe-pool';
 import {
   ELEMENT_REF_SELECTOR_MAX,
   ELEMENT_SNAPSHOT_MAX,
   INTERACTIVE_OUTERHTML_MAX,
 } from '@/lib/workbench/element-refs';
+
+vi.mock('@/lib/hooks/use-i18n', () => ({
+  useI18n: () => ({
+    t: (key: string) =>
+      key === 'chat.elementReference.instruction'
+        ? 'Click a courseware element · Esc to exit'
+        : key,
+  }),
+}));
 
 const translate = (key: string) => key;
 const picked = {
@@ -25,6 +38,7 @@ const picked = {
 
 afterEach(() => {
   useCanvasStore.getState().resetCanvasState();
+  useInteractiveIframePool.getState().reset();
   useElementRefsStore.setState({
     ownerSessionId: null,
     refs: [],
@@ -34,6 +48,50 @@ afterEach(() => {
 });
 
 describe('InteractiveIframeHost picker messages', () => {
+  it('shows the shared courseware instruction only while playback picking is armed', async () => {
+    useInteractiveIframePool.setState({
+      entries: {
+        'scene-web': {
+          srcDoc: '<div id="component">Component</div>',
+          rect: { left: 0, top: 0, width: 960, height: 540 },
+          clip: { left: 0, top: 0, width: 960, height: 540 },
+          owner: 'test-owner',
+          tick: 1,
+        },
+      },
+      activeSceneId: 'scene-web',
+      tick: 1,
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const renderHost = async (active: boolean) => {
+      await act(async () => {
+        root.render(
+          createElement(InteractiveIframeHost, {
+            playbackPicker: { sceneId: 'scene-web', active },
+            onPlaybackPick: vi.fn(),
+            onPlaybackCancel: vi.fn(),
+          }),
+        );
+        await Promise.resolve();
+      });
+    };
+
+    await renderHost(true);
+    expect(
+      document.querySelector('[data-testid="interactive-element-pick-instruction"]')?.textContent,
+    ).toBe('Click a courseware element · Esc to exit');
+
+    await renderHost(false);
+    expect(
+      document.querySelector('[data-testid="interactive-element-pick-instruction"]'),
+    ).toBeNull();
+
+    act(() => root.unmount());
+    container.remove();
+  });
+
   it('gives playback stable-ID mode deterministic precedence over editor picking', () => {
     expect(resolveInteractivePickerMode(false, false)).toBeNull();
     expect(resolveInteractivePickerMode(true, false)).toBe('editor');

@@ -7,7 +7,7 @@ import type { PPTElement } from '@openmaic/dsl';
 import type { Scene } from '@/lib/types/stage';
 
 const translations: Record<string, string> = {
-  'chat.elementReference.instruction': 'Click a slide element · Esc to exit',
+  'chat.elementReference.instruction': 'Click a courseware element · Esc to exit',
   'chat.elementReference.fallback': 'Other slide elements ({{count}})',
   'chat.elementReference.summary.noText': 'No text',
   'chat.elementReference.summary.emptyContent': 'No content',

@@ -644,6 +644,44 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
     expect(container.querySelector('[data-testid="owner-pill"]')).toBeNull();
   });
 
+  it('cancels an armed Interactive picker with Escape from playback chrome', async () => {
+    stageState.scenes = [interactiveScene];
+    stageState.currentSceneId = interactiveScene.id;
+    const pickerStates: unknown[] = [];
+    const ownerRef = createRef<PlaybackChromeRootHandle>();
+    await renderOwner({
+      ref: ownerRef,
+      onInteractivePickerChange: (state: unknown) => pickerStates.push(state),
+    });
+
+    click('toggle-pick');
+    expect(pickerStates.at(-1)).toEqual({
+      sceneId: interactiveScene.id,
+      active: true,
+      selectedSelector: undefined,
+    });
+
+    const escape = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => window.dispatchEvent(escape));
+
+    expect(escape.defaultPrevented).toBe(true);
+    expect(pickerStates.at(-1)).toEqual({
+      sceneId: interactiveScene.id,
+      active: false,
+      selectedSelector: undefined,
+    });
+    expect(
+      ownerRef.current?.acceptInteractivePick({
+        sceneId: interactiveScene.id,
+        selector: '#stale-after-escape',
+      }),
+    ).toBe(false);
+  });
+
   it('freezes one Interactive identity for exactly one send and preserves it without a receipt', async () => {
     stageState.scenes = [interactiveScene];
     stageState.currentSceneId = interactiveScene.id;

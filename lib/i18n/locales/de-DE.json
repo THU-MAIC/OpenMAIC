@@ -138,7 +138,7 @@
     "elementReference": {
       "button": "Kursinhalt referenzieren",
       "unavailable": "Nur die aktuelle PPT-Folie oder eine unterstützte interaktive Komponente kann referenziert werden",
-      "instruction": "Folienelement anklicken · Esc zum Beenden",
+      "instruction": "Kursmaterialelement anklicken · Esc zum Beenden",
       "fallback": "Weitere Folienelemente ({{count}})",
       "clear": "Kursinhaltsreferenz entfernen",
       "summary": {

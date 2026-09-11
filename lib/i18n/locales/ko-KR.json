@@ -138,7 +138,7 @@
     "elementReference": {
       "button": "수업 자료 참조",
       "unavailable": "현재 PPT 슬라이드 또는 지원되는 인터랙티브 컴포넌트만 참조할 수 있습니다",
-      "instruction": "슬라이드 요소를 클릭하세요 · Esc로 종료",
+      "instruction": "강의 자료 요소를 클릭하세요 · Esc로 종료",
       "fallback": "기타 슬라이드 요소 ({{count}})",
       "clear": "수업 자료 참조 제거",
       "summary": {

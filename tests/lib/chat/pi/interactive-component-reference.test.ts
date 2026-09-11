@@ -243,7 +243,7 @@ describe('Interactive static component reference', () => {
     expect(linkedomCapture.inputs.at(-1)).not.toContain(documentMetadata);
   });
 
-  it('counts attribute values copied by parse5 formatting reconstruction', () => {
+  it('bounds attribute values copied by parse5 formatting reconstruction', () => {
     const repeatedAttribute = 'A'.repeat(10_000);
     const html =
       '<div id="density-slider">ok</div>' +
@@ -253,7 +253,7 @@ describe('Interactive static component reference', () => {
 
     expect(html.length).toBeLessThan(INTERACTIVE_SOURCE_HTML_LIMIT);
     expect(() => resolveElementReference(makeBody(html))).toThrow(ElementReferenceValidationError);
-    expect(() => resolveElementReference(makeBody(html))).toThrow(/retained-content limit/);
+    expect(() => resolveElementReference(makeBody(html))).toThrow(/attribute-work limit/);
     expect(linkedomCapture.inputs).toHaveLength(linkedomInputsBefore);
   });
 
@@ -325,6 +325,51 @@ describe('Interactive static component reference', () => {
     expect(linkedomCapture.inputs.at(-1)).not.toContain('template-secret');
   });
 
+  it.each(['HTML', 'foreign-namespace'] as const)(
+    'does not bill discarded %s template text against the retained-content budget',
+    (namespace) => {
+      const discardedTemplateText = 'template-data'.repeat(50_000);
+      const template =
+        namespace === 'HTML'
+          ? `<template><section>${discardedTemplateText}</section></template>`
+          : `<svg><template><g>${discardedTemplateText}</g></template></svg>`;
+      const result = resolve(`${template}<div id="density-slider">ok</div>`);
+
+      expect(result.evidence.component.sourceText).toBe('ok');
+      expect(linkedomCapture.inputs.at(-1)).toContain('<template></template>');
+      expect(linkedomCapture.inputs.at(-1)).not.toContain(discardedTemplateText);
+    },
+  );
+
+  it.each(['HTML', 'foreign-namespace'] as const)(
+    'does not bill discarded %s template attributes against the retained-content budget',
+    (namespace) => {
+      const discardedTemplateAttribute = 'x'.repeat(600_000);
+      const template =
+        namespace === 'HTML'
+          ? `<template><section data-json="${discardedTemplateAttribute}"></section></template>`
+          : `<svg><template><g data-json="${discardedTemplateAttribute}"></g></template></svg>`;
+      const result = resolve(`${template}<div id="density-slider">ok</div>`);
+
+      expect(result.evidence.component.sourceText).toBe('ok');
+      expect(linkedomCapture.inputs.at(-1)).toContain('<template></template>');
+      expect(linkedomCapture.inputs.at(-1)).not.toContain(discardedTemplateAttribute);
+    },
+  );
+
+  it('compacts deep discarded template text without rescanning its ancestor chain per token', () => {
+    const discardedTemplatePayload =
+      '<template>' +
+      '<div>'.repeat(9_900) +
+      'x '.repeat(10_000) +
+      '</div>'.repeat(9_900) +
+      '</template>';
+    const result = resolve(`${discardedTemplatePayload}<div id="density-slider">ok</div>`);
+
+    expect(result.evidence.component.sourceText).toBe('ok');
+    expect(linkedomCapture.inputs.at(-1)).toContain('<template></template>');
+  }, 4_000);
+
   it.each(['noembed', 'noframes', 'plaintext', 'xmp'] as const)(
     'drops %s raw-text payload before linkedom can reinterpret it as structure',
     (tagName) => {
@@ -369,6 +414,12 @@ describe('Interactive static component reference', () => {
     const tooMuchText = `<div id="density-slider">${'x'.repeat(512_001)}</div>`;
     expect(tooMuchText.length).toBeLessThan(INTERACTIVE_SOURCE_HTML_LIMIT);
     expect(() => resolveElementReference(makeBody(tooMuchText))).toThrow(/retained-content limit/);
+
+    const tooMuchRetainedAttribute = `<div id="density-slider" data-description="${'x'.repeat(512_001)}">ok</div>`;
+    expect(tooMuchRetainedAttribute.length).toBeLessThan(INTERACTIVE_SOURCE_HTML_LIMIT);
+    expect(() => resolveElementReference(makeBody(tooMuchRetainedAttribute))).toThrow(
+      /retained-content limit/,
+    );
 
     const attributesPerElement = Array.from(
       { length: 200 },

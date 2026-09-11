@@ -138,7 +138,7 @@
     "elementReference": {
       "button": "Reference courseware",
       "unavailable": "Only the current PPT slide or a supported interactive component can be referenced",
-      "instruction": "Click a slide element · Esc to exit",
+      "instruction": "Click a courseware element · Esc to exit",
       "fallback": "Other slide elements ({{count}})",
       "clear": "Remove courseware reference",
       "summary": {

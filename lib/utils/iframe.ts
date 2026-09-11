@@ -1,4 +1,9 @@
 import { injectIntoDocumentHead } from './html-document';
+import { INTERACTIVE_REFERENCE_EXCLUDED_TAG_NAMES } from '@/lib/interactive/element-reference-policy';
+
+const INTERACTIVE_REFERENCE_EXCLUDED_TAG_LOOKUP = Object.fromEntries(
+  INTERACTIVE_REFERENCE_EXCLUDED_TAG_NAMES.map((tagName) => [tagName, 1]),
+);
 
 /**
  * In-memory localStorage/sessionStorage shim, injected as the FIRST thing in the
@@ -117,7 +122,7 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
   var candidate = null;
   var raf = null;
   var stableIdPattern = /^[A-Za-z][A-Za-z0-9_-]{0,126}$/;
-  var excludedTags = { html:1, head:1, body:1, script:1, style:1, link:1, meta:1, noscript:1, template:1, iframe:1, canvas:1 };
+  var excludedTags = ${JSON.stringify(INTERACTIVE_REFERENCE_EXCLUDED_TAG_LOOKUP)};
   function emit(message) {
     try { window.parent.postMessage(message, '*'); } catch (e) {}
   }

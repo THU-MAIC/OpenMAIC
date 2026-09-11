@@ -138,7 +138,7 @@
     "elementReference": {
       "button": "教材を参照",
       "unavailable": "現在の PPT スライドまたは対応するインタラクティブコンポーネントのみ参照できます",
-      "instruction": "スライド要素をクリック · Esc で終了",
+      "instruction": "教材要素をクリック · Esc で終了",
       "fallback": "その他のスライド要素（{{count}}）",
       "clear": "教材の参照を解除",
       "summary": {

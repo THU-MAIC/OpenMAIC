@@ -144,5 +144,30 @@ describe('iframe playback stable-ID picker shim', () => {
       }),
     );
     expect(document.querySelector('[data-maic-element-picker-overlay]')).toBeNull();
+
+    postMessage.mockClear();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: window,
+        data: { type: 'element-picker:arm', mode: 'playback-stable-id' },
+      }),
+    );
+    for (const [index, tagName] of ['noembed', 'noframes', 'plaintext', 'xmp'].entries()) {
+      const excluded = document.createElement(tagName);
+      excluded.id = `excluded-${index}`;
+      document.body.appendChild(excluded);
+      excluded.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    }
+    expect(postMessage).not.toHaveBeenCalled();
+
+    component.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'element-picked',
+        mode: 'playback-stable-id',
+        selector: '#component',
+      }),
+      '*',
+    );
   });
 });

@@ -138,7 +138,7 @@
     "elementReference": {
       "button": "Référencer le contenu du cours",
       "unavailable": "Seuls la diapositive PPT actuelle ou un composant interactif pris en charge peuvent être référencés",
-      "instruction": "Cliquez sur un élément · Échap pour quitter",
+      "instruction": "Cliquez sur un élément du support de cours · Échap pour quitter",
       "fallback": "Autres éléments de la diapositive ({{count}})",
       "clear": "Retirer la référence au contenu du cours",
       "summary": {
