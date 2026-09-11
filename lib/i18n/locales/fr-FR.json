@@ -9,6 +9,13 @@
     "retry": "Réessayer",
     "close": "Fermer"
   },
+  "interactiveRuntime": {
+    "regenerateCode": "Régénérer le code",
+    "regeneratingCode": "Régénération du code…",
+    "regenerateCodeSuccess": "Code régénéré",
+    "regenerateCodeFailed": "Impossible de régénérer le code",
+    "regenerateCodeLocked": "Quittez le mode édition avant de régénérer le code"
+  },
   "home": {
     "slogan": "L’apprentissage génératif en classe interactive multi-agents",
     "greetingWithName": "Bonjour, {{name}}"

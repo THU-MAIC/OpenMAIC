@@ -9,6 +9,13 @@
     "retry": "重试",
     "close": "关闭"
   },
+  "interactiveRuntime": {
+    "regenerateCode": "重新生成代码",
+    "regeneratingCode": "正在重新生成代码…",
+    "regenerateCodeSuccess": "代码已重新生成",
+    "regenerateCodeFailed": "无法重新生成代码",
+    "regenerateCodeLocked": "请先退出编辑模式再重新生成代码"
+  },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "嗨，{{name}}"

@@ -9,6 +9,13 @@
     "retry": "Retry",
     "close": "Close"
   },
+  "interactiveRuntime": {
+    "regenerateCode": "Regenerate code",
+    "regeneratingCode": "Regenerating code…",
+    "regenerateCodeSuccess": "Code regenerated",
+    "regenerateCodeFailed": "Could not regenerate code",
+    "regenerateCodeLocked": "Exit edit mode before regenerating code"
+  },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Hi, {{name}}"

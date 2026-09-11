@@ -9,6 +9,13 @@
     "retry": "إعادة المحاولة",
     "close": "إغلاق"
   },
+  "interactiveRuntime": {
+    "regenerateCode": "إعادة إنشاء الكود",
+    "regeneratingCode": "جارٍ إعادة إنشاء الكود…",
+    "regenerateCodeSuccess": "تمت إعادة إنشاء الكود",
+    "regenerateCodeFailed": "تعذرت إعادة إنشاء الكود",
+    "regenerateCodeLocked": "اخرج من وضع التحرير قبل إعادة إنشاء الكود"
+  },
   "home": {
     "slogan": "التعلّم التوليدي في فصل تفاعلي متعدد الوكلاء",
     "greetingWithName": "مرحبًا، {{name}}"

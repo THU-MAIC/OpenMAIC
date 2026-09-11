@@ -9,6 +9,13 @@
     "retry": "Thử lại",
     "close": "Đóng"
   },
+  "interactiveRuntime": {
+    "regenerateCode": "Tạo lại mã",
+    "regeneratingCode": "Đang tạo lại mã…",
+    "regenerateCodeSuccess": "Đã tạo lại mã",
+    "regenerateCodeFailed": "Không thể tạo lại mã",
+    "regenerateCodeLocked": "Thoát chế độ chỉnh sửa trước khi tạo lại mã"
+  },
   "home": {
     "slogan": "Học tập sinh tạo trong lớp học tương tác đa tác nhân",
     "greetingWithName": "Chào {{name}}"

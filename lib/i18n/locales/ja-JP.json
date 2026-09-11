@@ -9,6 +9,13 @@
     "retry": "再試行",
     "close": "閉じる"
   },
+  "interactiveRuntime": {
+    "regenerateCode": "コードを再生成",
+    "regeneratingCode": "コードを再生成中…",
+    "regenerateCodeSuccess": "コードを再生成しました",
+    "regenerateCodeFailed": "コードを再生成できませんでした",
+    "regenerateCodeLocked": "コードを再生成する前に編集モードを終了してください"
+  },
   "home": {
     "slogan": "マルチエージェント対話型教室で生成的に学ぶ",
     "greetingWithName": "こんにちは、{{name}}さん"

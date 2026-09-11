@@ -9,6 +9,13 @@
     "retry": "重试",
     "close": "關閉"
   },
+  "interactiveRuntime": {
+    "regenerateCode": "重新產生程式碼",
+    "regeneratingCode": "正在重新產生程式碼…",
+    "regenerateCodeSuccess": "程式碼已重新產生",
+    "regenerateCodeFailed": "無法重新產生程式碼",
+    "regenerateCodeLocked": "請先離開編輯模式再重新產生程式碼"
+  },
   "home": {
     "slogan": "多智能體互動課室中的生成式學習",
     "greetingWithName": "嗨，{{name}}"

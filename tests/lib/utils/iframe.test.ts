@@ -10,6 +10,20 @@ describe('patchHtmlForIframe', () => {
     expect(out).toContain('data-iframe-patch');
   });
 
+  it('keeps exactly one bounded root scroller and applies that contract after authored CSS', () => {
+    const authoredCss = '<style>html, body { min-height: 100vh; overflow-y: auto; }</style>';
+    const out = patchHtmlForIframe(
+      `<!DOCTYPE html><html><head>${authoredCss}</head><body><main>chart</main></body></html>`,
+    );
+
+    expect(out.indexOf(authoredCss)).toBeLessThan(out.indexOf('data-iframe-patch'));
+    expect(out).toContain('html {');
+    expect(out).toContain('overflow: hidden !important');
+    expect(out).toContain('max-height: 100%');
+    expect(out).toContain('overflow-y: auto !important');
+    expect(out).toContain('min-height: 0 !important');
+  });
+
   it('runs the storage shim before the page scripts', () => {
     const html =
       '<!DOCTYPE html><html><head><script>window.__x = localStorage.getItem("k");</script></head><body></body></html>';

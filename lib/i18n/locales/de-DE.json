@@ -9,6 +9,13 @@
     "retry": "Erneut versuchen",
     "close": "Schließen"
   },
+  "interactiveRuntime": {
+    "regenerateCode": "Code neu generieren",
+    "regeneratingCode": "Code wird neu generiert…",
+    "regenerateCodeSuccess": "Code wurde neu generiert",
+    "regenerateCodeFailed": "Code konnte nicht neu generiert werden",
+    "regenerateCodeLocked": "Beende den Bearbeitungsmodus, bevor du Code neu generierst"
+  },
   "home": {
     "slogan": "Generatives Lernen im interaktiven Lernraum mit mehreren KI-Agenten",
     "greetingWithName": "Hallo, {{name}}"

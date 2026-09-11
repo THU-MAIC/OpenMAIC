@@ -43,11 +43,22 @@ export function InteractiveRenderer({ content, sceneId }: InteractiveRendererPro
     mount(sceneId, {
       srcDoc: patchedHtml,
       src: patchedHtml ? undefined : content.url,
+      widgetType: content.widgetType,
     });
     setActive(sceneId);
     claim(sceneId, owner);
     return () => release(sceneId, owner);
-  }, [sceneId, owner, patchedHtml, content.url, mount, setActive, claim, release]);
+  }, [
+    sceneId,
+    owner,
+    patchedHtml,
+    content.url,
+    content.widgetType,
+    mount,
+    setActive,
+    claim,
+    release,
+  ]);
 
   // Track this slot's screen rect for the host. rAF loop mirrors useTrackedRect:
   // one getBoundingClientRect read resolves canvas scale, viewport offset and

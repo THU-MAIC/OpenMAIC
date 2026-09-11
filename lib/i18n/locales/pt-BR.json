@@ -9,6 +9,13 @@
     "retry": "Tentar novamente",
     "close": "Fechar"
   },
+  "interactiveRuntime": {
+    "regenerateCode": "Gerar código novamente",
+    "regeneratingCode": "Gerando código novamente…",
+    "regenerateCodeSuccess": "Código gerado novamente",
+    "regenerateCodeFailed": "Não foi possível gerar o código novamente",
+    "regenerateCodeLocked": "Saia do modo de edição antes de gerar o código novamente"
+  },
   "home": {
     "slogan": "Aprendizagem Generativa em Sala de Aula Interativa Multi-Agente",
     "greetingWithName": "Olá, {{name}}"

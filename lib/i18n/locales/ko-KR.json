@@ -9,6 +9,13 @@
     "retry": "다시 시도",
     "close": "닫기"
   },
+  "interactiveRuntime": {
+    "regenerateCode": "코드 다시 생성",
+    "regeneratingCode": "코드 다시 생성 중…",
+    "regenerateCodeSuccess": "코드를 다시 생성했습니다",
+    "regenerateCodeFailed": "코드를 다시 생성하지 못했습니다",
+    "regenerateCodeLocked": "코드를 다시 생성하려면 편집 모드에서 나가세요"
+  },
   "home": {
     "slogan": "멀티 에이전트 인터랙티브 교실에서 펼치는 생성형 학습",
     "greetingWithName": "안녕하세요, {{name}}!"
