@@ -26,13 +26,78 @@ import {
   resolveImageModel,
   resolveServerImageProviderId,
 } from '@/lib/server/provider-config';
-import type { ImageProviderId, ImageGenerationOptions } from '@/lib/media/types';
+import type {
+  ImageGenerationConfig,
+  ImageGenerationResult,
+  ImageGenerationOptions,
+  ImageProviderId,
+} from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { resolveImageSize } from '@/lib/server/image-sizing';
 
 const log = createLogger('ImageGeneration API');
+
+/** Total attempts per request (initial call + retries). */
+const IMAGE_TRANSIENT_RETRY_ATTEMPTS = 3;
+/** First retry backoff; doubles per attempt. */
+const IMAGE_TRANSIENT_RETRY_BASE_DELAY_MS = 400;
+
+/** undici/Node transport-level failure codes worth a bounded retry. */
+const TRANSIENT_TRANSPORT_CODES = [
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'EAI_AGAIN',
+  'ENOTFOUND',
+  'UND_ERR_SOCKET',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT',
+];
+
+/**
+ * A dropped connection ("fetch failed" — undici's generic transport message)
+ * is not retried by undici for POST bodies, so a single transient reset used
+ * to fail the whole image task. Retry bounded, only for transport failures:
+ * HTTP-level and content-safety rejections pass through untouched (they would
+ * repeat deterministically and may bill per attempt).
+ */
+function isTransientTransportError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message === 'fetch failed' || message === 'network error') return true;
+  const cause = (error as { cause?: unknown } | null)?.cause;
+  if (cause && typeof cause === 'object') {
+    const code = (cause as { code?: unknown }).code;
+    if (typeof code === 'string' && TRANSIENT_TRANSPORT_CODES.includes(code)) return true;
+  }
+  return false;
+}
+
+async function generateImageWithTransientRetry(
+  config: ImageGenerationConfig,
+  options: ImageGenerationOptions,
+): Promise<ImageGenerationResult> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= IMAGE_TRANSIENT_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await generateImage(config, options);
+    } catch (error) {
+      lastError = error;
+      if (!isTransientTransportError(error) || attempt === IMAGE_TRANSIENT_RETRY_ATTEMPTS) {
+        throw error;
+      }
+      const delay = IMAGE_TRANSIENT_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+      log.warn(
+        `Image provider transport error (attempt ${attempt}/${IMAGE_TRANSIENT_RETRY_ATTEMPTS}), ` +
+          `retrying in ${delay}ms: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
+}
 
 // The ComfyUI adapter polls up to GENERATION_TIMEOUT_MS (5 min) and real
 // workflows can take 3–5 min. 60s would let platforms that enforce maxDuration
@@ -108,7 +173,10 @@ export async function POST(request: NextRequest) {
         `prompt="${sizedOptions.prompt.slice(0, 80)}...", size=${sizedOptions.width ?? 'auto'}x${sizedOptions.height ?? 'auto'}`,
     );
 
-    const result = await generateImage({ providerId, apiKey, baseUrl, model }, sizedOptions);
+    const result = await generateImageWithTransientRetry(
+      { providerId, apiKey, baseUrl, model },
+      sizedOptions,
+    );
 
     void recordGenerationUsage({
       kind: 'image',
