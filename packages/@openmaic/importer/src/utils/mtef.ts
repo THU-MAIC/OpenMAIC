@@ -296,6 +296,8 @@ class Cursor {
 }
 
 const MAX_RECORDS = 20_000;
+const MAX_DEPTH = 200;
+const MAX_LATEX_LENGTH = 64 * 1024;
 
 interface CharNode {
   kind: 'char';
@@ -317,6 +319,7 @@ interface LineNode {
 type Node = CharNode | TmplNode | LineNode | { kind: 'other' };
 
 function parseObjectList(cur: Cursor, budget: { count: number }, depth = 0): Node[] {
+  if (depth > MAX_DEPTH) throw new MtefParseError('MTEF nesting too deep');
   const nodes: Node[] = [];
   while (!cur.eof) {
     if (++budget.count > MAX_RECORDS) throw new MtefParseError('MTEF stream too large');
@@ -449,22 +452,29 @@ interface RenderState {
  * text turns α into `a`. Codes ≥ 0x100 are MTCode/Unicode and skip this table.
  */
 const SYMBOL_FONT_LATEX: Record<number, string> = {
+  // Adobe Symbol font encoding (verified against URW StandardSymbolsPS AFM
+  // + Adobe AGL): covers the Greek block and every punctuation/operator
+  // position where Symbol differs from ASCII. Unmapped font-local bytes
+  // >= 0xA0 pass through and flag degraded (see charLatex).
+  0x22: '\\forall ',
+  0x24: '\\exists ',
+  0x27: '\\ni ',
   0x2a: '\\ast ',
   0x2d: '-',
-  0x3c: '\\le ',
-  0x3e: '\\ge ',
-  0x5b: '\\leftarrow ',
-  0x5d: '\\rightarrow ',
-  0x5e: '\\uparrow ',
-  0x5f: '\\downarrow ',
-  0x60: '\\equiv ',
-  0x7e: '\\simeq ',
+  0x5e: '\\perp ',
+  0x3c: '<',
+  0x3e: '>',
+  0x5b: '[',
+  0x5d: ']',
+  0x5c: '\\therefore ',
+  0x40: '\\cong ',
+  0x7e: '\\sim ',
   0x61: '\\alpha ',
   0x62: '\\beta ',
   0x63: '\\chi ',
   0x64: '\\delta ',
   0x65: '\\epsilon ',
-  0x66: '\\phi ',
+  0x66: '\\varphi ',
   0x67: '\\gamma ',
   0x68: '\\eta ',
   0x69: '\\iota ',
@@ -487,12 +497,14 @@ const SYMBOL_FONT_LATEX: Record<number, string> = {
   0x7a: '\\zeta ',
   0x41: 'A',
   0x42: 'B',
+  0x43: 'X',
   0x44: '\\Delta ',
   0x45: 'E',
   0x46: '\\Phi ',
   0x47: '\\Gamma ',
   0x48: 'H',
   0x49: 'I',
+  0x4a: '\\vartheta ',
   0x4b: 'K',
   0x4c: '\\Lambda ',
   0x4d: 'M',
@@ -504,10 +516,24 @@ const SYMBOL_FONT_LATEX: Record<number, string> = {
   0x53: '\\Sigma ',
   0x54: 'T',
   0x55: '\\Upsilon ',
+  0x56: '\\varsigma ',
   0x57: '\\Omega ',
   0x58: '\\Xi ',
   0x59: '\\Psi ',
   0x5a: 'Z',
+  // Adobe Symbol high half: the operator block real Equation 3.0 decks use.
+  0xa3: '\\le ',
+  0xb3: '\\ge ',
+  0xb4: '\\times ',
+  0xb8: '\\div ',
+  0xa5: '\\infty ',
+  0xae: '\\to ',
+  0xb9: '\\ne ',
+  0xd6: '\\surd ',
+  0xb1: '\\pm ',
+  0xac: '\\leftarrow ',
+  0xbb: '\\approx ',
+  0xba: '\\equiv ',
 };
 
 const TF_LCGREEK = 4;
@@ -521,6 +547,11 @@ function charLatex(node: CharNode, state: RenderState): string {
     (node.typeface === TF_LCGREEK + 128 ||
       node.typeface === TF_UCGREEK + 128 ||
       node.typeface === TF_SYMBOL + 128);
+  if (fontLocal && node.code >= 0xa0 && SYMBOL_FONT_LATEX[node.code] === undefined) {
+    // Unmapped Symbol operator position: passing the raw Latin-1 byte through
+    // is at best approximate — flag it so callers can warn.
+    state.degraded = true;
+  }
   const symbol = fontLocal
     ? (SYMBOL_FONT_LATEX[node.code] ?? escapeLatexChar(node.code))
     : SYMBOL_LATEX[node.code];
@@ -604,7 +635,10 @@ function renderList(nodes: Node[], state: RenderState): Rendered {
       // A following tmSCRIPT attaches to this atom (e.g. (a/2)²: the script
       // template trails the paren template as a sibling in the same list).
       const next = nodes[i + 1];
-      if (next?.kind === 'tmpl' && (next.selector === TM_SCRIPT || next.selector === TM_LSCRIPT)) {
+      // Only tmSCRIPT attaches backwards; tmLSCRIPT is a LEADING script whose
+      // base is the atom AFTER it — routing it through renderScript would
+      // steal the previous atom as its base.
+      if (next?.kind === 'tmpl' && next.selector === TM_SCRIPT) {
         const combo = renderScript(next, rendered, renderedText, state);
         latex.push(combo.latex);
         text.push(combo.plainText);
@@ -657,10 +691,12 @@ function renderTmpl(node: TmplNode, state: RenderState): Rendered {
   if (fence) {
     // The fence CHARs at the end of the template's own list are structural;
     // the \left/\right pair already renders them, so only the slot matters.
-    // Variations: 0 = both sides, 1 = left only, 2 = right only.
+    // Variations: 0 = both sides, 1 = left only, 2 = right only — the missing
+    // side becomes a null delimiter (\left. / \right.) so the output is
+    // always a matched KaTeX pair (piecewise-function braces are var 1).
     const [inner] = lineContents(children, state);
-    const open = variation === 2 ? '' : fence[0];
-    const close = variation === 1 ? '' : fence[1];
+    const open = variation === 2 ? '\\left. ' : fence[0];
+    const close = variation === 1 ? '\\right. ' : fence[1];
     return {
       latex: `${open}${inner?.latex ?? ''}${close}`,
       plainText: `(${inner?.plainText ?? ''})`,
@@ -707,12 +743,17 @@ function renderTmpl(node: TmplNode, state: RenderState): Rendered {
 
   if (selector === TM_LSCRIPT) {
     // Leading script: slots are [sub, sup] (ScrBoxClass order); variation
-    // picks which exist. tvLSUPER=0, tvLSUB=1, tvLSUBSUP=2.
+    // picks which exist (tvLSUPER=0, tvLSUB=1, tvLSUBSUP=2). The BASE is the
+    // next sibling in the parent list — this template emits the scripts only;
+    // re-emitting a slot as a base group would duplicate it.
     const parts = lineContents(children, state);
     const sub = variation === 0 ? '' : (parts[0]?.latex ?? '');
-    const sup = variation === 1 ? '' : (parts[1]?.latex ?? '');
+    // tvLSUPER writers may emit the sup slot alone; fall back like the
+    // big-operator branch does.
+    const sup =
+      variation === 1 ? '' : (parts[1]?.latex ?? (variation === 0 ? (parts[0]?.latex ?? '') : ''));
     return {
-      latex: `{}${sub ? `_{${sub}}` : ''}${sup ? `^{${sup}}` : ''}{${parts[2]?.latex ?? parts[1]?.latex ?? parts[0]?.latex ?? ''}}`,
+      latex: `{}${sub ? `_{${sub}}` : ''}${sup ? `^{${sup}}` : ''}`,
       plainText: parts.map((p) => p.plainText).join(''),
     };
   }
@@ -753,10 +794,18 @@ function renderTmpl(node: TmplNode, state: RenderState): Rendered {
   }
 
   if (selector === TM_LIM) {
-    // Slots [main, lower, upper]; variation 0/1/2 = lower / upper / both.
+    // Slots [main, lower, upper]. Variations (spec + rtf2latex2e eqn.c):
+    // 0 = tvULIM upper limit, 1 = tvLLIM lower limit, 2 = tvBLIM both.
+    // Single-limit writers emit two slots — the lone limit sits at position 1
+    // regardless of role — fall back like the big-operator branch does.
     const parts = lineContents(children, state);
-    const sub = variation === 1 ? '' : (parts[1]?.latex ?? '');
-    const sup = variation === 0 ? '' : (parts[2]?.latex ?? '');
+    const sub = variation === 1 || variation === 2 ? (parts[1]?.latex ?? '') : '';
+    const sup =
+      variation === 0
+        ? (parts[2]?.latex ?? parts[1]?.latex ?? '')
+        : variation === 2
+          ? (parts[2]?.latex ?? '')
+          : '';
     return {
       latex: `\\lim${sub ? `_{${sub}}` : ''}${sup ? `^{${sup}}` : ''}${parts[0]?.latex ?? ''}`,
       plainText: `lim${parts.map((p) => p.plainText).join('')}`,
@@ -867,5 +916,8 @@ export function equationNativeToLatex(stream: Uint8Array): MtefConversion {
   const rendered = renderList(root, state);
   const latex = rendered.latex.replace(/\s+/g, ' ').trim();
   if (!latex) throw new MtefParseError('MTEF stream produced empty equation');
+  if (latex.length > MAX_LATEX_LENGTH) {
+    throw new MtefParseError('MTEF stream produced oversized LaTeX output');
+  }
   return { latex, plainText: rendered.plainText.trim(), degraded: state.degraded };
 }

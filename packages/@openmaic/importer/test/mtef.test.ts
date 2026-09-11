@@ -213,7 +213,7 @@ describe('mtef · equationNativeToLatex', () => {
 
 describe('mtef · spec-conformance (cross-review round 2)', () => {
   it('BigOp tmSUM(tvBSUM) renders [main, upper, lower] in the right roles', () => {
-    // Slots per spec: main=summand k, upper=n, lower=i=1.
+    // Slots per real streams: [main=k, lower=i=1, upper=n].
     const stream = mtefStream([
       ...FULL,
       ...LINE,
@@ -416,7 +416,7 @@ describe('mtef · spec-conformance (cross-review round 2)', () => {
     expect(equationNativeToLatex(over).latex).toBe('\\overline{x}');
   });
 
-  it('fence variations render only the present side', () => {
+  it('fence variations render matched pairs via null delimiters (KaTeX-valid)', () => {
     const leftOnly = mtefStream([
       ...FULL,
       ...LINE,
@@ -431,7 +431,9 @@ describe('mtef · spec-conformance (cross-review round 2)', () => {
       ...END,
       ...END,
     ]);
-    expect(equationNativeToLatex(leftOnly).latex).toBe('\\left ( a');
+    const left = equationNativeToLatex(leftOnly);
+    expect(left.latex).toBe('\\left ( a\\right.');
+    expect(() => katex.renderToString(left.latex, { throwOnError: true })).not.toThrow();
     const rightOnly = mtefStream([
       ...FULL,
       ...LINE,
@@ -446,7 +448,28 @@ describe('mtef · spec-conformance (cross-review round 2)', () => {
       ...END,
       ...END,
     ]);
-    expect(equationNativeToLatex(rightOnly).latex).toBe('a\\right )');
+    const right = equationNativeToLatex(rightOnly);
+    expect(right.latex).toBe('\\left. a\\right )');
+    expect(() => katex.renderToString(right.latex, { throwOnError: true })).not.toThrow();
+    // tmBRACE var 1 — the legacy piecewise-function brace.
+    const brace = equationNativeToLatex(
+      mtefStream([
+        ...FULL,
+        ...LINE,
+        0x03,
+        2,
+        1,
+        0,
+        ...LINE,
+        ...varChar(0x61),
+        ...END,
+        ...END,
+        ...END,
+        ...END,
+      ]),
+    );
+    expect(brace.latex).toBe('\\left \\{ a\\right.');
+    expect(() => katex.renderToString(brace.latex, { throwOnError: true })).not.toThrow();
   });
 
   it('tmDIRAC renders ⟨left|right⟩ and degrades on a missing right slot', () => {
@@ -472,7 +495,7 @@ describe('mtef · spec-conformance (cross-review round 2)', () => {
     expect(() => katex.renderToString(conv.latex, { throwOnError: true })).not.toThrow();
   });
 
-  it('tmLSCRIPT(tvLSUB) renders a leading subscript, not superscript', () => {
+  it('tmLSCRIPT emits only the leading scripts; the base is the next sibling', () => {
     const stream = mtefStream([
       ...FULL,
       ...LINE,
@@ -483,19 +506,68 @@ describe('mtef · spec-conformance (cross-review round 2)', () => {
       ...LINE,
       ...varChar(0x31),
       ...END,
-      ...LINE_NULL,
       ...END,
       ...varChar(0x53),
       ...END,
       ...END,
     ]);
-    // leading script template + following base char S
-    const conv = equationNativeToLatex(stream);
-    expect(conv.latex).toBe('{}_{1}{}S');
+    expect(equationNativeToLatex(stream).latex).toBe('{}_{1}S');
+    // tvLSUPER with a single emitted slot (no null-sub line): the lone slot
+    // IS the superscript — it must not vanish.
+    const supOnly = mtefStream([
+      ...FULL,
+      ...LINE,
+      0x03,
+      44,
+      0,
+      0,
+      ...LINE,
+      ...numChar(0x31),
+      ...numChar(0x32),
+      ...END,
+      ...END,
+      ...varChar(0x43),
+      ...END,
+      ...END,
+    ]);
+    expect(equationNativeToLatex(supOnly).latex).toBe('{}^{12}C');
+    // A leading script must NOT steal the previous atom as its base.
+    const trail = mtefStream([
+      ...FULL,
+      ...LINE,
+      ...varChar(0x3d),
+      0x03,
+      44,
+      2,
+      0,
+      ...LINE,
+      ...numChar(0x36),
+      ...END,
+      ...LINE,
+      ...numChar(0x31),
+      ...numChar(0x32),
+      ...END,
+      ...END,
+      ...varChar(0x43),
+      ...END,
+      ...END,
+    ]);
+    expect(equationNativeToLatex(trail).latex).toBe('={}_{6}^{12}C');
   });
 
-  it('deeply nested fences render in linear time (perf guard)', () => {
-    function nested(depth: number): number[] {
+  it('deeply nested templates render in linear time and bounded size (perf guard)', () => {
+    // Nest the leading-script template inside its own sup slot — the shape
+    // that doubled per level before the base-duplication fix.
+    function nestedScripts(depth: number): number[] {
+      let rec: number[] = [...varChar(0x78)];
+      for (let i = 0; i < depth; i++) {
+        rec = [0x03, 44, 0, 0, ...LINE_NULL, ...LINE, ...rec, ...END, ...END];
+      }
+      return [...FULL, ...LINE, ...rec, ...END, ...END];
+    }
+    const conv = equationNativeToLatex(mtefStream(nestedScripts(90))); // 2 depth levels each, under the 200 cap
+    expect(conv.latex.length).toBeLessThan(2_000);
+    function nestedFences(depth: number): number[] {
       let rec: number[] = [...varChar(0x78)];
       for (let i = 0; i < depth; i++) {
         rec = [0x03, 1, 0, 0, 0x01, ...rec, 0x00, 0x00];
@@ -503,10 +575,8 @@ describe('mtef · spec-conformance (cross-review round 2)', () => {
       return [...FULL, ...LINE, ...rec, ...END, ...END];
     }
     const t0 = Date.now();
-    const conv = equationNativeToLatex(mtefStream(nested(80)));
-    const ms = Date.now() - t0;
-    expect(conv.latex).toContain('x');
-    expect(ms).toBeLessThan(2000);
+    expect(equationNativeToLatex(mtefStream(nestedFences(80))).latex).toContain('x');
+    expect(Date.now() - t0).toBeLessThan(2000);
   });
 
   it('truncated nested list throws instead of silently losing content', () => {
@@ -639,5 +709,119 @@ describe('mtef · round-3 fixes', () => {
       ...END,
     ]);
     expect(equationNativeToLatex(stream).latex).toBe('x');
+  });
+});
+
+describe('mtef · real Equation 3.0 fixtures (round-tripped from a legacy deck)', () => {
+  // Raw `Equation Native` streams from a real 消防 courseware deck
+  // (Equation.3 OLE objects), base64-encoded. These pin the font-local
+  // Symbol encoding and the [main, lower, upper] big-op claims against
+  // bytes a real writer produced.
+  const OLE_A_EQ_A_DOT_B =
+    'HAAAAAIA5sEdAAAAAAAAAFAlGACMMBgAAAAAAAMBAQMKCgESg0EAAoY9ABKDYQAChsUiEoNiAAAA';
+  const OLE_R_PRIME_LE_R =
+    'HAAAAAIA5sGFAAAAAAAAAJDDFwC87hcAAAAAAAMBAQMKCgEyg1IABgUAAAKGPQADDQAAAQMBAAABAw4AAAESg2EAAAECiDIAAAAAApYoAAKWKQAAAw8AAAsRAQKIMgAAAAoChisAAwEAAAEDDgAAARKDYgAAAQKIMgAAAAACligAApYpAAADDwAACxEBAogyAAAAABEACgKGZCISg1IAAAA=';
+  const OLE_2R_PRIME_LE_D_I =
+    'HAAAAAIAycGmAAAAAAAAAPgxFgD0zRUAAAAAAAMBAQMKCgECiDIAMoNSAAYFAAAChj0AAogyAAMNAAABAwEAAAEDDgAAARKDYQAAAQKIMgAAAAACligAApYpAAADDwAACxEBAogyAAAACgKGKwADAQAAAQMOAAABEoNiAAABAogyAAAAAAKWKAAClikAAAMPAAALEQECiDIAAAAAEQAKAoZkIgKIMgASg1IAAoY9ABKDRAADDwEACwESg2kAABEAAAA=';
+
+  function decode(b64: string): Uint8Array {
+    return new Uint8Array(Buffer.from(b64, 'base64'));
+  }
+
+  it('fixture 1: A = a·b (fnSYMBOL = / ⋅ via MTCode)', () => {
+    const conv = equationNativeToLatex(decode(OLE_A_EQ_A_DOT_B));
+    expect(conv.latex).toBe('A=a\\cdot b');
+    expect(conv.degraded).toBe(false);
+  });
+
+  it("fixture 2: R' = √((a/2)²+(b/2)²) ≤ R", () => {
+    const conv = equationNativeToLatex(decode(OLE_R_PRIME_LE_R));
+    expect(conv.latex).toBe(
+      "R'=\\sqrt{\\left ( \\frac{a}{2}\\right ) ^{2}+\\left ( \\frac{b}{2}\\right ) ^{2}}\\le R",
+    );
+    expect(conv.degraded).toBe(false);
+    expect(() => katex.renderToString(conv.latex, { throwOnError: true })).not.toThrow();
+  });
+
+  it("fixture 3: 2R' = 2√((a/2)²+(b/2)²) ≤ 2R = Dᵢ", () => {
+    const conv = equationNativeToLatex(decode(OLE_2R_PRIME_LE_D_I));
+    expect(conv.latex).toBe(
+      "2R'=2\\sqrt{\\left ( \\frac{a}{2}\\right ) ^{2}+\\left ( \\frac{b}{2}\\right ) ^{2}}\\le 2R=D_{i}",
+    );
+    expect(conv.degraded).toBe(false);
+  });
+});
+
+describe('mtef · review round fixes', () => {
+  it('tmLIM variations map roles correctly (0=upper, 1=lower)', () => {
+    // Single-limit writers emit two slots [main, limit]; the role comes from
+    // the variation, not the position (spec + rtf2latex2e eqn.c).
+    const upperOnly = mtefStream([
+      ...FULL,
+      ...LINE,
+      0x03,
+      39,
+      0,
+      0, // tmLIM tvULIM
+      ...LINE,
+      ...varChar(0x78),
+      ...END, // main: x
+      ...LINE,
+      ...varChar(0x6e),
+      ...END, // the lone limit
+      ...END,
+      ...END,
+      ...END,
+    ]);
+    expect(equationNativeToLatex(upperOnly).latex).toBe('\\lim^{n}x');
+    const lowerOnly = mtefStream([
+      ...FULL,
+      ...LINE,
+      0x03,
+      39,
+      1,
+      0, // tmLIM tvLLIM
+      ...LINE,
+      ...varChar(0x78),
+      ...END,
+      ...LINE,
+      ...varChar(0x6e),
+      ...END,
+      ...END,
+      ...END,
+      ...END,
+    ]);
+    expect(equationNativeToLatex(lowerOnly).latex).toBe('\\lim_{n}x');
+  });
+
+  it('Adobe Symbol operator block maps correctly (≤ × → ∞ ≠)', () => {
+    const conv = mtefStream([
+      ...FULL,
+      ...LINE,
+      0x02,
+      0x86,
+      0xa3,
+      0x00, // fnSYMBOL 0xA3 = ≤
+      ...varChar(0x61),
+      0x02,
+      0x86,
+      0xb4,
+      0x00, // fnSYMBOL 0xB4 = ×
+      ...varChar(0x62),
+      ...END,
+      ...END,
+    ]);
+    expect(equationNativeToLatex(conv).latex).toBe('\\le a\\times b');
+  });
+
+  it('nesting depth cap throws MtefParseError instead of RangeError', () => {
+    function nestedFences(depth: number): number[] {
+      let rec: number[] = [...varChar(0x78)];
+      for (let i = 0; i < depth; i++) {
+        rec = [0x03, 1, 0, 0, 0x01, ...rec, 0x00, 0x00];
+      }
+      return [...FULL, ...LINE, ...rec, ...END, ...END];
+    }
+    expect(() => equationNativeToLatex(mtefStream(nestedFences(500)))).toThrow(MtefParseError);
   });
 });
