@@ -3,9 +3,10 @@
 import type { PPTVideoElement } from '@openmaic/dsl';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
+import { mediaFailureNoticeKey } from '@/lib/media/media-failure';
 import { mediaResolutionCanRetry } from '@/lib/media/resolve-media-ref';
 import { useSettingsStore } from '@/lib/store/settings';
-import { RotateCcw, VideoOff } from 'lucide-react';
+import { RotateCcw, ShieldAlert, VideoOff } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSceneData } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
@@ -28,13 +29,17 @@ export function VideoElement({ elementInfo, selectElement }: VideoElementProps) 
   const stageId = useMediaStageId();
   const mediaGenerationDisabled = useSettingsStore((state) => !state.videoGenerationEnabled);
   const tasks = useMediaGenerationStore((state) => state.tasks);
-  const { mediaRef, resolution, resolvedSrc, resolvedPoster } = useResolvedVideoMedia(
+  const { mediaRef, resolution, resolvedSrc, resolvedPoster, task } = useResolvedVideoMedia(
     elementInfo,
     tasks,
     stageId,
     mediaGenerationDisabled,
   );
   const canRetry = mediaResolutionCanRetry(resolution);
+  // A refusal says why, next to the Retry rather than instead of it -- and only
+  // next to one, so a permanent refusal still paints exactly what it painted
+  // before this branch. See the note in the image element.
+  const failureNotice = canRetry ? mediaFailureNoticeKey(task?.errorCode) : undefined;
   const retryRef = mediaRef;
 
   const handleSelectElement = (e: React.MouseEvent | React.TouchEvent) => {
@@ -73,7 +78,21 @@ export function VideoElement({ elementInfo, selectElement }: VideoElementProps) 
               <span>{t('settings.mediaGenerationDisabled')}</span>
             </div>
           ) : resolution.kind === 'failed' ? (
-            <div className="flex h-full w-full items-center justify-center rounded bg-red-50 dark:bg-red-900/20">
+            <div
+              // Stacked only when there is something to stack; see the image
+              // element's note.
+              className={
+                failureNotice
+                  ? 'flex h-full w-full flex-col items-center justify-center gap-1.5 rounded bg-red-50 dark:bg-red-900/20'
+                  : 'flex h-full w-full items-center justify-center rounded bg-red-50 dark:bg-red-900/20'
+              }
+            >
+              {failureNotice ? (
+                <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                  <ShieldAlert className="h-3 w-3 shrink-0" />
+                  <span>{t(failureNotice)}</span>
+                </div>
+              ) : null}
               {canRetry && retryRef ? (
                 <button
                   onClick={(event) => {

@@ -107,22 +107,41 @@ export function VideoExportDialog({
   const { resolution, fps, quality, burnInSubtitles } = options;
   // undefined = unknown (still probing); true/false = capability answer.
   const [serviceEnabled, setServiceEnabled] = useState<boolean | undefined>(undefined);
+  const [accepting, setAccepting] = useState<boolean | undefined>(undefined);
+  const [checking, setChecking] = useState(true);
+  const [probeAttempt, setProbeAttempt] = useState(0);
+  const [previousOpen, setPreviousOpen] = useState(open);
+  // Reopening must not briefly enable MP4 using the last opening's answer.
+  if (previousOpen !== open) {
+    setPreviousOpen(open);
+    if (open) setChecking(true);
+  }
 
   useEffect(() => {
     if (!open) return;
     let active = true;
-    fetch('/api/export-video/capability')
-      .then((r) => r.json())
-      .then((d: { enabled?: boolean }) => {
-        if (active) setServiceEnabled(Boolean(d.enabled));
+    const controller = new AbortController();
+    fetch('/api/export-video/capability', { signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error('Capability check failed');
+        return r.json();
+      })
+      .then((d: { enabled?: boolean; accepting?: boolean }) => {
+        if (!active) return;
+        setServiceEnabled(Boolean(d.enabled));
+        setAccepting(d.accepting);
       })
       .catch(() => {
         if (active) setServiceEnabled(false);
+      })
+      .finally(() => {
+        if (active) setChecking(false);
       });
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [open]);
+  }, [open, probeAttempt]);
 
   // Any in-flight export operation (ZIP build, in-app render, or subtitle
   // download) blocks the others — they share one compile/store critical section.
@@ -218,12 +237,27 @@ export function VideoExportDialog({
             {serviceEnabled && (
               <button
                 onClick={() => renderVideo()}
-                disabled={busy}
+                disabled={busy || checking || accepting === false}
                 className="w-full px-2 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
                 {rendering && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 {t('export.videoRenderMp4')}
               </button>
+            )}
+            {serviceEnabled && accepting === false && (
+              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span role="status">{t('export.videoQueueBusy')}</span>
+                <button
+                  onClick={() => {
+                    setChecking(true);
+                    setProbeAttempt((attempt) => attempt + 1);
+                  }}
+                  disabled={checking || busy}
+                  className="shrink-0 underline underline-offset-2 disabled:opacity-50"
+                >
+                  {checking ? t('export.videoCheckingQueue') : t('export.videoRecheckQueue')}
+                </button>
+              </div>
             )}
             <button
               onClick={() => exportVideo(resolution, burnInSubtitles)}

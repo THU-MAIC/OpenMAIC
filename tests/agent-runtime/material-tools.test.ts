@@ -497,6 +497,9 @@ describe('material agent tools', () => {
         sessionId: 'ses_1',
         listMaterials: vi.fn().mockResolvedValue([material()]),
         readTextAsset: singleAsset(Buffer.from('a'.repeat(1_100_000))),
+        // Frozen clock: only the character budget can stop the scan, so the
+        // assertion does not depend on how fast the test machine is.
+        now: () => 0,
       }),
       'search_material',
     );
@@ -504,6 +507,30 @@ describe('material agent tools', () => {
     expect(result.details).toMatchObject({
       mode: 'literal',
       scannedChars: 1_000_000,
+      truncated: true,
+      hits: [],
+    });
+  });
+
+  it('stops at the per-execution time budget and reports truncation', async () => {
+    let clockCalls = 0;
+    const search = tool(
+      buildMaterialTools({
+        sessionId: 'ses_1',
+        listMaterials: vi.fn().mockResolvedValue([material()]),
+        readTextAsset: singleAsset(Buffer.from('a'.repeat(1_100_000))),
+        // Clock reads, in order: deadline (0 + 100), the pre-read check, the
+        // post-decode check, and the first per-chunk check all see 0, so one
+        // 16_384-char chunk is scanned; the second per-chunk check reads 1_000
+        // and trips the time budget with the counter at exactly one chunk.
+        now: () => (clockCalls++ < 4 ? 0 : 1_000),
+      }),
+      'search_material',
+    );
+    const result = await search.execute('call_1', { query: 'not-present' } as never);
+    expect(result.details).toMatchObject({
+      mode: 'literal',
+      scannedChars: 16_384,
       truncated: true,
       hits: [],
     });
