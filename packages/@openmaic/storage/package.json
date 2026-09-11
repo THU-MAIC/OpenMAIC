@@ -63,10 +63,6 @@
       "types": "./dist/asset/collector.d.ts",
       "import": "./dist/asset/collector.js"
     },
-    "./asset/references": {
-      "types": "./dist/asset/references.d.ts",
-      "import": "./dist/asset/references.js"
-    },
     "./server": {
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js"

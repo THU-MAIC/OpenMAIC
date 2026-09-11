@@ -64,24 +64,16 @@ export {
   ensureAssetSchema,
   type PgAssetStoreOptions,
 } from './asset/pg.js';
-export {
-  STAGE_ASSET_SCOPE_SCENE_ID,
-  backfillDocumentAssetReferences,
-  documentAssetScopes,
-  removeDocumentAssetReferences,
-  sceneAssetScope,
-  stageAssetScope,
-  syncDocumentAssetReferences,
-  syncStageAssetReferences,
-  type DocumentAssetScope,
-  type RemoveDocumentAssetReferencesInput,
-  type ScopedDocumentInput,
-  type SyncDocumentAssetReferencesInput,
-  type SyncStageAssetReferencesInput,
-} from './asset/references.js';
+// `./asset/references.js` is deliberately NOT re-exported. Its functions are
+// transaction-scoped maintenance primitives that replace and delete reference
+// rows; called outside a document write they would corrupt the table they
+// maintain. The supported surface is the two options -- PgDocumentStore's
+// `trackAssetReferences` and AssetCollector's `documentReferences` -- which is
+// everything a host needs to run the feature.
 export { PgAssetByteStore } from './asset/pg-bytes.js';
 export {
   AssetCollector,
+  AssetReferenceTrackingNotEnabledError,
   assertSignedUrlTtlWithinGrace,
   DEFAULT_ASSET_COLLECTION_BATCH_SIZE,
   DEFAULT_ASSET_COLLECTION_GRACE_MS,
