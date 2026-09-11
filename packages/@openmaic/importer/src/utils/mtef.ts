@@ -522,10 +522,11 @@ const SYMBOL_FONT_LATEX: Record<number, string> = {
   0x58: '\\Xi ',
   0x59: '\\Psi ',
   0x5a: 'Z',
-  // Adobe Symbol high half (0xA0–0xFF from the URW AFM); positions not listed
+  // Adobe Symbol high half (~50 of ~70 defined 0xA0–0xFF positions from the
+  // URW AFM; excluded: suits, ®/©/™, fraktur, extrema pieces → throw); positions not listed
   // here throw MtefParseError so the formula falls back to its picture. Font-local
   // codes here are glyph indices into the Symbol font; unmapped ones must
-  // NOT pass through as Latin-1 (0xF7 is ∫-extension, not ÷). Structural
+  // NOT pass through as Latin-1 (0xF4 is integralex, not a blank). Structural
   // pieces (big-paren/large-op extenders) map to their base operators;
   // playing-card suits and serif-mark glyphs are excluded — they flag
   // degraded via the unmapped path.
@@ -617,7 +618,7 @@ function charLatex(node: CharNode, state: RenderState): string {
       node.typeface === TF_UCGREEK + 128 ||
       node.typeface === TF_SYMBOL + 128);
   // Unmapped font-local Symbol glyph. Codes >= 0xA0 and the known-divergent
-  // low positions must NOT pass through as Latin-1 (0xF7 is an integral
+  // low positions must NOT pass through as Latin-1 (0xF4 is the integral
   // extender, not ÷; 0x60 is radicalex, not a backtick; 0x80-0x9F are C1
   // controls) — refuse the conversion so the picture fallback takes over.
   // Printable ASCII positions where Symbol matches ASCII (= + ( ) etc.) are
