@@ -369,6 +369,21 @@ export async function callLLM<T extends GenerateTextParams>(
         continue;
       }
 
+      // Diagnostic: warn when the model returns empty text so we can identify root cause
+      if (!result.text || result.text.trim().length === 0) {
+        const resultAsUnknown = result as unknown as Record<string, unknown>;
+        log.warn(`[${source}] LLM returned empty text`, {
+          finishReason: result.finishReason,
+          usage: result.usage,
+          hasReasoning: !!resultAsUnknown.reasoning,
+          reasoningLength:
+            typeof resultAsUnknown.reasoning === 'string'
+              ? resultAsUnknown.reasoning.length
+              : undefined,
+          model: getModelId(params),
+        });
+      }
+
       return result;
     } catch (error) {
       lastError = error;

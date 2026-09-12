@@ -139,6 +139,7 @@
 
 import { extractText, getDocumentProxy, extractImages } from 'unpdf';
 import sharp from 'sharp';
+import { Agent as UndiciAgent } from 'undici';
 import type { PDFParserConfig } from './types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { PDF_PROVIDERS } from './constants';
@@ -661,11 +662,20 @@ export async function parseWithMinerUDocument(
     headers['Authorization'] = `Bearer ${config.apiKey}`;
   }
 
-  // POST /file_parse
+  // Timeout: Node.js undici default bodyTimeout is 300s (5 min), too short for large PDFs.
+  // Configurable via MINERU_TIMEOUT_MS in .env.local (default: 15 minutes).
+  // AbortSignal.timeout() alone is NOT enough — undici's internal bodyTimeout fires first
+  // at 300s and throws "TypeError: fetch failed" before AbortSignal can trigger.
+  // Fix: pass a custom undici Agent with bodyTimeout/headersTimeout overridden.
+  const timeoutMs = parseInt(process.env.MINERU_TIMEOUT_MS || '900000', 10);
+  const dispatcher = new UndiciAgent({ bodyTimeout: timeoutMs, headersTimeout: timeoutMs });
   const response = await fetch(`${config.baseUrl}/file_parse`, {
     method: 'POST',
     headers,
     body: formData,
+    signal: AbortSignal.timeout(timeoutMs),
+    // @ts-expect-error: undici-specific option, not in standard RequestInit
+    dispatcher,
   });
 
   if (!response.ok) {
