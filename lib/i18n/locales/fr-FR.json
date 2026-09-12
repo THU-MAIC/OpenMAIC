@@ -1271,6 +1271,7 @@
       "xiaomiTokenPlanEU": "Forfait de jetons EU"
     },
     "requestUrl": "URL de la requête",
+    "ttsEndpointPath": "Chemin de la requête",
     "models": "Modèles",
     "comfyuiWorkflows": "Flux de travail",
     "comfyuiRefresh": "Actualiser",

@@ -1271,6 +1271,7 @@
       "xiaomiTokenPlanEU": "Plano de Tokens EU"
     },
     "requestUrl": "URL da Requisição",
+    "ttsEndpointPath": "Caminho da requisição",
     "models": "Modelos",
     "comfyuiWorkflows": "Fluxos de trabalho",
     "comfyuiRefresh": "Atualizar",

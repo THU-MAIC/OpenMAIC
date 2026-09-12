@@ -182,7 +182,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               ...(ttsProvidersConfig[selectedProviderId]?.providerOptions || {}),
               ...(await getVoxCPMProviderOptions(effectiveVoice, { role: 'teacher', locale })),
             }
-          : undefined;
+          : isCustom
+            ? ttsProvidersConfig[selectedProviderId]?.providerOptions
+            : undefined;
       await startPreview({
         text: testText,
         providerId: selectedProviderId,
@@ -220,7 +222,14 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
     (isCustom ? providerConfig?.customDefaultBaseUrl : ttsProvider?.defaultBaseUrl) ||
     '';
   const endpointPath = (() => {
-    if (isCustom) return '/audio/speech';
+    if (isCustom) {
+      const customPath = ttsProvidersConfig[selectedProviderId]?.providerOptions?.endpointPath;
+      if (typeof customPath === 'string' && customPath.trim()) {
+        const trimmed = customPath.trim();
+        return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+      }
+      return '/audio/speech';
+    }
     switch (selectedProviderId) {
       case 'openai-tts':
       case 'glm-tts':
@@ -506,6 +515,35 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                 />
               </div>
             </div>
+            {isCustom && (
+              <div className="space-y-2">
+                <Label className="text-sm">{t('settings.ttsEndpointPath')}</Label>
+                <Input
+                  name={`tts-endpoint-path-${selectedProviderId}`}
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="/audio/speech"
+                  value={
+                    typeof ttsProvidersConfig[selectedProviderId]?.providerOptions?.endpointPath ===
+                    'string'
+                      ? (ttsProvidersConfig[selectedProviderId]?.providerOptions
+                          ?.endpointPath as string)
+                      : ''
+                  }
+                  onChange={(e) =>
+                    setTTSProviderConfig(selectedProviderId, {
+                      providerOptions: {
+                        ...(ttsProvidersConfig[selectedProviderId]?.providerOptions || {}),
+                        endpointPath: e.target.value,
+                      },
+                    })
+                  }
+                  className="font-mono text-sm"
+                />
+              </div>
+            )}
             {requestUrl && (
               <p className="break-all text-xs text-muted-foreground">
                 {t('settings.requestUrl')}: {requestUrl}

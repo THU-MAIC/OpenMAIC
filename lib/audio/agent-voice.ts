@@ -76,7 +76,12 @@ export async function resolveAgentVoiceOptions(
   agent: AgentConfig | undefined,
   opts: AgentVoiceResolveOptions,
 ): Promise<Record<string, unknown> | undefined> {
-  if (opts.providerId !== VOXCPM_TTS_PROVIDER_ID) return undefined;
+  if (opts.providerId !== VOXCPM_TTS_PROVIDER_ID) {
+    // Pass through stored provider options (e.g. a custom provider's
+    // endpointPath) so every TTS flow honors them, not just the settings test.
+    const stored = opts.providerConfig?.providerOptions;
+    return stored && Object.keys(stored).length > 0 ? { ...stored } : undefined;
+  }
   return {
     ...(opts.providerConfig?.providerOptions || {}),
     ...(await getVoxCPMProviderOptions(

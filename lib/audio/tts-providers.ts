@@ -299,10 +299,23 @@ async function generateOpenAITTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = config.baseUrl || TTS_PROVIDERS['openai-tts'].defaultBaseUrl;
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['openai-tts'].defaultBaseUrl || '').replace(
+    /\/+$/,
+    '',
+  );
+
+  // Custom providers may override the request path suffix via
+  // providerOptions.endpointPath (default: OpenAI-compatible /audio/speech).
+  const rawEndpointPath = config.providerOptions?.endpointPath;
+  const endpointPath =
+    typeof rawEndpointPath === 'string' && rawEndpointPath.trim()
+      ? rawEndpointPath.trim().startsWith('/')
+        ? rawEndpointPath.trim()
+        : `/${rawEndpointPath.trim()}`
+      : '/audio/speech';
 
   // Use gpt-4o-mini-tts for best quality and intelligent realtime applications
-  const response = await fetch(`${baseUrl}/audio/speech`, {
+  const response = await fetch(`${baseUrl}${endpointPath}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
