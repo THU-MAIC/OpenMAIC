@@ -20,6 +20,7 @@ import type { AgentVoiceOverride } from '@/lib/audio/voice-resolver';
 import { isCustomTTSProvider, isCustomASRProvider } from '@/lib/audio/types';
 import {
   ASR_PROVIDERS,
+  CUSTOM_ASR_DEFAULT_LANGUAGES,
   DEFAULT_TTS_VOICES,
   isQwenCatalogVoice,
   isQwenVoiceCloneModel,
@@ -85,9 +86,9 @@ export type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
  */
 export function getValidASRLanguage(providerId: ASRProviderId, currentLanguage?: string): string {
   if (!providerId || typeof providerId !== 'string') return 'auto';
-  let supportedLanguages: string[];
+  let supportedLanguages: readonly string[];
   if (isCustomASRProvider(providerId)) {
-    supportedLanguages = ['auto'];
+    supportedLanguages = CUSTOM_ASR_DEFAULT_LANGUAGES;
   } else {
     supportedLanguages =
       ASR_PROVIDERS[providerId as keyof typeof ASR_PROVIDERS]?.supportedLanguages || [];
