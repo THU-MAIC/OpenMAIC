@@ -53,6 +53,9 @@ describe('POST /api/web-search', () => {
     delete process.env.EXA_API_KEY;
     delete process.env.EXA_BASE_URL;
     delete process.env.EXA_ENABLED;
+    delete process.env.SERPLY_API_KEY;
+    delete process.env.SERPLY_BASE_URL;
+    delete process.env.SERPLY_ENABLED;
     delete process.env.BOCHA_API_KEY;
     delete process.env.BOCHA_BASE_URL;
     delete process.env.BOCHA_ENABLED;
@@ -167,6 +170,34 @@ describe('POST /api/web-search', () => {
 
     expect(res.status).toBe(400);
     expect(json.error).toContain('EXA_API_KEY');
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
+  });
+
+  it('routes Serply web search with server-managed credentials', async () => {
+    vi.stubEnv('SERPLY_API_KEY', 'serply-server-key');
+    vi.stubEnv('SERPLY_BASE_URL', 'https://api.serply.io');
+
+    const res = await postWebSearch({
+      query: 'test query',
+      providerId: 'serply',
+    });
+
+    expect(res.status).toBe(200);
+    expect(mocks.searchWeb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'serply',
+        apiKey: 'serply-server-key',
+        baseUrl: 'https://api.serply.io',
+      }),
+    );
+  });
+
+  it('names SERPLY_API_KEY when Serply credentials are missing', async () => {
+    const res = await postWebSearch({ query: 'test query', providerId: 'serply' });
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json.error).toContain('SERPLY_API_KEY');
     expect(mocks.searchWeb).not.toHaveBeenCalled();
   });
 

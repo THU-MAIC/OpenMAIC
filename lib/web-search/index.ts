@@ -6,6 +6,7 @@ import { searchWithDoubao } from './doubao';
 import { searchWithExa } from './exa';
 import { searchWithMiniMax } from './minimax';
 import { searchWithSearxng } from './searxng';
+import { searchWithSerply } from './serply';
 import { searchWithTavily } from './tavily';
 import type { WebSearchResult } from '@/lib/types/web-search';
 import type { BaiduSubSources, WebSearchProviderId } from './types';
@@ -72,6 +73,8 @@ export async function searchWeb(params: {
       return searchWithMiniMax({ query, apiKey, maxResults, baseUrl, ...abortOptions });
     case 'searxng':
       return searchWithSearxng({ query, maxResults, baseUrl, ...abortOptions });
+    case 'serply':
+      return searchWithSerply({ query, apiKey, maxResults, baseUrl, ...abortOptions });
     case 'tavily':
       return searchWithTavily({ query, apiKey, maxResults, baseUrl, ...abortOptions });
     default: {
