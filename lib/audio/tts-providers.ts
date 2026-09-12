@@ -258,6 +258,8 @@ export async function generateTTS(
 
       case 'minimax-tts':
         return await generateMiniMaxTTS(config, text, signal);
+      case 'xiaomi-tts':
+        return await generateXiaomiTTS(config, text, signal);
       case 'doubao-tts':
         return await generateDoubaoTTS(config, text, signal);
       case 'elevenlabs-tts':
@@ -324,6 +326,72 @@ async function generateOpenAITTS(
   }
 
   return await validateTTSAudioResponse(response, 'OpenAI');
+}
+
+/**
+ * Xiaomi MiMo TTS implementation.
+ *
+ * MiMo TTS does NOT expose an OpenAI-style /audio/speech endpoint. It reuses
+ * the chat/completions protocol: the text to synthesize goes in an `assistant`
+ * message, optional style instructions go in a `user` message, and the audio
+ * payload comes back base64-encoded at `choices[0].message.audio.data`.
+ * Numeric speed is not a request parameter, so a non-default speed is
+ * translated into a natural-language style instruction instead.
+ */
+async function generateXiaomiTTS(
+  config: TTSModelConfig,
+  text: string,
+  signal: AbortSignal,
+): Promise<TTSGenerationResult> {
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['xiaomi-tts'].defaultBaseUrl || '').replace(
+    /\/+$/,
+    '',
+  );
+
+  const messages: Array<{ role: string; content: string }> = [];
+  const speed = config.speed ?? 1.0;
+  if (speed >= 1.25) {
+    messages.push({ role: 'user', content: '说得快一些，语速偏快。' });
+  } else if (speed <= 0.8) {
+    messages.push({ role: 'user', content: '说得慢一些，语速偏慢。' });
+  }
+  // The text to synthesize must be in the assistant message (provider rule).
+  messages.push({ role: 'assistant', content: text });
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify({
+      model: config.modelId || TTS_PROVIDERS['xiaomi-tts'].defaultModelId,
+      messages,
+      audio: {
+        format: 'wav',
+        voice: config.voice || 'mimo_default',
+      },
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throwIfTtsRateLimited('Xiaomi MiMo', response.status);
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(
+      `Xiaomi MiMo TTS API error: ${error.error?.message || error.message || response.statusText}`,
+    );
+  }
+
+  const data = await response.json();
+  const audioData = data?.choices?.[0]?.message?.audio?.data;
+  if (typeof audioData !== 'string' || !audioData) {
+    throw new Error('Xiaomi MiMo TTS API returned no audio data');
+  }
+  return {
+    audio: new Uint8Array(Buffer.from(audioData, 'base64')),
+    format: 'wav',
+  };
 }
 
 /**

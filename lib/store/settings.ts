@@ -517,6 +517,7 @@ const getDefaultAudioConfig = () => ({
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: true },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: true },
     'minimax-tts': { apiKey: '', baseUrl: '', modelId: 'speech-2.8-hd', enabled: true },
+    'xiaomi-tts': { apiKey: '', baseUrl: '', modelId: 'mimo-v2.5-tts', enabled: true },
     'lemonade-tts': {
       apiKey: '',
       baseUrl: '',
@@ -537,6 +538,7 @@ const getDefaultAudioConfig = () => ({
     'azure-asr': { apiKey: '', baseUrl: '', enabled: false },
     'funasr-asr': { apiKey: '', baseUrl: '', enabled: false },
     'lemonade-asr': { apiKey: '', baseUrl: '', enabled: false },
+    'xiaomi-asr': { apiKey: '', baseUrl: '', modelId: 'mimo-v2.5-asr', enabled: false },
   } as Record<ASRProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
 

@@ -196,6 +196,9 @@ export async function transcribeAudio(
         'Lemonade',
       );
 
+    case 'xiaomi-asr':
+      return await transcribeXiaomiASR(config, audioBuffer);
+
     default:
       if (isCustomASRProvider(config.providerId)) {
         return await transcribeCustomOpenAICompatibleASR(config, audioBuffer);
@@ -251,6 +254,113 @@ async function transcribeWavOpenAICompatibleASR(
 
   const data = await response.json();
   return { text: typeof data.text === 'string' ? data.text : '' };
+}
+
+/**
+ * Xiaomi MiMo ASR transcription.
+ *
+ * MiMo ASR reuses the chat/completions protocol rather than OpenAI's
+ * /audio/transcriptions: the audio sample rides inside a user message as an
+ * `input_audio` data-URL part (wav/mp3/flac/m4a/ogg, base64, <= 10 MB
+ * encoded), the language hint goes in `asr_options`, and the transcript comes
+ * back as the assistant message's plain text content.
+ */
+async function transcribeXiaomiASR(
+  config: ASRModelConfig,
+  audioBuffer: Buffer | Blob,
+): Promise<ASRTranscriptionResult> {
+  const baseUrl = (config.baseUrl || ASR_PROVIDERS['xiaomi-asr'].defaultBaseUrl || '').replace(
+    /\/+$/,
+    '',
+  );
+
+  const audioBlob = await toAudioBlob(audioBuffer);
+  const bytes = new Uint8Array(await audioBlob.arrayBuffer());
+  const mimeType = resolveXiaomiASRAudioMime(audioBlob, bytes);
+  if (!mimeType) {
+    throw new Error(
+      'Xiaomi MiMo ASR supports wav/mp3/flac/m4a/ogg audio only (browser recordings are transcoded to WAV client-side before upload).',
+    );
+  }
+  const base64 = Buffer.from(bytes).toString('base64');
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      ...getOptionalBearerAuthHeaders(config.apiKey),
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify({
+      model: config.modelId || ASR_PROVIDERS['xiaomi-asr'].defaultModelId,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'input_audio',
+              input_audio: { data: `data:${mimeType};base64,${base64}` },
+            },
+          ],
+        },
+      ],
+      ...(config.language && config.language !== 'auto'
+        ? { asr_options: { language: config.language } }
+        : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`Xiaomi MiMo ASR API error: ${errorText || response.statusText}`);
+  }
+
+  const data = await response.json();
+  const text = data?.choices?.[0]?.message?.content;
+  return { text: typeof text === 'string' ? text : '' };
+}
+
+/**
+ * MIME types MiMo ASR accepts, mapped to their canonical form for the
+ * input_audio data URL.
+ */
+const XIAOMI_ASR_MIME_MAP: Record<string, string> = {
+  'audio/wav': 'audio/wav',
+  'audio/x-wav': 'audio/wav',
+  'audio/mpeg': 'audio/mpeg',
+  'audio/mp3': 'audio/mpeg',
+  'audio/flac': 'audio/flac',
+  'audio/x-flac': 'audio/flac',
+  'audio/m4a': 'audio/m4a',
+  'audio/x-m4a': 'audio/m4a',
+  'audio/mp4': 'audio/m4a',
+  'audio/ogg': 'audio/ogg',
+};
+
+function asciiAt(bytes: Uint8Array, start: number, end: number): string {
+  return String.fromCharCode(...bytes.slice(start, end));
+}
+
+function sniffXiaomiASRAudioMime(bytes: Uint8Array): string | null {
+  if (bytes.byteLength >= 12 && asciiAt(bytes, 0, 4) === 'RIFF' && asciiAt(bytes, 8, 12) === 'WAVE')
+    return 'audio/wav';
+  if (bytes.byteLength >= 4 && asciiAt(bytes, 0, 4) === 'fLaC') return 'audio/flac';
+  if (bytes.byteLength >= 4 && asciiAt(bytes, 0, 4) === 'OggS') return 'audio/ogg';
+  if (bytes.byteLength >= 12 && asciiAt(bytes, 4, 8) === 'ftyp') return 'audio/m4a';
+  if (bytes.byteLength >= 3 && asciiAt(bytes, 0, 3) === 'ID3') return 'audio/mpeg';
+  if (bytes.byteLength >= 2 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) return 'audio/mpeg';
+  return null;
+}
+
+/**
+ * Resolve the data-URL MIME for a MiMo ASR upload: trust a declared blob type
+ * when it is one MiMo accepts, otherwise sniff the header. Returns null for
+ * unsupported containers (e.g. webm) so the caller can fail with a clear
+ * message instead of the provider's opaque "invalid audio format".
+ */
+function resolveXiaomiASRAudioMime(blob: Blob, bytes: Uint8Array): string | null {
+  const declared = blob.type?.split(';')[0].trim().toLowerCase();
+  if (declared && XIAOMI_ASR_MIME_MAP[declared]) return XIAOMI_ASR_MIME_MAP[declared];
+  return sniffXiaomiASRAudioMime(bytes);
 }
 
 async function toAudioBlob(audioBuffer: Buffer | Blob): Promise<Blob> {

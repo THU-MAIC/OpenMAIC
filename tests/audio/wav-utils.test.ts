@@ -46,4 +46,11 @@ describe('normalizeASRUploadAudio', () => {
     expect(result.blob).toBe(input);
     expect(result.fileName).toBe('recording.wav');
   });
+
+  it('keeps WAV blobs unchanged for xiaomi-asr', async () => {
+    const input = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/wav' });
+    const result = await normalizeASRUploadAudio('xiaomi-asr', input);
+    expect(result.blob).toBe(input);
+    expect(result.fileName).toBe('recording.wav');
+  });
 });
