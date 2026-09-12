@@ -15,6 +15,8 @@ export interface ResourceProfile {
   producerWorkers: 1;
   maxConcurrency: 1;
   maxConcurrentExtractions: 1;
+  maxPreviewPixels: number;
+  maxPreviewDeviceScaleFactor: number;
   /** Hard local chunk fan-out limits for the selected memory/CPU profile. */
   maxChunkWorkers: number;
   maxParallelChunks: number;
@@ -42,6 +44,8 @@ function defineProfile(
     // screenshot for compatibility-sensitive compositions such as iframe GenUI.
     requireBeginFrame: false,
     ...COMMON_LIMITS,
+    maxPreviewPixels: name === 'low-memory' ? 1920 * 1080 : 3840 * 2160,
+    maxPreviewDeviceScaleFactor: name === 'low-memory' ? 1 : 2,
     minimumMemoryBytes,
     maxChunkWorkers: 1,
     maxParallelChunks,
@@ -170,6 +174,8 @@ export function publicResourceProfile(profile: ResourceProfile) {
     producerWorkers: profile.producerWorkers,
     maxConcurrency: profile.maxConcurrency,
     maxConcurrentExtractions: profile.maxConcurrentExtractions,
+    maxPreviewPixels: profile.maxPreviewPixels,
+    maxPreviewDeviceScaleFactor: profile.maxPreviewDeviceScaleFactor,
     maxChunkWorkers: profile.maxChunkWorkers,
     maxParallelChunks: profile.maxParallelChunks,
     minimumMemoryMiB: profile.minimumMemoryBytes / 1024 ** 2,

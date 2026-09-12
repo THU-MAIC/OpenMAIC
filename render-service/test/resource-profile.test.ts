@@ -16,6 +16,8 @@ describe('resource profiles', () => {
       producerWorkers: 1,
       maxConcurrency: 1,
       maxConcurrentExtractions: 1,
+      maxPreviewPixels: 3840 * 2160,
+      maxPreviewDeviceScaleFactor: 2,
       minimumMemoryBytes: 8 * GIB,
     });
     expect(env).toMatchObject({
@@ -39,6 +41,8 @@ describe('resource profiles', () => {
       requestedCaptureMode: 'screenshot',
       requireBeginFrame: false,
       producerWorkers: 1,
+      maxPreviewPixels: 1920 * 1080,
+      maxPreviewDeviceScaleFactor: 1,
       minimumMemoryBytes: 4 * GIB,
     });
     expect(env).toMatchObject({

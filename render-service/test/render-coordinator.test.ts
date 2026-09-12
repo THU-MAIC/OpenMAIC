@@ -69,6 +69,41 @@ async function waitForCleanup(path: string): Promise<void> {
 const renderOptions = { fps: 30, quality: 'standard', format: 'mp4' } as const;
 
 describe('RenderCoordinator through the RenderExecutor seam', () => {
+  it('keeps a dispatched video queued until the shared execution slot is acquired', async () => {
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore();
+    let releasePreview!: () => void;
+    const previewParked = new Promise<void>((resolve) => {
+      releasePreview = resolve;
+    });
+    let finishVideo!: () => void;
+    const videoParked = new Promise<void>((resolve) => {
+      finishVideo = resolve;
+    });
+    const executor = new FakeExecutor(async () => {
+      await videoParked;
+      return { status: 'succeeded' };
+    });
+    const coordinator = new RenderCoordinator(executor, jobs, artifacts.store, {
+      maxConcurrency: 1,
+    });
+    const preview = coordinator.tryRunWithExecutionSlot(() => previewParked);
+    expect(preview).toBeDefined();
+
+    const dir = await projectDir();
+    const id = await coordinator.submit(coordinator.reserve('video-user'), dir, renderOptions);
+    await Promise.resolve();
+    expect(await jobs.get(id)).toMatchObject({ status: 'queued', currentStage: 'queued' });
+    expect(executor.requests).toHaveLength(0);
+
+    releasePreview();
+    await preview;
+    await waitForJob(jobs, id, () => executor.requests.length === 1);
+    expect(await jobs.get(id)).toMatchObject({ status: 'running', currentStage: 'preparing' });
+    finishVideo();
+    await waitForJob(jobs, id, (job) => job.status === 'succeeded');
+  });
+
   it('persists normalized progress, performance, and the artifact on success', async () => {
     const jobs = createMemoryJobStore();
     const artifacts = createMemoryArtifactStore();

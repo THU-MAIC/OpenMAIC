@@ -190,4 +190,10 @@ export interface ModelConfig {
   baseUrl?: string;
   proxy?: string; // Optional: HTTP proxy URL for this provider
   providerType?: ProviderType; // Optional: for custom providers on server-side
+  /**
+   * Optional server-side fetch implementation used for the model's outbound
+   * requests (e.g. a wrapper that re-validates redirect hops). When omitted the
+   * global fetch is used. Never set by client-side consumers.
+   */
+  fetchImpl?: typeof fetch;
 }

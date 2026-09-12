@@ -8,7 +8,12 @@
  */
 
 import { NextRequest } from 'next/server';
-import { generateTTS, QwenTTSError, TTSRateLimitError } from '@/lib/audio/tts-providers';
+import {
+  generateTTS,
+  QwenTTSError,
+  TTSInvalidResponseError,
+  TTSRateLimitError,
+} from '@/lib/audio/tts-providers';
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import {
@@ -166,6 +171,9 @@ export async function POST(req: NextRequest) {
     );
     if (error instanceof TTSRateLimitError) {
       return apiError('RATE_LIMITED', 429, error.message);
+    }
+    if (error instanceof TTSInvalidResponseError) {
+      return apiError(error.code, error.httpStatus, error.message);
     }
     if (error instanceof QwenVoiceCloneError) {
       return apiError(error.code, error.httpStatus || 502, qwenVoiceCloneErrorMessage(error));

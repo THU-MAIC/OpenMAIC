@@ -111,7 +111,7 @@ describe('edit_elements renderer contracts', () => {
     }
   });
 
-  it('renders explicit table row heights in the app renderer', () => {
+  it('uses the same compact table cell geometry in both renderers', () => {
     const table = {
       id: 'table-1',
       type: 'table',
@@ -120,15 +120,25 @@ describe('edit_elements renderer contracts', () => {
       width: 200,
       height: 100,
       rotate: 0,
-      data: [[{ id: 'a', text: 'A' }], [{ id: 'b', text: 'B' }]],
+      data: [
+        [{ id: 'a', text: 'A', padding: '2px 4px', vAlign: 'bottom' }],
+        [{ id: 'b', text: 'B' }],
+      ],
       colWidths: [1],
       rowHeights: [20, 80],
       cellMinHeight: 36,
       outline: { width: 1, color: '#000000' },
     } as PPTTableElement;
-    const markup = renderToStaticMarkup(React.createElement(StaticTable, { elementInfo: table }));
-    expect(markup).toContain('height:20px');
-    expect(markup).toContain('height:80px');
+    for (const Component of [StaticTable, PackageStaticTable]) {
+      const markup = renderToStaticMarkup(React.createElement(Component, { elementInfo: table }));
+      expect(markup).toContain('height:20px');
+      expect(markup).toContain('height:80px');
+      expect(markup).toContain('min-height:16px');
+      expect(markup).toContain('padding:2px 4px');
+      expect(markup).toContain('line-height:1');
+      expect(markup).toContain('justify-content:flex-end');
+      expect(markup).not.toContain('padding:5px');
+    }
   });
 
   it('fills the element height in the package table fallback path', () => {

@@ -3,8 +3,10 @@
 /**
  * Assistant Markdown renderer for the workbench chat.
  *
- * Streamdown owns the parse and render; three things are added:
+ * Streamdown owns the parse and render; four things are added:
  *
+ *  - KaTeX math through Streamdown's stable math plugin configuration, with a
+ *    same-parser guard that keeps ordinary currency and shell dollars literal.
  *  - `remark-cjk-friendly` BEFORE `remark-gfm`, because CommonMark's emphasis
  *    flanking rules misfire next to fullwidth CJK punctuation — e.g. `**smart**`
  *    quotes otherwise reach the user with their asterisks on (the spike's S10
@@ -19,12 +21,28 @@
  *    link renders exactly as it did before, and outside `/workspace` — where
  *    there is no right pane — the pill falls back to the plain anchor.
  */
+import { createMathPlugin } from '@streamdown/math';
 import { Streamdown, defaultRemarkPlugins } from 'streamdown';
 import remarkCjkFriendly from 'remark-cjk-friendly';
 import { courseIdFromHref } from '@/lib/workbench/course-link';
+import { remarkSelectiveSingleDollarMath } from '@/lib/workbench/markdown-math';
 import { CourseLink } from './course-link';
 
-const REMARK_PLUGINS = [remarkCjkFriendly, ...Object.values(defaultRemarkPlugins)];
+const REMARK_PLUGINS = [
+  remarkCjkFriendly,
+  remarkSelectiveSingleDollarMath,
+  ...Object.values(defaultRemarkPlugins),
+];
+
+const STREAMDOWN_PLUGINS = {
+  // The official tokenizer handles `$$`; the Workbench extension validates
+  // single-dollar candidates before accepting them as math.
+  math: createMathPlugin({ singleDollarTextMath: false }),
+} as const;
+
+// remark-math already accepts an unterminated flow fence through EOF. Generic
+// dollar completion can instead turn a delimiter inside fenced code into math.
+const REMEND = { katex: false } as const;
 
 // Table chrome (fullscreen/download) is workbench-irrelevant; the code block's
 // copy action stays.
@@ -49,7 +67,7 @@ const COMPONENTS = {
       <CourseLink
         courseId={courseId}
         variant="inline"
-        label={typeof children === 'string' ? children : undefined}
+        label={children}
         fallback={
           <a href={href} {...anchor}>
             {children}
@@ -68,6 +86,8 @@ export function TextBlock({ text, streaming = false }: { text: string; streaming
           quietly. (Walkthrough verdict: the caret read as too heavy.) */}
       <Streamdown
         remarkPlugins={REMARK_PLUGINS}
+        plugins={STREAMDOWN_PLUGINS}
+        remend={REMEND}
         controls={CONTROLS}
         components={COMPONENTS}
         parseIncompleteMarkdown={streaming}

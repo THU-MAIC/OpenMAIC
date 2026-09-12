@@ -76,6 +76,16 @@ const MEDIA_MIME_SET = new Set<string>(MEDIA_MIME_TYPES);
 /** The store's keyset-paging ceiling (default 50, capped at 200). */
 export const MAX_MATERIAL_LIST_LIMIT = 200;
 
+/**
+ * Byte-store key for an owner-scoped material upload.
+ * Sanitizes the owner id (which may contain `:`) because that character breaks
+ * the local byte store's `mkdir` on Windows; the encoding is deterministic so
+ * read/write/delete all resolve the same key.
+ */
+export function ownerMaterialObjectKey(ownerId: string, materialId: string): string {
+  return `materials/${ownerId.replace(/[^A-Za-z0-9._-]/g, '_')}/${materialId}`;
+}
+
 class MaterialPayloadTooLarge extends Error {}
 
 /** The `x-material-filename` header, sanitized to a bare file name. */
@@ -216,7 +226,7 @@ export async function POST(req: NextRequest) {
       }
       const createdMaterialId = createMaterialId();
       materialId = createdMaterialId;
-      const ossKey = `materials/${ownerId}/${createdMaterialId}`;
+      const ossKey = ownerMaterialObjectKey(ownerId, createdMaterialId);
 
       const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
       const byteStore = getMaterialByteStore();

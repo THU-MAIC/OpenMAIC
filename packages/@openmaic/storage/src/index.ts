@@ -135,6 +135,7 @@ export {
   extractObservedUrls,
   normalizeObservedUrl,
   type AgentSessionClaimReason,
+  type AgentSessionAutomaticTitleStore,
   type AgentSessionCompactionEntry,
   type AgentSessionCustomMessageEntry,
   type AgentSessionEntry,

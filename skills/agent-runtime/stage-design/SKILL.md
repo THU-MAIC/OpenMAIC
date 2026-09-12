@@ -44,7 +44,7 @@ order:
    usable voice exists. Every page's content
    and narration is written for the roster that exists when the page is
    generated, so a roster settled late is a roster half the stage never saw.
-4. **`generate_scene` once for EACH settled page, in ascending order** — one
+4. **`generate_scene` for EACH settled page, in ascending order** — one
    page per call, never more. Pass the page's settled `title`, `type` and
    `brief` (plus `materialFacts` when the page's content comes from attached
    material); no planned outline is needed. A `pbl` page is generated the same
@@ -58,6 +58,25 @@ None of the planning steps is a place to stop: a turn ends when a page actually
 landed, when `ask_user` is waiting on the user, or when the stage is done by the
 check below. Reporting what you have planned, imported or confirmed leaves the
 user holding an empty deck.
+
+## When `generate_scene` fails
+
+Track generation attempts by `stageId + order`. Changing the title or brief,
+or generating another page in between, does not reset the attempt.
+
+- For `prompt-unavailable` or another deterministic failure, do not repeat the
+  same call.
+- For `invalid-model-output`, change the brief without changing the settled
+  teaching intent, then retry once. Retry once for a clearly transient provider
+  failure too.
+- If that retry fails, do not call `generate_scene` again for that target during
+  this run. Leave the page unwritten, continue with later pages in the same
+  stage, and name the gap when wrapping up. Do not call `ask_user` after every
+  failed page or silently drop the page from the settled plan.
+
+Use `list_scenes` to reconcile persisted pages with the settled plan. A stage
+with a missing page can be wrapped up after later pages are built, but it is not
+done; name each gap and its latest failure instead of claiming completion.
 
 ## Narration audio follows narration text
 

@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
   runtimeConfigured: true,
+  persistenceConfigured: true,
   resolveRequestOwnerId: vi.fn(),
   accessRow: null as Record<string, unknown> | null,
   updatedRows: [] as unknown[],
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/config/feature-flags', () => ({
   isAgentRuntimeConfigured: () => mocks.runtimeConfigured,
+  isServerPersistenceConfigured: () => mocks.persistenceConfigured,
 }));
 vi.mock('@/lib/server/agent-runtime/owner', () => ({
   resolveRequestOwnerId: mocks.resolveRequestOwnerId,
@@ -48,6 +50,7 @@ const params = (id: string) => ({ params: Promise.resolve({ id }) });
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.runtimeConfigured = true;
+  mocks.persistenceConfigured = true;
   mocks.resolveRequestOwnerId.mockReturnValue('owner-1');
   mocks.accessRow = {
     meta_owner_id: 'owner-1',
@@ -102,8 +105,23 @@ describe('GET /api/stage-meta/[stageId]', () => {
     await expect(response.json()).resolves.toEqual({ error: 'not_found' });
   });
 
-  it('gates on the configured runtime', async () => {
+  // The sidecar reports who owns a persisted course. Every persisted course has
+  // an owner — the persistence route resolves one for each request — so gating
+  // this endpoint on the agent runtime made it answer "no such course" for every
+  // course of a persistence-only deployment, leaving its viewers with no
+  // ownership signal at all.
+  it('answers with server persistence configured and the agent runtime off', async () => {
     mocks.runtimeConfigured = false;
+    const response = await getStageMeta(
+      new NextRequest(`http://localhost/api/stage-meta/${STAGE_ID}`),
+      stageMetaParams(STAGE_ID),
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ isOwner: true });
+  });
+
+  it('gates on configured server persistence', async () => {
+    mocks.persistenceConfigured = false;
     const response = await getStageMeta(
       new NextRequest(`http://localhost/api/stage-meta/${STAGE_ID}`),
       stageMetaParams(STAGE_ID),

@@ -1,24 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import tinycolor from 'tinycolor2';
 import type { ChartData, ChartOptions, ChartType } from '@openmaic/dsl';
 import { getChartOption } from './chartOption';
-
-import * as echarts from 'echarts/core';
-import { BarChart, LineChart, PieChart, ScatterChart, RadarChart } from 'echarts/charts';
-import { LegendComponent } from 'echarts/components';
-import { SVGRenderer } from 'echarts/renderers';
-
-echarts.use([
-  BarChart,
-  LineChart,
-  PieChart,
-  ScatterChart,
-  RadarChart,
-  LegendComponent,
-  SVGRenderer,
-]);
+import { loadChartRuntime } from './chartRuntime';
 
 interface ChartProps {
   width: number;
@@ -42,7 +28,10 @@ export function Chart({
   options,
 }: ChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
-  const chartInstance = useRef<echarts.ECharts | null>(null);
+  const chartInstance = useRef<import('echarts/core').ECharts | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const updateOptionRef = useRef<() => void>(() => undefined);
+  const [chartState, setChartState] = useState<'loading' | 'ready' | 'error'>('loading');
 
   const themeColors = useMemo(() => {
     let colors: string[] = [];
@@ -62,48 +51,71 @@ export function Chart({
     return colors;
   }, [rawThemeColors]);
 
-  const updateOption = useMemo(() => {
-    return () => {
-      if (!chartInstance.current) return;
+  const updateOption = useCallback(() => {
+    if (!chartInstance.current) return;
 
-      const option = getChartOption({
-        type,
-        data,
-        themeColors,
-        textColor,
-        lineColor,
-        lineSmooth: options?.lineSmooth || false,
-        stack: options?.stack || false,
-      });
+    const option = getChartOption({
+      type,
+      data,
+      themeColors,
+      textColor,
+      lineColor,
+      lineSmooth: options?.lineSmooth || false,
+      stack: options?.stack || false,
+    });
 
-      if (option) {
-        chartInstance.current.setOption(option, true);
-      }
-    };
+    if (option) {
+      chartInstance.current.setOption(option, true);
+    }
   }, [type, data, themeColors, textColor, lineColor, options]);
 
   useEffect(() => {
-    if (!chartRef.current) return;
+    updateOptionRef.current = updateOption;
+  }, [updateOption]);
 
-    chartInstance.current = echarts.init(chartRef.current, null, { renderer: 'svg' });
-    updateOption();
+  useEffect(() => {
+    let mounted = true;
 
-    const resizeObserver = new ResizeObserver(() => {
-      chartInstance.current?.resize();
-    });
-    resizeObserver.observe(chartRef.current);
+    void loadChartRuntime()
+      .then((echarts) => {
+        if (!mounted || !chartRef.current) return;
+
+        chartInstance.current = echarts.init(chartRef.current, null, { renderer: 'svg' });
+        setChartState('ready');
+        updateOptionRef.current();
+
+        const resizeObserver = new ResizeObserver(() => {
+          chartInstance.current?.resize();
+        });
+        resizeObserver.observe(chartRef.current);
+        resizeObserverRef.current = resizeObserver;
+      })
+      .catch(() => {
+        if (mounted) setChartState('error');
+      });
 
     return () => {
-      resizeObserver.disconnect();
+      mounted = false;
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
       chartInstance.current?.dispose();
       chartInstance.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Init-only effect
+    // The runtime and ECharts instance are initialized once per mounted chart.
+    // Option changes are applied by the effect below without re-initializing.
   }, []);
 
   useEffect(() => {
     updateOption();
   }, [updateOption]);
 
-  return <div ref={chartRef} className="chart" style={{ width: '100%', height: '100%' }} />;
+  return (
+    <div
+      ref={chartRef}
+      className="chart"
+      data-chart-state={chartState}
+      aria-busy={chartState === 'loading'}
+      style={{ width: '100%', height: '100%' }}
+    />
+  );
 }

@@ -5,6 +5,7 @@ import {
   createDefaultShapeElement,
   createDefaultTableElement,
   createDefaultTextElement,
+  createTextElementAtCanvasPoint,
   htmlToPlainText,
   plainTextToParagraphHtml,
 } from '@/lib/edit/slide-edit-elements';
@@ -115,6 +116,30 @@ describe('slide edit element factories', () => {
       'table-1-cell-1-2',
     ]);
     expect(element.data.flat().every((cell) => cell.text === '')).toBe(true);
+  });
+
+  test('creates a blank text box at the clicked canvas point', () => {
+    const element = createTextElementAtCanvasPoint(
+      'text-quick-add',
+      { x: 240, y: 180 },
+      {
+        left: 100,
+        top: 50,
+      },
+      2,
+    );
+
+    expect(element).toMatchObject({
+      id: 'text-quick-add',
+      type: 'text',
+      left: 70,
+      top: 65,
+      width: 300,
+      height: 60,
+      defaultFontName: 'Inter',
+      defaultColor: '#333',
+      content: '<p style="text-align: center"><br></p>',
+    });
   });
 
   test('converts plain text to escaped paragraph html', () => {

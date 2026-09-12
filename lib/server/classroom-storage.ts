@@ -45,8 +45,24 @@ export function isValidClassroomId(id: string): boolean {
   return /^[a-zA-Z0-9_-]+$/.test(id);
 }
 
+/**
+ * Resolve the on-disk JSON path for a classroom id, asserting the result stays
+ * inside CLASSROOMS_DIR. The route validates ids up front, but storage must
+ * not trust callers: an id carrying path separators (e.g. `..`) must never be
+ * allowed to name a file outside the classrooms directory.
+ */
+export function resolveClassroomFilePath(id: string): string {
+  const resolvedRoot = path.resolve(CLASSROOMS_DIR);
+  const filePath = path.resolve(resolvedRoot, `${id}.json`);
+  const rootPrefix = `${resolvedRoot}${path.sep}`;
+  if (filePath !== resolvedRoot && !filePath.startsWith(rootPrefix)) {
+    throw new Error(`Classroom id "${id}" resolves outside the classrooms directory`);
+  }
+  return filePath;
+}
+
 export async function readClassroom(id: string): Promise<PersistedClassroomData | null> {
-  const filePath = path.join(CLASSROOMS_DIR, `${id}.json`);
+  const filePath = resolveClassroomFilePath(id);
   try {
     const content = await fs.readFile(filePath, 'utf-8');
     return JSON.parse(content) as PersistedClassroomData;
@@ -73,8 +89,8 @@ export async function persistClassroom(
     createdAt: new Date().toISOString(),
   };
 
+  const filePath = resolveClassroomFilePath(data.id);
   await ensureClassroomsDir();
-  const filePath = path.join(CLASSROOMS_DIR, `${data.id}.json`);
   await writeJsonFileAtomic(filePath, classroomData);
 
   return {

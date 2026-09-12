@@ -298,8 +298,8 @@ always the same: **write for the intersection.** The known divergences are
   playback (see [the HTML section](#the-rendering-truth-of-content-html));
 - **`paragraphSpace` on a text element** — honoured by the preview renderer, inert
   in playback;
-- **`vAlign` on a text element and `vAlign` / `padding` / `borders` on a table
-  cell** — honoured by the preview renderer, ignored in playback;
+- **`vAlign` on a text element and per-side `borders` on a table cell** — honoured
+  by the preview renderer, ignored in playback;
 - **a plain-text `content` with newlines** — the preview renderer sets
   `white-space: pre-line` when the string contains no markup at all, so the
   newlines become line breaks; playback does not, so they collapse to spaces;
@@ -529,7 +529,7 @@ geometry.
 | --------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `colWidths`     | number[]                                                             | **Ratios that sum to 1.** Column px = `colWidths[i] × element width`          |
 | `cellMinHeight` | number (px)                                                          | Row height fallback; content taller than it still expands the row             |
-| `rowHeights`    | number[] (optional)                                                  | Per-row height, overriding `cellMinHeight` for that row                       |
+| `rowHeights`    | number[] (optional)                                                  | Per-row minimum, overriding `cellMinHeight`; wrapped content can expand it    |
 | `outline`       | `{ style?, width?, color? }`                                         | The uniform grid border. Missing `width` → **1 px**, missing `color` → **black** |
 | `theme`         | `{ color, rowHeader, rowFooter, colHeader, colFooter }` (optional)    | Banding — see below                                                          |
 | `data`          | `TableCell[][]`                                                      | Row-major grid                                                               |
@@ -555,8 +555,9 @@ becomes `&nbsp;`**. That has three consequences you must design around:
    becomes `style="color:&nbsp;red"`, which is not a valid declaration, so the colour
    is dropped. Same for any attribute value with a space in it, and for a
    two-class `class`. Cell appearance comes from `cell.style`, not from markup.
-3. Text with spaces will **not wrap** at those spaces. Long prose in a cell
-   overflows sideways instead of re-flowing.
+3. Text with spaces will **not wrap** at those spaces. Playback's
+   `word-break: break-word` can still re-flow long prose, but it may break in the
+   middle of a word instead of at the spaces as the preview renderer does.
 
 So: put plain text in a cell, use `\n` for breaks, use `cell.style` for appearance,
 and reach for attribute-free tags (`<strong>`, `<br/>`) only if you must. The preview
@@ -568,9 +569,15 @@ white text; `rowFooter` does the same to the last row; `colHeader` / `colFooter`
 paint the first / last column in `theme.color` at 30 % alpha; every other even row
 gets it at 10 %. A cell's own `style.backcolor` and `style.color` beat all of it.
 
-**Fields playback ignores** (preview renderer honours them): `cell.vAlign` —
-playback always centres vertically; `cell.padding` — playback always uses 5 px;
-`cell.borders` — playback always draws the table-level `outline` on all four sides.
+**Field playback ignores** (preview renderer honours it): `cell.borders` — playback
+always draws the table-level `outline` on all four sides. Both renderers honour
+`cell.padding`. `cell.vAlign` only aligns text inside the declared row-height
+content box; if the browser stretches the row, that box remains centred in the
+full cell.
+
+`cell.padding` has no implicit default: omit it for no inset, or provide a CSS
+padding string such as `5px` or `3px 6px`. Both renderers use `line-height: 1`
+for cell text.
 
 **Merged cells are fragile.** Both renderers expect `data[r]` to contain only the
 top-left cell of each merge, with the spanned positions absent, and playback's

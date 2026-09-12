@@ -171,6 +171,26 @@ describe('capability force-off route guards (#665)', () => {
       expect(mocks.generateImage).not.toHaveBeenCalled();
     });
 
+    it('normalizes GPT Image 2 requests before calling the image provider', async () => {
+      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-img');
+      vi.stubEnv('IMAGE_OPENAI_MODELS', 'gpt-image-2');
+      const { POST } = await import('@/app/api/generate/image/route');
+
+      const res = await POST(
+        jsonRequest(
+          'http://localhost/api/generate/image',
+          { prompt: 'a plant', aspectRatio: '16:9' },
+          { 'x-image-provider': 'openai-image' },
+        ),
+      );
+
+      expect(res.status).toBe(200);
+      expect(mocks.generateImage).toHaveBeenCalledWith(
+        expect.objectContaining({ providerId: 'openai-image', model: 'gpt-image-2' }),
+        expect.objectContaining({ width: 1536, height: 1024 }),
+      );
+    });
+
     it('POST /api/verify-image-provider returns 403 for a force-disabled provider', async () => {
       vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-img');
       vi.stubEnv('IMAGE_OPENAI_ENABLED', 'false');

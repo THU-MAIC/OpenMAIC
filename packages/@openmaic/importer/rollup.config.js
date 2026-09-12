@@ -17,7 +17,7 @@ const plugins = [
   json(),
   typescript({ tsconfig: './tsconfig.json' }),
   terser(),
-  globals(),
+  globals({ dirname: false, filename: false }),
   builtins(),
 ];
 

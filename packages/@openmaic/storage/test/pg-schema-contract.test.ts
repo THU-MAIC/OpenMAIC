@@ -246,6 +246,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   owner_id            TEXT NOT NULL,
   prompt              TEXT NOT NULL,
   title               TEXT,
+  title_state         TEXT NOT NULL DEFAULT 'manual',
   stage_id            TEXT NOT NULL,
   active_stage_id     TEXT,
   skill_id            TEXT,
@@ -263,6 +264,8 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   deleted_at          TIMESTAMPTZ,
   CONSTRAINT agent_sessions_attempt_nonnegative CHECK (attempt >= 0),
+  CONSTRAINT agent_sessions_title_state_known
+    CHECK (title_state IN ('pending','automatic','manual')),
   CONSTRAINT agent_sessions_status_known
     CHECK (status IN ('queued','running','succeeded','failed','cancelled'))
 );
@@ -272,6 +275,45 @@ ALTER TABLE agent_sessions
 
 ALTER TABLE agent_sessions
   ADD COLUMN IF NOT EXISTS title TEXT;
+
+ALTER TABLE agent_sessions
+  ADD COLUMN IF NOT EXISTS title_state TEXT NOT NULL DEFAULT 'manual';
+
+DO $agent_session_title_state_constraint$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'agent_sessions'::regclass
+      AND conname = 'agent_sessions_title_state_known'
+  ) THEN
+    LOCK TABLE agent_sessions IN ACCESS EXCLUSIVE MODE;
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'agent_sessions'::regclass
+        AND conname = 'agent_sessions_title_state_known'
+    ) THEN
+      ALTER TABLE agent_sessions
+        ADD CONSTRAINT agent_sessions_title_state_known
+        CHECK (title_state IN ('pending','automatic','manual'))
+        NOT VALID;
+    END IF;
+  END IF;
+END
+$agent_session_title_state_constraint$;
+
+DO $agent_session_title_state_validation$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'agent_sessions'::regclass
+      AND conname = 'agent_sessions_title_state_known'
+      AND NOT convalidated
+  ) THEN
+    ALTER TABLE agent_sessions
+      VALIDATE CONSTRAINT agent_sessions_title_state_known;
+  END IF;
+END
+$agent_session_title_state_validation$;
 
 CREATE INDEX IF NOT EXISTS agent_sessions_status_live_idx
   ON agent_sessions (status, created_at) WHERE deleted_at IS NULL;
@@ -484,7 +526,30 @@ function statementsOf(schema: string): string[] {
   return splitSqlStatements(schema);
 }
 
-describe('agent-session owner-event constraint migration', () => {
+describe('agent-session constraint migrations', () => {
+  it('guards title-state installation and validates it in a separate statement', () => {
+    const statements = statementsOf(AGENT_SESSION_PG_SCHEMA);
+    const installIndex = statements.findIndex((statement) =>
+      statement.includes('$agent_session_title_state_constraint$'),
+    );
+    const validationIndex = statements.findIndex((statement) =>
+      statement.includes('$agent_session_title_state_validation$'),
+    );
+    const install = statements[installIndex] ?? '';
+    const validation = statements[validationIndex] ?? '';
+
+    expect(installIndex).toBeGreaterThanOrEqual(0);
+    expect(install.indexOf('IF NOT EXISTS')).toBeLessThan(
+      install.indexOf('LOCK TABLE agent_sessions IN ACCESS EXCLUSIVE MODE'),
+    );
+    expect(install).toMatch(/ADD CONSTRAINT agent_sessions_title_state_known[\s\S]*NOT VALID/);
+    expect(validationIndex).toBeGreaterThan(installIndex);
+    expect(validation).toContain('AND NOT convalidated');
+    expect(validation).toMatch(
+      /ALTER TABLE agent_sessions\s+VALIDATE CONSTRAINT agent_sessions_title_state_known/,
+    );
+  });
+
   it('installs without a locked scan, then conditionally validates in a separate statement', () => {
     const statements = statementsOf(AGENT_SESSION_PG_SCHEMA);
     const installIndex = statements.findIndex((statement) =>

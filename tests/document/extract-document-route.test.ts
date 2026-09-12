@@ -468,8 +468,8 @@ describe('POST /api/extract-document (asset-id form)', () => {
     expect(mocks.resolveServerAsset).not.toHaveBeenCalled();
   });
 
-  it('applies the SSRF guard to the JSON path baseUrl in production mode', async () => {
-    vi.stubEnv('NODE_ENV', 'production');
+  it('rejects a client-supplied JSON path baseUrl pointing at a private address in any environment', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
     vi.stubEnv('ALLOW_LOCAL_NETWORKS', 'false');
     mocks.resolveServerAsset.mockResolvedValue({
       status: 'resolved',
@@ -482,7 +482,7 @@ describe('POST /api/extract-document (asset-id form)', () => {
       fileName: 'lesson.pdf',
       mimeType: 'application/pdf',
       providerId: 'mineru-cloud',
-      baseUrl: 'http://169.254.169.254/latest/meta-data/',
+      baseUrl: 'http://192.168.1.10/v1/',
     });
     const json = await res.json();
 
@@ -492,6 +492,36 @@ describe('POST /api/extract-document (asset-id form)', () => {
       errorCode: 'INVALID_URL',
     });
     expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+  });
+
+  it('lets the JSON path proceed when ALLOW_LOCAL_NETWORKS=true opts a local base URL in', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('ALLOW_LOCAL_NETWORKS', 'true');
+    mocks.resolveServerAsset.mockResolvedValue({
+      status: 'resolved',
+      buffer: Buffer.from('%PDF-1.4'),
+      mimeType: 'application/pdf',
+    });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'lesson.pdf',
+      mimeType: 'application/pdf',
+      providerId: 'mineru-cloud',
+      baseUrl: 'http://192.168.1.10/v1/',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json).toMatchObject({ success: true });
+    expect(mocks.parseWithMinerUCloud).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'mineru-cloud',
+        baseUrl: 'http://192.168.1.10/v1/',
+      }),
+      expect.any(Buffer),
+      'lesson.pdf',
+    );
   });
 
   it('returns 413 when the resolved server asset exceeds the 50 MB cap (post-resolve backstop)', async () => {

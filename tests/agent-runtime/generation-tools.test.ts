@@ -178,6 +178,85 @@ describe('generation and deck tools', () => {
     ]);
   });
 
+  it.each([
+    ['slide', 'SLIDE_RAW_SENTINEL', undefined],
+    ['quiz', 'QUIZ_RAW_SENTINEL', undefined],
+    ['interactive', 'INTERACTIVE_RAW_SENTINEL', { widgetType: 'diagram' }],
+  ] as const)(
+    'preserves malformed %s generation failures without writing raw model output',
+    async (type, rawResponse, interactive) => {
+      const existing = slide('existing', 1, 'Existing');
+      const current = state(document([existing]));
+      const onCheckpoint = vi.fn();
+      const generateActions = vi.fn();
+      const generate = find(
+        buildGenerationTools(
+          deps(current.store, {
+            onCheckpoint,
+            generateActions,
+            aiCall: vi.fn(async () => rawResponse),
+          }),
+        ),
+        'generate_scene',
+      );
+      const before = structuredClone(current.get());
+      const originalLogFormat = process.env.LOG_FORMAT;
+      const originalLogLevel = process.env.LOG_LEVEL;
+      process.env.LOG_FORMAT = 'json';
+      process.env.LOG_LEVEL = 'warn';
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      try {
+        const response = await generate.execute('call', {
+          stageId: 'stage-test',
+          order: 1,
+          title: '  Replacement  ',
+          type,
+          brief: 'A replacement page',
+          ...(interactive ?? {}),
+        } as never);
+
+        const toolResult = response as { isError?: boolean; details: Record<string, unknown> };
+        expect(toolResult.isError).toBe(true);
+        expect((response.content[0] as { text: string }).text).toBe(
+          'The model response could not be parsed into page content; nothing was written.',
+        );
+        expect(toolResult.details).toEqual({
+          error: 'invalid-model-output',
+          order: 1,
+          title: 'Replacement',
+          type,
+          sceneId: 'existing',
+        });
+        expect(JSON.stringify(response)).not.toContain(rawResponse);
+        expect(current.get()).toEqual(before);
+        expect(current.store.putScene).not.toHaveBeenCalled();
+        expect(current.store.saveDocument).not.toHaveBeenCalled();
+        expect(generateActions).not.toHaveBeenCalled();
+        expect(onCheckpoint).not.toHaveBeenCalled();
+
+        expect(warn).toHaveBeenCalledTimes(1);
+        const warning = JSON.parse(String(warn.mock.calls[0][0]));
+        expect(warning).toMatchObject({ level: 'WARN', tag: 'AgentGenerationTools' });
+        expect(JSON.parse(warning.message)).toEqual({
+          error: 'invalid-model-output',
+          stageId: 'stage-test',
+          order: 1,
+          title: 'Replacement',
+          type,
+          sceneId: 'existing',
+        });
+        expect(JSON.stringify(warn.mock.calls)).not.toContain(rawResponse);
+      } finally {
+        warn.mockRestore();
+        if (originalLogFormat === undefined) delete process.env.LOG_FORMAT;
+        else process.env.LOG_FORMAT = originalLogFormat;
+        if (originalLogLevel === undefined) delete process.env.LOG_LEVEL;
+        else process.env.LOG_LEVEL = originalLogLevel;
+      }
+    },
+  );
+
   it('refuses destructive PBL type changes and unresolved generation media', async () => {
     const pbl = slide('project', 1, 'Project') as Scene;
     pbl.type = 'pbl';

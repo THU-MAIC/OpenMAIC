@@ -14,7 +14,9 @@ import { resolveMediaPath } from '../utils/media';
 import { resolveColorToCss } from './StyleResolver';
 import { DOMParser } from '@xmldom/xmldom';
 import { parseDocxMathContent } from '../utils/eqFieldParser';
+import { equationNativeToLatex } from '../utils/mtef';
 import JSZip from 'jszip';
+import * as CFB from 'cfb';
 
 // @ts-expect-error — omml2mathml has no type declarations
 import omml2mathml from 'omml2mathml';
@@ -393,6 +395,40 @@ async function resolveFallbackImage(
  * Resolve an embedded .docx package from the slide's rels + presentation embeddings.
  * Returns the word/document.xml content string, or null.
  */
+/**
+ * Resolve an `Equation.3` / MathType OLE embedding and convert its
+ * `Equation Native` stream (MTEF v3) to LaTeX. Returns null when the binary
+ * is missing, not a compound file, or MTEF parsing fails — the caller then
+ * falls back to the preview-picture path.
+ */
+function resolveOleEquationLatex(
+  rId: string,
+  ctx: RenderContext,
+): { latex: string; plainText: string; degraded: boolean } | null {
+  const rel = ctx.slide.rels.get(rId);
+  if (!rel) return null;
+
+  const fileName = rel.target.split('/').pop() || '';
+  const embeddingPath = `ppt/embeddings/${fileName}`;
+  const data = ctx.presentation.embeddings.get(embeddingPath);
+  if (!data) return null;
+
+  try {
+    const cfb = CFB.read(data, { type: 'buffer' });
+    const stream = CFB.find(cfb, 'Equation Native');
+    if (!stream?.content) return null;
+    const converted = equationNativeToLatex(new Uint8Array(stream.content));
+    return {
+      latex: converted.latex,
+      plainText: converted.plainText,
+      degraded: converted.degraded,
+    };
+  } catch (err) {
+    console.warn('[mathSerializer] Equation Native MTEF→LaTeX failed:', err);
+    return null;
+  }
+}
+
 async function resolveOleDocxContent(rId: string, ctx: RenderContext): Promise<string | null> {
   const rel = ctx.slide.rels.get(rId);
   if (!rel) return null;
@@ -428,7 +464,16 @@ export async function mathToElement(
   let latex = '';
   let plainText = node.plainText || '';
 
-  if (node.oleDocxRId) {
+  let mtefDegraded = false;
+  if (node.oleEquationRId) {
+    // Equation.3 / MathType OLE: `Equation Native` MTEF v3 → LaTeX
+    const converted = resolveOleEquationLatex(node.oleEquationRId, ctx);
+    if (converted) {
+      latex = converted.latex;
+      plainText = converted.plainText || plainText;
+      mtefDegraded = converted.degraded;
+    }
+  } else if (node.oleDocxRId) {
     // OLE Word.Document with EQ field math
     const docXml = await resolveOleDocxContent(node.oleDocxRId, ctx);
     if (docXml) {
@@ -476,5 +521,6 @@ export async function mathToElement(
     picBase64,
     order,
     text: plainText || undefined,
+    ...(mtefDegraded ? { degraded: true } : {}),
   };
 }

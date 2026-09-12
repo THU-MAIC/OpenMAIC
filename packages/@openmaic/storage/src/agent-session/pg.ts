@@ -22,6 +22,7 @@ import {
   type AgentSessionEventLog,
   type AgentSessionHooks,
   type AgentSessionMeta,
+  type AgentSessionAutomaticTitleStore,
   type AgentSessionStore,
   type AgentSessionTitleStore,
   type AgentSessionTransaction,
@@ -62,9 +63,11 @@ export const DEFAULT_AGENT_SESSION_TABLE_NAMES: Readonly<AgentSessionTableNames>
 };
 
 const OWNER_EVENT_TYPE_CONSTRAINT_V2 = 'agent_owner_session_events_type_known_v2';
-// Long custom names can truncate the v1/v2 constraints to one PG identifier.
-// This impossible custom name shelters v2 while table names are substituted.
+// Shelter fixed constraint names while custom table names are substituted;
+// otherwise long names can be folded into and truncate the constraint names.
 const OWNER_EVENT_TYPE_CONSTRAINT_V2_SENTINEL = '__OPENMAIC_OWNER_EVENT_TYPE_KNOWN_V2__';
+const TITLE_STATE_CONSTRAINT = 'agent_sessions_title_state_known';
+const TITLE_STATE_CONSTRAINT_SENTINEL = '__OPENMAIC_SESSION_TITLE_STATE_KNOWN__';
 
 export interface AgentSessionLogger {
   error(message: string, context: Record<string, unknown>, error: unknown): void;
@@ -90,6 +93,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   owner_id            TEXT NOT NULL,
   prompt              TEXT NOT NULL,
   title               TEXT,
+  title_state         TEXT NOT NULL DEFAULT 'manual',
   stage_id            TEXT NOT NULL,
   active_stage_id     TEXT,
   skill_id            TEXT,
@@ -107,6 +111,8 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   deleted_at          TIMESTAMPTZ,
   CONSTRAINT agent_sessions_attempt_nonnegative CHECK (attempt >= 0),
+  CONSTRAINT agent_sessions_title_state_known
+    CHECK (title_state IN ('pending','automatic','manual')),
   CONSTRAINT agent_sessions_status_known
     CHECK (status IN ('queued','running','succeeded','failed','cancelled'))
 );
@@ -116,6 +122,45 @@ ALTER TABLE agent_sessions
 
 ALTER TABLE agent_sessions
   ADD COLUMN IF NOT EXISTS title TEXT;
+
+ALTER TABLE agent_sessions
+  ADD COLUMN IF NOT EXISTS title_state TEXT NOT NULL DEFAULT 'manual';
+
+DO $agent_session_title_state_constraint$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'agent_sessions'::regclass
+      AND conname = 'agent_sessions_title_state_known'
+  ) THEN
+    LOCK TABLE agent_sessions IN ACCESS EXCLUSIVE MODE;
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'agent_sessions'::regclass
+        AND conname = 'agent_sessions_title_state_known'
+    ) THEN
+      ALTER TABLE agent_sessions
+        ADD CONSTRAINT agent_sessions_title_state_known
+        CHECK (title_state IN ('pending','automatic','manual'))
+        NOT VALID;
+    END IF;
+  END IF;
+END
+$agent_session_title_state_constraint$;
+
+DO $agent_session_title_state_validation$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'agent_sessions'::regclass
+      AND conname = 'agent_sessions_title_state_known'
+      AND NOT convalidated
+  ) THEN
+    ALTER TABLE agent_sessions
+      VALIDATE CONSTRAINT agent_sessions_title_state_known;
+  END IF;
+END
+$agent_session_title_state_validation$;
 
 CREATE INDEX IF NOT EXISTS agent_sessions_status_live_idx
   ON agent_sessions (status, created_at) WHERE deleted_at IS NULL;
@@ -277,18 +322,19 @@ function schemaFor(names: AgentSessionTableNames): string {
   // index names (`agent_sessions_status_live_idx`, ...) are re-keyed by the
   // same replaceAll that re-keys their tables, so no separate prefix rewriting
   // is performed or needed.
-  return AGENT_SESSION_PG_SCHEMA.replaceAll(
-    OWNER_EVENT_TYPE_CONSTRAINT_V2,
-    OWNER_EVENT_TYPE_CONSTRAINT_V2_SENTINEL,
-  )
+  return AGENT_SESSION_PG_SCHEMA.replaceAll(TITLE_STATE_CONSTRAINT, TITLE_STATE_CONSTRAINT_SENTINEL)
+    .replaceAll(OWNER_EVENT_TYPE_CONSTRAINT_V2, OWNER_EVENT_TYPE_CONSTRAINT_V2_SENTINEL)
     .replaceAll('agent_owner_session_event_counters', names.ownerEventCounters)
     .replaceAll('agent_owner_session_events', names.ownerEvents)
     .replaceAll('agent_session_entries', names.entries)
     .replaceAll('agent_session_events', names.events)
     .replaceAll('agent_session_urls', names.urls)
     .replaceAll('agent_sessions', names.sessions)
+    .replaceAll(`'${names.sessions}'::regclass`, `'${s}'::regclass`)
     .replaceAll(`'${names.ownerEvents}'::regclass`, `'${o}'::regclass`)
+    .replaceAll(`LOCK TABLE ${names.sessions} IN`, `LOCK TABLE ${s} IN`)
     .replaceAll(`LOCK TABLE ${names.ownerEvents} IN`, `LOCK TABLE ${o} IN`)
+    .replaceAll(`ALTER TABLE ${names.sessions}\n`, `ALTER TABLE ${s}\n`)
     .replaceAll(`ALTER TABLE ${names.ownerEvents}\n`, `ALTER TABLE ${o}\n`)
     .replaceAll(`REFERENCES ${names.sessions}`, `REFERENCES ${s}`)
     .replaceAll(`ON ${names.sessions}`, `ON ${s}`)
@@ -305,15 +351,16 @@ function schemaFor(names: AgentSessionTableNames): string {
       `CREATE TABLE IF NOT EXISTS ${o}`,
     )
     .replaceAll(`CREATE TABLE IF NOT EXISTS ${names.urls}`, `CREATE TABLE IF NOT EXISTS ${u}`)
-    .replaceAll(OWNER_EVENT_TYPE_CONSTRAINT_V2_SENTINEL, OWNER_EVENT_TYPE_CONSTRAINT_V2);
+    .replaceAll(OWNER_EVENT_TYPE_CONSTRAINT_V2_SENTINEL, OWNER_EVENT_TYPE_CONSTRAINT_V2)
+    .replaceAll(TITLE_STATE_CONSTRAINT_SENTINEL, TITLE_STATE_CONSTRAINT);
 }
 
 /**
  * Create all backend-owned tables when absent and apply their additive migrations.
  *
  * Call this on a queryable that is not already inside an explicit transaction.
- * The owner-event constraint install and validation are separate statements so
- * the install's ACCESS EXCLUSIVE lock is released before validation scans data.
+ * Constraint installs and validations are separate statements so each install's
+ * ACCESS EXCLUSIVE lock is released before validation scans existing data.
  */
 export async function ensureAgentSessionSchema(
   queryable: Queryable,
@@ -367,7 +414,7 @@ function sessionMeta(row: SessionRow): AgentSessionMeta {
     id: row.id,
     ownerId: row.owner_id,
     prompt: row.prompt,
-    ...(row.title !== null ? { title: row.title } : {}),
+    ...(row.title ? { title: row.title } : {}),
     stageId: row.stage_id,
     ...(row.skill_id ? { skillId: row.skill_id } : {}),
     ...(row.origin ? { origin: row.origin } : {}),
@@ -411,6 +458,7 @@ export class PgAgentSessionStore
   implements
     AgentSessionStore,
     AgentSessionTitleStore,
+    AgentSessionAutomaticTitleStore,
     AgentSessionEventLog,
     AgentSessionEntryTree,
     OwnerSessionEventProjection,
@@ -480,15 +528,22 @@ export class PgAgentSessionStore
     const id = input.id ?? this.createId();
     return this.transaction(async (tx) => {
       const ownerId = await this.resolveOwnerHook(tx, input.ownerId);
+      // Blank is an internal automatic-title reservation. An older process
+      // clearing or renaming during a rolling deploy replaces it, fencing both
+      // claims and commits without another state or token.
+      const title = input.titleState === 'pending' ? '' : null;
       const result = await tx.query<SessionRow>(
         `INSERT INTO ${this.table('sessions')}
-          (id, owner_id, prompt, stage_id, skill_id, origin, existing_course, status, attempt)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0)
+          (id, owner_id, prompt, title, title_state, stage_id, skill_id, origin, existing_course,
+           status, attempt)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0)
          RETURNING ${SESSION_COLUMNS}`,
         [
           id,
           ownerId,
           input.prompt,
+          title,
+          input.titleState ?? 'manual',
           input.stageId ?? `stage-${id.slice(0, 8)}`,
           input.skillId ?? null,
           input.origin ?? null,
@@ -534,8 +589,72 @@ export class PgAgentSessionStore
     return this.transaction(async (tx) => {
       const result = await tx.query<SessionRow>(
         `UPDATE ${this.table('sessions')}
+         SET title = $3, title_state = 'manual', updated_at = clock_timestamp()
+         WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+         RETURNING ${SESSION_COLUMNS}`,
+        [sessionId, ownerId, title],
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      const meta = sessionMeta(row);
+      await this.appendProjection(
+        { type: 'session_title', sessionId, title: meta.title ?? null, ts: meta.updatedAt },
+        tx,
+      );
+      return meta;
+    });
+  }
+
+  async claimAutomaticSessionTitle(sessionId: string, ownerId: string): Promise<string | null> {
+    return this.transaction(async (tx) => {
+      const locked = await tx.query<{
+        prompt: string;
+        existing_course: boolean;
+        title_state: string;
+      }>(
+        `SELECT prompt, existing_course, title_state FROM ${this.table('sessions')}
+         WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL FOR UPDATE`,
+        [sessionId, ownerId],
+      );
+      const session = locked.rows[0];
+      if (!session || session.title_state !== 'pending') return null;
+
+      let text = session.prompt;
+      if (session.existing_course) {
+        const firstMessage = await tx.query<{ text: string }>(
+          `SELECT data->>'text' AS text FROM ${this.table('events')}
+           WHERE session_id = $1 AND type = $2
+             AND COALESCE(data->>'text', '') ~ '[^[:space:]]'
+           ORDER BY seq LIMIT 1`,
+          [sessionId, AGENT_SESSION_LIFECYCLE.userMessage],
+        );
+        text = firstMessage.rows[0]?.text ?? '';
+      }
+      if (text.trim() === '') return null;
+
+      const claimed = await tx.query<{ id: string }>(
+        `UPDATE ${this.table('sessions')} SET title_state = 'automatic'
+         WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+           AND title_state = 'pending' AND title = ''
+         RETURNING id`,
+        [sessionId, ownerId],
+      );
+      return claimed.rows[0] ? text : null;
+    });
+  }
+
+  async setAutomaticSessionTitle(
+    sessionId: string,
+    ownerId: string,
+    title: string,
+  ): Promise<AgentSessionMeta | null> {
+    if (title.trim() === '') return null;
+    return this.transaction(async (tx) => {
+      const result = await tx.query<SessionRow>(
+        `UPDATE ${this.table('sessions')}
          SET title = $3, updated_at = clock_timestamp()
          WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+           AND title_state = 'automatic' AND title = ''
          RETURNING ${SESSION_COLUMNS}`,
         [sessionId, ownerId, title],
       );

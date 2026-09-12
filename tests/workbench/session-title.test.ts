@@ -149,6 +149,22 @@ describe('committing a rename', () => {
     expect(applied).toEqual([null, null]);
   });
 
+  it.each([
+    ['an empty input', '  '],
+    ['the unchanged prompt fallback', ' 帮我做一节课 '],
+  ])('does not turn %s into a manual clear when no override exists', async (_case, raw) => {
+    const save = vi.fn(async () => null);
+    const outcome = await commitSessionRename({
+      current: session,
+      raw,
+      apply: () => expect.unreachable('nothing should be written'),
+      save,
+    });
+
+    expect(outcome).toBe('unchanged');
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it('spends no round trip when nothing changed', async () => {
     const save = vi.fn(async () => null);
     const outcome = await commitSessionRename({

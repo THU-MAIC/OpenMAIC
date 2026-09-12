@@ -148,6 +148,12 @@ export async function slideToPng(
     await nextFrame();
     await nextFrame();
 
+    // Charts load ECharts asynchronously because it is an optional peer
+    // dependency. Wait for every chart element to finish loading before
+    // rasterizing; otherwise exports can capture the intentionally empty
+    // loading container while the live slide eventually renders correctly.
+    await waitForCharts(container, timeoutMs);
+
     // Explicitly force-load every (style, weight, family) the slide actually
     // uses BEFORE snapshotting. `document.fonts.ready` alone is racy: it can
     // resolve before the off-screen render has triggered a self-hosted woff2
@@ -341,6 +347,14 @@ export async function slideToPng(
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+async function waitForCharts(root: HTMLElement, timeoutMs: number): Promise<void> {
+  const deadline = performance.now() + timeoutMs;
+  while (root.querySelector('[data-chart-state="loading"]')) {
+    if (performance.now() >= deadline) return;
+    await nextFrame();
+  }
 }
 
 /**

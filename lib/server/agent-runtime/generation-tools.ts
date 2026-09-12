@@ -10,6 +10,7 @@ import {
   type AICallFn,
   type ImageMapping,
   type PdfImage,
+  type SceneContentFailureCode,
   type SceneGenerationContext,
 } from '@openmaic/generation';
 
@@ -28,9 +29,11 @@ import { synthesizeSceneNarration } from './scene-tts';
 import { toGenerationContent } from './generation-content';
 import { checkScenesAgainstSkill } from './skills';
 import { isMediaPlaceholder } from '@/lib/store/media-generation';
+import { createLogger } from '@/lib/logger';
 
 const MAX_GENERATE_SCENE_MEDIA = 8;
 const SUPPORTED_SCENE_TYPES = new Set(['slide', 'quiz', 'interactive', 'pbl']);
+const log = createLogger('AgentGenerationTools');
 
 const SceneParams = Type.Object({
   stageId: Type.String({ description: COURSE_STAGE_ID_DESCRIPTION }),
@@ -379,6 +382,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
       }
       const agents = doc.stage.generatedAgentConfigs;
       let content: Awaited<ReturnType<typeof generateSceneContent>>;
+      let contentFailure: SceneContentFailureCode | undefined;
       try {
         content = await generateSceneContent(outline, aiCallFor(sceneContentStage(params.type)), {
           agents,
@@ -387,6 +391,9 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           ...(assignedImages.length ? { assignedImages, imageMapping } : {}),
           ...(params.instruction ? { editDirective: params.instruction } : {}),
           ...(baseline ? { baselineContent: baseline } : {}),
+          onFailure: (failure) => {
+            contentFailure = failure.code;
+          },
         });
       } catch (error) {
         if (error instanceof PBLGenerationError) {
@@ -406,7 +413,34 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
         throw error;
       }
       if (signal?.aborted) throw new Error('aborted');
-      if (!content) return result('Page content generation failed; nothing was written.', {}, true);
+      if (!content) {
+        const error = contentFailure ?? 'scene-content-generation-failed';
+        log.warn({
+          error,
+          stageId: params.stageId,
+          order: params.order,
+          title,
+          type: params.type,
+          ...(existing ? { sceneId: existing.id } : {}),
+        });
+        const text =
+          error === 'prompt-unavailable'
+            ? 'Page content prompt could not be prepared; nothing was written.'
+            : error === 'invalid-model-output'
+              ? 'The model response could not be parsed into page content; nothing was written.'
+              : 'Page content generation failed; nothing was written.';
+        return result(
+          text,
+          {
+            error,
+            order: params.order,
+            title,
+            type: params.type,
+            ...(existing ? { sceneId: existing.id } : {}),
+          },
+          true,
+        );
+      }
       const actions = filterKnownActions(
         await actionGenerator(outline, content, aiCallFor('scene-actions'), {
           agents,

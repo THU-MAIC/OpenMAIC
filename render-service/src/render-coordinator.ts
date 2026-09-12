@@ -13,6 +13,8 @@ import type { ArtifactStore } from './artifact-store.js';
 import { config } from './config.js';
 import type { JobStore } from './job-store.js';
 import type { RenderExecutor } from './render-executor.js';
+import { emitRenderEvent, type RenderEventSink, type RenderOutcome } from './events.js';
+import { Semaphore } from './semaphore.js';
 import type {
   RenderCancelledFailure,
   RenderExecutionResult,
@@ -21,8 +23,27 @@ import type {
   RenderOptions,
 } from './types.js';
 
-/** Thrown when admission control rejects a submission (mapped to HTTP 429). */
-export class RenderRejectedError extends Error {}
+/**
+ * Machine-readable admission-rejection code, surfaced as `reason` on HTTP 429
+ * responses so clients can react to backpressure without parsing prose.
+ */
+export type RenderRejectionReason = 'queue_full' | 'per_identity_limit';
+
+/**
+ * Thrown when admission control rejects a submission (mapped to HTTP 429).
+ *
+ * `reason` is set when a rejection comes from an admission cap
+ * ({@link RenderRejectionReason}) and left undefined for internal invariants
+ * that have no client-facing remedy.
+ */
+export class RenderRejectedError extends Error {
+  constructor(
+    message: string,
+    readonly reason?: RenderRejectionReason,
+  ) {
+    super(message);
+  }
+}
 
 function planPathForProject(dir: string): string {
   return join(
@@ -48,6 +69,8 @@ export interface RenderCoordinatorOptions {
   maxQueue?: number;
   maxJobsPerUser?: number;
   jobDeadlineMs?: number;
+  /** Where lifecycle events go. Defaults to one JSON line per event on stdout. */
+  onEvent?: RenderEventSink;
 }
 
 export class RenderCoordinator {
@@ -60,6 +83,14 @@ export class RenderCoordinator {
   private readonly maxQueue: number;
   private readonly maxJobsPerUser: number;
   private readonly jobDeadlineMs: number;
+  private readonly executionGate: Semaphore;
+  private readonly onEvent: RenderEventSink;
+  /**
+   * Timing per in-flight job, so a start can report its queue wait and a finish
+   * can separate that wait from the render itself. An entry is removed by
+   * `finishEvent`, which also makes the finish idempotent.
+   */
+  private readonly jobTiming = new Map<string, { submittedAt: number; startedAt?: number }>();
 
   constructor(
     private readonly executor: RenderExecutor,
@@ -71,6 +102,28 @@ export class RenderCoordinator {
     this.maxQueue = options.maxQueue ?? config.maxQueue;
     this.maxJobsPerUser = options.maxJobsPerUser ?? config.maxJobsPerUser;
     this.jobDeadlineMs = options.jobDeadlineMs ?? config.jobDeadlineMs;
+    this.executionGate = new Semaphore(this.maxConcurrency);
+    this.onEvent = options.onEvent ?? emitRenderEvent;
+  }
+
+  /** Run Chromium-backed work within the service-wide execution budget. */
+  runWithExecutionSlot<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    return this.executionGate.run(task, signal);
+  }
+
+  /** Run work only when an execution slot is available now; never queue. */
+  tryRunWithExecutionSlot<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> | undefined {
+    signal?.throwIfAborted();
+    const release = this.executionGate.tryAcquire();
+    if (!release) return undefined;
+    return (async () => {
+      try {
+        signal?.throwIfAborted();
+        return await task();
+      } finally {
+        release();
+      }
+    })();
   }
 
   /** Total jobs occupying the system: reserved + queued + running. */
@@ -78,16 +131,33 @@ export class RenderCoordinator {
     return this.pending + this.queue.length + this.running;
   }
 
-  /** Claim an admission slot before buffering or extracting the archive. */
+  /**
+   * Whether the system currently has room for another job (queue below the
+   * global cap). Exposed for `/health` as a deliberate aggregate-only signal:
+   * no occupancy counts, and never per-identity state — identity keys are
+   * client IPs when the service runs behind a trusted proxy, so publishing
+   * them would leak the list of active users' addresses.
+   */
+  get accepting(): boolean {
+    return this.inSystem < this.maxQueue;
+  }
+
+  /**
+   * Claim an admission slot before buffering or extracting the archive.
+   * Throws {@link RenderRejectedError} with reason `queue_full` once the
+   * global cap is reached, or `per_identity_limit` when this identity already
+   * holds `maxJobsPerUser` active jobs.
+   */
   reserve(identity: string): Reservation {
     if (this.inSystem >= this.maxQueue) {
-      throw new RenderRejectedError('The render queue is full; try again shortly.');
+      throw new RenderRejectedError('The render queue is full; try again shortly.', 'queue_full');
     }
     if (this.maxJobsPerUser > 0) {
       const active = this.activeByIdentity.get(identity) ?? 0;
       if (active >= this.maxJobsPerUser) {
         throw new RenderRejectedError(
           `A render is already in progress (limit ${this.maxJobsPerUser}).`,
+          'per_identity_limit',
         );
       }
     }
@@ -143,6 +213,15 @@ export class RenderCoordinator {
     const abort = new AbortController();
     this.controllers.set(id, abort);
     this.queue.push({ record, options, abort });
+    this.jobTiming.set(id, { submittedAt: now });
+    this.onEvent({
+      event: 'render_job_submitted',
+      jobId: id,
+      // Exclude this job, so an idle service reports queued: 0 and "queued > 0"
+      // is a usable backlog signal.
+      queued: this.queue.length - 1,
+      running: this.running,
+    });
     this.pump();
     return id;
   }
@@ -162,6 +241,11 @@ export class RenderCoordinator {
         code: 'cancelled',
         message: 'Render cancelled',
       };
+      // Cancelling before the job ever started skips `finishNonSuccess`, so
+      // close the lifecycle here too. Without this a queued-then-cancelled job
+      // is submitted and then simply never heard from again, which would leave
+      // any success rate computed from these events quietly wrong.
+      this.finishEvent(id, 'cancelled');
       await this.jobs.update(id, {
         status: 'cancelled',
         currentStage: 'cancelled',
@@ -180,11 +264,51 @@ export class RenderCoordinator {
     }
   }
 
+  /**
+   * Close a job's lifecycle in the log. Also drops its submission timestamp so
+   * the map cannot grow without bound across a long-lived process.
+   */
+  private finishEvent(id: string, outcome: RenderOutcome, errorCode?: string): void {
+    // Deleting the timing entry is also what makes this idempotent. A terminal
+    // job-store write can reject *after* an outcome is known, which lands in the
+    // caller's catch and would otherwise close the same job a second time with a
+    // contradictory outcome — one render counted as both a success and a
+    // failure, which is precisely the corruption these events exist to rule out.
+    const timing = this.jobTiming.get(id);
+    if (!timing) return;
+    this.jobTiming.delete(id);
+    const now = Date.now();
+    this.onEvent({
+      event: 'render_job_finished',
+      jobId: id,
+      outcome,
+      durationMs: now - timing.submittedAt,
+      ...(timing.startedAt === undefined
+        ? {}
+        : {
+            queueWaitMs: timing.startedAt - timing.submittedAt,
+            renderMs: now - timing.startedAt,
+          }),
+      ...(errorCode === undefined ? {} : { errorCode }),
+    });
+  }
+
+  /** In-flight jobs whose timing is still tracked. Exposed for tests. */
+  get trackedJobs(): number {
+    return this.jobTiming.size;
+  }
+
   private async finishNonSuccess(
     id: string,
     projectDir: string,
     result: Exclude<RenderExecutionResult, { status: 'succeeded' }>,
   ): Promise<void> {
+    // `failure.code` is a fixed vocabulary; the free-text message is not logged.
+    this.finishEvent(
+      id,
+      result.status,
+      result.status === 'failed' ? result.failure.code : undefined,
+    );
     try {
       await this.jobs.update(id, {
         status: result.status,
@@ -203,25 +327,40 @@ export class RenderCoordinator {
     const { id, projectDir } = record;
     const outputPath = join(projectDir, 'output.mp4');
     try {
-      await this.jobs.update(id, { status: 'running', currentStage: 'preparing' });
-      const result = await this.executor.execute({
-        projectDir,
-        outputPath,
-        options,
-        signal: abort.signal,
-        deadlineMs: this.jobDeadlineMs,
-        onProgress: async (progress) => {
-          await this.jobs.update(id, {
-            status: 'running',
-            progress: progress.progress,
-            currentStage: progress.stage,
-            ...(progress.framesRendered !== undefined
-              ? { framesRendered: progress.framesRendered }
-              : {}),
-            ...(progress.totalFrames !== undefined ? { totalFrames: progress.totalFrames } : {}),
-          });
-        },
-      });
+      const result = await this.runWithExecutionSlot(async () => {
+        // Inside the slot: the wait measured here is exactly the time this job
+        // spent queued behind other renders, which is the signal a busy
+        // deployment needs and the one nothing else exposes.
+        const timing = this.jobTiming.get(id);
+        const startedAt = Date.now();
+        if (timing) timing.startedAt = startedAt;
+        this.onEvent({
+          event: 'render_job_started',
+          jobId: id,
+          queueWaitMs: startedAt - (timing?.submittedAt ?? startedAt),
+          queued: this.queue.length,
+          running: this.running,
+        });
+        await this.jobs.update(id, { status: 'running', currentStage: 'preparing' });
+        return this.executor.execute({
+          projectDir,
+          outputPath,
+          options,
+          signal: abort.signal,
+          deadlineMs: this.jobDeadlineMs,
+          onProgress: async (progress) => {
+            await this.jobs.update(id, {
+              status: 'running',
+              progress: progress.progress,
+              currentStage: progress.stage,
+              ...(progress.framesRendered !== undefined
+                ? { framesRendered: progress.framesRendered }
+                : {}),
+              ...(progress.totalFrames !== undefined ? { totalFrames: progress.totalFrames } : {}),
+            });
+          },
+        });
+      }, abort.signal);
 
       if (result.status !== 'succeeded') {
         await this.finishNonSuccess(id, projectDir, result);
@@ -247,8 +386,18 @@ export class RenderCoordinator {
         ...(result.performance ? { performance: result.performance } : {}),
         ...(result.metrics ? { metrics: result.metrics } : {}),
       });
+      // Emitted last: until the terminal write lands, "succeeded" is not yet
+      // true, and the catch below would drop the artifact this event describes.
+      this.finishEvent(id, 'succeeded');
     } catch (error) {
       await this.artifacts.remove(id).catch(() => {});
+      if (abort.signal.aborted) {
+        await this.finishNonSuccess(id, projectDir, {
+          status: 'cancelled',
+          failure: { code: 'cancelled', message: 'Render cancelled' },
+        });
+        return;
+      }
       const failure: RenderFailedFailure = {
         code: 'execution_failed',
         message: error instanceof Error ? error.message : String(error),

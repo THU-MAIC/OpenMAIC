@@ -83,9 +83,30 @@ function tiffToRgba(
   }
 }
 
-/** 1×1 transparent PNG — fallback when conversion is not possible */
+/**
+ * 1×1 fully transparent PNG — fallback when conversion is not possible.
+ * Decodes to RGBA(0,0,0,0): unlike a colored pixel, stretching it over the
+ * original frame's geometry renders as nothing instead of a colored block.
+ */
 const TRANSPARENT_PNG_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNgAAIAAAUAAen63NgAAAAASUVORK5CYII=';
+
+/**
+ * The placeholder shipped through 0.1.4: a 1×1 PNG whose single pixel is
+ * RGBA(255,0,0,127) — 50%-alpha red, despite the "transparent" name. Stretched
+ * over a formula frame it renders as a pink block. Kept so placeholder
+ * detection also matches data URLs produced by those versions (and decks
+ * re-imported from them).
+ */
+const LEGACY_PLACEHOLDER_PNG_DATA_URL =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+const PLACEHOLDER_DATA_URLS = new Set([TRANSPARENT_PNG_DATA_URL, LEGACY_PLACEHOLDER_PNG_DATA_URL]);
+
+/** Whether a media src is an unconvertible-format placeholder emitted by this module. */
+export function isPlaceholderDataUrl(src: string | undefined | null): boolean {
+  return !!src && PLACEHOLDER_DATA_URLS.has(src);
+}
 
 // ---------------------------------------------------------------------------
 // WDP (JPEG XR) → PNG
@@ -118,9 +139,25 @@ async function wdpToPngDataUrl(data: Uint8Array): Promise<string> {
 // EMF (embedded PDF) → PNG via pdfjs-dist + canvas
 // ---------------------------------------------------------------------------
 
-async function emfPdfToPngDataUrl(pdfData: Uint8Array, targetWidth = 1024): Promise<string> {
+/** True if this environment's canvas can rasterize (DOM shims often can't). */
+function hasUsable2dCanvas(): boolean {
   try {
-    const doc = await pdfjs.getDocument({ data: pdfData, verbosity: 0 }).promise;
+    if (typeof document === 'undefined') return false;
+    const canvas = document.createElement('canvas');
+    if (!canvas || typeof canvas.getContext !== 'function') return false;
+    const ctx = canvas.getContext('2d');
+    return !!ctx && typeof ctx.drawImage === 'function' && typeof canvas.toDataURL === 'function';
+  } catch {
+    return false;
+  }
+}
+
+/** Per-call ceiling so a stuck pdfjs worker degrades instead of hanging forever. */
+const EMF_PDF_RENDER_DEADLINE_MS = 10_000;
+
+async function renderPdfPageToPngDataUrl(pdfData: Uint8Array, targetWidth = 1024): Promise<string> {
+  const doc = await pdfjs.getDocument({ data: pdfData, verbosity: 0 }).promise;
+  try {
     const page = await doc.getPage(1);
     const baseViewport = page.getViewport({ scale: 1 });
     const scale = Math.max(1, targetWidth / baseViewport.width);
@@ -135,12 +172,32 @@ async function emfPdfToPngDataUrl(pdfData: Uint8Array, targetWidth = 1024): Prom
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, w, h);
     await page.render({ canvasContext: ctx, viewport }).promise;
-
-    await doc.destroy();
     return canvas.toDataURL('image/png');
+  } finally {
+    await doc.destroy().catch(() => undefined);
+  }
+}
+
+async function emfPdfToPngDataUrl(pdfData: Uint8Array, targetWidth = 1024): Promise<string> {
+  if (!hasUsable2dCanvas()) {
+    // No real 2D canvas here (DOM shims), so pdfjs would hang; fall back.
+    return TRANSPARENT_PNG_DATA_URL;
+  }
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error('pdf rasterize exceeded its deadline')),
+      EMF_PDF_RENDER_DEADLINE_MS,
+    );
+  });
+  try {
+    return await Promise.race([renderPdfPageToPngDataUrl(pdfData, targetWidth), deadline]);
   } catch (err) {
     console.error('[emfPdfToPng] failed:', err);
     return TRANSPARENT_PNG_DATA_URL;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 

@@ -15,9 +15,13 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ThinkingConfig } from '@/lib/types/provider';
 
-export const thinkingContext = new AsyncLocalStorage<ThinkingConfig | undefined>();
+const thinkingGlobal = globalThis as typeof globalThis & {
+  __thinkingContext?: AsyncLocalStorage<ThinkingConfig | undefined>;
+};
 
-// Expose on globalThis so providers.ts can access the store without
-// importing this module (which would pull node:async_hooks into the
-// client bundle via the settings.ts → providers.ts import chain).
-(globalThis as Record<string, unknown>).__thinkingContext = thinkingContext;
+// Next.js evaluates this module separately for instrumentation and API routes.
+// Reuse one store so a later evaluation cannot replace the context read by
+// providers.ts while the long-lived runner still uses the original export.
+export const thinkingContext = (thinkingGlobal.__thinkingContext ??= new AsyncLocalStorage<
+  ThinkingConfig | undefined
+>());

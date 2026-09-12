@@ -9,6 +9,7 @@ import { Pool } from 'pg';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { lazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
+import { resolveAssetQuotaBytes } from '@/lib/persistence/asset-quota';
 import { ensureOwnerMaterialSchema } from '@/lib/persistence/owner-materials';
 import { ensureStageMetaSchema } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
@@ -37,6 +38,11 @@ async function createServerPersistenceProvider(
   connectionString: string,
   poolFactory: PersistencePoolFactory,
 ): Promise<ServerPersistenceProvider> {
+  // Resolved before anything is opened: a malformed ceiling is a configuration
+  // mistake, and refusing it here costs no connection and no schema work.
+  // Allocation is reachable by any caller this deployment admits, so the
+  // store's own quota is what keeps it from growing without bound.
+  const quotaBytes = resolveAssetQuotaBytes();
   const pool = poolFactory(connectionString);
   const queryable = pool as unknown as ConnectableQueryable;
   try {
@@ -58,7 +64,11 @@ async function createServerPersistenceProvider(
         validateScene: validateAppScene,
         validateStage: validateAppStage,
       }),
-      assetStore: new PgAssetStore(queryable, { withTransaction, byteStore }),
+      assetStore: new PgAssetStore(queryable, {
+        withTransaction,
+        byteStore,
+        ...(quotaBytes === undefined ? {} : { quotaBytes }),
+      }),
     };
   } catch (error) {
     await pool.end().catch(() => {});

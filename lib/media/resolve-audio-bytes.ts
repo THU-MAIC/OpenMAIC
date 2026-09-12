@@ -1,5 +1,6 @@
 import { db } from '@/lib/utils/database';
 import { isConcreteMediaAddress } from './resolve-media-ref';
+import { mayNameAPoolAsset } from './media-placeholder';
 import { withAssetUrl } from './use-asset-url';
 
 /**
@@ -31,7 +32,9 @@ export async function resolveAudioBlobs(
 }
 
 async function pooledAudioBlob(audioId: string): Promise<Blob | null> {
-  if (!audioId || isConcreteMediaAddress(audioId)) return null;
+  // A derived narration key predates allocated identities: its bytes are in the
+  // local table, never in the pool, so leasing it is a guaranteed miss.
+  if (!audioId || isConcreteMediaAddress(audioId) || !mayNameAPoolAsset(audioId)) return null;
   try {
     return await withAssetUrl(audioId, async (url) => {
       if (!url) return null;

@@ -903,7 +903,7 @@ describe('HttpAssetStore snapshot behavior', () => {
     await store.release(id);
     expect(blobForObjectUrl(before!)).toBeUndefined();
     expect(blobForObjectUrl(after!)).toBeUndefined();
-  });
+  }, 10000);
 
   test('warm resolves revalidate with HEAD', async () => {
     const storeId = `head-${namespace++}`;

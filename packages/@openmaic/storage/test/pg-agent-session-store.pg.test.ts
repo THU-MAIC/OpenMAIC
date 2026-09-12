@@ -2,15 +2,18 @@ import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
 import {
+  AGENT_SESSION_PG_SCHEMA,
   PgAgentSessionStore,
   ensureAgentSessionSchema,
   type Queryable,
   type WithTransaction,
 } from '../src/agent-session/pg.js';
+import { splitSqlStatements } from '../src/document/pg.js';
 import {
   acquireAgentSessionPgContractLock,
   truncateAgentSessionTables,
 } from './pg-agent-session-contract-helpers.js';
+import { runAgentSessionAutomaticTitleContract } from './agent-session-automatic-title-contract.js';
 import { runAgentSessionConcurrencyContract } from './agent-session-concurrency-contract.js';
 import { makeAgentSessionInput, runAgentSessionStoreContract } from './agent-session-contract.js';
 import { runAgentSessionUrlContract } from './agent-session-url-contract.js';
@@ -53,6 +56,10 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function quotePgIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
+
 async function waitForDatabaseMillisecondAfter(pool: Pool, timestamp: number): Promise<void> {
   for (;;) {
     const result = await pool.query<{ now_ms: string }>(
@@ -91,6 +98,15 @@ describe.skipIf(!contractUrl)('PgAgentSessionStore with PostgreSQL 16', () => {
   runAgentSessionStoreContract('PostgreSQL 16 (node-postgres)', () => store);
   runAgentSessionConcurrencyContract('PostgreSQL 16 (node-postgres)', () => store, {
     genuineConcurrency: true,
+  });
+  runAgentSessionAutomaticTitleContract('PostgreSQL 16 (node-postgres)', () => store, {
+    genuineConcurrency: true,
+    writeLegacyManualTitle: (sessionId, ownerId, title) =>
+      pool.query(
+        `UPDATE agent_sessions SET title = $3, updated_at = clock_timestamp()
+         WHERE id = $1 AND owner_id = $2`,
+        [sessionId, ownerId, title],
+      ),
   });
   runAgentSessionUrlContract('PostgreSQL 16 (node-postgres)', () => store);
 
@@ -137,6 +153,74 @@ describe.skipIf(!contractUrl)('PgAgentSessionStore with PostgreSQL 16', () => {
     expect(titleEvents[1]!.ts).toBeGreaterThanOrEqual(titleEvents[0]!.ts);
     await expect(store.getSession('session-1')).resolves.toMatchObject({ title: 'Second commit' });
   });
+
+  test.each([
+    ['ordinary custom name', 'title_state_sessions_migration_probe'],
+    [
+      'name longer than PostgreSQL identifier limit',
+      'title_state_sessions_migration_probe_with_a_name_longer_than_sixty_three_bytes',
+    ],
+    ['reserved identifier', 'user'],
+  ])(
+    'installs one validated title-state constraint under concurrent initialization for %s',
+    async (_case, sessions) => {
+      const quotedSessions = quotePgIdentifier(sessions);
+      await pool.query(`DROP TABLE IF EXISTS ${quotedSessions}`);
+      try {
+        await pool.query(`
+          CREATE TABLE ${quotedSessions} (
+            id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            prompt TEXT NOT NULL,
+            stage_id TEXT NOT NULL,
+            title_state TEXT NOT NULL DEFAULT 'manual',
+            status TEXT NOT NULL DEFAULT 'queued',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            deleted_at TIMESTAMPTZ
+          )
+        `);
+
+        const statements: string[] = [];
+        const recorder: Queryable = {
+          async query<TRow extends Record<string, unknown>>(text: string) {
+            statements.push(text);
+            return { rows: [] as TRow[] };
+          },
+        };
+        await ensureAgentSessionSchema(recorder, { sessions });
+        const titleStateMigration = statements.filter(
+          (statement) =>
+            statement.includes('$agent_session_title_state_constraint$') ||
+            statement.includes('$agent_session_title_state_validation$'),
+        );
+        const runMigration = async () => {
+          for (const statement of titleStateMigration) await pool.query(statement);
+        };
+
+        await Promise.all([runMigration(), runMigration()]);
+        const readConstraint = () =>
+          pool.query<{ oid: number; conname: string; convalidated: boolean }>(
+            `SELECT oid, conname, convalidated FROM pg_constraint
+             WHERE conrelid = $1::regclass
+               AND conname = 'agent_sessions_title_state_known'`,
+            [quotedSessions],
+          );
+        const installed = await readConstraint();
+        expect(installed.rows).toEqual([
+          expect.objectContaining({
+            conname: 'agent_sessions_title_state_known',
+            convalidated: true,
+            oid: expect.any(Number),
+          }),
+        ]);
+
+        await runMigration();
+        await expect(readConstraint()).resolves.toEqual(installed);
+      } finally {
+        await pool.query(`DROP TABLE IF EXISTS ${quotedSessions}`);
+      }
+    },
+  );
 
   test('upgrades a legacy owner-event constraint for a long custom table name once', async () => {
     const ownerEvents = 'owner_events_with_a_very_long_custom_table_name_for_migration';
@@ -242,6 +326,28 @@ describe.skipIf(!contractUrl)('PgAgentSessionStore with PostgreSQL 16', () => {
       await initializer.query(`SET lock_timeout = '500ms'`);
 
       await expect(ensureAgentSessionSchema(initializer as Queryable)).resolves.toBeUndefined();
+    } finally {
+      await initializer.query('RESET lock_timeout').catch(() => {});
+      initializer.release();
+      await blocker.query('ROLLBACK').catch(() => {});
+      blocker.release();
+    }
+  });
+
+  test('skips title-state constraint locks and scans once validation is complete', async () => {
+    const statements = splitSqlStatements(AGENT_SESSION_PG_SCHEMA).filter(
+      (statement) =>
+        statement.includes('$agent_session_title_state_constraint$') ||
+        statement.includes('$agent_session_title_state_validation$'),
+    );
+    const blocker = await pool.connect();
+    const initializer = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('LOCK TABLE agent_sessions IN SHARE MODE');
+      await initializer.query(`SET lock_timeout = '500ms'`);
+
+      for (const statement of statements) await initializer.query(statement);
     } finally {
       await initializer.query('RESET lock_timeout').catch(() => {});
       initializer.release();

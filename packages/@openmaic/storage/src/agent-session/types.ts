@@ -105,6 +105,8 @@ export interface CreateAgentSessionInput {
   skillId?: string;
   origin?: string;
   existingCourse?: boolean;
+  /** New callers opt into the one-shot automatic-title lifecycle explicitly. */
+  titleState?: 'pending';
   /** Existing-course sessions may begin terminal and requeue on the first message. */
   status?: 'queued' | 'succeeded';
 }
@@ -347,6 +349,16 @@ export interface AgentSessionTitleStore {
     sessionId: string,
     ownerId: string,
     title: string | null,
+  ): Promise<AgentSessionMeta | null>;
+}
+
+/** One-shot automatic-title state transitions, separate from lifecycle authority. */
+export interface AgentSessionAutomaticTitleStore {
+  claimAutomaticSessionTitle(sessionId: string, ownerId: string): Promise<string | null>;
+  setAutomaticSessionTitle(
+    sessionId: string,
+    ownerId: string,
+    title: string,
   ): Promise<AgentSessionMeta | null>;
 }
 
