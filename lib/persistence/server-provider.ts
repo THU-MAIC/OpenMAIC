@@ -9,6 +9,7 @@ import { Pool } from 'pg';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { lazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
+import { resolveAssetPendingTtlMs } from '@/lib/persistence/asset-pending-ttl';
 import { resolveAssetQuotaBytes } from '@/lib/persistence/asset-quota';
 import { ensureOwnerMaterialSchema } from '@/lib/persistence/owner-materials';
 import { ensureStageMetaSchema } from '@/lib/persistence/stage-meta';
@@ -43,6 +44,9 @@ async function createServerPersistenceProvider(
   // Allocation is reachable by any caller this deployment admits, so the
   // store's own quota is what keeps it from growing without bound.
   const quotaBytes = resolveAssetQuotaBytes();
+  // Same reason, same moment: the window an allocation has to be claimed by a
+  // document before the collector expires it.
+  const pendingTtlMs = resolveAssetPendingTtlMs();
   const pool = poolFactory(connectionString);
   const queryable = pool as unknown as ConnectableQueryable;
   try {
@@ -53,20 +57,46 @@ async function createServerPersistenceProvider(
     await ensureAssetSchema(queryable);
     const withTransaction = nodePostgresTransaction(queryable);
     const byteStore = lazyAssetByteStore(process.env.ASSET_S3_BUCKET, queryable);
+    const documentStore = new PgDocumentStore(queryable, {
+      withTransaction,
+      validateScene: validateAppScene,
+      validateStage: validateAppStage,
+      // Unconditional, and it has to be: this function is the only place
+      // that decides what server-backed persistence is, and it always
+      // ensures the asset schema and always leaves the collector's entry
+      // pass on. A document store that did not record references would let
+      // that pass expire allocations live documents name.
+      trackAssetReferences: true,
+    });
+    // Say so on the database, rather than waiting for a document write to say
+    // it by accident.
+    //
+    // The collector's entry level refuses to run until some write has recorded
+    // a reference, which is the right refusal: releasing entries on a database
+    // no writer maintains would delete assets live documents name. But the
+    // only thing that used to answer it was a document write, so a cold
+    // install -- and an upgraded database that already holds documents, which
+    // is the case that matters -- sat refused until someone happened to save a
+    // course, and the one-time backfill sat with it. Every store this function
+    // builds is a reference writer, and this function is the only thing that
+    // builds them, so it is exactly the thing entitled to declare it.
+    //
+    // Not swallowed: the same posture as the schema work above. If this fails
+    // the provider fails, the pool is closed, and the next request retries a
+    // fresh initialization -- because a provider that came up without the
+    // declaration would leave reclamation refused with nothing to notice it.
+    await documentStore.declareAssetReferenceTracking();
     return {
       pool,
       runtimeStore: new PgRuntimeStore(queryable, {
         withTransaction,
         payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
       }),
-      documentStore: new PgDocumentStore(queryable, {
-        withTransaction,
-        validateScene: validateAppScene,
-        validateStage: validateAppStage,
-      }),
+      documentStore,
       assetStore: new PgAssetStore(queryable, {
         withTransaction,
         byteStore,
+        pendingTtlMs,
         ...(quotaBytes === undefined ? {} : { quotaBytes }),
       }),
     };
@@ -76,25 +106,36 @@ async function createServerPersistenceProvider(
   }
 }
 
-/** Shared server bootstrap used by both HTTP persistence and Pi composition. */
+/**
+ * Shared server bootstrap used by both HTTP persistence and Pi composition.
+ *
+ * The memo is keyed on the TRIMMED connection string, and the pool is built
+ * from it, because callers disagree about whose job that is: the persistence
+ * route and the agent runtime pass `process.env.DATABASE_URL` as it is, while
+ * the collector schedule and the shutdown hook trim it first — they need the
+ * trimmed value anyway, to tell a blank variable from an unset one. A
+ * whitespace-padded `DATABASE_URL` would otherwise memoise twice and open two
+ * pools for one database in one process, and every one of those callers would
+ * be individually correct. Normalizing at the one seam they all go through
+ * costs nothing and leaves no spelling that can split them.
+ */
 export function getServerPersistenceProvider(
   connectionString: string,
   poolFactory: PersistencePoolFactory = (value) => new Pool({ connectionString: value }),
 ): Promise<ServerPersistenceProvider> {
-  if (providerState.providerPromise && providerState.connectionString === connectionString) {
+  const key = connectionString.trim();
+  if (providerState.providerPromise && providerState.connectionString === key) {
     return providerState.providerPromise;
   }
 
-  providerState.connectionString = connectionString;
-  const initialization = createServerPersistenceProvider(connectionString, poolFactory).catch(
-    (error) => {
-      if (providerState.providerPromise === initialization) {
-        providerState.providerPromise = undefined;
-        providerState.connectionString = undefined;
-      }
-      throw error;
-    },
-  );
+  providerState.connectionString = key;
+  const initialization = createServerPersistenceProvider(key, poolFactory).catch((error) => {
+    if (providerState.providerPromise === initialization) {
+      providerState.providerPromise = undefined;
+      providerState.connectionString = undefined;
+    }
+    throw error;
+  });
   providerState.providerPromise = initialization;
   return initialization;
 }

@@ -26,6 +26,13 @@ export async function register(): Promise<void> {
   const { resolveAssetQuotaBytes } = await import('@/lib/persistence/asset-quota');
   resolveAssetQuotaBytes();
 
+  // The pending-allocation window, for the same reason and at the same moment.
+  // Too short is worse than malformed: it silently expires allocations whose
+  // document write was still coming, so it must fail the process rather than
+  // the request that discovers it.
+  const { resolveAssetPendingTtlMs } = await import('@/lib/persistence/asset-pending-ttl');
+  resolveAssetPendingTtlMs();
+
   // Imported dynamically so the Edge bundle never pulls in `pg`.
   const { startAssetCollectorSchedule } =
     await import('@/lib/persistence/asset-collector-schedule');

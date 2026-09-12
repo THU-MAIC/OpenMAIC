@@ -3,6 +3,7 @@ import { Check } from 'typebox/value';
 import { PGlite } from '@electric-sql/pglite';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { PPTTextElement } from '@openmaic/dsl';
+import { ensureAssetSchema } from '@openmaic/storage/asset/pg';
 import { ensureDocumentSchema } from '@openmaic/storage/document/pg';
 import {
   buildCourseAllowlist,
@@ -1346,6 +1347,10 @@ describe('cross-owner isolation (owner-scoped store)', () => {
     await db.waitReady;
     await ensureDocumentSchema(db);
     await ensureStageMetaSchema(db);
+    // The server ensures the asset schema alongside the document schema and
+    // builds every document store as a reference writer, so a harness that
+    // stands in for the server has to provision both halves.
+    await ensureAssetSchema(db);
   });
 
   afterEach(async () => {
