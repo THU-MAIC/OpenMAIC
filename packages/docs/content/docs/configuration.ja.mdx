@@ -164,7 +164,7 @@ AliDocMind のドキュメント解析は PDF、DOCX、PPTX、XLSX、PNG、JPG/J
 
 ## Web 検索
 
-Tavily、Exa、Bocha、Brave、Baidu、SearXNG、MiniMax を設定可能です。
+Tavily、Exa、Serply、Bocha、Brave、Baidu、SearXNG、MiniMax を設定可能です。
 
 ```bash
 TAVILY_API_KEY=
@@ -172,6 +172,9 @@ TAVILY_BASE_URL=           # 任意の上書き
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # 任意の上書き
+
+SERPLY_API_KEY=
+SERPLY_BASE_URL=https://api.serply.io  # 任意の上書き
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # 任意の上書き
@@ -299,8 +302,10 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  serply:
+    apiKey: ...
   searxng:
     baseUrl: http://localhost:8080
 ```
 
-環境変数は YAML の同名フィールドを逐次上書きします。キーはコード内登録済みの provider ID（例：`openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily`、`searxng`）でなければなりません。未知の ID でカスタム LLM provider を登録することはできません。
+環境変数は YAML の同名フィールドを逐次上書きします。キーはコード内登録済みの provider ID（例：`openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`exa`、`serply`、`tavily`、`searxng`）でなければなりません。未知の ID でカスタム LLM provider を登録することはできません。

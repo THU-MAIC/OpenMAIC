@@ -8,6 +8,8 @@ describe('server web search config', () => {
     delete process.env.TAVILY_BASE_URL;
     delete process.env.EXA_API_KEY;
     delete process.env.EXA_BASE_URL;
+    delete process.env.SERPLY_API_KEY;
+    delete process.env.SERPLY_BASE_URL;
     delete process.env.BOCHA_API_KEY;
     delete process.env.BOCHA_BASE_URL;
     delete process.env.BRAVE_API_KEY;
@@ -67,6 +69,38 @@ describe('server web search config', () => {
       providerId: 'exa',
       apiKey: 'exa-server-key',
       baseUrl: 'https://proxy.example.com/exa',
+    });
+  });
+
+  it('allows official Serply client base URLs and resolves client credentials', async () => {
+    const { resolveClassroomWebSearchConfig, resolveSafeClientWebSearchBaseUrl } =
+      await import('@/lib/server/web-search-config');
+
+    expect(resolveSafeClientWebSearchBaseUrl('serply', 'https://api.serply.io/v1/search')).toBe(
+      'https://api.serply.io/v1/search',
+    );
+    expect(
+      resolveClassroomWebSearchConfig({
+        webSearchProviderId: 'serply',
+        webSearchApiKey: 'serply-client-key',
+        webSearchBaseUrl: 'https://api.serply.io',
+      }),
+    ).toEqual({
+      providerId: 'serply',
+      apiKey: 'serply-client-key',
+      baseUrl: 'https://api.serply.io',
+    });
+  });
+
+  it('resolves Serply classroom config from server environment variables', async () => {
+    vi.stubEnv('SERPLY_API_KEY', 'serply-server-key');
+    vi.stubEnv('SERPLY_BASE_URL', 'https://proxy.example.com/serply');
+    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
+
+    expect(resolveClassroomWebSearchConfig({ webSearchProviderId: 'serply' })).toEqual({
+      providerId: 'serply',
+      apiKey: 'serply-server-key',
+      baseUrl: 'https://proxy.example.com/serply',
     });
   });
 

@@ -132,6 +132,7 @@ const VIDEO_ENV_MAP: Record<string, string> = {
 const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   TAVILY: 'tavily',
   EXA: 'exa',
+  SERPLY: 'serply',
   BOCHA: 'bocha',
   BRAVE: 'brave',
   BAIDU: 'baidu',
@@ -1011,6 +1012,7 @@ export function resolveServerWebSearchProviderId(preferredProviderId?: string): 
   }
   if (enabled('tavily') && webSearch.tavily?.apiKey) return 'tavily';
   if (enabled('exa') && webSearch.exa?.apiKey) return 'exa';
+  if (enabled('serply') && webSearch.serply?.apiKey) return 'serply';
   if (enabled('bocha') && webSearch.bocha?.apiKey) return 'bocha';
   if (enabled('baidu') && webSearch.baidu?.apiKey) return 'baidu';
   if (enabled('minimax') && webSearch.minimax?.apiKey) return 'minimax';

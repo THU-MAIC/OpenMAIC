@@ -128,7 +128,7 @@ These features require additional provider keys beyond the core LLM provider. As
 
 | Feature | Env Variable(s) | Description |
 |---------|-----------------|-------------|
-| Web Search | `TAVILY_API_KEY`, `EXA_API_KEY` | Enriches outlines with real-time web research (either provider suffices) |
+| Web Search | `TAVILY_API_KEY`, `EXA_API_KEY`, `SERPLY_API_KEY` | Enriches outlines with real-time web research (any one suffices) |
 | Image Generation | `IMAGE_SEEDREAM_API_KEY`, `IMAGE_QWEN_IMAGE_API_KEY`, `IMAGE_NANO_BANANA_API_KEY` | Generates images for slides (any one suffices) |
 | Video Generation | `VIDEO_SEEDANCE_API_KEY`, `VIDEO_KLING_API_KEY`, `VIDEO_VEO_API_KEY`, `VIDEO_SORA_API_KEY` | Generates short videos (any one suffices) |
 | TTS | `TTS_OPENAI_API_KEY`, `TTS_AZURE_API_KEY`, `TTS_GLM_API_KEY`, `TTS_QWEN_API_KEY` | Text-to-speech narration (any one suffices) |
@@ -143,6 +143,9 @@ web-search:
     apiKey: tvly-...
   # Or use Exa:
   # exa:
+  #   apiKey: ...
+  # Or use Serply:
+  # serply:
   #   apiKey: ...
 
 image:

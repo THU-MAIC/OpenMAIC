@@ -54,6 +54,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'VIDEO_MINIMAX',
   'VIDEO_GROK',
   'EXA',
+  'SERPLY',
   'BOCHA',
   'WEB_SEARCH_MINIMAX',
   'WEB_SEARCH_CLAUDE',
@@ -417,6 +418,17 @@ providers:
       expect(resolveWebSearchApiKey('exa', undefined)).toBe('exa-env-key');
       expect(resolveWebSearchBaseUrl('exa')).toBe('https://proxy.example.com/exa');
       expect(getServerWebSearchProviders().exa).toEqual({});
+    });
+
+    it('resolves Serply API key and base URL from env vars', async () => {
+      vi.stubEnv('SERPLY_API_KEY', 'serply-env-key');
+      vi.stubEnv('SERPLY_BASE_URL', 'https://proxy.example.com/serply');
+      const { getServerWebSearchProviders, resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchApiKey('serply', undefined)).toBe('serply-env-key');
+      expect(resolveWebSearchBaseUrl('serply')).toBe('https://proxy.example.com/serply');
+      expect(getServerWebSearchProviders().serply).toEqual({});
     });
 
     it('ignores client key and base URL for a server-managed Bocha provider', async () => {
@@ -875,6 +887,13 @@ video:
       vi.stubEnv('EXA_ENABLED', 'false');
       const { getServerWebSearchProviders } = await import('@/lib/server/provider-config');
       expect(getServerWebSearchProviders().exa).toEqual({ disabled: true });
+    });
+
+    it('web-search: force-disables Serply through SERPLY_ENABLED=false', async () => {
+      vi.stubEnv('SERPLY_API_KEY', 'serply-key');
+      vi.stubEnv('SERPLY_ENABLED', 'false');
+      const { getServerWebSearchProviders } = await import('@/lib/server/provider-config');
+      expect(getServerWebSearchProviders().serply).toEqual({ disabled: true });
     });
 
     it('web-search: force-disables the keyless SearXNG provider via env', async () => {

@@ -164,7 +164,7 @@ AliDocMind поддерживает PDF, DOCX, PPTX, XLSX, а также PNG, JP
 
 ## Поисковые провайдеры
 
-Настройте Tavily, Exa, Bocha, Brave, Baidu, SearXNG или MiniMax:
+Настройте Tavily, Exa, Serply, Bocha, Brave, Baidu, SearXNG или MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -172,6 +172,9 @@ TAVILY_BASE_URL=           # опциональное переопределен
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # опциональное переопределение
+
+SERPLY_API_KEY=
+SERPLY_BASE_URL=https://api.serply.io  # опциональное переопределение
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # опциональное переопределение
@@ -299,8 +302,10 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  serply:
+    apiKey: ...
   searxng:
     baseUrl: http://localhost:8080
 ```
 
-Переменные окружения по отдельным полям переопределяют соответствующие настройки в YAML. Ключи должны совпадать с зарегистрированными в коде ID провайдеров, например `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `seedream`, `seedance`, `exa`, `tavily` или `searxng`. Неизвестные ID нельзя использовать для регистрации кастомных LLM провайдеров.
+Переменные окружения по отдельным полям переопределяют соответствующие настройки в YAML. Ключи должны совпадать с зарегистрированными в коде ID провайдеров, например `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `seedream`, `seedance`, `exa`, `serply`, `tavily` или `searxng`. Неизвестные ID нельзя использовать для регистрации кастомных LLM провайдеров.

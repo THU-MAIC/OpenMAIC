@@ -23,6 +23,13 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     defaultBaseUrl: 'https://api.exa.ai',
     endpointPath: '/search',
   },
+  serply: {
+    id: 'serply',
+    name: 'Serply',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.serply.io',
+    endpointPath: '/v1/search',
+  },
   bocha: {
     id: 'bocha',
     name: 'Bocha',

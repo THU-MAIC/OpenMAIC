@@ -8,6 +8,7 @@ const searchWithTavilyMock = vi.hoisted(() => vi.fn());
 const searchWithMiniMaxMock = vi.hoisted(() => vi.fn());
 const searchWithDoubaoMock = vi.hoisted(() => vi.fn());
 const searchWithExaMock = vi.hoisted(() => vi.fn());
+const searchWithSerplyMock = vi.hoisted(() => vi.fn());
 const searchWithSearxngMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/web-search/bocha', () => ({
@@ -42,6 +43,10 @@ vi.mock('@/lib/web-search/exa', () => ({
   searchWithExa: searchWithExaMock,
 }));
 
+vi.mock('@/lib/web-search/serply', () => ({
+  searchWithSerply: searchWithSerplyMock,
+}));
+
 vi.mock('@/lib/web-search/searxng', () => ({
   searchWithSearxng: searchWithSearxngMock,
 }));
@@ -58,6 +63,7 @@ describe('searchWeb', () => {
     searchWithMiniMaxMock.mockReset();
     searchWithDoubaoMock.mockReset();
     searchWithExaMock.mockReset();
+    searchWithSerplyMock.mockReset();
     searchWithSearxngMock.mockReset();
   });
 
@@ -142,6 +148,36 @@ describe('searchWeb', () => {
       apiKey: 'exa-key',
       maxResults: 8,
       baseUrl: 'https://api.exa.ai',
+    });
+  });
+
+  it('dispatches Serply provider requests', async () => {
+    searchWithSerplyMock.mockResolvedValueOnce({
+      answer: '',
+      sources: [],
+      query: 'q',
+      responseTime: 0.2,
+    });
+
+    await expect(
+      searchWeb({
+        providerId: 'serply',
+        query: 'q',
+        apiKey: 'serply-key',
+        maxResults: 8,
+        baseUrl: 'https://api.serply.io',
+      }),
+    ).resolves.toEqual({
+      answer: '',
+      sources: [],
+      query: 'q',
+      responseTime: 0.2,
+    });
+    expect(searchWithSerplyMock).toHaveBeenCalledWith({
+      query: 'q',
+      apiKey: 'serply-key',
+      maxResults: 8,
+      baseUrl: 'https://api.serply.io',
     });
   });
 
@@ -346,6 +382,7 @@ describe('searchWeb', () => {
     }> = [
       { providerId: 'tavily', adapter: searchWithTavilyMock },
       { providerId: 'exa', adapter: searchWithExaMock },
+      { providerId: 'serply', adapter: searchWithSerplyMock },
       { providerId: 'bocha', adapter: searchWithBochaMock },
       { providerId: 'brave', adapter: searchWithBraveMock },
       { providerId: 'baidu', adapter: searchWithBaiduMock },

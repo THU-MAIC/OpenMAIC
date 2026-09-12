@@ -164,7 +164,7 @@ ALIDOCMIND_BASE_URL=       # تجاوز اختياري
 
 ## البحث عبر الإنترنت
 
-اضبط موفري البحث Tavily، Exa، Bocha، Brave، Baidu، SearXNG أو MiniMax:
+اضبط موفري البحث Tavily، Exa، Serply، Bocha، Brave، Baidu، SearXNG أو MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -172,6 +172,9 @@ TAVILY_BASE_URL=           # تجاوز اختياري
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # تجاوز اختياري
+
+SERPLY_API_KEY=
+SERPLY_BASE_URL=https://api.serply.io  # تجاوز اختياري
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # تجاوز اختياري
@@ -299,8 +302,10 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  serply:
+    apiKey: ...
   searxng:
     baseUrl: http://localhost:8080
 ```
 
-تتجاوز متغيرات البيئة حقول YAML المطابقة حقلًا بحقل. يجب أن تستخدم المفاتيح معرفات الموفرين المسجلين في الكود مثل `openai`، `doubao-tts`، `openai-whisper`، `mineru`، `alidocmind`، `seedream`، `seedance`، `exa`، `tavily` أو `searxng`. لا يمكن تسجيل معرفات غير معروفة هنا كموفري LLM مخصصين.
+تتجاوز متغيرات البيئة حقول YAML المطابقة حقلًا بحقل. يجب أن تستخدم المفاتيح معرفات الموفرين المسجلين في الكود مثل `openai`، `doubao-tts`، `openai-whisper`، `mineru`، `alidocmind`، `seedream`، `seedance`، `exa`، `serply`، `tavily` أو `searxng`. لا يمكن تسجيل معرفات غير معروفة هنا كموفري LLM مخصصين.

@@ -8,6 +8,7 @@
 export type WebSearchProviderId =
   | 'tavily'
   | 'exa'
+  | 'serply'
   | 'bocha'
   | 'brave'
   | 'baidu'
