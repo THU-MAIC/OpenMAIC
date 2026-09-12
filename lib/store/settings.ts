@@ -601,6 +601,12 @@ const getDefaultWebSearchConfig = () => ({
       enabled: true,
       requiresApiKey: true,
     },
+    serply: {
+      apiKey: '',
+      baseUrl: WEB_SEARCH_PROVIDERS.serply.defaultBaseUrl || '',
+      enabled: true,
+      requiresApiKey: true,
+    },
     bocha: { apiKey: '', baseUrl: '', enabled: true, requiresApiKey: true },
     brave: {
       apiKey: '',
@@ -2141,6 +2147,12 @@ export const useSettingsStore = create<SettingsState>()(
             exa: {
               apiKey: '',
               baseUrl: WEB_SEARCH_PROVIDERS.exa.defaultBaseUrl || '',
+              enabled: true,
+              requiresApiKey: true,
+            },
+            serply: {
+              apiKey: '',
+              baseUrl: WEB_SEARCH_PROVIDERS.serply.defaultBaseUrl || '',
               enabled: true,
               requiresApiKey: true,
             },

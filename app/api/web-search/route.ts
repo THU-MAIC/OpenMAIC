@@ -211,6 +211,8 @@ function getWebSearchEnvKey(providerId: WebSearchProviderId): string {
       return 'WEB_SEARCH_DOUBAO_API_KEY';
     case 'searxng':
       return 'SEARXNG_BASE_URL';
+    case 'serply':
+      return 'SERPLY_API_KEY';
     case 'tavily':
     default:
       return 'TAVILY_API_KEY';

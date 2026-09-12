@@ -44,6 +44,17 @@ describe('web search provider constants', () => {
     expect(getAllWebSearchProviders().map((provider) => provider.id)).toContain('exa');
   });
 
+  it('registers Serply as an API-key web search provider', () => {
+    expect(WEB_SEARCH_PROVIDERS.serply).toMatchObject({
+      id: 'serply',
+      name: 'Serply',
+      requiresApiKey: true,
+      defaultBaseUrl: 'https://api.serply.io',
+      endpointPath: '/v1/search',
+    });
+    expect(getAllWebSearchProviders().map((provider) => provider.id)).toContain('serply');
+  });
+
   it('registers Claude as an API-key web search provider with a model list', () => {
     expect(WEB_SEARCH_PROVIDERS.claude).toMatchObject({
       id: 'claude',

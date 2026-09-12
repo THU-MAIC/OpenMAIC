@@ -164,7 +164,7 @@ AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, B
 
 ## Web search
 
-Configure Tavily, Exa, Bocha, Brave, Baidu, SearXNG, or MiniMax:
+Configure Tavily, Exa, Serply, Bocha, Brave, Baidu, SearXNG, or MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -172,6 +172,9 @@ TAVILY_BASE_URL=           # optional override
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # optional override
+
+SERPLY_API_KEY=
+SERPLY_BASE_URL=https://api.serply.io  # optional override
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # optional override
@@ -299,8 +302,10 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  serply:
+    apiKey: ...
   searxng:
     baseUrl: http://localhost:8080
 ```
 
-Environment variables override matching YAML provider fields one by one. Keys must use provider IDs registered in the code, such as `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `seedream`, `seedance`, `exa`, `tavily`, or `searxng`. Unknown IDs cannot register custom LLM providers here.
+Environment variables override matching YAML provider fields one by one. Keys must use provider IDs registered in the code, such as `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `seedream`, `seedance`, `exa`, `serply`, `tavily`, or `searxng`. Unknown IDs cannot register custom LLM providers here.
