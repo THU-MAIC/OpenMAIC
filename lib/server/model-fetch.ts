@@ -7,8 +7,6 @@
  * suffix-strip fallback) and try each until one returns a model list.
  */
 
-import { fetchWithTimeout } from './fetch-with-timeout';
-
 /** A model id discovered from a provider's /models endpoint. */
 export interface FetchedModel {
   id: string;
@@ -33,6 +31,13 @@ const KNOWN_COMPAT_SUFFIXES = [
 ] as const;
 
 const FETCH_TIMEOUT_MS = 15_000;
+// Preserve the existing per-attempt allowance, with one retry and a finite
+// budget shared by every candidate and attempt in a discovery operation.
+const DISCOVERY_TIMEOUT_MS = 2 * FETCH_TIMEOUT_MS;
+
+function discoveryTimeout(): DOMException {
+  return new DOMException('Model discovery timed out', 'TimeoutError');
+}
 
 /** Whether the URL's last path segment is an OpenAI-style version segment `/v{N}`. */
 function endsWithVersionSegment(url: string): boolean {
@@ -118,38 +123,76 @@ export async function fetchModels(
 ): Promise<FetchedModel[]> {
   const candidates = buildModelsUrlCandidates(baseUrl, opts);
 
+  const deadline = Date.now() + DISCOVERY_TIMEOUT_MS;
+  let retried = false;
+
   for (const url of candidates) {
-    const res = await fetchWithTimeout(
-      url,
-      {
-        method: 'GET',
-        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-        redirect: 'manual',
-      },
-      FETCH_TIMEOUT_MS,
-    );
-
-    if (res.status >= 300 && res.status < 400) {
-      throw new ModelFetchError(res.status, 'Redirects are not allowed');
+    let body: ModelsApiResponse | null;
+    for (;;) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw discoveryTimeout();
+      try {
+        body = await fetchModelsCandidate(url, apiKey, Math.min(FETCH_TIMEOUT_MS, remaining));
+        break;
+      } catch (error) {
+        // HTTP errors and malformed JSON are terminal. Only a transport failure
+        // or our deadline gets one retry, shared across all candidate URLs.
+        if (
+          retried ||
+          Date.now() >= deadline ||
+          !(
+            error instanceof TypeError ||
+            (error instanceof DOMException && error.name === 'TimeoutError')
+          )
+        ) {
+          throw error;
+        }
+        retried = true;
+      }
     }
-
-    if (res.ok) {
-      const body = (await res.json()) as ModelsApiResponse;
-      return (body.data ?? [])
-        .map((m) => ({ id: m.id, ownedBy: m.owned_by }))
-        .sort((a, b) => a.id.localeCompare(b.id));
-    }
-
-    if (res.status === 404 || res.status === 405) {
-      continue;
-    }
-
-    // Other statuses (401/403/5xx) are terminal — surface the body for context.
-    const text = await res.text().catch(() => '');
-    throw new ModelFetchError(res.status, `HTTP ${res.status}: ${text.slice(0, 512)}`);
+    if (body === null) continue;
+    return (body.data ?? [])
+      .map((m) => ({ id: m.id, ownedBy: m.owned_by }))
+      .sort((a, b) => a.id.localeCompare(b.id));
   }
 
   throw new ModelFetchError(404, `No /models endpoint found (tried: ${candidates.join(', ')})`);
+}
+
+/** The timer owns the entire finite response, including JSON/error-body reads. */
+async function fetchModelsCandidate(
+  url: string,
+  apiKey: string,
+  timeoutMs: number,
+): Promise<ModelsApiResponse | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(discoveryTimeout()), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      redirect: 'manual',
+      signal: controller.signal,
+    });
+    if (res.status >= 300 && res.status < 400) {
+      throw new ModelFetchError(res.status, 'Redirects are not allowed');
+    }
+    if (res.ok) return (await res.json()) as ModelsApiResponse;
+    if (res.status === 404 || res.status === 405) return null;
+
+    // A stalled error body must not hide an already-known authentication/HTTP
+    // status, or turn a terminal HTTP error into a retryable timeout.
+    const text = await res.text().catch(() => '');
+    throw new ModelFetchError(res.status, `HTTP ${res.status}: ${text.slice(0, 512)}`);
+  } catch (error) {
+    if (error instanceof ModelFetchError) throw error;
+    if (controller.signal.aborted) throw controller.signal.reason;
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    // Release unread redirect/404/405 bodies before trying another endpoint.
+    controller.abort();
+  }
 }
 
 /** Error carrying the upstream HTTP status so the route can map it (401 vs 404). */
