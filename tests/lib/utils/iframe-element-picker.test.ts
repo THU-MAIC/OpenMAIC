@@ -57,7 +57,7 @@ describe('iframe element picker shim', () => {
     window.dispatchEvent(
       new MessageEvent('message', {
         source: window,
-        data: { type: 'element-picker:arm' },
+        data: { type: 'element-picker:arm', mode: 'editor' },
       }),
     );
     flushFrame();
@@ -69,6 +69,7 @@ describe('iframe element picker shim', () => {
       expect.objectContaining({
         __maicInteractive: true,
         kind: 'element-picked',
+        mode: 'editor',
         selector: '#cta',
         text: 'Start',
       }),
@@ -78,7 +79,7 @@ describe('iframe element picker shim', () => {
     window.dispatchEvent(
       new MessageEvent('message', {
         source: window,
-        data: { type: 'element-picker:sync', selectors: ['#cta'] },
+        data: { type: 'element-picker:sync', mode: 'editor', selectors: ['#cta'] },
       }),
     );
     flushFrame();
@@ -87,7 +88,7 @@ describe('iframe element picker shim', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(document.querySelector('[data-maic-element-picker-overlay]')).toBeNull();
     expect(postMessage).toHaveBeenCalledWith(
-      { __maicInteractive: true, kind: 'element-picker-disarmed' },
+      { __maicInteractive: true, kind: 'element-picker-disarmed', mode: 'editor' },
       '*',
     );
   });

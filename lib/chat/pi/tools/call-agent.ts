@@ -38,7 +38,7 @@ import {
 import { buildNativeSpotlightTool } from './native-spotlight';
 import { buildNativeWhiteboardTools } from './native-whiteboard';
 import type { WhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
-import type { SlideElementEvidence } from '../element-reference';
+import type { ElementReferenceEvidence } from '../element-reference';
 
 const CallAgentParams = Type.Object({
   agentId: Type.String({
@@ -555,7 +555,7 @@ export function buildCallAgentTool(opts: {
   isUserCued?: () => boolean;
   isSessionClosed?: () => boolean;
   takeSceneEvidence?: () => RuntimeEvidenceAttachment<DirectorSceneEvidenceMetadata[]> | undefined;
-  elementReferenceEvidence?: RuntimeEvidenceAttachment<SlideElementEvidence>;
+  elementReferenceEvidence?: RuntimeEvidenceAttachment<ElementReferenceEvidence>;
 }): AgentTool<typeof CallAgentParams> {
   // Loop-guard (model-agnostic): an empty/errored child turn used to bypass onAgentDone,
   // so the completed-turn count never advanced and the maxAgentTurns guard was defeated — a model
@@ -680,7 +680,8 @@ export function buildCallAgentTool(opts: {
         : [];
       if (
         capturedScene &&
-        elementReferenceEvidence?.metadata.sceneId === capturedScene.sceneId &&
+        elementReferenceEvidence?.metadata.kind === 'slide_element' &&
+        elementReferenceEvidence.metadata.sceneId === capturedScene.sceneId &&
         !spotlightElementIds.includes(elementReferenceEvidence.metadata.elementId)
       ) {
         spotlightElementIds.push(elementReferenceEvidence.metadata.elementId);
@@ -865,7 +866,7 @@ export function buildCallAgentTool(opts: {
         maxActionsPerAgent: opts.maxActionsPerAgent,
         enableWhiteboardTools: opts.enableWhiteboardTools,
         whiteboardState: getLegacyWhiteboardState(),
-        ...(elementReferenceEvidence
+        ...(elementReferenceEvidence?.metadata.kind === 'slide_element'
           ? { authorizedSpotlightElementIds: new Set(spotlightElementIds) }
           : {}),
       });

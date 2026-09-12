@@ -296,7 +296,9 @@ describe('slide element reference projector', () => {
     expect(() => resolveSlideElementReference(extraKey)).toThrow(ElementReferenceValidationError);
 
     const stale = makeBody(element);
-    stale.elementReference!.elementId = 'missing';
+    if (stale.elementReference?.kind !== 'slide_element')
+      throw new Error('missing slide reference');
+    stale.elementReference.elementId = 'missing';
     expect(() => resolveSlideElementReference(stale)).toThrow(/exactly one element/);
 
     const duplicate = makeBody(element);
