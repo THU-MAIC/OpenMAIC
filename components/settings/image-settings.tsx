@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ImageProviderId } from '@/lib/media/types';
+import { ApiKeySecurityNotice } from './api-key-security-notice';
 
 interface ImageSettingsProps {
   selectedProviderId: ImageProviderId;
@@ -213,6 +214,7 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
           are hidden (server ignores client-sent overrides for these). */}
       {!isServerConfigured && (
         <>
+          <ApiKeySecurityNotice />
           {/* API Key + Test inline */}
           <div className="space-y-2">
             <Label>API Key</Label>
