@@ -14,6 +14,7 @@ import {
   Image as ImageIcon,
   Video,
   Volume2,
+  Mic,
   Search,
   type LucideIcon,
 } from 'lucide-react';
@@ -42,6 +43,7 @@ const MODALITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   image: 'settings.imageSettings',
   video: 'settings.videoSettings',
   tts: 'settings.ttsSettings',
+  asr: 'settings.asrSettings',
   webSearch: 'settings.webSearchSettings',
 };
 
@@ -50,6 +52,7 @@ const MODALITY_ICONS: Record<TokenPlanModality, LucideIcon> = {
   image: ImageIcon,
   video: Video,
   tts: Volume2,
+  asr: Mic,
   webSearch: Search,
 };
 
@@ -68,6 +71,7 @@ export function TokenPlanSettings() {
   const setImageProviderConfig = useSettingsStore((s) => s.setImageProviderConfig);
   const setVideoProviderConfig = useSettingsStore((s) => s.setVideoProviderConfig);
   const setTTSProviderConfig = useSettingsStore((s) => s.setTTSProviderConfig);
+  const setASRProviderConfig = useSettingsStore((s) => s.setASRProviderConfig);
   const setWebSearchProviderConfig = useSettingsStore((s) => s.setWebSearchProviderConfig);
   const setImageProvider = useSettingsStore((s) => s.setImageProvider);
   const setImageModelId = useSettingsStore((s) => s.setImageModelId);
@@ -105,6 +109,7 @@ export function TokenPlanSettings() {
       setImageProviderConfig,
       setVideoProviderConfig,
       setTTSProviderConfig,
+      setASRProviderConfig,
       setWebSearchProviderConfig,
     });
   };
@@ -128,6 +133,7 @@ export function TokenPlanSettings() {
       setImageProviderConfig,
       setVideoProviderConfig,
       setTTSProviderConfig,
+      setASRProviderConfig,
       setWebSearchProviderConfig,
       setImageProvider,
       setImageModelId,
@@ -141,6 +147,7 @@ export function TokenPlanSettings() {
     setImageProviderConfig,
     setVideoProviderConfig,
     setTTSProviderConfig,
+    setASRProviderConfig,
     setWebSearchProviderConfig,
     setImageProvider,
     setImageModelId,

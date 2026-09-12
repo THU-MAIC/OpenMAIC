@@ -37,6 +37,7 @@ describe('token plan apply + probe model write', () => {
       setImageProviderConfig: store.setImageProviderConfig,
       setVideoProviderConfig: store.setVideoProviderConfig,
       setTTSProviderConfig: store.setTTSProviderConfig,
+      setASRProviderConfig: store.setASRProviderConfig,
       setWebSearchProviderConfig: store.setWebSearchProviderConfig,
     });
 

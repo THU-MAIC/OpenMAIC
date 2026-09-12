@@ -1,6 +1,6 @@
 import type { ProviderId } from '@/lib/types/provider';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
-import type { TTSProviderId } from '@/lib/audio/types';
+import type { TTSProviderId, ASRProviderId } from '@/lib/audio/types';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import type {
   TokenPlanModality,
@@ -42,6 +42,10 @@ export interface TokenPlanActions {
   ) => void;
   setTTSProviderConfig: (
     id: TTSProviderId,
+    config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean; modelId: string }>,
+  ) => void;
+  setASRProviderConfig: (
+    id: ASRProviderId,
     config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean; modelId: string }>,
   ) => void;
   setWebSearchProviderConfig: (
@@ -211,6 +215,14 @@ function applyModality(
         ...(target.defaultModelId ? { modelId: target.defaultModelId } : {}),
       });
       break;
+    case 'asr':
+      actions.setASRProviderConfig(target.providerId as ASRProviderId, {
+        apiKey,
+        baseUrl: target.baseUrl,
+        enabled: true,
+        ...(target.defaultModelId ? { modelId: target.defaultModelId } : {}),
+      });
+      break;
     case 'webSearch':
       actions.setWebSearchProviderConfig(target.providerId as WebSearchProviderId, {
         apiKey,
@@ -305,6 +317,13 @@ function removeModality(
       break;
     case 'tts':
       actions.setTTSProviderConfig(target.providerId as TTSProviderId, {
+        apiKey: '',
+        baseUrl: '',
+        enabled: false,
+      });
+      break;
+    case 'asr':
+      actions.setASRProviderConfig(target.providerId as ASRProviderId, {
         apiKey: '',
         baseUrl: '',
         enabled: false,

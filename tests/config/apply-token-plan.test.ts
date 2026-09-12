@@ -12,6 +12,7 @@ function makeActions(): TokenPlanActions {
     setImageProviderConfig: vi.fn(),
     setVideoProviderConfig: vi.fn(),
     setTTSProviderConfig: vi.fn(),
+    setASRProviderConfig: vi.fn(),
     setWebSearchProviderConfig: vi.fn(),
   };
 }
@@ -80,10 +81,51 @@ describe('applyTokenPlan', () => {
     expect(actions.setImageProviderConfig).not.toHaveBeenCalled();
     expect(actions.setVideoProviderConfig).not.toHaveBeenCalled();
     expect(actions.setTTSProviderConfig).not.toHaveBeenCalled();
+    expect(actions.setASRProviderConfig).not.toHaveBeenCalled();
     expect(actions.setWebSearchProviderConfig).not.toHaveBeenCalled();
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({ modality: 'llm', status: 'lit' });
+  });
+
+  it('fills LLM + TTS + ASR for the Xiaomi MiMo Token Plan', () => {
+    const actions = makeActions();
+    const xiaomi = TOKEN_PLAN_PRESETS.find((p) => p.id === 'xiaomi-mimo')!;
+    const results = applyTokenPlan(xiaomi, 'tp-test', actions);
+
+    expect(actions.setProviderConfig).toHaveBeenCalledWith(
+      'xiaomi',
+      expect.objectContaining({
+        apiKey: 'tp-test',
+        baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+        type: 'openai',
+        models: expect.arrayContaining([expect.objectContaining({ id: 'mimo-v2.5-pro' })]),
+      }),
+    );
+    expect(actions.setTTSProviderConfig).toHaveBeenCalledWith(
+      'xiaomi-tts',
+      expect.objectContaining({
+        apiKey: 'tp-test',
+        baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+        enabled: true,
+        modelId: 'mimo-v2.5-tts',
+      }),
+    );
+    expect(actions.setASRProviderConfig).toHaveBeenCalledWith(
+      'xiaomi-asr',
+      expect.objectContaining({
+        apiKey: 'tp-test',
+        baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+        enabled: true,
+        modelId: 'mimo-v2.5-asr',
+      }),
+    );
+    expect(actions.setImageProviderConfig).not.toHaveBeenCalled();
+    expect(actions.setVideoProviderConfig).not.toHaveBeenCalled();
+    expect(actions.setWebSearchProviderConfig).not.toHaveBeenCalled();
+
+    const lit = results.filter((r) => r.status === 'lit').map((r) => r.modality);
+    expect(lit).toEqual(['llm', 'tts', 'asr']);
   });
 
   it('passes modelsUrl through to the LLM provider config when present', () => {
