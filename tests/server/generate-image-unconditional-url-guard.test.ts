@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 // A client-supplied provider base URL must be validated in every environment,
@@ -37,13 +37,16 @@ const IMAGE_ENV_PREFIXES = [
   'IMAGE_COMFYUI',
 ];
 
-function clearImageEnv() {
+function stubImageEnvAbsent() {
   for (const prefix of IMAGE_ENV_PREFIXES) {
-    delete process.env[`${prefix}_API_KEY`];
-    delete process.env[`${prefix}_BASE_URL`];
-    delete process.env[`${prefix}_MODELS`];
-    delete process.env[`${prefix}_ENABLED`];
+    vi.stubEnv(`${prefix}_API_KEY`, undefined);
+    vi.stubEnv(`${prefix}_BASE_URL`, undefined);
+    vi.stubEnv(`${prefix}_MODELS`, undefined);
+    vi.stubEnv(`${prefix}_ENABLED`, undefined);
   }
+  // OpenAI also has a generic image fallback outside the IMAGE_* namespace.
+  vi.stubEnv('OPENAI_API_KEY', undefined);
+  vi.stubEnv('OPENAI_BASE_URL', undefined);
 }
 
 function imageRequest(headers: Record<string, string> = {}): NextRequest {
@@ -56,12 +59,16 @@ function imageRequest(headers: Record<string, string> = {}): NextRequest {
 
 describe('generate image — client-supplied base URL guard applies in every environment', () => {
   beforeEach(() => {
-    vi.resetModules();
     vi.unstubAllEnvs();
-    clearImageEnv();
-    delete process.env.ALLOW_LOCAL_NETWORKS;
+    stubImageEnvAbsent();
+    vi.stubEnv('ALLOW_LOCAL_NETWORKS', undefined);
+    vi.resetModules();
     mocks.generateImage.mockReset();
     mocks.generateImage.mockResolvedValue({ url: 'https://example.com/img.png' });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('rejects a private-network base URL when NODE_ENV is not production', async () => {
@@ -101,6 +108,7 @@ describe('generate image — client-supplied base URL guard applies in every env
     expect(mocks.generateImage).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: 'openai-image',
+        apiKey: 'client-key',
         model: 'gpt-image-2',
         baseUrl: 'http://192.168.1.10/v1/',
       }),
