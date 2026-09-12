@@ -74,6 +74,12 @@ export function configuredS3Bucket(value: string | undefined): string | undefine
  * dependency and its ignored native import, so resolution happens from the
  * package that declares the peer rather than from this app — and only when a
  * bucket is actually configured.
+ *
+ * `ASSET_S3_BUCKET` is this app's variable; region, endpoint, and credentials
+ * belong to the AWS SDK's own environment chain. `AWS_S3_FORCE_PATH_STYLE` is
+ * the one exception: the SDK exposes no variable for path-style addressing, so
+ * this app reads it and passes it through explicitly. S3-compatible servers
+ * (MinIO, Ceph, …) behind `AWS_ENDPOINT_URL(_S3)` generally need `=1`.
  */
 export async function createAssetByteStore(
   bucket: string | undefined,
@@ -81,7 +87,9 @@ export async function createAssetByteStore(
 ): Promise<AssetByteStore> {
   if (!bucket) return new PgAssetByteStore(queryable);
   const storage = await import('@openmaic/storage/asset/s3-bytes');
-  return storage.loadS3AssetByteStore(bucket);
+  return storage.loadS3AssetByteStore(bucket, {
+    forcePathStyle: process.env.AWS_S3_FORCE_PATH_STYLE === '1',
+  });
 }
 
 /**
