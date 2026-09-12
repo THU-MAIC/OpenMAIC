@@ -22,13 +22,20 @@ const defaultSleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
     throwIfAborted(signal);
     const timer = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => {
-      clearTimeout(timer);
-      reject(abortError());
-    }, { once: true });
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        reject(abortError());
+      },
+      { once: true },
+    );
   });
 
-export async function withRetry<T>(fn: (attempt: number) => Promise<T>, options: RetryOptions = {}): Promise<T> {
+export async function withRetry<T>(
+  fn: (attempt: number) => Promise<T>,
+  options: RetryOptions = {},
+): Promise<T> {
   const maxRetries = Math.max(0, options.maxRetries ?? 2);
   const baseDelayMs = Math.max(0, options.baseDelayMs ?? 300);
   const shouldRetry = options.shouldRetry ?? (() => true);
