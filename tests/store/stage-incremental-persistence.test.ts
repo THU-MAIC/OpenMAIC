@@ -58,6 +58,7 @@ beforeEach(() => {
     currentSceneId: 'scene-1',
     chats: [],
   });
+  useStageStore.getState().setViewerAccess({ isOwner: true });
 });
 
 afterEach(() => {
@@ -67,6 +68,20 @@ afterEach(() => {
 });
 
 describe('incremental stage flush', () => {
+  it('stops retrying owner-only document writes after access is revoked', async () => {
+    useStageStore.getState().updateScene('scene-2', { title: 'foreign edit' });
+    useStageStore.getState().setViewerAccess({ isOwner: false });
+
+    await flushStageSave();
+    expect(incrementalSave).not.toHaveBeenCalled();
+
+    // Learner-local tails remain writable for a read-only classroom.
+    useStageStore.getState().setCurrentSceneId('scene-1');
+    await flushStageSave();
+    expect(incrementalSave).toHaveBeenCalledOnce();
+    expect(incrementalSave.mock.calls[0]![1]).toEqual([{ kind: 'currentScene' }]);
+  });
+
   it('marks only the updated scene and drains the pending debounce', async () => {
     useStageStore.getState().updateScene('scene-2', { title: 'changed' });
 

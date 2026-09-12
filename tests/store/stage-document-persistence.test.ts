@@ -61,9 +61,18 @@ beforeEach(() => {
   saveStageDataMock.mockResolvedValue(undefined);
   useStageStore.getState().clearStore();
   useStageStore.setState({ stage: makeStage(), scenes: [], currentSceneId: null, chats: [] });
+  useStageStore.getState().setViewerAccess({ isOwner: true });
 });
 
 describe('stage document persistence', () => {
+  it('does not issue an aggregate document save for a read-only stage', async () => {
+    useStageStore.getState().setViewerAccess({ isOwner: false });
+
+    await expect(useStageStore.getState().saveToStorage()).resolves.toBe(false);
+    expect(prepareScenesMock).not.toHaveBeenCalled();
+    expect(saveStageDataMock).not.toHaveBeenCalled();
+  });
+
   it('prepares runtime-backed scenes before saving the document snapshot', async () => {
     const inMemoryScene = makeSlideScene('in-memory');
     const persistedScene = makeSlideScene('persisted');

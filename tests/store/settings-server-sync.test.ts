@@ -215,6 +215,8 @@ async function readPersistedState(): Promise<Record<string, unknown>> {
 /** Full server response shape */
 interface MockServerResponse {
   providers?: Record<string, { models?: string[]; baseUrl?: string }>;
+  llmPolicy?: { locked?: boolean; providerId?: string; modelId?: string };
+  audioPolicy?: { locked?: boolean; ttsProviderId?: string; asrProviderId?: string };
   tts?: Record<string, { baseUrl?: string; disabled?: boolean }>;
   asr?: Record<string, { baseUrl?: string; disabled?: boolean }>;
   pdf?: Record<string, { baseUrl?: string }>;
@@ -703,6 +705,45 @@ describe('fetchServerProviders — provider availability sync', () => {
 
     expect(store.getState().providerId).toBe('deepseek');
     expect(store.getState().modelId).toBe('deepseek-chat');
+  });
+
+  it('restores a persisted server LLM lock over a stale client selection', async () => {
+    const store = await getStore();
+
+    store.getState().setProviderConfig('deepseek', { apiKey: 'client-key' });
+    store.getState().setModel('deepseek', 'deepseek-v4-pro');
+    mockServerResponse({
+      providers: { openai: { models: ['gpt-4o'] } },
+      llmPolicy: { locked: true, providerId: 'openai', modelId: 'gpt-4o' },
+    });
+
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().providerId).toBe('openai');
+    expect(store.getState().modelId).toBe('gpt-4o');
+  });
+
+  it('restores persisted speech locks over stale client selections', async () => {
+    const store = await getStore();
+
+    store.getState().setTTSProviderConfig('openai-tts', { apiKey: 'client-key' });
+    store.getState().setTTSProvider('openai-tts');
+    store.getState().setASRProviderConfig('openai-whisper', { apiKey: 'client-key' });
+    store.getState().setASRProvider('openai-whisper');
+    mockServerResponse({
+      tts: { 'azure-tts': {} },
+      asr: { 'browser-native': {} },
+      audioPolicy: {
+        locked: true,
+        ttsProviderId: 'azure-tts',
+        asrProviderId: 'browser-native',
+      },
+    });
+
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().ttsProviderId).toBe('azure-tts');
+    expect(store.getState().asrProviderId).toBe('browser-native');
   });
 
   // ---- Error handling ----

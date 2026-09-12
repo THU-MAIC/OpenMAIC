@@ -182,7 +182,8 @@ export type BuiltInASRProviderId =
   | 'qwen-asr'
   | 'funasr-asr'
   | 'lemonade-asr'
-  | 'azure-asr';
+  | 'azure-asr'
+  | 'doubao-asr';
 
 export type ASRProviderId = BuiltInASRProviderId | `custom-asr-${string}`;
 

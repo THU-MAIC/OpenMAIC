@@ -1226,6 +1226,23 @@ export const ASR_PROVIDERS: Record<BuiltInASRProviderId, ASRProviderConfig> = {
     supportedFormats: ['wav', 'ogg', 'webm', 'mp3', 'flac', 'm4a'],
   },
 
+  'doubao-asr': {
+    id: 'doubao-asr',
+    name: '豆包语音识别（火山方舟）',
+    requiresApiKey: true,
+    // 方舟 Agent Plan 的 WebSocket 端点（单键 X-Api-Key 认证）。录音识别
+    // 使用 bigmodel_nostream；bigmodel_async 需要另一套任务协议。
+    // 语音控制台 appId:accessKey 认证时改用
+    // wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async。
+    defaultBaseUrl: 'wss://openspeech.bytedance.com/api/v3/plan/sauc/bigmodel_nostream',
+    icon: '/logos/doubao.svg',
+    models: [{ id: 'doubao-seed-asr-2.0', name: '豆包流式语音识别模型 2.0' }],
+    defaultModelId: 'doubao-seed-asr-2.0',
+    supportedLanguages: ['auto', 'zh', 'en', 'yue', 'ja', 'ko'],
+    // 客户端录音 webm 先转 WAV（16k 单声道），服务端按 wav 上送
+    supportedFormats: ['wav'],
+  },
+
   'browser-native': {
     id: 'browser-native',
     name: '浏览器原生 ASR (Web Speech API)',

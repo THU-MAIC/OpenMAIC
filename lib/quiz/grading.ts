@@ -3,9 +3,19 @@ import type { QuizQuestion } from '@/lib/types/stage';
 export interface QuestionResult {
   questionId: string;
   correct: boolean | null;
-  status: 'correct' | 'incorrect';
-  earned: number;
+  status: 'correct' | 'incorrect' | 'skipped' | 'pending_review';
+  /** Null means no score was assigned (skipped or awaiting human review). */
+  earned: number | null;
   aiComment?: string;
+}
+
+/** Persisted sentinel used for an explicit learner skip. */
+export const SKIPPED_ANSWER = '__openmaic_skipped__';
+
+export function isSkippedAnswer(value: string | string[] | undefined): boolean {
+  return Array.isArray(value)
+    ? value.length === 1 && value[0] === SKIPPED_ANSWER
+    : value === SKIPPED_ANSWER;
 }
 
 export function arraysEqual(a: string[], b: string[]): boolean {
@@ -30,18 +40,9 @@ export function isShortAnswer(q: QuizQuestion): boolean {
   return q.type === 'short_answer';
 }
 
-/**
- * Resolve a PERSISTED answer-key entry to an option value. Exact, unique
- * alignment only (per review): an entry that exactly equals one option VALUE
- * resolves to it; one that exactly equals exactly one option LABEL resolves
- * to that option's value. Unknown or ambiguous entries stay unresolved —
- * no case folding, whitespace/Unicode normalization, or wrapper/prefix
- * interpretation is applied.
- *
- * This compatibility resolution exists for the stored key, whose form is
- * whatever the generator wrote. A learner submission is produced by the UI
- * from the option values themselves, so it is compared as-is — see
- * `gradeChoiceQuestions`.
+/** Persisted answer keys may contain an exact option value or exact option label.
+ * Resolve only unique exact matches so ambiguous or fuzzy entries remain pending
+ * for human review instead of being guessed.
  */
 export function resolveAnswerKeyToValue(q: QuizQuestion, answer: string): string {
   const opts = q.options ?? [];
@@ -53,12 +54,7 @@ export function resolveAnswerKeyToValue(q: QuizQuestion, answer: string): string
   return answer;
 }
 
-/**
- * Review-UI projection of the same exact resolver used for grading: whether
- * an option's value is among the question's resolved correct-answer values.
- * Receives the question so label-stored keys resolve through the identical
- * exact/unique alignment instead of a separate fuzzy matcher.
- */
+/** Same exact resolver used by grading and the answer-review UI. */
 export function answerIncludesOption(q: QuizQuestion, optionValue: string): boolean {
   return toArray(q.answer).some((a) => resolveAnswerKeyToValue(q, a) === optionValue);
 }
@@ -76,6 +72,14 @@ export function gradeChoiceQuestions(
       // submission is a value the UI produced from the options, so resolving
       // it too would let a label (or any alias the key accepts) be submitted
       // and accepted as a different option.
+      if (isSkippedAnswer(answers[q.id])) {
+        return {
+          questionId: q.id,
+          correct: null,
+          status: 'skipped' as const,
+          earned: null,
+        };
+      }
       const userAnswer = toArray(answers[q.id]);
       const correctAnswer = toArray(q.answer).map((a) => resolveAnswerKeyToValue(q, a));
       const correct = arraysEqual(userAnswer, correctAnswer);

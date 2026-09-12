@@ -537,6 +537,7 @@ const getDefaultAudioConfig = () => ({
     'azure-asr': { apiKey: '', baseUrl: '', enabled: false },
     'funasr-asr': { apiKey: '', baseUrl: '', enabled: false },
     'lemonade-asr': { apiKey: '', baseUrl: '', enabled: false },
+    'doubao-asr': { apiKey: '', baseUrl: '', enabled: true },
   } as Record<ASRProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
 
@@ -1468,6 +1469,8 @@ export const useSettingsStore = create<SettingsState>()(
             // admin/server-level force-off (#665).
             const data = (await res.json()) as {
               providers: Record<string, { models?: string[] }>;
+              llmPolicy?: { locked?: boolean; providerId?: string; modelId?: string };
+              audioPolicy?: { locked?: boolean; ttsProviderId?: string; asrProviderId?: string };
               tts: Record<string, { disabled?: boolean }>;
               asr: Record<string, { disabled?: boolean }>;
               pdf: Record<string, Record<string, never>>;
@@ -1718,13 +1721,13 @@ export const useSettingsStore = create<SettingsState>()(
                 newProvidersConfig,
                 llmFallback,
               );
-              const validTTSProvider = validateProvider(
+              let validTTSProvider = validateProvider(
                 state.ttsProviderId,
                 newTTSConfig,
                 ttsFallback,
                 'browser-native-tts' as TTSProviderId,
               );
-              const validASRProvider = validateProvider(
+              let validASRProvider = validateProvider(
                 state.asrProviderId,
                 newASRConfig,
                 asrFallback,
@@ -1760,6 +1763,37 @@ export const useSettingsStore = create<SettingsState>()(
               if (!validLLMProvider && llmFallback.length > 0) {
                 validLLMProvider = llmFallback[0];
               }
+
+              // A persisted server lock is authoritative for restored browser
+              // settings too. Keep the client credential intact, but select the
+              // server-owned provider/model so a stale DeepSeek selection does
+              // not survive the policy refresh.
+              const lockedProviderId = data.llmPolicy?.locked
+                ? data.llmPolicy.providerId
+                : undefined;
+              const lockedModelId = data.llmPolicy?.locked ? data.llmPolicy.modelId : undefined;
+              if (
+                lockedProviderId &&
+                lockedModelId &&
+                newProvidersConfig[lockedProviderId as ProviderId]
+              ) {
+                const lockedModels = newProvidersConfig[lockedProviderId as ProviderId].models;
+                if (lockedModels.some((model) => model.id === lockedModelId)) {
+                  validLLMProvider = lockedProviderId as ProviderId;
+                }
+              }
+              const lockedTTSProviderId = data.audioPolicy?.locked
+                ? data.audioPolicy.ttsProviderId
+                : undefined;
+              if (lockedTTSProviderId && newTTSConfig[lockedTTSProviderId as TTSProviderId]) {
+                validTTSProvider = lockedTTSProviderId as TTSProviderId;
+              }
+              const lockedASRProviderId = data.audioPolicy?.locked
+                ? data.audioPolicy.asrProviderId
+                : undefined;
+              if (lockedASRProviderId && newASRConfig[lockedASRProviderId as ASRProviderId]) {
+                validASRProvider = lockedASRProviderId as ASRProviderId;
+              }
               if (!validImageProvider && imageFallback.length > 0) {
                 validImageProvider = imageFallback[0];
               }
@@ -1774,7 +1808,13 @@ export const useSettingsStore = create<SettingsState>()(
                 ? (newProvidersConfig[validLLMProvider as ProviderId]?.models ?? [])
                 : [];
               const validLLMModel = validLLMProvider
-                ? resolveSelectedLLMModel(validLLMProvider as ProviderId, state.modelId, llmModels)
+                ? lockedProviderId === validLLMProvider && lockedModelId
+                  ? lockedModelId
+                  : resolveSelectedLLMModel(
+                      validLLMProvider as ProviderId,
+                      state.modelId,
+                      llmModels,
+                    )
                 : '';
               const imageModels = validImageProvider
                 ? resolveMediaModels(

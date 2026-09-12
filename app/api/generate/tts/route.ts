@@ -24,6 +24,7 @@ import {
   resolveTTSModel,
   TTSModelNotAllowedError,
 } from '@/lib/server/provider-config';
+import { getEffectiveServerAudioPolicy } from '@/lib/server/audio-policy';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -63,6 +64,15 @@ export async function POST(req: NextRequest) {
         'MISSING_REQUIRED_FIELD',
         400,
         'Missing required fields: text, audioId, ttsProviderId, ttsVoice',
+      );
+    }
+
+    const audioPolicy = await getEffectiveServerAudioPolicy();
+    if (audioPolicy.locked && ttsProviderId !== audioPolicy.ttsProviderId) {
+      return apiError(
+        'PROVIDER_NOT_ALLOWED',
+        403,
+        `This run only allows ${audioPolicy.ttsProviderId} for TTS`,
       );
     }
 

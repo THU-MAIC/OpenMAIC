@@ -1,5 +1,5 @@
 import {
-  getServerProviders,
+  getEffectiveServerProviders,
   getServerTTSProviders,
   getServerASRProviders,
   getServerPDFProviders,
@@ -7,7 +7,9 @@ import {
   getServerVideoProviders,
   getServerWebSearchProviders,
   getParallelSceneConcurrency,
+  getEffectiveServerLLMPolicy,
 } from '@/lib/server/provider-config';
+import { getEffectiveServerAudioPolicy } from '@/lib/server/audio-policy';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 
@@ -15,8 +17,14 @@ const log = createLogger('ServerProviders');
 
 export async function GET() {
   try {
+    const [llmPolicy, audioPolicy] = await Promise.all([
+      getEffectiveServerLLMPolicy(),
+      getEffectiveServerAudioPolicy(),
+    ]);
     return apiSuccess({
-      providers: getServerProviders(),
+      providers: await getEffectiveServerProviders(),
+      llmPolicy,
+      audioPolicy,
       tts: getServerTTSProviders(),
       asr: getServerASRProviders(),
       pdf: getServerPDFProviders(),
