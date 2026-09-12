@@ -135,6 +135,14 @@ function getModelProviderId(params: GenerateTextParams | StreamTextParams): stri
 }
 
 /**
+ * `provider:model` for logs and for marking a model as already tried. Matches
+ * the form used by `MODEL_FALLBACKS` / `DEFAULT_MODEL`, so the two compare.
+ */
+function getModelString(params: GenerateTextParams | StreamTextParams): string {
+  return `${getModelProviderId(params) ?? 'unknown'}:${getModelId(params)}`;
+}
+
+/**
  * Map a unified ThinkingConfig to provider-specific providerOptions.
  */
 function buildThinkingProviderOptions(
@@ -336,11 +344,19 @@ export async function callLLM<T extends GenerateTextParams>(
   let lastResult: GenerateTextResult<any, any> | undefined;
   let lastError: unknown;
 
+  // A quota rejection is not retryable against the same model, so the loop can
+  // re-point itself at the next model in MODEL_FALLBACKS instead of spending
+  // its remaining attempts on a 429 that will not clear. `activeParams` is what
+  // actually gets sent; `params` stays untouched so usage is still attributed
+  // per model and the caller's object is not mutated.
+  let activeParams: GenerateTextParams = params;
+  const triedModels = new Set<string>();
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       // Resolve effective thinking config: per-call > global env > undefined
       const effectiveThinking = thinking ?? getGlobalThinkingConfig();
-      const injectedParams = injectProviderOptions(params, effectiveThinking);
+      const injectedParams = injectProviderOptions(activeParams, effectiveThinking);
 
       // Wrap in thinkingContext so the custom fetch wrapper in providers.ts
       // can read the config and inject vendor-specific body params for
@@ -358,7 +374,9 @@ export async function callLLM<T extends GenerateTextParams>(
       // every earlier step would go unaccounted. `totalUsage` aggregates across
       // steps and equals `usage` for a single-step call. Mirrors streamLLM,
       // which already prefers the aggregate.
-      recordUsageSafe(result.totalUsage ?? result.usage, buildUsageMeta(params, source));
+      // Attributed to `activeParams`, not `params`: after a fallback swap the
+      // call was served by a different model and the usage ledger must say so.
+      recordUsageSafe(result.totalUsage ?? result.usage, buildUsageMeta(activeParams, source));
 
       // Validate result (only when retries are configured)
       if (validate && !validate(result.text)) {
@@ -372,6 +390,27 @@ export async function callLLM<T extends GenerateTextParams>(
       return result;
     } catch (error) {
       lastError = error;
+
+      // Out of capacity on this model: another attempt against it would fail
+      // the same way, so move to the next model in the chain and give it a
+      // fresh attempt budget. Imported lazily to keep this module free of a
+      // static dependency on server-only provider config.
+      const { isCapacityError, isFallbackEligible, nextFallbackModel } = await import(
+        '@/lib/server/model-fallback'
+      );
+      if (isCapacityError(error) && isFallbackEligible(source)) {
+        if (triedModels.size === 0) triedModels.add(getModelString(activeParams));
+        const next = await nextFallbackModel(triedModels);
+        if (next) {
+          log.warn(
+            `[${source}] ${getModelString(activeParams)} is out of capacity; falling back to ${next.modelString}.`,
+          );
+          activeParams = { ...activeParams, model: next.model };
+          attempt = 0; // the new model has not been tried yet
+          continue;
+        }
+        log.warn(`[${source}] Out of capacity and no fallback model left.`);
+      }
 
       if (attempt < maxAttempts) {
         log.warn(`[${source}] Call failed (attempt ${attempt}/${maxAttempts}), retrying...`, error);
