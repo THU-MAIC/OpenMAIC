@@ -82,10 +82,34 @@ export const getElementRange = (element: PPTElement) => {
   let minX, maxX, minY, maxY;
 
   if (element.type === 'line') {
-    minX = element.left;
-    maxX = element.left + Math.max(element.start[0], element.end[0]);
-    minY = element.top;
-    maxY = element.top + Math.max(element.start[1], element.end[1]);
+    // Include every point the line can reach — endpoints AND the optional
+    // control points (broken/broken2 elbows, quadratic curve, cubic bezier) —
+    // and take min/max on both axes. The previous code used only
+    // `Math.max(start, end)` with `minX/minY = left`, which clipped curved or
+    // elbow lines (their control points extend past the endpoints) and assumed
+    // the nearer endpoint always sits at offset 0.
+    const xs = [element.start[0], element.end[0]];
+    const ys = [element.start[1], element.end[1]];
+    if (element.broken) {
+      xs.push(element.broken[0]);
+      ys.push(element.broken[1]);
+    }
+    if (element.broken2) {
+      xs.push(element.broken2[0]);
+      ys.push(element.broken2[1]);
+    }
+    if (element.curve) {
+      xs.push(element.curve[0]);
+      ys.push(element.curve[1]);
+    }
+    if (element.cubic) {
+      xs.push(element.cubic[0][0], element.cubic[1][0]);
+      ys.push(element.cubic[0][1], element.cubic[1][1]);
+    }
+    minX = element.left + Math.min(...xs);
+    maxX = element.left + Math.max(...xs);
+    minY = element.top + Math.min(...ys);
+    maxY = element.top + Math.max(...ys);
   } else if ('rotate' in element && element.rotate) {
     const { left, top, width, height, rotate } = element;
     const { xRange, yRange } = getRectRotatedRange({
@@ -237,8 +261,13 @@ export const getLineElementPath = (element: PPTLineElement) => {
     const mid = element.broken.join(',');
     return `M${start} L${mid} L${end}`;
   } else if (element.broken2) {
-    const { minX, maxX, minY, maxY } = getElementRange(element);
-    if (maxX - minX >= maxY - minY)
+    // Pick the elbow orientation from the endpoint extent, computed locally.
+    // getElementRange now folds in control points (#674); reusing it here would
+    // let the broken2 point itself flip the orientation. This preserves the
+    // exact pre-#674 heuristic (max of the endpoint offsets per axis).
+    const extentX = Math.max(startArr[0], endArr[0]);
+    const extentY = Math.max(startArr[1], endArr[1]);
+    if (extentX >= extentY)
       return `M${start} L${element.broken2[0]},${startArr[1]} L${element.broken2[0]},${endArr[1]} ${end}`;
     return `M${start} L${startArr[0]},${element.broken2[1]} L${endArr[0]},${element.broken2[1]} ${end}`;
   } else if (element.curve) {
