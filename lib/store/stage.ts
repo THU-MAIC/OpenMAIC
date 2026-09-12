@@ -56,6 +56,13 @@ type FlushRound = {
 let flushInFlight: FlushRound | null = null;
 let stageStorageModulePromise: Promise<typeof import('@/lib/utils/stage-storage')> | null = null;
 
+// A server-backed classroom may be readable by every viewer while its stage
+// document remains owner-only. Keep this fact outside the persisted store so
+// a foreign viewer cannot enqueue document writes after the sidecar answers.
+// The set is keyed by stage id because the singleton store survives classroom
+// navigation and a viewer can own one course while viewing another.
+const readOnlyStageIds = new Set<string>();
+
 const DEPARTING_STAGE_RETRY_DELAY_MS = 100;
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -75,6 +82,15 @@ function pendingChangeKey(change: PendingChange): string {
   return change.kind === 'scene' ? `scene:${change.sceneId}` : change.kind;
 }
 
+function isDocumentPendingChange(change: PendingChange): boolean {
+  return (
+    change.kind === 'scene' ||
+    change.kind === 'structure' ||
+    change.kind === 'stage' ||
+    change.kind === 'outline'
+  );
+}
+
 function cancelScheduledSave(): void {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = null;
@@ -85,6 +101,18 @@ function resetPendingChanges(stageId: string | null = null): void {
   pendingChanges.clear();
   pendingStageId = stageId;
   consecutiveFlushFailures = 0;
+}
+
+/** Remove queued owner-only writes while retaining learner-local tails. */
+function dropPendingDocumentChanges(stageId: string): void {
+  if (pendingStageId !== stageId) return;
+  for (const [key, entry] of pendingChanges) {
+    if (isDocumentPendingChange(entry.change)) pendingChanges.delete(key);
+  }
+  if (pendingChanges.size === 0) {
+    cancelScheduledSave();
+    consecutiveFlushFailures = 0;
+  }
 }
 
 function schedulePendingSave(): void {
@@ -103,8 +131,12 @@ function schedulePendingSave(): void {
 
 function markPendingChanges(stageId: string | undefined, ...changes: PendingChange[]): void {
   if (!stageId || isStageDeleted(stageId)) return;
+  const acceptedChanges = readOnlyStageIds.has(stageId)
+    ? changes.filter((change) => !isDocumentPendingChange(change))
+    : changes;
+  if (acceptedChanges.length === 0) return;
   if (pendingStageId !== stageId) resetPendingChanges(stageId);
-  for (const change of changes) {
+  for (const change of acceptedChanges) {
     pendingRevision += 1;
     pendingChanges.set(pendingChangeKey(change), { change, revision: pendingRevision });
   }
@@ -788,6 +820,15 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   setViewerAccess: ({ isOwner }) => {
+    const stageId = get().stage?.id;
+    if (stageId) {
+      if (isOwner) {
+        readOnlyStageIds.delete(stageId);
+      } else {
+        readOnlyStageIds.add(stageId);
+        dropPendingDocumentChanges(stageId);
+      }
+    }
     set({ isOwner, readOnly: !isOwner });
   },
 
@@ -834,6 +875,10 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       get();
     if (!stage?.id) {
       log.warn('Cannot save: stage.id is required');
+      return false;
+    }
+    if (readOnlyStageIds.has(stage.id)) {
+      log.info(`Skipping owner-only document save for read-only stage ${stage.id}`);
       return false;
     }
 

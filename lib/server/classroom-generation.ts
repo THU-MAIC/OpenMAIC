@@ -286,18 +286,16 @@ export async function generateClassroom(
       stageModelCache.set(stage, entry);
       return entry;
     } catch (err) {
-      log.warn(
-        `Stage "${stage}" route "${getStageModel(stage)}" could not be resolved; ` +
-          `falling back to the generate-classroom model.`,
-        err,
+      // A configured route is an operator assertion. Falling back would make
+      // a Doubao-only run silently call another model and invalidate its
+      // usage evidence, so fail the generation with the route error visible.
+      log.error(`Stage "${stage}" route "${getStageModel(stage)}" could not be resolved.`, err);
+      throw new Error(
+        `Configured model route for stage "${stage}" could not be resolved: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        { cause: err },
       );
-      const fallback = {
-        model: languageModel,
-        outputWindow: modelInfo?.outputWindow,
-        thinking: classroomThinking,
-      };
-      stageModelCache.set(stage, fallback);
-      return fallback;
     }
   };
 

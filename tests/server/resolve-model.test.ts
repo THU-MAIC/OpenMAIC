@@ -30,6 +30,11 @@ vi.mock('@/lib/server/provider-config', () => ({
   resolveApiKey: (_id: string, clientKey: string) => clientKey || 'server-key',
   resolveBaseUrl: (_id: string, clientBaseUrl?: string) => clientBaseUrl,
   resolveProxy: () => undefined,
+  getEffectiveServerLLMPolicy: async () => {
+    const providerId = process.env.OPENMAIC_LLM_ONLY_PROVIDER;
+    const modelId = process.env.OPENMAIC_LLM_ONLY_MODEL;
+    return providerId && modelId ? { locked: true, providerId, modelId } : { locked: false };
+  },
 }));
 
 vi.mock('@/lib/server/ssrf-guard', () => ({
@@ -43,6 +48,8 @@ describe('resolveModel — per-stage resolution order', () => {
     mocks.serverManaged = false;
     delete process.env.MODEL_ROUTES;
     delete process.env.DEFAULT_MODEL;
+    delete process.env.OPENMAIC_LLM_ONLY_PROVIDER;
+    delete process.env.OPENMAIC_LLM_ONLY_MODEL;
   });
 
   it('throws (no hardcoded fallback) when nothing is configured', async () => {
@@ -57,6 +64,34 @@ describe('resolveModel — per-stage resolution order', () => {
     const { resolveModel } = await import('@/lib/server/resolve-model');
     const r = await resolveModel({ stage: 'scene-content' });
     expect(r.modelString).toBe('openai:gpt-5.4-mini');
+  });
+
+  it('enforces the optional Doubao-only boundary before constructing a client', async () => {
+    process.env.OPENMAIC_LLM_ONLY_PROVIDER = 'doubao';
+    process.env.OPENMAIC_LLM_ONLY_MODEL = 'doubao-seed-2.0-pro';
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    await expect(resolveModel({ modelString: 'deepseek:deepseek-v4-flash' })).rejects.toThrow(
+      /LLM-only mode rejected provider "deepseek"/,
+    );
+    expect(mocks.getModelCalls).toHaveLength(0);
+  });
+
+  it('allows Doubao through the optional provider boundary', async () => {
+    process.env.OPENMAIC_LLM_ONLY_PROVIDER = 'doubao';
+    process.env.OPENMAIC_LLM_ONLY_MODEL = 'doubao-seed-2.0-pro';
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    const result = await resolveModel({ modelString: 'doubao:doubao-seed-2.0-pro' });
+    expect(result.providerId).toBe('doubao');
+  });
+
+  it('pins Doubao-only runs to the configured diagnostic model', async () => {
+    process.env.OPENMAIC_LLM_ONLY_PROVIDER = 'doubao';
+    process.env.OPENMAIC_LLM_ONLY_MODEL = 'doubao-seed-2.0-pro';
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    await expect(
+      resolveModel({ modelString: 'doubao:doubao-seed-2-1-pro-260628' }),
+    ).rejects.toThrow(/rejected model "doubao-seed-2-1-pro-260628"/);
+    expect(mocks.getModelCalls).toHaveLength(0);
   });
 
   it('uses the stage route over DEFAULT_MODEL', async () => {

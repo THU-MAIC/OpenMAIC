@@ -39,8 +39,8 @@ export interface AgentLoopStoreState {
     results: Array<{
       questionId: string;
       correct: boolean | null;
-      status: 'correct' | 'incorrect';
-      earned: number;
+      status: 'correct' | 'incorrect' | 'skipped' | 'pending_review';
+      earned: number | null;
       aiComment?: string;
     }>;
   };

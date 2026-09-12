@@ -294,7 +294,13 @@ function buildUsageMeta(params: GenerateTextParams | StreamTextParams, source: s
 /** Record one call's usage. Never throws. */
 function recordUsageSafe(
   rawUsage: unknown,
-  meta: { source: string; providerId: string; modelId: string; modelString: string },
+  meta: {
+    source: string;
+    providerId: string;
+    modelId: string;
+    modelString: string;
+    responseModelId?: string;
+  },
 ): void {
   void (async () => {
     try {
@@ -306,6 +312,7 @@ function recordUsageSafe(
         providerId: meta.providerId,
         modelId: meta.modelId,
         modelString: meta.modelString,
+        ...(meta.responseModelId ? { responseModelId: meta.responseModelId } : {}),
         usage: normalizeUsage(rawUsage as never),
       });
     } catch (err) {
@@ -358,7 +365,13 @@ export async function callLLM<T extends GenerateTextParams>(
       // every earlier step would go unaccounted. `totalUsage` aggregates across
       // steps and equals `usage` for a single-step call. Mirrors streamLLM,
       // which already prefers the aggregate.
-      recordUsageSafe(result.totalUsage ?? result.usage, buildUsageMeta(params, source));
+      recordUsageSafe(result.totalUsage ?? result.usage, {
+        ...buildUsageMeta(params, source),
+        // AI SDK exposes the provider's actual response model on response
+        // metadata. The requested model is already captured by buildUsageMeta;
+        // this field lets usage audits detect upstream routing differences.
+        responseModelId: result.response?.modelId,
+      });
 
       // Validate result (only when retries are configured)
       if (validate && !validate(result.text)) {
@@ -407,12 +420,23 @@ export function streamLLM<T extends StreamTextParams>(
   // caller-supplied onFinish. totalUsage aggregates across steps.
   const usageMeta = buildUsageMeta(params, source);
   const callerOnFinish = (params as Record<string, unknown>).onFinish as
-    | ((event: { totalUsage?: unknown; usage?: unknown }) => void | Promise<void>)
+    | ((event: {
+        totalUsage?: unknown;
+        usage?: unknown;
+        response?: { modelId?: string };
+      }) => void | Promise<void>)
     | undefined;
   const wrappedParams = {
     ...params,
-    onFinish: async (event: { totalUsage?: unknown; usage?: unknown }) => {
-      recordUsageSafe(event.totalUsage ?? event.usage, usageMeta);
+    onFinish: async (event: {
+      totalUsage?: unknown;
+      usage?: unknown;
+      response?: { modelId?: string };
+    }) => {
+      recordUsageSafe(event.totalUsage ?? event.usage, {
+        ...usageMeta,
+        responseModelId: event.response?.modelId,
+      });
       if (callerOnFinish) await callerOnFinish(event);
     },
   } as T;

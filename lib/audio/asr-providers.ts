@@ -8,6 +8,7 @@
  * - OpenAI Whisper: https://platform.openai.com/docs/guides/speech-to-text
  * - Browser Native: Web Speech API (https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API)
  * - Qwen ASR: https://bailian.console.aliyun.com/
+ * - Doubao ASR: https://www.volcengine.com/docs/82379/2516286 (Ark plan WebSocket)
  *
  * HOW TO ADD A NEW PROVIDER:
  *
@@ -184,6 +185,9 @@ export async function transcribeAudio(
 
     case 'azure-asr':
       return await transcribeAzureASR(config, audioBuffer);
+
+    case 'doubao-asr':
+      return await transcribeDoubaoASR(config, audioBuffer);
 
     case 'funasr-asr':
       return await transcribeWavOpenAICompatibleASR(config, audioBuffer, 'funasr-asr', 'FunASR');
@@ -421,6 +425,63 @@ async function transcribeOpenAIWhisper(
       return { text: '' };
     }
     throw error;
+  }
+}
+
+/**
+ * Doubao ASR implementation (Volcano Ark plan ASR, Seed-ASR 2.0).
+ *
+ * Two auth modes, keyed off the key shape — same split as doubao-tts:
+ *  - Ark Agent Plan single key (no colon) → plan WebSocket endpoint with
+ *    `X-Api-Key` and resource id `volc.seedasr.sauc.duration`.
+ *  - Speech-console `appId:accessKey` pair → non-plan endpoint with
+ *    `X-Api-App-Key` + `X-Api-Access-Key` and `volc.bigasr.sauc.duration`.
+ * Input audio is WAV (the client converts its webm recording first).
+ */
+async function transcribeDoubaoASR(
+  config: ASRModelConfig,
+  audioBuffer: Buffer | Blob,
+): Promise<ASRTranscriptionResult> {
+  const { transcribeWithDoubaoASR } = await import('./doubao-asr-client');
+
+  const apiKey = config.apiKey || '';
+  if (!apiKey) {
+    throw new Error(
+      'doubao-asr requires an API key: an Ark Agent Plan key (ark-…), or an "appId:accessKey" pair from the Volcengine speech console.',
+    );
+  }
+
+  let wav: Buffer;
+  if (audioBuffer instanceof Buffer) {
+    wav = audioBuffer;
+  } else if (audioBuffer instanceof Blob) {
+    wav = Buffer.from(await audioBuffer.arrayBuffer());
+  } else {
+    throw new Error('Invalid audio buffer type');
+  }
+
+  const request = {
+    url:
+      config.baseUrl ||
+      ASR_PROVIDERS['doubao-asr'].defaultBaseUrl ||
+      'wss://openspeech.bytedance.com/api/v3/plan/sauc/bigmodel_async',
+    apiKey,
+    wav,
+    language: config.language,
+  };
+
+  // A reset after the WebSocket handshake is a transient transport failure
+  // seen on the public endpoint. Retry once with a new request id; protocol,
+  // authentication and audio-format errors are surfaced immediately.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const text = await transcribeWithDoubaoASR(request);
+      return { text };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt >= 1 || !/\b(?:ECONNRESET|EPIPE)\b/i.test(message)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
   }
 }
 

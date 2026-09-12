@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { createLogger } from '@/lib/logger';
+import { getPersistedProviderPolicy } from '@/lib/server/persisted-provider-policy';
 import {
   DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL,
   isQwenCatalogVoice,
@@ -102,6 +103,7 @@ const ASR_ENV_MAP: Record<string, string> = {
   ASR_AZURE: 'azure-asr',
   ASR_FUNASR: 'funasr-asr',
   ASR_LEMONADE: 'lemonade-asr',
+  ASR_DOUBAO: 'doubao-asr',
 };
 
 const PDF_ENV_MAP: Record<string, string> = {
@@ -138,7 +140,7 @@ const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   // WEB_SEARCH_ prefix avoids colliding with ANTHROPIC_* LLM provider vars.
   WEB_SEARCH_CLAUDE: 'claude',
   WEB_SEARCH_MINIMAX: 'minimax',
-  // Dedicated prefix avoids colliding with the Doubao LLM provider vars.
+  // Dedicated prefix avoids colliding with the LLM provider vars.
   WEB_SEARCH_DOUBAO: 'doubao',
   SEARXNG: 'searxng',
 };
@@ -625,6 +627,46 @@ function resolveSectionBaseUrl(
 // ---------------------------------------------------------------------------
 
 /**
+ * Legacy environment fallback for the server-owned LLM boundary. A
+ * deployment can pin every LLM call to one provider/model without teaching
+ * the neutral resolver about a vendor. When PostgreSQL persistence is enabled,
+ * getEffectiveServerLLMPolicy reads the database row instead.
+ */
+export function getServerLLMPolicy(): {
+  locked: boolean;
+  providerId?: string;
+  modelId?: string;
+} {
+  const providerId = process.env.OPENMAIC_LLM_ONLY_PROVIDER?.trim();
+  const modelId = process.env.OPENMAIC_LLM_ONLY_MODEL?.trim();
+  return providerId && modelId ? { locked: true, providerId, modelId } : { locked: false };
+}
+
+/**
+ * Resolve the effective LLM policy. A persisted deployment row is
+ * authoritative when PostgreSQL persistence is enabled; the environment
+ * policy remains only as the first-run bootstrap/fallback for local installs
+ * that do not use a database.
+ */
+export async function getEffectiveServerLLMPolicy(): Promise<{
+  locked: boolean;
+  providerId?: string;
+  modelId?: string;
+}> {
+  const persisted = await getPersistedProviderPolicy();
+  if (persisted) {
+    return persisted.llmLocked
+      ? {
+          locked: true,
+          providerId: persisted.llmProviderId ?? undefined,
+          modelId: persisted.llmModelId ?? undefined,
+        }
+      : { locked: false };
+  }
+  return getServerLLMPolicy();
+}
+
+/**
  * Returns server-configured LLM providers. Exposes only the allowed model list
  * and the "managed" flag (presence in this map) — never the API key or the
  * base URL, which can reveal internal gateway/proxy infrastructure.
@@ -632,6 +674,30 @@ function resolveSectionBaseUrl(
 export function getServerProviders(): Record<string, { models?: string[] }> {
   const cfg = getConfig();
   const result: Record<string, { models?: string[] }> = {};
+  for (const [id, entry] of Object.entries(cfg.providers)) {
+    result[id] = {};
+    if (entry.models && entry.models.length > 0) result[id].models = entry.models;
+  }
+  return result;
+}
+
+/**
+ * Provider listing for API consumers. It mirrors getServerProviders but uses
+ * the effective database-backed lock, so a persisted policy also hides stale
+ * provider choices from the browser settings picker.
+ */
+export async function getEffectiveServerProviders(): Promise<
+  Record<string, { models?: string[] }>
+> {
+  const cfg = getConfig();
+  const result: Record<string, { models?: string[] }> = {};
+  const policy = await getEffectiveServerLLMPolicy();
+  if (policy.locked) {
+    if (policy.providerId && cfg.providers[policy.providerId]) {
+      result[policy.providerId] = { models: [policy.modelId!] };
+    }
+    return result;
+  }
   for (const [id, entry] of Object.entries(cfg.providers)) {
     result[id] = {};
     if (entry.models && entry.models.length > 0) result[id].models = entry.models;
