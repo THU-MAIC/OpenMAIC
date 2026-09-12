@@ -5,7 +5,17 @@ import type { StatelessEvent } from '@/lib/types/chat';
 const CueUserParams = Type.Object({
   prompt: Type.Optional(
     Type.String({
-      description: 'Optional short prompt for handing the turn back to the user.',
+      description:
+        'A concise, learner-facing question that makes it clear what response is expected.',
+      maxLength: 240,
+    }),
+  ),
+  options: Type.Optional(
+    Type.Array(Type.String({ minLength: 1, maxLength: 60 }), {
+      description:
+        'Two to four short, mutually exclusive replies when the learner can answer with one tap. Omit for open-ended questions.',
+      minItems: 2,
+      maxItems: 4,
     }),
   ),
 });
@@ -62,9 +72,14 @@ export function buildCueUserTool(opts: {
         };
       }
 
+      const options = params.options
+        ?.map((option) => option.trim())
+        .filter((option, index, all) => option.length > 0 && all.indexOf(option) === index)
+        .slice(0, 4);
       const emitted = await opts.cueUser({
         fromAgentId: opts.getLastAgentId(),
-        prompt: params.prompt,
+        prompt: params.prompt?.trim() || undefined,
+        ...(options && options.length >= 2 ? { options } : {}),
       });
       return {
         content: [

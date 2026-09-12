@@ -8,6 +8,7 @@ import {
   fromLegacyRecords,
   normalizeSession,
   planChatSync,
+  statePayload as chatStatePayload,
 } from '@/lib/utils/chat-storage-core';
 
 const STAGE_ID = 'stage-core';
@@ -282,5 +283,29 @@ describe('normalizeSession', () => {
   );
   it('preserves terminal statuses', () => {
     expect(normalizeSession(session({ status: 'completed' })).status).toBe('completed');
+  });
+
+  it('preserves a durable learner park and its prompt metadata', () => {
+    const parked = session({
+      status: 'waiting-user',
+      cueUser: {
+        fromAgentId: 'default-1',
+        prompt: 'Choose the next activity',
+        options: ['Example', 'Practice'],
+        parkedAt: 1_150,
+      },
+      directorState: { turnCount: 1, agentResponses: [], whiteboardLedger: [] },
+    });
+
+    expect(normalizeSession(parked)).toMatchObject({
+      status: 'waiting-user',
+      cueUser: parked.cueUser,
+      directorState: parked.directorState,
+    });
+    expect(chatStatePayload(parked)).toMatchObject({
+      status: 'waiting-user',
+      cueUser: parked.cueUser,
+      directorState: parked.directorState,
+    });
   });
 });

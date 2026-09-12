@@ -16,6 +16,7 @@ import {
   Maximize2,
   Minimize2,
   Quote,
+  BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store';
@@ -42,6 +43,8 @@ export interface CanvasToolbarProps {
   readonly showStopDiscussion?: boolean;
   readonly onStopDiscussion?: () => void;
   readonly onContinueDiscussion?: () => void;
+  readonly showResumeLesson?: boolean;
+  readonly onResumeLesson?: () => void;
   readonly isPresenting?: boolean;
   readonly onTogglePresentation?: () => void;
   readonly className?: string;
@@ -108,6 +111,8 @@ export function CanvasToolbar({
   showStopDiscussion,
   onStopDiscussion,
   onContinueDiscussion,
+  showResumeLesson,
+  onResumeLesson,
   isPresenting,
   onTogglePresentation,
   className,
@@ -307,6 +312,22 @@ export function CanvasToolbar({
           )}
 
           {/* Play / Pause / Stop Discussion */}
+          {showResumeLesson && onResumeLesson && (
+            <button
+              type="button"
+              data-testid="cue-user-resume-lesson"
+              onClick={(event) => {
+                event.stopPropagation();
+                onResumeLesson();
+              }}
+              className="flex h-6 items-center gap-1.5 whitespace-nowrap rounded-md bg-violet-500/10 px-2.5 text-[11px] font-semibold text-violet-600 transition-all hover:bg-violet-500/20 active:scale-95 dark:bg-violet-400/10 dark:text-violet-300 dark:hover:bg-violet-400/20"
+              title={t('roundtable.resumeLesson')}
+            >
+              <BookOpen className="size-3.5" />
+              {t('roundtable.resumeLesson')}
+            </button>
+          )}
+
           {showStopDiscussion && onStopDiscussion ? (
             <div className="flex items-center gap-1.5">
               <button
