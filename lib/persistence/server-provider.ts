@@ -106,25 +106,36 @@ async function createServerPersistenceProvider(
   }
 }
 
-/** Shared server bootstrap used by both HTTP persistence and Pi composition. */
+/**
+ * Shared server bootstrap used by both HTTP persistence and Pi composition.
+ *
+ * The memo is keyed on the TRIMMED connection string, and the pool is built
+ * from it, because callers disagree about whose job that is: the persistence
+ * route and the agent runtime pass `process.env.DATABASE_URL` as it is, while
+ * the collector schedule and the shutdown hook trim it first — they need the
+ * trimmed value anyway, to tell a blank variable from an unset one. A
+ * whitespace-padded `DATABASE_URL` would otherwise memoise twice and open two
+ * pools for one database in one process, and every one of those callers would
+ * be individually correct. Normalizing at the one seam they all go through
+ * costs nothing and leaves no spelling that can split them.
+ */
 export function getServerPersistenceProvider(
   connectionString: string,
   poolFactory: PersistencePoolFactory = (value) => new Pool({ connectionString: value }),
 ): Promise<ServerPersistenceProvider> {
-  if (providerState.providerPromise && providerState.connectionString === connectionString) {
+  const key = connectionString.trim();
+  if (providerState.providerPromise && providerState.connectionString === key) {
     return providerState.providerPromise;
   }
 
-  providerState.connectionString = connectionString;
-  const initialization = createServerPersistenceProvider(connectionString, poolFactory).catch(
-    (error) => {
-      if (providerState.providerPromise === initialization) {
-        providerState.providerPromise = undefined;
-        providerState.connectionString = undefined;
-      }
-      throw error;
-    },
-  );
+  providerState.connectionString = key;
+  const initialization = createServerPersistenceProvider(key, poolFactory).catch((error) => {
+    if (providerState.providerPromise === initialization) {
+      providerState.providerPromise = undefined;
+      providerState.connectionString = undefined;
+    }
+    throw error;
+  });
   providerState.providerPromise = initialization;
   return initialization;
 }

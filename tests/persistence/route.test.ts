@@ -752,6 +752,19 @@ describe('embedded persistence route', () => {
     expect(sharedProvider.runtimeStore).toBe(runtimeConstructions[0]?.instance);
     expect(secondPoolFactory).not.toHaveBeenCalled();
     expect(sdkModuleResolved).not.toHaveBeenCalled();
+
+    // Whitespace in DATABASE_URL must not split the memo. The route and the
+    // agent runtime pass the variable as it is; the collector schedule and the
+    // shutdown hook trim it first, because they also need it to tell a blank
+    // variable from an unset one. Both spellings have to land on one provider,
+    // or a padded value opens a second pool for the same database.
+    const paddedProvider = await getServerPersistenceProvider(
+      '  postgres://asset-wiring-test\n',
+      secondPoolFactory,
+    );
+    expect(paddedProvider).toBe(sharedProvider);
+    expect(secondPoolFactory).not.toHaveBeenCalled();
+    expect(runtimeConstructions).toHaveLength(1);
   });
 
   it('defers S3 resolution to the first asset byte operation', async () => {

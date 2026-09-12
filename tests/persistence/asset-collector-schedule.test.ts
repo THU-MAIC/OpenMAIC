@@ -288,7 +288,7 @@ describe('asset collector schedule', () => {
     info.mockRestore();
   });
 
-  it('reports a missing reference declaration as a defect, and keeps collecting', async () => {
+  it('reports a marker that is gone as a defect, and keeps collecting', async () => {
     const harness = mockStorage(async () => ({}));
     harness.collectPass.mockRejectedValue(new MockReferenceTrackingNotEnabled());
     vi.stubEnv('DATABASE_URL', 'postgres://collector-unpaired');
@@ -299,19 +299,22 @@ describe('asset collector schedule', () => {
     await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
     await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
 
-    // Preparing a collector awaits the provider that makes the declaration, so
-    // a pass only reaches here on a database where it was made and did not
-    // take -- never on one that is merely new or idle. Two causes are left and
-    // the message names both. Its own line rather than the transient wording,
-    // and the schedule keeps running either way, because only the entry level
-    // is refused and the blob level already ran.
+    // A pass ran, so preparation succeeded, so the provider wrote the marker --
+    // and nothing ever removes it. The message therefore points at the marker
+    // being gone rather than at a failed provider (which could not have
+    // produced this line) or an untracked writer (which cannot remove it). Its
+    // own line rather than the transient wording, and the schedule keeps
+    // running, because only the entry level is refused and the blob level
+    // already ran.
     expect(harness.collectPass).toHaveBeenCalledTimes(2);
     expect(error).toHaveBeenCalledTimes(2);
     const alarm = String(error.mock.calls[0]?.[0]);
-    expect(alarm).toContain('trackAssetReferences');
-    expect(alarm).toContain('awaits the persistence provider');
-    expect(alarm).toContain('provider initialization failed');
+    expect(alarm).toContain('does not hold the marker');
+    expect(alarm).toContain('nothing ever removes it');
     expect(alarm).not.toContain('retrying on the next interval');
+    // The two causes the reviewer showed cannot co-occur with this line.
+    expect(alarm).not.toContain('initialization failed');
+    expect(alarm).not.toContain('without trackAssetReferences');
     expect(warn).not.toHaveBeenCalled();
     error.mockRestore();
     warn.mockRestore();

@@ -222,28 +222,33 @@ export function startAssetCollectorSchedule(
       }
     } catch (error) {
       if (error instanceof AssetReferenceTrackingNotEnabledError) {
-        // The package's gate is "has anything declared that this database's
-        // writers maintain references". Preparing this collector awaits the
-        // persistence provider, which declares exactly that, so a pass only
-        // reaches here on a database where the declaration was made and did
-        // not take -- not on one that is merely new or idle.
+        // The package's gate is "does this database hold the one-row marker
+        // that says its writers maintain references". Reaching here means a
+        // pass ran and the row was not there.
         //
-        // Two causes are left. The declaration may have failed, in which case
-        // preparation failed with it and the previous line in this log is the
-        // failed pass that says why. Or something writes documents to this
-        // database through a store built without `trackAssetReferences`, which
-        // is the pairing this refusal exists to protect. Only the entry level
-        // is refused either way -- the blob level already ran, and nothing is
-        // released while refused, so it cannot lose data. It does mean no
-        // entry is being reclaimed until someone acts.
+        // That is a narrow thing. Preparation awaits the provider, and the
+        // provider writes the marker before it returns, so a provider that
+        // failed cannot produce this line at all -- preparation would have
+        // thrown and the generic branch below would have logged instead. The
+        // marker is also never withdrawn: writing it is `INSERT … ON CONFLICT
+        // DO NOTHING`, and nothing in the package or this application deletes
+        // it, so a store writing without `trackAssetReferences` cannot cause
+        // this either. What is left is that the row was removed or never
+        // reached the database this collector reads: dropped or truncated out
+        // of band, restored from a backup taken before the declaration, or a
+        // collector and a provider pointed at different databases.
+        //
+        // Only the entry level is refused -- the blob level already ran, and
+        // nothing is released while refused, so it cannot lose data. It does
+        // mean no entry is being reclaimed until someone acts.
         console.error(
-          'Asset collection is configured to reclaim registry entries, but nothing has ' +
-            'declared that this database maintains them, so entry reclamation (including the ' +
-            'one-time backfill) is refused. Byte reclamation is unaffected. Preparing this ' +
-            'collector awaits the persistence provider, which makes that declaration, so ' +
-            'either that provider initialization failed -- the failed pass logged just above ' +
-            'says why -- or documents on this database are being written by a store built ' +
-            'without trackAssetReferences.',
+          'Asset collection is configured to reclaim registry entries, but this database does ' +
+            'not hold the marker that says its document writers maintain them, so entry ' +
+            'reclamation (including the one-time backfill) is refused. Byte reclamation is ' +
+            'unaffected. The persistence provider writes that marker before this collector is ' +
+            'built and nothing ever removes it, so it was dropped or truncated out of band, ' +
+            'restored away, or this collector is reading a different database from the one ' +
+            'the provider initialized.',
           error,
         );
       } else if (error instanceof StorageLockUnavailableError) {
