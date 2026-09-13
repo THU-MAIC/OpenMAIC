@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-// POST /api/classroom must reject an id that would escape the classrooms
-// directory before any persistence happens, and must keep accepting generated
-// uuids and ordinary allowlisted ids.
+// POST /api/classroom must choose the storage id itself instead of trusting the
+// caller: a client-supplied stage.id is public share-URL material, so echoing
+// it would let any visitor name (and previously replace) an existing
+// classroom. The endpoint still rejects malformed scenes and returns the
+// server-generated id in the response.
 
 const mocks = vi.hoisted(() => ({
   persistClassroom: vi.fn(),
@@ -28,6 +30,8 @@ vi.mock('@/lib/logger', () => ({
   }),
 }));
 
+const SERVER_ID_PATTERN = /^[A-Za-z0-9_-]{10}$/;
+
 function postClassroom(stage: Record<string, unknown>, scenes: unknown[] = []) {
   const request = new NextRequest('http://localhost/api/classroom', {
     method: 'POST',
@@ -37,7 +41,18 @@ function postClassroom(stage: Record<string, unknown>, scenes: unknown[] = []) {
   return request;
 }
 
-describe('POST /api/classroom — id validation before persistence', () => {
+function slideScene(stageId: string) {
+  return {
+    id: 'scene-1',
+    stageId,
+    title: 'Scene 1',
+    order: 0,
+    type: 'slide',
+    content: { type: 'slide', canvas: {} },
+  };
+}
+
+describe('POST /api/classroom — server-generated id', () => {
   beforeEach(() => {
     vi.resetModules();
     mocks.persistClassroom.mockReset();
@@ -48,7 +63,7 @@ describe('POST /api/classroom — id validation before persistence', () => {
     }));
   });
 
-  it('returns 400 for a traversal-style stage id and never persists', async () => {
+  it('ignores a traversal-style stage id and persists under a server-generated id', async () => {
     const { POST } = await import('@/app/api/classroom/route');
 
     const res = await POST(
@@ -59,16 +74,20 @@ describe('POST /api/classroom — id validation before persistence', () => {
     );
     const json = await res.json();
 
-    expect(res.status).toBe(400);
-    expect(json).toMatchObject({
-      success: false,
-      errorCode: 'INVALID_REQUEST',
-      error: 'Invalid classroom id',
-    });
-    expect(mocks.persistClassroom).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect(json).toMatchObject({ success: true });
+    expect(json.id).toMatch(SERVER_ID_PATTERN);
+    expect(json.id).not.toBe('../../../../tmp/openmaic-escape');
+    expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
+
+    const [persisted, baseUrl, options] = mocks.persistClassroom.mock.calls[0];
+    expect(persisted.id).toBe(json.id);
+    expect(persisted.stage.id).toBe(json.id);
+    expect(baseUrl).toBe('http://localhost');
+    expect(options).toEqual({ exclusive: true });
   });
 
-  it('accepts an omitted stage id and persists with a generated uuid', async () => {
+  it('accepts an omitted stage id and persists with a generated id', async () => {
     const { POST } = await import('@/app/api/classroom/route');
 
     const res = await POST(
@@ -77,59 +96,40 @@ describe('POST /api/classroom — id validation before persistence', () => {
           title: 'Lesson',
           type: 'slide',
         },
-        [
-          {
-            id: 'scene-1',
-            stageId: 'classroom-1',
-            title: 'Scene 1',
-            order: 0,
-            type: 'slide',
-            content: { type: 'slide', canvas: {} },
-          },
-        ],
+        [slideScene('client-chosen-id')],
       ),
     );
     const json = await res.json();
 
     expect(res.status).toBe(201);
     expect(json).toMatchObject({ success: true });
-    expect(typeof json.id).toBe('string');
+    expect(json.id).toMatch(SERVER_ID_PATTERN);
     expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
+
     const [persisted] = mocks.persistClassroom.mock.calls[0];
-    expect(persisted.id).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-    );
+    expect(persisted.id).toBe(json.id);
     expect(persisted.stage.id).toBe(persisted.id);
+    // Scenes are re-bound to the id the server chose, keeping the persisted
+    // document internally consistent.
+    expect(persisted.scenes[0].stageId).toBe(persisted.id);
   });
 
-  it('still persists an ordinary allowlisted id', async () => {
+  it('ignores an ordinary allowlisted client id and mints a different one', async () => {
     const { POST } = await import('@/app/api/classroom/route');
 
     const res = await POST(
-      postClassroom(
-        {
-          id: 'abc-123_XY',
-          title: 'Lesson',
-        },
-        [
-          {
-            id: 'scene-1',
-            stageId: 'abc-123_XY',
-            title: 'Scene 1',
-            order: 0,
-            type: 'slide',
-            content: { type: 'slide', canvas: {} },
-          },
-        ],
-      ),
+      postClassroom({ id: 'abc-123_XY', title: 'Lesson' }, [slideScene('abc-123_XY')]),
     );
     const json = await res.json();
 
     expect(res.status).toBe(201);
-    expect(json).toMatchObject({ success: true, id: 'abc-123_XY' });
-    expect(mocks.persistClassroom).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'abc-123_XY' }),
-      'http://localhost',
-    );
+    expect(json).toMatchObject({ success: true });
+    expect(json.id).not.toBe('abc-123_XY');
+    expect(json.id).toMatch(SERVER_ID_PATTERN);
+
+    const [persisted] = mocks.persistClassroom.mock.calls[0];
+    expect(persisted.id).toBe(json.id);
+    expect(persisted.stage.id).toBe(json.id);
+    expect(persisted.scenes[0].stageId).toBe(json.id);
   });
 });

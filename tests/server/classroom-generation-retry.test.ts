@@ -9,8 +9,22 @@ const mocks = vi.hoisted(() => ({
   generateSceneActions: vi.fn(),
   createSceneWithActions: vi.fn(),
   persistClassroom: vi.fn(),
+  generateClassroomId: vi.fn(),
   callLLM: vi.fn(),
 }));
+const ClassroomAlreadyExistsErrorMock = vi.hoisted(
+  () =>
+    class ClassroomAlreadyExistsError extends Error {
+      readonly code = 'EEXIST' as const;
+      readonly classroomId: string;
+
+      constructor(classroomId = 'collision') {
+        super(`Classroom "${classroomId}" already exists`);
+        this.name = 'ClassroomAlreadyExistsError';
+        this.classroomId = classroomId;
+      }
+    },
+);
 const PBLGenerationErrorMock = vi.hoisted(
   () =>
     class PBLGenerationError extends Error {
@@ -54,6 +68,9 @@ vi.mock('@/lib/server/scene-generation', () => ({
 
 vi.mock('@/lib/server/classroom-storage', () => ({
   persistClassroom: mocks.persistClassroom,
+  generateClassroomId: mocks.generateClassroomId,
+  ClassroomAlreadyExistsError: ClassroomAlreadyExistsErrorMock,
+  CLASSROOM_ID_MAX_ATTEMPTS: 3,
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -141,6 +158,7 @@ describe('classroom scene generation retries', () => {
       scenesCount: scenes.length,
       createdAt: '2026-06-22T00:00:00.000Z',
     }));
+    mocks.generateClassroomId.mockReturnValue('stagegen01');
   });
 
   it('retries an empty scene content result before skipping the scene', async () => {
@@ -338,5 +356,48 @@ describe('classroom scene generation retries', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('persists the generated classroom with an exclusive create', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+
+    await generateWithProgress();
+
+    expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
+    const [data, baseUrl, options] = mocks.persistClassroom.mock.calls[0];
+    expect(baseUrl).toBe('http://localhost');
+    expect(options).toEqual({ exclusive: true });
+    expect(data.id).toBe('stagegen01');
+    expect(data.stage.id).toBe('stagegen01');
+    for (const scene of data.scenes) {
+      expect(scene.stageId).toBe('stagegen01');
+    }
+  });
+
+  it('retries with a fresh id when the exclusive create collides', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    mocks.generateClassroomId.mockReturnValueOnce('stagegen01').mockReturnValueOnce('stagegen02');
+    mocks.persistClassroom
+      .mockRejectedValueOnce(new ClassroomAlreadyExistsErrorMock('stagegen01'))
+      .mockImplementationOnce(async ({ id, scenes }) => ({
+        id,
+        url: `http://localhost/classroom/${id}`,
+        scenesCount: scenes.length,
+        createdAt: '2026-06-22T00:00:00.000Z',
+      }));
+
+    const { result } = await generateWithProgress();
+
+    expect(result.id).toBe('stagegen02');
+    expect(result.stage.id).toBe('stagegen02');
+    expect(mocks.persistClassroom).toHaveBeenCalledTimes(2);
+    const [retry] = mocks.persistClassroom.mock.calls[1];
+    expect(retry.id).toBe('stagegen02');
+    expect(retry.stage.id).toBe('stagegen02');
+    for (const scene of retry.scenes) {
+      expect(scene.stageId).toBe('stagegen02');
+    }
+    // The incumbent under the first id was never overwritten.
+    expect(mocks.persistClassroom.mock.calls[0][0].id).toBe('stagegen01');
   });
 });

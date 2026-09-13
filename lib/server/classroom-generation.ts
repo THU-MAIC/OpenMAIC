@@ -1,4 +1,3 @@
-import { nanoid } from 'nanoid';
 import { callLLM } from '@/lib/ai/llm';
 import { createStageAPI } from '@/lib/api/stage-api';
 import type { StageStore } from '@/lib/api/stage-api-types';
@@ -26,7 +25,13 @@ import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
-import { persistClassroom } from '@/lib/server/classroom-storage';
+import {
+  ClassroomAlreadyExistsError,
+  CLASSROOM_ID_MAX_ATTEMPTS,
+  generateClassroomId,
+  persistClassroom,
+  type PersistedClassroomData,
+} from '@/lib/server/classroom-storage';
 import {
   generateMediaForClassroom,
   replaceMediaPlaceholders,
@@ -171,6 +176,46 @@ Return a JSON object with this exact structure:
     role: a.role,
     persona: a.persona,
   }));
+}
+
+/**
+ * Persist a freshly generated classroom under a server-generated id using the
+ * exclusive create, retrying with a new id if that id is already taken. Mirrors
+ * the create route so neither creation path can replace an existing classroom
+ * file, and keeps the persisted stage/scenes bound to whichever id wins.
+ */
+async function persistGeneratedClassroom(
+  stage: Stage,
+  scenes: Scene[],
+  baseUrl: string,
+): Promise<{
+  persisted: PersistedClassroomData & { url: string };
+  stage: Stage;
+  scenes: Scene[];
+}> {
+  let id = stage.id;
+  for (let attempt = 0; ; attempt += 1) {
+    const attemptStage: Stage = id === stage.id ? stage : { ...stage, id };
+    const attemptScenes: Scene[] =
+      id === stage.id ? scenes : scenes.map((scene) => ({ ...scene, stageId: id }));
+    try {
+      const persisted = await persistClassroom(
+        { id, stage: attemptStage, scenes: attemptScenes },
+        baseUrl,
+        { exclusive: true },
+      );
+      return { persisted, stage: attemptStage, scenes: attemptScenes };
+    } catch (error) {
+      if (
+        !(error instanceof ClassroomAlreadyExistsError) ||
+        attempt >= CLASSROOM_ID_MAX_ATTEMPTS - 1
+      ) {
+        throw error;
+      }
+      log.warn(`Classroom id "${id}" already exists; retrying with a fresh id`);
+      id = generateClassroomId();
+    }
+  }
 }
 
 export async function generateClassroom(
@@ -519,7 +564,7 @@ export async function generateClassroom(
     agents = getDefaultAgents();
   }
 
-  const stageId = nanoid(10);
+  const stageId = generateClassroomId();
   const stage: Stage = {
     id: stageId,
     name: courseTitle || outlines[0]?.title || requirement.slice(0, 50),
@@ -708,14 +753,11 @@ export async function generateClassroom(
     totalScenes: outlines.length,
   });
 
-  const persisted = await persistClassroom(
-    {
-      id: stageId,
-      stage,
-      scenes,
-    },
-    options.baseUrl,
-  );
+  const {
+    persisted,
+    stage: persistedStage,
+    scenes: persistedScenes,
+  } = await persistGeneratedClassroom(stage, scenes, options.baseUrl);
 
   log.info(`Classroom persisted: ${persisted.id}, URL: ${persisted.url}`);
 
@@ -723,16 +765,16 @@ export async function generateClassroom(
     step: 'completed',
     progress: 100,
     message: 'Classroom generation completed',
-    scenesGenerated: scenes.length,
+    scenesGenerated: persistedScenes.length,
     totalScenes: outlines.length,
   });
 
   return {
     id: persisted.id,
     url: persisted.url,
-    stage,
-    scenes,
-    scenesCount: scenes.length,
+    stage: persistedStage,
+    scenes: persistedScenes,
+    scenesCount: persistedScenes.length,
     createdAt: persisted.createdAt,
   };
 }
