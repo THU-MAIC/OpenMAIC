@@ -145,37 +145,40 @@ describe('POST /api/classroom — create never overwrites', () => {
     expect(leftovers).toEqual([]);
   });
 
-  it('falls back to an exclusive wx open when the filesystem cannot hard-link', async () => {
-    const id = 'nohardlink1';
-    const filePath = path.join(tmpDir, `${id}.json`);
-    const linkSpy = vi
-      .spyOn(fs, 'link')
-      .mockRejectedValue(Object.assign(new Error('operation not supported'), { code: 'ENOTSUP' }));
-    try {
-      // The link fast path is unavailable, so the create succeeds through `wx`.
-      await expect(
-        storage.writeJsonFileExclusive(filePath, { id, marker: 'first' }),
-      ).resolves.toBeUndefined();
-      // The spy really intercepted the storage layer's link call: without the
-      // fallback the rejected link would have propagated.
-      expect(linkSpy).toHaveBeenCalledTimes(1);
-      // `wx` is still exclusive: a second create on the same id is a collision.
-      await expect(
-        storage.writeJsonFileExclusive(filePath, { id, marker: 'second' }),
-      ).rejects.toMatchObject({
-        name: 'ClassroomAlreadyExistsError',
-        code: 'EEXIST',
-      });
+  it.each(['ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EXDEV'])(
+    'falls back to an exclusive wx open when link reports %s',
+    async (code) => {
+      const id = `fb-${code}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const filePath = path.join(tmpDir, `${id}.json`);
+      const linkSpy = vi
+        .spyOn(fs, 'link')
+        .mockRejectedValue(Object.assign(new Error('link unavailable'), { code }));
+      try {
+        // The link fast path is unavailable, so the create succeeds through `wx`.
+        await expect(
+          storage.writeJsonFileExclusive(filePath, { id, marker: `${code}-first` }),
+        ).resolves.toBeUndefined();
+        // The spy really intercepted the storage layer's link call: without the
+        // fallback the rejected link would have propagated.
+        expect(linkSpy).toHaveBeenCalledTimes(1);
+        // `wx` is still exclusive: a second create on the same id is a collision.
+        await expect(
+          storage.writeJsonFileExclusive(filePath, { id, marker: `${code}-second` }),
+        ).rejects.toMatchObject({
+          name: 'ClassroomAlreadyExistsError',
+          code: 'EEXIST',
+        });
 
-      const written = JSON.parse(await fs.readFile(filePath, 'utf-8')) as { marker: string };
-      expect(written.marker).toBe('first');
-    } finally {
-      linkSpy.mockRestore();
-    }
+        const written = JSON.parse(await fs.readFile(filePath, 'utf-8')) as { marker: string };
+        expect(written.marker).toBe(`${code}-first`);
+      } finally {
+        linkSpy.mockRestore();
+      }
 
-    const leftovers = (await fs.readdir(tmpDir)).filter((entry) => entry.endsWith('.tmp'));
-    expect(leftovers).toEqual([]);
-  });
+      const leftovers = (await fs.readdir(tmpDir)).filter((entry) => entry.endsWith('.tmp'));
+      expect(leftovers).toEqual([]);
+    },
+  );
 
   it('reserves an id exclusively and hides the placeholder from readClassroom', async () => {
     const id = 'reserved01';
@@ -201,10 +204,44 @@ describe('POST /api/classroom — create never overwrites', () => {
     expect(stored?.reserved).toBeUndefined();
   });
 
+  it('releases a reservation and frees the id for reuse', async () => {
+    const id = 'released01';
+    const stage = storedStage(id, 'Abandoned');
+
+    await storage.reserveClassroom(id, stage);
+    expect(JSON.parse(await readRaw(id))).toMatchObject({ reserved: true });
+    await expect(storage.readClassroom(id)).resolves.toBeNull();
+
+    await storage.releaseClassroomReservation(id);
+
+    // The placeholder is gone, so nothing blocks the id from being claimed again.
+    await expect(fs.access(path.join(tmpDir, `${id}.json`))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(storage.reserveClassroom(id, stage)).resolves.toBeUndefined();
+  });
+
+  it('releasing a non-reserved classroom document is a no-op', async () => {
+    const id = 'persisted1';
+    const stage = storedStage(id, 'Persisted');
+    await storage.persistClassroom({ id, stage, scenes: [] }, 'http://localhost');
+    const before = await readRaw(id);
+
+    await storage.releaseClassroomReservation(id);
+
+    // The real document is byte-for-byte untouched.
+    expect(await readRaw(id)).toBe(before);
+    expect((await storage.readClassroom(id))?.stage.name).toBe('Persisted');
+  });
+
+  it('releasing a reservation that no longer exists is a no-op', async () => {
+    await expect(storage.releaseClassroomReservation('gone000001')).resolves.toBeUndefined();
+  });
+
   it('propagates link errors that are not a missing-hard-link capability', async () => {
-    const id = 'linkerror1';
+    const id = 'linkerror01';
     const filePath = path.join(tmpDir, `${id}.json`);
-    const failure = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    const failure = Object.assign(new Error('i/o error'), { code: 'EIO' });
     const linkSpy = vi.spyOn(fs, 'link').mockRejectedValue(failure);
     try {
       await expect(storage.writeJsonFileExclusive(filePath, { id })).rejects.toBe(failure);

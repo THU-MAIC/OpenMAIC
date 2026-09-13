@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   generateSceneActions: vi.fn(),
   createSceneWithActions: vi.fn(),
   reserveClassroom: vi.fn(),
+  releaseClassroomReservation: vi.fn(),
   persistClassroom: vi.fn(),
   generateClassroomId: vi.fn(),
   generateMediaForClassroom: vi.fn(),
@@ -65,6 +66,7 @@ vi.mock('@/lib/server/classroom-storage', async (importOriginal) => ({
   // collision handling is exercised against the actual error class.
   ...(await importOriginal<typeof import('@/lib/server/classroom-storage')>()),
   reserveClassroom: mocks.reserveClassroom,
+  releaseClassroomReservation: mocks.releaseClassroomReservation,
   persistClassroom: mocks.persistClassroom,
   generateClassroomId: mocks.generateClassroomId,
 }));
@@ -163,6 +165,7 @@ describe('classroom scene generation retries', () => {
       createdAt: '2026-06-22T00:00:00.000Z',
     }));
     mocks.reserveClassroom.mockResolvedValue(undefined);
+    mocks.releaseClassroomReservation.mockResolvedValue(undefined);
     mocks.generateMediaForClassroom.mockResolvedValue({});
     mocks.replaceMediaPlaceholders.mockImplementation(() => undefined);
     mocks.generateTTSForClassroom.mockResolvedValue(undefined);
@@ -386,6 +389,33 @@ describe('classroom scene generation retries', () => {
     for (const scene of data.scenes) {
       expect(scene.stageId).toBe('stagegen01');
     }
+  });
+
+  it('releases the reservation when generation fails before the final persist', async () => {
+    // Zero outlines reach the "No scenes were generated" failure after the id
+    // has already been reserved.
+    mocks.generateSceneOutlinesFromRequirements.mockResolvedValue({
+      success: true,
+      data: { languageDirective: 'Use English.', outlines: [] },
+    });
+
+    await expect(generateWithProgress()).rejects.toThrow('No scenes were generated');
+
+    expect(mocks.reserveClassroom).toHaveBeenCalledTimes(1);
+    expect(mocks.reserveClassroom).toHaveBeenCalledWith('stagegen01', expect.anything());
+    expect(mocks.persistClassroom).not.toHaveBeenCalled();
+    expect(mocks.releaseClassroomReservation).toHaveBeenCalledTimes(1);
+    expect(mocks.releaseClassroomReservation).toHaveBeenCalledWith('stagegen01');
+  });
+
+  it('does not release the reservation after a successful persist', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+
+    const { result } = await generateWithProgress();
+
+    expect(result.id).toBe('stagegen01');
+    expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
+    expect(mocks.releaseClassroomReservation).not.toHaveBeenCalled();
   });
 
   it('retries a colliding reservation before media and only generates for the final id', async () => {

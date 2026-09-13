@@ -3,6 +3,9 @@ import path from 'path';
 import { nanoid } from 'nanoid';
 import type { NextRequest } from 'next/server';
 import type { Scene, Stage } from '@/lib/types/stage';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('ClassroomStorage');
 
 /**
  * Root directory for the file-backed classroom store. Defaults to
@@ -199,6 +202,31 @@ export async function reserveClassroom(id: string, stage: Stage): Promise<void> 
     reserved: true,
   };
   await writeJsonFileExclusive(resolveClassroomFilePath(id), placeholder);
+}
+
+/**
+ * Drop a reservation that will never become a classroom, e.g. when generation
+ * throws before the final persist. The file is re-read first and unlinked only
+ * while it is still a placeholder (`reserved: true`), so a real classroom
+ * document is never deleted. A missing file is a no-op. Every other error is
+ * logged and swallowed: this runs from a `finally` and must never mask the
+ * failure that triggered the cleanup.
+ */
+export async function releaseClassroomReservation(id: string): Promise<void> {
+  const filePath = resolveClassroomFilePath(id);
+  try {
+    const content = await fs.readFile(filePath, 'utf-8');
+    const parsed = JSON.parse(content) as PersistedClassroomData;
+    if (parsed.reserved !== true) {
+      return;
+    }
+    await fs.unlink(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return;
+    }
+    log.warn(`Failed to release classroom reservation "${id}":`, error);
+  }
 }
 
 export interface PersistClassroomOptions {
