@@ -18,9 +18,27 @@ function createAbortError(): Error {
 }
 
 function inferPreviewLang(text: string): string {
-  const cjkCount = (text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length;
-  const ratio = text.length > 0 ? cjkCount / text.length : 0;
-  return ratio > CJK_LANG_THRESHOLD ? 'zh-CN' : 'en-US';
+  return detectSpeechLang(text);
+}
+
+// U+0110/0111 (đ), U+01A0/01A1 (ơ), U+01AF/01B0 (ư) and the U+1EA0–U+1EF9
+// precomposed block (ớ, ừ, ồ, ế, ấ, …) never occur in French or Romanian
+// Latin, so one occurrence marks Vietnamese. Bare ă/â/ê/ô do occur in
+// Romanian (and ê/ô in lone French words like "fête"), so they only count
+// toward a ratio — this does not fully exclude Romanian prose, which is
+// acceptable because narration chunks follow the course language.
+const VI_DECIDER_RE = /[đĐơƠưƯ\u1EA0-\u1EF9]/;
+const VI_BROAD_RE = /[ăâêôĂÂÊÔ]/g;
+const VI_BROAD_THRESHOLD = 0.02;
+
+/** Language tag for a narration chunk: zh-CN, vi-VN, or en-US fallback. */
+export function detectSpeechLang(text: string): string {
+  if (!text) return 'en-US';
+  const cjkRatio = (text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length / text.length;
+  if (cjkRatio > CJK_LANG_THRESHOLD) return 'zh-CN';
+  if (VI_DECIDER_RE.test(text)) return 'vi-VN';
+  if ((text.match(VI_BROAD_RE) || []).length / text.length > VI_BROAD_THRESHOLD) return 'vi-VN';
+  return 'en-US';
 }
 
 export function isBrowserTTSAbortError(error: unknown): boolean {
