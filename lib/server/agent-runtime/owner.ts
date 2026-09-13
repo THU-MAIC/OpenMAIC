@@ -20,7 +20,14 @@ function readCookie(headers: Headers, name: string): string | undefined {
 }
 
 function anonymousCookieHeader(id: string): string {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  // Safari refuses to store `Secure` cookies served over plain http://localhost
+  // (it does not special-case localhost the way Chromium/Firefox do), which
+  // makes every request mint a fresh anonymous owner and document writes fail
+  // with 403 owner-mismatch. Deployments without TLS opt out with
+  // COOKIE_SECURE=0; the flag only widens the default (Secure in production),
+  // it never forces Secure off a deployment that wants it.
+  const secure =
+    process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== '0' ? '; Secure' : '';
   return (
     `${ANONYMOUS_COOKIE}=${id}; Path=/; HttpOnly; SameSite=Lax; ` +
     `Max-Age=${ANONYMOUS_COOKIE_MAX_AGE_SECONDS}${secure}`
