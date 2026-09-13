@@ -100,7 +100,10 @@ function canonicalizeIp(value: string): string | null {
 /**
  * IPv4 addresses carried inside an IPv6 literal by a transition mechanism:
  * 6to4 (2002::/16), Teredo (2001:0::/32, XOR-inverted), ISATAP interface
- * identifiers and NAT64 (64:ff9b::/96). Empty when none applies.
+ * identifiers, NAT64 at the well-known (64:ff9b::/96) and RFC 8215 local-use
+ * (64:ff9b:1::/48) prefixes, and the RFC 6145 IPv4-translatable prefix
+ * (::ffff:0:0:0/96). Every NAT64/translation form embeds the IPv4 in the last
+ * 32 bits. Empty when none applies.
  */
 function tunnelEmbeddedIPv4(normalized: string): string[] {
   const hextets = expandIPv6(normalized);
@@ -116,6 +119,19 @@ function tunnelEmbeddedIPv4(normalized: string): string[] {
     embedded.push(dotted(hextets[6], hextets[7]));
   }
   if (hextets[0] === 0x0064 && hextets[1] === 0xff9b && hextets.slice(2, 6).every((h) => h === 0)) {
+    embedded.push(dotted(hextets[6], hextets[7]));
+  }
+  if (hextets[0] === 0x0064 && hextets[1] === 0xff9b && hextets[2] === 0x0001) {
+    embedded.push(dotted(hextets[6], hextets[7]));
+  }
+  if (
+    hextets[0] === 0x0000 &&
+    hextets[1] === 0x0000 &&
+    hextets[2] === 0x0000 &&
+    hextets[3] === 0x0000 &&
+    hextets[4] === 0xffff &&
+    hextets[5] === 0x0000
+  ) {
     embedded.push(dotted(hextets[6], hextets[7]));
   }
   return embedded;
@@ -134,11 +150,11 @@ function isCloudMetadataAddress(value: string): boolean {
 
 /**
  * Ranges that are never valid outbound proxy targets, with or without
- * `ALLOW_LOCAL_NETWORKS`: carrier-grade NAT (100.64.0.0/10), IANA reserved and
- * special-use blocks (240.0.0.0/4, 198.18.0.0/15, the TEST-NET blocks,
- * 192.0.0.0/24, ...), multicast and broadcast. Private, loopback and link-local
- * ranges are deliberately excluded because allowing those is the whole point of
- * the opt-in.
+ * `ALLOW_LOCAL_NETWORKS`: IANA reserved and special-use blocks (240.0.0.0/4,
+ * 198.18.0.0/15, the TEST-NET blocks, 192.0.0.0/24, ...), multicast and
+ * broadcast. Private, loopback, link-local and carrier-grade NAT ranges are
+ * deliberately excluded because allowing those is the whole point of the
+ * opt-in (see {@link isOptInGovernedRange}).
  *
  * Both `validateUrlForSSRF` and `connectionAddressBlockReason` apply this, so an
  * IP-literal URL (for which Node never runs `connect.lookup`) and a hostname
@@ -148,12 +164,20 @@ function isNeverAllowedRange(value: string): boolean {
   const canonical = canonicalizeIp(value);
   if (canonical === null) return false;
   const range = ipaddr.parse(canonical).range();
-  return (
-    range === 'carrierGradeNat' ||
-    range === 'reserved' ||
-    range === 'multicast' ||
-    range === 'broadcast'
-  );
+  return range === 'reserved' || range === 'multicast' || range === 'broadcast';
+}
+
+/**
+ * Ranges the `ALLOW_LOCAL_NETWORKS` opt-in governs: private, loopback and
+ * link-local targets, plus carrier-grade NAT (100.64.0.0/10). CGNAT is a
+ * routable unicast range that overlay networks such as Tailscale/Headscale
+ * assign to their nodes, so self-hosted model servers behind one need the same
+ * opt-in as RFC1918 targets. Blocked by default, allowed with the flag.
+ */
+function isOptInGovernedRange(value: string): boolean {
+  const canonical = canonicalizeIp(value);
+  if (canonical === null) return false;
+  return isPrivateIP(canonical) || ipaddr.parse(canonical).range() === 'carrierGradeNat';
 }
 
 /** dns.lookup bounded by a timer; resolves to null on timeout so the caller decides. */
@@ -195,10 +219,10 @@ export function assertSafeIp(value: string): void {
 /**
  * Classify a single connection-time address under the same policy
  * `validateUrlForSSRF` applies to a URL/DNS answer. Cloud metadata and
- * special-use ranges (CGNAT, IANA reserved, multicast, broadcast) are refused
- * unconditionally; private/loopback/link-local answers are refused unless the
- * operator opted into local networks. Returns the guard's block message, or
- * null when the address is acceptable.
+ * special-use ranges (IANA reserved, multicast, broadcast) are refused
+ * unconditionally; private/loopback/link-local and CGNAT answers are refused
+ * unless the operator opted into local networks. Returns the guard's block
+ * message, or null when the address is acceptable.
  *
  * Used by the pinned dispatcher so the address the socket connects to is
  * judged by the same policy as the address the URL-layer guard saw, while the
@@ -217,14 +241,15 @@ export function connectionAddressBlockReason(
   if (isCloudMetadataAddress(canonical)) {
     return CLOUD_METADATA_BLOCK_MESSAGE;
   }
-  // Special-use ranges are never legitimate proxy targets, opt-in or not.
+  // IANA reserved/multicast/broadcast ranges are never legitimate proxy
+  // targets, opt-in or not.
   if (isNeverAllowedRange(canonical)) {
     return LOCAL_NETWORK_BLOCK_MESSAGE;
   }
   if (allowLocalNetworks) {
     return null;
   }
-  if (isPrivateIP(canonical)) {
+  if (isOptInGovernedRange(canonical)) {
     return LOCAL_NETWORK_BLOCK_MESSAGE;
   }
   return null;
@@ -423,8 +448,9 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
     return 'Only HTTP(S) URLs are allowed';
   }
 
-  // Self-hosted deployments can set ALLOW_LOCAL_NETWORKS=true to skip private-IP
-  // checks. Cloud instance metadata endpoints stay blocked either way.
+  // Self-hosted deployments can set ALLOW_LOCAL_NETWORKS=true to allow private,
+  // loopback, link-local and CGNAT targets. Cloud instance metadata endpoints
+  // and IANA reserved/multicast/broadcast ranges stay blocked either way.
   const allowLocal = allowLocalNetworksEnabled();
   const hostname = normalizeAddress(parsed.hostname);
 
@@ -433,17 +459,17 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
     return CLOUD_METADATA_BLOCK_MESSAGE;
   }
 
-  // Special-use ranges (CGNAT, IANA reserved, multicast, broadcast) are never
-  // valid proxy targets, so this applies even when the local-network opt-in is
-  // set - matching the connect-time dispatcher policy. It also covers the case
-  // Node never runs `connect.lookup` for: an IP-literal URL.
+  // IANA reserved/special-use blocks and multicast/broadcast are never valid
+  // proxy targets, so this applies even when the local-network opt-in is set -
+  // matching the connect-time dispatcher policy. It also covers the case Node
+  // never runs `connect.lookup` for: an IP-literal URL.
   if (isNeverAllowedRange(hostname)) {
     return LOCAL_NETWORK_BLOCK_MESSAGE;
   }
 
   if (allowLocal) {
-    // The flag is for loopback/RFC1918/.local targets (local Ollama, compose
-    // networks, split-horizon DNS).
+    // The flag is for loopback/RFC1918/.local and CGNAT/overlay targets (local
+    // Ollama, compose networks, Tailscale, split-horizon DNS).
     if (isIP(hostname)) {
       return null;
     }
@@ -472,7 +498,7 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
     hostname.endsWith('.local') ||
     hostname === '0.0.0.0' ||
     hostname === '::1' ||
-    isPrivateIP(hostname)
+    isOptInGovernedRange(hostname)
   ) {
     return LOCAL_NETWORK_BLOCK_MESSAGE;
   }
@@ -497,7 +523,9 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
   }
 
   if (
-    resolvedAddresses.some(({ address }) => isPrivateIP(address) || isNeverAllowedRange(address))
+    resolvedAddresses.some(
+      ({ address }) => isOptInGovernedRange(address) || isNeverAllowedRange(address),
+    )
   ) {
     return LOCAL_NETWORK_BLOCK_MESSAGE;
   }
