@@ -33,8 +33,8 @@ import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { wrapLanguageModel, extractReasoningMiddleware } from 'ai';
 import {
-  createKimiReasoningPreservationMiddleware,
-  restoreKimiReasoningInRequestBody,
+  createReasoningPreservationMiddleware,
+  restoreReasoningContentInRequestBody,
   wrapJsonResponseWithReasoning,
   wrapResponseWithReasoning,
 } from './reasoning-sse';
@@ -1717,7 +1717,12 @@ function getCompatThinkingBodyParams(
       if (mode === 'disabled' || config.effort === 'none') {
         return { thinking: { type: 'disabled' } };
       }
-
+      // No explicit effort: send the thinking toggle alone. Tool-using
+      // transports (the agent driver) cannot combine reasoning_effort with
+      // function tools, and DeepSeek applies its own default effort anyway.
+      if (config.effort === undefined) {
+        return { thinking: { type: 'enabled' } };
+      }
       const effort = config.effort === 'max' || config.effort === 'xhigh' ? 'max' : 'high';
       return {
         thinking: { type: 'enabled' },
@@ -2261,14 +2266,20 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           }
 
           if (
-            providerId === 'kimi' &&
-            config.modelId === 'kimi-k3' &&
             init?.body &&
-            typeof init.body === 'string'
+            typeof init.body === 'string' &&
+            ((providerId === 'kimi' && config.modelId === 'kimi-k3') || providerId === 'deepseek')
           ) {
             try {
               const body = JSON.parse(init.body);
-              restoreKimiReasoningInRequestBody(body);
+              restoreReasoningContentInRequestBody(body);
+              if (providerId === 'deepseek' && body.thinking?.type === 'enabled') {
+                for (const message of body.messages ?? []) {
+                  if (message?.role === 'assistant' && message.reasoning_content === undefined) {
+                    message.reasoning_content = '';
+                  }
+                }
+              }
               init = { ...init, body: JSON.stringify(body) };
             } catch {
               /* leave body as-is */
@@ -2292,7 +2303,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           }
           const normalizedReasoningResponse = streaming
             ? wrapResponseWithReasoning(response)
-            : providerId === 'kimi' && config.modelId === 'kimi-k3'
+            : (providerId === 'kimi' && config.modelId === 'kimi-k3') || providerId === 'deepseek'
               ? await wrapJsonResponseWithReasoning(response)
               : response;
 
@@ -2349,13 +2360,15 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       // Split it into first-class reasoning parts so the agent stream and UI can
       // show a thinking panel and the answer text stays clean.
       if (usesCompatTransport) {
-        const middleware =
-          config.providerId === 'kimi' && config.modelId === 'kimi-k3'
-            ? [
-                createKimiReasoningPreservationMiddleware(),
-                extractReasoningMiddleware({ tagName: 'think' }),
-              ]
-            : extractReasoningMiddleware({ tagName: 'think' });
+        const preservesReasoning =
+          (config.providerId === 'kimi' && config.modelId === 'kimi-k3') ||
+          config.providerId === 'deepseek';
+        const middleware = preservesReasoning
+          ? [
+              createReasoningPreservationMiddleware(),
+              extractReasoningMiddleware({ tagName: 'think' }),
+            ]
+          : extractReasoningMiddleware({ tagName: 'think' });
         model = wrapLanguageModel({
           model,
           middleware,
