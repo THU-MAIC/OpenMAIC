@@ -1011,6 +1011,8 @@
     "ungrouped": "Non classés",
     "notFound": "Cours introuvable",
     "notFoundDesc": "Ce cours n’existe pas ou a été supprimé.",
+    "loadUnavailable": "Impossible de charger ce cours",
+    "loadUnavailableDesc": "Le serveur n'a pas répondu. Veuillez réessayer.",
     "backToHome": "Retour à l’accueil"
   },
   "upload": {

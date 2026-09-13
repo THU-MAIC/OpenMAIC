@@ -1011,6 +1011,8 @@
     "deleteFolderConfirmRemove": "Папка и её курсы (включая историю чата) будут удалены.",
     "notFound": "Курс не найден",
     "notFoundDesc": "Этот курс не существует или был удалён.",
+    "loadUnavailable": "Не удалось загрузить курс",
+    "loadUnavailableDesc": "Сервер не ответил. Попробуйте ещё раз.",
     "backToHome": "На главную"
   },
   "upload": {

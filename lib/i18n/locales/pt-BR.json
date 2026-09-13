@@ -1011,6 +1011,8 @@
     "deleteFolderConfirmRemove": "Isto remove a pasta e seus cursos, incluindo o histórico de chat.",
     "notFound": "Curso não encontrado",
     "notFoundDesc": "Este curso não existe ou foi excluído.",
+    "loadUnavailable": "Não foi possível carregar este curso",
+    "loadUnavailableDesc": "O servidor não respondeu. Tente novamente.",
     "backToHome": "Voltar ao início"
   },
   "upload": {

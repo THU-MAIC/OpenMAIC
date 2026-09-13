@@ -996,6 +996,8 @@
     "deleteFolderAndCourses_other": "刪除資料夾和 {{count}} 門課程",
     "notFound": "找不到這門課程",
     "notFoundDesc": "課程不存在，或已被刪除。",
+    "loadUnavailable": "暫時無法載入這門課程",
+    "loadUnavailableDesc": "伺服器沒有正常回應，請重試。",
     "backToHome": "返回首頁"
   },
   "upload": {

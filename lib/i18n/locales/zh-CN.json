@@ -1011,6 +1011,8 @@
     "deleteFolderAndCourses_other": "删除文件夹和 {{count}} 门课程",
     "notFound": "找不到这门课程",
     "notFoundDesc": "课程不存在，或已被删除。",
+    "loadUnavailable": "暂时无法加载这门课程",
+    "loadUnavailableDesc": "服务器没有正常响应，请重试。",
     "backToHome": "返回首页"
   },
   "upload": {

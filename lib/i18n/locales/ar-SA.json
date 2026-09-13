@@ -1011,6 +1011,8 @@
     "deleteFolderAndCourses_other": "حذف المجلد و {{count}} دورة",
     "notFound": "لم يتم العثور على الدورة",
     "notFoundDesc": "هذه الدورة غير موجودة أو تم حذفها.",
+    "loadUnavailable": "تعذر تحميل هذه الدورة",
+    "loadUnavailableDesc": "لم يستجب الخادم. يرجى المحاولة مرة أخرى.",
     "backToHome": "العودة إلى الصفحة الرئيسية"
   },
   "upload": {
