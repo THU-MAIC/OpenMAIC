@@ -107,6 +107,11 @@ export async function POST(request: NextRequest) {
     log.error(`Proxy media failed [url="${url?.substring(0, 100) ?? 'unknown'}"]:`, error);
     return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
   } finally {
-    await dispatcher?.close().catch(() => undefined);
+    // The response blob (if any) is already fully in memory here, so tear the
+    // pool down immediately instead of draining it. `close()` waits for
+    // in-flight requests, and the response body is intentionally left unread on
+    // the 30x, non-2xx, oversize and connect-refusal paths, so awaiting it would
+    // hang the handler until the upstream ends a body nobody reads.
+    void dispatcher?.destroy().catch(() => undefined);
   }
 }

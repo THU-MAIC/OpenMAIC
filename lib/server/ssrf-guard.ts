@@ -132,6 +132,30 @@ function isCloudMetadataAddress(value: string): boolean {
   return tunnelEmbeddedIPv4(canonical).some((embedded) => CLOUD_METADATA_ADDRESSES.has(embedded));
 }
 
+/**
+ * Ranges that are never valid outbound proxy targets, with or without
+ * `ALLOW_LOCAL_NETWORKS`: carrier-grade NAT (100.64.0.0/10), IANA reserved and
+ * special-use blocks (240.0.0.0/4, 198.18.0.0/15, the TEST-NET blocks,
+ * 192.0.0.0/24, ...), multicast and broadcast. Private, loopback and link-local
+ * ranges are deliberately excluded because allowing those is the whole point of
+ * the opt-in.
+ *
+ * Both `validateUrlForSSRF` and `connectionAddressBlockReason` apply this, so an
+ * IP-literal URL (for which Node never runs `connect.lookup`) and a hostname
+ * that resolves into the same range get the same decision.
+ */
+function isNeverAllowedRange(value: string): boolean {
+  const canonical = canonicalizeIp(value);
+  if (canonical === null) return false;
+  const range = ipaddr.parse(canonical).range();
+  return (
+    range === 'carrierGradeNat' ||
+    range === 'reserved' ||
+    range === 'multicast' ||
+    range === 'broadcast'
+  );
+}
+
 /** dns.lookup bounded by a timer; resolves to null on timeout so the caller decides. */
 async function lookupWithTimeout(
   hostname: string,
@@ -155,7 +179,9 @@ async function lookupWithTimeout(
 export function assertSafeIp(value: string): void {
   const canonical = canonicalizeIp(value);
   if (canonical === null) {
-    throw new UnsafeNetworkTargetError(`Unable to classify network address: ${value}`);
+    // Fail closed without echoing the unparseable address in the error, which
+    // can surface in a client-facing refusal.
+    throw new UnsafeNetworkTargetError('Local/private/reserved network URLs are not allowed');
   }
   if (
     isCloudMetadataAddress(canonical) ||
@@ -167,11 +193,12 @@ export function assertSafeIp(value: string): void {
 }
 
 /**
- * Classify a single connection-time address under the same local-network policy
- * `validateUrlForSSRF` applies to a DNS answer. Cloud metadata is refused
- * unconditionally; private/loopback/link-local/special-use answers are refused
- * unless the operator opted into local networks. Returns the guard's block
- * message, or null when the address is acceptable.
+ * Classify a single connection-time address under the same policy
+ * `validateUrlForSSRF` applies to a URL/DNS answer. Cloud metadata and
+ * special-use ranges (CGNAT, IANA reserved, multicast, broadcast) are refused
+ * unconditionally; private/loopback/link-local answers are refused unless the
+ * operator opted into local networks. Returns the guard's block message, or
+ * null when the address is acceptable.
  *
  * Used by the pinned dispatcher so the address the socket connects to is
  * judged by the same policy as the address the URL-layer guard saw, while the
@@ -183,15 +210,21 @@ export function connectionAddressBlockReason(
 ): string | null {
   const canonical = canonicalizeIp(value);
   if (canonical === null) {
-    return `Unable to classify network address: ${value}`;
+    // The route relays this message to the client in a 403 body, so do not echo
+    // the unparseable answer; fail closed with the generic block message.
+    return LOCAL_NETWORK_BLOCK_MESSAGE;
   }
   if (isCloudMetadataAddress(canonical)) {
     return CLOUD_METADATA_BLOCK_MESSAGE;
   }
+  // Special-use ranges are never legitimate proxy targets, opt-in or not.
+  if (isNeverAllowedRange(canonical)) {
+    return LOCAL_NETWORK_BLOCK_MESSAGE;
+  }
   if (allowLocalNetworks) {
     return null;
   }
-  if (isPrivateIP(canonical) || ipaddr.parse(canonical).range() !== 'unicast') {
+  if (isPrivateIP(canonical)) {
     return LOCAL_NETWORK_BLOCK_MESSAGE;
   }
   return null;
@@ -400,6 +433,14 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
     return CLOUD_METADATA_BLOCK_MESSAGE;
   }
 
+  // Special-use ranges (CGNAT, IANA reserved, multicast, broadcast) are never
+  // valid proxy targets, so this applies even when the local-network opt-in is
+  // set - matching the connect-time dispatcher policy. It also covers the case
+  // Node never runs `connect.lookup` for: an IP-literal URL.
+  if (isNeverAllowedRange(hostname)) {
+    return LOCAL_NETWORK_BLOCK_MESSAGE;
+  }
+
   if (allowLocal) {
     // The flag is for loopback/RFC1918/.local targets (local Ollama, compose
     // networks, split-horizon DNS).
@@ -408,9 +449,9 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
     }
     // Non-IP hostname: fail open when DNS errors, times out or returns nothing
     // (split-horizon DNS is an explicit flag use case), but never when an
-    // answer is a metadata address. This is a best-effort check against
-    // misconfiguration, not a defence against DNS rebinding: the provider
-    // fetch resolves the name again.
+    // answer is a metadata or special-use address. This is a best-effort check
+    // against misconfiguration, not a defence against DNS rebinding: the
+    // provider fetch resolves the name again.
     let resolvedAddresses: Array<{ address: string; family: number }> | null;
     try {
       resolvedAddresses = await lookupWithTimeout(hostname, ALLOW_LOCAL_DNS_TIMEOUT_MS);
@@ -419,6 +460,9 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
     }
     if (resolvedAddresses?.some(({ address }) => isCloudMetadataAddress(address))) {
       return CLOUD_METADATA_BLOCK_MESSAGE;
+    }
+    if (resolvedAddresses?.some(({ address }) => isNeverAllowedRange(address))) {
+      return LOCAL_NETWORK_BLOCK_MESSAGE;
     }
     return null;
   }
@@ -452,7 +496,9 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
     return CLOUD_METADATA_BLOCK_MESSAGE;
   }
 
-  if (resolvedAddresses.some(({ address }) => isPrivateIP(address))) {
+  if (
+    resolvedAddresses.some(({ address }) => isPrivateIP(address) || isNeverAllowedRange(address))
+  ) {
     return LOCAL_NETWORK_BLOCK_MESSAGE;
   }
 

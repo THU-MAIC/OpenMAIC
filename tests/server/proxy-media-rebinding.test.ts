@@ -12,6 +12,7 @@ import type { AddressInfo } from 'node:net';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
+import { Agent, getGlobalDispatcher, setGlobalDispatcher, type Dispatcher } from 'undici';
 
 const dnsMocks = vi.hoisted(() => ({
   promisesLookup: vi.fn(),
@@ -60,6 +61,26 @@ function answerWith(addresses: Answer[]) {
   };
 }
 
+/**
+ * Connect-time lookup that ignores the requested name and answers loopback,
+ * standing in for attacker-controlled DNS. Installed as the *global* dispatcher
+ * so a route that forgets to pass its own pinned dispatcher actually reaches the
+ * loopback server, instead of failing for the unrelated reason that the
+ * synthetic hostname does not resolve. `setGlobalDispatcher` writes the symbol
+ * Node's bundled `fetch` reads, so the unpinned path is genuinely exercised.
+ */
+function answerLoopback(
+  _hostname: string,
+  options: { all?: boolean },
+  callback: (...args: unknown[]) => void,
+): void {
+  if (options?.all) {
+    callback(null, [{ address: '127.0.0.1', family: 4 }]);
+  } else {
+    callback(null, '127.0.0.1', 4);
+  }
+}
+
 async function postProxy(body: Record<string, unknown>) {
   const { POST } = await import('@/app/api/proxy-media/route');
   const req = new Request('http://localhost/api/proxy-media', {
@@ -98,15 +119,30 @@ async function startLoopback(
 
 const originalAllowLocal = process.env.ALLOW_LOCAL_NETWORKS;
 
+let previousGlobalDispatcher: Dispatcher | undefined;
+let attackerDispatcher: Agent | undefined;
+
 describe('POST /api/proxy-media DNS-rebinding hardening', () => {
   beforeEach(() => {
     vi.resetModules();
     dnsMocks.promisesLookup.mockReset();
     dnsMocks.callbackLookup.mockReset();
     delete process.env.ALLOW_LOCAL_NETWORKS;
+
+    // Make the unpinned fetch path actually connect: without this, a route that
+    // drops its dispatcher would go red only because the synthetic hostname does
+    // not resolve, not because the attacker reached the loopback server.
+    previousGlobalDispatcher = getGlobalDispatcher();
+    attackerDispatcher = new Agent({ connect: { lookup: answerLoopback as never } });
+    setGlobalDispatcher(attackerDispatcher);
   });
 
   afterEach(async () => {
+    if (previousGlobalDispatcher) {
+      setGlobalDispatcher(previousGlobalDispatcher);
+    }
+    await attackerDispatcher?.destroy();
+    attackerDispatcher = undefined;
     if (originalAllowLocal === undefined) {
       delete process.env.ALLOW_LOCAL_NETWORKS;
     } else {
@@ -131,12 +167,17 @@ describe('POST /api/proxy-media DNS-rebinding hardening', () => {
     dnsMocks.callbackLookup.mockImplementation(answerWith(LOOPBACK));
 
     const res = await postProxy({ url: `http://rebind.test:${internal.port}/secret` });
+
+    // The global attacker dispatcher would have answered loopback here, so a
+    // route that fails to pin its connect-time lookup reaches the server and
+    // fails on this count before the response shape is even inspected.
+    expect(internal.requests()).toBe(0);
+
     const json = await res.json();
 
     expect(res.status).toBe(403);
     expect(json).toMatchObject({ errorCode: 'INVALID_URL' });
     expect(json.error).toContain(PRIVATE_BLOCK_MESSAGE);
-    expect(internal.requests()).toBe(0);
   });
 
   it('proxies a local target with ALLOW_LOCAL_NETWORKS=true through the pinned path', async () => {
@@ -152,6 +193,13 @@ describe('POST /api/proxy-media DNS-rebinding hardening', () => {
     expect(res.headers.get('Content-Type')).toBe('image/png');
     expect(body).toEqual(new Uint8Array([1, 2, 3, 4]));
     expect(media.requests()).toBe(1);
+    // A runtime that silently ignored `init.dispatcher` would fall back to the
+    // global attacker dispatcher and never run the pinned lookup at all.
+    expect(dnsMocks.callbackLookup).toHaveBeenCalledWith(
+      'internal.test',
+      expect.anything(),
+      expect.any(Function),
+    );
   });
 
   it('still refuses a metadata answer at connect time with ALLOW_LOCAL_NETWORKS=true', async () => {
@@ -204,5 +252,85 @@ describe('POST /api/proxy-media DNS-rebinding hardening', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(dispatchersSeen[0]).toBeDefined();
     expect(dispatchersSeen[1]).toBeDefined();
+  });
+
+  /**
+   * `Agent.close()` waits for in-flight requests to drain, and the route never
+   * reads the body on its early-return paths, so an upstream that trickles
+   * forever would hang the handler. These tests pin the dispatcher teardown to
+   * `destroy()` by asserting the route settles well under a second.
+   */
+  it('returns a forwarded 404 promptly when the upstream body never ends', async () => {
+    const slow = await startLoopback((_req, res) => {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.write('not found');
+      const trickle = setInterval(() => res.write('.'), 20);
+      res.on('close', () => clearInterval(trickle));
+    });
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    dnsMocks.promisesLookup.mockResolvedValue(LOOPBACK);
+    dnsMocks.callbackLookup.mockImplementation(answerWith(LOOPBACK));
+
+    const started = Date.now();
+    const res = await postProxy({ url: `http://trickle.test:${slow.port}/missing` });
+    const elapsed = Date.now() - started;
+    const json = await res.json();
+
+    expect(res.status).toBe(404);
+    expect(json).toMatchObject({ errorCode: 'UPSTREAM_ERROR' });
+    expect(elapsed).toBeLessThan(1000);
+    expect(slow.requests()).toBe(1);
+  });
+
+  it('follows a 30x whose body never ends and still returns the final asset', async () => {
+    const server = await startLoopback((req, res) => {
+      if (req.url === '/start') {
+        res.writeHead(302, { Location: '/final', 'Content-Type': 'text/plain' });
+        res.write('redirecting');
+        const trickle = setInterval(() => res.write('.'), 20);
+        res.on('close', () => clearInterval(trickle));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      res.end(Buffer.from([9, 8, 7]));
+    });
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    dnsMocks.promisesLookup.mockResolvedValue(LOOPBACK);
+    dnsMocks.callbackLookup.mockImplementation(answerWith(LOOPBACK));
+
+    const started = Date.now();
+    const res = await postProxy({ url: `http://trickle.test:${server.port}/start` });
+    const elapsed = Date.now() - started;
+    const body = new Uint8Array(await res.arrayBuffer());
+
+    expect(res.status).toBe(200);
+    expect(body).toEqual(new Uint8Array([9, 8, 7]));
+    expect(elapsed).toBeLessThan(1000);
+    expect(server.requests()).toBe(2);
+  });
+
+  it('returns the size-cap 502 promptly when the upstream body never ends', async () => {
+    const huge = await startLoopback((_req, res) => {
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': String(26 * 1024 * 1024),
+      });
+      res.write('x');
+      const trickle = setInterval(() => res.write('.'), 20);
+      res.on('close', () => clearInterval(trickle));
+    });
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    dnsMocks.promisesLookup.mockResolvedValue(LOOPBACK);
+    dnsMocks.callbackLookup.mockImplementation(answerWith(LOOPBACK));
+
+    const started = Date.now();
+    const res = await postProxy({ url: `http://trickle.test:${huge.port}/huge` });
+    const elapsed = Date.now() - started;
+    const json = await res.json();
+
+    expect(res.status).toBe(502);
+    expect(json).toMatchObject({ errorCode: 'UPSTREAM_ERROR' });
+    expect(elapsed).toBeLessThan(1000);
+    expect(huge.requests()).toBe(1);
   });
 });
