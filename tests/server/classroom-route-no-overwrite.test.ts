@@ -145,6 +145,77 @@ describe('POST /api/classroom — create never overwrites', () => {
     expect(leftovers).toEqual([]);
   });
 
+  it('falls back to an exclusive wx open when the filesystem cannot hard-link', async () => {
+    const id = 'nohardlink1';
+    const filePath = path.join(tmpDir, `${id}.json`);
+    const linkSpy = vi
+      .spyOn(fs, 'link')
+      .mockRejectedValue(Object.assign(new Error('operation not supported'), { code: 'ENOTSUP' }));
+    try {
+      // The link fast path is unavailable, so the create succeeds through `wx`.
+      await expect(
+        storage.writeJsonFileExclusive(filePath, { id, marker: 'first' }),
+      ).resolves.toBeUndefined();
+      // The spy really intercepted the storage layer's link call: without the
+      // fallback the rejected link would have propagated.
+      expect(linkSpy).toHaveBeenCalledTimes(1);
+      // `wx` is still exclusive: a second create on the same id is a collision.
+      await expect(
+        storage.writeJsonFileExclusive(filePath, { id, marker: 'second' }),
+      ).rejects.toMatchObject({
+        name: 'ClassroomAlreadyExistsError',
+        code: 'EEXIST',
+      });
+
+      const written = JSON.parse(await fs.readFile(filePath, 'utf-8')) as { marker: string };
+      expect(written.marker).toBe('first');
+    } finally {
+      linkSpy.mockRestore();
+    }
+
+    const leftovers = (await fs.readdir(tmpDir)).filter((entry) => entry.endsWith('.tmp'));
+    expect(leftovers).toEqual([]);
+  });
+
+  it('reserves an id exclusively and hides the placeholder from readClassroom', async () => {
+    const id = 'reserved01';
+    const stage = storedStage(id, 'Reserved');
+
+    await storage.reserveClassroom(id, stage);
+
+    // The placeholder exists on disk (so the id is claimed) but is not served.
+    const placeholder = JSON.parse(await readRaw(id)) as { reserved?: boolean };
+    expect(placeholder.reserved).toBe(true);
+    await expect(storage.readClassroom(id)).resolves.toBeNull();
+
+    // A second reservation of the same id is a collision.
+    await expect(storage.reserveClassroom(id, stage)).rejects.toMatchObject({
+      name: 'ClassroomAlreadyExistsError',
+      code: 'EEXIST',
+    });
+
+    // The final overwrite replaces the placeholder with the real document.
+    await storage.persistClassroom({ id, stage, scenes: [] }, 'http://localhost');
+    const stored = await storage.readClassroom(id);
+    expect(stored?.stage.name).toBe('Reserved');
+    expect(stored?.reserved).toBeUndefined();
+  });
+
+  it('propagates link errors that are not a missing-hard-link capability', async () => {
+    const id = 'linkerror1';
+    const filePath = path.join(tmpDir, `${id}.json`);
+    const failure = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    const linkSpy = vi.spyOn(fs, 'link').mockRejectedValue(failure);
+    try {
+      await expect(storage.writeJsonFileExclusive(filePath, { id })).rejects.toBe(failure);
+    } finally {
+      linkSpy.mockRestore();
+    }
+
+    const leftovers = (await fs.readdir(tmpDir)).filter((entry) => entry.endsWith('.tmp'));
+    expect(leftovers).toEqual([]);
+  });
+
   it('retries a colliding generated id and succeeds with a fresh one', async () => {
     const collideId = 'collide001';
     await storage.persistClassroom(

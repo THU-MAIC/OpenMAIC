@@ -73,14 +73,27 @@ export async function writeJsonFileAtomic(filePath: string, data: unknown) {
 }
 
 /**
+ * Error codes that mean "this filesystem has no hard links" rather than a real
+ * failure. Object-storage FUSE gateways (gcsfuse, s3fs, …) report `ENOSYS`,
+ * `ENOTSUP` or `EOPNOTSUPP`; some mounts report `EPERM` for `link(2)` even when
+ * it is merely unsupported; `EXDEV` covers a temp file that resolved to a
+ * different mount than the destination. On these the exclusive create falls
+ * back to `open(..., 'wx')`, which is exclusive everywhere. Any other code is a
+ * genuine failure and propagates unchanged.
+ */
+const LINK_UNSUPPORTED_CODES = new Set(['ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EXDEV']);
+
+/**
  * Create `filePath` with `data` only if it does not already exist.
  *
  * The payload is written to a temp file in the same directory and then
  * hard-linked into place. `link()` is atomic and fails with `EEXIST` when the
  * destination exists, so an existing file is never replaced, while concurrent
  * readers can only ever observe a complete document (the temp name is never
- * the target). The temp file is removed on every path. A collision surfaces as
- * a {@link ClassroomAlreadyExistsError}.
+ * the target). When the filesystem cannot do hard links the same content is
+ * written with an exclusive `wx` open instead — still never replacing an
+ * existing file, and still atomic against `EEXIST`. The temp file is removed on
+ * every path. A collision surfaces as a {@link ClassroomAlreadyExistsError}.
  */
 export async function writeJsonFileExclusive(filePath: string, data: unknown): Promise<void> {
   const dir = path.dirname(filePath);
@@ -90,7 +103,18 @@ export async function writeJsonFileExclusive(filePath: string, data: unknown): P
   const content = JSON.stringify(data, null, 2);
   try {
     await fs.writeFile(tempFilePath, content, 'utf-8');
-    await fs.link(tempFilePath, filePath);
+    try {
+      await fs.link(tempFilePath, filePath);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!code || !LINK_UNSUPPORTED_CODES.has(code)) {
+        // Includes EEXIST, which the outer catch maps to a collision.
+        throw error;
+      }
+      // No hard links here. `wx` is exclusive on every filesystem and has no
+      // link dependency; EEXIST surfaces exactly like the link path.
+      await fs.writeFile(filePath, content, { flag: 'wx' });
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
       throw new ClassroomAlreadyExistsError(path.basename(filePath, '.json'));
@@ -112,6 +136,13 @@ export interface PersistedClassroomData {
   stage: Stage;
   scenes: Scene[];
   createdAt: string;
+  /**
+   * Set only on the placeholder written by {@link reserveClassroom} before the
+   * slow media/TTS phases. A reserved document is not yet a classroom;
+   * {@link readClassroom} treats it as absent so an in-flight (or crashed)
+   * reservation is never served as an empty classroom.
+   */
+  reserved?: boolean;
 }
 
 export function isValidClassroomId(id: string): boolean {
@@ -138,13 +169,36 @@ export async function readClassroom(id: string): Promise<PersistedClassroomData 
   const filePath = resolveClassroomFilePath(id);
   try {
     const content = await fs.readFile(filePath, 'utf-8');
-    return JSON.parse(content) as PersistedClassroomData;
+    const parsed = JSON.parse(content) as PersistedClassroomData;
+    // A reservation is a placeholder, not a classroom: hide it so a reader that
+    // somehow learns the id before generation completes gets a 404 rather than
+    // an empty document.
+    return parsed.reserved ? null : parsed;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return null;
     }
     throw error;
   }
+}
+
+/**
+ * Reserve a classroom id by exclusively creating its file with a placeholder
+ * document before any media/TTS generation. The reservation claims the id (and
+ * therefore `<CLASSROOMS_DIR>/<id>/` too) for the lifetime of the generation,
+ * so a colliding id is rejected before any file lands in another classroom's
+ * directory. The caller owns the id and overwrites the placeholder with the
+ * final document when generation completes.
+ */
+export async function reserveClassroom(id: string, stage: Stage): Promise<void> {
+  const placeholder: PersistedClassroomData = {
+    id,
+    stage,
+    scenes: [],
+    createdAt: new Date().toISOString(),
+    reserved: true,
+  };
+  await writeJsonFileExclusive(resolveClassroomFilePath(id), placeholder);
 }
 
 export interface PersistClassroomOptions {

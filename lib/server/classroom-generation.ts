@@ -30,7 +30,7 @@ import {
   CLASSROOM_ID_MAX_ATTEMPTS,
   generateClassroomId,
   persistClassroom,
-  type PersistedClassroomData,
+  reserveClassroom,
 } from '@/lib/server/classroom-storage';
 import {
   generateMediaForClassroom,
@@ -179,32 +179,30 @@ Return a JSON object with this exact structure:
 }
 
 /**
- * Persist a freshly generated classroom under a server-generated id using the
- * exclusive create, retrying with a new id if that id is already taken. Mirrors
- * the create route so neither creation path can replace an existing classroom
- * file, and keeps the persisted stage/scenes bound to whichever id wins.
+ * Reserve the classroom id before generating any media or TTS.
+ *
+ * Media and TTS write into `<CLASSROOMS_DIR>/<id>/{media,audio}`, so the id must
+ * be claimed first: if the collision were only detected at persist time, the
+ * retry would already have written the new classroom's media into an existing
+ * classroom's directory and the retried document's media URLs would still point
+ * at that other id. The reservation is an exclusive create of the classroom file
+ * with a placeholder document (`reserved: true`, empty scenes) — the only token
+ * that atomically covers the whole collision namespace, because a classroom
+ * created through `POST /api/classroom` has a JSON file but no directory.
+ * `readClassroom` hides reserved documents, so an in-flight (or crashed)
+ * reservation is never served as an empty classroom. On `EEXIST` a fresh id is
+ * generated and retried, bounded exactly like the create route. The process now
+ * owns the id, so the final persist is an ordinary overwrite of that same file.
  */
-async function persistGeneratedClassroom(
-  stage: Stage,
-  scenes: Scene[],
-  baseUrl: string,
-): Promise<{
-  persisted: PersistedClassroomData & { url: string };
-  stage: Stage;
-  scenes: Scene[];
-}> {
-  let id = stage.id;
+async function reserveGeneratedClassroom(
+  buildStage: (id: string) => Stage,
+): Promise<{ id: string; stage: Stage }> {
   for (let attempt = 0; ; attempt += 1) {
-    const attemptStage: Stage = id === stage.id ? stage : { ...stage, id };
-    const attemptScenes: Scene[] =
-      id === stage.id ? scenes : scenes.map((scene) => ({ ...scene, stageId: id }));
+    const id = generateClassroomId();
+    const stage = buildStage(id);
     try {
-      const persisted = await persistClassroom(
-        { id, stage: attemptStage, scenes: attemptScenes },
-        baseUrl,
-        { exclusive: true },
-      );
-      return { persisted, stage: attemptStage, scenes: attemptScenes };
+      await reserveClassroom(id, stage);
+      return { id, stage };
     } catch (error) {
       if (
         !(error instanceof ClassroomAlreadyExistsError) ||
@@ -212,8 +210,7 @@ async function persistGeneratedClassroom(
       ) {
         throw error;
       }
-      log.warn(`Classroom id "${id}" already exists; retrying with a fresh id`);
-      id = generateClassroomId();
+      log.warn(`Classroom id "${id}" already exists; reserving a fresh id`);
     }
   }
 }
@@ -564,9 +561,8 @@ export async function generateClassroom(
     agents = getDefaultAgents();
   }
 
-  const stageId = generateClassroomId();
-  const stage: Stage = {
-    id: stageId,
+  const { id: stageId, stage } = await reserveGeneratedClassroom((id) => ({
+    id,
     name: courseTitle || outlines[0]?.title || requirement.slice(0, 50),
     description: undefined,
     languageDirective,
@@ -592,7 +588,7 @@ export async function generateClassroom(
       : {
           agentIds: agents.map((a) => a.id),
         }),
-  };
+  }));
 
   const store = createInMemoryStore(stage);
   const api = createStageAPI(store);
@@ -753,11 +749,9 @@ export async function generateClassroom(
     totalScenes: outlines.length,
   });
 
-  const {
-    persisted,
-    stage: persistedStage,
-    scenes: persistedScenes,
-  } = await persistGeneratedClassroom(stage, scenes, options.baseUrl);
+  // The id was reserved before media/TTS generation, so the process owns it and
+  // this is an ordinary overwrite that replaces the placeholder.
+  const persisted = await persistClassroom({ id: stageId, stage, scenes }, options.baseUrl);
 
   log.info(`Classroom persisted: ${persisted.id}, URL: ${persisted.url}`);
 
@@ -765,16 +759,16 @@ export async function generateClassroom(
     step: 'completed',
     progress: 100,
     message: 'Classroom generation completed',
-    scenesGenerated: persistedScenes.length,
+    scenesGenerated: persisted.scenes.length,
     totalScenes: outlines.length,
   });
 
   return {
     id: persisted.id,
     url: persisted.url,
-    stage: persistedStage,
-    scenes: persistedScenes,
-    scenesCount: persistedScenes.length,
+    stage: persisted.stage,
+    scenes: persisted.scenes,
+    scenesCount: persisted.scenes.length,
     createdAt: persisted.createdAt,
   };
 }
