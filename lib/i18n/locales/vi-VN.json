@@ -1011,6 +1011,8 @@
     "deleteFolderConfirmRemove": "Thao tác này xóa thư mục cùng các bài học bên trong, gồm cả lịch sử trò chuyện.",
     "notFound": "Không tìm thấy khóa học",
     "notFoundDesc": "Khóa học này không tồn tại hoặc đã bị xóa.",
+    "loadUnavailable": "Không tải được khóa học này",
+    "loadUnavailableDesc": "Máy chủ không phản hồi. Vui lòng thử lại.",
     "backToHome": "Về trang chủ"
   },
   "upload": {

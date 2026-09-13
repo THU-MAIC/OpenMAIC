@@ -34,6 +34,30 @@ export interface ClassroomPayload {
   scenes: Scene[];
 }
 
+/**
+ * What `/api/classroom` had to say — three outcomes, matching the stage-meta
+ * sidecar. Callers must not collapse `'unavailable'` into absence: a 5xx or
+ * transport failure is not proof the course does not exist (#1450).
+ */
+export type ClassroomFetchResult =
+  | { outcome: 'found'; classroom: ClassroomPayload }
+  | { outcome: 'absent' }
+  | { outcome: 'unavailable'; status?: number };
+
+/**
+ * What a classroom load concluded about the document itself.
+ *
+ * `'ready'` means this course is in the store (local and/or server).
+ * `'absent'` is a positive miss (404/410 or an empty success body).
+ * `'unavailable'` is the ABSENCE of an answer — retryable, never "not found".
+ */
+export type ClassroomLoadResult =
+  | { outcome: 'ready' }
+  | { outcome: 'absent' }
+  | { outcome: 'unavailable' }
+  | { outcome: 'failed' }
+  | { outcome: 'cancelled' };
+
 interface Logger {
   info: (...args: unknown[]) => void;
   warn: (...args: unknown[]) => void;
@@ -62,7 +86,7 @@ export interface RunClassroomLoadArgs<TMediaTasks = unknown> {
   fetchClassroom: (
     classroomId: string,
     shouldConvert?: () => boolean,
-  ) => Promise<ClassroomPayload | null>;
+  ) => Promise<ClassroomFetchResult>;
   applyFallbackScenes: (args: {
     loadToken: StageSceneLoadToken;
     stage: Stage;
@@ -128,10 +152,10 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
   setError,
   setLoading,
   log,
-}: RunClassroomLoadArgs<TMediaTasks>): Promise<void> {
+}: RunClassroomLoadArgs<TMediaTasks>): Promise<ClassroomLoadResult> {
   try {
     await loadFromStorage(classroomId, loadToken);
-    if (!isCurrent()) return;
+    if (!isCurrent()) return { outcome: 'cancelled' };
 
     if (!getCurrentStage()) {
       log.info('No IndexedDB data, trying server-side storage for:', classroomId);
@@ -139,32 +163,42 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
       // Once it returns, the document owns every allocation; a later
       // navigation may discard only this in-memory apply, never the durable
       // assets -- so nothing here rolls allocations back.
-      const classroom = await fetchClassroom(classroomId, isCurrent);
-      if (!isCurrent()) return;
+      const fetchResult = await fetchClassroom(classroomId, isCurrent);
+      if (!isCurrent()) return { outcome: 'cancelled' };
 
-      if (classroom) {
-        const { stage, scenes } = classroom;
+      if (fetchResult.outcome === 'unavailable') {
+        // Do not continue into media/roster hydration or let the surface treat
+        // this as not-found: we never got a positive answer about the course.
+        return { outcome: 'unavailable' };
+      }
+
+      if (fetchResult.outcome === 'found') {
+        const { stage, scenes } = fetchResult.classroom;
         const applied = await applyFallbackScenes({ loadToken, stage, scenes });
-        if (!isCurrent()) return;
+        if (!isCurrent()) return { outcome: 'cancelled' };
         if (!applied) {
           log.info('Stage changed during server-side fallback hydration, skipping load:', {
             requestedStageId: stage.id,
             latestStageId: getCurrentStage()?.id,
           });
-          return;
+          return { outcome: 'cancelled' };
         }
         log.info('Loaded from server-side storage:', classroomId);
+      } else {
+        // Positive absence from the server (and nothing local). Stop before
+        // inventing a loaded empty classroom.
+        return { outcome: 'absent' };
       }
     }
 
-    if (!isCurrent()) return;
+    if (!isCurrent()) return { outcome: 'cancelled' };
     // Metadata-only on the critical path: the default loader defers object-URL
     // creation for non-priority blobs, so this await is a table read, not a
     // full media hydration (the rest hydrates in the background after apply).
     const mediaTasks = await loadRestoredMediaTasks(classroomId);
     if (!isCurrent()) {
       discardRestoredMediaTasks(mediaTasks);
-      return;
+      return { outcome: 'cancelled' };
     }
     applyRestoredMediaTasks(mediaTasks);
 
@@ -179,7 +213,7 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     // mirror is not re-queried on every load of a classroom that has nothing
     // to migrate. A FAILED mirror read is neither merged nor remembered — the
     // next load retries the probe.
-    if (!isCurrent()) return;
+    if (!isCurrent()) return { outcome: 'cancelled' };
     const stageForRoster = getCurrentStage();
     // The absent-vs-empty distinction is load-bearing and deliberately NOT
     // collapsed here: `undefined` means the document predates roster
@@ -197,7 +231,7 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
       const fallbacks = await loadLegacyAgentFallbacks(classroomId);
       // The registry is a global singleton: after any await, re-check that this
       // load is still current before letting the merged roster land anywhere.
-      if (!isCurrent()) return;
+      if (!isCurrent()) return { outcome: 'cancelled' };
       // `null` = the mirror read FAILED (not "mirror is empty"). Skip both
       // the merge and the memo so the next load retries the probe once
       // storage recovers — a transient IndexedDB error must not become a
@@ -217,10 +251,10 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
       }
     }
 
-    if (!isCurrent()) return;
+    if (!isCurrent()) return { outcome: 'cancelled' };
     const generatedAgentIds = applyGeneratedAgents(classroomId, effectiveConfigs);
 
-    if (!isCurrent()) return;
+    if (!isCurrent()) return { outcome: 'cancelled' };
     const settings = getSettings();
     const { selection: next, isUserSet } = restoreSelection({
       persisted: { mode: settings.agentMode, selectedAgentIds: settings.selectedAgentIds },
@@ -233,7 +267,7 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
       },
     });
 
-    if (!isCurrent()) return;
+    if (!isCurrent()) return { outcome: 'cancelled' };
     if (next.mode !== settings.agentMode) settings.setAgentMode(next.mode);
     if (next.selectedAgentIds !== settings.selectedAgentIds) {
       settings.setSelectedAgentIds(next.selectedAgentIds);
@@ -241,11 +275,13 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     if (isUserSet !== settings.agentSelectionIsUserSet) {
       settings.setAgentSelectionIsUserSet(isUserSet);
     }
+    return { outcome: 'ready' };
   } catch (error) {
     log.error('Failed to load classroom:', error);
     if (isCurrent()) {
       setError(error instanceof Error ? error.message : 'Failed to load classroom');
     }
+    return isCurrent() ? { outcome: 'failed' } : { outcome: 'cancelled' };
   } finally {
     if (isCurrent()) {
       setLoading(false);
@@ -257,16 +293,26 @@ export async function fetchClassroomFromApi(
   classroomId: string,
   _shouldConvert: () => boolean = () => true,
   _deps: DocumentMigrationDeps = {},
-): Promise<ClassroomPayload | null> {
-  const res = await fetch(`/api/classroom?id=${encodeURIComponent(classroomId)}`);
-  if (!res.ok) return null;
+  fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+): Promise<ClassroomFetchResult> {
+  try {
+    const res = await fetchImpl(`/api/classroom?id=${encodeURIComponent(classroomId)}`);
+    if (!res.ok) {
+      // 404 / 410 are positive answers about absence (never existed / gone).
+      // Every other non-OK status — notably 5xx — is an outage, not a miss.
+      if (res.status === 404 || res.status === 410) return { outcome: 'absent' };
+      return { outcome: 'unavailable', status: res.status };
+    }
 
-  const json = (await res.json()) as {
-    success?: boolean;
-    classroom?: ClassroomPayload;
-  };
-  if (!json.success || !json.classroom) return null;
-  return json.classroom;
+    const json = (await res.json()) as {
+      success?: boolean;
+      classroom?: ClassroomPayload;
+    };
+    if (!json.success || !json.classroom) return { outcome: 'absent' };
+    return { outcome: 'found', classroom: json.classroom };
+  } catch {
+    return { outcome: 'unavailable' };
+  }
 }
 
 export function applyClassroomStageAndScenes(

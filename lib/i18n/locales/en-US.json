@@ -1011,6 +1011,8 @@
     "deleteFolderConfirmRemove": "This removes the folder and its courses, including chat history.",
     "notFound": "Course not found",
     "notFoundDesc": "This course does not exist, or it has been deleted.",
+    "loadUnavailable": "Couldn't load this course",
+    "loadUnavailableDesc": "The server did not answer. Please try again.",
     "backToHome": "Back to home"
   },
   "upload": {

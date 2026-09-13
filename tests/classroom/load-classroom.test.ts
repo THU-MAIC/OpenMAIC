@@ -121,7 +121,7 @@ function makeDeps(overrides: Partial<Parameters<typeof runClassroomLoad>[0]> = {
     isCurrent: () => current,
     loadFromStorage: vi.fn().mockResolvedValue(undefined),
     getCurrentStage: () => stage,
-    fetchClassroom: vi.fn().mockResolvedValue(null),
+    fetchClassroom: vi.fn().mockResolvedValue({ outcome: 'absent' }),
     applyFallbackScenes: vi.fn().mockResolvedValue(false),
     loadRestoredMediaTasks: vi.fn().mockResolvedValue({}),
     applyRestoredMediaTasks: vi.fn(),
@@ -233,7 +233,12 @@ describe('runClassroomLoad', () => {
         classroomId: 'stage-warm-ghost',
         loadFromStorage: (id, token) => useStageStore.getState().loadFromStorage(id, token),
         getCurrentStage: () => useStageStore.getState().stage,
-        fetchClassroom: vi.fn().mockResolvedValue({ stage: serverStage, scenes: [serverScene] }),
+        fetchClassroom: vi
+          .fn()
+          .mockResolvedValue({
+            outcome: 'found',
+            classroom: { stage: serverStage, scenes: [serverScene] },
+          }),
         applyFallbackScenes: vi.fn().mockImplementation(async ({ stage, scenes }) => {
           applyClassroomStageAndScenes(stage, scenes, { persist: false });
           return true;
@@ -289,7 +294,12 @@ describe('runClassroomLoad', () => {
         classroomId: 'stage-zero-ghost',
         loadFromStorage: (id, token) => useStageStore.getState().loadFromStorage(id, token),
         getCurrentStage: () => useStageStore.getState().stage,
-        fetchClassroom: vi.fn().mockResolvedValue({ stage: serverStage, scenes: [serverScene] }),
+        fetchClassroom: vi
+          .fn()
+          .mockResolvedValue({
+            outcome: 'found',
+            classroom: { stage: serverStage, scenes: [serverScene] },
+          }),
         applyFallbackScenes: vi.fn().mockImplementation(async ({ stage, scenes }) => {
           applyClassroomStageAndScenes(stage, scenes, { persist: false });
           return true;
@@ -413,7 +423,12 @@ describe('runClassroomLoad', () => {
         loadToken: token,
         loadFromStorage: (id, t) => useStageStore.getState().loadFromStorage(id, t),
         getCurrentStage: () => useStageStore.getState().stage,
-        fetchClassroom: vi.fn().mockResolvedValue({ stage: serverStage, scenes: [serverScene] }),
+        fetchClassroom: vi
+          .fn()
+          .mockResolvedValue({
+            outcome: 'found',
+            classroom: { stage: serverStage, scenes: [serverScene] },
+          }),
         applyFallbackScenes: vi.fn().mockImplementation(async ({ stage, scenes }) => {
           applyClassroomStageAndScenes(stage, scenes, { persist: false });
           return true;
@@ -657,7 +672,7 @@ describe('runClassroomLoad', () => {
   });
 
   it('stops after fetch when the load is superseded', async () => {
-    const fetched = deferred<{ stage: Stage; scenes: Scene[] } | null>();
+    const fetched = deferred<import('@/lib/classroom/load-classroom').ClassroomFetchResult>();
     const { deps, setCurrent } = makeDeps({
       fetchClassroom: vi.fn().mockReturnValue(fetched.promise),
     });
@@ -666,7 +681,10 @@ describe('runClassroomLoad', () => {
     await vi.waitFor(() => expect(deps.fetchClassroom).toHaveBeenCalled());
 
     setCurrent(false);
-    fetched.resolve({ stage: makeStage('stage-a'), scenes: [makeScene('scene-a', 'stage-a')] });
+    fetched.resolve({
+      outcome: 'found',
+      classroom: { stage: makeStage('stage-a'), scenes: [makeScene('scene-a', 'stage-a')] },
+    });
     await loading;
 
     expect(deps.applyFallbackScenes).not.toHaveBeenCalled();
@@ -679,8 +697,11 @@ describe('runClassroomLoad', () => {
     const applied = deferred<boolean>();
     const { deps, setCurrent } = makeDeps({
       fetchClassroom: vi.fn().mockResolvedValue({
-        stage: makeStage('stage-a', [makeAgentConfig('agent-a')]),
-        scenes: [makeScene('scene-a', 'stage-a')],
+        outcome: 'found',
+        classroom: {
+          stage: makeStage('stage-a', [makeAgentConfig('agent-a')]),
+          scenes: [makeScene('scene-a', 'stage-a')],
+        },
       }),
       applyFallbackScenes: vi.fn().mockReturnValue(applied.promise),
     });
@@ -706,8 +727,11 @@ describe('runClassroomLoad', () => {
     const applied = deferred<boolean>();
     const { deps, setCurrent } = makeDeps({
       fetchClassroom: vi.fn().mockResolvedValue({
-        stage: makeStage('stage-a'),
-        scenes: [makeScene('scene-a', 'stage-a')],
+        outcome: 'found',
+        classroom: {
+          stage: makeStage('stage-a'),
+          scenes: [makeScene('scene-a', 'stage-a')],
+        },
       }),
       applyFallbackScenes: vi.fn().mockReturnValue(applied.promise),
     });
@@ -948,7 +972,9 @@ describe('runClassroomLoad', () => {
     const scene = makeScene('scene-a', 'stage-a');
     const mediaTasks = { image: { elementId: 'image' } };
     const { deps, settings, setStage } = makeDeps({
-      fetchClassroom: vi.fn().mockResolvedValue({ stage, scenes: [scene] }),
+      fetchClassroom: vi
+        .fn()
+        .mockResolvedValue({ outcome: 'found', classroom: { stage, scenes: [scene] } }),
       loadRestoredMediaTasks: vi.fn().mockResolvedValue(mediaTasks),
       applyGeneratedAgents: vi.fn().mockReturnValue(['agent-a']),
       restoreAgentSelection: vi.fn().mockReturnValue({
@@ -994,6 +1020,26 @@ describe('runClassroomLoad', () => {
     expect(deps.applyGeneratedAgents).not.toHaveBeenCalled();
     expect(deps.setError).not.toHaveBeenCalled();
     expect(deps.setLoading).not.toHaveBeenCalled();
+  });
+
+  it('returns unavailable without applying when the classroom fetch is an outage (#1450)', async () => {
+    const { deps } = makeDeps({
+      fetchClassroom: vi.fn().mockResolvedValue({ outcome: 'unavailable', status: 503 }),
+    });
+
+    await expect(runClassroomLoad(deps)).resolves.toEqual({ outcome: 'unavailable' });
+    expect(deps.applyFallbackScenes).not.toHaveBeenCalled();
+    expect(deps.loadRestoredMediaTasks).not.toHaveBeenCalled();
+    expect(deps.setError).not.toHaveBeenCalled();
+  });
+
+  it('returns absent when the classroom fetch is a positive miss', async () => {
+    const { deps } = makeDeps({
+      fetchClassroom: vi.fn().mockResolvedValue({ outcome: 'absent' }),
+    });
+
+    await expect(runClassroomLoad(deps)).resolves.toEqual({ outcome: 'absent' });
+    expect(deps.applyFallbackScenes).not.toHaveBeenCalled();
   });
 });
 

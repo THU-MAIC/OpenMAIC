@@ -66,7 +66,7 @@ import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persiste
 
 const log = createLogger('Classroom');
 
-type ClassroomLoadOutcome = 'loaded' | 'unavailable' | 'failed' | 'cancelled';
+type ClassroomLoadOutcome = 'loaded' | 'unavailable' | 'absent' | 'failed' | 'cancelled';
 
 // stage_link can become visible shortly before its document. Probe only that
 // explicit availability gap, with a small bounded backoff; media conversion
@@ -81,12 +81,12 @@ export function ClassroomSurface({
   const { loadFromStorage } = useStageStore();
   const loadedClassroomId = useStageStore((s) => s.stage?.id ?? null);
   const { t } = useI18n();
-  // The retry loop below reads the message after async gaps, so it must see
-  // the CURRENT translation (a locale switch may have happened since mount).
-  // Written in an effect, not during render.
-  const notFoundMessageRef = useRef(t('classroom.notFound'));
+  // The retry / error paths below read the message after async gaps, so they
+  // must see the CURRENT translation (a locale switch may have happened since
+  // mount). Written in an effect, not during render.
+  const loadUnavailableMessageRef = useRef(t('classroom.loadUnavailable'));
   useEffect(() => {
-    notFoundMessageRef.current = t('classroom.notFound');
+    loadUnavailableMessageRef.current = t('classroom.loadUnavailable');
   }, [t]);
 
   const [loading, setLoading] = useState(true);
@@ -120,10 +120,9 @@ export function ClassroomSurface({
     async (isEffectCurrent: () => boolean = () => true): Promise<ClassroomLoadOutcome> => {
       const loadToken = claimStageSceneLoadToken();
       const isCurrent = () => isEffectCurrent() && isCurrentStageSceneLoadToken(loadToken);
-      let outcome: ClassroomLoadOutcome = 'loaded';
 
       try {
-        await runClassroomLoad({
+        const loadResult = await runClassroomLoad({
           classroomId,
           loadToken,
           isCurrent,
@@ -151,20 +150,43 @@ export function ClassroomSurface({
           log,
         });
         if (!isCurrent()) return 'cancelled';
-        // The load completed without landing this course in the store. The
-        // reference learns the same fact from a server 404; here the absence
-        // of a stage after every source answered is the equivalent signal. A
-        // standalone URL can give a definitive answer; inside the workspace
-        // the pane treats it as the bounded availability gap instead of
-        // replacing its lifecycle.
-        if (useStageStore.getState().stage?.id !== classroomId) {
+
+        // Positive absence only: the course is gone or never existed. Transient
+        // failures stay on the error/retry path so we never claim "not found"
+        // without a positive answer (#1450).
+        if (loadResult.outcome === 'absent') {
           if (variant === 'page') {
             setNotFound(true);
             return 'loaded';
           }
-          outcome = 'unavailable';
+          // Inside the workspace the pane treats a miss as the bounded
+          // availability gap (stage_link can land before the document).
+          return 'absent';
         }
-        return isCurrent() ? outcome : 'cancelled';
+
+        if (loadResult.outcome === 'unavailable') {
+          if (variant === 'pane') {
+            // Retry through the availability schedule; exhaustion lands on the
+            // error card with Retry, not the not-found claim.
+            return 'unavailable';
+          }
+          setError(loadUnavailableMessageRef.current);
+          setLoading(false);
+          return 'failed';
+        }
+
+        if (loadResult.outcome === 'cancelled') return 'cancelled';
+        if (loadResult.outcome === 'failed') return 'failed';
+
+        // Defensive: a "ready" load that somehow left the wrong course in the
+        // store still must not become not-found.
+        if (useStageStore.getState().stage?.id !== classroomId) {
+          if (variant === 'pane') return 'unavailable';
+          setError(loadUnavailableMessageRef.current);
+          setLoading(false);
+          return 'failed';
+        }
+        return 'loaded';
       } catch (error) {
         log.error('Failed to load classroom:', error);
         if (isCurrent()) {
@@ -213,6 +235,8 @@ export function ClassroomSurface({
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let availabilityAttempt = 0;
+    /** Last pane gap reason — exhaustion must not claim not-found after an outage. */
+    let lastGap: 'absent' | 'unavailable' | null = null;
 
     // The sidecar carries the per-viewer ownership fact the document seam does
     // not. It feeds only the generation gate here, so the pane's read-only and
@@ -247,20 +271,30 @@ export function ClassroomSurface({
       if (variant === 'pane') setError(null);
       const outcome = await loadClassroom(() => !cancelled);
       if (cancelled) return;
-      if (variant !== 'pane' || outcome !== 'unavailable') {
-        // The document answered, so the sidecar now has something to say about
-        // this course — whether or not an availability retry was needed.
-        refreshOwnership();
-        return;
+
+      if (outcome === 'absent' || outcome === 'unavailable') {
+        lastGap = outcome;
+        if (variant === 'pane') {
+          const delay = paneAvailabilityRetryDelay(availabilityAttempt);
+          availabilityAttempt += 1;
+          if (delay !== null) {
+            retryTimer = setTimeout(loadUntilAvailable, delay);
+            return;
+          }
+          setLoading(false);
+          if (lastGap === 'unavailable') {
+            setError(loadUnavailableMessageRef.current);
+          } else {
+            setNotFound(true);
+          }
+          return;
+        }
       }
 
-      const delay = paneAvailabilityRetryDelay(availabilityAttempt);
-      availabilityAttempt += 1;
-      if (delay !== null) {
-        retryTimer = setTimeout(loadUntilAvailable, delay);
-      } else {
-        setLoading(false);
-        setError(notFoundMessageRef.current);
+      // The document answered (or the page already rendered not-found / error),
+      // so the sidecar now has something to say about this course.
+      if (outcome === 'loaded') {
+        refreshOwnership();
       }
     };
     void loadUntilAvailable();
@@ -437,11 +471,19 @@ export function ClassroomSurface({
                 <button
                   onClick={() => {
                     setError(null);
+                    setNotFound(false);
                     setLoading(true);
                     void loadClassroom().then((outcome) => {
-                      if (variant === 'pane' && outcome === 'unavailable') {
+                      if (
+                        variant === 'pane' &&
+                        (outcome === 'unavailable' || outcome === 'absent')
+                      ) {
                         setLoading(false);
-                        setError(t('classroom.notFound'));
+                        if (outcome === 'absent') {
+                          setNotFound(true);
+                        } else {
+                          setError(t('classroom.loadUnavailable'));
+                        }
                       }
                     });
                   }}

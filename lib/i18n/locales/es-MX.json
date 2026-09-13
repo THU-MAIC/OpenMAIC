@@ -1011,6 +1011,8 @@
     "deleteFolderConfirmRemove": "Esto elimina la carpeta y sus cursos, incluido el historial de chat.",
     "notFound": "Curso no encontrado",
     "notFoundDesc": "Este curso no existe o ha sido eliminado.",
+    "loadUnavailable": "No se pudo cargar este curso",
+    "loadUnavailableDesc": "El servidor no respondió. Inténtalo de nuevo.",
     "backToHome": "Volver al inicio"
   },
   "upload": {

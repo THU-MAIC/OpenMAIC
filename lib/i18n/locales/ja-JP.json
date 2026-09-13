@@ -1011,6 +1011,8 @@
     "deleteFolderAndCourses_other": "フォルダと {{count}} 件のコースを削除",
     "notFound": "コースが見つかりません",
     "notFoundDesc": "このコースは存在しないか、すでに削除されています。",
+    "loadUnavailable": "コースを読み込めませんでした",
+    "loadUnavailableDesc": "サーバーが応答しませんでした。もう一度お試しください。",
     "backToHome": "ホームに戻る"
   },
   "upload": {

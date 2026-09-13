@@ -1011,6 +1011,8 @@
     "deleteFolderConfirmRemove": "Dadurch werden der Ordner und seine Kurse einschließlich des Chatverlaufs gelöscht.",
     "notFound": "Kurs nicht gefunden",
     "notFoundDesc": "Dieser Kurs existiert nicht oder wurde gelöscht.",
+    "loadUnavailable": "Kurs konnte nicht geladen werden",
+    "loadUnavailableDesc": "Der Server hat nicht geantwortet. Bitte erneut versuchen.",
     "backToHome": "Zurück zur Startseite"
   },
   "upload": {
