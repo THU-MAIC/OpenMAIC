@@ -36,6 +36,7 @@ import type {
 } from './types.js';
 import { DocumentFolderLimitError, DocumentNotFoundError, DocumentVersionError } from './types.js';
 import { assertJsonValue, isLosslessJsonString } from '../runtime/json-value.js';
+import { encodeJson } from '../pg-json.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
 export type { QueryResult, Queryable, WithTransaction } from '../runtime/pg.js';
@@ -409,16 +410,6 @@ function isPlainObject(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
-}
-
-function encodeJson(value: unknown, label: string): string {
-  try {
-    const encoded = JSON.stringify(value);
-    if (encoded === undefined) throw new TypeError('value is not JSON-serializable');
-    return encoded;
-  } catch (error) {
-    throw new Error(`@openmaic/storage: ${label} is not JSON-serializable`, { cause: error });
-  }
 }
 
 function isFutureVersioned(versioned: unknown): boolean {

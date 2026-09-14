@@ -15,6 +15,7 @@
  * dependency the URL trust-gate table has inside the agent-session schema.
  */
 import type { Queryable } from '../runtime/pg.js';
+import { encodeJson } from '../pg-json.js';
 import {
   AGENT_SESSION_MATERIAL_KINDS,
   AgentSessionMaterialError,
@@ -428,7 +429,7 @@ export class PgAgentSessionMaterialStore implements AgentSessionMaterialStore {
       [
         input.sourceId,
         input.workerId,
-        JSON.stringify(input.stats),
+        encodeJson(input.stats, 'material extraction stats'),
         input.extractorVersion,
         derived.map((item) => item.id),
         derived.map((item) => item.kind),

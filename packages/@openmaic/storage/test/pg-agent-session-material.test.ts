@@ -181,6 +181,44 @@ describe('PgAgentSessionMaterialStore with PGlite', () => {
     });
   });
 
+  test('persists extraction stats containing NUL and lone surrogates', async () => {
+    const sessions = new PgAgentSessionStore(db, {
+      withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),
+    });
+    await sessions.createSession({ id: 'session-1', ownerId: 'owner-a', prompt: 'p' });
+    const source = await store.createMaterial('session-1', {
+      id: 'mat_source',
+      kind: 'source',
+      title: 'notes.txt',
+    });
+    await store.enqueueExtraction('session-1', source.id);
+    await store.claimNextExtraction('worker-a', { leaseTtlMs: 10_000 });
+
+    expect(
+      await store.completeExtraction({
+        sourceId: source.id,
+        workerId: 'worker-a',
+        extractorVersion: 'plain-text@1',
+        stats: {
+          chars: 5,
+          pages: 0,
+          imageCount: 0,
+          diagnostics: [`bad\u0000diag`, `bad\uD800diag`],
+        },
+        derived: {
+          id: 'mat_extracted',
+          kind: 'extraction',
+          textAssetId: 'ast_text',
+          textChars: 5,
+        },
+      }),
+    ).toBe(true);
+
+    expect((await store.getMaterial('session-1', source.id))?.extraction.stats).toMatchObject({
+      diagnostics: ['bad\uFFFDdiag', 'bad\uFFFDdiag'],
+    });
+  });
+
   test('reclaims an expired running lease and fences the previous worker', async () => {
     const sessions = new PgAgentSessionStore(db, {
       withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),

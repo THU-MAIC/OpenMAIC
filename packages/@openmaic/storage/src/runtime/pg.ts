@@ -37,6 +37,7 @@ import type {
 } from './types.js';
 import { RuntimeAppendConflictError } from './types.js';
 import { assertJsonValue, isLosslessJsonString } from './json-value.js';
+import { encodeJson } from '../pg-json.js';
 
 export interface QueryResult<TRow extends Record<string, unknown> = Record<string, unknown>> {
   rows: TRow[];
@@ -163,16 +164,6 @@ function isPlainObject(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
-}
-
-function encodeJson(value: unknown, label: string): string {
-  try {
-    const encoded = JSON.stringify(value);
-    if (encoded === undefined) throw new TypeError('value is not JSON-serializable');
-    return encoded;
-  } catch (error) {
-    throw new Error(`@openmaic/storage: ${label} is not JSON-serializable`, { cause: error });
-  }
 }
 
 function isFutureRuntimeVersioned(row: unknown): boolean {

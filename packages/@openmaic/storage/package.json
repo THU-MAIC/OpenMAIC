@@ -70,6 +70,10 @@
     "./server/reference": {
       "types": "./dist/server/reference.d.ts",
       "import": "./dist/server/reference.js"
+    },
+    "./pg-json": {
+      "types": "./dist/pg-json.d.ts",
+      "import": "./dist/pg-json.js"
     }
   },
   "files": [
