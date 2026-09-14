@@ -45,23 +45,17 @@ test.describe('Home → Generation', () => {
     }, SETTINGS_STORAGE);
   });
 
-  test('home page loads with core UI elements and submits requirement', async ({ page }) => {
+  test('home page separates learning tasks from dedicated course creation', async ({ page }) => {
     const home = new HomePage(page);
     await home.goto();
 
-    // Core elements visible
     await expect(home.logo).toBeVisible();
+    await expect(page.getByTestId('learning-task-center')).toBeVisible();
+    await expect(home.textarea).toHaveCount(0);
+    await expect(page.getByTestId('nav-my-courses')).toHaveAttribute('aria-current', 'page');
+    await page.getByTestId('nav-create-course').click();
+    await page.waitForURL(/\/create$/);
     await expect(home.textarea).toBeVisible();
-    await expect(home.enterButton).toBeDisabled();
-
-    // Type requirement → button activates
-    await home.fillRequirement('讲解光合作用');
-    await expect(home.enterButton).toBeEnabled();
-
-    // Submit → navigate to generation-preview
-    await home.submit();
-    await page.waitForURL(/\/generation-preview/);
-    expect(page.url()).toContain('/generation-preview');
   });
 
   test('dedicated create route reuses the course composer and submits requirement', async ({

@@ -58,7 +58,7 @@ test.describe('settings persistence through the KVStore', () => {
     );
 
     const home = new HomePage(page);
-    await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto()]);
+    await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto('/create')]);
     await expect(home.textarea).toBeVisible();
 
     // The seeded provider/model reached the UI, so hydration read the KV scope.
@@ -79,7 +79,7 @@ test.describe('settings persistence through the KVStore', () => {
     }, SETTINGS);
 
     const home = new HomePage(page);
-    await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto()]);
+    await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto('/create')]);
     await expect(home.textarea).toBeVisible();
 
     // No migration: the raw blob is not read, and it is best-effort purged

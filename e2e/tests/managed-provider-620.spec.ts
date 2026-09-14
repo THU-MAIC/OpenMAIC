@@ -58,7 +58,7 @@ test.describe('#620 managed providers are read-only', () => {
 
   async function openProviderSettings(page: HomePage['page']) {
     const home = new HomePage(page);
-    await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto()]);
+    await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto('/create')]);
     await expect(home.textarea).toBeVisible();
     // Header gear button opens the settings dialog (defaults to the Providers section).
     await page.locator('button:has(svg.lucide-settings)').first().click();

@@ -22,7 +22,7 @@ test.describe('Slide editor double-click text insertion (#1310)', () => {
   test('double-click on blank canvas area creates a new text element', async ({ page }) => {
     // Generate a classroom through the mocked pipeline
     const home = new HomePage(page);
-    await home.goto();
+    await home.goto('/create');
     // Dismiss the "What's New" changelog modal
     await page
       .getByRole('button', { name: /got it|知道了/i })

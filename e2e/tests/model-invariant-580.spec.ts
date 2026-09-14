@@ -63,7 +63,7 @@ test.describe('#580 model-selection invariant', () => {
     );
 
     const home = new HomePage(page);
-    await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto()]);
+    await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto('/create')]);
     await expect(home.textarea).toBeVisible();
 
     // Single affordance is the toolbar "Set up model" CTA.
@@ -109,7 +109,7 @@ test.describe('#580 model-selection invariant', () => {
     );
 
     const home = new HomePage(page);
-    await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto()]);
+    await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto('/create')]);
     await expect(home.textarea).toBeVisible();
 
     // Reconcile resolves (openai, '' → first server model 'gpt-4o'); the

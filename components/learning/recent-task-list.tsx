@@ -50,7 +50,7 @@ export function RecentTaskList() {
 
   return (
     <section
-      className="relative z-20 mt-6 w-full max-w-6xl px-4 md:px-8"
+      className="relative z-20 mt-8 w-full max-w-6xl px-4 md:mt-12 md:px-8"
       data-testid="learning-task-center"
     >
       <div className="overflow-hidden rounded-2xl border border-primary/15 bg-card shadow-[0_18px_50px_-38px_color-mix(in_oklab,var(--primary)_45%,transparent)]">

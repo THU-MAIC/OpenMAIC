@@ -1024,308 +1024,318 @@ export function HomePage({
         <div className="absolute inset-0 opacity-[0.035] [background-image:linear-gradient(to_right,currentColor_1px,transparent_1px),linear-gradient(to_bottom,currentColor_1px,transparent_1px)] [background-size:32px_32px]" />
       </div>
 
-      {/* ═══ Course-space dashboard ═══ */}
-      <motion.div
-        initial={heroEnter({ opacity: 0, y: 20 })}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: 'easeOut' }}
-        className="relative z-20 mt-8 grid w-full max-w-6xl grid-cols-1 gap-5 px-4 md:mt-12 md:px-8 lg:grid-cols-12"
-      >
+      {/* Creation surfaces live on dedicated routes. The dashboard starts with
+          learning tasks and course management, so it no longer duplicates the
+          full AI course composer. */}
+      {!isDashboardExperience ? (
         <motion.div
-          initial={heroEnter({ opacity: 0, y: 10 })}
+          initial={heroEnter({ opacity: 0, y: 20 })}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="mb-2 lg:col-span-12"
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+          className="relative z-20 mt-8 grid w-full max-w-6xl grid-cols-1 gap-5 px-4 md:mt-12 md:px-8 lg:grid-cols-12"
         >
-          <div className="mb-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.15em] text-primary">
-            <Sparkles className="size-3.5" aria-hidden="true" />
-            {t('home.createEyebrow')}
-          </div>
-          {isCreateExperience && (
-            <div
-              className="mb-4 flex items-center gap-2 text-[11px] font-medium text-muted-foreground"
-              aria-label={locale === 'zh-CN' ? '创建课程步骤 1 / 3' : 'Course creation step 1 of 3'}
-            >
-              <span className="rounded-full bg-primary px-2 py-1 text-primary-foreground">1</span>
-              <span className="font-semibold text-primary">
-                {locale === 'zh-CN' ? '课程内容' : 'Course content'}
-              </span>
-              <span className="h-px w-8 bg-border" />
-              <span>2 {locale === 'zh-CN' ? '课程计划' : 'Course plan'}</span>
-              <span className="h-px w-8 bg-border" />
-              <span>3 {locale === 'zh-CN' ? '互动课堂' : 'Classroom'}</span>
-            </div>
-          )}
-          <h1 className="max-w-[760px] text-balance text-[28px] font-semibold leading-[1.2] tracking-[-0.03em] text-foreground sm:text-[34px]">
-            {isLearningExperience
-              ? locale === 'zh-CN'
-                ? '从一个明确目标，构建你的学习路径'
-                : 'Build a learning path from one clear goal'
-              : t('home.createTitle')}
-          </h1>
-          <p className="mt-3 max-w-[720px] text-pretty text-sm leading-6 text-muted-foreground">
-            {isLearningExperience
-              ? locale === 'zh-CN'
-                ? '创建概念理解任务，知构 AI 会生成与目标关联的课堂，并持续记录笔记与复习重点。'
-                : 'Create a concept task linked to a classroom, notes, and review priorities.'
-              : t('home.createDescription')}
-          </p>
-        </motion.div>
-
-        {/* ── Unified input area ── */}
-        <motion.div
-          initial={heroEnter({ opacity: 0, scale: 0.97 })}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.35 }}
-          className="w-full lg:col-span-8"
-        >
-          <div
-            data-pro-morph="composer"
-            className="w-full rounded-2xl border border-border/80 bg-card shadow-[0_18px_50px_-34px_rgba(16,42,67,0.42)] transition-[border-color,box-shadow] focus-within:border-primary/35 focus-within:shadow-[0_22px_60px_-32px_color-mix(in_oklab,var(--primary)_38%,transparent)]"
-          >
-            {isLearningExperience ? (
-              <TaskCreateFields
-                value={learningInput}
-                errors={learningErrors}
-                locale={locale}
-                disabled={preparingGenerate}
-                onChange={(next) => {
-                  setLearningInput(next);
-                  setLearningErrors({});
-                  setError(null);
-                }}
-              />
-            ) : null}
-            {/* ── Greeting + Profile + Agents ── */}
-            <div className="relative z-20 flex min-w-0 items-start justify-between">
-              <GreetingBar />
-              <div className="pr-3 pt-3.5 shrink-0">
-                <AgentBar />
-              </div>
-            </div>
-
-            {/* Textarea */}
-            <textarea
-              data-testid="course-requirement-input"
-              ref={textareaRef}
-              placeholder={t('upload.requirementPlaceholder')}
-              className="min-h-[150px] max-h-[300px] w-full resize-none border-0 bg-transparent px-5 pb-3 pt-2 text-[14px] leading-relaxed placeholder:text-muted-foreground/45 focus:outline-none"
-              value={form.requirement}
-              onChange={(e) => updateForm('requirement', e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={4}
-            />
-
-            {/* Toolbar row */}
-            <div className="flex flex-wrap items-end gap-2 px-3 pb-3 sm:flex-nowrap">
-              <div className="min-w-0 basis-full sm:basis-auto sm:flex-1">
-                <GenerationToolbar
-                  webSearch={form.webSearch}
-                  onWebSearchChange={(v) => updateForm('webSearch', v)}
-                  onSettingsOpen={(section) => {
-                    setSettingsSection(section);
-                    setSettingsOpen(true);
-                  }}
-                  courseMaterials={form.courseMaterials}
-                  onCourseMaterialsAdd={addCourseMaterials}
-                  onCourseMaterialRemove={removeCourseMaterial}
-                  onPdfError={setError}
-                  materialsLocked={preparingGenerate}
-                />
-              </div>
-
-              {/* Interactive mode toggle */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <InteractiveModeButton
-                    pressed={form.interactiveMode}
-                    label={t('toolbar.interactiveModeLabel')}
-                    onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
-                  />
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {t('toolbar.interactiveModeHint')}
-                </TooltipContent>
-              </Tooltip>
-
-              {/* Voice input */}
-              <SpeechButton
-                size="md"
-                onTranscription={(text) => {
-                  setForm((prev) => {
-                    const next = prev.requirement + (prev.requirement ? ' ' : '') + text;
-                    updateRequirementCache(next);
-                    return { ...prev, requirement: next };
-                  });
-                }}
-              />
-
-              {/* Send button */}
-              <button
-                data-testid="course-generate-submit"
-                onClick={handleGenerate}
-                disabled={!canGenerate || preparingGenerate}
-                className={cn(
-                  'shrink-0 h-8 rounded-lg flex items-center justify-center gap-1.5 transition-all px-3',
-                  canGenerate && !preparingGenerate
-                    ? 'bg-primary text-primary-foreground hover:opacity-90 shadow-sm cursor-pointer'
-                    : 'bg-muted text-muted-foreground/40 cursor-not-allowed',
-                )}
-              >
-                <span className="text-xs font-medium">
-                  {preparingGenerate
-                    ? t('stage.generating')
-                    : isLearningExperience
-                      ? locale === 'zh-CN'
-                        ? '生成目标课程'
-                        : 'Generate learning course'
-                      : isCreateExperience
-                        ? locale === 'zh-CN'
-                          ? '生成课程计划'
-                          : 'Generate course plan'
-                        : t('toolbar.enterClassroom')}
-                </span>
-                {preparingGenerate ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <ArrowUp className="size-3.5" />
-                )}
-              </button>
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.aside
-          initial={heroEnter({ opacity: 0, x: 12 })}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.4 }}
-          className="relative min-h-[254px] overflow-hidden rounded-2xl border border-primary/15 bg-primary p-6 text-primary-foreground shadow-[0_22px_60px_-36px_color-mix(in_oklab,var(--primary)_70%,transparent)] lg:col-span-4 lg:row-span-3"
-        >
-          <div className="absolute -right-16 -top-20 size-52 rounded-full border-[34px] border-white/10" />
-          <div className="absolute -bottom-14 right-8 size-32 rounded-full bg-white/[0.06]" />
-          <div className="relative flex h-full flex-col">
-            <span className="flex size-10 items-center justify-center rounded-xl bg-white/12">
-              <Clock className="size-5" aria-hidden="true" />
-            </span>
-            <p className="mt-6 text-xs font-semibold uppercase tracking-[0.14em] text-primary-foreground/65">
-              {!isDashboardExperience
-                ? locale === 'zh-CN'
-                  ? isLearningExperience
-                    ? '目标学习模式'
-                    : '创建指引'
-                  : isLearningExperience
-                    ? 'Goal-based learning'
-                    : 'Creation guide'
-                : t('classroom.recentClassrooms')}
-            </p>
-            {latestClassroom && isDashboardExperience ? (
-              <>
-                <h2 className="mt-2 line-clamp-2 text-xl font-semibold leading-snug">
-                  {latestClassroom.name}
-                </h2>
-                <p className="mt-2 text-sm text-primary-foreground/65">
-                  {formatDate(latestClassroom.updatedAt)}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => router.push(`/classroom/${latestClassroom.id}`)}
-                  className="mt-auto inline-flex h-10 w-fit items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-primary transition-transform hover:-translate-y-0.5"
-                >
-                  {locale === 'zh-CN' ? '继续课程' : 'Continue course'}
-                  <ChevronRight className="size-4" />
-                </button>
-              </>
-            ) : (
-              <>
-                <h2 className="mt-2 text-xl font-semibold leading-snug">
-                  {locale === 'zh-CN' ? '三步生成互动课程' : 'Create in three steps'}
-                </h2>
-                <ol className="mt-5 space-y-3 text-sm text-primary-foreground/75">
-                  {[
-                    locale === 'zh-CN' ? '描述课程主题与教学目标' : 'Describe the topic and goals',
-                    locale === 'zh-CN' ? '确认 AI 生成的课程方案' : 'Review the AI course plan',
-                    locale === 'zh-CN' ? '进入课堂开展互动学习' : 'Enter the interactive classroom',
-                  ].map((step, index) => (
-                    <li key={step} className="flex items-center gap-3">
-                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/15 text-xs font-semibold text-white">
-                        {index + 1}
-                      </span>
-                      <span>{step}</span>
-                    </li>
-                  ))}
-                </ol>
-                <p className="mt-auto text-xs leading-5 text-primary-foreground/55">
-                  {locale === 'zh-CN'
-                    ? '从左侧输入课程需求即可开始'
-                    : 'Start by entering your course request on the left'}
-                </p>
-              </>
-            )}
-          </div>
-        </motion.aside>
-
-        {showVocationalTestUi && (
           <motion.div
-            initial={{ opacity: 0, y: -4 }}
+            initial={heroEnter({ opacity: 0, y: 10 })}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="mt-2 flex w-full justify-start px-1 lg:col-span-8"
+            transition={{ delay: 0.3 }}
+            className="mb-2 lg:col-span-12"
           >
-            <Tooltip>
-              <TooltipTrigger asChild>
+            <div className="mb-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.15em] text-primary">
+              <Sparkles className="size-3.5" aria-hidden="true" />
+              {t('home.createEyebrow')}
+            </div>
+            {isCreateExperience && (
+              <div
+                className="mb-4 flex items-center gap-2 text-[11px] font-medium text-muted-foreground"
+                aria-label={
+                  locale === 'zh-CN' ? '创建课程步骤 1 / 3' : 'Course creation step 1 of 3'
+                }
+              >
+                <span className="rounded-full bg-primary px-2 py-1 text-primary-foreground">1</span>
+                <span className="font-semibold text-primary">
+                  {locale === 'zh-CN' ? '课程内容' : 'Course content'}
+                </span>
+                <span className="h-px w-8 bg-border" />
+                <span>2 {locale === 'zh-CN' ? '课程计划' : 'Course plan'}</span>
+                <span className="h-px w-8 bg-border" />
+                <span>3 {locale === 'zh-CN' ? '互动课堂' : 'Classroom'}</span>
+              </div>
+            )}
+            <h1 className="max-w-[760px] text-balance text-[28px] font-semibold leading-[1.2] tracking-[-0.03em] text-foreground sm:text-[34px]">
+              {isLearningExperience
+                ? locale === 'zh-CN'
+                  ? '从一个明确目标，构建你的学习路径'
+                  : 'Build a learning path from one clear goal'
+                : t('home.createTitle')}
+            </h1>
+            <p className="mt-3 max-w-[720px] text-pretty text-sm leading-6 text-muted-foreground">
+              {isLearningExperience
+                ? locale === 'zh-CN'
+                  ? '创建概念理解任务，知构 AI 会生成与目标关联的课堂，并持续记录笔记与复习重点。'
+                  : 'Create a concept task linked to a classroom, notes, and review priorities.'
+                : t('home.createDescription')}
+            </p>
+          </motion.div>
+
+          {/* ── Unified input area ── */}
+          <motion.div
+            initial={heroEnter({ opacity: 0, scale: 0.97 })}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.35 }}
+            className="w-full lg:col-span-8"
+          >
+            <div
+              data-pro-morph="composer"
+              className="w-full rounded-2xl border border-border/80 bg-card shadow-[0_18px_50px_-34px_rgba(16,42,67,0.42)] transition-[border-color,box-shadow] focus-within:border-primary/35 focus-within:shadow-[0_22px_60px_-32px_color-mix(in_oklab,var(--primary)_38%,transparent)]"
+            >
+              {isLearningExperience ? (
+                <TaskCreateFields
+                  value={learningInput}
+                  errors={learningErrors}
+                  locale={locale}
+                  disabled={preparingGenerate}
+                  onChange={(next) => {
+                    setLearningInput(next);
+                    setLearningErrors({});
+                    setError(null);
+                  }}
+                />
+              ) : null}
+              {/* ── Greeting + Profile + Agents ── */}
+              <div className="relative z-20 flex min-w-0 items-start justify-between">
+                <GreetingBar />
+                <div className="pr-3 pt-3.5 shrink-0">
+                  <AgentBar />
+                </div>
+              </div>
+
+              {/* Textarea */}
+              <textarea
+                data-testid="course-requirement-input"
+                ref={textareaRef}
+                placeholder={t('upload.requirementPlaceholder')}
+                className="min-h-[150px] max-h-[300px] w-full resize-none border-0 bg-transparent px-5 pb-3 pt-2 text-[14px] leading-relaxed placeholder:text-muted-foreground/45 focus:outline-none"
+                value={form.requirement}
+                onChange={(e) => updateForm('requirement', e.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={4}
+              />
+
+              {/* Toolbar row */}
+              <div className="flex flex-wrap items-end gap-2 px-3 pb-3 sm:flex-nowrap">
+                <div className="min-w-0 basis-full sm:basis-auto sm:flex-1">
+                  <GenerationToolbar
+                    webSearch={form.webSearch}
+                    onWebSearchChange={(v) => updateForm('webSearch', v)}
+                    onSettingsOpen={(section) => {
+                      setSettingsSection(section);
+                      setSettingsOpen(true);
+                    }}
+                    courseMaterials={form.courseMaterials}
+                    onCourseMaterialsAdd={addCourseMaterials}
+                    onCourseMaterialRemove={removeCourseMaterial}
+                    onPdfError={setError}
+                    materialsLocked={preparingGenerate}
+                  />
+                </div>
+
+                {/* Interactive mode toggle */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <InteractiveModeButton
+                      pressed={form.interactiveMode}
+                      label={t('toolbar.interactiveModeLabel')}
+                      onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {t('toolbar.interactiveModeHint')}
+                  </TooltipContent>
+                </Tooltip>
+
+                {/* Voice input */}
+                <SpeechButton
+                  size="md"
+                  onTranscription={(text) => {
+                    setForm((prev) => {
+                      const next = prev.requirement + (prev.requirement ? ' ' : '') + text;
+                      updateRequirementCache(next);
+                      return { ...prev, requirement: next };
+                    });
+                  }}
+                />
+
+                {/* Send button */}
                 <button
-                  type="button"
-                  role="switch"
-                  aria-checked={form.vocationalTestMode}
-                  onClick={() => updateForm('vocationalTestMode', !form.vocationalTestMode)}
+                  data-testid="course-generate-submit"
+                  onClick={handleGenerate}
+                  disabled={!canGenerate || preparingGenerate}
                   className={cn(
-                    'inline-flex h-7 items-center gap-2 rounded-full border px-2.5 text-[11px] font-medium transition-colors',
-                    form.vocationalTestMode
-                      ? 'border-cyan-400/70 bg-cyan-50 text-cyan-700 shadow-[0_0_10px_rgba(6,182,212,0.16)] dark:bg-cyan-950/40 dark:text-cyan-300'
-                      : 'border-border/70 bg-background/70 text-muted-foreground hover:border-cyan-300/60 hover:text-cyan-700 dark:hover:text-cyan-300',
+                    'shrink-0 h-8 rounded-lg flex items-center justify-center gap-1.5 transition-all px-3',
+                    canGenerate && !preparingGenerate
+                      ? 'bg-primary text-primary-foreground hover:opacity-90 shadow-sm cursor-pointer'
+                      : 'bg-muted text-muted-foreground/40 cursor-not-allowed',
                   )}
                 >
-                  <span className="rounded-full bg-cyan-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-normal text-cyan-700 dark:bg-cyan-900/45 dark:text-cyan-300">
-                    测试功能
+                  <span className="text-xs font-medium">
+                    {preparingGenerate
+                      ? t('stage.generating')
+                      : isLearningExperience
+                        ? locale === 'zh-CN'
+                          ? '生成目标课程'
+                          : 'Generate learning course'
+                        : isCreateExperience
+                          ? locale === 'zh-CN'
+                            ? '生成课程计划'
+                            : 'Generate course plan'
+                          : t('toolbar.enterClassroom')}
                   </span>
-                  <Sparkles className="size-3.5" />
-                  <span>职教任务</span>
-                  <span
+                  {preparingGenerate ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <ArrowUp className="size-3.5" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.aside
+            initial={heroEnter({ opacity: 0, x: 12 })}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.4 }}
+            className="relative min-h-[254px] overflow-hidden rounded-2xl border border-primary/15 bg-primary p-6 text-primary-foreground shadow-[0_22px_60px_-36px_color-mix(in_oklab,var(--primary)_70%,transparent)] lg:col-span-4 lg:row-span-3"
+          >
+            <div className="absolute -right-16 -top-20 size-52 rounded-full border-[34px] border-white/10" />
+            <div className="absolute -bottom-14 right-8 size-32 rounded-full bg-white/[0.06]" />
+            <div className="relative flex h-full flex-col">
+              <span className="flex size-10 items-center justify-center rounded-xl bg-white/12">
+                <Clock className="size-5" aria-hidden="true" />
+              </span>
+              <p className="mt-6 text-xs font-semibold uppercase tracking-[0.14em] text-primary-foreground/65">
+                {!isDashboardExperience
+                  ? locale === 'zh-CN'
+                    ? isLearningExperience
+                      ? '目标学习模式'
+                      : '创建指引'
+                    : isLearningExperience
+                      ? 'Goal-based learning'
+                      : 'Creation guide'
+                  : t('classroom.recentClassrooms')}
+              </p>
+              {latestClassroom && isDashboardExperience ? (
+                <>
+                  <h2 className="mt-2 line-clamp-2 text-xl font-semibold leading-snug">
+                    {latestClassroom.name}
+                  </h2>
+                  <p className="mt-2 text-sm text-primary-foreground/65">
+                    {formatDate(latestClassroom.updatedAt)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/classroom/${latestClassroom.id}`)}
+                    className="mt-auto inline-flex h-10 w-fit items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-primary transition-transform hover:-translate-y-0.5"
+                  >
+                    {locale === 'zh-CN' ? '继续课程' : 'Continue course'}
+                    <ChevronRight className="size-4" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h2 className="mt-2 text-xl font-semibold leading-snug">
+                    {locale === 'zh-CN' ? '三步生成互动课程' : 'Create in three steps'}
+                  </h2>
+                  <ol className="mt-5 space-y-3 text-sm text-primary-foreground/75">
+                    {[
+                      locale === 'zh-CN'
+                        ? '描述课程主题与教学目标'
+                        : 'Describe the topic and goals',
+                      locale === 'zh-CN' ? '确认 AI 生成的课程方案' : 'Review the AI course plan',
+                      locale === 'zh-CN'
+                        ? '进入课堂开展互动学习'
+                        : 'Enter the interactive classroom',
+                    ].map((step, index) => (
+                      <li key={step} className="flex items-center gap-3">
+                        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/15 text-xs font-semibold text-white">
+                          {index + 1}
+                        </span>
+                        <span>{step}</span>
+                      </li>
+                    ))}
+                  </ol>
+                  <p className="mt-auto text-xs leading-5 text-primary-foreground/55">
+                    {locale === 'zh-CN'
+                      ? '从左侧输入课程需求即可开始'
+                      : 'Start by entering your course request on the left'}
+                  </p>
+                </>
+              )}
+            </div>
+          </motion.aside>
+
+          {showVocationalTestUi && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="mt-2 flex w-full justify-start px-1 lg:col-span-8"
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={form.vocationalTestMode}
+                    onClick={() => updateForm('vocationalTestMode', !form.vocationalTestMode)}
                     className={cn(
-                      'relative h-3.5 w-6 rounded-full transition-colors',
-                      form.vocationalTestMode ? 'bg-cyan-500' : 'bg-muted-foreground/25',
+                      'inline-flex h-7 items-center gap-2 rounded-full border px-2.5 text-[11px] font-medium transition-colors',
+                      form.vocationalTestMode
+                        ? 'border-cyan-400/70 bg-cyan-50 text-cyan-700 shadow-[0_0_10px_rgba(6,182,212,0.16)] dark:bg-cyan-950/40 dark:text-cyan-300'
+                        : 'border-border/70 bg-background/70 text-muted-foreground hover:border-cyan-300/60 hover:text-cyan-700 dark:hover:text-cyan-300',
                     )}
                   >
+                    <span className="rounded-full bg-cyan-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-normal text-cyan-700 dark:bg-cyan-900/45 dark:text-cyan-300">
+                      测试功能
+                    </span>
+                    <Sparkles className="size-3.5" />
+                    <span>职教任务</span>
                     <span
                       className={cn(
-                        'absolute left-0.5 top-0.5 size-2.5 rounded-full bg-white transition-transform',
-                        form.vocationalTestMode ? 'translate-x-2.5' : 'translate-x-0',
+                        'relative h-3.5 w-6 rounded-full transition-colors',
+                        form.vocationalTestMode ? 'bg-cyan-500' : 'bg-muted-foreground/25',
                       )}
-                    />
-                  </span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">
-                从当前输入框提交职教实操训练测试
-              </TooltipContent>
-            </Tooltip>
-          </motion.div>
-        )}
-
-        {/* ── Error ── */}
-        <AnimatePresence>
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mt-3 w-full rounded-lg border border-destructive/20 bg-destructive/10 p-3 lg:col-span-8"
-            >
-              <p className="text-sm text-destructive">{error}</p>
+                    >
+                      <span
+                        className={cn(
+                          'absolute left-0.5 top-0.5 size-2.5 rounded-full bg-white transition-transform',
+                          form.vocationalTestMode ? 'translate-x-2.5' : 'translate-x-0',
+                        )}
+                      />
+                    </span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  从当前输入框提交职教实操训练测试
+                </TooltipContent>
+              </Tooltip>
             </motion.div>
           )}
-        </AnimatePresence>
-      </motion.div>
+
+          {/* ── Error ── */}
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-3 w-full rounded-lg border border-destructive/20 bg-destructive/10 p-3 lg:col-span-8"
+              >
+                <p className="text-sm text-destructive">{error}</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      ) : null}
 
       {isDashboardExperience ? <RecentTaskList /> : null}
 

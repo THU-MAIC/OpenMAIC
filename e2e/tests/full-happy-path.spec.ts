@@ -21,7 +21,7 @@ test.describe('Full Happy Path', () => {
   test('home → generation-preview → classroom with scene navigation', async ({ page }) => {
     // ── Phase 1: Home page ──────────────────────────────────────────────
     const home = new HomePage(page);
-    await home.goto();
+    await home.goto('/create');
 
     // Core UI elements visible
     await expect(home.logo).toBeVisible();

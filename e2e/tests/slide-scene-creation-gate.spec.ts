@@ -27,7 +27,7 @@ test.describe('Slide editor — scene creation (enabled)', () => {
   }, testInfo) => {
     // Generate a classroom through the mocked pipeline.
     const home = new HomePage(page);
-    await home.goto();
+    await home.goto('/create');
     await home.fillRequirement('讲解光合作用');
     await home.submit();
     await page.waitForURL(/\/generation-preview/);
