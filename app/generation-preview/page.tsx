@@ -63,6 +63,7 @@ import {
 } from './types';
 import { StepVisualizer } from './components/visualizers';
 import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
+import { LEARNING_TASK_DRAFT_SESSION_KEY, updateLearningTask } from '@/lib/learning/task-storage';
 
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
@@ -1155,10 +1156,22 @@ function GenerationPreviewContent() {
       );
 
       sessionStorage.removeItem('generationSession');
-      await store.saveToStorage();
+      const savedToStorage = await store.saveToStorage();
+      if (currentSession.learningTaskId) {
+        const linkedTask = updateLearningTask(currentSession.learningTaskId, {
+          status: savedToStorage ? 'ready' : 'draft',
+          ...(savedToStorage ? { classroomId: stage.id } : {}),
+        });
+        if (!linkedTask) {
+          log.warn('[GenerationPreview] Unable to persist learning task link');
+        }
+      }
       router.push(`/classroom/${stage.id}`);
     } catch (err) {
       setIsOutlineStreaming(false);
+      if (currentSession.learningTaskId) {
+        updateLearningTask(currentSession.learningTaskId, { status: 'draft' });
+      }
       // AbortError is expected when navigating away — don't show as error
       if (isAbortError(err)) {
         log.info('[GenerationPreview] Generation aborted');
@@ -1182,6 +1195,12 @@ function GenerationPreviewContent() {
     clearOutlineReviewTimer();
     outlineReviewIntentRef.current = false;
     sessionStorage.removeItem('generationSession');
+    if (session?.learningTaskId) {
+      updateLearningTask(session.learningTaskId, { status: 'draft' });
+      sessionStorage.setItem(LEARNING_TASK_DRAFT_SESSION_KEY, session.learningTaskId);
+      router.push('/learn/new');
+      return;
+    }
     router.push('/');
   };
 

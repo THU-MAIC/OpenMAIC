@@ -97,6 +97,20 @@ import {
   workspaceResumeHref,
 } from '@/lib/workbench/workspace-session-memory';
 import { useBrand } from '@/lib/brand/brand-context';
+import { TaskCreateFields } from '@/components/learning/task-create-fields';
+import { buildConceptLearningRequirement } from '@/lib/learning/requirement-adapter';
+import {
+  LEARNING_TASK_DRAFT_SESSION_KEY,
+  getLearningTask,
+  upsertLearningTask,
+  updateLearningTask,
+} from '@/lib/learning/task-storage';
+import {
+  createConceptLearningTask,
+  validateConceptLearningTaskInput,
+} from '@/lib/learning/task-template';
+import type { ConceptLearningTaskInput } from '@/lib/learning/types';
+import { RecentTaskList } from '@/components/learning/recent-task-list';
 
 const log = createLogger('Home');
 
@@ -128,11 +142,18 @@ const initialFormState: FormState = {
   vocationalTestMode: false,
 };
 
-export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard' | 'create' }) {
+export function HomePage({
+  experience = 'dashboard',
+}: {
+  experience?: 'dashboard' | 'create' | 'learning';
+}) {
   const { t, locale } = useI18n();
   const { theme, setTheme, resolvedTheme } = useTheme();
   const brand = useBrand();
   const router = useRouter();
+  const isDashboardExperience = experience === 'dashboard';
+  const isCreateExperience = experience === 'create';
+  const isLearningExperience = experience === 'learning';
   // Do not replay the classic hero's entrance after the route handoff already
   // carried the lockup and composer into place.
   const [swapped] = useState(arrivedByProSwap);
@@ -167,6 +188,16 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
     if (workbenchEntryEnabled) router.prefetch('/workspace');
   }, [router, workbenchEntryEnabled]);
   const [form, setForm] = useState<FormState>(initialFormState);
+  const [learningInput, setLearningInput] = useState<ConceptLearningTaskInput>({
+    courseName: '',
+    knowledgePoint: '',
+    learningGoal: '',
+    priorKnowledge: '',
+  });
+  const [learningErrors, setLearningErrors] = useState<
+    Partial<Record<keyof ConceptLearningTaskInput, string>>
+  >({});
+  const [activeLearningTaskId, setActiveLearningTaskId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<
     import('@/lib/types/settings').SettingsSection | undefined
@@ -219,11 +250,41 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
   // so the cache is hydrated into the form once we know the live requirement is empty.
   const draftRestoredRef = useRef(false);
   useEffect(() => {
+    if (isLearningExperience) return;
     if (draftRestoredRef.current) return;
     if (!cachedRequirement) return;
     draftRestoredRef.current = true;
     setForm((prev) => (prev.requirement ? prev : { ...prev, requirement: cachedRequirement }));
-  }, [cachedRequirement]);
+  }, [cachedRequirement, isLearningExperience]);
+
+  useEffect(() => {
+    if (!isLearningExperience) return;
+    const hasAnyValue = Object.values(learningInput).some((value) => value?.trim());
+    setForm((previous) => ({
+      ...previous,
+      requirement: hasAnyValue ? buildConceptLearningRequirement(learningInput, locale) : '',
+    }));
+  }, [isLearningExperience, learningInput, locale]);
+
+  useEffect(() => {
+    if (!isLearningExperience) return;
+    try {
+      const taskId = sessionStorage.getItem(LEARNING_TASK_DRAFT_SESSION_KEY);
+      if (!taskId) return;
+      sessionStorage.removeItem(LEARNING_TASK_DRAFT_SESSION_KEY);
+      const task = getLearningTask(taskId);
+      if (!task || task.classroomId) return;
+      setActiveLearningTaskId(task.id);
+      setLearningInput({
+        courseName: task.courseName,
+        knowledgePoint: task.knowledgePoint,
+        learningGoal: task.learningGoal,
+        priorKnowledge: task.priorKnowledge,
+      });
+    } catch {
+      // Session storage is optional; the task remains available in local storage.
+    }
+  }, [isLearningExperience]);
 
   const [themeOpen, setThemeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -257,13 +318,11 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
   const searchButtonRef = useRef<HTMLButtonElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const isCreateExperience = experience === 'create';
-
   useEffect(() => {
-    if (!isCreateExperience) return;
+    if (!isCreateExperience || isLearningExperience) return;
     const frame = requestAnimationFrame(() => textareaRef.current?.focus());
     return () => cancelAnimationFrame(frame);
-  }, [isCreateExperience]);
+  }, [isCreateExperience, isLearningExperience]);
   const thumbnailsRef = useRef<Record<string, Slide>>({});
 
   const replaceThumbnails = (slides: Record<string, Slide>) => {
@@ -603,6 +662,18 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
     // provider always has a concrete model. State A (no usable provider)
     // surfaces through the toolbar's single Configure-Provider affordance.
     if (preparingGenerate) return;
+    const nextLearningErrors = isLearningExperience
+      ? validateConceptLearningTaskInput(learningInput)
+      : {};
+    if (Object.keys(nextLearningErrors).length > 0) {
+      setLearningErrors(nextLearningErrors);
+      setError(
+        locale === 'zh-CN' ? '请先补全学习任务的必填信息' : 'Complete the required task fields',
+      );
+      return;
+    }
+    setLearningErrors({});
+
     if (!form.requirement.trim()) {
       setError(t('upload.requirementRequired'));
       return;
@@ -634,7 +705,30 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
 
     // Flip the generating UI state before material bytes are copied locally.
     setPreparingGenerate(true);
+    let learningTaskId: string | undefined;
     try {
+      if (isLearningExperience) {
+        const task = activeLearningTaskId
+          ? updateLearningTask(activeLearningTaskId, {
+              ...learningInput,
+              priorKnowledge: learningInput.priorKnowledge ?? '',
+              status: 'generating',
+            })
+          : createConceptLearningTask(learningInput);
+        learningTaskId = task?.id;
+        const saved = task
+          ? activeLearningTaskId
+            ? true
+            : upsertLearningTask({ ...task, status: 'generating' })
+          : false;
+        if (!learningTaskId || !saved) {
+          throw new Error(
+            locale === 'zh-CN'
+              ? '无法在当前浏览器中保存学习任务，请检查存储权限'
+              : 'Unable to save the learning task in this browser',
+          );
+        }
+      }
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
         requirement: form.requirement,
@@ -685,6 +779,7 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
 
       const sessionState = {
         sessionId: nanoid(),
+        learningTaskId,
         requirements,
         pdfText: '',
         pdfImages: [],
@@ -703,6 +798,7 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
 
       router.push('/generation-preview');
     } catch (err) {
+      if (learningTaskId) updateLearningTask(learningTaskId, { status: 'draft' });
       log.error('Error preparing generation:', err);
       setError(err instanceof Error ? err.message : t('upload.generateFailed'));
     } finally {
@@ -724,7 +820,14 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
     return date.toLocaleDateString();
   };
 
-  const canGenerate = !!form.requirement.trim() && hasUsableProvider;
+  const learningInputComplete =
+    !!learningInput.courseName.trim() &&
+    !!learningInput.knowledgePoint.trim() &&
+    !!learningInput.learningGoal.trim();
+  const canGenerate =
+    !!form.requirement.trim() &&
+    hasUsableProvider &&
+    (!isLearningExperience || learningInputComplete);
   const latestClassroom = useMemo(
     () => [...classrooms].sort((a, b) => b.updatedAt - a.updatedAt)[0],
     [classrooms],
@@ -783,16 +886,32 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
               <button
                 type="button"
                 data-testid="nav-my-courses"
-                aria-current={!isCreateExperience ? 'page' : undefined}
+                aria-current={experience === 'dashboard' ? 'page' : undefined}
                 onClick={() => router.push('/')}
                 className={cn(
                   'rounded-lg px-3 py-2 transition-colors',
-                  !isCreateExperience
+                  experience === 'dashboard'
                     ? 'bg-primary/10 font-medium text-primary'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                 )}
               >
                 {t('classroom.recentClassrooms')}
+              </button>
+              <button
+                type="button"
+                data-testid="nav-learning-task"
+                aria-current={isLearningExperience ? 'page' : undefined}
+                onClick={() => {
+                  if (!isLearningExperience) router.push('/learn/new');
+                }}
+                className={cn(
+                  'rounded-lg px-3 py-2 transition-colors',
+                  isLearningExperience
+                    ? 'bg-primary/10 font-medium text-primary'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                )}
+              >
+                {locale === 'zh-CN' ? '学习任务' : 'Learning task'}
               </button>
               <button
                 type="button"
@@ -938,10 +1057,18 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
             </div>
           )}
           <h1 className="max-w-[760px] text-balance text-[28px] font-semibold leading-[1.2] tracking-[-0.03em] text-foreground sm:text-[34px]">
-            {t('home.createTitle')}
+            {isLearningExperience
+              ? locale === 'zh-CN'
+                ? '从一个明确目标，构建你的学习路径'
+                : 'Build a learning path from one clear goal'
+              : t('home.createTitle')}
           </h1>
           <p className="mt-3 max-w-[720px] text-pretty text-sm leading-6 text-muted-foreground">
-            {t('home.createDescription')}
+            {isLearningExperience
+              ? locale === 'zh-CN'
+                ? '创建概念理解任务，知构 AI 会生成与目标关联的课堂，并持续记录笔记与复习重点。'
+                : 'Create a concept task linked to a classroom, notes, and review priorities.'
+              : t('home.createDescription')}
           </p>
         </motion.div>
 
@@ -956,6 +1083,19 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
             data-pro-morph="composer"
             className="w-full rounded-2xl border border-border/80 bg-card shadow-[0_18px_50px_-34px_rgba(16,42,67,0.42)] transition-[border-color,box-shadow] focus-within:border-primary/35 focus-within:shadow-[0_22px_60px_-32px_color-mix(in_oklab,var(--primary)_38%,transparent)]"
           >
+            {isLearningExperience ? (
+              <TaskCreateFields
+                value={learningInput}
+                errors={learningErrors}
+                locale={locale}
+                disabled={preparingGenerate}
+                onChange={(next) => {
+                  setLearningInput(next);
+                  setLearningErrors({});
+                  setError(null);
+                }}
+              />
+            ) : null}
             {/* ── Greeting + Profile + Agents ── */}
             <div className="relative z-20 flex min-w-0 items-start justify-between">
               <GreetingBar />
@@ -1035,11 +1175,15 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
                 <span className="text-xs font-medium">
                   {preparingGenerate
                     ? t('stage.generating')
-                    : isCreateExperience
+                    : isLearningExperience
                       ? locale === 'zh-CN'
-                        ? '生成课程计划'
-                        : 'Generate course plan'
-                      : t('toolbar.enterClassroom')}
+                        ? '生成目标课程'
+                        : 'Generate learning course'
+                      : isCreateExperience
+                        ? locale === 'zh-CN'
+                          ? '生成课程计划'
+                          : 'Generate course plan'
+                        : t('toolbar.enterClassroom')}
                 </span>
                 {preparingGenerate ? (
                   <Loader2 className="size-3.5 animate-spin" />
@@ -1064,13 +1208,17 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
               <Clock className="size-5" aria-hidden="true" />
             </span>
             <p className="mt-6 text-xs font-semibold uppercase tracking-[0.14em] text-primary-foreground/65">
-              {isCreateExperience
+              {!isDashboardExperience
                 ? locale === 'zh-CN'
-                  ? '创建指引'
-                  : 'Creation guide'
+                  ? isLearningExperience
+                    ? '目标学习模式'
+                    : '创建指引'
+                  : isLearningExperience
+                    ? 'Goal-based learning'
+                    : 'Creation guide'
                 : t('classroom.recentClassrooms')}
             </p>
-            {latestClassroom && !isCreateExperience ? (
+            {latestClassroom && isDashboardExperience ? (
               <>
                 <h2 className="mt-2 line-clamp-2 text-xl font-semibold leading-snug">
                   {latestClassroom.name}
@@ -1179,12 +1327,14 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
         </AnimatePresence>
       </motion.div>
 
+      {isDashboardExperience ? <RecentTaskList /> : null}
+
       {/* ═══ Course library — collapsible ═══ */}
       {/* The library action bar is always present after hydration: it carries
           the New-folder / import / search actions, so a brand-new user with
           zero courses and zero folders can still create the first folder or
           import. One stable action surface across root, folder, and empty. */}
-      {!hydrated && !isCreateExperience && (
+      {!hydrated && isDashboardExperience && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -1220,7 +1370,7 @@ export function HomePage({ experience = 'dashboard' }: { experience?: 'dashboard
           </div>
         </motion.div>
       )}
-      {hydrated && !isCreateExperience && (
+      {hydrated && isDashboardExperience && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}

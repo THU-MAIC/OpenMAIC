@@ -26,6 +26,7 @@ import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { useWorkbenchPanelState } from '@/lib/workbench/panel-context';
 import { workspaceHref } from '@/lib/workbench/workspace-panes';
 import { exitProPlaybackToStandalone } from '@/lib/workbench/pro-playback-exit';
+import { LearningTaskBridge } from '@/components/learning/learning-task-bridge';
 
 /**
  * Stage — top-level classroom container. Standalone classrooms dispatch
@@ -62,7 +63,8 @@ export function Stage({
   classroomId?: string;
   onRetryOutline?: (outlineId: string) => Promise<void>;
 }) {
-  const { mode, setMode, scenes, currentSceneId, generatingOutlines, stage } = useStageStore();
+  const { mode, setMode, scenes, currentSceneId, setCurrentSceneId, generatingOutlines, stage } =
+    useStageStore();
   const router = useRouter();
   const enteringWorkbench = useRef(false);
   const proWorkbenchFlag = isProWorkbenchEnabled();
@@ -383,6 +385,14 @@ export function Stage({
           the mode-swap subtree, so its iframes survive Pro mode toggles and
           scene switches instead of reloading on every remount. */}
       <InteractiveIframeHost />
+      {!hosted && stage?.id ? (
+        <LearningTaskBridge
+          classroomId={stage.id}
+          scenes={scenes}
+          currentSceneId={currentSceneId}
+          onSelectScene={setCurrentSceneId}
+        />
+      ) : null}
     </div>
   );
 }

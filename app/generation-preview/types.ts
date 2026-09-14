@@ -11,6 +11,8 @@ import type {
 // Session state stored in sessionStorage
 export interface GenerationSessionState {
   sessionId: string;
+  /** Optional peripheral link to a ZhiGou learning task. */
+  learningTaskId?: string;
   requirements: UserRequirements;
   pdfText: string;
   documentSources?: SessionDocumentSource[];
