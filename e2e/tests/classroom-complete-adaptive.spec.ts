@@ -80,11 +80,14 @@ test.describe('Classroom complete adaptive layout', () => {
     page,
   }) => {
     // Persist the classroom server-side (file store), then load it once so
-    // the document lands in IndexedDB…
+    // the document lands in IndexedDB. The route mints the id, so navigation
+    // and the IndexedDB probe must use the id it returns rather than the
+    // fixture's stage id.
     const response = await page.request.post('/api/classroom', { data: CLASSROOM_PAYLOAD });
     expect(response.ok()).toBe(true);
+    const { id: classroomId } = (await response.json()) as { id: string };
     const classroom = new ClassroomPage(page);
-    await classroom.goto(STAGE_ID);
+    await classroom.goto(classroomId);
     await classroom.waitForLoaded();
     await expect(page.getByRole('heading', { name: 'Page 1' })).toBeVisible();
 
@@ -106,7 +109,7 @@ test.describe('Classroom complete adaptive layout', () => {
               };
               req.onerror = () => resolve(-1);
             }),
-          { stageId: STAGE_ID },
+          { stageId: classroomId },
         ),
       )
       .toBe(1, { timeout: 15_000 });
@@ -140,11 +143,11 @@ test.describe('Classroom complete adaptive layout', () => {
           };
           req.onerror = () => reject(req.error);
         }),
-      { stageId: STAGE_ID },
+      { stageId: classroomId },
     );
 
     // Reload: the completed document now offers the completion slot (N/N + 1).
-    await classroom.goto(STAGE_ID);
+    await classroom.goto(classroomId);
     await classroom.waitForLoaded();
     await expect(page.getByText('1/4', { exact: true })).toBeVisible({ timeout: 10_000 });
 
