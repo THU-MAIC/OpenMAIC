@@ -6,6 +6,7 @@ import type { Slide, PPTImageElement, PPTVideoElement } from '@openmaic/dsl';
 import { SlideCanvas } from '@openmaic/renderer';
 import { useResolvedSlideMedia, type ResolvedSlideMediaEntry } from './use-resolved-slide';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { mediaFailureNoticeKey } from '@/lib/media/media-failure';
 import { retryMediaTask } from '@/lib/media/media-orchestrator';
 import { mediaResolutionCanRetry } from '@/lib/media/resolve-media-ref';
 
@@ -44,6 +45,7 @@ function renderThumbnailVideo(
   element: PPTVideoElement,
   media: ResolvedSlideMediaEntry | undefined,
   disabledMessage: string,
+  failureMessage: string | undefined,
   retryLabel: string,
   onRetry: () => void,
 ) {
@@ -67,7 +69,18 @@ function renderThumbnailVideo(
           {disabledMessage}
         </div>
       ) : failed ? (
-        <div className="h-full w-full rounded bg-red-50" data-media-state="failed" />
+        failureMessage ? (
+          <div
+            className="flex h-full w-full items-center justify-center rounded bg-red-50 px-2 text-center"
+            data-media-state="failed"
+          >
+            <span className="text-[10px] font-medium text-amber-600">{failureMessage}</span>
+          </div>
+        ) : (
+          // The box this has always been, unchanged for a failure with nothing
+          // to say -- which is every failure browser-only mode can produce.
+          <div className="h-full w-full rounded bg-red-50" data-media-state="failed" />
+        )
       ) : src ? (
         <video
           className="w-full h-full"
@@ -112,6 +125,7 @@ function renderThumbnailImage(
   defaultContent: ReactNode,
   media: ResolvedSlideMediaEntry | undefined,
   disabledMessage: string,
+  failureMessage: string | undefined,
   retryLabel: string,
   onRetry: () => void,
 ) {
@@ -121,6 +135,11 @@ function renderThumbnailImage(
   if (media?.resolution.kind === 'failed') {
     return (
       <div className="relative h-full w-full bg-red-50" data-media-state="failed">
+        {failureMessage ? (
+          <div className="flex h-full w-full items-center justify-center px-2 text-center">
+            <span className="text-[10px] font-medium text-amber-600">{failureMessage}</span>
+          </div>
+        ) : null}
         {mediaResolutionCanRetry(media.resolution) ? (
           <button
             onClick={(event) => {
@@ -193,6 +212,20 @@ export function SlideThumbnail({
   const resolved = useResolvedSlideMedia(slide);
   const autoSize = size === undefined;
 
+  // A thumbnail draws a Retry for a failure a retry could change, and a full
+  // store is one of those. Without the reason beside it, that button reads as
+  // an ordinary failure the author should keep clicking; the message is short
+  // enough to sit where the "generation is off" message already does.
+  //
+  // Beside a Retry and nowhere else: a thumbnail has never explained a failure
+  // it offers no action for, and a permanent refusal must keep painting what it
+  // painted before this branch, which changes nothing in browser-only mode.
+  const thumbnailFailureMessage = (media: ResolvedSlideMediaEntry | undefined) => {
+    if (!mediaResolutionCanRetry(media?.resolution)) return undefined;
+    const key = mediaFailureNoticeKey(media?.task?.errorCode);
+    return key ? t(key) : undefined;
+  };
+
   const containerClass = autoSize
     ? 'thumbnail-slide relative bg-white overflow-hidden select-none pointer-events-none w-full h-full'
     : 'thumbnail-slide relative bg-white overflow-hidden select-none pointer-events-none';
@@ -222,6 +255,7 @@ export function SlideThumbnail({
             defaultContent,
             resolved.byElementId[element.id],
             t('settings.mediaGenerationDisabled'),
+            thumbnailFailureMessage(resolved.byElementId[element.id]),
             t('settings.mediaRetry'),
             () => {
               const media = resolved.byElementId[element.id];
@@ -236,6 +270,7 @@ export function SlideThumbnail({
             element,
             resolved.byElementId[element.id],
             t('settings.mediaGenerationDisabled'),
+            thumbnailFailureMessage(resolved.byElementId[element.id]),
             t('settings.mediaRetry'),
             () => {
               const media = resolved.byElementId[element.id];

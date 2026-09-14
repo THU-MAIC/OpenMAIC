@@ -40,6 +40,7 @@ import { InProcessExecutor } from './render-executor.js';
 import { InvalidProjectError, unzipProject as defaultUnzipProject } from './unzip.js';
 import { capBodyStream } from './capped-stream.js';
 import { Semaphore } from './semaphore.js';
+import { emitRenderEvent, type RenderEventSink } from './events.js';
 import { PreviewGate, PreviewRejectedError } from './preview-gate.js';
 import {
   ChromiumPreviewRenderer,
@@ -91,6 +92,12 @@ export interface AppDeps {
   unzipProject?: (zip: Uint8Array, destDir: string) => Promise<void>;
   /** Create a fresh per-render scratch dir. Overridable in tests. */
   makeProjectDir?: () => Promise<string>;
+  /**
+   * Where route-level events go. The coordinator takes its own sink; pass the
+   * same one here so an embedder that injects a sink receives every event type
+   * rather than silently losing the two the routes emit.
+   */
+  onEvent?: RenderEventSink;
   /** Runtime identity reported by health and copied into per-render metrics. */
   runtimeVersions?: RuntimeVersions;
 }
@@ -233,6 +240,7 @@ export function createApp(deps: AppDeps): Hono {
   const previewRenderer = deps.previewRenderer ?? new ChromiumPreviewRenderer();
   const previewDeadlineMs = deps.previewDeadlineMs ?? config.previewDeadlineMs;
   const previewMaxJsonBytes = deps.previewMaxJsonBytes ?? config.previewMaxJsonBytes;
+  const onEvent = deps.onEvent ?? emitRenderEvent;
   const previewGate =
     deps.previewGate ?? new PreviewGate(config.previewMaxInFlight, config.previewMaxPerUser);
 
@@ -269,7 +277,15 @@ export function createApp(deps: AppDeps): Hono {
     try {
       reservation = coordinator.reserve(identity);
     } catch (error) {
-      if (error instanceof RenderRejectedError) return c.json(rejectionBody(error), 429);
+      if (error instanceof RenderRejectedError) {
+        onEvent({
+          event: 'render_admission_rejected',
+          route: '/render',
+          reason: error.reason ?? 'unspecified',
+          status: 429,
+        });
+        return c.json(rejectionBody(error), 429);
+      }
       throw error;
     }
 
@@ -325,9 +341,31 @@ export function createApp(deps: AppDeps): Hono {
       if (error instanceof UploadTooLargeError) return c.json({ error: error.message }, 413);
       if (error instanceof BadRequestError) return c.json({ error: error.message }, 400);
       if (error instanceof InvalidProjectError) return c.json({ error: error.message }, 400);
-      if (error instanceof RenderRejectedError) return c.json(rejectionBody(error), 429);
+      if (error instanceof RenderRejectedError) {
+        onEvent({
+          event: 'render_admission_rejected',
+          route: '/render',
+          reason: error.reason ?? 'unspecified',
+          status: 429,
+        });
+        return c.json(rejectionBody(error), 429);
+      }
       throw error;
     }
+  });
+
+  // Times every response the preview route produces — 200, 413, 429, 504, 500
+  // alike. A synchronous preview reports failure in its status, so this is the
+  // one place a deployment can see the route's real success rate and latency.
+  app.use('/preview', async (c, next) => {
+    const startedAt = Date.now();
+    await next();
+    onEvent({
+      event: 'preview_request',
+      route: '/preview',
+      status: c.res.status,
+      durationMs: Date.now() - startedAt,
+    });
   });
 
   app.post('/preview', async (c) => {
@@ -341,7 +379,15 @@ export function createApp(deps: AppDeps): Hono {
     try {
       release = previewGate.acquire(identity);
     } catch (error) {
-      if (error instanceof PreviewRejectedError) return c.json(rejectionBody(error), 429);
+      if (error instanceof PreviewRejectedError) {
+        onEvent({
+          event: 'render_admission_rejected',
+          route: '/preview',
+          reason: (error as Error & { reason?: string }).reason ?? 'unspecified',
+          status: 429,
+        });
+        return c.json(rejectionBody(error), 429);
+      }
       throw error;
     }
 
@@ -402,7 +448,15 @@ export function createApp(deps: AppDeps): Hono {
       if (error instanceof UnprocessablePreviewError) {
         return c.json({ error: error.message }, 422);
       }
-      if (error instanceof PreviewRejectedError) return c.json(rejectionBody(error), 429);
+      if (error instanceof PreviewRejectedError) {
+        onEvent({
+          event: 'render_admission_rejected',
+          route: '/preview',
+          reason: (error as Error & { reason?: string }).reason ?? 'unspecified',
+          status: 429,
+        });
+        return c.json(rejectionBody(error), 429);
+      }
       if (error instanceof PreviewTimeoutError || deadlineAbort.signal.aborted) {
         return c.json({ error: 'Preview exceeded the deadline' }, 504);
       }

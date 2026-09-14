@@ -61,11 +61,14 @@ async function fakePlan(
   planDir: string,
 ): Promise<PlanResult> {
   await mkdir(join(planDir, 'meta'), { recursive: true });
+  await writeFile(join(planDir, 'plan.json'), JSON.stringify({ hasAudio: false }));
   await mkdir(join(planDir, 'compiled', 'assets', 'fonts'), { recursive: true });
   await writeFile(join(planDir, 'compiled', 'index.html'), '<html></html>');
   await writeFile(join(planDir, 'compiled', 'assets', 'fonts', 'test.woff2'), 'font');
   await writeFile(
     join(planDir, 'meta', 'encoder.json'),
+    // Match the producer snapshot contract: only PRODUCER_RUNTIME_* and
+    // PRODUCER_RENDER_* values are persisted in encoder.json.runtimeEnv.
     JSON.stringify({ runtimeEnv: { PRODUCER_RUNTIME_TEST: '1' } }),
   );
   await writeFile(
@@ -128,6 +131,85 @@ function deps(overrides: Partial<ChunkExecutorDependencies> = {}): ChunkExecutor
 }
 
 describe('local bounded chunk executor', () => {
+  it.each(['audio.m4a', 'audio.aac', null])(
+    'passes the plan audio artifact %s to assembly',
+    async (filename) => {
+      const paths = setup();
+      await materializeProject(paths.projectDir);
+      let assembledAudio: string | null | undefined;
+      const dependencies = deps();
+      const assemble = dependencies.assemble!;
+      await executeRenderChunks(
+        { ...paths, options },
+        deps({
+          plan: async (...args) => {
+            const result = await fakePlan(...args);
+            await writeFile(
+              join(paths.planDir, 'plan.json'),
+              JSON.stringify({ hasAudio: filename !== null }),
+            );
+            if (filename) await writeFile(join(paths.planDir, filename), 'mixed-audio');
+            return result;
+          },
+          assemble: async (...args) => {
+            assembledAudio = args[2];
+            return assemble(...args);
+          },
+        }),
+      );
+      expect(assembledAudio).toBe(filename ? join(paths.planDir, filename) : null);
+    },
+  );
+
+  it('rejects a plan whose declared audio artifact is missing before assembly', async () => {
+    const paths = setup();
+    await materializeProject(paths.projectDir);
+    let assembled = false;
+    await expect(
+      executeRenderChunks(
+        { ...paths, options },
+        deps({
+          plan: async (...args) => {
+            const result = await fakePlan(...args);
+            await writeFile(join(paths.planDir, 'plan.json'), JSON.stringify({ hasAudio: true }));
+            return result;
+          },
+          assemble: async () => {
+            assembled = true;
+            throw new Error('Assembly should not be called');
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: 'assembly_failed',
+      message: expect.stringContaining('audio artifact is missing'),
+    });
+    expect(assembled).toBe(false);
+  });
+
+  it('ignores stale audio from a failed planning attempt when the current plan has no audio', async () => {
+    const paths = setup();
+    await materializeProject(paths.projectDir);
+    let assembledAudio: string | null | undefined;
+    const dependencies = deps();
+    const assemble = dependencies.assemble!;
+    await executeRenderChunks(
+      { ...paths, options },
+      deps({
+        plan: async (...args) => {
+          const result = await fakePlan(...args);
+          await writeFile(join(paths.planDir, 'audio.m4a'), 'stale-audio');
+          return result;
+        },
+        assemble: async (...args) => {
+          assembledAudio = args[2];
+          return assemble(...args);
+        },
+      }),
+    );
+    expect(assembledAudio).toBeNull();
+  });
+
   it('terminates a real child worker on deadline without crashing the parent', async () => {
     const controller = new AbortController();
     const fixture = join(
@@ -175,7 +257,12 @@ describe('local bounded chunk executor', () => {
     let active = 0;
     let peak = 0;
     let calls = 0;
+    let plans = 0;
     const dependencies = deps({
+      plan: async (...args) => {
+        plans += 1;
+        return fakePlan(...args);
+      },
       onChunkStarted: async () => {
         active += 1;
         peak = Math.max(peak, active);
@@ -211,6 +298,59 @@ describe('local bounded chunk executor', () => {
       dependencies,
     );
     expect(calls).toBe(3);
+    expect(plans).toBe(1);
+  });
+
+  it('propagates the one-worker cap into chunk capture sizing and restores the environment', async () => {
+    const paths = setup();
+    await materializeProject(paths.projectDir);
+    const previousMaxWorkers = process.env.PRODUCER_MAX_WORKERS;
+    const previousMinParallelFrames = process.env.PRODUCER_MIN_PARALLEL_FRAMES;
+    process.env.PRODUCER_MAX_WORKERS = '7';
+    process.env.PRODUCER_MIN_PARALLEL_FRAMES = '120';
+    let planEnvironment: { maxWorkers?: string; minParallelFrames?: string } | undefined;
+    const observed: Array<{ maxWorkers?: string; minParallelFrames?: string }> = [];
+    const renderChunk = deps().renderChunk!;
+
+    try {
+      await executeRenderChunks(
+        { ...paths, options, chunkCount: 3, chunkWorkers: 1, maxParallelChunks: 2 },
+        deps({
+          plan: async (...args) => {
+            planEnvironment = {
+              maxWorkers: process.env.PRODUCER_MAX_WORKERS,
+              minParallelFrames: process.env.PRODUCER_MIN_PARALLEL_FRAMES,
+            };
+            return fakePlan(...args);
+          },
+          renderChunk: async (...args) => {
+            observed.push({
+              maxWorkers: process.env.PRODUCER_MAX_WORKERS,
+              minParallelFrames: process.env.PRODUCER_MIN_PARALLEL_FRAMES,
+            });
+            return renderChunk(...args);
+          },
+        }),
+      );
+
+      expect(planEnvironment).toEqual({
+        maxWorkers: '1',
+        minParallelFrames: String(Number.MAX_SAFE_INTEGER),
+      });
+      expect(observed).toEqual(
+        Array.from({ length: 3 }, () => ({
+          maxWorkers: '1',
+          minParallelFrames: String(Number.MAX_SAFE_INTEGER),
+        })),
+      );
+      expect(process.env.PRODUCER_MAX_WORKERS).toBe('7');
+      expect(process.env.PRODUCER_MIN_PARALLEL_FRAMES).toBe('120');
+    } finally {
+      if (previousMaxWorkers === undefined) delete process.env.PRODUCER_MAX_WORKERS;
+      else process.env.PRODUCER_MAX_WORKERS = previousMaxWorkers;
+      if (previousMinParallelFrames === undefined) delete process.env.PRODUCER_MIN_PARALLEL_FRAMES;
+      else process.env.PRODUCER_MIN_PARALLEL_FRAMES = previousMinParallelFrames;
+    }
   });
 
   it('drains sibling chunks after one worker fails', async () => {

@@ -15,7 +15,10 @@ import {
   type DocumentAccess,
 } from '@/lib/persistence/document-access';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
-import { authenticatePersistenceRequest } from '@/lib/persistence/server-auth';
+import {
+  authenticatePersistenceRequest,
+  SHARED_ASSET_PRINCIPAL,
+} from '@/lib/persistence/server-auth';
 import {
   getServerPersistenceProvider,
   type PersistencePoolFactory,
@@ -92,10 +95,35 @@ async function createPersistenceHandler(
     validateScene: validateAppScene,
     validateStage: validateAppStage,
   });
-  // Runtime and asset requests retain the development authenticator, which
-  // takes their partition key from a client-supplied header. Document requests
-  // use the server-resolved anonymous owner below. Before runtime or asset
-  // routes carry production data, their authenticator must also be replaced
+  // The asset posture, precisely.
+  //
+  // Reading an asset and allocating one are open to any caller this deployment
+  // lets in, exactly as reading a document and creating one already are: assets
+  // live in a single shared partition by design (see the SHARED_ASSET_PRINCIPAL
+  // comment in lib/persistence/server-auth.ts), so there is nothing per-caller
+  // for the development authenticator to decide about them, and routing them
+  // through it made every asset request fail in a production build that had not
+  // opted into that authenticator — the build this project's own
+  // server-persistence recipe produces.
+  //
+  // Replacing and deleting are refused outright — to everyone, authenticated or
+  // not. Those operations scope by principal key alone, and every caller
+  // resolves to the same shared key, so authentication decides nothing here:
+  // any signed-in visitor who learned an id, and a document read hands out
+  // every id its slides name, could overwrite or destroy another author's
+  // media. There is no per-asset ownership to check against yet, and since this
+  // application began storing generated media the registry is the only copy a
+  // course has, so the answer is no mutations at all. Nothing in the app
+  // performs an asset PUT or DELETE; an entry nothing references waits for
+  // server-side reclamation rather than being deleted from the browser.
+  //
+  // What this is NOT: a per-caller access control. The deployment-level fence
+  // is the access code. Allocation is bounded by the asset store's per-principal
+  // quota, which with one shared principal is a deployment-wide cap.
+  //
+  // Runtime requests still take their partition key from a client-supplied
+  // header, because a runtime session genuinely is per-learner state. Before
+  // runtime routes carry production data, their authenticator must be replaced
   // with real session verification.
   // Reclamation is not scheduled from here, and must not be: a route module
   // has no once-per-process guarantee and no shutdown hook. AssetCollector
@@ -106,10 +134,20 @@ async function createPersistenceHandler(
     configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
   );
   return createStorageHttpHandler(runtimeStore, documentStore, {
-    authenticate: async (request) =>
-      request.url?.startsWith('/documents')
-        ? { learnerKey: ownerId }
-        : authenticatePersistenceRequest(request),
+    authenticate: async (request) => {
+      if (request.url?.startsWith('/documents')) return { learnerKey: ownerId };
+      if (request.url?.startsWith('/assets')) {
+        return { key: SHARED_ASSET_PRINCIPAL, learnerKey: ownerId };
+      }
+      return authenticatePersistenceRequest(request);
+    },
+    authorizeAssets: async (_principal, request) => {
+      const method = (request.method ?? 'GET').toUpperCase();
+      // Reads and allocations for everyone; mutations for nobody, because the
+      // principal they would be scoped to is shared and therefore proves
+      // nothing about who is asking.
+      return method !== 'PUT' && method !== 'DELETE';
+    },
     authorizeMerge: async () => false,
     authorizeAdmin: async () => false,
     authorizeDocuments: async () => access === 'allow',

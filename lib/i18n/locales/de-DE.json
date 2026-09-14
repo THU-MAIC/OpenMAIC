@@ -85,6 +85,9 @@
     "videoProgressWithEta": "{{percent}} % · noch etwa {{remaining}}",
     "videoEtaMinSec": "{{min}} Min. {{sec}} Sek.",
     "videoEtaSec": "{{sec}} Sek.",
+    "videoQueueBusy": "Die Render-Warteschlange ist ausgelastet. Bitte prüfen Sie es gleich erneut.",
+    "videoRecheckQueue": "Erneut prüfen",
+    "videoCheckingQueue": "Wird geprüft…",
     "videoRenderMp4": "MP4 rendern",
     "videoDownloadZip": "Projekt-ZIP herunterladen",
     "videoServiceHint": "Zum Rendern als MP4 ist der Renderdienst erforderlich. Lade das ZIP zum lokalen Rendern herunter.",
@@ -136,11 +139,11 @@
       "streamInterrupted": "Der Stream wurde unerwartet beendet; die Diskussion konnte nicht abgeschlossen werden. Versuche es erneut."
     },
     "elementReference": {
-      "button": "Folie referenzieren",
-      "unavailable": "Nur die aktuelle PPT-Folie kann referenziert werden",
-      "instruction": "Folienelement anklicken · Esc zum Beenden",
+      "button": "Kursinhalt referenzieren",
+      "unavailable": "Nur die aktuelle PPT-Folie oder eine unterstützte interaktive Komponente kann referenziert werden",
+      "instruction": "Kursmaterialelement anklicken · Esc zum Beenden",
       "fallback": "Weitere Folienelemente ({{count}})",
-      "clear": "Folienreferenz entfernen",
+      "clear": "Kursinhaltsreferenz entfernen",
       "summary": {
         "noText": "Kein Text",
         "emptyContent": "Kein Inhalt",
@@ -1746,6 +1749,7 @@
     "videoGenerationWarning": "Die Videogenerierung dauert normalerweise 1–2 Minuten. Bitte hab etwas Geduld.",
     "mediaRetry": "Erneut versuchen",
     "mediaContentSensitive": "Dieser Inhalt hat leider eine Sicherheitsprüfung ausgelöst.",
+    "mediaStorageFull": "Der Speicher ist voll, daher konnte dieses Medium nicht gespeichert werden.",
     "mediaGenerationDisabled": "Generierung in den Einstellungen deaktiviert",
     "singleAgent": "Einzelagent",
     "multiAgent": "Mehrere Agenten",

@@ -85,6 +85,9 @@
     "videoProgressWithEta": "{{percent}} % · environ {{remaining}} restant",
     "videoEtaMinSec": "{{min}} min {{sec}} s",
     "videoEtaSec": "{{sec}} s",
+    "videoQueueBusy": "La file de rendu est occupée. Réessayez dans un instant.",
+    "videoRecheckQueue": "Vérifier à nouveau",
+    "videoCheckingQueue": "Vérification…",
     "videoRenderMp4": "Générer le MP4",
     "videoDownloadZip": "Télécharger le ZIP du projet",
     "videoServiceHint": "Le rendu MP4 nécessite le service de rendu. Téléchargez le ZIP pour un rendu local.",
@@ -136,11 +139,11 @@
       "streamInterrupted": "Le flux s’est interrompu de façon inattendue ; la discussion n’a pas abouti. Veuillez réessayer."
     },
     "elementReference": {
-      "button": "Référencer la diapositive",
-      "unavailable": "Seule la diapositive PPT actuelle peut être référencée",
-      "instruction": "Cliquez sur un élément · Échap pour quitter",
+      "button": "Référencer le contenu du cours",
+      "unavailable": "Seuls la diapositive PPT actuelle ou un composant interactif pris en charge peuvent être référencés",
+      "instruction": "Cliquez sur un élément du support de cours · Échap pour quitter",
       "fallback": "Autres éléments de la diapositive ({{count}})",
-      "clear": "Retirer la référence à la diapositive",
+      "clear": "Retirer la référence au contenu du cours",
       "summary": {
         "noText": "Sans texte",
         "emptyContent": "Aucun contenu",
@@ -1746,6 +1749,7 @@
     "videoGenerationWarning": "La génération vidéo prend généralement 1 à 2 minutes, merci de patienter",
     "mediaRetry": "Réessayer",
     "mediaContentSensitive": "Désolé, ce contenu a déclenché un contrôle de sécurité.",
+    "mediaStorageFull": "L'espace de stockage est plein : ce média n'a pas pu être enregistré.",
     "mediaGenerationDisabled": "Génération désactivée dans les paramètres",
     "singleAgent": "Agent unique",
     "multiAgent": "Multi-agents",

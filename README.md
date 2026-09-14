@@ -415,6 +415,23 @@ horizontally scaled deployment may leave it on in every instance — each blob r
 is locked and re-checked before its bytes go, so concurrent collectors serialize
 rather than race — or disable it everywhere and run its own.
 
+One asset principal may hold `ASSET_QUOTA_BYTES` (default 10 GiB) before further
+allocations are refused; the store enforces it inside the write transaction, so
+concurrent uploads cannot race past it. Until per-user asset principals land
+every caller shares one principal, which makes this a deployment-wide ceiling
+rather than a per-user one — and one worth having, because allocation is
+reachable by any caller the deployment admits. Set `ASSET_QUOTA_BYTES=0` to opt
+out and bound storage elsewhere; any spelling of zero does it. A value that is
+not a non-negative integer is refused when the server starts, rather than
+replaced by the default, so a mistyped ceiling stops the process instead of
+quietly running on a limit nobody chose.
+
+Assets are read and allocated by any caller the deployment admits, and are never
+replaced or deleted through this endpoint: those operations would scope to the
+shared principal, so admitting them would let any caller overwrite or destroy
+another author's media. An asset nothing references is left to the collector
+rather than deleted by a browser.
+
 Asset byte egress is direct by default: the embedded route materializes the
 bytes in the response body. Setting `ASSET_BYTE_EGRESS=redirect` opts into
 **indirect** egress, under which a byte `GET` answers with a short-lived signed

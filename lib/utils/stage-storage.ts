@@ -51,6 +51,7 @@ import {
   type MediaTaskState,
 } from '@/lib/media/resolve-media-ref';
 import { withAssetUrl } from '@/lib/media/use-asset-url';
+import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
 import { useSettingsStore } from '@/lib/store/settings';
 import {
   beginStageDeletionCascade,
@@ -65,6 +66,8 @@ import {
   executeStageAssetReclamation,
   loadStageAssetInventory,
 } from '@/lib/media/reclaim-stage-assets';
+import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
+import { applyKnownMediaAllocations } from '@/lib/media/reconcile-scene-media';
 import {
   collectDocumentMediaElements,
   resolveMediaTaskForElement,
@@ -186,6 +189,25 @@ async function saveStageChats(
 export type StaleDroppedSave = 'stale-dropped';
 
 /**
+ * The one place every durable write passes through.
+ *
+ * A snapshot reaches storage from several producers — the debounced autosave,
+ * the aggregate save, the departing-course flush, an editor-history entry
+ * replayed by undo — and each captures content at its own moment. Any of those
+ * moments can predate a media write-back, in which case the snapshot still
+ * carries a generation placeholder the document has already moved past, and
+ * writing it would silently undo a successful rewrite. Rewriting here, rather
+ * than at each producer, is what keeps the next producer from rediscovering the
+ * same bug. Inert outside server-backed persistence, and a no-op allocation for
+ * a snapshot that holds no stale placeholder.
+ */
+function withKnownMediaAllocations(stageId: string, data: StageStoreData): StageStoreData {
+  const applied = applyKnownMediaAllocations(stageId, data.stage, data.scenes);
+  if (!applied) return data;
+  return { ...data, stage: applied.stage as StageStoreData['stage'], scenes: [...applied.scenes] };
+}
+
+/**
  * Save stage data to IndexedDB.
  *
  * `capturedEpoch` is the stage's deletion epoch at the moment `data` was
@@ -213,6 +235,11 @@ export async function saveStageData(
     await mutateDocument(
       stageId,
       async (existing, store) => {
+        // Reconciled here, under the document lock, not before it: a write-back
+        // running when this save was queued may only have recorded its
+        // allocation while we waited for the lock, and a departing-course flush
+        // gets no corrective pass afterwards.
+        data = withKnownMediaAllocations(stageId, data);
         // Re-check inside the mutation: a deletion that started while this
         // save was waiting must win. With Web Locks this runs under the
         // per-stage document lock; without them the callback is lock-free
@@ -304,6 +331,8 @@ export async function saveStageDataIncremental(
     await mutateDocument(
       stageId,
       async (existing, store) => {
+        // Reconciled under the lock, for the reason saveStageData gives.
+        data = withKnownMediaAllocations(stageId, data);
         // Re-check inside the mutation: `existing === undefined` after a
         // deletion must not be mistaken for a legacy destination — the
         // full-save fallback below would otherwise rebuild the deleted
@@ -568,6 +597,9 @@ async function performStageDeletion(stageId: string): Promise<void> {
   // sitting in the debounce window must not even start a flush after the
   // delete.
   discardPendingStageChanges(stageId);
+  // Media allocations parked for slides this stage will never build now have
+  // no possible destination; the reclamation plan below owns their bytes.
+  clearPendingMediaAllocations(stageId);
   let documentDeleted = false;
   try {
     // storageSharedLockHeld: the cascade below holds the EXCLUSIVE epoch, which
@@ -855,14 +887,18 @@ export async function resolveThumbnailMediaValue(
   }
   let blob: Blob | undefined;
   try {
-    blob = await withAssetUrl(ref, async (url) => {
-      if (!url) return undefined;
-      const response = await fetch(url);
-      const fetched = response.ok ? await response.blob() : undefined;
-      // Zero-byte pool answers are not usable bytes: fall back to the stored
-      // row (or no thumbnail) rather than minting an empty image.
-      return fetched && fetched.size > 0 ? fetched : undefined;
-    });
+    // A generation placeholder is not a pool id: leasing it is a guaranteed
+    // miss, and a thumbnail grid asks once per slide per load.
+    blob = mayNameAPoolAsset(ref)
+      ? await withAssetUrl(ref, async (url) => {
+          if (!url) return undefined;
+          const response = await fetch(url);
+          const fetched = response.ok ? await response.blob() : undefined;
+          // Zero-byte pool answers are not usable bytes: fall back to the
+          // stored row (or no thumbnail) rather than minting an empty image.
+          return fetched && fetched.size > 0 ? fetched : undefined;
+        })
+      : undefined;
   } catch {
     // Pool access is optional for the home-page compatibility thumbnail.
   }

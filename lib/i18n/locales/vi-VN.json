@@ -85,6 +85,9 @@
     "videoProgressWithEta": "{{percent}}% · còn khoảng {{remaining}}",
     "videoEtaMinSec": "{{min}} phút {{sec}} giây",
     "videoEtaSec": "{{sec}} giây",
+    "videoQueueBusy": "Hàng đợi kết xuất đang bận. Vui lòng kiểm tra lại sau ít phút.",
+    "videoRecheckQueue": "Kiểm tra lại",
+    "videoCheckingQueue": "Đang kiểm tra…",
     "videoRenderMp4": "Kết xuất MP4",
     "videoDownloadZip": "Tải ZIP dự án",
     "videoServiceHint": "Kết xuất MP4 cần dịch vụ kết xuất. Hãy tải ZIP về để kết xuất tại máy.",
@@ -136,11 +139,11 @@
       "streamInterrupted": "Luồng dữ liệu dừng bất ngờ, thảo luận chưa hoàn tất. Vui lòng thử lại."
     },
     "elementReference": {
-      "button": "Tham chiếu trang chiếu",
-      "unavailable": "Chỉ có thể tham chiếu trang PPT hiện tại",
-      "instruction": "Nhấp vào một phần tử · Esc để thoát",
+      "button": "Tham chiếu học liệu",
+      "unavailable": "Chỉ có thể tham chiếu trang PPT hiện tại hoặc một thành phần tương tác được hỗ trợ",
+      "instruction": "Nhấp vào một phần tử trong học liệu · Esc để thoát",
       "fallback": "Các phần tử khác ({{count}})",
-      "clear": "Xóa tham chiếu trang chiếu",
+      "clear": "Xóa tham chiếu học liệu",
       "summary": {
         "noText": "Không có văn bản",
         "emptyContent": "Không có nội dung",
@@ -1746,6 +1749,7 @@
     "videoGenerationWarning": "Việc tạo video thường mất 1–2 phút, vui lòng kiên nhẫn",
     "mediaRetry": "Thử lại",
     "mediaContentSensitive": "Rất tiếc, nội dung này vướng bộ kiểm tra an toàn.",
+    "mediaStorageFull": "Bộ nhớ đã đầy nên không thể lưu nội dung này.",
     "mediaGenerationDisabled": "Đã tắt chức năng tạo trong cài đặt",
     "singleAgent": "Một tác nhân",
     "multiAgent": "Nhiều tác nhân",

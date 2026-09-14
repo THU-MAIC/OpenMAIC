@@ -10,18 +10,32 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
+import { useNarrationAdoption } from '@/lib/audio/use-narration-adoption';
+import { clearNarrationAllocations } from '@/lib/audio/narration-allocations';
+import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { createLogger } from '@/lib/logger';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { fetchStageMeta } from '@/lib/classroom/stage-meta-client';
-import { noteStageOwnership } from '@/lib/classroom/stage-ownership-signal';
+import {
+  classroomGenerationOwnership,
+  mayStartOwnerGeneration,
+  noteStageOwnership,
+  retryWhileOwnershipUnresolved,
+  type ClassroomGenerationOwnership,
+} from '@/lib/classroom/stage-ownership-signal';
+import {
+  noteStageGenerationOwnership,
+  useStageGenerationOwnership,
+} from '@/lib/classroom/generation-permission';
 import {
   applyClassroomStageAndScenes,
   defaultClassroomLoadDeps,
   runClassroomLoad,
 } from '@/lib/classroom/load-classroom';
+import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 
 const log = createLogger('Classroom');
 
@@ -33,6 +47,15 @@ export default function ClassroomDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Not a boolean on purpose: `false` would say "this is a stranger's course",
+  // which is neither what an unanswered sidecar nor a 404 means. Held in the
+  // shared permission store rather than in local state, so the retry
+  // affordances read exactly the value this effect gates on.
+  const ownership = useStageGenerationOwnership(classroomId);
+  // Render condition and action precondition are the same value: an outline
+  // retry runs the whole content + actions + narration chain on the operator's
+  // keys, so a viewer must not even be offered it.
+  const mayGenerate = mayStartOwnerGeneration(isServerBackedMediaPersistence(), ownership);
 
   const generationStartedRef = useRef(false);
 
@@ -80,30 +103,51 @@ export default function ClassroomDetailPage() {
       // (see `stage-meta-client.ts`). Run it strictly AFTER the load applied
       // its defaults so its answer wins, and fire it without blocking the
       // render that already happened.
+      //
+      // Asked until it answers, not once. Every non-answer fails closed, so a
+      // single transient 5xx would otherwise leave the genuine owner with no
+      // resume, no Retry affordance and no legacy narration converted for the
+      // rest of the load -- the pane self-heals because it re-asks after every
+      // settled load, and this route had nothing equivalent.
+      const askOwnership = async (): Promise<ClassroomGenerationOwnership> => {
+        try {
+          const result = await fetchStageMeta(classroomId);
+          if (!isEffectCurrent()) return 'unresolved';
+          // One mapping of the sidecar's three outcomes onto the generation
+          // gate, shared with every other classroom surface and with every
+          // affordance that could start generation.
+          const ownership = classroomGenerationOwnership(result);
+          noteStageGenerationOwnership(classroomId, ownership);
+          if (result.outcome === 'found') {
+            noteStageOwnership(classroomId, true, {
+              isOwner: result.meta.isOwner,
+            });
+            useStageStore.getState().setViewerAccess({
+              isOwner: result.meta.isOwner,
+            });
+          } else if (result.outcome === 'unavailable') {
+            // A silent sidecar is not "this is a stranger's course": record
+            // the outage so nothing treats `isOwner === false` as a visitor
+            // conclusion. The edit gate stays on the upstream defaults.
+            noteStageOwnership(classroomId, false, null);
+          } else {
+            // 'absent' — no sidecar row for this id. This classroom also
+            // serves local-only courses, so the upstream editable default
+            // stays; the server's owner-scoped writes remain the authority.
+            noteStageOwnership(classroomId, true, null);
+          }
+          return ownership;
+        } catch {
+          if (!isEffectCurrent()) return 'unresolved';
+          // Recorded, not merely left absent: an answer an earlier load
+          // established must not outlive the failure that replaced it.
+          noteStageGenerationOwnership(classroomId, 'unresolved');
+          noteStageOwnership(classroomId, false, null);
+          return 'unresolved';
+        }
+      };
       if (isEffectCurrent()) {
-        void fetchStageMeta(classroomId)
-          .then((result) => {
-            if (!isEffectCurrent()) return;
-            if (result.outcome === 'found') {
-              noteStageOwnership(classroomId, true, {
-                isOwner: result.meta.isOwner,
-              });
-              useStageStore.getState().setViewerAccess({
-                isOwner: result.meta.isOwner,
-              });
-            } else if (result.outcome === 'unavailable') {
-              // A silent sidecar is not "this is a stranger's course": record
-              // the outage so nothing treats `isOwner === false` as a visitor
-              // conclusion. The edit gate stays on the upstream defaults.
-              noteStageOwnership(classroomId, false, null);
-            } else {
-              // 'absent' — no sidecar row for this id. This classroom also
-              // serves local-only courses, so the upstream editable default
-              // stays; the server's owner-scoped writes remain the authority.
-              noteStageOwnership(classroomId, true, null);
-            }
-          })
-          .catch(() => noteStageOwnership(classroomId, false, null));
+        void retryWhileOwnershipUnresolved(askOwnership, { isCurrent: isEffectCurrent });
       }
     },
     [classroomId, loadFromStorage],
@@ -116,6 +160,9 @@ export default function ClassroomDetailPage() {
     setLoading(true);
     setError(null);
     /* eslint-enable react-hooks/set-state-in-effect */
+    // Ownership belongs to the departing course; the new one must re-earn it
+    // before anything it holds may be generated.
+    noteStageGenerationOwnership(classroomId, 'unresolved');
     generationStartedRef.current = false;
 
     // Clear previous classroom's media tasks to prevent cross-classroom contamination.
@@ -124,6 +171,11 @@ export default function ClassroomDetailPage() {
     const mediaStore = useMediaGenerationStore.getState();
     mediaStore.revokeObjectUrls();
     useMediaGenerationStore.setState({ tasks: {} });
+    // Allocations parked by an interrupted run on THIS id must go with them.
+    // Classic placeholders are reused across runs of the same course, so a
+    // survivor would be handed to a different slide of the next deck.
+    clearPendingMediaAllocations(classroomId);
+    clearNarrationAllocations(classroomId);
 
     // Clear whiteboard history to prevent snapshots from a previous course leaking in.
     useWhiteboardHistoryStore.getState().clearHistory();
@@ -138,9 +190,19 @@ export default function ClassroomDetailPage() {
     };
   }, [classroomId, loadClassroom, stop]);
 
+  // Narration written before this application stored media server-side is a
+  // derived key that only this browser can resolve. The owner's browser still
+  // has the bytes, so it converts them once per load, with no provider call.
+  useNarrationAdoption(classroomId, { ready: !loading && !error, mayGenerate });
+
   // Auto-resume generation for pending outlines
   useEffect(() => {
     if (loading || error || generationStartedRef.current) return;
+    // Generation spends the operator's provider budget, and a server-backed
+    // course is readable by anyone it was shared with, so a viewer must never
+    // start it. `generationStartedRef` is deliberately NOT set here, so the
+    // effect re-runs and starts once the sidecar's answer arrives.
+    if (!mayGenerate) return;
 
     const state = useStageStore.getState();
     const { outlines, scenes, stage, generationComplete } = state;
@@ -218,7 +280,7 @@ export default function ClassroomDetailPage() {
         log.warn('[Classroom] Media generation resume error:', err);
       });
     }
-  }, [loading, error, generateRemaining]);
+  }, [loading, error, mayGenerate, generateRemaining]);
 
   return (
     <ThemeProvider>
@@ -247,7 +309,7 @@ export default function ClassroomDetailPage() {
               </div>
             </div>
           ) : (
-            <Stage onRetryOutline={retrySingleOutline} />
+            <Stage onRetryOutline={mayGenerate ? retrySingleOutline : undefined} />
           )}
         </div>
       </MediaStageProvider>

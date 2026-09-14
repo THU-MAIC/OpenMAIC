@@ -85,6 +85,9 @@
     "videoProgressWithEta": "{{percent}}% · 약 {{remaining}} 남음",
     "videoEtaMinSec": "{{min}}분 {{sec}}초",
     "videoEtaSec": "{{sec}}초",
+    "videoQueueBusy": "렌더링 대기열이 혼잡합니다. 잠시 후 다시 확인해 주세요.",
+    "videoRecheckQueue": "다시 확인",
+    "videoCheckingQueue": "확인 중…",
     "videoRenderMp4": "MP4 렌더링",
     "videoDownloadZip": "프로젝트 ZIP 다운로드",
     "videoServiceHint": "MP4 렌더링에는 렌더 서비스가 필요합니다. ZIP을 다운로드하여 로컬에서 렌더링하세요.",
@@ -136,11 +139,11 @@
       "streamInterrupted": "스트림이 예기치 않게 종료되어 토론이 완료되지 않았습니다. 다시 시도해 주세요."
     },
     "elementReference": {
-      "button": "슬라이드 참조",
-      "unavailable": "현재 PPT 슬라이드만 참조할 수 있습니다",
-      "instruction": "슬라이드 요소를 클릭하세요 · Esc로 종료",
+      "button": "수업 자료 참조",
+      "unavailable": "현재 PPT 슬라이드 또는 지원되는 인터랙티브 컴포넌트만 참조할 수 있습니다",
+      "instruction": "강의 자료 요소를 클릭하세요 · Esc로 종료",
       "fallback": "기타 슬라이드 요소 ({{count}})",
-      "clear": "슬라이드 참조 제거",
+      "clear": "수업 자료 참조 제거",
       "summary": {
         "noText": "텍스트 없음",
         "emptyContent": "콘텐츠 없음",
@@ -1746,6 +1749,7 @@
     "videoGenerationWarning": "동영상 생성은 보통 1~2분이 소요됩니다. 잠시 기다려 주세요",
     "mediaRetry": "재시도",
     "mediaContentSensitive": "죄송합니다. 이 콘텐츠가 안전 검사를 통과하지 못했습니다.",
+    "mediaStorageFull": "저장 공간이 가득 차서 이 미디어를 저장할 수 없습니다.",
     "mediaGenerationDisabled": "설정에서 생성이 비활성화되어 있습니다",
     "singleAgent": "단일 에이전트",
     "multiAgent": "멀티 에이전트",

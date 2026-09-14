@@ -98,7 +98,7 @@ describe('InProcessExecutor', () => {
           sessionBootMs: 1,
           captureStageMs: 5,
           encodeStageMs: 3,
-          workers: 1,
+          workers: 2,
           captureMode: 'beginframe' as const,
           perfPath: '/tmp/chunk-0.mp4.perf.json',
         },
@@ -112,7 +112,7 @@ describe('InProcessExecutor', () => {
           sessionBootMs: 1,
           captureStageMs: 6,
           encodeStageMs: 4,
-          workers: 1,
+          workers: 2,
           captureMode: 'beginframe' as const,
           perfPath: '/tmp/chunk-1.mp4.perf.json',
         },
@@ -131,7 +131,8 @@ describe('InProcessExecutor', () => {
 
     expect(result).toMatchObject({
       status: 'succeeded',
-      performance: { totalFrames: 60, workers: 1 },
+      performance: { totalFrames: 60, workers: 2 },
+      metrics: { requestedWorkers: 1, actualWorkers: 2 },
     });
     expect(chunkExecutor).toHaveBeenCalledWith(
       expect.objectContaining({

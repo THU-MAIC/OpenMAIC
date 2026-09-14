@@ -266,12 +266,31 @@ async function frozenVideo(
 const REFS = [
   'ast_opaque_1',
   'ast_opaque_1:variant',
+  // A generation placeholder still belongs in the matrix — it exercises the
+  // task and compatibility-row levels — but it is deliberately paired with a
+  // pool MISS in every case (see `arm`). The pool allocates every id it
+  // holds, so it cannot be holding one of these; the current resolver skips the
+  // lease for exactly that reason, while the frozen implementation still asks.
+  // Driving a placeholder against a pool hit would compare the two on a state
+  // that cannot occur.
   'gen_img_1',
   'https://cdn.example.com/remote.png',
   'blob:local-object',
   'data:image/png;base64,AAAA',
   'nested/path/file.png',
 ] as const;
+
+/**
+ * Whether this matrix ref could ever name a pool asset.
+ *
+ * The same rule the application applies: every id the pool allocated carries
+ * the `ast_` prefix, so nothing else can be in it. Note that the ref reaching
+ * a lease is not always the matrix ref — a compatibility row's id is split on
+ * `:` — so this is applied to whatever is actually asked for.
+ */
+function leasable(ref: string): boolean {
+  return ref.startsWith('ast_');
+}
 
 type TaskCase = { name: string; tasks: Record<string, Record<string, unknown>> };
 
@@ -385,12 +404,51 @@ interface Outcome {
   calls: string[];
 }
 
+/**
+ * The one intended divergence from the frozen behaviour.
+ *
+ * A ref the pool never allocated cannot be in it, so the current resolver does
+ * not lease it; the frozen implementations still ask and are told no. Both
+ * therefore reach the same answer through the same later levels, and the only
+ * difference in the trace is the lease that no longer happens. It is removed
+ * from the frozen side so everything else is still compared exactly.
+ */
+const LEASE_CALL = 'lease:';
+
+/**
+ * Drop the lease calls the current implementation is right to skip.
+ *
+ * The frozen implementations ask the pool about every reference; the current
+ * one asks only about references the pool could be holding. Both are answered
+ * the same way (see `arm`), so the outcomes stay comparable — but the frozen
+ * call log carries requests the current one never makes, and comparing those
+ * would only re-assert the skip this normalisation exists to allow.
+ *
+ * Filtered by the reference actually asked for, which is not always the matrix
+ * reference: a compatibility row's id is split on `:` before it is leased.
+ */
+function withoutSkippedLease(observed: Outcome): Outcome {
+  return {
+    ...observed,
+    calls: observed.calls.filter(
+      (call) => !call.startsWith(LEASE_CALL) || leasable(call.slice(LEASE_CALL.length)),
+    ),
+  };
+}
+
 function arm(pool: string, fetchMode: string, tasks: Record<string, unknown>) {
   mocks.calls.length = 0;
   mocks.getState.mockReturnValue({ tasks });
   mocks.withAssetUrl.mockImplementation(
     async (ref: string, use: (url: string | null) => Promise<Blob | null>) => {
       mocks.calls.push(`lease:${ref}`);
+      // The pool cannot hold a ref it never allocated, so a placeholder is a
+      // miss whatever the case says — modelled here rather than by dropping the
+      // ref from the matrix, which would lose its coverage of the task and
+      // compatibility-row levels. The current resolver skips the lease for such
+      // a ref; the frozen implementation still asks and is answered the same
+      // way, so the two remain comparable on every state that can occur.
+      if (!leasable(ref)) return use(null);
       if (pool === 'throw') throw new Error('pool unavailable');
       return use(pool === 'url' ? `blob:pool-${ref}` : null);
     },
@@ -439,7 +497,7 @@ describe('frozen-base differential harness', () => {
               const label = `ZIP ${ref} ${task.name} pool=${pool} fetch=${fetchMode} row=${row.name}`;
               const supplied = row.make(ref);
               arm(pool, fetchMode, task.tasks);
-              const before = await capture(() => frozenZip(ref), supplied);
+              const before = withoutSkippedLease(await capture(() => frozenZip(ref), supplied));
               arm(pool, fetchMode, task.tasks);
               const after = await capture(
                 () =>
@@ -468,13 +526,18 @@ describe('frozen-base differential harness', () => {
     // Every concrete ref bypasses the pool and reaches the supplied row. For
     // each opaque ref, the row is reached on pool miss/throw (8 fetch-mode
     // combinations), plus pool URL with the two rejected fetch outcomes
-    // (empty/throw). Exactly one ZIP row case carries usable non-empty bytes.
+    // (empty/throw). A ref the pool cannot hold reaches the row in EVERY pool
+    // case, because there is no pool answer to consume — the same arithmetic as
+    // a concrete ref. Exactly one ZIP row case carries usable non-empty bytes.
     const concreteRefs = REFS.filter(isConcreteMediaAddress).length;
-    const opaqueRefs = REFS.length - concreteRefs;
+    const unleasableRefs = REFS.filter(
+      (ref) => !isConcreteMediaAddress(ref) && !leasable(ref),
+    ).length;
+    const opaqueRefs = REFS.length - concreteRefs - unleasableRefs;
     const rowReachingOpaqueCases =
       (POOL_CASES.length - 1) * FETCH_CASES.length + 1 * (FETCH_CASES.length - 2);
     expect(divergences.length).toBe(
-      (concreteRefs * POOL_CASES.length * FETCH_CASES.length +
+      ((concreteRefs + unleasableRefs) * POOL_CASES.length * FETCH_CASES.length +
         opaqueRefs * rowReachingOpaqueCases) *
         9,
     );
@@ -496,7 +559,9 @@ describe('frozen-base differential harness', () => {
                   mocks.calls.push(`dexie:${key}`);
                   return loaded;
                 });
-                const before = await capture(() => frozenPptx(ref, stageId), loaded);
+                const before = withoutSkippedLease(
+                  await capture(() => frozenPptx(ref, stageId), loaded),
+                );
                 arm(pool, fetchMode, task.tasks);
                 mocks.mediaGet.mockImplementation(async (key: string) => {
                   mocks.calls.push(`dexie:${key}`);
@@ -525,7 +590,9 @@ describe('frozen-base differential harness', () => {
                     mocks.calls.push(`dexie:${key}`);
                     return loaded;
                   });
-                  const repaired = await capture(() => frozenPptxRepaired(ref, stageId), loaded);
+                  const repaired = withoutSkippedLease(
+                    await capture(() => frozenPptxRepaired(ref, stageId), loaded),
+                  );
                   expect(after, label).toEqual(repaired);
                   expect(after.kind, label).not.toBe('throw');
                   continue;
@@ -542,10 +609,12 @@ describe('frozen-base differential harness', () => {
     // one of the three non-concrete refs, a fetch outcome the frozen `fetchBlob`
     // accepts (`ok` and `empty` alike -- it checks only `response.ok`), and any
     // task state that still resolves to a URL, which is all of them except
-    // `generating` and `pending`. There are three non-concrete refs now: both
-    // opaque base refs and the opaque ref carrying an additional colon.
+    // `generating` and `pending`. Two non-concrete refs qualify: the opaque base
+    // ref and the opaque ref carrying an additional colon. The generation
+    // placeholder no longer does — the pool cannot hold it, so there are no
+    // pooled bytes to return before the row is read.
     const bloblessStaged = REFS.length * 9 * POOL_CASES.length * FETCH_CASES.length;
-    const pooledBeforeRow = 3 * 1 * 2 * 7;
+    const pooledBeforeRow = 2 * 1 * 2 * 7;
     expect(divergences.length).toBe(bloblessStaged - pooledBeforeRow);
   });
 
@@ -560,7 +629,9 @@ describe('frozen-base differential harness', () => {
                 const label = `VIDEO ${ref} ${task.name} pool=${pool} fetch=${fetchMode} row=${row.name} stage=${stageId}`;
                 const supplied = row.make(ref);
                 arm(pool, fetchMode, task.tasks);
-                const before = await capture(() => frozenVideo(ref, supplied, stageId), supplied);
+                const before = withoutSkippedLease(
+                  await capture(() => frozenVideo(ref, supplied, stageId), supplied),
+                );
                 arm(pool, fetchMode, task.tasks);
                 const after = await capture(
                   () =>

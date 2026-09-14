@@ -4,7 +4,9 @@ import { useMemo } from 'react';
 import type { Slide } from '@openmaic/dsl';
 import type { MediaTask } from '@/lib/store/media-generation';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
+import { useMayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { useAssetUrlLeases, type AssetUrlLeaseState } from '@/lib/media/use-asset-url';
+import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import {
@@ -12,6 +14,7 @@ import {
   isConcreteMediaAddress,
   renderableMediaUrl,
   resolveMediaRef,
+  withGenerationPermission,
   type MediaResolution,
 } from '@/lib/media/resolve-media-ref';
 import {
@@ -55,18 +58,24 @@ export function resolveSlideMediaState(
     assetLeases?: Readonly<Record<string, AssetUrlLeaseState>>;
     imageGenerationDisabled?: boolean;
     videoGenerationDisabled?: boolean;
+    /** Whether this browser may start generation; false withdraws retry. */
+    mayGenerate?: boolean;
   } = {},
 ): ResolvedSlideMedia {
+  const mayGenerate = options.mayGenerate ?? true;
   const byElementId: Record<string, ResolvedSlideMediaEntry> = {};
   const backgroundRef =
     slide.background?.type === 'image' ? slide.background.image?.src : undefined;
   const backgroundTask = resolveMediaTaskForRef(tasks, backgroundRef, stageId);
   const backgroundResolution = backgroundRef
-    ? resolveMediaRef(
-        backgroundRef,
-        backgroundTask,
-        leaseFor(backgroundRef, options.assetLeases, options.assetUrls),
-        options.imageGenerationDisabled,
+    ? withGenerationPermission(
+        resolveMediaRef(
+          backgroundRef,
+          backgroundTask,
+          leaseFor(backgroundRef, options.assetLeases, options.assetUrls),
+          options.imageGenerationDisabled,
+        ),
+        mayGenerate,
       )
     : undefined;
   const backgroundSrc = backgroundResolution
@@ -92,19 +101,27 @@ export function resolveSlideMediaState(
     const task =
       videoBinding?.task ??
       (element.type === 'image' ? resolveMediaTaskForElement(tasks, element, stageId) : undefined);
-    const resolution = resolveMediaRef(
-      sourceRef,
-      task,
-      leaseFor(sourceRef, options.assetLeases, options.assetUrls),
-      element.type === 'image' ? options.imageGenerationDisabled : options.videoGenerationDisabled,
+    const resolution = withGenerationPermission(
+      resolveMediaRef(
+        sourceRef,
+        task,
+        leaseFor(sourceRef, options.assetLeases, options.assetUrls),
+        element.type === 'image'
+          ? options.imageGenerationDisabled
+          : options.videoGenerationDisabled,
+      ),
+      mayGenerate,
     );
 
     let posterResolution: MediaResolution | undefined;
     if (element.type === 'video' && videoBinding?.posterRef !== undefined) {
-      posterResolution = resolveMediaRef(
-        videoBinding.posterRef,
-        videoBinding.posterTask,
-        leaseFor(videoBinding.posterRef, options.assetLeases, options.assetUrls),
+      posterResolution = withGenerationPermission(
+        resolveMediaRef(
+          videoBinding.posterRef,
+          videoBinding.posterTask,
+          leaseFor(videoBinding.posterRef, options.assetLeases, options.assetUrls),
+        ),
+        mayGenerate,
       );
     }
 
@@ -145,6 +162,44 @@ export function resolveSlideMedia(
   return resolveSlideMediaState(slide, stageId, tasks, options).slide;
 }
 
+/**
+ * Every reference on a slide that is worth asking the asset pool about.
+ *
+ * A slide carries media in four places — an image source, a video source, a
+ * video poster, and an image background — and each of them has to apply the
+ * same two tests before a lease is opened: a concrete address (a URL or a data
+ * URI) resolves itself, and a reference the pool never issued would only
+ * answer 404. Collecting all four here rather than inline in the hook is what
+ * makes that rule testable: a site that forgets a test still renders correctly
+ * while spending a request per element per load, so nothing else would fail.
+ *
+ * Pure over its inputs, and returns the references in slide order.
+ */
+export function poolLeasableSlideRefs(
+  slide: Slide,
+  stageId: string | undefined,
+  tasks: Record<string, MediaTask>,
+): string[] {
+  if (!stageId) return [];
+  const values: string[] = [];
+  const consider = (ref: string | undefined): void => {
+    if (!ref || isConcreteMediaAddress(ref) || !mayNameAPoolAsset(ref)) return;
+    values.push(ref);
+  };
+  for (const element of slide.elements) {
+    if (element.type === 'image') {
+      consider(mediaTaskRefForElement(element) ?? element.src);
+    }
+    if (element.type === 'video') {
+      const binding = resolveVideoMediaForElement(tasks, element, stageId);
+      consider(binding.sourceRef);
+      consider(binding.posterRef);
+    }
+  }
+  consider(slide.background?.type === 'image' ? slide.background.image?.src : undefined);
+  return values;
+}
+
 export function useResolvedSlideMedia(slide: Slide): ResolvedSlideMedia {
   const stageId = useMediaStageId();
   const imageGenerationDisabled = useSettingsStore((state) => !state.imageGenerationEnabled);
@@ -179,34 +234,12 @@ export function useResolvedSlideMedia(slide: Slide): ResolvedSlideMedia {
       .join('');
   });
 
-  const refs = useMemo(() => {
-    if (!stageId) return [];
-    const values: string[] = [];
-    for (const element of slide.elements) {
-      if (element.type === 'image') {
-        const source = mediaTaskRefForElement(element) ?? element.src;
-        if (source && !isConcreteMediaAddress(source)) values.push(source);
-      }
-      if (element.type === 'video') {
-        const binding = resolveVideoMediaForElement(
-          useMediaGenerationStore.getState().tasks,
-          element,
-          stageId,
-        );
-        if (binding.sourceRef && !isConcreteMediaAddress(binding.sourceRef)) {
-          values.push(binding.sourceRef);
-        }
-        if (binding.posterRef && !isConcreteMediaAddress(binding.posterRef)) {
-          values.push(binding.posterRef);
-        }
-      }
-    }
-    const backgroundRef =
-      slide.background?.type === 'image' ? slide.background.image?.src : undefined;
-    if (backgroundRef && !isConcreteMediaAddress(backgroundRef)) values.push(backgroundRef);
-    return values;
-  }, [slide, stageId]);
+  const refs = useMemo(
+    () => poolLeasableSlideRefs(slide, stageId, useMediaGenerationStore.getState().tasks),
+    [slide, stageId],
+  );
   const assetLeases = useAssetUrlLeases(refs);
+  const mayGenerate = useMayGenerateForStage(stageId);
 
   return useMemo(() => {
     if (!stageId) {
@@ -217,6 +250,7 @@ export function useResolvedSlideMedia(slide: Slide): ResolvedSlideMedia {
         {
           imageGenerationDisabled,
           videoGenerationDisabled,
+          mayGenerate,
         },
       );
     }
@@ -225,8 +259,17 @@ export function useResolvedSlideMedia(slide: Slide): ResolvedSlideMedia {
       assetLeases,
       imageGenerationDisabled,
       videoGenerationDisabled,
+      mayGenerate,
     });
-  }, [slide, stageId, signature, assetLeases, imageGenerationDisabled, videoGenerationDisabled]);
+  }, [
+    slide,
+    stageId,
+    signature,
+    assetLeases,
+    imageGenerationDisabled,
+    videoGenerationDisabled,
+    mayGenerate,
+  ]);
 }
 
 export function useResolvedSlide(slide: Slide): Slide {

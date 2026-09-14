@@ -85,6 +85,9 @@
     "videoProgressWithEta": "{{percent}}% · 残り約 {{remaining}}",
     "videoEtaMinSec": "{{min}} 分 {{sec}} 秒",
     "videoEtaSec": "{{sec}} 秒",
+    "videoQueueBusy": "レンダリング待ちが混み合っています。しばらくしてから再確認してください。",
+    "videoRecheckQueue": "再確認",
+    "videoCheckingQueue": "確認中…",
     "videoRenderMp4": "MP4 をレンダリング",
     "videoDownloadZip": "プロジェクト ZIP をダウンロード",
     "videoServiceHint": "MP4 レンダリングにはレンダーサービスが必要です。ZIP をダウンロードしてローカルでレンダリングできます。",
@@ -136,11 +139,11 @@
       "streamInterrupted": "ストリームが予期せず終了し、ディスカッションが完了しませんでした。再度お試しください。"
     },
     "elementReference": {
-      "button": "スライドを参照",
-      "unavailable": "現在の PPT スライドのみ参照できます",
-      "instruction": "スライド要素をクリック · Esc で終了",
+      "button": "教材を参照",
+      "unavailable": "現在の PPT スライドまたは対応するインタラクティブコンポーネントのみ参照できます",
+      "instruction": "教材要素をクリック · Esc で終了",
       "fallback": "その他のスライド要素（{{count}}）",
-      "clear": "スライド参照を解除",
+      "clear": "教材の参照を解除",
       "summary": {
         "noText": "テキストなし",
         "emptyContent": "内容なし",
@@ -1746,6 +1749,7 @@
     "videoGenerationWarning": "動画の生成には通常1〜2分かかります。しばらくお待ちください",
     "mediaRetry": "やり直す",
     "mediaContentSensitive": "申し訳ありません。このコンテンツは安全性チェックに該当しました。",
+    "mediaStorageFull": "ストレージが満杯のため、このメディアを保存できませんでした。",
     "mediaGenerationDisabled": "設定で生成が無効になっています",
     "singleAgent": "シングルエージェント",
     "multiAgent": "マルチエージェント",

@@ -135,7 +135,7 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
         setTestMessage(t('settings.imageConnectivitySuccess'));
       } else {
         setTestStatus('error');
-        setTestMessage(`${t('settings.imageConnectivityFailed')}: ${data.message}`);
+        setTestMessage(`${t('settings.imageConnectivityFailed')}: ${data.error}`);
       }
     } catch (err) {
       setTestStatus('error');

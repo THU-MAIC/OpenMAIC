@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { animate, motion, MotionConfig, useReducedMotion } from 'motion/react';
 import { FileText, HelpCircle, Gamepad2, Puzzle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -258,12 +258,21 @@ function AnimatedCounter({
   return <>{prefersReducedMotion ? value : display}</>;
 }
 
-function QuizRing({ pct, delay = 0 }: { pct: number; delay?: number }) {
+function QuizRing({
+  pct,
+  delay = 0,
+  compact = false,
+}: {
+  pct: number;
+  delay?: number;
+  compact?: boolean;
+}) {
   const prefersReducedMotion = useReducedMotion();
   const radius = 34;
   const circumference = 2 * Math.PI * radius;
+  const size = compact ? 64 : 88;
   return (
-    <div className="relative shrink-0" style={{ width: 88, height: 88 }}>
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg viewBox="0 0 88 88" className="w-full h-full -rotate-90">
         <defs>
           <linearGradient id="tc-ring-gold" x1="0" y1="0" x2="1" y2="1">
@@ -358,10 +367,71 @@ export function ClassroomCompletePage({ scenes, title }: ClassroomCompletePagePr
     }),
   );
 
+  // Adaptive compact mode. The complete page lives inside the `<Stage>`
+  // viewport — when that viewport is short (e.g. user shrinks the browser, or
+  // the stage is embedded in a thin column), the natural content (trophy +
+  // ribbon + title + stats + quiz) overflows. A centered flex container that
+  // overflows clips its top half beyond the scroll origin, so the trophy
+  // becomes unreachable — instead of relying on scrolling, we toggle a
+  // `compact` token before content overflows the container.
+  //
+  // We base the decision on the **container height alone**, not on
+  // measuring content vs. container. Measuring content while in compact
+  // would only see the compact size, so if we used "content + margin >
+  // container" both ways, we'd ping-pong between the two layouts (compact
+  // fits → swap to full → full overflows → swap to compact → repeat every
+  // frame).
+  //
+  // Hysteresis on the container size avoids that:
+  //   - flip TO compact when container drops below FULL_MIN
+  //   - flip BACK to full only when container climbs above FULL_SAFE
+  //
+  // FULL_MIN matches the natural full-layout height (trophy + title + 4
+  // stat cards + quiz card, all spaced); FULL_SAFE has a little headroom
+  // on top of that so we don't oscillate around the seam.
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!section) return;
+    const FULL_MIN = 760; // below this height, full layout overflows
+    const FULL_SAFE = 820; // only re-expand once we have this much again
+    const measure = () => {
+      const h = section.clientHeight;
+      setCompact((prev) => (prev ? h < FULL_SAFE : h < FULL_MIN));
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(section);
+    measure();
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <MotionConfig reducedMotion={prefersReducedMotion ? 'always' : 'user'}>
+      {/* Layering:
+          - outer <section> is the viewport-sized stage; it owns the
+            absolute-positioned decorative layers (background gradient,
+            radial glow, confetti) and stays overflow-hidden so the
+            sparkles/confetti that intentionally overshoot don't make a
+            scrollbar appear.
+          - inside, an absolutely-positioned scroll container owns the
+            content. The scroll container is overflow-y:auto so when content
+            is taller than the section the user can scroll, but because the
+            decorative layers live *outside* this scroll container they
+            stay pinned to the viewport instead of extending below the
+            content (which previously caused a large empty area below the
+            content — gradients followed the scroll height).
+          - inside the scroll container, a flex wrapper with min-h-full +
+            items-center keeps content vertically centered when it fits,
+            and expands past min-height when content overflows (which gives
+            natural scrolling without trailing whitespace). Note the wrapper
+            itself must not be the scroll container: a centered flex child
+            that overflows is clipped beyond the scroll origin at the top,
+            which is exactly what the compact token above avoids, and the
+            scroll layer keeps that path degenerate. */}
       <section
-        className="absolute inset-0 z-[105] flex items-center justify-center overflow-auto"
+        ref={sectionRef}
+        className="absolute inset-0 z-[105] overflow-hidden"
         aria-label={t('classroomComplete.title')}
       >
         {/* Single-shot announcement for screen readers — replaces the noisy
@@ -369,9 +439,9 @@ export function ClassroomCompletePage({ scenes, title }: ClassroomCompletePagePr
         <span className="sr-only" role="status">
           {t('classroomComplete.title')}
         </span>
-        {/* Base background */}
+        {/* Base background — pinned to the section, NOT to scroll height */}
         <div className="absolute inset-0 bg-gradient-to-br from-amber-50 via-white to-orange-50 dark:from-gray-900 dark:via-gray-900 dark:to-amber-950/30" />
-        {/* Radial glow */}
+        {/* Radial glow — same, pinned to section */}
         <motion.div
           aria-hidden
           initial={{ opacity: 0, scale: 0.6 }}
@@ -383,140 +453,201 @@ export function ClassroomCompletePage({ scenes, title }: ClassroomCompletePagePr
               'radial-gradient(circle at 50% 42%, rgba(251, 191, 36, 0.32), rgba(249, 115, 22, 0.12) 38%, transparent 68%)',
           }}
         />
-        {/* Confetti */}
+        {/* Confetti — pinned to section */}
         <Confetti />
 
-        {/* Content */}
-        <div className="relative flex flex-col items-center gap-6 max-w-2xl w-full px-8 py-10">
-          {/* Trophy + halo + sparkles */}
-          <div className="relative" style={{ width: 200, height: 200 }}>
-            <motion.div
-              aria-hidden
-              initial={{ scale: 0.6, opacity: 0 }}
-              animate={{ scale: [0.9, 1.15, 0.95, 1.1], opacity: [0, 0.55, 0.4, 0.5] }}
-              transition={{
-                delay: 0.15,
-                duration: 2.6,
-                repeat: Infinity,
-                repeatType: 'reverse',
-                ease: 'easeInOut',
-              }}
-              className="absolute inset-0 rounded-full"
-              style={{
-                background:
-                  'radial-gradient(circle, rgba(251, 191, 36, 0.5), rgba(249, 115, 22, 0.12) 55%, transparent 72%)',
-                filter: 'blur(14px)',
-              }}
-            />
-            <motion.div
-              aria-hidden
-              initial={{ y: 44, scale: 0.4, opacity: 0 }}
-              animate={{ y: 0, scale: 1, opacity: 1 }}
-              transition={{ type: 'spring', stiffness: 260, damping: 18, delay: 0.2 }}
-              className="absolute inset-0 flex items-center justify-center"
-            >
-              <motion.div
-                animate={{ y: [0, -5, 0] }}
-                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-                style={{ width: 148, height: 185 }}
-              >
-                <TrophySvg className="w-full h-full drop-shadow-[0_10px_18px_rgba(180,83,9,0.35)]" />
-              </motion.div>
-            </motion.div>
-            <Sparkles />
-          </div>
-
-          {/* Ribbon */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.7, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ delay: 0.65, type: 'spring', stiffness: 280, damping: 18 }}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-amber-500/30"
-          >
-            <Sparkle className="w-3 h-3" />
-            {t('classroomComplete.title')}
-            <Sparkle className="w-3 h-3" />
-          </motion.div>
-
-          {/* Title + date */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.78, duration: 0.4, ease: 'easeOut' }}
-            className="text-center space-y-1.5"
-          >
-            <h2 className="text-3xl md:text-4xl font-black leading-tight bg-gradient-to-br from-amber-700 via-orange-600 to-amber-800 dark:from-amber-200 dark:via-orange-200 dark:to-amber-300 bg-clip-text text-transparent">
-              {title || t('classroomComplete.title')}
-            </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{dateLabel}</p>
-          </motion.div>
-
-          {/* Stats cards */}
-          {trailItems.length > 0 && (
+        {/* Scroll layer: only this part scrolls when content overflows. */}
+        <div className="absolute inset-0 overflow-y-auto overflow-x-hidden">
+          <div className="min-h-full flex items-center justify-center">
+            {/* Content */}
             <div
               className={cn(
-                'grid gap-3 w-full',
-                trailItems.length === 1 && 'grid-cols-1 max-w-[180px]',
-                trailItems.length === 2 && 'grid-cols-2 max-w-md',
-                trailItems.length === 3 && 'grid-cols-3',
-                trailItems.length === 4 && 'grid-cols-2 sm:grid-cols-4',
+                'relative flex flex-col items-center max-w-2xl w-full',
+                compact ? 'gap-3 px-6 py-4' : 'gap-6 px-8 py-10',
               )}
             >
-              {trailItems.map(({ type, count, Icon, label }, idx) => {
-                const cardDelay = 0.96 + idx * 0.08;
-                return (
+              {/* Trophy + halo + sparkles */}
+              <div
+                className="relative"
+                style={{ width: compact ? 120 : 200, height: compact ? 120 : 200 }}
+              >
+                <motion.div
+                  aria-hidden
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: [0.9, 1.15, 0.95, 1.1], opacity: [0, 0.55, 0.4, 0.5] }}
+                  transition={{
+                    delay: 0.15,
+                    duration: 2.6,
+                    repeat: Infinity,
+                    repeatType: 'reverse',
+                    ease: 'easeInOut',
+                  }}
+                  className="absolute inset-0 rounded-full"
+                  style={{
+                    background:
+                      'radial-gradient(circle, rgba(251, 191, 36, 0.5), rgba(249, 115, 22, 0.12) 55%, transparent 72%)',
+                    filter: 'blur(14px)',
+                  }}
+                />
+                <motion.div
+                  aria-hidden
+                  initial={{ y: 44, scale: 0.4, opacity: 0 }}
+                  animate={{ y: 0, scale: 1, opacity: 1 }}
+                  transition={{ type: 'spring', stiffness: 260, damping: 18, delay: 0.2 }}
+                  className="absolute inset-0 flex items-center justify-center"
+                >
                   <motion.div
-                    key={type}
-                    initial={{ opacity: 0, y: 14, scale: 0.9 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{
-                      delay: cardDelay,
-                      type: 'spring',
-                      stiffness: 260,
-                      damping: 20,
+                    animate={{ y: [0, -5, 0] }}
+                    transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                    style={{
+                      width: compact ? 90 : 148,
+                      height: compact ? 112 : 185,
                     }}
-                    className="rounded-2xl bg-white/90 dark:bg-gray-900/70 border border-amber-100 dark:border-amber-900/40 shadow-sm px-4 py-4 flex flex-col items-center gap-1.5 backdrop-blur-sm"
                   >
-                    <Icon
-                      className="w-6 h-6 text-amber-500 dark:text-amber-400"
-                      strokeWidth={1.8}
-                    />
-                    <div className="text-3xl font-black text-gray-900 dark:text-gray-100 leading-none">
-                      <AnimatedCounter value={count} delay={cardDelay + 0.15} />
-                    </div>
-                    <div className="text-[11px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      {label}
-                    </div>
+                    <TrophySvg className="w-full h-full drop-shadow-[0_10px_18px_rgba(180,83,9,0.35)]" />
                   </motion.div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Quiz card */}
-          {summary.quiz && (
-            <motion.div
-              initial={{ opacity: 0, y: 14, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ delay: 1.2, type: 'spring', stiffness: 220, damping: 20 }}
-              className="w-full rounded-2xl bg-gradient-to-br from-amber-100 via-orange-50 to-amber-100 dark:from-amber-950/50 dark:via-orange-950/30 dark:to-amber-950/50 border border-amber-200 dark:border-amber-900/50 px-6 py-5 shadow-md shadow-amber-200/30 dark:shadow-amber-950/20"
-            >
-              <div className="flex items-center gap-5">
-                <QuizRing pct={summary.quiz.pct} delay={1.3} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-base font-bold text-amber-700 dark:text-amber-300">
-                    {t('classroomComplete.quizScoreLabel', {
-                      correct: summary.quiz.correct,
-                      total: summary.quiz.total,
-                    })}
-                  </div>
-                  <div className="mt-1 text-sm text-amber-700/80 dark:text-amber-300/80">
-                    {t(`classroomComplete.encouragement.${encouragementKey(summary.quiz.pct)}`)}
-                  </div>
-                </div>
+                </motion.div>
+                {!compact && <Sparkles />}
               </div>
-            </motion.div>
-          )}
+
+              {/* Ribbon */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.7, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ delay: 0.65, type: 'spring', stiffness: 280, damping: 18 }}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 text-white font-bold uppercase tracking-wider shadow-lg shadow-amber-500/30',
+                  compact ? 'px-3 py-1 text-[10px]' : 'px-4 py-1.5 text-xs',
+                )}
+              >
+                <Sparkle className="w-3 h-3" />
+                {t('classroomComplete.title')}
+                <Sparkle className="w-3 h-3" />
+              </motion.div>
+
+              {/* Title + date */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.78, duration: 0.4, ease: 'easeOut' }}
+                className={cn('text-center', compact ? 'space-y-0.5' : 'space-y-1.5')}
+              >
+                <h2
+                  className={cn(
+                    'font-black leading-tight bg-gradient-to-br from-amber-700 via-orange-600 to-amber-800 dark:from-amber-200 dark:via-orange-200 dark:to-amber-300 bg-clip-text text-transparent',
+                    compact ? 'text-xl md:text-2xl' : 'text-3xl md:text-4xl',
+                  )}
+                >
+                  {title || t('classroomComplete.title')}
+                </h2>
+                <p
+                  className={cn(
+                    'text-gray-500 dark:text-gray-400',
+                    compact ? 'text-xs' : 'text-sm',
+                  )}
+                >
+                  {dateLabel}
+                </p>
+              </motion.div>
+
+              {/* Stats cards */}
+              {trailItems.length > 0 && (
+                <div
+                  className={cn(
+                    'grid w-full',
+                    compact ? 'gap-2' : 'gap-3',
+                    trailItems.length === 1 && 'grid-cols-1 max-w-[180px]',
+                    trailItems.length === 2 && 'grid-cols-2 max-w-md',
+                    trailItems.length === 3 && 'grid-cols-3',
+                    trailItems.length === 4 && 'grid-cols-2 sm:grid-cols-4',
+                  )}
+                >
+                  {trailItems.map(({ type, count, Icon, label }, idx) => {
+                    const cardDelay = 0.96 + idx * 0.08;
+                    return (
+                      <motion.div
+                        key={type}
+                        initial={{ opacity: 0, y: 14, scale: 0.9 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        transition={{
+                          delay: cardDelay,
+                          type: 'spring',
+                          stiffness: 260,
+                          damping: 20,
+                        }}
+                        className={cn(
+                          'rounded-2xl bg-white/90 dark:bg-gray-900/70 border border-amber-100 dark:border-amber-900/40 shadow-sm flex flex-col items-center backdrop-blur-sm',
+                          compact ? 'px-3 py-2 gap-0.5' : 'px-4 py-4 gap-1.5',
+                        )}
+                      >
+                        <Icon
+                          className={cn(
+                            'text-amber-500 dark:text-amber-400',
+                            compact ? 'w-4 h-4' : 'w-6 h-6',
+                          )}
+                          strokeWidth={1.8}
+                        />
+                        <div
+                          className={cn(
+                            'font-black text-gray-900 dark:text-gray-100 leading-none',
+                            compact ? 'text-xl' : 'text-3xl',
+                          )}
+                        >
+                          <AnimatedCounter value={count} delay={cardDelay + 0.15} />
+                        </div>
+                        <div
+                          className={cn(
+                            'text-gray-500 dark:text-gray-400 uppercase tracking-wider',
+                            compact ? 'text-[10px]' : 'text-[11px]',
+                          )}
+                        >
+                          {label}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Quiz card */}
+              {summary.quiz && (
+                <motion.div
+                  initial={{ opacity: 0, y: 14, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ delay: 1.2, type: 'spring', stiffness: 220, damping: 20 }}
+                  className={cn(
+                    'w-full rounded-2xl bg-gradient-to-br from-amber-100 via-orange-50 to-amber-100 dark:from-amber-950/50 dark:via-orange-950/30 dark:to-amber-950/50 border border-amber-200 dark:border-amber-900/50 shadow-md shadow-amber-200/30 dark:shadow-amber-950/20',
+                    compact ? 'px-4 py-3' : 'px-6 py-5',
+                  )}
+                >
+                  <div className={cn('flex items-center', compact ? 'gap-3' : 'gap-5')}>
+                    <QuizRing pct={summary.quiz.pct} delay={1.3} compact={compact} />
+                    <div className="flex-1 min-w-0">
+                      <div
+                        className={cn(
+                          'font-bold text-amber-700 dark:text-amber-300',
+                          compact ? 'text-sm' : 'text-base',
+                        )}
+                      >
+                        {t('classroomComplete.quizScoreLabel', {
+                          correct: summary.quiz.correct,
+                          total: summary.quiz.total,
+                        })}
+                      </div>
+                      <div
+                        className={cn(
+                          'mt-1 text-amber-700/80 dark:text-amber-300/80',
+                          compact ? 'text-xs' : 'text-sm',
+                        )}
+                      >
+                        {t(`classroomComplete.encouragement.${encouragementKey(summary.quiz.pct)}`)}
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </div>
+          </div>
         </div>
       </section>
     </MotionConfig>

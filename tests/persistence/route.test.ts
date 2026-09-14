@@ -124,6 +124,472 @@ describe('embedded persistence route', () => {
     expect(hmrPoolFactory).not.toHaveBeenCalled();
   });
 
+  // The asset routes are the only durable home generated media has under
+  // server-backed persistence, and the deployment this project documents builds
+  // with NODE_ENV=production and does not opt into the development
+  // authenticator. Routing assets through it answered 401 for every store and
+  // every read, so nothing could be generated at all.
+  it('resolves the asset principal server-side, so assets work without the development auth opt-in', async () => {
+    const handlerOptions: unknown[] = [];
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.doMock('@openmaic/storage/server', () => ({
+      createStorageHttpHandler: vi.fn(
+        (_runtime: unknown, _documents: unknown, options: unknown) => {
+          handlerOptions.push(options);
+          return (
+            _request: unknown,
+            response: { writeHead: (status: number) => void; end: () => void },
+          ) => {
+            response.writeHead(204);
+            response.end();
+          };
+        },
+      ),
+    }));
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('PERSISTENCE_ALLOW_INSECURE_DEV_AUTH', '');
+    vi.stubEnv('DATABASE_URL', 'postgres://asset-auth-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const pool = { end: vi.fn().mockResolvedValue(undefined) };
+
+    await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/assets', { method: 'POST' }),
+      { poolFactory: () => pool as never },
+    );
+
+    const authenticate = (
+      handlerOptions[0] as {
+        authenticate: (request: {
+          url?: string;
+          headers: Record<string, string>;
+        }) => Promise<{ key?: string; learnerKey?: string } | undefined>;
+      }
+    ).authenticate;
+    const noCredentials = { headers: {} };
+
+    const documents = await authenticate({ url: '/documents', ...noCredentials });
+    const allocate = await authenticate({ url: '/assets', ...noCredentials });
+    const read = await authenticate({ url: '/assets/ast_example/content', ...noCredentials });
+
+    // One shared asset partition by design, and the owner the server resolved
+    // for this request — never a client-supplied credential.
+    expect(allocate).toEqual({ key: 'shared', learnerKey: documents?.learnerKey });
+    expect(read).toEqual(allocate);
+    expect(typeof documents?.learnerKey).toBe('string');
+    expect(documents?.learnerKey).not.toBe('');
+
+    // Runtime sessions are genuinely per-learner, so they keep the development
+    // authenticator — which refuses here, and the handler answers 401.
+    await expect(
+      authenticate({ url: '/runtime/sessions/example', ...noCredentials }),
+    ).resolves.toBeUndefined();
+  });
+
+  // Driven against the REAL storage handler, because the question is not which
+  // principal the route resolves but what that principal is then allowed to do.
+  // Reads and allocations are open — the same posture documents already have —
+  // while replacing and deleting require the deployment's credential, since the
+  // asset partition is shared and a document read hands out every id it names.
+  it('opens asset reads and allocations, and gates replacement and deletion', async () => {
+    interface Entry {
+      bytes: Uint8Array;
+      mime: string;
+      revision: number;
+      key: string;
+    }
+    const entries = new Map<string, Entry>();
+    let nextId = 0;
+    const assetStore = {
+      put: async (
+        principal: { key: string },
+        data: { arrayBuffer(): Promise<ArrayBuffer>; type: string },
+      ) => {
+        const id = `ast_${(nextId += 1)}`;
+        entries.set(id, {
+          bytes: new Uint8Array(await data.arrayBuffer()),
+          mime: data.type,
+          revision: 1,
+          key: principal.key,
+        });
+        return id;
+      },
+      identify: async (principal: { key: string }, ref: string) => {
+        const entry = entries.get(ref);
+        if (!entry || entry.key !== principal.key) return null;
+        return { mime: entry.mime, revision: entry.revision, byteLength: entry.bytes.byteLength };
+      },
+      resolve: async (principal: { key: string }, ref: string) => {
+        const entry = entries.get(ref);
+        if (!entry || entry.key !== principal.key) return null;
+        return { bytes: entry.bytes, mime: entry.mime, revision: entry.revision };
+      },
+      remove: async (principal: { key: string }, ref: string) => {
+        const entry = entries.get(ref);
+        if (entry && entry.key === principal.key) entries.delete(ref);
+      },
+      replace: async (
+        principal: { key: string },
+        ref: string,
+        data: { arrayBuffer(): Promise<ArrayBuffer>; type: string },
+      ) => {
+        const entry = entries.get(ref);
+        if (!entry || entry.key !== principal.key) {
+          const { AssetNotFoundError } = await import('@openmaic/storage');
+          throw new AssetNotFoundError();
+        }
+        entry.bytes = new Uint8Array(await data.arrayBuffer());
+        entry.revision += 1;
+        return entry.revision;
+      },
+    };
+
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {
+        constructor() {
+          return assetStore as never;
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    // The handler itself is the subject here, so it must be the real one even
+    // though earlier cases in this file stub it.
+    vi.doUnmock('@openmaic/storage/server');
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('PERSISTENCE_ALLOW_INSECURE_DEV_AUTH', '');
+    vi.stubEnv('DATABASE_URL', 'postgres://asset-authz-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const pool = { end: vi.fn().mockResolvedValue(undefined) };
+    const call = (request: Request) =>
+      handlePersistenceRequest(request, { poolFactory: () => pool as never });
+
+    const writeBody = (bytes: number[]) => {
+      const form = new FormData();
+      form.append('meta', new Blob([JSON.stringify({})], { type: 'application/json' }), 'meta');
+      form.append('bytes', new Blob([new Uint8Array(bytes)], { type: 'image/png' }), 'bytes');
+      return form;
+    };
+
+    // A visitor with no credential at all stores and reads.
+    const allocated = await call(
+      new Request('http://localhost/api/persistence/assets', {
+        method: 'POST',
+        body: writeBody([1, 2, 3]),
+      }),
+    );
+    expect(allocated.status).toBe(201);
+    const { id } = (await allocated.json()) as { id: string };
+
+    const read = await call(new Request(`http://localhost/api/persistence/assets/${id}/content`));
+    expect(read.status).toBe(200);
+
+    // The same visitor cannot take it away from its author, or swap its bytes.
+    const put = await call(
+      new Request(`http://localhost/api/persistence/assets/${id}/content`, {
+        method: 'PUT',
+        body: writeBody([9]),
+      }),
+    );
+    expect(put.status).toBe(403);
+    const removed = await call(
+      new Request(`http://localhost/api/persistence/assets/${id}`, { method: 'DELETE' }),
+    );
+    expect(removed.status).toBe(403);
+    expect(entries.has(id)).toBe(true);
+
+    // Holding the deployment's credential does not help. Every caller resolves
+    // to the same shared asset principal, so authentication decides nothing
+    // about whose media this is — and the registry is the only copy a course
+    // has.
+    const tokenPut = await call(
+      new Request(`http://localhost/api/persistence/assets/${id}/content`, {
+        method: 'PUT',
+        body: writeBody([9]),
+        headers: { authorization: 'Bearer test-token' },
+      }),
+    );
+    expect(tokenPut.status).toBe(403);
+    expect(entries.has(id)).toBe(true);
+  });
+
+  // Not even where the operator has opted into the development authenticator:
+  // that credential is shared too, so it cannot say whose asset this is.
+  it('refuses asset mutations even with the development authenticator enabled', async () => {
+    interface Entry {
+      bytes: Uint8Array;
+      mime: string;
+      revision: number;
+      key: string;
+    }
+    const entries = new Map<string, Entry>();
+    let nextId = 0;
+    const assetStore = {
+      put: async (
+        principal: { key: string },
+        data: { arrayBuffer(): Promise<ArrayBuffer>; type: string },
+      ) => {
+        const id = `ast_${(nextId += 1)}`;
+        entries.set(id, {
+          bytes: new Uint8Array(await data.arrayBuffer()),
+          mime: data.type,
+          revision: 1,
+          key: principal.key,
+        });
+        return id;
+      },
+      identify: async (principal: { key: string }, ref: string) => {
+        const entry = entries.get(ref);
+        if (!entry || entry.key !== principal.key) return null;
+        return { mime: entry.mime, revision: entry.revision, byteLength: entry.bytes.byteLength };
+      },
+      resolve: async (principal: { key: string }, ref: string) => {
+        const entry = entries.get(ref);
+        if (!entry || entry.key !== principal.key) return null;
+        return { bytes: entry.bytes, mime: entry.mime, revision: entry.revision };
+      },
+      remove: async (principal: { key: string }, ref: string) => {
+        const entry = entries.get(ref);
+        if (entry && entry.key === principal.key) entries.delete(ref);
+      },
+      replace: async (
+        principal: { key: string },
+        ref: string,
+        data: { arrayBuffer(): Promise<ArrayBuffer>; type: string },
+      ) => {
+        const entry = entries.get(ref);
+        if (!entry || entry.key !== principal.key) {
+          const { AssetNotFoundError } = await import('@openmaic/storage');
+          throw new AssetNotFoundError();
+        }
+        entry.bytes = new Uint8Array(await data.arrayBuffer());
+        entry.revision += 1;
+        return entry.revision;
+      },
+    };
+
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {
+        constructor() {
+          return assetStore as never;
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.doUnmock('@openmaic/storage/server');
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('DATABASE_URL', 'postgres://asset-authz-opt-in');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const pool = { end: vi.fn().mockResolvedValue(undefined) };
+    const call = (request: Request) =>
+      handlePersistenceRequest(request, { poolFactory: () => pool as never });
+    const writeBody = (bytes: number[]) => {
+      const form = new FormData();
+      form.append('meta', new Blob([JSON.stringify({})], { type: 'application/json' }), 'meta');
+      form.append('bytes', new Blob([new Uint8Array(bytes)], { type: 'image/png' }), 'bytes');
+      return form;
+    };
+    const credential = { authorization: 'Bearer test-token', 'x-learner-key': 'anon:test' };
+
+    const allocated = await call(
+      new Request('http://localhost/api/persistence/assets', {
+        method: 'POST',
+        body: writeBody([1, 2, 3]),
+      }),
+    );
+    const { id } = (await allocated.json()) as { id: string };
+
+    const anonymous = await call(
+      new Request(`http://localhost/api/persistence/assets/${id}`, { method: 'DELETE' }),
+    );
+    expect(anonymous.status).toBe(403);
+    expect(entries.has(id)).toBe(true);
+
+    const put = await call(
+      new Request(`http://localhost/api/persistence/assets/${id}/content`, {
+        method: 'PUT',
+        body: writeBody([9]),
+        headers: credential,
+      }),
+    );
+    expect(put.status).toBe(403);
+    expect(entries.get(id)?.revision).toBe(1);
+
+    const removed = await call(
+      new Request(`http://localhost/api/persistence/assets/${id}`, {
+        method: 'DELETE',
+        headers: credential,
+      }),
+    );
+    expect(removed.status).toBe(403);
+    expect(entries.has(id)).toBe(true);
+
+    // Reads and allocations are unaffected by the refusal.
+    const read = await call(new Request(`http://localhost/api/persistence/assets/${id}/content`));
+    expect(read.status).toBe(200);
+  });
+
+  // The quota is the only thing bounding a shared asset partition, so what a
+  // caller is told when it refuses is part of the contract: a client that
+  // reads "internal error" retries forever and pays a provider each time,
+  // while a client that reads the quota code stops. Driven against the REAL
+  // registry and the REAL handler, because the mapping this pins lives in the
+  // seam between them.
+  it('answers a quota refusal with the contract status and machine-readable code', async () => {
+    const client = {
+      query: async (sql: string) => {
+        // Already past the ceiling configured below.
+        if (sql.includes('SUM(blobs.byte_size)')) {
+          return { rows: [{ logical_bytes: '7589236' }] };
+        }
+        return { rows: [] };
+      },
+      release: vi.fn(),
+    };
+    const pool = {
+      connect: async () => client,
+      query: client.query,
+      end: vi.fn().mockResolvedValue(undefined),
+    };
+
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    // The real registry, with only its schema bootstrap stubbed out.
+    vi.doMock('@openmaic/storage/asset/pg', async () => {
+      const actual = await vi.importActual<typeof import('@openmaic/storage/asset/pg')>(
+        '@openmaic/storage/asset/pg',
+      );
+      return { ...actual, ensureAssetSchema: vi.fn().mockResolvedValue(undefined) };
+    });
+    vi.doUnmock('@openmaic/storage/asset/pg-bytes');
+    vi.doUnmock('@openmaic/storage/server/reference');
+    vi.doUnmock('@openmaic/storage/server');
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('PERSISTENCE_ALLOW_INSECURE_DEV_AUTH', '');
+    vi.stubEnv('DATABASE_URL', 'postgres://asset-quota-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    vi.stubEnv('ASSET_QUOTA_BYTES', '200000');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+
+    const form = new FormData();
+    form.append('meta', new Blob([JSON.stringify({})], { type: 'application/json' }), 'meta');
+    form.append('bytes', new Blob([new Uint8Array(4096)], { type: 'image/png' }), 'bytes');
+    const response = await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/assets', { method: 'POST', body: form }),
+      { poolFactory: () => pool as never },
+    );
+
+    expect(response.status).toBe(507);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'ASSET_QUOTA_EXCEEDED' },
+    });
+  });
+
+  // The store and the handler do not always come from the same copy of the
+  // package. This application's persistence provider is reached from the route
+  // bundle and from the instrumentation bundle -- which is why its state is
+  // parked on a `Symbol.for` global -- so the store answering a request may
+  // have been constructed by a different bundle's copy of the storage package.
+  // `instanceof` is false across that boundary while the error's declared code
+  // is still exactly right, and a refusal that degrades to 500 is the one a
+  // client retries forever, paying a provider each time.
+  it('answers a quota refusal raised in another module realm the same way', async () => {
+    class ForeignAssetQuotaExceededError extends Error {
+      readonly code = 'ASSET_QUOTA_EXCEEDED';
+
+      constructor() {
+        super('@openmaic/storage: asset quota exceeded for this principal');
+        this.name = 'AssetQuotaExceededError';
+      }
+    }
+
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema: vi.fn().mockResolvedValue(undefined),
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/asset/pg', () => ({
+      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
+      PgAssetStore: class {
+        put(): Promise<never> {
+          return Promise.reject(new ForeignAssetQuotaExceededError());
+        }
+      },
+    }));
+    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.doUnmock('@openmaic/storage/server');
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('PERSISTENCE_ALLOW_INSECURE_DEV_AUTH', '');
+    vi.stubEnv('DATABASE_URL', 'postgres://asset-quota-foreign-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+
+    const form = new FormData();
+    form.append('meta', new Blob([JSON.stringify({})], { type: 'application/json' }), 'meta');
+    form.append('bytes', new Blob([new Uint8Array(16)], { type: 'image/png' }), 'bytes');
+    const response = await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/assets', { method: 'POST', body: form }),
+      { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never },
+    );
+
+    expect(response.status).toBe(507);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'ASSET_QUOTA_EXCEEDED' },
+    });
+  });
+
   it('mounts an asset store on the document pool and transaction and ensures its schema', async () => {
     const sdkModuleResolved = vi.fn();
     const ensureSchema = vi.fn().mockResolvedValue(undefined);
@@ -230,6 +696,11 @@ describe('embedded persistence route', () => {
     ).toBe(transaction);
     expect((assetConstructions[0]?.options as { withTransaction?: unknown }).withTransaction).toBe(
       transaction,
+    );
+    // Allocation is open to every caller this deployment admits, and they all
+    // share one asset principal, so the store's own quota is the only ceiling.
+    expect((assetConstructions[0]?.options as { quotaBytes?: unknown }).quotaBytes).toBe(
+      10 * 1024 * 1024 * 1024,
     );
     expect((handlerOptions[0] as { assetStore?: unknown }).assetStore).toBe(
       assetConstructions[0]?.instance,

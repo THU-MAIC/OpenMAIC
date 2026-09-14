@@ -85,6 +85,9 @@
     "videoProgressWithEta": "{{percent}}% · يتبقّى ~{{remaining}}",
     "videoEtaMinSec": "{{min}} د {{sec}} ث",
     "videoEtaSec": "{{sec}} ث",
+    "videoQueueBusy": "قائمة انتظار التصيير مشغولة. يُرجى التحقق مجددًا بعد قليل.",
+    "videoRecheckQueue": "التحقق مجددًا",
+    "videoCheckingQueue": "جارٍ التحقق…",
     "videoRenderMp4": "عرض MP4",
     "videoDownloadZip": "تنزيل ملف ZIP للمشروع",
     "videoServiceHint": "يتطلب عرض MP4 خدمة العرض. نزّل ملف ZIP للعرض محليًا.",
@@ -136,11 +139,11 @@
       "streamInterrupted": "انتهى تدفق البيانات بشكل غير متوقع; لم يكتمل النقاش. يرجى المحاولة مرة أخرى."
     },
     "elementReference": {
-      "button": "الإشارة إلى الشريحة",
-      "unavailable": "يمكن الإشارة إلى شريحة PPT الحالية فقط",
-      "instruction": "انقر على عنصر في الشريحة · Esc للخروج",
+      "button": "الإشارة إلى المحتوى التعليمي",
+      "unavailable": "يمكن الإشارة فقط إلى شريحة PPT الحالية أو مكوّن تفاعلي مدعوم",
+      "instruction": "انقر على عنصر في المادة التعليمية · Esc للخروج",
       "fallback": "عناصر أخرى في الشريحة ({{count}})",
-      "clear": "إزالة مرجع الشريحة",
+      "clear": "إزالة مرجع المحتوى التعليمي",
       "summary": {
         "noText": "لا يوجد نص",
         "emptyContent": "لا يوجد محتوى",
@@ -1746,6 +1749,7 @@
     "videoGenerationWarning": "توليد الفيديو يستغرق عادةً 1-2 دقيقة، يرجى الصبر",
     "mediaRetry": "إعادة المحاولة",
     "mediaContentSensitive": "عذرًا، هذا المحتوى لم يجتز فحص السلامة.",
+    "mediaStorageFull": "مساحة التخزين ممتلئة، لذا تعذّر حفظ هذه الوسائط.",
     "mediaGenerationDisabled": "التوليد معطّل في الإعدادات",
     "singleAgent": "وكيل فردي",
     "multiAgent": "وكلاء متعددون",

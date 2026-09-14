@@ -25,6 +25,23 @@ export function isAgentRuntimeConfigured(): boolean {
 }
 
 /**
+ * Server-side persistence is available: documents, runtime rows and assets are
+ * durable and owner-scoped. This is the same condition the persistence route
+ * itself keys on, and it is strictly weaker than
+ * {@link isAgentRuntimeConfigured} — every deployment that runs the agent
+ * runtime also has persistence, but persistence runs perfectly well without it.
+ *
+ * Anything that describes a persisted course (who owns it, whether it is
+ * published) must gate on THIS, not on the agent runtime: the persistence
+ * route resolves an owner for every request and the owner-bound document store
+ * records one for every course, so those facts exist whether or not the runtime
+ * is enabled.
+ */
+export function isServerPersistenceConfigured(): boolean {
+  return Boolean(process.env.DATABASE_URL?.trim());
+}
+
+/**
  * Build-time workbench affordance. This public flag is separate from the
  * server runtime gate because Next.js inlines NEXT_PUBLIC values into client
  * bundles; both gates must be on before a workbench page is reachable.
@@ -71,6 +88,14 @@ export function isEditorRendererEnabled(): boolean {
  */
 export function isPiChatEnabled(): boolean {
   return readBoolean(process.env.NEXT_PUBLIC_PI_CHAT_ENABLED);
+}
+
+/**
+ * Unified playback courseware-reference gate for PPT and Interactive scenes.
+ * Default OFF and independently disableable while Pi chat remains available.
+ */
+export function isCoursewareReferenceEnabled(): boolean {
+  return readBoolean(process.env.NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED);
 }
 
 /**

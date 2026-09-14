@@ -85,6 +85,9 @@
     "videoProgressWithEta": "{{percent}}% · about {{remaining}} left",
     "videoEtaMinSec": "{{min}} min {{sec}} sec",
     "videoEtaSec": "{{sec}} sec",
+    "videoQueueBusy": "The render queue is busy. Please check again shortly.",
+    "videoRecheckQueue": "Check again",
+    "videoCheckingQueue": "Checking…",
     "videoRenderMp4": "Render MP4",
     "videoDownloadZip": "Download project ZIP",
     "videoServiceHint": "MP4 rendering needs the render service. Download the ZIP to render locally.",
@@ -136,11 +139,11 @@
       "streamInterrupted": "Stream ended unexpectedly; discussion didn't complete. Please try again."
     },
     "elementReference": {
-      "button": "Reference slide",
-      "unavailable": "Only the current PPT slide can be referenced",
-      "instruction": "Click a slide element · Esc to exit",
+      "button": "Reference courseware",
+      "unavailable": "Only the current PPT slide or a supported interactive component can be referenced",
+      "instruction": "Click a courseware element · Esc to exit",
       "fallback": "Other slide elements ({{count}})",
-      "clear": "Remove slide reference",
+      "clear": "Remove courseware reference",
       "summary": {
         "noText": "No text",
         "emptyContent": "No content",
@@ -1746,6 +1749,7 @@
     "videoGenerationWarning": "Video generation usually takes 1-2 minutes, please be patient",
     "mediaRetry": "Retry",
     "mediaContentSensitive": "Sorry, this content triggered a safety check.",
+    "mediaStorageFull": "Storage is full, so this media could not be saved.",
     "mediaGenerationDisabled": "Generation disabled in settings",
     "singleAgent": "Single Agent",
     "multiAgent": "Multi-Agent",

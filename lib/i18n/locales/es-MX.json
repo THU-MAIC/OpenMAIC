@@ -85,6 +85,9 @@
     "videoProgressWithEta": "{{percent}}% · quedan unos {{remaining}}",
     "videoEtaMinSec": "{{min}} min {{sec}} seg",
     "videoEtaSec": "{{sec}} seg",
+    "videoQueueBusy": "La cola de renderizado está ocupada. Vuelve a comprobar en un momento.",
+    "videoRecheckQueue": "Volver a comprobar",
+    "videoCheckingQueue": "Comprobando…",
     "videoRenderMp4": "Renderizar MP4",
     "videoDownloadZip": "Descargar ZIP del proyecto",
     "videoServiceHint": "Renderizar a MP4 necesita el servicio de renderizado. Descarga el ZIP para renderizar en tu equipo.",
@@ -136,11 +139,11 @@
       "streamInterrupted": "El streaming terminó inesperadamente; el debate no se completó. Inténtalo de nuevo."
     },
     "elementReference": {
-      "button": "Referenciar diapositiva",
-      "unavailable": "Solo se puede referenciar la diapositiva PPT actual",
-      "instruction": "Haz clic en un elemento · Esc para salir",
+      "button": "Referenciar contenido del curso",
+      "unavailable": "Solo se puede referenciar la diapositiva PPT actual o un componente interactivo compatible",
+      "instruction": "Haz clic en un elemento del material del curso · Esc para salir",
       "fallback": "Otros elementos de la diapositiva ({{count}})",
-      "clear": "Quitar referencia de diapositiva",
+      "clear": "Quitar referencia del contenido del curso",
       "summary": {
         "noText": "Sin texto",
         "emptyContent": "Sin contenido",
@@ -1746,6 +1749,7 @@
     "videoGenerationWarning": "La generación de video suele tardar de 1 a 2 minutos, ten paciencia",
     "mediaRetry": "Reintentar",
     "mediaContentSensitive": "Lo sentimos, este contenido activó una verificación de seguridad.",
+    "mediaStorageFull": "El almacenamiento está lleno, por lo que no se pudo guardar este archivo.",
     "mediaGenerationDisabled": "Generación deshabilitada en la configuración",
     "singleAgent": "Agente único",
     "multiAgent": "Multiagente",

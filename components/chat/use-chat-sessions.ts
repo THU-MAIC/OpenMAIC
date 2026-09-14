@@ -12,7 +12,7 @@ import {
   type DirectorState,
   type PiSessionBoundaryContext,
   type StatelessEvent,
-  type SlideElementReference,
+  type ElementReference,
 } from '@/lib/types/chat';
 import type { DiscussionRequest } from '@/components/roundtable';
 import type { Action, SpotlightAction, DiscussionAction } from '@/lib/types/action';
@@ -166,11 +166,11 @@ export type ChatRequestTemplate = {
   webSearchBaseUrl?: string;
   webSearchModelId?: string;
   baiduSubSources?: BaiduSubSources;
-  elementReference?: SlideElementReference;
+  elementReference?: ElementReference;
 };
 
 export interface ChatMessageSendOptions {
-  elementReference?: SlideElementReference;
+  elementReference?: ElementReference;
   onResponseAccepted?: (response: Response) => void;
 }
 
