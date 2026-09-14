@@ -214,10 +214,10 @@ export interface ASRModelConfig {
 
 /** Returns true if the provider ID is a user-defined custom TTS provider. */
 export function isCustomTTSProvider(id: string): boolean {
-  return id.startsWith('custom-tts-');
+  return typeof id === 'string' && id.startsWith('custom-tts-');
 }
 
 /** Returns true if the provider ID is a user-defined custom ASR provider. */
 export function isCustomASRProvider(id: string): boolean {
-  return id.startsWith('custom-asr-');
+  return typeof id === 'string' && id.startsWith('custom-asr-');
 }

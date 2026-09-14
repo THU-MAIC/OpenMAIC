@@ -51,6 +51,18 @@ describe('resolveRequestOwnerId', () => {
     expect(responseHeaders.get('set-cookie')).toMatch(/; Secure$/);
   });
 
+  it('omits Secure when COOKIE_SECURE=0', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('COOKIE_SECURE', '0');
+    const responseHeaders = new Headers();
+
+    resolveRequestOwnerId(new Request('http://localhost/agent'), responseHeaders);
+
+    expect(responseHeaders.get('set-cookie')).toMatch(
+      /^anonymous_id=[0-9a-f-]+; Path=\/; HttpOnly; SameSite=Lax; Max-Age=2592000$/i,
+    );
+  });
+
   it('uses an explicit authenticated owner without minting an anonymous cookie', () => {
     const responseHeaders = new Headers();
 
