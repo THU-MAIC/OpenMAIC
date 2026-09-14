@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { encodeJson, sanitizeJsonString } from '../src/pg-json.js';
+import { encodeJson, sanitizeJsonString, sanitizeJsonValue } from '../src/pg-json.js';
 
 const NUL = '\u0000';
 const REPLACEMENT = '\uFFFD';
@@ -84,5 +84,114 @@ describe('encodeJson', () => {
     expect(() => encodeJson(circular, 'value')).toThrow(
       '@openmaic/storage: value is not JSON-serializable',
     );
+  });
+});
+
+describe('sanitizeJsonValue', () => {
+  test('returns the same object reference when nothing needs sanitizing', () => {
+    const value = { plain: 'text', nested: { ok: true } };
+    expect(sanitizeJsonValue('', value)).toBe(value);
+  });
+
+  test('returns the same array reference and leaves its members to stringify', () => {
+    const value = [1, 'text', { plain: true }];
+    expect(sanitizeJsonValue('', value)).toBe(value);
+  });
+
+  test('rebuilds with a null prototype when a key changes', () => {
+    const rebuilt = sanitizeJsonValue('', { [`x${NUL}`]: 1 }) as Record<string, unknown>;
+    // A normal `{}` would invoke the `__proto__` setter on assignment; the null
+    // prototype makes every emitted member an own data property.
+    expect(Object.getPrototypeOf(rebuilt)).toBeNull();
+    expect(rebuilt[`x${REPLACEMENT}`]).toBe(1);
+  });
+});
+
+describe('encodeJson key collisions', () => {
+  test('keeps both members when a NUL key collides with the replacement key', () => {
+    const encoded = encodeJson(
+      { [`a${NUL}`]: { first: true }, [`a${REPLACEMENT}`]: { second: true } },
+      'value',
+    );
+    expect(Object.keys(JSON.parse(encoded))).toEqual([`a${REPLACEMENT}`, `a${REPLACEMENT}#2`]);
+    expect(JSON.parse(encoded)).toEqual({
+      [`a${REPLACEMENT}`]: { first: true },
+      [`a${REPLACEMENT}#2`]: { second: true },
+    });
+  });
+
+  test('keeps the replacement key first and suffixes the later NUL key', () => {
+    const encoded = encodeJson(
+      { [`a${REPLACEMENT}`]: { second: true }, [`a${NUL}`]: { first: true } },
+      'value',
+    );
+    expect(Object.keys(JSON.parse(encoded))).toEqual([`a${REPLACEMENT}`, `a${REPLACEMENT}#2`]);
+    expect(JSON.parse(encoded)).toEqual({
+      [`a${REPLACEMENT}`]: { second: true },
+      [`a${REPLACEMENT}#2`]: { first: true },
+    });
+  });
+
+  test('disambiguates a three-way collision with increasing ordinals', () => {
+    const encoded = encodeJson({ [`a${NUL}`]: 1, [`a${REPLACEMENT}`]: 2, ['a\uD800']: 3 }, 'value');
+    expect(JSON.parse(encoded)).toEqual({
+      [`a${REPLACEMENT}`]: 1,
+      [`a${REPLACEMENT}#2`]: 2,
+      [`a${REPLACEMENT}#3`]: 3,
+    });
+  });
+
+  test('bumps past a disambiguated key that is also an original key', () => {
+    const encoded = encodeJson(
+      { [`a${NUL}`]: 'nul', [`a${REPLACEMENT}#2`]: 'original', [`a${REPLACEMENT}`]: 'rc' },
+      'value',
+    );
+    expect(JSON.parse(encoded)).toEqual({
+      [`a${REPLACEMENT}`]: 'nul',
+      [`a${REPLACEMENT}#2`]: 'original',
+      [`a${REPLACEMENT}#3`]: 'rc',
+    });
+  });
+
+  test('never emits a duplicate or still-offending key', () => {
+    const encoded = encodeJson(
+      {
+        [`a${NUL}`]: 1,
+        [`a${REPLACEMENT}`]: 2,
+        ['b\uD800']: 3,
+        [`b${REPLACEMENT}`]: 4,
+        [`b${REPLACEMENT}#2`]: 5,
+      },
+      'value',
+    );
+    const keys = Object.keys(JSON.parse(encoded));
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const key of keys) expect(sanitizeJsonString(key)).toBe(key);
+  });
+});
+
+describe('encodeJson own __proto__ members', () => {
+  test('keeps an own __proto__ member when a sibling key needs sanitizing', () => {
+    const value = JSON.parse(`{"__proto__":{"own":true},"x\\u0000":1}`) as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(value, '__proto__')).toBe(true);
+
+    const encoded = encodeJson(value, 'value');
+    expect(encoded).toContain('"__proto__"');
+    const parsed = JSON.parse(encoded) as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(parsed, '__proto__')).toBe(true);
+    expect(parsed['__proto__']).toEqual({ own: true });
+    expect(parsed[`x${REPLACEMENT}`]).toBe(1);
+  });
+
+  test('keeps an own __proto__ member inside an array element', () => {
+    const element = JSON.parse(`{"__proto__":{"own":true},"x\\u0000":1}`) as Record<
+      string,
+      unknown
+    >;
+    const encoded = encodeJson({ list: [element] }, 'value');
+    const parsed = JSON.parse(encoded) as { list: Record<string, unknown>[] };
+    expect(Object.prototype.hasOwnProperty.call(parsed.list[0], '__proto__')).toBe(true);
+    expect(parsed.list[0]['__proto__']).toEqual({ own: true });
+    expect(parsed.list[0][`x${REPLACEMENT}`]).toBe(1);
   });
 });

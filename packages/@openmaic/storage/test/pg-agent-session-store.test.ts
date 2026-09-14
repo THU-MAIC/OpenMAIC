@@ -608,6 +608,56 @@ describe('PgAgentSessionStore with PGlite', () => {
     });
   });
 
+  test('keeps colliding sanitized keys as separate tree-entry members', async () => {
+    await store.createSession(makeAgentSessionInput());
+    await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
+    const tree = await store.openEntryTree('session-1', 'worker-a', 1);
+    const replacement = '\uFFFD';
+
+    await tree.appendEntry({
+      id: 'collide',
+      parentId: null,
+      type: 'message',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: {
+        [`a\u0000`]: { first: true },
+        [`a${replacement}`]: { second: true },
+      },
+    });
+
+    const reopened = await store.openEntryTree('session-1', 'worker-a', 1);
+    const entry = (await reopened.getEntries())[0] as Record<string, unknown>;
+    expect(entry.message).toEqual({
+      [`a${replacement}`]: { first: true },
+      [`a${replacement}#2`]: { second: true },
+    });
+  });
+
+  test('keeps an own __proto__ member alongside a NUL key in a tree entry', async () => {
+    await store.createSession(makeAgentSessionInput());
+    await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
+    const tree = await store.openEntryTree('session-1', 'worker-a', 1);
+    const message = JSON.parse(`{"__proto__":{"own":true},"x\\u0000":1}`) as Record<
+      string,
+      unknown
+    >;
+
+    await tree.appendEntry({
+      id: 'proto',
+      parentId: null,
+      type: 'message',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message,
+    });
+
+    const reopened = await store.openEntryTree('session-1', 'worker-a', 1);
+    const entry = (await reopened.getEntries())[0] as Record<string, unknown>;
+    const stored = entry.message as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(stored, '__proto__')).toBe(true);
+    expect(stored['__proto__']).toEqual({ own: true });
+    expect(stored['x\uFFFD']).toBe(1);
+  });
+
   test('keeps event and tree rows physically present after a tombstone', async () => {
     await store.createSession(makeAgentSessionInput());
     await store.appendControlEvent('session-1', {

@@ -16,9 +16,26 @@
  * runs on the in-memory values and object keys before `JSON.stringify`. A
  * replacer cannot see object keys, so an object whose keys contain an offender
  * is rebuilt explicitly; values are otherwise serialized exactly as before.
+ *
+ * Two distinct keys can sanitize to the same string (for example `"a\u0000"`
+ * and `"a\uFFFD"` both become `"a\uFFFD"`). Emitting both members under that
+ * one key would silently drop one, so a later colliding member is emitted under
+ * a deterministic disambiguated key instead.
  */
 
 const REPLACEMENT = '\uFFFD';
+
+/**
+ * Disambiguation for two members whose sanitized keys collide. The first member
+ * keeps the plain sanitized key; each later colliding member gets `#2`, `#3`,
+ * ... appended to that key until the result is unique among the keys emitted so
+ * far (whether a prior key was sanitized or already collision-free). The
+ * separator is ASCII `#` followed by an ordinal: it contains no NUL or
+ * surrogate, and the sanitizer alone can only ever emit U+FFFD, never `#`, so a
+ * suffixed key cannot be confused with a bare replacement result. Member order
+ * is preserved.
+ */
+const KEY_COLLISION_SEPARATOR = '#';
 
 /**
  * Replace every U+0000 and unpaired UTF-16 surrogate code unit with U+FFFD.
@@ -51,16 +68,32 @@ export function sanitizeJsonString(value: string): string {
  * `JSON.stringify` replacer: sanitize string values, and rebuild an object only
  * when one of its keys needs sanitizing. Arrays and all other values pass
  * through so stringify's own member/array/toJSON semantics are preserved.
+ *
+ * The rebuilt object has a null prototype so an own `__proto__` member stays an
+ * own data property: assigning `__proto__` on a normal `{}` invokes the
+ * prototype setter and drops the member from the JSON output. Colliding
+ * sanitized keys are disambiguated as described on `KEY_COLLISION_SEPARATOR`.
+ * Exported for direct unit testing of the fast path and disambiguation.
  */
-function sanitizeJsonValue(_key: string, value: unknown): unknown {
+export function sanitizeJsonValue(_key: string, value: unknown): unknown {
   if (typeof value === 'string') return sanitizeJsonString(value);
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
   let keysChanged = false;
-  const rebuilt: Record<string, unknown> = {};
+  const rebuilt: Record<string, unknown> = Object.create(null);
+  const emitted = new Set<string>();
   for (const key of Object.keys(value)) {
     const safeKey = sanitizeJsonString(key);
     if (safeKey !== key) keysChanged = true;
-    rebuilt[safeKey] = (value as Record<string, unknown>)[key];
+    let emittedKey = safeKey;
+    if (emitted.has(emittedKey)) {
+      let ordinal = 2;
+      do {
+        emittedKey = `${safeKey}${KEY_COLLISION_SEPARATOR}${ordinal}`;
+        ordinal += 1;
+      } while (emitted.has(emittedKey));
+    }
+    emitted.add(emittedKey);
+    rebuilt[emittedKey] = (value as Record<string, unknown>)[key];
   }
   return keysChanged ? rebuilt : value;
 }
