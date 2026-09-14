@@ -476,6 +476,7 @@ CREATE TABLE IF NOT EXISTS agent_session_materials (
   session_id    TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
   kind          TEXT NOT NULL,
   title         TEXT,
+  owner_material_id TEXT,
   source_url    TEXT,
   text_asset_id TEXT,
   raw_asset_id  TEXT,
@@ -498,8 +499,14 @@ CREATE TABLE IF NOT EXISTS agent_session_materials (
   ,CONSTRAINT agent_session_materials_extraction_attempts_nonnegative CHECK (extraction_attempts >= 0)
 );
 
+ALTER TABLE agent_session_materials ADD COLUMN IF NOT EXISTS owner_material_id TEXT;
+
 CREATE INDEX IF NOT EXISTS agent_session_materials_session_created_idx
   ON agent_session_materials (session_id, created_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS agent_session_materials_session_owner_material_idx
+  ON agent_session_materials (session_id, owner_material_id)
+  WHERE owner_material_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS agent_session_materials_extraction_queue_idx
   ON agent_session_materials (created_at)

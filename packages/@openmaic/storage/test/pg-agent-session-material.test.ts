@@ -70,6 +70,45 @@ describe('PgAgentSessionMaterialStore with PGlite', () => {
     );
   });
 
+  test('adds owner_material_id to a table provisioned before the column existed', async () => {
+    // Simulate a 1.0.2 database: the table predates the owner-material column,
+    // so `CREATE TABLE IF NOT EXISTS` cannot add it. CASCADE also drops the
+    // partial unique index that depends on the column.
+    await db.query('ALTER TABLE agent_session_materials DROP COLUMN owner_material_id CASCADE');
+    const sessions = new PgAgentSessionStore(db, {
+      withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),
+    });
+    await sessions.createSession({ id: 'session-legacy', ownerId: 'owner-a', prompt: 'p' });
+    await db.query(
+      `INSERT INTO agent_session_materials
+         (id, session_id, kind, title, text_chars, extraction_status, extraction_attempts, created_at)
+       VALUES ('mat_legacy', 'session-legacy', 'web', 'legacy', 0, 'done', 0, now())`,
+    );
+
+    // Re-running the initializer is the in-place upgrade.
+    await ensureAgentSessionMaterialSchema(db);
+
+    const legacy = await store.getMaterial('session-legacy', 'mat_legacy');
+    expect(legacy).toMatchObject({ id: 'mat_legacy', ownerMaterialId: null });
+
+    // The upgraded table now accepts two sessions binding one owner upload.
+    await sessions.createSession({ id: 'session-a', ownerId: 'owner-a', prompt: 'p' });
+    await sessions.createSession({ id: 'session-b', ownerId: 'owner-a', prompt: 'p' });
+    const first = await store.createMaterial('session-a', {
+      kind: 'source',
+      title: 'textbook.pdf',
+      ownerMaterialId: 'mat_owner',
+    });
+    const second = await store.createMaterial('session-b', {
+      kind: 'source',
+      title: 'textbook.pdf',
+      ownerMaterialId: 'mat_owner',
+    });
+    expect(first.id).not.toBe(second.id);
+    expect(first.ownerMaterialId).toBe('mat_owner');
+    expect(second.ownerMaterialId).toBe('mat_owner');
+  });
+
   test('cascades material rows away when the session row is hard-deleted', async () => {
     await new PgAgentSessionStore(db, {
       withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),

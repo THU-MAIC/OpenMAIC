@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS agent_session_materials (
   session_id    TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
   kind          TEXT NOT NULL,
   title         TEXT,
+  owner_material_id TEXT,
   source_url    TEXT,
   text_asset_id TEXT,
   raw_asset_id  TEXT,
@@ -80,8 +81,14 @@ CREATE TABLE IF NOT EXISTS agent_session_materials (
   ,CONSTRAINT agent_session_materials_extraction_attempts_nonnegative CHECK (extraction_attempts >= 0)
 );
 
+ALTER TABLE agent_session_materials ADD COLUMN IF NOT EXISTS owner_material_id TEXT;
+
 CREATE INDEX IF NOT EXISTS agent_session_materials_session_created_idx
   ON agent_session_materials (session_id, created_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS agent_session_materials_session_owner_material_idx
+  ON agent_session_materials (session_id, owner_material_id)
+  WHERE owner_material_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS agent_session_materials_extraction_queue_idx
   ON agent_session_materials (created_at)
@@ -149,6 +156,7 @@ interface MaterialRow extends Record<string, unknown> {
   session_id: string;
   kind: string;
   title: string | null;
+  owner_material_id: string | null;
   source_url: string | null;
   text_asset_id: string | null;
   raw_asset_id: string | null;
@@ -171,6 +179,7 @@ function mapRow(row: MaterialRow): AgentSessionMaterial {
     sessionId: row.session_id,
     kind: row.kind as AgentSessionMaterialKind,
     title: row.title,
+    ownerMaterialId: row.owner_material_id,
     sourceUrl: row.source_url,
     textAssetId: row.text_asset_id,
     rawAssetId: row.raw_asset_id,
@@ -248,10 +257,11 @@ export class PgAgentSessionMaterialStore implements AgentSessionMaterialStore {
     try {
       const { rows } = await this.queryable.query<MaterialRow>(
         `INSERT INTO ${this.table}
-           (id, session_id, kind, title, source_url, text_asset_id, raw_asset_id,
-            text_chars, derived_from, extraction_status, created_at)
-         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9,
-                CASE WHEN $3 = 'source' THEN 'idle' ELSE 'done' END, $10
+           (id, session_id, kind, title, owner_material_id, source_url,
+            text_asset_id, raw_asset_id, text_chars, derived_from,
+            extraction_status, created_at)
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                CASE WHEN $3 = 'source' THEN 'idle' ELSE 'done' END, $11
          FROM agent_sessions AS session
          WHERE session.id = $2 AND session.deleted_at IS NULL
          RETURNING *`,
@@ -260,6 +270,7 @@ export class PgAgentSessionMaterialStore implements AgentSessionMaterialStore {
           sessionId,
           input.kind,
           input.title ?? null,
+          input.ownerMaterialId ?? null,
           input.sourceUrl ?? null,
           input.textAssetId ?? null,
           input.rawAssetId ?? null,
@@ -324,6 +335,29 @@ export class PgAgentSessionMaterialStore implements AgentSessionMaterialStore {
         WHERE material.id = $1 AND material.session_id = $2 AND session.deleted_at IS NULL
         LIMIT 1`,
       [materialId, sessionId],
+    );
+    return result.rows[0] ? mapRow(result.rows[0]) : null;
+  }
+
+  /**
+   * Resolve the session's row for one owner-library upload, or `null`.
+   *
+   * This is intentionally not part of the `AgentSessionMaterialStore`
+   * interface: only the host's owner-material binder needs it, to keep a
+   * rebind idempotent while row ids stay globally unique. The unique
+   * `(session_id, owner_material_id)` index makes at most one row match.
+   */
+  async getMaterialByOwnerMaterialId(
+    sessionId: string,
+    ownerMaterialId: string,
+  ): Promise<AgentSessionMaterial | null> {
+    const result = await this.queryable.query<MaterialRow>(
+      `SELECT material.* FROM ${this.table} AS material
+        INNER JOIN agent_sessions AS session ON session.id = material.session_id
+        WHERE material.owner_material_id = $1 AND material.session_id = $2
+          AND session.deleted_at IS NULL
+        LIMIT 1`,
+      [ownerMaterialId, sessionId],
     );
     return result.rows[0] ? mapRow(result.rows[0]) : null;
   }
