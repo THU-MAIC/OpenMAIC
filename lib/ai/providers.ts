@@ -1648,10 +1648,35 @@ export interface ModelWithInfo {
   modelInfo: ModelInfo | null;
 }
 
+/**
+ * Whether the transport must keep a response's reasoning and send it back on
+ * the next turn. Covers every model on DeepSeek's request adapter (deepseek and
+ * the atlascloud deepseek models) plus Kimi K3, which each reject a multi-turn
+ * request whose assistant messages drop the field. One predicate for both the
+ * request-side gates below and the agent driver's includeReasoning gate, so the
+ * two cannot drift apart again.
+ */
+export function preservesReasoning(providerId: string, modelId: string): boolean {
+  if (providerId === 'kimi' && modelId === 'kimi-k3') return true;
+  return getCatalogThinkingCapability(providerId, modelId)?.requestAdapter === 'deepseek';
+}
+
+/** {@link preservesReasoning} for the AI SDK model instance the driver holds. */
+export function preservesReasoningForModel(model: LanguageModel | string): boolean {
+  if (typeof model === 'string') return false;
+  const provider = (model as { provider?: string }).provider;
+  const modelId = (model as { modelId?: string }).modelId;
+  if (!provider || !modelId) return false;
+  const separator = provider.indexOf('.');
+  const providerId = separator > 0 ? provider.slice(0, separator) : provider;
+  return providerId in PROVIDERS && preservesReasoning(providerId, modelId);
+}
+
 function getCompatThinkingBodyParams(
   providerId: ProviderId,
   modelId: string,
   config: ThinkingConfig,
+  options: { hasTools?: boolean } = {},
 ): Record<string, unknown> | undefined {
   // This model is served through an OpenAI-compatible gateway even when the
   // deployment uses the `openai` provider slot. The gateway's chat template
@@ -1717,10 +1742,10 @@ function getCompatThinkingBodyParams(
       if (mode === 'disabled' || config.effort === 'none') {
         return { thinking: { type: 'disabled' } };
       }
-      // No explicit effort: send the thinking toggle alone. Tool-using
-      // transports (the agent driver) cannot combine reasoning_effort with
-      // function tools, and DeepSeek applies its own default effort anyway.
-      if (config.effort === undefined) {
+      // A tool-carrying request may never set reasoning_effort (the transport
+      // rejects function tools combined with it), so the toggle goes alone;
+      // without tools the historical default effort is preserved.
+      if (options.hasTools || config.effort === undefined) {
         return { thinking: { type: 'enabled' } };
       }
       const effort = config.effort === 'max' || config.effort === 'xhigh' ? 'max' : 'high';
@@ -2236,6 +2261,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       const usesCompatTransport =
         config.providerId !== 'openai' ||
         (usesCustomOpenAIBaseUrl(config.baseUrl) && !usesOpenAIResponses);
+      const roundTripProvider = preservesReasoning(config.providerId, config.modelId);
       if (usesCompatTransport) {
         const providerId = config.providerId;
         const compatFetch = async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -2244,13 +2270,32 @@ export function getModel(config: ModelConfig): ModelWithInfo {
             | { getStore?: () => unknown }
             | undefined;
           const thinkingFromContext = thinkingCtx?.getStore?.() as ThinkingConfig | undefined;
+          // Preserved-reasoning providers get the catalog default injected when
+          // no caller supplied one, so the wire always states the thinking mode
+          // explicitly instead of relying on the provider's server-side default
+          // (which decides whether reasoning_content must round-trip at all).
           const thinking =
             thinkingFromContext ??
-            (providerId === 'lemonade'
+            (providerId === 'lemonade' || roundTripProvider
               ? getDefaultThinkingConfig(getCatalogThinkingCapability(providerId, config.modelId))
               : undefined);
+
+          const hasRequestTools =
+            !!init?.body &&
+            typeof init.body === 'string' &&
+            (() => {
+              try {
+                const tools = JSON.parse(init.body).tools;
+                return Array.isArray(tools) && tools.length > 0;
+              } catch {
+                return false;
+              }
+            })();
+
           if (thinking && init?.body && typeof init.body === 'string') {
-            const extra = getCompatThinkingBodyParams(providerId, config.modelId, thinking);
+            const extra = getCompatThinkingBodyParams(providerId, config.modelId, thinking, {
+              hasTools: hasRequestTools,
+            });
             if (extra) {
               try {
                 const body = JSON.parse(init.body);
@@ -2266,17 +2311,22 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           }
 
           if (
+            roundTripProvider &&
             init?.body &&
-            typeof init.body === 'string' &&
-            ((providerId === 'kimi' && config.modelId === 'kimi-k3') || providerId === 'deepseek')
+            typeof init.body === 'string'
           ) {
             try {
               const body = JSON.parse(init.body);
-              restoreReasoningContentInRequestBody(body);
-              if (providerId === 'deepseek' && body.thinking?.type === 'enabled') {
-                for (const message of body.messages ?? []) {
-                  if (message?.role === 'assistant' && message.reasoning_content === undefined) {
-                    message.reasoning_content = '';
+              // A disabled turn must carry neither the field nor the markers:
+              // the provider rejects reasoning_content outside thinking mode,
+              // and there is nothing to round-trip when thinking is off.
+              if (body.thinking?.type !== 'disabled') {
+                restoreReasoningContentInRequestBody(body);
+                if (body.thinking?.type === 'enabled') {
+                  for (const message of body.messages ?? []) {
+                    if (message?.role === 'assistant' && message.reasoning_content === undefined) {
+                      message.reasoning_content = '';
+                    }
                   }
                 }
               }
@@ -2303,7 +2353,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           }
           const normalizedReasoningResponse = streaming
             ? wrapResponseWithReasoning(response)
-            : (providerId === 'kimi' && config.modelId === 'kimi-k3') || providerId === 'deepseek'
+            : roundTripProvider
               ? await wrapJsonResponseWithReasoning(response)
               : response;
 
@@ -2360,10 +2410,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       // Split it into first-class reasoning parts so the agent stream and UI can
       // show a thinking panel and the answer text stays clean.
       if (usesCompatTransport) {
-        const preservesReasoning =
-          (config.providerId === 'kimi' && config.modelId === 'kimi-k3') ||
-          config.providerId === 'deepseek';
-        const middleware = preservesReasoning
+        const middleware = roundTripProvider
           ? [
               createReasoningPreservationMiddleware(),
               extractReasoningMiddleware({ tagName: 'think' }),
