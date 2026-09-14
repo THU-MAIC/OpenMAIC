@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 import { PgAgentSessionStore, ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
+import { ensureAgentSessionMaterialSchema } from '@openmaic/storage/material/pg';
 import type { Queryable } from '@openmaic/storage/asset/pg';
 import { setMaterialByteStoreForTests } from '@/lib/server/materials/bytes';
 import { ensureOwnerMaterialSchema } from '@/lib/persistence/owner-materials';
@@ -60,9 +61,14 @@ async function makeHost() {
   await instance.waitReady;
   await ensureAgentSessionSchema(instance);
   await ensureOwnerMaterialSchema(instance);
+  await ensureAgentSessionMaterialSchema(instance);
   const bytes = new Map<string, Buffer>();
+  const puts: string[] = [];
   setMaterialByteStoreForTests({
-    put: async (key, body) => void bytes.set(key, Buffer.from(body as Uint8Array)),
+    put: async (key, body) => {
+      bytes.set(key, Buffer.from(body as Uint8Array));
+      puts.push(key);
+    },
     get: async (key) => {
       const value = bytes.get(key);
       if (!value) throw new Error(`missing material bytes: ${key}`);
@@ -82,7 +88,7 @@ async function makeHost() {
     return 'owner-1';
   });
   db = instance;
-  return { db: instance, bytes, sessionStore };
+  return { db: instance, bytes, puts, sessionStore };
 }
 
 async function seedOwnerMaterial(instance: PGlite, id: string) {
@@ -92,6 +98,17 @@ async function seedOwnerMaterial(instance: PGlite, id: string) {
      VALUES ($1, 'owner-1', 'source', 'application/pdf', 3, 'textbook.pdf', $2, 'ready', NULL, $3)`,
     [id, `owner/${id}/raw`, Date.now()],
   );
+}
+
+/** The deterministic object key the pre-upgrade binder copied owner bytes to. */
+function legacyRawKey(
+  sessionId: string,
+  ownerMaterialId: string,
+  mime = 'application/pdf',
+): string {
+  return `materials/${sessionId}/${ownerMaterialId}/raw.${Buffer.from(mime, 'utf8').toString(
+    'base64url',
+  )}`;
 }
 
 function post(body: unknown) {
@@ -153,6 +170,113 @@ describe('owner-material binding across sessions', () => {
     const rebound = await bindOwnerMaterialsToSession('session-a', 'owner-1', ['mat_owner']);
     expect(rebound[0]!.materialId).toBe(first[0]!.materialId);
     expect(await listSessionMaterials('session-a')).toHaveLength(1);
+  });
+
+  it('reuses and backfills a pre-upgrade legacy owner-material binding', async () => {
+    const { db: instance, bytes, puts, sessionStore } = await makeHost();
+    await sessionStore.createSession({ id: 'session-legacy', ownerId: 'owner-1', prompt: 'p' });
+    await sessionStore.createSession({ id: 'session-other', ownerId: 'owner-1', prompt: 'p' });
+    await seedOwnerMaterial(instance, 'mat_owner');
+    bytes.set('owner/mat_owner/raw', Buffer.from('PDF'));
+
+    // Exactly what the previous binder wrote: row id = owner upload id,
+    // owner_material_id NULL, copied bytes at the deterministic legacy key,
+    // and extraction already finished to prove the state must survive.
+    const legacyKey = legacyRawKey('session-legacy', 'mat_owner');
+    bytes.set(legacyKey, Buffer.from('PDF'));
+    await instance.query(
+      `INSERT INTO agent_session_materials
+         (id, session_id, kind, title, owner_material_id, raw_asset_id, text_chars,
+          extraction_status, extraction_attempts, extraction_stats, extractor_version, created_at)
+       VALUES ('mat_owner', 'session-legacy', 'source', 'textbook.pdf', NULL, $1, 0,
+               'done', 2, $2::jsonb, 'pdf@1', now())`,
+      [legacyKey, JSON.stringify({ chars: 1234, pages: 2, imageCount: 0 })],
+    );
+    const putsBefore = puts.length;
+
+    const rebound = await bindOwnerMaterialsToSession('session-legacy', 'owner-1', ['mat_owner']);
+
+    // The legacy row is reused, not duplicated or re-copied.
+    expect(rebound).toHaveLength(1);
+    expect(rebound[0]!.materialId).toBe('mat_owner');
+    expect(await listSessionMaterials('session-legacy')).toHaveLength(1);
+    expect(puts).toHaveLength(putsBefore);
+    expect(bytes.get(legacyKey)).toEqual(Buffer.from('PDF'));
+
+    const row = await getSessionMaterial('session-legacy', 'mat_owner');
+    expect(row).toMatchObject({
+      id: 'mat_owner',
+      ownerMaterialId: 'mat_owner',
+      title: 'textbook.pdf',
+      rawAssetId: legacyKey,
+      extraction: {
+        status: 'done',
+        attempts: 2,
+        extractorVersion: 'pdf@1',
+        stats: { chars: 1234, pages: 2, imageCount: 0 },
+      },
+    });
+
+    // The backfill lets the next bind take the fast path without copying.
+    const again = await bindOwnerMaterialsToSession('session-legacy', 'owner-1', ['mat_owner']);
+    expect(again[0]!.materialId).toBe('mat_owner');
+    expect(await listSessionMaterials('session-legacy')).toHaveLength(1);
+    expect(puts).toHaveLength(putsBefore);
+
+    // A different session is still a fresh row with its own byte copy.
+    const other = await bindOwnerMaterialsToSession('session-other', 'owner-1', ['mat_owner']);
+    expect(other[0]!.materialId).not.toBe('mat_owner');
+    expect(await listSessionMaterials('session-other')).toHaveLength(1);
+    expect(await getSessionMaterial('session-other', other[0]!.materialId)).toMatchObject({
+      ownerMaterialId: 'mat_owner',
+      rawAssetId: expect.any(String),
+    });
+    expect(puts).toHaveLength(putsBefore + 1);
+  });
+
+  it('removes the losing upload when a concurrent bind wins the same session', async () => {
+    const { db: instance, sessionStore } = await makeHost();
+    await sessionStore.createSession({ id: 'session-race', ownerId: 'owner-1', prompt: 'p' });
+    await seedOwnerMaterial(instance, 'mat_owner');
+    const ownerBytes = new Map<string, Buffer>([['owner/mat_owner/raw', Buffer.from('PDF')]]);
+    const sessionBytes = new Map<string, Buffer>();
+    let parkedLoser = true;
+    let winner: Awaited<ReturnType<typeof bindOwnerMaterialsToSession>> | undefined;
+
+    // The loser's upload of its own object is the pause point: the winner runs
+    // to completion there, so the loser is guaranteed to lose the unique index
+    // and must clean up the object it already stored.
+    setMaterialByteStoreForTests({
+      put: async (key, body) => {
+        sessionBytes.set(key, Buffer.from(body as Uint8Array));
+        if (parkedLoser) {
+          parkedLoser = false;
+          winner = await bindOwnerMaterialsToSession('session-race', 'owner-1', ['mat_owner']);
+        }
+      },
+      get: async (key) => {
+        const value = sessionBytes.get(key) ?? ownerBytes.get(key);
+        if (!value) throw new Error(`missing material bytes: ${key}`);
+        return value;
+      },
+      delete: async (key) => {
+        sessionBytes.delete(key);
+        ownerBytes.delete(key);
+      },
+    });
+
+    const loser = await bindOwnerMaterialsToSession('session-race', 'owner-1', ['mat_owner']);
+
+    expect(winner).toBeDefined();
+    expect(loser).toHaveLength(1);
+    expect(loser[0]!.materialId).toBe(winner![0]!.materialId);
+
+    const rows = await listSessionMaterials('session-race');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.ownerMaterialId).toBe('mat_owner');
+    // Exactly one session byte object remains and it is the winner's.
+    expect([...sessionBytes.keys()]).toEqual([rows[0]!.rawAssetId]);
+    expect(ownerBytes.get('owner/mat_owner/raw')).toEqual(Buffer.from('PDF'));
   });
 
   it('POST /api/agent/sessions returns 202 when a second session reuses the upload', async () => {

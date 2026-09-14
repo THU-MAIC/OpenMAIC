@@ -109,6 +109,31 @@ describe('PgAgentSessionMaterialStore with PGlite', () => {
     expect(second.ownerMaterialId).toBe('mat_owner');
   });
 
+  test('backfills owner_material_id onto a legacy row without touching extraction', async () => {
+    await new PgAgentSessionStore(db, {
+      withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),
+    }).createSession({ id: 'session-1', ownerId: 'owner-a', prompt: 'p' });
+    // The pre-upgrade binder's shape: id = owner id, owner_material_id NULL.
+    await db.query(
+      `INSERT INTO agent_session_materials
+         (id, session_id, kind, title, raw_asset_id, text_chars, extraction_status,
+          extraction_attempts, extractor_version, created_at)
+       VALUES ('mat_owner', 'session-1', 'source', 'textbook.pdf',
+               'materials/session-1/mat_owner/raw.x', 0, 'done', 2, 'pdf@1', now())`,
+    );
+
+    const backfilled = await store.backfillOwnerMaterialId('session-1', 'mat_owner', 'mat_owner');
+    expect(backfilled).toMatchObject({
+      id: 'mat_owner',
+      ownerMaterialId: 'mat_owner',
+      rawAssetId: 'materials/session-1/mat_owner/raw.x',
+      extraction: { status: 'done', attempts: 2, extractorVersion: 'pdf@1' },
+    });
+    // The NULL predicate means a repeat is a no-op, not an error.
+    expect(await store.backfillOwnerMaterialId('session-1', 'mat_owner', 'mat_owner')).toBeNull();
+    expect(await store.backfillOwnerMaterialId('session-1', 'mat_absent', 'mat_absent')).toBeNull();
+  });
+
   test('cascades material rows away when the session row is hard-deleted', async () => {
     await new PgAgentSessionStore(db, {
       withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),

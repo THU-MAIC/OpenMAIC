@@ -208,6 +208,15 @@ function isForeignKeyViolation(error: unknown): boolean {
   );
 }
 
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === '23505'
+  );
+}
+
 export class PgAgentSessionMaterialStore implements AgentSessionMaterialStore {
   private readonly queryable: Queryable;
   private readonly tableNames: AgentSessionMaterialTableNames;
@@ -360,6 +369,42 @@ export class PgAgentSessionMaterialStore implements AgentSessionMaterialStore {
       [ownerMaterialId, sessionId],
     );
     return result.rows[0] ? mapRow(result.rows[0]) : null;
+  }
+
+  /**
+   * Backfill `owner_material_id` on a row the pre-upgrade binder wrote with
+   * `id = ownerMaterialId` and no `owner_material_id`. The host validates the
+   * form of the legacy row against its owner record before calling this, so
+   * only an already-verified binding is stamped.
+   *
+   * The partial unique index on `(session_id, owner_material_id)` can still
+   * reject the stamp when a concurrent bind already claimed the owner id for
+   * this session; that is an expected race, reported as `null` rather than an
+   * error so the caller can adopt the winner. Returns the updated row, or
+   * `null` when the row no longer matches (already upgraded, claimed, or
+   * gone). Extraction columns are deliberately untouched.
+   */
+  async backfillOwnerMaterialId(
+    sessionId: string,
+    materialId: string,
+    ownerMaterialId: string,
+  ): Promise<AgentSessionMaterial | null> {
+    try {
+      const result = await this.queryable.query<MaterialRow>(
+        `UPDATE ${this.table} AS material
+            SET owner_material_id = $3
+           FROM agent_sessions AS session
+          WHERE material.id = $1 AND material.session_id = $2
+            AND material.owner_material_id IS NULL
+            AND material.session_id = session.id AND session.deleted_at IS NULL
+          RETURNING material.*`,
+        [materialId, sessionId, ownerMaterialId],
+      );
+      return result.rows[0] ? mapRow(result.rows[0]) : null;
+    } catch (error) {
+      if (isUniqueViolation(error)) return null;
+      throw error;
+    }
   }
 
   async enqueueExtraction(sessionId: string, materialId: string): Promise<boolean> {

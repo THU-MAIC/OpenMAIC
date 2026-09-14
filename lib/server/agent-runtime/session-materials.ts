@@ -248,6 +248,58 @@ export async function bindOwnerMaterialsToSession(
 }
 
 /**
+ * The deterministic object key the pre-upgrade binder copied an owner upload
+ * to: the owner id was used as the session row id, so the key follows from the
+ * session, the owner id, and the MIME type.
+ */
+function legacyOwnerMaterialKey(
+  sessionId: string,
+  ownerMaterialId: string,
+  mime: string | null,
+): string {
+  return sessionMaterialKey(
+    sessionId,
+    ownerMaterialId,
+    rawObjectName(mime ?? 'application/octet-stream'),
+  );
+}
+
+/**
+ * Whether a row written before `owner_material_id` existed is the legacy
+ * binding of exactly this owner upload.
+ *
+ * The old binder keyed the row on the owner id, left `owner_material_id` NULL,
+ * and copied the bytes to the deterministic key above, so a match on the row
+ * id, kind, title, provenance, and that key plus the stored byte length is
+ * unambiguous. A row that fails any check stays a distinct row and is never
+ * silently adopted or overwritten.
+ */
+async function isLegacyOwnerMaterialBinding(
+  byteStore: ReturnType<typeof getMaterialByteStore>,
+  legacy: AgentSessionMaterial,
+  sessionId: string,
+  ownerMaterialId: string,
+  record: Pick<OwnerMaterialRecord, 'mime' | 'originalName' | 'bytes'>,
+): Promise<boolean> {
+  if (legacy.id !== ownerMaterialId) return false;
+  if (legacy.ownerMaterialId !== null) return false;
+  if (legacy.kind !== 'source') return false;
+  if (legacy.title !== (record.originalName ?? ownerMaterialId)) return false;
+  // A legacy source binding carries copied raw bytes only: no fetch URL, no
+  // derivative, and no extracted text.
+  if (legacy.sourceUrl !== null || legacy.derivedFrom !== null) return false;
+  if (legacy.textAssetId !== null || legacy.textChars !== 0) return false;
+  const expectedKey = legacyOwnerMaterialKey(sessionId, ownerMaterialId, record.mime);
+  if (!isSessionMaterialKey(sessionId, expectedKey)) return false;
+  if (legacy.rawAssetId !== expectedKey) return false;
+  try {
+    return (await byteStore.get(expectedKey)).length === record.bytes;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Bind one owner upload to a session. The `(session_id, owner_material_id)`
  * unique index adjudicates concurrent binds of the same upload into the same
  * session, so the loser adopts the winner's row instead of failing.
@@ -257,10 +309,25 @@ async function bindOwnerMaterial(
   byteStore: ReturnType<typeof getMaterialByteStore>,
   sessionId: string,
   ownerMaterialId: string,
-  record: Pick<OwnerMaterialRecord, 'ossKey' | 'mime' | 'originalName'>,
+  record: Pick<OwnerMaterialRecord, 'ossKey' | 'mime' | 'originalName' | 'bytes'>,
 ): Promise<AgentSessionMaterial> {
   const existing = await store.getMaterialByOwnerMaterialId(sessionId, ownerMaterialId);
   if (existing) return existing;
+
+  // Upgrade path: rows written before `owner_material_id` existed use the
+  // owner upload id as the session row id. Reuse and backfill one instead of
+  // minting a duplicate row and copying the bytes a second time.
+  const legacy = await store.getMaterial(sessionId, ownerMaterialId);
+  if (
+    legacy &&
+    (await isLegacyOwnerMaterialBinding(byteStore, legacy, sessionId, ownerMaterialId, record))
+  ) {
+    const adopted = await store.backfillOwnerMaterialId(sessionId, legacy.id, ownerMaterialId);
+    if (adopted) return adopted;
+    // A concurrent bind upgraded or claimed the owner id first; take its row.
+    const winner = await store.getMaterialByOwnerMaterialId(sessionId, ownerMaterialId);
+    if (winner) return winner;
+  }
 
   let source: Buffer;
   try {
@@ -283,12 +350,23 @@ async function bindOwnerMaterial(
     });
   } catch (error) {
     // A concurrent bind may have committed the row first (the unique index
-    // rejected ours); adopt it, and only drop the bytes we just stored when no
-    // row owns them.
+    // rejected ours); adopt it, and drop the object we just stored when the
+    // winner does not reference it. Cleanup is best-effort: a failed delete
+    // must not fail a bind that already succeeded.
     const winner = await store
       .getMaterialByOwnerMaterialId(sessionId, ownerMaterialId)
       .catch(() => null);
-    if (winner) return winner;
+    if (winner) {
+      if (winner.rawAssetId !== rawObjectKey) {
+        await byteStore.delete(rawObjectKey).catch((cleanupError) => {
+          console.warn(
+            `[session-materials] failed to delete losing bind object ${rawObjectKey}:`,
+            cleanupError,
+          );
+        });
+      }
+      return winner;
+    }
     await byteStore.delete(rawObjectKey).catch(() => undefined);
     throw error;
   }
