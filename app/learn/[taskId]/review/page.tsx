@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Bookmark,
   BookOpenCheck,
+  Check,
   CheckCircle2,
   Download,
   FileQuestion,
@@ -19,10 +20,15 @@ import { useBrand } from '@/lib/brand/brand-context';
 import { readSceneQuizAnswers, summarizeScenes } from '@/lib/classroom/complete-summary';
 import {
   buildLearningReview,
+  buildReviewQueue,
   learningReviewToMarkdown,
   type LearningReview,
 } from '@/lib/learning/review-builder';
-import { getLearningTask, updateLearningTask } from '@/lib/learning/task-storage';
+import {
+  getLearningTask,
+  toggleLearningTaskReviewScene,
+  updateLearningTask,
+} from '@/lib/learning/task-storage';
 import { loadQuizAttemptState } from '@/lib/quiz/runtime';
 import { loadStageData } from '@/lib/utils/stage-storage';
 
@@ -107,6 +113,19 @@ export default function LearningReviewPage() {
     URL.revokeObjectURL(url);
   };
 
+  const completeReview = (sceneId: string) => {
+    if (!review) return;
+    const updatedTask = toggleLearningTaskReviewScene(review.task.id, sceneId);
+    if (!updatedTask) return;
+    setReview((current) => {
+      if (!current) return current;
+      const items = current.items.map((item) =>
+        item.sceneId === sceneId ? { ...item, markedForReview: false } : item,
+      );
+      return { ...current, task: updatedTask, items, reviewQueue: buildReviewQueue(items) };
+    });
+  };
+
   if (loading) {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-background text-muted-foreground">
@@ -129,7 +148,25 @@ export default function LearningReviewPage() {
     );
   }
 
-  const reviewItems = review.items.filter((item) => item.markedForReview || item.note);
+  const reviewItems = review.reviewQueue;
+  const pendingCount = reviewItems.filter((item) => item.markedForReview).length;
+  const priorityMeta = {
+    high: {
+      label: '优先复习',
+      reason: '你主动标记了此环节并留下笔记，建议结合笔记重点复盘。',
+      className: 'border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300',
+    },
+    medium: {
+      label: '建议复习',
+      reason: '你在课堂中主动标记了此环节，建议重新回顾核心内容。',
+      className: 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+    },
+    reference: {
+      label: '笔记参考',
+      reason: '此环节保留了学习笔记，可在需要时返回查阅。',
+      className: 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300',
+    },
+  } as const;
 
   return (
     <main className="min-h-dvh bg-background">
@@ -194,35 +231,89 @@ export default function LearningReviewPage() {
 
         <section className="mt-10 grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
           <div className="rounded-2xl border bg-card p-5 shadow-sm">
-            <div className="mb-4 flex items-center gap-2">
-              <Bookmark className="size-4 text-primary" />
-              <h2 className="font-semibold">重点与笔记</h2>
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Bookmark className="size-4 text-primary" />
+                  <h2 className="font-semibold">智能复习清单</h2>
+                </div>
+                <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                  根据你的复习标记和课堂笔记自动排序，优先处理最需要巩固的内容。
+                </p>
+              </div>
+              <span
+                data-testid="review-pending-count"
+                aria-live="polite"
+                className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+              >
+                待完成 {pendingCount}
+              </span>
             </div>
             {reviewItems.length ? (
               <div className="space-y-3">
-                {reviewItems.map((item) => (
-                  <button
-                    key={item.sceneId}
-                    type="button"
-                    disabled={courseUnavailable || !item.available}
-                    onClick={() => openScene(item.sceneId)}
-                    className="w-full rounded-xl border border-border/70 p-4 text-left transition hover:border-primary/35 hover:bg-primary/[0.03] disabled:cursor-default"
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="font-medium">{item.title}</span>
-                      {item.markedForReview ? (
-                        <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">
-                          待复习
-                        </span>
+                {reviewItems.map((item) => {
+                  const meta = priorityMeta[item.priority];
+                  return (
+                    <article
+                      key={item.sceneId}
+                      data-testid={`review-queue-item-${item.sceneId}`}
+                      className="rounded-xl border border-border/70 p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-medium">{item.title}</h3>
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${meta.className}`}
+                            >
+                              {meta.label}
+                            </span>
+                          </div>
+                          <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                            {meta.reason}
+                          </p>
+                        </div>
+                      </div>
+                      {item.note ? (
+                        <div className="mt-3 rounded-lg bg-muted/55 px-3 py-2.5">
+                          <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                            <NotebookPen className="size-3" /> 课堂笔记
+                          </div>
+                          <p className="whitespace-pre-wrap text-sm leading-6 text-foreground/80">
+                            {item.note}
+                          </p>
+                        </div>
                       ) : null}
-                    </div>
-                    {item.note ? (
-                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
-                        {item.note}
-                      </p>
-                    ) : null}
-                  </button>
-                ))}
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={courseUnavailable || !item.available}
+                          onClick={() => openScene(item.sceneId)}
+                        >
+                          <Play className="size-3.5" /> 回到此环节
+                        </Button>
+                        {item.markedForReview ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            data-testid={`complete-review-${item.sceneId}`}
+                            onClick={() => completeReview(item.sceneId)}
+                          >
+                            <Check className="size-3.5" /> 完成复习
+                          </Button>
+                        ) : null}
+                        {!item.available ? (
+                          <span className="self-center text-xs text-muted-foreground">
+                            原课堂环节已不可用
+                          </span>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             ) : (
               <div className="rounded-xl bg-muted/50 px-4 py-8 text-center text-sm text-muted-foreground">

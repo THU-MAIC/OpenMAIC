@@ -127,4 +127,53 @@ test.describe('ZhiGou learning loop', () => {
     await expect(page.getByRole('button', { name: '开始检测' })).toBeVisible();
     expect(generationRequests).toEqual([]);
   });
+
+  test('turns marked classroom scenes into an actionable review queue', async ({ page }) => {
+    await page.goto('/');
+    await page.getByTestId('golden-demo-launch').click();
+    await expect(page).toHaveURL(/\/classroom\/zhigou-demo-linear-function$/);
+
+    await page.evaluate(() => {
+      const key = 'zhigou.learning.tasks.v1';
+      const tasks = JSON.parse(localStorage.getItem(key) ?? '[]') as Array<{
+        id: string;
+        reviewSceneIds: string[];
+        notes: Record<string, unknown>;
+      }>;
+      const task = tasks.find((item) => item.id === 'zhigou-demo-linear-function-task');
+      if (!task) throw new Error('Golden demo learning task was not created');
+      task.reviewSceneIds = ['demo-scene-intro', 'demo-scene-lab'];
+      task.notes = {
+        'demo-scene-lab': {
+          sceneId: 'demo-scene-lab',
+          content: 'k 决定方向和陡缓，b 决定纵轴交点。',
+          updatedAt: Date.now(),
+        },
+      };
+      localStorage.setItem(key, JSON.stringify(tasks));
+    });
+
+    await page.goto('/learn/zhigou-demo-linear-function-task/review');
+    await expect(page.getByRole('heading', { name: '智能复习清单' })).toBeVisible();
+    await expect(page.getByTestId('review-pending-count')).toHaveText('待完成 2');
+
+    const priorityItem = page.getByTestId('review-queue-item-demo-scene-lab');
+    await expect(priorityItem.getByText('优先复习')).toBeVisible();
+    await expect(priorityItem.getByText('主动标记了此环节并留下笔记')).toBeVisible();
+    await expect(priorityItem.getByRole('button', { name: '回到此环节' })).toBeEnabled();
+
+    await priorityItem.getByRole('button', { name: '完成复习' }).click();
+    await expect(page.getByTestId('review-pending-count')).toHaveText('待完成 1');
+    await expect(priorityItem.getByText('笔记参考')).toBeVisible();
+    await expect(priorityItem.getByRole('button', { name: '完成复习' })).toHaveCount(0);
+
+    const storedReviewScenes = await page.evaluate(() => {
+      const tasks = JSON.parse(localStorage.getItem('zhigou.learning.tasks.v1') ?? '[]') as Array<{
+        id: string;
+        reviewSceneIds: string[];
+      }>;
+      return tasks.find((item) => item.id === 'zhigou-demo-linear-function-task')?.reviewSceneIds;
+    });
+    expect(storedReviewScenes).toEqual(['demo-scene-intro']);
+  });
 });

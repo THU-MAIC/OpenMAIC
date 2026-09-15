@@ -12,14 +12,34 @@ export interface LearningReviewItem {
   note?: string;
 }
 
+export interface LearningReviewQueueItem extends LearningReviewItem {
+  priority: 'high' | 'medium' | 'reference';
+  reason: 'marked-and-noted' | 'marked' | 'noted';
+}
+
 export interface LearningReview {
   task: LearningTask;
   courseTitle: string;
   items: LearningReviewItem[];
+  reviewQueue: LearningReviewQueueItem[];
   sceneCount: number;
   visitedCount: number;
   progressPercent: number;
   quiz: CompleteSummary['quiz'];
+}
+
+export function buildReviewQueue(items: LearningReviewItem[]): LearningReviewQueueItem[] {
+  const rank = { high: 0, medium: 1, reference: 2 } as const;
+  return items
+    .filter((item) => item.markedForReview || item.note)
+    .map((item): LearningReviewQueueItem => {
+      if (item.markedForReview && item.note) {
+        return { ...item, priority: 'high', reason: 'marked-and-noted' };
+      }
+      if (item.markedForReview) return { ...item, priority: 'medium', reason: 'marked' };
+      return { ...item, priority: 'reference', reason: 'noted' };
+    })
+    .sort((a, b) => rank[a.priority] - rank[b.priority] || a.order - b.order);
 }
 
 export function buildLearningReview(
@@ -62,6 +82,7 @@ export function buildLearningReview(
     task,
     courseTitle: options.courseTitle || task.courseName,
     items,
+    reviewQueue: buildReviewQueue(items),
     sceneCount: availableItems.length,
     visitedCount,
     progressPercent: availableItems.length
