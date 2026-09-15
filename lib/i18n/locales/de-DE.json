@@ -1271,6 +1271,7 @@
       "xiaomiTokenPlanEU": "Token-Tarif EU"
     },
     "requestUrl": "Anfrage-URL",
+    "ttsEndpointPath": "Anfragepfad",
     "models": "Modelle",
     "comfyuiWorkflows": "Workflows",
     "comfyuiRefresh": "Aktualisieren",

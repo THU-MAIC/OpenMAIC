@@ -1256,6 +1256,7 @@
       "xiaomiTokenPlanEU": "Token Plan 歐洲"
     },
     "requestUrl": "請求位址",
+    "ttsEndpointPath": "請求路徑",
     "models": "模型",
     "comfyuiWorkflows": "工作流程",
     "comfyuiRefresh": "重新整理",

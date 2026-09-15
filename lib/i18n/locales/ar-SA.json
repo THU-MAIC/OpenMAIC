@@ -1271,6 +1271,7 @@
       "xiaomiTokenPlanEU": "Token Plan أوروبا"
     },
     "requestUrl": "عنوان الطلب",
+    "ttsEndpointPath": "مسار الطلب",
     "models": "النماذج",
     "comfyuiWorkflows": "سير العمل",
     "comfyuiRefresh": "تحديث",
