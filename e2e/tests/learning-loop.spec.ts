@@ -15,6 +15,9 @@ test.describe('ZhiGou learning loop', () => {
     await page.goto('/learn/new');
 
     await expect(page.getByTestId('learning-task-fields')).toBeVisible();
+    const flow = page.getByTestId('creation-flow-learning');
+    await expect(flow).toBeVisible();
+    await expect(flow.getByText('让每次学习留下成果')).toBeVisible();
     await page.getByPlaceholder('例如：数据结构').fill('数据结构');
     await page.getByPlaceholder('例如：二叉树遍历').fill('二叉树遍历');
     await page.getByPlaceholder('例如：能区分并手写三种遍历过程').fill('区分三种遍历过程');
@@ -24,6 +27,7 @@ test.describe('ZhiGou learning loop', () => {
     await expect(requirement).toHaveValue(/核心知识点：二叉树遍历/);
     await expect(page.getByTestId('course-generate-submit')).toBeEnabled();
     await expect(page.getByTestId('nav-learning-task')).toHaveAttribute('aria-current', 'page');
+    await expect(flow.getByText('3 / 3 项必填已完成')).toBeVisible();
   });
 
   test('shows durable learning tasks separately from the course library', async ({ page }) => {

@@ -68,9 +68,13 @@ test.describe('Home → Generation', () => {
     await expect(home.textarea).toBeVisible();
     await expect(home.textarea).toBeFocused();
     await expect(page.getByTestId('nav-create-course')).toHaveAttribute('aria-current', 'page');
+    const flow = page.getByTestId('creation-flow-create');
+    await expect(flow).toBeVisible();
+    await expect(flow.getByText('From idea to classroom')).toBeVisible();
 
     await home.fillRequirement('创建一堂关于牛顿运动定律的互动课程');
     await expect(home.enterButton).toBeEnabled();
+    await expect(flow.getByText('Brief ready')).toBeVisible();
     await home.submit();
 
     await page.waitForURL(/\/generation-preview/);

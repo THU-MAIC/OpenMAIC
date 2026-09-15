@@ -8,7 +8,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Clock,
   Copy,
   Folder,
   FolderPlus,
@@ -111,6 +110,7 @@ import {
 } from '@/lib/learning/task-template';
 import type { ConceptLearningTaskInput } from '@/lib/learning/types';
 import { RecentTaskList } from '@/components/learning/recent-task-list';
+import { CreationFlowCard } from '@/components/generation/creation-flow-card';
 
 const log = createLogger('Home');
 
@@ -828,11 +828,6 @@ export function HomePage({
     !!form.requirement.trim() &&
     hasUsableProvider &&
     (!isLearningExperience || learningInputComplete);
-  const latestClassroom = useMemo(
-    () => [...classrooms].sort((a, b) => b.updatedAt - a.updatedAt)[0],
-    [classrooms],
-  );
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
@@ -1200,78 +1195,30 @@ export function HomePage({
             </div>
           </motion.div>
 
-          <motion.aside
-            initial={heroEnter({ opacity: 0, x: 12 })}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.4 }}
-            className="relative min-h-[254px] overflow-hidden rounded-2xl border border-primary/15 bg-primary p-6 text-primary-foreground shadow-[0_22px_60px_-36px_color-mix(in_oklab,var(--primary)_70%,transparent)] lg:col-span-4 lg:row-span-3"
-          >
-            <div className="absolute -right-16 -top-20 size-52 rounded-full border-[34px] border-white/10" />
-            <div className="absolute -bottom-14 right-8 size-32 rounded-full bg-white/[0.06]" />
-            <div className="relative flex h-full flex-col">
-              <span className="flex size-10 items-center justify-center rounded-xl bg-white/12">
-                <Clock className="size-5" aria-hidden="true" />
-              </span>
-              <p className="mt-6 text-xs font-semibold uppercase tracking-[0.14em] text-primary-foreground/65">
-                {!isDashboardExperience
-                  ? locale === 'zh-CN'
-                    ? isLearningExperience
-                      ? '目标学习模式'
-                      : '创建指引'
-                    : isLearningExperience
-                      ? 'Goal-based learning'
-                      : 'Creation guide'
-                  : t('classroom.recentClassrooms')}
-              </p>
-              {latestClassroom && isDashboardExperience ? (
-                <>
-                  <h2 className="mt-2 line-clamp-2 text-xl font-semibold leading-snug">
-                    {latestClassroom.name}
-                  </h2>
-                  <p className="mt-2 text-sm text-primary-foreground/65">
-                    {formatDate(latestClassroom.updatedAt)}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/classroom/${latestClassroom.id}`)}
-                    className="mt-auto inline-flex h-10 w-fit items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-primary transition-transform hover:-translate-y-0.5"
-                  >
-                    {locale === 'zh-CN' ? '继续课程' : 'Continue course'}
-                    <ChevronRight className="size-4" />
-                  </button>
-                </>
-              ) : (
-                <>
-                  <h2 className="mt-2 text-xl font-semibold leading-snug">
-                    {locale === 'zh-CN' ? '三步生成互动课程' : 'Create in three steps'}
-                  </h2>
-                  <ol className="mt-5 space-y-3 text-sm text-primary-foreground/75">
-                    {[
-                      locale === 'zh-CN'
-                        ? '描述课程主题与教学目标'
-                        : 'Describe the topic and goals',
-                      locale === 'zh-CN' ? '确认 AI 生成的课程方案' : 'Review the AI course plan',
-                      locale === 'zh-CN'
-                        ? '进入课堂开展互动学习'
-                        : 'Enter the interactive classroom',
-                    ].map((step, index) => (
-                      <li key={step} className="flex items-center gap-3">
-                        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/15 text-xs font-semibold text-white">
-                          {index + 1}
-                        </span>
-                        <span>{step}</span>
-                      </li>
-                    ))}
-                  </ol>
-                  <p className="mt-auto text-xs leading-5 text-primary-foreground/55">
-                    {locale === 'zh-CN'
-                      ? '从左侧输入课程需求即可开始'
-                      : 'Start by entering your course request on the left'}
-                  </p>
-                </>
-              )}
-            </div>
-          </motion.aside>
+          <CreationFlowCard
+            mode={isLearningExperience ? 'learning' : 'create'}
+            locale={locale}
+            requirementReady={Boolean(form.requirement.trim())}
+            materialCount={form.courseMaterials.length}
+            learningFieldsCompleted={
+              [
+                learningInput.courseName,
+                learningInput.knowledgePoint,
+                learningInput.learningGoal,
+              ].filter((value) => value.trim()).length
+            }
+            onFocusPrimary={() => {
+              if (isLearningExperience) {
+                const field = document.querySelector<HTMLInputElement>(
+                  '[data-testid="learning-task-fields"] input',
+                );
+                field?.focus();
+                field?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              } else {
+                textareaRef.current?.focus();
+              }
+            }}
+          />
 
           {showVocationalTestUi && (
             <motion.div
