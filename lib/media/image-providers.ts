@@ -168,8 +168,8 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
     name: 'OpenRouter Image',
     requiresApiKey: true,
     defaultBaseUrl: OPENROUTER_DEFAULT_BASE_URL,
-    // Model list is fetched live from GET /images/models (see
-    // /api/openrouter-models); this seed keeps the picker usable offline.
+    // Model list is fetched live from OpenRouter's public GET /images/models
+    // catalog; this seed keeps the picker usable offline.
     models: [
       { id: 'google/gemini-3-pro-image', name: 'Gemini 3 Pro Image' },
       { id: 'openai/gpt-image-2', name: 'GPT Image 2' },

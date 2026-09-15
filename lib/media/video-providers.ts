@@ -130,8 +130,8 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     name: 'OpenRouter Video',
     requiresApiKey: true,
     defaultBaseUrl: OPENROUTER_DEFAULT_BASE_URL,
-    // Model list is fetched live from GET /videos/models (see
-    // /api/openrouter-models); this seed keeps the picker usable offline.
+    // Model list is fetched live from OpenRouter's public GET /videos/models
+    // catalog; this seed keeps the picker usable offline.
     models: [
       { id: 'google/veo-3.1', name: 'Veo 3.1' },
       { id: 'kwaivgi/kling-v3.0-pro', name: 'Kling v3.0 Pro' },
