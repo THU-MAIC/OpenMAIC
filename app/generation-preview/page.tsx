@@ -58,9 +58,12 @@ import {
   ALL_STEPS,
   getActiveSteps,
   getGenerationStepText,
+  createGenerationStepStates,
+  type GenerationStepStates,
 } from './types';
 import { StepVisualizer } from './components/visualizers';
 import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
+import { withRetry } from '@/lib/generation/retry';
 
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
@@ -115,6 +118,34 @@ function GenerationPreviewContent() {
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [stepStates, setStepStates] = useState<GenerationStepStates>(() =>
+    createGenerationStepStates(ALL_STEPS),
+  );
+  const updateStepState = (stepId: string, patch: Partial<GenerationStepStates[string]>) =>
+    setStepStates((states) => {
+      const next = { ...states, [stepId]: { ...states[stepId], ...patch } };
+      if (session)
+        sessionStorage.setItem(
+          'generationSession',
+          JSON.stringify({ ...session, previewStepStates: next }),
+        );
+      return next;
+    });
+  const activateStep = (steps: typeof ALL_STEPS, index: number) => {
+    const next = steps[index];
+    if (!next) return;
+    setStepStates((states) => {
+      const previous = steps[Math.max(0, index - 1)];
+      return {
+        ...states,
+        ...(previous && states[previous.id]?.status === 'running'
+          ? { [previous.id]: { ...states[previous.id], status: 'done' as const } }
+          : {}),
+        [next.id]: { ...states[next.id], status: 'running' as const },
+      };
+    });
+    setCurrentStepIndex(index);
+  };
   const [isComplete] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [streamingOutlines, setStreamingOutlines] = useState<SceneOutline[] | null>(null);
@@ -235,6 +266,9 @@ function GenerationPreviewContent() {
         }
         parsed.taskEngineMode = parsed.taskEngineMode === true;
         setSession(parsed);
+        if (parsed.previewStepStates) setStepStates(parsed.previewStepStates);
+        if (parsed.generatedAgents)
+          setGeneratedAgents(parsed.generatedAgents as typeof generatedAgents);
       } catch (e) {
         log.error('Failed to parse generation session:', e);
       }
@@ -317,6 +351,7 @@ function GenerationPreviewContent() {
     let currentSession = generationSession;
 
     setError(null);
+    setStepStates(createGenerationStepStates(ALL_STEPS));
     setCurrentStepIndex(0);
 
     try {
@@ -328,12 +363,21 @@ function GenerationPreviewContent() {
       const hasPdfToAnalyze = documentSources.length > 0 && !currentSession.pdfText;
       // If no document to analyze, skip to the next available step
       if (!hasPdfToAnalyze) {
+        updateStepState('pdf-analysis', { status: 'skipped' });
         const firstNonPdfIdx = activeSteps.findIndex((s) => s.id !== 'pdf-analysis');
         setCurrentStepIndex(Math.max(0, firstNonPdfIdx));
       }
 
       // Step 0: Extract uploaded course material if needed
       if (hasPdfToAnalyze) {
+        setStepStates((s) => ({
+          ...s,
+          'pdf-analysis': {
+            ...s['pdf-analysis'],
+            status: 'running',
+            attempt: s['pdf-analysis'].attempt + 1,
+          },
+        }));
         log.debug('=== Generation Preview: Extracting course material bundle ===');
         validateDocumentSources(documentSources, t);
         const sortedDocumentSources = [...documentSources].sort((a, b) => a.order - b.order);
@@ -466,33 +510,67 @@ function GenerationPreviewContent() {
         // Reassign local reference for subsequent steps
         currentSession = updatedSession;
         activeSteps = getActiveSteps(currentSession);
+        updateStepState('pdf-analysis', { status: 'done' });
       }
 
       // Step: Web Search (if enabled)
       const webSearchStepIdx = activeSteps.findIndex((s) => s.id === 'web-search');
-      if (currentSession.requirements.webSearch && webSearchStepIdx >= 0) {
-        setCurrentStepIndex(webSearchStepIdx);
+      if (
+        currentSession.requirements.webSearch &&
+        webSearchStepIdx >= 0 &&
+        !currentSession.researchContext
+      ) {
+        updateStepState('web-search', {
+          status: 'running',
+          attempt: stepStates['web-search'].attempt + 1,
+          error: undefined,
+        });
+        activateStep(activeSteps, webSearchStepIdx);
         setWebSearchSources([]);
 
         const wsSettings = useSettingsStore.getState();
         const wsProviderId = wsSettings.webSearchProviderId;
         const wsConfig = wsSettings.webSearchProvidersConfig?.[wsProviderId];
-        const res = await fetch('/api/web-search', {
-          method: 'POST',
-          headers: getApiHeaders(),
-          body: JSON.stringify(
-            withThinkingConfig({
-              query: currentSession.requirements.requirement,
-              pdfText: currentSession.pdfText || undefined,
-              providerId: wsProviderId,
-              apiKey: wsConfig?.apiKey || undefined,
-              baseUrl: wsProviderId === 'searxng' ? undefined : wsConfig?.baseUrl || undefined,
-              baiduSubSources: wsProviderId === 'baidu' ? wsSettings.baiduSubSources : undefined,
-              claudeModelId: wsProviderId === 'claude' ? wsConfig?.modelId || undefined : undefined,
-            }),
-          ),
-          signal,
-        });
+        const res = await withRetry(
+          async () => {
+            const response = await fetch('/api/web-search', {
+              method: 'POST',
+              headers: getApiHeaders(),
+              body: JSON.stringify(
+                withThinkingConfig({
+                  query: currentSession.requirements.requirement,
+                  pdfText: currentSession.pdfText || undefined,
+                  providerId: wsProviderId,
+                  apiKey: wsConfig?.apiKey || undefined,
+                  baseUrl: wsProviderId === 'searxng' ? undefined : wsConfig?.baseUrl || undefined,
+                  baiduSubSources:
+                    wsProviderId === 'baidu' ? wsSettings.baiduSubSources : undefined,
+                  claudeModelId:
+                    wsProviderId === 'claude' ? wsConfig?.modelId || undefined : undefined,
+                }),
+              ),
+              signal,
+            });
+            if (!response.ok && (response.status === 429 || response.status >= 500)) {
+              throw Object.assign(new Error(`Web search temporary failure (${response.status})`), {
+                status: response.status,
+              });
+            }
+            return response;
+          },
+          {
+            signal,
+            maxRetries: 2,
+            shouldRetry: (failure) => {
+              if (isAbortError(failure)) return false;
+              return (
+                failure instanceof TypeError ||
+                (failure as { status?: number })?.status === 429 ||
+                ((failure as { status?: number })?.status ?? 0) >= 500
+              );
+            },
+          },
+        );
 
         if (!res.ok) {
           const data = await res.json().catch(() => ({ error: 'Web search failed' }));
@@ -515,6 +593,7 @@ function GenerationPreviewContent() {
         sessionStorage.setItem('generationSession', JSON.stringify(updatedSessionWithSearch));
         currentSession = updatedSessionWithSearch;
         activeSteps = getActiveSteps(currentSession);
+        updateStepState('web-search', { status: 'done' });
       }
 
       // Load imageMapping early (needed for both outline and scene generation).
@@ -549,7 +628,8 @@ function GenerationPreviewContent() {
       let courseTitle = currentSession.courseTitle;
 
       const outlineStepIdx = activeSteps.findIndex((s) => s.id === 'outline');
-      setCurrentStepIndex(outlineStepIdx >= 0 ? outlineStepIdx : 0);
+      activateStep(activeSteps, outlineStepIdx >= 0 ? outlineStepIdx : 0);
+      if (outlines?.length) updateStepState('outline', { status: 'done' });
       if (!outlines || outlines.length === 0) {
         log.debug('=== Generating outlines (SSE) ===');
         setStreamingOutlines([]);
@@ -741,9 +821,15 @@ function GenerationPreviewContent() {
         persona?: string;
       }> = [];
 
-      if (settings.agentMode === 'auto') {
+      if (currentSession.generatedAgents?.length) {
+        agents = currentSession.generatedAgents;
+        setGeneratedAgents(currentSession.generatedAgents as typeof generatedAgents);
+        updateStepState('agent-generation', { status: 'done' });
+      }
+
+      if (settings.agentMode === 'auto' && agents.length === 0) {
         const agentStepIdx = activeSteps.findIndex((s) => s.id === 'agent-generation');
-        if (agentStepIdx >= 0) setCurrentStepIndex(agentStepIdx);
+        if (agentStepIdx >= 0) activateStep(activeSteps, agentStepIdx);
 
         try {
           const allAvatars = [
@@ -880,6 +966,8 @@ function GenerationPreviewContent() {
 
           // Show card-reveal modal, continue generation once all cards are revealed
           setGeneratedAgents(agentData.agents);
+          currentSession = { ...currentSession, generatedAgents: agentData.agents };
+          persistSession(currentSession);
           setShowAgentReveal(true);
           await new Promise<void>((resolve) => {
             agentRevealResolveRef.current = resolve;
@@ -946,7 +1034,7 @@ function GenerationPreviewContent() {
 
       // Advance to slide-content step
       const contentStepIdx = activeSteps.findIndex((s) => s.id === 'slide-content');
-      if (contentStepIdx >= 0) setCurrentStepIndex(contentStepIdx);
+      if (contentStepIdx >= 0) activateStep(activeSteps, contentStepIdx);
 
       // Build stageInfo and userProfile for API call
       const stageInfo = {
@@ -966,49 +1054,57 @@ function GenerationPreviewContent() {
       const firstOutline = outlines[0];
 
       // Step 2: Generate content (currentStepIndex is already 2)
-      const contentData = await fetchSceneContent(
-        {
-          outline: firstOutline,
-          allOutlines: outlines,
-          pdfImages: currentSession.pdfImages,
-          imageMapping,
-          stageInfo,
-          stageId: stage.id,
-          agents,
-          languageDirective,
-          requirements: currentSession.requirements,
-        },
-        signal,
-        FOREGROUND_SCENE_RETRY_OPTIONS,
-      );
+      const contentData = currentSession.generatedFirstSceneContent
+        ? { success: true as const, content: currentSession.generatedFirstSceneContent as never }
+        : await fetchSceneContent(
+            {
+              outline: firstOutline,
+              allOutlines: outlines,
+              pdfImages: currentSession.pdfImages,
+              imageMapping,
+              stageInfo,
+              stageId: stage.id,
+              agents,
+              languageDirective,
+              requirements: currentSession.requirements,
+            },
+            signal,
+            FOREGROUND_SCENE_RETRY_OPTIONS,
+          );
 
       if (!contentData.success || !contentData.content) {
         throw new Error(sceneGenerationErrorMessage(contentData));
       }
+      currentSession = { ...currentSession, generatedFirstSceneContent: contentData.content };
+      persistSession(currentSession);
 
       // Generate actions (activate actions step indicator)
       const actionsStepIdx = activeSteps.findIndex((s) => s.id === 'actions');
-      setCurrentStepIndex(actionsStepIdx >= 0 ? actionsStepIdx : currentStepIndex + 1);
+      activateStep(activeSteps, actionsStepIdx >= 0 ? actionsStepIdx : currentStepIndex + 1);
 
-      const data = await fetchSceneActions(
-        {
-          outline: contentData.effectiveOutline || firstOutline,
-          allOutlines: outlines,
-          content: contentData.content,
-          stageId: stage.id,
-          agents,
-          previousSpeeches: [],
-          userProfile,
-          languageDirective,
-        },
-        signal,
-        FOREGROUND_SCENE_RETRY_OPTIONS,
-      );
+      const data = currentSession.generatedFirstScene
+        ? { success: true as const, scene: currentSession.generatedFirstScene as never }
+        : await fetchSceneActions(
+            {
+              outline: contentData.effectiveOutline || firstOutline,
+              allOutlines: outlines,
+              content: contentData.content,
+              stageId: stage.id,
+              agents,
+              previousSpeeches: [],
+              userProfile,
+              languageDirective,
+            },
+            signal,
+            FOREGROUND_SCENE_RETRY_OPTIONS,
+          );
 
       if (!data.success || !data.scene) {
         throw new Error(sceneGenerationErrorMessage(data));
       }
       const firstScene = data.scene;
+      currentSession = { ...currentSession, generatedFirstScene: firstScene };
+      persistSession(currentSession);
 
       // Generate TTS for first scene (part of actions step — blocking)
       if (
@@ -1019,6 +1115,7 @@ function GenerationPreviewContent() {
           settings.ttsProvidersConfig?.[settings.ttsProviderId],
         )
       ) {
+        updateStepState('tts', { status: 'running', attempt: (stepStates.tts?.attempt ?? 0) + 1 });
         const ttsResult = await generateTTSForScene(
           firstScene,
           languageDirective,
@@ -1026,6 +1123,9 @@ function GenerationPreviewContent() {
           FOREGROUND_SCENE_RETRY_OPTIONS,
         );
         if (!ttsResult.success) throw new Error(t('generation.speechFailed'));
+        updateStepState('tts', { status: 'done' });
+      } else {
+        updateStepState('tts', { status: 'skipped' });
       }
 
       // Add scene to store and navigate
@@ -1058,6 +1158,19 @@ function GenerationPreviewContent() {
         return;
       }
       sessionStorage.removeItem('generationSession');
+      setStepStates((s) => {
+        const step = activeSteps[Math.min(currentStepIndex, activeSteps.length - 1)];
+        return step
+          ? {
+              ...s,
+              [step.id]: {
+                ...s[step.id],
+                status: 'failed',
+                error: err instanceof Error ? err.message : String(err),
+              },
+            }
+          : s;
+      });
       setError(err instanceof Error ? err.message : String(err));
     }
   };
@@ -1076,6 +1189,35 @@ function GenerationPreviewContent() {
     outlineReviewIntentRef.current = false;
     sessionStorage.removeItem('generationSession');
     router.push('/');
+  };
+
+  const retryFailedStep = () => {
+    if (!session) return;
+    const failed = activeSteps.find((step) => stepStates[step.id]?.status === 'failed');
+    if (!failed) return;
+    const reset: GenerationSessionState = { ...session, previewStepStates: undefined };
+    if (failed.id === 'pdf-analysis') {
+      reset.pdfText = '';
+      reset.pdfImages = undefined;
+      reset.imageStorageIds = undefined;
+    } else if (failed.id === 'web-search') {
+      reset.researchContext = undefined;
+      reset.researchSources = undefined;
+    } else if (failed.id === 'outline') {
+      reset.sceneOutlines = undefined;
+      reset.languageDirective = undefined;
+      reset.courseTitle = undefined;
+    } else if (failed.id === 'agent-generation') {
+      reset.generatedAgents = undefined;
+    } else if (failed.id === 'slide-content') {
+      reset.generatedFirstSceneContent = undefined;
+      reset.generatedFirstScene = undefined;
+    } else if (failed.id === 'actions') {
+      reset.generatedFirstScene = undefined;
+    }
+    persistSession(reset);
+    hasStartedRef.current = true;
+    void startGeneration(reset);
   };
 
   // Triggered when the user clicks the streaming outline card mid-stream.
@@ -1343,15 +1485,25 @@ function GenerationPreviewContent() {
                   key={step.id}
                   className={cn(
                     'h-1.5 rounded-full transition-all duration-500',
-                    idx < currentStepIndex
+                    stepStates[step.id]?.status === 'done' || idx < currentStepIndex
                       ? 'w-1.5 bg-blue-500/30'
-                      : idx === currentStepIndex
-                        ? 'w-8 bg-blue-500'
-                        : 'w-1.5 bg-muted/50',
+                      : stepStates[step.id]?.status === 'failed'
+                        ? 'w-8 bg-red-500'
+                        : stepStates[step.id]?.status === 'retrying'
+                          ? 'w-8 bg-amber-500'
+                          : idx === currentStepIndex
+                            ? 'w-8 bg-blue-500'
+                            : 'w-1.5 bg-muted/50',
                   )}
                 />
               ))}
             </div>
+
+            {error && activeStep && (
+              <div className="mx-auto max-w-2xl rounded-md border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-300">
+                {t('generation.generationFailed')}: {error}
+              </div>
+            )}
 
             {/* Central Content */}
             <div className="flex-1 flex flex-col items-center justify-center w-full space-y-8 mt-4">
@@ -1425,6 +1577,36 @@ function GenerationPreviewContent() {
                   </motion.div>
                 </AnimatePresence>
 
+                <div className="mx-auto w-full max-w-sm space-y-1 text-left">
+                  {activeSteps.map((step) => {
+                    const state = stepStates[step.id];
+                    if (!state || state.status === 'idle') return null;
+                    return (
+                      <div
+                        key={step.id}
+                        className="flex items-center justify-between rounded px-2 py-1 text-xs text-muted-foreground"
+                      >
+                        <span>{t(step.title)}</span>
+                        <span
+                          className={
+                            state.status === 'failed'
+                              ? 'text-red-500'
+                              : state.status === 'retrying'
+                                ? 'text-amber-500'
+                                : 'text-muted-foreground'
+                          }
+                        >
+                          {state.status === 'failed'
+                            ? state.error
+                            : state.status === 'retrying'
+                              ? `Retry ${state.attempt}/${state.maxAttempts}`
+                              : state.status}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
                 {/* Truncation warning indicator */}
                 <AnimatePresence>
                   {truncationWarnings.length > 0 && !error && !isComplete && (
@@ -1495,7 +1677,12 @@ function GenerationPreviewContent() {
                 animate={{ opacity: 1, y: 0 }}
                 className="w-full max-w-xs"
               >
-                <Button size="lg" variant="outline" className="w-full h-12" onClick={goBackToHome}>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="w-full h-12"
+                  onClick={retryFailedStep}
+                >
                   {t('generation.goBackAndRetry')}
                 </Button>
               </motion.div>

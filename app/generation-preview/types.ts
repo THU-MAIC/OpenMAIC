@@ -8,6 +8,16 @@ import type {
   SessionDocumentSource,
 } from '@/lib/types/generation';
 
+export type GeneratedAgent = {
+  id: string;
+  name: string;
+  role: string;
+  persona?: string;
+  avatar?: string;
+  color?: string;
+  priority?: number;
+};
+
 // Session state stored in sessionStorage
 export interface GenerationSessionState {
   sessionId: string;
@@ -40,6 +50,10 @@ export interface GenerationSessionState {
   courseTitle?: string;
   // Server-effective vocational mode from the outline generation done event.
   taskEngineMode?: boolean;
+  previewStepStates?: GenerationStepStates;
+  generatedAgents?: GeneratedAgent[];
+  generatedFirstSceneContent?: unknown;
+  generatedFirstScene?: unknown;
 }
 
 export type GenerationStep = {
@@ -49,6 +63,26 @@ export type GenerationStep = {
   icon: React.ElementType;
   type: 'analysis' | 'writing' | 'visual';
 };
+
+export type GenerationStepStatus = 'idle' | 'running' | 'retrying' | 'failed' | 'done' | 'skipped';
+
+export type GenerationStepState = {
+  status: GenerationStepStatus;
+  attempt: number;
+  maxAttempts: number;
+  error?: string;
+};
+
+export type GenerationStepStates = Record<string, GenerationStepState>;
+
+export function createGenerationStepStates(
+  steps: GenerationStep[],
+  maxAttempts = 3,
+): GenerationStepStates {
+  return Object.fromEntries(
+    steps.map((step) => [step.id, { status: 'idle', attempt: 0, maxAttempts }]),
+  );
+}
 
 const MEDIA_EXTENSIONS = new Set(['mp4', 'mkv', 'avi', 'mov', 'wmv', 'mp3', 'wav', 'aac', 'm4a']);
 
