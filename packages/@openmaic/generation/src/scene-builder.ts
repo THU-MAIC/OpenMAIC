@@ -49,6 +49,7 @@ export function buildCompleteScene(
       theme: defaultTheme,
       elements: content.elements,
       background: content.background,
+      ...(content.remark ? { script: content.remark } : {}),
     };
     return {
       id: sceneId,
