@@ -205,12 +205,19 @@ export interface QuizQuestion {
   points?: number; // Points per question (default 1)
 }
 
+/** Optional behaviour for evidence-focused diagnostic quizzes. */
+export interface QuizDiagnosticConfig {
+  /** Allow the learner to submit unanswered items as an explicit skip. */
+  allowSkip?: boolean;
+}
+
 /**
  * Quiz content - React component props/data.
  */
 export interface QuizContent {
   type: 'quiz';
   questions: QuizQuestion[];
+  diagnostic?: QuizDiagnosticConfig;
 }
 
 /**

@@ -45,6 +45,12 @@ describe('recordUsage — LLM', () => {
     expect(records[0].createdAt).toBeGreaterThan(0);
   });
 
+  it('keeps the upstream response model id when one is available', async () => {
+    await recordUsage({ ...llmInput, responseModelId: 'doubao-seed-2.0-pro' }, { baseDir: tmpDir });
+    const [record] = await readUsageRecords({ baseDir: tmpDir });
+    expect(record.responseModelId).toBe('doubao-seed-2.0-pro');
+  });
+
   it('defaults kind to llm when omitted', async () => {
     const { kind: _omit, ...noKind } = llmInput;
     await recordUsage(noKind, { baseDir: tmpDir });

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { gradeChoiceQuestions, isShortAnswer } from '@/lib/quiz/grading';
+import {
+  gradeChoiceQuestions,
+  isShortAnswer,
+  isSkippedAnswer,
+  SKIPPED_ANSWER,
+} from '@/lib/quiz/grading';
 import type { QuizQuestion } from '@/lib/types/stage';
 
 function q(overrides: Partial<QuizQuestion>): QuizQuestion {
@@ -50,6 +55,18 @@ describe('gradeChoiceQuestions', () => {
   it('honors custom point values', () => {
     const results = gradeChoiceQuestions([q({ points: 5 })], { q1: 'a' });
     expect(results[0].earned).toBe(5);
+  });
+
+  it('records an explicit skip without assigning a score', () => {
+    const results = gradeChoiceQuestions([q({})], { q1: SKIPPED_ANSWER });
+    expect(results[0]).toMatchObject({ correct: null, status: 'skipped', earned: null });
+  });
+});
+
+describe('isSkippedAnswer', () => {
+  it('recognizes the persisted skip sentinel', () => {
+    expect(isSkippedAnswer(SKIPPED_ANSWER)).toBe(true);
+    expect(isSkippedAnswer(['A'])).toBe(false);
   });
 });
 

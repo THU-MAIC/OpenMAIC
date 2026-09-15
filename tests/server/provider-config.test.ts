@@ -55,6 +55,8 @@ const ENV_PREFIXES_TO_CLEAR = [
   'VIDEO_GROK',
   'EXA',
   'BOCHA',
+  'BRAVE',
+  'SEARXNG',
   'WEB_SEARCH_MINIMAX',
   'WEB_SEARCH_CLAUDE',
   'WEB_SEARCH_DOUBAO',
@@ -1117,6 +1119,27 @@ video:
         await import('@/lib/server/provider-config');
       expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(false);
       expect(resolveManagedAliDocMindCredentials()).toBeUndefined();
+    });
+  });
+});
+
+describe('getServerAudioPolicy', () => {
+  beforeEach(() => {
+    delete process.env.OPENMAIC_AUDIO_ONLY_PROVIDER;
+  });
+
+  it('is unlocked by default', async () => {
+    const { getServerAudioPolicy } = await import('@/lib/server/audio-policy');
+    expect(getServerAudioPolicy()).toEqual({ locked: false });
+  });
+
+  it('pins both speech directions to Doubao when requested', async () => {
+    vi.stubEnv('OPENMAIC_AUDIO_ONLY_PROVIDER', 'doubao');
+    const { getServerAudioPolicy } = await import('@/lib/server/audio-policy');
+    expect(getServerAudioPolicy()).toEqual({
+      locked: true,
+      ttsProviderId: 'doubao-tts',
+      asrProviderId: 'doubao-asr',
     });
   });
 });

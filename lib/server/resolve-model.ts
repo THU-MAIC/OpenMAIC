@@ -13,6 +13,7 @@ import {
   resolveApiKey,
   resolveBaseUrl,
   resolveProxy,
+  getEffectiveServerLLMPolicy,
 } from '@/lib/server/provider-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
@@ -69,6 +70,23 @@ export async function resolveModel(params: {
     );
   }
   const { providerId, modelId } = parseModelString(modelString);
+
+  // A deployment can opt into a hard provider boundary. This is checked after
+  // route resolution so a stale client model cannot bypass the policy. The
+  // effective policy is database-backed when server persistence is enabled.
+  const llmPolicy = await getEffectiveServerLLMPolicy();
+  if (llmPolicy.locked) {
+    if (providerId !== llmPolicy.providerId) {
+      throw new Error(
+        `LLM-only mode rejected provider "${providerId}" for stage "${params.stage ?? 'unrouted'}".`,
+      );
+    }
+    if (modelId !== llmPolicy.modelId) {
+      throw new Error(
+        `LLM-only mode rejected model "${modelId}" for stage "${params.stage ?? 'unrouted'}"; expected "${llmPolicy.modelId}".`,
+      );
+    }
+  }
 
   // When a stage route overrides the client's model, the client-sent connection
   // params (apiKey/baseUrl/providerType) belong to the client's *other* model

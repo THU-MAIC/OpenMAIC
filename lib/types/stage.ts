@@ -32,6 +32,7 @@ export type {
   SlideContent,
   QuizOption,
   QuizQuestion,
+  QuizDiagnosticConfig,
   QuizContent,
 } from '@openmaic/dsl';
 

@@ -21,7 +21,7 @@ interface GradeRequest {
 }
 
 interface GradeResponse {
-  score: number;
+  score: number | null;
   comment: string;
 }
 
@@ -53,10 +53,12 @@ export async function POST(req: NextRequest) {
     const isZh = language === 'zh-CN';
 
     const systemPrompt = isZh
-      ? `你是一位专业的教育评估专家。请根据题目和学生答案进行评分并给出简短评语。
+      ? `你是一位专业的教育评估专家。请只根据题目、评分要点和学生原答进行评估。
+评语必须指出原答中的一个具体证据（可短引原词，也可明确指出缺少哪一处），并给出一个下一步可执行建议；不要给学生贴能力、性格或心理标签。
 必须以如下 JSON 格式回复（不要包含其他内容）：
 {"score": <0到${points}的整数>, "comment": "<一两句评语>"}`
-      : `You are a professional educational assessor. Grade the student's answer and provide brief feedback.
+      : `You are a professional educational assessor. Use only the question, grading guidance, and the student's original answer.
+The comment must point to one concrete piece of evidence in the answer (or identify what is missing) and give one actionable next step; do not assign ability, personality, or psychological labels.
 You must reply in the following JSON format only (no other content):
 {"score": <integer from 0 to ${points}>, "comment": "<one or two sentences of feedback>"}`;
 
@@ -88,17 +90,36 @@ ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error('No JSON found');
       const parsed = JSON.parse(jsonMatch[0]);
+      const rawScore = parsed?.score;
+      // Accept a numeric string for compatibility with older model prompts,
+      // but reject empty strings, booleans, fractions, and out-of-range values.
+      const parsedScore =
+        typeof rawScore === 'number'
+          ? rawScore
+          : typeof rawScore === 'string' && rawScore.trim().length > 0
+            ? Number(rawScore)
+            : Number.NaN;
+      if (
+        !Number.isFinite(parsedScore) ||
+        !Number.isInteger(parsedScore) ||
+        parsedScore < 0 ||
+        parsedScore > points ||
+        typeof parsed?.comment !== 'string' ||
+        parsed.comment.trim().length === 0
+      ) {
+        throw new Error('Invalid grade payload');
+      }
       gradeResult = {
-        score: Math.max(0, Math.min(points, Math.round(Number(parsed.score)))),
-        comment: String(parsed.comment || ''),
+        score: parsedScore,
+        comment: parsed.comment,
       };
     } catch {
-      // Fallback: give partial credit with a generic comment
+      // Never invent a score when the assessor did not return valid JSON.
       gradeResult = {
-        score: Math.round(points * 0.5),
+        score: null,
         comment: isZh
-          ? '已作答，请参考标准答案。'
-          : 'Answer received. Please refer to the standard answer.',
+          ? '自动评分未返回可验证结果，请由家长或老师复核。'
+          : 'No verifiable automatic score was returned. Please review manually.',
       };
     }
 

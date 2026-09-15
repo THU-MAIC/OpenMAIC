@@ -31,6 +31,8 @@ export function SceneRenderer({ scene, mode }: SceneRendererProps) {
             questions={scene.content.questions}
             sceneId={scene.id}
             stageId={scene.stageId}
+            allowSkip={scene.content.diagnostic?.allowSkip}
+            diagnostic={scene.content.diagnostic}
           />
         );
       case 'interactive':
