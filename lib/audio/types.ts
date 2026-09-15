@@ -164,6 +164,15 @@ export interface TTSModelConfig {
    * restart repairs it.
    */
   signal?: AbortSignal;
+  /**
+   * Server-side outbound address policy for this provider call. `true` marks a
+   * client-supplied BYOK `baseUrl`: the request is pinned to the strict public
+   * policy, so metadata, private, loopback and CGNAT targets are refused even
+   * when the operator enabled local networks. When unset (a server-managed or
+   * built-in default target) the adapter falls back to the process-wide
+   * `ALLOW_LOCAL_NETWORKS` behavior.
+   */
+  publicOnly?: boolean;
 }
 
 // ============================================================================
@@ -210,6 +219,11 @@ export interface ASRModelConfig {
   apiKey?: string;
   baseUrl?: string;
   language?: string;
+  /**
+   * Server-side outbound address policy (see {@link TTSModelConfig.publicOnly}).
+   * A client-supplied BYOK `baseUrl` sets this so the strict public policy wins.
+   */
+  publicOnly?: boolean;
 }
 
 /** Returns true if the provider ID is a user-defined custom TTS provider. */

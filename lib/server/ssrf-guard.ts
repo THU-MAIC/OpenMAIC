@@ -433,10 +433,29 @@ export function isPrivateIP(ip: string): boolean {
 }
 
 /**
- * Validate a URL against SSRF attacks.
- * Returns null if the URL is safe, or an error message string if blocked.
+ * The per-call address policy for URL-layer SSRF validation.
+ *
+ * `allowLocalNetworks` mirrors the meaning of the process-wide
+ * `ALLOW_LOCAL_NETWORKS` opt-in, but is supplied by the caller instead of read
+ * from the environment: server-owned targets (operator-configured providers)
+ * may inherit the operator's opt-in, while a client-supplied BYOK endpoint is
+ * always validated under the strict public policy.
  */
-export async function validateUrlForSSRF(url: string): Promise<string | null> {
+export interface SsrfValidationPolicy {
+  allowLocalNetworks: boolean;
+}
+
+/**
+ * Validate a URL against SSRF attacks under an explicit {@link SsrfValidationPolicy}.
+ * Returns null if the URL is safe, or an error message string if blocked.
+ *
+ * Cloud metadata endpoints and IANA reserved/multicast/broadcast ranges are
+ * refused under every policy, including `allowLocalNetworks: true`.
+ */
+export async function validateUrlForSSRFWithPolicy(
+  url: string,
+  policy: SsrfValidationPolicy,
+): Promise<string | null> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -451,7 +470,7 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
   // Self-hosted deployments can set ALLOW_LOCAL_NETWORKS=true to allow private,
   // loopback, link-local and CGNAT targets. Cloud instance metadata endpoints
   // and IANA reserved/multicast/broadcast ranges stay blocked either way.
-  const allowLocal = allowLocalNetworksEnabled();
+  const allowLocal = policy.allowLocalNetworks;
   const hostname = normalizeAddress(parsed.hostname);
 
   // Cloud metadata endpoints are never allowed, with or without the flag.
@@ -531,4 +550,24 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
   }
 
   return null;
+}
+
+/**
+ * Validate a URL against SSRF attacks under the process-wide policy
+ * (`ALLOW_LOCAL_NETWORKS`). Callers that need to keep a client-supplied URL on
+ * the strict public policy regardless of the operator's local-network opt-in
+ * must call {@link validateUrlForSSRFWithPolicy} instead.
+ */
+export async function validateUrlForSSRF(url: string): Promise<string | null> {
+  return validateUrlForSSRFWithPolicy(url, { allowLocalNetworks: allowLocalNetworksEnabled() });
+}
+
+/**
+ * Validate a URL that must resolve to a globally routable public address, no
+ * matter what the operator's `ALLOW_LOCAL_NETWORKS` opt-in says. This is the
+ * policy for a client-supplied BYOK endpoint: metadata, private, loopback and
+ * CGNAT targets are always refused.
+ */
+export async function validatePublicUrlForSSRF(url: string): Promise<string | null> {
+  return validateUrlForSSRFWithPolicy(url, { allowLocalNetworks: false });
 }
