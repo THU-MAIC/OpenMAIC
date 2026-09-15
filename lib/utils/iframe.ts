@@ -286,6 +286,17 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
  * it also observes the storage shim).
  */
 export function patchHtmlForIframe(html: string): string {
+  /* A small number of legacy experiment generators emitted this fixed shell
+     palette without semantic class names or CSS variables. Normalize only the
+     shell neutrals/accent we have shipped; scientific/canvas colours remain
+     untouched. This also repairs already-created classrooms. */
+  const themedHtml = html
+    .replace(/#1b1a2d/gi, '#102e39')
+    .replace(/#1a203c/gi, '#173e49')
+    .replace(/#1b1c31/gi, '#102e39')
+    .replace(/#0f0f19/gi, '#071b23')
+    .replace(/#54437a/gi, '#176b87')
+    .replace(/#d4cddd/gi, '#eef7f8');
   const iframeCss = `<style data-iframe-patch>
   html, body {
     width: 100%;
@@ -374,6 +385,32 @@ export function patchHtmlForIframe(html: string): string {
     border-color: var(--maic-iframe-border) !important;
     color: var(--maic-iframe-foreground) !important;
   }
+  /* Generated experiments are inconsistent about class naming, but usually
+     use semantic shell elements. Theme those containers without touching the
+     canvas/SVG where subject-specific colours carry meaning. */
+  :is(
+    header,
+    nav,
+    aside,
+    footer,
+    [role="banner"],
+    [role="navigation"],
+    [role="complementary"],
+    [class~="header"],
+    [class~="sidebar"],
+    [class~="toolbar"],
+    [class~="footer"],
+    [class~="statusbar"],
+    [id="header"],
+    [id="sidebar"],
+    [id="toolbar"],
+    [id="footer"],
+    [id="statusbar"]
+  ) {
+    background-color: var(--maic-iframe-panel) !important;
+    border-color: var(--maic-iframe-border) !important;
+    color: var(--maic-iframe-foreground) !important;
+  }
   button[id*="start"],
   button[id*="reset"],
   #start-btn,
@@ -438,5 +475,5 @@ export function patchHtmlForIframe(html: string): string {
   const injection =
     '\n' + ERROR_CAPTURE_SHIM + '\n' + ELEMENT_PICKER_SHIM + '\n' + STORAGE_SHIM + '\n' + iframeCss;
 
-  return injectIntoDocumentHead(html, injection);
+  return injectIntoDocumentHead(themedHtml, injection);
 }

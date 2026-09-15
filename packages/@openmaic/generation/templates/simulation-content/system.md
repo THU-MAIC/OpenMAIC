@@ -13,9 +13,9 @@ Your output must be a complete HTML document with:
 5. **Mobile-responsive design**
 6. **postMessage listener** for widget actions (REQUIRED)
 
-## Visual Design: OpenMAIC Classroom Theme
+## Visual Design: ZhiGou AI Classroom Theme
 
-The widget is embedded in the OpenMAIC classroom and must use a calm teal-and-slate
+The widget is embedded in the ZhiGou AI classroom and must use a calm teal-and-slate
 interface. Do not use purple, violet, or indigo as the primary brand color.
 Define and use these CSS variables instead of hard-coded theme colors:
 

@@ -22,6 +22,18 @@ describe('patchHtmlForIframe', () => {
     expect(out).toContain(html.slice(html.indexOf('<body>')));
   });
 
+  it('normalizes the legacy experiment shell palette without recoloring scientific content', () => {
+    const html =
+      '<html><head><style>header{background:#1B1A2D}aside{background:#1a203c}.active{background:#54437A}.liquid{background:#7dd3fc}</style></head><body></body></html>';
+    const out = patchHtmlForIframe(html);
+
+    expect(out).toContain('header{background:#102e39}');
+    expect(out).toContain('aside{background:#173e49}');
+    expect(out).toContain('.active{background:#176b87}');
+    expect(out).toContain('.liquid{background:#7dd3fc}');
+    expect(out).toContain('[role="complementary"]');
+  });
+
   it('runs the storage shim before the page scripts', () => {
     const html =
       '<!DOCTYPE html><html><head><script>window.__x = localStorage.getItem("k");</script></head><body></body></html>';
