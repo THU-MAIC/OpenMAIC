@@ -24,6 +24,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'TENCENT_HUNYUAN',
   'XIAOMI',
   'MIMO',
+  'TOKENDANCE',
   'HY3',
   'OLLAMA',
   'BEDROCK',

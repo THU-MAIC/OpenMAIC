@@ -572,6 +572,31 @@ describe('polled video adapter compatibility', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('reports MiniMax H3 v2 dimensions for the requested aspect ratio', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ task_id: 'h3-square' }))
+      .mockResolvedValueOnce(
+        jsonResponse({ status: 'succeeded', content: { url: 'https://cdn.example.com/sq.mp4' } }),
+      );
+    const promise = generateWithMiniMaxVideo(
+      {
+        providerId: 'minimax-video',
+        apiKey: 'gateway-key',
+        baseUrl: 'https://gateway.example/minimax',
+        model: 'minimax-h3',
+      },
+      { prompt: 'a paper city', aspectRatio: '1:1' },
+    );
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(promise).resolves.toEqual({
+      url: 'https://cdn.example.com/sq.mp4',
+      duration: 6,
+      width: 768,
+      height: 768,
+    });
+  });
+
   it('reports a terminal MiniMax H3 v2 failure with its error message', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ task_id: 'h3-failed' }))

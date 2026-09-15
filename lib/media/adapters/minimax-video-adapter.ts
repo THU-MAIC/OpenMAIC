@@ -67,6 +67,14 @@ interface MiniMaxV2Response extends MiniMaxV2Task {
   task?: MiniMaxV2Task;
 }
 
+/** Reported size of an H3 768P clip for each requested aspect ratio. */
+const V2_DIMENSIONS: Record<string, { width: number; height: number }> = {
+  '16:9': { width: 1366, height: 768 },
+  '9:16': { width: 768, height: 1366 },
+  '4:3': { width: 1024, height: 768 },
+  '1:1': { width: 768, height: 768 },
+};
+
 /** H3-family models only accept the v2 task API. */
 function usesV2TaskApi(model: string | undefined): boolean {
   return /^minimax-h3(?:-|$)/i.test(model ?? '');
@@ -232,16 +240,9 @@ export async function generateWithMiniMaxVideo(
         if (task.status === 'succeeded') {
           const url = task.content?.url;
           if (!url) throw new Error('MiniMax Video: task succeeded but no video url returned');
-          const portrait = options.aspectRatio === '9:16';
-          return {
-            status: 'done',
-            result: {
-              url,
-              width: portrait ? 768 : 1366,
-              height: portrait ? 1366 : 768,
-              duration: 6,
-            },
-          };
+          const { width, height } =
+            V2_DIMENSIONS[options.aspectRatio || '16:9'] ?? V2_DIMENSIONS['16:9'];
+          return { status: 'done', result: { url, width, height, duration: 6 } };
         }
         if (task.status === 'failed' || task.status === 'cancelled' || task.status === 'expired') {
           const message = typeof task.error === 'string' ? task.error : task.error?.message;
