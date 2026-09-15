@@ -102,6 +102,62 @@ describe('validateUrlForSSRF', () => {
     expect(lookupMock).not.toHaveBeenCalled();
   });
 
+  it('rejects CGNAT/reserved/multicast literals without DNS', async () => {
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    const urls = [
+      'http://100.64.0.1/',
+      'http://100.100.100.100/',
+      'http://240.0.0.1/',
+      'http://198.18.0.1/',
+      'http://[::ffff:100.64.0.1]/',
+      'http://224.0.0.1/',
+      'http://255.255.255.255/',
+      // WHATWG URL canonicalizes legacy decimal/hex IPv4 spellings first.
+      'http://0x64646464/', // 100.100.100.100
+      'http://1684300998/', // 100.100.100.198
+    ];
+
+    for (const url of urls) {
+      await expect(validateUrlForSSRF(url)).resolves.toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+    }
+
+    expect(lookupMock).not.toHaveBeenCalled();
+  });
+
+  it('governs CGNAT literals and resolved answers by ALLOW_LOCAL_NETWORKS, never metadata', async () => {
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    // Blocked by default: literal (no DNS) and resolved answer.
+    await expect(validateUrlForSSRF('http://100.64.0.1/')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+    await expect(validateUrlForSSRF('http://[::ffff:100.64.0.1]/')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+    expect(lookupMock).not.toHaveBeenCalled();
+    lookupMock.mockResolvedValue([{ address: '100.64.0.1', family: 4 }]);
+    await expect(validateUrlForSSRF('https://tailnet.example')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+    expect(lookupMock).toHaveBeenCalledWith('tailnet.example', { all: true, verbatim: true });
+
+    // Allowed with the opt-in: the literal skips DNS and a resolved CGNAT
+    // answer passes, which is the documented escape hatch for overlay networks
+    // such as Tailscale/Headscale.
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    lookupMock.mockClear();
+    await expect(validateUrlForSSRF('http://100.64.0.1/')).resolves.toBeNull();
+    await expect(validateUrlForSSRF('http://[::ffff:100.64.0.1]/')).resolves.toBeNull();
+    await expect(validateUrlForSSRF('https://tailnet.example')).resolves.toBeNull();
+    expect(lookupMock).toHaveBeenCalledWith('tailnet.example', { all: true, verbatim: true });
+
+    // A metadata address inside the same range stays blocked with the flag.
+    await expect(validateUrlForSSRF('http://100.100.100.200/')).resolves.toBe(
+      CLOUD_METADATA_BLOCK_MESSAGE,
+    );
+  });
+
   it('rejects private IPv6 literals and mapped loopback addresses', async () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
@@ -215,6 +271,29 @@ describe('validateUrlForSSRF', () => {
     expect(lookupMock).not.toHaveBeenCalled();
   });
 
+  it('rejects local-use NAT64 and IPv4-translatable addresses by their embedded IPv4', async () => {
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    // RFC 8215 local-use NAT64 (64:ff9b:1::/48) embeds 169.254.169.254.
+    await expect(validateUrlForSSRF('http://[64:ff9b:1::a9fe:a9fe]/')).resolves.toBe(
+      CLOUD_METADATA_BLOCK_MESSAGE,
+    );
+    // RFC 6145 IPv4-translatable (::ffff:0:0:0/96) embeds 169.254.169.254.
+    await expect(validateUrlForSSRF('http://[::ffff:0:a9fe:a9fe]/')).resolves.toBe(
+      CLOUD_METADATA_BLOCK_MESSAGE,
+    );
+    // Local-use NAT64 embedding a private IPv4 is blocked without the opt-in.
+    await expect(validateUrlForSSRF('http://[64:ff9b:1::c0a8:101]/')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+    await expect(validateUrlForSSRF('http://[::ffff:0:c0a8:101]/')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+    // A public embedded IPv4 stays allowed, mirroring the 64:ff9b::/96 fixture.
+    await expect(validateUrlForSSRF('http://[64:ff9b:1::808:808]/')).resolves.toBeNull();
+    expect(lookupMock).not.toHaveBeenCalled();
+  });
+
   it('rejects hostnames that resolve to a private IP', async () => {
     lookupMock.mockResolvedValue([{ address: '127.0.0.1', family: 4 }]);
 
@@ -238,8 +317,28 @@ describe('validateUrlForSSRF', () => {
     );
   });
 
+  it('rejects hostnames that resolve into CGNAT/reserved ranges', async () => {
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    const answers: Array<{ address: string; family: number }> = [
+      { address: '100.64.0.1', family: 4 },
+      { address: '100.100.100.100', family: 4 },
+      { address: '240.0.0.1', family: 4 },
+      { address: '198.18.0.1', family: 4 },
+      { address: '::ffff:100.64.0.1', family: 6 },
+    ];
+
+    for (const answer of answers) {
+      lookupMock.mockReset();
+      lookupMock.mockResolvedValue([answer]);
+      await expect(validateUrlForSSRF('https://special.example')).resolves.toBe(
+        PRIVATE_NETWORK_BLOCK_MESSAGE,
+      );
+    }
+  });
+
   it('rejects a hostname that resolves to an ISATAP address embedding private IPv4', async () => {
-    lookupMock.mockResolvedValue([{ address: '2001:db8::200:5efe:192.168.1.10', family: 6 }]);
+    lookupMock.mockResolvedValue([{ address: '2001:4860::200:5efe:192.168.1.10', family: 6 }]);
 
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
@@ -283,11 +382,12 @@ describe('validateUrlForSSRF', () => {
       'http://[2001:0:1234:5678::5601:5601]/',
       'http://[fe80::5efe:a9fe:a9fe]/',
       'http://[64:ff9b::a9fe:a9fe]/',
-      // ISATAP under a globally routable prefix carrying a non-private metadata
-      // address: only the tunnel decoder catches these.
-      'http://[2001:db8::5efe:168.63.129.16]/',
-      'http://[2001:db8::200:5efe:192.0.0.192]/',
-      'http://[2001:db8::5efe:100.100.100.200]/',
+      // ISATAP under a genuinely public prefix carrying a non-private metadata
+      // address: the embedded IPv4 is not private/reserved, so only the tunnel
+      // decoder catches these.
+      'http://[2001:4860::5efe:168.63.129.16]/',
+      'http://[2001:4860::200:5efe:192.0.0.192]/',
+      'http://[2001:4860::5efe:100.100.100.200]/',
     ];
 
     for (const url of urls) {
@@ -296,6 +396,27 @@ describe('validateUrlForSSRF', () => {
 
     // Literals and known metadata hostnames are classified without DNS.
     expect(lookupMock).not.toHaveBeenCalled();
+  });
+
+  it('still blocks reserved/multicast literals and answers when ALLOW_LOCAL_NETWORKS=true', async () => {
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    for (const url of [
+      'http://240.0.0.1/',
+      'http://198.18.0.1/',
+      'http://224.0.0.1/',
+      'http://255.255.255.255/',
+    ]) {
+      await expect(validateUrlForSSRF(url)).resolves.toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+    }
+    expect(lookupMock).not.toHaveBeenCalled();
+
+    lookupMock.mockResolvedValue([{ address: '240.0.0.1', family: 4 }]);
+    await expect(validateUrlForSSRF('https://special.example')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
   });
 
   it('keeps allowing tunnel literals that embed public or private IPv4 when ALLOW_LOCAL_NETWORKS=true', async () => {
@@ -308,7 +429,9 @@ describe('validateUrlForSSRF', () => {
       'http://[2002:c0a8:10a::]/', // 6to4 192.168.1.10
       'http://[2001:0:1234:5678::f7f7:f7f7]/', // Teredo 8.8.8.8
       'http://[2001:0:1234:5678::3f57:fef5]/', // Teredo 192.168.1.10
-      'http://[2001:db8::5efe:8.8.8.8]/', // ISATAP 8.8.8.8
+      // A genuinely public prefix: 2001:db8::/32 is the IANA documentation
+      // range, which ipaddr.js classifies as reserved and is now always blocked.
+      'http://[2001:4860::5efe:8.8.8.8]/', // ISATAP 8.8.8.8
       'http://[fe80::5efe:192.168.1.10]/', // ISATAP 192.168.1.10
       'http://[64:ff9b::8.8.8.8]/', // NAT64 8.8.8.8
       'http://[64:ff9b::192.168.1.10]/', // NAT64 192.168.1.10
@@ -492,9 +615,15 @@ describe('assertSafeIp', () => {
     expect(isPrivateIP('64:ff9b::192.168.1.10')).toBe(true);
     expect(isPrivateIP('64:ff9b::7f00:1')).toBe(true);
     expect(isPrivateIP('64:ff9b::8.8.8.8')).toBe(false);
+    // RFC 8215 local-use NAT64 and RFC 6145 IPv4-translatable decode too.
+    expect(isPrivateIP('64:ff9b:1::c0a8:101')).toBe(true);
+    expect(isPrivateIP('64:ff9b:1::7f00:1')).toBe(true);
+    expect(isPrivateIP('64:ff9b:1::808:808')).toBe(false);
+    expect(isPrivateIP('::ffff:0:c0a8:101')).toBe(true);
+    expect(isPrivateIP('::ffff:0:808:808')).toBe(false);
     // Decoder boundaries: only the exact tunnel prefixes carry an embedded IPv4.
     expect(isPrivateIP('2001:db8:1:2:3:4:3f57:fef5')).toBe(false); // not Teredo (2001:0::/32)
-    expect(isPrivateIP('64:ff9b:1:2:3:4:c0a8:10a')).toBe(false); // not NAT64 (64:ff9b::/96)
+    expect(isPrivateIP('64:ff9b:2:2:3:4:c0a8:10a')).toBe(false); // not NAT64 (64:ff9b::/96 or 64:ff9b:1::/48)
     expect(isPrivateIP('2003:c0a8:10a::')).toBe(false); // not 6to4 (2002::/16)
   });
 
@@ -574,5 +703,53 @@ describe('normalizeUrlForStrictFetch', () => {
     expect(() => normalizeUrlForStrictFetch('https://8.8.8.8')).not.toThrow();
     expect(() => normalizeUrlForStrictFetch('https://[2606:4700:4700::1111]')).not.toThrow();
     expect(lookupMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('connectionAddressBlockReason', () => {
+  beforeEach(() => {
+    lookupMock.mockReset();
+  });
+
+  it('matches validateUrlForSSRF for reserved/multicast ranges, opt-in or not', async () => {
+    const { connectionAddressBlockReason } = await import('@/lib/server/ssrf-guard');
+
+    for (const address of ['240.0.0.1', '198.18.0.1', '224.0.0.1', '255.255.255.255']) {
+      expect(connectionAddressBlockReason(address, false)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+      expect(connectionAddressBlockReason(address, true)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+    }
+  });
+
+  it('governs CGNAT addresses by the opt-in and keeps metadata blocked with the flag', async () => {
+    const { connectionAddressBlockReason } = await import('@/lib/server/ssrf-guard');
+
+    for (const address of ['100.64.0.1', '100.100.100.100', '::ffff:100.64.0.1']) {
+      expect(connectionAddressBlockReason(address, false)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+      expect(connectionAddressBlockReason(address, true)).toBeNull();
+    }
+    // Cloud metadata inside the same range is decided before any range logic.
+    expect(connectionAddressBlockReason('100.100.100.200', false)).toBe(
+      CLOUD_METADATA_BLOCK_MESSAGE,
+    );
+    expect(connectionAddressBlockReason('100.100.100.200', true)).toBe(
+      CLOUD_METADATA_BLOCK_MESSAGE,
+    );
+  });
+
+  it('keeps private/loopback addresses governed by the opt-in', async () => {
+    const { connectionAddressBlockReason } = await import('@/lib/server/ssrf-guard');
+    expect(connectionAddressBlockReason('127.0.0.1', false)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+    expect(connectionAddressBlockReason('10.0.0.1', false)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+    expect(connectionAddressBlockReason('127.0.0.1', true)).toBeNull();
+    expect(connectionAddressBlockReason('10.0.0.1', true)).toBeNull();
+    expect(connectionAddressBlockReason('93.184.216.34', false)).toBeNull();
+  });
+
+  it('does not echo an unparseable address in the refusal', async () => {
+    const { connectionAddressBlockReason } = await import('@/lib/server/ssrf-guard');
+    const reason = connectionAddressBlockReason('not-an-ip', false);
+    expect(reason).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+    expect(reason).not.toContain('not-an-ip');
+    expect(connectionAddressBlockReason('not-an-ip', true)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
   });
 });

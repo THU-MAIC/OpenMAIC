@@ -2,6 +2,12 @@ import { createHash } from 'node:crypto';
 
 import type { TTSGenerationResult } from '@/lib/audio/tts-providers';
 import { createLogger } from '@/lib/logger';
+import { audioProviderFetch, resolveAllowLocalNetworks } from '@/lib/server/audio-provider-fetch';
+import {
+  findUnsafeNetworkTargetError,
+  UnsafeNetworkTargetError,
+  validateUrlForSSRFWithPolicy,
+} from '@/lib/server/ssrf-guard';
 
 export const QWEN_VOICE_ENROLLMENT_MODEL = 'qwen-voice-enrollment';
 export const DEFAULT_QWEN_BASE_URL = 'https://dashscope.aliyuncs.com/api/v1';
@@ -43,6 +49,11 @@ export interface QwenVoiceCloneConfig {
   apiKey?: string;
   baseUrl?: string;
   targetModel?: string;
+  /**
+   * `true` pins a client BYOK endpoint to the strict public policy; unset
+   * falls back to the process-wide `ALLOW_LOCAL_NETWORKS` behavior.
+   */
+  publicOnly?: boolean;
 }
 
 interface QwenResponse {
@@ -111,6 +122,7 @@ function resolveConfig(config: QwenVoiceCloneConfig): {
   apiKey: string;
   baseUrl: URL;
   targetModel: string;
+  publicOnly?: boolean;
 } {
   const apiKey = config.apiKey?.trim() || '';
   const targetModel = config.targetModel?.trim() || '';
@@ -125,7 +137,7 @@ function resolveConfig(config: QwenVoiceCloneConfig): {
   if (baseUrl.protocol !== 'https:' && baseUrl.hostname !== 'localhost') {
     throw new QwenVoiceCloneError('QWEN_VC_ENDPOINT_INVALID', 400);
   }
-  return { apiKey, baseUrl, targetModel };
+  return { apiKey, baseUrl, targetModel, publicOnly: config.publicOnly };
 }
 
 function endpoint(baseUrl: URL, path: string): URL {
@@ -179,21 +191,30 @@ async function postJson(
   apiKey: string,
   body: unknown,
   signal?: AbortSignal,
+  publicOnly?: boolean,
 ): Promise<QwenResponse> {
   const timeout = timeoutSignal(signal, REQUEST_TIMEOUT_MS);
   try {
     let response: Response;
     try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json; charset=utf-8',
+      response = await audioProviderFetch(
+        url,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json; charset=utf-8',
+          },
+          body: JSON.stringify(body),
+          signal: timeout.signal,
         },
-        body: JSON.stringify(body),
-        signal: timeout.signal,
-      });
+        { allowLocalNetworks: publicOnly ? false : undefined },
+      );
     } catch (error) {
+      // A pinned-dispatcher / redirect-guard refusal is an SSRF policy decision,
+      // not a transport failure: keep it typed so the route can answer 403.
+      const blocked = findUnsafeNetworkTargetError(error);
+      if (blocked) throw blocked;
       if (signal?.aborted) throw error;
       throw new QwenVoiceCloneError(
         timeout.timedOut() ? 'QWEN_VC_TIMEOUT' : 'QWEN_VC_TRANSPORT_ERROR',
@@ -242,6 +263,7 @@ export async function registerQwenVoice(
       },
     },
     signal,
+    resolved.publicOnly,
   );
   const voiceId = typeof body.output?.voice === 'string' ? body.output.voice.trim() : '';
   if (!voiceId) throw new QwenVoiceCloneError('QWEN_VC_RESPONSE_VOICE_MISSING', 502);
@@ -262,6 +284,7 @@ export async function deleteQwenVoice(
     resolved.apiKey,
     { model: QWEN_VOICE_ENROLLMENT_MODEL, input: { action: 'delete', voice } },
     signal,
+    resolved.publicOnly,
   );
 }
 
@@ -288,6 +311,7 @@ export async function qwenVoiceExists(
           input: { action: 'list', page_size: pageSize, page_index: pageIndex },
         },
         signal,
+        resolved.publicOnly,
       );
     } catch (error) {
       // A transient vendor failure (5xx or network error) makes the lookup
@@ -337,6 +361,7 @@ export async function downloadAudio(
   rawUrl: string,
   signal?: AbortSignal,
   effectiveBaseUrl?: string | URL,
+  publicOnly?: boolean,
 ): Promise<{ bytes: Uint8Array; contentType: string | null; url: URL }> {
   let url: URL;
   try {
@@ -370,12 +395,33 @@ export async function downloadAudio(
   }
   if (trustedHost && url.protocol === 'http:') url.protocol = 'https:';
 
+  // Same server-side decision as the synthesis request for this config: a client
+  // BYOK endpoint (`publicOnly`) is held to the strict public policy even when
+  // the operator enabled ALLOW_LOCAL_NETWORKS; a server-managed/default target
+  // inherits the operator's opt-in. Never derived from request input.
+  const allowLocalNetworks = resolveAllowLocalNetworks(publicOnly ? false : undefined);
+
   const timeout = timeoutSignal(signal, AUDIO_DOWNLOAD_TIMEOUT_MS);
   try {
     let response: Response;
     try {
-      response = await fetch(url, { signal: timeout.signal, redirect: 'error' });
+      // URL-layer guard under the same policy the connect-time pin uses. The
+      // allowlist above decides *which* hosts may serve audio; this decides
+      // whether the address is safe under the server's policy.
+      const ssrfError = await validateUrlForSSRFWithPolicy(url.href, { allowLocalNetworks });
+      if (ssrfError) throw new UnsafeNetworkTargetError(ssrfError);
+      // Pin the connect address and keep `redirect: 'error'`: the allowlist only
+      // vets the requested URL, so a redirect on this hop must stay a failure.
+      response = await audioProviderFetch(
+        url,
+        { signal: timeout.signal, redirect: 'error' },
+        { allowLocalNetworks: publicOnly ? false : undefined, rejectRedirects: true },
+      );
     } catch (error) {
+      // A guard/pin refusal is a policy decision, not a transport failure: keep
+      // it typed so the route answers 403 instead of a generic 502.
+      const blocked = findUnsafeNetworkTargetError(error);
+      if (blocked) throw blocked;
       if (signal?.aborted) throw error;
       throw new QwenVoiceCloneError(
         timeout.timedOut() ? 'QWEN_VC_TIMEOUT' : 'QWEN_VC_AUDIO_DOWNLOAD_FAILED',
@@ -439,13 +485,19 @@ export async function synthesizeQwenVoiceClone(
       resolved.apiKey,
       { model: resolved.targetModel, input: { text, voice } },
       deadline.signal,
+      resolved.publicOnly,
     );
     const rawAudioUrl =
       typeof body.output?.audio?.url === 'string' ? body.output.audio.url.trim() : '';
     if (!rawAudioUrl) {
       throw new QwenVoiceCloneError('QWEN_VC_RESPONSE_AUDIO_URL_MISSING', 502);
     }
-    const downloaded = await downloadAudio(rawAudioUrl, deadline.signal, resolved.baseUrl);
+    const downloaded = await downloadAudio(
+      rawAudioUrl,
+      deadline.signal,
+      resolved.baseUrl,
+      resolved.publicOnly,
+    );
     return {
       audio: downloaded.bytes,
       format: audioFormat(downloaded.contentType, body.output?.audio?.format, downloaded.url),

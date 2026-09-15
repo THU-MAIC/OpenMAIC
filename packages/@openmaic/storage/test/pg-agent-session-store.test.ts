@@ -569,6 +569,95 @@ describe('PgAgentSessionStore with PGlite', () => {
     await expect(tree.getLeafId()).rejects.toBeInstanceOf(AgentSessionEntryTreeError);
   });
 
+  test('persists NUL and lone surrogates in tree entries and events', async () => {
+    await store.createSession(makeAgentSessionInput());
+    await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
+    const tree = await store.openEntryTree('session-1', 'worker-a', 1);
+    const replacement = '\uFFFD';
+    const emoji = '\u{1F600}';
+    const dirty = `a\u0000b\uD800c\uDC00d`;
+
+    await tree.appendEntry({
+      id: 'dirty',
+      parentId: null,
+      type: 'message',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: { role: 'assistant', content: dirty, [`key\u0000`]: `value\uD800` },
+      emoji,
+    });
+    await store.appendControlEvent('session-1', {
+      ts: 1,
+      type: 'control',
+      data: { text: dirty, emoji },
+    });
+
+    const reopened = await store.openEntryTree('session-1', 'worker-a', 1);
+    const entry = (await reopened.getEntries())[0] as Record<string, unknown>;
+    expect(entry.message).toEqual({
+      role: 'assistant',
+      content: `a${replacement}b${replacement}c${replacement}d`,
+      [`key${replacement}`]: `value${replacement}`,
+    });
+    expect(entry.emoji).toBe(emoji);
+
+    const events = await store.readEventsAfter('session-1', 0);
+    const control = events.find((event) => event.type === 'control');
+    expect(control?.data).toEqual({
+      text: `a${replacement}b${replacement}c${replacement}d`,
+      emoji,
+    });
+  });
+
+  test('keeps colliding sanitized keys as separate tree-entry members', async () => {
+    await store.createSession(makeAgentSessionInput());
+    await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
+    const tree = await store.openEntryTree('session-1', 'worker-a', 1);
+    const replacement = '\uFFFD';
+
+    await tree.appendEntry({
+      id: 'collide',
+      parentId: null,
+      type: 'message',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: {
+        [`a\u0000`]: { first: true },
+        [`a${replacement}`]: { second: true },
+      },
+    });
+
+    const reopened = await store.openEntryTree('session-1', 'worker-a', 1);
+    const entry = (await reopened.getEntries())[0] as Record<string, unknown>;
+    expect(entry.message).toEqual({
+      [`a${replacement}`]: { first: true },
+      [`a${replacement}#2`]: { second: true },
+    });
+  });
+
+  test('keeps an own __proto__ member alongside a NUL key in a tree entry', async () => {
+    await store.createSession(makeAgentSessionInput());
+    await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
+    const tree = await store.openEntryTree('session-1', 'worker-a', 1);
+    const message = JSON.parse(`{"__proto__":{"own":true},"x\\u0000":1}`) as Record<
+      string,
+      unknown
+    >;
+
+    await tree.appendEntry({
+      id: 'proto',
+      parentId: null,
+      type: 'message',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message,
+    });
+
+    const reopened = await store.openEntryTree('session-1', 'worker-a', 1);
+    const entry = (await reopened.getEntries())[0] as Record<string, unknown>;
+    const stored = entry.message as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(stored, '__proto__')).toBe(true);
+    expect(stored['__proto__']).toEqual({ own: true });
+    expect(stored['x\uFFFD']).toBe(1);
+  });
+
   test('keeps event and tree rows physically present after a tombstone', async () => {
     await store.createSession(makeAgentSessionInput());
     await store.appendControlEvent('session-1', {

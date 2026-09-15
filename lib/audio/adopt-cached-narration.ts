@@ -37,9 +37,8 @@
  *   and paying a provider to replace it is a decision for the author, not a
  *   side effect of opening a course.
  */
-import { putAsset } from '@/lib/media/asset-pool';
+import { commitToPool } from '@/lib/media/commit-to-pool';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
-import { isStorageFullFailure } from '@/lib/media/media-failure';
 import { createLogger } from '@/lib/logger';
 import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
@@ -170,12 +169,14 @@ const DERIVED_KEY_ACTION_ID = /^tts_(?:request_)?s-?\d+_(.+)$/;
  */
 const UNIQUE_ACTION_ID = /^action_[A-Za-z0-9_-]{8,}$/;
 
-/** The contract code an upload failure declares, if it declares one. */
-function storageErrorCode(error: unknown): string | undefined {
-  if (typeof error !== 'object' || error === null) return undefined;
-  const code = (error as { code?: unknown }).code;
-  return typeof code === 'string' ? code : undefined;
-}
+/**
+ * What the narration write-back settled as, for the clip the loop is on.
+ *
+ * `departed` is not a failure of the write: it is this browser leaving the
+ * course between the allocation and the rewrite, which ends the run rather than
+ * skipping one clip.
+ */
+type NarrationPlacement = 'placed' | 'unplaced' | 'departed';
 
 function derivedKeyIsUnique(derivedRef: string): boolean {
   const actionId = DERIVED_KEY_ACTION_ID.exec(derivedRef)?.[1];
@@ -407,70 +408,83 @@ async function adoptCachedNarrationRun(
     // Re-checked after the read and before anything is spent.
     if (abortSignal?.aborted || !onThisCourse()) break;
 
-    let assetId: string;
-    try {
-      // Bytes first, exactly as the media path does it: a document may never
-      // name narration that was not stored.
-      assetId = await putAsset(
-        row.blob,
-        {
-          contentType: row.blob.type || `audio/${row.format}`,
-          ...(row.duration === undefined ? {} : { durationSeconds: row.duration }),
-        },
-        // A write that goes through retires this course's "no room" note, at
-        // the seam rather than here. Together with generated narration this is
-        // the only path that can establish that for a course whose media needs
-        // nothing, and it is worth naming what it costs: a few hundred bytes of
-        // narration fit in headroom an image does not, so retiring the note can
-        // let the next pass pay a provider for an image that is refused again.
-        // Bounded at one such generation, because that pass re-marks and
-        // adoption converts everything that fits in a single load, and the
-        // alternative is a course whose media never generates again.
-        { stageId },
-      );
-    } catch (error) {
+    // Bytes first, exactly as the media path does it -- through the same
+    // primitive, in fact: a document may never name narration that was not
+    // stored.
+    //
+    // No `retain` sink is handed over, and that is the whole of this caller's
+    // refusal semantics: the bytes this commit would keep are the bytes it is
+    // reading, already in `audioFiles` under the derived key, which is exactly
+    // where the next load looks for them. A refusal here loses nothing and
+    // costs no provider call.
+    const outcome = await commitToPool<NarrationPlacement>({
+      // A write that goes through retires this course's "no room" note, at the
+      // seam rather than here. Together with generated narration this is the
+      // only path that can establish that for a course whose media needs
+      // nothing, and it is worth naming what it costs: a few hundred bytes of
+      // narration fit in headroom an image does not, so retiring the note can
+      // let the next pass pay a provider for an image that is refused again.
+      // Bounded at one such generation, because that pass re-marks and adoption
+      // converts everything that fits in a single load, and the alternative is
+      // a course whose media never generates again.
+      stageId,
+      slot: action.derivedRef,
+      bytes: row.blob,
+      mimeType: row.blob.type || `audio/${row.format}`,
+      ...(row.duration === undefined ? {} : { meta: { durationSeconds: row.duration } }),
+      writeBack: async (assetId) => {
+        // The allocation is uncancellable, so it may finish after the course
+        // was left. Its write-back is not: a document this browser no longer
+        // has open would take a lock for a rewrite the live store cannot
+        // mirror.
+        if (!onThisCourse()) return 'departed';
+        const placed = await persistNarrationReference(stageId, action.derivedRef, assetId).catch(
+          (error: unknown) => {
+            log.warn(`Could not write back narration ${action.derivedRef}:`, error);
+            return false;
+          },
+        );
+        return placed ? 'placed' : 'unplaced';
+      },
+      // Local mirror under the new id, stage-scoped so it cannot be mistaken
+      // for another course's the way the derived row could be. The document
+      // already points at the pool, so a failed cache write costs a
+      // re-download. Nothing is mirrored for a rewrite nothing took: the new id
+      // is not the one anything reads by.
+      mirror: async (assetId, placement) => {
+        if (placement !== 'placed') return;
+        await db.audioFiles
+          .put({ ...row, id: assetId, stageId, originAudioId: action.derivedRef })
+          .catch((error: unknown) => {
+            log.warn(`Local narration cache mirror failed for ${assetId}:`, error);
+          });
+      },
+    });
+
+    if (outcome.status !== 'stored') {
       // One clip's storage failure costs that clip and nothing else. The action
       // keeps its derived id, the deck carries on, and a later load tries
       // again -- which is how a course converges the moment the ceiling moves,
       // with nothing to click and nothing to remember.
-      log.warn(`Could not store cached narration ${action.derivedRef}:`, error);
+      log.warn(`Could not store cached narration ${action.derivedRef}:`, outcome.error);
       unbacked += 1;
       // A refusal for room, and only that, lowers the bar for the rest of this
       // run. Any other failure -- a dropped connection, a 500 -- says nothing
       // about how much room there is, so it must not stop the next clip being
       // attempted.
-      if (isStorageFullFailure(storageErrorCode(error))) {
+      if (outcome.status === 'refused-retained') {
         smallestRefusedForRoom = Math.min(smallestRefusedForRoom, row.blob.size);
       }
       continue;
     }
-    // The allocation is uncancellable, so it may finish after the course was
-    // left. Its write-back is not: a document this browser no longer has open
-    // would take a lock for a rewrite the live store cannot mirror.
-    if (!onThisCourse()) {
+    if (outcome.placement === 'departed') {
       unbacked += 1;
       break;
     }
-
-    const placed = await persistNarrationReference(stageId, action.derivedRef, assetId).catch(
-      (error: unknown) => {
-        log.warn(`Could not write back narration ${action.derivedRef}:`, error);
-        return false;
-      },
-    );
-    if (!placed) {
+    if (outcome.placement === 'unplaced') {
       unbacked += 1;
       continue;
     }
-
-    // Local mirror under the new id, stage-scoped so it cannot be mistaken for
-    // another course's the way the derived row could be. The document already
-    // points at the pool, so a failed cache write costs a re-download.
-    await db.audioFiles
-      .put({ ...row, id: assetId, stageId, originAudioId: action.derivedRef })
-      .catch((error: unknown) => {
-        log.warn(`Local narration cache mirror failed for ${assetId}:`, error);
-      });
     adopted += 1;
   }
 

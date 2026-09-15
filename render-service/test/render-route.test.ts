@@ -10,7 +10,7 @@
  * `unzipProject` stub that parks — recording how many calls are simultaneously
  * "inside" — so we can assert the peak never exceeds the gate's permit count.
  */
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -418,5 +418,41 @@ describe('admission observability (429 reason + /health accepting)', () => {
 
     releaseRenders();
     await waitForPoll(app, jobId, 'succeeded');
+  });
+});
+
+describe('render project CSP hardening', () => {
+  it('injects the render policy into the extracted project before the executor reads it', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'render-route-csp-'));
+    scratch.push(dir);
+    let observedHtml: string | undefined;
+    const executor: RenderExecutor = {
+      async execute(request) {
+        observedHtml = await readFile(join(request.projectDir, 'index.html'), 'utf8');
+        return { status: 'succeeded' };
+      },
+    };
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore().store;
+    const coordinator = new RenderCoordinator(executor, jobs, artifacts);
+    const app = createApp({
+      jobs,
+      artifacts,
+      coordinator,
+      extractionGate: new Semaphore(1),
+      // The real default `hardenProject` runs here; only extraction is stubbed.
+      unzipProject: async (_zip, destDir) => {
+        await writeFile(join(destDir, 'index.html'), '<!doctype html><html><head></head></html>');
+      },
+      makeProjectDir: async () => dir,
+    });
+
+    const submit = await app.fetch(renderRequest());
+    expect(submit.status).toBe(202);
+    const { jobId } = (await submit.json()) as { jobId: string };
+    await waitForPoll(app, jobId, 'succeeded');
+
+    expect(observedHtml).toContain('data-openmaic-untrusted-csp');
+    expect(observedHtml).toContain("connect-src 'none'");
   });
 });

@@ -70,6 +70,70 @@ describe('PgAgentSessionMaterialStore with PGlite', () => {
     );
   });
 
+  test('adds owner_material_id to a table provisioned before the column existed', async () => {
+    // Simulate a 1.0.2 database: the table predates the owner-material column,
+    // so `CREATE TABLE IF NOT EXISTS` cannot add it. CASCADE also drops the
+    // partial unique index that depends on the column.
+    await db.query('ALTER TABLE agent_session_materials DROP COLUMN owner_material_id CASCADE');
+    const sessions = new PgAgentSessionStore(db, {
+      withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),
+    });
+    await sessions.createSession({ id: 'session-legacy', ownerId: 'owner-a', prompt: 'p' });
+    await db.query(
+      `INSERT INTO agent_session_materials
+         (id, session_id, kind, title, text_chars, extraction_status, extraction_attempts, created_at)
+       VALUES ('mat_legacy', 'session-legacy', 'web', 'legacy', 0, 'done', 0, now())`,
+    );
+
+    // Re-running the initializer is the in-place upgrade.
+    await ensureAgentSessionMaterialSchema(db);
+
+    const legacy = await store.getMaterial('session-legacy', 'mat_legacy');
+    expect(legacy).toMatchObject({ id: 'mat_legacy', ownerMaterialId: null });
+
+    // The upgraded table now accepts two sessions binding one owner upload.
+    await sessions.createSession({ id: 'session-a', ownerId: 'owner-a', prompt: 'p' });
+    await sessions.createSession({ id: 'session-b', ownerId: 'owner-a', prompt: 'p' });
+    const first = await store.createMaterial('session-a', {
+      kind: 'source',
+      title: 'textbook.pdf',
+      ownerMaterialId: 'mat_owner',
+    });
+    const second = await store.createMaterial('session-b', {
+      kind: 'source',
+      title: 'textbook.pdf',
+      ownerMaterialId: 'mat_owner',
+    });
+    expect(first.id).not.toBe(second.id);
+    expect(first.ownerMaterialId).toBe('mat_owner');
+    expect(second.ownerMaterialId).toBe('mat_owner');
+  });
+
+  test('backfills owner_material_id onto a legacy row without touching extraction', async () => {
+    await new PgAgentSessionStore(db, {
+      withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),
+    }).createSession({ id: 'session-1', ownerId: 'owner-a', prompt: 'p' });
+    // The pre-upgrade binder's shape: id = owner id, owner_material_id NULL.
+    await db.query(
+      `INSERT INTO agent_session_materials
+         (id, session_id, kind, title, raw_asset_id, text_chars, extraction_status,
+          extraction_attempts, extractor_version, created_at)
+       VALUES ('mat_owner', 'session-1', 'source', 'textbook.pdf',
+               'materials/session-1/mat_owner/raw.x', 0, 'done', 2, 'pdf@1', now())`,
+    );
+
+    const backfilled = await store.backfillOwnerMaterialId('session-1', 'mat_owner', 'mat_owner');
+    expect(backfilled).toMatchObject({
+      id: 'mat_owner',
+      ownerMaterialId: 'mat_owner',
+      rawAssetId: 'materials/session-1/mat_owner/raw.x',
+      extraction: { status: 'done', attempts: 2, extractorVersion: 'pdf@1' },
+    });
+    // The NULL predicate means a repeat is a no-op, not an error.
+    expect(await store.backfillOwnerMaterialId('session-1', 'mat_owner', 'mat_owner')).toBeNull();
+    expect(await store.backfillOwnerMaterialId('session-1', 'mat_absent', 'mat_absent')).toBeNull();
+  });
+
   test('cascades material rows away when the session row is hard-deleted', async () => {
     await new PgAgentSessionStore(db, {
       withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),
@@ -178,6 +242,44 @@ describe('PgAgentSessionMaterialStore with PGlite', () => {
       derivedFrom: source.id,
       textAssetId: 'ast_text',
       extraction: { status: 'done' },
+    });
+  });
+
+  test('persists extraction stats containing NUL and lone surrogates', async () => {
+    const sessions = new PgAgentSessionStore(db, {
+      withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),
+    });
+    await sessions.createSession({ id: 'session-1', ownerId: 'owner-a', prompt: 'p' });
+    const source = await store.createMaterial('session-1', {
+      id: 'mat_source',
+      kind: 'source',
+      title: 'notes.txt',
+    });
+    await store.enqueueExtraction('session-1', source.id);
+    await store.claimNextExtraction('worker-a', { leaseTtlMs: 10_000 });
+
+    expect(
+      await store.completeExtraction({
+        sourceId: source.id,
+        workerId: 'worker-a',
+        extractorVersion: 'plain-text@1',
+        stats: {
+          chars: 5,
+          pages: 0,
+          imageCount: 0,
+          diagnostics: [`bad\u0000diag`, `bad\uD800diag`],
+        },
+        derived: {
+          id: 'mat_extracted',
+          kind: 'extraction',
+          textAssetId: 'ast_text',
+          textChars: 5,
+        },
+      }),
+    ).toBe(true);
+
+    expect((await store.getMaterial('session-1', source.id))?.extraction.stats).toMatchObject({
+      diagnostics: ['bad\uFFFDdiag', 'bad\uFFFDdiag'],
     });
   });
 
