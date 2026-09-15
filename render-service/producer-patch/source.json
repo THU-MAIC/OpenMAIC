@@ -1,0 +1,32 @@
+{
+  "repository": "https://github.com/heygen-com/hyperframes.git",
+  "revision": "e30992fdb8c6278db6afde2b5deeb7908835c524",
+  "version": "0.8.37",
+  "patchSha256": "a93045091238db656d2b7f7cf4155f1aee20f951fc9eda76fcfc9719671299ad",
+  "files": {
+    "packages/producer/README.md": "6ecd92ed7894c083e5b50839ebf85886db3e8fecdcf55d29cf1b8891b1abb21b",
+    "packages/producer/build.mjs": "f2e12d6975eebd3e16d5c0da4ea7a1b1a5a323b2dbfd671eb5fd8e5328e38e5f",
+    "packages/producer/native/build.mjs": "a0401ed73667d1199849720f5de2fb4f2b302ffeb669a00dcd8723a3de0df4da",
+    "packages/producer/native/resource-launcher.c": "647b06450701767d3ea6ff337eb952ba141797177ad612c33650d42d88abed74",
+    "packages/producer/native/resource-supervisor.c": "8c28b6c4ef21aa633d29aa86e3fdda9ab6bc62909ee671bce1c0e46d02d03646",
+    "packages/producer/package-subpaths.json": "e3b7411d30a19a040db5b57532a451e508c0a4878af28110712a7c45e1eaca97",
+    "packages/producer/package.json": "43f529e568dd66353bdcf2322b3bb3884fbfbe849bc02267caa0e666851877e1",
+    "packages/producer/scripts/test-classification.mjs": "fa42f366b3ff21b376181e946e051c631ed5cee8d47cfafe421d173080a13643",
+    "packages/producer/src/resourceWorker.ts": "4ca18c899565ef8ee1112cd066ae9732a3f91fb2782b2af347c1bd3704d90267",
+    "packages/producer/src/resources.ts": "ad1e449b6166353886e33a275f494beb87a91d4a7aae93cd301367bfaa4f99d2",
+    "packages/producer/src/resources/admission.test.ts": "80f83a4781e29d2dc2ba8b32c70e5c025e800b33b593f9b2c6815958191621f0",
+    "packages/producer/src/resources/admission.ts": "d19a72625013ab56292a91d5e53eb514e06562d9809faf440b170b67a5266b47",
+    "packages/producer/src/resources/installed-linux-cases.mjs": "f89c12bb34045a10fe907933cd2819d6fc5d75e06264a3899b76cb44eeae0008",
+    "packages/producer/src/resources/installed-linux-evidence.test.ts": "b542ed9ada95f7aa5e96ce3042da000bd6c21730b91e641a32680e43c993f0fd",
+    "packages/producer/src/resources/installed-linux.test.ts": "522b1cadb9a07e603d87a0f2dd179858b8ebfa17573841fac9aa65e35dbbd83b",
+    "packages/producer/src/resources/linux.test.ts": "cb97bcd5e529a375025e8ae37e266b3428d5f9f4154f21c3228b35da2c161bba",
+    "packages/producer/src/resources/linux.ts": "afca71c30bbf59bf2035e4f2bcca48a699a653e360b085a2c8e46aebfd180307",
+    "packages/producer/src/resources/supervisor.test.ts": "a68270b2055ba8e0a802cdbf47f10bd2c59c3bb5dbb582c13556a44c26ffae5e",
+    "packages/producer/src/resources/supervisor.ts": "d8da2476dbd9d117945a86f7bac707b32aa81a7c4a930e8c90e502f942d1d2f7",
+    "packages/producer/src/services/render/artifactTransaction.test.ts": "2627fdddef2336ae3439bc896695d8064704c665c1892a5c209d17c0ad9355d6",
+    "packages/producer/src/services/render/artifactTransaction.ts": "8c65f13313233a4c1a8623ca6f07e6804fa25451c8adf01103fc94d23b83927e",
+    "packages/producer/src/services/render/renderExecutionContext.test.ts": "3d5cffd8a79810a270f74254f8f8457b5708c83743d5c62034902a64d4bef477",
+    "packages/producer/src/services/render/renderExecutionContext.ts": "2d9e3530630a7c4b52bcab14d2978095ec9daf9f628d16e22909bb421eaae143",
+    "packages/producer/src/services/renderOrchestrator.ts": "1b3b3f388ffbab54d65a3c874d325ae8bf1cf9154c6ddb4f60876022b962eeb2"
+  }
+}

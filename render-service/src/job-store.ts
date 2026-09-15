@@ -72,7 +72,11 @@ export class InMemoryJobStore implements JobStore {
   private sweep(): void {
     const now = Date.now();
     for (const [id, job] of this.jobs) {
-      if (isTerminal(job.status) && now - job.updatedAtMs > this.ttlMs) {
+      if (
+        isTerminal(job.status) &&
+        job.resources?.reservationReturned !== false &&
+        now - job.updatedAtMs > this.ttlMs
+      ) {
         this.jobs.delete(id);
         this.onReap?.(job);
       }

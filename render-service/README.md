@@ -287,3 +287,12 @@ chunk bytes and sidecar hashes before ordered assembly, and reuses only a valid
 result for an idempotent retry. The default remains the in-process executor.
 
 [`@hyperframes/producer`]: https://www.npmjs.com/package/@hyperframes/producer
+
+### Experimental per-task resource budgets
+
+The opt-in resource executor combines Producer CPU/memory admission with native
+per-task hard limits and verified reservation/artifact settlement. It is
+maintained as an OpenMAIC-owned fixed source patch, consumed through the existing
+`RenderExecutor` seam. See [dependency delivery, startup and validation limits](producer-patch/README.md).
+The standard service and Docker entrypoint keep their current dependency and
+privilege model. This experimental path is not yet Linux deployment-qualified.

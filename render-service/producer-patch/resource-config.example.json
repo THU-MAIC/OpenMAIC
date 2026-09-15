@@ -1,0 +1,16 @@
+{
+  "packageRoot": "/opt/openmaic-resource/node_modules/@hyperframes/producer",
+  "projectRoot": "/tmp/openmaic-renders",
+  "owner": {
+    "taskCgroupRoot": "/sys/fs/cgroup/openmaic-render/tasks",
+    "cpuMillis": 1000,
+    "memoryBytes": 805306368,
+    "workerUid": 1001,
+    "workerGid": 1001,
+    "cleanupTimeoutMs": 10000
+  },
+  "task": {
+    "cpuMillis": 1000,
+    "memoryBytes": 805306368
+  }
+}

@@ -1,0 +1,3810 @@
+diff --git a/packages/producer/README.md b/packages/producer/README.md
+index 7349071df..491b2d210 100644
+--- a/packages/producer/README.md
++++ b/packages/producer/README.md
+@@ -32,6 +32,123 @@ const result = await executeRenderJob(job, (progress) => {
+ console.log(result.outputPath); // ./output.mp4
+ ```
+ 
++### Render with admission and per-task budgets (Linux)
++
++This implementation is a draft for review. The installed package passed Linux
++ARM64 native compilation/loading, initial in-domain launch, aggregate CPU/memory
++limits and lifecycle checks. The real Producer passed consecutive normal exports,
++media-phase OOM, cancellation, deadline, supervisor death, guardian death and
++unknown-reference cases. Normal exports used a 1-second, 200×200, 1 fps composition;
++media fault cases used that composition at 30 fps after observing a live Chrome
++renderer and encoding FFmpeg. Media OOM was injected by lowering that task's limit
++from 768 MiB to 64 MiB; this is not a general workload qualification.
++
++Verified cleanup returns reservations and permits another export on the same
++owner. Missing cleanup receipts or unknown references retain reservations and
++close admission. All fault cases preserved the previous output. A dead supervisor's
++session remains unavailable for reuse until its platform owner removes it.
++These results cover the earlier tested package and Linux environment. The current
++ancestor-pressure guard, structured failure accounting and packaging corrections
++are pending a fresh installed-package run; release/CI and supported-architecture
++compatibility remain required before merge.
++
++The experimental `@hyperframes/producer/resources` entry accepts the existing
++`RenderRequest` and reserves CPU bandwidth, memory and an active slot before
++starting a task. Its native launcher starts Node inside that task's cgroup;
++compilation, Chrome, FFmpeg and cleanup inherit the same hard limits. A trusted
++cleanup bootstrap joins and verifies the original task domain before accessing
++any task files. This avoids the kernel's post-`cgroup.kill` clone-into issue
++([Linux fix](https://github.com/torvalds/linux/commit/8e359920216689b3b79e0fe8961a77fe312a511f));
++business workers still use atomic `CLONE_INTO_CGROUP`.
++
++```typescript
++import { createBudgetedProducer } from "@hyperframes/producer/resources";
++
++const producer = createBudgetedProducer({
++  taskCgroupRoot: "/sys/fs/cgroup/my-render-service/tasks",
++  cpuMillis: 2000,
++  memoryBytes: 2 * 1024 ** 3,
++  maxActive: 2,
++  maxQueued: 4,
++  workerUid: 65534,
++  workerGid: 65534,
++  cleanupTimeoutMs: 10_000,
++});
++try {
++  const result = await producer.render(
++    request,
++    {
++      cpuMillis: 1000,
++      memoryBytes: 1024 ** 3,
++    },
++    { timeoutMs: 120_000, signal },
++  );
++  // outputPath means the artifact was published. Check reservationReturned
++  // separately: failed final cleanup closes admission and retains ownership.
++  console.log(result.outputPath, result.reservationReturned);
++} finally {
++  await producer.close();
++}
++```
++
++The platform must supply a dedicated Node >=22 supervisor process running as
++root **outside** an empty, exclusive cgroup v2 task delegation, with CPU and
++memory controllers, `clone3(CLONE_INTO_CGROUP)`, pidfds, and mount/cgroup namespaces.
++Its ancestor PID allowance must cover the media pipeline's threads. The minimal
++Linux test reached 109 concurrent tasks; a 64-task service cap prevented Chromium
++startup, while a finite 256-task cap passed with the same CPU/memory budgets.
++This is a tested environment setting, not a universal thread requirement.
++The worker runs with the configured non-root UID/GID, no capabilities and a
++read-only cgroup view. `TMPDIR` and Puppeteer profiles use a short `/proc/<worker>/fd/4`
++path to the task-owned scratch directory, so long output paths do not overflow
++Chromium's Unix socket pathname. The worker retains only this scratch descriptor
++alongside its IPC; its exit closes the descriptor and the guardian cleans the
++original directory. Chrome's existing `--disable-dev-shm-usage` flag redirects
++its shared-memory files there.
++Retained input and output paths must be canonical and readable by that UID;
++the output parent must already exist. The names `scratch` and `request.json`
++are reserved for task control. This entry supports trusted local rendering to
++file outputs, without retained debug directories or cross-task extraction caches.
++Node and the installed package must have parent directories and files accessible
++to the worker UID.
++
++Published packages contain native source, never publisher-architecture binaries.
++Ordinary package builds do not require a compiler. Native build is explicit via
++`HYPERFRAMES_BUILD_NATIVE=1` for development, or the installed build entry below.
++It requires `cc` and Node headers (`NODE_INCLUDE_DIR` overrides their location).
++Build the installed helpers on the target Linux architecture with
++`node node_modules/@hyperframes/producer/dist/native/build.mjs`. Rendering never
++downloads or compiles a helper, configures a host delegation, or falls back to
++unlimited execution when a required capability is missing.
++
++Reservation return requires revoked launch permissions, completed task cleanup,
++reaped descendants and no unknown retained task objects. Residual kernel memory
++accounting is reported separately; return does not assert `memory.current=0`.
++On cleanable failures, `BudgetedRenderError.cause` preserves the primary error and
++`settlement` reports cleanup, reservation return and final task accounting before
++the domain is removed. Successful results retain `residual` accounting.
++The existing owner samples visible non-root ancestors every 100 ms and at grant
++and settlement boundaries. Increases in ancestor `memory.events.local` high/max/oom
++(or current usage at a finite memory.high) close admission and reject queued work;
++active tasks keep their budgets and cleanup ownership. Child OOM propagation and
++oom_kill victim counts alone do not trigger this guard. Missing pressure evidence
++also stops admission. `status().pressure` records the observations; this neither
++estimates free capacity nor proves absence of pressure outside a namespace.
++Memory budgets must be multiples of the target Linux page size.
++
++The supervisor must be a dedicated process: native initialization sets process-wide
++subreaper and non-dumpable state, which close does not restore. Do not embed it in
++a process managing unrelated children. CONFIG_PROC_CHILDREN and readable procfs
++are required; missing enumeration evidence fails closed.
++An unfinished session is rejected on startup and remains the platform's cleanup
++responsibility. This is not a sandbox for hostile native programs.
++
++`src/resources/installed-linux.test.ts` verifies native limits, the existing render
++fixture, fault cleanup, publication and reservation settlement from an installed package. It requires explicit
++`HYPERFRAMES_RESOURCE_TEST_CGROUP`, `HYPERFRAMES_RESOURCE_TEST_PACKAGE` and
++`HYPERFRAMES_RESOURCE_TEST_WORKDIR` inputs; an absent Linux environment is a skip,
++not evidence that the native execution path passed.
++
+ ### Run as an HTTP server
+ 
+ The producer can also run as a render server, accepting render requests over HTTP:
+diff --git a/packages/producer/build.mjs b/packages/producer/build.mjs
+index 222ccc9ef..07623bc3c 100644
+--- a/packages/producer/build.mjs
++++ b/packages/producer/build.mjs
+@@ -71,8 +71,22 @@ await Promise.all([
+     outfile: "dist/services/healthWorkerThread.js",
+   }),
+   build({ ...sharedOpts, entryPoints: ["src/distributed.ts"], outfile: "dist/distributed.js" }),
++  build({
++    ...sharedOpts,
++    entryPoints: ["src/resources.ts", "src/resourceWorker.ts"],
++    outdir: "dist",
++    splitting: true,
++    chunkNames: "resource-chunk-[hash]",
++  }),
+ ]);
+ 
++// Ship the native sources/build entry alongside Linux build products. This
++// keeps the installed package self-contained without an install-time daemon.
++import { cpSync } from "node:fs";
++import { buildNative } from "./native/build.mjs";
++cpSync(resolve(scriptDir, "native"), resolve(scriptDir, "dist/native"), { recursive: true });
++if (process.env.HYPERFRAMES_BUILD_NATIVE === "1") buildNative(resolve(scriptDir, "dist/native"));
++
+ // Copy core runtime artifacts so the producer can find them at dist/
+ import { copyFileSync, existsSync, readFileSync } from "fs";
+ const coreDistDir = resolve(scriptDir, "../core/dist");
+diff --git a/packages/producer/native/build.mjs b/packages/producer/native/build.mjs
+new file mode 100644
+index 000000000..8f49b7b50
+--- /dev/null
++++ b/packages/producer/native/build.mjs
+@@ -0,0 +1,52 @@
++import { spawnSync } from "node:child_process";
++import { existsSync, mkdirSync } from "node:fs";
++import { dirname, join, resolve } from "node:path";
++import { fileURLToPath } from "node:url";
++
++// Called by the package build on Linux. No install-time download, setuid bit,
++// host delegation changes or compiler invocation on a render request.
++// Both compiler invocations are explicit and must fail closed on any build error.
++// fallow-ignore-next-line complexity
++export function buildNative(directory = dirname(fileURLToPath(import.meta.url))) {
++  if (process.platform !== "linux") return;
++  const bundledHeaders = resolve(dirname(process.execPath), "../include/node");
++  const include =
++    process.env.NODE_INCLUDE_DIR ??
++    (existsSync(join(bundledHeaders, "node_api.h")) ? bundledHeaders : "/usr/include/node");
++  if (!existsSync(join(include, "node_api.h"))) {
++    throw new Error("Building supervised Producer requires Node API headers (NODE_INCLUDE_DIR)");
++  }
++  mkdirSync(directory, { recursive: true });
++  const compiler = process.env.CC ?? "cc";
++  for (const args of [
++    [
++      "-std=c11",
++      "-O2",
++      "-Wall",
++      "-Wextra",
++      "-Werror",
++      "-o",
++      join(directory, "resource-launcher"),
++      join(directory, "resource-launcher.c"),
++    ],
++    [
++      "-std=c11",
++      "-O2",
++      "-Wall",
++      "-Wextra",
++      "-Werror",
++      "-shared",
++      "-fPIC",
++      `-I${include}`,
++      "-o",
++      join(directory, "resource-supervisor.node"),
++      join(directory, "resource-supervisor.c"),
++    ],
++  ]) {
++    const result = spawnSync(compiler, args, { stdio: "inherit" });
++    if (result.error) throw result.error;
++    if (result.status !== 0) throw new Error(`Native Producer build failed (${result.status})`);
++  }
++}
++
++if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) buildNative();
+diff --git a/packages/producer/native/resource-launcher.c b/packages/producer/native/resource-launcher.c
+new file mode 100644
+index 000000000..59c3757d6
+--- /dev/null
++++ b/packages/producer/native/resource-launcher.c
+@@ -0,0 +1,336 @@
++#define _GNU_SOURCE
++#include <dirent.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <grp.h>
++#include <limits.h>
++#include <linux/capability.h>
++#include <linux/sched.h>
++#include <math.h>
++#include <poll.h>
++#include <sched.h>
++#include <signal.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/mount.h>
++#include <sys/prctl.h>
++#include <sys/stat.h>
++#include <sys/syscall.h>
++#include <sys/types.h>
++#include <sys/wait.h>
++#include <time.h>
++#include <unistd.h>
++
++/* One task, one lifeline. This executable is not a daemon or a general shell.
++ * stdin belongs only to S; fd 3 is Node's IPC channel, inherited only by W.
++ * G stays outside A and reaps all W descendants before its terminal receipt.
++ */
++static int domain = -1;
++static volatile sig_atomic_t stopping;
++static const char *root, *candidate;
++
++static double monotonic(void) {
++  struct timespec t;
++  if (clock_gettime(CLOCK_MONOTONIC, &t)) _exit(125);
++  return t.tv_sec + t.tv_nsec / 1e9;
++}
++
++static void fail(const char *operation) {
++  int saved = errno;
++  fprintf(stderr, "resource-launcher: %s: errno=%d (%s)\n", operation, saved, strerror(saved));
++  _exit(125);
++}
++
++static void stop(int signal) { (void)signal; stopping = 1; }
++
++static void put(const char *name, const char *value) {
++  int fd = openat(domain, name, O_WRONLY | O_CLOEXEC | O_NOFOLLOW);
++  if (fd < 0) fail(name);
++  if (write(fd, value, strlen(value)) != (ssize_t)strlen(value)) fail(name);
++  if (close(fd)) fail("close cgroup control");
++}
++
++static int populated(void) {
++  char text[256];
++  int fd = openat(domain, "cgroup.events", O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
++  if (fd < 0) fail("cgroup.events");
++  ssize_t n = read(fd, text, sizeof(text) - 1);
++  close(fd);
++  if (n <= 0) fail("read cgroup.events");
++  text[n] = 0;
++  char *p = strstr(text, "populated ");
++  if (!p || (p[10] != '0' && p[10] != '1')) fail("parse cgroup.events");
++  return p[10] == '1';
++}
++
++static unsigned long number(const char *text) {
++  char *end;
++  errno = 0;
++  unsigned long n = strtoul(text, &end, 10);
++  if (errno || !*text || *end || n > INT_MAX) fail("numeric argument");
++  return n;
++}
++
++static void close_from(unsigned fd) {
++  if (syscall(SYS_close_range, fd, ~0U, 0)) fail("close_range");
++}
++
++static void drop(uid_t uid, gid_t gid) {
++  for (int cap = 0; cap < 64; cap++) {
++    if (prctl(PR_CAPBSET_DROP, cap, 0, 0, 0) && errno != EINVAL) fail("capability bounding set");
++  }
++  if (setgroups(0, NULL) || setresgid(gid, gid, gid) || setresuid(uid, uid, uid)) fail("worker identity");
++  struct __user_cap_header_struct h = { _LINUX_CAPABILITY_VERSION_3, 0 };
++  struct __user_cap_data_struct data[2] = {{0}, {0}};
++  if (syscall(SYS_capset, &h, data) || prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) fail("worker capabilities");
++}
++
++static void check_management_denied(int original_mount, const char *cgroup) {
++  const char *prefix = "/sys/fs/cgroup/";
++  if (strncmp(cgroup, prefix, strlen(prefix))) { errno = EINVAL; fail("cgroup location"); }
++  char ancestor[PATH_MAX];
++  if (snprintf(ancestor, sizeof(ancestor), "%s", cgroup + strlen(prefix)) >= (int)sizeof(ancestor)) fail("cgroup location length");
++  const char *names[] = { "cgroup.procs", "cgroup.subtree_control", "cgroup.kill", "cpu.max", "memory.max" };
++  for (;;) {
++    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
++      char path[PATH_MAX];
++      if (snprintf(path, sizeof(path), "%s%s%s", ancestor, *ancestor ? "/" : "", names[i]) >= (int)sizeof(path)) fail("management check path");
++      int fd = openat(original_mount, path, O_WRONLY | O_CLOEXEC | O_NOFOLLOW);
++      if (fd >= 0) { close(fd); errno = EPERM; fail("worker can manage its cgroup hierarchy"); }
++      if (errno != EACCES && errno != EPERM && errno != EROFS && errno != ENOENT) fail("management permission evidence");
++    }
++    if (!*ancestor) break;
++    char *slash = strrchr(ancestor, '/');
++    if (slash) *slash = 0; else *ancestor = 0;
++  }
++}
++
++/* Delete only this reserved directory, never follow a worker-created symlink.
++ * Executed in A, so recursive cleanup shares the task's hard resource limits.
++ */
++static void clean_directory(int fd, const char *keep, unsigned depth) {
++  if (depth > 128) { errno = ELOOP; fail("cleanup depth"); }
++  DIR *dir = fdopendir(dup(fd));
++  if (!dir) fail("cleanup directory");
++  struct dirent *entry;
++  errno = 0;
++  while ((entry = readdir(dir))) {
++    const char *name = entry->d_name;
++    if (!strcmp(name, ".") || !strcmp(name, "..") || (keep && !strcmp(name, keep))) continue;
++    struct stat st;
++    if (fstatat(fd, name, &st, AT_SYMLINK_NOFOLLOW)) fail("cleanup stat");
++    if (!S_ISDIR(st.st_mode) && st.st_nlink > 1) { errno = EMLINK; fail("unknown retained file reference"); }
++    if (S_ISDIR(st.st_mode)) {
++      int child = openat(fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
++      if (child < 0) fail("cleanup open");
++      clean_directory(child, NULL, depth + 1);
++      close(child);
++      if (unlinkat(fd, name, AT_REMOVEDIR)) fail("cleanup rmdir");
++    } else if (unlinkat(fd, name, 0)) fail("cleanup unlink");
++    errno = 0;
++  }
++  if (errno) fail("cleanup readdir");
++  closedir(dir);
++}
++
++static pid_t clone_child(int *pidfd, int into_task) {
++  struct clone_args args = {0};
++  args.flags = CLONE_PIDFD | (into_task ? CLONE_INTO_CGROUP : 0);
++  args.cgroup = into_task ? (uint64_t)domain : 0;
++  args.pidfd = (uint64_t)(uintptr_t)pidfd;
++  args.exit_signal = SIGCHLD;
++  pid_t pid = (pid_t)syscall(SYS_clone3, &args, sizeof(args));
++  if (pid < 0) fail(into_task ? "clone3(CLONE_INTO_CGROUP)" : "clone3(cleanup bootstrap)");
++  return pid;
++}
++
++static int reap(pid_t leader, int *leader_status) {
++  int status;
++  pid_t pid;
++  while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
++    if (pid == leader) *leader_status = status;
++  }
++  if (pid < 0 && errno != ECHILD && errno != EINTR) fail("waitpid");
++  return pid < 0 && errno == ECHILD;
++}
++
++static void drain(pid_t leader, int *status, double deadline) {
++  /* The launch permit is already revoked; no business process can be created
++   * after this point. cgroup.kill covers descendants that detached sessions. */
++  put("cgroup.kill", "1");
++  for (;;) {
++    int empty = reap(leader, status);
++    int populated_now = populated();
++    if (monotonic() >= deadline) { errno = ETIMEDOUT; fail("drain deadline"); }
++    if (empty && !populated_now) return;
++    poll(NULL, 0, 10);
++  }
++}
++
++int main(int argc, char **argv) {
++  if (argc != 10) return 64;
++  /* cgroup, reserved artifact directory, candidate basename, uid, gid,
++   * CLOCK_MONOTONIC deadline ms, cleanup timeout ms, Node executable, worker entry. */
++  root = argv[2]; candidate = argv[3];
++  uid_t uid = (uid_t)number(argv[4]);
++  gid_t gid = (gid_t)number(argv[5]);
++  char *end;
++  errno = 0;
++  double deadline = strtod(argv[6], &end) / 1000.0;
++  if (errno || !*argv[6] || *end || !isfinite(deadline) || deadline <= 0) return 64;
++  double cleanup = number(argv[7]) / 1000.0;
++  if (!uid || !gid || cleanup <= 0 || strchr(candidate, '/') || !strcmp(candidate, ".") || !strcmp(candidate, "..")) return 64;
++  struct stat reserved_directory;
++  if (root[0] != '/' || lstat(root, &reserved_directory) || !S_ISDIR(reserved_directory.st_mode) ||
++      reserved_directory.st_uid != uid || reserved_directory.st_gid != gid ||
++      (reserved_directory.st_mode & 0777) != 0700) {
++    errno = EPERM; fail("reserved directory identity");
++  }
++  signal(SIGPIPE, SIG_IGN);
++  struct sigaction action = { .sa_handler = stop };
++  sigemptyset(&action.sa_mask);
++  if (sigaction(SIGTERM, &action, NULL) || sigaction(SIGINT, &action, NULL)) fail("signal handler");
++  if (prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) || prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)) fail("guardian identity");
++  domain = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
++  if (domain < 0 || populated()) fail("task domain");
++  int flags = fcntl(0, F_GETFL);
++  if (flags < 0 || fcntl(0, F_SETFL, flags | O_NONBLOCK)) fail("lifeline");
++  int granted = 0, preserve = 0, parent_alive = 1, worker_status = -1, worker_fd = -1;
++  pid_t worker = -1;
++  for (;;) {
++    if (stopping || monotonic() >= deadline) break;
++    struct pollfd life = { .fd = 0, .events = POLLIN | POLLHUP };
++    if (poll(&life, 1, 10) < 0 && errno != EINTR) fail("lifeline poll");
++    /* HUP wins even when a buffered start/prepare command is readable. */
++    if (life.revents & (POLLHUP | POLLERR | POLLNVAL)) { parent_alive = 0; break; }
++    if (stopping || monotonic() >= deadline) break;
++    if (life.revents & POLLIN) {
++      char command;
++      ssize_t n = read(0, &command, 1);
++      if (n == 0) { parent_alive = 0; break; }
++      if (n < 0 && errno != EAGAIN && errno != EINTR) fail("lifeline read");
++      if (n == 1) {
++        if (command == 'C') break;
++        if (command == 'P' && worker > 0) preserve = 1;
++        else if (command == 'G' && !granted) {
++          granted = 1;
++          worker = clone_child(&worker_fd, 1);
++          if (worker == 0) {
++            /* Initialization, Node imports and media descendants begin in A.
++             * Only the task's cgroup view needs a private mount namespace. */
++            int management = open("/sys/fs/cgroup", O_PATH | O_DIRECTORY | O_CLOEXEC);
++            if (management < 0) fail("management permission view");
++            if (unshare(CLONE_NEWNS | CLONE_NEWCGROUP)) fail("task cgroup view");
++            if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL)) fail("private mounts");
++            char scratch[PATH_MAX], request[PATH_MAX];
++            if (snprintf(scratch, sizeof(scratch), "%s/scratch", root) >= (int)sizeof(scratch) ||
++                snprintf(request, sizeof(request), "%s/request.json", root) >= (int)sizeof(request)) fail("task paths");
++            /* Existing Engine memory heuristics read the cgroup mount root.
++             * Expose A read-only there; do not add a second memory estimator. */
++            if (mount(argv[1], "/sys/fs/cgroup", NULL, MS_BIND, NULL) ||
++                mount(NULL, "/sys/fs/cgroup", NULL, MS_BIND | MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL)) fail("read-only task cgroup view");
++            /* Chrome's Unix socket paths must fit sockaddr_un even when the
++             * output path is long. Keep one O_PATH handle to the same owned
++             * scratch directory in W; descendants use W's short procfs alias.
++             * It creates no filesystem alias or second cleanup owner, and
++             * preserves cwd and all original input/output paths. */
++            int scratch_fd = open(scratch, O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
++            struct stat scratch_stat;
++            if (scratch_fd < 0 || fstat(scratch_fd, &scratch_stat) ||
++                scratch_stat.st_uid != uid || scratch_stat.st_gid != gid ||
++                (scratch_stat.st_mode & 0777) != 0700) fail("scratch identity");
++            char short_temp[64];
++            if (snprintf(short_temp, sizeof(short_temp), "/proc/%ld/fd/4", (long)getpid()) >= (int)sizeof(short_temp)) fail("scratch alias length");
++            if (setenv("TMPDIR", short_temp, 1) || setenv("PUPPETEER_TMP_DIR", short_temp, 1) || setenv("HOME", scratch, 1) || setenv("NODE_CHANNEL_FD", "3", 1) || setenv("NODE_CHANNEL_SERIALIZATION_MODE", "json", 1)) fail("worker environment");
++            int null = open("/dev/null", O_RDONLY);
++            if (null < 0 || dup2(null, 0) < 0 || dup2(2, 1) < 0) fail("worker streams");
++            drop(uid, gid);
++            // Check actual post-drop DAC/ACL permissions through the original
++            // mount, then discard it before any Node or composition code runs.
++            check_management_denied(management, argv[1]);
++            // fd 3 is IPC, fd 4 is only the task scratch handle. All management
++            // descriptors are discarded before Node starts; exec retains fd 4.
++            if (dup2(scratch_fd, 4) < 0 || fcntl(4, F_SETFD, 0)) fail("scratch descriptor");
++            close_from(5);
++            execl(argv[8], argv[8], argv[9], request, (char *)NULL);
++            fail("worker exec");
++          }
++          close(3); /* only W retains the payload IPC channel */
++          printf("{\"event\":\"started\",\"pid\":%ld}\n", (long)worker);
++          fflush(stdout);
++        } else { errno = EPROTO; fail("lifeline command"); }
++      }
++    }
++    if (stopping || monotonic() >= deadline) break;
++    if (worker > 0) {
++      reap(worker, &worker_status);
++      if (worker_status >= 0) break;
++    }
++  }
++  /* No more GO commands are consumed, including during cleanup. */
++  double clean_deadline = monotonic() + cleanup;
++  drain(worker, &worker_status, clean_deadline);
++  if (worker_fd >= 0) close(worker_fd);
++  preserve = preserve && parent_alive && !stopping && worker_status == 0 && monotonic() < deadline;
++  int reaper_fd = -1;
++  /* Some kernels compare the parent's kill_seq with the destination's and
++   * SIGKILL CLONE_INTO_CGROUP children after cgroup.kill (Linux 8e3599202166).
++   * Only this trusted cleanup bootstrap starts with G. It must enter and
++   * verify A before opening any task file or allocating a directory walker.
++   * Business W still uses atomic CLONE_INTO_CGROUP before all initialization.
++   */
++  pid_t cleaner = clone_child(&reaper_fd, 0);
++  if (cleaner == 0) {
++    put("cgroup.procs", "0");
++    char expected[32], actual[64];
++    int length = snprintf(expected, sizeof(expected), "%ld\n", (long)getpid());
++    int membership = openat(domain, "cgroup.procs", O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
++    if (membership < 0) fail("cleanup membership");
++    ssize_t count = read(membership, actual, sizeof(actual));
++    close(membership);
++    if (length <= 0 || length >= (int)sizeof(expected) || count != length ||
++        memcmp(actual, expected, (size_t)length)) {
++      errno = EXDEV; fail("cleanup outside task domain");
++    }
++    printf("{\"event\":\"cleanup-entered\",\"pid\":%ld}\n", (long)getpid());
++    fflush(stdout);
++    close_from(3);
++    int fd = open(root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
++    if (fd < 0) fail("reserved artifact directory");
++    struct stat current;
++    if (fstat(fd, &current) || current.st_dev != reserved_directory.st_dev ||
++        current.st_ino != reserved_directory.st_ino) {
++      errno = ESTALE; fail("cleanup directory identity changed");
++    }
++    clean_directory(fd, preserve ? candidate : NULL, 0);
++    close(fd);
++    _exit(0);
++  }
++  int cleaner_status = -1;
++  for (;;) {
++    int empty = reap(cleaner, &cleaner_status);
++    int populated_now = populated();
++    if (monotonic() >= clean_deadline) {
++      put("cgroup.kill", "1");
++      errno = ETIMEDOUT; fail("cleanup deadline");
++    }
++    if (empty && !populated_now) break;
++    poll(NULL, 0, 10);
++  }
++  close(reaper_fd);
++  if (cleaner_status != 0) {
++    fprintf(stderr, "resource-launcher: cleanup status: worker=%d cleaner=%d exited=%d exit=%d signaled=%d signal=%d\n",
++            worker_status, cleaner_status,
++            cleaner_status >= 0 && WIFEXITED(cleaner_status),
++            cleaner_status >= 0 && WIFEXITED(cleaner_status) ? WEXITSTATUS(cleaner_status) : -1,
++            cleaner_status >= 0 && WIFSIGNALED(cleaner_status),
++            cleaner_status >= 0 && WIFSIGNALED(cleaner_status) ? WTERMSIG(cleaner_status) : -1);
++    errno = EIO; fail("cleanup child");
++  }
++  if (!parent_alive && rmdir(root)) fail("orphan directory cleanup");
++  printf("{\"event\":\"drained\",\"workerStatus\":%d,\"prepared\":%s}\n", worker_status, preserve ? "true" : "false");
++  fflush(stdout);
++  return 0;
++}
+diff --git a/packages/producer/native/resource-supervisor.c b/packages/producer/native/resource-supervisor.c
+new file mode 100644
+index 000000000..dad24a4ae
+--- /dev/null
++++ b/packages/producer/native/resource-supervisor.c
+@@ -0,0 +1,109 @@
++#define _GNU_SOURCE
++#include <node_api.h>
++#include <dirent.h>
++#include <errno.h>
++#include <limits.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/prctl.h>
++#include <sys/wait.h>
++#include <time.h>
++#include <unistd.h>
++
++/* JS cannot set PR_SET_CHILD_SUBREAPER. Keep this binding limited to the S
++ * lifecycle requirement; never reap Node's ordinary children or G itself. */
++static napi_value error(napi_env env, const char *message) {
++  napi_throw_error(env, NULL, message);
++  return NULL;
++}
++
++static napi_value initialize(napi_env env, napi_callback_info info) {
++  (void)info;
++  /* Fail before changing process-wide state when descendant enumeration is
++   * unavailable. This entry is for a dedicated supervisor process only. */
++  if (access("/proc/thread-self/children", R_OK)) return error(env, "Supervisor requires readable proc children (CONFIG_PROC_CHILDREN)");
++  int enabled = 0;
++  if (prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) ||
++      prctl(PR_GET_CHILD_SUBREAPER, &enabled, 0, 0, 0) || !enabled ||
++      prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)) return error(env, "Cannot establish supervisor lifecycle ownership");
++  napi_value result;
++  napi_get_undefined(env, &result);
++  return result;
++}
++
++static napi_value page_size(napi_env env, napi_callback_info info) {
++  (void)info;
++  long size = sysconf(_SC_PAGESIZE);
++  if (size <= 0) return error(env, "Cannot read Linux page size");
++  napi_value result;
++  napi_create_int64(env, size, &result);
++  return result;
++}
++
++static napi_value monotonic_milliseconds(napi_env env, napi_callback_info info) {
++  (void)info;
++  struct timespec clock;
++  if (clock_gettime(CLOCK_MONOTONIC, &clock)) return error(env, "Cannot read supervisor monotonic clock");
++  napi_value result;
++  napi_create_double(env, clock.tv_sec * 1000.0 + clock.tv_nsec / 1e6, &result);
++  return result;
++}
++
++static napi_value reap_task(napi_env env, napi_callback_info info) {
++  napi_value argv[1], result;
++  size_t argc = 1, length;
++  char expected[PATH_MAX];
++  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc != 1 ||
++      napi_get_value_string_utf8(env, argv[0], expected, sizeof(expected), &length) != napi_ok ||
++      length >= sizeof(expected) - 1 || expected[0] != '/') return error(env, "Expected a unified cgroup membership path");
++  /* A subreaper's adopted children are listed on the owning thread. Inspect
++   * every S thread, and wait only for a child still assigned to this task. */
++  DIR *threads = opendir("/proc/self/task");
++  if (!threads) return error(env, "Cannot enumerate supervisor children");
++  int pending = 0, failed = 0, readable = 0;
++  struct dirent *thread;
++  while ((thread = readdir(threads))) {
++    char *end;
++    long tid = strtol(thread->d_name, &end, 10);
++    if (*end || tid <= 0) continue;
++    char path[128];
++    snprintf(path, sizeof(path), "/proc/self/task/%ld/children", tid);
++    FILE *children = fopen(path, "r");
++    if (!children) { if (errno != ENOENT) failed = 1; continue; }
++    readable++;
++    long pid;
++    while (fscanf(children, "%ld", &pid) == 1) {
++      snprintf(path, sizeof(path), "/proc/%ld/cgroup", pid);
++      FILE *file = fopen(path, "r");
++      if (!file) { if (errno != ENOENT) failed = 1; continue; }
++      char membership[PATH_MAX + 8];
++      char *line = fgets(membership, sizeof(membership), file);
++      fclose(file);
++      if (!line) { failed = 1; continue; }
++      membership[strcspn(membership, "\n")] = 0;
++      if (strncmp(membership, "0::", 3) || strcmp(membership + 3, expected)) continue;
++      int status;
++      pid_t reaped = waitpid((pid_t)pid, &status, WNOHANG);
++      if (!reaped) pending = 1;
++      else if (reaped < 0 && errno != ECHILD && errno != ESRCH) failed = 1;
++    }
++    if (ferror(children)) failed = 1;
++    fclose(children);
++  }
++  closedir(threads);
++  if (failed || !readable) return error(env, "Cannot verify task descendant reaping");
++  napi_get_boolean(env, !pending, &result);
++  return result;
++}
++
++NAPI_MODULE_INIT() {
++  napi_property_descriptor methods[] = {
++    { "initialize", NULL, initialize, NULL, NULL, NULL, napi_default, NULL },
++    { "pageSize", NULL, page_size, NULL, NULL, NULL, napi_default, NULL },
++    { "reapTask", NULL, reap_task, NULL, NULL, NULL, napi_default, NULL },
++    { "monotonicMilliseconds", NULL, monotonic_milliseconds, NULL, NULL, NULL, napi_default, NULL },
++  };
++  napi_define_properties(env, exports, 4, methods);
++  return exports;
++}
+diff --git a/packages/producer/package-subpaths.json b/packages/producer/package-subpaths.json
+index 0bf942ee6..49cfbe063 100644
+--- a/packages/producer/package-subpaths.json
++++ b/packages/producer/package-subpaths.json
+@@ -1,6 +1,12 @@
+ {
+   "package": "@hyperframes/producer",
+   "subpaths": {
++    "./resources": {
++      "source": "./src/resources.ts",
++      "runtime": "./dist/resources.js",
++      "types": "./dist/resources.d.ts",
++      "environments": ["bun", "node"]
++    },
+     ".": {
+       "source": "./src/index.ts",
+       "runtime": "./dist/index.js",
+diff --git a/packages/producer/package.json b/packages/producer/package.json
+index 68792f7c4..00c404f01 100644
+--- a/packages/producer/package.json
++++ b/packages/producer/package.json
+@@ -8,12 +8,19 @@
+     "directory": "packages/producer"
+   },
+   "files": [
+-    "dist/"
++    "dist/",
++    "!dist/native/resource-launcher",
++    "!dist/native/*.node"
+   ],
+   "type": "module",
+   "main": "dist/index.js",
+   "types": "dist/index.d.ts",
+   "exports": {
++    "./resources": {
++      "bun": "./src/resources.ts",
++      "import": "./src/resources.ts",
++      "types": "./src/resources.ts"
++    },
+     ".": {
+       "bun": "./src/index.ts",
+       "import": "./src/index.ts",
+@@ -29,6 +36,10 @@
+   "publishConfig": {
+     "access": "public",
+     "exports": {
++      "./resources": {
++        "import": "./dist/resources.js",
++        "types": "./dist/resources.d.ts"
++      },
+       ".": {
+         "import": "./dist/index.js",
+         "types": "./dist/index.d.ts"
+diff --git a/packages/producer/scripts/test-classification.mjs b/packages/producer/scripts/test-classification.mjs
+index 2b559f9c7..847b75ff0 100644
+--- a/packages/producer/scripts/test-classification.mjs
++++ b/packages/producer/scripts/test-classification.mjs
+@@ -9,6 +9,8 @@ export const PRODUCER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), ".
+ // or local sockets. Keep the list explicit so a filename-only rename does not
+ // make Git/fallow re-audit thousands of unchanged test lines as new code.
+ const INTEGRATION_TEST_FILES = new Set([
++  "src/resources/installed-linux.test.ts",
++  "src/resources/installed-linux-evidence.test.ts",
+   "src/regression-harness-psnr.test.ts",
+   "src/services/coreRuntimeBrowser.test.ts",
+   "src/services/deterministicFonts-systemCapture.test.ts",
+diff --git a/packages/producer/src/resourceWorker.ts b/packages/producer/src/resourceWorker.ts
+new file mode 100644
+index 000000000..11946e24b
+--- /dev/null
++++ b/packages/producer/src/resourceWorker.ts
+@@ -0,0 +1,90 @@
++import { readFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { normalizeErrorMessage } from "./utils/errorMessage.js";
++
++// This entry is exec'd by the native launcher only after CLONE_INTO_CGROUP.
++// Heavy renderer imports, request validation and disposal all belong to W.
++const cancel = new AbortController();
++let cleanupFailed = false;
++process.once("SIGTERM", () => cancel.abort(new Error("render_cancelled")));
++process.once("disconnect", () => cancel.abort(new Error("supervisor_disconnected")));
++
++function send(message: object): Promise<void> {
++  return new Promise((resolve, reject) => {
++    if (!process.send) {
++      reject(new Error("Missing supervisor IPC"));
++      return;
++    }
++    process.send(message, (error) => (error ? reject(error) : resolve()));
++  });
++}
++
++try {
++  const file = process.argv[2];
++  if (!file || !process.send) throw new Error("Worker requires a supervisor request");
++  const raw = readFileSync(file, "utf8");
++  if (Buffer.byteLength(raw) > 1024 * 1024) throw new Error("Oversized render request");
++  const { parseRenderRequest, renderConfigFromRequest } = await import("./renderRequest.js");
++  const { createRenderJob, executeRenderJob } = await import("./services/renderOrchestrator.js");
++  const { RenderCleanupError } = await import("./services/render/renderExecutionContext.js");
++  const request = parseRenderRequest(raw);
++  if (
++    request.options.debug ||
++    request.options.distributed ||
++    request.options.format === "png-sequence"
++  ) {
++    throw new Error(
++      "Supervised rendering currently supports local file outputs without retained debug state",
++    );
++  }
++  const config = renderConfigFromRequest(request);
++  // Cross-task caches would leave a second owner outside this reservation.
++  // Keep the existing cache implementation, confined to this task's temp root.
++  config.producerConfig = {
++    ...request.options.engineConfig,
++    extractCacheDir: join(tmpdir(), "extraction-cache"),
++    debug: false,
++  };
++  const job = createRenderJob(config);
++  try {
++    await executeRenderJob(job, request.projectDir, request.outputPath, undefined, cancel.signal, {
++      requireCleanup: true,
++    });
++  } catch (error) {
++    cleanupFailed = error instanceof RenderCleanupError;
++    throw error;
++  }
++  cancel.signal.throwIfAborted();
++  // ACK validation and disconnect cancellation jointly guard this one handoff.
++  const ack = new Promise<void>((resolve, reject) => {
++    // fallow-ignore-next-line complexity
++    process.once("message", (message: unknown) => {
++      if (
++        typeof message === "object" &&
++        message !== null &&
++        "event" in message &&
++        message.event === "prepared-ack"
++      )
++        resolve();
++      else reject(new Error("Invalid prepared acknowledgement"));
++    });
++    cancel.signal.addEventListener("abort", () => reject(cancel.signal.reason), { once: true });
++  });
++  await send({ event: "prepared" });
++  await ack;
++  process.disconnect?.();
++  // G owns any remaining browser/encoder descendants and the final drain.
++  process.exit(0);
++} catch (error) {
++  try {
++    await send({
++      event: "failed",
++      cleanupFailed,
++      message: normalizeErrorMessage(error).slice(0, 2048),
++    });
++  } catch {
++    /* The guardian's lifeline still triggers cleanup if S is gone. */
++  }
++  process.exit(1);
++}
+diff --git a/packages/producer/src/resources.ts b/packages/producer/src/resources.ts
+new file mode 100644
+index 000000000..412bd3bf3
+--- /dev/null
++++ b/packages/producer/src/resources.ts
+@@ -0,0 +1,8 @@
++export { createBudgetedProducer, BudgetedRenderError } from "./resources/supervisor.js";
++export type {
++  BudgetedProducer,
++  BudgetedProducerOptions,
++  BudgetedRenderResult,
++  TaskSettlement,
++} from "./resources/supervisor.js";
++export type { TaskBudget } from "./resources/admission.js";
+diff --git a/packages/producer/src/resources/admission.test.ts b/packages/producer/src/resources/admission.test.ts
+new file mode 100644
+index 000000000..5bcc2cd12
+--- /dev/null
++++ b/packages/producer/src/resources/admission.test.ts
+@@ -0,0 +1,87 @@
++import { describe, expect, it } from "vitest";
++import { Admission } from "./admission.js";
++
++const budget = { cpuMillis: 500, memoryBytes: 128 * 1024 * 1024 };
++const signal = () => new AbortController().signal;
++const create = () =>
++  new Admission({
++    cpuMillis: 1000,
++    memoryBytes: budget.memoryBytes * 2,
++    maxActive: 4,
++    maxQueued: 2,
++  });
++
++describe("supervisor admission ownership", () => {
++  it("atomically accounts concurrent CPU and memory reservations", async () => {
++    const owner = create();
++    const [a, b] = await Promise.all([
++      owner.acquire(budget, signal()),
++      owner.acquire(budget, signal()),
++    ]);
++    let started = false;
++    const next = owner.acquire(budget, signal()).then((r) => {
++      started = true;
++      return r;
++    });
++    await Promise.resolve();
++    expect(started).toBe(false);
++    expect(owner.snapshot()).toMatchObject({ active: 2, queued: 1, cpuMillis: 1000 });
++    a.settle(true);
++    const c = await next;
++    expect(owner.snapshot().active).toBe(2);
++    a.settle(true);
++    expect(owner.snapshot().active).toBe(2);
++    b.settle(true);
++    c.settle(true);
++    expect(owner.snapshot()).toMatchObject({ active: 0, cpuMillis: 0, memoryBytes: 0 });
++  });
++
++  it("removes a cancelled waiter before returning the competing permit", async () => {
++    const owner = create();
++    const a = await owner.acquire({ cpuMillis: 1000, memoryBytes: budget.memoryBytes }, signal());
++    const cancel = new AbortController();
++    const waiting = owner.acquire(budget, cancel.signal);
++    const rejected = expect(waiting).rejects.toThrow("deadline");
++    cancel.abort(new Error("deadline"));
++    a.settle(true);
++    await rejected;
++    expect(owner.snapshot()).toMatchObject({ active: 0, queued: 0 });
++  });
++
++  it("returns B while A remains owned, then supports cumulative work beyond the envelope", async () => {
++    const owner = create();
++    const a = await owner.acquire(budget, signal());
++    for (let i = 0; i < 10; i++) {
++      const b = await owner.acquire(budget, signal());
++      b.settle(true);
++      expect(owner.snapshot().memoryBytes).toBe(budget.memoryBytes);
++    }
++    a.settle(true);
++  });
++
++  it("quarantines failed cleanup without returning capacity or admitting another task", async () => {
++    const owner = create();
++    const a = await owner.acquire(budget, signal());
++    const b = await owner.acquire(budget, signal());
++    const waiting = expect(owner.acquire(budget, signal())).rejects.toThrow("closed");
++    a.settle(false);
++    a.settle(true);
++    b.settle(true);
++    await waiting;
++    expect(owner.snapshot()).toMatchObject({
++      active: 0,
++      quarantined: 1,
++      memoryBytes: budget.memoryBytes,
++      closed: true,
++    });
++    await expect(owner.acquire(budget, signal())).rejects.toThrow("closed");
++  });
++
++  it("bounds the queue and rejects impossible budgets without starting work", async () => {
++    const owner = new Admission({ ...budget, maxActive: 1, maxQueued: 0 });
++    await expect(owner.acquire({ ...budget, cpuMillis: 501 }, signal())).rejects.toThrow("exceeds");
++    const a = await owner.acquire(budget, signal());
++    await expect(owner.acquire(budget, signal())).rejects.toThrow("full");
++    a.settle(true);
++  });
++});
+diff --git a/packages/producer/src/resources/admission.ts b/packages/producer/src/resources/admission.ts
+new file mode 100644
+index 000000000..5e53f1cdd
+--- /dev/null
++++ b/packages/producer/src/resources/admission.ts
+@@ -0,0 +1,148 @@
++export interface TaskBudget {
++  /** CPU bandwidth in thousandths of one CPU, enforced over 100 ms periods. */
++  cpuMillis: number;
++  memoryBytes: number;
++}
++
++export interface AdmissionLimits extends TaskBudget {
++  maxActive: number;
++  maxQueued: number;
++}
++
++export interface Reservation {
++  /** Called only by the supervisor after its terminal ownership checks. */
++  settle(clean: boolean): void;
++}
++
++interface Waiting {
++  budget: TaskBudget;
++  signal: AbortSignal;
++  resolve: (reservation: Reservation) => void;
++  reject: (error: unknown) => void;
++  abort: () => void;
++}
++
++function integer(value: number, name: string, minimum: number): void {
++  if (
++    !Number.isSafeInteger(value) ||
++    value < minimum ||
++    (name === "cpuMillis" && !Number.isSafeInteger(value * 100))
++  ) {
++    throw new Error(`${name} must be a safe integer >= ${minimum}`);
++  }
++}
++
++/** Private ledger of the supervised Producer. No separate scheduling service. */
++export class Admission {
++  private readonly limits: Readonly<AdmissionLimits>;
++  private readonly waiting: Waiting[] = [];
++  private active = 0;
++  private cpuMillis = 0;
++  private memoryBytes = 0;
++  private quarantined = 0;
++  private closed = false;
++
++  constructor(limits: AdmissionLimits) {
++    for (const field of ["cpuMillis", "memoryBytes", "maxActive"] as const) {
++      integer(limits[field], field, 1);
++    }
++    integer(limits.maxQueued, "maxQueued", 0);
++    this.limits = Object.freeze({ ...limits });
++  }
++
++  snapshot() {
++    return Object.freeze({
++      active: this.active,
++      queued: this.waiting.length,
++      cpuMillis: this.cpuMillis,
++      memoryBytes: this.memoryBytes,
++      quarantined: this.quarantined,
++      closed: this.closed,
++    });
++  }
++
++  acquire(input: TaskBudget, signal: AbortSignal): Promise<Reservation> {
++    integer(input.cpuMillis, "cpuMillis", 10);
++    integer(input.memoryBytes, "memoryBytes", 1);
++    const budget = Object.freeze({ ...input });
++    if (budget.cpuMillis > this.limits.cpuMillis || budget.memoryBytes > this.limits.memoryBytes) {
++      return Promise.reject(new Error("Task budget exceeds the Producer envelope"));
++    }
++    if (this.closed) return Promise.reject(new Error("Producer admission is closed"));
++    if (signal.aborted) return Promise.reject(signal.reason);
++    if (this.waiting.length === 0 && this.fits(budget)) {
++      return Promise.resolve(this.reserve(budget));
++    }
++    if (this.waiting.length >= this.limits.maxQueued) {
++      return Promise.reject(new Error("Producer admission queue is full"));
++    }
++    return new Promise((resolve, reject) => {
++      const item: Waiting = {
++        budget,
++        signal,
++        resolve,
++        reject,
++        abort: () => {
++          const index = this.waiting.indexOf(item);
++          if (index < 0) return;
++          this.waiting.splice(index, 1);
++          signal.removeEventListener("abort", item.abort);
++          reject(signal.reason);
++          this.admit();
++        },
++      };
++      this.waiting.push(item);
++      signal.addEventListener("abort", item.abort, { once: true });
++    });
++  }
++
++  close(reason: Error = new Error("Producer admission is closed")): void {
++    this.closed = true;
++    for (const item of this.waiting.splice(0)) {
++      item.signal.removeEventListener("abort", item.abort);
++      item.reject(reason);
++    }
++  }
++
++  private fits(budget: TaskBudget): boolean {
++    return (
++      this.active < this.limits.maxActive &&
++      budget.cpuMillis <= this.limits.cpuMillis - this.cpuMillis &&
++      budget.memoryBytes <= this.limits.memoryBytes - this.memoryBytes
++    );
++  }
++
++  private reserve(budget: TaskBudget): Reservation {
++    this.active++;
++    this.cpuMillis += budget.cpuMillis;
++    this.memoryBytes += budget.memoryBytes;
++    let settled = false;
++    return {
++      settle: (clean) => {
++        if (settled) return;
++        settled = true;
++        if (!clean) {
++          this.active--;
++          this.quarantined++;
++          this.close();
++          return;
++        }
++        this.active--;
++        this.cpuMillis -= budget.cpuMillis;
++        this.memoryBytes -= budget.memoryBytes;
++        this.admit();
++      },
++    };
++  }
++
++  private admit(): void {
++    while (!this.closed) {
++      const item = this.waiting[0];
++      if (!item || !this.fits(item.budget)) return;
++      this.waiting.shift();
++      item.signal.removeEventListener("abort", item.abort);
++      if (item.signal.aborted) item.reject(item.signal.reason);
++      else item.resolve(this.reserve(item.budget));
++    }
++  }
++}
+diff --git a/packages/producer/src/resources/installed-linux-cases.mjs b/packages/producer/src/resources/installed-linux-cases.mjs
+new file mode 100644
+index 000000000..e6bd801f1
+--- /dev/null
++++ b/packages/producer/src/resources/installed-linux-cases.mjs
+@@ -0,0 +1,1082 @@
++// fallow-ignore-file complexity
++// Concrete fault cases deliberately keep injection, observation and terminal assertions together.
++// Concrete installed-package tests, shared by Vitest and the existing guest executor.
++// No provisioning, downloads, test-only product hooks, or alternate implementation.
++import assert from "node:assert/strict";
++import { spawn, execFileSync } from "node:child_process";
++import { createRequire } from "node:module";
++import { createHash } from "node:crypto";
++import * as fs from "node:fs";
++import { join } from "node:path";
++import { fileURLToPath, pathToFileURL } from "node:url";
++import { setTimeout as delay } from "node:timers/promises";
++
++const self = fileURLToPath(import.meta.url);
++const read = (path) => fs.readFileSync(path, "utf8").trim();
++const json = (path) => JSON.parse(read(path));
++const write = (path, value) => fs.writeFileSync(path, JSON.stringify(value, null, 2) + "\n");
++const exists = fs.existsSync;
++async function until(check, ms = 12000) {
++  const end = performance.now() + ms;
++  do {
++    const value = check();
++    if (value) return value;
++    await delay(10);
++  } while (performance.now() < end);
++  throw new Error("Required lifecycle observation timed out");
++}
++// Capture before waiting, and publish on every event. Failed startup must leave
++// the same argv/exit/stream evidence as a successful case.
++export function observeLauncher(child, argv, persist = () => {}) {
++  const evidence = {
++    argv,
++    pid: child.pid ?? null,
++    stdout: "",
++    stderr: "",
++    stdoutBytes: 0,
++    stderrBytes: 0,
++    exitObserved: false,
++    closed: false,
++    code: null,
++    signal: null,
++    spawnError: null,
++    first: null,
++    descendants: [],
++  };
++  for (const stream of ["stdout", "stderr"])
++    child[stream]?.on("data", (chunk) => {
++      evidence[stream + "Bytes"] += chunk.length;
++      const text = evidence[stream] + chunk.toString();
++      evidence[stream] = text.length > 16384 ? text.slice(0, 8192) + text.slice(-8192) : text;
++      persist(evidence);
++    });
++  child.on("message", (message) => {
++    if (message.event === "native-ready") evidence.first = message.first;
++    if (message.event === "descendants") evidence.descendants = message.pids;
++    persist(evidence);
++  });
++  child.once("error", (error) => {
++    evidence.spawnError = String(error);
++    persist(evidence);
++  });
++  child.once("exit", (code, signal) => {
++    Object.assign(evidence, { exitObserved: true, code, signal });
++    persist(evidence);
++  });
++  const done = new Promise((ok) =>
++    child.once("close", (code, signal) => {
++      Object.assign(evidence, { closed: true, code, signal });
++      persist(evidence);
++      ok(code);
++    }),
++  );
++  return {
++    evidence,
++    done,
++    waitReady: (check, ms = 12000) =>
++      until(() => {
++        if (check()) return true;
++        if (evidence.exitObserved || evidence.spawnError || evidence.closed)
++          throw new Error(
++            `Launcher exited before readiness: code=${evidence.code} signal=${evidence.signal} ${evidence.spawnError ?? ""} ${evidence.stderr}`,
++          );
++        return false;
++      }, ms),
++  };
++}
++function status(pid) {
++  try {
++    return {
++      pid,
++      stat: read(`/proc/${pid}/stat`),
++      cgroup: read(`/proc/${pid}/cgroup`),
++      status: read(`/proc/${pid}/status`),
++      cmdline: read(`/proc/${pid}/cmdline`),
++    };
++  } catch (error) {
++    if (error.code === "ENOENT" || error.code === "ESRCH") return null;
++    throw error;
++  }
++}
++export function mediaGate(rows, domain) {
++  const membership = "0::" + domain.slice("/sys/fs/cgroup".length);
++  const living = rows.filter((row) => row && !/State:\s+Z/.test(row.status));
++  const worker = living.find((row) => row.cmdline.includes("resourceWorker.js"));
++  const args = (row) => row.cmdline.replaceAll("\0", " ");
++  const executable = (row) => args(row).split(" ")[0].split("/").at(-1);
++  const renderer = living.find(
++    (row) =>
++      ["chrome", "headless_shell"].includes(executable(row)) &&
++      /(?:^| )--type=renderer(?: |$)/.test(args(row)),
++  );
++  const encoder = living.find(
++    (row) =>
++      executable(row) === "ffmpeg" &&
++      /(?:^| )-i (?:pipe:0|-)(?: |$)/.test(args(row)) &&
++      /(?:^| )-c:v /.test(args(row)),
++  );
++  if (!worker || !renderer || !encoder) return null;
++  const media = [renderer, encoder];
++  living.forEach((row) =>
++    assert.equal(row.cgroup, membership, "Media gate observed an out-of-domain process"),
++  );
++  return { worker, media, observed: living };
++}
++const pids = (domain) =>
++  exists(domain) ? read(join(domain, "cgroup.procs")).split(/\s+/).filter(Boolean).map(Number) : [];
++const statValue = (text, key) => Number(new RegExp(`^${key} (\\d+)$`, "m").exec(text)?.[1] ?? NaN);
++function childProcess(args, options = {}) {
++  const child = spawn(process.execPath, args, {
++    stdio: ["ignore", "pipe", "pipe", "ipc"],
++    ...options,
++  });
++  const output = { stdout: "", stderr: "" };
++  for (const name of ["stdout", "stderr"])
++    child[name]?.on("data", (b) => {
++      output[name] = (output[name] + b).slice(-65536);
++    });
++  const done = new Promise((ok, fail) => {
++    child.once("error", fail);
++    child.once("close", (code, signal) => ok({ code, signal, ...output }));
++  });
++  return { child, done };
++}
++
++// This worker is passed to the *packaged* launcher for native boundary tests.
++// Product pipeline tests below use the unmodified packaged resourceWorker.
++async function nativeWorker() {
++  const request = json(process.argv[3]);
++  const first = {
++    ...status(process.pid),
++    uid: process.getuid(),
++    gid: process.getgid(),
++    mountinfo: read("/proc/self/mountinfo"),
++    cpu: read("/sys/fs/cgroup/cpu.max"),
++    memory: read("/sys/fs/cgroup/memory.max"),
++    fds: fs.readdirSync("/proc/self/fd").flatMap((fd) => {
++      try {
++        return [fs.readlinkSync(`/proc/self/fd/${fd}`)];
++      } catch {
++        return [];
++      }
++    }),
++  };
++  const tempPath = process.env.TMPDIR;
++  assert.equal(tempPath, `/proc/${process.pid}/fd/4`);
++  const tempRoot = fs.realpathSync(tempPath);
++  assert.equal(fs.fstatSync(4).ino, fs.statSync(tempRoot).ino);
++  assert.equal(tempRoot, join(process.argv[3], "..", "scratch"));
++  // A real child must be able to use the parent's alias for a Unix socket.
++  // Keep this in the existing native case so the actual packaged launcher is tested.
++  const tempChild = JSON.parse(
++    execFileSync(
++      process.execPath,
++      [
++        "--input-type=module",
++        "-e",
++        `
++    import fs from "node:fs";
++    import net from "node:net";
++    import { join } from "node:path";
++    const directory = fs.mkdtempSync(join(process.env.TMPDIR, ".org.chromium.Chromium."));
++    const socket = join(directory, "SingletonSocket");
++    const server = net.createServer();
++    await new Promise((resolve, reject) => { server.once("error", reject); server.listen(socket, resolve); });
++    console.log(JSON.stringify({ socket, uid: process.getuid(), cgroup: fs.readFileSync("/proc/self/cgroup", "utf8").trim(), realDirectory: fs.realpathSync(directory) }));
++    await new Promise((resolve) => server.close(resolve));
++    fs.rmdirSync(directory);
++  `,
++      ],
++      { encoding: "utf8", timeout: 5000 },
++    ),
++  );
++  assert.equal(tempChild.uid, 65534);
++  assert.equal(tempChild.cgroup, "0::/");
++  assert(tempChild.realDirectory.startsWith(tempRoot + "/"));
++  assert(Buffer.byteLength(tempChild.socket) < 108);
++  first.temp = { path: tempPath, realPath: tempRoot, child: tempChild };
++  assert.throws(() => fs.openSync("/sys/fs/cgroup/cgroup.procs", "w"));
++  process.send({ event: "native-ready", first });
++  process.on("message", (message) => {
++    if (message.event === "finish") {
++      process.disconnect();
++      process.exitCode = 0;
++      clearInterval(keepAlive);
++      return;
++    }
++    if (message.event !== "load") return;
++    const children = [0, 1].map(() =>
++      spawn(process.execPath, [self, "burn", request.load], { detached: true, stdio: "ignore" }),
++    );
++    process.send({ event: "descendants", pids: children.map((c) => c.pid) });
++  });
++  const keepAlive = setInterval(() => {}, 1000);
++}
++if (process.argv[2] === "burn") {
++  const buffers = [];
++  if (process.argv[3] === "memory") for (;;) buffers.push(Buffer.alloc(4 * 1024 * 1024, 1));
++  else for (;;) Math.sqrt(Math.random());
++} else if (process.argv[2] === "native-worker") {
++  await nativeWorker();
++} else if (process.argv[2] === "producer-child") {
++  const config = json(process.argv[3]);
++  const { createBudgetedProducer } = await import(config.resources);
++  const producer = createBudgetedProducer(config.options);
++  process.send({ event: "supervisor-ready" });
++  try {
++    const result = await producer.render(config.request, config.budget, { timeoutMs: 120000 });
++    process.send({ event: "result", result });
++  } catch (error) {
++    process.send({ event: "failed", message: String(error), status: producer.status() });
++  }
++  try {
++    await producer.close();
++  } catch {
++    /* Failed ownership is inspected externally. */
++  }
++  process.disconnect();
++} else if (process.argv[1] === self && process.argv[2] === "run") {
++  await runInstalledCases(process.argv[3]);
++}
++
++export async function runInstalledCases(stage) {
++  assert.equal(process.platform, "linux");
++  assert.equal(process.getuid(), 0);
++  assert(["native", "native-smoke", "pipeline", "pipeline-normal"].includes(stage));
++  const pkg = fs.realpathSync(process.env.HYPERFRAMES_RESOURCE_TEST_PACKAGE);
++  const delegation = fs.realpathSync(process.env.HYPERFRAMES_RESOURCE_TEST_CGROUP);
++  const workRoot = fs.realpathSync(process.env.HYPERFRAMES_RESOURCE_TEST_WORKDIR);
++  const evidence = process.env.HYPERFRAMES_RESOURCE_TEST_EVIDENCE;
++  assert(pkg.split("/").includes("node_modules"));
++  const entries = execFileSync(
++    process.execPath,
++    [
++      "--input-type=module",
++      "--eval",
++      'console.log(import.meta.resolve("@hyperframes/producer/resources"));console.log(import.meta.resolve("@hyperframes/producer"));',
++    ],
++    { cwd: pkg, encoding: "utf8" },
++  )
++    .trim()
++    .split("\n");
++  entries.forEach((entry) => assert(entry.startsWith(pathToFileURL(pkg + "/").href)));
++  const { createBudgetedProducer } = await import(entries[0]);
++  const { createRenderRequest } = await import(entries[1]);
++  const report = {
++    stage,
++    status: "RUNNING",
++    cases: [],
++    package: pkg,
++    bootId: read("/proc/sys/kernel/random/boot_id"),
++    runId: process.env.HYPERFRAMES_RESOURCE_TEST_RUN_ID,
++    inputSha256: process.env.HYPERFRAMES_RESOURCE_TEST_INPUT_SHA256,
++    startedMonotonicMs: Number(process.hrtime.bigint()) / 1e6,
++    nativeHashes: Object.fromEntries(
++      [
++        "resource-launcher.c",
++        "resource-supervisor.c",
++        "build.mjs",
++        "resource-launcher",
++        "resource-supervisor.node",
++      ].map((name) => [
++        name,
++        createHash("sha256")
++          .update(fs.readFileSync(join(pkg, "dist/native", name)))
++          .digest("hex"),
++      ]),
++    ),
++  };
++  const save = () => write(evidence, report);
++  async function test(name, body) {
++    const row = { name, status: "RUNNING" };
++    report.cases.push(row);
++    save();
++    try {
++      row.evidence = await body(row);
++      row.status = "PASS";
++      save();
++    } catch (error) {
++      row.status = "FAIL";
++      row.error = error.stack;
++      save();
++      throw error;
++    }
++  }
++  const budget = { cpuMillis: 1000, memoryBytes: 768 * 1024 * 1024 };
++  const options = {
++    ...budget,
++    taskCgroupRoot: delegation,
++    maxActive: 1,
++    maxQueued: 1,
++    workerUid: 65534,
++    workerGid: 65534,
++    cleanupTimeoutMs: 10000,
++  };
++  const session = join(delegation, "hyperframes-session");
++  const tasks = () =>
++    exists(session)
++      ? fs
++          .readdirSync(session, { withFileTypes: true })
++          .filter((e) => e.isDirectory())
++          .map((e) => join(session, e.name))
++      : [];
++  try {
++    if (stage === "native" || stage === "native-smoke") {
++      // Public construction loads the actual .node binding and verifies delegation.
++      await test("native-load-exclusive-owner", async () => {
++        assert.throws(
++          () => createBudgetedProducer({ ...options, memoryBytes: 1000000001 }),
++          /page size/,
++        );
++        assert(!exists(session), "Invalid page budget must not acquire a session");
++        const producer = createBudgetedProducer(options);
++        try {
++          assert.throws(() => createBudgetedProducer(options), /existing owner/);
++        } finally {
++          await producer.close();
++        }
++        return {
++          loaded: true,
++          pageBudgetRejectedBeforeSession: true,
++          sessionRemoved: !exists(session),
++        };
++      });
++      const nativeCases =
++        stage === "native-smoke"
++          ? ["normal-exit"]
++          : ["before-go", "cpu-cancel-detached", "memory-oom", "deadline", "lifeline-loss"];
++      for (const kind of nativeCases) {
++        await test(kind, async (row) => {
++          const domain = join(delegation, kind);
++          fs.mkdirSync(domain);
++          for (const [name, value] of Object.entries({
++            "cpu.max": "25000 100000",
++            "memory.max": String(192 * 1024 * 1024),
++            "memory.swap.max": "0",
++            "memory.oom.group": "1",
++          }))
++            fs.writeFileSync(join(domain, name), value);
++          const work = fs.mkdtempSync(join(workRoot, "native-"));
++          fs.chmodSync(work, 0o700);
++          fs.chownSync(work, 65534, 65534);
++          fs.mkdirSync(join(work, "scratch"), { mode: 0o700 });
++          fs.chownSync(join(work, "scratch"), 65534, 65534);
++          write(join(work, "request.json"), { load: kind === "memory-oom" ? "memory" : "cpu" });
++          // Launcher argv accepts an entry file, not additional Node arguments.
++          const entry = join(workRoot, `native-worker-${kind}.mjs`);
++          fs.writeFileSync(
++            entry,
++            `process.argv.splice(2,0,"native-worker");await import(${JSON.stringify(pathToFileURL(self).href)});\n`,
++          );
++          const binding = createRequire(import.meta.url)(
++            join(pkg, "dist/native/resource-supervisor.node"),
++          );
++          const launcher = spawn(
++            join(pkg, "dist/native/resource-launcher"),
++            [
++              domain,
++              work,
++              "output.mp4",
++              "65534",
++              "65534",
++              String(
++                Math.floor(binding.monotonicMilliseconds() + (kind === "deadline" ? 3000 : 20000)),
++              ),
++              "10000",
++              process.execPath,
++              entry,
++            ],
++            { stdio: ["pipe", "pipe", "pipe", "ipc"] },
++          );
++          const observation = observeLauncher(launcher, launcher.spawnargs, (value) => {
++            row.evidence = value;
++            save();
++          });
++          row.evidence = observation.evidence;
++          save();
++          let first,
++            descendants = [];
++          launcher.stdin.on("error", () => {});
++          try {
++            launcher.stdin.write(kind === "before-go" ? "C" : "G");
++            let cpu;
++            if (kind !== "before-go") {
++              await observation.waitReady(() => observation.evidence.first);
++              first = observation.evidence.first;
++              assert.equal(first.uid, 65534);
++              assert.equal(first.gid, 65534);
++              assert.match(first.status, /NoNewPrivs:\s+1/);
++              assert.match(first.status, /CapEff:\s+0+/);
++              assert.equal(first.cpu, "25000 100000");
++              assert.equal(first.memory, String(192 * 1024 * 1024));
++              assert.match(first.cgroup, /^0::\/$/); // native cgroup namespace rooted at A
++              assert(
++                first.fds.every((fd) => !fd.includes("cgroup")),
++                "No management FD reaches Node",
++              );
++              assert(pids(domain).includes(first.pid), "Host observes the first Node process in A");
++              observation.evidence.hostFirst = status(first.pid);
++              save();
++              if (kind === "normal-exit") launcher.send({ event: "finish" });
++              else if (kind !== "deadline") {
++                launcher.send({ event: "load" });
++                await observation.waitReady(() => observation.evidence.descendants.length === 2);
++                descendants = observation.evidence.descendants;
++                if (kind !== "memory-oom") {
++                  descendants.forEach((pid) => assert(pids(domain).includes(pid)));
++                  if (kind === "cpu-cancel-detached") {
++                    const start = performance.now(),
++                      used = statValue(read(join(domain, "cpu.stat")), "usage_usec");
++                    await delay(2000);
++                    cpu =
++                      (statValue(read(join(domain, "cpu.stat")), "usage_usec") - used) /
++                      ((performance.now() - start) * 1000);
++                    assert(cpu > 0.1 && cpu < 0.45, `Aggregate CPU ratio ${cpu}`);
++                  }
++                  if (kind === "lifeline-loss") launcher.stdin.end();
++                  else launcher.stdin.write("C");
++                }
++              }
++            }
++            const code = await Promise.race([
++              observation.done,
++              delay(16000, undefined, { ref: false }).then(() => {
++                throw new Error("Native termination deadline");
++              }),
++            ]);
++            assert.equal(code, 0, observation.evidence.stderr);
++            assert.match(observation.evidence.stdout, /"event":"drained"/);
++            if (kind === "normal-exit") {
++              const receipt = JSON.parse(observation.evidence.stdout.trim().split("\n").at(-1));
++              assert.equal(receipt.workerStatus, 0, "Worker must exit normally");
++              assert.equal(receipt.prepared, false);
++            }
++            const cleanupEntry = observation.evidence.stdout
++              .trim()
++              .split("\n")
++              .map((line) => JSON.parse(line))
++              .find((event) => event.event === "cleanup-entered");
++            assert(cleanupEntry && Number.isInteger(cleanupEntry.pid) && cleanupEntry.pid > 0);
++            assert.equal(status(cleanupEntry.pid), null, "Cleanup child must also be reaped");
++            observation.evidence.cleanupEntry = cleanupEntry;
++            assert.equal(pids(domain).length, 0);
++            assert.match(read(join(domain, "cgroup.events")), /populated 0/);
++            for (const pid of [...descendants, ...(first ? [first.pid] : [])])
++              assert.equal(status(pid), null, "Descendant must be reaped, not merely killed");
++            const memory = read(join(domain, "memory.events"));
++            if (kind === "memory-oom") assert(statValue(memory, "oom_kill") > 0);
++            if (kind === "before-go") assert.equal(first, undefined);
++            assert(!exists(work) || fs.readdirSync(work).length === 0);
++            if (exists(work)) fs.rmdirSync(work);
++            fs.rmdirSync(domain);
++            fs.unlinkSync(entry);
++            Object.assign(observation.evidence, {
++              first: first ?? null,
++              descendants,
++              cpu: cpu ?? null,
++              memory,
++              finalReaped: true,
++              domainRemoved: !exists(domain),
++              workRemoved: !exists(work),
++              domain,
++            });
++            return observation.evidence;
++          } finally {
++            if (!observation.evidence.closed) {
++              if (!observation.evidence.exitObserved) launcher.kill("SIGKILL");
++              await Promise.race([observation.done, delay(1000, undefined, { ref: false })]);
++            }
++            observation.evidence.cleanupReadback = Object.fromEntries(
++              ["cgroup.events", "memory.events", "memory.current", "pids.events"].map((name) => [
++                name,
++                exists(join(domain, name)) ? read(join(domain, name)) : null,
++              ]),
++            );
++            row.evidence = observation.evidence;
++            save();
++            // The guest platform owner, not this test, handles failed residuals.
++          }
++        });
++      }
++    } else {
++      const project = fs.realpathSync(process.env.HYPERFRAMES_RESOURCE_TEST_PROJECT);
++      const makeRequest = (outputPath, fps = 1) =>
++        createRenderRequest({
++          projectDir: project,
++          outputPath,
++          options: { fps: { num: fps, den: 1 }, quality: "draft", format: "mp4", workers: 1 },
++          engineOverrides: {
++            concurrency: 1,
++            forceScreenshot: true,
++            disableGpu: true,
++            enableBrowserPool: false,
++            chromePath: process.env.HYPERFRAMES_RESOURCE_TEST_CHROME,
++          },
++        });
++      const artifactDir = process.env.HYPERFRAMES_RESOURCE_TEST_ARTIFACT_DIR ?? workRoot;
++      const hashFile = (path) => createHash("sha256").update(fs.readFileSync(path)).digest("hex");
++      async function proveReturnedCapacity(producer, work) {
++        const result = await producer.render(makeRequest(join(work, "recovery.mp4")), budget, {
++          timeoutMs: 120000,
++        });
++        assert(result.reservationReturned);
++        assert.equal(producer.status().memoryBytes, 0);
++        assert.equal(producer.status().cpuMillis, 0);
++        assert.deepEqual(tasks(), []);
++        execFileSync(
++          "/usr/bin/ffmpeg",
++          ["-v", "error", "-xerror", "-i", result.outputPath, "-f", "null", "-"],
++          { timeout: 15000, maxBuffer: 65536 },
++        );
++        return {
++          accepted: true,
++          decoded: true,
++          reservation: producer.status(),
++          bytes: fs.statSync(result.outputPath).size,
++        };
++      }
++      await test("real-pipeline-repeat-return", async (row) => {
++        const work = fs.mkdtempSync(join(workRoot, "pipeline-"));
++        fs.chmodSync(work, 0o755);
++        const producer = createBudgetedProducer(options),
++          results = [];
++        row.evidence = results;
++        try {
++          for (let i = 0; i < 2; i++) {
++            const observed = new Map(),
++              guardians = new Set();
++            const attempt = { iteration: i + 1, descendants: [], phase: "render" };
++            results.push(attempt);
++            save();
++            let observationError;
++            const abort = new AbortController();
++            const sampler = setInterval(() => {
++              try {
++                const domain = tasks()[0];
++                if (!domain) return;
++                const initial = pids(domain)
++                  .map(status)
++                  .find((p) => p?.cmdline.includes("resourceWorker.js"));
++                if (!initial) return;
++                const guardian = Number(/^PPid:\s+(\d+)$/m.exec(initial.status)?.[1]);
++                guardians.add(guardian);
++                attempt.domain = domain;
++                const queue = [guardian],
++                  visited = new Set();
++                while (queue.length) {
++                  const parent = queue.shift();
++                  if (visited.has(parent)) continue;
++                  visited.add(parent);
++                  let threads;
++                  try {
++                    threads = fs.readdirSync(`/proc/${parent}/task`);
++                  } catch (e) {
++                    if (e.code === "ENOENT") continue;
++                    throw e;
++                  }
++                  for (const tid of threads) {
++                    let children;
++                    try {
++                      children = read(`/proc/${parent}/task/${tid}/children`);
++                    } catch (e) {
++                      if (e.code === "ENOENT") continue;
++                      throw e;
++                    }
++                    for (const pid of children.split(/\s+/).filter(Boolean).map(Number)) {
++                      const row = status(pid);
++                      if (!row) continue;
++                      assert.equal(
++                        row.cgroup,
++                        "0::" + domain.slice("/sys/fs/cgroup".length),
++                        "Observed media descendant escaped A",
++                      );
++                      observed.set(pid, row);
++                      queue.push(pid);
++                    }
++                  }
++                }
++              } catch (error) {
++                observationError = error;
++                abort.abort(error);
++              }
++            }, 10);
++            let result;
++            try {
++              result = await producer.render(makeRequest(join(work, "output.mp4")), budget, {
++                timeoutMs: 120000,
++                signal: abort.signal,
++              });
++            } finally {
++              clearInterval(sampler);
++              attempt.descendants = [...observed.values()];
++              attempt.guardians = [...guardians];
++              attempt.observationError = observationError?.stack ?? null;
++              save();
++            }
++            if (observationError) throw observationError;
++            const descendants = [...observed.values()];
++            assert(
++              descendants.some((p) => p.cmdline.includes("chrome")),
++              "Missing actual Chrome descendant evidence",
++            );
++            assert(
++              descendants.some((p) => p.cmdline.includes("ffmpeg")),
++              "Missing actual FFmpeg descendant evidence",
++            );
++            descendants.forEach((p) =>
++              assert.equal(status(p.pid), null, "Final descendants must be reaped"),
++            );
++            assert(result.reservationReturned);
++            assert(fs.statSync(result.outputPath).size > 0);
++            assert.match(result.residual.cpuStat, /usage_usec [1-9]/);
++            assert.deepEqual(tasks(), []);
++            assert.equal(producer.status().memoryBytes, 0);
++            guardians.forEach((pid) => assert.equal(status(pid), null, "Guardian must be reaped"));
++            assert.deepEqual(fs.readdirSync(work), ["output.mp4"], "Temporary objects remain");
++            const media = JSON.parse(
++              execFileSync(
++                "/usr/bin/ffprobe",
++                [
++                  "-v",
++                  "error",
++                  "-count_frames",
++                  "-show_streams",
++                  "-show_format",
++                  "-of",
++                  "json",
++                  result.outputPath,
++                ],
++                { encoding: "utf8", timeout: 10000, maxBuffer: 65536 },
++              ),
++            );
++            const video = media.streams.filter((stream) => stream.codec_type === "video");
++            assert.equal(video.length, 1);
++            assert.equal(video[0].codec_name, "h264");
++            assert(
++              Number(video[0].nb_read_frames) > 0 && video[0].width > 0 && video[0].height > 0,
++            );
++            assert(Number(media.format.duration) > 0);
++            execFileSync(
++              "/usr/bin/ffmpeg",
++              ["-v", "error", "-xerror", "-i", result.outputPath, "-f", "null", "-"],
++              { timeout: 15000, maxBuffer: 65536 },
++            );
++            const bytes = fs.statSync(result.outputPath).size;
++            const sha256 = createHash("sha256")
++              .update(fs.readFileSync(result.outputPath))
++              .digest("hex");
++            let artifact = null;
++            if (stage === "pipeline-normal" || stage === "pipeline") {
++              assert(bytes <= 1024 * 1024, "Normal export exceeds existing evidence allowance");
++              artifact = `normal-output-${i + 1}.mp4`;
++              fs.copyFileSync(result.outputPath, join(artifactDir, artifact));
++            }
++            Object.assign(attempt, result, {
++              phase: "verified",
++              bytes,
++              sha256,
++              artifact,
++              media,
++              decoded: true,
++              finalReaped: true,
++              temporaryObjectsRemoved: true,
++              remainingTasks: tasks(),
++              reservation: producer.status(),
++            });
++            save();
++          }
++          await producer.close();
++          assert(!exists(session));
++          fs.rmSync(work, { recursive: true });
++          results.forEach((attempt) =>
++            Object.assign(attempt, {
++              sessionRemoved: !exists(session),
++              workRemoved: !exists(work),
++            }),
++          );
++          return results;
++        } catch (error) {
++          const attempt = results.at(-1);
++          if (attempt) {
++            attempt.error = String(error);
++            attempt.reservationAfterError = producer.status();
++            attempt.remainingTasksAfterError = tasks();
++            attempt.reapedAfterError = attempt.descendants.map((p) => ({
++              pid: p.pid,
++              absent: status(p.pid) === null,
++            }));
++          }
++          try {
++            await producer.close();
++          } catch (closeError) {
++            if (attempt) attempt.closeError = String(closeError);
++          }
++          save();
++          throw error;
++        }
++      });
++      if (stage !== "pipeline-normal") {
++        const previousArtifact = join(artifactDir, "normal-output-1.mp4");
++        const previousHash = hashFile(previousArtifact);
++        await test("startup-oom-return", async () => {
++          const work = fs.mkdtempSync(join(workRoot, "oom-"));
++          fs.chmodSync(work, 0o755);
++          const output = join(work, "output.mp4");
++          fs.copyFileSync(previousArtifact, output);
++          const producer = createBudgetedProducer(options);
++          let fd,
++            memory = "",
++            observationError,
++            settlement;
++          const sample = () => {
++            try {
++              const domain = tasks()[0];
++              if (fd === undefined && domain) fd = fs.openSync(join(domain, "memory.events"), "r");
++              if (fd !== undefined) {
++                const buffer = Buffer.alloc(4096);
++                const text = buffer
++                  .subarray(0, fs.readSync(fd, buffer, 0, buffer.length, 0))
++                  .toString();
++                if (
++                  statValue(text, "oom_kill") > statValue(memory || "oom_kill 0", "oom_kill") ||
++                  !memory
++                )
++                  memory = text;
++              }
++            } catch (error) {
++              // Offline cgroup files can disappear after final removal. Never
++              // infer OOM from that; require a previously observed kernel counter.
++              if (error.code !== "ENOENT" && error.code !== "ENODEV") observationError = error;
++            }
++          };
++          const timer = setInterval(sample, 10);
++          try {
++            await assert.rejects(
++              producer.render(
++                makeRequest(output),
++                { ...budget, memoryBytes: 64 * 1024 * 1024 },
++                { timeoutMs: 120000 },
++              ),
++              (error) => {
++                settlement = error.settlement;
++                return Boolean(settlement?.cleanupVerified && settlement.reservationReturned);
++              },
++            );
++            assert(statValue(settlement.residual.memoryEventsLocal, "oom") > 0);
++            assert.deepEqual(settlement.pressure.triggers, []);
++            sample();
++            if (observationError) throw observationError;
++            assert(statValue(memory, "oom_kill") > 0, "A failed render alone is not OOM evidence");
++            assert.equal(hashFile(output), previousHash);
++            assert.equal(producer.status().memoryBytes, 0);
++            assert.deepEqual(tasks(), []);
++            const recovery = await proveReturnedCapacity(producer, work);
++            assert.equal(hashFile(output), previousHash);
++            await producer.close();
++            fs.rmSync(work, { recursive: true });
++            return {
++              coverage: "startup-or-media-oom-not-media-gated",
++              memory,
++              settlement,
++              memoryLimit: 64 * 1024 * 1024,
++              finalReaped: true,
++              reservationReturned: true,
++              previousOutputPreserved: true,
++              previousOutputSha256: previousHash,
++              recovery,
++            };
++          } finally {
++            clearInterval(timer);
++            if (fd !== undefined) fs.closeSync(fd);
++            try {
++              await producer.close();
++            } catch {}
++          }
++        });
++        for (const kind of [
++          "media-oom",
++          "cancel",
++          "deadline",
++          "guardian-death",
++          "supervisor-death",
++          "unknown-reference",
++          "ancestor-pressure",
++        ]) {
++          await test(`real-${kind}`, async (row) => {
++            const work = fs.mkdtempSync(join(workRoot, "failure-"));
++            fs.chmodSync(work, 0o755);
++            const output = join(work, "output.mp4");
++            fs.copyFileSync(previousArtifact, output);
++            const request = makeRequest(output, 30),
++              observed = [],
++              cancel = new AbortController();
++            let producer, child, done, failure, memoryFd, queued;
++            const started = performance.now(),
++              timeoutMs = kind === "deadline" ? 15000 : 120000;
++            const fault = { kind, mediaReady: false, observed, timeoutMs, injection: null };
++            row.evidence = fault;
++            save();
++            if (kind === "supervisor-death") {
++              const config = join(work, "case.json");
++              write(config, { resources: entries[0], options, request, budget });
++              ({ child, done } = childProcess([self, "producer-child", config]));
++            } else {
++              producer = createBudgetedProducer(options);
++              done = producer
++                .render(request, budget, {
++                  timeoutMs,
++                  signal: cancel.signal,
++                })
++                .then(
++                  () => {
++                    throw new Error("Faulted render unexpectedly succeeded");
++                  },
++                  (error) => {
++                    failure = String(error);
++                    fault.settlement = error.settlement ?? null;
++                  },
++                );
++            }
++            let settled = false,
++              outcome;
++            void done.then(
++              (value) => {
++                settled = true;
++                outcome = value;
++              },
++              (error) => {
++                settled = true;
++                outcome = { error: String(error) };
++              },
++            );
++            let domain, worker, guardian;
++            try {
++              await until(() => {
++                if (settled)
++                  throw new Error(
++                    `Render exited before media injection: ${failure ?? JSON.stringify(outcome)}`,
++                  );
++                domain = tasks()[0];
++                if (!domain) return false;
++                const gate = mediaGate(pids(domain).map(status), domain);
++                if (!gate) return false;
++                worker = gate.worker;
++                observed.push(...gate.observed);
++                Object.assign(fault, { mediaReady: true, media: gate.media, domain });
++                save();
++                guardian = Number(/^PPid:\s+(\d+)$/m.exec(worker.status)?.[1]);
++                return guardian > 0;
++              });
++              // Freeze the observed media tree, not just an exec'd Node process.
++              for (const proc of observed) {
++                try {
++                  process.kill(proc.pid, "SIGSTOP");
++                } catch (error) {
++                  if (error.code !== "ESRCH") throw error;
++                }
++              }
++              const injectionGate = mediaGate(pids(domain).map(status), domain);
++              assert(injectionGate, "Renderer and encoder must remain alive at injection");
++              observed.splice(0, observed.length, ...injectionGate.observed);
++              fault.media = injectionGate.media;
++              fault.injection = {
++                kind,
++                atElapsedMs: performance.now() - started,
++                guardian,
++                action: kind === "deadline" ? "wait-existing-deadline" : kind,
++              };
++              save();
++              assert.match(read(join(domain, "cpu.max")), /^100000 100000$/);
++              assert.equal(read(join(domain, "memory.max")), String(budget.memoryBytes));
++              fault.previousOutputSha256 = previousHash;
++              fault.reservationAtInjection = producer ? producer.status() : null;
++              save();
++              if (kind === "unknown-reference") {
++                const reserved = fs
++                  .readdirSync(work)
++                  .find((name) => fs.statSync(join(work, name)).isDirectory());
++                assert(reserved);
++                const source = join(work, reserved, "scratch", "retained");
++                fs.writeFileSync(source, "reference");
++                fs.linkSync(source, join(work, "retained-link"));
++              }
++              if (kind === "ancestor-pressure") {
++                queued = producer
++                  .render(makeRequest(join(work, "queued.mp4")), budget, { timeoutMs: 120000 })
++                  .then(
++                    () => {
++                      throw new Error("Ancestor pressure admitted queued work");
++                    },
++                    (error) => {
++                      fault.queuedRejection = String(error);
++                    },
++                  );
++                await until(() => producer.status().queued === 1);
++                fault.ancestorMemoryMaxBefore = read(join(session, "memory.max"));
++                fault.ancestorEventsBefore = read(join(session, "memory.events.local"));
++                fault.injectedAncestorMemoryMax = 64 * 1024 * 1024;
++                // Test owner changes only this session, below the unchanged
++                // outer platform boundary. A still has its original 768 MiB.
++                fs.writeFileSync(
++                  join(session, "memory.max"),
++                  String(fault.injectedAncestorMemoryMax),
++                );
++                fault.ancestorEventsAfter = read(join(session, "memory.events.local"));
++                assert(
++                  statValue(fault.ancestorEventsAfter, "oom") >
++                    statValue(fault.ancestorEventsBefore, "oom"),
++                );
++                save();
++              } else if (kind === "media-oom") {
++                memoryFd = fs.openSync(join(domain, "memory.events"), "r");
++                fault.oomBefore = read(join(domain, "memory.events"));
++                fault.injectedMemoryMax = 64 * 1024 * 1024;
++                fs.writeFileSync(join(domain, "memory.max"), String(fault.injectedMemoryMax));
++                const buffer = Buffer.alloc(4096);
++                fault.oomAfter = buffer
++                  .subarray(0, fs.readSync(memoryFd, buffer, 0, buffer.length, 0))
++                  .toString();
++                assert(
++                  statValue(fault.oomAfter, "oom_kill") > statValue(fault.oomBefore, "oom_kill"),
++                );
++                save();
++              } else if (kind === "guardian-death") process.kill(guardian, "SIGKILL");
++              else if (kind === "supervisor-death") child.kill("SIGKILL");
++              else if (kind !== "deadline") cancel.abort(new Error(kind));
++              const terminal = await Promise.race([
++                done,
++                delay(25000, undefined, { ref: false }).then(() => {
++                  throw new Error("Product cleanup deadline");
++                }),
++              ]);
++              // S's exit is not G's cleanup receipt. An empty cgroup excludes
++              // zombies; wait for G to reap the whole observed tree as well.
++              await until(
++                () =>
++                  pids(domain).length === 0 &&
++                  status(worker.pid) === null &&
++                  observed.every((proc) => status(proc.pid) === null),
++              );
++              for (const proc of observed)
++                assert.equal(status(proc.pid), null, "Observed media descendant must be reaped");
++              assert.equal(hashFile(output), previousHash);
++              fault.reaped = observed.map((proc) => ({
++                pid: proc.pid,
++                absent: status(proc.pid) === null,
++              }));
++              fault.emptyDomainBeforeTestCleanup = pids(domain).length === 0;
++              if (kind === "supervisor-death") {
++                assert.equal(terminal.signal, "SIGKILL");
++                const binding = createRequire(import.meta.url)(
++                  join(pkg, "dist/native/resource-supervisor.node"),
++                );
++                await until(() => {
++                  binding.reapTask(read("/proc/self/cgroup").slice(3));
++                  return !status(guardian);
++                });
++                assert.throws(() => createBudgetedProducer(options), /existing owner/);
++                assert.equal(
++                  fs.readdirSync(work).filter((name) => fs.statSync(join(work, name)).isDirectory())
++                    .length,
++                  0,
++                );
++                // Platform test owner may remove the empty, unreusable dead-S session.
++                fs.rmdirSync(domain);
++                fs.rmdirSync(session);
++              } else if (kind === "guardian-death" || kind === "unknown-reference") {
++                assert.match(failure, /cleanup could not be verified|quarantined/);
++                assert.equal(producer.status().quarantined, 1);
++                assert.equal(producer.status().memoryBytes, budget.memoryBytes);
++                assert.equal(producer.status().cpuMillis, budget.cpuMillis);
++                await assert.rejects(
++                  producer.render(request, budget, { timeoutMs: 1000 }),
++                  /closed|quarantined/,
++                );
++                fault.admissionRejectedWhileQuarantined = true;
++                await assert.rejects(producer.close(), /quarantined/);
++                assert.throws(() => createBudgetedProducer(options), /existing owner/);
++                // Known injected leftovers are now transferred to the platform test owner.
++                fs.rmdirSync(domain);
++                fs.rmdirSync(session);
++              } else if (kind === "ancestor-pressure") {
++                await queued;
++                assert.match(fault.queuedRejection, /admission is closed/);
++                assert(producer.status().closed);
++                assert.equal(producer.status().memoryBytes, 0);
++                assert.deepEqual(tasks(), []);
++                assert(fault.settlement.cleanupVerified && fault.settlement.reservationReturned);
++                assert.equal(statValue(fault.settlement.residual.memoryEventsLocal, "oom"), 0);
++                assert(statValue(fault.settlement.residual.memoryEventsLocal, "oom_kill") > 0);
++                assert(
++                  producer
++                    .status()
++                    .pressure.triggers.some((row) => row.path === session && row.event === "oom"),
++                );
++                assert.deepEqual(fs.readdirSync(work), ["output.mp4"]);
++                fault.temporaryObjectsRemoved = true;
++                await producer.close();
++              } else {
++                assert(failure, "Fault must reject the active render");
++                if (kind === "deadline")
++                  assert(
++                    performance.now() - started >= timeoutMs - 20,
++                    "Failure preceded the real deadline",
++                  );
++                assert.equal(producer.status().memoryBytes, 0);
++                assert(fault.settlement.cleanupVerified && fault.settlement.reservationReturned);
++                assert.match(fault.settlement.residual.cpuStat, /usage_usec [1-9]/);
++                assert.equal(producer.status().pressureFailure, undefined);
++                assert.deepEqual(producer.status().pressure.triggers, []);
++                if (kind === "media-oom")
++                  assert(statValue(fault.settlement.residual.memoryEventsLocal, "oom") > 0);
++                assert.deepEqual(tasks(), []);
++                fault.recovery = await proveReturnedCapacity(producer, work);
++                assert.equal(hashFile(output), previousHash);
++                assert.deepEqual(
++                  fs.readdirSync(work).sort(),
++                  ["output.mp4", "recovery.mp4"],
++                  "Task temporary objects remain",
++                );
++                fault.temporaryObjectsRemoved = true;
++                await producer.close();
++              }
++              fs.rmSync(work, { recursive: true });
++              Object.assign(fault, {
++                guardian,
++                failure: failure ?? null,
++                terminal: terminal ?? null,
++                elapsedMs: performance.now() - started,
++                previousOutputPreserved: true,
++                finalReaped: true,
++                reservation: producer ? producer.status() : null,
++              });
++              return fault;
++            } finally {
++              if (memoryFd !== undefined) fs.closeSync(memoryFd);
++              if (child && child.exitCode === null && child.signalCode === null)
++                child.kill("SIGKILL");
++              if (producer) {
++                cancel.abort();
++                try {
++                  await producer.close();
++                } catch {}
++              }
++              Object.assign(fault, { failure: failure ?? null, outcome: outcome ?? null });
++              row.evidence = fault;
++              save();
++            }
++          });
++        }
++      }
++    }
++    report.status = "PASS";
++    report.finishedMonotonicMs = Number(process.hrtime.bigint()) / 1e6;
++    save();
++  } catch (error) {
++    report.status = "FAIL";
++    report.finishedMonotonicMs = Number(process.hrtime.bigint()) / 1e6;
++    report.error = error.stack;
++    save();
++    throw error;
++  }
++}
+diff --git a/packages/producer/src/resources/installed-linux-evidence.test.ts b/packages/producer/src/resources/installed-linux-evidence.test.ts
+new file mode 100644
+index 000000000..f50ad0521
+--- /dev/null
++++ b/packages/producer/src/resources/installed-linux-evidence.test.ts
+@@ -0,0 +1,69 @@
++import { describe, expect, it } from "vitest";
++import { spawn } from "node:child_process";
++import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
++import { join } from "node:path";
++import { tmpdir } from "node:os";
++import { mediaGate, observeLauncher } from "./installed-linux-cases.mjs";
++
++describe("installed test evidence regressions without cgroups", () => {
++  it("retains stderr and exit status when a child exits before readiness", async () => {
++    const root = mkdtempSync(join(tmpdir(), "producer-evidence-"));
++    const path = join(root, "failure.json");
++    const child = spawn(
++      process.execPath,
++      [
++        "-e",
++        'process.stderr.write("resource-launcher: worker exec: errno=13 (Permission denied)\\n"); process.exitCode=125;',
++      ],
++      { stdio: ["ignore", "pipe", "pipe"] },
++    );
++    const observation = observeLauncher(child, child.spawnargs, (evidence: unknown) =>
++      writeFileSync(path, JSON.stringify(evidence)),
++    );
++    try {
++      await expect(observation.waitReady(() => false, 3000)).rejects.toThrow(
++        "Launcher exited before readiness",
++      );
++      await observation.done;
++      expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({
++        code: 125,
++        signal: null,
++        closed: true,
++        exitObserved: true,
++        first: null,
++        descendants: [],
++      });
++      expect(readFileSync(path, "utf8")).toContain("errno=13");
++      expect(observation.evidence.argv).toEqual(child.spawnargs);
++    } finally {
++      if (!observation.evidence.closed) child.kill("SIGKILL");
++      rmSync(root, { recursive: true, force: true });
++    }
++  });
++
++  it("does not call Node-only startup a media injection point", () => {
++    const domain = "/sys/fs/cgroup/test/task";
++    const worker = {
++      pid: 1,
++      status: "State:\tS",
++      cmdline: "/node\0/resourceWorker.js\0",
++      cgroup: "0::/test/task",
++    };
++    expect(mediaGate([worker], domain)).toBeNull();
++    const chrome = { ...worker, pid: 2, cmdline: "/browser/chrome --type=renderer --headless" };
++    const encoder = {
++      ...worker,
++      pid: 3,
++      cmdline: "/usr/bin/ffmpeg\0-i\0-\0-c:v\0libx264\0output.mp4\0",
++    };
++    expect(mediaGate([worker, chrome], domain)).toBeNull();
++    expect(mediaGate([worker, chrome, encoder], domain)?.media).toEqual([chrome, encoder]);
++    expect(
++      mediaGate([worker, chrome, { ...encoder, cmdline: "/usr/bin/ffmpeg\0-version\0" }], domain),
++    ).toBeNull();
++    expect(mediaGate([worker, { ...chrome, status: "State:\tZ" }, encoder], domain)).toBeNull();
++    expect(() =>
++      mediaGate([worker, { ...chrome, cgroup: "0::/escaped" }, encoder], domain),
++    ).toThrow("out-of-domain");
++  });
++});
+diff --git a/packages/producer/src/resources/installed-linux.test.ts b/packages/producer/src/resources/installed-linux.test.ts
+new file mode 100644
+index 000000000..3b960839c
+--- /dev/null
++++ b/packages/producer/src/resources/installed-linux.test.ts
+@@ -0,0 +1,25 @@
++import { describe, it } from "vitest";
++import { runInstalledCases } from "./installed-linux-cases.mjs";
++
++// One implementation of these cases; the guest invokes the same module with Node.
++const enabled =
++  process.platform === "linux" &&
++  process.getuid?.() === 0 &&
++  process.env.HYPERFRAMES_RESOURCE_TEST_CGROUP &&
++  process.env.HYPERFRAMES_RESOURCE_TEST_PACKAGE &&
++  process.env.HYPERFRAMES_RESOURCE_TEST_WORKDIR &&
++  process.env.HYPERFRAMES_RESOURCE_TEST_EVIDENCE;
++describe.skipIf(!enabled)("installed budgeted Producer on Linux", () => {
++  it("loads the packaged native and starts and drains a normal task", async () => {
++    await runInstalledCases("native-smoke");
++  }, 180000);
++  it("validates the packaged native boundary", async () => {
++    await runInstalledCases("native");
++  }, 180000);
++  it("exports twice through the real pipeline and returns its reservation", async () => {
++    await runInstalledCases("pipeline-normal");
++  }, 600000);
++  it("validates the real pipeline and its lifecycle", async () => {
++    await runInstalledCases("pipeline");
++  }, 600000);
++});
+diff --git a/packages/producer/src/resources/linux.test.ts b/packages/producer/src/resources/linux.test.ts
+new file mode 100644
+index 000000000..cf5eb8d4c
+--- /dev/null
++++ b/packages/producer/src/resources/linux.test.ts
+@@ -0,0 +1,35 @@
++import { describe, expect, it } from "vitest";
++import { memoryPressure, type AncestorMemory } from "./linux.js";
++
++const snapshot = (events = "high 0\nmax 0\noom 0\noom_kill 0"): AncestorMemory[] => [
++  {
++    path: "/sys/fs/cgroup/jobs/hyperframes-session",
++    memoryCurrent: "4096",
++    memoryHigh: "max",
++    memoryMax: "805306368",
++    memoryEventsLocal: events,
++  },
++];
++
++describe("ancestor-local pressure attribution", () => {
++  it("stops on an ancestor's local limit event without treating task OOM victims as ancestor pressure", () => {
++    expect(
++      memoryPressure(snapshot(), snapshot("high 0\nmax 0\noom 0\noom_kill 1")).triggers,
++    ).toEqual([]);
++    expect(
++      memoryPressure(snapshot(), snapshot("high 0\nmax 2\noom 1\noom_kill 1")).triggers,
++    ).toEqual([
++      { path: snapshot()[0]!.path, event: "max", before: "0", after: "2" },
++      { path: snapshot()[0]!.path, event: "oom", before: "0", after: "1" },
++    ]);
++  });
++  it("rejects missing counters, counter resets and ancestor identity changes", () => {
++    expect(() => memoryPressure(snapshot(), snapshot("high 0\nmax 0"))).toThrow("Missing");
++    expect(() => memoryPressure(snapshot("high 1\nmax 0\noom 0"), snapshot())).toThrow("reset");
++    expect(() => memoryPressure(snapshot(), [])).toThrow("identity");
++  });
++  it("detects already present high pressure without calculating a replacement capacity", () => {
++    const rows = snapshot().map((row) => ({ ...row, memoryHigh: "4096" }));
++    expect(memoryPressure(rows, rows).triggers[0]?.event).toBe("at-memory.high");
++  });
++});
+diff --git a/packages/producer/src/resources/linux.ts b/packages/producer/src/resources/linux.ts
+new file mode 100644
+index 000000000..c2470b42e
+--- /dev/null
++++ b/packages/producer/src/resources/linux.ts
+@@ -0,0 +1,295 @@
++import { createRequire } from "node:module";
++import {
++  accessSync,
++  constants,
++  lstatSync,
++  mkdirSync,
++  readFileSync,
++  readdirSync,
++  realpathSync,
++  rmdirSync,
++  writeFileSync,
++} from "node:fs";
++import { dirname, join, relative } from "node:path";
++import { fileURLToPath } from "node:url";
++import { randomUUID } from "node:crypto";
++import { performance } from "node:perf_hooks";
++import type { TaskBudget } from "./admission.js";
++
++interface NativeSupervisor {
++  initialize(): void;
++  pageSize(): number;
++  reapTask(membership: string): boolean;
++  monotonicMilliseconds(): number;
++}
++
++function nativeSupervisor(value: unknown): value is NativeSupervisor {
++  return (
++    typeof value === "object" &&
++    value !== null &&
++    ["initialize", "pageSize", "reapTask", "monotonicMilliseconds"].every(
++      (name) => typeof Reflect.get(value, name) === "function",
++    )
++  );
++}
++
++export interface TaskAccounting {
++  memoryCurrent: string;
++  memoryEvents: string;
++  memoryEventsLocal: string;
++  cpuStat: string;
++}
++
++export interface AncestorMemory {
++  path: string;
++  memoryCurrent: string;
++  memoryHigh: string;
++  memoryMax: string;
++  memoryEventsLocal: string;
++}
++
++export interface PressureObservation {
++  ancestors: AncestorMemory[];
++  triggers: { path: string; event: string; before: string; after: string }[];
++}
++
++function localCounter(text: string, key: string): bigint {
++  const match = new RegExp(`^${key} (\\d+)$`, "m").exec(text);
++  if (!match?.[1]) throw new Error(`Missing local memory event ${key}`);
++  return BigInt(match[1]);
++}
++
++export function memoryPressure(
++  previous: AncestorMemory[],
++  current: AncestorMemory[],
++): PressureObservation {
++  if (previous.length !== current.length) throw new Error("Ancestor pressure identity changed");
++  const triggers: PressureObservation["triggers"] = [];
++  current.forEach((row, index) => {
++    const before = previous[index];
++    if (!before || before.path !== row.path) throw new Error("Ancestor pressure identity changed");
++    // Hierarchical events include task OOMs. Only local limit/reclaim failures
++    // identify pressure at this ancestor; oom_kill describes victims instead.
++    for (const key of ["high", "max", "oom"]) {
++      const a = localCounter(before.memoryEventsLocal, key);
++      const b = localCounter(row.memoryEventsLocal, key);
++      if (b < a) throw new Error("Ancestor memory counter reset");
++      if (b > a) triggers.push({ path: row.path, event: key, before: String(a), after: String(b) });
++    }
++    if (row.memoryHigh !== "max" && BigInt(row.memoryCurrent) >= BigInt(row.memoryHigh)) {
++      triggers.push({
++        path: row.path,
++        event: "at-memory.high",
++        before: row.memoryHigh,
++        after: row.memoryCurrent,
++      });
++    }
++  });
++  return { ancestors: current, triggers };
++}
++
++export function runtimeFiles() {
++  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
++  const dist = import.meta.url.endsWith(".ts")
++    ? join(moduleDirectory, "../../dist")
++    : moduleDirectory;
++  return {
++    launcher: join(dist, "native/resource-launcher"),
++    binding: join(dist, "native/resource-supervisor.node"),
++    worker: join(dist, "resourceWorker.js"),
++  };
++}
++
++function read(path: string): string {
++  const text = readFileSync(path, "utf8");
++  if (text.length > 65536) throw new Error(`Oversized cgroup control: ${path}`);
++  return text.trim();
++}
++
++function writeVerified(root: string, name: string, value: string): void {
++  writeFileSync(join(root, name), value);
++  if (read(join(root, name)) !== value) throw new Error(`Cgroup ${name} did not retain ${value}`);
++}
++
++function cgroupPopulated(root: string): boolean {
++  const match = /^populated ([01])$/m.exec(read(join(root, "cgroup.events")));
++  if (!match) throw new Error("Missing populated evidence");
++  return match[1] === "1";
++}
++
++function setBudget(root: string, budget: TaskBudget): void {
++  writeVerified(root, "cpu.max", `${budget.cpuMillis * 100} 100000`);
++  writeVerified(root, "memory.max", String(budget.memoryBytes));
++  writeVerified(root, "memory.swap.max", "0");
++  writeVerified(root, "memory.oom.group", "1");
++}
++
++/** Owns only a fresh session under the caller's delegated, empty task root. */
++export class LinuxTasks {
++  readonly root: string;
++  private readonly native: NativeSupervisor;
++  private readonly clockOffset: number;
++  private readonly ancestorPaths: string[] = [];
++  private pressureBaseline: AncestorMemory[] = [];
++
++  // Fail-closed permission and capability checks precede the one owned session.
++  // fallow-ignore-next-line complexity
++  constructor(taskRoot: string, envelope: TaskBudget) {
++    if ("bun" in process.versions || Number(process.versions.node.split(".")[0]) < 22) {
++      throw new Error("Supervised Producer requires Node.js 22 or newer");
++    }
++    if (process.platform !== "linux" || process.getuid?.() !== 0) {
++      throw new Error(
++        "Supervised Producer requires a Linux root supervisor with an exclusive cgroup v2 delegation",
++      );
++    }
++    if (!taskRoot.startsWith("/sys/fs/cgroup/") || realpathSync(taskRoot) !== taskRoot) {
++      throw new Error("Expected a canonical delegated cgroup v2 task root");
++    }
++    const st = lstatSync(taskRoot);
++    if (!st.isDirectory() || st.uid !== 0 || (st.mode & 0o022) !== 0) {
++      throw new Error("Task management must be inaccessible to the unprivileged worker");
++    }
++    if (
++      cgroupPopulated(taskRoot) ||
++      readdirSync(taskRoot, { withFileTypes: true }).some((entry) => entry.isDirectory())
++    ) {
++      throw new Error("Delegation has an existing owner; refusing to reuse it");
++    }
++    const ownMembership = read("/proc/self/cgroup");
++    const taskMembership = `0::/${relative("/sys/fs/cgroup", taskRoot)}`;
++    if (ownMembership === taskMembership || ownMembership.startsWith(`${taskMembership}/`)) {
++      throw new Error("Supervisor must be outside the task budget root");
++    }
++    for (const controller of ["cpu", "memory"]) {
++      if (!read(join(taskRoot, "cgroup.controllers")).split(/\s+/).includes(controller)) {
++        throw new Error(`Missing delegated ${controller} controller`);
++      }
++    }
++    const files = runtimeFiles();
++    for (const path of [process.execPath, files.worker]) {
++      const canonical = realpathSync(path);
++      if (canonical.startsWith("/sys/fs/cgroup/")) {
++        throw new Error(`Runtime artifact would be hidden by a task mount: ${canonical}`);
++      }
++    }
++    let binding: unknown;
++    try {
++      accessSync(files.launcher, constants.X_OK);
++      binding = createRequire(import.meta.url)(files.binding);
++    } catch (cause) {
++      throw new Error(
++        "Build native helpers on this Linux host with: node node_modules/@hyperframes/producer/dist/native/build.mjs",
++        { cause },
++      );
++    }
++    if (!nativeSupervisor(binding)) throw new Error("Invalid packaged native supervisor");
++    this.native = binding;
++    this.validateBudget(envelope);
++    this.native.initialize();
++    // Sample native first: the small call skew shortens, never extends, the
++    // task deadline. G receives an absolute deadline, including spawn delay.
++    this.clockOffset = binding.monotonicMilliseconds() - performance.now();
++    // A fixed name makes competing S instances and unfinished owners conflict.
++    this.root = join(taskRoot, "hyperframes-session");
++    mkdirSync(this.root, { mode: 0o700 });
++    try {
++      writeFileSync(join(taskRoot, "cgroup.subtree_control"), "+cpu +memory");
++      setBudget(this.root, envelope);
++      writeFileSync(join(this.root, "cgroup.subtree_control"), "+cpu +memory");
++      for (let path = this.root; path !== "/sys/fs/cgroup"; path = dirname(path)) {
++        if (this.ancestorPaths.length >= 64) throw new Error("Too many visible cgroup ancestors");
++        this.ancestorPaths.push(path);
++      }
++      this.pressureBaseline = this.readAncestors();
++      memoryPressure(this.pressureBaseline, this.pressureBaseline);
++    } catch (error) {
++      rmdirSync(this.root);
++      throw error;
++    }
++  }
++
++  create(budget: TaskBudget): string {
++    this.validateBudget(budget);
++    const root = join(this.root, randomUUID());
++    // W receives a read-only bind of this node at its cgroup mount root.
++    // Management files stay root-owned and no delegation is given to W.
++    mkdirSync(root, { mode: 0o755 });
++    try {
++      setBudget(root, budget);
++    } catch (error) {
++      rmdirSync(root);
++      throw error;
++    }
++    return root;
++  }
++
++  deadlineAt(monotonicDeadline: number): number {
++    return Math.floor(monotonicDeadline + this.clockOffset);
++  }
++
++  kill(root: string): void {
++    this.assertOwned(root);
++    writeFileSync(join(root, "cgroup.kill"), "1");
++  }
++
++  reaped(root: string): boolean {
++    this.assertOwned(root);
++    return this.native.reapTask(`/${relative("/sys/fs/cgroup", root)}`) && !cgroupPopulated(root);
++  }
++
++  validateBudget(budget: TaskBudget): void {
++    const size = this.native.pageSize();
++    if (!Number.isSafeInteger(size) || size <= 0) throw new Error("Invalid Linux page size");
++    if (
++      !Number.isSafeInteger(budget.memoryBytes) ||
++      budget.memoryBytes <= 0 ||
++      budget.memoryBytes % size !== 0
++    ) {
++      throw new Error(
++        `memoryBytes must be a positive multiple of this Linux host's page size (${size})`,
++      );
++    }
++  }
++
++  pressure(): PressureObservation {
++    return memoryPressure(this.pressureBaseline, this.readAncestors());
++  }
++
++  private readAncestors(): AncestorMemory[] {
++    return this.ancestorPaths.map((path) => ({
++      path,
++      memoryCurrent: read(join(path, "memory.current")),
++      memoryHigh: read(join(path, "memory.high")),
++      memoryMax: read(join(path, "memory.max")),
++      memoryEventsLocal: read(join(path, "memory.events.local")),
++    }));
++  }
++
++  accounting(root: string): TaskAccounting {
++    this.assertOwned(root);
++    return {
++      memoryCurrent: read(join(root, "memory.current")),
++      memoryEvents: read(join(root, "memory.events")),
++      memoryEventsLocal: read(join(root, "memory.events.local")),
++      cpuStat: read(join(root, "cpu.stat")),
++    };
++  }
++
++  remove(root: string): TaskAccounting {
++    this.assertOwned(root);
++    if (!this.reaped(root)) throw new Error("Task still owns descendants");
++    const residual = this.accounting(root);
++    rmdirSync(root);
++    return residual;
++  }
++
++  close(): void {
++    rmdirSync(this.root);
++  }
++
++  private assertOwned(root: string): void {
++    if (dirname(root) !== this.root || realpathSync(root) !== root)
++      throw new Error("Task domain identity changed");
++  }
++}
+diff --git a/packages/producer/src/resources/supervisor.test.ts b/packages/producer/src/resources/supervisor.test.ts
+new file mode 100644
+index 000000000..832f3f077
+--- /dev/null
++++ b/packages/producer/src/resources/supervisor.test.ts
+@@ -0,0 +1,394 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { EventEmitter } from "node:events";
++import { PassThrough } from "node:stream";
++import {
++  mkdtempSync,
++  readFileSync,
++  readdirSync,
++  realpathSync,
++  rmSync,
++  writeFileSync,
++} from "node:fs";
++import { join } from "node:path";
++import { tmpdir } from "node:os";
++import { createRenderRequest } from "../renderRequest.js";
++import { ArtifactTransaction } from "../services/render/artifactTransaction.js";
++
++const boundary = vi.hoisted(() => ({
++  spawn: vi.fn(),
++  kill: vi.fn(),
++  remove: vi.fn(),
++  close: vi.fn(),
++  pressure: vi.fn<() => import("./linux.js").PressureObservation>(() => ({
++    ancestors: [],
++    triggers: [],
++  })),
++  accounting: vi.fn(),
++  cleanupFailure: false,
++  renderFailure: false,
++  publicationCleanupFailure: false,
++  guardianLost: false,
++  guardianHung: false,
++  guardianPipeHeld: false,
++}));
++vi.mock("node:child_process", async (original) => ({
++  ...(await original<typeof import("node:child_process")>()),
++  spawn: boundary.spawn,
++}));
++vi.mock("node:fs", async (original) => {
++  const fs = await original<typeof import("node:fs")>();
++  return {
++    ...fs,
++    chownSync: vi.fn(),
++    rmSync: (...args: Parameters<typeof fs.rmSync>) => {
++      if (
++        boundary.publicationCleanupFailure &&
++        typeof args[0] === "string" &&
++        args[0].split("/").at(-1)?.includes(".hf-transaction-")
++      )
++        throw new Error("injected directory cleanup failure");
++      return fs.rmSync(...args);
++    },
++  };
++});
++vi.mock("./linux.js", () => ({
++  runtimeFiles: () => ({ launcher: "/packaged/launcher", worker: "/packaged/worker" }),
++  LinuxTasks: class {
++    validateBudget() {}
++    pressure = boundary.pressure;
++    accounting = boundary.accounting;
++    deadlineAt(deadline: number) {
++      return deadline;
++    }
++    create() {
++      return "/delegated/task";
++    }
++    kill = boundary.kill;
++    reaped() {
++      return true;
++    }
++    remove = boundary.remove;
++    close = boundary.close;
++  },
++}));
++import { createBudgetedProducer } from "./supervisor.js";
++
++const directories: string[] = [];
++afterEach(() => {
++  vi.restoreAllMocks();
++  boundary.cleanupFailure = false;
++  boundary.renderFailure = false;
++  boundary.publicationCleanupFailure = false;
++  boundary.guardianLost = false;
++  boundary.guardianHung = false;
++  boundary.guardianPipeHeld = false;
++  boundary.spawn.mockReset();
++  boundary.kill.mockReset();
++  boundary.remove.mockReset();
++  boundary.pressure.mockReset().mockReturnValue({ ancestors: [], triggers: [] });
++  for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true });
++});
++
++function setup() {
++  // This suite verifies S's actual owner/transaction code using synthetic
++  // protocol receipts; it deliberately does not claim Linux mechanism proof.
++  const dir = realpathSync(
++    mkdtempSync(join(process.platform === "linux" ? "/var/tmp" : tmpdir(), "hf-resource-owner-")),
++  );
++  directories.push(dir);
++  const output = join(dir, "render.mp4");
++  writeFileSync(output, "previous");
++  const request = createRenderRequest({
++    projectDir: dir,
++    outputPath: output,
++    options: { fps: { num: 1, den: 1 }, quality: "draft", format: "mp4" },
++  });
++  boundary.remove.mockReturnValue({
++    memoryCurrent: "4096",
++    memoryEvents: "oom 0",
++    memoryEventsLocal: "oom 0",
++    cpuStat: "usage_usec 1234",
++  });
++  boundary.accounting.mockImplementation(() => boundary.remove.getMockImplementation()?.());
++  boundary.spawn.mockImplementation((_file: string, args: string[]) => {
++    const root = args[1];
++    const candidate = args[2];
++    if (!root || !candidate) throw new Error("Missing owned paths");
++    const child = new EventEmitter();
++    const stdin = new PassThrough(),
++      stdout = new PassThrough(),
++      stderr = new PassThrough();
++    let prepared = false;
++    const finish = () => {
++      for (const name of readdirSync(root)) {
++        if (name !== candidate) rmSync(join(root, name), { recursive: true, force: true });
++      }
++      stdout.write(
++        JSON.stringify({ event: "drained", prepared, workerStatus: prepared ? 0 : 256 }) + "\n",
++      );
++      child.emit("close", 0);
++    };
++    stdin.on("data", (chunk: Buffer) => {
++      if (chunk.toString() === "G")
++        queueMicrotask(() => {
++          if (boundary.guardianHung) return;
++          if (boundary.guardianPipeHeld) {
++            child.emit("exit", null, "SIGKILL");
++            return;
++          }
++          if (boundary.guardianLost) {
++            child.emit("close", 125);
++            return;
++          }
++          if (boundary.renderFailure) {
++            stderr.write("concrete browser failure: socket closed");
++            child.emit("message", {
++              event: "failed",
++              cleanupFailed: false,
++              message: "render failed",
++            });
++            finish();
++          } else if (boundary.cleanupFailure) {
++            child.emit("message", {
++              event: "failed",
++              cleanupFailed: true,
++              message: "browser close failed",
++            });
++            finish();
++          } else {
++            const workerRequest = JSON.parse(readFileSync(join(root, "request.json"), "utf8"));
++            expect(workerRequest.outputPath).toBe(join(root, candidate));
++            expect(workerRequest.projectDir).toBe(dir);
++            writeFileSync(workerRequest.outputPath, "new render");
++            child.emit("message", { event: "prepared" });
++          }
++        });
++      if (chunk.toString() === "P") prepared = true;
++    });
++    return Object.assign(child, {
++      stdin,
++      stdout,
++      stderr,
++      kill: vi.fn(),
++      send(message: unknown, callback: (error?: Error) => void) {
++        expect(message).toEqual({ event: "prepared-ack" });
++        expect(prepared).toBe(true);
++        callback();
++        queueMicrotask(finish);
++      },
++    });
++  });
++  const budget = { cpuMillis: 500, memoryBytes: 128 * 1024 * 1024 };
++  const producer = createBudgetedProducer({
++    ...budget,
++    taskCgroupRoot: "/delegated",
++    maxActive: 1,
++    maxQueued: 1,
++    workerUid: 65534,
++    workerGid: 65534,
++    cleanupTimeoutMs: 100,
++  });
++  return { producer, request, budget, output, dir };
++}
++
++describe("budgeted Producer terminal ownership", () => {
++  it("rejects queued work when an ancestor reports local pressure before releasing a permit", async () => {
++    const { producer, request, budget } = setup();
++    boundary.guardianHung = true;
++    const active = expect(producer.render(request, budget, { timeoutMs: 1000 })).rejects.toThrow();
++    await vi.waitFor(() => expect(boundary.spawn).toHaveBeenCalledTimes(1));
++    const waiting = expect(producer.render(request, budget, { timeoutMs: 5000 })).rejects.toThrow(
++      "Ancestor memory pressure",
++    );
++    await vi.waitFor(() => expect(producer.status().queued).toBe(1));
++    boundary.pressure.mockReturnValue({
++      ancestors: [],
++      triggers: [{ path: "/delegated", event: "oom", before: "0", after: "1" }],
++    });
++    await waiting;
++    expect(producer.status()).toMatchObject({ closed: true, queued: 0 });
++    expect(boundary.spawn).toHaveBeenCalledTimes(1);
++    await active;
++    await expect(producer.close()).rejects.toThrow("quarantined");
++  });
++  it("preserves failed task accounting and returns the reservation once", async () => {
++    const { producer, request, budget } = setup();
++    boundary.renderFailure = true;
++    let failure: unknown;
++    try {
++      await producer.render(request, budget, { timeoutMs: 1000 });
++    } catch (error) {
++      failure = error;
++    }
++    expect(failure).toMatchObject({
++      cause: expect.any(Error),
++      settlement: {
++        published: false,
++        cleanupVerified: true,
++        reservationReturned: true,
++        residual: {
++          memoryCurrent: "4096",
++          memoryEvents: "oom 0",
++          memoryEventsLocal: "oom 0",
++          cpuStat: "usage_usec 1234",
++        },
++      },
++    });
++    expect(boundary.remove).toHaveBeenCalledTimes(1);
++    expect(producer.status()).toMatchObject({ active: 0, cpuMillis: 0, memoryBytes: 0 });
++    await producer.close();
++  });
++
++  it("stops queued admission on pressure observation failure without abandoning active cleanup", async () => {
++    const { producer, request, budget } = setup();
++    boundary.guardianHung = true;
++    const active = expect(producer.render(request, budget, { timeoutMs: 200 })).rejects.toThrow();
++    await vi.waitFor(() => expect(boundary.spawn).toHaveBeenCalledTimes(1));
++    const queued = expect(producer.render(request, budget, { timeoutMs: 5000 })).rejects.toThrow(
++      "ancestor pressure",
++    );
++    await vi.waitFor(() => expect(producer.status().queued).toBe(1));
++    boundary.pressure.mockImplementation(() => {
++      throw new Error("local event unavailable");
++    });
++    await queued;
++    expect(boundary.spawn).toHaveBeenCalledTimes(1);
++    expect(producer.status()).toMatchObject({
++      closed: true,
++      pressureFailure: expect.stringContaining("local event unavailable"),
++    });
++    await active;
++    await expect(producer.close()).rejects.toThrow("quarantined");
++  });
++
++  it("returns a rejected promise for invalid public render input", async () => {
++    const { producer, request, budget } = setup();
++    await expect(producer.render(request, budget, { timeoutMs: 0 })).rejects.toThrow("timeoutMs");
++    expect(boundary.spawn).not.toHaveBeenCalled();
++    await producer.close();
++  });
++  it("preserves renderer diagnostics alongside its failure receipt after a verified drain", async () => {
++    const { producer, request, budget, output } = setup();
++    boundary.renderFailure = true;
++    await expect(producer.render(request, budget, { timeoutMs: 1000 })).rejects.toThrow(
++      "render failed\nconcrete browser failure: socket closed",
++    );
++    expect(readFileSync(output, "utf8")).toBe("previous");
++    expect(producer.status()).toMatchObject({ active: 0, memoryBytes: 0, quarantined: 0 });
++    expect(boundary.remove).toHaveBeenCalledWith("/delegated/task");
++    await producer.close();
++  });
++
++  it("returns a cancelled permit before any payload can start", async () => {
++    const { producer, request, budget } = setup();
++    const cancel = new AbortController();
++    const work = producer.render(request, budget, { timeoutMs: 1000, signal: cancel.signal });
++    cancel.abort(new Error("cancelled permit"));
++    await expect(work).rejects.toThrow("cancelled permit");
++    expect(boundary.spawn).not.toHaveBeenCalled();
++    expect(producer.status()).toMatchObject({ active: 0, quarantined: 0 });
++    await producer.close();
++  });
++
++  it("takes fallback drain ownership when G exits without a receipt", async () => {
++    const { producer, request, budget, output } = setup();
++    boundary.guardianLost = true;
++    await expect(producer.render(request, budget, { timeoutMs: 1000 })).rejects.toThrow(
++      "quarantined",
++    );
++    expect(boundary.kill).toHaveBeenCalledWith("/delegated/task");
++    expect(boundary.remove).not.toHaveBeenCalled();
++    expect(readFileSync(output, "utf8")).toBe("previous");
++    await expect(producer.close()).rejects.toThrow("quarantined");
++  });
++
++  it("does not wait indefinitely for inherited pipe EOF after the guardian deadline", async () => {
++    const { producer, request, budget } = setup();
++    boundary.guardianHung = true;
++    await expect(producer.render(request, budget, { timeoutMs: 25 })).rejects.toThrow(
++      "Guardian deadline exceeded",
++    );
++    expect(boundary.kill).toHaveBeenCalledWith("/delegated/task");
++    expect(producer.status().quarantined).toBe(1);
++    await expect(producer.close()).rejects.toThrow("quarantined");
++  });
++  it("kills the domain on guardian exit and bounds inherited pipes by cleanup time", async () => {
++    const { producer, request, budget, output } = setup();
++    boundary.guardianPipeHeld = true;
++    const work = expect(producer.render(request, budget, { timeoutMs: 5000 })).rejects.toThrow(
++      "Guardian exited with SIGKILL",
++    );
++    await vi.waitFor(() => expect(boundary.kill).toHaveBeenCalledWith("/delegated/task"), {
++      timeout: 200,
++    });
++    await work;
++    expect(boundary.remove).not.toHaveBeenCalled();
++    expect(readFileSync(output, "utf8")).toBe("previous");
++    expect(producer.status()).toMatchObject({
++      quarantined: 1,
++      closed: true,
++      cpuMillis: budget.cpuMillis,
++      memoryBytes: budget.memoryBytes,
++    });
++    await expect(producer.close()).rejects.toThrow("quarantined");
++  });
++  it("reports publication independently when its final directory cleanup fails", async () => {
++    const { producer, request, budget, output } = setup();
++    boundary.publicationCleanupFailure = true;
++    const result = await producer.render(request, budget, { timeoutMs: 1000 });
++    expect(result.reservationReturned).toBe(false);
++    expect(result.cleanupFailure).toContain("Output published");
++    expect(readFileSync(output, "utf8")).toBe("new render");
++    expect(producer.status()).toMatchObject({ quarantined: 1, closed: true });
++    await expect(producer.close()).rejects.toThrow("quarantined");
++  });
++  it("ACKs prepared before waiting for exit, publishes only after drain and returns reservations repeatedly", async () => {
++    const { producer, request, budget, output, dir } = setup();
++    for (let index = 0; index < 3; index++) {
++      const result = await producer.render(request, budget, { timeoutMs: 1000 });
++      expect(result).toMatchObject({
++        outputPath: output,
++        reservationReturned: true,
++        residual: { memoryCurrent: "4096" },
++      });
++      expect(producer.status()).toMatchObject({ active: 0, memoryBytes: 0, quarantined: 0 });
++      expect(readFileSync(output, "utf8")).toBe("new render");
++      expect(readdirSync(dir)).toEqual(["render.mp4"]);
++    }
++    expect(boundary.remove).toHaveBeenCalledTimes(3);
++    await producer.close();
++  });
++
++  it("lets cancellation at final validation win without destroying the previous output or leaking the reservation", async () => {
++    const { producer, request, budget, output } = setup();
++    const cancel = new AbortController();
++    const validate = ArtifactTransaction.prototype.validate;
++    vi.spyOn(ArtifactTransaction.prototype, "validate").mockImplementation(
++      async function (this: ArtifactTransaction) {
++        await validate.call(this);
++        cancel.abort(new Error("cancel at claim"));
++      },
++    );
++    await expect(
++      producer.render(request, budget, { timeoutMs: 1000, signal: cancel.signal }),
++    ).rejects.toThrow("cancel at claim");
++    expect(readFileSync(output, "utf8")).toBe("previous");
++    expect(producer.status()).toMatchObject({ active: 0, quarantined: 0 });
++    await producer.close();
++  });
++
++  it("keeps strict disposer failure quarantined even when the guardian drained all processes", async () => {
++    const { producer, request, budget, output } = setup();
++    boundary.cleanupFailure = true;
++    await expect(producer.render(request, budget, { timeoutMs: 1000 })).rejects.toThrow(
++      "quarantined",
++    );
++    expect(readFileSync(output, "utf8")).toBe("previous");
++    expect(producer.status()).toMatchObject({
++      active: 0,
++      quarantined: 1,
++      memoryBytes: budget.memoryBytes,
++    });
++    await expect(producer.close()).rejects.toThrow("quarantined");
++  });
++});
+diff --git a/packages/producer/src/resources/supervisor.ts b/packages/producer/src/resources/supervisor.ts
+new file mode 100644
+index 000000000..05d86ba7e
+--- /dev/null
++++ b/packages/producer/src/resources/supervisor.ts
+@@ -0,0 +1,501 @@
++import { spawn } from "node:child_process";
++import {
++  chownSync,
++  existsSync,
++  lstatSync,
++  mkdirSync,
++  realpathSync,
++  readdirSync,
++  rmdirSync,
++  unlinkSync,
++  writeFileSync,
++} from "node:fs";
++import { basename, dirname, isAbsolute, join } from "node:path";
++import { performance } from "node:perf_hooks";
++import { setTimeout as delay } from "node:timers/promises";
++import type { RenderRequest } from "../renderRequest.js";
++import { ArtifactTransaction } from "../services/render/artifactTransaction.js";
++import { Admission, type AdmissionLimits, type TaskBudget } from "./admission.js";
++import {
++  LinuxTasks,
++  runtimeFiles,
++  type TaskAccounting,
++  type PressureObservation,
++} from "./linux.js";
++
++export interface BudgetedProducerOptions extends AdmissionLimits {
++  /** Fresh empty cgroup v2 delegation, outside S's own control cgroup. */
++  taskCgroupRoot: string;
++  workerUid: number;
++  workerGid: number;
++  cleanupTimeoutMs: number;
++}
++
++export interface BudgetedRenderResult {
++  outputPath: string;
++  /** Reservation return is distinct from residual kernel memory accounting. */
++  reservationReturned: boolean;
++  cleanupFailure?: string;
++  residual: TaskAccounting;
++  pressure?: PressureObservation;
++}
++
++export interface TaskSettlement {
++  published: boolean;
++  cleanupVerified: boolean;
++  reservationReturned: boolean;
++  residual?: TaskAccounting;
++  accountingFailure?: string;
++  cleanupFailure?: string;
++  pressure?: PressureObservation;
++  pressureFailure?: string;
++}
++
++export class BudgetedRenderError extends Error {
++  constructor(
++    cause: unknown,
++    readonly settlement: TaskSettlement,
++  ) {
++    super(cause instanceof Error ? cause.message : String(cause), { cause });
++    this.name = "BudgetedRenderError";
++  }
++}
++
++export interface BudgetedProducer {
++  render(
++    request: RenderRequest,
++    budget: TaskBudget,
++    options: { timeoutMs: number; signal?: AbortSignal },
++  ): Promise<BudgetedRenderResult>;
++  status(): ReturnType<Admission["snapshot"]> & {
++    pressure?: PressureObservation;
++    pressureFailure?: string;
++  };
++  /** Cancels pending and active work; refuses to close a quarantined owner. */
++  close(): Promise<void>;
++}
++
++function boundedInteger(value: number, name: string): void {
++  if (!Number.isSafeInteger(value) || value <= 0 || value > 2_147_483_647)
++    throw new Error(`Invalid ${name}`);
++}
++
++function record(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++// Validate the complete supported request boundary before granting launch.
++// fallow-ignore-next-line complexity
++function requestSnapshot(request: RenderRequest): string {
++  if (
++    !isAbsolute(request.projectDir) ||
++    realpathSync(request.projectDir) !== request.projectDir ||
++    !isAbsolute(request.outputPath) ||
++    realpathSync(dirname(request.outputPath)) !== dirname(request.outputPath)
++  ) {
++    throw new Error("Supervised requests require canonical absolute project and output paths");
++  }
++  for (const path of [request.projectDir, request.outputPath]) {
++    if (path === "/sys/fs/cgroup" || path.startsWith("/sys/fs/cgroup/"))
++      throw new Error("Retained input/output cannot be inside the task cgroup view");
++  }
++  if (["scratch", "request.json"].includes(basename(request.outputPath))) {
++    throw new Error("Output basename conflicts with task control files");
++  }
++  if (
++    request.options.debug ||
++    request.options.distributed ||
++    request.options.format === "png-sequence"
++  ) {
++    throw new Error("Supervised requests require local file output without retained debug state");
++  }
++  const text = JSON.stringify(request);
++  if (Buffer.byteLength(text) > 1024 * 1024) throw new Error("Render request exceeds 1 MiB");
++  return text;
++}
++
++export function createBudgetedProducer(input: BudgetedProducerOptions): BudgetedProducer {
++  const options = Object.freeze({ ...input });
++  for (const key of ["workerUid", "workerGid", "cleanupTimeoutMs"] as const)
++    boundedInteger(options[key], key);
++  const admission = new Admission(options);
++  const linux = new LinuxTasks(options.taskCgroupRoot, options);
++  const active = new Map<AbortController, Promise<unknown>>();
++  let closePromise: Promise<void> | undefined;
++  let pressure: PressureObservation | undefined;
++  let pressureFailure: string | undefined;
++  let pressureTimer: ReturnType<typeof setInterval> | undefined;
++  const checkPressure = () => {
++    if (pressureFailure) return;
++    try {
++      pressure = linux.pressure();
++      if (pressure.triggers.length) pressureFailure = "Ancestor memory pressure";
++    } catch (error) {
++      pressureFailure = `Cannot verify ancestor pressure: ${String(error)}`;
++    }
++    if (pressureFailure) {
++      admission.close(new Error(`Producer admission is closed: ${pressureFailure}`));
++      clearInterval(pressureTimer);
++    }
++  };
++  checkPressure();
++  // This is a stop-admission guard, not a capacity estimator. Active tasks keep
++  // their hard budgets and cleanup owner. Synchronous grant/settlement checks
++  // also prevent the queue advancing between samples.
++  if (!pressureFailure) pressureTimer = setInterval(checkPressure, 100).unref();
++
++  // Keep acquisition, publication and the single terminal settlement in one owner.
++  // fallow-ignore-next-line complexity
++  async function execute(
++    requestText: string,
++    outputPath: string,
++    budget: TaskBudget,
++    signal: AbortSignal,
++    deadline: number,
++  ): Promise<BudgetedRenderResult> {
++    linux.validateBudget(budget);
++    checkPressure();
++    const reservation = await admission.acquire(budget, signal);
++    let domain: string | undefined;
++    let transaction: ArtifactTransaction | undefined;
++    let clean = true;
++    let published = false;
++    let residual: TaskAccounting | undefined;
++    let accountingFailure: string | undefined;
++    let cleanupFailure: string | undefined;
++    let failed = false;
++    let primary: unknown;
++    try {
++      checkPressure();
++      if (pressureFailure) throw new Error(`Producer admission is closed: ${pressureFailure}`);
++      signal.throwIfAborted();
++      domain = linux.create(budget);
++      transaction = new ArtifactTransaction(outputPath, "file");
++      const root = dirname(transaction.stagingPath);
++      // Input and final output retain caller ownership. Only the reserved
++      // sibling directory and its temporary objects belong to this task.
++      chownSync(root, options.workerUid, options.workerGid);
++      const scratch = join(root, "scratch");
++      mkdirSync(scratch, { mode: 0o700 });
++      chownSync(scratch, options.workerUid, options.workerGid);
++      const snapshot: unknown = JSON.parse(requestText);
++      if (!record(snapshot)) throw new Error("Invalid render request");
++      const requestFile = join(root, "request.json");
++      writeFileSync(
++        requestFile,
++        JSON.stringify({ ...snapshot, outputPath: transaction.stagingPath }),
++        { flag: "wx", mode: 0o444 },
++      );
++      clean = false;
++      const receipt = await launch(
++        domain,
++        root,
++        basename(transaction.stagingPath),
++        signal,
++        deadline,
++      );
++      clean = receipt.drained && !receipt.cleanupFailed;
++      const failureDetail = [receipt.failure, receipt.diagnostics].filter(Boolean).join("\n");
++      if (!clean)
++        throw new Error(
++          `Task cleanup could not be verified; reservation quarantined at ${domain}: ${failureDetail}`,
++        );
++      // G has reaped W, revoked its business/cleanup launch permissions, and
++      // removed scratch and the task cgroup view before this point.
++      if (!linux.reaped(domain)) {
++        clean = false;
++        throw new Error("Task descendants remain after guardian exit");
++      }
++      const names = readdirSync(root);
++      const candidateName = basename(transaction.stagingPath);
++      if (names.some((name) => name !== candidateName)) {
++        clean = false;
++        throw new Error("Unknown task-owned files remain; reservation quarantined");
++      }
++      if (receipt.failure || !receipt.prepared)
++        throw new Error(failureDetail || "Render did not prepare an artifact");
++      const candidate = lstatSync(transaction.stagingPath);
++      if (
++        !candidate.isFile() ||
++        candidate.nlink !== 1 ||
++        realpathSync(transaction.stagingPath) !== transaction.stagingPath
++      ) {
++        clean = false;
++        throw new Error("Artifact has an unknown reference or file identity");
++      }
++      signal.throwIfAborted();
++      if (performance.now() >= deadline) throw new Error("render_deadline_exceeded");
++      residual = linux.remove(domain);
++      domain = undefined;
++      await transaction.commit(signal, deadline);
++      published = true;
++      // commit's final synchronous claim checks cancellation after validation.
++      // Only the empty transaction directory may remain after publication.
++      clean = !existsSync(root);
++      if (!clean)
++        cleanupFailure =
++          "Output published; transaction cleanup failed and reservation remains quarantined";
++    } catch (error) {
++      failed = true;
++      primary = error;
++    } finally {
++      if (domain) {
++        try {
++          linux.kill(domain);
++          const until = performance.now() + options.cleanupTimeoutMs;
++          while (!linux.reaped(domain) && performance.now() < until) await delay(10);
++          if (!linux.reaped(domain)) clean = false;
++          // Recursive cleanup belongs to G in A. S removes only an empty
++          // directory; a partial/unknown tree stays quarantined for its owner.
++          if (clean) residual = linux.remove(domain);
++          else residual = linux.accounting(domain);
++        } catch (error) {
++          clean = false;
++          cleanupFailure = String(error);
++          try {
++            residual ??= linux.accounting(domain);
++          } catch (error) {
++            accountingFailure = String(error);
++          }
++        }
++      }
++      if (transaction && !published) {
++        try {
++          const root = dirname(transaction.stagingPath);
++          if (existsSync(root)) {
++            const names = readdirSync(root);
++            // Cancellation can win after G retained the sole candidate.
++            // Discarding one known file is bounded; never recurse in S.
++            if (clean && names.length === 1 && names[0] === basename(transaction.stagingPath)) {
++              const file = lstatSync(transaction.stagingPath);
++              if (file.isFile() && file.nlink === 1) unlinkSync(transaction.stagingPath);
++              else clean = false;
++            }
++            if (readdirSync(root).length === 0) rmdirSync(root);
++            else clean = false;
++          }
++        } catch (error) {
++          clean = false;
++          cleanupFailure = String(error);
++        }
++      }
++      checkPressure();
++      reservation.settle(clean);
++    }
++    if (failed)
++      throw new BudgetedRenderError(primary, {
++        published,
++        cleanupVerified: clean,
++        reservationReturned: clean,
++        residual,
++        accountingFailure,
++        cleanupFailure,
++        pressure,
++        pressureFailure,
++      });
++    if (!residual) throw new Error("Missing successful task accounting");
++    return { outputPath, reservationReturned: clean, residual, cleanupFailure, pressure };
++  }
++
++  // One bounded guardian protocol; exit, pipe EOF, ACK and cancellation share state.
++  // fallow-ignore-next-line complexity
++  async function launch(
++    domain: string,
++    root: string,
++    candidate: string,
++    signal: AbortSignal,
++    deadline: number,
++  ) {
++    const files = runtimeFiles();
++    const remaining = Math.ceil(deadline - performance.now());
++    signal.throwIfAborted();
++    if (remaining <= 0) throw new Error("render_deadline_exceeded");
++    const child = spawn(
++      files.launcher,
++      [
++        domain,
++        root,
++        candidate,
++        String(options.workerUid),
++        String(options.workerGid),
++        String(linux.deadlineAt(deadline)),
++        String(options.cleanupTimeoutMs),
++        process.execPath,
++        files.worker,
++      ],
++      {
++        stdio: ["pipe", "pipe", "pipe", "ipc"],
++        env: {
++          PATH: process.env.PATH,
++          LANG: "C.UTF-8",
++          KEEP_TEMP: "0",
++          HYPERFRAMES_EXTRACT_CACHE_DIR: "off",
++        },
++      },
++    );
++    let prepared = false,
++      drained = false,
++      cleanupFailed = false,
++      failure: string | undefined;
++    let output = "",
++      outputBytes = 0;
++    const cancel = () => {
++      if (child.stdin?.writable) child.stdin.write("C");
++    };
++    signal.addEventListener("abort", cancel, { once: true });
++    child.stdin?.on("error", () => {
++      failure ??= "Guardian lifeline failed";
++    });
++    child.on("message", (message: unknown) => {
++      if (!record(message)) {
++        failure = "Invalid worker message";
++        cancel();
++        return;
++      }
++      if (message.event === "prepared" && !prepared && !failure && !signal.aborted) {
++        prepared = true;
++        // Tell G what to retain, then ACK W before waiting for its exit.
++        child.stdin?.write("P");
++        child.send({ event: "prepared-ack" }, (error) => {
++          if (error) {
++            failure = "Prepared ACK failed";
++            cancel();
++          }
++        });
++      } else if (message.event === "failed" && typeof message.message === "string") {
++        failure = message.message.slice(0, 2048);
++        cleanupFailed = message.cleanupFailed !== false;
++      } else {
++        failure = "Unexpected worker protocol state";
++        cancel();
++      }
++    });
++    child.stdout?.on("data", (chunk: Buffer) => {
++      outputBytes += chunk.length;
++      if (outputBytes > 4096) {
++        failure = "Oversized guardian protocol";
++        cancel();
++        return;
++      }
++      output += chunk.toString("utf8");
++    });
++    let diagnosticBytes = 0;
++    let diagnostics = "";
++    child.stderr?.on("data", (chunk: Buffer) => {
++      diagnosticBytes += chunk.length;
++      diagnostics = (diagnostics + chunk.toString("utf8")).slice(-8192);
++      if (diagnosticBytes > 1024 * 1024) {
++        failure = "Worker diagnostics exceeded limit";
++        cancel();
++      }
++    });
++    // This timer bounds a stopped/uncooperative G too; S retains the fallback
++    // kill/reap responsibility, and never returns a missing G receipt.
++    let expire: (error: Error) => void = () => {};
++    const forceTerminal = () => {
++      failure ??= "Guardian deadline exceeded";
++      child.kill("SIGKILL");
++      try {
++        linux.kill(domain);
++      } catch {
++        /* Missing cleanup receipt remains quarantined. */
++      }
++      child.stdout?.destroy();
++      child.stderr?.destroy();
++      if (child.connected) child.disconnect();
++      expire(new Error(failure));
++    };
++    let watchdog = setTimeout(forceTerminal, remaining + options.cleanupTimeoutMs);
++    const guardianExited = (code: number | null, exitSignal: NodeJS.Signals | null) => {
++      if (code === 0) return;
++      failure ??= `Guardian exited with ${exitSignal ?? code}`;
++      // W and media descendants can retain G's pipes after G dies. Take
++      // fallback drain ownership on exit, before waiting for pipe EOF.
++      try {
++        linux.kill(domain);
++      } catch {
++        /* Missing cleanup receipt remains quarantined. */
++      }
++      clearTimeout(watchdog);
++      watchdog = setTimeout(
++        forceTerminal,
++        Math.max(
++          1,
++          Math.min(
++            options.cleanupTimeoutMs,
++            deadline + options.cleanupTimeoutMs - performance.now(),
++          ),
++        ),
++      );
++    };
++    child.once("exit", guardianExited);
++    try {
++      const code = await new Promise<number | null>((resolve, reject) => {
++        expire = reject;
++        child.once("error", reject);
++        child.once("close", resolve);
++        if (signal.aborted) cancel();
++        else child.stdin?.write("G");
++      });
++      if (code !== 0) failure ??= `Guardian exited with ${code}`;
++      try {
++        const events: unknown[] = output
++          .trim()
++          .split("\n")
++          .filter(Boolean)
++          .map((line) => JSON.parse(line));
++        const last = events.at(-1);
++        drained =
++          code === 0 &&
++          record(last) &&
++          last.event === "drained" &&
++          typeof last.workerStatus === "number";
++        prepared = prepared && record(last) && last.prepared === true && last.workerStatus === 0;
++      } catch {
++        failure = "Invalid guardian receipt";
++      }
++      return { drained, prepared, cleanupFailed, failure, diagnostics };
++    } finally {
++      clearTimeout(watchdog);
++      child.removeListener("exit", guardianExited);
++      signal.removeEventListener("abort", cancel);
++      child.stdin?.end();
++    }
++  }
++
++  return {
++    async render(request, budget, run) {
++      boundedInteger(run.timeoutMs, "timeoutMs");
++      const requestText = requestSnapshot(request);
++      const cancel = new AbortController();
++      const signal = run.signal ? AbortSignal.any([cancel.signal, run.signal]) : cancel.signal;
++      const deadline = performance.now() + run.timeoutMs;
++      const timer = setTimeout(
++        () => cancel.abort(new Error("render_deadline_exceeded")),
++        run.timeoutMs,
++      );
++      const work = execute(requestText, request.outputPath, { ...budget }, signal, deadline);
++      active.set(cancel, work);
++      void work
++        .finally(() => {
++          clearTimeout(timer);
++          active.delete(cancel);
++        })
++        .catch(() => {});
++      return work;
++    },
++    status: () => ({ ...admission.snapshot(), pressure, pressureFailure }),
++    close() {
++      closePromise ??= (async () => {
++        admission.close();
++        clearInterval(pressureTimer);
++        for (const cancel of active.keys()) cancel.abort(new Error("Producer closing"));
++        await Promise.allSettled(active.values());
++        if (admission.snapshot().quarantined)
++          throw new Error("Producer has quarantined task ownership");
++        linux.close();
++      })();
++      return closePromise;
++    },
++  };
++}
+diff --git a/packages/producer/src/services/render/artifactTransaction.test.ts b/packages/producer/src/services/render/artifactTransaction.test.ts
+index 771138eb4..5636fa62e 100644
+--- a/packages/producer/src/services/render/artifactTransaction.test.ts
++++ b/packages/producer/src/services/render/artifactTransaction.test.ts
+@@ -12,6 +12,7 @@ import {
+ } from "node:fs";
+ import { dirname, join } from "node:path";
+ import { tmpdir } from "node:os";
++import { performance } from "node:perf_hooks";
+ import { ArtifactTransaction, type ArtifactDurationProbe } from "./artifactTransaction.js";
+ 
+ function tempDir(): string {
+@@ -23,6 +24,43 @@ function transactionDirectories(dir: string): string[] {
+ }
+ 
+ describe("ArtifactTransaction", () => {
++  it("checks the actual deadline at the publication claim even before a timer fires", async () => {
++    const dir = tempDir();
++    const destination = join(dir, "render.mp4");
++    writeFileSync(destination, "previous");
++    const transaction = new ArtifactTransaction(destination, "file");
++    writeFileSync(transaction.stagingPath, "candidate");
++    await expect(
++      transaction.commit(new AbortController().signal, performance.now() - 1),
++    ).rejects.toThrow("render_deadline_exceeded");
++    expect(readFileSync(destination, "utf8")).toBe("previous");
++    transaction.rollback();
++    rmSync(dir, { recursive: true, force: true });
++  });
++  it("lets cancellation during the final validation boundary retain the previous output", async () => {
++    const dir = tempDir();
++    const destination = join(dir, "render.mp4");
++    writeFileSync(destination, "old");
++    const transaction = new ArtifactTransaction(destination, "file");
++    writeFileSync(transaction.stagingPath, "candidate");
++    const cancel = new AbortController();
++    const commit = transaction.commit(cancel.signal);
++    cancel.abort(new Error("cancelled before claim"));
++    await expect(commit).rejects.toThrow("cancelled before claim");
++    expect(readFileSync(destination, "utf8")).toBe("old");
++    transaction.rollback();
++    rmSync(dir, { recursive: true, force: true });
++  });
++
++  it("allows only one publication when commits overlap", async () => {
++    const dir = tempDir();
++    const transaction = new ArtifactTransaction(join(dir, "render.mp4"), "file");
++    writeFileSync(transaction.stagingPath, "candidate");
++    const outcomes = await Promise.allSettled([transaction.commit(), transaction.commit()]);
++    expect(outcomes.map(({ status }) => status)).toEqual(["fulfilled", "rejected"]);
++    expect(readFileSync(transaction.destinationPath, "utf8")).toBe("candidate");
++    rmSync(dir, { recursive: true, force: true });
++  });
+   it("uses a private, atomically reserved sibling directory", () => {
+     const dir = tempDir();
+     const destination = join(dir, "render.mp4");
+diff --git a/packages/producer/src/services/render/artifactTransaction.ts b/packages/producer/src/services/render/artifactTransaction.ts
+index 23956a36d..b13c01ea8 100644
+--- a/packages/producer/src/services/render/artifactTransaction.ts
++++ b/packages/producer/src/services/render/artifactTransaction.ts
+@@ -10,7 +10,7 @@ import {
+   rmSync,
+ } from "node:fs";
+ import { basename, dirname, extname, join, resolve } from "node:path";
+-import { extractMediaMetadata } from "../../utils/ffprobe.js";
++import { performance } from "node:perf_hooks";
+ 
+ export type ArtifactKind = "file" | "directory";
+ 
+@@ -55,6 +55,9 @@ export interface ArtifactDurationProbeResult {
+ export type ArtifactDurationProbe = (path: string) => Promise<ArtifactDurationProbeResult>;
+ 
+ async function defaultArtifactDurationProbe(path: string): Promise<ArtifactDurationProbeResult> {
++  // Keep the supervisor's artifact owner lightweight. Media probing occurs
++  // only in the worker that requested duration validation.
++  const { extractMediaMetadata } = await import("../../utils/ffprobe.js");
+   const meta = await extractMediaMetadata(path);
+   // Forward the probed frame count when ffprobe reported one. The frame
+   // count check (#3395) catches the multi-worker encode mode where the
+@@ -283,11 +286,20 @@ export class ArtifactTransaction {
+     }
+   }
+ 
+-  async commit(): Promise<void> {
++  async commit(signal?: AbortSignal, deadlineAtMonotonicMs?: number): Promise<void> {
+     if (this.state !== "active") {
+       throw new Error(`Cannot commit an artifact transaction in state ${this.state}`);
+     }
+     await this.validate();
++    // This is the final asynchronous boundary before publication. A caller
++    // cancelling during validation must win before the synchronous rename.
++    signal?.throwIfAborted();
++    if (deadlineAtMonotonicMs !== undefined && performance.now() >= deadlineAtMonotonicMs) {
++      throw new Error("render_deadline_exceeded");
++    }
++    if (this.state !== "active") {
++      throw new Error(`Cannot commit an artifact transaction in state ${this.state}`);
++    }
+     const hadDestination = this.fileSystem.existsSync(this.destinationPath);
+ 
+     // Both files and new directories publish with one rename. In particular,
+diff --git a/packages/producer/src/services/render/renderExecutionContext.test.ts b/packages/producer/src/services/render/renderExecutionContext.test.ts
+index adf1810b1..4ec277b66 100644
+--- a/packages/producer/src/services/render/renderExecutionContext.test.ts
++++ b/packages/producer/src/services/render/renderExecutionContext.test.ts
+@@ -1,3 +1,5 @@
++// fallow-ignore-file complexity
++// Each ownership regression keeps its setup and terminal assertions in one test.
+ import { describe, expect, it, vi } from "vitest";
+ import type { ProducerLogger } from "../../logger.js";
+ import type { RenderJob } from "../renderOrchestrator.js";
+@@ -21,6 +23,43 @@ function job(): RenderJob {
+ }
+ 
+ describe("RenderExecutionContext", () => {
++  it("keeps the pipeline cause together with strict cleanup failures", async () => {
++    const context = new RenderExecutionContext({
++      request: { renderJobId: "failed", projectDir: "/project", outputPath: "/out.mp4" },
++      logger: logger(),
++      requireCleanup: true,
++    });
++    const primary = new Error("encoder failed");
++    const cleanup = new Error("browser close failed");
++    context.defer("browser", () => {
++      throw cleanup;
++    });
++    await expect(context.dispose({ error: primary })).rejects.toMatchObject({
++      cause: primary,
++      errors: [primary, cleanup],
++      message: expect.stringContaining("encoder failed"),
++    });
++  });
++  it("reports every cleanup failure after running the remaining owners in strict mode", async () => {
++    const calls: string[] = [];
++    const context = new RenderExecutionContext({
++      request: { renderJobId: "strict", projectDir: "/project", outputPath: "/out.mp4" },
++      logger: logger(),
++      requireCleanup: true,
++    });
++    context.defer("scratch", () => {
++      calls.push("scratch");
++    });
++    context.defer("browser", () => {
++      throw new Error("browser close failed");
++    });
++    const first = context.dispose();
++    expect(context.dispose()).toBe(first);
++    await expect(first).rejects.toThrow("Render cleanup failed: browser");
++    expect(calls).toEqual(["scratch"]);
++    expect(context.cleanupFailures.map(({ label }) => label)).toEqual(["browser"]);
++    expect(context.cleanupFailures).not.toBe(context.cleanupFailures);
++  });
+   it("freezes request identity and scopes every log record", () => {
+     const base = logger();
+     const context = new RenderExecutionContext({
+diff --git a/packages/producer/src/services/render/renderExecutionContext.ts b/packages/producer/src/services/render/renderExecutionContext.ts
+index eb9476196..750b0545a 100644
+--- a/packages/producer/src/services/render/renderExecutionContext.ts
++++ b/packages/producer/src/services/render/renderExecutionContext.ts
+@@ -10,6 +10,8 @@ export interface RenderExecutionRequestIdentity {
+ 
+ export type RenderDisposer = () => Promise<void> | void;
+ 
++export class RenderCleanupError extends AggregateError {}
++
+ interface RegisteredDisposer {
+   active: boolean;
+   label: string;
+@@ -22,6 +24,8 @@ export interface RenderExecutionContextOptions {
+   progressSink?: ProgressCallback;
+   signal?: AbortSignal;
+   deadlineAtMs?: number;
++  /** Supervised executions cannot return their reservation after failed disposal. */
++  requireCleanup?: boolean;
+ }
+ 
+ function scopedLogger(
+@@ -58,8 +62,15 @@ export class RenderExecutionContext {
+ 
+   private readonly disposers: RegisteredDisposer[] = [];
+   private disposePromise: Promise<void> | null = null;
++  private readonly requireCleanup: boolean;
++  private readonly failures: { label: string; error: unknown }[] = [];
++
++  get cleanupFailures(): readonly { label: string; error: unknown }[] {
++    return this.failures.map((failure) => ({ ...failure }));
++  }
+ 
+   constructor(options: RenderExecutionContextOptions) {
++    this.requireCleanup = options.requireCleanup ?? false;
+     this.request = Object.freeze({ ...options.request });
+     this.signal = composeSignal(options.signal, options.deadlineAtMs);
+     this.logger = scopedLogger(options.logger, { renderJobId: options.request.renderJobId });
+@@ -83,13 +94,15 @@ export class RenderExecutionContext {
+     if (this.signal?.aborted) throw createError();
+   }
+ 
+-  dispose(): Promise<void> {
++  dispose(primary?: { error: unknown }): Promise<void> {
+     if (this.disposePromise) return this.disposePromise;
+-    this.disposePromise = this.disposeOnce();
++    this.disposePromise = this.disposeOnce(primary);
+     return this.disposePromise;
+   }
+ 
+-  private async disposeOnce(): Promise<void> {
++  // Drain every LIFO disposer once, retaining both primary and cleanup failures.
++  // fallow-ignore-next-line complexity
++  private async disposeOnce(primary?: { error: unknown }): Promise<void> {
+     await this.events.flush();
+     for (const entry of this.disposers.reverse()) {
+       if (!entry.active) continue;
+@@ -97,6 +110,7 @@ export class RenderExecutionContext {
+       try {
+         await entry.dispose();
+       } catch (error) {
++        this.failures.push({ label: entry.label, error });
+         try {
+           this.logger.debug(`Cleanup failed (${entry.label})`, {
+             error: error instanceof Error ? error.message : String(error),
+@@ -107,5 +121,12 @@ export class RenderExecutionContext {
+         }
+       }
+     }
++    if (this.requireCleanup && this.failures.length > 0) {
++      throw new RenderCleanupError(
++        [...(primary ? [primary.error] : []), ...this.failures.map(({ error }) => error)],
++        `${primary ? `${primary.error instanceof Error ? primary.error.message : String(primary.error)}; ` : ""}Render cleanup failed: ${this.failures.map(({ label }) => label).join(", ")}`,
++        primary ? { cause: primary.error } : undefined,
++      );
++    }
+   }
+ }
+diff --git a/packages/producer/src/services/renderOrchestrator.ts b/packages/producer/src/services/renderOrchestrator.ts
+index 427f15299..2686abe9d 100644
+--- a/packages/producer/src/services/renderOrchestrator.ts
++++ b/packages/producer/src/services/renderOrchestrator.ts
+@@ -2133,6 +2133,7 @@ export async function executeRenderJob(
+   outputPath: string,
+   progressSink?: ProgressCallback,
+   abortSignal?: AbortSignal,
++  executionOptions: { requireCleanup?: boolean } = {},
+ ): Promise<void> {
+   const moduleDir = dirname(fileURLToPath(import.meta.url));
+   const producerRoot = process.env.PRODUCER_RENDERS_DIR
+@@ -2152,6 +2153,7 @@ export async function executeRenderJob(
+     logger: logPath ? createRenderFileLogger(logPath, baseLog) : baseLog,
+     progressSink,
+     signal: abortSignal,
++    requireCleanup: executionOptions.requireCleanup,
+   });
+   const log = execution.logger;
+   execution.defer("remove workDir", () => {
+@@ -2163,6 +2165,7 @@ export async function executeRenderJob(
+     rmSync(workDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+   });
+ 
++  let primary: { error: unknown } | undefined;
+   try {
+     await executeRenderPipeline({
+       job,
+@@ -2173,8 +2176,11 @@ export async function executeRenderJob(
+       pipelineStart,
+       execution,
+     });
++  } catch (error) {
++    primary = { error };
++    throw error;
+   } finally {
+-    await execution.dispose();
++    await execution.dispose(primary);
+   }
+ }
+ 
