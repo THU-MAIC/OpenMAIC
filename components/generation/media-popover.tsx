@@ -57,11 +57,13 @@ const VIDEO_PROVIDER_ICONS: Record<string, string> = {
 
 type TabId = 'image' | 'video' | 'tts' | 'asr';
 
-const TABS: Array<{ id: TabId; icon: LucideIcon; label: string }> = [
-  { id: 'image', icon: ImageIcon, label: 'Image' },
-  { id: 'video', icon: Video, label: 'Video' },
-  { id: 'tts', icon: Volume2, label: 'TTS' },
-  { id: 'asr', icon: Mic, label: 'ASR' },
+// The label is a key rather than a string: this table is module scope and `t`
+// lives in the component.
+const TABS: Array<{ id: TabId; icon: LucideIcon; labelKey: string }> = [
+  { id: 'image', icon: ImageIcon, labelKey: 'media.tabImage' },
+  { id: 'video', icon: Video, labelKey: 'media.tabVideo' },
+  { id: 'tts', icon: Volume2, labelKey: 'media.tabTts' },
+  { id: 'asr', icon: Mic, labelKey: 'media.tabAsr' },
 ];
 
 function providerModels<T extends { id: string; name: string }>(
@@ -273,7 +275,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
                   )}
                 >
                   <Icon className="size-3.5" />
-                  <span className="hidden sm:inline">{tab.label}</span>
+                  <span className="hidden sm:inline">{t(tab.labelKey)}</span>
                   {isEnabled && !isActive && (
                     <span className="absolute top-1 right-1 size-1.5 rounded-full bg-violet-500" />
                   )}
