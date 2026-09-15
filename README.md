@@ -291,7 +291,11 @@ To protect your deployment with a site-level password, set `ACCESS_CODE` in `.en
 ACCESS_CODE=your-secret-code
 ```
 
+Use a long random value — at least 16 characters from a random generator — because this code is the only secret guarding the deployment.
+
 When set, visitors see a password prompt before accessing the app. All API routes are also protected. If not set, the app works as before.
+
+The code is remembered in a signed token stored in an HTTP-only cookie for 7 days; the lifetime is enforced server-side, so visitors re-verify after it expires. Verification is rate limited only when `TRUST_PROXY_HEADERS=true` is set: behind a trusted reverse proxy that overwrites `x-forwarded-for` / `x-real-ip`, each client gets its own limit of 10 attempts per 60 seconds, and a successful check clears that client's counter. Without a trusted proxy the app cannot attribute requests to a client, so there is no throttle at all — the length and randomness of the code are the protection.
 
 ### Vercel Deployment
 
