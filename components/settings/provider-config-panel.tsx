@@ -37,6 +37,7 @@ import type { ProviderConfig } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { createVerifyModelRequest, formatContextWindow } from './utils';
 import { cn } from '@/lib/utils';
+import { ApiKeySecurityNotice } from './api-key-security-notice';
 
 interface ProviderConfigPanelProps {
   provider: ProviderConfig;
@@ -224,6 +225,7 @@ export function ProviderConfigPanel({
           {/* API Key */}
           <div className="space-y-2">
             <Label>{t('settings.apiSecret')}</Label>
+            {requiresApiKey && <ApiKeySecurityNotice />}
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Input
