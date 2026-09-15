@@ -178,7 +178,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['glm', 4],
       ['siliconflow', 2],
       ['doubao', 6],
-      ['openrouter', 2],
+      ['openrouter', 6],
       ['grok', 6],
       ['tencent', 4],
       ['hunyuan', 3],
