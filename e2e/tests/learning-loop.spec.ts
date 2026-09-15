@@ -1,7 +1,7 @@
 import { expect, test } from '../fixtures/base';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
 
-const SETTINGS_STORAGE = createSettingsStorage();
+const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
 
 test.describe('ZhiGou learning loop', () => {
   test.beforeEach(async ({ page }) => {
@@ -100,5 +100,31 @@ test.describe('ZhiGou learning loop', () => {
     await expect(detail).toBeVisible();
     await expect(detail.getByRole('heading', { name: '进程与线程' })).toBeVisible();
     await expect(detail.getByText('理解两者的区别')).toBeVisible();
+  });
+
+  test('launches the built-in demo classroom without a generation request', async ({ page }) => {
+    const generationRequests: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/api/generate/')) generationRequests.push(request.url());
+    });
+
+    await page.goto('/');
+    await page.getByTestId('golden-demo-launch').click();
+
+    await expect(page).toHaveURL(/\/classroom\/zhigou-demo-linear-function$/);
+    const classroom = page.locator('[data-testid="scene-item"]');
+    await expect(classroom).toHaveCount(4, { timeout: 15_000 });
+    await expect(classroom.getByTestId('scene-title').nth(0)).toHaveText('认识一次函数');
+    await expect(classroom.getByTestId('scene-title').nth(1)).toHaveText('参数实验室');
+
+    await classroom.nth(1).click();
+    const experiment = page.frameLocator('iframe[title="Interactive Scene demo-scene-lab"]');
+    await expect(experiment.getByText('拖动参数，观察直线怎样变化')).toBeVisible();
+    await experiment.locator('#k').fill('2');
+    await expect(experiment.locator('#formula')).toHaveText('y = 2x + 0');
+
+    await classroom.nth(2).click();
+    await expect(page.getByRole('button', { name: '开始检测' })).toBeVisible();
+    expect(generationRequests).toEqual([]);
   });
 });

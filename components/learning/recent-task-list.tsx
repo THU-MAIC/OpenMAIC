@@ -10,13 +10,16 @@ import {
   Bookmark,
   Clock3,
   FileText,
+  LoaderCircle,
   Plus,
+  Presentation,
   RotateCcw,
   Sparkles,
   Target,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { ensureGoldenDemoClassroom } from '@/lib/demo/golden-classroom';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   LEARNING_TASK_DRAFT_SESSION_KEY,
@@ -25,6 +28,7 @@ import {
 } from '@/lib/learning/task-storage';
 import type { LearningTask, LearningTaskStatus } from '@/lib/learning/types';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 const STATUS_LABELS: Record<'zh-CN' | 'en-US', Record<LearningTaskStatus, string>> = {
   'zh-CN': { draft: '待继续', generating: '生成中', ready: '学习中', reviewed: '已回顾' },
@@ -45,6 +49,7 @@ export function RecentTaskList() {
   const zh = language === 'zh-CN';
   const [tasks, setTasks] = useState<LearningTask[]>([]);
   const [activeFilter, setActiveFilter] = useState<TaskFilter>('all');
+  const [launchingDemo, setLaunchingDemo] = useState(false);
 
   const refresh = useCallback(() => setTasks(loadLearningTasks()), []);
   useEffect(() => {
@@ -68,6 +73,20 @@ export function RecentTaskList() {
     if (!draft) return;
     sessionStorage.setItem(LEARNING_TASK_DRAFT_SESSION_KEY, task.id);
     router.push('/learn/new');
+  };
+
+  const launchGoldenDemo = async () => {
+    if (launchingDemo) return;
+    setLaunchingDemo(true);
+    try {
+      const { stageId } = await ensureGoldenDemoClassroom();
+      refresh();
+      router.push(`/classroom/${stageId}`);
+    } catch (error) {
+      console.error('Failed to launch golden demo classroom', error);
+      toast.error(zh ? '示例课堂准备失败，请稍后重试' : 'Could not prepare the demo classroom');
+      setLaunchingDemo(false);
+    }
   };
 
   const activeTasks = tasks.filter(
@@ -192,6 +211,26 @@ export function RecentTaskList() {
                 <Button variant="outline" onClick={() => router.push('/create')}>
                   <Sparkles className="size-4" />
                   {zh ? '自由创作课程' : 'Create a course'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  data-testid="golden-demo-launch"
+                  disabled={launchingDemo}
+                  onClick={launchGoldenDemo}
+                  className="border border-primary/15 bg-primary/10 text-primary hover:bg-primary/15"
+                >
+                  {launchingDemo ? (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  ) : (
+                    <Presentation className="size-4" />
+                  )}
+                  {launchingDemo
+                    ? zh
+                      ? '正在准备…'
+                      : 'Preparing…'
+                    : zh
+                      ? '体验示例课堂'
+                      : 'Try demo classroom'}
                 </Button>
               </div>
             </div>
