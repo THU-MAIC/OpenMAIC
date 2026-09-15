@@ -37,6 +37,24 @@ test.describe('ZhiGou learning loop', () => {
         JSON.stringify([
           {
             schemaVersion: 1,
+            id: 'task-active',
+            template: 'concept-understanding',
+            courseName: '操作系统',
+            knowledgePoint: '进程与线程',
+            learningGoal: '理解两者的区别',
+            priorKnowledge: '计算机基础',
+            status: 'ready',
+            classroomId: 'classroom-demo',
+            visitedSceneIds: ['scene-1'],
+            reviewSceneIds: ['scene-1'],
+            notes: {
+              'scene-1': { sceneId: 'scene-1', content: '线程共享进程资源', updatedAt: 2 },
+            },
+            createdAt: 2,
+            updatedAt: 2,
+          },
+          {
+            schemaVersion: 1,
             id: 'task-demo',
             template: 'concept-understanding',
             courseName: '高等数学',
@@ -59,5 +77,21 @@ test.describe('ZhiGou learning loop', () => {
     await expect(center).toBeVisible();
     await expect(center.getByText('极限', { exact: true })).toBeVisible();
     await expect(center.getByText('继续创建')).toBeVisible();
+
+    await center.getByTestId('task-filter-review').click();
+    await expect(center.getByTestId('learning-task-filter-heading')).toHaveText(
+      /待复习任务\s*·\s*1/,
+    );
+    await expect(center.getByText('进程与线程', { exact: true })).toBeVisible();
+    await expect(center.getByText('极限', { exact: true })).toHaveCount(0);
+
+    await center.getByTestId('task-filter-notes').click();
+    await expect(center.getByTestId('learning-task-filter-heading')).toHaveText(
+      /包含笔记的任务\s*·\s*1/,
+    );
+    await expect(center.getByText('进程与线程', { exact: true })).toBeVisible();
+
+    await center.getByRole('button', { name: '查看全部' }).click();
+    await expect(center.getByText('极限', { exact: true })).toBeVisible();
   });
 });
