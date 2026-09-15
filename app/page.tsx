@@ -1402,7 +1402,7 @@ export function HomePage({
                 </span>
                 <span className="min-w-0">
                   <span className="flex items-center gap-2 text-xl font-semibold tracking-tight text-foreground">
-                    {t('classroom.recentClassrooms')}
+                    {locale === 'zh-CN' ? '课程资源库' : 'Course library'}
                     {currentFolder && (
                       <>
                         <ChevronRight className="size-4 text-muted-foreground/50" />
@@ -1421,7 +1421,9 @@ export function HomePage({
                     </motion.span>
                   </span>
                   <span className="mt-0.5 block text-xs text-muted-foreground sm:text-[13px]">
-                    {t('home.libraryDescription')}
+                    {locale === 'zh-CN'
+                      ? '管理生成或导入的课程资源，按文件夹整理并随时进入课堂。'
+                      : 'Manage generated or imported courses, organize them, and reopen any classroom.'}
                   </span>
                 </span>
               </span>
