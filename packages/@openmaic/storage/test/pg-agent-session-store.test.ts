@@ -53,6 +53,125 @@ describe('PgAgentSessionStore with PGlite', () => {
   });
   runAgentSessionUrlContract('Postgres (PGlite)', () => store);
 
+  const textCases = [
+    ['before\u0000after', 'beforeafter'],
+    ['\uD800left\uDC00', '\uFFFDleft\uFFFD'],
+    ['\uD800\u0000\uDC00', '\uFFFD\uFFFD'],
+    ['  课堂 😀 café\nnext  ', '  课堂 😀 café\nnext  '],
+    [String.raw`\u0000 \ud800`, String.raw`\u0000 \ud800`],
+  ];
+
+  test('sanitizes descriptive TEXT when creating a session', async () => {
+    for (const [index, [prompt, expected]] of textCases.entries()) {
+      const id = `text-session-${index}`;
+      const created = await store.createSession(makeAgentSessionInput({ id, prompt }));
+      expect(created.prompt).toBe(expected);
+      expect((await store.getSession(id))?.prompt).toBe(expected);
+      expect(
+        (await store.listSessionsByOwner('owner-a')).find((row) => row.id === id)?.prompt,
+      ).toBe(expected);
+    }
+  });
+
+  test('sanitizes descriptive TEXT in manual titles and their owner projection', async () => {
+    await store.createSession(makeAgentSessionInput({ titleState: 'pending' }));
+    await store.claimAutomaticSessionTitle('session-1', 'owner-a');
+    for (const [title, expected] of textCases) {
+      expect((await store.setManualSessionTitle('session-1', 'owner-a', title))?.title).toBe(
+        expected,
+      );
+      expect((await store.getSession('session-1'))?.title).toBe(expected);
+      expect((await store.readAfter('owner-a', BigInt(0))).at(-1)).toMatchObject({
+        type: 'session_title',
+        title: expected,
+      });
+    }
+    expect(await store.setManualSessionTitle('session-1', 'owner-a', '\u0000')).not.toHaveProperty(
+      'title',
+    );
+    expect((await store.readAfter('owner-a', BigInt(0))).at(-1)).toMatchObject({
+      type: 'session_title',
+      title: null,
+    });
+    expect(await store.setAutomaticSessionTitle('session-1', 'owner-a', 'Late title')).toBeNull();
+  });
+
+  test('sanitizes descriptive TEXT in automatic titles and their owner projection', async () => {
+    for (const [index, [title, expected]] of textCases.entries()) {
+      const id = `text-session-${index}`;
+      await store.createSession(makeAgentSessionInput({ id, titleState: 'pending' }));
+      expect(await store.claimAutomaticSessionTitle(id, 'owner-a')).not.toBeNull();
+      expect((await store.setAutomaticSessionTitle(id, 'owner-a', title))?.title).toBe(expected);
+      expect((await store.getSession(id))?.title).toBe(expected);
+      expect((await store.readAfter('owner-a', BigInt(0))).at(-1)).toMatchObject({
+        type: 'session_title',
+        sessionId: id,
+        title: expected,
+      });
+    }
+  });
+
+  test('sanitizes descriptive TEXT errors without losing failure settlement', async () => {
+    for (const [index, [error, expected]] of textCases.entries()) {
+      const id = `text-session-${index}`;
+      await store.createSession(makeAgentSessionInput({ id }));
+      const claim = await store.claimNextSession('worker-a', 101, {
+        leaseTtlMs: 10_000,
+        maxAttempts: 3,
+        sessionId: id,
+      });
+      expect(claim).not.toBeNull();
+      expect(
+        await store.finishSession(id, 'worker-a', {
+          status: 'failed',
+          error,
+          expectedAttempt: claim!.attempt,
+        }),
+      ).toBe(true);
+      const settled = await store.getSession(id);
+      expect(settled).toMatchObject({ status: 'failed', error: expected });
+      expect(settled).not.toHaveProperty('lease');
+    }
+  });
+
+  test('keeps the automatic title reservation when descriptive TEXT sanitizes to blank', async () => {
+    await store.createSession(makeAgentSessionInput({ titleState: 'pending' }));
+    await store.claimAutomaticSessionTitle('session-1', 'owner-a');
+    const before = await store.readMaxId('owner-a');
+    expect(await store.setAutomaticSessionTitle('session-1', 'owner-a', ' \u0000\n')).toBeNull();
+    expect(await store.readMaxId('owner-a')).toBe(before);
+    expect(
+      (await store.setAutomaticSessionTitle('session-1', 'owner-a', 'Valid title'))?.title,
+    ).toBe('Valid title');
+  });
+
+  test('preserves omitted and empty error semantics after descriptive TEXT sanitization', async () => {
+    await store.createSession(makeAgentSessionInput());
+    await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
+    await store.finishSession('session-1', 'worker-a', {
+      status: 'running',
+      error: 'before\u0000after',
+      releaseLease: false,
+    });
+    expect(
+      await store.finishSession('session-1', 'worker-a', {
+        status: 'running',
+        releaseLease: false,
+      }),
+    ).toBe(true);
+    expect((await store.getSession('session-1'))?.error).toBe('beforeafter');
+    expect(
+      await store.finishSession('session-1', 'worker-a', { status: 'succeeded', error: '\u0000' }),
+    ).toBe(true);
+    expect((await db.query<{ error: string }>('SELECT error FROM agent_sessions')).rows).toEqual([
+      { error: '' },
+    ]);
+    const settled = await store.getSession('session-1');
+    expect(settled).toMatchObject({ status: 'succeeded' });
+    expect(settled).not.toHaveProperty('error');
+    expect(settled).not.toHaveProperty('lease');
+  });
+
   test('provisions all six tables idempotently', async () => {
     await expect(ensureAgentSessionSchema(db)).resolves.toBeUndefined();
     const result = await db.query<{ table_name: string }>(
