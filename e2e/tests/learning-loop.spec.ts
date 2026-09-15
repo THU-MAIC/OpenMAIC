@@ -93,5 +93,12 @@ test.describe('ZhiGou learning loop', () => {
 
     await center.getByRole('button', { name: '查看全部' }).click();
     await expect(center.getByText('极限', { exact: true })).toBeVisible();
+
+    await center.getByTestId('learning-task-card-task-active').click();
+    await expect(page).toHaveURL(/\/learn\/task-active$/);
+    const detail = page.getByTestId('learning-task-detail');
+    await expect(detail).toBeVisible();
+    await expect(detail.getByRole('heading', { name: '进程与线程' })).toBeVisible();
+    await expect(detail.getByText('理解两者的区别')).toBeVisible();
   });
 });

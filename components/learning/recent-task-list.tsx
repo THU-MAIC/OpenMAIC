@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
@@ -289,34 +290,40 @@ export function RecentTaskList() {
                   key={task.id}
                   className="group flex min-h-60 flex-col rounded-2xl border border-border/70 bg-background/55 p-4 transition-[border-color,transform,box-shadow] hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_16px_35px_-28px_color-mix(in_oklab,var(--primary)_70%,transparent)]"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <span
-                      className={cn(
-                        'rounded-full px-2 py-1 text-[11px] font-medium',
-                        task.status === 'reviewed'
-                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                          : 'bg-primary/10 text-primary',
-                      )}
-                    >
-                      {STATUS_LABELS[language][task.status]}
-                    </span>
-                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                      <Clock3 className="size-3" />
-                      {new Date(task.updatedAt).toLocaleDateString(language)}
-                    </span>
-                  </div>
-                  <p className="mt-4 text-xs font-medium text-primary/80">{task.courseName}</p>
-                  <h3 className="mt-1 line-clamp-2 font-semibold leading-6 text-foreground">
-                    {task.knowledgePoint}
-                  </h3>
-                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                    {task.learningGoal}
-                  </p>
-                  <div className="mt-4 grid grid-cols-3 gap-1 rounded-xl bg-muted/55 p-2 text-center">
-                    <TaskMetric value={visitedCount} label={zh ? '访问' : 'Visits'} />
-                    <TaskMetric value={taskReviewCount} label={zh ? '复习' : 'Review'} />
-                    <TaskMetric value={taskNoteCount} label={zh ? '笔记' : 'Notes'} />
-                  </div>
+                  <Link
+                    href={`/learn/${task.id}`}
+                    data-testid={`learning-task-card-${task.id}`}
+                    className="rounded-xl outline-none ring-primary/35 focus-visible:ring-2"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span
+                        className={cn(
+                          'rounded-full px-2 py-1 text-[11px] font-medium',
+                          task.status === 'reviewed'
+                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                            : 'bg-primary/10 text-primary',
+                        )}
+                      >
+                        {STATUS_LABELS[language][task.status]}
+                      </span>
+                      <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <Clock3 className="size-3" />
+                        {new Date(task.updatedAt).toLocaleDateString(language)}
+                      </span>
+                    </div>
+                    <p className="mt-4 text-xs font-medium text-primary/80">{task.courseName}</p>
+                    <h3 className="mt-1 line-clamp-2 font-semibold leading-6 text-foreground transition group-hover:text-primary">
+                      {task.knowledgePoint}
+                    </h3>
+                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                      {task.learningGoal}
+                    </p>
+                    <div className="mt-4 grid grid-cols-3 gap-1 rounded-xl bg-muted/55 p-2 text-center">
+                      <TaskMetric value={visitedCount} label={zh ? '访问' : 'Visits'} />
+                      <TaskMetric value={taskReviewCount} label={zh ? '复习' : 'Review'} />
+                      <TaskMetric value={taskNoteCount} label={zh ? '笔记' : 'Notes'} />
+                    </div>
+                  </Link>
                   <div className="mt-auto flex items-center justify-between gap-2 pt-4">
                     {task.classroomId ? (
                       <button
