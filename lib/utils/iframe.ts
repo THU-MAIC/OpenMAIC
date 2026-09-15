@@ -411,6 +411,54 @@ export function patchHtmlForIframe(html: string): string {
     border-color: var(--maic-iframe-border) !important;
     color: var(--maic-iframe-foreground) !important;
   }
+  :is(
+    #controls,
+    #control-panel,
+    [class*="control-panel"],
+    [class*="controls"],
+    [class*="panel"],
+    header,
+    nav,
+    aside,
+    footer,
+    [role="banner"],
+    [role="navigation"],
+    [role="complementary"],
+    [class~="header"],
+    [class~="sidebar"],
+    [class~="toolbar"],
+    [class~="footer"],
+    [class~="statusbar"],
+    [id="header"],
+    [id="sidebar"],
+    [id="toolbar"],
+    [id="footer"],
+    [id="statusbar"]
+  ) :where(h1, h2, h3, h4, p, label, small, strong, [class*="title"], [class*="label"], [class*="caption"]) {
+    color: var(--maic-iframe-foreground) !important;
+  }
+  :is(
+    #controls,
+    #control-panel,
+    [class*="control-panel"],
+    [class*="controls"],
+    [class*="panel"],
+    header,
+    nav,
+    aside,
+    footer,
+    [role="banner"],
+    [role="navigation"],
+    [role="complementary"],
+    [class~="sidebar"],
+    [class~="toolbar"],
+    [class~="statusbar"],
+    [id="sidebar"],
+    [id="toolbar"],
+    [id="statusbar"]
+  ) svg {
+    color: var(--maic-iframe-primary) !important;
+  }
   button[id*="start"],
   button[id*="reset"],
   #start-btn,

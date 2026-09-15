@@ -32,6 +32,8 @@ describe('patchHtmlForIframe', () => {
     expect(out).toContain('.active{background:#176b87}');
     expect(out).toContain('.liquid{background:#7dd3fc}');
     expect(out).toContain('[role="complementary"]');
+    expect(out).toContain('[class*="caption"]');
+    expect(out).toContain(') svg {');
   });
 
   it('runs the storage shim before the page scripts', () => {
