@@ -213,4 +213,128 @@ describe('preview renderer browser readiness', () => {
     expect(kill).toHaveBeenCalledOnce();
     expect(kill).toHaveBeenCalledWith('SIGKILL');
   });
+
+  it('installs the request guard in render() and never removes it early', async () => {
+    process.env.PRODUCER_HEADLESS_SHELL_PATH = '/test/chromium-headless-shell';
+    const mainFrame = { name: 'main' } as unknown as Frame;
+    const interceptHandlers: Array<(request: FakeRequest) => void> = [];
+    const setRequestInterception = vi.fn(async () => {});
+    const on = vi.fn((event: string, handler: unknown) => {
+      if (event === 'request') interceptHandlers.push(handler as (request: FakeRequest) => void);
+    });
+    const off = vi.fn();
+    const page = {
+      setViewport: vi.fn(async () => {}),
+      setRequestInterception,
+      mainFrame: () => mainFrame,
+      on,
+      off,
+      setContent: vi.fn(async () => {}),
+      evaluate: vi.fn(async () => true),
+      waitForSelector: vi.fn(async () => ({
+        contentFrame: async () => ({
+          waitForFunction: async () => {},
+          evaluate: async () => {},
+        }),
+      })),
+      screenshot: vi.fn(async () => Buffer.from('png')),
+    } as unknown as Page;
+    const browser = {
+      newPage: vi.fn(async () => page),
+      close: vi.fn(async () => {}),
+      process: () => ({ kill: vi.fn() }),
+    } as unknown as Browser;
+    const renderer = new ChromiumPreviewRenderer({
+      browserLauncher: { launch: vi.fn(async () => browser) } as never,
+    });
+
+    await renderer.render({
+      scene: {
+        id: 'guarded',
+        stageId: 'stage-1',
+        order: 1,
+        title: 'Guarded',
+        type: 'interactive',
+        content: { type: 'interactive', html: '<!doctype html><p>Ready</p>' },
+        actions: [],
+      },
+      stage: { id: 'stage-1', name: 'Course' },
+      viewport,
+      signal: AbortSignal.timeout(10_000),
+      deadlineMs: 10_000,
+    });
+
+    // M7: deleting the guard from render() must fail this.
+    expect(setRequestInterception).toHaveBeenCalledWith(true);
+    expect(on).toHaveBeenCalledWith('request', expect.any(Function));
+    const handler = interceptHandlers[0];
+    expect(handler).toBeTypeOf('function');
+
+    const subframe = makeRequest({
+      frame: {},
+      url: 'http://127.0.0.1:9/subframe',
+      navigation: false,
+    });
+    handler?.(subframe);
+    expect(subframe.abort).toHaveBeenCalledWith('blockedbyclient');
+    expect(subframe.continue).not.toHaveBeenCalled();
+
+    const localSubframe = makeRequest({ frame: {}, url: 'data:text/plain,x', navigation: false });
+    handler?.(localSubframe);
+    expect(localSubframe.continue).toHaveBeenCalledOnce();
+    expect(localSubframe.abort).not.toHaveBeenCalled();
+
+    // M5: a main-frame navigation away from the setContent document is aborted.
+    const mainNavigation = makeRequest({
+      frame: mainFrame,
+      url: 'http://127.0.0.1:9/main-nav',
+      navigation: true,
+    });
+    handler?.(mainNavigation);
+    expect(mainNavigation.abort).toHaveBeenCalledWith('blockedbyclient');
+    expect(mainNavigation.continue).not.toHaveBeenCalled();
+
+    const initialNavigation = makeRequest({
+      frame: mainFrame,
+      url: 'about:blank',
+      navigation: true,
+    });
+    handler?.(initialNavigation);
+    expect(initialNavigation.continue).toHaveBeenCalledOnce();
+
+    const mainAsset = makeRequest({
+      frame: mainFrame,
+      url: 'http://127.0.0.1:9/app.js',
+      navigation: false,
+    });
+    handler?.(mainAsset);
+    expect(mainAsset.continue).toHaveBeenCalledOnce();
+
+    // The disposer must run when render() returns, not before.
+    expect(off).toHaveBeenCalledWith('request', handler);
+  });
 });
+
+interface FakeRequest {
+  frame(): unknown;
+  url(): string;
+  isNavigationRequest(): boolean;
+  isInterceptResolutionHandled(): boolean;
+  continue(): Promise<void>;
+  abort(reason: string): Promise<void>;
+}
+
+function makeRequest(options: {
+  frame: unknown;
+  url: string;
+  navigation: boolean;
+}): FakeRequest & { continue: ReturnType<typeof vi.fn>; abort: ReturnType<typeof vi.fn> } {
+  return {
+    frame: () => options.frame,
+    url: () => options.url,
+    isNavigationRequest: () => options.navigation,
+    isInterceptResolutionHandled: () => false,
+    continue: vi.fn(async () => {}),
+    abort: vi.fn(async () => {}),
+  };
+}
