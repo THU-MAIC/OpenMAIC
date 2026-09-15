@@ -1,10 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-  StageAssetDocument,
-  StageAudioRow,
-  StageMediaRow,
-} from '@/lib/media/collect-stage-asset-refs';
+import type { StageAssetDocument } from '@/lib/media/collect-stage-asset-refs';
 
 const mocks = vi.hoisted(() => ({
   removeAsset: vi.fn(),
@@ -53,12 +49,9 @@ vi.mock('@/lib/utils/database', () => ({
 import {
   collectPersistedDocumentAssetRefs,
   collectStageAssetRefs,
+  loadSurvivingDocumentAssetRefs,
 } from '@/lib/media/collect-stage-asset-refs';
-import {
-  buildStageAssetReclamationPlan,
-  executeStageAssetReclamation,
-  loadStageAssetInventory,
-} from '@/lib/media/reclaim-stage-assets';
+import { clearStageMediaCache } from '@/lib/media/clear-stage-media-cache';
 
 const stageId = 'stage-matrix';
 
@@ -215,7 +208,7 @@ const mediaRefs = [
   'background-exclusive-ref',
 ];
 
-describe('stage asset reference and reclamation matrix', () => {
+describe('stage deletion: document references and the local media cache', () => {
   beforeEach(() => {
     mocks.documents.clear();
     mocks.poolBytes.clear();
@@ -248,7 +241,7 @@ describe('stage asset reference and reclamation matrix', () => {
   });
 
   it('enumerates every document reference category', () => {
-    const refs = collectStageAssetRefs(matrixDocument(), { mediaRows: [], audioRows: [] });
+    const refs = collectStageAssetRefs(matrixDocument());
 
     expect(refs.imageSrc).toEqual(
       new Set([
@@ -268,66 +261,47 @@ describe('stage asset reference and reclamation matrix', () => {
     expect(refs.videoManifestKey).toEqual(new Set(['video-media-exclusive', 'manifest-only']));
   });
 
-  it('builds a whole-stage plan from honestly stage-filtered rows', async () => {
-    const inventory = await loadStageAssetInventory(matrixDocument());
-    const plan = buildStageAssetReclamationPlan(
-      stageId,
-      inventory.refs,
-      inventory.mediaRows,
-      inventory.audioRows,
-    );
+  it('counts a ref one element names twice as one logical owner', () => {
+    const refs = collectStageAssetRefs(matrixDocument());
 
-    expect(new Set(plan.poolRefs)).toEqual(
-      new Set([...mediaRefs, 'audio-exclusive', 'audio-orphan']),
-    );
-    expect(new Set(plan.mediaRowIds)).toEqual(new Set(mediaRefs.map((ref) => `${stageId}:${ref}`)));
-    expect(new Set(plan.audioRowIds)).toEqual(new Set(['audio-exclusive', 'audio-orphan']));
-    expect(plan.poolRefs).not.toContain('foreign-course-ref');
-    expect(plan.poolRefs).not.toContain('tts_s1_action_1');
+    // `video-media-exclusive` is the element's mediaRef and a manifest key; the
+    // DSL's position-keyed accounting is what stops that from reading as two
+    // owners, which is what in-place byte replacement decides on.
+    expect(refs.referenceCounts.get('video-media-exclusive')).toBe(1);
+    expect(refs.referenceCounts.get('image-exclusive-ref')).toBe(1);
   });
 
-  it('filters unscoped and foreign legacy rows inside both pure functions', () => {
-    const mediaRows = [
-      { id: `${stageId}:image-exclusive-ref`, stageId },
-      { id: 'other-stage:foreign-course-ref', stageId: 'other-stage' },
-      { id: 'foreign-course-ref' } as unknown as StageMediaRow,
-    ];
-    const audioRows: StageAudioRow[] = [
-      { id: 'audio-exclusive', stageId },
-      { id: 'tts_s1_action_1' },
-      { id: 'audio-exclusive', stageId: 'other-stage' },
-    ];
+  it('clears every media row of the deleted stage and leaves foreign ones', async () => {
+    await clearStageMediaCache(stageId);
 
-    const refs = collectStageAssetRefs(matrixDocument(), { mediaRows, audioRows });
-    expect(refs.mediaRow).toEqual(new Set(['image-exclusive-ref']));
-    expect(refs.audioRow).toEqual(new Set(['audio-exclusive']));
-    expect(refs.poolOwned).not.toContain('foreign-course-ref');
-    expect(refs.poolOwned).not.toContain('tts_s1_action_1');
-
-    const plan = buildStageAssetReclamationPlan(stageId, refs, mediaRows, audioRows);
-    expect(plan.mediaRowIds).toEqual([`${stageId}:image-exclusive-ref`]);
-    expect(plan.audioRowIds).toEqual(['audio-exclusive']);
-  });
-
-  it('stage deletion reclaims matched rows while stage-less legacy rows survive', async () => {
-    const inventory = await loadStageAssetInventory(matrixDocument());
-    const plan = buildStageAssetReclamationPlan(
-      stageId,
-      inventory.refs,
-      inventory.mediaRows,
-      inventory.audioRows,
-    );
-
-    await executeStageAssetReclamation(plan, null);
-
-    expect(mocks.removeAsset).not.toHaveBeenCalled();
+    // Media rows are indexed by stage and belong to exactly one, so liveness
+    // never enters into it: the other course keeps its row, this one keeps none.
     expect(mocks.mediaRows).toEqual([
       { id: 'other-stage:foreign-course-ref', stageId: 'other-stage' },
     ]);
+  });
+
+  it('leaves stage-less legacy audio rows and other stages rows alone', async () => {
+    await clearStageMediaCache(stageId);
+
+    // A stage-less legacy audio id is derived from scene order and action id,
+    // so the same value occurs in unrelated documents; it is never attributed
+    // to this stage. `other-audio` belongs to a different stage outright.
     expect(mocks.audioRows).toEqual([
       { id: 'tts_s1_action_1' },
       { id: 'other-audio', stageId: 'other-stage' },
     ]);
+  });
+
+  it('never asks the asset pool to delete anything', async () => {
+    await clearStageMediaCache(stageId);
+
+    expect(mocks.removeAsset).not.toHaveBeenCalled();
+    // The bytes are still there. Releasing the registry entry, and the bytes
+    // behind it, is the server's pass, not this browser's.
+    expect(await mocks.poolBytes.get('image-exclusive-ref')?.text()).toBe(
+      'image-exclusive-ref-bytes',
+    );
   });
 
   it('preserves a globally shared pool ref when one owning stage is deleted', async () => {
@@ -348,47 +322,35 @@ describe('stage asset reference and reclamation matrix', () => {
         sharedRef,
       ),
     ).toBe(2);
-    const inventory = await loadStageAssetInventory(deletedDocument);
-    const plan = buildStageAssetReclamationPlan(
-      deletedStageId,
-      inventory.refs,
-      inventory.mediaRows,
-      inventory.audioRows,
-    );
     mocks.documents.delete(deletedStageId);
 
-    await executeStageAssetReclamation(plan, null);
+    await clearStageMediaCache(deletedStageId);
 
     expect(mocks.removeAsset).not.toHaveBeenCalledWith(sharedRef);
     expect(mocks.mediaRows).toEqual([]);
     expect(await resolveImageBytes(survivingDocument)).toBe('shared-surviving-bytes');
   });
 
-  it('preserves a shared ref referenced by a surviving slide-audio element', async () => {
+  it('preserves an audio row a surviving slide-audio element still plays', async () => {
     const sharedRef = 'ast_cross_role_alias';
     const deletedStageId = 'stage-deleted';
-    const deletedDocument = documentWithImage(deletedStageId, sharedRef);
+    const deletedDocument = documentWithSpeechAudio(deletedStageId, sharedRef);
+    // The survivor names the same id in a different role: a slide audio
+    // element's `src` rather than a speech cue's `audioId`. Liveness is about
+    // the id, not the slot it sits in.
     const survivingDocument = documentWithSlideAudio('stage-surviving', sharedRef);
-    mocks.mediaRows.splice(0, mocks.mediaRows.length, {
-      id: `${deletedStageId}:${sharedRef}`,
+    mocks.mediaRows.splice(0, mocks.mediaRows.length);
+    mocks.audioRows.splice(0, mocks.audioRows.length, {
+      id: sharedRef,
       stageId: deletedStageId,
     });
-    mocks.audioRows.splice(0, mocks.audioRows.length);
-    mocks.poolBytes.set(sharedRef, new Blob(['shared-surviving-bytes']));
     mocks.documents.set(deletedDocument.stage.id, deletedDocument);
     mocks.documents.set(survivingDocument.stage.id, survivingDocument);
-    const inventory = await loadStageAssetInventory(deletedDocument);
-    const plan = buildStageAssetReclamationPlan(
-      deletedStageId,
-      inventory.refs,
-      inventory.mediaRows,
-      inventory.audioRows,
-    );
     mocks.documents.delete(deletedStageId);
 
-    await executeStageAssetReclamation(plan, null);
+    await clearStageMediaCache(deletedStageId);
 
-    expect(mocks.removeAsset).not.toHaveBeenCalledWith(sharedRef);
+    expect(mocks.audioRows.map((row) => row.id)).toContain(sharedRef);
   });
 
   it('preserves the compatibility row of an audio ref a surviving document shares', async () => {
@@ -405,17 +367,9 @@ describe('stage asset reference and reclamation matrix', () => {
     mocks.poolBytes.set(sharedAudioId, new Blob(['shared-audio-bytes']));
     mocks.documents.set(deletedDocument.stage.id, deletedDocument);
     mocks.documents.set(survivingDocument.stage.id, survivingDocument);
-    const inventory = await loadStageAssetInventory(deletedDocument);
-    const plan = buildStageAssetReclamationPlan(
-      deletedStageId,
-      inventory.refs,
-      inventory.mediaRows,
-      inventory.audioRows,
-    );
-    expect(plan.audioRowIds).toContain(sharedAudioId);
     mocks.documents.delete(deletedStageId);
 
-    await executeStageAssetReclamation(plan, null);
+    await clearStageMediaCache(deletedStageId);
 
     // Playback, classroom export and video export read this table directly, so
     // the survivor keeps both the pool entry and its compatibility row.
@@ -436,19 +390,12 @@ describe('stage asset reference and reclamation matrix', () => {
     mocks.poolBytes.set(sharedAudioId, new Blob(['shared-audio-bytes']));
     mocks.documents.set(deletedDocument.stage.id, deletedDocument);
     mocks.documents.set(survivingDocument.stage.id, survivingDocument);
-    const inventory = await loadStageAssetInventory(deletedDocument);
-    const plan = buildStageAssetReclamationPlan(
-      deletedStageId,
-      inventory.refs,
-      inventory.mediaRows,
-      inventory.audioRows,
-    );
     mocks.documents.delete(deletedStageId);
     mocks.listDocuments.mockRejectedValue(new Error('document repository unavailable'));
 
-    await executeStageAssetReclamation(plan, null);
+    await clearStageMediaCache(deletedStageId);
 
-    // The pool entry survives, and so must the row the survivor plays from.
+    // Unknown liveness is not absence: the row the survivor plays from stays.
     expect(mocks.removeAsset).not.toHaveBeenCalled();
     expect(mocks.audioRows.map((row) => row.id)).toContain(sharedAudioId);
   });
@@ -468,101 +415,67 @@ describe('stage asset reference and reclamation matrix', () => {
     );
     mocks.poolBytes.set(exclusiveAudioId, new Blob(['exclusive-audio']));
     mocks.documents.set(deletedDocument.stage.id, deletedDocument);
-    const inventory = await loadStageAssetInventory(deletedDocument);
-    const plan = buildStageAssetReclamationPlan(
-      deletedStageId,
-      inventory.refs,
-      inventory.mediaRows,
-      inventory.audioRows,
-    );
     mocks.documents.delete(deletedStageId);
 
-    await executeStageAssetReclamation(plan, null);
+    await clearStageMediaCache(deletedStageId);
 
     expect(mocks.audioRows).toEqual([]);
   });
 
-  it('preserves a ref owned by a surviving document only through its video manifest', async () => {
+  it('counts a ref a surviving document names only in its video manifest as live', async () => {
     const sharedRef = 'ast_manifest_before_scene_insert';
-    const deletedDocument = documentWithImage('stage-deleted', sharedRef);
-    const survivingDocument = documentWithManifestRef('stage-surviving', sharedRef);
-    mocks.mediaRows.splice(0, mocks.mediaRows.length, {
-      id: `stage-deleted:${sharedRef}`,
-      stageId: 'stage-deleted',
-    });
-    mocks.audioRows.splice(0, mocks.audioRows.length);
-    mocks.documents.set(survivingDocument.stage.id, survivingDocument);
-    const inventory = await loadStageAssetInventory(deletedDocument);
-    const plan = buildStageAssetReclamationPlan(
-      deletedDocument.stage.id,
-      inventory.refs,
-      inventory.mediaRows,
-      inventory.audioRows,
-    );
+    mocks.documents.set('stage-surviving', documentWithManifestRef('stage-surviving', sharedRef));
 
-    await executeStageAssetReclamation(plan, null);
+    const liveRefs = await loadSurvivingDocumentAssetRefs();
 
-    expect(mocks.removeAsset).not.toHaveBeenCalledWith(sharedRef);
-    expect(mocks.mediaRows).toEqual([]);
+    // Media that finished before its slide was inserted is named by the
+    // manifest alone; reading only rendered elements would call it dead.
+    expect(liveRefs?.has(sharedRef)).toBe(true);
   });
 
-  it('enumerates surviving documents once for every ref in a reclamation plan', async () => {
+  it('enumerates surviving documents once for a whole stage deletion', async () => {
     mocks.documents.set('stage-one', documentWithImage('stage-one', 'unrelated-one'));
     mocks.documents.set('stage-two', documentWithManifestRef('stage-two', 'unrelated-two'));
-    const inventory = await loadStageAssetInventory(matrixDocument());
-    const plan = buildStageAssetReclamationPlan(
-      stageId,
-      inventory.refs,
-      inventory.mediaRows,
-      inventory.audioRows,
-    );
-    expect(plan.poolRefs.length).toBeGreaterThan(3);
 
-    await executeStageAssetReclamation(plan, null);
+    await clearStageMediaCache(stageId);
 
     expect(mocks.listDocuments).toHaveBeenCalledTimes(1);
     expect(mocks.loadDocument).toHaveBeenCalledTimes(2);
   });
 
-  it('fails closed when surviving document enumeration fails', async () => {
-    const exclusiveRef = 'image-exclusive-ref';
-    const inventory = await loadStageAssetInventory(matrixDocument());
-    const plan = buildStageAssetReclamationPlan(
-      stageId,
-      inventory.refs,
-      inventory.mediaRows,
-      inventory.audioRows,
-    );
+  it('does not enumerate at all when the stage owns no audio rows', async () => {
+    mocks.audioRows.splice(0, mocks.audioRows.length, { id: 'other-audio', stageId: 'other' });
+
+    await clearStageMediaCache(stageId);
+
+    // The media half needs no liveness proof, so a stage with no audio rows
+    // costs no document reads at all.
+    expect(mocks.listDocuments).not.toHaveBeenCalled();
+    expect(mocks.mediaRows.every((row) => row.stageId !== stageId)).toBe(true);
+  });
+
+  it('fails closed for audio rows when surviving document enumeration fails', async () => {
     mocks.listDocuments.mockRejectedValue(new Error('document repository unavailable'));
 
-    await executeStageAssetReclamation(plan, null);
+    await clearStageMediaCache(stageId);
 
     expect(mocks.removeAsset).not.toHaveBeenCalled();
-    expect(await mocks.poolBytes.get(exclusiveRef)?.text()).toBe(`${exclusiveRef}-bytes`);
     expect(mocks.mediaRows.every((row) => row.stageId !== stageId)).toBe(true);
     // Audio rows are globally keyed, so losing one is as irreversible for
     // playback and the export paths as removing the pool entry: unknown
     // liveness keeps them and leaves bounded garbage behind.
     expect(mocks.audioRows.map((row) => row.id)).toEqual(
-      expect.arrayContaining([...plan.audioRowIds]),
+      expect.arrayContaining(['audio-exclusive', 'audio-orphan']),
     );
   });
 
-  it('cleans compatibility rows without touching the asset pool', async () => {
-    const inventory = await loadStageAssetInventory(matrixDocument());
-    const plan = buildStageAssetReclamationPlan(
-      stageId,
-      inventory.refs,
-      inventory.mediaRows,
-      inventory.audioRows,
-    );
-    mocks.removeAsset.mockRejectedValueOnce(new Error('broken entry'));
+  it('holds no registry reclamation of its own', () => {
+    const source = readFileSync('lib/media/clear-stage-media-cache.ts', 'utf8');
 
-    await executeStageAssetReclamation(plan, null);
-
-    expect(mocks.removeAsset).not.toHaveBeenCalled();
-    expect(mocks.mediaRows.every((row) => row.stageId !== stageId)).toBe(true);
-    expect(mocks.audioRows.every((row) => row.stageId !== stageId)).toBe(true);
+    // The registry half of stage deletion is the server's: deleting the
+    // document withdraws its references, and the collector releases an entry
+    // nothing claims. A browser that tried would be refused, and must not try.
+    expect(source).not.toMatch(/asset-pool|removeAsset/);
   });
 
   it.each([
@@ -573,7 +486,7 @@ describe('stage asset reference and reclamation matrix', () => {
   ])('%s cannot remove pool or Dexie assets', (_entryPoint, file) => {
     const source = readFileSync(file, 'utf8');
     expect(source).not.toMatch(
-      /(?:reclaim-stage-assets|removeAsset|\.(?:audioFiles|mediaFiles)\.(?:delete|bulkDelete))/,
+      /(?:clear-stage-media-cache|removeAsset|\.(?:audioFiles|mediaFiles)\.(?:delete|bulkDelete))/,
     );
   });
 });

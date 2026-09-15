@@ -917,6 +917,27 @@ export async function transformParsedToSlides(
           warnUnconvertibleMedia(ctx, slideIndex, 'A video poster', el.src);
           slide.elements.push(videoElement);
 
+          // Use the same injectable uploader as other images. The default
+          // context returns the data URL unchanged when no upload is configured.
+          if (el.src?.startsWith('data:image/')) {
+            const extension =
+              el.src
+                .match(/^data:image\/([^;,]+)/)?.[1]
+                .replace('jpeg', 'jpg')
+                .replace('svg+xml', 'svg') || 'png';
+            uploadTasks.push(
+              limitUpload(() =>
+                ctx.uploadBase64Image(el.src!, `poster_${videoElement.id}.${extension}`, 'a2m'),
+              )
+                .then((url) => {
+                  videoElement.poster = url;
+                })
+                .catch((error) => {
+                  console.error('视频封面上传失败:', error);
+                }),
+            );
+          }
+
           // 上传到 OSS
           if (el.blob && el.blob.startsWith('blob:')) {
             uploadTasks.push(

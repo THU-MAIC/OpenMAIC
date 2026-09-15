@@ -534,9 +534,13 @@ export async function generateAndStoreTTS(
  * the new id reaching a durable document, so deleting the old bytes could
  * leave a still-referenced action pointing at nothing if the save that follows
  * fails; and the exclusivity that would make deletion safe is the same proof
- * that is unavailable. Nothing reclaims it either: the stage-scoped registry
- * sweep is written but deliberately not wired up, so a superseded clip's entry
- * and bytes persist. Every regeneration therefore leaves one behind.
+ * that is unavailable. It does not have to be removed here: the save that
+ * writes the new id is also the write that stops naming the old one, so the
+ * server stamps the superseded entry as it lands and the collector releases it
+ * after the grace period, the bytes following after their own. If that save
+ * never lands, it is the NEW id that nothing committed, and it expires on
+ * `ASSET_PENDING_TTL_MS` — either way regeneration leaves nothing permanent
+ * behind.
  */
 async function allocatePooledAudio(
   blob: Blob,

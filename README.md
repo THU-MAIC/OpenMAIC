@@ -403,19 +403,48 @@ is active without also affecting the default deployment. Startup therefore
 relies on the embedded route's retry-on-next-request behavior while PostgreSQL
 becomes healthy.
 
-Deleting or replacing an asset only drops its registry entry; the bytes behind
-it are reclaimed afterwards by an offline collector. **This deployment runs that
-collector by default**, so nothing has to be configured for asset storage to
-stop growing. A pass runs every `ASSET_COLLECTION_INTERVAL_MS` (default 15
-minutes) over bytes that have been unreferenced for longer than
-`ASSET_COLLECTION_GRACE_MS` (default 1 hour); the grace period is the retention
-window a user's deleted bytes actually get, so raise it deliberately. Set
+Assets are reclaimed by an offline collector rather than on a request path.
+**This deployment runs that collector by default**, so nothing has to be
+configured for asset storage to stop growing. A pass runs every
+`ASSET_COLLECTION_INTERVAL_MS` (default 15 minutes) and has two levels. It first
+releases registry entries — an allocation no document claimed before its pending
+window ran out, and an entry whose last document reference left longer ago than
+`ASSET_COLLECTION_GRACE_MS` (default 1 hour) — and then deletes the bytes whose
+last entry left, after the same grace. The two levels wait in sequence:
+releasing an entry is what leaves its bytes unreferenced, so the bytes start
+their own grace only once the entry has served its. The worst case from "the
+last document stopped naming this" to "the bytes are gone" is therefore two
+grace periods, not one. That window is the retention a user's deleted media
+actually gets, so raise it deliberately. Set
 `ASSET_COLLECTION_ENABLED=0` to switch collection off in a process. A
-horizontally scaled deployment may leave it on in every instance — each blob row
-is locked and re-checked before its bytes go, so concurrent collectors serialize
+horizontally scaled deployment may leave it on in every instance — each row is
+locked and re-checked before anything goes, so concurrent collectors serialize
 rather than race — or disable it everywhere and run its own.
 
-One asset principal may hold `ASSET_QUOTA_BYTES` (default 10 GiB) before further
+The server owns that bookkeeping end to end, and it needs no configuration
+because it is not optional here: every document write records which assets the
+document names and commits the allocations it names, which is exactly what the
+collector reads. A browser never deletes an asset and is never asked to.
+
+Deleting a course releases the assets it was holding. The course id itself is
+retired permanently rather than removed — that is what keeps a deleted id from
+being claimed again — but the references it held are withdrawn in the same
+transaction, so its media stops counting against the quota immediately. The
+entry is released after one grace period and its bytes after a second, as
+above. The grace period is the undo: within it the assets are still there.
+
+`ASSET_PENDING_TTL_MS` (default 24 hours) is how long an allocation stays
+*pending* — its bytes are stored, but no document names its id yet. A client
+stores bytes first and writes the id into the document afterwards, and nothing
+leases that gap, so the window has to outlive a whole generation pass plus a
+write-back waiting for the slide it belongs to: media routinely finishes before
+that slide exists. A day is deliberately generous, because unclaimed bytes cost
+storage while an expiry that fires early costs a course its media. A value that
+is not a positive integer stops the server from starting, for the same reason
+`ASSET_QUOTA_BYTES` does.
+
+One asset principal may hold `ASSET_QUOTA_BYTES` (default 10 GiB) of live
+assets — pending-unexpired or still referenced by a document — before further
 allocations are refused; the store enforces it inside the write transaction, so
 concurrent uploads cannot race past it. Until per-user asset principals land
 every caller shares one principal, which makes this a deployment-wide ceiling
@@ -430,7 +459,8 @@ Assets are read and allocated by any caller the deployment admits, and are never
 replaced or deleted through this endpoint: those operations would scope to the
 shared principal, so admitting them would let any caller overwrite or destroy
 another author's media. An asset nothing references is left to the collector
-rather than deleted by a browser.
+rather than deleted by a browser, and nothing on the wire changes when one is
+committed — a document write does that as a side effect.
 
 Asset byte egress is direct by default: the embedded route materializes the
 bytes in the response body. Setting `ASSET_BYTE_EGRESS=redirect` opts into

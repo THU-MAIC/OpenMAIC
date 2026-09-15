@@ -628,8 +628,10 @@ async function commitPooledMedia(args: {
     //
     // The bytes themselves are NOT deleted. Asset deletion is refused to every
     // browser, because the principal it scopes to is shared and would let any
-    // caller destroy another author's media; an entry nothing references waits
-    // for server-side reclamation instead.
+    // caller destroy another author's media. The entry does not need a browser
+    // to release it: no document write ever commits this allocation, so it
+    // stays pending and the collector's entry pass takes it once
+    // ASSET_PENDING_TTL_MS has elapsed.
     forgetMediaAllocation(stageId, req.elementId);
     throw error;
   }
