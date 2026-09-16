@@ -22,6 +22,7 @@ import {
   GOOGLE_ASR_DEFAULT_MODEL,
   GOOGLE_ASR_LANGUAGES,
 } from './google-asr-provider';
+import { audioProviderFetch } from '@/lib/server/audio-provider-fetch';
 
 /**
  * Map whatever the client stored as `asrLanguage` onto a code the model
@@ -84,26 +85,32 @@ export async function transcribeGoogleASR(
   const baseUrl = (config.baseUrl || GOOGLE_ASR_DEFAULT_BASE_URL).replace(/\/+$/, '');
   const languageCode = resolveGoogleASRLanguage(config.language);
 
-  const response = await fetch(`${baseUrl}/interactions`, {
-    method: 'POST',
-    headers: {
-      'x-goog-api-key': config.apiKey!,
-      'Content-Type': 'application/json; charset=utf-8',
-    },
-    body: JSON.stringify({
-      model: config.modelId || GOOGLE_ASR_DEFAULT_MODEL,
-      input: [
-        {
-          type: 'audio',
-          data: Buffer.from(bytes).toString('base64'),
-          mime_type: mime,
-        },
-      ],
-      generation_config: {
-        transcription_config: languageCode ? { language_codes: [languageCode] } : {},
+  // Strict transport (redirect re-validation + connect-time DNS pinning); a
+  // client BYOK base URL runs under the public-only policy like every provider.
+  const response = await audioProviderFetch(
+    `${baseUrl}/interactions`,
+    {
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': config.apiKey!,
+        'Content-Type': 'application/json; charset=utf-8',
       },
-    }),
-  });
+      body: JSON.stringify({
+        model: config.modelId || GOOGLE_ASR_DEFAULT_MODEL,
+        input: [
+          {
+            type: 'audio',
+            data: Buffer.from(bytes).toString('base64'),
+            mime_type: mime,
+          },
+        ],
+        generation_config: {
+          transcription_config: languageCode ? { language_codes: [languageCode] } : {},
+        },
+      }),
+    },
+    { allowLocalNetworks: config.publicOnly ? false : undefined },
+  );
 
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {

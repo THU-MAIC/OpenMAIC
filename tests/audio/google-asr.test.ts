@@ -3,8 +3,14 @@ import { transcribeAudio } from '@/lib/audio/asr-providers';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
 import { resolveGoogleASRLanguage } from '@/lib/audio/google-asr';
 
-const mockFetch = vi.fn() as Mock;
-vi.stubGlobal('fetch', mockFetch);
+const mockFetch = vi.hoisted(() => vi.fn() as Mock);
+// The provider adapters issue requests through undici's fetch (pinned
+// dispatcher, per-hop redirect validation), not the Next-patched global, so
+// the double lives here — same pattern as the other provider tests.
+vi.mock('undici', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('undici')>();
+  return { ...actual, fetch: mockFetch };
+});
 
 const AUDIO = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x01]); // EBML magic + 2 bytes
 const webmBlob = () => new Blob([AUDIO], { type: 'audio/webm;codecs=opus' });
