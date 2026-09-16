@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { sharedOwnerId } from './shared-owner';
 
 const ANONYMOUS_COOKIE = 'anonymous_id';
 const ANONYMOUS_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
@@ -66,6 +67,8 @@ export function resolveRequestOwnerId(
   authenticatedOwnerId?: string,
 ): string {
   if (authenticatedOwnerId) return authenticatedOwnerId;
+  const shared = sharedOwnerId(req);
+  if (shared) return shared;
 
   const existingId = readCookie(req.headers, ANONYMOUS_COOKIE);
   if (existingId && UUID_V4.test(existingId)) return `anon:${existingId}`;
