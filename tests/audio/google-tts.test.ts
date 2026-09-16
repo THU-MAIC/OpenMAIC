@@ -3,8 +3,14 @@ import { generateTTS, TTSInvalidResponseError, TTSRateLimitError } from '@/lib/a
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import { pcm16ToWav } from '@/lib/audio/google-tts';
 
-const mockFetch = vi.fn() as Mock;
-vi.stubGlobal('fetch', mockFetch);
+const mockFetch = vi.hoisted(() => vi.fn() as Mock);
+// The provider adapters issue requests through undici's fetch (pinned
+// dispatcher, per-hop redirect validation), not the Next-patched global, so
+// the double lives here — same pattern as the other provider tests.
+vi.mock('undici', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('undici')>();
+  return { ...actual, fetch: mockFetch };
+});
 
 const PCM = new Uint8Array([0x01, 0x00, 0xff, 0x7f]); // two 16-bit samples
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');

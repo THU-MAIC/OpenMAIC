@@ -23,6 +23,7 @@ import {
   type TTSGenerationResult,
 } from '@/lib/audio/tts-providers';
 import { GOOGLE_TTS_DEFAULT_BASE_URL, GOOGLE_TTS_DEFAULT_MODEL } from './google-tts-provider';
+import { audioProviderFetch } from '@/lib/server/audio-provider-fetch';
 
 interface AudioPart {
   type?: string;
@@ -93,20 +94,26 @@ export async function generateGoogleTTS(
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
   const baseUrl = (config.baseUrl || GOOGLE_TTS_DEFAULT_BASE_URL).replace(/\/+$/, '');
-  const response = await fetch(`${baseUrl}/interactions`, {
-    method: 'POST',
-    headers: {
-      'x-goog-api-key': config.apiKey!,
-      'Content-Type': 'application/json; charset=utf-8',
+  // Strict transport (redirect re-validation + connect-time DNS pinning); a
+  // client BYOK base URL runs under the public-only policy like every provider.
+  const response = await audioProviderFetch(
+    `${baseUrl}/interactions`,
+    {
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': config.apiKey!,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify({
+        model: config.modelId || GOOGLE_TTS_DEFAULT_MODEL,
+        input: text,
+        response_format: { type: 'audio' },
+        generation_config: { speech_config: [{ voice: config.voice }] },
+      }),
+      signal,
     },
-    body: JSON.stringify({
-      model: config.modelId || GOOGLE_TTS_DEFAULT_MODEL,
-      input: text,
-      response_format: { type: 'audio' },
-      generation_config: { speech_config: [{ voice: config.voice }] },
-    }),
-    signal,
-  });
+    { allowLocalNetworks: config.publicOnly ? false : undefined },
+  );
 
   if (!response.ok) {
     throwIfTtsRateLimited('Google', response.status);
