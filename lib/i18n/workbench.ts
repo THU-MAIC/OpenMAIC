@@ -23,6 +23,7 @@ import workbenchJaJP from './workbench-locales/ja-JP.json' with { type: 'json' }
 import workbenchKoKR from './workbench-locales/ko-KR.json' with { type: 'json' };
 import workbenchPtBR from './workbench-locales/pt-BR.json' with { type: 'json' };
 import workbenchRuRU from './workbench-locales/ru-RU.json' with { type: 'json' };
+import workbenchTrTR from './workbench-locales/tr-TR.json' with { type: 'json' };
 import workbenchViVN from './workbench-locales/vi-VN.json' with { type: 'json' };
 import workbenchZhTW from './workbench-locales/zh-TW.json' with { type: 'json' };
 
@@ -686,6 +687,7 @@ const localeOverrides: Record<string, WorkbenchResource> = {
   'ru-RU': workbenchRuRU,
   'ar-SA': workbenchArSA,
   'vi-VN': workbenchViVN,
+  'tr-TR': workbenchTrTR,
 };
 
 function isRecord(value: unknown): value is WorkbenchResource {

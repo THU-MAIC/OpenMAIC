@@ -8,6 +8,7 @@ import jaJP from '@/lib/i18n/locales/ja-JP.json';
 import koKR from '@/lib/i18n/locales/ko-KR.json';
 import ptBR from '@/lib/i18n/locales/pt-BR.json';
 import ruRU from '@/lib/i18n/locales/ru-RU.json';
+import trTR from '@/lib/i18n/locales/tr-TR.json';
 import viVN from '@/lib/i18n/locales/vi-VN.json';
 import zhCN from '@/lib/i18n/locales/zh-CN.json';
 import zhTW from '@/lib/i18n/locales/zh-TW.json';
@@ -57,6 +58,7 @@ const LOCALE_RESOURCES: Record<Locale, Record<string, unknown>> = {
   'ru-RU': ruRU,
   'ar-SA': arSA,
   'de-DE': deDE,
+  'tr-TR': trTR,
 };
 
 /**
