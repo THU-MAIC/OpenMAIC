@@ -897,6 +897,8 @@ Optional config in `~/.openclaw/openclaw.json`:
 | **Interactive HTML** | Self-contained web pages with interactive simulations |
 | **Classroom ZIP** | Full classroom export (course structure + media) for backup or sharing |
 
+With server-backed persistence enabled, importing a classroom ZIP stores its embedded audio, images, video, and posters in the server asset pool before saving the course. Other browsers can resolve those imported assets without the importing browser's cache. Browser-only imports remain local. This does not automatically migrate existing browser courses; export them from the original browser and import the ZIP on the destination deployment.
+
 **Offline / intranet classrooms:** When you export a classroom (`.maic.zip`) or a Resource Pack, OpenMAIC inlines the external assets referenced by interactive scenes (KaTeX, Three.js incl. `three/addons`, Tailwind CDN, Google Fonts, images) into the exported HTML as `data:` URIs. The exported course then plays fully offline after import into an air-gapped/intranet instance — no public CDN is contacted at playback time. Assets that can't be fetched at export time (e.g. CORS-restricted image hosts) are reported and left as URLs. Classrooms exported *before* this feature still reference CDNs and must be re-exported to gain offline support.
 
 ### And More
