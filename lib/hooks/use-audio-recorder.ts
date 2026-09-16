@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
+import { defaultASRLanguage } from '@/lib/audio/asr-language';
 import { getASRServerDisabledError } from '@/lib/audio/asr-enablement';
 import { normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
 import { createLogger } from '@/lib/logger';
@@ -125,7 +126,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API instance shape isn't in lib.dom
           const recognition: any = new SpeechRecognitionCtor();
 
-          recognition.lang = asrLanguage || 'zh-CN';
+          recognition.lang = asrLanguage || defaultASRLanguage('browser-native');
           recognition.continuous = continuous;
           recognition.interimResults = false;
 

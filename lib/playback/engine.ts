@@ -49,6 +49,8 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { createLogger } from '@/lib/logger';
+import i18n from '@/lib/i18n/config';
+import { defaultLocale } from '@/lib/i18n';
 
 const log = createLogger('PlaybackEngine');
 
@@ -817,13 +819,14 @@ export class PlaybackEngine {
       }
     }
     if (!voiceFound) {
-      // No usable voice configured — detect text language so the browser
-      // auto-selects an appropriate voice.
+      // No usable voice configured — detect CJK text, otherwise follow the UI
+      // locale so the browser picks a voice in the lesson's language instead of
+      // always en-US.
       const cjkRatio =
         chunkText.length > 0
           ? (chunkText.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length / chunkText.length
           : 0;
-      utterance.lang = cjkRatio > CJK_LANG_THRESHOLD ? 'zh-CN' : 'en-US';
+      utterance.lang = cjkRatio > CJK_LANG_THRESHOLD ? 'zh-CN' : i18n.language || defaultLocale;
     }
 
     utterance.onend = () => {

@@ -6,6 +6,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { createLogger } from '@/lib/logger';
+import { defaultASRLanguage } from '@/lib/audio/asr-language';
 
 const log = createLogger('BrowserASR');
 
@@ -32,7 +33,7 @@ export function useBrowserASR(options: UseBrowserASROptions = {}) {
   const {
     onTranscription,
     onError,
-    language = 'zh-CN',
+    language = defaultASRLanguage('browser-native'),
     continuous = false,
     interimResults = false,
   } = options;
