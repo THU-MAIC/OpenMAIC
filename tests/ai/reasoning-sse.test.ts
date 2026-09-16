@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  createKimiReasoningPreservationMiddleware,
+  createReasoningPreservationMiddleware,
   createReasoningContentRewriter,
-  restoreKimiReasoningInRequestBody,
+  restoreReasoningContentInRequestBody,
   wrapJsonResponseWithReasoning,
   wrapResponseWithReasoning,
 } from '@/lib/ai/reasoning-sse';
@@ -155,7 +155,7 @@ describe('wrapResponseWithReasoning', () => {
 
 describe('Kimi reasoning preservation', () => {
   it('round-trips reasoning prompt parts through OpenAI-compatible serialization markers', async () => {
-    const middleware = createKimiReasoningPreservationMiddleware();
+    const middleware = createReasoningPreservationMiddleware();
     const params = await middleware.transformParams!({
       type: 'stream',
       model: {} as never,
@@ -187,7 +187,7 @@ describe('Kimi reasoning preservation', () => {
       ],
     };
 
-    restoreKimiReasoningInRequestBody(body);
+    restoreReasoningContentInRequestBody(body);
 
     expect(body.messages[0]).toMatchObject({
       content: null,

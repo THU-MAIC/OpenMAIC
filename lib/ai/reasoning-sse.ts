@@ -61,9 +61,11 @@ function extractKimiReasoning(content: string): { content: string; reasoning?: s
 /**
  * The OpenAI chat adapter drops standardized reasoning prompt parts. Encode
  * them as private text markers until the request reaches our fetch wrapper,
- * where they are restored to Kimi's `reasoning_content` field.
+ * where they are restored to the provider's native `reasoning_content` field.
+ * Shared by Kimi and DeepSeek: both require reasoning_content to be passed
+ * back verbatim on the next turn while their thinking mode is on.
  */
-export function createKimiReasoningPreservationMiddleware(): LanguageModelMiddleware {
+export function createReasoningPreservationMiddleware(): LanguageModelMiddleware {
   return {
     specificationVersion: 'v3',
     transformParams: async ({ params }) => ({
@@ -84,8 +86,8 @@ export function createKimiReasoningPreservationMiddleware(): LanguageModelMiddle
   };
 }
 
-/** Restore private Kimi reasoning markers after OpenAI chat serialization. */
-export function restoreKimiReasoningInRequestBody(body: unknown): void {
+/** Restore private reasoning markers after OpenAI chat serialization. */
+export function restoreReasoningContentInRequestBody(body: unknown): void {
   if (!body || typeof body !== 'object') return;
   const messages = (body as { messages?: unknown }).messages;
   if (!Array.isArray(messages)) return;

@@ -35,6 +35,7 @@ import {
   type ToolSet,
 } from 'ai';
 import { streamLLM } from '@/lib/ai/llm';
+import { preservesReasoningForModel } from '@/lib/ai/providers';
 import { normalizeUsage } from '@/lib/usage/normalize';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import {
@@ -402,10 +403,7 @@ async function pump(
         model: opts.languageModel,
         system: context.systemPrompt,
         messages: toModelMessages(context.messages, {
-          includeReasoning:
-            typeof opts.languageModel !== 'string' &&
-            opts.languageModel.provider === 'kimi.chat' &&
-            opts.languageModel.modelId === 'kimi-k3',
+          includeReasoning: preservesReasoningForModel(opts.languageModel),
         }),
         tools: toAiTools(context.tools ?? []),
         toolChoice: 'auto',
