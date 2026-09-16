@@ -27,6 +27,7 @@ import { ProSwapWatcher } from '@/components/workbench/ProSwapWatcher';
 // `--font-sans` moves to globals.css since the family no longer comes from
 // next/font's generated class.
 import '@fontsource-variable/inter';
+import { defaultLocale } from '@/lib/i18n/types';
 
 export const metadata: Metadata = {
   title: 'OpenMAIC',
@@ -40,7 +41,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={defaultLocale.split('-')[0]} suppressHydrationWarning>
       <body
         className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}
         suppressHydrationWarning
