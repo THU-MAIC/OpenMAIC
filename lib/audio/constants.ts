@@ -43,6 +43,7 @@ import {
   VOXCPM_TTS_PROVIDER_ID,
   VOXCPM_VLLM_MODEL_ID,
 } from './voxcpm';
+import { GOOGLE_ASR_PROVIDER } from './google-asr-provider';
 
 /**
  * Default supported languages for custom OpenAI-compatible ASR providers.
@@ -1226,6 +1227,7 @@ export const ASR_PROVIDERS: Record<BuiltInASRProviderId, ASRProviderConfig> = {
     supportedFormats: ['wav', 'ogg', 'webm', 'mp3', 'flac', 'm4a'],
   },
 
+  'google-asr': GOOGLE_ASR_PROVIDER,
   'browser-native': {
     id: 'browser-native',
     name: '浏览器原生 ASR (Web Speech API)',

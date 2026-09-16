@@ -1456,6 +1456,7 @@
     "qwenCloneNarrationUnavailable": "指定音色不可用，旁白将改用其他可用音色。",
     "qwenCloneDiscussionUnavailable": "指定音色不可用，讨论将改用其他可用音色。",
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
+    "providerGoogleASR": "Google ASR (Gemini 3.5 Transcribe)",
     "providerBrowserNative": "浏览器原生 ASR",
     "providerQwenASR": "Qwen ASR（阿里云百炼）",
     "providerFunASRASR": "FunASR（本地）",

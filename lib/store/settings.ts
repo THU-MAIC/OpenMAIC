@@ -558,6 +558,7 @@ const getDefaultAudioConfig = () => ({
     'browser-native': { apiKey: '', baseUrl: '', enabled: true },
     'qwen-asr': { apiKey: '', baseUrl: '', enabled: false },
     'azure-asr': { apiKey: '', baseUrl: '', enabled: false },
+    'google-asr': { apiKey: '', baseUrl: '', modelId: 'gemini-3.5-transcribe', enabled: true },
     'funasr-asr': { apiKey: '', baseUrl: '', enabled: false },
     'lemonade-asr': { apiKey: '', baseUrl: '', enabled: false },
   } as Record<ASRProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,

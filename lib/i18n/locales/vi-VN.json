@@ -1456,6 +1456,7 @@
     "qwenCloneNarrationUnavailable": "The assigned voice is unavailable. Narration will use another enabled voice instead.",
     "qwenCloneDiscussionUnavailable": "The assigned voice is unavailable. Discussion will use another enabled voice instead.",
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
+    "providerGoogleASR": "Google ASR (Gemini 3.5 Transcribe)",
     "providerBrowserNative": "Nhận dạng giọng nói sẵn có của trình duyệt",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
     "providerFunASRASR": "FunASR (Cục bộ)",

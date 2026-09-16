@@ -150,6 +150,7 @@ import { experimental_transcribe as transcribe } from 'ai';
 import type { ASRModelConfig } from './types';
 import { isCustomASRProvider } from './types';
 import { ASR_PROVIDERS } from './constants';
+import { transcribeGoogleASR } from './google-asr';
 import { audioProviderFetch, createAudioProviderFetch } from '@/lib/server/audio-provider-fetch';
 
 /**
@@ -176,6 +177,9 @@ export async function transcribeAudio(
   switch (config.providerId) {
     case 'openai-whisper':
       return await transcribeOpenAIWhisper(config, audioBuffer);
+
+    case 'google-asr':
+      return await transcribeGoogleASR(config, audioBuffer);
 
     case 'browser-native':
       throw new Error('Browser Native ASR must be handled client-side using useBrowserASR hook');
