@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
             ],
-            maxOutputTokens: 256,
+            maxOutputTokens: 2048,
           },
           'web-search-query-rewrite',
           undefined,
