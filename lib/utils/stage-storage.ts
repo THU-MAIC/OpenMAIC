@@ -70,6 +70,7 @@ import {
   type MediaTaskLookupEntry,
 } from '@/lib/media/media-task-resolution';
 import { slideMediaReferenceSlots } from '@/lib/media/slide-media-slots';
+import { chatSaveBrake } from '@/lib/utils/chat-save-brake';
 
 const log = createLogger('StageStorage');
 
@@ -156,15 +157,18 @@ async function saveStageChats(
   data: StageStoreData,
   globalLockHeld = false,
 ): Promise<boolean> {
+  if (!chatSaveBrake.allows(stageId)) return false;
   try {
     await saveChatSessions(stageId, data.chats, {
       ...(globalLockHeld ? { globalLockHeld: true } : {}),
       snapshot: data.chatSnapshot,
     });
+    chatSaveBrake.recordSuccess(stageId);
     return true;
   } catch (error) {
     const unchangedSnapshot = isEqual(data.chatSnapshot?.sessions ?? [], data.chats);
     if (error instanceof ChatStorageLockUnavailableError && !unchangedSnapshot) throw error;
+    chatSaveBrake.recordFailure(stageId, error);
     log.warn(`Chat sessions failed to save for stage ${stageId}:`, error);
     return false;
   }
