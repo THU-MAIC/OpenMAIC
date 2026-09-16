@@ -298,6 +298,9 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
                 case 'qwen-asr':
                   endpointPath = '/services/aigc/multimodal-generation/generation';
                   break;
+                case 'xiaomi-asr':
+                  endpointPath = '/chat/completions';
+                  break;
               }
             }
             if (!endpointPath) return null;

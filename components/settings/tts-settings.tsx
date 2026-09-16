@@ -226,6 +226,8 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       case 'glm-tts':
       case 'lemonade-tts':
         return '/audio/speech';
+      case 'xiaomi-tts':
+        return '/chat/completions';
       case 'azure-tts':
         return '/cognitiveservices/v1';
       case 'qwen-tts':
