@@ -1346,6 +1346,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     );
     interactivePickHandlerRef.current = handlePickInteractiveComponent;
 
+    // Declaring a state interface adds evidence to a reference; it never replaces
+    // the component picker with a whole-area reference.
     const handleToggleElementPick = useCallback(() => {
       if (!canPickElement) return;
       setElementPickActive((active) => !active);

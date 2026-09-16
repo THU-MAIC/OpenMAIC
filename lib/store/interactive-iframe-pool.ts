@@ -30,6 +30,8 @@ export interface IframeRect {
 export interface IframePoolEntry {
   /** Patched HTML for `srcDoc`, when the scene carries inline HTML. */
   readonly srcDoc?: string;
+  /** Original source identity for send-time observation; never a state cache. */
+  readonly sourceHtml?: string;
   /** URL for `src`, when the scene points at an external page. */
   readonly src?: string;
   /** Full available slot rect. The host contain-fits one fixed logical viewport inside it. */
@@ -52,6 +54,8 @@ export interface IframePoolEntry {
 
 interface MountInput {
   readonly srcDoc?: string;
+  /** Original source identity for send-time observation; never a state cache. */
+  readonly sourceHtml?: string;
   readonly src?: string;
 }
 
@@ -108,7 +112,12 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
       // existing srcDoc/src reference so the host never re-sets it (which would
       // reload the iframe). String `===` is by value, so a remount that produces
       // an equal-but-new srcDoc string still hits this keep-alive fast path.
-      if (existing && existing.srcDoc === input.srcDoc && existing.src === input.src) {
+      if (
+        existing &&
+        existing.srcDoc === input.srcDoc &&
+        existing.src === input.src &&
+        existing.sourceHtml === input.sourceHtml
+      ) {
         const entries = { ...state.entries, [sceneId]: { ...existing, tick } };
         return { entries, tick };
       }
@@ -116,6 +125,7 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
       // is the one intended reload path.
       const entry: IframePoolEntry = {
         srcDoc: input.srcDoc,
+        sourceHtml: input.sourceHtml,
         src: input.src,
         rect: existing?.rect ?? null,
         clip: existing?.clip ?? null,
