@@ -1,3 +1,4 @@
+import { isLinePreset } from '../shapes/linePresets';
 import {
   parse as parsePptxDefault,
   type Shape,
@@ -980,7 +981,9 @@ export async function transformParsedToSlides(
             );
           }
         } else if (el.type === 'shape') {
-          if (el.shapType === 'line' || /Connector/.test(el.shapType)) {
+          // lineInv must retain its inverse SVG path: parseLineElement assumes
+          // the forward diagonal before applying flips.
+          if (isLinePreset(el.shapType) && el.shapType.toLowerCase() !== 'lineinv') {
             const lineElement = parseLineElement(el, ratio);
             slide.elements.push(lineElement);
           } else {

@@ -771,10 +771,11 @@ presetShapes.set('upArrow', (w, h, adjustments) => {
 });
 
 presetShapes.set('downArrow', (w, h, adjustments) => {
-  const a1 = adj(adjustments, 'adj1', 50000);
+  const a1 = Math.max(0, Math.min(1, adj(adjustments, 'adj1', 50000)));
   const a2 = adj(adjustments, 'adj2', 50000);
   const shaftHalfW = (w * a1) / 2;
-  const headLen = h * a2;
+  // OOXML uses ss (the shortest side), not h, for the head adjustment.
+  const headLen = Math.max(0, Math.min(h, Math.min(w, h) * a2));
   const cx = w / 2;
   const shaftEnd = h - headLen;
   return [

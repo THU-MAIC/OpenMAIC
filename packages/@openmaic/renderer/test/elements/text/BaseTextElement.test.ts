@@ -96,3 +96,28 @@ describe('BaseTextElement', () => {
     expect(markup).not.toContain('ProseMirror-static');
   });
 });
+
+describe('BaseTextElement imported text insets', () => {
+  it.each([false, true])(
+    'does not add a second inset to imported text (vertical=%s)',
+    (vertical) => {
+      const markup = renderToStaticMarkup(
+        React.createElement(BaseTextElement, {
+          elementInfo: {
+            ...textElement,
+            vertical,
+            content: '<div style="padding: 4.8px 9.6px 4.8px 9.6px;"><p>优先级</p></div>',
+          },
+        }),
+      );
+      expect(markup).toContain('box-sizing:border-box;padding:0;');
+      expect(markup).toContain('padding: 4.8px 9.6px 4.8px 9.6px;');
+    },
+  );
+  it('retains the default inset for manually authored text', () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(BaseTextElement, { elementInfo: textElement }),
+    );
+    expect(markup).toContain('padding:10px');
+  });
+});
