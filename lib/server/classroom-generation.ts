@@ -432,7 +432,7 @@ export async function generateClassroom(
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        maxOutputTokens: 256,
+        maxOutputTokens: 2048,
       },
       'web-search-query-rewrite',
       undefined,
