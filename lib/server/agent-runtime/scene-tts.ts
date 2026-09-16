@@ -10,7 +10,13 @@ import {
   resolveTTSBaseUrl,
   resolveTTSModel,
 } from '@/lib/server/provider-config';
-import { persistClassroomMediaBytes } from '@/lib/server/classroom-media-bytes';
+import {
+  ensureClassroomMediaWritable,
+  persistClassroomMediaBytes,
+} from '@/lib/server/classroom-media-bytes';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('SceneTts');
 
 export interface SceneTtsSummary {
   available: boolean;
@@ -18,6 +24,8 @@ export interface SceneTtsSummary {
   generated: number;
   skipped: number;
   failed: string[];
+  /** Message of the first per-action failure (undefined when nothing failed). */
+  error?: string;
 }
 
 export interface SceneTtsInput {
@@ -71,6 +79,32 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
   let generated = 0;
   let skipped = 0;
   const failed: string[] = [];
+  let firstError: string | undefined;
+  const pending = (input.scene.actions ?? []).filter(
+    (action) =>
+      action.type === 'speech' &&
+      !!(action as SpeechAction).text &&
+      (input.force || !(action as SpeechAction).audioId),
+  );
+  if (pending.length > 0) {
+    try {
+      await ensureClassroomMediaWritable(input.scene.stageId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn(`classroom media dir not writable for stage ${input.scene.stageId}: ${message}`);
+      return {
+        available: true,
+        changed: false,
+        generated: 0,
+        skipped:
+          (input.scene.actions ?? []).filter(
+            (action) => action.type === 'speech' && !!(action as SpeechAction).text,
+          ).length - pending.length,
+        failed: pending.map((action) => action.id),
+        error: `classroom media directory is not writable: ${message}`,
+      };
+    }
+  }
   for (const action of input.scene.actions ?? []) {
     if (action.type !== 'speech' || !(action as SpeechAction).text) continue;
     const speech = action as SpeechAction;
@@ -117,6 +151,11 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
       // error instead of degrading into a per-action failure: the remaining
       // actions would hit the same hung upstream and the session would wedge.
       if (error instanceof TTSRequestTimeoutError) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      firstError ??= message;
+      log.warn(
+        `narration for action ${action.id} (stage ${input.scene.stageId}) failed: ${message}`,
+      );
       failed.push(action.id);
     }
   }
@@ -126,5 +165,6 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
     generated,
     skipped,
     failed,
+    ...(firstError ? { error: firstError } : {}),
   };
 }

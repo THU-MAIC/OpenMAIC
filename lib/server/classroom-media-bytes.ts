@@ -34,6 +34,18 @@ function extensionForMime(mime: string): string {
  * routes that DO have an origin build absolute URLs through
  * `resolveMediaServingOrigin` (`classroom-media-generation.ts`).
  */
+/**
+ * Fail fast when the stage's classroom-media directory cannot be created or
+ * written (typical cause: `/app/data` volume mounted root-owned while the
+ * runtime user is `nextjs`). Callers use this BEFORE paying for synthesis so a
+ * non-writable store does not turn into N billed-then-dropped TTS calls.
+ */
+export async function ensureClassroomMediaWritable(stageId: string): Promise<void> {
+  const mediaDir = path.join(CLASSROOMS_DIR, stageId, 'media');
+  await fs.mkdir(mediaDir, { recursive: true });
+  await fs.access(mediaDir, fs.constants.W_OK);
+}
+
 export async function persistClassroomMediaBytes(input: {
   stageId: string;
   bytes: Buffer | Uint8Array;

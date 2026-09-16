@@ -109,6 +109,11 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Runtime data root (classroom media/TTS bytes, classroom jobs). Created and
+# owned here so a volume mounted at /app/data is writable by the unprivileged
+# runtime user instead of inheriting root ownership from the mount.
+RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
+
 USER nextjs
 
 EXPOSE 3000

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   providers: vi.fn(),
   generate: vi.fn(),
   persist: vi.fn(),
+  writable: vi.fn(async () => undefined),
 }));
 
 vi.mock('@/lib/server/provider-config', () => ({
@@ -13,9 +14,13 @@ vi.mock('@/lib/server/provider-config', () => ({
   resolveTTSModel: vi.fn(() => ''),
 }));
 
-vi.mock('@/lib/audio/tts-providers', () => ({ generateTTS: mocks.generate }));
+vi.mock('@/lib/audio/tts-providers', () => ({
+  generateTTS: mocks.generate,
+  TTSRequestTimeoutError: class TTSRequestTimeoutError extends Error {},
+}));
 
 vi.mock('@/lib/server/classroom-media-bytes', () => ({
+  ensureClassroomMediaWritable: mocks.writable,
   persistClassroomMediaBytes: mocks.persist,
 }));
 
@@ -33,7 +38,10 @@ const scene = {
 } as Scene;
 
 describe('scene TTS capability routing', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.writable.mockResolvedValue(undefined);
+  });
 
   it('honors the server capability force-off before synthesis', async () => {
     mocks.providers.mockReturnValue({ 'configured-tts': { disabled: true } });
@@ -65,5 +73,28 @@ describe('scene TTS capability routing', () => {
     expect(mocks.persist).toHaveBeenCalledWith(
       expect.objectContaining({ stageId: 'stage-a', mime: 'audio/mpeg' }),
     );
+  });
+
+  it('surfaces the first persist failure instead of swallowing it', async () => {
+    mocks.providers.mockReturnValue({ 'configured-tts': {} });
+    mocks.generate.mockResolvedValue({ audio: new Uint8Array([1, 2]), format: 'mp3' });
+    mocks.persist.mockRejectedValue(new Error("EACCES: permission denied, mkdir '/app/data'"));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const summary = await synthesizeSceneNarration({ scene: structuredClone(scene), force: false });
+    expect(summary).toMatchObject({ available: true, changed: false, failed: ['speech-a'] });
+    expect(summary.error).toContain('EACCES');
+    expect(warn.mock.calls.flat().join(' ')).toContain('EACCES');
+    warn.mockRestore();
+  });
+
+  it('does not call the provider when the media directory is not writable', async () => {
+    mocks.providers.mockReturnValue({ 'configured-tts': {} });
+    mocks.writable.mockRejectedValue(new Error('EACCES: permission denied'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const summary = await synthesizeSceneNarration({ scene: structuredClone(scene), force: false });
+    expect(summary).toMatchObject({ available: true, generated: 0, failed: ['speech-a'] });
+    expect(summary.error).toContain('not writable');
+    expect(mocks.generate).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

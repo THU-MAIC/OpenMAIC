@@ -28,6 +28,7 @@ vi.mock('@/lib/server/provider-config', () => ({
 }));
 
 vi.mock('@/lib/server/classroom-media-bytes', () => ({
+  ensureClassroomMediaWritable: vi.fn(async () => undefined),
   persistClassroomMediaBytes: mocks.persist,
 }));
 

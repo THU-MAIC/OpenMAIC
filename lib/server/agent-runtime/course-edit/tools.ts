@@ -136,7 +136,8 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
         });
       }
       return result(
-        `Narration audio: ${summary.generated} generated, ${summary.skipped} skipped, ${summary.failed.length} failed.`,
+        `Narration audio: ${summary.generated} generated, ${summary.skipped} skipped, ${summary.failed.length} failed.` +
+          (summary.error ? ` First error: ${summary.error}` : ''),
         {
           sceneId: scene.id,
           ...summary,
