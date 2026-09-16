@@ -16,8 +16,8 @@ import type { ProviderType } from '@/lib/types/provider';
 /** Loose grouping for the preset list UI. */
 export type PresetCategory = 'official' | 'aggregator' | 'token_plan' | 'third_party';
 
-/** The modalities a token plan can be applied to. ASR is omitted = not adapted. */
-export type TokenPlanModality = 'llm' | 'image' | 'video' | 'tts' | 'webSearch';
+/** The modalities a token plan can be applied to. */
+export type TokenPlanModality = 'llm' | 'image' | 'video' | 'tts' | 'asr' | 'webSearch';
 
 /** Where a token plan maps in one modality's provider registry. */
 export interface TokenPlanModalityTarget {
@@ -59,7 +59,14 @@ export interface TokenPlanPreset {
 }
 
 /** Human-facing order of modalities in the apply result. */
-export const MODALITY_ORDER: TokenPlanModality[] = ['llm', 'image', 'video', 'tts', 'webSearch'];
+export const MODALITY_ORDER: TokenPlanModality[] = [
+  'llm',
+  'image',
+  'video',
+  'tts',
+  'asr',
+  'webSearch',
+];
 
 /**
  * Built-in token plans.
@@ -123,6 +130,41 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
         ],
       },
       webSearch: { providerId: 'minimax', baseUrl: 'https://api.minimaxi.com' },
+    },
+  },
+
+  // ── Xiaomi MiMo Token Plan ────────────────────────────────────────────────
+  {
+    // Xiaomi MiMo Token Plan: one tp-... key spans LLM + TTS + ASR. tp- keys
+    // authenticate ONLY against the regional Token Plan hosts (verified: the
+    // pay-as-you-go api.xiaomimimo.com host rejects them), so every modality
+    // points at the CN cluster by default — users in other regions switch the
+    // base URL to the SGP/AMS cluster in each provider's settings afterwards.
+    // MiMo audio models speak the chat/completions protocol (text/audio ride
+    // in messages), adapted by the built-in xiaomi-tts / xiaomi-asr providers.
+    id: 'xiaomi-mimo',
+    name: 'Xiaomi MiMo Token Plan',
+    websiteUrl: 'https://mimo.mi.com',
+    apiKeyPlaceholder: 'tp-...',
+    icon: '/logos/xiaomi.svg',
+    category: 'token_plan',
+    modalities: {
+      llm: {
+        providerId: 'xiaomi',
+        baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+        apiFormat: 'openai',
+        defaultModels: ['mimo-v2.5-pro', 'mimo-v2.5'],
+      },
+      tts: {
+        providerId: 'xiaomi-tts',
+        baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+        defaultModelId: 'mimo-v2.5-tts',
+      },
+      asr: {
+        providerId: 'xiaomi-asr',
+        baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+        defaultModelId: 'mimo-v2.5-asr',
+      },
     },
   },
 
