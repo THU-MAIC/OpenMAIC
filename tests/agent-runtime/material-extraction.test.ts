@@ -184,7 +184,7 @@ describe('uploaded material extraction lifecycle', () => {
               id: 'frame-1',
               type: 'image',
               mimeType: 'image/webp',
-              data: Buffer.from('prepared-webp').toString('base64'),
+              data: `data:image/webp;base64,${Buffer.from('prepared-webp').toString('base64')}`,
             },
           ],
         })),
