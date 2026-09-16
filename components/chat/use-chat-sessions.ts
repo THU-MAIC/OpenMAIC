@@ -2201,7 +2201,11 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             action.type === 'spotlight'
               ? {
                   elementId: action.elementId,
-                  dimOpacity: (action as SpotlightAction).dimOpacity,
+                  // Omit rather than write `undefined`: the persisted message part is
+                  // validated as a plain JSON value and an undefined member fails the save.
+                  ...((action as SpotlightAction).dimOpacity === undefined
+                    ? {}
+                    : { dimOpacity: (action as SpotlightAction).dimOpacity }),
                 }
               : action.type === 'laser'
                 ? { elementId: action.elementId }

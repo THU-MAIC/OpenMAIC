@@ -663,8 +663,12 @@ export class PlaybackEngine {
           kind: action.type,
           targetId: action.elementId,
           ...(action.type === 'spotlight'
-            ? { dimOpacity: action.dimOpacity }
-            : { color: action.color }),
+            ? action.dimOpacity === undefined
+              ? {}
+              : { dimOpacity: action.dimOpacity }
+            : action.color === undefined
+              ? {}
+              : { color: action.color }),
         } as Effect);
         // Don't block — continue immediately (use queueMicrotask to avoid
         // stack overflow from deep synchronous recursion when many consecutive
