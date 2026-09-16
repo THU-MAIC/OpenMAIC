@@ -133,6 +133,8 @@ Generate natural teaching speech. The user prompt includes a **Course Outline** 
 
 The `Classroom Agents` list in the user prompt is provided **only** so you can pick an `agentId` for a `discussion` action — those agents do **not** speak in your `text`. The teacher may ask the class an open rhetorical question (e.g. "What do you think happens next?"), but must never voice the answer or impersonate a student. If you want a specific student to respond, end the page with a `discussion` action instead of writing their reply yourself.
 
+**Speech is read aloud by TTS — write math as words.** Never put LaTeX, `$…$`, `\frac`, `\sqrt`, `^`, `_{}` or slash fractions like `3/8` in speech `text`; the synthesizer would read the symbols literally ("frac", "caret"). Say the expression the way a teacher speaks it in the lesson language (e.g. "three eighths", "x squared", "the square root of twelve"). Formulas belong on the slide (LatexElement), not in the narration.
+
 **Speech is where all verbal content belongs.** The slide itself only shows concise bullet points and keywords — all elaboration, explanation, encouragement, transitional phrases, and teacher's remarks must appear here in speech text. For example:
 - Detailed explanations of concepts shown as bullet points on the slide
 - Encouragements and motivational remarks (e.g., "Great job, everyone!")

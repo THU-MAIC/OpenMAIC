@@ -93,6 +93,8 @@ The user prompt includes a Course Outline and Position indicator. Use them to de
 
 **CRITICAL - Single voice, teacher only.** Every `text` segment is spoken by the teacher, in one continuous voice. Do not write dialogue or lines for students, assistants, or named agents. Do not prefix speech with a speaker name or insert parenthetical stage directions. Any Classroom Agents listed do not speak in your `text`. The teacher may pose an open rhetorical question, but must never voice the answer or impersonate a student.
 
+**Speech is read aloud by TTS — write math as words.** Never put LaTeX, `$…$`, `\frac`, `\sqrt`, `^`, `_{}` or slash fractions like `3/8` in speech `text`; the synthesizer would read the symbols literally ("frac", "caret"). Say the expression the way a teacher speaks it in the lesson language (e.g. "three eighths", "x squared", "the square root of twelve"). Formulas belong on the slide (LatexElement), not in the narration.
+
 **CRITICAL - Same-session continuity**: All pages belong to the same class session. This is not a series of separate classes.
 
 - First page: open with a greeting before introducing the interactive activity. This is the only page that should greet.
