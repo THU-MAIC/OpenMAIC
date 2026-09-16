@@ -1402,6 +1402,7 @@
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerLemonadeTTS": "Lemonade TTS (Cục bộ)",
+    "providerGoogleTTS": "Google TTS (Gemini)",
     "providerBrowserNativeTTS": "Giọng đọc sẵn có của trình duyệt",
     "voxcpmBackend": "Máy chủ xử lý",
     "voxcpmBaseUrlPending": "Nhập địa chỉ gốc để sinh ra địa chỉ yêu cầu",

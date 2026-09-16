@@ -1402,6 +1402,7 @@
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerLemonadeTTS": "Lemonade TTS (로컬)",
+    "providerGoogleTTS": "Google TTS (Gemini)",
     "providerBrowserNativeTTS": "브라우저 기본 TTS",
     "voxcpmBackend": "백엔드",
     "voxcpmBaseUrlPending": "요청 URL을 생성하려면 Base URL을 입력하세요",

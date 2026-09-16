@@ -1402,6 +1402,7 @@
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerLemonadeTTS": "Lemonade TTS（ローカル）",
+    "providerGoogleTTS": "Google TTS (Gemini)",
     "providerBrowserNativeTTS": "ブラウザネイティブTTS",
     "voxcpmBackend": "バックエンド",
     "voxcpmBaseUrlPending": "Base URL を入力するとリクエスト URL が生成されます",

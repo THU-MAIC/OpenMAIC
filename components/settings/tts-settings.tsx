@@ -236,6 +236,8 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         return '/text-to-speech';
       case 'doubao-tts':
         return '/unidirectional';
+      case 'google-tts':
+        return '/interactions';
       default:
         return '';
     }

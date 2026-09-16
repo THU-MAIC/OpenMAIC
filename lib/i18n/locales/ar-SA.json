@@ -1402,6 +1402,7 @@
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerLemonadeTTS": "Lemonade TTS (محلي)",
+    "providerGoogleTTS": "Google TTS (Gemini)",
     "providerBrowserNativeTTS": "تحويل النص إلى كلام المدمج في المتصفح",
     "voxcpmBackend": "الخلفية",
     "voxcpmBaseUrlPending": "أدخل Base URL لإنشاء عنوان الطلب",

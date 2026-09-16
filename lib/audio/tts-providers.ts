@@ -97,6 +97,7 @@ import { isCustomTTSProvider } from './types';
 import { isQwenCloneVoice, resolveTTSModelForVoice, TTS_PROVIDERS } from './constants';
 import { downloadAudio, QwenVoiceCloneError, synthesizeQwenVoiceClone } from './qwen-voice-clone';
 import { evictQwenVoiceRegistrationMemo } from './qwen-voice-clone-registration';
+import { generateGoogleTTS } from './google-tts';
 import { splitConcatenatedJsonObjects } from './json-stream';
 import {
   VOXCPM_VLLM_MODEL_ID,
@@ -282,6 +283,9 @@ export async function generateTTS(
 
       case 'lemonade-tts':
         return await generateLemonadeTTS(config, text, signal);
+
+      case 'google-tts':
+        return await generateGoogleTTS(config, text, signal);
 
       case 'browser-native-tts':
         throw new Error(

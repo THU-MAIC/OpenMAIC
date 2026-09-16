@@ -43,6 +43,7 @@ import {
   VOXCPM_TTS_PROVIDER_ID,
   VOXCPM_VLLM_MODEL_ID,
 } from './voxcpm';
+import { GOOGLE_TTS_PROVIDER } from './google-tts-provider';
 
 /**
  * Default supported languages for custom OpenAI-compatible ASR providers.
@@ -972,6 +973,7 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     speedRange: { min: 0.7, max: 1.2, default: 1.0 },
   },
 
+  'google-tts': GOOGLE_TTS_PROVIDER,
   'browser-native-tts': {
     id: 'browser-native-tts',
     name: '浏览器原生 (Web Speech API)',
@@ -1343,6 +1345,7 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'minimax-tts': 'female-yujie',
   'lemonade-tts': 'af_heart',
+  'google-tts': 'Kore',
   'browser-native-tts': 'default',
 };
 
@@ -1356,6 +1359,7 @@ export const DEFAULT_TTS_MODELS: Record<BuiltInTTSProviderId, string> = {
   'elevenlabs-tts': 'eleven_multilingual_v2',
   'minimax-tts': 'speech-2.8-hd',
   'lemonade-tts': 'kokoro-v1',
+  'google-tts': 'gemini-3.1-flash-tts-preview',
   'browser-native-tts': '',
 };
 

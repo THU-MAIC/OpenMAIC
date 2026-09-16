@@ -1402,6 +1402,7 @@
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerLemonadeTTS": "Lemonade TTS (Lokal)",
+    "providerGoogleTTS": "Google TTS (Gemini)",
     "providerBrowserNativeTTS": "Browserintegrierte TTS",
     "voxcpmBackend": "Backend",
     "voxcpmBaseUrlPending": "Gib eine Basis-URL ein, um die Anfrage-URL zu erzeugen",
