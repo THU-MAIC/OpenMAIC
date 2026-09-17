@@ -10,6 +10,8 @@ import {
   RotateCcw,
   ChevronRight,
   Check,
+  CircleHelp,
+  MinusCircle,
   BookOpenText,
   Loader2,
   Sparkles,
@@ -20,9 +22,15 @@ import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('QuizView');
-import type { QuizQuestion } from '@/lib/types/stage';
+import type { QuizDiagnosticConfig, QuizQuestion } from '@/lib/types/stage';
 import { SpeechButton } from '@/components/audio/speech-button';
-import { gradeChoiceQuestions, isShortAnswer, type QuestionResult } from '@/lib/quiz/grading';
+import {
+  gradeChoiceQuestions,
+  isShortAnswer,
+  isSkippedAnswer,
+  SKIPPED_ANSWER,
+  type QuestionResult,
+} from '@/lib/quiz/grading';
 import { renderQuizMathText } from '@/lib/quiz/math-text';
 import { writeDraftRecovery } from '@/lib/quiz/persistence';
 import {
@@ -47,10 +55,18 @@ import {
 
 type Phase = 'not_started' | 'answering' | 'submitting' | 'grading' | 'reviewing';
 
+function hasAnswerValue(value: string | string[] | undefined): boolean {
+  if (Array.isArray(value)) return value.length > 0;
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 interface QuizViewProps {
   readonly questions: QuizQuestion[];
   readonly sceneId: string;
   readonly stageId: string;
+  readonly allowSkip?: boolean;
+  /** Evidence-focused mode records each item without an aggregate score. */
+  readonly diagnostic?: QuizDiagnosticConfig;
 }
 
 const QuizMathText = memo(function QuizMathText({
@@ -95,9 +111,12 @@ async function gradeShortAnswerQuestion(
   q: QuizQuestion,
   userAnswer: string,
   language: string,
+  diagnostic = false,
 ): Promise<QuestionResult> {
   const pts = q.points ?? 1;
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60_000);
     const modelConfig = getCurrentModelConfig();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -107,20 +126,44 @@ async function gradeShortAnswerQuestion(
     if (modelConfig.baseUrl) headers['x-base-url'] = modelConfig.baseUrl;
     if (modelConfig.providerType) headers['x-provider-type'] = modelConfig.providerType;
 
-    const res = await fetch('/api/quiz-grade', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        question: q.question,
-        userAnswer,
-        points: pts,
-        commentPrompt: q.commentPrompt,
-        language,
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch('/api/quiz-grade', {
+        method: 'POST',
+        headers,
+        signal: controller.signal,
+        body: JSON.stringify({
+          question: q.question,
+          userAnswer,
+          points: pts,
+          commentPrompt: q.commentPrompt,
+          language,
+        }),
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = (await res.json()) as { score: number; comment: string };
+    const data = (await res.json()) as { score: number | null; comment: string };
+    if (data.score === null || !Number.isFinite(data.score)) {
+      return {
+        questionId: q.id,
+        correct: null,
+        status: 'pending_review' as const,
+        earned: null,
+        aiComment: data.comment,
+      };
+    }
+    if (diagnostic) {
+      return {
+        questionId: q.id,
+        correct: null,
+        status: 'pending_review',
+        earned: null,
+        aiComment: data.comment,
+      };
+    }
     const earned = Math.max(0, Math.min(pts, data.score));
     return {
       questionId: q.id,
@@ -131,16 +174,16 @@ async function gradeShortAnswerQuestion(
     };
   } catch (err) {
     log.error('[quiz-view] AI grading failed for', q.id, err);
-    // Fallback: give half credit
+    // Never manufacture a score when the assessor is unavailable.
     return {
       questionId: q.id,
       correct: null,
-      status: 'incorrect',
-      earned: Math.round(pts * 0.5),
+      status: 'pending_review',
+      earned: null,
       aiComment:
         language === 'zh-CN'
-          ? '评分服务暂时不可用，已给予基础分。'
-          : 'Grading service unavailable. Base score given.',
+          ? '评分服务暂时不可用，请由家长或老师复核。'
+          : 'Grading service unavailable. Please review manually.',
     };
   }
 }
@@ -150,10 +193,12 @@ async function gradeShortAnswerQuestion(
 function QuizCover({
   questionCount,
   totalPoints,
+  diagnostic,
   onStart,
 }: {
   questionCount: number;
   totalPoints: number;
+  diagnostic?: boolean;
   onStart: () => void;
 }) {
   const { t } = useI18n();
@@ -201,14 +246,16 @@ function QuizCover({
             {questionCount} {t('quiz.questionsCount')}
           </span>
         </div>
-        <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-          <div className="w-7 h-7 rounded-lg bg-violet-50 dark:bg-violet-900/30 flex items-center justify-center">
-            <PieChart className="w-3.5 h-3.5 text-violet-500" />
+        {!diagnostic && (
+          <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+            <div className="w-7 h-7 rounded-lg bg-violet-50 dark:bg-violet-900/30 flex items-center justify-center">
+              <PieChart className="w-3.5 h-3.5 text-violet-500" />
+            </div>
+            <span>
+              {t('quiz.totalPrefix')} {totalPoints} {t('quiz.pointsSuffix')}
+            </span>
           </div>
-          <span>
-            {t('quiz.totalPrefix')} {totalPoints} {t('quiz.pointsSuffix')}
-          </span>
-        </div>
+        )}
       </motion.div>
 
       <motion.button
@@ -234,6 +281,9 @@ function SingleChoiceQuestion({
   onChange,
   disabled,
   result,
+  diagnostic,
+  canSkip,
+  onSkip,
 }: {
   question: QuizQuestion;
   index: number;
@@ -241,11 +291,23 @@ function SingleChoiceQuestion({
   onChange: (value: string) => void;
   disabled?: boolean;
   result?: QuestionResult;
+  diagnostic?: boolean;
+  canSkip?: boolean;
+  onSkip?: () => void;
 }) {
   const isReview = !!result;
+  const skipped = isSkippedAnswer(value);
 
   return (
-    <QuestionCard question={question} index={index} result={result}>
+    <QuestionCard
+      question={question}
+      index={index}
+      result={result}
+      diagnostic={diagnostic}
+      canSkip={canSkip && !skipped}
+      onSkip={onSkip}
+      skipped={skipped}
+    >
       <div className="grid gap-2">
         {question.options?.map((opt) => {
           const selected = value === opt.value;
@@ -327,6 +389,9 @@ function MultipleChoiceQuestion({
   onChange,
   disabled,
   result,
+  diagnostic,
+  canSkip,
+  onSkip,
 }: {
   question: QuizQuestion;
   index: number;
@@ -334,9 +399,16 @@ function MultipleChoiceQuestion({
   onChange: (value: string[]) => void;
   disabled?: boolean;
   result?: QuestionResult;
+  diagnostic?: boolean;
+  canSkip?: boolean;
+  onSkip?: () => void;
 }) {
   const isReview = !!result;
-  const selected = value ?? [];
+  const skipped = isSkippedAnswer(value);
+  // A skipped multiple-choice answer is persisted as a string sentinel. Keep
+  // it out of the array operations so a learner can still choose an option
+  // before submitting if they change their mind.
+  const selected = Array.isArray(value) ? value : [];
 
   const toggle = (optValue: string) => {
     if (disabled) return;
@@ -350,7 +422,15 @@ function MultipleChoiceQuestion({
   const { t } = useI18n();
 
   return (
-    <QuestionCard question={question} index={index} result={result}>
+    <QuestionCard
+      question={question}
+      index={index}
+      result={result}
+      diagnostic={diagnostic}
+      canSkip={canSkip && !skipped}
+      onSkip={onSkip}
+      skipped={skipped}
+    >
       {!isReview && (
         <p className="text-xs text-gray-400 dark:text-gray-500 mb-2">
           {t('quiz.multipleChoiceHint')}
@@ -430,6 +510,9 @@ function ShortAnswerQuestion({
   onChange,
   disabled,
   result,
+  diagnostic,
+  canSkip,
+  onSkip,
 }: {
   question: QuizQuestion;
   index: number;
@@ -437,9 +520,13 @@ function ShortAnswerQuestion({
   onChange: (value: string) => void;
   disabled?: boolean;
   result?: QuestionResult;
+  diagnostic?: boolean;
+  canSkip?: boolean;
+  onSkip?: () => void;
 }) {
   const isReview = !!result;
   const { t } = useI18n();
+  const skipped = isSkippedAnswer(value);
   // Ref to track latest value for voice transcription append
   const valueRef = useRef(value);
   useEffect(() => {
@@ -447,11 +534,19 @@ function ShortAnswerQuestion({
   }, [value]);
 
   return (
-    <QuestionCard question={question} index={index} result={result}>
+    <QuestionCard
+      question={question}
+      index={index}
+      result={result}
+      diagnostic={diagnostic}
+      canSkip={canSkip && !skipped}
+      onSkip={onSkip}
+      skipped={skipped}
+    >
       {!isReview ? (
         <div className="relative">
           <textarea
-            value={value ?? ''}
+            value={skipped ? '' : (value ?? '')}
             onChange={(e) => onChange(e.target.value)}
             disabled={disabled}
             placeholder={t('quiz.inputPlaceholder')}
@@ -467,18 +562,18 @@ function ShortAnswerQuestion({
             }}
           />
           <span className="absolute bottom-3 right-3 text-xs text-gray-300 dark:text-gray-600">
-            {(value ?? '').length} {t('quiz.charCount')}
+            {(skipped ? '' : (value ?? '')).length} {t('quiz.charCount')}
           </span>
         </div>
       ) : (
         <div className="space-y-3">
           <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300">
             <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">{t('quiz.yourAnswer')}</p>
-            {value ? (
+            {value && !skipped ? (
               <QuizMathText text={value} />
             ) : (
               <span className="text-gray-400 dark:text-gray-500 italic">
-                {t('quiz.notAnswered')}
+                {skipped ? t('quiz.skipped') : t('quiz.notAnswered')}
               </span>
             )}
           </div>
@@ -493,10 +588,12 @@ function ShortAnswerQuestion({
                   <QuizMathText text={result.aiComment} />
                 </p>
               </div>
-              <span className="ml-auto text-xs font-bold text-violet-600 dark:text-violet-400 shrink-0">
-                {result.earned}/{question.points ?? 1}
-                {t('quiz.pointsSuffix')}
-              </span>
+              {!diagnostic && (
+                <span className="ml-auto text-xs font-bold text-violet-600 dark:text-violet-400 shrink-0">
+                  {result.earned === null ? '—' : result.earned}/{question.points ?? 1}
+                  {t('quiz.pointsSuffix')}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -509,11 +606,19 @@ function QuestionCard({
   question,
   index,
   result,
+  diagnostic,
+  canSkip,
+  onSkip,
+  skipped,
   children,
 }: {
   question: QuizQuestion;
   index: number;
   result?: QuestionResult;
+  diagnostic?: boolean;
+  canSkip?: boolean;
+  onSkip?: () => void;
+  skipped?: boolean;
   children: React.ReactNode;
 }) {
   const { t } = useI18n();
@@ -534,6 +639,9 @@ function QuestionCard({
         isReview &&
           result.status === 'incorrect' &&
           'border-red-200 dark:border-red-800 shadow-sm shadow-red-50 dark:shadow-red-900/20',
+        isReview &&
+          (result.status === 'skipped' || result.status === 'pending_review') &&
+          'border-amber-200 dark:border-amber-800 shadow-sm shadow-amber-50 dark:shadow-amber-900/20',
       )}
     >
       {/* Left accent */}
@@ -543,6 +651,9 @@ function QuestionCard({
           !isReview && 'bg-violet-400',
           isReview && result.status === 'correct' && 'bg-emerald-400',
           isReview && result.status === 'incorrect' && 'bg-red-400',
+          isReview &&
+            (result.status === 'skipped' || result.status === 'pending_review') &&
+            'bg-amber-400',
         )}
       />
 
@@ -560,6 +671,9 @@ function QuestionCard({
               isReview &&
                 result.status === 'incorrect' &&
                 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
+              isReview &&
+                (result.status === 'skipped' || result.status === 'pending_review') &&
+                'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400',
             )}
           >
             {index + 1}
@@ -568,23 +682,49 @@ function QuestionCard({
             <div className="text-sm font-medium text-gray-800 dark:text-gray-100 leading-relaxed">
               <QuizMathText text={question.question} allowDisplayMode />
             </div>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {question.type === 'single'
-                ? t('quiz.singleChoice')
-                : question.type === 'multiple'
-                  ? t('quiz.multipleChoice')
-                  : t('quiz.shortAnswer')}
-              {' · '}
-              {pts} {t('quiz.pointsSuffix')}
-            </p>
+            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+              <p className="text-xs text-gray-400">
+                {question.type === 'single'
+                  ? t('quiz.singleChoice')
+                  : question.type === 'multiple'
+                    ? t('quiz.multipleChoice')
+                    : t('quiz.shortAnswer')}
+                {!diagnostic && (
+                  <>
+                    {' · '}
+                    {pts} {t('quiz.pointsSuffix')}
+                  </>
+                )}
+              </p>
+              {skipped && !isReview && (
+                <span className="text-[11px] text-amber-700 dark:text-amber-300">
+                  {t('quiz.skipped')}
+                </span>
+              )}
+            </div>
           </div>
         </div>
-        {isReview && (
-          <div className="shrink-0 ml-2">
-            {result.status === 'correct' && <CheckCircle2 className="w-6 h-6 text-emerald-500" />}
-            {result.status === 'incorrect' && <XCircle className="w-6 h-6 text-red-400" />}
-          </div>
-        )}
+        <div className="shrink-0 ml-2 flex items-center gap-2">
+          {!isReview && diagnostic && canSkip && onSkip && (
+            <button
+              type="button"
+              onClick={onSkip}
+              className="rounded-md border border-amber-200 px-2 py-1 text-[11px] font-medium text-amber-700 transition-colors hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/30"
+            >
+              {t('quiz.skipUnanswered')}
+            </button>
+          )}
+          {isReview && (
+            <>
+              {result.status === 'correct' && <CheckCircle2 className="w-6 h-6 text-emerald-500" />}
+              {result.status === 'incorrect' && <XCircle className="w-6 h-6 text-red-400" />}
+              {result.status === 'skipped' && <MinusCircle className="w-6 h-6 text-amber-500" />}
+              {result.status === 'pending_review' && (
+                <CircleHelp className="w-6 h-6 text-amber-500" />
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Body */}
@@ -614,6 +754,8 @@ function ScoreBanner({
   const pct = total > 0 ? Math.round((score / total) * 100) : 0;
   const correctCount = results.filter((r) => r.status === 'correct').length;
   const incorrectCount = results.filter((r) => r.status === 'incorrect').length;
+  const skippedCount = results.filter((r) => r.status === 'skipped').length;
+  const pendingCount = results.filter((r) => r.status === 'pending_review').length;
 
   const color = pct >= 80 ? 'emerald' : pct >= 60 ? 'amber' : 'red';
   const colorMap = {
@@ -658,6 +800,16 @@ function ScoreBanner({
             <span className="flex items-center gap-1">
               <XCircle className="w-3.5 h-3.5" /> {incorrectCount} {t('quiz.incorrect')}
             </span>
+            {skippedCount > 0 && (
+              <span>
+                {skippedCount} {t('quiz.skipped')}
+              </span>
+            )}
+            {pendingCount > 0 && (
+              <span>
+                {pendingCount} {t('quiz.pendingReview')}
+              </span>
+            )}
           </div>
         </div>
 
@@ -695,10 +847,49 @@ function ScoreBanner({
   );
 }
 
+function DiagnosticBanner({ results }: { results: QuestionResult[] }) {
+  const { t } = useI18n();
+  const pendingCount = results.filter((r) => r.status === 'pending_review').length;
+  const skippedCount = results.filter((r) => r.status === 'skipped').length;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="rounded-2xl border border-violet-200 bg-violet-50/80 p-5 text-violet-900 dark:border-violet-800 dark:bg-violet-900/20 dark:text-violet-100"
+    >
+      <p className="text-sm font-semibold">{t('quiz.quizReport')}</p>
+      <p className="mt-1 text-sm text-violet-700 dark:text-violet-300">
+        {t('quiz.diagnosticNoTotal')}
+      </p>
+      <div className="mt-3 flex flex-wrap gap-3 text-xs text-violet-700 dark:text-violet-300">
+        {pendingCount > 0 && (
+          <span>
+            {pendingCount} {t('quiz.pendingReview')}
+          </span>
+        )}
+        {skippedCount > 0 && (
+          <span>
+            {skippedCount} {t('quiz.skipped')}
+          </span>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 
-export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
+export function QuizView({
+  questions,
+  sceneId,
+  stageId,
+  allowSkip = false,
+  diagnostic,
+}: QuizViewProps) {
   const { t, locale } = useI18n();
+  const diagnosticMode = Boolean(diagnostic);
+  const canSkip = diagnostic?.allowSkip ?? allowSkip;
 
   const [phase, setPhase] = useState<Phase>('not_started');
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
@@ -780,19 +971,47 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
     [attemptId, runtimeWriter, sceneId, stageId],
   );
 
-  const handleSubmit = useCallback(async () => {
-    if (!attemptId) return;
-    setPhase('submitting');
-    await runQuizPersistenceTransition(
-      () => persistQuizSubmission({ stageId, sceneId, attemptId, answers }, runtimeWriter),
-      viewLifetime,
-      () => setPhase('grading'),
-      (error) => {
-        log.warn('Failed to persist quiz submission:', error);
-        setRuntimeGate({ status: 'error' });
-      },
-    );
-  }, [attemptId, answers, runtimeWriter, sceneId, stageId, viewLifetime]);
+  const handleSkipQuestion = useCallback(
+    (questionId: string) => {
+      if (!canSkip) return;
+      handleSetAnswer(questionId, SKIPPED_ANSWER);
+    },
+    [canSkip, handleSetAnswer],
+  );
+
+  const handleSubmit = useCallback(
+    async (skipUnanswered = false) => {
+      if (!attemptId) return;
+      const nextAnswers = skipUnanswered
+        ? questions.reduce<Record<string, string | string[]>>((next, q) => {
+            const answer = answers[q.id];
+            next[q.id] =
+              answer && (!Array.isArray(answer) || answer.length > 0) ? answer : SKIPPED_ANSWER;
+            return next;
+          }, {})
+        : answers;
+      if (!skipUnanswered && !allAnswered) return;
+      if (skipUnanswered) {
+        setAnswers(nextAnswers);
+        writeDraftRecovery(sceneId, attemptId, nextAnswers);
+      }
+      setPhase('submitting');
+      await runQuizPersistenceTransition(
+        () =>
+          persistQuizSubmission(
+            { stageId, sceneId, attemptId, answers: nextAnswers },
+            runtimeWriter,
+          ),
+        viewLifetime,
+        () => setPhase('grading'),
+        (error) => {
+          log.warn('Failed to persist quiz submission:', error);
+          setRuntimeGate({ status: 'error' });
+        },
+      );
+    },
+    [allAnswered, answers, attemptId, questions, runtimeWriter, sceneId, stageId, viewLifetime],
+  );
 
   // When entering grading phase, grade choice questions locally + call API for short-answer
   useEffect(() => {
@@ -807,7 +1026,14 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
       const shortAnswerQs = questions.filter(isShortAnswer);
       const aiResults = await Promise.all(
         shortAnswerQs.map((q) =>
-          gradeShortAnswerQuestion(q, (answers[q.id] as string) ?? '', locale),
+          isSkippedAnswer(answers[q.id])
+            ? Promise.resolve({
+                questionId: q.id,
+                correct: null,
+                status: 'skipped' as const,
+                earned: null,
+              })
+            : gradeShortAnswerQuestion(q, (answers[q.id] as string) ?? '', locale, diagnosticMode),
         ),
       );
 
@@ -842,7 +1068,17 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [phase, questions, answers, locale, sceneId, stageId, attemptId, runtimeWriter]);
+  }, [
+    phase,
+    questions,
+    answers,
+    locale,
+    sceneId,
+    stageId,
+    attemptId,
+    runtimeWriter,
+    diagnosticMode,
+  ]);
 
   const handleRetry = useCallback(async () => {
     if (!attemptId || retrying) return;
@@ -869,7 +1105,10 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
     );
   }, [attemptId, retrying, runtimeWriter, sceneId, stageId, viewLifetime]);
 
-  const earnedScore = useMemo(() => results.reduce((sum, r) => sum + r.earned, 0), [results]);
+  const earnedScore = useMemo(
+    () => results.reduce((sum, r) => sum + (r.earned ?? 0), 0),
+    [results],
+  );
 
   const resultMap = useMemo(() => {
     const map: Record<string, QuestionResult> = {};
@@ -916,6 +1155,7 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
             <QuizCover
               questionCount={questions.length}
               totalPoints={totalPoints}
+              diagnostic={diagnosticMode}
               onStart={() => setPhase('answering')}
             />
           </motion.div>
@@ -947,19 +1187,30 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                   / {questions.length}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => void handleSubmit()}
-                disabled={!allAnswered}
-                className={cn(
-                  'px-4 py-1.5 rounded-lg text-xs font-medium transition-all',
-                  allAnswered
-                    ? 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-sm hover:shadow-md hover:shadow-violet-200/50 dark:hover:shadow-violet-900/50 active:scale-[0.97]'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed',
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleSubmit()}
+                  disabled={!allAnswered}
+                  className={cn(
+                    'px-4 py-1.5 rounded-lg text-xs font-medium transition-all',
+                    allAnswered
+                      ? 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-sm hover:shadow-md hover:shadow-violet-200/50 dark:hover:shadow-violet-900/50 active:scale-[0.97]'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed',
+                  )}
+                >
+                  {t('quiz.submitAnswers')}
+                </button>
+                {canSkip && (
+                  <button
+                    type="button"
+                    onClick={() => void handleSubmit(true)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors"
+                  >
+                    {t('quiz.skipUnanswered')}
+                  </button>
                 )}
-              >
-                {t('quiz.submitAnswers')}
-              </button>
+              </div>
             </div>
 
             {/* Questions */}
@@ -973,6 +1224,9 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                       index={i}
                       value={answers[q.id] as string | undefined}
                       onChange={(v) => handleSetAnswer(q.id, v)}
+                      diagnostic={diagnosticMode}
+                      canSkip={canSkip && !hasAnswerValue(answers[q.id])}
+                      onSkip={() => handleSkipQuestion(q.id)}
                     />
                   );
                 }
@@ -984,6 +1238,9 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                       index={i}
                       value={answers[q.id] as string[] | undefined}
                       onChange={(v) => handleSetAnswer(q.id, v)}
+                      diagnostic={diagnosticMode}
+                      canSkip={canSkip && !hasAnswerValue(answers[q.id])}
+                      onSkip={() => handleSkipQuestion(q.id)}
                     />
                   );
                 }
@@ -994,6 +1251,9 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                     index={i}
                     value={answers[q.id] as string | undefined}
                     onChange={(v) => handleSetAnswer(q.id, v)}
+                    diagnostic={diagnosticMode}
+                    canSkip={canSkip && !hasAnswerValue(answers[q.id])}
+                    onSkip={() => handleSkipQuestion(q.id)}
                   />
                 );
               })}
@@ -1066,7 +1326,11 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
 
             {/* Results */}
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-              <ScoreBanner score={earnedScore} total={totalPoints} results={results} />
+              {diagnosticMode ? (
+                <DiagnosticBanner results={results} />
+              ) : (
+                <ScoreBanner score={earnedScore} total={totalPoints} results={results} />
+              )}
 
               {questions.map((q, i) => {
                 const r = resultMap[q.id];
@@ -1080,6 +1344,7 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                       onChange={() => {}}
                       disabled
                       result={r}
+                      diagnostic={diagnosticMode}
                     />
                   );
                 }
@@ -1093,6 +1358,7 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                       onChange={() => {}}
                       disabled
                       result={r}
+                      diagnostic={diagnosticMode}
                     />
                   );
                 }
@@ -1105,6 +1371,7 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                     onChange={() => {}}
                     disabled
                     result={r}
+                    diagnostic={diagnosticMode}
                   />
                 );
               })}

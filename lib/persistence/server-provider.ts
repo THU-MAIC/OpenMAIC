@@ -12,6 +12,7 @@ import { lazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { resolveAssetPendingTtlMs } from '@/lib/persistence/asset-pending-ttl';
 import { resolveAssetQuotaBytes } from '@/lib/persistence/asset-quota';
 import { ensureOwnerMaterialSchema } from '@/lib/persistence/owner-materials';
+import { ensureProviderPolicySchema } from '@/lib/persistence/provider-policy';
 import { ensureStageMetaSchema } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 
@@ -54,6 +55,7 @@ async function createServerPersistenceProvider(
     await ensureDocumentSchema(queryable);
     await ensureStageMetaSchema(queryable);
     await ensureOwnerMaterialSchema(queryable);
+    await ensureProviderPolicySchema(queryable);
     await ensureAssetSchema(queryable);
     const withTransaction = nodePostgresTransaction(queryable);
     const byteStore = lazyAssetByteStore(process.env.ASSET_S3_BUCKET, queryable);

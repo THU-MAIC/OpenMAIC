@@ -8,6 +8,7 @@ import {
   resolveASRModel,
   resolveServerASRProviderId,
 } from '@/lib/server/provider-config';
+import { getEffectiveServerAudioPolicy } from '@/lib/server/audio-policy';
 import type { ASRProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -44,6 +45,15 @@ export async function POST(req: NextRequest) {
     }
     resolvedProviderId = effectiveProviderId;
     resolvedModelId = modelId;
+
+    const audioPolicy = await getEffectiveServerAudioPolicy();
+    if (audioPolicy.locked && effectiveProviderId !== audioPolicy.asrProviderId) {
+      return apiError(
+        'PROVIDER_NOT_ALLOWED',
+        403,
+        `This run only allows ${audioPolicy.asrProviderId} for ASR`,
+      );
+    }
 
     // Enforce server precedence: a force-disabled provider is off for everyone,
     // regardless of any client key/selection — mirror the TTS contract (#665).

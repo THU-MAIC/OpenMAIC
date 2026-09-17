@@ -76,8 +76,13 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
         });
 
         if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || 'Transcription failed');
+          const error = (await response.json().catch(() => null)) as {
+            error?: unknown;
+            details?: unknown;
+          } | null;
+          const summary = typeof error?.error === 'string' ? error.error : 'Transcription failed';
+          const details = typeof error?.details === 'string' ? error.details.trim() : '';
+          throw new Error(details ? `${summary}: ${details}` : summary);
         }
 
         const result = await response.json();

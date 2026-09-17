@@ -30,6 +30,8 @@ export interface UsageRecordInput {
   providerId: string;
   modelId: string;
   modelString: string;
+  /** Model id reported by the upstream response, when the SDK exposes it. */
+  responseModelId?: string;
   /** Token usage (LLM only). */
   usage?: NormalizedUsage;
   /** Non-token quantity: images count / seconds / characters. */
@@ -47,6 +49,8 @@ export interface UsageRecord {
   providerId: string;
   modelId: string;
   modelString: string;
+  /** Model id reported by the upstream response, when available. */
+  responseModelId?: string;
   // LLM token counts (0 for non-LLM rows).
   inputTokens: number;
   outputTokens: number;
@@ -118,6 +122,7 @@ export async function recordUsage(
       providerId: input.providerId,
       modelId: input.modelId,
       modelString: input.modelString,
+      ...(input.responseModelId ? { responseModelId: input.responseModelId } : {}),
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
       cacheReadTokens: usage.cacheReadTokens,
