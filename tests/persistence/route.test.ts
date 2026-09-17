@@ -52,6 +52,41 @@ describe('embedded persistence route', () => {
     });
   });
 
+  it('logs every 5xx with method, path, status, code and echoes a request id', async () => {
+    vi.stubEnv('DATABASE_URL', 'postgres://unused-in-this-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', '');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { PATCH } = await import('@/app/api/persistence/[...path]/route');
+
+    const response = await PATCH(
+      new Request('http://localhost/api/persistence/runtime/sessions/s1/status', {
+        method: 'PATCH',
+        headers: { 'x-request-id': 'req-abc' },
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get('x-request-id')).toBe('req-abc');
+    const logged = error.mock.calls.flat().join(' ');
+    expect(logged).toContain('PATCH /api/persistence/runtime/sessions/s1/status → 503');
+    expect(logged).toContain('PERSISTENCE_DEV_TOKEN_MISSING');
+    expect(logged).toContain('requestId=req-abc');
+    error.mockRestore();
+  });
+
+  it('does not log 4xx answers but still echoes a minted request id', async () => {
+    vi.stubEnv('DATABASE_URL', '');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { GET } = await import('@/app/api/persistence/[...path]/route');
+
+    const response = await GET(new Request('http://localhost/api/persistence/documents'));
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get('x-request-id')).toMatch(/^[0-9a-f]{8}$/);
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
+
   it('retries initialization on the next request after a failed pool initialization', async () => {
     const ensureSchema = vi
       .fn()

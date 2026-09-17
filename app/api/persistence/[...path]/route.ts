@@ -1,4 +1,5 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 
 import {
@@ -26,10 +27,12 @@ import {
 import { readStageMeta } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { createLogger } from '@/lib/logger';
 
 export const runtime = 'nodejs';
 
 const ROUTE_PREFIX = '/api/persistence';
+const log = createLogger('Persistence');
 
 function jsonError(status: number, code: string, message: string): Response {
   return Response.json({ error: { code, message } }, { status });
@@ -310,9 +313,41 @@ interface PersistenceRequestDeps {
   poolFactory?: PersistencePoolFactory;
 }
 
+/**
+ * Every 5xx leaving this route is logged with method, path, status and a
+ * request id (taken from `x-request-id` when a proxy set one, minted
+ * otherwise) and the id is echoed on the response, so a failing save can be
+ * matched between the browser's network tab and the server log instead of
+ * being guessed at (matnastik İŞ 68.1b: PUT/PATCH/DELETE 503s that no code
+ * path could explain).
+ */
 export async function handlePersistenceRequest(
   request: Request,
   deps: PersistenceRequestDeps = {},
+): Promise<Response> {
+  const requestId = request.headers.get('x-request-id')?.trim() || randomUUID().slice(0, 8);
+  const response = await handlePersistenceRequestInner(request, deps);
+  if (response.status >= 500) {
+    let code = '-';
+    if (response.headers.get('content-type')?.includes('application/json')) {
+      try {
+        const parsed = (await response.clone().json()) as { error?: { code?: string } };
+        code = parsed?.error?.code ?? '-';
+      } catch {
+        code = '-';
+      }
+    }
+    log.error(
+      `${request.method} ${new URL(request.url).pathname} → ${response.status} ${code} (requestId=${requestId})`,
+    );
+  }
+  response.headers.set('x-request-id', requestId);
+  return response;
+}
+
+async function handlePersistenceRequestInner(
+  request: Request,
+  deps: PersistenceRequestDeps,
 ): Promise<Response> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
