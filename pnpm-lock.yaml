@@ -720,6 +720,9 @@ importers:
       eslint:
         specifier: ^8.27.0
         version: 8.57.1
+      jsdom:
+        specifier: ^29.1.1
+        version: 29.1.1(@noble/hashes@1.8.0)(canvas@3.2.3)
       rollup:
         specifier: ^3.3.0
         version: 3.30.0

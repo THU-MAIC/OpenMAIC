@@ -364,8 +364,25 @@ function ommlToLatexJs(ommlXml: string): string {
     const normalized = normalizeOmmlXml(ommlXml);
     const parser = new DOMParser();
     const doc = parser.parseFromString(normalized, 'application/xml');
+    // omml2mathml drops explicitly empty delimiter attributes. Preserve them as
+    // LaTeX's invisible delimiter before they can be confused with defaults.
+    const mathNamespace = 'http://schemas.openxmlformats.org/officeDocument/2006/math';
+    for (const name of ['begChr', 'endChr']) {
+      for (const delimiter of Array.from(doc.getElementsByTagNameNS(mathNamespace, name))) {
+        const value = delimiter.getAttributeNodeNS(mathNamespace, 'val');
+        if (value?.value === '') value.value = '.';
+      }
+    }
     const mathmlNode = omml2mathml(doc);
     if (!mathmlNode) return '';
+    // mathml-to-latex copies mfenced attributes verbatim after \left/\right.
+    // Braces must be escaped or the whole equation fails KaTeX parsing.
+    for (const fence of Array.from(mathmlNode.getElementsByTagName('mfenced')) as Element[]) {
+      for (const name of ['open', 'close']) {
+        const value = fence.getAttribute(name);
+        if (value === '{' || value === '}') fence.setAttribute(name, `\\${value}`);
+      }
+    }
     const mathmlStr: string = mathmlNode.outerHTML ?? mathmlNode.toString();
     const rawLatex = MathMLToLaTeX.convert(mathmlStr);
     return postProcessLatex(rawLatex);

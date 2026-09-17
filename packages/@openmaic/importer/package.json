@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/importer",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "description": "A javascript tool for parsing .pptx file",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -73,6 +73,7 @@
     "@rollup/plugin-terser": "^0.1.0",
     "@rollup/plugin-typescript": "^11.1.6",
     "eslint": "^8.27.0",
+    "jsdom": "^29.1.1",
     "rollup": "^3.3.0",
     "rollup-plugin-node-builtins": "^2.1.2",
     "rollup-plugin-node-globals": "^1.4.0",

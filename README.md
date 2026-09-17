@@ -157,7 +157,7 @@ providers:
       - us.anthropic.claude-opus-4-8
 ```
 
-Supported providers: **OpenAI**, **Azure OpenAI**, **Anthropic**, **Amazon Bedrock**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), **Lemonade** (local LLM / image / TTS / ASR), **FunASR** (local ASR), and any OpenAI-compatible API.
+Supported providers: **OpenAI**, **Azure OpenAI**, **Anthropic**, **Amazon Bedrock**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **TokenDance**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), **Lemonade** (local LLM / image / TTS / ASR), **FunASR** (local ASR), and any OpenAI-compatible API.
 
 Amazon Bedrock quick example:
 
@@ -249,6 +249,31 @@ DEFAULT_MODEL=xiaomi:mimo-v2.5-pro
 
 Use `https://token-plan-sgp.xiaomimimo.com/v1` or `https://token-plan-ams.xiaomimimo.com/v1` for the Singapore or Europe Token Plan clusters.
 
+TokenDance quick example (one key for chat, image, video, TTS, and web search):
+
+```env
+TOKENDANCE_API_KEY=sk-...
+TOKENDANCE_BASE_URL=https://tokendance.space/gateway/v1
+DEFAULT_MODEL=tokendance:deepseek-v4.1-flash
+
+IMAGE_SEEDREAM_API_KEY=sk-...
+IMAGE_SEEDREAM_BASE_URL=https://tokendance.space/gateway/ark/v3
+IMAGE_SEEDREAM_MODELS=seedream-5.0-lite
+
+VIDEO_MINIMAX_API_KEY=sk-...
+VIDEO_MINIMAX_BASE_URL=https://tokendance.space/gateway/minimax
+VIDEO_MINIMAX_MODELS=minimax-h3
+
+TTS_MINIMAX_API_KEY=sk-...
+TTS_MINIMAX_BASE_URL=https://tokendance.space/gateway/minimax
+TTS_MINIMAX_MODELS=minimax-speech-2.8-turbo
+
+BOCHA_API_KEY=sk-...
+BOCHA_BASE_URL=https://tokendance.space/gateway/bocha
+```
+
+Without touching `.env.local`, **Settings → Token Plan → TokenDance** applies the same key to every modality in one step.
+
 GLM (Zhipu) quick examples:
 
 ```env
@@ -263,9 +288,7 @@ GLM_BASE_URL=https://api.z.ai/api/paas/v4
 DEFAULT_MODEL=glm:glm-5.1
 ```
 
-> **Recommended model:** **Gemini 3 Flash** — best balance of quality and speed. For highest quality (at slower speed), try **Gemini 3.1 Pro**.
->
-> If you want OpenMAIC server APIs to use Gemini by default, also set `DEFAULT_MODEL=google:gemini-3-flash-preview`.
+> **Recommended setup:** OpenMAIC is at its best with every modality turned on — generated illustrations, narration, video clips, and web-grounded research. The least friction is a single key that covers all of them (see the one-key example above), with a fast long-context model such as `deepseek-v4.1-flash` as the default.
 >
 > If you want to use MiniMax as the default server model, set `DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed`.
 

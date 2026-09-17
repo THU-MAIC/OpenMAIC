@@ -144,7 +144,7 @@ providers:
       - us.anthropic.claude-opus-4-8
 ```
 
-支持的服务商：**OpenAI**、**Azure OpenAI**、**Anthropic**、**Amazon Bedrock**、**Google Gemini**、**DeepSeek**、**通义千问 Qwen**、**Kimi**、**MiniMax**、**Grok (xAI)**、**OpenRouter**、**豆包**、**腾讯混元 / TokenHub**、**小米 MiMo**、**智谱 GLM**、**Ollama**（本地）、**Lemonade**（本地 LLM / 图像 / TTS / ASR）、**FunASR**（本地 ASR）以及任何兼容 OpenAI API 的服务。
+支持的服务商：**OpenAI**、**Azure OpenAI**、**Anthropic**、**Amazon Bedrock**、**Google Gemini**、**DeepSeek**、**通义千问 Qwen**、**Kimi**、**MiniMax**、**Grok (xAI)**、**OpenRouter**、**TokenDance**、**豆包**、**腾讯混元 / TokenHub**、**小米 MiMo**、**智谱 GLM**、**Ollama**（本地）、**Lemonade**（本地 LLM / 图像 / TTS / ASR）、**FunASR**（本地 ASR）以及任何兼容 OpenAI API 的服务。
 
 Amazon Bedrock 快速示例：
 
@@ -230,6 +230,31 @@ DEFAULT_MODEL=xiaomi:mimo-v2.5-pro
 
 新加坡或欧洲 Token Plan 集群可分别使用 `https://token-plan-sgp.xiaomimimo.com/v1`、`https://token-plan-ams.xiaomimimo.com/v1`。
 
+TokenDance 快速示例（一个 Key 同时覆盖对话、图像、视频、TTS 与联网搜索）：
+
+```env
+TOKENDANCE_API_KEY=sk-...
+TOKENDANCE_BASE_URL=https://tokendance.space/gateway/v1
+DEFAULT_MODEL=tokendance:deepseek-v4.1-flash
+
+IMAGE_SEEDREAM_API_KEY=sk-...
+IMAGE_SEEDREAM_BASE_URL=https://tokendance.space/gateway/ark/v3
+IMAGE_SEEDREAM_MODELS=seedream-5.0-lite
+
+VIDEO_MINIMAX_API_KEY=sk-...
+VIDEO_MINIMAX_BASE_URL=https://tokendance.space/gateway/minimax
+VIDEO_MINIMAX_MODELS=minimax-h3
+
+TTS_MINIMAX_API_KEY=sk-...
+TTS_MINIMAX_BASE_URL=https://tokendance.space/gateway/minimax
+TTS_MINIMAX_MODELS=minimax-speech-2.8-turbo
+
+BOCHA_API_KEY=sk-...
+BOCHA_BASE_URL=https://tokendance.space/gateway/bocha
+```
+
+不想改 `.env.local` 的话，在 **设置 → Token Plan → TokenDance** 中可以一键把同一个 Key 填入全部模态。
+
 智谱 GLM 快速示例：
 
 ```env
@@ -244,9 +269,7 @@ GLM_BASE_URL=https://api.z.ai/api/paas/v4
 DEFAULT_MODEL=glm:glm-5.1
 ```
 
-> **推荐模型：** **Gemini 3 Flash** — 效果与速度的最佳平衡。追求最高质量可选 **Gemini 3.1 Pro**（速度较慢）。
->
-> 如果希望 OpenMAIC 服务端默认走 Gemini，还需要额外设置 `DEFAULT_MODEL=google:gemini-3-flash-preview`。
+> **推荐配置：** 打开全部模态时 OpenMAIC 效果最好——配图、语音讲解、视频片段与联网检索都会参与生成。最省事的方式是用一个 Key 覆盖全部模态（见上方的一键示例），默认模型选 `deepseek-v4.1-flash` 这类速度快、长上下文的模型即可。
 >
 > 如果希望默认走 MiniMax，可设置 `DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed`。
 
