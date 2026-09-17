@@ -2,7 +2,12 @@
  * Tests for the promoted stream-fn adapter — `toModelMessages` conversion.
  */
 import { describe, it, expect } from 'vitest';
-import { toModelMessages, createPartMapper } from '@/lib/agent/runtime/stream-fn';
+import {
+  toModelMessages,
+  createPartMapper,
+  createCallLlmStreamFn,
+} from '@/lib/agent/runtime/stream-fn';
+import { getModel } from '@/lib/ai/providers';
 import type { ToolCallProviderMetadata } from '@/lib/agent/runtime/provider-metadata';
 import type {
   AssistantMessage,
@@ -265,5 +270,113 @@ describe('toModelMessages', () => {
     const content = (result[0] as { content: Array<Record<string, unknown>> }).content;
 
     expect(content[0].output).toEqual({ type: 'error-text', value: 'failure detail' });
+  });
+});
+
+describe('createCallLlmStreamFn — reasoning round-trip on the driver wire', () => {
+  function sseBody(chunks: unknown[]): Response {
+    const encoder = new TextEncoder();
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          for (const chunk of chunks) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+          }
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        },
+      }),
+      { headers: { 'content-type': 'text/event-stream' } },
+    );
+  }
+
+  function chunk(delta: Record<string, unknown>, finishReason: string | null = null) {
+    return {
+      id: 'chatcmpl-driver',
+      object: 'chat.completion.chunk',
+      created: 1,
+      model: 'deepseek-v4-pro',
+      choices: [{ index: 0, delta, finish_reason: finishReason }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    };
+  }
+
+  function priorTurnMessages(): PiMessage[] {
+    return [
+      {
+        role: 'user',
+        content: [{ type: 'text', text: 'find it' }],
+        timestamp: 0,
+      },
+      {
+        ...emptyPartial(),
+        content: [
+          { type: 'thinking', thinking: 'use the lookup tool' },
+          { type: 'toolCall', id: 'call-1', name: 'lookup', arguments: {} },
+        ],
+      } as PiMessage,
+      {
+        role: 'toolResult',
+        toolCallId: 'call-1',
+        toolName: 'lookup',
+        content: [{ type: 'text', text: '{"found":true}' }],
+        isError: false,
+        timestamp: 0,
+      } as PiMessage,
+    ];
+  }
+
+  async function driveDeepseekTurn(thinkingConfig?: { enabled?: boolean }) {
+    const requestBodies: Array<Record<string, unknown>> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return sseBody([chunk({ content: 'done' }), chunk({}, 'stop')]);
+    }) as typeof globalThis.fetch;
+
+    try {
+      const { model } = getModel({
+        providerId: 'deepseek',
+        modelId: 'deepseek-v4-pro',
+        apiKey: 'sk-test',
+      });
+      const streamFn = createCallLlmStreamFn({
+        languageModel: model,
+        thinkingConfig,
+        omitMaxOutputTokens: true,
+      });
+      const stream = streamFn(
+        { id: 'maic-connector' } as never,
+        { systemPrompt: 'sys', messages: priorTurnMessages() },
+        undefined,
+      );
+      for await (const _event of stream as unknown as AsyncIterable<unknown>) {
+        void _event;
+      }
+      return requestBodies;
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  it('carries the prior thinking block as reasoning_content when thinking is on', async () => {
+    const requestBodies = await driveDeepseekTurn({ enabled: true });
+
+    expect(requestBodies).toHaveLength(1);
+    const assistant = (requestBodies[0]?.messages as Array<Record<string, unknown>>).find(
+      (message) => message.role === 'assistant',
+    );
+    expect(assistant?.reasoning_content).toBe('use the lookup tool');
+  });
+
+  it('strips the private marker instead of shipping it on a disabled turn', async () => {
+    const requestBodies = await driveDeepseekTurn({ enabled: false });
+
+    expect(requestBodies).toHaveLength(1);
+    const assistant = (requestBodies[0]?.messages as Array<Record<string, unknown>>).find(
+      (message) => message.role === 'assistant',
+    );
+    expect(assistant?.reasoning_content).toBeUndefined();
+    expect(String(assistant?.content ?? '')).not.toContain('openmaic:kimi-reasoning');
   });
 });

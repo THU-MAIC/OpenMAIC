@@ -35,6 +35,7 @@ import { wrapLanguageModel, extractReasoningMiddleware } from 'ai';
 import {
   createReasoningPreservationMiddleware,
   restoreReasoningContentInRequestBody,
+  stripReasoningContentInRequestBody,
   wrapJsonResponseWithReasoning,
   wrapResponseWithReasoning,
 } from './reasoning-sse';
@@ -2262,6 +2263,9 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         config.providerId !== 'openai' ||
         (usesCustomOpenAIBaseUrl(config.baseUrl) && !usesOpenAIResponses);
       const roundTripProvider = preservesReasoning(config.providerId, config.modelId);
+      const deepseekAdapter =
+        getCatalogThinkingCapability(config.providerId, config.modelId)?.requestAdapter ===
+        'deepseek';
       if (usesCompatTransport) {
         const providerId = config.providerId;
         const compatFetch = async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -2310,19 +2314,14 @@ export function getModel(config: ModelConfig): ModelWithInfo {
             }
           }
 
-          if (
-            roundTripProvider &&
-            init?.body &&
-            typeof init.body === 'string'
-          ) {
+          if (roundTripProvider && init?.body && typeof init.body === 'string') {
             try {
               const body = JSON.parse(init.body);
-              // A disabled turn must carry neither the field nor the markers:
-              // the provider rejects reasoning_content outside thinking mode,
-              // and there is nothing to round-trip when thinking is off.
-              if (body.thinking?.type !== 'disabled') {
+              if (getThinkingMode(thinking) === 'disabled') {
+                stripReasoningContentInRequestBody(body);
+              } else {
                 restoreReasoningContentInRequestBody(body);
-                if (body.thinking?.type === 'enabled') {
+                if (deepseekAdapter) {
                   for (const message of body.messages ?? []) {
                     if (message?.role === 'assistant' && message.reasoning_content === undefined) {
                       message.reasoning_content = '';

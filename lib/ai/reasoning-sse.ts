@@ -107,6 +107,29 @@ export function restoreReasoningContentInRequestBody(body: unknown): void {
 }
 
 /**
+ * Decode the private reasoning markers and drop them without emitting
+ * `reasoning_content`: a disabled thinking turn must carry neither the field
+ * nor the sentinel that stands in for it.
+ */
+export function stripReasoningContentInRequestBody(body: unknown): void {
+  if (!body || typeof body !== 'object') return;
+  const messages = (body as { messages?: unknown }).messages;
+  if (!Array.isArray(messages)) return;
+
+  for (const message of messages) {
+    if (!message || typeof message !== 'object') continue;
+    const record = message as Record<string, unknown>;
+    if (record.role !== 'assistant' || typeof record.content !== 'string') continue;
+
+    const stripped = extractKimiReasoning(record.content);
+    if (!stripped.reasoning) continue;
+
+    record.content =
+      stripped.content === '' && Array.isArray(record.tool_calls) ? null : stripped.content;
+  }
+}
+
+/**
  * Create a stateful rewriter for one streamed response. Call it on each parsed
  * `chat.completion.chunk`; it mutates and returns the same object with
  * `reasoning_content` folded into a `<think>…</think>` block in `content`.
