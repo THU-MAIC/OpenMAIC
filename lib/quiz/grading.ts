@@ -1,4 +1,5 @@
 import type { QuizQuestion } from '@/lib/types/stage';
+import { resolveQuizAnswerKey } from '@/lib/quiz/answer-key';
 
 export interface QuestionResult {
   questionId: string;
@@ -31,33 +32,26 @@ export function isShortAnswer(q: QuizQuestion): boolean {
 }
 
 /**
- * Resolve a PERSISTED answer-key entry to an option value. Exact, unique
- * alignment only (per review): an entry that exactly equals one option VALUE
- * resolves to it; one that exactly equals exactly one option LABEL resolves
- * to that option's value. Unknown or ambiguous entries stay unresolved —
- * no case folding, whitespace/Unicode normalization, or wrapper/prefix
- * interpretation is applied.
+ * Resolve a PERSISTED answer-key entry to an option value. Canonical, unique
+ * alignment: NFKC + whitespace-stripped + lowercase, tolerant of leading
+ * letter wrappers ("A." / "A、" / "(B)" / "（Ｂ）"). An entry that canonically
+ * equals exactly one option VALUE or LABEL resolves to that option's actual
+ * `value`. Unknown or ambiguous entries stay unresolved.
  *
  * This compatibility resolution exists for the stored key, whose form is
- * whatever the generator wrote. A learner submission is produced by the UI
- * from the option values themselves, so it is compared as-is — see
- * `gradeChoiceQuestions`.
+ * whatever the generator wrote (content, letter, or a formatting variant).
+ * A learner submission is produced by the UI from the option values
+ * themselves, so it is compared as-is — see `gradeChoiceQuestions`.
  */
 export function resolveAnswerKeyToValue(q: QuizQuestion, answer: string): string {
-  const opts = q.options ?? [];
-  if (opts.length === 0) return answer;
-  const valueMatches = opts.filter((o) => o.value === answer);
-  if (valueMatches.length === 1) return valueMatches[0].value;
-  const labelMatches = opts.filter((o) => o.label === answer);
-  if (labelMatches.length === 1) return labelMatches[0].value;
-  return answer;
+  return resolveQuizAnswerKey(answer, q.options ?? []);
 }
 
 /**
- * Review-UI projection of the same exact resolver used for grading: whether
- * an option's value is among the question's resolved correct-answer values.
- * Receives the question so label-stored keys resolve through the identical
- * exact/unique alignment instead of a separate fuzzy matcher.
+ * Review-UI projection of the same canonical resolver used for grading:
+ * whether an option's value is among the question's resolved correct-answer
+ * values. Receives the question so content/format-variant keys resolve
+ * through the identical unique alignment instead of a separate matcher.
  */
 export function answerIncludesOption(q: QuizQuestion, optionValue: string): boolean {
   return toArray(q.answer).some((a) => resolveAnswerKeyToValue(q, a) === optionValue);

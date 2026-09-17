@@ -33,6 +33,7 @@ import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator.js';
 import { postProcessInteractiveHtml } from './interactive-post-processor.js';
 import { parseActionsFromStructuredOutput } from './action-parser.js';
 import { parseJsonResponse } from './json-repair.js';
+import { resolveQuizAnswerKey } from './quiz-answer-key.js';
 import {
   buildCourseContext,
   formatAgentsForPrompt,
@@ -943,14 +944,13 @@ function normalizeQuizOptions(
  * AI may generate correctAnswer as string or string[], under various field names.
  * This normalizes to string[] format matching option values.
  *
- * The LLM writes the answer key inconsistently, as option CONTENT ("(6, 2)")
- * or as a LETTER ("A"). Only exact, unique alignment is resolved: an entry
- * that equals exactly one option value, or exactly one option label, becomes
- * that option's value. Formatting variants (case, whitespace, full-width
- * forms, wrapper punctuation) are NOT normalized, and ambiguous entries (two
- * options sharing a value or a label) are left untouched — consistent with
- * the grading-side resolver, which must not accept a variant a stored key
- * would never resolve to.
+ * The LLM writes the answer key inconsistently: as option CONTENT ("(6, 2)"),
+ * as a LETTER ("A"), or as a formatting variant (full-width chars, missing
+ * inner spaces, trailing spaces, "A." / "A、" / "（Ｂ）" wrappers). Every
+ * variant is resolved to the matching option value via canonical comparison
+ * (NFKC + whitespace-stripped + lowercase, letter-wrapper tolerant). Unknown
+ * or ambiguous entries (two options sharing a canonical value or label) pass
+ * through untouched — consistent with the grading-side resolver.
  */
 export function normalizeQuizAnswer(
   question: Record<string, unknown>,
@@ -969,19 +969,7 @@ export function normalizeQuizAnswer(
     return answers;
   }
 
-  // Exact alignment only (per review): value or label must match the answer
-  // byte-for-byte; no case folding, whitespace/Unicode normalization, or
-  // wrapper interpretation. Fail closed on ambiguity: convert only when
-  // exactly one distinct option value matches.
-  return answers.map((a) => {
-    const valueMatches = options.filter((o) => o.value === a);
-    const labelMatches = options.filter((o) => o.label === a);
-    const candidates = new Set<string>();
-    for (const o of valueMatches) candidates.add(o.value);
-    for (const o of labelMatches) candidates.add(o.value);
-    if (candidates.size === 1) return [...candidates][0];
-    return a;
-  });
+  return answers.map((a) => resolveQuizAnswerKey(a, options));
 }
 
 /**

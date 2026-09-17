@@ -51,6 +51,30 @@ describe('gradeChoiceQuestions', () => {
     const results = gradeChoiceQuestions([q({ points: 5 })], { q1: 'a' });
     expect(results[0].earned).toBe(5);
   });
+
+  it('grades a persisted content-variant key against the option value', () => {
+    const question = q({
+      options: [
+        { value: 'A', label: '(6, 2)' },
+        { value: 'B', label: '(2, -4)' },
+      ],
+      answer: ['(6,2)'],
+    });
+    expect(gradeChoiceQuestions([question], { q1: 'A' })[0].correct).toBe(true);
+    expect(gradeChoiceQuestions([question], { q1: 'B' })[0].correct).toBe(false);
+  });
+
+  it('does not fuzzy-resolve the learner submission', () => {
+    const question = q({
+      options: [
+        { value: 'A', label: '(6, 2)' },
+        { value: 'B', label: '(2, -4)' },
+      ],
+      answer: ['A'],
+    });
+    expect(gradeChoiceQuestions([question], { q1: '(6, 2)' })[0].correct).toBe(false);
+    expect(gradeChoiceQuestions([question], { q1: 'A' })[0].correct).toBe(true);
+  });
 });
 
 describe('isShortAnswer', () => {

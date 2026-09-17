@@ -5,7 +5,15 @@ import {
   gradeChoiceQuestions,
   resolveAnswerKeyToValue,
 } from '@/lib/quiz/grading';
+import {
+  canonQuizAnswerKey as appCanon,
+  resolveQuizAnswerKey as appResolve,
+} from '@/lib/quiz/answer-key';
 import { normalizeQuizAnswer } from '../packages/@openmaic/generation/src/scene-generator';
+import {
+  canonQuizAnswerKey as genCanon,
+  resolveQuizAnswerKey as genResolve,
+} from '../packages/@openmaic/generation/src/quiz-answer-key';
 import type { QuizQuestion } from '@/lib/types/stage';
 
 const VECTOR_OPTIONS = [
@@ -15,19 +23,50 @@ const VECTOR_OPTIONS = [
   { value: 'D', label: '(6, -4)' },
 ];
 
+const RELATION_OPTIONS = [
+  { value: 'A', label: '平行' },
+  { value: 'B', label: '垂直' },
+  { value: 'C', label: '同向' },
+  { value: 'D', label: '反向' },
+];
+
 function q(options: { value: string; label: string }[], answer?: string[]): QuizQuestion {
   return {
     id: 'qx',
     type: 'single',
     question: '?',
     options,
-    answer: answer ?? ['A'], // 默认存储一个值键，供投影测试使用
+    answer: answer ?? ['A'],
     hasAnswer: true,
     points: 10,
   };
 }
 
-describe('resolveAnswerKeyToValue: exact alignment only', () => {
+describe('canonQuizAnswerKey: generation and grading stay in lockstep', () => {
+  test.each([
+    'A',
+    'a',
+    'A.',
+    'A、',
+    '(B)',
+    '（Ｂ）',
+    '(6, 2)',
+    '(6,2)',
+    '（６，２）',
+    '垂直 ',
+    'A. (6, 2)',
+  ])('same canonical form for %j', (sample) => {
+    expect(appCanon(sample)).toBe(genCanon(sample));
+  });
+
+  test('same unique resolution for letter, content, and variant keys', () => {
+    for (const key of ['A', 'a', '(6, 2)', '(6,2)', '（６，２）', '（Ｂ）', 'B.', 'A、']) {
+      expect(appResolve(key, VECTOR_OPTIONS)).toBe(genResolve(key, VECTOR_OPTIONS));
+    }
+  });
+});
+
+describe('resolveAnswerKeyToValue: exact alignment', () => {
   test('exact option value resolves to itself', () => {
     expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), 'A')).toBe('A');
   });
@@ -49,37 +88,74 @@ describe('resolveAnswerKeyToValue: exact alignment only', () => {
   });
 });
 
-describe('negative cases: formatting differences are NOT silently equivalent', () => {
-  test('case-differing key stays unresolved', () => {
-    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), 'a')).toBe('a');
+describe('resolveAnswerKeyToValue: canonical formatting variants', () => {
+  test('case-differing letter key resolves to the option value', () => {
+    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), 'a')).toBe('A');
   });
 
-  test('whitespace-differing key stays unresolved', () => {
-    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), '(6,2)')).toBe('(6,2)');
-    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), '(6,  2)')).toBe('(6,  2)');
+  test('whitespace-differing content key resolves to the option value', () => {
+    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), '(6,2)')).toBe('A');
+    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), '(6,  2)')).toBe('A');
   });
 
-  test('full-width wrapped key stays unresolved', () => {
-    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), '（Ｂ）')).toBe('（Ｂ）');
+  test('full-width content key resolves via NFKC', () => {
+    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), '（６，２）')).toBe('A');
   });
 
-  test('wrapped/prefixed letter key stays unresolved', () => {
-    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), '(B)')).toBe('(B)');
-    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), 'B.')).toBe('B.');
+  test('full-width wrapped letter key resolves to the option value', () => {
+    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), '（Ｂ）')).toBe('B');
+  });
+
+  test('wrapped/prefixed letter keys resolve to the option value', () => {
+    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), '(B)')).toBe('B');
+    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), 'B.')).toBe('B');
+    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), 'A、')).toBe('A');
+  });
+
+  test('leading letter wrapper on content resolves to the option value', () => {
+    expect(resolveAnswerKeyToValue(q(VECTOR_OPTIONS), 'A. (6, 2)')).toBe('A');
+  });
+
+  test('trailing-space content key resolves to the option value', () => {
+    expect(resolveAnswerKeyToValue(q(RELATION_OPTIONS), '垂直 ')).toBe('B');
+  });
+
+  test('canonical-equal-not-byte-identical value match returns the option value', () => {
+    // Persisted key holds a formatting variant of the option VALUE itself
+    // (not the label). Must return the option's actual value, not the input.
+    const contentValued = [
+      { value: '(6, 2)', label: 'A' },
+      { value: '(2, -4)', label: 'B' },
+    ];
+    expect(resolveAnswerKeyToValue(q(contentValued), '（６，２）')).toBe('(6, 2)');
+  });
+
+  test('ambiguous canonical labels stay unresolved', () => {
+    const dup = [
+      { value: 'A', label: '(6, 2)' },
+      { value: 'B', label: '(6,2)' },
+    ];
+    expect(resolveAnswerKeyToValue(q(dup), '(6, 2)')).toBe('(6, 2)');
+    expect(resolveAnswerKeyToValue(q(dup), '(6,2)')).toBe('(6,2)');
+  });
+
+  test('semantic synonym stays unresolved', () => {
+    expect(resolveAnswerKeyToValue(q(RELATION_OPTIONS), '正交')).toBe('正交');
   });
 });
 
-describe('answerIncludesOption: exact resolver projection', () => {
+describe('answerIncludesOption: canonical resolver projection', () => {
   test('exact value and exact unique label both project to the option', () => {
-    const question = q(VECTOR_OPTIONS, ['(6, 2)']); // label 存储
-    expect(answerIncludesOption(question, 'A')).toBe(true); // label 解析后命中选项 A
+    const question = q(VECTOR_OPTIONS, ['(6, 2)']);
+    expect(answerIncludesOption(question, 'A')).toBe(true);
     expect(answerIncludesOption(question, 'B')).toBe(false);
   });
 
-  test('case/whitespace/full-width/wrapper differences project to false', () => {
-    expect(answerIncludesOption(q(VECTOR_OPTIONS), 'a')).toBe(false);
-    expect(answerIncludesOption(q(VECTOR_OPTIONS), '（Ｂ）')).toBe(false);
-    expect(answerIncludesOption(q(VECTOR_OPTIONS), '(6,2)')).toBe(false);
+  test('formatting-variant stored keys project to the matching option', () => {
+    expect(answerIncludesOption(q(VECTOR_OPTIONS, ['a']), 'A')).toBe(true);
+    expect(answerIncludesOption(q(VECTOR_OPTIONS, ['（Ｂ）']), 'B')).toBe(true);
+    expect(answerIncludesOption(q(VECTOR_OPTIONS, ['(6,2)']), 'A')).toBe(true);
+    expect(answerIncludesOption(q(VECTOR_OPTIONS, ['(6,2)']), 'B')).toBe(false);
   });
 
   test('ambiguous labels project to false for every option', () => {
@@ -87,7 +163,7 @@ describe('answerIncludesOption: exact resolver projection', () => {
       { value: 'A', label: 'same' },
       { value: 'B', label: 'same' },
     ];
-    const question = q(dup, ['same']); // 歧义存储：投影对任何选项都是 false
+    const question = q(dup, ['same']);
     expect(answerIncludesOption(question, 'A')).toBe(false);
     expect(answerIncludesOption(question, 'B')).toBe(false);
   });
@@ -100,7 +176,7 @@ describe('gradeChoiceQuestions: consumer paths', () => {
       type: 'single',
       question: 'a+b=?',
       options: VECTOR_OPTIONS,
-      answer: ['(6, 2)'], // 存储为 label（精确形态）
+      answer: ['(6, 2)'],
       hasAnswer: true,
       points: 10,
     };
@@ -114,7 +190,7 @@ describe('gradeChoiceQuestions: consumer paths', () => {
       type: 'multiple',
       question: 'select all',
       options: VECTOR_OPTIONS,
-      answer: ['A', '(2, -4)'], // 值 + 精确 label 混合存储
+      answer: ['A', '(2, -4)'],
       hasAnswer: true,
       points: 10,
     };
@@ -122,18 +198,31 @@ describe('gradeChoiceQuestions: consumer paths', () => {
     expect(results[0].correct).toBe(true);
   });
 
-  test('formatting-variant keys do NOT silently grade correct (negative)', () => {
+  test('formatting-variant keys grade correct when the learner picks the option value', () => {
     const question: QuizQuestion = {
       id: 'q3',
       type: 'single',
       question: '?',
       options: VECTOR_OPTIONS,
-      answer: ['(6,2)'], // 无空格变体：与任何选项值/label 都不精确相等
+      answer: ['(6,2)'],
       hasAnswer: true,
       points: 10,
     };
     const results = gradeChoiceQuestions([question], { q3: 'A' });
-    expect(results[0].correct).toBe(false);
+    expect(results[0].correct).toBe(true);
+  });
+
+  test('full-width letter key grades correct', () => {
+    const question: QuizQuestion = {
+      id: 'q3b',
+      type: 'single',
+      question: '?',
+      options: VECTOR_OPTIONS,
+      answer: ['（Ｂ）'],
+      hasAnswer: true,
+      points: 10,
+    };
+    expect(gradeChoiceQuestions([question], { q3b: 'B' })[0].correct).toBe(true);
   });
 
   test('compatibility resolution applies to the persisted key only (negative)', () => {
@@ -149,12 +238,25 @@ describe('gradeChoiceQuestions: consumer paths', () => {
       points: 10,
     };
     expect(gradeChoiceQuestions([question], { q4: '(6, 2)' })[0].correct).toBe(false);
-    // 同一道题，提交选项值本身仍判对。
     expect(gradeChoiceQuestions([question], { q4: 'A' })[0].correct).toBe(true);
+  });
+
+  test('multiple-choice with formatting-variant keys grades a fully-correct selection', () => {
+    const question: QuizQuestion = {
+      id: 'q5',
+      type: 'multiple',
+      question: '选出正确的坐标',
+      options: VECTOR_OPTIONS,
+      answer: ['（Ａ）', 'c'],
+      hasAnswer: true,
+      points: 10,
+    };
+    expect(question.answer!.map((a) => resolveAnswerKeyToValue(question, a))).toEqual(['A', 'C']);
+    expect(gradeChoiceQuestions([question], { q5: ['A', 'C'] })[0].correct).toBe(true);
   });
 });
 
-describe('normalizeQuizAnswer (generation): narrowed exact alignment', () => {
+describe('normalizeQuizAnswer (generation): canonical alignment', () => {
   test('exact value passes through', () => {
     expect(normalizeQuizAnswer({ answer: 'A' }, VECTOR_OPTIONS)).toEqual(['A']);
   });
@@ -163,9 +265,47 @@ describe('normalizeQuizAnswer (generation): narrowed exact alignment', () => {
     expect(normalizeQuizAnswer({ answer: '(6, 2)' }, VECTOR_OPTIONS)).toEqual(['A']);
   });
 
-  test('formatting variants stay unresolved (fail closed)', () => {
-    expect(normalizeQuizAnswer({ answer: '(6,2)' }, VECTOR_OPTIONS)).toEqual(['(6,2)']);
-    expect(normalizeQuizAnswer({ answer: '（Ｂ）' }, VECTOR_OPTIONS)).toEqual(['（Ｂ）']);
+  test('letter answer resolves to itself', () => {
+    expect(normalizeQuizAnswer({ answer: 'A' }, VECTOR_OPTIONS)).toEqual(['A']);
+  });
+
+  test('content answer resolves to the matching option value', () => {
+    expect(normalizeQuizAnswer({ answer: '(6, 2)' }, VECTOR_OPTIONS)).toEqual(['A']);
+  });
+
+  test('full-width formatting variant resolves via NFKC', () => {
+    expect(normalizeQuizAnswer({ answer: '（６，２）' }, VECTOR_OPTIONS)).toEqual(['A']);
+  });
+
+  test('content without inner spaces resolves to the spaced option', () => {
+    expect(normalizeQuizAnswer({ answer: '(6,2)' }, VECTOR_OPTIONS)).toEqual(['A']);
+  });
+
+  test('trailing-space Chinese content resolves to the trimmed option', () => {
+    expect(normalizeQuizAnswer({ answer: '垂直 ' }, RELATION_OPTIONS)).toEqual(['B']);
+  });
+
+  test('wrapped full-width single-letter key resolves', () => {
+    expect(normalizeQuizAnswer({ answer: '（Ｂ）' }, VECTOR_OPTIONS)).toEqual(['B']);
+  });
+
+  test('prefixed letter keys resolve', () => {
+    expect(normalizeQuizAnswer({ answer: 'A.' }, VECTOR_OPTIONS)).toEqual(['A']);
+    expect(normalizeQuizAnswer({ answer: 'A、' }, VECTOR_OPTIONS)).toEqual(['A']);
+    expect(normalizeQuizAnswer({ answer: '(B)' }, VECTOR_OPTIONS)).toEqual(['B']);
+  });
+
+  test('multiple letter answers pass through', () => {
+    expect(normalizeQuizAnswer({ answer: ['A', 'C'] }, VECTOR_OPTIONS)).toEqual(['A', 'C']);
+  });
+
+  test('multiple mixed variants resolve independently', () => {
+    expect(normalizeQuizAnswer({ answer: ['（Ａ）', 'c'] }, VECTOR_OPTIONS)).toEqual(['A', 'C']);
+  });
+
+  test('unknown answer passes through untouched', () => {
+    expect(normalizeQuizAnswer({ answer: '正交' }, RELATION_OPTIONS)).toEqual(['正交']);
+    expect(normalizeQuizAnswer({ answer: '(9, 9)' }, VECTOR_OPTIONS)).toEqual(['(9, 9)']);
   });
 
   test('ambiguous keys stay unresolved', () => {
@@ -174,5 +314,17 @@ describe('normalizeQuizAnswer (generation): narrowed exact alignment', () => {
       { value: 'B', label: 'same' },
     ];
     expect(normalizeQuizAnswer({ answer: 'same' }, dup)).toEqual(['same']);
+  });
+
+  test('ambiguous canonical labels stay unresolved', () => {
+    const dup = [
+      { value: 'A', label: '(6, 2)' },
+      { value: 'B', label: '(6,2)' },
+    ];
+    expect(normalizeQuizAnswer({ answer: '(6, 2)' }, dup)).toEqual(['(6, 2)']);
+  });
+
+  test('missing options passes answers through untouched', () => {
+    expect(normalizeQuizAnswer({ answer: '(6, 2)' }, undefined)).toEqual(['(6, 2)']);
   });
 });
