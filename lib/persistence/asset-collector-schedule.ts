@@ -1,22 +1,34 @@
 /**
- * The periodic pass that actually reclaims unreferenced asset bytes.
+ * The periodic pass that actually reclaims unreferenced assets.
  *
+ * It has two levels, and this application runs both. A registry entry is
+ * released once it is either a pending allocation no document claimed before
+ * `ASSET_PENDING_TTL_MS` ran out, or a committed entry whose last document
+ * reference left longer ago than the grace period; its bytes then wait out the
+ * same grace and go on a later pass. Nothing on a request path deletes either:
  * `PgAssetStore.remove`, and a `replace` that changes content, only stamp
- * `asset_blobs.unreferenced_at`; `AssetCollector.collect` is the sole deletion
- * path in the design. Leaving it to "the deployment" is not a decision this
- * repository can defer, because the deployment it ships is `docker-compose.yml`
- * — the app and PostgreSQL, and nothing else that could ever call it. Unrun,
- * ordinary asset churn retains PostgreSQL bytes or S3 objects forever.
+ * `unreferenced_at`, and this application refuses `remove` to every browser
+ * outright. `AssetCollector` is the sole deletion path in the design.
+ *
+ * Leaving it to "the deployment" is not a decision this repository can defer,
+ * because the deployment it ships is `docker-compose.yml` — the app and
+ * PostgreSQL, and nothing else that could ever call it. Unrun, ordinary asset
+ * churn retains registry rows, PostgreSQL bytes or S3 objects forever, and the
+ * per-principal quota only ever fills.
  *
  * So the app schedules it, once per server process, from `instrumentation.ts`.
  *
- * SEVERAL INSTANCES MAY RUN THIS AT ONCE, AND THAT IS FINE. Each candidate blob
- * is re-checked and locked `FOR UPDATE` inside its own transaction before the
- * bytes and the row go, so two collectors serialize on the row: the loser finds
- * the row gone, or still referenced, and skips it. No distributed lock, leader
+ * SEVERAL INSTANCES MAY RUN THIS AT ONCE, AND THAT IS FINE. Each candidate row,
+ * entry or blob, is re-checked and locked `FOR UPDATE` inside its own
+ * transaction before it goes, so two collectors serialize on the row: the loser
+ * finds the row gone, or still referenced, and skips it. No distributed lock, leader
  * election, or advisory lock is needed here — please do not add one.
  */
-import { AssetCollector } from '@openmaic/storage/asset/collector';
+import {
+  AssetCollector,
+  AssetReferenceTrackingNotEnabledError,
+  StorageLockUnavailableError,
+} from '@openmaic/storage/asset/collector';
 import { ensureAssetSchema } from '@openmaic/storage/asset/pg';
 import {
   nodePostgresTransaction,
@@ -26,6 +38,7 @@ import { Pool } from 'pg';
 
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import { configuredS3Bucket, createAssetByteStore } from '@/lib/persistence/asset-byte-store';
+import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
 /**
  * Fifteen minutes. Short enough that a deleted asset's bytes go the same day,
@@ -128,6 +141,30 @@ export function startAssetCollectorSchedule(
   // failure is logged and retried instead of escaping into server startup.
   let prepared: Promise<AssetCollector> | undefined;
   const prepare = async (): Promise<AssetCollector> => {
+    // The provider first, and awaited, because it is what declares that this
+    // database's document writers maintain asset references -- the thing the
+    // entry level refuses to run without.
+    //
+    // Nothing else here would have brought it up. `register` starts this
+    // schedule and does not touch the provider, and the provider is lazy: it
+    // initializes on the first persistence request. An instance that serves
+    // none -- a cold install, an upgraded deployment, an idle replica behind a
+    // health check -- would otherwise reach this pass with nothing declared,
+    // refuse the entry level and the one-time backfill, and say so every
+    // interval. Awaiting it here makes the declaration part of preparing a
+    // collector rather than a race against traffic.
+    //
+    // A failure propagates like any other preparation failure: `collector()`
+    // drops the memoised promise, `collectNow` logs it, and the next interval
+    // tries again. The schedule is never taken down by it, and the provider
+    // has its own retry on the request path regardless.
+    //
+    // The collector keeps its own small pool rather than borrowing the
+    // provider's. A background pass that competes for request connections is a
+    // pass that makes request latency its problem, and this pool's lifetime is
+    // the schedule's -- `stop()` ends it, while the provider's is ended by the
+    // shutdown hook that owns it.
+    await getServerPersistenceProvider(connectionString);
     await ensureAssetSchema(queryable);
     const byteStore = await createAssetByteStore(
       configuredS3Bucket(process.env.ASSET_S3_BUCKET),
@@ -136,6 +173,14 @@ export function startAssetCollectorSchedule(
     return new AssetCollector(queryable, byteStore, {
       withTransaction: nodePostgresTransaction(queryable),
       graceMs,
+      // The entry level of the same reclamation, and not optional here. Every
+      // document store this application builds against the server schema runs
+      // with `trackAssetReferences`, so the reference table the pass reads is
+      // always being maintained; there is no deployment shape of this app in
+      // which one half is on and the other off. See the reference-writer
+      // comments in lib/persistence/server-provider.ts and
+      // lib/persistence/owner-bound-document-store.ts.
+      documentReferences: true,
     });
   };
   const collector = (): Promise<AssetCollector> =>
@@ -152,15 +197,74 @@ export function startAssetCollectorSchedule(
     if (stopped || running) return;
     running = true;
     try {
-      const collected = await (await collector()).collect();
-      if (collected > 0) {
-        console.info(`Asset collector reclaimed ${collected} unreferenced blob(s)`);
+      // `collectPass` rather than `collect` because the pass now has two
+      // levels and `collect` only answers for the lower one. A pass that
+      // released a hundred registry entries and no bytes -- the ordinary shape
+      // of the first pass after a course is deleted, since the bytes wait out
+      // their own grace afterwards -- would otherwise log nothing at all.
+      const pass = await (await collector()).collectPass();
+      if (pass.entriesCollected > 0 || pass.collected > 0) {
+        console.info(
+          `Asset collector reclaimed ${pass.entriesCollected} unreferenced registry entr` +
+            `${pass.entriesCollected === 1 ? 'y' : 'ies'} and ${pass.collected} ` +
+            `unreferenced blob(s)`,
+        );
+      }
+      if (pass.backfilledDocuments > 0 || pass.legacyEntriesCommitted > 0) {
+        // The one-time upgrade walk. Worth its own line: until it finishes,
+        // the entry level deliberately releases nothing, so an operator
+        // watching reclamation not happen should be able to see why.
+        console.info(
+          `Asset reference backfill enumerated ${pass.backfilledDocuments} document(s) and ` +
+            `committed ${pass.legacyEntriesCommitted} pre-lifecycle entr` +
+            `${pass.legacyEntriesCommitted === 1 ? 'y' : 'ies'}`,
+        );
       }
     } catch (error) {
-      // A failed pass must not take the process down or end the schedule: an
-      // unreachable database, a revoked bucket credential, and a lock timeout
-      // are all transient. Log it and let the next tick try again.
-      console.error('Asset collection pass failed; retrying on the next interval', error);
+      if (error instanceof AssetReferenceTrackingNotEnabledError) {
+        // The package's gate is "does this database hold the one-row marker
+        // that says its writers maintain references". Reaching here means a
+        // pass ran and the row was not there.
+        //
+        // That is a narrow thing. Preparation awaits the provider, and the
+        // provider writes the marker before it returns, so a provider that
+        // failed cannot produce this line at all -- preparation would have
+        // thrown and the generic branch below would have logged instead. The
+        // marker is also never withdrawn: writing it is `INSERT … ON CONFLICT
+        // DO NOTHING`, and nothing in the package or this application deletes
+        // it, so a store writing without `trackAssetReferences` cannot cause
+        // this either. What is left is that the row was removed or never
+        // reached the database this collector reads: dropped or truncated out
+        // of band, restored from a backup taken before the declaration, or a
+        // collector and a provider pointed at different databases.
+        //
+        // Only the entry level is refused -- the blob level already ran, and
+        // nothing is released while refused, so it cannot lose data. It does
+        // mean no entry is being reclaimed until someone acts.
+        console.error(
+          'Asset collection is configured to reclaim registry entries, but this database does ' +
+            'not hold the marker that says its document writers maintain them, so entry ' +
+            'reclamation (including the one-time backfill) is refused. Byte reclamation is ' +
+            'unaffected. The persistence provider writes that marker before this collector is ' +
+            'built and nothing ever removes it, so it was dropped or truncated out of band, ' +
+            'restored away, or this collector is reading a different database from the one ' +
+            'the provider initialized.',
+          error,
+        );
+      } else if (error instanceof StorageLockUnavailableError) {
+        // Contention, not breakage: some request path held a row this pass
+        // wanted for longer than the collector's lock budget. The next
+        // interval takes it. Nothing to page on, so this is a warning.
+        console.warn(
+          `Asset collection pass gave up waiting on a lock (${error.reason}); ` +
+            `retrying on the next interval`,
+        );
+      } else {
+        // A failed pass must not take the process down or end the schedule: an
+        // unreachable database and a revoked bucket credential are both
+        // transient. Log it and let the next tick try again.
+        console.error('Asset collection pass failed; retrying on the next interval', error);
+      }
     } finally {
       running = false;
     }

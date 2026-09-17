@@ -14,17 +14,6 @@ export interface StageAssetDocument {
   readonly scenes: readonly Scene[];
 }
 
-export interface StageMediaRow {
-  readonly id: string;
-  readonly stageId: string;
-}
-
-export interface StageAudioRow {
-  readonly id: string;
-  /** Missing on rows written before the per-stage audio index existed. */
-  readonly stageId?: string;
-}
-
 export interface StageAssetRefs {
   readonly imageSrc: ReadonlySet<string>;
   readonly slideAudioSrc: ReadonlySet<string>;
@@ -36,18 +25,10 @@ export interface StageAssetRefs {
   readonly sceneWhiteboard: ReadonlySet<string>;
   readonly speechAudioId: ReadonlySet<string>;
   readonly videoManifestKey: ReadonlySet<string>;
-  readonly mediaRow: ReadonlySet<string>;
-  readonly audioRow: ReadonlySet<string>;
-  readonly mediaOrphans: ReadonlySet<string>;
-  readonly audioOrphans: ReadonlySet<string>;
   /** Refs held by renderable elements or speech cues (manifest metadata excluded). */
   readonly referenced: ReadonlySet<string>;
   /** Every document ref, including video-manifest metadata. */
   readonly document: ReadonlySet<string>;
-  /** Document refs plus stage-owned Dexie-only orphan rows. */
-  readonly all: ReadonlySet<string>;
-  /** Refs with a stage-owned compatibility row and therefore safe to remove from the pool. */
-  readonly poolOwned: ReadonlySet<string>;
   /** Logical owners per ref; video src+mediaRef on one element count once. */
   readonly referenceCounts: ReadonlyMap<string, number>;
 }
@@ -65,29 +46,20 @@ function addValue(target: Set<string>, value: string | undefined): value is stri
   return true;
 }
 
-function mediaRefFromRow(stageId: string, rowId: string): string {
-  const prefix = `${stageId}:`;
-  return rowId.startsWith(prefix) ? rowId.slice(prefix.length) : rowId;
-}
-
 /**
- * Enumerate the complete stage asset reference space without performing I/O.
+ * Enumerate what a stage's document references, without performing I/O.
+ *
+ * Document refs only: the local media cache is not consulted, because the
+ * question this answers — which ids does this document claim — is now asked of
+ * the document alone. The server maintains the other direction (which entries
+ * any document still claims) in its own reference table.
  *
  * Categories intentionally overlap: a whiteboard image belongs to both
  * `imageSrc` and its whiteboard category. `referenceCounts` counts the logical
  * owning element/action only once, which is what duplication-safe replacement
  * needs when a video repeats the same ref in both `src` and `mediaRef`.
  */
-export function collectStageAssetRefs(
-  document: StageAssetDocument | null,
-  {
-    mediaRows,
-    audioRows,
-  }: {
-    readonly mediaRows: readonly StageMediaRow[];
-    readonly audioRows: readonly StageAudioRow[];
-  },
-): StageAssetRefs {
+export function collectStageAssetRefs(document: StageAssetDocument | null): StageAssetRefs {
   const imageSrc = new Set<string>();
   const slideAudioSrc = new Set<string>();
   const videoSrc = new Set<string>();
@@ -151,22 +123,7 @@ export function collectStageAssetRefs(
     }
   }
 
-  const stageId = document?.stage.id;
-  const mediaRow = new Set(
-    mediaRows
-      .filter((row) => !stageId || row.stageId === stageId)
-      .map((row) => mediaRefFromRow(row.stageId, row.id)),
-  );
-  const audioRow = new Set(
-    audioRows
-      .filter((row) => (stageId ? row.stageId === stageId : row.stageId !== undefined))
-      .map((row) => row.id),
-  );
   const documentRefs = new Set([...referenced, ...videoManifestKey]);
-  const mediaOrphans = new Set([...mediaRow].filter((ref) => !documentRefs.has(ref)));
-  const audioOrphans = new Set([...audioRow].filter((ref) => !documentRefs.has(ref)));
-  const all = new Set([...documentRefs, ...mediaRow, ...audioRow]);
-  const poolOwned = new Set([...mediaRow, ...audioRow]);
   // Consume the DSL's position-keyed ownership accounting directly. Keeping
   // one implementation prevents user-controlled duplicate scene/slide/
   // element/action ids from collapsing distinct owners here.
@@ -185,14 +142,8 @@ export function collectStageAssetRefs(
     sceneWhiteboard,
     speechAudioId,
     videoManifestKey,
-    mediaRow,
-    audioRow,
-    mediaOrphans,
-    audioOrphans,
     referenced,
     document: documentRefs,
-    all,
-    poolOwned,
     referenceCounts,
   };
 }
@@ -205,7 +156,7 @@ export function collectPersistedDocumentAssetRefs(
   const byDocument = new Map<string, StageAssetRefs>();
 
   for (const document of documents) {
-    const refs = collectStageAssetRefs(document, { mediaRows: [], audioRows: [] });
+    const refs = collectStageAssetRefs(document);
     byDocument.set(document.stage.id, refs);
     for (const [ref, count] of refs.referenceCounts) {
       referenceCounts.set(ref, (referenceCounts.get(ref) ?? 0) + count);
@@ -240,10 +191,7 @@ export async function isAllocatedAssetRefReferencedBySurvivingDocument(
 function unflushedStageOwnerCount(assetId: string, stageId: string): number | undefined {
   const { stage, scenes } = useStageStore.getState();
   if (!stage || stage.id !== stageId) return undefined;
-  return collectStageAssetRefs(
-    { stage, scenes },
-    { mediaRows: [], audioRows: [] },
-  ).referenceCounts.get(assetId);
+  return collectStageAssetRefs({ stage, scenes }).referenceCounts.get(assetId);
 }
 
 /**
@@ -267,7 +215,7 @@ export async function proveExclusiveAssetOwnership(
   try {
     const document = await getDocumentStore().loadDocument(stageId);
     if (!document) throw new Error(`Document ${stageId} could not be loaded`);
-    activePersistedRefs = collectStageAssetRefs(document, { mediaRows: [], audioRows: [] });
+    activePersistedRefs = collectStageAssetRefs(document);
   } catch (error) {
     log.warn(`Could not prove exclusive ownership of asset ${assetId}:`, error);
   }

@@ -3,10 +3,12 @@ import type { SceneOutline } from './outline-types.js';
 
 /** Give every generated-media request its own globally unique ID. */
 export function uniquifyMediaElementIds(outlines: SceneOutline[]): SceneOutline[] {
-  if (!outlines.some((outline) => outline.mediaGenerations?.length)) return outlines;
+  if (!outlines.some((outline) => outline.mediaGenerations !== undefined)) return outlines;
 
   return outlines.map((outline) => {
-    if (!outline.mediaGenerations) return outline;
+    if (!Array.isArray(outline.mediaGenerations)) {
+      return { ...outline, mediaGenerations: undefined };
+    }
     return {
       ...outline,
       mediaGenerations: outline.mediaGenerations.map((mediaGeneration) => {

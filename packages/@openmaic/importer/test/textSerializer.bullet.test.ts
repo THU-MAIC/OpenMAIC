@@ -86,3 +86,14 @@ describe('textSerializer · 负 indent + Wingdings bullet 槽位', () => {
     expect(html).toContain('color: #000000'); // 正文用 run 的黑色
   });
 });
+
+// Wingdings 0xD8 is the rightwards arrowhead used by PowerPoint lists.
+describe('textSerializer · Wingdings arrowhead', () => {
+  it.each(['Ø', '\uF0D8'])('maps %s to an arrowhead, not a victory hand', (char) => {
+    const html = renderTxBodyHtml(`<a:p><a:pPr marL="457200" indent="-457200">
+      <a:buFont typeface="Wingdings"/><a:buChar char="${char}"/>
+      </a:pPr><a:r><a:rPr sz="2800"/><a:t>优先级高的先运算。</a:t></a:r></a:p>`);
+    expect(html).toContain('➢');
+    expect(html).not.toContain('✌');
+  });
+});

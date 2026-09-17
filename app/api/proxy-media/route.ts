@@ -12,7 +12,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import type { Dispatcher } from 'undici';
+import { findUnsafeNetworkTargetError, validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { createValidatedDispatcher } from '@/lib/server/pinned-dispatcher';
 import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 
@@ -22,6 +24,7 @@ export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   let url: string | undefined;
+  let dispatcher: Dispatcher | undefined;
   try {
     ({ url } = await request.json());
 
@@ -35,11 +38,22 @@ export async function POST(request: NextRequest) {
       return apiError('INVALID_URL', 403, ssrfError);
     }
 
+    // Pin every connection to the exact address set the connect-time lookup
+    // approved, closing the window where the HTTP client resolves the hostname
+    // again and could reach an internal address after the guard saw a public one.
+    dispatcher = createValidatedDispatcher();
+
     const MAX_REDIRECTS = 5;
     let currentUrl = url;
     let response: Response;
+    // Node's global fetch is undici and accepts a `dispatcher`, which the DOM
+    // RequestInit type does not model.
+    const hopInit: RequestInit & { dispatcher: Dispatcher } = {
+      redirect: 'manual',
+      dispatcher,
+    };
     for (let hop = 0; ; hop++) {
-      response = await fetch(currentUrl, { redirect: 'manual' });
+      response = await fetch(currentUrl, hopInit);
       if (response.status < 300 || response.status >= 400) break; // not a redirect
       const location = response.headers.get('location');
       if (!location)
@@ -83,7 +97,21 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
+    // A connect-time refusal from the pinned dispatcher is the same SSRF policy
+    // the URL-layer guard enforces, so report it as an invalid URL (403), not
+    // as an internal error (undici wraps the lookup error as `fetch failed`).
+    const blocked = findUnsafeNetworkTargetError(error);
+    if (blocked) {
+      return apiError('INVALID_URL', 403, blocked.message);
+    }
     log.error(`Proxy media failed [url="${url?.substring(0, 100) ?? 'unknown'}"]:`, error);
     return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
+  } finally {
+    // The response blob (if any) is already fully in memory here, so tear the
+    // pool down immediately instead of draining it. `close()` waits for
+    // in-flight requests, and the response body is intentionally left unread on
+    // the 30x, non-2xx, oversize and connect-refusal paths, so awaiting it would
+    // hang the handler until the upstream ends a body nobody reads.
+    void dispatcher?.destroy().catch(() => undefined);
   }
 }

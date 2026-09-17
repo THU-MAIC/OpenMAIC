@@ -30,6 +30,64 @@ const deepseek: TokenPlanPreset = {
 };
 
 describe('applyTokenPlan', () => {
+  it('fills one gateway key into every modality for TokenDance', () => {
+    const tokendance = TOKEN_PLAN_PRESETS.find((p) => p.id === 'tokendance')!;
+    const actions = makeActions();
+    const results = applyTokenPlan(tokendance, 'sk-td', actions);
+
+    expect(actions.setProviderConfig).toHaveBeenCalledWith(
+      'tokendance',
+      expect.objectContaining({
+        apiKey: 'sk-td',
+        baseUrl: 'https://tokendance.space/gateway/v1',
+        type: 'openai',
+        models: expect.arrayContaining([
+          expect.objectContaining({ id: 'deepseek-v4.1-flash', contextWindow: 1000000 }),
+        ]),
+      }),
+    );
+    expect(actions.setImageProviderConfig).toHaveBeenCalledWith(
+      'seedream',
+      expect.objectContaining({
+        apiKey: 'sk-td',
+        baseUrl: 'https://tokendance.space/gateway/ark/v3',
+        customModels: expect.arrayContaining([
+          { id: 'seedream-5.0-lite', name: 'seedream-5.0-lite' },
+        ]),
+      }),
+    );
+    expect(actions.setVideoProviderConfig).toHaveBeenCalledWith(
+      'minimax-video',
+      expect.objectContaining({
+        apiKey: 'sk-td',
+        baseUrl: 'https://tokendance.space/gateway/minimax',
+        customModels: expect.arrayContaining([{ id: 'minimax-h3', name: 'minimax-h3' }]),
+      }),
+    );
+    expect(actions.setTTSProviderConfig).toHaveBeenCalledWith(
+      'minimax-tts',
+      expect.objectContaining({
+        apiKey: 'sk-td',
+        baseUrl: 'https://tokendance.space/gateway/minimax',
+        modelId: 'minimax-speech-2.8-turbo',
+      }),
+    );
+    expect(actions.setWebSearchProviderConfig).toHaveBeenCalledWith(
+      'bocha',
+      expect.objectContaining({
+        apiKey: 'sk-td',
+        baseUrl: 'https://tokendance.space/gateway/bocha',
+      }),
+    );
+    expect(results.map((r) => [r.modality, r.status])).toEqual([
+      ['llm', 'lit'],
+      ['image', 'lit'],
+      ['video', 'lit'],
+      ['tts', 'lit'],
+      ['webSearch', 'lit'],
+    ]);
+  });
+
   it('fills every declared modality for a full-set plan (MiniMax)', () => {
     const actions = makeActions();
     const results = applyTokenPlan(minimax, 'sk-test', actions);

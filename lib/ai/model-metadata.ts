@@ -186,6 +186,19 @@ const glm52Effort: ThinkingCapability = {
   defaultEnabled: true,
 };
 
+// GLM-5.3 / GLM-5.3-Flash always think; depth is controlled by effort only
+// (the API rejects thinking.type "disabled": "该模型始终思考,不支持关闭思考").
+const glm53Effort: ThinkingCapability = {
+  control: 'effort',
+  requestAdapter: 'glm',
+  effortValues: ['low', 'high', 'max'],
+  defaultEffort: 'max',
+  defaultMode: 'enabled',
+  toggleable: false,
+  budgetAdjustable: false,
+  defaultEnabled: true,
+};
+
 const hunyuanHy3Effort: ThinkingCapability = {
   control: 'effort',
   requestAdapter: 'hunyuan',
@@ -339,6 +352,8 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
     -1,
   ),
 
+  [getModelMetadataKey('glm', 'glm-5.3')]: glm53Effort,
+  [getModelMetadataKey('glm', 'glm-5.3-flash')]: glm53Effort,
   [getModelMetadataKey('glm', 'glm-5.2')]: glm52Effort,
   [getModelMetadataKey('glm', 'glm-5.1')]: toggleCapability('glm'),
   [getModelMetadataKey('glm', 'glm-5v-turbo')]: toggleCapability('glm'),

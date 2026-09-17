@@ -189,10 +189,13 @@ const slides = await parsedToSlides(json, { upload });
 
 ## 📞 `upload` 回调被调用的时机
 
+视频 `poster` 与图片使用同一上传配置：未提供 `upload` 时保留 base64；提供后等待上传完成，将回调返回的 URL 写入 `poster`。上传失败时保留原始封面，已有远程 URL 不重复上传。回调可对接 OSS 或其他存储服务。
+
 | 元素类型 | 源数据 | filename 示例 | dir |
 |---------|--------|---------------|-----|
 | 背景图片 | base64 → Blob | `background_<timestamp>.png` | `a2m` |
 | 图片元素 | base64 → Blob | `image_<timestamp>.png` | `a2m` |
+| 视频封面 | base64 → Blob | `poster_<element-id>.<图片扩展名>` | `a2m` |
 | 数学公式渲染图 | base64 → Blob | `math_<timestamp>.png` | `a2m` |
 | 形状的图案填充 | base64 → Blob | `pattern_<timestamp>.png` | `a2m` |
 | 音频 | 直接是 Blob | `audio_<timestamp>.mp3` | `a2m/audio` |
@@ -478,3 +481,17 @@ const slides = await mod.importPptx(file, { upload });
 
 # 📄 开源协议
 MIT License | Copyright © 2020-PRESENT [pipipi-pikachu](https://github.com/pipipi-pikachu)
+
+## Tab 布局的环境差异
+
+PPTX 文本的 Tab 列会转换为固定宽度的可编辑行内容器。浏览器导入时使用
+Canvas 字体测量（依赖当时可用的字体）；服务端缺少浏览器字体测量能力时使用
+估算宽度，因此两种环境的列位置不保证完全一致。
+
+服务端输出的列带有 `min-width:max-content`，文字比估算值宽时允许列扩展，
+以减少相邻内容重叠。但后续 Tab 停靠点仍根据估算宽度选择，实际字体导致的
+列扩展可能使后续列累计偏移。该规则不保证所有选项都位于原始停靠点或画布内。
+
+已导入内容在浏览器打开后，目前不会自动重新测量 Tab 停靠点。需要更准确的
+字体布局时，可在目标字体加载完成后在浏览器重新导入原始 PPTX。对服务端导入
+结果增加浏览器重新测量属于后续工作，本次不改变现有布局算法。

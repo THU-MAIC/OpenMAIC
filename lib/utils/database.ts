@@ -32,6 +32,7 @@ import type { ChatStorageOptions } from './chat-storage';
 import type { AppDocument } from '@/lib/document-store';
 import { BrowserKVStore } from '@openmaic/storage';
 import { clearAssetPool } from '@/lib/media/asset-pool';
+import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
 
 const log = createLogger('Database');
 
@@ -603,6 +604,7 @@ export async function clearDatabase(runtimeStore?: RuntimeStore): Promise<void> 
     await deleteAllDocuments();
     await clearDocumentStoreKeys();
     await db.delete();
+    clearPendingMediaAllocations();
     await clearAssetPool();
   });
   log.info('Database cleared');
@@ -956,26 +958,11 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
   // inside it (self-deadlock against our own exclusive hold).
   await mutateDocument(
     stageId,
-    async (document, store) =>
+    async (_document, store) =>
       withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
-        const {
-          buildStageAssetReclamationPlan,
-          executeStageAssetReclamation,
-          loadStageAssetInventory,
-        } = await import('@/lib/media/reclaim-stage-assets');
-        const deletionDocument = document ?? {
-          stage: { id: stageId, name: '', createdAt: 0, updatedAt: 0 },
-          scenes: [],
-        };
-        const inventory = await loadStageAssetInventory(deletionDocument);
-        const assetPlan = buildStageAssetReclamationPlan(
-          stageId,
-          inventory.refs,
-          inventory.mediaRows,
-          inventory.audioRows,
-        );
+        const { clearStageMediaCache } = await import('@/lib/media/clear-stage-media-cache');
         await store.deleteDocument(stageId);
-        await executeStageAssetReclamation(assetPlan, null);
+        await clearStageMediaCache(stageId);
         await db.transaction(
           'rw',
           [

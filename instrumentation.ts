@@ -15,6 +15,24 @@ export async function register(): Promise<void> {
   // want; the persistence stack is Node-only.
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
+  // The asset quota, read here rather than at the first persistence request.
+  // The provider that consumes it is lazy and memoised, so a malformed ceiling
+  // would otherwise let the process boot, pass its health check, and then fail
+  // every persistence request -- documents and runtime included -- until it was
+  // fixed and the process restarted. `register` runs before the server is
+  // ready, so throwing here is what makes a misconfigured deployment fail to
+  // start instead of failing to work. First, so the throw cannot skip the
+  // teardown registration for something this function has already started.
+  const { resolveAssetQuotaBytes } = await import('@/lib/persistence/asset-quota');
+  resolveAssetQuotaBytes();
+
+  // The pending-allocation window, for the same reason and at the same moment.
+  // Too short is worse than malformed: it silently expires allocations whose
+  // document write was still coming, so it must fail the process rather than
+  // the request that discovers it.
+  const { resolveAssetPendingTtlMs } = await import('@/lib/persistence/asset-pending-ttl');
+  resolveAssetPendingTtlMs();
+
   // Imported dynamically so the Edge bundle never pulls in `pg`.
   const { startAssetCollectorSchedule } =
     await import('@/lib/persistence/asset-collector-schedule');

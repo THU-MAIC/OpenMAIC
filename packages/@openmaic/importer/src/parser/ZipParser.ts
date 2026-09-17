@@ -19,6 +19,7 @@ export interface PptxFiles {
   themes: Map<string, string>;
   media: Map<string, Uint8Array>;
   tableStyles?: string;
+  chartRels?: Map<string, string>;
   charts: Map<string, string>; // ppt/charts/chart*.xml
   chartStyles: Map<string, string>; // ppt/charts/style*.xml
   chartColors: Map<string, string>; // ppt/charts/colors*.xml
@@ -139,6 +140,7 @@ export async function parseZip(
     themes: new Map(),
     media: new Map(),
     charts: new Map(),
+    chartRels: new Map(),
     chartStyles: new Map(),
     chartColors: new Map(),
     diagramDrawings: new Map(),
@@ -247,6 +249,11 @@ export async function parseZip(
     // --- Themes ---
     if (/^ppt\/theme\/theme\d+\.xml$/.test(normalizedPath)) {
       result.themes.set(normalizedPath, await file.async('string'));
+      return;
+    }
+
+    if (/^ppt\/charts\/_rels\/chart\d+\.xml\.rels$/.test(normalizedPath)) {
+      result.chartRels!.set(normalizedPath, await file.async('string'));
       return;
     }
 

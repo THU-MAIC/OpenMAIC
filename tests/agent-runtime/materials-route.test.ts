@@ -260,6 +260,48 @@ describe('POST /api/materials', () => {
     expect(mocks.registerOwnerMaterial).not.toHaveBeenCalled();
   });
 
+  it('derives the concrete mime from the filename when the client sends a generic Office MIME', async () => {
+    // Older Linux XDG mime databases report OOXML uploads as the generic
+    // `application/vnd.ms-office` container (#1497); the extension resolves it.
+    const pptxMime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+    const response = await post(Buffer.from('x'), {
+      'content-type': 'application/vnd.ms-office',
+      'x-material-filename': encodeURIComponent('slides.pptx'),
+    });
+    expect(response.status).toBe(201);
+    // The resolved concrete MIME drives the reservation and the stored bytes.
+    expect(mocks.registerOwnerMaterial).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ ownerId: 'owner-1', kind: 'source', mime: pptxMime }),
+      expect.anything(),
+    );
+    expect(mocks.byteStore.put).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Buffer),
+      pptxMime,
+    );
+  });
+
+  it('still rejects a generic MIME whose extension is not an accepted material', async () => {
+    const response = await post(Buffer.from('x'), {
+      'content-type': 'application/vnd.ms-office',
+      'x-material-filename': encodeURIComponent('blob.bin'),
+    });
+    expect(response.status).toBe(415);
+    expect(mocks.registerOwnerMaterial).not.toHaveBeenCalled();
+  });
+
+  it('answers 415 for a generic MIME before the missing-filename 400', async () => {
+    // A generic type with no filename cannot be resolved, so the mime gate
+    // fires first — error precedence must match the specific-MIME path.
+    const response = await post(Buffer.from('x'), {
+      'content-type': 'application/vnd.ms-office',
+      'x-material-filename': '',
+    });
+    expect(response.status).toBe(415);
+    expect(mocks.registerOwnerMaterial).not.toHaveBeenCalled();
+  });
+
   it('rejects a missing filename header', async () => {
     const response = await post(Buffer.from('x'), { 'x-material-filename': '' });
     expect(response.status).toBe(400);

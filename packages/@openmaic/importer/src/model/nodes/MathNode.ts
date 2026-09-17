@@ -34,6 +34,12 @@ export interface MathNodeData extends BaseNodeData {
   plainText: string;
   /** rId of embedded .docx package (Word.Document OLE — contains EQ field math). */
   oleDocxRId?: string;
+  /**
+   * rId of the embedded OLE binary for `Equation.3` / MathType objects. The
+   * binary is an OLE compound file whose `Equation Native` stream holds MTEF
+   * v3 data convertible to LaTeX (see utils/mtef.ts).
+   */
+  oleEquationRId?: string;
 }
 
 /**
@@ -162,6 +168,46 @@ export function parseOleDocxMathNode(graphicFrame: SafeXmlNode): MathNodeData | 
     nodeType: 'math' as const,
     ommlXml: '',
     oleDocxRId: docxRId,
+    fallbackBlipEmbed,
+    plainText: '',
+  };
+}
+
+/**
+ * Parse a graphicFrame whose oleObj has progId "Equation.3" / "MathType.*".
+ * The embedding is an OLE compound file with an `Equation Native` (MTEF v3)
+ * stream; conversion to LaTeX is deferred to the serializer, which needs the
+ * embeddings map. Structure mirrors {@link parseOleDocxMathNode}.
+ */
+export function parseOleEquationMathNode(graphicFrame: SafeXmlNode): MathNodeData | undefined {
+  const base = parseBaseProps(graphicFrame);
+
+  const graphicData = graphicFrame.child('graphic').child('graphicData');
+  const altContent = graphicData.child('AlternateContent');
+  if (!altContent.exists()) return undefined;
+
+  const oleObj = altContent.child('Choice').child('oleObj');
+  const equationRId = oleObj.attr('r:id') ?? oleObj.attr('id');
+  if (!equationRId) return undefined;
+
+  let fallbackBlipEmbed: string | undefined;
+  const fallback = altContent.child('Fallback');
+  if (fallback.exists()) {
+    const fbOle = fallback.child('oleObj');
+    const fbPic = fbOle.exists() ? fbOle.child('pic') : fallback.child('pic');
+    if (fbPic.exists()) {
+      const blip = fbPic.child('blipFill').child('blip');
+      if (blip.exists()) {
+        fallbackBlipEmbed = blip.attr('embed') ?? blip.attr('r:embed');
+      }
+    }
+  }
+
+  return {
+    ...base,
+    nodeType: 'math' as const,
+    ommlXml: '',
+    oleEquationRId: equationRId,
     fallbackBlipEmbed,
     plainText: '',
   };

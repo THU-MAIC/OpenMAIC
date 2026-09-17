@@ -19,7 +19,10 @@ import {
   type AgentSessionMeta,
   type ListAgentSessionMaterialsOptions,
 } from '@openmaic/storage';
-import { getReadyOwnerMaterials } from '@/lib/persistence/owner-materials';
+import {
+  getReadyOwnerMaterials,
+  type OwnerMaterialRecord,
+} from '@/lib/persistence/owner-materials';
 
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getMaterialByteStore } from '@/lib/server/materials/bytes';
@@ -208,7 +211,12 @@ export async function createSourceMaterial(
 /**
  * Bind owner-library uploads to a session by copying their private bytes into
  * the session byte prefix and creating the material rows the agent reads.
- * Rebinding the same id is idempotent.
+ *
+ * Row ids are globally unique (the extraction pipeline keys on them), so the
+ * session row is minted with its own fresh `mat_` id and the owner upload id is
+ * recorded in `ownerMaterialId`. That lets one owner material back several
+ * sessions, and a unique `(session_id, owner_material_id)` index makes
+ * rebinding the same upload into the same session idempotent.
  */
 export async function bindOwnerMaterialsToSession(
   sessionId: string,
@@ -228,39 +236,140 @@ export async function bindOwnerMaterialsToSession(
   const bound = [];
   for (const id of materialIds) {
     const record = byId.get(id)!;
-    if (!(await store.getMaterial(sessionId, id))) {
-      let source: Buffer;
-      try {
-        source = await byteStore.get(record.ossKey);
-      } catch {
-        throw new SessionMaterialBindingError(`material ${id} bytes are unavailable`);
-      }
-      const mime = record.mime ?? 'application/octet-stream';
-      const rawObjectKey = sessionMaterialKey(sessionId, id, rawObjectName(mime));
-      await byteStore.put(rawObjectKey, source, mime);
-      try {
-        await store.createMaterial(sessionId, {
-          id,
-          kind: 'source',
-          title: record.originalName ?? id,
-          rawAssetId: rawObjectKey,
-          textChars: 0,
-        });
-      } catch (error) {
-        if (!(await store.getMaterial(sessionId, id))) {
-          await byteStore.delete(rawObjectKey).catch(() => undefined);
-          throw error;
-        }
-      }
-    }
+    const material = await bindOwnerMaterial(store, byteStore, sessionId, id, record);
     bound.push({
-      materialId: id,
+      materialId: material.id,
       ...(record.originalName ? { originalName: record.originalName } : {}),
       ...(record.mime ? { mime: record.mime } : {}),
       bytes: record.bytes,
     });
   }
   return bound;
+}
+
+/**
+ * The deterministic object key the pre-upgrade binder copied an owner upload
+ * to: the owner id was used as the session row id, so the key follows from the
+ * session, the owner id, and the MIME type.
+ */
+function legacyOwnerMaterialKey(
+  sessionId: string,
+  ownerMaterialId: string,
+  mime: string | null,
+): string {
+  return sessionMaterialKey(
+    sessionId,
+    ownerMaterialId,
+    rawObjectName(mime ?? 'application/octet-stream'),
+  );
+}
+
+/**
+ * Whether a row written before `owner_material_id` existed is the legacy
+ * binding of exactly this owner upload.
+ *
+ * The old binder keyed the row on the owner id, left `owner_material_id` NULL,
+ * and copied the bytes to the deterministic key above, so a match on the row
+ * id, kind, title, provenance, and that key plus the stored byte length is
+ * unambiguous. A row that fails any check stays a distinct row and is never
+ * silently adopted or overwritten.
+ */
+async function isLegacyOwnerMaterialBinding(
+  byteStore: ReturnType<typeof getMaterialByteStore>,
+  legacy: AgentSessionMaterial,
+  sessionId: string,
+  ownerMaterialId: string,
+  record: Pick<OwnerMaterialRecord, 'mime' | 'originalName' | 'bytes'>,
+): Promise<boolean> {
+  if (legacy.id !== ownerMaterialId) return false;
+  if (legacy.ownerMaterialId !== null) return false;
+  if (legacy.kind !== 'source') return false;
+  if (legacy.title !== (record.originalName ?? ownerMaterialId)) return false;
+  // A legacy source binding carries copied raw bytes only: no fetch URL, no
+  // derivative, and no extracted text.
+  if (legacy.sourceUrl !== null || legacy.derivedFrom !== null) return false;
+  if (legacy.textAssetId !== null || legacy.textChars !== 0) return false;
+  const expectedKey = legacyOwnerMaterialKey(sessionId, ownerMaterialId, record.mime);
+  if (!isSessionMaterialKey(sessionId, expectedKey)) return false;
+  if (legacy.rawAssetId !== expectedKey) return false;
+  try {
+    return (await byteStore.get(expectedKey)).length === record.bytes;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Bind one owner upload to a session. The `(session_id, owner_material_id)`
+ * unique index adjudicates concurrent binds of the same upload into the same
+ * session, so the loser adopts the winner's row instead of failing.
+ */
+async function bindOwnerMaterial(
+  store: PgAgentSessionMaterialStore,
+  byteStore: ReturnType<typeof getMaterialByteStore>,
+  sessionId: string,
+  ownerMaterialId: string,
+  record: Pick<OwnerMaterialRecord, 'ossKey' | 'mime' | 'originalName' | 'bytes'>,
+): Promise<AgentSessionMaterial> {
+  const existing = await store.getMaterialByOwnerMaterialId(sessionId, ownerMaterialId);
+  if (existing) return existing;
+
+  // Upgrade path: rows written before `owner_material_id` existed use the
+  // owner upload id as the session row id. Reuse and backfill one instead of
+  // minting a duplicate row and copying the bytes a second time.
+  const legacy = await store.getMaterial(sessionId, ownerMaterialId);
+  if (
+    legacy &&
+    (await isLegacyOwnerMaterialBinding(byteStore, legacy, sessionId, ownerMaterialId, record))
+  ) {
+    const adopted = await store.backfillOwnerMaterialId(sessionId, legacy.id, ownerMaterialId);
+    if (adopted) return adopted;
+    // A concurrent bind upgraded or claimed the owner id first; take its row.
+    const winner = await store.getMaterialByOwnerMaterialId(sessionId, ownerMaterialId);
+    if (winner) return winner;
+  }
+
+  let source: Buffer;
+  try {
+    source = await byteStore.get(record.ossKey);
+  } catch {
+    throw new SessionMaterialBindingError(`material ${ownerMaterialId} bytes are unavailable`);
+  }
+  const mime = record.mime ?? 'application/octet-stream';
+  const sessionMaterialId = createMaterialId();
+  const rawObjectKey = sessionMaterialKey(sessionId, sessionMaterialId, rawObjectName(mime));
+  await byteStore.put(rawObjectKey, source, mime);
+  try {
+    return await store.createMaterial(sessionId, {
+      id: sessionMaterialId,
+      ownerMaterialId,
+      kind: 'source',
+      title: record.originalName ?? ownerMaterialId,
+      rawAssetId: rawObjectKey,
+      textChars: 0,
+    });
+  } catch (error) {
+    // A concurrent bind may have committed the row first (the unique index
+    // rejected ours); adopt it, and drop the object we just stored when the
+    // winner does not reference it. Cleanup is best-effort: a failed delete
+    // must not fail a bind that already succeeded.
+    const winner = await store
+      .getMaterialByOwnerMaterialId(sessionId, ownerMaterialId)
+      .catch(() => null);
+    if (winner) {
+      if (winner.rawAssetId !== rawObjectKey) {
+        await byteStore.delete(rawObjectKey).catch((cleanupError) => {
+          console.warn(
+            `[session-materials] failed to delete losing bind object ${rawObjectKey}:`,
+            cleanupError,
+          );
+        });
+      }
+      return winner;
+    }
+    await byteStore.delete(rawObjectKey).catch(() => undefined);
+    throw error;
+  }
 }
 
 /**

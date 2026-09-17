@@ -20,7 +20,7 @@ import {
 } from './tools/read-scene';
 import type { NativeWebSearchConfig } from './tools/web-search';
 import type { WhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
-import type { ResolvedSlideElementReference } from './element-reference';
+import type { ResolvedElementReference } from './element-reference';
 
 function formatSceneEvidenceForDelegation(evidence: DirectorSceneEvidencePacket[]): string {
   return evidence.map((packet) => packet.content).join('\n\n');
@@ -28,7 +28,7 @@ function formatSceneEvidenceForDelegation(evidence: DirectorSceneEvidencePacket[
 
 export async function runPiDirectorLoop(opts: {
   body: StatelessChatRequest;
-  elementReference?: ResolvedSlideElementReference;
+  elementReference?: ResolvedElementReference;
   agentConfigs: AgentConfig[];
   send: SendEvent;
   languageModel: LanguageModel;

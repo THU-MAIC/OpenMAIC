@@ -47,6 +47,30 @@ describe('document MIME normalization', () => {
     expect(normalizeDocumentMimeType({ mimeType: 'text/x-markdown', fileName: 'notes.md' })).toBe(
       DOCUMENT_MIME_TYPES.markdown,
     );
+    expect(
+      normalizeDocumentMimeType({
+        mimeType: 'application/wps-office.pptx',
+        fileName: 'slides.pptx',
+      }),
+    ).toBe(DOCUMENT_MIME_TYPES.pptx);
+    expect(
+      normalizeDocumentMimeType({
+        mimeType: 'application/wps-office.docx',
+        fileName: 'lesson.docx',
+      }),
+    ).toBe(DOCUMENT_MIME_TYPES.docx);
+    expect(
+      normalizeDocumentMimeType({
+        mimeType: 'application/wps-office.xlsx',
+        fileName: 'grades.xlsx',
+      }),
+    ).toBe(DOCUMENT_MIME_TYPES.xlsx);
+    expect(
+      isMimeSupportedByProviders(
+        { mimeType: 'application/wps-office.pptx', fileName: 'slides.pptx' },
+        ['mineru'],
+      ),
+    ).toBe(true);
   });
 
   it('falls back to the extension when a browser reports an unknown MIME', () => {
@@ -74,6 +98,80 @@ describe('document MIME normalization', () => {
         'unpdf',
       ]),
     ).toBe(false);
+    expect(
+      isMimeSupportedByProviders(
+        { mimeType: 'application/wps-office.unknown', fileName: 'lesson.pptx' },
+        ['mineru'],
+      ),
+    ).toBe(false);
+  });
+
+  describe('generic Office container MIME (application/vnd.ms-office)', () => {
+    // Older Linux XDG shared-mime-info databases (e.g. Kylin OS V10) report
+    // every OOXML file as the generic Office container instead of the
+    // concrete format MIME. Like the zip family, the extension must decide.
+    // (#1497)
+    it('resolves OOXML extensions through the extension fallback', () => {
+      expect(
+        normalizeDocumentMimeType({
+          mimeType: 'application/vnd.ms-office',
+          fileName: 'slides.pptx',
+        }),
+      ).toBe(DOCUMENT_MIME_TYPES.pptx);
+      expect(
+        normalizeDocumentMimeType({
+          mimeType: 'application/vnd.ms-office',
+          fileName: 'lesson.docx',
+        }),
+      ).toBe(DOCUMENT_MIME_TYPES.docx);
+      expect(
+        normalizeDocumentMimeType({
+          mimeType: 'application/vnd.ms-office',
+          fileName: 'grades.xlsx',
+        }),
+      ).toBe(DOCUMENT_MIME_TYPES.xlsx);
+    });
+
+    it('resolves legacy Office extensions to their own canonical MIME', () => {
+      expect(
+        normalizeDocumentMimeType({
+          mimeType: 'application/vnd.ms-office',
+          fileName: 'deck.ppt',
+        }),
+      ).toBe(DOCUMENT_MIME_TYPES.ppt);
+    });
+
+    it('keeps the provider capability split for resolved legacy .ppt', () => {
+      // Self-host MinerU does not support legacy OLE formats; only the cloud
+      // provider does. Resolution must not blur that line.
+      const input = { mimeType: 'application/vnd.ms-office', fileName: 'deck.ppt' };
+      expect(isMimeSupportedByProviders(input, ['mineru'])).toBe(false);
+      expect(isMimeSupportedByProviders(input, ['mineru-cloud'])).toBe(true);
+    });
+
+    it('passes provider whitelists for providers that support the format', () => {
+      expect(
+        isMimeSupportedByProviders(
+          { mimeType: 'application/vnd.ms-office', fileName: 'slides.pptx' },
+          ['mineru'],
+        ),
+      ).toBe(true);
+    });
+
+    it('still rejects the generic MIME when the extension is unknown', () => {
+      expect(
+        normalizeDocumentMimeType({
+          mimeType: 'application/vnd.ms-office',
+          fileName: 'blob.bin',
+        }),
+      ).toBe('application/vnd.ms-office');
+      expect(
+        isMimeSupportedByProviders(
+          { mimeType: 'application/vnd.ms-office', fileName: 'blob.bin' },
+          ['mineru-cloud'],
+        ),
+      ).toBe(false);
+    });
   });
 
   it('accepts a non-canonical browser MIME for a provider that supports the format', () => {
