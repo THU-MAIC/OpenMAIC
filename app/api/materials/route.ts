@@ -62,7 +62,7 @@ import { getMaterialByteStore } from '@/lib/server/materials/bytes';
 import {
   isWorkbenchMaterialMime,
   MEDIA_MIME_TYPES,
-  normalizeWorkbenchMaterialMime,
+  resolveWorkbenchMaterialMime,
 } from '@/lib/workbench/material-upload-policy';
 
 export const runtime = 'nodejs';
@@ -158,6 +158,7 @@ export async function POST(req: NextRequest) {
   let phase = 'feature_gate';
   let materialId: string | undefined;
   let mime = '';
+  let declaredMime = '';
   let declaredBytes = 0;
   let receivedBytes = 0;
   let failureLogged = false;
@@ -166,6 +167,7 @@ export async function POST(req: NextRequest) {
     phase,
     ...(materialId ? { materialId } : {}),
     ...(mime ? { mime } : {}),
+    ...(declaredMime && declaredMime !== mime ? { declaredMime } : {}),
     declaredBytes,
     receivedBytes,
     durationMs: Date.now() - startedAt,
@@ -184,7 +186,13 @@ export async function POST(req: NextRequest) {
     try {
       phase = 'validate_request';
       const rawMime = (req.headers.get('content-type') ?? '').split(';', 1)[0];
-      mime = normalizeWorkbenchMaterialMime(rawMime);
+      declaredMime = rawMime;
+      const originalName = materialFilename(req);
+      // A generic content-type (empty, octet-stream, zip-family, or the
+      // generic Office container some Linux browsers report for OOXML —
+      // #1497) is resolved from the filename extension; a specific but
+      // unsupported type falls through verbatim for the whitelist to reject.
+      mime = resolveWorkbenchMaterialMime({ mimeType: rawMime, fileName: originalName });
       if (!isWorkbenchMaterialMime(mime)) {
         return reject(
           apiError(
@@ -216,7 +224,6 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const originalName = materialFilename(req);
       if (!originalName) {
         return reject(
           apiError('MISSING_REQUIRED_FIELD', 400, 'x-material-filename header is required'),

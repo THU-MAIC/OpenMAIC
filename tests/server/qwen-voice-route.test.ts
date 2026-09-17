@@ -4,6 +4,14 @@ import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/generate/voice/route';
 import { clearQwenVoiceRegistrationMemoForTests } from '@/lib/audio/qwen-voice-clone-registration';
 
+// The Qwen voice-clone adapter now issues requests through undici's fetch with
+// a pinned dispatcher, so the vendor double stands in for undici.
+const fetchMock = vi.hoisted(() => vi.fn());
+vi.mock('undici', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('undici')>();
+  return { ...actual, fetch: fetchMock };
+});
+
 function request(referenceAudioBase64 = 'unused-when-voice-exists'): NextRequest {
   return new NextRequest('http://localhost/api/generate/voice', {
     method: 'POST',
@@ -45,11 +53,14 @@ function validReferenceAudioBase64(): string {
 }
 
 describe('Qwen voice registration route', () => {
-  beforeEach(clearQwenVoiceRegistrationMemoForTests);
+  beforeEach(() => {
+    clearQwenVoiceRegistrationMemoForTests();
+    fetchMock.mockReset();
+  });
   afterEach(() => vi.restoreAllMocks());
 
   it('uses the shared default Qwen base URL when the request omits one', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    const fetchSpy = fetchMock.mockResolvedValue(
       new Response(
         JSON.stringify({
           output: {
@@ -69,7 +80,7 @@ describe('Qwen voice registration route', () => {
   it('returns a readable message while retaining the typed Qwen error code', async () => {
     // A lookup 5xx is tolerated (falls through to re-register), so surface the
     // Qwen error from the authoritative create action instead.
-    vi.spyOn(globalThis, 'fetch')
+    fetchMock
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ output: { total_count: 0, voice_list: [] } })),
       )
@@ -87,7 +98,7 @@ describe('Qwen voice registration route', () => {
   });
 
   it('returns 400 for invalid reference audio', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ output: { total_count: 0, voice_list: [] } })),
     );
     const response = await POST(request());
@@ -100,8 +111,7 @@ describe('Qwen voice registration route', () => {
   });
 
   it('re-registers the cached clip instead of fresh enrollment after an ambiguous lookup', async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
+    const fetchSpy = fetchMock
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ output: { total_count: 1, voice_list: [] } })),
       )
@@ -118,8 +128,7 @@ describe('Qwen voice registration route', () => {
   });
 
   it('re-registers the cached clip when the existence lookup hits a vendor 5xx', async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
+    const fetchSpy = fetchMock
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ code: 'UpstreamFailure' }), { status: 500 }),
       )
@@ -138,7 +147,7 @@ describe('Qwen voice registration route', () => {
   });
 
   it('fails loudly when the existence lookup reports an auth error', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ code: 'InvalidApiKey' }), { status: 401 }),
     );
     const response = await POST(request(validReferenceAudioBase64()));
@@ -152,7 +161,7 @@ describe('Qwen voice registration route', () => {
   it('shares one route deadline across lookup and enrollment', async () => {
     vi.useFakeTimers();
     try {
-      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      const fetchSpy = fetchMock.mockImplementation(
         (_input, init) =>
           new Promise((_resolve, reject) => {
             init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {

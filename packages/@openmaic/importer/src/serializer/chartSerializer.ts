@@ -1,3 +1,6 @@
+import { resolveRelTarget } from '../parser/RelParser';
+import { getMimeType } from '../utils/media';
+import { arrayBufferToBase64 } from '../utils/mediaWebConvert';
 /**
  * Serializes ChartNodeData to pptxtojson CommonChart or ScatterChart.
  * Reads chart XML from presentation.charts; extracts chartType, series data,
@@ -16,7 +19,8 @@ import type {
   ScatterChartData,
 } from '../adapter/types';
 import { SafeXmlNode } from '../parser/XmlParser';
-import { resolveColor } from './StyleResolver';
+import type { ChartFill, ImportedChartAxis, ImportedChartStyle } from '@openmaic/dsl';
+import { resolveColorToCss, resolveColor } from './StyleResolver';
 
 const PX_TO_PT = 0.75;
 
@@ -252,6 +256,164 @@ function extractScatterChartData(chartTypeNode: SafeXmlNode): ScatterChartData {
   return [xArr, yArr];
 }
 
+function chartFill(spPr: SafeXmlNode, ctx: RenderContext): ChartFill | undefined {
+  if (spPr.child('noFill').exists()) return 'transparent';
+  const solid = spPr.child('solidFill');
+  if (solid.exists()) return resolveColorToCss(solid, ctx);
+  const grad = spPr.child('gradFill');
+  const lin = grad.child('lin');
+  if (!lin.exists()) return undefined;
+  const stops = grad
+    .child('gsLst')
+    .children('gs')
+    .map((gs) => ({
+      offset: Math.max(0, Math.min(1, (gs.numAttr('pos') ?? 0) / 100000)),
+      color: resolveColorToCss(gs, ctx),
+    }))
+    .sort((a, b) => a.offset - b.offset);
+  if (!stops.length) return undefined;
+  const rad = (((lin.numAttr('ang') ?? 0) / 60000) * Math.PI) / 180;
+  const dx = Math.cos(rad),
+    dy = Math.sin(rad);
+  const span = Math.max(Math.abs(dx), Math.abs(dy));
+  return {
+    type: 'linear',
+    x: 0.5 - dx / (2 * span),
+    y: 0.5 - dy / (2 * span),
+    x2: 0.5 + dx / (2 * span),
+    y2: 0.5 + dy / (2 * span),
+    colorStops: stops,
+  };
+}
+function chartBool(node: SafeXmlNode): boolean | undefined {
+  if (!node.exists()) return undefined;
+  return !['0', 'false'].includes(node.attr('val') ?? '1');
+}
+function chartAxis(
+  node: SafeXmlNode,
+  ctx: RenderContext,
+  sourceFormat?: string,
+): ImportedChartAxis | undefined {
+  if (!node.exists()) return undefined;
+  const label = node.child('txPr').child('p').child('pPr').child('defRPr');
+  const line = node.child('spPr').child('ln');
+  const grid = node.child('majorGridlines');
+  const gridFill = grid.child('spPr').child('ln').child('solidFill');
+  const fill = line.child('solidFill');
+  const labelFill = label.child('solidFill');
+  const deleted = chartBool(node.child('delete'));
+  const numFmt = node.child('numFmt');
+  // sourceLinked defaults to true. Cached series formats describe the linked
+  // data; preserve the axis format when that information is unavailable.
+  const linked = !['0', 'false'].includes(numFmt.attr('sourceLinked') ?? '1');
+  return {
+    show: deleted === undefined ? undefined : !deleted,
+    gridlines: grid.exists() && !grid.child('spPr').child('ln').child('noFill').exists(),
+    gridlineColor: gridFill.exists() ? resolveColorToCss(gridFill, ctx) : undefined,
+    lineColor: fill.exists() ? resolveColorToCss(fill, ctx) : undefined,
+    lineVisible: line.exists() ? !line.child('noFill').exists() : undefined,
+    labelVisible: node.child('tickLblPos').exists()
+      ? node.child('tickLblPos').attr('val') !== 'none'
+      : undefined,
+    labelColor: labelFill.exists() ? resolveColorToCss(labelFill, ctx) : undefined,
+    labelFontSize: label.numAttr('sz') === undefined ? undefined : label.numAttr('sz')! / 100,
+    labelBold: label.attr('b') === undefined ? undefined : ['1', 'true'].includes(label.attr('b')!),
+    min: node.child('scaling').child('min').numAttr('val'),
+    max: node.child('scaling').child('max').numAttr('val'),
+    majorUnit: node.child('majorUnit').numAttr('val'),
+    numberFormat: linked ? (sourceFormat ?? numFmt.attr('formatCode')) : numFmt.attr('formatCode'),
+  };
+}
+function chartPicture(
+  spPr: SafeXmlNode,
+  ctx: RenderContext,
+  chartPath: string,
+): string | undefined {
+  const fill = spPr.child('blipFill');
+  // Only stretch fills with an uncropped rectangle are supported here.
+  if (!fill.child('stretch').exists() || fill.child('srcRect').exists()) return;
+  const rect = fill.child('stretch').child('fillRect');
+  if (['l', 't', 'r', 'b'].some((key) => rect.numAttr(key))) return;
+  const rid = fill.child('blip').attr('r:embed') ?? fill.child('blip').attr('embed');
+  const rel = rid ? ctx.presentation.chartRels?.get(chartPath)?.get(rid) : undefined;
+  if (!rel || rel.targetMode === 'External') return;
+  const path = resolveRelTarget(chartPath.slice(0, chartPath.lastIndexOf('/')), rel.target);
+  if (!/\.(png|jpe?g|gif|webp)$/i.test(path)) return;
+  const data = ctx.presentation.media?.get(path);
+  if (!data) return;
+  return `data:${getMimeType(path)};base64,${arrayBufferToBase64(data)}`;
+}
+
+function barStyle(
+  chart: SafeXmlNode,
+  plot: SafeXmlNode,
+  ctx: RenderContext,
+  chartPath: string,
+): ImportedChartStyle {
+  const showLabel = (node: SafeXmlNode): boolean | undefined => {
+    if (chartBool(node.child('delete')) === true) return false;
+    return chartBool(node.child('showVal'));
+  };
+  const sourceFormats = chart
+    .children('ser')
+    .map((ser) =>
+      ser.child('val').child('numRef').child('numCache').child('formatCode').text().trim(),
+    );
+  // A shared axis with mixed/missing source formats has no unambiguous cache
+  // format. Keep its saved format instead of guessing from the first series.
+  const sourceFormat =
+    sourceFormats.length > 0 &&
+    sourceFormats[0] &&
+    sourceFormats.every((format) => format === sourceFormats[0])
+      ? sourceFormats[0]
+      : undefined;
+  const style: ImportedChartStyle = {
+    series: chart.children('ser').map((ser) => {
+      const pointFills: Record<string, ChartFill> = {};
+      const pointImages: Record<string, string> = {};
+      for (const point of ser.children('dPt')) {
+        const idx = point.child('idx').numAttr('val');
+        const fill = chartFill(point.child('spPr'), ctx);
+        const image = chartPicture(point.child('spPr'), ctx, chartPath);
+        if (idx !== undefined && image) pointImages[String(idx)] = image;
+        if (idx !== undefined && fill !== undefined) pointFills[String(idx)] = fill;
+      }
+      return {
+        fill: chartFill(ser.child('spPr'), ctx),
+        pointFills,
+        pointImages,
+        showValue: showLabel(ser.child('dLbls')) ?? showLabel(chart.child('dLbls')),
+      };
+    }),
+    categoryAxis: chartAxis(plot.child('catAx'), ctx),
+    valueAxis: chartAxis(plot.child('valAx'), ctx, sourceFormat),
+    gapWidth: chart.child('gapWidth').numAttr('val'),
+  };
+  const layout = plot.child('layout').child('manualLayout');
+  const x = layout.child('x').numAttr('val'),
+    y = layout.child('y').numAttr('val');
+  const w = layout.child('w').numAttr('val'),
+    h = layout.child('h').numAttr('val');
+  if (
+    layout.child('layoutTarget').attr('val') === 'inner' &&
+    layout.child('xMode').attr('val') === 'edge' &&
+    layout.child('yMode').attr('val') === 'edge' &&
+    x !== undefined &&
+    y !== undefined &&
+    w !== undefined &&
+    h !== undefined &&
+    x >= 0 &&
+    y >= 0 &&
+    w > 0 &&
+    h > 0 &&
+    x + w <= 1.001 &&
+    y + h <= 1.001
+  ) {
+    style.plotArea = { x, y, w, h };
+  }
+  return style;
+}
+
 // ---------------------------------------------------------------------------
 // Main Serializer
 // ---------------------------------------------------------------------------
@@ -330,6 +492,10 @@ export function chartToElement(
     chartType: chartType as CommonChart['chartType'],
     order,
   };
+
+  if (chartTypeNode && plotArea && chartType === 'barChart') {
+    result.importedStyle = barStyle(chartTypeNode, plotArea, ctx, node.chartPath);
+  }
 
   if (chartTypeNode) {
     const barDir = chartTypeNode.child('barDir').attr('val');

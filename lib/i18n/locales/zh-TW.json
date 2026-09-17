@@ -996,6 +996,8 @@
     "deleteFolderAndCourses_other": "刪除資料夾和 {{count}} 門課程",
     "notFound": "找不到這門課程",
     "notFoundDesc": "課程不存在，或已被刪除。",
+    "loadUnavailable": "暫時無法載入這門課程",
+    "loadUnavailableDesc": "無法取得課程，請檢查存取權限或重試。",
     "backToHome": "返回首頁"
   },
   "upload": {
@@ -1214,6 +1216,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "騰訊混元",
       "xiaomi": "小米 MiMo",
+      "tokendance": "TokenDance",
       "lemonade": "Lemonade（本機）",
       "ollama": "Ollama（本機模型）",
       "tavily": "Tavily",

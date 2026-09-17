@@ -674,6 +674,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     useEffect(() => {
       let cancelled = false;
       const initializeScene = async () => {
+        const previousEngine = engineRef.current;
+        engineRef.current = null;
+        previousEngine?.stop();
+
         const previousSceneId = activeSceneIdRef.current;
         if (previousSceneId && previousSceneId !== currentScene?.id) {
           saveSceneResumePosition(previousSceneId, currentPlaybackActionIndexRef.current);
@@ -745,16 +749,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           !!currentScene?.actions &&
           (currentScene.actions.length > 0 || currentScene.type === 'slide');
         if (!currentScene || !hasPlayableActions) {
-          engineRef.current = null;
           setEngineMode('idle');
           activeSceneIdRef.current = currentSceneId;
 
           return;
-        }
-
-        // Stop previous engine
-        if (engineRef.current) {
-          engineRef.current.stop();
         }
 
         // Widget iframe messaging callback for interactive scenes, resolved lazily
@@ -783,7 +781,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             // Identity guard: a superseded engine (scene switch during an
             // async resume) must not publish its old scene's position over
             // the installed engine's cursor.
-            if (engineRef.current !== null && engineRef.current !== engine) return;
+            if (engineRef.current !== engine) return;
             updateCurrentPlaybackActionIndex(snapshot.actionIndex);
             saveSceneResumePosition(snapshot.sceneId, snapshot.actionIndex);
             if (playbackStageId && snapshot.sceneId) {
@@ -948,11 +946,17 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         if (autoStartRef.current) {
           autoStartRef.current = false;
           (async () => {
-            if (currentScene && chatAreaRef.current) {
-              const sessionId = await chatAreaRef.current.startLecture(currentScene.id);
+            const chatArea = chatAreaRef.current;
+            if (currentScene && chatArea) {
+              const sessionId = await chatArea.startLecture(currentScene.id);
+              if (engineRef.current !== engine) {
+                await chatArea.endSession(sessionId);
+                return;
+              }
               lectureSessionIdRef.current = sessionId;
               lectureActionCounterRef.current = 0;
             }
+            if (engineRef.current !== engine) return;
             engine.start();
           })();
         } else {
@@ -1165,10 +1169,16 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         const wasCompleted = playbackCompleted;
         setPlaybackCompleted(false);
         // Starting playback - create/reuse lecture session
-        if (currentScene && chatAreaRef.current) {
-          const sessionId = await chatAreaRef.current.startLecture(currentScene.id);
+        const chatArea = chatAreaRef.current;
+        if (currentScene && chatArea) {
+          const sessionId = await chatArea.startLecture(currentScene.id);
+          if (engineRef.current !== engine) {
+            await chatArea.endSession(sessionId);
+            return;
+          }
           lectureSessionIdRef.current = sessionId;
         }
+        if (engineRef.current !== engine) return;
         if (wasCompleted) {
           // Restart from beginning (user clicked restart after completion)
           lectureActionCounterRef.current = 0;

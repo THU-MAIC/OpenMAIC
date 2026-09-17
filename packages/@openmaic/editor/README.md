@@ -115,3 +115,36 @@ language without resetting the controlled document or selection. The editor does
 specific i18n library; `appTranslate` may come from i18next, react-intl, a local dictionary, or any
 other translation system. Missing external translations can use `defaultMessage`, which contains
 the editor's built-in fallback label.
+
+## Inline formula serialization
+
+Inline formulas persist as HTML with their LaTeX source in `data-inline-math`.
+Serialization regenerates KaTeX markup with `trust: false`; imported HTML is not
+reused as trusted formula markup. Missing or non-string source normalizes to an
+empty formula atom. An unexpected render failure falls back to escaped source
+text while retaining the atom and source for reopening. Invalid LaTeX syntax
+continues to use KaTeX's `throwOnError: false` behavior.
+
+The text editor schedules persistence only after document changes, with a 300ms
+trailing debounce. Selection-only transactions do not trigger that persistence
+path. Explicit serialization (such as clipboard or HTML retrieval) can still
+render formulas independently.
+
+### Performance measurement
+
+A local headless Chrome measurement on 2026-09-17 serialized one paragraph of
+unique inline formulas of the form `\frac{N+i^{(m)}}{1+i} = e^{\delta}`.
+After five warm-up serializations, 30 serializations per document produced:
+
+| Formula count | Median | P95 |
+| --- | --- | --- |
+| 5 | 0.4ms | 0.5ms |
+| 20 | 1.3ms | 1.6ms |
+| 50 | 3.1ms | 3.6ms |
+| 100 | 5.9ms | 6.7ms |
+
+These measurements include KaTeX DOM generation and HTML serialization, but not
+painting, layout, or the full editor transaction. They are synthetic local
+measurements, not a cross-device performance guarantee. No cache is introduced
+based on these results. Profile representative documents on slower devices
+before adding cache lifetime, memory limits, or invalidation behavior.

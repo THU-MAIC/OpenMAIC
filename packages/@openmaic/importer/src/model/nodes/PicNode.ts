@@ -24,6 +24,8 @@ export interface PicNodeData extends BaseNodeData {
   isVideo?: boolean;
   isAudio?: boolean;
   mediaRId?: string;
+  /** Embedded p14:media reference, kept separately from the legacy link for fallback. */
+  embeddedMediaRId?: string;
 }
 
 /** OOXML encodes srcRect as 1/1000th of a percent; divide by 1000 to get percentage (0–100). */
@@ -76,6 +78,12 @@ export function parsePicNode(picNode: SafeXmlNode): PicNodeData {
 
   const videoFile = nvPr.child('videoFile');
   const audioFile = nvPr.child('audioFile');
+  const embeddedMediaRId = nvPr
+    .child('extLst')
+    .children('ext')
+    .map((ext) => ext.child('media'))
+    .map((media) => media.attr('embed') ?? media.attr('r:embed'))
+    .find((id) => !!id);
 
   const isVideo = videoFile.exists();
   const isAudio = audioFile.exists();
@@ -98,5 +106,6 @@ export function parsePicNode(picNode: SafeXmlNode): PicNodeData {
     isVideo: isVideo || undefined,
     isAudio: isAudio || undefined,
     mediaRId,
+    embeddedMediaRId,
   };
 }

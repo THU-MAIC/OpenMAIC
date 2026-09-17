@@ -17,6 +17,7 @@ import {
   type GradientFillData,
 } from './StyleResolver';
 import { renderTextBody, findPlaceholderNode, type RenderTextBodyOptions } from './textSerializer';
+import { isLinePreset } from '../shapes/linePresets';
 import { renderCustomGeometry } from '../shapes/customGeometry';
 import { getPresetShapePath, getMultiPathPreset, type PresetSubPath } from '../shapes/presets';
 import { emuToPt } from '../parser/units';
@@ -603,6 +604,48 @@ async function fillToJson(
   return { type: 'color', value: 'transparent' };
 }
 
+/**
+ * Flat, editable compatibility preview for WPS's clear/chilly front face.
+ * The base fill alone is not the displayed material color. Our 2D output has
+ * no lighting engine: use an empirically matched pale specular surface with
+ * a small base-color tint (slide 12 of the reported lesson deck).
+ * These coefficients are a visual approximation, NOT OOXML lighting constants.
+ * Do not apply this to perspective, tilted or extruded geometry, other lighting
+ * presets, gradients, or images. Full 3D/bevel rendering remains unsupported.
+ */
+function clearMaterialPreview(fill: Fill, spPr: SafeXmlNode): Fill {
+  const material = spPr.child('sp3d');
+  const scene = spPr.child('scene3d');
+  const camera = scene.child('camera');
+  const light = scene.child('lightRig');
+  const cameraRot = camera.child('rot');
+  const lightRot = light.child('rot');
+  if (
+    fill.type !== 'color' ||
+    !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(fill.value) ||
+    material.attr('prstMaterial') !== 'clear' ||
+    (material.numAttr('extrusionH') ?? 0) !== 0 ||
+    camera.attr('prst') !== 'orthographicFront' ||
+    light.attr('rig') !== 'chilly' ||
+    light.attr('dir') !== 't' ||
+    (lightRot.numAttr('rev') ?? 0) !== 18480000 ||
+    (cameraRot.numAttr('rev') ?? 0) !== 0 ||
+    material.child('bevelT').attr('prst') !== 'relaxedInset' ||
+    (cameraRot.numAttr('lat') ?? 0) !== 0 ||
+    (cameraRot.numAttr('lon') ?? 0) !== 0 ||
+    (lightRot.numAttr('lat') ?? 0) !== 0 ||
+    (lightRot.numAttr('lon') ?? 0) !== 0
+  )
+    return fill;
+
+  const { r, g, b } = hexToRgb(fill.value.slice(0, 7));
+  const tint = (channel: number) => Math.round(249 * 0.95 + channel * 0.05);
+  return {
+    type: 'color',
+    value: rgbToHex(tint(r), tint(g), tint(b)).toUpperCase() + fill.value.slice(7),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Shadow + link (mirror ShapeRenderer tail sections)
 // ---------------------------------------------------------------------------
@@ -814,11 +857,7 @@ export async function renderShape(
     'bracepair',
   ]);
   const presetIsLine =
-    !!presetKey &&
-    (presetKey === 'line' ||
-      presetKey === 'lineinv' ||
-      presetKey.includes('connector') ||
-      outlineOnlyPresets.has(presetKey));
+    !!presetKey && (isLinePreset(presetKey) || outlineOnlyPresets.has(presetKey));
   const isConnectorShape = node.source.localName === 'cxnSp';
   const fillKind = node.fill?.localName;
   const hasAreaFill =
@@ -1093,7 +1132,10 @@ export async function renderShape(
     };
   }
 
-  const fillJson = await fillToJson(spPr, ctx, fillCss, gradientFillData, isLineLike);
+  const fillJson = clearMaterialPreview(
+    await fillToJson(spPr, ctx, fillCss, gradientFillData, isLineLike),
+    spPr,
+  );
 
   const shadowJson = resolveShapeShadow(node, spPr, ctx);
   const linkStr = resolveShapeLink(node, ctx);

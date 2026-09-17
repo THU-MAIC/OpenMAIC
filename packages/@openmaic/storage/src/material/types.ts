@@ -92,6 +92,13 @@ export interface AgentSessionMaterial {
   sessionId: string;
   kind: AgentSessionMaterialKind;
   title: string | null;
+  /**
+   * The owner-library upload this row was bound from, when it came from the
+   * owner material library (null for fetched/derived rows). The row `id` is
+   * minted per session, so the same owner upload bound to several sessions
+   * yields several rows that all record the same `ownerMaterialId`.
+   */
+  ownerMaterialId?: string | null;
   /** The fetch's source URL; never a model-invented target. */
   sourceUrl: string | null;
   /** Asset id (registry) of the extracted text/markdown bytes. */
@@ -110,6 +117,12 @@ export interface AgentSessionMaterial {
 export interface CreateAgentSessionMaterialInput {
   /** Caller-minted stable id; defaults to a fresh `mat_` id. */
   id?: string;
+  /**
+   * The owner-library upload this row is bound from, when applicable. A
+   * unique `(session_id, owner_material_id)` index makes a rebind idempotent
+   * without requiring the shared owner id to be globally unique.
+   */
+  ownerMaterialId?: string;
   kind: AgentSessionMaterialKind;
   title?: string;
   sourceUrl?: string;

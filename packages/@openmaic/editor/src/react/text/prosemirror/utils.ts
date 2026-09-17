@@ -135,7 +135,14 @@ export const getMarkAttrs = (view: EditorView) => {
   let node = doc.nodeAt(from) || doc.nodeAt(from - 1);
   node = getLastTextNode(node);
 
-  return node?.marks || [];
+  let inherited: readonly Mark[] = [];
+  for (let depth = 1; depth <= selection.$from.depth; depth++) {
+    for (const mark of selection.$from.node(depth).marks) inherited = mark.addToSet(inherited);
+  }
+  const own =
+    selection.empty && view.state.storedMarks !== null ? view.state.storedMarks : node?.marks || [];
+  for (const mark of own) inherited = mark.addToSet(inherited);
+  return inherited;
 };
 
 export const getAttrValue = (

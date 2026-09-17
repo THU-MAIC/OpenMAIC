@@ -68,7 +68,7 @@ const WINGDINGS: Record<number, string> = {
   0xd5: '✉',
   0xd6: '☛',
   0xd7: '☞',
-  0xd8: '✌',
+  0xd8: '➢',
   0xfb: '⚫',
 };
 
@@ -97,7 +97,7 @@ const WINGDINGS2: Record<number, string> = {
 const WINGDINGS3: Record<number, string> = {
   0x7d: '▶',
   0x7e: '◀',
-  0x7b: '▲',
+  0x7b: '◥', // Upper-right right-angle triangle, also used by U+F07B.
   0x7c: '▼',
   0x75: '►',
   0x76: '◄',
@@ -129,6 +129,23 @@ function symbolFontCharToUnicode(char: string, fontName: string): string {
 
   if (table && table[code]) return table[code];
   return '•';
+}
+
+/** a:sym selects the font for symbol-private-use characters, not the whole run.
+ * Office can leave it attached to ordinary dates/punctuation after a font edit.
+ */
+function mapRunSymbols(text: string, properties: SafeXmlNode | undefined): string {
+  const font = properties?.child('sym').attr('typeface');
+  if (!isSymbolFont(font)) return text;
+  const legacySymbolRun = isSymbolFont(properties?.child('latin').attr('typeface'));
+  return Array.from(text)
+    .map((char) => {
+      const code = char.codePointAt(0)!;
+      return (code >= 0xf000 && code <= 0xf0ff) || (legacySymbolRun && code <= 0xff)
+        ? symbolFontCharToUnicode(char, font!)
+        : char;
+    })
+    .join('');
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +238,7 @@ function getPlaceholderLstStyle(phNode: SafeXmlNode): SafeXmlNode | undefined {
  * Later calls override earlier values (higher priority wins).
  */
 interface MergedParagraphStyle {
+  hangingPunctuation?: boolean;
   align?: string;
   marginLeft?: number;
   textIndent?: number;
@@ -247,6 +265,7 @@ interface MergedParagraphStyle {
    *  items / titles positioned to the right of an icon). Without them we fall back to the
    *  OOXML default 96px tab grid, which pushes tabbed text far past its intended column. */
   tabStopsPx?: number[];
+  defaultTabSizePx?: number;
 }
 
 function buildMergedParagraphStyle(
@@ -305,6 +324,15 @@ function buildMergedParagraphStyle(
 
 function mergeParagraphProps(target: MergedParagraphStyle, pPr: SafeXmlNode): void {
   if (!pPr.exists()) return;
+  const hangingPunct = pPr.attr('hangingPunct');
+  if (hangingPunct !== undefined) {
+    target.hangingPunctuation = hangingPunct === '1' || hangingPunct === 'true';
+  }
+
+  const defaultTabSize = pPr.numAttr('defTabSz');
+  if (defaultTabSize !== undefined && defaultTabSize > 0) {
+    target.defaultTabSizePx = emuToPx(defaultTabSize);
+  }
 
   const algn = pPr.attr('algn');
   if (algn) target.align = algn;
@@ -446,6 +474,7 @@ interface MergedRunStyle {
   color?: string;
   fontFamily?: string;
   hlinkClick?: string;
+  hyperlinkColor?: 'tx' | 'hlink';
   /** Character spacing (tracking) in points — from a:spc @val (hundredths of pt). */
   letterSpacingPt?: number;
   /** Kerning: minimum font size (pt) for kerning; 0 = always kern. */
@@ -576,8 +605,27 @@ function mergeRunProps(target: MergedRunStyle, rPr: SafeXmlNode, ctx: RenderCont
   // Hyperlink
   const hlinkClick = rPr.child('hlinkClick');
   if (hlinkClick.exists()) {
+    // Office's hyperlink color override belongs to the hyperlink, not rPr fill.
+    target.hyperlinkColor = 'hlink';
+    for (const ext of hlinkClick.child('extLst').children('ext')) {
+      const color = ext.child('hlinkClr');
+      if (
+        color.rawElement?.namespaceURI !==
+        'http://schemas.microsoft.com/office/drawing/2018/hyperlinkcolor'
+      )
+        continue;
+      const value = color.attr('val');
+      if (value === 'tx' || value === 'hlink') target.hyperlinkColor = value;
+    }
     // The actual URL is in the slide rels, referenced by r:id
-    const rId = hlinkClick.attr('id') ?? hlinkClick.attr('r:id');
+    // Relationship prefixes are arbitrary (e.g. ns1:id); resolve by namespace.
+    const rId =
+      hlinkClick.rawElement?.getAttributeNS(
+        'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+        'id',
+      ) ||
+      hlinkClick.attr('id') ||
+      hlinkClick.attr('r:id');
     if (rId) {
       const rel = ctx.slide.rels.get(rId);
       if (rel && rel.targetMode === 'External' && isAllowedExternalUrl(rel.target)) {
@@ -786,21 +834,15 @@ function formatRunTextForHtml(raw: string): string {
   if (raw.includes('\t')) {
     return escapeHtml(raw);
   }
-  // PowerPoint \u91cc\u4f5c\u8005\u5e38\u7528 N \u4e2a ASCII \u7a7a\u683c\u505a\u89c6\u89c9\u7f29\u8fdb\u2014\u2014\u5728 \u7b49\u7ebf/CJK \u5b57\u4f53\u91cc
-  // ASCII space \u662f\u56fa\u5b9a\u7684 half-width\uff080.5em\uff09\uff0c\u4f46\u6d4f\u89c8\u5668\u66ff\u6362\u6210 SourceHanSans
-  // \u540e\u7a7a\u683c\u5bbd\u5ea6\u504f\u5bbd\uff0c\u5bfc\u81f4 "\u6388\u8bfe\u56e2\u961f\uff1a" \u4e0b\u9762\u7528\u7a7a\u683c\u5bf9\u9f50\u7684\u51e0\u884c\u88ab\u63a8\u5230\u6bd4\u6e90 PPT
-  // \u6392\u7248\u610f\u56fe\u66f4\u9760\u53f3\u7684\u4f4d\u7f6e\u3002\u628a\u9996\u6bb5 >=2 \u4e2a\u8fde\u7eed\u7a7a\u683c\u6298\u7b97\u6210\u7b49\u5bbd inline-block\uff0c
-  // \u7f29\u8fdb\u5c31\u548c\u5b57\u4f53\u5ea6\u91cf\u89e3\u8026\uff0c\u5339\u914d CJK half-width \u4e60\u60ef\u3002
+  // Preserve the actual space glyphs. Their advance depends on the resolved
+  // font; a fixed em width or a label-based indent changes authored layout.
   let leadingPrefix = '';
   let remainder = raw;
   const leadingMatch = remainder.match(/^( {2,})/);
   if (leadingMatch) {
-    const count = leadingMatch[1].length;
-    remainder = remainder.slice(count);
-    // 0.25em/空格：自托管思源宋体/黑体实测 ASCII space advance ≈0.256em。早期用
-    // 0.5em 是 fonts.css 未 import 时空格落到偏宽系统 fallback 的补偿；字体注册修复
-    // 后 0.5em 反而把「图标+\t+空格+标题」窄框标题多撑约 1em 触发误换行（slide 6）。
-    leadingPrefix = `<span style="display:inline-block;width:${(count * 0.25).toFixed(2)}em"></span>`;
+    remainder = remainder.slice(leadingMatch[1].length);
+    // NBSP preserves leading whitespace through HTML and editor serialization.
+    leadingPrefix = '\u00a0'.repeat(leadingMatch[1].length);
   }
   let t = escapeHtml(remainder);
   if (/ {2}/.test(remainder)) {
@@ -865,15 +907,7 @@ function renderTextWarp(
       }
 
       let runText = run.text ?? '';
-      if (run.properties) {
-        const symNode = run.properties.child('sym');
-        const symTypeface = symNode.exists() ? symNode.attr('typeface') : undefined;
-        if (isSymbolFont(symTypeface)) {
-          runText = Array.from(runText)
-            .map((ch) => symbolFontCharToUnicode(ch, symTypeface!))
-            .join('');
-        }
-      }
+      runText = mapRunSymbols(runText, run.properties);
 
       const style = runStylesToCssString(runStyle, run, options, ctx);
       for (const ch of textRunToGlyphs(runText)) {
@@ -965,10 +999,67 @@ export interface RenderTextBodyOptions {
   forceNoWrap?: boolean;
 }
 
-/**
- * Same contract as `TextRenderer.renderTextBody`, but returns an HTML string for `Shape.content` / `Text.content`
- * (types.ts / README) instead of mutating a DOM `container`.
+/** Recover font leading from the saved extent of simple shape-auto-fit labels.
+ * Only use extents compatible with one natural line per paragraph. Wrapped,
+ * mixed-size, bulleted, spaced and rotated bodies keep the normal layout path.
  */
+function autoFitLineHeight(
+  body: TextBody,
+  styles: MergedParagraphStyle[],
+  options?: RenderTextBodyOptions,
+): string | undefined {
+  const bp = body.bodyProperties;
+  if (
+    !bp?.child('spAutoFit').exists() ||
+    !options?.frameHeightPx ||
+    // With many paragraphs, one wrapped line can masquerade as small leading.
+    body.paragraphs.length > 2 ||
+    bp.numAttr('rot') ||
+    (bp.attr('vert') && bp.attr('vert') !== 'horz') ||
+    options.forceNoWrap
+  )
+    return undefined;
+  let fontSize: number | undefined;
+  for (const [index, paragraph] of body.paragraphs.entries()) {
+    const style = styles[index];
+    if (
+      style.lineHeightAbsolute ||
+      (style.lineHeight !== undefined && style.lineHeight !== '1') ||
+      style.spaceBefore ||
+      style.spaceBeforePct ||
+      style.spaceAfter ||
+      style.spaceAfterPct ||
+      style.bulletChar ||
+      style.bulletAutoNum ||
+      !paragraph.runs.length
+    )
+      return undefined;
+    for (const run of paragraph.runs) {
+      const size = run.properties?.numAttr('sz');
+      if (
+        !run.text.trim() ||
+        /[\n\r\t]/.test(run.text) ||
+        run.ommlXml ||
+        run.fldType ||
+        !size ||
+        run.properties?.numAttr('baseline') ||
+        (fontSize !== undefined && size !== fontSize)
+      )
+        return undefined;
+      fontSize = size;
+    }
+  }
+  if (!fontSize) return undefined;
+  const innerHeight =
+    options.frameHeightPx - emuToPx((bp.numAttr('tIns') ?? 45720) + (bp.numAttr('bIns') ?? 45720));
+  const pitch = innerHeight / body.paragraphs.length;
+  const ratio = pitch / (((fontSize / 100) * 4) / 3);
+  // Natural leading is small. A taller extent is not evidence for single-line
+  // paragraphs (it may contain wrapping or unused space); don't stretch to fit.
+  return ratio >= 1.05 && ratio <= 1.3 ? `${pitch.toFixed(4)}px` : undefined;
+}
+
+/** Render the text body as HTML, preserving inherited paragraph and run styles. */
 export function renderTextBody(
   textBody: TextBody | undefined,
   placeholder: PlaceholderInfo | undefined,
@@ -989,6 +1080,10 @@ export function renderTextBody(
     textBody.bodyProperties?.attr('spcFirstLastPara') === 'true';
   const lastParaIdx = textBody.paragraphs.length - 1;
 
+  const paragraphStyles = textBody.paragraphs.map((paragraph) =>
+    buildMergedParagraphStyle(textBody, paragraph, category, placeholder, ctx),
+  );
+  const savedAutoFitLineHeight = autoFitLineHeight(textBody, paragraphStyles, options);
   let html = '';
   const textWarp = getSupportedTextWarp(textBody);
 
@@ -1003,7 +1098,7 @@ export function renderTextBody(
       const level = paragraph.level;
 
       // ---- Build merged paragraph style (7-level inheritance) ----
-      const merged = buildMergedParagraphStyle(textBody, paragraph, category, placeholder, ctx);
+      const merged = paragraphStyles[paraIdx - 1];
 
       // ---- Apply paragraph styles (equivalent to paraDiv.style.* in TextRenderer) ----
       const paraCssParts: string[] = [];
@@ -1136,13 +1231,9 @@ export function renderTextBody(
       } else if (merged.textIndent !== undefined) {
         paraCssParts.push(`text-indent: ${merged.textIndent}px`);
       }
-      // OOXML: when <a:lnSpc> is absent at every level of the cascade, the
-      // implicit default is "single spacing" = 1.0. We fall back to that so
-      // the browser doesn't take over with `line-height: normal` (~1.2 for
-      // most fonts, sometimes much larger for CJK with tall typo metrics),
-      // which causes multi-paragraph body text to overflow its container
-      // and visibly stack/overlap.
-      const effectiveLineHeight = merged.lineHeight ?? '1';
+      // Preserve saved font leading for simple auto-fit labels. Other frames
+      // retain the established explicit/default single-spacing behavior.
+      const effectiveLineHeight = savedAutoFitLineHeight ?? merged.lineHeight ?? '1';
       paraCssParts.push(`line-height: ${effectiveLineHeight}`);
       // Determine effective font size for percentage-based spacing
       // Use defRPr or first run's font size, fallback to 12pt
@@ -1153,10 +1244,44 @@ export function renderTextBody(
           if (sz !== undefined) effectiveFontSize = sz / 100;
         }
       }
+      const inheritedFontSize = effectiveFontSize;
       if (paragraph.runs.length > 0 && paragraph.runs[0].properties) {
         const sz = paragraph.runs[0].properties.numAttr('sz');
         if (sz !== undefined) effectiveFontSize = sz / 100;
       }
+
+      // Office may hang the blank half of a final full-width punctuation mark.
+      // Only recover a short CJK line that fits after this half-em compression;
+      // do not disable wrapping or resize the text frame for ordinary prose.
+      const paragraphText = paragraph.runs.map((r) => r.text ?? '').join('');
+      const bp = textBody.bodyProperties;
+      const availableWidth =
+        (options?.frameWidthPx ?? 0) -
+        emuToPx((bp?.numAttr('lIns') ?? 91440) + (bp?.numAttr('rIns') ?? 91440));
+      const emWidth = (effectiveFontSize * 4) / 3;
+      const compactFinalPunctuation =
+        merged.hangingPunctuation === true &&
+        !options?.cellMargins &&
+        !noWrap &&
+        (!bp?.attr('vert') || bp.attr('vert') === 'horz') &&
+        (bp?.numAttr('numCol') ?? 1) === 1 &&
+        (bp?.child('normAutofit').numAttr('fontScale') ?? 100000) === 100000 &&
+        !merged.marginLeft &&
+        !merged.textIndent &&
+        !merged.bulletChar &&
+        !merged.bulletAutoNum &&
+        /^[\u3400-\u9fff]{1,12}[，。！？；：、]$/.test(paragraphText) &&
+        paragraphText.length * emWidth > availableWidth &&
+        (paragraphText.length - 0.5) * emWidth <= availableWidth &&
+        !(merged.defRPrs ?? []).some((r) => r.numAttr('spc') || r.numAttr('baseline')) &&
+        paragraph.runs.every(
+          (r) =>
+            !r.ommlXml &&
+            !r.properties?.numAttr('spc') &&
+            !r.properties?.numAttr('baseline') &&
+            (r.properties?.numAttr('sz') ?? inheritedFontSize * 100) === effectiveFontSize * 100,
+        );
+      const lastTextRun = [...paragraph.runs].reverse().find((r) => !!r.text);
 
       // Empty paragraph (no visible runs → renders as a bare <br/>): PowerPoint
       // sizes the blank line from its end-of-paragraph mark (endParaRPr). Without
@@ -1265,7 +1390,11 @@ export function renderTextBody(
         (n, r) => n + (r.text ? (r.text.match(/\t/g)?.length ?? 0) : 0),
         0,
       );
-      if (totalTabs - leadingFoldedTabs > 0) {
+      const useTabColumns =
+        totalTabs > leadingFoldedTabs &&
+        // Formula layout cannot be measured with plain-text canvas metrics.
+        !paragraph.runs.some((run) => run.ommlXml);
+      if (totalTabs - leadingFoldedTabs > 0 && !useTabColumns) {
         paraCssParts.push(`tab-size: ${resolveTabPx().toFixed(2)}px`);
       }
       if (noWrap) {
@@ -1285,6 +1414,9 @@ export function renderTextBody(
       // content; emitting an inline <span> before a block-level wrapper <div>
       // would push the content onto the next line and shift the whole paragraph.
       let bulletHtml = '';
+      let bulletSlotWidthPx = 0;
+      let tabBulletText = '';
+      let tabBulletStyle = '';
       if (bulletPrefix) {
         // Compute the first-run effective style once so the bullet can inherit
         // color, font-size, AND font-family from it. Without this, auto-number
@@ -1363,6 +1495,7 @@ export function renderTextBody(
           // 时，过宽的槽把正文推到 marL+|indent| 之外、bullet 离正文很远。slide 3 那种「无显式 marL、
           // 由 -indent 合成 marL」的情形 marL==|indent|，取值不变、不受影响。
           const slotWidthPx = -(merged.textIndent ?? 0);
+          bulletSlotWidthPx = slotWidthPx;
           // symbol bullet 的字形对齐：
           // - 合成 marL（无真实 marL、bullet 紧贴 element 左沿、可能压住相邻形状，如 slide 3 编号圆）：
           //   在槽内补 padding-left:16px 把 ■ 往右推、避开相邻形状光晕；body 位置不变。
@@ -1382,6 +1515,8 @@ export function renderTextBody(
           // 字形稳定落在 padding 处，body 与续行仍由 <p> 的 margin-left/text-indent 控制不受影响。
           bulletHtml = `<span style="display:inline-block;width:${slotWidthPx}px;text-indent:0;${slotPad}${bFontCss}${bSizeCss}color: ${bColor};">${escapeHtml(displayChar)}</span>`;
         } else {
+          tabBulletText = `${displayChar} `;
+          tabBulletStyle = `${bFontCss}${bSizeCss}`;
           bulletHtml = `<span style="${bFontCss}${bSizeCss}color: ${bColor};">${escapeHtml(displayChar)} </span>`;
         }
       }
@@ -1445,6 +1580,52 @@ export function renderTextBody(
       let prevStyleStr: string | null = null;
       let prevIsLink = false;
       let accumulatedText = '';
+      let tabCursorPx =
+        (tabStopBehindMargin
+          ? leadingFirstStop!
+          : (finalMarginLeftPx ?? 0) + (merged.textIndent ?? 0)) + bulletSlotWidthPx;
+      // Use actual browser font metrics to decide which stop follows the text.
+      // The output contains fixed column widths, so consumers need no tab support.
+      const tabMeasure =
+        useTabColumns && typeof OffscreenCanvas !== 'undefined'
+          ? new OffscreenCanvas(1, 1).getContext('2d')
+          : null;
+      const measureTabText = (text: string, paintStyle: string): number => {
+        // Read the same resolved CSS we emit, including table overrides and caps.
+        const sizePx =
+          // Baseline shifts append a smaller font-size; CSS uses the last declaration.
+          (Number(
+            Array.from(paintStyle.matchAll(/font-size: ([\d.]+)pt/g)).pop()?.[1] ??
+              effectiveFontSize,
+          ) *
+            4) /
+          3;
+        const spacingPx =
+          (Number(paintStyle.match(/letter-spacing: (-?[\d.]+)pt/)?.[1] ?? 0) * 4) / 3;
+        if (paintStyle.includes('text-transform: uppercase')) text = text.toUpperCase();
+        let width: number;
+        if (tabMeasure) {
+          const family = paintStyle.match(/font-family: ([^;]+)/)?.[1] ?? 'Arial';
+          const italic = paintStyle.includes('font-style: italic') ? 'italic ' : '';
+          const bold = paintStyle.includes('font-weight: bold') ? 'bold ' : '';
+          const caps = paintStyle.includes('font-variant: small-caps') ? 'small-caps ' : '';
+          tabMeasure.font = `${italic}${caps}${bold}${sizePx}px ${family}`;
+          tabMeasure.fontKerning = paintStyle.includes('font-kerning: none') ? 'none' : 'normal';
+          width = tabMeasure.measureText(text).width;
+        } else {
+          // Deterministic fallback for server-side imports without a canvas.
+          width = Array.from(text).reduce(
+            (sum, char) =>
+              sum + (char === ' ' ? 0.25 : char.charCodeAt(0) > 255 ? 1 : 0.5) * sizePx,
+            0,
+          );
+        }
+        return width + Array.from(text).length * spacingPx;
+      };
+
+      if (useTabColumns && tabBulletText) {
+        tabCursorPx += measureTabText(tabBulletText, tabBulletStyle);
+      }
 
       const flushAccumulatedRun = () => {
         if (!accumulatedText || prevStyleStr === null) return;
@@ -1495,6 +1676,7 @@ export function renderTextBody(
           continue;
         }
         if (run.text === '\n') {
+          tabCursorPx = finalMarginLeftPx ?? 0;
           flushAccumulatedRun();
           prevStyleStr = null;
           if (useLineWrappers) {
@@ -1562,22 +1744,55 @@ export function renderTextBody(
             if (!runText) runText = String(ctx.slide.index + 1);
           }
         }
-        if (run.properties) {
-          const symNode = run.properties.child('sym');
-          if (symNode.exists()) {
-            const symTypeface = symNode.attr('typeface');
-            if (isSymbolFont(symTypeface)) {
-              runText = Array.from(runText)
-                .map((ch) => symbolFontCharToUnicode(ch, symTypeface!))
-                .join('');
-            }
-          }
-        }
-        const inner = formatRunTextForHtml(runText);
+        runText = mapRunSymbols(runText, run.properties);
+        const inner =
+          compactFinalPunctuation && run === lastTextRun
+            ? formatRunTextForHtml(runText.slice(0, -1)) +
+              `<span style="display:inline-block;width:0.5em">${escapeHtml(runText.slice(-1))}</span>`
+            : formatRunTextForHtml(runText);
         const tabStyleSuffix = runText.includes('\t') ? ';white-space: pre' : '';
 
         const styleStr = runStylesToCssString(runStyle, run, options, ctx) + tabStyleSuffix;
         const isLink = !!runStyle.hlinkClick;
+
+        if (useTabColumns) {
+          flushAccumulatedRun();
+          prevStyleStr = null;
+          const paintStyle = runStylesToCssString(runStyle, run, options, ctx);
+          const paint = (text: string) =>
+            isLink
+              ? `<a href="${escapeHtmlAttr(runStyle.hlinkClick!)}" target="_blank" rel="noopener noreferrer" style="${paintStyle}">${formatRunTextForHtml(text)}</a>`
+              : `<span style="${paintStyle}">${formatRunTextForHtml(text)}</span>`;
+          const lines = runText.split('\n');
+          for (let line = 0; line < lines.length; line++) {
+            if (line > 0) {
+              html += '<br/>';
+              tabCursorPx = finalMarginLeftPx ?? 0;
+            }
+            const parts = lines[line].split('\t');
+            for (let part = 0; part < parts.length; part++) {
+              const text = parts[part];
+              const textEndPx = tabCursorPx + measureTabText(text, paintStyle);
+              if (part < parts.length - 1) {
+                const grid = merged.defaultTabSizePx ?? 96;
+                const stop =
+                  merged.tabStopsPx?.find((pos) => pos > textEndPx + 0.01) ??
+                  (Math.floor((textEndPx + 0.01) / grid) + 1) * grid;
+                const widthPt = ((stop - tabCursorPx) * 3) / 4;
+                // Server estimates can undercount wide glyphs. Let their columns
+                // grow to the painted text width so following content cannot overlap.
+                const minWidth = tabMeasure ? '' : 'min-width:max-content;';
+                html += `<span data-pptx-tab-column="true" style="display:inline-block;width:${widthPt.toFixed(2)}pt;${minWidth}text-indent:0;text-align:left;white-space:pre;">${text ? paint(text) : ''}</span>`;
+                tabCursorPx = stop;
+              } else if (text) {
+                html += paint(text);
+                tabCursorPx = textEndPx;
+              }
+            }
+          }
+          prevIsLink = false;
+          continue;
+        }
 
         if (isLink) {
           flushAccumulatedRun();
@@ -1634,7 +1849,7 @@ export function renderTextBody(
     const tIns = bp.numAttr('tIns') ?? cm?.tIns ?? DEFAULT_V_INSET;
     const bIns = bp.numAttr('bIns') ?? cm?.bIns ?? DEFAULT_V_INSET;
     const pt = (emu: number) => parseFloat((emu / 12700).toFixed(2));
-    html = `<div style="padding: ${pt(tIns)}pt ${pt(rIns)}pt ${pt(bIns)}pt ${pt(lIns)}pt;">${html}</div>`;
+    html = `<div data-pptx-text-insets="true" style="padding: ${pt(tIns)}pt ${pt(rIns)}pt ${pt(bIns)}pt ${pt(lIns)}pt;">${html}</div>`;
   }
 
   return html;
@@ -1663,13 +1878,16 @@ function runStylesToCssString(
   }
 
   const decorations: string[] = [];
-  if (runStyle.underline) decorations.push('underline');
+  // Text hyperlinks have their own underline, independent of ordinary rPr u.
+  // Shape hyperlinks never enter this run-level styling path.
+  if (runStyle.hlinkClick || runStyle.underline) decorations.push('underline');
   if (runStyle.strikethrough) decorations.push('line-through');
   if (decorations.length > 0) {
     parts.push(`text-decoration: ${decorations.join(' ')}`);
   }
 
-  // Color priority: explicit run rPr > hlink theme color > cellTextColor (table style tcTxStyle) > fontRef (shape style) > inherited styles > black default
+  // Resolve the ordinary text fill first; the hyperlink color policy below
+  // can override it with the document theme color.
   // cellTextColor from table style overrides inherited cascade colors but yields to explicit run/paragraph solidFill/gradFill.
   // fontRefColor overrides inherited styles but yields to explicit run solidFill/gradFill.
   const hasExplicitRunColor =
@@ -1683,14 +1901,16 @@ function runStylesToCssString(
     effectiveColor = runStyle.color;
   }
 
-  // Hyperlink default color: when the run is a hyperlink and has no explicit
-  // solidFill on its own rPr, use the theme's hlink color.  This matches
-  // PowerPoint behaviour where hyperlink text defaults to the hlink scheme color.
-  if (runStyle.hlinkClick && !hasExplicitRunColor) {
-    const hlinkHex = ctx.theme.colorScheme.get('hlink');
-    if (hlinkHex) {
-      effectiveColor = hlinkHex.startsWith('#') ? hlinkHex : `#${hlinkHex}`;
-    }
+  // Text hyperlinks use the theme color unless Office's hlinkClr explicitly
+  // selects the text fill. Visible URL text and named links follow the same rule.
+  const hyperlinkThemeColor =
+    runStyle.hlinkClick && runStyle.hyperlinkColor !== 'tx'
+      ? ctx.theme.colorScheme.get('hlink')
+      : undefined;
+  if (hyperlinkThemeColor) {
+    effectiveColor = hyperlinkThemeColor.startsWith('#')
+      ? hyperlinkThemeColor
+      : `#${hyperlinkThemeColor}`;
   }
 
   if (effectiveColor) {
@@ -1701,7 +1921,7 @@ function runStylesToCssString(
   }
 
   // Gradient text fill: use background-clip to paint text with gradient
-  if (runStyle.textGradientCss) {
+  if (runStyle.textGradientCss && !hyperlinkThemeColor) {
     parts.push(`background: ${runStyle.textGradientCss}`);
     parts.push('-webkit-background-clip: text');
     parts.push('background-clip: text');

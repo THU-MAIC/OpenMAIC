@@ -133,6 +133,7 @@ export const workbenchEn = {
     title: {
       'build-personal-skill': 'Build a personal Skill',
       'curriculum-planner': 'Series planning',
+      'zone-of-proximal-development': 'Practice lesson (zone of proximal development)',
       'stage-dsl': 'Classroom document structure',
       'deep-interactive': 'Deep interactive',
       'deep-research': 'Deep research',
@@ -433,6 +434,7 @@ export const workbenchZh = {
     title: {
       'build-personal-skill': '创建专属 Skill',
       'curriculum-planner': '系列课规划',
+      'zone-of-proximal-development': '习题课（最近发展区）',
       'stage-dsl': '课堂文档结构',
       'deep-interactive': '深度交互',
       'deep-research': '深度调研',

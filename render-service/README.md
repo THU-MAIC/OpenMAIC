@@ -171,6 +171,23 @@ that untrusted page contained:
 (and keep the egress lockdown on, or accept the risk with the toggle) — it needs
 no outbound access.
 
+### Residual risk
+
+The injected CSP plus request interception close script, fetch/XHR, WebSocket,
+image, frame and form egress from the untrusted documents. Two channels remain:
+
+- **Top-level navigation on `/render`.** `location`, a `<meta http-equiv=refresh>`,
+  `window.open` and `target=_top` can replace the top frame; CSP has no
+  `navigate-to` directive, and the producer's browser exposes no request
+  interception we can install. The service therefore relies on the container's
+  egress lockdown: with `RENDER_EGRESS_LOCKDOWN=false`, a rendered page can
+  navigate to any reachable address and the result appears in the output video.
+  Do not run standalone with the lockdown disabled.
+- **Declarative subresources inside a framed SVG/XHTML.** Sanitizing removes
+  script and event handlers, but a surviving `<image href>` (or CSS `url()`)
+  can still load a subresource through a framed document that has no CSP of its
+  own. The lockdown is what blocks that egress in supported deployments.
+
 ## Run
 
 ### Docker (recommended)
