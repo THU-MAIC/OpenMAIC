@@ -722,3 +722,81 @@ describe('a failed media task explains itself beside a Retry, and only there', (
     expect(markup).not.toContain('settings.mediaRetry');
   });
 });
+
+/**
+ * The window between a `media_ready` frame and the document catching up.
+ *
+ * The server stores the bytes in the pool and patches the document, but the
+ * pane holds the pre-patch scene for as long as the stage-freshness sync takes.
+ * During that window the element still names the generation placeholder, which
+ * the pool cannot hold, while the completion frame has already handed the task
+ * the allocated id. The id is what gets leased, so the video plays when the
+ * frame arrives rather than when the sync lands (#1522).
+ */
+describe('a completed pool-backed task renders before the document catches up', () => {
+  afterEach(() => {
+    hookLeases.current = {};
+    componentStores.media.tasks = {};
+    useMediaGenerationStore.setState({ tasks: {} });
+  });
+
+  const placeholder = 'gen_vid_window';
+  const allocated = 'ast_window_video';
+
+  function bindingFor(element: PPTVideoElement, tasks: Record<string, MediaTask>): string {
+    function WindowProbe() {
+      const binding = useResolvedVideoMedia(element, tasks, stageId, false);
+      return createElement('div', {
+        'data-kind': binding.resolution.kind,
+        'data-src': binding.resolvedSrc ?? '',
+      });
+    }
+    return renderToStaticMarkup(createElement(WindowProbe));
+  }
+
+  it('leases the id the frame carried while the element still holds the placeholder', () => {
+    hookLeases.current = { [allocated]: { status: 'resolved', url: 'blob:window-video' } };
+    const element = { ...videoElement(placeholder), poster: undefined } as PPTVideoElement;
+    const tasks = {
+      [placeholder]: fullTask(placeholder, task('done', { objectUrl: allocated }), 'video')!,
+    };
+
+    const markup = bindingFor(element, tasks);
+    expect(markup).toContain('data-kind="url"');
+    expect(markup).toContain('data-src="blob:window-video"');
+  });
+
+  it('shows a skeleton rather than handing the raw id to the DOM while the lease is in flight', () => {
+    // The id is an identity, not an address. Before this it reached
+    // `resolveMediaRef` as `{kind:'url', url:'ast_…'}`, which `renderableMediaUrl`
+    // then dropped — leaving the element in the state that renders neither the
+    // video nor a skeleton.
+    hookLeases.current = {};
+    const element = { ...videoElement(placeholder), poster: undefined } as PPTVideoElement;
+    const tasks = {
+      [placeholder]: fullTask(placeholder, task('done', { objectUrl: allocated }), 'video')!,
+    };
+
+    const markup = bindingFor(element, tasks);
+    expect(markup).toContain('data-kind="pending"');
+    expect(markup).toContain('data-src=""');
+    expect(markup).not.toContain(allocated);
+  });
+
+  it('still prefers the document’s own reference once the sync has landed', () => {
+    hookLeases.current = {
+      [allocated]: { status: 'resolved', url: 'blob:window-video' },
+      ast_from_document: { status: 'resolved', url: 'blob:document-video' },
+    };
+    const element = {
+      ...videoElement('ast_from_document'),
+      mediaRef: 'ast_from_document',
+      poster: undefined,
+    } as PPTVideoElement;
+    const tasks = {
+      [placeholder]: fullTask(placeholder, task('done', { objectUrl: allocated }), 'video')!,
+    };
+
+    expect(bindingFor(element, tasks)).toContain('data-src="blob:document-video"');
+  });
+});

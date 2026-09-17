@@ -1231,6 +1231,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "tokendance": "TokenDance",
       "lemonade": "Lemonade (로컬)",
       "ollama": "Ollama (로컬)",
       "tavily": "Tavily",

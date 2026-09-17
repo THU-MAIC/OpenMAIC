@@ -1231,6 +1231,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "腾讯混元",
       "xiaomi": "小米 MiMo",
+      "tokendance": "TokenDance",
       "lemonade": "Lemonade（本地）",
       "ollama": "Ollama（本地模型）",
       "tavily": "Tavily",

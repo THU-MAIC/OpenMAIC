@@ -12,6 +12,7 @@ import { getMimeType, resolveMediaPath, toDataUrl } from '../utils/media';
 import { isAllowedExternalUrl } from '../utils/urlSafety';
 import { resolveColor } from './StyleResolver';
 import { hexToRgb } from '../utils/color';
+import { applyDuotoneToDataUrl } from './imageDuotone';
 
 const PX_TO_PT = 0.75;
 
@@ -554,11 +555,15 @@ async function renderImage(
   const blip = blipFill.exists() ? blipFill.child('blip') : node.source.child('__none__');
   const clrChange = blip.exists() ? blip.child('clrChange') : node.source.child('__none__');
 
+  const duotone = blip.child('duotone');
+  // SVG image filters need self-contained media, including when the caller uses blob URLs.
+  const mediaCtx = duotone.exists() ? { ...ctx, mediaMode: 'base64' as const } : ctx;
   if (clrChange.exists()) {
-    src = await applyClrChange(data, mediaPath, clrChange, ctx);
+    src = await applyClrChange(data, mediaPath, clrChange, mediaCtx);
   } else {
-    src = await resolveMediaToUrl(mediaPath, data, ctx.mediaMode, ctx.mediaUrlCache);
+    src = await resolveMediaToUrl(mediaPath, data, mediaCtx.mediaMode, mediaCtx.mediaUrlCache);
   }
+  src = applyDuotoneToDataUrl(src, duotone, ctx);
 
   return buildImage(node, ctx, order, box, src, buildImageFilters(node));
 }
