@@ -1745,8 +1745,9 @@ function getCompatThinkingBodyParams(
       }
       // A tool-carrying request may never set reasoning_effort (the transport
       // rejects function tools combined with it), so the toggle goes alone;
-      // without tools the historical default effort is preserved.
-      if (options.hasTools || config.effort === undefined) {
+      // every other request keeps the historical effort (explicit value, else
+      // the default).
+      if (options.hasTools) {
         return { thinking: { type: 'enabled' } };
       }
       const effort = config.effort === 'max' || config.effort === 'xhigh' ? 'max' : 'high';

@@ -473,8 +473,10 @@ describe('OpenAI SDK integration', () => {
         await streamLLM({ model, prompt: 'hi', maxRetries: 0 }, 'test', {
           enabled: true,
         }).consumeStream();
-        expect(bodies.at(-1)).toMatchObject({ thinking: { type: 'enabled' } });
-        expect(bodies.at(-1)).not.toHaveProperty('reasoning_effort');
+        expect(bodies.at(-1)).toMatchObject({
+          thinking: { type: 'enabled' },
+          reasoning_effort: 'high',
+        });
 
         await streamLLM({ model, prompt: 'hi', maxRetries: 0 }, 'test', {
           mode: 'enabled',
