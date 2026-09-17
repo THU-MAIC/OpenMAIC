@@ -1,6 +1,7 @@
 'use server';
 
 import { cookies } from 'next/headers';
+import { anonymousCookieSecure } from '@/lib/server/agent-runtime/owner';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 
 /**
@@ -24,7 +25,7 @@ async function currentOwnerId(): Promise<string> {
     sameSite: 'lax',
     path: '/',
     maxAge: 30 * 24 * 60 * 60,
-    secure: process.env.NODE_ENV === 'production',
+    secure: anonymousCookieSecure(),
   });
   return `anon:${minted}`;
 }

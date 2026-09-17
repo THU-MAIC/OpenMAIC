@@ -14,7 +14,8 @@ import type {
   SlideContent,
 } from '@openmaic/dsl';
 import puppeteer from 'puppeteer-core';
-import type { Browser, Frame, Page } from 'puppeteer-core';
+import type { Browser, Frame, HTTPRequest, Page } from 'puppeteer-core';
+import { UNTRUSTED_HTML_CSP, injectUntrustedHtmlCsp } from './untrusted-html-csp.js';
 
 export type PreviewScene = Scene<
   Action,
@@ -135,6 +136,15 @@ export function injectInteractiveStorageShim(html: string): string {
   return injectIntoDocumentHead(html, `\n${STORAGE_SHIM}\n`);
 }
 
+/**
+ * Build the interactive `srcDoc`: the CSP `<meta>` first, then the storage
+ * shim. The policy must be processed before any authored script, including one
+ * placed before `<head>` or before `<html>`.
+ */
+export function buildInteractiveSrcDoc(html: string): string {
+  return injectInteractiveStorageShim(injectUntrustedHtmlCsp(html, UNTRUSTED_HTML_CSP));
+}
+
 function slidePreviewMarkup(
   _scene: Extract<PreviewScene, { type: 'slide' }>,
   viewport: PreviewViewport,
@@ -155,7 +165,7 @@ function interactivePreviewMarkup(
   return renderToStaticMarkup(
     createElement('iframe', {
       title: scene.title,
-      srcDoc: injectInteractiveStorageShim(scene.content.html),
+      srcDoc: buildInteractiveSrcDoc(scene.content.html),
       sandbox: 'allow-scripts allow-forms allow-modals',
       style: { width: `${viewport.width}px`, height: `${viewport.height}px`, border: 0 },
     }),
@@ -360,6 +370,67 @@ function abortError(signal: AbortSignal): Error {
   return signal.reason instanceof Error ? signal.reason : new Error('Preview aborted');
 }
 
+/**
+ * Schemes a request from inside the untrusted frame may still use. They carry
+ * data with the document rather than reaching the network, so the injected CSP
+ * already allows them and interception stays a defense-in-depth layer.
+ */
+const SUBFRAME_ALLOWED_PROTOCOLS = new Set(['data:', 'blob:', 'about:']);
+
+/** The `setContent` document loads as `about:blank`; nothing else may replace it. */
+const MAIN_FRAME_NAVIGATION_PROTOCOLS = new Set(['about:']);
+
+function requestProtocol(url: string): string {
+  try {
+    return new URL(url).protocol;
+  } catch {
+    return '';
+  }
+}
+
+/** Resolve one intercepted request exactly once, never letting a page hang. */
+function settleRequest(request: HTTPRequest, allow: boolean): void {
+  try {
+    if (request.isInterceptResolutionHandled()) return;
+    const action = allow ? request.continue() : request.abort('blockedbyclient');
+    void action.catch(() => {});
+  } catch {
+    // The request can already be gone (detached frame, aborted navigation).
+  }
+}
+
+/**
+ * Puppeteer-level counterpart to the injected CSP. The main frame keeps loading
+ * its own preview resources (slide images and the client bundle are
+ * deliberately untouched), while every request from the untrusted interactive
+ * frame and anything nested inside it is aborted unless it is a local scheme.
+ * Main-frame navigation away from the `setContent` document is blocked too.
+ *
+ * Returns a disposer to detach the handler.
+ */
+export async function installPreviewRequestGuard(page: Page): Promise<() => void> {
+  const mainFrame = page.mainFrame();
+  const handler = (request: HTTPRequest): void => {
+    let allow = false;
+    try {
+      if (request.frame() === mainFrame) {
+        allow =
+          !request.isNavigationRequest() ||
+          MAIN_FRAME_NAVIGATION_PROTOCOLS.has(requestProtocol(request.url()));
+      } else {
+        allow = SUBFRAME_ALLOWED_PROTOCOLS.has(requestProtocol(request.url()));
+      }
+    } catch {
+      allow = false;
+    }
+    settleRequest(request, allow);
+  };
+
+  await page.setRequestInterception(true);
+  page.on('request', handler);
+  return () => page.off('request', handler);
+}
+
 async function raceWithAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) throw abortError(signal);
   let rejectAbort!: (error: Error) => void;
@@ -475,38 +546,46 @@ export class ChromiumPreviewRenderer implements PreviewRenderer {
         (async () => {
           const page = await browser.newPage();
           await page.setViewport(request.viewport);
-          await page.setContent(buildPreviewHtml(request.scene, request.stage, request.viewport), {
-            waitUntil: 'domcontentloaded',
-          });
-
-          if (request.scene.type === 'slide') {
-            await page.evaluate(
-              (slide, viewport) => {
-                Object.assign(window, {
-                  __OPENMAIC_PREVIEW_PROPS__: { slide, viewport },
-                });
+          const removeRequestGuard = await installPreviewRequestGuard(page);
+          try {
+            await page.setContent(
+              buildPreviewHtml(request.scene, request.stage, request.viewport),
+              {
+                waitUntil: 'domcontentloaded',
               },
-              request.scene.content.canvas,
-              request.viewport,
             );
-            await mountSlideClient(page, await buildSlideClientBundle());
-          }
 
-          const selected = await page.evaluate(
-            (sceneId) => document.body.getAttribute('data-scene-id') === sceneId,
-            request.scene.id,
-          );
-          if (!selected) {
-            throw new Error(
-              `Requested scene was not found in the preview page (${request.scene.id})`,
+            if (request.scene.type === 'slide') {
+              await page.evaluate(
+                (slide, viewport) => {
+                  Object.assign(window, {
+                    __OPENMAIC_PREVIEW_PROPS__: { slide, viewport },
+                  });
+                },
+                request.scene.content.canvas,
+                request.viewport,
+              );
+              await mountSlideClient(page, await buildSlideClientBundle());
+            }
+
+            const selected = await page.evaluate(
+              (sceneId) => document.body.getAttribute('data-scene-id') === sceneId,
+              request.scene.id,
             );
+            if (!selected) {
+              throw new Error(
+                `Requested scene was not found in the preview page (${request.scene.id})`,
+              );
+            }
+
+            if (request.scene.type === 'interactive') await waitForInteractiveFrame(page);
+            else await waitForDocumentAssets(page);
+
+            const png = await page.screenshot({ type: 'png', optimizeForSpeed: true });
+            return new Uint8Array(png);
+          } finally {
+            removeRequestGuard();
           }
-
-          if (request.scene.type === 'interactive') await waitForInteractiveFrame(page);
-          else await waitForDocumentAssets(page);
-
-          const png = await page.screenshot({ type: 'png', optimizeForSpeed: true });
-          return new Uint8Array(png);
         })(),
         request.signal,
       );

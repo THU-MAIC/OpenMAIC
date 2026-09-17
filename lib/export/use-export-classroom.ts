@@ -56,6 +56,7 @@ export interface ClassroomExportZip {
   zip: Blob;
   fileName: string;
   inlineFailures: InlineReport['failed'];
+  missingAudioCount: number;
 }
 
 /**
@@ -96,6 +97,7 @@ export async function buildClassroomExportZip(
   const exportScenes = documentScenes;
 
   let zipBlob: Blob;
+  let missingAudioCount = 0;
   const aggregateReport: InlineReport = { inlined: [], failed: [] };
   try {
     // 3. Collect the roster from the in-memory stage (single source of truth;
@@ -128,10 +130,11 @@ export async function buildClassroomExportZip(
     // 6b. Fetch legacy audio URLs that no local row backs. An unconverted
     // document can carry narration only as an audioUrl; the field itself
     // never enters the manifest, so its bytes must.
-    const { audioUrlToPath, blobs: legacyAudioBlobs } = await collectLegacyAudioForExport(
-      exportScenes,
-      audioIdToPath,
-    );
+    const {
+      audioUrlToPath,
+      blobs: legacyAudioBlobs,
+      fullyRescuedAudioIds,
+    } = await collectLegacyAudioForExport(exportScenes, audioIdToPath);
 
     // 7. Build manifest
     const manifestStage: ManifestStage = {
@@ -201,7 +204,8 @@ export async function buildClassroomExportZip(
     // Legacy audioUrl-only narration is outside the standardized manifest and
     // is handled by collectLegacyAudioForExport above.
     for (const [index, entry] of audioEntries.entries()) {
-      if (!audioIdToPath.has(entry.ref)) {
+      if (!audioIdToPath.has(entry.ref) && !fullyRescuedAudioIds.has(entry.ref)) {
+        missingAudioCount += 1;
         mediaIndexEntries.push([
           audioArchivePath(index, 'mp3'),
           {
@@ -251,6 +255,7 @@ export async function buildClassroomExportZip(
     zip: zipBlob,
     fileName: `${safeName}${CLASSROOM_ZIP_EXTENSION}`,
     inlineFailures: aggregateReport.failed,
+    missingAudioCount,
   };
 }
 
@@ -266,12 +271,19 @@ export function useExportClassroom() {
     const toastId = toast.loading(t('export.exporting'));
 
     try {
-      const { zip, fileName, inlineFailures } = await buildClassroomExportZip(stage, scenes);
+      const { zip, fileName, inlineFailures, missingAudioCount } = await buildClassroomExportZip(
+        stage,
+        scenes,
+      );
 
       saveAs(zip, fileName);
 
-      if (inlineFailures.length > 0) {
-        log.warn('Some interactive-scene assets could not be inlined:', inlineFailures);
+      const partialCount = inlineFailures.length + missingAudioCount;
+      if (partialCount > 0) {
+        log.warn('Some referenced assets could not be bundled:', {
+          inlineFailures,
+          missingAudioCount,
+        });
         const hosts = [
           ...new Set(
             inlineFailures.map((f) => {
@@ -283,11 +295,13 @@ export function useExportClassroom() {
             }),
           ),
         ];
-        toast.warning(t('export.inlinePartial', { count: inlineFailures.length }), {
-          description: hosts.join(', '),
+        toast.warning(t('export.inlinePartial', { count: partialCount }), {
+          id: toastId,
+          description: hosts.length > 0 ? hosts.join(', ') : undefined,
         });
+      } else {
+        toast.success(t('export.exportSuccess'), { id: toastId });
       }
-      toast.success(t('export.exportSuccess'), { id: toastId });
     } catch (error) {
       log.error('Classroom ZIP export failed:', error);
       toast.error(t('export.exportFailed'), { id: toastId });

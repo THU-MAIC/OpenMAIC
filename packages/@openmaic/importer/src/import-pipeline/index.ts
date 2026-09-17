@@ -20,7 +20,7 @@ import type { Output } from '../adapter/types';
 import { parseZip } from '../parser/ZipParser';
 import { buildPresentation } from '../model/Presentation';
 import { toPptxtojsonFormat } from '../adapter/toPptxtojson';
-import type { ImportContext } from './types';
+import type { ImportContext, ImportWarning } from './types';
 import { transformParsedToSlides } from './transformParsedToSlides';
 import { createMockImportContext } from './mockContext';
 
@@ -42,6 +42,13 @@ export interface ImportPptxOptions {
    * keeps an in-memory `blob:` URL (valid only for the current tab).
    */
   upload?: OssUpload;
+  /**
+   * Degrade-not-fail telemetry sink. The import never fails on partial
+   * content loss by design; this is the only channel through which callers
+   * can learn it happened (formulas degraded to placeholders, unconvertible
+   * WMF/EMF media, elements dropped by DSL normalization).
+   */
+  onWarning?: (warning: ImportWarning) => void;
 }
 
 /**
@@ -57,7 +64,7 @@ export async function parsedToSlides(
   json: Output,
   options: ImportPptxOptions = {},
 ): Promise<Slide[]> {
-  const baseCtx = createMockImportContext(buildContextOverrides(options.upload));
+  const baseCtx = createMockImportContext(buildContextOverrides(options.upload, options.onWarning));
   // Drive the transform-time width clamp from the deck's own pixel width
   // (pt → px via ratio) so 16:9 widescreen decks (960pt → 1280px) don't
   // get text elements truncated to the legacy 4:3 default of 960.
@@ -79,7 +86,7 @@ export async function parsedToSlides(
   // viewportRatio / theme are filled at construction); the contract's
   // `normalize` pass at this output boundary is the safety net for anything the
   // transform missed on an exotic deck, mirroring the generator's wiring.
-  return normalizeImportedSlides(slides);
+  return normalizeImportedSlides(slides, options.onWarning);
 }
 
 /**
@@ -109,8 +116,34 @@ const normalizeImportedSlide = normalizeSlideWith({
   },
 });
 
-export function normalizeImportedSlides(slides: Slide[]): Slide[] {
-  return slides.map(normalizeImportedSlide);
+export function normalizeImportedSlides(
+  slides: Slide[],
+  onWarning?: (warning: ImportWarning) => void,
+): Slide[] {
+  if (!onWarning) return slides.map(normalizeImportedSlide);
+  return slides.map((slide, slideIndex) =>
+    normalizeSlideWith({
+      onInvalid: 'drop',
+      onDropped: (element, error) => {
+        console.warn(
+          `[@openmaic/importer] dropping element that fails DSL normalization: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        try {
+          onWarning({
+            code: 'element-dropped',
+            slideIndex,
+            message: `A ${String((element as { type?: string }).type ?? 'unknown')} element failed DSL normalization and was dropped: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          });
+        } catch (sinkErr) {
+          console.error('[@openmaic/importer] onWarning sink threw (ignored):', sinkErr);
+        }
+      },
+    })(slide),
+  );
 }
 
 /**
@@ -131,15 +164,20 @@ export async function importPptx(
   return parsedToSlides(json, options);
 }
 
-function buildContextOverrides(upload: OssUpload | undefined): Partial<ImportContext> {
-  if (!upload) return {};
-  return {
-    uploadBase64Image: async (base64, filename, dir) => {
+function buildContextOverrides(
+  upload: OssUpload | undefined,
+  onWarning?: (warning: ImportWarning) => void,
+): Partial<ImportContext> {
+  const overrides: Partial<ImportContext> = {};
+  if (upload) {
+    overrides.uploadBase64Image = async (base64, filename, dir) => {
       const blob = await dataUrlToBlob(base64);
       return upload(blob, filename, dir);
-    },
-    uploadBlobMedia: (blob, filename, dir) => upload(blob, filename, dir),
-  };
+    };
+    overrides.uploadBlobMedia = (blob, filename, dir) => upload(blob, filename, dir);
+  }
+  if (onWarning) overrides.onWarning = onWarning;
+  return overrides;
 }
 
 async function toArrayBuffer(input: File | Blob | ArrayBuffer): Promise<ArrayBuffer> {
@@ -152,7 +190,7 @@ async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   return response.blob();
 }
 
-export type { ImportContext, TransformResult } from './types';
+export type { ImportContext, ImportWarning, TransformResult } from './types';
 export { transformParsedToSlides } from './transformParsedToSlides';
 export { createMockImportContext } from './mockContext';
 export type { Output } from '../adapter/types';

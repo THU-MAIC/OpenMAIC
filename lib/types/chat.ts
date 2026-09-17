@@ -313,6 +313,15 @@ export interface SlideElementReference {
   elementId: string;
 }
 
+/** Browser-selected identity for one source-authored Interactive DOM component. */
+export interface InteractiveComponentReference {
+  kind: 'interactive_component';
+  sceneId: string;
+  selector: string;
+}
+
+export type ElementReference = SlideElementReference | InteractiveComponentReference;
+
 /**
  * Request body for the stateless chat API
  * All state is sent from the client on each request
@@ -351,8 +360,8 @@ export interface StatelessChatRequest {
       }>;
     };
   };
-  /** Optional Pi-only, identity-only reference to one slide element. */
-  elementReference?: SlideElementReference;
+  /** Optional Pi-only, identity-only reference to one classroom component. */
+  elementReference?: ElementReference;
   /** Agent configuration */
   config: {
     agentIds: string[];

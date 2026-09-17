@@ -8,37 +8,18 @@ const cwd = fileURLToPath(new URL('..', import.meta.url));
 
 // Use the service's real tsx loader, not Vitest's transform. Puppeteer sends
 // only the callback source to Chromium, without the module's esbuild helpers.
-it('settles document assets when callbacks cross the tsx/browser boundary', async () => {
-  const { stdout } = await execute(
-    process.execPath,
-    [
-      '--import',
-      'tsx',
-      '--input-type=module',
-      '--eval',
-      `
-        import { runInNewContext } from 'node:vm';
-        import { waitForDocumentAssets } from './src/preview-renderer.ts';
-        const document = {
-          fonts: { ready: Promise.resolve() }, images: [], documentElement: {},
-        };
-        await waitForDocumentAssets({
-          evaluate: (callback) => runInNewContext(
-            typeof callback === 'string' ? callback : '(' + callback.toString() + ')()',
-            {
-              document, setTimeout, clearTimeout,
-              requestAnimationFrame: (callback) => setTimeout(callback, 0),
-              MutationObserver: class { observe() {} disconnect() {} },
-            },
-          ),
-        });
-        console.log('assets settled');
-      `,
-    ],
-    { cwd, timeout: 15_000 },
-  );
-  expect(stdout.trim()).toBe('assets settled');
-});
+it.each(['slide', 'interactive'])(
+  'executes every %s preview callback across the tsx/browser boundary',
+  async (type) => {
+    const { stdout } = await execute(
+      process.execPath,
+      ['--import', 'tsx', 'test/preview-browser-boundary.fixture.mjs', type],
+      { cwd, timeout: 15_000 },
+    );
+    expect(stdout.trim()).toBe(`${type} callbacks verified`);
+  },
+  20_000,
+);
 
 const executable =
   process.env.PRODUCER_HEADLESS_SHELL_PATH || process.env.PUPPETEER_EXECUTABLE_PATH;

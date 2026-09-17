@@ -124,6 +124,25 @@ describe('owner material reservations', () => {
     expect(insertStatement).toBeGreaterThan(usageStatement);
   });
 
+  it('stores extraction metadata containing NUL and lone surrogates', async () => {
+    const record = await registerOwnerMaterial(
+      pool as unknown as ConnectableQueryable,
+      input({
+        extraction: {
+          status: 'idle',
+          diagnostics: [`bad\u0000diag`, `bad\uD800diag`],
+          emoji: '\u{1F600}',
+        },
+      }),
+      { maxCount: 10, maxTotalBytes: 1_000 },
+    );
+    expect(record.extraction).toEqual({
+      status: 'idle',
+      diagnostics: ['bad\uFFFDdiag', 'bad\uFFFDdiag'],
+      emoji: '\u{1F600}',
+    });
+  });
+
   it('rejects a reservation when the owner count quota is already spent', async () => {
     const limits = { maxCount: 1, maxTotalBytes: 1_000 };
     await registerOwnerMaterial(pool as unknown as ConnectableQueryable, input(), limits);

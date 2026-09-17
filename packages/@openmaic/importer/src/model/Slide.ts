@@ -16,6 +16,7 @@ import {
   MathNodeData,
   parseMathNode,
   parseOleDocxMathNode,
+  parseOleEquationMathNode,
   isMathAlternateContent,
 } from './nodes/MathNode';
 
@@ -77,6 +78,30 @@ function tryParseOleDocxMath(graphicFrame: SafeXmlNode): MathNodeData | undefine
   if (!progId.startsWith('Word.Document')) return undefined;
 
   return parseOleDocxMathNode(graphicFrame);
+}
+
+/**
+ * Detect graphicFrame with oleObj progId="Equation.3" / "MathType.*" and
+ * delegate to parseOleEquationMathNode. The embedding's `Equation Native`
+ * stream carries MTEF v3 data convertible to LaTeX (utils/mtef.ts); without
+ * this branch the object falls through to its WMF preview picture, which
+ * cannot be converted and degrades to the blank placeholder.
+ */
+function tryParseOleEquationMath(graphicFrame: SafeXmlNode): MathNodeData | undefined {
+  const graphicData = graphicFrame.child('graphic').child('graphicData');
+  const uri = graphicData.attr('uri') || '';
+  if (!uri.includes('ole')) return undefined;
+
+  const altContent = graphicData.child('AlternateContent');
+  if (!altContent.exists()) return undefined;
+
+  const oleObj = altContent.child('Choice').child('oleObj');
+  if (!oleObj.exists()) return undefined;
+
+  const progId = oleObj.attr('progId') || '';
+  if (!progId.startsWith('Equation.') && !progId.startsWith('MathType')) return undefined;
+
+  return parseOleEquationMathNode(graphicFrame);
 }
 
 /**
@@ -398,6 +423,11 @@ export function parseChildNode(
         const oleDocxMath = tryParseOleDocxMath(child);
         if (oleDocxMath) return oleDocxMath;
       }
+      // Equation.3 / MathType OLE → math node (MTEF v3 in `Equation Native`)
+      {
+        const oleEquationMath = tryParseOleEquationMath(child);
+        if (oleEquationMath) return oleEquationMath;
+      }
       // OLE object with fallback picture (e.g. embedded PDF preview on slide 34)
       {
         const olePic = parseOleFrameAsPicture(child);
@@ -406,6 +436,12 @@ export function parseChildNode(
       // Non-table/chart/ole graphic frames — skip
       return undefined;
     case 'AlternateContent':
+      // Tables containing Office 2010 inline math are wrapped in a14 Choices,
+      // with a degraded preview in Fallback. Keep the native, editable table.
+      for (const choice of child.children('Choice')) {
+        const frame = choice.child('graphicFrame');
+        if (frame.exists() && isTableFrame(frame)) return parseTableNode(frame);
+      }
       if (isMathAlternateContent(child)) {
         // A box that mixes real text runs with inline formulas (公式与正文混排，
         // 如「设 N 为类别数量」) must be parsed as a TEXT shape — parseMathNode

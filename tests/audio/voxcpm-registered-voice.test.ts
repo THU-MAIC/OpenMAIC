@@ -1,20 +1,25 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { generateTTS } from '@/lib/audio/tts-providers';
 import { VOXCPM_AUTO_VOICE_ID } from '@/lib/audio/voxcpm';
 import type { TTSModelConfig } from '@/lib/audio/types';
 
-afterEach(() => vi.unstubAllGlobals());
+// Provider requests go through undici's fetch with a pinned dispatcher.
+const fetchMock = vi.hoisted(() => vi.fn());
+vi.mock('undici', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('undici')>();
+  return { ...actual, fetch: fetchMock };
+});
 
 function stubSpeech() {
-  const f = vi.fn(
+  fetchMock.mockReset();
+  fetchMock.mockImplementation(
     async () =>
       new Response(new Uint8Array([82, 73, 70, 70]), {
         status: 200,
         headers: { 'content-type': 'audio/wav' },
       }),
   );
-  vi.stubGlobal('fetch', f);
-  return f;
+  return fetchMock;
 }
 
 function lastPayload(f: ReturnType<typeof stubSpeech>) {

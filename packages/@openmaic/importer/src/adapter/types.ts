@@ -1,3 +1,4 @@
+import type { ImportedChartStyle } from '@openmaic/dsl';
 /**
  * pptxtojson / PPTist 输出格式类型定义
  * 长度与坐标单位均为 pt。
@@ -223,6 +224,7 @@ export interface ChartItem {
 export type ScatterChartData = [number[], number[]];
 
 export interface CommonChart {
+  importedStyle?: ImportedChartStyle;
   type: 'chart';
   left: number;
   top: number;
@@ -298,6 +300,9 @@ export interface Math {
   picBase64: string;
   order: number;
   text?: string;
+  /** MTEF conversion succeeded but approximated a construct (PILE/MATRIX …);
+   *  the LaTeX renders but is semantically flattened — surfaces a warning. */
+  degraded?: boolean;
 }
 
 export type BaseElement = Shape | Text | Image | Table | Chart | Video | Audio | Diagram | Math;

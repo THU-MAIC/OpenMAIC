@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { splitSqlStatements } from '../document/pg.js';
+import { encodeJson } from '../pg-json.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 import {
   AGENT_SESSION_LIFECYCLE,
@@ -435,16 +436,6 @@ function sessionMeta(row: SessionRow): AgentSessionMeta {
       : {}),
     ...(row.error ? { error: row.error } : {}),
   };
-}
-
-function encodeJson(value: unknown, label: string): string {
-  try {
-    const encoded = JSON.stringify(value === undefined ? null : value);
-    if (encoded === undefined) throw new TypeError('value is not JSON-serializable');
-    return encoded;
-  } catch (error) {
-    throw new Error(`@openmaic/storage: ${label} is not JSON-serializable`, { cause: error });
-  }
 }
 
 function decodedObject(value: unknown): Record<string, unknown> {

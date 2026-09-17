@@ -28,6 +28,7 @@ import { createGenerationAiCallFactory, sceneContentStage } from './generation-a
 import { synthesizeSceneNarration } from './scene-tts';
 import { toGenerationContent } from './generation-content';
 import { checkScenesAgainstSkill } from './skills';
+import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
 import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import { createLogger } from '@/lib/logger';
 
@@ -153,10 +154,40 @@ function concreteMediaSrc(src: string): boolean {
   }
 }
 
+/**
+ * A media src this tool will pass through onto a page element.
+ *
+ * An allocated asset id counts, alongside an HTTP(S) URL and a same-origin
+ * path. `generate_image` returns an id now that it stores its bytes in the
+ * asset pool (#1522), and the documented flow hands that src straight to
+ * `generate_scene.media`; the generation package writes a mapping value onto
+ * the element verbatim (`resolveImageIds`) and the renderer leases the id from
+ * the pool, so it needs no other treatment here. `isMediaPlaceholder` still
+ * answers true for it — an id does need resolving before it renders — which is
+ * why the id is admitted ahead of that question rather than by changing what
+ * it means. What stays refused is what was always refused: a generation
+ * placeholder, a data URL, and anything naming nothing.
+ */
+function acceptableMediaSrc(src: string): boolean {
+  if (mayNameAPoolAsset(src)) return !/\s/.test(src);
+  return !isMediaPlaceholder(src) && concreteMediaSrc(src);
+}
+
 export interface UnresolvedMediaPlaceholder {
   elementId: string;
   type: 'image' | 'video';
   placeholder: string;
+}
+
+/**
+ * Whether a document reference would still render as a skeleton.
+ *
+ * An allocated asset id would not: its bytes are in the pool and the renderer
+ * leases them. Only a reference nothing can resolve — a generation placeholder
+ * waiting on a job — is a skeleton.
+ */
+function unresolvedRef(ref: string): boolean {
+  return isMediaPlaceholder(ref) && !mayNameAPoolAsset(ref);
 }
 
 /** Find slide media elements that would still render as skeletons. */
@@ -171,7 +202,7 @@ export function collectUnresolvedMediaPlaceholders(scene: Scene): UnresolvedMedi
       mediaRef?: string;
     };
     if (!candidate.id) continue;
-    if (candidate.type === 'image' && candidate.src && isMediaPlaceholder(candidate.src)) {
+    if (candidate.type === 'image' && candidate.src && unresolvedRef(candidate.src)) {
       placeholders.push({
         elementId: candidate.id,
         type: 'image',
@@ -181,15 +212,15 @@ export function collectUnresolvedMediaPlaceholders(scene: Scene): UnresolvedMedi
     if (
       candidate.type === 'video' &&
       (!candidate.src ||
-        isMediaPlaceholder(candidate.src) ||
-        (candidate.mediaRef ? isMediaPlaceholder(candidate.mediaRef) : false))
+        unresolvedRef(candidate.src) ||
+        (candidate.mediaRef ? unresolvedRef(candidate.mediaRef) : false))
     ) {
       placeholders.push({
         elementId: candidate.id,
         type: 'video',
         placeholder:
-          (candidate.src && isMediaPlaceholder(candidate.src) ? candidate.src : undefined) ??
-          (candidate.mediaRef && isMediaPlaceholder(candidate.mediaRef)
+          (candidate.src && unresolvedRef(candidate.src) ? candidate.src : undefined) ??
+          (candidate.mediaRef && unresolvedRef(candidate.mediaRef)
             ? candidate.mediaRef
             : undefined) ??
           candidate.mediaRef ??
@@ -358,9 +389,9 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
             true,
           );
         }
-        if (isMediaPlaceholder(src) || !concreteMediaSrc(src)) {
+        if (!acceptableMediaSrc(src)) {
           return result(
-            'Every media item needs a concrete HTTP(S) URL or same-origin path, not a placeholder or data URL.',
+            'Every media item needs a stored-asset id from generate_image, an HTTP(S) URL, or a same-origin path — not a generation placeholder or a data URL.',
             {
               error: isMediaPlaceholder(src) ? 'media-placeholder-src' : 'invalid-media-src',
               index,

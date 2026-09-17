@@ -12,6 +12,22 @@ export interface ImportContext {
   uploadBlobMedia: (blob: Blob, filename: string, dir: string) => Promise<string>;
   /** 当前未被 transform 使用，poster 提取仍由 hook 侧 extractVideoPosters 负责，预留给后续迁移 */
   extractVideoFirstFrame: (videoUrl: string) => Promise<string | null>;
+  /**
+   * Degrade-not-fail telemetry: emitted when content survives the import only
+   * partially — e.g. a formula that could not be converted to LaTeX, or media
+   * in an unconvertible format (WMF / vector-only EMF) replaced by the blank
+   * placeholder. Optional so existing callers keep compiling unchanged.
+   */
+  onWarning?: (warning: ImportWarning) => void;
+}
+
+/** A single content-degradation event surfaced to the importing caller. */
+export interface ImportWarning {
+  /** Stable machine code, e.g. `media-unconvertible` | `formula-fallback-image` | `element-dropped`. */
+  code: string;
+  /** 0-based index of the slide the warning belongs to. */
+  slideIndex: number;
+  message: string;
 }
 
 export interface TransformResult {
