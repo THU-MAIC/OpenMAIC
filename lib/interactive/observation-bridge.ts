@@ -39,8 +39,9 @@ export function installObservationResponder(identity: ObservationIdentity): () =
   const OBSERVATION_MAX_BYTES = 32768;
   if (typeof globalThis.crypto?.randomUUID !== 'function') return () => {};
   const instanceId = crypto.randomUUID();
-  const roots = document.querySelectorAll(`#${CSS.escape(identity.scopeId)}`);
-  const root = roots.length === 1 ? roots[0] : null;
+  // A lesson may create its scope after this shim runs. Bind on the first read
+  // that finds one scope, then retain that identity to reject replacement.
+  let root: Element | null = null;
   const receive = (event: MessageEvent) => {
     const d = event.data;
     if (
@@ -56,8 +57,9 @@ export function installObservationResponder(identity: ObservationIdentity): () =
     let raw: string | undefined;
     let reason: UnavailableReason | undefined;
     const currentRoots = document.querySelectorAll(`#${CSS.escape(identity.scopeId)}`);
+    if (!root && currentRoots.length === 1) root = currentRoots[0];
     // Legacy documents never declared a scope; a removed/replaced scope is different.
-    if (roots.length === 0 && currentRoots.length === 0) reason = 'no-interface';
+    if (!root && currentRoots.length === 0) reason = 'no-interface';
     else if (
       !root?.isConnected ||
       currentRoots.length !== 1 ||
@@ -227,9 +229,8 @@ export function createObservationSession(iframe: HTMLIFrameElement, identity: Ob
  * sniffing for the attribute: a document that publishes no outlet answers
  * `no-interface`, which is authoritative where a substring match was a guess.
  *
- * Injection stays at body end. `installObservationResponder` captures the scope
- * element when it runs, so a head injection would capture nothing and report
- * `scope-changed` for every later read.
+ * Injection stays at body end. The scope is resolved lazily on reads, so pages
+ * can create their activity later (for example, on DOMContentLoaded).
  */
 export function withObservationResponder(html: string, identity: ObservationIdentity): string {
   const script =

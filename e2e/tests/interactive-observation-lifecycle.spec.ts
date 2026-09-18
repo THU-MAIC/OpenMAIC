@@ -120,6 +120,7 @@ test('spurious reply from another window is ignored; no interface is explicit', 
 test('a legacy page with no scope reports no-interface; removing a declared scope reports scope-changed', async ({
   page,
 }) => {
+  expect(await page.evaluate('session.capture()')).toHaveProperty('status', 'available');
   const frame = page.frames().find((f) => f.parentFrame())!;
   await frame.locator('#experiment').evaluate((el) => el.remove());
   expect(await page.evaluate('session.capture()')).toMatchObject({
@@ -300,5 +301,45 @@ for (const value of [[{ density: 1400 }], 'density is 1400', 1400, false, null])
       status: 'available',
       observation: value,
     });
+  });
+}
+
+for (const creation of ['DOMContentLoaded', 'after an empty read'] as const) {
+  test(`reads a scope created on ${creation} and still rejects later replacement`, async ({
+    page,
+  }) => {
+    await page.evaluate(patchBundle + ';window.IframeUtils=IframeUtils;');
+    await page.evaluate(
+      async ({ creation, html }) => {
+        const w = window as unknown as TestWindow;
+        w.session.dispose();
+        const ready = new Promise<void>((resolve) => {
+          w.f.onload = () => resolve();
+        });
+        const source =
+          creation === 'DOMContentLoaded'
+            ? '<script>document.addEventListener("DOMContentLoaded",()=>document.body.insertAdjacentHTML("afterbegin",' +
+              JSON.stringify(html).replace(/</g, '\\u003c') +
+              '));<\/script>'
+            : '<main>Waiting for activity</main>';
+        w.f.srcdoc = w.IframeUtils.patchHtmlForIframe(source, w.identity);
+        await ready;
+        w.session = w.Bridge.createObservationSession(w.f, w.identity);
+      },
+      { creation, html },
+    );
+    const frame = page.frames().find((f) => f.parentFrame())!;
+    if (creation === 'after an empty read') {
+      expect(await page.evaluate('session.capture()')).toMatchObject({ reason: 'no-interface' });
+      await frame
+        .locator('body')
+        .evaluate((el, html) => el.insertAdjacentHTML('afterbegin', html), html);
+    }
+    expect(await page.evaluate('session.capture()')).toMatchObject({
+      status: 'available',
+      observation,
+    });
+    await frame.locator('#experiment').evaluate((el) => el.replaceWith(el.cloneNode(true)));
+    expect(await page.evaluate('session.capture()')).toMatchObject({ reason: 'scope-changed' });
   });
 }

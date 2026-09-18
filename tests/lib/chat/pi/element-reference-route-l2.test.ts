@@ -679,6 +679,18 @@ describe('PPT element reference Route → Director → real call_agent L2', () =
     expect(mocks.resolveModel).not.toHaveBeenCalled();
   });
 
+  it('keeps malformed null content on the SSE path rather than returning HTTP 500', async () => {
+    installAgentShell('Mock answer.');
+    const body = makeInteractiveBody() as Record<string, unknown>;
+    delete body.elementReference;
+    (body.storeState as { scenes: { content: unknown }[] }).scenes[0].content = null;
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/event-stream');
+    await response.text();
+  });
+
   it('injects no state constraints while the courseware-reference feature is disabled', async () => {
     // Regression: the Host used to add the full page-state block to an ordinary
     // question whenever the current Scene declared the interface, even with the

@@ -20,7 +20,8 @@ export const OBSERVATION_SCOPE_ID = 'experiment';
 export function supportsInteractiveObservation(): boolean {
   return (
     typeof globalThis.crypto?.randomUUID === 'function' &&
-    typeof globalThis.crypto?.subtle?.digest === 'function'
+    typeof globalThis.crypto?.subtle?.digest === 'function' &&
+    typeof globalThis.AbortSignal?.any === 'function'
   );
 }
 

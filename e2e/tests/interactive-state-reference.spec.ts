@@ -149,3 +149,53 @@ test('actual classroom component reference samples declared area state on send w
     contentType: 'application/json',
   });
 });
+
+test('missing AbortSignal.any still sends the classroom question without state', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(AbortSignal, 'any', { configurable: true, value: undefined });
+  });
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/chat/pi')
+      return route.fulfill({
+        contentType: 'text/event-stream',
+        body:
+          'data: ' +
+          JSON.stringify({ type: 'done', data: { totalActions: 0, totalAgents: 0 } }) +
+          '\n\n',
+      });
+    if (path.includes('/chat') || path.includes('/generate') || path.includes('/tts'))
+      return route.abort();
+    if (path === '/api/server-providers')
+      return route.fulfill({ json: { providers: {}, mediaProviders: {}, defaultModel: null } });
+    if (path === '/api/comfyui-workflows') return route.fulfill({ json: { workflows: [] } });
+    await route.continue();
+  });
+  await seedDatabase(page);
+  const classroom = new ClassroomPage(page);
+  await classroom.goto(TEST_STAGE_ID);
+  await classroom.waitForLoaded();
+  await expect(
+    page.frameLocator(`iframe[title="${IFRAME_TITLE}"]`).locator('#value'),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => ({
+      any: typeof AbortSignal.any,
+      uuid: typeof crypto.randomUUID,
+      digest: typeof crypto.subtle.digest,
+    })),
+  ).toEqual({ any: 'undefined', uuid: 'function', digest: 'function' });
+  await page.getByRole('heading', { name: 'Slider experiment' }).click();
+  await page.keyboard.press('T');
+  const input = page.getByPlaceholder('Type your message...', { exact: true });
+  await input.fill('What is the current value?');
+  const request = page.waitForRequest('**/api/chat/pi', { timeout: 10000 });
+  await input.press('Enter');
+  const body = (await request).postDataJSON();
+  expect(body.interactiveState).toBeUndefined();
+  expect(body.messages).toEqual(
+    expect.arrayContaining([expect.objectContaining({ role: 'user' })]),
+  );
+});

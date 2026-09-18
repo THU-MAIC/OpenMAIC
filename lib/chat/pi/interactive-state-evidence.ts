@@ -46,7 +46,7 @@ function currentSceneDeclaresInterface(body: Pick<StatelessChatRequest, 'storeSt
   const scene = body.storeState.scenes.find((s) => s.id === body.storeState.currentSceneId);
   return (
     scene?.type === 'interactive' &&
-    scene.content.type === 'interactive' &&
+    scene.content?.type === 'interactive' &&
     typeof scene.content.html === 'string' &&
     scene.content.html.includes(OBSERVATION_ATTRIBUTE)
   );
