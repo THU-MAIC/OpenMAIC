@@ -22,10 +22,27 @@ export interface RunPolledTaskOptions<T> {
   maxAttempts: number;
   label: string;
   formatTimeout?: (context: PolledTaskTimeoutContext) => string;
+  /**
+   * Cancels the wait between polls. Without it a cancelled generation still
+   * sleeps out its full interval before noticing, so an abort can take a whole
+   * poll period to take effect.
+   */
+  signal?: AbortSignal;
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 export async function runPolledTask<T>({
@@ -35,6 +52,7 @@ export async function runPolledTask<T>({
   maxAttempts,
   label,
   formatTimeout,
+  signal,
 }: RunPolledTaskOptions<T>): Promise<T> {
   const submitted = await submit();
   if (submitted.status === 'done') return submitted.result;
@@ -44,7 +62,7 @@ export async function runPolledTask<T>({
   let lastPendingDetail: string | undefined;
 
   while (attempts < maxAttempts) {
-    await delay(intervalMs);
+    await delay(intervalMs, signal);
     const result = await poll(submitted.taskId);
     attempts++;
 

@@ -1,3 +1,4 @@
+import { isLinePreset } from '../shapes/linePresets';
 import {
   parse as parsePptxDefault,
   type Shape,
@@ -23,6 +24,7 @@ import type {
   PPTVideoElement,
   PPTAudioElement,
   ChartOptions,
+  ImportedChartStyle,
   Gradient,
   ImageElementFilters,
 } from '@openmaic/dsl';
@@ -34,9 +36,12 @@ import type { ImportContext, TransformResult } from './types';
 
 type ParsedPptxJson = Awaited<ReturnType<typeof parsePptxDefault>>;
 
-const convertPtToPx = (html: string, ratio: number) => {
-  return html.replace(/([\d.]+)pt\b/g, (_match, p1) => {
-    return `${(parseFloat(p1) * ratio).toFixed(1)}px`;
+const convertPtToPx = (html: string, ratio: number, fontScale = 1) => {
+  return html.replace(/(font-size:\s*)?([\d.]+)pt\b/g, (_match, fontSizeProperty, value) => {
+    // normAutofit scales glyphs (including bullets), not the frame's insets
+    // or paragraph indents. Unitless line-height follows the scaled font.
+    const scale = fontSizeProperty ? fontScale : 1;
+    return `${fontSizeProperty || ''}${(parseFloat(value) * ratio * scale).toFixed(1)}px`;
   });
 };
 
@@ -980,7 +985,9 @@ export async function transformParsedToSlides(
             );
           }
         } else if (el.type === 'shape') {
-          if (el.shapType === 'line' || /Connector/.test(el.shapType)) {
+          // lineInv must retain its inverse SVG path: parseLineElement assumes
+          // the forward diagonal before applying flips.
+          if (isLinePreset(el.shapType) && el.shapType.toLowerCase() !== 'lineinv') {
             const lineElement = parseLineElement(el, ratio);
             slide.elements.push(lineElement);
           } else {
@@ -1012,6 +1019,8 @@ export async function transformParsedToSlides(
               warnUnconvertibleMedia(ctx, slideIndex, 'A shape image fill', pattern);
             }
             const fill = el.fill?.type === 'color' ? el.fill.value : '';
+            const autoFit = (el as { autoFit?: { type?: string; fontScale?: number } }).autoFit;
+            const fontScale = autoFit?.type === 'text' ? (autoFit.fontScale ?? 100) / 100 : 1;
 
             const element: PPTShapeElement = {
               type: 'shape',
@@ -1029,7 +1038,7 @@ export async function transformParsedToSlides(
               fixedRatio: false,
               rotate: el.rotate,
               text: {
-                content: convertPtToPx(el.content, ratio),
+                content: convertPtToPx(el.content, ratio, fontScale),
                 defaultFontName: theme.fontName,
                 defaultColor: theme.fontColor,
                 align: vAlignMap[el.vAlign] || 'middle',
@@ -1147,7 +1156,10 @@ export async function transformParsedToSlides(
                 (textDiv.firstElementChild as HTMLElement | null)?.style?.padding || ''
               ).trim();
 
-              const span = textDiv.querySelector('span');
+              // Tab columns describe layout; their nested run carries the font.
+              const span = textDiv.querySelector<HTMLSpanElement>(
+                'span:not([data-pptx-tab-column="true"])',
+              );
               const fontsize = span?.style.fontSize
                 ? (parseInt(span?.style.fontSize) * ratio).toFixed(1) + 'px'
                 : '';
@@ -1207,9 +1219,45 @@ export async function transformParsedToSlides(
                     out += '<br/>';
                     return;
                   }
+                  if (el.tagName === 'SPAN' && el.classList.contains('katex')) {
+                    // Treat generated math as one unit. Flattening its MathML,
+                    // TeX annotation and visual spans duplicates the formula
+                    // and destroys fractions/superscripts. Re-render the source
+                    // instead of trusting arbitrary markup in the input HTML.
+                    const latex = el.querySelector(
+                      'annotation[encoding="application/x-tex"]',
+                    )?.textContent;
+                    if (latex) {
+                      try {
+                        out += katex.renderToString(latex, { throwOnError: true, trust: false });
+                      } catch {
+                        out += escapeText(latex);
+                      }
+                      return;
+                    }
+                  }
                   if (el.tagName === 'SPAN') {
                     const st = keepRunStyle(el);
                     const inner = serializeInline(el);
+                    if (el.dataset.pptxTabColumn === 'true') {
+                      // Preserve explicit tab boundaries, including empty columns.
+                      // Scale their point widths like the cell's font size while
+                      // continuing to discard unrelated legacy spacing spans.
+                      const columnStyle = document.createElement('span').style;
+                      for (const property of [
+                        'display',
+                        'width',
+                        'min-width',
+                        'text-indent',
+                        'text-align',
+                        'white-space',
+                      ]) {
+                        const value = el.style.getPropertyValue(property);
+                        if (value) columnStyle.setProperty(property, convertPtToPx(value, ratio));
+                      }
+                      out += `<span data-pptx-tab-column="true" style="${columnStyle.cssText}">${inner}</span>`;
+                      return;
+                    }
                     out += st ? `<span style="${st}">${inner}</span>` : inner;
                     return;
                   }
@@ -1413,10 +1461,39 @@ export async function transformParsedToSlides(
             default:
           }
 
+          if (options.stack && 'grouping' in el && el.grouping === 'percentStacked') {
+            options.percentStack = true;
+          }
+
+          const importedStyle = (el as typeof el & { importedStyle?: ImportedChartStyle })
+            .importedStyle;
           slide.elements.push({
             type: 'chart',
             id: nanoid(10),
             chartType: chartType,
+            importedStyle: importedStyle
+              ? {
+                  ...importedStyle,
+                  categoryAxis: importedStyle.categoryAxis
+                    ? {
+                        ...importedStyle.categoryAxis,
+                        labelFontSize:
+                          importedStyle.categoryAxis.labelFontSize === undefined
+                            ? undefined
+                            : importedStyle.categoryAxis.labelFontSize * ratio,
+                      }
+                    : undefined,
+                  valueAxis: importedStyle.valueAxis
+                    ? {
+                        ...importedStyle.valueAxis,
+                        labelFontSize:
+                          importedStyle.valueAxis.labelFontSize === undefined
+                            ? undefined
+                            : importedStyle.valueAxis.labelFontSize * ratio,
+                      }
+                    : undefined,
+                }
+              : undefined,
             width: el.width,
             height: el.height,
             left: el.left,
