@@ -1011,6 +1011,8 @@
     "deleteFolderConfirmRemove": "This removes the folder and its courses, including chat history.",
     "notFound": "Course not found",
     "notFoundDesc": "This course does not exist, or it has been deleted.",
+    "loadUnavailable": "Couldn't load this course",
+    "loadUnavailableDesc": "The course could not be retrieved. Check your access or try again.",
     "backToHome": "Back to home"
   },
   "upload": {
@@ -1229,6 +1231,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "tokendance": "TokenDance",
       "lemonade": "Lemonade (Local)",
       "ollama": "Ollama (Local)",
       "tavily": "Tavily",
@@ -1712,6 +1715,7 @@
     "providerNanoBanana": "Nano Banana (Gemini)",
     "providerMiniMaxImage": "MiniMax Image",
     "providerGrokImage": "Grok Image (xAI)",
+    "providerOpenRouterImage": "OpenRouter Image",
     "providerComfyUIImage": "ComfyUI Image",
     "providerLemonadeImage": "Lemonade Image (Local)",
     "testImageGeneration": "Test Image Generation",
@@ -1736,6 +1740,7 @@
     "providerSora": "Sora (OpenAI)",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video (xAI)",
+    "providerOpenRouterVideo": "OpenRouter Video",
     "providerHappyHorse": "HappyHorse (Alibaba Cloud)",
     "testVideoGeneration": "Test Video Generation",
     "testVideoConnectivity": "Test Connection",

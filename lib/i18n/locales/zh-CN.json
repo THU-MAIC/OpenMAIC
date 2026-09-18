@@ -1011,6 +1011,8 @@
     "deleteFolderAndCourses_other": "删除文件夹和 {{count}} 门课程",
     "notFound": "找不到这门课程",
     "notFoundDesc": "课程不存在，或已被删除。",
+    "loadUnavailable": "暂时无法加载这门课程",
+    "loadUnavailableDesc": "无法获取课程，请检查访问权限或重试。",
     "backToHome": "返回首页"
   },
   "upload": {
@@ -1229,6 +1231,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "腾讯混元",
       "xiaomi": "小米 MiMo",
+      "tokendance": "TokenDance",
       "lemonade": "Lemonade（本地）",
       "ollama": "Ollama（本地模型）",
       "tavily": "Tavily",
@@ -1712,6 +1715,7 @@
     "providerNanoBanana": "Nano Banana（Gemini）",
     "providerMiniMaxImage": "MiniMax 图像",
     "providerGrokImage": "Grok Image（xAI）",
+    "providerOpenRouterImage": "OpenRouter 图像",
     "providerComfyUIImage": "ComfyUI Image",
     "providerLemonadeImage": "Lemonade 图像（本地）",
     "testImageGeneration": "测试图像生成",
@@ -1736,6 +1740,7 @@
     "providerSora": "Sora（OpenAI）",
     "providerMiniMaxVideo": "MiniMax 视频",
     "providerGrokVideo": "Grok Video（xAI）",
+    "providerOpenRouterVideo": "OpenRouter 视频",
     "providerHappyHorse": "HappyHorse（阿里云百炼）",
     "testVideoGeneration": "测试视频生成",
     "testVideoConnectivity": "测试连接",

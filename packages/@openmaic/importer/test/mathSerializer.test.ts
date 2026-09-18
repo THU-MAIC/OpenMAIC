@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import katex from 'katex';
 import { ommlToLatex } from '../src/serializer/mathSerializer';
 
 const M = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"';
@@ -32,5 +33,44 @@ describe('mathSerializer · ommlToLatex', () => {
     const latex = ommlToLatex(omath('<m:r><m:t>\u2207</m:t></m:r>'));
     expect(latex).toContain('\\nabla');
     expect(latex).not.toContain('\u2207');
+  });
+});
+
+describe('OMML equation delimiters', () => {
+  const run = (text: string) => `<m:r><m:t>${text}</m:t></m:r>`;
+  const power = (base: string, exponent: string) =>
+    `<m:sSup><m:e><m:d><m:e>${run(base)}</m:e></m:d></m:e><m:sup>${run(exponent)}</m:sup></m:sSup>`;
+
+  it('preserves a two-row system with a left brace, invisible right delimiter and powers', () => {
+    const rows = [
+      `${run('X')}${power('1.02', '40')}${run('+Y')}${power('1.03', '20')}${run('=1000')}`,
+      `${run('X')}${power('1.02', '20')}${run('=2Y')}${power('1.03', '10')}`,
+    ];
+    const latex = ommlToLatex(
+      omath(
+        `<m:d><m:dPr><m:begChr m:val="{"/><m:endChr m:val=""/></m:dPr><m:e><m:eqArr>${rows.map((row) => `<m:e>${row}</m:e>`).join('')}</m:eqArr></m:e></m:d>`,
+      ),
+    );
+    expect(() => katex.renderToString(latex, { throwOnError: true })).not.toThrow();
+    expect(latex).toContain('\\left\\{');
+    expect(latex).toContain('\\right.');
+    expect(latex).toContain('\\\\');
+    expect(latex).toContain('^{40}');
+    expect(latex).toContain('^{10}');
+  });
+
+  it.each([
+    ['{', '}', '\\left\\{', '\\right\\}'],
+    ['', '}', '\\left.', '\\right\\}'],
+    ['[', '', '\\left[', '\\right.'],
+  ])('preserves explicit delimiters %s / %s', (open, close, left, right) => {
+    const latex = ommlToLatex(
+      omath(
+        `<m:d><m:dPr><m:begChr m:val="${open}"/><m:endChr m:val="${close}"/></m:dPr><m:e>${run('x')}</m:e></m:d>`,
+      ),
+    );
+    expect(() => katex.renderToString(latex, { throwOnError: true })).not.toThrow();
+    expect(latex).toContain(left);
+    expect(latex).toContain(right);
   });
 });

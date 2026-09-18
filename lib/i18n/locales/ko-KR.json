@@ -1011,6 +1011,8 @@
     "deleteFolderAndCourses_other": "폴더와 강의 {{count}}개 삭제",
     "notFound": "강의를 찾을 수 없습니다",
     "notFoundDesc": "해당 강의가 존재하지 않거나 이미 삭제되었습니다.",
+    "loadUnavailable": "강의를 불러오지 못했습니다",
+    "loadUnavailableDesc": "강의를 가져올 수 없습니다. 접근 권한을 확인하거나 다시 시도해 주세요.",
     "backToHome": "홈으로 돌아가기"
   },
   "upload": {
@@ -1229,6 +1231,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "tokendance": "TokenDance",
       "lemonade": "Lemonade (로컬)",
       "ollama": "Ollama (로컬)",
       "tavily": "Tavily",
@@ -1712,6 +1715,7 @@
     "providerNanoBanana": "Nano Banana (Gemini)",
     "providerMiniMaxImage": "MiniMax Image",
     "providerGrokImage": "Grok Image (xAI)",
+    "providerOpenRouterImage": "OpenRouter Image",
     "providerComfyUIImage": "ComfyUI Image",
     "providerLemonadeImage": "Lemonade Image (로컬)",
     "testImageGeneration": "이미지 생성 테스트",
@@ -1736,6 +1740,7 @@
     "providerSora": "Sora (OpenAI)",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video (xAI)",
+    "providerOpenRouterVideo": "OpenRouter Video",
     "providerHappyHorse": "HappyHorse (Alibaba Cloud)",
     "testVideoGeneration": "동영상 생성 테스트",
     "testVideoConnectivity": "연결 테스트",

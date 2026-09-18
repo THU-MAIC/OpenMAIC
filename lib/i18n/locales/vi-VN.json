@@ -1011,6 +1011,8 @@
     "deleteFolderConfirmRemove": "Thao tác này xóa thư mục cùng các bài học bên trong, gồm cả lịch sử trò chuyện.",
     "notFound": "Không tìm thấy khóa học",
     "notFoundDesc": "Khóa học này không tồn tại hoặc đã bị xóa.",
+    "loadUnavailable": "Không tải được khóa học này",
+    "loadUnavailableDesc": "Không thể truy xuất khóa học. Hãy kiểm tra quyền truy cập hoặc thử lại.",
     "backToHome": "Về trang chủ"
   },
   "upload": {
@@ -1229,6 +1231,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "tokendance": "TokenDance",
       "lemonade": "Lemonade (Cục bộ)",
       "ollama": "Ollama (Cục bộ)",
       "tavily": "Tavily",
@@ -1712,6 +1715,7 @@
     "providerNanoBanana": "Nano Banana (Gemini)",
     "providerMiniMaxImage": "MiniMax Image",
     "providerGrokImage": "Grok Image (xAI)",
+    "providerOpenRouterImage": "OpenRouter Image",
     "providerComfyUIImage": "ComfyUI Image",
     "providerLemonadeImage": "Lemonade Image (Cục bộ)",
     "testImageGeneration": "Kiểm tra tạo ảnh",
@@ -1736,6 +1740,7 @@
     "providerSora": "Sora (OpenAI)",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video (xAI)",
+    "providerOpenRouterVideo": "OpenRouter Video",
     "providerHappyHorse": "HappyHorse (Alibaba Cloud)",
     "testVideoGeneration": "Kiểm tra tạo video",
     "testVideoConnectivity": "Kiểm tra kết nối",

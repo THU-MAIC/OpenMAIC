@@ -43,7 +43,7 @@ type UtifPage = {
   [key: string]: unknown;
 };
 
-function arrayBufferToBase64(data: Uint8Array): string {
+export function arrayBufferToBase64(data: Uint8Array): string {
   let binary = '';
   const len = data.byteLength;
   for (let i = 0; i < len; i++) {

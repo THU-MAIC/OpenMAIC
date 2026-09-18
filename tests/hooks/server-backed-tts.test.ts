@@ -151,8 +151,10 @@ describe('server-backed narration storage', () => {
   // leave this browser: `proveExclusiveAssetOwnership` refuses unconditionally
   // in that mode (pinned by tests/media/prove-exclusive-ownership.test.ts), so
   // the upstream caller supplies no existing id at all. The superseded clip is
-  // left for the stage-scoped document-truth sweep rather than deleted here,
-  // where nothing has yet observed the new id reaching a durable document.
+  // left for the server-side reclamation rather than deleted here, where
+  // nothing has yet observed the new id reaching a durable document: the save
+  // that writes the new id is the write that stops naming the old one, and
+  // releasing it is the server's job from there.
   it('forks to a fresh id even when handed the id it just superseded', async () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
     mockFetch.mockResolvedValueOnce(ttsResponse());

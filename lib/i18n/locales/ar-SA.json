@@ -1011,6 +1011,8 @@
     "deleteFolderAndCourses_other": "حذف المجلد و {{count}} دورة",
     "notFound": "لم يتم العثور على الدورة",
     "notFoundDesc": "هذه الدورة غير موجودة أو تم حذفها.",
+    "loadUnavailable": "تعذر تحميل هذه الدورة",
+    "loadUnavailableDesc": "تعذر استرداد الدورة. تحقق من صلاحية الوصول أو حاول مرة أخرى.",
     "backToHome": "العودة إلى الصفحة الرئيسية"
   },
   "upload": {
@@ -1229,6 +1231,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "tokendance": "TokenDance",
       "lemonade": "Lemonade (محلي)",
       "ollama": "Ollama (محلي)",
       "tavily": "Tavily",
@@ -1712,6 +1715,7 @@
     "providerNanoBanana": "Nano Banana (Gemini)",
     "providerMiniMaxImage": "MiniMax Image",
     "providerGrokImage": "Grok Image (xAI)",
+    "providerOpenRouterImage": "OpenRouter Image",
     "providerComfyUIImage": "ComfyUI Image",
     "providerLemonadeImage": "Lemonade Image (محلي)",
     "testImageGeneration": "اختبار توليد الصور",
@@ -1736,6 +1740,7 @@
     "providerSora": "Sora (OpenAI)",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video (xAI)",
+    "providerOpenRouterVideo": "OpenRouter Video",
     "providerHappyHorse": "HappyHorse (Alibaba Cloud)",
     "testVideoGeneration": "اختبار توليد الفيديو",
     "testVideoConnectivity": "اختبار الاتصال",

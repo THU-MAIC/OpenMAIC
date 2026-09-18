@@ -1,0 +1,93 @@
+<p:sp xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:nvSpPr>
+    <p:cNvPr id="24" name="Text3" />
+    <p:cNvSpPr />
+    <p:nvPr />
+  </p:nvSpPr>
+  <p:spPr>
+    <a:xfrm>
+      <a:off x="7290487" y="3638336" />
+      <a:ext cx="3516519" cy="626267" />
+    </a:xfrm>
+    <a:prstGeom prst="roundRect">
+      <a:avLst>
+        <a:gd name="adj" fmla="val 8000" />
+      </a:avLst>
+    </a:prstGeom>
+    <a:solidFill>
+      <a:schemeClr val="tx2">
+        <a:alpha val="15000" />
+      </a:schemeClr>
+    </a:solidFill>
+    <a:ln w="6055" cap="flat">
+      <a:noFill />
+      <a:prstDash val="solid" />
+      <a:miter />
+    </a:ln>
+  </p:spPr>
+  <p:txBody>
+    <a:bodyPr wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" rtlCol="0" anchor="ctr">
+      <a:normAutofit fontScale="90000" />
+    </a:bodyPr>
+    <a:lstStyle />
+    <a:p>
+      <a:pPr marL="171450" indent="-171450">
+        <a:lnSpc>
+          <a:spcPct val="120000" />
+        </a:lnSpc>
+        <a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0" />
+        <a:buChar char="•" />
+      </a:pPr>
+      <a:r>
+        <a:rPr kumimoji="1" lang="zh-CN" altLang="en-US" sz="2000" dirty="0">
+          <a:solidFill>
+            <a:schemeClr val="tx1" />
+          </a:solidFill>
+          <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0" />
+          <a:ea typeface="微软雅黑" panose="020B0503020204020204" pitchFamily="34" charset="-122" />
+          <a:sym typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0" />
+        </a:rPr>
+        <a:t>资源：</a:t>
+      </a:r>
+      <a:r>
+        <a:rPr lang="zh-CN" altLang="en-US" sz="2000" dirty="0">
+          <a:latin typeface="微软雅黑" panose="020B0503020204020204" pitchFamily="34" charset="-122" />
+          <a:ea typeface="微软雅黑" panose="020B0503020204020204" pitchFamily="34" charset="-122" />
+        </a:rPr>
+        <a:t>教材同类型作业题自我检测</a:t>
+      </a:r>
+      <a:endParaRPr lang="zh-CN" altLang="en-US" sz="2000" dirty="0">
+        <a:latin typeface="微软雅黑" panose="020B0503020204020204" pitchFamily="34" charset="-122" />
+        <a:ea typeface="微软雅黑" panose="020B0503020204020204" pitchFamily="34" charset="-122" />
+      </a:endParaRPr>
+    </a:p>
+    <a:p>
+      <a:pPr marL="171450" indent="-171450">
+        <a:lnSpc>
+          <a:spcPct val="120000" />
+        </a:lnSpc>
+        <a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0" />
+        <a:buChar char="•" />
+      </a:pPr>
+      <a:r>
+        <a:rPr kumimoji="1" lang="zh-CN" altLang="en-US" sz="2000" dirty="0">
+          <a:solidFill>
+            <a:schemeClr val="tx1" />
+          </a:solidFill>
+          <a:latin typeface="微软雅黑" panose="020B0503020204020204" pitchFamily="34" charset="-122" />
+          <a:ea typeface="微软雅黑" panose="020B0503020204020204" pitchFamily="34" charset="-122" />
+          <a:sym typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0" />
+        </a:rPr>
+        <a:t>清小搭智能体广场中微积分等模拟试卷助手智能体</a:t>
+      </a:r>
+      <a:endParaRPr kumimoji="1" lang="zh-CN" altLang="en-US" sz="2000" dirty="0">
+        <a:solidFill>
+          <a:schemeClr val="tx1" />
+        </a:solidFill>
+        <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0" />
+        <a:ea typeface="微软雅黑" panose="020B0503020204020204" pitchFamily="34" charset="-122" />
+        <a:sym typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0" />
+      </a:endParaRPr>
+    </a:p>
+  </p:txBody>
+</p:sp>
