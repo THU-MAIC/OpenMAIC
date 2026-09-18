@@ -326,7 +326,35 @@ describe('createCallLlmStreamFn — reasoning round-trip on the driver wire', ()
     ];
   }
 
-  async function driveDeepseekTurn(thinkingConfig?: { enabled?: boolean }) {
+  function emptyThinkingTurnMessages(): PiMessage[] {
+    return [
+      {
+        role: 'user',
+        content: [{ type: 'text', text: 'find it' }],
+        timestamp: 0,
+      },
+      {
+        ...emptyPartial(),
+        content: [
+          { type: 'thinking', thinking: '' },
+          { type: 'toolCall', id: 'call-1', name: 'lookup', arguments: {} },
+        ],
+      } as PiMessage,
+      {
+        role: 'toolResult',
+        toolCallId: 'call-1',
+        toolName: 'lookup',
+        content: [{ type: 'text', text: '{"found":true}' }],
+        isError: false,
+        timestamp: 0,
+      } as PiMessage,
+    ];
+  }
+
+  async function driveDeepseekTurn(
+    thinkingConfig?: { enabled?: boolean },
+    messages: PiMessage[] = priorTurnMessages(),
+  ) {
     const requestBodies: Array<Record<string, unknown>> = [];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -347,7 +375,7 @@ describe('createCallLlmStreamFn — reasoning round-trip on the driver wire', ()
       });
       const stream = streamFn(
         { id: 'maic-connector' } as never,
-        { systemPrompt: 'sys', messages: priorTurnMessages() },
+        { systemPrompt: 'sys', messages },
         undefined,
       );
       for await (const _event of stream as unknown as AsyncIterable<unknown>) {
@@ -371,6 +399,28 @@ describe('createCallLlmStreamFn — reasoning round-trip on the driver wire', ()
 
   it('strips the private marker instead of shipping it on a disabled turn', async () => {
     const requestBodies = await driveDeepseekTurn({ enabled: false });
+
+    expect(requestBodies).toHaveLength(1);
+    const assistant = (requestBodies[0]?.messages as Array<Record<string, unknown>>).find(
+      (message) => message.role === 'assistant',
+    );
+    expect(assistant?.reasoning_content).toBeUndefined();
+    expect(String(assistant?.content ?? '')).not.toContain('openmaic:kimi-reasoning');
+  });
+
+  it('round-trips an empty prior thinking block as an empty field without the marker', async () => {
+    const requestBodies = await driveDeepseekTurn({ enabled: true }, emptyThinkingTurnMessages());
+
+    expect(requestBodies).toHaveLength(1);
+    const assistant = (requestBodies[0]?.messages as Array<Record<string, unknown>>).find(
+      (message) => message.role === 'assistant',
+    );
+    expect(assistant?.reasoning_content).toBe('');
+    expect(String(assistant?.content ?? '')).not.toContain('openmaic:kimi-reasoning');
+  });
+
+  it('drops an empty prior thinking block without a trace on a disabled turn', async () => {
+    const requestBodies = await driveDeepseekTurn({ enabled: false }, emptyThinkingTurnMessages());
 
     expect(requestBodies).toHaveLength(1);
     const assistant = (requestBodies[0]?.messages as Array<Record<string, unknown>>).find(
