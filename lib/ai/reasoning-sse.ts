@@ -31,9 +31,14 @@ function encodeKimiReasoning(text: string): string {
   return `${KIMI_REASONING_MARKER}${text.length}:${text}`;
 }
 
-function extractKimiReasoning(content: string): { content: string; reasoning?: string } {
+function extractKimiReasoning(content: string): {
+  content: string;
+  reasoning: string;
+  found: boolean;
+} {
   let remaining = content;
   let reasoning = '';
+  let found = false;
 
   for (;;) {
     const markerIndex = remaining.indexOf(KIMI_REASONING_MARKER);
@@ -51,11 +56,12 @@ function extractKimiReasoning(content: string): { content: string; reasoning?: s
     const reasoningEnd = reasoningStart + reasoningLength;
     if (reasoningEnd > remaining.length) break;
 
+    found = true;
     reasoning += remaining.slice(reasoningStart, reasoningEnd);
     remaining = remaining.slice(0, markerIndex) + remaining.slice(reasoningEnd);
   }
 
-  return reasoning ? { content: remaining, reasoning } : { content };
+  return { content: remaining, reasoning, found };
 }
 
 /**
@@ -76,7 +82,7 @@ export function createReasoningPreservationMiddleware(): LanguageModelMiddleware
           : {
               ...message,
               content: message.content.map((part) =>
-                part.type === 'reasoning'
+                part.type === 'reasoning' && part.text
                   ? { type: 'text' as const, text: encodeKimiReasoning(part.text) }
                   : part,
               ),
@@ -86,8 +92,7 @@ export function createReasoningPreservationMiddleware(): LanguageModelMiddleware
   };
 }
 
-/** Restore private reasoning markers after OpenAI chat serialization. */
-export function restoreReasoningContentInRequestBody(body: unknown): void {
+function processReasoningMarkersInRequestBody(body: unknown, restore: boolean): void {
   if (!body || typeof body !== 'object') return;
   const messages = (body as { messages?: unknown }).messages;
   if (!Array.isArray(messages)) return;
@@ -97,13 +102,20 @@ export function restoreReasoningContentInRequestBody(body: unknown): void {
     const record = message as Record<string, unknown>;
     if (record.role !== 'assistant' || typeof record.content !== 'string') continue;
 
-    const restored = extractKimiReasoning(record.content);
-    if (!restored.reasoning) continue;
+    const processed = extractKimiReasoning(record.content);
+    if (!processed.found) continue;
 
-    record.reasoning_content = restored.reasoning;
+    if (restore) {
+      record.reasoning_content = processed.reasoning;
+    }
     record.content =
-      restored.content === '' && Array.isArray(record.tool_calls) ? null : restored.content;
+      processed.content === '' && Array.isArray(record.tool_calls) ? null : processed.content;
   }
+}
+
+/** Restore private reasoning markers after OpenAI chat serialization. */
+export function restoreReasoningContentInRequestBody(body: unknown): void {
+  processReasoningMarkersInRequestBody(body, true);
 }
 
 /**
@@ -112,21 +124,7 @@ export function restoreReasoningContentInRequestBody(body: unknown): void {
  * nor the sentinel that stands in for it.
  */
 export function stripReasoningContentInRequestBody(body: unknown): void {
-  if (!body || typeof body !== 'object') return;
-  const messages = (body as { messages?: unknown }).messages;
-  if (!Array.isArray(messages)) return;
-
-  for (const message of messages) {
-    if (!message || typeof message !== 'object') continue;
-    const record = message as Record<string, unknown>;
-    if (record.role !== 'assistant' || typeof record.content !== 'string') continue;
-
-    const stripped = extractKimiReasoning(record.content);
-    if (!stripped.reasoning) continue;
-
-    record.content =
-      stripped.content === '' && Array.isArray(record.tool_calls) ? null : stripped.content;
-  }
+  processReasoningMarkersInRequestBody(body, false);
 }
 
 /**

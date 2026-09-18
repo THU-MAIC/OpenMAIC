@@ -577,4 +577,236 @@ describe('OpenAI SDK integration', () => {
       expect(preservesReasoningForModel(kimiK26Model)).toBe(false);
     });
   });
+
+  describe('DeepSeek effort none disables thinking on the wire', () => {
+    it('strips reasoning and sends no field when the wire disables thinking', async () => {
+      const requestBodies: Array<Record<string, unknown>> = [];
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        if (requestBodies.length === 1) {
+          const encoder = new TextEncoder();
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                for (const delta of [
+                  { reasoning_content: 'use the lookup tool' },
+                  {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: 'call-1',
+                        type: 'function',
+                        function: { name: 'lookup', arguments: '{}' },
+                      },
+                    ],
+                  },
+                ]) {
+                  controller.enqueue(
+                    encoder.encode(
+                      `data: ${JSON.stringify({
+                        id: 'chatcmpl-1',
+                        object: 'chat.completion.chunk',
+                        created: 1,
+                        model: 'deepseek-v4-pro',
+                        choices: [{ index: 0, delta, finish_reason: null }],
+                      })}\n\n`,
+                    ),
+                  );
+                }
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({
+                      id: 'chatcmpl-1',
+                      object: 'chat.completion.chunk',
+                      created: 1,
+                      model: 'deepseek-v4-pro',
+                      choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }],
+                      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+                    })}\n\n`,
+                  ),
+                );
+                controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                controller.close();
+              },
+            }),
+            { headers: { 'content-type': 'text/event-stream' } },
+          );
+        }
+        const encoder = new TextEncoder();
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              for (const [delta, finish] of [
+                [{ content: 'done' }, null],
+                [{}, 'stop'],
+              ] as Array<[Record<string, unknown>, string | null]>) {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({
+                      id: 'chatcmpl-2',
+                      object: 'chat.completion.chunk',
+                      created: 1,
+                      model: 'deepseek-v4-pro',
+                      choices: [{ index: 0, delta, finish_reason: finish }],
+                      ...(finish === 'stop'
+                        ? { usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }
+                        : {}),
+                    })}\n\n`,
+                  ),
+                );
+              }
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+              controller.close();
+            },
+          }),
+          { headers: { 'content-type': 'text/event-stream' } },
+        );
+      }) as typeof globalThis.fetch;
+
+      try {
+        const { model } = getModel({
+          providerId: 'deepseek',
+          modelId: 'deepseek-v4-pro',
+          apiKey: 'sk-test',
+        });
+        const result = streamLLM(
+          {
+            model,
+            prompt: 'find it',
+            maxRetries: 0,
+            tools: {
+              lookup: tool({
+                description: 'lookup',
+                inputSchema: z.object({}),
+                execute: async () => ({ found: true }),
+              }),
+            },
+            stopWhen: stepCountIs(2),
+          },
+          'test',
+          { effort: 'none' },
+        );
+        await result.consumeStream();
+
+        expect(requestBodies).toHaveLength(2);
+        expect(requestBodies[1]).toMatchObject({ thinking: { type: 'disabled' } });
+        const assistant = (requestBodies[1]?.messages as Array<Record<string, unknown>>).find(
+          (message) => message.role === 'assistant',
+        );
+        expect(assistant?.reasoning_content).toBeUndefined();
+        expect(String(assistant?.content ?? '')).not.toContain('openmaic:kimi-reasoning');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  describe('Kimi K3 disabled thinking', () => {
+    function sseBody(chunks: unknown[]): Response {
+      const encoder = new TextEncoder();
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            for (const chunk of chunks) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            }
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+          },
+        }),
+        { headers: { 'content-type': 'text/event-stream' } },
+      );
+    }
+
+    function chatChunk(delta: Record<string, unknown>, finishReason: string | null = null) {
+      return {
+        id: 'chatcmpl-kimi',
+        object: 'chat.completion.chunk',
+        created: 1,
+        model: 'kimi-k3',
+        choices: [{ index: 0, delta, finish_reason: finishReason }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      };
+    }
+
+    async function runKimiTurn(withReasoning: boolean, thinking: { enabled: boolean }) {
+      const requestBodies: Array<Record<string, unknown>> = [];
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        if (requestBodies.length === 1) {
+          return sseBody([
+            ...(withReasoning ? [chatChunk({ reasoning_content: 'use the lookup tool' })] : []),
+            chatChunk({
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call-1',
+                  type: 'function',
+                  function: { name: 'lookup', arguments: '{}' },
+                },
+              ],
+            }),
+            chatChunk({}, 'tool_calls'),
+          ]);
+        }
+        return sseBody([chatChunk({ content: 'done' }), chatChunk({}, 'stop')]);
+      }) as typeof globalThis.fetch;
+
+      try {
+        const { model } = getModel({
+          providerId: 'kimi',
+          modelId: 'kimi-k3',
+          apiKey: 'sk-test',
+        });
+        const result = streamLLM(
+          {
+            model,
+            prompt: 'find it',
+            maxRetries: 0,
+            tools: {
+              lookup: tool({
+                description: 'lookup',
+                inputSchema: z.object({}),
+                execute: async () => ({ found: true }),
+              }),
+            },
+            stopWhen: stepCountIs(2),
+          },
+          'test',
+          thinking,
+        );
+        await result.consumeStream();
+        return requestBodies;
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+
+    function findAssistant(body: Record<string, unknown>) {
+      return (body.messages as Array<Record<string, unknown>>).find(
+        (message) => message.role === 'assistant',
+      );
+    }
+
+    it('keeps reasoning_content when the wire still reasons', async () => {
+      const requestBodies = await runKimiTurn(true, { enabled: false });
+
+      expect(requestBodies).toHaveLength(2);
+      expect(requestBodies[1]).toMatchObject({ reasoning_effort: 'low' });
+      expect(requestBodies[1]).not.toHaveProperty('thinking');
+      const assistant = findAssistant(requestBodies[1]);
+      expect(assistant?.reasoning_content).toBe('use the lookup tool');
+      expect(String(assistant?.content ?? '')).not.toContain('openmaic:kimi-reasoning');
+    });
+
+    it('does not backfill reasoning_content outside the DeepSeek adapter', async () => {
+      const requestBodies = await runKimiTurn(false, { enabled: true });
+
+      expect(requestBodies).toHaveLength(2);
+      const assistant = findAssistant(requestBodies[1]);
+      expect(assistant?.reasoning_content).toBeUndefined();
+    });
+  });
 });

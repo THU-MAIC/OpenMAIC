@@ -3,6 +3,7 @@ import {
   createReasoningPreservationMiddleware,
   createReasoningContentRewriter,
   restoreReasoningContentInRequestBody,
+  stripReasoningContentInRequestBody,
   wrapJsonResponseWithReasoning,
   wrapResponseWithReasoning,
 } from '@/lib/ai/reasoning-sse';
@@ -220,5 +221,33 @@ describe('Kimi reasoning preservation', () => {
       tool_calls: [{ id: 'call-1' }],
     });
     expect(body.choices[0].message).not.toHaveProperty('reasoning_content');
+  });
+});
+
+describe('empty reasoning markers', () => {
+  const EMPTY_MARKER = String.fromCharCode(0) + 'openmaic:kimi-reasoning:';
+
+  it('restore sets an empty reasoning_content and removes the marker', () => {
+    const body = {
+      messages: [{ role: 'assistant', content: `before ${EMPTY_MARKER}0: after` }],
+    };
+
+    restoreReasoningContentInRequestBody(body);
+
+    expect(body.messages[0]).toMatchObject({
+      content: 'before  after',
+      reasoning_content: '',
+    });
+  });
+
+  it('strip removes the marker without emitting the field', () => {
+    const body = {
+      messages: [{ role: 'assistant', content: `before ${EMPTY_MARKER}0: after` }],
+    };
+
+    stripReasoningContentInRequestBody(body);
+
+    expect(body.messages[0]).toMatchObject({ content: 'before  after' });
+    expect(body.messages[0]).not.toHaveProperty('reasoning_content');
   });
 });
