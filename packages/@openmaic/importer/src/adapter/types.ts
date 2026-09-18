@@ -1,3 +1,4 @@
+import type { ImportedChartStyle } from '@openmaic/dsl';
 /**
  * pptxtojson / PPTist 输出格式类型定义
  * 长度与坐标单位均为 pt。
@@ -223,6 +224,7 @@ export interface ChartItem {
 export type ScatterChartData = [number[], number[]];
 
 export interface CommonChart {
+  importedStyle?: ImportedChartStyle;
   type: 'chart';
   left: number;
   top: number;

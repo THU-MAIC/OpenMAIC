@@ -1445,3 +1445,56 @@ describe('cross-owner isolation (owner-scoped store)', () => {
     expect(await alice.store.listDocuments()).toHaveLength(1);
   });
 });
+
+it('allows unrelated text edits on a slide with imported chart formatting', async () => {
+  const initial = course();
+  const canvas = (initial.scenes[0].content as SlideContent).canvas;
+  canvas.elements.push({
+    type: 'chart',
+    id: 'imported-chart',
+    left: 10,
+    top: 100,
+    width: 400,
+    height: 200,
+    rotate: 0,
+    chartType: 'bar',
+    themeColors: ['#ff0000'],
+    data: { labels: ['A'], legends: ['B'], series: [[40]] },
+    options: { stack: true, percentStack: true },
+    importedStyle: {
+      series: [
+        {
+          fill: '#ff0000',
+          pointFills: {
+            '0': {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: '#ff0000' },
+                { offset: 1, color: '#ffffff' },
+              ],
+            },
+          },
+          pointImages: { '0': 'data:image/png;base64,AA==' },
+          showValue: false,
+        },
+      ],
+      categoryAxis: { show: true, gridlines: false },
+      valueAxis: { min: 0, max: 1, numberFormat: '0%' },
+      gapWidth: 100,
+      plotArea: { x: 0, y: 0, w: 1, h: 1 },
+    },
+  });
+  const current = state(initial);
+  const patch = tool(dslTools(current.store), 'patch_stage');
+  const result = await patch.execute('edit-chart-slide', {
+    target: '/scenes/scene_slide',
+    intent: 'Edit unrelated text',
+    ops: [{ op: 'set', path: '/content/canvas/elements/0/defaultColor', value: '#f00' }],
+  } as never);
+  expect(result).not.toHaveProperty('isError');
+  expect(current.putScene).toHaveBeenCalledTimes(1);
+});

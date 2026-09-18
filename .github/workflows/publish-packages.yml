@@ -96,13 +96,13 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           cache: pnpm
@@ -183,10 +183,10 @@ jobs:
           RELEASE_ARTIFACTS: ${{ runner.temp }}/openmaic-package-tarballs
         run: node scripts/verify-package-artifacts.mjs "$RELEASE_ARTIFACTS"
 
-      # actions/upload-artifact v4 artifacts cannot be modified after upload.
+      # Uploaded artifacts cannot be modified after upload.
       # Tests below keep using the same local tarballs, while `publish` receives
       # this already-uploaded snapshot only after the whole validate job passes.
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: openmaic-package-tarballs-${{ github.sha }}
           path: ${{ runner.temp }}/openmaic-package-tarballs
@@ -251,7 +251,7 @@ jobs:
       actions: read # required to read this commit's CI conclusion
       id-token: write # required for npm provenance
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           # The first-parent check needs real history.
           fetch-depth: 0
@@ -259,13 +259,17 @@ jobs:
           # remains isolated in the `mark` job.
           persist-credentials: false
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+          # setup-node v5 enables package-manager caching whenever package.json
+          # declares `packageManager`, which requires pnpm on PATH. This job only
+          # publishes prebuilt tarballs with npm and never installs pnpm.
+          package-manager-cache: false
 
       - name: Download validated package tarballs
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: openmaic-package-tarballs-${{ github.sha }}
           path: ${{ runner.temp }}/openmaic-package-tarballs
@@ -428,14 +432,16 @@ jobs:
     permissions:
       contents: write # required to push the release marker tags
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
+          # See the publish job: no pnpm here, so disable the automatic cache.
+          package-manager-cache: false
 
       - name: Write missing release markers
         env:

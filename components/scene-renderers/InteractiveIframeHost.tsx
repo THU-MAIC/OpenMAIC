@@ -1,6 +1,6 @@
 'use client';
 
-import { useLayoutEffect, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createObservationSession } from '@/lib/interactive/observation-bridge';
 import { createPortal } from 'react-dom';
 import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
@@ -289,6 +289,7 @@ function PooledIframe({
     };
   }, [sceneId, entry.srcDoc, registerObservation]);
   const registerIframe = useWidgetIframeStore((s) => s.registerIframe);
+  const markIframeReady = useWidgetIframeStore((s) => s.markIframeReady);
   const getSendMessage = useWidgetIframeStore((s) => s.getSendMessage);
   const pickTarget = useCanvasStore.use.pickTarget();
   const refs = useElementRefsStore.use.refs();
@@ -301,17 +302,17 @@ function PooledIframe({
       ),
     [refs, sceneId],
   );
+  const documentToken = entry.srcDoc ? `srcDoc:${entry.srcDoc}` : `src:${entry.src ?? ''}`;
 
   // Register the postMessage callback for this scene (moved here from the
   // placeholder, since the iframe now lives in the host). Stable per scene:
   // the callback reads contentWindow lazily at send time.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const send = (type: string, payload: Record<string, unknown>) => {
       iframeRef.current?.contentWindow?.postMessage({ type, ...payload }, '*');
     };
-    registerIframe(sceneId, send);
-    return () => registerIframe(sceneId, null);
-  }, [sceneId, registerIframe]);
+    return registerIframe(sceneId, send, documentToken);
+  }, [documentToken, sceneId, registerIframe]);
 
   useEffect(() => {
     const send = getSendMessage(sceneId);
@@ -432,6 +433,7 @@ function PooledIframe({
             iframeRef.current && observation.identity
               ? createObservationSession(iframeRef.current, observation.identity)
               : null;
+          markIframeReady(sceneId);
         }}
         src={entry.srcDoc ? undefined : entry.src}
         style={iframeStyle}

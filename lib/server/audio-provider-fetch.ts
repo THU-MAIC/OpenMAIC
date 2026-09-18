@@ -27,6 +27,14 @@
  * to be honored when both ends come from the same copy. This mirrors the
  * agent-runtime reference call site (`lib/server/agent-runtime/fetch-url.ts`).
  *
+ * The same two copies also disagree about *bodies*: the adapters build
+ * multipart requests with the platform-global `FormData`/`Blob`/`File`, but
+ * undici's serializer only recognizes its own `FormData` and coerces the
+ * platform one to the literal string `[object FormData]` (audio and fields
+ * gone, `text/plain` on the wire). Before any request leaves this module the
+ * body is therefore normalized into shapes this undici version serializes
+ * correctly — see {@link normalizeProviderBodyForUndici}.
+ *
  * Policy is a server-side decision: a client-supplied BYOK endpoint always
  * runs under the strict public policy (`allowLocalNetworks: false`), while a
  * server-managed provider may inherit the operator's `ALLOW_LOCAL_NETWORKS`
@@ -35,6 +43,7 @@
  */
 import {
   fetch as undiciFetch,
+  FormData as UndiciFormData,
   type Dispatcher,
   type RequestInit as UndiciRequestInit,
 } from 'undici';
@@ -94,6 +103,56 @@ function dispatcherFor(allowLocalNetworks: boolean): Dispatcher {
 const undiciTransport: RedirectValidationFetch = (input, init) =>
   undiciFetch(input, init as UndiciRequestInit) as unknown as Promise<Response>;
 
+// ---------------------------------------------------------------------------
+// Body normalization across the two undici copies
+// ---------------------------------------------------------------------------
+
+/** The brand every `FormData` class carries, regardless of which copy made it. */
+function toStringBrand(value: object): string | undefined {
+  return (value as { readonly [Symbol.toStringTag]?: string })[Symbol.toStringTag];
+}
+
+/**
+ * A `FormData` this transport must rebuild: it brands as `FormData` but is not
+ * the undici package's own class (i.e. it came from the platform globals or
+ * another undici copy). Undici's serializer brand-checks bodies and coerces
+ * such an object to the literal string `[object FormData]`, so the request
+ * would leave as `text/plain` with the audio and every field dropped.
+ */
+function isForeignFormData(body: unknown): body is FormData {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    toStringBrand(body) === 'FormData' &&
+    !(body instanceof UndiciFormData)
+  );
+}
+
+/**
+ * Rebuild `init.body` into shapes this transport's undici serializes correctly.
+ *
+ * The adapters are right to build bodies with the platform globals — that is
+ * the public API boundary — so the mismatch is fixed here, once, for every
+ * caller. Only `FormData` needs rebuilding: undici's serializer coerces a
+ * foreign one to `[object FormData]`, while bare platform Blob/File bodies and
+ * multipart parts alike are accepted as-is (this undici exports no `File`/
+ * `Blob` classes and its bare-body brand checks bind the platform ones). A
+ * foreign `FormData` is re-created as undici's own with every entry carried
+ * over verbatim; all other bodies pass through untouched.
+ */
+function normalizeProviderBodyForUndici(init: RequestInit | undefined): RequestInit | undefined {
+  const body = init?.body;
+  if (!isForeignFormData(body)) return init;
+  const rebuilt = new UndiciFormData();
+  // `append` (not `set`) so repeated field names survive the rebuild exactly as
+  // the caller declared them, and no filename argument: a platform File carries
+  // its own name/type/lastModified and undici accepts it as a part directly.
+  for (const [name, value] of body.entries()) {
+    rebuilt.append(name, value);
+  }
+  return { ...init, body: rebuilt as unknown as FormData };
+}
+
 /**
  * Issue one provider request: a pinned dispatcher plus redirect handling under
  * the given policy. By default redirects are followed only after each hop is
@@ -108,6 +167,10 @@ export async function audioProviderFetch(
 ): Promise<Response> {
   const allowLocalNetworks = resolveAllowLocalNetworks(policy.allowLocalNetworks);
   const dispatcher = dispatcherFor(allowLocalNetworks);
+  // Normalize the body once, before either transport path can serialize it:
+  // both the direct `redirect: 'error'` request and the per-hop loop hand the
+  // init to undici's fetch, whose serializer is the one that must recognize it.
+  const normalizedInit = normalizeProviderBodyForUndici(init);
   try {
     // Redirect-free mode: the caller owns the exact URL and its allowlist, so a
     // 3xx must stay a hard failure. Issue the request directly with the pinned
@@ -115,12 +178,12 @@ export async function audioProviderFetch(
     // per-hop loop, which would follow the redirect.
     if (policy.rejectRedirects) {
       return await undiciTransport(input, {
-        ...(init ?? {}),
+        ...(normalizedInit ?? {}),
         redirect: 'error',
         dispatcher,
       } as RequestInit);
     }
-    return await fetchWithRedirectValidation(input, init, {
+    return await fetchWithRedirectValidation(input, normalizedInit, {
       fetchImpl: undiciTransport,
       dispatcher,
       allowLocalNetworks,

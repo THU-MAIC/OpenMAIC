@@ -1553,6 +1553,59 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     ],
   },
 
+  tokendance: {
+    id: 'tokendance',
+    name: 'TokenDance',
+    type: 'openai',
+    defaultBaseUrl: 'https://tokendance.space/gateway/v1',
+    requiresApiKey: true,
+    icon: '/logos/tokendance.svg',
+    models: [
+      {
+        id: 'deepseek-v4.1-flash',
+        name: 'DeepSeek V4.1 Flash',
+        contextWindow: 1000000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'deepseek-v4-pro',
+        name: 'DeepSeek V4 Pro',
+        contextWindow: 1048576,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'glm-5.3',
+        name: 'GLM-5.3',
+        contextWindow: 1000000,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'kimi-k3',
+        name: 'Kimi K3',
+        contextWindow: 1048576,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'qwen3.8-max',
+        name: 'Qwen3.8 Max',
+        contextWindow: 1000000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'seed-2.1-pro',
+        name: 'Seed 2.1 Pro',
+        contextWindow: 256000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'minimax-m3',
+        name: 'MiniMax M3',
+        contextWindow: 1000000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+    ],
+  },
+
   ollama: {
     id: 'ollama',
     name: 'Ollama',

@@ -70,11 +70,66 @@ export const MODALITY_ORDER: TokenPlanModality[] = ['llm', 'image', 'video', 'tt
  * already covered by the add-provider flow, and listing them under "Token Plan"
  * muddied the "one key, every modality" promise.
  *
+ * - TokenDance: LLM/image/video/TTS/web-search through one gateway key.
  * - MiniMax: full-set template — every modality has a working adapter
  *   (LLM/image/video/TTS/web-search).
  * - Volcengine Ark Agent Plan: LLM/image/video/TTS/web-search via the plan key.
  */
 export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
+  // ── Gateway token plan (one key, vendor wire formats) ─────────────────────
+  {
+    // TokenDance is a model gateway. Chat and image generation are
+    // OpenAI-compatible at /gateway/v1; the same key also authenticates
+    // vendor-protocol routes on the same host that keep each vendor's wire
+    // format, so the existing adapters are reused with the route prefix as
+    // their base URL: Ark (/gateway/ark/v3) for Seedream, MiniMax
+    // (/gateway/minimax) for TTS and video, Bocha (/gateway/bocha) for web
+    // search. The public catalogue is listed at /gateway/v1/models. Video
+    // models are the H3 family, which only speak MiniMax's v2 task API.
+    id: 'tokendance',
+    name: 'TokenDance',
+    websiteUrl: 'https://tokendance.space',
+    apiKeyPlaceholder: 'sk-...',
+    icon: '/logos/tokendance.svg',
+    category: 'token_plan',
+    modalities: {
+      llm: {
+        providerId: 'tokendance',
+        baseUrl: 'https://tokendance.space/gateway/v1',
+        apiFormat: 'openai',
+        defaultModels: [
+          'deepseek-v4.1-flash',
+          'deepseek-v4-pro',
+          'glm-5.3',
+          'kimi-k3',
+          'qwen3.8-max',
+          'seed-2.1-pro',
+          'minimax-m3',
+        ],
+      },
+      image: {
+        providerId: 'seedream',
+        baseUrl: 'https://tokendance.space/gateway/ark/v3',
+        defaultModels: ['seedream-5.0-lite', 'seedream-5.0-pro'],
+      },
+      video: {
+        providerId: 'minimax-video',
+        baseUrl: 'https://tokendance.space/gateway/minimax',
+        defaultModels: ['minimax-h3', 'minimax-h3-max'],
+      },
+      tts: {
+        providerId: 'minimax-tts',
+        baseUrl: 'https://tokendance.space/gateway/minimax',
+        defaultModelId: 'minimax-speech-2.8-turbo',
+        defaultModels: ['minimax-speech-2.8-turbo', 'minimax-speech-2.8-hd'],
+      },
+      webSearch: {
+        providerId: 'bocha',
+        baseUrl: 'https://tokendance.space/gateway/bocha',
+      },
+    },
+  },
+
   // ── Full-set token plan (template) ────────────────────────────────────────
   {
     id: 'minimax',

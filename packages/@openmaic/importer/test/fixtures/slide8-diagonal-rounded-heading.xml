@@ -1,0 +1,79 @@
+<p:sp xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:nvSpPr>
+    <p:cNvPr id="11" name="íṥļiḍe" />
+    <p:cNvSpPr />
+    <p:nvPr />
+  </p:nvSpPr>
+  <p:spPr>
+    <a:xfrm>
+      <a:off x="2791846" y="2244938" />
+      <a:ext cx="1296885" cy="526622" />
+    </a:xfrm>
+    <a:prstGeom prst="round2DiagRect">
+      <a:avLst>
+        <a:gd name="adj1" fmla="val 42648" />
+        <a:gd name="adj2" fmla="val 0" />
+      </a:avLst>
+    </a:prstGeom>
+    <a:gradFill>
+      <a:gsLst>
+        <a:gs pos="0">
+          <a:schemeClr val="accent1">
+            <a:lumMod val="60000" />
+            <a:lumOff val="40000" />
+          </a:schemeClr>
+        </a:gs>
+        <a:gs pos="50000">
+          <a:schemeClr val="accent1" />
+        </a:gs>
+      </a:gsLst>
+      <a:lin ang="2700000" scaled="0" />
+    </a:gradFill>
+    <a:ln w="12700" cap="flat" cmpd="sng" algn="ctr">
+      <a:noFill />
+      <a:prstDash val="solid" />
+      <a:miter lim="800000" />
+    </a:ln>
+    <a:effectLst />
+  </p:spPr>
+  <p:style>
+    <a:lnRef idx="2">
+      <a:schemeClr val="accent1">
+        <a:shade val="50000" />
+      </a:schemeClr>
+    </a:lnRef>
+    <a:fillRef idx="1">
+      <a:schemeClr val="accent1" />
+    </a:fillRef>
+    <a:effectRef idx="0">
+      <a:schemeClr val="accent1" />
+    </a:effectRef>
+    <a:fontRef idx="minor">
+      <a:schemeClr val="lt1" />
+    </a:fontRef>
+  </p:style>
+  <p:txBody>
+    <a:bodyPr anchor="ctr" />
+    <a:lstStyle />
+    <a:p>
+      <a:pPr algn="ctr" />
+      <a:r>
+        <a:rPr kumimoji="1" lang="zh-CN" altLang="en-US" b="1" dirty="0">
+          <a:solidFill>
+            <a:schemeClr val="bg1" />
+          </a:solidFill>
+          <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0" />
+          <a:ea typeface="微软雅黑" panose="020B0503020204020204" pitchFamily="34" charset="-122" />
+        </a:rPr>
+        <a:t>为什么</a:t>
+      </a:r>
+      <a:endParaRPr kumimoji="1" lang="zh-CN" altLang="en-US" b="1" dirty="0">
+        <a:solidFill>
+          <a:schemeClr val="bg1" />
+        </a:solidFill>
+        <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0" />
+        <a:ea typeface="微软雅黑" panose="020B0503020204020204" pitchFamily="34" charset="-122" />
+      </a:endParaRPr>
+    </a:p>
+  </p:txBody>
+</p:sp>
