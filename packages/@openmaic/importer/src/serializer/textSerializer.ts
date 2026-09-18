@@ -45,7 +45,7 @@ const WINGDINGS: Record<number, string> = {
   0xa1: '✡',
   0xa7: '✺',
   0xab: '⇨',
-  0xfc: '●',
+  0xfc: '✓',
   0xa8: '✶',
   0xaa: '⇦',
   0xac: '⇧',

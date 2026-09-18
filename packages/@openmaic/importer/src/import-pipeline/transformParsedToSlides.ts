@@ -36,9 +36,12 @@ import type { ImportContext, TransformResult } from './types';
 
 type ParsedPptxJson = Awaited<ReturnType<typeof parsePptxDefault>>;
 
-const convertPtToPx = (html: string, ratio: number) => {
-  return html.replace(/([\d.]+)pt\b/g, (_match, p1) => {
-    return `${(parseFloat(p1) * ratio).toFixed(1)}px`;
+const convertPtToPx = (html: string, ratio: number, fontScale = 1) => {
+  return html.replace(/(font-size:\s*)?([\d.]+)pt\b/g, (_match, fontSizeProperty, value) => {
+    // normAutofit scales glyphs (including bullets), not the frame's insets
+    // or paragraph indents. Unitless line-height follows the scaled font.
+    const scale = fontSizeProperty ? fontScale : 1;
+    return `${fontSizeProperty || ''}${(parseFloat(value) * ratio * scale).toFixed(1)}px`;
   });
 };
 
@@ -1016,6 +1019,8 @@ export async function transformParsedToSlides(
               warnUnconvertibleMedia(ctx, slideIndex, 'A shape image fill', pattern);
             }
             const fill = el.fill?.type === 'color' ? el.fill.value : '';
+            const autoFit = (el as { autoFit?: { type?: string; fontScale?: number } }).autoFit;
+            const fontScale = autoFit?.type === 'text' ? (autoFit.fontScale ?? 100) / 100 : 1;
 
             const element: PPTShapeElement = {
               type: 'shape',
@@ -1033,7 +1038,7 @@ export async function transformParsedToSlides(
               fixedRatio: false,
               rotate: el.rotate,
               text: {
-                content: convertPtToPx(el.content, ratio),
+                content: convertPtToPx(el.content, ratio, fontScale),
                 defaultFontName: theme.fontName,
                 defaultColor: theme.fontColor,
                 align: vAlignMap[el.vAlign] || 'middle',

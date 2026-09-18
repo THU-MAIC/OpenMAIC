@@ -87,6 +87,16 @@ describe('textSerializer · 负 indent + Wingdings bullet 槽位', () => {
   });
 });
 
+describe('textSerializer · Wingdings checkmark (slide 27)', () => {
+  it.each(['ü', '\uF0FC'])('preserves the checkmark bullet encoded as %s', (char) => {
+    const html = renderTxBodyHtml(`<a:p><a:pPr marL="171450" indent="-171450">
+      <a:buFont typeface="Wingdings"/><a:buChar char="${char}"/>
+      </a:pPr><a:r><a:rPr sz="1800"/><a:t>阅读培养方案，合理选课</a:t></a:r></a:p>`);
+    expect(html).toContain('✓');
+    expect(html).not.toContain('●');
+  });
+});
+
 // Wingdings 0xD8 is the rightwards arrowhead used by PowerPoint lists.
 describe('textSerializer · Wingdings arrowhead', () => {
   it.each(['Ø', '\uF0D8'])('maps %s to an arrowhead, not a victory hand', (char) => {

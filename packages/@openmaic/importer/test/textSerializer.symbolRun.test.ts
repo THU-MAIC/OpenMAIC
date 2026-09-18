@@ -1,6 +1,17 @@
 import { expect, it } from 'vitest';
 import { renderTxBodyHtml } from './helpers';
 
+it.each([
+  ['Wingdings', 'ü'],
+  ['Arial', '\uF0FC'],
+])('preserves checkmarks in %s symbol runs', (latin, text) => {
+  const html = renderTxBodyHtml(`<a:p><a:r><a:rPr sz="1800">
+    <a:latin typeface="${latin}"/><a:sym typeface="Wingdings"/>
+    </a:rPr><a:t>${text}</a:t></a:r></a:p>`);
+  expect(html).toContain('✓');
+  expect(html).not.toContain('●');
+});
+
 it('preserves ordinary text when a supplemental symbol font remains on the run', () => {
   const html = renderTxBodyHtml(`<a:p><a:r><a:rPr sz="3200">
     <a:latin typeface="仿宋"/><a:ea typeface="仿宋"/><a:sym typeface="Wingdings"/>
