@@ -25,6 +25,22 @@ describe('scene content model-output failures', () => {
     },
   );
 
+  it('rejects interactive HTML whose visible controls are backed by syntactically invalid inline JavaScript', async () => {
+    const aiCall: AICallFn = vi.fn(
+      async () =>
+        '<!DOCTYPE html><html><head></head><body><button id="go">Go</button><script>document.getElementById("go").addEventListener("click", () => { const broken = ; });</script></body></html>',
+    );
+    const failures: SceneContentFailure[] = [];
+
+    const content = await generateSceneContent(widgetOutline(), aiCall, {
+      onFailure: (failure) => failures.push(failure),
+    });
+
+    expect(content).toBeNull();
+    expect(failures).toEqual([{ code: 'invalid-model-output' }]);
+    expect(aiCall).toHaveBeenCalledTimes(1);
+  });
+
   it('does not classify capability gates, PBL failures, or provider exceptions', async () => {
     const gateFailures: SceneContentFailure[] = [];
     const gateAiCall: AICallFn = vi.fn();
