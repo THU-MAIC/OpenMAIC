@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { VideoProviderId } from '@/lib/media/types';
+import { ApiKeySecurityNotice } from './api-key-security-notice';
 
 interface VideoSettingsProps {
   selectedProviderId: VideoProviderId;
@@ -183,6 +184,7 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
           authoritative and not overridable here, so the editing inputs are hidden. */}
       {!isServerConfigured && (
         <>
+          <ApiKeySecurityNotice />
           {/* API Key + Test inline */}
           <div className="space-y-2">
             <Label>API Key</Label>
