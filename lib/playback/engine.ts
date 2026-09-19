@@ -50,6 +50,8 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { detectSpeechLang } from '@/lib/audio/browser-tts-preview';
 import { createLogger } from '@/lib/logger';
+import i18n from '@/lib/i18n/config';
+import { defaultLocale } from '@/lib/i18n';
 
 const log = createLogger('PlaybackEngine');
 
@@ -811,11 +813,12 @@ export class PlaybackEngine {
       }
     }
     if (!voiceFound) {
-      // No usable voice configured — detect text language so the browser
-      // auto-selects an appropriate voice. For Vietnamese additionally bind an
+      // No usable voice configured — detect CJK / Vietnamese text, otherwise
+      // follow the UI locale so the browser picks a voice in the lesson's
+      // language instead of always en-US. For Vietnamese additionally bind an
       // installed vi voice when one exists, since browsers otherwise fall back
       // to an English voice reading Vietnamese text.
-      utterance.lang = detectSpeechLang(chunkText);
+      utterance.lang = detectSpeechLang(chunkText, i18n.language || defaultLocale);
       if (utterance.lang === 'vi-VN') {
         const viVoice = voices.find((v) => v.lang?.toLowerCase().startsWith('vi'));
         if (viVoice) {

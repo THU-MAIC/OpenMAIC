@@ -31,14 +31,14 @@ const VI_DECIDER_RE = /[đĐơƠưƯ\u1EA0-\u1EF9]/;
 const VI_BROAD_RE = /[ăâêôĂÂÊÔ]/g;
 const VI_BROAD_THRESHOLD = 0.02;
 
-/** Language tag for a narration chunk: zh-CN, vi-VN, or en-US fallback. */
-export function detectSpeechLang(text: string): string {
-  if (!text) return 'en-US';
+/** Language tag for a narration chunk: zh-CN, vi-VN, or `fallback` (en-US by default). */
+export function detectSpeechLang(text: string, fallback: string = 'en-US'): string {
+  if (!text) return fallback;
   const cjkRatio = (text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length / text.length;
   if (cjkRatio > CJK_LANG_THRESHOLD) return 'zh-CN';
   if (VI_DECIDER_RE.test(text)) return 'vi-VN';
   if ((text.match(VI_BROAD_RE) || []).length / text.length > VI_BROAD_THRESHOLD) return 'vi-VN';
-  return 'en-US';
+  return fallback;
 }
 
 export function isBrowserTTSAbortError(error: unknown): boolean {

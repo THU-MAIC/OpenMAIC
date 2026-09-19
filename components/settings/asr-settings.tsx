@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/select';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
+import { defaultASRLanguage } from '@/lib/audio/asr-language';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
 import type { ASRProviderId } from '@/lib/audio/types';
 import { isCustomASRProvider } from '@/lib/audio/types';
@@ -106,7 +107,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Vendor-prefixed API without standard typings
         const recognition = new (SpeechRecognitionCtor as new () => any)();
-        recognition.lang = asrLanguage || 'zh-CN';
+        recognition.lang = asrLanguage || defaultASRLanguage('browser-native');
         recognition.onresult = (event: {
           results: {
             [index: number]: { [index: number]: { transcript: string } };
