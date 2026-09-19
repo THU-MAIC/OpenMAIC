@@ -45,7 +45,7 @@ import {
   isAbortError,
   withGenerationRetry,
   type GenerationRetryOptions,
-} from '@openmaic/generation';
+} from '@openmaic/generation/browser';
 
 const log = createLogger('SceneGenerator');
 
