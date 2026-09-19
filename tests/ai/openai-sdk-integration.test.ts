@@ -1,6 +1,6 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText, stepCountIs, streamText, tool } from 'ai';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { resolveThinkingProviderOptions, streamLLM } from '@/lib/ai/llm';
@@ -807,6 +807,78 @@ describe('OpenAI SDK integration', () => {
       expect(requestBodies).toHaveLength(2);
       const assistant = findAssistant(requestBodies[1]);
       expect(assistant?.reasoning_content).toBeUndefined();
+    });
+  });
+
+  describe('OpenCode Go session header', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    async function driveOneTurn() {
+      let sessionHeader: string | null | undefined;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        sessionHeader = new Headers(init?.headers).get('x-opencode-session');
+        const encoder = new TextEncoder();
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    id: 'chatcmpl-1',
+                    object: 'chat.completion.chunk',
+                    created: 1,
+                    model: 'deepseek-v4-pro',
+                    choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: null }],
+                  })}\n\n`,
+                ),
+              );
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    id: 'chatcmpl-1',
+                    object: 'chat.completion.chunk',
+                    created: 1,
+                    model: 'deepseek-v4-pro',
+                    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+                    usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+                  })}\n\n`,
+                ),
+              );
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+              controller.close();
+            },
+          }),
+          { headers: { 'content-type': 'text/event-stream' } },
+        );
+      }) as typeof globalThis.fetch;
+
+      try {
+        const { model } = getModel({
+          providerId: 'deepseek',
+          modelId: 'deepseek-v4-pro',
+          apiKey: 'sk-test',
+        });
+        const result = streamText({ model, prompt: 'hi', maxRetries: 0 });
+        await result.consumeStream();
+        return sessionHeader;
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+
+    it('sends x-opencode-session for the deepseek provider when configured', async () => {
+      vi.stubEnv('OPENCODE_GO_SESSION', 'session-123');
+
+      expect(await driveOneTurn()).toBe('session-123');
+    });
+
+    it('sends no session header without the opt-in', async () => {
+      vi.stubEnv('OPENCODE_GO_SESSION', '');
+
+      expect(await driveOneTurn()).toBeNull();
     });
   });
 });
