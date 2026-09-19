@@ -12,7 +12,7 @@ import { ServerProvidersInit } from '@/components/server-providers-init';
 import { StorageHealthNotice } from '@/components/storage-health-notice';
 import { AccessCodeGuard } from '@/components/access-code-guard';
 import { ProSwapWatcher } from '@/components/workbench/ProSwapWatcher';
-import i18n from '@/lib/i18n/config';
+import { loadLocaleResource } from '@/lib/i18n/load-resource';
 import { getRequestLocale } from '@/lib/i18n/request-locale';
 import { htmlLangFromLocale } from '@/lib/i18n/resolve-locale';
 
@@ -42,14 +42,11 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Resolve the locale in this Server Component without importing
+  // `lib/i18n/config` — that module calls `initReactI18next` / `createContext`
+  // and cannot run in the RSC graph.
   const locale = await getRequestLocale();
-  await i18n.changeLanguage(locale);
-  const bundle = i18n.getResourceBundle(locale, 'translation') as
-    | Record<string, unknown>
-    | undefined;
-  const initialResources = bundle
-    ? (JSON.parse(JSON.stringify(bundle)) as Record<string, unknown>)
-    : undefined;
+  const initialResources = await loadLocaleResource(locale);
 
   return (
     <html lang={htmlLangFromLocale(locale)} suppressHydrationWarning>
