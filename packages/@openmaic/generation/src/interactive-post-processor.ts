@@ -17,9 +17,13 @@ export function postProcessInteractiveHtml(html: string): string {
   // Convert LaTeX delimiters while protecting script tags
   let processed = convertLatexDelimiters(html);
 
-  // Inject KaTeX resources if not already present
-  if (!processed.toLowerCase().includes('katex')) {
-    processed = injectKatex(processed);
+  // Guard on auto-render / renderMathInElement, not the bare word "katex".
+  // Models often ship katex.min.js/css themselves; that used to skip the whole
+  // injection, so \(…\) stayed raw. If only the core is present, inject the
+  // contrib script + observer (after the page's own core).
+  const lower = processed.toLowerCase();
+  if (!lower.includes('auto-render') && !lower.includes('rendermathinelement')) {
+    processed = injectKatex(processed, { includeCore: !lower.includes('katex') });
   }
 
   return processed;
@@ -66,11 +70,17 @@ function convertLatexDelimiters(html: string): string {
 /**
  * Inject KaTeX CSS, JS, auto-render, and MutationObserver before </head>.
  * Falls back to appending at end if </head> is not found.
+ *
+ * With `includeCore: false` (the page already loads KaTeX itself) only
+ * auto-render + the observer are injected, before </body> so the page's own
+ * core script — wherever it sits — has loaded first (auto-render needs the
+ * `katex` global at load time).
  */
-function injectKatex(html: string): string {
-  const katexInjection = `
+function injectKatex(html: string, { includeCore = true }: { includeCore?: boolean } = {}): string {
+  const coreInjection = `
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>`;
+  const katexInjection = `${includeCore ? coreInjection : ''}
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -119,6 +129,12 @@ document.addEventListener("DOMContentLoaded", function() {
         characterData: true
     });
 
+    // Labels filled by the page's own init() (same tick as DOMContentLoaded or
+    // right after) land before the observer exists; render once more after a
+    // short settle and again on window load so the first paint is not raw.
+    setTimeout(safeRender, 300);
+    window.addEventListener("load", function() { safeRender(); });
+
     setInterval(() => {
         const text = document.body.innerText;
         if (text.includes('\\\\(') || text.includes('$$')) {
@@ -131,7 +147,7 @@ document.addEventListener("DOMContentLoaded", function() {
   // Use indexOf + substring instead of String.replace() because the
   // katexInjection string contains '$' characters that .replace() would
   // interpret as special substitution patterns ($$ → $, $' → post-match text).
-  const headCloseIdx = html.indexOf('</head>');
+  const headCloseIdx = includeCore ? html.indexOf('</head>') : -1;
   if (headCloseIdx !== -1) {
     return (
       html.substring(0, headCloseIdx) +
