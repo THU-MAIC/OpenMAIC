@@ -36,7 +36,7 @@ import {
   RenderRejectedError,
   makeProjectDir as defaultMakeProjectDir,
 } from './render-coordinator.js';
-import { InProcessExecutor } from './render-executor.js';
+import { InProcessExecutor, type RenderExecutor } from './render-executor.js';
 import { InvalidProjectError, unzipProject as defaultUnzipProject } from './unzip.js';
 import { hardenProjectDirectory } from './project-html-hardening.js';
 import { capBodyStream } from './capped-stream.js';
@@ -487,6 +487,12 @@ export function createApp(deps: AppDeps): Hono {
       framesRendered: job.framesRendered,
       totalFrames: job.totalFrames,
       metrics: job.metrics,
+      resources: job.resources && {
+        published: job.resources.published,
+        cleanupVerified: job.resources.cleanupVerified,
+        reservationReturned: job.resources.reservationReturned,
+        admissionClosed: job.resources.admissionClosed,
+      },
       error: job.error,
       done: isTerminal(job.status),
     });
@@ -529,26 +535,29 @@ export function createApp(deps: AppDeps): Hono {
 }
 
 /** Wire the production collaborators and start the server (skipped under tests). */
-async function main(): Promise<void> {
+export async function startService(resourceExecutor?: RenderExecutor): Promise<void> {
   const artifacts = new LocalDiskArtifactStore();
   validateResourceProfileStartup(config.resourceProfile);
   const runtimeVersions = await collectRuntimeVersions();
-  const executor = new InProcessExecutor({
-    runtimeVersions,
-    ...(config.chunkExecutionEnabled
-      ? {
-          chunkExecution: {
-            chunkCount: config.chunkCount,
-            chunkWorkers: config.chunkWorkers,
-            maxParallelChunks: config.maxParallelChunks,
-            ...(config.chunkSizeFrames > 0 ? { chunkSizeFrames: config.chunkSizeFrames } : {}),
-            ...(config.targetChunkFrames > 0
-              ? { targetChunkFrames: config.targetChunkFrames }
-              : {}),
-          },
-        }
-      : {}),
-  });
+  if (resourceExecutor) runtimeVersions.producer = '0.8.37 (OpenMAIC resource patch)';
+  const executor =
+    resourceExecutor ??
+    new InProcessExecutor({
+      runtimeVersions,
+      ...(config.chunkExecutionEnabled
+        ? {
+            chunkExecution: {
+              chunkCount: config.chunkCount,
+              chunkWorkers: config.chunkWorkers,
+              maxParallelChunks: config.maxParallelChunks,
+              ...(config.chunkSizeFrames > 0 ? { chunkSizeFrames: config.chunkSizeFrames } : {}),
+              ...(config.targetChunkFrames > 0
+                ? { targetChunkFrames: config.targetChunkFrames }
+                : {}),
+            },
+          }
+        : {}),
+    });
   // Assigned after `jobs` so its reap callback can close over the coordinator.
   // eslint-disable-next-line prefer-const
   let coordinator: RenderCoordinator;
@@ -599,5 +608,5 @@ async function main(): Promise<void> {
 
 // Only auto-start when run as the entrypoint, not when imported by tests.
 if (process.env.RENDER_SERVICE_NO_LISTEN !== 'true') {
-  await main();
+  await startService();
 }

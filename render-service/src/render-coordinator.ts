@@ -21,13 +21,14 @@ import type {
   RenderFailedFailure,
   RenderJobRecord,
   RenderOptions,
+  RenderResourceSettlement,
 } from './types.js';
 
 /**
  * Machine-readable admission-rejection code, surfaced as `reason` on HTTP 429
  * responses so clients can react to backpressure without parsing prose.
  */
-export type RenderRejectionReason = 'queue_full' | 'per_identity_limit';
+export type RenderRejectionReason = 'queue_full' | 'per_identity_limit' | 'resource_unavailable';
 
 /**
  * Thrown when admission control rejects a submission (mapped to HTTP 429).
@@ -75,6 +76,7 @@ export interface RenderCoordinatorOptions {
 
 export class RenderCoordinator {
   private running = 0;
+  private readonly retainedProjects = new Set<string>();
   private readonly queue: QueuedJob[] = [];
   private readonly controllers = new Map<string, AbortController>();
   private readonly activeByIdentity = new Map<string, number>();
@@ -139,7 +141,7 @@ export class RenderCoordinator {
    * them would leak the list of active users' addresses.
    */
   get accepting(): boolean {
-    return this.inSystem < this.maxQueue;
+    return this.executor.accepting?.() !== false && this.inSystem < this.maxQueue;
   }
 
   /**
@@ -149,6 +151,9 @@ export class RenderCoordinator {
    * holds `maxJobsPerUser` active jobs.
    */
   reserve(identity: string): Reservation {
+    if (this.executor.accepting?.() === false) {
+      throw new RenderRejectedError('The resource owner is unavailable.', 'resource_unavailable');
+    }
     if (this.inSystem >= this.maxQueue) {
       throw new RenderRejectedError('The render queue is full; try again shortly.', 'queue_full');
     }
@@ -188,6 +193,10 @@ export class RenderCoordinator {
   ): Promise<string> {
     if (reservation.consumed) throw new RenderRejectedError('Reservation already used');
 
+    if (this.executor.accepting?.() === false) {
+      this.release(reservation);
+      throw new RenderRejectedError('The resource owner is unavailable.', 'resource_unavailable');
+    }
     reservation.consumed = true;
     this.pending = Math.max(0, this.pending - 1);
 
@@ -317,6 +326,7 @@ export class RenderCoordinator {
         error: result.failure.message,
         ...(result.performance ? { performance: result.performance } : {}),
         ...(result.metrics ? { metrics: result.metrics } : {}),
+        ...(result.resources ? { resources: result.resources } : {}),
       });
     } finally {
       await this.cleanupProject(projectDir);
@@ -326,8 +336,15 @@ export class RenderCoordinator {
   private async run({ record, options, abort }: QueuedJob): Promise<void> {
     const { id, projectDir } = record;
     const outputPath = join(projectDir, 'output.mp4');
+    let resources: RenderResourceSettlement | undefined;
     try {
       const result = await this.runWithExecutionSlot(async () => {
+        if (this.executor.accepting?.() === false) {
+          return {
+            status: 'failed',
+            failure: { code: 'execution_failed', message: 'The resource owner is unavailable.' },
+          } satisfies RenderExecutionResult;
+        }
         // Inside the slot: the wait measured here is exactly the time this job
         // spent queued behind other renders, which is the signal a busy
         // deployment needs and the one nothing else exposes.
@@ -362,6 +379,13 @@ export class RenderCoordinator {
         });
       }, abort.signal);
 
+      resources = result.resources;
+      if (
+        result.resources &&
+        (!result.resources.cleanupVerified || !result.resources.reservationReturned)
+      ) {
+        this.retainedProjects.add(projectDir);
+      }
       if (result.status !== 'succeeded') {
         await this.finishNonSuccess(id, projectDir, result);
         return;
@@ -373,6 +397,7 @@ export class RenderCoordinator {
           failure: { code: 'cancelled', message: 'Render cancelled' },
           ...(result.performance ? { performance: result.performance } : {}),
           ...(result.metrics ? { metrics: result.metrics } : {}),
+          ...(result.resources ? { resources: result.resources } : {}),
         });
         return;
       }
@@ -385,6 +410,7 @@ export class RenderCoordinator {
         outputPath,
         ...(result.performance ? { performance: result.performance } : {}),
         ...(result.metrics ? { metrics: result.metrics } : {}),
+        ...(result.resources ? { resources: result.resources } : {}),
       });
       // Emitted last: until the terminal write lands, "succeeded" is not yet
       // true, and the catch below would drop the artifact this event describes.
@@ -395,6 +421,7 @@ export class RenderCoordinator {
         await this.finishNonSuccess(id, projectDir, {
           status: 'cancelled',
           failure: { code: 'cancelled', message: 'Render cancelled' },
+          resources,
         });
         return;
       }
@@ -402,7 +429,7 @@ export class RenderCoordinator {
         code: 'execution_failed',
         message: error instanceof Error ? error.message : String(error),
       };
-      await this.finishNonSuccess(id, projectDir, { status: 'failed', failure });
+      await this.finishNonSuccess(id, projectDir, { status: 'failed', failure, resources });
     } finally {
       this.controllers.delete(id);
       if (record.userId) this.decrementIdentity(record.userId);
@@ -413,6 +440,8 @@ export class RenderCoordinator {
 
   /** Best-effort recursive delete of a job's unzipped project dir. */
   async cleanupProject(dir: string): Promise<void> {
+    // Quarantined objects outlive HTTP/TTL bookkeeping and belong to the platform.
+    if (this.retainedProjects.has(dir)) return;
     await Promise.all([
       rm(dir, { recursive: true, force: true }).catch(() => {}),
       rm(planPathForProject(dir), { recursive: true, force: true }).catch(() => {}),

@@ -1,0 +1,26 @@
+tree e4a2b9faa9301a30f04b00409db3be03f2b176d7
+parent cd975d8c2805acc78542a68433271f771352de23
+parent 7a5d2bf769181b13cabc7c79b2db189dd37351c3
+author Miguel Ángel <miguel.sierra@heygen.com> 1789319406 -0400
+committer GitHub <noreply@github.com> 1789319406 -0400
+gpgsig -----BEGIN PGP SIGNATURE-----
+ 
+ wsFcBAABCAAQBQJqptjuCRC1aQ7uu5UhlAAA3lkQAJi6BaalGvAAcS8fOk9Dg37m
+ lN+DdhCnhA69S+GIsvJu2Cg9S93jH6HhlgkUnAho/XAwbQTwRWKx5y7jjKwwt1ru
+ 9N792eMTvgZFM0xAbiSNvMzlH8FeadZFCez9+zOuZv6pOzzBHCAxR+af31DXGpi7
+ EezNxpqnk0AcNMQFPhuBlQsEp4OxDLLo6CS8hX9GdnxgrubJhxn8yfBgiPNW7avf
+ uL3ISxC4/EIj5v/BYbtB/jw9mQgPO6z4dj0TNrLtGvd+ZehTYrenWbM14oTFf2tv
+ prF+qWwM8bwXE3GthkF4D3e0cie8TPjy6c0IgRF2vRLoxvQyn6gDB8duGX5/rP6J
+ XxU6QksiAUgF2cUSbRefwN5LhTZ7spTbhNN71YD3vltMK8dsUzoURdRGcDtO1XnP
+ OZnWBzMbk8TiFNpej7Kvki/H4Pt3vruShzlT32BRSHMe9opTCx/UxTWldJEctH9W
+ qVJdBUGGzlEL4x5ieVgMJoXy1sht4uFhBfcM2P8x7s/33KJv2jNg/FN3qiLRZ+uF
+ 6ysB15ubilJaFaDzC+79hwRb8IQ+ZLVVHg5JBEe2J5gMbFs/Ozy/pkEunqIjm502
+ 1AQ0shALZacYx57bFYZKSv+B5bHKC85Qae/9+0MXK++nRA8wJs/hHez5K6yD9VAF
+ hay4qqQNC08EAv4/0/yn
+ =Tm3S
+ -----END PGP SIGNATURE-----
+ 
+
+Merge pull request #3925 from heygen-com/release/v0.8.37
+
+chore: release v0.8.37

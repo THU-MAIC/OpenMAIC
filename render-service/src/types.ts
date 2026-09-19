@@ -104,23 +104,36 @@ export interface RenderExecutionRequest {
   };
 }
 
+/** Producer-owned settlement. A service slot is not the resource reservation. */
+export interface RenderResourceSettlement {
+  published: boolean | 'unknown';
+  cleanupVerified: boolean;
+  reservationReturned: boolean;
+  admissionClosed: boolean;
+  /** Exact JSON-safe Producer accounting/pressure evidence, retained on failure too. */
+  details: Record<string, unknown>;
+}
+
 export type RenderExecutionResult =
   | {
       status: 'succeeded';
       performance?: RenderPerformanceSummary;
       metrics?: RenderExecutionMetrics;
+      resources?: RenderResourceSettlement;
     }
   | {
       status: 'cancelled';
       failure: RenderCancelledFailure;
       performance?: RenderPerformanceSummary;
       metrics?: RenderExecutionMetrics;
+      resources?: RenderResourceSettlement;
     }
   | {
       status: 'failed';
       failure: RenderFailedFailure;
       performance?: RenderPerformanceSummary;
       metrics?: RenderExecutionMetrics;
+      resources?: RenderResourceSettlement;
     };
 
 /**
@@ -148,6 +161,7 @@ export interface RenderJobRecord {
   failure?: RenderFailure;
   /** Executor-independent diagnostics for completed or failed attempts. */
   performance?: RenderPerformanceSummary;
+  resources?: RenderResourceSettlement;
 }
 
 export function isTerminal(status: RenderJobStatus): boolean {

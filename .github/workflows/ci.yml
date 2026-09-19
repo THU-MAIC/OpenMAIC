@@ -222,6 +222,27 @@ jobs:
           cache: npm
           cache-dependency-path: render-service/package-lock.json
 
+      - name: Read fixed Producer source identity
+        id: producer-source
+        run: |
+          node --input-type=module - <<'JS'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const { revision } = JSON.parse(readFileSync('render-service/producer-patch/source.json', 'utf8'));
+          if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error('Invalid source revision');
+          appendFileSync(process.env.GITHUB_OUTPUT, `revision=${revision}\n`);
+          JS
+
+      - uses: actions/checkout@v5
+        with:
+          repository: heygen-com/hyperframes
+          ref: ${{ steps.producer-source.outputs.revision }}
+          path: .producer-source
+          persist-credentials: false
+          lfs: false
+
+      - name: Verify fixed Producer source patch (no install or native execution)
+        run: node render-service/scripts/build-resource-producer.mjs --check "$GITHUB_WORKSPACE/.producer-source"
+
       - name: Install
         working-directory: render-service
         run: npm ci
@@ -233,6 +254,24 @@ jobs:
       - name: Unit Tests
         working-directory: render-service
         run: npm test
+
+      - name: Patched Producer owner tests (no native execution)
+        run: |
+          git -C .producer-source apply "$GITHUB_WORKSPACE/render-service/producer-patch/producer.patch"
+          ln -s "$GITHUB_WORKSPACE/render-service/node_modules" .producer-source/node_modules
+          cd .producer-source
+          ../render-service/node_modules/.bin/vitest run --config ../render-service/producer-patch/vitest.config.mjs \
+            packages/engine/src/utils/temporaryCleanup.test.ts \
+            packages/producer/src/resources/admission.test.ts \
+            packages/producer/src/resources/linux.test.ts \
+            packages/producer/src/resources/supervisor.test.ts \
+            packages/producer/src/resources/installed-linux-evidence.test.ts \
+            packages/producer/src/services/render/artifactTransaction.test.ts \
+            packages/producer/src/services/render/renderExecutionContext.test.ts
+          ../render-service/node_modules/.bin/vitest run --config ../render-service/producer-patch/vitest.config.mjs \
+            packages/engine/src/services/browserManager.test.ts \
+            packages/engine/src/utils/urlDownloader.test.ts \
+            -t "keeps supervised profiles|keeps one visible inode"
 
       - name: Build container image
         run: docker build --tag openmaic-render-service:ci render-service

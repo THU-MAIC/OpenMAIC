@@ -39,6 +39,8 @@ JSON body `{ error, reason }` where `reason` is one of:
   running jobs) is exhausted; back off and retry.
 - `per_identity_limit` — this client identity already holds
   `RENDER_MAX_JOBS_PER_USER` active renders.
+- `resource_unavailable` — the opt-in resource owner is unavailable or admission
+  is closed; operator investigation is required before resuming submissions.
 
 `POST /preview` also answers `429` with `{ error, reason }`, where `reason` is
 one of:
@@ -287,3 +289,17 @@ chunk bytes and sidecar hashes before ordered assembly, and reuses only a valid
 result for an idempotent retry. The default remains the in-process executor.
 
 [`@hyperframes/producer`]: https://www.npmjs.com/package/@hyperframes/producer
+
+### Experimental per-task resource budgets
+
+The opt-in resource executor combines Producer CPU/memory admission with native
+per-task hard limits and verified reservation/artifact settlement. It is
+maintained as an OpenMAIC-owned fixed source patch, consumed through the existing
+`RenderExecutor` seam. See [dependency delivery, startup and validation limits](producer-patch/README.md).
+The standard service and Docker entrypoint keep their current dependency and
+privilege model. The shipped Docker image does not support `start:resources`;
+use the separately provisioned Linux installation described above.
+Resource-mode progress stays at `preparing` until the terminal result; intermediate
+frame counts and capture metrics are not reported. Do not interpret unchanged
+progress alone as a hung job; the configured deadline still applies.
+Deployment qualification remains specific to the installed platform and workload.

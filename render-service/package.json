@@ -11,7 +11,8 @@
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "start:resources": "tsx src/resource-main.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
