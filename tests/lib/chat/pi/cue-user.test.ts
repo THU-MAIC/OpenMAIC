@@ -16,13 +16,20 @@ describe('Pi chat cue_user tool', () => {
       },
     });
 
-    const first = await tool.execute('cue-1', { prompt: 'Any follow-up?' });
+    const first = await tool.execute('cue-1', {
+      prompt: ' Any follow-up? ',
+      options: [' Show an example ', 'Let me practice', 'Let me practice'],
+    });
     const second = await tool.execute('cue-2', { prompt: 'Again?' });
 
     expect(events).toEqual([
       {
         type: 'cue_user',
-        data: { fromAgentId: 'default-1', prompt: 'Any follow-up?' },
+        data: {
+          fromAgentId: 'default-1',
+          prompt: 'Any follow-up?',
+          options: ['Show an example', 'Let me practice'],
+        },
       },
     ]);
     expect(first.details).toEqual({ emitted: true });
