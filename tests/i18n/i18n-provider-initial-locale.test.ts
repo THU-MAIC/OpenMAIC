@@ -14,11 +14,11 @@ async function renderGreeting(locale: 'en-US' | 'zh-CN') {
   await i18n.changeLanguage(locale);
   const resources = i18n.getResourceBundle(locale, 'translation') as Record<string, unknown>;
   return renderToStaticMarkup(
-    createElement(
-      I18nProvider,
-      { initialLocale: locale, initialResources: resources },
-      createElement(Greeting),
-    ),
+    createElement(I18nProvider, {
+      initialLocale: locale,
+      initialResources: resources,
+      children: createElement(Greeting),
+    }),
   );
 }
 
