@@ -69,7 +69,7 @@ const INTERACTIVE_FIELD_LIMIT = 512;
 const INTERACTIVE_ATTRIBUTE_LIMIT = 64;
 const INTERACTIVE_TEXT_LIMIT = 8_000;
 const INTERACTIVE_MARKUP_LIMIT = 12_000;
-const INTERACTIVE_PACKET_LIMIT = 24_000;
+export const INTERACTIVE_PACKET_LIMIT = 24_000;
 const INTERACTIVE_HINT_LIMIT = 240;
 const INTERACTIVE_HINT_SEMANTIC_LIMIT = 200;
 const STABLE_ID_SELECTOR = /^#[A-Za-z][A-Za-z0-9_-]{0,126}$/u;
@@ -463,7 +463,7 @@ function compactInteractiveSourceHtml(sourceHtml: string): string {
   return serializeSourceHtml(compactDocument, { treeAdapter });
 }
 
-function codePointLength(value: string): number {
+export function codePointLength(value: string): number {
   return Array.from(value).length;
 }
 
