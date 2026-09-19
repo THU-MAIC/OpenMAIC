@@ -43,7 +43,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     if [ -n "$npm_registry" ]; then \
       pnpm config set registry "$npm_registry"; \
     fi && \
-    pnpm install --frozen-lockfile
+    pnpm install --frozen-lockfile --ignore-scripts
 
 # ---- Stage 3: Builder ----
 FROM base AS builder
@@ -78,7 +78,15 @@ ENV NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=$NEXT_PUBLIC_PRO_WORKBENCH_ENABLED
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages ./packages
 COPY . .
-COPY --from=deps /app/public/vendor ./public/vendor
+
+# Build the workspace packages (rollup + tsc) here, not inside `pnpm install`.
+# The importer's rollup+terser pass peaked above 1 GiB and OOMed small Docker
+# VMs while the install was still alive (#1526). This is the same chain the
+# root `postinstall` runs locally, so local dev is unchanged.
+# Cap V8 old space so a runaway build fails with a clear JS heap error instead
+# of letting the kernel OOM the whole Docker VM. (Node sizes its default heap
+# from the cgroup limit; here that was ~1300 MiB.)
+RUN NODE_OPTIONS=--max-old-space-size=1024 pnpm run build:packages
 
 RUN pnpm build
 
