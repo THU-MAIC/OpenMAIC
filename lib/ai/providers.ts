@@ -56,6 +56,11 @@ import {
 } from './thinking-config';
 import { createLogger } from '@/lib/logger';
 import { normalizeAzureBaseUrl } from './azure';
+import {
+  isGoogleOpenAICompatUrl,
+  normalizeGoogleToolCallStream,
+  restoreGoogleThoughtSignatures,
+} from './google-openai-compat';
 // NOTE: Do NOT import thinking-context.ts here — it uses node:async_hooks
 // which is server-only, and this file is also used on the client via
 // settings.ts. The thinking context is read from globalThis instead
@@ -2327,6 +2332,11 @@ export function getModel(config: ModelConfig): ModelWithInfo {
               /* leave body as-is */
             }
           }
+          // Gemini's OpenAI-compatible endpoint omits `tool_calls[].index` in
+          // stream deltas (the chat chunk schema requires it) and expects its
+          // thought signature back on the next request; see google-openai-compat.ts.
+          const googleCompat = isGoogleOpenAICompatUrl(effectiveBaseUrl);
+          if (googleCompat) init = restoreGoogleThoughtSignatures(init);
           const response = useStreamingChatCompat
             ? await fetchCustomOpenAIChat(url, init, transportFetch)
             : await transportFetch(url, init);
@@ -2343,11 +2353,15 @@ export function getModel(config: ModelConfig): ModelWithInfo {
               /* ignore request-body inspection failure */
             }
           }
-          const normalizedReasoningResponse = streaming
+          const reasoningResponse = streaming
             ? wrapResponseWithReasoning(response)
             : providerId === 'kimi' && config.modelId === 'kimi-k3'
               ? await wrapJsonResponseWithReasoning(response)
               : response;
+          const normalizedReasoningResponse =
+            googleCompat && streaming
+              ? normalizeGoogleToolCallStream(reasoningResponse)
+              : reasoningResponse;
 
           if (providerId !== 'lemonade') {
             return normalizedReasoningResponse;
