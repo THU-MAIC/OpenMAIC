@@ -19,6 +19,7 @@ vi.mock('@ai-sdk/azure', () => ({
   createAzure: azureMock.createAzure,
 }));
 
+import { forgetGoogleThoughtSignatures } from '@/lib/ai/google-openai-compat';
 import { getModel, getModelInfo, getProvider, LLM_FETCH_TIMEOUT_MS } from '@/lib/ai/providers';
 import { normalizeAzureBaseUrl } from '@/lib/ai/azure';
 import type { ProviderId } from '@/lib/types/provider';
@@ -747,6 +748,138 @@ describe('OpenAI provider defaults', () => {
 
       expect(normalized).toContain('<think>Inspect the evidence');
       expect(normalized).not.toContain('reasoning_content');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('injects tool_call index and restores Gemini thought signatures on the Google compat host', async () => {
+    forgetGoogleThoughtSignatures();
+    const originalFetch = globalThis.fetch;
+    const measured = {
+      choices: [
+        {
+          delta: {
+            role: 'assistant',
+            tool_calls: [
+              {
+                extra_content: { google: { thought_signature: 'sig-297140' } },
+                function: { arguments: '{}', name: 'read' },
+                id: 'call_297140',
+                type: 'function',
+              },
+            ],
+          },
+          index: 0,
+        },
+      ],
+      model: 'gemini-3.8-flash',
+      object: 'chat.completion.chunk',
+    };
+    const fetchMock = vi.fn(async () => {
+      return new Response(`data: ${JSON.stringify(measured)}\n\ndata: [DONE]\n\n`, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    });
+
+    try {
+      globalThis.fetch = fetchMock as typeof fetch;
+      getModel({
+        providerId: 'openai',
+        modelId: 'gemini-3.8-flash',
+        apiKey: 'sk-test',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      });
+      const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+        | { fetch?: typeof fetch }
+        | undefined;
+
+      const response = await options?.fetch?.(
+        'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+        {
+          method: 'POST',
+          body: JSON.stringify({ stream: true }),
+        },
+      );
+      const normalized = await response?.text();
+      const dataLine = normalized?.split('\n').find((line) => line.startsWith('data: {'));
+      expect(dataLine).toBeTruthy();
+      const parsed = JSON.parse(dataLine!.slice(6));
+      expect(parsed.choices[0].delta.tool_calls[0].index).toBe(0);
+
+      await options?.fetch?.(
+        'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            stream: true,
+            messages: [
+              {
+                role: 'assistant',
+                tool_calls: [
+                  {
+                    id: 'call_297140',
+                    type: 'function',
+                    function: { name: 'read', arguments: '{}' },
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+      );
+      const sent = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
+      expect(sent.messages[0].tool_calls[0].extra_content).toEqual({
+        google: { thought_signature: 'sig-297140' },
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+      forgetGoogleThoughtSignatures();
+    }
+  });
+
+  it('leaves streamed tool_calls unchanged for non-Google OpenAI-compatible URLs', async () => {
+    const originalFetch = globalThis.fetch;
+    const chunk = {
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              { id: 'call_1', type: 'function', function: { name: 'read', arguments: '{}' } },
+            ],
+          },
+          index: 0,
+        },
+      ],
+    };
+    const fetchMock = vi.fn(async () => {
+      return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    });
+
+    try {
+      globalThis.fetch = fetchMock as typeof fetch;
+      getModel({
+        providerId: 'openai',
+        modelId: 'gemini-3.8-flash',
+        apiKey: 'sk-test',
+        baseUrl: 'https://gateway.example/v1',
+      });
+      const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+        | { fetch?: typeof fetch }
+        | undefined;
+      const response = await options?.fetch?.('https://gateway.example/v1/chat/completions', {
+        method: 'POST',
+        body: JSON.stringify({ stream: true }),
+      });
+      const normalized = await response?.text();
+      const dataLine = normalized?.split('\n').find((line) => line.startsWith('data: {'));
+      const parsed = JSON.parse(dataLine!.slice(6));
+      expect(parsed.choices[0].delta.tool_calls[0].index).toBeUndefined();
+      expect(parsed.choices[0].delta.tool_calls[0].id).toBe('call_1');
     } finally {
       globalThis.fetch = originalFetch;
     }
