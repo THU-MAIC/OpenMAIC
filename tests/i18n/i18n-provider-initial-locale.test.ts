@@ -1,4 +1,4 @@
-import { createElement } from 'react';
+import { createElement, type ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it } from 'vitest';
 import { I18nProvider, useI18n } from '@/lib/hooks/use-i18n';
@@ -14,11 +14,11 @@ async function renderGreeting(locale: 'en-US' | 'zh-CN') {
   await i18n.changeLanguage(locale);
   const resources = i18n.getResourceBundle(locale, 'translation') as Record<string, unknown>;
   return renderToStaticMarkup(
-    createElement(I18nProvider, {
-      initialLocale: locale,
-      initialResources: resources,
-      children: createElement(Greeting),
-    }),
+    createElement(
+      I18nProvider,
+      { initialLocale: locale, initialResources: resources } as ComponentProps<typeof I18nProvider>,
+      createElement(Greeting),
+    ),
   );
 }
 
