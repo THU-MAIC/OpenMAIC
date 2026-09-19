@@ -12,6 +12,9 @@ import { ServerProvidersInit } from '@/components/server-providers-init';
 import { StorageHealthNotice } from '@/components/storage-health-notice';
 import { AccessCodeGuard } from '@/components/access-code-guard';
 import { ProSwapWatcher } from '@/components/workbench/ProSwapWatcher';
+import { loadLocaleResource } from '@/lib/i18n/load-resource';
+import { getRequestLocale } from '@/lib/i18n/request-locale';
+import { htmlLangFromLocale } from '@/lib/i18n/resolve-locale';
 
 // The UI font is loaded from @fontsource's stylesheet rather than next/font,
 // because only the stylesheet carries the per-subset `unicode-range`
@@ -34,19 +37,25 @@ export const metadata: Metadata = {
     'The open-source AI interactive classroom. Upload a PDF to instantly generate an immersive, multi-agent learning experience.',
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Resolve the locale in this Server Component without importing
+  // `lib/i18n/config` — that module calls `initReactI18next` / `createContext`
+  // and cannot run in the RSC graph.
+  const locale = await getRequestLocale();
+  const initialResources = await loadLocaleResource(locale);
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={htmlLangFromLocale(locale)} suppressHydrationWarning>
       <body
         className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}
         suppressHydrationWarning
       >
         <ThemeProvider>
-          <I18nProvider>
+          <I18nProvider initialLocale={locale} initialResources={initialResources}>
             <ServerProvidersInit />
             <ProSwapWatcher />
             <AccessCodeGuard>{children}</AccessCodeGuard>
