@@ -12,6 +12,9 @@ import { ServerProvidersInit } from '@/components/server-providers-init';
 import { StorageHealthNotice } from '@/components/storage-health-notice';
 import { AccessCodeGuard } from '@/components/access-code-guard';
 import { ProSwapWatcher } from '@/components/workbench/ProSwapWatcher';
+import i18n from '@/lib/i18n/config';
+import { getRequestLocale } from '@/lib/i18n/request-locale';
+import { htmlLangFromLocale } from '@/lib/i18n/resolve-locale';
 
 // The UI font is loaded from @fontsource's stylesheet rather than next/font,
 // because only the stylesheet carries the per-subset `unicode-range`
@@ -34,19 +37,28 @@ export const metadata: Metadata = {
     'The open-source AI interactive classroom. Upload a PDF to instantly generate an immersive, multi-agent learning experience.',
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const locale = await getRequestLocale();
+  await i18n.changeLanguage(locale);
+  const bundle = i18n.getResourceBundle(locale, 'translation') as
+    | Record<string, unknown>
+    | undefined;
+  const initialResources = bundle
+    ? (JSON.parse(JSON.stringify(bundle)) as Record<string, unknown>)
+    : undefined;
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={htmlLangFromLocale(locale)} suppressHydrationWarning>
       <body
         className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}
         suppressHydrationWarning
       >
         <ThemeProvider>
-          <I18nProvider>
+          <I18nProvider initialLocale={locale} initialResources={initialResources}>
             <ServerProvidersInit />
             <ProSwapWatcher />
             <AccessCodeGuard>{children}</AccessCodeGuard>

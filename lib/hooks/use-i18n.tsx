@@ -1,22 +1,13 @@
 'use client';
 
-import { createContext, useContext, useEffect, ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
-import { type Locale, defaultLocale, supportedLocales } from '@/lib/i18n';
-import '@/lib/i18n/config';
-
-const LOCALE_STORAGE_KEY = 'locale';
-
-/** Match a browser language code (e.g. 'en', 'zh-TW') to a supported locale */
-function resolveLocale(lang: string): Locale {
-  // Exact match
-  const exact = supportedLocales.find((l) => l.code === lang);
-  if (exact) return exact.code;
-  // Prefix match: 'en' → 'en-US', 'zh' → 'zh-CN'
-  const prefix = lang.split('-')[0].toLowerCase();
-  const match = supportedLocales.find((l) => l.code.toLowerCase().startsWith(prefix));
-  return match?.code ?? defaultLocale;
-}
+import { createContext, useContext, useState, ReactNode } from 'react';
+import { type Locale, defaultLocale } from '@/lib/i18n/types';
+import {
+  LOCALE_STORAGE_KEY,
+  htmlLangFromLocale,
+  serializeLocaleCookie,
+} from '@/lib/i18n/resolve-locale';
+import i18n from '@/lib/i18n/config';
 
 type I18nContextType = {
   locale: Locale;
@@ -26,31 +17,47 @@ type I18nContextType = {
 
 const I18nContext = createContext<I18nContextType | undefined>(undefined);
 
-export function I18nProvider({ children }: { children: ReactNode }) {
-  const { t, i18n } = useTranslation();
+type I18nProviderProps = {
+  children: ReactNode;
+  /** Server-chosen locale. First paint must not re-detect from the browser. */
+  initialLocale?: Locale;
+  /** Resource bundle for `initialLocale`, so hydration can resolve `t()` synchronously. */
+  initialResources?: Record<string, unknown>;
+};
 
-  const locale = (i18n.language || defaultLocale) as Locale;
+function applyInitialLocale(locale: Locale, resources?: Record<string, unknown>) {
+  if (resources && !i18n.hasResourceBundle(locale, 'translation')) {
+    i18n.addResourceBundle(locale, 'translation', resources, true, true);
+  }
+  if (i18n.language !== locale) {
+    void i18n.changeLanguage(locale);
+  }
+}
 
-  // Detect language after hydration to avoid SSR mismatch.
-  // i18next handles fallback automatically: if the detected language
-  // has no matching JSON file, it falls back to fallbackLng.
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
-      const raw = stored || navigator.language || defaultLocale;
-      const target = resolveLocale(raw);
-      if (target !== i18n.language) i18n.changeLanguage(target);
-    } catch {
-      // localStorage unavailable, keep default
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+export function I18nProvider({
+  children,
+  initialLocale = defaultLocale,
+  initialResources,
+}: I18nProviderProps) {
+  const [locale, setLocaleState] = useState<Locale>(() => {
+    applyInitialLocale(initialLocale, initialResources);
+    return initialLocale;
+  });
+
+  const t = (key: string, options?: Record<string, unknown>) =>
+    i18n.t(key, { ...(options ?? {}), lng: locale }) as string;
 
   const setLocale = (newLocale: Locale) => {
-    i18n.changeLanguage(newLocale);
-    try {
-      localStorage.setItem(LOCALE_STORAGE_KEY, newLocale);
-    } catch {
-      // localStorage unavailable
+    applyInitialLocale(newLocale);
+    setLocaleState(newLocale);
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = htmlLangFromLocale(newLocale);
+      document.cookie = serializeLocaleCookie(newLocale);
+      try {
+        localStorage.setItem(LOCALE_STORAGE_KEY, newLocale);
+      } catch {
+        // localStorage unavailable
+      }
     }
   };
 
