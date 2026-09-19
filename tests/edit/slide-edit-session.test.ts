@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultSlide, createDefaultTextElement } from '@/lib/edit/slide-edit-elements';
-import type { PPTTextElement } from '@/lib/types/slides';
+import type { PPTTextElement } from '@openmaic/dsl';
 import type { SlideContent } from '@/lib/types/stage';
 
 // Mock the canonical stage store so we can assert write-through: every
@@ -59,6 +59,23 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
       'scene-1',
       expect.objectContaining({ content: history!.present }),
     );
+  });
+
+  it('rejects a transaction captured by a previous scene', () => {
+    useSlideEditSession.getState().seed('scene-1', makeContent());
+    const staleSceneId = useSlideEditSession.getState().sceneId!;
+    const nextScene = makeContent();
+    nextScene.canvas.id = 'slide-2';
+    useSlideEditSession.getState().seed('scene-2', nextScene);
+
+    useSlideEditSession.getState().applyTransactionForScene(staleSceneId, {
+      origin: 'toolbar',
+      history: 'record',
+      operations: [{ type: 'element.update', elementId: 'text-1', patch: { left: 999 } }],
+    });
+
+    expect(useSlideEditSession.getState().history?.present.canvas.elements[0].left).not.toBe(999);
+    expect(updateScene).not.toHaveBeenCalled();
   });
 
   it('applyOp ignores a no-op against a missing element (no stage write)', () => {

@@ -12,11 +12,18 @@
 
 import { db } from '@/lib/utils/database';
 import { getDeterministicVoiceId, type VoiceDesign } from '@/lib/audio/voice-design';
+import { clearVoiceBindingUnavailable } from '@/lib/audio/unavailable-voice-bindings';
 
 export interface VoiceRegistrationRequestConfig {
   ttsApiKey?: string;
   ttsBaseUrl?: string;
   ttsModelId?: string;
+}
+
+export interface UserVoiceRegistrationParams {
+  name: string;
+  referenceAudio: Blob;
+  refText: string;
 }
 
 function base64ToBlob(base64: string, mimeType?: string): Blob {
@@ -37,6 +44,55 @@ async function blobToBase64(blob: Blob): Promise<string> {
     };
     reader.readAsDataURL(blob);
   });
+}
+
+/** Register a user-provided sample and return the provider's authoritative voice id. */
+export async function registerVoiceFromReference(
+  providerId: string,
+  params: UserVoiceRegistrationParams,
+  request: VoiceRegistrationRequestConfig,
+): Promise<string> {
+  const referenceAudioBase64 = await blobToBase64(params.referenceAudio);
+  const res = await fetch('/api/generate/voice', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      providerId,
+      voiceId: params.name.trim(),
+      referenceAudioBase64,
+      mimeType: params.referenceAudio.type || 'audio/wav',
+      refText: params.refText,
+      ...request,
+    }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { voiceId?: unknown; error?: unknown };
+  if (!res.ok) {
+    throw new Error(typeof data.error === 'string' ? data.error : 'Voice registration failed');
+  }
+  const voiceId = typeof data.voiceId === 'string' ? data.voiceId.trim() : '';
+  if (!voiceId) throw new Error('Voice registration returned no voice id');
+  clearVoiceBindingUnavailable({ providerId, voiceId: params.name.trim() });
+  clearVoiceBindingUnavailable({ providerId, voiceId });
+  return voiceId;
+}
+
+/** Request provider-side deletion. Returns false so callers can still remove local state. */
+export async function deleteRegisteredVoice(
+  providerId: string,
+  voiceId: string,
+  request: VoiceRegistrationRequestConfig,
+): Promise<boolean> {
+  try {
+    const res = await fetch('/api/generate/voice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ providerId, voiceId, action: 'delete', ...request }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { vendorDeleted?: unknown };
+    return res.ok && data.vendorDeleted === true;
+  } catch {
+    return false;
+  }
 }
 
 // Confirmed-registered + in-flight memos, keyed by (voiceId, backend, credential).
@@ -116,6 +172,7 @@ async function registerOnce(
   if (!res.ok) return undefined; // graceful fallback to the inline prompt path
 
   const data = (await res.json().catch(() => ({}))) as {
+    voiceId?: string;
     referenceAudioBase64?: string;
     mimeType?: string;
   };
@@ -127,6 +184,12 @@ async function registerOnce(
       updatedAt: Date.now(),
     });
   }
+  const registeredVoiceId = data.voiceId?.trim() || voiceId;
+  clearVoiceBindingUnavailable({ providerId, voiceId });
+  clearVoiceBindingUnavailable({ providerId, voiceId: registeredVoiceId });
   registeredThisSession.add(memoKey);
-  return voiceId;
+  if (registeredVoiceId !== voiceId) {
+    registeredThisSession.add(memoKeyFor(registeredVoiceId, request));
+  }
+  return registeredVoiceId;
 }

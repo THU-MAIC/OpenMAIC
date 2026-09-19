@@ -9,8 +9,8 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { requireModel } from '../require-model';
 
-const DEFAULT_MODEL = 'Qwen-Image-GGUF';
 const DEFAULT_BASE_URL = 'http://localhost:13305/v1';
 
 function normalizeBaseUrl(baseUrl?: string): string {
@@ -33,6 +33,7 @@ export async function testLemonadeImageConnectivity(
 
   try {
     const response = await fetch(`${baseUrl}/models`, {
+      redirect: 'manual',
       headers: authHeaders(config.apiKey),
     });
 
@@ -62,7 +63,7 @@ export async function generateWithLemonadeImage(
       ...authHeaders(config.apiKey),
     },
     body: JSON.stringify({
-      model: config.model || DEFAULT_MODEL,
+      model: requireModel(config.model, 'Lemonade Image'),
       prompt: options.prompt,
       n: 1,
       size: resolveSize(options),

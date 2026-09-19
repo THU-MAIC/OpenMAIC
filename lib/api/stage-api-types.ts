@@ -5,7 +5,7 @@
  */
 
 import type { Stage, Scene, SceneContent, SceneType, StageMode } from '@/lib/types/stage';
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement } from '@openmaic/dsl';
 import type { Action } from '@/lib/types/action';
 
 // ==================== Type Definitions ====================
@@ -28,6 +28,8 @@ export interface CreateSceneParams {
   content?: Partial<SceneContent>;
   order?: number;
   actions?: Action[];
+  /** Stable id of the generation outline this scene was built from (see {@link Scene.outlineId}). */
+  outlineId?: string;
 }
 
 /**

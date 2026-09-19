@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect } from 'react';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { useSyncCanvasViewportFromSlide } from '@/lib/store/sync-canvas-viewport';
 import { useSceneSelector } from '@/lib/contexts/scene-context';
 import { useKeyboardStore } from '@/lib/store/keyboard';
 import { useViewportSize } from './hooks/useViewportSize';
@@ -24,11 +25,13 @@ import { ElementCreateSelection } from './ElementCreateSelection';
 import { ShapeCreateCanvas } from './ShapeCreateCanvas';
 import { Ruler } from './Ruler';
 import { GridLines } from './GridLines';
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement } from '@openmaic/dsl';
 import type { AlignmentLineProps } from '@/lib/types/edit';
 import type { ContextmenuItem } from './EditableElement';
 import type { SlideContent } from '@/lib/types/stage';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
+import { createTextElementAtCanvasPoint } from '@/lib/edit/slide-edit-elements';
+import { createElementId } from '@/lib/edit/element-id';
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -62,6 +65,7 @@ export interface CanvasProps {
 export function Canvas(_props: CanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  useSyncCanvasViewportFromSlide();
 
   // Subscribe to specific parts for performance optimization
   const elements = useSceneSelector<SlideContent, PPTElement[]>(
@@ -69,7 +73,6 @@ export function Canvas(_props: CanvasProps) {
   );
 
   // Canvas UI state
-  const canvasScale = useCanvasStore.use.canvasScale();
   const activeElementIdList = useCanvasStore.use.activeElementIdList();
   const activeGroupElementId = useCanvasStore.use.activeGroupElementId();
   const handleElementId = useCanvasStore.use.handleElementId();
@@ -100,8 +103,14 @@ export function Canvas(_props: CanvasProps) {
     setElementList(newElements);
   }, [elements]);
 
-  // Viewport size and positioning
-  const { viewportStyles, dragViewport } = useViewportSize(canvasRef);
+  // Viewport size and positioning. Render with the hook's LOCAL fitScale (not
+  // the global store canvasScale): sibling canvases (crossfade-exiting pane,
+  // keep-alive tabs) write the shared store value, which could leave this
+  // canvas rendering a scale computed for another container until a seam drag
+  // forced a re-measure. The store is still written by the hook for
+  // out-of-tree consumers.
+  const { viewportStyles, dragViewport, fitScale } = useViewportSize(canvasRef);
+  const canvasScale = fitScale;
 
   // Initialize drop handler
   useDrop(canvasRef);
@@ -133,6 +142,7 @@ export function Canvas(_props: CanvasProps) {
 
   // Create element from selection
   const { insertElementFromCreateSelection } = useInsertFromCreateSelection(viewportRef);
+  const { addElement, pasteElement, selectAllElements, deleteAllElements } = useCanvasOperations();
 
   // Click on blank canvas area: clear active elements
   const handleClickBlankArea = (e: React.MouseEvent) => {
@@ -158,20 +168,29 @@ export function Canvas(_props: CanvasProps) {
     }
   };
 
-  // Double-click blank area to insert text
-  const handleDblClick = (_e: React.MouseEvent) => {
+  // Double-click blank area to insert a ready-to-edit text box at the click point.
+  const handleDblClick = (e: React.MouseEvent) => {
     if (activeElementIdList.length || creatingElement || creatingCustomShape) return;
     if (!viewportRef.current) return;
 
-    const _viewportRect = viewportRef.current.getBoundingClientRect();
-    // TODO: implement createTextElement (use _viewportRect + e.pageX/Y + canvasScale)
+    // Only treat double-click as blank-area when the event target isn't inside an element node
+    const target = e.target as HTMLElement;
+    if (target.closest('.editable-element')) return;
+
+    const viewportRect = viewportRef.current.getBoundingClientRect();
+    const textElement = createTextElementAtCanvasPoint(
+      createElementId('text'),
+      { x: e.clientX, y: e.clientY },
+      { left: viewportRect.left, top: viewportRect.top },
+      canvasScale,
+    );
+
+    addElement(textElement);
   };
 
   const openLinkDialog = () => {
     setLinkDialogVisible(true);
   };
-
-  const { pasteElement, selectAllElements, deleteAllElements } = useCanvasOperations();
 
   const contextmenus = (): ContextmenuItem[] => {
     return [

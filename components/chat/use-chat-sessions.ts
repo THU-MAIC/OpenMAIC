@@ -1,12 +1,20 @@
 'use client';
 
+import { sampleInteractiveState } from '@/lib/interactive/chat-observation';
+
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type {
-  ChatSession,
-  SessionType,
-  SessionStatus,
-  ChatMessageMetadata,
-  DirectorState,
+import {
+  nextChatUpdatedAt,
+  withChatSegmentReveal,
+  withChatSessionStatus,
+  type ChatSession,
+  type SessionType,
+  type SessionStatus,
+  type ChatMessageMetadata,
+  type DirectorState,
+  type PiSessionBoundaryContext,
+  type StatelessEvent,
+  type ElementReference,
 } from '@/lib/types/chat';
 import type { DiscussionRequest } from '@/components/roundtable';
 import type { Action, SpotlightAction, DiscussionAction } from '@/lib/types/action';
@@ -14,7 +22,7 @@ import type { UIMessage } from 'ai';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
-import { useSettingsStore } from '@/lib/store/settings';
+import { useSettingsStore, type SettingsState } from '@/lib/store/settings';
 import { useUserProfileStore } from '@/lib/store/user-profile';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -24,10 +32,98 @@ import { StreamBuffer } from '@/lib/buffer/stream-buffer';
 import type { AgentStartItem, ActionItem } from '@/lib/buffer/stream-buffer';
 import { runAgentLoop, type AgentLoopStoreState } from '@/lib/chat/agent-loop';
 import { ActionEngine } from '@/lib/action/engine';
+import {
+  buildQuizResultsForStoreState,
+  didActiveSceneRemainUnchanged,
+} from '@/lib/chat/quiz-results-for-store-state';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
+import { isPiChatEnabled } from '@/lib/config/feature-flags';
+import type { CleanupSource } from '@/lib/playback/auto-resume';
+import { nanoid } from 'nanoid';
+import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
+import { getPersistenceRequestHeaders } from '@/lib/persistence/bootstrap';
+import { refreshWhiteboardRuntimeProjection } from '@/lib/whiteboard/runtime/browser-projection';
 
 const log = createLogger('ChatSessions');
+const SOFT_CLOSE_TIMEOUT_MS = 15_000;
+
+export interface SoftCloseRegistration {
+  token: string;
+  deadline: number;
+  timer: ReturnType<typeof setTimeout>;
+  endReason?: string;
+  directorState?: DirectorState;
+}
+
+export function takeSoftCloseRegistration(
+  registrations: Map<string, SoftCloseRegistration>,
+  sessionId: string,
+  expectedToken?: string,
+): SoftCloseRegistration | undefined {
+  const registration = registrations.get(sessionId);
+  if (!registration || (expectedToken && registration.token !== expectedToken)) return undefined;
+  registrations.delete(sessionId);
+  clearTimeout(registration.timer);
+  return registration;
+}
+
+/** Context used by playback cleanup and optional lecture auto-resume. */
+export interface SessionCleanupPayload {
+  sessionId: string;
+  endReason?: string;
+  source: CleanupSource;
+}
+
+export interface EndSessionOptions {
+  source?: CleanupSource;
+}
+
+export const MANUAL_STOP_END_OPTIONS: EndSessionOptions = { source: 'manual_stop' };
+
+export interface PreviousLiveSessionContext {
+  endSource?: CleanupSource;
+  sceneId?: string;
+}
+
+export function createPreviousLiveSessionContext(
+  session: Pick<ChatSession, 'sceneId'>,
+  currentSceneId: string | null | undefined,
+  endSource?: CleanupSource,
+): PreviousLiveSessionContext {
+  return {
+    endSource,
+    sceneId: session.sceneId ?? currentSceneId ?? undefined,
+  };
+}
+
+export function createPiSessionBoundaryContext(
+  previous: PreviousLiveSessionContext | undefined,
+  currentSceneId: string | null | undefined,
+): PiSessionBoundaryContext {
+  return {
+    isFirstRequestInLiveSession: true,
+    previousEndSource: previous?.endSource,
+    sameSceneAsPrevious:
+      previous?.sceneId && currentSceneId ? previous.sceneId === currentSceneId : undefined,
+  };
+}
+
+export function getPiSessionBoundaryContext(
+  contexts: Map<string, PiSessionBoundaryContext>,
+  sessionId: string,
+): PiSessionBoundaryContext | undefined {
+  return contexts.get(sessionId);
+}
+
+export function consumePiSessionBoundaryContext(
+  contexts: Map<string, PiSessionBoundaryContext>,
+  sessionId: string,
+  expected: PiSessionBoundaryContext,
+): boolean {
+  if (contexts.get(sessionId) !== expected) return false;
+  return contexts.delete(sessionId);
+}
 
 interface UseChatSessionsOptions {
   onLiveSpeech?: (text: string | null, agentId?: string | null) => void;
@@ -36,8 +132,10 @@ interface UseChatSessionsOptions {
   onCueUser?: (fromAgentId?: string, prompt?: string) => void;
   onActiveBubble?: (messageId: string | null) => void;
   onLiveSessionError?: () => void;
+  /** Called immediately when the server semantically closes a QA/Discussion session. */
+  onSoftCloseSession?: (payload: SessionCleanupPayload) => void;
   /** Called when a QA/Discussion session completes naturally (director end). */
-  onStopSession?: () => void;
+  onStopSession?: (payload: SessionCleanupPayload) => void;
   onSegmentSealed?: (
     messageId: string,
     partId: string,
@@ -48,6 +146,374 @@ interface UseChatSessionsOptions {
   shouldHoldAfterReveal?: () => { holding: boolean; segmentDone: number } | boolean;
 }
 
+export type ChatRequestTemplate = {
+  messages: UIMessage<ChatMessageMetadata>[];
+  config: {
+    agentIds: string[];
+    sessionType?: string;
+    agentConfigs?: Record<string, unknown>[];
+    piEnableWhiteboardTools?: boolean;
+    [key: string]: unknown;
+  };
+  userProfile?: { nickname?: string; bio?: string };
+  apiKey: string;
+  baseUrl?: string;
+  model?: string;
+  providerType?: string;
+  thinkingConfig?: ThinkingConfig;
+  directorState?: DirectorState;
+  piSessionBoundary?: PiSessionBoundaryContext;
+  webSearchProviderId?: WebSearchProviderId;
+  webSearchApiKey?: string;
+  webSearchBaseUrl?: string;
+  webSearchModelId?: string;
+  baiduSubSources?: BaiduSubSources;
+  elementReference?: ElementReference;
+};
+
+export interface ChatMessageSendOptions {
+  elementReference?: ElementReference;
+  onResponseAccepted?: (response: Response) => void;
+}
+
+/**
+ * One fresh store-state snapshot for an outgoing chat request. Quiz results
+ * come from the async RuntimeStore read; the before/after scene compare drops
+ * them when a scene transition raced the read (a stale scene's results must
+ * not leak into the next scene's request).
+ */
+async function buildFreshAgentLoopStoreState(): Promise<AgentLoopStoreState> {
+  const stateBeforeQuizRead = useStageStore.getState();
+  const quizResults = await buildQuizResultsForStoreState(
+    stateBeforeQuizRead.scenes,
+    stateBeforeQuizRead.currentSceneId,
+  );
+  const freshState = useStageStore.getState();
+  return {
+    stage: freshState.stage,
+    scenes: freshState.scenes,
+    outlines: freshState.outlines,
+    currentSceneId: freshState.currentSceneId,
+    mode: freshState.mode,
+    whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
+    whiteboardManualVisibilityRevision:
+      useCanvasStore.getState().whiteboardManualVisibilityRevision,
+    quizResults: didActiveSceneRemainUnchanged(
+      stateBeforeQuizRead.scenes,
+      stateBeforeQuizRead.currentSceneId,
+      freshState.scenes,
+      freshState.currentSceneId,
+    )
+      ? quizResults
+      : undefined,
+  };
+}
+
+export function withPiInclassWhiteboardTools<T extends ChatRequestTemplate>(requestTemplate: T): T {
+  return {
+    ...requestTemplate,
+    config: {
+      ...requestTemplate.config,
+      piEnableWhiteboardTools: true,
+    },
+  };
+}
+
+type PiWebSearchSettings = Pick<
+  SettingsState,
+  'webSearchProviderId' | 'webSearchProvidersConfig' | 'baiduSubSources'
+>;
+
+/** Snapshot only the selected provider fields accepted by the classroom resolver. */
+export function withPiWebSearchSettings<T extends ChatRequestTemplate>(
+  requestTemplate: T,
+  settings: PiWebSearchSettings,
+): T {
+  const providerId = settings.webSearchProviderId;
+  const providerConfig = settings.webSearchProvidersConfig[providerId];
+  const request = { ...requestTemplate };
+  delete request.webSearchProviderId;
+  delete request.webSearchApiKey;
+  delete request.webSearchBaseUrl;
+  delete request.webSearchModelId;
+  delete request.baiduSubSources;
+  return {
+    ...request,
+    webSearchProviderId: providerId,
+    ...(providerConfig?.apiKey ? { webSearchApiKey: providerConfig.apiKey } : {}),
+    ...(providerConfig?.baseUrl && !providerConfig.isServerConfigured && providerId !== 'searxng'
+      ? { webSearchBaseUrl: providerConfig.baseUrl }
+      : {}),
+    ...(providerId === 'claude' && providerConfig?.modelId
+      ? { webSearchModelId: providerConfig.modelId }
+      : {}),
+    ...(providerId === 'baidu' ? { baiduSubSources: { ...settings.baiduSubSources } } : {}),
+  } as T;
+}
+
+export function shouldAwaitPresentationAction(actionName: string): boolean {
+  return actionName.startsWith('wb_');
+}
+
+export async function retireLiveRequestResources<
+  T extends { shutdown(): void; waitForCurrentAction?(): Promise<void> },
+>(
+  controller: AbortController | null,
+  sessionId: string | null,
+  buffers: Map<string, T>,
+): Promise<void> {
+  controller?.abort();
+  if (!sessionId) return;
+  const buffer = buffers.get(sessionId);
+  buffer?.shutdown();
+  buffers.delete(sessionId);
+  await buffer?.waitForCurrentAction?.();
+}
+
+type StatelessStreamConsumerFactory = (
+  sessionId: string,
+  controller: AbortController,
+  sessionType: SessionType,
+) => {
+  onEvent: (event: StatelessEvent) => void;
+  onIterationEnd: () => Promise<{
+    directorState: DirectorState | undefined;
+    totalAgents: number;
+    agentHadContent: boolean;
+    cueUserReceived?: boolean;
+    sessionClosed?: boolean;
+    endReason?: string;
+  } | null>;
+};
+
+export function normalizeStoredSessionsForRestore(sessions: ChatSession[]): ChatSession[] {
+  return sessions.map((session) => {
+    if (session.status === 'active') {
+      return {
+        ...withChatSessionStatus(session, 'interrupted'),
+        softCloseDeadline: undefined,
+      };
+    }
+    if (session.status === 'soft-closing') {
+      return {
+        ...withChatSessionStatus(session, 'completed'),
+        softCloseDeadline: undefined,
+      };
+    }
+    return session.softCloseDeadline ? { ...session, softCloseDeadline: undefined } : session;
+  });
+}
+
+function isLiveSessionType(session: Pick<ChatSession, 'type'>): boolean {
+  return session.type === 'qa' || session.type === 'discussion';
+}
+
+export function isOpenLiveSession(session: Pick<ChatSession, 'type' | 'status'>): boolean {
+  return (
+    isLiveSessionType(session) && (session.status === 'active' || session.status === 'soft-closing')
+  );
+}
+
+export function resumeSoftClosingSessionForFollowUp(
+  session: ChatSession,
+  userMessage: UIMessage<ChatMessageMetadata>,
+  now: number,
+): ChatSession {
+  return {
+    ...session,
+    messages: [...session.messages, userMessage],
+    status: 'active' as SessionStatus,
+    endReason: undefined,
+    softCloseDeadline: undefined,
+    updatedAt: nextChatUpdatedAt(session, now),
+  };
+}
+
+export function resumeSoftClosingSessionWithoutMessage(
+  session: ChatSession,
+  now: number,
+): ChatSession | undefined {
+  if (session.status !== 'soft-closing') return undefined;
+  return {
+    ...session,
+    status: 'active',
+    endReason: undefined,
+    softCloseDeadline: undefined,
+    updatedAt: nextChatUpdatedAt(session, now),
+  };
+}
+
+export type PiSingleRequestOutcome =
+  | { type: 'error'; messageKey: 'chat.error.streamInterrupted' }
+  | { type: 'soft_closing'; endReason?: string; directorState?: DirectorState }
+  | { type: 'cue_user'; directorState?: DirectorState }
+  | { type: 'completed'; directorState?: DirectorState };
+
+export function getPiSingleRequestOutcome(
+  doneData: Awaited<ReturnType<ReturnType<StatelessStreamConsumerFactory>['onIterationEnd']>>,
+): PiSingleRequestOutcome {
+  if (!doneData) {
+    return { type: 'error', messageKey: 'chat.error.streamInterrupted' };
+  }
+  if (doneData.sessionClosed) {
+    return {
+      type: 'soft_closing',
+      endReason: doneData.endReason,
+      directorState: doneData.directorState,
+    };
+  }
+  if (doneData.totalAgents === 0 || doneData.agentHadContent === false) {
+    return { type: 'error', messageKey: 'chat.error.streamInterrupted' };
+  }
+  if (doneData.cueUserReceived) {
+    return { type: 'cue_user', directorState: doneData.directorState };
+  }
+  return { type: 'completed', directorState: doneData.directorState };
+}
+
+export async function runPiSingleRequest(
+  sessionId: string,
+  requestTemplate: ChatRequestTemplate & { storeState: AgentLoopStoreState },
+  controller: AbortController,
+  sessionType: SessionType,
+  createConsumer: StatelessStreamConsumerFactory,
+  clearLiveSessionAfterError: (sessionId: string, message: string) => void,
+  enterSoftClosing: (
+    sessionId: string,
+    data: { endReason?: string; directorState?: DirectorState },
+  ) => void,
+  markSessionCompleted: (
+    sessionId: string,
+    data?: { endReason?: string; directorState?: DirectorState; source?: CleanupSource },
+  ) => void,
+  storeDirectorState: (sessionId: string, directorState?: DirectorState) => void,
+  onStopSessionRef: { current?: ((payload: SessionCleanupPayload) => void) | undefined },
+  t: (key: string) => string,
+  onResponseAccepted?: (response: Response) => void,
+): Promise<void> {
+  const consumer = createConsumer(sessionId, controller, sessionType);
+  const persistenceHeaders = await getPersistenceRequestHeaders();
+  // Every send re-samples the current Scene, including a follow-up with no reference.
+  const interactiveState = await sampleInteractiveState(
+    requestTemplate.storeState,
+    controller.signal,
+  );
+  if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+  const response = await fetch('/api/chat/pi', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...persistenceHeaders },
+    body: JSON.stringify({ ...requestTemplate, ...(interactiveState ? { interactiveState } : {}) }),
+    signal: controller.signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Pi chat request failed: ${response.status}`);
+  }
+  if (!response.body) {
+    throw new Error('Pi chat response body is empty');
+  }
+  onResponseAccepted?.(response);
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let sseBuffer = '';
+  let sawDoneEvent = false;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    sseBuffer += decoder.decode(value, { stream: true });
+    const parts = sseBuffer.split('\n\n');
+    sseBuffer = parts.pop() || '';
+
+    for (const part of parts) {
+      if (!part.trim() || part.startsWith(':')) continue;
+      const dataLine = part.split('\n').find((line) => line.startsWith('data: '));
+      if (!dataLine) continue;
+      const event = JSON.parse(dataLine.slice(6)) as StatelessEvent;
+      if (event.type === 'done') sawDoneEvent = true;
+      consumer.onEvent(event);
+    }
+  }
+
+  const doneData = sawDoneEvent ? await consumer.onIterationEnd() : null;
+
+  if (controller.signal.aborted) return;
+
+  const outcome = getPiSingleRequestOutcome(doneData);
+  if (outcome.type === 'error') {
+    clearLiveSessionAfterError(sessionId, t(outcome.messageKey));
+    onStopSessionRef.current?.({ sessionId, source: 'error' });
+    return;
+  }
+
+  if (outcome.type === 'soft_closing') {
+    enterSoftClosing(sessionId, {
+      endReason: outcome.endReason,
+      directorState: outcome.directorState,
+    });
+    return;
+  }
+
+  if (outcome.type === 'cue_user') {
+    storeDirectorState(sessionId, outcome.directorState);
+    return;
+  }
+
+  // The Pi endpoint owns the whole server-side loop; one successful done closes
+  // this classroom turn instead of asking the frontend to POST another turn.
+  markSessionCompleted(sessionId, {
+    directorState: outcome.directorState,
+    source: 'turn_complete',
+  });
+  onStopSessionRef.current?.({ sessionId, source: 'turn_complete' });
+}
+
+export async function respondToWhiteboardVisibilityQuery(
+  data: Extract<StatelessEvent, { type: 'whiteboard' }>['data'] & {
+    kind: 'visibility_query';
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  if (signal.aborted || useStageStore.getState().stage?.id !== data.stageId) return;
+  const headers = await getPersistenceRequestHeaders();
+  if (signal.aborted || useStageStore.getState().stage?.id !== data.stageId) return;
+  const visibility = useCanvasStore.getState().whiteboardOpen ? 'open' : 'closed';
+  const response = await fetch('/api/chat/pi/whiteboard-visibility', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({
+      queryId: data.queryId,
+      stageId: data.stageId,
+      visibility,
+    }),
+    signal,
+  });
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Whiteboard visibility response failed: ${response.status}`);
+  }
+}
+
+export function consumePiWhiteboardEvent(
+  data: Extract<StatelessEvent, { type: 'whiteboard' }>['data'],
+  signal: AbortSignal,
+): void {
+  if (signal.aborted || useStageStore.getState().stage?.id !== data.stageId) return;
+  if (data.kind === 'visibility_query') {
+    void respondToWhiteboardVisibilityQuery(data, signal).catch((error) => {
+      if (!signal.aborted) log.warn('Whiteboard visibility response failed', error);
+    });
+    return;
+  }
+  if (data.kind === 'projection') {
+    void refreshWhiteboardRuntimeProjection(data.stageId, data.lastSeq);
+    return;
+  }
+  const canvas = useCanvasStore.getState();
+  if (canvas.whiteboardManualVisibilityRevision !== data.manualVisibilityRevision) return;
+  canvas.setWhiteboardOpen(data.kind === 'open');
+}
+
 export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const onLiveSpeechRef = useRef(options.onLiveSpeech);
   const onSpeechProgressRef = useRef(options.onSpeechProgress);
@@ -55,6 +521,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const onCueUserRef = useRef(options.onCueUser);
   const onActiveBubbleRef = useRef(options.onActiveBubble);
   const onLiveSessionErrorRef = useRef(options.onLiveSessionError);
+  const onSoftCloseSessionRef = useRef(options.onSoftCloseSession);
   const onStopSessionRef = useRef(options.onStopSession);
   const onSegmentSealedRef = useRef(options.onSegmentSealed);
   const shouldHoldAfterRevealRef = useRef(options.shouldHoldAfterReveal);
@@ -65,6 +532,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     onCueUserRef.current = options.onCueUser;
     onActiveBubbleRef.current = options.onActiveBubble;
     onLiveSessionErrorRef.current = options.onLiveSessionError;
+    onSoftCloseSessionRef.current = options.onSoftCloseSession;
     onStopSessionRef.current = options.onStopSession;
     onSegmentSealedRef.current = options.onSegmentSealed;
     shouldHoldAfterRevealRef.current = options.shouldHoldAfterReveal;
@@ -75,6 +543,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     options.onCueUser,
     options.onActiveBubble,
     options.onLiveSessionError,
+    options.onSoftCloseSession,
     options.onStopSession,
     options.onSegmentSealed,
     options.shouldHoldAfterReveal,
@@ -84,20 +553,26 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   // Track current stageId for data isolation
   const stageId = useStageStore((s) => s.stage?.id);
   const stageIdRef = useRef(stageId);
+  const currentSceneId = useStageStore((s) => s.currentSceneId);
+  const currentSceneIdRef = useRef(currentSceneId);
 
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
     // Restore sessions from store (loaded from IndexedDB)
     const stored = useStageStore.getState().chats;
-    return stored.map((s) =>
-      s.status === 'active' ? { ...s, status: 'interrupted' as SessionStatus } : s,
-    );
+    return normalizeStoredSessionsForRestore(stored);
   });
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(new Set());
   const [isStreaming, setIsStreaming] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const streamingSessionIdRef = useRef<string | null>(null);
+  const softCloseRegistrationsRef = useRef<Map<string, SoftCloseRegistration>>(new Map());
+  const softCloseLifecycleRef = useRef<Map<string, 'soft-closing' | 'active' | 'completed'>>(
+    new Map(),
+  );
   const sessionsRef = useRef<ChatSession[]>(sessions);
+  const previousLiveSessionRef = useRef<PreviousLiveSessionContext | undefined>(undefined);
+  const piSessionBoundariesRef = useRef<Map<string, PiSessionBoundaryContext>>(new Map());
   useEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
@@ -108,6 +583,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     totalAgents: number;
     agentHadContent?: boolean;
     cueUserReceived: boolean;
+    sessionClosed?: boolean;
+    endReason?: string;
   } | null>(null);
 
   // Reload sessions when stage changes (course switch)
@@ -116,16 +593,33 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   useEffect(() => {
     if (stageId === stageIdRef.current) return;
     stageIdRef.current = stageId;
+    softCloseRegistrationsRef.current.forEach(({ timer }) => clearTimeout(timer));
+    softCloseRegistrationsRef.current.clear();
+    softCloseLifecycleRef.current.clear();
     // Stage changed — reload sessions from store (already populated by loadFromStorage)
     const stored = useStageStore.getState().chats;
-    setSessions(
-      stored.map((s) =>
-        s.status === 'active' ? { ...s, status: 'interrupted' as SessionStatus } : s,
-      ),
-    );
+    setSessions(normalizeStoredSessionsForRestore(stored));
     setActiveSessionId(null);
     setExpandedSessionIds(new Set());
+    previousLiveSessionRef.current = undefined;
+    piSessionBoundariesRef.current.clear();
   }, [stageId]);
+
+  useEffect(() => {
+    if (currentSceneId === currentSceneIdRef.current) return;
+    currentSceneIdRef.current = currentSceneId;
+  }, [currentSceneId]);
+
+  const registerFirstPiRequest = useCallback((sessionId: string) => {
+    piSessionBoundariesRef.current.set(
+      sessionId,
+      createPiSessionBoundaryContext(previousLiveSessionRef.current, currentSceneIdRef.current),
+    );
+  }, []);
+
+  const getFirstPiRequestContext = useCallback((sessionId: string) => {
+    return getPiSessionBoundaryContext(piSessionBoundariesRef.current, sessionId);
+  }, []);
 
   // Sync sessions back to store for persistence (debounced via store's debouncedSave)
   // Guard: only write to the currently active stage
@@ -137,68 +631,254 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
   // StreamBuffer instances per session (SSE + lecture share the same buffer model)
   const buffersRef = useRef<Map<string, StreamBuffer>>(new Map());
+  const pendingRetirementRef = useRef<Promise<void>>(Promise.resolve());
+
+  const retireActiveLiveRequest = useCallback(
+    (fallbackSessionId?: string | null): string | null => {
+      const interruptedSessionId = streamingSessionIdRef.current ?? fallbackSessionId ?? null;
+      const previousRetirement = pendingRetirementRef.current;
+      const retirement = retireLiveRequestResources(
+        abortControllerRef.current,
+        interruptedSessionId,
+        buffersRef.current,
+      );
+      pendingRetirementRef.current = Promise.all([previousRetirement, retirement]).then(
+        () => undefined,
+      );
+      abortControllerRef.current = null;
+      streamingSessionIdRef.current = null;
+      setIsStreaming(false);
+      return interruptedSessionId;
+    },
+    [],
+  );
 
   // Abort active stream and destroy buffers on unmount
   useEffect(() => {
     const buffers = buffersRef.current;
+    const softCloseRegistrations = softCloseRegistrationsRef.current;
+    const softCloseLifecycle = softCloseLifecycleRef.current;
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
       }
+      softCloseRegistrations.forEach(({ timer }) => clearTimeout(timer));
+      softCloseRegistrations.clear();
+      softCloseLifecycle.clear();
       buffers.forEach((buf) => buf.shutdown());
       buffers.clear();
     };
   }, []);
 
-  // Session-scoped "paused intent" — survives buffer recreation across turns.
-  // When true, newly created discussion/QA buffers are immediately paused.
-  const livePausedRef = useRef(false);
+  const claimSoftCloseRegistration = useCallback(
+    (sessionId: string, expectedToken?: string): SoftCloseRegistration | undefined => {
+      return takeSoftCloseRegistration(softCloseRegistrationsRef.current, sessionId, expectedToken);
+    },
+    [],
+  );
 
-  const clearLiveSessionAfterError = useCallback((sessionId: string, message: string) => {
-    const now = Date.now();
-    const errorMessageId = `error-${now}`;
+  const clearSoftCloseRegistration = useCallback(
+    (sessionId: string): boolean => {
+      return Boolean(claimSoftCloseRegistration(sessionId));
+    },
+    [claimSoftCloseRegistration],
+  );
 
-    const buf = buffersRef.current.get(sessionId);
-    if (buf) {
-      buf.shutdown();
-      buffersRef.current.delete(sessionId);
-    }
+  const markSessionCompleted = useCallback(
+    (
+      sessionId: string,
+      data?: { endReason?: string; directorState?: DirectorState; source?: CleanupSource },
+    ) => {
+      const session = sessionsRef.current.find((candidate) => candidate.id === sessionId);
+      if (session && isLiveSessionType(session)) {
+        previousLiveSessionRef.current = createPreviousLiveSessionContext(
+          session,
+          currentSceneIdRef.current,
+          data?.source,
+        );
+      }
+      piSessionBoundariesRef.current.delete(sessionId);
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                status: 'completed' as SessionStatus,
+                updatedAt: Date.now(),
+                endReason: data?.endReason ?? s.endReason,
+                softCloseDeadline: undefined,
+                directorState: data?.directorState ?? s.directorState,
+              }
+            : s,
+        ),
+      );
+    },
+    [],
+  );
 
+  const finishSoftCloseTimeout = useCallback(
+    (sessionId: string, expectedToken?: string): boolean => {
+      const registration = claimSoftCloseRegistration(sessionId, expectedToken);
+      if (!registration || softCloseLifecycleRef.current.get(sessionId) !== 'soft-closing') {
+        return false;
+      }
+      softCloseLifecycleRef.current.set(sessionId, 'completed');
+
+      const retirement = retireLiveRequestResources(null, sessionId, buffersRef.current);
+      pendingRetirementRef.current = Promise.all([pendingRetirementRef.current, retirement]).then(
+        () => undefined,
+      );
+      markSessionCompleted(sessionId, {
+        endReason: registration.endReason,
+        directorState: registration.directorState,
+        source: 'soft_close_timeout',
+      });
+      onStopSessionRef.current?.({
+        sessionId,
+        endReason: registration.endReason,
+        source: 'soft_close_timeout',
+      });
+      return true;
+    },
+    [claimSoftCloseRegistration, markSessionCompleted],
+  );
+
+  const storeDirectorState = useCallback((sessionId: string, directorState?: DirectorState) => {
+    if (!directorState) return;
     setSessions((prev) =>
       prev.map((s) =>
         s.id === sessionId
           ? {
               ...s,
-              status: 'error' as SessionStatus,
-              updatedAt: now,
-              messages: [
-                ...s.messages,
-                {
-                  id: errorMessageId,
-                  role: 'assistant' as const,
-                  parts: [{ type: 'text', text: message }],
-                  metadata: {
-                    senderName: 'System',
-                    originalRole: 'agent' as const,
-                    createdAt: now,
-                  },
-                },
-              ],
+              directorState,
+              updatedAt: nextChatUpdatedAt(s),
             }
           : s,
       ),
     );
-
-    onActiveBubbleRef.current?.(null);
-    if (onLiveSessionErrorRef.current) {
-      onLiveSessionErrorRef.current();
-    } else {
-      onSpeechProgressRef.current?.(null);
-      onThinkingRef.current?.(null);
-      onLiveSpeechRef.current?.(null, null);
-    }
   }, []);
+
+  const enterSoftClosing = useCallback(
+    (sessionId: string, data: { endReason?: string; directorState?: DirectorState }) => {
+      clearSoftCloseRegistration(sessionId);
+      const token = nanoid();
+      const deadline = Date.now() + SOFT_CLOSE_TIMEOUT_MS;
+      softCloseLifecycleRef.current.set(sessionId, 'soft-closing');
+      // Entering the soft-closing window is NOT the timeout — only the 15s timer
+      // firing below counts as soft_close_timeout (the auto-resume trigger).
+      onSoftCloseSessionRef.current?.({
+        sessionId,
+        endReason: data.endReason,
+        source: 'soft_close_enter',
+      });
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                status: 'soft-closing' as SessionStatus,
+                updatedAt: Date.now(),
+                endReason: data.endReason ?? s.endReason,
+                softCloseDeadline: deadline,
+                directorState: data.directorState ?? s.directorState,
+              }
+            : s,
+        ),
+      );
+
+      const timer = setTimeout(() => {
+        finishSoftCloseTimeout(sessionId, token);
+      }, SOFT_CLOSE_TIMEOUT_MS);
+
+      softCloseRegistrationsRef.current.set(sessionId, {
+        token,
+        deadline,
+        timer,
+        endReason: data.endReason,
+        directorState: data.directorState,
+      });
+    },
+    [clearSoftCloseRegistration, finishSoftCloseTimeout],
+  );
+
+  useEffect(() => {
+    const reconcileExpiredSoftClose = () => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      for (const [sessionId, registration] of softCloseRegistrationsRef.current) {
+        if (now >= registration.deadline) {
+          finishSoftCloseTimeout(sessionId, registration.token);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', reconcileExpiredSoftClose);
+    return () => document.removeEventListener('visibilitychange', reconcileExpiredSoftClose);
+  }, [finishSoftCloseTimeout]);
+
+  // Session-scoped "paused intent" — survives buffer recreation across turns.
+  // When true, newly created discussion/QA buffers are immediately paused.
+  const livePausedRef = useRef(false);
+
+  const clearLiveSessionAfterError = useCallback(
+    (sessionId: string, message: string) => {
+      const now = Date.now();
+      const errorMessageId = `error-${now}`;
+      const session = sessionsRef.current.find((candidate) => candidate.id === sessionId);
+      if (session && isLiveSessionType(session)) {
+        previousLiveSessionRef.current = createPreviousLiveSessionContext(
+          session,
+          currentSceneIdRef.current,
+          'error',
+        );
+      }
+
+      if (streamingSessionIdRef.current === sessionId) {
+        retireActiveLiveRequest(sessionId);
+      } else {
+        const retirement = retireLiveRequestResources(null, sessionId, buffersRef.current);
+        pendingRetirementRef.current = Promise.all([pendingRetirementRef.current, retirement]).then(
+          () => undefined,
+        );
+      }
+
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                status: 'error' as SessionStatus,
+                softCloseDeadline: undefined,
+                updatedAt: nextChatUpdatedAt(s, now),
+                messages: [
+                  ...s.messages,
+                  {
+                    id: errorMessageId,
+                    role: 'assistant' as const,
+                    parts: [{ type: 'text', text: message }],
+                    metadata: {
+                      senderName: 'System',
+                      originalRole: 'agent' as const,
+                      createdAt: now,
+                    },
+                  },
+                ],
+              }
+            : s,
+        ),
+      );
+
+      onActiveBubbleRef.current?.(null);
+      if (onLiveSessionErrorRef.current) {
+        onLiveSessionErrorRef.current();
+      } else {
+        onSpeechProgressRef.current?.(null);
+        onThinkingRef.current?.(null);
+        onLiveSpeechRef.current?.(null, null);
+      }
+    },
+    [retireActiveLiveRequest],
+  );
 
   // Tracks the single message ID per lecture session
   const lectureMessageIds = useRef<Map<string, string>>(new Map());
@@ -253,7 +933,11 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             setSessions((prev) =>
               prev.map((s) =>
                 s.id === sessionId
-                  ? { ...s, messages: [...s.messages, newMsg], updatedAt: now }
+                  ? {
+                      ...s,
+                      messages: [...s.messages, newMsg],
+                      updatedAt: nextChatUpdatedAt(s, now),
+                    }
                   : s,
               ),
             );
@@ -268,7 +952,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                 const msgs = s.messages.filter(
                   (m) => !(m.role === 'assistant' && m.parts.length === 0),
                 );
-                return msgs.length !== s.messages.length ? { ...s, messages: msgs } : s;
+                return msgs.length !== s.messages.length
+                  ? { ...s, messages: msgs, updatedAt: nextChatUpdatedAt(s) }
+                  : s;
               }),
             );
           },
@@ -277,12 +963,12 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             messageId: string,
             partId: string,
             revealedText: string,
-            _isComplete: boolean,
+            isComplete: boolean,
           ) {
             setSessions((prev) =>
               prev.map((s) => {
                 if (s.id !== sessionId) return s;
-                return {
+                const revealed = {
                   ...s,
                   messages: s.messages.map((m) => {
                     if (m.id !== messageId) return m;
@@ -308,12 +994,12 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                   }),
                   // Don't update updatedAt on every tick — avoids thrashing persistence sync
                 };
+                return withChatSegmentReveal(revealed, isComplete);
               }),
             );
           },
 
-          onActionReady(messageId: string, data: ActionItem) {
-            // Add action badge to message parts
+          async onActionReady(messageId: string, data: ActionItem, signal: AbortSignal) {
             const actionPart = {
               type: `action-${data.actionName}`,
               actionId: data.actionId,
@@ -322,7 +1008,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
               state: 'result',
               output: { success: true },
             } as unknown as UIMessage<ChatMessageMetadata>['parts'][number];
-
             setSessions((prev) =>
               prev.map((s) => {
                 if (s.id !== sessionId) return s;
@@ -331,12 +1016,13 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                   messages: s.messages.map((m) =>
                     m.id === messageId ? { ...m, parts: [...m.parts, actionPart] } : m,
                   ),
-                  updatedAt: Date.now(),
+                  updatedAt: nextChatUpdatedAt(s),
                 };
               }),
             );
 
-            // Execute the action via ActionEngine (fire-and-forget for visual effects)
+            // Whiteboard effects mutate shared stage state after animation delays,
+            // so keep them ordered. Long-running media playback stays interruptible.
             try {
               const actionEngine = new ActionEngine(useStageStore);
               const action = {
@@ -344,7 +1030,12 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                 type: data.actionName,
                 ...data.params,
               } as Action;
-              actionEngine.execute(action);
+              const execution = actionEngine.execute(action, { signal });
+              if (shouldAwaitPresentationAction(data.actionName)) {
+                await execution;
+              } else {
+                void execution.catch((err) => log.warn('[Buffer] Action execution error:', err));
+              }
             } catch (err) {
               log.warn('[Buffer] Action execution error:', err);
             }
@@ -382,6 +1073,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             totalActions: number;
             totalAgents: number;
             agentHadContent?: boolean;
+            cueUserReceived?: boolean;
+            sessionClosed?: boolean;
+            endReason?: string;
             directorState?: DirectorState;
           }) {
             // Store done data for agent loop consumption
@@ -389,7 +1083,10 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
               directorState: data.directorState,
               totalAgents: data.totalAgents,
               agentHadContent: data.agentHadContent ?? true,
-              cueUserReceived: loopDoneDataRef.current?.cueUserReceived ?? false,
+              cueUserReceived:
+                data.cueUserReceived ?? loopDoneDataRef.current?.cueUserReceived ?? false,
+              sessionClosed: data.sessionClosed,
+              endReason: data.endReason,
             };
             // Session completion is handled by runAgentLoopFn, not here
             // (Lectures don't use the agent loop and complete via endSession)
@@ -429,6 +1126,105 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     [],
   );
 
+  const createStatelessStreamConsumer = useCallback(
+    (sessionId: string, controller: AbortController, sessionType: SessionType) => {
+      let currentBuffer: StreamBuffer | null = null;
+      let currentMessageId: string | null = null;
+
+      const onEvent = (event: StatelessEvent) => {
+        if (event.type === 'whiteboard') {
+          consumePiWhiteboardEvent(event.data, controller.signal);
+          return;
+        }
+        if (!currentBuffer) {
+          currentBuffer = createBufferForSession(sessionId, sessionType);
+        }
+
+        switch (event.type) {
+          case 'agent_start': {
+            const { messageId, agentId, agentName, agentAvatar, agentColor } = event.data;
+            currentMessageId = messageId;
+            currentBuffer.pushAgentStart({
+              messageId,
+              agentId,
+              agentName,
+              avatar: agentAvatar,
+              color: agentColor,
+            });
+            break;
+          }
+          case 'agent_end': {
+            currentBuffer.pushAgentEnd({
+              messageId: event.data.messageId,
+              agentId: event.data.agentId,
+            });
+            break;
+          }
+          case 'text_delta': {
+            const targetId = event.data.messageId ?? currentMessageId;
+            if (!targetId) break;
+            currentBuffer.pushText(targetId, event.data.content);
+            break;
+          }
+          case 'action': {
+            const targetId = event.data.messageId ?? currentMessageId;
+            if (!targetId) break;
+            if (controller.signal.aborted) break;
+            currentBuffer.pushAction({
+              actionId: event.data.actionId,
+              actionName: event.data.actionName,
+              params: event.data.params,
+              messageId: targetId,
+              agentId: event.data.agentId,
+            });
+            break;
+          }
+          case 'thinking':
+            currentBuffer.pushThinking(event.data);
+            break;
+          case 'cue_user':
+            currentBuffer.pushCueUser(event.data);
+            break;
+          case 'done':
+            currentBuffer.pushDone(event.data);
+            break;
+          case 'error':
+            currentBuffer.pushError(event.data.message);
+            throw new Error(event.data.message);
+        }
+      };
+
+      const onIterationEnd = async () => {
+        if (!currentBuffer) return null;
+
+        try {
+          await currentBuffer.waitUntilDrained();
+        } catch {
+          currentBuffer = null;
+          return null;
+        }
+
+        currentBuffer = null;
+
+        const doneData = loopDoneDataRef.current;
+        loopDoneDataRef.current = null;
+
+        if (!doneData) return null;
+        return {
+          directorState: doneData.directorState,
+          totalAgents: doneData.totalAgents,
+          agentHadContent: doneData.agentHadContent ?? true,
+          cueUserReceived: doneData.cueUserReceived,
+          sessionClosed: doneData.sessionClosed,
+          endReason: doneData.endReason,
+        };
+      };
+
+      return { onEvent, onIterationEnd };
+    },
+    [createBufferForSession],
+  );
+
   /**
    * Frontend-driven agent loop. Delegates to the shared runAgentLoop
    * from lib/chat/agent-loop.ts, wiring StreamBuffer for UI pacing.
@@ -438,24 +1234,10 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const runAgentLoopFn = useCallback(
     async (
       sessionId: string,
-      requestTemplate: {
-        messages: UIMessage<ChatMessageMetadata>[];
-        storeState: Record<string, unknown>;
-        config: {
-          agentIds: string[];
-          sessionType?: string;
-          agentConfigs?: Record<string, unknown>[];
-          [key: string]: unknown;
-        };
-        userProfile?: { nickname?: string; bio?: string };
-        apiKey: string;
-        baseUrl?: string;
-        model?: string;
-        providerType?: string;
-        thinkingConfig?: ThinkingConfig;
-      },
+      requestTemplate: ChatRequestTemplate,
       controller: AbortController,
       sessionType: SessionType,
+      onElementReferenceResponseAccepted?: (response: Response) => void,
     ): Promise<void> => {
       // Attach full configs for generated (non-default) agents so the server can use them.
       // The server-side registry only has default agents; generated agents exist only client-side.
@@ -468,11 +1250,48 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         requestTemplate.config.agentConfigs = generatedConfigs;
       }
 
-      // Per-iteration buffer reference — set in onEvent, used in onIterationEnd
-      let currentBuffer: StreamBuffer | null = null;
-      // Tracks agent_start messageId so text_delta/action events with a missing
-      // messageId can fall back to the current agent.
-      let currentMessageId: string | null = null;
+      if (isPiChatEnabled()) {
+        // Pi bypasses runAgentLoop's per-iteration getStoreState, so its single
+        // request needs the snapshot built here — /api/chat/pi rejects bodies
+        // without storeState.
+        const storeState = await buildFreshAgentLoopStoreState();
+        const firstRequestContext = getFirstPiRequestContext(sessionId);
+        const piRequestTemplate = firstRequestContext
+          ? { ...requestTemplate, storeState, piSessionBoundary: firstRequestContext }
+          : { ...requestTemplate, storeState };
+        const piRequestWithWebSearch = withPiWebSearchSettings(
+          piRequestTemplate,
+          useSettingsStore.getState(),
+        );
+        await runPiSingleRequest(
+          sessionId,
+          withPiInclassWhiteboardTools(piRequestWithWebSearch),
+          controller,
+          sessionType,
+          createStatelessStreamConsumer,
+          clearLiveSessionAfterError,
+          enterSoftClosing,
+          markSessionCompleted,
+          storeDirectorState,
+          onStopSessionRef,
+          t,
+          firstRequestContext || onElementReferenceResponseAccepted
+            ? (response) => {
+                if (firstRequestContext) {
+                  consumePiSessionBoundaryContext(
+                    piSessionBoundariesRef.current,
+                    sessionId,
+                    firstRequestContext,
+                  );
+                }
+                onElementReferenceResponseAccepted?.(response);
+              }
+            : undefined,
+        );
+        return;
+      }
+
+      const streamConsumer = createStatelessStreamConsumer(sessionId, controller, sessionType);
 
       const outcome = await runAgentLoop(
         {
@@ -485,16 +1304,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           thinkingConfig: requestTemplate.thinkingConfig,
         },
         {
-          getStoreState: (): AgentLoopStoreState => {
-            const freshState = useStageStore.getState();
-            return {
-              stage: freshState.stage,
-              scenes: freshState.scenes,
-              currentSceneId: freshState.currentSceneId,
-              mode: freshState.mode,
-              whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
-            };
-          },
+          getStoreState: buildFreshAgentLoopStoreState,
 
           getMessages: () => {
             const currentSession = sessionsRef.current.find((s) => s.id === sessionId);
@@ -509,96 +1319,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
               signal,
             }),
 
-          onEvent: (event) => {
-            // Create buffer on first event of each iteration
-            if (!currentBuffer) {
-              currentBuffer = createBufferForSession(sessionId, sessionType);
-            }
-
-            // Pipe SSE events into StreamBuffer.
-            switch (event.type) {
-              case 'agent_start': {
-                const { messageId, agentId, agentName, agentAvatar, agentColor } = event.data;
-                currentMessageId = messageId;
-                currentBuffer.pushAgentStart({
-                  messageId,
-                  agentId,
-                  agentName,
-                  avatar: agentAvatar,
-                  color: agentColor,
-                });
-                break;
-              }
-              case 'agent_end': {
-                currentBuffer.pushAgentEnd({
-                  messageId: event.data.messageId,
-                  agentId: event.data.agentId,
-                });
-                break;
-              }
-              case 'text_delta': {
-                const targetId = event.data.messageId ?? currentMessageId;
-                if (!targetId) break;
-                currentBuffer.pushText(targetId, event.data.content);
-                break;
-              }
-              case 'action': {
-                const targetId = event.data.messageId ?? currentMessageId;
-                if (!targetId) break;
-                if (controller.signal.aborted) break;
-                currentBuffer.pushAction({
-                  actionId: event.data.actionId,
-                  actionName: event.data.actionName,
-                  params: event.data.params,
-                  messageId: targetId,
-                  agentId: event.data.agentId,
-                });
-                break;
-              }
-              case 'thinking':
-                currentBuffer.pushThinking(event.data);
-                break;
-              case 'cue_user':
-                currentBuffer.pushCueUser(event.data);
-                break;
-              case 'done':
-                currentBuffer.pushDone(event.data);
-                break;
-              case 'error':
-                // Surface the error to the buffer (for UI), then throw so the
-                // shared agent loop breaks out instead of silently continuing.
-                currentBuffer.pushError(event.data.message);
-                throw new Error(event.data.message);
-            }
-          },
-
-          onIterationEnd: async () => {
-            if (!currentBuffer) return null;
-
-            // Wait for buffer to finish playing all items (character animations, delays)
-            try {
-              await currentBuffer.waitUntilDrained();
-            } catch {
-              // Buffer was disposed/shutdown (abort or session end)
-              currentBuffer = null;
-              return null;
-            }
-
-            currentBuffer = null;
-
-            // Read the iteration result from loopDoneDataRef
-            // (populated by buffer's onDone/onCueUser callbacks)
-            const doneData = loopDoneDataRef.current;
-            loopDoneDataRef.current = null;
-
-            if (!doneData) return null;
-            return {
-              directorState: doneData.directorState,
-              totalAgents: doneData.totalAgents,
-              agentHadContent: doneData.agentHadContent ?? true,
-              cueUserReceived: doneData.cueUserReceived,
-            };
-          },
+          onEvent: streamConsumer.onEvent,
+          onIterationEnd: streamConsumer.onIterationEnd,
         },
         controller.signal,
       );
@@ -614,19 +1336,23 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             setSessions((prev) =>
               prev.map((s) =>
                 s.id === sessionId
-                  ? { ...s, status: 'completed' as SessionStatus, updatedAt: Date.now() }
+                  ? {
+                      ...s,
+                      status: 'completed' as SessionStatus,
+                      updatedAt: nextChatUpdatedAt(s),
+                    }
                   : s,
               ),
             );
-            onStopSessionRef.current?.();
+            onStopSessionRef.current?.({ sessionId, source: 'turn_complete' });
             break;
           case 'empty_turns':
             clearLiveSessionAfterError(sessionId, t('chat.error.emptyAgentResponses'));
-            onStopSessionRef.current?.();
+            onStopSessionRef.current?.({ sessionId, source: 'error' });
             break;
           case 'no_done':
             clearLiveSessionAfterError(sessionId, t('chat.error.streamInterrupted'));
-            onStopSessionRef.current?.();
+            onStopSessionRef.current?.({ sessionId, source: 'error' });
             break;
           case 'aborted':
             // Already handled elsewhere via abort signal.
@@ -634,47 +1360,62 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         }
       }
     },
-    [createBufferForSession, clearLiveSessionAfterError, t],
+    [
+      clearLiveSessionAfterError,
+      createStatelessStreamConsumer,
+      enterSoftClosing,
+      markSessionCompleted,
+      storeDirectorState,
+      t,
+      getFirstPiRequestContext,
+    ],
   );
 
   /**
    * Create a new chat session
    */
-  const createSession = useCallback(async (type: SessionType, title: string): Promise<string> => {
-    const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const now = Date.now();
+  const createSession = useCallback(
+    async (type: SessionType, title: string): Promise<string> => {
+      const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const now = Date.now();
 
-    const newSession: ChatSession = {
-      id: sessionId,
-      type,
-      title,
-      status: 'active',
-      messages: [],
-      config: {
-        agentIds: ['default-1'],
-        defaultAgentId: 'default-1',
-      },
-      toolCalls: [],
-      pendingToolCalls: [],
-      createdAt: now,
-      updatedAt: now,
-    };
+      if (type === 'qa' || type === 'discussion') registerFirstPiRequest(sessionId);
+      const newSession: ChatSession = {
+        id: sessionId,
+        type,
+        title,
+        status: 'active',
+        messages: [],
+        config: {
+          agentIds: ['default-1'],
+          defaultAgentId: 'default-1',
+        },
+        toolCalls: [],
+        pendingToolCalls: [],
+        sceneId: currentSceneIdRef.current ?? undefined,
+        createdAt: now,
+        updatedAt: now,
+      };
 
-    setSessions((prev) => [...prev, newSession]);
-    setActiveSessionId(sessionId);
-    setExpandedSessionIds((prev) => new Set([...prev, sessionId]));
+      setSessions((prev) => [...prev, newSession]);
+      setActiveSessionId(sessionId);
+      setExpandedSessionIds((prev) => new Set([...prev, sessionId]));
 
-    log.info(`[ChatArea] Created session: ${sessionId} (${type})`);
-    return sessionId;
-  }, []);
+      log.info(`[ChatArea] Created session: ${sessionId} (${type})`);
+      return sessionId;
+    },
+    [registerFirstPiRequest],
+  );
 
   /**
    * End a chat session.
    * For QA/Discussion sessions with active streaming, appends "..." + interrupted marker.
    */
   const endSession = useCallback(
-    async (sessionId: string): Promise<void> => {
+    async (sessionId: string, options: EndSessionOptions = {}): Promise<void> => {
       log.info(`[ChatArea] Ending session: ${sessionId}`);
+      clearSoftCloseRegistration(sessionId);
+      softCloseLifecycleRef.current.set(sessionId, 'completed');
       livePausedRef.current = false;
 
       const session = sessionsRef.current.find((s) => s.id === sessionId);
@@ -683,19 +1424,24 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         abortControllerRef.current && streamingSessionIdRef.current === sessionId
       );
 
-      // Only abort if this session owns the active stream
+      // Retire presentation work before callers start another session. An action
+      // already inside ActionEngine cannot be cancelled, so wait for it to settle.
       if (wasStreaming) {
-        abortControllerRef.current!.abort();
-        abortControllerRef.current = null;
-        streamingSessionIdRef.current = null;
-        setIsStreaming(false);
+        retireActiveLiveRequest(sessionId);
+      } else {
+        const retirement = retireLiveRequestResources(null, sessionId, buffersRef.current);
+        pendingRetirementRef.current = Promise.all([pendingRetirementRef.current, retirement]).then(
+          () => undefined,
+        );
       }
-
-      // Destroy buffer — shutdown avoids firing stale onLiveSpeech(null,null)
-      const buf = buffersRef.current.get(sessionId);
-      if (buf) {
-        buf.shutdown();
-        buffersRef.current.delete(sessionId);
+      await pendingRetirementRef.current;
+      piSessionBoundariesRef.current.delete(sessionId);
+      if (isLiveSession && session) {
+        previousLiveSessionRef.current = createPreviousLiveSessionContext(
+          session,
+          currentSceneIdRef.current,
+          options.source,
+        );
       }
       lectureMessageIds.current.delete(sessionId);
       lectureLastActionIndexRef.current.delete(sessionId);
@@ -735,7 +1481,11 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                 break;
               }
             }
-            return { ...s, messages, status: 'completed' as SessionStatus };
+            return {
+              ...withChatSessionStatus(s, 'completed'),
+              messages,
+              softCloseDeadline: undefined,
+            };
           }),
         );
         // Clear roundtable state via callbacks
@@ -744,7 +1494,12 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       } else {
         setSessions((prev) =>
           prev.map((s) =>
-            s.id === sessionId ? { ...s, status: 'completed' as SessionStatus } : s,
+            s.id === sessionId
+              ? {
+                  ...withChatSessionStatus(s, 'completed'),
+                  softCloseDeadline: undefined,
+                }
+              : s,
           ),
         );
       }
@@ -753,106 +1508,142 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         setActiveSessionId(null);
       }
     },
-    [activeSessionId],
+    [activeSessionId, clearSoftCloseRegistration, retireActiveLiveRequest],
+  );
+
+  const continueSoftClosingSession = useCallback(
+    (sessionId: string): boolean => {
+      if (
+        softCloseLifecycleRef.current.get(sessionId) !== 'soft-closing' ||
+        !claimSoftCloseRegistration(sessionId)
+      ) {
+        return false;
+      }
+      softCloseLifecycleRef.current.set(sessionId, 'active');
+      const now = Date.now();
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId
+            ? (resumeSoftClosingSessionWithoutMessage(session, now) ?? session)
+            : session,
+        ),
+      );
+      return true;
+    },
+    [claimSoftCloseRegistration],
+  );
+
+  const confirmSoftClosingSession = useCallback(
+    async (sessionId: string): Promise<SessionCleanupPayload | undefined> => {
+      const registration = claimSoftCloseRegistration(sessionId);
+      if (!registration || softCloseLifecycleRef.current.get(sessionId) !== 'soft-closing') {
+        return undefined;
+      }
+      softCloseLifecycleRef.current.set(sessionId, 'completed');
+      const payload: SessionCleanupPayload = {
+        sessionId,
+        endReason: registration.endReason,
+        source: 'soft_close_confirmed',
+      };
+      await endSession(sessionId, { source: 'soft_close_confirmed' });
+      return payload;
+    },
+    [claimSoftCloseRegistration, endSession],
   );
 
   /**
    * End the currently active QA/Discussion session (if any).
    */
-  const endActiveSession = useCallback(async (): Promise<void> => {
-    const active = sessionsRef.current.find(
-      (s) => (s.type === 'qa' || s.type === 'discussion') && s.status === 'active',
-    );
-    if (active) {
-      await endSession(active.id);
-    }
-  }, [endSession]);
+  const endActiveSession = useCallback(
+    async (options: EndSessionOptions = {}): Promise<void> => {
+      const active = sessionsRef.current.find(isOpenLiveSession);
+      if (active) {
+        await endSession(active.id, options);
+      }
+    },
+    [endSession],
+  );
 
   /**
    * Soft-pause the active QA/Discussion session.
    * Aborts SSE and appends "..." + interrupted marker, but keeps session 'active'
    * so the user can continue speaking in the same topic.
    */
-  const softPauseSession = useCallback(async (sessionId: string): Promise<void> => {
-    livePausedRef.current = false;
-    const session = sessionsRef.current.find((s) => s.id === sessionId);
-    if (!session) return;
-    const isLiveSession = session.type === 'qa' || session.type === 'discussion';
-    if (!isLiveSession || session.status !== 'active') return;
+  const softPauseSession = useCallback(
+    async (sessionId: string): Promise<void> => {
+      livePausedRef.current = false;
+      const session = sessionsRef.current.find((s) => s.id === sessionId);
+      if (!session) return;
+      const isLiveSession = session.type === 'qa' || session.type === 'discussion';
+      if (!isLiveSession || session.status !== 'active') return;
 
-    const wasStreaming = !!(
-      abortControllerRef.current && streamingSessionIdRef.current === sessionId
-    );
-
-    // Destroy buffer — no more ticks, no stale onDone/onLiveSpeech callbacks.
-    // Resume will create a fresh buffer.
-    const buf = buffersRef.current.get(sessionId);
-    if (buf) {
-      buf.shutdown();
-      buffersRef.current.delete(sessionId);
-    }
-
-    // Abort SSE stream
-    if (wasStreaming) {
-      abortControllerRef.current!.abort();
-      abortControllerRef.current = null;
-      streamingSessionIdRef.current = null;
-      setIsStreaming(false);
-    }
-
-    if (wasStreaming) {
-      // Append "..." + interrupted marker to last assistant message, keep status 'active'
-      setSessions((prev) =>
-        prev.map((s) => {
-          if (s.id !== sessionId) return s;
-          const messages = [...s.messages];
-          for (let i = messages.length - 1; i >= 0; i--) {
-            if (messages[i].role === 'assistant') {
-              const parts = [...messages[i].parts];
-              let appended = false;
-              for (let j = parts.length - 1; j >= 0; j--) {
-                if (parts[j].type === 'text') {
-                  const textPart = parts[j] as { type: 'text'; text: string };
-                  parts[j] = {
-                    type: 'text',
-                    text: (textPart.text || '') + '...',
-                  } as UIMessage<ChatMessageMetadata>['parts'][number];
-                  appended = true;
-                  break;
-                }
-              }
-              if (!appended) {
-                parts.push({
-                  type: 'text',
-                  text: '...',
-                } as UIMessage<ChatMessageMetadata>['parts'][number]);
-              }
-              messages[i] = {
-                ...messages[i],
-                parts,
-                metadata: { ...messages[i].metadata, interrupted: true },
-              };
-              break;
-            }
-          }
-          // Keep status 'active' — session continues when user speaks
-          return { ...s, messages, updatedAt: Date.now() };
-        }),
+      const wasStreaming = !!(
+        abortControllerRef.current && streamingSessionIdRef.current === sessionId
       );
-      // Note: Do NOT call onLiveSpeech/onThinking here.
-      // Caller (doSoftPause) manages roundtable state to keep the interrupted bubble visible.
-    }
 
-    log.info(`[ChatArea] Soft-paused session: ${sessionId}`);
-  }, []);
+      if (wasStreaming) {
+        retireActiveLiveRequest(sessionId);
+      } else {
+        const retirement = retireLiveRequestResources(null, sessionId, buffersRef.current);
+        pendingRetirementRef.current = Promise.all([pendingRetirementRef.current, retirement]).then(
+          () => undefined,
+        );
+      }
+      await pendingRetirementRef.current;
+
+      if (wasStreaming) {
+        // Append "..." + interrupted marker to last assistant message, keep status 'active'
+        setSessions((prev) =>
+          prev.map((s) => {
+            if (s.id !== sessionId) return s;
+            const messages = [...s.messages];
+            for (let i = messages.length - 1; i >= 0; i--) {
+              if (messages[i].role === 'assistant') {
+                const parts = [...messages[i].parts];
+                let appended = false;
+                for (let j = parts.length - 1; j >= 0; j--) {
+                  if (parts[j].type === 'text') {
+                    const textPart = parts[j] as { type: 'text'; text: string };
+                    parts[j] = {
+                      type: 'text',
+                      text: (textPart.text || '') + '...',
+                    } as UIMessage<ChatMessageMetadata>['parts'][number];
+                    appended = true;
+                    break;
+                  }
+                }
+                if (!appended) {
+                  parts.push({
+                    type: 'text',
+                    text: '...',
+                  } as UIMessage<ChatMessageMetadata>['parts'][number]);
+                }
+                messages[i] = {
+                  ...messages[i],
+                  parts,
+                  metadata: { ...messages[i].metadata, interrupted: true },
+                };
+                break;
+              }
+            }
+            // Keep status 'active' — session continues when user speaks
+            return { ...s, messages, updatedAt: nextChatUpdatedAt(s) };
+          }),
+        );
+        // Note: Do NOT call onLiveSpeech/onThinking here.
+        // Caller (doSoftPause) manages roundtable state to keep the interrupted bubble visible.
+      }
+
+      log.info(`[ChatArea] Soft-paused session: ${sessionId}`);
+    },
+    [retireActiveLiveRequest],
+  );
 
   /**
    * Soft-pause the currently active QA/Discussion session (if any).
    */
   const softPauseActiveSession = useCallback(async (): Promise<void> => {
-    const active = sessionsRef.current.find(
-      (s) => (s.type === 'qa' || s.type === 'discussion') && s.status === 'active',
-    );
+    const active = sessionsRef.current.find(isOpenLiveSession);
     if (active) {
       await softPauseSession(active.id);
     }
@@ -867,12 +1658,12 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       if (!session || session.status !== 'active') return;
 
+      await pendingRetirementRef.current;
+
       const controller = new AbortController();
       abortControllerRef.current = controller;
       streamingSessionIdRef.current = sessionId;
       setIsStreaming(true);
-
-      const currentState = useStageStore.getState();
 
       try {
         log.info(`[ChatArea] Resuming session: ${sessionId}`);
@@ -889,13 +1680,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           sessionId,
           {
             messages: session.messages,
-            storeState: {
-              stage: currentState.stage,
-              scenes: currentState.scenes,
-              currentSceneId: currentState.currentSceneId,
-              mode: currentState.mode,
-              whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
-            },
             config: {
               agentIds,
               sessionType: session.type,
@@ -909,6 +1693,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             model: mc.modelString,
             providerType: mc.providerType,
             thinkingConfig: mc.thinkingConfig,
+            directorState: session.directorState,
           },
           controller,
           session.type,
@@ -938,9 +1723,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    * Resume the currently active soft-paused session (if any).
    */
   const resumeActiveSession = useCallback(async (): Promise<void> => {
-    const active = sessionsRef.current.find(
-      (s) => (s.type === 'qa' || s.type === 'discussion') && s.status === 'active',
-    );
+    const active = sessionsRef.current.find(isOpenLiveSession);
     if (active) {
       await resumeSession(active.id);
     }
@@ -950,18 +1733,18 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    * Send a message to the active session
    */
   const sendMessage = useCallback(
-    async (content: string): Promise<void> => {
+    async (content: string, options: ChatMessageSendOptions = {}): Promise<void> => {
       let sessionId = activeSessionId;
 
       // Interrupt active generation: abort stream and append "..." to the last agent message
-      if (isStreaming && abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
+      if (abortControllerRef.current) {
+        const interruptedSessionId = retireActiveLiveRequest(sessionId);
+        const interruptedMessageSessionId = interruptedSessionId ?? sessionId;
 
-        if (sessionId) {
+        if (interruptedMessageSessionId) {
           setSessions((prev) =>
             prev.map((s) => {
-              if (s.id !== sessionId) return s;
+              if (s.id !== interruptedMessageSessionId) return s;
               const messages = [...s.messages];
               for (let i = messages.length - 1; i >= 0; i--) {
                 if (messages[i].role === 'assistant') {
@@ -977,7 +1760,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                         text: (textPart.text || '') + '...',
                       } as UIMessage<ChatMessageMetadata>['parts'][number];
                       messages[i] = { ...messages[i], parts };
-                      return { ...s, messages, updatedAt: Date.now() };
+                      return { ...s, messages, updatedAt: nextChatUpdatedAt(s) };
                     }
                   }
                   break;
@@ -988,6 +1771,10 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           );
         }
       }
+
+      // An interrupted action may still be finishing a delayed state mutation.
+      // Capture the next request only after that mutation has settled.
+      await pendingRetirementRef.current;
 
       // Validate model configuration before sending
       const modelConfig = getCurrentModelConfig();
@@ -1010,13 +1797,22 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       if (needNewSession) {
         // End all active QA/Discussion sessions before creating new one
-        const activeQAOrDiscussion = sessionsRef.current.filter(
-          (s) => (s.type === 'qa' || s.type === 'discussion') && s.status === 'active',
-        );
+        const activeQAOrDiscussion = sessionsRef.current.filter(isOpenLiveSession);
         for (const session of activeQAOrDiscussion) {
           await endSession(session.id);
         }
         sessionId = await createSession('qa', 'Q&A');
+      } else if (sessionId && activeSession?.status === 'soft-closing') {
+        if (claimSoftCloseRegistration(sessionId)) {
+          softCloseLifecycleRef.current.set(sessionId, 'active');
+        } else {
+          const lifecycle = softCloseLifecycleRef.current.get(sessionId);
+          if (lifecycle === 'completed') {
+            sessionId = await createSession('qa', 'Q&A');
+          } else if (lifecycle !== 'active') {
+            return;
+          }
+        }
       }
 
       const controller = new AbortController();
@@ -1056,14 +1852,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         const exists = prev.some((s) => s.id === sessionId);
         if (exists) {
           return prev.map((s) =>
-            s.id === sessionId
-              ? {
-                  ...s,
-                  messages: [...s.messages, userMessage],
-                  status: 'active' as SessionStatus,
-                  updatedAt: now,
-                }
-              : s,
+            s.id === sessionId ? resumeSoftClosingSessionForFollowUp(s, userMessage, now) : s,
           );
         } else {
           const newSession: ChatSession = {
@@ -1078,14 +1867,13 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             },
             toolCalls: [],
             pendingToolCalls: [],
+            sceneId: currentSceneIdRef.current ?? undefined,
             createdAt: now,
             updatedAt: now,
           };
           return [...prev, newSession];
         }
       });
-
-      const currentState = useStageStore.getState();
 
       try {
         log.info(
@@ -1099,13 +1887,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           sessionId!,
           {
             messages: sessionMessages,
-            storeState: {
-              stage: currentState.stage,
-              scenes: currentState.scenes,
-              currentSceneId: currentState.currentSceneId,
-              mode: currentState.mode,
-              whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
-            },
             config: {
               agentIds,
               sessionType,
@@ -1119,9 +1900,12 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             model: mc.modelString,
             providerType: mc.providerType,
             thinkingConfig: mc.thinkingConfig,
+            directorState: existingSession?.directorState,
+            ...(options.elementReference ? { elementReference: options.elementReference } : {}),
           },
           controller,
           sessionType,
+          options.onResponseAccepted,
         );
       } catch (error) {
         // Ignore AbortError — it's intentional (user interrupted)
@@ -1147,9 +1931,10 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     [
       activeSessionId,
       clearLiveSessionAfterError,
-      isStreaming,
       createSession,
       endSession,
+      claimSoftCloseRegistration,
+      retireActiveLiveRequest,
       runAgentLoopFn,
       t,
     ],
@@ -1179,9 +1964,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       }
 
       // Auto-end previous active QA/Discussion sessions to ensure only one is active
-      const activeQAOrDiscussion = sessionsRef.current.filter(
-        (s) => (s.type === 'qa' || s.type === 'discussion') && s.status === 'active',
-      );
+      const activeQAOrDiscussion = sessionsRef.current.filter(isOpenLiveSession);
       for (const session of activeQAOrDiscussion) {
         await endSession(session.id);
       }
@@ -1189,6 +1972,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const now = Date.now();
       const agentId = request.agentId || 'default-1';
+      registerFirstPiRequest(sessionId);
 
       // Read all selected agent IDs from settings store
       const settingsState = useSettingsStore.getState();
@@ -1214,6 +1998,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         },
         toolCalls: [],
         pendingToolCalls: [],
+        sceneId: currentSceneIdRef.current ?? undefined,
         createdAt: now,
         updatedAt: now,
       };
@@ -1227,8 +2012,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       streamingSessionIdRef.current = sessionId;
       setIsStreaming(true);
 
-      const currentState = useStageStore.getState();
-
       try {
         const userProfileState = useUserProfileStore.getState();
         const mc = getCurrentModelConfig();
@@ -1237,13 +2020,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           sessionId,
           {
             messages: [],
-            storeState: {
-              stage: currentState.stage,
-              scenes: currentState.scenes,
-              currentSceneId: currentState.currentSceneId,
-              mode: currentState.mode,
-              whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
-            },
             config: {
               agentIds,
               sessionType: 'discussion',
@@ -1286,7 +2062,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable from i18n context
-    [clearLiveSessionAfterError, endSession, runAgentLoopFn],
+    [clearLiveSessionAfterError, endSession, registerFirstPiRequest, runAgentLoopFn],
   );
 
   /**
@@ -1296,11 +2072,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     if (!abortControllerRef.current) return;
 
     log.info('[ChatArea] Interrupting active request');
-    abortControllerRef.current.abort();
-    abortControllerRef.current = null;
-    setIsStreaming(false);
-    streamingSessionIdRef.current = null;
-  }, []);
+    retireActiveLiveRequest(activeSessionId);
+  }, [activeSessionId, retireActiveLiveRequest]);
 
   /**
    * Start a lecture session for a scene.
@@ -1321,9 +2094,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         // Actions won't be re-appended because lastActionIndex already covers them.
         if (existing.status === 'completed') {
           setSessions((prev) =>
-            prev.map((s) =>
-              s.id === existing.id ? { ...s, status: 'active' as SessionStatus } : s,
-            ),
+            prev.map((s) => (s.id === existing.id ? withChatSessionStatus(s, 'active') : s)),
           );
           // Restore lecture tracking refs (cleared by endSession)
           const messageId = existing.messages[0]?.id;
@@ -1409,7 +2180,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       // Update lastActionIndex in session
       setSessions((prev) =>
         prev.map((s) =>
-          s.id === sessionId ? { ...s, lastActionIndex: actionIndex, updatedAt: Date.now() } : s,
+          s.id === sessionId
+            ? { ...s, lastActionIndex: actionIndex, updatedAt: nextChatUpdatedAt(s) }
+            : s,
         ),
       );
 
@@ -1473,9 +2246,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
   /** Pause the active live (QA/Discussion) buffer and set sticky intent. Returns true if paused. */
   const pauseActiveLiveBuffer = useCallback((): boolean => {
-    const active = sessionsRef.current.find(
-      (s) => (s.type === 'qa' || s.type === 'discussion') && s.status === 'active',
-    );
+    const active = sessionsRef.current.find(isOpenLiveSession);
     if (!active) return false;
     const buf = buffersRef.current.get(active.id);
     if (!buf || buf.disposed) return false;
@@ -1487,9 +2258,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
   /** Resume the active live (QA/Discussion) buffer and clear sticky intent. */
   const resumeActiveLiveBuffer = useCallback(() => {
-    const active = sessionsRef.current.find(
-      (s) => (s.type === 'qa' || s.type === 'discussion') && s.status === 'active',
-    );
+    const active = sessionsRef.current.find(isOpenLiveSession);
     if (!active) return;
     livePausedRef.current = false;
     const buf = buffersRef.current.get(active.id);
@@ -1506,6 +2275,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     createSession,
     endSession,
     endActiveSession,
+    continueSoftClosingSession,
+    confirmSoftClosingSession,
     softPauseActiveSession,
     resumeActiveSession,
     sendMessage,

@@ -30,11 +30,20 @@ const KEYS = [
   'edit.text.alignRight',
   'edit.text.bullet',
   'edit.insert.textBox',
+  'edit.insert.line',
+  'edit.insert.table',
+  'edit.insert.chart',
+  'edit.insert.chartBar',
+  'edit.insert.chartLine',
+  'edit.insert.chartPie',
+  'edit.insert.tableDimensions',
+  'edit.table.doubleClickToEdit',
   'edit.insert.image',
   'edit.insert.imageDrop',
   'edit.insert.imageOr',
   'edit.insert.imageUrlPlaceholder',
   'edit.insert.imageInsert',
+  'edit.image.crop',
 ];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- locale JSON traversal
 const get = (o: any, k: string) => k.split('.').reduce((a, p) => a?.[p], o);

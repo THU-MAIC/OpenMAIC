@@ -1,17 +1,25 @@
 'use client';
 
-import { motion, useReducedMotion } from 'motion/react';
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { motion, useMotionValue, useReducedMotion } from 'motion/react';
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { SceneEditorSurface, SurfaceState } from '@/lib/edit/scene-editor-surface';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
 import { NOOP_SURFACE } from '@/lib/edit/noop-surface';
 import type { Scene } from '@/lib/types/stage';
 import { CHROME_DURATION, CHROME_EASE, CHROME_STAGGER } from '@/lib/edit/transitions';
 import { StageGrid } from '@/components/edit/StageGrid';
+import { ContainBox } from '@/components/edit/ContainBox';
+import type { SceneType } from '@/lib/types/stage';
 import { CommandBar } from './CommandBar';
 import { FloatingInsertToolbar } from './FloatingInsertToolbar';
 import { FloatingToolbar } from './FloatingToolbar';
 import { HintRail } from './HintRail';
+import { CanvasPager, type CanvasPagerProps } from './CanvasPager';
+
+/** 16:9 classroom surfaces. Quiz is a form and stays full-bleed. */
+function usesClassroomAspect(type: SceneType): boolean {
+  return type === 'slide' || type === 'interactive' || type === 'pbl';
+}
 
 interface EditShellProps {
   readonly scene: Scene;
@@ -28,6 +36,18 @@ interface EditShellProps {
    * is hidden, so the entire top chrome reduces to a single bar.
    */
   readonly commandTrailing?: ReactNode;
+  /**
+   * Page pager for the canvas (‹ n/m › scene flipper), in its FLOATING form.
+   * Passed down uninterpreted — the chrome stays pure; `EditChromeRoot` computes
+   * the state from `lib/edit/scene-pager.ts` + the stage store, and normally
+   * hands it to the edit dock's global edit bar instead. This slot is what remains
+   * for scene types that get no dock.
+   */
+  readonly pager?: CanvasPagerProps;
+  /** Omit the whole top command bar inside the workbench panel. */
+  readonly hideCommandBar?: boolean;
+  /** Optional bottom bar (under the canvas) — used for the actions timeline. */
+  readonly bottomRail?: ReactNode;
 }
 
 const CHROME_TRANSITION = { duration: CHROME_DURATION, ease: CHROME_EASE } as const;
@@ -47,7 +67,7 @@ const LEFT_RAIL_DELAY = CHROME_STAGGER * 2;
  *   ├──────────┬───────────────────────────────────┤
  *   │ leftRail │ Canvas / unsupported-scene        │
  *   │ (opt)    │ FloatingToolbar (when selected)   │
- *   │          │ HintRail (AI, reserved)            │
+ *   │          │ HintRail (surface hints)           │
  *   └──────────┴───────────────────────────────────┘
  *
  * Mount choreography: CommandBar drops in from top, leftRail slides in
@@ -58,19 +78,37 @@ const LEFT_RAIL_DELAY = CHROME_STAGGER * 2;
  * Architecture: this shell resolves `scene.type` to a registered surface
  * (or falls back to NOOP_SURFACE for unregistered types) and **never
  * branches into a different component type**. The same `<Frame>` mounts
- * across every scene-type change — only the `surface.CanvasComponent`
- * inside the canvas slot swaps. That guarantees CommandBar and `leftRail`
+ * across every scene-type change — only the `surface.SurfaceComponent`
+ * inside the center slot swaps. That guarantees CommandBar and `leftRail`
  * never remount during scene navigation, removing the chrome flicker that
  * the previous two-branch design caused (PR3a rearch).
  */
-export function EditShell({ scene, leftRail, commandTrailing }: EditShellProps) {
+export function EditShell({
+  scene,
+  leftRail,
+  commandTrailing,
+  bottomRail,
+  pager,
+  hideCommandBar,
+}: EditShellProps) {
   const surface = sceneEditorRegistry.resolve(scene.type) ?? NOOP_SURFACE;
   // Surface state is published from a child runner (keyed by sceneType so it
   // remounts when the surface identity changes — that's the boundary at which
   // rules-of-hooks naturally allows a different hook signature). The chrome
   // around it stays mounted and consumes state via these props.
   const [state, setState] = useState<SurfaceState | null>(null);
-  const CanvasComponent = surface.CanvasComponent;
+  // The insert palette disappears on surfaces that do not expose insert
+  // items (Quiz, GenUI, etc.). Keep its offset AND its fold in the persistent
+  // shell so a temporary unmount does not discard either of the author's
+  // choices about where the strip sits and whether it is open.
+  const insertToolbarX = useMotionValue(0);
+  const insertToolbarY = useMotionValue(0);
+  const [insertToolbarCollapsed, setInsertToolbarCollapsed] = useState(false);
+  const toggleInsertToolbarCollapsed = useCallback(
+    () => setInsertToolbarCollapsed((current) => !current),
+    [],
+  );
+  const SurfaceComponent = surface.SurfaceComponent;
 
   return (
     <>
@@ -85,17 +123,27 @@ export function EditShell({ scene, leftRail, commandTrailing }: EditShellProps) 
       <SurfaceStateRunner key={scene.type} surface={surface} onChange={setState} />
       <Frame
         title={scene.title}
+        sceneType={scene.type}
         leftRail={leftRail}
         history={state?.history}
         commands={state?.commands}
         trailing={commandTrailing}
+        bottomRail={bottomRail}
+        pager={pager}
+        hideCommandBar={hideCommandBar}
       >
-        <CanvasComponent />
-        {state?.insertItems && state.insertItems.length > 0 && (
-          <FloatingInsertToolbar items={state.insertItems} />
+        <SurfaceComponent />
+        {state && state.insertItems.length > 0 && (
+          <FloatingInsertToolbar
+            items={state.insertItems}
+            x={insertToolbarX}
+            y={insertToolbarY}
+            collapsed={insertToolbarCollapsed}
+            onToggleCollapsed={toggleInsertToolbarCollapsed}
+          />
         )}
         {state?.hasSelection && <FloatingToolbar actions={state.floatingActions} />}
-        <HintRail hints={state?.hints} />
+        <HintRail hints={state?.hints} reserveSpace={scene.type === 'quiz'} />
       </Frame>
     </>
   );
@@ -206,14 +254,29 @@ function surfaceStateEqual(a: SurfaceState, b: SurfaceState | null): boolean {
 
 interface FrameProps {
   readonly title: string;
+  readonly sceneType: SceneType;
   readonly leftRail?: ReactNode;
   readonly history?: React.ComponentProps<typeof CommandBar>['history'];
   readonly commands?: React.ComponentProps<typeof CommandBar>['commands'];
   readonly trailing?: ReactNode;
+  readonly bottomRail?: ReactNode;
+  readonly pager?: CanvasPagerProps;
+  readonly hideCommandBar?: boolean;
   readonly children: ReactNode;
 }
 
-function Frame({ title, leftRail, history, commands, trailing, children }: FrameProps) {
+function Frame({
+  title,
+  sceneType,
+  leftRail,
+  history,
+  commands,
+  trailing,
+  bottomRail,
+  pager,
+  hideCommandBar,
+  children,
+}: FrameProps) {
   const prefersReducedMotion = useReducedMotion();
 
   // Chrome layers fade in (opacity only) — deliberately NO transform (x/y)
@@ -238,13 +301,20 @@ function Frame({ title, leftRail, history, commands, trailing, children }: Frame
     <StageGrid
       className="bg-gradient-to-b from-zinc-100 to-zinc-200 dark:from-zinc-950 dark:to-zinc-900"
       topSlot={
-        <motion.div
-          initial={cmdInitial}
-          animate={cmdAnimate}
-          transition={{ ...stepTransition, delay: prefersReducedMotion ? 0 : COMMANDBAR_DELAY }}
-        >
-          <CommandBar title={title} history={history} commands={commands} trailing={trailing} />
-        </motion.div>
+        hideCommandBar ? null : (
+          // `data-maic-edit-chrome`: the workbench's hand-edit signal scope
+          // (structure ops live here — undo/redo, insert — while the nav rail
+          // is deliberately out of it: switching pages is navigation, not an
+          // edit). See lib/workbench/use-workbench-pro-edit.ts.
+          <motion.div
+            data-maic-edit-chrome="true"
+            initial={cmdInitial}
+            animate={cmdAnimate}
+            transition={{ ...stepTransition, delay: prefersReducedMotion ? 0 : COMMANDBAR_DELAY }}
+          >
+            <CommandBar title={title} history={history} commands={commands} trailing={trailing} />
+          </motion.div>
+        )
       }
       leftSlot={
         leftRail ? (
@@ -259,18 +329,53 @@ function Frame({ title, leftRail, history, commands, trailing, children }: Frame
         ) : null
       }
       centerSlot={
-        // Padded studio frame around the actual scene renderer. Lifted
-        // up from SlideCanvas so the slide and the non-slide read-only
-        // renderers share the exact same canvas bounding rect (no
-        // layout jump when switching scene type). Children render
-        // inside an inner ring/shadow card that the playback
-        // CanvasArea visually mirrors.
-        <div className="relative h-full w-full p-3 sm:p-4">
-          <div className="relative h-full w-full overflow-hidden rounded-xl bg-white ring-1 ring-zinc-200/80 dark:bg-zinc-900 dark:ring-zinc-800/80 shadow-[0_10px_40px_-12px_rgba(15,23,42,0.18)] dark:shadow-[0_10px_40px_-12px_rgba(0,0,0,0.6)]">
-            {children}
-          </div>
+        // Padded studio frame. Classroom scenes contain-fit the card at
+        // exactly 16:9, everywhere — a wide workbench panel gets side
+        // gutters, never a cropped slide. `fill-width` was tried here
+        // (card as wide as the frame) but it sized the card taller than
+        // the frame once the pane got wider than 16:9 of its height, and
+        // `overflow-hidden` cut the slide's bottom off.
+        //
+        // The pager anchors to the FRAME's bottom edge, not the card: the
+        // card keeps its contain-centred fit (untouched), and the pager
+        // floats in the frame's bottom padding. A card-anchored pager rides
+        // the slide's lower edge and covers canvas content (e.g. a slide's
+        // bottom banner) wherever containment puts the card; a frame-anchored
+        // one drops into the letterbox gap below the card in a tall pane and
+        // never overlaps the slide.
+        <div
+          data-maic-studio-frame="true"
+          className="relative h-full min-h-0 w-full overflow-hidden p-3 sm:p-4"
+        >
+          {/* `data-maic-edit-canvas`: the workbench's hand-edit signal scope
+              (typing / pointer gestures on the page itself). See
+              lib/workbench/use-workbench-pro-edit.ts. */}
+          {usesClassroomAspect(sceneType) ? (
+            <ContainBox
+              fit="contain"
+              className="overflow-hidden rounded-xl bg-white ring-1 ring-zinc-200/80 dark:bg-zinc-900 dark:ring-zinc-800/80 shadow-[0_10px_40px_-12px_rgba(15,23,42,0.18)] dark:shadow-[0_10px_40px_-12px_rgba(0,0,0,0.6)]"
+            >
+              <div
+                data-maic-edit-canvas="true"
+                data-maic-stage-card="true"
+                className="relative h-full w-full"
+              >
+                {children}
+              </div>
+            </ContainBox>
+          ) : (
+            <div
+              data-maic-edit-canvas="true"
+              data-maic-stage-card="true"
+              className="relative h-full w-full overflow-hidden rounded-xl bg-white ring-1 ring-zinc-200/80 dark:bg-zinc-900 dark:ring-zinc-800/80 shadow-[0_10px_40px_-12px_rgba(15,23,42,0.18)] dark:shadow-[0_10px_40px_-12px_rgba(0,0,0,0.6)]"
+            >
+              {children}
+            </div>
+          )}
+          {pager ? <CanvasPager {...pager} /> : null}
         </div>
       }
+      bottomSlot={bottomRail ?? null}
     />
   );
 }

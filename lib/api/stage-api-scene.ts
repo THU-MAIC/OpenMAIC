@@ -4,7 +4,7 @@
  * Factory function that creates the scene namespace of the Stage API.
  */
 
-import type { Scene, SceneContent } from '@/lib/types/stage';
+import { makeScene, type Scene, type ScenePatch, type SceneContent } from '@/lib/types/stage';
 import type { StageStore, APIResult, CreateSceneParams } from './stage-api-types';
 import { generateId, validateSceneId, getScene, createDefaultContent } from './stage-api-defaults';
 
@@ -45,28 +45,40 @@ export function createSceneAPI(store: StageStore) {
         // Determine order
         const order = params.order ?? state.scenes.length;
 
-        // Create default content or use the provided content
+        // Create default content or use the provided content. `params.type` is
+        // authoritative: reject a `content.type` that disagrees, and pin the
+        // merged content's `type` to it so the scene's discriminant can't be
+        // silently overridden by a partial content override.
         let content: SceneContent;
         if (params.content) {
+          if (params.content.type !== undefined && params.content.type !== params.type) {
+            return {
+              success: false,
+              error: `content.type '${params.content.type}' does not match scene type '${params.type}'`,
+            };
+          }
           content = {
             ...createDefaultContent(params.type),
             ...params.content,
+            type: params.type,
           } as SceneContent;
         } else {
           content = createDefaultContent(params.type);
         }
 
-        const newScene: Scene = {
-          id: sceneId,
-          stageId: state.stage.id,
-          type: params.type,
-          title: params.title,
-          order,
+        const newScene: Scene = makeScene(
+          {
+            id: sceneId,
+            stageId: state.stage.id,
+            title: params.title,
+            order,
+            actions: params.actions,
+            ...(params.outlineId !== undefined && { outlineId: params.outlineId }),
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          },
           content,
-          actions: params.actions,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
+        );
 
         const newScenes = [...state.scenes, newScene].sort((a, b) => a.order - b.order);
 
@@ -118,7 +130,7 @@ export function createSceneAPI(store: StageStore) {
      * @param updates - Fields to update
      * @returns Whether successful
      */
-    update(sceneId: string, updates: Partial<Scene>): APIResult<boolean> {
+    update(sceneId: string, updates: ScenePatch): APIResult<boolean> {
       try {
         const state = store.getState();
 
@@ -126,9 +138,13 @@ export function createSceneAPI(store: StageStore) {
           return { success: false, error: `Scene not found: ${sceneId}` };
         }
 
-        const newScenes = state.scenes.map((scene) =>
-          scene.id === sceneId ? { ...scene, ...updates, updatedAt: Date.now() } : scene,
-        );
+        const newScenes = state.scenes.map((scene) => {
+          if (scene.id !== sceneId) return scene;
+          // Rebind `type` to the (possibly updated) content's kind so a
+          // content-only or type-only patch can't desync the discriminant.
+          const content = updates.content ?? scene.content;
+          return makeScene({ ...scene, ...updates, updatedAt: Date.now() }, content);
+        });
 
         store.setState({ scenes: newScenes });
 

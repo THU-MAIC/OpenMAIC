@@ -1,0 +1,296 @@
+[
+  {
+    "id": "python-list-beginner",
+    "requirement": "我要用PBL项目制学习来学python中的列表，最最最简单的版本，课程短一点，最多只要8个场景",
+    "pblConfig": {
+      "projectTopic": "Python列表入门：水果清单小程序",
+      "projectDescription": "通过制作一个水果清单小程序来学习Python列表的基本操作",
+      "targetSkills": ["Python list", "index", "append", "基本数据操作"],
+      "issueCount": 3
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "python-set-beginner",
+    "requirement": "我要用PBL项目制学习来学python中的set，最最最简单的版本，课程短一点，最多只要8个场景",
+    "pblConfig": {
+      "projectTopic": "Python set 水果清单去重助手",
+      "projectDescription": "用set来帮水果店老板去掉重复的水果订单",
+      "targetSkills": ["Python set", "去重", "add", "discard"],
+      "issueCount": 4
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "python-dict-beginner",
+    "requirement": "我要用PBL项目制学习来学python中的字典，最最最简单的版本，课程短一点，最多只要8个场景",
+    "pblConfig": {
+      "projectTopic": "用Python字典制作学生信息卡",
+      "projectDescription": "用字典来存储和查询学生信息",
+      "targetSkills": ["Python dict", "key-value", "读取和修改"],
+      "issueCount": 3
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "python-boolean-beginner",
+    "requirement": "我要用PBL项目制学习来学python中的布尔值，最最最简单的版本，课程短一点，最多只要8个场景",
+    "pblConfig": {
+      "projectTopic": "Python 布尔值门禁判断器",
+      "projectDescription": "用布尔值做一个简单的门禁判断程序",
+      "targetSkills": ["Python bool", "True/False", "比较运算", "if判断"],
+      "issueCount": 3
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "python-number-beginner",
+    "requirement": "我要用PBL项目制学习来学python中的数字和运算，最最最简单的版本，课程短一点，最多只要8个场景",
+    "pblConfig": {
+      "projectTopic": "Python 数字小助手",
+      "projectDescription": "用Python做加减乘除计算器",
+      "targetSkills": ["Python number", "加减乘除", "变量", "基本运算"],
+      "issueCount": 3
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "algorithm-two-pointer",
+    "requirement": "我要用PBL项目制学习来学快慢指针算法，最最最简单的版本，课程短一点，最多只要8个场景",
+    "pblConfig": {
+      "projectTopic": "用快慢指针判断链表是否有环",
+      "projectDescription": "学习快慢指针算法来判断链表中的环",
+      "targetSkills": ["快慢指针", "链表", "算法思维"],
+      "issueCount": 3
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "python-string-beginner",
+    "requirement": "我要用PBL项目制学习来学python中的字符串处理，最最最简单的版本，课程短一点",
+    "pblConfig": {
+      "projectTopic": "Python 字符串姓名处理器",
+      "projectDescription": "用Python字符串方法处理姓名格式",
+      "targetSkills": ["Python string", "split", "join", "upper/lower"],
+      "issueCount": 3
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "python-loop-beginner",
+    "requirement": "我要用PBL项目制学习来学python中的for循环，最最最简单的版本，课程短一点",
+    "pblConfig": {
+      "projectTopic": "Python for循环成绩统计器",
+      "projectDescription": "用for循环来统计学生成绩",
+      "targetSkills": ["Python for loop", "遍历", "累加", "条件判断"],
+      "issueCount": 4
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "python-string-processing",
+    "requirement": "我要用PBL项目制学习来学python中的字符串处理",
+    "pblConfig": {
+      "projectTopic": "Python 字符串处理：评论文本清洗小工具",
+      "projectDescription": "用 Python 字符串方法做一个把杂乱评论文本清洗成规整格式的小工具",
+      "targetSkills": [
+        "Python string",
+        "split/join",
+        "strip/replace",
+        "大小写与查找",
+        "格式化输出"
+      ],
+      "issueCount": 3
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "rag-qa-assistant",
+    "requirement": "我要用PBL项目制学习来学RAG",
+    "pblConfig": {
+      "projectTopic": "搭建一个基于自有文档的 RAG 问答助手",
+      "projectDescription": "从零搭建一个检索增强生成（RAG）问答系统，能基于自己的文档检索片段并生成有依据的回答",
+      "targetSkills": [
+        "文档切分与向量化",
+        "向量检索",
+        "上下文拼接",
+        "提示词构造",
+        "调用大模型生成答案",
+        "效果评估"
+      ],
+      "issueCount": 5
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "dynamic-programming-knapsack",
+    "requirement": "我要用PBL项目制学习来学动态规划算法",
+    "pblConfig": {
+      "projectTopic": "用动态规划求解背包问题的最优装包方案",
+      "projectDescription": "通过解决经典 0/1 背包问题，掌握动态规划的状态定义、转移方程与最优子结构",
+      "targetSkills": [
+        "识别最优子结构",
+        "状态定义",
+        "状态转移方程",
+        "自底向上求解",
+        "时间空间复杂度分析"
+      ],
+      "issueCount": 4
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "business-startup-proposal",
+    "requirement": "我想通过做项目的方式，学会写一份能拿去参加创业大赛的项目申报方案",
+    "pblConfig": {
+      "projectTopic": "校园二手交易平台创业申报方案",
+      "projectDescription": "面向大学生市场，完成一份可提交创业大赛的项目申报方案，含问题、用户、解决方案、商业模式与可行性",
+      "targetSkills": ["问题定义", "用户与市场分析", "商业模式设计", "可行性论证", "方案表达"],
+      "issueCount": 4
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "writing-argumentative-essay",
+    "requirement": "我想用项目制的方式练习写一篇有说服力的议论文",
+    "pblConfig": {
+      "projectTopic": "围绕\"AI 是否应进入中小学课堂\"写一篇议论文",
+      "projectDescription": "完成一篇结构完整、论证有力的议论文，包含明确立场、分论点、证据与回应反方",
+      "targetSkills": ["确立论点", "搭建论证结构", "选取与运用证据", "回应反驳", "修改润色"],
+      "issueCount": 3
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "analysis-user-churn-case",
+    "requirement": "我想通过分析一个真实业务案例，学会做用户流失的归因分析（不写代码，重在分析思路）",
+    "pblConfig": {
+      "projectTopic": "某在线课程 App 用户流失归因分析",
+      "projectDescription": "面对一份用户流失现象的描述材料，产出一份有依据的归因分析与改进建议，重在分析框架与推理，而非编程",
+      "targetSkills": ["拆解问题", "提出假设", "用证据验证", "归因推理", "给出可执行建议"],
+      "issueCount": 4
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "research-literature-question",
+    "requirement": "我是研究新手，想通过项目学会怎么把一个模糊的兴趣收敛成一个能做的研究问题，并做小型文献梳理",
+    "pblConfig": {
+      "projectTopic": "把\"短视频与青少年注意力\"收敛成一个可研究的问题",
+      "projectDescription": "从一个宽泛兴趣出发，完成一次小型文献梳理并界定出一个具体、可回答的研究问题与初步研究思路",
+      "targetSkills": [
+        "界定研究问题",
+        "检索与筛选文献",
+        "归纳已有结论",
+        "找出研究空白",
+        "形成研究思路"
+      ],
+      "issueCount": 3
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "scenario-comfort-friend",
+    "requirement": "我想练习怎么安慰一个压力很大的朋友",
+    "pblConfig": {
+      "projectTopic": "安慰考前压力很大的朋友",
+      "projectDescription": "在一场咖啡馆对话里练习倾听与共情，支持一位临近期末、嘴上说没事其实很累的朋友",
+      "targetSkills": ["积极倾听", "共情回应", "开放式提问"],
+      "issueCount": 3,
+      "scenarioRoleplay": true,
+      "scenarioBrief": "好友临近期末崩溃边缘却强撑说没事"
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "scenario-mock-interview",
+    "requirement": "我想用角色扮演练习产品经理面试",
+    "pblConfig": {
+      "projectTopic": "模拟产品经理行为面试",
+      "projectDescription": "扮演候选人，在一场行为面试里回答面试官的追问，练习用 STAR 结构讲清自己的经历",
+      "targetSkills": ["STAR 结构表达", "应对追问", "突出影响力"],
+      "issueCount": 4,
+      "scenarioRoleplay": true,
+      "scenarioBrief": "资深面试官，会就模糊回答持续追问细节"
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "roleplay-tcm-diagnosis",
+    "requirement": "我是一名小学生，我的梦想是当中医，我想要用PBL情景模拟，需要一个模拟的病人来锻炼",
+    "pblConfig": {
+      "projectTopic": "中医诊疗情景模拟：望闻问切接诊练习",
+      "projectDescription": "通过模拟接诊真实病人，练习中医四诊（望闻问切）的基本流程，从询问症状到开具基础调理方案",
+      "targetSkills": ["望闻问切", "症状询问", "病情分析", "体质辨识", "调理建议"],
+      "issueCount": 4,
+      "scenarioRoleplay": true,
+      "scenarioBrief": "一位主诉疲劳乏力、睡眠不好的成年病人前来就诊，嘴上说只是有点累，真正的诱因要靠四诊一步步问出来"
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "roleplay-texas-holdem",
+    "requirement": "我要用PBL项目制学习（情景模拟项目）来学习打德州扑克",
+    "pblConfig": {
+      "projectTopic": "德州扑克实战情景：从规则到策略",
+      "projectDescription": "在真实牌局情景中，从基础规则学起，逐步掌握位置策略、赔率计算和对手解读",
+      "targetSkills": ["德州扑克规则", "手牌强度判断", "位置策略", "底池赔率", "对手行为解读"],
+      "issueCount": 5,
+      "scenarioRoleplay": true,
+      "scenarioBrief": "一桌现金局，对手风格各异（紧凶老手、松弱新手），从发牌到摊牌逐手做决策"
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "roleplay-job-interview",
+    "requirement": "我是应届毕业生，想用情景模拟来练习求职面试，特别是技术岗位的面试",
+    "pblConfig": {
+      "projectTopic": "互联网公司技术岗面试情景实战",
+      "projectDescription": "模拟真实的技术岗面试全流程，从自我介绍到技术问答、项目讲解和HR面，全方位提升面试表现",
+      "targetSkills": ["自我介绍", "项目经验阐述", "技术问题应对", "行为面试", "反向提问"],
+      "issueCount": 4,
+      "scenarioRoleplay": true,
+      "scenarioBrief": "一位资深技术面试官，会就项目细节和模糊回答层层追问，期望结构化、清晰、有影响力的回答"
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "roleplay-customer-service",
+    "requirement": "我在准备客服岗位，想用情景模拟来练习处理各种棘手的客户投诉",
+    "pblConfig": {
+      "projectTopic": "客服情景模拟：处理难缠客户的艺术",
+      "projectDescription": "面对愤怒、纠缠、无理取闹等各类棘手客户，练习情绪管理、需求挖掘和问题解决的综合技巧",
+      "targetSkills": ["倾听与共情", "情绪安抚", "需求识别", "解决方案提供", "冲突化解"],
+      "issueCount": 4,
+      "scenarioRoleplay": true,
+      "scenarioBrief": "一位因物流延误而愤怒的客户，言辞激烈、要求赔偿，需先安抚情绪、问出真实诉求再给方案"
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "roleplay-negotiation-business",
+    "requirement": "我想学习商务谈判技巧，希望通过情景模拟来练习谈判的各个环节",
+    "pblConfig": {
+      "projectTopic": "商务合作谈判情景实战：从开价到成交",
+      "projectDescription": "模拟一次完整的商务谈判，练习如何开价、让步、打破僵局和达成双赢协议",
+      "targetSkills": ["谈判准备", "开价策略", "让步技巧", "僵局破解", "协议达成"],
+      "issueCount": 5,
+      "scenarioRoleplay": true,
+      "scenarioBrief": "对方是预算有限、压价强硬的采购代表，谈判中会制造僵局，需在让步里守住底线达成双赢"
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  },
+  {
+    "id": "roleplay-parent-teacher-conference",
+    "requirement": "我是新手老师，想通过情景模拟来练习和家长沟通孩子的学习问题",
+    "pblConfig": {
+      "projectTopic": "家校沟通情景模拟：棘手家长会谈",
+      "projectDescription": "模拟与不同类型家长的沟通场景，练习如何有效反馈学生问题、安抚焦虑家长并达成教育共识",
+      "targetSkills": ["问题反馈技巧", "家长情绪管理", "教育理念沟通", "共识达成", "后续跟进"],
+      "issueCount": 4,
+      "scenarioRoleplay": true,
+      "scenarioBrief": "一位对孩子成绩下滑既焦虑又护短的家长，听到问题容易激动，需要先稳住情绪再客观反馈并达成共识"
+    },
+    "languageDirective": "Reply in Simplified Chinese"
+  }
+]

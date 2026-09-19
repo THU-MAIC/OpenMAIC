@@ -1,0 +1,13 @@
+# Keep detected text files on LF across platforms so formatting checks see the
+# same contents on Windows, macOS, and Linux.
+* text=auto eol=lf
+
+# Shell scripts must keep LF endings even when checked out on Windows.
+#
+# With Git's default `core.autocrlf=true` on Windows, docker-entrypoint.sh is
+# rewritten to CRLF at checkout. COPY-ing it into a Linux image then leaves the
+# shebang reading `#!/bin/sh\r`, so the kernel looks for an interpreter whose
+# name ends in a carriage return and the container exits immediately with
+# `exec /usr/local/bin/docker-entrypoint.sh: no such file or directory` —
+# a message that points at the script rather than at the interpreter.
+*.sh text eol=lf

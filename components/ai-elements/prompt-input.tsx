@@ -1018,14 +1018,9 @@ interface SpeechRecognitionErrorEvent extends Event {
   error: string;
 }
 
-declare global {
-  interface Window {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    SpeechRecognition: any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    webkitSpeechRecognition: any;
-  }
-}
+// Window.SpeechRecognition / webkitSpeechRecognition have minimal constructor
+// declarations in types/web-speech.d.ts. The local `SpeechRecognition`
+// interface above is the richer instance shape this component consumes.
 
 export type PromptInputSpeechButtonProps = ComponentProps<typeof PromptInputButton> & {
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
@@ -1047,8 +1042,8 @@ export const PromptInputSpeechButton = ({
       typeof window !== 'undefined' &&
       ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
     ) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const speechRecognition = new SpeechRecognition();
+      const SpeechRecognitionCtor = (window.SpeechRecognition || window.webkitSpeechRecognition)!;
+      const speechRecognition = new SpeechRecognitionCtor() as unknown as SpeechRecognition;
 
       speechRecognition.continuous = true;
       speechRecognition.interimResults = true;

@@ -4,6 +4,7 @@ import type { TextAttrs } from '@/lib/prosemirror/utils';
 import { defaultRichTextAttrs } from '@/lib/prosemirror/utils';
 import type { TextFormatPainter, ShapeFormatPainter, CreatingElement } from '@/lib/types/edit';
 import type { PercentageGeometry } from '@/lib/types/action';
+import type { Whiteboard } from '@openmaic/dsl';
 
 /**
  * Spotlight options
@@ -31,6 +32,16 @@ export interface LaserOptions {
   color?: string; // Laser pointer color, default red
   duration?: number; // Duration (milliseconds)
 }
+
+/** Canvas selection intent shared by the narration timeline and edit dock. */
+export type PickTarget =
+  | { purpose: 'cue'; stageId: string; sceneId: string; actionId: string; cueType: string }
+  | {
+      purpose: 'element-ref';
+      stageId: string;
+      sceneId: string;
+      ownerSessionId: string;
+    };
 
 /**
  * Canvas Store - Manages all UI state of the Canvas editor
@@ -66,6 +77,11 @@ interface CanvasState {
   laserElementId: string; // Element focused by laser pointer
   laserOptions: LaserOptions | null; // Laser pointer configuration
   zoomTarget: { elementId: string; scale: number } | null; // Zoom target
+  // Timeline "pick element on canvas" mode: when set, the editor canvas lets the
+  // user click an element to bind it to the given scene action (ActionsBar cue).
+  // Keyed by actionId (not a positional index) so reorder/delete while armed
+  // can't rebind the wrong action.
+  pickTarget: PickTarget | null;
 
   // ===== Canvas viewport state =====
   canvasScale: number; // Canvas actual zoom scale
@@ -102,6 +118,13 @@ interface CanvasState {
   // ===== Whiteboard =====
   whiteboardOpen: boolean; // Whether whiteboard is open
   whiteboardClearing: boolean; // Whiteboard clear animation in progress
+  whiteboardManualVisibilityRevision: number;
+  runtimeWhiteboardProjection: {
+    stageId: string;
+    lastSeq: number | null;
+    whiteboard: Whiteboard | null;
+  } | null;
+  runtimeWhiteboardProjectionGeneration: number;
 
   // ===== Other =====
   thumbnailsFocus: boolean; // Whether left thumbnail area is focused
@@ -154,7 +177,15 @@ interface CanvasState {
 
   // ----- Whiteboard -----
   setWhiteboardOpen: (open: boolean) => void;
+  setWhiteboardOpenManually: (open: boolean) => void;
   setWhiteboardClearing: (clearing: boolean) => void;
+  beginRuntimeWhiteboardProjection: (stageId: string) => number;
+  setRuntimeWhiteboardProjection: (projection: {
+    stageId: string;
+    lastSeq: number | null;
+    whiteboard: Whiteboard | null;
+  }) => void;
+  clearRuntimeWhiteboardProjection: () => void;
 
   // ----- Other -----
   setThumbnailsFocus: (focus: boolean) => void;
@@ -174,6 +205,7 @@ interface CanvasState {
   clearHighlight: () => void;
   setLaser: (elementId: string, options?: LaserOptions) => void;
   clearLaser: () => void;
+  setPickTarget: (target: PickTarget | null) => void;
   setZoom: (elementId: string, scale: number) => void;
   clearZoom: () => void;
   clearAllEffects: () => void;
@@ -227,6 +259,9 @@ const initialState = {
   // Whiteboard
   whiteboardOpen: false,
   whiteboardClearing: false,
+  whiteboardManualVisibilityRevision: 0,
+  runtimeWhiteboardProjection: null,
+  runtimeWhiteboardProjectionGeneration: 0,
 
   // Other: false,
   editorAreaFocus: false,
@@ -244,6 +279,7 @@ const initialState = {
   laserElementId: '',
   laserOptions: null,
   zoomTarget: null,
+  pickTarget: null,
 };
 
 // ==================== Store Implementation ====================
@@ -339,7 +375,28 @@ const useCanvasStoreBase = create<CanvasState>((set, get) => ({
   // ===== Whiteboard Actions =====
 
   setWhiteboardOpen: (open) => set({ whiteboardOpen: open }),
+  setWhiteboardOpenManually: (open) =>
+    set((state) => ({
+      whiteboardOpen: open,
+      whiteboardManualVisibilityRevision: state.whiteboardManualVisibilityRevision + 1,
+    })),
   setWhiteboardClearing: (clearing) => set({ whiteboardClearing: clearing }),
+  beginRuntimeWhiteboardProjection: (stageId) => {
+    const generation = get().runtimeWhiteboardProjectionGeneration + 1;
+    set((state) => ({
+      runtimeWhiteboardProjectionGeneration: generation,
+      ...(state.runtimeWhiteboardProjection?.stageId === stageId
+        ? {}
+        : { runtimeWhiteboardProjection: null }),
+    }));
+    return generation;
+  },
+  setRuntimeWhiteboardProjection: (projection) => set({ runtimeWhiteboardProjection: projection }),
+  clearRuntimeWhiteboardProjection: () =>
+    set((state) => ({
+      runtimeWhiteboardProjection: null,
+      runtimeWhiteboardProjectionGeneration: state.runtimeWhiteboardProjectionGeneration + 1,
+    })),
 
   // ===== Other Actions =====
 
@@ -427,6 +484,8 @@ const useCanvasStoreBase = create<CanvasState>((set, get) => ({
     });
   },
 
+  setPickTarget: (target) => set({ pickTarget: target }),
+
   setZoom: (elementId, scale) => {
     set({
       zoomTarget: { elementId, scale },
@@ -450,6 +509,7 @@ const useCanvasStoreBase = create<CanvasState>((set, get) => ({
       laserElementId: '',
       laserOptions: null,
       zoomTarget: null,
+      pickTarget: null,
       // Note: playingVideoElementId intentionally NOT cleared here.
       // Video playback has its own lifecycle (playVideo/pauseVideo/onEnded)
       // and must not be interrupted by visual effect auto-clear timers.
@@ -459,11 +519,17 @@ const useCanvasStoreBase = create<CanvasState>((set, get) => ({
   // ===== Batch Operations =====
 
   resetCanvasState: () => {
+    const runtimeWhiteboardProjection = get().runtimeWhiteboardProjection;
+    const runtimeWhiteboardProjectionGeneration = get().runtimeWhiteboardProjectionGeneration;
+    const whiteboardManualVisibilityRevision = get().whiteboardManualVisibilityRevision;
     set({
       ...initialState,
       // Preserve viewport settings
       viewportSize: get().viewportSize,
       viewportRatio: get().viewportRatio,
+      runtimeWhiteboardProjection,
+      runtimeWhiteboardProjectionGeneration,
+      whiteboardManualVisibilityRevision,
     });
   },
 }));

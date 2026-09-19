@@ -27,6 +27,8 @@ import {
   Volume2,
   Mic,
   Plus,
+  CreditCard,
+  Sparkles,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -34,7 +36,7 @@ import { toast } from 'sonner';
 import { type ProviderId } from '@/lib/ai/providers';
 import { PROVIDERS, MONO_LOGO_PROVIDERS } from '@/lib/ai/providers';
 import { cn } from '@/lib/utils';
-import { createCustomProviderSettings, getProviderTypeLabel } from './utils';
+import { createCustomProviderSettings, getProviderTypeLabel, modelInfoFromId } from './utils';
 import { ProviderList } from './provider-list';
 import { ProviderConfigPanel } from './provider-config-panel';
 import { PDFSettings } from './pdf-settings';
@@ -56,10 +58,13 @@ import { WebSearchSettings } from './web-search-settings';
 import { WEB_SEARCH_PROVIDERS, getWebSearchProviderDisplayName } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import { GeneralSettings } from './general-settings';
+import { SkillSettings } from './skill-settings';
+import { TokenPlanSettings } from './token-plan-settings';
 import { ModelEditDialog } from './model-edit-dialog';
 import { AddProviderDialog, type NewProviderData } from './add-provider-dialog';
 import { AddAudioProviderDialog, type NewAudioProviderData } from './add-audio-provider-dialog';
 import { isCustomTTSProvider, isCustomASRProvider } from '@/lib/audio/types';
+import { resolveASRProviderName, resolveTTSProviderName } from '@/lib/audio/provider-display';
 import type { SettingsSection, EditingModel } from '@/lib/types/settings';
 
 // ─── Provider List Column (reusable) ───
@@ -131,24 +136,14 @@ function ProviderListColumn<T extends string>({
 }
 
 // ─── Helper: get TTS/ASR provider display name ───
+// The id→i18n-key tables live in lib/audio/provider-display so the generation
+// toolbar resolves provider names the same way this dialog does.
 function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => string): string {
   if (isCustomTTSProvider(providerId)) {
     const cfg = useSettingsStore.getState().ttsProvidersConfig[providerId];
     return cfg?.customName || providerId;
   }
-  const names: Record<string, string> = {
-    'openai-tts': t('settings.providerOpenAITTS'),
-    'azure-tts': t('settings.providerAzureTTS'),
-    'glm-tts': t('settings.providerGLMTTS'),
-    'qwen-tts': t('settings.providerQwenTTS'),
-    'voxcpm-tts': t('settings.providerVoxCPMTTS'),
-    'doubao-tts': t('settings.providerDoubaoTTS'),
-    'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
-    'minimax-tts': t('settings.providerMiniMaxTTS'),
-    'lemonade-tts': t('settings.providerLemonadeTTS'),
-    'browser-native-tts': t('settings.providerBrowserNativeTTS'),
-  };
-  return names[providerId] || providerId;
+  return resolveTTSProviderName(providerId, t);
 }
 
 function getASRProviderName(providerId: ASRProviderId, t: (key: string) => string): string {
@@ -156,14 +151,7 @@ function getASRProviderName(providerId: ASRProviderId, t: (key: string) => strin
     const cfg = useSettingsStore.getState().asrProvidersConfig[providerId];
     return cfg?.customName || providerId;
   }
-  const names: Record<string, string> = {
-    'openai-whisper': t('settings.providerOpenAIWhisper'),
-    'browser-native': t('settings.providerBrowserNative'),
-    'qwen-asr': t('settings.providerQwenASR'),
-    'azure-asr': t('settings.providerAzureASR'),
-    'lemonade-asr': t('settings.providerLemonadeASR'),
-  };
-  return names[providerId] || providerId;
+  return resolveASRProviderName(providerId, t);
 }
 
 // ─── Image/Video provider name helpers ───
@@ -174,6 +162,8 @@ const IMAGE_PROVIDER_NAMES: Record<ImageProviderId, string> = {
   'nano-banana': 'providerNanoBanana',
   'minimax-image': 'providerMiniMaxImage',
   'grok-image': 'providerGrokImage',
+  'comfyui-image': 'providerComfyUIImage',
+  'openrouter-image': 'providerOpenRouterImage',
   lemonade: 'providerLemonadeImage',
 };
 
@@ -184,6 +174,8 @@ const IMAGE_PROVIDER_ICONS: Record<ImageProviderId, string> = {
   'nano-banana': '/logos/gemini.svg',
   'minimax-image': '/logos/minimax.svg',
   'grok-image': '/logos/grok.svg',
+  'comfyui-image': '/logos/comfyui.svg',
+  'openrouter-image': '/logos/openrouter.svg',
   lemonade: '/logos/lemonade.svg',
 };
 
@@ -191,9 +183,9 @@ const VIDEO_PROVIDER_NAMES: Record<VideoProviderId, string> = {
   seedance: 'providerSeedance',
   kling: 'providerKling',
   veo: 'providerVeo',
-  sora: 'providerSora',
   'minimax-video': 'providerMiniMaxVideo',
   'grok-video': 'providerGrokVideo',
+  'openrouter-video': 'providerOpenRouterVideo',
   happyhorse: 'providerHappyHorse',
 };
 
@@ -201,9 +193,9 @@ const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
   seedance: '/logos/doubao.svg',
   kling: '/logos/kling.svg',
   veo: '/logos/gemini.svg',
-  sora: '/logos/openai.svg',
   'minimax-video': '/logos/minimax.svg',
   'grok-video': '/logos/grok.svg',
+  'openrouter-video': '/logos/openrouter.svg',
   happyhorse: '/logos/qwen.svg',
 };
 
@@ -245,10 +237,19 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const [selectedPdfProviderId, setSelectedPdfProviderId] = useState<PDFProviderId>(pdfProviderId);
   const [selectedWebSearchProviderId, setSelectedWebSearchProviderId] =
     useState<WebSearchProviderId>(webSearchProviderId);
-  const [selectedImageProviderId, setSelectedImageProviderId] =
-    useState<ImageProviderId>(imageProviderId);
-  const [selectedVideoProviderId, setSelectedVideoProviderId] =
-    useState<VideoProviderId>(videoProviderId);
+  // `imageProviderId`/`videoProviderId` are empty until a provider is actually
+  // chosen (first-run auto-config leaves them blank when the server reports no
+  // media provider). Opening the panel on an empty id selected nothing: the
+  // header rendered the missing key as "settings.undefined", and Test
+  // Connection posted a blank `x-image-provider`/`x-video-provider`, so it
+  // failed with "No image/video provider configured" no matter what was typed.
+  // Fall back to the first catalog entry so the panel always has a selection.
+  const [selectedImageProviderId, setSelectedImageProviderId] = useState<ImageProviderId>(
+    imageProviderId || (Object.keys(IMAGE_PROVIDERS)[0] as ImageProviderId),
+  );
+  const [selectedVideoProviderId, setSelectedVideoProviderId] = useState<VideoProviderId>(
+    videoProviderId || (Object.keys(VIDEO_PROVIDERS)[0] as VideoProviderId),
+  );
   // Navigate to initialSection when dialog opens
   useEffect(() => {
     if (open && initialSection) {
@@ -369,6 +370,8 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         name: providersConfig[selectedProviderId].name,
         type: providersConfig[selectedProviderId].type,
         defaultBaseUrl: providersConfig[selectedProviderId].defaultBaseUrl,
+        baseUrlPlaceholder: PROVIDERS[selectedProviderId]?.baseUrlPlaceholder,
+        supportsModelDiscovery: PROVIDERS[selectedProviderId]?.supportsModelDiscovery,
         alternateBaseUrls: PROVIDERS[selectedProviderId]?.alternateBaseUrls,
         icon: providersConfig[selectedProviderId].icon,
         requiresApiKey: providersConfig[selectedProviderId].requiresApiKey,
@@ -408,6 +411,27 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
     const currentModels = providersConfig[pid]?.models || [];
     const newModels = currentModels.filter((_, i) => i !== modelIndex);
     setProviderConfig(pid, { models: newModels });
+  };
+
+  // Merge probed model ids into the provider's model list. Previously
+  // probe-derived entries (`source: 'probed'`) are dropped first so a re-fetch
+  // (after the user changes base URL / API key) REPLACES the stale set instead
+  // of accumulating dead ids. Catalog and manually-added models are preserved.
+  // `modelInfoFromId(id, pid)` keeps built-in thinking capability so the
+  // thinking control isn't silently hidden for fetched built-in models.
+  const handleModelsFetched = (pid: ProviderId, fetchedIds: string[]): number => {
+    const currentModels = providersConfig[pid]?.models || [];
+    const kept = currentModels.filter((m) => m.source !== 'probed');
+    const keptIds = new Set(kept.map((m) => m.id));
+    const additions = fetchedIds
+      .filter((id) => !keptIds.has(id))
+      .map((id) => ({ ...modelInfoFromId(id, pid), source: 'probed' as const }));
+    const next = [...kept, ...additions];
+    // Write when the set changed at all — additions, or stale probed ids pruned.
+    if (additions.length > 0 || next.length !== currentModels.length) {
+      setProviderConfig(pid, { models: next });
+    }
+    return additions.length;
   };
 
   const handleAutoSaveModel = () => {
@@ -466,7 +490,14 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
     const newProviderId = `custom-${Date.now()}` as ProviderId;
     const updatedConfig = {
       ...providersConfig,
-      [newProviderId]: createCustomProviderSettings(providerData),
+      [newProviderId]: createCustomProviderSettings({
+        name: providerData.name,
+        type: providerData.type,
+        baseUrl: providerData.baseUrl,
+        icon: providerData.icon,
+        requiresApiKey: providerData.requiresApiKey,
+        modelsUrl: providerData.modelsUrl,
+      }),
     };
     setProvidersConfig(updatedConfig);
     setShowAddProviderDialog(false);
@@ -535,6 +566,15 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
     switch (activeSection) {
       case 'general':
         return <h2 className="text-lg font-semibold">{t('settings.systemSettings')}</h2>;
+      case 'skills':
+        return (
+          <>
+            <Sparkles className="h-6 w-6 text-muted-foreground" />
+            <h2 className="text-lg font-semibold">{t('settings.skills.title')}</h2>
+          </>
+        );
+      case 'token-plan':
+        return <h2 className="text-lg font-semibold">{t('settings.tokenPlan.nav')}</h2>;
       case 'providers':
         if (selectedProvider) {
           return (
@@ -713,6 +753,19 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
           {/* Left Sidebar - Navigation */}
           <div className="flex-shrink-0 bg-muted/30 p-3 space-y-1" style={{ width: sidebarWidth }}>
             <button
+              onClick={() => setActiveSection('token-plan')}
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
+                activeSection === 'token-plan'
+                  ? 'bg-primary/10 text-primary font-medium'
+                  : 'hover:bg-muted',
+              )}
+            >
+              <CreditCard className="h-4 w-4 shrink-0" />
+              <span className="truncate">{t('settings.tokenPlan.nav')}</span>
+            </button>
+
+            <button
               onClick={() => setActiveSection('providers')}
               className={cn(
                 'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
@@ -787,7 +840,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               )}
             >
               <FileText className="h-4 w-4 shrink-0" />
-              <span className="truncate">{t('settings.pdfSettings')}</span>
+              <span className="truncate">{t('settings.documentParsingSettings')}</span>
             </button>
 
             <button
@@ -801,6 +854,19 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="truncate">{t('settings.webSearchSettings')}</span>
+            </button>
+
+            <button
+              onClick={() => setActiveSection('skills')}
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
+                activeSection === 'skills'
+                  ? 'bg-primary/10 text-primary font-medium'
+                  : 'hover:bg-muted',
+              )}
+            >
+              <Sparkles className="h-4 w-4 shrink-0" />
+              <span className="truncate">{t('settings.skills.nav')}</span>
             </button>
 
             <button
@@ -1024,6 +1090,10 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             <div className="flex-1 overflow-y-auto p-5">
               {activeSection === 'general' && <GeneralSettings />}
 
+              {activeSection === 'skills' && <SkillSettings />}
+
+              {activeSection === 'token-plan' && <TokenPlanSettings />}
+
               {activeSection === 'providers' && selectedProvider && (
                 <ProviderConfigPanel
                   provider={selectedProvider}
@@ -1040,6 +1110,8 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                   onEditModel={(index) => handleEditModel(selectedProviderId, index)}
                   onDeleteModel={(index) => handleDeleteModel(selectedProviderId, index)}
                   onAddModel={handleAddModel}
+                  onModelsFetched={(ids) => handleModelsFetched(selectedProviderId, ids)}
+                  modelsUrl={providersConfig[selectedProviderId]?.modelsUrl}
                   onResetToDefault={() => handleResetProvider(selectedProviderId)}
                   isBuiltIn={providersConfig[selectedProviderId]?.isBuiltIn ?? true}
                 />

@@ -16,6 +16,8 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { probeAuth } from '../probe-auth';
+import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'qwen-image-max';
 const DEFAULT_BASE_URL = 'https://dashscope.aliyuncs.com';
@@ -38,11 +40,12 @@ export async function testQwenImageConnectivity(
   config: ImageGenerationConfig,
 ): Promise<{ success: boolean; message: string }> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
-  try {
-    const response = await fetch(
-      `${baseUrl}/api/v1/services/aigc/multimodal-generation/generation`,
-      {
+  return probeAuth({
+    providerName: 'Qwen Image',
+    request: () =>
+      fetch(`${baseUrl}/api/v1/services/aigc/multimodal-generation/generation`, {
         method: 'POST',
+        redirect: 'manual',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${config.apiKey}`,
@@ -52,19 +55,8 @@ export async function testQwenImageConnectivity(
           input: { messages: [{ role: 'user', content: [{ text: '' }] }] },
           parameters: { size: '1*1' },
         }),
-      },
-    );
-    if (response.status === 401 || response.status === 403) {
-      const text = await response.text();
-      return {
-        success: false,
-        message: `Qwen Image auth failed (${response.status}): ${text}`,
-      };
-    }
-    return { success: true, message: 'Connected to Qwen Image' };
-  } catch (err) {
-    return { success: false, message: `Qwen Image connectivity error: ${err}` };
-  }
+      }),
+  });
 }
 
 export async function generateWithQwenImage(
@@ -80,7 +72,7 @@ export async function generateWithQwenImage(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify({
-      model: config.model || DEFAULT_MODEL,
+      model: requireModel(config.model, 'Qwen Image'),
       input: {
         messages: [
           {

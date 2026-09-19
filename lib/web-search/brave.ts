@@ -71,10 +71,16 @@ export function parseBraveSearchHtml(html: string, maxResults: number): WebSearc
     const url = decodeHtml(linkMatch[1].trim());
     if (!url || isBraveOwnedUrl(url)) continue;
 
+    // Brave moved the result title from `<span class="search-snippet-title">`
+    // to `<div class="title search-snippet-title …">`, which made this parser
+    // return zero results against the live page. Accept either element so we are
+    // robust to that (and a future) swap; the title text is stripped of tags
+    // regardless. The `\1` backreference ties the closing tag to the captured
+    // opening tag, so a mismatched `<span …>…</div>` can't be picked up as a title.
     const titleMatch = block.match(
-      /<span[^>]*class="[^"]*search-snippet-title[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+      /<(span|div)[^>]*class="[^"]*search-snippet-title[^"]*"[^>]*>([\s\S]*?)<\/\1>/i,
     );
-    const title = titleMatch ? stripHtml(titleMatch[1]) : '';
+    const title = titleMatch ? stripHtml(titleMatch[2]) : '';
     if (!title) continue;
 
     const genericMatch = block.match(
@@ -109,6 +115,7 @@ async function searchWithBraveApi(
   query: string,
   apiKey: string,
   maxResults: number,
+  signal?: AbortSignal,
 ): Promise<WebSearchSource[]> {
   const url = new URL('/res/v1/web/search', BRAVE_API_BASE_URL);
   url.searchParams.set('q', query);
@@ -120,6 +127,7 @@ async function searchWithBraveApi(
       'X-Subscription-Token': apiKey,
       Accept: 'application/json',
     },
+    ...(signal ? { signal } : {}),
   });
 
   if (!res.ok) {
@@ -155,10 +163,12 @@ async function searchWithBraveScrape(
   query: string,
   maxResults: number,
   baseUrl?: string,
+  signal?: AbortSignal,
 ): Promise<WebSearchSource[]> {
   const res = await proxyFetch(buildBraveSearchUrl(query, baseUrl), {
     method: 'GET',
     headers: BRAVE_HEADERS,
+    ...(signal ? { signal } : {}),
   });
 
   if (!res.ok) {
@@ -175,14 +185,15 @@ export async function searchWithBrave(params: {
   apiKey?: string;
   maxResults?: number;
   baseUrl?: string;
+  signal?: AbortSignal;
 }): Promise<WebSearchResult> {
-  const { query: rawQuery, apiKey, maxResults = 5, baseUrl } = params;
+  const { query: rawQuery, apiKey, maxResults = 5, baseUrl, signal } = params;
   const query = normalizeWebSearchQuery(rawQuery);
   const startedAt = Date.now();
 
   const sources = apiKey
-    ? await searchWithBraveApi(query, apiKey, maxResults)
-    : await searchWithBraveScrape(query, maxResults, baseUrl);
+    ? await searchWithBraveApi(query, apiKey, maxResults, signal)
+    : await searchWithBraveScrape(query, maxResults, baseUrl, signal);
 
   return {
     answer: '',

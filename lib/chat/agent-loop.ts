@@ -23,9 +23,27 @@ const log = createLogger('AgentLoop');
 export interface AgentLoopStoreState {
   stage: unknown;
   scenes: unknown[];
+  outlines?: unknown[];
   currentSceneId: string | null;
   mode: string;
   whiteboardOpen: boolean;
+  whiteboardManualVisibilityRevision?: number;
+  /**
+   * Post-submit quiz state for the current scene. Hydrated from RuntimeStore
+   * client-side; absent when the active scene is not a graded quiz or the
+   * student has not submitted yet.
+   */
+  quizResults?: {
+    sceneId: string;
+    answers: Record<string, string | string[]>;
+    results: Array<{
+      questionId: string;
+      correct: boolean | null;
+      status: 'correct' | 'incorrect';
+      earned: number;
+      aiComment?: string;
+    }>;
+  };
 }
 
 /** Request template — fields that stay constant across loop iterations */
@@ -55,7 +73,7 @@ export interface AgentLoopIterationResult {
 /** Callbacks injected by the caller (frontend or eval) */
 export interface AgentLoopCallbacks {
   /** Get fresh store state for each iteration (whiteboard may have changed) */
-  getStoreState: () => AgentLoopStoreState;
+  getStoreState: () => AgentLoopStoreState | Promise<AgentLoopStoreState>;
 
   /** Get current messages for the request */
   getMessages: () => unknown[];
@@ -97,6 +115,33 @@ export interface AgentLoopOutcome {
 
 // ==================== Core Loop ====================
 
+function awaitOrAbort<T>(work: Promise<T>, signal: AbortSignal) {
+  if (signal.aborted) return Promise.resolve({ status: 'aborted' as const });
+  return new Promise<{ status: 'completed'; value: T } | { status: 'aborted' }>(
+    (resolve, reject) => {
+      let settled = false;
+      const finish = (result: { status: 'completed'; value: T } | { status: 'aborted' }) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener('abort', onAbort);
+        resolve(result);
+      };
+      const onAbort = () => finish({ status: 'aborted' });
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) onAbort();
+      void work.then(
+        (value) => finish({ status: 'completed', value }),
+        (error) => {
+          if (settled) return;
+          settled = true;
+          signal.removeEventListener('abort', onAbort);
+          reject(error);
+        },
+      );
+    },
+  );
+}
+
 /**
  * Run the agent loop — shared between frontend and eval.
  *
@@ -122,7 +167,14 @@ export async function runAgentLoop(
 
     // Refresh store state each iteration — agent actions may have changed
     // whiteboard, scene, or mode between turns
-    const freshStoreState = callbacks.getStoreState();
+    const stateRead = await awaitOrAbort(
+      Promise.resolve().then(() => callbacks.getStoreState()),
+      signal,
+    );
+    if (stateRead.status === 'aborted') {
+      return { reason: 'aborted', directorState, turnCount };
+    }
+    const freshStoreState = stateRead.value;
     const currentMessages = callbacks.getMessages();
 
     // Build request body

@@ -1,4 +1,4 @@
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement } from '@openmaic/dsl';
 
 export function useOrderElement() {
   /**

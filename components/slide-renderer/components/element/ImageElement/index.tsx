@@ -1,6 +1,6 @@
 'use client';
 
-import type { PPTImageElement, ImageElementClip } from '@/lib/types/slides';
+import type { PPTImageElement, ImageElementClip } from '@openmaic/dsl';
 import type { ImageClipedEmitData } from '@/lib/types/edit';
 import { useCanvasStore } from '@/lib/store';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
@@ -12,6 +12,13 @@ import { useFilter } from './useFilter';
 import { ImageOutline } from './ImageOutline';
 import { ImageClipHandler } from './ImageClipHandler';
 import { useResolvedImageSrc } from './useResolvedImageSrc';
+import { ImageOff, RotateCcw, ShieldAlert } from 'lucide-react';
+import { useI18n } from '@/lib/hooks/use-i18n';
+import { useSceneData } from '@/lib/contexts/scene-context';
+import type { SlideContent } from '@/lib/types/stage';
+import { mediaRetryTarget, retryMediaTask } from '@/lib/media/media-orchestrator';
+import { mediaFailureNoticeKey } from '@/lib/media/media-failure';
+import { mediaResolutionCanRetry } from '@/lib/media/resolve-media-ref';
 
 export interface ImageElementProps {
   elementInfo: PPTImageElement;
@@ -22,6 +29,8 @@ export interface ImageElementProps {
  * Image element component with interaction support
  */
 export function ImageElement({ elementInfo, selectElement }: ImageElementProps) {
+  const { t } = useI18n();
+  const { sceneId, sceneData } = useSceneData<SlideContent>();
   const clipingImageElementId = useCanvasStore.use.clipingImageElementId();
   const setClipingImageElementId = useCanvasStore.use.setClipingImageElementId();
   const { updateElement } = useCanvasOperations();
@@ -36,7 +45,18 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
   // editor canvas displays the generated image (the read-only BaseImageElement
   // has always done this; the interactive variant previously rendered the raw
   // placeholder string, surfacing a broken-image icon in Pro mode).
-  const { resolvedSrc } = useResolvedImageSrc(elementInfo);
+  const { resolvedSrc, resolution, task } = useResolvedImageSrc(elementInfo);
+  const canRetry = mediaResolutionCanRetry(resolution);
+  // A refusal says why, next to the Retry rather than instead of it: a full
+  // store is worth retrying once an operator has raised the ceiling, but a bare
+  // Retry would read as an ordinary failure.
+  //
+  // Only next to one. This surface has never explained a failure it offers no
+  // action for, and the read-only renderers that do have always done it here
+  // instead of a Retry rather than as well as one. Painting one here for a
+  // permanent refusal would change what a browser-only deck looks like, and
+  // this branch changes nothing in browser-only mode.
+  const failureNotice = canRetry ? mediaFailureNoticeKey(task?.errorCode) : undefined;
 
   const isCliping = clipingImageElementId === elementInfo.id;
 
@@ -135,21 +155,71 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
               className="image-content w-full h-full overflow-hidden relative"
               style={{ clipPath: clipShape.style }}
             >
-              <img
-                src={resolvedSrc}
-                draggable={false}
-                style={{
-                  position: 'absolute',
-                  top: imgPosition.top,
-                  left: imgPosition.left,
-                  width: imgPosition.width,
-                  height: imgPosition.height,
-                  filter,
-                }}
-                alt=""
-                onDragStart={(e) => e.preventDefault()}
-              />
-              {elementInfo.colorMask && (
+              {resolution.kind === 'pending' || resolution.kind === 'placeholder' ? (
+                <div
+                  className="h-full w-full animate-pulse bg-black/10"
+                  data-media-state="pending"
+                />
+              ) : resolution.kind === 'disabled' ? (
+                <div
+                  className="flex h-full w-full items-center justify-center gap-1 bg-gray-50 px-2 text-[10px] font-medium text-gray-500 dark:bg-gray-900/20 dark:text-gray-400"
+                  data-media-state="disabled"
+                >
+                  <ImageOff className="h-3 w-3 shrink-0" />
+                  <span>{t('settings.mediaGenerationDisabled')}</span>
+                </div>
+              ) : resolution.kind === 'failed' ? (
+                <div
+                  // Stacked only when there is something to stack. With no
+                  // notice this is the box it has always been, down to the
+                  // class attribute: browser-only markup does not change here.
+                  className={
+                    failureNotice
+                      ? 'flex h-full w-full flex-col items-center justify-center gap-1.5 bg-red-50'
+                      : 'flex h-full w-full items-center justify-center bg-red-50'
+                  }
+                  data-media-state="failed"
+                >
+                  {failureNotice ? (
+                    <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                      <ShieldAlert className="h-3 w-3 shrink-0" />
+                      <span>{t(failureNotice)}</span>
+                    </div>
+                  ) : null}
+                  {canRetry ? (
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        retryMediaTask(
+                          elementInfo.src,
+                          mediaRetryTarget(elementInfo.id, sceneId, sceneData),
+                        );
+                      }}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      className="flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-[10px] font-medium text-red-600"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      {t('settings.mediaRetry')}
+                    </button>
+                  ) : null}
+                </div>
+              ) : resolvedSrc ? (
+                <img
+                  src={resolvedSrc}
+                  draggable={false}
+                  style={{
+                    position: 'absolute',
+                    top: imgPosition.top,
+                    left: imgPosition.left,
+                    width: imgPosition.width,
+                    height: imgPosition.height,
+                    filter,
+                  }}
+                  alt=""
+                  onDragStart={(e) => e.preventDefault()}
+                />
+              ) : null}
+              {resolvedSrc && elementInfo.colorMask && (
                 <div
                   className="color-mask absolute inset-0"
                   style={{
@@ -160,6 +230,19 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
             </div>
           </div>
         )}
+        {canRetry && resolution.kind !== 'failed' ? (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              retryMediaTask(elementInfo.src, mediaRetryTarget(elementInfo.id, sceneId, sceneData));
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            className="absolute right-1 top-1 flex items-center gap-1 rounded bg-red-100/95 px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm"
+          >
+            <RotateCcw className="h-3 w-3" />
+            {t('settings.mediaRetry')}
+          </button>
+        ) : null}
       </div>
     </div>
   );

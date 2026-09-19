@@ -9,6 +9,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
+import { getFormatLabelsForProviders } from '@/lib/document/mime';
 import { CheckCircle2, Eye, EyeOff, Loader2, Zap, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -48,10 +49,17 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
 
   const isCloud = selectedProviderId === 'mineru-cloud';
   const isSelfHosted = selectedProviderId === 'mineru';
-  const needsRemoteConfig = isSelfHosted || isCloud;
+  const isAliDocMind = selectedProviderId === 'alidocmind';
+  const hasAccessKeys = !!providerConfig?.accessKeyId && !!providerConfig?.accessKeySecret;
+  const needsRemoteConfig = isSelfHosted || isCloud || isAliDocMind;
 
-  // For cloud: test requires API key (user-entered or server-configured); for self-hosted: test requires base URL
-  const canTest = isCloud ? hasApiKey || isServerConfigured : hasBaseUrl || isServerConfigured;
+  // For cloud: test requires API key (user-entered or server-configured);
+  // for AliDocMind: requires AK + SK; for self-hosted: requires base URL.
+  const canTest = isAliDocMind
+    ? hasAccessKeys || isServerConfigured
+    : isCloud
+      ? hasApiKey || isServerConfigured
+      : hasBaseUrl || isServerConfigured;
 
   // Reset state when provider changes
   const [prevSelectedProviderId, setPrevSelectedProviderId] = useState(selectedProviderId);
@@ -74,6 +82,8 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
           providerId: selectedProviderId,
           apiKey: providerConfig?.apiKey || '',
           baseUrl: providerConfig?.baseUrl || '',
+          accessKeyId: providerConfig?.accessKeyId || '',
+          accessKeySecret: providerConfig?.accessKeySecret || '',
         }),
       });
 
@@ -153,6 +163,74 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
                   </Button>
                 </div>
               </div>
+            )}
+
+            {/* AliDocMind uses Aliyun AccessKey ID + Secret (not a single apiKey). */}
+            {isAliDocMind && (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-sm">{t('settings.alidocmindAccessKeyId')}</Label>
+                  <Input
+                    name={`pdf-ak-id-${selectedProviderId}`}
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    placeholder="LTAI..."
+                    value={providerConfig?.accessKeyId || ''}
+                    onChange={(e) =>
+                      setPDFProviderConfig(selectedProviderId, { accessKeyId: e.target.value })
+                    }
+                    className="font-mono text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">{t('settings.alidocmindAccessKeySecret')}</Label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Input
+                        name={`pdf-ak-secret-${selectedProviderId}`}
+                        type={showApiKey ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        placeholder={t('settings.enterApiKey')}
+                        value={providerConfig?.accessKeySecret || ''}
+                        onChange={(e) =>
+                          setPDFProviderConfig(selectedProviderId, {
+                            accessKeySecret: e.target.value,
+                          })
+                        }
+                        className="font-mono text-sm pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleTestConnection}
+                      disabled={testStatus === 'testing' || !canTest}
+                      className="gap-1.5 shrink-0"
+                    >
+                      {testStatus === 'testing' ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <>
+                          <Zap className="h-3.5 w-3.5" />
+                          {t('settings.testConnection')}
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </>
             )}
 
             {/* Base URL */}
@@ -260,6 +338,14 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
 
           {/* Request URL Preview */}
           {(() => {
+            if (isAliDocMind) {
+              const base = providerConfig?.baseUrl || 'docmind-api.cn-hangzhou.aliyuncs.com';
+              return (
+                <p className="text-xs text-muted-foreground break-all">
+                  {t('settings.requestUrl')}: {base.replace(/^https?:\/\//, '')}
+                </p>
+              );
+            }
             if (isCloud) {
               const base = providerConfig?.baseUrl || 'https://mineru.net/api/v4';
               return (
@@ -278,6 +364,24 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
           })()}
         </>
       )}
+
+      {/* Supported Formats */}
+      <div className="space-y-2">
+        <Label className="text-sm">{t('settings.supportedFormats')}</Label>
+        <div className="flex flex-wrap gap-2">
+          {getFormatLabelsForProviders([selectedProviderId]).map((format) => (
+            <Badge key={format} variant="secondary" className="font-normal">
+              <CheckCircle2 className="h-3 w-3 mr-1" />
+              {format}
+            </Badge>
+          ))}
+        </div>
+        {/* Self-hosted MinerU can under-deliver on PDF/image formats when the
+            server lacks the pipeline/core extras — warn against over-promising. */}
+        {isSelfHosted && (
+          <p className="text-xs text-muted-foreground">{t('settings.mineruSelfHostFormatsNote')}</p>
+        )}
+      </div>
 
       {/* Features List */}
       <div className="space-y-2">

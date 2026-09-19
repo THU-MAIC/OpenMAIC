@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { buildPrompt, PROMPT_IDS, processConditionalBlocks } from '@/lib/prompts';
-import type { PromptId } from '@/lib/prompts';
+import { buildPrompt, PROMPT_IDS, processConditionalBlocks } from '@openmaic/generation';
+import { buildPrompt as buildAppPrompt, PROMPT_IDS as APP_PROMPT_IDS } from '@/lib/prompts';
 
 function buildOutlinePrompt(
   flags: {
@@ -8,11 +8,19 @@ function buildOutlinePrompt(
     imageEnabled?: boolean;
     videoEnabled?: boolean;
   },
-  promptId: PromptId = PROMPT_IDS.REQUIREMENTS_TO_OUTLINES,
+  promptId:
+    | 'requirements-to-outlines'
+    | 'interactive-outlines' = PROMPT_IDS.REQUIREMENTS_TO_OUTLINES,
 ) {
   const imageEnabled = flags.imageEnabled ?? false;
   const videoEnabled = flags.videoEnabled ?? false;
-  return buildPrompt(promptId, {
+  const builder =
+    promptId === 'interactive-outlines'
+      ? (variables: Record<string, unknown>) =>
+          buildAppPrompt(APP_PROMPT_IDS.INTERACTIVE_OUTLINES, variables)
+      : (variables: Record<string, unknown>) =>
+          buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, variables);
+  return builder({
     requirement: 'Teach water cycle basics',
     pdfContent: 'None',
     availableImages: flags.hasSourceImages ? '- img_1: water cycle diagram' : 'No images available',
@@ -114,7 +122,7 @@ describe('interactive-outlines media prompt conditions', () => {
   // Interactive Mode (Ultra Mode) uses a separate outline template. It must gate
   // the same media snippets as the standard template, or weak local models never
   // emit `mediaGenerations` and images silently never generate (issue #626).
-  const INTERACTIVE = PROMPT_IDS.INTERACTIVE_OUTLINES;
+  const INTERACTIVE = APP_PROMPT_IDS.INTERACTIVE_OUTLINES;
 
   test('omits media generation instructions when image and video generation are disabled', () => {
     const text = combined(buildOutlinePrompt({ hasSourceImages: false }, INTERACTIVE));

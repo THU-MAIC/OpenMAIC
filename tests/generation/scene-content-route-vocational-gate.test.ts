@@ -40,13 +40,9 @@ describe('scene-content vocational gate', () => {
   test('flag off direct/replayed procedural-skill outline is downgraded before content generation', async () => {
     vi.resetModules();
     process.env[VOCATIONAL_FLAG] = 'false';
-    callLLMMock
-      .mockResolvedValueOnce({
-        text: htmlForWidget('diagram'),
-      })
-      .mockResolvedValueOnce({
-        text: JSON.stringify({ actions: [] }),
-      });
+    callLLMMock.mockResolvedValueOnce({
+      text: htmlForWidget('diagram'),
+    });
 
     const { POST } = await import('@/app/api/generate/scene-content/route');
     const response = await POST(
@@ -59,19 +55,15 @@ describe('scene-content vocational gate', () => {
     expect(body.effectiveOutline.widgetOutline.task).toBeUndefined();
     expect(body.content.widgetType).toBe('diagram');
     expect(body.content.widgetConfig.type).toBe('diagram');
-    expect(callLLMMock).toHaveBeenCalledTimes(2);
+    expect(callLLMMock).toHaveBeenCalledTimes(1);
     expect(callLLMMock.mock.calls[0][0].system).not.toContain('Procedural Skill');
   });
 
   test('flag off without requirements defaults to safe false for persisted procedural-skill outlines', async () => {
     vi.resetModules();
-    callLLMMock
-      .mockResolvedValueOnce({
-        text: htmlForWidget('diagram'),
-      })
-      .mockResolvedValueOnce({
-        text: JSON.stringify({ actions: [] }),
-      });
+    callLLMMock.mockResolvedValueOnce({
+      text: htmlForWidget('diagram'),
+    });
 
     const { POST } = await import('@/app/api/generate/scene-content/route');
     const response = await POST(mockRequest(createProceduralSkillOutline()));
@@ -85,13 +77,9 @@ describe('scene-content vocational gate', () => {
   test('flag on with effective taskEngineMode allows procedural-skill content generation', async () => {
     vi.resetModules();
     process.env[VOCATIONAL_FLAG] = '1';
-    callLLMMock
-      .mockResolvedValueOnce({
-        text: htmlForWidget('procedural-skill'),
-      })
-      .mockResolvedValueOnce({
-        text: JSON.stringify({ actions: [] }),
-      });
+    callLLMMock.mockResolvedValueOnce({
+      text: htmlForWidget('procedural-skill'),
+    });
 
     const { POST } = await import('@/app/api/generate/scene-content/route');
     const response = await POST(

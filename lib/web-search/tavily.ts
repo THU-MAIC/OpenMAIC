@@ -26,8 +26,9 @@ export async function searchWithTavily(params: {
   apiKey: string;
   maxResults?: number;
   baseUrl?: string;
+  signal?: AbortSignal;
 }): Promise<WebSearchResult> {
-  const { query, apiKey, maxResults = 5, baseUrl } = params;
+  const { query, apiKey, maxResults = 5, baseUrl, signal } = params;
 
   // Tavily rejects queries over 400 characters with a 400 error
   const truncatedQuery = query.slice(0, TAVILY_MAX_QUERY_LENGTH);
@@ -44,6 +45,7 @@ export async function searchWithTavily(params: {
       max_results: maxResults,
       include_answer: 'basic',
     }),
+    ...(signal ? { signal } : {}),
   });
 
   if (!res.ok) {

@@ -32,4 +32,41 @@ describe('getSvgPathRange', () => {
   test('returns zero range for malformed path (existing tolerant behaviour)', () => {
     expect(getSvgPathRange('not a path')).toEqual({ minX: 0, minY: 0, maxX: 0, maxY: 0 });
   });
+
+  test('does not include the origin for a closed glyph away from (0,0)', () => {
+    // Z carries no x/y; it must not inject a spurious (0,0) into the bbox.
+    expect(getSvgPathRange('M 100 100 L 200 100 L 200 200 L 100 200 Z')).toEqual({
+      minX: 100,
+      minY: 100,
+      maxX: 200,
+      maxY: 200,
+    });
+  });
+
+  test('handles H/V commands without missing-axis zeros', () => {
+    expect(getSvgPathRange('M 50 60 H 150 V 160 H 50 Z')).toEqual({
+      minX: 50,
+      minY: 60,
+      maxX: 150,
+      maxY: 160,
+    });
+  });
+
+  test('resolves relative commands instead of treating deltas as absolute', () => {
+    expect(getSvgPathRange('m 100 100 l 50 0 l 0 50 l -50 0 z')).toEqual({
+      minX: 100,
+      minY: 100,
+      maxX: 150,
+      maxY: 150,
+    });
+  });
+
+  test('accounts for arc bulge (non-zero extent on the bulge axis)', () => {
+    expect(getSvgPathRange('M 0 50 A 50 50 0 0 1 100 50')).toEqual({
+      minX: 0,
+      minY: 0,
+      maxX: 100,
+      maxY: 50,
+    });
+  });
 });

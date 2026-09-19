@@ -8,11 +8,12 @@
  * code path and assert it both reaches the rendered prompt AND the literal
  * placeholder is gone.
  */
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { generateSceneContent, generateSceneActions } from '@/lib/generation/scene-generator';
-import { buildSceneFromOutline } from '@/lib/generation/scene-builder';
-import type { AICallFn } from '@/lib/generation/pipeline-types';
+import { generateSceneActions, generateSceneContent, type AICallFn } from '@openmaic/generation';
+import { buildSceneFromOutline } from '@/lib/server/scene-generation';
+import { normalizeLegacyPBLContent } from '@/lib/pbl/legacy/read';
+import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
 import type {
   SceneOutline,
   GeneratedSlideContent,
@@ -147,7 +148,6 @@ describe('scene-generator language directive threading (issue #472)', () => {
       const { aiCall, lastUser } = makeCapturingAiCall('[]');
       const content: GeneratedInteractiveContent = {
         html: '<div />',
-        // No widgetType/teacherActions so we hit the normal actions path
       };
 
       await generateSceneActions(baseOutline({ type: 'interactive' }), content, aiCall, {
@@ -159,14 +159,9 @@ describe('scene-generator language directive threading (issue #472)', () => {
     });
 
     it('threads languageDirective into pbl actions prompt', async () => {
-      const { aiCall, lastUser } = makeCapturingAiCall('[]');
+      const { aiCall, lastUser, lastSystem } = makeCapturingAiCall('[]');
       const content: GeneratedPBLContent = {
-        projectConfig: {
-          projectInfo: { title: 't', description: 'd' },
-          agents: [],
-          issueboard: { agent_ids: [], issues: [], current_issue_id: null },
-          chat: { messages: [] },
-        },
+        projectV2: {} as GeneratedPBLContent['projectV2'],
       };
 
       await generateSceneActions(
@@ -185,18 +180,86 @@ describe('scene-generator language directive threading (issue #472)', () => {
 
       expect(lastUser()).toContain(DIRECTIVE);
       expect(lastUser()).not.toContain('{{languageDirective}}');
+      expect(lastSystem()).toContain('Project title: t');
+      expect(lastSystem()).toContain('Driving goal: d');
+      expect(lastSystem()).not.toContain('undefined');
+      expect(lastSystem()).not.toContain('{{projectSummary}}');
+    });
+
+    it('grounds the pbl actions prompt in the generated project plan', async () => {
+      const { aiCall, lastSystem } = makeCapturingAiCall('[]');
+      const legacyContent = structuredClone(legacyPBLSceneFixture.content);
+      if (legacyContent.type !== 'pbl') {
+        throw new Error('expected a PBL fixture');
+      }
+      const normalized = normalizeLegacyPBLContent(legacyContent);
+      if (!('projectV2' in normalized) || !normalized.projectV2) {
+        throw new Error('expected the legacy PBL fixture to normalize to projectV2');
+      }
+      const content: GeneratedPBLContent = {
+        projectV2: normalized.projectV2,
+      };
+
+      await generateSceneActions(baseOutline({ type: 'pbl' }), content, aiCall);
+
+      expect(lastSystem()).toContain('Project title: Community Garden Data Project');
+      expect(lastSystem()).toContain('1. Inspect the measurements');
+      expect(lastSystem()).toContain('2. Recommend a watering plan');
+      expect(lastSystem()).not.toContain('{{projectSummary}}');
+    });
+
+    it('tolerates non-string leaves in a container-valid pbl project summary', async () => {
+      const { aiCall, lastSystem } = makeCapturingAiCall('[]');
+      const content = {
+        projectV2: {
+          title: 42,
+          description: 42,
+          gains: [42],
+          roles: [{ id: 'role_instructor', type: 'instructor', name: 'Instructor' }],
+          milestones: [
+            { title: 42, order: 0, microtasks: [{ id: 'task_1', title: 'First task' }] },
+            {
+              title: 'Valid milestone',
+              order: 1,
+              microtasks: [{ id: 'task_2', title: 'Second task' }],
+            },
+          ],
+          submissions: [],
+          evaluations: [],
+          threads: [],
+          engagementEvents: [],
+        },
+      } as unknown as GeneratedPBLContent;
+
+      await expect(
+        generateSceneActions(
+          baseOutline({
+            type: 'pbl',
+            pblConfig: {
+              projectTopic: 'Fallback project',
+              projectDescription: 'Fallback description',
+              targetSkills: [],
+            },
+          }),
+          content,
+          aiCall,
+        ),
+      ).resolves.toEqual(expect.any(Array));
+
+      expect(lastSystem()).toContain('Project title: Fallback project');
+      expect(lastSystem()).toContain('Driving goal: Fallback description');
+      expect(lastSystem()).toContain('1. Task 1');
+      expect(lastSystem()).toContain('2. Valid milestone');
+      expect(lastSystem()).not.toContain('Learner gains: 42');
     });
   });
 
   describe('widget generation (interactive scenes)', () => {
-    it('threads languageDirective into widget content AND widget-teacher-actions prompts', async () => {
+    it('threads languageDirective into the widget content prompt', async () => {
       const captured: string[] = [];
-      // 1st call: widget HTML content; 2nd call: widget-teacher-actions JSON
       const aiCall: AICallFn = async (_system, user) => {
         captured.push(user);
-        return captured.length === 1
-          ? '<!DOCTYPE html><html><body>widget</body></html>'
-          : JSON.stringify({ actions: [] });
+        return '<!DOCTYPE html><html><body>widget</body></html>';
       };
 
       await generateSceneContent(
@@ -209,7 +272,7 @@ describe('scene-generator language directive threading (issue #472)', () => {
         { languageDirective: DIRECTIVE },
       );
 
-      expect(captured).toHaveLength(2);
+      expect(captured).toHaveLength(1);
       for (const user of captured) {
         expect(user).toContain(DIRECTIVE);
         expect(user).not.toContain('{{languageDirective}}');
@@ -249,44 +312,6 @@ describe('scene-generator language directive threading (issue #472)', () => {
         expect(user).toContain(DIRECTIVE);
         expect(user).not.toContain('{{languageDirective}}');
       }
-    });
-  });
-
-  describe('pbl content honors caller-provided directive', () => {
-    afterEach(() => {
-      vi.restoreAllMocks();
-    });
-
-    it('forwards options.languageDirective to generatePBLContent', async () => {
-      const pblModule = await import('@/lib/pbl/generate-pbl');
-      const spy = vi.spyOn(pblModule, 'generatePBLContent').mockResolvedValue({
-        projectInfo: { title: '', description: '' },
-        agents: [],
-        issueboard: { agent_ids: [], issues: [], current_issue_id: null },
-        chat: { messages: [] },
-      });
-
-      const aiCall: AICallFn = async () => '';
-
-      await generateSceneContent(
-        baseOutline({
-          type: 'pbl',
-          pblConfig: {
-            projectTopic: 't',
-            projectDescription: 'd',
-            targetSkills: [],
-          },
-        }),
-        aiCall,
-        {
-          languageDirective: DIRECTIVE,
-          languageModel: {} as unknown as import('ai').LanguageModel,
-        },
-      );
-
-      expect(spy).toHaveBeenCalledTimes(1);
-      const config = spy.mock.calls[0][0];
-      expect(config.languageDirective).toBe(DIRECTIVE);
     });
   });
 });

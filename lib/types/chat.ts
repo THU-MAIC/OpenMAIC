@@ -1,3 +1,4 @@
+import type { InteractiveStateEvidence } from '@/lib/interactive/chat-observation';
 /**
  * Shared Type Definitions for Multi-Agent Orchestration
  *
@@ -6,11 +7,18 @@
  */
 
 import type { UIMessage } from 'ai';
+import type { CleanupSource } from '@/lib/playback/auto-resume';
 import type { ThinkingConfig } from './provider';
 
 // Session Types
 export type SessionType = 'qa' | 'discussion' | 'lecture';
-export type SessionStatus = 'idle' | 'active' | 'interrupted' | 'completed' | 'error';
+export type SessionStatus =
+  | 'idle'
+  | 'active'
+  | 'soft-closing'
+  | 'interrupted'
+  | 'completed'
+  | 'error';
 
 /**
  * Metadata attached to chat messages
@@ -52,6 +60,61 @@ export interface ChatSession {
   updatedAt: number;
   sceneId?: string;
   lastActionIndex?: number;
+  endReason?: string;
+  /** Absolute deadline for the client-side soft-closing grace window. */
+  softCloseDeadline?: number;
+  directorState?: DirectorState;
+}
+
+export interface PiSessionBoundaryContext {
+  isFirstRequestInLiveSession: true;
+  previousEndSource?: CleanupSource;
+  sameSceneAsPrevious?: boolean;
+}
+
+/**
+ * Advance the session's conflict-order clock without trusting wall time to be
+ * monotonic. Restored data may come from a clock ahead of this device, and the
+ * local clock itself can move backwards.
+ */
+export function nextChatUpdatedAt(
+  session: Pick<ChatSession, 'updatedAt'>,
+  now = Date.now(),
+): number {
+  return Math.max(now, session.updatedAt + 1);
+}
+
+/** Apply a lifecycle transition and advance the same conflict-order clock. */
+export function withChatSessionStatus(
+  session: ChatSession,
+  status: SessionStatus,
+  now = Date.now(),
+): ChatSession {
+  return { ...session, status, updatedAt: nextChatUpdatedAt(session, now) };
+}
+
+/** Advance conflict order once a streamed message segment is fully revealed. */
+export function withChatSegmentSealed(session: ChatSession, now = Date.now()): ChatSession {
+  return { ...session, updatedAt: nextChatUpdatedAt(session, now) };
+}
+
+/** Advance conflict order only when paced text has actually finished revealing. */
+export function withChatSegmentReveal(
+  session: ChatSession,
+  isComplete: boolean,
+  now = Date.now(),
+): ChatSession {
+  return isComplete ? withChatSegmentSealed(session, now) : session;
+}
+
+/** Mark streams that cannot survive a reload as interrupted without stale ordering. */
+export function interruptActiveChatSessions(
+  sessions: ChatSession[],
+  now = Date.now(),
+): ChatSession[] {
+  return sessions.map((session) =>
+    session.status === 'active' ? withChatSessionStatus(session, 'interrupted', now) : session,
+  );
 }
 
 /**
@@ -197,8 +260,21 @@ export function toSessionListItem(session: ChatSession): SessionListItem {
  * Ordered to match the original action sequence in the scene.
  */
 export type LectureNoteItem =
-  | { kind: 'speech'; text: string }
-  | { kind: 'action'; type: string; label?: string };
+  | {
+      kind: 'speech';
+      text: string;
+      actionIndex: number;
+      actionId: string;
+      actionType: string;
+    }
+  | {
+      kind: 'action';
+      type: string;
+      label?: string;
+      actionIndex: number;
+      actionId: string;
+      actionType: string;
+    };
 
 /**
  * A completed lecture note entry for one scene.
@@ -215,7 +291,11 @@ export interface LectureNoteEntry {
 // ==================== Stateless Multi-Agent API Types ====================
 
 import type { Stage, Scene, StageMode } from '@/lib/types/stage';
+import type { SceneOutline } from '@/lib/types/generation';
 import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestration/types';
+import type { DirectorCompactionTrace } from '@/lib/chat/pi/director-compaction';
+import type { DirectorToolTraceEntry } from '@/lib/chat/pi/types';
+import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 
 /**
  * Accumulated director state passed between per-agent requests.
@@ -226,6 +306,22 @@ export interface DirectorState {
   agentResponses: AgentTurnSummary[];
   whiteboardLedger: WhiteboardActionRecord[];
 }
+
+/** Browser-selected identity for one PPT element. Content is resolved by the Host. */
+export interface SlideElementReference {
+  kind: 'slide_element';
+  sceneId: string;
+  elementId: string;
+}
+
+/** Browser-selected identity for one source-authored Interactive DOM component. */
+export interface InteractiveComponentReference {
+  kind: 'interactive_component';
+  sceneId: string;
+  selector: string;
+}
+
+export type ElementReference = SlideElementReference | InteractiveComponentReference;
 
 /**
  * Request body for the stateless chat API
@@ -238,10 +334,37 @@ export interface StatelessChatRequest {
   storeState: {
     stage: Stage | null;
     scenes: Scene[];
+    /** Thin course map available to the Pi Director before it reads any scene. */
+    outlines?: SceneOutline[];
     currentSceneId: string | null;
     mode: StageMode;
     whiteboardOpen: boolean;
+    /** Browser-owned manual visibility revision captured for this request. */
+    whiteboardManualVisibilityRevision?: number;
+    /**
+     * Post-submit quiz state for the CURRENT scene, hydrated by the client
+     * from localStorage when the active scene is a graded quiz. Lets the
+     * agent give targeted feedback on the student's actual answers
+     * (correct/incorrect, written response, AI grader comment) instead of
+     * guessing. Absent when the student has not submitted yet, or when the
+     * active scene is not a quiz.
+     */
+    quizResults?: {
+      sceneId: string;
+      answers: Record<string, string | string[]>;
+      results: Array<{
+        questionId: string;
+        correct: boolean | null;
+        status: 'correct' | 'incorrect';
+        earned: number;
+        aiComment?: string;
+      }>;
+    };
   };
+  /** Optional Pi-only, identity-only reference to one classroom component. */
+  elementReference?: ElementReference;
+  /** Request-scoped browser evidence, never a tool permission or static definition. */
+  interactiveState?: InteractiveStateEvidence;
   /** Agent configuration */
   config: {
     agentIds: string[];
@@ -265,9 +388,17 @@ export interface StatelessChatRequest {
       isGenerated?: boolean;
       boundStageId?: string;
     }>;
+    /** Pi PoC: max child agent turns in one server-side loop. */
+    piMaxAgentTurns?: number;
+    /** Pi PoC: max emitted actions per child agent turn. */
+    piMaxActionsPerAgent?: number;
+    /** Pi PoC: opt in to whiteboard tools; defaults off to keep the first A/B pass comparable. */
+    piEnableWhiteboardTools?: boolean;
   };
   /** Accumulated director state from previous per-agent requests */
   directorState?: DirectorState;
+  /** Pi-only context for the first request in a newly created live UI session. */
+  piSessionBoundary?: PiSessionBoundaryContext;
   /** User profile for personalization */
   userProfile?: {
     nickname?: string;
@@ -286,6 +417,16 @@ export interface StatelessChatRequest {
   thinking?: ThinkingConfig;
   /** UI-selected per-model thinking config. Takes precedence over `thinking`. */
   thinkingConfig?: ThinkingConfig;
+  /** Toolbar-selected Web Search provider. Resolved server-side independently from the LLM. */
+  webSearchProviderId?: WebSearchProviderId;
+  /** Selected provider credential only; server-managed credentials remain authoritative. */
+  webSearchApiKey?: string;
+  /** Selected provider base URL only; validated server-side and ignored for managed providers. */
+  webSearchBaseUrl?: string;
+  /** Selected Claude Web Search model only. */
+  webSearchModelId?: string;
+  /** Selected Baidu Web Search sub-sources only. */
+  baiduSubSources?: BaiduSubSources;
 }
 
 /**
@@ -330,6 +471,17 @@ export type StatelessEvent =
       type: 'thinking';
       data: { stage: 'director' | 'agent_loading'; agentId?: string };
     }
+  | {
+      type: 'whiteboard';
+      data:
+        | { kind: 'visibility_query'; queryId: string; stageId: string }
+        | {
+            kind: 'open' | 'close';
+            stageId: string;
+            manualVisibilityRevision: number;
+          }
+        | { kind: 'projection'; stageId: string; lastSeq: number };
+    }
   | { type: 'cue_user'; data: { fromAgentId?: string; prompt?: string } }
   | {
       type: 'done';
@@ -337,6 +489,11 @@ export type StatelessEvent =
         totalActions: number;
         totalAgents: number;
         agentHadContent?: boolean;
+        cueUserReceived?: boolean;
+        sessionClosed?: boolean;
+        endReason?: string;
+        directorCompaction?: DirectorCompactionTrace;
+        directorToolTrace?: DirectorToolTraceEntry[];
         directorState?: DirectorState;
       };
     }

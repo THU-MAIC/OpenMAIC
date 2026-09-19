@@ -150,6 +150,7 @@ import { experimental_transcribe as transcribe } from 'ai';
 import type { ASRModelConfig } from './types';
 import { isCustomASRProvider } from './types';
 import { ASR_PROVIDERS } from './constants';
+import { audioProviderFetch, createAudioProviderFetch } from '@/lib/server/audio-provider-fetch';
 
 /**
  * Result of ASR transcription
@@ -185,27 +186,37 @@ export async function transcribeAudio(
     case 'azure-asr':
       return await transcribeAzureASR(config, audioBuffer);
 
+    case 'funasr-asr':
+      return await transcribeWavOpenAICompatibleASR(config, audioBuffer, 'funasr-asr', 'FunASR');
+
     case 'lemonade-asr':
-      return await transcribeLemonadeASR(config, audioBuffer);
+      return await transcribeWavOpenAICompatibleASR(
+        config,
+        audioBuffer,
+        'lemonade-asr',
+        'Lemonade',
+      );
 
     default:
       if (isCustomASRProvider(config.providerId)) {
-        return await transcribeOpenAIWhisper(config, audioBuffer);
+        return await transcribeCustomOpenAICompatibleASR(config, audioBuffer);
       }
       throw new Error(`Unsupported ASR provider: ${config.providerId}`);
   }
 }
 
 /**
- * Lemonade ASR implementation (OpenAI-compatible multipart transcription).
+ * WAV-only OpenAI-compatible multipart transcription.
  *
- * Lemonade currently supports WAV input and JSON response format.
+ * Used by local providers whose transcription endpoint accepts WAV and JSON.
  */
-async function transcribeLemonadeASR(
+async function transcribeWavOpenAICompatibleASR(
   config: ASRModelConfig,
   audioBuffer: Buffer | Blob,
+  providerId: 'funasr-asr' | 'lemonade-asr',
+  providerName: string,
 ): Promise<ASRTranscriptionResult> {
-  const baseUrl = (config.baseUrl || ASR_PROVIDERS['lemonade-asr'].defaultBaseUrl || '').replace(
+  const baseUrl = (config.baseUrl || ASR_PROVIDERS[providerId].defaultBaseUrl || '').replace(
     /\/$/,
     '',
   );
@@ -213,30 +224,34 @@ async function transcribeLemonadeASR(
   const audioBlob = await toAudioBlob(audioBuffer);
   if (!(await isWavAudio(audioBlob))) {
     throw new Error(
-      'Lemonade ASR currently supports WAV input only. Recordings should be converted to WAV before upload.',
+      `${providerName} ASR currently supports WAV input only. Recordings should be converted to WAV before upload.`,
     );
   }
 
   const formData = new FormData();
   formData.set('file', audioBlob, 'audio.wav');
-  formData.set('model', config.modelId || ASR_PROVIDERS['lemonade-asr'].defaultModelId);
+  formData.set('model', config.modelId || ASR_PROVIDERS[providerId].defaultModelId);
   formData.set('response_format', 'json');
   if (config.language && config.language !== 'auto') {
     formData.set('language', config.language);
   }
 
-  const response = await fetch(`${baseUrl}/audio/transcriptions`, {
-    method: 'POST',
-    headers: getOptionalBearerAuthHeaders(config.apiKey),
-    body: formData,
-  });
+  const response = await audioProviderFetch(
+    `${baseUrl}/audio/transcriptions`,
+    {
+      method: 'POST',
+      headers: getOptionalBearerAuthHeaders(config.apiKey),
+      body: formData,
+    },
+    { allowLocalNetworks: config.publicOnly ? false : undefined },
+  );
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => response.statusText);
     if (errorText.includes('audio is empty') || errorText.includes('too short')) {
       return { text: '' };
     }
-    throw new Error(`Lemonade ASR API error: ${errorText || response.statusText}`);
+    throw new Error(`${providerName} ASR API error: ${errorText || response.statusText}`);
   }
 
   const data = await response.json();
@@ -292,6 +307,88 @@ function getOptionalBearerAuthHeaders(apiKey?: string): Record<string, string> {
 }
 
 /**
+ * Custom OpenAI-compatible ASR transcription via raw fetch.
+ *
+ * Used by all `custom-asr-*` providers (e.g. SiliconFlow, LocalAI, etc.).
+ *
+ * Unlike `transcribeOpenAIWhisper`, this bypasses the Vercel AI SDK so that
+ * provider responses with extra fields (e.g. SiliconFlow's `segments` array)
+ * are NOT rejected by the SDK's strict response-schema validation.  Only
+ * `data.text` is extracted, making it tolerant of any OpenAI-compatible
+ * provider that returns additional fields beyond the standard spec.
+ */
+async function transcribeCustomOpenAICompatibleASR(
+  config: ASRModelConfig,
+  audioBuffer: Buffer | Blob,
+): Promise<ASRTranscriptionResult> {
+  const baseUrl = (config.baseUrl || '').replace(/\/$/, '');
+  if (!baseUrl) {
+    throw new Error('Custom ASR provider requires a base URL (e.g. https://api.siliconflow.cn/v1)');
+  }
+
+  // Build a Blob with a sensible content-type so the remote API can detect
+  // the audio format without relying on a file extension.
+  let audioBlob: Blob;
+  if (audioBuffer instanceof Blob) {
+    audioBlob = audioBuffer;
+  } else {
+    const arrayBuffer = audioBuffer.buffer.slice(
+      audioBuffer.byteOffset,
+      audioBuffer.byteOffset + audioBuffer.byteLength,
+    ) as ArrayBuffer;
+    // Preserve existing type when converting from Buffer; fall back to webm
+    // (the default recording format used by the browser MediaRecorder API).
+    audioBlob = new Blob([arrayBuffer], { type: 'audio/webm' });
+  }
+
+  // Most OpenAI-compatible transcription endpoints treat `model` as a
+  // required field.  Custom providers have no built-in default, so we
+  // require the caller to supply one and fail fast with a clear message
+  // rather than sending a request that will almost certainly return a 400.
+  if (!config.modelId?.trim()) {
+    throw new Error(
+      'Custom ASR provider requires a model ID (e.g. FunAudioLLM/SenseVoiceSmall). ' +
+        'Please set the model in the provider settings.',
+    );
+  }
+
+  const formData = new FormData();
+  // Use 'file' key — required by the OpenAI audio/transcriptions spec.
+  formData.set('file', audioBlob, 'audio.webm');
+  formData.set('model', config.modelId);
+  formData.set('response_format', 'json');
+  if (config.language && config.language !== 'auto') {
+    formData.set('language', config.language);
+  }
+
+  const response = await audioProviderFetch(
+    `${baseUrl}/audio/transcriptions`,
+    {
+      method: 'POST',
+      headers: getOptionalBearerAuthHeaders(config.apiKey),
+      body: formData,
+    },
+    { allowLocalNetworks: config.publicOnly ? false : undefined },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    if (errorText.includes('audio is empty') || errorText.includes('too short')) {
+      return { text: '' };
+    }
+    throw new Error(
+      `Custom ASR API error (${response.status}): ${errorText || response.statusText}`,
+    );
+  }
+
+  // Only extract `text` — extra provider-specific fields (e.g. SiliconFlow's
+  // `segments`, `duration`, `usage`) are intentionally ignored so that strict
+  // schema validators in the SDK never see them.
+  const data = await response.json();
+  return { text: typeof data.text === 'string' ? data.text : '' };
+}
+
+/**
  * OpenAI Whisper implementation (using Vercel AI SDK)
  */
 async function transcribeOpenAIWhisper(
@@ -301,6 +398,12 @@ async function transcribeOpenAIWhisper(
   const openai = createOpenAI({
     apiKey: config.apiKey!,
     baseURL: config.baseUrl || ASR_PROVIDERS['openai-whisper'].defaultBaseUrl,
+    // The AI SDK issues the multipart upload through this transport, so the
+    // provider request inherits the same redirect + pinned-DNS protection as
+    // the raw provider fetches.
+    fetch: createAudioProviderFetch({
+      allowLocalNetworks: config.publicOnly ? false : undefined,
+    }) as typeof fetch,
   });
 
   // Convert to Buffer or Uint8Array (which is required by the AI SDK)
@@ -316,7 +419,7 @@ async function transcribeOpenAIWhisper(
 
   try {
     const result = await transcribe({
-      model: openai.transcription(config.modelId || 'gpt-4o-mini-transcribe'),
+      model: openai.transcription(config.modelId || ASR_PROVIDERS['openai-whisper'].defaultModelId),
       audio: audioData,
       providerOptions: {
         openai: {
@@ -358,7 +461,7 @@ async function transcribeQwenASR(
 
   // Build request body
   const requestBody: Record<string, unknown> = {
-    model: config.modelId || 'qwen3-asr-flash',
+    model: config.modelId || ASR_PROVIDERS['qwen-asr'].defaultModelId,
     input: {
       messages: [
         {
@@ -383,15 +486,19 @@ async function transcribeQwenASR(
     };
   }
 
-  const response = await fetch(`${baseUrl}/services/aigc/multimodal-generation/generation`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      'Content-Type': 'application/json; charset=utf-8',
-      'X-DashScope-Audio-Format': 'wav',
+  const response = await audioProviderFetch(
+    `${baseUrl}/services/aigc/multimodal-generation/generation`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-DashScope-Audio-Format': 'wav',
+      },
+      body: JSON.stringify(requestBody),
     },
-    body: JSON.stringify(requestBody),
-  });
+    { allowLocalNetworks: config.publicOnly ? false : undefined },
+  );
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => response.statusText);
@@ -484,11 +591,15 @@ async function transcribeAzureASR(
     formData.append('definition', JSON.stringify({ locales: [locale] }));
   }
 
-  const response = await fetch(url.toString(), {
-    method: 'POST',
-    headers: { 'Ocp-Apim-Subscription-Key': config.apiKey! },
-    body: formData,
-  });
+  const response = await audioProviderFetch(
+    url.toString(),
+    {
+      method: 'POST',
+      headers: { 'Ocp-Apim-Subscription-Key': config.apiKey! },
+      body: formData,
+    },
+    { allowLocalNetworks: config.publicOnly ? false : undefined },
+  );
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => response.statusText);

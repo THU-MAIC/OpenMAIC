@@ -16,6 +16,13 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     endpointPath: '/search',
     icon: '/logos/tavily.svg',
   },
+  exa: {
+    id: 'exa',
+    name: 'Exa',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.exa.ai',
+    endpointPath: '/search',
+  },
   bocha: {
     id: 'bocha',
     name: 'Bocha',
@@ -40,6 +47,14 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     endpointPath: '/v2/ai_search/web_search',
     icon: '/logos/baidu.png',
   },
+  claude: {
+    id: 'claude',
+    name: 'Claude',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.anthropic.com/v1',
+    endpointPath: '/messages',
+    icon: '/logos/claude.svg',
+  },
   minimax: {
     id: 'minimax',
     name: 'MiniMax',
@@ -48,7 +63,103 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     endpointPath: '/v1/coding_plan/search',
     icon: '/logos/minimax.svg',
   },
+  doubao: {
+    id: 'doubao',
+    name: 'Doubao',
+    requiresApiKey: true,
+    // 豆包搜索 Custom 版: the Agent Plan key authenticates directly here
+    // (verified). The MCP/Skill path wraps this same REST endpoint.
+    defaultBaseUrl: 'https://open.feedcoopapi.com',
+    endpointPath: '/search_api/web_search',
+    icon: '/logos/doubao.svg',
+  },
+  searxng: {
+    id: 'searxng',
+    name: 'SearXNG',
+    requiresApiKey: false,
+    requiresBaseUrl: true,
+    endpointPath: '/search',
+  },
 };
+
+/** Default model for Claude web search (Sonnet tier: balanced speed/cost for search + summarize). */
+export const CLAUDE_WEB_SEARCH_DEFAULT_MODEL = 'claude-sonnet-5';
+
+/** Curated model list offered in the Claude web-search settings. */
+export const CLAUDE_WEB_SEARCH_MODELS: ReadonlyArray<{ id: string; name: string }> = [
+  { id: 'claude-opus-5', name: 'Claude Opus 5' },
+  { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
+  { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+  { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+  { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+];
+
+export function isWebSearchProviderConfigured(
+  provider: WebSearchProviderConfig,
+  cfg?: {
+    apiKey?: string;
+    baseUrl?: string;
+    isServerConfigured?: boolean;
+    serverDisabled?: boolean;
+  },
+): boolean {
+  if (cfg?.serverDisabled) return false;
+  if (cfg?.isServerConfigured) return true;
+  // SearXNG base URLs are operator-managed only; client settings must not count.
+  if (provider.id === 'searxng') return false;
+  if (provider.requiresApiKey) return !!cfg?.apiKey;
+  if (provider.requiresBaseUrl) return !!cfg?.baseUrl;
+  return true;
+}
+
+function isWebSearchConfigUsable(
+  providerId: WebSearchProviderId,
+  cfg?: {
+    apiKey?: string;
+    baseUrl?: string;
+    isServerConfigured?: boolean;
+    requiresApiKey?: boolean;
+    serverDisabled?: boolean;
+  },
+): boolean {
+  if (!cfg) return false;
+  if (cfg.serverDisabled) return false;
+  if (cfg.isServerConfigured) return true;
+
+  const provider = WEB_SEARCH_PROVIDERS[providerId];
+  if (providerId === 'searxng') return false;
+  const requiresApiKey = cfg.requiresApiKey ?? provider.requiresApiKey;
+  if (!requiresApiKey) {
+    if (provider.requiresBaseUrl) return !!cfg.baseUrl;
+    return true;
+  }
+  return !!cfg.apiKey;
+}
+
+/** Server-managed providers first, then other usable client providers. */
+export function buildWebSearchFallbackOrder(
+  config: Partial<
+    Record<
+      WebSearchProviderId,
+      {
+        apiKey?: string;
+        baseUrl?: string;
+        isServerConfigured?: boolean;
+        requiresApiKey?: boolean;
+        serverDisabled?: boolean;
+      }
+    >
+  >,
+): WebSearchProviderId[] {
+  const ids = Object.keys(WEB_SEARCH_PROVIDERS) as WebSearchProviderId[];
+  const serverManaged = ids.filter(
+    (id) => isWebSearchConfigUsable(id, config[id]) && config[id]?.isServerConfigured,
+  );
+  const clientUsable = ids.filter(
+    (id) => isWebSearchConfigUsable(id, config[id]) && !config[id]?.isServerConfigured,
+  );
+  return [...serverManaged, ...clientUsable];
+}
 
 export const BAIDU_SUB_SOURCES: Record<
   keyof BaiduSubSources,

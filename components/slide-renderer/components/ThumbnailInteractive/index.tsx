@@ -84,7 +84,7 @@ export function ThumbnailInteractive({
             src={patchedHtml ? undefined : content.url}
             className="w-full h-full border-0"
             title="Interactive Preview"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            sandbox="allow-scripts allow-forms allow-popups"
           />
         </div>
       )}

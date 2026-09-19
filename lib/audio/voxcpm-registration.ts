@@ -13,6 +13,8 @@ import {
   normalizeVoxCPMBackend,
   voxCPMBackendSupportsVoiceRegistration,
 } from '@/lib/audio/voxcpm';
+import { resolveTTSModel } from '@/lib/server/provider-config';
+import { audioProviderFetch } from '@/lib/server/audio-provider-fetch';
 import type {
   VoiceRegistrationAdapter,
   VoiceRegistrationConfig,
@@ -60,10 +62,14 @@ export async function voxCPMVoiceExists(
   cfg: VoiceRegistrationConfig,
   voiceId: string,
 ): Promise<boolean> {
-  const res = await fetch(`${v1(cfg.baseUrl)}/audio/voices`, {
-    method: 'GET',
-    headers: authHeaders(cfg.apiKey),
-  });
+  const res = await audioProviderFetch(
+    `${v1(cfg.baseUrl)}/audio/voices`,
+    {
+      method: 'GET',
+      headers: authHeaders(cfg.apiKey),
+    },
+    { allowLocalNetworks: cfg.publicOnly ? false : undefined },
+  );
   if (!res.ok) return false;
   const data = (await res.json().catch(() => ({}))) as { voices?: unknown };
   return Array.isArray(data.voices) && data.voices.includes(voiceId);
@@ -83,11 +89,15 @@ export async function registerVoxCPMVoice(
     `${params.voiceId}.wav`,
   );
 
-  const res = await fetch(`${v1(cfg.baseUrl)}/audio/voices`, {
-    method: 'POST',
-    headers: authHeaders(cfg.apiKey),
-    body: form,
-  });
+  const res = await audioProviderFetch(
+    `${v1(cfg.baseUrl)}/audio/voices`,
+    {
+      method: 'POST',
+      headers: authHeaders(cfg.apiKey),
+      body: form,
+    },
+    { allowLocalNetworks: cfg.publicOnly ? false : undefined },
+  );
   if (!res.ok) {
     throw new Error(`VoxCPM voice registration failed: ${res.status}`);
   }
@@ -102,17 +112,21 @@ export async function bootstrapVoxCPMReferenceClip(
 ): Promise<{ referenceAudioBase64: string; mimeType: string }> {
   const prompt = buildVoiceDesignPrompt(params.design);
   const sample = bootstrapSentence(params.language);
-  const res = await fetch(`${v1(cfg.baseUrl)}/audio/speech`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...authHeaders(cfg.apiKey) },
-    body: JSON.stringify({
-      model: cfg.model || VOXCPM_VLLM_MODEL_ID,
-      input: prompt ? `(${prompt})${sample}` : sample,
-      voice: 'default',
-      response_format: 'wav',
-      stream: false,
-    }),
-  });
+  const res = await audioProviderFetch(
+    `${v1(cfg.baseUrl)}/audio/speech`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8', ...authHeaders(cfg.apiKey) },
+      body: JSON.stringify({
+        model: cfg.model || VOXCPM_VLLM_MODEL_ID,
+        input: prompt ? `(${prompt})${sample}` : sample,
+        voice: 'default',
+        response_format: 'wav',
+        stream: false,
+      }),
+    },
+    { allowLocalNetworks: cfg.publicOnly ? false : undefined },
+  );
   if (!res.ok) {
     throw new Error(`VoxCPM bootstrap synthesis failed: ${res.status}`);
   }
@@ -127,6 +141,12 @@ export async function bootstrapVoxCPMReferenceClip(
 export const voxcpmVoiceRegistrationAdapter: VoiceRegistrationAdapter = {
   supportsRegistration(options) {
     return voxCPMBackendSupportsVoiceRegistration(normalizeVoxCPMBackend(options?.backend));
+  },
+  // The registration call itself is model-less (multipart name + consent +
+  // audio_sample); the model only feeds the bootstrap reference-clip synthesis,
+  // so resolve it the same way the TTS route does (server pin wins, else client).
+  resolveRegistrationModel(clientModel) {
+    return resolveTTSModel('voxcpm-tts', clientModel);
   },
   voiceExists: voxCPMVoiceExists,
   registerVoice: registerVoxCPMVoice,

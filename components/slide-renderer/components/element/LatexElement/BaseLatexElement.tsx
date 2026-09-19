@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useLayoutEffect } from 'react';
-import type { PPTLatexElement } from '@/lib/types/slides';
+import type { PPTLatexElement } from '@openmaic/dsl';
 
 export interface BaseLatexElementProps {
   elementInfo: PPTLatexElement;
@@ -26,7 +26,10 @@ export function BaseLatexElement({ elementInfo }: BaseLatexElementProps) {
         className="rotate-wrapper w-full h-full"
         style={{ transform: `rotate(${elementInfo.rotate}deg)` }}
       >
-        <div className="element-content relative w-full h-full">
+        <div
+          className="element-content relative w-full h-full"
+          style={{ color: elementInfo.color }}
+        >
           {elementInfo.html ? (
             <KatexContent
               html={elementInfo.html}

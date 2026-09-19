@@ -19,6 +19,7 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash-image';
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com';
@@ -58,7 +59,10 @@ export async function testNanoBananaConnectivity(
   // Try ?key= query param first (direct Google API), fall back to x-goog-api-key header (proxy)
   let response: Response | null = null;
   try {
-    response = await fetch(`${url}?key=${config.apiKey}`, { method: 'GET' });
+    response = await fetch(`${url}?key=${config.apiKey}`, {
+      method: 'GET',
+      redirect: 'manual',
+    });
   } catch {
     // Direct API unreachable, try header auth
   }
@@ -66,6 +70,7 @@ export async function testNanoBananaConnectivity(
     try {
       response = await fetch(url, {
         method: 'GET',
+        redirect: 'manual',
         headers: { 'x-goog-api-key': config.apiKey },
       });
     } catch (_err) {
@@ -99,7 +104,7 @@ export async function generateWithNanoBanana(
   options: ImageGenerationOptions,
 ): Promise<ImageGenerationResult> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
-  const model = config.model || DEFAULT_MODEL;
+  const model = requireModel(config.model, 'Nano Banana');
 
   const response = await fetch(`${baseUrl}/v1beta/models/${model}:generateContent`, {
     method: 'POST',

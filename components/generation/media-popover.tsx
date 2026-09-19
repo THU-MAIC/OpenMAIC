@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, Fragment } from 'react';
+import { useState, useCallback, useMemo, Fragment, useEffect } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   Image as ImageIcon,
@@ -24,9 +24,11 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { resolveASRProviderName } from '@/lib/audio/provider-display';
 import { useSettingsStore } from '@/lib/store/settings';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
+import { useOpenRouterModels } from '@/lib/media/use-openrouter-models';
 import { CUSTOM_ASR_DEFAULT_LANGUAGES } from '@/lib/audio/constants';
 import { ASR_PROVIDERS, getASRSupportedLanguages } from '@/lib/audio/constants';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
@@ -45,13 +47,15 @@ const IMAGE_PROVIDER_ICONS: Record<string, string> = {
   'qwen-image': '/logos/bailian.svg',
   'nano-banana': '/logos/gemini.svg',
   'grok-image': '/logos/grok.svg',
+  'comfyui-image': '/logos/comfyui.svg',
+  'openrouter-image': '/logos/openrouter.svg',
 };
 const VIDEO_PROVIDER_ICONS: Record<string, string> = {
   seedance: '/logos/doubao.svg',
   kling: '/logos/kling.svg',
   veo: '/logos/gemini.svg',
-  sora: '/logos/openai.svg',
   'grok-video': '/logos/grok.svg',
+  'openrouter-video': '/logos/openrouter.svg',
 };
 
 type TabId = 'image' | 'video' | 'tts' | 'asr';
@@ -62,6 +66,17 @@ const TABS: Array<{ id: TabId; icon: LucideIcon; label: string }> = [
   { id: 'tts', icon: Volume2, label: 'TTS' },
   { id: 'asr', icon: Mic, label: 'ASR' },
 ];
+
+function providerModels<T extends { id: string; name: string }>(
+  builtInModels: T[],
+  config?: { customModels?: T[]; replaceBuiltInModels?: boolean },
+): T[] {
+  const customModels = config?.customModels || [];
+  if (config?.replaceBuiltInModels && customModels.length > 0) {
+    return customModels;
+  }
+  return [...builtInModels, ...customModels];
+}
 
 export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   const { t } = useI18n();
@@ -96,6 +111,14 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   const setASRProvider = useSettingsStore((s) => s.setASRProvider);
   const setASRLanguage = useSettingsStore((s) => s.setASRLanguage);
 
+  const [comfyWorkflows, setComfyWorkflows] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    fetch('/api/comfyui-workflows')
+      .then((r) => r.json())
+      .then((d) => setComfyWorkflows(d.workflows || []))
+      .catch(() => setComfyWorkflows([]));
+  }, []);
+
   const enabledMap: Record<TabId, boolean> = {
     image: imageGenerationEnabled,
     video: videoGenerationEnabled,
@@ -112,11 +135,34 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
 
   const cfgOk = useCallback(
     (
-      configs: Record<string, { apiKey?: string; isServerConfigured?: boolean }>,
+      configs: Record<
+        string,
+        { apiKey?: string; isServerConfigured?: boolean; serverDisabled?: boolean }
+      >,
       id: string,
       needsKey: boolean,
-    ) => !needsKey || !!configs[id]?.apiKey || !!configs[id]?.isServerConfigured,
+    ) =>
+      !configs[id]?.serverDisabled &&
+      (!needsKey || !!configs[id]?.apiKey || !!configs[id]?.isServerConfigured),
     [],
+  );
+
+  // The OpenRouter groups list every model OpenRouter hosts, not the registry
+  // seed — the same live catalog the settings picker shows. Fetched only once
+  // the provider is actually usable so an unconfigured install makes no call.
+  const { models: openRouterImageModels } = useOpenRouterModels(
+    'image',
+    cfgOk(imageProvidersConfig, 'openrouter-image', true),
+    IMAGE_PROVIDERS['openrouter-image'].models,
+    imageProvidersConfig['openrouter-image']?.apiKey,
+    imageProvidersConfig['openrouter-image']?.baseUrl,
+  );
+  const { models: openRouterVideoModels } = useOpenRouterModels(
+    'video',
+    cfgOk(videoProvidersConfig, 'openrouter-video', true),
+    VIDEO_PROVIDERS['openrouter-video'].models,
+    videoProvidersConfig['openrouter-video']?.apiKey,
+    videoProvidersConfig['openrouter-video']?.baseUrl,
   );
 
   // ─── Grouped select data (only available providers) ───
@@ -124,17 +170,26 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     () =>
       Object.values(IMAGE_PROVIDERS)
         .filter((p) => cfgOk(imageProvidersConfig, p.id, p.requiresApiKey))
-        .map((p) => ({
-          groupId: p.id,
-          groupName: p.name,
-          groupIcon: IMAGE_PROVIDER_ICONS[p.id],
-          available: true,
-          items: [...p.models, ...(imageProvidersConfig[p.id]?.customModels || [])].map((m) => ({
-            id: m.id,
-            name: m.name,
-          })),
-        })),
-    [cfgOk, imageProvidersConfig],
+        .map((p) => {
+          const catalog = p.id === 'openrouter-image' ? openRouterImageModels : p.models;
+          const items =
+            p.id === 'comfyui-image'
+              ? comfyWorkflows
+              : providerModels(catalog, imageProvidersConfig[p.id]);
+
+          return {
+            groupId: p.id,
+            groupName: p.name,
+            groupIcon: IMAGE_PROVIDER_ICONS[p.id],
+            available: true,
+            // Map to a consistent format here
+            items: items.map((m) => ({
+              id: m.id,
+              name: m.name,
+            })),
+          };
+        }),
+    [cfgOk, imageProvidersConfig, comfyWorkflows, openRouterImageModels],
   );
 
   const videoGroups = useMemo(
@@ -146,12 +201,15 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
           groupName: p.name,
           groupIcon: VIDEO_PROVIDER_ICONS[p.id],
           available: true,
-          items: [...p.models, ...(videoProvidersConfig[p.id]?.customModels || [])].map((m) => ({
+          items: providerModels(
+            p.id === 'openrouter-video' ? openRouterVideoModels : p.models,
+            videoProvidersConfig[p.id],
+          ).map((m) => ({
             id: m.id,
             name: m.name,
           })),
         })),
-    [cfgOk, videoProvidersConfig],
+    [cfgOk, videoProvidersConfig, openRouterVideoModels],
   );
 
   // ASR: built-in + custom providers
@@ -163,7 +221,9 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
       if (!cfgOk(asrProvidersConfig, p.id, p.requiresApiKey)) continue;
       groups.push({
         groupId: p.id,
-        groupName: p.name,
+        // `p.name` is the registry label, which is Chinese for several
+        // providers; resolve it the way the settings dialog does.
+        groupName: resolveASRProviderName(p.id, t, p.name),
         groupIcon: p.icon,
         available: true,
         items: getASRSupportedLanguages(p.id).map((l) => ({
@@ -188,7 +248,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     }
 
     return groups;
-  }, [asrProvidersConfig, cfgOk]);
+  }, [asrProvidersConfig, cfgOk, t]);
 
   // Auto-select first enabled tab on open
   const handleOpenChange = (isOpen: boolean) => {

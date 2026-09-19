@@ -37,4 +37,9 @@ export interface AgentTurnSummary {
   contentPreview: string;
   actionCount: number;
   whiteboardActions: WhiteboardActionRecord[];
+  actionWarnings?: Array<{
+    actionName?: string;
+    reason: 'unknown_action' | 'invalid_params' | 'raw_structured_fallback';
+    message: string;
+  }>;
 }

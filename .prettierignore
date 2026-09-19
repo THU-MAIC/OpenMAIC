@@ -6,10 +6,10 @@ node_modules/
 packages/pptxgenjs/
 packages/mathml2omml/
 
-# @maic workspace packages: the source is formatted to the root style, but skip
+# @openmaic workspace packages: the source is formatted to the root style, but skip
 # generated build output and the vendored legacy reference under the importer.
-packages/@maic/*/dist/
-packages/@maic/importer/src1/
+packages/@openmaic/*/dist/
+packages/@openmaic/importer/src1/
 
 # Docs site (separate Fumadocs app with its own toolchain)
 packages/docs/

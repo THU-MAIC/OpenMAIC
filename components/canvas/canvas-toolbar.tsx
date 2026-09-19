@@ -15,17 +15,21 @@ import {
   Repeat,
   Maximize2,
   Minimize2,
+  Quote,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useSoftCloseCountdown } from '@/components/chat/use-soft-close-countdown';
 
 export interface CanvasToolbarProps {
   readonly currentSceneIndex: number;
   readonly scenesCount: number;
   readonly engineState: 'idle' | 'playing' | 'paused';
   readonly isLiveSession?: boolean;
+  readonly isSoftClosing?: boolean;
+  readonly softCloseDeadline?: number;
   readonly whiteboardOpen: boolean;
   readonly sidebarCollapsed?: boolean;
   readonly chatCollapsed?: boolean;
@@ -37,6 +41,7 @@ export interface CanvasToolbarProps {
   readonly onWhiteboardClose: () => void;
   readonly showStopDiscussion?: boolean;
   readonly onStopDiscussion?: () => void;
+  readonly onContinueDiscussion?: () => void;
   readonly isPresenting?: boolean;
   readonly onTogglePresentation?: () => void;
   readonly className?: string;
@@ -50,6 +55,10 @@ export interface CanvasToolbarProps {
   readonly onToggleAutoPlay?: () => void;
   readonly playbackSpeed?: number;
   readonly onCycleSpeed?: () => void;
+  readonly showElementReference?: boolean;
+  readonly canPickSlideElement?: boolean;
+  readonly elementPickActive?: boolean;
+  readonly onToggleElementPick?: () => void;
 }
 
 /* Compact control button */
@@ -85,6 +94,8 @@ export function CanvasToolbar({
   scenesCount,
   engineState,
   isLiveSession,
+  isSoftClosing,
+  softCloseDeadline,
   whiteboardOpen,
   sidebarCollapsed,
   chatCollapsed,
@@ -96,6 +107,7 @@ export function CanvasToolbar({
   onWhiteboardClose,
   showStopDiscussion,
   onStopDiscussion,
+  onContinueDiscussion,
   isPresenting,
   onTogglePresentation,
   className,
@@ -108,8 +120,13 @@ export function CanvasToolbar({
   onToggleAutoPlay,
   playbackSpeed = 1,
   onCycleSpeed,
+  showElementReference,
+  canPickSlideElement,
+  elementPickActive,
+  onToggleElementPick,
 }: CanvasToolbarProps) {
   const { t } = useI18n();
+  const remainingSoftCloseSeconds = useSoftCloseCountdown(softCloseDeadline);
   const canGoPrev = currentSceneIndex > 0;
   const canGoNext = currentSceneIndex < scenesCount - 1;
   const showPlayPause = !isLiveSession;
@@ -291,25 +308,41 @@ export function CanvasToolbar({
 
           {/* Play / Pause / Stop Discussion */}
           {showStopDiscussion && onStopDiscussion ? (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onStopDiscussion();
-              }}
-              className={cn(
-                'flex items-center gap-1.5 h-6 px-2.5 rounded-md',
-                'bg-red-500/10 dark:bg-red-400/10 text-red-600 dark:text-red-400',
-                'text-[11px] font-semibold whitespace-nowrap',
-                'hover:bg-red-500/20 dark:hover:bg-red-400/20 active:scale-95 transition-all cursor-pointer',
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStopDiscussion();
+                }}
+                className={cn(
+                  'flex items-center gap-1.5 h-6 px-2.5 rounded-md',
+                  'bg-red-500/10 dark:bg-red-400/10 text-red-600 dark:text-red-400',
+                  'text-[11px] font-semibold whitespace-nowrap',
+                  'hover:bg-red-500/20 dark:hover:bg-red-400/20 active:scale-95 transition-all cursor-pointer',
+                )}
+                title={t('roundtable.stopDiscussion')}
+              >
+                <span className="inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
+                {t('roundtable.stopDiscussion')}
+              </button>
+              {isSoftClosing && onContinueDiscussion && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onContinueDiscussion();
+                  }}
+                  className="flex items-center gap-1.5 h-6 px-2.5 rounded-md border border-purple-200 dark:border-purple-700 bg-white/70 dark:bg-gray-800/70 text-purple-600 dark:text-purple-300 text-[11px] font-semibold whitespace-nowrap hover:bg-purple-50 dark:hover:bg-purple-900/20 active:scale-95 transition-all cursor-pointer"
+                  title={t('roundtable.softClosing')}
+                >
+                  {t('roundtable.softClosing')}
+                  {remainingSoftCloseSeconds !== undefined && (
+                    <span className="text-[9px] font-medium tabular-nums text-gray-400 dark:text-gray-500">
+                      {remainingSoftCloseSeconds}s
+                    </span>
+                  )}
+                </button>
               )}
-              title={t('roundtable.stopDiscussion')}
-            >
-              <span className="relative flex h-1.5 w-1.5 shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
-              </span>
-              {t('roundtable.stopDiscussion')}
-            </button>
+            </div>
           ) : showPlayPause ? (
             <button
               onClick={onPlayPause}
@@ -393,6 +426,34 @@ export function CanvasToolbar({
               <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-violet-500 dark:bg-violet-400 rounded-full" />
             )}
           </button>
+
+          {showElementReference && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleElementPick?.();
+              }}
+              disabled={!canPickSlideElement}
+              className={cn(
+                'relative flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-all',
+                elementPickActive
+                  ? 'bg-violet-500/15 text-violet-700 ring-1 ring-violet-400/40 dark:text-violet-300'
+                  : 'text-gray-500 hover:bg-gray-500/[0.08] dark:text-gray-400',
+                !canPickSlideElement && 'cursor-not-allowed opacity-35',
+              )}
+              aria-label={t('chat.elementReference.button')}
+              aria-pressed={elementPickActive}
+              title={
+                canPickSlideElement
+                  ? t('chat.elementReference.button')
+                  : t('chat.elementReference.unavailable')
+              }
+            >
+              <Quote className="h-3.5 w-3.5" />
+              <span>{t('chat.elementReference.button')}</span>
+            </button>
+          )}
         </div>
       </div>
 

@@ -1,5 +1,13 @@
-import Dexie, { type EntityTable } from 'dexie';
-import type { Scene, SceneType, SceneContent, Whiteboard, VideoManifest } from '@/lib/types/stage';
+import Dexie, { type EntityTable, type Table } from 'dexie';
+import { migrate } from '@openmaic/dsl';
+import type {
+  Scene,
+  SceneType,
+  SceneContent,
+  Whiteboard,
+  VideoManifest,
+  GeneratedAgentConfig,
+} from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import type {
   SessionType,
@@ -7,11 +15,24 @@ import type {
   SessionConfig,
   ToolCallRecord,
   ToolCallRequest,
+  ChatSession,
 } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { VoiceDesign } from '@/lib/audio/voice-design';
 import type { UIMessage } from 'ai';
 import { createLogger } from '@/lib/logger';
+import { beginStageRuntimeDeletionSafely, getRuntimeStore } from '@/lib/runtime/store';
+import type { RuntimeStore } from '@openmaic/storage';
+import {
+  withRuntimeStorageExclusiveLock,
+  withRuntimeStorageExclusiveLockUntilSettled,
+  withRuntimeStorageSharedLock,
+} from './chat-storage-lock';
+import type { ChatStorageOptions } from './chat-storage';
+import type { AppDocument } from '@/lib/document-store';
+import { BrowserKVStore } from '@openmaic/storage';
+import { clearAssetPool } from '@/lib/media/asset-pool';
+import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
 
 const log = createLogger('Database');
 
@@ -52,6 +73,37 @@ export interface StageRecord {
   videoManifest?: VideoManifest; // Generated video request manifest; non-indexed
   interactiveMode?: boolean; // Interactive Mode flag; non-indexed
   taskEngineMode?: boolean; // Vocational Task Engine flag; non-indexed
+  generatedAgentConfigs?: GeneratedAgentConfig[]; // Editor-authored agent roster snapshot
+}
+
+/**
+ * Folder table - User-created folders for grouping courses.
+ *
+ * Folder membership is device-local organization metadata, not part of the
+ * course document itself (which is owned by the `@openmaic/storage`
+ * DocumentStore in a separate database). It lives in this Dexie database
+ * alongside the legacy tables. See {@link StageFolderMembership}.
+ */
+export interface FolderRecord {
+  id: string; // Primary key
+  name: string;
+  order: number; // Sort order
+  createdAt: number; // timestamp
+  updatedAt: number; // timestamp
+}
+
+/**
+ * Stage→folder membership mapping. `stageId` is the primary key so each course
+ * has at most one row; a missing row (or `folderId === undefined`) means the
+ * course is unfiled. This is intentionally separate from both the legacy
+ * `stages` table (a migration mirror that nothing writes) and the
+ * DocumentStore stage row (version-independent document content), so folder
+ * grouping never touches document semantics.
+ */
+export interface StageFolderMembership {
+  stageId: string; // Primary key (FK -> DocumentStore stage id)
+  folderId?: string; // FK -> folders.id; undefined = unfiled
+  updatedAt: number; // timestamp
 }
 
 /**
@@ -75,6 +127,15 @@ export interface SceneRecord {
  */
 export interface AudioFileRecord {
   id: string; // Primary key (audioId)
+  /** Stage ownership index. Absent on legacy rows; document walking remains their fallback. */
+  stageId?: string;
+  /**
+   * The legacy derived id a compatibility mirror was written for. IndexedDB
+   * needs no schema bump for a non-indexed field; retry recovery reads it.
+   */
+  originAudioId?: string;
+  /** The legacy URL a compatibility mirror was fetched from, for retry recovery. */
+  originAudioUrl?: string;
   blob: Blob; // Audio binary data
   duration?: number; // Duration (seconds)
   format: string; // mp3, wav, etc.
@@ -89,7 +150,7 @@ export interface AudioFileRecord {
  */
 export interface ImageFileRecord {
   id: string; // Primary key
-  blob: Blob; // Image binary data
+  blob: Blob | ArrayBuffer; // Image binary data
   filename: string; // Original filename
   mimeType: string; // image/png, image/jpeg, etc.
   size: number; // File size (bytes)
@@ -115,6 +176,18 @@ export interface ChatSessionRecord {
   lastActionIndex?: number;
 }
 
+/** Compatibility-only shape for the retired editor right-rail table. The
+ * table remains in the Dexie schema so deleting a course can clean up rows
+ * created by older clients; no runtime writes or reads it anymore. */
+interface LegacyAgentEditSessionRecord {
+  id: string;
+  stageId: string;
+  title: string;
+  messages: unknown[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 /**
  * PlaybackState table - Playback state snapshot (at most one per stage)
  */
@@ -132,6 +205,10 @@ export interface PlaybackStateRecord {
 export interface StageOutlinesRecord {
   stageId: string; // Primary key (FK -> stages.id)
   outlines: SceneOutline[];
+  // True once generation finished for this stage. Gates resume-on-mount so an
+  // edited (e.g. slide-deleted) finished deck is not treated as "interrupted"
+  // and regenerated. Optional for backward compat with pre-existing records.
+  generationComplete?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -140,8 +217,12 @@ export interface StageOutlinesRecord {
  * MediaFile table - AI-generated media files (images/videos)
  */
 export interface MediaFileRecord {
-  id: string; // Compound key: `${stageId}:${elementId}`
+  // Compound key: `${stageId}:${mediaRef}`. Successful and failed rows use
+  // the same reference space (allocated id after allocation, legacy ref before it).
+  id: string;
   stageId: string; // FK → stages.id
+  /** Original gen_* reference retained after allocation for reload reconciliation. */
+  placeholderRef?: string;
   type: 'image' | 'video';
   blob: Blob; // Media binary
   mimeType: string; // image/png, video/mp4
@@ -157,7 +238,15 @@ export interface MediaFileRecord {
 }
 
 /**
- * GeneratedAgent table - AI-generated agent profiles
+ * GeneratedAgent table - AI-generated agent profiles.
+ *
+ * LEGACY. The roster now persists on the stage document
+ * (`stage.generatedAgentConfigs`); this table is kept only as a lazy-migration
+ * source for classrooms whose roster (or voice fields) predate the
+ * document-embedded model. Production access is migration reads plus deletion
+ * hygiene: `deleteStageData` clears a deleted stage's rows (as does the
+ * deprecated `deleteStageWithRelatedData` cascade). Nothing writes new rows;
+ * do not add writers.
  */
 export interface GeneratedAgentRecord {
   id: string; // PK: agent ID (e.g. "gen-abc123")
@@ -209,7 +298,7 @@ export function mediaFileKey(stageId: string, elementId: string): string {
 // ==================== Database Definition ====================
 
 const DATABASE_NAME = 'MAIC-Database';
-const _DATABASE_VERSION = 11;
+const _DATABASE_VERSION = 17;
 
 /**
  * MAIC Database Instance
@@ -222,12 +311,16 @@ class MAICDatabase extends Dexie {
   imageFiles!: EntityTable<ImageFileRecord, 'id'>;
   snapshots!: EntityTable<Snapshot, 'id'>; // Undo/redo snapshots (legacy)
   chatSessions!: EntityTable<ChatSessionRecord, 'id'>;
+  chatRestoreStaging!: Table<ChatSessionRecord, [string, string]>;
   playbackState!: EntityTable<PlaybackStateRecord, 'stageId'>;
   stageOutlines!: EntityTable<StageOutlinesRecord, 'stageId'>;
   mediaFiles!: EntityTable<MediaFileRecord, 'id'>;
   generatedAgents!: EntityTable<GeneratedAgentRecord, 'id'>;
   voiceProfiles!: EntityTable<VoiceProfileRecord, 'id'>;
   autoVoiceCache!: EntityTable<AutoVoiceCacheRecord, 'voiceId'>;
+  agentEditSessions!: EntityTable<LegacyAgentEditSessionRecord, 'id'>;
+  folders!: EntityTable<FolderRecord, 'id'>;
+  stageFolders!: EntityTable<StageFolderMembership, 'stageId'>;
 
   constructor() {
     super(DATABASE_NAME);
@@ -410,6 +503,67 @@ class MAICDatabase extends Dexie {
       voiceProfiles: 'id, providerId, kind, updatedAt',
       autoVoiceCache: 'voiceId, updatedAt',
     });
+
+    // Version 12: Add agentEditSessions — multi-session AI-editing conversation
+    // history per stage (replaces the single-thread localStorage store).
+    this.version(12).stores({
+      stages: 'id, updatedAt',
+      scenes: 'id, stageId, order, [stageId+order]',
+      audioFiles: 'id, createdAt',
+      imageFiles: 'id, createdAt',
+      snapshots: '++id',
+      chatSessions: 'id, stageId, [stageId+createdAt]',
+      playbackState: 'stageId',
+      stageOutlines: 'stageId',
+      mediaFiles: 'id, stageId, [stageId+type]',
+      generatedAgents: 'id, stageId',
+      voiceProfiles: 'id, providerId, kind, updatedAt',
+      autoVoiceCache: 'voiceId, updatedAt',
+      agentEditSessions: 'id, stageId, [stageId+updatedAt]',
+    });
+
+    // Version 13 briefly added chatStorageLocks on the draft chat cutover
+    // branch. Advance past it and remove the abandoned lease table so database
+    // versions stay monotonic for anyone who opened that intermediate build.
+    this.version(14).stores({
+      stages: 'id, updatedAt',
+      scenes: 'id, stageId, order, [stageId+order]',
+      audioFiles: 'id, createdAt',
+      imageFiles: 'id, createdAt',
+      snapshots: '++id',
+      chatSessions: 'id, stageId, [stageId+createdAt]',
+      playbackState: 'stageId',
+      stageOutlines: 'stageId',
+      mediaFiles: 'id, stageId, [stageId+type]',
+      generatedAgents: 'id, stageId',
+      voiceProfiles: 'id, providerId, kind, updatedAt',
+      autoVoiceCache: 'voiceId, updatedAt',
+      agentEditSessions: 'id, stageId, [stageId+updatedAt]',
+      chatStorageLocks: null,
+    });
+
+    // Version 15: backup restore staging must preserve chat IDs that are reused
+    // in different stage partitions; the legacy chat table is keyed by id only.
+    this.version(15).stores({
+      chatRestoreStaging: '[stageId+id], stageId, [stageId+createdAt]',
+    });
+
+    // Version 16: make newly-written audio independently reclaimable by stage.
+    // Legacy rows remain valid and are found through speech-action references.
+    this.version(16).stores({
+      audioFiles: 'id, stageId, createdAt',
+    });
+
+    // Version 17: Course folders — group courses into user-created folders.
+    // `folders` holds folder metadata; `stageFolders` maps each course (by
+    // DocumentStore stage id) to its folder. Neither touches the document
+    // aggregate: folder grouping is device-local organization metadata kept in
+    // this Dexie database alongside the legacy tables, so an existing course
+    // with no membership row is simply unfiled (no upgrade callback needed).
+    this.version(17).stores({
+      folders: 'id, order',
+      stageFolders: 'stageId, folderId',
+    });
   }
 }
 
@@ -439,24 +593,150 @@ export async function initDatabase(): Promise<void> {
  * Clear database (optional)
  * Use with caution: deletes all data
  */
-export async function clearDatabase(): Promise<void> {
-  await db.delete();
+export async function clearDatabase(runtimeStore?: RuntimeStore): Promise<void> {
+  // Clear the whole runtime database first, including rows orphaned by an
+  // earlier best-effort stage deletion. This user-requested destructive action
+  // must fail loud: reporting success while runtime data remains is misleading.
+  await withRuntimeStorageExclusiveLock(async () => {
+    const { bumpGeneration } = await import('@/lib/document-store/storage-generation');
+    await bumpGeneration();
+    await (runtimeStore ?? getRuntimeStore()).deleteAllRuntime();
+    await deleteAllDocuments();
+    await clearDocumentStoreKeys();
+    await db.delete();
+    clearPendingMediaAllocations();
+    await clearAssetPool();
+  });
   log.info('Database cleared');
+}
+
+/** Delete every aggregate without bypassing the document store's open connection. */
+export async function deleteAllDocuments(): Promise<void> {
+  const { getDocumentStore } = await import('@/lib/document-store');
+  const store = getDocumentStore();
+  const documents = await store.listDocuments();
+  await Promise.all(documents.map((document) => store.deleteDocument(document.id)));
+}
+
+/** Remove device-local metadata owned by the document cutover. */
+export async function clearDocumentStoreKeys(): Promise<void> {
+  if (typeof localStorage === 'undefined') return;
+  const kv = new BrowserKVStore();
+  for (const prefix of ['document-migration:', 'editor-current-scene:']) {
+    const keys = await kv.keys(prefix, 'device');
+    await Promise.all(keys.map((key) => kv.remove(key, 'device')));
+  }
+}
+
+function toChatSessionRecord(stageId: string, session: ChatSession): ChatSessionRecord {
+  return {
+    id: session.id,
+    stageId,
+    type: session.type,
+    title: session.title,
+    status: session.status,
+    messages: session.messages,
+    config: session.config,
+    toolCalls: session.toolCalls,
+    pendingToolCalls: session.pendingToolCalls,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    sceneId: session.sceneId,
+    lastActionIndex: session.lastActionIndex,
+  };
 }
 
 /**
  * Export database contents (for backup)
  */
-export async function exportDatabase(): Promise<{
-  stages: StageRecord[];
-  scenes: SceneRecord[];
+export async function exportDatabase(chatOptions: ChatStorageOptions = {}): Promise<{
+  documents: AppDocument[];
   chatSessions: ChatSessionRecord[];
   playbackState: PlaybackStateRecord[];
 }> {
+  const {
+    accessDocument,
+    canonicalizeLegacyOutline,
+    canonicalizeLegacyScene,
+    canonicalizeLegacyStage,
+    getDocumentStore,
+    getLegacyDocumentStore,
+  } = await import('@/lib/document-store');
+  const documentStore = getDocumentStore();
+  // Backups must not strand courses that have not yet been opened since cutover.
+  // Route them through the normal lazy-migration seam before enumerating aggregates.
+  const legacyStages = await getLegacyDocumentStore().listStages();
+  await Promise.all(legacyStages.map((stage) => accessDocument(stage.id)));
+  const summaries = await documentStore.listDocuments();
+  const storedDocuments = (
+    await Promise.all(summaries.map((summary) => documentStore.loadDocument(summary.id)))
+  ).filter((document): document is AppDocument => document !== null);
+  const storedIds = new Set(summaries.map((summary) => summary.id));
+  const legacyOnlyDocuments = (
+    await Promise.all(
+      legacyStages
+        .filter((stage) => !storedIds.has(stage.id))
+        .map(async (stage): Promise<AppDocument | null> => {
+          const snapshot = await getLegacyDocumentStore().read(stage.id);
+          if (!snapshot) return null;
+          const { stage: canonicalStage } = canonicalizeLegacyStage(snapshot.stage);
+          // Leave the document unstamped and let the ladder stamp it: the
+          // stamp must be earned by actually running the migrations. A
+          // hand-assigned DSL_VERSION on a payload the ladder never walked
+          // reads as current on restore and permanently skips real payload
+          // transforms (the 0.3.0 legacy-line strip was the first).
+          const document: AppDocument = migrate({
+            stage: canonicalStage,
+            scenes: snapshot.scenes.map(canonicalizeLegacyScene).sort((a, b) => a.order - b.order),
+          }) as AppDocument;
+          if (snapshot.outline) document.outline = canonicalizeLegacyOutline(snapshot.outline);
+          return document;
+        }),
+    )
+  ).filter((document): document is AppDocument => document !== null);
+  const documents = [...storedDocuments, ...legacyOnlyDocuments];
+  const legacyChatMap = new Map<string, ChatSessionRecord>();
+  for (const session of [
+    ...(await db.chatSessions.toArray()),
+    ...(await db.chatRestoreStaging.toArray()),
+  ]) {
+    legacyChatMap.set(JSON.stringify([session.stageId, session.id]), session);
+  }
+  const legacyChats = [...legacyChatMap.values()];
+  const { loadChatSessions } = await import('./chat-storage');
+  // Chat sessions live on the learner RuntimeStore — an independent seam from
+  // document migration — so legacy-only documents can still own runtime chat
+  // history. Enumerate chats for EVERY exported document, not just stored ones.
+  // The legacy chat rows are collected separately above by direct table reads,
+  // so the RuntimeStore load gets an empty legacy source and never needs the
+  // cross-realm migration lock. It may still finalize a pending restore marker;
+  // `observe: false` only keeps this export from changing partition memos.
+  const runtimeChats = (
+    await Promise.all(
+      documents.map(async ({ stage }) =>
+        (
+          await loadChatSessions(stage.id, {
+            legacyStore: { load: async () => [], clear: async () => {} },
+            ...chatOptions,
+            fallbackToLegacyOnError: false,
+            observe: false,
+          })
+        ).map((session) => toChatSessionRecord(stage.id, session)),
+      ),
+    )
+  ).flat();
+  const runtimeChatKeys = new Set(
+    runtimeChats.map((session) => JSON.stringify([session.stageId, session.id])),
+  );
+
   return {
-    stages: await db.stages.toArray(),
-    scenes: await db.scenes.toArray(),
-    chatSessions: await db.chatSessions.toArray(),
+    documents,
+    chatSessions: [
+      ...runtimeChats,
+      ...legacyChats.filter(
+        (session) => !runtimeChatKeys.has(JSON.stringify([session.stageId, session.id])),
+      ),
+    ],
     playbackState: await db.playbackState.toArray(),
   };
 }
@@ -464,23 +744,195 @@ export async function exportDatabase(): Promise<{
 /**
  * Import database contents (for restoring backups)
  */
-export async function importDatabase(data: {
-  stages?: StageRecord[];
-  scenes?: SceneRecord[];
-  chatSessions?: ChatSessionRecord[];
-  playbackState?: PlaybackStateRecord[];
-}): Promise<void> {
-  await db.transaction(
-    'rw',
-    [db.stages, db.scenes, db.chatSessions, db.playbackState],
-    async () => {
-      if (data.stages) await db.stages.bulkPut(data.stages);
-      if (data.scenes) await db.scenes.bulkPut(data.scenes);
-      if (data.chatSessions) await db.chatSessions.bulkPut(data.chatSessions);
-      if (data.playbackState) await db.playbackState.bulkPut(data.playbackState);
-    },
-  );
-  log.info('Database imported successfully');
+export async function importDatabase(
+  data: {
+    documents?: AppDocument[];
+    stages?: StageRecord[];
+    scenes?: SceneRecord[];
+    chatSessions?: ChatSessionRecord[];
+    playbackState?: PlaybackStateRecord[];
+  },
+  chatOptions: ChatStorageOptions = {},
+): Promise<void> {
+  const { canonicalizeLegacyScene, canonicalizeLegacyStage, mutateDocument } =
+    await import('@/lib/document-store');
+  const legacyScenesByStage = new Map<string, SceneRecord[]>();
+  for (const scene of data.scenes ?? []) {
+    const scenes = legacyScenesByStage.get(scene.stageId) ?? [];
+    scenes.push(scene);
+    legacyScenesByStage.set(scene.stageId, scenes);
+  }
+  const documents =
+    data.documents ??
+    (data.stages ?? []).map((legacyStage): AppDocument => {
+      const { stage } = canonicalizeLegacyStage(legacyStage);
+      return {
+        stage,
+        scenes: (legacyScenesByStage.get(legacyStage.id) ?? [])
+          .map(canonicalizeLegacyScene)
+          .sort((a, b) => a.order - b.order),
+      };
+    });
+  const importedDocuments: Array<{
+    id: string;
+    preImage: AppDocument | null;
+    wasDeleted: boolean;
+  }> = [];
+  const importedCurrentScenes: Array<{ key: string; preImage: unknown | null }> = [];
+  const kv = new BrowserKVStore();
+  const { isStageDeleted, markStageDeleted, unmarkStageDeleted } = await import('./deleted-stages');
+
+  try {
+    for (const document of documents) {
+      // Record the pre-import deletion state alongside the document pre-image:
+      // a failed import rolls the document back, so it must roll this back too.
+      const wasDeleted = isStageDeleted(document.stage.id);
+      // Wholesale replacement: the restored aggregate overwrites the whole
+      // document, so eager conversion of whatever currently sits there would
+      // allocate assets for content the restore immediately replaces.
+      await mutateDocument(
+        document.stage.id,
+        async (_existing, store) => {
+          const preImage = (await store.loadDocument(document.stage.id)) as AppDocument | null;
+          await store.saveDocument(document);
+          importedDocuments.push({ id: document.stage.id, preImage, wasDeleted });
+        },
+        {},
+        { mode: 'replace' },
+      );
+      // Explicit document (re)creation: a backup may restore a stage deleted
+      // earlier this session under the same id. Lift the deleted flag so later
+      // edits of the restored document persist instead of being dropped. (The
+      // deletion epoch stays bumped, so pre-delete in-flight writes remain
+      // fenced off the restored document.)
+      unmarkStageDeleted(document.stage.id);
+    }
+    for (const legacyStage of data.stages ?? []) {
+      if (legacyStage.currentSceneId !== undefined) {
+        const key = `editor-current-scene:${legacyStage.id}`;
+        const preImage = await kv.get<unknown>(key, 'device');
+        await kv.set(
+          key,
+          { sceneId: legacyStage.currentSceneId, updatedAt: new Date().toISOString() },
+          'device',
+        );
+        importedCurrentScenes.push({ key, preImage });
+      }
+    }
+
+    await withRuntimeStorageSharedLock(async () => {
+      const restoredChatStageIds =
+        data.chatSessions === undefined
+          ? []
+          : [
+              ...new Set([
+                ...documents.map((document) => document.stage.id),
+                ...data.chatSessions.map((session) => session.stageId),
+              ]),
+            ];
+      const restoreRows = () =>
+        db.transaction(
+          'rw',
+          [db.stages, db.scenes, db.chatSessions, db.chatRestoreStaging, db.playbackState],
+          async () => {
+            if (data.chatSessions) {
+              for (const stageId of restoredChatStageIds) {
+                await db.chatSessions.where('stageId').equals(stageId).delete();
+                await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
+              }
+              await db.chatRestoreStaging.bulkPut(data.chatSessions);
+            }
+            if (data.playbackState) await db.playbackState.bulkPut(data.playbackState);
+          },
+        );
+      if (data.chatSessions !== undefined) {
+        // RuntimeStore cannot join Dexie's transaction. Keep a rollback image
+        // until durable restore markers have been created for every affected
+        // runtime partition; marker creation failure must not commit half an
+        // imported backup.
+        const rollbackImage = await db.transaction(
+          'r',
+          [db.stages, db.scenes, db.chatSessions, db.chatRestoreStaging, db.playbackState],
+          async () => ({
+            chatSessions: (
+              await Promise.all(
+                restoredChatStageIds.map((stageId) =>
+                  db.chatSessions.where('stageId').equals(stageId).toArray(),
+                ),
+              )
+            ).flat(),
+            chatRestoreStaging: (
+              await Promise.all(
+                restoredChatStageIds.map((stageId) =>
+                  db.chatRestoreStaging.where('stageId').equals(stageId).toArray(),
+                ),
+              )
+            ).flat(),
+            playbackState: (
+              await db.playbackState.bulkGet(
+                (data.playbackState ?? []).map((playback) => playback.stageId),
+              )
+            ).filter((playback): playback is PlaybackStateRecord => playback !== undefined),
+          }),
+        );
+        const rollbackRows = () =>
+          db.transaction(
+            'rw',
+            [db.stages, db.scenes, db.chatSessions, db.chatRestoreStaging, db.playbackState],
+            async () => {
+              for (const stageId of restoredChatStageIds) {
+                await db.chatSessions.where('stageId').equals(stageId).delete();
+                await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
+              }
+              await db.playbackState.bulkDelete(
+                (data.playbackState ?? []).map((playback) => playback.stageId),
+              );
+              await db.chatSessions.bulkPut(rollbackImage.chatSessions);
+              await db.chatRestoreStaging.bulkPut(rollbackImage.chatRestoreStaging);
+              await db.playbackState.bulkPut(rollbackImage.playbackState);
+            },
+          );
+        const { restoreChatSessionsFromBackup } = await import('./chat-storage');
+        await restoreChatSessionsFromBackup(restoredChatStageIds, restoreRows, {
+          ...chatOptions,
+          globalLockHeld: true,
+          rollbackLegacyRows: rollbackRows,
+        });
+      } else {
+        await restoreRows();
+      }
+      log.info('Database imported successfully');
+    });
+  } catch (error) {
+    for (const { key, preImage } of importedCurrentScenes.reverse()) {
+      try {
+        if (preImage === null) await kv.remove(key, 'device');
+        else await kv.set(key, preImage, 'device');
+      } catch (rollbackError) {
+        log.error(`Failed to roll back imported current-scene key ${key}:`, rollbackError);
+      }
+    }
+    for (const { id, preImage, wasDeleted } of importedDocuments.reverse()) {
+      try {
+        await mutateDocument(id, async (_document, store) => {
+          if (preImage) await store.saveDocument(preImage);
+          else await store.deleteDocument(id);
+        });
+        // The rollback reinstated the pre-import world; reinstate the deletion
+        // state the import lifted, or the rolled-back (absent) document would
+        // stay writable and an outstanding flush could recreate it. Re-marking
+        // bumps the epoch again — consistent either way, since every pre-import
+        // capture is already stale. Deliberately skipped when the rollback
+        // write itself failed above: the imported document then still exists,
+        // and re-marking would silently drop edits to a document that is
+        // present (the exact bug the lift exists to prevent).
+        if (wasDeleted) markStageDeleted(id);
+      } catch (rollbackError) {
+        log.error(`Failed to roll back imported document ${id}:`, rollbackError);
+      }
+    }
+    throw error;
+  }
 }
 
 // ==================== Convenience Query Functions ====================
@@ -488,34 +940,61 @@ export async function importDatabase(data: {
 /**
  * Get all scenes for a course
  */
-export async function getScenesByStageId(stageId: string): Promise<SceneRecord[]> {
-  return db.scenes.where('stageId').equals(stageId).sortBy('order');
+export async function getScenesByStageId(stageId: string): Promise<Scene[]> {
+  const { accessDocument } = await import('@/lib/document-store');
+  return (await accessDocument(stageId)).document?.scenes ?? [];
 }
 
 /**
  * Delete a course and all its related data
+ *
+ * @deprecated No production caller remains. `deleteStageData` is the primary
+ * stage-deletion path; this compatibility helper retains its broader author-side cascade.
  */
 export async function deleteStageWithRelatedData(stageId: string): Promise<void> {
-  await db.transaction(
-    'rw',
-    [
-      db.stages,
-      db.scenes,
-      db.chatSessions,
-      db.playbackState,
-      db.stageOutlines,
-      db.mediaFiles,
-      db.generatedAgents,
-    ],
-    async () => {
-      await db.stages.delete(stageId);
-      await db.scenes.where('stageId').equals(stageId).delete();
-      await db.chatSessions.where('stageId').equals(stageId).delete();
-      await db.playbackState.delete(stageId);
-      await db.stageOutlines.delete(stageId);
-      await db.mediaFiles.where('stageId').equals(stageId).delete();
-      await db.generatedAgents.where('stageId').equals(stageId).delete();
-    },
+  const { mutateDocument } = await import('@/lib/document-store');
+  // storageSharedLockHeld: the cascade holds the EXCLUSIVE epoch, which
+  // subsumes shared — the generation-guarded store must not re-acquire shared
+  // inside it (self-deadlock against our own exclusive hold).
+  await mutateDocument(
+    stageId,
+    async (_document, store) =>
+      withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
+        const { clearStageMediaCache } = await import('@/lib/media/clear-stage-media-cache');
+        await store.deleteDocument(stageId);
+        await clearStageMediaCache(stageId);
+        await db.transaction(
+          'rw',
+          [
+            db.stages,
+            db.scenes,
+            db.chatSessions,
+            db.chatRestoreStaging,
+            db.playbackState,
+            db.stageOutlines,
+            db.generatedAgents,
+            db.agentEditSessions,
+          ],
+          async () => {
+            await db.stages.delete(stageId);
+            await db.scenes.where('stageId').equals(stageId).delete();
+            await db.chatSessions.where('stageId').equals(stageId).delete();
+            await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
+            await db.playbackState.delete(stageId);
+            await db.stageOutlines.delete(stageId);
+            await db.generatedAgents.where('stageId').equals(stageId).delete();
+            await db.agentEditSessions.where('stageId').equals(stageId).delete();
+          },
+        );
+        // Learner-runtime data lives in a separate IndexedDB database, so it is
+        // cascaded after the Dexie transaction: it cannot join it, and a runtime
+        // failure must not abort it (the helper warns instead of throwing).
+        const runtimeDeletion = beginStageRuntimeDeletionSafely(stageId);
+        await runtimeDeletion.completion;
+        releaseCaller(undefined);
+        await runtimeDeletion.settlement;
+      }),
+    { storageSharedLockHeld: true },
   );
 }
 
@@ -532,9 +1011,13 @@ export async function getGeneratedAgentsByStageId(
  * Get database statistics
  */
 export async function getDatabaseStats() {
+  const { getDocumentStore } = await import('@/lib/document-store');
+  const documents = await getDocumentStore().listDocuments();
   return {
-    stages: await db.stages.count(),
-    scenes: await db.scenes.count(),
+    documents: documents.length,
+    documentScenes: documents.reduce((total, document) => total + document.sceneCount, 0),
+    legacyStages: await db.stages.count(),
+    legacyScenes: await db.scenes.count(),
     audioFiles: await db.audioFiles.count(),
     imageFiles: await db.imageFiles.count(),
     snapshots: await db.snapshots.count(),

@@ -1,0 +1,1492 @@
+'use client';
+
+/**
+ * ActionsBar — the "narration script" timeline: a horizontal film-editing strip
+ * that is also a light editor for the scene's playback `actions`.
+ *
+ * This WAS the whole bottom bar. It is now the body of `EditDock`, which owns
+ * the surface (border, blur, fold) and the global edit bar above it; the
+ * timeline still renders its own header row — the row's controls and the body
+ * share one piece of state — and drives the dock's fold through `useEditDock`.
+ * Nothing about the timeline's own behaviour or geometry changed in the move.
+ * (The height-drag handle was removed per product decision: only the fold moves
+ * the dock's height, so the timeline no longer sizes itself.)
+ *
+ * The scene's `actions` ARE the timeline: walked left→right, each `speech`
+ * becomes an editable clip block (one spoken line, numbered) and every non-speech
+ * cue (spotlight / laser / board) becomes a compact card pinned at its place in
+ * the flow. Hovering a cue replays the REAL playback effect on its bound element
+ * (setLaser → LaserPointerOverlay, setSpotlight → SpotlightOverlay).
+ *
+ * Editing (persisted via useStageStore.updateScene → actions-edit ops):
+ * - speech clip text is editable inline (commit on blur);
+ * - the header "Add action" pill opens ActionPicker to insert a new action;
+ * - existing items drag to reorder; each card carries a delete button;
+ * - clicking an element-bound cue arms canvas pick mode (useCanvasStore.pickTarget
+ *   with purpose 'cue'), so the target is chosen by clicking the element directly
+ *   on the slide.
+ *
+ * Reactive to the stage store; collapse and height belong to the dock.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Flag,
+  FoldVertical,
+  GripVertical,
+  Loader2,
+  Play,
+  Plus,
+  RefreshCw,
+  Square,
+  Trash2,
+  UnfoldVertical,
+  Volume2,
+} from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
+import { cn } from '@/lib/utils/cn';
+import { useI18n } from '@/lib/hooks/use-i18n';
+import { flushStageSave, useStageStore } from '@/lib/store/stage';
+import { useCanvasStore } from '@/lib/store/canvas';
+import { useSettingsStore } from '@/lib/store/settings';
+import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import { AvatarDisplay } from '@/components/ui/avatar-display';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import type { Action, DiscussionAction } from '@/lib/types/action';
+import type { SceneType } from '@/lib/types/stage';
+import { ELEMENT_BOUND, cueLabel, cueMeta, elementLabel } from './cue-meta';
+import { applyCuePreview, clearCuePreview, cuePreviewFor } from './cue-preview';
+import {
+  appendDiscussion,
+  clampInsertSlot,
+  hasDiscussion,
+  insertAt,
+  makeAction,
+  moveById,
+  moveByIdDir,
+  removeById,
+  setAudioIdById,
+  setDiscussionAgentById,
+  setDiscussionPromptById,
+  setDiscussionTopicById,
+  setSpeechTextClearAudioById,
+} from './actions-edit';
+import { useEditDock } from '@/components/edit/EditDock/dock-context';
+import { ActionPicker } from './ActionPicker';
+import type { PickerType } from './picker-options';
+import {
+  audioExists,
+  audioObjectUrl,
+  discardSpeechAudio,
+  regenerateSpeechAudio,
+  resolveLegacySpeechAudioId,
+  resolveSpeechAudioId,
+} from '@/lib/audio/regenerate-speech-tts';
+import { useMayGenerateForStage } from '@/lib/classroom/generation-permission';
+
+const EMPTY: Action[] = [];
+const EMPTY_ELEMENTS: { id?: string; type: string; content?: string }[] = [];
+// Stable empty set for the "no lines regenerating" state (avoids re-allocating
+// on every reset and keeps a constant identity between batch runs).
+const NO_IDS: ReadonlySet<string> = new Set();
+
+/**
+ * Module-level single-flight controller for TTS preview: at most one
+ * SpeechTtsBar may be loading or playing at any moment, across every speech
+ * clip in the timeline. A bar registers its own `stop` handle when it starts a
+ * preview and clears it in `stopPreview` only when it is still the registered
+ * owner — so a stale stop (a superseded attempt, or an unmounted non-active
+ * bar) never kills the currently active preview.
+ */
+let activePreview: { stop: () => void } | null = null;
+
+/**
+ * Clear the canvas spotlight/laser preview when a cue glyph unmounts while it is
+ * being hovered — most importantly when the user deletes the cue. React does not
+ * fire `onMouseLeave` on unmount, so without this the previewed effect would stay
+ * stuck on the slide after its cue is gone.
+ */
+function useClearCuePreviewOnUnmount() {
+  useEffect(() => () => clearCuePreview(), []);
+}
+
+/**
+ * Soft amber dashed border marking a still-incomplete clip card — an empty
+ * narration line, a cue bound to no element, a discussion with no topic. A clip
+ * is a card, so a dashed frame reads as "draft / unfinished" better than a dot;
+ * the calmer amber stays clear of the blue interactive controls and is dropped
+ * the moment the clip is filled.
+ */
+const INCOMPLETE_CLIP = 'border-dashed border-amber-400/70';
+
+const AXIS_FROM_TOP = 20; // px from track top to the axis center (nodes hang below it)
+
+// Radix Select forbids an empty-string item value, so the discussion's
+// "unspecified agent" choice rides a sentinel that maps back to '' on change.
+const DISCUSSION_AGENT_NONE = '__none__';
+
+type DragPayload = { kind: 'move'; id: string };
+
+interface TooltipState {
+  action: Action;
+  anchor: DOMRect;
+}
+
+type TFn = (key: string, options?: Record<string, unknown>) => string;
+
+function propsOf(a: Action, t: TFn): Array<[string, string]> {
+  const rows: Array<[string, string]> = [[t('edit.timeline.fieldAction'), cueLabel(a.type, t)]];
+  const el = (a as { elementId?: string }).elementId;
+  if (el) rows.push([t('edit.timeline.fieldElement'), el]);
+  const content = (a as { content?: string }).content;
+  if (content)
+    rows.push([
+      t('edit.timeline.fieldContent'),
+      content.length > 48 ? `${content.slice(0, 48)}…` : content,
+    ]);
+  return rows;
+}
+
+function CueTooltip({ tip }: { tip: TooltipState }) {
+  const { t } = useI18n();
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        left: Math.max(8, tip.anchor.left + tip.anchor.width / 2),
+        top: tip.anchor.top - 8,
+        transform: 'translate(-50%, -100%)',
+        maxWidth: 280,
+        zIndex: 60,
+      }}
+      className="pointer-events-none rounded-lg border border-border/80 bg-popover px-2.5 py-1.5 text-popover-foreground shadow-lg shadow-black/5"
+    >
+      {propsOf(tip.action, t).map(([k, v]) => (
+        <div key={k} className="flex gap-2 text-[11px] leading-relaxed">
+          <span className="shrink-0 text-muted-foreground">{k}</span>
+          <span className="font-mono [overflow-wrap:anywhere]">{v}</span>
+        </div>
+      ))}
+    </div>,
+    document.body,
+  );
+}
+
+// Native HTML5 drag snapshots the element's square bounding box, so a round
+// icon chip drags with white corners ("white border"). Suppress the ghost with a 1×1
+// transparent image — the violet drop indicator carries the feedback instead.
+let blankDragImg: HTMLImageElement | null = null;
+function setBlankDragImage(e: React.DragEvent) {
+  if (typeof document === 'undefined') return;
+  if (!blankDragImg) {
+    blankDragImg = new Image();
+    blankDragImg.src =
+      'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  }
+  try {
+    e.dataTransfer.setDragImage(blankDragImg, 0, 0);
+  } catch {
+    /* not supported — fall back to the default ghost */
+  }
+}
+
+/** Shared delete button — prominent, top-right of a card. */
+function DeleteButton({ onDelete }: { onDelete: () => void }) {
+  const { t } = useI18n();
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onDelete();
+      }}
+      className="grid size-5 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-500/15"
+      aria-label={t('edit.delete')}
+    >
+      <Trash2 className="size-3.5" />
+    </button>
+  );
+}
+
+/** ‹ › buttons to nudge a node left/right along the timeline. */
+function MoveButtons({
+  onLeft,
+  onRight,
+  canLeft,
+  canRight,
+}: {
+  onLeft: () => void;
+  onRight: () => void;
+  canLeft: boolean;
+  canRight: boolean;
+}) {
+  const { t } = useI18n();
+  const cls =
+    'grid size-5 place-items-center rounded text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-25 disabled:hover:bg-transparent';
+  return (
+    <>
+      <button
+        type="button"
+        disabled={!canLeft}
+        onClick={(e) => {
+          e.stopPropagation();
+          onLeft();
+        }}
+        className={cls}
+        aria-label={t('edit.timeline.moveLeft')}
+        title={t('edit.timeline.moveLeft')}
+      >
+        <ChevronLeft className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        disabled={!canRight}
+        onClick={(e) => {
+          e.stopPropagation();
+          onRight();
+        }}
+        className={cls}
+        aria-label={t('edit.timeline.moveRight')}
+        title={t('edit.timeline.moveRight')}
+      >
+        <ChevronRight className="size-3.5" />
+      </button>
+    </>
+  );
+}
+
+type TtsStatus = 'none' | 'ready' | 'generating' | 'error';
+
+/** TTS preview lifecycle: idle → loading (awaiting the blob URL) → playing → idle. */
+type PreviewPhase = 'idle' | 'loading' | 'playing';
+
+/** Audio status + preview / regenerate row, shown when managed TTS is on. */
+export function SpeechTtsBar({
+  actionId,
+  audioId,
+  audioUrl,
+  audioInvalidated,
+  sceneOrder,
+  language,
+  text,
+  refreshKey,
+  regenerating,
+  onGenerated,
+}: {
+  actionId: string;
+  audioId?: string;
+  /** The legacy URL of an unconverted pair: narration exists until conversion removes it. */
+  audioUrl?: string;
+  audioInvalidated?: boolean;
+  sceneOrder: number;
+  language?: string;
+  text: string;
+  refreshKey?: number;
+  regenerating?: boolean;
+  /**
+   * Notification that regeneration succeeded. Carries the freshly allocated
+   * audioId so the caller can stamp it on the action: this tree allocates pool
+   * identities (the blob is stored under the returned id), so the id cannot be
+   * re-derived by the caller like the reference's deterministic key.
+   */
+  onGenerated: (audioId: string) => void;
+}) {
+  const { t } = useI18n();
+  const [status, setStatus] = useState<TtsStatus>('none');
+  // Holds this line in the generating state across a batch ("Voice all") run
+  // and — crucially — until its OWN audio re-check resolves, so it can't
+  // briefly flash back to not voiced in the window between the batch clearing
+  // `regenerating` and the async audioExists effect landing. Latched on the
+  // rising edge of `regenerating`, cleared inside that re-check effect (which
+  // the batch always re-triggers via `refreshKey`).
+  const [batchPending, setBatchPending] = useState(false);
+  const [prevRegenerating, setPrevRegenerating] = useState(regenerating);
+  if (regenerating !== prevRegenerating) {
+    // Adjust state during render (per React's "you might not need an effect"),
+    // not in an effect — avoids a cascading render on the batch's hot path.
+    setPrevRegenerating(regenerating);
+    if (regenerating) setBatchPending(true);
+  }
+  // TTS preview state machine — local UI state for the preview button, kept
+  // apart from `status`/`effStatus` (audio availability + regeneration), which
+  // the playback lifecycle must not disturb.
+  const [previewPhase, setPreviewPhase] = useState<PreviewPhase>('idle');
+  // Generation token: every `stopPreview` (and every fresh `preview`) bumps it,
+  // so an in-flight `audioObjectUrl` await can tell it was superseded and drop
+  // its result — this is what kills the double-click double-Audio race.
+  const previewTokenRef = useRef(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const objUrlRef = useRef<string | null>(null);
+
+  const lookupId = resolveSpeechAudioId(sceneOrder, { id: actionId, audioId });
+  const [readAudioId, setReadAudioId] = useState<string | undefined>(lookupId);
+  const [seededLookupId, setSeededLookupId] = useState(lookupId);
+  if (lookupId !== seededLookupId) {
+    setSeededLookupId(lookupId);
+    setReadAudioId(lookupId);
+  }
+
+  const stopPreview = useCallback(() => {
+    // Invalidate every in-flight `preview()` await — a newer click, a takeover
+    // by another bar, or an unmount all funnel through here.
+    previewTokenRef.current += 1;
+    // Only the registered owner clears the module-level handle: a stale stop
+    // from a superseded or unmounted bar must not kill the current preview.
+    if (activePreview?.stop === stopPreview) activePreview = null;
+    audioRef.current?.pause();
+    audioRef.current = null;
+    if (objUrlRef.current) {
+      URL.revokeObjectURL(objUrlRef.current);
+      objUrlRef.current = null;
+    }
+    setPreviewPhase('idle');
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        // A missing stamped id means "not generated" for new documents. Probe
+        // the deterministic key only to preserve pre-allocation Dexie rows.
+        const legacyId = lookupId
+          ? undefined
+          : await resolveLegacySpeechAudioId(sceneOrder, { id: actionId, audioInvalidated });
+        const candidateId = lookupId ?? legacyId;
+        // An unconverted pair's legacy URL is narration that exists: the id
+        // lookup may find nothing while the URL is still live.
+        const has = (candidateId ? await audioExists(candidateId) : false) || !!audioUrl;
+        if (alive) {
+          setReadAudioId(has ? candidateId : undefined);
+          setStatus((s) => (s === 'generating' ? s : has ? 'ready' : 'none'));
+        }
+      } catch {
+        /* IndexedDB read failed — leave status as-is (as before this change) */
+      } finally {
+        // Clear the batch latch only once the batch itself is over — its
+        // end-of-batch re-check runs with regenerating=false. A *stale*
+        // pre-batch check that resolves mid-batch must NOT clear it (adding
+        // regenerating to the deps also cancels such a check at batch start via
+        // the cleanup below). Runs even if the read threw, so the row can never
+        // wedge in the generating state.
+        if (alive && !regenerating) setBatchPending(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [lookupId, actionId, sceneOrder, audioInvalidated, audioUrl, refreshKey, regenerating]);
+
+  useEffect(() => () => stopPreview(), [stopPreview]);
+
+  const preview = async () => {
+    // Global single-flight: stop whatever is loading/playing in ANY bar first.
+    // This also bumps the token, so this bar's own previous in-flight attempt
+    // is already invalidated by the time we capture the fresh token below.
+    activePreview?.stop();
+    const token = ++previewTokenRef.current;
+    setPreviewPhase('loading');
+    activePreview = { stop: stopPreview };
+    // The legacy URL of an unconverted pair is the narration when no pool or
+    // Dexie id resolved -- or when the resolved id turns out to have no local
+    // bytes, which is exactly the dangling-id case the URL survives for.
+    const src = (readAudioId ? await audioObjectUrl(readAudioId) : null) ?? audioUrl ?? null;
+    if (token !== previewTokenRef.current) {
+      // Superseded while loading (a newer click, a takeover, a stop): drop the
+      // result and revoke any blob URL we minted — the winner is in charge.
+      if (src && src.startsWith('blob:')) URL.revokeObjectURL(src);
+      return;
+    }
+    if (!src) {
+      stopPreview();
+      return;
+    }
+    objUrlRef.current = src;
+    const a = new Audio(src);
+    audioRef.current = a;
+    a.addEventListener('ended', stopPreview);
+    a.addEventListener('error', stopPreview);
+    try {
+      await a.play();
+      // Stopped while play() was settling (e.g. a takeover in the gap): the
+      // stop already paused it, nothing more to do.
+      if (token !== previewTokenRef.current) return;
+      setPreviewPhase('playing');
+    } catch {
+      // Autoplay rejection etc. — treat like any other stop.
+      stopPreview();
+    }
+  };
+
+  // The control that spends is withheld from a viewer; the ones that only listen
+  // and report stay. `regenerateSpeechAudio` refuses in any case.
+  const mayRegenerate = useMayGenerateForStage(useStageStore((state) => state.stage?.id));
+
+  const regenerate = async () => {
+    setStatus('generating');
+    try {
+      const previousAudioId = audioId;
+      const id = await regenerateSpeechAudio(
+        sceneOrder,
+        { id: actionId, text, audioId: previousAudioId },
+        language,
+      );
+      if (id) {
+        setReadAudioId(id);
+        onGenerated(id);
+        setStatus('ready');
+      } else {
+        setStatus('none');
+      }
+    } catch {
+      setStatus('error');
+    }
+  };
+
+  const STATUS: Record<TtsStatus, { label: string; cls: string }> = {
+    ready: { label: t('edit.tts.statusReady'), cls: 'text-emerald-600 dark:text-emerald-400' },
+    none: { label: t('edit.tts.statusNone'), cls: 'text-muted-foreground' },
+    generating: {
+      label: t('edit.tts.statusGenerating'),
+      cls: 'text-amber-600 dark:text-amber-400',
+    },
+    error: { label: t('edit.tts.statusError'), cls: 'text-rose-500' },
+  };
+  // A batch "Voice all" run drives this line's loading state from the parent
+  // (regenerating) — independent of the local single-line status. `batchPending`
+  // extends the generating state past the prop clearing, until this line's own
+  // audio re-check resolves to voiced / not voiced, so the batch end shows a
+  // clean generating → voiced transition with no intermediate flash.
+  const effStatus: TtsStatus = regenerating || batchPending ? 'generating' : status;
+  const s = STATUS[effStatus];
+  const previewLabel =
+    previewPhase === 'loading'
+      ? t('edit.tts.cancelPreview')
+      : previewPhase === 'playing'
+        ? t('edit.tts.stopPreview')
+        : t('edit.tts.preview');
+  // idle → Play; loading → spinner (click cancels the load); playing → Stop.
+  const PreviewIcon =
+    previewPhase === 'loading' ? Loader2 : previewPhase === 'playing' ? Square : Play;
+
+  return (
+    <div className="flex items-center gap-1 border-t border-border/60 px-2 py-1">
+      <Volume2 className="size-3 shrink-0 text-muted-foreground/40" />
+      <span className={cn('text-[10px] font-medium', s.cls)}>{s.label}</span>
+      <span className="ml-auto" />
+      <button
+        type="button"
+        onClick={previewPhase === 'idle' ? () => void preview() : stopPreview}
+        disabled={effStatus !== 'ready'}
+        className={cn(
+          'grid size-5 place-items-center rounded-md transition-colors disabled:opacity-30 disabled:hover:bg-transparent',
+          previewPhase === 'playing'
+            ? 'text-rose-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400'
+            : 'text-muted-foreground/60 hover:bg-muted hover:text-foreground',
+        )}
+        aria-label={previewLabel}
+        title={previewLabel}
+      >
+        <PreviewIcon className={cn('size-3', previewPhase === 'loading' && 'animate-spin')} />
+      </button>
+      {mayRegenerate ? (
+        <button
+          type="button"
+          onClick={regenerate}
+          disabled={effStatus === 'generating' || !text.trim()}
+          className="grid size-5 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+          aria-label={t('edit.tts.regenerate')}
+          title={t('edit.tts.regenerate')}
+        >
+          <RefreshCw className={cn('size-3', effStatus === 'generating' && 'animate-spin')} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** One spoken line — a numbered, editable clip block. */
+function SpeechClip({
+  text,
+  index,
+  actionId,
+  audioId,
+  audioUrl,
+  audioInvalidated,
+  sceneOrder,
+  language,
+  autoFocus,
+  ttsActive,
+  ttsRefresh,
+  regenerating,
+  onCommit,
+  onGenerated,
+  onDelete,
+  onMoveLeft,
+  onMoveRight,
+  canMoveLeft,
+  canMoveRight,
+  onDragStart,
+  onDragEnd,
+  onFocused,
+}: {
+  text: string;
+  index: number;
+  actionId: string;
+  audioId?: string;
+  audioUrl?: string;
+  audioInvalidated?: boolean;
+  sceneOrder: number;
+  language?: string;
+  autoFocus: boolean;
+  ttsActive: boolean;
+  ttsRefresh?: number;
+  regenerating?: boolean;
+  onCommit: (text: string) => void;
+  onGenerated: (audioId: string) => void;
+  onDelete: () => void;
+  onMoveLeft: () => void;
+  onMoveRight: () => void;
+  canMoveLeft: boolean;
+  canMoveRight: boolean;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+  onFocused: () => void;
+}) {
+  const { t } = useI18n();
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [val, setVal] = useState(text);
+  // Has the user typed since the last external sync? If not, external text
+  // changes (e.g. an agent regeneration mid-edit) are adopted even while
+  // focused — so a stale draft can't clobber regenerated narration on blur.
+  const dirtyRef = useRef(false);
+
+  useEffect(() => {
+    if (document.activeElement !== ref.current || !dirtyRef.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external text in only when not mid-edit
+      setVal(text);
+      dirtyRef.current = false;
+    }
+  }, [text]);
+
+  useEffect(() => {
+    if (autoFocus) {
+      ref.current?.focus();
+      onFocused();
+    }
+  }, [autoFocus, onFocused]);
+
+  const commit = () => {
+    if (dirtyRef.current && val !== text) onCommit(val);
+    dirtyRef.current = false;
+  };
+
+  const SpeechIcon = cueMeta('speech').icon;
+  const needsText = !text.trim();
+
+  return (
+    <div
+      className={cn(
+        'group/clip relative flex h-full w-[228px] shrink-0 flex-col overflow-hidden rounded-xl border border-border/85 bg-white/75 shadow-sm transition-colors focus-within:border-violet-400 hover:border-violet-300/70 dark:bg-slate-800/50 dark:hover:border-violet-500/40',
+        needsText && INCOMPLETE_CLIP,
+      )}
+    >
+      <span className="absolute inset-x-0 top-0 h-[3px] bg-primary/35" />
+      <div className="flex items-center gap-1.5 border-b border-border/60 bg-muted/40 px-2 py-1">
+        <span
+          draggable
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          className="cursor-grab text-muted-foreground/50 transition-colors hover:text-muted-foreground active:cursor-grabbing"
+          aria-label={t('edit.timeline.reorder')}
+        >
+          <GripVertical className="size-3.5" />
+        </span>
+        <span className="font-mono text-[10px] font-semibold tabular-nums text-muted-foreground/55">
+          {String(index).padStart(2, '0')}
+        </span>
+        <SpeechIcon className="size-3 text-primary/45" />
+        <span className="ml-auto mr-0.5 text-[8.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground/50">
+          {t('edit.cue.speech')}
+        </span>
+        <MoveButtons
+          onLeft={onMoveLeft}
+          onRight={onMoveRight}
+          canLeft={canMoveLeft}
+          canRight={canMoveRight}
+        />
+        <DeleteButton onDelete={onDelete} />
+      </div>
+      <textarea
+        ref={ref}
+        value={val}
+        onChange={(e) => {
+          dirtyRef.current = true;
+          setVal(e.target.value);
+        }}
+        onBlur={commit}
+        placeholder={t('edit.timeline.speechPlaceholder')}
+        className="flex-1 resize-none bg-transparent px-3 py-2 text-[12.5px] leading-[1.7] text-foreground/90 outline-none placeholder:text-muted-foreground/40 [scrollbar-width:thin]"
+      />
+      {ttsActive && (
+        <SpeechTtsBar
+          actionId={actionId}
+          audioId={audioId}
+          audioUrl={audioUrl}
+          audioInvalidated={audioInvalidated}
+          sceneOrder={sceneOrder}
+          language={language}
+          text={val}
+          refreshKey={ttsRefresh}
+          regenerating={regenerating}
+          onGenerated={onGenerated}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * A discussion node — the scene's terminal roundtable trigger. Unlike the other
+ * cues it isn't drag-addable or movable: a discussion must be the LAST action and
+ * there is at most one per scene (mirrors the action-parser invariant), so it's
+ * appended via the toolbar and pinned at the end. Inline-edits topic (required),
+ * prompt (optional) and the initiating agent. Topic/prompt commit on blur.
+ */
+function DiscussionClip({
+  topic,
+  prompt,
+  agentId,
+  agents,
+  onTopicChange,
+  onPromptChange,
+  onAgentChange,
+  onDelete,
+}: {
+  topic: string;
+  prompt: string;
+  agentId: string;
+  agents: Array<{ id: string; name: string; avatar?: string }>;
+  onTopicChange: (v: string) => void;
+  onPromptChange: (v: string) => void;
+  onAgentChange: (v: string) => void;
+  onDelete: () => void;
+}) {
+  const { t } = useI18n();
+  const m = cueMeta('discussion');
+  const needsTopic = !topic.trim();
+  // Local drafts committed on blur; synced from props when not mid-edit so a
+  // concurrent store update can't clobber an in-flight edit (mirrors SpeechClip).
+  const [topicVal, setTopicVal] = useState(topic);
+  const [promptVal, setPromptVal] = useState(prompt);
+  const topicDirty = useRef(false);
+  const promptDirty = useRef(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- adopt external topic only when not mid-edit
+    if (!topicDirty.current) setTopicVal(topic);
+  }, [topic]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- adopt external prompt only when not mid-edit
+    if (!promptDirty.current) setPromptVal(prompt);
+  }, [prompt]);
+
+  return (
+    <div
+      className={cn(
+        'group/disc relative flex h-full w-[228px] shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200/80 bg-white/70 shadow-sm transition-colors focus-within:border-yellow-400 hover:border-yellow-300/70 dark:border-gray-700/60 dark:bg-slate-800/50 dark:hover:border-yellow-500/40',
+        needsTopic && INCOMPLETE_CLIP,
+      )}
+    >
+      {/* The empty state reads from the amber dashed frame + the "topic
+          (required)" placeholder; the discussion keeps its Flag glyph identity. */}
+      <span className={cn('absolute inset-x-0 top-0 h-[3px]', m.accent)} />
+      <div className="flex items-center gap-1.5 border-b border-yellow-300/50 bg-yellow-400/15 px-2 py-1 dark:border-yellow-500/25 dark:bg-yellow-500/10">
+        <span className="flex size-4 items-center justify-center rounded-md bg-yellow-400 text-yellow-950 dark:bg-yellow-500 dark:text-slate-900">
+          <Flag className="size-2.5" />
+        </span>
+        <span className="text-[8.5px] font-semibold uppercase tracking-[0.12em] text-yellow-700 dark:text-yellow-400">
+          {t('edit.cue.discussion')}
+        </span>
+        <span
+          className="ml-auto text-[8.5px] font-medium uppercase tracking-[0.1em] text-yellow-600/70 dark:text-yellow-500/60"
+          title={t('edit.timeline.discussionTerminalHint')}
+        >
+          {t('edit.timeline.discussionTerminal')}
+        </span>
+        <DeleteButton onDelete={onDelete} />
+      </div>
+      <textarea
+        value={topicVal}
+        onChange={(e) => {
+          topicDirty.current = true;
+          setTopicVal(e.target.value);
+        }}
+        onBlur={() => {
+          if (topicDirty.current) onTopicChange(topicVal);
+          topicDirty.current = false;
+        }}
+        placeholder={t('edit.timeline.discussionTopicPlaceholder')}
+        className="h-[46px] shrink-0 resize-none bg-transparent px-3 pt-2 text-[12.5px] font-medium leading-[1.55] text-foreground/85 outline-none placeholder:font-normal placeholder:text-amber-500/60 [scrollbar-width:thin]"
+      />
+      <textarea
+        value={promptVal}
+        onChange={(e) => {
+          promptDirty.current = true;
+          setPromptVal(e.target.value);
+        }}
+        onBlur={() => {
+          if (promptDirty.current) onPromptChange(promptVal);
+          promptDirty.current = false;
+        }}
+        placeholder={t('edit.timeline.discussionPromptPlaceholder')}
+        className="min-h-0 flex-1 resize-none bg-transparent px-3 text-[11px] leading-[1.6] text-muted-foreground outline-none placeholder:text-muted-foreground/35 [scrollbar-width:thin]"
+      />
+      <div className="flex items-center gap-1 border-t border-gray-100 px-2 py-1 dark:border-gray-700/50">
+        <span className="shrink-0 text-[9px] text-muted-foreground/50">
+          {t('edit.timeline.discussionAgent')}
+        </span>
+        <Select
+          value={agentId || DISCUSSION_AGENT_NONE}
+          onValueChange={(v) => onAgentChange(v === DISCUSSION_AGENT_NONE ? '' : v)}
+        >
+          <SelectTrigger
+            size="sm"
+            className="ml-auto h-6 max-w-[150px] gap-1 rounded border-border px-1.5 py-0 text-[10px] shadow-none focus-visible:ring-yellow-400/40 [&_svg]:size-3"
+          >
+            <SelectValue placeholder={t('edit.timeline.discussionAgentUnset')} />
+          </SelectTrigger>
+          <SelectContent className="max-h-56">
+            <SelectItem value={DISCUSSION_AGENT_NONE} className="text-[11px]">
+              <span className="text-muted-foreground">
+                {t('edit.timeline.discussionAgentUnset')}
+              </span>
+            </SelectItem>
+            {agents.map((a) => (
+              <SelectItem key={a.id} value={a.id} className="text-[11px]">
+                <span className="flex items-center gap-1.5">
+                  {a.avatar && (
+                    <span className="size-4 shrink-0 overflow-hidden rounded-full bg-muted">
+                      <AvatarDisplay src={a.avatar} alt={a.name} />
+                    </span>
+                  )}
+                  {a.name}
+                </span>
+              </SelectItem>
+            ))}
+            {/* keep a set agent visible even if it's no longer in the scene roster */}
+            {agentId && !agents.some((a) => a.id === agentId) && (
+              <SelectItem value={agentId} className="text-[11px]">
+                {agentId}
+              </SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A non-speech cue — its own compact card on the timeline (the action's implicit
+ * container, made explicit). Carries a delete button; clicking an element-bound
+ * cue arms canvas pick mode so the target is chosen on the slide itself.
+ */
+function CueMarker({
+  action,
+  elements,
+  onTip,
+  onDelete,
+  onPick,
+  onMoveLeft,
+  onMoveRight,
+  canMoveLeft,
+  canMoveRight,
+  onDragStart,
+  onDragEnd,
+}: {
+  action: Action;
+  elements: { id?: string; type: string; content?: string }[];
+  onTip: (t: TooltipState | null) => void;
+  onDelete: () => void;
+  onPick: () => void;
+  onMoveLeft: () => void;
+  onMoveRight: () => void;
+  canMoveLeft: boolean;
+  canMoveRight: boolean;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+}) {
+  const { t } = useI18n();
+  useClearCuePreviewOnUnmount();
+  const m = cueMeta(action.type);
+  const label = cueLabel(action.type, t);
+  const Icon = m.icon;
+  const bound = ELEMENT_BOUND.has(action.type);
+  const elementId = (action as { elementId?: string }).elementId ?? '';
+  const needsTarget = bound && !elementId;
+  // Bound cue → show what it's actually pointing at, not a generic "bound";
+  // the element may have been deleted since binding, so fall back gracefully.
+  const boundEl = elementId ? elements.find((e) => e.id === elementId) : undefined;
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onMouseEnter={(e) => {
+        onTip({ action, anchor: e.currentTarget.getBoundingClientRect() });
+        applyCuePreview(cuePreviewFor(action));
+      }}
+      onMouseLeave={() => {
+        onTip(null);
+        clearCuePreview();
+      }}
+      onClick={() => {
+        if (bound) onPick();
+      }}
+      className={cn(
+        'group/cue relative flex h-full w-[108px] shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200/80 bg-white/65 shadow-sm transition-colors dark:border-gray-700/60 dark:bg-slate-800/40',
+        bound
+          ? 'cursor-pointer hover:border-violet-300/70 dark:hover:border-violet-500/40'
+          : 'cursor-grab active:cursor-grabbing',
+        needsTarget && cn('border-dashed', m.dash),
+      )}
+      aria-label={label}
+    >
+      <span className={cn('absolute inset-x-0 top-0 h-[3px]', m.accent)} />
+      <div className="flex items-center gap-0.5 px-1 pt-1">
+        <span
+          draggable
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          onClick={(e) => e.stopPropagation()}
+          className="cursor-grab text-muted-foreground/35 transition-colors hover:text-muted-foreground active:cursor-grabbing"
+          aria-label={t('edit.timeline.reorder')}
+        >
+          <GripVertical className="size-3.5" />
+        </span>
+        <span className="ml-auto flex items-center">
+          <MoveButtons
+            onLeft={onMoveLeft}
+            onRight={onMoveRight}
+            canLeft={canMoveLeft}
+            canRight={canMoveRight}
+          />
+          <DeleteButton onDelete={onDelete} />
+        </span>
+      </div>
+      <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-1 pb-1">
+        <span className={cn('flex size-8 items-center justify-center rounded-full', m.glyph)}>
+          <Icon className="size-4" />
+        </span>
+        <span className="text-[10px] font-medium text-foreground/70">{label}</span>
+        {bound && (
+          <span
+            className={cn(
+              'text-[9px]',
+              needsTarget
+                ? 'font-medium text-amber-600 dark:text-amber-400'
+                : 'text-muted-foreground/45',
+            )}
+          >
+            {needsTarget
+              ? t('edit.timeline.pickElement')
+              : `→ ${boundEl ? elementLabel(boundEl, t) : t('edit.timeline.bound')}`}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A node anchored on the axis — drag handle; for cues, hover preview + click-to-pick. */
+function NodeDot({
+  action,
+  onTip,
+  onPick,
+  onDragStart,
+  onDragEnd,
+  canDrag = true,
+}: {
+  action: Action;
+  onTip: (t: TooltipState | null) => void;
+  onPick: () => void;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+  canDrag?: boolean;
+}) {
+  const { t } = useI18n();
+  useClearCuePreviewOnUnmount();
+  const isSpeech = action.type === 'speech';
+  // A discussion is the scene's terminal anchor — give its node a distinct
+  // marker (square, filled yellow) so it reads as the end stop, not a regular
+  // cue. Its flag glyph comes from cue-meta like every other type's.
+  const isDiscussion = action.type === 'discussion';
+  const bound = ELEMENT_BOUND.has(action.type);
+  const elementId = (action as { elementId?: string }).elementId ?? '';
+  const needsTarget = bound && !elementId;
+  const m = cueMeta(action.type);
+  const label = cueLabel(action.type, t);
+  const Icon = m.icon;
+  return (
+    <span
+      draggable={canDrag}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      title={isSpeech ? (action as { text?: string }).text?.slice(0, 60) : label}
+      onMouseEnter={(e) => {
+        if (isSpeech) return;
+        onTip({ action, anchor: e.currentTarget.getBoundingClientRect() });
+        applyCuePreview(cuePreviewFor(action));
+      }}
+      onMouseLeave={() => {
+        if (isSpeech) return;
+        onTip(null);
+        clearCuePreview();
+      }}
+      onClick={() => {
+        if (bound) onPick();
+      }}
+      className={cn(
+        'grid size-6 place-items-center ring-2 ring-white transition-transform hover:scale-110 dark:ring-slate-900',
+        isDiscussion ? 'rounded-[7px]' : 'rounded-full',
+        needsTarget
+          ? 'text-amber-600 bg-amber-100 ring-amber-200 animate-pulse dark:bg-amber-500/20 dark:text-amber-400'
+          : isDiscussion
+            ? 'bg-yellow-400 text-yellow-900 ring-yellow-200 dark:bg-yellow-500 dark:text-slate-900 dark:ring-yellow-500/30'
+            : m.glyph,
+        bound
+          ? 'cursor-pointer'
+          : canDrag
+            ? 'cursor-grab active:cursor-grabbing'
+            : 'cursor-default',
+      )}
+      aria-label={label}
+    >
+      <Icon className="size-3.5" />
+    </span>
+  );
+}
+
+/** Slim insertion slot between items; widens + glows while a drag hovers it. */
+function DropZone({
+  active,
+  slot,
+  onEnter,
+  onDrop,
+  onInsert,
+  insertLabel,
+  flex,
+}: {
+  active: boolean;
+  slot: number;
+  onEnter: () => void;
+  onDrop: () => void;
+  onInsert: (slot: number, rect: DOMRect) => void;
+  insertLabel: string;
+  flex?: boolean;
+}) {
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        onEnter();
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDrop();
+      }}
+      className={cn(
+        'group/ins relative flex h-full shrink-0 items-start justify-center pt-2 transition-all',
+        flex ? 'flex-1' : active ? 'w-10' : 'w-4',
+      )}
+    >
+      <span
+        className={cn(
+          'pointer-events-none absolute inset-y-3 left-1/2 w-0.5 -translate-x-1/2 rounded-full transition-colors',
+          active ? 'bg-primary' : 'bg-transparent',
+        )}
+      />
+      {!active && (
+        <button
+          type="button"
+          aria-label={insertLabel}
+          title={insertLabel}
+          onClick={(e) => onInsert(slot, e.currentTarget.getBoundingClientRect())}
+          className="relative z-[1] grid size-[22px] scale-90 place-items-center rounded-full border border-dashed border-primary/40 bg-background text-primary/70 opacity-30 transition-all hover:scale-100 hover:border-solid hover:border-primary hover:bg-primary/5 hover:text-primary hover:opacity-100 group-hover/ins:opacity-90"
+        >
+          <Plus className="size-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function ActionsBar({ sceneId }: { sceneId: string }) {
+  const { t } = useI18n();
+  const scene = useStageStore((s) => s.scenes.find((x) => x.id === sceneId));
+  const actions = scene?.actions ?? EMPTY;
+  const sceneOrder = scene?.order ?? 0;
+  // Element-bound cues (spotlight / laser) point at slide elements, so they only
+  // make sense on SLIDE scenes. While the scene hasn't loaded yet, fall back to
+  // a non-slide type so the picker doesn't briefly offer unsupported cues.
+  const sceneType: SceneType = scene?.type ?? 'quiz';
+  // Slide-scene canvas elements — feeds CueMarker's bound-cue label lookup
+  // ("→ <element name>" instead of a generic "bound"). Non-slide scenes'
+  // `content` has no `canvas`, so this is always [] there.
+  const sceneElements =
+    (
+      scene?.content as
+        | { canvas?: { elements?: { id?: string; type: string; content?: string }[] } }
+        | undefined
+    )?.canvas?.elements ?? EMPTY_ELEMENTS;
+  const language = useStageStore((s) => s.stage?.languageDirective);
+  // Managed TTS on → speech clips show audio status + preview / regenerate.
+  // The ownership gate belongs on regeneration alone: listening back to
+  // narration that already exists, and seeing whether a line has any, spend
+  // nothing, and a course with no ownership record must not lose its playback
+  // controls the way it must lose its ability to bill the operator.
+  const ttsActive = useSettingsStore(
+    (s) => s.ttsEnabled && s.ttsProviderId !== 'browser-native-tts',
+  );
+  const mayGenerate = useMayGenerateForStage(useStageStore((s) => s.stage?.id));
+
+  // Agents a discussion can be initiated by — sourced from the user's currently
+  // SELECTED agents, the exact set the playback engine gates on: it skips (and
+  // consumes) any discussion whose `agentId` isn't selected. Offering the same
+  // set here means whatever the author picks will actually fire at playback;
+  // anything else (scene/stage roster) could let them save an initiator that the
+  // engine silently drops. With nothing selected only "unspecified" remains,
+  // which is correct since an unset `agentId` is never skipped.
+  const agentsRecord = useAgentRegistry((s) => s.agents);
+  const selectedAgentIds = useSettingsStore((s) => s.selectedAgentIds);
+  const discussionAgents = useMemo(
+    () =>
+      selectedAgentIds
+        .map((id) => agentsRecord[id])
+        .filter(Boolean)
+        .map((a) => ({ id: a.id, name: a.name, avatar: a.avatar })),
+    [selectedAgentIds, agentsRecord],
+  );
+
+  // Collapsed = the dock's own fold, which this bar's title and its trailing
+  // toggle both drive. The timeline's collapsed form is its axis of node icons,
+  // so it reads `collapsed` rather than being hidden by the shell.
+  const { collapsed: lineMode, toggleCollapsed } = useEditDock();
+  const [tip, setTip] = useState<TooltipState | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [regenAll, setRegenAll] = useState(false);
+  const [pickerAt, setPickerAt] = useState<{ slot: number; rect: DOMRect } | null>(null);
+  // Ids of speech lines currently being (re)generated by "Voice all", so each
+  // line's status row shows the generating state for the duration of the batch.
+  const [regeneratingIds, setRegeneratingIds] = useState<ReadonlySet<string>>(NO_IDS);
+  const [ttsRefresh, setTtsRefresh] = useState(0); // bump → speech clips re-check audio status
+  const reduce = useReducedMotion();
+  const dragRef = useRef<DragPayload | null>(null);
+
+  // Apply an edit to the LATEST actions from the store (not the render-time
+  // snapshot), so a concurrent agent/TTS update isn't reverted by a later UI
+  // commit (drag / reorder / blur / delete).
+  const commit = useCallback(
+    (updater: (cur: Action[]) => Action[]) => {
+      const cur = useStageStore.getState().scenes.find((s) => s.id === sceneId)?.actions ?? [];
+      useStageStore.getState().updateScene(sceneId, { actions: updater(cur) });
+    },
+    [sceneId],
+  );
+
+  // Regenerate TTS for every speech line in the scene, then stamp audioIds.
+  // Reads the latest actions from the store at each step so a concurrent edit
+  // isn't clobbered, and stamps by id (index-stale-safe).
+  const regenerateAllAudio = useCallback(async () => {
+    if (regenAll) return;
+    const latest = () => useStageStore.getState().scenes.find((s) => s.id === sceneId);
+    const speeches = (latest()?.actions ?? []).filter(
+      (a) => a.type === 'speech' && ((a as { text?: string }).text ?? '').trim(),
+    );
+    if (!speeches.length) return;
+    const order = latest()?.order ?? 0;
+    setRegenAll(true);
+    // Light up every queued line's status row up front (they're all about to be
+    // synthesized), cleared together in the finally once the batch settles.
+    setRegeneratingIds(new Set(speeches.map((a) => a.id).filter(Boolean) as string[]));
+    try {
+      for (const queued of speeches) {
+        if (!queued.id) continue;
+        try {
+          const liveAction = latest()?.actions?.find(
+            (action) => action.type === 'speech' && action.id === queued.id,
+          );
+          if (!liveAction || liveAction.type !== 'speech') continue;
+          const previousAudioId = liveAction.audioId;
+          const id = await regenerateSpeechAudio(
+            latest()?.order ?? order,
+            {
+              id: liveAction.id,
+              text: liveAction.text,
+              audioId: previousAudioId,
+            },
+            language,
+          );
+          if (id) {
+            commit((cur) => setAudioIdById(cur, liveAction.id!, id));
+            await flushStageSave();
+          }
+        } catch {
+          /* skip a failed line, keep going */
+        }
+      }
+    } finally {
+      setRegenAll(false);
+      setRegeneratingIds(NO_IDS);
+      // Always re-check every line's audio at batch end — even when nothing
+      // synthesized — so each SpeechTtsBar resolves its status (and clears its
+      // batchPending flag) instead of getting stuck in the generating state.
+      setTtsRefresh((n) => n + 1);
+    }
+  }, [regenAll, sceneId, language, commit]);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const panViewport = (dir: -1 | 1) =>
+    scrollRef.current?.scrollBy({ left: dir * 280, behavior: 'smooth' });
+
+  const newId = () =>
+    typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `a-${Date.now()}`;
+
+  // Insert path for the ActionPicker (header pill / inline "+" drop-zone
+  // buttons): appends a discussion (terminal, at-most-one) or inserts an
+  // ordinary action at a slot, capped before any existing discussion so it
+  // always stays last.
+  const insertActionAt = useCallback(
+    (type: PickerType, slot: number) => {
+      const id = newId();
+      if (type === 'discussion') {
+        commit((cur) => appendDiscussion(cur, id));
+        return;
+      }
+      const action = makeAction(type, id);
+      commit((cur) => insertAt(cur, clampInsertSlot(cur, slot), action));
+      if (type === 'speech') setFocusId(id);
+    },
+    [commit],
+  );
+
+  const handleDrop = useCallback(
+    (slot: number) => {
+      const p = dragRef.current;
+      dragRef.current = null;
+      setDragOver(null);
+      if (!p) return;
+      commit((cur) => moveById(cur, p.id, clampInsertSlot(cur, slot)));
+    },
+    [commit],
+  );
+
+  const speechCount = actions.filter((a) => a.type === 'speech').length;
+  const cueCount = actions.length - speechCount;
+
+  // A discussion is pinned at the end (at most one), so ordinary actions can move
+  // right only up to the slot before it; the discussion node itself can't move.
+  const discussionPresent = hasDiscussion(actions);
+  const lastMovableIndex = discussionPresent ? actions.length - 2 : actions.length - 1;
+
+  let speechIndex = 0;
+  const items = actions.map((action, index) => {
+    if (action.type === 'speech') speechIndex += 1;
+    return { action, index, key: (action.id ?? `a-${index}`) as string, speechIndex };
+  });
+
+  const header = (
+    <>
+      {/* The title is also the fold: it was a click target long before there was
+          a toggle beside it, so the cursor already knows this spot. */}
+      <button
+        type="button"
+        data-testid="edit-timeline-title"
+        onClick={toggleCollapsed}
+        className="flex shrink-0 items-center gap-2.5"
+      >
+        <span className="size-1.5 rounded-full bg-primary" />
+        <span className="text-[12px] font-medium tracking-[0.18em] text-foreground/80">
+          {t('edit.timeline.title')}
+        </span>
+      </button>
+
+      {!lineMode && (
+        <button
+          type="button"
+          onClick={(e) => {
+            const slot = discussionPresent ? actions.length - 1 : actions.length;
+            setPickerAt({ slot, rect: e.currentTarget.getBoundingClientRect() });
+          }}
+          className="ml-1.5 inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
+        >
+          <Plus className="size-3" />
+          {t('edit.timeline.addAction')}
+          <ChevronDown className="size-3 opacity-70" />
+        </button>
+      )}
+
+      {!lineMode && ttsActive && mayGenerate && (
+        <button
+          type="button"
+          onClick={regenerateAllAudio}
+          disabled={regenAll}
+          title={t('edit.timeline.regenAllTts')}
+          aria-label={t('edit.timeline.regenAllTts')}
+          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground disabled:opacity-50"
+        >
+          <RefreshCw className={cn('size-3', regenAll && 'animate-spin')} />
+          {t('edit.timeline.voiceAll')}
+        </button>
+      )}
+
+      <span className="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/60">
+        {t('edit.timeline.counts', { speech: speechCount, cue: cueCount })}
+      </span>
+      {/* pan the timeline viewport left/right */}
+      {!lineMode && (
+        <div className="flex shrink-0 items-center border-l border-gray-200/70 pl-1 dark:border-gray-700/60">
+          <button
+            type="button"
+            onClick={() => panViewport(-1)}
+            title={t('edit.timeline.panLeft')}
+            aria-label={t('edit.timeline.panLeft')}
+            className="grid size-7 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ChevronsLeft className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => panViewport(1)}
+            title={t('edit.timeline.panRight')}
+            aria-label={t('edit.timeline.panRight')}
+            className="grid size-7 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ChevronsRight className="size-4" />
+          </button>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        title={lineMode ? t('edit.timeline.expandTrack') : t('edit.timeline.collapseAxis')}
+        aria-label={lineMode ? t('edit.timeline.expandTrack') : t('edit.timeline.collapseAxis')}
+        className="ml-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+      >
+        {lineMode ? <UnfoldVertical className="size-4" /> : <FoldVertical className="size-4" />}
+      </button>
+    </>
+  );
+
+  return (
+    <>
+      {/* The timeline's own header row: what it is, what it can insert, how much
+          it holds, and its fold. Geometry unchanged from the standalone bar. */}
+      <div className="flex h-10 shrink-0 items-center gap-2 px-6">{header}</div>
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
+        <div className="relative h-full min-w-max">
+          {/* the timeline axis (top) — nodes hang below it; hidden when empty
+                so the placeholder hint doesn't collide with the line */}
+          {actions.length > 0 && (
+            <div
+              className="pointer-events-none absolute inset-x-3 bg-gradient-to-r from-border/30 via-border to-border/30"
+              style={{ top: AXIS_FROM_TOP - 1, height: 2 }}
+            />
+          )}
+          <div className="relative flex h-full items-stretch px-3.5">
+            {actions.length === 0 && (
+              <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[12px] text-muted-foreground/60">
+                {t('edit.timeline.emptyHint')}
+              </span>
+            )}
+            <DropZone
+              active={dragOver === 0}
+              slot={0}
+              flex={actions.length === 0}
+              onEnter={() => setDragOver(0)}
+              onDrop={() => handleDrop(0)}
+              onInsert={(slot, rect) => setPickerAt({ slot, rect })}
+              insertLabel={t('edit.timeline.addAction')}
+            />
+            {items.map(({ action, index, key, speechIndex: si }) => {
+              // A discussion is pinned terminal, so it can't be drag-reordered.
+              const isDiscussion = action.type === 'discussion';
+              const onDragStart = isDiscussion
+                ? () => {}
+                : (e: React.DragEvent) => {
+                    dragRef.current = { kind: 'move', id: key };
+                    setBlankDragImage(e);
+                  };
+              const onDragEnd = () => {
+                dragRef.current = null;
+                setDragOver(null);
+              };
+              const onPick = () =>
+                useCanvasStore.getState().setPickTarget(
+                  useStageStore.getState().stage?.id
+                    ? {
+                        purpose: 'cue',
+                        stageId: useStageStore.getState().stage!.id,
+                        sceneId,
+                        actionId: key,
+                        cueType: action.type,
+                      }
+                    : null,
+                );
+              const dot = (
+                <NodeDot
+                  action={action}
+                  onTip={setTip}
+                  onPick={onPick}
+                  onDragStart={onDragStart}
+                  onDragEnd={onDragEnd}
+                  canDrag={!isDiscussion}
+                />
+              );
+              return (
+                <div key={key} className="relative flex h-full items-stretch">
+                  <motion.div
+                    initial={reduce ? false : { opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.22,
+                      delay: reduce ? 0 : Math.min(index * 0.02, 0.24),
+                      ease: 'easeOut',
+                    }}
+                    className="flex h-full flex-col items-center"
+                    style={{ paddingTop: AXIS_FROM_TOP - 12 }}
+                  >
+                    {lineMode ? (
+                      <div className="w-9">{dot}</div>
+                    ) : (
+                      <>
+                        {dot}
+                        <div className="my-1 h-2.5 w-px bg-border" />
+                        <div className="min-h-0 w-full flex-1">
+                          {action.type === 'speech' ? (
+                            <SpeechClip
+                              text={(action as { text?: string }).text ?? ''}
+                              index={si}
+                              actionId={key}
+                              audioId={(action as { audioId?: string }).audioId}
+                              audioUrl={(action as { audioUrl?: string }).audioUrl}
+                              audioInvalidated={
+                                (action as { audioInvalidated?: boolean }).audioInvalidated
+                              }
+                              sceneOrder={sceneOrder}
+                              language={language}
+                              ttsActive={ttsActive}
+                              ttsRefresh={ttsRefresh}
+                              regenerating={regeneratingIds.has(key)}
+                              autoFocus={key === focusId}
+                              onFocused={() => setFocusId(null)}
+                              onCommit={(text) => {
+                                // Editing the text invalidates any cached audio
+                                // (the blob is keyed by order+id and the stamped
+                                // audioId, not the text), so drop the stamped
+                                // fields and delete the blob — the line then
+                                // reads as un-voiced until regen.
+                                const prevAudioId = (action as { audioId?: string }).audioId;
+                                commit((cur) => setSpeechTextClearAudioById(cur, key, text));
+                                // Re-check status only AFTER the blob is gone, so
+                                // the status row can't race the async delete and
+                                // briefly still read "voiced".
+                                void discardSpeechAudio(sceneOrder, {
+                                  id: key,
+                                  audioId: prevAudioId,
+                                }).finally(() => setTtsRefresh((n) => n + 1));
+                              }}
+                              onGenerated={(assetId) => {
+                                commit((cur) => setAudioIdById(cur, key, assetId));
+                                // Stage persistence is debounced; flush so the
+                                // stamped reference is durable once the row
+                                // settles (pool bytes persist first, stamp last).
+                                void flushStageSave().catch(() => undefined);
+                              }}
+                              onDelete={() => {
+                                commit((cur) => removeById(cur, key));
+                              }}
+                              onMoveLeft={() => commit((cur) => moveByIdDir(cur, key, -1))}
+                              onMoveRight={() => commit((cur) => moveByIdDir(cur, key, 1))}
+                              canMoveLeft={index > 0}
+                              canMoveRight={index < lastMovableIndex}
+                              onDragStart={onDragStart}
+                              onDragEnd={onDragEnd}
+                            />
+                          ) : isDiscussion ? (
+                            <DiscussionClip
+                              topic={(action as DiscussionAction).topic ?? ''}
+                              prompt={(action as DiscussionAction).prompt ?? ''}
+                              agentId={(action as DiscussionAction).agentId ?? ''}
+                              agents={discussionAgents}
+                              onTopicChange={(v) =>
+                                commit((cur) => setDiscussionTopicById(cur, key, v))
+                              }
+                              onPromptChange={(v) =>
+                                commit((cur) => setDiscussionPromptById(cur, key, v))
+                              }
+                              onAgentChange={(v) =>
+                                commit((cur) => setDiscussionAgentById(cur, key, v))
+                              }
+                              onDelete={() => commit((cur) => removeById(cur, key))}
+                            />
+                          ) : (
+                            <CueMarker
+                              action={action}
+                              elements={sceneElements}
+                              onTip={setTip}
+                              onDelete={() => commit((cur) => removeById(cur, key))}
+                              onPick={onPick}
+                              onMoveLeft={() => commit((cur) => moveByIdDir(cur, key, -1))}
+                              onMoveRight={() => commit((cur) => moveByIdDir(cur, key, 1))}
+                              canMoveLeft={index > 0}
+                              canMoveRight={index < lastMovableIndex}
+                              onDragStart={onDragStart}
+                              onDragEnd={onDragEnd}
+                            />
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </motion.div>
+                  <DropZone
+                    active={dragOver === index + 1}
+                    slot={index + 1}
+                    onEnter={() => setDragOver(index + 1)}
+                    onDrop={() => handleDrop(index + 1)}
+                    onInsert={(slot, rect) => setPickerAt({ slot, rect })}
+                    insertLabel={t('edit.timeline.addAction')}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {tip && <CueTooltip tip={tip} />}
+      {pickerAt && (
+        <ActionPicker
+          anchor={pickerAt.rect}
+          sceneType={sceneType}
+          actions={actions}
+          onSelect={(type) => insertActionAt(type, pickerAt.slot)}
+          onClose={() => setPickerAt(null)}
+        />
+      )}
+    </>
+  );
+}

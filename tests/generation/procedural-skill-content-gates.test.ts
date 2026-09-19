@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { applyOutlineFallbacks } from '@/lib/generation/outline-generator';
+import { applyOutlineFallbacks } from '@openmaic/generation';
 import type { SceneOutline } from '@/lib/types/generation';
 
 describe('procedural-skill content gates', () => {

@@ -1,10 +1,12 @@
 'use client';
 
 import { Info, Lightbulb, AlertTriangle } from 'lucide-react';
+import { useLayoutEffect, useRef } from 'react';
 import type { EditorHint } from '@/lib/edit/scene-editor-surface';
 
 interface HintRailProps {
   readonly hints?: readonly EditorHint[];
+  readonly reserveSpace?: boolean;
 }
 
 /**
@@ -12,12 +14,38 @@ interface HintRailProps {
  * return [] for hints). Layout slot is wired so future phases can populate
  * it without restructuring the shell.
  */
-export function HintRail({ hints }: HintRailProps) {
+export function HintRail({ hints, reserveSpace = false }: HintRailProps) {
+  const railRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const rail = railRef.current;
+    const host = rail?.parentElement;
+    if (!reserveSpace || !rail || !host) return;
+
+    const updateReservedSpace = () => {
+      host.style.setProperty(
+        '--editor-hint-rail-height',
+        `${rail.getBoundingClientRect().height}px`,
+      );
+    };
+    updateReservedSpace();
+
+    const observer = new ResizeObserver(updateReservedSpace);
+    observer.observe(rail);
+    return () => {
+      observer.disconnect();
+      host.style.removeProperty('--editor-hint-rail-height');
+    };
+  }, [hints, reserveSpace]);
+
   if (!hints || hints.length === 0) return null;
 
   return (
-    <div className="pointer-events-none absolute bottom-4 left-1/2 z-20 -translate-x-1/2">
-      <div className="pointer-events-auto flex max-w-md flex-col gap-2">
+    <div
+      ref={railRef}
+      className="pointer-events-none absolute bottom-4 left-1/2 z-20 -translate-x-1/2"
+    >
+      <div className="flex max-w-md flex-col gap-2">
         {hints.map((hint) => (
           <HintCard key={hint.id} hint={hint} />
         ))}
@@ -52,7 +80,7 @@ function HintCard({ hint }: { readonly hint: EditorHint }) {
         <button
           type="button"
           onClick={hint.action.onInvoke}
-          className="shrink-0 rounded-md bg-white/60 px-2.5 py-1 text-xs font-medium hover:bg-white dark:bg-zinc-800/60 dark:hover:bg-zinc-800"
+          className="pointer-events-auto shrink-0 rounded-md bg-white/60 px-2.5 py-1 text-xs font-medium hover:bg-white dark:bg-zinc-800/60 dark:hover:bg-zinc-800"
         >
           {hint.action.label}
         </button>

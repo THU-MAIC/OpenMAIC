@@ -1,5 +1,8 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
+  - name: Report a Security Vulnerability
+    url: https://github.com/THU-MAIC/OpenMAIC/security/advisories/new
+    about: Privately report a security vulnerability instead of opening a public issue
   - name: Discord Community
     url: https://discord.gg/p8Pf2r3SaG
     about: Ask questions and discuss with the community

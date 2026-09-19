@@ -19,14 +19,66 @@ export interface PdfImage {
   pageNumber: number; // Page number in PDF
   description?: string; // Optional description for AI context
   storageId?: string; // Reference to IndexedDB (session_xxx_img_1)
+  /**
+   * Pool asset id of the image bytes. Present on server-backed deployments
+   * (RFC #1153 part 2 B): the extracted images are pool assets, so generation
+   * is fed by id and no IndexedDB bytes are materialized. Browser-backed
+   * images carry `storageId` instead — never both.
+   */
+  assetId?: string; // Allocated asset-pool id (server-backed transport)
   width?: number; // Image width (px or normalized)
   height?: number; // Image height (px or normalized)
+  originalId?: string; // ID assigned by the extractor before bundle-level normalization
+  sourceDocumentId?: string; // DocumentBundle source ID
+  sourceDocumentName?: string; // Original source filename for citation back to material
+  sourceDocumentOrder?: number; // Upload order in the bundle
+  visionPriority?: number; // Higher values are attached first when vision budget is limited
 }
 
 /**
  * Image mapping for post-processing: image_id → base64 URL
  */
 export type ImageMapping = Record<string, string>;
+
+export interface SelectedCourseMaterial {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  lastModified: number;
+  type: string;
+  order: number;
+  /** Allocated asset-pool id once the file has been ingested (part 0). */
+  assetId?: string;
+  /**
+   * SHA-256 of the file bytes, computed at upload time. This is the stable
+   * half of the extraction-cache key: two uploads of the same bytes get
+   * different allocated asset ids but the same digest (part 1).
+   */
+  contentDigest?: string;
+}
+
+export interface SessionDocumentSource {
+  id: string;
+  name: string;
+  size: number;
+  lastModified?: number;
+  mimeType?: string;
+  order: number;
+  storageKey: string;
+  /**
+   * Allocated asset-pool id for this source. New sessions write it; legacy
+   * sessions carry only `storageKey` and keep working (back-compat).
+   */
+  assetId?: string;
+  /**
+   * SHA-256 of the source bytes, computed at upload time. Together with the
+   * extractor identity it keys the extraction derivation cache (part 1);
+   * legacy sessions predating the digest carry only `storageKey`.
+   */
+  contentDigest?: string;
+  providerId?: string;
+}
 
 // ==================== Stage 1 Input ====================
 
@@ -82,6 +134,13 @@ export interface WidgetOutline {
   challenge?: string; // game - description of what player does
   playerControls?: string[]; // game - what player controls
   nodeCount?: number; // diagram - approximate node count
+  nodes?: Array<{
+    id: string;
+    label: string;
+    parentId?: string;
+    icon?: string;
+    details?: string;
+  }>; // diagram - prescribed nodes and optional hierarchy
   challengeType?: string; // code - type of coding challenge
 }
 
@@ -125,6 +184,10 @@ export interface SceneOutline {
     projectDescription: string;
     targetSkills: string[];
     issueCount?: number;
+    /** Opt into role-play scenario planning on top of the standard PBL v2 structure. */
+    scenarioRoleplay?: boolean;
+    /** Optional scenario brief used only when scenarioRoleplay is true. */
+    scenarioBrief?: string;
   };
   // Widget fields (required for type === 'interactive' in unified mode)
   widgetType?: WidgetType;
@@ -133,7 +196,7 @@ export interface SceneOutline {
 
 // ==================== Stage 3 Output: Generated Content ====================
 
-import type { PPTElement, SlideBackground } from './slides';
+import type { PPTElement, SlideBackground } from '@openmaic/dsl';
 import type { QuizQuestion } from './stage';
 
 /**
@@ -154,18 +217,20 @@ export interface GeneratedQuizContent {
 
 // ==================== PBL Generation Types ====================
 
-import type { PBLProjectConfig } from '@/lib/pbl/types';
+import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 
 /**
- * AI-generated PBL content
+ * AI-generated PBL content.
+ *
+ * PBL generation produces only the v2 project payload.
  */
 export interface GeneratedPBLContent {
-  projectConfig: PBLProjectConfig;
+  projectV2: PBLProjectV2;
 }
 
 // ==================== Interactive Generation Types ====================
 
-import type { WidgetConfig, TeacherAction, WidgetType } from './widgets';
+import type { WidgetConfig, WidgetType } from './widgets';
 
 /**
  * Scientific model output from scientific modeling stage
@@ -185,7 +250,6 @@ export interface GeneratedInteractiveContent {
   scientificModel?: ScientificModel;
   widgetType?: WidgetType;
   widgetConfig?: WidgetConfig;
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== Legacy Types (for compatibility) ====================
@@ -211,26 +275,4 @@ export interface SuggestedAction {
   type: ActionType;
   description: string;
   timing?: 'start' | 'middle' | 'end' | 'after-content';
-}
-
-// ==================== Generation Session ====================
-
-export interface GenerationProgress {
-  currentStage: 1 | 2 | 3;
-  overallProgress: number; // 0-100
-  stageProgress: number; // 0-100
-  statusMessage: string;
-  scenesGenerated: number;
-  totalScenes: number;
-  errors?: string[];
-}
-
-export interface GenerationSession {
-  id: string;
-  requirements: UserRequirements;
-  sceneOutlines?: SceneOutline[];
-  progress: GenerationProgress;
-  startedAt: Date;
-  completedAt?: Date;
-  generatedStageId?: string;
 }

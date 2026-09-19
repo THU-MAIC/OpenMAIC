@@ -15,6 +15,13 @@ export interface ViewportStyles {
 export function useViewportSize(canvasRef: RefObject<HTMLElement | null>) {
   const [viewportLeft, setViewportLeft] = useState(0);
   const [viewportTop, setViewportTop] = useState(0);
+  // Local mirror of the computed scale. `canvasScale` in the store is GLOBAL:
+  // every mounted canvas writes it (crossfade-exiting panes, keep-alive tabs),
+  // so a sibling's settle can overwrite the scale this canvas renders with
+  // until this canvas's own observer fires again — the first-open mis-scale
+  // that a seam drag "fixed" by forcing a re-measure. Render from the local
+  // value; the store keeps being written for out-of-tree consumers.
+  const [fitScale, setFitScale] = useState(() => useCanvasStore.getState().canvasScale);
 
   const canvasPercentage = useCanvasStore.use.canvasPercentage();
   const canvasDragged = useCanvasStore.use.canvasDragged();
@@ -32,12 +39,16 @@ export function useViewportSize(canvasRef: RefObject<HTMLElement | null>) {
 
     if (canvasHeight / canvasWidth > viewportRatio) {
       const viewportActualWidth = canvasWidth * (canvasPercentage / 100);
-      setCanvasScale(viewportActualWidth / viewportSize);
+      const nextScale = viewportActualWidth / viewportSize;
+      setCanvasScale(nextScale);
+      setFitScale(nextScale);
       setViewportLeft((canvasWidth - viewportActualWidth) / 2);
       setViewportTop((canvasHeight - viewportActualWidth * viewportRatio) / 2);
     } else {
       const viewportActualHeight = canvasHeight * (canvasPercentage / 100);
-      setCanvasScale(viewportActualHeight / (viewportSize * viewportRatio));
+      const nextScale = viewportActualHeight / (viewportSize * viewportRatio);
+      setCanvasScale(nextScale);
+      setFitScale(nextScale);
       setViewportLeft((canvasWidth - viewportActualHeight / viewportRatio) / 2);
       setViewportTop((canvasHeight - viewportActualHeight) / 2);
     }
@@ -56,7 +67,9 @@ export function useViewportSize(canvasRef: RefObject<HTMLElement | null>) {
         const newViewportActualHeight = newViewportActualWidth * viewportRatio;
         const oldViewportActualHeight = oldViewportActualWidth * viewportRatio;
 
-        setCanvasScale(newViewportActualWidth / viewportSize);
+        const nextScale = newViewportActualWidth / viewportSize;
+        setCanvasScale(nextScale);
+        setFitScale(nextScale);
 
         setViewportLeft((prev) => prev - (newViewportActualWidth - oldViewportActualWidth) / 2);
         setViewportTop((prev) => prev - (newViewportActualHeight - oldViewportActualHeight) / 2);
@@ -66,7 +79,9 @@ export function useViewportSize(canvasRef: RefObject<HTMLElement | null>) {
         const newViewportActualWidth = newViewportActualHeight / viewportRatio;
         const oldViewportActualWidth = oldViewportActualHeight / viewportRatio;
 
-        setCanvasScale(newViewportActualHeight / (viewportSize * viewportRatio));
+        const nextScale = newViewportActualHeight / (viewportSize * viewportRatio);
+        setCanvasScale(nextScale);
+        setFitScale(nextScale);
 
         setViewportLeft((prev) => prev - (newViewportActualWidth - oldViewportActualWidth) / 2);
         setViewportTop((prev) => prev - (newViewportActualHeight - oldViewportActualHeight) / 2);
@@ -161,5 +176,6 @@ export function useViewportSize(canvasRef: RefObject<HTMLElement | null>) {
   return {
     viewportStyles,
     dragViewport,
+    fitScale,
   };
 }

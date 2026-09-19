@@ -1,0 +1,727 @@
+import { describe, it, expect } from 'vitest';
+import {
+  DSL_VERSION,
+  UNVERSIONED_DSL_VERSION,
+  INITIAL_DSL_VERSION,
+  INITIAL_RUNTIME_DSL_VERSION,
+  DSL_VERSION_KEY,
+  DSL_MIGRATIONS,
+  RUNTIME_DSL_VERSION,
+  RUNTIME_DSL_VERSION_KEY,
+  RUNTIME_DSL_MIGRATIONS,
+  dslVersionOf,
+  runtimeDslVersionOf,
+  needsMigration,
+  needsRuntimeMigration,
+  migrate,
+  migrateRuntime,
+} from '@openmaic/dsl';
+import { stripLegacyLineGeometry } from '../src/legacy-line-geometry.js';
+
+describe('DSL_MIGRATIONS ladder invariants', () => {
+  it('is a contiguous chain ending at DSL_VERSION', () => {
+    expect(DSL_MIGRATIONS.length).toBeGreaterThan(0);
+    for (let i = 1; i < DSL_MIGRATIONS.length; i++) {
+      // each step's `to` is the next step's `from`
+      expect(DSL_MIGRATIONS[i].from).toBe(DSL_MIGRATIONS[i - 1].to);
+    }
+    expect(DSL_MIGRATIONS[DSL_MIGRATIONS.length - 1].to).toBe(DSL_VERSION);
+  });
+
+  it('begins by lifting legacy (unversioned) documents to a pinned endpoint', () => {
+    expect(DSL_MIGRATIONS[0].from).toBe(UNVERSIONED_DSL_VERSION);
+    // The endpoint is the *pinned* initial version, not the moving DSL_VERSION —
+    // so a future step appended from INITIAL_DSL_VERSION isn't skipped once
+    // DSL_VERSION moves past it. (They're equal today; the assertion guards the
+    // intent, not the current value.)
+    expect(DSL_MIGRATIONS[0].to).toBe(INITIAL_DSL_VERSION);
+  });
+});
+
+describe('RUNTIME_DSL_MIGRATIONS ladder invariants', () => {
+  it('is empty today — the runtime line has no unversioned epoch to lift from', () => {
+    // Unlike the document ladder, the runtime ladder ships EMPTY: the runtime
+    // envelope is brand new (nothing legitimately predates it), so there is no
+    // legacy-lift first entry. It stays a valid, fully-functional ladder — an
+    // empty ladder just means every stamped-current session is already at the
+    // target and no walk is needed.
+    expect(RUNTIME_DSL_MIGRATIONS.length).toBe(0);
+  });
+
+  it('IF non-empty (future), starts at the pinned initial version and chains to RUNTIME_DSL_VERSION', () => {
+    // Guards the invariants the *first real* runtime shape change must satisfy.
+    // Vacuously true while empty; becomes a real check the moment a step is
+    // appended. The first `from` is pinned to INITIAL_RUNTIME_DSL_VERSION — the
+    // runtime line has no unversioned epoch, so a ladder starting anywhere
+    // earlier (e.g. a copy-pasted 0.0.0 legacy lift) would reintroduce the
+    // lift-arbitrary-unstamped-data hole this model removed.
+    if (RUNTIME_DSL_MIGRATIONS.length > 0) {
+      expect(RUNTIME_DSL_MIGRATIONS[0].from).toBe(INITIAL_RUNTIME_DSL_VERSION);
+      expect(RUNTIME_DSL_MIGRATIONS[RUNTIME_DSL_MIGRATIONS.length - 1].to).toBe(
+        RUNTIME_DSL_VERSION,
+      );
+    }
+    for (let i = 1; i < RUNTIME_DSL_MIGRATIONS.length; i++) {
+      expect(RUNTIME_DSL_MIGRATIONS[i].from).toBe(RUNTIME_DSL_MIGRATIONS[i - 1].to);
+    }
+  });
+});
+
+describe('migrateRuntime', () => {
+  it('throws on an unstamped object — the runtime line has no unversioned epoch', () => {
+    // Unlike the document line, an unstamped object is NOT legacy data to lift:
+    // sessions are born stamped, so this is a misrouted legacy document or an
+    // unstamped producer write — fail loud instead of inventing a version.
+    expect(() => migrateRuntime({ id: 'sess' })).toThrow(/no unversioned epoch/);
+  });
+
+  it('is idempotent on a stamped-current session and returns non-objects unchanged', () => {
+    // An already-current (stamped) session early-returns by reference — the
+    // empty ladder needs no walk once the object is at the target version.
+    const once = { id: 's', [RUNTIME_DSL_VERSION_KEY]: RUNTIME_DSL_VERSION };
+    expect(migrateRuntime(once)).toBe(once);
+    expect(migrateRuntime(migrateRuntime(once))).toBe(once);
+    // Non-objects are not migratable aggregates: returned as-is on every line,
+    // never subject to the no-epoch throw.
+    expect(migrateRuntime(42)).toBe(42);
+    expect(migrateRuntime(null)).toBe(null);
+  });
+
+  it('stamps only the runtime envelope field, never the document key', () => {
+    // A doubly-stamped-free session at the current version keeps the runtime
+    // stamp and never grows a `dslVersion`.
+    const out = migrateRuntime({
+      id: 'sess',
+      [RUNTIME_DSL_VERSION_KEY]: RUNTIME_DSL_VERSION,
+    }) as Record<string, unknown>;
+    expect(out[RUNTIME_DSL_VERSION_KEY]).toBe(RUNTIME_DSL_VERSION);
+    expect(out[DSL_VERSION_KEY]).toBeUndefined();
+  });
+
+  it('leaves a forward-versioned runtime document untouched', () => {
+    const future = { id: 's', [RUNTIME_DSL_VERSION_KEY]: '99.0.0' };
+    expect(migrateRuntime(future)).toBe(future);
+  });
+
+  it('fails loud when the ladder has no path from the runtime version', () => {
+    // A runtime version older than RUNTIME_DSL_VERSION with no matching `from`
+    // entry — with an empty ladder, ANY stamped-older version hits this. Mirrors
+    // the document ladder's unbridgeable-stamp case.
+    expect(() => migrateRuntime({ id: 's', [RUNTIME_DSL_VERSION_KEY]: '0.0.5' })).toThrow(
+      /no migration path/,
+    );
+  });
+
+  it('fails loud on a malformed stamp', () => {
+    expect(() => migrateRuntime({ id: 's', [RUNTIME_DSL_VERSION_KEY]: '0.1' })).toThrow(
+      /invalid runtimeDslVersion/,
+    );
+  });
+});
+
+describe('cross-line guard (ambiguous envelopes fail loud, not reinterpreted)', () => {
+  it('migrate() throws on a runtime-stamped object — no document lift, no silent skip', () => {
+    // Case (3): own stamp (dslVersion) ABSENT + other line's stamp
+    // (runtimeDslVersion) PRESENT. Byte-identical to "runtime session misrouted
+    // into the document runner" AND to "document carrying a stray runtime
+    // stamp" — walking the ladder would mangle the former, returning it
+    // unchanged would orphan the latter, so the only safe answer is to throw.
+    const session = { id: 's', [RUNTIME_DSL_VERSION_KEY]: RUNTIME_DSL_VERSION };
+    expect(() => migrate(session)).toThrow(/carries "runtimeDslVersion" but no "dslVersion"/);
+  });
+
+  it('migrateRuntime() throws on a document-stamped object — no runtime lift, no orphaning', () => {
+    // Symmetric case (3): own stamp (runtimeDslVersion) ABSENT + document
+    // line's stamp (dslVersion) PRESENT. Same undecidable state, mirrored:
+    // fail loud instead of guessing.
+    const doc = { id: 'd', [DSL_VERSION_KEY]: DSL_VERSION };
+    expect(() => migrateRuntime(doc)).toThrow(/carries "dslVersion" but no "runtimeDslVersion"/);
+  });
+
+  it('an object carrying BOTH stamps migrates normally on each runner’s own line', () => {
+    // Case (1): own line's stamp present → migrate normally on own line,
+    // regardless of the other key. The guard only fires when the OWN stamp is
+    // absent, so a doubly-stamped envelope is handled by each runner exactly as
+    // if the other stamp were not there.
+    const both = {
+      id: 'x',
+      [DSL_VERSION_KEY]: DSL_VERSION,
+      [RUNTIME_DSL_VERSION_KEY]: RUNTIME_DSL_VERSION,
+    };
+    // Each runner sees its own line already current → idempotent no-op, and
+    // leaves the other line's stamp intact.
+    const migrated = migrate(both) as Record<string, unknown>;
+    expect(migrated[DSL_VERSION_KEY]).toBe(DSL_VERSION);
+    expect(migrated[RUNTIME_DSL_VERSION_KEY]).toBe(RUNTIME_DSL_VERSION);
+    const migratedRuntime = migrateRuntime(both) as Record<string, unknown>;
+    expect(migratedRuntime[RUNTIME_DSL_VERSION_KEY]).toBe(RUNTIME_DSL_VERSION);
+    expect(migratedRuntime[DSL_VERSION_KEY]).toBe(DSL_VERSION);
+  });
+
+  it('an object with NEITHER stamp: document line lifts it, runtime line throws (no epoch)', () => {
+    // Case (2), but the two lines diverge here. The document line HAS an
+    // unversioned epoch → genuine legacy data, lifted onto its own ladder. The
+    // runtime line has NO unversioned epoch → an unstamped object is a misrouted
+    // legacy document or an unstamped producer write, so it fails loud instead.
+    const legacy = { id: 'z', name: 'course' };
+    const lifted = migrate(legacy) as Record<string, unknown>;
+    expect(lifted[DSL_VERSION_KEY]).toBe(DSL_VERSION);
+    expect(lifted[RUNTIME_DSL_VERSION_KEY]).toBeUndefined();
+    expect(lifted.name).toBe('course');
+
+    expect(() => migrateRuntime(legacy)).toThrow(/no unversioned epoch/);
+  });
+});
+
+describe('runtimeDslVersionOf', () => {
+  it('reads a stamped runtime version', () => {
+    expect(runtimeDslVersionOf({ [RUNTIME_DSL_VERSION_KEY]: '9.9.9' })).toBe('9.9.9');
+  });
+  it('throws on an unstamped object (no unversioned epoch)', () => {
+    // The runtime line has no legacy epoch, so an unstamped object does not read
+    // as `0.0.0` here — it throws, matching migrateRuntime / needsRuntimeMigration.
+    expect(() => runtimeDslVersionOf({ id: 'x' })).toThrow(/no unversioned epoch/);
+  });
+  it('reads non-objects as unversioned (not migratable aggregates)', () => {
+    // Non-objects are exempt from the no-epoch throw on every line — they are not
+    // migratable aggregates and read as the unversioned sentinel.
+    expect(runtimeDslVersionOf(null)).toBe(UNVERSIONED_DSL_VERSION);
+    expect(runtimeDslVersionOf('nope')).toBe(UNVERSIONED_DSL_VERSION);
+  });
+  it('throws on an ambiguous document-stamped envelope (authoritative read)', () => {
+    // Reading this as unversioned would report `0.0.0` for data migrateRuntime
+    // refuses to touch — the reader applies the same cross-line rule.
+    expect(() => runtimeDslVersionOf({ [DSL_VERSION_KEY]: '9.9.9' })).toThrow(
+      /carries "dslVersion" but no "runtimeDslVersion"/,
+    );
+  });
+  it('throws on a present-but-malformed runtime stamp', () => {
+    expect(() => runtimeDslVersionOf({ [RUNTIME_DSL_VERSION_KEY]: '0.1' })).toThrow(
+      /invalid runtimeDslVersion/,
+    );
+  });
+});
+
+describe('needsRuntimeMigration', () => {
+  it('throws on an unstamped session (no epoch) and is false at/ahead of the current version', () => {
+    // No unversioned epoch: an unstamped object is a bug, not legacy data, so the
+    // predicate throws — matching migrateRuntime, so a
+    // `while (needsRuntimeMigration(x)) x = migrateRuntime(x)` loop fails loud on
+    // the same input rather than spinning.
+    expect(() => needsRuntimeMigration({ id: 'legacy' })).toThrow(/no unversioned epoch/);
+    expect(needsRuntimeMigration({ [RUNTIME_DSL_VERSION_KEY]: RUNTIME_DSL_VERSION })).toBe(false);
+    expect(needsRuntimeMigration({ [RUNTIME_DSL_VERSION_KEY]: '99.0.0' })).toBe(false);
+  });
+  it('agrees with migrateRuntime on non-objects (loop terminates)', () => {
+    for (const v of [42, null, undefined, 'x', []]) {
+      expect(needsRuntimeMigration(v)).toBe(false);
+      expect(needsRuntimeMigration(migrateRuntime(v))).toBe(false);
+    }
+  });
+  it('throws on an ambiguous document-stamped envelope (mirrors the runner guard)', () => {
+    // migrateRuntime throws on a document-stamped object (cross-line guard), so
+    // the predicate must throw the same error — quietly answering true would
+    // spin a `while (needsRuntimeMigration(x)) x = migrateRuntime(x)` loop,
+    // quietly answering false would misreport data the runner refuses to touch.
+    const doc = { [DSL_VERSION_KEY]: DSL_VERSION, id: 'doc' };
+    expect(() => needsRuntimeMigration(doc)).toThrow(
+      /carries "dslVersion" but no "runtimeDslVersion"/,
+    );
+    // Doubly-stamped data is the runtime line's own: predicate and runner both
+    // act on the runtime stamp as usual.
+    expect(
+      needsRuntimeMigration({ [DSL_VERSION_KEY]: DSL_VERSION, [RUNTIME_DSL_VERSION_KEY]: '0.0.0' }),
+    ).toBe(true);
+  });
+});
+
+describe('dslVersionOf', () => {
+  it('reads a stamped version', () => {
+    expect(dslVersionOf({ [DSL_VERSION_KEY]: '9.9.9' })).toBe('9.9.9');
+  });
+  it('treats an unstamped document as unversioned', () => {
+    expect(dslVersionOf({ id: 'x' })).toBe(UNVERSIONED_DSL_VERSION);
+    expect(dslVersionOf(null)).toBe(UNVERSIONED_DSL_VERSION);
+    expect(dslVersionOf('nope')).toBe(UNVERSIONED_DSL_VERSION);
+  });
+  it('throws on an ambiguous runtime-stamped envelope (authoritative read)', () => {
+    // The reader, the predicate, and the runner give one answer per envelope:
+    // this state throws everywhere instead of reading as `0.0.0` here while
+    // `migrate` refuses to touch it.
+    expect(() => dslVersionOf({ [RUNTIME_DSL_VERSION_KEY]: '9.9.9' })).toThrow(
+      /carries "runtimeDslVersion" but no "dslVersion"/,
+    );
+  });
+  it('throws on a present-but-malformed stamp (no silent bypass)', () => {
+    // "1", "0.1", "0.1.0-beta" would otherwise parse into a comparable version
+    // and skip migration entirely.
+    for (const bad of ['1', '0.1', '0.1.0-beta', 'x.y.z', '']) {
+      expect(() => dslVersionOf({ [DSL_VERSION_KEY]: bad })).toThrow(/invalid dslVersion/);
+    }
+    expect(() => dslVersionOf({ [DSL_VERSION_KEY]: 3 })).toThrow(/invalid dslVersion/);
+  });
+});
+
+describe('needsMigration', () => {
+  it('is true for legacy documents and false at/ahead of the current version', () => {
+    expect(needsMigration({ id: 'legacy' })).toBe(true);
+    expect(needsMigration({ [DSL_VERSION_KEY]: DSL_VERSION })).toBe(false);
+    expect(needsMigration({ [DSL_VERSION_KEY]: '99.0.0' })).toBe(false);
+  });
+  it('is false for non-objects (mirrors migrate no-op — never disagree)', () => {
+    for (const v of [42, null, undefined, 'x', []]) {
+      expect(needsMigration(v)).toBe(false);
+      // the invariant: needsMigration and migrate agree on every input
+      expect(needsMigration(migrate(v))).toBe(false);
+    }
+  });
+  it('throws on a malformed stamp rather than silently reporting no migration', () => {
+    expect(() => needsMigration({ [DSL_VERSION_KEY]: '0.1.0-beta' })).toThrow(/invalid dslVersion/);
+  });
+  it('throws on an ambiguous runtime-stamped envelope (mirrors the runner guard)', () => {
+    // migrate throws on a runtime-stamped object (cross-line guard), so the
+    // predicate must throw the same error rather than quietly answer either
+    // way — see the needsRuntimeMigration counterpart for the two failure
+    // modes a quiet answer would pick between.
+    const session = { [RUNTIME_DSL_VERSION_KEY]: RUNTIME_DSL_VERSION, id: 's' };
+    expect(() => needsMigration(session)).toThrow(
+      /carries "runtimeDslVersion" but no "dslVersion"/,
+    );
+  });
+});
+
+describe('0.1.0 -> 0.2.0 ladder entry (audioUrl abolition)', () => {
+  const speechAction = (extra: Record<string, unknown>) => ({
+    id: 'a1',
+    type: 'speech',
+    text: 'Hello',
+    ...extra,
+  });
+  const docWithActions = (actions: unknown[], stamp?: string) => ({
+    stage: { id: 'st', name: 'Course', createdAt: 1, updatedAt: 2 },
+    scenes: [
+      {
+        id: 's1',
+        stageId: 'st',
+        type: 'slide',
+        title: 'Scene',
+        order: 0,
+        content: { type: 'slide', canvas: { id: 'c1', elements: [] } },
+        actions,
+      },
+    ],
+    ...(stamp ? { [DSL_VERSION_KEY]: stamp } : {}),
+  });
+
+  it('keeps a URL-only speech reference for the converter to probe', () => {
+    // The ladder cannot tell a live URL from a dead one, and it runs on every
+    // read before the converter sees the document -- so dropping the field
+    // here could destroy a live handle. The URL stays as inert data until the
+    // app-side converter ingests it or empties the reference.
+    const urlOnly = speechAction({ audioUrl: 'https://cdn.example.com/a.mp3' });
+    const out = migrate(docWithActions([urlOnly], '0.1.0')) as ReturnType<typeof docWithActions>;
+    expect(out[DSL_VERSION_KEY]).toBe(DSL_VERSION);
+    expect(out.scenes[0].actions[0]).toEqual(urlOnly);
+  });
+
+  it('preserves a co-present audioId/audioUrl pair verbatim', () => {
+    // The audioId may be a dangling derived id whose only live handle is the
+    // URL beside it; a pure transform cannot decide the pair, so both handles
+    // survive for the app-side reference converter.
+    const pair = speechAction({
+      audioId: 'tts_s0_a1',
+      audioUrl: 'https://cdn.example.com/a.mp3',
+    });
+    const out = migrate(docWithActions([pair], '0.1.0')) as ReturnType<typeof docWithActions>;
+    expect(out[DSL_VERSION_KEY]).toBe(DSL_VERSION);
+    expect(out.scenes[0].actions[0]).toEqual(pair);
+  });
+
+  it('leaves an audioId-only speech action untouched apart from the stamp', () => {
+    const idOnly = speechAction({ audioId: 'tts_s0_a1' });
+    const out = migrate(docWithActions([idOnly], '0.1.0')) as ReturnType<typeof docWithActions>;
+    expect(out[DSL_VERSION_KEY]).toBe(DSL_VERSION);
+    expect(out.scenes[0].actions[0]).toEqual(idOnly);
+  });
+
+  it('lifts unversioned (0.0.0) documents through both entries', () => {
+    const urlOnly = speechAction({ audioUrl: 'https://cdn.example.com/a.mp3' });
+    const out = migrate(docWithActions([urlOnly])) as ReturnType<typeof docWithActions>;
+    expect(out[DSL_VERSION_KEY]).toBe(DSL_VERSION);
+    expect(out.scenes[0].actions[0]).toEqual(urlOnly);
+  });
+
+  it('does not mutate its input and returns it by identity', () => {
+    // The entry is a pure stamp: nothing is copied because nothing changes.
+    const pair = speechAction({
+      audioId: 'tts_s0_a1',
+      audioUrl: 'https://cdn.example.com/a.mp3',
+    });
+    const urlOnly = speechAction({ audioUrl: 'https://cdn.example.com/b.mp3' });
+    const input = docWithActions([pair, urlOnly], '0.1.0');
+    const snapshot = structuredClone(input);
+    const out = migrate(input) as ReturnType<typeof docWithActions>;
+    expect(input).toEqual(snapshot);
+    expect(out.scenes[0].actions[0]).toBe(pair);
+    expect(out.scenes[0].actions[1]).toBe(urlOnly);
+  });
+});
+
+describe('0.2.0 -> 0.3.0 ladder entry (legacy line geometry)', () => {
+  const lineEl = (extra: Record<string, unknown>) => ({
+    id: 'line-1',
+    type: 'line',
+    left: 10,
+    top: 20,
+    width: 100,
+    start: [0, 0],
+    end: [100, 0],
+    style: 'solid',
+    color: '#333333',
+    points: ['', ''],
+    ...extra,
+  });
+  const textEl = {
+    id: 'text-1',
+    type: 'text',
+    left: 0,
+    top: 0,
+    width: 50,
+    height: 30,
+    rotate: 15,
+    content: 'Hello',
+  };
+  const shapeEl = {
+    id: 'shape-1',
+    type: 'rect',
+    left: 0,
+    top: 0,
+    width: 40,
+    height: 40,
+  };
+  const tableEl = { id: 'table-1', type: 'table', left: 0, top: 0, width: 60 };
+  const quizScene = {
+    id: 's2',
+    stageId: 'st',
+    type: 'quiz',
+    title: 'Quiz',
+    order: 1,
+    content: { type: 'quiz', questions: [{ id: 'q1' }] },
+  };
+  const slideSceneWith = (elements: unknown[]) => ({
+    id: 's1',
+    stageId: 'st',
+    type: 'slide',
+    title: 'Scene',
+    order: 0,
+    content: { type: 'slide', canvas: { id: 'c1', elements } },
+  });
+  const docWithElements = (elements: unknown[], stamp?: string) => ({
+    stage: { id: 'st', name: 'Course', createdAt: 1, updatedAt: 2 },
+    scenes: [slideSceneWith(elements), quizScene],
+    ...(stamp ? { [DSL_VERSION_KEY]: stamp } : {}),
+  });
+  // scenes[0] is the slide scene by construction; the quiz scene needs no
+  // element access, so this localized cast stands in for the slide/quiz union.
+  const elementsOf = (doc: unknown): Record<string, unknown>[] =>
+    (
+      doc as {
+        scenes: { content: { canvas: { elements: Record<string, unknown>[] } } }[];
+      }
+    ).scenes[0].content.canvas.elements;
+
+  it('pins DSL_VERSION to the endpoint this entry introduced', () => {
+    expect(DSL_VERSION).toBe('0.3.0');
+  });
+
+  it('strips rotate/height from line elements only, in unversioned documents', () => {
+    const withRotate = lineEl({ id: 'l1', rotate: 45 });
+    const withHeight = lineEl({ id: 'l2', height: 30 });
+    const withBoth = lineEl({ id: 'l3', rotate: 45, height: 30 });
+    const clean = lineEl({ id: 'l4' });
+    const input = docWithElements([
+      withRotate,
+      withHeight,
+      withBoth,
+      clean,
+      textEl,
+      shapeEl,
+      tableEl,
+    ]);
+
+    const out = migrate(input) as ReturnType<typeof docWithElements>;
+    // envelope stamped to the new endpoint
+    expect(out[DSL_VERSION_KEY]).toBe('0.3.0');
+
+    const elements = elementsOf(out);
+    expect(elements[0]).toEqual({ ...lineEl({ id: 'l1' }) });
+    expect(elements[1]).toEqual({ ...lineEl({ id: 'l2' }) });
+    expect(elements[2]).toEqual({ ...lineEl({ id: 'l3' }) });
+    expect(elements[3]).toBe(clean);
+    // non-line elements are untouched — text/shape legitimately carry rotate/height
+    expect(elements[4]).toEqual(textEl);
+    expect(elements[5]).toEqual(shapeEl);
+    expect(elements[6]).toEqual(tableEl);
+    // the non-slide scene passes through untouched
+    expect(out.scenes[1]).toEqual(quizScene);
+  });
+
+  it('does not mutate its input and shares untouched subtrees', () => {
+    const dirty = lineEl({ id: 'l1', rotate: 45 });
+    const input = docWithElements([dirty, textEl], '0.2.0');
+    const snapshot = structuredClone(input);
+
+    const out = migrate(input) as ReturnType<typeof docWithElements>;
+    expect(input).toEqual(snapshot);
+    // untouched elements are shared by reference, only the dirty line is fresh
+    const elements = elementsOf(out);
+    expect(elements[0]).not.toBe(dirty);
+    expect(elements[1]).toBe(textEl);
+  });
+
+  it('lifts a document already stamped 0.2.0 and cleans it', () => {
+    const dirty = lineEl({ id: 'l1', rotate: 45, height: 30 });
+    const out = migrate(docWithElements([dirty], '0.2.0')) as ReturnType<typeof docWithElements>;
+    expect(out[DSL_VERSION_KEY]).toBe('0.3.0');
+    const [cleaned] = elementsOf(out);
+    expect(cleaned.rotate).toBeUndefined();
+    expect(cleaned.height).toBeUndefined();
+    expect(cleaned.type).toBe('line');
+  });
+
+  it('returns a document already stamped 0.3.0 by identity', () => {
+    const current = docWithElements([lineEl({ rotate: 45 })], '0.3.0');
+    expect(migrate(current)).toBe(current);
+  });
+
+  it('is idempotent across the ladder walk', () => {
+    const input = docWithElements([lineEl({ id: 'l1', rotate: 45 })]);
+    const once = migrate(input);
+    const twice = migrate(once);
+    expect(twice).toEqual(once);
+    expect(migrate(once)).toBe(once);
+  });
+
+  it('is a no-op by identity when there are no line elements', () => {
+    const clean = docWithElements([textEl, shapeEl, tableEl], '0.2.0');
+    expect(stripLegacyLineGeometry(clean)).toBe(clean);
+    expect(stripLegacyLineGeometry(42)).toBe(42);
+    expect(stripLegacyLineGeometry(null)).toBe(null);
+  });
+
+  it('strips dirty lines on interactive whiteboard slides too', () => {
+    const wbDirty = lineEl({ id: 'l1', rotate: 45 });
+    const wbClean = lineEl({ id: 'l2' });
+    const input = {
+      stage: { id: 'st', name: 'Course', createdAt: 1, updatedAt: 2 },
+      scenes: [
+        {
+          ...slideSceneWith([textEl]),
+          whiteboards: [{ id: 'wb-1', type: 'slide', elements: [wbDirty, wbClean] }],
+        },
+        quizScene,
+      ],
+    };
+
+    const out = migrate(input) as unknown as Record<string, unknown> & {
+      scenes: unknown[];
+    };
+    expect(out[DSL_VERSION_KEY]).toBe('0.3.0');
+    // localized cast: the slide/quiz scene union only matters for these paths
+    const scene = out.scenes[0] as {
+      content: { canvas: { elements: Record<string, unknown>[] } };
+      whiteboards?: { elements: Record<string, unknown>[] }[];
+    };
+    const [cleaned, kept] = scene.whiteboards![0].elements;
+    expect(cleaned).toEqual(lineEl({ id: 'l1' }));
+    // untouched whiteboard element is shared by reference
+    expect(kept).toBe(wbClean);
+    // the canvas had no dirty lines, so its subtree stays shared
+    expect(scene.content.canvas.elements[0]).toBe(textEl);
+    expect(out.scenes[1]).toEqual(quizScene);
+  });
+
+  it('cleans canvas and whiteboards of the same scene in one pass', () => {
+    const canvasDirty = lineEl({ id: 'l1', rotate: 45 });
+    const wbDirty = lineEl({ id: 'l2', height: 30 });
+    const input = {
+      stage: { id: 'st', name: 'Course', createdAt: 1, updatedAt: 2 },
+      scenes: [
+        {
+          ...slideSceneWith([canvasDirty]),
+          whiteboards: [{ id: 'wb-1', type: 'slide', elements: [wbDirty] }],
+        },
+      ],
+    };
+
+    const out = migrate(input) as {
+      [DSL_VERSION_KEY]: string;
+      scenes: {
+        content: { canvas: { elements: Record<string, unknown>[] } };
+        whiteboards?: { elements: Record<string, unknown>[] }[];
+      }[];
+    };
+    expect(out[DSL_VERSION_KEY]).toBe('0.3.0');
+    expect(out.scenes[0].content.canvas.elements[0]).toEqual(lineEl({ id: 'l1' }));
+    expect(out.scenes[0].whiteboards![0].elements[0]).toEqual(lineEl({ id: 'l2' }));
+  });
+
+  it('strips dirty lines on the stage-level explainer boards (stage.whiteboard)', () => {
+    const boardDirty = lineEl({ id: 'l1', rotate: 45 });
+    const boardClean = lineEl({ id: 'l2' });
+    const input = {
+      stage: {
+        id: 'st',
+        name: 'Course',
+        createdAt: 1,
+        updatedAt: 2,
+        whiteboard: [{ id: 'wb-1', elements: [boardDirty, boardClean] }],
+      },
+      scenes: [slideSceneWith([textEl])],
+    };
+
+    const out = migrate(input) as unknown as {
+      [DSL_VERSION_KEY]: string;
+      stage: { whiteboard: { elements: Record<string, unknown>[] }[] };
+      scenes: { content: { canvas: { elements: Record<string, unknown>[] } } }[];
+    };
+    expect(out[DSL_VERSION_KEY]).toBe('0.3.0');
+    const [cleaned, kept] = out.stage.whiteboard[0].elements;
+    expect(cleaned).toEqual(lineEl({ id: 'l1' }));
+    expect(kept).toBe(boardClean);
+    // untouched scene canvas subtree stays shared
+    expect(out.scenes[0].content.canvas.elements[0]).toBe(textEl);
+  });
+
+  it('cleans a single Scene row envelope (no scenes array around it)', () => {
+    const dirty = lineEl({ id: 'l1', rotate: 45 });
+    const sceneRow = {
+      id: 's1',
+      stageId: 'st',
+      type: 'slide',
+      order: 0,
+      content: { type: 'slide', canvas: { id: 'c1', elements: [dirty, textEl] } },
+      [DSL_VERSION_KEY]: '0.2.0',
+    };
+
+    const out = migrate(sceneRow) as unknown as {
+      [DSL_VERSION_KEY]: string;
+      content: { canvas: { elements: Record<string, unknown>[] } };
+    };
+    expect(out[DSL_VERSION_KEY]).toBe('0.3.0');
+    expect(out.content.canvas.elements[0]).toEqual(lineEl({ id: 'l1' }));
+    expect(out.content.canvas.elements[1]).toBe(textEl);
+  });
+
+  it('cleans a single Stage row envelope (whiteboard explainer boards)', () => {
+    const boardDirty = lineEl({ id: 'l1', rotate: 45 });
+    const stageRow = {
+      id: 'st',
+      name: 'Course',
+      whiteboard: [{ id: 'wb-1', elements: [boardDirty] }],
+      [DSL_VERSION_KEY]: '0.2.0',
+    };
+
+    const out = migrate(stageRow) as unknown as {
+      [DSL_VERSION_KEY]: string;
+      whiteboard: { elements: Record<string, unknown>[] }[];
+    };
+    expect(out[DSL_VERSION_KEY]).toBe('0.3.0');
+    expect(out.whiteboard[0].elements[0]).toEqual(lineEl({ id: 'l1' }));
+  });
+
+  it('returns a Stage aggregate by identity when nothing on any surface is dirty', () => {
+    const input = {
+      stage: { id: 'st', name: 'Course', whiteboard: [{ id: 'wb-1', elements: [textEl] }] },
+      scenes: [slideSceneWith([textEl]), quizScene],
+    };
+    expect(stripLegacyLineGeometry(input)).toBe(input);
+    // malformed surfaces pass through instead of throwing
+    expect(
+      stripLegacyLineGeometry({ scenes: [{ whiteboards: 42 }], stage: { whiteboard: 'nope' } }),
+    ).toEqual({ scenes: [{ whiteboards: 42 }], stage: { whiteboard: 'nope' } });
+  });
+
+  it('gates the canvas walk on the slide discriminant (non-slide kinds untouched)', () => {
+    const lineDirty = lineEl({ id: 'l1', rotate: 45 });
+    const quizWithCanvasExtension = {
+      ...quizScene,
+      content: {
+        type: 'quiz',
+        questions: [{ id: 'q1' }],
+        // hypothetical app-domain extension shaped like a slide canvas
+        canvas: { id: 'c-ext', elements: [lineDirty] },
+      },
+    };
+
+    // absent discriminant stays eligible: the dirty-line epoch predates
+    // schema enforcement
+    const untyped = {
+      id: 's3',
+      stageId: 'st',
+      type: 'slide',
+      order: 2,
+      content: { canvas: { id: 'c2', elements: [lineDirty] } },
+    };
+    const out = stripLegacyLineGeometry({
+      scenes: [quizWithCanvasExtension, untyped],
+    }) as unknown as {
+      scenes: [
+        { content: { canvas?: { elements: Record<string, unknown>[] } } },
+        { content: { canvas: { elements: Record<string, unknown>[] } } },
+      ];
+    };
+    // quiz content keeps its extension untouched — including the dirty line
+    expect(out.scenes[0].content.canvas!.elements[0]).toBe(lineDirty);
+    // untyped slide-shaped content is still cleaned
+    expect(out.scenes[1].content.canvas.elements[0]).toEqual(lineEl({ id: 'l1' }));
+  });
+});
+
+describe('migrate', () => {
+  it('stamps a legacy document up to the current version', () => {
+    const out = migrate({ id: 'legacy', name: 'course' }) as Record<string, unknown>;
+    expect(out[DSL_VERSION_KEY]).toBe(DSL_VERSION);
+    // payload is preserved
+    expect(out.id).toBe('legacy');
+    expect(out.name).toBe('course');
+  });
+
+  it('is idempotent (running twice equals running once)', () => {
+    const once = migrate({ id: 'x' });
+    const twice = migrate(once);
+    expect(twice).toEqual(once);
+    // an already-current document is returned by reference (no needless copy)
+    expect(migrate(once)).toBe(once);
+  });
+
+  it('does not mutate its input', () => {
+    const input = { id: 'x' };
+    const frozen = Object.freeze({ ...input });
+    const out = migrate(frozen);
+    expect(out).not.toBe(frozen);
+    expect(frozen).toEqual({ id: 'x' }); // untouched, no dslVersion added
+  });
+
+  it('leaves a forward-versioned document untouched (no silent downgrade)', () => {
+    const future = { id: 'x', [DSL_VERSION_KEY]: '99.0.0', shinyNewField: true };
+    expect(migrate(future)).toBe(future);
+  });
+
+  it('fails loud when the ladder has no path from the document version', () => {
+    // A version older than DSL_VERSION but with no matching `from` entry.
+    expect(() => migrate({ id: 'x', [DSL_VERSION_KEY]: '0.0.5' })).toThrow(/no migration path/);
+  });
+
+  it('fails loud on a malformed version stamp (no silent no-op)', () => {
+    expect(() => migrate({ id: 'x', [DSL_VERSION_KEY]: '0.1' })).toThrow(/invalid dslVersion/);
+    expect(() => migrate({ id: 'x', [DSL_VERSION_KEY]: '0.1.0-beta' })).toThrow(
+      /invalid dslVersion/,
+    );
+  });
+
+  it('returns non-object inputs unchanged', () => {
+    expect(migrate(42)).toBe(42);
+    expect(migrate(null)).toBe(null);
+  });
+});

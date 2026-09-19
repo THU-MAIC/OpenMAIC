@@ -5,6 +5,7 @@ import {
   validateModel,
   resolveSelectedModel,
   hasUsableLLMProvider,
+  isLLMProviderConfigured,
   type ProviderCfgLike,
 } from '@/lib/store/settings-validation';
 
@@ -260,6 +261,30 @@ describe('hasUsableLLMProvider', () => {
           models: [{ id: 'llama3.3' }],
         },
       }),
+    ).toBe(true);
+  });
+});
+
+describe('isLLMProviderConfigured', () => {
+  // Regression: a freshly-applied token-plan provider may have no `models`
+  // field yet (probe populates it later). The validator must not throw.
+  it('returns false (not throw) when models is undefined', () => {
+    expect(() =>
+      isLLMProviderConfigured({ apiKey: 'sk-x', baseUrl: 'https://b/v1' } as never),
+    ).not.toThrow();
+    expect(isLLMProviderConfigured({ apiKey: 'sk-x', baseUrl: 'https://b/v1' } as never)).toBe(
+      false,
+    );
+  });
+
+  it('returns true when key + baseUrl + ≥1 model', () => {
+    expect(
+      isLLMProviderConfigured({
+        apiKey: 'sk-x',
+        baseUrl: 'https://b/v1',
+        requiresApiKey: true,
+        models: [{ id: 'm1' }],
+      } as never),
     ).toBe(true);
   });
 });

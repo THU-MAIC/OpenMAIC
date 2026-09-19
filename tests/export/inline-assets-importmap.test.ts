@@ -1,9 +1,35 @@
 import { describe, it, expect } from 'vitest';
-import { buildInlinedImportmap } from '@/lib/export/inline-assets-importmap';
+import {
+  buildInlinedImportmap,
+  extractSpecifiers,
+  rewriteModuleSpecifiers,
+} from '@/lib/export/inline-assets-importmap';
 
 const enc = (s: string) => ({ bytes: new TextEncoder().encode(s), contentType: 'text/javascript' });
 
 describe('buildInlinedImportmap', () => {
+  it('ignores import-like text in comments and strings', async () => {
+    const code = `
+      const example = "import 'string-only'";
+      // import 'comment-only';
+      /* export { value } from 'block-comment-only'; */
+      import 'real-module';
+    `;
+
+    expect(extractSpecifiers(code)).toEqual(['real-module']);
+    expect(
+      await rewriteModuleSpecifiers(code, (specifier) =>
+        specifier === 'real-module' ? 'packaged-module' : 'unexpected-rewrite',
+      ),
+    ).toContain("import 'packaged-module'");
+    expect(await rewriteModuleSpecifiers(code, () => undefined)).toBe(code);
+    const escaped = String.raw`import './\u0061.js';`;
+    expect(await rewriteModuleSpecifiers(escaped, () => undefined)).toBe(escaped);
+    expect(await rewriteModuleSpecifiers("import('real-module')", () => 'packaged-module')).toBe(
+      "import('packaged-module')",
+    );
+  });
+
   it('inlines a direct module entry to a data: URI', async () => {
     const fetchAsset = async (url: string) =>
       url === 'https://unpkg.com/three@0.160.0/build/three.module.js'
@@ -87,5 +113,22 @@ describe('buildInlinedImportmap', () => {
       fetchAsset,
     );
     expect(imports.three).toMatch(/^data:/);
+  });
+
+  it('rejects cyclic external modules as an explicit unresolved resource', async () => {
+    const modules: Record<string, string> = {
+      'https://cdn.example/a.js': "import './b.js'; export const a = 1;",
+      'https://cdn.example/b.js': "import './a.js'; export const b = 1;",
+    };
+    const { report } = await buildInlinedImportmap(
+      { entry: 'https://cdn.example/a.js' },
+      ["import 'entry';"],
+      async (url) => (modules[url] ? enc(modules[url]) : null),
+    );
+
+    expect(report.failed).toContainEqual({
+      url: 'https://cdn.example/a.js',
+      reason: 'cyclic module dependency',
+    });
   });
 });

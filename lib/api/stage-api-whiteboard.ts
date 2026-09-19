@@ -6,7 +6,7 @@
  */
 
 import type { Whiteboard } from '@/lib/types/stage';
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement } from '@openmaic/dsl';
 import type { StageStore, APIResult } from './stage-api-types';
 import { generateId } from './stage-api-defaults';
 
@@ -29,7 +29,8 @@ export function createWhiteboardAPI(store: StageStore) {
         const whiteboard: Whiteboard = {
           id: generateId('whiteboard'),
           viewportSize: 1000,
-          viewportRatio: 16 / 9,
+          // viewportRatio is height/width, so a 16:9 landscape sheet is 9/16.
+          viewportRatio: 9 / 16,
           elements: [],
           background: {
             type: 'solid',

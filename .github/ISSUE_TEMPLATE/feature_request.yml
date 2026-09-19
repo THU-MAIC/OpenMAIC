@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for suggesting a feature! Please describe your idea below.
+        Thanks for suggesting a feature! Please search existing issues for duplicates, then describe the user problem and a testable outcome below.
 
   - type: textarea
     id: problem
@@ -26,6 +26,18 @@ body:
       required: true
 
   - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: What observable outcomes would make this feature complete?
+      placeholder: |
+        - [ ] A user can ...
+        - [ ] The system shows ...
+        - [ ] Existing ... continues to work
+    validations:
+      required: true
+
+  - type: textarea
     id: alternatives
     attributes:
       label: Alternatives Considered
@@ -39,13 +51,16 @@ body:
       options:
         - Classroom generation
         - Multi-agent interaction
-        - Slides / Whiteboard
+        - Playback / presentation
+        - Editor / canvas
+        - Import / export
+        - Storage / persistence
         - Quiz / Assessment
-        - TTS / Voice
+        - Model / provider integration
         - Interactive simulations
         - OpenClaw integration
         - UI / UX
-        - API / Backend
+        - Deployment / infrastructure
         - Documentation
         - Other
     validations:

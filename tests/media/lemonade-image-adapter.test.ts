@@ -19,7 +19,12 @@ describe('lemonade-image-adapter', () => {
     });
 
     const result = await generateWithLemonadeImage(
-      { providerId: 'lemonade', apiKey: '', baseUrl: 'http://localhost:13305/v1/' },
+      {
+        providerId: 'lemonade',
+        apiKey: '',
+        baseUrl: 'http://localhost:13305/v1/',
+        model: 'Qwen-Image-GGUF',
+      },
       { prompt: 'a fox', width: 768, height: 768 },
     );
 
@@ -52,7 +57,10 @@ describe('lemonade-image-adapter', () => {
       json: async () => ({ data: [{ b64_json: 'eA==' }] }),
     });
 
-    await generateWithLemonadeImage({ providerId: 'lemonade', apiKey: '' }, { prompt: 'tile' });
+    await generateWithLemonadeImage(
+      { providerId: 'lemonade', apiKey: '', model: 'Qwen-Image-GGUF' },
+      { prompt: 'tile' },
+    );
 
     expect(mockFetch.mock.calls[0][0]).toBe('http://localhost:13305/v1/images/generations');
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
@@ -80,7 +88,10 @@ describe('lemonade-image-adapter', () => {
       json: async () => ({ data: [{ b64_json: 'eA==' }] }),
     });
 
-    await generateWithLemonadeImage({ providerId: 'lemonade', apiKey: 'sk-lm' }, { prompt: 'p' });
+    await generateWithLemonadeImage(
+      { providerId: 'lemonade', apiKey: 'sk-lm', model: 'Qwen-Image-GGUF' },
+      { prompt: 'p' },
+    );
 
     expect(mockFetch.mock.calls[0][1].headers).toEqual({
       'Content-Type': 'application/json',
@@ -94,7 +105,10 @@ describe('lemonade-image-adapter', () => {
       json: async () => ({ data: [{ b64_json: 'eA==' }] }),
     });
 
-    await generateWithLemonadeImage({ providerId: 'lemonade', apiKey: '' }, { prompt: 'p' });
+    await generateWithLemonadeImage(
+      { providerId: 'lemonade', apiKey: '', model: 'Qwen-Image-GGUF' },
+      { prompt: 'p' },
+    );
 
     expect(mockFetch.mock.calls[0][1].headers).toEqual({
       'Content-Type': 'application/json',
@@ -110,7 +124,10 @@ describe('lemonade-image-adapter', () => {
     });
 
     await expect(
-      generateWithLemonadeImage({ providerId: 'lemonade', apiKey: '' }, { prompt: 'p' }),
+      generateWithLemonadeImage(
+        { providerId: 'lemonade', apiKey: '', model: 'Qwen-Image-GGUF' },
+        { prompt: 'p' },
+      ),
     ).rejects.toThrow('Lemonade image generation failed (500): model unavailable');
   });
 
@@ -121,7 +138,10 @@ describe('lemonade-image-adapter', () => {
     });
 
     await expect(
-      generateWithLemonadeImage({ providerId: 'lemonade', apiKey: '' }, { prompt: 'p' }),
+      generateWithLemonadeImage(
+        { providerId: 'lemonade', apiKey: '', model: 'Qwen-Image-GGUF' },
+        { prompt: 'p' },
+      ),
     ).rejects.toThrow('Lemonade returned empty image response');
   });
 

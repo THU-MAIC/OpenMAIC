@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { PPTImageElement } from '@/lib/types/slides';
+import type { PPTImageElement } from '@openmaic/dsl';
 import { CLIPPATHS, ClipPathTypes } from '@/configs/image-clip';
 
 /**
@@ -14,7 +14,7 @@ export function useClipImage(element: PPTImageElement) {
       const shape = element.clip.shape || ClipPathTypes.RECT;
       _clipShape = CLIPPATHS[shape];
     }
-    if (_clipShape.radius !== undefined && element.radius) {
+    if (_clipShape.radius !== undefined && element.radius !== undefined) {
       _clipShape = {
         ..._clipShape,
         radius: `${element.radius}px`,

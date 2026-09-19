@@ -1,15 +1,149 @@
 services:
   openmaic:
-    build: .
+    build:
+      context: .
+      args:
+        - ALPINE_MIRROR=${ALPINE_MIRROR:-}
+        - NPM_REGISTRY=${NPM_REGISTRY:-}
+        # NEXT_PUBLIC_* values are compiled into the browser bundle. Leave them
+        # empty unless the corresponding client feature is explicitly enabled;
+        # persistence and other build-time flags can be supplied on the command line.
+        - ALLOWED_FRAME_ANCESTORS=${ALLOWED_FRAME_ANCESTORS:-}
+        - NEXT_PUBLIC_PERSISTENCE=${NEXT_PUBLIC_PERSISTENCE:-}
+        - NEXT_PUBLIC_PERSISTENCE_TOKEN=${NEXT_PUBLIC_PERSISTENCE_TOKEN:-}
+        - NEXT_PUBLIC_MAIC_EDITOR_ENABLED=${NEXT_PUBLIC_MAIC_EDITOR_ENABLED:-}
+        - NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED=${NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED:-}
+        - NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED=${NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED:-}
+        - NEXT_PUBLIC_PI_CHAT_ENABLED=${NEXT_PUBLIC_PI_CHAT_ENABLED:-}
+        - NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED=${NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED:-}
+        - NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=${NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI:-}
+        - NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=${NEXT_PUBLIC_ENABLE_VIDEO_EXPORT:-}
+        - NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION=${NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION:-}
+        - NEXT_PUBLIC_ENABLE_PPTX_IMPORT=${NEXT_PUBLIC_ENABLE_PPTX_IMPORT:-}
+        - NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=${NEXT_PUBLIC_PRO_WORKBENCH_ENABLED:-}
     ports:
-      - "3000:3000"
+      - '3000:3000'
     env_file:
       - .env.local
+    environment:
+      # Point the app at the render service when it's running. This wins over any
+      # RENDER_SERVICE_URL in .env.local; the service only starts under the
+      # "video-export" profile. The app's capability check probes the service's
+      # /health, so if the profile is off (service absent) the app reports the
+      # MP4 export disabled and degrades to the ZIP-download path — this URL
+      # being set does not, by itself, advertise a working render.
+      - RENDER_SERVICE_URL=http://render-service:9000
+    networks:
+      - default # outbound internet (LLM/media provider APIs, etc.)
+      - render # reach the render service over the isolated network
     volumes:
       # Optional: mount server-providers.yml for provider config
       # - ./server-providers.yml:/app/server-providers.yml:ro
       - openmaic-data:/app/data
     restart: unless-stopped
 
+  # Optional PostgreSQL backing for the app-embedded persistence API.
+  # The app reads DATABASE_URL and PERSISTENCE_DEV_TOKEN from .env.local; keeping
+  # those values there avoids changing the default browser-only deployment.
+  postgres:
+    image: postgres:16
+    profiles:
+      - server-persistence
+    environment:
+      - POSTGRES_DB=openmaic
+      - POSTGRES_USER=openmaic
+      # Development default only. Override this and the matching DATABASE_URL
+      # before using the stack outside a local trusted environment.
+      - POSTGRES_PASSWORD=${PERSISTENCE_POSTGRES_PASSWORD:-openmaic-dev}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U openmaic -d openmaic']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - openmaic-postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # Isolated MP4 render service (Node 22 + Chromium + FFmpeg) for classroom video
+  # export (issue #866). Opt-in: only starts with `--profile video-export`, since
+  # the image is heavy (bundles Chromium + FFmpeg) and the capability is optional.
+  #
+  #   docker compose --profile video-export up --build
+  #
+  # Sits on the `render` network (`internal: true`, no host/internet gateway).
+  # It shares that network with `openmaic` only so the app can reach it; to stop
+  # the untrusted Chromium from initiating connections *back* to the app over
+  # that shared network, the container's entrypoint installs an iptables egress
+  # lockdown (needs CAP_NET_ADMIN) that drops all outbound except loopback and
+  # replies on app-initiated connections. The export ZIP is self-contained, so
+  # the render needs no outbound at all.
+  render-service:
+    build: ./render-service
+    profiles:
+      - video-export
+    expose:
+      - '9000'
+    # Required for the entrypoint's iptables egress lockdown. Without it the
+    # service still boots, but logs a warning and does NOT block Chromium egress.
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PORT=9000
+      # The standard CPU profile prefers BeginFrame but permits producer's
+      # compatibility fallback (for example iframe GenUI). It still fixes one
+      # producer worker, one render, and one extraction. Select low-memory to
+      # force screenshot instead of relying on producer auto-selection.
+      - RENDER_RESOURCE_PROFILE=${RENDER_RESOURCE_PROFILE:-standard}
+      - RENDER_CHUNK_EXECUTION=${RENDER_CHUNK_EXECUTION:-false}
+      - RENDER_CHUNK_COUNT=${RENDER_CHUNK_COUNT:-1}
+      - RENDER_CHUNK_WORKERS=${RENDER_CHUNK_WORKERS:-1}
+      - RENDER_MAX_PARALLEL_CHUNKS=${RENDER_MAX_PARALLEL_CHUNKS:-1}
+      - RENDER_CHUNK_SIZE_FRAMES=${RENDER_CHUNK_SIZE_FRAMES:-0}
+      - RENDER_TARGET_CHUNK_FRAMES=${RENDER_TARGET_CHUNK_FRAMES:-0}
+      - PRODUCER_HEADLESS_SHELL_PATH=/usr/bin/chromium-headless-shell
+      - RENDER_MAX_CONCURRENCY=1
+      - RENDER_MAX_CONCURRENT_EXTRACTIONS=1
+      # Long compositions still need CDP headroom even with one explicit worker.
+      - PRODUCER_PUPPETEER_PROTOCOL_TIMEOUT_MS=900000
+      # OpenMAIC's long slide exports currently exhaust producer's 15s static
+      # verification budget and disable dedup anyway. Skip that guaranteed-lost
+      # startup cost until the verifier can share/scale its plan across workers.
+      - HF_STATIC_DEDUP=false
+      # In this default topology the app is exposed directly and does NOT set
+      # TRUST_PROXY_HEADERS, so every caller collapses to one identity. A
+      # per-identity limit would then throttle the whole deployment to a single
+      # render, so disable it here and rely on RENDER_MAX_CONCURRENCY + the global
+      # RENDER_MAX_QUEUE cap. Set this >0 only with a trusted proxy supplying
+      # per-user identity (see render-service/README.md).
+      - RENDER_MAX_JOBS_PER_USER=0
+      - RENDER_PREVIEW_TIMEOUT_MS=${RENDER_PREVIEW_TIMEOUT_MS:-20000}
+      - RENDER_PREVIEW_MAX_IN_FLIGHT=${RENDER_PREVIEW_MAX_IN_FLIGHT:-8}
+      # Preview callers send a durable owner identity in x-openmaic-client, so
+      # keep this per-owner guard enabled. Set it to 0 only in deployments that
+      # call /preview without an owner identity.
+      - RENDER_PREVIEW_MAX_PER_USER=${RENDER_PREVIEW_MAX_PER_USER:-2}
+    # Bound RAM: each render (Chromium + FFmpeg + archive expansion) is memory-heavy.
+    # The standard profile requires 8 GiB. For the explicit low-memory profile,
+    # set RENDER_RESOURCE_PROFILE=low-memory and RENDER_SERVICE_MEMORY_LIMIT=4g.
+    mem_limit: ${RENDER_SERVICE_MEMORY_LIMIT:-8g}
+    # Chromium media/frame work can exceed Docker's 64 MiB default shared-memory
+    # mount. This is a ceiling inside the selected profile cgroup, not eager allocation.
+    shm_size: 2gb
+    networks:
+      - render
+    restart: unless-stopped
+
+networks:
+  default: {}
+  # Isolated network for app <-> render-service traffic. `internal: true` means
+  # no route to the host or internet. Both services share it so the app can
+  # reach the render service; the render container additionally blocks its own
+  # egress (iptables, see the service's entrypoint) so the untrusted Chromium
+  # can't use this shared network to reach the app.
+  render:
+    internal: true
+
 volumes:
   openmaic-data:
+  openmaic-postgres:

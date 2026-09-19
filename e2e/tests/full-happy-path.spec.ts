@@ -10,7 +10,7 @@ test.describe('Full Happy Path', () => {
   test.beforeEach(async ({ page, mockApi }) => {
     // Pre-seed settings in localStorage (all tests do this)
     await page.addInitScript((settings) => {
-      localStorage.setItem('settings-storage', settings);
+      localStorage.setItem('maic:account:settings-storage', settings);
     }, SETTINGS_STORAGE);
 
     // Set up generation API mocks BEFORE any navigation —

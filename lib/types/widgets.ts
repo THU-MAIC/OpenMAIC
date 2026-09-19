@@ -2,24 +2,11 @@
  * Widget Configuration Types for Ultra Interaction Mode
  */
 
+import type { WidgetConfigBase } from '@openmaic/dsl';
+
 // ==================== Base Types ====================
 
-export type WidgetType =
-  | 'simulation'
-  | 'diagram'
-  | 'code'
-  | 'game'
-  | 'visualization3d'
-  | 'procedural-skill';
-
-export interface TeacherAction {
-  id: string;
-  type: 'speech' | 'highlight' | 'annotation' | 'reveal' | 'setState';
-  target?: string; // Element ID or selector to highlight/annotate
-  content?: string; // Speech text or annotation text
-  state?: Record<string, unknown>; // Widget state to set
-  label?: string; // Short label for UI button (e.g., "Next", "Try This")
-}
+export type { WidgetType } from '@openmaic/dsl';
 
 // ==================== Simulation Widget ====================
 
@@ -33,7 +20,7 @@ export interface SimulationVariable {
   step?: number;
 }
 
-export interface SimulationConfig {
+export interface SimulationConfig extends WidgetConfigBase {
   type: 'simulation';
   concept: string;
   description: string;
@@ -42,7 +29,6 @@ export interface SimulationConfig {
     name: string;
     variables: Record<string, number>;
   }>;
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== Diagram Widget ====================
@@ -62,14 +48,13 @@ export interface DiagramEdge {
   label?: string;
 }
 
-export interface DiagramConfig {
+export interface DiagramConfig extends WidgetConfigBase {
   type: 'diagram';
   diagramType: 'flowchart' | 'mindmap' | 'hierarchy' | 'system';
   description: string;
   nodes: DiagramNode[];
   edges: DiagramEdge[];
   revealOrder?: string[]; // Node IDs in reveal sequence
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== Code Widget ====================
@@ -82,7 +67,7 @@ export interface CodeTestCase {
   isHidden?: boolean;
 }
 
-export interface CodeConfig {
+export interface CodeConfig extends WidgetConfigBase {
   type: 'code';
   language: 'python' | 'javascript' | 'typescript' | 'java' | 'cpp';
   description: string;
@@ -90,7 +75,6 @@ export interface CodeConfig {
   testCases: CodeTestCase[];
   hints: string[];
   solution: string;
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== Game Widget ====================
@@ -105,7 +89,7 @@ export interface GameQuestion {
   points?: number;
 }
 
-export interface GameConfig {
+export interface GameConfig extends WidgetConfigBase {
   type: 'game';
   gameType: 'quiz' | 'puzzle' | 'strategy' | 'card';
   description: string;
@@ -123,7 +107,6 @@ export interface GameConfig {
     icon: string;
     condition: string;
   }>;
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== 3D Visualization Widget ====================
@@ -164,7 +147,7 @@ export interface Visualization3DInteraction {
   step?: number;
 }
 
-export interface Visualization3DConfig {
+export interface Visualization3DConfig extends WidgetConfigBase {
   type: 'visualization3d';
   visualizationType: 'molecular' | 'solar' | 'anatomy' | 'geometry' | 'physics' | 'custom';
   description: string;
@@ -193,7 +176,6 @@ export interface Visualization3DConfig {
     description?: string;
     state: Record<string, unknown>;
   }>;
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== Procedural Skill Widget ====================
@@ -206,14 +188,13 @@ export interface ProceduralSkillStep {
   successCriteria?: string[];
 }
 
-export interface ProceduralSkillConfig {
+export interface ProceduralSkillConfig extends WidgetConfigBase {
   type: 'procedural-skill';
   task: string;
   description: string;
   tools?: string[];
   steps: ProceduralSkillStep[];
   successCriteria?: string[];
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== Union Types ====================

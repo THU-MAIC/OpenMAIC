@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { generateSceneContent } from '@/lib/generation/scene-generator';
-import type { AICallFn } from '@/lib/generation/pipeline-types';
+import { generateSceneContent, type AICallFn } from '@openmaic/generation';
 import type { GeneratedSlideContent, SceneOutline } from '@/lib/types/generation';
 
 describe('video manifest wiring', () => {

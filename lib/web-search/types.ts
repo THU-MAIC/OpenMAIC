@@ -5,7 +5,16 @@
 /**
  * Web Search Provider IDs
  */
-export type WebSearchProviderId = 'tavily' | 'bocha' | 'brave' | 'baidu' | 'minimax';
+export type WebSearchProviderId =
+  | 'tavily'
+  | 'exa'
+  | 'bocha'
+  | 'brave'
+  | 'baidu'
+  | 'claude'
+  | 'minimax'
+  | 'doubao'
+  | 'searxng';
 
 /**
  * Baidu sub-source toggles
@@ -23,6 +32,8 @@ export interface WebSearchProviderConfig {
   id: WebSearchProviderId;
   name: string;
   requiresApiKey: boolean;
+  /** Self-hosted instances need an explicit base URL (no public default). */
+  requiresBaseUrl?: boolean;
   defaultBaseUrl?: string;
   endpointPath: string;
   icon?: string;

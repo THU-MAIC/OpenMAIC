@@ -1,0 +1,221 @@
+{
+  "73": {
+    "inputs": {
+      "filename_prefix": "Ernie-Image-Turbo",
+      "images": ["88:65", 0]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "88:71": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  },
+  "88:66": {
+    "inputs": {
+      "unet_name": "ernie-image-turbo.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "88:65": {
+    "inputs": {
+      "samples": ["88:70", 0],
+      "vae": ["88:63", 0]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "88:70": {
+    "inputs": {
+      "seed": 239071813140207,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["88:66", 0],
+      "positive": ["88:67", 0],
+      "negative": ["88:91", 0],
+      "latent_image": ["88:71", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "88:67": {
+    "inputs": {
+      "text": ["88:97", 0],
+      "clip": ["88:62", 0]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "88:62": {
+    "inputs": {
+      "clip_name": "ministral-3-3b.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "88:63": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "88:91": {
+    "inputs": {
+      "conditioning": ["88:67", 0]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    }
+  },
+  "88:93": {
+    "inputs": {
+      "string": "<s>[SYSTEM_PROMPT]你是一个专业的文生图 Prompt 增强助手。你将收到用户的简短图片描述及目标生成分辨率，请据此扩写为一段内容丰富、细节充分的视觉描述，以帮助文生图模型生成高质量的图片。仅输出增强后的描述，不要包含任何解释或前缀。[/SYSTEM_PROMPT][INST]{\"prompt\": \"{prompt}\", \"width\": {width}, \"height\": {height}}[/INST]",
+      "find": "{prompt}",
+      "replace": ["88:94", 0]
+    },
+    "class_type": "StringReplace",
+    "_meta": {
+      "title": "Text Replace"
+    }
+  },
+  "88:94": {
+    "inputs": {
+      "value": ""
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "String (Multiline - Prompt)"
+    }
+  },
+  "88:95": {
+    "inputs": {
+      "prompt": ["88:102", 0],
+      "max_length": 2048,
+      "sampling_mode": "on",
+      "sampling_mode.temperature": 0.6,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.8,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 0,
+      "sampling_mode.presence_penalty": 0,
+      "thinking": false,
+      "use_default_template": true,
+      "clip": ["88:98", 0]
+    },
+    "class_type": "TextGenerate",
+    "_meta": {
+      "title": "TextGenerate"
+    }
+  },
+  "88:96": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "Enable prompt enhancement?"
+    }
+  },
+  "88:97": {
+    "inputs": {
+      "switch": ["88:96", 0],
+      "on_false": ["88:94", 0],
+      "on_true": ["88:95", 0]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch"
+    }
+  },
+  "88:98": {
+    "inputs": {
+      "clip_name": "ernie-image-prompt-enhancer.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP (PE)"
+    }
+  },
+  "88:99": {
+    "inputs": {
+      "source": 1024
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Preview as Text (Int to String)"
+    }
+  },
+  "88:100": {
+    "inputs": {
+      "source": 1024
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Preview as Text (Int to String)"
+    }
+  },
+  "88:101": {
+    "inputs": {
+      "string": ["88:93", 0],
+      "find": "{width}",
+      "replace": ["88:99", 0]
+    },
+    "class_type": "StringReplace",
+    "_meta": {
+      "title": "Text Replace"
+    }
+  },
+  "88:102": {
+    "inputs": {
+      "string": ["88:101", 0],
+      "find": "{height}",
+      "replace": ["88:100", 0]
+    },
+    "class_type": "StringReplace",
+    "_meta": {
+      "title": "Text Replace"
+    }
+  },
+  "88:103": {
+    "inputs": {
+      "source": ["88:97", 0]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Preview as Text (Int to String)"
+    }
+  }
+}

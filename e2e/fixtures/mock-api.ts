@@ -19,7 +19,7 @@ export class MockApi {
             `data: ${JSON.stringify({ type: 'outline', data: outline, index: i })}\n\n`,
         )
         .join('');
-      const done = `data: ${JSON.stringify({ type: 'done', outlines })}\n\n`;
+      const done = `data: ${JSON.stringify({ type: 'done', outlines, courseTitle: 'Mock Course' })}\n\n`;
 
       route.fulfill({
         status: 200,

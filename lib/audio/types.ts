@@ -116,6 +116,22 @@ export interface TTSProviderConfig {
   requiresApiKey: boolean;
   defaultBaseUrl?: string;
   icon?: string;
+  /**
+   * Declared exclusion from the agent-facing voice catalog. A provider flagged
+   * here (e.g. a paid showcase whose presets must never be offered to the
+   * agent) is dropped from `list_voices` / `set_roster` binding validation
+   * even when it is served and keyed — an explicit mechanism, not "no env so
+   * absent". Session-registered clones of the provider remain bindable when a
+   * registration adapter is configured (see the agent catalog assembly).
+   */
+  excludeFromAgentVoiceCatalog?: boolean;
+  /**
+   * True when the provider has NO deployment default voice: its only
+   * synthesizable voices are the ones registered at runtime. Such a provider's
+   * registered voices stay in the catalog regardless of clone-synthesis
+   * capability, because they are the only voices that provider can produce.
+   */
+  requiresRegisteredVoice?: boolean;
   /** Available models. Empty array means provider has no model concept (e.g. Azure, Browser Native). */
   models: Array<{ id: string; name: string }>;
   /** Default model ID used when user hasn't selected one. Empty string if no models. */
@@ -141,6 +157,22 @@ export interface TTSModelConfig {
   speed?: number;
   format?: string;
   providerOptions?: Record<string, unknown>;
+  /**
+   * Cancel the provider request(s) when this signal aborts. The agent runtime
+   * threads the session cancel signal here so an in-flight synthesis fetch is
+   * aborted within seconds of a cancel, instead of wedging the session until a
+   * restart repairs it.
+   */
+  signal?: AbortSignal;
+  /**
+   * Server-side outbound address policy for this provider call. `true` marks a
+   * client-supplied BYOK `baseUrl`: the request is pinned to the strict public
+   * policy, so metadata, private, loopback and CGNAT targets are refused even
+   * when the operator enabled local networks. When unset (a server-managed or
+   * built-in default target) the adapter falls back to the process-wide
+   * `ALLOW_LOCAL_NETWORKS` behavior.
+   */
+  publicOnly?: boolean;
 }
 
 // ============================================================================
@@ -157,6 +189,7 @@ export type BuiltInASRProviderId =
   | 'openai-whisper'
   | 'browser-native'
   | 'qwen-asr'
+  | 'funasr-asr'
   | 'lemonade-asr'
   | 'azure-asr';
 
@@ -186,14 +219,19 @@ export interface ASRModelConfig {
   apiKey?: string;
   baseUrl?: string;
   language?: string;
+  /**
+   * Server-side outbound address policy (see {@link TTSModelConfig.publicOnly}).
+   * A client-supplied BYOK `baseUrl` sets this so the strict public policy wins.
+   */
+  publicOnly?: boolean;
 }
 
 /** Returns true if the provider ID is a user-defined custom TTS provider. */
 export function isCustomTTSProvider(id: string): boolean {
-  return id.startsWith('custom-tts-');
+  return typeof id === 'string' && id.startsWith('custom-tts-');
 }
 
 /** Returns true if the provider ID is a user-defined custom ASR provider. */
 export function isCustomASRProvider(id: string): boolean {
-  return id.startsWith('custom-asr-');
+  return typeof id === 'string' && id.startsWith('custom-asr-');
 }

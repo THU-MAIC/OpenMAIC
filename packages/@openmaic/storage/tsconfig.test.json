@@ -1,0 +1,15 @@
+{
+  // The package build compiles `src` only, so the test tree was never
+  // type-checked from inside the package — and the device-scope guard is
+  // *written* as `@ts-expect-error` probes in the tests, which are inert unless
+  // something type-checks them. Run this alongside the build typecheck so the
+  // guard holds in the package itself rather than depending on a root-level
+  // glob happening to reach it.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src", "test"],
+  "exclude": ["node_modules", "dist"]
+}

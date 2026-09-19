@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest';
-import { loadPrompt, loadSnippet, buildPrompt } from '@/lib/prompts';
+import { loadPrompt, loadSnippet, buildPrompt } from '@openmaic/generation';
 
-describe('lib/prompts loader', () => {
+describe('@openmaic/generation prompt loader', () => {
   test('loads a known template + interpolates variables', () => {
     const result = buildPrompt('slide-actions', {
       title: 'Test Slide',

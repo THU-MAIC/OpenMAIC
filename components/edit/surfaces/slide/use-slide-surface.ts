@@ -1,38 +1,45 @@
 'use client';
 
 import { produce } from 'immer';
-import { Image as ImageIcon, Type } from 'lucide-react';
+import { Image as ImageIcon, PaintBucket, Type } from 'lucide-react';
 import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
 import type { InsertPaletteItem, SurfaceState } from '@/lib/edit/scene-editor-surface';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createElementId } from '@/lib/edit/element-id';
-import { createDefaultImageElement, createDefaultSlide } from '@/lib/edit/slide-edit-elements';
+import {
+  createDefaultChartElement,
+  createDefaultImageElement,
+  createDefaultSlide,
+  createDefaultTableElement,
+} from '@/lib/edit/slide-edit-elements';
 import { defaultRichTextAttrs } from '@/lib/prosemirror/utils';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
 import type { SlideContent } from '@/lib/types/stage';
+import type { ChartType, PPTElement, PPTImageElement, SlideBackground } from '@openmaic/dsl';
 import { ImagePicker } from './ImagePicker';
+import { BackgroundControl } from './BackgroundControl';
 import { useSlideEditSession } from './slide-edit-session';
 import { resolveEditingElementId, resolveSelectedElement } from './editing-state';
+import { isEditorRendererEnabled } from '@/lib/config/feature-flags';
 
 export interface SlideSelection {
   readonly activeElementIds: readonly string[];
 }
 
 export function buildInsertItems(
-  t: (k: string) => string,
+  t: (k: string, options?: Record<string, unknown>) => string,
   // The currently-armed creating type, or undefined when nothing is armed. The
-  // text item toggles `creatingElement` (no auto-insert): the renderer's
-  // ElementCreateSelection then captures the canvas click/drag and the text
-  // branch in useInsertFromCreateSelection adds the element at that rect.
+  // text item toggles `creatingElement` (no auto-insert): the active canvas
+  // then captures the next click/drag and creates a text box at that rect.
   creatingType?: string,
 ): InsertPaletteItem[] {
   const armText = () => {
     const cs = useCanvasStore.getState();
     cs.setCreatingElement(creatingType === 'text' ? null : { type: 'text' });
   };
-  return [
+  const items: InsertPaletteItem[] = [
     {
       id: 'insert-text',
       label: t('edit.insert.textBox'),
@@ -53,6 +60,17 @@ export function buildInsertItems(
         }),
     },
   ];
+  items.push({
+    // Slide-level (not element-anchored): set the slide background. Rides the
+    // always-visible insert strip so it stays reachable with nothing selected.
+    id: 'slide-background',
+    label: t('edit.background.label'),
+    tooltip: t('edit.background.label'),
+    icon: React.createElement(PaintBucket, { className: 'h-4 w-4' }),
+    onInvoke: () => {}, // popover-only: see insert-image above
+    popoverContent: () => React.createElement(BackgroundControl),
+  });
+  return items;
 }
 
 // Default insertion size for an image whose natural dimensions are unknown
@@ -104,10 +122,64 @@ export function insertImageElement(src: string): void {
   img.src = src;
 }
 
+/** Insert an empty table and select it through the normal slide edit session. */
+export function insertTableElement(rows: number, columns: number): void {
+  const id = createElementId('table');
+  const element = createDefaultTableElement(id, rows, columns);
+  useSlideEditSession.getState().applyOp({ type: 'element.add', element });
+  useCanvasStore.getState().setActiveElementIdList([id]);
+}
+
+/** Insert a chart and select it through the normal slide edit session. */
+export function insertChartElement(chartType: ChartType): void {
+  const id = createElementId('chart');
+  const element = createDefaultChartElement(id, chartType);
+  useSlideEditSession.getState().applyOp({ type: 'element.add', element });
+  useCanvasStore.getState().setActiveElementIdList([id]);
+}
+
 /** Delete a slide element and clear the canvas selection. */
 export function deleteSlideElement(elementId: string): void {
-  useSlideEditSession.getState().applyOp({ type: 'element.delete', elementId });
+  const session = useSlideEditSession.getState();
+  session.applyOp({ type: 'element.delete', elementId });
   useCanvasStore.getState().setActiveElementIdList([]);
+}
+
+/**
+ * Move an element to the front (top) or back (bottom) of the z-order.
+ * Two-way only — intermediate forward/backward steps stay AI's domain.
+ */
+export function reorderSlideElement(elementId: string, edge: 'front' | 'back'): void {
+  const present = useSlideEditSession.getState().history?.present ?? null;
+  if (!present) return;
+  const elements = present.canvas.elements;
+  const currentIndex = elements.findIndex((el) => el.id === elementId);
+  if (currentIndex === -1) return;
+  const index = edge === 'front' ? elements.length - 1 : 0;
+  // Already at the target edge — skip so we don't push an empty undo step.
+  if (currentIndex === index) return;
+  useSlideEditSession.getState().applyOp({ type: 'element.reorder', elementId, index });
+}
+
+/**
+ * Replace an image element's source. Clears any stale `clip`: the new source's
+ * aspect ratio may differ, so the old crop rect would no longer be meaningful.
+ */
+export function replaceImageSrc(elementId: string, src: string): void {
+  useSlideEditSession
+    .getState()
+    .applyOp({ type: 'element.update', elementId, patch: { src, clip: undefined } });
+}
+
+/** Toggle horizontal/vertical flip on an image element. */
+export function toggleImageFlip(el: PPTImageElement, axis: 'H' | 'V'): void {
+  const patch = axis === 'H' ? { flipH: !el.flipH } : { flipV: !el.flipV };
+  useSlideEditSession.getState().applyOp({ type: 'element.update', elementId: el.id, patch });
+}
+
+/** Set the slide-level background (solid color or image). */
+export function updateSlideBackground(background: SlideBackground): void {
+  useSlideEditSession.getState().applyOp({ type: 'slide.update', patch: { background } });
 }
 
 const EMPTY_SLIDE: SlideContent = { type: 'slide', canvas: createDefaultSlide('') };
@@ -138,6 +210,7 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
   const history = useSlideEditSession((s) => s.history);
   const activeElementIds = useCanvasStore.use.activeElementIdList();
   const creatingElement = useCanvasStore.use.creatingElement();
+  const rendererEditorEnabled = isEditorRendererEnabled();
   const content = useResolvedSlideContent();
 
   return {
@@ -150,9 +223,9 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
       undo: () => useSlideEditSession.getState().undo(),
       redo: () => useSlideEditSession.getState().redo(),
     },
-    insertItems: buildInsertItems(t, creatingElement?.type),
+    insertItems: rendererEditorEnabled ? [] : buildInsertItems(t, creatingElement?.type),
     // Every element type carries its own actions on a selection-anchored bar
-    // (AnchoredTextBar / AnchoredDeleteBar) — the surface contributes no
+    // (AnchoredTextBar / AnchoredElementBar) — the surface contributes no
     // top-center FloatingToolbar actions.
     floatingActions: [],
     commands: [],
@@ -196,19 +269,36 @@ export function useSlideCanvasController(): SlideCanvasController {
   // no gesture. Cleared on a macrotask after pointerup so the synchronous
   // commit still observes `true`.
   const gestureRef = useRef(false);
+  useEffect(() => {
+    const finishGesture = () => {
+      setTimeout(() => {
+        gestureRef.current = false;
+        useSlideEditSession.getState().setGestureActive(false);
+      }, 0);
+    };
+    window.addEventListener('pointerup', finishGesture);
+    window.addEventListener('pointercancel', finishGesture);
+    return () => {
+      window.removeEventListener('pointerup', finishGesture);
+      window.removeEventListener('pointercancel', finishGesture);
+    };
+  }, []);
   const gestureProps = useMemo(
     () => ({
       onPointerDownCapture: () => {
         gestureRef.current = true;
+        useSlideEditSession.getState().setGestureActive(true);
       },
       onPointerUpCapture: () => {
         setTimeout(() => {
           gestureRef.current = false;
+          useSlideEditSession.getState().setGestureActive(false);
         }, 0);
       },
       onPointerCancelCapture: () => {
         setTimeout(() => {
           gestureRef.current = false;
+          useSlideEditSession.getState().setGestureActive(false);
         }, 0);
       },
     }),
@@ -254,22 +344,23 @@ export function useSlideCanvasController(): SlideCanvasController {
  * element, when it is a text element. "" means "not editing text". Drives both
  * the AnchoredTextBar and the canvas store's `editingElementId`.
  */
-export function useEditingTextElementId(): string {
+export function useEditingTextElementId(requestedId?: string): string {
   const activeElementIds = useCanvasStore.use.activeElementIdList();
   const content = useResolvedSlideContent();
-  return resolveEditingElementId(activeElementIds, content.canvas.elements);
+  return resolveEditingElementId(activeElementIds, content.canvas.elements, requestedId);
 }
 
 /**
- * The id of the single selected non-text element (image, shape, line, …), or
- * "" — drives the selection-anchored delete bar. Text elements get their own
- * AnchoredTextBar; every other element type shares the delete-only bar.
+ * The single selected non-text element (image / shape / line / …), or null —
+ * drives the type-aware AnchoredElementBar. Text elements get their own
+ * AnchoredTextBar. Returns the element (not just its id) so the bar can branch
+ * on element type for image-specific controls.
  */
-export function useSelectedNonTextElementId(): string {
+export function useSelectedNonTextElement(): PPTElement | null {
   const activeElementIds = useCanvasStore.use.activeElementIdList();
   const content = useResolvedSlideContent();
   const el = resolveSelectedElement(activeElementIds, content.canvas.elements);
-  return el && el.type !== 'text' ? el.id : '';
+  return el && el.type !== 'text' ? el : null;
 }
 
 /**
@@ -278,7 +369,7 @@ export function useSelectedNonTextElementId(): string {
  * useLayoutEffect so the renderer suppresses the dashed frame in the same
  * commit the selection changes — no one-frame flicker. Cleared on unmount.
  */
-export function useSyncEditingElementId(editingElementId: string): void {
+export function useSyncEditingElementId(editingElementId: string, enabled = true): void {
   const setEditingElementId = useCanvasStore.use.setEditingElementId();
   const setRichTextAttrs = useCanvasStore.use.setRichtextAttrs();
   // Track the previous editing id so we only reset attrs on element-to-element
@@ -288,6 +379,7 @@ export function useSyncEditingElementId(editingElementId: string): void {
   // values, which is more jarring than skipping the reset there.
   const prevEditingElementId = useRef('');
   useLayoutEffect(() => {
+    if (!enabled) return;
     setEditingElementId(editingElementId);
     if (prevEditingElementId.current && prevEditingElementId.current !== editingElementId) {
       // `richTextAttrs` is a single shared store updated by whichever
@@ -299,5 +391,5 @@ export function useSyncEditingElementId(editingElementId: string): void {
     }
     prevEditingElementId.current = editingElementId;
     return () => setEditingElementId('');
-  }, [editingElementId, setEditingElementId, setRichTextAttrs]);
+  }, [editingElementId, enabled, setEditingElementId, setRichTextAttrs]);
 }

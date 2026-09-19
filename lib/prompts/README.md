@@ -1,7 +1,7 @@
 # `lib/prompts`
 
-File-based prompt loader + templates shared by both the generation pipeline and
-the runtime orchestration layer.
+File-based prompt loader + templates for the runtime orchestration layer and
+app-only outline modes. Generation templates live in `@openmaic/generation`.
 
 ## Directory layout
 
@@ -38,10 +38,9 @@ Conditional blocks read from the same `variables` record passed to
 ## Naming conventions
 
 - **Placeholder names use `camelCase`.** Example: `{{agentName}}`, `{{stateContext}}`.
-- **Template IDs use `kebab-case`.** Example: `agent-system`, `pbl-design`.
-- `lib/prompts/templates/slide-content/{system,user}.md` still uses legacy
-  `snake_case` placeholders (`{{canvas_width}}`, `{{canvas_height}}`). This
-  predates the camelCase convention; don't imitate it when writing new templates.
+- **Template IDs use `kebab-case`.** Example: `agent-system`, `interactive-outlines`.
+- Package-owned generation templates follow the same placeholder conventions;
+  edit them under `packages/@openmaic/generation/templates/`.
 
 ## Adding a new prompt
 
@@ -77,9 +76,10 @@ interpolate('hello {{missing}}', {}) === 'hello {{missing}}'
 This is intentional for partial-render scenarios but means a typo in a
 placeholder name ships literal `{{…}}` text to the LLM. Defence:
 
-- Tests in `tests/prompts/templates.test.ts` assert that the fully-rendered
-  agent-system / director / pbl-design prompts contain no surviving
-  `{{…}}` tokens. Keep that check passing when adding variables.
+- Tests in `tests/prompts/templates.test.ts` and
+  `packages/@openmaic/generation/test/` assert that fully rendered app and
+  generation prompts contain no surviving `{{…}}` tokens. Keep those checks
+  passing when adding variables.
 - `{{snippet:name}}` lookups **throw** on a missing snippet file rather than
   passing through silently, so a typo like `{{snippet:speach-guidelines}}`
   fails at load time instead of reaching the LLM.

@@ -8,14 +8,16 @@ import { toast } from 'sonner';
 
 import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
-import { useMediaGenerationStore, isMediaPlaceholder } from '@/lib/store/media-generation';
+import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import type {
-  Slide,
-  PPTElementOutline,
-  PPTElementShadow,
-  PPTElementLink,
-} from '@/lib/types/slides';
+import {
+  enumerateAssetManifest,
+  slideMediaSlotDescriptors,
+  type Slide,
+  type PPTElementOutline,
+  type PPTElementShadow,
+  type PPTElementLink,
+} from '@openmaic/dsl';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
 import { getElementRange, getLineElementPath, getTableSubThemeColor } from '@/lib/utils/element';
@@ -25,7 +27,18 @@ import { svg2Base64 } from '@/lib/export/svg2base64';
 import { latexToOmml } from '@/lib/export/latex-to-omml';
 import { createLogger } from '@/lib/logger';
 import { inlineHtmlAssets, createAssetFetcher } from './inline-assets';
+import type { FetchAsset } from './inline-assets';
 import { createProxiedFetch } from './proxied-fetch';
+import type { AssetUrlLeaseState } from '@/lib/media/use-asset-url';
+import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
+import {
+  MISSING_ASSET_LEASE,
+  isConcreteMediaAddress,
+  renderableMediaUrl,
+  resolveMediaRef,
+  type MediaTaskState,
+} from '@/lib/media/resolve-media-ref';
+import { lookupMediaTask, resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
 
 const log = createLogger('ExportPPTX');
 
@@ -295,8 +308,11 @@ function getShadowOption(shadow: PPTElementShadow, ratioPx2Pt: number): pptxgen.
     type: 'outer',
     color: c.color.replace('#', ''),
     opacity: c.alpha,
+    // pptxgenjs shadow blur AND offset are in points; the source model is in
+    // pixels. blur was converted but offset was not, so shadows exported ~33%
+    // too far at the default viewport (ratioPx2Pt = 96/72 × viewportSize/960).
     blur: shadow.blur / ratioPx2Pt,
-    offset,
+    offset: offset / ratioPx2Pt,
     angle,
   };
 }
@@ -361,6 +377,120 @@ function buildSpeakerNotes(scene: Scene): string {
   return parts.join('\n');
 }
 
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+export function resolvePptxMediaBinding(
+  ref: string | undefined,
+  task: MediaTaskState | undefined,
+  lease: AssetUrlLeaseState = MISSING_ASSET_LEASE,
+  mediaGenerationDisabled = false,
+) {
+  const resolution = resolveMediaRef(ref, task, lease, mediaGenerationDisabled);
+  return { resolution, src: renderableMediaUrl(resolution) ?? '' };
+}
+
+/**
+ * Resolve one media ref to an embeddable PPTX source through the shared
+ * resolver, so no export-element branch carries its own fallback chain.
+ *
+ * An opaque ref (allocated id or legacy placeholder) resolves pool-first via
+ * {@link resolveStoredBytes} -- then the compatibility row, then the task's
+ * resolved URL, every level gated on the media-resolution state machine -- and
+ * embeds as a data URL. A concrete address resolves to itself through the
+ * state machine and keeps the caller's legacy fetch path. Returns '' when no
+ * level yields a renderable source; the caller skips the element.
+ */
+async function resolvePptxEmbeddableSrc(
+  ref: string | undefined,
+  task: MediaTaskState | undefined,
+  stageId?: string,
+): Promise<string> {
+  if (!ref) return '';
+  if (!isConcreteMediaAddress(ref)) {
+    const stored = await resolveStoredBytes(ref, {
+      stageId,
+      resolutionGating: true,
+      loadCompatRow: true,
+      taskUrlFallback: true,
+      fetchPolicy: { requireOk: true, requireNonEmpty: false },
+    });
+    if (stored) return blobToDataUrl(stored);
+  }
+  const tasks = useMediaGenerationStore.getState().tasks;
+  const effectiveTask = task ?? lookupMediaTask(tasks, ref, stageId);
+  return renderableMediaUrl(resolvePptxMediaBinding(ref, effectiveTask).resolution) ?? '';
+}
+
+/**
+ * Derive the document-wide candidate set for PPTX media resolution through the
+ * standard manifest. The PPTX document is the ordered slide list it renders;
+ * speaker-note actions and non-rendered whiteboards are intentionally outside
+ * this media scope.
+ */
+export function derivePptxMediaReferenceSet(slides: readonly Slide[]): ReadonlySet<string> {
+  const scenes = slides.map(
+    (slide, index) =>
+      ({
+        id: `pptx-slide-${index}`,
+        stageId: 'pptx-export',
+        type: 'slide',
+        title: '',
+        order: index,
+        content: { type: 'slide', canvas: slide },
+      }) as Scene,
+  );
+  return new Set(enumerateAssetManifest({ stage: {}, scenes }).entries.map(({ ref }) => ref));
+}
+
+/**
+ * The manifest-guard predicate: is this ref foreign to the PPTX document's
+ * asset manifest, with no task ownership that would legitimate it? A generated
+ * task may supply concrete runtime URLs (its objectUrl, or the poster of an
+ * element without one) that are runtime metadata rather than document refs;
+ * every other ref the layout resolves must come from the manifest. Exported so
+ * the guard's foreign-ref rejection stays directly testable.
+ */
+export function isPptxManifestForeignRef(
+  ref: string | undefined,
+  manifestRefs: ReadonlySet<string>,
+  task: MediaTaskState | undefined,
+): boolean {
+  return !!ref && !manifestRefs.has(ref) && task?.objectUrl !== ref;
+}
+
+/**
+ * Pin the manifest and layout walks together. Element iteration remains
+ * necessary for coordinates, z-order and video binding selection; it may not
+ * introduce or omit a media role relative to the manifest.
+ */
+export function assertPptxMediaReferenceParity(
+  slides: readonly Slide[],
+  manifestRefs: ReadonlySet<string>,
+): void {
+  const layoutRefs = new Set<string>();
+  for (const slide of slides) {
+    for (const slot of slideMediaSlotDescriptors(slide)) {
+      if (slot.ref) layoutRefs.add(slot.ref);
+    }
+  }
+  const missingFromLayout = [...manifestRefs].filter((ref) => !layoutRefs.has(ref));
+  const missingFromManifest = [...layoutRefs].filter((ref) => !manifestRefs.has(ref));
+  if (missingFromLayout.length > 0 || missingFromManifest.length > 0) {
+    throw new Error(
+      `PPTX media manifest/layout mismatch: ` +
+        `manifest-only=${JSON.stringify(missingFromLayout)}, ` +
+        `layout-only=${JSON.stringify(missingFromManifest)}`,
+    );
+  }
+}
+
 // Exported for the round-trip integration test harness — the test wires its
 // own slides + ratios in and inspects the resulting PPTX bytes via JSZip.
 // The hook below is still the only intended runtime caller.
@@ -371,8 +501,24 @@ export async function buildPptxBlob(
   viewportSize: number,
   ratioPx2Inch: number,
   ratioPx2Pt: number,
+  stageId?: string,
 ): Promise<Blob> {
   const pptx = new pptxgen();
+  const documentElements = slides.flatMap((slide) => slide.elements);
+  const manifestRefs = derivePptxMediaReferenceSet(slides);
+  assertPptxMediaReferenceParity(slides, manifestRefs);
+  const resolveManifestMedia = (
+    ref: string | undefined,
+    task: MediaTaskState | undefined,
+  ): Promise<string> => {
+    // A generated task may supply a concrete poster URL that is runtime
+    // metadata rather than a document ref. Preserve that established fallback;
+    // every document-owned ref must still come from the manifest.
+    if (isPptxManifestForeignRef(ref, manifestRefs, task)) {
+      throw new Error(`PPTX layout attempted to resolve a ref outside the asset manifest: ${ref}`);
+    }
+    return resolvePptxEmbeddableSrc(ref, task, stageId);
+  };
 
   // Set layout based on aspect ratio
   if (viewportRatio === 0.625) pptx.layout = 'LAYOUT_16x10';
@@ -394,18 +540,21 @@ export async function buildPptxBlob(
     if (slide.background) {
       const bg = slide.background;
       if (bg.type === 'image' && bg.image) {
-        if (isSVGImage(bg.image.src)) {
+        const resolvedSrc = await resolveManifestMedia(bg.image.src, undefined);
+        if (!resolvedSrc) {
+          // Missing generated backgrounds stay empty instead of leaking an opaque ref to pptxgen.
+        } else if (isSVGImage(resolvedSrc)) {
           pptxSlide.addImage({
-            data: bg.image.src,
+            data: resolvedSrc,
             x: 0,
             y: 0,
             w: viewportSize / ratioPx2Inch,
             h: (viewportSize * viewportRatio) / ratioPx2Inch,
           });
-        } else if (isBase64Image(bg.image.src)) {
-          pptxSlide.background = { data: bg.image.src };
+        } else if (isBase64Image(resolvedSrc)) {
+          pptxSlide.background = { data: resolvedSrc };
         } else {
-          pptxSlide.background = { path: bg.image.src };
+          pptxSlide.background = { path: resolvedSrc };
         }
       } else if (bg.type === 'solid' && bg.color) {
         const c = formatColor(bg.color);
@@ -472,16 +621,10 @@ export async function buildPptxBlob(
 
       // ── IMAGE ──
       else if (el.type === 'image') {
-        // Resolve placeholder src → actual image data
-        let resolvedSrc = el.src;
-        if (isMediaPlaceholder(el.src)) {
-          const task = useMediaGenerationStore.getState().tasks[el.src];
-          if (task?.status === 'done' && task.objectUrl) {
-            resolvedSrc = task.objectUrl;
-          } else {
-            continue; // Media not ready, skip
-          }
-        }
+        // Resolve the src through the shared stored-bytes resolver (opaque
+        // refs embed as data URLs; concrete addresses keep the fetch below).
+        let resolvedSrc = await resolveManifestMedia(el.src, undefined);
+        if (!resolvedSrc) continue;
 
         // Fetch and convert to base64 for embedding in PPTX
         // (blob: URLs and remote URLs won't work in offline PPTX)
@@ -494,13 +637,7 @@ export async function buildPptxBlob(
               );
               continue;
             }
-            const blob = await resp.blob();
-            resolvedSrc = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result as string);
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
-            });
+            resolvedSrc = await blobToDataUrl(await resp.blob());
           } catch {
             log.warn('Failed to convert image to base64, skipping element');
             continue;
@@ -962,40 +1099,32 @@ export async function buildPptxBlob(
 
       // ── VIDEO / AUDIO ──
       else if (el.type === 'video' || el.type === 'audio') {
-        // Resolve generated video mediaRef or legacy placeholder src → blob URL.
-        let resolvedSrc = el.src;
-        const mediaRef = el.type === 'video' ? el.mediaRef : undefined;
-        const mediaLookupKey =
-          mediaRef ||
-          (typeof el.src === 'string' && isMediaPlaceholder(el.src) ? el.src : undefined);
-        if (mediaLookupKey) {
-          const task = useMediaGenerationStore.getState().tasks[mediaLookupKey];
-          if (task?.status === 'done' && task.objectUrl) {
-            resolvedSrc = task.objectUrl;
-          } else if (!resolvedSrc || isMediaPlaceholder(resolvedSrc)) {
-            continue; // Media not ready, skip
-          }
-        }
+        const videoBinding =
+          el.type === 'video'
+            ? resolveVideoMediaForElement(
+                useMediaGenerationStore.getState().tasks,
+                el,
+                stageId,
+                documentElements,
+              )
+            : undefined;
+        const sourceRef = videoBinding?.sourceRef ?? el.src;
+        const resolvedSrc = await resolveManifestMedia(sourceRef, videoBinding?.task);
 
         if (!resolvedSrc) continue;
 
         // Fetch blob and convert to base64 for embedding in PPTX
         // (blob: URLs and remote URLs won't work in offline PPTX)
         try {
-          const resp = await fetch(resolvedSrc);
-          if (!resp.ok) {
-            log.warn(
-              `Failed to fetch media (HTTP ${resp.status}), skipping element: ${resolvedSrc}`,
-            );
-            continue;
-          }
-          const blob = await resp.blob();
-          const base64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
+          const base64 = isBase64Image(resolvedSrc)
+            ? resolvedSrc
+            : await (async () => {
+                const resp = await fetch(resolvedSrc);
+                if (!resp.ok) {
+                  throw new Error(`Failed to fetch media (HTTP ${resp.status}): ${resolvedSrc}`);
+                }
+                return blobToDataUrl(await resp.blob());
+              })();
 
           const mediaOptions: pptxgen.MediaProps = {
             x: el.left / ratioPx2Inch,
@@ -1016,28 +1145,26 @@ export async function buildPptxBlob(
           if (el.type === 'video') {
             let coverBase64: string | undefined;
 
-            // 1. Try poster from element or media generation store
-            let posterUrl = 'poster' in el && el.poster ? el.poster : undefined;
-            if (!posterUrl && mediaLookupKey) {
-              const task = useMediaGenerationStore.getState().tasks[mediaLookupKey];
-              if (task?.poster) posterUrl = task.poster;
-            }
-            if (posterUrl) {
-              try {
-                const posterResp = await fetch(posterUrl);
-                if (!posterResp.ok) {
-                  log.warn(`Failed to fetch poster (HTTP ${posterResp.status}), skipping`);
-                } else {
-                  const posterBlob = await posterResp.blob();
-                  coverBase64 = await new Promise<string>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result as string);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(posterBlob);
-                  });
+            // 1. Try the poster the element (or its generation task) names,
+            // resolved through the same shared chain as the media itself.
+            const posterSrc = await resolveManifestMedia(
+              videoBinding?.posterRef,
+              videoBinding?.posterTask,
+            );
+            if (posterSrc) {
+              if (isBase64Image(posterSrc)) {
+                coverBase64 = posterSrc;
+              } else {
+                try {
+                  const posterResp = await fetch(posterSrc);
+                  if (!posterResp.ok) {
+                    log.warn(`Failed to fetch poster (HTTP ${posterResp.status}), skipping`);
+                  } else {
+                    coverBase64 = await blobToDataUrl(await posterResp.blob());
+                  }
+                } catch {
+                  // Poster fetch failed, fall through to video frame capture
                 }
-              } catch {
-                // Poster fetch failed, fall through to video frame capture
               }
             }
 
@@ -1093,6 +1220,81 @@ export async function buildPptxBlob(
   return (await pptx.write({ outputType: 'blob' })) as Blob;
 }
 
+// ── Resource Pack assembly (PPTX + interactive HTML pages as ZIP) ──
+// Pure/async builder extracted from the hook so the assembly logic — which
+// scenes make it into the ZIP, whether the PPTX builder runs — is unit-testable
+// without a React/jsdom harness. The hook stays the only runtime caller.
+//
+// `getPptxBlob` is invoked only when slide scenes exist, so an interactive-only
+// deck never touches the PPTX builder. Returns `empty: true` (and a null blob)
+// when there is nothing to ship.
+
+export interface ResourcePackResult {
+  /** Generated ZIP blob, or null when there is nothing to ship. */
+  blob: Blob | null;
+  /** True when the deck has interactive pages but no slides (PPTX skipped). */
+  skippedPptx: boolean;
+  /** True when neither slides nor interactive pages could be exported. */
+  empty: boolean;
+  /** External asset URLs that could not be inlined into the HTML pages. */
+  failedAssetUrls: string[];
+}
+
+export async function buildResourcePackZip(
+  scenes: Scene[],
+  slides: Slide[],
+  slideScenes: Scene[],
+  opts: {
+    viewportRatio: number;
+    viewportSize: number;
+    ratioPx2Inch: number;
+    ratioPx2Pt: number;
+    fileName: string;
+    /** Called only when `slides.length > 0`; produces the PPTX blob. */
+    getPptxBlob: () => Promise<Blob>;
+    /** Passed through to `inlineHtmlAssets`; tests inject a no-op fetcher. */
+    fetcher?: FetchAsset;
+  },
+): Promise<ResourcePackResult> {
+  const JSZip = (await import('jszip')).default;
+  const zip = new JSZip();
+  const failedAssetUrls: string[] = [];
+
+  // 1. Add interactive HTML pages (independent of slides)
+  let interactiveIndex = 0;
+  for (const scene of scenes) {
+    if (scene.content.type === 'interactive' && scene.content.html) {
+      interactiveIndex++;
+      const safeName = scene.title.replace(/[\\/:*?"<>|]/g, '_');
+      const htmlFileName = `interactive/${String(interactiveIndex).padStart(2, '0')}_${safeName}.html`;
+      const { html: inlinedHtml, report } = await inlineHtmlAssets(scene.content.html, {
+        fetcher: opts.fetcher,
+      });
+      for (const f of report.failed) {
+        if (!failedAssetUrls.includes(f.url)) failedAssetUrls.push(f.url);
+      }
+      zip.file(htmlFileName, inlinedHtml);
+    }
+  }
+
+  // Nothing to ship: no slides and no interactive pages.
+  if (interactiveIndex === 0 && slides.length === 0) {
+    return { blob: null, skippedPptx: false, empty: true, failedAssetUrls };
+  }
+
+  // 2. Generate PPTX only when slide scenes exist.
+  const skippedPptx = slides.length === 0;
+  if (!skippedPptx) {
+    const pptxBlob = await opts.getPptxBlob();
+    // Convert to ArrayBuffer so jszip stores a plain byte buffer rather than a
+    // Blob (which it can't reliably round-trip outside the browser).
+    zip.file(`${opts.fileName}.pptx`, await pptxBlob.arrayBuffer());
+  }
+
+  const blob = await zip.generateAsync({ type: 'blob' });
+  return { blob, skippedPptx, empty: false, failedAssetUrls };
+}
+
 // ── Hook ──
 
 export function useExportPPTX() {
@@ -1111,10 +1313,17 @@ export function useExportPPTX() {
   const slideScenes = scenes.filter((s) => s.content.type === 'slide');
   const slides = slideScenes.map((s) => (s.content as SlideContent).canvas);
 
-  // Shared guard + state wrapper for export actions
+  // Shared guard + state wrapper for export actions.
+  // `requireSlides` controls whether the guard rejects a deck with no slide
+  // scenes (PPTX export needs them; the resource pack can ship interactive
+  // pages alone). When it rejects, callers get a toast instead of silence.
   const withExportGuard = useCallback(
-    (action: () => Promise<void>) => {
-      if (exportingRef.current || slides.length === 0) return;
+    (action: () => Promise<void>, requireSlides = true) => {
+      if (exportingRef.current) return;
+      if (requireSlides && slides.length === 0) {
+        toast.warning(t('export.noSlides'));
+        return;
+      }
       exportingRef.current = true;
       setExporting(true);
       setTimeout(async () => {
@@ -1143,6 +1352,7 @@ export function useExportPPTX() {
         viewportSize,
         ratioPx2Inch,
         ratioPx2Pt,
+        stage?.id,
       );
       saveAs(blob, `${fileName}.pptx`);
       toast.success(t('export.exportSuccess'));
@@ -1160,54 +1370,49 @@ export function useExportPPTX() {
   ]);
 
   // ── Export Resource Pack (PPTX + interactive HTML pages as ZIP) ──
+  // `requireSlides` is false: a deck with only interactive scenes still ships
+  // its interactive pages as the resource pack (PPTX is skipped with a toast).
   const exportResourcePack = useCallback(() => {
     withExportGuard(async () => {
-      const JSZip = (await import('jszip')).default;
-      const zip = new JSZip();
       const fileName = stage?.name || 'slides';
+      const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
 
-      // 1. Generate PPTX
-      const pptxBlob = await buildPptxBlob(
-        slides,
-        slideScenes,
+      const result = await buildResourcePackZip(scenes, slides, slideScenes, {
         viewportRatio,
         viewportSize,
         ratioPx2Inch,
         ratioPx2Pt,
-      );
-      zip.file(`${fileName}.pptx`, pptxBlob);
+        fileName,
+        fetcher: sharedFetcher,
+        getPptxBlob: () =>
+          buildPptxBlob(
+            slides,
+            slideScenes,
+            viewportRatio,
+            viewportSize,
+            ratioPx2Inch,
+            ratioPx2Pt,
+            stage?.id,
+          ),
+      });
 
-      // 2. Add interactive HTML pages
-      const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
-      let interactiveIndex = 0;
-      const failedAssetUrls = new Set<string>();
-      for (const scene of scenes) {
-        if (scene.content.type === 'interactive' && scene.content.html) {
-          interactiveIndex++;
-          const safeName = scene.title.replace(/[\\/:*?"<>|]/g, '_');
-          const htmlFileName = `interactive/${String(interactiveIndex).padStart(2, '0')}_${safeName}.html`;
-          const { html: inlinedHtml, report } = await inlineHtmlAssets(scene.content.html, {
-            fetcher: sharedFetcher,
-          });
-          if (report.failed.length > 0) {
-            log.warn(
-              'Resource Pack: some interactive-scene assets could not be inlined:',
-              report.failed,
-            );
-            for (const f of report.failed) failedAssetUrls.add(f.url);
-          }
-          zip.file(htmlFileName, inlinedHtml);
-        }
+      if (result.empty) {
+        toast.warning(t('export.nothingToExport'));
+        return;
       }
-
-      // 3. Download ZIP
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      saveAs(zipBlob, `${fileName}.zip`);
+      if (result.skippedPptx) {
+        toast.info(t('export.noSlidesSkipped'));
+      }
+      saveAs(result.blob!, `${fileName}.zip`);
       toast.success(t('export.exportSuccess'));
-      if (failedAssetUrls.size > 0) {
+      if (result.failedAssetUrls.length > 0) {
+        log.warn(
+          'Resource Pack: some interactive-scene assets could not be inlined:',
+          result.failedAssetUrls,
+        );
         const hosts = [
           ...new Set(
-            [...failedAssetUrls].map((u) => {
+            result.failedAssetUrls.map((u) => {
               try {
                 return new URL(u).host;
               } catch {
@@ -1216,11 +1421,11 @@ export function useExportPPTX() {
             }),
           ),
         ];
-        toast.warning(t('export.inlinePartial', { count: failedAssetUrls.size }), {
+        toast.warning(t('export.inlinePartial', { count: result.failedAssetUrls.length }), {
           description: hosts.join(', '),
         });
       }
-    });
+    }, false);
   }, [
     withExportGuard,
     slides,

@@ -1,27 +1,23 @@
 import { useState, useRef, useCallback } from 'react';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
+import { getASRServerDisabledError } from '@/lib/audio/asr-enablement';
 import { normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('AudioRecorder');
 
-// TypeScript declarations for Web Speech API
-declare global {
-  interface Window {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API not typed in lib.dom
-    SpeechRecognition: any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API not typed in lib.dom
-    webkitSpeechRecognition: any;
-  }
-}
+// Window.SpeechRecognition / webkitSpeechRecognition have minimal constructor
+// declarations in types/web-speech.d.ts; this hook casts the richer instance.
 
 export interface UseAudioRecorderOptions {
   onTranscription?: (text: string) => void;
   onError?: (error: string) => void;
+  /** When true and using browser-native ASR, recognition stays active until explicitly stopped. */
+  continuous?: boolean;
 }
 
 export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
-  const { onTranscription, onError } = options;
+  const { onTranscription, onError, continuous = false } = options;
 
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -106,7 +102,15 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
       // Get current ASR configuration
       if (typeof window !== 'undefined') {
         const { useSettingsStore } = await import('@/lib/store/settings');
-        const { asrProviderId, asrLanguage } = useSettingsStore.getState();
+        const { asrProviderId, asrLanguage, asrProvidersConfig } = useSettingsStore.getState();
+
+        // Browser-native ASR never reaches the server route, so enforce the
+        // operator force-off locally before invoking the Web Speech API.
+        const serverDisabledError = getASRServerDisabledError(asrProvidersConfig[asrProviderId]);
+        if (serverDisabledError) {
+          onError?.(serverDisabledError);
+          return;
+        }
 
         // Use browser native ASR if configured
         if (asrProviderId === 'browser-native') {
@@ -116,11 +120,13 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
             return;
           }
 
-          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-          const recognition = new SpeechRecognition();
+          const SpeechRecognitionCtor = (window.SpeechRecognition ||
+            window.webkitSpeechRecognition)!;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API instance shape isn't in lib.dom
+          const recognition: any = new SpeechRecognitionCtor();
 
           recognition.lang = asrLanguage || 'zh-CN';
-          recognition.continuous = false;
+          recognition.continuous = continuous;
           recognition.interimResults = false;
 
           recognition.onstart = () => {
@@ -134,12 +140,25 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           };
 
           recognition.onresult = (event: {
+            resultIndex: number;
             results: {
-              [index: number]: { [index: number]: { transcript: string } };
+              [index: number]: {
+                isFinal: boolean;
+                [index: number]: { transcript: string };
+              };
+              length: number;
             };
           }) => {
-            const transcript = event.results[0][0].transcript;
-            onTranscription?.(transcript);
+            let transcript = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              const result = event.results[i];
+              if (result.isFinal && result[0]?.transcript) {
+                transcript += result[0].transcript;
+              }
+            }
+            if (transcript) {
+              onTranscription?.(transcript);
+            }
           };
 
           recognition.onerror = (event: { error: string }) => {
@@ -245,7 +264,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
       log.error('Failed to start recording:', error);
       onError?.('无法访问麦克风，请检查权限设置');
     }
-  }, [onTranscription, onError, transcribeAudio]);
+  }, [onTranscription, onError, transcribeAudio, continuous]);
 
   // Stop recording
   const stopRecording = useCallback(() => {

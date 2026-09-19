@@ -15,15 +15,16 @@ import { generateTTS } from '@/lib/audio/tts-providers';
 import { DEFAULT_TTS_VOICES, DEFAULT_TTS_MODELS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
-import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import {
   getServerImageProviders,
   getServerVideoProviders,
   getServerTTSProviders,
   resolveImageApiKey,
   resolveImageBaseUrl,
+  resolveImageModel,
   resolveVideoApiKey,
   resolveVideoBaseUrl,
+  resolveVideoModel,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
 } from '@/lib/server/provider-config';
@@ -34,9 +35,23 @@ import type { ImageProviderId } from '@/lib/media/types';
 import type { VideoProviderId } from '@/lib/media/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
+import { resolveImageSize } from '@/lib/server/image-sizing';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 
 const log = createLogger('ClassroomMedia');
+
+/**
+ * The classroom JSON payload is a pre-conversion transport, not a persisted
+ * DSL document. `audioUrl` is gone from the `SpeechAction` contract, but the
+ * file-based classroom store has no asset registry to allocate from, so the
+ * server still hands the client the serving URL beside the derived `audioId`.
+ * The app-side reference converter ingests the URL's bytes and rewrites the
+ * pair to one allocated asset id when the classroom is first fetched, before
+ * the document is persisted client-side; the URL never enters a stored
+ * document.
+ */
+type ServerTransportSpeechAction = SpeechAction & { audioUrl?: string };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -79,9 +94,14 @@ export async function generateMediaForClassroom(
   const requests = outlines.flatMap((o) => o.mediaGenerations ?? []);
   if (requests.length === 0) return {};
 
-  // Resolve providers
-  const imageProviderIds = Object.keys(getServerImageProviders());
-  const videoProviderIds = Object.keys(getServerVideoProviders());
+  // Resolve providers, excluding operator force-disabled ones (server
+  // precedence, #665 — mirror the TTS listing's disabled flag).
+  const imageProviderIds = Object.entries(getServerImageProviders())
+    .filter(([, info]) => !info.disabled)
+    .map(([id]) => id);
+  const videoProviderIds = Object.entries(getServerVideoProviders())
+    .filter(([, info]) => !info.disabled)
+    .map(([id]) => id);
 
   const mediaMap: Record<string, string> = {};
 
@@ -100,11 +120,20 @@ export async function generateMediaForClassroom(
           log.warn(`No API key for image provider "${providerId}", skipping ${req.elementId}`);
           continue;
         }
-        const model = providerConfig?.models?.[0]?.id;
+        // No client model here — the server-side `IMAGE_<PREFIX>_MODELS` pin
+        // (first entry) is authoritative when set; otherwise fall back to the
+        // first catalog model so key-only deployments keep generating. This
+        // path is internal (no HTTP response to fail loud with), so the
+        // adapter's requireModel must stay a backstop, never the primary
+        // failure mode.
+        const model = resolveImageModel(providerId) ?? providerConfig?.models?.[0]?.id;
 
         const result = await generateImage(
           { providerId, apiKey, baseUrl: resolveImageBaseUrl(providerId), model },
-          { prompt: req.prompt, aspectRatio: req.aspectRatio || '16:9' },
+          resolveImageSize(
+            { prompt: req.prompt, aspectRatio: req.aspectRatio || '16:9' },
+            { providerId, modelId: model },
+          ),
         );
 
         let buf: Buffer;
@@ -140,8 +169,14 @@ export async function generateMediaForClassroom(
           log.warn(`No API key for video provider "${providerId}", skipping ${req.elementId}`);
           continue;
         }
+        // No client model here — the server-side `VIDEO_<PREFIX>_MODELS` pin
+        // (first entry) is authoritative when set; otherwise fall back to the
+        // first catalog model so key-only deployments keep generating. This
+        // path is internal (no HTTP response to fail loud with), so the
+        // adapter's requireModel must stay a backstop, never the primary
+        // failure mode.
         const providerConfig = VIDEO_PROVIDERS[providerId];
-        const model = providerConfig?.models?.[0]?.id;
+        const model = resolveVideoModel(providerId) ?? providerConfig?.models?.[0]?.id;
 
         const normalized = normalizeVideoOptions(providerId, {
           prompt: req.prompt,
@@ -192,7 +227,7 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
         el.type === 'video' &&
         typeof el.mediaRef === 'string' &&
         mediaMap[el.mediaRef] &&
-        (!el.src || isMediaPlaceholder(el.src))
+        (!el.src || /^gen_vid_[\w-]+$/i.test(el.src))
       ) {
         el.src = mediaMap[el.mediaRef];
         continue;
@@ -200,7 +235,7 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
       if (
         (el.type === 'image' || el.type === 'video') &&
         typeof el.src === 'string' &&
-        isMediaPlaceholder(el.src) &&
+        isGeneratedMediaPlaceholder(el.src) &&
         mediaMap[el.src]
       ) {
         el.src = mediaMap[el.src];
@@ -258,8 +293,10 @@ export async function generateTTSForClassroom(
 
     for (const action of scene.actions) {
       if (action.type !== 'speech' || !(action as SpeechAction).text) continue;
-      const speechAction = action as SpeechAction;
-      // Include scene order in audioId to prevent collision across scenes
+      const speechAction = action as ServerTransportSpeechAction;
+      // Server transport emits the derived id plus the serving URL; the
+      // client-side converter collapses the pair into one pool asset on
+      // first load. Browser generation allocates pool ids directly.
       const audioId = `tts_s${sceneOrder}_${action.id}`;
 
       try {

@@ -1,0 +1,153 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`emitHyperframes > matches the HTML snapshot 1`] = `
+"<!doctype html>
+<html lang="en-US">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sample Lesson — OpenMAIC video</title>
+<style>
+  @font-face {
+  font-family: "Inter";
+  src: url("data:font/woff2;base64,<embedded>") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+}
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #000; }
+  #openmaic { font-family:Inter,system-ui,sans-serif; }
+  .cover-card { position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:5.2%;background:#07111f;color:#f8fafc;font-family:Inter,system-ui,sans-serif; }
+  .cover-card * { overflow-wrap:anywhere; }
+  .cover-quiz { background:linear-gradient(145deg,#071426 0%,#102a43 56%,#133f4b 100%); }
+  .cover-pbl { background:linear-gradient(145deg,#0b1020 0%,#161b35 54%,#232042 100%); }
+  .cover-grid { position:absolute;inset:0;opacity:.14;background-image:linear-gradient(rgba(255,255,255,.16) 2px,transparent 2px),linear-gradient(90deg,rgba(255,255,255,.16) 2px,transparent 2px);background-size:69px 69px;mask-image:radial-gradient(ellipse at center,#000 35%,transparent 85%); }
+  .cover-orb { position:absolute;border-radius:50%;filter:blur(90px);opacity:.44; }
+  .cover-orb-a { width:48%;height:66%;left:-12%;top:-22%;background:#287ca8; }
+  .cover-orb-b { width:50%;height:68%;right:-15%;bottom:-28%;background:#6d4bc3; }
+  .cover-panel { position:relative;z-index:1;width:min(88%,1560px);max-height:100%;overflow:hidden;border:2px solid rgba(255,255,255,.13);border-radius:42px;background:rgba(11,18,33,.82);box-shadow:0 45px 120px rgba(0,0,0,.42);backdrop-filter:blur(24px); }
+  .cover-quiz-panel { width:min(76%,1230px);padding:6.5% 8%;text-align:center; }
+  .cover-pbl-panel { padding:4.5% 5.5%; }
+  .cover-eyebrow { display:inline-flex;align-items:center;gap:12px;margin-bottom:27px;color:#8fdcf5;font-size:20px;font-weight:750;letter-spacing:.12em;text-transform:uppercase; }
+  .cover-eyebrow-icon { display:inline-grid;place-items:center;width:39px;height:39px;border-radius:999px;background:rgba(86,197,234,.14);border:2px solid rgba(111,220,255,.26); }
+  .cover-title { display:-webkit-box;max-width:100%;margin:0;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:78px;line-height:1.08;letter-spacing:-.035em; }
+  .cover-description { display:-webkit-box;max-width:92%;margin:24px 0 0;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3;color:#c4cedd;font-size:29px;line-height:1.45; }
+  .cover-stats { display:flex;gap:18px; }
+  .cover-quiz-stats { justify-content:center;margin-top:51px; }
+  .cover-stat { display:flex;min-width:198px;align-items:baseline;justify-content:center;gap:12px;padding:20px 27px;border:2px solid rgba(255,255,255,.11);border-radius:24px;background:rgba(255,255,255,.055); }
+  .cover-stat strong { color:#fff;font-size:42px;line-height:1; }
+  .cover-stat span { color:#aebbd0;font-size:20px;text-transform:uppercase;letter-spacing:.07em; }
+  .cover-gains { margin-top:33px; }
+  .cover-section-label { margin-bottom:15px;color:#98a8be;font-size:17px;font-weight:750;letter-spacing:.11em;text-transform:uppercase; }
+  .cover-gains ul { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:0;padding:0;list-style:none; }
+  .cover-gains li { display:flex;min-width:0;align-items:flex-start;gap:14px;padding:15px 18px;border:2px solid rgba(255,255,255,.08);border-radius:20px;background:rgba(255,255,255,.035); }
+  .cover-check { flex:0 0 auto;color:#6ee7b7;font-weight:800; }
+  .cover-gain-text { display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:#e3e9f2;font-size:20px;line-height:1.35; }
+  .cover-pbl-meta { display:grid;grid-template-columns:auto minmax(0,1fr);align-items:stretch;gap:18px;margin-top:30px; }
+  .cover-people { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px; }
+  .cover-person { display:flex;min-width:0;align-items:center;gap:15px;padding:15px 18px;border:2px solid rgba(255,255,255,.09);border-radius:21px;background:rgba(255,255,255,.04); }
+  .cover-avatar { display:grid;flex:0 0 auto;place-items:center;width:57px;height:57px;border-radius:18px;background:rgba(91,195,233,.17);color:#bdefff;font-size:27px;font-weight:800; }
+  .cover-person-character .cover-avatar { background:rgba(174,123,255,.18);color:#e0ccff; }
+  .cover-person-copy { display:flex;min-width:0;flex-direction:column; }
+  .cover-person-copy span { color:#91a2ba;font-size:14px;font-weight:700;line-height:1.1;letter-spacing:.09em;text-transform:uppercase; }
+  .cover-person-copy strong { overflow:hidden;color:#f5f7fb;font-size:21px;line-height:1.1;text-overflow:ellipsis;white-space:nowrap; }
+  .cover-person-copy small { display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:#aebbd0;font-size:15px;line-height:1.25; }
+  .cover-cta { display:grid;gap:6px;margin-top:27px;text-align:center; }
+  .cover-cta-line { min-width:0;color:#aebbd0;font-size:18px;line-height:1.35;overflow-wrap:anywhere;white-space:normal; }
+  .cover-cta-line bdi { overflow-wrap:anywhere;word-break:break-word; }
+  .cover-cta-line:last-child { color:#f8fafc;font-weight:700; }
+</style>
+</head>
+<body>
+<div id="openmaic" data-composition-id="openmaic" data-start="0" data-duration="7" data-width="1920" data-height="1080" style="position:relative;width:1920px;height:1080px;overflow:hidden;background:#000">
+<!-- scene 1: Intro -->
+<img id="scene-1-base" class="clip" data-start="0" data-duration="5" data-track-index="0" src="assets/frames/001-intro.png" alt="" style="position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain" />
+<video id="scene-1-video-1" class="clip" data-start="2" data-duration="3" data-track-index="1" src="assets/media/e1.mp4" data-has-audio="true" style="position:absolute;left:25%;top:24.88888888888889%;width:50%;height:49.77777777777778%;transform:rotate(0deg);object-fit:contain" playsinline></video>
+<audio id="scene-1-audio-1" class="clip" data-start="0" data-duration="2" data-track-index="2" src="assets/audio/001-intro/speech-001.mp3" data-volume="1"></audio>
+<!-- scene 2: checkpoint -->
+<div id="scene-2-visual-1" class="clip cover-card cover-quiz" data-visual-kind="quiz-cover" data-start="5" data-duration="2" data-track-index="0">
+  <div class="cover-orb cover-orb-a"></div><div class="cover-orb cover-orb-b"></div>
+  <div class="cover-panel cover-quiz-panel" dir="ltr">
+    <div class="cover-eyebrow"><span class="cover-eyebrow-icon">?</span> Quiz</div>
+    <h1 class="cover-title" dir="auto">checkpoint</h1>
+    <div class="cover-stats cover-quiz-stats">
+      <div class="cover-stat"><strong>0</strong><span>questions</span></div>
+      <div class="cover-stat"><strong>0</strong><span>pts</span></div>
+    </div>
+  </div>
+</div>
+<div id="fx-0-1" class="fx fx-spotlight" style="position:absolute;inset:0;z-index:100;pointer-events:none;overflow:hidden;visibility:hidden;opacity:0">
+  <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0">
+    <defs><mask id="fx-0-1-mask">
+      <rect x="0" y="0" width="100" height="100" fill="white"/>
+      <rect id="fx-0-1-cut" fill="black" x="17" y="16.8889" width="66" height="65.7778" rx="4"/>
+    </mask></defs>
+    <rect x="0" y="0" width="100" height="100" fill="rgba(0,0,0,0.5)" mask="url(#fx-0-1-mask)"/>
+    <rect id="fx-0-1-border" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.2" vector-effect="non-scaling-stroke" x="21" y="20.8889" width="58" height="57.7778" rx="2" opacity="0"/>
+  </svg>
+</div>
+<div id="fx-0-2" class="fx fx-laser" style="position:absolute;z-index:101;pointer-events:none;left:50%;top:49.7778%;visibility:hidden;opacity:0">
+  <div style="position:relative;transform:translate(-50%,-50%)">
+    <div id="fx-0-2-ring" style="position:absolute;inset:0;border-radius:9999px;border:1.5px solid #00ff88;opacity:0.6"></div>
+    <div style="width:10px;height:10px;border-radius:9999px;background-color:#00ff88;box-shadow:0 0 8px 2px #00ff8860"></div>
+  </div>
+</div>
+
+<script type="application/json" data-openmaic-runtime-diagnostics>[]</script>
+</div>
+<script src="assets/vendor/gsap.min.js"></script>
+<script>
+function cubicBezier(x1, y1, x2, y2) {
+  // Deterministic cubic-bezier easing as a GSAP ease function (progress → eased).
+  var cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  var cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  function sampleX(t) { return ((ax * t + bx) * t + cx) * t; }
+  function sampleY(t) { return ((ay * t + by) * t + cy) * t; }
+  function solveX(x) {
+    var t = x;
+    for (var i = 0; i < 8; i++) {
+      var xEst = sampleX(t) - x;
+      if (Math.abs(xEst) < 1e-6) return t;
+      var d = (3 * ax * t + 2 * bx) * t + cx;
+      if (Math.abs(d) < 1e-6) break;
+      t -= xEst / d;
+    }
+    var lo = 0, hi = 1;
+    t = x;
+    while (lo < hi) {
+      var xEst2 = sampleX(t);
+      if (Math.abs(xEst2 - x) < 1e-6) return t;
+      if (x > xEst2) lo = t; else hi = t;
+      t = (hi - lo) / 2 + lo;
+    }
+    return t;
+  }
+  return function (p) { return p <= 0 ? 0 : p >= 1 ? 1 : sampleY(solveX(p)); };
+}
+var EASE_SPOTLIGHT_FADE = cubicBezier(0.25, 0.1, 0.35, 1);
+var EASE_OUT_EXPO = cubicBezier(0.16, 1, 0.3, 1);
+var EASE_LASER = cubicBezier(0.22, 1, 0.36, 1);
+var EASE_IN = cubicBezier(0.4, 0, 1, 1);
+var EASE_OUT = cubicBezier(0, 0, 0.58, 1);
+var tl = gsap.timeline({ paused: true });
+tl.fromTo('#fx-0-1',{autoAlpha:0},{autoAlpha:1,duration:0.3,ease:EASE_SPOTLIGHT_FADE},2);
+tl.fromTo('#fx-0-1-cut',{attr:{x:17,y:16.8889,width:66,height:65.7778,rx:4}},{attr:{x:24.6,y:24.2889,width:50.8,height:50.9778,rx:1},duration:0.6,ease:EASE_OUT_EXPO},2);
+tl.fromTo('#fx-0-1-border',{attr:{x:21,y:20.8889,width:58,height:57.7778,rx:2},opacity:0},{attr:{x:24.6,y:24.2889,width:50.8,height:50.9778,rx:1},opacity:1,duration:0.5,ease:EASE_OUT_EXPO},2.05);
+tl.to('#fx-0-1',{autoAlpha:0,duration:0.3,ease:EASE_SPOTLIGHT_FADE},4.7);
+tl.set('#fx-0-1',{autoAlpha:0},5);
+tl.fromTo('#fx-0-2',{autoAlpha:0},{autoAlpha:1,duration:0.15,ease:'none'},2);
+tl.fromTo('#fx-0-2',{x:-1056,y:-591.6},{x:0,y:0,duration:0.5,ease:EASE_LASER},2);
+tl.fromTo('#fx-0-2-ring',{scale:1,opacity:0.6},{scale:2.8,opacity:0,duration:1.5,ease:EASE_OUT,repeat:1,repeatDelay:0.3},2);
+tl.to('#fx-0-2',{autoAlpha:0,x:-1056,y:-591.6,duration:0.25,ease:EASE_IN},4.75);
+tl.set('#fx-0-2',{autoAlpha:0},5);
+tl.set('#fx-0-2-ring',{opacity:0},5);
+tl.set({}, {}, 7);
+window.__openmaicVideoManifest = { runtimeDiagnostics: [], manifestPath: "openmaic-video-manifest.json" };
+window.__timelines = window.__timelines || {};
+window.__timelines["openmaic"] = tl;
+</script>
+</body>
+</html>
+"
+`;

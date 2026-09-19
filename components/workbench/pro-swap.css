@@ -1,0 +1,268 @@
+/* Pro ↔ classic is a state change, not spatial navigation. The two working
+   surfaces crossfade in place while the OpenMAIC lockup remains the visual
+   anchor. Two authored beats sit on top of that dissolve: the badge stamps the
+   active state into place, and the composer — the one object both surfaces are
+   actually about — turns over like a card being flipped to its other face.
+
+   The composer used to STRETCH across the route change, and that was removed:
+   morphing a large, structurally different card into another one asks the eye
+   to accept two different objects as one object deforming, and the wrongness
+   of that claim is exactly what read as showy. A flip makes the opposite
+   claim, and a true one: one thing, two faces, and the switch shows you the
+   other face. Nothing has to pretend to deform, because the geometry change is
+   never what you are looking at — the group's width/height interpolation is
+   timed with a steep S-curve (`cubic-bezier(0.86, 0, 0.14, 1)`) so that the
+   two cards' different sizes are reconciled in the middle of the turn, while
+   the card is edge-on and there is nothing on screen to distort.
+
+   The turn is two halves rather than one continuous rotation past 90°: the
+   leaving face rotates to edge-on and the arriving face picks the rotation up
+   from the other side. That keeps it off `backface-visibility` on the view
+   transition pseudo-elements, which is the part browsers disagree about, and
+   it means neither face is ever rendered mirrored. Perspective lives inside
+   each face's own `transform` instead of on the group, because
+   `::view-transition-image-pair` carries `isolation: isolate` from the UA
+   sheet — a grouping value, which forces the pair to flatten, so a perspective
+   set on an ancestor group never reaches the snapshots.
+
+   `data-pro-swap` exists only while `lib/workbench/pro-swap.ts` owns a View
+   Transition. The controller removes it after success, skip, or abort — and it
+   removes it from `finished`, which resolves only once these animations are
+   done, so a 520ms turn cannot have its name pulled out from under it. */
+
+@keyframes pro-swap-surface-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes pro-swap-surface-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pro-badge-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes pro-badge-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pro-badge-stamp {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pro-swap-anchor-hold {
+  from,
+  to {
+    opacity: 1;
+  }
+}
+
+/* The turn, in four keyframes rather than two parameterised ones: a custom
+   property multiplied into an angle would read shorter here and fail silently
+   (an invalid `transform` is no transform, i.e. a plain fade) on the day it
+   stops resolving inside the pseudo tree. The opacity stops are a guard, not
+   the effect — a plane at exactly 90° has no width to draw, but a browser that
+   leaves a one-pixel sliver of it should leave nothing. */
+@keyframes pro-composer-turn-out-forward {
+  from {
+    opacity: 1;
+    transform: perspective(1400px) rotateY(0deg);
+  }
+
+  70% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+    transform: perspective(1400px) rotateY(-90deg);
+  }
+}
+
+@keyframes pro-composer-turn-in-forward {
+  from {
+    opacity: 0;
+    transform: perspective(1400px) rotateY(90deg);
+  }
+
+  35% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 1;
+    transform: perspective(1400px) rotateY(0deg);
+  }
+}
+
+@keyframes pro-composer-turn-out-back {
+  from {
+    opacity: 1;
+    transform: perspective(1400px) rotateY(0deg);
+  }
+
+  70% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+    transform: perspective(1400px) rotateY(90deg);
+  }
+}
+
+@keyframes pro-composer-turn-in-back {
+  from {
+    opacity: 0;
+    transform: perspective(1400px) rotateY(-90deg);
+  }
+
+  35% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 1;
+    transform: perspective(1400px) rotateY(0deg);
+  }
+}
+
+html[data-pro-swap] [data-pro-morph='lockup'] {
+  view-transition-name: pro-lockup;
+}
+
+html[data-pro-swap] [data-pro-morph='badge'] {
+  view-transition-name: pro-badge;
+}
+
+html[data-pro-swap] [data-pro-morph='composer'] {
+  view-transition-name: pro-composer;
+}
+
+html[data-pro-swap]::view-transition-group(root),
+html[data-pro-swap]::view-transition-group(pro-lockup),
+html[data-pro-swap]::view-transition-group(pro-badge) {
+  animation: pro-swap-anchor-hold 210ms linear both;
+}
+
+html[data-pro-swap]::view-transition-old(root) {
+  animation: pro-swap-surface-out 130ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+html[data-pro-swap]::view-transition-new(root) {
+  animation: pro-swap-surface-in 210ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Keep exactly one lockup snapshot visible. Showing both exposes the small
+   responsive size difference as a doubled wordmark, even without movement. */
+html[data-pro-swap]::view-transition-old(pro-lockup) {
+  animation: none;
+  opacity: 0;
+}
+
+html[data-pro-swap]::view-transition-new(pro-lockup) {
+  animation: none;
+  opacity: 1;
+}
+
+html[data-pro-swap]::view-transition-old(pro-badge) {
+  animation: pro-badge-out 110ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+html[data-pro-swap='enter']::view-transition-new(pro-badge) {
+  animation: pro-badge-stamp 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: center;
+}
+
+html[data-pro-swap='exit']::view-transition-new(pro-badge) {
+  animation: pro-badge-in 190ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Only the timing longhands here, never the `animation` shorthand: the group
+   carries the UA's own width/height/position interpolation between the two
+   cards, and replacing it (as the anchors above deliberately do) would drop
+   the arriving face at the leaving face's size. Retiming it is the point —
+   520ms to match the turn, on an S-curve that spends the geometry at the
+   hinge. Above the dissolving surface by pseudo-tree order already, since root
+   is always the first group; stated anyway, because "it happens to paint last"
+   is not a thing to leave a flip depending on. */
+html[data-pro-swap]::view-transition-group(pro-composer) {
+  animation-duration: 520ms;
+  animation-timing-function: cubic-bezier(0.86, 0, 0.14, 1);
+  z-index: 2;
+}
+
+/* `normal`, not the UA's `plus-lighter`: that blend exists to make a pair of
+   simultaneously-fading snapshots add up to one opaque image, and these two
+   never overlap in time — the arriving face waits out the leaving one. Left on
+   plus-lighter, a translucent card over a dissolving surface brightens at the
+   seam instead of staying its own colour. */
+html[data-pro-swap]::view-transition-old(pro-composer),
+html[data-pro-swap]::view-transition-new(pro-composer) {
+  mix-blend-mode: normal;
+  transform-origin: center;
+}
+
+html[data-pro-swap='enter']::view-transition-old(pro-composer) {
+  animation: pro-composer-turn-out-forward 240ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+html[data-pro-swap='enter']::view-transition-new(pro-composer) {
+  animation: pro-composer-turn-in-forward 280ms cubic-bezier(0.22, 1, 0.36, 1) 240ms both;
+}
+
+html[data-pro-swap='exit']::view-transition-old(pro-composer) {
+  animation: pro-composer-turn-out-back 240ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+html[data-pro-swap='exit']::view-transition-new(pro-composer) {
+  animation: pro-composer-turn-in-back 280ms cubic-bezier(0.22, 1, 0.36, 1) 240ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The controller normally falls back to direct navigation in this mode.
+     Keep the destination badge's state change legible without spatial motion. */
+  [data-pro-stamp] {
+    animation: pro-badge-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  html[data-pro-swap='enter']::view-transition-new(pro-badge) {
+    animation: pro-badge-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    transform: none;
+  }
+
+  /* No turn, and no crossfade standing in for one: show the arriving face and
+     hide the leaving one, the way the lockup is handled. `animation: none` on
+     the group drops the UA geometry interpolation too, so the card is simply
+     already the size it is going to be. */
+  html[data-pro-swap]::view-transition-group(pro-composer) {
+    animation: none;
+  }
+
+  html[data-pro-swap]::view-transition-old(pro-composer) {
+    animation: none;
+    opacity: 0;
+  }
+
+  html[data-pro-swap]::view-transition-new(pro-composer) {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

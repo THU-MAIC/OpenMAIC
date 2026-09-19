@@ -26,7 +26,7 @@ describe('isWavBlob', () => {
 });
 
 describe('normalizeASRUploadAudio', () => {
-  it('passes through non-lemonade providers unchanged', async () => {
+  it('passes through providers without WAV normalization unchanged', async () => {
     const input = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' });
     const result = await normalizeASRUploadAudio('openai-whisper', input);
     expect(result.blob).toBe(input);
@@ -36,6 +36,13 @@ describe('normalizeASRUploadAudio', () => {
   it('keeps WAV blobs unchanged for lemonade-asr', async () => {
     const input = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/wav' });
     const result = await normalizeASRUploadAudio('lemonade-asr', input);
+    expect(result.blob).toBe(input);
+    expect(result.fileName).toBe('recording.wav');
+  });
+
+  it('keeps WAV blobs unchanged for funasr-asr', async () => {
+    const input = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/wav' });
+    const result = await normalizeASRUploadAudio('funasr-asr', input);
     expect(result.blob).toBe(input);
     expect(result.fileName).toBe('recording.wav');
   });

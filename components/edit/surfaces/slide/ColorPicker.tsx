@@ -34,6 +34,12 @@ interface ColorPickerProps {
   readonly onChange: (color: string) => void;
   /** Discrete commit (swatch click / eyedropper). Caller closes the popover. */
   readonly onCommit: (color: string) => void;
+  /**
+   * Width override for the root. Defaults to a compact fixed width (the
+   * text-color popover); the slide-background popover passes `w-full` so the
+   * picker fills the wider card and aligns with its tabs and swatch row.
+   */
+  readonly className?: string;
 }
 
 /**
@@ -42,7 +48,12 @@ interface ColorPickerProps {
  * tight row of common colors at the bottom. No hex text input — picking is
  * meant to be tactile.
  */
-export function ColorPicker({ value, onChange, onCommit }: ColorPickerProps) {
+export function ColorPicker({
+  value,
+  onChange,
+  onCommit,
+  className = 'w-[224px]',
+}: ColorPickerProps) {
   // Local mirror so the picker UI stays responsive while dragging without
   // round-tripping through ProseMirror + store on every tick.
   const [color, setColor] = useState(value);
@@ -91,7 +102,7 @@ export function ColorPicker({ value, onChange, onCommit }: ColorPickerProps) {
   };
 
   return (
-    <div className="color-picker flex w-[224px] flex-col gap-3">
+    <div className={`color-picker flex flex-col gap-3 ${className}`}>
       <HexColorPicker color={color} onChange={handleChange} />
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">

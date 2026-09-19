@@ -10,7 +10,7 @@
 import { describe, test, expect } from 'vitest';
 import { buildStructuredPrompt } from '@/lib/orchestration/prompt-builder';
 import { buildDirectorPrompt } from '@/lib/orchestration/director-prompt';
-import { buildPBLSystemPrompt } from '@/lib/pbl/pbl-system-prompt';
+import { loadPrompt } from '@openmaic/generation';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 
@@ -97,16 +97,26 @@ describe('no surviving placeholders', () => {
     const out = buildDirectorPrompt([baseAgent], 'No history', [], 0);
     expect(out).not.toMatch(UNRESOLVED_PLACEHOLDER);
   });
+});
 
-  test('pbl-design prompt', () => {
-    const out = buildPBLSystemPrompt({
-      projectTopic: 'Smart Garden',
-      projectDescription: 'IoT project',
-      targetSkills: ['IoT', 'Python'],
-      issueCount: 3,
-      languageDirective: 'en',
-    });
-    expect(out).not.toMatch(UNRESOLVED_PLACEHOLDER);
+describe('PBL action workflow', () => {
+  test('previews the v2 instructor-guided milestone workspace', () => {
+    const prompt = loadPrompt('pbl-actions');
+
+    expect(prompt?.systemPrompt).toContain(
+      'complete project configuration with milestones and a guided project workspace led by an instructor',
+    );
+    expect(prompt?.systemPrompt).toContain(
+      'Briefly previews what the project involves, including its driving goal and key milestones',
+    );
+    expect(prompt?.systemPrompt).toContain(
+      'Encourages students to enter the project workspace and start the first task',
+    );
+    expect(prompt?.systemPrompt).toContain('## Project Plan');
+    expect(prompt?.systemPrompt).toContain('{{projectSummary}}');
+    expect(prompt?.systemPrompt).toContain('do not invent or rename them');
+    expect(prompt?.systemPrompt).not.toContain('available roles');
+    expect(prompt?.systemPrompt).not.toContain('select a role');
   });
 });
 
@@ -158,6 +168,19 @@ describe('scene-type action stripping', () => {
     const out = buildStructuredPrompt(baseAgent, quizState);
     expect(out).not.toMatch(/^- spotlight:/m);
     expect(out).not.toMatch(/^- laser:/m);
+  });
+});
+
+describe('whiteboard close contract', () => {
+  test('keeps the shared action description consistent with role prompts', () => {
+    const out = buildStructuredPrompt(baseAgent, slideState);
+
+    expect(out).not.toContain('Always close after you finish drawing');
+    expect(out).toContain('Do not close merely because your own drawing is complete');
+    expect(out).toContain('a later classroom agent still needs the board');
+    expect(out).toContain('Close only when explicitly requested');
+    expect(out).toContain('Do NOT call `wb_close` at the end of a drawing turn');
+    expect(out).toContain('Only close when returning to the slide canvas');
   });
 });
 
@@ -214,23 +237,6 @@ describe('director routing contract', () => {
     expect(out).toContain('# Discussion Mode');
     expect(out).toContain('Force decomposition');
     expect(out).toContain('student_1');
-  });
-});
-
-describe('pbl-design template fills all repeated placeholders', () => {
-  test('issueCount is substituted at every occurrence (3x in template)', () => {
-    const UNIQUE = 42;
-    const out = buildPBLSystemPrompt({
-      projectTopic: 'Smart Garden',
-      projectDescription: 'IoT project',
-      targetSkills: ['IoT'],
-      issueCount: UNIQUE,
-      languageDirective: 'en',
-    });
-    // Template references {{issueCount}} at 3 positions:
-    // "Suggested Number of Issues: N", "Create N sequential issues", "Create exactly N issues"
-    const occurrences = out.match(new RegExp(`\\b${UNIQUE}\\b`, 'g'))?.length ?? 0;
-    expect(occurrences).toBeGreaterThanOrEqual(3);
   });
 });
 

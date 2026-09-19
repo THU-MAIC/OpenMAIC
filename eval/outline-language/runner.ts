@@ -18,9 +18,9 @@
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { generateSceneOutlinesFromRequirements } from '@/lib/generation/outline-generator';
+import { generateSceneOutlinesFromRequirements } from '@openmaic/generation';
 import { callLLM } from '@/lib/ai/llm';
-import type { AICallFn } from '@/lib/generation/pipeline-types';
+import type { AICallFn } from '@openmaic/generation';
 import { resolveEvalModel } from '../shared/resolve-model';
 import { createRunDir } from '../shared/run-dir';
 import { judgeDirective } from './judge';

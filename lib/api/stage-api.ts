@@ -64,6 +64,52 @@ import { createNavigationAPI } from './stage-api-navigation';
 import { createWhiteboardAPI } from './stage-api-whiteboard';
 import { createModeAPI, createStageMetaAPI } from './stage-api-mode';
 import type { StageStore } from './stage-api-types';
+import { markStagePersistenceDirty, useStageStore } from '@/lib/store/stage';
+import type { PendingChange } from '@/lib/utils/stage-storage';
+
+function persistenceChangesForSetState(
+  before: ReturnType<StageStore['getState']>,
+  after: ReturnType<StageStore['getState']>,
+): PendingChange[] {
+  const changes: PendingChange[] = [];
+
+  if (before.stage !== after.stage) changes.push({ kind: 'stage' });
+  if (before.currentSceneId !== after.currentSceneId) changes.push({ kind: 'currentScene' });
+
+  if (before.scenes !== after.scenes) {
+    const beforeStructure = before.scenes.map(({ id, order }) => [id, order] as const);
+    const afterStructure = after.scenes.map(({ id, order }) => [id, order] as const);
+    const structureChanged =
+      beforeStructure.length !== afterStructure.length ||
+      beforeStructure.some(
+        ([id, order], index) =>
+          afterStructure[index]?.[0] !== id || afterStructure[index]?.[1] !== order,
+      );
+
+    if (structureChanged) {
+      changes.push({ kind: 'structure' });
+    } else {
+      before.scenes.forEach((scene, index) => {
+        if (scene !== after.scenes[index]) changes.push({ kind: 'scene', sceneId: scene.id });
+      });
+    }
+  }
+
+  return changes;
+}
+
+function withProductionPersistence(store: StageStore): StageStore {
+  if (store !== useStageStore) return store;
+  return {
+    ...store,
+    setState(partial) {
+      const before = store.getState();
+      store.setState(partial);
+      const changes = persistenceChangesForSetState(before, store.getState());
+      if (changes.length > 0) markStagePersistenceDirty(changes);
+    },
+  };
+}
 
 // ==================== Stage API Implementation ====================
 
@@ -74,14 +120,17 @@ import type { StageStore } from './stage-api-types';
  * @returns Stage API object
  */
 export function createStageAPI(store: StageStore) {
+  // All namespaces receive the same guarded injection boundary. New API
+  // modules cannot bypass persistence by adding another raw setState call.
+  const persistenceStore = withProductionPersistence(store);
   return {
-    scene: createSceneAPI(store),
-    navigation: createNavigationAPI(store),
-    element: createElementAPI(store),
-    canvas: createCanvasAPI(store),
-    whiteboard: createWhiteboardAPI(store),
-    mode: createModeAPI(store),
-    stage: createStageMetaAPI(store),
+    scene: createSceneAPI(persistenceStore),
+    navigation: createNavigationAPI(persistenceStore),
+    element: createElementAPI(persistenceStore),
+    canvas: createCanvasAPI(persistenceStore),
+    whiteboard: createWhiteboardAPI(persistenceStore),
+    mode: createModeAPI(persistenceStore),
+    stage: createStageMetaAPI(persistenceStore),
   };
 }
 

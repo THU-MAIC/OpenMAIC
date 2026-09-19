@@ -1,0 +1,773 @@
+/**
+ * PostgreSQL registry for server assets over a pluggable byte layer.
+ *
+ * Within a write, the blob row is claimed first, then the bytes are written,
+ * then the entry that references them. The order is load-bearing at both ends:
+ * claiming the row first serializes the write against the collector, which
+ * could otherwise delete those bytes while this upsert waited for the lock, and
+ * writing bytes before the entry keeps every surviving entry backed by bytes
+ * that were actually stored. The byte write is unconditional, so both existence
+ * paths emit the same statements.
+ *
+ * The byte write itself must go through the transaction-pinned queryable
+ * (`writeWith`) whenever the bytes live in the registry's own PostgreSQL:
+ * written on the byte layer's own pooled connection while this transaction
+ * holds the blob-row lock, it would block on that lock forever -- a
+ * self-deadlock PostgreSQL cannot detect. A byte layer that cannot join the
+ * transaction must declare `writesOutsideRegistryDatabase`, or the registry
+ * refuses the configuration (see `assertByteWriteIsCoordinatable`).
+ *
+ * Request paths never delete bytes; the offline collector is the only reclaimer.
+ * `withTransaction` must pin all queries in its body to one freshly checked-out
+ * transaction.
+ */
+import type { AssetMeta, AssetRef, BinaryBlob } from '@openmaic/dsl';
+import { contentHashOf, type ContentHash } from './blob.js';
+import type { AssetByteStore } from './byte-store.js';
+import { newAssetId, type AssetId } from './id.js';
+import {
+  AssetNotFoundError,
+  AssetQuotaExceededError,
+  type AssetBytes,
+  type AssetIdentity,
+  type AssetIndirectRead,
+  type AssetIndirectReadRequest,
+  type AssetPrincipal,
+  type AssetStore,
+} from './types.js';
+import { assertJsonValue, isLosslessJsonString } from '../runtime/json-value.js';
+import { encodeJson } from '../pg-json.js';
+import type { Queryable, WithTransaction } from '../runtime/pg.js';
+
+export type { QueryResult, Queryable, WithTransaction } from '../runtime/pg.js';
+export type { AssetByteStore, AssetSignedReadHeaders } from './byte-store.js';
+export type {
+  AssetBytes,
+  AssetIdentity,
+  AssetIndirectRead,
+  AssetIndirectReadRequest,
+  AssetPrincipal,
+  AssetStore,
+} from './types.js';
+export { AssetNotFoundError, AssetQuotaExceededError } from './types.js';
+
+export interface PgAssetStoreOptions {
+  /** Pin each callback to a fresh PostgreSQL transaction and connection. */
+  withTransaction: WithTransaction;
+  /** Physical byte storage used beneath the registry. */
+  byteStore: AssetByteStore;
+  /** Optional logical-byte ceiling for each principal. */
+  quotaBytes?: number;
+  /**
+   * How long an allocated entry stays pending before it expires.
+   *
+   * The window this has to cover is "the bytes were stored, and then the
+   * document that names them was saved". A client stores bytes first and
+   * writes the id into the document afterwards, and nothing on the wire leases
+   * that gap, so the default is deliberately generous rather than tight: a day
+   * of unreclaimed bytes costs storage, while an expiry that fires before the
+   * document write costs the document its media.
+   *
+   * Expiry only matters to a deployment that runs the collector's entry pass
+   * (`AssetCollector`'s `documentReferences` option); without it the column is
+   * written and never read.
+   */
+  pendingTtlMs?: number;
+}
+
+/** One day. A deployment may choose a longer window. */
+export const DEFAULT_ASSET_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * One PGlite-compatible statement per entry, in dependency order.
+ *
+ * The three lifecycle columns on `asset_entries` and the `document_asset_refs`
+ * table carry the entry level of reference counting, mirroring one level up
+ * what `asset_blobs.unreferenced_at` already does for bytes:
+ *
+ * - `expires_at` is set when an entry is allocated and cleared when a document
+ *   first names it. An entry no document ever names therefore has a deadline
+ *   rather than living forever.
+ * - `committed_at` is stamped by that same first document write. `NULL` means
+ *   pending; it is never read on a request path.
+ * - `unreferenced_at` is stamped when a document write removes the entry's
+ *   last reference row, so an entry drains after a grace period instead of
+ *   immediately, and cleared by the document write paths when a reference
+ *   arrives back. The collector's backfill is the one reference-adding writer
+ *   that does NOT clear it: it deliberately touches no lifecycle column, so a
+ *   walk that re-references a stamped entry leaves it referenced AND stamped.
+ *   That is a normal intermediate state and a safe one -- the entry pass never
+ *   releases a referenced entry, and the next document write to that document
+ *   normalizes the columns.
+ *
+ * `document_asset_refs.scope` separates the stage-level slot -- stage
+ * whiteboards and the stage video manifest, which no scene owns -- from a
+ * scene's own slots, and is part of the primary key. It is a column rather
+ * than a reserved `scene_id` value because scene ids are opaque and
+ * unconstrained: a scene whose id happened to equal any sentinel would
+ * otherwise share a key with the stage-level rows, and one scope's write
+ * would silently delete the other's. Stage rows carry `scene_id = ''`, which
+ * is then a value nothing keys on rather than a reservation.
+ *
+ * The table deliberately carries no foreign key to `document_stages`: the
+ * document schema is a different backend that a deployment may not provision
+ * at all, and the reference rows are maintained explicitly by the document
+ * store (see `./references.ts`) rather than by a cascade.
+ *
+ * `asset_reference_tracking` is a one-row marker, written by a document store
+ * configured to maintain references and read by the collector before its
+ * entry pass. It exists because the two halves are separately configured and
+ * the failure mode of enabling only the second is silent deletion of live
+ * media: an empty `document_asset_refs` cannot be told apart from documents
+ * that reference nothing, but the absence of this marker can.
+ *
+ * `document_asset_withdrawals` records that a host has retired a document
+ * while keeping its rows, so the collector's one-time backfill does not walk
+ * that document's stored JSON and re-reference what the retirement released.
+ * A row here is the only durable trace of a retirement -- the document itself
+ * looks exactly like a live one, by design, because the retirement belongs to
+ * the host's own tombstone and not to this schema -- and therefore the only
+ * thing that may make that walk skip a document. Every write path that
+ * maintains references removes the row -- a write that re-establishes the
+ * document's references, and a delete on a store that tracks them -- so under
+ * a single, consistent configuration the record never outlives what it
+ * describes. A delete issued by a store with tracking OFF cannot clear it,
+ * because that store may be running against a database with no asset schema
+ * at all; a stale record then survives its document and would make the walk
+ * skip whatever later claims that id. That is one more reason for the rule
+ * `docs/reference-server.md` already gives: do not mix tracking states on one
+ * database (see `./references.ts`).
+ */
+export const ASSET_PG_SCHEMA: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS asset_blobs (
+     content_hash TEXT PRIMARY KEY,
+     byte_size BIGINT NOT NULL,
+     bytes BYTEA,
+     unreferenced_at TIMESTAMPTZ
+   )`,
+  `CREATE TABLE IF NOT EXISTS asset_entries (
+     id TEXT PRIMARY KEY,
+     principal TEXT NOT NULL,
+     content_hash TEXT NOT NULL REFERENCES asset_blobs(content_hash),
+     mime TEXT NOT NULL,
+     meta JSONB NOT NULL,
+     revision INTEGER NOT NULL DEFAULT 1,
+     created_at DOUBLE PRECISION NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS asset_entries_principal_idx
+     ON asset_entries (principal, id)`,
+  `CREATE INDEX IF NOT EXISTS asset_entries_content_hash_idx
+     ON asset_entries (content_hash)`,
+  `CREATE INDEX IF NOT EXISTS asset_blobs_unreferenced_idx
+     ON asset_blobs (unreferenced_at) WHERE unreferenced_at IS NOT NULL`,
+  `ALTER TABLE asset_entries
+     ADD COLUMN IF NOT EXISTS committed_at TIMESTAMPTZ`,
+  `ALTER TABLE asset_entries
+     ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`,
+  `ALTER TABLE asset_entries
+     ADD COLUMN IF NOT EXISTS unreferenced_at TIMESTAMPTZ`,
+  `CREATE TABLE IF NOT EXISTS document_asset_refs (
+     stage_id TEXT NOT NULL,
+     scope TEXT NOT NULL CHECK (scope IN ('stage', 'scene')),
+     scene_id TEXT NOT NULL,
+     asset_id TEXT NOT NULL REFERENCES asset_entries(id) ON DELETE CASCADE,
+     PRIMARY KEY (stage_id, scope, scene_id, asset_id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS document_asset_refs_asset_idx
+     ON document_asset_refs (asset_id)`,
+  `CREATE INDEX IF NOT EXISTS asset_entries_expires_idx
+     ON asset_entries (expires_at) WHERE expires_at IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS asset_entries_unreferenced_idx
+     ON asset_entries (unreferenced_at) WHERE unreferenced_at IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS asset_entries_legacy_idx
+     ON asset_entries (id) WHERE committed_at IS NULL AND expires_at IS NULL`,
+  `CREATE TABLE IF NOT EXISTS asset_reference_tracking (
+     singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+     enabled_at TIMESTAMPTZ NOT NULL
+   )`,
+  `CREATE TABLE IF NOT EXISTS document_asset_withdrawals (
+     stage_id TEXT NOT NULL PRIMARY KEY,
+     withdrawn_at TIMESTAMPTZ NOT NULL
+   )`,
+];
+
+export async function ensureAssetSchema(queryable: Queryable): Promise<void> {
+  for (const statement of ASSET_PG_SCHEMA) await queryable.query(statement);
+}
+
+interface UsageRow extends Record<string, unknown> {
+  logical_bytes: number | string;
+}
+
+interface ReplaceUsageRow extends UsageRow {
+  current_bytes: number | string;
+  current_counts: boolean;
+}
+
+interface EntryRow extends Record<string, unknown> {
+  content_hash: ContentHash;
+  mime: string;
+  meta: unknown;
+  revision: number | string;
+}
+
+interface IdentityRow extends Record<string, unknown> {
+  mime: string;
+  revision: number | string;
+  byte_size: number | string;
+}
+
+interface HashRow extends Record<string, unknown> {
+  content_hash: ContentHash;
+}
+
+interface TransactionalByteWriter extends AssetByteStore {
+  writeWith(queryable: Queryable, hash: ContentHash, bytes: Uint8Array): Promise<void>;
+}
+
+interface TransactionalByteReader extends AssetByteStore {
+  readWith(queryable: Queryable, hash: ContentHash): Promise<Uint8Array | null>;
+}
+
+function hasTransactionalWriter(store: AssetByteStore): store is TransactionalByteWriter {
+  return 'writeWith' in store && typeof store.writeWith === 'function';
+}
+
+function hasTransactionalReader(store: AssetByteStore): store is TransactionalByteReader {
+  return 'readWith' in store && typeof store.readWith === 'function';
+}
+
+/**
+ * Bound on how long one registry write transaction may wait on a lock.
+ *
+ * Every registry lock wait in a healthy deployment is short: the blob-row
+ * claim serializes against the collector (a transaction per blob) or against a
+ * concurrent writer of the same content, and the principal quota lock waits
+ * only for a same-principal write already in flight. A wait that outlives this
+ * bound is a stuck transaction or a lock-contention bug, and must surface as a
+ * loud error rather than hang a request or an agent turn for as long as the
+ * holder stays stuck.
+ */
+const REGISTRY_WRITE_LOCK_TIMEOUT_SQL = `SET LOCAL lock_timeout = '30s'`;
+
+function registryConfigurationFailure(problem: string): Error {
+  return new Error(`@openmaic/storage: ${problem}`);
+}
+
+function registryFailure(operation: string): Error {
+  return new Error(`@openmaic/storage: asset registry ${operation} failed`);
+}
+
+class RegistryAssetNotFound extends Error {}
+
+class RegistryAssetQuotaExceeded extends Error {}
+
+function encodeMeta(meta: AssetMeta): string {
+  assertJsonValue(meta, 'asset metadata');
+  return encodeJson(meta, 'asset metadata');
+}
+
+function byteView(buffer: ArrayBuffer): Uint8Array {
+  return new Uint8Array(buffer);
+}
+
+export class PgAssetStore implements AssetStore {
+  private readonly transactionHook: WithTransaction;
+  private readonly byteStore: AssetByteStore;
+  private readonly quotaBytes?: number;
+  private readonly pendingTtlMs: number;
+
+  constructor(
+    private readonly queryable: Queryable,
+    options: PgAssetStoreOptions,
+  ) {
+    if (typeof options?.withTransaction !== 'function') {
+      throw new Error(
+        '@openmaic/storage: withTransaction is required and must pin a fresh connection and transaction for every call',
+      );
+    }
+    if (!options.byteStore) {
+      throw new Error('@openmaic/storage: byteStore is required for PgAssetStore');
+    }
+    if (
+      options.quotaBytes !== undefined &&
+      (!Number.isSafeInteger(options.quotaBytes) || options.quotaBytes < 0)
+    ) {
+      throw new Error('@openmaic/storage: quotaBytes must be a non-negative safe integer');
+    }
+    if (
+      options.pendingTtlMs !== undefined &&
+      (!Number.isSafeInteger(options.pendingTtlMs) || options.pendingTtlMs < 1)
+    ) {
+      throw new Error('@openmaic/storage: pendingTtlMs must be a positive safe integer');
+    }
+    this.transactionHook = options.withTransaction;
+    this.byteStore = options.byteStore;
+    this.quotaBytes = options.quotaBytes;
+    this.pendingTtlMs = options.pendingTtlMs ?? DEFAULT_ASSET_PENDING_TTL_MS;
+  }
+
+  private transaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
+    return this.transactionHook(body);
+  }
+
+  /**
+   * A write transaction: the same fresh pinned connection as
+   * {@link transaction}, plus a lock-wait budget, so a future lock-contention
+   * variant of a registry write fails loudly instead of hanging.
+   */
+  private writeTransaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
+    return this.transactionHook(async (queryable) => {
+      await queryable.query(REGISTRY_WRITE_LOCK_TIMEOUT_SQL);
+      return body(queryable);
+    });
+  }
+
+  /**
+   * Refuse the self-deadlock configuration up front: a byte store that writes
+   * to the registry's own PostgreSQL but cannot join the registry's
+   * transaction would issue its byte write on a second pooled connection while
+   * this transaction holds the blob-row lock. That write blocks forever on the
+   * lock the transaction just took, and the transaction waits on the write --
+   * a deadlock PostgreSQL cannot detect, because one side is idle in
+   * transaction. A store either joins the transaction (`writeWith`) or
+   * declares that its bytes live outside the registry's database
+   * ({@link AssetByteStore.writesOutsideRegistryDatabase}); anything else is a
+   * configuration error, thrown here before any row is claimed.
+   */
+  private assertByteWriteIsCoordinatable(): void {
+    if (hasTransactionalWriter(this.byteStore)) return;
+    if (this.byteStore.writesOutsideRegistryDatabase === true) return;
+    throw registryConfigurationFailure(
+      'the asset byte store cannot coordinate byte writes with the registry. A byte store without ' +
+        'writeWith() writes on its own connection; if it writes to the same PostgreSQL as the ' +
+        'registry, that write blocks forever on the blob-row lock the registry transaction just ' +
+        'took (a self-deadlock PostgreSQL cannot detect). Provide a transaction-pinned writeWith(), ' +
+        'or declare writesOutsideRegistryDatabase: true when the bytes genuinely live outside the ' +
+        "registry's database (for example in an object store).",
+    );
+  }
+
+  private async coordinatedWrite(
+    queryable: Queryable,
+    hash: ContentHash,
+    bytes: Uint8Array,
+  ): Promise<void> {
+    if (hasTransactionalWriter(this.byteStore)) {
+      await this.byteStore.writeWith(queryable, hash, bytes);
+      return;
+    }
+    if (this.byteStore.writesOutsideRegistryDatabase === true) {
+      await this.byteStore.write(hash, bytes);
+      return;
+    }
+    // Defense in depth: the entry-point check above should have refused this
+    // configuration before any transaction opened. Keep the guard here too so
+    // a future call path cannot fall into the deadlock silently.
+    this.assertByteWriteIsCoordinatable();
+  }
+
+  private readBytes(queryable: Queryable, hash: ContentHash): Promise<Uint8Array | null> {
+    return hasTransactionalReader(this.byteStore)
+      ? this.byteStore.readWith(queryable, hash)
+      : this.byteStore.read(hash);
+  }
+
+  /**
+   * Serialize this principal's writes before reading their usage.
+   *
+   * A quota read outside the write transaction is stale by the time it is
+   * used: two concurrent writes both observe the old total, both pass, and the
+   * principal ends up over quota by as much as the concurrency allows. The
+   * lock is transaction-scoped, so it releases on commit or rollback, and it
+   * is taken only when a quota is configured -- a branch on deployment
+   * configuration, never on data, so it discloses nothing.
+   */
+  private async lockPrincipal(queryable: Queryable, principal: AssetPrincipal): Promise<void> {
+    // hashtextextended is 64-bit: hashtext is 32-bit, and colliding principals
+    // would block each other for the whole transaction -- which spans a byte
+    // write that may be a network upload.
+    await queryable.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [principal.key]);
+  }
+
+  private async assertPutQuota(
+    queryable: Queryable,
+    principal: AssetPrincipal,
+    addedBytes: number,
+  ): Promise<void> {
+    if (this.quotaBytes === undefined) return;
+    await this.lockPrincipal(queryable, principal);
+    let result;
+    try {
+      result = await queryable.query<UsageRow>(
+        // Everything not yet stamped unreferenced. An entry whose last
+        // document reference is gone is on its way out, so counting it would
+        // make a regeneration cost quota forever instead of only until the
+        // collector's grace period passes. The predicate is exactly that and
+        // nothing more: a pending entry counts whether or not its expiry has
+        // passed, because only the entry pass removes it, and a quota that
+        // over-counts for one collection interval refuses a write slightly
+        // early rather than admitting one it should not.
+        `SELECT COALESCE(SUM(blobs.byte_size), 0)::text AS logical_bytes
+           FROM asset_entries AS entries
+           JOIN asset_blobs AS blobs ON blobs.content_hash = entries.content_hash
+          WHERE entries.principal = $1 AND entries.unreferenced_at IS NULL`,
+        [principal.key],
+      );
+    } catch {
+      throw registryFailure('quota check');
+    }
+    const used = Number(result.rows[0]?.logical_bytes ?? 0);
+    if (used + addedBytes > this.quotaBytes) throw new RegistryAssetQuotaExceeded();
+  }
+
+  private async assertReplaceQuota(
+    queryable: Queryable,
+    principal: AssetPrincipal,
+    ref: AssetId,
+    replacementBytes: number,
+  ): Promise<void> {
+    if (this.quotaBytes === undefined) return;
+    await this.lockPrincipal(queryable, principal);
+    let result;
+    try {
+      result = await queryable.query<ReplaceUsageRow>(
+        // Same live-entry sum as assertPutQuota. `current_counts` says whether
+        // the entry being replaced is part of that sum: replace leaves the
+        // lifecycle columns alone, so an entry that has already lost its last
+        // reference is outside the sum before the replace and still outside it
+        // after, and neither its old nor its new bytes may move the total.
+        `SELECT current_blob.byte_size::text AS current_bytes,
+                current_entry.unreferenced_at IS NULL AS current_counts,
+                usage.logical_bytes
+           FROM asset_entries AS current_entry
+           JOIN asset_blobs AS current_blob
+             ON current_blob.content_hash = current_entry.content_hash
+           CROSS JOIN (
+             SELECT COALESCE(SUM(blobs.byte_size), 0)::text AS logical_bytes
+               FROM asset_entries AS entries
+               JOIN asset_blobs AS blobs ON blobs.content_hash = entries.content_hash
+              WHERE entries.principal = $2 AND entries.unreferenced_at IS NULL
+           ) AS usage
+          WHERE current_entry.id = $1 AND current_entry.principal = $2`,
+        [ref, principal.key],
+      );
+    } catch {
+      throw registryFailure('quota check');
+    }
+    const row = result.rows[0];
+    if (!row) throw new RegistryAssetNotFound();
+    // The post-state of the live sum, which is what a quota bounds. An entry
+    // outside the sum contributes neither term, so replacing it is a no-op
+    // against the quota rather than a charge for bytes that will not be
+    // counted -- a check whose own refusal could not be explained by the
+    // total it protects.
+    const countsLive = row.current_counts;
+    const liveAfterBytes =
+      Number(row.logical_bytes) -
+      (countsLive ? Number(row.current_bytes) : 0) +
+      (countsLive ? replacementBytes : 0);
+    if (liveAfterBytes > this.quotaBytes) throw new RegistryAssetQuotaExceeded();
+  }
+
+  async put(principal: AssetPrincipal, data: BinaryBlob, meta?: AssetMeta): Promise<AssetId> {
+    this.assertByteWriteIsCoordinatable();
+    const storedMeta = meta ?? {};
+    const encodedMeta = encodeMeta(storedMeta);
+    const mime = storedMeta.contentType ?? data.type;
+    const { contentHash, bytes: buffer } = await contentHashOf(data);
+    const bytes = byteView(buffer);
+    let id: AssetId;
+    try {
+      id = newAssetId();
+    } catch {
+      throw registryFailure('put');
+    }
+
+    try {
+      await this.writeTransaction(async (queryable) => {
+        // Inside the transaction, and before anything is written: a check on
+        // the pool is already stale when it is acted on.
+        await this.assertPutQuota(queryable, principal, bytes.byteLength);
+        await queryable.query(
+          `INSERT INTO asset_blobs (content_hash, byte_size, unreferenced_at)
+           VALUES ($1, $2, NULL)
+           ON CONFLICT (content_hash) DO UPDATE
+             SET unreferenced_at = NULL,
+                 byte_size = EXCLUDED.byte_size`,
+          [contentHash, bytes.byteLength],
+        );
+        // Bytes are written only after the upsert above has taken the blob
+        // row's lock. Writing before it instead would not be safe: the
+        // collector can hold that lock, delete those bytes, and commit while
+        // this upsert waits, leaving a fresh entry pointing at nothing. The
+        // write is unconditional, so both existence paths still emit the same
+        // sequence. The entry is inserted after it, so no row ever references
+        // bytes that were not stored first.
+        await this.coordinatedWrite(queryable, contentHash, bytes);
+        // The entry is allocated PENDING: `committed_at` stays NULL until the
+        // first document write names this id, and `expires_at` is the deadline
+        // for that write to arrive. The columns are written unconditionally on
+        // every put, and no READ path reads them -- see `resolve` / `identify`
+        // / `resolveIndirect`, none of which mention them -- so the pending and
+        // committed states are indistinguishable to a caller. The one
+        // deliberate exception is `unreferenced_at`, which the quota checks on
+        // `put` and `replace` read: quota is accounted on live logical bytes,
+        // and the asset contract states that branch explicitly.
+        await queryable.query(
+          `INSERT INTO asset_entries
+             (id, principal, content_hash, mime, meta, revision, created_at,
+              committed_at, expires_at, unreferenced_at)
+           VALUES ($1, $2, $3, $4, $5::jsonb, 1, $6,
+                   NULL, now() + ($7::double precision * interval '1 millisecond'), NULL)`,
+          [id, principal.key, contentHash, mime, encodedMeta, Date.now(), this.pendingTtlMs],
+        );
+      });
+    } catch (error) {
+      if (error instanceof RegistryAssetQuotaExceeded) throw new AssetQuotaExceededError();
+      throw registryFailure('put');
+    }
+    return id;
+  }
+
+  async resolve(principal: AssetPrincipal, ref: AssetRef): Promise<AssetBytes | null> {
+    if (!isLosslessJsonString(ref) || !isLosslessJsonString(principal.key)) return null;
+    try {
+      return await this.transaction(async (queryable) => {
+        const result = await queryable.query<EntryRow>(
+          `SELECT content_hash, mime, revision
+             FROM asset_entries
+            WHERE id = $1 AND principal = $2`,
+          [ref, principal.key],
+        );
+        const entry = result.rows[0];
+        if (!entry) return null;
+        const locked = await queryable.query(
+          `SELECT 1
+             FROM asset_blobs
+            WHERE content_hash = $1
+            FOR SHARE`,
+          [entry.content_hash],
+        );
+        if (!locked.rows[0]) return null;
+        const bytes = await this.readBytes(queryable, entry.content_hash);
+        if (bytes === null) return null;
+        return { bytes, mime: entry.mime, revision: Number(entry.revision) };
+      });
+    } catch {
+      throw registryFailure('resolve');
+    }
+  }
+
+  /**
+   * The indirect counterpart of {@link resolve}: same ownership-checked read,
+   * but the answer is a signed URL minted by the byte layer rather than the
+   * bytes. Returns `undefined` when the byte layer cannot sign, so the caller
+   * falls back to a direct read -- a byte column never gains a signer, and an
+   * object store only declines when its signing dependency is absent.
+   *
+   * No byte is read here, which is the point: the network cost of an
+   * object-store read moves off this path entirely. The shared blob-row lock
+   * is still taken for the read, keeping the hash being signed in the same
+   * snapshot as the entry that named it; the signing itself runs after the
+   * transaction closes, since credential resolution can wait on the network.
+   */
+  async resolveIndirect(
+    principal: AssetPrincipal,
+    ref: AssetRef,
+    request: AssetIndirectReadRequest,
+  ): Promise<AssetIndirectRead | null | undefined> {
+    const signReadUrl = this.byteStore.signReadUrl;
+    if (typeof signReadUrl !== 'function') return undefined;
+    if (!isLosslessJsonString(ref) || !isLosslessJsonString(principal.key)) return null;
+    // The coordinated read and the signing are deliberately separate steps.
+    // The read takes the shared blob-row lock so the hash, label and revision
+    // come from one snapshot; the signing happens after the transaction has
+    // closed, because a signer on refreshable credentials can wait on the
+    // network, and no database connection or lock may be held across that.
+    // What the URL names is already fixed by then, so signing cannot observe
+    // anything the read did not.
+    let read: { hash: ContentHash; mime: string; revision: number } | null;
+    try {
+      read = await this.transaction(async (queryable) => {
+        const result = await queryable.query<EntryRow>(
+          `SELECT content_hash, mime, revision
+             FROM asset_entries
+            WHERE id = $1 AND principal = $2`,
+          [ref, principal.key],
+        );
+        const entry = result.rows[0];
+        if (!entry) return null;
+        const locked = await queryable.query(
+          `SELECT 1
+             FROM asset_blobs
+            WHERE content_hash = $1
+            FOR SHARE`,
+          [entry.content_hash],
+        );
+        if (!locked.rows[0]) return null;
+        return {
+          hash: entry.content_hash,
+          mime: entry.mime,
+          revision: Number(entry.revision),
+        };
+      });
+    } catch {
+      throw registryFailure('resolve');
+    }
+    if (read === null) return null;
+    let url: string | undefined;
+    try {
+      url = await signReadUrl.call(this.byteStore, read.hash, {
+        ...request.label(read.mime),
+        cacheControl: request.cacheControl,
+        expiresInSeconds: request.expiresInSeconds,
+      });
+    } catch {
+      throw registryFailure('resolve');
+    }
+    return url === undefined ? undefined : { url, revision: read.revision };
+  }
+
+  async identify(principal: AssetPrincipal, ref: AssetRef): Promise<AssetIdentity | null> {
+    if (!isLosslessJsonString(ref) || !isLosslessJsonString(principal.key)) return null;
+    try {
+      const result = await this.queryable.query<IdentityRow>(
+        `SELECT entries.mime, entries.revision, blobs.byte_size
+           FROM asset_entries AS entries
+           JOIN asset_blobs AS blobs ON blobs.content_hash = entries.content_hash
+          WHERE entries.id = $1 AND entries.principal = $2`,
+        [ref, principal.key],
+      );
+      const identity = result.rows[0];
+      if (!identity) return null;
+      return {
+        mime: identity.mime,
+        revision: Number(identity.revision),
+        byteLength: Number(identity.byte_size),
+      };
+    } catch {
+      throw registryFailure('identify');
+    }
+  }
+
+  /**
+   * Delete one entry, and stamp the blob when no entry names it any more.
+   *
+   * Unchanged by the entry lifecycle: any `document_asset_refs` rows naming
+   * this id go with the row through the table's `ON DELETE CASCADE`, which
+   * needs no statement here and cannot change the contract that an unknown id
+   * -- or another principal's id -- is the same no-op, because a delete that
+   * matches no row cascades to nothing.
+   */
+  async remove(principal: AssetPrincipal, ref: AssetRef): Promise<void> {
+    if (!isLosslessJsonString(ref) || !isLosslessJsonString(principal.key)) return;
+    try {
+      await this.writeTransaction(async (queryable) => {
+        const deleted = await queryable.query<HashRow>(
+          `DELETE FROM asset_entries
+            WHERE id = $1 AND principal = $2
+            RETURNING content_hash`,
+          [ref, principal.key],
+        );
+        const hash = deleted.rows[0]?.content_hash;
+        if (!hash) return;
+        await queryable.query(
+          `UPDATE asset_blobs
+              SET unreferenced_at = now()
+            WHERE content_hash = $1
+              AND NOT EXISTS (
+                SELECT 1 FROM asset_entries WHERE content_hash = $1
+              )`,
+          [hash],
+        );
+      });
+    } catch {
+      throw registryFailure('remove');
+    }
+  }
+
+  async replace(
+    principal: AssetPrincipal,
+    ref: AssetId,
+    data: BinaryBlob,
+    meta?: AssetMeta,
+  ): Promise<number> {
+    if (!isLosslessJsonString(ref) || !isLosslessJsonString(principal.key)) {
+      throw new AssetNotFoundError();
+    }
+    const storedMeta = meta === undefined ? undefined : meta;
+    const encodedMeta = storedMeta === undefined ? undefined : encodeMeta(storedMeta);
+    const replacementMime = storedMeta?.contentType ?? data.type;
+    const { contentHash, bytes: buffer } = await contentHashOf(data);
+    const bytes = byteView(buffer);
+    this.assertByteWriteIsCoordinatable();
+    try {
+      return await this.writeTransaction(async (queryable) => {
+        await this.assertReplaceQuota(queryable, principal, ref, bytes.byteLength);
+        const existing = await queryable.query<EntryRow>(
+          `SELECT content_hash, mime, meta, revision
+             FROM asset_entries
+            WHERE id = $1 AND principal = $2
+            FOR UPDATE`,
+          [ref, principal.key],
+        );
+        const oldEntry = existing.rows[0];
+        if (!oldEntry) throw new RegistryAssetNotFound();
+
+        await queryable.query(
+          `INSERT INTO asset_blobs (content_hash, byte_size, unreferenced_at)
+           VALUES ($1, $2, NULL)
+           ON CONFLICT (content_hash) DO UPDATE
+             SET unreferenced_at = NULL,
+                 byte_size = EXCLUDED.byte_size`,
+          [contentHash, bytes.byteLength],
+        );
+        await this.coordinatedWrite(queryable, contentHash, bytes);
+
+        // The lifecycle columns are deliberately absent from both branches
+        // below: replacing bytes under an existing id changes neither what
+        // names that id nor when it was first named, so a pending entry stays
+        // pending and an unreferenced one stays unreferenced.
+        let updated;
+        if (storedMeta === undefined) {
+          updated = await queryable.query<{ revision: number | string }>(
+            `UPDATE asset_entries
+                SET content_hash = $3,
+                    mime = CASE WHEN $4 = '' THEN mime ELSE $4 END,
+                    revision = revision + 1
+              WHERE id = $1 AND principal = $2
+              RETURNING revision`,
+            [ref, principal.key, contentHash, data.type],
+          );
+        } else {
+          updated = await queryable.query<{ revision: number | string }>(
+            `UPDATE asset_entries
+                SET content_hash = $3,
+                    mime = $4,
+                    meta = $5::jsonb,
+                    revision = revision + 1
+              WHERE id = $1 AND principal = $2
+              RETURNING revision`,
+            [ref, principal.key, contentHash, replacementMime, encodedMeta],
+          );
+        }
+
+        await queryable.query(
+          `UPDATE asset_blobs
+              SET unreferenced_at = now()
+            WHERE content_hash = $1
+              AND NOT EXISTS (
+                SELECT 1 FROM asset_entries WHERE content_hash = $1
+              )`,
+          [oldEntry.content_hash],
+        );
+        return Number(updated.rows[0]!.revision);
+      });
+    } catch (error) {
+      if (error instanceof RegistryAssetNotFound) throw new AssetNotFoundError();
+      if (error instanceof RegistryAssetQuotaExceeded) throw new AssetQuotaExceededError();
+      throw registryFailure('replace');
+    }
+  }
+}

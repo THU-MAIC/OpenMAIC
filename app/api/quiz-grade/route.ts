@@ -44,7 +44,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Resolve model from request headers/body
-    const { model: languageModel, thinkingConfig } = await resolveModelFromRequest(req, body);
+    const { model: languageModel, thinkingConfig } = await resolveModelFromRequest(
+      req,
+      body,
+      'quiz-grade',
+    );
 
     const isZh = language === 'zh-CN';
 

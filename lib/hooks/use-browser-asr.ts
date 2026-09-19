@@ -9,7 +9,7 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('BrowserASR');
 
-// Note: Window.SpeechRecognition declaration is in components/ai-elements/prompt-input.tsx
+// Window.SpeechRecognition constructors are declared in types/web-speech.d.ts.
 
 export type ASRErrorCode =
   | 'not-supported'
@@ -68,9 +68,11 @@ export function useBrowserASR(options: UseBrowserASROptions = {}) {
       return;
     }
 
-    // Create Speech Recognition instance
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
+    // Cast the instance because its rich shape (event handlers, lang,
+    // continuous, …) is intentionally outside our minimal global declaration.
+    const SpeechRecognitionCtor = (window.SpeechRecognition || window.webkitSpeechRecognition)!;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API instance shape isn't in lib.dom
+    const recognition: any = new SpeechRecognitionCtor();
 
     recognition.lang = language;
     recognition.continuous = continuous;

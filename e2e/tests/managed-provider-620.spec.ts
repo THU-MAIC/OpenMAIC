@@ -42,7 +42,7 @@ test.describe('#620 managed providers are read-only', () => {
     );
     await page.addInitScript(
       (settings) => {
-        localStorage.setItem('settings-storage', settings);
+        localStorage.setItem('maic:account:settings-storage', settings);
       },
       createSettingsStorage({
         modelId: '',

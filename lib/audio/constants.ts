@@ -36,6 +36,7 @@ import type {
   ASRProviderId,
   ASRProviderConfig,
 } from './types';
+import { isCustomTTSProvider } from './types';
 import {
   VOXCPM_AUTO_VOICE,
   VOXCPM_AUTO_VOICE_ID,
@@ -77,6 +78,43 @@ export const MINIMAX_TTS_MODELS = [
   { id: 'speech-02-hd', name: 'Speech 02 HD' },
   { id: 'speech-02-turbo', name: 'Speech 02 Turbo' },
 ] as const;
+
+export const DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL = 'qwen3-tts-vc-2026-01-22';
+/** Client-visible VC model. Server-only overrides are resolved in provider-config. */
+export const QWEN_TTS_VOICE_CLONE_MODEL = DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL;
+
+export function isQwenVoiceCloneModel(modelId?: string, configuredModelId?: string): boolean {
+  return (
+    !!modelId &&
+    (/-tts-vc(?:-|$)/iu.test(modelId) || (!!configuredModelId && modelId === configuredModelId))
+  );
+}
+
+/** A Qwen catalog voice is provider-owned and must never use the clone model. */
+export function isQwenCatalogVoice(voiceId?: string): boolean {
+  return !!voiceId && TTS_PROVIDERS['qwen-tts'].voices.some((voice) => voice.id === voiceId);
+}
+
+/** A non-catalog Qwen voice ID is an enrolled clone; local profile storage is not authoritative. */
+export function isQwenCloneVoice(voiceId?: string): boolean {
+  return !!voiceId && !isQwenCatalogVoice(voiceId);
+}
+
+/**
+ * Enforce the client-side half of the model-follows-voice invariant. The server
+ * maps the VC sentinel to its operator-resolved model and applies model pins.
+ */
+export function resolveTTSModelForVoice(
+  providerId: TTSProviderId,
+  voiceId: string,
+  requestedModelId?: string,
+): string | undefined {
+  if (providerId !== 'qwen-tts') return requestedModelId;
+  if (isQwenCloneVoice(voiceId)) return QWEN_TTS_VOICE_CLONE_MODEL;
+  return requestedModelId && !isQwenVoiceCloneModel(requestedModelId)
+    ? requestedModelId
+    : TTS_PROVIDERS['qwen-tts'].defaultModelId;
+}
 
 export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
   'openai-tts': {
@@ -306,10 +344,16 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://dashscope.aliyuncs.com/api/v1',
     icon: '/logos/bailian.svg',
+    // Paid showcase presets: never offered to the agent even when this provider
+    // is configured (explicit mechanism, not "no env so absent"). A clone
+    // registered this session through the registration adapter stays bindable;
+    // only the preset list is excluded from the agent catalog.
+    excludeFromAgentVoiceCatalog: true,
     models: [
       { id: 'qwen3-tts-flash', name: 'Qwen3 TTS Flash' },
       { id: 'qwen3-tts-instruct-flash', name: 'Qwen3 TTS Instruct Flash' },
       { id: 'qwen-tts', name: 'Qwen TTS' },
+      { id: QWEN_TTS_VOICE_CLONE_MODEL, name: 'Qwen3 TTS Voice Clone' },
     ],
     defaultModelId: 'qwen3-tts-flash',
     voices: [
@@ -1249,6 +1293,22 @@ export const ASR_PROVIDERS: Record<BuiltInASRProviderId, ASRProviderConfig> = {
     supportedFormats: ['webm'], // MediaRecorder format
   },
 
+  'funasr-asr': {
+    id: 'funasr-asr',
+    name: 'FunASR',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://localhost:8000/v1',
+    icon: '/logos/funasr.png',
+    models: [
+      { id: 'sensevoice', name: 'SenseVoiceSmall' },
+      { id: 'paraformer', name: 'Paraformer' },
+      { id: 'fun-asr-nano', name: 'Fun-ASR-Nano' },
+    ],
+    defaultModelId: 'sensevoice',
+    supportedLanguages: ['auto', 'zh', 'en', 'ja', 'ko', 'yue'],
+    supportedFormats: ['wav'],
+  },
+
   'lemonade-asr': {
     id: 'lemonade-asr',
     name: 'Lemonade ASR',
@@ -1311,16 +1371,42 @@ export function getAllTTSProviders(
 }
 
 /**
+ * Narrow an arbitrary string (e.g. from a persisted document or an imported
+ * manifest, where the contract keeps providerId an open string) to a known
+ * TTS provider id: a registered built-in provider or the user-defined
+ * custom-provider namespace. Anything else must be treated as "no voice".
+ */
+export function isKnownTTSProviderId(id: string): id is TTSProviderId {
+  // Object.hasOwn, not `in`: prototype-chain keys ('toString', 'constructor',
+  // …) must not pass a whitelist built from an object literal.
+  return Object.hasOwn(TTS_PROVIDERS, id) || isCustomTTSProvider(id);
+}
+
+/**
  * Get TTS provider by ID (checks built-in first, then custom)
  */
 export function getTTSProvider(
   providerId: TTSProviderId,
   customProviders?: Record<string, TTSProviderConfig>,
 ): TTSProviderConfig | undefined {
-  if (providerId in TTS_PROVIDERS) {
+  if (Object.hasOwn(TTS_PROVIDERS, providerId)) {
     return TTS_PROVIDERS[providerId as BuiltInTTSProviderId];
   }
   return customProviders?.[providerId];
+}
+
+/**
+ * Models a user may pick manually in the UI. The Qwen voice-clone model is
+ * excluded: it is never chosen by hand, only resolved implicitly from a picked
+ * clone voice (model-follows-voice), so it must not appear in manual model
+ * pickers while staying in the provider registry for voice-driven dispatch.
+ */
+export function getManuallySelectableTTSModels(
+  providerId: TTSProviderId,
+  customProviders?: Record<string, TTSProviderConfig>,
+): TTSProviderConfig['models'] {
+  const provider = getTTSProvider(providerId, customProviders);
+  return (provider?.models || []).filter((model) => !isQwenVoiceCloneModel(model.id));
 }
 
 /**
@@ -1351,7 +1437,7 @@ export function getASRProvider(
   providerId: ASRProviderId,
   customProviders?: Record<string, ASRProviderConfig>,
 ): ASRProviderConfig | undefined {
-  if (providerId in ASR_PROVIDERS) {
+  if (Object.hasOwn(ASR_PROVIDERS, providerId)) {
     return ASR_PROVIDERS[providerId as BuiltInASRProviderId];
   }
   return customProviders?.[providerId];

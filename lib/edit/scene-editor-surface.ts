@@ -129,8 +129,13 @@ export interface SceneEditorSurface<
 > {
   sceneType: SceneType;
 
-  /** Center canvas — surface fully owns rendering. */
-  CanvasComponent: ComponentType;
+  /**
+   * Center surface region — the surface fully owns rendering. Paradigm-neutral
+   * by design: the slide surface mounts a canvas here, the quiz surface a
+   * structured form. (Renamed from `CanvasComponent` once the quiz surface
+   * proved the slot is not canvas-specific.)
+   */
+  SurfaceComponent: ComponentType;
 
   /**
    * React hook called by the shell once per render. Owns selection, history,

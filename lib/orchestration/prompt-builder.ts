@@ -67,6 +67,9 @@ const SPOTLIGHT_EXAMPLES = `[{"type":"action","name":"spotlight","params":{"elem
 
 `;
 
+const BAD_EXAMPLES_HEADING = '### Bad Examples (DO NOT do this)';
+const RAW_LATEX_BAD_EXAMPLE = `[{"type":"action","name":"wb_draw_text","params":{"content":"\\\\frac{a}{b}","x":100,"y":80}}] (Don't pass raw LaTeX to wb_draw_text; use wb_draw_latex for equations!)`;
+
 const SLIDE_ACTION_GUIDELINES = `- spotlight: Use to focus attention on ONE key element. Don't overuse — max 1-2 per response.
 - laser: Use to point at elements. Good for directing attention during explanations.
 `;
@@ -161,7 +164,10 @@ export function buildStructuredPrompt(
   if (!prompt) {
     throw new Error('agent-system template not found');
   }
-  return prompt.system;
+  return prompt.system.replace(
+    BAD_EXAMPLES_HEADING,
+    `${BAD_EXAMPLES_HEADING}\n${RAW_LATEX_BAD_EXAMPLE}`,
+  );
 }
 
 // ==================== Length Guidelines ====================

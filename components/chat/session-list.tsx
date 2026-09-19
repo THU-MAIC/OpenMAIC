@@ -14,6 +14,7 @@ interface SessionListProps {
   activeBubbleId?: string | null;
   onToggleExpand: (sessionId: string) => void;
   onEndSession: (sessionId: string) => Promise<void>;
+  onContinueSession: (sessionId: string) => boolean;
 }
 
 const sessionBadgeStyles = {
@@ -28,6 +29,8 @@ function getStatusIcon(status: SessionStatus) {
   switch (status) {
     case 'active':
       return <Circle className="size-2.5 fill-green-500 text-green-500" />;
+    case 'soft-closing':
+      return <Circle className="size-2.5 fill-amber-500 text-amber-500 animate-pulse" />;
     case 'interrupted':
       return <Clock className="size-2.5 text-yellow-500" />;
     case 'completed':
@@ -47,13 +50,14 @@ export function SessionList({
   activeBubbleId,
   onToggleExpand,
   onEndSession,
+  onContinueSession,
 }: SessionListProps) {
   const { t } = useI18n();
   return (
     <>
       {sessions.map((session) => {
         const isExpanded = expandedSessionIds.has(session.id);
-        const isActive = session.status === 'active';
+        const isActive = session.status === 'active' || session.status === 'soft-closing';
         const dotColor =
           session.type === 'lecture'
             ? 'bg-purple-500'
@@ -129,6 +133,7 @@ export function SessionList({
                       isStreaming={isStreaming && isActive}
                       activeBubbleId={activeBubbleId}
                       onEndSession={onEndSession}
+                      onContinueSession={onContinueSession}
                     />
                   </div>
                 </motion.div>

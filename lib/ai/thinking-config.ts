@@ -5,9 +5,10 @@ import type {
   ThinkingLevel,
   ThinkingMode,
 } from '@/lib/types/provider';
+import { getCanonicalModelId } from './model-aliases';
 
 export function getThinkingConfigKey(providerId: string, modelId: string): string {
-  return `${providerId}:${modelId}`;
+  return `${providerId}:${getCanonicalModelId(providerId, modelId)}`;
 }
 
 export function supportsConfigurableThinking(

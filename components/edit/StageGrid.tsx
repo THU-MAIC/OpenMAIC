@@ -45,7 +45,10 @@ interface StageGridProps {
  */
 const GRID_STYLE: CSSProperties = {
   display: 'grid',
-  gridTemplateAreas: `"left top top" "left center right" "left bottom bottom"`,
+  // bottom spans the center column only; `right` spans rows 2–3 so the
+  // right rail (AI sidebar) stays full-height while the bottom bar (actions
+  // timeline) sits under the canvas.
+  gridTemplateAreas: `"left top top" "left center right" "left bottom right"`,
   gridTemplateColumns: 'auto minmax(0, 1fr) auto',
   gridTemplateRows: 'auto minmax(0, 1fr) auto',
 };

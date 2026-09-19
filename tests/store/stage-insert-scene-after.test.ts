@@ -5,10 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // to talk to a real (or jsdom) IndexedDB in the test environment.
 vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageData: vi.fn().mockResolvedValue(undefined),
+  saveStageDataIncremental: vi.fn().mockResolvedValue(undefined),
   loadStageData: vi.fn().mockResolvedValue(null),
 }));
 vi.mock('@/lib/utils/database', () => ({
-  db: { stageOutlines: { put: vi.fn(), get: vi.fn() } },
+  db: {
+    stageOutlines: { put: vi.fn(), get: vi.fn() },
+    stageFolders: { delete: vi.fn().mockResolvedValue(undefined) },
+  },
 }));
 
 import { useStageStore } from '@/lib/store/stage';
@@ -49,6 +53,7 @@ function makeSlideScene(id: string, order: number, stageId = 'stage-1'): Scene {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers();
   useStageStore.setState({
     stage: makeStage(),
     scenes: [makeSlideScene('a', 1), makeSlideScene('b', 2), makeSlideScene('c', 3)],
@@ -56,8 +61,14 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
-  useStageStore.getState().clearStore();
+afterEach(async () => {
+  try {
+    await vi.runOnlyPendingTimersAsync();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    useStageStore.getState().clearStore();
+    vi.useRealTimers();
+  }
 });
 
 describe('insertSceneAfter', () => {
