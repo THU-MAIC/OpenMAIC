@@ -67,9 +67,9 @@ describe('Gemini OpenAI-compatible shim', () => {
       true,
     );
     expect(isGoogleOpenAICompatUrl('https://api.openai.com/v1')).toBe(false);
-    expect(isGoogleOpenAICompatUrl('https://generativelanguage.googleapis.com.evil.example/v1')).toBe(
-      false,
-    );
+    expect(
+      isGoogleOpenAICompatUrl('https://generativelanguage.googleapis.com.evil.example/v1'),
+    ).toBe(false);
     expect(isGoogleOpenAICompatUrl(undefined)).toBe(false);
   });
 
