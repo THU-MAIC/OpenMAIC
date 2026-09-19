@@ -56,6 +56,7 @@ import {
   saveStageDataIncremental,
   type StageStoreData,
 } from '@/lib/utils/stage-storage';
+import { chatSaveBrake } from '@/lib/utils/chat-save-brake';
 import type { Scene, Stage } from '@/lib/types/stage';
 
 const stage: Stage = { id: 'stage-1', name: 'Stage', createdAt: 1, updatedAt: 1 };
@@ -128,6 +129,7 @@ beforeEach(() => {
   saveDocument.mockReset().mockResolvedValue(undefined);
   saveCurrentScene.mockReset().mockResolvedValue(undefined);
   saveChatSessions.mockReset().mockResolvedValue(undefined);
+  chatSaveBrake.resetAll();
 });
 
 describe('saveStageDataIncremental', () => {
@@ -199,6 +201,41 @@ describe('saveStageDataIncremental', () => {
     ).resolves.toEqual({
       failedChanges: [{ kind: 'chats' }],
     });
+  });
+
+  it('skips chat autosave for a stage while the save brake is cooling down', async () => {
+    saveChatSessions.mockRejectedValueOnce(new Error('runtime unavailable'));
+    await saveStageDataIncremental('stage-1', [{ kind: 'chats' }], data, 0);
+    expect(saveChatSessions).toHaveBeenCalledOnce();
+
+    saveChatSessions.mockClear();
+    await expect(
+      saveStageDataIncremental('stage-1', [{ kind: 'chats' }], data, 0),
+    ).resolves.toEqual({
+      failedChanges: [{ kind: 'chats' }],
+    });
+    expect(saveChatSessions).not.toHaveBeenCalled();
+  });
+
+  it('does not brake a lock-unavailable failure that is rethrown', async () => {
+    const { ChatStorageLockUnavailableError } = await import('@/lib/utils/chat-storage');
+    saveChatSessions.mockRejectedValueOnce(new ChatStorageLockUnavailableError('locked'));
+    const changed = {
+      ...data,
+      chats: [{ id: 'new-chat' }] as StageStoreData['chats'],
+      chatSnapshot: { sessions: [] },
+    };
+
+    await expect(
+      saveStageDataIncremental('stage-1', [{ kind: 'chats' }], changed, 0),
+    ).rejects.toBeInstanceOf(ChatStorageLockUnavailableError);
+    expect(chatSaveBrake.allows('stage-1')).toBe(true);
+
+    saveChatSessions.mockReset().mockResolvedValue(undefined);
+    await expect(
+      saveStageDataIncremental('stage-1', [{ kind: 'chats' }], changed, 0),
+    ).resolves.toEqual({ failedChanges: [] });
+    expect(saveChatSessions).toHaveBeenCalledOnce();
   });
 });
 
