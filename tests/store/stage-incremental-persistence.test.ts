@@ -1,18 +1,24 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { fullSave, incrementalSave } = vi.hoisted(() => ({
+const { fullSave, incrementalSave, loadStageData } = vi.hoisted(() => ({
   fullSave: vi.fn().mockResolvedValue(undefined),
   incrementalSave: vi.fn().mockResolvedValue(undefined),
+  loadStageData: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageData: (...args: unknown[]) => fullSave(...args),
   saveStageDataIncremental: (...args: unknown[]) => incrementalSave(...args),
-  loadStageData: vi.fn().mockResolvedValue(null),
+  loadStageData: (...args: unknown[]) => loadStageData(...args),
 }));
 
-import { flushStageSave, restorePendingStageChanges, useStageStore } from '@/lib/store/stage';
+import {
+  flushStageSave,
+  restorePendingStageChanges,
+  snapshotPendingStageChangesForDeletion,
+  useStageStore,
+} from '@/lib/store/stage';
 import { clearAssetPool, getAssetPool } from '@/lib/media/asset-pool';
 import type { ChatSession } from '@/lib/types/chat';
 import type { Scene, Stage } from '@/lib/types/stage';
@@ -51,12 +57,203 @@ beforeEach(() => {
   vi.useFakeTimers();
   fullSave.mockReset().mockResolvedValue(undefined);
   incrementalSave.mockReset().mockResolvedValue(undefined);
+  loadStageData.mockReset().mockResolvedValue(null);
   useStageStore.getState().clearStore();
   useStageStore.setState({
     stage: stage(),
     scenes: [scene('scene-1'), scene('scene-2')],
     currentSceneId: 'scene-1',
     chats: [],
+  });
+});
+
+const unsavedChat = (updatedAt = 1): ChatSession => ({
+  id: 'chat-auth',
+  type: 'qa',
+  title: 'Unsaved question',
+  status: 'idle',
+  messages: [{ id: 'question', role: 'user', parts: [{ type: 'text', text: 'Keep my question' }] }],
+  config: { agentIds: [] },
+  toolCalls: [],
+  pendingToolCalls: [],
+  createdAt: 1,
+  updatedAt,
+});
+
+const authenticationRefusal = () => ({
+  failedChanges: [{ kind: 'chats' as const }],
+  blockedChanges: [{ kind: 'chats' as const }],
+});
+
+describe('runtime authentication refusal in stage autosave', () => {
+  it('parks refused chat dirt across timers, explicit flushes, and streaming deltas', async () => {
+    incrementalSave.mockResolvedValue(authenticationRefusal());
+    const baseline = useStageStore.getState().chatSnapshot;
+    useStageStore.getState().setChats([unsavedChat()]);
+
+    await flushStageSave();
+    await vi.advanceTimersByTimeAsync(65_000);
+    for (let delta = 2; delta <= 64; delta += 1) {
+      useStageStore.getState().setChats([unsavedChat(delta)]);
+    }
+    await vi.advanceTimersByTimeAsync(65_000);
+    await flushStageSave();
+
+    expect(incrementalSave).toHaveBeenCalledOnce();
+    expect(useStageStore.getState().chats).toEqual([unsavedChat(64)]);
+    expect(useStageStore.getState().chatSnapshot).toBe(baseline);
+    expect(snapshotPendingStageChangesForDeletion('stage-1')).toEqual([{ kind: 'chats' }]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('continues saving document edits at the normal cadence while chat is blocked', async () => {
+    incrementalSave.mockResolvedValueOnce(authenticationRefusal());
+    useStageStore.getState().setChats([unsavedChat()]);
+    const baseline = useStageStore.getState().chatSnapshot;
+    await flushStageSave();
+
+    useStageStore.getState().updateScene('scene-1', { title: 'Saved independently' });
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(incrementalSave).toHaveBeenCalledTimes(2);
+    expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-1' }]);
+    expect(useStageStore.getState().chatSnapshot).toBe(baseline);
+    expect(snapshotPendingStageChangesForDeletion('stage-1')).toEqual([{ kind: 'chats' }]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('keeps a newer document edit scheduled when joined chat flushes become blocked', async () => {
+    let refuse!: (result: ReturnType<typeof authenticationRefusal>) => void;
+    incrementalSave.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          refuse = resolve;
+        }),
+    );
+    useStageStore.getState().setChats([unsavedChat()]);
+    const firstFlush = flushStageSave();
+    await vi.waitFor(() => expect(incrementalSave).toHaveBeenCalledOnce());
+    useStageStore.getState().setChats([unsavedChat(2)]);
+    const joinedFlush = flushStageSave();
+    useStageStore.getState().updateScene('scene-1', { title: 'Newer document edit' });
+
+    refuse(authenticationRefusal());
+    await Promise.all([firstFlush, joinedFlush]);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(incrementalSave).toHaveBeenCalledTimes(2);
+    expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-1' }]);
+    expect(snapshotPendingStageChangesForDeletion('stage-1')).toEqual([{ kind: 'chats' }]);
+    expect(useStageStore.getState().chats).toEqual([unsavedChat(2)]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('parks a full-save refusal and tells subsequent full saves to skip the refused chat', async () => {
+    fullSave.mockResolvedValue(authenticationRefusal());
+    useStageStore.getState().setChats([unsavedChat()]);
+    const baseline = useStageStore.getState().chatSnapshot;
+
+    await expect(useStageStore.getState().saveToStorage()).resolves.toBe(true);
+    await vi.advanceTimersByTimeAsync(65_000);
+    await expect(useStageStore.getState().saveToStorage()).resolves.toBe(true);
+    await vi.advanceTimersByTimeAsync(65_000);
+
+    expect(fullSave.mock.calls[0]![1].chatSaveBlocked).toBeUndefined();
+    expect(fullSave.mock.calls[1]![1]).toMatchObject({ chatSaveBlocked: true });
+    expect(incrementalSave).not.toHaveBeenCalled();
+    expect(useStageStore.getState().chats).toEqual([unsavedChat()]);
+    expect(useStageStore.getState().chatSnapshot).toBe(baseline);
+    expect(snapshotPendingStageChangesForDeletion('stage-1')).toEqual([{ kind: 'chats' }]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('carries an incremental refusal into a later full save', async () => {
+    incrementalSave.mockResolvedValueOnce(authenticationRefusal());
+    fullSave.mockResolvedValue(authenticationRefusal());
+    useStageStore.getState().setChats([unsavedChat()]);
+    const baseline = useStageStore.getState().chatSnapshot;
+    await flushStageSave();
+
+    await useStageStore.getState().saveToStorage();
+
+    expect(fullSave.mock.calls[0]![1]).toMatchObject({ chatSaveBlocked: true });
+    expect(useStageStore.getState().chatSnapshot).toBe(baseline);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not flush parked chat on departure, and allows the next stage to save', async () => {
+    incrementalSave.mockResolvedValueOnce(authenticationRefusal());
+    useStageStore.getState().setChats([unsavedChat()]);
+    await flushStageSave();
+
+    useStageStore.getState().setStage(stage('stage-2'));
+    useStageStore.getState().setChats([unsavedChat(2)]);
+    await flushStageSave();
+    await vi.advanceTimersByTimeAsync(65_000);
+
+    expect(incrementalSave).toHaveBeenCalledTimes(2);
+    expect(incrementalSave.mock.calls[1]![0]).toBe('stage-2');
+    expect(incrementalSave.mock.calls[1]![1]).toContainEqual({ kind: 'chats' });
+    expect(useStageStore.getState().chatSnapshot.sessions).toEqual([unsavedChat(2)]);
+  });
+
+  it('does not retry a first authentication refusal in the departing-stage save', async () => {
+    incrementalSave.mockImplementation(async (id: string) =>
+      id === 'stage-1' ? authenticationRefusal() : { failedChanges: [] },
+    );
+    useStageStore.getState().setChats([unsavedChat()]);
+    useStageStore.getState().updateScene('scene-1', { title: 'Also dirty' });
+
+    useStageStore.getState().setStage(stage('stage-2'));
+    await vi.advanceTimersByTimeAsync(65_000);
+
+    expect(incrementalSave.mock.calls.filter(([id]) => id === 'stage-1')).toHaveLength(1);
+    expect(useStageStore.getState().stage?.id).toBe('stage-2');
+  });
+
+  it('allows chat saving again after a fresh load of the same stage', async () => {
+    incrementalSave.mockResolvedValueOnce(authenticationRefusal());
+    useStageStore.getState().setChats([unsavedChat()]);
+    await flushStageSave();
+
+    loadStageData.mockResolvedValue({
+      stage: stage(),
+      scenes: [],
+      currentSceneId: null,
+      chats: [],
+      chatSnapshot: { sessions: [], restoreMarker: null },
+      outline: { outlines: [], generationComplete: true, createdAt: 1, updatedAt: 1 },
+    });
+    useStageStore.getState().clearStore();
+    await useStageStore.getState().loadFromStorage('stage-1');
+    useStageStore.getState().setChats([unsavedChat(2)]);
+    await flushStageSave();
+
+    expect(incrementalSave).toHaveBeenCalledTimes(2);
+    expect(useStageStore.getState().chatSnapshot.sessions).toEqual([unsavedChat(2)]);
+  });
+
+  it('ignores a refusal from a prior visit when the same stage has been reopened', async () => {
+    let refuse!: (result: ReturnType<typeof authenticationRefusal>) => void;
+    incrementalSave.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          refuse = resolve;
+        }),
+    );
+    useStageStore.getState().setChats([unsavedChat()]);
+    const oldFlush = flushStageSave();
+    await vi.waitFor(() => expect(incrementalSave).toHaveBeenCalledOnce());
+
+    useStageStore.getState().clearStore();
+    useStageStore.setState({ stage: stage(), scenes: [scene('scene-1')] });
+    useStageStore.getState().setChats([unsavedChat(2)]);
+    refuse(authenticationRefusal());
+    await oldFlush;
+    await flushStageSave();
+
+    expect(incrementalSave).toHaveBeenCalledTimes(2);
+    expect(useStageStore.getState().chatSnapshot.sessions).toEqual([unsavedChat(2)]);
   });
 });
 

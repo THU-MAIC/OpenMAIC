@@ -22,7 +22,7 @@ import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/doc
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
 import type { ChatStorageSnapshot } from '@/lib/utils/chat-storage';
 import type { DocumentProducer } from '@/lib/document-store/persistence-types';
-import type { PendingChange, StaleDroppedSave } from '@/lib/utils/stage-storage';
+import type { PendingChange, StageSaveResult, StaleDroppedSave } from '@/lib/utils/stage-storage';
 import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
 import { reconcileSceneMediaAllocations } from '@/lib/media/reconcile-scene-media';
 import {
@@ -45,6 +45,10 @@ let latestStageSceneLoadToken = 0;
 type PendingEntry = { change: PendingChange; revision: number };
 
 let pendingStageId: string | null = null;
+let pendingStageVisit = 0;
+// A runtime authentication refusal cannot recover through a timer. Keep chat
+// dirt and its last durable baseline, but park it until a fresh stage visit.
+let blockedChatSave = false;
 let pendingRevision = 0;
 const pendingChanges = new Map<string, PendingEntry>();
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -84,10 +88,32 @@ function resetPendingChanges(stageId: string | null = null): void {
   cancelScheduledSave();
   pendingChanges.clear();
   pendingStageId = stageId;
+  pendingStageVisit += 1;
+  blockedChatSave = false;
   consecutiveFlushFailures = 0;
 }
 
+function isPendingChangeBlocked(key: string): boolean {
+  return key === 'chats' && blockedChatSave;
+}
+
+function recordBlockedChanges(
+  stageId: string,
+  visit: number,
+  result: StageSaveResult | undefined,
+): void {
+  // An old request may settle after navigating away and back to the same id.
+  if (pendingStageId !== stageId || pendingStageVisit !== visit) return;
+  if (result?.blockedChanges?.some((change) => change.kind === 'chats')) {
+    blockedChatSave = true;
+  }
+}
+
 function schedulePendingSave(): void {
+  if (![...pendingChanges.keys()].some((key) => !isPendingChangeBlocked(key))) {
+    cancelScheduledSave();
+    return;
+  }
   // Once a write has failed, keep the already-armed backoff timer. Streaming
   // chat mutations are already represented by the dirty descriptor; rearming
   // per delta would collapse the backoff to the base cadence or starve it.
@@ -403,12 +429,21 @@ type StagePersistenceSnapshot = Pick<
   | 'chatSnapshot'
   | 'outlines'
   | 'generationComplete'
->;
+> & { chatSaveBlocked: boolean };
 
 function persistenceSnapshot(state: StageState): StagePersistenceSnapshot {
   const { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete } =
     state;
-  return { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete };
+  return {
+    stage,
+    scenes,
+    currentSceneId,
+    chats,
+    chatSnapshot,
+    outlines,
+    generationComplete,
+    chatSaveBlocked: pendingStageId === stage?.id && blockedChatSave,
+  };
 }
 
 function delay(ms: number): Promise<void> {
@@ -420,8 +455,8 @@ async function persistDirtySnapshot(
   dirtySnapshot: ReadonlyMap<string, PendingEntry>,
   snapshot: StagePersistenceSnapshot,
   capturedEpoch: number,
-): Promise<Set<string> | StaleDroppedSave> {
-  if (!snapshot.stage) return new Set();
+): Promise<StageSaveResult | StaleDroppedSave> {
+  if (!snapshot.stage) return { failedChanges: [] };
   // A stale capture is dropped, not retried: this covers snapshots that
   // escaped `discardPendingStageChanges` because they already left the
   // pending map (an in-flight flush round, or the departing-stage retry in
@@ -440,6 +475,7 @@ async function persistDirtySnapshot(
       currentSceneId: snapshot.currentSceneId,
       chats: snapshot.chats,
       chatSnapshot: snapshot.chatSnapshot,
+      ...(snapshot.chatSaveBlocked ? { chatSaveBlocked: true } : {}),
       outline: {
         outlines: snapshot.outlines,
         generationComplete: snapshot.generationComplete,
@@ -463,7 +499,7 @@ async function persistDirtySnapshot(
   // the revision guards keep any restored (re-queued) descriptors, since
   // restores mint fresh revisions.
   if (result === 'stale-dropped') return 'stale-dropped';
-  return new Set((result?.failedChanges ?? []).map(pendingChangeKey));
+  return result ?? { failedChanges: [] };
 }
 
 const useStageStoreBase = create<StageState>()((set, get) => ({
@@ -498,7 +534,9 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       pendingChanges.size > 0
     ) {
       const departingStageId = departingState.stage.id;
-      const departingDirty = new Map(pendingChanges);
+      const departingDirty = new Map(
+        [...pendingChanges].filter(([key]) => !isPendingChangeBlocked(key)),
+      );
       const departingSnapshot = persistenceSnapshot(departingState);
       // The deletion epoch travels with the snapshot: a deletion during the
       // retry window permanently invalidates both attempts, even if a
@@ -511,6 +549,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
        * document or block navigation indefinitely.
        */
       void (async () => {
+        if (departingDirty.size === 0) return;
         let lastFailedKeys = new Set<string>();
         for (let attempt = 0; attempt < 2; attempt += 1) {
           try {
@@ -529,8 +568,15 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
             // accepted consequence of navigation not being a durability
             // barrier.
             if (result === 'stale-dropped') return;
-            lastFailedKeys = result;
+            lastFailedKeys = new Set(result.failedChanges.map(pendingChangeKey));
+            // A refusal on the departing snapshot must not trigger its usual
+            // second attempt either. Other failed units still get their retry.
+            const blockedKeys = new Set((result.blockedChanges ?? []).map(pendingChangeKey));
+            for (const change of result.blockedChanges ?? []) {
+              departingDirty.delete(pendingChangeKey(change));
+            }
             if (lastFailedKeys.size === 0) return;
+            if ([...lastFailedKeys].every((key) => blockedKeys.has(key))) return;
           } catch (error) {
             if (attempt === 1) throw error;
           }
@@ -839,6 +885,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     // Epoch captured with the state read above: a deletion during the PBL
     // preparation await below permanently invalidates this write.
     const capturedEpoch = stageDeletionEpoch(stage.id);
+    const visit = pendingStageVisit;
+    const chatSaveBlocked = pendingStageId === stage.id && blockedChatSave;
     const pendingAtStart = new Map(pendingChanges);
     try {
       const persistedScenes = await preparePBLScenesForDocumentPersistence(stage.id, scenes);
@@ -851,6 +899,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           currentSceneId,
           chats,
           chatSnapshot,
+          ...(chatSaveBlocked ? { chatSaveBlocked: true } : {}),
           outline: {
             outlines,
             generationComplete,
@@ -871,6 +920,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       }
 
       const failedKeys = new Set((result?.failedChanges ?? []).map(pendingChangeKey));
+      recordBlockedChanges(stage.id, visit, result);
       if (
         failedKeys.has('chats') &&
         pendingStageId === stage.id &&
@@ -1109,7 +1159,11 @@ function startFlushRound(): FlushRound | null {
   if (!pendingStageId || pendingChanges.size === 0) return null;
 
   const stageId = pendingStageId;
-  const dirtySnapshot = new Map(pendingChanges);
+  const visit = pendingStageVisit;
+  const dirtySnapshot = new Map(
+    [...pendingChanges].filter(([key]) => !isPendingChangeBlocked(key)),
+  );
+  if (dirtySnapshot.size === 0) return null;
   const state = useStageStore.getState();
   if (state.stage?.id !== stageId) {
     resetPendingChanges(state.stage?.id ?? null);
@@ -1132,7 +1186,10 @@ function startFlushRound(): FlushRound | null {
       // already durable and corrupt the cross-tab conflict baseline — mirror
       // of the stale-dropped handling in saveToStorage.
       const staleDropped = result === 'stale-dropped';
-      const failedKeys = result === 'stale-dropped' ? new Set<string>() : result;
+      const failedKeys = new Set(
+        result === 'stale-dropped' ? [] : result.failedChanges.map(pendingChangeKey),
+      );
+      if (result !== 'stale-dropped') recordBlockedChanges(stageId, visit, result);
       if (pendingStageId === stageId) {
         for (const [key, entry] of dirtySnapshot) {
           if (!failedKeys.has(key) && pendingChanges.get(key)?.revision === entry.revision) {
@@ -1154,7 +1211,10 @@ function startFlushRound(): FlushRound | null {
           },
         });
       }
-      recordFlushOutcome(failedKeys.size > 0);
+      const blockedKeys = new Set(
+        result === 'stale-dropped' ? [] : (result.blockedChanges ?? []).map(pendingChangeKey),
+      );
+      recordFlushOutcome([...failedKeys].some((key) => !blockedKeys.has(key)));
       return failedKeys;
     } catch (error) {
       log.error(`Failed to flush pending stage changes for ${stageId}:`, error);
@@ -1162,8 +1222,8 @@ function startFlushRound(): FlushRound | null {
       throw error;
     } finally {
       flushInFlight = null;
-      // Successive mutations and failed writes both leave durable work queued.
-      // Always restore the retry timer so dirt is never stranded.
+      // Retry transient failures and new mutations. Authentication-blocked
+      // chat dirt stays in memory without scheduling another rejected write.
       if (pendingChanges.size > 0 && pendingStageId) schedulePendingSave();
     }
   })();
@@ -1177,6 +1237,7 @@ function roundCoversEntry(
   entrySnapshot: ReadonlyMap<string, PendingEntry>,
 ): boolean {
   for (const [key, entry] of entrySnapshot) {
+    if (isPendingChangeBlocked(key)) continue;
     const pending = pendingChanges.get(key);
     if (!pending || pending.revision < entry.revision) continue;
     const attempted = round.dirtySnapshot.get(key);
@@ -1188,28 +1249,33 @@ function roundCoversEntry(
 /**
  * Drain every mutation visible to the caller, including one that lands after
  * an in-flight round captured its snapshot. Chat-store failures are reported
- * as retained dirt and retried by the debounce without rolling back a
- * successful document commit.
+ * as retained dirt without rolling back a successful document commit.
+ * Transient failures retry; authentication refusals park until a fresh visit.
  */
 export async function flushStageSave(): Promise<void> {
   const entryStageId = pendingStageId;
   const entryRevision = pendingRevision;
   const entrySnapshot = new Map(
-    [...pendingChanges].filter(([, entry]) => entry.revision <= entryRevision),
+    [...pendingChanges].filter(
+      ([key, entry]) => entry.revision <= entryRevision && !isPendingChangeBlocked(key),
+    ),
   );
 
   for (let round = 0; round < MAX_FLUSH_DRAIN_ROUNDS; round += 1) {
-    cancelScheduledSave();
     const stillPendingAtEntry = [...entrySnapshot].some(([key, entry]) => {
       const pending = pendingChanges.get(key);
       return (
         pendingStageId === entryStageId &&
+        !isPendingChangeBlocked(key) &&
         pending !== undefined &&
         pending.revision >= entry.revision
       );
     });
     if (!entryStageId || entrySnapshot.size === 0 || !stillPendingAtEntry) return;
 
+    // A joined round may have parked this caller's chat dirt while a newer
+    // document edit still needs its timer. Cancel only when starting a drain.
+    cancelScheduledSave();
     const flushRound = startFlushRound();
     if (!flushRound) return;
     const coversEntry = roundCoversEntry(flushRound, entrySnapshot);

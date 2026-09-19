@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { HttpRuntimeStoreError } from '@openmaic/storage/runtime/http';
 
 const { loadChatSessions } = vi.hoisted(() => ({
   loadChatSessions: vi.fn().mockRejectedValue(new Error('runtime unavailable')),
@@ -68,6 +69,10 @@ vi.mock('@/lib/pbl/v2/runtime/drain', () => ({
 
 import { loadStageData } from '@/lib/utils/stage-storage';
 
+beforeEach(() => {
+  loadChatSessions.mockReset().mockRejectedValue(new Error('runtime unavailable'));
+});
+
 describe('loadStageData chat failure isolation', () => {
   it('keeps document data and falls back from a stale persisted cursor', async () => {
     await expect(loadStageData('stage-1')).resolves.toMatchObject({
@@ -81,5 +86,19 @@ describe('loadStageData chat failure isolation', () => {
       'stage-1',
       expect.objectContaining({ onSnapshot: expect.any(Function) }),
     );
+  });
+
+  it('keeps the course readable after a runtime 401 without claiming an empty durable snapshot', async () => {
+    loadChatSessions.mockRejectedValueOnce(
+      new HttpRuntimeStoreError(401, 'UNAUTHORIZED', 'Authentication required'),
+    );
+
+    await expect(loadStageData('stage-1')).resolves.toMatchObject({
+      stage: { id: 'stage-1', name: 'Persisted stage' },
+      scenes: [{ id: 'scene-1', type: 'slide' }],
+      chats: [],
+      chatSnapshot: { sessions: [], restoreMarker: undefined },
+    });
+    expect(loadChatSessions).toHaveBeenCalledOnce();
   });
 });

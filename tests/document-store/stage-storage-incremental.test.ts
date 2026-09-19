@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DocumentVersionError } from '@openmaic/storage';
+import { HttpRuntimeStoreError } from '@openmaic/storage/runtime/http';
 
 const {
   loadDocument,
@@ -130,6 +131,10 @@ beforeEach(() => {
   saveChatSessions.mockReset().mockResolvedValue(undefined);
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('saveStageDataIncremental', () => {
   it('prepares and writes exactly one dirty scene', async () => {
     await saveStageDataIncremental('stage-1', [{ kind: 'scene', sceneId: 'scene-2' }], data, 0);
@@ -211,5 +216,64 @@ describe('saveStageData', () => {
     });
     expect(saveDocument).toHaveBeenCalledOnce();
     expect(saveCurrentScene).toHaveBeenCalledWith('stage-1', 'scene-1');
+  });
+});
+
+const chatSaveCases: Array<{
+  name: string;
+  save: (snapshot: StageStoreData) => Promise<unknown>;
+}> = [
+  {
+    name: 'incremental',
+    save: (snapshot) =>
+      saveStageDataIncremental('stage-1', [{ kind: 'structure' }, { kind: 'chats' }], snapshot, 0),
+  },
+  { name: 'full', save: (snapshot) => saveStageData('stage-1', snapshot, 0) },
+];
+
+describe.each(chatSaveCases)('$name save authentication failures', ({ save }) => {
+  it.each(['direct', 'wrapped'])('reports a %s runtime 401 as failed and blocked', async (kind) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const refusal = new HttpRuntimeStoreError(401, 'UNAUTHORIZED', 'Authentication required');
+    const error =
+      kind === 'wrapped' ? new Error('Chat sync rejected', { cause: refusal }) : refusal;
+    saveChatSessions.mockRejectedValueOnce(error);
+
+    await expect(save(data)).resolves.toEqual({
+      failedChanges: [{ kind: 'chats' }],
+      blockedChanges: [{ kind: 'chats' }],
+    });
+    expect(saveChatSessions).toHaveBeenCalledOnce();
+    expect(saveDocument).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0]!.join(' ')).toContain('Fix authentication and reload to retry.');
+  });
+
+  it('keeps an HTTP 503 chat failure retryable after the document commits', async () => {
+    saveChatSessions.mockRejectedValueOnce(
+      new HttpRuntimeStoreError(503, 'HTTP_ERROR', 'Runtime unavailable'),
+    );
+
+    await expect(save(data)).resolves.toEqual({ failedChanges: [{ kind: 'chats' }] });
+    expect(saveDocument).toHaveBeenCalledOnce();
+  });
+
+  it('preserves blocked chat failure without another runtime call or warning', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const snapshot: StageStoreData = {
+      ...data,
+      chatSnapshot: { sessions: [], restoreMarker: undefined },
+      chatSaveBlocked: true,
+    };
+
+    await expect(save(snapshot)).resolves.toEqual({
+      failedChanges: [{ kind: 'chats' }],
+      blockedChanges: [{ kind: 'chats' }],
+    });
+    expect(saveChatSessions).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+    expect(saveDocument).toHaveBeenCalledOnce();
+    expect(saveDocument.mock.calls[0]![0]).not.toHaveProperty('chatSaveBlocked');
+    expect(snapshot.chatSnapshot).toEqual({ sessions: [], restoreMarker: undefined });
   });
 });

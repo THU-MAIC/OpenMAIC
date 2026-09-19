@@ -33,6 +33,7 @@ import {
 } from '@/lib/document-store';
 import { clearAllForScene } from '@/lib/quiz/persistence';
 import { beginStageRuntimeDeletionSafely } from '@/lib/runtime/store';
+import { isRuntimeAuthenticationFailure } from '@/lib/runtime/errors';
 import { clearStageDrainWatermarks } from '@/lib/pbl/v2/runtime/drain';
 import { createLogger } from '@/lib/logger';
 import {
@@ -79,6 +80,8 @@ export interface StageStoreData {
   currentSceneId: string | null;
   chats: ChatSession[];
   chatSnapshot?: ChatStorageSnapshot;
+  /** Transient scheduler state after an authentication refusal; never persisted. */
+  chatSaveBlocked?: boolean;
   /** The aggregate save contract treats omission as deletion; callers should carry this snapshot. */
   outline?: AppDocumentOutline;
 }
@@ -95,6 +98,12 @@ export type PendingChange =
   | { kind: 'outline' }
   | { kind: 'currentScene' }
   | { kind: 'chats' };
+
+export interface StageSaveResult {
+  failedChanges: PendingChange[];
+  /** Failed changes that must wait for explicit recovery instead of automatic retries. */
+  blockedChanges?: PendingChange[];
+}
 
 export interface StageListItem {
   id: string;
@@ -155,18 +164,29 @@ async function saveStageChats(
   stageId: string,
   data: StageStoreData,
   globalLockHeld = false,
-): Promise<boolean> {
+): Promise<StageSaveResult> {
+  if (data.chatSaveBlocked) {
+    return { failedChanges: [{ kind: 'chats' }], blockedChanges: [{ kind: 'chats' }] };
+  }
   try {
     await saveChatSessions(stageId, data.chats, {
       ...(globalLockHeld ? { globalLockHeld: true } : {}),
       snapshot: data.chatSnapshot,
     });
-    return true;
+    return { failedChanges: [] };
   } catch (error) {
     const unchangedSnapshot = isEqual(data.chatSnapshot?.sessions ?? [], data.chats);
     if (error instanceof ChatStorageLockUnavailableError && !unchangedSnapshot) throw error;
+    if (isRuntimeAuthenticationFailure(error)) {
+      log.warn(
+        `Chat autosave is paused for this visit to stage ${stageId}: runtime authentication ` +
+          'was refused. Fix authentication and reload to retry.',
+        error,
+      );
+      return { failedChanges: [{ kind: 'chats' }], blockedChanges: [{ kind: 'chats' }] };
+    }
     log.warn(`Chat sessions failed to save for stage ${stageId}:`, error);
-    return false;
+    return { failedChanges: [{ kind: 'chats' }] };
   }
 }
 
@@ -218,14 +238,14 @@ export async function saveStageData(
   stageId: string,
   data: StageStoreData,
   capturedEpoch: number,
-): Promise<{ failedChanges: PendingChange[] } | StaleDroppedSave | undefined> {
+): Promise<StageSaveResult | StaleDroppedSave | undefined> {
   if (isStageWriteStale(stageId, capturedEpoch)) {
     log.info(`Dropping save for deleted/stale stage: ${stageId}`);
     return 'stale-dropped';
   }
   try {
     const now = Date.now();
-    const failedChanges: PendingChange[] = [];
+    let chatResult: StageSaveResult = { failedChanges: [] };
     let dropped = false;
     await mutateDocument(
       stageId,
@@ -265,9 +285,7 @@ export async function saveStageData(
             dropped = true;
             return;
           }
-          if (data.chats && !(await saveStageChats(stageId, data, true))) {
-            failedChanges.push({ kind: 'chats' });
-          }
+          if (data.chats) chatResult = await saveStageChats(stageId, data, true);
         });
       },
       { storageSharedLockHeld: true },
@@ -277,7 +295,7 @@ export async function saveStageData(
       return 'stale-dropped';
     }
     log.info(`Saved stage: ${stageId}`);
-    return failedChanges.length > 0 ? { failedChanges } : undefined;
+    return chatResult.failedChanges.length > 0 ? chatResult : undefined;
   } catch (error) {
     log.error('Failed to save stage:', error);
     throw error;
@@ -294,7 +312,7 @@ export async function saveStageDataIncremental(
   dirty: readonly PendingChange[],
   data: StageStoreData,
   capturedEpoch: number,
-): Promise<{ failedChanges: PendingChange[] } | StaleDroppedSave> {
+): Promise<StageSaveResult | StaleDroppedSave> {
   // `capturedEpoch` = the deletion epoch when `data` was captured (the flush
   // round / departing-stage snapshot); required so the capture point and the
   // validation point stay paired. See saveStageData for the fencing contract;
@@ -442,11 +460,7 @@ export async function saveStageDataIncremental(
     log.info(`Dropping incremental chat tail for deleted/stale stage: ${stageId}`);
     return 'stale-dropped';
   }
-  const failedChanges: PendingChange[] = [];
-  if (has('chats') && !(await saveStageChats(stageId, data))) {
-    failedChanges.push({ kind: 'chats' });
-  }
-  return { failedChanges };
+  return has('chats') ? saveStageChats(stageId, data) : { failedChanges: [] };
 }
 
 /**
