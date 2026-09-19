@@ -1,4 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { FormData as UndiciFormData } from 'undici';
 import {
   voxCPMVoiceExists,
   registerVoxCPMVoice,
@@ -55,8 +56,12 @@ describe('registerVoxCPMVoice', () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(String(url)).toBe('https://voxcpm.test/v1/audio/voices');
     expect(init.method).toBe('POST');
-    const form = init.body as FormData;
-    expect(form).toBeInstanceOf(FormData);
+    // The transport normalizes the adapter's platform FormData into undici's
+    // own class before undici's fetch serializes it, so that is what the
+    // (mocked) undici boundary receives — a platform FormData here would
+    // serialize as the literal "[object FormData]".
+    const form = init.body as unknown as UndiciFormData;
+    expect(form).toBeInstanceOf(UndiciFormData);
     expect(form.get('name')).toBe('voxcpm:voice:abc');
     expect(typeof form.get('consent')).toBe('string');
     expect(form.get('audio_sample')).toBeInstanceOf(Blob);
