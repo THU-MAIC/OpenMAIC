@@ -56,6 +56,11 @@ function markerTime(timeMs: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${seconds}`;
 }
 
+function decodeMediaAssetData(data: string): Buffer {
+  const dataUrl = /^data:[^,]*;base64,([\s\S]*)$/i.exec(data);
+  return Buffer.from(dataUrl?.[1] ?? data, 'base64');
+}
+
 export function mediaArtifactText(artifact: MediaArtifact): string {
   return (artifact.transcript ?? [])
     .filter((segment) => segment.text.trim())
@@ -151,7 +156,7 @@ export async function extractClaimedSessionMaterial(
     const images = [];
     for (const asset of artifact.assets ?? []) {
       if (asset.type !== 'image' || !asset.data) continue;
-      const bytes = Buffer.from(asset.data, 'base64');
+      const bytes = decodeMediaAssetData(asset.data);
       const rawAssetId = await putBytes(source.sessionId, bytes, asset.mimeType ?? 'image/webp');
       images.push({
         id: createMaterialId(),

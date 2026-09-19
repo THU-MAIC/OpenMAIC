@@ -142,7 +142,13 @@ describe.skipIf(!ffmpegAvailable)('local media extractor real pipeline', () => {
       ]);
       expect(artifact.transcript?.[0].endMs).toBeGreaterThan(1_500);
       expect(artifact.keyframes?.length).toBeGreaterThan(0);
-      expect(artifact.assets?.[0]).toMatchObject({ type: 'image', mimeType: 'image/webp' });
+      const keyframe = artifact.assets?.[0];
+      expect(keyframe).toMatchObject({ type: 'image', mimeType: 'image/webp' });
+      // Keyframe `data` must be a data URL. `pdf-compat` derives the asset mime
+      // from it, and the document bundle forwards it as the `pdfImages[].src`
+      // that `storeImages` decodes with `decodeBase64DataUrl`. Raw base64 here
+      // makes course generation fail with "Failed to store image bundle".
+      expect(keyframe?.data).toMatch(/^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/);
 
       const deadlineProvider = createLocalMediaExtractorProvider({
         transcribe: vi.fn(() => new Promise<{ text: string }>(() => undefined)),
