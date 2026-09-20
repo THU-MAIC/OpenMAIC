@@ -48,7 +48,7 @@ afterEach(() => {
 
 describe('which KV backend the persist seam binds', () => {
   it('never reaches the network on a local-only deployment', async () => {
-    vi.doMock('@/lib/persistence/bootstrap', () => ({
+    vi.doMock('@/lib/persistence/enabled', () => ({
       isBrowserPersistenceEnabled: () => false,
       getPersistenceRequestHeaders: async () => ({}),
     }));
@@ -67,7 +67,7 @@ describe('which KV backend the persist seam binds', () => {
   });
 
   it('routes an account write to the server store when persistence is on', async () => {
-    vi.doMock('@/lib/persistence/bootstrap', () => ({
+    vi.doMock('@/lib/persistence/enabled', () => ({
       isBrowserPersistenceEnabled: () => true,
       getPersistenceRequestHeaders: async () => ({ 'x-learner-key': 'k' }),
     }));
@@ -101,7 +101,7 @@ describe('which KV backend the persist seam binds', () => {
   });
 
   it('keeps the device scope off the network even when persistence is on', async () => {
-    vi.doMock('@/lib/persistence/bootstrap', () => ({
+    vi.doMock('@/lib/persistence/enabled', () => ({
       isBrowserPersistenceEnabled: () => true,
       getPersistenceRequestHeaders: async () => ({}),
     }));

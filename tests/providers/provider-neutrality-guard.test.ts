@@ -315,7 +315,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/persistence/server-provider.ts',
     'Temporary: server persistence composition still imports concrete storage implementations.',
     [
-      ['pg', 13],
+      ['pg', 17],
       ['s3', 1],
     ],
   ),

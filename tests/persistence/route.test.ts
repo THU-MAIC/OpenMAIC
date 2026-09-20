@@ -78,6 +78,10 @@ describe('embedded persistence route', () => {
       ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
       PgAssetStore: class {},
     }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
+    }));
     vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
       PgAssetByteStore: class {},
     }));
@@ -152,6 +156,10 @@ describe('embedded persistence route', () => {
     vi.doMock('@openmaic/storage/asset/pg', () => ({
       ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
       PgAssetStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
     }));
     vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
@@ -289,6 +297,10 @@ describe('embedded persistence route', () => {
           return assetStore as never;
         }
       },
+    }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
     }));
     vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
@@ -430,6 +442,10 @@ describe('embedded persistence route', () => {
           return assetStore as never;
         }
       },
+    }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
     }));
     vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
@@ -578,6 +594,10 @@ describe('embedded persistence route', () => {
       ensureSchema: vi.fn().mockResolvedValue(undefined),
       PgRuntimeStore: class {},
     }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
+    }));
     vi.doMock('@openmaic/storage/document/pg', () => ({
       ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
       // The provider declares reference tracking as part of coming up, so a
@@ -594,6 +614,10 @@ describe('embedded persistence route', () => {
           return Promise.reject(new ForeignAssetQuotaExceededError());
         }
       },
+    }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
     }));
     vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
@@ -673,6 +697,10 @@ describe('embedded persistence route', () => {
           assetConstructions.push({ queryable, options, instance: this });
         }
       },
+    }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({ nodePostgresTransaction }));
     vi.doMock('@openmaic/storage/server', () => ({
@@ -801,6 +829,10 @@ describe('embedded persistence route', () => {
         }
       },
     }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
+    }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
       nodePostgresTransaction: vi.fn(() => vi.fn()),
     }));
@@ -879,6 +911,10 @@ describe('embedded persistence route', () => {
           assetOptions.push(options);
         }
       },
+    }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
       nodePostgresTransaction: vi.fn(() => vi.fn()),
@@ -959,6 +995,10 @@ describe('embedded persistence route', () => {
         }
       },
     }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
+    }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
       nodePostgresTransaction: vi.fn(() => vi.fn()),
     }));
@@ -1026,6 +1066,10 @@ describe('embedded persistence route', () => {
       ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
       PgAssetStore: class {},
     }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
+    }));
     vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
       PgAssetByteStore: class {},
     }));
@@ -1092,6 +1136,10 @@ describe('embedded persistence route', () => {
     vi.doMock('@openmaic/storage/asset/pg', () => ({
       ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
       PgAssetStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
     }));
     vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
       PgAssetByteStore: class {},
@@ -1372,6 +1420,10 @@ describe('embedded persistence route', () => {
       ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
       PgAssetStore: class {},
     }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
+    }));
     vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
       PgAssetByteStore: class {},
     }));
@@ -1546,6 +1598,10 @@ describe('embedded persistence route', () => {
         }
       },
     }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
+    }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
       nodePostgresTransaction: vi.fn(() => vi.fn()),
     }));
@@ -1615,6 +1671,10 @@ describe('embedded persistence route', () => {
           assetOptions.push(options);
         }
       },
+    }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
       nodePostgresTransaction: vi.fn(() => vi.fn()),
@@ -1735,6 +1795,10 @@ describe('embedded persistence route -- real handler boundary', () => {
           return revision;
         }
       },
+    }));
+    vi.doMock('@openmaic/storage/kv/pg', () => ({
+      ensureKVSchema: async () => {},
+      PgKVStore: class {},
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
       nodePostgresTransaction: vi.fn(() => vi.fn()),

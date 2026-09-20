@@ -47,7 +47,7 @@ import { reportPersistHealth } from '@/lib/store/persist-health';
 import {
   getPersistenceRequestHeaders,
   isBrowserPersistenceEnabled,
-} from '@/lib/persistence/bootstrap';
+} from '@/lib/persistence/enabled';
 
 const log = createLogger('KVPersist');
 

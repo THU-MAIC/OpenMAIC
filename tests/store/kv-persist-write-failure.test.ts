@@ -37,7 +37,7 @@ beforeEach(() => {
   vi.resetModules();
   vi.stubGlobal('window', {} as Window & typeof globalThis);
   vi.stubGlobal('localStorage', new MemoryStorage());
-  vi.doMock('@/lib/persistence/bootstrap', () => ({
+  vi.doMock('@/lib/persistence/enabled', () => ({
     isBrowserPersistenceEnabled: () => true,
     getPersistenceRequestHeaders: async () => ({}),
   }));

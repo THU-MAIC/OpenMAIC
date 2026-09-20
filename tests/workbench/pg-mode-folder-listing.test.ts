@@ -260,13 +260,15 @@ describe('PG-mode folder listing and creation', () => {
     await renameFolder('folder/one', 'Reading');
     await deleteFolder('folder/one', 'ungroup');
 
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
+    // Chọn theo ĐƯỜNG DẪN, không theo thứ tự lời gọi: với lưu trữ phía máy chủ
+    // bật, kho cấu hình cũng nạp qua mạng, nên lời gọi thứ nhất của bộ giả lập
+    // không còn chắc là lời gọi thư mục. Neo vào thứ tự là neo vào một thứ bài
+    // kiểm này không hứa.
+    expect(fetchMock).toHaveBeenCalledWith(
       '/api/folders/folder%2Fone',
       expect.objectContaining({ method: 'PATCH' }),
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
+    expect(fetchMock).toHaveBeenCalledWith(
       '/api/folders/folder%2Fone?mode=ungroup',
       expect.objectContaining({ method: 'DELETE' }),
     );

@@ -19,7 +19,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { isBrowserPersistenceEnabled } from '@/lib/persistence/bootstrap';
+import { isBrowserPersistenceEnabled } from '@/lib/persistence/enabled';
 import { adoptChoicesFromCode, normalizeClaimCode } from '@/lib/persistence/adopt-choices';
 
 type MintState =
