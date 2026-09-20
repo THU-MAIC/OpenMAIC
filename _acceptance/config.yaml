@@ -60,3 +60,5 @@ capture:
   # Ưu tiên Chromium của Playwright (CI cache sẵn), thiếu thì lùi về Chrome hệ thống.
   # Cú pháp: <url> <out.png> [--wait ms] [--full] [--w px] [--h px]
   ui: "node scripts/ui-capture.mjs"
+feature_loop:
+  suite_keys: [executors.test.api, executors.test.storage]

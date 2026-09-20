@@ -1,0 +1,149 @@
+schema_version: 1
+feature_slug: cau-hinh-di-theo-nguoi
+evals:
+  - id: E1
+    criterion: AC-1
+    executor: test
+    layer: backend-effect
+    cmd: config:executors.test.api
+    expected: "exit 0; ghi một khoá account rồi đọc lại bằng một yêu cầu MỚI trả đúng giá trị vừa ghi. Chiều đỏ trên cùng dữ liệu dựng sẵn: làm bên ghi bỏ qua lời gọi mạng → case đỏ với thông điệp ghim 'account write did not reach the server store'."
+    paths: ["lib/store/kv-persist.ts", "packages/@openmaic/storage/src/kv/**", "app/api/persistence/**"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
+  - id: E2
+    criterion: AC-2
+    executor: test
+    layer: backend-effect
+    cmd: config:executors.test.api
+    expected: "exit 0; ma trận TOÀN PHẦN — số assert BẰNG số kho khai phạm vi account, danh sách rút từ chính khai báo của các kho chứ không chép tay; phiên thứ hai của cùng chủ sở hữu đọc đúng mọi khoá phiên một đã ghi. Hai chiều đỏ trên cùng fixture: (a) cho một kho account ở lại trình duyệt → đỏ với thông điệp ghim 'account key stayed device-local: <tên kho>'; (b) thêm một kho khai account mà bài kiểm chưa liệt → đỏ với thông điệp ghim 'account key set drifted from the declared scope'."
+    paths: ["lib/store/kv-persist.ts", "lib/store/settings.ts", "app/api/persistence/**"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
+  - id: E3
+    criterion: AC-3
+    executor: test
+    cmd: config:executors.test.api
+    expected: "exit 0; ba vế — mã còn hiệu lực TRƯỚC mốc 10 phút, hết hiệu lực SAU mốc đó, và cấu hình khai hạn dài hơn 10 phút thì chính bài kiểm đỏ. Chiều đỏ trên cùng fixture: nới hạn cấu hình lên 24 giờ → đỏ với thông điệp ghim 'claim TTL exceeds the signed ceiling of 10 minutes'."
+    paths: ["lib/persistence/claim-code.ts", "app/api/claim/**"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
+  - id: E4
+    criterion: AC-4
+    executor: test
+    cmd: config:executors.test.api
+    expected: "exit 0; nhập lại một mã đã dùng bị từ chối VÀ danh tính chủ sở hữu không đổi. Chiều đỏ: bỏ dấu đã-dùng → đỏ với thông điệp ghim 'claim code was redeemable twice'."
+    paths: ["lib/persistence/claim-code.ts", "app/api/claim/**"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
+  - id: E5
+    criterion: AC-5
+    executor: test
+    cmd: config:executors.test.api
+    expected: "exit 0; ba ca sai / hết hạn / đã dùng trả về CÙNG một thân phản hồi và cùng mã trạng thái. Chiều đỏ: cho một ca trả thông điệp riêng → đỏ với thông điệp ghim 'claim failure modes are distinguishable'."
+    paths: ["app/api/claim/**"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
+  - id: E6
+    criterion: AC-6
+    executor: test
+    cmd: config:executors.test.api
+    expected: "exit 0; vượt nhịp đã khai thì lần nhập kế tiếp bị chặn thay vì được chấm. Chiều đỏ: tắt bộ đếm nhịp → đỏ với thông điệp ghim 'claim redeem accepted unlimited attempts'."
+    paths: ["app/api/claim/**"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
+  - id: E7
+    criterion: AC-7
+    executor: test
+    layer: backend-effect
+    cmd: config:executors.test.api
+    expected: "exit 0; sau khi đổi mã, máy thứ hai mang đúng danh tính chủ sở hữu của máy thứ nhất và đọc chung một ngăn account. Chiều đỏ: cho bên đổi mã cấp một danh tính mới → đỏ với thông điệp ghim 'redeem minted a fresh owner instead of adopting'."
+    paths: ["app/api/claim/**", "lib/server/agent-runtime/owner.ts"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
+  - id: E8
+    criterion: AC-8
+    executor: test
+    cmd: config:executors.test.storage
+    expected: "exit 0; yêu cầu mang phạm vi device tới ngăn phía máy chủ bị TỪ CHỐI tại cổng vào, không im lặng bỏ qua. Chiều đỏ: cho cổng vào chấp nhận device → đỏ với thông điệp ghim 'device scope crossed the network boundary'."
+    paths: ["packages/@openmaic/storage/src/kv/**", "packages/@openmaic/storage/src/server/**"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
+  - id: E9
+    criterion: AC-9
+    executor: test
+    cmd: config:executors.test.api
+    expected: "exit 0; khi lưu trữ phía máy chủ tắt, đường ghi và đọc lựa chọn giữ nguyên hành vi trước vòng này (không gọi mạng, không hồi quy). Chiều đỏ: cho bên nối luôn dựng kho chạy qua mạng → đỏ với thông điệp ghim 'local-only deployment reached the network'."
+    paths: ["lib/store/kv-persist.ts", "lib/persistence/bootstrap.ts"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
+  - id: E10
+    criterion: AC-10
+    executor: test
+    cmd: config:executors.test.storage
+    expected: "exit 0; đọc lỗi KHÔNG bao giờ được hiểu thành trống, và không ghi đè giá trị đang có bằng mặc định. Chiều đỏ: cho một lần đọc hỏng trả null → đỏ với thông điệp ghim 'a failed read was read as absence'."
+    paths: ["lib/store/kv-persist.ts", "packages/@openmaic/storage/src/kv/**"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
+  - id: E11
+    criterion: AC-11
+    executor: test
+    layer: backend-effect
+    cmd: config:executors.test.api
+    expected: "exit 0; hai chủ sở hữu khác nhau đọc hai ngăn account tách biệt — không ai thấy khoá của người kia. Chiều đỏ: bỏ vế chia ngăn theo chủ sở hữu trong truy vấn → đỏ với thông điệp ghim 'account partition leaked across owners'."
+    paths: ["app/api/persistence/**", "packages/@openmaic/storage/src/server/**", "lib/persistence/server-auth.ts"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
+  - id: E12
+    criterion: AC-12
+    executor: judgment
+    question: "Máy thứ hai đã có lựa chọn riêng, rồi người nhập mã để nhận lựa chọn từ máy kia. Sản phẩm hỏi xác nhận trước khi thay. Câu hỏi: lời hỏi đó có nói đủ rõ rằng thứ đang có trên máy này sẽ MẤT, và có cho người quay lại không — hay nó đọc như một hộp thoại xác nhận qua loa?"
+    inputs:
+      - _acceptance/cau-hinh-di-theo-nguoi/contract.md
+      - _acceptance/cau-hinh-di-theo-nguoi/design.md
+      - _acceptance/cau-hinh-di-theo-nguoi/evidence/E13-ghi-de.png
+    evidence_required: [judged_by, verdict, rationale]
+
+  - id: E13
+    criterion: AC-13
+    executor: ui-check
+    layer: ui-observed
+    steps:
+      - "Dựng máy chủ phát triển theo config dev_server.start"
+      - "Mở {url} → Cài đặt → mục «Máy của tôi» → chụp evidence/E13-san-sang.png"
+      - "Bấm «Lấy mã» → chụp evidence/E13-co-ma.png (thấy mã và đồng hồ đếm ngược)"
+      - "Ở một ngữ cảnh trình duyệt SẠCH, mở cùng mục, nhập một mã sai → chụp evidence/E13-nhan-loi.png (dải lỗi nội tuyến, ô giữ nguyên nội dung)"
+      - "Với ngữ cảnh đã có lựa chọn riêng, nhập mã hợp lệ → chụp evidence/E13-ghi-de.png (lời hỏi xác nhận sẽ thay)"
+      - "Xác nhận → chụp evidence/E13-xong.png"
+      - "Để mã quá hạn → chụp evidence/E13-ma-het-han.png (mã mờ, lời báo hết hạn, nút lấy mã mới)"
+      - "Trong lúc đang đổi mã → chụp evidence/E13-dang-nhan.png (ô khoá lại, chỉ báo đang xử lý)"
+      - "Chặn đường tới máy chủ rồi tải lại mục → chụp evidence/E13-may-chu-im.png (trạng thái lỗi, nút thử lại, lựa chọn đang dùng KHÔNG đổi)"
+      - "Tắt lưu trữ phía máy chủ, tải lại mục → chụp evidence/E13-tat.png (lời giải thích, không có nút)"
+    expected: "Số khung BẰNG số dòng trong khối UX-STATE-TABLE của đặc tả UX (hôm nay 9): -tat, -san-sang, -co-ma, -ma-het-han, -dang-nhan, -nhan-loi, -se-ghi-de, -xong, -may-chu-im. Danh sách trạng thái rút từ chính bảng đó. Chiều đỏ: thêm một dòng vào bảng trạng thái mà không thêm khung → đỏ với thông điệp ghim 'declared state has no captured frame: <id>'. Ca lỗi phải hiện dải lỗi nội tuyến, không phải hộp thoại."
+    paths: ["components/settings/**", "app/api/claim/**"]
+    evidence_required: [run_id, exit_code, verifier, verified_at, screenshot]
+
+  - id: E15
+    criterion: AC-14
+    executor: test
+    layer: backend-effect
+    cmd: config:executors.test.api
+    expected: "exit 0; máy B đã có lựa chọn riêng, sau khi đổi mã và đồng ý thay thì ĐỌC RA đúng giá trị máy A đã ghi — so bằng chính giá trị, không so câu thông báo. Chiều đỏ: bỏ bước nạp lại sau khi đổi mã, để trạng thái trong bộ nhớ giữ giá trị cũ → đỏ với thông điệp ghim 'redeem left stale in-memory choices'."
+    paths: ["app/api/claim/**", "lib/store/kv-persist.ts", "lib/store/settings.ts"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
+  - id: E16
+    criterion: AC-15
+    executor: test
+    layer: backend-effect
+    cmd: config:executors.test.api
+    expected: "exit 0; lời ghi hỏng thì khoá KHÔNG được đánh dấu đã lưu, trạng thái lỗi nổi lên, và lần đọc kế tiếp không trả về giá trị chưa tới máy chủ. Chiều đỏ: cho bên ghi nuốt lỗi và báo thành công → đỏ với thông điệp ghim 'a failed write was reported as saved'."
+    paths: ["lib/store/kv-persist.ts", "packages/@openmaic/storage/src/kv/**"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
+  - id: E14
+    criterion: AC-13
+    executor: ui-check
+    cmd: config:executors.design.gate
+    expected: "exit 0; sàn thẩm mỹ P0 của kho đạt trên mục mới (tương phản, tiêu điểm, bàn phím, trạng thái rỗng/đang tải/lỗi). Chiều đỏ: hạ tương phản một nhãn dưới ngưỡng → đỏ với thông điệp ghim tên phép đo bị trượt."
+    paths: ["components/settings/**"]
+    evidence_required: [run_id, exit_code, verifier, verified_at, screenshot]

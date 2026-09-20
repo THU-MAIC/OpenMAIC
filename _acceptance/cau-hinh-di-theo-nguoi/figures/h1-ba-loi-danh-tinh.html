@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ba lối danh tính · Cây quyết định</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Lora:ital,wght@0,400;1,400&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #eb6c36;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Lora', 'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1280px; width: 100%; }
+    svg { width: 100%; min-width: 900px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <svg viewBox="0 0 1280 688" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <!-- Header -->
+      <text x="64" y="48" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.18em">HÌNH 1 · ĐIỂM QUYẾT ĐỊNH TẠI CỔNG PHẠM VI</text>
+      <text x="64" y="88" fill="#2d3142" font-size="24" font-family="'Lora', 'Instrument Serif', serif">Ba lối danh tính</text>
+
+      <!-- Connectors (drawn before nodes) -->
+      <!-- gốc → lối đã loại (trái): nét đứt -->
+      <path d="M 500 240 L 500 264 Q 500 272 492 272 L 248 272 Q 240 272 240 280 L 240 312"
+            fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+      <!-- gốc → lối đã chọn (giữa): nét liền, đậm -->
+      <path d="M 640 240 L 640 312"
+            fill="none" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <!-- gốc → lối đã loại (phải): nét đứt -->
+      <path d="M 780 240 L 780 264 Q 780 272 788 272 L 1032 272 Q 1040 272 1040 280 L 1040 312"
+            fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+
+      <!-- Nút gốc: câu hỏi -->
+      <rect x="360" y="144" width="560" height="96" rx="6" fill="#f5f5f5"/>
+      <rect x="360" y="144" width="560" height="96" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="380" y="160" width="92" height="20" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="426" y="174" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CÂU HỎI GỐC</text>
+      <text x="640" y="204" fill="#2d3142" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Máy B phải rơi vào đúng ngăn của máy A</text>
+      <text x="640" y="224" fill="#2d3142" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">— bằng cách nào?</text>
+
+      <!-- Lối 1 (trái): Đăng nhập thật — ĐÃ LOẠI -->
+      <rect x="64" y="312" width="352" height="232" rx="6" fill="#f5f5f5"/>
+      <rect x="64" y="312" width="352" height="232" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="5,4"/>
+      <rect x="84" y="332" width="64" height="20" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="116" y="346" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ĐÃ LOẠI</text>
+      <text x="84" y="400" fill="#4f5d75" font-size="16" font-weight="600" font-family="'Geist', sans-serif">Đăng nhập thật</text>
+      <line x1="84" y1="444" x2="396" y2="444" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+      <text x="84" y="468" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LÝ DO LOẠI</text>
+      <text x="84" y="496" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif">Đúng chuẩn production; đổi lại bắt</text>
+      <text x="84" y="516" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif">người tự dựng phải cấu hình đăng nhập.</text>
+
+      <!-- Lối 2 (giữa): Mã nhận một lần — ĐÃ CHỌN -->
+      <rect x="464" y="312" width="352" height="232" rx="6" fill="#f5f5f5"/>
+      <rect x="464" y="312" width="352" height="232" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+      <rect x="484" y="332" width="64" height="20" rx="2" fill="#2d3142"/>
+      <text x="516" y="346" fill="#f5f5f5" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ĐÃ CHỌN</text>
+      <text x="484" y="400" fill="#2d3142" font-size="16" font-weight="600" font-family="'Geist', sans-serif">Mã nhận một lần</text>
+      <line x1="484" y1="444" x2="796" y2="444" stroke="rgba(235,108,54,0.35)" stroke-width="0.8"/>
+      <text x="484" y="468" fill="#ba4513" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.18em">ĐÁNH ĐỔI</text>
+      <text x="484" y="496" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif">Giữ được chạy-local, rẻ;</text>
+      <text x="484" y="516" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif">đổi lại mã là vé mang được.</text>
+
+      <!-- Lối 3 (phải): Một danh tính chung — ĐÃ LOẠI -->
+      <rect x="864" y="312" width="352" height="232" rx="6" fill="#f5f5f5"/>
+      <rect x="864" y="312" width="352" height="232" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="5,4"/>
+      <rect x="884" y="332" width="64" height="20" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="916" y="346" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ĐÃ LOẠI</text>
+      <text x="884" y="400" fill="#4f5d75" font-size="16" font-weight="600" font-family="'Geist', sans-serif">Một danh tính chung</text>
+      <text x="884" y="420" fill="#4f5d75" font-size="16" font-weight="600" font-family="'Geist', sans-serif">cho cả deployment</text>
+      <line x1="884" y1="444" x2="1196" y2="444" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+      <text x="884" y="468" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LÝ DO LOẠI</text>
+      <text x="884" y="496" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif">Rẻ nhất; đâm vào ngưỡng CHẾT:</text>
+      <text x="884" y="516" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif">lựa chọn hai người trộn nhau.</text>
+
+      <!-- Legend -->
+      <line x1="64" y1="592" x2="1216" y2="592" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+      <text x="64" y="608" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.18em">CHÚ GIẢI</text>
+
+      <rect x="64" y="624" width="16" height="12" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+      <text x="88" y="634" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">Lối đã chọn — khung nét liền, nhãn ĐÃ CHỌN nền đậm</text>
+
+      <rect x="424" y="624" width="16" height="12" rx="2" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="5,4"/>
+      <text x="448" y="634" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">Lối đã loại — khung nét đứt, nhãn ĐÃ LOẠI, kèm lý do loại</text>
+
+      <text x="1216" y="634" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="end" letter-spacing="0.06em">TIÊU CHÍ LIÊN QUAN · AC-7 · AC-11</text>
+    </svg>
+  </div>
+</body>
+</html>
