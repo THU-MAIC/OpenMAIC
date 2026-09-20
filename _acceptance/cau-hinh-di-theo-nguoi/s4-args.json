@@ -1,0 +1,558 @@
+{
+  "generated_at": "2026-09-20T11:04:23Z",
+  "generated_sha": "ee5b6e3f2ab12e4f842f8140bd879f1341cf5b20",
+  "mainBranchInfo": {
+    "branch": "main",
+    "source": "remote"
+  },
+  "slug": "cau-hinh-di-theo-nguoi",
+  "round": 1,
+  "riskTier": "T3",
+  "evals": [
+    {
+      "id": "E1",
+      "criterion": "AC-1",
+      "cmd": "pnpm test",
+      "expected": "\"exit 0; ghi một khoá account rồi đọc lại bằng một yêu cầu MỚI trả đúng giá trị vừa ghi. Chiều đỏ trên cùng dữ liệu dựng sẵn: làm bên ghi bỏ qua lời gọi mạng → case đỏ với thông điệp ghim 'account write did not reach the server store'.\"",
+      "executor": "test",
+      "expectedExit": 0,
+      "paths": [
+        "lib/store/kv-persist.ts",
+        "packages/@openmaic/storage/src/kv/**",
+        "app/api/persistence/**"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at"
+      ],
+      "ref": "config:executors.test.api"
+    },
+    {
+      "id": "E2",
+      "criterion": "AC-2",
+      "cmd": "pnpm test",
+      "expected": "\"exit 0; ma trận TOÀN PHẦN — số assert BẰNG số kho khai phạm vi account, danh sách rút từ chính khai báo của các kho chứ không chép tay; phiên thứ hai của cùng chủ sở hữu đọc đúng mọi khoá phiên một đã ghi. Hai chiều đỏ trên cùng fixture: (a) cho một kho account ở lại trình duyệt → đỏ với thông điệp ghim 'account key stayed device-local: <tên kho>'; (b) thêm một kho khai account mà bài kiểm chưa liệt → đỏ với thông điệp ghim 'account key set drifted from the declared scope'.\"",
+      "executor": "test",
+      "expectedExit": 0,
+      "paths": [
+        "lib/store/kv-persist.ts",
+        "lib/store/settings.ts",
+        "app/api/persistence/**"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at"
+      ],
+      "ref": "config:executors.test.api"
+    },
+    {
+      "id": "E3",
+      "criterion": "AC-3",
+      "cmd": "pnpm test",
+      "expected": "\"exit 0; ba vế — mã còn hiệu lực TRƯỚC mốc 10 phút, hết hiệu lực SAU mốc đó, và cấu hình khai hạn dài hơn 10 phút thì chính bài kiểm đỏ. Chiều đỏ trên cùng fixture: nới hạn cấu hình lên 24 giờ → đỏ với thông điệp ghim 'claim TTL exceeds the signed ceiling of 10 minutes'.\"",
+      "executor": "test",
+      "expectedExit": 0,
+      "paths": [
+        "lib/persistence/claim-code.ts",
+        "app/api/claim/**"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at"
+      ],
+      "ref": "config:executors.test.api"
+    },
+    {
+      "id": "E4",
+      "criterion": "AC-4",
+      "cmd": "pnpm test",
+      "expected": "\"exit 0; nhập lại một mã đã dùng bị từ chối VÀ danh tính chủ sở hữu không đổi. Chiều đỏ: bỏ dấu đã-dùng → đỏ với thông điệp ghim 'claim code was redeemable twice'.\"",
+      "executor": "test",
+      "expectedExit": 0,
+      "paths": [
+        "lib/persistence/claim-code.ts",
+        "app/api/claim/**"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at"
+      ],
+      "ref": "config:executors.test.api"
+    },
+    {
+      "id": "E5",
+      "criterion": "AC-5",
+      "cmd": "pnpm test",
+      "expected": "\"exit 0; ba ca sai / hết hạn / đã dùng trả về CÙNG một thân phản hồi và cùng mã trạng thái. Chiều đỏ: cho một ca trả thông điệp riêng → đỏ với thông điệp ghim 'claim failure modes are distinguishable'.\"",
+      "executor": "test",
+      "expectedExit": 0,
+      "paths": [
+        "app/api/claim/**"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at"
+      ],
+      "ref": "config:executors.test.api"
+    },
+    {
+      "id": "E6",
+      "criterion": "AC-6",
+      "cmd": "pnpm test",
+      "expected": "\"exit 0; vượt nhịp đã khai thì lần nhập kế tiếp bị chặn thay vì được chấm. Chiều đỏ: tắt bộ đếm nhịp → đỏ với thông điệp ghim 'claim redeem accepted unlimited attempts'.\"",
+      "executor": "test",
+      "expectedExit": 0,
+      "paths": [
+        "app/api/claim/**"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at"
+      ],
+      "ref": "config:executors.test.api"
+    },
+    {
+      "id": "E7",
+      "criterion": "AC-7",
+      "cmd": "pnpm test",
+      "expected": "\"exit 0; sau khi đổi mã, máy thứ hai mang đúng danh tính chủ sở hữu của máy thứ nhất và đọc chung một ngăn account. Chiều đỏ: cho bên đổi mã cấp một danh tính mới → đỏ với thông điệp ghim 'redeem minted a fresh owner instead of adopting'.\"",
+      "executor": "test",
+      "expectedExit": 0,
+      "paths": [
+        "app/api/claim/**",
+        "lib/server/agent-runtime/owner.ts"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at"
+      ],
+      "ref": "config:executors.test.api"
+    },
+    {
+      "id": "E8",
+      "criterion": "AC-8",
+      "cmd": "pnpm --filter @openmaic/storage test",
+      "expected": "\"exit 0; yêu cầu mang phạm vi device tới ngăn phía máy chủ bị TỪ CHỐI tại cổng vào, không im lặng bỏ qua. Chiều đỏ: cho cổng vào chấp nhận device → đỏ với thông điệp ghim 'device scope crossed the network boundary'.\"",
+      "executor": "test",
+      "expectedExit": 0,
+      "paths": [
+        "packages/@openmaic/storage/src/kv/**",
+        "packages/@openmaic/storage/src/server/**"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at"
+      ],
+      "ref": "config:executors.test.storage"
+    },
+    {
+      "id": "E9",
+      "criterion": "AC-9",
+      "cmd": "pnpm test",
+      "expected": "\"exit 0; khi lưu trữ phía máy chủ tắt, đường ghi và đọc lựa chọn giữ nguyên hành vi trước vòng này (không gọi mạng, không hồi quy). Chiều đỏ: cho bên nối luôn dựng kho chạy qua mạng → đỏ với thông điệp ghim 'local-only deployment reached the network'.\"",
+      "executor": "test",
+      "expectedExit": 0,
+      "paths": [
+        "lib/store/kv-persist.ts",
+        "lib/persistence/bootstrap.ts"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at"
+      ],
+      "ref": "config:executors.test.api"
+    },
+    {
+      "id": "E10",
+      "criterion": "AC-10",
+      "cmd": "pnpm --filter @openmaic/storage test",
+      "expected": "\"exit 0; đọc lỗi KHÔNG bao giờ được hiểu thành trống, và không ghi đè giá trị đang có bằng mặc định. Chiều đỏ: cho một lần đọc hỏng trả null → đỏ với thông điệp ghim 'a failed read was read as absence'.\"",
+      "executor": "test",
+      "expectedExit": 0,
+      "paths": [
+        "lib/store/kv-persist.ts",
+        "packages/@openmaic/storage/src/kv/**"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at"
+      ],
+      "ref": "config:executors.test.storage"
+    },
+    {
+      "id": "E11",
+      "criterion": "AC-11",
+      "cmd": "pnpm test",
+      "expected": "\"exit 0; hai chủ sở hữu khác nhau đọc hai ngăn account tách biệt — không ai thấy khoá của người kia. Chiều đỏ: bỏ vế chia ngăn theo chủ sở hữu trong truy vấn → đỏ với thông điệp ghim 'account partition leaked across owners'.\"",
+      "executor": "test",
+      "expectedExit": 0,
+      "paths": [
+        "app/api/persistence/**",
+        "packages/@openmaic/storage/src/server/**",
+        "lib/persistence/server-auth.ts"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at"
+      ],
+      "ref": "config:executors.test.api"
+    },
+    {
+      "id": "E12",
+      "criterion": "AC-12",
+      "question": "\"Máy thứ hai đã có lựa chọn riêng, rồi người nhập mã để nhận lựa chọn từ máy kia. Sản phẩm hỏi xác nhận trước khi thay. Câu hỏi: lời hỏi đó có nói đủ rõ rằng thứ đang có trên máy này sẽ MẤT, và có cho người quay lại không — hay nó đọc như một hộp thoại xác nhận qua loa?\"",
+      "executor": "judgment",
+      "expectedExit": 0,
+      "inputs": [
+        "/Users/manhphan/dev/OpenMAIC/_acceptance/cau-hinh-di-theo-nguoi/contract.md",
+        "/Users/manhphan/dev/OpenMAIC/_acceptance/cau-hinh-di-theo-nguoi/design.md",
+        "/Users/manhphan/dev/OpenMAIC/_acceptance/cau-hinh-di-theo-nguoi/evidence/E13-ghi-de.png"
+      ],
+      "evidence_required": [
+        "judged_by",
+        "verdict",
+        "rationale"
+      ]
+    },
+    {
+      "id": "E13",
+      "criterion": "AC-13",
+      "expected": "\"Số khung BẰNG số dòng trong khối UX-STATE-TABLE của đặc tả UX (hôm nay 9): -tat, -san-sang, -co-ma, -ma-het-han, -dang-nhan, -nhan-loi, -se-ghi-de, -xong, -may-chu-im. Danh sách trạng thái rút từ chính bảng đó. Chiều đỏ: thêm một dòng vào bảng trạng thái mà không thêm khung → đỏ với thông điệp ghim 'declared state has no captured frame: <id>'. Ca lỗi phải hiện dải lỗi nội tuyến, không phải hộp thoại.\"",
+      "executor": "ui-check",
+      "expectedExit": 0,
+      "steps": [
+        "Dựng máy chủ phát triển theo config dev_server.start",
+        "Mở {url} → Cài đặt → mục «Máy của tôi» → chụp evidence/E13-san-sang.png",
+        "Bấm «Lấy mã» → chụp evidence/E13-co-ma.png (thấy mã và đồng hồ đếm ngược)",
+        "Ở một ngữ cảnh trình duyệt SẠCH, mở cùng mục, nhập một mã sai → chụp evidence/E13-nhan-loi.png (dải lỗi nội tuyến, ô giữ nguyên nội dung)",
+        "Với ngữ cảnh đã có lựa chọn riêng, nhập mã hợp lệ → chụp evidence/E13-ghi-de.png (lời hỏi xác nhận sẽ thay)",
+        "Xác nhận → chụp evidence/E13-xong.png",
+        "Để mã quá hạn → chụp evidence/E13-ma-het-han.png (mã mờ, lời báo hết hạn, nút lấy mã mới)",
+        "Trong lúc đang đổi mã → chụp evidence/E13-dang-nhan.png (ô khoá lại, chỉ báo đang xử lý)",
+        "Chặn đường tới máy chủ rồi tải lại mục → chụp evidence/E13-may-chu-im.png (trạng thái lỗi, nút thử lại, lựa chọn đang dùng KHÔNG đổi)",
+        "Tắt lưu trữ phía máy chủ, tải lại mục → chụp evidence/E13-tat.png (lời giải thích, không có nút)"
+      ],
+      "paths": [
+        "components/settings/**",
+        "app/api/claim/**"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at",
+        "screenshot"
+      ]
+    },
+    {
+      "id": "E15",
+      "criterion": "AC-14",
+      "cmd": "pnpm test",
+      "expected": "\"exit 0; máy B đã có lựa chọn riêng, sau khi đổi mã và đồng ý thay thì ĐỌC RA đúng giá trị máy A đã ghi — so bằng chính giá trị, không so câu thông báo. Chiều đỏ: bỏ bước nạp lại sau khi đổi mã, để trạng thái trong bộ nhớ giữ giá trị cũ → đỏ với thông điệp ghim 'redeem left stale in-memory choices'.\"",
+      "executor": "test",
+      "expectedExit": 0,
+      "paths": [
+        "app/api/claim/**",
+        "lib/store/kv-persist.ts",
+        "lib/store/settings.ts"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at"
+      ],
+      "ref": "config:executors.test.api"
+    },
+    {
+      "id": "E16",
+      "criterion": "AC-15",
+      "cmd": "pnpm test",
+      "expected": "\"exit 0; lời ghi hỏng thì khoá KHÔNG được đánh dấu đã lưu, trạng thái lỗi nổi lên, và lần đọc kế tiếp không trả về giá trị chưa tới máy chủ. Chiều đỏ: cho bên ghi nuốt lỗi và báo thành công → đỏ với thông điệp ghim 'a failed write was reported as saved'.\"",
+      "executor": "test",
+      "expectedExit": 0,
+      "paths": [
+        "lib/store/kv-persist.ts",
+        "packages/@openmaic/storage/src/kv/**"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at"
+      ],
+      "ref": "config:executors.test.api"
+    },
+    {
+      "id": "E14",
+      "criterion": "AC-13",
+      "cmd": "node scripts/design-gate-changed.mjs",
+      "expected": "\"exit 0; sàn thẩm mỹ P0 của kho đạt trên mục mới (tương phản, tiêu điểm, bàn phím, trạng thái rỗng/đang tải/lỗi). Chiều đỏ: hạ tương phản một nhãn dưới ngưỡng → đỏ với thông điệp ghim tên phép đo bị trượt.\"",
+      "executor": "script",
+      "expectedExit": 0,
+      "paths": [
+        "components/settings/**"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at",
+        "output"
+      ],
+      "ref": "config:executors.design.gate"
+    }
+  ],
+  "suiteCommands": [
+    "pnpm test",
+    "pnpm --filter @openmaic/storage test"
+  ],
+  "diffBase": "1237ae44b4f5e18747d53c22526630e08ab7f37d",
+  "repoRoot": "/Users/manhphan/dev/OpenMAIC",
+  "personasPath": "/Users/manhphan/.claude/plugins/cache/acceptance-gate-kit/acceptance-gate/2.16.0/skills/acceptance/references/judge-personas.md",
+  "templatePath": "/Users/manhphan/.claude/plugins/cache/acceptance-gate-kit/acceptance-gate/2.16.0/skills/acceptance/references/evidence-report-template.md",
+  "toolKillRule": "# TOOL-KILL-RULE — lệnh bị công cụ ngắt KHÔNG phải lệnh fail\n\n**Nguồn duy nhất** của luật «hết giờ không phải trượt» cho MỌI đường chạy lệnh\nkiểm của kit. Hai đường tiêu thụ, cùng đọc khối marker dưới đây, không chép tay:\n\n- **Vòng lặp tính năng** (plugin feature-loop): skill `feature-loop` đọc file này\n  (resolve qua `resolve-plugin.mjs --require skills/acceptance/references/tool-kill-rule.md`)\n  và truyền NGUYÊN VĂN vào `args.toolKillRule` của workflow\n  `acceptance-verify.js`; workflow rút khối marker và nội suy vào prompt của mọi\n  agent chạy lệnh (machine · ui-check · baseline). Thiếu args hoặc không rút\n  được marker → workflow trả BLOCKED có tên, không chạy không luật.\n- **Đường VERIFY độc lập** (skill `acceptance` Phase 3): phiên điều phối chép khối\n  marker VERBATIM vào prompt của phiên tươi VERIFY, cùng nếp «Network truth».\n\nVì sao có luật: verifier chạy lệnh qua Bash tool có trần thời gian mặc định\n(~120 s) NGẮN hơn nhiều suite; lệnh bị công cụ giết trả exit code CỦA CÔNG CỤ,\nkhông phải của lệnh (vấp thật release-2-2-0 S4 r5: suite 108 s đơn lẻ, dưới tải\nbị giết ở 118 s → REJECT giả 4 eval). Nhận diện là việc AGENT (nó thấy tool\nresult thật); phần máy chỉ phòng thủ trên field cấu trúc `killedByTool` —\nKHÔNG grep nội dung output trong engine (chuỗi tổng kết là của suite từng repo).\n\n<!-- <<<TOOL-KILL-RULE -->\nTRAN THOI GIAN CONG CU: khi goi Bash chay lenh, LUON dat tham so timeout >= 600000 (ms) — tran mac dinh cua cong cu (~120s) NGAN hon nhieu suite; lenh vuot tran se bi CONG CU giet va exit code luc do la cua cong cu, KHONG phai cua lenh. Neu lenh van bi cong cu dung (tool result bao timeout/killed, hoac output bi CAT giua chung truoc dong tong ket cuoi cua lenh) → DO KHONG PHAI ket qua that: khai cannotRun=true + killedByTool=true + reason \"bi cong cu giet o <so giay> giay\" kem dau hieu (timeout tool / output cat). TUYET DOI khong bao exitCode nhu the lenh tu fail va khong doan PASS/FAIL tu output cut.\n<!-- TOOL-KILL-RULE>>> -->\n\n## Hồ sơ cho lượt bị ngắt (đường độc lập)\n\nPhiên tươi VERIFY gặp lệnh bị công cụ ngắt thì:\n\n- dòng run-log của eval đó: `\"exit_code\": null, \"killed_by_tool\": true` (không\n  ghi mã thoát của công cụ như mã thoát của lệnh);\n- verdict báo cáo `BLOCKED`, `reason: bi cong cu giet o <so giay> giay — <eval ids>`\n  (kèm dấu hiệu: timeout tool / output cắt trước dòng tổng kết); `failed_evals`\n  rỗng — người đọc hồ sơ thấy đây là sự cố hạ tầng, chữa bằng chạy lại với trần\n  công cụ đủ dài, không phải sửa sản phẩm.\n",
+  "contractPath": "/Users/manhphan/dev/OpenMAIC/_acceptance/cau-hinh-di-theo-nguoi/contract.md",
+  "invokedAt": "2026-09-20T11:04:23Z",
+  "invokedSha": "ee5b6e3f2ab12e4f842f8140bd879f1341cf5b20",
+  "vungVat": [
+    "_acceptance/cau-hinh-di-theo-nguoi/evals.yaml",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/h1-ba-loi-danh-tinh.html",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/h1-ba-loi-danh-tinh.png",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/h2-luong-ma-nhan.html",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/h2-luong-ma-nhan.png",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/the-cong-pham-vi.html",
+    "_acceptance/config.yaml",
+    "app/api/claim/redeem/route.ts",
+    "app/api/claim/route.ts",
+    "app/api/persistence/[...path]/route.ts",
+    "components/settings/index.tsx",
+    "components/settings/my-devices-settings.tsx",
+    "lib/i18n/locales/ar-SA.json",
+    "lib/i18n/locales/de-DE.json",
+    "lib/i18n/locales/en-US.json",
+    "lib/i18n/locales/es-MX.json",
+    "lib/i18n/locales/fr-FR.json",
+    "lib/i18n/locales/ja-JP.json",
+    "lib/i18n/locales/ko-KR.json",
+    "lib/i18n/locales/pt-BR.json",
+    "lib/i18n/locales/ru-RU.json",
+    "lib/i18n/locales/vi-VN.json",
+    "lib/i18n/locales/zh-CN.json",
+    "lib/i18n/locales/zh-TW.json",
+    "lib/p-tiers.json",
+    "lib/persistence/adopt-choices.ts",
+    "lib/persistence/bootstrap.ts",
+    "lib/persistence/claim-code.ts",
+    "lib/persistence/enabled.ts",
+    "lib/persistence/server-provider.ts",
+    "lib/server/agent-runtime/owner.ts",
+    "lib/store/kv-persist.ts",
+    "lib/types/settings.ts",
+    "packages/@openmaic/storage/package.json",
+    "packages/@openmaic/storage/src/index.ts",
+    "packages/@openmaic/storage/src/kv/pg.ts",
+    "packages/@openmaic/storage/src/server/index.ts",
+    "packages/@openmaic/storage/src/server/kv.ts",
+    "packages/@openmaic/storage/test/kv-http-handler.test.ts",
+    "packages/@openmaic/storage/test/pg-kv-store.test.ts",
+    "scripts/design-gate-changed.mjs",
+    "tests/api/claim.test.ts",
+    "tests/persistence/adopt-choices.test.ts",
+    "tests/persistence/asset-collector-schedule.test.ts",
+    "tests/persistence/claim-code.test.ts",
+    "tests/persistence/route.test.ts",
+    "tests/providers/provider-neutrality-guard.test.ts",
+    "tests/store/kv-persist-http.test.ts",
+    "tests/store/kv-persist-write-failure.test.ts",
+    "tests/workbench/pg-mode-folder-listing.test.ts",
+    "vendor/impeccable/LICENSE",
+    "vendor/impeccable/NOTICE",
+    "vendor/impeccable/engine/browser/injected/index.mjs",
+    "vendor/impeccable/engine/design-system.mjs",
+    "vendor/impeccable/engine/detect-antipatterns-browser.js",
+    "vendor/impeccable/engine/engines/browser/detect-url.mjs",
+    "vendor/impeccable/engine/engines/regex/detect-text.mjs",
+    "vendor/impeccable/engine/engines/static-html/css-cascade.mjs",
+    "vendor/impeccable/engine/engines/static-html/detect-html.mjs",
+    "vendor/impeccable/engine/engines/visual/screenshot-contrast.mjs",
+    "vendor/impeccable/engine/findings.mjs",
+    "vendor/impeccable/engine/profile/profiler.mjs",
+    "vendor/impeccable/engine/registry/antipatterns.mjs",
+    "vendor/impeccable/engine/rules/checks.mjs",
+    "vendor/impeccable/engine/shared/color.mjs",
+    "vendor/impeccable/engine/shared/constants.mjs",
+    "vendor/impeccable/engine/shared/inline-ignores.mjs",
+    "vendor/impeccable/engine/shared/page.mjs",
+    "vendor/impeccable/vendor-sync.sh"
+  ],
+  "ngoaiVatGlobs": [
+    "*.md",
+    "packages/docs/**",
+    ".github/ISSUE_TEMPLATE/**",
+    "LICENSE",
+    "PRODUCT-MAP.md",
+    "_acceptance/*/**/*.md",
+    "_acceptance/*/**/*.jsonl"
+  ],
+  "ngoaiVatFiles": [
+    "PRODUCT-MAP.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/contract.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/decisions.jsonl",
+    "_acceptance/cau-hinh-di-theo-nguoi/design.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/duong-nen.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/index.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/gap-probe.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/plan.md"
+  ],
+  "diffFiles": [
+    "PRODUCT-MAP.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/contract.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/decisions.jsonl",
+    "_acceptance/cau-hinh-di-theo-nguoi/design.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/duong-nen.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/evals.yaml",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/h1-ba-loi-danh-tinh.html",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/h1-ba-loi-danh-tinh.png",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/h2-luong-ma-nhan.html",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/h2-luong-ma-nhan.png",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/index.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/the-cong-pham-vi.html",
+    "_acceptance/cau-hinh-di-theo-nguoi/gap-probe.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/plan.md",
+    "_acceptance/config.yaml",
+    "app/api/claim/redeem/route.ts",
+    "app/api/claim/route.ts",
+    "app/api/persistence/[...path]/route.ts",
+    "components/settings/index.tsx",
+    "components/settings/my-devices-settings.tsx",
+    "lib/i18n/locales/ar-SA.json",
+    "lib/i18n/locales/de-DE.json",
+    "lib/i18n/locales/en-US.json",
+    "lib/i18n/locales/es-MX.json",
+    "lib/i18n/locales/fr-FR.json",
+    "lib/i18n/locales/ja-JP.json",
+    "lib/i18n/locales/ko-KR.json",
+    "lib/i18n/locales/pt-BR.json",
+    "lib/i18n/locales/ru-RU.json",
+    "lib/i18n/locales/vi-VN.json",
+    "lib/i18n/locales/zh-CN.json",
+    "lib/i18n/locales/zh-TW.json",
+    "lib/p-tiers.json",
+    "lib/persistence/adopt-choices.ts",
+    "lib/persistence/bootstrap.ts",
+    "lib/persistence/claim-code.ts",
+    "lib/persistence/enabled.ts",
+    "lib/persistence/server-provider.ts",
+    "lib/server/agent-runtime/owner.ts",
+    "lib/store/kv-persist.ts",
+    "lib/types/settings.ts",
+    "packages/@openmaic/storage/package.json",
+    "packages/@openmaic/storage/src/index.ts",
+    "packages/@openmaic/storage/src/kv/pg.ts",
+    "packages/@openmaic/storage/src/server/index.ts",
+    "packages/@openmaic/storage/src/server/kv.ts",
+    "packages/@openmaic/storage/test/kv-http-handler.test.ts",
+    "packages/@openmaic/storage/test/pg-kv-store.test.ts",
+    "scripts/design-gate-changed.mjs",
+    "tests/api/claim.test.ts",
+    "tests/persistence/adopt-choices.test.ts",
+    "tests/persistence/asset-collector-schedule.test.ts",
+    "tests/persistence/claim-code.test.ts",
+    "tests/persistence/route.test.ts",
+    "tests/providers/provider-neutrality-guard.test.ts",
+    "tests/store/kv-persist-http.test.ts",
+    "tests/store/kv-persist-write-failure.test.ts",
+    "tests/workbench/pg-mode-folder-listing.test.ts",
+    "vendor/impeccable/LICENSE",
+    "vendor/impeccable/NOTICE",
+    "vendor/impeccable/engine/browser/injected/index.mjs",
+    "vendor/impeccable/engine/design-system.mjs",
+    "vendor/impeccable/engine/detect-antipatterns-browser.js",
+    "vendor/impeccable/engine/engines/browser/detect-url.mjs",
+    "vendor/impeccable/engine/engines/regex/detect-text.mjs",
+    "vendor/impeccable/engine/engines/static-html/css-cascade.mjs",
+    "vendor/impeccable/engine/engines/static-html/detect-html.mjs",
+    "vendor/impeccable/engine/engines/visual/screenshot-contrast.mjs",
+    "vendor/impeccable/engine/findings.mjs",
+    "vendor/impeccable/engine/profile/profiler.mjs",
+    "vendor/impeccable/engine/registry/antipatterns.mjs",
+    "vendor/impeccable/engine/rules/checks.mjs",
+    "vendor/impeccable/engine/shared/color.mjs",
+    "vendor/impeccable/engine/shared/constants.mjs",
+    "vendor/impeccable/engine/shared/inline-ignores.mjs",
+    "vendor/impeccable/engine/shared/page.mjs",
+    "vendor/impeccable/vendor-sync.sh"
+  ],
+  "fileDoTrongDiff": [
+    "_acceptance/cau-hinh-di-theo-nguoi/evals.yaml",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/h1-ba-loi-danh-tinh.html",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/h1-ba-loi-danh-tinh.png",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/h2-luong-ma-nhan.html",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/h2-luong-ma-nhan.png",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/the-cong-pham-vi.html",
+    "_acceptance/config.yaml",
+    "app/api/claim/redeem/route.ts",
+    "app/api/claim/route.ts",
+    "app/api/persistence/[...path]/route.ts",
+    "components/settings/index.tsx",
+    "components/settings/my-devices-settings.tsx",
+    "lib/persistence/bootstrap.ts",
+    "lib/persistence/claim-code.ts",
+    "lib/server/agent-runtime/owner.ts",
+    "lib/store/kv-persist.ts",
+    "packages/@openmaic/storage/src/kv/pg.ts",
+    "packages/@openmaic/storage/src/server/index.ts",
+    "packages/@openmaic/storage/src/server/kv.ts",
+    "packages/@openmaic/storage/test/kv-http-handler.test.ts",
+    "packages/@openmaic/storage/test/pg-kv-store.test.ts",
+    "tests/api/claim.test.ts",
+    "tests/persistence/adopt-choices.test.ts",
+    "tests/persistence/asset-collector-schedule.test.ts",
+    "tests/persistence/claim-code.test.ts",
+    "tests/persistence/route.test.ts",
+    "tests/providers/provider-neutrality-guard.test.ts",
+    "tests/store/kv-persist-http.test.ts",
+    "tests/store/kv-persist-write-failure.test.ts",
+    "tests/workbench/pg-mode-folder-listing.test.ts"
+  ],
+  "coverageFiles": [
+    "app/api/claim/redeem/route.ts",
+    "app/api/claim/route.ts",
+    "app/api/persistence/[...path]/route.ts",
+    "components/settings/index.tsx",
+    "components/settings/my-devices-settings.tsx",
+    "lib/persistence/bootstrap.ts",
+    "lib/persistence/claim-code.ts",
+    "lib/server/agent-runtime/owner.ts",
+    "lib/store/kv-persist.ts",
+    "packages/@openmaic/storage/src/kv/pg.ts",
+    "packages/@openmaic/storage/src/server/index.ts",
+    "packages/@openmaic/storage/src/server/kv.ts"
+  ],
+  "coEvalPaths": true,
+  "evalsHash": "ba18fc945c6363af4c3ed8eb4a8de251955613a700f0fb9e14327c4b9d851660",
+  "runBaseline": true
+}
