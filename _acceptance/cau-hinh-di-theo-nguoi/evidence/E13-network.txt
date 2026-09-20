@@ -1,0 +1,69 @@
+E13 NETWORK TRUTH — dev_server.url = http://localhost:3002 (no dev_server.api_base declared -> app origin only, same-origin).
+
+Driver: Claude_Browser (tab-9/tab-10) + Playwright MCP (tabs 0/1/2), both expose network reads.
+
+FAIL-eligible set observed (same-origin fetch/XHR to localhost:3002):
+  GET /api/persistence/kv/entries/settings-storage       -> 404 (real backend, no DATABASE_URL) / 200 (mocked, see below)
+  GET /api/persistence/kv/entries/user-profile-storage    -> 404 (real backend AND intentionally-mocked 404 KEY_NOT_FOUND)
+  GET /api/stages                                         -> 404 Not Found
+  GET /api/folders                                        -> 404 Not Found
+  POST /api/claim                (mint code)               -> 200 OK (in-memory store, no DB needed)
+  POST /api/claim/redeem         (redeem code)              -> 200 OK (in-memory store, no DB needed)
+
+Static / third-party: none observed beyond same-origin Next.js dev assets and internal
+__nextjs_original-stack-frames (dev-tool diagnostics, ignored per scoping rules).
+
+ROOT CAUSE of the 404s on /api/persistence/kv/entries/*, /api/stages, /api/folders:
+  no DATABASE_URL is configured for this dev server (repo has no local PostgreSQL running,
+  psql/pg_isready are not even installed on this machine). app/api/persistence/[...path]/route.ts
+  and the stages/folders routes require a real Postgres pool (lib/persistence/server-provider.ts,
+  @openmaic/storage/*/pg) and fail closed with no fallback. This is the exact, pre-disclosed
+  limitation named in this eval's own Expected text: "Máy đo KHÔNG có PostgreSQL nên luồng
+  đầu-cuối không chạy trọn được". Mint/redeem (/api/claim, /api/claim/redeem) are in-memory
+  and do NOT depend on Postgres, and both returned 200 in every live attempt.
+
+CONSEQUENCE for the redeem->adopt flow (verified live, unmocked, in a real click-through):
+  entering a real code minted by a separate identity and clicking "Replace them" DOES burn the
+  code (redeem succeeds) but the subsequent rehydrate step (reloadAccountStoresAndConfirm ->
+  zustand persist.rehydrate -> HttpKVStore GET) fails against the DB-less backend, so the UI
+  lands on ST-maycuatoi-may-chu-im ("Could not reach the server. Your current choices are
+  unchanged.") instead of ST-maycuatoi-xong. This was reproduced twice with two different fresh
+  codes from two different (cookie-cleared) browser identities.
+
+networkObserved = app-fail
+  (FAIL-eligible same-origin requests — /api/persistence/kv/entries/*, /api/stages, /api/folders —
+  returned 4xx, and this eval's Expected text does not cite those exact status codes, so per the
+  harness's literal network-truth rule this is categorized app-fail even though the eval's own
+  Expected block explicitly predicts and asks to have this exact condition documented rather than
+  silently passed. Recorded here verbatim for the human/reviewer to weigh; see outputTail for how
+  this affects exitCode.)
+69. [GET] http://localhost:3002/api/persistence/kv/entries/settings-storage => [200] OK
+70. [GET] http://localhost:3002/api/persistence/kv/entries/user-profile-storage => [404] Not Found
+72. [GET] http://localhost:3002/api/persistence/kv/entries/settings-storage => [200] OK
+74. [GET] http://localhost:3002/api/server-providers => [200] OK
+75. [GET] http://localhost:3002/api/comfyui-workflows => [200] OK
+76. [GET] http://localhost:3002/api/stages => [404] Not Found
+77. [GET] http://localhost:3002/api/folders => [404] Not Found
+78. [GET] http://localhost:3002/api/access-code/status => [200] OK
+80. [GET] http://localhost:3002/api/server-providers => [200] OK
+81. [GET] http://localhost:3002/api/comfyui-workflows => [200] OK
+82. [GET] http://localhost:3002/api/stages => [404] Not Found
+83. [GET] http://localhost:3002/api/folders => [404] Not Found
+84. [GET] http://localhost:3002/api/access-code/status => [200] OK
+87. [POST] http://localhost:3002/__nextjs_original-stack-frames => [200] OK
+88. [POST] http://localhost:3002/__nextjs_original-stack-frames => [200] OK
+89. [POST] http://localhost:3002/__nextjs_original-stack-frames => [200] OK
+91. [POST] http://localhost:3002/__nextjs_original-stack-frames => [200] OK
+92. [POST] http://localhost:3002/__nextjs_original-stack-frames => [200] OK
+93. [POST] http://localhost:3002/__nextjs_original-stack-frames => [200] OK
+94. [POST] http://localhost:3002/__nextjs_original-stack-frames => [200] OK
+95. [POST] http://localhost:3002/__nextjs_original-stack-frames => [200] OK
+96. [POST] http://localhost:3002/__nextjs_original-stack-frames => [200] OK
+97. [POST] http://localhost:3002/__nextjs_original-stack-frames => [200] OK
+98. [GET] http://localhost:3002/api/persistence/kv/entries/settings-storage => [200] OK
+99. [POST] http://localhost:3002/__nextjs_original-stack-frames => [200] OK
+100. [GET] http://localhost:3002/api/persistence/kv/entries/settings-storage => [200] OK
+101. [POST] http://localhost:3002/__nextjs_original-stack-frames => [200] OK
+102. [POST] http://localhost:3002/__nextjs_original-stack-frames => [200] OK
+
+Note: 92 static requests not shown, run with "static" option to see them.

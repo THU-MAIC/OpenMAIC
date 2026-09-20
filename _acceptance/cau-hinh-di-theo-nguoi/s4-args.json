@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-09-20T13:41:13Z",
-  "generated_sha": "f6be99c588d325f887fc7de8f73153a111be92d7",
+  "generated_at": "2026-09-20T14:16:44Z",
+  "generated_sha": "0f3bf83a5036854533e4d8b5034c5ea947efd9a0",
   "mainBranchInfo": {
     "branch": "main",
     "source": "remote"
   },
   "slug": "cau-hinh-di-theo-nguoi",
-  "round": 4,
+  "round": 5,
   "riskTier": "T3",
   "evals": [
     {
@@ -53,7 +53,7 @@
       "id": "E3",
       "criterion": "AC-3",
       "cmd": "./scripts/with-pinned-node.sh pnpm test",
-      "expected": "\"exit 0; ba vế — mã còn hiệu lực TRƯỚC mốc 10 phút, hết hiệu lực SAU mốc đó, và cấu hình khai hạn dài hơn 10 phút thì chính bài kiểm đỏ. Chiều đỏ trên cùng fixture: nới hạn cấu hình lên 24 giờ → đỏ với thông điệp ghim 'claim TTL exceeds the signed ceiling of 10 minutes'.\"",
+      "expected": "\"exit 0; bốn vế quanh cùng một mốc — (a) NGAY DƯỚI mốc 10 phút mã vẫn đổi được, tức việc hết hạn KHÔNG xảy ra sớm; (b) ngay trên mốc thì hết hiệu lực; (c) mã chỉ dùng được một lần; (d) cấu hình khai hạn dài hơn 10 phút thì chính bài kiểm đỏ. Chiều đỏ trên cùng fixture: nới hạn cấu hình lên 24 giờ → đỏ với thông điệp ghim 'claim TTL exceeds the signed ceiling of 10 minutes'.\"",
       "executor": "test",
       "expectedExit": 0,
       "paths": [
@@ -235,7 +235,7 @@
         "verdict",
         "rationale"
       ],
-      "inputsHash": "dc933f078b95ef045ed54c36ee42802deea8ed381e708f777eb64867ed5ea1c7"
+      "inputsHash": "dec904bdb59b2b863d3b97321d397f8685bf4df655e8f16e8883c9e9fdc7a7e1"
     },
     {
       "id": "E13",
@@ -307,6 +307,25 @@
       "ref": "config:executors.test.api"
     },
     {
+      "id": "E17",
+      "criterion": "AC-16",
+      "cmd": "./scripts/with-pinned-node.sh pnpm test",
+      "expected": "\"exit 0; khoá mà chủ sở hữu mới CHƯA TỪNG lưu thì giữ nguyên giá trị của máy này sau khi nhận, và đường nhận KHÔNG kể nó vào phần đã thay. Chiều đỏ: cho đường nhận tuyên đã thay mọi khoá bất kể máy kia có hay không → đỏ với thông điệp ghim 'adoption claimed a key the other machine never wrote'.\"",
+      "executor": "test",
+      "expectedExit": 0,
+      "paths": [
+        "lib/store/account-stores.ts",
+        "lib/persistence/adopt-choices.ts"
+      ],
+      "evidence_required": [
+        "run_id",
+        "exit_code",
+        "verifier",
+        "verified_at"
+      ],
+      "ref": "config:executors.test.api"
+    },
+    {
       "id": "E14",
       "criterion": "AC-13",
       "cmd": "./scripts/with-pinned-node.sh node scripts/design-gate-changed.mjs",
@@ -336,8 +355,8 @@
   "templatePath": "/Users/manhphan/.claude/plugins/cache/acceptance-gate-kit/acceptance-gate/2.16.0/skills/acceptance/references/evidence-report-template.md",
   "toolKillRule": "# TOOL-KILL-RULE — lệnh bị công cụ ngắt KHÔNG phải lệnh fail\n\n**Nguồn duy nhất** của luật «hết giờ không phải trượt» cho MỌI đường chạy lệnh\nkiểm của kit. Hai đường tiêu thụ, cùng đọc khối marker dưới đây, không chép tay:\n\n- **Vòng lặp tính năng** (plugin feature-loop): skill `feature-loop` đọc file này\n  (resolve qua `resolve-plugin.mjs --require skills/acceptance/references/tool-kill-rule.md`)\n  và truyền NGUYÊN VĂN vào `args.toolKillRule` của workflow\n  `acceptance-verify.js`; workflow rút khối marker và nội suy vào prompt của mọi\n  agent chạy lệnh (machine · ui-check · baseline). Thiếu args hoặc không rút\n  được marker → workflow trả BLOCKED có tên, không chạy không luật.\n- **Đường VERIFY độc lập** (skill `acceptance` Phase 3): phiên điều phối chép khối\n  marker VERBATIM vào prompt của phiên tươi VERIFY, cùng nếp «Network truth».\n\nVì sao có luật: verifier chạy lệnh qua Bash tool có trần thời gian mặc định\n(~120 s) NGẮN hơn nhiều suite; lệnh bị công cụ giết trả exit code CỦA CÔNG CỤ,\nkhông phải của lệnh (vấp thật release-2-2-0 S4 r5: suite 108 s đơn lẻ, dưới tải\nbị giết ở 118 s → REJECT giả 4 eval). Nhận diện là việc AGENT (nó thấy tool\nresult thật); phần máy chỉ phòng thủ trên field cấu trúc `killedByTool` —\nKHÔNG grep nội dung output trong engine (chuỗi tổng kết là của suite từng repo).\n\n<!-- <<<TOOL-KILL-RULE -->\nTRAN THOI GIAN CONG CU: khi goi Bash chay lenh, LUON dat tham so timeout >= 600000 (ms) — tran mac dinh cua cong cu (~120s) NGAN hon nhieu suite; lenh vuot tran se bi CONG CU giet va exit code luc do la cua cong cu, KHONG phai cua lenh. Neu lenh van bi cong cu dung (tool result bao timeout/killed, hoac output bi CAT giua chung truoc dong tong ket cuoi cua lenh) → DO KHONG PHAI ket qua that: khai cannotRun=true + killedByTool=true + reason \"bi cong cu giet o <so giay> giay\" kem dau hieu (timeout tool / output cat). TUYET DOI khong bao exitCode nhu the lenh tu fail va khong doan PASS/FAIL tu output cut.\n<!-- TOOL-KILL-RULE>>> -->\n\n## Hồ sơ cho lượt bị ngắt (đường độc lập)\n\nPhiên tươi VERIFY gặp lệnh bị công cụ ngắt thì:\n\n- dòng run-log của eval đó: `\"exit_code\": null, \"killed_by_tool\": true` (không\n  ghi mã thoát của công cụ như mã thoát của lệnh);\n- verdict báo cáo `BLOCKED`, `reason: bi cong cu giet o <so giay> giay — <eval ids>`\n  (kèm dấu hiệu: timeout tool / output cắt trước dòng tổng kết); `failed_evals`\n  rỗng — người đọc hồ sơ thấy đây là sự cố hạ tầng, chữa bằng chạy lại với trần\n  công cụ đủ dài, không phải sửa sản phẩm.\n",
   "contractPath": "/Users/manhphan/dev/OpenMAIC/_acceptance/cau-hinh-di-theo-nguoi/contract.md",
-  "invokedAt": "2026-09-20T13:41:13Z",
-  "invokedSha": "f6be99c588d325f887fc7de8f73153a111be92d7",
+  "invokedAt": "2026-09-20T14:16:44Z",
+  "invokedSha": "0f3bf83a5036854533e4d8b5034c5ea947efd9a0",
   "vungVat": [
     ".gitignore",
     "_acceptance/cau-hinh-di-theo-nguoi/evals.yaml",
@@ -354,6 +373,7 @@
     "_acceptance/cau-hinh-di-theo-nguoi/figures/h1-ba-loi-danh-tinh.png",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/h2-luong-ma-nhan.html",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/h2-luong-ma-nhan.png",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/the-cong-pham-vi-v2.html",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/the-cong-pham-vi.html",
     "_acceptance/cau-hinh-di-theo-nguoi/s4-args.json",
     "_acceptance/config.yaml",
@@ -473,6 +493,7 @@
     "_acceptance/cau-hinh-di-theo-nguoi/figures/h2-luong-ma-nhan.html",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/h2-luong-ma-nhan.png",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/index.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/the-cong-pham-vi-v2.html",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/the-cong-pham-vi.html",
     "_acceptance/cau-hinh-di-theo-nguoi/gap-probe.md",
     "_acceptance/cau-hinh-di-theo-nguoi/plan.md",
@@ -566,6 +587,7 @@
     "_acceptance/cau-hinh-di-theo-nguoi/figures/h1-ba-loi-danh-tinh.png",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/h2-luong-ma-nhan.html",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/h2-luong-ma-nhan.png",
+    "_acceptance/cau-hinh-di-theo-nguoi/figures/the-cong-pham-vi-v2.html",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/the-cong-pham-vi.html",
     "_acceptance/cau-hinh-di-theo-nguoi/s4-args.json",
     "_acceptance/config.yaml",
@@ -574,9 +596,11 @@
     "app/api/persistence/[...path]/route.ts",
     "components/settings/index.tsx",
     "components/settings/my-devices-settings.tsx",
+    "lib/persistence/adopt-choices.ts",
     "lib/persistence/bootstrap.ts",
     "lib/persistence/claim-code.ts",
     "lib/server/agent-runtime/owner.ts",
+    "lib/store/account-stores.ts",
     "lib/store/kv-persist.ts",
     "packages/@openmaic/storage/src/kv/pg.ts",
     "packages/@openmaic/storage/src/server/index.ts",
@@ -601,19 +625,17 @@
     "app/api/persistence/[...path]/route.ts",
     "components/settings/index.tsx",
     "components/settings/my-devices-settings.tsx",
+    "lib/persistence/adopt-choices.ts",
     "lib/persistence/bootstrap.ts",
     "lib/persistence/claim-code.ts",
     "lib/server/agent-runtime/owner.ts",
+    "lib/store/account-stores.ts",
     "lib/store/kv-persist.ts",
     "packages/@openmaic/storage/src/kv/pg.ts",
     "packages/@openmaic/storage/src/server/index.ts",
     "packages/@openmaic/storage/src/server/kv.ts"
   ],
   "coEvalPaths": true,
-  "evalsHash": "ba18fc945c6363af4c3ed8eb4a8de251955613a700f0fb9e14327c4b9d851660",
-  "runBaseline": false,
-  "carriedAnalyst": {
-    "fromRound": 3,
-    "nonDiscriminating": []
-  }
+  "evalsHash": "0741e3bf2bd7c119924f77f86a65d20d4053f2206331ced9468d82b85338cbe6",
+  "runBaseline": true
 }

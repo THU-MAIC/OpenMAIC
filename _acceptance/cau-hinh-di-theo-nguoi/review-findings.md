@@ -1,122 +1,143 @@
 ## Trong hợp đồng
 
-- **Adoption reports success when the adopted partition has no entry — the device keeps its old choices and then pushes them to the other machine**
-  file: `lib/store/account-stores.ts:66`
-  severity: medium
-  AC: AC-12
+- **Bằng chứng «nhận xong» đọc chốt sức khoẻ cũ, không đọc lần nạp vừa xảy ra**
+  file: `lib/store/account-stores.ts:85`
+  severity: high
+  AC: AC-7
   source: conventions
-  `reloadAccountStoresAndConfirm` treats "not unavailable" as "adopted". But a key the adopted owner never wrote answers 404 → `HttpAccountKV` returns `null` → no health fault is raised, so `isPersistUnavailable` is false and the function resolves cleanly.
+  `reloadAccountStoresAndConfirm` quyết «ngăn của chủ mới đọc được hay không» bằng `isPersistUnavailable(store.persistName)` — một CHỐT đứng (standing latch) trong lib/store/persist-health.ts, chứ không phải kết quả của chính lần đọc vừa chạy. Chốt đó chỉ được gỡ ở nhánh `status === 'recovered'` (persist-health.ts:94). Nhưng trong kv-persist.ts, khi một lần đọc THÀNH CÔNG kết thúc ở nhánh `changes-lost` (`#settleOutcome`, kv-persist.ts:277-285: `refused !== null`, `!refused.replayable`, `refused.origin === 'unavailable'`), nó báo `changes-lost` và KHÔNG bao giờ báo `recovered` — `reportPersistHealth(name,'changes-lost')` (persist-health.ts:84-89) không đụng tới tập `unavailable`. Nhánh bỏ cuộc trong `#askForRecovery` (kv-persist.ts:415-418) cũng vậy.
 
-  What zustand does with that null is the problem (node_modules/zustand/esm/middleware.mjs:388-419): `getItem` → `null` yields `migratedState === undefined`, the default `merge` returns the *current* in-memory state, and `set(stateFromStorage, true)` writes it straight back. The store therefore keeps device B's own values — it is not reset to defaults and not replaced by A's.
+  Kịch bản hỏng: máy thứ hai chưa từng có giá trị trên ngăn account (`#storeHoldsRealData === false`), người dùng sửa một cài đặt trong lúc backend KV hỏng → ghi bị từ chối, không replay được, chốt `unavailable` bật. Sau đó họ nhập mã nhận: `/api/claim/redeem` trả 200, cookie ĐÃ đổi sang chủ sở hữu mới, `rehydrate()` đọc THÀNH CÔNG ngăn mới — nhưng lần settle này báo `changes-lost`, chốt `unavailable` vẫn bật, nên dòng 85-88 ném `AccountPartitionUnreadableError`, `adoptChoicesFromCode` trả `unreachable` và màn hiện ST-maycuatoi-may-chu-im. Người dùng thấy «máy chủ im» dù việc nhận đã xong; thử lại thì mã dùng-một-lần đã cháy nên lần sau ra «mã không dùng được» — ngõ cụt.
 
-  Concrete failure: A configured providers but never touched the profile screen, so only `settings-storage` exists in A's partition. B adopts. `settings-storage` is replaced correctly; `user-profile-storage` 404s, so B keeps its own nickname/avatar, the UI shows `ST-maycuatoi-xong` and the string «This machine now shares your choices», and B's next profile edit writes B's values into the now-shared account — A silently inherits them on next load.
+  Đây đúng là bệnh mà commit f6be99c5 («derive every check from the thing it checks») và chính đầu file này khai là muốn chữa: `didLastReadFindStoredValue` được thêm vì lý do đó, còn phép thử hỏng/không-hỏng thì vẫn đi mượn một chốt toàn cục không nói về lần đọc này.
 
-  Two declared properties break: AC-12's promise, rendered as `settings.myDevices.willReplace` («The choices on this machine will be replaced by the ones from the other machine»), is false for that key; and `adopt-choices.ts`'s stated invariant — never report adopted while the product still runs on the old choices — is the very thing that happens. A 404 on the adopted partition is distinguishable from a hydrated value; the confirm step needs to act on that distinction rather than on the health flag alone.
+  AC-7 đòi sau khi đổi mã máy B phải đọc chung ngăn account; ở đây lần đọc sau redeem thành công thật nhưng bị báo lỗi do chốt cũ, nên vế Then của AC-7 không đạt.
 
-  Finding chỉ ra đúng lời hứa xác nhận của AC-12 (lựa chọn trên máy này SẼ bị thay) là sai cho khoá đó, nên AC-12 thất bại.
-
-- **Hình dạng 1 — đo CHỈ DẪN thay vì ĐẦU RA: bài «ma trận toàn phần» của E2 chỉ grep văn bản sổ đăng ký**
-  file: `tests/persistence/account-scope-wiring.test.ts:66`
+- **A write refused before adoption is replayed into the newly adopted owner's partition, overwriting the other device's settings**
+  file: `lib/store/kv-persist.ts:656`
   severity: high
-  AC: AC-2
-  source: measurement
-  Dòng 61-70: danh sách kho được rút từ mã nguồn (`readdirSync('lib/store')` + regex `createKVPersistStorage(...'account')`) — phần rút là thật — nhưng phép đo kế tiếp lại là `registry.includes("/store/${name}'")`, tức GREP VĂN BẢN của `lib/store/account-stores.ts`. Không có khoá nào được ghi, không có khoá nào được đọc lại. Thứ làm bài đỏ là sự vắng mặt của một CHUỖI trong file khai báo, không phải hành vi của việc nạp lại.
+  AC: AC-14
+  source: bugs
+  `KeyState` keeps a refused write (`#refused`) alive indefinitely — `#askForRecovery` gives up after `DEFAULT_RECOVERY_BACKOFF_MS` (3 tries, ~1.25s total), sets `#recoveryExhausted`, reports `changes-lost`, and deliberately does NOT clear `#refused` (kv-persist.ts:406-421). Nothing in the adoption path resets it: `reloadAccountStoresAndConfirm` (lib/store/account-stores.ts:78) only calls `persist.rehydrate()`.
 
-  Ca hỏng cụ thể: xoá mục `userProfile` khỏi `ACCOUNT_SCOPE_STORES` (lib/store/account-stores.ts:34-38) nhưng giữ nguyên dòng `import { useUserProfileStore } from '@/lib/store/user-profile'` ở dòng 15 — `registry.includes("/store/user-profile'")` vẫn đúng → bài vẫn XANH, trong khi `reloadAccountStoresAndConfirm()` và `accountStoreStates()` im lặng bỏ sót kho hồ sơ. Đó đúng là lớp lỗi mà chính phần đầu file (dòng 1-8) tuyên bố nó tồn tại để chặn.
+  Concrete sequence on device B:
+  1. Boot: `getItem('settings-storage')` returns B's own value → `noteRealData()` latches `#storeHoldsRealData = true`.
+  2. Backend hiccup while the user edits a setting: `setItem` is admitted, the PUT fails → `onFailure` (phase `unavailable`) then `noteWriteFailed(value)` stores `#refused = { value: B's settings, replayable: true, origin: 'unavailable' }`.
+  3. The backend stays down past three retries → recovery exhausted, `#refused` retained, key stays `unavailable`.
+  4. User redeems device A's claim code. Cookie now points at A. `reloadAccountStoresAndConfirm` → `rehydrate()` → `getItem` reads **A's** partition successfully → `concludeRead` (line 641) calls `state.settle()`; `#settleOutcome` sees `refused.replayable === true` and promotes it to `#replay` (line 256-262), reports `recovered`.
+  5. `concludeRead` then writes that snapshot back: `kvStorage.setItem(name, replay)` at line 656 — **device B's old settings are written into device A's account partition** — and returns `replay` (line 667) instead of `stored`, so device B's store hydrates with B's own values, not A's.
 
-  So với lời hứa E2 («số assert BẰNG số kho khai phạm vi account … phiên thứ hai của cùng chủ sở hữu đọc đúng MỌI khoá phiên một đã ghi»): không có vế phiên-một-ghi/phiên-hai-đọc nào cả, và chiều đỏ (a) của E2 — thông điệp ghim 'account key stayed device-local: <tên kho>' — không xuất hiện ở bất kỳ file kiểm thử nào trong repo (grep toàn `tests/` và `packages/@openmaic/storage/test/` không có kết quả).
+  The outcome is reported as success: `isPersistUnavailable` is false (step 4 reported `recovered`), so `reloadAccountStoresAndConfirm` does not throw; `lastReadFoundValue` was set from `stored` (A's value was present, line 713), so the store is listed in `replaced`; `adoptChoicesFromCode` returns `'adopted'` and the panel renders `ST-maycuatoi-xong`. This is exactly the failure the JSDoc on `MyDevicesSettingsProps.onAdopted` claims the type prevents (\"báo «đã dùng chung» trong khi sản phẩm vẫn chạy bằng lựa chọn cũ, rồi lần sửa kế tiếp ghi đè cấu hình của máy kia\") — here the overwrite happens immediately, inside the adoption read itself. No test covers it: tests/store/adoption-proof.test.ts never puts a refused write in flight before adopting.
 
-  AC-2 tự đòi tập khoá phải rút từ khai báo phạm vi và máy B phải hiện đúng toàn bộ tập đó; finding chứng minh phép đo không kiểm được vế đọc-lại nên lời hứa của AC-2 không được giữ.
+  The replay decision is owner-blind — `replayable` only asks \"did this session ever hold authoritative data\", never \"authoritative data for *which* owner\".
 
-- **Hình dạng 5 — tuyên quét LỚP «ba ca hỏng» nhưng vòng lặp chạy CÙNG một ca ba lần**
-  file: `tests/persistence/adopt-choices.test.ts:51`
-  severity: high
-  AC: AC-5
-  source: measurement
-  Bài tên «ba ca hỏng của máy chủ về cùng một kết quả» (dòng 49) lặp `for (const status of [401, 401, 401])` — mảng ba phần tử nhưng cả ba là CÙNG một giá trị, nên đây là một điểm-case chạy lặp, không phải ma trận. Ba ca thật mà tiêu chí nói tới — mã sai / hết hạn / đã dùng — khác nhau ở phía máy chủ chứ không ở con số 401 mà `adoptChoicesFromCode` nhận; ở tầng này chúng phải được sinh ra từ ba đường khác nhau (hoặc ít nhất ba mã trạng thái/thân phản hồi khác nhau, ví dụ 401/403/429/500) rồi đối chiếu KẾT QUẢ bằng nhau.
+  AC-14 đòi sau khi nhận xong máy B phải đọc ra ĐÚNG giá trị máy A đã ghi; ở đây máy B lại đọc ra giá trị cũ của chính nó (bị replay đè lên ngăn của A), nên Then của AC-14 không đạt.
 
-  Ca hỏng: sửa `adoptChoicesFromCode` (lib/persistence/adopt-choices.ts:47) thành `if (response.status === 401) return 'rejected'; return 'unreachable';` — một máy chủ trả 403 cho «đã dùng» sẽ ra kết quả khác hẳn, người dùng thấy trạng thái sai, nhưng bài này vẫn XANH vì nó chỉ từng thấy 401.
-
-  AC-5 đòi đúng ba ca sai/hết hạn/đã dùng phải ra cùng một kết quả; finding cho thấy phép đo chỉ thử một ca lặp ba lần nên không giữ được lời hứa của AC-5.
-
-- **Hình dạng 4 — assertion âm-tính-một-mình: phép đọc-lại không thể đỏ vì bộ giả lập luôn trả 404**
-  file: `tests/store/kv-persist-write-failure.test.ts:86`
+- **A redeem that succeeds but whose rehydrate fails is reported as "server silent" after the code is already burned and the cookie already swapped**
+  file: `lib/persistence/adopt-choices.ts:52`
   severity: medium
-  AC: AC-15
-  source: measurement
-  Dòng 84-89: sau lần ghi hỏng, bài gọi `storage.getItem('settings-storage')` rồi assert `.not.toBe('chưa tới máy chủ')`. Bộ giả lập ở dòng 56-64 trả 404 KEY_NOT_FOUND cho MỌI GET, và `getItem` trong lib/store/kv-persist.ts:667-707 luôn đi xuống backend (không có nhánh nào trả lại giá trị đã bị từ chối), nên `readBack` chắc chắn là `null` và `?.state?.voice` chắc chắn là `undefined`. Vế assert này không có cách nào đỏ.
+  AC: AC-7
+  source: bugs
+  `adoptChoicesFromCode` awaits `deps.rehydrate()` after a 2xx redeem and returns `'unreachable'` if it throws. By that point the server has already (a) burned the one-time code in `redeemClaimCode` (claim-code.ts:104-105) and (b) sent `Set-Cookie: anonymous_id=<A's uuid>`, which the browser has applied — the device IS the adopted owner.
 
-  Thiếu đối chứng dương: trong cả file không có ca nào chứng minh rằng một lần ghi THÀNH CÔNG thì đọc lại RA đúng giá trị. Ca hỏng: làm `getItem` luôn trả `null` (hỏng hoàn toàn đường đọc) — vế dòng 81 vẫn thấy 'unavailable', vế dòng 86 vẫn xanh vì `undefined !== 'chưa tới máy chủ'` → bài XANH trên một seam không đọc được gì.
+  The panel renders `ST-maycuatoi-may-chu-im` (`settings.myDevices.serverSilent`) with the code input still live, inviting a retry. The only retry available is the same code, which now returns 401 → `'rejected'` → \"mã không đúng hoặc đã hết hạn\". The user has no path forward except going back to device A for a new code, and nothing tells them the identity switch already happened.
 
-  AC-15 đòi lần đọc kế tiếp sau ghi lỗi không được trả về giá trị chưa tới máy chủ; finding cho thấy phép đo không thể đỏ trong mọi trường hợp nên không giữ được lời hứa của AC-15.
+  The throw comes from `AccountPartitionUnreadableError` (lib/store/account-stores.ts:88), raised when any one account store's read failed. Because `Promise.all` rehydrates both stores, the *other* store may have hydrated successfully from the adopted partition — so the app is left half-adopted while the UI reports a network failure.
 
-- **Hình dạng 5 — «nêu ĐÍCH DANH mọi kho» nhưng danh sách kho được chép tay, không rút từ sổ đăng ký**
-  file: `tests/store/adoption-proof.test.ts:113`
-  severity: medium
-  AC: AC-2
-  source: measurement
-  Dòng 104-117 ghim hai tên bền `settings-storage` và `user-profile-storage` bằng hai regex viết tay, trong khi đầu file (dòng 1-9) tuyên bố nguyên tắc «Bên KIỂM rút ra từ bên LÀM — không dựng song song», và `ACCOUNT_SCOPE_STORES` (lib/store/account-stores.ts:28) đang được export sẵn với đúng trường `persistName` để map ra.
-
-  Ca hỏng: thêm kho account thứ ba vào `ACCOUNT_SCOPE_STORES` — nếu `AccountPartitionUnreadableError` bỏ sót tên kho mới trong báo cáo (hoặc kho mới không bao giờ được lọc vào `broken`), hai regex chép tay vẫn khớp → bài XANH, đúng bản sao thứ hai của sự thật mà chính file này nói là nguyên nhân của ba vòng lỗi trước. Cùng bệnh ở dòng 152-158: `hasLocalChoicesInAccountScope` được gọi với mảng hai trạng thái viết tay chứ không phải `accountStoreStates()`, nên số phần tử của ma trận không đi theo sổ đăng ký.
-
-  AC-2 đòi tập khoá phải rút từ chính khai báo phạm vi của các kho, không chép tay; finding cho thấy phép đo dùng danh sách chép tay nên không giữ được lời hứa đó của AC-2.
+  AC-7 đòi khi đổi mã thành công máy B phải đọc chung ngăn account; ở đây danh tính đã đổi nhưng việc đọc lại thất bại và được báo như redeem thất bại, nên vế Then của AC-7 không đạt.
 
 ## Ngoài hợp đồng — người quyết ở Gate 2
 
 Các lỗi dưới đây nằm ngoài phạm vi đã duyệt ở Cổng Phạm vi và CHƯA qua bác bỏ đối kháng — người quyết, máy không sửa và không chấm thứ máy không được sửa.
 
-- **Provider API keys now leave the browser for the server KV partition — the contract's own out-of-scope line**
-    Người dùng thấy gì: Bấm lưu Cài đặt có thể khiến khoá API của nhà cung cấp bị gửi lên máy chủ ở dạng chưa mã hoá, dù việc này chưa từng nằm trong kế hoạch của vòng hiện tại.
-    file: `lib/store/kv-persist.ts`
-    severity: high
-    Đề xuất: new-contract
+- **Đường mint /api/claim không có bộ hãm, cho phép xoá sổ mã đang chờ của người khác**
+  Người dùng thấy gì: Một người lạ có thể gửi rất nhiều yêu cầu xin mã liên tục khiến mã đang chờ của người khác bị đẩy khỏi hệ thống, làm người đó nhập đúng mã vẫn bị báo là sai.
+  file: `app/api/claim/route.ts`
+  severity: medium
+  Đề xuất: new-contract
 
-- **Minting a claim code is unthrottled, and minting is what evicts other people's live codes**
-    Người dùng thấy gì: Nếu ai đó xin mã liên kết liên tục nhiều lần, mã đang chờ của người khác có thể bị huỷ sớm, khiến họ thấy báo 'mã không dùng được' dù mã của họ vẫn còn đúng.
-    file: `app/api/claim/route.ts`
-    severity: medium
-    Đề xuất: new-contract
+- **Mọi HTTP status khác 2xx bị gộp thành «mã sai», kể cả 429 và 500 cố ý phân biệt**
+  Người dùng thấy gì: Khi bị tạm chặn vì thử quá nhanh hoặc khi máy chủ gặp sự cố nội bộ, người dùng vẫn chỉ thấy thông báo 'mã không đúng hoặc đã hết hạn' và không biết nên đợi bao lâu để thử lại.
+  file: `lib/persistence/adopt-choices.ts`
+  severity: medium
+  Đề xuất: known-limits
 
-- **`getAccountKv` is exported but called from nowhere, and it swallowed `purgeLegacyPersistKey`'s doc comment**
-    Người dùng thấy gì: Không ảnh hưởng đến người dùng — đây chỉ là phần ghi chú kỹ thuật còn sót lại trong mã nguồn, không hiển thị ra sản phẩm.
-    file: `lib/store/kv-persist.ts`
-    severity: low
-    Đề xuất: wont-fix
+- **Đăng ký toàn bộ state của hai store rồi `void` — lệch pattern selector của chính file**
+  Người dùng thấy gì: Màn Cài đặt có thể vẽ lại chậm hơn cần thiết mỗi khi có bất kỳ lựa chọn nào đổi ở nơi khác trong app, kể cả khi mục Máy của tôi đang đóng.
+  file: `components/settings/index.tsx`
+  severity: medium
+  Đề xuất: known-limits
 
-- **`adopt-choices.ts` is not Prettier-formatted, so the required pre-PR format check fails**
-    Người dùng thấy gì: Không ảnh hưởng đến người dùng — đây là một bước kiểm định dạng mã nguồn trước khi phát hành, chưa đạt yêu cầu kỹ thuật nội bộ.
-    file: `lib/persistence/adopt-choices.ts`
-    severity: low
-    Đề xuất: known-limits
+- **Bump minor cho thay đổi thuần cộng thêm, ngược quy ước semver 0.x của repo**
+  Người dùng thấy gì: Các gói phụ thuộc vào thư viện lưu trữ này có thể tưởng nhầm bản cập nhật phá vỡ tương thích và ngần ngại nâng cấp, dù thực ra chỉ có tính năng mới không ảnh hưởng tới họ.
+  file: `packages/@openmaic/storage/package.json`
+  severity: low
+  Đề xuất: known-limits
 
-- **Settings dialog subscribes to two whole stores to recompute one boolean on every render**
-    Người dùng thấy gì: Khi gõ trong ô cấu hình nhà cung cấp, màn Cài đặt có thể phản hồi chậm hơn một chút do vẽ lại nhiều hơn cần thiết.
-    file: `components/settings/index.tsx`
-    severity: low
-    Đề xuất: wont-fix
+- **Every non-2xx from /api/claim/redeem is reported to the user as a bad code, including 429 and 500**
+  Người dùng thấy gì: Người dùng bị tạm chặn do thử nhanh hoặc gặp lỗi hệ thống vẫn chỉ thấy đúng thông báo 'mã sai', không được biết đó là sự cố tạm thời hay nên chờ bao lâu.
+  file: `lib/persistence/adopt-choices.ts`
+  severity: medium
+  Đề xuất: known-limits
 
-- **Refused-write replay buffer survives the owner swap and writes device B's settings into the adopted account**
-    Người dùng thấy gì: Nếu máy đang gặp trục trặc mạng rồi người dùng nhận mã để chuyển sang tài khoản khác, các lựa chọn cũ trên máy đó — có thể gồm cả khoá API — có thể âm thầm ghi đè lên tài khoản vừa nhận mà không ai được báo.
-    file: `lib/store/kv-persist.ts`
-    severity: high
-    Đề xuất: new-contract
+- **The copy button reports success even when nothing reached the clipboard**
+  Người dùng thấy gì: Người dùng bấm Sao chép và thấy dấu xác nhận dù mã chưa thực sự vào bộ nhớ tạm, nên khi dán sang máy kia có thể dán nhầm nội dung cũ và bị báo mã sai mà không hiểu vì sao.
+  file: `components/settings/my-devices-settings.tsx`
+  severity: medium
+  Đề xuất: known-limits
 
-- **Redemption commits the identity swap before the reload; the 'unreachable' path leaves the device on the new owner while telling the user nothing changed**
-    Người dùng thấy gì: Nếu màn hình báo 'không đổi gì' sau khi nhập mã, thực ra danh tính máy đã đổi; nếu người dùng tiếp tục chỉnh Cài đặt sau đó, lựa chọn cũ của máy có thể âm thầm ghi đè lên tài khoản vừa nhận.
-    file: `lib/persistence/adopt-choices.ts`
-    severity: high
-    Đề xuất: new-contract
+- **/api/claim has no attempt limiter, so unauthenticated minting can silently evict a live claim code**
+  Người dùng thấy gì: Một người lạ có thể gửi rất nhiều yêu cầu xin mã để đẩy mã đang chờ của người khác biến mất, khiến người đó nhập đúng mã vẫn bị báo là sai.
+  file: `app/api/claim/route.ts`
+  severity: medium
+  Đề xuất: new-contract
 
-- **Every non-2xx redeem response is reported as a bad code, including 429 and 500**
-    Người dùng thấy gì: Khi hệ thống đang bận hoặc gặp sự cố, người nhập đúng mã liên kết vẫn có thể bị báo 'mã không dùng được', khiến họ tưởng mình gõ sai và thử lại vô ích.
-    file: `lib/persistence/adopt-choices.ts`
-    severity: medium
-    Đề xuất: known-limits
+- **Tuyên quét LỚP nhưng chỉ có điểm-case — «ba ca hỏng» thật ra là một ca lặp ba lần**
+  Người dùng thấy gì: Nếu mã bị từ chối vì lý do khác sai/hết hạn/đã dùng (như bị chặn do thử quá nhanh), hiện chưa có phép thử nào chắc chắn phát hiện nếu sản phẩm xử lý sai trường hợp đó.
+  file: `tests/persistence/adopt-choices.test.ts`
+  severity: high
+  Đề xuất: known-limits
 
-- **Copy button shows the success checkmark even when the clipboard write never happened**
-    Người dùng thấy gì: Nút sao chép mã có thể báo đã sao chép thành công dù thực ra chưa chép được gì, khiến người dùng dán nhầm nội dung cũ sang máy kia.
-    file: `components/settings/my-devices-settings.tsx`
-    severity: medium
-    Đề xuất: wont-fix
+- **Đo CHỈ DẪN thay vì ĐẦU RA — grep văn bản nguồn của sổ đăng ký, trong khi đường nhận đọc giá trị export**
+  Người dùng thấy gì: Nếu một loại lựa chọn mới quên được đưa vào danh sách đi theo người, hiện chưa chắc có phép thử nào phát hiện, nên người dùng đổi máy có thể lại thấy thiếu lựa chọn mà không ai biết trước khi phát hành.
+  file: `tests/persistence/account-scope-wiring.test.ts`
+  severity: high
+  Đề xuất: known-limits
 
-⚠ Cụm ngoài vùng phủ: 4/14 lỗi rơi vào file không bộ đo nào phủ (tests/persistence/account-scope-wiring.test.ts, tests/persistence/adopt-choices.test.ts, tests/store/kv-persist-write-failure.test.ts, tests/store/adoption-proof.test.ts) — dừng và quyết: mở rộng hợp đồng hay rút phạm vi.
+- **Fixture VIẾT TAY tự ứng nghiệm — stub `rehydrate` ghi thẳng giá trị mà assert đi tìm**
+  Người dùng thấy gì: Phép thử hiện tại không thực sự xác nhận máy thứ hai đọc đúng giá trị máy thứ nhất đã ghi, nên một lỗi khiến giá trị đọc sai có thể lọt qua trước khi phát hành.
+  file: `tests/persistence/adopt-choices.test.ts`
+  severity: high
+  Đề xuất: known-limits
+
+- **Assertion âm-tính-một-mình — không đối chứng dương rằng bản dump có chứa bản ghi**
+  Người dùng thấy gì: Không có phép thử nào xác nhận chắc chắn rằng mã nhận thực sự được lưu lại ở dạng mã hoá, nên một lỗi vô tình làm mất bản ghi có thể không bị phát hiện trước khi phát hành.
+  file: `tests/persistence/claim-code.test.ts`
+  severity: medium
+  Đề xuất: known-limits
+
+- **Tuyên quét LỚP nhưng chỉ có điểm-case — E2 hứa ma trận toàn phần, phép đo chỉ chạm một kho**
+  Người dùng thấy gì: Phép đo hiện tại chỉ kiểm tra một trong hai loại lựa chọn khi máy thứ hai nạp lại, nên nếu loại lựa chọn còn lại (hồ sơ người dạy) bị lỗi không đi theo người, có thể không ai phát hiện trước khi phát hành.
+  file: `_acceptance/cau-hinh-di-theo-nguoi/evals.yaml`
+  severity: medium
+  Đề xuất: known-limits
+
+- **Tuyên quét LỚP nhưng assert là NGƯỠNG ĐẾM — `toBeGreaterThan(1)` thay cho danh sách kho**
+  Người dùng thấy gì: Phép đo chỉ kiểm tra có nhiều hơn một lựa chọn được thay hay giữ, không kiểm tra đúng từng loại, nên nếu thêm một loại lựa chọn mới mà sản phẩm bỏ sót, phép đo vẫn có thể báo đạt.
+  file: `tests/store/adoption-proof.test.ts`
+  severity: medium
+  Đề xuất: known-limits
+
+- **Fixture VIẾT TAY đúng khuôn bên đọc — mảng hai phần tử tự dựng thay cho `accountStoreStates()`**
+  Người dùng thấy gì: Phép thử dựng sẵn dữ liệu giả thay vì lấy từ đúng nguồn sản phẩm dùng, nên nếu sản phẩm thật bỏ sót một loại lựa chọn, màn Cài đặt có thể ghi đè mà không hỏi trước, trong khi phép thử vẫn báo đạt.
+  file: `tests/store/adoption-proof.test.ts`
+  severity: medium
+  Đề xuất: known-limits
+
+- **Không ghim thông điệp — chiều đỏ E10 trỏ vào một chuỗi không tồn tại trong phép đo nào**
+  Người dùng thấy gì: Có một cảnh báo được hứa cho trường hợp đọc lỗi bị hiểu nhầm thành không có gì, nhưng hiện không có phép thử nào thực sự kiểm tra cảnh báo đó xuất hiện, nên nếu lỗi này xảy ra có thể không ai biết trước khi phát hành.
+  file: `_acceptance/cau-hinh-di-theo-nguoi/evals.yaml`
+  severity: low
+  Đề xuất: known-limits
+
+⚠ Cụm ngoài vùng phủ: 9/18 lỗi rơi vào file không bộ đo nào phủ (packages/@openmaic/storage/package.json, tests/persistence/adopt-choices.test.ts, tests/persistence/account-scope-wiring.test.ts, tests/persistence/claim-code.test.ts, _acceptance/cau-hinh-di-theo-nguoi/evals.yaml, tests/store/adoption-proof.test.ts) — dừng và quyết: mở rộng hợp đồng hay rút phạm vi.
