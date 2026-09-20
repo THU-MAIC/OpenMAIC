@@ -5,7 +5,7 @@ slug: cau-hinh-di-theo-nguoi
 owner: phanlemanh@gmail.com
 risk_tier: T3
 surfaces: [api, ui]
-status: implemented
+status: approved
 design_doc: _acceptance/cau-hinh-di-theo-nguoi/design.md
 approved_by: Manh Phan
 approved_at: 2026-09-20
@@ -37,9 +37,10 @@ Source input: `_acceptance/cau-hinh-di-theo-nguoi/opportunity.md` (Cổng Đáng
 - AC-9: Given lưu trữ phía máy chủ KHÔNG bật, When người dùng sản phẩm như thường, Then mọi lựa chọn vẫn lưu và đọc được đúng như trước vòng này, và mục «Máy của tôi» nói rõ tính năng đang tắt.
 - AC-10: Given máy chủ không trả lời khi đọc ngăn `account`, When app nạp lựa chọn, Then lựa chọn đang có không bị hiểu thành trống và không bị ghi đè bằng giá trị mặc định.
 - AC-11: Given hai chủ sở hữu khác nhau trên cùng một deployment, When mỗi người đọc ngăn `account` của mình, Then không ai đọc được lựa chọn của người kia. (cross-layer)
-- AC-12: Given máy B đã có lựa chọn riêng, When người nhập mã để nhận, Then sản phẩm hỏi xác nhận rõ rằng lựa chọn trên máy này sẽ bị thay, TRƯỚC khi thay. (judgment)
+- AC-12: Given máy B đã có lựa chọn riêng, When người nhập mã để nhận, Then sản phẩm hỏi xác nhận TRƯỚC khi thay, và lời hỏi nói đúng PHẠM VI bị thay — những lựa chọn máy kia có sẽ thay lựa chọn tương ứng ở máy này, còn thứ máy kia chưa từng đặt thì không hứa là sẽ thay. (judgment)
 - AC-14: Given máy B đã có lựa chọn riêng và người đã đồng ý thay, When việc đổi mã xong, Then máy B đọc ra ĐÚNG các giá trị máy A đã ghi — so bằng chính giá trị, không so câu thông báo trên màn. (cross-layer)
 - AC-15: Given máy chủ không nhận được lời ghi, When app ghi một lựa chọn phạm vi `account`, Then lựa chọn đó KHÔNG được đánh dấu là đã lưu, người thấy trạng thái lỗi, và lần đọc kế tiếp không trả về giá trị chưa tới máy chủ. (cross-layer)
+- AC-16: Given máy kia chưa từng lưu một loại lựa chọn nào đó, When máy này nhận, Then loại lựa chọn ấy giữ nguyên giá trị của máy này, và sản phẩm không tuyên bố nó đã bị thay. (cross-layer)
 - AC-13: Given mục «Máy của tôi» trên màn Cài đặt, When người đi qua luồng lấy mã rồi luồng nhập mã, Then **mọi** dòng trong bảng trạng thái của đặc tả UX đều có một khung chụp tương ứng — số khung bằng số dòng, dòng nào thiếu khung là đỏ.
 
 ## Coverage
@@ -57,6 +58,7 @@ Chân ngành đối chiếu (bốn sản phẩm có tên, cùng loại «liên k
 Rút ra bốn điều kiện nền mà đề bài gốc không nêu: mã phải hết hạn · mã dùng một lần · chống dò · một thông điệp chung cho mọi ca hỏng. Cả bốn đã thành AC-3 đến AC-6.
 
 Điểm cần anh gạch tại cổng:
+- [MỞ LẠI 20/09] Vòng nghiệm thu thứ tư hỏi một câu hợp đồng chưa trả lời: khi máy kia CHƯA TỪNG đặt một loại lựa chọn, «thay» nghĩa là gì. Hai lối dẫn tới hai sản phẩm khác nhau — giữ nguyên thứ của máy này (đề xuất, đã viết thành AC-12 và AC-16 ở trên), hay coi trống cũng là một giá trị và xoá thứ của máy này. Máy khuyên lối thứ nhất, máy không chốt.
 - [GIẢ ĐỊNH] Hạn của mã đã ghi thành 10 phút trong AC-3 để phép đo thôi tự soi chính cấu hình (ngành: Plex ~4 phút, Jellyfin vài phút). Con số vẫn là lựa chọn của anh — đổi nó là đổi AC-3.
 - [GIẢ ĐỊNH] Deployment thật của anh hiện là một người dùng. Trục D vẫn giữ ca «người thứ hai» vì ngưỡng CHẾT đã khai đòi nó.
 

@@ -140,6 +140,15 @@ evals:
     paths: ["lib/store/kv-persist.ts", "packages/@openmaic/storage/src/kv/**"]
     evidence_required: [run_id, exit_code, verifier, verified_at]
 
+  - id: E17
+    criterion: AC-16
+    executor: test
+    layer: backend-effect
+    cmd: config:executors.test.api
+    expected: "exit 0; khoá mà chủ sở hữu mới CHƯA TỪNG lưu thì giữ nguyên giá trị của máy này sau khi nhận, và đường nhận KHÔNG kể nó vào phần đã thay. Chiều đỏ: cho đường nhận tuyên đã thay mọi khoá bất kể máy kia có hay không → đỏ với thông điệp ghim 'adoption claimed a key the other machine never wrote'."
+    paths: ["lib/store/account-stores.ts", "lib/persistence/adopt-choices.ts"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
   - id: E14
     criterion: AC-13
     executor: script
