@@ -39,6 +39,26 @@ function anonymousCookieHeader(id: string): string {
 }
 
 /**
+ * The Set-Cookie that makes `ownerId` stick on this client.
+ *
+ * `resolveRequestOwnerId` only mints a cookie when it invents an identity; an
+ * identity handed to it explicitly is returned verbatim and left unpersisted,
+ * which is right for a host auth layer that re-proves the principal on every
+ * request. The claim-code path has no such layer: the second device adopts an
+ * anonymous identity once and must then carry it itself, so it asks for the
+ * same header the minting path writes rather than spelling the cookie out a
+ * second time and letting the two drift.
+ *
+ * Returns `undefined` for anything that is not an anonymous owner id, so an
+ * identity from some future auth layer can never be replayed as a cookie.
+ */
+export function anonymousOwnerCookieHeader(ownerId: string): string | undefined {
+  if (!ownerId.startsWith('anon:')) return undefined;
+  const id = ownerId.slice('anon:'.length);
+  return UUID_V4.test(id) ? anonymousCookieHeader(id) : undefined;
+}
+
+/**
  * Resolve the request identity used to partition agent sessions.
  *
  * Session lists are user-visible data keyed by owner. A shared constant would
