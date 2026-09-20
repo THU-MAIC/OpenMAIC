@@ -449,6 +449,7 @@ export function ClassroomSurface({
           agents: params.agents,
           userProfile: params.userProfile,
           languageDirective: params.languageDirective || stage.languageDirective,
+          taskEngineMode: stage.taskEngineMode,
         });
 
       const imageMapping: Record<string, string> = {};

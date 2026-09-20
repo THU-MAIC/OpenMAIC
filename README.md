@@ -49,7 +49,7 @@
 - 🤖 **Agent workbench** — a chat-first workspace that plans, builds, and revises whole courses
 - 💾 **Durable sessions** — server-backed runs survive restarts; cancel, resume, and steer anytime
 - 📎 **Session materials** — upload documents, audio, and video, or pull from web search; the agent builds from them
-- 🧰 **Course tools + 20 built-in skills** — slides, quizzes, interactives, PBL, images, video, voices, `.pptx` import
+- 🧰 **Course tools + 24 built-in skills** — slides, quizzes, interactives, PBL, images, video, voices, `.pptx` import
 - 🔌 **Neutral by design** — bring your own models, media, search providers, and storage backend
 
 Take the full tour in [Features](#-features), then set it up with [Agent workbench and runtime](#optional-agent-workbench-and-runtime).
@@ -316,7 +316,7 @@ ACCESS_CODE=your-secret-code
 
 Use a long random value — at least 16 characters from a random generator — because this code is the only secret guarding the deployment.
 
-When set, visitors see a password prompt before accessing the app. All API routes are also protected. If not set, the app works as before.
+When set, visitors see a password prompt before accessing the app. All API routes are also protected. When unset (the default in `.env.example`), `middleware.ts` does not check a credential and every matched route — including the API — is reachable. That is fail-open: an unconfigured deployment is not gated, and there is no second enforcement point.
 
 The code is remembered in a signed token stored in an HTTP-only cookie for 7 days; the lifetime is enforced server-side, so visitors re-verify after it expires. Verification is rate limited only when `TRUST_PROXY_HEADERS=true` is set: behind a trusted reverse proxy that overwrites `x-forwarded-for` / `x-real-ip`, each client gets its own limit of 10 attempts per 60 seconds, and a successful check clears that client's counter. Without a trusted proxy the app cannot attribute requests to a client, so there is no throttle at all — the length and randomness of the code are the protection.
 
@@ -406,12 +406,20 @@ misleadingly displaying an empty library.
 `PERSISTENCE_DEV_TOKEN` and `NEXT_PUBLIC_PERSISTENCE_TOKEN` are **not a
 secret in any meaningful sense**: the `NEXT_PUBLIC_` token is compiled into
 the public JavaScript bundle, fully visible to every visitor, and therefore
-provides **no confidentiality and no user isolation whatsoever** — anyone who
-can load the page can extract it and read or write **every** learner partition
-and **all** documents by choosing an `x-learner-key`. Its only purpose is to
-keep unrelated network scanners out of an endpoint on a trusted network. This
-is suitable only for localhost or trusted-network, single-user deployments. Before production,
-replace
+provides **no confidentiality and no user isolation whatsoever**. Document
+and asset requests skip that authenticator
+(`app/api/persistence/[...path]/route.ts`). The document owner is the
+30-day anonymous cookie (`lib/server/agent-runtime/owner.ts`), not
+`x-learner-key`. A document read is capability-by-id: if the stage meta
+exists and is not tombstoned, `decideDocumentAccess` allows it with no
+owner check (`lib/persistence/document-access.ts`), so anyone who can
+reach the endpoint and knows a stage id can read that course. Writes and
+deletes are owner-checked against the cookie. Only `/runtime/*` calls
+`authenticatePersistenceRequest`, where a client-chosen `x-learner-key`
+still partitions learner sessions. The token's only purpose on that
+runtime path is to keep unrelated network scanners out of an endpoint on
+a trusted network. This is suitable only for localhost or trusted-network,
+single-user deployments. Before production, replace
 [`lib/persistence/server-auth.ts`](lib/persistence/server-auth.ts) with real
 session verification that derives the learner partition from server-controlled
 identity, and change the document/merge/admin authorization policies as
@@ -617,7 +625,7 @@ blobs:
 | **Import and inspect** | Import `.pptx` slides with their layout preserved; render scene previews for visual inspection when available |
 | **Configure the classroom** | List available voices, set the agent roster, and clone/register a voice when a pluggable registration adapter is configured |
 
-Twenty built-in skills cover curriculum planning, deep research, interactive,
+Twenty-four built-in skills cover curriculum planning, deep research, interactive,
 lecture, workshop, vocational, and other teaching styles, slide/stage craft,
 PPTX import, editing, and style reuse. User-authored skills are stored per owner
 and can be created, read, and patched through the same runtime.
@@ -1057,7 +1065,7 @@ OpenMAIC/
 - **Persistence Layer** (`@openmaic/storage`) — Swappable document, runtime, KV, asset, agent-session, material, and user-skill stores
 - **Multi-Agent Orchestration** (`lib/orchestration/`) — LangGraph state machine managing agent turns and discussions
 - **Playback Engine** (`lib/playback/`) — State machine driving classroom playback and live interaction
-- **Action Engine** (`lib/action/`) — Executes 28+ action types (speech, whiteboard draw/text/shape/chart, spotlight, laser …)
+- **Action Engine** (`lib/action/`) — Executes 21 action types (speech, whiteboard draw/text/shape/chart, spotlight, laser …)
 - **Storage Layer** (`@openmaic/storage`) — Runtime/Document/asset storage abstraction with a Postgres reference implementation; its HTTP contracts let you plug in any external storage service
 
 ### How to Contribute

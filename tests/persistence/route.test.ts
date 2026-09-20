@@ -52,6 +52,53 @@ describe('embedded persistence route', () => {
     });
   });
 
+  it('logs 5xx responses with route details and echoes the request id', async () => {
+    vi.stubEnv('DATABASE_URL', 'postgres://unused-in-this-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', '');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const { PATCH } = await import('@/app/api/persistence/[...path]/route');
+      const response = await PATCH(
+        new Request('http://localhost/api/persistence/runtime/sessions/session-1/status', {
+          method: 'PATCH',
+          headers: { 'x-request-id': 'req-abc' },
+        }),
+      );
+
+      expect(response.status).toBe(503);
+      expect(response.headers.get('x-request-id')).toBe('req-abc');
+      expect(errorSpy).toHaveBeenCalledOnce();
+      expect(errorSpy.mock.calls[0]?.join(' ')).toContain(
+        'PATCH /api/persistence/runtime/sessions/session-1/status -> 503 PERSISTENCE_DEV_TOKEN_MISSING (requestId=req-abc)',
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('does not log 4xx responses and replaces an invalid request id', async () => {
+    vi.stubEnv('DATABASE_URL', '');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const { GET } = await import('@/app/api/persistence/[...path]/route');
+      const response = await GET(
+        new Request('http://localhost/api/persistence/runtime/sessions', {
+          headers: { 'x-request-id': 'invalid request id' },
+        }),
+      );
+
+      expect(response.status).toBe(404);
+      expect(response.headers.get('x-request-id')).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      );
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('retries initialization on the next request after a failed pool initialization', async () => {
     const ensureSchema = vi
       .fn()
