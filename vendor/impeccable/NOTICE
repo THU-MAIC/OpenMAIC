@@ -1,0 +1,17 @@
+Vendored component: Impeccable design anti-pattern detector (engine only)
+Upstream:  https://github.com/pbakaus/impeccable
+License:   Apache License 2.0 (see ./LICENSE)
+Author:    Paul Bakaus
+Pinned at: commit 3590bf9 (2026-06-25)
+
+What is vendored
+  Only cli/engine/ (the detector engine), with the CLI entrypoint
+  (detect-antipatterns.mjs, cli/, node/) removed because it reaches outside the
+  engine tree. The acceptance gate calls the engine directly via lib/design-detect.mjs:
+    - engines/static-html/detect-html.mjs   (static source scan, zero-dep)
+    - detect-antipatterns-browser.js          (rendered-DOM scan, self-contained bundle)
+
+Modifications: none. Files are byte-identical to upstream; glue lives in
+lib/design-detect.mjs and scripts/design-gate.mjs, not here.
+
+Re-sync with ./vendor-sync.sh.

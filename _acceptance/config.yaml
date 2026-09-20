@@ -20,7 +20,7 @@ executors:
     # Ứng viên gần nhất là scripts/generation-node-smoke.mjs nhưng nó cần server chạy trước.  # cần anh nếu muốn bật
     product_map: "node scripts/product-map.mjs --root . --check"
   design:                                                 # repo có web UI (app/, components/)
-    gate: "node scripts/design-gate.mjs"
+    gate: "node scripts/design-gate-changed.mjs"   # chấm mọi file giao diện vòng đụng; design-gate.mjs chỉ nhận MỘT file nên không dùng thẳng làm khoá cấp kho được
     ui_check: "scripts/design-scan.js"
 
 risk_tiers:

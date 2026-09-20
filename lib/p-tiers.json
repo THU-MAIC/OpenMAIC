@@ -1,0 +1,6 @@
+{
+  "_note": "Single source of truth for rule -> P-tier. Imported by lib/design-detect.mjs (node) AND injected into scripts/design-scan.js (browser) by build-design-scan.mjs, so the script and ui-check tiers never disagree.",
+  "p0": ["low-contrast", "gray-on-color", "text-overflow", "broken-image", "body-text-viewport-edge"],
+  "p1": ["gradient-text", "side-tab", "cream-palette", "bounce-easing", "image-hover-transform", "nested-cards", "icon-tile-stack", "dark-glow", "gpt-thin-border-wide-shadow", "repeating-stripes-gradient", "ai-color-palette"],
+  "drop": ["design-system-color", "design-system-font", "design-system-radius"]
+}

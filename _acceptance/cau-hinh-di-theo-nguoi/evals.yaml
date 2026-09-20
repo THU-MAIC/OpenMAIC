@@ -142,8 +142,8 @@ evals:
 
   - id: E14
     criterion: AC-13
-    executor: ui-check
+    executor: script
     cmd: config:executors.design.gate
     expected: "exit 0; sàn thẩm mỹ P0 của kho đạt trên mục mới (tương phản, tiêu điểm, bàn phím, trạng thái rỗng/đang tải/lỗi). Chiều đỏ: hạ tương phản một nhãn dưới ngưỡng → đỏ với thông điệp ghim tên phép đo bị trượt."
     paths: ["components/settings/**"]
-    evidence_required: [run_id, exit_code, verifier, verified_at, screenshot]
+    evidence_required: [run_id, exit_code, verifier, verified_at, output]
