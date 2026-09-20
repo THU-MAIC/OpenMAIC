@@ -1,5 +1,6 @@
 import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
 import { PgDocumentStore, ensureDocumentSchema } from '@openmaic/storage/document/pg';
+import { PgKVStore, ensureKVSchema } from '@openmaic/storage/kv/pg';
 import { PgRuntimeStore, ensureSchema } from '@openmaic/storage/runtime/pg';
 import {
   nodePostgresTransaction,
@@ -22,6 +23,8 @@ export interface ServerPersistenceProvider {
   runtimeStore: PgRuntimeStore;
   documentStore: PgDocumentStore;
   assetStore: PgAssetStore;
+  /** The `account` KV scope — one partition per owner, never the device scope. */
+  kvStore: PgKVStore;
 }
 
 interface ProviderState {
@@ -55,6 +58,7 @@ async function createServerPersistenceProvider(
     await ensureStageMetaSchema(queryable);
     await ensureOwnerMaterialSchema(queryable);
     await ensureAssetSchema(queryable);
+    await ensureKVSchema(queryable);
     const withTransaction = nodePostgresTransaction(queryable);
     const byteStore = lazyAssetByteStore(process.env.ASSET_S3_BUCKET, queryable);
     const documentStore = new PgDocumentStore(queryable, {
@@ -93,6 +97,7 @@ async function createServerPersistenceProvider(
         payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
       }),
       documentStore,
+      kvStore: new PgKVStore({ withTransaction }),
       assetStore: new PgAssetStore(queryable, {
         withTransaction,
         byteStore,

@@ -33,6 +33,7 @@
  */
 import {
   BrowserKVStore,
+  HttpKVStore,
   kvPersistStorage,
   type DeviceSafeKVStore,
   type KVScope,
@@ -43,6 +44,10 @@ import type { PersistStorage, StorageValue } from 'zustand/middleware';
 
 import { createLogger } from '@/lib/logger';
 import { reportPersistHealth } from '@/lib/store/persist-health';
+import {
+  getPersistenceRequestHeaders,
+  isBrowserPersistenceEnabled,
+} from '@/lib/persistence/bootstrap';
 
 const log = createLogger('KVPersist');
 
@@ -467,9 +472,26 @@ function ambientLocalStorage(): Storage | null {
   }
 }
 
+/**
+ * Which backend this deployment persists through.
+ *
+ * A server-backed deployment routes the `account` scope over the KV HTTP
+ * contract so a second machine reads the same choices, while `device` stays on
+ * the machine — `HttpKVStore` owns that split itself and refuses to carry
+ * `device` over the wire, so the caller cannot get it wrong. A local-only
+ * deployment keeps the behaviour it had before server persistence existed: one
+ * browser-backed store, no network.
+ */
 function resolveKv(deps: KVPersistDeps): KVStore | null {
   if (deps.kv) return deps.kv;
   if (!ambientLocalStorage()) return null;
+  if (isBrowserPersistenceEnabled()) {
+    return (defaultKv ??= new HttpKVStore({
+      baseUrl: '/api/persistence',
+      deviceStore: new BrowserKVStore(),
+      headers: getPersistenceRequestHeaders,
+    }));
+  }
   return (defaultKv ??= new BrowserKVStore());
 }
 

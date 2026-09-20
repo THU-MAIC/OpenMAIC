@@ -85,7 +85,7 @@ async function createPersistenceHandler(
   access: DocumentAccess,
   poolFactory?: PersistencePoolFactory,
 ): Promise<RequestListener> {
-  const { pool, runtimeStore, assetStore } = await getServerPersistenceProvider(
+  const { pool, runtimeStore, assetStore, kvStore } = await getServerPersistenceProvider(
     connectionString,
     poolFactory,
   );
@@ -142,6 +142,7 @@ async function createPersistenceHandler(
     configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
   );
   return createStorageHttpHandler(runtimeStore, documentStore, {
+    kvStore,
     authenticate: async (request) => {
       if (request.url?.startsWith('/documents')) return { learnerKey: ownerId };
       if (request.url?.startsWith('/assets')) {

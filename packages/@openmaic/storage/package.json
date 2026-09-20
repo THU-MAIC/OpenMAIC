@@ -23,6 +23,10 @@
       "types": "./dist/kv/http.d.ts",
       "import": "./dist/kv/http.js"
     },
+    "./kv/pg": {
+      "types": "./dist/kv/pg.d.ts",
+      "import": "./dist/kv/pg.js"
+    },
     "./asset/http": {
       "types": "./dist/asset/http.d.ts",
       "import": "./dist/asset/http.js"
