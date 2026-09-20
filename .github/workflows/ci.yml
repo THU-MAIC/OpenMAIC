@@ -424,6 +424,10 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          # The kit is zero-dependency, so this job never installs anything.
+          # Left on, the action auto-detects pnpm-lock.yaml and fails looking
+          # for a pnpm this job has no reason to set up.
+          package-manager-cache: false
 
       # The kit is zero-dependency (bash + Node builtins), so no install step.
       # The product map is exempt from the gate's own staleness check, which is
