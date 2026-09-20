@@ -11,7 +11,8 @@ export type SettingsSection =
   | 'image'
   | 'video'
   | 'web-search'
-  | 'skills';
+  | 'skills'
+  | 'my-devices';
 
 /**
  * Unified provider configuration stored in JSON format

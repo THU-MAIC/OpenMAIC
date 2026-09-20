@@ -1883,7 +1883,29 @@
     },
     "ttsBrowserNativeTimelineNotice": "Встроенный в браузер TTS не поддерживает функции аудио на таймлайне редактора (прослушивание, повторная генерация и массовая озвучка). Переключитесь на управляемый TTS-провайдер, чтобы генерировать и управлять аудио для каждой строки.",
     "alidocmindAccessKeyId": "AccessKey ID",
-    "alidocmindAccessKeySecret": "AccessKey Secret"
+    "alidocmindAccessKeySecret": "AccessKey Secret",
+    "myDevices": {
+      "nav": "My devices",
+      "title": "My devices",
+      "description": "Use your choices on another machine.",
+      "disabled": "Your choices are stored on this machine. Turn on server-backed persistence to carry them to another machine.",
+      "shareTitle": "Let another machine use my choices",
+      "shareHint": "The code works once and expires quickly.",
+      "getCode": "Get a code",
+      "copy": "Copy",
+      "expiresIn": "Expires in {{seconds}}s",
+      "expired": "This code has expired.",
+      "newCode": "Get a new code",
+      "adoptTitle": "Use the choices from another machine",
+      "codePlaceholder": "Enter the code",
+      "adopt": "Use them here",
+      "adopted": "This machine now shares your choices.",
+      "codeRejected": "That code cannot be used.",
+      "willReplace": "The choices on this machine will be replaced by the ones from the other machine.",
+      "confirmReplace": "Replace them",
+      "serverSilent": "Could not reach the server. Your current choices are unchanged.",
+      "retry": "Try again"
+    }
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

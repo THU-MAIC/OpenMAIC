@@ -1883,7 +1883,29 @@
     },
     "ttsBrowserNativeTimelineNotice": "Giọng đọc của trình duyệt không hỗ trợ các chức năng âm thanh trên dòng thời gian của trình sửa (nghe thử, tạo lại, lồng tiếng hàng loạt). Hãy chuyển sang một nhà cung cấp giọng đọc có quản lý để tạo và quản lý âm thanh theo từng dòng.",
     "alidocmindAccessKeyId": "AccessKey ID",
-    "alidocmindAccessKeySecret": "AccessKey Secret"
+    "alidocmindAccessKeySecret": "AccessKey Secret",
+    "myDevices": {
+      "nav": "Máy của tôi",
+      "title": "Máy của tôi",
+      "description": "Dùng lựa chọn của anh trên một máy khác.",
+      "disabled": "Lựa chọn đang lưu trên máy này. Bật lưu trữ phía máy chủ để mang sang máy khác.",
+      "shareTitle": "Cho máy khác dùng lựa chọn của tôi",
+      "shareHint": "Mã dùng được một lần và hết hạn nhanh.",
+      "getCode": "Lấy mã",
+      "copy": "Sao chép",
+      "expiresIn": "Hết hạn sau {{seconds}} giây",
+      "expired": "Mã đã hết hạn.",
+      "newCode": "Lấy mã mới",
+      "adoptTitle": "Nhận lựa chọn từ máy khác",
+      "codePlaceholder": "Nhập mã",
+      "adopt": "Nhận về máy này",
+      "adopted": "Máy này đã dùng chung lựa chọn của anh.",
+      "codeRejected": "Mã không dùng được.",
+      "willReplace": "Lựa chọn trên máy này sẽ bị thay bằng lựa chọn từ máy kia.",
+      "confirmReplace": "Thay đi",
+      "serverSilent": "Chưa gọi được máy chủ. Lựa chọn đang dùng không đổi.",
+      "retry": "Thử lại"
+    }
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

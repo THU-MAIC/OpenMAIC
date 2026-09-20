@@ -1883,7 +1883,29 @@
     },
     "ttsBrowserNativeTimelineNotice": "浏览器内置 TTS 不支持编辑器时间轴的音频功能（试听、重新生成、全部配音）。切换到托管 TTS 提供方即可逐句生成和管理音频。",
     "alidocmindAccessKeyId": "AccessKey ID",
-    "alidocmindAccessKeySecret": "AccessKey Secret"
+    "alidocmindAccessKeySecret": "AccessKey Secret",
+    "myDevices": {
+      "nav": "我的设备",
+      "title": "我的设备",
+      "description": "在另一台设备上使用你的设置。",
+      "disabled": "你的设置保存在本机。开启服务端持久化后才能带到其他设备。",
+      "shareTitle": "让另一台设备使用我的设置",
+      "shareHint": "验证码仅可使用一次，并会很快过期。",
+      "getCode": "获取验证码",
+      "copy": "复制",
+      "expiresIn": "{{seconds}} 秒后过期",
+      "expired": "验证码已过期。",
+      "newCode": "获取新验证码",
+      "adoptTitle": "使用另一台设备的设置",
+      "codePlaceholder": "输入验证码",
+      "adopt": "在本机使用",
+      "adopted": "本机已共享你的设置。",
+      "codeRejected": "该验证码无法使用。",
+      "willReplace": "本机的设置将被另一台设备的设置替换。",
+      "confirmReplace": "替换",
+      "serverSilent": "无法连接服务器。当前设置未更改。",
+      "retry": "重试"
+    }
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

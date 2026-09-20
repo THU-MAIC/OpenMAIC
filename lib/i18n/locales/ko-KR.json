@@ -1883,7 +1883,29 @@
     },
     "ttsBrowserNativeTimelineNotice": "브라우저 내장 TTS는 편집기 타임라인의 오디오 기능(미리듣기·다시 생성·전체 음성 생성)을 지원하지 않습니다. 관리형 TTS 공급자로 전환하면 줄별 오디오를 생성·관리할 수 있습니다.",
     "alidocmindAccessKeyId": "AccessKey ID",
-    "alidocmindAccessKeySecret": "AccessKey Secret"
+    "alidocmindAccessKeySecret": "AccessKey Secret",
+    "myDevices": {
+      "nav": "My devices",
+      "title": "My devices",
+      "description": "Use your choices on another machine.",
+      "disabled": "Your choices are stored on this machine. Turn on server-backed persistence to carry them to another machine.",
+      "shareTitle": "Let another machine use my choices",
+      "shareHint": "The code works once and expires quickly.",
+      "getCode": "Get a code",
+      "copy": "Copy",
+      "expiresIn": "Expires in {{seconds}}s",
+      "expired": "This code has expired.",
+      "newCode": "Get a new code",
+      "adoptTitle": "Use the choices from another machine",
+      "codePlaceholder": "Enter the code",
+      "adopt": "Use them here",
+      "adopted": "This machine now shares your choices.",
+      "codeRejected": "That code cannot be used.",
+      "willReplace": "The choices on this machine will be replaced by the ones from the other machine.",
+      "confirmReplace": "Replace them",
+      "serverSilent": "Could not reach the server. Your current choices are unchanged.",
+      "retry": "Try again"
+    }
   },
   "workspace": {
     "untitledCourse": "未命名课堂",
