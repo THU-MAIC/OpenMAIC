@@ -410,3 +410,50 @@ jobs:
           load: false
           cache-from: type=gha,scope=openmaic-main-image
           cache-to: type=gha,scope=openmaic-main-image,mode=max
+
+  acceptance-gate:
+    name: Acceptance Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The gate diffs against the pull request base, so it needs real history.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # The kit is zero-dependency (bash + Node builtins), so no install step.
+      # The product map is exempt from the gate's own staleness check, which is
+      # only safe while this check watches it: a signature commit rewrites the
+      # map, and nothing else would notice it drifting from the workshop record.
+      - name: Product map is current
+        run: node scripts/product-map.mjs --root . --check
+
+      # `--base` arms the gap-probe rule; without it the run is a VIOLATION in
+      # `required` mode. `--no-t1-escape` on push only: the T1-escape backstop
+      # assumes "this is a pull request, so it must carry _acceptance/<slug>/",
+      # which is false for release commits landing straight on main and would
+      # make this job permanently red for structural reasons. See docs/adr/0005.
+      - name: Pre-merge check (pull request)
+        if: github.event_name == 'pull_request'
+        run: bash scripts/pre-merge-check.sh . --base "origin/$GITHUB_BASE_REF"
+
+      # A branch creation or a force push reports an unusable `before`; fall back
+      # to the previous commit so the gap-probe rule still has a diff scope.
+      # Unlike the version check above, a slightly wide scope here only widens
+      # what the gate reads, so the fallback costs nothing.
+      - name: Pre-merge check (push)
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          base="$BEFORE_SHA"
+          if [ -z "$base" ] || ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
+            base="$(git rev-parse HEAD^)"
+            echo "Push range base is unavailable; falling back to $base."
+          fi
+          bash scripts/pre-merge-check.sh . --base "$base" --no-t1-escape
+        env:
+          BEFORE_SHA: ${{ github.event.before }}

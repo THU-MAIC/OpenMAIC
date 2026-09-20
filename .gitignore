@@ -2,6 +2,10 @@
 
 CLAUDE.local.md
 .claude
+# Bộ plugin của đội (Claude Code): khai ở repo để ai mở cũng được nhắc cài.
+# Chỉ mở đúng khe này — phần còn lại của .claude vẫn là của từng máy.
+!.claude/
+!.claude/settings.json
 .superpowers
 
 # dependencies

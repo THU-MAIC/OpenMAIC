@@ -11,6 +11,25 @@ packages/mathml2omml/
 packages/@openmaic/*/dist/
 packages/@openmaic/importer/src1/
 
+# Acceptance-gate kit: vendored verbatim from the plugin so a re-copy stays a
+# clean diff. Reformatting them would make every kit upgrade a merge conflict.
+scripts/pre-merge-check.sh
+scripts/recheck-evidence.cjs
+scripts/product-map.mjs
+scripts/trang-thai-ho-so.cjs
+scripts/khong-can-nguoi.mjs
+scripts/design-gate.mjs
+scripts/design-scan.js
+lib/ac-line.cjs
+lib/eval-yaml.cjs
+lib/evidence-core.cjs
+lib/gap-probe.cjs
+lib/lop-nhin-thay.cjs
+lib/md-section.cjs
+lib/nguong-o-co-hoi.cjs
+lib/workspace-record.cjs
+lib/design-detect.mjs
+
 # Docs site (separate Fumadocs app with its own toolchain)
 packages/docs/
 

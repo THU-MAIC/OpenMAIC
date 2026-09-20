@@ -33,6 +33,19 @@ const eslintConfig = defineConfig([
     'out/**',
     'build/**',
     'next-env.d.ts',
+    // Acceptance-gate kit, vendored verbatim from the plugin (CommonJS on
+    // purpose — a copied .js would be read as ESM under this package's
+    // "type" and the enforcement layer would die silently). Kept byte-identical
+    // so a kit upgrade stays a clean re-copy:
+    'scripts/pre-merge-check.sh',
+    'scripts/recheck-evidence.cjs',
+    'scripts/product-map.mjs',
+    'scripts/trang-thai-ho-so.cjs',
+    'scripts/khong-can-nguoi.mjs',
+    'scripts/design-gate.mjs',
+    'scripts/design-scan.js',
+    'lib/*.cjs',
+    'lib/design-detect.mjs',
     // Third-party / vendored packages (not our code):
     'packages/docs/**',
     'packages/mathml2omml/**',
