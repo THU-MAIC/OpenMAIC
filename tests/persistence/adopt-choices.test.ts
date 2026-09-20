@@ -68,7 +68,9 @@ describe('nhận lựa chọn từ máy khác', () => {
     expect(outcome, 'a failed rehydrate was reported as adopted').toBe('unreachable');
   });
 
-  it('bỏ khoảng trắng và gạch nối khi người dán mã', () => {
-    expect(normalizeClaimCode(' ab-cd 12-34 ')).toBe('ABCD1234');
+  it('bỏ khoảng trắng và gạch nối, và hạ về đúng dạng máy chủ băm', () => {
+    // Chữ thường, vì mã sinh ra là hex thường. Bản trước của bài này ghim chữ
+    // HOA — tức nó ghim đúng lỗi làm không mã nào đổi được.
+    expect(normalizeClaimCode(' AB-cd 12-34 ')).toBe('abcd1234');
   });
 });

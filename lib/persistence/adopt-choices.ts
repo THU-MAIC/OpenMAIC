@@ -11,6 +11,11 @@
  * được, và hàm này cũng không đoán hộ: tất cả là `rejected`.
  */
 
+import { canonicalClaimCode } from './claim-code-format';
+
+/** Dạng chuẩn của mã — LẤY LẠI từ một bản dùng chung, không viết bản thứ hai. */
+export { canonicalClaimCode as normalizeClaimCode } from './claim-code-format';
+
 export type AdoptOutcome = 'adopted' | 'rejected' | 'unreachable';
 
 export interface AdoptChoicesDeps {
@@ -19,16 +24,13 @@ export interface AdoptChoicesDeps {
   rehydrate: () => void | Promise<void>;
 }
 
-/** Người dán mã thường mang theo khoảng trắng và gạch nối. */
-export function normalizeClaimCode(raw: string): string {
-  return raw.replace(/[\s-]/g, '').toUpperCase();
-}
+
 
 export async function adoptChoicesFromCode(
   rawCode: string,
   deps: AdoptChoicesDeps,
 ): Promise<AdoptOutcome> {
-  const code = normalizeClaimCode(rawCode);
+  const code = canonicalClaimCode(rawCode);
   if (code === '') return 'rejected';
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
 

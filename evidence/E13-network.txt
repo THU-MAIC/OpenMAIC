@@ -1,0 +1,35 @@
+# E13 network truth dump
+# Driver: mcp__Claude_Browser (Chromium-based), interactive session.
+# NOTE — port substitution: dev_server.url in _acceptance/config.yaml declares
+# http://localhost:3002, and dev_server.start pins PORT=3002. Next.js refused
+# to boot a second dev instance for this same repo directory because a
+# pre-existing `next dev` process (PID 19327, already running ~4h16m before
+# this verification started) holds a directory-scoped dev lock, redirecting
+# to its own port 3000. Per the "dùng chung, không tắt" rule for a
+# pre-existing server, that process was left running untouched and this
+# verification used its port (3000) as the reachable substitute for the same
+# app/repo. FAIL-eligible scope below is therefore localhost:3000 in place of
+# the declared localhost:3002 (same Next.js app, same source tree).
+#
+# All requests observed during: load app root -> open Settings -> click
+# "My devices" nav item (the only step reachable — see outputTail).
+
+Total requests observed: 97
+Failed (non-2xx/3xx) requests: 0
+Console errors: 0
+Console warnings: 0
+
+Sample of requests (first + representative slice; full list in tool transcript):
+GET http://localhost:3000/ -> 200 OK
+GET http://localhost:3000/api/server-providers -> 200 OK
+GET http://localhost:3000/api/comfyui-workflows -> 200 OK
+GET http://localhost:3000/api/access-code/status -> 200 OK
+(94 further requests: _next/static chunks, fonts, /logos/*.svg|png — all 200 OK, all same-origin)
+
+No request to /api/claim or /api/claim/redeem was observed, because the "My
+devices" UI never rendered past its disabled branch (ST-maycuatoi-tat) — the
+button that would trigger POST /api/claim does not exist in this state, so
+that endpoint was never exercised by the UI in this run.
+
+No third-party (analytics/CDN/tracker) requests were observed at all.
+No 4xx/5xx responses were observed.

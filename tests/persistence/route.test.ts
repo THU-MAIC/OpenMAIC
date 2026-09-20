@@ -196,7 +196,7 @@ describe('embedded persistence route', () => {
         authenticate: (request: {
           url?: string;
           headers: Record<string, string>;
-        }) => Promise<{ key?: string; learnerKey?: string } | undefined>;
+        }) => Promise<{ key?: string; learnerKey?: string; kvOwner?: string } | undefined>;
       }
     ).authenticate;
     const noCredentials = { headers: {} };
@@ -211,6 +211,24 @@ describe('embedded persistence route', () => {
     expect(read).toEqual(allocate);
     expect(typeof documents?.learnerKey).toBe('string');
     expect(documents?.learnerKey).not.toBe('');
+
+    // The account KV scope is partitioned per owner, by the id the SERVER
+    // resolved. Asserted here rather than against the KV handler in isolation:
+    // the handler takes whatever `authenticate` hands it, so a test that
+    // supplies its own authenticator proves nothing about this wiring — which
+    // is exactly how every caller ended up sharing one partition once before.
+    const kv = await authenticate({ url: '/kv/entries/settings-storage', ...noCredentials });
+    expect(kv?.kvOwner, 'account partition leaked across owners').toBe(documents?.learnerKey);
+    expect(kv?.kvOwner, 'account partition leaked across owners').not.toBe('shared');
+
+    // And no header the caller sends may move them into someone else's ngăn.
+    const spoofed = await authenticate({
+      url: '/kv/entries/settings-storage',
+      headers: { 'x-learner-key': 'someone-elses-owner' },
+    });
+    expect(spoofed?.kvOwner, 'account partition leaked across owners').toBe(
+      documents?.learnerKey,
+    );
 
     // Runtime sessions are genuinely per-learner, so they keep the development
     // authenticator — which refuses here, and the handler answers 401.

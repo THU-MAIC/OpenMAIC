@@ -25,6 +25,8 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 
+import { canonicalClaimCode } from './claim-code-format';
+
 /** AC-3: the signed ceiling for how long a claim code stays redeemable. */
 export const CLAIM_TTL_MS = 10 * 60 * 1000;
 
@@ -75,7 +77,7 @@ export async function mintClaimCode(
   prune(now);
   const code = randomBytes(CLAIM_CODE_BYTES).toString('hex');
   const expiresAt = now + CLAIM_TTL_MS;
-  claims.set(hashCode(code), { owner, expiresAt, used: false });
+  claims.set(hashCode(canonicalClaimCode(code)), { owner, expiresAt, used: false });
   return { code, expiresAt };
 }
 
@@ -88,7 +90,7 @@ export async function redeemClaimCode(
   code: string,
   now: number = Date.now(),
 ): Promise<{ owner: string } | undefined> {
-  const hash = hashCode(code);
+  const hash = hashCode(canonicalClaimCode(code));
   const record = claims.get(hash);
   // The lookup is a map hit on the digest, not a comparison against the secret:
   // an attacker's guess is hashed before anything is compared, so there is no

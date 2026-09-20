@@ -148,6 +148,10 @@ async function createPersistenceHandler(
       if (request.url?.startsWith('/assets')) {
         return { key: SHARED_ASSET_PRINCIPAL, learnerKey: ownerId };
       }
+      // Ngăn account chia theo chủ sở hữu MÁY CHỦ suy từ cookie, không theo
+      // bất cứ thứ gì client gửi lên: một khoá do client khai thì người này
+      // đọc được ngăn của người kia chỉ bằng cách đổi một header.
+      if (request.url?.startsWith('/kv')) return { kvOwner: ownerId, learnerKey: ownerId };
       return authenticatePersistenceRequest(request);
     },
     authorizeAssets: async (_principal, request) => {

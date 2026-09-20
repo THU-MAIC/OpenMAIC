@@ -722,8 +722,12 @@ export interface StorageHttpHandlerOptions
   assetStore?: AssetStore;
   /**
    * When supplied, the composed handler exposes the `/kv` contract — the
-   * account scope, partitioned by the principal `authenticate` resolves. The
-   * device scope never arrives here: it is refused at the KV ingress.
+   * account scope, partitioned by the `kvOwner` the deployment's
+   * `authenticate` returns for a `/kv` request. `kvOwner` is deliberately its
+   * own field: `key` belongs to the asset layer and `learnerKey` documents
+   * itself as "not the partition key", so borrowing either would let another
+   * contract decide this one's partition. The device scope never arrives here
+   * — it is refused at the KV ingress.
    */
   kvStore?: PgKVStore;
 }
@@ -761,8 +765,13 @@ export function createStorageHttpHandler<
           authenticate: async (req) => {
             const principal = await options.authenticate(req);
             if (principal === undefined) return undefined;
-            const owner = (principal as { key?: string; learnerKey?: string }).key ??
-              (principal as { learnerKey?: string }).learnerKey;
+            // KV đòi trường CỦA RIÊNG NÓ. `key` là khoá phân vùng của tầng
+            // TỆP và `learnerKey` tự khai là «không phải khoá phân vùng», nên
+            // mượn một trong hai là để tầng khác quyết ngăn của tầng này — và
+            // khi bộ xác thực trả một principal gộp thì cái mượn đó im lặng
+            // dồn mọi người vào một ngăn. Thiếu trường này là 401, không phải
+            // một mặc định trông có vẻ hợp lý.
+            const owner = (principal as { kvOwner?: string }).kvOwner;
             return typeof owner === 'string' && owner !== '' ? { owner } : undefined;
           },
           ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes }),

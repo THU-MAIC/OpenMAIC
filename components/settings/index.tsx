@@ -60,6 +60,7 @@ import { WEB_SEARCH_PROVIDERS, getWebSearchProviderDisplayName } from '@/lib/web
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import { GeneralSettings } from './general-settings';
 import { MyDevicesSettings } from './my-devices-settings';
+import { rehydrateAccountStores } from '@/lib/store/account-stores';
 import { SkillSettings } from './skill-settings';
 import { TokenPlanSettings } from './token-plan-settings';
 import { ModelEditDialog } from './model-edit-dialog';
@@ -235,8 +236,14 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const hasLocalChoices =
     Object.keys(agentVoiceOverrides ?? {}).length > 0 ||
     Boolean(selectedModelId) ||
-    Object.values(ttsProvidersConfig ?? {}).some(
-      (config) => ((config as { customVoices?: unknown[] }).customVoices?.length ?? 0) > 0,
+    // Giọng nhập từ tài khoản, mô hình tự thêm, và nhà cung cấp tự thêm —
+    // nhìn CẢ BA bảng cấu hình nhà cung cấp, không chỉ bảng giọng đọc. Bỏ sót
+    // một bảng nghĩa là người có lựa chọn thật mà vẫn bị thay không hỏi.
+    [providersConfig, ttsProvidersConfig, asrProvidersConfig].some((table) =>
+      Object.values(table ?? {}).some((config) => {
+        const entry = config as { customVoices?: unknown[]; customModels?: unknown[] };
+        return (entry.customVoices?.length ?? 0) > 0 || (entry.customModels?.length ?? 0) > 0;
+      }),
     );
 
   // Store actions
@@ -1119,7 +1126,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             <div className="flex-1 overflow-y-auto p-5">
               {activeSection === 'my-devices' && (
                 <MyDevicesSettings
-                  onAdopted={() => useSettingsStore.persist.rehydrate()}
+                  onAdopted={rehydrateAccountStores}
                   hasLocalChoices={hasLocalChoices}
                 />
               )}
