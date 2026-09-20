@@ -23,6 +23,7 @@ import {
   buildOutlinePrompt,
   uniquifyMediaElementIds,
   formatTeacherPersonaForPrompt,
+  MAX_CLARIFICATION_QUESTIONS,
 } from '@openmaic/generation';
 import type { AgentInfo } from '@openmaic/generation';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from '@openmaic/generation';
@@ -269,6 +270,31 @@ function sanitizeNonTaskEngineOutline(outline: SceneOutline): SceneOutline {
   };
 }
 
+/**
+ * Validate client-supplied clarification answers. Only pairs with non-empty
+ * string questions and answers survive; anything else is dropped so a
+ * malformed body field can never inject prompt content.
+ */
+function sanitizeClarificationQA(
+  value: unknown,
+): Array<{ question: string; answer: string }> | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const pairs: Array<{ question: string; answer: string }> = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { question, answer } = entry as { question?: unknown; answer?: unknown };
+    if (typeof question !== 'string' || !question.trim()) continue;
+    if (typeof answer !== 'string' || !answer.trim()) continue;
+    // Bound injected prompt content per pair.
+    pairs.push({
+      question: question.trim().slice(0, 500),
+      answer: answer.trim().slice(0, 1000),
+    });
+    if (pairs.length >= MAX_CLARIFICATION_QUESTIONS) break;
+  }
+  return pairs.length > 0 ? pairs : undefined;
+}
+
 function ensureUniqueOutlineId(outline: SceneOutline, usedIds: Set<string>): SceneOutline {
   const candidate = typeof outline.id === 'string' && outline.id.trim() ? outline.id : undefined;
   if (candidate && !usedIds.has(candidate)) {
@@ -310,8 +336,14 @@ export async function POST(req: NextRequest) {
       imageMapping?: ImageMapping;
       researchContext?: string;
       agents?: AgentInfo[];
+      clarificationQA?: Array<{ question?: unknown; answer?: unknown }>;
     };
     requirementSnippet = requirements?.requirement?.substring(0, 60);
+
+    // Answered pre-outline clarification questions: validated defensively —
+    // this body field crosses the client boundary, so only well-formed pairs
+    // reach the prompt, where they act as authoritative requirements.
+    const clarificationQA = sanitizeClarificationQA(body.clarificationQA);
 
     // Build user profile string for language inference context
     const userProfileText =
@@ -427,6 +459,7 @@ export async function POST(req: NextRequest) {
       videoGenerationEnabled,
       researchContext,
       teacherContext,
+      clarificationQA,
     });
 
     if (taskEngineMode || interactiveMode) {
