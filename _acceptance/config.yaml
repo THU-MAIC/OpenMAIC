@@ -55,4 +55,8 @@ dev_server:
   # render-service là service riêng; khai thêm ở đây nếu eval cần gọi thẳng nó.  # cần anh nếu có
 
 capture:
-  ui: ""                              # cần anh — repo chưa có lệnh chụp-ra-FILE cho slideshow Cổng 2
+  # Chụp-ra-FILE cho slideshow Cổng 2. Script thuộc repo (scripts/ui-capture.mjs),
+  # chạy bằng @playwright/test repo đã có — không thêm phụ thuộc nào.
+  # Ưu tiên Chromium của Playwright (CI cache sẵn), thiếu thì lùi về Chrome hệ thống.
+  # Cú pháp: <url> <out.png> [--wait ms] [--full] [--w px] [--h px]
+  ui: "node scripts/ui-capture.mjs"
