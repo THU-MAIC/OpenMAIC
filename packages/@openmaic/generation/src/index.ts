@@ -79,6 +79,26 @@ export {
   generateSceneOutlinesFromRequirements,
   sanitizeProceduralSkillOutline,
 } from './outline-generator.js';
+export {
+  CLARIFY_MAX_PDF_CHARS,
+  CLARIFY_MAX_RESEARCH_CHARS,
+  MAX_CLARIFICATION_QUESTIONS,
+  buildClarificationPrompt,
+  generateClarificationQuestions,
+  parseClarificationResponse,
+} from './clarify.js';
+export type {
+  ClarificationResult,
+  ClarifyGenerationOptions,
+  ClarifyPromptContext,
+} from './clarify.js';
+export { buildClarificationQA, formatClarificationQAForPrompt } from './clarify-qa.js';
+export type {
+  AskUserOption,
+  AskUserQuestion,
+  ClarificationAnswer,
+  ClarificationQA,
+} from './clarify-qa.js';
 export type {
   OutlineFallbackOptions,
   OutlineGenerationOptions,

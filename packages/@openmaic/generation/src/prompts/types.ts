@@ -5,6 +5,7 @@
 /** Prompt template identifier for generation-owned prompts. */
 export type PromptId =
   | 'requirements-to-outlines'
+  | 'requirements-clarify'
   | 'slide-content'
   | 'quiz-content'
   | 'simulation-content'

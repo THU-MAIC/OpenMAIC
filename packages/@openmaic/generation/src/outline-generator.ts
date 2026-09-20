@@ -4,6 +4,7 @@
  */
 
 import { nanoid } from 'nanoid';
+import { formatClarificationQAForPrompt, type ClarificationQA } from './clarify-qa.js';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from './constants.js';
 import { parseJsonResponse } from './json-repair.js';
 import { noopGenerationLogger, type GenerationLogger } from './logger.js';
@@ -29,6 +30,11 @@ export interface OutlinePromptContext {
   videoGenerationEnabled?: boolean;
   researchContext?: string;
   teacherContext?: string;
+  /**
+   * Answered pre-outline clarification questions. Treated as authoritative
+   * requirements that override conflicting inference. Empty by default.
+   */
+  clarificationQA?: ClarificationQA[];
 }
 
 export interface OutlineGenerationOptions extends Omit<
@@ -95,6 +101,7 @@ export function buildOutlinePrompt(
   const videoEnabled = context.videoGenerationEnabled ?? false;
   const mediaEnabled = imageEnabled || videoEnabled;
   const hasSourceImages = (pdfImages?.length ?? 0) > 0;
+  const clarificationText = formatClarificationQAForPrompt(context.clarificationQA ?? []);
 
   const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
     requirement: requirements.requirement,
@@ -107,6 +114,11 @@ export function buildOutlinePrompt(
     mediaEnabled,
     researchContext: context.researchContext || 'None',
     teacherContext: context.teacherContext || '',
+    // The template abuts `{{#if hasClarifications}}` directly to the final
+    // line: a leading newline would survive conditional removal and break the
+    // byte-stable golden contract when no clarifications exist.
+    hasClarifications: clarificationText.length > 0,
+    clarificationQA: clarificationText,
   });
 
   if (!prompts) {

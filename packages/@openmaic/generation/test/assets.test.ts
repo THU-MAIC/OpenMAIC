@@ -14,6 +14,7 @@ const PBL_PROMPT_FILES = [
 
 const PROMPT_IDS = [
   'requirements-to-outlines',
+  'requirements-clarify',
   'slide-content',
   'quiz-content',
   'simulation-content',
