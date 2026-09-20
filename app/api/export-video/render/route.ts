@@ -1,5 +1,5 @@
-import { type NextRequest, NextResponse } from 'next/server';
-import { apiError, apiSuccess, type ApiErrorBody } from '@/lib/server/api-response';
+import { type NextRequest } from 'next/server';
+import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { proxyFetch } from '@/lib/server/proxy-fetch';
 import { resolveRenderServiceUrl } from '@/lib/server/render-service';
 import { capBodyStream } from '@/lib/server/capped-stream';
@@ -79,18 +79,12 @@ export async function POST(req: NextRequest) {
             : 'UPSTREAM_ERROR';
       // Keep admission reasons separate from diagnostic prose so clients can
       // localize known rejections and fall back for older/newer services.
-      return NextResponse.json(
-        {
-          success: false,
-          errorCode: code,
-          error: 'Render service rejected the request',
-          ...(detail ? { details: detail } : {}),
-          ...(upstream.status === 429 && typeof data.reason === 'string'
-            ? { reason: data.reason }
-            : {}),
-        } satisfies ApiErrorBody & { reason?: string },
-        { status },
-      );
+      const reason =
+        upstream.status === 429 &&
+        (data.reason === 'queue_full' || data.reason === 'per_identity_limit')
+          ? data.reason
+          : undefined;
+      return apiError(code, status, 'Render service rejected the request', detail, reason);
     }
 
     return apiSuccess({ jobId: data.jobId, pollIntervalMs: 3000 }, 202);

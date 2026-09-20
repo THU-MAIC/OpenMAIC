@@ -28,7 +28,7 @@ describe('POST /api/export-video/render', () => {
 
   afterEach(() => vi.unstubAllEnvs());
 
-  it.each(['queue_full', 'per_identity_limit', 'future_limit'])(
+  it.each(['queue_full', 'per_identity_limit'])(
     'preserves the 429 envelope and %s reason without interpreting prose',
     async (reason) => {
       mocks.proxyFetch.mockResolvedValueOnce(
@@ -46,8 +46,8 @@ describe('POST /api/export-video/render', () => {
     },
   );
 
-  it.each([undefined, null, 123, { code: 'queue_full' }])(
-    'omits missing or non-string admission reasons (%j)',
+  it.each([undefined, null, 123, { code: 'queue_full' }, 'future_limit'])(
+    'omits missing or unrecognized admission reasons (%j)',
     async (reason) => {
       mocks.proxyFetch.mockResolvedValueOnce(
         Response.json({ error: 'Queue busy', reason }, { status: 429 }),

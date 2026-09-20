@@ -76,13 +76,14 @@ describe('video render failure presentation and lifecycle', () => {
     [502, undefined],
     [502, 'queue_full'],
   ])(
-    'shows details for unrecognized %i / %s without guessing from prose',
+    'keeps unrecognized %i / %s generic without exposing upstream diagnostics',
     async (status, reason) => {
       fetchMock.mockResolvedValueOnce(
         Response.json(
           {
             error: 'Rejected',
-            details: 'The render queue is full; try again shortly.',
+            details:
+              'Check PRODUCER_HEADLESS_SHELL_PATH: /srv/render/private.zip at https://internal.example/render',
             reason,
           },
           { status },
@@ -91,7 +92,6 @@ describe('video render failure presentation and lifecycle', () => {
       await start();
       expect(mocks.error).toHaveBeenCalledWith('export.videoFailed', {
         id: 'render-toast',
-        description: 'Rejected: The render queue is full; try again shortly.',
       });
       expect(mocks.saveAs).not.toHaveBeenCalled();
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -103,8 +103,8 @@ describe('video render failure presentation and lifecycle', () => {
     await start();
     expect(mocks.error).toHaveBeenCalledWith('export.videoFailed', {
       id: 'render-toast',
-      description: 'HTTP 502',
     });
+    expect(useVideoRenderStore.getState().error).toBe('HTTP 502');
   });
 
   it.each(['unconfigured', 'browser-network-failure'])(
@@ -125,13 +125,12 @@ describe('video render failure presentation and lifecycle', () => {
     },
   );
 
-  it('retains and displays the actual compile error', async () => {
+  it('retains the compile diagnostic without exposing it in the toast', async () => {
     mocks.buildZip.mockRejectedValueOnce(new Error('Unable to read narration audio'));
     await start();
     expect(useVideoRenderStore.getState().error).toBe('Unable to read narration audio');
     expect(mocks.error).toHaveBeenCalledWith('export.videoFailed', {
       id: 'render-toast',
-      description: 'Unable to read narration audio',
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -144,20 +143,25 @@ describe('video render failure presentation and lifecycle', () => {
   });
 
   it.each([
-    ['job-failed', 'Encoder exited with code 1'],
+    ['job-failed', 'ffmpeg failed: /srv/render/jobs/private/output.mp4'],
+    ['job-cancelled', 'Producer stopped: /srv/render/jobs/private/project.zip'],
+    ['poll-http-error', 'Internal gateway: https://internal.example/render'],
     ['poll-network-error', 'Failed to fetch'],
     ['download-failed', 'download HTTP 502'],
     ['timeout', 'render-video timed out after 1200 polls'],
-  ])('shows the %s detail and still cancels the accepted job', async (kind, message) => {
+  ])('keeps %s generic and still cancels the accepted job', async (kind, message) => {
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (init?.method === 'POST') return Response.json({ jobId: 'job-1' }, { status: 202 });
       if (init?.method === 'DELETE') return Response.json({ cancelled: true });
       if (url.endsWith('/download')) return new Response(null, { status: 502 });
       if (kind === 'poll-network-error') throw new TypeError(message);
+      if (kind === 'poll-http-error') return Response.json({ error: message }, { status: 502 });
       return Response.json(
         kind === 'job-failed'
           ? { status: 'failed', error: message }
-          : { status: kind === 'timeout' ? 'running' : 'succeeded' },
+          : kind === 'job-cancelled'
+            ? { status: 'cancelled', error: message }
+            : { status: kind === 'timeout' ? 'running' : 'succeeded' },
       );
     });
     const pending = start();
@@ -167,7 +171,6 @@ describe('video render failure presentation and lifecycle', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/export-video/render/job-1', { method: 'DELETE' });
     expect(mocks.error).toHaveBeenCalledWith('export.videoFailed', {
       id: 'render-toast',
-      description: message,
     });
     expect(useVideoRenderStore.getState()).toMatchObject({ status: 'failed', error: message });
     expect(mocks.saveAs).not.toHaveBeenCalled();

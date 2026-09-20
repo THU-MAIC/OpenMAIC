@@ -238,7 +238,7 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
         toast.error(t('export.videoNoScenes'), { id: toastId });
       } else {
         log.error('Video render (compile) failed:', error);
-        toast.error(t('export.videoFailed'), { id: toastId, description: message });
+        toast.error(t('export.videoFailed'), { id: toastId });
       }
       activeRenders -= 1;
       releaseIdleObservers();
@@ -361,10 +361,7 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
           if (submitStatus === 400 || submitStatus === 413) invalidateCachedZip();
           set({ status: 'failed', error: message });
           const key = rejectionMessageKey(submitStatus, submitReason);
-          toast.error(t(key ?? 'export.videoFailed'), {
-            id: toastId,
-            ...(!key ? { description: message } : {}),
-          });
+          toast.error(t(key ?? 'export.videoFailed'), { id: toastId });
         }
       } else {
         // The render started but failed / timed out. Cancel the server job so it
@@ -374,7 +371,7 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
         );
         log.error('Video render failed:', error);
         set({ status: 'failed', error: message });
-        toast.error(t('export.videoFailed'), { id: toastId, description: message });
+        toast.error(t('export.videoFailed'), { id: toastId });
       }
     } finally {
       activeRenders -= 1;
