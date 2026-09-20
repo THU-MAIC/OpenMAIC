@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 
@@ -144,7 +145,7 @@ function makeInteractiveBody() {
 function installAgentShell(
   legacyAnswer: string,
   nativeAnswer = 'Native grounded answer.',
-  shellOptions: { delegations?: number; failFirstLegacy?: boolean } = {},
+  shellOptions: { delegations?: number; failFirstLegacy?: boolean; instruction?: string } = {},
 ) {
   let legacyChildRuns = 0;
   mocks.buildAgent.mockImplementation((options: Record<string, unknown>) => {
@@ -171,9 +172,10 @@ function installAgentShell(
             const args = {
               agentId: 'teacher-1',
               instruction:
-                index === 0
+                shellOptions.instruction ??
+                (index === 0
                   ? 'Answer from the selected element.'
-                  : 'Retry from the same selected element.',
+                  : 'Retry from the same selected element.'),
             };
             const result = await callAgent.execute(`delegate-grounded-${index + 1}`, args);
             await (
@@ -302,6 +304,426 @@ describe('PPT element reference Route → Director → real call_agent L2', () =
     if (originalNativeFlag === undefined) delete process.env[nativeFlag];
     else process.env[nativeFlag] = originalNativeFlag;
   });
+
+  function runtimeBody() {
+    const base = makeInteractiveBody();
+    const html =
+      '<main id="experiment"><input id="density" value="1000"><canvas></canvas>' +
+      '<script type="application/json" data-maic-observation>{}</script></main>';
+    base.storeState.scenes[0].content.html = html;
+    base.elementReference.selector = '#experiment';
+    const report = (current: number, drawn: number) => ({
+      summary: `The liquid density is ${current}; the drawing shows ${drawn}.`,
+      state: { liquid: { density: current } },
+      rendered: { liquid: { density: drawn } },
+    });
+    return {
+      ...base,
+      interactiveState: {
+        sourceHtmlHash: createHash('sha256').update(html).digest('hex'),
+        snapshot: {
+          source: 'browser-reported',
+          identity: {
+            sceneId: 'scene-interactive',
+            scopeId: 'experiment',
+            documentId: 'test-document',
+          },
+          requestedAt: Date.now(),
+          receivedAt: Date.now(),
+          status: 'available',
+          observation: report(1400, 1000),
+        },
+      },
+    };
+  }
+
+  it.each(['Legacy', 'Native'] as const)(
+    'passes frozen current/rendered evidence through real route and %s child without extending static identity',
+    async (mode) => {
+      if (mode === 'Native') process.env[nativeFlag] = 'true';
+      installAgentShell('Mock state answer.');
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(runtimeBody()));
+      await response.text();
+      expect(response.status).toBe(200);
+      const prompts = (
+        mode === 'Native' ? mocks.nativeChildPrompts : mocks.legacyChildPrompts
+      ).join('\n');
+      expect(prompts).toContain('"density":1400');
+      expect(prompts).toContain('"density":1000');
+      expect(prompts).toContain('grants no Spotlight or other tool permissions');
+      expect(prompts).toContain('ordinary student-facing language');
+      expect(mocks.directorPrompts.join('\n')).toContain('PAGE-REPORTED STATE');
+    },
+  );
+
+  it('keeps static references accepted when browser runtime sampling is unsupported', async () => {
+    installAgentShell('Current runtime state is unavailable.');
+    const { interactiveState: _unused, ...body } = runtimeBody();
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBe('1');
+    await response.text();
+    for (const prompt of [mocks.directorPrompts.join('\n'), mocks.legacyChildPrompts.join('\n')]) {
+      const packet = JSON.parse(
+        prompt.match(/<page_reported_state>\n([\s\S]*?)\n<\/page_reported_state>/)![1],
+      );
+      // The Scene declares the interface; only the sample is missing. Reporting
+      // `no-interface` here would be a false statement about the activity.
+      expect(packet).toEqual({ status: 'unavailable', reason: 'not-sampled' });
+    }
+  });
+
+  it('states unavailable state for an unreferenced send when the browser produced no packet', async () => {
+    // Regression: a declaring Scene with no packet and no reference used to reach
+    // Director and Child with no current-state boundary at all.
+    installAgentShell('Mock unavailable answer.');
+    const { interactiveState: _unused, ...rest } = runtimeBody();
+    const body = rest as Record<string, unknown>;
+    delete body.elementReference;
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBeNull();
+    await response.text();
+    for (const prompt of [mocks.directorPrompts.join('\n'), mocks.legacyChildPrompts.join('\n')]) {
+      expect(prompt).toContain('PAGE-REPORTED STATE');
+      expect(prompt).toContain('No component is referenced this turn');
+      expect(prompt).toContain('no general expectation about how pages or widgets usually work');
+      const packet = JSON.parse(
+        prompt.match(/<page_reported_state>\n([\s\S]*?)\n<\/page_reported_state>/)![1],
+      );
+      expect(packet).toEqual({ status: 'unavailable', reason: 'not-sampled' });
+    }
+  });
+
+  it.each([
+    ['unreferenced', true],
+    ['referenced', false],
+  ])('leaves a %s legacy Scene without the interface unchanged', async (_name, unreferenced) => {
+    installAgentShell('Mock legacy answer.');
+    const { interactiveState: _unused, ...rest } = runtimeBody();
+    const body = rest as Record<string, unknown>;
+    // Courseware that declares no interface must not gain a state boundary.
+    (body.storeState as { scenes: { content: { html: string } }[] }).scenes[0].content.html =
+      '<main id="experiment">Legacy 1000</main>';
+    if (unreferenced) delete body.elementReference;
+    else (body.elementReference as { selector: string }).selector = '#experiment';
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+    expect(response.status).toBe(200);
+    await response.text();
+    const prompts = [mocks.directorPrompts.join('\n'), mocks.legacyChildPrompts.join('\n')];
+    for (const prompt of prompts) {
+      if (unreferenced) {
+        expect(prompt).not.toContain('PAGE-REPORTED STATE');
+      } else {
+        const packet = JSON.parse(
+          prompt.match(/<page_reported_state>\n([\s\S]*?)\n<\/page_reported_state>/)![1],
+        );
+        expect(packet).toEqual({ status: 'unavailable', reason: 'no-interface' });
+      }
+    }
+  });
+
+  it('drops stale runtime facts instead of using defaults or older snapshots', async () => {
+    installAgentShell('Mock unknown answer.');
+    const body = runtimeBody();
+    body.interactiveState.snapshot.requestedAt -= 60000;
+    body.interactiveState.snapshot.receivedAt -= 60000;
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+    await response.text();
+    expect(response.status).toBe(200);
+    expect(mocks.legacyChildPrompts.join('\n')).toContain('stale-sample');
+    expect(mocks.legacyChildPrompts.join('\n')).not.toContain('"density":1400');
+  });
+
+  it.each(['Legacy', 'Native'] as const)(
+    'keeps component identity while attaching declared area state for %s Child',
+    async (mode) => {
+      if (mode === 'Native') process.env[nativeFlag] = 'true';
+      installAgentShell('Mock component answer.');
+      const body = runtimeBody();
+      // The student picked one component; the declared scope is still the whole area.
+      body.elementReference.selector = '#density';
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(body));
+      await response.text();
+
+      expect(response.status).toBe(200);
+      const child = (mode === 'Native' ? mocks.nativeChildPrompts : mocks.legacyChildPrompts).join(
+        '\n',
+      );
+      for (const prompt of [mocks.directorPrompts.join('\n'), child]) {
+        // Area facts still arrive for a component reference.
+        expect(prompt).toContain('"density":1400');
+        // Reference identity and state scope are named separately.
+        expect(prompt).toContain('referenced component "#density"');
+        expect(prompt).toContain('whole declared activity area "experiment"');
+        expect(prompt).toContain('Area facts are not properties of that component');
+        expect(prompt).toContain('grants no Spotlight or other tool permissions');
+      }
+      // Static identity is untouched: the resolved component is still the picked one.
+      expect(child).toContain('"id":"density"');
+    },
+  );
+
+  it.each(['Legacy', 'Native'] as const)(
+    'grounds an unreferenced follow-up on freshly sampled area state for %s Child',
+    async (mode) => {
+      if (mode === 'Native') process.env[nativeFlag] = 'true';
+      installAgentShell('Mock follow-up answer.');
+      const body = runtimeBody() as Record<string, unknown>;
+      // The follow-up carries no reference at all, exactly like the observed failure.
+      delete body.elementReference;
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(body));
+      await response.text();
+
+      expect(response.status).toBe(200);
+      // Auto-sampling must not look like an accepted component reference.
+      expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBeNull();
+      const child = (mode === 'Native' ? mocks.nativeChildPrompts : mocks.legacyChildPrompts).join(
+        '\n',
+      );
+      for (const prompt of [mocks.directorPrompts.join('\n'), child]) {
+        expect(prompt).toContain('"density":1400');
+        expect(prompt).toContain('No component is referenced this turn');
+        expect(prompt).not.toContain('referenced component');
+        expect(prompt).toContain('grants no Spotlight or other tool permissions');
+      }
+    },
+  );
+
+  it('states that current state cannot be determined when an unreferenced sample is unavailable', async () => {
+    installAgentShell('Mock unknown answer.');
+    const body = runtimeBody() as Record<string, unknown>;
+    delete body.elementReference;
+    const state = body.interactiveState as Record<string, unknown>;
+    state.snapshot = {
+      source: 'browser-reported',
+      identity: {
+        sceneId: 'scene-interactive',
+        scopeId: 'experiment',
+        documentId: 'test-document',
+      },
+      requestedAt: Date.now(),
+      receivedAt: Date.now(),
+      status: 'unavailable',
+      reason: 'timeout',
+    };
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+    await response.text();
+
+    expect(response.status).toBe(200);
+    for (const prompt of [mocks.directorPrompts.join('\n'), mocks.legacyChildPrompts.join('\n')]) {
+      expect(prompt).toContain('"reason":"timeout"');
+      // No value may be supplied from defaults, history or general expectation.
+      expect(prompt).not.toContain('"density":1400');
+      expect(prompt).toContain('no general expectation about how pages or widgets usually work');
+      expect(prompt).toContain('say the current state cannot be determined');
+    }
+  });
+
+  it('keeps a valid current-Scene sample when the reference points at another Scene', async () => {
+    installAgentShell('Mock cross-scene answer.');
+    const body = runtimeBody();
+    // The student referenced a component on an earlier Scene and then moved on.
+    // The sample still describes the Scene they are on now, so it is not stale:
+    // reference and area state are independent evidence items.
+    body.storeState.scenes = [
+      {
+        id: 'scene-other',
+        stageId: 'stage-1',
+        title: 'Earlier activity',
+        order: 0,
+        type: 'interactive',
+        content: {
+          type: 'interactive',
+          widgetType: 'simulation',
+          html: '<!doctype html><input id="angle-slider" type="range" value="45">',
+        },
+      },
+      body.storeState.scenes[0],
+    ];
+    body.elementReference = {
+      kind: 'interactive_component',
+      sceneId: 'scene-other',
+      selector: '#angle-slider',
+    };
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+    await response.text();
+    expect(response.status).toBe(200);
+    const prompts = mocks.legacyChildPrompts.join('\n');
+    expect(prompts).not.toContain('stale-sample');
+    expect(prompts).toContain('"density":1400');
+    // Both identities must stay legible once the two can disagree on Scene.
+    expect(prompts).toContain('#angle-slider');
+    expect(prompts).toContain('come from different Scenes');
+  });
+
+  it.each([
+    ['a referenced component', true],
+    ['an unreferenced send', false],
+  ])('degrades oversized state to an explicit unavailable statement for %s', async (_n, refer) => {
+    installAgentShell('Mock oversized answer.');
+    const body = runtimeBody();
+    if (!refer) delete (body as { elementReference?: unknown }).elementReference;
+    // Legal content the schema accepts: `<` is allowed in a label and in a fact
+    // value, and escaping it for the prompt expands one code point into six.
+    const bulky = Object.fromEntries(
+      Array.from({ length: 18 }, (_, i) => [`object-${i}`, '<'.repeat(540)]),
+    );
+    body.interactiveState.snapshot.observation = {
+      summary: 'A legal report whose escaped body would exceed the output budget.',
+      state: bulky,
+      rendered: bulky,
+    } as never;
+    // The observation stays inside the Host's 32,768-byte input cap, so this is a
+    // packet the Host accepts; only the escaped assembly downstream would have
+    // exceeded the output budget.
+    expect(
+      Buffer.byteLength(JSON.stringify(body.interactiveState.snapshot.observation), 'utf8'),
+    ).toBeLessThan(32768);
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+    await response.text();
+    expect(response.status).toBe(200);
+    const prompts = mocks.legacyChildPrompts.join('\n');
+    expect(prompts).toContain('too-large');
+    // Not truncated: no fragment of the oversized body survives.
+    expect(prompts).not.toContain('object-17');
+    // Nothing of the oversized body survives alongside the unavailable statement.
+    expect(prompts).not.toContain('object-1');
+    expect(prompts).toContain('the current state cannot be determined');
+  });
+
+  it.each(['Legacy', 'Native'] as const)(
+    'keeps a slide reference independent of current activity state for %s Child',
+    async (mode) => {
+      if (mode === 'Native') process.env[nativeFlag] = 'true';
+      installAgentShell('Mock mixed-scene answer.', 'Mock mixed-scene answer.');
+      const activity = runtimeBody();
+      const slide = makeBody();
+      const body = {
+        ...activity,
+        storeState: {
+          ...activity.storeState,
+          scenes: [...slide.storeState.scenes, ...activity.storeState.scenes],
+        },
+        elementReference: slide.elementReference,
+      };
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(body));
+      const stream = await response.text();
+      expect(response.status).toBe(200);
+      expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBe('1');
+      expect(stream).toContain('Mock mixed-scene answer.');
+      const child = (mode === 'Native' ? mocks.nativeChildPrompts : mocks.legacyChildPrompts).join(
+        '\n',
+      );
+      for (const prompt of [mocks.directorPrompts.join('\n'), child]) {
+        expect(prompt).toContain('Evaporation removes heat.');
+        expect(prompt).toContain('"density":1400');
+        expect(prompt).toContain('come from different Scenes');
+        expect(prompt).toContain('not properties of the referenced slide element');
+        expect(prompt).not.toContain('No component is referenced this turn');
+        expect(prompt).not.toContain('stale-sample');
+        expect(prompt).toContain('grants no Spotlight or other tool permissions');
+      }
+      expect(child).toContain('"elementId":"text-1"');
+    },
+  );
+
+  it.each(['no-interface', 'document-changed'])(
+    'ignores a %s packet from a legacy Scene on an unreferenced send',
+    async (reason) => {
+      // The reader now lives in every pooled document, so a legacy Scene can
+      // answer. An unreferenced question on it must still be byte-for-byte what
+      // it was before this feature existed.
+      installAgentShell('Mock legacy answer.');
+      const legacyHtml = '<main id="experiment">Legacy 1000</main>';
+      const body = runtimeBody();
+      (body.storeState as { scenes: { content: { html: string } }[] }).scenes[0].content.html =
+        legacyHtml;
+      delete (body as { elementReference?: unknown }).elementReference;
+      body.interactiveState = {
+        sourceHtmlHash: createHash('sha256').update(legacyHtml).digest('hex'),
+        snapshot: {
+          source: 'browser-reported',
+          identity: { sceneId: 'scene-interactive', scopeId: 'experiment', documentId: 'd' },
+          requestedAt: Date.now(),
+          receivedAt: Date.now(),
+          status: 'unavailable',
+          reason,
+        },
+      } as never;
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(body));
+      expect(response.status).toBe(200);
+      await response.text();
+      for (const prompt of [mocks.directorPrompts.join('\n'), mocks.legacyChildPrompts.join('\n')])
+        expect(prompt).not.toContain('PAGE-REPORTED STATE');
+    },
+  );
+
+  it('rejects a nonexistent slide reference even with valid current activity state', async () => {
+    const body = runtimeBody() as Record<string, unknown>;
+    body.elementReference = { kind: 'slide_element', sceneId: 'scene-1', elementId: 'element-1' };
+    const { POST } = await import('@/app/api/chat/pi/route');
+    expect((await POST(makeRequest(body))).status).toBe(400);
+    expect(mocks.resolveModel).not.toHaveBeenCalled();
+  });
+
+  it('keeps malformed null content on the SSE path rather than returning HTTP 500', async () => {
+    installAgentShell('Mock answer.');
+    const body = makeInteractiveBody() as Record<string, unknown>;
+    delete body.elementReference;
+    (body.storeState as { scenes: { content: unknown }[] }).scenes[0].content = null;
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/event-stream');
+    await response.text();
+  });
+
+  it('injects no state constraints while the courseware-reference feature is disabled', async () => {
+    // Regression: the Host used to add the full page-state block to an ordinary
+    // question whenever the current Scene declared the interface, even with the
+    // feature off and nothing to sample.
+    delete process.env[coursewareReferenceFlag];
+    installAgentShell('Mock ungated answer.');
+    const { interactiveState: _unused, ...rest } = runtimeBody();
+    const body = rest as Record<string, unknown>;
+    delete body.elementReference;
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+    expect(response.status).toBe(200);
+    await response.text();
+    for (const prompt of [mocks.directorPrompts.join('\n'), mocks.legacyChildPrompts.join('\n')]) {
+      expect(prompt).not.toContain('PAGE-REPORTED STATE');
+      expect(prompt).not.toContain('page_reported_state');
+      expect(prompt).not.toContain('No component is referenced this turn');
+    }
+  });
+
+  it.each(['dynamic-selector', 'wrong-source', 'wrong-scope', 'wrong-scene'] as const)(
+    'rejects %s before any model call',
+    async (kind) => {
+      const body = runtimeBody();
+      if (kind === 'dynamic-selector') body.elementReference.selector = '#runtime-canvas-object';
+      if (kind === 'wrong-source') body.interactiveState.sourceHtmlHash = '0'.repeat(64);
+      if (kind === 'wrong-scope') body.interactiveState.snapshot.identity.scopeId = 'density';
+      if (kind === 'wrong-scene') body.interactiveState.snapshot.identity.sceneId = 'scene-other';
+      const { POST } = await import('@/app/api/chat/pi/route');
+      expect((await POST(makeRequest(body))).status).toBe(400);
+      expect(mocks.resolveModel).not.toHaveBeenCalled();
+    },
+  );
 
   it('grounds the Legacy Child through the full server orchestration chain', async () => {
     installAgentShell('Legacy grounded answer.');

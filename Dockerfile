@@ -43,7 +43,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     if [ -n "$npm_registry" ]; then \
       pnpm config set registry "$npm_registry"; \
     fi && \
-    pnpm install --frozen-lockfile
+    pnpm install --frozen-lockfile --ignore-scripts
 
 # ---- Stage 3: Builder ----
 FROM base AS builder
@@ -78,7 +78,16 @@ ENV NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=$NEXT_PUBLIC_PRO_WORKBENCH_ENABLED
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages ./packages
 COPY . .
-COPY --from=deps /app/public/vendor ./public/vendor
+
+# Build the workspace packages (rollup + tsc) here, not inside `pnpm install`,
+# so the deps stage only resolves and links dependencies. The importer's
+# rollup + terser pass is the heaviest step (see #1526). This is the same chain
+# the root `postinstall` runs locally, so local dev is unchanged.
+# The explicit V8 old-space size makes the heap limit predictable instead of
+# derived from the container's memory limit; with it, this step completes under
+# a 1 GiB container limit. It bounds the JS heap only, not the step's total
+# memory, so it does not by itself prevent a host- or VM-level OOM.
+RUN NODE_OPTIONS=--max-old-space-size=1024 pnpm run build:packages
 
 RUN pnpm build
 

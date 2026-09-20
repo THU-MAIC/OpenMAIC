@@ -22,6 +22,7 @@ pnpm-debug.log*
 
 pptx-renderer-main
 *.pptx
+!test/fixtures/*.pptx
 .pnpm-store
 dist
 docs

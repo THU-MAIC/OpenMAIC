@@ -1,137 +1,92 @@
-export const MEDIA_MIME_TYPES = [
-  'video/mp4',
-  'video/quicktime',
-  'video/webm',
-  'audio/mpeg',
-  'audio/wav',
-  'audio/x-wav',
-  'audio/mp4',
-  'audio/aac',
-  'audio/webm',
+// Workbench material upload policy.
+//
+// Every MIME/extension fact here — the extension→MIME table, alias
+// normalization, and the generic-MIME fallback set — derives from the
+// document format registry in lib/document/mime.ts, the single source of
+// truth shared with the classic upload path, so the two gates cannot drift
+// (#1589). What stays policy in this module is WHICH formats the workbench
+// accepts: a fixed, extractor-independent list, unlike the classic path's
+// provider-scoped whitelist.
+import {
+  DOCUMENT_MIME_TYPES,
+  getExtensionsForMimes,
+  normalizeDocumentMimeType,
+} from '@/lib/document/mime';
+
+/** Registry format ids the workbench accepts. */
+const WORKBENCH_MATERIAL_FORMAT_IDS = [
+  'pdf',
+  'pptx',
+  'docx',
+  'xlsx',
+  'png',
+  'jpeg',
+  'webp',
+  'txt',
+  'markdown',
+  'csv',
+  'mp4',
+  'mov',
+  'webm',
+  'mp3',
+  'wav',
+  'm4a',
+  'aac',
 ] as const;
 
-export const MEDIA_MIME_ALIASES = ['audio/x-m4a'] as const;
+/**
+ * Accepted media MIME with no registry format of its own: `.webm` resolves to
+ * `video/webm`, so `audio/webm` has no extension to register under.
+ */
+const WORKBENCH_EXTRA_MEDIA_MIMES = ['audio/webm'] as const;
 
-const MIME_ALIASES: Readonly<Record<string, string>> = {
-  'audio/x-m4a': 'audio/mp4',
-  'application/wps-office.docx':
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/wps-office.pptx':
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/wps-office.xlsx':
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-};
+export const WORKBENCH_MATERIAL_MIME_TYPES: readonly string[] = [
+  ...WORKBENCH_MATERIAL_FORMAT_IDS.map((id) => DOCUMENT_MIME_TYPES[id]),
+  ...WORKBENCH_EXTRA_MEDIA_MIMES,
+];
 
-export function normalizeWorkbenchMaterialMime(mime: string): string {
-  const normalized = mime.trim().toLowerCase();
-  return MIME_ALIASES[normalized] ?? normalized;
-}
+export const WORKBENCH_MATERIAL_EXTENSIONS: readonly string[] = getExtensionsForMimes(
+  WORKBENCH_MATERIAL_MIME_TYPES,
+).map((extension) => `.${extension}`);
 
-// MIME strings that carry no format specificity, mirroring the document
-// path's generic set (lib/document/mime.ts). On Linux, Chrome resolves
-// File.type against the XDG shared-mime-info database, and older databases
-// (e.g. Kylin OS V10) report every OOXML file as the generic
-// `application/vnd.ms-office` container — the filename extension is the
-// only signal left. (#1497)
-const GENERIC_MATERIAL_MIME_TYPES = new Set([
-  'application/octet-stream',
-  'application/zip',
-  'application/x-zip',
-  'application/x-zip-compressed',
-  'application/vnd.ms-office',
-]);
+export const WORKBENCH_MATERIAL_ACCEPT = [
+  ...WORKBENCH_MATERIAL_EXTENSIONS,
+  ...WORKBENCH_MATERIAL_MIME_TYPES,
+  // Real browser-reported aliases of whitelisted formats; the gate
+  // normalizes them anyway — listing them here just pre-filters the OS
+  // file picker.
+  'audio/x-m4a',
+  'audio/x-wav',
+].join(',');
 
-// Canonical MIME per accepted extension (without the leading dot), kept in
-// lockstep with WORKBENCH_MATERIAL_EXTENSIONS above.
-const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
-  pdf: 'application/pdf',
-  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  webp: 'image/webp',
-  txt: 'text/plain',
-  md: 'text/markdown',
-  markdown: 'text/markdown',
-  csv: 'text/csv',
-  mp4: 'video/mp4',
-  mov: 'video/quicktime',
-  webm: 'video/webm',
-  mp3: 'audio/mpeg',
-  wav: 'audio/wav',
-  m4a: 'audio/mp4',
-  aac: 'audio/aac',
-};
+/** Media (audio/video) formats among the accepted set. */
+const WORKBENCH_MEDIA_FORMAT_IDS = ['mp4', 'mov', 'webm', 'mp3', 'wav', 'm4a', 'aac'] as const;
+
+/** The upload route splits its media/document byte limit on this set. */
+export const MEDIA_MIME_TYPES: readonly string[] = [
+  ...WORKBENCH_MEDIA_FORMAT_IDS.map((id) => DOCUMENT_MIME_TYPES[id]),
+  ...WORKBENCH_EXTRA_MEDIA_MIMES,
+];
+
+const MIME_SET = new Set<string>(WORKBENCH_MATERIAL_MIME_TYPES);
 
 /**
  * Resolve a (mimeType, fileName) pair to the MIME the material API should
- * gate and store on.
- *
- * Known aliases map to their canonical form; a missing or generic MIME falls
- * back to the extension's canonical MIME. Anything else — a specific but
- * unsupported MIME — is returned verbatim so the whitelist can reject it;
- * the extension must not let `application/x-unknown` masquerade as a
- * supported type.
+ * gate and store on — the shared document-path normalization (see
+ * `normalizeDocumentMimeType`): a missing or generic MIME (octet-stream,
+ * zip-family, the generic Office container some Linux browsers report for
+ * OOXML — #1497) falls back to the extension's canonical MIME; curated
+ * aliases map to their canonical form; anything else is returned verbatim so
+ * the whitelist can reject it — the extension must not let
+ * `application/x-unknown` masquerade as a supported type.
  */
 export function resolveWorkbenchMaterialMime(input: {
   mimeType?: string | null;
   fileName?: string | null;
 }): string {
-  const normalized = normalizeWorkbenchMaterialMime(input.mimeType ?? '');
-  if (!normalized || GENERIC_MATERIAL_MIME_TYPES.has(normalized)) {
-    const extension = input.fileName?.split('.').pop()?.toLowerCase();
-    const fromExtension = extension ? MIME_BY_EXTENSION[extension] : undefined;
-    return fromExtension ?? normalized;
-  }
-  return normalized;
+  return normalizeDocumentMimeType(input);
 }
 
-export const WORKBENCH_MATERIAL_MIME_TYPES = [
-  'application/pdf',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-  'text/plain',
-  'text/markdown',
-  'text/csv',
-  ...MEDIA_MIME_TYPES,
-] as const;
-
-export const WORKBENCH_MATERIAL_EXTENSIONS = [
-  '.pdf',
-  '.pptx',
-  '.docx',
-  '.xlsx',
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.webp',
-  '.txt',
-  '.md',
-  '.markdown',
-  '.csv',
-  '.mp4',
-  '.mov',
-  '.webm',
-  '.mp3',
-  '.wav',
-  '.m4a',
-  '.aac',
-] as const;
-
-export const WORKBENCH_MATERIAL_ACCEPT = [
-  ...WORKBENCH_MATERIAL_EXTENSIONS,
-  ...WORKBENCH_MATERIAL_MIME_TYPES,
-  ...MEDIA_MIME_ALIASES,
-].join(',');
-
-const MIME_SET = new Set<string>(WORKBENCH_MATERIAL_MIME_TYPES);
-
 export function isWorkbenchMaterialMime(mime: string): boolean {
-  return MIME_SET.has(normalizeWorkbenchMaterialMime(mime));
+  return MIME_SET.has(normalizeDocumentMimeType({ mimeType: mime }));
 }
