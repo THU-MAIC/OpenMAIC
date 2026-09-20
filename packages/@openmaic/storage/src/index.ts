@@ -24,6 +24,7 @@
 export type { DeviceSafeKVStore, KVScope, KVStore, LocalKVStore } from './kv/types.js';
 export { assertKVScope, DEFAULT_KV_SCOPE, KVScopeViolationError } from './kv/types.js';
 export { BrowserKVStore, type BrowserKVStoreOptions } from './kv/browser.js';
+export { PgKVStore, ensureKVSchema, type PgKVStoreOptions } from './kv/pg.js';
 export {
   HttpAccountKV,
   HttpKVStore,
