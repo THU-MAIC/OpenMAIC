@@ -84,7 +84,10 @@ describe('bằng chứng đã-nhận-xong lấy từ chính việc nạp lại',
       vi.fn(async () => noEntry()),
     );
     const { reloadAccountStoresAndConfirm } = await import('@/lib/store/account-stores');
-    await expect(reloadAccountStoresAndConfirm()).resolves.toBeUndefined();
+    // Ngăn đọc được nhưng trống: nhận được, và KHÔNG kho nào bị kể là đã thay.
+    const scope = await reloadAccountStoresAndConfirm();
+    expect(scope.replaced, 'adoption claimed a key the other machine never wrote').toEqual([]);
+    expect(scope.keptOwn.length).toBeGreaterThan(1);
   });
 
   it('mạng chết hoàn toàn thì KHÔNG báo xong', async () => {
@@ -114,6 +117,55 @@ describe('bằng chứng đã-nhận-xong lấy từ chính việc nạp lại',
     expect(String(error), 'the profile store was left out of the report').toMatch(
       /user-profile-storage/,
     );
+  });
+});
+
+describe('thứ máy kia chưa từng đặt thì để nguyên, và không bị kể là đã thay', () => {
+  it('ngăn có kho này nhưng KHÔNG có kho kia → chỉ kho có mới tính là đã thay', async () => {
+    // Máy kia đã khai cấu hình nhưng chưa bao giờ mở màn hồ sơ, nên ngăn của
+    // nó chỉ có một trong hai kho.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes('settings-storage')) {
+          return new Response(
+            JSON.stringify({ value: { state: { modelId: 'cua-may-kia' }, version: 4 } }),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            },
+          );
+        }
+        return noEntry();
+      }),
+    );
+    const { reloadAccountStoresAndConfirm } = await import('@/lib/store/account-stores');
+    const scope = await reloadAccountStoresAndConfirm();
+    expect(scope.replaced, 'adoption claimed a key the other machine never wrote').toEqual([
+      'settings',
+    ]);
+    expect(scope.keptOwn, 'adoption claimed a key the other machine never wrote').toEqual([
+      'userProfile',
+    ]);
+  });
+
+  it('ngăn có CẢ HAI kho thì không còn gì phải giữ nguyên', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const body = String(input).includes('settings-storage')
+          ? { value: { state: { modelId: 'cua-may-kia' }, version: 4 } }
+          : { value: { state: { nickname: 'cua-may-kia' }, version: 0 } };
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+    const { reloadAccountStoresAndConfirm } = await import('@/lib/store/account-stores');
+    const scope = await reloadAccountStoresAndConfirm();
+    expect(scope.keptOwn).toEqual([]);
+    expect(scope.replaced.length, 'no store was reported as replaced at all').toBeGreaterThan(1);
   });
 });
 

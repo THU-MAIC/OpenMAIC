@@ -121,9 +121,9 @@ function mockStorage(collect: () => Promise<Partial<CollectionPass>>): Harness {
     PgAssetStore: class {},
   }));
   vi.doMock('@openmaic/storage/kv/pg', () => ({
-      ensureKVSchema: async () => {},
-      PgKVStore: class {},
-    }));
+    ensureKVSchema: async () => {},
+    PgKVStore: class {},
+  }));
   vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({
     PgAssetByteStore: class {
       constructor(queryable: unknown) {

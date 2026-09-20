@@ -1886,10 +1886,11 @@
       "adopt": "Use them here",
       "adopted": "This machine now shares your choices.",
       "codeRejected": "That code cannot be used.",
-      "willReplace": "The choices on this machine will be replaced by the ones from the other machine.",
+      "willReplace": "另一台设备已有的设置将替换本机对应的设置；它从未设置过的内容将保持不变。",
       "confirmReplace": "Replace them",
       "serverSilent": "Could not reach the server. Your current choices are unchanged.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "adoptedPartly": "本机已共享另一台设备已有的设置；它从未设置过的内容保持不变。"
     }
   },
   "workspace": {

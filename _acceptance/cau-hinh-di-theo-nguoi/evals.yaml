@@ -23,7 +23,7 @@ evals:
     criterion: AC-3
     executor: test
     cmd: config:executors.test.api
-    expected: "exit 0; ba vế — mã còn hiệu lực TRƯỚC mốc 10 phút, hết hiệu lực SAU mốc đó, và cấu hình khai hạn dài hơn 10 phút thì chính bài kiểm đỏ. Chiều đỏ trên cùng fixture: nới hạn cấu hình lên 24 giờ → đỏ với thông điệp ghim 'claim TTL exceeds the signed ceiling of 10 minutes'."
+    expected: "exit 0; bốn vế quanh cùng một mốc — (a) NGAY DƯỚI mốc 10 phút mã vẫn đổi được, tức việc hết hạn KHÔNG xảy ra sớm; (b) ngay trên mốc thì hết hiệu lực; (c) mã chỉ dùng được một lần; (d) cấu hình khai hạn dài hơn 10 phút thì chính bài kiểm đỏ. Chiều đỏ trên cùng fixture: nới hạn cấu hình lên 24 giờ → đỏ với thông điệp ghim 'claim TTL exceeds the signed ceiling of 10 minutes'."
     paths: ["lib/persistence/claim-code.ts", "app/api/claim/**"]
     evidence_required: [run_id, exit_code, verifier, verified_at]
 

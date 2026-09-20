@@ -63,7 +63,9 @@ describe('which KV backend the persist seam binds', () => {
     await flush();
 
     expect(fetchSpy, 'local-only deployment reached the network').not.toHaveBeenCalled();
-    expect(localStorage.length, 'a local-only write never reached local storage').toBeGreaterThan(0);
+    expect(localStorage.length, 'a local-only write never reached local storage').toBeGreaterThan(
+      0,
+    );
   });
 
   it('routes an account write to the server store when persistence is on', async () => {

@@ -34,7 +34,7 @@ type RedeemState =
   | { kind: 'redeeming' }
   | { kind: 'failed' }
   | { kind: 'unreachable' }
-  | { kind: 'done' };
+  | { kind: 'done'; keptOwn: string[] };
 
 function secondsLeft(expiresAt: number, now: number): number {
   return Math.max(0, Math.ceil((expiresAt - now) / 1000));
@@ -48,7 +48,7 @@ export interface MyDevicesSettingsProps {
    * lần sửa kế tiếp ghi đè cấu hình của máy kia. Lời chú thích không chặn được
    * chuyện đó; kiểu thì chặn được.
    */
-  onAdopted: () => Promise<void>;
+  onAdopted: () => Promise<{ replaced: string[]; keptOwn: string[] }>;
   /** True khi máy này đã có lựa chọn riêng — nhận mã sẽ thay chúng. */
   hasLocalChoices?: boolean;
 }
@@ -67,6 +67,9 @@ export function MyDevicesSettings({ onAdopted, hasLocalChoices = false }: MyDevi
   const liveCode = mint.kind === 'minted' && secondsLeft(mint.expiresAt, now) > 0 ? mint : null;
   const staleCode = mint.kind === 'minted' && secondsLeft(mint.expiresAt, now) === 0;
   const entryRef = useRef<HTMLInputElement>(null);
+  // Thứ máy kia chưa từng đặt — màn phải nói đúng phạm vi đã thay, không hứa
+  // là đã thay tất cả.
+  const adoptedScope = useRef<string[]>([]);
 
   // Đồng hồ chỉ để HIỂN THỊ. Máy chủ vẫn là bên quyết mã còn sống hay không —
   // một đồng hồ trình duyệt lệch giờ không được phép nới hạn của mã.
@@ -102,7 +105,9 @@ export function MyDevicesSettings({ onAdopted, hasLocalChoices = false }: MyDevi
       setRedeem({ kind: 'redeeming' });
       // Thứ tự nạp-lại-rồi-mới-báo-xong sống trong chính sách, không ở màn này.
       const outcome = await adoptChoicesFromCode(code, {
-        rehydrate: onAdopted,
+        rehydrate: async () => {
+          adoptedScope.current = (await onAdopted()).keptOwn;
+        },
       });
       if (outcome === 'rejected') {
         setRedeem({ kind: 'failed' });
@@ -113,7 +118,7 @@ export function MyDevicesSettings({ onAdopted, hasLocalChoices = false }: MyDevi
         setRedeem({ kind: 'unreachable' });
         return;
       }
-      setRedeem({ kind: 'done' });
+      setRedeem({ kind: 'done', keptOwn: adoptedScope.current });
     },
     [onAdopted],
   );
@@ -232,7 +237,11 @@ export function MyDevicesSettings({ onAdopted, hasLocalChoices = false }: MyDevi
         <h3 className="text-sm font-medium">{t('settings.myDevices.adoptTitle')}</h3>
 
         {redeem.kind === 'done' ? (
-          <p className="text-sm text-muted-foreground">{t('settings.myDevices.adopted')}</p>
+          <p className="text-sm text-muted-foreground">
+            {redeem.keptOwn.length > 0
+              ? t('settings.myDevices.adoptedPartly')
+              : t('settings.myDevices.adopted')}
+          </p>
         ) : redeem.kind === 'confirming' ? (
           <div className="space-y-3">
             <Alert>

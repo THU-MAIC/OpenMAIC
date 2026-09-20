@@ -1901,10 +1901,11 @@
       "adopt": "在本机使用",
       "adopted": "本机已共享你的设置。",
       "codeRejected": "该验证码无法使用。",
-      "willReplace": "本机的设置将被另一台设备的设置替换。",
+      "willReplace": "另一台设备已有的设置将替换本机对应的设置；它从未设置过的内容将保持不变。",
       "confirmReplace": "替换",
       "serverSilent": "无法连接服务器。当前设置未更改。",
-      "retry": "重试"
+      "retry": "重试",
+      "adoptedPartly": "本机已共享另一台设备已有的设置；它从未设置过的内容保持不变。"
     }
   },
   "workspace": {

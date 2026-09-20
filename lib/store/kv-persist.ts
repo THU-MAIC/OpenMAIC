@@ -53,6 +53,24 @@ const log = createLogger('KVPersist');
 
 let defaultKv: KVStore | undefined;
 
+/**
+ * Lần đọc gần nhất của mỗi khoá có tìm thấy giá trị trong ngăn không.
+ *
+ * Ghi bởi bên ĐỌC, đọc bởi bên cần QUYẾT. Không có mục nào nghĩa là khoá ấy
+ * chưa từng đọc xong — khác hẳn với «đọc xong và ngăn trống».
+ */
+const lastReadFoundValue = new Map<string, boolean>();
+
+/**
+ * Ngăn có giá trị cho khoá này ở lần đọc gần nhất không?
+ *
+ * `false` khi ngăn đọc được nhưng trống — chủ sở hữu ấy chưa từng lưu khoá
+ * này. Bên gọi dùng nó để thôi hứa là đã thay một thứ máy kia chưa bao giờ đặt.
+ */
+export function didLastReadFindStoredValue(name: string): boolean {
+  return lastReadFoundValue.get(name) === true;
+}
+
 /** What a backend operation yields when the backend could not answer. */
 const UNAVAILABLE = Symbol('kv-unavailable');
 type Unavailable = typeof UNAVAILABLE;
@@ -510,20 +528,6 @@ function isDeviceSafeKVStore(kv: KVStore): kv is DeviceSafeKVStore {
  * provider API keys, so removing it is a small security win. No correctness
  * depends on this: if it fails, the stale key is ignored forever anyway.
  */
-/**
- * Kho phạm vi `account` mà seam này đang dùng — CHƯA qua máy trạng thái.
- *
- * Máy trạng thái của seam cố ý nuốt lỗi đọc thành `null`: với việc hydrate một
- * kho thì đó là hành vi đúng (một lần đọc hỏng không được phép thay dữ liệu
- * người dùng bằng mặc định). Nhưng nó cũng có nghĩa là KHÔNG ai hỏi seam được
- * câu «vừa rồi đọc có tới nơi không» — và đó đúng là câu mà việc nhận lựa chọn
- * từ máy khác phải trả lời trước khi dám báo xong. Lối duy nhất trung thực là
- * hỏi thẳng kho, nơi một lần hỏng vẫn còn là một lần hỏng.
- */
-export function getAccountKv(deps: KVPersistDeps = {}): KVStore | null {
-  return resolveKv(deps);
-}
-
 export function purgeLegacyPersistKey(name: string): void {
   const storage = ambientLocalStorage();
   if (!storage) return;
@@ -700,6 +704,13 @@ export function createKVPersistStorage<S>(
         // and the write gate refuses writes — rather than settling defaults over
         // a value we could not read.
         if (stored === UNAVAILABLE) return null;
+
+        // Ghi lại SỰ THẬT của chính lần đọc này: ngăn có giá trị cho khoá này
+        // hay chưa từng có. Việc nhận lựa chọn từ máy khác cần đúng điều đó để
+        // khỏi tuyên bố đã thay một thứ mà máy kia chưa bao giờ đặt — và nó
+        // phải đọc ở đây, nơi việc đọc xảy ra, chứ không hỏi lại bằng một lời
+        // gọi thứ hai (một lời gọi khác trả lời cho một câu hỏi khác).
+        lastReadFoundValue.set(name, stored !== null);
 
         // KV is authoritative. `null` is a legitimate empty store (hydrate
         // defaults); a value hydrates it. Either way the key settles, so writes

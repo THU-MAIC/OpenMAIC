@@ -32,10 +32,9 @@ describe('mã nhận đi trọn đường người dùng thật', () => {
 
   it('hai đầu dùng CHUNG một dạng chuẩn, không phải hai bản giống nhau', () => {
     const messy = ' AB-cd 12-34 ';
-    expect(
-      normalizeClaimCode(messy),
-      'the client and the server canonicalize differently',
-    ).toBe(canonicalClaimCode(messy));
+    expect(normalizeClaimCode(messy), 'the client and the server canonicalize differently').toBe(
+      canonicalClaimCode(messy),
+    );
   });
 
   it('gõ hoa hay thường đều đổi được cùng một mã', async () => {
@@ -60,7 +59,9 @@ describe('mọi kho phạm vi account đều được nạp lại khi nhận', (
     // account mới mà quên khai vào sổ đăng ký thì bài này đỏ.
     const declared = readdirSync(dir)
       .filter((f) => f.endsWith('.ts'))
-      .filter((f) => /createKVPersistStorage[^(]*\(\s*'account'/.test(readFileSync(join(dir, f), 'utf8')))
+      .filter((f) =>
+        /createKVPersistStorage[^(]*\(\s*'account'/.test(readFileSync(join(dir, f), 'utf8')),
+      )
       .map((f) => f.replace(/\.ts$/, ''));
     const registry = readFileSync(join(dir, 'account-stores.ts'), 'utf8');
     const missing = declared.filter((name) => !registry.includes(`/store/${name}'`));

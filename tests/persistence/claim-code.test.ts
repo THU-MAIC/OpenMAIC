@@ -14,6 +14,14 @@ describe('claim code', () => {
     expect(await redeemClaimCode(code, CLAIM_TTL_MS - 1)).toEqual({ owner: 'anon:owner-1' });
   });
 
+  test('ngay DƯỚI mốc thì việc hết hạn KHÔNG xảy ra', async () => {
+    const { code } = await mintClaimCode('owner-1', 0);
+    expect(
+      await redeemClaimCode(code, CLAIM_TTL_MS - 1),
+      'the claim expired before its own ceiling',
+    ).toEqual({ owner: 'owner-1' });
+  });
+
   test('is dead after the mark', async () => {
     const { code } = await mintClaimCode('anon:owner-1', 0);
     expect(await redeemClaimCode(code, CLAIM_TTL_MS + 1)).toBeUndefined();

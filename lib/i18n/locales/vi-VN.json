@@ -1901,10 +1901,11 @@
       "adopt": "Nhận về máy này",
       "adopted": "Máy này đã dùng chung lựa chọn của anh.",
       "codeRejected": "Mã không dùng được.",
-      "willReplace": "Lựa chọn trên máy này sẽ bị thay bằng lựa chọn từ máy kia.",
+      "willReplace": "Những lựa chọn máy kia có sẽ thay lựa chọn tương ứng ở máy này. Thứ máy kia chưa từng đặt thì để nguyên.",
       "confirmReplace": "Thay đi",
       "serverSilent": "Chưa gọi được máy chủ. Lựa chọn đang dùng không đổi.",
-      "retry": "Thử lại"
+      "retry": "Thử lại",
+      "adoptedPartly": "Máy này đã dùng chung những lựa chọn máy kia có. Thứ máy kia chưa từng đặt vẫn để nguyên."
     }
   },
   "workspace": {

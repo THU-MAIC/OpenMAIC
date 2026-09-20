@@ -10,6 +10,7 @@
  *
  * Nên file này giữ bản khai DUY NHẤT, và cả hai bên kiểm đều đọc từ đây.
  */
+import { didLastReadFindStoredValue } from '@/lib/store/kv-persist';
 import { isPersistUnavailable } from '@/lib/store/persist-health';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore } from '@/lib/store/user-profile';
@@ -62,7 +63,19 @@ export class AccountPartitionUnreadableError extends Error {
  * ấy: không thêm một phép thử nào bên cạnh, vì phép thử bên cạnh là một lời
  * gọi KHÁC và trả lời cho một câu hỏi KHÁC.
  */
-export async function reloadAccountStoresAndConfirm(): Promise<void> {
+/**
+ * Việc nhận đã thay được những gì.
+ *
+ * `replaced` là các loại lựa chọn máy kia CÓ và nay đã thay ở máy này.
+ * `keptOwn` là các loại máy kia chưa từng đặt — chúng giữ nguyên giá trị của
+ * máy này, và sản phẩm KHÔNG được nói là đã thay chúng.
+ */
+export interface AdoptionScope {
+  replaced: string[];
+  keptOwn: string[];
+}
+
+export async function reloadAccountStoresAndConfirm(): Promise<AdoptionScope> {
   await Promise.all(Object.values(ACCOUNT_SCOPE_STORES).map((store) => store.persist.rehydrate()));
 
   // Đọc thẳng thứ việc nạp vừa GHI, không nghe kênh phát: kênh cố ý phát chậm
@@ -73,4 +86,12 @@ export async function reloadAccountStoresAndConfirm(): Promise<void> {
     .map((store) => store.persistName);
 
   if (broken.length > 0) throw new AccountPartitionUnreadableError(broken);
+
+  // Phạm vi thật của việc vừa nhận, đọc từ chính những lần đọc vừa xảy ra.
+  const replaced: string[] = [];
+  const keptOwn: string[] = [];
+  for (const [key, store] of Object.entries(ACCOUNT_SCOPE_STORES)) {
+    (didLastReadFindStoredValue(store.persistName) ? replaced : keptOwn).push(key);
+  }
+  return { replaced, keptOwn };
 }

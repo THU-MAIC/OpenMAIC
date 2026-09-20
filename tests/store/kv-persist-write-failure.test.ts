@@ -65,9 +65,8 @@ describe('a write the server never took', () => {
     );
 
     const { createKVPersistStorage } = await import('@/lib/store/kv-persist');
-    const { subscribeToPersistHealth, resetPersistHealth } = await import(
-      '@/lib/store/persist-health'
-    );
+    const { subscribeToPersistHealth, resetPersistHealth } =
+      await import('@/lib/store/persist-health');
     resetPersistHealth();
     const seen: string[] = [];
     const unsubscribe = subscribeToPersistHealth((event) => seen.push(event.status));

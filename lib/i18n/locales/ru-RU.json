@@ -1901,10 +1901,11 @@
       "adopt": "Use them here",
       "adopted": "This machine now shares your choices.",
       "codeRejected": "That code cannot be used.",
-      "willReplace": "The choices on this machine will be replaced by the ones from the other machine.",
+      "willReplace": "The choices the other machine has will replace the matching ones here. Anything it never set is left as it is.",
       "confirmReplace": "Replace them",
       "serverSilent": "Could not reach the server. Your current choices are unchanged.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "adoptedPartly": "This machine now shares the choices the other machine had. Anything it never set was left as it is."
     }
   },
   "workspace": {

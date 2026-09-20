@@ -226,9 +226,7 @@ describe('embedded persistence route', () => {
       url: '/kv/entries/settings-storage',
       headers: { 'x-learner-key': 'someone-elses-owner' },
     });
-    expect(spoofed?.kvOwner, 'account partition leaked across owners').toBe(
-      documents?.learnerKey,
-    );
+    expect(spoofed?.kvOwner, 'account partition leaked across owners').toBe(documents?.learnerKey);
 
     // Runtime sessions are genuinely per-learner, so they keep the development
     // authenticator — which refuses here, and the handler answers 401.
