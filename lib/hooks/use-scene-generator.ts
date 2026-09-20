@@ -158,7 +158,7 @@ export async function fetchSceneContent(
     };
     agents?: AgentInfo[];
     languageDirective?: string;
-    requirements?: UserRequirements;
+    requirements?: Partial<UserRequirements>;
   },
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<SceneContentResult>,
@@ -749,6 +749,8 @@ export interface GenerationParams {
   agents?: AgentInfo[];
   userProfile?: string;
   languageDirective?: string;
+  /** Vocational task-engine flag; gates procedural-skill generation server-side (see resolveVocationalActive). */
+  taskEngineMode?: boolean;
 }
 
 export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
@@ -862,6 +864,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               stageInfo: params.stageInfo,
               agents: params.agents,
               languageDirective: params.languageDirective,
+              ...(params.taskEngineMode ? { requirements: { taskEngineMode: true } } : {}),
             },
             signal,
           );
@@ -1115,6 +1118,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             stageInfo: params.stageInfo,
             agents: params.agents,
             languageDirective: params.languageDirective,
+            ...(params.taskEngineMode ? { requirements: { taskEngineMode: true } } : {}),
           },
           signal,
         );

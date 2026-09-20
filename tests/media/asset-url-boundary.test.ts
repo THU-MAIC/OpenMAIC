@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const SOURCE_ROOTS = ['app', 'components', 'lib', 'packages', 'scripts'];
@@ -51,7 +51,7 @@ describe('asset URL ownership boundary', () => {
   it('keeps pool URL resolution and release inside the shared owner module', () => {
     const cwd = process.cwd();
     const sources = SOURCE_ROOTS.flatMap((root) => sourceFiles(join(cwd, root))).map((path) => ({
-      path: relative(cwd, path),
+      path: relative(cwd, path).split(sep).join('/'),
       source: readFileSync(path, 'utf8'),
     }));
     // Best-effort static guard: dynamic import(), require aliases, and computed
