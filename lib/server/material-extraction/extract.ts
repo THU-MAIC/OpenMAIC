@@ -56,9 +56,13 @@ function markerTime(timeMs: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${seconds}`;
 }
 
-function decodeMediaAssetData(data: string): Buffer {
-  const dataUrl = /^data:[^,]*;base64,([\s\S]*)$/i.exec(data);
-  return Buffer.from(dataUrl?.[1] ?? data, 'base64');
+export function decodeMediaAssetData(data: string): Buffer {
+  const dataUrl = /^data:([^,]*),([\s\S]*)$/i.exec(data);
+  if (!dataUrl) return Buffer.from(data, 'base64');
+  if (!/;base64$/i.test(dataUrl[1])) {
+    throw new Error('Unsupported media asset data URL encoding');
+  }
+  return Buffer.from(dataUrl[2], 'base64');
 }
 
 export function mediaArtifactText(artifact: MediaArtifact): string {
