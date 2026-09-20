@@ -79,8 +79,28 @@ export class MockApi {
 
   /** Set up API mocks for the generation flow. Note: server-providers is already mocked by the base fixture. */
   async setupGenerationMocks(stageId?: string) {
+    await this.mockClarify();
     await this.mockSceneOutlinesStream();
     await this.mockSceneContent();
     await this.mockSceneActions(stageId);
+  }
+
+  /**
+   * Mock the pre-outline clarification preflight. Defaults to
+   * no-clarification so existing flows proceed straight to outlines.
+   */
+  async mockClarify(
+    response: { needsClarification: boolean; questions: unknown[] } = {
+      needsClarification: false,
+      questions: [],
+    },
+  ) {
+    await this.page.route('**/api/generate/clarify', (route) => {
+      route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(response),
+      });
+    });
   }
 }
