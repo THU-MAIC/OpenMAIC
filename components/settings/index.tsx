@@ -60,8 +60,9 @@ import { WEB_SEARCH_PROVIDERS, getWebSearchProviderDisplayName } from '@/lib/web
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import { GeneralSettings } from './general-settings';
 import { MyDevicesSettings } from './my-devices-settings';
-import { reloadAccountStoresAndConfirm } from '@/lib/store/account-stores';
-import { hasLocalChoices as hasLocalChoicesIn } from '@/lib/store/local-choices';
+import { accountStoreStates, reloadAccountStoresAndConfirm } from '@/lib/store/account-stores';
+import { hasLocalChoicesInAccountScope } from '@/lib/store/local-choices';
+import { useUserProfileStore } from '@/lib/store/user-profile';
 import { SkillSettings } from './skill-settings';
 import { TokenPlanSettings } from './token-plan-settings';
 import { ModelEditDialog } from './model-edit-dialog';
@@ -230,9 +231,14 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const asrProvidersConfig = useSettingsStore((state) => state.asrProvidersConfig);
   // Có gì để mất trên máy này không — quét chính trạng thái đã lưu, không đếm
   // tay từng loại. Xem lib/store/local-choices.ts.
-  const hasLocalChoices = useSettingsStore((state) =>
-    hasLocalChoicesIn(state as unknown as Record<string, unknown>),
-  );
+  // Soi MỌI kho mà việc nhận sẽ thay — danh sách lấy từ chính sổ đăng ký việc
+  // nhận duyệt, không viết lại ở đây. Đọc lại khi kho cấu hình hoặc kho hồ sơ
+  // đổi, để câu trả lời không cũ hơn màn.
+  const settingsRevision = useSettingsStore((state) => state);
+  const profileRevision = useUserProfileStore((state) => state);
+  void settingsRevision;
+  void profileRevision;
+  const hasLocalChoices = hasLocalChoicesInAccountScope(accountStoreStates());
 
   // Store actions
   const setProviderConfig = useSettingsStore((state) => state.setProviderConfig);

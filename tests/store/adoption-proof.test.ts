@@ -1,12 +1,11 @@
 /**
- * Khuôn mới: lời báo «đã dùng chung» nối vào BẰNG CHỨNG ngăn mới đọc được,
- * không nối vào việc đã gọi `rehydrate()`.
+ * Bên KIỂM rút ra từ bên LÀM — không dựng song song.
  *
- * Hai vòng nghiệm thu liên tiếp cùng vấp một lớp: `rehydrate()` luôn trả về êm
- * vì máy trạng thái của seam cố ý biến một lần đọc hỏng thành `null` — để một
- * sự cố mạng không xoá cấu hình người dùng. Đúng cho việc hydrate, nhưng nó có
- * nghĩa là không ai hỏi seam được «vừa rồi đọc có tới nơi không». Các bài dưới
- * đây đo đúng câu đó.
+ * Bốn vòng nghiệm thu, ba lần cùng một bệnh: bằng chứng «đã nhận xong» được
+ * dựng độc lập với việc nạp lại, và cờ «có gì để mất» được dựng độc lập với
+ * danh sách kho mà việc nhận thay. Các bài dưới đây đo đúng chỗ nối đó, và bài
+ * ĐẦU TIÊN là ca mà vòng ba để lọt: lời đọc từng khoá hỏng, lời liệt kê ngăn
+ * lại được — hai lời gọi khác nhau, nên một phép thử bên cạnh trả lời sai.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,6 +31,12 @@ class MemoryStorage implements Storage {
   }
 }
 
+const noEntry = () =>
+  new Response(JSON.stringify({ error: { code: 'KEY_NOT_FOUND', message: 'no kv entry' } }), {
+    status: 404,
+    headers: { 'content-type': 'application/json' },
+  });
+
 beforeEach(() => {
   vi.resetModules();
   vi.stubGlobal('window', {} as Window & typeof globalThis);
@@ -47,24 +52,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('nhận lựa chọn chỉ được báo xong khi CHỨNG được', () => {
-  it('ngăn không đọc được thì KHÔNG báo xong, dù mọi kho đã gọi nạp lại êm', async () => {
-    // Mạng chết: mọi lời gọi ném. Seam sẽ nuốt lỗi khi hydrate (đúng thiết kế),
-    // nên rehydrate() vẫn resolve — đúng cái bẫy của hai vòng trước.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        throw new Error('network down');
-      }),
-    );
-    const { reloadAccountStoresAndConfirm } = await import('@/lib/store/account-stores');
-    await expect(
-      reloadAccountStoresAndConfirm(),
-      'account partition was never read: adoption reported success without proof',
-    ).rejects.toThrow(/account partition was never read/);
-  });
-
-  it('ngăn RỖNG vẫn là đọc được — chủ mới chưa lưu gì là chuyện bình thường', async () => {
+describe('bằng chứng đã-nhận-xong lấy từ chính việc nạp lại', () => {
+  it('đọc từng khoá HỎNG nhưng liệt kê ngăn ĐƯỢC thì vẫn KHÔNG báo xong', async () => {
+    // Đúng ca vòng ba để lọt: một phép thử bên cạnh (liệt kê ngăn) trả lời
+    // được, nên bản trước kết luận nhầm là đã nhận xong.
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -75,72 +66,95 @@ describe('nhận lựa chọn chỉ được báo xong khi CHỨNG được', ()
           });
         }
         return new Response(
-          JSON.stringify({ error: { code: 'KEY_NOT_FOUND', message: 'no kv entry' } }),
-          { status: 404, headers: { 'content-type': 'application/json' } },
-        );
-      }),
-    );
-    const { reloadAccountStoresAndConfirm } = await import('@/lib/store/account-stores');
-    await expect(reloadAccountStoresAndConfirm()).resolves.toBeUndefined();
-  });
-
-  it('không báo xong khi chỉ một phần đường đi qua được', async () => {
-    // Đọc từng khoá thì được, nhưng liệt kê ngăn thì hỏng: chưa đủ để nói
-    // ngăn của chủ mới đã tới nơi.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        if (String(input).includes('/kv/keys')) throw new Error('partition unreachable');
-        return new Response(
-          JSON.stringify({ error: { code: 'KEY_NOT_FOUND', message: 'no kv entry' } }),
-          { status: 404, headers: { 'content-type': 'application/json' } },
+          JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }),
+          { status: 500, headers: { 'content-type': 'application/json' } },
         );
       }),
     );
     const { reloadAccountStoresAndConfirm } = await import('@/lib/store/account-stores');
     await expect(
       reloadAccountStoresAndConfirm(),
-      'account partition was never read: adoption reported success without proof',
+      'account partition was never read: a side probe answered instead of the reload itself',
     ).rejects.toThrow(/account partition was never read/);
+  });
+
+  it('ngăn RỖNG vẫn là nhận được — chủ mới chưa lưu gì là chuyện bình thường', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => noEntry()),
+    );
+    const { reloadAccountStoresAndConfirm } = await import('@/lib/store/account-stores');
+    await expect(reloadAccountStoresAndConfirm()).resolves.toBeUndefined();
+  });
+
+  it('mạng chết hoàn toàn thì KHÔNG báo xong', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('network down');
+      }),
+    );
+    const { reloadAccountStoresAndConfirm } = await import('@/lib/store/account-stores');
+    await expect(
+      reloadAccountStoresAndConfirm(),
+      'account partition was never read',
+    ).rejects.toThrow(/account partition was never read/);
+  });
+
+  it('nêu ĐÍCH DANH kho nào không nhận được, không nói chung chung', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('network down');
+      }),
+    );
+    const { reloadAccountStoresAndConfirm } = await import('@/lib/store/account-stores');
+    const error = await reloadAccountStoresAndConfirm().catch((e: Error) => e);
+    expect(String(error)).toMatch(/settings-storage/);
+    expect(String(error), 'the profile store was left out of the report').toMatch(
+      /user-profile-storage/,
+    );
   });
 });
 
-describe('có gì để mất trên máy này không', () => {
-  it('thấy khoá API ở BẤT KỲ bảng nhà cung cấp nào, không chỉ ba bảng quen', async () => {
+describe('có gì để mất trên máy này không — soi MỌI kho việc nhận sẽ thay', () => {
+  it('thấy hồ sơ người dùng: biệt danh, tiểu sử, ảnh tự tải lên', async () => {
     const { hasLocalChoices } = await import('@/lib/store/local-choices');
-    for (const table of [
-      'providersConfig',
-      'ttsProvidersConfig',
-      'asrProvidersConfig',
-      'imageProvidersConfig',
-      'videoProvidersConfig',
-      'pdfProvidersConfig',
-      'webSearchProvidersConfig',
-    ]) {
-      expect(
-        hasLocalChoices({ [table]: { some: { apiKey: 'sk-live-xxx' } } }),
-        `a device can be overwritten without the confirmation: ${table} was not counted`,
-      ).toBe(true);
-    }
+    const { AVATAR_OPTIONS } = await import('@/lib/store/user-profile');
+    expect(hasLocalChoices({ nickname: 'Mạnh' }), 'the profile store was not counted').toBe(true);
+    expect(hasLocalChoices({ bio: 'dạy vật lý' }), 'the profile store was not counted').toBe(true);
+    expect(hasLocalChoices({ avatar: '/uploads/mine.png' })).toBe(true);
+    // Ảnh dựng sẵn KHÔNG phải lựa chọn của người.
+    expect(hasLocalChoices({ avatar: AVATAR_OPTIONS[0], nickname: '', bio: '' })).toBe(false);
   });
 
-  it('máy trắng tinh KHÔNG bị hỏi, kể cả khi lần chạy đầu tự chọn một mô hình', async () => {
+  it('thấy khoá để ở TÊN TRƯỜNG khác, không chỉ apiKey', async () => {
+    const { hasLocalChoices } = await import('@/lib/store/local-choices');
+    expect(
+      hasLocalChoices({ pdfProvidersConfig: { alidocmind: { accessKeySecret: 's3cr3t' } } }),
+      'a credential under a different field name was overwritten without the confirmation',
+    ).toBe(true);
+    expect(hasLocalChoices({ providersConfig: { openai: { apiKey: 'sk-live' } } })).toBe(true);
+  });
+
+  it('máy TRẮNG TINH không bị hỏi — địa chỉ mặc định không phải lựa chọn', async () => {
     const { hasLocalChoices } = await import('@/lib/store/local-choices');
     expect(
       hasLocalChoices({
-        modelId: 'gpt-auto-picked',
-        providersConfig: { openai: { apiKey: '', baseUrl: '', customModels: [] } },
-        agentVoiceOverrides: {},
+        modelId: 'auto-picked-on-first-run',
+        webSearchProvidersConfig: { exa: { baseUrl: 'https://api.exa.ai' } },
+        providersConfig: { openai: { apiKey: '', customModels: [] } },
       }),
       'the confirmation fired when there was nothing to lose',
     ).toBe(false);
   });
 
-  it('thấy giọng đã nhập và giọng gán cho từng nhân vật dạy', async () => {
-    const { hasLocalChoices } = await import('@/lib/store/local-choices');
+  it('câu trả lời của màn soi CẢ HAI kho, không chỉ kho cấu hình', async () => {
+    const { hasLocalChoicesInAccountScope } = await import('@/lib/store/local-choices');
+    // Kho cấu hình trắng, kho hồ sơ có biệt danh → vẫn phải hỏi.
     expect(
-      hasLocalChoices({ ttsProvidersConfig: { eleven: { customVoices: [{ id: 'v1' }] } } }),
+      hasLocalChoicesInAccountScope([{ providersConfig: {} }, { nickname: 'Mạnh' }]),
+      'the overwrite confirmation ignored a store that adoption replaces',
     ).toBe(true);
-    expect(hasLocalChoices({ agentVoiceOverrides: { teacher: { voiceId: 'v1' } } })).toBe(true);
   });
 });
