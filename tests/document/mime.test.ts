@@ -81,6 +81,27 @@ describe('document MIME normalization', () => {
     ).toBe(DOCUMENT_MIME_TYPES.doc);
   });
 
+  it('registers the workbench-only formats while keeping them provider-rejected', () => {
+    // csv and webm are workbench-material formats (#1589): registered so the
+    // shared extension table resolves them, but no document provider handles
+    // them, so classic mode keeps rejecting them.
+    expect(
+      normalizeDocumentMimeType({ mimeType: 'application/octet-stream', fileName: 'grades.csv' }),
+    ).toBe(DOCUMENT_MIME_TYPES.csv);
+    expect(normalizeDocumentMimeType({ mimeType: '', fileName: 'clip.webm' })).toBe(
+      DOCUMENT_MIME_TYPES.webm,
+    );
+    expect(
+      isMimeSupportedByProviders({ mimeType: 'text/csv', fileName: 'grades.csv' }, ['plain-text']),
+    ).toBe(false);
+  });
+
+  it('normalizes the audio/x-m4a alias some browsers report for .m4a', () => {
+    expect(normalizeDocumentMimeType({ mimeType: 'audio/x-m4a', fileName: 'clip.m4a' })).toBe(
+      DOCUMENT_MIME_TYPES.m4a,
+    );
+  });
+
   it('does not let an unknown MIME masquerade as a supported format via the filename extension', () => {
     // Security regression: previously any unknown MIME with a matching
     // extension was normalized to the extension's canonical MIME, so a

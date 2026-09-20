@@ -355,3 +355,58 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  docker-main-image:
+    name: Main image (deps + builder)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # The main Dockerfile was never built in CI, so an install step that no
+    # longer fits in a small Docker VM (#1526) or fails on the host's mounts
+    # (#1506) only surfaced on users' machines. Build the deps and builder
+    # stages whenever an input to them changes; the runner stage only copies
+    # their outputs.
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect main-image changes
+        id: changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then base="$PR_BASE"; else base="$PUSH_BEFORE"; fi
+          if [ -z "$base" ] || ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The builder stage copies the whole context (`COPY . .`), so almost any
+          # file is an image input. Skip only when every changed file is docs.
+          changed="$(git diff --name-only "$base" "$GITHUB_SHA")"
+          if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qvE '(^docs/|\.md$)'; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Only documentation changed; skipping the image build."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Buildx
+        if: steps.changes.outputs.changed == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      # target=builder builds deps as well (COPY --from=deps), which is where
+      # the install and the package builds run.
+      - name: Build deps + builder stages
+        if: steps.changes.outputs.changed == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: builder
+          push: false
+          load: false
+          cache-from: type=gha,scope=openmaic-main-image
+          cache-to: type=gha,scope=openmaic-main-image,mode=max

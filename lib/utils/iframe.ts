@@ -1,4 +1,8 @@
 import { injectIntoDocumentHead } from './html-document';
+import {
+  withObservationResponder,
+  type ObservationIdentity,
+} from '@/lib/interactive/observation-bridge';
 import { INTERACTIVE_REFERENCE_EXCLUDED_TAG_NAMES } from '@/lib/interactive/element-reference-policy';
 
 const INTERACTIVE_REFERENCE_EXCLUDED_TAG_LOOKUP = Object.fromEntries(
@@ -376,7 +380,14 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
  * placed first so they run before the page's own scripts (error capture first, so
  * it also observes the storage shim).
  */
-export function patchHtmlForIframe(html: string): string {
+/**
+ * Identity for the observation reader shim. Supplied by the caller and never
+ * generated here: it is serialized into the returned document, so a value that
+ * changed per call would churn the iframe `srcDoc` and break pooling keep-alive.
+ * Omitted by consumers that produce standalone documents (video export), where
+ * no parent ever asks and the bytes count against an export size cap.
+ */
+export function patchHtmlForIframe(html: string, observation?: ObservationIdentity): string {
   const iframeCss = `<style data-iframe-patch>
   html, body {
     width: 100%;
@@ -394,5 +405,7 @@ export function patchHtmlForIframe(html: string): string {
   const injection =
     '\n' + ERROR_CAPTURE_SHIM + '\n' + ELEMENT_PICKER_SHIM + '\n' + STORAGE_SHIM + '\n' + iframeCss;
 
-  return injectIntoDocumentHead(html, injection);
+  const patched = injectIntoDocumentHead(html, injection);
+  // Body end, not head: the reader captures the scope element as it installs.
+  return observation ? withObservationResponder(patched, observation) : patched;
 }

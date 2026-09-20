@@ -1,5 +1,7 @@
 'use client';
 
+import { sampleInteractiveState } from '@/lib/interactive/chat-observation';
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   nextChatUpdatedAt,
@@ -15,7 +17,7 @@ import {
   type ElementReference,
 } from '@/lib/types/chat';
 import type { DiscussionRequest } from '@/components/roundtable';
-import type { Action, SpotlightAction, DiscussionAction } from '@/lib/types/action';
+import type { Action } from '@/lib/types/action';
 import type { UIMessage } from 'ai';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { useStageStore } from '@/lib/store';
@@ -253,6 +255,25 @@ export function shouldAwaitPresentationAction(actionName: string): boolean {
   return actionName.startsWith('wb_');
 }
 
+type LectureVisualAction = Extract<Action, { type: 'spotlight' | 'laser' | 'discussion' }>;
+
+/** Persist params for lecture action badges. Omit optional members JSON would drop as undefined. */
+export function lectureActionPersistParams(action: LectureVisualAction): Record<string, unknown> {
+  if (action.type === 'spotlight') {
+    return {
+      elementId: action.elementId,
+      ...(action.dimOpacity === undefined ? {} : { dimOpacity: action.dimOpacity }),
+    };
+  }
+  if (action.type === 'laser') {
+    return { elementId: action.elementId };
+  }
+  return {
+    topic: action.topic,
+    ...(action.prompt === undefined ? {} : { prompt: action.prompt }),
+  };
+}
+
 export async function retireLiveRequestResources<
   T extends { shutdown(): void; waitForCurrentAction?(): Promise<void> },
 >(
@@ -391,10 +412,16 @@ export async function runPiSingleRequest(
 ): Promise<void> {
   const consumer = createConsumer(sessionId, controller, sessionType);
   const persistenceHeaders = await getPersistenceRequestHeaders();
+  // Every send re-samples the current Scene, including a follow-up with no reference.
+  const interactiveState = await sampleInteractiveState(
+    requestTemplate.storeState,
+    controller.signal,
+  );
+  if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
   const response = await fetch('/api/chat/pi', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...persistenceHeaders },
-    body: JSON.stringify(requestTemplate),
+    body: JSON.stringify({ ...requestTemplate, ...(interactiveState ? { interactiveState } : {}) }),
     signal: controller.signal,
   });
 
@@ -2197,18 +2224,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           messageId,
           actionId: `${action.type}-${now}`,
           actionName: action.type,
-          params:
-            action.type === 'spotlight'
-              ? {
-                  elementId: action.elementId,
-                  dimOpacity: (action as SpotlightAction).dimOpacity,
-                }
-              : action.type === 'laser'
-                ? { elementId: action.elementId }
-                : {
-                    topic: (action as DiscussionAction).topic,
-                    prompt: (action as DiscussionAction).prompt,
-                  },
+          params: lectureActionPersistParams(action),
           agentId: 'default-1',
         });
       }

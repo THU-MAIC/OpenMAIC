@@ -152,6 +152,8 @@ Structure:
 - **Body**: Explain points one by one, with spotlight
 - **Summary**: Brief recap of this page's content
 
+{{snippet:speech-tts-readability}}
+
 ### 2. Focus Strategy
 
 Elements to focus on should be **key content currently being discussed**:

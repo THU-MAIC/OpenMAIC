@@ -40,3 +40,16 @@ export function injectIntoDocumentHead(html: string, injection: string): string 
 
   return `<head>${injection}</head>${html}`;
 }
+
+/** Insert before the parsed body end tag, preserving every authored byte. */
+export function injectIntoDocumentBodyEnd(html: string, injection: string): string {
+  const document = parse(html, { sourceCodeLocationInfo: true });
+  const htmlElement = document.childNodes.find(
+    (node): node is DefaultTreeAdapterTypes.Element => isElement(node) && node.tagName === 'html',
+  );
+  const body = htmlElement?.childNodes.find(
+    (node): node is DefaultTreeAdapterTypes.Element => isElement(node) && node.tagName === 'body',
+  );
+  const offset = body?.sourceCodeLocation?.endTag?.startOffset ?? html.length;
+  return insertAt(html, offset, injection);
+}
