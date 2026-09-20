@@ -26,6 +26,7 @@ import {
   generateTTSForScene,
 } from '@/lib/hooks/use-scene-generator';
 import { isAbortError } from '@openmaic/generation';
+import { buildClarificationQA } from '@openmaic/generation';
 import { FOREGROUND_SCENE_RETRY_OPTIONS } from './foreground-retry';
 import {
   loadImageMapping,
@@ -50,8 +51,10 @@ import type {
   PdfImage,
   ImageMapping,
   SessionDocumentSource,
+  ClarificationAnswer,
 } from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
+import { ClarificationPanel } from '@/components/generation/clarification-panel';
 import { createLogger } from '@/lib/logger';
 import {
   type GenerationSessionState,
@@ -144,6 +147,7 @@ function GenerationPreviewContent() {
   const activeSteps = getActiveSteps(session);
   const isOutlineReady = session?.previewPhase === 'outline-ready';
   const isReviewingOutlines = session?.previewPhase === 'review';
+  const isClarifying = session?.previewPhase === 'clarifying';
 
   const sceneGenerationErrorMessage = (failure: SceneGenerationFailure): string => {
     if (
@@ -232,6 +236,13 @@ function GenerationPreviewContent() {
         // the post-stream auto-continue timer doesn't fire after SSE restart.
         if (parsed.previewPhase === 'review' && !parsed.sceneOutlines?.length) {
           outlineReviewIntentRef.current = true;
+        }
+        // Restoring into a clarifying pause: point the pipeline card at the
+        // clarification step so dots, visualizer, and title match the panel.
+        if (parsed.previewPhase === 'clarifying') {
+          const restoredSteps = getActiveSteps(parsed);
+          const clarificationIdx = restoredSteps.findIndex((s) => s.id === 'clarification');
+          setCurrentStepIndex(clarificationIdx >= 0 ? clarificationIdx : 0);
         }
         parsed.taskEngineMode = parsed.taskEngineMode === true;
         setSession(parsed);
@@ -517,6 +528,54 @@ function GenerationPreviewContent() {
         activeSteps = getActiveSteps(currentSession);
       }
 
+      // ── Pre-outline clarification (ask_user preflight) ──
+      // The model decides on its own whether to ask and what to ask. When it
+      // poses questions, park the pipeline here: the clarifying view collects
+      // answers and resumes via startGeneration. Runs at most once per run —
+      // once clarificationAnswers exists (even {} from an explicit skip),
+      // never ask again. Any failure fails open to outline generation.
+      if (
+        (!currentSession.sceneOutlines || currentSession.sceneOutlines.length === 0) &&
+        currentSession.clarificationAnswers === undefined
+      ) {
+        try {
+          const clarifyRes = await fetch('/api/generate/clarify', {
+            method: 'POST',
+            headers: getApiHeaders(),
+            body: JSON.stringify(
+              withThinkingConfig({
+                requirements: currentSession.requirements,
+                pdfText: currentSession.pdfText || undefined,
+                researchContext: currentSession.researchContext || undefined,
+              }),
+            ),
+            signal,
+          });
+          if (clarifyRes.ok) {
+            const clarifyData = await clarifyRes.json();
+            if (
+              clarifyData.needsClarification &&
+              Array.isArray(clarifyData.questions) &&
+              clarifyData.questions.length > 0
+            ) {
+              // Highlight the clarification step in the pipeline card, then
+              // park: the in-card panel collects answers and resumes.
+              const clarificationStepIdx = activeSteps.findIndex((s) => s.id === 'clarification');
+              setCurrentStepIndex(clarificationStepIdx >= 0 ? clarificationStepIdx : 0);
+              persistSession({
+                ...currentSession,
+                clarification: clarifyData.questions,
+                previewPhase: 'clarifying',
+              });
+              return;
+            }
+          }
+        } catch (error) {
+          if (isAbortError(error)) throw error;
+          log.warn('Clarify preflight failed, proceeding to outlines:', error);
+        }
+      }
+
       // Load imageMapping early (needed for both outline and scene generation).
       let imageMapping: ImageMapping = {};
       if (currentSession.imageStorageIds && currentSession.imageStorageIds.length > 0) {
@@ -548,6 +607,12 @@ function GenerationPreviewContent() {
       let languageDirective = currentSession.languageDirective;
       let courseTitle = currentSession.courseTitle;
 
+      // Answers from the clarifying pause, resolved to prompt-ready Q/A pairs.
+      const clarificationQA = buildClarificationQA(
+        currentSession.clarification ?? [],
+        currentSession.clarificationAnswers ?? {},
+      );
+
       const outlineStepIdx = activeSteps.findIndex((s) => s.id === 'outline');
       setCurrentStepIndex(outlineStepIdx >= 0 ? outlineStepIdx : 0);
       if (!outlines || outlines.length === 0) {
@@ -575,6 +640,7 @@ function GenerationPreviewContent() {
                 pdfImages: currentSession.pdfImages,
                 imageMapping,
                 researchContext: currentSession.researchContext,
+                ...(clarificationQA.length > 0 ? { clarificationQA } : {}),
               }),
             ),
             signal,
@@ -1078,6 +1144,34 @@ function GenerationPreviewContent() {
     router.push('/');
   };
 
+  // Clarifying pause: the user answered the model's questions — persist the
+  // answers and resume the pipeline from the top. startGeneration skips the
+  // clarify call (clarificationAnswers is now defined) and threads the
+  // answers into the outline request.
+  const handleClarificationSubmit = (answers: Record<string, ClarificationAnswer>) => {
+    if (!session) return;
+    const resumed: GenerationSessionState = {
+      ...session,
+      clarificationAnswers: answers,
+      previewPhase: 'preparing',
+    };
+    persistSession(resumed);
+    void startGeneration(resumed);
+  };
+
+  // Clarifying pause: explicit skip — resume with no answers. Persisting the
+  // empty record marks clarification as handled so it never re-asks.
+  const handleClarificationSkip = () => {
+    if (!session) return;
+    const resumed: GenerationSessionState = {
+      ...session,
+      clarificationAnswers: {},
+      previewPhase: 'preparing',
+    };
+    persistSession(resumed);
+    void startGeneration(resumed);
+  };
+
   // Triggered when the user clicks the streaming outline card mid-stream.
   // SSE keeps running; only the surface morph + intent flag change.
   const handleExpandStreamingOutline = () => {
@@ -1328,7 +1422,12 @@ function GenerationPreviewContent() {
         </Button>
       </motion.div>
 
-      <div className="z-10 w-full max-w-lg space-y-8 flex flex-col items-center">
+      <div
+        className={cn(
+          'z-10 w-full space-y-8 flex flex-col items-center',
+          isClarifying ? 'max-w-2xl' : 'max-w-lg',
+        )}
+      >
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1389,6 +1488,7 @@ function GenerationPreviewContent() {
                         stepId={activeStep.id}
                         outlines={session.sceneOutlines ?? streamingOutlines}
                         webSearchSources={webSearchSources}
+                        clarificationCount={session?.clarification?.length ?? 0}
                         onExpandOutline={
                           activeStep.id === 'outline' ? handleExpandStreamingOutline : undefined
                         }
@@ -1482,6 +1582,30 @@ function GenerationPreviewContent() {
                   )}
                 </AnimatePresence>
               </div>
+
+              {/* In-pipeline clarification: the model's questions render inside
+                  the same pipeline card, below the step title. The card widens
+                  (see container above) and this region scrolls internally. */}
+              <AnimatePresence>
+                {isClarifying && !error && (
+                  <motion.div
+                    key="clarification"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    // Inner padding keeps button shadows inside the scrollport
+                    // instead of clipped by it.
+                    className="w-full max-h-[40dvh] overflow-y-auto px-4 pb-6 pt-1"
+                  >
+                    <ClarificationPanel
+                      questions={session?.clarification ?? []}
+                      onSubmit={handleClarificationSubmit}
+                      onSkip={handleClarificationSkip}
+                      onBack={goBackToHome}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </Card>
         </motion.div>
@@ -1499,7 +1623,7 @@ function GenerationPreviewContent() {
                   {t('generation.goBackAndRetry')}
                 </Button>
               </motion.div>
-            ) : isOutlineReady ? null : !isComplete ? (
+            ) : isOutlineReady ? null : !isComplete && !isClarifying ? (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

@@ -24,11 +24,13 @@ export function StepVisualizer({
   stepId,
   outlines,
   webSearchSources,
+  clarificationCount,
   onExpandOutline,
 }: {
   stepId: string;
   outlines?: SceneOutline[] | null;
   webSearchSources?: Array<{ title: string; url: string }>;
+  clarificationCount?: number;
   onExpandOutline?: () => void;
 }) {
   switch (stepId) {
@@ -36,6 +38,8 @@ export function StepVisualizer({
       return <PdfScanVisualizer />;
     case 'web-search':
       return <WebSearchVisualizer sources={webSearchSources || []} />;
+    case 'clarification':
+      return <ClarificationVisualizer count={clarificationCount ?? 0} />;
     case 'outline':
       return <StreamingOutlineVisualizer outlines={outlines || []} onExpand={onExpandOutline} />;
     case 'agent-generation':
@@ -238,6 +242,170 @@ function WebSearchVisualizer({ sources }: { sources: Array<{ title: string; url:
           {sources.length}
         </motion.div>
       )}
+    </div>
+  );
+}
+
+// Clarification: the pipeline is parked on the model's questions —
+// a question card in the StreamingOutlineVisualizer timeline style (visual
+// continuity into the outline step): a looping composing bar, a spine with
+// one node per question, the active node lit similarly to a streaming
+// outline row, plus beam, rings, floating marks, and the count badge.
+function ClarificationVisualizer({ count }: { count: number }) {
+  const [activeRow, setActiveRow] = useState(0);
+  // Fixed two blinking rows — the card is a motif, it does not mirror the
+  // actual question count (the badge carries that number).
+  const ROWS = 2;
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setActiveRow((prev) => (prev + 1) % ROWS);
+    }, 1400);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="size-56 relative flex items-center justify-center">
+      {/* Background glow */}
+      <motion.div
+        className="absolute inset-0 blur-3xl rounded-full bg-blue-500/10"
+        animate={{ scale: [1, 1.15, 1], opacity: [0.3, 0.5, 0.3] }}
+        transition={{ duration: 3, repeat: Infinity }}
+      />
+
+      {/* Orbiting rings */}
+      {[0, 1].map((i) => (
+        <motion.div
+          key={i}
+          className="absolute border border-blue-500/10 rounded-full"
+          style={{
+            width: 180 + i * 50,
+            height: 180 + i * 50,
+            borderStyle: 'dashed',
+          }}
+          animate={{ rotate: 360 }}
+          transition={{
+            duration: 40 + i * 15,
+            ease: 'linear',
+            repeat: Infinity,
+            delay: i * -5,
+          }}
+        />
+      ))}
+
+      {/* Floating question marks */}
+      {[
+        { position: 'left-3 top-8', delay: 0 },
+        { position: 'right-4 bottom-10', delay: 0.7 },
+      ].map((chip, i) => (
+        <motion.div
+          key={i}
+          className={`absolute ${chip.position} z-20 flex size-6 items-center justify-center rounded-full bg-blue-500 text-[11px] font-bold text-white shadow-lg shadow-blue-500/30`}
+          animate={{ y: [0, -8, 0], rotate: [0, 8, -8, 0] }}
+          transition={{ duration: 2.4, repeat: Infinity, delay: chip.delay, ease: 'easeInOut' }}
+        >
+          ?
+        </motion.div>
+      ))}
+
+      {/* Card + badge anchor: the badge hangs off the card corner, not the
+          outer box, so it stays attached regardless of card height. */}
+      <div className="relative">
+        <div className="w-44 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden relative">
+          {/* Header with looping composing bar */}
+          <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2">
+            <MessageSquare className="size-3 text-blue-500 shrink-0" />
+            <motion.div
+              className="h-1.5 bg-blue-500/25 rounded-full"
+              initial={{ width: '0%' }}
+              animate={{ width: ['0%', '55%', '55%', '0%'] }}
+              transition={{
+                duration: 3,
+                times: [0, 0.35, 0.7, 1],
+                repeat: Infinity,
+                repeatDelay: 1,
+                ease: 'easeInOut',
+              }}
+            />
+          </div>
+
+          {/* Question timeline: 32px gutter, dot and spine share center x=16
+              by construction — dot spans 12-20 (-left-[20px] + size-2),
+              spine spans 15-17 (left-[15px] + 2px). */}
+          <div className="relative overflow-hidden pl-8 pr-2 py-2.5">
+            <div className="absolute bottom-0 left-[15px] top-0 w-[2px] bg-slate-200 dark:bg-slate-700" />
+            {Array.from({ length: ROWS }).map((_, i) => {
+              const isActive = i === activeRow;
+              // No entrance animation: the two rows are a fixed motif, always
+              // present. Only the active state cycles.
+              return (
+                <div key={i} className="relative mb-3 last:mb-0">
+                  {/* Node dot, centered on the spine (x=16) */}
+                  <div
+                    className={cn(
+                      'absolute -left-[20px] top-0 size-2 rounded-full border transition-colors duration-300',
+                      isActive
+                        ? 'border-blue-500 bg-blue-500/50 shadow-sm shadow-blue-500/20'
+                        : 'border-blue-300 bg-white dark:bg-slate-900',
+                    )}
+                  />
+                  {/* Question line */}
+                  <div
+                    className={cn(
+                      'h-2 rounded-full transition-colors duration-300',
+                      isActive ? 'bg-blue-500/60' : 'bg-slate-200 dark:bg-slate-700',
+                    )}
+                    style={{ width: `${[88, 72][i % 2]}%` }}
+                  />
+                  {/* Option chips echoing the real answer panel below */}
+                  <div className="mt-1.5 flex items-center gap-1.5">
+                    {[0, 1].map((c) => (
+                      <div
+                        key={c}
+                        className={cn(
+                          'flex items-center gap-1 rounded-full border px-1.5 py-[3px] transition-colors duration-300',
+                          isActive && c === 0
+                            ? 'border-blue-500/60 bg-blue-500/10'
+                            : 'border-slate-200 dark:border-slate-700',
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            'size-1 rounded-full transition-colors duration-300',
+                            isActive && c === 0 ? 'bg-blue-500' : 'bg-slate-300 dark:bg-slate-600',
+                          )}
+                        />
+                        <div
+                          className={cn(
+                            'h-1 rounded-full transition-colors duration-300',
+                            isActive && c === 0
+                              ? 'bg-blue-500/50'
+                              : 'bg-slate-200 dark:bg-slate-600',
+                          )}
+                          style={{ width: c === 0 ? 26 : 18 }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Question count badge */}
+        {count > 0 && (
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+            className="absolute -top-2 -right-2 h-6 px-2 rounded-full bg-blue-500 text-white text-[10px] font-bold flex items-center justify-center shadow-lg shadow-blue-500/25 z-20 gap-0.5"
+          >
+            <MessageSquare className="size-2.5" />
+            {count}
+          </motion.div>
+        )}
+      </div>
     </div>
   );
 }

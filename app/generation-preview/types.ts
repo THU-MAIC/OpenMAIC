@@ -1,6 +1,16 @@
-import { ScanLine, Search, Bot, FileText, LayoutPanelLeft, Clapperboard } from 'lucide-react';
+import {
+  ScanLine,
+  Search,
+  Bot,
+  FileText,
+  LayoutPanelLeft,
+  Clapperboard,
+  MessageCircleQuestion,
+} from 'lucide-react';
 import { useSettingsStore } from '@/lib/store/settings';
 import type {
+  AskUserQuestion,
+  ClarificationAnswer,
   SceneOutline,
   UserRequirements,
   PdfImage,
@@ -19,7 +29,12 @@ export interface GenerationSessionState {
   imageMapping?: ImageMapping;
   sceneOutlines?: SceneOutline[] | null;
   currentStep: 'generating' | 'complete';
-  previewPhase?: 'preparing' | 'outline-ready' | 'review' | 'generating-content';
+  previewPhase?: 'preparing' | 'clarifying' | 'outline-ready' | 'review' | 'generating-content';
+  // Pre-outline ask_user clarification: model-posed questions awaiting the user.
+  clarification?: AskUserQuestion[];
+  // Answers keyed by question id. Present (even empty) once the user has
+  // answered or explicitly skipped — clarification runs at most once per run.
+  clarificationAnswers?: Record<string, ClarificationAnswer>;
   // PDF deferred parsing fields
   pdfStorageKey?: string;
   pdfFileName?: string;
@@ -100,6 +115,13 @@ export const ALL_STEPS: GenerationStep[] = [
     title: 'generation.webSearching',
     description: 'generation.webSearchingDesc',
     icon: Search,
+    type: 'analysis',
+  },
+  {
+    id: 'clarification',
+    title: 'generation.clarifying',
+    description: 'generation.clarifyingDesc',
+    icon: MessageCircleQuestion,
     type: 'analysis',
   },
   {

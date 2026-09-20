@@ -8,6 +8,16 @@
 import type { ActionType } from './action';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 
+// Pre-outline ask_user clarification shapes are owned by @openmaic/generation
+// (prompt contract + validation); re-exported here for app consumers.
+export type {
+  AskUserOption,
+  AskUserQuestion,
+  ClarificationAnswer,
+  ClarificationQA,
+  ClarificationResult,
+} from '@openmaic/generation';
+
 // ==================== PDF Image Types ====================
 
 /**
