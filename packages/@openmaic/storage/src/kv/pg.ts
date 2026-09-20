@@ -86,7 +86,7 @@ export class PgKVStore {
     return this.#withTransaction(async (tx) => {
       const result = await tx.query<ValueRow<T>>(
         'SELECT value FROM kv_entries WHERE owner_id = $1 AND key = $2',
-        [owner, key],
+        [owner, encodeKey(key)],
       );
       const row = result.rows[0];
       return row === undefined ? null : row.value;
@@ -99,7 +99,7 @@ export class PgKVStore {
       await tx.query(
         `INSERT INTO kv_entries (owner_id, key, value) VALUES ($1, $2, $3::jsonb)
          ON CONFLICT (owner_id, key) DO UPDATE SET value = EXCLUDED.value`,
-        [owner, key, encodeJson(value, `KV value for key ${JSON.stringify(key)}`)],
+        [owner, encodeKey(key), encodeJson(value, `KV value for key ${JSON.stringify(key)}`)],
       );
     });
   }
@@ -107,7 +107,10 @@ export class PgKVStore {
   async remove(owner: string, key: string, scope: KVScope = 'account'): Promise<void> {
     assertAccountOnly(scope);
     await this.#withTransaction(async (tx) => {
-      await tx.query('DELETE FROM kv_entries WHERE owner_id = $1 AND key = $2', [owner, key]);
+      await tx.query('DELETE FROM kv_entries WHERE owner_id = $1 AND key = $2', [
+        owner,
+        encodeKey(key),
+      ]);
     });
   }
 
@@ -120,11 +123,28 @@ export class PgKVStore {
         `SELECT key FROM kv_entries
           WHERE owner_id = $1 AND key LIKE $2 ESCAPE '\\'
           ORDER BY key`,
-        [owner, `${escapeLikePrefix(prefix)}%`],
+        [owner, `${escapeLikePrefix(encodeKey(prefix))}%`],
       );
-      return result.rows.map((row) => row.key);
+      return result.rows.map((row) => decodeKey(row.key));
     });
   }
+}
+
+/**
+ * A KV key is OPAQUE: any JavaScript string is legitimate, including one holding
+ * a NUL code point or a lone surrogate. A PostgreSQL TEXT column accepts
+ * neither, and `sanitizePgText` is explicitly not for keys — it is lossy, so two
+ * distinct keys would collapse onto one row. The key is therefore stored in its
+ * JSON-escaped form, which is total and reversible: escaping is per code unit,
+ * so the encoding of a prefix stays a prefix of the encoding of the whole key
+ * and LIKE still matches what the caller meant.
+ */
+function encodeKey(key: string): string {
+  return JSON.stringify(key).slice(1, -1);
+}
+
+function decodeKey(stored: string): string {
+  return JSON.parse(`"${stored}"`) as string;
 }
 
 /** Neutralize LIKE metacharacters so a prefix matches itself literally. */

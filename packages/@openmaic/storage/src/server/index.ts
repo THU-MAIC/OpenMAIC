@@ -16,6 +16,8 @@ import type {
   RuntimeSessionStatus,
   ValidationResult,
 } from '@openmaic/dsl';
+import type { PgKVStore } from '../kv/pg.js';
+import { createKVHttpHandler } from './kv.js';
 import { assertJsonValue } from '../runtime/json-value.js';
 import type {
   RuntimeAppendOptions,
@@ -718,6 +720,12 @@ export interface StorageHttpHandlerOptions
     > {
   /** When supplied, the composed handler exposes the `/assets` contract. */
   assetStore?: AssetStore;
+  /**
+   * When supplied, the composed handler exposes the `/kv` contract — the
+   * account scope, partitioned by the principal `authenticate` resolves. The
+   * device scope never arrives here: it is refused at the KV ingress.
+   */
+  kvStore?: PgKVStore;
 }
 
 /**
@@ -744,6 +752,19 @@ export function createStorageHttpHandler<
             : { authorizeDocuments: options.authorizeDocuments }),
           ...(options.validateScene === undefined ? {} : { validateScene: options.validateScene }),
           ...(options.validateStage === undefined ? {} : { validateStage: options.validateStage }),
+          ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes }),
+        });
+  const kv =
+    options.kvStore === undefined
+      ? undefined
+      : createKVHttpHandler(options.kvStore, {
+          authenticate: async (req) => {
+            const principal = await options.authenticate(req);
+            if (principal === undefined) return undefined;
+            const owner = (principal as { key?: string; learnerKey?: string }).key ??
+              (principal as { learnerKey?: string }).learnerKey;
+            return typeof owner === 'string' && owner !== '' ? { owner } : undefined;
+          },
           ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes }),
         });
   const assets =
@@ -784,6 +805,8 @@ export function createStorageHttpHandler<
       (pathname === '/assets' || pathname.startsWith('/assets/'))
     ) {
       assets(req, res);
+    } else if (kv !== undefined && (pathname === '/kv' || pathname.startsWith('/kv/'))) {
+      kv(req, res);
     } else {
       runtime(req, res);
     }
