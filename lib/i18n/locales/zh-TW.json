@@ -1818,6 +1818,22 @@
       "unitSecond": "秒",
       "unitCharacter": "字符"
     },
+    "modelSchedule": {
+      "nav": "Model Scheduling",
+      "title": "Model Scheduling (auto model escalation)",
+      "desc": "Per-stage escalation policy: on a retryable base-model failure (timeout/empty/network) the engine re-runs once with the upgrade model and logs the decision below. Config is hot-reloaded, no restart needed.",
+      "enabled": "Enabled (config file present)",
+      "disabled": "Disabled (original behavior)",
+      "loadTemplate": "Load 3-tier preset template",
+      "clear": "Disable (delete config)",
+      "saving": "Saving...",
+      "ledger": "Scheduling log (last 20)",
+      "noEvents": "No entries yet",
+      "invalidJson": "Invalid JSON, not saved",
+      "loadFailed": "Failed to load config",
+      "saveSuccess": "Model scheduling config saved and active",
+      "saveFailed": "Save failed, please retry"
+    },
     "tokenPlan": {
       "nav": "Token Plan",
       "title": "Token Plan 一鍵設定",

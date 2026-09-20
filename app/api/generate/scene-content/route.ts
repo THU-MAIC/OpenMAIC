@@ -13,6 +13,7 @@ import {
   generateSceneContent,
   buildVisionUserContent,
   partitionImagesForVision,
+  isRetryableGenerationError,
 } from '@openmaic/generation';
 import type { AgentInfo } from '@openmaic/generation';
 import type {
@@ -24,7 +25,12 @@ import type {
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
-import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { resolveModel, resolveModelFromRequest } from '@/lib/server/resolve-model';
+import {
+  appendScheduleEvent,
+  getEscalationFor,
+  isEscalationBudgetExhausted,
+} from '@/lib/server/model-schedule';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
@@ -120,7 +126,7 @@ export async function POST(req: NextRequest) {
     // Detect vision capability
     const hasVision = !!modelInfo?.capabilities?.vision;
 
-    // Vision-aware AI call function. On a server-backed transport the
+    // Vision-aware AI call factory. On a server-backed transport the
     // `imageMapping` values are allocated asset ids; the N3 pre-resolution
     // below has already resolved the vision slice's ids to bytes and stripped
     // every unresolvable id from the mapping, so the srcs this closure sees
@@ -129,28 +135,46 @@ export async function POST(req: NextRequest) {
     // only drop an id that still carried an allocated id, which the
     // pre-resolution makes impossible. Kept so a package consumer that
     // generates without pre-resolving still degrades cleanly.
-    const aiCall = async (
-      systemPrompt: string,
-      userPrompt: string,
-      images?: Array<{ id: string; src: string }>,
-    ): Promise<string> => {
-      if (images?.length && hasVision) {
-        // Server-backed transport: `imageMapping` values are allocated asset
-        // ids, so the image srcs reach here as ids. Resolve them to the same
-        // bytes the base64 path would send BEFORE prompt assembly, keeping the
-        // vision prompt byte-identical in both modes (RFC #1153 part 2 B).
-        const resolvedImages = await resolveVisionImagesForPrompt(images, req.headers);
+    // (方案D: factored into a factory so an escalation can rebuild the call
+    // against a different model without duplicating prompt assembly.)
+    const makeAiCall = (lm: typeof languageModel, info: typeof modelInfo) => {
+      const vision = !!info?.capabilities?.vision;
+      return async (
+        systemPrompt: string,
+        userPrompt: string,
+        images?: Array<{ id: string; src: string }>,
+      ): Promise<string> => {
+        if (images?.length && vision) {
+          // Server-backed transport: `imageMapping` values are allocated asset
+          // ids, so the image srcs reach here as ids. Resolve them to the same
+          // bytes the base64 path would send BEFORE prompt assembly, keeping the
+          // vision prompt byte-identical in both modes (RFC #1153 part 2 B).
+          const resolvedImages = await resolveVisionImagesForPrompt(images, req.headers);
+          const result = await callLLM(
+            {
+              model: lm,
+              system: systemPrompt,
+              messages: [
+                {
+                  role: 'user' as const,
+                  content: buildVisionUserContent(userPrompt, resolvedImages),
+                },
+              ],
+              maxOutputTokens: info?.outputWindow,
+              maxRetries: 0,
+            },
+            'scene-content',
+            undefined,
+            thinkingConfig,
+          );
+          return result.text;
+        }
         const result = await callLLM(
           {
-            model: languageModel,
+            model: lm,
             system: systemPrompt,
-            messages: [
-              {
-                role: 'user' as const,
-                content: buildVisionUserContent(userPrompt, resolvedImages),
-              },
-            ],
-            maxOutputTokens: modelInfo?.outputWindow,
+            prompt: userPrompt,
+            maxOutputTokens: info?.outputWindow,
             maxRetries: 0,
           },
           'scene-content',
@@ -158,21 +182,9 @@ export async function POST(req: NextRequest) {
           thinkingConfig,
         );
         return result.text;
-      }
-      const result = await callLLM(
-        {
-          model: languageModel,
-          system: systemPrompt,
-          prompt: userPrompt,
-          maxOutputTokens: modelInfo?.outputWindow,
-          maxRetries: 0,
-        },
-        'scene-content',
-        undefined,
-        thinkingConfig,
-      );
-      return result.text;
+      };
     };
+    const aiCall = makeAiCall(languageModel, modelInfo);
 
     // ── Apply fallbacks ──
     const vocationalActive = resolveVocationalActive(requirements);
@@ -321,7 +333,7 @@ export async function POST(req: NextRequest) {
 
     const userLocale = req.headers?.get('x-user-locale') ?? '';
 
-    const content = await generateSceneContent(effectiveOutline, aiCall, {
+    const sceneGenerationParams = {
       assignedImages,
       imageMapping: visionImageMapping,
       visionEnabled: hasVision,
@@ -334,11 +346,47 @@ export async function POST(req: NextRequest) {
       allowProceduralSkill: vocationalActive,
       ...(effectiveOutline.type === 'pbl'
         ? {
-            pblLoopFallback: (input) =>
+            pblLoopFallback: (input: Parameters<typeof generatePBLV2Project>[0]) =>
               generatePBLV2Project(input, languageModel, callLLM, { logger: log }, thinkingConfig),
           }
         : {}),
-    });
+    };
+
+    // ── 方案D 复杂度自动升级（默认关闭；data/model-schedule.json 配置后生效）──
+    // 按 stage 策略：base 模型的可重试失败（超时/空结果/网络）触发单次升级重试，
+    // 升级模型走 resolveModel 强制指定（绕过 MODEL_ROUTES），成功后写调度建议日志。
+    const escalationPolicy = await getEscalationFor(stage);
+    let content;
+    try {
+      content = await generateSceneContent(effectiveOutline, aiCall, sceneGenerationParams);
+    } catch (error) {
+      if (!escalationPolicy) throw error;
+      if (await isEscalationBudgetExhausted()) throw error;
+      const retryable = isRetryableGenerationError(error);
+      const timeoutHit =
+        error instanceof Error &&
+        (error.name === 'TimeoutError' || /aborted due to timeout/i.test(error.message ?? ''));
+      if (!timeoutHit && !retryable) throw error;
+      if (escalationPolicy.trigger === 'onTimeout' && !timeoutHit) throw error;
+      log.info(
+        `[escalation] ${stage} failed (timeout=${timeoutHit}, retryable=${retryable}); escalating to ${escalationPolicy.escalateTo}`,
+      );
+      const alt = await resolveModel({ modelString: escalationPolicy.escalateTo });
+      const altAiCall = makeAiCall(alt.model, alt.modelInfo);
+      content = await generateSceneContent(effectiveOutline, altAiCall, sceneGenerationParams);
+      if (content) {
+        await appendScheduleEvent({
+          ts: new Date().toISOString(),
+          kind: 'escalation',
+          stage,
+          scene: outlineTitle,
+          base: modelString,
+          used: escalationPolicy.escalateTo,
+          errorClass: error instanceof Error ? error.name : 'unknown',
+          reason: timeoutHit ? 'timeout' : 'retryable',
+        });
+      }
+    }
 
     if (!content) {
       log.error(`Failed to generate content for: "${effectiveOutline.title}"`);
