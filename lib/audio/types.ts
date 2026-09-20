@@ -231,6 +231,21 @@ export function isCustomTTSProvider(id: string): boolean {
   return typeof id === 'string' && id.startsWith('custom-tts-');
 }
 
+/**
+ * Providers whose voice list the user may extend with their own voice IDs.
+ *
+ * Custom providers have always worked this way — they ship no catalogue, so the
+ * voices the user pastes are the only ones they have. ElevenLabs is included for
+ * the opposite reason: its catalogue is account-specific and thousands of voices
+ * deep, while the built-in entries are a six-voice English-only starter set kept
+ * small so a free-tier key still works. Neither list can name the voice a given
+ * deployment actually wants (a native Vietnamese voice, say), so both need the
+ * user's own IDs merged in.
+ */
+export function providerAcceptsUserVoices(id: string): boolean {
+  return isCustomTTSProvider(id) || id === 'elevenlabs-tts';
+}
+
 /** Returns true if the provider ID is a user-defined custom ASR provider. */
 export function isCustomASRProvider(id: string): boolean {
   return typeof id === 'string' && id.startsWith('custom-asr-');

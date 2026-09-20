@@ -1,5 +1,5 @@
 import type { TTSProviderId } from '@/lib/audio/types';
-import { isCustomTTSProvider } from '@/lib/audio/types';
+import { isCustomTTSProvider, providerAcceptsUserVoices } from '@/lib/audio/types';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import {
   isQwenCatalogVoice,
@@ -202,20 +202,45 @@ export function resolveNarratorVoiceForGeneration(
  * For browser-native-tts, returns empty (browser voices are dynamic).
  * For custom providers, reads from ttsProvidersConfig.customVoices.
  */
+/**
+ * Voice entries the user added for a provider that allows it (pasted by hand or
+ * imported from the account). Exported because three different pickers need the
+ * same list — a picker that builds its own copy is how the global voice picker
+ * ended up unable to select an imported voice.
+ */
+export function getConfiguredUserVoices(
+  providerId: TTSProviderId,
+  ttsProvidersConfig?: Record<string, Record<string, unknown>>,
+): Array<{ id: string; name: string; language: string }> {
+  if (!ttsProvidersConfig || !providerAcceptsUserVoices(providerId)) return [];
+  const voices = ttsProvidersConfig[providerId]?.customVoices as
+    | Array<{ id: string; name: string }>
+    | undefined;
+  return (voices ?? []).map((v) => ({ id: v.id, name: v.name, language: 'auto' }));
+}
+
+/** Drop later entries that repeat an id already seen (built-in entry wins). */
+export function dedupeVoicesById<T extends { id: string }>(voices: T[]): T[] {
+  const seen = new Set<string>();
+  return voices.filter((voice) => (seen.has(voice.id) ? false : (seen.add(voice.id), true)));
+}
+
 export function getServerVoiceList(
   providerId: TTSProviderId,
   ttsProvidersConfig?: Record<string, Record<string, unknown>>,
 ): string[] {
   if (providerId === 'browser-native-tts') return [];
-  if (isCustomTTSProvider(providerId) && ttsProvidersConfig) {
-    const customVoices = ttsProvidersConfig[providerId]?.customVoices as
-      | Array<{ id: string }>
-      | undefined;
-    return customVoices?.map((v) => v.id) || [];
-  }
+  const userVoiceIds =
+    providerAcceptsUserVoices(providerId) && ttsProvidersConfig
+      ? ((
+          ttsProvidersConfig[providerId]?.customVoices as Array<{ id: string }> | undefined
+        )?.map((v) => v.id) ?? [])
+      : [];
+  // A custom provider ships no catalogue, so its user voices are the whole list.
+  if (isCustomTTSProvider(providerId)) return userVoiceIds;
   const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
   if (!provider) return [];
-  return provider.voices.map((v) => v.id);
+  return [...new Set([...provider.voices.map((v) => v.id), ...userVoiceIds])];
 }
 
 export interface ModelVoiceGroup {
@@ -283,7 +308,7 @@ export function getEnabledProvidersWithVoices(
             return profile.kind !== 'clone' || voxCPMBackendSupportsReferenceAudio(backend);
           })
         : [];
-    const userVoices =
+    const profileVoices =
       providerId === VOXCPM_TTS_PROVIDER_ID
         ? visibleVoxCPMProfiles.map((profile) => ({
             id: getVoxCPMProfileVoiceId(profile.id),
@@ -295,16 +320,28 @@ export function getEnabledProvidersWithVoices(
             name: profile.name,
             language: 'auto',
           }));
+    // Voice IDs the user pasted or imported for a built-in provider that allows
+    // it (ElevenLabs). Merged here so they flow into `allVoices` AND into every
+    // model group below, instead of being bolted on at each call site.
+    const userVoices = [
+      ...profileVoices,
+      ...getConfiguredUserVoices(
+        providerId,
+        ttsProvidersConfig as Record<string, Record<string, unknown>>,
+      ),
+    ];
 
     {
-      const allVoices = [
+      // Deduped: importing the account catalogue returns the same ids as the
+      // built-in presets, and a picker must not list a voice twice.
+      const allVoices = dedupeVoicesById([
         ...config.voices.map((v) => ({
           id: v.id,
           name: v.name,
           language: v.language,
         })),
         ...userVoices,
-      ];
+      ]);
 
       // Build model groups
       const modelGroups: ModelVoiceGroup[] = [];
@@ -324,7 +361,7 @@ export function getEnabledProvidersWithVoices(
           modelGroups.push({
             modelId: model.id,
             modelName: model.name,
-            voices: compatibleVoices,
+            voices: dedupeVoicesById(compatibleVoices),
           });
         }
       } else {
@@ -421,12 +458,14 @@ export function findVoiceDisplayName(
   voiceId: string,
   ttsProvidersConfig?: Record<string, Record<string, unknown>>,
 ): string {
-  if (isCustomTTSProvider(providerId) && ttsProvidersConfig) {
+  if (providerAcceptsUserVoices(providerId) && ttsProvidersConfig) {
     const customVoices = ttsProvidersConfig[providerId]?.customVoices as
       | Array<{ id: string; name: string }>
       | undefined;
     const voice = customVoices?.find((v) => v.id === voiceId);
-    return voice?.name ?? voiceId;
+    if (voice) return voice.name;
+    // A custom provider has no catalogue to fall back to; a built-in one does.
+    if (isCustomTTSProvider(providerId)) return voiceId;
   }
   // Object.hasOwn, not a bare index: a prototype-chain key ('toString', …)
   // would resolve to a function and crash the `.voices` access below.

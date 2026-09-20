@@ -35,6 +35,7 @@ import {
   getManuallySelectableTTSModels,
 } from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
+import { providerAcceptsUserVoices } from '@/lib/audio/types';
 import {
   Volume2,
   Loader2,
@@ -115,6 +116,17 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const providerEnableLocked = providerServerDisabled || !providerConfigured;
   const providerEnabled = isTTSProviderEnabled(selectedProviderId, providerConfig);
   const isVoxCPM = selectedProviderId === 'voxcpm-tts';
+  // Only Qwen's clone flow derives the model from the picked voice; every other
+  // provider takes an explicit model_id, so the badges below act as a picker
+  // rather than inert labels. Without this an ElevenLabs deployment is pinned to
+  // `defaultModelId` forever, which matters because `eleven_multilingual_v2`
+  // cannot speak Vietnamese while `eleven_v3` / `eleven_turbo_v2_5` can.
+  const modelIsVoiceBound = selectedProviderId === 'qwen-tts';
+  // Custom providers plus ElevenLabs — see providerAcceptsUserVoices().
+  const acceptsUserVoices = providerAcceptsUserVoices(selectedProviderId);
+  const effectiveModelId =
+    (providerConfig?.modelId as string | undefined) ||
+    TTS_PROVIDERS[selectedProviderId as keyof typeof TTS_PROVIDERS]?.defaultModelId;
   const voxcpmBackend = normalizeVoxCPMBackend(providerConfig?.providerOptions?.backend);
   const requiresApiKey = isCustom
     ? !!providerConfig?.requiresApiKey
@@ -137,6 +149,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const [testText, setTestText] = useState(t('settings.ttsTestTextDefault'));
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
+  const [fetchingVoices, setFetchingVoices] = useState(false);
   const { previewing: testingTTS, startPreview, stopPreview } = useTTSPreview();
 
   // Doubao TTS uses compound "appId:accessKey" — split for separate UI fields
@@ -592,27 +605,116 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         <div className="space-y-2">
           <Label className="text-sm text-muted-foreground">{t('settings.availableModels')}</Label>
           <div className="flex flex-wrap gap-2">
-            {manuallySelectableModels.map((model) => (
-              <div
-                key={model.id}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/50 border border-border/40 text-xs font-mono text-muted-foreground"
-              >
-                <span className="size-1.5 rounded-full bg-emerald-500/70" />
-                {model.name}
-              </div>
-            ))}
+            {manuallySelectableModels.map((model) => {
+              const selected = effectiveModelId === model.id;
+              return modelIsVoiceBound ? (
+                <div
+                  key={model.id}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/50 border border-border/40 text-xs font-mono text-muted-foreground"
+                >
+                  <span className="size-1.5 rounded-full bg-emerald-500/70" />
+                  {model.name}
+                </div>
+              ) : (
+                <button
+                  key={model.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setTTSProviderConfig(selectedProviderId, { modelId: model.id })}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono transition-colors',
+                    selected
+                      ? 'bg-primary/10 border-primary/50 text-foreground'
+                      : 'bg-muted/50 border-border/40 text-muted-foreground hover:bg-muted',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'size-1.5 rounded-full',
+                      selected ? 'bg-emerald-500' : 'bg-muted-foreground/40',
+                    )}
+                  />
+                  {model.name}
+                </button>
+              );
+            })}
           </div>
-          <p className="text-[11px] text-muted-foreground/60">
-            {t('settings.modelSelectedViaVoice')}
-          </p>
+          {modelIsVoiceBound && (
+            <p className="text-[11px] text-muted-foreground/60">
+              {t('settings.modelSelectedViaVoice')}
+            </p>
+          )}
         </div>
       )}
 
       {selectedProviderId === 'voxcpm-tts' && <VoxCPMVoiceManager />}
       {selectedProviderId === 'qwen-tts' && <QwenVoiceCloneManager />}
 
+      {/* Import the catalogue this key can actually see. The built-in list is a
+          small English-only starter set, so without this a deployment cannot
+          name a voice in its own language (see /api/elevenlabs-voices). */}
+      {selectedProviderId === 'elevenlabs-tts' && (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={fetchingVoices}
+          onClick={async () => {
+            setFetchingVoices(true);
+            setTestStatus('idle');
+            setTestMessage('');
+            try {
+              const res = await fetch('/api/elevenlabs-voices', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  apiKey: providerConfig?.apiKey,
+                  baseUrl: providerConfig?.baseUrl,
+                }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data?.success) {
+                throw new Error(data?.error || data?.details || res.statusText);
+              }
+              const fetched = (data.voices ?? []) as Array<{
+                id: string;
+                name: string;
+                accent?: string;
+              }>;
+              // Merge, not replace: a voice the user pasted by hand must survive
+              // an import that does not happen to include it.
+              const merged = new Map(
+                (
+                  (providerConfig?.customVoices as
+                    | Array<{ id: string; name: string }>
+                    | undefined) ?? []
+                ).map((v) => [v.id, v]),
+              );
+              for (const v of fetched) {
+                merged.set(v.id, { id: v.id, name: v.accent ? `${v.name} · ${v.accent}` : v.name });
+              }
+              setTTSProviderConfig(selectedProviderId, {
+                customVoices: [...merged.values()],
+              } as Record<string, unknown>);
+              setTestStatus('success');
+              setTestMessage(`${t('settings.voicesFetched')} (${fetched.length})`);
+            } catch (err) {
+              setTestStatus('error');
+              setTestMessage(
+                `${t('settings.fetchVoicesFailed')}: ${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              );
+            } finally {
+              setFetchingVoices(false);
+            }
+          }}
+        >
+          {fetchingVoices ? t('settings.fetchingVoices') : t('settings.fetchVoices')}
+        </Button>
+      )}
+
       {/* Custom Voice List Management */}
-      {isCustom && (
+      {acceptsUserVoices && (
         <div className="space-y-3">
           <Label className="text-sm">{t('settings.customVoices')}</Label>
           {(providerConfig?.customVoices as Array<{ id: string; name: string }> | undefined)

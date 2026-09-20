@@ -910,12 +910,18 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.elevenlabs.io/v1',
     icon: '/logos/elevenlabs.svg',
+    // Ordered best-first for non-English (notably Vietnamese): `eleven_v3`
+    // covers 70+ languages and `eleven_turbo_v2_5` / `eleven_flash_v2_5` add
+    // `hu`/`no`/`vi` on top of the multilingual_v2 set. `eleven_multilingual_v2`
+    // does NOT include Vietnamese, so it must not be the default here.
     models: [
-      { id: 'eleven_multilingual_v2', name: 'Multilingual v2' },
+      { id: 'eleven_v3', name: 'Eleven v3' },
+      { id: 'eleven_turbo_v2_5', name: 'Turbo v2.5' },
       { id: 'eleven_flash_v2_5', name: 'Flash v2.5' },
+      { id: 'eleven_multilingual_v2', name: 'Multilingual v2' },
       { id: 'eleven_flash_v2', name: 'Flash v2' },
     ],
-    defaultModelId: 'eleven_multilingual_v2',
+    defaultModelId: 'eleven_v3',
     // Free-tier-safe fallback set; account-specific/custom voices should come from /v2/voices dynamically later.
     voices: [
       {
@@ -1353,7 +1359,7 @@ export const DEFAULT_TTS_MODELS: Record<BuiltInTTSProviderId, string> = {
   'qwen-tts': 'qwen3-tts-flash',
   'voxcpm-tts': VOXCPM_VLLM_MODEL_ID,
   'doubao-tts': '',
-  'elevenlabs-tts': 'eleven_multilingual_v2',
+  'elevenlabs-tts': 'eleven_v3',
   'minimax-tts': 'speech-2.8-hd',
   'lemonade-tts': 'kokoro-v1',
   'browser-native-tts': '',

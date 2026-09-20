@@ -1083,7 +1083,7 @@ async function generateElevenLabsTTS(
       },
       body: JSON.stringify({
         text,
-        model_id: config.modelId || 'eleven_multilingual_v2',
+        model_id: config.modelId || TTS_PROVIDERS['elevenlabs-tts'].defaultModelId,
         voice_settings: {
           stability: 0.5,
           similarity_boost: 0.75,

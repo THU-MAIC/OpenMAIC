@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { getTTSVoices, isQwenCloneVoice, resolveTTSModelForVoice } from '@/lib/audio/constants';
+import { dedupeVoicesById, getConfiguredUserVoices } from '@/lib/audio/voice-resolver';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 import {
   getVoxCPMProviderOptions,
@@ -81,7 +82,14 @@ export function TtsConfigPopover() {
               gender: 'neutral' as const,
             })),
           ]
-        : getTTSVoices(ttsProviderId);
+        : // The built-in catalogue PLUS the voices the user added for this
+          // provider. Without the second half an imported voice can never be
+          // picked as the global (narrator) voice, so the teacher stays pinned
+          // to a built-in preset no matter what the user imported.
+          dedupeVoicesById([
+            ...getTTSVoices(ttsProviderId),
+            ...getConfiguredUserVoices(ttsProviderId, ttsProvidersConfig),
+          ]);
   const localizedVoices = voices.map((voice) => ({
     ...voice,
     displayName: getVoiceDisplayName(voice.id, voice.name, locale, t),
