@@ -232,9 +232,9 @@ export function getServerVoiceList(
   if (providerId === 'browser-native-tts') return [];
   const userVoiceIds =
     providerAcceptsUserVoices(providerId) && ttsProvidersConfig
-      ? ((
-          ttsProvidersConfig[providerId]?.customVoices as Array<{ id: string }> | undefined
-        )?.map((v) => v.id) ?? [])
+      ? ((ttsProvidersConfig[providerId]?.customVoices as Array<{ id: string }> | undefined)?.map(
+          (v) => v.id,
+        ) ?? [])
       : [];
   // A custom provider ships no catalogue, so its user voices are the whole list.
   if (isCustomTTSProvider(providerId)) return userVoiceIds;
