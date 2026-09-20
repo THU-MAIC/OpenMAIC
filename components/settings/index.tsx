@@ -60,7 +60,8 @@ import { WEB_SEARCH_PROVIDERS, getWebSearchProviderDisplayName } from '@/lib/web
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import { GeneralSettings } from './general-settings';
 import { MyDevicesSettings } from './my-devices-settings';
-import { rehydrateAccountStores } from '@/lib/store/account-stores';
+import { reloadAccountStoresAndConfirm } from '@/lib/store/account-stores';
+import { hasLocalChoices as hasLocalChoicesIn } from '@/lib/store/local-choices';
 import { SkillSettings } from './skill-settings';
 import { TokenPlanSettings } from './token-plan-settings';
 import { ModelEditDialog } from './model-edit-dialog';
@@ -227,24 +228,11 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
   const asrProviderId = useSettingsStore((state) => state.asrProviderId);
   const asrProvidersConfig = useSettingsStore((state) => state.asrProvidersConfig);
-  const agentVoiceOverrides = useSettingsStore((state) => state.agentVoiceOverrides);
-  const selectedModelId = useSettingsStore((state) => state.modelId);
-  // Máy này đã có lựa chọn riêng chưa — quyết định có phải hỏi trước khi thay
-  // bằng lựa chọn của máy kia. Đếm những thứ CHỈ người mới tạo ra: giọng nhập
-  // từ tài khoản, mô hình tự thêm, giọng gán cho từng nhân vật dạy, mô hình đã
-  // chọn. Mặc định của lần chạy đầu không tính là lựa chọn.
-  const hasLocalChoices =
-    Object.keys(agentVoiceOverrides ?? {}).length > 0 ||
-    Boolean(selectedModelId) ||
-    // Giọng nhập từ tài khoản, mô hình tự thêm, và nhà cung cấp tự thêm —
-    // nhìn CẢ BA bảng cấu hình nhà cung cấp, không chỉ bảng giọng đọc. Bỏ sót
-    // một bảng nghĩa là người có lựa chọn thật mà vẫn bị thay không hỏi.
-    [providersConfig, ttsProvidersConfig, asrProvidersConfig].some((table) =>
-      Object.values(table ?? {}).some((config) => {
-        const entry = config as { customVoices?: unknown[]; customModels?: unknown[] };
-        return (entry.customVoices?.length ?? 0) > 0 || (entry.customModels?.length ?? 0) > 0;
-      }),
-    );
+  // Có gì để mất trên máy này không — quét chính trạng thái đã lưu, không đếm
+  // tay từng loại. Xem lib/store/local-choices.ts.
+  const hasLocalChoices = useSettingsStore((state) =>
+    hasLocalChoicesIn(state as unknown as Record<string, unknown>),
+  );
 
   // Store actions
   const setProviderConfig = useSettingsStore((state) => state.setProviderConfig);
@@ -1126,7 +1114,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             <div className="flex-1 overflow-y-auto p-5">
               {activeSection === 'my-devices' && (
                 <MyDevicesSettings
-                  onAdopted={rehydrateAccountStores}
+                  onAdopted={reloadAccountStoresAndConfirm}
                   hasLocalChoices={hasLocalChoices}
                 />
               )}

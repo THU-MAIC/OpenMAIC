@@ -42,11 +42,13 @@ function secondsLeft(expiresAt: number, now: number): number {
 
 export interface MyDevicesSettingsProps {
   /**
-   * Nạp lại lựa chọn sau khi nhận xong. Bắt buộc: cookie đã đổi chủ sở hữu
-   * nhưng trạng thái trong bộ nhớ vẫn là của máy này, nên nếu không nạp lại thì
-   * màn báo "đã dùng chung" trong khi sản phẩm vẫn chạy bằng lựa chọn cũ.
+   * Nạp lại lựa chọn RỒI chứng rằng ngăn của chủ mới đọc được; NÉM khi chưa
+   * chứng được. Bắt buộc, và kiểu nói ra điều đó: một bản dựng quên truyền nó
+   * sẽ báo «đã dùng chung» trong khi sản phẩm vẫn chạy bằng lựa chọn cũ, rồi
+   * lần sửa kế tiếp ghi đè cấu hình của máy kia. Lời chú thích không chặn được
+   * chuyện đó; kiểu thì chặn được.
    */
-  onAdopted?: () => Promise<void> | void;
+  onAdopted: () => Promise<void>;
   /** True khi máy này đã có lựa chọn riêng — nhận mã sẽ thay chúng. */
   hasLocalChoices?: boolean;
 }
@@ -100,7 +102,7 @@ export function MyDevicesSettings({ onAdopted, hasLocalChoices = false }: MyDevi
       setRedeem({ kind: 'redeeming' });
       // Thứ tự nạp-lại-rồi-mới-báo-xong sống trong chính sách, không ở màn này.
       const outcome = await adoptChoicesFromCode(code, {
-        rehydrate: () => onAdopted?.(),
+        rehydrate: onAdopted,
       });
       if (outcome === 'rejected') {
         setRedeem({ kind: 'failed' });

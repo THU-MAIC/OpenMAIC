@@ -510,6 +510,20 @@ function isDeviceSafeKVStore(kv: KVStore): kv is DeviceSafeKVStore {
  * provider API keys, so removing it is a small security win. No correctness
  * depends on this: if it fails, the stale key is ignored forever anyway.
  */
+/**
+ * Kho phạm vi `account` mà seam này đang dùng — CHƯA qua máy trạng thái.
+ *
+ * Máy trạng thái của seam cố ý nuốt lỗi đọc thành `null`: với việc hydrate một
+ * kho thì đó là hành vi đúng (một lần đọc hỏng không được phép thay dữ liệu
+ * người dùng bằng mặc định). Nhưng nó cũng có nghĩa là KHÔNG ai hỏi seam được
+ * câu «vừa rồi đọc có tới nơi không» — và đó đúng là câu mà việc nhận lựa chọn
+ * từ máy khác phải trả lời trước khi dám báo xong. Lối duy nhất trung thực là
+ * hỏi thẳng kho, nơi một lần hỏng vẫn còn là một lần hỏng.
+ */
+export function getAccountKv(deps: KVPersistDeps = {}): KVStore | null {
+  return resolveKv(deps);
+}
+
 export function purgeLegacyPersistKey(name: string): void {
   const storage = ambientLocalStorage();
   if (!storage) return;
