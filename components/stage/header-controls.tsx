@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ComponentProps } from 'react';
 import {
   Archive,
   Download,
@@ -38,7 +38,47 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import type { LucideIcon } from 'lucide-react';
 import type { StageMode } from '@/lib/types/stage';
+
+type DropdownMenuItemProps = ComponentProps<typeof DropdownMenuItem>;
+
+interface ExportMenuItemProps extends Omit<DropdownMenuItemProps, 'onSelect' | 'children'> {
+  readonly icon: LucideIcon;
+  readonly labelKey: string;
+  readonly descKey?: string;
+  readonly onSelect: () => void;
+}
+
+/**
+ * One row in the classroom export menu. The menu previously had six
+ * near-identical DropdownMenuItem blocks differing only in icon, i18n keys,
+ * and handler — see #1141. `title` is passed through untouched so the
+ * top-level items keep their `mediaPending` tooltip-while-disabled and the
+ * script submenu items keep having no title at all.
+ */
+function ExportMenuItem({
+  icon: Icon,
+  labelKey,
+  descKey,
+  className,
+  ...rest
+}: ExportMenuItemProps) {
+  const { t } = useI18n();
+  return (
+    <DropdownMenuItem className={cn('cursor-pointer gap-2.5', className)} {...rest}>
+      <Icon className="w-4 h-4 text-gray-400 shrink-0" aria-hidden="true" />
+      {descKey ? (
+        <div>
+          <div>{t(labelKey)}</div>
+          <div className="text-[11px] text-gray-400 dark:text-gray-500">{t(descKey)}</div>
+        </div>
+      ) : (
+        <span>{t(labelKey)}</span>
+      )}
+    </DropdownMenuItem>
+  );
+}
 
 interface HeaderControlsProps {
   readonly mode?: StageMode;
@@ -293,43 +333,29 @@ export function HeaderControls({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={8} className="min-w-[240px]">
-          <DropdownMenuItem
-            disabled={!canExport}
+          <ExportMenuItem
+            icon={FileDown}
+            labelKey="export.pptx"
             onSelect={exportPPTX}
-            className="cursor-pointer gap-2.5"
-            title={canExport ? undefined : t('export.mediaPending')}
-          >
-            <FileDown className="w-4 h-4 text-gray-400 shrink-0" />
-            <span>{t('export.pptx')}</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem
             disabled={!canExport}
+            title={canExport ? undefined : t('export.mediaPending')}
+          />
+          <ExportMenuItem
+            icon={Package}
+            labelKey="export.resourcePack"
+            descKey="export.resourcePackDesc"
             onSelect={exportResourcePack}
-            className="cursor-pointer gap-2.5"
+            disabled={!canExport}
             title={canExport ? undefined : t('export.mediaPending')}
-          >
-            <Package className="w-4 h-4 text-gray-400 shrink-0" />
-            <div>
-              <div>{t('export.resourcePack')}</div>
-              <div className="text-[11px] text-gray-400 dark:text-gray-500">
-                {t('export.resourcePackDesc')}
-              </div>
-            </div>
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={!canExport || isExportingZip}
+          />
+          <ExportMenuItem
+            icon={Archive}
+            labelKey="export.classroomZip"
+            descKey="export.classroomZipDesc"
             onSelect={exportClassroomZip}
-            className="cursor-pointer gap-2.5"
+            disabled={!canExport || isExportingZip}
             title={canExport ? undefined : t('export.mediaPending')}
-          >
-            <Archive className="w-4 h-4 text-gray-400 shrink-0" />
-            <div>
-              <div>{t('export.classroomZip')}</div>
-              <div className="text-[11px] text-gray-400 dark:text-gray-500">
-                {t('export.classroomZipDesc')}
-              </div>
-            </div>
-          </DropdownMenuItem>
+          />
           <DropdownMenuSub>
             <DropdownMenuSubTrigger
               disabled={!canExport}
@@ -340,52 +366,32 @@ export function HeaderControls({
               <span>{t('export.script')}</span>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="min-w-[240px]">
-              <DropdownMenuItem
-                disabled={!canExport || isExportingScript}
+              <ExportMenuItem
+                icon={NotebookText}
+                labelKey="export.scriptMd"
+                descKey="export.scriptMdDesc"
                 onSelect={exportScriptMd}
-                className="cursor-pointer gap-2.5"
-              >
-                <NotebookText className="w-4 h-4 text-gray-400 shrink-0" aria-hidden="true" />
-                <div>
-                  <div>{t('export.scriptMd')}</div>
-                  <div className="text-[11px] text-gray-400 dark:text-gray-500">
-                    {t('export.scriptMdDesc')}
-                  </div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem
                 disabled={!canExport || isExportingScript}
+              />
+              <ExportMenuItem
+                icon={NotebookText}
+                labelKey="export.scriptDocx"
+                descKey="export.scriptDocxDesc"
                 onSelect={exportScriptDocx}
-                className="cursor-pointer gap-2.5"
-              >
-                <NotebookText
-                  className="w-4 h-4 text-gray-400 dark:text-gray-500"
-                  aria-hidden="true"
-                />
-                <div>
-                  <div>{t('export.scriptDocx')}</div>
-                  <div className="text-[11px] text-gray-400 dark:text-gray-500">
-                    {t('export.scriptDocxDesc')}
-                  </div>
-                </div>
-              </DropdownMenuItem>
+                disabled={!canExport || isExportingScript}
+              />
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           {videoExportEnabled && (
-            <DropdownMenuItem
-              disabled={!canExport}
+            <ExportMenuItem
+              icon={Film}
+              labelKey="export.video"
+              descKey="export.videoDesc"
               onSelect={() => setVideoDialogOpen(true)}
-              className="cursor-pointer gap-2.5 border-t border-gray-200 dark:border-gray-700"
+              disabled={!canExport}
               title={canExport ? undefined : t('export.mediaPending')}
-            >
-              <Film className="w-4 h-4 text-gray-400 shrink-0" />
-              <div>
-                <div>{t('export.video')}</div>
-                <div className="text-[11px] text-gray-400 dark:text-gray-500">
-                  {t('export.videoDesc')}
-                </div>
-              </div>
-            </DropdownMenuItem>
+              className="border-t border-gray-200 dark:border-gray-700"
+            />
           )}
         </DropdownMenuContent>
       </DropdownMenu>
