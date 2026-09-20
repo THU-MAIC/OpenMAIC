@@ -1,35 +1,237 @@
-# E13 network truth dump
-# Driver: mcp__Claude_Browser (Chromium-based), interactive session.
-# NOTE — port substitution: dev_server.url in _acceptance/config.yaml declares
-# http://localhost:3002, and dev_server.start pins PORT=3002. Next.js refused
-# to boot a second dev instance for this same repo directory because a
-# pre-existing `next dev` process (PID 19327, already running ~4h16m before
-# this verification started) holds a directory-scoped dev lock, redirecting
-# to its own port 3000. Per the "dùng chung, không tắt" rule for a
-# pre-existing server, that process was left running untouched and this
-# verification used its port (3000) as the reachable substitute for the same
-# app/repo. FAIL-eligible scope below is therefore localhost:3000 in place of
-# the declared localhost:3002 (same Next.js app, same source tree).
-#
-# All requests observed during: load app root -> open Settings -> click
-# "My devices" nav item (the only step reachable — see outputTail).
-
-Total requests observed: 97
-Failed (non-2xx/3xx) requests: 0
-Console errors: 0
-Console warnings: 0
-
-Sample of requests (first + representative slice; full list in tool transcript):
-GET http://localhost:3000/ -> 200 OK
-GET http://localhost:3000/api/server-providers -> 200 OK
-GET http://localhost:3000/api/comfyui-workflows -> 200 OK
-GET http://localhost:3000/api/access-code/status -> 200 OK
-(94 further requests: _next/static chunks, fonts, /logos/*.svg|png — all 200 OK, all same-origin)
-
-No request to /api/claim or /api/claim/redeem was observed, because the "My
-devices" UI never rendered past its disabled branch (ST-maycuatoi-tat) — the
-button that would trigger POST /api/claim does not exist in this state, so
-that endpoint was never exercised by the UI in this run.
-
-No third-party (analytics/CDN/tracker) requests were observed at all.
-No 4xx/5xx responses were observed.
+# E13 network log -- started 2026-09-20T12:08:33.498Z
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/settings-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/user-profile-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:34.224Z] [ERROR] [KVPersist] Could not read "settings-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://local
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:34.225Z] [ERROR] [KVPersist] Could not read "user-profile-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://l
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/settings-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/user-profile-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:34.301Z] [ERROR] [KVPersist] Could not read "settings-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://local
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:34.310Z] [ERROR] [KVPersist] Could not read "user-profile-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://l
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:34.311Z] [ERROR] [KVPersist] Refusing to persist "settings-storage" while its storage is unavailable. Changes made in this session are not being saved.
+[pageA] RESPONSE 404 GET http://localhost:3002/api/stages
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:34.610Z] [ERROR] [StageStorage] Failed to list stages: Error: Failed to list owner stages: HTTP 404
+    at listOwnerStagesFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18354:15)
+    at async listStages (http://localhost:3002/_next/static/chunks/lib_15bugfi.
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:34.610Z] [ERROR] [Home] Failed to load classrooms: Error: Failed to list owner stages: HTTP 404
+    at listOwnerStagesFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18354:15)
+    at async listStages (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js
+[pageA] RESPONSE 404 GET http://localhost:3002/api/folders
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:34.610Z] [ERROR] [Home] Failed to load folders: Error: Failed to list owner folders: HTTP 404
+    at listOwnerFoldersFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18650:15)
+    at async listFolders (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js
+[pageA] RESPONSE 404 GET http://localhost:3002/api/stages
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:34.610Z] [ERROR] [StageStorage] Failed to list stages: Error: Failed to list owner stages: HTTP 404
+    at listOwnerStagesFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18354:15)
+    at async listStages (http://localhost:3002/_next/static/chunks/lib_15bugfi.
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:34.610Z] [ERROR] [Home] Failed to load classrooms: Error: Failed to list owner stages: HTTP 404
+    at listOwnerStagesFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18354:15)
+    at async listStages (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js
+[pageA] RESPONSE 404 GET http://localhost:3002/api/folders
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:34.611Z] [ERROR] [Home] Failed to load folders: Error: Failed to list owner folders: HTTP 404
+    at listOwnerFoldersFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18650:15)
+    at async listFolders (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/settings-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/user-profile-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:34.672Z] [ERROR] [KVPersist] Refusing to persist "settings-storage" while its storage is unavailable. Changes made in this session are not being saved.
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:34.694Z] [ERROR] [KVPersist] Could not read "settings-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://local
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:34.697Z] [ERROR] [KVPersist] Could not read "user-profile-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://l
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/settings-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:35.704Z] [ERROR] [KVPersist] Could not read "settings-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://local
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:35.713Z] [ERROR] [KVPersist] Giving up on recovering "settings-storage" after 3 attempts; storage stays read-only until something outside this session changes
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/user-profile-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:35.718Z] [ERROR] [KVPersist] Could not read "user-profile-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://l
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:35.719Z] [ERROR] [KVPersist] Giving up on recovering "user-profile-storage" after 3 attempts; storage stays read-only until something outside this session changes
+[pageA] RESPONSE 401 POST http://localhost:3002/api/claim/redeem
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 401 (Unauthorized)
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:38.195Z] [ERROR] [KVPersist] Refusing to persist "settings-storage" while its storage is unavailable. Changes made in this session are not being saved.
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:38.228Z] [ERROR] [KVPersist] Refusing to persist "settings-storage" while its storage is unavailable. Changes made in this session are not being saved.
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/settings-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:39.336Z] [ERROR] [KVPersist] Could not read "settings-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://local
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/user-profile-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:08:39.345Z] [ERROR] [KVPersist] Could not read "user-profile-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://l
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/settings-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/user-profile-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:41.531Z] [ERROR] [KVPersist] Could not read "settings-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://local
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:41.532Z] [ERROR] [KVPersist] Could not read "user-profile-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://l
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/settings-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] RESPONSE 404 GET http://localhost:3002/api/stages
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:41.577Z] [ERROR] [StageStorage] Failed to list stages: Error: Failed to list owner stages: HTTP 404
+    at listOwnerStagesFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18354:15)
+    at async listStages (http://localhost:3002/_next/static/chunks/lib_15bugfi.
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:41.577Z] [ERROR] [Home] Failed to load classrooms: Error: Failed to list owner stages: HTTP 404
+    at listOwnerStagesFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18354:15)
+    at async listStages (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js
+[pageA] RESPONSE 404 GET http://localhost:3002/api/folders
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:41.577Z] [ERROR] [Home] Failed to load folders: Error: Failed to list owner folders: HTTP 404
+    at listOwnerFoldersFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18650:15)
+    at async listFolders (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js
+[pageA] RESPONSE 404 GET http://localhost:3002/api/stages
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:41.660Z] [ERROR] [StageStorage] Failed to list stages: Error: Failed to list owner stages: HTTP 404
+    at listOwnerStagesFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18354:15)
+    at async listStages (http://localhost:3002/_next/static/chunks/lib_15bugfi.
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:41.660Z] [ERROR] [Home] Failed to load classrooms: Error: Failed to list owner stages: HTTP 404
+    at listOwnerStagesFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18354:15)
+    at async listStages (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js
+[pageA] RESPONSE 404 GET http://localhost:3002/api/folders
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:41.663Z] [ERROR] [Home] Failed to load folders: Error: Failed to list owner folders: HTTP 404
+    at listOwnerFoldersFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18650:15)
+    at async listFolders (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:41.663Z] [ERROR] [KVPersist] Could not read "settings-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://local
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:41.669Z] [ERROR] [KVPersist] Refusing to persist "settings-storage" while its storage is unavailable. Changes made in this session are not being saved.
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/user-profile-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:41.703Z] [ERROR] [KVPersist] Refusing to persist "settings-storage" while its storage is unavailable. Changes made in this session are not being saved.
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:41.712Z] [ERROR] [KVPersist] Could not read "user-profile-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://l
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/settings-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:41.926Z] [ERROR] [KVPersist] Could not read "settings-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://local
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/user-profile-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:41.968Z] [ERROR] [KVPersist] Could not read "user-profile-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://l
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/settings-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:42.936Z] [ERROR] [KVPersist] Could not read "settings-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://local
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:42.944Z] [ERROR] [KVPersist] Giving up on recovering "settings-storage" after 3 attempts; storage stays read-only until something outside this session changes
+[pageA] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/user-profile-storage
+[pageA] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:42.976Z] [ERROR] [KVPersist] Could not read "user-profile-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://l
+[pageA] CONSOLE-ERROR [2026-09-20T12:19:42.976Z] [ERROR] [KVPersist] Giving up on recovering "user-profile-storage" after 3 attempts; storage stays read-only until something outside this session changes
+[pageA] REQUESTFAILED POST http://localhost:3002/api/claim :: net::ERR_FAILED
+[pageA] CONSOLE-ERROR Failed to load resource: net::ERR_FAILED
+[pageB] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/settings-storage
+[pageB] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageB] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/user-profile-storage
+[pageB] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:44.363Z] [ERROR] [KVPersist] Could not read "settings-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://local
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:44.364Z] [ERROR] [KVPersist] Could not read "user-profile-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://l
+[pageB] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/settings-storage
+[pageB] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageB] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/user-profile-storage
+[pageB] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageB] RESPONSE 404 GET http://localhost:3002/api/stages
+[pageB] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:44.418Z] [ERROR] [StageStorage] Failed to list stages: Error: Failed to list owner stages: HTTP 404
+    at listOwnerStagesFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18354:15)
+    at async listStages (http://localhost:3002/_next/static/chunks/lib_15bugfi.
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:44.418Z] [ERROR] [Home] Failed to load classrooms: Error: Failed to list owner stages: HTTP 404
+    at listOwnerStagesFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18354:15)
+    at async listStages (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js
+[pageB] RESPONSE 404 GET http://localhost:3002/api/folders
+[pageB] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:44.418Z] [ERROR] [Home] Failed to load folders: Error: Failed to list owner folders: HTTP 404
+    at listOwnerFoldersFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18650:15)
+    at async listFolders (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js
+[pageB] RESPONSE 404 GET http://localhost:3002/api/stages
+[pageB] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:44.418Z] [ERROR] [StageStorage] Failed to list stages: Error: Failed to list owner stages: HTTP 404
+    at listOwnerStagesFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18354:15)
+    at async listStages (http://localhost:3002/_next/static/chunks/lib_15bugfi.
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:44.418Z] [ERROR] [Home] Failed to load classrooms: Error: Failed to list owner stages: HTTP 404
+    at listOwnerStagesFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18354:15)
+    at async listStages (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js
+[pageB] RESPONSE 404 GET http://localhost:3002/api/folders
+[pageB] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:44.444Z] [ERROR] [Home] Failed to load folders: Error: Failed to list owner folders: HTTP 404
+    at listOwnerFoldersFromServer (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js:18650:15)
+    at async listFolders (http://localhost:3002/_next/static/chunks/lib_15bugfi._.js
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:44.521Z] [ERROR] [KVPersist] Could not read "settings-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://local
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:44.529Z] [ERROR] [KVPersist] Could not read "user-profile-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://l
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:44.531Z] [ERROR] [KVPersist] Refusing to persist "settings-storage" while its storage is unavailable. Changes made in this session are not being saved.
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:44.563Z] [ERROR] [KVPersist] Refusing to persist "settings-storage" while its storage is unavailable. Changes made in this session are not being saved.
+[pageB] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/settings-storage
+[pageB] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:44.787Z] [ERROR] [KVPersist] Could not read "settings-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://local
+[pageB] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/user-profile-storage
+[pageB] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:44.792Z] [ERROR] [KVPersist] Could not read "user-profile-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://l
+[pageB] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/settings-storage
+[pageB] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:45.798Z] [ERROR] [KVPersist] Could not read "settings-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://local
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:45.807Z] [ERROR] [KVPersist] Giving up on recovering "settings-storage" after 3 attempts; storage stays read-only until something outside this session changes
+[pageB] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/user-profile-storage
+[pageB] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:45.815Z] [ERROR] [KVPersist] Could not read "user-profile-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://l
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:45.815Z] [ERROR] [KVPersist] Giving up on recovering "user-profile-storage" after 3 attempts; storage stays read-only until something outside this session changes
+[pageB] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/settings-storage
+[pageB] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:50.267Z] [ERROR] [KVPersist] Could not read "settings-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://local
+[pageB] RESPONSE 404 GET http://localhost:3002/api/persistence/kv/entries/user-profile-storage
+[pageB] CONSOLE-ERROR Failed to load resource: the server responded with a status of 404 (Not Found)
+[pageB] CONSOLE-ERROR [2026-09-20T12:08:50.277Z] [ERROR] [KVPersist] Could not read "user-profile-storage" from the KV account scope: HttpKVStoreError: server persistence not configured
+    at HttpAccountKV.request (http://localhost:3002/_next/static/chunks/_1mr6ozb._.js:15585:19)
+    at async HttpAccountKV.get (http://l

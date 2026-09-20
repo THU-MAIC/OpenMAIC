@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-09-20T11:11:02Z",
-  "generated_sha": "039bf277cc6604fd0403e26cf41905b48e62e3b7",
+  "generated_at": "2026-09-20T11:44:57Z",
+  "generated_sha": "6ba55abad76fe896c9facc76c22e330ef4b02825",
   "mainBranchInfo": {
     "branch": "main",
     "source": "remote"
   },
   "slug": "cau-hinh-di-theo-nguoi",
-  "round": 1,
+  "round": 2,
   "riskTier": "T3",
   "evals": [
     {
@@ -234,7 +234,8 @@
         "judged_by",
         "verdict",
         "rationale"
-      ]
+      ],
+      "inputsHash": "72733d6c24d54b1c90e788a174b03320b7433a0695052b1dae4899a935ec367e"
     },
     {
       "id": "E13",
@@ -335,9 +336,10 @@
   "templatePath": "/Users/manhphan/.claude/plugins/cache/acceptance-gate-kit/acceptance-gate/2.16.0/skills/acceptance/references/evidence-report-template.md",
   "toolKillRule": "# TOOL-KILL-RULE — lệnh bị công cụ ngắt KHÔNG phải lệnh fail\n\n**Nguồn duy nhất** của luật «hết giờ không phải trượt» cho MỌI đường chạy lệnh\nkiểm của kit. Hai đường tiêu thụ, cùng đọc khối marker dưới đây, không chép tay:\n\n- **Vòng lặp tính năng** (plugin feature-loop): skill `feature-loop` đọc file này\n  (resolve qua `resolve-plugin.mjs --require skills/acceptance/references/tool-kill-rule.md`)\n  và truyền NGUYÊN VĂN vào `args.toolKillRule` của workflow\n  `acceptance-verify.js`; workflow rút khối marker và nội suy vào prompt của mọi\n  agent chạy lệnh (machine · ui-check · baseline). Thiếu args hoặc không rút\n  được marker → workflow trả BLOCKED có tên, không chạy không luật.\n- **Đường VERIFY độc lập** (skill `acceptance` Phase 3): phiên điều phối chép khối\n  marker VERBATIM vào prompt của phiên tươi VERIFY, cùng nếp «Network truth».\n\nVì sao có luật: verifier chạy lệnh qua Bash tool có trần thời gian mặc định\n(~120 s) NGẮN hơn nhiều suite; lệnh bị công cụ giết trả exit code CỦA CÔNG CỤ,\nkhông phải của lệnh (vấp thật release-2-2-0 S4 r5: suite 108 s đơn lẻ, dưới tải\nbị giết ở 118 s → REJECT giả 4 eval). Nhận diện là việc AGENT (nó thấy tool\nresult thật); phần máy chỉ phòng thủ trên field cấu trúc `killedByTool` —\nKHÔNG grep nội dung output trong engine (chuỗi tổng kết là của suite từng repo).\n\n<!-- <<<TOOL-KILL-RULE -->\nTRAN THOI GIAN CONG CU: khi goi Bash chay lenh, LUON dat tham so timeout >= 600000 (ms) — tran mac dinh cua cong cu (~120s) NGAN hon nhieu suite; lenh vuot tran se bi CONG CU giet va exit code luc do la cua cong cu, KHONG phai cua lenh. Neu lenh van bi cong cu dung (tool result bao timeout/killed, hoac output bi CAT giua chung truoc dong tong ket cuoi cua lenh) → DO KHONG PHAI ket qua that: khai cannotRun=true + killedByTool=true + reason \"bi cong cu giet o <so giay> giay\" kem dau hieu (timeout tool / output cat). TUYET DOI khong bao exitCode nhu the lenh tu fail va khong doan PASS/FAIL tu output cut.\n<!-- TOOL-KILL-RULE>>> -->\n\n## Hồ sơ cho lượt bị ngắt (đường độc lập)\n\nPhiên tươi VERIFY gặp lệnh bị công cụ ngắt thì:\n\n- dòng run-log của eval đó: `\"exit_code\": null, \"killed_by_tool\": true` (không\n  ghi mã thoát của công cụ như mã thoát của lệnh);\n- verdict báo cáo `BLOCKED`, `reason: bi cong cu giet o <so giay> giay — <eval ids>`\n  (kèm dấu hiệu: timeout tool / output cắt trước dòng tổng kết); `failed_evals`\n  rỗng — người đọc hồ sơ thấy đây là sự cố hạ tầng, chữa bằng chạy lại với trần\n  công cụ đủ dài, không phải sửa sản phẩm.\n",
   "contractPath": "/Users/manhphan/dev/OpenMAIC/_acceptance/cau-hinh-di-theo-nguoi/contract.md",
-  "invokedAt": "2026-09-20T11:11:02Z",
-  "invokedSha": "039bf277cc6604fd0403e26cf41905b48e62e3b7",
+  "invokedAt": "2026-09-20T11:44:57Z",
+  "invokedSha": "6ba55abad76fe896c9facc76c22e330ef4b02825",
   "vungVat": [
+    ".gitignore",
     "_acceptance/cau-hinh-di-theo-nguoi/evals.yaml",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/h1-ba-loi-danh-tinh.html",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/h1-ba-loi-danh-tinh.png",
@@ -351,6 +353,8 @@
     "app/api/persistence/[...path]/route.ts",
     "components/settings/index.tsx",
     "components/settings/my-devices-settings.tsx",
+    "evidence/E13-network.txt",
+    "evidence/E13-tat.png",
     "lib/i18n/locales/ar-SA.json",
     "lib/i18n/locales/de-DE.json",
     "lib/i18n/locales/en-US.json",
@@ -366,10 +370,12 @@
     "lib/p-tiers.json",
     "lib/persistence/adopt-choices.ts",
     "lib/persistence/bootstrap.ts",
+    "lib/persistence/claim-code-format.ts",
     "lib/persistence/claim-code.ts",
     "lib/persistence/enabled.ts",
     "lib/persistence/server-provider.ts",
     "lib/server/agent-runtime/owner.ts",
+    "lib/store/account-stores.ts",
     "lib/store/kv-persist.ts",
     "lib/types/settings.ts",
     "packages/@openmaic/storage/package.json",
@@ -382,6 +388,7 @@
     "scripts/design-gate-changed.mjs",
     "scripts/with-pinned-node.sh",
     "tests/api/claim.test.ts",
+    "tests/persistence/account-scope-wiring.test.ts",
     "tests/persistence/adopt-choices.test.ts",
     "tests/persistence/asset-collector-schedule.test.ts",
     "tests/persistence/claim-code.test.ts",
@@ -425,17 +432,22 @@
     "_acceptance/cau-hinh-di-theo-nguoi/decisions.jsonl",
     "_acceptance/cau-hinh-di-theo-nguoi/design.md",
     "_acceptance/cau-hinh-di-theo-nguoi/duong-nen.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/evidence-report.md",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/index.md",
     "_acceptance/cau-hinh-di-theo-nguoi/gap-probe.md",
-    "_acceptance/cau-hinh-di-theo-nguoi/plan.md"
+    "_acceptance/cau-hinh-di-theo-nguoi/plan.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/review-findings.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/run-log.jsonl"
   ],
   "diffFiles": [
+    ".gitignore",
     "PRODUCT-MAP.md",
     "_acceptance/cau-hinh-di-theo-nguoi/contract.md",
     "_acceptance/cau-hinh-di-theo-nguoi/decisions.jsonl",
     "_acceptance/cau-hinh-di-theo-nguoi/design.md",
     "_acceptance/cau-hinh-di-theo-nguoi/duong-nen.md",
     "_acceptance/cau-hinh-di-theo-nguoi/evals.yaml",
+    "_acceptance/cau-hinh-di-theo-nguoi/evidence-report.md",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/h1-ba-loi-danh-tinh.html",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/h1-ba-loi-danh-tinh.png",
     "_acceptance/cau-hinh-di-theo-nguoi/figures/h2-luong-ma-nhan.html",
@@ -444,6 +456,8 @@
     "_acceptance/cau-hinh-di-theo-nguoi/figures/the-cong-pham-vi.html",
     "_acceptance/cau-hinh-di-theo-nguoi/gap-probe.md",
     "_acceptance/cau-hinh-di-theo-nguoi/plan.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/review-findings.md",
+    "_acceptance/cau-hinh-di-theo-nguoi/run-log.jsonl",
     "_acceptance/cau-hinh-di-theo-nguoi/s4-args.json",
     "_acceptance/config.yaml",
     "app/api/claim/redeem/route.ts",
@@ -451,6 +465,8 @@
     "app/api/persistence/[...path]/route.ts",
     "components/settings/index.tsx",
     "components/settings/my-devices-settings.tsx",
+    "evidence/E13-network.txt",
+    "evidence/E13-tat.png",
     "lib/i18n/locales/ar-SA.json",
     "lib/i18n/locales/de-DE.json",
     "lib/i18n/locales/en-US.json",
@@ -466,10 +482,12 @@
     "lib/p-tiers.json",
     "lib/persistence/adopt-choices.ts",
     "lib/persistence/bootstrap.ts",
+    "lib/persistence/claim-code-format.ts",
     "lib/persistence/claim-code.ts",
     "lib/persistence/enabled.ts",
     "lib/persistence/server-provider.ts",
     "lib/server/agent-runtime/owner.ts",
+    "lib/store/account-stores.ts",
     "lib/store/kv-persist.ts",
     "lib/types/settings.ts",
     "packages/@openmaic/storage/package.json",
@@ -482,6 +500,7 @@
     "scripts/design-gate-changed.mjs",
     "scripts/with-pinned-node.sh",
     "tests/api/claim.test.ts",
+    "tests/persistence/account-scope-wiring.test.ts",
     "tests/persistence/adopt-choices.test.ts",
     "tests/persistence/asset-collector-schedule.test.ts",
     "tests/persistence/claim-code.test.ts",
@@ -534,6 +553,7 @@
     "packages/@openmaic/storage/test/kv-http-handler.test.ts",
     "packages/@openmaic/storage/test/pg-kv-store.test.ts",
     "tests/api/claim.test.ts",
+    "tests/persistence/account-scope-wiring.test.ts",
     "tests/persistence/adopt-choices.test.ts",
     "tests/persistence/asset-collector-schedule.test.ts",
     "tests/persistence/claim-code.test.ts",
@@ -559,5 +579,9 @@
   ],
   "coEvalPaths": true,
   "evalsHash": "ba18fc945c6363af4c3ed8eb4a8de251955613a700f0fb9e14327c4b9d851660",
-  "runBaseline": true
+  "runBaseline": false,
+  "carriedAnalyst": {
+    "fromRound": 1,
+    "nonDiscriminating": []
+  }
 }
