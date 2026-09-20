@@ -8,11 +8,11 @@ import { cn } from '@/lib/utils';
 
 const PRESET_TEMPLATE: Record<string, unknown> = {
   models: {
-    'qwen:qwen3.8-flash': { tier: 'low', label: '千问3.8 Flash（快/省）' },
-    'qwen:deepseek-v4.1-flash': { tier: 'low+', label: 'DeepSeek V4.1 Flash（可选低档）' },
-    'openai:ZHIPU/GLM-5.3-Flash': { tier: 'mid', label: '智谱GLM-5.3 Flash（主力）' },
-    'openai:ZHIPU/GLM-5.3': { tier: 'mid+', label: '智谱GLM-5.3（强于Flash）' },
-    'qwen:deepseek-v4-pro-0813': { tier: 'high', label: 'DeepSeek V4 Pro（最难页）' },
+    'qwen:qwen3.8-flash': { tier: 'low', label: 'Qwen3.8 Flash (fast/cheap)' },
+    'qwen:deepseek-v4.1-flash': { tier: 'low+', label: 'DeepSeek V4.1 Flash (optional low tier)' },
+    'openai:ZHIPU/GLM-5.3-Flash': { tier: 'mid', label: 'GLM-5.3 Flash (main/default)' },
+    'openai:ZHIPU/GLM-5.3': { tier: 'mid+', label: 'GLM-5.3 (stronger than Flash)' },
+    'qwen:deepseek-v4-pro-0813': { tier: 'high', label: 'DeepSeek V4 Pro (hardest pages)' },
   },
   budget: { monthlyCapCny: 100, dailyEscalationCap: 20, hardLock: true },
   escalation: {
@@ -61,8 +61,9 @@ interface LedgerEvent {
 }
 
 /**
- * 模型调度面板（方案D）：JSON 配置编辑 + 示例模板 + 最近调度建议日志。
- * GET/PUT /api/model-schedule；引擎按次热读，保存即生效，无需重启。
+ * Model Scheduling panel: JSON config editor + preset template + recent ledger.
+ * Talks to GET/PUT /api/model-schedule; the engine hot-reads the file per call,
+ * so saving applies without a server restart.
  */
 export function ModelScheduleSettings() {
   const { t } = useI18n();

@@ -1,5 +1,5 @@
 /**
- * Model schedule & complexity escalation config (方案D, local patch v103).
+ * Model schedule & complexity escalation config.
  *
  * Reads data/model-schedule.json (hot-reload per call) and exposes:
  *  - getEscalationFor(stage): per-stage auto-switch policy

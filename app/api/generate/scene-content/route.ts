@@ -135,8 +135,8 @@ export async function POST(req: NextRequest) {
     // only drop an id that still carried an allocated id, which the
     // pre-resolution makes impossible. Kept so a package consumer that
     // generates without pre-resolving still degrades cleanly.
-    // (方案D: factored into a factory so an escalation can rebuild the call
-    // against a different model without duplicating prompt assembly.)
+    // Factored into a factory so an escalation can rebuild the call against a
+    // different model without duplicating prompt assembly.
     const makeAiCall = (lm: typeof languageModel, info: typeof modelInfo) => {
       const vision = !!info?.capabilities?.vision;
       return async (
@@ -352,9 +352,10 @@ export async function POST(req: NextRequest) {
         : {}),
     };
 
-    // ── 方案D 复杂度自动升级（默认关闭；data/model-schedule.json 配置后生效）──
-    // 按 stage 策略：base 模型的可重试失败（超时/空结果/网络）触发单次升级重试，
-    // 升级模型走 resolveModel 强制指定（绕过 MODEL_ROUTES），成功后写调度建议日志。
+    // ── Model escalation (optional; active only when data/model-schedule.json exists) ──
+    // Per-stage policy: a retryable base-model failure (timeout/empty/network) triggers a
+    // single escalation retry; the upgrade model is resolved explicitly (outside MODEL_ROUTES);
+    // a successful switch is recorded in the schedule ledger.
     const escalationPolicy = await getEscalationFor(stage);
     let content;
     try {
