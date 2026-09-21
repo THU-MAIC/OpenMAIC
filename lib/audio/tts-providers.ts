@@ -1032,6 +1032,15 @@ async function generateMiniMaxTTS(
   }
 
   const data = await response.json();
+  // MiniMax reports an RPM limit as HTTP 200 with base_resp.status_code 1002,
+  // not HTTP 429. Classify that code so callers can pace and retry.
+  if (data?.base_resp?.status_code === 1002) {
+    const statusMsg =
+      typeof data.base_resp.status_msg === 'string' && data.base_resp.status_msg.trim()
+        ? data.base_resp.status_msg.trim()
+        : 'rate limit exceeded';
+    throw new TTSRateLimitError('MiniMax', `MiniMax TTS rate limit exceeded: ${statusMsg}`);
+  }
   const hexAudio = data?.data?.audio;
   if (!hexAudio || typeof hexAudio !== 'string') {
     throw new Error(`MiniMax TTS error: No audio returned. Response: ${JSON.stringify(data)}`);

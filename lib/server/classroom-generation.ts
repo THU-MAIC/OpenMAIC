@@ -34,9 +34,11 @@ import {
   reserveClassroom,
 } from '@/lib/server/classroom-storage';
 import {
+  classroomTtsSummary,
   generateMediaForClassroom,
   replaceMediaPlaceholders,
   generateTTSForClassroom,
+  type ClassroomTtsCoverage,
 } from '@/lib/server/classroom-media-generation';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import type { UserRequirements } from '@/lib/types/generation';
@@ -90,6 +92,10 @@ export interface GenerateClassroomResult {
   scenes: Scene[];
   scenesCount: number;
   createdAt: string;
+  /** Present only when server TTS ran. Omitted when TTS is disabled or skipped. */
+  ttsCoverage?: ClassroomTtsCoverage;
+  /** Set when narration was requested but some speech actions stayed silent. */
+  warning?: string;
 }
 
 function createInMemoryStore(stage: Stage): StageStore {
@@ -731,6 +737,7 @@ export async function generateClassroom(
     }
 
     // Phase: TTS generation
+    let ttsCoverage: ClassroomTtsCoverage | undefined;
     if (input.enableTTS) {
       await options.onProgress?.({
         step: 'generating_tts',
@@ -741,12 +748,16 @@ export async function generateClassroom(
       });
 
       try {
-        await generateTTSForClassroom(scenes, stageId, options.baseUrl);
-        log.info('TTS generation complete');
+        ttsCoverage =
+          (await generateTTSForClassroom(scenes, stageId, options.baseUrl)) ?? undefined;
       } catch (err) {
         log.warn('TTS generation phase failed, continuing:', err);
       }
     }
+    const ttsWarning =
+      ttsCoverage && ttsCoverage.written < ttsCoverage.total
+        ? classroomTtsSummary(ttsCoverage.written, ttsCoverage.total)
+        : undefined;
 
     await options.onProgress?.({
       step: 'persisting',
@@ -765,7 +776,7 @@ export async function generateClassroom(
     await options.onProgress?.({
       step: 'completed',
       progress: 100,
-      message: 'Classroom generation completed',
+      message: ttsWarning ?? 'Classroom generation completed',
       scenesGenerated: persisted.scenes.length,
       totalScenes: outlines.length,
     });
@@ -777,6 +788,8 @@ export async function generateClassroom(
       scenes: persisted.scenes,
       scenesCount: persisted.scenes.length,
       createdAt: persisted.createdAt,
+      ...(ttsCoverage ? { ttsCoverage } : {}),
+      ...(ttsWarning ? { warning: ttsWarning } : {}),
     };
   } finally {
     if (!persisted) {
