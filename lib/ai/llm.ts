@@ -342,7 +342,9 @@ export async function callLLM<T extends GenerateTextParams>(
     roundParams: T,
     attemptLabel: string,
   ): Promise<
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     | { ok: true; result: GenerateTextResult<any, any> }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     | { ok: false; error: unknown; result?: GenerateTextResult<any, any> }
   > {
     try {
@@ -378,6 +380,7 @@ export async function callLLM<T extends GenerateTextParams>(
   }
 
   // Phase 1 — primary model, up to maxAttempts times (existing behaviour).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let lastResult: GenerateTextResult<any, any> | undefined;
   let lastError: unknown;
   let triggerFallback = false;
