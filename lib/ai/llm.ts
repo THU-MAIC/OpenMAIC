@@ -9,6 +9,7 @@ import type { GenerateTextResult, JSONValue, LanguageModel, StreamTextResult } f
 import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
+import { isRetryableLlmError } from '@/lib/server/llm-fallback';
 import { getModelMetadataKey } from './model-metadata';
 import { getCanonicalModelId } from './model-aliases';
 import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
@@ -321,26 +322,32 @@ function recordUsageSafe(
  * @param source - A short label for log grouping (e.g. 'scene-stream', 'pbl-chat')
  * @param retryOptions - Optional retry-on-validation-failure settings
  * @param thinking - Optional per-call thinking config (overrides global LLM_THINKING_DISABLED)
+ * @param fallbackOptions - Optional `{ enabled }`; pass `{ enabled: false }` to
+ *   skip the retryable-failure model fallback for this call (e.g. verify-model)
  */
 export async function callLLM<T extends GenerateTextParams>(
   params: T,
   source: string,
   retryOptions?: LLMRetryOptions,
   thinking?: ThinkingConfig,
+  fallbackOptions?: { enabled?: boolean },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<GenerateTextResult<any, any>> {
   const maxAttempts = (retryOptions?.retries ?? 0) + 1;
   const validate = retryOptions?.validate ?? (maxAttempts > 1 ? DEFAULT_VALIDATE : undefined);
+  const allowFallback = fallbackOptions?.enabled !== false;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let lastResult: GenerateTextResult<any, any> | undefined;
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  /** One generateText round for the given params; validates when asked to. */
+  async function runRound(
+    roundParams: T,
+    attemptLabel: string,
+  ): Promise<
+    | { ok: true; result: GenerateTextResult<any, any> }
+    | { ok: false; error: unknown; result?: GenerateTextResult<any, any> }
+  > {
     try {
-      // Resolve effective thinking config: per-call > global env > undefined
       const effectiveThinking = thinking ?? getGlobalThinkingConfig();
-      const injectedParams = injectProviderOptions(params, effectiveThinking);
+      const injectedParams = injectProviderOptions(roundParams, effectiveThinking);
 
       // Wrap in thinkingContext so the custom fetch wrapper in providers.ts
       // can read the config and inject vendor-specific body params for
@@ -358,31 +365,75 @@ export async function callLLM<T extends GenerateTextParams>(
       // every earlier step would go unaccounted. `totalUsage` aggregates across
       // steps and equals `usage` for a single-step call. Mirrors streamLLM,
       // which already prefers the aggregate.
-      recordUsageSafe(result.totalUsage ?? result.usage, buildUsageMeta(params, source));
+      recordUsageSafe(result.totalUsage ?? result.usage, buildUsageMeta(injectedParams, source));
 
-      // Validate result (only when retries are configured)
       if (validate && !validate(result.text)) {
-        log.warn(
-          `[${source}] Validation failed (attempt ${attempt}/${maxAttempts}), ${attempt < maxAttempts ? 'retrying...' : 'giving up'}`,
-        );
-        lastResult = result;
-        continue;
+        log.warn(`[${source}] Validation failed (${attemptLabel})`);
+        return { ok: false, error: undefined, result };
       }
-
-      return result;
+      return { ok: true, result };
     } catch (error) {
-      lastError = error;
+      return { ok: false, error };
+    }
+  }
 
+  // Phase 1 — primary model, up to maxAttempts times (existing behaviour).
+  let lastResult: GenerateTextResult<any, any> | undefined;
+  let lastError: unknown;
+  let triggerFallback = false;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const round = await runRound(params, `attempt ${attempt}/${maxAttempts}`);
+    if (round.ok) return round.result;
+    if (round.error !== undefined) {
+      lastError = round.error;
       if (attempt < maxAttempts) {
-        log.warn(`[${source}] Call failed (attempt ${attempt}/${maxAttempts}), retrying...`, error);
+        log.warn(`[${source}] Call failed (attempt ${attempt}/${maxAttempts}), retrying...`, round.error);
         continue;
       }
+      if (allowFallback && isRetryableLlmError(round.error)) triggerFallback = true;
+    } else {
+      // Validation failure (e.g. empty output) — keep the last billed result,
+      // and only consider a fallback once the same-model retries are exhausted.
+      lastResult = round.result;
+      if (attempt >= maxAttempts && allowFallback) triggerFallback = true;
+    }
+  }
+
+  // Phase 2 — fallback model, exactly one round (no further escalation).
+  if (triggerFallback) {
+    const fallback = await resolveFallbackModelSafe(source);
+    if (fallback) {
+      const primary = typeof params.model === 'string' ? params.model : getModelId(params);
+      log.warn(
+        `[${source}] ${lastError !== undefined ? 'retryable failure' : 'empty output'} on ${primary || '?'
+        }; falling back once to ${fallback.modelString}`,
+      );
+      const round = await runRound({ ...params, model: fallback.model } as T, 'fallback');
+      if (round.ok) return round.result;
+      if (round.error !== undefined) lastError = round.error;
+      else lastResult = round.result;
+    } else {
+      log.warn(`[${source}] fallback requested but none configured; giving up`);
     }
   }
 
   // All attempts exhausted — return last result or throw last error
-  if (lastResult) return lastResult;
+  if (lastResult !== undefined) return lastResult;
   throw lastError;
+}
+
+/** Lazily resolve the fallback model; never throws (fallback is best-effort). */
+async function resolveFallbackModelSafe(
+  source: string,
+): Promise<{ model: LanguageModel; modelString: string } | null> {
+  try {
+    const { resolveFallbackModel } = await import('@/lib/server/llm-fallback');
+    return await resolveFallbackModel(source);
+  } catch (err) {
+    log.warn(`[${source}] Fallback model resolution failed, skipping fallback:`, err);
+    return null;
+  }
 }
 
 /**
