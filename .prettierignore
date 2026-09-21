@@ -18,6 +18,7 @@ scripts/recheck-evidence.cjs
 scripts/product-map.mjs
 scripts/trang-thai-ho-so.cjs
 scripts/khong-can-nguoi.mjs
+skills/acceptance/references/opportunity-template.md
 scripts/design-gate.mjs
 scripts/design-scan.js
 lib/ac-line.cjs
