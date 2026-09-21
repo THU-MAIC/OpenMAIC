@@ -29,7 +29,6 @@ import {
   Plus,
   CreditCard,
   Sparkles,
-  Workflow,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -61,7 +60,6 @@ import type { WebSearchProviderId } from '@/lib/web-search/types';
 import { GeneralSettings } from './general-settings';
 import { SkillSettings } from './skill-settings';
 import { TokenPlanSettings } from './token-plan-settings';
-import { ModelScheduleSettings } from './model-schedule-settings';
 import { ModelEditDialog } from './model-edit-dialog';
 import { AddProviderDialog, type NewProviderData } from './add-provider-dialog';
 import { AddAudioProviderDialog, type NewAudioProviderData } from './add-audio-provider-dialog';
@@ -165,6 +163,7 @@ const IMAGE_PROVIDER_NAMES: Record<ImageProviderId, string> = {
   'minimax-image': 'providerMiniMaxImage',
   'grok-image': 'providerGrokImage',
   'comfyui-image': 'providerComfyUIImage',
+  'openrouter-image': 'providerOpenRouterImage',
   lemonade: 'providerLemonadeImage',
 };
 
@@ -176,6 +175,7 @@ const IMAGE_PROVIDER_ICONS: Record<ImageProviderId, string> = {
   'minimax-image': '/logos/minimax.svg',
   'grok-image': '/logos/grok.svg',
   'comfyui-image': '/logos/comfyui.svg',
+  'openrouter-image': '/logos/openrouter.svg',
   lemonade: '/logos/lemonade.svg',
 };
 
@@ -185,6 +185,7 @@ const VIDEO_PROVIDER_NAMES: Record<VideoProviderId, string> = {
   veo: 'providerVeo',
   'minimax-video': 'providerMiniMaxVideo',
   'grok-video': 'providerGrokVideo',
+  'openrouter-video': 'providerOpenRouterVideo',
   happyhorse: 'providerHappyHorse',
 };
 
@@ -194,6 +195,7 @@ const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
   veo: '/logos/gemini.svg',
   'minimax-video': '/logos/minimax.svg',
   'grok-video': '/logos/grok.svg',
+  'openrouter-video': '/logos/openrouter.svg',
   happyhorse: '/logos/qwen.svg',
 };
 
@@ -235,10 +237,19 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const [selectedPdfProviderId, setSelectedPdfProviderId] = useState<PDFProviderId>(pdfProviderId);
   const [selectedWebSearchProviderId, setSelectedWebSearchProviderId] =
     useState<WebSearchProviderId>(webSearchProviderId);
-  const [selectedImageProviderId, setSelectedImageProviderId] =
-    useState<ImageProviderId>(imageProviderId);
-  const [selectedVideoProviderId, setSelectedVideoProviderId] =
-    useState<VideoProviderId>(videoProviderId);
+  // `imageProviderId`/`videoProviderId` are empty until a provider is actually
+  // chosen (first-run auto-config leaves them blank when the server reports no
+  // media provider). Opening the panel on an empty id selected nothing: the
+  // header rendered the missing key as "settings.undefined", and Test
+  // Connection posted a blank `x-image-provider`/`x-video-provider`, so it
+  // failed with "No image/video provider configured" no matter what was typed.
+  // Fall back to the first catalog entry so the panel always has a selection.
+  const [selectedImageProviderId, setSelectedImageProviderId] = useState<ImageProviderId>(
+    imageProviderId || (Object.keys(IMAGE_PROVIDERS)[0] as ImageProviderId),
+  );
+  const [selectedVideoProviderId, setSelectedVideoProviderId] = useState<VideoProviderId>(
+    videoProviderId || (Object.keys(VIDEO_PROVIDERS)[0] as VideoProviderId),
+  );
   // Navigate to initialSection when dialog opens
   useEffect(() => {
     if (open && initialSection) {
@@ -564,13 +575,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         );
       case 'token-plan':
         return <h2 className="text-lg font-semibold">{t('settings.tokenPlan.nav')}</h2>;
-      case 'model-schedule':
-        return (
-          <>
-            <Workflow className="h-6 w-6 text-muted-foreground" />
-            <h2 className="text-lg font-semibold">{t('settings.modelSchedule.title')}</h2>
-          </>
-        );
       case 'providers':
         if (selectedProvider) {
           return (
@@ -759,19 +763,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             >
               <CreditCard className="h-4 w-4 shrink-0" />
               <span className="truncate">{t('settings.tokenPlan.nav')}</span>
-            </button>
-
-            <button
-              onClick={() => setActiveSection('model-schedule')}
-              className={cn(
-                'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
-                activeSection === 'model-schedule'
-                  ? 'bg-primary/10 text-primary font-medium'
-                  : 'hover:bg-muted',
-              )}
-            >
-              <Workflow className="h-4 w-4 shrink-0" />
-              <span className="truncate">{t('settings.modelSchedule.nav')}</span>
             </button>
 
             <button
@@ -1102,7 +1093,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               {activeSection === 'skills' && <SkillSettings />}
 
               {activeSection === 'token-plan' && <TokenPlanSettings />}
-              {activeSection === 'model-schedule' && <ModelScheduleSettings />}
 
               {activeSection === 'providers' && selectedProvider && (
                 <ProviderConfigPanel
