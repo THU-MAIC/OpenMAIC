@@ -116,9 +116,9 @@ evals:
       - "Trong lúc đang đổi mã → chụp evidence/E13-dang-nhan.png"
       - "Để mã quá hạn → chụp evidence/E13-ma-het-han.png"
       - "Chặn đường tới máy chủ rồi tải lại → chụp evidence/E13-may-chu-im.png"
-      - "Tắt NEXT_PUBLIC_PERSISTENCE rồi tải lại → chụp evidence/E13-tat.png"
+      - "Tắt cả NEXT_PUBLIC_PERSISTENCE lẫn NEXT_PUBLIC_ACCOUNT_SYNC rồi tải lại → chụp evidence/E13-tat.png"
       - "MỌI khung phải là chụp SỐNG. Khung nào không dựng được thì khai thẳng, TUYỆT ĐỐI không dựng lại một ảnh rồi nộp như ảnh chụp."
-    expected: "exit 0; đủ TÁM khung sống cho tám trạng thái dựng được không cần cơ sở dữ liệu. Trạng thái «đã dùng chung» KHÔNG thuộc phép đo này — nó thuộc AC-17, mắt người ký chứng. Chiều đỏ: thiếu một trong tám khung, hoặc một khung là bản dựng lại thay vì chụp sống → đỏ nêu đích danh khung đó."
+    expected: "exit 0; đủ TÁM khung sống cho tám trạng thái dựng được không cần cơ sở dữ liệu. Trạng thái «đã dùng chung» KHÔNG thuộc phép đo này — nó thuộc AC-17, mắt người ký chứng. Máy đo KHÔNG có cơ sở dữ liệu, nên các phản hồi sau là ĐÚNG THIẾT KẾ, không phải lỗi: 404 ở GET /api/persistence/kv/entries/* (lưu trữ máy chủ chưa cấu hình), 404 ở GET /api/stages và GET /api/folders (chỉ phục vụ khi agent runtime bật), 401 ở POST /api/claim/redeem với mã sai hoặc hết hạn (lời từ chối thiết kế của AC-5), và yêu cầu do chính người đo cố ý chặn để dựng khung «máy chủ im». Mọi 4xx/5xx khác trên cùng origin vẫn là đỏ. Chiều đỏ: thiếu một trong tám khung, hoặc một khung là bản dựng lại thay vì chụp sống → đỏ nêu đích danh khung đó."
     paths: ["components/settings/**", "app/api/claim/**"]
     evidence_required: [run_id, exit_code, verifier, verified_at, screenshot]
 
