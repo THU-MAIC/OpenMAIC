@@ -3,10 +3,10 @@ schema_version: 1
 slug: giong-doc-dung-tieng
 feature: Giọng đọc phải nói được thứ tiếng của khóa học
 owner: Manh Phan
-stage: discovery
-decision:
-decided_by:
-decided_at:
+stage: decided
+decision: kill
+decided_by: Manh Phan
+decided_at: 2026-09-21
 prototype:
   base_commit:
   disposition:
@@ -67,9 +67,9 @@ nguồn của kho này.
 
 ## Cổng Đáng
 
-- **decision = …** Căn cứ: …
-- **disposition = …** Căn cứ: …
-- **Ngưỡng UAT chốt cùng lúc ký:** …
+- **decision = kill** Căn cứ: «Phần a sản phẩm đã có nên bỏ nó đi, lỗi thời» (Manh Phan, 21/09/2026)
+- **disposition = …** Căn cứ: không áp dụng — chưa dựng prototype
+- **Ngưỡng UAT chốt cùng lúc ký:** không áp dụng — cơ hội đã bỏ
 
 ## Thước đo thành công → ứng viên criterion
 
