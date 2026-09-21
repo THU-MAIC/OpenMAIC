@@ -18,12 +18,16 @@
  *   already-used all return `undefined`. A caller cannot tell them apart, so it
  *   cannot leak to an attacker which guesses were "close".
  *
- * State is per-process and deliberately in memory. A claim code is a handshake
- * measured in minutes between two devices of one person; surviving a restart is
- * not a property worth a table, and losing the store on restart only costs the
- * user one re-press of "get a code".
+ * Where the codes live depends on the deployment. With a database, they live in
+ * `claim_codes`: on a serverless host the request that mints a code and the one
+ * that redeems it land on different instances, and an in-process store answers
+ * every redemption "unknown" (found on prod, 2026-09-21 — the local dev server
+ * is a single process, so nothing local could show it). Without a database the
+ * store stays in memory, where one process is all there is.
  */
 import { createHash, randomBytes } from 'node:crypto';
+
+import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
 import { canonicalClaimCode } from './claim-code-format';
 
@@ -74,10 +78,9 @@ export async function mintClaimCode(
   owner: string,
   now: number = Date.now(),
 ): Promise<{ code: string; expiresAt: number }> {
-  prune(now);
   const code = randomBytes(CLAIM_CODE_BYTES).toString('hex');
   const expiresAt = now + CLAIM_TTL_MS;
-  claims.set(hashCode(canonicalClaimCode(code)), { owner, expiresAt, used: false });
+  await (await resolveBackend()).put(hashCode(canonicalClaimCode(code)), owner, expiresAt, now);
   return { code, expiresAt };
 }
 
@@ -90,20 +93,102 @@ export async function redeemClaimCode(
   code: string,
   now: number = Date.now(),
 ): Promise<{ owner: string } | undefined> {
-  const hash = hashCode(canonicalClaimCode(code));
-  const record = claims.get(hash);
-  // The lookup is a map hit on the digest, not a comparison against the secret:
-  // an attacker's guess is hashed before anything is compared, so there is no
+  // The lookup is keyed on the digest, not a comparison against the secret: an
+  // attacker's guess is hashed before anything is compared, so there is no
   // character-by-character prefix for timing to leak.
-  if (!record) return undefined;
-  if (record.used) return undefined;
-  if (record.expiresAt <= now) return undefined;
+  const taken = await (await resolveBackend()).take(hashCode(canonicalClaimCode(code)));
+  if (!taken) return undefined;
+  if (taken.expiresAt <= now) return undefined;
+  return { owner: taken.owner };
+}
 
-  // Burn it before returning: a second redemption of the same code must lose,
-  // including one already in flight on another request.
-  claims.delete(hash);
-  claims.set(hash, { ...record, used: true });
-  return { owner: record.owner };
+/**
+ * Where codes are kept. `take` removes the record in the same step that reads
+ * it, so a second redemption of the same code — including one racing on
+ * another instance — finds nothing. Spent and unknown are then the same answer
+ * by construction, and expiry is judged by the caller.
+ */
+export interface ClaimBackend {
+  put(hash: string, owner: string, expiresAt: number, now: number): Promise<void>;
+  take(hash: string): Promise<{ owner: string; expiresAt: number } | undefined>;
+}
+
+const memoryBackend: ClaimBackend = {
+  async put(hash, owner, expiresAt, now) {
+    prune(now);
+    claims.set(hash, { owner, expiresAt, used: false });
+  },
+  async take(hash) {
+    const record = claims.get(hash);
+    if (!record || record.used) return undefined;
+    // Burn it before returning: kept as spent so the store dump still shows it.
+    claims.set(hash, { ...record, used: true });
+    return { owner: record.owner, expiresAt: record.expiresAt };
+  },
+};
+
+interface Queryable {
+  query(text: string, params?: unknown[]): Promise<{ rows: Array<Record<string, unknown>> }>;
+}
+
+/** Claim codes in PostgreSQL, shared by every instance of the deployment. */
+export function pgClaimBackend(db: Queryable): ClaimBackend {
+  let ready: Promise<unknown> | undefined;
+  const ensure = () =>
+    (ready ??= db
+      .query(
+        `CREATE TABLE IF NOT EXISTS claim_codes (
+           hash TEXT PRIMARY KEY,
+           owner TEXT NOT NULL,
+           expires_at BIGINT NOT NULL
+         )`,
+      )
+      .catch((error: unknown) => {
+        ready = undefined;
+        throw error;
+      }));
+  return {
+    async put(hash, owner, expiresAt, now) {
+      await ensure();
+      // Expired rows can never be redeemed; clearing them here keeps the table
+      // at roughly the codes of the last ten minutes without a scheduled job.
+      await db.query('DELETE FROM claim_codes WHERE expires_at <= $1', [now]);
+      await db.query('INSERT INTO claim_codes (hash, owner, expires_at) VALUES ($1, $2, $3)', [
+        hash,
+        owner,
+        expiresAt,
+      ]);
+    },
+    async take(hash) {
+      await ensure();
+      const { rows } = await db.query(
+        'DELETE FROM claim_codes WHERE hash = $1 RETURNING owner, expires_at',
+        [hash],
+      );
+      const row = rows[0];
+      if (!row) return undefined;
+      return { owner: String(row.owner), expiresAt: Number(row.expires_at) };
+    },
+  };
+}
+
+let backendOverride: ClaimBackend | undefined;
+let pgBackend: { url: string; backend: ClaimBackend } | undefined;
+
+async function resolveBackend(): Promise<ClaimBackend> {
+  if (backendOverride) return backendOverride;
+  const url = process.env.DATABASE_URL?.trim();
+  if (!url) return memoryBackend;
+  if (pgBackend?.url !== url) {
+    const { pool } = await getServerPersistenceProvider(url);
+    pgBackend = { url, backend: pgClaimBackend(pool as unknown as Queryable) };
+  }
+  return pgBackend.backend;
+}
+
+/** Route codes through `backend` instead of the deployment's own. Exists for tests. */
+export function setClaimBackendForTests(backend: ClaimBackend | undefined): void {
+  backendOverride = backend;
 }
 
 /**

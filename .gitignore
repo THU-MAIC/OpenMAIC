@@ -99,3 +99,4 @@ e2e/__screenshots-619/
 
 # Cây worktree tạm của các lượt chạy song song — không thuộc kho.
 .claude/worktrees/
+.playwright-mcp/
