@@ -335,7 +335,8 @@ export async function callLLM<T extends GenerateTextParams>(
 ): Promise<GenerateTextResult<any, any>> {
   const maxAttempts = (retryOptions?.retries ?? 0) + 1;
   const validate = retryOptions?.validate ?? (maxAttempts > 1 ? DEFAULT_VALIDATE : undefined);
-  const allowFallback = fallbackOptions?.enabled !== false;
+  // verify-model probes the exact primary model, so it never falls back.
+  const allowFallback = fallbackOptions?.enabled !== false && source !== 'verify-model';
 
   /** One generateText round for the given params; validates when asked to. */
   async function runRound(
