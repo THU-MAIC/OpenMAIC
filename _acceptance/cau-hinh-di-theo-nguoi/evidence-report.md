@@ -370,4 +370,13 @@ Thử trên prod với «máy C» (danh tính mới, bản cũ `May C tu truoc` 
 duyệt): máy chủ nhận đúng bản cũ, màn chào «Hi, May C tu truoc»
 (`evidence/prod-2026-09-21-may-C-mang-len.jpg`); ngăn của A/B không đổi.
 
-Chưa làm: người ký nhìn bằng mắt trên hai máy thật (AC-17).
+### Mắt người ký — AC-17 (E18)
+
+- Người chứng: Manh Phan · 2026-09-21 · trên máy thật, prod
+  https://openmaic-zeta-seven.vercel.app
+- Nguyên văn: «Tôi đã thử và chạy tốt»
+- Phần này do MẮT NGƯỜI KÝ chứng, không phải máy đo: máy đo không có cơ sở dữ
+  liệu nên không dựng được trạng thái «đã dùng chung» và kết quả thật của việc nhận.
+  Lời chứng không tách từng bước; điều nó phủ là bốn bước đã trình (máy đầu giữ
+  lựa chọn cũ · lấy mã · máy thứ hai dùng mã và thấy lựa chọn · sửa một bên, bên
+  kia thấy sau khi tải lại).
