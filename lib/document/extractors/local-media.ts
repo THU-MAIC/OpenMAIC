@@ -747,7 +747,7 @@ export async function extractMediaMaterial(
             id: assetId,
             type: 'image',
             mimeType: prepared.mime,
-            data: prepared.buffer.toString('base64'),
+            data: `data:${prepared.mime};base64,${prepared.buffer.toString('base64')}`,
             width: prepared.width,
             height: prepared.height,
             description: `${stem} at ${(timeMs / 1000).toFixed(3)} seconds`,
