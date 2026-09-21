@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   audioGet: vi.fn(),
+  fetchMediaUrl: vi.fn(),
   poolResolve: vi.fn(),
   poolRelease: vi.fn(),
 }));
@@ -12,6 +13,10 @@ vi.mock('@/lib/utils/database', () => ({
 
 vi.mock('@/lib/media/asset-pool', () => ({
   getAssetPool: () => ({ resolve: mocks.poolResolve, release: mocks.poolRelease }),
+}));
+
+vi.mock('@/lib/media/fetch-media-url', () => ({
+  fetchMediaUrl: (...args: unknown[]) => mocks.fetchMediaUrl(...args),
 }));
 
 import { AudioPlayer } from '@/lib/utils/audio-player';
@@ -85,6 +90,22 @@ describe('AudioPlayer stored-byte resolution', () => {
 
     expect(played).toBe(true);
     expect(await sources[0].text()).toBe('legacy-narration');
+  });
+
+  it('plays a CDN-backed compatibility row on the first attempt', async () => {
+    const { sources } = stubObjectUrl();
+    const ossKey = 'https://cdn.example.com/audio/remote.mp3';
+    mocks.audioGet.mockResolvedValue({ id: 'ast_remote', blob: new Blob([]), ossKey });
+    mocks.poolResolve.mockResolvedValue(null);
+    mocks.fetchMediaUrl.mockResolvedValue(
+      new Response(new Blob(['remote-narration'], { type: 'audio/mpeg' }), { status: 200 }),
+    );
+
+    const played = await new AudioPlayer().play('ast_remote');
+
+    expect(played).toBe(true);
+    expect(mocks.fetchMediaUrl).toHaveBeenCalledWith(ossKey, 15_000);
+    expect(await sources[0].text()).toBe('remote-narration');
   });
 
   it('reports no audio when neither store has bytes', async () => {

@@ -15,6 +15,8 @@
  * visitor path, so a plain per-stage last-write record is sufficient.
  */
 
+import type { StageMetaResult } from './stage-meta-client';
+
 export interface StageAccessSignal {
   isOwner: boolean;
 }
@@ -62,4 +64,102 @@ export function resolveStageFallbackAccess(stageId: string): StageAccessSignal {
 /** Test hook: forget every recorded outcome. */
 export function resetStageOwnershipSignals(): void {
   stageOwnership.clear();
+}
+
+/**
+ * What a load learned about the viewer, in the four states the sidecar's three
+ * outcomes actually produce.
+ *
+ * `'owner'` and `'not-owner'` are the two halves of a definite answer.
+ * `'ownerless'` is the sidecar's 404: no ownership record exists for this id,
+ * because the course was never persisted or because it was tombstoned. It is
+ * kept distinct from `'unresolved'` — the ABSENCE of an answer, whether not
+ * asked yet or asked and nothing usable came back — so the two cannot be
+ * silently collapsed, even though the gate refuses both.
+ */
+export type ClassroomGenerationOwnership = 'owner' | 'not-owner' | 'ownerless' | 'unresolved';
+
+/** Map a sidecar result onto the generation gate's view of the viewer. */
+export function classroomGenerationOwnership(
+  result: StageMetaResult,
+): ClassroomGenerationOwnership {
+  if (result.outcome === 'found') return result.meta.isOwner ? 'owner' : 'not-owner';
+  return result.outcome === 'absent' ? 'ownerless' : 'unresolved';
+}
+
+/**
+ * May this browser start generation for this course?
+ *
+ * Generation spends the operator's provider budget, and under server-backed
+ * persistence a course is shared and any visitor may open it, so the gate
+ * admits exactly one state: a viewer the sidecar named as the owner. Every
+ * other answer refuses, including the two that are not "somebody else owns
+ * this" — a 404 and a silent sidecar are both "this browser has no reason to
+ * believe it may spend", which is the only reading that keeps a visitor from
+ * billing the operator. A viewer therefore sees unresolved placeholders and no
+ * generation; the owner's own load, which does get an answer, converges them.
+ * Browser-only mode has one viewer who is by construction the author, so the
+ * gate is inert there and behaviour is unchanged.
+ */
+export function mayStartOwnerGeneration(
+  serverBackedMedia: boolean,
+  ownership: ClassroomGenerationOwnership,
+): boolean {
+  if (!serverBackedMedia) return true;
+  return ownership === 'owner';
+}
+
+/**
+ * How long to wait before asking the sidecar again, or `null` to stop.
+ *
+ * Only an unresolved answer is worth repeating. `not-owner` and `ownerless` are
+ * answers -- they refuse, and asking again would not change that -- while
+ * `unresolved` is the absence of one, and it is indistinguishable from a 5xx or
+ * a dropped connection. A surface that asks once per load turns one such blip
+ * into a load with no owner at all: no resume, no Retry affordance, no legacy
+ * narration converted, and nothing to change it short of a full reload.
+ *
+ * Bounded, and short. The gate stays closed the whole time, so asking again can
+ * only ever open it for someone who is entitled to it; and a sidecar that is
+ * still silent after a few seconds is an outage rather than a blip, which the
+ * next load will discover anyway.
+ */
+const OWNERSHIP_RETRY_DELAYS_MS = [500, 2_000, 5_000] as const;
+
+export function stageOwnershipRetryDelay(
+  ownership: ClassroomGenerationOwnership,
+  attempt: number,
+): number | null {
+  if (ownership !== 'unresolved') return null;
+  return OWNERSHIP_RETRY_DELAYS_MS[attempt] ?? null;
+}
+
+export interface OwnershipRetryOptions {
+  /** False once the course this was asked for is no longer the one on screen. */
+  readonly isCurrent: () => boolean;
+  /** @internal Test seam for the timer. */
+  readonly schedule?: (run: () => void, delayMs: number) => void;
+}
+
+/**
+ * Ask until the sidecar says something, or until the attempts run out.
+ *
+ * `ask` performs one round trip and records whatever it learned; it returns the
+ * generation ownership that round trip established so this can decide whether
+ * there is anything left to find out. An `ask` that throws is treated as
+ * unresolved, which is the same fail-closed reading every other non-answer
+ * gets.
+ */
+export async function retryWhileOwnershipUnresolved(
+  ask: () => Promise<ClassroomGenerationOwnership>,
+  { isCurrent, schedule = (run, delayMs) => void setTimeout(run, delayMs) }: OwnershipRetryOptions,
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    if (!isCurrent()) return;
+    const ownership = await ask().catch(() => 'unresolved' as const);
+    if (!isCurrent()) return;
+    const delay = stageOwnershipRetryDelay(ownership, attempt);
+    if (delay === null) return;
+    await new Promise<void>((resolve) => schedule(resolve, delay));
+  }
 }

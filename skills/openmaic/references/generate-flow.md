@@ -33,7 +33,7 @@ Request body:
 Only send supported content fields:
 
 - `requirement` (required)
-- optional `pdfContent`
+- optional `pdfContent` object with the required shape `{ "text": string, "images": string[] }`; malformed values are rejected with `400 INVALID_REQUEST`
 - optional `language` (`"zh-CN"` | `"en-US"`, defaults to `"zh-CN"`) — any other value silently falls back to `"zh-CN"`
 - optional `enableWebSearch` (boolean) — include web search context in outline generation
 - optional `enableImageGeneration` (boolean) — allow image generation metadata in outlines
@@ -94,6 +94,20 @@ POST {url}/api/parse-pdf
 ```text
 POST {url}/api/generate-classroom
 ```
+
+Use this request shape:
+
+```json
+{
+  "requirement": "Create a classroom from this PDF",
+  "pdfContent": {
+    "text": "Parsed PDF text...",
+    "images": []
+  }
+}
+```
+
+Both `pdfContent.text` and `pdfContent.images` are required when `pdfContent` is present. `text` must be a string and every entry in `images` must be a string. The current generation pipeline consumes `pdfContent.text`; `images` is still part of the API contract and is counted in generation job metadata.
 
 ## Polling Loop
 

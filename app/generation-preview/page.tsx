@@ -25,7 +25,7 @@ import {
   fetchSceneContent,
   generateTTSForScene,
 } from '@/lib/hooks/use-scene-generator';
-import { isAbortError } from '@openmaic/generation';
+import { isAbortError } from '@openmaic/generation/browser';
 import { FOREGROUND_SCENE_RETRY_OPTIONS } from './foreground-retry';
 import {
   loadImageMapping,

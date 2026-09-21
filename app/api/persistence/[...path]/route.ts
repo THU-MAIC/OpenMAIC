@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 
@@ -8,6 +9,7 @@ import {
 } from '@openmaic/storage/server';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
+import { createLogger } from '@/lib/logger';
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import {
   decideDocumentAccess,
@@ -15,7 +17,10 @@ import {
   type DocumentAccess,
 } from '@/lib/persistence/document-access';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
-import { authenticatePersistenceRequest } from '@/lib/persistence/server-auth';
+import {
+  authenticatePersistenceRequest,
+  SHARED_ASSET_PRINCIPAL,
+} from '@/lib/persistence/server-auth';
 import {
   getServerPersistenceProvider,
   type PersistencePoolFactory,
@@ -27,6 +32,8 @@ import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
 export const runtime = 'nodejs';
 
 const ROUTE_PREFIX = '/api/persistence';
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+const log = createLogger('Persistence');
 
 function jsonError(status: number, code: string, message: string): Response {
   return Response.json({ error: { code, message } }, { status });
@@ -92,24 +99,67 @@ async function createPersistenceHandler(
     validateScene: validateAppScene,
     validateStage: validateAppStage,
   });
-  // Runtime and asset requests retain the development authenticator, which
-  // takes their partition key from a client-supplied header. Document requests
-  // use the server-resolved anonymous owner below. Before runtime or asset
-  // routes carry production data, their authenticator must also be replaced
+  // The asset posture, precisely.
+  //
+  // Reading an asset and allocating one are open to any caller this deployment
+  // lets in, exactly as reading a document and creating one already are: assets
+  // live in a single shared partition by design (see the SHARED_ASSET_PRINCIPAL
+  // comment in lib/persistence/server-auth.ts), so there is nothing per-caller
+  // for the development authenticator to decide about them, and routing them
+  // through it made every asset request fail in a production build that had not
+  // opted into that authenticator — the build this project's own
+  // server-persistence recipe produces.
+  //
+  // Replacing and deleting are refused outright — to everyone, authenticated or
+  // not. Those operations scope by principal key alone, and every caller
+  // resolves to the same shared key, so authentication decides nothing here:
+  // any signed-in visitor who learned an id, and a document read hands out
+  // every id its slides name, could overwrite or destroy another author's
+  // media. There is no per-asset ownership to check against yet, and since this
+  // application began storing generated media the registry is the only copy a
+  // course has, so the answer is no mutations at all. Nothing in the app
+  // performs an asset PUT or DELETE, and none needs to: the server owns the
+  // entry lifecycle. A document write records what that document claims in the
+  // reference table and commits the allocations it names; deleting the document
+  // withdraws those claims; the collector's entry pass releases an entry whose
+  // last claim left longer ago than the grace period, and an allocation no
+  // document ever claimed once its pending TTL expires. The bytes follow after
+  // their own grace.
+  //
+  // What this is NOT: a per-caller access control. The deployment-level fence
+  // is the access code. Allocation is bounded by the asset store's per-principal
+  // quota, which with one shared principal is a deployment-wide cap.
+  //
+  // Runtime requests still take their partition key from a client-supplied
+  // header, because a runtime session genuinely is per-learner state. Before
+  // runtime routes carry production data, their authenticator must be replaced
   // with real session verification.
   // Reclamation is not scheduled from here, and must not be: a route module
   // has no once-per-process guarantee and no shutdown hook. AssetCollector
   // runs from instrumentation.ts instead, over the byte store this same
   // lib/persistence/asset-byte-store selection produces, so the collector
-  // always deletes through the layer the request path wrote through.
+  // always deletes through the layer the request path wrote through. The
+  // document store this handler mounts is the other half of that mechanism:
+  // createOwnerBoundDocumentStore builds it with reference tracking on, which
+  // is what gives the entry pass something to read.
   const byteEgress = indirectEgressWithinGrace(
     configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
   );
   return createStorageHttpHandler(runtimeStore, documentStore, {
-    authenticate: async (request) =>
-      request.url?.startsWith('/documents')
-        ? { learnerKey: ownerId }
-        : authenticatePersistenceRequest(request),
+    authenticate: async (request) => {
+      if (request.url?.startsWith('/documents')) return { learnerKey: ownerId };
+      if (request.url?.startsWith('/assets')) {
+        return { key: SHARED_ASSET_PRINCIPAL, learnerKey: ownerId };
+      }
+      return authenticatePersistenceRequest(request);
+    },
+    authorizeAssets: async (_principal, request) => {
+      const method = (request.method ?? 'GET').toUpperCase();
+      // Reads and allocations for everyone; mutations for nobody, because the
+      // principal they would be scoped to is shared and therefore proves
+      // nothing about who is asking.
+      return method !== 'PUT' && method !== 'DELETE';
+    },
     authorizeMerge: async () => false,
     authorizeAdmin: async () => false,
     authorizeDocuments: async () => access === 'allow',
@@ -264,9 +314,38 @@ interface PersistenceRequestDeps {
   poolFactory?: PersistencePoolFactory;
 }
 
+function persistenceRequestId(request: Request): string {
+  const upstream = request.headers.get('x-request-id')?.trim();
+  return upstream && REQUEST_ID_PATTERN.test(upstream) ? upstream : randomUUID();
+}
+
+async function responseErrorCode(response: Response): Promise<string> {
+  if (!response.headers.get('content-type')?.includes('application/json')) return '-';
+  const payload = (await response
+    .clone()
+    .json()
+    .catch(() => undefined)) as { error?: { code?: unknown } } | undefined;
+  return typeof payload?.error?.code === 'string' ? payload.error.code : '-';
+}
+
 export async function handlePersistenceRequest(
   request: Request,
   deps: PersistenceRequestDeps = {},
+): Promise<Response> {
+  const requestId = persistenceRequestId(request);
+  const response = await handlePersistenceRequestInner(request, deps);
+  if (response.status >= 500) {
+    const path = new URL(request.url).pathname;
+    const code = await responseErrorCode(response);
+    log.error(`${request.method} ${path} -> ${response.status} ${code} (requestId=${requestId})`);
+  }
+  response.headers.set('x-request-id', requestId);
+  return response;
+}
+
+async function handlePersistenceRequestInner(
+  request: Request,
+  deps: PersistenceRequestDeps,
 ): Promise<Response> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {

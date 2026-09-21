@@ -1,5 +1,6 @@
-import { lift, toggleMark, wrapIn } from 'prosemirror-commands';
+import { lift, wrapIn } from 'prosemirror-commands';
 import type { EditorView } from 'prosemirror-view';
+import { toggleInlineMark, materializeInlineMark } from './prosemirror/commands/toggleInlineMark';
 import { replaceText } from './prosemirror/commands/replaceText';
 import { setListStyle } from './prosemirror/commands/setListStyle';
 import { alignmentCommand } from './prosemirror/commands/setTextAlign';
@@ -20,6 +21,22 @@ function applyMark(view: EditorView, markName: string, attrs?: Record<string, st
   const markType = view.state.schema.marks[markName];
   if (!markType) return;
   autoSelectAll(view);
+  if (markName === 'fontname' || markName === 'fontsize') {
+    const { from, to } = view.state.selection;
+    const tr = view.state.tr;
+    const mark = markType.create(attrs);
+    // Font marks on inline containers define the context for em/ch dimensions.
+    // Range-based addMark also visits those containers and its inverse can copy
+    // their marks onto children. Replace only selected leaves for exact undo.
+    view.state.doc.nodesBetween(from, to, (node, pos, parent) => {
+      if (!node.isInline || !node.isLeaf || !parent?.type.allowsMarkType(markType)) return;
+      const start = Math.max(pos, from);
+      const end = Math.min(pos + node.nodeSize, to);
+      tr.replaceWith(start, end, node.cut(start - pos, end - pos).mark(mark.addToSet(node.marks)));
+    });
+    view.dispatch(tr);
+    return;
+  }
   addMark(view, markType.create(attrs));
 }
 
@@ -27,13 +44,38 @@ function toggleTextMark(view: EditorView, markName: string, selectAll: boolean) 
   const markType = view.state.schema.marks[markName];
   if (!markType) return;
   if (selectAll) autoSelectAll(view);
-  toggleMark(markType)(view.state, view.dispatch);
+  toggleInlineMark(markType)(view.state, view.dispatch);
 }
 
 function clearTextFormatting(view: EditorView) {
   autoSelectAll(view);
   const { $from, $to } = view.state.selection;
-  view.dispatch(view.state.tr.removeMark($from.pos, $to.pos));
+  const tr = view.state.tr;
+  // Container font family/size are the local typography context. Clearing a
+  // text selection removes its own overrides, not that structural context.
+  for (const type of Object.values(view.state.schema.marks)) {
+    if (type.name === 'fontname' || type.name === 'fontsize') {
+      tr.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
+        if (node.isInline && node.isLeaf) {
+          if (!type.isInSet(node.marks)) return;
+          const from = Math.max(pos, $from.pos);
+          const to = Math.min(pos + node.nodeSize, $to.pos);
+          // removeMark also visits enclosing inline nodes, including when its
+          // range starts inside them. Replace just the selected leaf so undo
+          // cannot restore a container mark onto its descendants.
+          tr.replaceWith(
+            from,
+            to,
+            node.cut(from - pos, to - pos).mark(type.removeFromSet(node.marks)),
+          );
+        }
+      });
+    } else {
+      materializeInlineMark(tr, type);
+      tr.removeMark($from.pos, $to.pos, type);
+    }
+  }
+  view.dispatch(tr);
   setListStyle(view, [
     { key: 'fontsize', value: '' },
     { key: 'color', value: '' },
@@ -59,13 +101,13 @@ function setTextLink(view: EditorView, href: string) {
 
   if (markActive(view.state, markType)) {
     if (href) addMark(view, markType.create({ href, title: href }));
-    else toggleMark(markType)(view.state, view.dispatch);
+    else toggleInlineMark(markType)(view.state, view.dispatch);
     return;
   }
 
   if (!href) return;
   autoSelectAll(view);
-  toggleMark(markType, { href, title: href })(view.state, view.dispatch);
+  toggleInlineMark(markType, { href, title: href })(view.state, view.dispatch);
 }
 
 function toggleTextList(view: EditorView, ordered: boolean, listStyleType = '') {

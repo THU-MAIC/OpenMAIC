@@ -3,13 +3,17 @@
  *
  * The token is NOT a secret: NEXT_PUBLIC_PERSISTENCE_TOKEN is compiled into
  * the public browser bundle, so it is fully visible to every visitor and
- * provides no confidentiality and no user isolation — anyone who can load the
- * page can read and write EVERY learner partition and all documents by
- * supplying an arbitrary x-learner-key. Its only purpose is to keep unrelated
- * network scanners out of a trusted-network endpoint. Suitable only for
- * localhost or trusted-network, single-user deployments. Production must
- * replace this module with real session verification and derive learner
- * identity from server-controlled claims.
+ * provides no confidentiality and no user isolation.
+ *
+ * This authenticator is only consulted for `/runtime/*`. Document and asset
+ * requests skip it and take their principal from the 30-day anonymous owner
+ * cookie. Document reads are capability-by-id (stage id, no owner check);
+ * writes and deletes compare that cookie-derived owner. `x-learner-key` is a
+ * client-supplied runtime partition key, not a document-access token.
+ *
+ * Suitable only for localhost or trusted-network, single-user deployments.
+ * Production must replace this module with real session verification and
+ * derive learner identity from server-controlled claims.
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
@@ -26,8 +30,14 @@ type PersistencePrincipal = RuntimeHttpPrincipal & Partial<Pick<AssetPrincipal, 
 /**
  * The single asset partition for this deployment shape. Documents have no
  * ownership partition; assets get the same treatment until real auth lands.
+ *
+ * Exported because the persistence route resolves the asset principal itself,
+ * server-side, rather than through this module's client-supplied credentials:
+ * assets are one shared partition by design, so there is nothing per-caller for
+ * the development authenticator to decide, and routing them through it made
+ * every asset request fail in a production build that had not opted into it.
  */
-const SHARED_ASSET_PRINCIPAL = 'shared';
+export const SHARED_ASSET_PRINCIPAL = 'shared';
 
 /**
  * Whether the operator explicitly opted the development authenticator into

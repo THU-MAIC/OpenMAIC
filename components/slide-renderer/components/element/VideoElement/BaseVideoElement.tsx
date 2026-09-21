@@ -7,6 +7,7 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
 import { mediaRetryTarget, retryMediaTask } from '@/lib/media/media-orchestrator';
+import { mediaFailureNoticeKey } from '@/lib/media/media-failure';
 import { mediaResolutionCanRetry } from '@/lib/media/resolve-media-ref';
 import { RotateCcw, Film, ShieldAlert, VideoOff } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -49,6 +50,8 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
   const showDisabled = resolution.kind === 'disabled';
   const showError = resolution.kind === 'failed';
   const canRetry = mediaResolutionCanRetry(resolution);
+  // A refusal shows why instead of a Retry that would fail the same way.
+  const failureNotice = mediaFailureNoticeKey(task?.errorCode);
   const isReady = !!resolvedSrc;
 
   // Ensure video is paused on mount — prevents browser autoplay from user gesture context
@@ -140,12 +143,13 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
           </div>
         ) : showError ? (
           <div className="w-full h-full bg-red-50 dark:bg-red-900/20 flex flex-col items-center justify-center gap-1.5 rounded">
-            {task?.errorCode === 'CONTENT_SENSITIVE' ? (
+            {failureNotice ? (
               <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
                 <ShieldAlert className="w-3 h-3 shrink-0" />
-                <span>{t('settings.mediaContentSensitive')}</span>
+                <span>{t(failureNotice)}</span>
               </div>
-            ) : canRetry ? (
+            ) : null}
+            {canRetry ? (
               <button
                 onClick={(e) => {
                   e.stopPropagation();

@@ -53,6 +53,125 @@ describe('PgAgentSessionStore with PGlite', () => {
   });
   runAgentSessionUrlContract('Postgres (PGlite)', () => store);
 
+  const textCases = [
+    ['before\u0000after', 'beforeafter'],
+    ['\uD800left\uDC00', '\uFFFDleft\uFFFD'],
+    ['\uD800\u0000\uDC00', '\uFFFD\uFFFD'],
+    ['  课堂 😀 café\nnext  ', '  课堂 😀 café\nnext  '],
+    [String.raw`\u0000 \ud800`, String.raw`\u0000 \ud800`],
+  ];
+
+  test('sanitizes descriptive TEXT when creating a session', async () => {
+    for (const [index, [prompt, expected]] of textCases.entries()) {
+      const id = `text-session-${index}`;
+      const created = await store.createSession(makeAgentSessionInput({ id, prompt }));
+      expect(created.prompt).toBe(expected);
+      expect((await store.getSession(id))?.prompt).toBe(expected);
+      expect(
+        (await store.listSessionsByOwner('owner-a')).find((row) => row.id === id)?.prompt,
+      ).toBe(expected);
+    }
+  });
+
+  test('sanitizes descriptive TEXT in manual titles and their owner projection', async () => {
+    await store.createSession(makeAgentSessionInput({ titleState: 'pending' }));
+    await store.claimAutomaticSessionTitle('session-1', 'owner-a');
+    for (const [title, expected] of textCases) {
+      expect((await store.setManualSessionTitle('session-1', 'owner-a', title))?.title).toBe(
+        expected,
+      );
+      expect((await store.getSession('session-1'))?.title).toBe(expected);
+      expect((await store.readAfter('owner-a', BigInt(0))).at(-1)).toMatchObject({
+        type: 'session_title',
+        title: expected,
+      });
+    }
+    expect(await store.setManualSessionTitle('session-1', 'owner-a', '\u0000')).not.toHaveProperty(
+      'title',
+    );
+    expect((await store.readAfter('owner-a', BigInt(0))).at(-1)).toMatchObject({
+      type: 'session_title',
+      title: null,
+    });
+    expect(await store.setAutomaticSessionTitle('session-1', 'owner-a', 'Late title')).toBeNull();
+  });
+
+  test('sanitizes descriptive TEXT in automatic titles and their owner projection', async () => {
+    for (const [index, [title, expected]] of textCases.entries()) {
+      const id = `text-session-${index}`;
+      await store.createSession(makeAgentSessionInput({ id, titleState: 'pending' }));
+      expect(await store.claimAutomaticSessionTitle(id, 'owner-a')).not.toBeNull();
+      expect((await store.setAutomaticSessionTitle(id, 'owner-a', title))?.title).toBe(expected);
+      expect((await store.getSession(id))?.title).toBe(expected);
+      expect((await store.readAfter('owner-a', BigInt(0))).at(-1)).toMatchObject({
+        type: 'session_title',
+        sessionId: id,
+        title: expected,
+      });
+    }
+  });
+
+  test('sanitizes descriptive TEXT errors without losing failure settlement', async () => {
+    for (const [index, [error, expected]] of textCases.entries()) {
+      const id = `text-session-${index}`;
+      await store.createSession(makeAgentSessionInput({ id }));
+      const claim = await store.claimNextSession('worker-a', 101, {
+        leaseTtlMs: 10_000,
+        maxAttempts: 3,
+        sessionId: id,
+      });
+      expect(claim).not.toBeNull();
+      expect(
+        await store.finishSession(id, 'worker-a', {
+          status: 'failed',
+          error,
+          expectedAttempt: claim!.attempt,
+        }),
+      ).toBe(true);
+      const settled = await store.getSession(id);
+      expect(settled).toMatchObject({ status: 'failed', error: expected });
+      expect(settled).not.toHaveProperty('lease');
+    }
+  });
+
+  test('keeps the automatic title reservation when descriptive TEXT sanitizes to blank', async () => {
+    await store.createSession(makeAgentSessionInput({ titleState: 'pending' }));
+    await store.claimAutomaticSessionTitle('session-1', 'owner-a');
+    const before = await store.readMaxId('owner-a');
+    expect(await store.setAutomaticSessionTitle('session-1', 'owner-a', ' \u0000\n')).toBeNull();
+    expect(await store.readMaxId('owner-a')).toBe(before);
+    expect(
+      (await store.setAutomaticSessionTitle('session-1', 'owner-a', 'Valid title'))?.title,
+    ).toBe('Valid title');
+  });
+
+  test('preserves omitted and empty error semantics after descriptive TEXT sanitization', async () => {
+    await store.createSession(makeAgentSessionInput());
+    await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
+    await store.finishSession('session-1', 'worker-a', {
+      status: 'running',
+      error: 'before\u0000after',
+      releaseLease: false,
+    });
+    expect(
+      await store.finishSession('session-1', 'worker-a', {
+        status: 'running',
+        releaseLease: false,
+      }),
+    ).toBe(true);
+    expect((await store.getSession('session-1'))?.error).toBe('beforeafter');
+    expect(
+      await store.finishSession('session-1', 'worker-a', { status: 'succeeded', error: '\u0000' }),
+    ).toBe(true);
+    expect((await db.query<{ error: string }>('SELECT error FROM agent_sessions')).rows).toEqual([
+      { error: '' },
+    ]);
+    const settled = await store.getSession('session-1');
+    expect(settled).toMatchObject({ status: 'succeeded' });
+    expect(settled).not.toHaveProperty('error');
+    expect(settled).not.toHaveProperty('lease');
+  });
+
   test('provisions all six tables idempotently', async () => {
     await expect(ensureAgentSessionSchema(db)).resolves.toBeUndefined();
     const result = await db.query<{ table_name: string }>(
@@ -567,6 +686,95 @@ describe('PgAgentSessionStore with PGlite', () => {
     // returns it verbatim), so getLeafId validates it like any other leaf id
     // and finds no entry with id '' — instead of silently returning null.
     await expect(tree.getLeafId()).rejects.toBeInstanceOf(AgentSessionEntryTreeError);
+  });
+
+  test('persists NUL and lone surrogates in tree entries and events', async () => {
+    await store.createSession(makeAgentSessionInput());
+    await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
+    const tree = await store.openEntryTree('session-1', 'worker-a', 1);
+    const replacement = '\uFFFD';
+    const emoji = '\u{1F600}';
+    const dirty = `a\u0000b\uD800c\uDC00d`;
+
+    await tree.appendEntry({
+      id: 'dirty',
+      parentId: null,
+      type: 'message',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: { role: 'assistant', content: dirty, [`key\u0000`]: `value\uD800` },
+      emoji,
+    });
+    await store.appendControlEvent('session-1', {
+      ts: 1,
+      type: 'control',
+      data: { text: dirty, emoji },
+    });
+
+    const reopened = await store.openEntryTree('session-1', 'worker-a', 1);
+    const entry = (await reopened.getEntries())[0] as Record<string, unknown>;
+    expect(entry.message).toEqual({
+      role: 'assistant',
+      content: `a${replacement}b${replacement}c${replacement}d`,
+      [`key${replacement}`]: `value${replacement}`,
+    });
+    expect(entry.emoji).toBe(emoji);
+
+    const events = await store.readEventsAfter('session-1', 0);
+    const control = events.find((event) => event.type === 'control');
+    expect(control?.data).toEqual({
+      text: `a${replacement}b${replacement}c${replacement}d`,
+      emoji,
+    });
+  });
+
+  test('keeps colliding sanitized keys as separate tree-entry members', async () => {
+    await store.createSession(makeAgentSessionInput());
+    await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
+    const tree = await store.openEntryTree('session-1', 'worker-a', 1);
+    const replacement = '\uFFFD';
+
+    await tree.appendEntry({
+      id: 'collide',
+      parentId: null,
+      type: 'message',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: {
+        [`a\u0000`]: { first: true },
+        [`a${replacement}`]: { second: true },
+      },
+    });
+
+    const reopened = await store.openEntryTree('session-1', 'worker-a', 1);
+    const entry = (await reopened.getEntries())[0] as Record<string, unknown>;
+    expect(entry.message).toEqual({
+      [`a${replacement}`]: { first: true },
+      [`a${replacement}#2`]: { second: true },
+    });
+  });
+
+  test('keeps an own __proto__ member alongside a NUL key in a tree entry', async () => {
+    await store.createSession(makeAgentSessionInput());
+    await store.claimNextSession('worker-a', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
+    const tree = await store.openEntryTree('session-1', 'worker-a', 1);
+    const message = JSON.parse(`{"__proto__":{"own":true},"x\\u0000":1}`) as Record<
+      string,
+      unknown
+    >;
+
+    await tree.appendEntry({
+      id: 'proto',
+      parentId: null,
+      type: 'message',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message,
+    });
+
+    const reopened = await store.openEntryTree('session-1', 'worker-a', 1);
+    const entry = (await reopened.getEntries())[0] as Record<string, unknown>;
+    const stored = entry.message as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(stored, '__proto__')).toBe(true);
+    expect(stored['__proto__']).toEqual({ own: true });
+    expect(stored['x\uFFFD']).toBe(1);
   });
 
   test('keeps event and tree rows physically present after a tombstone', async () => {

@@ -12,11 +12,12 @@ import { useFilter } from './useFilter';
 import { ImageOutline } from './ImageOutline';
 import { ImageClipHandler } from './ImageClipHandler';
 import { useResolvedImageSrc } from './useResolvedImageSrc';
-import { ImageOff, RotateCcw } from 'lucide-react';
+import { ImageOff, RotateCcw, ShieldAlert } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSceneData } from '@/lib/contexts/scene-context';
 import type { SlideContent } from '@/lib/types/stage';
 import { mediaRetryTarget, retryMediaTask } from '@/lib/media/media-orchestrator';
+import { mediaFailureNoticeKey } from '@/lib/media/media-failure';
 import { mediaResolutionCanRetry } from '@/lib/media/resolve-media-ref';
 
 export interface ImageElementProps {
@@ -44,8 +45,18 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
   // editor canvas displays the generated image (the read-only BaseImageElement
   // has always done this; the interactive variant previously rendered the raw
   // placeholder string, surfacing a broken-image icon in Pro mode).
-  const { resolvedSrc, resolution } = useResolvedImageSrc(elementInfo);
+  const { resolvedSrc, resolution, task } = useResolvedImageSrc(elementInfo);
   const canRetry = mediaResolutionCanRetry(resolution);
+  // A refusal says why, next to the Retry rather than instead of it: a full
+  // store is worth retrying once an operator has raised the ceiling, but a bare
+  // Retry would read as an ordinary failure.
+  //
+  // Only next to one. This surface has never explained a failure it offers no
+  // action for, and the read-only renderers that do have always done it here
+  // instead of a Retry rather than as well as one. Painting one here for a
+  // permanent refusal would change what a browser-only deck looks like, and
+  // this branch changes nothing in browser-only mode.
+  const failureNotice = canRetry ? mediaFailureNoticeKey(task?.errorCode) : undefined;
 
   const isCliping = clipingImageElementId === elementInfo.id;
 
@@ -159,9 +170,22 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
                 </div>
               ) : resolution.kind === 'failed' ? (
                 <div
-                  className="flex h-full w-full items-center justify-center bg-red-50"
+                  // Stacked only when there is something to stack. With no
+                  // notice this is the box it has always been, down to the
+                  // class attribute: browser-only markup does not change here.
+                  className={
+                    failureNotice
+                      ? 'flex h-full w-full flex-col items-center justify-center gap-1.5 bg-red-50'
+                      : 'flex h-full w-full items-center justify-center bg-red-50'
+                  }
                   data-media-state="failed"
                 >
+                  {failureNotice ? (
+                    <div className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                      <ShieldAlert className="h-3 w-3 shrink-0" />
+                      <span>{t(failureNotice)}</span>
+                    </div>
+                  ) : null}
                   {canRetry ? (
                     <button
                       onClick={(event) => {

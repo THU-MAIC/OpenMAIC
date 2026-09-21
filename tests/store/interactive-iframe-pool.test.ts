@@ -11,26 +11,29 @@ beforeEach(reset);
 
 describe('mount', () => {
   test('creates an entry with the given content', () => {
-    pool().mount('s1', { srcDoc: '<p>1</p>' });
+    pool().mount('s1', { sourceHtml: '<p>1</p>' });
     const e = pool().entries['s1'];
     expect(e).toBeDefined();
-    expect(e.srcDoc).toBe('<p>1</p>');
+    expect(e.sourceHtml).toBe('<p>1</p>');
+    expect(e.srcDoc).toContain('<p>1</p>');
   });
 
   test('re-mounting with equal content keeps the entry (no reload)', () => {
-    pool().mount('s1', { srcDoc: '<p>1</p>' });
+    pool().mount('s1', { sourceHtml: '<p>1</p>' });
     const first = pool().entries['s1'].srcDoc;
+    const firstIdentity = pool().entries['s1'].observationIdentity;
     // A remount recomputes an equal-but-new string; value equality must still
     // hit the keep-alive fast path so the host never re-sets srcDoc.
-    pool().mount('s1', { srcDoc: ['<p>', '1', '</p>'].join('') });
+    pool().mount('s1', { sourceHtml: ['<p>', '1', '</p>'].join('') });
     expect(pool().entries['s1'].srcDoc).toBe(first);
+    expect(pool().entries['s1'].observationIdentity).toBe(firstIdentity);
     expect(Object.keys(pool().entries)).toHaveLength(1);
   });
 
   test('re-mounting with changed content replaces it (intended reload)', () => {
-    pool().mount('s1', { srcDoc: '<p>1</p>' });
-    pool().mount('s1', { srcDoc: '<p>2</p>' });
-    expect(pool().entries['s1'].srcDoc).toBe('<p>2</p>');
+    pool().mount('s1', { sourceHtml: '<p>1</p>' });
+    pool().mount('s1', { sourceHtml: '<p>2</p>' });
+    expect(pool().entries['s1'].srcDoc).toContain('<p>2</p>');
   });
 
   test('supports url-backed (src) entries', () => {
@@ -42,7 +45,7 @@ describe('mount', () => {
 
 describe('visibility ownership + rect + active', () => {
   test('release keeps the entry alive but clears its owner', () => {
-    pool().mount('s1', { srcDoc: 'x' });
+    pool().mount('s1', { sourceHtml: 'x' });
     pool().claim('s1', 'ownerA');
     expect(pool().entries['s1'].owner).toBe('ownerA');
     pool().release('s1', 'ownerA');
@@ -53,7 +56,7 @@ describe('visibility ownership + rect + active', () => {
   test('a stale release (wrong owner) does NOT clear a re-claimed entry', () => {
     // Models the mode cross-fade: a newer placeholder re-claims the scene, then
     // the outgoing placeholder's unmount cleanup fires with its old owner id.
-    pool().mount('s1', { srcDoc: 'x' });
+    pool().mount('s1', { sourceHtml: 'x' });
     pool().claim('s1', 'old');
     pool().claim('s1', 'new'); // newer placeholder takes over
     pool().release('s1', 'old'); // stale cleanup must not hide it
@@ -61,14 +64,14 @@ describe('visibility ownership + rect + active', () => {
   });
 
   test('setRect updates the tracked rect', () => {
-    pool().mount('s1', { srcDoc: 'x' });
+    pool().mount('s1', { sourceHtml: 'x' });
     pool().setRect('s1', { left: 1, top: 2, width: 3, height: 4 });
     expect(pool().entries['s1'].rect).toEqual({ left: 1, top: 2, width: 3, height: 4 });
     expect(pool().entries['s1'].clip).toEqual({ left: 1, top: 2, width: 3, height: 4 });
   });
 
   test('setRect can clip smaller than the slot', () => {
-    pool().mount('s1', { srcDoc: 'x' });
+    pool().mount('s1', { sourceHtml: 'x' });
     pool().setRect(
       's1',
       { left: 0, top: 0, width: 1600, height: 900 },
@@ -78,7 +81,7 @@ describe('visibility ownership + rect + active', () => {
   });
 
   test('setActive records the active scene', () => {
-    pool().mount('s1', { srcDoc: 'x' });
+    pool().mount('s1', { sourceHtml: 'x' });
     pool().setActive('s1');
     expect(pool().activeSceneId).toBe('s1');
   });
@@ -94,7 +97,7 @@ describe('visibility ownership + rect + active', () => {
 describe('LRU eviction', () => {
   test(`evicts the least-recently-mounted entry beyond CAP (${IFRAME_POOL_CAP})`, () => {
     for (let i = 0; i < IFRAME_POOL_CAP + 1; i++) {
-      pool().mount(`s${i}`, { srcDoc: `x${i}` });
+      pool().mount(`s${i}`, { sourceHtml: `x${i}` });
     }
     expect(Object.keys(pool().entries)).toHaveLength(IFRAME_POOL_CAP);
     expect(pool().entries['s0']).toBeUndefined(); // oldest evicted
@@ -102,21 +105,21 @@ describe('LRU eviction', () => {
   });
 
   test('never evicts the active scene even if it is the oldest', () => {
-    pool().mount('s0', { srcDoc: 'x0' });
+    pool().mount('s0', { sourceHtml: 'x0' });
     pool().setActive('s0');
     for (let i = 1; i < IFRAME_POOL_CAP + 1; i++) {
-      pool().mount(`s${i}`, { srcDoc: `x${i}` });
+      pool().mount(`s${i}`, { sourceHtml: `x${i}` });
     }
     expect(pool().entries['s0']).toBeDefined(); // active survives
     expect(Object.keys(pool().entries)).toHaveLength(IFRAME_POOL_CAP);
   });
 
   test('re-mounting an existing entry refreshes its recency', () => {
-    pool().mount('s0', { srcDoc: 'x0' });
-    pool().mount('s1', { srcDoc: 'x1' });
-    pool().mount('s2', { srcDoc: 'x2' });
-    pool().mount('s0', { srcDoc: 'x0' }); // touch s0 -> s1 now oldest
-    pool().mount('s3', { srcDoc: 'x3' });
+    pool().mount('s0', { sourceHtml: 'x0' });
+    pool().mount('s1', { sourceHtml: 'x1' });
+    pool().mount('s2', { sourceHtml: 'x2' });
+    pool().mount('s0', { sourceHtml: 'x0' }); // touch s0 -> s1 now oldest
+    pool().mount('s3', { sourceHtml: 'x3' });
     expect(pool().entries['s1']).toBeUndefined();
     expect(pool().entries['s0']).toBeDefined();
   });
@@ -124,13 +127,13 @@ describe('LRU eviction', () => {
 
 describe('evict / reset', () => {
   test('evict removes an entry explicitly', () => {
-    pool().mount('s1', { srcDoc: 'x' });
+    pool().mount('s1', { sourceHtml: 'x' });
     pool().evict('s1');
     expect(pool().entries['s1']).toBeUndefined();
   });
 
   test('reset clears all entries and active scene', () => {
-    pool().mount('s1', { srcDoc: 'x' });
+    pool().mount('s1', { sourceHtml: 'x' });
     pool().setActive('s1');
     pool().reset();
     expect(Object.keys(pool().entries)).toHaveLength(0);

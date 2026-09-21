@@ -144,4 +144,44 @@ describe('Bedrock provider defaults', () => {
       }),
     );
   });
+
+  it('routes Bedrock requests through the extended-timeout transport', async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => {
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    try {
+      globalThis.fetch = fetchMock as typeof fetch;
+
+      getModel({
+        providerId: 'bedrock',
+        modelId: 'us.anthropic.claude-sonnet-5',
+        apiKey: '',
+      });
+
+      // Bedrock goes through the same transport seam as every other provider:
+      // without the fetch override, undici's default 300 s headers timeout
+      // would still cap non-streaming thinking completions.
+      const options = bedrockMock.createAmazonBedrock.mock.calls.at(-1)?.[0] as {
+        fetch?: typeof fetch;
+      };
+      expect(options?.fetch).toBeTruthy();
+
+      await options?.fetch?.(
+        'https://bedrock-runtime.us-west-2.amazonaws.com/us.anthropic.claude-sonnet-5/invoke',
+        { method: 'POST' },
+      );
+
+      const init = fetchMock.mock.calls.at(-1)?.[1] as RequestInit & {
+        dispatcher?: unknown;
+      };
+      expect(init?.dispatcher).toBeTruthy();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

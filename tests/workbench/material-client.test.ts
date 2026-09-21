@@ -29,6 +29,34 @@ describe('workbench material client', () => {
     expect(WORKBENCH_MATERIAL_ACCEPT).toContain('audio/x-m4a');
   });
 
+  it('resolves a generic browser MIME to the concrete type before upload', async () => {
+    // Older Linux XDG mime databases report OOXML files as the generic
+    // `application/vnd.ms-office` container (#1497); the request must carry
+    // the concrete type or the server gate answers 415.
+    const pptxMime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({
+        materialId: material.materialId,
+        originalName: 'slides.pptx',
+        bytes: 5,
+        mime: pptxMime,
+        extraction: { status: 'idle' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const file = new File(['hello'], 'slides.pptx', { type: 'application/vnd.ms-office' });
+    await expect(uploadWorkbenchMaterial(file)).resolves.toMatchObject({ mimeType: pptxMime });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/materials',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'content-type': pptxMime,
+          'x-material-filename': encodeURIComponent('slides.pptx'),
+        }),
+      }),
+    );
+  });
+
   it('uploads composer files through POST /api/materials', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       Response.json({

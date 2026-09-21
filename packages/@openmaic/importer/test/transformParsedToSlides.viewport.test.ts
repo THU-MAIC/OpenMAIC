@@ -54,6 +54,19 @@ type TextGeometry = {
 };
 
 describe('transformParsedToSlides · deck viewport adaptation', () => {
+  it('retains the explicit text-inset marker during canvas conversion', async () => {
+    const slides = await parsedToSlides(
+      deck({ width: 960, height: 540 }, [
+        textElement({
+          content: '<div data-pptx-text-insets="true" style="padding: 0pt;"><p>Text</p></div>',
+        }),
+      ]) as unknown as Parameters<typeof parsedToSlides>[0],
+    );
+    const element = slides[0].elements[0] as unknown as TextGeometry;
+    expect(element.content).toContain('data-pptx-text-insets="true"');
+    expect(element.content).toContain('padding: 0.0px;');
+  });
+
   it('sizes a 4:3 deck (720×540pt) to a 960×0.75 canvas and scales elements by 96/72', async () => {
     const slides = await parsedToSlides(
       deck({ width: 720, height: 540 }, [

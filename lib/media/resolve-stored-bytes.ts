@@ -1,5 +1,6 @@
 import { db, mediaFileKey, type MediaFileRecord } from '@/lib/utils/database';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
+import { mayNameAPoolAsset } from './media-placeholder';
 import { withAssetUrl } from './use-asset-url';
 import { lookupMediaTask } from './media-task-resolution';
 import {
@@ -160,7 +161,9 @@ async function pooledBytes(
   task: MediaTaskState | undefined,
   options: ResolveStoredBytesOptions,
 ): Promise<Blob | null> {
-  if (isConcreteMediaAddress(ref)) return null;
+  // Concrete addresses are network sources, and a ref this application minted
+  // itself was never in the pool; neither is worth a lease.
+  if (isConcreteMediaAddress(ref) || !mayNameAPoolAsset(ref)) return null;
   try {
     return await withAssetUrl(ref, async (url) => {
       if (!url) return null;
