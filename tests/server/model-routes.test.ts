@@ -382,4 +382,32 @@ describe('model-routes', () => {
       ]),
     );
   });
+
+  it('parses a per-stage fallback from the route object', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'scene-content': {
+        model: 'openai:gpt-5.4',
+        fallback: 'qwen:deepseek-v4-pro',
+      },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('scene-content')).toEqual({
+      model: 'openai:gpt-5.4',
+      fallback: 'qwen:deepseek-v4-pro',
+    });
+  });
+
+  it('ignores a blank fallback with a warn', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'scene-content': { model: 'openai:gpt-5.4', fallback: '   ' },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('scene-content')).toEqual({ model: 'openai:gpt-5.4' });
+  });
+
+  it('keeps string routes without a fallback', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': 'openai:gpt-5.4' });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('scene-content')).toEqual({ model: 'openai:gpt-5.4' });
+  });
 });
