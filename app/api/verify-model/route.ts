@@ -44,10 +44,10 @@ export async function POST(req: NextRequest) {
       },
       'verify-model',
       undefined,
-      { mode: 'disabled', enabled: false },
       // Probe the exact model the user typed in — a fallback would report a
-      // dead or mis-keyed model as healthy.
-      { enabled: false },
+      // dead or mis-keyed model as healthy. The shared layer disables the
+      // fallback for the 'verify-model' source automatically.
+      { mode: 'disabled', enabled: false },
     );
 
     return apiSuccess({
