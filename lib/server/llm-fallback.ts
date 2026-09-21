@@ -23,11 +23,7 @@ import type { LanguageModel } from 'ai';
 import type { LlmStage } from '@/lib/server/model-routes';
 import { getStageRoute } from '@/lib/server/model-routes';
 import { getModel, parseModelString } from '@/lib/ai/providers';
-import {
-  resolveApiKey,
-  resolveBaseUrl,
-  resolveProxy,
-} from '@/lib/server/provider-config';
+import { resolveApiKey, resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
 
 export interface FallbackResolution {
