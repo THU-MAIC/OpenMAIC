@@ -6,7 +6,7 @@ failed_evals: []
 verified_by: fresh-context verification subagent
 enforcement_mode: strict
 bypass_used: false
-verified_commit: 9d7f88347787af9aa131e453af896df06916ac1c
+verified_commit: 7c3852e640a2450bf00d2239c3c286d1c4520ce6
 human_signoff: Manh Phan 2026-09-21
 ---
 
@@ -529,3 +529,7 @@ duyệt): máy chủ nhận đúng bản cũ, màn chào «Hi, May C tu truoc»
 ### Re-pin lần 1 — 2026-09-21, do định dạng code sau chữ ký (chỉ đổi khoảng trắng)
 run_id: repin-20260921T082048Z-34851
 sha: 9d7f88347787af9aa131e453af896df06916ac1c · suites: 2 lệnh exit 0 · evals: 15/15 eval máy đạt kỳ vọng
+
+### Re-pin lần 2 — 2026-09-21, do chép khuôn opportunity cho bản đồ sản phẩm trong CI (không đổi mã sản phẩm)
+run_id: repin-20260921T083233Z-49257
+sha: 7c3852e640a2450bf00d2239c3c286d1c4520ce6 · suites: 2 lệnh exit 0 · evals: 15/15 eval máy đạt kỳ vọng
