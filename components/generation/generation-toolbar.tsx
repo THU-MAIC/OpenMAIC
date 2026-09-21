@@ -852,6 +852,7 @@ function ModelSettingsPopover({
 
   return (
     <Popover
+      modal={false}
       open={popoverOpen}
       onOpenChange={(nextOpen) => {
         setPopoverOpen(nextOpen);
@@ -981,6 +982,7 @@ function ModelSettingsPopover({
                     currentProviderId === provider.id && currentModelId === model.id;
                   const selectModel = () => {
                     setActiveProviderId(provider.id);
+                    setPopoverOpen(false);
                     setModel(provider.id, model.id);
                   };
                   return (

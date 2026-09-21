@@ -1,3 +1,4 @@
+import { attachInteractiveState } from '@/lib/chat/pi/interactive-state-evidence';
 /**
  * Pi Director Chat API Endpoint
  *
@@ -8,6 +9,7 @@
 import { NextRequest } from 'next/server';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import {
+  isCoursewareReferenceEnabled,
   isPiChatEnabled,
   isPiNativeChildRuntimeEnabled,
   isPiNativeChildSpotlightEnabled,
@@ -32,7 +34,7 @@ import { hasNativeWhiteboardAction } from '@/lib/chat/pi/tools/native-whiteboard
 import {
   ELEMENT_REFERENCE_ACCEPTED_HEADER,
   ElementReferenceValidationError,
-  resolveSlideElementReference,
+  resolveElementReference,
 } from '@/lib/chat/pi/element-reference';
 
 const log = createLogger('Pi Chat API');
@@ -65,9 +67,20 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: config.agentIds');
     }
 
+    if (
+      (body.elementReference !== undefined || body.interactiveState !== undefined) &&
+      !isCoursewareReferenceEnabled()
+    ) {
+      return apiError('INVALID_REQUEST', 400, 'Courseware references are disabled');
+    }
+
     let elementReference;
+    let interactiveStateNote;
     try {
-      elementReference = resolveSlideElementReference(body);
+      ({ elementReference, stateNote: interactiveStateNote } = attachInteractiveState(
+        body,
+        resolveElementReference(body),
+      ));
     } catch (error) {
       if (error instanceof ElementReferenceValidationError) {
         return apiError('INVALID_REQUEST', 400, error.message);
@@ -226,6 +239,7 @@ export async function POST(req: NextRequest) {
         await runPiDirectorLoop({
           body,
           elementReference,
+          interactiveStateNote,
           agentConfigs,
           send,
           languageModel,

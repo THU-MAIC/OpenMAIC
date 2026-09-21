@@ -28,11 +28,27 @@ Instead, please report it privately using one of the following methods:
 
 We will acknowledge receipt of your vulnerability report within 48 hours and strive to send you regular updates about our progress.
 
+## Before You Report
+
+* Reproduce the issue on the latest release or on `main`. A report that only affects a version already fixed by a published release is closed as a duplicate.
+* Search the published [security advisories](https://github.com/THU-MAIC/OpenMAIC/security/advisories). Variants of a published advisory are welcome; explain what the existing fix misses.
+* Where possible, demonstrate the issue against the default deployment (the shipped `Dockerfile`, `docker-compose.yml`, and `.env.example`). If the finding depends on a non-default setting or a different network topology, name that setting in the report.
+
+## Deployment Assumptions
+
+OpenMAIC's security boundaries are designed around the assumptions below, and reports are assessed against them.
+
+* **`ACCESS_CODE` is a shared site password, not user authentication.** Everyone who knows the code has the same access, and it does not separate users from each other. Its resistance to guessing depends on the code itself, so use a long random value. When the variable is unset (the default in `.env.example`), `middleware.ts` returns `NextResponse.next()` and does not require a credential. There is no second gate, so the API is reachable: that is fail-open, not fail-closed. [GHSA-9m7h-vh2h-rc3w](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-9m7h-vh2h-rc3w) made outbound URL validation unconditional in v1.0.1; it did not change this middleware behaviour.
+* **The render service is an isolation boundary only in its shipped configuration.** It executes untrusted HTML in headless Chromium and relies on the container's egress lockdown (`RENDER_EGRESS_LOCKDOWN=true`, the default, which needs `CAP_NET_ADMIN`) and on an isolated network (`internal: true` in Compose). Disabling the lockdown or placing the service on a routable network is an operator opt-in; see [`render-service/README.md`](render-service/README.md).
+* **Forwarding headers are trusted only when `TRUST_PROXY_HEADERS=true`.** Enable it only behind a reverse proxy that overwrites `X-Forwarded-For` and `X-Real-IP`.
+* **`PERSISTENCE_DEV_TOKEN` does not provide user isolation.** It is meant for local or trusted private networks and must not be used as authentication for a public deployment. Document and asset requests on `/api/persistence` skip the development authenticator: the owner comes from the 30-day anonymous cookie, document reads are capability-by-id (no owner check), and `x-learner-key` is only used on `/runtime/*`.
+* **Server-side configuration is trusted operator input.** Endpoints an operator sets through environment variables (for example `OLLAMA_BASE_URL` or `RENDER_SERVICE_URL`) are not subject to the outbound URL guard. URLs supplied by end users at request time are untrusted and must pass the guard.
+
 ## Triage and Severity
 
 * Maintainers confirm the report, agree on the affected code paths, and assign a severity using CVSS v4.0. The published vector reflects the maintainers' assessment of the default deployment described in this repository (the shipped `Dockerfile`, `docker-compose.yml`, and `.env.example`); deployment-specific amplification is described in the advisory text rather than baked into the base score.
 * If you disagree with the proposed severity, say so in the advisory thread before publication. We will answer every severity objection in the thread before we publish, and we will not publish while a metric is still under active discussion.
-* Behaviour that an operator explicitly opts into and that is documented as unsafe for public deployments (for example `ALLOW_LOCAL_NETWORKS=true`) is evaluated against its documentation: we treat it as a hardening request when it does what the documentation says, and as a vulnerability when it is unsafe beyond that.
+* Behaviour that an operator explicitly opts into and that is documented as unsafe for public deployments (for example `ALLOW_LOCAL_NETWORKS=true`) is evaluated against its documentation: we treat it as a hardening request when it does what the documentation says, and as a vulnerability when it is unsafe beyond that. Findings that only hold after one of the [Deployment Assumptions](#deployment-assumptions) is broken are evaluated the same way.
 
 ## Disclosure Process
 

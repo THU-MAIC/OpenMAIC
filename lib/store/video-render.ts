@@ -29,6 +29,11 @@ import {
   type VideoResolution,
 } from '@/lib/video-export-app/export-options';
 import type { Locale } from '@/lib/i18n';
+import { useStageStore } from '@/lib/store/stage';
+import { observeExportChanges } from '@/lib/video-export-app/observe-export-changes';
+import { resolveExportStageName } from '@/lib/video-export-app/resolve-stage-name';
+
+type BuildExportZipResult = import('@/lib/video-export-app/build-export-zip').BuildExportZipResult;
 
 const log = createLogger('VideoRenderStore');
 
@@ -104,6 +109,39 @@ function inFlight(status: VideoRenderStatus): boolean {
   return status === 'compiling' || status === 'rendering';
 }
 
+// One in-memory retry slot; the active request and the slot share the same Blob.
+let cachedZip: {
+  stageId: string;
+  resolution: VideoResolution;
+  burnInSubtitles: boolean;
+  locale: Locale;
+  result: BuildExportZipResult;
+} | null = null;
+let exportRevision = 0;
+let activeRenders = 0;
+let stopObserving: (() => void) | undefined;
+
+function releaseIdleObservers() {
+  if (activeRenders === 0 && !cachedZip) {
+    stopObserving?.();
+    stopObserving = undefined;
+  }
+}
+
+function invalidateCachedZip() {
+  exportRevision += 1;
+  cachedZip = null;
+  releaseIdleObservers();
+}
+
+function rejectionMessageKey(status: number | null, reason?: string): string | undefined {
+  if (status === 413) return 'export.videoTooLarge';
+  if (status !== 429) return undefined;
+  if (reason === 'queue_full') return 'export.videoQueueFull';
+  if (reason === 'per_identity_limit') return 'export.videoRenderInProgress';
+  return undefined;
+}
+
 export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
   status: 'idle',
   percent: 0,
@@ -112,37 +150,98 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
   error: null,
   options: DEFAULT_OPTIONS,
 
-  setOptions: (patch) => set((s) => ({ options: { ...s.options, ...patch } })),
+  setOptions: (patch) => {
+    const previous = get().options;
+    const options = { ...previous, ...patch };
+    if (
+      options.resolution !== previous.resolution ||
+      options.burnInSubtitles !== previous.burnInSubtitles
+    )
+      invalidateCachedZip();
+    set({ options });
+  },
 
   isActive: () => inFlight(get().status),
 
-  reset: () => set({ status: 'idle', percent: 0, etaMs: null, filename: null, error: null }),
+  reset: () => {
+    invalidateCachedZip();
+    set({ status: 'idle', percent: 0, etaMs: null, filename: null, error: null });
+  },
 
   startRender: async (t, locale) => {
     // Guard against a duplicate submit — the whole reason state lives here.
     if (inFlight(get().status)) return;
 
+    activeRenders += 1;
+    stopObserving ??= observeExportChanges(invalidateCachedZip);
     const { resolution, fps, quality, burnInSubtitles } = get().options;
+    const { stage } = useStageStore.getState();
+    const stageId = stage?.id;
+    if (
+      cachedZip &&
+      (cachedZip.stageId !== stageId ||
+        cachedZip.resolution !== resolution ||
+        cachedZip.burnInSubtitles !== burnInSubtitles ||
+        cachedZip.locale !== locale)
+    )
+      invalidateCachedZip();
+    const cached = cachedZip?.result;
 
-    set({ status: 'compiling', percent: 0, etaMs: null, filename: null, error: null });
-    const toastId = toast.loading(t('export.videoCompiling'));
+    set({
+      status: cached ? 'rendering' : 'compiling',
+      percent: 0,
+      etaMs: null,
+      filename: null,
+      error: null,
+    });
+    const toastId = toast.loading(t(cached ? 'export.videoRendering' : 'export.videoCompiling'));
 
     let zipBlob: Blob;
     let stageName: string;
     let missingCount = 0;
     let errorCount = 0;
     try {
-      const { buildExportZip } = await import('@/lib/video-export-app/build-export-zip');
-      const built = await buildExportZip({ resolution, burnInSubtitles, locale });
+      let built = cached;
+      if (built && stage) {
+        const currentName = await resolveExportStageName(stage);
+        // The async name read can overlap an edit/reset. Never reuse a slot
+        // that was released while reading, even when the name still matches.
+        if (cachedZip?.result !== built || currentName !== built.stageName) {
+          invalidateCachedZip();
+          built = undefined;
+          set({ status: 'compiling' });
+          toast.loading(t('export.videoCompiling'), { id: toastId });
+        }
+      }
+      if (!built) {
+        const revision = exportRevision;
+        const compileStageId = useStageStore.getState().stage?.id;
+        const { buildExportZip } = await import('@/lib/video-export-app/build-export-zip');
+        built = await buildExportZip({ resolution, burnInSubtitles, locale });
+        // Changes during compilation (including reset or switching away and
+        // back) cannot repopulate the retry slot with an obsolete snapshot.
+        if (compileStageId && revision === exportRevision) {
+          cachedZip = {
+            stageId: compileStageId,
+            resolution,
+            burnInSubtitles,
+            locale,
+            result: built,
+          };
+        }
+      }
       ({ zipBlob, stageName, missingCount, errorCount } = built);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      set({ status: 'failed', error: message });
       if (error instanceof NoScenesError) {
         toast.error(t('export.videoNoScenes'), { id: toastId });
       } else {
         log.error('Video render (compile) failed:', error);
         toast.error(t('export.videoFailed'), { id: toastId });
       }
-      set({ status: 'failed', error: 'compile' });
+      activeRenders -= 1;
+      releaseIdleObservers();
       return;
     }
 
@@ -164,6 +263,7 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
     // unavailable" (degrade to ZIP) from a real rejection like 429/413/5xx
     // (surface the error instead of an unsolicited download). null = fetch threw.
     let submitStatus: number | null = null;
+    let submitReason: string | undefined;
 
     try {
       const form = new FormData();
@@ -184,9 +284,11 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
             jobId?: string;
             error?: string;
             details?: string;
+            reason?: string;
           };
           if (!res.ok || !data.jobId) {
             submitStatus = res.status;
+            submitReason = data.reason;
             const detail = [data.error, data.details].filter(Boolean).join(': ');
             return { status: 'failed', message: detail || `HTTP ${res.status}` };
           }
@@ -235,6 +337,7 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
       });
 
       saveAs(mp4, filename);
+      invalidateCachedZip();
       set({ status: 'succeeded', percent: 100, etaMs: 0 });
       toast.success(t('export.videoMp4Success'), { id: toastId });
       if (missingCount > 0 || errorCount > 0) {
@@ -251,11 +354,14 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
         const unavailable = submitStatus == null || submitStatus === 501;
         if (unavailable) {
           saveAs(zipBlob, `${sanitizeFilename(stageName)}-video.zip`);
+          invalidateCachedZip();
           set({ status: 'idle', percent: 0, etaMs: null });
           toast.info(t('export.videoServiceUnavailable'), { id: toastId });
         } else {
+          if (submitStatus === 400 || submitStatus === 413) invalidateCachedZip();
           set({ status: 'failed', error: message });
-          toast.error(t('export.videoFailed'), { id: toastId });
+          const key = rejectionMessageKey(submitStatus, submitReason);
+          toast.error(t(key ?? 'export.videoFailed'), { id: toastId });
         }
       } else {
         // The render started but failed / timed out. Cancel the server job so it
@@ -267,6 +373,9 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
         set({ status: 'failed', error: message });
         toast.error(t('export.videoFailed'), { id: toastId });
       }
+    } finally {
+      activeRenders -= 1;
+      releaseIdleObservers();
     }
   },
 }));

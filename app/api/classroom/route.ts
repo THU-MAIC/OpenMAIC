@@ -1,9 +1,11 @@
 import { type NextRequest } from 'next/server';
-import { randomUUID } from 'crypto';
 import { validateScene } from '@openmaic/dsl';
 import { apiSuccess, apiError, API_ERROR_CODES } from '@/lib/server/api-response';
 import {
   buildRequestOrigin,
+  ClassroomAlreadyExistsError,
+  CLASSROOM_ID_MAX_ATTEMPTS,
+  generateClassroomId,
   isValidClassroomId,
   persistClassroom,
   readClassroom,
@@ -63,15 +65,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const id = stage.id || randomUUID();
-
-    // An id that fails the allowlist never reaches the filesystem: the storage
-    // layer joins the id into CLASSROOMS_DIR, so a traversal-style id must be
-    // rejected here with the same contract the read side already enforces.
-    if (!isValidClassroomId(id)) {
-      return apiError(API_ERROR_CODES.INVALID_REQUEST, 400, 'Invalid classroom id');
-    }
-
     const baseUrl = buildRequestOrigin(request);
 
     // Sanitize every HTML-bearing string in the payload before it reaches
@@ -80,10 +73,45 @@ export async function POST(request: NextRequest) {
     const safeStage = sanitizeSceneContent(stage);
     const safeScenes = sanitizeSceneContent(scenes);
 
-    const persisted = await persistClassroom(
-      { id, stage: { ...safeStage, id }, scenes: safeScenes },
-      baseUrl,
-    );
+    // The storage id is ALWAYS server-generated. A caller-supplied stage.id is
+    // ignored: ids are public share-URL segments, so accepting one would let
+    // any visitor name — and therefore attempt to replace — an existing
+    // classroom. The generated id becomes the stage id and every scene's
+    // stageId so the persisted document is internally consistent.
+    let persisted: Awaited<ReturnType<typeof persistClassroom>> | undefined;
+    for (let attempt = 0; attempt < CLASSROOM_ID_MAX_ATTEMPTS; attempt += 1) {
+      const id = generateClassroomId();
+
+      // Defence in depth: the generator only emits allowlisted characters, but
+      // an id must never be joined into a filesystem path unasserted.
+      if (!isValidClassroomId(id)) {
+        return apiError(API_ERROR_CODES.INVALID_REQUEST, 400, 'Invalid classroom id');
+      }
+
+      try {
+        persisted = await persistClassroom(
+          {
+            id,
+            stage: { ...safeStage, id },
+            scenes: safeScenes.map((scene) => ({ ...scene, stageId: id })),
+          },
+          baseUrl,
+          { exclusive: true },
+        );
+        break;
+      } catch (error) {
+        if (!(error instanceof ClassroomAlreadyExistsError)) {
+          throw error;
+        }
+        // Astronomically unlikely with a 10-character id: pick a fresh id and
+        // retry a bounded number of times rather than clobbering the
+        // incumbent classroom.
+      }
+    }
+
+    if (!persisted) {
+      return apiError(API_ERROR_CODES.INVALID_REQUEST, 409, 'Classroom id collision');
+    }
 
     return apiSuccess({ id: persisted.id, url: persisted.url }, 201);
   } catch (error) {

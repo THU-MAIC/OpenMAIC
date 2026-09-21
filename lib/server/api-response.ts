@@ -33,6 +33,7 @@ export const API_ERROR_CODES = {
   QWEN_VC_BOOTSTRAP_UNSUPPORTED: 'QWEN_VC_BOOTSTRAP_UNSUPPORTED',
   QWEN_VC_REFERENCE_AUDIO_INVALID: 'QWEN_VC_REFERENCE_AUDIO_INVALID',
   QWEN_TTS_ERROR: 'QWEN_TTS_ERROR',
+  TTS_INVALID_RESPONSE: 'TTS_INVALID_RESPONSE',
   GENERATION_FAILED: 'GENERATION_FAILED',
   TRANSCRIPTION_FAILED: 'TRANSCRIPTION_FAILED',
   PARSE_FAILED: 'PARSE_FAILED',
@@ -46,6 +47,7 @@ export interface ApiErrorBody {
   errorCode: ApiErrorCode;
   error: string;
   details?: string;
+  reason?: string;
 }
 
 export function apiError(
@@ -53,6 +55,7 @@ export function apiError(
   status: number,
   error: string,
   details?: string,
+  reason?: string,
 ): NextResponse<ApiErrorBody> {
   return NextResponse.json(
     {
@@ -60,6 +63,7 @@ export function apiError(
       errorCode: code,
       error,
       ...(details ? { details } : {}),
+      ...(reason ? { reason } : {}),
     },
     { status },
   );

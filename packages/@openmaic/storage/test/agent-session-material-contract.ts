@@ -88,6 +88,49 @@ export function runAgentSessionMaterialContract(
       ).rejects.toThrow();
     });
 
+    test('same owner material bound to two sessions succeeds and both sessions can read it', async () => {
+      const store = makeStore();
+      await store.createSession({ id: 'session-1', ownerId: 'owner-a', prompt: 'p' });
+      await store.createSession({ id: 'session-2', ownerId: 'owner-a', prompt: 'p' });
+
+      // One owner-library upload reused across sessions: each session gets its
+      // own globally unique row id, so the shared owner id is metadata rather
+      // than the primary key.
+      const first = await store.createMaterial('session-1', {
+        kind: 'source',
+        title: 'textbook.pdf',
+        ownerMaterialId: 'mat_owner',
+      });
+      const second = await store.createMaterial('session-2', {
+        kind: 'source',
+        title: 'textbook.pdf',
+        ownerMaterialId: 'mat_owner',
+      });
+
+      expect(first.id).not.toBe(second.id);
+      expect(first.ownerMaterialId).toBe('mat_owner');
+      expect(second.ownerMaterialId).toBe('mat_owner');
+      // Both sessions read their own binding, and neither leaks the other's.
+      await expect(store.getMaterial('session-1', first.id)).resolves.toMatchObject({
+        id: first.id,
+        ownerMaterialId: 'mat_owner',
+      });
+      await expect(store.getMaterial('session-2', second.id)).resolves.toMatchObject({
+        id: second.id,
+        ownerMaterialId: 'mat_owner',
+      });
+      await expect(store.getMaterial('session-1', second.id)).resolves.toBeNull();
+      // Rebinding the same owner upload into one session is refused by the
+      // unique (session_id, owner_material_id) index.
+      await expect(
+        store.createMaterial('session-1', {
+          kind: 'source',
+          title: 'textbook.pdf',
+          ownerMaterialId: 'mat_owner',
+        }),
+      ).rejects.toThrow();
+    });
+
     test('lists newest-first and pages with a keyset before cursor', async () => {
       const store = makeStore();
       await store.createSession({ id: 'session-1', ownerId: 'owner-a', prompt: 'p' });

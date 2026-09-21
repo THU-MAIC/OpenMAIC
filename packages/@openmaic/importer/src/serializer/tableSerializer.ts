@@ -559,6 +559,9 @@ export function tableToElement(node: TableNodeData, ctx: RenderContext, _order: 
             cellTextColor: textProps?.color,
             cellTextBold: textProps?.bold,
             cellMargins,
+            punctuationFrameWidthPx: node.columns
+              .slice(colIdx, colIdx + cell.gridSpan)
+              .reduce((sum, columnWidth) => sum + columnWidth, 0),
           })
         : '';
 

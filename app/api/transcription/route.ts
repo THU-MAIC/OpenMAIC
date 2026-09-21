@@ -11,7 +11,7 @@ import {
 import type { ASRProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { findUnsafeNetworkTargetError, validatePublicUrlForSSRF } from '@/lib/server/ssrf-guard';
 const log = createLogger('Transcription');
 
 export const maxDuration = 60;
@@ -54,8 +54,12 @@ export async function POST(req: NextRequest) {
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
     const managed = isServerConfiguredProvider('asr', effectiveProviderId);
     const clientBaseUrl = managed ? undefined : baseUrl || undefined;
+    // A client-supplied BYOK base URL is always judged under the strict public
+    // policy, even when the operator enabled local networks for their own
+    // server-configured ASR backend.
+    const publicOnly = Boolean(clientBaseUrl);
     if (clientBaseUrl) {
-      const ssrfError = await validateUrlForSSRF(clientBaseUrl);
+      const ssrfError = await validatePublicUrlForSSRF(clientBaseUrl);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }
@@ -71,6 +75,7 @@ export async function POST(req: NextRequest) {
       language: language || 'auto',
       apiKey: resolveASRApiKey(effectiveProviderId, managed ? undefined : apiKey || undefined),
       baseUrl: resolveASRBaseUrl(effectiveProviderId, clientBaseUrl),
+      publicOnly,
     };
     // Reflect the resolved (possibly server-pinned) model in failure logs.
     resolvedModelId = config.modelId;
@@ -84,6 +89,10 @@ export async function POST(req: NextRequest) {
       `Transcription failed [provider=${resolvedProviderId ?? 'unknown'}, model=${resolvedModelId ?? 'default'}]:`,
       error,
     );
+    const blocked = findUnsafeNetworkTargetError(error);
+    if (blocked) {
+      return apiError('INVALID_URL', 403, blocked.message);
+    }
     return apiError(
       'TRANSCRIPTION_FAILED',
       500,

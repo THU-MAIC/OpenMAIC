@@ -164,6 +164,10 @@ describe('preview payload semantic validation', () => {
   });
 
   it('accepts an inline-only interactive page and rejects missing or blank HTML', () => {
+    // Inline script is intentionally NOT rejected by this static gate: the
+    // preview contains it with the injected CSP and Puppeteer request
+    // interception instead. This gate only rejects non-self-contained
+    // resource references.
     expect(
       previewabilityError(
         interactiveScene(

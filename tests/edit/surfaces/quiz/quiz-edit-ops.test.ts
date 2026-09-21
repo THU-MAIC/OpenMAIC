@@ -200,6 +200,44 @@ describe('option mutations keep value=letter and answer correct', () => {
     expect(multi.questions[0].answer).toEqual(['C']);
   });
 
+  // A key stored as an option LABEL (an AI-generation legacy form) reads as
+  // correct in the review UI and to the grader. The rows must agree, or the
+  // next mutation rebuilds `answer` from all-false rows and drops it.
+  describe('label-stored correct answers survive option mutations', () => {
+    function labelKeyed(over: Partial<QuizQuestion> = {}): QuizQuestion {
+      return choiceQuestion({
+        options: [
+          { label: '(6, 2)', value: 'A' },
+          { label: '(2, -4)', value: 'B' },
+          { label: '(6, -3)', value: 'C' },
+        ],
+        answer: ['(6, 2)'],
+        ...over,
+      });
+    }
+
+    it('an unrelated option-label edit keeps the answer', () => {
+      const q = updateOptionLabel(content(labelKeyed()), 'q1', 2, '(0, 0)').questions[0];
+      expect(q.options?.map((o) => o.label)).toEqual(['(6, 2)', '(2, -4)', '(0, 0)']);
+      expect(q.answer).toEqual(['A']);
+    });
+
+    it('an option reorder carries the correct answer to its new letter', () => {
+      const q = reorderOptions(content(labelKeyed()), 'q1', 0, 2).questions[0];
+      expect(q.options?.map((o) => o.label)).toEqual(['(2, -4)', '(6, -3)', '(6, 2)']);
+      expect(q.answer).toEqual(['C']);
+    });
+
+    it('a multiple-choice toggle preserves the label-stored answer', () => {
+      const q = toggleCorrect(
+        content(labelKeyed({ type: 'multiple', answer: ['(6, 2)'] })),
+        'q1',
+        1,
+      ).questions[0];
+      expect(q.answer).toEqual(['A', 'B']); // A survived the toggle, B was added
+    });
+  });
+
   it('option mutations on a short_answer question are no-ops', () => {
     const c0 = content(createBlankQuestion('short_answer', 'q1'));
     expect(addOption(c0, 'q1').questions[0].options).toBeUndefined();

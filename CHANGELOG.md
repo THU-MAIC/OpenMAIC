@@ -4,6 +4,102 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.3] - 2026-09-15
+
+A security release: access-code tokens now expire and verification is throttled behind a trusted proxy, the render service applies a network policy to the untrusted HTML it renders, audio provider requests validate redirects and pin their connections, and Next.js is upgraded to patch a critical RCE. It also carries the fixes and features merged since 1.0.2.
+
+### Security
+
+- Access-code verification tokens (`timestamp.HMAC`) never expired because neither verifier checked the timestamp, and `POST /api/access-code/verify` had no throttling. Both verifiers now enforce a 7-day server-side lifetime and reject non-canonical signatures, and verification is rate-limited per client when `TRUST_PROXY_HEADERS=true` (with a warning to use a long random `ACCESS_CODE` when it is short) [GHSA-qpmr-534w-hhpg](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-qpmr-534w-hhpg) (reported by @CaptBoykin) [#1513](https://github.com/THU-MAIC/OpenMAIC/pull/1513)
+- The render service ran caller-supplied HTML in headless Chromium without the packager's Content-Security-Policy on the `/preview` and `/render` paths, so inline script could reach loopback and internal addresses and, on `/render`, paint the response into the returned MP4. Both paths now inject a first-parsed CSP, the preview frame is additionally guarded by request interception, and framed same-origin `.svg`/`.xhtml` documents are sanitized [GHSA-vqq3-22q7-289w](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-vqq3-22q7-289w) (reported by @CaptBoykin) [#1512](https://github.com/THU-MAIC/OpenMAIC/pull/1512)
+- Audio provider requests (TTS, ASR, voice registration and voice cloning) validated a client-supplied base URL once and then followed redirects and re-resolved DNS unvalidated, so a redirect or a rebinding answer could reach an internal address. These requests now validate every redirect hop and connect only to the addresses the guard validated, on every hop [GHSA-9p8q-rcmg-pmjw](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-9p8q-rcmg-pmjw) (reported by @CaptBoykin) [#1514](https://github.com/THU-MAIC/OpenMAIC/pull/1514)
+- Upgrade Next.js from 16.2.11 to 16.3.3, which patches an unauthenticated remote code execution on Windows-hosted servers ([GHSA-p293-qw3h-jr36](https://github.com/vercel/next.js/security/advisories/GHSA-p293-qw3h-jr36) / CVE-2026-75604) [#1503](https://github.com/THU-MAIC/OpenMAIC/pull/1503)
+
+### Features
+
+- Storage: the server owns the asset entry lifecycle and releases assets on course deletion (the #1007 amendment) [#1472](https://github.com/THU-MAIC/OpenMAIC/pull/1472) [#1473](https://github.com/THU-MAIC/OpenMAIC/pull/1473)
+- Skills: add an inquiry-based exercise-class teaching skill grounded in the zone of proximal development [#1382](https://github.com/THU-MAIC/OpenMAIC/pull/1382)
+
+### Bug Fixes
+
+- Importer: resolve embedded PPTX videos when the legacy link points at NULL, and upload video posters through the configured callback (`@openmaic/importer` 0.2.1) [#1507](https://github.com/THU-MAIC/OpenMAIC/pull/1507)
+- Storage: keep jsonb writes valid when model output contains NUL or lone surrogates [#1499](https://github.com/THU-MAIC/OpenMAIC/pull/1499); allow one owner material to be bound to multiple sessions [#1500](https://github.com/THU-MAIC/OpenMAIC/pull/1500)
+- Classroom: render a transient server error as a retryable state instead of the terminal "course does not exist" card, on both the pane and the standalone route [#1485](https://github.com/THU-MAIC/OpenMAIC/pull/1485)
+- Upload: resolve the generic Office MIME (`application/vnd.ms-office`) via the filename extension [#1498](https://github.com/THU-MAIC/OpenMAIC/pull/1498)
+- Settings: maintain the ASR language state invariant on provider selection [#1443](https://github.com/THU-MAIC/OpenMAIC/pull/1443)
+- TTS: treat a custom provider's Add-dialog default base URL as a configured credential path so generation narration is not skipped [#1482](https://github.com/THU-MAIC/OpenMAIC/pull/1482)
+- Export: tolerate malformed authored CSS in classroom exports instead of dropping later assets [#1422](https://github.com/THU-MAIC/OpenMAIC/pull/1422)
+- Render service: preserve plan audio during chunk assembly [#1358](https://github.com/THU-MAIC/OpenMAIC/pull/1358)
+- Docker: enable the Pro workbench flag in Docker builds and allow a non-TLS localhost cookie [#1484](https://github.com/THU-MAIC/OpenMAIC/pull/1484)
+
+### Other Changes
+
+- Docs: document the deployment assumptions and pre-report checks in the security policy [#1511](https://github.com/THU-MAIC/OpenMAIC/pull/1511)
+- Tests: isolate the image URL-guard test environment so it no longer inherits the generic OpenAI fallback [#1476](https://github.com/THU-MAIC/OpenMAIC/pull/1476)
+
+## [1.0.2] - 2026-09-14
+
+A security release that closes a cloud-metadata SSRF gap, a DNS-rebinding bypass
+on media proxying, and a classroom overwrite, and tightens two request paths —
+read the Breaking Changes section first.
+
+### Security
+
+- `/api/proxy-media` and the outbound URL guard accepted the Alibaba Cloud
+  instance-metadata address `100.100.100.200` because the metadata denylist was
+  not applied before an IP literal was accepted. The guard now checks metadata
+  hostnames and addresses — including mapped and transition encodings — before
+  the literal and local-network branches, in every environment and regardless of
+  `ALLOW_LOCAL_NETWORKS`
+  [GHSA-6xff-rgjg-v33f](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-6xff-rgjg-v33f) (reported by @lihua666a-cell)
+- `/api/proxy-media` validated a hostname and then let `fetch()` resolve it
+  again at connect time, so a name whose answer changed between the two lookups
+  could reach an internal address (DNS rebinding). The proxy now connects only
+  to the addresses the guard validated, on every redirect hop, through a shared
+  pinned dispatcher
+  [GHSA-23xq-m3mm-3j49](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-23xq-m3mm-3j49) (reported by @ry2811)
+- `POST /api/classroom` accepted a caller-chosen classroom id and renamed a
+  temporary file over an existing classroom, replacing its content. Ids are now
+  server-generated and classroom files are created exclusively, with a bounded
+  retry and a 409 on collision
+  [GHSA-87m4-6c66-pc68](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-87m4-6c66-pc68) (reported by @ry2811)
+- `POST /api/generate/tts` now inspects a 200 response before storing or billing
+  it: HTML, JSON and other non-audio bodies are rejected, and a URL embedded in
+  a JSON envelope is never followed [#1405](https://github.com/THU-MAIC/OpenMAIC/pull/1405)
+
+### Breaking Changes
+
+- `POST /api/classroom` no longer honours a client-supplied `stage.id`; the `id` in the response is the classroom's id [#1489](https://github.com/THU-MAIC/OpenMAIC/pull/1489)
+- The outbound URL guard now refuses IANA reserved, documentation, multicast and broadcast ranges (`240.0.0.0/4`, `198.18.0.0/15`, `192.0.2.0/24`, `2001:db8::/32`, …) at both the URL and the connection layer, regardless of `ALLOW_LOCAL_NETWORKS`. CGNAT `100.64.0.0/10` (Tailscale and similar overlays) is blocked by default and allowed with `ALLOW_LOCAL_NETWORKS=true`, like private ranges [#1488](https://github.com/THU-MAIC/OpenMAIC/pull/1488)
+
+### Features
+
+- Playback: the global Reference courseware entry now grounds HTML-backed GenUI and Interactive scenes on one source-authored component — resolved again on the host against the request-start scene snapshot, sanitized and bounded, and shared with the Director and both child runtimes — behind the default-off `NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED` build-time gate [#1281](https://github.com/THU-MAIC/OpenMAIC/pull/1281)
+- Export: the export dialog checks render queue availability before compiling; a service that reports itself busy disables MP4 with a localized hint and a manual recheck, while ZIP and subtitle downloads stay available [#1455](https://github.com/THU-MAIC/OpenMAIC/pull/1455)
+- Media: under server-backed persistence, generated media is written through the asset pool first and the allocated id is persisted into the document, so a reload regenerates nothing and other browsers resolve the same bytes [#1392](https://github.com/THU-MAIC/OpenMAIC/pull/1392)
+- Providers: add GLM-5.3 and GLM-5.3-Flash, and make the GLM thinking adapter degrade a disabled request to the lightest effort for always-thinking models [#1401](https://github.com/THU-MAIC/OpenMAIC/pull/1401)
+- Render service: emit one JSON lifecycle event per render and preview transition — submission, start with `queueWaitMs`, finish with its outcome and duration, admission rejection, and preview request — carrying only bounded, low-cardinality fields [#1397](https://github.com/THU-MAIC/OpenMAIC/pull/1397)
+
+### Bug Fixes
+
+- TTS: prepare the next discussion segment while the current clip plays, so synthesis latency overlaps playback while audio stays strictly ordered [#1435](https://github.com/THU-MAIC/OpenMAIC/pull/1435)
+- Export: keep one in-memory compiled ZIP so an unchanged retry after a 429 submits the same result instead of recompiling [#1456](https://github.com/THU-MAIC/OpenMAIC/pull/1456)
+- AI runtime: let non-streaming LLM calls outlive undici's 300 s headers timeout through a shared dispatcher with a 15-minute limit [#1404](https://github.com/THU-MAIC/OpenMAIC/pull/1404); share one process-local thinking context across Next.js bundle evaluations [#1378](https://github.com/THU-MAIC/OpenMAIC/pull/1378)
+- Importer: convert Equation 3.0 and MathType OLE formulas to LaTeX through MTEF v3 with degrade telemetry, and fix the non-transparent formula placeholder [#1411](https://github.com/THU-MAIC/OpenMAIC/pull/1411); stop PPTX import from hanging in non-browser environments by bounding image loading and EMF/PDF rasterization [#1424](https://github.com/THU-MAIC/OpenMAIC/pull/1424)
+- Quiz: resolve AI answer keys to option values before grading, failing closed when a key matches no option or several [#1328](https://github.com/THU-MAIC/OpenMAIC/pull/1328)
+- Renderer: lazy-load the optional ECharts runtime, share one loading promise and wait for chart readiness during slide PNG export [#1420](https://github.com/THU-MAIC/OpenMAIC/pull/1420)
+- Render service: keep preview browser evaluation self-contained so `tsx`'s `__name` helper never reaches Chromium [#1421](https://github.com/THU-MAIC/OpenMAIC/pull/1421); enforce the chunk worker cap and report the worker count actually observed [#1359](https://github.com/THU-MAIC/OpenMAIC/pull/1359)
+- Materials: sanitize the owner id in the byte-store key so uploads work on Windows [#1426](https://github.com/THU-MAIC/OpenMAIC/pull/1426)
+- Settings: read `data.error` for image and video provider test results instead of rendering `failed: undefined` [#1459](https://github.com/THU-MAIC/OpenMAIC/pull/1459)
+- Classroom: adapt the completion page to short viewports instead of clipping its content above the scroll origin [#1461](https://github.com/THU-MAIC/OpenMAIC/pull/1461)
+- Build: include the libvips native libraries in standalone tracing so sharp loads at boot [#1407](https://github.com/THU-MAIC/OpenMAIC/pull/1407)
+
+### Other Changes
+
+- CI: add an opt-in issue triage agent that analyzes read-only by default and publishes only on an explicit run [#1439](https://github.com/THU-MAIC/OpenMAIC/pull/1439)
+- Docs: state the advisory severity and CVE process in the security policy [#1417](https://github.com/THU-MAIC/OpenMAIC/pull/1417)
+- Tests: cover preview callbacks across the `tsx`/browser boundary [#1454](https://github.com/THU-MAIC/OpenMAIC/pull/1454); make the material search budget test deterministic through an injectable clock [#1453](https://github.com/THU-MAIC/OpenMAIC/pull/1453)
+
 ## [1.0.1] - 2026-09-06
 
 A security and stability release. Everyone running 1.0.0 should upgrade; read the

@@ -6,7 +6,12 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { AssetId } from '../src/asset/id.js';
-import type { AssetIndirectReadRequest, AssetPrincipal, AssetStore } from '../src/asset/types.js';
+import {
+  AssetQuotaExceededError,
+  type AssetIndirectReadRequest,
+  type AssetPrincipal,
+  type AssetStore,
+} from '../src/asset/types.js';
 import { createAssetHttpHandler, type AssetHttpHandlerOptions } from '../src/server/asset.js';
 
 const PRINCIPAL: AssetPrincipal = { key: 'principal-a' };
@@ -82,6 +87,59 @@ async function serve(
 function getBytes(url: string, method: 'GET' | 'HEAD' = 'GET'): Promise<Response> {
   return fetch(`${url}/assets/ast_example/content`, { method, redirect: 'manual' });
 }
+
+// The store answering a request is not always constructed by the same copy of
+// this package as the handler: a host may bundle the package more than once, or
+// build its store in one bundle and its handler in another. `instanceof` is
+// false across such a boundary while the error's own declared code is still
+// exactly right, and a quota refusal that degrades into a 500 is the one a
+// client retries forever — paying a provider for the bytes each time.
+describe('store refusals are classified by contract, not by class identity', () => {
+  function refusingStore(error: unknown): AssetStore {
+    return { ...stubStore(), put: () => Promise.reject(error) };
+  }
+
+  function allocate(url: string): Promise<Response> {
+    const body = new FormData();
+    body.append('meta', new Blob([JSON.stringify({})], { type: 'application/json' }), 'meta');
+    body.append('bytes', new Blob([BYTES], { type: 'image/png' }), 'bytes');
+    return fetch(`${url}/assets`, { method: 'POST', body });
+  }
+
+  test('answers this package\u2019s own quota error with 507', async () => {
+    const { url } = await serve(refusingStore(new AssetQuotaExceededError()));
+
+    const response = await allocate(url);
+
+    expect(response.status).toBe(507);
+    expect(await response.json()).toMatchObject({ error: { code: 'ASSET_QUOTA_EXCEEDED' } });
+  });
+
+  test('answers a quota error from another module realm the same way', async () => {
+    class ForeignQuotaError extends Error {
+      readonly code = 'ASSET_QUOTA_EXCEEDED';
+    }
+    const { url } = await serve(refusingStore(new ForeignQuotaError()));
+
+    const response = await allocate(url);
+
+    expect(response.status).toBe(507);
+    expect(await response.json()).toMatchObject({ error: { code: 'ASSET_QUOTA_EXCEEDED' } });
+  });
+
+  test('leaves an ordinary store failure as an internal error', async () => {
+    // A PostgreSQL error carries a `code` too -- a SQLSTATE, which spells none
+    // of the contract's codes and must not be mistaken for one.
+    const { url } = await serve(
+      refusingStore(Object.assign(new Error('deadlock detected'), { code: '40P01' })),
+    );
+
+    const response = await allocate(url);
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({ error: { code: 'INTERNAL_ERROR' } });
+  });
+});
 
 describe('asset byte egress', () => {
   test('serves bytes directly by default, even when the store can sign', async () => {
