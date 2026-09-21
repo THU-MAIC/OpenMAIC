@@ -44,10 +44,7 @@ import type { PersistStorage, StorageValue } from 'zustand/middleware';
 
 import { createLogger } from '@/lib/logger';
 import { reportPersistHealth } from '@/lib/store/persist-health';
-import {
-  getPersistenceRequestHeaders,
-  isBrowserPersistenceEnabled,
-} from '@/lib/persistence/enabled';
+import { getPersistenceRequestHeaders, isAccountSyncEnabled } from '@/lib/persistence/enabled';
 
 const log = createLogger('KVPersist');
 
@@ -503,7 +500,7 @@ function ambientLocalStorage(): Storage | null {
 function resolveKv(deps: KVPersistDeps): KVStore | null {
   if (deps.kv) return deps.kv;
   if (!ambientLocalStorage()) return null;
-  if (isBrowserPersistenceEnabled()) {
+  if (isAccountSyncEnabled()) {
     return (defaultKv ??= new HttpKVStore({
       baseUrl: '/api/persistence',
       deviceStore: new BrowserKVStore(),
@@ -511,6 +508,11 @@ function resolveKv(deps: KVPersistDeps): KVStore | null {
     }));
   }
   return (defaultKv ??= new BrowserKVStore());
+}
+
+/** What `JSON.stringify` keeps of a snapshot: no functions, no `undefined` members. */
+function toPersistedJson<T>(snapshot: T): T {
+  return JSON.parse(JSON.stringify(snapshot)) as T;
 }
 
 /** True when a KV backend keeps its `device` scope on the machine. */
@@ -719,7 +721,14 @@ export function createKVPersistStorage<S>(
       }
     },
 
-    setItem(name, value) {
+    setItem(name, snapshot) {
+      // zustand hands over the whole state: actions (`setAvatar`) and optional
+      // members left `undefined` ride along. Its default JSON storage dropped
+      // both without a word, and so does `BrowserKVStore`; the KV contract over
+      // the wire refuses them instead, so every account write failed the moment
+      // the server was the backend. Persist exactly what JSON keeps — the same
+      // bytes this app has always stored.
+      const value = toPersistedJson(snapshot);
       const state = stateFor(name);
       if (!state.admitWrite(value)) return Promise.resolve();
       return serial(name, async () => {

@@ -43,6 +43,7 @@ beforeEach(() => {
   vi.stubGlobal('localStorage', new MemoryStorage());
   vi.doMock('@/lib/persistence/enabled', () => ({
     isBrowserPersistenceEnabled: () => true,
+    isAccountSyncEnabled: () => true,
     getPersistenceRequestHeaders: async () => ({}),
   }));
 });

@@ -19,6 +19,21 @@ export function isBrowserPersistenceEnabled(): boolean {
   return typeof window !== 'undefined' && process.env.NEXT_PUBLIC_PERSISTENCE === '1';
 }
 
+/**
+ * Lựa chọn (cấu hình, hồ sơ) đi theo người qua ngăn tài khoản trên máy chủ.
+ *
+ * Bật cùng lưu trữ máy chủ đầy đủ, HOẶC riêng một mình bằng
+ * `NEXT_PUBLIC_ACCOUNT_SYNC=1`. Cờ riêng tồn tại vì lưu trữ đầy đủ còn chuyển
+ * danh sách lớp học sang máy chủ — mà danh sách đó chỉ phục vụ được khi agent
+ * runtime (thử nghiệm) cũng bật; không có nó trang chủ trả 404 và lớp học trong
+ * trình duyệt biến khỏi danh sách. Cờ riêng chỉ đưa ngăn tài khoản lên mạng;
+ * lớp học, tài liệu, tệp ở yên trên máy như trước.
+ */
+export function isAccountSyncEnabled(): boolean {
+  if (isBrowserPersistenceEnabled()) return true;
+  return typeof window !== 'undefined' && process.env.NEXT_PUBLIC_ACCOUNT_SYNC === '1';
+}
+
 export function getPersistenceLearnerKey(): Promise<string> {
   if (!isBrowserPersistenceEnabled()) {
     return Promise.reject(new Error('Browser persistence is not enabled'));

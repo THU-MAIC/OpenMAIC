@@ -19,7 +19,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { isBrowserPersistenceEnabled } from '@/lib/persistence/enabled';
+import { isAccountSyncEnabled } from '@/lib/persistence/enabled';
 import { adoptChoicesFromCode, normalizeClaimCode } from '@/lib/persistence/adopt-choices';
 
 type MintState =
@@ -55,7 +55,7 @@ export interface MyDevicesSettingsProps {
 
 export function MyDevicesSettings({ onAdopted, hasLocalChoices = false }: MyDevicesSettingsProps) {
   const { t } = useI18n();
-  const enabled = isBrowserPersistenceEnabled();
+  const enabled = isAccountSyncEnabled();
 
   const [mint, setMint] = useState<MintState>({ kind: 'idle' });
   const [redeem, setRedeem] = useState<RedeemState>({ kind: 'idle' });
