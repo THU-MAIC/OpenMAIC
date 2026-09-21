@@ -110,17 +110,43 @@ evals:
     steps:
       - "Dựng máy chủ phát triển theo config dev_server.start"
       - "Mở {url} → Cài đặt → mục «Máy của tôi» → chụp evidence/E13-san-sang.png"
-      - "Bấm «Lấy mã» → chụp evidence/E13-co-ma.png (thấy mã và đồng hồ đếm ngược)"
-      - "Ở một ngữ cảnh trình duyệt SẠCH, mở cùng mục, nhập một mã sai → chụp evidence/E13-nhan-loi.png (dải lỗi nội tuyến, ô giữ nguyên nội dung)"
-      - "Với ngữ cảnh đã có lựa chọn riêng, nhập mã hợp lệ → chụp evidence/E13-ghi-de.png (lời hỏi xác nhận sẽ thay)"
-      - "Xác nhận → chụp evidence/E13-xong.png"
-      - "Để mã quá hạn → chụp evidence/E13-ma-het-han.png (mã mờ, lời báo hết hạn, nút lấy mã mới)"
-      - "Trong lúc đang đổi mã → chụp evidence/E13-dang-nhan.png (ô khoá lại, chỉ báo đang xử lý)"
-      - "Chặn đường tới máy chủ rồi tải lại mục → chụp evidence/E13-may-chu-im.png (trạng thái lỗi, nút thử lại, lựa chọn đang dùng KHÔNG đổi)"
-      - "Tắt lưu trữ phía máy chủ, tải lại mục → chụp evidence/E13-tat.png (lời giải thích, không có nút)"
-    expected: "Số khung BẰNG số dòng trong khối UX-STATE-TABLE của đặc tả UX (hôm nay 9): -tat, -san-sang, -co-ma, -ma-het-han, -dang-nhan, -nhan-loi, -se-ghi-de, -xong, -may-chu-im. Danh sách trạng thái rút từ chính bảng đó. Chiều đỏ: thêm một dòng vào bảng trạng thái mà không thêm khung → đỏ với thông điệp ghim 'declared state has no captured frame: <id>'. Ca lỗi phải hiện dải lỗi nội tuyến, không phải hộp thoại."
+      - "Bấm «Lấy mã» → chụp evidence/E13-co-ma.png"
+      - "Nhập một mã sai → chụp evidence/E13-nhan-loi.png"
+      - "Đặt một khoá bất kỳ ở một mục Cài đặt rồi nhập mã hợp lệ → chụp evidence/E13-ghi-de.png với LỜI HỨA VỀ PHẠM VI, không phải lời hứa cũ"
+      - "Trong lúc đang đổi mã → chụp evidence/E13-dang-nhan.png"
+      - "Để mã quá hạn → chụp evidence/E13-ma-het-han.png"
+      - "Chặn đường tới máy chủ rồi tải lại → chụp evidence/E13-may-chu-im.png"
+      - "Tắt NEXT_PUBLIC_PERSISTENCE rồi tải lại → chụp evidence/E13-tat.png"
+      - "MỌI khung phải là chụp SỐNG. Khung nào không dựng được thì khai thẳng, TUYỆT ĐỐI không dựng lại một ảnh rồi nộp như ảnh chụp."
+    expected: "exit 0; đủ TÁM khung sống cho tám trạng thái dựng được không cần cơ sở dữ liệu. Trạng thái «đã dùng chung» KHÔNG thuộc phép đo này — nó thuộc AC-17, mắt người ký chứng. Chiều đỏ: thiếu một trong tám khung, hoặc một khung là bản dựng lại thay vì chụp sống → đỏ nêu đích danh khung đó."
     paths: ["components/settings/**", "app/api/claim/**"]
     evidence_required: [run_id, exit_code, verifier, verified_at, screenshot]
+
+  - id: E18
+    criterion: AC-17
+    executor: judgment
+    question: "Trạng thái «đã dùng chung» và kết quả thật của việc nhận chỉ dựng được khi có cơ sở dữ liệu, mà máy đo không có. Câu hỏi: hồ sơ có ghi rõ rằng phần ấy do MẮT NGƯỜI KÝ chứng, kèm điều người ấy thấy — hay nó im lặng để người đọc tưởng máy đã chứng?"
+    inputs:
+      - _acceptance/cau-hinh-di-theo-nguoi/contract.md
+      - _acceptance/cau-hinh-di-theo-nguoi/evidence-report.md
+    evidence_required: [judged_by, verdict, rationale]
+
+  - id: E17
+    criterion: AC-16
+    executor: test
+    layer: backend-effect
+    cmd: config:executors.test.api
+    expected: "exit 0; khoá mà chủ sở hữu mới CHƯA TỪNG lưu thì giữ nguyên giá trị của máy này sau khi nhận, và đường nhận KHÔNG kể nó vào phần đã thay. Chiều đỏ: cho đường nhận tuyên đã thay mọi khoá bất kể máy kia có hay không → đỏ với thông điệp ghim 'adoption claimed a key the other machine never wrote'."
+    paths: ["lib/store/account-stores.ts", "lib/persistence/adopt-choices.ts"]
+    evidence_required: [run_id, exit_code, verifier, verified_at]
+
+  - id: E14
+    criterion: AC-13
+    executor: script
+    cmd: config:executors.design.gate
+    expected: "exit 0; sàn thẩm mỹ P0 của kho đạt trên mục mới (tương phản, tiêu điểm, bàn phím, trạng thái rỗng/đang tải/lỗi). Chiều đỏ: hạ tương phản một nhãn dưới ngưỡng → đỏ với thông điệp ghim tên phép đo bị trượt."
+    paths: ["components/settings/**"]
+    evidence_required: [run_id, exit_code, verifier, verified_at, output]
 
   - id: E15
     criterion: AC-14
@@ -140,19 +166,3 @@ evals:
     paths: ["lib/store/kv-persist.ts", "packages/@openmaic/storage/src/kv/**"]
     evidence_required: [run_id, exit_code, verifier, verified_at]
 
-  - id: E17
-    criterion: AC-16
-    executor: test
-    layer: backend-effect
-    cmd: config:executors.test.api
-    expected: "exit 0; khoá mà chủ sở hữu mới CHƯA TỪNG lưu thì giữ nguyên giá trị của máy này sau khi nhận, và đường nhận KHÔNG kể nó vào phần đã thay. Chiều đỏ: cho đường nhận tuyên đã thay mọi khoá bất kể máy kia có hay không → đỏ với thông điệp ghim 'adoption claimed a key the other machine never wrote'."
-    paths: ["lib/store/account-stores.ts", "lib/persistence/adopt-choices.ts"]
-    evidence_required: [run_id, exit_code, verifier, verified_at]
-
-  - id: E14
-    criterion: AC-13
-    executor: script
-    cmd: config:executors.design.gate
-    expected: "exit 0; sàn thẩm mỹ P0 của kho đạt trên mục mới (tương phản, tiêu điểm, bàn phím, trạng thái rỗng/đang tải/lỗi). Chiều đỏ: hạ tương phản một nhãn dưới ngưỡng → đỏ với thông điệp ghim tên phép đo bị trượt."
-    paths: ["components/settings/**"]
-    evidence_required: [run_id, exit_code, verifier, verified_at, output]

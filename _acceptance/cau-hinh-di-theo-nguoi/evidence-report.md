@@ -287,6 +287,27 @@ human_signoff:
 
 ## Known limits
 
+Người ký chấp nhận ba giới hạn dưới đây trước khi phát hành. Cả ba chụm vào
+MỘT gốc: trạng thái theo-khoá của tầng lưu bền khoá theo tên kho nhưng ngữ
+nghĩa là theo chủ sở hữu, và không gì gột nó khi chủ đổi.
+
+1. Nhận xong nhưng màn báo «máy chủ im», và KHÔNG thử lại được vì mã dùng-một-lần
+   đã cháy. Xảy ra khi máy này từng gặp sự cố lưu trữ trước lúc nhận: dấu hỏng cũ
+   còn treo, nên lần đọc mới thành công vẫn bị đọc thành thất bại. Đây là ngõ cụt
+   cho người dùng — không có đường đi tiếp trong sản phẩm.
+2. Lựa chọn cũ của máy này có thể GHI ĐÈ cấu hình của máy kia sau khi nhận. Xảy ra
+   khi có một lời ghi bị từ chối trước lúc nhận: nó nằm chờ trong bộ đệm rồi được
+   phát lại vào ngăn của chủ mới.
+3. Việc đổi mã chốt danh tính TRƯỚC khi biết nạp lại có xong không. Nạp hỏng thì
+   màn nói «không đổi gì» trong khi máy đã mang danh tính mới.
+
+Phép sửa cho cả ba là một: gột trạng thái theo-khoá ngay tại lúc đổi chủ sở hữu,
+trước khi nạp lại. Chưa làm ở vòng này theo quyết định của người ký.
+
+GIỚI HẠN CỦA PHÉP ĐO, không phải của sản phẩm: máy đo không có cơ sở dữ liệu nào
+chạy, nên luồng đầu-cuối chưa từng được chạy trọn. Phần giao diện và phần chấm
+bằng mắt của vòng này chưa được chứng — người ký tự soi.
+
 ## Ngoài hợp đồng
 
 ## Analyst
