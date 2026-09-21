@@ -5,7 +5,7 @@ slug: cau-hinh-di-theo-nguoi
 owner: phanlemanh@gmail.com
 risk_tier: T3
 surfaces: [api, ui]
-status: implemented
+status: signed-off
 design_doc: _acceptance/cau-hinh-di-theo-nguoi/design.md
 approved_by: Manh Phan
 approved_at: 2026-09-21
@@ -90,6 +90,11 @@ Rút ra bốn điều kiện nền mà đề bài gốc không nêu: mã phải 
 - Mọi chuỗi mới phải có mục trong cả 12 tệp ngôn ngữ (`lib/i18n/locales/`).
 - Mã nhận sinh bằng nguồn ngẫu nhiên mã hoá và lưu ở dạng băm; nhịp chặn đi theo nếp đã có ở `app/api/access-code/verify`.
 - Lối mã nhận ghi vào tham số `authenticatedOwnerId` đã có sẵn của `resolveRequestOwnerId()`, nên một hệ đăng nhập thật sau này thay cách LẤY danh tính chứ không phải sửa tầng lưu trữ.
+- Known limit (Ngoài-1, ký 2026-09-21): khoá API nhà cung cấp nằm dạng rõ trong bảng lựa chọn trên máy chủ; đỡ bằng cổng mật mã vào app và Data API Supabase đã tắt — ai vào được cơ sở dữ liệu thì đọc được.
+- Known limit (Ngoài-2, ký 2026-09-21): đổi mã không kiểm nguồn gọi; trang lạ không lợi dụng được chỉ nhờ cổng mật mã vào app — tắt cổng là hở.
+- Known limit (Ngoài-3, ký 2026-09-21): lấy mã không giới hạn tần suất; chỉ người đã qua cổng mật mã gọi được.
+- Known limit (Ngoài-4, ký 2026-09-21): mọi lỗi khi đổi mã, kể cả quá tần suất và máy chủ lỗi, hiện là «mã sai hoặc hết hạn».
+- Known limit (Ngoài-5, ký 2026-09-21): giới hạn «luồng đầu-cuối chưa chạy trọn lần nào» đã lỗi thời — luồng đã chạy trọn trên prod ngày 2026-09-21 (mục prod trong `evidence-report.md`).
 
 ## Known limits
 
