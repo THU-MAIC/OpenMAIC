@@ -339,3 +339,29 @@ providersConfig/openai/serverModels làm JSON KV không hợp lệ); E12 panel �
 từ đề xuất PASS (round 4) sang đề xuất FAIL 3/3 vì evidence bị nghi vẫn mang
 lời hứa cũ (không nêu phạm vi) — xem lưu ý mâu thuẫn nguồn ngay dưới khối E12;
 E1-E11, E14-E17 PASS.
+## Chạy thật trên prod — 2026-09-21 (máy chạy, chưa phải mắt người ký)
+
+Hai trình duyệt không chung cookie trên https://openmaic-zeta-seven.vercel.app
+(Supabase Singapore, kết nối mã hoá có xác minh chứng chỉ):
+
+| Bước | Thấy |
+|---|---|
+| Máy A đặt lời giới thiệu, đọc lại từ máy chủ | có — `Thu nghiem may A 21-9` |
+| Máy B lúc đầu | ngăn riêng, trống (404) |
+| Máy A lấy mã, máy B dùng mã | màn báo «This machine now shares your choices.» |
+| Máy B đọc | thấy lời giới thiệu của A |
+| Dùng lại cùng mã | bị từ chối, cùng câu với mã sai |
+| Máy B đổi tên thành `Sua tu may B`, máy A đọc | A thấy tên mới |
+| Máy B tải lại trang | màn chào «Hi, Sua tu may B» — `evidence/prod-2026-09-21-may-B.jpg` |
+
+Ba lỗi chỉ prod mới lộ, đã sửa trước lần chạy này:
+1. Mã nhận giữ trong bộ nhớ một tiến trình — trên Vercel lấy mã và dùng mã chạy ở
+   hai tiến trình khác nhau, nên mọi mã đều «sai hoặc hết hạn». Nay giữ trong
+   bảng `claim_codes` (chỉ lưu dấu băm, dùng một lần).
+2. Ảnh chụp trạng thái mang theo hàm và trường rỗng — kho trên mạng từ chối cả gói,
+   nên không lựa chọn nào ghi được. Nay ghi đúng phần JSON giữ.
+3. Cờ lưu trữ đầy đủ kéo luôn danh sách lớp học lên máy chủ — cần agent runtime,
+   không bật thì trang chủ mất lớp học. Nay cờ riêng `NEXT_PUBLIC_ACCOUNT_SYNC`
+   chỉ đồng bộ lựa chọn; lớp học ở yên trên máy.
+
+Chưa làm: người ký nhìn bằng mắt trên hai máy thật (AC-17).
