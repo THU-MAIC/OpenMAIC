@@ -364,4 +364,10 @@ Ba lỗi chỉ prod mới lộ, đã sửa trước lần chạy này:
    không bật thì trang chủ mất lớp học. Nay cờ riêng `NEXT_PUBLIC_ACCOUNT_SYNC`
    chỉ đồng bộ lựa chọn; lớp học ở yên trên máy.
 
+Thêm sau (người ký duyệt «làm»): trình duyệt có lựa chọn từ trước khi bật đồng
+bộ, gặp ngăn máy chủ trống → mang bản cũ lên, một lần mỗi khoá mỗi trình duyệt.
+Thử trên prod với «máy C» (danh tính mới, bản cũ `May C tu truoc` trong trình
+duyệt): máy chủ nhận đúng bản cũ, màn chào «Hi, May C tu truoc»
+(`evidence/prod-2026-09-21-may-C-mang-len.jpg`); ngăn của A/B không đổi.
+
 Chưa làm: người ký nhìn bằng mắt trên hai máy thật (AC-17).
