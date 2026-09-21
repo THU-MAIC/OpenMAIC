@@ -49,6 +49,7 @@ import { getPersistenceRequestHeaders, isAccountSyncEnabled } from '@/lib/persis
 const log = createLogger('KVPersist');
 
 let defaultKv: KVStore | undefined;
+let localSeedKv: BrowserKVStore | undefined;
 
 /**
  * Lần đọc gần nhất của mỗi khoá có tìm thấy giá trị trong ngăn không.
@@ -466,6 +467,14 @@ export interface KVPersistDeps {
    * recovery again. Injectable so tests can drive the cap without waiting.
    */
   recoveryBackoffMs?: readonly number[];
+  /**
+   * This browser's own copy of the account scope, from before choices synced
+   * through the server. Read once per key, the first time the server partition
+   * turns out empty, and carried up — so the first machine opened after sync is
+   * switched on keeps everything it had. Defaults to the browser store when
+   * account sync is on and no backend was injected; `null` turns it off.
+   */
+  localSeed?: KVStore | null;
 }
 
 /** Three tries, spread out enough that a transient fault has time to clear. */
@@ -513,6 +522,23 @@ function resolveKv(deps: KVPersistDeps): KVStore | null {
 /** What `JSON.stringify` keeps of a snapshot: no functions, no `undefined` members. */
 function toPersistedJson<T>(snapshot: T): T {
   return JSON.parse(JSON.stringify(snapshot)) as T;
+}
+
+/**
+ * The store to carry this browser's earlier choices up from, if any.
+ *
+ * Only when the backend is the server: a local-only deployment reads that very
+ * store already, and seeding a store from itself would be a no-op at best.
+ */
+function resolveLocalSeed(deps: KVPersistDeps): KVStore | null {
+  if (deps.localSeed !== undefined) return deps.localSeed;
+  if (deps.kv || !ambientLocalStorage() || !isAccountSyncEnabled()) return null;
+  return (localSeedKv ??= new BrowserKVStore());
+}
+
+/** Device-scope marker: this browser has had its one chance to seed `name`. */
+function seedMarker(name: string): string {
+  return `account-seeded:${name}`;
 }
 
 /** True when a KV backend keeps its `device` scope on the machine. */
@@ -669,6 +695,45 @@ export function createKVPersistStorage<S>(
     return replay;
   }
 
+  /**
+   * Carry this browser's earlier copy of `name` up to an empty server partition.
+   *
+   * Once per browser per key, marked on the device and only after it resolved:
+   * a machine that later adopts another machine's choices must not push its own
+   * into that partition, and a partition this machine emptied on purpose must
+   * stay empty. A failed write leaves the marker unset, so the next load tries
+   * again instead of losing the copy.
+   */
+  async function seedFromThisBrowser(
+    name: string,
+    kvStorage: PersistStorageLike<S>,
+  ): Promise<StorageValue<S> | null | typeof UNAVAILABLE> {
+    const local = resolveLocalSeed(deps);
+    if (!local) return null;
+    try {
+      if ((await local.get(seedMarker(name), 'device')) !== null) return null;
+      const earlier = await local.get<StorageValue<S>>(name, 'account');
+      if (earlier === null) {
+        await local.set(seedMarker(name), true, 'device');
+        return null;
+      }
+      const value = toPersistedJson(earlier);
+      const written = (await Outcome.run(() => kvStorage.setItem(name, value))).into(
+        stateFor(name),
+        `carry this browser's earlier "${name}" up to the KV ${scope} scope`,
+      );
+      if (written === UNAVAILABLE) return UNAVAILABLE;
+      await local.set(seedMarker(name), true, 'device');
+      log.info(`Carried this browser's earlier "${name}" up to the account partition`);
+      return value;
+    } catch (error) {
+      // The local copy is unreadable (privacy mode, corrupt entry). Nothing to
+      // carry; the empty partition stands, exactly as before this existed.
+      log.warn(`Could not read this browser's earlier "${name}":`, error);
+      return null;
+    }
+  }
+
   return {
     getItem(name) {
       const state = stateFor(name);
@@ -713,6 +778,15 @@ export function createKVPersistStorage<S>(
         // phải đọc ở đây, nơi việc đọc xảy ra, chứ không hỏi lại bằng một lời
         // gọi thứ hai (một lời gọi khác trả lời cho một câu hỏi khác).
         lastReadFoundValue.set(name, stored !== null);
+
+        if (stored === null && scope === 'account') {
+          const seeded = await seedFromThisBrowser(name, kvStorage);
+          if (seeded === UNAVAILABLE) return null;
+          if (seeded !== null) {
+            lastReadFoundValue.set(name, true);
+            return concludeRead(state, name, seeded);
+          }
+        }
 
         // KV is authoritative. `null` is a legitimate empty store (hydrate
         // defaults); a value hydrates it. Either way the key settles, so writes

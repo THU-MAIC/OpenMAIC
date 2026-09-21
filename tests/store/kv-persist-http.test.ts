@@ -210,4 +210,92 @@ describe('which KV backend the persist seam binds', () => {
       },
     ]);
   });
+
+  describe("carrying this browser's earlier choices up", () => {
+    const EARLIER = { state: { nickname: 'Manh', bio: 'đặt từ trước' }, version: 0 };
+
+    async function setUp(server: Map<string, unknown>, failPut = false) {
+      vi.doMock('@/lib/persistence/enabled', () => ({
+        isBrowserPersistenceEnabled: () => false,
+        isAccountSyncEnabled: () => true,
+        getPersistenceRequestHeaders: async () => ({}),
+      }));
+      const puts: unknown[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const key = decodeURIComponent(String(input).split('/').pop() ?? '');
+          const method = init?.method ?? 'GET';
+          if (method === 'PUT') {
+            if (failPut) return new Response('boom', { status: 500 });
+            const { value } = JSON.parse(String(init?.body)) as { value: unknown };
+            puts.push(value);
+            server.set(key, value);
+            return new Response(null, { status: 204 });
+          }
+          if (server.has(key)) {
+            return new Response(JSON.stringify({ value: server.get(key) }), {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            });
+          }
+          return new Response(
+            JSON.stringify({ error: { code: 'KEY_NOT_FOUND', message: 'none' } }),
+            {
+              status: 404,
+              headers: { 'content-type': 'application/json' },
+            },
+          );
+        }),
+      );
+      const { createKVPersistStorage } = await import('@/lib/store/kv-persist');
+      return { storage: createKVPersistStorage<Record<string, unknown>>('account', {}), puts };
+    }
+
+    it('carries the earlier copy up when the server partition is empty', async () => {
+      localStorage.setItem('maic:account:user-profile-storage', JSON.stringify(EARLIER));
+      const server = new Map<string, unknown>();
+      const { storage, puts } = await setUp(server);
+
+      expect(await storage.getItem('user-profile-storage')).toEqual(EARLIER);
+      expect(puts).toEqual([EARLIER]);
+      expect(server.get('user-profile-storage')).toEqual(EARLIER);
+    });
+
+    it('leaves a partition that already holds choices alone', async () => {
+      localStorage.setItem('maic:account:user-profile-storage', JSON.stringify(EARLIER));
+      const onServer = { state: { nickname: 'từ máy khác' }, version: 0 };
+      const { storage, puts } = await setUp(new Map([['user-profile-storage', onServer]]));
+
+      expect(await storage.getItem('user-profile-storage')).toEqual(onServer);
+      expect(puts).toEqual([]);
+    });
+
+    it('carries up once per browser — an emptied partition stays empty', async () => {
+      localStorage.setItem('maic:account:user-profile-storage', JSON.stringify(EARLIER));
+      const server = new Map<string, unknown>();
+      const first = await setUp(server);
+      await first.storage.getItem('user-profile-storage');
+
+      server.clear();
+      vi.resetModules();
+      const second = await setUp(server);
+      expect(await second.storage.getItem('user-profile-storage')).toBeNull();
+      expect(second.puts).toEqual([]);
+    });
+
+    it('tries again next load when carrying up failed', async () => {
+      localStorage.setItem('maic:account:user-profile-storage', JSON.stringify(EARLIER));
+      const server = new Map<string, unknown>();
+      const failing = await setUp(server, true);
+      await failing.storage.getItem('user-profile-storage');
+      await flush();
+      expect(server.size).toBe(0);
+
+      vi.resetModules();
+      const retry = await setUp(server);
+      expect(await retry.storage.getItem('user-profile-storage')).toEqual(EARLIER);
+      expect(server.get('user-profile-storage')).toEqual(EARLIER);
+    });
+  });
 });
