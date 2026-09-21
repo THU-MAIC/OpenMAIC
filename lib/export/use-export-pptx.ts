@@ -220,44 +220,49 @@ type Points = Array<
   | { close: true }
 >;
 
-function formatPoints(points: SvgPoints, ratioPx2Inch: number, scale = { x: 1, y: 1 }): Points {
+function formatPoints(
+  points: SvgPoints,
+  ratioPx2Inch: number,
+  scale = { x: 1, y: 1 },
+  origin = { x: 0, y: 0 },
+): Points {
   return points.map((point) => {
     if (point.close !== undefined) {
       return { close: true };
     } else if (point.type === 'M') {
       return {
-        x: ((point.x as number) / ratioPx2Inch) * scale.x,
-        y: ((point.y as number) / ratioPx2Inch) * scale.y,
+        x: (((point.x as number) - origin.x) / ratioPx2Inch) * scale.x,
+        y: (((point.y as number) - origin.y) / ratioPx2Inch) * scale.y,
         moveTo: true,
       };
     } else if (point.curve) {
       if (point.curve.type === 'cubic') {
         return {
-          x: ((point.x as number) / ratioPx2Inch) * scale.x,
-          y: ((point.y as number) / ratioPx2Inch) * scale.y,
+          x: (((point.x as number) - origin.x) / ratioPx2Inch) * scale.x,
+          y: (((point.y as number) - origin.y) / ratioPx2Inch) * scale.y,
           curve: {
             type: 'cubic' as const,
-            x1: ((point.curve.x1 as number) / ratioPx2Inch) * scale.x,
-            y1: ((point.curve.y1 as number) / ratioPx2Inch) * scale.y,
-            x2: ((point.curve.x2 as number) / ratioPx2Inch) * scale.x,
-            y2: ((point.curve.y2 as number) / ratioPx2Inch) * scale.y,
+            x1: (((point.curve.x1 as number) - origin.x) / ratioPx2Inch) * scale.x,
+            y1: (((point.curve.y1 as number) - origin.y) / ratioPx2Inch) * scale.y,
+            x2: (((point.curve.x2 as number) - origin.x) / ratioPx2Inch) * scale.x,
+            y2: (((point.curve.y2 as number) - origin.y) / ratioPx2Inch) * scale.y,
           },
         };
       } else if (point.curve.type === 'quadratic') {
         return {
-          x: ((point.x as number) / ratioPx2Inch) * scale.x,
-          y: ((point.y as number) / ratioPx2Inch) * scale.y,
+          x: (((point.x as number) - origin.x) / ratioPx2Inch) * scale.x,
+          y: (((point.y as number) - origin.y) / ratioPx2Inch) * scale.y,
           curve: {
             type: 'quadratic' as const,
-            x1: ((point.curve.x1 as number) / ratioPx2Inch) * scale.x,
-            y1: ((point.curve.y1 as number) / ratioPx2Inch) * scale.y,
+            x1: (((point.curve.x1 as number) - origin.x) / ratioPx2Inch) * scale.x,
+            y1: (((point.curve.y1 as number) - origin.y) / ratioPx2Inch) * scale.y,
           },
         };
       }
     }
     return {
-      x: ((point.x as number) / ratioPx2Inch) * scale.x,
-      y: ((point.y as number) / ratioPx2Inch) * scale.y,
+      x: (((point.x as number) - origin.x) / ratioPx2Inch) * scale.x,
+      y: (((point.y as number) - origin.y) / ratioPx2Inch) * scale.y,
     };
   });
 }
@@ -814,13 +819,18 @@ export async function buildPptxBlob(
       // ── LINE ──
       else if (el.type === 'line') {
         const path = getLineElementPath(el);
-        const points = formatPoints(toPoints(path), ratioPx2Inch);
         const { minX, maxX, minY, maxY } = getElementRange(el);
+        // Custom geometry points are relative to its bounding box, which need
+        // not begin at the element origin (negative controls / offset endpoints).
+        const points = formatPoints(toPoints(path), ratioPx2Inch, undefined, {
+          x: minX - el.left,
+          y: minY - el.top,
+        });
         const c = formatColor(el.color);
 
         const lineOptions: pptxgen.ShapeProps = {
-          x: el.left / ratioPx2Inch,
-          y: el.top / ratioPx2Inch,
+          x: minX / ratioPx2Inch,
+          y: minY / ratioPx2Inch,
           w: (maxX - minX) / ratioPx2Inch,
           h: (maxY - minY) / ratioPx2Inch,
           line: {
