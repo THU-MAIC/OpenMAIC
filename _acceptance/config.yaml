@@ -6,21 +6,21 @@ recheck: strict              # CI re-check of COMMITTED evidence (fresh repo →
 
 executors:
   test:
-    api: "pnpm test"                                      # suy từ: package.json "test" + .github/workflows/ci.yml "Unit Tests"
-    e2e_web: "pnpm test:e2e"                              # suy từ: playwright.config.ts + ci.yml job "e2e"
-    storage: "pnpm --filter @openmaic/storage test"       # suy từ: ci.yml "Unit Tests (storage)"
-    generation: "pnpm --filter @openmaic/generation test" # suy từ: ci.yml "Unit Tests (generation)"
-    importer: "pnpm --filter @openmaic/importer test"     # suy từ: ci.yml "Unit Tests (importer)"
-    dsl: "pnpm --filter @openmaic/dsl test"               # suy từ: ci.yml "Unit Tests (dsl)"
-    render_service: "npm --prefix render-service test"    # suy từ: ci.yml job "render-service"
+    api: "./scripts/with-pinned-node.sh pnpm test"                                      # suy từ: package.json "test" + .github/workflows/ci.yml "Unit Tests"
+    e2e_web: "./scripts/with-pinned-node.sh pnpm test:e2e"                              # suy từ: playwright.config.ts + ci.yml job "e2e"
+    storage: "./scripts/with-pinned-node.sh pnpm --filter @openmaic/storage test"       # suy từ: ci.yml "Unit Tests (storage)"
+    generation: "./scripts/with-pinned-node.sh pnpm --filter @openmaic/generation test" # suy từ: ci.yml "Unit Tests (generation)"
+    importer: "./scripts/with-pinned-node.sh pnpm --filter @openmaic/importer test"     # suy từ: ci.yml "Unit Tests (importer)"
+    dsl: "./scripts/with-pinned-node.sh pnpm --filter @openmaic/dsl test"               # suy từ: ci.yml "Unit Tests (dsl)"
+    render_service: "./scripts/with-pinned-node.sh npm --prefix render-service test"    # suy từ: ci.yml job "render-service"
   # Executor trỏ vào scripts/ TRONG repo, không vào plugin cache: file này được
   # commit, mà đường dẫn cache khác nhau theo từng máy/từng user.
   script:
     # cli: repo KHÔNG có CLI người dùng — bỏ trống có chủ đích.
     # Ứng viên gần nhất là scripts/generation-node-smoke.mjs nhưng nó cần server chạy trước.  # cần anh nếu muốn bật
-    product_map: "node scripts/product-map.mjs --root . --check"
+    product_map: "./scripts/with-pinned-node.sh node scripts/product-map.mjs --root . --check"
   design:                                                 # repo có web UI (app/, components/)
-    gate: "node scripts/design-gate.mjs"
+    gate: "./scripts/with-pinned-node.sh node scripts/design-gate-changed.mjs"   # chấm mọi file giao diện vòng đụng; design-gate.mjs chỉ nhận MỘT file nên không dùng thẳng làm khoá cấp kho được
     ui_check: "scripts/design-scan.js"
 
 risk_tiers:
@@ -49,7 +49,10 @@ signoff:
   approvers: ["Manh Phan"]            # suy từ: git config user.name — thông tin, gate KHÔNG cưỡng chế khoá này
 
 dev_server:
-  start: "PORT=3002 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true NEXT_PUBLIC_PI_CHAT_ENABLED=true NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED=true pnpm dev"
+  # NEXT_PUBLIC_PERSISTENCE=1 bật phạm vi account: thiếu nó thì mục «Máy của tôi»
+  # chỉ dựng được đúng trạng thái TẮT, và một phép đo giao diện sẽ chấm một màn
+  # không phải màn người dùng thật thấy.
+  start: "PORT=3002 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true NEXT_PUBLIC_PI_CHAT_ENABLED=true NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED=true NEXT_PUBLIC_PERSISTENCE=1 pnpm dev"
   url: "http://localhost:3002"        # suy từ: playwright.config.ts webServer (khớp e2e, bật Pro/editor flags)
   # api_base: app/api nằm cùng origin với url → bỏ trống.
   # render-service là service riêng; khai thêm ở đây nếu eval cần gọi thẳng nó.  # cần anh nếu có
@@ -60,3 +63,5 @@ capture:
   # Ưu tiên Chromium của Playwright (CI cache sẵn), thiếu thì lùi về Chrome hệ thống.
   # Cú pháp: <url> <out.png> [--wait ms] [--full] [--w px] [--h px]
   ui: "node scripts/ui-capture.mjs"
+feature_loop:
+  suite_keys: [executors.test.api, executors.test.storage]

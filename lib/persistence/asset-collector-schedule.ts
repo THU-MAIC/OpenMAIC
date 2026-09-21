@@ -38,6 +38,7 @@ import { Pool } from 'pg';
 
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import { configuredS3Bucket, createAssetByteStore } from '@/lib/persistence/asset-byte-store';
+import { databaseTlsFromEnv } from '@/lib/persistence/database-tls';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
 /**
@@ -130,9 +131,10 @@ export function startAssetCollectorSchedule(
   // indirect byte egress safely.
   const graceMs = resolveAssetCollectionGraceMs();
 
-  const pool = (deps.poolFactory ?? ((value) => new Pool({ connectionString: value, max: 2 })))(
-    connectionString,
-  );
+  const pool = (
+    deps.poolFactory ??
+    ((value) => new Pool({ connectionString: value, max: 2, ssl: databaseTlsFromEnv() }))
+  )(connectionString);
   const queryable = pool as unknown as ConnectableQueryable;
 
   // Built on first use rather than now: PostgreSQL may still be starting (the

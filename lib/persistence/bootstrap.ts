@@ -1,5 +1,4 @@
 import {
-  BrowserKVStore,
   HttpAssetStore,
   HttpDocumentStore,
   type HttpAssetHeadersHook,
@@ -18,36 +17,20 @@ import {
   type AssetPoolStorageOptions,
 } from '@/lib/media/asset-pool-config';
 import { assertRuntimeStorageConfigurable, configureRuntimeStorage } from '@/lib/runtime/config';
-import { getLearnerKey } from '@/lib/runtime/learner-key';
+import {
+  getPersistenceLearnerKey,
+  getPersistenceRequestHeaders,
+  isBrowserPersistenceEnabled,
+} from './enabled';
 
-let deviceKv: BrowserKVStore | undefined;
-let learnerKeyPromise: Promise<string> | undefined;
-
-export function isBrowserPersistenceEnabled(): boolean {
-  return typeof window !== 'undefined' && process.env.NEXT_PUBLIC_PERSISTENCE === '1';
-}
-
-export function getPersistenceLearnerKey(): Promise<string> {
-  if (!isBrowserPersistenceEnabled()) {
-    return Promise.reject(new Error('Browser persistence is not enabled'));
-  }
-  return (learnerKeyPromise ??= getLearnerKey((deviceKv ??= new BrowserKVStore())).catch(
-    (error) => {
-      learnerKeyPromise = undefined;
-      throw error;
-    },
-  ));
-}
-
-export async function getPersistenceRequestHeaders(): Promise<Record<string, string>> {
-  if (!isBrowserPersistenceEnabled()) return {};
-  const resolvedLearnerKey = await getPersistenceLearnerKey();
-  const token = process.env.NEXT_PUBLIC_PERSISTENCE_TOKEN;
-  return {
-    'x-learner-key': resolvedLearnerKey,
-    ...(token ? { authorization: `Bearer ${token}` } : {}),
-  };
-}
+// Ba thứ dưới đây sống ở `./enabled` — một module KHÔNG có tác dụng phụ — để
+// bên nào chỉ cần hỏi «có bật không» không phải kéo theo cả khối cấu hình bên
+// dưới. Xuất tiếp ở đây để mọi chỗ gọi cũ không phải đổi.
+export {
+  getPersistenceLearnerKey,
+  getPersistenceRequestHeaders,
+  isBrowserPersistenceEnabled,
+} from './enabled';
 
 if (isBrowserPersistenceEnabled()) {
   const learnerKey = getPersistenceLearnerKey;

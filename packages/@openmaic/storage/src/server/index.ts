@@ -16,6 +16,8 @@ import type {
   RuntimeSessionStatus,
   ValidationResult,
 } from '@openmaic/dsl';
+import type { PgKVStore } from '../kv/pg.js';
+import { createKVHttpHandler } from './kv.js';
 import { assertJsonValue } from '../runtime/json-value.js';
 import type {
   RuntimeAppendOptions,
@@ -718,6 +720,16 @@ export interface StorageHttpHandlerOptions
     > {
   /** When supplied, the composed handler exposes the `/assets` contract. */
   assetStore?: AssetStore;
+  /**
+   * When supplied, the composed handler exposes the `/kv` contract — the
+   * account scope, partitioned by the `kvOwner` the deployment's
+   * `authenticate` returns for a `/kv` request. `kvOwner` is deliberately its
+   * own field: `key` belongs to the asset layer and `learnerKey` documents
+   * itself as "not the partition key", so borrowing either would let another
+   * contract decide this one's partition. The device scope never arrives here
+   * — it is refused at the KV ingress.
+   */
+  kvStore?: PgKVStore;
 }
 
 /**
@@ -744,6 +756,24 @@ export function createStorageHttpHandler<
             : { authorizeDocuments: options.authorizeDocuments }),
           ...(options.validateScene === undefined ? {} : { validateScene: options.validateScene }),
           ...(options.validateStage === undefined ? {} : { validateStage: options.validateStage }),
+          ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes }),
+        });
+  const kv =
+    options.kvStore === undefined
+      ? undefined
+      : createKVHttpHandler(options.kvStore, {
+          authenticate: async (req) => {
+            const principal = await options.authenticate(req);
+            if (principal === undefined) return undefined;
+            // KV đòi trường CỦA RIÊNG NÓ. `key` là khoá phân vùng của tầng
+            // TỆP và `learnerKey` tự khai là «không phải khoá phân vùng», nên
+            // mượn một trong hai là để tầng khác quyết ngăn của tầng này — và
+            // khi bộ xác thực trả một principal gộp thì cái mượn đó im lặng
+            // dồn mọi người vào một ngăn. Thiếu trường này là 401, không phải
+            // một mặc định trông có vẻ hợp lý.
+            const owner = (principal as { kvOwner?: string }).kvOwner;
+            return typeof owner === 'string' && owner !== '' ? { owner } : undefined;
+          },
           ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes }),
         });
   const assets =
@@ -784,6 +814,8 @@ export function createStorageHttpHandler<
       (pathname === '/assets' || pathname.startsWith('/assets/'))
     ) {
       assets(req, res);
+    } else if (kv !== undefined && (pathname === '/kv' || pathname.startsWith('/kv/'))) {
+      kv(req, res);
     } else {
       runtime(req, res);
     }

@@ -96,3 +96,7 @@ e2e/__screenshots-619/
 /.playwright-mcp/
 # playwright-cli drops page snapshots and console logs beside the working dir.
 /.playwright-cli/
+
+# Cây worktree tạm của các lượt chạy song song — không thuộc kho.
+.claude/worktrees/
+.playwright-mcp/

@@ -126,6 +126,20 @@ export function reportPersistUnavailable(name: string): void {
 }
 
 /**
+ * Is storage currently unusable for this key?
+ *
+ * The standing state, read synchronously. `publish` is deliberately deferred —
+ * a warning that flickers in and out within one task is worse than none — but
+ * the state itself is recorded the moment the failure happens. A caller that
+ * must DECIDE on the truth (rather than display it) reads here: subscribing and
+ * racing the deferred publish would make the decision depend on timing, which
+ * is exactly the kind of near-miss this module exists to remove.
+ */
+export function isPersistUnavailable(name: string): boolean {
+  return unavailable.has(name);
+}
+
+/**
  * Subscribe to persistence health. A listener that arrives while a problem is
  * standing is caught up on a later task — React mounts well after the store
  * module runs, so the notice would otherwise be missed exactly when it matters

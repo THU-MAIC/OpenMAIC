@@ -85,7 +85,7 @@ async function createPersistenceHandler(
   access: DocumentAccess,
   poolFactory?: PersistencePoolFactory,
 ): Promise<RequestListener> {
-  const { pool, runtimeStore, assetStore } = await getServerPersistenceProvider(
+  const { pool, runtimeStore, assetStore, kvStore } = await getServerPersistenceProvider(
     connectionString,
     poolFactory,
   );
@@ -142,11 +142,16 @@ async function createPersistenceHandler(
     configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
   );
   return createStorageHttpHandler(runtimeStore, documentStore, {
+    kvStore,
     authenticate: async (request) => {
       if (request.url?.startsWith('/documents')) return { learnerKey: ownerId };
       if (request.url?.startsWith('/assets')) {
         return { key: SHARED_ASSET_PRINCIPAL, learnerKey: ownerId };
       }
+      // Ngăn account chia theo chủ sở hữu MÁY CHỦ suy từ cookie, không theo
+      // bất cứ thứ gì client gửi lên: một khoá do client khai thì người này
+      // đọc được ngăn của người kia chỉ bằng cách đổi một header.
+      if (request.url?.startsWith('/kv')) return { kvOwner: ownerId, learnerKey: ownerId };
       return authenticatePersistenceRequest(request);
     },
     authorizeAssets: async (_principal, request) => {

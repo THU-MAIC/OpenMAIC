@@ -1883,7 +1883,30 @@
     },
     "ttsBrowserNativeTimelineNotice": "Browser-native TTS doesn't support the editor timeline's audio features (preview, regenerate, and bulk voiceover). Switch to a managed TTS provider to generate and manage per-line audio.",
     "alidocmindAccessKeyId": "AccessKey ID",
-    "alidocmindAccessKeySecret": "AccessKey Secret"
+    "alidocmindAccessKeySecret": "AccessKey Secret",
+    "myDevices": {
+      "nav": "My devices",
+      "title": "My devices",
+      "description": "Use your choices on another machine.",
+      "disabled": "Your choices are stored on this machine. Turn on server-backed persistence to carry them to another machine.",
+      "shareTitle": "Let another machine use my choices",
+      "shareHint": "The code works once and expires quickly.",
+      "getCode": "Get a code",
+      "copy": "Copy",
+      "expiresIn": "Expires in {{seconds}}s",
+      "expired": "This code has expired.",
+      "newCode": "Get a new code",
+      "adoptTitle": "Use the choices from another machine",
+      "codePlaceholder": "Enter the code",
+      "adopt": "Use them here",
+      "adopted": "This machine now shares your choices.",
+      "codeRejected": "That code cannot be used.",
+      "willReplace": "The choices the other machine has will replace the matching ones here. Anything it never set is left as it is.",
+      "confirmReplace": "Replace them",
+      "serverSilent": "Could not reach the server. Your current choices are unchanged.",
+      "retry": "Try again",
+      "adoptedPartly": "This machine now shares the choices the other machine had. Anything it never set was left as it is."
+    }
   },
   "workspace": {
     "untitledCourse": "Untitled course",

@@ -18,6 +18,7 @@ import {
   Trash2,
   Box,
   Settings,
+  MonitorSmartphone,
   CheckCircle2,
   XCircle,
   FileText,
@@ -58,6 +59,10 @@ import { WebSearchSettings } from './web-search-settings';
 import { WEB_SEARCH_PROVIDERS, getWebSearchProviderDisplayName } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import { GeneralSettings } from './general-settings';
+import { MyDevicesSettings } from './my-devices-settings';
+import { accountStoreStates, reloadAccountStoresAndConfirm } from '@/lib/store/account-stores';
+import { hasLocalChoicesInAccountScope } from '@/lib/store/local-choices';
+import { useUserProfileStore } from '@/lib/store/user-profile';
 import { SkillSettings } from './skill-settings';
 import { TokenPlanSettings } from './token-plan-settings';
 import { ModelEditDialog } from './model-edit-dialog';
@@ -224,6 +229,16 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
   const asrProviderId = useSettingsStore((state) => state.asrProviderId);
   const asrProvidersConfig = useSettingsStore((state) => state.asrProvidersConfig);
+  // Có gì để mất trên máy này không — quét chính trạng thái đã lưu, không đếm
+  // tay từng loại. Xem lib/store/local-choices.ts.
+  // Soi MỌI kho mà việc nhận sẽ thay — danh sách lấy từ chính sổ đăng ký việc
+  // nhận duyệt, không viết lại ở đây. Đọc lại khi kho cấu hình hoặc kho hồ sơ
+  // đổi, để câu trả lời không cũ hơn màn.
+  const settingsRevision = useSettingsStore((state) => state);
+  const profileRevision = useUserProfileStore((state) => state);
+  void settingsRevision;
+  void profileRevision;
+  const hasLocalChoices = hasLocalChoicesInAccountScope(accountStoreStates());
 
   // Store actions
   const setProviderConfig = useSettingsStore((state) => state.setProviderConfig);
@@ -575,6 +590,8 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         );
       case 'token-plan':
         return <h2 className="text-lg font-semibold">{t('settings.tokenPlan.nav')}</h2>;
+      case 'my-devices':
+        return <h2 className="text-lg font-semibold">{t('settings.myDevices.title')}</h2>;
       case 'providers':
         if (selectedProvider) {
           return (
@@ -870,6 +887,19 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             </button>
 
             <button
+              onClick={() => setActiveSection('my-devices')}
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
+                activeSection === 'my-devices'
+                  ? 'bg-primary/10 text-primary font-medium'
+                  : 'hover:bg-muted',
+              )}
+            >
+              <MonitorSmartphone className="h-4 w-4 shrink-0" />
+              <span className="truncate">{t('settings.myDevices.nav')}</span>
+            </button>
+
+            <button
               onClick={() => setActiveSection('general')}
               className={cn(
                 'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
@@ -1088,6 +1118,13 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-5">
+              {activeSection === 'my-devices' && (
+                <MyDevicesSettings
+                  onAdopted={reloadAccountStoresAndConfirm}
+                  hasLocalChoices={hasLocalChoices}
+                />
+              )}
+
               {activeSection === 'general' && <GeneralSettings />}
 
               {activeSection === 'skills' && <SkillSettings />}

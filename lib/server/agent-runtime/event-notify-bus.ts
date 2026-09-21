@@ -18,6 +18,7 @@
 import { Client, type Notification } from 'pg';
 
 import { createLogger } from '@/lib/logger';
+import { databaseTlsFromEnv } from '@/lib/persistence/database-tls';
 
 /** The minimal query surface a transaction handle must expose for pg_notify. */
 export interface NotifyQueryable {
@@ -243,6 +244,7 @@ async function connect(generation: number): Promise<void> {
   // LISTEN connection and fans notifications out in memory.
   const client = new Client({
     connectionString,
+    ssl: databaseTlsFromEnv(),
     application_name: AGENT_EVENT_NOTIFY_APPLICATION_NAME,
     connectionTimeoutMillis: 10_000,
   });
