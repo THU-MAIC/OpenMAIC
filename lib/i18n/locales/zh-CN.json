@@ -157,6 +157,10 @@
         "audioMetadata": "音频（仅引用元数据）"
       }
     },
+    "interactiveRuntimeError": {
+      "title": "这个互动未能运行",
+      "dismiss": "关闭"
+    },
     "tabs": {
       "lecture": "笔记",
       "chat": "对话"

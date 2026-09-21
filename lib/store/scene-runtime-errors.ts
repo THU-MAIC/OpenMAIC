@@ -3,9 +3,10 @@
 /**
  * Per-scene runtime errors captured from interactive iframes (via the error
  * shim's postMessage, see lib/utils/iframe.ts). Keyed by sceneId. Deduped (a
- * render loop can log the same error repeatedly) and capped so the agent context
- * stays small. The editor agent reads these when building its scene context so it
- * can diagnose a blank/broken page from the actual error instead of guessing.
+ * render loop can log the same error repeatedly) and capped so a banner can
+ * show the latest few. The active interactive scene reads this store. The
+ * workbench agent does not: it loads scene HTML on the server and cannot see
+ * this client snapshot.
  */
 import { create } from 'zustand';
 

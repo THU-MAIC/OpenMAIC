@@ -157,6 +157,10 @@
         "audioMetadata": "Âm thanh (chỉ siêu dữ liệu)"
       }
     },
+    "interactiveRuntimeError": {
+      "title": "Tương tác này không chạy được",
+      "dismiss": "Đóng"
+    },
     "tabs": {
       "lecture": "Ghi chú",
       "chat": "Trò chuyện"

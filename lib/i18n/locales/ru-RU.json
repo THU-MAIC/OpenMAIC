@@ -157,6 +157,10 @@
         "audioMetadata": "Аудио (только метаданные)"
       }
     },
+    "interactiveRuntimeError": {
+      "title": "Этот интерактив не удалось запустить",
+      "dismiss": "Закрыть"
+    },
     "tabs": {
       "lecture": "Заметки",
       "chat": "Чат"

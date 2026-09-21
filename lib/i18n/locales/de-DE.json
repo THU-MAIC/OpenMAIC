@@ -157,6 +157,10 @@
         "audioMetadata": "Audio (nur Metadaten)"
       }
     },
+    "interactiveRuntimeError": {
+      "title": "Diese Interaktion konnte nicht ausgeführt werden",
+      "dismiss": "Schließen"
+    },
     "tabs": {
       "lecture": "Notizen",
       "chat": "Chat"

@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AICallFn, SceneContentFailure } from '@openmaic/generation';
+import type { AICallFn, GenerationLogger, SceneContentFailure } from '@openmaic/generation';
 import { generateSceneContent } from '@openmaic/generation';
 import { pblOutline, quizOutline, slideOutline, widgetOutline } from './scene-fixtures.js';
+
+const silentLogger: GenerationLogger = {
+  debug() {},
+  info() {},
+  warn() {},
+  error() {},
+};
 
 describe('scene content model-output failures', () => {
   it.each([
@@ -24,6 +31,32 @@ describe('scene content model-output failures', () => {
       expect(aiCall).toHaveBeenCalledTimes(1);
     },
   );
+
+  it('rejects interactive HTML whose classic inline JavaScript cannot parse', async () => {
+    const errors: string[] = [];
+    const aiCall: AICallFn = vi.fn(
+      async () =>
+        '<!DOCTYPE html><html><head></head><body><button id="start">Start Simulation</button><script type="application/json" id="widget-config">{"type":"simulation"}</script><script>state counts = new Array(10).fill(0);</script></body></html>',
+    );
+    const failures: SceneContentFailure[] = [];
+
+    const content = await generateSceneContent(widgetOutline(), aiCall, {
+      logger: {
+        ...silentLogger,
+        error(message) {
+          errors.push(String(message));
+        },
+      },
+      onFailure: (failure) => failures.push(failure),
+    });
+
+    expect(content).toBeNull();
+    expect(failures).toEqual([{ code: 'invalid-model-output' }]);
+    expect(aiCall).toHaveBeenCalledTimes(1);
+    expect(
+      errors.some((message) => message.includes('script #2') && message.includes('counts')),
+    ).toBe(true);
+  });
 
   it('does not classify capability gates, PBL failures, or provider exceptions', async () => {
     const gateFailures: SceneContentFailure[] = [];
