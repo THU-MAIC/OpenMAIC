@@ -31,8 +31,12 @@ describe('isRetryableLlmError', () => {
 
   it('treats transport-level failures as retryable', () => {
     expect(isRetryableLlmError(new TypeError('fetch failed'))).toBe(true);
-    expect(isRetryableLlmError(Object.assign(new Error('connect ECONNRESET'), { code: 'ECONNRESET' }))).toBe(true);
-    expect(isRetryableLlmError(Object.assign(new Error('UND_ERR_SOCKET'), { code: 'UND_ERR_SOCKET' }))).toBe(true);
+    expect(
+      isRetryableLlmError(Object.assign(new Error('connect ECONNRESET'), { code: 'ECONNRESET' })),
+    ).toBe(true);
+    expect(
+      isRetryableLlmError(Object.assign(new Error('UND_ERR_SOCKET'), { code: 'UND_ERR_SOCKET' })),
+    ).toBe(true);
   });
 
   it('is conservative with unknown non-AI errors', () => {
