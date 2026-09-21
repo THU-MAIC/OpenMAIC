@@ -391,7 +391,10 @@ export async function callLLM<T extends GenerateTextParams>(
     if (round.error !== undefined) {
       lastError = round.error;
       if (attempt < maxAttempts) {
-        log.warn(`[${source}] Call failed (attempt ${attempt}/${maxAttempts}), retrying...`, round.error);
+        log.warn(
+          `[${source}] Call failed (attempt ${attempt}/${maxAttempts}), retrying...`,
+          round.error,
+        );
         continue;
       }
       if (allowFallback && isRetryableLlmError(round.error)) triggerFallback = true;
@@ -409,7 +412,8 @@ export async function callLLM<T extends GenerateTextParams>(
     if (fallback) {
       const primary = typeof params.model === 'string' ? params.model : getModelId(params);
       log.warn(
-        `[${source}] ${lastError !== undefined ? 'retryable failure' : 'empty output'} on ${primary || '?'
+        `[${source}] ${lastError !== undefined ? 'retryable failure' : 'empty output'} on ${
+          primary || '?'
         }; falling back once to ${fallback.modelString}`,
       );
       const round = await runRound({ ...params, model: fallback.model } as T, 'fallback');
