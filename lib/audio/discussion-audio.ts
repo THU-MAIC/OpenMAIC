@@ -5,7 +5,10 @@
  * reached, so an element minted per line gets its programmatic `play()` refused
  * with NotAllowedError from the second line on: the discussion goes silent
  * while the lesson keeps advancing. One element, handed every line, stays
- * playable for the rest of the lesson.
+ * playable for the rest of the lesson — but only if that element was reached
+ * inside the gesture. Creating it after the TTS fetch is too late for a strict
+ * per-element policy; `primeDiscussionAudioElement` does the unlock while the
+ * click is still on the stack.
  *
  * Deliberately separate from the narration element in `AudioPlayer`: sharing a
  * single element would let a discussion line cut the narrator off, and vice
@@ -17,6 +20,13 @@
  */
 let element: HTMLAudioElement | null = null;
 
+/**
+ * A short silent WAV. `play()` with no source rejects and does not unlock the
+ * element, and assigning `src = ''` would point it at the page URL.
+ */
+const UNLOCK_SRC =
+  'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+
 /** The discussion element, created on first use and reused by every line. */
 export function getDiscussionAudioElement(): HTMLAudioElement {
   if (!element) {
@@ -24,6 +34,38 @@ export function getDiscussionAudioElement(): HTMLAudioElement {
     element.preload = 'auto';
   }
   return element;
+}
+
+/**
+ * Unlocks the shared element during the user gesture that starts discussion.
+ *
+ * Call it synchronously, before any `await`. The `play()` invocation itself is
+ * what a strict per-element policy remembers; the clip is muted, paused, and
+ * released before this returns so it cannot be heard and cannot leave a source
+ * for the next line. A line already loaded on the element is left alone —
+ * replacing `src` would drop audio that is playing or waiting to resume.
+ */
+export function primeDiscussionAudioElement(): void {
+  const audio = getDiscussionAudioElement();
+  if (audio.src) return;
+
+  const previousMuted = audio.muted;
+  audio.muted = true;
+  audio.src = UNLOCK_SRC;
+  try {
+    const pending = audio.play();
+    audio.pause();
+    // Immediate pause aborts the unlock clip. Outside a gesture `play()` is
+    // refused; either way the rejection must not escape the click handler.
+    void Promise.resolve(pending).catch(() => {});
+  } catch {
+    // Synchronous rejection: nothing started.
+  } finally {
+    audio.muted = previousMuted;
+    if (audio.src === UNLOCK_SRC) {
+      releaseDiscussionAudioLine(audio);
+    }
+  }
 }
 
 /**
