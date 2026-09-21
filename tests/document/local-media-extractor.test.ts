@@ -144,10 +144,11 @@ describe.skipIf(!ffmpegAvailable)('local media extractor real pipeline', () => {
       expect(artifact.keyframes?.length).toBeGreaterThan(0);
       const keyframe = artifact.assets?.[0];
       expect(keyframe).toMatchObject({ type: 'image', mimeType: 'image/webp' });
-      // Keyframe `data` must be a data URL. `pdf-compat` derives the asset mime
-      // from it, and the document bundle forwards it as the `pdfImages[].src`
-      // that `storeImages` decodes with `decodeBase64DataUrl`. Raw base64 here
-      // makes course generation fail with "Failed to store image bundle".
+      // Keyframe `data` must be a data URL, the same form every other
+      // `DocumentAsset` producer emits and the form document-bundle consumers
+      // (`pdf-compat` → `decodeBase64DataUrl`) expect. Material extraction
+      // accepts both forms via `decodeMediaAssetData`. This test needs ffmpeg,
+      // so it does not run in CI.
       expect(keyframe?.data).toMatch(/^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/);
 
       const deadlineProvider = createLocalMediaExtractorProvider({

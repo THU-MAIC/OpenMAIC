@@ -57,12 +57,20 @@ function markerTime(timeMs: number): string {
 }
 
 export function decodeMediaAssetData(data: string): Buffer {
-  const dataUrl = /^data:([^,]*),([\s\S]*)$/i.exec(data);
-  if (!dataUrl) return Buffer.from(data, 'base64');
+  const value = data.trim();
+  const dataUrl = /^data:([^,]*),([\s\S]*)$/i.exec(value);
+  if (!dataUrl) {
+    // Node's base64 decoder skips non-alphabet characters, so a malformed data
+    // URL falling through here would decode to garbage bytes instead of failing.
+    if (/^data:/i.test(value)) throw new Error('Malformed media asset data URL');
+    return Buffer.from(value, 'base64');
+  }
   if (!/;base64$/i.test(dataUrl[1])) {
     throw new Error('Unsupported media asset data URL encoding');
   }
-  return Buffer.from(dataUrl[2], 'base64');
+  const bytes = Buffer.from(dataUrl[2], 'base64');
+  if (bytes.byteLength === 0) throw new Error('Empty media asset data URL payload');
+  return bytes;
 }
 
 export function mediaArtifactText(artifact: MediaArtifact): string {

@@ -60,6 +60,20 @@ describe('uploaded material extraction lifecycle', () => {
     );
   });
 
+  it('rejects malformed or empty data URLs instead of decoding garbage bytes', () => {
+    const encoded = Buffer.from('prepared-webp').toString('base64');
+
+    expect(() => decodeMediaAssetData(`data:image/webp;base64${encoded}`)).toThrow(
+      'Malformed media asset data URL',
+    );
+    expect(decodeMediaAssetData(` data:image/webp;base64,${encoded}`)).toEqual(
+      Buffer.from('prepared-webp'),
+    );
+    expect(() => decodeMediaAssetData('data:image/webp;base64,')).toThrow(
+      'Empty media asset data URL payload',
+    );
+  });
+
   it('uploads a source, extracts it through the registry, and reads the extracted text', async () => {
     db = new PGlite();
     await db.waitReady;
