@@ -131,9 +131,10 @@ export function startAssetCollectorSchedule(
   // indirect byte egress safely.
   const graceMs = resolveAssetCollectionGraceMs();
 
-  const pool = (deps.poolFactory ?? ((value) => new Pool({ connectionString: value, max: 2, ssl: databaseTlsFromEnv() })))(
-    connectionString,
-  );
+  const pool = (
+    deps.poolFactory ??
+    ((value) => new Pool({ connectionString: value, max: 2, ssl: databaseTlsFromEnv() }))
+  )(connectionString);
   const queryable = pool as unknown as ConnectableQueryable;
 
   // Built on first use rather than now: PostgreSQL may still be starting (the

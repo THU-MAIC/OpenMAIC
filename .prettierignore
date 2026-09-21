@@ -48,3 +48,10 @@ out/
 
 # SVG arc helper (vendored declaration)
 lib/export/svg-arc-to-cubic-bezier.d.ts
+
+# Impeccable design-gate engine: vendored verbatim, same reason as the kit above.
+vendor/impeccable/
+
+# Acceptance records written by the gate tools (figures, loop arguments).
+_acceptance/**/figures/
+_acceptance/**/s4-args.json

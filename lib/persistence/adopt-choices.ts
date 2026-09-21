@@ -24,8 +24,6 @@ export interface AdoptChoicesDeps {
   rehydrate: () => void | Promise<void>;
 }
 
-
-
 export async function adoptChoicesFromCode(
   rawCode: string,
   deps: AdoptChoicesDeps,

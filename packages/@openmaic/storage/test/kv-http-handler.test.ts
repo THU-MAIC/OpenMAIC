@@ -67,10 +67,7 @@ describe('KV handler refuses what the contract forbids', () => {
       headers: { [OWNER_HEADER]: 'owner-scope', 'content-type': 'application/json' },
       body: JSON.stringify({ value: 1 }),
     });
-    expect(
-      res.status,
-      'device scope crossed the network boundary',
-    ).toBe(400);
+    expect(res.status, 'device scope crossed the network boundary').toBe(400);
   });
 
   test('a scope path segment is refused', async () => {
@@ -94,10 +91,7 @@ describe('KV handler refuses what the contract forbids', () => {
     const a = makeStore('owner-alpha');
     await a.set('settings', { voice: 'a' });
     const b = makeStore('owner-beta');
-    expect(
-      await b.get('settings'),
-      'account partition leaked across owners',
-    ).toBeNull();
+    expect(await b.get('settings'), 'account partition leaked across owners').toBeNull();
     expect(await a.get('settings')).toEqual({ voice: 'a' });
   });
 
