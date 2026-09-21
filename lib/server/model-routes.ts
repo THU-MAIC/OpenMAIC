@@ -53,6 +53,13 @@ const VALID_LEVELS: readonly ThinkingLevel[] = ['minimal', 'low', 'medium', 'hig
 export interface StageRoute {
   model: string;
   /**
+   * Optional model to retry once with, when the primary call fails with a
+   * retryable error (timeout, empty output, network, quota/capacity). Canonical
+   * `provider:model` string, resolved from server config only. Unset means no
+   * fallback for this stage. See lib/server/llm-fallback.ts.
+   */
+  fallback?: string;
+  /**
    * Explicit pi transport dialect (for example openai-completions). Consumed only
    * by the agent-driver stage; inert on every other routable stage.
    */
@@ -194,6 +201,14 @@ function parseRouteValue(key: string, value: unknown): StageRoute | undefined {
     if (obj.thinking !== undefined) {
       const thinking = parseThinking(key, obj.thinking);
       if (thinking) route.thinking = thinking;
+    }
+    if (obj.fallback !== undefined) {
+      const fallback = typeof obj.fallback === 'string' ? obj.fallback.trim() : '';
+      if (fallback) {
+        route.fallback = fallback;
+      } else {
+        log.warn(`Invalid fallback for stage "${key}" in MODEL_ROUTES; ignored.`);
+      }
     }
     if (obj.contextWindow !== undefined) {
       const contextWindow = obj.contextWindow;
