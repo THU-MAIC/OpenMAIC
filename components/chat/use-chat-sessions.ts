@@ -17,7 +17,7 @@ import {
   type ElementReference,
 } from '@/lib/types/chat';
 import type { DiscussionRequest } from '@/components/roundtable';
-import type { Action, SpotlightAction, DiscussionAction } from '@/lib/types/action';
+import type { Action } from '@/lib/types/action';
 import type { UIMessage } from 'ai';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { useStageStore } from '@/lib/store';
@@ -253,6 +253,25 @@ export function withPiWebSearchSettings<T extends ChatRequestTemplate>(
 
 export function shouldAwaitPresentationAction(actionName: string): boolean {
   return actionName.startsWith('wb_');
+}
+
+type LectureVisualAction = Extract<Action, { type: 'spotlight' | 'laser' | 'discussion' }>;
+
+/** Persist params for lecture action badges. Omit optional members JSON would drop as undefined. */
+export function lectureActionPersistParams(action: LectureVisualAction): Record<string, unknown> {
+  if (action.type === 'spotlight') {
+    return {
+      elementId: action.elementId,
+      ...(action.dimOpacity === undefined ? {} : { dimOpacity: action.dimOpacity }),
+    };
+  }
+  if (action.type === 'laser') {
+    return { elementId: action.elementId };
+  }
+  return {
+    topic: action.topic,
+    ...(action.prompt === undefined ? {} : { prompt: action.prompt }),
+  };
 }
 
 export async function retireLiveRequestResources<
@@ -2205,18 +2224,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           messageId,
           actionId: `${action.type}-${now}`,
           actionName: action.type,
-          params:
-            action.type === 'spotlight'
-              ? {
-                  elementId: action.elementId,
-                  dimOpacity: (action as SpotlightAction).dimOpacity,
-                }
-              : action.type === 'laser'
-                ? { elementId: action.elementId }
-                : {
-                    topic: (action as DiscussionAction).topic,
-                    prompt: (action as DiscussionAction).prompt,
-                  },
+          params: lectureActionPersistParams(action),
           agentId: 'default-1',
         });
       }

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 
@@ -8,6 +9,7 @@ import {
 } from '@openmaic/storage/server';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
+import { createLogger } from '@/lib/logger';
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import {
   decideDocumentAccess,
@@ -30,6 +32,8 @@ import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
 export const runtime = 'nodejs';
 
 const ROUTE_PREFIX = '/api/persistence';
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+const log = createLogger('Persistence');
 
 function jsonError(status: number, code: string, message: string): Response {
   return Response.json({ error: { code, message } }, { status });
@@ -310,9 +314,38 @@ interface PersistenceRequestDeps {
   poolFactory?: PersistencePoolFactory;
 }
 
+function persistenceRequestId(request: Request): string {
+  const upstream = request.headers.get('x-request-id')?.trim();
+  return upstream && REQUEST_ID_PATTERN.test(upstream) ? upstream : randomUUID();
+}
+
+async function responseErrorCode(response: Response): Promise<string> {
+  if (!response.headers.get('content-type')?.includes('application/json')) return '-';
+  const payload = (await response
+    .clone()
+    .json()
+    .catch(() => undefined)) as { error?: { code?: unknown } } | undefined;
+  return typeof payload?.error?.code === 'string' ? payload.error.code : '-';
+}
+
 export async function handlePersistenceRequest(
   request: Request,
   deps: PersistenceRequestDeps = {},
+): Promise<Response> {
+  const requestId = persistenceRequestId(request);
+  const response = await handlePersistenceRequestInner(request, deps);
+  if (response.status >= 500) {
+    const path = new URL(request.url).pathname;
+    const code = await responseErrorCode(response);
+    log.error(`${request.method} ${path} -> ${response.status} ${code} (requestId=${requestId})`);
+  }
+  response.headers.set('x-request-id', requestId);
+  return response;
+}
+
+async function handlePersistenceRequestInner(
+  request: Request,
+  deps: PersistenceRequestDeps,
 ): Promise<Response> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {

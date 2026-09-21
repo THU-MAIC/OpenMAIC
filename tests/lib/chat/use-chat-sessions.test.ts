@@ -14,6 +14,7 @@ import {
   resumeSoftClosingSessionWithoutMessage,
   runPiSingleRequest,
   shouldAwaitPresentationAction,
+  lectureActionPersistParams,
   withPiInclassWhiteboardTools,
   withPiWebSearchSettings,
   MANUAL_STOP_END_OPTIONS,
@@ -438,6 +439,45 @@ describe('shouldAwaitPresentationAction', () => {
     expect(shouldAwaitPresentationAction('wb_clear')).toBe(true);
     expect(shouldAwaitPresentationAction('wb_edit_code')).toBe(true);
     expect(shouldAwaitPresentationAction('play_video')).toBe(false);
+  });
+});
+
+describe('lectureActionPersistParams', () => {
+  it('omits undefined spotlight dimOpacity so session JSON persist stays lossless', () => {
+    const omitted = lectureActionPersistParams({
+      id: 'spot-1',
+      type: 'spotlight',
+      elementId: 'el-1',
+    });
+    expect(omitted).toEqual({ elementId: 'el-1' });
+    expect(omitted).not.toHaveProperty('dimOpacity');
+    expect(JSON.stringify(omitted)).toBe('{"elementId":"el-1"}');
+
+    expect(
+      lectureActionPersistParams({
+        id: 'spot-1',
+        type: 'spotlight',
+        elementId: 'el-1',
+        dimOpacity: 0,
+      }),
+    ).toEqual({ elementId: 'el-1', dimOpacity: 0 });
+  });
+
+  it('omits undefined discussion prompt and keeps laser params required-only', () => {
+    expect(
+      lectureActionPersistParams({
+        id: 'disc-1',
+        type: 'discussion',
+        topic: 'Heat islands',
+      }),
+    ).toEqual({ topic: 'Heat islands' });
+    expect(
+      lectureActionPersistParams({
+        id: 'laser-1',
+        type: 'laser',
+        elementId: 'el-2',
+      }),
+    ).toEqual({ elementId: 'el-2' });
   });
 });
 

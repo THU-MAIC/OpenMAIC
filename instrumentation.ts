@@ -15,6 +15,9 @@ export async function register(): Promise<void> {
   // want; the persistence stack is Node-only.
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
+  const { warnIfAccessCodeIsUnset } = await import('@/lib/server/access-code-warning');
+  warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
+
   // The asset quota, read here rather than at the first persistence request.
   // The provider that consumes it is lazy and memoised, so a malformed ceiling
   // would otherwise let the process boot, pass its health check, and then fail
