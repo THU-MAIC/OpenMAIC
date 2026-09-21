@@ -15,6 +15,7 @@
 
 import { NextRequest } from 'next/server';
 import { streamLLM } from '@/lib/ai/llm';
+import { resolveFallbackModel, isRetryableLlmError } from '@/lib/server/llm-fallback';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import {
   formatImageDescription,
@@ -485,38 +486,68 @@ export async function POST(req: NextRequest) {
         // generation and must not be allowed to grow the heap unbounded.
         const MAX_OUTLINE_STREAM_BYTES = 512 * 1024;
 
+        // Retryable-failure fallback: after the same-model retries are
+        // exhausted, retry once on the stage's configured fallback model.
+        let streamParams = visionImages?.length
+          ? {
+              model: languageModel,
+              system: prompts.system,
+              messages: [
+                {
+                  role: 'user' as const,
+                  content: buildVisionUserContent(prompts.user, visionImages),
+                },
+              ],
+              maxOutputTokens: modelInfo?.outputWindow,
+              // Tear down the upstream LLM request when the client disconnects,
+              // instead of letting it run to completion for a dead connection.
+              abortSignal: req.signal,
+            }
+          : {
+              model: languageModel,
+              system: prompts.system,
+              prompt: prompts.user,
+              maxOutputTokens: modelInfo?.outputWindow,
+              abortSignal: req.signal,
+            };
+        let fellBack = false;
+        const maybeFallback = async (error: unknown): Promise<boolean> => {
+          if (fellBack) return false;
+          const retryable =
+            error === undefined
+              ? true // empty-output path: an empty response is always retryable
+              : isRetryableLlmError(error);
+          if (!retryable) return false;
+          const fallback = await resolveFallbackModel('scene-outlines-stream');
+          if (!fallback) return false;
+          streamParams = { ...streamParams, model: fallback.model };
+          fellBack = true;
+          log.warn(
+            `Outlines retryable failure on ${resolvedModelString ?? '?'}; falling back once to ${fallback.modelString}`,
+          );
+          const retryEvent = JSON.stringify({
+            type: 'retry',
+            attempt: MAX_STREAM_RETRIES + 1,
+            maxAttempts: MAX_STREAM_RETRIES + 1,
+            fallback: fallback.modelString,
+          });
+          controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+          return true;
+        };
+
         try {
           startHeartbeat();
-
-          const streamParams = visionImages?.length
-            ? {
-                model: languageModel,
-                system: prompts.system,
-                messages: [
-                  {
-                    role: 'user' as const,
-                    content: buildVisionUserContent(prompts.user, visionImages),
-                  },
-                ],
-                maxOutputTokens: modelInfo?.outputWindow,
-                // Tear down the upstream LLM request when the client disconnects,
-                // instead of letting it run to completion for a dead connection.
-                abortSignal: req.signal,
-              }
-            : {
-                model: languageModel,
-                system: prompts.system,
-                prompt: prompts.user,
-                maxOutputTokens: modelInfo?.outputWindow,
-                abortSignal: req.signal,
-              };
 
           let parsedOutlines: SceneOutline[] = [];
           let languageDirective: string | null = null;
           let courseTitle: string | null = null;
           let lastError: string | undefined;
 
-          for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
+          for (
+            let attempt = 1;
+            attempt <= MAX_STREAM_RETRIES + 1 && !(fellBack && attempt > 1);
+            attempt++
+          ) {
             try {
               let fullText = '';
               let scanFrom = 0;
@@ -629,6 +660,12 @@ export async function POST(req: NextRequest) {
                   maxAttempts: MAX_STREAM_RETRIES + 1,
                 });
                 controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+              } else if (fullText.trim().length === 0 && (await maybeFallback(undefined))) {
+                // Same-model retries exhausted and the response was empty:
+                // retry once on the fallback model (loop is re-entered via
+                // attempt reset below).
+                attempt = 0;
+                continue;
               }
             } catch (error) {
               // Client disconnected (AbortError from the now-propagated signal):
@@ -653,6 +690,13 @@ export async function POST(req: NextRequest) {
                   maxAttempts: MAX_STREAM_RETRIES + 1,
                 });
                 controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+                continue;
+              }
+
+              // Same-model retries exhausted: retry once on the fallback model
+              // when the failure is retryable.
+              if (await maybeFallback(error)) {
+                attempt = 0;
                 continue;
               }
             }
