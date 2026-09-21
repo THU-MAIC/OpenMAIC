@@ -1,14 +1,105 @@
 ---
 schema_version: 2
 feature_slug: cau-hinh-di-theo-nguoi
-verdict: REJECT
-failed_evals: [E13]
+verdict: PENDING-JUDGMENT
+failed_evals: []
 verified_by: fresh-context verification subagent
 enforcement_mode: strict
 bypass_used: false
-verified_commit: 73d9a5ebe822e05599de5a851d0312351a8ef122
+verified_commit: 77e7a849a8bc0a4195154f0faa9d57f1bbfd3f70
 human_signoff:
 ---
+
+# Evidence Report: cau-hinh-di-theo-nguoi (round 7)
+
+Vòng 7 chấm lại E13 theo thước đã ký lại ở Cổng 1 (commit 19d7d42d, 77e7a849;
+quyết định d-20260921T075657Z-27): Expected của E13 nay nêu đích danh các phản
+hồi đúng-thiết-kế khi máy đo không có cơ sở dữ liệu, và bước «tắt tính năng»
+đòi tắt CẢ NEXT_PUBLIC_PERSISTENCE lẫn NEXT_PUBLIC_ACCOUNT_SYNC.
+
+**Mã sản phẩm không đổi kể từ vòng 6.** `git diff --stat 73d9a5eb HEAD -- .
+':(exclude)_acceptance' ':(exclude)PRODUCT-MAP.md'` rỗng; mọi thay đổi từ
+73d9a5eb tới HEAD 77e7a849 nằm trong `_acceptance/`. Vì vậy kết quả vòng 6 của
+E1–E12 và E14–E18 được MANG SANG nguyên trạng — chỉ vì mã không đổi, không đo
+lại vòng này. Khối bằng chứng của chúng là khối vòng 6 giữ nguyên văn bên dưới.
+E13 được chấm lại trên chính các khung SỐNG và nhật ký mạng của vòng 6 (không
+chụp lại: khung «tắt» được xác lập đủ điều kiện, xem khối E13 vòng 7).
+
+| Eval | Criterion | Executor | Verdict |
+|---|---|---|---|
+| E1 | AC-1 | test | PASS (mang sang vòng 6 — mã không đổi) |
+| E2 | AC-2 | test | PASS (mang sang vòng 6 — mã không đổi) |
+| E3 | AC-3 | test | PASS (mang sang vòng 6 — mã không đổi) |
+| E4 | AC-4 | test | PASS (mang sang vòng 6 — mã không đổi) |
+| E5 | AC-5 | test | PASS (mang sang vòng 6 — mã không đổi) |
+| E6 | AC-6 | test | PASS (mang sang vòng 6 — mã không đổi) |
+| E7 | AC-7 | test | PASS (mang sang vòng 6 — mã không đổi) |
+| E8 | AC-8 | test | PASS (mang sang vòng 6 — mã không đổi) |
+| E9 | AC-9 | test | PASS (mang sang vòng 6 — mã không đổi) |
+| E10 | AC-10 | test | PASS (mang sang vòng 6 — mã không đổi) |
+| E11 | AC-11 | test | PASS (mang sang vòng 6 — mã không đổi) |
+| E12 | AC-12 | judgment | PASS (đề xuất máy, mang sang vòng 6) — T3: chờ human_override |
+| E13 | AC-13 | ui-check | PASS — chấm lại vòng 7 theo Expected đã ký lại (xem khối E13 vòng 7) |
+| E14 | AC-13 | script | PASS (mang sang vòng 6 — mã không đổi) |
+| E15 | AC-14 | test | PASS (mang sang vòng 6 — mã không đổi) |
+| E16 | AC-15 | test | PASS (mang sang vòng 6 — mã không đổi) |
+| E17 | AC-16 | test | PASS (mang sang vòng 6 — mã không đổi) |
+| E18 | AC-17 | judgment | PASS (đề xuất máy, mang sang vòng 6) — T3: chờ human_override |
+
+Phán quyết PENDING-JUDGMENT: mọi eval máy đều qua; E12 và E18 là judgment trên
+hợp đồng T3, ô human_override của cả hai còn trống — chỉ người điền.
+
+## Evidence vòng 7
+
+- eval: E13
+  run_id: minted-cau-hinh-di-theo-nguoi-E13-r7
+  exit_code: 0
+  baseline: n-a
+  verifier: ui-check:E13
+  verified_at: 2026-09-21T07:58:33Z
+  screenshot: evidence/E13-ghi-de.png
+  network_observed: ok
+  observed: |
+    Chấm lại trên khung SỐNG vòng 6 (commit 787d10f1) — không chụp mới, vì mã
+    sản phẩm không đổi và thước chỉ đổi phần Expected về mạng.
+    Khung: đã mở cả tám ảnh để soi. Cả tám do commit 787d10f1 (vòng 6) ghi, đúng
+    trạng thái theo tên file: -san-sang (Get a code + ô Enter the code, nút mờ),
+    -co-ma (mã thật + Copy + Expires in 600s), -ma-het-han (This code has
+    expired. + Get a new code), -nhan-loi (That code cannot be used., ô giữ
+    ZZZZZZZZ), -dang-nhan (ô khoá mang YYYYYYYY, vòng quay trên Use them here),
+    -ghi-de (lời hỏi có phạm vi + Replace them / Cancel), -may-chu-im (Could not
+    reach the server. Your current choices are unchanged. + Try again), -tat
+    (Your choices are stored on this machine…, không nút). evidence/E13-xong.png
+    là bản DOM-dựng-lại của vòng 5 (commit e4f76df6), KHÔNG thuộc tám khung và
+    không eval nào dùng — không tính.
+    Khung «tắt» và NEXT_PUBLIC_ACCOUNT_SYNC: nhật ký vòng 6 chỉ ghi máy chủ tạm
+    :3012 chạy với NEXT_PUBLIC_PERSISTENCE bỏ trống, KHÔNG đặt tường minh
+    NEXT_PUBLIC_ACCOUNT_SYNC — tức cờ đó bỏ trống (mặc định tắt). Xác lập bằng
+    ba căn cứ độc lập: (1) không nguồn env nào của repo (.env.local,
+    .env.example, dev_server.start) hay shell đo khai cờ này; (2) ở mã sản phẩm
+    73d9a5eb = HEAD, trạng thái ST-maycuatoi-tat chỉ dựng được khi
+    isAccountSyncEnabled() sai, mà hàm đó trả đúng nếu MỘT TRONG HAI cờ bằng '1'
+    — khung -tat hiện ra nghĩa là cả hai đều tắt lúc biên dịch; (3) nhật ký
+    mạng phiên TAT không có một yêu cầu /api/persistence/kv/entries/* nào, trong
+    khi mọi phiên bật đồng bộ đều có. Khung vòng 6 vì vậy đáp đúng bước đã ký lại.
+  output: |
+    Khung: 8/8 có mặt, 8/8 sống, 8/8 đúng trạng thái.
+    Network truth (evidence/E13-network.txt, same-origin http://localhost:3002
+    và :3012), đối chiếu từng dòng 4xx/5xx với Expected đã ký lại:
+    - 40 × GET /api/persistence/kv/entries/* 404 — nêu đích danh (lưu trữ máy
+      chủ chưa cấu hình).
+    - 10 × GET /api/stages 404, 10 × GET /api/folders 404 — nêu đích danh (chỉ
+      phục vụ khi agent runtime bật).
+    - 2 × POST /api/claim/redeem 401 — cả hai là mã sai: ZZZZZZZZ (khung
+      -nhan-loi) và YYYYYYYY (yêu cầu bị giữ 4 giây cho khung -dang-nhan, thấy
+      trong ô khoá của ảnh). Nêu đích danh (lời từ chối thiết kế của AC-5).
+    - 1 × POST /api/claim FAILED net::ERR_CONNECTION_REFUSED — yêu cầu người đo
+      cố ý chặn để dựng khung -may-chu-im; nêu đích danh.
+    - Còn lại toàn 2xx (server-providers, comfyui-workflows, access-code/status,
+      claim). Không có 5xx. Không có 4xx nào ngoài danh sách.
+    network_observed = ok → exit_code 0 → E13 PASS.
+
+# Vòng 6 (giữ nguyên văn — nguồn của các kết quả mang sang)
 
 # Evidence Report: cau-hinh-di-theo-nguoi (round 6)
 
@@ -439,6 +530,10 @@ không có cơ sở dữ liệu, unauthorized của mã sai theo thiết kế; E
 khai trạng thái nào). Tám khung đều sống và đúng — lý do "khung dựng lại" của
 vòng 5 đã hết nhờ AC-13 thu về tám trạng thái. E12 đổi sang đề xuất PASS (khung
 sống mang lời hứa có phạm vi). E18 mới: đề xuất PASS. E1-E11, E14-E17 PASS.
+Round 7 (HEAD 77e7a849, mã sản phẩm không đổi từ 73d9a5eb): PENDING-JUDGMENT —
+E13 chấm lại theo Expected đã ký lại ở Cổng 1: mọi 4xx trong nhật ký mạng đều
+thuộc danh sách đúng-thiết-kế → PASS; khung «tắt» xác lập được là cả hai cờ đều
+tắt. Các eval khác mang sang vòng 6 vì mã không đổi. E12, E18 chờ human_override.
 ## Chạy thật trên prod — 2026-09-21 (máy chạy, chưa phải mắt người ký)
 
 Hai trình duyệt không chung cookie trên https://openmaic-zeta-seven.vercel.app
