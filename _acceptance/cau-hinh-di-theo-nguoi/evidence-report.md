@@ -493,6 +493,23 @@ bằng mắt của vòng này chưa được chứng — người ký tự soi.
 
 ## Ngoài hợp đồng
 
+### Chờ người ký định đoạt (tác giả nêu, chưa sửa)
+
+- Ngoài-1 — Khoá API nằm dạng rõ trong bảng lựa chọn trên máy chủ. Khi bật đồng
+  bộ, khoá nhà cung cấp người dán vào Cài đặt được ghi nguyên văn vào Supabase.
+  Hiện đỡ bằng: cổng mật mã vào app, Data API của Supabase đã tắt lúc tạo dự án
+  nên không đọc được bảng qua khoá công khai. Ai có quyền vào database thì đọc được.
+- Ngoài-2 — Trang lạ có thể dụ trình duyệt đã vào app gửi một mã nhận (đổi mã
+  không kiểm nguồn gọi). Hiện chặn được nhờ cổng mật mã: cookie cổng không đi theo
+  yêu cầu từ trang khác. Tắt cổng mật mã là hở.
+- Ngoài-3 — Lấy mã không giới hạn tần suất. Sau cổng mật mã chỉ người đã vào app
+  gọi được; bảng mã tự dọn mã hết hạn mỗi lần lấy mã mới.
+- Ngoài-4 — Mọi lỗi khi đổi mã (kể cả quá tần suất, máy chủ lỗi) đều hiện là
+  «mã sai hoặc hết hạn» — người không biết nên thử lại hay đợi.
+- Ngoài-5 — Giới hạn đã biết «luồng đầu-cuối chưa chạy trọn lần nào» trong hợp
+  đồng đã lỗi thời: nó đã chạy trọn trên prod ngày 2026-09-21 (mục dưới).
+
+
 ### Ghi chú phép đo (vòng 6, không lật phán quyết)
 
 - Hai chiều đỏ trong evals.yaml trỏ vào thông điệp ghim không tìm thấy trong
