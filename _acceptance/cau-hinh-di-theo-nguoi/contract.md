@@ -5,7 +5,7 @@ slug: cau-hinh-di-theo-nguoi
 owner: phanlemanh@gmail.com
 risk_tier: T3
 surfaces: [api, ui]
-status: implemented
+status: approved
 design_doc: _acceptance/cau-hinh-di-theo-nguoi/design.md
 approved_by: Manh Phan
 approved_at: 2026-09-21
