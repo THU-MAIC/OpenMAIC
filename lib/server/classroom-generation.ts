@@ -6,6 +6,7 @@ import {
   generateSceneOutlinesFromRequirements,
   generateSceneActions,
   generateSceneContent,
+  isAbortError,
   PBLGenerationError,
   withGenerationRetry,
   type AICallFn,
@@ -92,9 +93,12 @@ export interface GenerateClassroomResult {
   scenes: Scene[];
   scenesCount: number;
   createdAt: string;
-  /** Present only when server TTS ran. Omitted when TTS is disabled or skipped. */
+  /**
+   * Present when TTS was requested. Omitted when TTS is disabled.
+   * `written` is 0 when the phase was skipped or threw before any clip was saved.
+   */
   ttsCoverage?: ClassroomTtsCoverage;
-  /** Set when narration was requested but some speech actions stayed silent. */
+  /** Set when requested narration is missing, skipped, or the TTS phase failed. */
   warning?: string;
 }
 
@@ -222,10 +226,34 @@ async function reserveGeneratedClassroom(
   }
 }
 
+function countNarratableSpeechActions(scenes: Scene[]): number {
+  let total = 0;
+  for (const scene of scenes) {
+    for (const action of scene.actions ?? []) {
+      if (action.type === 'speech' && 'text' in action && action.text) total += 1;
+    }
+  }
+  return total;
+}
+
+const TTS_SKIPPED_WARNING = 'TTS generation skipped: no clips were written';
+const TTS_PHASE_FAILED_WARNING = 'TTS generation phase failed';
+
+function ttsResultWarning(
+  coverage: ClassroomTtsCoverage | undefined,
+  fallback?: string,
+): string | undefined {
+  if (coverage && coverage.written < coverage.total) {
+    return classroomTtsSummary(coverage.written, coverage.total);
+  }
+  return fallback;
+}
+
 export async function generateClassroom(
   input: GenerateClassroomInput,
   options: {
     baseUrl: string;
+    signal?: AbortSignal;
     onProgress?: (progress: ClassroomGenerationProgress) => Promise<void> | void;
   },
 ): Promise<GenerateClassroomResult> {
@@ -738,6 +766,7 @@ export async function generateClassroom(
 
     // Phase: TTS generation
     let ttsCoverage: ClassroomTtsCoverage | undefined;
+    let ttsFailureWarning: string | undefined;
     if (input.enableTTS) {
       await options.onProgress?.({
         step: 'generating_tts',
@@ -748,16 +777,26 @@ export async function generateClassroom(
       });
 
       try {
-        ttsCoverage =
-          (await generateTTSForClassroom(scenes, stageId, options.baseUrl)) ?? undefined;
+        const reported = await generateTTSForClassroom(
+          scenes,
+          stageId,
+          options.baseUrl,
+          options.signal,
+        );
+        if (reported) {
+          ttsCoverage = reported;
+        } else {
+          ttsCoverage = { written: 0, total: countNarratableSpeechActions(scenes) };
+          ttsFailureWarning = TTS_SKIPPED_WARNING;
+        }
       } catch (err) {
+        if (isAbortError(err)) throw err;
         log.warn('TTS generation phase failed, continuing:', err);
+        ttsCoverage = { written: 0, total: countNarratableSpeechActions(scenes) };
+        ttsFailureWarning = TTS_PHASE_FAILED_WARNING;
       }
     }
-    const ttsWarning =
-      ttsCoverage && ttsCoverage.written < ttsCoverage.total
-        ? classroomTtsSummary(ttsCoverage.written, ttsCoverage.total)
-        : undefined;
+    const ttsWarning = ttsResultWarning(ttsCoverage, ttsFailureWarning);
 
     await options.onProgress?.({
       step: 'persisting',

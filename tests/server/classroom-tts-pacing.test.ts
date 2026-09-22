@@ -79,9 +79,9 @@ async function loadClassroomTts() {
   };
 }
 
-async function runClassroomTts(scenes: Scene[]) {
+async function runClassroomTts(scenes: Scene[], signal?: AbortSignal) {
   const { generateTTSForClassroom } = await loadClassroomTts();
-  const pending = generateTTSForClassroom(scenes, 'cls-tts', 'http://localhost');
+  const pending = generateTTSForClassroom(scenes, 'cls-tts', 'http://localhost', signal);
   await vi.runAllTimersAsync();
   return pending;
 }
@@ -186,6 +186,168 @@ describe('generateTTSForClassroom pacing and coverage', () => {
     ]);
 
     expect(startedAt[1]! - startedAt[0]!).toBe(0);
+  });
+
+  it('backs off from a positive floor after a rate limit when TTS_MIN_INTERVAL_MS is 0', async () => {
+    vi.stubEnv('TTS_MIN_INTERVAL_MS', '0');
+    const { TTSRateLimitError } = await loadClassroomTts();
+    const startedAt: number[] = [];
+    ttsMocks.generateTTS.mockImplementation(async () => {
+      startedAt.push(Date.now());
+      if (startedAt.length <= 2) {
+        throw new TTSRateLimitError('MiniMax', 'rate limit exceeded');
+      }
+      return { audio: CLIP, format: 'mp3' };
+    });
+
+    const coverage = await runClassroomTts([speechScene([{ id: 'action_0', text: 'retry me' }])]);
+
+    expect(coverage).toEqual({ written: 1, total: 1 });
+    expect(startedAt).toHaveLength(3);
+    // Configured spacing stays 0 for successes. The first rate-limit delay is
+    // 2× the 1000ms floor, then the next retry doubles that delay.
+    expect(startedAt[1]! - startedAt[0]!).toBe(2000);
+    expect(startedAt[2]! - startedAt[1]!).toBe(4000);
+    expect(logLines.some((line) => line.includes('widening spacing to 2000ms (retry 1/5)'))).toBe(
+      true,
+    );
+    expect(logLines.some((line) => line.includes('widening spacing to 4000ms (retry 2/5)'))).toBe(
+      true,
+    );
+  });
+
+  it('waits the full widened back-off after a slow rate-limited response', async () => {
+    const { TTSRateLimitError } = await loadClassroomTts();
+    const startedAt: number[] = [];
+    ttsMocks.generateTTS.mockImplementation(async () => {
+      startedAt.push(Date.now());
+      if (startedAt.length === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        throw new TTSRateLimitError('MiniMax', 'rate limit exceeded');
+      }
+      return { audio: CLIP, format: 'mp3' };
+    });
+
+    const coverage = await runClassroomTts([speechScene([{ id: 'action_0', text: 'slow limit' }])]);
+
+    expect(coverage).toEqual({ written: 1, total: 1 });
+    expect(startedAt).toHaveLength(2);
+    // The failed request took 5000ms and the widened spacing is 2000ms.
+    // That elapsed time must not cancel the back-off.
+    expect(startedAt[1]! - startedAt[0]!).toBe(7000);
+  });
+
+  it('honours Retry-After when it is longer than the widened spacing', async () => {
+    const { TTSRateLimitError } = await loadClassroomTts();
+    const startedAt: number[] = [];
+    ttsMocks.generateTTS.mockImplementation(async () => {
+      startedAt.push(Date.now());
+      if (startedAt.length === 1) {
+        throw new TTSRateLimitError('MiniMax', 'rate limit exceeded', 7000);
+      }
+      return { audio: CLIP, format: 'mp3' };
+    });
+
+    const coverage = await runClassroomTts([
+      speechScene([{ id: 'action_0', text: 'retry after' }]),
+    ]);
+
+    expect(coverage).toEqual({ written: 1, total: 1 });
+    expect(startedAt[1]! - startedAt[0]!).toBe(7000);
+  });
+
+  it('keeps the widened spacing when Retry-After is shorter than that delay', async () => {
+    const { TTSRateLimitError } = await loadClassroomTts();
+    const startedAt: number[] = [];
+    ttsMocks.generateTTS.mockImplementation(async () => {
+      startedAt.push(Date.now());
+      if (startedAt.length === 1) {
+        throw new TTSRateLimitError('MiniMax', 'rate limit exceeded', 500);
+      }
+      return { audio: CLIP, format: 'mp3' };
+    });
+
+    await runClassroomTts([speechScene([{ id: 'action_0', text: 'short retry after' }])]);
+
+    expect(startedAt[1]! - startedAt[0]!).toBe(2000);
+  });
+
+  it('does not spend the back-off budget on successful clip spacing', async () => {
+    vi.stubEnv('TTS_BACKOFF_BUDGET_MS', '0');
+    const startedAt: number[] = [];
+    ttsMocks.generateTTS.mockImplementation(async () => {
+      startedAt.push(Date.now());
+      return { audio: CLIP, format: 'mp3' };
+    });
+
+    const coverage = await runClassroomTts([
+      speechScene([
+        { id: 'action_0', text: 'one' },
+        { id: 'action_1', text: 'two' },
+      ]),
+    ]);
+
+    expect(coverage).toEqual({ written: 2, total: 2 });
+    expect(startedAt[1]! - startedAt[0]!).toBe(1000);
+  });
+
+  it('marks remaining clips failed once the TTS back-off budget is exhausted', async () => {
+    vi.stubEnv('TTS_MIN_INTERVAL_MS', '0');
+    vi.stubEnv('TTS_BACKOFF_BUDGET_MS', '3000');
+    const { TTSRateLimitError } = await loadClassroomTts();
+    const startedAt: number[] = [];
+    ttsMocks.generateTTS.mockImplementation(async () => {
+      startedAt.push(Date.now());
+      throw new TTSRateLimitError('MiniMax', 'rate limit exceeded');
+    });
+    const scene = speechScene([
+      { id: 'action_0', text: 'first' },
+      { id: 'action_1', text: 'second' },
+    ]);
+
+    const coverage = await runClassroomTts([scene]);
+
+    // First delay is 2000ms and fits. The next delay is 4000ms and does not,
+    // so the second clip is never requested.
+    expect(startedAt).toEqual([0, 2000].map((offset) => startedAt[0]! + offset));
+    expect(startedAt).toHaveLength(2);
+    expect(coverage).toEqual({ written: 0, total: 2 });
+    expect(speechAction(scene, 'action_0')?.audioId).toBeUndefined();
+    expect(speechAction(scene, 'action_1')?.audioId).toBeUndefined();
+    expect(ttsMocks.generateTTS).toHaveBeenCalledTimes(2);
+    expect(logLines.some((line) => line.includes('TTS back-off budget exhausted'))).toBe(true);
+    expect(
+      logLines.some((line) =>
+        line.includes('TTS generation INCOMPLETE: 0 written, 2 speech actions left silent'),
+      ),
+    ).toBe(true);
+  });
+
+  it('cancels a rate-limit back-off sleep when the signal aborts', async () => {
+    const { TTSRateLimitError, generateTTSForClassroom } = await loadClassroomTts();
+    ttsMocks.generateTTS.mockRejectedValue(new TTSRateLimitError('MiniMax', 'rate limit exceeded'));
+    const controller = new AbortController();
+    const pending = generateTTSForClassroom(
+      [speechScene([{ id: 'action_0', text: 'cancel me' }])],
+      'cls-tts',
+      'http://localhost',
+      controller.signal,
+    );
+    const settled = pending.then(
+      () => 'resolved' as const,
+      (error: unknown) => error,
+    );
+
+    await vi.advanceTimersByTimeAsync(10);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    const outcome = await Promise.race([
+      settled,
+      vi.advanceTimersByTimeAsync(2000).then(() => 'still-sleeping' as const),
+    ]);
+
+    expect(outcome).toMatchObject({ name: 'AbortError' });
+    expect(ttsMocks.generateTTS).toHaveBeenCalledTimes(1);
   });
 
   it('doubles spacing after a rate limit and retries the same action', async () => {
@@ -310,17 +472,21 @@ describe('generateTTSForClassroom pacing and coverage', () => {
     ).toBe(true);
   });
 
-  it('returns undefined and skips synthesis when no server TTS provider is configured', async () => {
+  it('reports zero coverage when TTS is enabled but no server provider is configured', async () => {
     vi.stubEnv('TTS_MINIMAX_API_KEY', '');
     vi.stubEnv('TTS_MINIMAX_ENABLED', 'false');
     vi.resetModules();
 
     const coverage = await runClassroomTts([speechScene([{ id: 'action_0', text: 'silent' }])]);
 
-    expect(coverage).toBeUndefined();
+    expect(coverage).toEqual({ written: 0, total: 1 });
     expect(ttsMocks.generateTTS).not.toHaveBeenCalled();
     expect(fsMocks.writeFile).not.toHaveBeenCalled();
     expect(logLines.some((line) => line.includes('TTS generation complete'))).toBe(false);
-    expect(logLines.some((line) => line.includes('TTS generation INCOMPLETE'))).toBe(false);
+    expect(
+      logLines.some((line) =>
+        line.includes('TTS generation INCOMPLETE: 0 written, 1 speech actions left silent'),
+      ),
+    ).toBe(true);
   });
 });
