@@ -263,6 +263,61 @@ describe('generate_image tool', () => {
     expect(mocks.writeFile).not.toHaveBeenCalled();
   });
 
+  it('records the media type the adapter reported for inline bytes', async () => {
+    // Inline bytes carry no `Content-Type`, so the adapter that received them is
+    // the only thing that knows what they are. Recording a constant instead
+    // would store a Grok JPEG as a PNG — served back as the wrong content type
+    // and written to disk under a `.png` extension. The URL path above reads
+    // this from the response headers.
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const pool = createFakeAssetStore();
+    await expect(
+      defaultPersistGeneratedImage(
+        {
+          result: {
+            base64: jpeg.toString('base64'),
+            mimeType: 'image/jpeg',
+            width: 1024,
+            height: 576,
+          },
+          stageId: 'stage-owner',
+          signal: new AbortController().signal,
+        },
+        pool.store,
+      ),
+    ).resolves.toBe('ast_fake_1');
+    expect(pool.puts[0]).toMatchObject({
+      bytes: jpeg,
+      type: 'image/jpeg',
+      meta: { contentType: 'image/jpeg', stageId: 'stage-owner', kind: 'image' },
+    });
+    expect(mocks.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('falls back to image/png for inline bytes whose adapter reported no type', async () => {
+    // Every adapter that predates the field omits it, and PNG is what this path
+    // recorded for all of them.
+    const pool = createFakeAssetStore();
+    await expect(
+      defaultPersistGeneratedImage(
+        {
+          result: {
+            base64: Buffer.from('real-image-bytes').toString('base64'),
+            width: 1,
+            height: 1,
+          },
+          stageId: 'stage-owner',
+          signal: new AbortController().signal,
+        },
+        pool.store,
+      ),
+    ).resolves.toBe('ast_fake_1');
+    expect(pool.puts[0]).toMatchObject({
+      type: 'image/png',
+      meta: { contentType: 'image/png', stageId: 'stage-owner', kind: 'image' },
+    });
+  });
+
   it('fails the call with a readable error and writes nothing when the store is full', async () => {
     const pool = createFakeAssetStore({ full: true });
     const generateConfiguredImage = vi.fn().mockResolvedValue({

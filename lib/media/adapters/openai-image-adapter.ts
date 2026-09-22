@@ -10,6 +10,7 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'gpt-image-2';
@@ -70,6 +71,7 @@ export async function generateWithOpenAIImage(
 
   const response = await fetch(`${baseUrl}/images/generations`, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.apiKey}`,
@@ -81,6 +83,8 @@ export async function generateWithOpenAIImage(
       size: resolveSize(options),
     }),
   });
+
+  assertNotRedirected(response, 'OpenAI Image');
 
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText);

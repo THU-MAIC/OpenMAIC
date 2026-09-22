@@ -1,13 +1,20 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { NextRequest } from 'next/server';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
 
 const mocks = vi.hoisted(() => ({
   streamLLM: vi.fn(),
   injectOwnErrorWithOkStatus: false,
+  resolveModel: vi.fn(),
+  logError: vi.fn(),
 }));
 
 vi.mock('@/lib/ai/llm', () => ({ streamLLM: mocks.streamLLM }));
+vi.mock('@/lib/server/resolve-model', () => ({ resolveModel: mocks.resolveModel }));
+vi.mock('@/lib/logger', () => ({
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: mocks.logError }),
+}));
 
 vi.mock('@/lib/chat/pi/tools/read-scene', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/chat/pi/tools/read-scene')>();
@@ -107,6 +114,75 @@ describe('Director shared Pi transport consumer', () => {
   beforeEach(() => {
     mocks.streamLLM.mockReset();
     mocks.injectOwnErrorWithOkStatus = false;
+    mocks.logError.mockReset();
+    mocks.resolveModel.mockReset();
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each(['stream error', 'thrown error'])(
+    'logs and streams the provider reason through the real Director and route (%s)',
+    async (failureMode) => {
+      vi.stubEnv('NEXT_PUBLIC_PI_CHAT_ENABLED', 'true');
+      vi.stubEnv('OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME', 'false');
+      const error = new Error('This model does not support tool calling');
+      if (failureMode === 'thrown error') mocks.streamLLM.mockRejectedValueOnce(error);
+      else mocks.streamLLM.mockReturnValueOnce(resultFrom([{ type: 'error', error }]));
+      mocks.resolveModel.mockResolvedValue({
+        model: resolvedModel,
+        apiKey: 'offline-test-key',
+        providerId: 'openai',
+      });
+
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(
+        new Request('http://localhost/api/chat/pi', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(makeBody()),
+        }) as NextRequest,
+      );
+      const events = (await response.text())
+        .split('\n\n')
+        .filter((block) => block.startsWith('data: '))
+        .map((block) => JSON.parse(block.slice(6)) as StatelessEvent);
+
+      expect(response.status).toBe(200);
+      expect(events.filter((event) => event.type === 'error')).toEqual([
+        { type: 'error', data: { message: error.message } },
+      ]);
+      expect(events.some((event) => event.type === 'done' || event.type === 'cue_user')).toBe(
+        false,
+      );
+      expect(mocks.logError).toHaveBeenCalledWith('Pi chat stream error:', expect.any(Error));
+      expect(mocks.streamLLM).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('keeps request cancellation silent instead of reporting a provider failure', async () => {
+    const abortController = new AbortController();
+    mocks.streamLLM.mockImplementationOnce(() => {
+      abortController.abort();
+      return resultFrom([{ type: 'error', error: new Error('request aborted') }]);
+    });
+    const events: StatelessEvent[] = [];
+
+    await runPiDirectorLoop({
+      body: makeBody(),
+      agentConfigs: [teacher],
+      send: async (event) => {
+        events.push(event);
+      },
+      languageModel: resolvedModel as never,
+      thinkingConfig: { mode: 'disabled', enabled: false },
+      abortSignal: abortController.signal,
+      signal: abortController.signal,
+      maxAgentTurns: 2,
+      maxActionsPerAgent: 1,
+      enableWhiteboardTools: false,
+    });
+
+    expect(events).toEqual([]);
   });
 
   it('uses the resolved chat model and traces a normalized evidence failure unchanged', async () => {

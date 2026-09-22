@@ -263,6 +263,10 @@ export async function runPiDirectorLoop(opts: {
 
   if (opts.signal.aborted) return;
 
+  // Pi settles provider failures in state rather than rejecting prompt(). Let
+  // the route log and stream the actual reason instead of emitting a normal done.
+  if (director.state.errorMessage) throw new Error(director.state.errorMessage);
+
   if (!sessionClosed && !userCued && hasAgentContent()) {
     await cueUser({ fromAgentId: piAgentResponses.at(-1)?.agentId });
   }

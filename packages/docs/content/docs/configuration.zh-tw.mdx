@@ -210,14 +210,14 @@ DEFAULT_MODEL=openai:gpt-5.5
 
 ## 功能開關
 
-功能開關的值可設為 `true` 或 `1`，其他值都視為關閉。`NEXT_PUBLIC_*` 開關會在建置時編譯至用戶端，修改後需要重新建置：
+功能開關的值可設為 `true` 或 `1`；除非另有說明，其他值都視為關閉。`NEXT_PUBLIC_*` 開關會在建置時編譯至用戶端，修改後需要重新建置：
 
 ```bash
 # MAIC Editor（Pro 模式）
 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
 
-# Pi 對話執行時
-NEXT_PUBLIC_PI_CHAT_ENABLED=true
+# Pi 對話執行時預設開啟；取消下一行的註解可回復舊版鏈路
+# NEXT_PUBLIC_PI_CHAT_ENABLED=false
 
 # Pi 播放態中的 PPT 與互動頁課件引用（建置時開關；不影響編輯態引用）
 NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED=true
@@ -233,6 +233,14 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 
 # 顯示實驗性 PPTX 匯入入口
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+```
+
+Pi 對話執行時依賴模型的工具／函式呼叫能力。如果所選模型或 provider 不支援工具呼叫，請設定 `NEXT_PUBLIC_PI_CHAT_ENABLED=false`（或 `0`）並重新建置，以使用舊版對話鏈路。
+
+使用 Docker Compose 時，`.env.local` 由 `env_file` 在執行時載入，不參與建置參數插值。請依下方指令明確傳入建置時設定並重新建置；只修改執行時環境不會改變已建置的用戶端與伺服器對話路徑。
+
+```bash
+NEXT_PUBLIC_PI_CHAT_ENABLED=false docker compose up -d --build openmaic
 ```
 
 PPTX 匯入目前仍是實驗性入口，解析結果尚未完整整合至課堂資料流。以上 `NEXT_PUBLIC_*` 變數都是建置時開關；Docker 部署還需要透過 build args 傳入，不能只寫在容器執行時環境變數中。

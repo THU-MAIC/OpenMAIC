@@ -314,6 +314,16 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('anthropic', 'claude-sonnet-4-5')]: anthropicManualEffort,
   [getModelMetadataKey('anthropic', 'claude-haiku-4-5')]: anthropicBudget,
 
+  // gemini-3.8/3.7-flash: thinking always on; levels low|medium|high, default medium
+  // ("minimal is not supported and returns an error" — docs, 12.09.2026).
+  [getModelMetadataKey('google', 'gemini-3.8-flash')]: levelCapability(
+    ['low', 'medium', 'high'],
+    'medium',
+  ),
+  [getModelMetadataKey('google', 'gemini-3.7-flash')]: levelCapability(
+    ['low', 'medium', 'high'],
+    'medium',
+  ),
   [getModelMetadataKey('google', 'gemini-3.6-flash')]: levelCapability(
     ['minimal', 'low', 'medium', 'high'],
     'medium',
