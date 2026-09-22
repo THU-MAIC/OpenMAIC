@@ -164,4 +164,82 @@ describe('generateSceneContent quiz option contract', () => {
       ],
     });
   });
+
+  it('rewrites a lowercase letter key to the swapped value before exact alignment', async () => {
+    const content = await generateSceneContent(quizOutline(), async () =>
+      JSON.stringify([
+        {
+          id: 'q-lower',
+          type: 'single',
+          question: 'Which coordinate is (6, 2)?',
+          options: [
+            { value: '(6, 2)', label: 'a' },
+            { value: '(2, -4)', label: 'b' },
+          ],
+          answer: ['a'],
+        },
+        {
+          id: 'q-correct-answer',
+          type: 'single',
+          question: 'Which coordinate is (0, 1)?',
+          options: [
+            { value: '(0, 1)', label: 'a' },
+            { value: '(1, 0)', label: 'b' },
+          ],
+          correctAnswer: 'a',
+        },
+      ]),
+    );
+
+    expect(content).toMatchObject({
+      questions: [
+        {
+          id: 'q-lower',
+          options: [
+            { value: 'A', label: '(6, 2)' },
+            { value: 'B', label: '(2, -4)' },
+          ],
+          answer: ['A'],
+        },
+        {
+          id: 'q-correct-answer',
+          options: [
+            { value: 'A', label: '(0, 1)' },
+            { value: 'B', label: '(1, 0)' },
+          ],
+          answer: ['A'],
+        },
+      ],
+    });
+  });
+
+  it('leaves a lowercase key untouched when the option value is already the letter', async () => {
+    const content = await generateSceneContent(quizOutline(), async () =>
+      JSON.stringify([
+        {
+          id: 'q-already',
+          type: 'single',
+          question: 'Which coordinate is (6, 2)?',
+          options: [
+            { value: 'A', label: '(6, 2)' },
+            { value: 'B', label: '(2, -4)' },
+          ],
+          answer: ['a'],
+        },
+      ]),
+    );
+
+    expect(content).toMatchObject({
+      questions: [
+        {
+          id: 'q-already',
+          options: [
+            { value: 'A', label: '(6, 2)' },
+            { value: 'B', label: '(2, -4)' },
+          ],
+          answer: ['a'],
+        },
+      ],
+    });
+  });
 });
