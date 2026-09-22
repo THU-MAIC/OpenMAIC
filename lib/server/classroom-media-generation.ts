@@ -11,7 +11,7 @@ import { createLogger } from '@/lib/logger';
 import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
 import { generateImage } from '@/lib/media/image-providers';
 import { generateVideo, normalizeVideoOptions } from '@/lib/media/video-providers';
-import { generateTTS } from '@/lib/audio/tts-providers';
+import { generateTTS, TTSRateLimitError } from '@/lib/audio/tts-providers';
 import { DEFAULT_TTS_VOICES, DEFAULT_TTS_MODELS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
@@ -265,11 +265,106 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
 // TTS generation
 // ---------------------------------------------------------------------------
 
+const DEFAULT_TTS_MIN_INTERVAL_MS = 1000;
+/** Back-off floor after a rate limit. Independent of `TTS_MIN_INTERVAL_MS`. */
+const TTS_RATE_LIMIT_BACKOFF_FLOOR_MS = 1000;
+const MAX_TTS_INTERVAL_MS = 15_000;
+const MAX_TTS_RATE_LIMIT_RETRIES = 5;
+/** Cumulative rate-limit sleep budget for one classroom TTS phase. */
+const DEFAULT_TTS_BACKOFF_BUDGET_MS = 120_000;
+
+/** Classroom TTS request spacing. Unset or invalid values fall back to 1000ms. `0` is allowed. */
+function readTtsMinIntervalMs(): number {
+  const raw = process.env.TTS_MIN_INTERVAL_MS?.trim();
+  if (!raw) return DEFAULT_TTS_MIN_INTERVAL_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_TTS_MIN_INTERVAL_MS;
+}
+
+/** Total rate-limit back-off budget. Unset or invalid values fall back to 120000ms. `0` disables further waits. */
+function readTtsBackoffBudgetMs(): number {
+  const raw = process.env.TTS_BACKOFF_BUDGET_MS?.trim();
+  if (!raw) return DEFAULT_TTS_BACKOFF_BUDGET_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_TTS_BACKOFF_BUDGET_MS;
+}
+
+/**
+ * Next spacing after a rate limit. A configured interval of 0 must not stay 0:
+ * the delay starts at 2× {@link TTS_RATE_LIMIT_BACKOFF_FLOOR_MS} and doubles
+ * up to {@link MAX_TTS_INTERVAL_MS}.
+ */
+function widenTtsSpacing(currentMs: number): number {
+  if (currentMs >= MAX_TTS_INTERVAL_MS) return currentMs;
+  const base = Math.max(currentMs, TTS_RATE_LIMIT_BACKOFF_FLOOR_MS);
+  return Math.min(base * 2, MAX_TTS_INTERVAL_MS);
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+
+    const timeoutId = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function countNarratableSpeechActions(scenes: Scene[]): number {
+  let total = 0;
+  for (const scene of scenes) {
+    for (const action of scene.actions ?? []) {
+      if (action.type === 'speech' && (action as SpeechAction).text) total += 1;
+    }
+  }
+  return total;
+}
+
+/** TTS was requested but synthesis never started. Coverage stays zero so the job is not a clean success. */
+function skippedTtsCoverage(scenes: Scene[], reason: string): ClassroomTtsCoverage {
+  const coverage: ClassroomTtsCoverage = {
+    written: 0,
+    total: countNarratableSpeechActions(scenes),
+  };
+  log.warn(reason);
+  if (coverage.written < coverage.total)
+    log.error(classroomTtsSummary(coverage.written, coverage.total));
+  return coverage;
+}
+
+export interface ClassroomTtsCoverage {
+  written: number;
+  total: number;
+}
+
+/** Loud one-line summary for a classroom TTS run. */
+export function classroomTtsSummary(written: number, total: number): string {
+  const silent = total - written;
+  if (silent <= 0) return `TTS generation complete: ${written} clips written`;
+  return `TTS generation INCOMPLETE: ${written} written, ${silent} speech actions left silent`;
+}
+
 export async function generateTTSForClassroom(
   scenes: Scene[],
   classroomId: string,
   baseUrl: string,
-): Promise<void> {
+  signal?: AbortSignal,
+): Promise<ClassroomTtsCoverage | undefined> {
   const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
   await ensureDir(audioDir);
 
@@ -279,24 +374,47 @@ export async function generateTTSForClassroom(
     .filter(([id, info]) => id !== 'browser-native-tts' && !info.disabled)
     .map(([id]) => id);
   if (ttsProviderIds.length === 0) {
-    log.warn('No server TTS provider configured, skipping TTS generation');
-    return;
+    return skippedTtsCoverage(scenes, 'No server TTS provider configured, skipping TTS generation');
   }
 
   const providerId = ttsProviderIds[0] as TTSProviderId;
   const apiKey = resolveTTSApiKey(providerId);
   const ttsProvider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
   if (ttsProvider?.requiresApiKey && !apiKey) {
-    log.warn(`No API key for TTS provider "${providerId}", skipping TTS generation`);
-    return;
+    return skippedTtsCoverage(
+      scenes,
+      `No API key for TTS provider "${providerId}", skipping TTS generation`,
+    );
   }
   const ttsBaseUrl = resolveTTSBaseUrl(providerId) || ttsProvider?.defaultBaseUrl;
   const voice = DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
   const format = ttsProvider?.supportedFormats?.[0] || 'mp3';
   if (providerId === VOXCPM_TTS_PROVIDER_ID && voice === VOXCPM_AUTO_VOICE_ID) {
-    log.warn('VoxCPM Auto Voice requires agent context; skipping server-side TTS generation');
-    return;
+    return skippedTtsCoverage(
+      scenes,
+      'VoxCPM Auto Voice requires agent context; skipping server-side TTS generation',
+    );
   }
+
+  let spacingMs = readTtsMinIntervalMs();
+  let lastStartedAt = Number.NEGATIVE_INFINITY;
+  // Full delay for the next attempt after a rate limit. Unlike successful-call
+  // pacing, this is not reduced by how long the failed request itself took.
+  let pendingBackoffMs = 0;
+  let backoffSpentMs = 0;
+  const backoffBudgetMs = readTtsBackoffBudgetMs();
+  let budgetExhausted = false;
+  let written = 0;
+  let total = 0;
+
+  const waitForTtsSlot = async () => {
+    signal?.throwIfAborted();
+    const pacingWaitMs = spacingMs - (Date.now() - lastStartedAt);
+    const waitMs = pendingBackoffMs > 0 ? pendingBackoffMs : pacingWaitMs;
+    pendingBackoffMs = 0;
+    if (waitMs > 0) await sleep(waitMs, signal);
+    lastStartedAt = Date.now();
+  };
 
   for (const scene of scenes) {
     if (!scene.actions) continue;
@@ -309,35 +427,80 @@ export async function generateTTSForClassroom(
     const sceneOrder = scene.order;
 
     for (const action of scene.actions) {
+      signal?.throwIfAborted();
       if (action.type !== 'speech' || !(action as SpeechAction).text) continue;
       const speechAction = action as ServerTransportSpeechAction;
       // Server transport emits the derived id plus the serving URL; the
       // client-side converter collapses the pair into one pool asset on
       // first load. Browser generation allocates pool ids directly.
       const audioId = `tts_s${sceneOrder}_${action.id}`;
+      total += 1;
+      if (budgetExhausted) {
+        log.warn(`TTS back-off budget exhausted; leaving ${audioId} silent`);
+        continue;
+      }
+      let rateLimitRetries = 0;
 
-      try {
-        const result = await generateTTS(
-          {
-            providerId,
-            modelId: DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
-            apiKey,
-            baseUrl: ttsBaseUrl,
-            voice,
-            speed: speechAction.speed,
-          },
-          speechAction.text,
-        );
+      while (true) {
+        await waitForTtsSlot();
+        try {
+          const result = await generateTTS(
+            {
+              providerId,
+              modelId: DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
+              apiKey,
+              baseUrl: ttsBaseUrl,
+              voice,
+              speed: speechAction.speed,
+              signal,
+            },
+            speechAction.text,
+          );
 
-        const filename = `${audioId}.${result.format || format}`;
-        await fs.writeFile(path.join(audioDir, filename), result.audio);
+          const filename = `${audioId}.${result.format || format}`;
+          await fs.writeFile(path.join(audioDir, filename), result.audio);
 
-        speechAction.audioId = audioId;
-        speechAction.audioUrl = mediaServingUrl(baseUrl, classroomId, `audio/${filename}`);
-        log.info(`Generated TTS: ${filename} (${result.audio.length} bytes)`);
-      } catch (err) {
-        log.warn(`TTS generation failed for action ${action.id}:`, err);
+          speechAction.audioId = audioId;
+          speechAction.audioUrl = mediaServingUrl(baseUrl, classroomId, `audio/${filename}`);
+          written += 1;
+          log.info(`Generated TTS: ${filename} (${result.audio.length} bytes)`);
+          break;
+        } catch (err) {
+          if (isAbortError(err) || signal?.aborted) {
+            throw isAbortError(err) ? err : new DOMException('Aborted', 'AbortError');
+          }
+          if (err instanceof TTSRateLimitError && rateLimitRetries < MAX_TTS_RATE_LIMIT_RETRIES) {
+            const nextSpacingMs = widenTtsSpacing(spacingMs);
+            const delayMs = Math.max(nextSpacingMs, err.retryAfterMs ?? 0);
+            if (backoffSpentMs + delayMs > backoffBudgetMs) {
+              budgetExhausted = true;
+              log.warn(
+                `TTS back-off budget exhausted for ${audioId}; leaving remaining speech silent`,
+              );
+              break;
+            }
+            backoffSpentMs += delayMs;
+            rateLimitRetries += 1;
+            spacingMs = nextSpacingMs;
+            pendingBackoffMs = delayMs;
+            log.warn(
+              `TTS rate limited for ${audioId}; widening spacing to ${spacingMs}ms (retry ${rateLimitRetries}/${MAX_TTS_RATE_LIMIT_RETRIES})`,
+            );
+            continue;
+          }
+          if (err instanceof TTSRateLimitError) {
+            log.warn(`TTS rate limit retries exhausted for ${audioId}; leaving speech silent`);
+          } else {
+            log.warn(`TTS generation failed for action ${action.id}:`, err);
+          }
+          break;
+        }
       }
     }
   }
+
+  const summary = classroomTtsSummary(written, total);
+  if (written < total) log.error(summary);
+  else log.info(summary);
+  return { written, total };
 }

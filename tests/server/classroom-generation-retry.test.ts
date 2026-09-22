@@ -461,4 +461,68 @@ describe('classroom scene generation retries', () => {
       expect(scene.stageId).toBe('stagegen02');
     }
   });
+
+  it('surfaces partial TTS coverage on the classroom result', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    mocks.generateTTSForClassroom.mockResolvedValue({ written: 1, total: 3 });
+
+    const { result } = await generateWithProgress({ enableTTS: true });
+
+    expect(result.ttsCoverage).toEqual({ written: 1, total: 3 });
+    expect(result.warning).toBe(
+      'TTS generation INCOMPLETE: 1 written, 2 speech actions left silent',
+    );
+  });
+
+  it('records complete TTS coverage without a warning', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    mocks.generateTTSForClassroom.mockResolvedValue({ written: 4, total: 4 });
+
+    const { result } = await generateWithProgress({ enableTTS: true });
+
+    expect(result.ttsCoverage).toEqual({ written: 4, total: 4 });
+    expect(result.warning).toBeUndefined();
+  });
+
+  it('omits TTS coverage when TTS is disabled', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+
+    const disabled = await generateWithProgress({ enableTTS: false });
+    expect(disabled.result.ttsCoverage).toBeUndefined();
+    expect(disabled.result.warning).toBeUndefined();
+    expect(mocks.generateTTSForClassroom).not.toHaveBeenCalled();
+  });
+
+  it('reports zero TTS coverage and a warning when enabled TTS is skipped', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    mocks.generateTTSForClassroom.mockResolvedValue(undefined);
+
+    const skipped = await generateWithProgress({ enableTTS: true });
+
+    expect(skipped.result.ttsCoverage).toEqual({ written: 0, total: 0 });
+    expect(skipped.result.warning).toBe('TTS generation skipped: no clips were written');
+    expect(skipped.progress.some((event) => event.message === skipped.result.warning)).toBe(true);
+  });
+
+  it('reports zero TTS coverage and a warning when the TTS phase throws', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    mocks.generateTTSForClassroom.mockRejectedValue(new Error('tts down'));
+
+    const failed = await generateWithProgress({ enableTTS: true });
+
+    expect(failed.result.ttsCoverage).toEqual({ written: 0, total: 0 });
+    expect(failed.result.warning).toBe('TTS generation phase failed');
+    expect(failed.result.id).toBe('stagegen01');
+    expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates TTS cancellation instead of recording a successful warning', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    mocks.generateTTSForClassroom.mockRejectedValue(new DOMException('Aborted', 'AbortError'));
+
+    await expect(generateWithProgress({ enableTTS: true })).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    expect(mocks.persistClassroom).not.toHaveBeenCalled();
+  });
 });
