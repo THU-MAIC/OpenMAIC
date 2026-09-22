@@ -648,9 +648,12 @@ describe('discussion TTS under a mobile autoplay policy', () => {
     const audio = FakeAudio.instances[0] as PolicyAudio;
     expect(FakeAudio.instances).toHaveLength(1);
     expect(audio.activated).toBe(true);
-    // The unlock clip must not still be loaded, and the element must not stay muted.
-    expect(audio.src).toBe('');
+    // load() would reset readyState and can drop the gesture on iOS. The silent
+    // clip stays loaded so the real line can replace it. This stub's `activated`
+    // flag is not a browser autoplay policy — jsdom does not enforce one.
+    expect(audio.load).not.toHaveBeenCalled();
     expect(audio.muted).toBe(false);
+    expect(audio.src.startsWith('data:audio/wav;base64,')).toBe(true);
 
     await seal('A');
     await seal('B');

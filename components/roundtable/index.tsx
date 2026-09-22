@@ -21,6 +21,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { AudioIndicatorState } from './audio-indicator';
 import { CanvasToolbar } from '@/components/canvas/canvas-toolbar';
+import { primeDiscussionAudioElement } from '@/lib/audio/discussion-audio';
 import { useAudioRecorder } from '@/lib/hooks/use-audio-recorder';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { toast } from 'sonner';
@@ -432,6 +433,9 @@ export function Roundtable({
       setIsVoiceOpen(false);
     } else {
       if (isSendCooldown || isProcessing) return;
+      // onMessageSend runs from onTranscription after the ASR await, so this
+      // click is the gesture that has to unlock the shared discussion element.
+      primeDiscussionAudioElement();
       onInputActivate?.();
       onUserInputActivity?.('recording_start');
       setIsVoiceOpen(true);
