@@ -329,7 +329,7 @@ export function useMaterialUploadsEnabled(): boolean {
 export function useComposerMaterials(
   initialMaterials: readonly WorkbenchMaterial[] = [],
 ): ComposerMaterials {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const enabled = useMaterialUploadsEnabled();
   const initial = useRef<WorkbenchMaterial[] | null>(null);
   if (initial.current === null) {
@@ -380,7 +380,7 @@ export function useComposerMaterials(
         setFailed((items) => [...items, entry]);
         toast.error(
           err instanceof WorkbenchMaterialUploadError
-            ? err.userMessage(t)
+            ? err.userMessage(t, locale)
             : err instanceof Error
               ? err.message
               : t('workbench.material.uploadFailed', { name: file.name }),

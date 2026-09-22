@@ -7,7 +7,11 @@ import {
   WorkbenchMaterialUploadError,
 } from '@/lib/workbench/session-store';
 import { WORKBENCH_MATERIAL_ACCEPT } from '@/lib/workbench/material-upload-policy';
-import { createWorkbenchTranslator } from '@/lib/i18n/workbench';
+import {
+  createWorkbenchTranslator,
+  workbenchResourceFor,
+  type WorkbenchTranslator,
+} from '@/lib/i18n/workbench';
 
 const material = {
   materialId: 'mat_00000000000000000000000000',
@@ -17,7 +21,10 @@ const material = {
   extractionStatus: 'idle' as const,
 };
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe('workbench material client', () => {
   it('offers the document, image, audio, and video material surface', () => {
@@ -134,10 +141,10 @@ describe('workbench material client', () => {
       expect(error).toBeInstanceOf(WorkbenchMaterialUploadError);
       expect(error.requestId).toBe('upload-trace-123');
       expect(error.message).toContain('upload-trace-123');
-      expect(error.userMessage(createWorkbenchTranslator('zh-CN'))).toBe(
+      expect(error.userMessage(createWorkbenchTranslator('zh-CN'), 'zh-CN')).toBe(
         `文件过大，请选择不超过 ${mb}MB 的文件。`,
       );
-      expect(error.userMessage(createWorkbenchTranslator('en-US'))).toBe(
+      expect(error.userMessage(createWorkbenchTranslator('en-US'), 'en-US')).toBe(
         `File too large. Please select a file no larger than ${mb} MB.`,
       );
     },
@@ -154,7 +161,7 @@ describe('workbench material client', () => {
         (err) => err,
       );
       expect(error.maxBytes).toBeUndefined();
-      expect(error.userMessage(createWorkbenchTranslator('zh-CN'))).toBe(
+      expect(error.userMessage(createWorkbenchTranslator('zh-CN'), 'zh-CN')).toBe(
         '文件过大，请压缩或拆分后重试。',
       );
     },
@@ -166,14 +173,164 @@ describe('workbench material client', () => {
       vi.fn(async () => new Response('<html>Request Entity Too Large</html>', { status: 413 })),
     );
     const error = await uploadWorkbenchMaterial(new File(['x'], material.name)).catch((err) => err);
-    expect(error.userMessage(createWorkbenchTranslator('en-US'))).toBe(
+    expect(error.userMessage(createWorkbenchTranslator('en-US'), 'en-US')).toBe(
       'File too large. Compress or split the file and try again.',
     );
   });
 
-  it('preserves other upload errors for the existing error handling', () => {
-    const error = new WorkbenchMaterialUploadError('slow down', 429);
-    expect(error.userMessage(createWorkbenchTranslator('zh-CN'))).toBe('slow down');
+  it.each([
+    ['en-US', 'File too large. Please select a file no larger than 95.3 MB.'],
+    ['zh-CN', '文件过大，请选择不超过 95.3MB 的文件。'],
+    ['de-DE', 'Die Datei ist zu groß. Wähle eine Datei mit höchstens 95,3 MB aus.'],
+    ['fr-FR', 'Fichier trop volumineux. Sélectionnez un fichier de 95,3 Mo maximum.'],
+    ['ar-SA', 'الملف كبير جدًا. اختر ملفًا لا يتجاوز حجمه 95.3 ميجابايت.'],
+  ] as const)('rounds a non-MiB limit down for %s', (locale, expected) => {
+    const error = new WorkbenchMaterialUploadError(
+      'upload exceeds 100000000 bytes [requestId=upload-trace-123]',
+      413,
+      'upload-trace-123',
+      100_000_000,
+    );
+    expect(error.maxBytes).toBe(100_000_000);
+    expect(error.message).toContain('upload-trace-123');
+    expect(error.userMessage(createWorkbenchTranslator(locale), locale)).toBe(expected);
+    expect(error.userMessage(createWorkbenchTranslator(locale), locale)).not.toContain('95.4');
+    expect(error.userMessage(createWorkbenchTranslator(locale), locale)).not.toContain('requestId');
+  });
+
+  it.each([1, 104_857])(
+    'uses the generic message for a positive limit below 0.1 MiB (%s bytes)',
+    (maxBytes) => {
+      const error = new WorkbenchMaterialUploadError(
+        'upload exceeds 1 bytes',
+        413,
+        undefined,
+        maxBytes,
+      );
+      expect(error.maxBytes).toBe(maxBytes);
+      expect(error.userMessage(createWorkbenchTranslator('en-US'), 'en-US')).toBe(
+        'File too large. Compress or split the file and try again.',
+      );
+      expect(error.userMessage(createWorkbenchTranslator('zh-CN'), 'zh-CN')).toBe(
+        '文件过大，请压缩或拆分后重试。',
+      );
+    },
+  );
+
+  it.each([
+    ['en-US', 'File too large. Please select a file no larger than 0.1 MB.'],
+    ['de-DE', 'Die Datei ist zu groß. Wähle eine Datei mit höchstens 0,1 MB aus.'],
+  ] as const)(
+    'shows 0.1 for the first integer-byte limit above 0.1 MiB in %s',
+    (locale, expected) => {
+      const error = new WorkbenchMaterialUploadError(
+        'upload exceeds 104858 bytes',
+        413,
+        undefined,
+        104_858,
+      );
+      expect(error.userMessage(createWorkbenchTranslator(locale), locale)).toBe(expected);
+    },
+  );
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY])(
+    'uses the generic message for non-finite limit %s without dropping it from the error',
+    (maxBytes) => {
+      const error = new WorkbenchMaterialUploadError('upload too large', 413, undefined, maxBytes);
+      expect(error.maxBytes).toBe(maxBytes);
+      expect(error.userMessage(createWorkbenchTranslator('en-US'), 'en-US')).toBe(
+        'File too large. Compress or split the file and try again.',
+      );
+    },
+  );
+
+  it('uses the generic message when floor rounding is unavailable', () => {
+    const RealNumberFormat = Intl.NumberFormat;
+    let resolvedCalls = 0;
+    vi.spyOn(Intl, 'NumberFormat').mockImplementation(function NumberFormat(
+      locales?: Intl.LocalesArgument,
+      options?: Intl.NumberFormatOptions,
+    ) {
+      const rest = { ...options };
+      delete rest.roundingMode;
+      const formatter = new RealNumberFormat(locales, rest);
+      const resolved = formatter.resolvedOptions();
+      vi.spyOn(formatter, 'resolvedOptions').mockImplementation(() => {
+        resolvedCalls += 1;
+        return { ...resolved, roundingMode: 'halfExpand' };
+      });
+      return formatter;
+    });
+    const error = new WorkbenchMaterialUploadError(
+      'upload exceeds 100000000 bytes',
+      413,
+      undefined,
+      100_000_000,
+    );
+    expect(error.userMessage(createWorkbenchTranslator('en-US'), 'en-US')).toBe(
+      'File too large. Compress or split the file and try again.',
+    );
+    expect(error.userMessage(createWorkbenchTranslator('en-US'), 'en-US')).not.toContain('95.4');
+    expect(resolvedCalls).toBe(2);
+  });
+
+  it('uses the generic message when the number formatter cannot be constructed', () => {
+    vi.spyOn(Intl, 'NumberFormat').mockImplementation(function NumberFormat() {
+      throw new TypeError('formatter unavailable');
+    });
+    const error = new WorkbenchMaterialUploadError(
+      'upload exceeds 100000000 bytes',
+      413,
+      undefined,
+      100_000_000,
+    );
+    expect(error.userMessage(createWorkbenchTranslator('en-US'), 'en-US')).toBe(
+      'File too large. Compress or split the file and try again.',
+    );
+  });
+
+  it('does not insert grouping separators into a four-digit limit', () => {
+    const error = new WorkbenchMaterialUploadError(
+      'upload exceeds 1073741824 bytes',
+      413,
+      undefined,
+      1024 * 1024 * 1024,
+    );
+    expect(error.userMessage(createWorkbenchTranslator('en-US'), 'en-US')).toBe(
+      'File too large. Please select a file no larger than 1024 MB.',
+    );
+    expect(error.userMessage(createWorkbenchTranslator('de-DE'), 'de-DE')).toBe(
+      'Die Datei ist zu groß. Wähle eine Datei mit höchstens 1024 MB aus.',
+    );
+  });
+
+  it('produces the same localized limit through i18next and the hook-free translator', async () => {
+    const i18next = (await import('i18next')).default;
+    const instance = i18next.createInstance();
+    await instance.init({
+      lng: 'de-DE',
+      fallbackLng: false,
+      interpolation: { escapeValue: false },
+      resources: {
+        'de-DE': { translation: { workbench: workbenchResourceFor('de-DE') } },
+      },
+    });
+    const expected = 'Die Datei ist zu groß. Wähle eine Datei mit höchstens 95,3 MB aus.';
+    const error = new WorkbenchMaterialUploadError(
+      'upload exceeds 100000000 bytes [requestId=upload-trace-123]',
+      413,
+      'upload-trace-123',
+      100_000_000,
+    );
+    const i18nextTranslator: WorkbenchTranslator = (key, options) => instance.t(key, options);
+    expect(error.userMessage(createWorkbenchTranslator('de-DE'), 'de-DE')).toBe(expected);
+    expect(error.userMessage(i18nextTranslator, 'de-DE')).toBe(expected);
+    expect(error.message).toContain('[requestId=upload-trace-123]');
+  });
+
+  it.each([400, 415, 429, 500])('preserves status %s messages unchanged', (status) => {
+    const error = new WorkbenchMaterialUploadError('slow down', status);
+    expect(error.userMessage(createWorkbenchTranslator('zh-CN'), 'zh-CN')).toBe('slow down');
   });
 
   it('sends only materialIds when creating a session', async () => {

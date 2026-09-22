@@ -15,8 +15,12 @@
  * - `x-material-filename` is the display name (required).
  * - Size caps are per class: media (audio/video) uploads cap at
  *   `maxUploadBytes`, documents/images at `min(maxDocumentBytes,
- *   maxUploadBytes)` — both 413 when exceeded, checked on the declared
- *   `content-length` AND on the streamed body.
+ *   maxUploadBytes)`. Exceeding that effective limit answers 413, both for
+ *   the declared `content-length` and while reading the body. Those two
+ *   responses include a top-level numeric `maxBytes`: the exact byte
+ *   threshold that check enforced, not the rounded figure the client shows.
+ *   A body larger than its declared content-length is a separate 413 and
+ *   does not include `maxBytes`.
  * - Lifecycle: the upload reclaims crashed `uploading` leftovers older than
  *   24 hours (their byte objects first, then the reservations), reserves a
  *   quota-checked `uploading` row (429 when the owner's count or byte quota is
