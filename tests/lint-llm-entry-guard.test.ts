@@ -70,6 +70,9 @@ async function errorsFor(filePath: string, code: string): Promise<string[]> {
 }
 
 describe('LLM entry-point lint guard — coverage matrix', () => {
+  // Every case runs the real eslint over every guarded path, which is tens of
+  // full lint passes per test; on a loaded machine that is minutes of work,
+  // not milliseconds, so the suite carries its own budget.
   for (const [form, code] of Object.entries(BYPASS_FORMS)) {
     for (const ext of EXTENSIONS) {
       // A namespace or named import of a value is not valid in a .cjs/.mjs mix
@@ -118,4 +121,4 @@ describe('LLM entry-point lint guard — coverage matrix', () => {
     const choreographyErrors = await errorsFor('lib/choreography/probe.ts', reactImport);
     expect(choreographyErrors).toContain('no-restricted-imports');
   });
-});
+}, 120_000);

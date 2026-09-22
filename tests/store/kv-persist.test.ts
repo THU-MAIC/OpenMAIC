@@ -160,8 +160,16 @@ async function hydrated(storage: PersistStorageUnderTest): Promise<PersistStorag
 
 /** Health events raised during a test, in order. */
 let health: PersistHealthEvent[] = [];
-/** Just the ones the user would actually see as a standing problem. */
-const problems = () => health.filter((e) => e.status !== 'recovered').map((e) => e.name);
+/**
+ * Just the ones the user would actually see as a standing problem — one entry
+ * per key. A key whose storage stays down reports the same standing problem
+ * again on every recovery attempt, and how many attempts elapse inside
+ * `flushTasks` is wall-clock, not code: the user-visible fact is which keys
+ * stand, not how often the channel repeated itself.
+ */
+const problems = () => [
+  ...new Set(health.filter((e) => e.status !== 'recovered').map((e) => e.name)),
+];
 
 beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
