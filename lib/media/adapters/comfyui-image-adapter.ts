@@ -26,6 +26,7 @@ import type {
   ImageGenerationResult,
 } from '../types';
 import { aspectRatioToDimensions, IMAGE_PROVIDERS } from '../image-providers';
+import { assertNotRedirected } from '../redirect-guard';
 
 // ---------------------------------------------------------------------------
 // Logger  (matches openmaic's [TIMESTAMP] [LEVEL] [Component] format)
@@ -455,10 +456,13 @@ async function queuePrompt(
   log.info(`Submitting workflow to queue [client_id: ${clientId}]`);
   const response = await fetch(`${baseUrl}/prompt`, {
     method: 'POST',
+    redirect: 'manual',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt: workflow, client_id: clientId }),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
+
+  assertNotRedirected(response, 'ComfyUI');
 
   if (!response.ok) {
     const text = await response.text();
@@ -482,8 +486,16 @@ async function pollHistory(baseUrl: string, promptId: string): Promise<HistoryEn
   // return null so the caller's loop simply tries again on the next interval.
   try {
     const response = await fetch(`${baseUrl}/history/${promptId}`, {
+      redirect: 'manual',
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
+    if (response.status >= 300 && response.status < 400) {
+      // Not followed: a redirect would send this poll to a host the base URL's
+      // owner chose. A 3xx is not transient, but this function's contract is to
+      // hand the caller a retryable failure rather than abort the generation.
+      log.error(`History poll refused a redirect (HTTP ${response.status})`);
+      return null;
+    }
     if (!response.ok) return null;
     const data = (await response.json()) as Record<string, HistoryEntry>;
     return data[promptId] ?? null;
@@ -501,8 +513,11 @@ async function fetchImageAsBase64(
 ): Promise<string> {
   const params = new URLSearchParams({ filename, subfolder, type });
   const response = await fetch(`${baseUrl}/view?${params.toString()}`, {
+    redirect: 'manual',
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
+
+  assertNotRedirected(response, 'ComfyUI');
 
   if (!response.ok) {
     throw new Error(`ComfyUI /view failed (${response.status}) for image "${filename}"`);
