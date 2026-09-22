@@ -237,6 +237,12 @@ NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
 
 Pi 対話ランタイムではモデルのツール／関数呼び出し機能が必要です。選択したモデルまたは provider がツール呼び出しに対応していない場合は、`NEXT_PUBLIC_PI_CHAT_ENABLED=false`（または `0`）を設定して再ビルドし、従来の対話経路を使用してください。
 
+Docker Compose では、`.env.local` は `env_file` により実行時に読み込まれ、ビルド引数の変数展開には使われません。次のコマンドでビルド時の値を明示して再ビルドしてください。実行時の環境変数だけを変更しても、ビルド済みのクライアントとサーバーの対話経路は変わりません。
+
+```bash
+NEXT_PUBLIC_PI_CHAT_ENABLED=false docker compose up -d --build openmaic
+```
+
 PPTX インポートはまだ実験的で、解析結果は完全に授業データフローに統合されていません。`NEXT_PUBLIC_*` 変数はビルド時スイッチで、Docker では build args で渡す必要があり、コンテナ実行時環境変数だけでは反映されません。
 
 ## その他サーバーオプション

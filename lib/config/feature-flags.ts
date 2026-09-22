@@ -89,7 +89,9 @@ export function isEditorRendererEnabled(): boolean {
 /**
  * Pi-based classroom chat runtime. Default ON. The same public flag selects
  * the client runtime and gates the corresponding server route. Operators can
- * set it to `false` or `0` to roll back to the legacy classroom chat runtime.
+ * set it to `false` or `0` and rebuild to roll back to the legacy runtime.
+ * next.config.ts pins the default too, so runtime-only overrides cannot split
+ * the built client's choice from the server route gate.
  */
 export function isPiChatEnabled(): boolean {
   return readDefaultOnBoolean(process.env.NEXT_PUBLIC_PI_CHAT_ENABLED);
