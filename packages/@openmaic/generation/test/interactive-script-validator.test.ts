@@ -59,4 +59,94 @@ describe('findInteractiveScriptSyntaxFailure', () => {
       ),
     ).toBeNull();
   });
+
+  it('accepts a classic script whose quoted attribute contains a greater-than', () => {
+    expect(
+      findInteractiveScriptSyntaxFailure(
+        '<script data-note="a > b">window.widgetRan = true;</script>',
+      ),
+    ).toBeNull();
+  });
+
+  it('still checks the script body when an attribute value contains a greater-than', () => {
+    expect(
+      findInteractiveScriptSyntaxFailure('<script data-note="a > b">state counts = [];</script>'),
+    ).toMatchObject({
+      scriptIndex: 1,
+      message: expect.stringMatching(/Unexpected identifier 'counts'/),
+    });
+  });
+
+  it('does not let a greater-than inside quotes hide a later type attribute', () => {
+    expect(
+      findInteractiveScriptSyntaxFailure(
+        '<script data-note="a > b" type="application/json">{"a":1}</script>',
+      ),
+    ).toBeNull();
+  });
+
+  it('does not treat a script inside an HTML comment as executable', () => {
+    expect(
+      findInteractiveScriptSyntaxFailure(
+        '<!-- <script>state counts = [];</script> --><script>window.widgetRan = true;</script>',
+      ),
+    ).toBeNull();
+  });
+
+  it('checks the script that follows an HTML comment and does not count the comment', () => {
+    expect(
+      findInteractiveScriptSyntaxFailure(
+        '<!-- <script>state counts = [];</script> --><script>state counts = [];</script>',
+      ),
+    ).toMatchObject({
+      scriptIndex: 1,
+      message: expect.stringMatching(/Unexpected identifier 'counts'/),
+    });
+  });
+
+  it('ends an abruptly closed comment before the next script', () => {
+    expect(
+      findInteractiveScriptSyntaxFailure('<!--> <script>state counts = [];</script>'),
+    ).toMatchObject({
+      scriptIndex: 1,
+      message: expect.stringMatching(/Unexpected identifier 'counts'/),
+    });
+  });
+
+  it.each([
+    [
+      'noscript',
+      '<noscript><script>state counts = [];</script></noscript><script>window.widgetRan = true;</script>',
+    ],
+    [
+      'textarea',
+      '<textarea><script>state counts = [];</script></textarea><script>window.widgetRan = true;</script>',
+    ],
+  ])('does not treat a script inside %s as executable', (_label, html) => {
+    expect(findInteractiveScriptSyntaxFailure(html)).toBeNull();
+  });
+
+  it('rejects a top-level return, which is illegal in a classic script', () => {
+    expect(findInteractiveScriptSyntaxFailure('<script>return;</script>')).toMatchObject({
+      scriptIndex: 1,
+      message: expect.stringMatching(/Illegal return statement/),
+    });
+  });
+
+  it('accepts a return nested inside a function', () => {
+    expect(
+      findInteractiveScriptSyntaxFailure('<script>function stop() { return; }</script>'),
+    ).toBeNull();
+  });
+
+  it('ends a classic script at the HTML end tag, even inside a JavaScript string', () => {
+    expect(
+      findInteractiveScriptSyntaxFailure(
+        '<script>const value = "</script>"; window.widgetRan = true;</script>',
+      ),
+    ).toMatchObject({
+      scriptIndex: 1,
+      message: expect.stringMatching(/Invalid or unexpected token/),
+    });
+  });
 });
