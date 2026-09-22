@@ -124,8 +124,19 @@ describe('POST /api/chat/pi model and thinking resolution', () => {
     }
   });
 
-  it('returns 404 without invoking the runtime when the feature flag is disabled', async () => {
+  it('uses the Pi route when the feature flag is unset', async () => {
     delete process.env[PI_CHAT_FLAG];
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(makeBody()));
+
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(mocks.resolveModel).toHaveBeenCalledOnce();
+    expect(mocks.runPiDirectorLoop).toHaveBeenCalledOnce();
+  });
+
+  it('returns 404 without invoking the runtime when legacy rollback is explicit', async () => {
+    process.env[PI_CHAT_FLAG] = 'false';
     const { POST } = await import('@/app/api/chat/pi/route');
     const response = await POST(makeRequest(makeBody()));
 

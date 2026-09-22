@@ -165,22 +165,27 @@ describe('asking the sidecar until it answers', () => {
 });
 
 describe('classroom surfaces feed the sidecar into the gate', () => {
-  it('the shared surface asks the sidecar and gates on the shared permission', () => {
-    const source = readFileSync(
+  it('the shared session owns the sidecar and generation gate', () => {
+    const session = readFileSync(
+      join(process.cwd(), 'lib/classroom/use-classroom-session.ts'),
+      'utf8',
+    );
+    const surface = readFileSync(
       join(process.cwd(), 'components/classroom/ClassroomSurface.tsx'),
       'utf8',
     );
-    expect(source).toContain('fetchStageMeta');
-    expect(source).toContain('classroomGenerationOwnership(result)');
-    expect(source).toContain('noteStageGenerationOwnership');
+    expect(session).toContain('fetchStageMeta');
+    expect(session).toContain('classroomGenerationOwnership(result)');
+    expect(session).toContain('noteStageGenerationOwnership');
+    expect(session).toContain('useMayGenerateForStage(classroomId)');
     // Reset on course switch, so a previous course's answer never carries over.
-    expect(source).toContain("noteStageGenerationOwnership(classroomId, 'unresolved')");
+    expect(session).toContain("noteStageGenerationOwnership(classroomId, 'unresolved')");
     // The resume effect re-runs when the answer lands.
-    expect(source).toMatch(/\}, \[loading, error, mayGenerate, generateRemaining\]\);/);
+    expect(surface).toMatch(/\}, \[loading, error, mayGenerate, generateRemaining\]\);/);
     // An unresolved answer is asked again rather than accepted for the load.
-    expect(source).toContain('retryWhileOwnershipUnresolved');
+    expect(session).toContain('retryWhileOwnershipUnresolved');
     // The outline-retry affordance is withheld, not merely refused.
-    expect(source).toMatch(/onRetryOutline=\{mayGenerate \? retrySingleOutline : undefined\}/);
+    expect(surface).toMatch(/onRetryOutline=\{mayGenerate \? retrySingleOutline : undefined\}/);
   });
 
   it('the standalone route mounts the shared page variant', () => {
@@ -189,14 +194,28 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     expect(source).toContain('variant="page"');
   });
 
-  it('does not ask the sidecar from the shared surface in browser-only mode', () => {
-    const source = readFileSync(
+  it('the workspace mounts the same session-owning surface', () => {
+    const pane = readFileSync(
+      join(process.cwd(), 'components/workbench/workspace/WorkspaceClassroomPane.tsx'),
+      'utf8',
+    );
+    const surface = readFileSync(
       join(process.cwd(), 'components/classroom/ClassroomSurface.tsx'),
       'utf8',
     );
+    expect(pane).toContain('<ClassroomSurface');
+    expect(pane).toContain('variant="pane"');
+    expect(surface).toContain('useClassroomSession({');
+  });
+
+  it('does not ask the sidecar from the shared surface in browser-only mode', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'lib/classroom/use-classroom-session.ts'),
+      'utf8',
+    );
     const refreshStart = source.indexOf('const refreshOwnership = useCallback(');
-    const retryStart = source.indexOf('const retryClassroom = useCallback(');
-    const refresh = source.slice(refreshStart, retryStart);
+    const refresh = source.slice(refreshStart);
+    expect(refreshStart).toBeGreaterThan(0);
     expect(refresh).toContain('!isServerBackedMediaPersistence()');
     expect(refresh).toContain('retryWhileOwnershipUnresolved');
   });
@@ -211,15 +230,13 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
       join(process.cwd(), 'components/classroom/ClassroomSurface.tsx'),
       'utf8',
     );
-    const definition = source.indexOf('const refreshOwnership = useCallback(');
     const retryStart = source.indexOf('const retryClassroom = useCallback(');
     const effectStart = source.indexOf('useEffect(() => {', retryStart);
     const loadStart = source.indexOf('const loadUntilAvailable = async () => {');
     const loadEnd = source.indexOf('void loadUntilAvailable();', loadStart);
-    expect(definition).toBeGreaterThan(0);
-    expect(retryStart).toBeGreaterThan(definition);
+    expect(retryStart).toBeGreaterThan(0);
     expect(effectStart).toBeGreaterThan(retryStart);
-    expect(loadStart).toBeGreaterThan(definition);
+    expect(loadStart).toBeGreaterThan(retryStart);
 
     const retry = source.slice(retryStart, effectStart);
     const initialLoad = source.slice(loadStart, loadEnd);
@@ -260,10 +277,12 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
 
   it('clears parked media allocations when a course is (re)opened', () => {
     const source = readFileSync(
-      join(process.cwd(), 'components/classroom/ClassroomSurface.tsx'),
+      join(process.cwd(), 'lib/classroom/use-classroom-session.ts'),
       'utf8',
     );
     expect(source).toContain('clearPendingMediaAllocations(classroomId)');
+    expect(source).toContain('clearNarrationAllocations(classroomId)');
+    expect(source).toContain('return () => stopGeneration()');
   });
 
   // Listening back to narration and seeing whether a line has any spend nothing,

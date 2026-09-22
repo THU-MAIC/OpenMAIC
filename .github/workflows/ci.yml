@@ -339,11 +339,11 @@ jobs:
       # Dedicated so a cold `next build` is not charged against Playwright's
       # webServer readiness budget (120s). NEXT_PUBLIC_MAIC_EDITOR_ENABLED is a
       # build-time flag and must be set here, not only on `pnpm start`.
+      # Leave NEXT_PUBLIC_PI_CHAT_ENABLED unset so E2E covers the shipped default.
       - name: Build
         run: pnpm build
         env:
           NEXT_PUBLIC_MAIC_EDITOR_ENABLED: 'true'
-          NEXT_PUBLIC_PI_CHAT_ENABLED: 'true'
           NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED: 'true'
 
       - name: Run e2e tests

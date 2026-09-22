@@ -77,7 +77,14 @@ export async function POST(req: NextRequest) {
           : upstream.status === 413
             ? 'INVALID_REQUEST'
             : 'UPSTREAM_ERROR';
-      return apiError(code, status, 'Render service rejected the request', detail);
+      // Keep admission reasons separate from diagnostic prose so clients can
+      // localize known rejections and fall back for older/newer services.
+      const reason =
+        upstream.status === 429 &&
+        (data.reason === 'queue_full' || data.reason === 'per_identity_limit')
+          ? data.reason
+          : undefined;
+      return apiError(code, status, 'Render service rejected the request', detail, reason);
     }
 
     return apiSuccess({ jobId: data.jobId, pollIntervalMs: 3000 }, 202);

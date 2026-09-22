@@ -295,7 +295,7 @@ pnpm build && pnpm start
 ACCESS_CODE=your-secret-code
 ```
 
-设置后，访客需要输入密码才能使用，所有 API 路由也会受到保护。不设置则无影响。请使用足够长的随机值（至少 16 个字符），因为该密码是保护部署的唯一密钥。
+设置后，访客需要输入密码才能使用，所有 API 路由也会受到保护。未设置时（`.env.example` 的默认），`middleware.ts` 不校验任何凭证，所有匹配到的路由——包括 API——均可访问。这是 fail-open：未配置的部署没有门禁，也没有第二道校验。请使用足够长的随机值（至少 16 个字符），因为该密码是保护部署的唯一密钥。
 
 验证通过后会在 HTTP-only cookie 中保存一个签名令牌，有效期 7 天，由服务端强制校验，过期后需要重新验证。只有当应用运行在会覆盖 `x-forwarded-for` / `x-real-ip` 的反向代理之后并设置 `TRUST_PROXY_HEADERS=true` 时才会限流：按客户端限流（每个客户端 60 秒内 10 次），受信任客户端验证成功会清空自己的计数。没有可信代理时，应用无法把请求归因到具体客户端，因此完全不限流，保护完全依赖密码的长度和随机性。
 
@@ -366,7 +366,7 @@ NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docke
 `NEXT_PUBLIC_PERSISTENCE` 是**编译期开关**，会打进浏览器 bundle。启用它的构建必须部署在具备可用运行时 `DATABASE_URL` 和 `PERSISTENCE_DEV_TOKEN` 的环境中，且构建时的 `NEXT_PUBLIC_PERSISTENCE_TOKEN` 必须与服务端 token 一致。否则浏览器会选择 HTTP 持久化但内嵌端点返回配置/认证/初始化错误；首页会弹出持久化不可用的提示并保留原有课程列表，而不是误导性地显示空课程库。
 
 > [!WARNING]
-> `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` **不是严格意义上的密钥**：`NEXT_PUBLIC_` token 会被编译进公开的 JavaScript，任何访客都能提取它并指定任意 `x-learner-key`，从而读写**所有**学习者的分区和文档。它只用于把无关的网络扫描器挡在可信网络的端点之外。**该模式仅适用于 localhost 或可信网络下的单用户部署。**生产环境请将 [`lib/persistence/server-auth.ts`](lib/persistence/server-auth.ts) 替换为真正的会话校验，由服务端身份推导学习者分区，并相应调整文档/合并/管理端的授权策略。
+> `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` **不是严格意义上的密钥**：`NEXT_PUBLIC_` token 会被编译进公开的 JavaScript，对每个访客可见，因此**既无保密性也无用户隔离**。文档和资产请求会跳过该认证器（`app/api/persistence/[...path]/route.ts`）。文档所有者来自 30 天匿名 cookie（`lib/server/agent-runtime/owner.ts`），而不是 `x-learner-key`。文档读取是 capability-by-id：只要 stage meta 存在且未被墓碑化，`decideDocumentAccess` 就会放行且不比对所有者（`lib/persistence/document-access.ts`），因此能访问该端点并知道 stage id 的人都可以读这门课。写入和删除按 cookie 校验所有者。只有 `/runtime/*` 会调用 `authenticatePersistenceRequest`，此时客户端自选的 `x-learner-key` 仍用于划分学习者会话。该 token 在这条运行时路径上的唯一用途，是把无关的网络扫描器挡在可信网络的端点之外。**该模式仅适用于 localhost 或可信网络下的单用户部署。**生产环境请将 [`lib/persistence/server-auth.ts`](lib/persistence/server-auth.ts) 替换为真正的会话校验，由服务端身份推导学习者分区，并相应调整文档/合并/管理端的授权策略。
 
 `PERSISTENCE_POSTGRES_PASSWORD` 只在数据目录为空时初始化 PostgreSQL 角色，之后再修改不会轮换已有的 `openmaic-postgres` 卷。一次性本地库可以直接 `docker compose --profile server-persistence down -v` 后换密码重启；要保留数据则需以管理员执行 `ALTER ROLE openmaic WITH PASSWORD 'new-password';` 并更新 `DATABASE_URL`。
 
@@ -831,7 +831,7 @@ OpenMAIC/
 - **生成流水线** (`@openmaic/generation`) — 两阶段：大纲生成 → 场景内容生成
 - **多智能体编排** (`lib/orchestration/`) — 基于 LangGraph 的状态机，管理智能体轮次和讨论
 - **回放引擎** (`lib/playback/`) — 驱动课堂回放和实时互动的状态机
-- **动作引擎** (`lib/action/`) — 执行 28+ 种动作类型（语音、白板绘图/文字/形状/图表、聚光灯、激光笔…）
+- **动作引擎** (`lib/action/`) — 执行 21 种动作类型（语音、白板绘图/文字/形状/图表、聚光灯、激光笔…）
 - **存储层** (`@openmaic/storage`) — Runtime/Document/资产存储抽象，附 Postgres 参考实现，HTTP 契约可对接任意外部存储服务
 
 ### 贡献流程

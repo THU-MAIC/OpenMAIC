@@ -1,8 +1,8 @@
-import type { PPTElement, PPTLineElement } from '@openmaic/dsl';
+import type { PPTElement } from '@openmaic/dsl';
 
 // Reuse the renderer's single source of truth for element bounds instead of a
 // local re-implementation. `getElementRange` there is line-aware (derives
-// bounds from `start`/`end` for `PPTLineElement`) and rotation-aware, so
+// bounds from endpoints and active control points) and rotation-aware, so
 // alignment guides built over a slide containing a line no longer produce NaN.
 import { getElementRange } from '@openmaic/renderer';
 
@@ -82,55 +82,8 @@ function pushCubicExtrema(values: number[], p0: number, c1: number, c2: number, 
   if (root !== 0) pushCubicRoot(values, p0, c1, c2, p3, (-derivativeB + root) / (2 * derivativeA));
 }
 
-/**
- * Conservative editing AABB for a line element's rendered path, in canvas
- * units: the box over `start`, `end`, and every present path control point
- * (`broken`, `broken2`, `curve`, `cubic`), offset by the element origin.
- *
- * Straight/broken/broken2 polylines draw through these vertices directly, and
- * quadratic/cubic Beziers stay inside the convex hull of their control points,
- * so this range never misses a visible bend. It is intentionally conservative:
- * a Bezier rarely reaches the control point itself, but editing hit-testing and
- * snap math prefer extra coverage over a false miss.
- */
-function getLineEditingRange(el: PPTLineElement): ElementRange {
-  const xs = [el.start[0], el.end[0]];
-  const ys = [el.start[1], el.end[1]];
-  if (el.broken) {
-    xs.push(el.broken[0]);
-    ys.push(el.broken[1]);
-  }
-  if (el.broken2) {
-    xs.push(el.broken2[0]);
-    ys.push(el.broken2[1]);
-  }
-  if (el.curve) {
-    xs.push(el.curve[0]);
-    ys.push(el.curve[1]);
-  }
-  if (el.cubic) {
-    for (const [cx, cy] of el.cubic) {
-      xs.push(cx);
-      ys.push(cy);
-    }
-  }
-  return {
-    minX: el.left + Math.min(...xs),
-    maxX: el.left + Math.max(...xs),
-    minY: el.top + Math.min(...ys),
-    maxY: el.top + Math.max(...ys),
-  };
-}
-
-/**
- * Editing-side element range. Non-line elements delegate to the renderer's
- * shared range helper; line elements use the control-point-aware path AABB so
- * marquee hit-testing and multi-drag union snapping answer "could this be
- * here?" without false misses.
- */
-export function getEditingElementRange(el: PPTElement): ElementRange {
-  return el.type === 'line' ? getLineEditingRange(el) : getElementRange(el);
-}
+/** Shared conservative bounds for marquee hit-testing and multi-drag unions. */
+export const getEditingElementRange = getElementRange;
 
 /**
  * Visual element range for alignment guides. Non-line elements share their
@@ -139,31 +92,14 @@ export function getEditingElementRange(el: PPTElement): ElementRange {
  * Bezier control-hull geometry.
  */
 export function getVisualElementRange(el: PPTElement): ElementRange {
-  if (el.type !== 'line') return getElementRange(el);
+  if (el.type !== 'line' || el.broken || el.broken2) return getElementRange(el);
 
   const xs = [el.start[0], el.end[0]];
   const ys = [el.start[1], el.end[1]];
   const start: Point = el.start;
   const end: Point = el.end;
 
-  if (el.broken) {
-    xs.push(el.broken[0]);
-    ys.push(el.broken[1]);
-  } else if (el.broken2) {
-    /**
-     * Mirrors `getLineElementPath`: `broken2` selects two orthogonal elbows,
-     * not a drawn vertex. Keep this in lockstep so visual snap bounds follow
-     * the rendered stroke instead of the control handle.
-     */
-    const { minX, maxX, minY, maxY } = getElementRange(el);
-    if (maxX - minX >= maxY - minY) {
-      xs.push(el.broken2[0], el.broken2[0]);
-      ys.push(start[1], end[1]);
-    } else {
-      xs.push(start[0], end[0]);
-      ys.push(el.broken2[1], el.broken2[1]);
-    }
-  } else if (el.curve) {
+  if (el.curve) {
     pushQuadraticExtrema(xs, start[0], el.curve[0], end[0]);
     pushQuadraticExtrema(ys, start[1], el.curve[1], end[1]);
   } else if (el.cubic) {

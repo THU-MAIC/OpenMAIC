@@ -210,14 +210,14 @@ DEFAULT_MODEL=openai:gpt-5.5
 
 ## 機能フラグ
 
-機能フラグは `true` または `1` を有効とし、それ以外は無効です。`NEXT_PUBLIC_*` はビルド時にクライアントに注入されるため、変更後は再ビルドが必要です。
+機能フラグは `true` または `1` を有効とし、特記がない限りそれ以外は無効です。`NEXT_PUBLIC_*` はビルド時にクライアントに注入されるため、変更後は再ビルドが必要です。
 
 ```bash
 # MAIC Editor（Pro モード）
 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
 
-# Pi 対話ランタイム
-NEXT_PUBLIC_PI_CHAT_ENABLED=true
+# Pi 対話ランタイムはデフォルトで有効。従来経路へ戻す場合は次の行のコメントを解除
+# NEXT_PUBLIC_PI_CHAT_ENABLED=false
 
 # Pi 再生時の PPT・インタラクティブ教材参照（ビルド時フラグ。編集モードの参照には影響しません）
 NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED=true
@@ -234,6 +234,8 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 # 実験的 PPTX インポート入口表示
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
 ```
+
+Pi 対話ランタイムではモデルのツール／関数呼び出し機能が必要です。選択したモデルまたは provider がツール呼び出しに対応していない場合は、`NEXT_PUBLIC_PI_CHAT_ENABLED=false`（または `0`）を設定して再ビルドし、従来の対話経路を使用してください。
 
 PPTX インポートはまだ実験的で、解析結果は完全に授業データフローに統合されていません。`NEXT_PUBLIC_*` 変数はビルド時スイッチで、Docker では build args で渡す必要があり、コンテナ実行時環境変数だけでは反映されません。
 

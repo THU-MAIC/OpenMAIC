@@ -142,7 +142,14 @@ describe.skipIf(!ffmpegAvailable)('local media extractor real pipeline', () => {
       ]);
       expect(artifact.transcript?.[0].endMs).toBeGreaterThan(1_500);
       expect(artifact.keyframes?.length).toBeGreaterThan(0);
-      expect(artifact.assets?.[0]).toMatchObject({ type: 'image', mimeType: 'image/webp' });
+      const keyframe = artifact.assets?.[0];
+      expect(keyframe).toMatchObject({ type: 'image', mimeType: 'image/webp' });
+      // Keyframe `data` must be a data URL, the same form every other
+      // `DocumentAsset` producer emits and the form document-bundle consumers
+      // (`pdf-compat` → `decodeBase64DataUrl`) expect. Material extraction
+      // accepts both forms via `decodeMediaAssetData`. This test needs ffmpeg,
+      // so it does not run in CI.
+      expect(keyframe?.data).toMatch(/^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/);
 
       const deadlineProvider = createLocalMediaExtractorProvider({
         transcribe: vi.fn(() => new Promise<{ text: string }>(() => undefined)),

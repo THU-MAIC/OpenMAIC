@@ -1,7 +1,6 @@
 /**
- * One-time operator warning when the configured `ACCESS_CODE` is too short to
- * resist brute force. It is emitted through the repo logger and never contains
- * the code itself.
+ * One-time operator warnings for missing or short `ACCESS_CODE` values.
+ * Emitted through the repo logger; neither warning contains the code itself.
  */
 
 import { createLogger } from '@/lib/logger';
@@ -12,6 +11,25 @@ const log = createLogger('AccessCode');
 export const ACCESS_CODE_MIN_RECOMMENDED_LENGTH = 16;
 
 let warned = false;
+let warnedUnset = false;
+
+/**
+ * The startup hook has no public API for the actual listening address. In
+ * particular, `next dev` and `next start` ignore HOSTNAME and default to a
+ * wildcard bind. Warn conservatively even when network exposure is unknown,
+ * rather than interpreting a missing/loopback HOSTNAME as a safe deployment.
+ * Keep the same truthiness check as middleware: do not trim the access code.
+ */
+export function warnIfAccessCodeIsUnset(accessCode: string | undefined): void {
+  if (accessCode || warnedUnset) return;
+
+  warnedUnset = true;
+  log.warn(
+    'ACCESS_CODE is not set. The access-code gate is disabled for all API routes. ' +
+      'Set ACCESS_CODE to a long random value (at least ' +
+      `${ACCESS_CODE_MIN_RECOMMENDED_LENGTH} characters) before exposing this server to a network.`,
+  );
+}
 
 /**
  * Log at most one warning per process when `accessCode` is shorter than
@@ -35,4 +53,5 @@ export function warnIfAccessCodeIsShort(accessCode: string): void {
 /** Reset the once-per-process guard. Exists mainly for tests. */
 export function resetAccessCodeWarningForTests(): void {
   warned = false;
+  warnedUnset = false;
 }

@@ -60,7 +60,7 @@ describe('geometry', () => {
       end: [120, 0],
       curve: [60, 80],
     } as unknown as PPTElement;
-    expect(getElementRange(line)).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 50 });
+    expect(getElementRange(line)).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 130 });
     expect(getEditingElementRange(line)).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 130 });
   });
   it('visual range for a quadratic curve uses the Bezier extremum, not the control hull', () => {
@@ -126,7 +126,23 @@ describe('geometry', () => {
     } as unknown as PPTLineElement;
 
     expect(getLineElementPath(line)).toBe('M0,0 L80,0 L80,20 120,20');
+    expect(getEditingElementRange(line)).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 70 });
     expect(getVisualElementRange(line)).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 70 });
+  });
+  it('double-elbow visual bounds preserve routing with nonzero endpoint offsets', () => {
+    const line = {
+      id: 'offset-elbow',
+      type: 'line',
+      left: 100,
+      top: 50,
+      start: [100, 0],
+      end: [120, 80],
+      broken2: [110, 500],
+    } as PPTLineElement;
+
+    expect(getLineElementPath(line)).toBe('M100,0 L110,0 L110,80 120,80');
+    expect(getVisualElementRange(line)).toEqual({ minX: 200, maxX: 220, minY: 50, maxY: 130 });
+    expect(getEditingElementRange(line)).toEqual({ minX: 200, maxX: 220, minY: 50, maxY: 130 });
   });
   it('visual range for non-line elements delegates to the shared element range', () => {
     const element = box({ rotate: 15 });
