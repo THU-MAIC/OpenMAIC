@@ -157,6 +157,10 @@
         "audioMetadata": "صوت (بيانات وصفية فقط)"
       }
     },
+    "interactiveRuntimeError": {
+      "title": "تعذر تشغيل هذا التفاعل",
+      "dismiss": "إغلاق"
+    },
     "tabs": {
       "lecture": "الملاحظات",
       "chat": "المحادثة"

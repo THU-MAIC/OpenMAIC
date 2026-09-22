@@ -157,6 +157,10 @@
         "audioMetadata": "Audio (métadonnées uniquement)"
       }
     },
+    "interactiveRuntimeError": {
+      "title": "Cette activité interactive n'a pas pu s'exécuter",
+      "dismiss": "Fermer"
+    },
     "tabs": {
       "lecture": "Notes",
       "chat": "Discussion"

@@ -41,7 +41,9 @@ const widget={registerObservation(){},registerIframe(){},markIframeReady(){},get
 const useWidgetIframeStore=selector=>selector(widget);
 const useCanvasStore={use:{pickTarget:()=>null}};
 const useElementRefsStore={use:{refs:()=>[]}};
-const useSceneRuntimeErrors={getState:()=>({clearScene(){}})};
+const runtimeErrorState={errors:{},clearScene(){}};
+const useSceneRuntimeErrors=Object.assign((selector)=>selector(runtimeErrorState),{getState:()=>runtimeErrorState});
+const InteractiveRuntimeErrorBanner=()=>null;
 const resolveInteractivePickerMode=()=>null;
 import { GENUI_LOGICAL_WIDTH, GENUI_LOGICAL_HEIGHT, fitGenUiViewport } from './lib/interactive/logical-viewport';
 import { intersectClientBoxes } from './lib/edit/visible-client-rect';

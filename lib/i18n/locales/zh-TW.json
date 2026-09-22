@@ -157,6 +157,10 @@
         "audioMetadata": "音訊（僅引用中繼資料）"
       }
     },
+    "interactiveRuntimeError": {
+      "title": "這個互動未能執行",
+      "dismiss": "關閉"
+    },
     "tabs": {
       "lecture": "筆記",
       "chat": "對話"

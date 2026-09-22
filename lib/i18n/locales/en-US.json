@@ -157,6 +157,10 @@
         "audioMetadata": "Audio (metadata only)"
       }
     },
+    "interactiveRuntimeError": {
+      "title": "This interactive failed to run",
+      "dismiss": "Dismiss"
+    },
     "tabs": {
       "lecture": "Notes",
       "chat": "Chat"
