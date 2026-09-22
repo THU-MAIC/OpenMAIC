@@ -1,4 +1,5 @@
 import { isPPTElementType, type PPTElement, type Slide, type SlideContent } from '@openmaic/dsl';
+import { getElementRange } from '@openmaic/renderer/geometry';
 
 export const MAX_EDITOR_HISTORY = 50;
 
@@ -716,49 +717,6 @@ function getElementListRange(elements: readonly PPTElement[]) {
     maxX: Math.max(...ranges.map((range) => range.maxX)),
     minY: Math.min(...ranges.map((range) => range.minY)),
     maxY: Math.max(...ranges.map((range) => range.maxY)),
-  };
-}
-
-function getElementRange(element: PPTElement) {
-  if (element.type === 'line') {
-    return {
-      minX: element.left,
-      maxX: element.left + Math.max(element.start[0], element.end[0]),
-      minY: element.top,
-      maxY: element.top + Math.max(element.start[1], element.end[1]),
-    };
-  }
-  if ('rotate' in element && element.rotate) {
-    const radius = Math.hypot(element.width, element.height) / 2;
-    const auxiliaryAngle = (Math.atan(element.height / element.width) * 180) / Math.PI;
-    const tlbr = ((180 - element.rotate - auxiliaryAngle) * Math.PI) / 180;
-    const trbl = ((auxiliaryAngle - element.rotate) * Math.PI) / 180;
-    const middleLeft = element.left + element.width / 2;
-    const middleTop = element.top + element.height / 2;
-    const xAxis = [
-      middleLeft + radius * Math.cos(tlbr),
-      middleLeft + radius * Math.cos(trbl),
-      middleLeft - radius * Math.cos(tlbr),
-      middleLeft - radius * Math.cos(trbl),
-    ];
-    const yAxis = [
-      middleTop - radius * Math.sin(tlbr),
-      middleTop - radius * Math.sin(trbl),
-      middleTop + radius * Math.sin(tlbr),
-      middleTop + radius * Math.sin(trbl),
-    ];
-    return {
-      minX: Math.min(...xAxis),
-      maxX: Math.max(...xAxis),
-      minY: Math.min(...yAxis),
-      maxY: Math.max(...yAxis),
-    };
-  }
-  return {
-    minX: element.left,
-    maxX: element.left + element.width,
-    minY: element.top,
-    maxY: element.top + element.height,
   };
 }
 
