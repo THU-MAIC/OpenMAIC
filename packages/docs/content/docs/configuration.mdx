@@ -237,6 +237,12 @@ NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
 
 Pi chat requires model tool/function calling. If the selected model or provider does not support tool calls, set `NEXT_PUBLIC_PI_CHAT_ENABLED=false` (or `0`) and rebuild to use the legacy chat path.
 
+With Docker Compose, `.env.local` is loaded by `env_file` at runtime, not used for build-arg interpolation. Rebuild with an explicit build-time override as below; a runtime-only change leaves the built client and server on their original chat path.
+
+```bash
+NEXT_PUBLIC_PI_CHAT_ENABLED=false docker compose up -d --build openmaic
+```
+
 PPTX import is still experimental, and its parsed output is not yet fully integrated into the classroom data flow. All `NEXT_PUBLIC_*` variables above are build-time flags. Docker deployments must also pass them as build args; setting them only as container runtime environment variables is not sufficient.
 
 ## Other server options
