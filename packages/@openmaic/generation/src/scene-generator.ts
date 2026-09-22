@@ -909,12 +909,24 @@ async function generateQuizContent(
   return { questions };
 }
 
+/** A single ASCII selection letter. Not "A.", "(B)", "A ", or a full-width "Ｂ". */
+function isBareQuizLetter(value: string): boolean {
+  return /^[A-Z]$/i.test(value);
+}
+
 /**
  * Normalize quiz options from AI response.
  * AI may generate plain strings ["OptionA", "OptionB"] or QuizOption objects.
  * This normalizes to QuizOption[] format: { value: "A", label: "OptionA" }
+ *
+ * Models sometimes emit those fields backwards (`value` holds the content,
+ * `label` holds "A"). The quiz surface renders `value` as the badge and
+ * `label` as the body, so the swapped shape shows the content in the badge.
+ * When `label` is a bare A–Z letter and `value` is other non-empty text,
+ * swap them and uppercase the letter. Both-letter, both-content, and missing
+ * fields keep the previous fallback (index letter when `value` is not a string).
  */
-function normalizeQuizOptions(
+export function normalizeQuizOptions(
   options: unknown[] | undefined,
 ): { value: string; label: string }[] | undefined {
   if (!options || !Array.isArray(options)) return undefined;
@@ -928,9 +940,21 @@ function normalizeQuizOptions(
 
     if (typeof opt === 'object' && opt !== null) {
       const obj = opt as Record<string, unknown>;
+      const rawValue = obj.value;
+      const rawLabel = obj.label;
+      if (
+        typeof rawLabel === 'string' &&
+        isBareQuizLetter(rawLabel) &&
+        typeof rawValue === 'string' &&
+        rawValue.length > 0 &&
+        !isBareQuizLetter(rawValue)
+      ) {
+        return { value: rawLabel.toUpperCase(), label: rawValue };
+      }
+
       return {
-        value: typeof obj.value === 'string' ? obj.value : letter,
-        label: typeof obj.label === 'string' ? obj.label : String(obj.value || obj.text || letter),
+        value: typeof rawValue === 'string' ? rawValue : letter,
+        label: typeof rawLabel === 'string' ? rawLabel : String(rawValue || obj.text || letter),
       };
     }
 
