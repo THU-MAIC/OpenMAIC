@@ -19,13 +19,13 @@ import {
   type PPTElementLink,
 } from '@openmaic/dsl';
 import type { Scene, SlideContent } from '@/lib/types/stage';
-import type { SpeechAction } from '@/lib/types/action';
 import { getElementRange, getLineElementPath, getTableSubThemeColor } from '@/lib/utils/element';
 import { type AST, toAST } from '@/lib/export/html-parser';
 import { type SvgPoints, toPoints, getSvgPathRange } from '@/lib/export/svg-path-parser';
 import { svg2Base64 } from '@/lib/export/svg2base64';
 import { latexToOmml } from '@/lib/export/latex-to-omml';
 import { createLogger } from '@/lib/logger';
+import { collectSpeechText } from './narration';
 import { inlineHtmlAssets, createAssetFetcher } from './inline-assets';
 import type { FetchAsset } from './inline-assets';
 import { createProxiedFetch } from './proxied-fetch';
@@ -370,16 +370,14 @@ function isSVGImage(url: string) {
  * Extract speaker notes text from a scene's actions.
  * Concatenates speech text and action labels into plain text.
  */
+/**
+ * Speaker notes for one slide: the scene's speech text in action order.
+ * Delegates to the shared narration walk in `./narration` (#1142) with its
+ * historical options — whitespace-only speech is kept and parts are not
+ * trimmed, matching the pre-refactor notes output.
+ */
 function buildSpeakerNotes(scene: Scene): string {
-  if (!scene.actions || scene.actions.length === 0) return '';
-
-  const parts: string[] = [];
-  for (const action of scene.actions) {
-    if (action.type === 'speech') {
-      parts.push((action as SpeechAction).text);
-    }
-  }
-  return parts.join('\n');
+  return collectSpeechText(scene);
 }
 
 async function blobToDataUrl(blob: Blob): Promise<string> {
