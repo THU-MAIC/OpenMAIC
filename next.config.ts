@@ -3,6 +3,11 @@ import type { NextConfig } from 'next';
 const isVercelBuild = Boolean(process.env.VERCEL);
 
 const nextConfig: NextConfig = {
+  env: {
+    // Pin even the unset/default value in both client and server bundles.
+    // A runtime-only override must not disable the route the built client uses.
+    NEXT_PUBLIC_PI_CHAT_ENABLED: process.env.NEXT_PUBLIC_PI_CHAT_ENABLED ?? '',
+  },
   output: process.env.VERCEL ? undefined : 'standalone',
   outputFileTracingIncludes: {
     '/*': [

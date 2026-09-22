@@ -125,7 +125,10 @@ async function imageBytes(
     if (bytes.length > MAX_REMOTE_IMAGE_BYTES) {
       throw new Error(`Generated image exceeds the ${MAX_REMOTE_IMAGE_BYTES}-byte limit`);
     }
-    return { bytes, mime: 'image/png' };
+    // Inline bytes have no `Content-Type` to read, so the adapter that received
+    // them is the one that knows their type. PNG stays the fallback for an
+    // adapter that does not report one.
+    return { bytes, mime: result.mimeType ?? 'image/png' };
   }
   if (!result.url) throw new Error('Image provider returned neither URL nor image bytes');
 
