@@ -694,6 +694,33 @@ Open-ended question requiring a written response. No options or predefined answe
 - Avoid "all of the above" or "none of the above" options
 - Randomize correct answer position
 
+### Option field contract
+
+\`value\` and \`label\` are different fields. Never reverse them.
+
+- \`value\` MUST be a single ASCII uppercase letter A-Z. It is a JSON Schema enum: the selection key, never the option text.
+- \`label\` MUST be the option content text the learner reads. It must not be a bare letter standing in for that content.
+- \`answer\` MUST be an array of those \`value\` letters, such as \`["A"]\` or \`["A", "C"]\`. Do not put option content in \`answer\`.
+- Invalid: \`{ "value": "(6, 2)", "label": "A" }\`. Content belongs in \`label\`; the letter belongs in \`value\`.
+
+Each choice option binds to this schema (\`value\` cannot be free text):
+
+\`\`\`json
+{
+  "type": "object",
+  "required": ["label", "value"],
+  "additionalProperties": false,
+  "properties": {
+    "label": { "type": "string", "description": "Option content text shown to the learner." },
+    "value": {
+      "type": "string",
+      "enum": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"],
+      "description": "Selection key. One ASCII uppercase letter. Never the option content."
+    }
+  }
+}
+\`\`\`
+
 ### Difficulty Guidelines
 
 | Difficulty | Description                                          |
@@ -704,7 +731,7 @@ Open-ended question requiring a written response. No options or predefined answe
 
 ## Output Format
 
-Output a JSON array of question objects. Every question must have \`analysis\` and \`points\`:
+Output a JSON array of question objects. Every question must have \`analysis\` and \`points\`. Choice option \`value\` is the enum A-Z above; \`label\` is content; \`answer\` copies \`value\` letters only:
 
 \`\`\`json
 [
@@ -754,7 +781,7 @@ Question Count: 1, Difficulty: easy, Question Types: single
 ## Language Directive
 Teach in English.
 
-Output a JSON array directly (no explanation, no code blocks, no LaTeX). Use the exact object shape from the system prompt — \`options\` as \`{ "label", "value" }\` objects with single-letter values (A, B, C, ...) and \`answer\` as an array of the correct option VALUES:
+Output a JSON array directly (no explanation, no code blocks, no LaTeX). Each choice option MUST be \`{ "label": "<content text>", "value": "<one ASCII uppercase letter A-Z>" }\`. \`value\` is an enum A-Z and is never the option content; \`label\` is the content text and is never just the letter. Never reverse them (invalid: \`{ "value": "(6, 2)", "label": "A" }\`). \`answer\` MUST be an array of those \`value\` letters, never the content text:
 [{"id":"q1","type":"single","question":"Question text","options":[{"label":"Option A content","value":"A"},{"label":"Option B content","value":"B"},{"label":"Option C content","value":"C"},{"label":"Option D content","value":"D"}],"answer":["A"]}]",
   },
   "slide": {

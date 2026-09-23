@@ -75,13 +75,15 @@ test('provider switch and nested thinking popup remain usable', async ({ page })
   const picker = page.locator('button[aria-label*=" / "]').first();
   await picker.click();
   let dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: /Claude/ }).click();
+  // Post-restructure picker: providers are group headings (not tabs), so a
+  // provider switch is just selecting a row from the Claude group.
   await dialog.locator('div[role="button"]').filter({ hasText: 'claude-sonnet-4-6' }).click();
   await expect(dialog).toBeHidden();
   await expect(picker).toHaveAttribute('aria-label', /Claude/);
   for (let i = 0; i < 10; i++) {
     await picker.click();
     dialog = page.getByRole('dialog');
+    // Inline thinking control on the selected row (nested Select popover).
     await dialog.getByRole('combobox').first().click();
     const options = page.getByRole('option');
     await options.first().click();

@@ -60,9 +60,12 @@ test.describe('#620 managed providers are read-only', () => {
     const home = new HomePage(page);
     await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto()]);
     await expect(home.textarea).toBeVisible();
-    // Header gear button opens the settings dialog (defaults to the Providers section).
+    // Header gear button opens the settings dialog (defaults to the first section).
     await page.locator('button:has(svg.lucide-settings)').first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
+    // Post-restructure IA: the provider list + config panel live under the
+    // "Model Services" section.
+    await page.getByRole('button', { name: 'Model Services' }).click();
   }
 
   test('managed provider (openai) hides the key / base-URL override inputs', async ({ page }) => {
@@ -74,8 +77,10 @@ test.describe('#620 managed providers are read-only', () => {
     await expect(page.locator('input[name="llm-base-url-openai"]')).toHaveCount(0);
     // The mock pins an allowed model list, so the catalog is locked too:
     // no add/reset affordance, and the pinned models are shown read-only.
+    // (Scope to the dialog: the homepage toolbar model pill also shows the
+    // selected model name after the settings-IA restructure.)
     await expect(page.getByRole('button', { name: /new model/i })).toHaveCount(0);
-    await expect(page.getByText('gpt-4o', { exact: true })).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('gpt-4o', { exact: true })).toBeVisible();
 
     await page.screenshot({
       path: `${SCREENSHOT_DIR}/620-managed-openai-readonly.png`,

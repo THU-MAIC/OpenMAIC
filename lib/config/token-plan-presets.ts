@@ -38,8 +38,18 @@ export interface TokenPlanModalityTarget {
    * them; we never silently drop a model the user paid for.
    */
   defaultModels?: string[];
-  /** TTS only: default model id to enable. */
+  /**
+   * LLM/TTS: the plan's recommended default model — for LLM the mainline model
+   * (defaults to `defaultModels[0]`), for TTS the model the plan enables.
+   */
   defaultModelId?: string;
+  /**
+   * LLM only: per-stage recommended models, applied as user-level stage routes
+   * (e.g. 'scene-content:slide' → the plan's courseware model). Stage keys live
+   * in the LLM_STAGES whitelist; ids must also appear in `defaultModels` so the
+   * route's model is selectable.
+   */
+  stageRoutes?: Record<string, string>;
 }
 
 export interface TokenPlanPreset {
@@ -97,7 +107,13 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
         providerId: 'tokendance',
         baseUrl: 'https://tokendance.space/gateway/v1',
         apiFormat: 'openai',
+        // The plan's own model family is its primary course-generation set: base
+        // drives the mainline while slide/interactive cover courseware and
+        // interactive pages.
         defaultModels: [
+          'cogevol-base',
+          'cogevol-slide-0828',
+          'cogevol-interactive-0828',
           'deepseek-v4.1-flash',
           'deepseek-v4-pro',
           'glm-5.3',
@@ -106,6 +122,11 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
           'seed-2.1-pro',
           'minimax-m3',
         ],
+        defaultModelId: 'cogevol-base',
+        stageRoutes: {
+          'scene-content:slide': 'cogevol-slide-0828',
+          'scene-content:interactive': 'cogevol-interactive-0828',
+        },
       },
       image: {
         providerId: 'seedream',
@@ -167,7 +188,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
       tts: {
         providerId: 'minimax-tts',
         baseUrl: 'https://api.minimaxi.com',
-        defaultModelId: 'speech-2.8-hd',
+        defaultModelId: 'speech-2.8-turbo',
         defaultModels: [
           'speech-2.8-hd',
           'speech-2.8-turbo',
@@ -203,6 +224,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
         baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
         apiFormat: 'openai',
         defaultModels: [
+          'doubao-seed-2.1-turbo',
           'ark-code-latest',
           'doubao-seed-2.0-pro',
           'doubao-seed-2.0-code',
@@ -218,6 +240,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
           'kimi-k2.7-code',
           'kimi-k2.6',
         ],
+        defaultModelId: 'doubao-seed-2.1-turbo',
       },
       // Image: Agent Plan documentation and user-facing guides consistently
       // expose Seedream 5.0 Lite via the dotted plan alias, not the pay-as-you-go
@@ -235,7 +258,11 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
       video: {
         providerId: 'seedance',
         baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
-        defaultModels: ['doubao-seedance-2.0', 'doubao-seedance-1.5-pro'],
+        defaultModels: [
+          'doubao-seedance-2.0-mini',
+          'doubao-seedance-2.0',
+          'doubao-seedance-1.5-pro',
+        ],
       },
       // Web search: 豆包搜索 (Custom 版). Unlike the LLM/image/video modalities,
       // this lives on its OWN host (open.feedcoopapi.com, not the ark plan
@@ -253,6 +280,8 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
       tts: {
         providerId: 'doubao-tts',
         baseUrl: 'https://openspeech.bytedance.com/api/v3/plan/tts',
+        defaultModelId: 'seed-tts-2.0',
+        defaultModels: ['seed-tts-2.0'],
       },
     },
   },
@@ -265,3 +294,21 @@ export const PRESET_CATEGORY_ORDER: PresetCategory[] = [
   'third_party',
   'official',
 ];
+
+/**
+ * Fingerprint of everything a preset seeds (model catalogues, default model,
+ * stage routes). Recorded on apply; when the shipped preset data changes, the
+ * fingerprint changes and the app re-seeds enabled plans on next load — so
+ * users who enabled a plan before a preset update still get the new defaults
+ * without re-applying. Credentials are deliberately excluded: only the user's
+ * key ever writes those.
+ */
+export function tokenPlanSeedFingerprint(preset: TokenPlanPreset): string {
+  const m = preset.modalities;
+  return JSON.stringify({
+    llm: [m.llm?.defaultModelId, m.llm?.defaultModels, m.llm?.stageRoutes],
+    image: m.image?.defaultModels,
+    video: m.video?.defaultModels,
+    tts: [m.tts?.defaultModelId, m.tts?.defaultModels],
+  });
+}

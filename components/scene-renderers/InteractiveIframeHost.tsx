@@ -24,6 +24,7 @@ import {
   INTERACTIVE_OUTERHTML_MAX,
   makeInteractiveElementRef,
 } from '@/lib/workbench/element-refs';
+import { InteractiveRuntimeErrorBanner } from './InteractiveRuntimeErrorBanner';
 
 type InteractivePickerMessage = {
   __maicInteractive?: boolean;
@@ -233,6 +234,9 @@ function PooledIframe({
 }: PooledIframeProps) {
   const { t } = useI18n();
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const runtimeErrors = useSceneRuntimeErrors((state) => state.errors[sceneId]);
+  const runtimeErrorSignature = runtimeErrors?.join('\n') ?? '';
+  const [dismissedRuntimeSignature, setDismissedRuntimeSignature] = useState<string | null>(null);
   // `srcDoc` already carries every shim, the observation reader included; the
   // reader is installed for each pooled document and one that publishes no
   // outlet answers `no-interface`. This reads the identity baked into that
@@ -333,8 +337,8 @@ function PooledIframe({
     });
   }, [effectiveMode, entry.srcDoc, getSendMessage, playbackSelectedSelector, sceneId, selectors]);
 
-  // Capture runtime errors the iframe's error shim posts out (see iframe.ts), so
-  // the editor agent can diagnose a blank/broken page. Matched to THIS iframe by
+  // Capture runtime errors the iframe's error shim posts out (see iframe.ts).
+  // The active scene's banner reads this store. Matched to THIS iframe by
   // event.source (sandboxed null-origin iframes still postMessage to the parent).
   //
   // The errors that matter most (a JSON.parse that aborts setup) fire while srcDoc
@@ -379,6 +383,7 @@ function PooledIframe({
   // A content change reloads the iframe; drop the previous render's errors so the
   // captured set reflects the CURRENT page (e.g. after the agent applies a fix).
   useEffect(() => {
+    setDismissedRuntimeSignature(null);
     useSceneRuntimeErrors.getState().clearScene(sceneId);
   }, [sceneId, entry.srcDoc]);
 
@@ -399,6 +404,11 @@ function PooledIframe({
     visibleViewport.height > 0 &&
     rect.width > 0 &&
     rect.height > 0;
+  const latestRuntimeError = runtimeErrors?.[runtimeErrors.length - 1];
+  const showRuntimeError =
+    shown &&
+    typeof latestRuntimeError === 'string' &&
+    dismissedRuntimeSignature !== runtimeErrorSignature;
   const wrapStyle: CSSProperties = {
     position: 'fixed',
     left: visibleViewport?.left ?? 0,
@@ -440,6 +450,12 @@ function PooledIframe({
         title={`Interactive Scene ${sceneId}`}
         sandbox="allow-scripts allow-forms allow-popups"
       />
+      {showRuntimeError && latestRuntimeError ? (
+        <InteractiveRuntimeErrorBanner
+          message={latestRuntimeError}
+          onDismiss={() => setDismissedRuntimeSignature(runtimeErrorSignature)}
+        />
+      ) : null}
       {playbackArmed && (
         <div
           data-testid="interactive-element-pick-instruction"

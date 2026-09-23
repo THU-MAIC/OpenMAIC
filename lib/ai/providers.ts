@@ -24,6 +24,8 @@
  * - https://www.volcengine.com/docs/82379/1330310
  * - https://platform.xiaomimimo.com/static/docs/pricing.md
  * - https://platform.xiaomimimo.com/static/docs/tokenplan/quick-access.md
+ * - https://mimo.mi.com/static/docs/quick-start/summary/model.md
+ * - https://mimo.mi.com/static/docs/api/chat/openai-api.md
  */
 
 import { createOpenAI } from '@ai-sdk/openai';
@@ -1502,6 +1504,38 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/xiaomi.svg',
     models: [
+      {
+        id: 'mimo-v2.6-pro',
+        name: 'MiMo V2.6 Pro',
+        contextWindow: 1048576,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'mimo-v2.6-flash',
+        name: 'MiMo V2.6 Flash',
+        contextWindow: 1048576,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
       {
         id: 'mimo-v2.5-pro',
         name: 'MiMo V2.5 Pro',

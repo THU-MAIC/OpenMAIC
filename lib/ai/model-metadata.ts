@@ -160,6 +160,9 @@ const anthropicFable5Effort: ThinkingCapability = {
 };
 
 const kimiK3Effort = effortCapability('openai', ['low', 'high', 'max'], 'max');
+
+// TokenDance 网关统一 reasoning_effort（见 THINKING_CAPABILITIES 末尾的注释）
+const tokendanceEffort = effortCapability('openai', ['low', 'medium', 'high'], 'medium');
 const grok46Effort = effortCapability('openai', ['low', 'medium', 'high', 'xhigh'], 'high');
 const grok45Effort = effortCapability('openai', ['low', 'medium', 'high'], 'high');
 const grok43Effort = effortCapability('openai', ['none', 'low', 'medium', 'high'], 'none');
@@ -427,6 +430,9 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('doubao', 'doubao-seed-2.0-code')]: doubaoSeed20Effort,
   [getModelMetadataKey('doubao', 'doubao-seed-2.0-lite')]: doubaoSeed20Effort,
   [getModelMetadataKey('doubao', 'doubao-seed-2.0-mini')]: doubaoSeed20Effort,
+  // Agent Plan 新增的 Seed 2.1 dotted 别名（token-plan preset 默认主线模型），
+  // 与 2.0 dotted 系列同族，思考控制一致。
+  [getModelMetadataKey('doubao', 'doubao-seed-2.1-turbo')]: doubaoSeed20Effort,
   // Cross-vendor models the Ark Agent Plan also serves through its
   // OpenAI-compatible endpoint (all under the `doubao` provider id). Verified
   // against a live plan key: each accepts the gateway's unified `reasoning_effort`
@@ -466,6 +472,8 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
 
   [getModelMetadataKey('tencent-hunyuan', 'hy3-preview')]: hunyuanHy3Effort,
 
+  [getModelMetadataKey('xiaomi', 'mimo-v2.6-pro')]: toggleCapability('xiaomi'),
+  [getModelMetadataKey('xiaomi', 'mimo-v2.6-flash')]: toggleCapability('xiaomi'),
   [getModelMetadataKey('xiaomi', 'mimo-v2.5-pro')]: toggleCapability('xiaomi'),
   [getModelMetadataKey('xiaomi', 'mimo-v2-pro')]: toggleCapability('xiaomi'),
   [getModelMetadataKey('xiaomi', 'mimo-v2.5')]: toggleCapability('xiaomi'),
@@ -477,6 +485,21 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('lemonade', 'Gemma-4-26B-A4B-it-GGUF')]: lemonadeToggleBudget,
   [getModelMetadataKey('lemonade', 'gpt-oss-20b')]: lemonadeToggleBudget,
   [getModelMetadataKey('lemonade', 'GPT-OSS-20B-GGUF')]: lemonadeToggleBudget,
+
+  // TokenDance 网关（OpenAI 兼容，/gateway/v1）：套餐目录统一透传网关的
+  // reasoning_effort 字段（low/medium/high）——包括网关自有的 cogevol 系列
+  // 和跨厂商模型（各家原生思考传输不经网关透传，统一走网关字段；与火山
+  // Ark 套餐跨厂商模型的口径一致）。
+  [getModelMetadataKey('tokendance', 'cogevol-base')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'cogevol-slide-0828')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'cogevol-interactive-0828')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'deepseek-v4.1-flash')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'deepseek-v4-pro')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'glm-5.3')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'kimi-k3')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'qwen3.8-max')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'seed-2.1-pro')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'minimax-m3')]: tokendanceEffort,
 };
 
 export function getCatalogThinkingCapability(

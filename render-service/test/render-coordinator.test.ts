@@ -168,6 +168,30 @@ describe('RenderCoordinator through the RenderExecutor seam', () => {
     await waitForCleanup(dir);
   });
 
+  it('keeps default-executor late success cancellable when no publication was committed', async () => {
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore();
+    let settle!: (result: RenderExecutionResult) => void;
+    const executor = new FakeExecutor(
+      () =>
+        new Promise((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const coordinator = new RenderCoordinator(executor, jobs, artifacts.store);
+    const dir = await projectDir();
+    const id = await coordinator.submit(coordinator.reserve('late-default'), dir, renderOptions);
+    await waitForJob(jobs, id, () => executor.requests.length === 1);
+
+    expect(await coordinator.cancel(id)).toBe(true);
+    settle({ status: 'succeeded' });
+
+    const job = await waitForJob(jobs, id, (current) => current.status === 'cancelled');
+    expect(job.failure).toEqual({ code: 'cancelled', message: 'Render cancelled' });
+    expect(artifacts.paths.has(id)).toBe(false);
+    await waitForCleanup(dir);
+  });
+
   it('keeps deadline failure classification from a replaceable executor', async () => {
     const jobs = createMemoryJobStore();
     const artifacts = createMemoryArtifactStore();

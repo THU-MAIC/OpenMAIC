@@ -36,6 +36,8 @@ export interface ClassroomGenerationJob {
     classroomId: string;
     url: string;
     scenesCount: number;
+    ttsCoverage?: GenerateClassroomResult['ttsCoverage'];
+    warning?: string;
   };
   error?: string;
 }
@@ -199,13 +201,15 @@ export async function markClassroomGenerationJobSucceeded(
     status: 'succeeded',
     step: 'completed',
     progress: 100,
-    message: 'Classroom generation completed',
+    message: result.warning ?? 'Classroom generation completed',
     completedAt: new Date().toISOString(),
     scenesGenerated: result.scenesCount,
     result: {
       classroomId: result.id,
       url: result.url,
       scenesCount: result.scenesCount,
+      ...(result.ttsCoverage ? { ttsCoverage: result.ttsCoverage } : {}),
+      ...(result.warning ? { warning: result.warning } : {}),
     },
   });
 }
