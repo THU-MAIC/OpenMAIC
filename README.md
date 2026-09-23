@@ -408,13 +408,13 @@ secret in any meaningful sense**: the `NEXT_PUBLIC_` token is compiled into
 the public JavaScript bundle, fully visible to every visitor, and therefore
 provides **no confidentiality and no user isolation whatsoever**. Document
 and asset requests skip that authenticator
-(`app/api/persistence/[...path]/route.ts`). The document owner is the
-30-day anonymous cookie (`lib/server/agent-runtime/owner.ts`), not
-`x-learner-key`. A document read is capability-by-id: if the stage meta
+(`app/api/persistence/[...path]/route.ts`). The document owner comes from
+the owner authenticator (see [Owner identity](#owner-identity)) — by default
+the 30-day anonymous cookie — not from `x-learner-key`. A document read is capability-by-id: if the stage meta
 exists and is not tombstoned, `decideDocumentAccess` allows it with no
 owner check (`lib/persistence/document-access.ts`), so anyone who can
 reach the endpoint and knows a stage id can read that course. Writes and
-deletes are owner-checked against the cookie. Only `/runtime/*` calls
+deletes are owner-checked against that owner. Only `/runtime/*` calls
 `authenticatePersistenceRequest`, where a client-chosen `x-learner-key`
 still partitions learner sessions. The token's only purpose on that
 runtime path is to keep unrelated network scanners out of an endpoint on
@@ -515,6 +515,59 @@ and
 [DocumentStore HTTP contract](packages/@openmaic/storage/docs/document-http-contract.md).
 Leave `NEXT_PUBLIC_PERSISTENCE` unset to retain the existing browser-only
 behavior.
+
+#### Owner identity
+
+Courses, folders, materials, agent sessions and skills are partitioned by an
+**owner id**, which the server resolves for every request through one
+pluggable **owner authenticator** (`lib/server/identity/`). Every owner-scoped
+route and Server Action asks it, once per request; nothing else reads identity
+cookies or headers.
+
+Two built-ins cover the configurations OpenMAIC has always supported:
+
+| Authenticator | Selected when | Owner |
+|---|---|---|
+| `anonymousCookie` | default | One owner per browser: `anon:<uuid>` from a 30-day `HttpOnly` `anonymous_id` cookie, minted on first use. Cannot publish. |
+| `sharedTeam` | `PERSISTENCE_SHARED_OWNER_ID` is set (requires `ACCESS_CODE`) | That fixed id for every request, so the team behind the access code shares one library. May publish. |
+
+Authorization reads the principal's `kind` and `roles`, never the shape of the
+id. The core roles are `course:publish` (publish and unpublish a course) and
+`admin` (reserved; granted by no built-in).
+
+A host with its own accounts implements `OwnerAuthenticator` and registers it
+once, from `instrumentation.ts` `register()`, before the server serves a
+request:
+
+```ts
+const { configureOwnerAuthenticator } = await import('@/lib/server/identity');
+configureOwnerAuthenticator({
+  name: 'my-host',
+  async authenticate(req) {
+    const user = await verifySession(req.headers); // host code
+    if (user === 'invalid') return { ok: false, status: 401, code: 'INVALID_CREDENTIAL' };
+    return {
+      ok: true,
+      principal: {
+        ownerId: `user:${user.id}`,
+        kind: 'user',
+        roles: new Set(user.canPublish ? ['course:publish'] : []),
+        assurance: 'verified',
+      },
+    };
+  },
+});
+```
+
+An invalid credential must be answered with `INVALID_CREDENTIAL`, which every
+surface turns into a `401`; it is never re-identified as a fresh anonymous
+owner. `setCookies` on a successful outcome ride every response, errors
+included. Server Actions call `authenticateFromContext()` when the
+authenticator has one, and otherwise `authenticate()` with the request headers.
+Registration is single-shot, fails the boot when repeated or combined with
+`PERSISTENCE_SHARED_OWNER_ID`, and owner ids must be 1-256 printable non-space
+ASCII characters. The runtime `x-learner-key` path of `/api/persistence` is not
+yet routed through the authenticator.
 
 ### Optional: Agent workbench and runtime
 

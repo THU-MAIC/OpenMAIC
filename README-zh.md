@@ -366,7 +366,7 @@ NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docke
 `NEXT_PUBLIC_PERSISTENCE` 是**编译期开关**，会打进浏览器 bundle。启用它的构建必须部署在具备可用运行时 `DATABASE_URL` 和 `PERSISTENCE_DEV_TOKEN` 的环境中，且构建时的 `NEXT_PUBLIC_PERSISTENCE_TOKEN` 必须与服务端 token 一致。否则浏览器会选择 HTTP 持久化但内嵌端点返回配置/认证/初始化错误；首页会弹出持久化不可用的提示并保留原有课程列表，而不是误导性地显示空课程库。
 
 > [!WARNING]
-> `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` **不是严格意义上的密钥**：`NEXT_PUBLIC_` token 会被编译进公开的 JavaScript，对每个访客可见，因此**既无保密性也无用户隔离**。文档和资产请求会跳过该认证器（`app/api/persistence/[...path]/route.ts`）。文档所有者来自 30 天匿名 cookie（`lib/server/agent-runtime/owner.ts`），而不是 `x-learner-key`。文档读取是 capability-by-id：只要 stage meta 存在且未被墓碑化，`decideDocumentAccess` 就会放行且不比对所有者（`lib/persistence/document-access.ts`），因此能访问该端点并知道 stage id 的人都可以读这门课。写入和删除按 cookie 校验所有者。只有 `/runtime/*` 会调用 `authenticatePersistenceRequest`，此时客户端自选的 `x-learner-key` 仍用于划分学习者会话。该 token 在这条运行时路径上的唯一用途，是把无关的网络扫描器挡在可信网络的端点之外。**该模式仅适用于 localhost 或可信网络下的单用户部署。**生产环境请将 [`lib/persistence/server-auth.ts`](lib/persistence/server-auth.ts) 替换为真正的会话校验，由服务端身份推导学习者分区，并相应调整文档/合并/管理端的授权策略。
+> `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` **不是严格意义上的密钥**：`NEXT_PUBLIC_` token 会被编译进公开的 JavaScript，对每个访客可见，因此**既无保密性也无用户隔离**。文档和资产请求会跳过该认证器（`app/api/persistence/[...path]/route.ts`）。文档所有者由所有者认证器解析（`lib/server/identity/`，默认为 30 天匿名 cookie），而不是 `x-learner-key`。文档读取是 capability-by-id：只要 stage meta 存在且未被墓碑化，`decideDocumentAccess` 就会放行且不比对所有者（`lib/persistence/document-access.ts`），因此能访问该端点并知道 stage id 的人都可以读这门课。写入和删除按该所有者校验。只有 `/runtime/*` 会调用 `authenticatePersistenceRequest`，此时客户端自选的 `x-learner-key` 仍用于划分学习者会话。该 token 在这条运行时路径上的唯一用途，是把无关的网络扫描器挡在可信网络的端点之外。**该模式仅适用于 localhost 或可信网络下的单用户部署。**生产环境请将 [`lib/persistence/server-auth.ts`](lib/persistence/server-auth.ts) 替换为真正的会话校验，由服务端身份推导学习者分区，并相应调整文档/合并/管理端的授权策略。
 
 `PERSISTENCE_POSTGRES_PASSWORD` 只在数据目录为空时初始化 PostgreSQL 角色，之后再修改不会轮换已有的 `openmaic-postgres` 卷。一次性本地库可以直接 `docker compose --profile server-persistence down -v` 后换密码重启；要保留数据则需以管理员执行 `ALTER ROLE openmaic WITH PASSWORD 'new-password';` 并更新 `DATABASE_URL`。
 
@@ -383,6 +383,14 @@ NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docke
 资产字节默认直接出站（内嵌路由把字节写入响应体）。设置 `ASSET_BYTE_EGRESS=redirect` 可选择**间接出站**：字节 `GET` 会在字节层支持签名（S3 支持；PostgreSQL 字节列不支持，回退为直接返回字节）时返回一个短时效的签名 S3 URL。间接出站有两个对象存储前提：bucket 的 CORS 需允许本应用来源并在签名响应上暴露 `Content-Type`；签名身份需持有 bucket 的 `s3:ListBucket`，缺失的 key 才能以 `404 NoSuchKey` 而非 `403` 返回。相关取舍见[资产 HTTP 契约](packages/@openmaic/storage/docs/asset-http-contract.md)。
 
 内嵌端点实现了 [RuntimeStore HTTP 契约](packages/@openmaic/storage/docs/runtime-http-contract.md)和 [DocumentStore HTTP 契约](packages/@openmaic/storage/docs/document-http-contract.md)。不设置 `NEXT_PUBLIC_PERSISTENCE` 则保持原有的纯浏览器行为。
+
+#### 所有者身份
+
+课程、文件夹、资料、Agent 会话与技能都按**所有者 id** 分区。服务端对每个请求只通过一个可插拔的**所有者认证器**（`lib/server/identity/`）解析一次所有者；所有按所有者划分的路由和 Server Action 都经由它，其他模块不读取身份 cookie 或请求头。
+
+内置两种认证器：默认的 `anonymousCookie`（每个浏览器一个所有者，`anon:<uuid>`，来自 30 天 `HttpOnly` 的 `anonymous_id` cookie，不能发布课程）；设置 `PERSISTENCE_SHARED_OWNER_ID`（必须同时设置 `ACCESS_CODE`）时启用 `sharedTeam`（所有请求共用该固定 id，可以发布课程）。授权只看 principal 的 `kind` 和 `roles`，不解析 id 的形状；核心角色为 `course:publish` 和 `admin`（保留，内置认证器均不授予）。
+
+有自有账号体系的部署可实现 `OwnerAuthenticator`，并在 `instrumentation.ts` 的 `register()` 中调用一次 `configureOwnerAuthenticator(...)` 注册（示例见英文 README 的 “Owner identity” 一节）。无效凭证必须返回 `INVALID_CREDENTIAL`，各接口统一返回 `401`，绝不回退为新的匿名所有者。`/api/persistence` 的运行时 `x-learner-key` 路径暂未接入该认证器。
 
 ### 可选：MP4 视频导出（渲染服务）
 
