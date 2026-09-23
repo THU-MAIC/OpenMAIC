@@ -1,5 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { isRetryableLlmError } from '@/lib/server/llm-fallback';
+import {
+  isRetryableLlmError,
+  isEmptyLlmOutput,
+  shouldFallbackFor,
+} from '@/lib/server/llm-fallback';
 
 function apiError(statusCode: number, message: string): Error {
   return Object.assign(new Error(message), { name: 'AI_APICallError', statusCode });
@@ -43,5 +47,32 @@ describe('isRetryableLlmError', () => {
     expect(isRetryableLlmError(new Error('something else went wrong'))).toBe(false);
     expect(isRetryableLlmError(undefined)).toBe(false);
     expect(isRetryableLlmError('not an error')).toBe(false);
+  });
+});
+
+describe('isEmptyLlmOutput', () => {
+  it('treats only truly empty or whitespace-only text as empty', () => {
+    expect(isEmptyLlmOutput('')).toBe(true);
+    expect(isEmptyLlmOutput('   ')).toBe(true);
+    expect(isEmptyLlmOutput('\n\t ')).toBe(true);
+    expect(isEmptyLlmOutput(null)).toBe(true);
+    expect(isEmptyLlmOutput(undefined)).toBe(true);
+    expect(isEmptyLlmOutput('ok')).toBe(false);
+    expect(isEmptyLlmOutput(' {json} ')).toBe(false);
+  });
+});
+
+describe('shouldFallbackFor', () => {
+  it('delegates error decisions to isRetryableLlmError and ignores the text', () => {
+    expect(shouldFallbackFor(apiError(429, 'quota'), 'ok')).toBe(true);
+    expect(shouldFallbackFor(apiError(400, 'content policy'), 'ok')).toBe(false);
+  });
+
+  it('only falls back on empty output when no error is present', () => {
+    expect(shouldFallbackFor(undefined, '')).toBe(true);
+    expect(shouldFallbackFor(undefined, '   ')).toBe(true);
+    // A non-empty output that failed a custom validator must NOT fall back.
+    expect(shouldFallbackFor(undefined, '[not valid json]')).toBe(false);
+    expect(shouldFallbackFor(undefined, 'valid-looking output')).toBe(false);
   });
 });
