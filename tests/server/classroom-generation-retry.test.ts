@@ -102,14 +102,14 @@ const slideContent = {
 };
 
 async function generateWithProgress(input: Partial<GenerateClassroomInput> = {}) {
-  const progress: Array<{ message: string }> = [];
+  const progress: Array<{ step: string; progress: number; message: string }> = [];
   const { generateClassroom } = await import('@/lib/server/classroom-generation');
   const result = await generateClassroom(
     { requirement: 'Teach retry basics', ...input },
     {
       baseUrl: 'http://localhost',
       onProgress: (event) => {
-        progress.push({ message: event.message });
+        progress.push({ step: event.step, progress: event.progress, message: event.message });
       },
     },
   );
@@ -168,7 +168,7 @@ describe('classroom scene generation retries', () => {
     mocks.releaseClassroomReservation.mockResolvedValue(undefined);
     mocks.generateMediaForClassroom.mockResolvedValue({});
     mocks.replaceMediaPlaceholders.mockImplementation(() => undefined);
-    mocks.generateTTSForClassroom.mockResolvedValue(undefined);
+    mocks.generateTTSForClassroom.mockResolvedValue({ written: 0, total: 0 });
     mocks.generateClassroomId.mockReturnValue('stagegen01');
   });
 
@@ -493,15 +493,64 @@ describe('classroom scene generation retries', () => {
     expect(mocks.generateTTSForClassroom).not.toHaveBeenCalled();
   });
 
-  it('reports zero TTS coverage and a warning when enabled TTS is skipped', async () => {
+  it('reports skipped TTS coverage and a warning when enabled TTS writes nothing', async () => {
     mocks.generateSceneContent.mockResolvedValue(slideContent);
-    mocks.generateTTSForClassroom.mockResolvedValue(undefined);
+    mocks.generateTTSForClassroom.mockResolvedValue({ written: 0, total: 2 });
 
     const skipped = await generateWithProgress({ enableTTS: true });
 
-    expect(skipped.result.ttsCoverage).toEqual({ written: 0, total: 0 });
-    expect(skipped.result.warning).toBe('TTS generation skipped: no clips were written');
+    expect(skipped.result.ttsCoverage).toEqual({ written: 0, total: 2 });
+    expect(skipped.result.warning).toBe(
+      'TTS generation INCOMPLETE: 0 written, 2 speech actions left silent',
+    );
     expect(skipped.progress.some((event) => event.message === skipped.result.warning)).toBe(true);
+  });
+
+  it('does not warn when requested TTS has no narratable speech', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    mocks.generateTTSForClassroom.mockResolvedValue({ written: 0, total: 0 });
+
+    const empty = await generateWithProgress({ enableTTS: true });
+
+    expect(empty.result.ttsCoverage).toEqual({ written: 0, total: 0 });
+    expect(empty.result.warning).toBeUndefined();
+  });
+
+  it('forwards TTS clip heartbeats as generating_tts progress', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    mocks.generateTTSForClassroom.mockImplementation(
+      async (
+        _scenes: unknown,
+        _classroomId: unknown,
+        _baseUrl: unknown,
+        _signal: unknown,
+        onProgress?: (progress: { written: number; total: number }) => Promise<void> | void,
+      ) => {
+        await onProgress?.({ written: 1, total: 4 });
+        await onProgress?.({ written: 4, total: 4 });
+        return { written: 4, total: 4 };
+      },
+    );
+
+    const { result, progress } = await generateWithProgress({ enableTTS: true });
+
+    expect(mocks.generateTTSForClassroom.mock.calls[0]?.[4]).toEqual(expect.any(Function));
+    expect(result.ttsCoverage).toEqual({ written: 4, total: 4 });
+    expect(result.warning).toBeUndefined();
+    expect(progress).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          step: 'generating_tts',
+          progress: 94,
+          message: 'Generating TTS audio (1/4)',
+        }),
+        expect.objectContaining({
+          step: 'generating_tts',
+          progress: 97,
+          message: 'Generating TTS audio (4/4)',
+        }),
+      ]),
+    );
   });
 
   it('reports zero TTS coverage and a warning when the TTS phase throws', async () => {

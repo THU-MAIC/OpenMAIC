@@ -138,7 +138,7 @@ GET {pollUrl}
 - On `succeeded`, read `result.classroomId` and `result.url` from the final poll response, and also read `result.warning` and `result.ttsCoverage` before telling the user the classroom is ready.
   - If `result.warning` is set, quote it in the same update and describe narration as incomplete.
   - If `result.ttsCoverage` is set and `written` is less than `total`, tell the user how many narration clips were written and how many speech actions were left silent. The classroom URL is still usable, and narration is incomplete.
-  - A missing `ttsCoverage` means server TTS was not requested. A requested TTS run that wrote nothing includes `ttsCoverage` (`written: 0`) and a `warning`.
+  - A missing `ttsCoverage` means server TTS was not requested. A requested TTS run includes `ttsCoverage`. `warning` is set when `written` is less than `total`, or when the TTS phase failed. A run with no narratable speech (`written: 0`, `total: 0`) has coverage and no `warning`.
 
 ## If The Loop Ends First
 

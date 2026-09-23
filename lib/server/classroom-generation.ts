@@ -36,6 +36,7 @@ import {
 } from '@/lib/server/classroom-storage';
 import {
   classroomTtsSummary,
+  countNarratableSpeechActions,
   generateMediaForClassroom,
   replaceMediaPlaceholders,
   generateTTSForClassroom,
@@ -95,10 +96,13 @@ export interface GenerateClassroomResult {
   createdAt: string;
   /**
    * Present when TTS was requested. Omitted when TTS is disabled.
-   * `written` is 0 when the phase was skipped or threw before any clip was saved.
+   * `written` is 0 when synthesis saved no clips.
    */
   ttsCoverage?: ClassroomTtsCoverage;
-  /** Set when requested narration is missing, skipped, or the TTS phase failed. */
+  /**
+   * Set when requested narration is incomplete (`written` < `total`) or the TTS phase failed.
+   * A requested run with no narratable speech (`total` 0) has coverage and no warning.
+   */
   warning?: string;
 }
 
@@ -226,18 +230,13 @@ async function reserveGeneratedClassroom(
   }
 }
 
-function countNarratableSpeechActions(scenes: Scene[]): number {
-  let total = 0;
-  for (const scene of scenes) {
-    for (const action of scene.actions ?? []) {
-      if (action.type === 'speech' && 'text' in action && action.text) total += 1;
-    }
-  }
-  return total;
-}
-
-const TTS_SKIPPED_WARNING = 'TTS generation skipped: no clips were written';
 const TTS_PHASE_FAILED_WARNING = 'TTS generation phase failed';
+
+function classroomTtsHeartbeatProgress(written: number, total: number): number {
+  if (total <= 0) return 94;
+  const ratio = Math.min(1, Math.max(0, written / total));
+  return 94 + Math.floor(ratio * 3);
+}
 
 function ttsResultWarning(
   coverage: ClassroomTtsCoverage | undefined,
@@ -777,18 +776,21 @@ export async function generateClassroom(
       });
 
       try {
-        const reported = await generateTTSForClassroom(
+        ttsCoverage = await generateTTSForClassroom(
           scenes,
           stageId,
           options.baseUrl,
           options.signal,
+          async ({ written, total }) => {
+            await options.onProgress?.({
+              step: 'generating_tts',
+              progress: classroomTtsHeartbeatProgress(written, total),
+              message: `Generating TTS audio (${written}/${total})`,
+              scenesGenerated: scenes.length,
+              totalScenes: outlines.length,
+            });
+          },
         );
-        if (reported) {
-          ttsCoverage = reported;
-        } else {
-          ttsCoverage = { written: 0, total: countNarratableSpeechActions(scenes) };
-          ttsFailureWarning = TTS_SKIPPED_WARNING;
-        }
       } catch (err) {
         if (isAbortError(err)) throw err;
         log.warn('TTS generation phase failed, continuing:', err);

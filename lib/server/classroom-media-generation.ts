@@ -248,7 +248,7 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
 // TTS generation
 // ---------------------------------------------------------------------------
 
-const DEFAULT_TTS_MIN_INTERVAL_MS = 1000;
+const DEFAULT_TTS_MIN_INTERVAL_MS = 0;
 /** Back-off floor after a rate limit. Independent of `TTS_MIN_INTERVAL_MS`. */
 const TTS_RATE_LIMIT_BACKOFF_FLOOR_MS = 1000;
 const MAX_TTS_INTERVAL_MS = 15_000;
@@ -256,7 +256,7 @@ const MAX_TTS_RATE_LIMIT_RETRIES = 5;
 /** Cumulative rate-limit sleep budget for one classroom TTS phase. */
 const DEFAULT_TTS_BACKOFF_BUDGET_MS = 120_000;
 
-/** Classroom TTS request spacing. Unset or invalid values fall back to 1000ms. `0` is allowed. */
+/** Classroom TTS request spacing. Unset or invalid values fall back to 0. */
 function readTtsMinIntervalMs(): number {
   const raw = process.env.TTS_MIN_INTERVAL_MS?.trim();
   if (!raw) return DEFAULT_TTS_MIN_INTERVAL_MS;
@@ -281,6 +281,15 @@ function widenTtsSpacing(currentMs: number): number {
   if (currentMs >= MAX_TTS_INTERVAL_MS) return currentMs;
   const base = Math.max(currentMs, TTS_RATE_LIMIT_BACKOFF_FLOOR_MS);
   return Math.min(base * 2, MAX_TTS_INTERVAL_MS);
+}
+
+/**
+ * Step spacing halfway back toward the configured base.
+ * A non-positive success streak leaves spacing unchanged; rate limits reset that streak.
+ */
+function decayTtsSpacing(currentMs: number, baseMs: number, consecutiveSuccesses: number): number {
+  if (consecutiveSuccesses <= 0 || currentMs <= baseMs) return Math.max(currentMs, baseMs);
+  return baseMs + Math.floor((currentMs - baseMs) / 2);
 }
 
 function isAbortError(error: unknown): boolean {
@@ -308,7 +317,19 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-function countNarratableSpeechActions(scenes: Scene[]): number {
+/**
+ * Narratable speech clips currently stored on `scenes`.
+ * Pass `providerId` to split long lines the same way synthesis does before counting.
+ * That split is applied in place so a skipped run and a generated run agree.
+ * With no provider there is no length limit, so the stored actions are counted as-is.
+ */
+export function countNarratableSpeechActions(scenes: Scene[], providerId?: TTSProviderId): number {
+  if (providerId) {
+    for (const scene of scenes) {
+      if (!scene.actions) continue;
+      scene.actions = splitLongSpeechActions(scene.actions, providerId);
+    }
+  }
   let total = 0;
   for (const scene of scenes) {
     for (const action of scene.actions ?? []) {
@@ -318,11 +339,18 @@ function countNarratableSpeechActions(scenes: Scene[]): number {
   return total;
 }
 
-/** TTS was requested but synthesis never started. Coverage stays zero so the job is not a clean success. */
-function skippedTtsCoverage(scenes: Scene[], reason: string): ClassroomTtsCoverage {
+/**
+ * TTS was requested but synthesis never started.
+ * Coverage stays at zero written clips so the job is not a clean success.
+ */
+function skippedTtsCoverage(
+  scenes: Scene[],
+  reason: string,
+  providerId?: TTSProviderId,
+): ClassroomTtsCoverage {
   const coverage: ClassroomTtsCoverage = {
     written: 0,
-    total: countNarratableSpeechActions(scenes),
+    total: countNarratableSpeechActions(scenes, providerId),
   };
   log.warn(reason);
   if (coverage.written < coverage.total)
@@ -342,12 +370,25 @@ export function classroomTtsSummary(written: number, total: number): string {
   return `TTS generation INCOMPLETE: ${written} written, ${silent} speech actions left silent`;
 }
 
+/** Clip counts emitted while classroom TTS is still running. */
+export interface ClassroomTtsProgress {
+  written: number;
+  total: number;
+}
+
+/**
+ * Synthesize narration for every speech clip.
+ * `signal` rejects an in-flight wait when a caller supplies one. The classroom
+ * job runner does not supply one.
+ * `onProgress` reports clip counts so a long run can refresh job liveness.
+ */
 export async function generateTTSForClassroom(
   scenes: Scene[],
   classroomId: string,
   baseUrl: string,
   signal?: AbortSignal,
-): Promise<ClassroomTtsCoverage | undefined> {
+  onProgress?: (progress: ClassroomTtsProgress) => void | Promise<void>,
+): Promise<ClassroomTtsCoverage> {
   const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
   await ensureDir(audioDir);
 
@@ -367,6 +408,7 @@ export async function generateTTSForClassroom(
     return skippedTtsCoverage(
       scenes,
       `No API key for TTS provider "${providerId}", skipping TTS generation`,
+      providerId,
     );
   }
   const ttsBaseUrl = resolveTTSBaseUrl(providerId) || ttsProvider?.defaultBaseUrl;
@@ -376,10 +418,13 @@ export async function generateTTSForClassroom(
     return skippedTtsCoverage(
       scenes,
       'VoxCPM Auto Voice requires agent context; skipping server-side TTS generation',
+      providerId,
     );
   }
 
-  let spacingMs = readTtsMinIntervalMs();
+  const baseSpacingMs = readTtsMinIntervalMs();
+  let spacingMs = baseSpacingMs;
+  let consecutiveSuccesses = 0;
   let lastStartedAt = Number.NEGATIVE_INFINITY;
   // Full delay for the next attempt after a rate limit. Unlike successful-call
   // pacing, this is not reduced by how long the failed request itself took.
@@ -388,7 +433,7 @@ export async function generateTTSForClassroom(
   const backoffBudgetMs = readTtsBackoffBudgetMs();
   let budgetExhausted = false;
   let written = 0;
-  let total = 0;
+  const total = countNarratableSpeechActions(scenes, providerId);
 
   const waitForTtsSlot = async () => {
     signal?.throwIfAborted();
@@ -399,12 +444,12 @@ export async function generateTTSForClassroom(
     lastStartedAt = Date.now();
   };
 
+  const emitTtsProgress = async () => {
+    await onProgress?.({ written, total });
+  };
+
   for (const scene of scenes) {
     if (!scene.actions) continue;
-
-    // Split long speech actions into multiple shorter ones before TTS generation,
-    // mirroring the client-side approach. Each sub-action gets its own audio file.
-    scene.actions = splitLongSpeechActions(scene.actions, providerId);
 
     // Use scene order to make audio IDs unique across scenes
     const sceneOrder = scene.order;
@@ -417,9 +462,9 @@ export async function generateTTSForClassroom(
       // client-side converter collapses the pair into one pool asset on
       // first load. Browser generation allocates pool ids directly.
       const audioId = `tts_s${sceneOrder}_${action.id}`;
-      total += 1;
       if (budgetExhausted) {
         log.warn(`TTS back-off budget exhausted; leaving ${audioId} silent`);
+        await emitTtsProgress();
         continue;
       }
       let rateLimitRetries = 0;
@@ -446,6 +491,8 @@ export async function generateTTSForClassroom(
           speechAction.audioId = audioId;
           speechAction.audioUrl = mediaServingUrl(baseUrl, classroomId, `audio/${filename}`);
           written += 1;
+          consecutiveSuccesses += 1;
+          spacingMs = decayTtsSpacing(spacingMs, baseSpacingMs, consecutiveSuccesses);
           log.info(`Generated TTS: ${filename} (${result.audio.length} bytes)`);
           break;
         } catch (err) {
@@ -454,7 +501,18 @@ export async function generateTTSForClassroom(
           }
           if (err instanceof TTSRateLimitError && rateLimitRetries < MAX_TTS_RATE_LIMIT_RETRIES) {
             const nextSpacingMs = widenTtsSpacing(spacingMs);
-            const delayMs = Math.max(nextSpacingMs, err.retryAfterMs ?? 0);
+            const retryAfterMs = err.retryAfterMs ?? 0;
+            const delayMs = Math.max(nextSpacingMs, retryAfterMs);
+            consecutiveSuccesses = 0;
+            const remainingBudgetMs = backoffBudgetMs - backoffSpentMs;
+            // A single huge Retry-After must not silence every later clip.
+            if (retryAfterMs > remainingBudgetMs) {
+              spacingMs = nextSpacingMs;
+              log.warn(
+                `TTS Retry-After ${retryAfterMs}ms exceeds remaining back-off budget for ${audioId}; leaving this clip silent and widening spacing to ${spacingMs}ms`,
+              );
+              break;
+            }
             if (backoffSpentMs + delayMs > backoffBudgetMs) {
               budgetExhausted = true;
               log.warn(
@@ -479,6 +537,7 @@ export async function generateTTSForClassroom(
           break;
         }
       }
+      await emitTtsProgress();
     }
   }
 
