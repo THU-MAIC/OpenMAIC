@@ -390,7 +390,9 @@ describe('PPT element reference Route → Director → real call_agent L2', () =
     for (const prompt of [mocks.directorPrompts.join('\n'), mocks.legacyChildPrompts.join('\n')]) {
       expect(prompt).toContain('PAGE-REPORTED STATE');
       expect(prompt).toContain('No component is referenced this turn');
-      expect(prompt).toContain('no general expectation about how pages or widgets usually work');
+      expect(prompt).toContain(
+        'Explicit static source instructions may still support general task or rule explanations',
+      );
       const packet = JSON.parse(
         prompt.match(/<page_reported_state>\n([\s\S]*?)\n<\/page_reported_state>/)![1],
       );
@@ -523,7 +525,9 @@ describe('PPT element reference Route → Director → real call_agent L2', () =
       expect(prompt).toContain('"reason":"timeout"');
       // No value may be supplied from defaults, history or general expectation.
       expect(prompt).not.toContain('"density":1400');
-      expect(prompt).toContain('no general expectation about how pages or widgets usually work');
+      expect(prompt).toContain(
+        'neither Director nor Teacher may supply a current value, a current direction of change, or a current outcome',
+      );
       expect(prompt).toContain('say the current state cannot be determined');
     }
   });

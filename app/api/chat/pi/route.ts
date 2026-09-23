@@ -2,8 +2,9 @@ import { attachInteractiveState } from '@/lib/chat/pi/interactive-state-evidence
 /**
  * Pi Director Chat API Endpoint
  *
- * POST /api/chat/pi - parallel PoC path for running the in-class multi-agent
- * chain as a single server-side pi agent loop.
+ * POST /api/chat/pi - default path for running the in-class multi-agent chain
+ * as a single server-side Pi agent loop. The build-time flag can disable this
+ * route together with the corresponding client path for legacy rollback.
  */
 
 import { NextRequest } from 'next/server';

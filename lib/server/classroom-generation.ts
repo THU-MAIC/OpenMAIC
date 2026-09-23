@@ -6,6 +6,7 @@ import {
   generateSceneOutlinesFromRequirements,
   generateSceneActions,
   generateSceneContent,
+  isAbortError,
   PBLGenerationError,
   withGenerationRetry,
   type AICallFn,
@@ -34,9 +35,12 @@ import {
   reserveClassroom,
 } from '@/lib/server/classroom-storage';
 import {
+  classroomTtsSummary,
+  countNarratableSpeechActions,
   generateMediaForClassroom,
   replaceMediaPlaceholders,
   generateTTSForClassroom,
+  type ClassroomTtsCoverage,
 } from '@/lib/server/classroom-media-generation';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import type { UserRequirements } from '@/lib/types/generation';
@@ -90,6 +94,16 @@ export interface GenerateClassroomResult {
   scenes: Scene[];
   scenesCount: number;
   createdAt: string;
+  /**
+   * Present when TTS was requested. Omitted when TTS is disabled.
+   * `written` is 0 when synthesis saved no clips.
+   */
+  ttsCoverage?: ClassroomTtsCoverage;
+  /**
+   * Set when requested narration is incomplete (`written` < `total`) or the TTS phase failed.
+   * A requested run with no narratable speech (`total` 0) has coverage and no warning.
+   */
+  warning?: string;
 }
 
 function createInMemoryStore(stage: Stage): StageStore {
@@ -216,10 +230,29 @@ async function reserveGeneratedClassroom(
   }
 }
 
+const TTS_PHASE_FAILED_WARNING = 'TTS generation phase failed';
+
+function classroomTtsHeartbeatProgress(written: number, total: number): number {
+  if (total <= 0) return 94;
+  const ratio = Math.min(1, Math.max(0, written / total));
+  return 94 + Math.floor(ratio * 3);
+}
+
+function ttsResultWarning(
+  coverage: ClassroomTtsCoverage | undefined,
+  fallback?: string,
+): string | undefined {
+  if (coverage && coverage.written < coverage.total) {
+    return classroomTtsSummary(coverage.written, coverage.total);
+  }
+  return fallback;
+}
+
 export async function generateClassroom(
   input: GenerateClassroomInput,
   options: {
     baseUrl: string;
+    signal?: AbortSignal;
     onProgress?: (progress: ClassroomGenerationProgress) => Promise<void> | void;
   },
 ): Promise<GenerateClassroomResult> {
@@ -731,6 +764,8 @@ export async function generateClassroom(
     }
 
     // Phase: TTS generation
+    let ttsCoverage: ClassroomTtsCoverage | undefined;
+    let ttsFailureWarning: string | undefined;
     if (input.enableTTS) {
       await options.onProgress?.({
         step: 'generating_tts',
@@ -741,12 +776,29 @@ export async function generateClassroom(
       });
 
       try {
-        await generateTTSForClassroom(scenes, stageId, options.baseUrl);
-        log.info('TTS generation complete');
+        ttsCoverage = await generateTTSForClassroom(
+          scenes,
+          stageId,
+          options.baseUrl,
+          options.signal,
+          async ({ written, total }) => {
+            await options.onProgress?.({
+              step: 'generating_tts',
+              progress: classroomTtsHeartbeatProgress(written, total),
+              message: `Generating TTS audio (${written}/${total})`,
+              scenesGenerated: scenes.length,
+              totalScenes: outlines.length,
+            });
+          },
+        );
       } catch (err) {
+        if (isAbortError(err)) throw err;
         log.warn('TTS generation phase failed, continuing:', err);
+        ttsCoverage = { written: 0, total: countNarratableSpeechActions(scenes) };
+        ttsFailureWarning = TTS_PHASE_FAILED_WARNING;
       }
     }
+    const ttsWarning = ttsResultWarning(ttsCoverage, ttsFailureWarning);
 
     await options.onProgress?.({
       step: 'persisting',
@@ -765,7 +817,7 @@ export async function generateClassroom(
     await options.onProgress?.({
       step: 'completed',
       progress: 100,
-      message: 'Classroom generation completed',
+      message: ttsWarning ?? 'Classroom generation completed',
       scenesGenerated: persisted.scenes.length,
       totalScenes: outlines.length,
     });
@@ -777,6 +829,8 @@ export async function generateClassroom(
       scenes: persisted.scenes,
       scenesCount: persisted.scenes.length,
       createdAt: persisted.createdAt,
+      ...(ttsCoverage ? { ttsCoverage } : {}),
+      ...(ttsWarning ? { warning: ttsWarning } : {}),
     };
   } finally {
     if (!persisted) {

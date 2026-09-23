@@ -17,6 +17,7 @@ import type {
 } from '../types';
 import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const BASE_URL = 'https://api.minimaxi.com';
@@ -103,6 +104,7 @@ async function submitTask(
     // duration below matches the delivered video.
     const response = await fetch(`${baseUrl}/v2/video_generation`, {
       method: 'POST',
+      redirect: 'manual',
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json; charset=utf-8',
@@ -115,6 +117,8 @@ async function submitTask(
         content: [{ type: 'text', text: options.prompt }],
       }),
     });
+
+    assertNotRedirected(response, 'MiniMax Video');
 
     if (!response.ok) {
       const errText = await response.text().catch(() => response.statusText);
@@ -131,6 +135,7 @@ async function submitTask(
 
   const response = await fetch(`${baseUrl}/v1/video_generation`, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json; charset=utf-8',
@@ -143,6 +148,8 @@ async function submitTask(
       prompt_optimizer: false,
     }),
   });
+
+  assertNotRedirected(response, 'MiniMax Video');
 
   if (!response.ok) {
     const errText = await response.text().catch(() => response.statusText);
@@ -175,10 +182,13 @@ async function pollTaskStatus(
 
   const response = await fetch(url, {
     method: 'GET',
+    redirect: 'manual',
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
     },
   });
+
+  assertNotRedirected(response, 'MiniMax Video');
 
   if (!response.ok) {
     const errText = await response.text().catch(() => response.statusText);
@@ -197,10 +207,13 @@ async function retrieveFileDownloadUrl(
 
   const response = await fetch(url, {
     method: 'GET',
+    redirect: 'manual',
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
     },
   });
+
+  assertNotRedirected(response, 'MiniMax Video');
 
   if (!response.ok) {
     const errText = await response.text().catch(() => response.statusText);

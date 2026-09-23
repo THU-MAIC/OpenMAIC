@@ -13,6 +13,7 @@ import type {
 } from '../types';
 import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const DEFAULT_BASE_URL = 'https://dashscope.aliyuncs.com';
@@ -97,6 +98,7 @@ export async function submitHappyHorseTask(
   const baseUrl = normalizeBaseUrl(config.baseUrl);
   const response = await fetch(`${baseUrl}/api/v1/services/aigc/video-generation/video-synthesis`, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       ...jsonHeaders(config.apiKey),
       'X-DashScope-Async': 'enable',
@@ -114,6 +116,8 @@ export async function submitHappyHorseTask(
       },
     }),
   });
+
+  assertNotRedirected(response, 'HappyHorse');
 
   if (!response.ok) {
     const text = await response.text();
@@ -138,8 +142,11 @@ export async function pollHappyHorseTask(
   const baseUrl = normalizeBaseUrl(config.baseUrl);
   const response = await fetch(`${baseUrl}/api/v1/tasks/${encodeURIComponent(taskId)}`, {
     method: 'GET',
+    redirect: 'manual',
     headers: authHeaders(config.apiKey),
   });
+
+  assertNotRedirected(response, 'HappyHorse');
 
   if (!response.ok) {
     const text = await response.text();

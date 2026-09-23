@@ -28,6 +28,7 @@ import type {
   VideoGenerationResult,
 } from '../types';
 import { runPolledTask, type TerminalResult } from '../polled-task';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'veo-3.0-generate-001';
@@ -138,9 +139,12 @@ async function submitVideoGeneration(
 
   const response = await fetch(url, {
     method: 'POST',
+    redirect: 'manual',
     headers: apiHeaders(apiKey),
     body: JSON.stringify(body),
   });
+
+  assertNotRedirected(response, 'Veo');
 
   if (!response.ok) {
     const text = await response.text();
@@ -164,9 +168,12 @@ async function pollOperation(
 
   const response = await fetch(url, {
     method: 'POST',
+    redirect: 'manual',
     headers: apiHeaders(apiKey),
     body: JSON.stringify({ operationName }),
   });
+
+  assertNotRedirected(response, 'Veo');
 
   if (!response.ok) {
     const text = await response.text();

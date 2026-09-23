@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/renderer",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "React component for rendering PPTist-style Slide JSON, extracted from OpenMAIC.",
   "type": "module",
   "main": "./dist/index.js",
@@ -23,7 +23,11 @@
       "types": "./dist/snapshot/index.d.ts",
       "import": "./dist/snapshot/index.js"
     },
-    "./fonts.css": "./fonts.css"
+    "./fonts.css": "./fonts.css",
+    "./geometry": {
+      "types": "./dist/utils/element.d.ts",
+      "import": "./dist/utils/element.js"
+    }
   },
   "files": [
     "dist",

@@ -15,8 +15,12 @@
  * - `x-material-filename` is the display name (required).
  * - Size caps are per class: media (audio/video) uploads cap at
  *   `maxUploadBytes`, documents/images at `min(maxDocumentBytes,
- *   maxUploadBytes)` — both 413 when exceeded, checked on the declared
- *   `content-length` AND on the streamed body.
+ *   maxUploadBytes)`. Exceeding that effective limit answers 413, both for
+ *   the declared `content-length` and while reading the body. Those two
+ *   responses include a top-level numeric `maxBytes`: the exact byte
+ *   threshold that check enforced, not the rounded figure the client shows.
+ *   A body larger than its declared content-length is a separate 413 and
+ *   does not include `maxBytes`.
  * - Lifecycle: the upload reclaims crashed `uploading` leftovers older than
  *   24 hours (their byte objects first, then the reservations), reserves a
  *   quota-checked `uploading` row (429 when the owner's count or byte quota is
@@ -87,6 +91,18 @@ export function ownerMaterialObjectKey(ownerId: string, materialId: string): str
 }
 
 class MaterialPayloadTooLarge extends Error {}
+
+function materialTooLarge(maxBytes: number) {
+  return NextResponse.json(
+    {
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+      error: `upload exceeds ${maxBytes} bytes`,
+      maxBytes,
+    },
+    { status: 413 },
+  );
+}
 
 /** The `x-material-filename` header, sanitized to a bare file name. */
 function materialFilename(req: NextRequest): string | null {
@@ -210,11 +226,7 @@ export async function POST(req: NextRequest) {
 
       declaredBytes = Number(req.headers.get('content-length') ?? 0);
       if (Number.isFinite(declaredBytes) && declaredBytes > uploadLimit) {
-        return reject(
-          apiError('INVALID_REQUEST', 413, `upload exceeds ${uploadLimit} bytes`),
-          'declared_body_too_large',
-          responseHeaders,
-        );
+        return reject(materialTooLarge(uploadLimit), 'declared_body_too_large', responseHeaders);
       }
       if (!req.body) {
         return reject(
@@ -316,11 +328,7 @@ export async function POST(req: NextRequest) {
             provider.pool as unknown as ConnectableQueryable,
             createdMaterialId,
           ).catch(() => undefined);
-          return reject(
-            apiError('INVALID_REQUEST', 413, `upload exceeds ${uploadLimit} bytes`),
-            'streamed_body_too_large',
-            responseHeaders,
-          );
+          return reject(materialTooLarge(uploadLimit), 'streamed_body_too_large', responseHeaders);
         }
         failureLogged = true;
         await abandonOwnerMaterial(
