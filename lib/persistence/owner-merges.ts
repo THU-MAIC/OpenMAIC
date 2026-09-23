@@ -78,8 +78,6 @@ export function ownerIdentityLockKey(ownerId: string): bigint {
 
 export type IdentityLockMode = 'shared' | 'exclusive';
 
-export { resolveLockWaitMs } from './owner-lock-waits';
-
 /** SQLSTATEs that mean "this could not run now; retry as it is". */
 const RETRYABLE_LOCK_CODES = new Set(['55P03', '40P01', '40001']);
 

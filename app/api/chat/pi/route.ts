@@ -30,6 +30,7 @@ import type { ThinkingConfig } from '@/lib/types/provider';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 import { resolveRequestOwner } from '@/lib/server/identity/resolve';
+import { invalidOwnerCredentialResponse } from '@/lib/server/identity/with-owner';
 import { guardedServerRuntimeStore } from '@/lib/persistence/runtime-tombstone-guard';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { createWhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
   // this resolution.
   const owner = await resolveRequestOwner(req);
   if (!owner.ok) {
-    return apiError('INVALID_CREDENTIALS', 401, 'Invalid owner credential');
+    return invalidOwnerCredentialResponse();
   }
 
   const encoder = new TextEncoder();

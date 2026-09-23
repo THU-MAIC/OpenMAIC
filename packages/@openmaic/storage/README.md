@@ -123,8 +123,8 @@ a browser.
   `folder_id` unless `folders: false`; `document_scenes`, `document_outlines`
   and the revision companion tables as `DOCUMENT_PG_SCHEMA` defines them. No
   ownership column. An installation provisioned before 0.34.0 keeps a nullable
-  `document_stages.owner_id` that nothing reads or writes; it is dropped in the
-  next release, so copy it into your ownership relation first.
+  `document_stages.owner_id` that the store no longer reads or writes; it is
+  dropped in the next release, so copy it into your ownership relation first.
 - **Generic over scene type.** `DocumentStore<TScene>` defaults to the DSL
   `Scene` (universal `slide` / `quiz`). An app that widens `Scene` with its own
   kinds (`interactive` / `pbl`, content the DSL does not own) parameterizes the

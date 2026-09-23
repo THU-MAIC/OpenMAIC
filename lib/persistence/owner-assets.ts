@@ -176,9 +176,6 @@ export interface OwnerAssetTransactions {
   storeIn(queryable: Queryable): AssetStore;
 }
 
-/** @deprecated The former name of {@link OwnerAssetTransactions}. */
-export type LegacyAssetMutations = OwnerAssetTransactions;
-
 export interface OwnerAssetStoreOptions {
   /** The owner every principal passed to this store was derived from. */
   ownerId: string;

@@ -711,7 +711,7 @@ describe('PR2 Native Child route production wiring', () => {
     );
 
     expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toMatchObject({ errorCode: 'INVALID_CREDENTIALS' });
+    await expect(response.json()).resolves.toMatchObject({ error: { code: 'INVALID_CREDENTIAL' } });
     expect(mocks.resolveModel).not.toHaveBeenCalled();
     expect(mocks.streamLLM).not.toHaveBeenCalled();
     expect(mocks.getServerPersistenceProvider).not.toHaveBeenCalled();

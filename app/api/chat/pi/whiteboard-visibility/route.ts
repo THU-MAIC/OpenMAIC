@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { settleWhiteboardVisibility } from '@/lib/chat/pi/whiteboard-visibility';
 import { apiError } from '@/lib/server/api-response';
 import { resolveRequestOwner } from '@/lib/server/identity/resolve';
+import { invalidOwnerCredentialResponse } from '@/lib/server/identity/with-owner';
 
 export const runtime = 'nodejs';
 
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // which is the request owner; only that owner can settle it.
   const owner = await resolveRequestOwner(req);
   if (!owner.ok) {
-    return apiError('INVALID_CREDENTIALS', 401, 'Invalid owner credential');
+    return invalidOwnerCredentialResponse();
   }
 
   let body: unknown;
