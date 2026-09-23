@@ -111,8 +111,14 @@ describe('embedded persistence route', () => {
       .mockRejectedValueOnce(new Error('postgres is still starting'))
       .mockResolvedValue(undefined);
     const ensureDocumentSchema = vi.fn().mockResolvedValue(undefined);
-    const failedPool = { end: vi.fn().mockResolvedValue(undefined) };
-    const workingPool = { end: vi.fn().mockResolvedValue(undefined) };
+    const failedPool = {
+      end: vi.fn().mockResolvedValue(undefined),
+      query: vi.fn().mockResolvedValue({ rows: [] }),
+    };
+    const workingPool = {
+      end: vi.fn().mockResolvedValue(undefined),
+      query: vi.fn().mockResolvedValue({ rows: [] }),
+    };
 
     vi.doMock('@openmaic/storage/runtime/pg', () => ({
       ensureSchema,
@@ -135,7 +141,10 @@ describe('embedded persistence route', () => {
       PgAssetByteStore: class {},
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
+      nodePostgresTransaction: vi.fn(
+        () => async (body: (tx: unknown) => Promise<unknown>) =>
+          body({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+      ),
     }));
     vi.doMock('@openmaic/storage/server', () => ({
       createStorageHttpHandler: vi.fn(
@@ -202,7 +211,10 @@ describe('embedded persistence route', () => {
     }));
     vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
+      nodePostgresTransaction: vi.fn(
+        () => async (body: (tx: unknown) => Promise<unknown>) =>
+          body({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+      ),
     }));
     vi.doMock('@openmaic/storage/server', () => ({
       createStorageHttpHandler: vi.fn(
@@ -221,7 +233,10 @@ describe('embedded persistence route', () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('DATABASE_URL', 'postgres://asset-auth-test');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
-    const pool = { end: vi.fn().mockResolvedValue(undefined) };
+    const pool = {
+      end: vi.fn().mockResolvedValue(undefined),
+      query: vi.fn().mockResolvedValue({ rows: [] }),
+    };
     const cookie = 'anonymous_id=44444444-4444-4444-8444-444444444444';
     const owner = 'anon:44444444-4444-4444-8444-444444444444';
 
@@ -362,7 +377,10 @@ describe('embedded persistence route', () => {
     }));
     vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
+      nodePostgresTransaction: vi.fn(
+        () => async (body: (tx: unknown) => Promise<unknown>) =>
+          body({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+      ),
     }));
     vi.doUnmock('@openmaic/storage/server');
     vi.stubEnv('NODE_ENV', 'production');
@@ -374,7 +392,13 @@ describe('embedded persistence route', () => {
     form.append('bytes', new Blob([new Uint8Array(16)], { type: 'image/png' }), 'bytes');
     const response = await handlePersistenceRequest(
       new Request('http://localhost/api/persistence/assets', { method: 'POST', body: form }),
-      { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never },
+      {
+        poolFactory: () =>
+          ({
+            end: vi.fn().mockResolvedValue(undefined),
+            query: vi.fn().mockResolvedValue({ rows: [] }),
+          }) as never,
+      },
     );
 
     expect(response.status).toBe(507);
@@ -388,7 +412,12 @@ describe('embedded persistence route', () => {
     const ensureSchema = vi.fn().mockResolvedValue(undefined);
     const ensureDocumentSchema = vi.fn().mockResolvedValue(undefined);
     const ensureAssetSchema = vi.fn().mockResolvedValue(undefined);
-    const transaction = vi.fn();
+    // An allocation runs in a transaction that first takes the owner's
+    // identity lock (lib/persistence/owner-merges.ts).
+    const allocationTx = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const transaction = vi.fn(async (body: (tx: unknown) => Promise<unknown>) =>
+      body(allocationTx),
+    );
     const nodePostgresTransaction = vi.fn(() => transaction);
     const runtimeConstructions: Array<{
       queryable: unknown;
@@ -459,7 +488,10 @@ describe('embedded persistence route', () => {
     });
     vi.stubEnv('DATABASE_URL', 'postgres://asset-wiring-test');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
-    const pool = { end: vi.fn().mockResolvedValue(undefined) };
+    const pool = {
+      end: vi.fn().mockResolvedValue(undefined),
+      query: vi.fn().mockResolvedValue({ rows: [] }),
+    };
 
     const response = await handlePersistenceRequest(
       new Request('http://localhost/api/persistence/assets/ast_example/content', {
@@ -505,11 +537,20 @@ describe('embedded persistence route', () => {
     // The handler mounts the provider's store behind the per-owner rules, and
     // an allocation through it lands on that store, under the owner principal.
     const mounted = (handlerOptions[0] as { assetStore: AssetStoreLike }).assetStore;
-    const raw = assetConstructions[0]?.instance as { put: ReturnType<typeof vi.fn> };
     const principal = { key: 'owner:anon:test' };
     const blob = new Blob(['x']);
     await expect(mounted.put(principal, blob)).resolves.toBe('ast_wired');
-    expect(raw.put).toHaveBeenCalledWith(principal, blob, undefined);
+    // The allocation lands on the registry pinned to the fenced transaction,
+    // after the identity lock and the retirement read.
+    const pinned = assetConstructions.at(-1)!;
+    expect(pinned.queryable).toBe(allocationTx);
+    expect((pinned.instance as { put: ReturnType<typeof vi.fn> }).put).toHaveBeenCalledWith(
+      principal,
+      blob,
+      undefined,
+    );
+    expect(allocationTx.query.mock.calls[0]?.[0]).toMatch(/pg_advisory_xact_lock_shared/);
+    expect(allocationTx.query.mock.calls[1]?.[0]).toMatch(/FROM owner_merges/);
     const { getServerPersistenceProvider } = await import('@/lib/persistence/server-provider');
     const secondPoolFactory = vi.fn();
     const sharedProvider = await getServerPersistenceProvider(
@@ -569,7 +610,10 @@ describe('embedded persistence route', () => {
       },
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
+      nodePostgresTransaction: vi.fn(
+        () => async (body: (tx: unknown) => Promise<unknown>) =>
+          body({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+      ),
     }));
     vi.doMock('@openmaic/storage/server', () => ({
       createStorageHttpHandler: vi.fn(
@@ -596,7 +640,13 @@ describe('embedded persistence route', () => {
         method: 'POST',
         headers: {},
       }),
-      { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never },
+      {
+        poolFactory: () =>
+          ({
+            end: vi.fn().mockResolvedValue(undefined),
+            query: vi.fn().mockResolvedValue({ rows: [] }),
+          }) as never,
+      },
     );
 
     // Handler initialization leaves the byte layer unresolved: the mocked
@@ -647,7 +697,10 @@ describe('embedded persistence route', () => {
       },
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
+      nodePostgresTransaction: vi.fn(
+        () => async (body: (tx: unknown) => Promise<unknown>) =>
+          body({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+      ),
     }));
     vi.doMock('@openmaic/storage/server', () => ({
       createStorageHttpHandler: vi.fn(
@@ -668,7 +721,10 @@ describe('embedded persistence route', () => {
     vi.stubEnv('DATABASE_URL', 'postgres://invalid-s3-bucket-test');
     vi.stubEnv('ASSET_S3_BUCKET', 'Invalid_Bucket');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
-    const poolFactory = vi.fn(() => ({ end: vi.fn().mockResolvedValue(undefined) }));
+    const poolFactory = vi.fn(() => ({
+      end: vi.fn().mockResolvedValue(undefined),
+      query: vi.fn().mockResolvedValue({ rows: [] }),
+    }));
 
     // The malformed bucket no longer gates handler initialization: document
     // and runtime traffic initializes and serves normally.
@@ -723,7 +779,10 @@ describe('embedded persistence route', () => {
       },
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
+      nodePostgresTransaction: vi.fn(
+        () => async (body: (tx: unknown) => Promise<unknown>) =>
+          body({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+      ),
     }));
     vi.doMock('@openmaic/storage/server', () => ({
       createStorageHttpHandler: vi.fn(
@@ -744,7 +803,13 @@ describe('embedded persistence route', () => {
 
     const response = await handlePersistenceRequest(
       new Request('http://localhost/api/persistence/runtime/sessions', {}),
-      { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never },
+      {
+        poolFactory: () =>
+          ({
+            end: vi.fn().mockResolvedValue(undefined),
+            query: vi.fn().mockResolvedValue({ rows: [] }),
+          }) as never,
+      },
     );
 
     // An SDK that cannot be resolved must not reach handler initialization.
@@ -790,7 +855,10 @@ describe('embedded persistence route', () => {
       PgAssetByteStore: class {},
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
+      nodePostgresTransaction: vi.fn(
+        () => async (body: (tx: unknown) => Promise<unknown>) =>
+          body({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+      ),
     }));
     vi.doMock('@openmaic/storage/server', () => ({
       createStorageHttpHandler: vi.fn((_runtime: unknown, _document: unknown, options: unknown) => {
@@ -811,7 +879,10 @@ describe('embedded persistence route', () => {
     ]);
     const response = await handlePersistenceRequest(
       new Request('http://localhost/api/persistence/runtime/sessions', {}),
-      { poolFactory: () => ({ end: vi.fn() }) as never },
+      {
+        poolFactory: () =>
+          ({ end: vi.fn(), query: vi.fn().mockResolvedValue({ rows: [] }) }) as never,
+      },
     );
 
     expect(response.status).toBe(204);
@@ -854,7 +925,10 @@ describe('embedded persistence route', () => {
       PgAssetByteStore: class {},
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
+      nodePostgresTransaction: vi.fn(
+        () => async (body: (tx: unknown) => Promise<unknown>) =>
+          body({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+      ),
     }));
     vi.doMock('@openmaic/storage/server', () => ({
       createStorageHttpHandler: vi.fn(
@@ -884,7 +958,10 @@ describe('embedded persistence route', () => {
     }));
     vi.stubEnv('DATABASE_URL', 'postgres://adapter-test');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
-    const pool = { end: vi.fn().mockResolvedValue(undefined) };
+    const pool = {
+      end: vi.fn().mockResolvedValue(undefined),
+      query: vi.fn().mockResolvedValue({ rows: [] }),
+    };
 
     const put = await handlePersistenceRequest(
       new Request('http://localhost/api/persistence/documents/stage%2Fslash', {
@@ -933,7 +1010,10 @@ describe('embedded persistence route', () => {
       },
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
+      nodePostgresTransaction: vi.fn(
+        () => async (body: (tx: unknown) => Promise<unknown>) =>
+          body({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+      ),
     }));
     vi.doMock('@openmaic/storage/server', () => ({
       createStorageHttpHandler: vi.fn(() => handler),
@@ -943,7 +1023,10 @@ describe('embedded persistence route', () => {
 
   const readAdapterBody = async (path: string) => {
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
-    const pool = { end: vi.fn().mockResolvedValue(undefined) };
+    const pool = {
+      end: vi.fn().mockResolvedValue(undefined),
+      query: vi.fn().mockResolvedValue({ rows: [] }),
+    };
     const response = await handlePersistenceRequest(
       new Request(`http://localhost/api/persistence/${path}`, {}),
       { poolFactory: () => pool as never },
@@ -1094,7 +1177,10 @@ describe('embedded persistence route', () => {
       new Request('http://localhost/api/persistence/documents/head', {
         method: 'HEAD',
       }),
-      { poolFactory: () => ({ end: vi.fn() }) as never },
+      {
+        poolFactory: () =>
+          ({ end: vi.fn(), query: vi.fn().mockResolvedValue({ rows: [] }) }) as never,
+      },
     );
 
     expect(response.status).toBe(200);
@@ -1127,7 +1213,10 @@ describe('embedded persistence route', () => {
       PgAssetByteStore: class {},
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
+      nodePostgresTransaction: vi.fn(
+        () => async (body: (tx: unknown) => Promise<unknown>) =>
+          body({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+      ),
     }));
     vi.doMock('@openmaic/storage/server', () => ({
       createStorageHttpHandler: vi.fn((_runtime: unknown, _document: unknown, options: unknown) => {
@@ -1149,7 +1238,13 @@ describe('embedded persistence route', () => {
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
     return handlePersistenceRequest(
       new Request('http://localhost/api/persistence/runtime/sessions', {}),
-      { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never },
+      {
+        poolFactory: () =>
+          ({
+            end: vi.fn().mockResolvedValue(undefined),
+            query: vi.fn().mockResolvedValue({ rows: [] }),
+          }) as never,
+      },
     );
   };
 
@@ -1295,7 +1390,10 @@ describe('embedded persistence route', () => {
       },
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
+      nodePostgresTransaction: vi.fn(
+        () => async (body: (tx: unknown) => Promise<unknown>) =>
+          body({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+      ),
     }));
     vi.doMock('@openmaic/storage/server', () => ({
       createStorageHttpHandler: vi.fn(
@@ -1364,7 +1462,10 @@ describe('embedded persistence route', () => {
       },
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
+      nodePostgresTransaction: vi.fn(
+        () => async (body: (tx: unknown) => Promise<unknown>) =>
+          body({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+      ),
     }));
     vi.doMock('@openmaic/storage/server', () => ({
       createStorageHttpHandler: vi.fn(
@@ -1483,7 +1584,10 @@ describe('embedded persistence route -- real handler boundary', () => {
       },
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
+      nodePostgresTransaction: vi.fn(
+        () => async (body: (tx: unknown) => Promise<unknown>) =>
+          body({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+      ),
     }));
     vi.stubEnv('DATABASE_URL', connectionString);
   }
@@ -1499,7 +1603,13 @@ describe('embedded persistence route -- real handler boundary', () => {
     }> = [];
     wireRealHandler(stores);
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
-    const deps = { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never };
+    const deps = {
+      poolFactory: () =>
+        ({
+          end: vi.fn().mockResolvedValue(undefined),
+          query: vi.fn().mockResolvedValue({ rows: [] }),
+        }) as never,
+    };
 
     // First request initializes the handler and the store.
     const first = await handlePersistenceRequest(authed('/runtime/sessions'), deps);
@@ -1535,7 +1645,13 @@ describe('embedded persistence route -- real handler boundary', () => {
     vi.stubEnv('ASSET_BYTE_EGRESS', 'redirect');
     vi.stubEnv('ASSET_COLLECTION_GRACE_MS', graceMs);
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
-    const deps = { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never };
+    const deps = {
+      poolFactory: () =>
+        ({
+          end: vi.fn().mockResolvedValue(undefined),
+          query: vi.fn().mockResolvedValue({ rows: [] }),
+        }) as never,
+    };
     const first = await handlePersistenceRequest(authed('/runtime/sessions'), deps);
     expect(first.status).not.toBe(500);
     const id = await stores[0]!.put(

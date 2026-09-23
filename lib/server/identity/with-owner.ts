@@ -37,7 +37,60 @@ export async function authenticateRequestOwner(
   if (!outcome.ok) return { ok: false, response: invalidOwnerCredentialResponse() };
   const responseHeaders = new Headers();
   for (const value of outcome.setCookies ?? []) responseHeaders.append('Set-Cookie', value);
-  return { ok: true, principal: outcome.principal, responseHeaders };
+  const principal = await autoClaim(req, outcome.principal, responseHeaders);
+  return { ok: true, principal, responseHeaders };
+}
+
+/** The routes that perform a claim themselves: `POST /api/identity/claim` and the runtime learner merge. */
+const EXPLICIT_CLAIM_PATHS = ['/api/identity/claim', '/api/persistence/runtime/learners/merge'];
+
+function isExplicitClaimRoute(url: string | undefined): boolean {
+  if (!url) return false;
+  let pathname: string;
+  try {
+    pathname = new URL(url, 'http://localhost').pathname;
+  } catch {
+    return false;
+  }
+  const trimmed = pathname.replace(/\/+$/, '');
+  return EXPLICIT_CLAIM_PATHS.includes(trimmed);
+}
+
+/**
+ * `OWNER_CLAIM_TRIGGER=auto`: claim a pending anonymous owner on the first
+ * route request that presents one, before the handler runs, so the handler
+ * already sees the claimed work. The default (`explicit`) leaves it to
+ * `POST /api/identity/claim`. A claim that fails for a reason other than a
+ * refusal is logged and the request goes on unclaimed; the next request tries
+ * again. Server Actions never trigger it.
+ */
+async function autoClaim(
+  req: OwnerAuthRequest,
+  principal: OwnerPrincipal,
+  responseHeaders: Headers,
+) {
+  if (!principal.pendingClaim || principal.kind === 'anonymous') return principal;
+  // The explicit claim routes claim themselves and report the outcome: an
+  // automatic claim ahead of them would leave them nothing to report but a
+  // refusal ("no pending claim") for a claim that succeeded.
+  if (isExplicitClaimRoute(req.url)) return principal;
+  if (!process.env.DATABASE_URL?.trim()) return principal;
+  const { resolveOwnerClaimTrigger, runPendingClaim } =
+    await import('@/lib/persistence/owner-claim-http');
+  if (resolveOwnerClaimTrigger() !== 'auto') return principal;
+  try {
+    const outcome = await runPendingClaim(principal);
+    for (const cookie of outcome.setCookies) responseHeaders.append('Set-Cookie', cookie);
+    if (!outcome.ok && outcome.setCookies.length === 0) return principal;
+  } catch (error) {
+    console.error(
+      '[owner-identity] automatic claim failed; the request continues unclaimed',
+      error,
+    );
+    return principal;
+  }
+  const { pendingClaim: _claimed, ...claimed } = principal;
+  return claimed;
 }
 
 /**

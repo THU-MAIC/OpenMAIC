@@ -10,6 +10,7 @@ import type { Pool } from 'pg';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { notifyDurableAgentEvent } from './event-notify-bus';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
+import { forwardOwnerWrite } from '@/lib/persistence/owner-merges';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 
 interface AgentSessionStoreState {
@@ -54,6 +55,15 @@ async function createAgentSessionStore(connectionString: string): Promise<PgAgen
   // store is constructed, so the closure reference is always assigned.
   const store: PgAgentSessionStore = new PgAgentSessionStore(pool, {
     withTransaction: nodePostgresTransaction(pool),
+    // The owner a session write is for, under that owner's identity lock (the
+    // transaction's first statement, as the package requires): a retired
+    // anonymous owner resolves to the account it was claimed into. This is
+    // what makes `readRetirement` tell a stale owner-events stream to
+    // reconnect, and `postUserMessage` refuse a request that still presents
+    // the retired identity. `POST /api/agent/sessions` refuses one before it
+    // gets here; a create racing the claim is written for the account, as if
+    // it had committed just before the claim.
+    resolveFinalOwner: (transaction, ownerId) => forwardOwnerWrite(transaction, ownerId),
     onSessionCreated: async (transaction, meta): Promise<void> => {
       await store.registerSessionUrls(
         meta.id,

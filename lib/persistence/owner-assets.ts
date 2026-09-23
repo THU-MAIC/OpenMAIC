@@ -47,6 +47,8 @@ import {
 import type { AssetMeta, AssetRef, BinaryBlob } from '@openmaic/dsl';
 import type { Queryable, WithTransaction } from '@openmaic/storage/document/pg';
 
+import { fenceOwnerWrite } from './owner-merges';
+
 /**
  * The single asset partition every caller shared before per-owner partitions.
  * It has no `:` in it, so no {@link assetPrincipalForOwner} key can equal it —
@@ -163,22 +165,39 @@ async function ownsEveryReference(
 }
 
 /**
- * How a legacy entry is mutated atomically: one transaction, and the registry
- * pinned to it, so the ownership check and the replace or delete commit
- * together.
+ * How this store runs a check and a write atomically: one transaction, and the
+ * registry pinned to it. Used for every allocation (the owner's identity
+ * fence and the `put` commit together) and for mutating a legacy entry (the
+ * ownership check and the replace or delete commit together).
  */
-export interface LegacyAssetMutations {
+export interface OwnerAssetTransactions {
   withTransaction: WithTransaction;
   /** The registry, running every statement on `queryable` (the open transaction). */
   storeIn(queryable: Queryable): AssetStore;
 }
 
+/** @deprecated The former name of {@link OwnerAssetTransactions}. */
+export type LegacyAssetMutations = OwnerAssetTransactions;
+
 export interface OwnerAssetStoreOptions {
   /** The owner every principal passed to this store was derived from. */
   ownerId: string;
   queryable: OwnerAssetQueryable;
-  /** Enables replacing and deleting legacy entries. Without it they are refused. */
-  legacyMutations?: LegacyAssetMutations;
+  /**
+   * Required to allocate or to mutate legacy entries. Every `put` runs in a
+   * transaction that first takes the owner's identity lock and refuses an
+   * owner a claim retired (`./owner-merges.ts`), so an upload racing a claim
+   * either lands before it (and is moved) or is refused -- never left behind
+   * under the retired owner. A store built without it is read-only: `put`
+   * throws rather than allocate unfenced, and legacy entries are refused.
+   *
+   * The fence is held for the whole allocation transaction, which (as the
+   * registry requires) includes writing the bytes to the byte store. A claim
+   * of the owner therefore waits for in-flight uploads, and waits at most
+   * `OWNER_CLAIM_LOCK_WAIT_MS` before answering `OWNER_BUSY`; the lock is
+   * shared, so uploads never wait for each other.
+   */
+  transactions?: OwnerAssetTransactions;
 }
 
 /**
@@ -191,7 +210,7 @@ export function createOwnerAssetStore(
   inner: AssetStore,
   options: OwnerAssetStoreOptions,
 ): AssetStore {
-  const { ownerId, queryable, legacyMutations } = options;
+  const { ownerId, queryable, transactions } = options;
 
   /**
    * Run `mutate` under the principal the caller may mutate `ref` as, or return
@@ -208,11 +227,11 @@ export function createOwnerAssetStore(
   ): Promise<T> {
     const ownership = await entryOwnership(queryable, ref, principal);
     if (ownership === 'own') return mutate(inner, principal);
-    if (ownership === 'foreign' || legacyMutations === undefined) return refused();
-    return legacyMutations.withTransaction(async (tx) => {
+    if (ownership === 'foreign' || transactions === undefined) return refused();
+    return transactions.withTransaction(async (tx) => {
       if ((await entryOwnership(tx, ref, principal, true)) !== 'legacy') return refused();
       if (!(await ownsEveryReference(tx, ref, ownerId))) return refused();
-      return mutate(legacyMutations.storeIn(tx), { key: LEGACY_SHARED_ASSET_PRINCIPAL });
+      return mutate(transactions.storeIn(tx), { key: LEGACY_SHARED_ASSET_PRINCIPAL });
     });
   }
 
@@ -229,7 +248,14 @@ export function createOwnerAssetStore(
 
   const store: AssetStore = {
     put: (principal: AssetPrincipal, data: BinaryBlob, meta?: AssetMeta) =>
-      inner.put(principal, data, meta),
+      transactions === undefined
+        ? Promise.reject(
+            new Error('createOwnerAssetStore: allocating requires `transactions` (fenced writes)'),
+          )
+        : transactions.withTransaction(async (tx) => {
+            await fenceOwnerWrite(tx, ownerId);
+            return transactions.storeIn(tx).put(principal, data, meta);
+          }),
     identify: (principal: AssetPrincipal, ref: AssetRef): Promise<AssetIdentity | null> =>
       readWithFallback(principal, ref, (as) => inner.identify(as, ref)),
     resolve: (principal: AssetPrincipal, ref: AssetRef): Promise<AssetBytes | null> =>

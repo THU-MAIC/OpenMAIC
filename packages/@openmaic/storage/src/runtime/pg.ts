@@ -111,6 +111,15 @@ export interface PgRuntimeStoreOptions {
   withTransaction: WithTransaction;
   /** Replaces the default chat / quizAttempt skeleton validator map. */
   payloadValidators?: Record<string, RuntimePayloadValidator>;
+  /**
+   * Resolve the learner a new session is created for, as the create
+   * transaction's first statement. A host that retires owners (claiming
+   * anonymous work into an account) takes the identity lock the retiring
+   * operation takes and either refuses a retired learner (throw, for a
+   * request) or returns the learner it forwards to (for background work).
+   * Unset, `createSession` is the single insert it always was.
+   */
+  resolveFinalLearner?: (transaction: Queryable, learnerKey: string) => Promise<string>;
 }
 
 /** Idempotent schema for the PostgreSQL runtime backend. */
@@ -265,6 +274,7 @@ export class PgRuntimeStore implements RuntimeStore {
   private readonly queryable: Queryable;
   private readonly transactionHook: WithTransaction;
   private readonly payloadValidators: Record<string, RuntimePayloadValidator>;
+  private readonly resolveLearner?: PgRuntimeStoreOptions['resolveFinalLearner'];
 
   constructor(queryable: Queryable, options: PgRuntimeStoreOptions) {
     if (typeof options?.withTransaction !== 'function') {
@@ -277,6 +287,7 @@ export class PgRuntimeStore implements RuntimeStore {
     this.queryable = queryable;
     this.transactionHook = options.withTransaction;
     this.payloadValidators = options.payloadValidators ?? DEFAULT_PAYLOAD_VALIDATORS;
+    this.resolveLearner = options.resolveFinalLearner;
   }
 
   private async transaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
@@ -335,12 +346,32 @@ export class PgRuntimeStore implements RuntimeStore {
   }
 
   async createSession(init: RuntimeSessionInit): Promise<RuntimeSession> {
-    const stamped: RuntimeSession = { ...init, runtimeDslVersion: RUNTIME_DSL_VERSION };
-    assertValid(validateRuntimeSession(stamped), `runtime session ${JSON.stringify(stamped.id)}`);
-    assertJsonValue(stamped, `runtime session ${JSON.stringify(stamped.id)}`);
+    const requested: RuntimeSession = { ...init, runtimeDslVersion: RUNTIME_DSL_VERSION };
+    assertValid(
+      validateRuntimeSession(requested),
+      `runtime session ${JSON.stringify(requested.id)}`,
+    );
+    assertJsonValue(requested, `runtime session ${JSON.stringify(requested.id)}`);
+    const resolveLearner = this.resolveLearner;
+    if (resolveLearner === undefined) return this.insertSession(this.queryable, requested);
+    return this.transaction(async (queryable) => {
+      const learnerKey = await resolveLearner(queryable, requested.learnerKey);
+      if (learnerKey === requested.learnerKey) return this.insertSession(queryable, requested);
+      const forwarded: RuntimeSession = { ...requested, learnerKey };
+      assertValid(
+        validateRuntimeSession(forwarded),
+        `runtime session ${JSON.stringify(forwarded.id)}`,
+      );
+      return this.insertSession(queryable, forwarded);
+    });
+  }
 
+  private async insertSession(
+    queryable: Queryable,
+    stamped: RuntimeSession,
+  ): Promise<RuntimeSession> {
     try {
-      await this.queryable.query(
+      await queryable.query(
         `INSERT INTO runtime_sessions
            (id, stage_id, learner_key, kind, status, created_at, updated_at, data)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
@@ -620,6 +651,48 @@ export class PgRuntimeStore implements RuntimeStore {
       });
       for (const session of updatedSessions) await this.persistSession(queryable, session);
       return updatedSessions.length;
+    });
+  }
+
+  /**
+   * Move every session of `fromLearnerKey` to `toLearnerKey` without reading
+   * them back: the learner key column and the stored session's `learnerKey`
+   * are rewritten in place, and nothing is migrated or validated. For a host
+   * merging two owners inside a transaction of its own (pin the store to it),
+   * where one session that no longer validates -- written by a newer version,
+   * say -- must not make the whole merge fail; readers keep validating as they
+   * always do. {@link mergeLearner} is the validating form. Answers how many
+   * sessions moved.
+   */
+  async reassignLearner(fromLearnerKey: string, toLearnerKey: string): Promise<number> {
+    if (
+      typeof fromLearnerKey !== 'string' ||
+      fromLearnerKey === '' ||
+      typeof toLearnerKey !== 'string' ||
+      toLearnerKey === ''
+    ) {
+      throw new Error('@openmaic/storage: learner keys must be non-empty strings');
+    }
+    assertJsonValue(toLearnerKey, 'target learner key');
+    if (!isPgQueryableKey(fromLearnerKey) || fromLearnerKey === toLearnerKey) return 0;
+    return this.transaction(async (queryable) => {
+      await queryable.query(
+        'SELECT id FROM runtime_sessions WHERE learner_key = $1 ORDER BY id FOR UPDATE',
+        [fromLearnerKey],
+      );
+      const moved = await queryable.query<{ id: string } & Record<string, unknown>>(
+        `UPDATE runtime_sessions
+            SET learner_key = $2,
+                data = CASE
+                  WHEN jsonb_typeof(data) = 'object'
+                    THEN jsonb_set(data, '{learnerKey}', to_jsonb($2::text))
+                  ELSE data
+                END
+          WHERE learner_key = $1
+          RETURNING id`,
+        [fromLearnerKey, toLearnerKey],
+      );
+      return moved.rows.length;
     });
   }
 

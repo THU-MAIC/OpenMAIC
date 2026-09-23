@@ -14,6 +14,7 @@ import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { subscribeAgentEventWakeup } from '@/lib/server/agent-runtime/event-notify-bus';
 import { authenticateRequestOwner } from '@/lib/server/identity/with-owner';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
+import { isRetiredStoredOwner, retiredCredentialCookies } from '@/lib/persistence/owner-merges';
 
 export const runtime = 'nodejs';
 // Self-hosted `next start` ignores maxDuration; Vercel's adapter can still use
@@ -48,6 +49,20 @@ export async function GET(req: NextRequest) {
     principal: { ownerId },
     responseHeaders,
   } = owner;
+  // An identity a claim already retired gets no stream: one `owner_moved`,
+  // then end of stream, with the Set-Cookie values that drop the retired
+  // credential. A tab that learned of the move on a heartbeat reconnects with
+  // the old credential and lands here, so the reconnect loop ends after one
+  // round trip. Nothing about the account is disclosed.
+  if (await isRetiredStoredOwner(ownerId)) {
+    for (const cookie of retiredCredentialCookies()) responseHeaders.append('Set-Cookie', cookie);
+    responseHeaders.set('Content-Type', 'text/event-stream; charset=utf-8');
+    responseHeaders.set('Cache-Control', 'no-cache, no-transform');
+    return new Response(
+      `event: owner_moved\ndata: ${JSON.stringify({ type: 'owner_moved', action: 'reconnect' })}\n\n`,
+      { headers: responseHeaders },
+    );
+  }
   const store = await getAgentSessionStore();
 
   const url = new URL(req.url);
@@ -278,6 +293,11 @@ export async function GET(req: NextRequest) {
           .readRetirement(ownerId)
           .then((newOwnerId) => {
             if (!newOwnerId || closed) return;
+            // The stream's owner was claimed into an account. Say only that it
+            // moved: whoever still holds the retired identity (a stale tab, a
+            // shared browser) must not learn the account's owner id, which is
+            // often a login or an email. The client reconnects, and a
+            // signed-in client reconnects as the account.
             // Native EventSource reconnects a clean 200 EOF with the same
             // Last-Event-ID. The client MUST close this instance, construct a
             // new EventSource without that cursor, and perform one full session
@@ -286,7 +306,6 @@ export async function GET(req: NextRequest) {
             write(
               `event: owner_moved\ndata: ${JSON.stringify({
                 type: 'owner_moved',
-                newOwnerId,
                 action: 'reconnect',
               })}\n\n`,
             );

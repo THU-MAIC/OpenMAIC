@@ -51,6 +51,34 @@ export interface OwnerPrincipal {
   readonly assurance: OwnerAssurance;
   /** Free-form transport label, e.g. `'web'`, `'api-key'`, `'proxy'`. Informational. */
   readonly channel?: string;
+  /**
+   * An anonymous identity the same request presented alongside this one: the
+   * candidate for claiming that anonymous owner's work into this owner (see
+   * `lib/persistence/owner-claims.ts`). Set only by an authenticator that
+   * resolved a non-anonymous principal and recognized a valid anonymous
+   * credential beside it; its presence is the authenticator's statement that
+   * `fromOwnerId` is an anonymous owner. Nothing is claimed until the host's
+   * trigger runs (`POST /api/identity/claim`, or `OWNER_CLAIM_TRIGGER=auto`).
+   */
+  readonly pendingClaim?: PendingOwnerClaim;
+}
+
+/** See {@link OwnerPrincipal.pendingClaim}. */
+export interface PendingOwnerClaim {
+  /** The anonymous owner id the request's anonymous credential names. */
+  readonly fromOwnerId: string;
+  /** What that credential proves; the anonymous cookie is `unverified-legacy`. */
+  readonly assurance: OwnerAssurance;
+}
+
+/**
+ * What an authenticator knows about an owner id it minted, without a request:
+ * see {@link OwnerAuthenticator.describeStoredOwner}.
+ */
+export interface StoredOwnerDescription {
+  readonly kind: SubjectKind;
+  /** Roles the id always carries. Roles granted per request (groups) are not known here. */
+  readonly roles?: ReadonlySet<string>;
 }
 
 export type AuthOutcome =
@@ -102,6 +130,36 @@ export interface OwnerAuthenticator {
    * `authenticate` mints cookies must implement this method.
    */
   authenticateFromContext?(): Promise<AuthOutcome>;
+  /**
+   * Describe an owner id this authenticator minted, for work that holds only
+   * the stored id (an agent run, a claim). Answer `undefined` for an id it
+   * does not recognize. Optional: without it, `principalFromStoredOwner`
+   * describes every id as `kind: 'user'` with no roles, which is also what
+   * makes an unrecognized id ineligible as the anonymous side of a claim.
+   *
+   * An authenticator that sets {@link OwnerPrincipal.pendingClaim} must
+   * describe those anonymous ids as `kind: 'anonymous'`: a claim is refused
+   * for any other source, and the write fences rely on it (only an id
+   * described as anonymous can ever be retired, so only those are looked up).
+   *
+   * The answer must be stable: an id once described as anonymous must keep
+   * being described so, or a retired id stops being fenced and a stale write
+   * under it succeeds. Classify from the id itself (as the built-ins do), not
+   * from state that can be pruned.
+   */
+  describeStoredOwner?(ownerId: string): StoredOwnerDescription | undefined;
+  /**
+   * `Set-Cookie` values that drop the anonymous credential this authenticator
+   * reads -- the one behind a {@link OwnerPrincipal.pendingClaim}, or the
+   * anonymous principal's own. Sent once a claim is done (or can never
+   * succeed), and with every `403 OWNER_RETIRED`, so a browser stops
+   * presenting a retired identity and gets a fresh one. An authenticator
+   * whose anonymous path keeps accepting a retired credential without this
+   * leaves that browser refused on every write. Optional: one with no
+   * anonymous credential, or whose credential is not a cookie, leaves it out
+   * and must treat a retired anonymous credential as absent itself.
+   */
+  clearPendingClaim?(): readonly string[];
 }
 
 /**

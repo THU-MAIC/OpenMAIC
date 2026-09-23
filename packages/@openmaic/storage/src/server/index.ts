@@ -35,6 +35,7 @@ import type { AssetPrincipal, AssetStore } from '../asset/types.js';
 import { createAssetHttpHandler, type AssetHttpHandlerOptions } from './asset.js';
 import { createDocumentHttpHandler, type DocumentHttpHandlerOptions } from './document.js';
 import { assertMaxBodyBytes, DEFAULT_MAX_BODY_BYTES, readJsonObject } from './read-json.js';
+import { storePolicyResponse } from '../store-errors.js';
 
 export {
   createAssetHttpHandler,
@@ -108,8 +109,13 @@ class RuntimeHttpError extends Error {
   }
 }
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { 'content-type': 'application/json' });
+function sendJson(
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): void {
+  res.writeHead(status, { 'content-type': 'application/json', ...headers });
   res.end(JSON.stringify(body));
 }
 
@@ -375,7 +381,19 @@ function isStageNotFound(error: unknown): boolean {
   );
 }
 
-function mappedError(error: unknown): { status: number; body: ErrorBody } {
+function mappedError(error: unknown): {
+  status: number;
+  body: ErrorBody;
+  headers?: Record<string, string>;
+} {
+  const policy = storePolicyResponse(error);
+  if (policy) {
+    return {
+      status: policy.status,
+      body: { error: { code: policy.code, message: policy.message } },
+      headers: policy.headers,
+    };
+  }
   if (error instanceof RuntimeAppendConflictError) {
     return {
       status: 409,
@@ -730,7 +748,7 @@ export function createRuntimeHttpHandler(
         console.error('@openmaic/storage: Runtime HTTP handler internal error', error);
       }
       const mapped = mappedError(error);
-      sendJson(res, mapped.status, mapped.body);
+      sendJson(res, mapped.status, mapped.body, mapped.headers);
     });
   };
 }

@@ -7,6 +7,8 @@ import {
   trustedProxyModeSelected,
   warnAboutTrustedProxyAdminGroups,
 } from './trusted-proxy';
+import { resolveClaimLockWaitMs, resolveWriteLockWaitMs } from '@/lib/persistence/owner-lock-waits';
+
 import type { OwnerAuthenticator } from './types';
 
 /**
@@ -52,6 +54,12 @@ function builtInFromEnvironment(): OwnerAuthenticator {
 const defaultOwnerAuthenticator: OwnerAuthenticator = {
   name: 'default',
   authenticate: async (req) => builtInFromEnvironment().authenticate(req),
+  // The anonymous built-in is asked first in every mode: anonymous ids minted
+  // before a deployment switched to accounts are still anonymous owners.
+  describeStoredOwner: (ownerId) =>
+    anonymousCookie.describeStoredOwner?.(ownerId) ??
+    builtInFromEnvironment().describeStoredOwner?.(ownerId),
+  clearPendingClaim: () => builtInFromEnvironment().clearPendingClaim?.() ?? [],
   authenticateFromContext: async () => {
     const selected = builtInFromEnvironment();
     // Every built-in implements it; the check keeps the type honest.
@@ -94,10 +102,15 @@ export function configureOwnerAuthenticator(authenticator: OwnerAuthenticator): 
     !authenticator.name ||
     typeof authenticator.authenticate !== 'function' ||
     (authenticator.authenticateFromContext !== undefined &&
-      typeof authenticator.authenticateFromContext !== 'function')
+      typeof authenticator.authenticateFromContext !== 'function') ||
+    (['describeStoredOwner', 'clearPendingClaim'] as const).some(
+      (method) =>
+        authenticator[method] !== undefined && typeof authenticator[method] !== 'function',
+    )
   ) {
     throw new Error(
-      'configureOwnerAuthenticator expects { name, authenticate(req), authenticateFromContext?() }',
+      'configureOwnerAuthenticator expects { name, authenticate(req), authenticateFromContext?(), ' +
+        'describeStoredOwner?(ownerId), clearPendingClaim?() }',
     );
   }
   if (process.env.PERSISTENCE_SHARED_OWNER_ID?.trim()) {
@@ -139,6 +152,16 @@ export type OwnerIdentityMode =
  * is configured, so a leftover one is reported rather than ignored.
  */
 export function validateOwnerIdentityConfiguration(): OwnerIdentityMode {
+  const trigger = process.env.OWNER_CLAIM_TRIGGER?.trim();
+  if (trigger && trigger !== 'explicit' && trigger !== 'auto') {
+    throw new Error(
+      `OWNER_CLAIM_TRIGGER must be "explicit" or "auto", got ${JSON.stringify(trigger)}.`,
+    );
+  }
+  // Read on every owner write and claim: a malformed value must stop the
+  // server here, not fail each write as a 500.
+  resolveWriteLockWaitMs();
+  resolveClaimLockWaitMs();
   const configured = registry().configured;
   if (configured && trustedProxyModeSelected()) {
     throw new Error(

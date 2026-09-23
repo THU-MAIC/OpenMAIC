@@ -15,6 +15,8 @@ import type { PersistenceHooks } from '@/lib/server/persistence-hooks/types';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
 const TEST_SCHEMA = 'openmaic_host_create_hooks_test';
+/** This suite's connections, told apart from other suites' in `pg_locks`. */
+const POOL_NAME = 'host-create-hooks-suite';
 const OWNER = 'user:alice';
 const NOW = 1_800_000_000_000;
 
@@ -48,6 +50,7 @@ describe.skipIf(!contractUrl)('host create hooks on PostgreSQL', () => {
       connectionString: contractUrl,
       options: `-c search_path=${TEST_SCHEMA}`,
       max: 6,
+      application_name: POOL_NAME,
     });
     const databaseUrl = `${contractUrl}${contractUrl!.includes('?') ? '&' : '?'}application_name=host-create-hooks`;
     process.env.DATABASE_URL = databaseUrl;
@@ -143,16 +146,81 @@ describe.skipIf(!contractUrl)('host create hooks on PostgreSQL', () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
     await expect(counts('stage-pg-race')).resolves.toEqual({ stages: 1, meta: 1, host: 1 });
 
-    // The lock is transaction-scoped: nothing is left held. (The schema
-    // bootstrap lock is left out: another suite may be booting a provider
-    // against this database at the same moment.)
+    // The lock is transaction-scoped: nothing is left held by this suite's
+    // connections. (Other suites may hold advisory locks of their own against
+    // this database at the same moment -- a schema bootstrap, or the owner
+    // identity locks the claim suite parks on -- so only this pool counts.)
     const held = await pool.query<{ n: string }>(
       `SELECT COUNT(*) AS n FROM pg_locks
         WHERE locktype = 'advisory' AND granted
-          AND NOT (classid = 0 AND objsubid = 1 AND objid = $1::bigint::oid)`,
-      [SCHEMA_BOOTSTRAP_LOCK_KEY],
+          AND NOT (classid = 0 AND objsubid = 1 AND objid = $1::bigint::oid)
+          AND pid IN (SELECT pid FROM pg_stat_activity WHERE application_name = $2)`,
+      [SCHEMA_BOOTSTRAP_LOCK_KEY, POOL_NAME],
     );
     expect(Number(held.rows[0]!.n)).toBe(0);
+  });
+
+  it('a second create of one id waits for the first and saves as an update, never as reserved', async () => {
+    // The interleaving that used to refuse the second create: its ownership
+    // probe runs before the first create commits, and its document probe
+    // after. The second create's connection holds its document probe until
+    // the first create has committed, so without the per-id create lock that
+    // interleaving happens every time.
+    let firstParked!: () => void;
+    const parked = new Promise<void>((resolve) => (firstParked = resolve));
+    let releaseFirst!: () => void;
+    const released = new Promise<void>((resolve) => (releaseFirst = resolve));
+    let firstCommitted!: () => void;
+    const committed = new Promise<void>((resolve) => (firstCommitted = resolve));
+    const onCreate = vi.fn(
+      async (...args: Parameters<NonNullable<PersistenceHooks['onCreate']>>) => {
+        if (onCreate.mock.calls.length === 1) {
+          firstParked();
+          await released;
+        }
+        await recordHostRow!(...args);
+      },
+    );
+    const first = store({ name: 'host', onCreate }).saveDocument(
+      courseDocument('stage-pg-probe', 'First'),
+    );
+    await parked;
+
+    const heldBetweenProbes = {
+      async connect() {
+        const client = await pool.connect();
+        return {
+          query: async (text: string, params?: unknown[]) => {
+            if (text.includes('SELECT EXISTS(SELECT 1 FROM document_stages')) await committed;
+            return client.query(text, params);
+          },
+          release: () => client.release(),
+        };
+      },
+    };
+    const second = createOwnerBoundDocumentStore({
+      pool: heldBetweenProbes,
+      ownerId: OWNER,
+      validateScene: validateAppScene,
+      validateStage: validateAppStage,
+      createHooks: { name: 'host', onCreate },
+    }).saveDocument(courseDocument('stage-pg-probe', 'Second'));
+
+    // Let the second create reach whatever it waits on, then commit the first.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    releaseFirst();
+    await first;
+    firstCommitted();
+
+    await expect(second).resolves.toBeUndefined();
+    // One create, one update: the hooks ran once, and the second save won.
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    await expect(counts('stage-pg-probe')).resolves.toEqual({ stages: 1, meta: 1, host: 1 });
+    const name = await pool.query<{ name: string }>(
+      'SELECT name FROM document_stages WHERE id = $1',
+      ['stage-pg-probe'],
+    );
+    expect(name.rows[0]?.name).toBe('Second');
   });
 
   it('gates concurrent operations on one shared store instance by their own operation', async () => {

@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
   readOwnerRetirement: vi.fn(),
+  isRetiredStoredOwner: vi.fn(async (_ownerId: string) => false),
   readOwnerSessionEventMaxId: vi.fn(),
   readOwnerSessionEventsAfter: vi.fn(),
   resolveRequestOwnerId: vi.fn(),
@@ -25,6 +26,10 @@ vi.mock('@/lib/server/agent-runtime/store', () => ({
     readMaxId: mocks.readOwnerSessionEventMaxId,
     readAfter: mocks.readOwnerSessionEventsAfter,
   })),
+}));
+vi.mock('@/lib/persistence/owner-merges', async (importActual) => ({
+  ...(await importActual<typeof import('@/lib/persistence/owner-merges')>()),
+  isRetiredStoredOwner: mocks.isRetiredStoredOwner,
 }));
 vi.mock('@/lib/server/agent-runtime/event-notify-bus', () => ({
   subscribeAgentEventWakeup: vi.fn((_route, wake: () => void) => {
@@ -494,6 +499,26 @@ describe('GET owner session events', () => {
     expect(mocks.readOwnerRetirement).toHaveBeenCalledTimes(1);
   });
 
+  it('answers a connect by an already retired identity with owner_moved and drops its credential', async () => {
+    mocks.resolveRequestOwnerId.mockReturnValueOnce('anon:retired');
+    mocks.isRetiredStoredOwner.mockResolvedValueOnce(true);
+
+    const response = await call();
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/event-stream');
+    expect(await response.text()).toBe(
+      'event: owner_moved\ndata: {"type":"owner_moved","action":"reconnect"}\n\n',
+    );
+    // The retired cookie is dropped, so the client's reconnect is a fresh
+    // identity instead of the same retired one every heartbeat.
+    expect(
+      response.headers.getSetCookie().some((cookie) => cookie.startsWith('anonymous_id=;')),
+    ).toBe(true);
+    expect(mocks.isRetiredStoredOwner).toHaveBeenCalledWith('anon:retired');
+    expect(mocks.readOwnerSessionEventMaxId).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('checks retirement only on heartbeat, emits owner_moved, and ends the established stream', async () => {
     mocks.resolveRequestOwnerId.mockReturnValueOnce('anon:old');
     mocks.readOwnerRetirement.mockResolvedValueOnce('user:new');
@@ -509,9 +534,10 @@ describe('GET owner session events', () => {
     expect(await readChunk(reader)).toBe(': ping\n\n');
     const moved = await readChunk(reader);
     expect(moved).toContain('event: owner_moved');
-    expect(moved).toContain(
-      'data: {"type":"owner_moved","newOwnerId":"user:new","action":"reconnect"}',
-    );
+    // Only that it moved: the claiming account's id is not disclosed to the
+    // holder of the retired identity.
+    expect(moved).toContain('data: {"type":"owner_moved","action":"reconnect"}');
+    expect(moved).not.toContain('user:new');
     expect(await reader.read()).toEqual({ done: true, value: undefined });
     expect(mocks.readOwnerRetirement).toHaveBeenCalledWith('anon:old');
     expect(vi.getTimerCount()).toBe(0);

@@ -58,6 +58,33 @@ function anonymousCookieHeader(id: string): string {
   );
 }
 
+/**
+ * The anonymous owner id a request's cookie names, when the cookie is present
+ * and well-formed; `undefined` otherwise. Nothing is minted. Used by the
+ * trusted-proxy built-in to recognize an anonymous identity presented beside a
+ * gateway user (the claim candidate), so the cookie is still parsed only here.
+ */
+export function readAnonymousOwnerId(headers: Headers): string | undefined {
+  const existingId = readCookie(headers, ANONYMOUS_COOKIE);
+  return existingId && UUID_V4.test(existingId)
+    ? `${ANONYMOUS_OWNER_PREFIX}${existingId}`
+    : undefined;
+}
+
+/** A `Set-Cookie` value that removes the anonymous owner cookie. */
+export function clearAnonymousCookieHeader(): string {
+  const secure = anonymousCookieSecure() ? '; Secure' : '';
+  return `${ANONYMOUS_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+}
+
+/** Whether `ownerId` has the shape this built-in mints: `anon:<uuid v4>`. */
+export function isAnonymousCookieOwnerId(ownerId: string): boolean {
+  return (
+    ownerId.slice(0, ANONYMOUS_OWNER_PREFIX.length) === ANONYMOUS_OWNER_PREFIX &&
+    UUID_V4.test(ownerId.slice(ANONYMOUS_OWNER_PREFIX.length))
+  );
+}
+
 const NO_ROLES: ReadonlySet<string> = new Set<string>();
 
 /**
@@ -127,5 +154,10 @@ export function createAnonymousCookieAuthenticator(): OwnerAuthenticator {
     name: 'anonymousCookie',
     authenticate: async (req) => authenticateAnonymousRequest(req),
     authenticateFromContext: authenticateAnonymousContext,
+    describeStoredOwner: (ownerId) =>
+      isAnonymousCookieOwnerId(ownerId) ? { kind: 'anonymous', roles: NO_ROLES } : undefined,
+    // Dropping a retired cookie is all recovery takes: the next request mints
+    // a fresh anonymous owner.
+    clearPendingClaim: () => [clearAnonymousCookieHeader()],
   };
 }

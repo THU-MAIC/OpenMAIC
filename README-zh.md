@@ -443,6 +443,24 @@ oauth2-proxy（v7.14 及以上）的示例配置见英文 README 的 “Accounts
 
 有自有账号体系的部署可实现 `OwnerAuthenticator`，并在 `instrumentation.ts` 的 `register()` 中调用一次 `configureOwnerAuthenticator(...)` 注册（示例见英文 README 的 “Owner identity” 一节）。无效凭证必须返回 `INVALID_CREDENTIAL`，各接口统一返回 `401`，绝不回退为新的匿名所有者。注册冲突在启动时报错：重复调用 `configureOwnerAuthenticator`，或同时设置了 `PERSISTENCE_SHARED_OWNER_ID` 或 `OWNER_AUTHENTICATOR`，都会让 `register()` 抛错、服务无法启动；principal 则按请求校验：注册的认证器返回的 owner id 不是 1–256 个可打印、无空格的 ASCII 字符（或 `kind` / `assurance` 未知）时，该请求返回 `500`，不会写入存储。同一个解析出的所有者也是 `/api/persistence` 的运行时学习者 key 和资产分区，因此注册的认证器同样管辖它们。
 
+##### 认领匿名工作
+
+访客先匿名使用、后登录，会同时拥有两个所有者：写入课程时的匿名所有者，以及登录后的账号。**认领（claim）**在一个数据库事务内把匿名所有者名下的全部内容转到账号，并让该匿名 id 退役。
+
+**何时会出现认领。** 请求必须同时带有账号身份和匿名身份。使用内置认证器时只有一种情况：部署从默认的 `anonymousCookie` 切换到 `trustedProxyHeader`，而访客仍持有切换前的 `anonymous_id` cookie。此时 `trustedProxyHeader` 解析出的网关用户会带有指向该匿名所有者的 `pendingClaim`，即覆盖“把匿名部署迁移到身份网关”的场景。若要在同一部署中让访客先匿名、后登录，需要一个同时接受两类请求的宿主认证器：它在已登录的 principal 上设置 `pendingClaim`，并通过 `describeStoredOwner` 把这些匿名 id 描述为匿名。
+
+触发认领之前不会移动任何数据：默认由应用页面以 JSON 请求体（`{}`）显式调用 `POST /api/identity/claim`，成功返回 `200 { status: 'claimed', moved }` 或 `200 { status: 'already-claimed' }`，并通过 `Set-Cookie` 删除匿名 cookie；设置 `OWNER_CLAIM_TRIGGER=auto` 后，携带待认领身份的第一个路由请求会在处理前自动认领（显式认领路由除外，它们仍报告自己的认领结果；Server Action 不会触发）。同一浏览器可能由多人共用时建议保留显式触发，否则最先登录的人会拿走其中的匿名内容。**匿名 cookie 是持有者凭证（bearer credential）**：持有它的人可以读取、编辑这些匿名内容，并能在登录后把它们认领进自己的账号；在共用设备上，应在下一个人登录前清除它（认领会自动清除）。非同源 JSON 请求（`Sec-Fetch-Site` 不是 `same-origin`、`Origin` 不是本站，或内容类型不是 `application/json`）返回 `403 CROSS_ORIGIN_REFUSED`；匿名请求者返回 `403 TARGET_ANONYMOUS`；账号旁没有匿名 cookie 返回 `409 NO_PENDING_CLAIM`；该匿名所有者已被其他账号认领时返回 `409 ALREADY_CLAIMED_ELSEWHERE` 并删除 cookie；任一所有者正在写入、认领未能及时拿到锁时返回 `503 OWNER_BUSY` 并附 `Retry-After`，可原样重试。
+
+按固定顺序移动：文件夹（账号已有同名文件夹时合并进去，名称比较不区分大小写，与 `createFolder` 一致；id 已被账号的其他文件夹占用时换用新 id；其余原样移动，排在账号自己的文件夹之后，课程归档随之调整）、课程（`stage_meta`，含已删除的课程）、资料、Agent 会话及其会话列表历史、用户技能（账号已占用的名称改为双方都未占用的第一个名称，如 `my-notes-2`、`my-notes-3`……）、运行时会话（学习者 key，按存储原样改键，由新版本写入的会话不会阻止认领）、资产条目（按所有者的分区，认领后的课程对所有观看者仍能显示其媒体）。移动的内容不受配额限制：账号保留全部内容，若因此超出资产、资料、技能或文件夹上限，则在降回上限以下之前不能再新增。认领记录在 `owner_merges` 表中。
+
+规则：只能认领匿名所有者，且只能由非匿名所有者认领；重复认领同一对所有者会成功且不做任何事；已被某账号认领的匿名所有者不能再被其他账号认领；不允许链式认领（已退役的账号不能认领，已吸收过其他所有者的所有者不能被认领），因此每个退役 id 一步即可转到当前所有者。
+
+认领后该匿名 id **退役**：仍携带它的请求不会再以它写入任何内容。经 `/api/persistence` 的创建（文档、文件夹、资产、运行时会话）、文件夹、课程、资料和技能上传路由，以及 `/api/persistence` 的其他写入都返回 `403 OWNER_RETIRED`；按 id 写入已随认领移走的行（删除技能、向 Agent 会话发消息）同样返回 `403 OWNER_RETIRED`。这些响应都带有删除该退役匿名 cookie 的 `Set-Cookie`（认证器的 `clearPendingClaim`），浏览器的下一个请求会得到新的匿名所有者；退役 id 的课程库显示为空。认领之前已开始、脱离请求继续运行的工作（Agent 运行中的课程编辑、生成的媒体和新建技能）会随 id 转到账号，因此作者登录时仍在生成的课程会进入其账号；与认领并发、由请求创建的 Agent 会话会写入账号，如同在认领前创建。
+
+每个创建或修改所有者数据的写事务都以共享模式获取该所有者的 PostgreSQL advisory 锁（身份锁）作为第一条语句，认领则在修改任何行之前以独占模式获取双方的身份锁；因此受保护的写入与认领并发时，要么先提交并被移动，要么等待后被拒绝，测试中这些写入既未出现死锁，也未在退役 id 下残留数据。等待都有上限：认领获取两把身份锁最多等 `OWNER_CLAIM_LOCK_WAIT_MS`（默认 5000）毫秒（等待期间 PostgreSQL 会让双方新的写入排在它后面，因此这段等待要短）；写入获取所有者锁最多等 `OWNER_WRITE_LOCK_WAIT_MS`（默认 30000）毫秒；上传在写入字节期间持有该锁，因此认领会在上限内等待进行中的上传。超时返回 `503 OWNER_BUSY` 并附 `Retry-After`，不写入任何内容。资产回收器不获取身份锁，与认领并发处理同一批条目时 PostgreSQL 可能中止其中一方，被这样中止的认领同样返回 `OWNER_BUSY`。
+
+宿主可以在 `instrumentation.ts` 中用 `registerClaimParticipant({ name, order, rekey(tx, from, to) })` 为自有的按所有者划分的表注册参与方（在认领事务内运行，抛错则所有参与方的改动都不保留；核心参与方占用顺序 100–700，宿主建议从 1000 起），用 `claimOwner(from, to)` / `claimPendingOwner(principal)` 在宿主代码中发起认领；`OwnerAuthenticator` 还可以实现 `describeStoredOwner(ownerId)`（只持有已存储 id 的工作据此得知所有者类型，见 `principalFromStoredOwner`；认领的来源必须被描述为匿名）和 `clearPendingClaim()`（删除其匿名凭证的 `Set-Cookie` 值）。退役 id 的转发由核心的 `owner_merges` 负责，没有宿主钩子。`owner_merges` 只记录对匿名所有者的认领，因为写入保护只对认证器描述为匿名的 id 强制退役：`describeStoredOwner` 对同一 id 的描述必须保持稳定，读取到退役非匿名所有者的记录时会直接报错。宿主若要合并两个已登录账号，应自行移动数据（注册自己的参与方），并在认证器中拒绝被合并掉的账号。`OWNER_WRITE_LOCK_WAIT_MS` 与 `OWNER_CLAIM_LOCK_WAIT_MS` 在启动时校验。示例见英文 README 的 “Claiming anonymous work” 一节。
+
 ##### 宿主扩展钩子
 
 宿主可以在四个位置扩展产品行为而无需分叉路由，注册方式与认证器相同：在 `instrumentation.ts` 的 `register()` 中调用一次，首次使用后即封存（重复调用或在服务已开始使用后调用都会抛错）。未注册任何钩子时，行为与上文完全一致。`configurePersistenceHooks({ name, authorizeCreate, onCreate, library, beforeAssetAllocate })` 提供：课程创建时在同一事务内的授权与副作用（拒绝返回 `403 CREATE_REFUSED`，抛错则整个创建回滚；已存在课程的保存与编辑不会触发）；`GET /api/stages` 列出哪些课程（提供方返回 stage id，路由会剔除读取路径会拒绝的 id）；以及资产上传前的准入（新建 `POST /assets` 与替换 `PUT /assets/{id}/content` 都会经过，`req.operation` 区分二者；返回 `Response` 即拒绝，此时尚未存储任何字节、也未计入配额）。钩子的 `actor.source` 区分请求写入（附带 `principal`）与后台 Agent 运行写入（无 principal，拒绝时 Agent 只会得到固定的“已被部署拒绝”结果，不会看到宿主的 `message`）。普通对象与类实例均可注册。`configureAssetByteStore({ name, create, signsReadUrls })` 取代 `ASSET_S3_BUCKET` 开关，请求路径与资产回收器使用同一注册；在 `ASSET_BYTE_EGRESS=redirect` 下未声明 `signsReadUrls: true` 的存储会在启动时报错。示例与完整约定见英文 README 的 “Host extension hooks” 一节。

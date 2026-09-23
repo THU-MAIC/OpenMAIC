@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
   runtimeEnabled: true,
   createSession: vi.fn(),
+  readRetirement: vi.fn(async (_ownerId: string): Promise<string | null> => null),
   postUserMessage: vi.fn(),
   softDeleteSession: vi.fn(),
   bindOwnerMaterialsToSession: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock('@/lib/server/agent-runtime/store', () => ({
     postUserMessage: mocks.postUserMessage,
     softDeleteSession: mocks.softDeleteSession,
     listSessionsByOwner: mocks.listSessionsByOwner,
+    readRetirement: mocks.readRetirement,
   }),
 }));
 vi.mock('@/lib/server/agent-runtime/session-materials', () => ({

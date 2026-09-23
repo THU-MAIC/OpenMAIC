@@ -26,6 +26,7 @@ import { apiError } from '@/lib/server/api-response';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { ownerApiError, ownerJson, ownerNotFound } from '@/lib/server/agent-runtime/route-response';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import { STAGE_NAME_MAX_LENGTH } from '@/lib/server/agent-runtime/stage-limits';
 
 export const runtime = 'nodejs';
@@ -44,6 +45,8 @@ function isStoreValidationError(error: unknown): error is Error {
 
 /** Map a store save failure onto the route's error surface. */
 function mapSaveError(error: unknown, headers: Headers) {
+  const claimed = ownerWriteErrorResponse(error, headers);
+  if (claimed) return claimed;
   if (error instanceof DocumentNotFoundError) return ownerNotFound(headers);
   if (error instanceof DocumentVersionError) {
     // A document written by a newer client cannot be saved by this one.
@@ -183,7 +186,13 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const { id } = await params;
     const store = await getOwnerScopedDocumentStore(ownerId);
-    await store.deleteDocument(id);
+    try {
+      await store.deleteDocument(id);
+    } catch (error) {
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
+      throw error;
+    }
     return ownerJson({ ok: true }, 200, responseHeaders);
   });
 }

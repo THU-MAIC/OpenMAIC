@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 
+import { DocumentWriteRefusedError, type RuntimeStore } from '@openmaic/storage';
+import type { Queryable } from '@openmaic/storage/document/pg';
 import {
   createStorageHttpHandler,
   DEFAULT_SIGNED_URL_TTL_SECONDS,
@@ -19,6 +21,18 @@ import {
 } from '@/lib/persistence/document-access';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
 import { assetPrincipalForOwner, createOwnerAssetStore } from '@/lib/persistence/owner-assets';
+import {
+  claimRefusalResponse,
+  isSameOriginJsonRequest,
+  runPendingClaim,
+} from '@/lib/persistence/owner-claim-http';
+import {
+  isOwnerRetired,
+  OWNER_RETIRED,
+  OwnerBusyError,
+  ownerRetiredResponse,
+  retiredCredentialCookies,
+} from '@/lib/persistence/owner-merges';
 import { guardedServerRuntimeStore } from '@/lib/persistence/runtime-tombstone-guard';
 import {
   getServerPersistenceProvider,
@@ -116,6 +130,94 @@ interface AssetAdmission {
   refusal?: Response;
 }
 
+/** The runtime contract's learner merge route, as this route sees it. */
+const LEARNER_MERGE_PATH = '/runtime/learners/merge';
+
+/**
+ * Whether `principal` may merge runtime learner `from` into `to`: only its own
+ * pending claim into itself, from a non-anonymous principal, on a same-origin
+ * JSON request (the merge acts on cookies; see `isSameOriginJsonRequest`).
+ */
+function mayMergeLearner(
+  principal: OwnerPrincipal,
+  request: Request,
+  fromLearnerKey: string,
+  toLearnerKey: string,
+): boolean {
+  return (
+    principal.kind !== 'anonymous' &&
+    principal.pendingClaim?.fromOwnerId === fromLearnerKey &&
+    toLearnerKey === principal.ownerId &&
+    isSameOriginJsonRequest(request)
+  );
+}
+
+/**
+ * The runtime store the handler gets, with its learner merge replaced by a
+ * claim: a runtime-only re-key would move an owner's sessions and leave its
+ * courses, folders and media behind under an id nothing retires. Reached only
+ * after `authorizeMerge` allowed it; the canonical spelling of the route is
+ * answered before the handler (`handleLearnerMerge`) so refusals get their own
+ * status codes, and this covers any other spelling the handler routes.
+ */
+function mergeThroughClaim(store: RuntimeStore, principal: OwnerPrincipal): RuntimeStore {
+  return {
+    ...store,
+    mergeLearner: async () => {
+      const outcome = await runPendingClaim(principal);
+      if (!outcome.ok) {
+        // Typed, so the handler answers them as the claim endpoint does
+        // (`503` for a busy claim, `403` with the refusal's code otherwise)
+        // rather than as an internal error.
+        if (outcome.refusal === 'OWNER_BUSY') throw new OwnerBusyError();
+        throw new DocumentWriteRefusedError('', outcome.refusal, outcome.message);
+      }
+      return outcome.result.status === 'claimed' ? (outcome.result.moved.runtime ?? 0) : 0;
+    },
+  };
+}
+
+/**
+ * `POST /runtime/learners/merge` for this app: the runtime contract's shape
+ * (`{ fromLearnerKey, toLearnerKey }` in, `{ moved }` out), performed as a
+ * claim, with the claim endpoint's refusals and cookie handling.
+ */
+async function handleLearnerMerge(
+  request: Request,
+  principal: OwnerPrincipal,
+  responseHeaders: Headers,
+): Promise<Response> {
+  let body: { fromLearnerKey?: unknown; toLearnerKey?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return withHeaders(
+      jsonError(400, 'VALIDATION_FAILED', 'request body must be JSON'),
+      responseHeaders,
+    );
+  }
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    typeof body.fromLearnerKey !== 'string' ||
+    typeof body.toLearnerKey !== 'string' ||
+    !mayMergeLearner(principal, request, body.fromLearnerKey, body.toLearnerKey)
+  ) {
+    return withHeaders(
+      jsonError(403, 'FORBIDDEN_LEARNER', 'only your own pending claim can be merged'),
+      responseHeaders,
+    );
+  }
+  const outcome = await runPendingClaim(principal);
+  for (const cookie of outcome.setCookies) responseHeaders.append('Set-Cookie', cookie);
+  if (!outcome.ok) return claimRefusalResponse(outcome, responseHeaders);
+  const moved = outcome.result.status === 'claimed' ? (outcome.result.moved.runtime ?? 0) : 0;
+  return withHeaders(Response.json({ moved }, { status: 200 }), responseHeaders);
+}
+
+/** Methods that only read; every other method may write under the owner. */
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
 async function createPersistenceHandler(
   connectionString: string,
   principal: OwnerPrincipal,
@@ -163,7 +265,10 @@ async function createPersistenceHandler(
   const byteEgress = indirectEgressWithinGrace(
     configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
   );
-  const guardedRuntimeStore = guardedServerRuntimeStore(runtimeStore, pool);
+  const guardedRuntimeStore = mergeThroughClaim(
+    guardedServerRuntimeStore(runtimeStore, pool),
+    principal,
+  );
   return createStorageHttpHandler(guardedRuntimeStore, documentStore, {
     authenticate: async (request) => {
       if (request.url?.startsWith('/assets')) return assetPrincipal;
@@ -200,7 +305,13 @@ async function createPersistenceHandler(
             return false;
           },
         }),
-    authorizeMerge: async () => false,
+    // The runtime contract's learner merge is a claim: it is allowed only
+    // from the anonymous owner this request presents beside a non-anonymous
+    // one (its pendingClaim) into that owner, and it moves everything the
+    // anonymous owner holds, not only runtime sessions (see
+    // `mergeThroughClaim` below and lib/persistence/owner-claims.ts).
+    authorizeMerge: async (_runtimePrincipal, fromLearnerKey, toLearnerKey) =>
+      mayMergeLearner(principal, request, fromLearnerKey, toLearnerKey),
     authorizeAdmin: async () => false,
     authorizeDocuments: async () => access === 'allow',
     validateScene: validateAppScene,
@@ -209,7 +320,7 @@ async function createPersistenceHandler(
     assetStore: createOwnerAssetStore(assetStore, {
       ownerId,
       queryable: pool,
-      legacyMutations: { withTransaction, storeIn: assetStoreIn },
+      transactions: { withTransaction, storeIn: assetStoreIn },
     }),
     ...(byteEgress === undefined ? {} : { byteEgress }),
   });
@@ -408,6 +519,23 @@ async function handlePersistenceRequestInner(
               responseHeaders,
             );
       }
+      if (path === LEARNER_MERGE_PATH && request.method === 'POST') {
+        return await handleLearnerMerge(request, principal, responseHeaders);
+      }
+      // A request that still presents an identity a claim retired writes
+      // nothing: its work lives in the account now. What makes that exact is
+      // the fence inside every create transaction (documents, folders, asset
+      // allocations, runtime sessions), which answers `403 OWNER_RETIRED`
+      // itself. This check only answers the common case up front with the
+      // same status for every write, including writes by id to rows that
+      // moved (which would otherwise read as not found). It costs nothing for
+      // an owner that cannot be retired (see `isOwnerRetired`).
+      if (!READ_METHODS.has(request.method)) {
+        const { pool } = await getServerPersistenceProvider(connectionString, deps.poolFactory);
+        if (await isOwnerRetired(pool as unknown as Queryable, ownerId)) {
+          return withHeaders(ownerRetiredResponse(), responseHeaders);
+        }
+      }
       const action = parseDocumentAction(request.method, path);
       let access: DocumentAccess = 'allow';
       if (path === '/documents' || path.startsWith('/documents/')) {
@@ -440,7 +568,14 @@ async function handlePersistenceRequestInner(
               ),
               request,
             );
-      return withHeaders(admission.refusal ?? handled, responseHeaders);
+      const answered = admission.refusal ?? handled;
+      // A write the fence refused inside its transaction: drop the retired
+      // credential, as the up-front answer above does.
+      if (answered.status === 403 && (await responseErrorCode(answered)) === OWNER_RETIRED) {
+        for (const cookie of retiredCredentialCookies())
+          responseHeaders.append('Set-Cookie', cookie);
+      }
+      return withHeaders(answered, responseHeaders);
     } catch (error) {
       console.error('Embedded persistence route initialization failed', error);
       return withHeaders(

@@ -27,6 +27,7 @@ import type {
 } from '@/lib/server/persistence-hooks/types';
 
 import { assetReferencePrincipalsForOwner } from './owner-assets';
+import { fenceOwnerWrite } from './owner-merges';
 import { claimStageMeta, StageAccessError, tombstoneStageMeta } from './stage-meta';
 import { STAGE_META_OWNERSHIP } from './stage-meta-ownership';
 
@@ -326,7 +327,29 @@ export function createOwnerBoundDocumentStore<
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       try {
         const queryable = queryableFor(client);
-        if (operation && operation.mode !== 'read') await options.mutationFence?.(queryable);
+        if (operation && operation.mode !== 'read') {
+          // First, before any row lock: the identity lock orders this write
+          // against a claim of its owner, and a retired owner writes nothing
+          // (see `./owner-merges.ts`). A background run forwards its owner
+          // before it gets here (`getOwnerScopedDocumentStore`).
+          await fenceOwnerWrite(queryable, options.ownerId, operation.stageId);
+          await options.mutationFence?.(queryable);
+        }
+        if (operation?.mode === 'create' && operation.stageId) {
+          // Creates of one course id take turns. The probe below reads
+          // `stage_meta` and then `document_stages` in two statements, and a
+          // concurrent create of the same id commits both rows in between, so
+          // an unserialized second create could find the document row without
+          // its ownership row and refuse it as reserved. Serialized, the
+          // second create finds the first one's ownership row: for the same
+          // owner it is an update (no create hooks run again), for another
+          // owner a foreign refusal. Transaction-scoped; taken after the
+          // identity lock, and no claim takes it, so it adds no lock-order edge.
+          await queryable.query(
+            "SELECT pg_advisory_xact_lock(hashtextextended('openmaic.stage-create:' || $1, 0))",
+            [operation.stageId],
+          );
+        }
         if (operation?.stageId) {
           const lock = operation.mode === 'read' ? 'FOR SHARE' : 'FOR UPDATE';
           const result = await queryable.query<RawOwnershipRow>(

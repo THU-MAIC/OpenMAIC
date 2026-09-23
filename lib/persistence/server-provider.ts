@@ -17,6 +17,7 @@ import { configuredLazyAssetByteStore } from '@/lib/persistence/asset-byte-store
 import { resolveAssetPendingTtlMs } from '@/lib/persistence/asset-pending-ttl';
 import { resolveAssetQuotaBytes } from '@/lib/persistence/asset-quota';
 import { ensureOwnerMaterialSchema } from '@/lib/persistence/owner-materials';
+import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 import { ensureStageMetaSchema } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
@@ -122,6 +123,15 @@ async function createServerPersistenceProvider(
       runtimeStore: new PgRuntimeStore(queryable, {
         withTransaction,
         payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+        // Every runtime session is created by a request (the persistence
+        // route, the chat route's whiteboard), for the request's owner: the
+        // identity lock first, and a retired owner is refused
+        // (./owner-merges.ts), so a create racing a claim either lands before
+        // it and is moved, or is refused -- never left under the retired id.
+        resolveFinalLearner: async (transaction, learnerKey) => {
+          await fenceOwnerWrite(transaction, learnerKey);
+          return learnerKey;
+        },
       }),
       assetStore: assetRegistry(queryable, withTransaction),
       withTransaction,

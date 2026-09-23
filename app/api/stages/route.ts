@@ -17,6 +17,8 @@ import type { NextRequest } from 'next/server';
 import { randomBytes } from 'node:crypto';
 
 import { isDocumentWriteRefusedError } from '@openmaic/storage';
+
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
 import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
@@ -117,7 +119,10 @@ export async function POST(req: NextRequest) {
         outline,
       });
     } catch (error) {
-      // A host's authorizeCreate refused the course; nothing was written.
+      // A retired identity (claimed into an account), or a host's
+      // authorizeCreate refusal; nothing was written either way.
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
       if (isDocumentWriteRefusedError(error)) {
         return ownerApiError('CREATE_REFUSED', 403, error.message, responseHeaders);
       }

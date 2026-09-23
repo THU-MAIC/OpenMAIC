@@ -20,6 +20,25 @@ const SUBJECT_KINDS: ReadonlySet<SubjectKind> = new Set<SubjectKind>([
 ]);
 const ASSURANCES = new Set(['verified', 'unverified-legacy', 'minted']);
 
+/**
+ * A claim candidate is only meaningful beside a non-anonymous owner, names a
+ * different, storable owner, and says what its credential proves.
+ */
+function pendingClaimProblem(principal: OwnerPrincipal): string | undefined {
+  const claim = principal.pendingClaim;
+  if (claim === undefined) return undefined;
+  if (!claim || typeof claim !== 'object') return 'a pendingClaim that is not an object';
+  if (!isStorableOwnerId(claim.fromOwnerId)) {
+    return 'a pendingClaim.fromOwnerId outside 1-256 printable non-space ASCII characters';
+  }
+  if (claim.fromOwnerId === principal.ownerId) return 'a pendingClaim naming the owner itself';
+  if (!ASSURANCES.has(claim.assurance)) {
+    return `a pendingClaim with an unknown assurance ${JSON.stringify(claim.assurance)}`;
+  }
+  if (principal.kind === 'anonymous') return 'a pendingClaim on an anonymous principal';
+  return undefined;
+}
+
 function assertPrincipal(principal: OwnerPrincipal, authenticatorName: string): void {
   const problem =
     !principal || typeof principal !== 'object'
@@ -32,7 +51,7 @@ function assertPrincipal(principal: OwnerPrincipal, authenticatorName: string): 
             ? 'roles that are not a Set'
             : !ASSURANCES.has(principal.assurance)
               ? `an unknown assurance ${JSON.stringify(principal.assurance)}`
-              : undefined;
+              : pendingClaimProblem(principal);
   if (problem) {
     // A server misconfiguration, not a client error: surfaces as a 500.
     throw new Error(`Owner authenticator ${authenticatorName} returned ${problem}`);

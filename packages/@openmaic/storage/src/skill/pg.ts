@@ -44,6 +44,27 @@ export interface PgUserSkillStoreOptions {
   tableNames?: Partial<UserSkillTableNames>;
   /** Test seam; production callers normally use the default id scheme. */
   createId?: () => string;
+  /**
+   * Resolve the owner a create is for, as the create transaction's first
+   * statement. A host that retires owners (claiming anonymous work into an
+   * account) returns the owner a retired id now forwards to, and takes the
+   * same identity lock the retiring operation takes, so a create cannot
+   * commit under an owner that was retired while it ran. It may also throw to
+   * refuse the create. Defaults to the owner as given.
+   */
+  resolveFinalOwner?: (transaction: Queryable, ownerId: string) => Promise<string>;
+}
+
+/** What {@link PgUserSkillStore.mergeOwner} did. */
+export interface UserSkillOwnerMerge {
+  /** Live and deleted skills moved to the target owner. */
+  moved: number;
+  /**
+   * Live skills whose handle the target already used, renamed on the way:
+   * `from` is the old handle, `to` the new one. The target's own skills are
+   * never renamed.
+   */
+  renamed: { id: string; from: string; to: string }[];
 }
 
 /** Pinned default schema for the PostgreSQL user-skill backend. */
@@ -159,6 +180,24 @@ function refCondition(ref: string): { sql: string; params: unknown[] } {
   return { sql: `name = $1`, params: [handle] };
 }
 
+/** Longest handle the table's CHECK constraint admits. */
+const MAX_SKILL_HANDLE_LENGTH = 64;
+
+/**
+ * The first `handle-N` (N >= 2) not in `taken`, shortening the base so the
+ * result stays within the handle length limit. The base is a valid handle, so
+ * the result is one as well: a numeric segment is a valid segment, and a base
+ * cut at a hyphen loses the hyphen too.
+ */
+function freeSkillHandle(handle: string, taken: ReadonlySet<string>): string {
+  for (let n = 2; ; n += 1) {
+    const suffix = `-${n}`;
+    const base = handle.slice(0, MAX_SKILL_HANDLE_LENGTH - suffix.length).replace(/-+$/, '');
+    const candidate = `${base}${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
 function skillNotFound(ref: string): UserSkillError {
   // Deliberately identical whether the row does not exist or belongs to someone
   // else: a probe must not be able to learn that another user's handle is taken.
@@ -174,6 +213,7 @@ export class PgUserSkillStore implements UserSkillStore {
   private readonly transactionHook: WithTransaction;
   private readonly tableNames: UserSkillTableNames;
   private readonly createId: () => string;
+  private readonly resolveOwner: (transaction: Queryable, ownerId: string) => Promise<string>;
 
   constructor(queryable: Queryable, options: PgUserSkillStoreOptions) {
     if (typeof options?.withTransaction !== 'function') {
@@ -187,6 +227,7 @@ export class PgUserSkillStore implements UserSkillStore {
     this.transactionHook = options.withTransaction;
     this.tableNames = resolveTableNames(options.tableNames);
     this.createId = options.createId ?? (() => `usk_${randomBytes(12).toString('base64url')}`);
+    this.resolveOwner = options.resolveFinalOwner ?? (async (_transaction, ownerId) => ownerId);
   }
 
   private get table(): string {
@@ -197,7 +238,7 @@ export class PgUserSkillStore implements UserSkillStore {
     const result = await this.queryable.query<UserSkillRow>(
       `SELECT * FROM ${this.table}
         WHERE owner_id = $1 AND deleted_at IS NULL
-        ORDER BY created_at ASC`,
+        ORDER BY created_at ASC, id ASC`,
       [ownerId],
     );
     return result.rows.map(mapRow);
@@ -225,13 +266,18 @@ export class PgUserSkillStore implements UserSkillStore {
   }
 
   async create(
-    ownerId: string,
+    requestedOwnerId: string,
     input: { name: string; title: string; description: string; content: string },
   ): Promise<UserSkillRecord> {
     const value = validateUserSkillInput(input);
     const id = this.createId();
+    // The owner the row is written for: the requested one unless the host
+    // resolver forwards it (see `resolveFinalOwner`). Captured for the
+    // unique-violation backstop below, which reads outside the transaction.
+    let ownerId = requestedOwnerId;
     try {
       const rows = await this.transactionHook(async (tx) => {
+        ownerId = await this.resolveOwner(tx, requestedOwnerId);
         // Serialize creates per owner. The quota check below is a
         // read-then-write pair: under READ COMMITTED, two concurrent creates at
         // 49 rows would BOTH count 49 and both insert, overshooting the
@@ -361,6 +407,74 @@ export class PgUserSkillStore implements UserSkillStore {
         [row.id, next.title, next.description, next.content],
       );
       return { skill: mapRow(updated.rows[0]!), applied, changed: true };
+    });
+  }
+
+  /**
+   * Move every skill of `fromOwnerId` to `toOwnerId`, in the store's
+   * transaction (pin the store to an open transaction to run it inside a
+   * larger one).
+   *
+   * Handles are unique per owner among live skills, so a live skill whose
+   * handle the target already uses is renamed with the first free numeric
+   * suffix (`my-notes` becomes `my-notes-2`); the target's own skills keep
+   * theirs. Deleted skills move as they are. The per-owner skill limit is not
+   * applied: a merge never drops a skill, so the target may end up above it
+   * and simply cannot create more until it is back under.
+   *
+   * Takes both owners' create locks (the per-owner advisory lock `create`
+   * takes), in key order, so it cannot interleave with a create for either.
+   */
+  async mergeOwner(fromOwnerId: string, toOwnerId: string): Promise<UserSkillOwnerMerge> {
+    if (fromOwnerId === toOwnerId) return { moved: 0, renamed: [] };
+    return this.transactionHook(async (tx) => {
+      const keys = await tx.query<{ key: string }>(
+        `SELECT DISTINCT hashtext(owner::text)::text AS key
+           FROM unnest($1::text[]) AS owner
+          ORDER BY 1`,
+        [[fromOwnerId, toOwnerId]],
+      );
+      const ordered = keys.rows.map((row) => row.key).sort((a, b) => Number(a) - Number(b));
+      for (const key of ordered) {
+        await tx.query('SELECT pg_advisory_xact_lock($1::integer)', [key]);
+      }
+      const targetNames = new Set(
+        (
+          await tx.query<{ name: string }>(
+            `SELECT name FROM ${this.table} WHERE owner_id = $1 AND deleted_at IS NULL`,
+            [toOwnerId],
+          )
+        ).rows.map((row) => row.name),
+      );
+      const incoming = await tx.query<{ id: string; name: string }>(
+        `SELECT id, name FROM ${this.table}
+          WHERE owner_id = $1 AND deleted_at IS NULL
+          ORDER BY created_at ASC, id ASC
+          FOR UPDATE`,
+        [fromOwnerId],
+      );
+      // Every handle either side holds is reserved before anything is renamed:
+      // a source row renamed while it still belongs to the source must not take
+      // a handle another source row holds (the unique index is per owner), and
+      // after the move it must not take one the target holds. Only source rows
+      // whose handle the target already uses are renamed.
+      const taken = new Set([...targetNames, ...incoming.rows.map((row) => row.name)]);
+      const renamed: UserSkillOwnerMerge['renamed'] = [];
+      for (const row of incoming.rows) {
+        if (!targetNames.has(row.name)) continue;
+        const next = freeSkillHandle(row.name, taken);
+        taken.add(next);
+        await tx.query(`UPDATE ${this.table} SET name = $2, updated_at = now() WHERE id = $1`, [
+          row.id,
+          next,
+        ]);
+        renamed.push({ id: row.id, from: row.name, to: next });
+      }
+      const moved = await tx.query<{ id: string }>(
+        `UPDATE ${this.table} SET owner_id = $2 WHERE owner_id = $1 RETURNING id`,
+        [fromOwnerId, toOwnerId],
+      );
+      return { moved: moved.rows.length, renamed };
     });
   }
 }
