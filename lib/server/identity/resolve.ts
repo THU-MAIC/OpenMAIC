@@ -1,5 +1,6 @@
 import { getOwnerAuthenticator } from './registry';
 import type { AuthOutcome, OwnerAuthRequest, OwnerPrincipal, SubjectKind } from './types';
+import { isStorableOwnerId } from './types';
 
 /**
  * Owner resolution: the one call every owner-scoped entry point makes.
@@ -19,18 +20,11 @@ const SUBJECT_KINDS: ReadonlySet<SubjectKind> = new Set<SubjectKind>([
 ]);
 const ASSURANCES = new Set(['verified', 'unverified-legacy', 'minted']);
 
-/**
- * Core treats owner ids as opaque but they are stored verbatim and become part
- * of object keys, so they get a charset and length guard: printable ASCII
- * without spaces, at most 256 characters. Every id the built-ins produce passes.
- */
-const OWNER_ID_PATTERN = /^[\x21-\x7e]{1,256}$/;
-
 function assertPrincipal(principal: OwnerPrincipal, authenticatorName: string): void {
   const problem =
     !principal || typeof principal !== 'object'
       ? 'no principal'
-      : typeof principal.ownerId !== 'string' || !OWNER_ID_PATTERN.test(principal.ownerId)
+      : !isStorableOwnerId(principal.ownerId)
         ? 'an ownerId outside 1-256 printable non-space ASCII characters'
         : !SUBJECT_KINDS.has(principal.kind)
           ? `an unknown kind ${JSON.stringify(principal.kind)}`

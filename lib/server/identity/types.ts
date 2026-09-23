@@ -7,8 +7,9 @@
  * is an {@link OwnerPrincipal}, produced by exactly one configured
  * {@link OwnerAuthenticator} (see `./registry.ts`).
  *
- * The built-in authenticators (`./anonymous-cookie.ts`, `./shared-team.ts`)
- * reproduce the identities OpenMAIC has always used. A host with its own
+ * The built-in authenticators (`./anonymous-cookie.ts`, `./shared-team.ts`,
+ * `./trusted-proxy.ts`) cover per-browser, per-team and gateway-backed
+ * identities. A host with its own
  * accounts implements this interface and registers it at boot instead of
  * patching every route.
  */
@@ -34,7 +35,7 @@ export type OwnerAssurance = 'verified' | 'unverified-legacy' | 'minted';
 export const OWNER_ROLES = {
   /** May make a course public (`POST /api/stages/[id]/publish` and `/unpublish`). */
   coursePublish: 'course:publish',
-  /** Reserved for administrative surfaces. No built-in grants it. */
+  /** Reserved for administrative surfaces. Granted only by the trusted-proxy built-in, to configured groups. */
   admin: 'admin',
 } as const;
 
@@ -101,6 +102,18 @@ export interface OwnerAuthenticator {
    * `authenticate` mints cookies must implement this method.
    */
   authenticateFromContext?(): Promise<AuthOutcome>;
+}
+
+/**
+ * Core treats owner ids as opaque but they are stored verbatim and become part
+ * of object keys, so they get a charset and length guard: printable ASCII
+ * without spaces, at most 256 characters.
+ */
+const OWNER_ID_PATTERN = /^[\x21-\x7e]{1,256}$/;
+
+/** Whether a value is usable as an owner id (see {@link OwnerPrincipal.ownerId}). */
+export function isStorableOwnerId(value: unknown): value is string {
+  return typeof value === 'string' && OWNER_ID_PATTERN.test(value);
 }
 
 /** Whether a principal carries a role. */

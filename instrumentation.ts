@@ -15,9 +15,6 @@ export async function register(): Promise<void> {
   // want; the persistence stack is Node-only.
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
-  const { warnIfAccessCodeIsUnset } = await import('@/lib/server/access-code-warning');
-  warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
-
   // The asset quota, read here rather than at the first persistence request.
   // The provider that consumes it is lazy and memoised, so a malformed ceiling
   // would otherwise let the process boot, pass its health check, and then fail
@@ -37,11 +34,12 @@ export async function register(): Promise<void> {
   resolveAssetPendingTtlMs();
 
   // Owner identity, for the same reason and at the same moment. A malformed
-  // PERSISTENCE_SHARED_OWNER_ID would otherwise boot, pass its health check,
-  // and then fail every owner-scoped request — and an operator who meant to
-  // share one course library has no way to tell from the outside that their
-  // setting was not accepted. An empty value is treated as unset, so this only
-  // rejects values that are present and unusable.
+  // PERSISTENCE_SHARED_OWNER_ID, or the trusted-proxy authenticator without a
+  // usable gateway secret, would otherwise boot, pass its health check,
+  // and then fail every owner-scoped request — and an operator has no way to
+  // tell from the outside that their setting was not accepted. An empty value
+  // is treated as unset, so this only rejects values that are present and
+  // unusable.
   //
   // A host that brings its own identity registers its authenticator here,
   // before validation and before the server serves a request:
@@ -49,7 +47,14 @@ export async function register(): Promise<void> {
   //   const { configureOwnerAuthenticator } = await import('@/lib/server/identity');
   //   configureOwnerAuthenticator(myOwnerAuthenticator);
   const { validateOwnerIdentityConfiguration } = await import('@/lib/server/identity/registry');
-  validateOwnerIdentityConfiguration();
+  const identityMode = validateOwnerIdentityConfiguration();
+
+  // Behind a trusted identity gateway the gateway is the access gate, so an
+  // unset ACCESS_CODE is the expected configuration there, not an exposure.
+  if (identityMode !== 'trustedProxyHeader') {
+    const { warnIfAccessCodeIsUnset } = await import('@/lib/server/access-code-warning');
+    warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
+  }
 
   // Imported dynamically so the Edge bundle never pulls in `pg`.
   const { startAssetCollectorSchedule } =

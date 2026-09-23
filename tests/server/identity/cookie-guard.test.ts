@@ -60,8 +60,19 @@ const ANON_PREFIX_CHECK = new RegExp(
 const RETIRED_CLIENT_IDENTITY =
   /x-learner-key|PERSISTENCE_DEV_TOKEN|NEXT_PUBLIC_PERSISTENCE_TOKEN|PERSISTENCE_ALLOW_INSECURE_DEV_AUTH/i;
 
+/**
+ * Identity asserted by a gateway: the trusted-proxy built-in's default header
+ * names, the identity headers common gateways set (oauth2-proxy, Authelia and
+ * similar), the gateway secret header and the built-in's configuration. Such a
+ * header is trustworthy only after the secret check in
+ * `lib/server/identity/trusted-proxy.ts`; code that read one anywhere else
+ * would take a client-chosen user at its word.
+ */
+const GATEWAY_IDENTITY =
+  /x-forwarded-(?:user|groups|email|preferred-username)|x-auth-request-(?:user|groups|email|preferred-username)|\bremote-(?:user|groups|email|name)\b|x-openmaic-proxy-secret|TRUSTED_PROXY_/i;
+
 const BUILT_IN_IMPORT =
-  /createAnonymousCookieAuthenticator|createSharedTeamAuthenticator|resolveSharedOwnerId|identity\/(?:anonymous-cookie|shared-team)['"]/;
+  /createAnonymousCookieAuthenticator|createSharedTeamAuthenticator|createTrustedProxyAuthenticator|resolveSharedOwnerId|resolveTrustedProxyConfig|identity\/(?:anonymous-cookie|shared-team|trusted-proxy)['"]/;
 
 function packageSourceDirs(): string[] {
   const dirs: string[] = [];
@@ -105,6 +116,25 @@ describe('owner identity boundary', () => {
     expect(cookieModule).toMatch(/anonymous_id/);
     const registry = readFileSync(join(ROOT, IDENTITY_MODULE, 'registry.ts'), 'utf8');
     expect(registry).toMatch(BUILT_IN_IMPORT);
+    const trustedProxy = readFileSync(join(ROOT, IDENTITY_MODULE, 'trusted-proxy.ts'), 'utf8');
+    expect(trustedProxy).toMatch(GATEWAY_IDENTITY);
+  });
+
+  it.each([
+    "req.headers.get('x-forwarded-user')",
+    "headers.get('X-Forwarded-Groups')",
+    "headers.get('x-forwarded-email')",
+    "headers.get('x-auth-request-user')",
+    "headers.get('Remote-User')",
+    "headers.get('x-openmaic-proxy-secret')",
+    'process.env.TRUSTED_PROXY_SECRET',
+  ])('recognizes the gateway identity read %s', (code) => {
+    expect(code).toMatch(GATEWAY_IDENTITY);
+  });
+
+  it('does not flag unrelated forwarding headers', () => {
+    expect("headers.get('x-forwarded-for')").not.toMatch(GATEWAY_IDENTITY);
+    expect("headers.get('x-forwarded-proto')").not.toMatch(GATEWAY_IDENTITY);
   });
 
   it.each([
@@ -136,6 +166,10 @@ describe('owner identity boundary', () => {
 
   it('never reads a client-chosen learner key or the retired development token', () => {
     expect(offenders(RETIRED_CLIENT_IDENTITY)).toEqual([]);
+  });
+
+  it('reads gateway identity headers only inside lib/server/identity', () => {
+    expect(offenders(GATEWAY_IDENTITY)).toEqual([]);
   });
 
   it('keeps the concrete built-in authenticators inside lib/server/identity', () => {

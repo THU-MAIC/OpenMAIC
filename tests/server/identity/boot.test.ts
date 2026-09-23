@@ -37,6 +37,42 @@ describe('owner identity validation at boot', () => {
     await expect(register()).rejects.toThrow(/ACCESS_CODE/);
   });
 
+  it('fails the register() hook when trusted-proxy mode has no secret', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
+    vi.stubEnv('OWNER_AUTHENTICATOR', 'trusted-proxy');
+    vi.stubEnv('TRUSTED_PROXY_SECRET', '');
+    const { register } = await import('@/instrumentation');
+
+    await expect(register()).rejects.toThrow(/requires TRUSTED_PROXY_SECRET/);
+  });
+
+  it('fails the register() hook on a trusted-proxy variable without the selector', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
+    vi.stubEnv('OWNER_AUTHENTICATOR', '');
+    vi.stubEnv('TRUSTED_PROXY_SECRET', 'x'.repeat(40));
+    const { register } = await import('@/instrumentation');
+
+    await expect(register()).rejects.toThrow(/OWNER_AUTHENTICATOR/);
+  });
+
+  it('boots in trusted-proxy mode without an ACCESS_CODE warning', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    vi.stubEnv('ACCESS_CODE', '');
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
+    vi.stubEnv('OWNER_AUTHENTICATOR', 'trusted-proxy');
+    vi.stubEnv('TRUSTED_PROXY_SECRET', 'x'.repeat(40));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { resetAccessCodeWarningForTests } = await import('@/lib/server/access-code-warning');
+    resetAccessCodeWarningForTests();
+    const { register } = await import('@/instrumentation');
+
+    await expect(register()).resolves.toBeUndefined();
+    expect(warn.mock.calls.flat().join(' ')).not.toMatch(/ACCESS_CODE/);
+  });
+
   it('boots with the default configuration', async () => {
     vi.stubEnv('NEXT_RUNTIME', 'nodejs');
     vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');

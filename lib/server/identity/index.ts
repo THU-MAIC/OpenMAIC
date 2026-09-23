@@ -10,7 +10,8 @@
  * ```
  *
  * Route handlers and Server Actions resolve owners through `./with-owner.ts`
- * and `./resolve.ts`; nothing else reads identity cookies or headers. The
+ * and `./resolve.ts`; nothing else reads identity cookies or headers, including
+ * the gateway headers of the trusted-proxy built-in. The
  * built-in authenticators are wired only by `./registry.ts`, which selects
  * them from the environment when no authenticator is configured.
  */
