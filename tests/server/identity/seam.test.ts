@@ -240,6 +240,24 @@ describe('Server Actions through a configured authenticator', () => {
 
     await expect(requireContextOwner()).rejects.toThrow(/authenticateFromContext/);
   });
+
+  it('refuse setCookies returned from authenticateFromContext too', async () => {
+    configureOwnerAuthenticator({
+      name: 'context-minting',
+      authenticate: async () => INVALID,
+      authenticateFromContext: async () => ({
+        ok: true,
+        principal: userPrincipal('user:m'),
+        setCookies: ['session=1'],
+      }),
+    });
+
+    await expect(requireContextOwner()).rejects.toThrow(
+      /context-minting returned setCookies in a Server Action/,
+    );
+    await expect(deleteWorkspaceSession('session-3')).rejects.toThrow(/setCookies/);
+    expect(mocks.softDeleteSession).not.toHaveBeenCalled();
+  });
 });
 
 describe('core roles', () => {

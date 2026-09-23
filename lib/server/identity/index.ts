@@ -10,7 +10,9 @@
  * ```
  *
  * Route handlers and Server Actions resolve owners through `./with-owner.ts`
- * and `./resolve.ts`; nothing else reads identity cookies or headers.
+ * and `./resolve.ts`; nothing else reads identity cookies or headers. The
+ * built-in authenticators are wired only by `./registry.ts`, which selects
+ * them from the environment when no authenticator is configured.
  */
 export type {
   AuthOutcome,
@@ -22,5 +24,3 @@ export type {
 } from './types';
 export { OWNER_ROLES, principalHasRole } from './types';
 export { configureOwnerAuthenticator, getOwnerAuthenticator } from './registry';
-export { createAnonymousCookieAuthenticator } from './anonymous-cookie';
-export { createSharedTeamAuthenticator } from './shared-team';

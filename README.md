@@ -563,10 +563,15 @@ An invalid credential must be answered with `INVALID_CREDENTIAL`, which every
 surface turns into a `401`; it is never re-identified as a fresh anonymous
 owner. `setCookies` on a successful outcome ride every response, errors
 included. Server Actions call `authenticateFromContext()` when the
-authenticator has one, and otherwise `authenticate()` with the request headers.
-Registration is single-shot, fails the boot when repeated or combined with
-`PERSISTENCE_SHARED_OWNER_ID`, and owner ids must be 1-256 printable non-space
-ASCII characters. The runtime `x-learner-key` path of `/api/persistence` is not
+authenticator has one, and otherwise `authenticate()` with the request headers;
+in a Server Action cookies must be written through `next/headers`, and an
+outcome carrying `setCookies` is refused.
+
+Registration is checked at boot: calling `configureOwnerAuthenticator` a second
+time, or while `PERSISTENCE_SHARED_OWNER_ID` is set, throws from `register()`
+and the server does not start. Principals are checked per request: an owner id
+that is not 1-256 printable non-space ASCII characters (or an unknown `kind` /
+`assurance`) is rejected with a `500` for that request rather than stored. The runtime `x-learner-key` path of `/api/persistence` is not
 yet routed through the authenticator.
 
 ### Optional: Agent workbench and runtime

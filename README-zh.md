@@ -390,7 +390,7 @@ NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docke
 
 内置两种认证器：默认的 `anonymousCookie`（每个浏览器一个所有者，`anon:<uuid>`，来自 30 天 `HttpOnly` 的 `anonymous_id` cookie，不能发布课程）；设置 `PERSISTENCE_SHARED_OWNER_ID`（必须同时设置 `ACCESS_CODE`）时启用 `sharedTeam`（所有请求共用该固定 id，可以发布课程）。授权只看 principal 的 `kind` 和 `roles`，不解析 id 的形状；核心角色为 `course:publish` 和 `admin`（保留，内置认证器均不授予）。
 
-有自有账号体系的部署可实现 `OwnerAuthenticator`，并在 `instrumentation.ts` 的 `register()` 中调用一次 `configureOwnerAuthenticator(...)` 注册（示例见英文 README 的 “Owner identity” 一节）。无效凭证必须返回 `INVALID_CREDENTIAL`，各接口统一返回 `401`，绝不回退为新的匿名所有者。`/api/persistence` 的运行时 `x-learner-key` 路径暂未接入该认证器。
+有自有账号体系的部署可实现 `OwnerAuthenticator`，并在 `instrumentation.ts` 的 `register()` 中调用一次 `configureOwnerAuthenticator(...)` 注册（示例见英文 README 的 “Owner identity” 一节）。无效凭证必须返回 `INVALID_CREDENTIAL`，各接口统一返回 `401`，绝不回退为新的匿名所有者。注册冲突在启动时报错：重复调用 `configureOwnerAuthenticator`，或同时设置了 `PERSISTENCE_SHARED_OWNER_ID`，都会让 `register()` 抛错、服务无法启动；principal 则按请求校验：owner id 不是 1–256 个可打印、无空格的 ASCII 字符（或 `kind` / `assurance` 未知）时，该请求返回 `500`，不会写入存储。`/api/persistence` 的运行时 `x-learner-key` 路径暂未接入该认证器。
 
 ### 可选：MP4 视频导出（渲染服务）
 

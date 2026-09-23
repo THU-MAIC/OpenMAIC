@@ -88,23 +88,37 @@ export class InvalidOwnerCredentialError extends Error {
   }
 }
 
-async function resolveContextOwner(): Promise<AuthOutcome> {
-  const authenticator = getOwnerAuthenticator();
-  if (authenticator.authenticateFromContext) {
-    return checkedOutcome(await authenticator.authenticateFromContext(), authenticator.name);
-  }
-  const { headers } = await import('next/headers');
-  const outcome = checkedOutcome(
-    await authenticator.authenticate({ headers: new Headers(await headers()) }),
-    authenticator.name,
-  );
+/**
+ * A Server Action has no response whose headers could carry `setCookies`, so
+ * an outcome that asks for one would silently lose the cookie — and with it the
+ * identity it minted. Refuse it loudly on both context paths.
+ */
+function refuseContextSetCookies(outcome: AuthOutcome, authenticatorName: string): AuthOutcome {
   if (outcome.ok && outcome.setCookies?.length) {
     throw new Error(
-      `Owner authenticator ${authenticator.name} minted a cookie in a Server Action; ` +
-        'implement authenticateFromContext to write it through next/headers.',
+      `Owner authenticator ${authenticatorName} returned setCookies in a Server Action; ` +
+        'authenticateFromContext must write cookies itself through next/headers.',
     );
   }
   return outcome;
+}
+
+async function resolveContextOwner(): Promise<AuthOutcome> {
+  const authenticator = getOwnerAuthenticator();
+  if (authenticator.authenticateFromContext) {
+    return refuseContextSetCookies(
+      checkedOutcome(await authenticator.authenticateFromContext(), authenticator.name),
+      authenticator.name,
+    );
+  }
+  const { headers } = await import('next/headers');
+  return refuseContextSetCookies(
+    checkedOutcome(
+      await authenticator.authenticate({ headers: new Headers(await headers()) }),
+      authenticator.name,
+    ),
+    authenticator.name,
+  );
 }
 
 /**

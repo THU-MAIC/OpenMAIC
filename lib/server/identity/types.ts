@@ -91,10 +91,14 @@ export interface OwnerAuthenticator {
    * Resolve the owner inside a Server Action, where no `Request` exists and
    * cookies are read and written through `next/headers`.
    *
+   * A Server Action cannot forward raw `Set-Cookie` values, so this method
+   * must write any cookie it mints itself, through `cookies()` from
+   * `next/headers`, and must not populate `setCookies`: an outcome that does is
+   * refused with an error.
+   *
    * Optional: without it the request headers from `next/headers` are passed to
-   * {@link authenticate}. Because a Server Action cannot forward raw
-   * `Set-Cookie` values, an authenticator that mints cookies must implement
-   * this method and write them itself.
+   * {@link authenticate}, under the same rule — an authenticator whose
+   * `authenticate` mints cookies must implement this method.
    */
   authenticateFromContext?(): Promise<AuthOutcome>;
 }
