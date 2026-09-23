@@ -9,6 +9,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
+import { SCHEMA_BOOTSTRAP_LOCK_KEY } from '@/lib/persistence/schema-bootstrap-lock';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import type { PersistenceHooks } from '@/lib/server/persistence-hooks/types';
 
@@ -142,9 +143,14 @@ describe.skipIf(!contractUrl)('host create hooks on PostgreSQL', () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
     await expect(counts('stage-pg-race')).resolves.toEqual({ stages: 1, meta: 1, host: 1 });
 
-    // The lock is transaction-scoped: nothing is left held.
+    // The lock is transaction-scoped: nothing is left held. (The schema
+    // bootstrap lock is left out: another suite may be booting a provider
+    // against this database at the same moment.)
     const held = await pool.query<{ n: string }>(
-      "SELECT COUNT(*) AS n FROM pg_locks WHERE locktype = 'advisory' AND granted",
+      `SELECT COUNT(*) AS n FROM pg_locks
+        WHERE locktype = 'advisory' AND granted
+          AND NOT (classid = 0 AND objsubid = 1 AND objid = $1::bigint::oid)`,
+      [SCHEMA_BOOTSTRAP_LOCK_KEY],
     );
     expect(Number(held.rows[0]!.n)).toBe(0);
   });
