@@ -98,6 +98,26 @@ export class DocumentWriteRefusedError extends Error {
 }
 
 /**
+ * Whether `error` is a {@link DocumentWriteRefusedError}: an instance of this
+ * class, or one from another copy of this package (a host store bundled
+ * separately), recognized by its name and the refusal shape. The shape check
+ * matters: a `code` alone is not enough, since unrelated errors carry
+ * upper-case codes too (a database error's SQLSTATE, for one), and treating
+ * them as refusals would turn failures into `403`s.
+ */
+export function isDocumentWriteRefusedError(error: unknown): error is DocumentWriteRefusedError {
+  if (error instanceof DocumentWriteRefusedError) return true;
+  if (!(error instanceof Error)) return false;
+  const candidate = error as Error & { code?: unknown; stageId?: unknown };
+  return (
+    candidate.name === 'DocumentWriteRefusedError' &&
+    typeof candidate.code === 'string' &&
+    REFUSAL_CODE.test(candidate.code) &&
+    typeof candidate.stageId === 'string'
+  );
+}
+
+/**
  * The portable, embedded form of a persisted course. Storage normalizes it into
  * per-entity rows on write and reassembles it on read.
  *

@@ -44,13 +44,32 @@ INSERT INTO stage_meta (stage_id, owner_id)
 SELECT id, owner_id
   FROM document_stages
  WHERE owner_id IS NOT NULL
-ON CONFLICT (stage_id) DO NOTHING;
+ON CONFLICT (stage_id) DO NOTHING
+RETURNING stage_id;
 `;
 
+/**
+ * Ensure the schema, and adopt owned documents that have no ownership row.
+ *
+ * The adoption is a backfill for databases written before `stage_meta`
+ * existed. It runs at provider startup, outside any request, so it records
+ * ownership **without** the host create hooks (`authorizeCreate` / `onCreate`):
+ * there is no request, principal, or create transaction to run them in. On a
+ * database this version created, every course is claimed with its hooks at
+ * creation and the backfill adopts nothing; when it does adopt, it says how
+ * many so an operator can reconcile any host rows those courses lack.
+ */
 export async function ensureStageMetaSchema(queryable: Queryable): Promise<void> {
   for (const sql of STAGE_META_SCHEMA.split(';')) {
     const statement = sql.trim();
-    if (statement !== '') await queryable.query(statement);
+    if (statement === '') continue;
+    const result = await queryable.query(statement);
+    if (statement.startsWith('INSERT INTO stage_meta') && result.rows.length > 0) {
+      console.warn(
+        `[stage-meta] adopted ${result.rows.length} owned course(s) without an ownership row; ` +
+          'host create hooks do not run for adopted courses.',
+      );
+    }
   }
 }
 

@@ -165,10 +165,18 @@ export function lazyAssetByteStore(
 }
 
 /**
- * Check what a host factory built before anything uses it. A store that would
- * deadlock the registry, or that was declared to sign and cannot, fails here
- * -- on the asset request or collector pass that built it -- with the
- * registration named, instead of misbehaving later.
+ * Check what a host factory built before anything uses it. A store that is not
+ * an AssetByteStore, or that does not declare its bytes outside the registry
+ * database, fails here -- on the asset request or collector pass that built it
+ * -- with the registration named, instead of misbehaving later.
+ *
+ * `writesOutsideRegistryDatabase` is the host's assertion, and it is trusted:
+ * core cannot see where a store writes. A store that declares it and still
+ * writes through the registry's own PostgreSQL can deadlock on the blob-row
+ * lock the registry transaction holds. A host byte layer inside the registry
+ * database (one that forwards transaction-pinned `writeWith` / `deleteWith`)
+ * is not accepted: the lazy wrapper would have to know those methods before
+ * building the store, and that layer is exactly the built-in default.
  */
 function checkedRegisteredStore(
   registration: AssetByteStoreRegistration,
@@ -191,7 +199,13 @@ function checkedRegisteredStore(
     );
   }
   if (registration.signsReadUrls === true && typeof store.signReadUrl !== 'function') {
-    throw new Error(`${label} declares signsReadUrls but has no signReadUrl()`);
+    // Not fatal, and deliberately so: signing is only an egress optimization.
+    // Byte reads fall back to direct bytes (see lazyRegisteredByteStore) and
+    // the collector never signs, so refusing the store here would take
+    // uploads and reclamation down over a missing optimization.
+    console.warn(
+      `${label} declares signsReadUrls but has no signReadUrl(); asset reads use direct bytes.`,
+    );
   }
   return store;
 }
@@ -227,9 +241,13 @@ function lazyRegisteredByteStore(
     writesOutsideRegistryDatabase: true as const,
     ...(registration.signsReadUrls === true
       ? {
+          // Degrades like the built-in wrapper: a store that turns out not to
+          // sign answers `undefined`, and the read falls back to direct bytes.
           signReadUrl: async (hash, headers) => {
             const store = await resolve();
-            return store.signReadUrl!(hash, headers);
+            return typeof store.signReadUrl === 'function'
+              ? store.signReadUrl(hash, headers)
+              : undefined;
           },
         }
       : {}),

@@ -186,6 +186,43 @@ describe('library provider', () => {
     }
   });
 
+  it('drops ids the read path cannot address instead of failing the listing', async () => {
+    const { configurePersistenceHooks } = await import('@/lib/server/persistence-hooks');
+    configurePersistenceHooks({
+      name: 'test-host',
+      library: {
+        name: 'echoing',
+        list: async () => ['', '.', '..', 'stage\u0000nul', 'lone-\ud800', 'stage-alice-b'],
+      },
+    });
+
+    const { status, body } = await listAsAlice();
+    expect(status).toBe(200);
+    expect(body.stages).toEqual([expect.objectContaining({ id: 'stage-alice-b' })]);
+  });
+
+  it('refuses a provider answer over the documented limit', async () => {
+    const { MAX_LIBRARY_STAGE_IDS } = await import('@/lib/persistence/library');
+    const { configurePersistenceHooks } = await import('@/lib/server/persistence-hooks');
+    configurePersistenceHooks({
+      name: 'test-host',
+      library: {
+        name: 'unbounded',
+        list: async () =>
+          Array.from({ length: MAX_LIBRARY_STAGE_IDS + 1 }, (_, index) => `stage-${index}`),
+      },
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { GET } = await import('@/app/api/stages/route');
+    const response = await GET(
+      new NextRequest('http://localhost/api/stages', {
+        headers: { cookie: `anonymous_id=${ALICE_COOKIE}` },
+      }),
+    );
+    expect(response.status).toBe(500);
+  });
+
   it('answers 500 for a provider that does not return stage ids', async () => {
     const { configurePersistenceHooks } = await import('@/lib/server/persistence-hooks');
     configurePersistenceHooks({

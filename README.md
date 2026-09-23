@@ -781,8 +781,10 @@ same resolved owner is the runtime learner key and the asset partition of
 A host can add product behavior at four points without forking a route. They
 are registered like the authenticator: once, from `instrumentation.ts`
 `register()`, and sealed on first use (a second call, or a call after the
-server started using them, throws). With nothing registered, every point
-behaves exactly as described above.
+server started using them, throws). A plain object or a class instance both
+work; each hook is read once at registration and bound to the object passed,
+and an unknown key in a plain object (a misspelled hook) is refused. With
+nothing registered, every point behaves exactly as described above.
 
 ```ts
 // instrumentation.ts, inside register(), next to configureOwnerAuthenticator
@@ -815,7 +817,8 @@ configurePersistenceHooks({
       return [...(await ownedStageIds()), ...saved.rows.map((row) => row.stage_id)];
     },
   },
-  // Upload admission, before any byte is stored or counted.
+  // Upload admission (req.operation: 'create' | 'replace'), before any byte
+  // is stored or counted.
   async beforeAssetAllocate(principal, req) {
     const exhausted = await uploadBudgetExhausted(principal.ownerId, req.headers); // host code
     return exhausted
@@ -836,18 +839,26 @@ configureAssetByteStore({
 |---|---|---|
 | `authorizeCreate(tx, actor, stageId)` | Once per created course, inside its transaction, after the course rows are written | Resolve `{ allow: true }` or `{ allow: false, message? }`. A refusal rolls everything back and answers `403 CREATE_REFUSED` (on `/api/persistence` and `POST /api/stages`). |
 | `onCreate(tx, actor, stageId)` | Right after `authorizeCreate` allowed it, same transaction | Statements on `tx` commit with the course; a throw rolls the whole create back. |
-| `library.list({ principal, queryable, ownedStageIds })` | `GET /api/stages` | Resolve stage ids. The route lists them in that order as the usual items, without duplicates, and drops every id the read path would refuse (deleted or unclaimed). `folderId` is shown only on the principal's own courses. |
-| `beforeAssetAllocate(principal, req)` | `POST /api/persistence/assets`, after the owner is resolved and before the body is read | Resolve `undefined` to proceed or a `Response` to answer with it; nothing is stored and no quota is counted. `req` carries `method`, `url` and `headers`. |
-| `configureAssetByteStore({ name, create, signsReadUrls? })` | Lazily, by the persistence route and by the asset collector | `create({ queryable })` returns an `AssetByteStore` (`@openmaic/storage`) that keeps bytes outside the registry database (`writesOutsideRegistryDatabase: true`). Replaces the `ASSET_S3_BUCKET` switch; setting both stops the server. |
+| `library.list({ principal, queryable, ownedStageIds })` | `GET /api/stages` | Resolve at most 5000 stage ids (more is a `500`). The route lists them in that order as the usual items, without duplicates, and drops every id the read path would refuse (deleted, unclaimed, or not addressable at all, such as `..` or one containing NUL). `folderId` is shown only on the principal's own courses. |
+| `beforeAssetAllocate(principal, req)` | Every upload over `/api/persistence/assets`: `POST /assets` (`req.operation: 'create'`) and `PUT /assets/{id}/content` (`'replace'`, with the decoded `req.assetId`), after the owner is resolved and before the body is read | Resolve `undefined` to proceed or a `Response` to answer with it; nothing is stored and no quota is counted. Decide on `operation` / `assetId`, which are the storage handler's own routing; `url` is the request as received. Media an agent run generates on the server is not an HTTP upload and does not pass this hook; the per-owner quota still bounds it. |
+| `configureAssetByteStore({ name, create, signsReadUrls? })` | Lazily, by the persistence route and by the asset collector | `create({ queryable })` returns an `AssetByteStore` (`@openmaic/storage`) that keeps bytes outside the registry database and declares it with `writesOutsideRegistryDatabase: true`. The flag is trusted: a store that sets it but writes through the registry database can deadlock. Replaces the `ASSET_S3_BUCKET` switch; setting both stops the server. |
 
 **What counts as a create.** A course is created by the transaction that
 records its owner for the first time: the first save of a new stage id, from a
 request or from an agent run. Saving, editing or renaming a course the owner
 already holds is an update and calls neither create hook; so is a create that
 loses a race to a concurrent create of the same id by the same owner.
-`actor.ownerId` is always the owner. `actor.principal` is the principal the
-request resolved to, and is absent when a background agent run writes on the
-owner's behalf, because a run records only the owner id.
+`actor.ownerId` is always the owner. `actor.source` says who is writing:
+`'request'` carries `actor.principal`, the principal the request resolved to;
+`'background'` is an agent run writing on the owner's behalf after its request
+ended, and has no principal because a run records only the owner id. A
+background write is not a trusted caller: the owner started it, so apply the
+same limits to it. On a background write a refusal reaches the agent as a fixed
+"refused by this deployment" result; `message` is only sent to request clients.
+
+Courses written before ownership rows existed are adopted by a one-time
+backfill when the server starts. That runs outside any request, so no create
+hook runs for them; the server logs how many it adopted.
 
 **What a library may list.** Course reads are capability-by-id, so listing an
 id hands it out: a provider lists another owner's course only when the
@@ -858,7 +869,9 @@ would not serve.
 **Redirect egress.** The built-in layers are unchanged (S3 signs; the
 PostgreSQL column falls back to direct bytes). A configured store that does not
 declare `signsReadUrls: true` stops the server at boot under
-`ASSET_BYTE_EGRESS=redirect`, instead of being discovered by the first read.
+`ASSET_BYTE_EGRESS=redirect`, instead of being discovered by the first read. One
+that declares it but turns out to have no `signReadUrl` is logged and served
+with direct bytes, like the built-in fallback; the collector never signs.
 
 ### Optional: Agent workbench and runtime
 

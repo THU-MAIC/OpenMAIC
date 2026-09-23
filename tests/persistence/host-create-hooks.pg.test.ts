@@ -132,8 +132,13 @@ describe.skipIf(!contractUrl)('host create hooks on PostgreSQL', () => {
         store(hooks).saveDocument(courseDocument('stage-pg-race', `Attempt ${index}`)),
       ),
     );
-    const fulfilled = results.filter((result) => result.status === 'fulfilled');
-    expect(fulfilled.length).toBeGreaterThanOrEqual(1);
+    // Every attempt succeeds: one creates, the others commit as updates.
+    expect(results.map((result) => result.status)).toEqual([
+      'fulfilled',
+      'fulfilled',
+      'fulfilled',
+      'fulfilled',
+    ]);
     expect(onCreate).toHaveBeenCalledTimes(1);
     await expect(counts('stage-pg-race')).resolves.toEqual({ stages: 1, meta: 1, host: 1 });
 
@@ -142,5 +147,32 @@ describe.skipIf(!contractUrl)('host create hooks on PostgreSQL', () => {
       "SELECT COUNT(*) AS n FROM pg_locks WHERE locktype = 'advisory' AND granted",
     );
     expect(Number(held.rows[0]!.n)).toBe(0);
+  });
+
+  it('gates concurrent operations on one shared store instance by their own operation', async () => {
+    const onCreate = vi.fn(recordHostRow!);
+    // One instance for every call, as an agent run shares one store with all
+    // of its tools; each call runs on its own pooled connection.
+    const shared = store({ name: 'host', onCreate });
+    await shared.saveDocument(courseDocument('stage-pg-shared-read'));
+    onCreate.mockClear();
+
+    const results = await Promise.allSettled([
+      shared.saveDocument(courseDocument('stage-pg-shared-a')),
+      shared.loadDocument('stage-pg-shared-read'),
+      shared.saveDocument(courseDocument('stage-pg-shared-b')),
+      shared.loadDocument('stage-pg-shared-missing'),
+      shared.saveDocument(courseDocument('stage-pg-shared-c')),
+    ]);
+
+    expect(results.map((result) => result.status)).toEqual(Array(5).fill('fulfilled'));
+    for (const id of ['stage-pg-shared-a', 'stage-pg-shared-b', 'stage-pg-shared-c']) {
+      await expect(counts(id)).resolves.toEqual({ stages: 1, meta: 1, host: 1 });
+    }
+    expect(onCreate.mock.calls.map((call) => call[2]).sort()).toEqual([
+      'stage-pg-shared-a',
+      'stage-pg-shared-b',
+      'stage-pg-shared-c',
+    ]);
   });
 });

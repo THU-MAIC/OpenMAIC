@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import type { Scene, Stage } from '@openmaic/dsl';
 import {
   PgDocumentStore,
@@ -56,6 +58,13 @@ export interface OwnerBoundDocumentStoreOptions {
 /** The code a refused course creation answers with, as `403`. */
 export const CREATE_REFUSED = 'CREATE_REFUSED';
 
+/**
+ * The message a refusal carries on a background (agent run) write. Fixed, so a
+ * host's refusal text -- meant for its own client -- never reaches a model
+ * transcript through a tool error.
+ */
+export const BACKGROUND_CREATE_REFUSED_MESSAGE = 'course creation was refused by this deployment';
+
 function isCreateDecision(value: unknown): value is CreateDecision {
   if (!value || typeof value !== 'object') return false;
   const decision = value as { allow?: unknown; message?: unknown };
@@ -90,7 +99,9 @@ async function runCreateHooks(
       throw new DocumentWriteRefusedError(
         stageId,
         CREATE_REFUSED,
-        decision.message ?? 'course creation refused',
+        actor.source === 'request'
+          ? (decision.message ?? 'course creation refused')
+          : BACKGROUND_CREATE_REFUSED_MESSAGE,
       );
     }
   }
@@ -122,7 +133,7 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
 {
   constructor(
     private readonly inner: PgDocumentStore<TScene, TStage>,
-    private readonly pending: { operation?: PendingOperation },
+    private readonly operations: AsyncLocalStorage<PendingOperation>,
     private readonly runTransaction: WithTransaction,
     private readonly queryable: Queryable,
     private readonly ownerId: string,
@@ -130,13 +141,18 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
     private readonly pinnedToTransaction: (queryable: Queryable) => PgDocumentStore<TScene, TStage>,
   ) {}
 
-  private async tagged<T>(operation: PendingOperation, body: () => Promise<T>): Promise<T> {
-    this.pending.operation = operation;
-    try {
-      return await body();
-    } finally {
-      this.pending.operation = undefined;
-    }
+  /**
+   * Run `body` with `operation` as the operation its transaction gates.
+   *
+   * The operation travels with the call's own async context, never on the
+   * instance: one store is shared by every tool of an agent run, and those
+   * tools can run concurrently. A field set here and read after the
+   * transaction's first await would be overwritten by a concurrent call, so a
+   * create could be gated as a read -- no ownership row, no create hooks -- or
+   * claimed under another call's stage id.
+   */
+  private tagged<T>(operation: PendingOperation, body: () => Promise<T>): Promise<T> {
+    return this.operations.run(operation, body);
   }
 
   saveDocument(doc: MaicDocument<TScene, TStage>): Promise<void> {
@@ -296,22 +312,23 @@ export function createOwnerBoundDocumentStore<
   TScene extends SceneLike = Scene,
   TStage extends Stage = Stage,
 >(options: OwnerBoundDocumentStoreOptions): DocumentStore<TScene, TStage> & DocumentFolderStore {
-  const pending: { operation?: PendingOperation } = {};
+  const operations = new AsyncLocalStorage<PendingOperation>();
   if (options.principal && options.principal.ownerId !== options.ownerId) {
     throw new Error('createOwnerBoundDocumentStore: principal does not match ownerId');
   }
   const createHooks = options.createHooks ?? getPersistenceHooks();
   const actor: DocumentActor = options.principal
-    ? { ownerId: options.ownerId, principal: options.principal }
-    : { ownerId: options.ownerId };
+    ? { source: 'request', ownerId: options.ownerId, principal: options.principal }
+    : { source: 'background', ownerId: options.ownerId };
 
   const withTransaction: WithTransaction = async (body) => {
+    // Read before the first await, from this call's own context (see `tagged`).
+    const operation = operations.getStore();
     const client = await options.pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       try {
         const queryable = queryableFor(client);
-        const operation = pending.operation;
         if (operation && operation.mode !== 'read') await options.mutationFence?.(queryable);
         if (operation?.stageId) {
           const lock = operation.mode === 'read' ? 'FOR SHARE' : 'FOR UPDATE';
@@ -408,7 +425,7 @@ export function createOwnerBoundDocumentStore<
     });
   return new OwnerBoundDocumentStore(
     inner,
-    pending,
+    operations,
     withTransaction,
     queryable,
     options.ownerId,

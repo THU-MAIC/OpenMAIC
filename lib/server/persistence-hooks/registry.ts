@@ -1,6 +1,6 @@
 import { configuredAssetByteEgress } from '@/lib/persistence/asset-byte-egress';
 
-import type { AssetByteStoreRegistration, PersistenceHooks } from './types';
+import type { AssetByteStoreRegistration, LibraryProvider, PersistenceHooks } from './types';
 
 /**
  * The process-wide host extension hooks, registered the way the owner
@@ -43,25 +43,75 @@ function isOptionalFunction(value: unknown): boolean {
   return value === undefined || typeof value === 'function';
 }
 
-function describeHooksProblem(hooks: PersistenceHooks): string | undefined {
-  if (!hooks || typeof hooks !== 'object') return 'expects an object';
-  if (typeof hooks.name !== 'string' || !hooks.name) return 'expects a non-empty name';
-  const known = new Set(['name', 'authorizeCreate', 'onCreate', 'library', 'beforeAssetAllocate']);
-  const unknown = Object.keys(hooks).find((key) => !known.has(key));
-  if (unknown !== undefined) return `does not know the hook ${JSON.stringify(unknown)}`;
-  if (!isOptionalFunction(hooks.authorizeCreate)) return 'expects authorizeCreate to be a function';
-  if (!isOptionalFunction(hooks.onCreate)) return 'expects onCreate to be a function';
-  if (!isOptionalFunction(hooks.beforeAssetAllocate)) {
+const HOOK_KEYS = ['name', 'authorizeCreate', 'onCreate', 'library', 'beforeAssetAllocate'];
+
+/**
+ * A method of `owner`, bound to it, or `undefined`. Read once, through normal
+ * property access, so a hook defined on a class prototype -- or as a
+ * non-enumerable property -- is kept: copying with `{ ...owner }` takes only
+ * own enumerable properties and would silently drop it, and with it a gate
+ * such as `authorizeCreate`.
+ */
+function boundMethod<T>(owner: object, value: unknown): T | undefined {
+  return typeof value === 'function' ? (value.bind(owner) as T) : undefined;
+}
+
+/** One read of every hook, so what is validated is exactly what is stored. */
+interface HooksSnapshot {
+  name: unknown;
+  authorizeCreate: unknown;
+  onCreate: unknown;
+  beforeAssetAllocate: unknown;
+  library: unknown;
+  libraryName: unknown;
+  libraryList: unknown;
+}
+
+function snapshotHooks(hooks: PersistenceHooks): HooksSnapshot | undefined {
+  if (!hooks || typeof hooks !== 'object') return undefined;
+  const library: unknown = hooks.library;
+  const libraryObject =
+    library && typeof library === 'object' ? (library as LibraryProvider) : undefined;
+  return {
+    name: hooks.name,
+    authorizeCreate: hooks.authorizeCreate,
+    onCreate: hooks.onCreate,
+    beforeAssetAllocate: hooks.beforeAssetAllocate,
+    library,
+    libraryName: libraryObject?.name,
+    libraryList: libraryObject?.list,
+  };
+}
+
+function describeHooksProblem(
+  hooks: PersistenceHooks,
+  snapshot: HooksSnapshot | undefined,
+): string | undefined {
+  if (!snapshot) return 'expects an object';
+  if (typeof snapshot.name !== 'string' || !snapshot.name) return 'expects a non-empty name';
+  // A misspelled hook in a plain object is reported rather than silently never
+  // called. A class instance legitimately carries its own state fields, so
+  // only plain objects are checked; its hooks are read from the prototype.
+  const prototype: unknown = Object.getPrototypeOf(hooks);
+  if (prototype === Object.prototype || prototype === null) {
+    const known = new Set(HOOK_KEYS);
+    const unknown = Object.keys(hooks).find((key) => !known.has(key));
+    if (unknown !== undefined) return `does not know the hook ${JSON.stringify(unknown)}`;
+  }
+  if (!isOptionalFunction(snapshot.authorizeCreate)) {
+    return 'expects authorizeCreate to be a function';
+  }
+  if (!isOptionalFunction(snapshot.onCreate)) return 'expects onCreate to be a function';
+  if (!isOptionalFunction(snapshot.beforeAssetAllocate)) {
     return 'expects beforeAssetAllocate to be a function';
   }
-  const library = hooks.library;
   if (
-    library !== undefined &&
-    (!library ||
-      typeof library !== 'object' ||
-      typeof library.name !== 'string' ||
-      !library.name ||
-      typeof library.list !== 'function')
+    snapshot.library !== undefined &&
+    (typeof snapshot.library !== 'object' ||
+      snapshot.library === null ||
+      typeof snapshot.libraryName !== 'string' ||
+      !snapshot.libraryName ||
+      typeof snapshot.libraryList !== 'function')
   ) {
     return 'expects library to be { name, list(context) }';
   }
@@ -90,9 +140,26 @@ export function configurePersistenceHooks(hooks: PersistenceHooks): void {
         'instrumentation.ts register(), before the server serves a request.',
     );
   }
-  const problem = describeHooksProblem(hooks);
-  if (problem) throw new Error(`configurePersistenceHooks ${problem}`);
-  state.hooks = Object.freeze({ ...hooks });
+  const snapshot = snapshotHooks(hooks);
+  const problem = describeHooksProblem(hooks, snapshot);
+  if (problem || !snapshot) throw new Error(`configurePersistenceHooks ${problem}`);
+  // Each hook was read exactly once, above, and is bound to the object the
+  // host passed: what was validated is what runs, whether the host wrote a
+  // plain object or a class instance.
+  const library = snapshot.library as object | undefined;
+  const stored: PersistenceHooks = {
+    name: snapshot.name as string,
+    authorizeCreate: boundMethod(hooks, snapshot.authorizeCreate),
+    onCreate: boundMethod(hooks, snapshot.onCreate),
+    beforeAssetAllocate: boundMethod(hooks, snapshot.beforeAssetAllocate),
+    library: library
+      ? Object.freeze({
+          name: snapshot.libraryName as string,
+          list: boundMethod<LibraryProvider['list']>(library, snapshot.libraryList)!,
+        })
+      : undefined,
+  };
+  state.hooks = Object.freeze(stored);
 }
 
 /** The registered hooks, or none. Reading them seals the registration. */
@@ -123,13 +190,17 @@ export function configureAssetByteStore(registration: AssetByteStoreRegistration
         'instrumentation.ts register(), before the server serves a request.',
     );
   }
+  const name: unknown =
+    registration && typeof registration === 'object' ? registration.name : undefined;
+  const create: unknown =
+    registration && typeof registration === 'object' ? registration.create : undefined;
+  const signsReadUrls: unknown =
+    registration && typeof registration === 'object' ? registration.signsReadUrls : undefined;
   if (
-    !registration ||
-    typeof registration !== 'object' ||
-    typeof registration.name !== 'string' ||
-    !registration.name ||
-    typeof registration.create !== 'function' ||
-    (registration.signsReadUrls !== undefined && typeof registration.signsReadUrls !== 'boolean')
+    typeof name !== 'string' ||
+    !name ||
+    typeof create !== 'function' ||
+    (signsReadUrls !== undefined && typeof signsReadUrls !== 'boolean')
   ) {
     throw new Error(
       'configureAssetByteStore expects { name, create(context), signsReadUrls?: boolean }',
@@ -138,10 +209,15 @@ export function configureAssetByteStore(registration: AssetByteStoreRegistration
   if (process.env.ASSET_S3_BUCKET?.trim()) {
     throw new Error(
       'ASSET_S3_BUCKET selects the built-in S3 byte store and cannot be combined with a ' +
-        `configured asset byte store (${registration.name}). Unset it.`,
+        `configured asset byte store (${name}). Unset it.`,
     );
   }
-  state.byteStore = Object.freeze({ ...registration });
+  // Read once and bound, for the same reason as the persistence hooks.
+  state.byteStore = Object.freeze({
+    name,
+    create: boundMethod<AssetByteStoreRegistration['create']>(registration, create)!,
+    ...(signsReadUrls === undefined ? {} : { signsReadUrls: signsReadUrls as boolean }),
+  });
 }
 
 /**

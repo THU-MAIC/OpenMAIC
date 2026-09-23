@@ -19,7 +19,7 @@ import type {
 import {
   DocumentNotFoundError,
   DocumentVersionError,
-  DocumentWriteRefusedError,
+  isDocumentWriteRefusedError,
 } from '../document/types.js';
 import { assertMaxBodyBytes, DEFAULT_MAX_BODY_BYTES, readJsonObject } from './read-json.js';
 
@@ -244,7 +244,7 @@ function classifyStoreError(error: unknown): never {
   if (error instanceof DocumentNotFoundError) {
     throw new DocumentHttpError(404, 'DOCUMENT_NOT_FOUND', error.message);
   }
-  if (error instanceof DocumentWriteRefusedError) {
+  if (isDocumentWriteRefusedError(error)) {
     throw new DocumentHttpError(403, error.code, error.message);
   }
   if (error instanceof DocumentVersionError) {

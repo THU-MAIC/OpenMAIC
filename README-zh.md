@@ -445,7 +445,7 @@ oauth2-proxy（v7.14 及以上）的示例配置见英文 README 的 “Accounts
 
 ##### 宿主扩展钩子
 
-宿主可以在四个位置扩展产品行为而无需分叉路由，注册方式与认证器相同：在 `instrumentation.ts` 的 `register()` 中调用一次，首次使用后即封存（重复调用或在服务已开始使用后调用都会抛错）。未注册任何钩子时，行为与上文完全一致。`configurePersistenceHooks({ name, authorizeCreate, onCreate, library, beforeAssetAllocate })` 提供：课程创建时在同一事务内的授权与副作用（拒绝返回 `403 CREATE_REFUSED`，抛错则整个创建回滚；已存在课程的保存与编辑不会触发）；`GET /api/stages` 列出哪些课程（提供方返回 stage id，路由会剔除读取路径会拒绝的 id）；以及资产上传前的准入（返回 `Response` 即拒绝，此时尚未存储任何字节、也未计入配额）。`configureAssetByteStore({ name, create, signsReadUrls })` 取代 `ASSET_S3_BUCKET` 开关，请求路径与资产回收器使用同一注册；在 `ASSET_BYTE_EGRESS=redirect` 下未声明 `signsReadUrls: true` 的存储会在启动时报错。示例与完整约定见英文 README 的 “Host extension hooks” 一节。
+宿主可以在四个位置扩展产品行为而无需分叉路由，注册方式与认证器相同：在 `instrumentation.ts` 的 `register()` 中调用一次，首次使用后即封存（重复调用或在服务已开始使用后调用都会抛错）。未注册任何钩子时，行为与上文完全一致。`configurePersistenceHooks({ name, authorizeCreate, onCreate, library, beforeAssetAllocate })` 提供：课程创建时在同一事务内的授权与副作用（拒绝返回 `403 CREATE_REFUSED`，抛错则整个创建回滚；已存在课程的保存与编辑不会触发）；`GET /api/stages` 列出哪些课程（提供方返回 stage id，路由会剔除读取路径会拒绝的 id）；以及资产上传前的准入（新建 `POST /assets` 与替换 `PUT /assets/{id}/content` 都会经过，`req.operation` 区分二者；返回 `Response` 即拒绝，此时尚未存储任何字节、也未计入配额）。钩子的 `actor.source` 区分请求写入（附带 `principal`）与后台 Agent 运行写入（无 principal，拒绝时 Agent 只会得到固定的“已被部署拒绝”结果，不会看到宿主的 `message`）。普通对象与类实例均可注册。`configureAssetByteStore({ name, create, signsReadUrls })` 取代 `ASSET_S3_BUCKET` 开关，请求路径与资产回收器使用同一注册；在 `ASSET_BYTE_EGRESS=redirect` 下未声明 `signsReadUrls: true` 的存储会在启动时报错。示例与完整约定见英文 README 的 “Host extension hooks” 一节。
 
 ### 可选：MP4 视频导出（渲染服务）
 

@@ -22,10 +22,16 @@ import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators
 
 export type PersistencePoolFactory = (connectionString: string) => Pool;
 
+/**
+ * The process's persistence stores. There is deliberately no document store
+ * here: an unscoped `PgDocumentStore` would write courses with no owner check
+ * and no host create hooks. Documents are reached only through the
+ * owner-bound store (`createOwnerBoundDocumentStore`,
+ * `getOwnerScopedDocumentStore`).
+ */
 export interface ServerPersistenceProvider {
   pool: Pool;
   runtimeStore: PgRuntimeStore;
-  documentStore: PgDocumentStore;
   assetStore: PgAssetStore;
   /** Pin a body to one fresh transaction on the pool. */
   withTransaction: WithTransaction;
@@ -111,7 +117,6 @@ async function createServerPersistenceProvider(
         withTransaction,
         payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
       }),
-      documentStore,
       assetStore: assetRegistry(queryable, withTransaction),
       withTransaction,
       assetStoreIn: (pinned) => assetRegistry(pinned, (body) => body(pinned)),

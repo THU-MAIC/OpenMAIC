@@ -24,19 +24,30 @@ import type { OwnerPrincipal } from '@/lib/server/identity/types';
 export type { Queryable };
 
 /**
- * Who a document write is performed for.
+ * Who a document write is performed for. Discriminated by `source`, so a hook
+ * cannot mistake one kind of write for the other:
  *
- * `ownerId` is always the owner the course is created under. `principal` is
- * the principal the owner identity seam resolved for the request that is
- * writing, and is present on every request-driven write (`/api/persistence`,
- * `/api/stages`). It is absent when a background agent run writes on the
- * owner's behalf after the request that started it has ended: a run records
- * only the owner id, and the hooks never re-derive a principal from it.
+ * - `'request'`: a request-driven write (`/api/persistence`, `/api/stages`).
+ *   `principal` is what the owner identity seam resolved for that request.
+ * - `'background'`: an agent run writing on the owner's behalf after the
+ *   request that started it has ended. A run records only the owner id, so
+ *   there is no principal, and the hooks never re-derive one. It is not a
+ *   trusted or internal caller: the owner started it, and a policy that
+ *   limits what an owner may create must apply to it as well.
+ *
+ * `ownerId` is always the owner the course is created under.
  */
-export interface DocumentActor {
-  readonly ownerId: string;
-  readonly principal?: OwnerPrincipal;
-}
+export type DocumentActor =
+  | {
+      readonly source: 'request';
+      readonly ownerId: string;
+      readonly principal: OwnerPrincipal;
+    }
+  | {
+      readonly source: 'background';
+      readonly ownerId: string;
+      readonly principal?: undefined;
+    };
 
 /** The answer of {@link PersistenceHooks.authorizeCreate}. */
 export type CreateDecision =
@@ -87,18 +98,35 @@ export interface LibraryProvider {
   list(context: LibraryListContext): Promise<readonly string[]>;
 }
 
-/** The parts of an upload request {@link BeforeAssetAllocate} may read. No body. */
+/**
+ * An upload {@link BeforeAssetAllocate} is asked about. No body.
+ *
+ * `operation` and `assetId` are the storage handler's own routing decision,
+ * made on the decoded path it serves; base a policy on them rather than on
+ * matching `url`, whose spelling the handler normalizes.
+ */
 export interface AssetAllocateRequest {
+  /** `create`: `POST /assets`. `replace`: `PUT /assets/{id}/content`. */
+  readonly operation: 'create' | 'replace';
+  /** The asset being replaced, decoded as the handler decodes it. Only on `replace`. */
+  readonly assetId?: string;
   readonly method: string;
+  /** The request URL as received, for logging. */
   readonly url: string;
   readonly headers: Headers;
 }
 
 /**
- * Called for `POST /api/persistence/assets` after the owner is resolved and
- * before the upload body is read: no bytes are stored and no quota is counted
- * yet. Resolve `undefined` to let the upload proceed, or a `Response` to answer
- * the request with it instead.
+ * Called for every request that stores asset bytes over
+ * `/api/persistence/assets` -- an allocation (`POST /assets`) or a replace
+ * (`PUT /assets/{id}/content`) -- after the owner is resolved and before the
+ * upload body is read: no bytes are stored and no quota is counted yet.
+ * Resolve `undefined` to let the upload proceed, or a `Response` to answer the
+ * request with it instead.
+ *
+ * Scope: HTTP uploads. Media an agent run generates on the server (images,
+ * videos) is stored by the run directly; it is bounded by the per-owner quota
+ * and by which generation tools the deployment enables, not by this hook.
  */
 export type BeforeAssetAllocate = (
   principal: OwnerPrincipal,
@@ -144,7 +172,10 @@ export interface AssetByteStoreContext {
  *
  * The store must keep its bytes outside the registry's PostgreSQL and say so
  * with `writesOutsideRegistryDatabase: true` (see `AssetByteStore` in
- * `@openmaic/storage`); the in-database byte layer is the built-in default.
+ * `@openmaic/storage`). The flag is trusted, not checked: a store that sets it
+ * but writes through the registry database can deadlock the registry's write
+ * transaction. An in-database byte layer is the built-in default and cannot be
+ * registered.
  */
 export interface AssetByteStoreRegistration {
   /** Short label for logs and boot errors. */
@@ -152,7 +183,9 @@ export interface AssetByteStoreRegistration {
   create(context: AssetByteStoreContext): AssetByteStore | Promise<AssetByteStore>;
   /**
    * Whether the stores `create` returns implement `signReadUrl`. Required for
-   * `ASSET_BYTE_EGRESS=redirect`, which is refused at boot without it.
+   * `ASSET_BYTE_EGRESS=redirect`, which is refused at boot without it. A store
+   * that declares it but cannot sign is logged and served with direct bytes;
+   * the collector never signs.
    */
   readonly signsReadUrls?: boolean;
 }

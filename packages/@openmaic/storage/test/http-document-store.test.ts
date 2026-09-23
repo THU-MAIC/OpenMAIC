@@ -3,7 +3,11 @@ import { IDBFactory } from 'fake-indexeddb';
 import { DSL_VERSION_KEY } from '@openmaic/dsl';
 import { describe, expect, test } from 'vitest';
 import { BrowserDocumentStore } from '../src/document/browser.js';
-import { DocumentVersionError, DocumentWriteRefusedError } from '../src/document/types.js';
+import {
+  DocumentVersionError,
+  DocumentWriteRefusedError,
+  isDocumentWriteRefusedError,
+} from '../src/document/types.js';
 import { HttpDocumentStore, HttpDocumentStoreError } from '../src/document/http.js';
 import type { StageValidator } from '../src/document/types.js';
 import { BrowserRuntimeStore } from '../src/runtime/browser.js';
@@ -181,6 +185,54 @@ describe('HttpDocumentStore contract mapping', () => {
     await expect(failure).rejects.toBeInstanceOf(HttpDocumentStoreError);
     await expect(failure).rejects.toMatchObject({ status: 403, code: 'CREATE_REFUSED' });
     await expect(client.loadDocument('stage-1')).resolves.toBeNull();
+  });
+
+  test('maps a refusal from another copy of the package by name and shape, not by code alone', async () => {
+    const { documents } = makeHarness();
+    // Structurally the class, built without it: what a host store bundled
+    // with a second copy of this package throws.
+    const lookalike = Object.assign(new Error('refused elsewhere'), {
+      name: 'DocumentWriteRefusedError',
+      code: 'CREATE_REFUSED',
+      stageId: 'stage-1',
+    });
+    // A database error: an upper-case code, but not a refusal.
+    const sqlstate = Object.assign(new Error('raise exception'), { code: 'P0001' });
+    expect(isDocumentWriteRefusedError(lookalike)).toBe(true);
+    expect(isDocumentWriteRefusedError(sqlstate)).toBe(false);
+    expect(
+      isDocumentWriteRefusedError(
+        Object.assign(new Error('x'), {
+          name: 'DocumentWriteRefusedError',
+          code: 'lower',
+          stageId: 's',
+        }),
+      ),
+    ).toBe(false);
+
+    for (const [thrown, status] of [
+      [lookalike, 403],
+      [sqlstate, 500],
+    ] as const) {
+      const refusing = Object.create(documents) as typeof documents;
+      refusing.saveDocument = async () => {
+        throw thrown;
+      };
+      const handler = createStorageHttpHandler(
+        new BrowserRuntimeStore({ indexedDB: new IDBFactory() }),
+        refusing,
+        {
+          authenticate: async () => ({ learnerKey: 'author' }),
+          authorizeDocuments: async () => true,
+        },
+      );
+      const response = await handlerFetch(handler)(`${BASE_URL}/documents/stage-1`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(makeDocument()),
+      });
+      expect(response.status).toBe(status);
+    }
   });
 
   test('refuses a refusal code outside the machine-readable alphabet', () => {

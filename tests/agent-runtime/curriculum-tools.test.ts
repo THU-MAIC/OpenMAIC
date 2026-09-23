@@ -441,13 +441,20 @@ describe('folder tool cross-owner isolation through the bound PostgreSQL store',
     await db.close();
   });
 
-  function ownerTools(ownerId: string, sessionId: string) {
+  function ownerTools(
+    ownerId: string,
+    sessionId: string,
+    createHooks: Parameters<typeof createOwnerBoundDocumentStore>[0]['createHooks'] = {
+      name: 'none',
+    },
+  ) {
     const store = withPlainJsonDocumentWrites(
       createOwnerBoundDocumentStore({
         pool: new PGlitePool(db),
         ownerId,
         validateScene: validateAppScene,
         validateStage: validateAppStage,
+        createHooks,
       }),
     ) as unknown as CourseStore;
     const stageAccess = (stageId: string) => probeStageAccess(ownerId, stageId, db);
@@ -464,6 +471,38 @@ describe('folder tool cross-owner isolation through the bound PostgreSQL store',
     if (!tool) throw new Error(`${name} not registered`);
     return (await tool.execute(callId, params as never)) as ToolResultShape;
   }
+
+  it('answers a deployment refusal with a stable result that never carries the host message', async () => {
+    const authorizeCreate = vi.fn(async () => ({
+      allow: false as const,
+      message: 'internal policy note: account 42 is frozen',
+    }));
+    const alice = ownerTools('anon:alice', 'session-alice', { name: 'host', authorizeCreate });
+
+    const result = await execute(alice.tools, 'create_stage', 'stage-refused', { title: 'Nope' });
+
+    expect(authorizeCreate).toHaveBeenCalledOnce();
+    expect(authorizeCreate.mock.calls[0]).toEqual([
+      expect.anything(),
+      { source: 'background', ownerId: 'anon:alice' },
+      expect.any(String),
+    ]);
+    expect(result).toMatchObject({
+      isError: true,
+      details: { refused: true, error: 'create-refused' },
+    });
+    expect(JSON.stringify(result)).not.toContain('internal policy note');
+    const rows = await db.query<{ n: number }>('SELECT COUNT(*)::int AS n FROM document_stages');
+    expect(rows.rows[0]!.n).toBe(0);
+  });
+
+  it('schedules create_stage sequentially, so a batch cannot run it beside other stage tools', () => {
+    const { tools } = ownerTools('anon:alice', 'session-alice');
+    const createStage = tools.find((tool) => tool.name === 'create_stage') as unknown as {
+      executionMode?: string;
+    };
+    expect(createStage.executionMode).toBe('sequential');
+  });
 
   it('keeps create, create-with-folder, move, rename, and list owner-scoped', async () => {
     const alice = ownerTools('anon:alice', 'session-alice');

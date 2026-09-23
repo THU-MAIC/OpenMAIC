@@ -54,10 +54,53 @@ describe('configurePersistenceHooks', () => {
   });
 
   it('registers once and is read back', () => {
-    const onCreate = async () => {};
+    const onCreate = vi.fn(async () => {});
     configurePersistenceHooks({ name: 'host', onCreate });
-    expect(getPersistenceHooks().onCreate).toBe(onCreate);
+    void getPersistenceHooks().onCreate!({} as never, {} as never, 'stage-1');
+    expect(onCreate).toHaveBeenCalledWith({}, {}, 'stage-1');
     expect(() => configurePersistenceHooks({ name: 'again' })).toThrow(/already configured/);
+  });
+
+  it('keeps hooks defined on a class prototype, bound to their instance', async () => {
+    class HostHooks {
+      readonly name = 'class-host';
+      readonly denied = 'retired';
+      async authorizeCreate() {
+        return { allow: false as const, message: this.denied };
+      }
+      async onCreate() {}
+      async beforeAssetAllocate() {
+        return new Response(this.denied, { status: 429 });
+      }
+    }
+    class Library {
+      readonly name = 'class-library';
+      private readonly ids = ['stage-a'];
+      async list() {
+        return this.ids;
+      }
+    }
+    const host = Object.assign(new HostHooks(), { library: new Library() });
+    configurePersistenceHooks(host as never);
+
+    const stored = getPersistenceHooks();
+    expect(typeof stored.authorizeCreate).toBe('function');
+    expect(typeof stored.onCreate).toBe('function');
+    expect(typeof stored.beforeAssetAllocate).toBe('function');
+    await expect(stored.authorizeCreate!({} as never, {} as never, 's')).resolves.toEqual({
+      allow: false,
+      message: 'retired',
+    });
+    await expect(stored.library!.list({} as never)).resolves.toEqual(['stage-a']);
+    expect(stored.library!.name).toBe('class-library');
+  });
+
+  it('keeps a non-enumerable hook', () => {
+    const hooks = { name: 'host' };
+    const authorizeCreate = async () => ({ allow: true as const });
+    Object.defineProperty(hooks, 'authorizeCreate', { value: authorizeCreate, enumerable: false });
+    configurePersistenceHooks(hooks);
+    expect(typeof getPersistenceHooks().authorizeCreate).toBe('function');
   });
 
   it('is sealed by the first read', () => {
@@ -85,6 +128,22 @@ describe('configureAssetByteStore', () => {
     configureAssetByteStore(store);
     expect(getAssetByteStoreRegistration()?.name).toBe('object-store');
     expect(() => configureAssetByteStore(store)).toThrow(/already configured/);
+  });
+
+  it('keeps a byte store factory defined on a class prototype, bound to its instance', async () => {
+    class ObjectStoreRegistration {
+      readonly name = 'class-store';
+      readonly signsReadUrls = true;
+      private readonly bucket = 'objects';
+      create() {
+        return { bucket: this.bucket } as never;
+      }
+    }
+    configureAssetByteStore(new ObjectStoreRegistration() as never);
+    const stored = getAssetByteStoreRegistration()!;
+    expect(stored.name).toBe('class-store');
+    expect(stored.signsReadUrls).toBe(true);
+    expect(await stored.create({ queryable: {} as never })).toEqual({ bucket: 'objects' });
   });
 
   it('is sealed by the first byte store built', () => {
@@ -141,8 +200,10 @@ describe('boot validation', () => {
     const { register } = await import('@/instrumentation');
 
     await expect(register()).rejects.toThrow(/ASSET_BYTE_EGRESS=redirect requires/);
-    // Validation does not seal: the registration is still only configured.
-    resetPersistenceHooksForTests();
+    // Validation does not seal: the slot still reports "already configured",
+    // not "after a byte store was built", and the hooks are still open.
+    expect(() => configureAssetByteStore(store)).toThrow(/already configured/);
+    expect(() => configurePersistenceHooks({ name: 'late-but-before-use' })).not.toThrow();
   });
 });
 

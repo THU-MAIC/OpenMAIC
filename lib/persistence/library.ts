@@ -12,8 +12,17 @@
 import type { DocumentSummary } from '@openmaic/storage';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
+import { isQueryableSegment } from '@/lib/persistence/document-access';
 import type { OwnerPrincipal } from '@/lib/server/identity/types';
 import type { LibraryProvider } from '@/lib/server/persistence-hooks/types';
+
+/**
+ * The most ids one listing may name. `GET /api/stages` is unpaginated, and the
+ * ids travel as one query parameter, so an unbounded provider answer is a
+ * memory problem rather than a library. A provider over the limit is a host
+ * bug and answers `500`.
+ */
+export const MAX_LIBRARY_STAGE_IDS = 5000;
 
 interface LibraryRow extends Record<string, unknown> {
   id: string;
@@ -36,7 +45,10 @@ export async function summarizeLibraryStages(
   ownerId: string,
   stageIds: readonly string[],
 ): Promise<DocumentSummary[]> {
-  const ordered = [...new Set(stageIds)];
+  // An id the read path cannot address (empty, `.`, `..`, NUL, a lone
+  // surrogate) is refused there, so it is not listed here either -- and never
+  // reaches the query, where some of them would be a database error.
+  const ordered = [...new Set(stageIds)].filter(isQueryableSegment);
   if (ordered.length === 0) return [];
   const result = await queryable.query<LibraryRow>(
     `SELECT stages.id,
@@ -91,6 +103,11 @@ export async function listLibraryStages(options: {
   if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string')) {
     // A host bug: surfaces as a 500 rather than a silently partial library.
     throw new Error(`Library provider ${provider.name} must resolve an array of stage ids`);
+  }
+  if (ids.length > MAX_LIBRARY_STAGE_IDS) {
+    throw new Error(
+      `Library provider ${provider.name} returned ${ids.length} stage ids; the limit is ${MAX_LIBRARY_STAGE_IDS}`,
+    );
   }
   return summarizeLibraryStages(queryable, principal.ownerId, ids as string[]);
 }

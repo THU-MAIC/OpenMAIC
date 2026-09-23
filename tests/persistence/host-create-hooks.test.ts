@@ -156,6 +156,7 @@ describe('host document creation hooks', () => {
     for (const call of calls) {
       expect(call.stageId).toBe('stage-hooked');
       expect(call.actor.ownerId).toBe(OWNER);
+      expect(call.actor.source).toBe('request');
       const principal = call.actor.principal as OwnerPrincipal;
       expect(principal.ownerId).toBe(OWNER);
       expect(principal.kind).toBe('anonymous');
@@ -246,6 +247,7 @@ describe('host document creation hooks', () => {
     const response = await postStage();
     expect(response.status).toBe(201);
     expect(actors).toHaveLength(1);
+    expect(actors[0]!.source).toBe('request');
     expect(actors[0]!.principal?.ownerId).toBe(OWNER);
   });
 
@@ -269,7 +271,30 @@ describe('host document creation hooks', () => {
     const store = await getOwnerScopedDocumentStore(OWNER);
     await store.saveDocument(courseDocument('stage-agent') as never);
 
-    expect(actors).toEqual([{ ownerId: OWNER }]);
+    expect(actors).toEqual([{ source: 'background', ownerId: OWNER }]);
+  });
+
+  it('carries a fixed refusal message on background writes, never the host text', async () => {
+    await configure({
+      authorizeCreate: async () => ({ allow: false, message: 'host-only detail' }),
+    });
+    const { getOwnerScopedDocumentStore } =
+      await import('@/lib/server/agent-runtime/owner-scoped-documents');
+    const { BACKGROUND_CREATE_REFUSED_MESSAGE } =
+      await import('@/lib/persistence/owner-bound-document-store');
+    const store = await getOwnerScopedDocumentStore(OWNER);
+
+    const failure = store.saveDocument(courseDocument('stage-agent-refused') as never);
+    await expect(failure).rejects.toMatchObject({
+      name: 'DocumentWriteRefusedError',
+      code: 'CREATE_REFUSED',
+      message: BACKGROUND_CREATE_REFUSED_MESSAGE,
+    });
+    await expect(rowCounts('stage-agent-refused')).resolves.toEqual({
+      stages: 0,
+      meta: 0,
+      host: 0,
+    });
   });
 
   it('refuses a principal that does not match the store owner', async () => {
@@ -298,5 +323,53 @@ describe('host document creation hooks', () => {
     const second = await putDocument('stage-once');
     expect([first.status, second.status]).toEqual([204, 204]);
     expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('gates concurrent operations on one shared store by their own operation', async () => {
+    // One store instance, as an agent run shares with all of its tools. A
+    // create running beside a read on it must still be gated as a create:
+    // ownership row claimed, hooks run for its own stage id.
+    const { createOwnerBoundDocumentStore } =
+      await import('@/lib/persistence/owner-bound-document-store');
+    const { validateAppScene, validateAppStage } = await import('@/lib/document-store/validators');
+    const onCreate = vi.fn(async (_tx: Queryable, _actor: DocumentActor, _stageId: string) => {});
+    const shared = createOwnerBoundDocumentStore({
+      pool,
+      ownerId: OWNER,
+      validateScene: validateAppScene,
+      validateStage: validateAppStage,
+      createHooks: { name: 'host', onCreate },
+    });
+    await shared.saveDocument(courseDocument('stage-read') as never);
+    onCreate.mockClear();
+
+    await Promise.all([
+      shared.saveDocument(courseDocument('stage-a') as never),
+      shared.loadDocument('stage-read'),
+      shared.saveDocument(courseDocument('stage-b') as never),
+      shared.loadDocument('stage-missing'),
+    ]);
+
+    await expect(rowCounts('stage-a')).resolves.toMatchObject({ stages: 1, meta: 1 });
+    await expect(rowCounts('stage-b')).resolves.toMatchObject({ stages: 1, meta: 1 });
+    expect(onCreate.mock.calls.map((call) => call[2]).sort()).toEqual(['stage-a', 'stage-b']);
+  });
+
+  it('warns, with a count, when the boot backfill adopts owned courses without hooks', async () => {
+    await pool.query(
+      `INSERT INTO document_stages (id, name, created_at, updated_at, owner_id, data)
+       VALUES ('stage-legacy', 'Legacy', 1, 1, $1, '{}'::jsonb)`,
+      [OWNER],
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { ensureStageMetaSchema } = await import('@/lib/persistence/stage-meta');
+
+    await ensureStageMetaSchema(pool as never);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/adopted 1 owned course\(s\)/));
+    await expect(rowCounts('stage-legacy')).resolves.toMatchObject({ meta: 1 });
+
+    warn.mockClear();
+    await ensureStageMetaSchema(pool as never);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

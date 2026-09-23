@@ -139,6 +139,8 @@ describe('host asset hooks', () => {
       await expect(response.json()).resolves.toEqual({ error: { code: 'UPLOAD_BUDGET' } });
       expect(seen).toHaveLength(1);
       expect(seen[0]!.principal.ownerId).toBe(OWNER);
+      expect(seen[0]!.req.operation).toBe('create');
+      expect(seen[0]!.req.assetId).toBeUndefined();
       expect(seen[0]!.req.method).toBe('POST');
       expect(seen[0]!.req.url).toBe('http://localhost/api/persistence/assets');
       expect(seen[0]!.req.headers.get('x-forwarded-for')).toBe('203.0.113.7');
@@ -181,6 +183,40 @@ describe('host asset hooks', () => {
       expect(hook).toHaveBeenCalledOnce();
     });
 
+    it('gates a replace too: refused before the new bytes are stored or counted', async () => {
+      const seen: AssetAllocateRequest[] = [];
+      const { configurePersistenceHooks } = await import('@/lib/server/persistence-hooks');
+      configurePersistenceHooks({
+        name: 'test-host',
+        beforeAssetAllocate: async (_principal, req) => {
+          seen.push(req);
+          return req.operation === 'replace'
+            ? Response.json({ error: { code: 'UPLOADS_FROZEN' } }, { status: 423 })
+            : undefined;
+        },
+      });
+      await startProvider();
+
+      const created = await call('/assets', { method: 'POST', body: assetForm([1, 1]) });
+      expect(created.status).toBe(201);
+      const { id } = (await created.json()) as { id: string };
+      const blobsBefore = await countRows('asset_blobs');
+
+      // Percent-encoded id: the hook sees it decoded, as the handler routes it.
+      const encoded = encodeURIComponent(id).replace(/-/g, '%2D');
+      const replaced = await call(`/assets/${encoded}/content`, {
+        method: 'PUT',
+        body: assetForm([2, 2, 2]),
+      });
+      expect(replaced.status).toBe(423);
+      expect(seen.map((req) => req.operation)).toEqual(['create', 'replace']);
+      expect(seen[1]!.assetId).toBe(id);
+      expect(await countRows('asset_blobs')).toBe(blobsBefore);
+      const read = await call(`/assets/${id}/content`);
+      expect(read.headers.get('x-asset-revision')).toBe('1');
+      expect([...new Uint8Array(await read.arrayBuffer())]).toEqual([1, 1]);
+    });
+
     it('answers 500 for a hook that resolves something other than a Response', async () => {
       const { configurePersistenceHooks } = await import('@/lib/server/persistence-hooks');
       configurePersistenceHooks({
@@ -197,6 +233,31 @@ describe('host asset hooks', () => {
   });
 
   describe('configureAssetByteStore', () => {
+    it('degrades to direct bytes when a store declared to sign cannot, and the collector still builds it', async () => {
+      vi.stubEnv('ASSET_BYTE_EGRESS', 'redirect');
+      const memory = memoryByteStore();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { configureAssetByteStore } = await import('@/lib/server/persistence-hooks');
+      configureAssetByteStore({
+        name: 'claims-to-sign',
+        create: () => memory.store,
+        signsReadUrls: true,
+      });
+      await startProvider();
+
+      const created = await call('/assets', { method: 'POST', body: assetForm([6, 6]) });
+      expect(created.status).toBe(201);
+      const { id } = (await created.json()) as { id: string };
+      const read = await call(`/assets/${id}/content`);
+      expect(read.status).toBe(200);
+      expect([...new Uint8Array(await read.arrayBuffer())]).toEqual([6, 6]);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/declares signsReadUrls but has no/));
+
+      const { resolveConfiguredAssetByteStore } =
+        await import('@/lib/persistence/asset-byte-store');
+      await expect(resolveConfiguredAssetByteStore(pool as never)).resolves.toBe(memory.store);
+    });
+
     it('stores and serves bytes through the host store instead of the PostgreSQL column', async () => {
       const memory = memoryByteStore();
       const create = vi.fn((_context: unknown) => memory.store);

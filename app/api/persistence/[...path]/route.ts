@@ -92,6 +92,22 @@ function indirectEgressWithinGrace(
 }
 
 /**
+ * The asset id of `PUT /assets/{id}/content`, decoded the way the storage
+ * handler decodes the path it routes (a leading slash dropped, each segment
+ * percent-decoded). The handler has already matched and decoded this path
+ * before admission runs, so a failure here cannot happen in practice.
+ */
+function routedAssetId(url: string | undefined): string | undefined {
+  const parts = (url ?? '/').split('#', 1)[0]!.split('/');
+  if (parts[0] === '') parts.shift();
+  try {
+    return parts[1] === undefined ? undefined : decodeURIComponent(parts[1]);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Where the upload-admission hook leaves the answer it wants sent. The package
  * handler can only answer its own `403` when admission is refused, so the
  * route substitutes the host's `Response` for it (see `handlePersistenceRequestInner`).
@@ -154,16 +170,22 @@ async function createPersistenceHandler(
       return { learnerKey: ownerId };
     },
     // Upload admission. The package calls this after it has matched the asset
-    // route and method and before it reads the body, and POST is accepted only
-    // on the collection route, so a POST here is exactly an allocation -- by
-    // the package's own routing, whatever spelling the path used -- and
-    // nothing has been stored or counted against the quota yet.
+    // route and method and before it reads the body. POST is accepted only on
+    // the collection route and PUT only on the content route, so the method
+    // alone says which byte-storing operation this is -- by the package's own
+    // routing, whatever spelling the path used -- and nothing has been stored
+    // or counted against the quota yet.
     ...(beforeAssetAllocate === undefined
       ? {}
       : {
-          authorizeAssets: async (_assetPrincipal: unknown, req: { method?: string }) => {
-            if (req.method !== 'POST') return true;
+          authorizeAssets: async (_assetPrincipal: unknown, req: IncomingMessage) => {
+            const operation =
+              req.method === 'POST' ? 'create' : req.method === 'PUT' ? 'replace' : undefined;
+            if (operation === undefined) return true;
+            const assetId = operation === 'replace' ? routedAssetId(req.url) : undefined;
             const refusal: unknown = await beforeAssetAllocate(principal, {
+              operation,
+              ...(assetId === undefined ? {} : { assetId }),
               method: request.method,
               url: request.url,
               headers: request.headers,
