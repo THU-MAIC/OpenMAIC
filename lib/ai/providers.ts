@@ -489,6 +489,38 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/gemini.svg',
     models: [
       {
+        id: 'gemini-3.8-flash',
+        name: 'Gemini 3.8 Flash',
+        contextWindow: 1048576,
+        outputWindow: 65536,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'gemini-3.7-flash',
+        name: 'Gemini 3.7 Flash',
+        contextWindow: 1048576,
+        outputWindow: 65536,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
         id: 'gemini-3.6-flash',
         name: 'Gemini 3.6 Flash',
         contextWindow: 1048576,
@@ -1933,23 +1965,59 @@ function shouldUseOpenAIResponsesApi(providerId: ProviderId, modelId: string): b
   );
 }
 
+/**
+ * A base URL reduced to the endpoint it addresses: origin plus path, with
+ * trailing slashes dropped and any query string discarded. `undefined` when it
+ * does not parse as a URL.
+ */
+function endpointKey(baseUrl: string): string | undefined {
+  try {
+    const url = new URL(baseUrl.trim());
+    return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
+  } catch {
+    return undefined;
+  }
+}
+
 function usesCustomOpenAIBaseUrl(baseUrl?: string): boolean {
   if (!baseUrl) return false;
   const trimmed = baseUrl.trim();
   if (!trimmed) return false;
 
-  try {
-    const url = new URL(trimmed);
-    const pathname = url.pathname.replace(/\/+$/, '');
-    return url.origin !== 'https://api.openai.com' || pathname !== '/v1';
-  } catch {
-    return true;
-  }
+  const key = endpointKey(trimmed);
+  // An unparseable URL counts as custom: the operator pointed this provider
+  // somewhere, and that somewhere is not the OpenAI service.
+  return key === undefined || key !== 'https://api.openai.com/v1';
+}
+
+/**
+ * Whether `baseUrl` addresses a provider's own service rather than a relay.
+ *
+ * `usesCustomOpenAIBaseUrl` recognises OpenAI's origin alone, so every other
+ * provider's native endpoint reads as "custom" to it. The distinction decides
+ * whether the compat streaming path applies, and that path exists for RELAYS: a
+ * relay is what carries an idle timeout to defeat, and a provider's own
+ * endpoint is not.
+ */
+function isProviderNativeBaseUrl(providerId: ProviderId, baseUrl?: string): boolean {
+  if (!baseUrl) return false;
+  const nativeBaseUrl = PROVIDERS[providerId]?.defaultBaseUrl;
+  if (!nativeBaseUrl) return false;
+  const key = endpointKey(baseUrl);
+  return key !== undefined && key === endpointKey(nativeBaseUrl);
 }
 
 function shouldUseOpenAIStreamingChatCompat(providerId: ProviderId, baseUrl?: string): boolean {
   return (
-    providerId === 'openai' &&
+    // Grok behind a relay is the same shape as OpenAI behind one. A long
+    // non-streaming generation sends nothing until the model has the whole
+    // answer, so the relay's idle timeout cuts the connection (~5 min 504).
+    // Streaming upstream keeps bytes flowing; the SSE is buffered back into a
+    // normal JSON response for the caller.
+    (providerId === 'openai' || providerId === 'grok') &&
+    // ...but only for a relay. Grok's own api.x.ai is not one, and it reads as
+    // custom to `usesCustomOpenAIBaseUrl`, which knows OpenAI's origin alone.
+    !isProviderNativeBaseUrl(providerId, baseUrl) &&
     usesCustomOpenAIBaseUrl(baseUrl) &&
     process.env.OPENAI_COMPAT_USE_STREAMING_CHAT === 'true'
   );

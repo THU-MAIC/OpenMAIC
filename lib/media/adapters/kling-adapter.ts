@@ -25,6 +25,7 @@ import type {
 } from '../types';
 import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const DEFAULT_BASE_URL = 'https://api-beijing.klingai.com';
@@ -166,12 +167,15 @@ async function submitTask(
 
   const response = await fetch(`${baseUrl}/v1/videos/text2video`, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(body),
   });
+
+  assertNotRedirected(response, 'Kling');
 
   if (!response.ok) {
     const text = await response.text();
@@ -200,8 +204,11 @@ async function pollTask(
 ): Promise<KlingPollResponse['data']> {
   const response = await fetch(`${baseUrl}/v1/videos/text2video/${taskId}`, {
     method: 'GET',
+    redirect: 'manual',
     headers: { Authorization: `Bearer ${token}` },
   });
+
+  assertNotRedirected(response, 'Kling');
 
   if (!response.ok) {
     const text = await response.text();

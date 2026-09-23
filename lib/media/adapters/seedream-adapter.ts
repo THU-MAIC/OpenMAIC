@@ -20,6 +20,7 @@ import type {
   ImageGenerationResult,
 } from '../types';
 import { probeAuth } from '../probe-auth';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'doubao-seedream-5-0-260128';
@@ -93,6 +94,7 @@ export async function generateWithSeedream(
 
   const response = await fetch(`${resolveArkRoot(baseUrl)}/images/generations`, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.apiKey}`,
@@ -104,6 +106,8 @@ export async function generateWithSeedream(
       watermark: false,
     }),
   });
+
+  assertNotRedirected(response, 'Seedream');
 
   if (!response.ok) {
     const text = await response.text();

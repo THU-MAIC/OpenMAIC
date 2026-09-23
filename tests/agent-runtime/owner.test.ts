@@ -85,4 +85,38 @@ describe('resolveRequestOwnerId', () => {
     expect(resolveRequestOwnerId(request, responseHeaders, 'user-42')).toBe('user-42');
     expect(responseHeaders.has('set-cookie')).toBe(false);
   });
+
+  it('resolves to the configured shared owner instead of a cookie partition', () => {
+    // What the single-tenant setting buys: one identity for every browser, so
+    // the course list is shared and `publish` (which refuses `anon:` owners)
+    // has something it will accept.
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', 'team-alpha');
+    vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+    const responseHeaders = new Headers();
+
+    const ownerId = resolveRequestOwnerId(
+      new Request('http://localhost/agent', {
+        headers: { cookie: 'anonymous_id=a652e716-0e2e-47f5-8432-4ee60f6f0977' },
+      }),
+      responseHeaders,
+    );
+
+    expect(ownerId).toBe('team-alpha');
+    expect(ownerId.startsWith('anon:')).toBe(false);
+    // Nothing to remember per browser, so no cookie is minted or refreshed.
+    expect(responseHeaders.has('set-cookie')).toBe(false);
+  });
+
+  it('lets an authenticated owner outrank the shared owner', () => {
+    // A host auth layer added later must not require clearing this variable
+    // first, so the explicit identity keeps winning.
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', 'team-alpha');
+    vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+    const responseHeaders = new Headers();
+
+    expect(
+      resolveRequestOwnerId(new Request('http://localhost/agent'), responseHeaders, 'user-42'),
+    ).toBe('user-42');
+    expect(responseHeaders.has('set-cookie')).toBe(false);
+  });
 });

@@ -64,6 +64,20 @@ async function ensureDir(dir: string) {
 const DOWNLOAD_TIMEOUT_MS = 120_000; // 2 minutes
 const DOWNLOAD_MAX_SIZE = 100 * 1024 * 1024; // 100 MB
 
+/**
+ * File extension for the image types this path writes.
+ *
+ * It names the bytes on disk, so it has to follow the type the adapter reported
+ * rather than a constant: a JPEG saved as `.png` is served back as the wrong
+ * type. Anything unlisted keeps `png`, the extension this path used to write
+ * for every inline image.
+ */
+const IMAGE_EXTENSION_BY_MIME: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+};
+
 async function downloadToBuffer(url: string): Promise<Buffer> {
   const resp = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   if (!resp.ok) throw new Error(`Download failed: ${resp.status} ${resp.statusText}`);
@@ -140,7 +154,10 @@ export async function generateMediaForClassroom(
         let ext: string;
         if (result.base64) {
           buf = Buffer.from(result.base64, 'base64');
-          ext = 'png';
+          // The adapter that received these bytes reports their type; the URL
+          // branch below reads it off the response, and this branch has only
+          // the adapter's word for it.
+          ext = IMAGE_EXTENSION_BY_MIME[result.mimeType ?? ''] ?? 'png';
         } else if (result.url) {
           buf = await downloadToBuffer(result.url);
           const urlExt = path.extname(new URL(result.url).pathname).replace('.', '');
