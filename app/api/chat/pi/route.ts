@@ -48,6 +48,17 @@ export async function POST(req: NextRequest) {
     return apiError('INVALID_REQUEST', 404, 'Pi chat runtime is disabled');
   }
 
+  // Like every owner-resolving route, a request whose credential the owner
+  // authenticator rejects is refused here, before any model work. With the
+  // default anonymous authenticator resolution always succeeds, so this only
+  // refuses requests under an authenticator that can reject (a gateway
+  // without its secret, say). Memoized, so the whiteboard branch below reuses
+  // this resolution.
+  const owner = await resolveRequestOwner(req);
+  if (!owner.ok) {
+    return apiError('INVALID_CREDENTIALS', 401, 'Invalid owner credential');
+  }
+
   const encoder = new TextEncoder();
   let chatModel: string | undefined;
   let chatMessageCount: number | undefined;
@@ -186,21 +197,18 @@ export async function POST(req: NextRequest) {
     ) {
       // The runtime learner key is the request owner, exactly as on
       // /api/persistence/runtime/*; nothing the client sends chooses it.
-      const owner = await resolveRequestOwner(req);
-      const learnerKey = owner.ok ? owner.principal.ownerId : undefined;
-      if (learnerKey) {
-        try {
-          const provider = await getServerPersistenceProvider(process.env.DATABASE_URL);
-          nativeWhiteboardLearnerKey = learnerKey;
-          nativeWhiteboardService = createWhiteboardRuntimeService({
-            // Guarded like /api/persistence/runtime/*: a deleted course takes
-            // no new runtime from the whiteboard either.
-            store: guardedServerRuntimeStore(provider.runtimeStore, provider.pool),
-            resolveLearnerKey: () => learnerKey,
-          });
-        } catch {
-          log.warn('Native whiteboard capability unavailable: persistence initialization failed');
-        }
+      const learnerKey = owner.principal.ownerId;
+      try {
+        const provider = await getServerPersistenceProvider(process.env.DATABASE_URL);
+        nativeWhiteboardLearnerKey = learnerKey;
+        nativeWhiteboardService = createWhiteboardRuntimeService({
+          // Guarded like /api/persistence/runtime/*: a deleted course takes
+          // no new runtime from the whiteboard either.
+          store: guardedServerRuntimeStore(provider.runtimeStore, provider.pool),
+          resolveLearnerKey: () => learnerKey,
+        });
+      } catch {
+        log.warn('Native whiteboard capability unavailable: persistence initialization failed');
       }
     }
     let nativeWebSearchConfig: ReturnType<typeof resolveClassroomWebSearchConfig>;

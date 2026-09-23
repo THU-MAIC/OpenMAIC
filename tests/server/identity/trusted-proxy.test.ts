@@ -151,12 +151,12 @@ describe('trusted-proxy configuration', () => {
     [
       'a reserved secret header name',
       { TRUSTED_PROXY_SECRET_HEADER: 'Cookie' },
-      /TRUSTED_PROXY_SECRET_HEADER must be an HTTP header name other than/,
+      /TRUSTED_PROXY_SECRET_HEADER names "cookie", a header that HTTP, Next.js/,
     ],
     [
       'a reserved groups header name',
       { TRUSTED_PROXY_GROUPS_HEADER: 'authorization' },
-      /TRUSTED_PROXY_GROUPS_HEADER must be an HTTP header name other than/,
+      /TRUSTED_PROXY_GROUPS_HEADER names "authorization"/,
     ],
     [
       'the user header doubling as the secret header',
@@ -202,6 +202,77 @@ describe('trusted-proxy configuration', () => {
     expect(() => validateOwnerIdentityConfiguration()).toThrow(
       /cannot be combined with a configured authenticator \(host\)/,
     );
+  });
+});
+
+describe('reserved header names', () => {
+  const RESERVED = [
+    // Next.js internal families, reserved by prefix.
+    'x-middleware-subrequest',
+    'X-Middleware-Rewrite',
+    'x-invoke-path',
+    'x-nextjs-data',
+    'next-router-state-tree',
+    'next-router-prefetch',
+    'rsc',
+    'next-action',
+    // Forwarding headers a proxy sets from the connection or passes through.
+    'x-forwarded-for',
+    'x-forwarded-host',
+    'x-forwarded-proto',
+    'x-forwarded-port',
+    'x-real-ip',
+    'forwarded',
+  ];
+  const VARIABLES = [
+    'TRUSTED_PROXY_USER_HEADER',
+    'TRUSTED_PROXY_GROUPS_HEADER',
+    'TRUSTED_PROXY_SECRET_HEADER',
+  ];
+
+  it.each(VARIABLES.flatMap((variable) => RESERVED.map((name) => [variable, name])))(
+    'refuses %s=%s at boot',
+    (variable, name) => {
+      enable({ [variable]: name });
+      expect(() => validateOwnerIdentityConfiguration()).toThrow(
+        new RegExp(`${variable} names "${name.toLowerCase()}", a header that HTTP, Next.js`),
+      );
+    },
+  );
+
+  it.each(['x-forwarded-user', 'x-forwarded-email', 'x-nextjs', 'x-invoker', 'rsc-user'])(
+    'still accepts the neighbouring name %s',
+    (name) => {
+      enable({ TRUSTED_PROXY_USER_HEADER: name });
+      expect(resolveTrustedProxyConfig()?.userHeader).toBe(name);
+    },
+  );
+});
+
+describe('the admin groups boot warning', () => {
+  const warnings = () =>
+    vi
+      .mocked(console.warn)
+      .mock.calls.flat()
+      .filter((line) => String(line).includes('TRUSTED_PROXY_ADMIN_GROUPS'));
+
+  it('is logged once when admin groups are configured', () => {
+    enable({
+      TRUSTED_PROXY_GROUPS_HEADER: 'x-forwarded-groups',
+      TRUSTED_PROXY_ADMIN_GROUPS: 'ops',
+    });
+    validateOwnerIdentityConfiguration();
+    validateOwnerIdentityConfiguration();
+    expect(warnings()).toHaveLength(1);
+    expect(String(warnings()[0])).toMatch(
+      /WARNING: .*x-forwarded-groups header, which is trusted on the strength of the shared secret alone\. The gateway MUST overwrite or strip/,
+    );
+  });
+
+  it('is not logged without admin groups', () => {
+    enable({ TRUSTED_PROXY_GROUPS_HEADER: 'x-forwarded-groups' });
+    validateOwnerIdentityConfiguration();
+    expect(warnings()).toHaveLength(0);
   });
 });
 

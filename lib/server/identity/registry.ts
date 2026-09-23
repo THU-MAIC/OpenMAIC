@@ -2,8 +2,10 @@ import { createAnonymousCookieAuthenticator } from './anonymous-cookie';
 import { createSharedTeamAuthenticator, resolveSharedOwnerId } from './shared-team';
 import {
   createTrustedProxyAuthenticator,
+  resetTrustedProxyWarningsForTests,
   resolveTrustedProxyConfig,
   trustedProxyModeSelected,
+  warnAboutTrustedProxyAdminGroups,
 } from './trusted-proxy';
 import type { OwnerAuthenticator } from './types';
 
@@ -146,10 +148,14 @@ export function validateOwnerIdentityConfiguration(): OwnerIdentityMode {
   const trustedProxy = resolveTrustedProxyConfig();
   const sharedOwnerId = resolveSharedOwnerId();
   if (configured) return 'configured';
-  if (trustedProxy) return 'trustedProxyHeader';
+  if (trustedProxy) {
+    warnAboutTrustedProxyAdminGroups(trustedProxy);
+    return 'trustedProxyHeader';
+  }
   return sharedOwnerId ? 'sharedTeam' : 'anonymousCookie';
 }
 
 export function resetOwnerAuthenticatorForTests(): void {
   delete globalState[REGISTRY_KEY];
+  resetTrustedProxyWarningsForTests();
 }

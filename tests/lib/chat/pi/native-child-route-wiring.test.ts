@@ -645,33 +645,6 @@ describe('PR2 Native Child route production wiring', () => {
           },
         }),
     },
-    {
-      name: 'a rejected owner credential',
-      request: () => {
-        rejectOwnerCredentials();
-        return makeRequest(
-          {
-            config: {
-              agentIds: ['teacher-1'],
-              piEnableWhiteboardTools: true,
-              agentConfigs: [
-                {
-                  id: 'teacher-1',
-                  name: 'Teacher',
-                  role: 'teacher',
-                  persona: 'Teach directly.',
-                  avatar: '',
-                  color: '#3366ff',
-                  allowedActions: ['wb_draw_text'],
-                  priority: 10,
-                },
-              ],
-            },
-          },
-          { cookie: `anonymous_id=${OWNER_COOKIE}` },
-        );
-      },
-    },
   ])('keeps the Native WB bundle absent for $name', async ({ request }) => {
     process.env.NEXT_PUBLIC_PERSISTENCE = '1';
     process.env.DATABASE_URL = 'postgres://shared-provider-test';
@@ -706,6 +679,42 @@ describe('PR2 Native Child route production wiring', () => {
     const child = payloads.find((payload) => payload.source === 'pi-chat-native-child');
     expect(child?.options.tools).not.toHaveProperty('wb_read');
     expect(child?.options.tools).not.toHaveProperty('wb_draw_text');
+  });
+
+  it('refuses a rejected owner credential with 401 before any model work', async () => {
+    process.env.NEXT_PUBLIC_PERSISTENCE = '1';
+    process.env.DATABASE_URL = 'postgres://shared-provider-test';
+    rejectOwnerCredentials();
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(
+      makeRequest(
+        {
+          config: {
+            agentIds: ['teacher-1'],
+            piEnableWhiteboardTools: true,
+            agentConfigs: [
+              {
+                id: 'teacher-1',
+                name: 'Teacher',
+                role: 'teacher',
+                persona: 'Teach directly.',
+                avatar: '',
+                color: '#3366ff',
+                allowedActions: ['wb_draw_text'],
+                priority: 10,
+              },
+            ],
+          },
+        },
+        { cookie: `anonymous_id=${OWNER_COOKIE}` },
+      ),
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ errorCode: 'INVALID_CREDENTIALS' });
+    expect(mocks.resolveModel).not.toHaveBeenCalled();
+    expect(mocks.streamLLM).not.toHaveBeenCalled();
+    expect(mocks.getServerPersistenceProvider).not.toHaveBeenCalled();
   });
 
   it('keeps Pi chat available without WB inventory when persistence initialization fails', async () => {

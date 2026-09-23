@@ -62,14 +62,31 @@ const RETIRED_CLIENT_IDENTITY =
 
 /**
  * Identity asserted by a gateway: the trusted-proxy built-in's default header
- * names, the identity headers common gateways set (oauth2-proxy, Authelia and
- * similar), the gateway secret header and the built-in's configuration. Such a
+ * names, the identity header families common gateways set (oauth2-proxy,
+ * Authelia, Authentik, Azure App Service authentication, Cloudflare Access,
+ * Google IAP, AWS ALB OIDC and similar), the gateway secret header and the
+ * built-in's configuration. Such a
  * header is trustworthy only after the secret check in
  * `lib/server/identity/trusted-proxy.ts`; code that read one anywhere else
  * would take a client-chosen user at its word.
  */
-const GATEWAY_IDENTITY =
-  /x-forwarded-(?:user|groups|email|preferred-username)|x-auth-request-(?:user|groups|email|preferred-username)|\bremote-(?:user|groups|email|name)\b|x-openmaic-proxy-secret|TRUSTED_PROXY_/i;
+const GATEWAY_IDENTITY = new RegExp(
+  [
+    String.raw`x-forwarded-(?:user|groups|email|preferred-username|access-token)`,
+    String.raw`x-auth-request-`,
+    String.raw`\bremote-(?:user|groups|email|name)\b`,
+    String.raw`x-authentik-`,
+    String.raw`x-ms-client-principal`,
+    String.raw`x-webauth-`,
+    String.raw`cf-access-`,
+    String.raw`x-goog-authenticated-user-`,
+    String.raw`x-goog-iap-jwt-assertion`,
+    String.raw`x-amzn-oidc-`,
+    String.raw`x-openmaic-proxy-secret`,
+    String.raw`TRUSTED_PROXY_`,
+  ].join('|'),
+  'i',
+);
 
 const BUILT_IN_IMPORT =
   /createAnonymousCookieAuthenticator|createSharedTeamAuthenticator|createTrustedProxyAuthenticator|resolveSharedOwnerId|resolveTrustedProxyConfig|identity\/(?:anonymous-cookie|shared-team|trusted-proxy)['"]/;
@@ -127,6 +144,18 @@ describe('owner identity boundary', () => {
     "headers.get('x-auth-request-user')",
     "headers.get('Remote-User')",
     "headers.get('x-openmaic-proxy-secret')",
+    "headers.get('X-Forwarded-Preferred-Username')",
+    "headers.get('x-authentik-username')",
+    "headers.get('X-authentik-groups')",
+    "headers.get('x-ms-client-principal')",
+    "headers.get('X-MS-CLIENT-PRINCIPAL-NAME')",
+    "headers.get('x-webauth-user')",
+    "headers.get('cf-access-authenticated-user-email')",
+    "headers.get('Cf-Access-Jwt-Assertion')",
+    "headers.get('x-goog-authenticated-user-email')",
+    "headers.get('x-goog-iap-jwt-assertion')",
+    "headers.get('x-amzn-oidc-identity')",
+    "headers.get('X-Amzn-Oidc-Data')",
     'process.env.TRUSTED_PROXY_SECRET',
   ])('recognizes the gateway identity read %s', (code) => {
     expect(code).toMatch(GATEWAY_IDENTITY);

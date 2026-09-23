@@ -78,17 +78,39 @@ const TRUSTED_PROXY_SECRET_MAX_LENGTH = 1024;
 const SECRET_PATTERN = /^[\x21-\x7e]+$/;
 /** An HTTP field name (RFC 9110 token). */
 const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9a-z]+$/;
-/** Headers the platform or other parts of the app give their own meaning. */
+/**
+ * Headers that HTTP, the framework or a forwarding proxy give their own
+ * meaning. Next.js sets or rewrites its internal headers between middleware
+ * and the handler, and proxies set the forwarding ones from the connection or
+ * pass a client's value through, so none of them can carry the gateway's
+ * user, groups or secret.
+ */
 const RESERVED_HEADERS = new Set([
   'authorization',
   'connection',
   'content-length',
   'content-type',
   'cookie',
+  'forwarded',
   'host',
+  'next-action',
+  'rsc',
   'set-cookie',
   'transfer-encoding',
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'x-forwarded-port',
+  'x-forwarded-proto',
+  'x-real-ip',
 ]);
+/** Framework-internal header families, reserved by prefix. */
+const RESERVED_HEADER_PREFIXES = ['next-router-', 'x-invoke-', 'x-middleware-', 'x-nextjs-'];
+
+function reservedHeader(name: string): boolean {
+  return (
+    RESERVED_HEADERS.has(name) || RESERVED_HEADER_PREFIXES.some((prefix) => name.startsWith(prefix))
+  );
+}
 
 /** Groups past these bounds are ignored, which can only withhold a role. */
 export const TRUSTED_PROXY_MAX_GROUPS = 256;
@@ -112,10 +134,14 @@ function env(name: string): string | undefined {
 function headerName(variable: string, fallback?: string): string | undefined {
   const raw = env(variable)?.trim().toLowerCase() ?? fallback;
   if (raw === undefined) return undefined;
-  if (!HEADER_NAME_PATTERN.test(raw) || RESERVED_HEADERS.has(raw)) {
+  if (!HEADER_NAME_PATTERN.test(raw)) {
+    throw new Error(`${variable} must be an HTTP header name, got ${JSON.stringify(raw)}.`);
+  }
+  if (reservedHeader(raw)) {
     throw new Error(
-      `${variable} must be an HTTP header name other than ${[...RESERVED_HEADERS].join(', ')}; ` +
-        `got ${JSON.stringify(raw)}.`,
+      `${variable} names ${JSON.stringify(raw)}, a header that HTTP, Next.js or a forwarding ` +
+        `proxy sets itself. Reserved: ${[...RESERVED_HEADERS].join(', ')}, and names starting ` +
+        `with ${RESERVED_HEADER_PREFIXES.join(', ')}.`,
     );
   }
   return raw;
@@ -228,6 +254,30 @@ export function trustedProxySecretMatches(presented: string | null, expected: st
   if (presented === null) return false;
   const digest = (value: string) => createHash('sha256').update(value, 'utf8').digest();
   return timingSafeEqual(digest(presented), digest(expected));
+}
+
+const ADMIN_GROUPS_WARNED = Symbol.for('openmaic.owner-identity.trusted-proxy.admin-warned');
+const warnState = globalThis as typeof globalThis & { [ADMIN_GROUPS_WARNED]?: boolean };
+
+/**
+ * Called once at boot. The `admin` role is granted from the groups header, and
+ * nothing but the shared secret proves where that header came from: a gateway
+ * that injects the secret but passes a client's groups header through would let
+ * the client name its own groups. Say so where the operator will see it.
+ */
+export function warnAboutTrustedProxyAdminGroups(config: TrustedProxyConfig): void {
+  if (!config.adminGroups.size || warnState[ADMIN_GROUPS_WARNED]) return;
+  warnState[ADMIN_GROUPS_WARNED] = true;
+  log.warn(
+    `WARNING: ${ADMIN_GROUPS_ENV} grants the admin role from the ${config.groupsHeader} ` +
+      'header, which is trusted on the strength of the shared secret alone. The gateway MUST ' +
+      'overwrite or strip any client-supplied copy of that header on every request; otherwise ' +
+      'any client that reaches the app through the gateway can grant itself admin.',
+  );
+}
+
+export function resetTrustedProxyWarningsForTests(): void {
+  delete warnState[ADMIN_GROUPS_WARNED];
 }
 
 const INVALID: AuthOutcome = { ok: false, status: 401, code: 'INVALID_CREDENTIAL' };

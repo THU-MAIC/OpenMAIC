@@ -158,6 +158,42 @@ describe('trusted-proxy authenticator through the routes', () => {
     expect(published.headers.has('set-cookie')).toBe(false);
   });
 
+  async function piChat(headers: Record<string, string>) {
+    const { POST } = await import('@/app/api/chat/pi/route');
+    // An empty body: a resolved owner gets past identity and stops at body
+    // validation (400) before any model work; a refused one never gets there.
+    return POST(
+      new NextRequest('http://localhost/api/chat/pi', {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: '{}',
+      }),
+    );
+  }
+
+  it('refuses /api/chat/pi without the gateway secret', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PI_CHAT_ENABLED', 'true');
+
+    const forged = await piChat({ 'x-forwarded-user': 'alice' });
+    expect(forged.status).toBe(401);
+    expect(forged.headers.has('set-cookie')).toBe(false);
+    expect((await piChat({ 'x-openmaic-proxy-secret': SECRET })).status).toBe(401);
+
+    const gateway = await piChat(asGateway('alice'));
+    expect(gateway.status).toBe(400);
+    await expect(gateway.json()).resolves.toMatchObject({ errorCode: 'MISSING_REQUIRED_FIELD' });
+  });
+
+  it('leaves /api/chat/pi open to anonymous visitors under the default authenticator', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PI_CHAT_ENABLED', 'true');
+    vi.stubEnv('OWNER_AUTHENTICATOR', '');
+    vi.stubEnv('TRUSTED_PROXY_SECRET', '');
+
+    // No cookie at all, and a malformed one: anonymous resolution always succeeds.
+    expect((await piChat({})).status).toBe(400);
+    expect((await piChat({ cookie: 'anonymous_id=not-a-uuid' })).status).toBe(400);
+  });
+
   it('keys runtime data by the gateway user', async () => {
     const response = await learnerKey(asGateway('alice'));
     expect(response.status).toBe(200);
