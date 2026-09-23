@@ -29,7 +29,7 @@ Reads are migrated on both sides of the wire. The backing store performs its nor
 
 ## Authentication and authorization
 
-Documents are author assets, not learner-partitioned data. The contract does not prescribe a tenant or ownership model; deployments enforce their policy through the injected `authenticate` and `authorizeDocuments` hooks. The reference handler requires an authenticated principal for every document route. Its default authorization permits any authenticated principal; production deployments can supply `authorizeDocuments` to apply author, tenant, role, or document-level policy.
+Documents are author assets, not learner-partitioned data. The contract does not prescribe a tenant or ownership model; deployments enforce their policy through the injected `authenticate` and `authorizeDocuments` hooks. The reference handler requires an authenticated principal for every document route. Its default authorization permits any authenticated principal; production deployments can supply `authorizeDocuments` to apply author, tenant, role, or document-level policy. Nothing on the wire names an owner, and the PostgreSQL backend keeps no ownership column on `document_stages`: a deployment that scopes documents per owner injects a `PgDocumentStore` bound to the request's owner with its own ownership relation (`documentOwnership`), so listings and writes are scoped by that relation while reads by id stay capability-by-id.
 
 ## Errors
 

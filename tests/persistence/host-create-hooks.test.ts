@@ -356,6 +356,9 @@ describe('host document creation hooks', () => {
   });
 
   it('warns, with a count, when the boot backfill adopts owned courses without hooks', async () => {
+    // An installation upgraded from before ownership left the document row:
+    // it still has the retired column, and a course recorded only there.
+    await pool.query('ALTER TABLE document_stages ADD COLUMN owner_id TEXT');
     await pool.query(
       `INSERT INTO document_stages (id, name, created_at, updated_at, owner_id, data)
        VALUES ('stage-legacy', 'Legacy', 1, 1, $1, '{}'::jsonb)`,

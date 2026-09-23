@@ -36,6 +36,14 @@ import type {
 } from './types.js';
 import { DocumentFolderLimitError, DocumentNotFoundError, DocumentVersionError } from './types.js';
 import {
+  claimOwnershipSql,
+  ownedByCondition,
+  ownerOfSql,
+  resolveDocumentOwnership,
+  type DocumentOwnershipRelation,
+  type ResolvedDocumentOwnership,
+} from './ownership.js';
+import {
   documentAssetScopes,
   forgetDocumentAssetWithdrawal,
   recordAssetReferenceTracking,
@@ -52,6 +60,7 @@ import { asStorageLockUnavailable } from '../runtime/pg.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
 export type { QueryResult, Queryable, WithTransaction } from '../runtime/pg.js';
+export type { DocumentOwnershipRelation } from './ownership.js';
 export { StorageLockUnavailableError, type StorageLockUnavailableReason } from '../runtime/pg.js';
 
 export interface PgDocumentStoreOptions {
@@ -64,8 +73,39 @@ export interface PgDocumentStoreOptions {
   validateScene?: SceneValidator;
   /** Stage write-boundary validator. Defaults to the DSL validateStage. */
   validateStage?: StageValidator;
-  /** Restrict writes, listings, and folders to this owner. Reads remain id-capable. */
+  /**
+   * The trusted owner this store acts for: whose folders it manages, whose
+   * asset principals its writes may reference ({@link assetReferencePrincipals}),
+   * and -- through {@link documentOwnership} -- whose documents it lists and
+   * writes. Reads by id remain capability-by-id. Usually set with
+   * {@link PgDocumentStore.forOwner} rather than here.
+   *
+   * Requires `documentOwnership` to be given explicitly (a relation, or
+   * `false`): an owner-bound store used to scope documents through a
+   * `document_stages.owner_id` column that no longer exists, and a store
+   * that silently stopped scoping would list and write every owner's
+   * documents.
+   */
   ownerId?: string;
+  /**
+   * Where document ownership lives: the host's relation, which an owner-bound
+   * store scopes listings, writes, deletes and folder membership through.
+   * `false` declares that this store does not scope documents by owner at all
+   * -- a single-owner deployment, or a host that gates every call itself --
+   * and still lets it bind an owner for folders and asset principals.
+   * Unset is allowed only on a store that is not owner-bound.
+   *
+   * A store that is not owner-bound is tenant-agnostic whatever this says: it
+   * lists and writes every document.
+   */
+  documentOwnership?: DocumentOwnershipRelation | false;
+  /**
+   * Whether `document_stages` has the `folder_id` column the folder methods
+   * use. Defaults to `true` (`ensureDocumentSchema` provisions it). A host
+   * that provisions its own tables without folders sets `false`: listings
+   * then never read the column, and every folder method throws.
+   */
+  folders?: boolean;
   /**
    * Maintain the `document_asset_refs` table and the `asset_entries` lifecycle
    * columns as a side effect of every write route. Defaults to `false`.
@@ -91,13 +131,15 @@ export interface PgDocumentStoreOptions {
    * never refused.
    *
    * A function of the owner rather than a list, and evaluated per write
-   * against the store's own `ownerId`, so a store re-bound with
-   * {@link PgDocumentStore.forOwner} scopes to the new owner: a fixed list
+   * against the store's own `ownerId` (never a column of the document row), so
+   * a store re-bound with {@link PgDocumentStore.forOwner} scopes to the new
+   * owner: a fixed list
    * would carry one owner's principals onto another owner's writes. A host
    * whose asset registry is partitioned per owner returns the owner's own
    * principal (plus any partition every owner may use), so one owner's
    * document cannot commit or pin another owner's allocation. The collector's
-   * backfill takes the same function (`AssetCollectorOptions`).
+   * backfill takes the same function (`AssetCollectorOptions`), with the same
+   * `documentOwnership` relation to learn each document's owner from.
    */
   assetReferencePrincipals?: (ownerId: string | null) => readonly string[] | undefined;
 }
@@ -161,23 +203,54 @@ CREATE TABLE IF NOT EXISTS document_stages (
   task_engine_mode BOOLEAN,
   created_at DOUBLE PRECISION NOT NULL,
   updated_at DOUBLE PRECISION NOT NULL,
-  owner_id TEXT,
   folder_id TEXT,
   data JSONB NOT NULL
 );
 
 ALTER TABLE document_stages
-  ADD COLUMN IF NOT EXISTS owner_id TEXT;
-
-ALTER TABLE document_stages
   ADD COLUMN IF NOT EXISTS folder_id TEXT;
 
-CREATE INDEX IF NOT EXISTS document_stages_owner_idx
-  ON document_stages (owner_id, id) WHERE owner_id IS NOT NULL;
+-- Document ownership is not recorded here: a host keeps it in its own
+-- relation (see DocumentOwnershipRelation). An installation created before
+-- that keeps its owner_id column for one release -- so a rollback still finds
+-- it, and a host can copy it into its relation first -- but nothing reads or
+-- writes it any more, and the next release drops it. A NOT NULL or a default
+-- a host added to it would fail or mislabel every new document, so both are
+-- relaxed. The catalog is asked first, and each ALTER runs only when it has
+-- something to change: an ALTER naming a column that is not there is an error,
+-- and one with nothing to change would still take an exclusive table lock on
+-- every boot. The indexes below served only the column.
+DO $document_stages_owner_retirement$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM pg_attribute
+     WHERE attrelid = to_regclass('document_stages')
+       AND attname = 'owner_id'
+       AND NOT attisdropped
+       AND attnotnull
+  ) THEN
+    ALTER TABLE document_stages ALTER COLUMN owner_id DROP NOT NULL;
+  END IF;
+  IF EXISTS (
+    SELECT 1
+      FROM pg_attribute
+     WHERE attrelid = to_regclass('document_stages')
+       AND attname = 'owner_id'
+       AND NOT attisdropped
+       AND atthasdef
+  ) THEN
+    ALTER TABLE document_stages ALTER COLUMN owner_id DROP DEFAULT;
+  END IF;
+END
+$document_stages_owner_retirement$;
 
-CREATE INDEX IF NOT EXISTS document_stages_owner_folder_idx
-  ON document_stages (owner_id, folder_id, id)
-  WHERE owner_id IS NOT NULL AND folder_id IS NOT NULL;
+DROP INDEX IF EXISTS document_stages_owner_idx;
+
+DROP INDEX IF EXISTS document_stages_owner_folder_idx;
+
+CREATE INDEX IF NOT EXISTS document_stages_folder_idx
+  ON document_stages (folder_id, id) WHERE folder_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS document_scenes (
   stage_id TEXT NOT NULL REFERENCES document_stages(id) ON DELETE CASCADE,
@@ -537,6 +610,9 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
   private readonly validateScene: SceneValidator;
   private readonly validateStage: StageValidator;
   private readonly ownerId: string | null;
+  /** The host's ownership relation, when this store scopes documents through one. */
+  private readonly ownership: ResolvedDocumentOwnership | null;
+  private readonly folders: boolean;
   private readonly trackAssetReferences: boolean;
   private readonly options: PgDocumentStoreOptions;
 
@@ -555,7 +631,20 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     if (options.ownerId !== undefined && !isPgQueryableKey(options.ownerId)) {
       throw new Error('@openmaic/storage: PgDocumentStore ownerId must be lossless JSON text');
     }
+    if (options.ownerId !== undefined && options.documentOwnership === undefined) {
+      throw new Error(
+        '@openmaic/storage: an owner-bound PgDocumentStore requires documentOwnership -- the ' +
+          "host's ownership relation, or false for a store that does not scope documents by " +
+          'owner. document_stages no longer records an owner, so there is nothing to scope ' +
+          'through by default',
+      );
+    }
     this.ownerId = options.ownerId ?? null;
+    this.ownership =
+      options.documentOwnership === undefined || options.documentOwnership === false
+        ? null
+        : resolveDocumentOwnership(options.documentOwnership);
+    this.folders = options.folders !== false;
     this.trackAssetReferences = options.trackAssetReferences === true;
     this.options = options;
   }
@@ -566,24 +655,101 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     return principals === undefined ? {} : { principals };
   }
 
-  /** Bind document writes, listings, and folders to one trusted owner identity. */
+  /**
+   * Bind this store to one trusted owner: its folders, its asset principals,
+   * and -- through `documentOwnership` -- its documents. The binding needs
+   * `documentOwnership` configured (a relation, or `false`); see the option.
+   */
   forOwner(ownerId: string): PgDocumentStore<TScene, TStage> {
     return new PgDocumentStore(this.queryable, { ...this.options, ownerId });
   }
 
-  private scopePredicate(alias = '', ownerParameter = 1): string {
-    const column = alias === '' ? 'owner_id' : `${alias}.owner_id`;
-    return this.ownerId === null ? `${column} IS NULL` : `${column} = $${ownerParameter}`;
+  /** The relation and owner this store scopes documents by, or `null` for none. */
+  private documentScope(): { ownership: ResolvedDocumentOwnership; ownerId: string } | null {
+    return this.ownership !== null && this.ownerId !== null
+      ? { ownership: this.ownership, ownerId: this.ownerId }
+      : null;
   }
 
-  private scopeParams(stageId?: string): unknown[] {
-    return this.ownerId === null
-      ? stageId === undefined
-        ? []
-        : [stageId]
-      : stageId === undefined
-        ? [this.ownerId]
-        : [stageId, this.ownerId];
+  /**
+   * ` AND <owned>` for a query whose parameters are `params`, appending the
+   * owner parameter when this store scopes documents; `''` otherwise.
+   */
+  private ownedClause(stageExpression: string, params: unknown[], live = false): string {
+    const scope = this.documentScope();
+    if (scope === null) return '';
+    params.push(scope.ownerId);
+    return ` AND ${ownedByCondition(scope.ownership, stageExpression, params.length, live)}`;
+  }
+
+  /**
+   * Refuse a write to a document this store's owner does not hold.
+   *
+   * `exists` is whether the document row is already there (the caller has
+   * locked it). A row in the ownership relation naming another owner is
+   * refused; so is an existing document with no ownership row, which belongs
+   * to no one this store may act for. A new document with no ownership row is
+   * allowed: it is claimed after its rows are written, by this store
+   * (`claimOnCreate`) or by the host in the same transaction.
+   */
+  private async assertWritable(
+    queryable: Queryable,
+    stageId: string,
+    exists: boolean,
+  ): Promise<void> {
+    const scope = this.documentScope();
+    if (scope === null) return;
+    const owner = await queryable.query<{ owner_id: string }>(
+      ownerOfSql(scope.ownership, ' FOR SHARE'),
+      [stageId],
+    );
+    const holder = owner.rows[0]?.owner_id;
+    if (holder === scope.ownerId) return;
+    if (holder === undefined && !exists) return;
+    throw new DocumentNotFoundError(
+      stageId,
+      `@openmaic/storage: document ${JSON.stringify(stageId)} belongs to another scope`,
+    );
+  }
+
+  /** Whether this store's owner holds `stageId` (always true when unscoped). */
+  private async ownsDocument(queryable: Queryable, stageId: string): Promise<boolean> {
+    const scope = this.documentScope();
+    if (scope === null) return true;
+    const owner = await queryable.query<{ owner_id: string }>(
+      ownerOfSql(scope.ownership, ' FOR SHARE'),
+      [stageId],
+    );
+    return owner.rows[0]?.owner_id === scope.ownerId;
+  }
+
+  /**
+   * With `claimOnCreate`, record this store's owner as the owner of a
+   * document it just created, and refuse (rolling the create back) when a
+   * concurrent create by another owner got there first.
+   */
+  private async claimCreated(queryable: Queryable, stageId: string): Promise<void> {
+    const scope = this.documentScope();
+    if (scope === null || !scope.ownership.claimOnCreate) return;
+    const inserted = await queryable.query<{ owner_id: string }>(
+      claimOwnershipSql(scope.ownership),
+      [stageId, scope.ownerId],
+    );
+    if (inserted.rows[0]?.owner_id === scope.ownerId) return;
+    if (await this.ownsDocument(queryable, stageId)) return;
+    throw new DocumentNotFoundError(
+      stageId,
+      `@openmaic/storage: document ${JSON.stringify(stageId)} belongs to another scope`,
+    );
+  }
+
+  private requireFolders(operation: string): void {
+    if (!this.folders) {
+      throw new Error(
+        `@openmaic/storage: ${operation} requires folders; this store was constructed with ` +
+          'folders: false',
+      );
+    }
   }
 
   private async transaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
@@ -620,6 +786,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
   }
 
   private requireOwner(operation: string): string {
+    this.requireFolders(operation);
     if (this.ownerId === null) {
       throw new Error(`@openmaic/storage: ${operation} requires an owner-bound document store`);
     }
@@ -723,11 +890,11 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
   }
 
   private async persistStage(queryable: Queryable, stageRow: StageRow<TStage>): Promise<void> {
-    const result = await queryable.query<{ id: string }>(
+    await queryable.query(
       `INSERT INTO document_stages
          (id, name, description, interactive_mode, task_engine_mode, created_at, updated_at,
-          owner_id, data)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+          data)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
        ON CONFLICT (id) DO UPDATE
          SET name = EXCLUDED.name,
              description = EXCLUDED.description,
@@ -735,9 +902,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
              task_engine_mode = EXCLUDED.task_engine_mode,
              created_at = EXCLUDED.created_at,
              updated_at = EXCLUDED.updated_at,
-             data = EXCLUDED.data
-       WHERE document_stages.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id
-       RETURNING id`,
+             data = EXCLUDED.data`,
       [
         stageRow.id,
         stageRow.name,
@@ -746,16 +911,9 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         stageRow.taskEngineMode ?? null,
         stageRow.createdAt,
         stageRow.updatedAt,
-        this.ownerId,
         encodeJson(stageRow, `document stage ${JSON.stringify(stageRow.id)}`),
       ],
     );
-    if (result.rows.length === 0) {
-      throw new DocumentNotFoundError(
-        stageRow.id,
-        `@openmaic/storage: document ${JSON.stringify(stageRow.id)} belongs to another scope`,
-      );
-    }
   }
 
   async saveDocument(doc: MaicDocument<TScene, TStage>): Promise<void> {
@@ -786,7 +944,13 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         );
       }
 
+      // Ownership is decided before anything is written, against the host's
+      // relation rather than a column of the row: the stage row is locked
+      // above, so a concurrent writer cannot slip between the check and the
+      // write.
+      await this.assertWritable(queryable, stageId, existingStage !== undefined);
       await this.persistStage(queryable, stageRow);
+      if (existingStage === undefined) await this.claimCreated(queryable, stageId);
       const existingScenes = await queryable.query<StoredSceneRow>(
         `SELECT id, data
            FROM document_scenes
@@ -856,11 +1020,12 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
       // Existence and ownership gate, exactly like loadDocument: a foreign or
       // missing stage answers the same null. The revision read itself is
       // un-scoped (readStageFreshnessManifest assumes the stage exists).
+      const params: unknown[] = [stageId];
       const scoped = await queryable.query<{ id: string }>(
-        `SELECT id
-           FROM document_stages
-          WHERE id = $1 AND ${this.scopePredicate('', 2)}`,
-        this.scopeParams(stageId),
+        `SELECT stages.id
+           FROM document_stages AS stages
+          WHERE stages.id = $1${this.ownedClause('stages.id', params)}`,
+        params,
       );
       if (scoped.rows.length === 0) return null;
       return readStageFreshnessManifest(stageId, queryable);
@@ -985,28 +1150,31 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     const ownerId = this.requireOwner('deleteFolder');
     if (!isPgQueryableKey(id)) return null;
     return this.transaction(async (queryable) => {
-      // Capture the filed documents before the folder row goes away. Every
-      // document in this folder is owner-scoped (the folder is owner-scoped),
-      // so the captured ids are exactly the caller's own courses.
+      // Capture the filed documents before the folder row goes away. Folder
+      // ids are unique only per owner, so membership is scoped through the
+      // ownership relation as well: the captured ids are exactly the caller's
+      // own courses, never another owner's filed under the same folder id.
       let removedStageIds: string[] = [];
       if (mode === 'remove') {
+        const params: unknown[] = [id];
         const members = await queryable.query<{ id: string }>(
-          `SELECT id
-             FROM document_stages
-            WHERE owner_id = $1 AND folder_id = $2
-            ORDER BY id ASC`,
-          [ownerId, id],
+          `SELECT stages.id
+             FROM document_stages AS stages
+            WHERE stages.folder_id = $1${this.ownedClause('stages.id', params)}
+            ORDER BY stages.id ASC`,
+          params,
         );
         removedStageIds = members.rows.map((row) => row.id);
       }
       // Clear the membership of every filed document: 'ungroup' keeps the
       // courses (they become unfiled), 'remove' hands them to the caller's
       // cascade without leaving dangling folder pointers behind.
+      const clearParams: unknown[] = [id];
       await queryable.query(
-        `UPDATE document_stages
+        `UPDATE document_stages AS stages
             SET folder_id = NULL
-          WHERE owner_id = $1 AND folder_id = $2`,
-        [ownerId, id],
+          WHERE stages.folder_id = $1${this.ownedClause('stages.id', clearParams)}`,
+        clearParams,
       );
       const deleted = await queryable.query<{ id: string }>(
         `DELETE FROM document_folders
@@ -1029,34 +1197,44 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     if (folderId === null) {
       // Un-file: a missing membership row already means unfiled, so this is
       // idempotent and never refuses (the route's contract for folderId null).
+      const params: unknown[] = [stageId];
       await this.queryable.query(
-        `UPDATE document_stages
+        `UPDATE document_stages AS stages
             SET folder_id = NULL
-          WHERE id = $1 AND owner_id = $2`,
-        [stageId, ownerId],
+          WHERE stages.id = $1${this.ownedClause('stages.id', params)}`,
+        params,
       );
       return true;
     }
     if (!isPgQueryableKey(folderId)) return false;
+    const params: unknown[] = [stageId, folderId, ownerId];
     const result = await this.queryable.query<{ id: string }>(
       `UPDATE document_stages AS stages
           SET folder_id = $2
         WHERE stages.id = $1
-          AND stages.owner_id = $3
           AND EXISTS (
             SELECT 1
               FROM document_folders AS folders
              WHERE folders.owner_id = $3 AND folders.id = $2
-          )
+          )${this.ownedClause('stages.id', params)}
       RETURNING stages.id`,
-      [stageId, folderId, ownerId],
+      params,
     );
     return result.rows.length === 1;
   }
 
   async listDocuments(folderId?: string): Promise<DocumentSummary[]> {
+    if (folderId !== undefined) this.requireFolders('listDocuments(folderId)');
     if (folderId !== undefined && (!isPgQueryableKey(folderId) || this.ownerId === null)) return [];
-    const folderFilter = folderId === undefined ? '' : ` AND stages.folder_id = $2`;
+    const params: unknown[] = [];
+    let folderFilter = '';
+    if (folderId !== undefined) {
+      params.push(folderId);
+      folderFilter = ` AND stages.folder_id = $${params.length}`;
+    }
+    // Owned and not retired, through the host's relation, when this store
+    // scopes documents; every document otherwise.
+    const owned = this.ownedClause('stages.id', params, true);
     const result = await this.queryable.query<SummaryRow>(
       `SELECT stages.id,
               stages.name,
@@ -1065,14 +1243,14 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
               stages.task_engine_mode,
               stages.created_at,
               stages.updated_at,
-              stages.folder_id,
+              ${this.folders ? 'stages.folder_id' : 'NULL::text AS folder_id'},
               COUNT(scenes.id)::text AS scene_count
          FROM document_stages AS stages
          LEFT JOIN document_scenes AS scenes ON scenes.stage_id = stages.id
-        WHERE ${this.scopePredicate('stages')}${folderFilter}
+        WHERE TRUE${folderFilter}${owned}
         GROUP BY stages.id
         ORDER BY stages.id ASC`,
-      folderId === undefined ? this.scopeParams() : [this.ownerId, folderId],
+      params,
     );
     return result.rows.map((row) => ({
       id: row.id,
@@ -1173,11 +1351,12 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
       // cannot drop another scope's reference rows. Holding that lock also
       // serializes this against a concurrent write to the same stage, which
       // would otherwise re-insert the rows this is removing.
+      const params: unknown[] = [stageId];
       const scoped = await queryable.query<{ id: string }>(
-        `SELECT id FROM document_stages
-          WHERE id = $1 AND ${this.scopePredicate('', 2)}
+        `SELECT stages.id FROM document_stages AS stages
+          WHERE stages.id = $1${this.ownedClause('stages.id', params)}
           FOR UPDATE`,
-        this.scopeParams(stageId),
+        params,
       );
       if (scoped.rows.length === 0) return false;
       // Every scope of the stage -- stage-level rows and every scene's -- and
@@ -1208,11 +1387,12 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         //
         // Gated on the scoped stage first: a foreign or missing stage deletes
         // no document, and must not drop another scope's reference rows.
+        const params: unknown[] = [stageId];
         const scoped = await queryable.query<{ id: string }>(
-          `SELECT id FROM document_stages
-            WHERE id = $1 AND ${this.scopePredicate('', 2)}
+          `SELECT stages.id FROM document_stages AS stages
+            WHERE stages.id = $1${this.ownedClause('stages.id', params)}
             FOR UPDATE`,
-          this.scopeParams(stageId),
+          params,
         );
         if (scoped.rows.length === 0) return;
         await removeDocumentAssetReferences(queryable, { stageId });
@@ -1221,17 +1401,17 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         // walk would skip that document, and on a deployment where some writer
         // does not track references there would be no write to clear it.
         await forgetDocumentAssetWithdrawal(queryable, stageId);
-        await queryable.query(
-          `DELETE FROM document_stages WHERE id = $1 AND ${this.scopePredicate('', 2)}`,
-          this.scopeParams(stageId),
-        );
+        // The row is locked and its ownership checked above.
+        await queryable.query('DELETE FROM document_stages WHERE id = $1', [stageId]);
       });
       return;
     }
     // One statement; both child tables are removed by their FK cascades.
+    const params: unknown[] = [stageId];
     await this.queryable.query(
-      `DELETE FROM document_stages WHERE id = $1 AND ${this.scopePredicate('', 2)}`,
-      this.scopeParams(stageId),
+      `DELETE FROM document_stages AS stages
+        WHERE stages.id = $1${this.ownedClause('stages.id', params)}`,
+      params,
     );
   }
 
@@ -1256,6 +1436,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
       if (dslVersionOf(stored) !== DSL_VERSION) {
         throw this.currentVersionError('putStage into', stageId, stored);
       }
+      await this.assertWritable(queryable, stageId, true);
       await this.persistStage(queryable, stageRow);
       // Stage-level rows only: this write cannot have changed what any scene
       // holds, so touching a scene's rows here would drop references the
@@ -1285,6 +1466,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
       if (dslVersionOf(stored) !== DSL_VERSION) {
         throw this.currentVersionError('putScene into', stageId, stored);
       }
+      await this.assertWritable(queryable, stageId, true);
       await queryable.query(
         `INSERT INTO document_scenes (stage_id, id, scene_order, data)
          VALUES ($1, $2, $3, $4::jsonb)
@@ -1355,6 +1537,8 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     await this.writeTransaction(async (queryable) => {
       const stored = await this.loadStage(queryable, stageId, 'update');
       if (!stored) return;
+      // A foreign document is as absent to this store as a missing one.
+      if (!(await this.ownsDocument(queryable, stageId))) return;
       if (dslVersionOf(stored) !== DSL_VERSION) {
         throw this.currentVersionError('deleteScene from', stageId, stored);
       }

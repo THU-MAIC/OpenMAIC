@@ -188,6 +188,8 @@ export class DocumentFolderLimitError extends Error {
  * Owner-scoped folder organization layered beside document storage. These
  * methods are intentionally available only on a bound server store: callers
  * choose the trusted owner with `forOwner`, never with method parameters.
+ * Which documents are the owner's is answered by the store's ownership
+ * relation (`documentOwnership`), not by the document rows.
  */
 export interface DocumentFolderStore {
   createFolder(
@@ -332,7 +334,8 @@ export interface StageFreshnessManifest {
 export interface StageFreshnessManifestStore {
   /**
    * Read the owner-scoped freshness manifest for one stage. `null` when the
-   * stage is absent from this store's scope (the same no-existence-oracle
+   * stage is absent from this store's scope -- missing, or not held by the
+   * bound owner in the store's ownership relation (the same no-existence-oracle
    * posture as `loadDocument`).
    */
   readFreshnessManifest(stageId: string): Promise<StageFreshnessManifest | null>;

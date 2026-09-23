@@ -28,6 +28,7 @@ import type {
 
 import { assetReferencePrincipalsForOwner } from './owner-assets';
 import { claimStageMeta, StageAccessError, tombstoneStageMeta } from './stage-meta';
+import { STAGE_META_OWNERSHIP } from './stage-meta-ownership';
 
 export interface PoolClientLike {
   query(text: string, params?: unknown[]): Promise<{ rows: unknown[] }>;
@@ -135,7 +136,6 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
     private readonly inner: PgDocumentStore<TScene, TStage>,
     private readonly operations: AsyncLocalStorage<PendingOperation>,
     private readonly runTransaction: WithTransaction,
-    private readonly queryable: Queryable,
     private readonly ownerId: string,
     /** The same store, pinned to one already-open transaction. See its use. */
     private readonly pinnedToTransaction: (queryable: Queryable) => PgDocumentStore<TScene, TStage>,
@@ -264,16 +264,13 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
     }
   }
 
-  async listDocuments(folderId?: string): Promise<DocumentSummary[]> {
-    const [documents, live] = await Promise.all([
-      this.inner.listDocuments(folderId),
-      this.queryable.query<{ stage_id: string } & Record<string, unknown>>(
-        'SELECT stage_id FROM stage_meta WHERE owner_id = $1 AND deleted_at IS NULL',
-        [this.ownerId],
-      ),
-    ]);
-    const liveIds = new Set(live.rows.map((row) => row.stage_id));
-    return documents.filter((document) => liveIds.has(document.id));
+  /**
+   * This owner's live courses: the package lists through `stage_meta`
+   * (`STAGE_META_OWNERSHIP`), owned by this owner and not tombstoned, in one
+   * query.
+   */
+  listDocuments(folderId?: string): Promise<DocumentSummary[]> {
+    return this.inner.listDocuments(folderId);
   }
 
   createFolder(folderId: string, name: string, limit?: number) {
@@ -393,6 +390,10 @@ export function createOwnerBoundDocumentStore<
   };
   const innerOptions = {
     ownerId: options.ownerId,
+    // Ownership lives in `stage_meta` alone: the package scopes listings,
+    // writes, deletes and folder membership through it. It never claims a
+    // row itself -- the gate above does, with the host create hooks.
+    documentOwnership: STAGE_META_OWNERSHIP,
     validateScene: options.validateScene,
     validateStage: options.validateStage,
     // The reference half of the asset lifecycle, on for the same reason the
@@ -427,7 +428,6 @@ export function createOwnerBoundDocumentStore<
     inner,
     operations,
     withTransaction,
-    queryable,
     options.ownerId,
     pinnedToTransaction,
   );

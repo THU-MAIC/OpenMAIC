@@ -88,15 +88,37 @@ a browser.
   (`validateStage` / `validateScene`) so schema drift fails loud. The outline is
   an opaque, app-owned snapshot carried alongside — persisted verbatim, neither
   validated nor migrated.
-- **Server document ownership.** A document id is a read capability. Binding a
-  `PgDocumentStore` with `store.forOwner(ownerId)` filters listings and protects
-  writes while leaving direct reads addressable by id. Deployments that need
-  stronger lifecycle rules can add an ownership metadata decorator.
+- **Server document ownership lives in the host's relation.** A document id is
+  a read capability. `document_stages` records no owner: a host keeps ownership
+  in a table of its own (one row per owned document, usually beside visibility
+  and tombstones) and names it with `documentOwnership: { table, stageIdColumn,
+  ownerIdColumn, tombstoneColumn?, claimOnCreate? }`. A store bound with
+  `store.forOwner(ownerId)` then lists the owner's live documents and refuses
+  writes and deletes to anyone else's through that relation, while direct
+  reads stay addressable by id. The relation's ownership row is written by the
+  host inside the store's transaction (its `withTransaction`), or by the store
+  when `claimOnCreate` is set; a concurrent create of the same id by another
+  owner is rolled back. An owner-bound store must set `documentOwnership`
+  (`false` declares that it does not scope documents at all — a single-owner
+  deployment, or a host that gates every call itself); a store that is not
+  bound is tenant-agnostic and lists every document. Re-keying an owner (for
+  example when an anonymous visitor signs in) is then one update in one place.
 - **Owner-scoped folders.** An owner-bound `PgDocumentStore` also implements
   `DocumentFolderStore`: folders are durable entities, so empty folders are
   representable, while `folder_id` membership on stage rows makes filtered
   document listings indexed and keeps folder names independent from documents.
-  Folder APIs take no owner parameter; the bound store is the trust boundary.
+  Folder ids are unique per owner, so membership is read and written through
+  the ownership relation too. Folder APIs take no owner parameter; the bound
+  store is the trust boundary. A host that provisions its own tables without
+  folders sets `folders: false`: `folder_id` is then never read, and the
+  folder methods throw.
+- **Columns a host must provide.** `document_stages (id, name, description,
+  interactive_mode, task_engine_mode, created_at, updated_at, data)`, plus
+  `folder_id` unless `folders: false`; `document_scenes`, `document_outlines`
+  and the revision companion tables as `DOCUMENT_PG_SCHEMA` defines them. No
+  ownership column. An installation provisioned before 0.34.0 keeps a nullable
+  `document_stages.owner_id` that nothing reads or writes; it is dropped in the
+  next release, so copy it into your ownership relation first.
 - **Generic over scene type.** `DocumentStore<TScene>` defaults to the DSL
   `Scene` (universal `slide` / `quiz`). An app that widens `Scene` with its own
   kinds (`interactive` / `pbl`, content the DSL does not own) parameterizes the
