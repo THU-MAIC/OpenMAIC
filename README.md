@@ -782,8 +782,11 @@ A host can add product behavior at four points without forking a route. They
 are registered like the authenticator: once, from `instrumentation.ts`
 `register()`, and sealed on first use (a second call, or a call after the
 server started using them, throws). A plain object or a class instance both
-work; each hook is read once at registration and bound to the object passed,
-and an unknown key in a plain object (a misspelled hook) is refused. With
+work; each hook is read once at registration and bound to the object passed.
+A misspelled hook is refused rather than silently never called: a plain object
+may carry only the known keys, and a class instance may carry no public method
+other than a hook, so keep a host class's helpers private (`#helper`) or
+register a plain object. With
 nothing registered, every point behaves exactly as described above.
 
 ```ts

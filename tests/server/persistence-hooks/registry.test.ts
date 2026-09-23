@@ -95,6 +95,57 @@ describe('configurePersistenceHooks', () => {
     expect(stored.library!.name).toBe('class-library');
   });
 
+  it('refuses a class instance with a misspelled hook, and suggests the hook', () => {
+    class TypoHost {
+      readonly name = 'typo-host';
+      async authorizeCreat() {
+        return { allow: false as const };
+      }
+    }
+    expect(() => configurePersistenceHooks(new TypoHost() as never)).toThrow(
+      /does not know the hook "authorizeCreat" \(did you mean "authorizeCreate"\?\)/,
+    );
+    // Nothing was registered: the slot is still free.
+    configurePersistenceHooks({ name: 'valid' });
+  });
+
+  it('refuses a public helper method on a host class, with the guidance', () => {
+    class HelperHost {
+      readonly name = 'helper-host';
+      async onCreate() {}
+      lookupAccount() {
+        return 'account';
+      }
+    }
+    expect(() => configurePersistenceHooks(new HelperHost() as never)).toThrow(
+      /"lookupAccount"\. A host class must keep helper methods private \(#method\)/,
+    );
+  });
+
+  it('accepts a host class whose helpers are private, inherited hooks included', async () => {
+    class BaseHost {
+      async onCreate() {}
+    }
+    class PrivateHelperHost extends BaseHost {
+      readonly name = 'private-host';
+      readonly retiredOwners = new Set(['user:gone']);
+      async authorizeCreate(_tx: unknown, actor: { ownerId: string }) {
+        return this.#isRetired(actor.ownerId)
+          ? { allow: false as const }
+          : { allow: true as const };
+      }
+      #isRetired(ownerId: string) {
+        return this.retiredOwners.has(ownerId);
+      }
+    }
+    configurePersistenceHooks(new PrivateHelperHost() as never);
+    const stored = getPersistenceHooks();
+    expect(typeof stored.onCreate).toBe('function');
+    await expect(
+      stored.authorizeCreate!({} as never, { ownerId: 'user:gone' } as never, 's'),
+    ).resolves.toEqual({ allow: false });
+  });
+
   it('keeps a non-enumerable hook', () => {
     const hooks = { name: 'host' };
     const authorizeCreate = async () => ({ allow: true as const });
@@ -144,6 +195,24 @@ describe('configureAssetByteStore', () => {
     expect(stored.name).toBe('class-store');
     expect(stored.signsReadUrls).toBe(true);
     expect(await stored.create({ queryable: {} as never })).toEqual({ bucket: 'objects' });
+  });
+
+  it('refuses a byte store class with a misspelled factory or a public helper', () => {
+    class TypoStore {
+      readonly name = 'typo-store';
+      create() {
+        return {} as never;
+      }
+      craete() {
+        return {} as never;
+      }
+    }
+    expect(() => configureAssetByteStore(new TypoStore() as never)).toThrow(
+      /does not know the key "craete" \(did you mean "create"\?\)/,
+    );
+    expect(() => configureAssetByteStore({ ...store, signsReadUrl: true } as never)).toThrow(
+      /"signsReadUrl" \(did you mean "signsReadUrls"\?\)/,
+    );
   });
 
   it('is sealed by the first byte store built', () => {

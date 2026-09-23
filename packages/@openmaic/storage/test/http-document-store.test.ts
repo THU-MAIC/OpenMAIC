@@ -200,6 +200,25 @@ describe('HttpDocumentStore contract mapping', () => {
     const sqlstate = Object.assign(new Error('raise exception'), { code: 'P0001' });
     expect(isDocumentWriteRefusedError(lookalike)).toBe(true);
     expect(isDocumentWriteRefusedError(sqlstate)).toBe(false);
+    // Not an Error, or an Error without a string message: never a refusal.
+    expect(
+      isDocumentWriteRefusedError({
+        name: 'DocumentWriteRefusedError',
+        code: 'CREATE_REFUSED',
+        stageId: 's',
+        message: 'plain object',
+      }),
+    ).toBe(false);
+    expect(
+      isDocumentWriteRefusedError(
+        Object.assign(new Error('x'), {
+          name: 'DocumentWriteRefusedError',
+          code: 'CREATE_REFUSED',
+          stageId: 's',
+          message: 42,
+        }),
+      ),
+    ).toBe(false);
     expect(
       isDocumentWriteRefusedError(
         Object.assign(new Error('x'), {

@@ -44,6 +44,67 @@ function isOptionalFunction(value: unknown): boolean {
 }
 
 const HOOK_KEYS = ['name', 'authorizeCreate', 'onCreate', 'library', 'beforeAssetAllocate'];
+const BYTE_STORE_KEYS = ['name', 'create', 'signsReadUrls'];
+
+/** Levenshtein distance, for the "did you mean" hint. Keys are short. */
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      current[j] = Math.min(
+        previous[j]! + 1,
+        current[j - 1]! + 1,
+        previous[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    previous = current;
+  }
+  return previous[b.length]!;
+}
+
+/**
+ * The first key of `target` that is not a known key, if any.
+ *
+ * Every hook is optional, so a misspelled one (`authorizeCreat`) would
+ * otherwise register cleanly and never run -- for a gate, a silent bypass.
+ *
+ * - A plain object may carry nothing but known keys.
+ * - A class instance legitimately carries state, so only its function-valued
+ *   properties are checked: its own and those of its prototype chain up to
+ *   `Object.prototype`, excluding `constructor`. A helper method is
+ *   indistinguishable from a misspelled hook, so a host class must keep
+ *   helpers private (`#helper`), non-function, or pass a plain object.
+ */
+function unknownKey(target: object, known: readonly string[]): string | undefined {
+  const knownKeys = new Set(known);
+  const prototype: unknown = Object.getPrototypeOf(target);
+  if (prototype === Object.prototype || prototype === null) {
+    return Object.keys(target).find((key) => !knownKeys.has(key));
+  }
+  for (
+    let level: object | null = target;
+    level !== null && level !== Object.prototype;
+    level = Object.getPrototypeOf(level) as object | null
+  ) {
+    for (const key of Object.getOwnPropertyNames(level)) {
+      if (key === 'constructor' || knownKeys.has(key)) continue;
+      const descriptor = Object.getOwnPropertyDescriptor(level, key);
+      if (typeof descriptor?.value === 'function') return key;
+    }
+  }
+  return undefined;
+}
+
+function unknownKeyMessage(key: string, known: readonly string[], kind: string): string {
+  const suggestion = known.find((candidate) => editDistance(key, candidate) <= 2);
+  return (
+    `does not know the ${kind} ${JSON.stringify(key)}` +
+    (suggestion ? ` (did you mean ${JSON.stringify(suggestion)}?)` : '') +
+    '. A host class must keep helper methods private (#method) or non-function, ' +
+    'or register a plain object.'
+  );
+}
 
 /**
  * A method of `owner`, bound to it, or `undefined`. Read once, through normal
@@ -89,15 +150,9 @@ function describeHooksProblem(
 ): string | undefined {
   if (!snapshot) return 'expects an object';
   if (typeof snapshot.name !== 'string' || !snapshot.name) return 'expects a non-empty name';
-  // A misspelled hook in a plain object is reported rather than silently never
-  // called. A class instance legitimately carries its own state fields, so
-  // only plain objects are checked; its hooks are read from the prototype.
-  const prototype: unknown = Object.getPrototypeOf(hooks);
-  if (prototype === Object.prototype || prototype === null) {
-    const known = new Set(HOOK_KEYS);
-    const unknown = Object.keys(hooks).find((key) => !known.has(key));
-    if (unknown !== undefined) return `does not know the hook ${JSON.stringify(unknown)}`;
-  }
+  // A misspelled hook is reported rather than silently never called.
+  const unknown = unknownKey(hooks, HOOK_KEYS);
+  if (unknown !== undefined) return unknownKeyMessage(unknown, HOOK_KEYS, 'hook');
   if (!isOptionalFunction(snapshot.authorizeCreate)) {
     return 'expects authorizeCreate to be a function';
   }
@@ -204,6 +259,12 @@ export function configureAssetByteStore(registration: AssetByteStoreRegistration
   ) {
     throw new Error(
       'configureAssetByteStore expects { name, create(context), signsReadUrls?: boolean }',
+    );
+  }
+  const unknown = unknownKey(registration, BYTE_STORE_KEYS);
+  if (unknown !== undefined) {
+    throw new Error(
+      `configureAssetByteStore ${unknownKeyMessage(unknown, BYTE_STORE_KEYS, 'key')}`,
     );
   }
   if (process.env.ASSET_S3_BUCKET?.trim()) {
