@@ -6,8 +6,8 @@
  * store to the app's PostgreSQL pool through `user-skill-store.ts`, so tools,
  * routes and the runner import from one place.
  *
- * The owner model here is the anonymous-cookie owner from
- * `lib/server/agent-runtime/owner.ts`. There is deliberately no owner-merge
+ * The owner model here is the request owner resolved by the owner identity
+ * seam (`lib/server/identity/`). There is deliberately no owner-merge
  * machinery: identity consolidation is a live-product concern, and the
  * `resolveFinalOwner` seam on the agent-session store is left untouched.
  */

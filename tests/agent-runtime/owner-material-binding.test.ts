@@ -28,9 +28,11 @@ vi.mock('@/lib/config/feature-flags', () => ({
   isAgentRuntimeEnabled: () => true,
   isAgentRuntimeConfigured: () => true,
 }));
-vi.mock('@/lib/server/agent-runtime/owner', () => ({
-  resolveRequestOwnerId: mocks.resolveRequestOwnerId,
-}));
+vi.mock('@/lib/server/identity/resolve', async () =>
+  (await import('../helpers/owner-resolution-mock')).ownerResolveModule(
+    mocks.resolveRequestOwnerId,
+  ),
+);
 vi.mock('@/lib/server/agent-runtime/skills', () => ({
   listSkills: async () => [],
   findSkill: async () => null,
@@ -288,7 +290,7 @@ describe('owner-material binding across sessions', () => {
     expect(first.status).toBe(202);
 
     // The regression: before the fix this second bind threw the primary-key
-    // violation, `withRequestOwnerId` swallowed it, and the response was 500.
+    // violation, `withRequestOwner` swallowed it, and the response was 500.
     const second = await post({ prompt: 'Build the sequel', materialIds: ['mat_owner'] });
     expect(second.status).toBe(202);
   });

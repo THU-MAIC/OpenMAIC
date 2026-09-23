@@ -1,47 +1,22 @@
 'use server';
 
-import { cookies } from 'next/headers';
-import { anonymousCookieSecure } from '@/lib/server/agent-runtime/owner';
-import { resolveSharedOwnerId } from '@/lib/server/agent-runtime/shared-owner';
+import { requireContextOwner } from '@/lib/server/identity/resolve';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 
 /**
- * The anonymous identity cookie minted by the agent-runtime owner resolution
- * (`lib/server/agent-runtime/owner.ts`). A server action has no `Request` to
- * hand to `resolveRequestOwnerId`, so this module re-reads the same cookie the
- * routes read, and mints with the same UUID-v4 scheme when it is absent or
- * forged (an over-strict guard is fail-safe: visitors merely get a fresh id,
- * nobody is locked out of their own sessions).
+ * Server Action mutation used by the workspace row menu.
+ *
+ * The owner comes from the same authenticator the routes use, through its
+ * Server Action entry point (a Server Action has no `Request`): with the
+ * built-ins, the deployment-wide shared owner when one is configured,
+ * otherwise the anonymous cookie, minted here when absent. So the workspace
+ * list the routes filter and the row actions taken here always agree on one
+ * owner.
  */
-const ANONYMOUS_COOKIE = 'anonymous_id';
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-async function currentOwnerId(): Promise<string> {
-  // A configured deployment-wide id replaces the cookie partition entirely, and
-  // has to be read here too: otherwise the workspace list would be filtered by
-  // one owner while its row actions acted on another.
-  const sharedOwnerId = resolveSharedOwnerId();
-  if (sharedOwnerId) return sharedOwnerId;
-
-  const cookieStore = await cookies();
-  const existing = cookieStore.get(ANONYMOUS_COOKIE)?.value;
-  if (existing && UUID_V4.test(existing)) return `anon:${existing}`;
-  const minted = crypto.randomUUID();
-  cookieStore.set(ANONYMOUS_COOKIE, minted, {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 30 * 24 * 60 * 60,
-    secure: anonymousCookieSecure(),
-  });
-  return `anon:${minted}`;
-}
-
-/** Server Action mutation used by the workspace row menu. */
 export async function deleteWorkspaceSession(id: string): Promise<{ deleted: boolean }> {
   const sessionId = id.trim();
   if (!sessionId) return { deleted: false };
-  const ownerId = await currentOwnerId();
+  const { ownerId } = await requireContextOwner();
   const store = await getAgentSessionStore();
   return { deleted: await store.softDeleteSession(sessionId, ownerId) };
 }

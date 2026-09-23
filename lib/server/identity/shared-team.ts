@@ -1,18 +1,20 @@
 /**
- * Deployment-wide owner identity, for single-tenant installations.
+ * The `sharedTeam` built-in: one deployment-wide owner, for single-tenant
+ * installations.
  *
  * Course documents, folders, materials and agent sessions are partitioned by an
  * owner id. Without a host auth layer that id comes from a 30-day anonymous
- * cookie (`./owner.ts`), which means one physical browser is one learner: a
+ * cookie (`./anonymous-cookie.ts`), which means one physical browser is one learner: a
  * second browser sees an empty course list, a cleared cookie looks like a new
  * installation, and `POST /api/stages/[id]/publish` refuses every owner because
- * publishing an anonymous partition is not something the product allows.
+ * an anonymous principal does not hold the `course:publish` role.
  *
  * For one team behind one `ACCESS_CODE` that partitioning buys nothing — those
  * visitors already share the site password and can read each other's courses by
  * id (`SECURITY.md` says as much about `ACCESS_CODE`). `PERSISTENCE_SHARED_OWNER_ID`
  * replaces the cookie-derived id with that fixed value, so the deployment has
- * one course library, and publishing works.
+ * one course library, and publishing works: the shared principal holds
+ * `course:publish`.
  *
  * It **requires** `ACCESS_CODE`, and refuses to run without one: see the note
  * in {@link resolveSharedOwnerId}. It is also not a substitute for server
@@ -23,13 +25,16 @@
  * cookie partition.
  */
 
+import type { OwnerAuthenticator, OwnerPrincipal } from './types';
+import { OWNER_ROLES } from './types';
+
 const SHARED_OWNER_ENV = 'PERSISTENCE_SHARED_OWNER_ID';
 
 /**
  * The value becomes an owner id and part of material object keys, so it is
  * restricted to characters that survive that path unchanged. `:` is excluded,
- * which also rules out the reserved `anon:` prefix — an id in that namespace
- * would still be refused by `publish` and would alias onto a cookie owner.
+ * which also rules out the `anon:` namespace of the anonymous cookie
+ * authenticator — an id there would alias onto a cookie owner.
  */
 const SHARED_OWNER_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 
@@ -72,4 +77,29 @@ export function resolveSharedOwnerId(): string | undefined {
     );
   }
   return raw;
+}
+
+const SHARED_ROLES: ReadonlySet<string> = new Set<string>([OWNER_ROLES.coursePublish]);
+
+/**
+ * Create the `sharedTeam` authenticator for an already validated shared owner
+ * id (see {@link resolveSharedOwnerId}): every request resolves to that id with
+ * `kind: 'shared'` and the `course:publish` role, and no cookie is minted — there
+ * is nothing to remember per browser. The access-code middleware in front of it
+ * is what admits a request; this authenticator has no credential of its own, so
+ * `assurance` is `unverified-legacy`.
+ */
+export function createSharedTeamAuthenticator(ownerId: string): OwnerAuthenticator {
+  const principal = {
+    ownerId,
+    kind: 'shared',
+    roles: SHARED_ROLES,
+    assurance: 'unverified-legacy',
+  } satisfies OwnerPrincipal;
+  const outcome = { ok: true, principal } as const;
+  return {
+    name: 'sharedTeam',
+    authenticate: async () => outcome,
+    authenticateFromContext: async () => outcome,
+  };
 }

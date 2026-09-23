@@ -5,8 +5,8 @@
  * Dexie tables).
  *
  * Every handler is owner-scoped exactly like the other workbench routes: the
- * owner resolves from the anonymous cookie (`withRequestOwnerId`) and is never
- * a request parameter, and all reads and writes go through the owner-bound
+ * owner resolves through the owner identity seam (`withRequestOwner`) and is
+ * never a request parameter, and all reads and writes go through the owner-bound
  * document store (`getOwnerScopedDocumentStore`), the same seam the runner
  * binds for the stage tools. A folder created here is visible to this browser
  * and to nobody else.
@@ -26,7 +26,7 @@ import type { DocumentFolder, DocumentFolderStore } from '@openmaic/storage';
 import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { ownerJson } from '@/lib/server/agent-runtime/route-response';
-import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
 import { folderNameErrorResponse } from '@/lib/server/folder-name-errors';
 import { createFolderForOwner, listFoldersForOwner } from '@/lib/server/folder-persistence';
 import { validateFolderName } from '@/lib/utils/folder-name-validation';
@@ -52,7 +52,7 @@ function jsonError(status: number, code: string, message: string, headers?: Head
 export async function GET(req: NextRequest) {
   if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     try {
       const store = (await getOwnerScopedDocumentStore(ownerId)) as unknown as DocumentFolderStore;
       const folders = await listFoldersForOwner(store);
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     try {
       const store = (await getOwnerScopedDocumentStore(ownerId)) as unknown as DocumentFolderStore;
       const { folder } = await createFolderForOwner(store, trimmed, { reuseExisting: false });

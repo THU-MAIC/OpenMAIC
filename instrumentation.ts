@@ -36,14 +36,20 @@ export async function register(): Promise<void> {
   const { resolveAssetPendingTtlMs } = await import('@/lib/persistence/asset-pending-ttl');
   resolveAssetPendingTtlMs();
 
-  // The shared owner id, for the same reason and at the same moment. A
-  // malformed value would otherwise boot, pass its health check, and then fail
-  // every owner-scoped request — and an operator who meant to share one course
-  // library has no way to tell from the outside that their setting was not
-  // accepted. `resolveSharedOwnerId` treats an empty value as unset, so this
-  // only rejects values that are present and unusable.
-  const { resolveSharedOwnerId } = await import('@/lib/server/agent-runtime/shared-owner');
-  resolveSharedOwnerId();
+  // Owner identity, for the same reason and at the same moment. A malformed
+  // PERSISTENCE_SHARED_OWNER_ID would otherwise boot, pass its health check,
+  // and then fail every owner-scoped request — and an operator who meant to
+  // share one course library has no way to tell from the outside that their
+  // setting was not accepted. An empty value is treated as unset, so this only
+  // rejects values that are present and unusable.
+  //
+  // A host that brings its own identity registers its authenticator here,
+  // before validation and before the server serves a request:
+  //
+  //   const { configureOwnerAuthenticator } = await import('@/lib/server/identity');
+  //   configureOwnerAuthenticator(myOwnerAuthenticator);
+  const { validateOwnerIdentityConfiguration } = await import('@/lib/server/identity/registry');
+  validateOwnerIdentityConfiguration();
 
   // Imported dynamically so the Edge bundle never pulls in `pg`.
   const { startAssetCollectorSchedule } =

@@ -14,7 +14,7 @@ import { NextResponse } from 'next/server';
 import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { listSkills } from '@/lib/server/agent-runtime/skills';
 import { createUserSkill, UserSkillError } from '@/lib/server/agent-runtime/user-skills';
-import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
 import {
   parseUserSkillMarkdown,
   parseUserSkillZip,
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   if (!isAgentRuntimeConfigured()) {
     return new Response('Not found', { status: 404 });
   }
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const skills = await listSkills(ownerId);
     return NextResponse.json(
       skills.map((s) => ({
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
 /** Upload one owner Skill as the exporter zip or a bare canonical SKILL.md. */
 export async function POST(req: NextRequest) {
   if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     try {
       const form = await req.formData();
       const upload = form.get('file');

@@ -27,7 +27,7 @@ import {
 } from '@/lib/persistence/server-provider';
 import { readStageMeta } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
-import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
 
 export const runtime = 'nodejs';
 
@@ -359,7 +359,7 @@ async function handlePersistenceRequestInner(
     );
   }
 
-  return withRequestOwnerId(request, async (ownerId, responseHeaders) => {
+  return withRequestOwner(request, async ({ ownerId }, responseHeaders) => {
     try {
       const path = routeRelativePath(request);
       const action = parseDocumentAction(request.method, path);

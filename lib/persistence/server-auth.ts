@@ -6,9 +6,10 @@
  * provides no confidentiality and no user isolation.
  *
  * This authenticator is only consulted for `/runtime/*`. Document and asset
- * requests skip it and take their principal from the 30-day anonymous owner
- * cookie. Document reads are capability-by-id (stage id, no owner check);
- * writes and deletes compare that cookie-derived owner. `x-learner-key` is a
+ * requests skip it and take their owner from the owner identity seam
+ * (`lib/server/identity/`; by default the 30-day anonymous owner cookie).
+ * Document reads are capability-by-id (stage id, no owner check); writes and
+ * deletes compare that resolved owner. `x-learner-key` is a
  * client-supplied runtime partition key, not a document-access token.
  *
  * Suitable only for localhost or trusted-network, single-user deployments.

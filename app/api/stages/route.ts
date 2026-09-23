@@ -2,11 +2,11 @@
  * /api/stages — the workbench's course-document index and create face.
  *
  * Every handler is owner-scoped exactly like the agent tools: the owner
- * resolves from the anonymous cookie (`withRequestOwnerId`) and is never a
- * request parameter, and all reads and writes go through the owner-bound
+ * resolves through the owner identity seam (`withRequestOwner`) and is never
+ * a request parameter, and all reads and writes go through the owner-bound
  * document store (`getOwnerScopedDocumentStore`), the same seam the runner
- * binds for the stage tools. A stage created here is visible to this browser
- * and to nobody else.
+ * binds for the stage tools. A stage created here is visible to this owner
+ * (with the default authenticator, this browser) and to nobody else.
  *
  * The configured runtime gates the whole family: these routes serve the
  * workbench, which is agent-runtime territory, so a runtime that is off OR
@@ -22,7 +22,7 @@ import { apiError } from '@/lib/server/api-response';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { ownerJson } from '@/lib/server/agent-runtime/route-response';
 import { STAGE_NAME_MAX_LENGTH } from '@/lib/server/agent-runtime/stage-limits';
-import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
 
 export const runtime = 'nodejs';
 
@@ -35,7 +35,7 @@ function createStageId(): string {
 export async function GET(req: NextRequest) {
   if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const store = await getOwnerScopedDocumentStore(ownerId);
     const stages = await store.listDocuments();
     return ownerJson({ stages }, 200, responseHeaders);
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
   }
   const trimmedDescription = description?.trim();
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const id = createStageId();
     const now = Date.now();
     const outline: AppDocumentOutline = {

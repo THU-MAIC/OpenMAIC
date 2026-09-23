@@ -21,7 +21,7 @@ import {
   resolveOwnedSession,
 } from '@/lib/server/agent-runtime/session-materials';
 import { ownerJson, ownerNotFound } from '@/lib/server/agent-runtime/route-response';
-import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
 
 export const runtime = 'nodejs';
 
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest, { params }: Params) {
   const sessionId = new URL(req.url).searchParams.get('sessionId')?.trim();
   if (!sessionId) return apiError('MISSING_REQUIRED_FIELD', 400, 'sessionId is required');
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const session = await resolveOwnedSession(sessionId, ownerId);
     if (!session) return ownerNotFound(responseHeaders);
     const { id } = await params;

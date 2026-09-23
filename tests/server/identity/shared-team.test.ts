@@ -3,8 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 import { middleware } from '@/middleware';
-import { resolveRequestOwnerId } from '@/lib/server/agent-runtime/owner';
-import { resolveSharedOwnerId } from '@/lib/server/agent-runtime/shared-owner';
+import { OWNER_ROLES } from '@/lib/server/identity';
+import {
+  resetOwnerAuthenticatorForTests,
+  validateOwnerIdentityConfiguration,
+} from '@/lib/server/identity/registry';
+import { resolveRequestOwner } from '@/lib/server/identity/resolve';
+import { resolveSharedOwnerId } from '@/lib/server/identity/shared-team';
 
 const CODE = 'demo-code-that-is-long-enough';
 
@@ -39,6 +44,7 @@ function configure(sharedOwnerId: string, accessCode: string | null = CODE): voi
 afterEach(() => {
   vi.unstubAllEnvs();
   delete process.env.ACCESS_CODE;
+  resetOwnerAuthenticatorForTests();
 });
 
 describe('resolveSharedOwnerId', () => {
@@ -71,8 +77,7 @@ describe('resolveSharedOwnerId', () => {
 
   it('rejects the reserved anonymous prefix', () => {
     // `anon:` is not in the allowed set, which is what keeps a shared id from
-    // aliasing onto a cookie owner — and from being refused by `publish`, which
-    // is the behaviour this setting exists to remove.
+    // aliasing onto a cookie owner.
     configure('anon:00000000-0000-4000-8000-000000000000');
     expect(() => resolveSharedOwnerId()).toThrow(/PERSISTENCE_SHARED_OWNER_ID/);
   });
@@ -128,9 +133,54 @@ describe('the access-code gate in front of the shared owner', () => {
 
     expect((await middleware(request)).status).toBe(200);
 
-    const responseHeaders = new Headers();
-    const ownerId = resolveRequestOwnerId(request, responseHeaders);
-    expect(ownerId).toBe('team-alpha');
-    expect(responseHeaders.has('set-cookie')).toBe(false);
+    const outcome = await resolveRequestOwner(request);
+    expect(outcome).toMatchObject({ ok: true, principal: { ownerId: 'team-alpha' } });
+    expect(outcome.ok && outcome.setCookies).toBeFalsy();
+  });
+});
+
+describe('the sharedTeam built-in through the seam', () => {
+  const cookie = 'anonymous_id=a652e716-0e2e-47f5-8432-4ee60f6f0977';
+
+  it('resolves every request to the shared owner, holding course:publish, minting nothing', async () => {
+    // What the single-tenant setting buys: one identity for every browser, so
+    // the course list is shared and publish has a principal it accepts.
+    configure('team-alpha');
+
+    const outcome = await resolveRequestOwner(
+      new Request('http://localhost/agent', { headers: { cookie } }),
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.principal.ownerId).toBe('team-alpha');
+    expect(outcome.principal.kind).toBe('shared');
+    expect(outcome.principal.roles.has(OWNER_ROLES.coursePublish)).toBe(true);
+    expect(outcome.principal.roles.has(OWNER_ROLES.admin)).toBe(false);
+    // Nothing to remember per browser, so no cookie is minted or refreshed.
+    expect(outcome.setCookies).toBeUndefined();
+  });
+
+  it('fails owner resolution, not falls back to the cookie, when misconfigured', async () => {
+    configure('team-alpha', null);
+
+    await expect(resolveRequestOwner(new Request('http://localhost/agent'))).rejects.toThrow(
+      /ACCESS_CODE/,
+    );
+  });
+});
+
+describe('boot validation', () => {
+  it('passes when the variable is unset or valid', () => {
+    expect(() => validateOwnerIdentityConfiguration()).not.toThrow();
+    configure('team-alpha');
+    expect(() => validateOwnerIdentityConfiguration()).not.toThrow();
+  });
+
+  it('fails the boot on a malformed value or a missing ACCESS_CODE', () => {
+    configure('has space');
+    expect(() => validateOwnerIdentityConfiguration()).toThrow(/PERSISTENCE_SHARED_OWNER_ID/);
+    configure('team-alpha', null);
+    expect(() => validateOwnerIdentityConfiguration()).toThrow(/ACCESS_CODE/);
   });
 });
