@@ -83,15 +83,23 @@ export interface PgDocumentStoreOptions {
    */
   trackAssetReferences?: boolean;
   /**
-   * With `trackAssetReferences`, reference and commit only asset entries held
-   * by these principals. An id naming another principal's entry records no
-   * reference and commits nothing -- the same as an unknown id -- and the
-   * write itself is never refused. Omit to reference any entry the registry
-   * holds (the default). A host whose asset registry is partitioned per
-   * owner sets this to the writing owner's principal, so one owner's document
-   * cannot commit or pin another owner's allocation.
+   * With `trackAssetReferences`, the asset principals whose entries a write by
+   * the bound owner may reference and commit, given that owner (`null` for an
+   * unbound store); `undefined` references any entry the registry holds (the
+   * default). An id naming another principal's entry records no reference and
+   * commits nothing -- the same as an unknown id -- and the write itself is
+   * never refused.
+   *
+   * A function of the owner rather than a list, and evaluated per write
+   * against the store's own `ownerId`, so a store re-bound with
+   * {@link PgDocumentStore.forOwner} scopes to the new owner: a fixed list
+   * would carry one owner's principals onto another owner's writes. A host
+   * whose asset registry is partitioned per owner returns the owner's own
+   * principal (plus any partition every owner may use), so one owner's
+   * document cannot commit or pin another owner's allocation. The collector's
+   * backfill takes the same function (`AssetCollectorOptions`).
    */
-  assetReferencePrincipals?: readonly string[];
+  assetReferencePrincipals?: (ownerId: string | null) => readonly string[] | undefined;
 }
 
 /**
@@ -554,7 +562,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
 
   /** The `principals` argument of the reference sync calls, when configured. */
   private referencePrincipals(): { principals?: readonly string[] } {
-    const principals = this.options.assetReferencePrincipals;
+    const principals = this.options.assetReferencePrincipals?.(this.ownerId);
     return principals === undefined ? {} : { principals };
   }
 

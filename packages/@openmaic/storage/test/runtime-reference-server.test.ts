@@ -7,6 +7,7 @@ import type { AssetStore } from '../src/asset/types.js';
 import { BrowserRuntimeStore } from '../src/runtime/browser.js';
 import { HttpRuntimeStore } from '../src/runtime/http.js';
 import {
+  RuntimeSessionExistsError,
   RuntimeStageNotFoundError,
   type RuntimePayloadValidator,
   type RuntimeStore,
@@ -907,6 +908,49 @@ describe('reference HTTP handler session-create collisions', () => {
     await expect(store.getSession('held-by-b')).resolves.toMatchObject({
       learnerKey: 'learner-b',
     });
+  });
+});
+
+describe('reference HTTP handler taken-id refusals from the store', () => {
+  test('answers 409 when the holder is hidden from reads and only the store knows the id is taken', async () => {
+    const inner = new BrowserRuntimeStore({ indexedDB: new IDBFactory() });
+    await inner.createSession(
+      makeSession({ id: 'hidden', learnerKey: 'learner-a', stageId: 'stage-deleted' }),
+    );
+    await expect(
+      inner.createSession(makeSession({ id: 'hidden', learnerKey: 'learner-a' })),
+    ).rejects.toBeInstanceOf(RuntimeSessionExistsError);
+    // A host wrapper that hides some sessions from reads (a deleted course's).
+    const store = new Proxy(inner, {
+      get(target, property) {
+        if (property === 'getSession') return async () => undefined;
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? (value as () => unknown).bind(target) : value;
+      },
+    }) as RuntimeStore;
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const handler = createRuntimeHttpHandler(store, {
+        authenticate: async () => ({ learnerKey: 'learner-a' }),
+      });
+      const response = await handlerFetch(handler, async () => 'Bearer learner-a')(
+        `${BASE_URL}/runtime/sessions`,
+        {
+          method: 'POST',
+          body: JSON.stringify(
+            makeSession({ id: 'hidden', learnerKey: 'learner-a', stageId: 'stage-live' }),
+          ),
+        },
+      );
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: 'SESSION_ALREADY_EXISTS' },
+      });
+      expect(consoleError).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });
 

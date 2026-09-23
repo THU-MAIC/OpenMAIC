@@ -64,6 +64,25 @@ export class RuntimeAppendConflictError extends Error {
 }
 
 /**
+ * `createSession` found the id taken. Session ids are one key space per
+ * store, so this is raised whoever holds the id, and the HTTP handler answers
+ * it with `409 SESSION_ALREADY_EXISTS` -- including when the holder is a
+ * session a host-side wrapper hides from reads. Recognized by class or by
+ * `code`, so a store from another module realm still maps.
+ */
+export class RuntimeSessionExistsError extends Error {
+  override readonly name = 'RuntimeSessionExistsError';
+  readonly code = 'SESSION_ALREADY_EXISTS' as const;
+
+  constructor(
+    readonly sessionId: string,
+    options?: { cause?: unknown },
+  ) {
+    super(`@openmaic/storage: session ${JSON.stringify(sessionId)} already exists`, options);
+  }
+}
+
+/**
  * A store refused to create a session because its stage does not exist, as far
  * as this store's host is concerned (for example a course the host deleted).
  *

@@ -24,7 +24,11 @@ import type {
   RuntimeStore,
   RuntimeTailOptions,
 } from '../runtime/types.js';
-import { RuntimeAppendConflictError, RuntimeStageNotFoundError } from '../runtime/types.js';
+import {
+  RuntimeAppendConflictError,
+  RuntimeSessionExistsError,
+  RuntimeStageNotFoundError,
+} from '../runtime/types.js';
 import type { Scene, Stage } from '@openmaic/dsl';
 import type { DocumentStore, SceneLike } from '../document/types.js';
 import type { AssetPrincipal, AssetStore } from '../asset/types.js';
@@ -353,6 +357,15 @@ function parsePath(req: IncomingMessage): { parts: string[]; url: URL } {
   }
 }
 
+function isSessionExists(error: unknown): boolean {
+  if (error instanceof RuntimeSessionExistsError) return true;
+  return (
+    error instanceof Error &&
+    error.name === 'RuntimeSessionExistsError' &&
+    (error as { code?: unknown }).code === 'SESSION_ALREADY_EXISTS'
+  );
+}
+
 function isStageNotFound(error: unknown): boolean {
   if (error instanceof RuntimeStageNotFoundError) return true;
   return (
@@ -474,7 +487,9 @@ async function route(
       // A post-failure existence check classifies duplicate races without
       // depending on a database driver's message text.
       const raced = await store.getSession(init.id);
-      if (raced !== undefined) {
+      // The store's own taken-id refusal is authoritative: the re-read above
+      // can miss a holder a host-side wrapper hides from reads.
+      if (raced !== undefined || isSessionExists(error)) {
         throw new RuntimeHttpError(
           409,
           'SESSION_ALREADY_EXISTS',

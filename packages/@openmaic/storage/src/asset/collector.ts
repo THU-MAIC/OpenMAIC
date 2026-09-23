@@ -98,9 +98,9 @@ export interface AssetCollectorOptions {
   /**
    * The principals whose entries a document's backfilled references may name,
    * given the document's `owner_id` (`null` for an unowned document), or
-   * `undefined` for any entry. Pass the same scoping the document store's
-   * `assetReferencePrincipals` applies, so the walk never records a
-   * reference a write by that document's owner would not have recorded.
+   * `undefined` for any entry. Pass the same function as the document store's
+   * `assetReferencePrincipals`, so the walk never records a reference a write
+   * by that document's owner would not have recorded.
    */
   assetReferencePrincipals?: (documentOwnerId: string | null) => readonly string[] | undefined;
 }

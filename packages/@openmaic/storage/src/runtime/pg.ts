@@ -35,7 +35,7 @@ import type {
   RuntimeStore,
   RuntimeTailOptions,
 } from './types.js';
-import { RuntimeAppendConflictError } from './types.js';
+import { RuntimeAppendConflictError, RuntimeSessionExistsError } from './types.js';
 import { assertJsonValue, isLosslessJsonString } from './json-value.js';
 import { encodeJson } from '../pg-json.js';
 
@@ -357,9 +357,7 @@ export class PgRuntimeStore implements RuntimeStore {
       );
     } catch (error) {
       if (isUniqueViolation(error)) {
-        throw new Error(`@openmaic/storage: session ${JSON.stringify(stamped.id)} already exists`, {
-          cause: error,
-        });
+        throw new RuntimeSessionExistsError(stamped.id, { cause: error });
       }
       throw error;
     }

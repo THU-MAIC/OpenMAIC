@@ -1333,7 +1333,7 @@ describe('asset entry lifecycle with PGlite', () => {
       new PgDocumentStore(db, {
         withTransaction: transactions(db),
         trackAssetReferences: true,
-        assetReferencePrincipals: [OWN.key, SHARED.key],
+        assetReferencePrincipals: () => [OWN.key, SHARED.key],
         ...(ownerId === undefined ? {} : { ownerId }),
       });
 
@@ -1374,6 +1374,25 @@ describe('asset entry lifecycle with PGlite', () => {
       expect(await refRows()).toEqual([]);
       expect((await lifecycleOf(foreignScene))?.committed_at).toBeNull();
       expect((await lifecycleOf(foreignStage))?.committed_at).toBeNull();
+    });
+
+    test('a store re-bound with forOwner scopes writes to the new owner', async () => {
+      const alice = await store.put({ key: 'owner:alice' }, new Blob(['alice']));
+      const bob = await store.put({ key: 'owner:bob' }, new Blob(['bob']));
+      const bound = new PgDocumentStore(db, {
+        withTransaction: transactions(db),
+        trackAssetReferences: true,
+        ownerId: 'alice',
+        assetReferencePrincipals: (ownerId) => (ownerId === null ? [] : [`owner:${ownerId}`]),
+      }).forOwner('bob');
+
+      await bound.saveDocument(
+        documentWith('stage-bob', [sceneWithImages('stage-bob', 'scene-a', 0, [alice, bob])]),
+      );
+
+      expect((await refRows()).map((row) => row.asset_id)).toEqual([bob]);
+      expect((await lifecycleOf(bob))?.committed_at).not.toBeNull();
+      expect((await lifecycleOf(alice))?.committed_at).toBeNull();
     });
 
     test('without the option every held entry is referenced, as before', async () => {
