@@ -8,12 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Breaking Changes
 
-- Server persistence: runtime sessions (`/api/persistence/runtime/*`) are keyed by the owner the owner identity seam resolves, not by a client-supplied `x-learner-key` behind the development token. `PERSISTENCE_DEV_TOKEN`, `NEXT_PUBLIC_PERSISTENCE_TOKEN` and `PERSISTENCE_ALLOW_INSECURE_DEV_AUTH` are removed and ignored; the browser learns its learner key from `GET /api/persistence/learner-key`. Runtime sessions written before this change were keyed by a browser-minted learner key and are no longer reachable; they are not migrated, because trusting a client-supplied old key would restore client-chosen identity. Course documents and media are unaffected.
-- Server persistence: assets are allocated in a per-owner partition, so `ASSET_QUOTA_BYTES` is a per-owner ceiling and only the owner can replace or delete an entry. Other owners read an entry by id while a live course references it. Entries in the old shared partition stay readable by id, and can be replaced or deleted only by an owner who owns every course referencing them.
+- Server persistence: runtime sessions (`/api/persistence/runtime/*`) are keyed by the owner the owner identity seam resolves, not by a client-supplied `x-learner-key` behind the development token. `PERSISTENCE_DEV_TOKEN`, `NEXT_PUBLIC_PERSISTENCE_TOKEN` and `PERSISTENCE_ALLOW_INSECURE_DEV_AUTH` are removed and ignored; the browser learns its learner key from `GET /api/persistence/learner-key`. Runtime sessions written before this change were keyed by a browser-minted learner key and are no longer reachable; they are not migrated, because trusting a client-supplied old key would restore client-chosen identity. Course documents and media are unaffected. **If the development token was your only access gate**, put the deployment behind `ACCESS_CODE` or a gateway, register an owner authenticator, or turn server persistence off before upgrading: without the token the endpoint serves every visitor as their own anonymous owner.
+- Server persistence: assets are allocated in a per-owner partition, so `ASSET_QUOTA_BYTES` is a per-owner ceiling and only the owner can replace or delete an entry. Other owners read an entry by id while a live course of the entry's owner references it, and a document write references and commits only its owner's entries (and legacy ones), so naming another owner's id records nothing. Entries in the old shared partition stay readable by id, and can be replaced or deleted only by an owner who owns every course referencing them.
 
 ### Security
 
-- Server persistence: runtime data of a deleted course reads as absent and takes no new writes.
+- Server persistence: runtime data of a deleted course reads as absent and takes no new writes, however the request path is spelled.
+- `@openmaic/storage` 0.32.0: `PgDocumentStore` takes `assetReferencePrincipals` (and `AssetCollector` a matching per-owner function) so a document write can no longer commit or pin another principal's asset entry; a store can refuse `createSession` with `RuntimeStageNotFoundError` (`404 STAGE_NOT_FOUND`); and a session create over a taken id answers `409 SESSION_ALREADY_EXISTS` whoever holds it, instead of `403` for another learner's session.
 
 ## [1.0.3] - 2026-09-15
 

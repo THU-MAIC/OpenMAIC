@@ -421,7 +421,10 @@ credential:
   a per-owner ceiling and only the owner can replace or delete an entry. Reads
   stay capability-by-id for media a course viewer needs: an owner reads its own
   entries, and anyone reads another owner's committed entry while a live course
-  references it. Entries written before per-owner partitions (the old shared
+  of that same owner references it. A course only references (and commits) its
+  owner's own media: naming another owner's asset id in your course records
+  nothing, so it can neither expose their unsaved uploads nor keep their media
+  alive. Entries written before per-owner partitions (the old shared
   partition) stay readable by id to everyone, and can be replaced or deleted
   only by an owner who owns every course referencing them; the collector
   reclaims them as courses stop naming them, as before.
@@ -440,6 +443,13 @@ deployment with its own accounts registers an authenticator (see
 > documents and media are unaffected). They are not migrated automatically,
 > because trusting a client-supplied old key would bring client-chosen identity
 > back.
+>
+> **If `PERSISTENCE_DEV_TOKEN` was your only access gate, act before upgrading.**
+> Without it the endpoint answers every visitor who reaches it, each as their
+> own anonymous owner. Put the deployment behind `ACCESS_CODE` or your own
+> gateway, register an owner authenticator backed by your accounts (see
+> [Owner identity](#owner-identity)), or turn server persistence off
+> (`NEXT_PUBLIC_PERSISTENCE` unset) until you have one.
 
 `PERSISTENCE_POSTGRES_PASSWORD` initializes the PostgreSQL role only when the
 data directory is empty; changing it later does not rotate an existing

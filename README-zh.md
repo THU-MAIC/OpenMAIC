@@ -369,12 +369,14 @@ NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
 
 - **文档**：读取是 capability-by-id：只要 stage meta 存在且未被墓碑化，`decideDocumentAccess` 就会放行且不比对所有者（`lib/persistence/document-access.ts`），因此能访问该端点并知道 stage id 的人都可以读这门课。写入和删除按所有者校验。
 - **运行时会话**（`/runtime/*`）按学习者 key 分区，而学习者 key **就是所有者 id**。浏览器通过 `GET /api/persistence/learner-key` 获取它；请求中写入任何其他学习者 key 都会被拒绝（`403 FORBIDDEN_LEARNER`），他人的会话返回 `404`。已删除（墓碑化）课程的运行时数据视为不存在，也不再接受写入。学习者合并与管理端清空仍然拒绝。
-- **资产**按所有者分区分配，因此 `ASSET_QUOTA_BYTES` 是每个所有者的上限，只有所有者本人可以替换或删除条目。为保证课程观看者能加载媒体，读取仍是 capability-by-id：所有者可读自己的条目；他人已提交、且被某门未删除课程引用的条目，任何人都可按 id 读取。按所有者分区之前写入的条目（旧的共享分区）仍可被所有人按 id 读取，只有拥有所有引用它的课程的所有者才能替换或删除；课程不再引用后照旧由回收器回收。
+- **资产**按所有者分区分配，因此 `ASSET_QUOTA_BYTES` 是每个所有者的上限，只有所有者本人可以替换或删除条目。为保证课程观看者能加载媒体，读取仍是 capability-by-id：所有者可读自己的条目；他人已提交、且被**该所有者本人**某门未删除课程引用的条目，任何人都可按 id 读取。课程只会引用（并提交）其所有者自己的媒体：在自己的课程里写入他人的资产 id 不会产生任何引用，因此既无法暴露对方尚未保存的上传，也无法让对方的媒体一直保留。按所有者分区之前写入的条目（旧的共享分区）仍可被所有人按 id 读取，只有拥有所有引用它的课程的所有者才能替换或删除；课程不再引用后照旧由回收器回收。
 
 在没有宿主认证器时，所有者的强度只等同于一个 cookie：适用于 localhost、可信网络或单团队部署。有自有账号体系的部署注册认证器（见[所有者身份](#所有者身份)）后，上述所有接口都随之生效。
 
 > [!WARNING]
 > **升级服务端持久化。** `PERSISTENCE_DEV_TOKEN`、`NEXT_PUBLIC_PERSISTENCE_TOKEN` 和 `PERSISTENCE_ALLOW_INSECURE_DEV_AUTH` 已移除并被忽略，请从环境变量和构建参数中删去。此前写入的运行时会话以浏览器自生成的学习者 key 为键，而不是所有者 id，因此**将无法再访问**（课程文档和媒体不受影响）。它们不会被自动迁移，因为信任客户端提交的旧 key 会重新引入客户端自选身份。
+>
+> **如果 `PERSISTENCE_DEV_TOKEN` 是你唯一的访问门槛，请在升级前处理。** 去掉它之后，端点会接受所有能访问到它的访客，每人作为各自的匿名所有者。请先用 `ACCESS_CODE` 或自己的网关保护部署、注册基于自有账号体系的所有者认证器（见[所有者身份](#所有者身份)），或在此之前关闭服务端持久化（不设置 `NEXT_PUBLIC_PERSISTENCE`）。
 
 `PERSISTENCE_POSTGRES_PASSWORD` 只在数据目录为空时初始化 PostgreSQL 角色，之后再修改不会轮换已有的 `openmaic-postgres` 卷。一次性本地库可以直接 `docker compose --profile server-persistence down -v` 后换密码重启；要保留数据则需以管理员执行 `ALTER ROLE openmaic WITH PASSWORD 'new-password';` 并更新 `DATABASE_URL`。
 

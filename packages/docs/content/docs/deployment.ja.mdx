@@ -83,7 +83,7 @@ NEXT_PUBLIC_PERSISTENCE=1 \
 docker compose --profile server-persistence up --build
 ```
 
-`NEXT_PUBLIC_PERSISTENCE` はビルド時の変数です。永続化専用の認証情報はありません。各リクエストはオーナー認証器が解決したオーナー（既定ではブラウザごとの匿名 Cookie）に帰属し、ランタイムセッションとメディアはそのオーナーごとに分離されます。既定の識別はブラウザを分離するだけで誰も認証しないため、実ユーザー向けのデプロイでは自前のアカウントに基づくオーナー認証器を登録してください。以前のリリースの `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` は削除され無視されます。旧来のブラウザ生成の学習者キーで保存されたランタイムセッションにはアクセスできなくなります。
+`NEXT_PUBLIC_PERSISTENCE` はビルド時の変数です。永続化専用の認証情報はありません。各リクエストはオーナー認証器が解決したオーナー（既定ではブラウザごとの匿名 Cookie）に帰属し、ランタイムセッションとメディアはそのオーナーごとに分離されます。既定の識別はブラウザを分離するだけで誰も認証しないため、実ユーザー向けのデプロイでは自前のアカウントに基づくオーナー認証器を登録してください。以前のリリースの `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` は削除され無視されます。旧来のブラウザ生成の学習者キーで保存されたランタイムセッションにはアクセスできなくなります。`PERSISTENCE_DEV_TOKEN` が唯一のアクセス制御だった場合は、アップグレード前に `ACCESS_CODE` やゲートウェイで保護する、オーナー認証器を登録する、または `NEXT_PUBLIC_PERSISTENCE` を未設定にしてください。
 
 PostgreSQL のデータは `openmaic-postgres` ボリュームに保存されます。`PERSISTENCE_POSTGRES_PASSWORD` はデータベースディレクトリ初回初期化時にのみパスワードを設定し、その後の環境変数変更では既存ユーザーのパスワードは自動的に変更されません。
 
