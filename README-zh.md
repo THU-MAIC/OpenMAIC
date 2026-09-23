@@ -357,16 +357,24 @@ store；缓存只用于提升性能，不是正确完成构建的必要条件。
 
 ```bash
 cp .env.example .env.local
-printf '\nDATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic\nPERSISTENCE_DEV_TOKEN=openmaic-local-dev\n' >> .env.local
-NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docker compose --profile server-persistence up --build
+printf '\nDATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic\n' >> .env.local
+NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
 ```
 
-和往常一样把服务商 API Key 填进 `.env.local`。之后运行时会话和课程文档都由服务端存储；设备维度的 KV 数据（包括匿名设备学习者 key 和播放进度）仍保留在浏览器中。已有的浏览器课程数据会在首次访问时逐门课程懒式迁移到服务端存储，迁移路径与浏览器持久化一致且经过校验。
+和往常一样把服务商 API Key 填进 `.env.local`。之后运行时会话、课程文档和生成的媒体都由服务端存储；设备维度的 KV 数据（如播放进度）仍保留在浏览器中。已有的浏览器课程数据会在首次访问时逐门课程懒式迁移到服务端存储，迁移路径与浏览器持久化一致且经过校验。
 
-`NEXT_PUBLIC_PERSISTENCE` 是**编译期开关**，会打进浏览器 bundle。启用它的构建必须部署在具备可用运行时 `DATABASE_URL` 和 `PERSISTENCE_DEV_TOKEN` 的环境中，且构建时的 `NEXT_PUBLIC_PERSISTENCE_TOKEN` 必须与服务端 token 一致。否则浏览器会选择 HTTP 持久化但内嵌端点返回配置/认证/初始化错误；首页会弹出持久化不可用的提示并保留原有课程列表，而不是误导性地显示空课程库。
+`NEXT_PUBLIC_PERSISTENCE` 是**编译期开关**，会打进浏览器 bundle。启用它的构建必须部署在具备可用运行时 `DATABASE_URL` 的环境中。否则浏览器会选择 HTTP 持久化但内嵌端点返回配置或初始化错误；首页会弹出持久化不可用的提示并保留原有课程列表，而不是误导性地显示空课程库。
+
+`/api/persistence` 的每个请求都归属于[所有者认证器](#所有者身份)解析出的所有者——默认为 30 天匿名 cookie，每个浏览器一个所有者。持久化不再有单独的凭证：
+
+- **文档**：读取是 capability-by-id：只要 stage meta 存在且未被墓碑化，`decideDocumentAccess` 就会放行且不比对所有者（`lib/persistence/document-access.ts`），因此能访问该端点并知道 stage id 的人都可以读这门课。写入和删除按所有者校验。
+- **运行时会话**（`/runtime/*`）按学习者 key 分区，而学习者 key **就是所有者 id**。浏览器通过 `GET /api/persistence/learner-key` 获取它；请求中写入任何其他学习者 key 都会被拒绝（`403 FORBIDDEN_LEARNER`），他人的会话返回 `404`。已删除（墓碑化）课程的运行时数据视为不存在，也不再接受写入。学习者合并与管理端清空仍然拒绝。
+- **资产**按所有者分区分配，因此 `ASSET_QUOTA_BYTES` 是每个所有者的上限，只有所有者本人可以替换或删除条目。为保证课程观看者能加载媒体，读取仍是 capability-by-id：所有者可读自己的条目；他人已提交、且被某门未删除课程引用的条目，任何人都可按 id 读取。按所有者分区之前写入的条目（旧的共享分区）仍可被所有人按 id 读取，只有拥有所有引用它的课程的所有者才能替换或删除；课程不再引用后照旧由回收器回收。
+
+在没有宿主认证器时，所有者的强度只等同于一个 cookie：适用于 localhost、可信网络或单团队部署。有自有账号体系的部署注册认证器（见[所有者身份](#所有者身份)）后，上述所有接口都随之生效。
 
 > [!WARNING]
-> `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` **不是严格意义上的密钥**：`NEXT_PUBLIC_` token 会被编译进公开的 JavaScript，对每个访客可见，因此**既无保密性也无用户隔离**。文档和资产请求会跳过该认证器（`app/api/persistence/[...path]/route.ts`）。文档所有者由所有者认证器解析（`lib/server/identity/`，默认为 30 天匿名 cookie），而不是 `x-learner-key`。文档读取是 capability-by-id：只要 stage meta 存在且未被墓碑化，`decideDocumentAccess` 就会放行且不比对所有者（`lib/persistence/document-access.ts`），因此能访问该端点并知道 stage id 的人都可以读这门课。写入和删除按该所有者校验。只有 `/runtime/*` 会调用 `authenticatePersistenceRequest`，此时客户端自选的 `x-learner-key` 仍用于划分学习者会话。该 token 在这条运行时路径上的唯一用途，是把无关的网络扫描器挡在可信网络的端点之外。**该模式仅适用于 localhost 或可信网络下的单用户部署。**生产环境请将 [`lib/persistence/server-auth.ts`](lib/persistence/server-auth.ts) 替换为真正的会话校验，由服务端身份推导学习者分区，并相应调整文档/合并/管理端的授权策略。
+> **升级服务端持久化。** `PERSISTENCE_DEV_TOKEN`、`NEXT_PUBLIC_PERSISTENCE_TOKEN` 和 `PERSISTENCE_ALLOW_INSECURE_DEV_AUTH` 已移除并被忽略，请从环境变量和构建参数中删去。此前写入的运行时会话以浏览器自生成的学习者 key 为键，而不是所有者 id，因此**将无法再访问**（课程文档和媒体不受影响）。它们不会被自动迁移，因为信任客户端提交的旧 key 会重新引入客户端自选身份。
 
 `PERSISTENCE_POSTGRES_PASSWORD` 只在数据目录为空时初始化 PostgreSQL 角色，之后再修改不会轮换已有的 `openmaic-postgres` 卷。一次性本地库可以直接 `docker compose --profile server-persistence down -v` 后换密码重启；要保留数据则需以管理员执行 `ALTER ROLE openmaic WITH PASSWORD 'new-password';` 并更新 `DATABASE_URL`。
 
@@ -378,7 +386,7 @@ NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docke
 
 `ASSET_PENDING_TTL_MS`（默认 24 小时）是一次分配处于**待定**状态的时长——字节已入库，但还没有任何文档引用它的 id。客户端先存字节、之后才把 id 写进文档，这段间隙没有任何租约，因此该窗口必须长于一整轮生成过程加上一次仍在等待所属幻灯片的回写：媒体常常在那张幻灯片存在之前就已完成。默认给一天是刻意从宽的——未被引用的字节只是占用存储，而过早过期会让一门课丢掉自己的媒体。取值不是正整数时服务端会拒绝启动，理由与 `ASSET_QUOTA_BYTES` 相同。
 
-单个资产 principal 最多可持有 `ASSET_QUOTA_BYTES`（默认 10 GiB）的**存活**资产——待定且未过期的，或仍被某个文档引用的——超出后拒绝新的分配；该上限由存储层在写事务内、按 principal 的 advisory lock 强制执行，并发上传无法越过。在按用户划分的资产 principal 落地之前，所有调用方共享同一个 principal，因此这是一个部署级而非用户级的上限——而它值得存在，因为本部署放行的任何调用方都能触达分配。设置 `ASSET_QUOTA_BYTES=0` 可完全关闭配额并在别处限制存储，零的任何写法都有效。取值不是非负整数时服务端会拒绝启动，而不是退回默认值，这样写错的上限会让进程停下，而不是悄悄跑在一个没人选择的限制上。
+每个所有者最多可持有 `ASSET_QUOTA_BYTES`（默认 10 GiB）的**存活**资产——待定且未过期的，或仍被某个文档引用的——超出后拒绝新的分配；该上限由存储层在写事务内强制执行，并发上传无法越过。该上限按所有者而非按部署计算：在默认的匿名 cookie 所有者下，清除 cookie 的访客会成为拥有全新配额的新所有者，如需限制总量请在别处设置。按所有者分区之前的条目仍计入旧的共享分区。设置 `ASSET_QUOTA_BYTES=0` 可完全关闭配额并在别处限制存储，零的任何写法都有效。取值不是非负整数时服务端会拒绝启动，而不是退回默认值，这样写错的上限会让进程停下，而不是悄悄跑在一个没人选择的限制上。
 
 资产字节默认直接出站（内嵌路由把字节写入响应体）。设置 `ASSET_BYTE_EGRESS=redirect` 可选择**间接出站**：字节 `GET` 会在字节层支持签名（S3 支持；PostgreSQL 字节列不支持，回退为直接返回字节）时返回一个短时效的签名 S3 URL。间接出站有两个对象存储前提：bucket 的 CORS 需允许本应用来源并在签名响应上暴露 `Content-Type`；签名身份需持有 bucket 的 `s3:ListBucket`，缺失的 key 才能以 `404 NoSuchKey` 而非 `403` 返回。相关取舍见[资产 HTTP 契约](packages/@openmaic/storage/docs/asset-http-contract.md)。
 
@@ -390,7 +398,7 @@ NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docke
 
 内置两种认证器：默认的 `anonymousCookie`（每个浏览器一个所有者，`anon:<uuid>`，来自 30 天 `HttpOnly` 的 `anonymous_id` cookie，不能发布课程）；设置 `PERSISTENCE_SHARED_OWNER_ID`（必须同时设置 `ACCESS_CODE`）时启用 `sharedTeam`（所有请求共用该固定 id，可以发布课程）。授权只看 principal 的 `kind` 和 `roles`，不解析 id 的形状；核心角色为 `course:publish` 和 `admin`（保留，内置认证器均不授予）。
 
-有自有账号体系的部署可实现 `OwnerAuthenticator`，并在 `instrumentation.ts` 的 `register()` 中调用一次 `configureOwnerAuthenticator(...)` 注册（示例见英文 README 的 “Owner identity” 一节）。无效凭证必须返回 `INVALID_CREDENTIAL`，各接口统一返回 `401`，绝不回退为新的匿名所有者。注册冲突在启动时报错：重复调用 `configureOwnerAuthenticator`，或同时设置了 `PERSISTENCE_SHARED_OWNER_ID`，都会让 `register()` 抛错、服务无法启动；principal 则按请求校验：owner id 不是 1–256 个可打印、无空格的 ASCII 字符（或 `kind` / `assurance` 未知）时，该请求返回 `500`，不会写入存储。`/api/persistence` 的运行时 `x-learner-key` 路径暂未接入该认证器。
+有自有账号体系的部署可实现 `OwnerAuthenticator`，并在 `instrumentation.ts` 的 `register()` 中调用一次 `configureOwnerAuthenticator(...)` 注册（示例见英文 README 的 “Owner identity” 一节）。无效凭证必须返回 `INVALID_CREDENTIAL`，各接口统一返回 `401`，绝不回退为新的匿名所有者。注册冲突在启动时报错：重复调用 `configureOwnerAuthenticator`，或同时设置了 `PERSISTENCE_SHARED_OWNER_ID`，都会让 `register()` 抛错、服务无法启动；principal 则按请求校验：owner id 不是 1–256 个可打印、无空格的 ASCII 字符（或 `kind` / `assurance` 未知）时，该请求返回 `500`，不会写入存储。同一个解析出的所有者也是 `/api/persistence` 的运行时学习者 key 和资产分区，因此注册的认证器同样管辖它们。
 
 ### 可选：MP4 视频导出（渲染服务）
 

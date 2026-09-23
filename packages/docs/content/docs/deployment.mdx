@@ -76,22 +76,20 @@ Put nginx or Caddy in front for TLS termination. By default, classroom state is 
 
 The repository's `server-persistence` profile starts OpenMAIC and PostgreSQL in two containers. The persistence HTTP API is embedded in OpenMAIC; no separate persistence service is required.
 
-First add the database connection and development token to `.env.local`:
+First add the database connection to `.env.local`:
 
 ```bash
 DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
-PERSISTENCE_DEV_TOKEN=openmaic-local-dev
 ```
 
 Then start the profile:
 
 ```bash
 NEXT_PUBLIC_PERSISTENCE=1 \
-NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev \
 docker compose --profile server-persistence up --build
 ```
 
-`NEXT_PUBLIC_PERSISTENCE` and `NEXT_PUBLIC_PERSISTENCE_TOKEN` are build-time variables and must match the server-side runtime configuration. `PERSISTENCE_DEV_TOKEN` is suitable only for local or trusted private-network deployments. It does not provide real user isolation and must not be used directly as authentication for a public production deployment.
+`NEXT_PUBLIC_PERSISTENCE` is a build-time variable. There is no separate persistence credential: every request is attributed to the owner the owner authenticator resolves (by default an anonymous per-browser cookie), and runtime sessions and media are partitioned by that owner. The default identity isolates browsers but authenticates nobody, so a deployment serving real users should register an owner authenticator backed by its own accounts. Earlier releases used `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN`; both are removed and ignored, and runtime sessions stored under the old browser-minted learner key are no longer reachable.
 
 PostgreSQL data is stored in the `openmaic-postgres` volume. `PERSISTENCE_POSTGRES_PASSWORD` sets the password only when the database directory is first initialized. Changing the environment variable later does not automatically change the existing database user's password.
 

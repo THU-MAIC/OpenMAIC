@@ -383,47 +383,63 @@ and PostgreSQL. The persistence HTTP server is embedded in the app at
 
 ```bash
 cp .env.example .env.local
-printf '\nDATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic\nPERSISTENCE_DEV_TOKEN=openmaic-local-dev\n' >> .env.local
-NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docker compose --profile server-persistence up --build
+printf '\nDATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic\n' >> .env.local
+NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
 ```
 
-Add your provider API keys to `.env.local` as usual. Runtime sessions and course
-documents become server-backed; device-scoped KV data (including the anonymous
-device learner key and playback position) remains in the browser. Existing
-browser course data is copied into the configured server store lazily, one
-course at a time when it is first accessed, using the same verified migration
-path as browser persistence.
+Add your provider API keys to `.env.local` as usual. Runtime sessions, course
+documents and generated media become server-backed; device-scoped KV data
+(such as playback position) remains in the browser. Existing browser course
+data is copied into the configured server store lazily, one course at a time
+when it is first accessed, using the same verified migration path as browser
+persistence.
 
 `NEXT_PUBLIC_PERSISTENCE` is a **build-time switch** compiled into the browser
 bundle. A build with it enabled must be deployed with a working runtime
-`DATABASE_URL` and `PERSISTENCE_DEV_TOKEN`, while
-`NEXT_PUBLIC_PERSISTENCE_TOKEN` must match that server token at build time.
-Otherwise the browser selects HTTP persistence but the embedded endpoint
-returns configuration/authentication/initialization errors; the home page shows
-a persistence-unavailable toast and keeps the prior course list instead of
+`DATABASE_URL`. Otherwise the browser selects HTTP persistence but the embedded
+endpoint returns configuration or initialization errors; the home page shows a
+persistence-unavailable toast and keeps the prior course list instead of
 misleadingly displaying an empty library.
 
-`PERSISTENCE_DEV_TOKEN` and `NEXT_PUBLIC_PERSISTENCE_TOKEN` are **not a
-secret in any meaningful sense**: the `NEXT_PUBLIC_` token is compiled into
-the public JavaScript bundle, fully visible to every visitor, and therefore
-provides **no confidentiality and no user isolation whatsoever**. Document
-and asset requests skip that authenticator
-(`app/api/persistence/[...path]/route.ts`). The document owner comes from
-the owner authenticator (see [Owner identity](#owner-identity)) — by default
-the 30-day anonymous cookie — not from `x-learner-key`. A document read is capability-by-id: if the stage meta
-exists and is not tombstoned, `decideDocumentAccess` allows it with no
-owner check (`lib/persistence/document-access.ts`), so anyone who can
-reach the endpoint and knows a stage id can read that course. Writes and
-deletes are owner-checked against that owner. Only `/runtime/*` calls
-`authenticatePersistenceRequest`, where a client-chosen `x-learner-key`
-still partitions learner sessions. The token's only purpose on that
-runtime path is to keep unrelated network scanners out of an endpoint on
-a trusted network. This is suitable only for localhost or trusted-network,
-single-user deployments. Before production, replace
-[`lib/persistence/server-auth.ts`](lib/persistence/server-auth.ts) with real
-session verification that derives the learner partition from server-controlled
-identity, and change the document/merge/admin authorization policies as
-appropriate.
+Every `/api/persistence` request is attributed to the owner the
+[owner authenticator](#owner-identity) resolves — by default the 30-day
+anonymous cookie, one owner per browser. There is no separate persistence
+credential:
+
+- **Documents.** A read is capability-by-id: if the stage meta exists and is
+  not tombstoned, `decideDocumentAccess` allows it with no owner check
+  (`lib/persistence/document-access.ts`), so anyone who can reach the endpoint
+  and knows a stage id can read that course. Writes and deletes are
+  owner-checked.
+- **Runtime sessions** (`/runtime/*`) are partitioned by learner key, and the
+  learner key **is the owner id**. The browser learns it from
+  `GET /api/persistence/learner-key`; a request naming any other learner key
+  is refused (`403 FORBIDDEN_LEARNER`), and another learner's session answers
+  `404`. Runtime of a deleted (tombstoned) course reads as absent and takes no
+  new writes. Learner merge and the admin wipes stay refused.
+- **Assets** are allocated in a per-owner partition, so `ASSET_QUOTA_BYTES` is
+  a per-owner ceiling and only the owner can replace or delete an entry. Reads
+  stay capability-by-id for media a course viewer needs: an owner reads its own
+  entries, and anyone reads another owner's committed entry while a live course
+  references it. Entries written before per-owner partitions (the old shared
+  partition) stay readable by id to everyone, and can be replaced or deleted
+  only by an owner who owns every course referencing them; the collector
+  reclaims them as courses stop naming them, as before.
+
+Without a host authenticator the owner is only as strong as a cookie: this is
+suitable for localhost, trusted-network, or single-team deployments. A
+deployment with its own accounts registers an authenticator (see
+[Owner identity](#owner-identity)) and every surface above follows it.
+
+> [!WARNING]
+> **Upgrading server persistence.** `PERSISTENCE_DEV_TOKEN`,
+> `NEXT_PUBLIC_PERSISTENCE_TOKEN` and `PERSISTENCE_ALLOW_INSECURE_DEV_AUTH` are
+> removed and ignored; drop them from your environment and build arguments.
+> Runtime sessions written before this change are keyed by a learner key the
+> browser minted, not by an owner id, so they are **no longer reachable** (course
+> documents and media are unaffected). They are not migrated automatically,
+> because trusting a client-supplied old key would bring client-chosen identity
+> back.
 
 `PERSISTENCE_POSTGRES_PASSWORD` initializes the PostgreSQL role only when the
 data directory is empty; changing it later does not rotate an existing
@@ -478,24 +494,23 @@ storage while an expiry that fires early costs a course its media. A value that
 is not a positive integer stops the server from starting, for the same reason
 `ASSET_QUOTA_BYTES` does.
 
-One asset principal may hold `ASSET_QUOTA_BYTES` (default 10 GiB) of live
-assets — pending-unexpired or still referenced by a document — before further
+Each owner may hold `ASSET_QUOTA_BYTES` (default 10 GiB) of live assets —
+pending-unexpired or still referenced by a document — before further
 allocations are refused; the store enforces it inside the write transaction, so
-concurrent uploads cannot race past it. Until per-user asset principals land
-every caller shares one principal, which makes this a deployment-wide ceiling
-rather than a per-user one — and one worth having, because allocation is
-reachable by any caller the deployment admits. Set `ASSET_QUOTA_BYTES=0` to opt
-out and bound storage elsewhere; any spelling of zero does it. A value that is
-not a non-negative integer is refused when the server starts, rather than
-replaced by the default, so a mistyped ceiling stops the process instead of
-quietly running on a limit nobody chose.
+concurrent uploads cannot race past it. The ceiling is per owner, not per
+deployment: with the default anonymous-cookie owners a visitor who clears their
+cookie becomes a new owner with a fresh quota, so bound total storage elsewhere
+if that matters. Entries from before per-owner partitions keep counting against
+the old shared partition. Set `ASSET_QUOTA_BYTES=0` to opt out and bound
+storage elsewhere; any spelling of zero does it. A value that is not a
+non-negative integer is refused when the server starts, rather than replaced by
+the default, so a mistyped ceiling stops the process instead of quietly running
+on a limit nobody chose.
 
-Assets are read and allocated by any caller the deployment admits, and are never
-replaced or deleted through this endpoint: those operations would scope to the
-shared principal, so admitting them would let any caller overwrite or destroy
-another author's media. An asset nothing references is left to the collector
-rather than deleted by a browser, and nothing on the wire changes when one is
-committed — a document write does that as a side effect.
+The browser never deletes an asset: one nothing references is left to the
+collector, and nothing on the wire changes when one is committed — a document
+write does that as a side effect. Replacing or deleting through the endpoint is
+limited to the owner, as described above.
 
 Asset byte egress is direct by default: the embedded route materializes the
 bytes in the response body. Setting `ASSET_BYTE_EGRESS=redirect` opts into
@@ -571,8 +586,9 @@ Registration is checked at boot: calling `configureOwnerAuthenticator` a second
 time, or while `PERSISTENCE_SHARED_OWNER_ID` is set, throws from `register()`
 and the server does not start. Principals are checked per request: an owner id
 that is not 1-256 printable non-space ASCII characters (or an unknown `kind` /
-`assurance`) is rejected with a `500` for that request rather than stored. The runtime `x-learner-key` path of `/api/persistence` is not
-yet routed through the authenticator.
+`assurance`) is rejected with a `500` for that request rather than stored. The
+same resolved owner is the runtime learner key and the asset partition of
+`/api/persistence`, so a registered authenticator governs those too.
 
 ### Optional: Agent workbench and runtime
 

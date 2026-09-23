@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Breaking Changes
+
+- Server persistence: runtime sessions (`/api/persistence/runtime/*`) are keyed by the owner the owner identity seam resolves, not by a client-supplied `x-learner-key` behind the development token. `PERSISTENCE_DEV_TOKEN`, `NEXT_PUBLIC_PERSISTENCE_TOKEN` and `PERSISTENCE_ALLOW_INSECURE_DEV_AUTH` are removed and ignored; the browser learns its learner key from `GET /api/persistence/learner-key`. Runtime sessions written before this change were keyed by a browser-minted learner key and are no longer reachable; they are not migrated, because trusting a client-supplied old key would restore client-chosen identity. Course documents and media are unaffected.
+- Server persistence: assets are allocated in a per-owner partition, so `ASSET_QUOTA_BYTES` is a per-owner ceiling and only the owner can replace or delete an entry. Other owners read an entry by id while a live course references it. Entries in the old shared partition stay readable by id, and can be replaced or deleted only by an owner who owns every course referencing them.
+
+### Security
+
+- Server persistence: runtime data of a deleted course reads as absent and takes no new writes.
+
 ## [1.0.3] - 2026-09-15
 
 A security release: access-code tokens now expire and verification is throttled behind a trusted proxy, the render service applies a network policy to the untrusted HTML it renders, audio provider requests validate redirects and pin their connections, and Next.js is upgraded to patch a critical RCE. It also carries the fixes and features merged since 1.0.2.
