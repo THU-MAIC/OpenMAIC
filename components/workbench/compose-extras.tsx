@@ -11,7 +11,11 @@ import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { uploadWorkbenchMaterial, type WorkbenchMaterial } from '@/lib/workbench/session-store';
+import {
+  uploadWorkbenchMaterial,
+  WorkbenchMaterialUploadError,
+  type WorkbenchMaterial,
+} from '@/lib/workbench/session-store';
 import { skillTitle, useAgentSkills, type AgentSkillInfo } from '@/lib/workbench/agent-skills';
 import {
   createMaterialUploadIdentityGate,
@@ -325,7 +329,7 @@ export function useMaterialUploadsEnabled(): boolean {
 export function useComposerMaterials(
   initialMaterials: readonly WorkbenchMaterial[] = [],
 ): ComposerMaterials {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const enabled = useMaterialUploadsEnabled();
   const initial = useRef<WorkbenchMaterial[] | null>(null);
   if (initial.current === null) {
@@ -375,9 +379,11 @@ export function useComposerMaterials(
       } catch (err) {
         setFailed((items) => [...items, entry]);
         toast.error(
-          err instanceof Error
-            ? err.message
-            : t('workbench.material.uploadFailed', { name: file.name }),
+          err instanceof WorkbenchMaterialUploadError
+            ? err.userMessage(t, locale)
+            : err instanceof Error
+              ? err.message
+              : t('workbench.material.uploadFailed', { name: file.name }),
         );
         return false;
       } finally {

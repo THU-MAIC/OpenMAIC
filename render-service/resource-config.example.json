@@ -1,0 +1,16 @@
+{
+  "projectRoot": "/var/lib/openmaic/renders",
+  "stateRoot": "/run/openmaic-resource",
+  "owner": {
+    "workerUid": 1001,
+    "workerGid": 1001,
+    "cleanupTimeoutMs": 10000,
+    "taskPidsMax": 256,
+    "browserPath": "/opt/openmaic/chrome/headless_shell",
+    "ffmpegPath": "/usr/bin/ffmpeg"
+  },
+  "task": {
+    "cpuMillis": 1000,
+    "memoryBytes": 805306368
+  }
+}

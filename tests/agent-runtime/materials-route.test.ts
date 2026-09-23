@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 import type { AgentSessionMaterial } from '@openmaic/storage';
@@ -314,7 +314,29 @@ describe('POST /api/materials', () => {
   it('rejects a body over the upload cap with 413', async () => {
     const response = await post(Buffer.alloc(agentRuntimeConfig.maxUploadBytes + 1));
     expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({
+      maxBytes: Math.min(agentRuntimeConfig.maxDocumentBytes, agentRuntimeConfig.maxUploadBytes),
+    });
     expect(mocks.finalizeOwnerMaterial).not.toHaveBeenCalled();
+  });
+
+  it('does not include maxBytes when the body exceeds its declared length', async () => {
+    // 0 < declared length < actual body < effective upload cap, so this is the
+    // mismatch 413 and not either size-cap 413.
+    const body = Buffer.from('hello world');
+    const effectiveLimit = Math.min(
+      agentRuntimeConfig.maxDocumentBytes,
+      agentRuntimeConfig.maxUploadBytes,
+    );
+    expect(body.byteLength).toBeGreaterThan(4);
+    expect(body.byteLength).toBeLessThan(effectiveLimit);
+    const response = await post(body, { 'content-length': '4' });
+    expect(response.status).toBe(413);
+    const payload = (await response.json()) as { error?: string };
+    expect(payload.error).toBe('upload body exceeds its declared content length');
+    expect(payload).not.toHaveProperty('maxBytes');
+    expect(mocks.byteStore.put).not.toHaveBeenCalled();
+    expect(mocks.abandonOwnerMaterial).toHaveBeenCalled();
   });
 
   it('answers 429 when the owner quota is exceeded', async () => {
@@ -362,4 +384,47 @@ describe('POST /api/materials', () => {
     const response = await post(Buffer.from('x'));
     expect(response.status).toBe(404);
   });
+});
+
+describe('configured material upload limit metadata', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([
+    ['application/pdf', 1024, 2048, 1024],
+    ['image/png', 1024, 2048, 1024],
+    ['audio/mpeg', 1024, 2048, 2048],
+    ['video/mp4', 1024, 2048, 2048],
+    ['application/pdf', 2048, 1024, 1024],
+  ])(
+    'reports the effective limit for %s (document %i, upload %i)',
+    async (mime, documentBytes, uploadBytes, maxBytes) => {
+      vi.resetModules();
+      vi.stubEnv('MATERIALS_MAX_DOCUMENT_BYTES', String(documentBytes));
+      vi.stubEnv('OPENMAIC_AGENT_MAX_UPLOAD_BYTES', String(uploadBytes));
+      const { POST: configuredPost } = await import('@/app/api/materials/route');
+
+      for (const declared of [true, false]) {
+        const response = await configuredPost(
+          new NextRequest('http://localhost/api/materials', {
+            method: 'POST',
+            headers: {
+              'content-type': mime,
+              'x-material-filename': 'material',
+              ...(declared ? { 'content-length': String(maxBytes + 1) } : {}),
+            },
+            body: Buffer.alloc(maxBytes + 1),
+          }),
+        );
+        expect(response.status).toBe(413);
+        expect(response.headers.get('x-request-id')).toBeTruthy();
+        await expect(response.json()).resolves.toEqual({
+          success: false,
+          errorCode: 'INVALID_REQUEST',
+          error: `upload exceeds ${maxBytes} bytes`,
+          maxBytes,
+        });
+      }
+      expect(mocks.byteStore.put).not.toHaveBeenCalled();
+    },
+  );
 });

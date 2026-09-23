@@ -203,6 +203,43 @@ describe('POST /render buffering/extraction bound', () => {
 });
 
 describe('render HTTP contract through a replaceable executor', () => {
+  it('exposes a safe startup summary without leaking private owner diagnostics', async () => {
+    const jobs = createMemoryJobStore();
+    const now = Date.now();
+    await jobs.create({
+      id: 'startup-failed',
+      status: 'failed',
+      progress: 0,
+      currentStage: 'failed',
+      error: 'Resource render failed; see service logs',
+      createdAtMs: now,
+      updatedAtMs: now,
+      projectDir: '/tmp/startup-failed',
+      resources: {
+        published: false,
+        cleanupVerified: false,
+        reservationReturned: false,
+        admissionClosed: true,
+        diagnosticCode: 'main_pid_read_error',
+        details: { diagnostic: '/proc/42/cgroup: private permission failure' },
+      },
+    });
+    const { app } = testApp(succeedingExecutor, { jobs });
+    const response = await app.fetch(new Request('http://test/render/startup-failed'));
+    const text = await response.text();
+    expect(JSON.parse(text)).toMatchObject({
+      resources: {
+        published: false,
+        cleanupVerified: false,
+        reservationReturned: false,
+        admissionClosed: true,
+        diagnosticCode: 'main_pid_read_error',
+      },
+    });
+    expect(text).not.toContain('/proc/42');
+    expect(text).not.toContain('private permission failure');
+  });
+
   it('preserves submit, polling, and file download behavior', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'render-route-success-'));
     scratch.push(dir);
