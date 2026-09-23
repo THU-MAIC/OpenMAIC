@@ -238,7 +238,7 @@ export class PgUserSkillStore implements UserSkillStore {
     const result = await this.queryable.query<UserSkillRow>(
       `SELECT * FROM ${this.table}
         WHERE owner_id = $1 AND deleted_at IS NULL
-        ORDER BY created_at ASC`,
+        ORDER BY created_at ASC, id ASC`,
       [ownerId],
     );
     return result.rows.map(mapRow);
@@ -438,7 +438,7 @@ export class PgUserSkillStore implements UserSkillStore {
       for (const key of ordered) {
         await tx.query('SELECT pg_advisory_xact_lock($1::integer)', [key]);
       }
-      const taken = new Set(
+      const targetNames = new Set(
         (
           await tx.query<{ name: string }>(
             `SELECT name FROM ${this.table} WHERE owner_id = $1 AND deleted_at IS NULL`,
@@ -453,12 +453,15 @@ export class PgUserSkillStore implements UserSkillStore {
           FOR UPDATE`,
         [fromOwnerId],
       );
+      // Every handle either side holds is reserved before anything is renamed:
+      // a source row renamed while it still belongs to the source must not take
+      // a handle another source row holds (the unique index is per owner), and
+      // after the move it must not take one the target holds. Only source rows
+      // whose handle the target already uses are renamed.
+      const taken = new Set([...targetNames, ...incoming.rows.map((row) => row.name)]);
       const renamed: UserSkillOwnerMerge['renamed'] = [];
       for (const row of incoming.rows) {
-        if (!taken.has(row.name)) {
-          taken.add(row.name);
-          continue;
-        }
+        if (!targetNames.has(row.name)) continue;
         const next = freeSkillHandle(row.name, taken);
         taken.add(next);
         await tx.query(`UPDATE ${this.table} SET name = $2, updated_at = now() WHERE id = $1`, [

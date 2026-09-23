@@ -1049,3 +1049,57 @@ describe('reference HTTP handler ownership ordering', () => {
     expect(deleted).toBe(false);
   });
 });
+
+describe('reference HTTP handler store policy errors', () => {
+  function storeFailingWith(error: Error): RuntimeStore {
+    const backing = new BrowserRuntimeStore({ indexedDB: new IDBFactory() });
+    return new Proxy(backing, {
+      get(target, property, receiver) {
+        if (property === 'createSession') return async () => Promise.reject(error);
+        return Reflect.get(target, property, receiver);
+      },
+    });
+  }
+
+  async function createWith(error: Error): Promise<Response> {
+    const handler = createRuntimeHttpHandler(storeFailingWith(error), {
+      authenticate: async (req) => bearerLearner(req),
+    });
+    return handlerFetch(handler, async () => 'Bearer anon:device-1')(
+      `${BASE_URL}/runtime/sessions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(makeSession()),
+      },
+    );
+  }
+
+  test('answers a refused write 403 with its code', async () => {
+    const { DocumentWriteRefusedError } = await import('../src/document/types.js');
+    const response = await createWith(
+      new DocumentWriteRefusedError('', 'OWNER_RETIRED', 'identity was merged'),
+    );
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: 'OWNER_RETIRED' } });
+  });
+
+  test('answers a busy write 503 with its code and Retry-After', async () => {
+    const { StorageBusyError } = await import('../src/store-errors.js');
+    const response = await createWith(new StorageBusyError('OWNER_BUSY', 'try again', 2));
+    expect(response.status).toBe(503);
+    expect(response.headers.get('retry-after')).toBe('2');
+    await expect(response.json()).resolves.toMatchObject({ error: { code: 'OWNER_BUSY' } });
+  });
+
+  test('recognizes a busy error from another copy of the package by name and shape', async () => {
+    const foreign = Object.assign(new Error('busy'), {
+      name: 'StorageBusyError',
+      code: 'OWNER_BUSY',
+      retryAfterSeconds: 1,
+    });
+    expect((await createWith(foreign)).status).toBe(503);
+    const malformed = Object.assign(new Error('busy'), { name: 'StorageBusyError', code: 'x' });
+    expect((await createWith(malformed)).status).toBe(500);
+  });
+});

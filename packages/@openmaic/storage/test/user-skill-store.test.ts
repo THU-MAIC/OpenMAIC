@@ -366,7 +366,9 @@ describe('PgUserSkillStore owner merge and forwarding', () => {
       moved: 3,
       renamed: [{ id: clash.id, from: 'my-notes', to: 'my-notes-2' }],
     });
-    const names = (await store.list('user:1')).map((skill) => [skill.id, skill.name]);
+    const names = (await store.list('user:1'))
+      .map((skill) => [skill.id, skill.name])
+      .sort((a, b) => (a[1]! < b[1]! ? -1 : 1));
     expect(names).toEqual([
       [mine.id, 'my-notes'],
       [clash.id, 'my-notes-2'],
@@ -374,6 +376,22 @@ describe('PgUserSkillStore owner merge and forwarding', () => {
     ]);
     await expect(store.list('anon:1')).resolves.toEqual([]);
     await expect(store.mergeOwner('anon:1', 'user:1')).resolves.toEqual({ moved: 0, renamed: [] });
+  });
+
+  test('never renames into a handle the source itself still holds', async () => {
+    // The target has my-x; the source has my-x and my-x-2. Renaming the
+    // source's my-x must skip my-x-2 (still the source's while it is renamed,
+    // and the source's other skill after the move).
+    await store.create('user:1', input('my-x'));
+    const clash = await store.create('anon:1', input('my-x'));
+    const sibling = await store.create('anon:1', input('my-x-2'));
+    await expect(store.mergeOwner('anon:1', 'user:1')).resolves.toEqual({
+      moved: 2,
+      renamed: [{ id: clash.id, from: 'my-x', to: 'my-x-3' }],
+    });
+    const names = (await store.list('user:1')).map((skill) => skill.name).sort();
+    expect(names).toEqual(['my-x', 'my-x-2', 'my-x-3']);
+    expect((await store.find(sibling.id, 'user:1'))?.name).toBe('my-x-2');
   });
 
   test('a renamed handle stays within the length limit and skips taken suffixes', async () => {

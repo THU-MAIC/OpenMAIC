@@ -12,6 +12,7 @@ import {
   type AssetPrincipal,
   type AssetStore,
 } from '../asset/types.js';
+import { storePolicyResponse } from '../store-errors.js';
 
 /** Derive the asset principal from the authenticated request session. */
 export type AssetHttpAuthenticate = (req: IncomingMessage) => Promise<AssetPrincipal | undefined>;
@@ -510,6 +511,14 @@ function mappedError(error: unknown): {
   body: ErrorBody;
   headers: Record<string, string>;
 } {
+  const policy = storePolicyResponse(error);
+  if (policy) {
+    return {
+      status: policy.status,
+      body: { error: { code: policy.code, message: policy.message } },
+      headers: policy.headers,
+    };
+  }
   if (error instanceof AssetHttpError) {
     return {
       status: error.status,

@@ -153,17 +153,28 @@ a browser.
   anonymous work into an account) gets a primitive per PostgreSQL store, each
   runnable inside the host's own transaction by pinning the store to it
   (`withTransaction: (body) => body(tx)`) so the whole merge commits or rolls
-  back as one: `PgRuntimeStore.mergeLearner`, `PgAgentSessionStore.mergeOwner`,
-  `PgUserSkillStore.mergeOwner` (a live handle the target already uses is
-  renamed with a numeric suffix), `PgAssetStore.reassignPrincipal` (takes both
-  principals' write locks; quota is not re-checked), and
+  back as one: `PgRuntimeStore.reassignLearner` (a plain re-key that does not
+  re-validate stored sessions; `mergeLearner` is the validating form),
+  `PgAgentSessionStore.mergeOwner`, `PgUserSkillStore.mergeOwner` (a live
+  handle the target already uses is renamed to the first numeric suffix
+  neither side holds), `PgAssetStore.reassignPrincipal` (takes both principals'
+  write locks; quota is not re-checked), and
   `reassignDocumentFolders(tx, { fromOwnerId, toOwnerId, documentOwnership })`
   (run before the ownership rows move: a same-named folder merges into the
-  target's, a colliding id is renumbered, filing follows). Stores that create
-  owner-keyed rows take a `resolveFinalOwner(tx, ownerId)` hook
-  (`PgAgentSessionStore`, `PgUserSkillStore`), run as the create transaction's
-  first statement, where a host takes its identity lock and forwards a retired
-  owner.
+  target's, a colliding id is renumbered, filing follows). The primitives take
+  their own store-local locks only; ordering them against the host's other
+  writes (an identity lock) is the host's. Stores that create owner-keyed rows
+  take a hook run as the create transaction's first statement --
+  `resolveFinalOwner(tx, ownerId)` on `PgAgentSessionStore` and
+  `PgUserSkillStore`, `resolveFinalLearner(tx, learnerKey)` on
+  `PgRuntimeStore` -- where a host takes its identity lock and forwards or
+  refuses a retired owner.
+- **Policy errors over HTTP.** Every handler (runtime, documents, assets)
+  answers a `DocumentWriteRefusedError` thrown by a store as `403` with its
+  code, and a `StorageBusyError(code, message, retryAfterSeconds)` as `503`
+  with its code and `Retry-After`: a write that could not run now and may be
+  retried as it is. Both are recognized across copies of the package by name
+  and shape (`isDocumentWriteRefusedError`, `isStorageBusyError`).
 
 ## Upgrading from 0.1.x
 

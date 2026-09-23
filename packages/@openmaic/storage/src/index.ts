@@ -103,6 +103,7 @@ export type {
   StageFreshnessManifest,
   StageFreshnessManifestStore,
 } from './document/types.js';
+export { StorageBusyError, isStorageBusyError } from './store-errors.js';
 export {
   DocumentFolderLimitError,
   DocumentNotFoundError,
