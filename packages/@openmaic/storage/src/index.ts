@@ -125,9 +125,12 @@ export {
   StorageLockUnavailableError,
   ensureDocumentSchema,
   readStageFreshnessManifest,
+  reassignDocumentFolders,
   splitSqlStatements,
+  type DocumentFolderReassignment,
   type DocumentOwnershipRelation,
   type PgDocumentStoreOptions,
+  type ReassignDocumentFoldersInput,
   type StorageLockUnavailableReason,
 } from './document/pg.js';
 
@@ -223,6 +226,7 @@ export {
   USER_SKILL_PG_SCHEMA,
   ensureUserSkillSchema,
   type PgUserSkillStoreOptions,
+  type UserSkillOwnerMerge,
   type UserSkillTableNames,
 } from './skill/pg.js';
 

@@ -4,6 +4,7 @@ import { DSL_VERSION } from '@openmaic/dsl';
 import {
   PgDocumentStore,
   ensureDocumentSchema,
+  reassignDocumentFolders,
   type PgDocumentStoreOptions,
   type QueryResult,
   type Queryable,
@@ -293,6 +294,124 @@ describe('owner-scoped document folders', () => {
     await expect(bob.listDocuments('same-id')).resolves.toEqual([
       expect.objectContaining({ id: 'bob-stage', folderId: 'same-id' }),
     ]);
+  });
+});
+
+describe('reassignDocumentFolders', () => {
+  let db: PGlite;
+  let anon: PgDocumentStore;
+  let user: PgDocumentStore;
+
+  beforeEach(async () => {
+    db = new PGlite();
+    await db.waitReady;
+    await ensureDocumentSchema(db);
+    await provisionOwnershipRelation(db);
+    const root = new PgDocumentStore(db, {
+      ...transactionOptions(db),
+      documentOwnership: CLAIMING_OWNERSHIP,
+    });
+    anon = root.forOwner('anon:1');
+    user = root.forOwner('user:1');
+  });
+
+  afterEach(async () => {
+    await db.close();
+  });
+
+  /** Move the folders, then the ownership rows, the order a claim runs them in. */
+  async function claim(createFolderId?: () => string) {
+    return db.transaction(async (tx: Queryable) => {
+      const plan = await reassignDocumentFolders(tx, {
+        fromOwnerId: 'anon:1',
+        toOwnerId: 'user:1',
+        documentOwnership: OWNERSHIP,
+        ...(createFolderId ? { createFolderId } : {}),
+      });
+      await tx.query('UPDATE document_owners SET owner_id = $2 WHERE owner_id = $1', [
+        'anon:1',
+        'user:1',
+      ]);
+      return plan;
+    });
+  }
+
+  test('moves, merges same-named folders, and renumbers colliding ids, keeping filing', async () => {
+    await user.createFolder('shared-id', 'Work');
+    await user.createFolder('user-only', 'Reading');
+    await user.saveDocument(makeDocument('user-stage'));
+    await user.setStageFolder('user-stage', 'shared-id');
+
+    // Same id as the account's "Work", different name: renumbered.
+    await anon.createFolder('shared-id', 'Drafts');
+    // Same name as the account's "Reading" (case-insensitively): merged.
+    await anon.createFolder('anon-reading', 'reading');
+    // No collision: moved as is.
+    await anon.createFolder('anon-only', 'Ideas');
+    for (const [stage, folder] of [
+      ['anon-draft', 'shared-id'],
+      ['anon-reading-stage', 'anon-reading'],
+      ['anon-idea', 'anon-only'],
+    ] as const) {
+      await anon.saveDocument(makeDocument(stage));
+      await anon.setStageFolder(stage, folder);
+    }
+
+    const plan = await claim(() => 'fresh-id');
+    expect(plan).toEqual([
+      { fromFolderId: 'shared-id', toFolderId: 'fresh-id', outcome: 'renumbered' },
+      { fromFolderId: 'anon-reading', toFolderId: 'user-only', outcome: 'merged' },
+      { fromFolderId: 'anon-only', toFolderId: 'anon-only', outcome: 'moved' },
+    ]);
+    const folders = await user.listFolders();
+    expect(folders.map((folder) => [folder.id, folder.name])).toEqual([
+      ['shared-id', 'Work'],
+      ['user-only', 'Reading'],
+      ['fresh-id', 'Drafts'],
+      ['anon-only', 'Ideas'],
+    ]);
+    await expect(anon.listFolders()).resolves.toEqual([]);
+    const filed = Object.fromEntries(
+      (await user.listDocuments()).map((summary) => [summary.id, summary.folderId]),
+    );
+    expect(filed).toEqual({
+      'user-stage': 'shared-id',
+      'anon-draft': 'fresh-id',
+      'anon-reading-stage': 'user-only',
+      'anon-idea': 'anon-only',
+    });
+  });
+
+  test('re-files from the old ids in one step when a new id equals another old id', async () => {
+    // The account has "B" under id "x"; the anonymous owner has "A" under "x"
+    // and "B" under "y". "A" is renumbered away from "x" and "B" merges INTO
+    // "x": a sequential re-file would move the "B" course twice.
+    await user.createFolder('x', 'B');
+    await anon.createFolder('x', 'A');
+    await anon.createFolder('y', 'B');
+    await anon.saveDocument(makeDocument('in-a'));
+    await anon.setStageFolder('in-a', 'x');
+    await anon.saveDocument(makeDocument('in-b'));
+    await anon.setStageFolder('in-b', 'y');
+
+    await claim(() => 'z');
+    const filed = Object.fromEntries(
+      (await user.listDocuments()).map((summary) => [summary.id, summary.folderId]),
+    );
+    expect(filed).toEqual({ 'in-a': 'z', 'in-b': 'x' });
+  });
+
+  test('does nothing without source folders, and nothing for the same owner', async () => {
+    await user.createFolder('f', 'Mine');
+    await expect(claim()).resolves.toEqual([]);
+    await expect(
+      reassignDocumentFolders(db, {
+        fromOwnerId: 'user:1',
+        toOwnerId: 'user:1',
+        documentOwnership: OWNERSHIP,
+      }),
+    ).resolves.toEqual([]);
+    await expect(user.listFolders()).resolves.toHaveLength(1);
   });
 });
 

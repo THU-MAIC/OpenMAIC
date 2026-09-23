@@ -621,6 +621,140 @@ function assertStorableScene(scene: SceneLike, stageId: string): void {
   }
 }
 
+/** Input of {@link reassignDocumentFolders}. */
+export interface ReassignDocumentFoldersInput {
+  fromOwnerId: string;
+  toOwnerId: string;
+  /**
+   * The host's ownership relation, read to tell which filed documents are the
+   * source owner's. Must still name the source owner for its documents: run
+   * this before the ownership rows themselves are moved.
+   */
+  documentOwnership: DocumentOwnershipRelation;
+  /** Mints the id of a folder whose id the target already uses. Defaults to a random UUID. */
+  createFolderId?: () => string;
+}
+
+/** What {@link reassignDocumentFolders} did, one entry per source folder. */
+export interface DocumentFolderReassignment {
+  /** The source owner's folder id. */
+  fromFolderId: string;
+  /** The target folder its documents are filed in now. */
+  toFolderId: string;
+  /**
+   * `moved`: the folder moved as it was. `merged`: the target already had a
+   * folder of the same name (compared the way `createFolder` compares them),
+   * so the documents joined it and the source folder is gone. `renumbered`:
+   * the target already used the folder's id for a differently named folder,
+   * so the folder moved under a fresh id.
+   */
+  outcome: 'moved' | 'merged' | 'renumbered';
+}
+
+/**
+ * Move every folder of one owner to another, with the documents filed in
+ * them: the folder half of merging two owners' libraries. `queryable` must be
+ * an open transaction; the caller commits.
+ *
+ * Folder names are unique per owner (case-insensitively), and folder ids are
+ * unique per owner, so the two libraries can collide. Deterministically:
+ *
+ * - A source folder whose name the target already uses is merged into the
+ *   target's folder, which is what `createFolder` does with a second folder of
+ *   the same name: the documents are filed there and the source folder goes.
+ * - Otherwise, a source folder whose id the target already uses moves under a
+ *   fresh id, and its documents follow it.
+ * - Otherwise it moves unchanged.
+ *
+ * Moved folders are placed after the target's, in their original order. The
+ * folder limit is not applied: nothing is dropped, and a target above it
+ * cannot create folders until it is back under. Filing is rewritten in one
+ * statement from the old folder ids, so no document is re-filed twice when a
+ * fresh id or a merge target equals another source folder's old id.
+ */
+export async function reassignDocumentFolders(
+  queryable: Queryable,
+  input: ReassignDocumentFoldersInput,
+): Promise<DocumentFolderReassignment[]> {
+  const { fromOwnerId, toOwnerId } = input;
+  if (fromOwnerId === toOwnerId) return [];
+  const ownership = resolveDocumentOwnership(input.documentOwnership);
+  const createFolderId = input.createFolderId ?? (() => globalThis.crypto.randomUUID());
+  const rows = await queryable.query<FolderRow & { owner_id: string; normalized_name: string }>(
+    `SELECT owner_id, id, name, normalized_name, folder_order, created_at, updated_at
+       FROM document_folders
+      WHERE owner_id IN ($1, $2)
+      ORDER BY owner_id, id
+      FOR UPDATE`,
+    [fromOwnerId, toOwnerId],
+  );
+  const target = rows.rows.filter((row) => row.owner_id === toOwnerId);
+  const source = rows.rows
+    .filter((row) => row.owner_id === fromOwnerId)
+    .sort(
+      (a, b) =>
+        Number(a.folder_order) - Number(b.folder_order) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
+  if (source.length === 0) return [];
+  const targetByName = new Map(target.map((row) => [row.normalized_name, row.id]));
+  const usedIds = new Set(target.map((row) => row.id));
+  let order = target.reduce((max, row) => Math.max(max, Number(row.folder_order)), -1);
+  const plan: DocumentFolderReassignment[] = [];
+  const inserts: (typeof source)[number][] = [];
+  for (const folder of source) {
+    const merged = targetByName.get(folder.normalized_name);
+    if (merged !== undefined) {
+      plan.push({ fromFolderId: folder.id, toFolderId: merged, outcome: 'merged' });
+      continue;
+    }
+    let id = folder.id;
+    let outcome: DocumentFolderReassignment['outcome'] = 'moved';
+    if (usedIds.has(id)) {
+      do id = createFolderId();
+      while (usedIds.has(id) || !isPgQueryableKey(id));
+      outcome = 'renumbered';
+    }
+    usedIds.add(id);
+    targetByName.set(folder.normalized_name, id);
+    order += 1;
+    inserts.push({ ...folder, id, folder_order: order });
+    plan.push({ fromFolderId: folder.id, toFolderId: id, outcome });
+  }
+  const refiled = plan.filter((entry) => entry.fromFolderId !== entry.toFolderId);
+  if (refiled.length > 0) {
+    await queryable.query(
+      `UPDATE document_stages AS stages
+          SET folder_id = moves.to_id
+         FROM unnest($1::text[], $2::text[]) AS moves(from_id, to_id)
+        WHERE stages.folder_id = moves.from_id
+          AND ${ownedByCondition(ownership, 'stages.id', 3)}`,
+      [
+        refiled.map((entry) => entry.fromFolderId),
+        refiled.map((entry) => entry.toFolderId),
+        fromOwnerId,
+      ],
+    );
+  }
+  await queryable.query('DELETE FROM document_folders WHERE owner_id = $1', [fromOwnerId]);
+  for (const folder of inserts) {
+    await queryable.query(
+      `INSERT INTO document_folders
+         (owner_id, id, name, normalized_name, folder_order, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        toOwnerId,
+        folder.id,
+        folder.name,
+        folder.normalized_name,
+        folder.folder_order,
+        Number(folder.created_at),
+        Number(folder.updated_at),
+      ],
+    );
+  }
+  return plan;
+}
+
 function isPgQueryableKey(value: string): boolean {
   return isLosslessJsonString(value);
 }

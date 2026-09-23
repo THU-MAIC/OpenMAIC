@@ -149,6 +149,21 @@ a browser.
   cascades through.
 - `deleteAllRuntime` clears every runtime session and record for explicit
   whole-cache reset flows.
+- **Merging owners.** A host that moves one owner's data to another (claiming
+  anonymous work into an account) gets a primitive per PostgreSQL store, each
+  runnable inside the host's own transaction by pinning the store to it
+  (`withTransaction: (body) => body(tx)`) so the whole merge commits or rolls
+  back as one: `PgRuntimeStore.mergeLearner`, `PgAgentSessionStore.mergeOwner`,
+  `PgUserSkillStore.mergeOwner` (a live handle the target already uses is
+  renamed with a numeric suffix), `PgAssetStore.reassignPrincipal` (takes both
+  principals' write locks; quota is not re-checked), and
+  `reassignDocumentFolders(tx, { fromOwnerId, toOwnerId, documentOwnership })`
+  (run before the ownership rows move: a same-named folder merges into the
+  target's, a colliding id is renumbered, filing follows). Stores that create
+  owner-keyed rows take a `resolveFinalOwner(tx, ownerId)` hook
+  (`PgAgentSessionStore`, `PgUserSkillStore`), run as the create transaction's
+  first statement, where a host takes its identity lock and forwards a retired
+  owner.
 
 ## Upgrading from 0.1.x
 

@@ -339,3 +339,68 @@ describe('PgUserSkillStore with PGlite', () => {
     expect(fields.content).toBe('ALPHA beta');
   });
 });
+
+describe('PgUserSkillStore owner merge and forwarding', () => {
+  let db: PGlite;
+  let store: PgUserSkillStore;
+
+  beforeEach(async () => {
+    db = new PGlite();
+    await db.waitReady;
+    await ensureUserSkillSchema(db);
+    store = new PgUserSkillStore(db, optionsFor(db));
+  });
+
+  afterEach(async () => {
+    await db.close();
+  });
+
+  test('moves every skill, renaming a live handle the target already uses', async () => {
+    const mine = await store.create('user:1', input('my-notes'));
+    const clash = await store.create('anon:1', input('my-notes'));
+    const other = await store.create('anon:1', input('my-plan'));
+    const deleted = await store.create('anon:1', input('my-gone'));
+    await store.delete('anon:1', deleted.id);
+
+    await expect(store.mergeOwner('anon:1', 'user:1')).resolves.toEqual({
+      moved: 3,
+      renamed: [{ id: clash.id, from: 'my-notes', to: 'my-notes-2' }],
+    });
+    const names = (await store.list('user:1')).map((skill) => [skill.id, skill.name]);
+    expect(names).toEqual([
+      [mine.id, 'my-notes'],
+      [clash.id, 'my-notes-2'],
+      [other.id, 'my-plan'],
+    ]);
+    await expect(store.list('anon:1')).resolves.toEqual([]);
+    await expect(store.mergeOwner('anon:1', 'user:1')).resolves.toEqual({ moved: 0, renamed: [] });
+  });
+
+  test('a renamed handle stays within the length limit and skips taken suffixes', async () => {
+    const long = `my-${'a'.repeat(61)}`;
+    await store.create('user:1', input(long));
+    await store.create('user:1', input(`my-${'a'.repeat(59)}-2`));
+    await store.create('anon:1', input(long));
+    const merge = await store.mergeOwner('anon:1', 'user:1');
+    expect(merge.renamed[0]!.to).toBe(`my-${'a'.repeat(59)}-3`);
+    expect(merge.renamed[0]!.to.length).toBeLessThanOrEqual(64);
+  });
+
+  test('create writes for the owner resolveFinalOwner names, inside the transaction', async () => {
+    const seen: string[] = [];
+    const forwarding = new PgUserSkillStore(db, {
+      ...optionsFor(db),
+      resolveFinalOwner: async (tx, ownerId) => {
+        seen.push(ownerId);
+        await tx.query('SELECT 1');
+        return ownerId === 'anon:1' ? 'user:1' : ownerId;
+      },
+    });
+    const created = await forwarding.create('anon:1', input('my-forwarded'));
+    expect(created.ownerId).toBe('user:1');
+    expect(seen).toEqual(['anon:1']);
+    await expect(store.list('anon:1')).resolves.toEqual([]);
+    // A retry of the same create is answered from the resolved owner's row.
+    await expect(forwarding.create('anon:1', input('my-forwarded'))).resolves.toEqual(created);
+  });
+});
