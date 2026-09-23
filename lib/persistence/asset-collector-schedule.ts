@@ -109,9 +109,7 @@ export function startAssetCollectorSchedule(
 
   // No database, no collector. DATABASE_URL is what makes server persistence
   // real; without it every asset lives in the browser and nothing here has
-  // anything to reclaim. PERSISTENCE_DEV_TOKEN deliberately does not gate this:
-  // it authenticates the HTTP surface, and bytes already written still have to
-  // be reclaimed if it is later removed.
+  // anything to reclaim.
   const connectionString = process.env.DATABASE_URL?.trim();
   if (!connectionString) return undefined;
   if (!collectionEnabled()) return undefined;

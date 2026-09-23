@@ -19,7 +19,7 @@ import { validateAppScene, validateAppStage } from '@/lib/document-store/validat
 import type { TransactionSource } from '@/lib/persistence/owner-bound-document-store';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
 import { StageAccessError } from '@/lib/persistence/stage-meta';
-import { SHARED_ASSET_PRINCIPAL } from '@/lib/persistence/server-auth';
+import { LEGACY_SHARED_ASSET_PRINCIPAL } from '@/lib/persistence/owner-assets';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
 const FIXED_NOW = 1_700_000_000_000;
@@ -76,7 +76,7 @@ describe.skipIf(!contractUrl)('document asset references through the app stores'
     // the document schema, and what decides the store options under test.
     const provider = await getServerPersistenceProvider(contractUrl!, () => pool);
     allocate = (bytes: string) =>
-      provider.assetStore.put({ key: SHARED_ASSET_PRINCIPAL }, new Blob([bytes]), {
+      provider.assetStore.put({ key: LEGACY_SHARED_ASSET_PRINCIPAL }, new Blob([bytes]), {
         contentType: 'image/png',
       });
   });
@@ -230,7 +230,7 @@ describe.skipIf(!contractUrl)('document asset references through the app stores'
          FROM asset_entries AS entries
          JOIN asset_blobs AS blobs ON blobs.content_hash = entries.content_hash
         WHERE entries.principal = $1 AND entries.unreferenced_at IS NULL`,
-      [SHARED_ASSET_PRINCIPAL],
+      [LEGACY_SHARED_ASSET_PRINCIPAL],
     );
     return Number(result.rows[0]?.logical_bytes ?? '0');
   }

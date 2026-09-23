@@ -17,10 +17,12 @@ import {
   type DocumentAccess,
 } from '@/lib/persistence/document-access';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
+import { assetPrincipalForOwner, createOwnerAssetStore } from '@/lib/persistence/owner-assets';
 import {
-  authenticatePersistenceRequest,
-  SHARED_ASSET_PRINCIPAL,
-} from '@/lib/persistence/server-auth';
+  createTombstoneGuardedRuntimeStore,
+  isQueryableStageId,
+  runtimeSessionCreateStageId,
+} from '@/lib/persistence/runtime-tombstone-guard';
 import {
   getServerPersistenceProvider,
   type PersistencePoolFactory,
@@ -37,6 +39,29 @@ const log = createLogger('Persistence');
 
 function jsonError(status: number, code: string, message: string): Response {
   return Response.json({ error: { code, message } }, { status });
+}
+
+function withHeaders(response: Response, headers: Headers): Response {
+  for (const [name, value] of headers.entries()) response.headers.append(name, value);
+  return response;
+}
+
+/**
+ * `GET /api/persistence/learner-key`: the runtime learner key the server
+ * derives for this request's owner, so the browser can address its own runtime
+ * sessions (the runtime contract names the learner key in paths and bodies).
+ * The key is the owner id, which owner-scoped responses already carry
+ * (folders report it as `userKey`), so this discloses nothing new; it is
+ * uncacheable because it is per owner.
+ */
+const LEARNER_KEY_PATH = '/learner-key';
+
+function learnerKeyResponse(ownerId: string, responseHeaders: Headers): Response {
+  const response = Response.json(
+    { learnerKey: ownerId },
+    { status: 200, headers: { 'cache-control': 'private, no-store' } },
+  );
+  return withHeaders(response, responseHeaders);
 }
 
 /**
@@ -99,41 +124,21 @@ async function createPersistenceHandler(
     validateScene: validateAppScene,
     validateStage: validateAppStage,
   });
-  // The asset posture, precisely.
+  // One identity for all three contracts, resolved server-side by the owner
+  // identity seam (lib/server/identity/) for this request:
   //
-  // Reading an asset and allocating one are open to any caller this deployment
-  // lets in, exactly as reading a document and creating one already are: assets
-  // live in a single shared partition by design (see the SHARED_ASSET_PRINCIPAL
-  // comment in lib/persistence/server-auth.ts), so there is nothing per-caller
-  // for the development authenticator to decide about them, and routing them
-  // through it made every asset request fail in a production build that had not
-  // opted into that authenticator — the build this project's own
-  // server-persistence recipe produces.
+  // - Documents act as the owner.
+  // - Runtime sessions are partitioned by learner key, and the learner key IS
+  //   the owner id. Nothing the client sends chooses it: a request that names
+  //   another learner's partition in its path or body answers 403
+  //   FORBIDDEN_LEARNER from the handler, and a session another learner holds
+  //   answers 404. The browser learns its key from GET /api/persistence/learner-key.
+  // - Assets are partitioned per owner (lib/persistence/owner-assets.ts), so
+  //   quota is per owner and replace/delete reach only the owner's own entries
+  //   (plus legacy shared entries only their courses reference). Reads stay
+  //   capability-by-id for committed media a live course references, so
+  //   viewers of a course keep loading its media.
   //
-  // Replacing and deleting are refused outright — to everyone, authenticated or
-  // not. Those operations scope by principal key alone, and every caller
-  // resolves to the same shared key, so authentication decides nothing here:
-  // any signed-in visitor who learned an id, and a document read hands out
-  // every id its slides name, could overwrite or destroy another author's
-  // media. There is no per-asset ownership to check against yet, and since this
-  // application began storing generated media the registry is the only copy a
-  // course has, so the answer is no mutations at all. Nothing in the app
-  // performs an asset PUT or DELETE, and none needs to: the server owns the
-  // entry lifecycle. A document write records what that document claims in the
-  // reference table and commits the allocations it names; deleting the document
-  // withdraws those claims; the collector's entry pass releases an entry whose
-  // last claim left longer ago than the grace period, and an allocation no
-  // document ever claimed once its pending TTL expires. The bytes follow after
-  // their own grace.
-  //
-  // What this is NOT: a per-caller access control. The deployment-level fence
-  // is the access code. Allocation is bounded by the asset store's per-principal
-  // quota, which with one shared principal is a deployment-wide cap.
-  //
-  // Runtime requests still take their partition key from a client-supplied
-  // header, because a runtime session genuinely is per-learner state. Before
-  // runtime routes carry production data, their authenticator must be replaced
-  // with real session verification.
   // Reclamation is not scheduled from here, and must not be: a route module
   // has no once-per-process guarantee and no shutdown hook. AssetCollector
   // runs from instrumentation.ts instead, over the byte store this same
@@ -142,23 +147,17 @@ async function createPersistenceHandler(
   // document store this handler mounts is the other half of that mechanism:
   // createOwnerBoundDocumentStore builds it with reference tracking on, which
   // is what gives the entry pass something to read.
+  const assetPrincipal = assetPrincipalForOwner(ownerId);
   const byteEgress = indirectEgressWithinGrace(
     configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
   );
-  return createStorageHttpHandler(runtimeStore, documentStore, {
+  const guardedRuntimeStore = createTombstoneGuardedRuntimeStore(runtimeStore, (stageId) =>
+    isStageTombstoned(pool, stageId),
+  );
+  return createStorageHttpHandler(guardedRuntimeStore, documentStore, {
     authenticate: async (request) => {
-      if (request.url?.startsWith('/documents')) return { learnerKey: ownerId };
-      if (request.url?.startsWith('/assets')) {
-        return { key: SHARED_ASSET_PRINCIPAL, learnerKey: ownerId };
-      }
-      return authenticatePersistenceRequest(request);
-    },
-    authorizeAssets: async (_principal, request) => {
-      const method = (request.method ?? 'GET').toUpperCase();
-      // Reads and allocations for everyone; mutations for nobody, because the
-      // principal they would be scoped to is shared and therefore proves
-      // nothing about who is asking.
-      return method !== 'PUT' && method !== 'DELETE';
+      if (request.url?.startsWith('/assets')) return assetPrincipal;
+      return { learnerKey: ownerId };
     },
     authorizeMerge: async () => false,
     authorizeAdmin: async () => false,
@@ -166,9 +165,18 @@ async function createPersistenceHandler(
     validateScene: validateAppScene,
     validateStage: validateAppStage,
     payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
-    assetStore,
+    assetStore: createOwnerAssetStore(assetStore, { ownerId, queryable: pool }),
     ...(byteEgress === undefined ? {} : { byteEgress }),
   });
+}
+
+async function isStageTombstoned(
+  queryable: Parameters<typeof readStageMeta>[0],
+  stageId: string,
+): Promise<boolean> {
+  if (!isQueryableStageId(stageId)) return false;
+  const meta = await readStageMeta(queryable, stageId);
+  return meta !== null && meta.deletedAt !== null;
 }
 
 function routeRelativePath(request: Request): string {
@@ -351,17 +359,18 @@ async function handlePersistenceRequestInner(
   if (!connectionString) {
     return jsonError(404, 'PERSISTENCE_NOT_CONFIGURED', 'server persistence not configured');
   }
-  if (!process.env.PERSISTENCE_DEV_TOKEN) {
-    return jsonError(
-      503,
-      'PERSISTENCE_DEV_TOKEN_MISSING',
-      'server persistence requires PERSISTENCE_DEV_TOKEN (development auth only)',
-    );
-  }
 
   return withRequestOwner(request, async ({ ownerId }, responseHeaders) => {
     try {
       const path = routeRelativePath(request);
+      if (path === LEARNER_KEY_PATH) {
+        return request.method === 'GET'
+          ? learnerKeyResponse(ownerId, responseHeaders)
+          : withHeaders(
+              jsonError(405, 'METHOD_NOT_ALLOWED', 'learner-key accepts GET only'),
+              responseHeaders,
+            );
+      }
       const action = parseDocumentAction(request.method, path);
       let access: DocumentAccess = 'allow';
       if (path === '/documents' || path.startsWith('/documents/')) {
@@ -379,6 +388,18 @@ async function handlePersistenceRequestInner(
         );
       }
 
+      const createStageId = await runtimeSessionCreateStageId(request, path);
+      if (createStageId !== undefined) {
+        const { pool } = await getServerPersistenceProvider(connectionString, deps.poolFactory);
+        if (await isStageTombstoned(pool, createStageId)) {
+          // As if the course were absent: a deleted course takes no new runtime.
+          return withHeaders(
+            jsonError(404, 'STAGE_NOT_FOUND', '@openmaic/storage: stage not found'),
+            responseHeaders,
+          );
+        }
+      }
+
       const response =
         access === 'not-found'
           ? jsonError(404, 'DOCUMENT_NOT_FOUND', '@openmaic/storage: document not found')
@@ -386,17 +407,13 @@ async function handlePersistenceRequestInner(
               await createPersistenceHandler(connectionString, ownerId, access, deps.poolFactory),
               request,
             );
-      for (const [name, value] of responseHeaders.entries()) response.headers.append(name, value);
-      return response;
+      return withHeaders(response, responseHeaders);
     } catch (error) {
       console.error('Embedded persistence route initialization failed', error);
-      const response = jsonError(
-        500,
-        'PERSISTENCE_INIT_FAILED',
-        'server persistence initialization failed',
+      return withHeaders(
+        jsonError(500, 'PERSISTENCE_INIT_FAILED', 'server persistence initialization failed'),
+        responseHeaders,
       );
-      for (const [name, value] of responseHeaders.entries()) response.headers.append(name, value);
-      return response;
     }
   });
 }

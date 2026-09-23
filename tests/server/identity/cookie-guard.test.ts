@@ -51,6 +51,15 @@ const ANON_PREFIX_CHECK = new RegExp(
  * `lib/server/identity/`) may use them: anywhere else would pin that code to
  * the built-in identity and bypass a host's configured authenticator.
  */
+/**
+ * The retired runtime identity: a client-chosen learner key header behind a
+ * development bearer token that shipped in the public bundle. The runtime
+ * learner key is the resolved owner id now; code that read either of these
+ * again would let a client choose whose runtime data it touches.
+ */
+const RETIRED_CLIENT_IDENTITY =
+  /x-learner-key|PERSISTENCE_DEV_TOKEN|NEXT_PUBLIC_PERSISTENCE_TOKEN|PERSISTENCE_ALLOW_INSECURE_DEV_AUTH/i;
+
 const BUILT_IN_IMPORT =
   /createAnonymousCookieAuthenticator|createSharedTeamAuthenticator|resolveSharedOwnerId|identity\/(?:anonymous-cookie|shared-team)['"]/;
 
@@ -123,6 +132,10 @@ describe('owner identity boundary', () => {
 
   it('never authorizes from an anon: owner id prefix', () => {
     expect(offenders(ANON_PREFIX_CHECK)).toEqual([]);
+  });
+
+  it('never reads a client-chosen learner key or the retired development token', () => {
+    expect(offenders(RETIRED_CLIENT_IDENTITY)).toEqual([]);
   });
 
   it('keeps the concrete built-in authenticators inside lib/server/identity', () => {

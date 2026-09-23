@@ -5,6 +5,8 @@ import { BrowserRuntimeStore } from '@openmaic/storage';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
+import { configureOwnerAuthenticator } from '@/lib/server/identity';
+import { resetOwnerAuthenticatorForTests } from '@/lib/server/identity/registry';
 
 const mocks = vi.hoisted(() => ({
   resolveModel: vi.fn(),
@@ -45,8 +47,11 @@ const envNames = [
   'TAVILY_BASE_URL',
   'NEXT_PUBLIC_PERSISTENCE',
   'DATABASE_URL',
-  'PERSISTENCE_DEV_TOKEN',
 ] as const;
+
+/** The owner the route requests resolve to; its id is the runtime learner key. */
+const OWNER_COOKIE = '88888888-8888-4888-8888-888888888888';
+const LEARNER_KEY = `anon:${OWNER_COOKIE}`;
 const originalEnv = new Map<string, string | undefined>();
 
 function finish(finishReason: string) {
@@ -68,10 +73,7 @@ function resultFrom(parts: Array<Record<string, unknown>>) {
 
 function makeRequest(
   overrides: Record<string, unknown> = {},
-  headers: Record<string, string> = {
-    authorization: 'Bearer persistence-test-token',
-    'x-learner-key': 'learner-route-test',
-  },
+  headers: Record<string, string> = { cookie: `anonymous_id=${OWNER_COOKIE}` },
 ): NextRequest {
   return new Request('http://localhost/api/chat/pi', {
     method: 'POST',
@@ -152,6 +154,14 @@ async function readSseEvents(response: Response) {
     .map((part) => JSON.parse(part.slice('data: '.length)));
 }
 
+function rejectOwnerCredentials(): void {
+  resetOwnerAuthenticatorForTests();
+  configureOwnerAuthenticator({
+    name: 'rejecting',
+    authenticate: async () => ({ ok: false, status: 401, code: 'INVALID_CREDENTIAL' }),
+  });
+}
+
 describe('PR2 Native Child route production wiring', () => {
   beforeEach(() => {
     vi.stubGlobal('IDBKeyRange', IDBKeyRange);
@@ -181,6 +191,7 @@ describe('PR2 Native Child route production wiring', () => {
   });
 
   afterEach(() => {
+    resetOwnerAuthenticatorForTests();
     for (const name of envNames) {
       const value = originalEnv.get(name);
       if (value === undefined) delete process.env[name];
@@ -269,7 +280,6 @@ describe('PR2 Native Child route production wiring', () => {
   it('wires RuntimeStore WB inventory through the real route and completes an action-only Child', async () => {
     process.env.NEXT_PUBLIC_PERSISTENCE = '1';
     process.env.DATABASE_URL = 'postgres://shared-provider-test';
-    process.env.PERSISTENCE_DEV_TOKEN = 'persistence-test-token';
     const directorResponses = [
       [toolCall('read-1', 'read_scene', { sceneId: 'scene-current' }), finish('tool-calls')],
       [
@@ -397,7 +407,7 @@ describe('PR2 Native Child route production wiring', () => {
     });
 
     const provider = await mocks.getServerPersistenceProvider.mock.results[0]?.value;
-    const sessions = await provider.runtimeStore.listSessions('stage-1', 'learner-route-test');
+    const sessions = await provider.runtimeStore.listSessions('stage-1', LEARNER_KEY);
     expect(sessions).toHaveLength(1);
     const records: RuntimeRecord[] = await provider.runtimeStore.listRecords(sessions[0]!.id);
     expect(records).toHaveLength(1);
@@ -407,7 +417,6 @@ describe('PR2 Native Child route production wiring', () => {
   it('executes wb_draw_text → wb_delete through the production route in one Child', async () => {
     process.env.NEXT_PUBLIC_PERSISTENCE = '1';
     process.env.DATABASE_URL = 'postgres://shared-provider-test';
-    process.env.PERSISTENCE_DEV_TOKEN = 'persistence-test-token';
     const directorResponses = [
       [toolCall('read-1', 'read_scene', { sceneId: 'scene-current' }), finish('tool-calls')],
       [
@@ -508,7 +517,7 @@ describe('PR2 Native Child route production wiring', () => {
     });
 
     const provider = await mocks.getServerPersistenceProvider.mock.results[0]?.value;
-    const sessions = await provider.runtimeStore.listSessions('stage-1', 'learner-route-test');
+    const sessions = await provider.runtimeStore.listSessions('stage-1', LEARNER_KEY);
     expect(sessions).toHaveLength(1);
     const records: RuntimeRecord[] = await provider.runtimeStore.listRecords(sessions[0]!.id);
     expect(records.map((record) => record.seq)).toEqual([0, 1]);
@@ -560,9 +569,10 @@ describe('PR2 Native Child route production wiring', () => {
         }),
     },
     {
-      name: 'a missing learner binding',
-      request: () =>
-        makeRequest(
+      name: 'a rejected owner credential',
+      request: () => {
+        rejectOwnerCredentials();
+        return makeRequest(
           {
             config: {
               agentIds: ['teacher-1'],
@@ -581,13 +591,13 @@ describe('PR2 Native Child route production wiring', () => {
               ],
             },
           },
-          { authorization: 'Bearer persistence-test-token' },
-        ),
+          { cookie: `anonymous_id=${OWNER_COOKIE}` },
+        );
+      },
     },
   ])('keeps the Native WB bundle absent for $name', async ({ request }) => {
     process.env.NEXT_PUBLIC_PERSISTENCE = '1';
     process.env.DATABASE_URL = 'postgres://shared-provider-test';
-    process.env.PERSISTENCE_DEV_TOKEN = 'persistence-test-token';
     const directorResponses = [
       [toolCall('read-1', 'read_scene', { sceneId: 'scene-current' }), finish('tool-calls')],
       [
@@ -624,7 +634,6 @@ describe('PR2 Native Child route production wiring', () => {
   it('keeps Pi chat available without WB inventory when persistence initialization fails', async () => {
     process.env.NEXT_PUBLIC_PERSISTENCE = '1';
     process.env.DATABASE_URL = 'postgres://unavailable-provider-test';
-    process.env.PERSISTENCE_DEV_TOKEN = 'persistence-test-token';
     mocks.getServerPersistenceProvider.mockRejectedValue(new Error('pool unavailable'));
     const directorResponses = [
       [toolCall('read-1', 'read_scene', { sceneId: 'scene-current' }), finish('tool-calls')],

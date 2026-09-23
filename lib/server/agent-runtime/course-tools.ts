@@ -89,6 +89,11 @@ export interface CourseToolDeps {
   onCheckpoint: (info: CheckpointInfo) => void;
   /** The session id, recorded on the document as the producer reference. */
   sessionId?: string;
+  /**
+   * The owner recorded on the run's durable session. Media the run generates is
+   * allocated in this owner's asset partition.
+   */
+  ownerId?: string;
   /** Cancel generation, preview, and synthesis when the run stops. */
   abortSignal?: AbortSignal;
   /** Test seam for the neutral TTS path. */

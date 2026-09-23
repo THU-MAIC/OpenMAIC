@@ -1,6 +1,6 @@
 import { AssetQuotaExceededError, type AssetStore } from '@openmaic/storage';
 
-import { SHARED_ASSET_PRINCIPAL } from '@/lib/persistence/server-auth';
+import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
 /**
@@ -25,6 +25,12 @@ import { getServerPersistenceProvider } from '@/lib/persistence/server-provider'
 export type GeneratedAssetKind = 'image' | 'video' | 'poster';
 
 export interface StoreGeneratedAssetInput {
+  /**
+   * The owner the bytes are allocated for: the owner recorded on the run that
+   * generated them. The entry lands in that owner's asset partition and counts
+   * against that owner's quota.
+   */
+  ownerId: string;
   /** The course the bytes belong to. Recorded on the entry's metadata. */
   stageId: string;
   bytes: Uint8Array;
@@ -111,7 +117,7 @@ export async function storeGeneratedAsset(
   );
   try {
     const assetId = await store.put(
-      { key: SHARED_ASSET_PRINCIPAL },
+      assetPrincipalForOwner(input.ownerId),
       new Blob([part], { type: input.mimeType }),
       meta,
     );

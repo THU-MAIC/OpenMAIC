@@ -12,7 +12,7 @@ import { resolveVisionImagesForPrompt } from '@/lib/persistence/resolve-vision-i
 
 const BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const BASE64 = Buffer.from(BYTES).toString('base64');
-const HEADERS = new Headers();
+const HEADERS = { headers: new Headers() };
 
 describe('resolveVisionImagesForPrompt (RFC #1153 part 2 B)', () => {
   beforeEach(() => {

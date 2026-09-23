@@ -25,7 +25,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
-import { SHARED_ASSET_PRINCIPAL } from '@/lib/persistence/server-auth';
+import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import type { CourseStore } from '@/lib/server/agent-runtime/course-tools';
 import { patchStageVideoPlaceholder } from '@/lib/server/agent-runtime/generate-video';
@@ -195,6 +195,7 @@ describe.skipIf(!contractUrl)('workbench tool media through the asset pool', () 
 
   async function storedId(stageId: string, kind: 'image' | 'video' | 'poster'): Promise<string> {
     const stored = await storeGeneratedAsset({
+      ownerId: OWNER,
       stageId,
       bytes: Buffer.from(`${kind}-bytes-for-${stageId}`),
       mimeType: kind === 'video' ? 'video/mp4' : 'image/png',
@@ -204,7 +205,7 @@ describe.skipIf(!contractUrl)('workbench tool media through the asset pool', () 
     return stored.assetId;
   }
 
-  it('allocates under the shared principal, with the content type and the course on the entry', async () => {
+  it("allocates under the run owner's principal, with the content type and the course on the entry", async () => {
     const assetId = await storedId('stage-wb-meta', 'image');
     const result = await pool.query<{ principal: string; mime: string; meta: unknown }>(
       'SELECT principal, mime, meta FROM asset_entries WHERE id = $1',
@@ -212,7 +213,7 @@ describe.skipIf(!contractUrl)('workbench tool media through the asset pool', () 
     );
     expect(assetId).toMatch(/^ast_/);
     expect(result.rows[0]).toMatchObject({
-      principal: SHARED_ASSET_PRINCIPAL,
+      principal: assetPrincipalForOwner(OWNER).key,
       mime: 'image/png',
       meta: { contentType: 'image/png', stageId: 'stage-wb-meta', kind: 'image' },
     });

@@ -2,6 +2,14 @@ import type { RequestListener } from 'node:http';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+interface AssetStoreLike {
+  put(principal: { key: string }, data: Blob, meta?: unknown): Promise<string>;
+}
+
+/** The owner every request in the real-handler cases resolves to. */
+const BOUNDARY_COOKIE = '55555555-5555-4555-8555-555555555555';
+const BOUNDARY_ASSET_PRINCIPAL = `owner:anon:${BOUNDARY_COOKIE}`;
+
 describe('embedded persistence route', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -36,41 +44,30 @@ describe('embedded persistence route', () => {
     });
   });
 
-  it('refuses configured persistence when the development token is missing', async () => {
-    vi.stubEnv('DATABASE_URL', 'postgres://unused-in-this-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', '');
-    const { GET } = await import('@/app/api/persistence/[...path]/route');
-
-    const response = await GET(new Request('http://localhost/api/persistence/documents'));
-
-    expect(response.status).toBe(503);
-    await expect(response.json()).resolves.toEqual({
-      error: {
-        code: 'PERSISTENCE_DEV_TOKEN_MISSING',
-        message: 'server persistence requires PERSISTENCE_DEV_TOKEN (development auth only)',
-      },
-    });
-  });
-
   it('logs 5xx responses with route details and echoes the request id', async () => {
-    vi.stubEnv('DATABASE_URL', 'postgres://unused-in-this-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', '');
+    vi.stubEnv('DATABASE_URL', `postgres://log-5xx-${Math.random()}`);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     try {
-      const { PATCH } = await import('@/app/api/persistence/[...path]/route');
-      const response = await PATCH(
+      const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+      const response = await handlePersistenceRequest(
         new Request('http://localhost/api/persistence/runtime/sessions/session-1/status', {
           method: 'PATCH',
           headers: { 'x-request-id': 'req-abc' },
         }),
+        {
+          poolFactory: () => {
+            throw new Error('database unreachable');
+          },
+        },
       );
 
-      expect(response.status).toBe(503);
+      expect(response.status).toBe(500);
       expect(response.headers.get('x-request-id')).toBe('req-abc');
-      expect(errorSpy).toHaveBeenCalledOnce();
-      expect(errorSpy.mock.calls[0]?.join(' ')).toContain(
-        'PATCH /api/persistence/runtime/sessions/session-1/status -> 503 PERSISTENCE_DEV_TOKEN_MISSING (requestId=req-abc)',
+      expect(errorSpy.mock.calls.map((call) => call.join(' '))).toContainEqual(
+        expect.stringContaining(
+          'PATCH /api/persistence/runtime/sessions/session-1/status -> 500 PERSISTENCE_INIT_FAILED (requestId=req-abc)',
+        ),
       );
     } finally {
       errorSpy.mockRestore();
@@ -144,12 +141,8 @@ describe('embedded persistence route', () => {
       ),
     }));
     vi.stubEnv('DATABASE_URL', 'postgres://retry-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
-    const request = () =>
-      new Request('http://localhost/api/persistence/runtime/sessions', {
-        headers: { authorization: 'Bearer test-token' },
-      });
+    const request = () => new Request('http://localhost/api/persistence/runtime/sessions', {});
 
     const first = await handlePersistenceRequest(request(), {
       poolFactory: () => failedPool as never,
@@ -176,12 +169,10 @@ describe('embedded persistence route', () => {
     expect(hmrPoolFactory).not.toHaveBeenCalled();
   });
 
-  // The asset routes are the only durable home generated media has under
-  // server-backed persistence, and the deployment this project documents builds
-  // with NODE_ENV=production and does not opt into the development
-  // authenticator. Routing assets through it answered 401 for every store and
-  // every read, so nothing could be generated at all.
-  it('resolves the asset principal server-side, so assets work without the development auth opt-in', async () => {
+  // One identity for all three contracts, resolved by the owner identity seam.
+  // Runtime once took its learner key from a client header behind a shared
+  // development token, which let any visitor name another learner's partition.
+  it('derives every principal from the resolved owner, never from client-supplied headers', async () => {
     const handlerOptions: unknown[] = [];
     vi.doMock('@openmaic/storage/runtime/pg', () => ({
       ensureSchema: vi.fn().mockResolvedValue(undefined),
@@ -219,14 +210,17 @@ describe('embedded persistence route', () => {
       ),
     }));
     vi.stubEnv('NODE_ENV', 'production');
-    vi.stubEnv('PERSISTENCE_ALLOW_INSECURE_DEV_AUTH', '');
     vi.stubEnv('DATABASE_URL', 'postgres://asset-auth-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
     const pool = { end: vi.fn().mockResolvedValue(undefined) };
+    const cookie = 'anonymous_id=44444444-4444-4444-8444-444444444444';
+    const owner = 'anon:44444444-4444-4444-8444-444444444444';
 
     await handlePersistenceRequest(
-      new Request('http://localhost/api/persistence/assets', { method: 'POST' }),
+      new Request('http://localhost/api/persistence/assets', {
+        method: 'POST',
+        headers: { cookie },
+      }),
       { poolFactory: () => pool as never },
     );
 
@@ -238,302 +232,19 @@ describe('embedded persistence route', () => {
         }) => Promise<{ key?: string; learnerKey?: string } | undefined>;
       }
     ).authenticate;
-    const noCredentials = { headers: {} };
+    // A client-supplied learner key and bearer token are not credentials any
+    // more: every contract answers with the owner the server resolved.
+    const clientClaims = { headers: { 'x-learner-key': 'anon:someone-else', authorization: 'x' } };
 
-    const documents = await authenticate({ url: '/documents', ...noCredentials });
-    const allocate = await authenticate({ url: '/assets', ...noCredentials });
-    const read = await authenticate({ url: '/assets/ast_example/content', ...noCredentials });
+    const documents = await authenticate({ url: '/documents', ...clientClaims });
+    const runtime = await authenticate({ url: '/runtime/sessions/example', ...clientClaims });
+    const allocate = await authenticate({ url: '/assets', ...clientClaims });
+    const read = await authenticate({ url: '/assets/ast_example/content', ...clientClaims });
 
-    // One shared asset partition by design, and the owner the server resolved
-    // for this request — never a client-supplied credential.
-    expect(allocate).toEqual({ key: 'shared', learnerKey: documents?.learnerKey });
+    expect(documents).toEqual({ learnerKey: owner });
+    expect(runtime).toEqual({ learnerKey: owner });
+    expect(allocate).toEqual({ key: `owner:${owner}`, learnerKey: owner });
     expect(read).toEqual(allocate);
-    expect(typeof documents?.learnerKey).toBe('string');
-    expect(documents?.learnerKey).not.toBe('');
-
-    // Runtime sessions are genuinely per-learner, so they keep the development
-    // authenticator — which refuses here, and the handler answers 401.
-    await expect(
-      authenticate({ url: '/runtime/sessions/example', ...noCredentials }),
-    ).resolves.toBeUndefined();
-  });
-
-  // Driven against the REAL storage handler, because the question is not which
-  // principal the route resolves but what that principal is then allowed to do.
-  // Reads and allocations are open — the same posture documents already have —
-  // while replacing and deleting require the deployment's credential, since the
-  // asset partition is shared and a document read hands out every id it names.
-  it('opens asset reads and allocations, and gates replacement and deletion', async () => {
-    interface Entry {
-      bytes: Uint8Array;
-      mime: string;
-      revision: number;
-      key: string;
-    }
-    const entries = new Map<string, Entry>();
-    let nextId = 0;
-    const assetStore = {
-      put: async (
-        principal: { key: string },
-        data: { arrayBuffer(): Promise<ArrayBuffer>; type: string },
-      ) => {
-        const id = `ast_${(nextId += 1)}`;
-        entries.set(id, {
-          bytes: new Uint8Array(await data.arrayBuffer()),
-          mime: data.type,
-          revision: 1,
-          key: principal.key,
-        });
-        return id;
-      },
-      identify: async (principal: { key: string }, ref: string) => {
-        const entry = entries.get(ref);
-        if (!entry || entry.key !== principal.key) return null;
-        return { mime: entry.mime, revision: entry.revision, byteLength: entry.bytes.byteLength };
-      },
-      resolve: async (principal: { key: string }, ref: string) => {
-        const entry = entries.get(ref);
-        if (!entry || entry.key !== principal.key) return null;
-        return { bytes: entry.bytes, mime: entry.mime, revision: entry.revision };
-      },
-      remove: async (principal: { key: string }, ref: string) => {
-        const entry = entries.get(ref);
-        if (entry && entry.key === principal.key) entries.delete(ref);
-      },
-      replace: async (
-        principal: { key: string },
-        ref: string,
-        data: { arrayBuffer(): Promise<ArrayBuffer>; type: string },
-      ) => {
-        const entry = entries.get(ref);
-        if (!entry || entry.key !== principal.key) {
-          const { AssetNotFoundError } = await import('@openmaic/storage');
-          throw new AssetNotFoundError();
-        }
-        entry.bytes = new Uint8Array(await data.arrayBuffer());
-        entry.revision += 1;
-        return entry.revision;
-      },
-    };
-
-    vi.doMock('@openmaic/storage/runtime/pg', () => ({
-      ensureSchema: vi.fn().mockResolvedValue(undefined),
-      PgRuntimeStore: class {},
-    }));
-    vi.doMock('@openmaic/storage/document/pg', () => ({
-      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
-      // The provider declares reference tracking as part of coming up, so a
-      // stand-in document store has to answer that call the way the real one
-      // does or every persistence request fails at initialization.
-      PgDocumentStore: class {
-        declareAssetReferenceTracking = async () => undefined;
-      },
-    }));
-    vi.doMock('@openmaic/storage/asset/pg', () => ({
-      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
-      PgAssetStore: class {
-        constructor() {
-          return assetStore as never;
-        }
-      },
-    }));
-    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
-    vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
-    }));
-    // The handler itself is the subject here, so it must be the real one even
-    // though earlier cases in this file stub it.
-    vi.doUnmock('@openmaic/storage/server');
-    vi.stubEnv('NODE_ENV', 'production');
-    vi.stubEnv('PERSISTENCE_ALLOW_INSECURE_DEV_AUTH', '');
-    vi.stubEnv('DATABASE_URL', 'postgres://asset-authz-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
-    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
-    const pool = { end: vi.fn().mockResolvedValue(undefined) };
-    const call = (request: Request) =>
-      handlePersistenceRequest(request, { poolFactory: () => pool as never });
-
-    const writeBody = (bytes: number[]) => {
-      const form = new FormData();
-      form.append('meta', new Blob([JSON.stringify({})], { type: 'application/json' }), 'meta');
-      form.append('bytes', new Blob([new Uint8Array(bytes)], { type: 'image/png' }), 'bytes');
-      return form;
-    };
-
-    // A visitor with no credential at all stores and reads.
-    const allocated = await call(
-      new Request('http://localhost/api/persistence/assets', {
-        method: 'POST',
-        body: writeBody([1, 2, 3]),
-      }),
-    );
-    expect(allocated.status).toBe(201);
-    const { id } = (await allocated.json()) as { id: string };
-
-    const read = await call(new Request(`http://localhost/api/persistence/assets/${id}/content`));
-    expect(read.status).toBe(200);
-
-    // The same visitor cannot take it away from its author, or swap its bytes.
-    const put = await call(
-      new Request(`http://localhost/api/persistence/assets/${id}/content`, {
-        method: 'PUT',
-        body: writeBody([9]),
-      }),
-    );
-    expect(put.status).toBe(403);
-    const removed = await call(
-      new Request(`http://localhost/api/persistence/assets/${id}`, { method: 'DELETE' }),
-    );
-    expect(removed.status).toBe(403);
-    expect(entries.has(id)).toBe(true);
-
-    // Holding the deployment's credential does not help. Every caller resolves
-    // to the same shared asset principal, so authentication decides nothing
-    // about whose media this is — and the registry is the only copy a course
-    // has.
-    const tokenPut = await call(
-      new Request(`http://localhost/api/persistence/assets/${id}/content`, {
-        method: 'PUT',
-        body: writeBody([9]),
-        headers: { authorization: 'Bearer test-token' },
-      }),
-    );
-    expect(tokenPut.status).toBe(403);
-    expect(entries.has(id)).toBe(true);
-  });
-
-  // Not even where the operator has opted into the development authenticator:
-  // that credential is shared too, so it cannot say whose asset this is.
-  it('refuses asset mutations even with the development authenticator enabled', async () => {
-    interface Entry {
-      bytes: Uint8Array;
-      mime: string;
-      revision: number;
-      key: string;
-    }
-    const entries = new Map<string, Entry>();
-    let nextId = 0;
-    const assetStore = {
-      put: async (
-        principal: { key: string },
-        data: { arrayBuffer(): Promise<ArrayBuffer>; type: string },
-      ) => {
-        const id = `ast_${(nextId += 1)}`;
-        entries.set(id, {
-          bytes: new Uint8Array(await data.arrayBuffer()),
-          mime: data.type,
-          revision: 1,
-          key: principal.key,
-        });
-        return id;
-      },
-      identify: async (principal: { key: string }, ref: string) => {
-        const entry = entries.get(ref);
-        if (!entry || entry.key !== principal.key) return null;
-        return { mime: entry.mime, revision: entry.revision, byteLength: entry.bytes.byteLength };
-      },
-      resolve: async (principal: { key: string }, ref: string) => {
-        const entry = entries.get(ref);
-        if (!entry || entry.key !== principal.key) return null;
-        return { bytes: entry.bytes, mime: entry.mime, revision: entry.revision };
-      },
-      remove: async (principal: { key: string }, ref: string) => {
-        const entry = entries.get(ref);
-        if (entry && entry.key === principal.key) entries.delete(ref);
-      },
-      replace: async (
-        principal: { key: string },
-        ref: string,
-        data: { arrayBuffer(): Promise<ArrayBuffer>; type: string },
-      ) => {
-        const entry = entries.get(ref);
-        if (!entry || entry.key !== principal.key) {
-          const { AssetNotFoundError } = await import('@openmaic/storage');
-          throw new AssetNotFoundError();
-        }
-        entry.bytes = new Uint8Array(await data.arrayBuffer());
-        entry.revision += 1;
-        return entry.revision;
-      },
-    };
-
-    vi.doMock('@openmaic/storage/runtime/pg', () => ({
-      ensureSchema: vi.fn().mockResolvedValue(undefined),
-      PgRuntimeStore: class {},
-    }));
-    vi.doMock('@openmaic/storage/document/pg', () => ({
-      ensureDocumentSchema: vi.fn().mockResolvedValue(undefined),
-      // The provider declares reference tracking as part of coming up, so a
-      // stand-in document store has to answer that call the way the real one
-      // does or every persistence request fails at initialization.
-      PgDocumentStore: class {
-        declareAssetReferenceTracking = async () => undefined;
-      },
-    }));
-    vi.doMock('@openmaic/storage/asset/pg', () => ({
-      ensureAssetSchema: vi.fn().mockResolvedValue(undefined),
-      PgAssetStore: class {
-        constructor() {
-          return assetStore as never;
-        }
-      },
-    }));
-    vi.doMock('@openmaic/storage/asset/pg-bytes', () => ({ PgAssetByteStore: class {} }));
-    vi.doMock('@openmaic/storage/server/reference', () => ({
-      nodePostgresTransaction: vi.fn(() => vi.fn()),
-    }));
-    vi.doUnmock('@openmaic/storage/server');
-    vi.stubEnv('NODE_ENV', 'development');
-    vi.stubEnv('DATABASE_URL', 'postgres://asset-authz-opt-in');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
-    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
-    const pool = { end: vi.fn().mockResolvedValue(undefined) };
-    const call = (request: Request) =>
-      handlePersistenceRequest(request, { poolFactory: () => pool as never });
-    const writeBody = (bytes: number[]) => {
-      const form = new FormData();
-      form.append('meta', new Blob([JSON.stringify({})], { type: 'application/json' }), 'meta');
-      form.append('bytes', new Blob([new Uint8Array(bytes)], { type: 'image/png' }), 'bytes');
-      return form;
-    };
-    const credential = { authorization: 'Bearer test-token', 'x-learner-key': 'anon:test' };
-
-    const allocated = await call(
-      new Request('http://localhost/api/persistence/assets', {
-        method: 'POST',
-        body: writeBody([1, 2, 3]),
-      }),
-    );
-    const { id } = (await allocated.json()) as { id: string };
-
-    const anonymous = await call(
-      new Request(`http://localhost/api/persistence/assets/${id}`, { method: 'DELETE' }),
-    );
-    expect(anonymous.status).toBe(403);
-    expect(entries.has(id)).toBe(true);
-
-    const put = await call(
-      new Request(`http://localhost/api/persistence/assets/${id}/content`, {
-        method: 'PUT',
-        body: writeBody([9]),
-        headers: credential,
-      }),
-    );
-    expect(put.status).toBe(403);
-    expect(entries.get(id)?.revision).toBe(1);
-
-    const removed = await call(
-      new Request(`http://localhost/api/persistence/assets/${id}`, {
-        method: 'DELETE',
-        headers: credential,
-      }),
-    );
-    expect(removed.status).toBe(403);
-    expect(entries.has(id)).toBe(true);
-
-    // Reads and allocations are unaffected by the refusal.
-    const read = await call(new Request(`http://localhost/api/persistence/assets/${id}/content`));
-    expect(read.status).toBe(200);
   });
 
   // The quota is the only thing bounding a shared asset partition, so what a
@@ -583,9 +294,7 @@ describe('embedded persistence route', () => {
     vi.doUnmock('@openmaic/storage/server/reference');
     vi.doUnmock('@openmaic/storage/server');
     vi.stubEnv('NODE_ENV', 'production');
-    vi.stubEnv('PERSISTENCE_ALLOW_INSECURE_DEV_AUTH', '');
     vi.stubEnv('DATABASE_URL', 'postgres://asset-quota-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
     vi.stubEnv('ASSET_QUOTA_BYTES', '200000');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
 
@@ -648,9 +357,7 @@ describe('embedded persistence route', () => {
     }));
     vi.doUnmock('@openmaic/storage/server');
     vi.stubEnv('NODE_ENV', 'production');
-    vi.stubEnv('PERSISTENCE_ALLOW_INSECURE_DEV_AUTH', '');
     vi.stubEnv('DATABASE_URL', 'postgres://asset-quota-foreign-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
 
     const form = new FormData();
@@ -719,6 +426,7 @@ describe('embedded persistence route', () => {
         constructor(queryable: unknown, options: unknown) {
           assetConstructions.push({ queryable, options, instance: this });
         }
+        put = vi.fn().mockResolvedValue('ast_wired');
       },
     }));
     vi.doMock('@openmaic/storage/server/reference', () => ({ nodePostgresTransaction }));
@@ -741,13 +449,12 @@ describe('embedded persistence route', () => {
       throw new Error('the optional SDK must not resolve without a bucket');
     });
     vi.stubEnv('DATABASE_URL', 'postgres://asset-wiring-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
     const pool = { end: vi.fn().mockResolvedValue(undefined) };
 
     const response = await handlePersistenceRequest(
       new Request('http://localhost/api/persistence/assets/ast_example/content', {
-        headers: { authorization: 'Bearer test-token', 'x-learner-key': 'anon:test' },
+        headers: {},
       }),
       { poolFactory: () => pool as never },
     );
@@ -782,14 +489,18 @@ describe('embedded persistence route', () => {
     expect((assetConstructions[0]?.options as { withTransaction?: unknown }).withTransaction).toBe(
       transaction,
     );
-    // Allocation is open to every caller this deployment admits, and they all
-    // share one asset principal, so the store's own quota is the only ceiling.
+    // The store's own quota is the ceiling, now per owner.
     expect((assetConstructions[0]?.options as { quotaBytes?: unknown }).quotaBytes).toBe(
       10 * 1024 * 1024 * 1024,
     );
-    expect((handlerOptions[0] as { assetStore?: unknown }).assetStore).toBe(
-      assetConstructions[0]?.instance,
-    );
+    // The handler mounts the provider's store behind the per-owner rules, and
+    // an allocation through it lands on that store, under the owner principal.
+    const mounted = (handlerOptions[0] as { assetStore: AssetStoreLike }).assetStore;
+    const raw = assetConstructions[0]?.instance as { put: ReturnType<typeof vi.fn> };
+    const principal = { key: 'owner:anon:test' };
+    const blob = new Blob(['x']);
+    await expect(mounted.put(principal, blob)).resolves.toBe('ast_wired');
+    expect(raw.put).toHaveBeenCalledWith(principal, blob, undefined);
     const { getServerPersistenceProvider } = await import('@/lib/persistence/server-provider');
     const secondPoolFactory = vi.fn();
     const sharedProvider = await getServerPersistenceProvider(
@@ -868,14 +579,13 @@ describe('embedded persistence route', () => {
       return { loadS3AssetByteStore };
     });
     vi.stubEnv('DATABASE_URL', 'postgres://asset-s3-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
     vi.stubEnv('ASSET_S3_BUCKET', '  asset-bucket  ');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
 
     const response = await handlePersistenceRequest(
       new Request('http://localhost/api/persistence/assets', {
         method: 'POST',
-        headers: { authorization: 'Bearer test-token', 'x-learner-key': 'anon:test' },
+        headers: {},
       }),
       { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never },
     );
@@ -947,7 +657,6 @@ describe('embedded persistence route', () => {
       return { loadS3AssetByteStore: vi.fn() };
     });
     vi.stubEnv('DATABASE_URL', 'postgres://invalid-s3-bucket-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
     vi.stubEnv('ASSET_S3_BUCKET', 'Invalid_Bucket');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
     const poolFactory = vi.fn(() => ({ end: vi.fn().mockResolvedValue(undefined) }));
@@ -955,9 +664,7 @@ describe('embedded persistence route', () => {
     // The malformed bucket no longer gates handler initialization: document
     // and runtime traffic initializes and serves normally.
     const response = await handlePersistenceRequest(
-      new Request('http://localhost/api/persistence/runtime/sessions', {
-        headers: { authorization: 'Bearer test-token' },
-      }),
+      new Request('http://localhost/api/persistence/runtime/sessions', {}),
       { poolFactory: poolFactory as never },
     );
 
@@ -1023,14 +730,11 @@ describe('embedded persistence route', () => {
     }));
     vi.doMock('@openmaic/storage/asset/s3-bytes', () => ({ loadS3AssetByteStore }));
     vi.stubEnv('DATABASE_URL', 'postgres://asset-s3-retry-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
     vi.stubEnv('ASSET_S3_BUCKET', 'asset-bucket');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
 
     const response = await handlePersistenceRequest(
-      new Request('http://localhost/api/persistence/runtime/sessions', {
-        headers: { authorization: 'Bearer test-token' },
-      }),
+      new Request('http://localhost/api/persistence/runtime/sessions', {}),
       { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never },
     );
 
@@ -1092,15 +796,12 @@ describe('embedded persistence route', () => {
       }),
     }));
     vi.stubEnv('DATABASE_URL', 'postgres://validator-wiring-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
     const [{ handlePersistenceRequest }, { APP_RUNTIME_PAYLOAD_VALIDATORS }] = await Promise.all([
       import('@/app/api/persistence/[...path]/route'),
       import('@/lib/runtime/payload-validators'),
     ]);
     const response = await handlePersistenceRequest(
-      new Request('http://localhost/api/persistence/runtime/sessions', {
-        headers: { authorization: 'Bearer test-token' },
-      }),
+      new Request('http://localhost/api/persistence/runtime/sessions', {}),
       { poolFactory: () => ({ end: vi.fn() }) as never },
     );
 
@@ -1173,14 +874,13 @@ describe('embedded persistence route', () => {
       ),
     }));
     vi.stubEnv('DATABASE_URL', 'postgres://adapter-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
     const pool = { end: vi.fn().mockResolvedValue(undefined) };
 
     const put = await handlePersistenceRequest(
       new Request('http://localhost/api/persistence/documents/stage%2Fslash', {
         method: 'PUT',
-        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ hello: 'world' }),
       }),
       { poolFactory: () => pool as never },
@@ -1193,7 +893,6 @@ describe('embedded persistence route', () => {
     const del = await handlePersistenceRequest(
       new Request('http://localhost/api/persistence/documents/stage%2Fslash', {
         method: 'DELETE',
-        headers: { authorization: 'Bearer test-token' },
       }),
       { poolFactory: () => pool as never },
     );
@@ -1231,16 +930,13 @@ describe('embedded persistence route', () => {
       createStorageHttpHandler: vi.fn(() => handler),
     }));
     vi.stubEnv('DATABASE_URL', connectionString);
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
   };
 
   const readAdapterBody = async (path: string) => {
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
     const pool = { end: vi.fn().mockResolvedValue(undefined) };
     const response = await handlePersistenceRequest(
-      new Request(`http://localhost/api/persistence/${path}`, {
-        headers: { authorization: 'Bearer test-token' },
-      }),
+      new Request(`http://localhost/api/persistence/${path}`, {}),
       { poolFactory: () => pool as never },
     );
     return { response, body: new Uint8Array(await response.arrayBuffer()) };
@@ -1388,7 +1084,6 @@ describe('embedded persistence route', () => {
     const response = await handlePersistenceRequest(
       new Request('http://localhost/api/persistence/documents/head', {
         method: 'HEAD',
-        headers: { authorization: 'Bearer test-token' },
       }),
       { poolFactory: () => ({ end: vi.fn() }) as never },
     );
@@ -1439,15 +1134,12 @@ describe('embedded persistence route', () => {
       DEFAULT_SIGNED_URL_TTL_SECONDS: 60,
     }));
     vi.stubEnv('DATABASE_URL', connectionString);
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
   };
 
   const requestThroughRoute = async () => {
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
     return handlePersistenceRequest(
-      new Request('http://localhost/api/persistence/runtime/sessions', {
-        headers: { authorization: 'Bearer test-token' },
-      }),
+      new Request('http://localhost/api/persistence/runtime/sessions', {}),
       { poolFactory: () => ({ end: vi.fn().mockResolvedValue(undefined) }) as never },
     );
   };
@@ -1612,7 +1304,6 @@ describe('embedded persistence route', () => {
       loadS3AssetByteStore: vi.fn().mockResolvedValue({ signReadUrl }),
     }));
     vi.stubEnv('DATABASE_URL', 'postgres://egress-signing-forward-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
     vi.stubEnv('ASSET_S3_BUCKET', 'asset-bucket');
 
     const response = await requestThroughRoute();
@@ -1679,7 +1370,6 @@ describe('embedded persistence route', () => {
       ),
     }));
     vi.stubEnv('DATABASE_URL', 'postgres://egress-signing-decline-test');
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
 
     const response = await requestThroughRoute();
     expect(response.status).toBe(204);
@@ -1787,12 +1477,11 @@ describe('embedded persistence route -- real handler boundary', () => {
       nodePostgresTransaction: vi.fn(() => vi.fn()),
     }));
     vi.stubEnv('DATABASE_URL', connectionString);
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
   }
 
   const authed = (path: string, extraHeaders: Record<string, string> = {}) =>
     new Request(`http://localhost/api/persistence${path}`, {
-      headers: { authorization: 'Bearer test-token', ...extraHeaders },
+      headers: { cookie: `anonymous_id=${BOUNDARY_COOKIE}`, ...extraHeaders },
     });
 
   it('serves a stored asset through the real handler and route adapter', async () => {
@@ -1808,21 +1497,16 @@ describe('embedded persistence route -- real handler boundary', () => {
     expect(first.status).not.toBe(500);
     const store = stores[0]!;
     const id = await store.put(
-      {
-        // The dev authenticator issues one shared asset principal for every
-        // request, so the stored entry must live under it to be readable.
-        key: 'shared',
-      },
+      // Stored under the requesting owner's own partition, so the read is an
+      // owner read and needs no foreign-read lookup.
+      { key: BOUNDARY_ASSET_PRINCIPAL },
       new Blob(['real-bytes'], { type: 'text/plain' }),
       {
         contentType: 'image/png',
       },
     );
 
-    const response = await handlePersistenceRequest(
-      authed(`/assets/${id}/content`, { 'x-learner-key': 'anon:test' }),
-      deps,
-    );
+    const response = await handlePersistenceRequest(authed(`/assets/${id}/content`), deps);
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('image/png');
@@ -1846,11 +1530,9 @@ describe('embedded persistence route -- real handler boundary', () => {
     const first = await handlePersistenceRequest(authed('/runtime/sessions'), deps);
     expect(first.status).not.toBe(500);
     const id = await stores[0]!.put(
-      {
-        // The dev authenticator issues one shared asset principal for every
-        // request, so the stored entry must live under it to be readable.
-        key: 'shared',
-      },
+      // Stored under the requesting owner's own partition, so the read is an
+      // owner read and needs no foreign-read lookup.
+      { key: BOUNDARY_ASSET_PRINCIPAL },
       new Blob(['real-bytes'], { type: 'text/plain' }),
       { contentType: 'image/png' },
     );
@@ -1863,10 +1545,7 @@ describe('embedded persistence route -- real handler boundary', () => {
       'https://objects.example/signed',
     );
 
-    const response = await handlePersistenceRequest(
-      authed(`/assets/${id}/content`, { 'x-learner-key': 'anon:test' }),
-      deps,
-    );
+    const response = await handlePersistenceRequest(authed(`/assets/${id}/content`), deps);
 
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe('https://objects.example/signed');
@@ -1882,7 +1561,6 @@ describe('embedded persistence route -- real handler boundary', () => {
 
     const response = await handlePersistenceRequest(
       authed(`/assets/${id}/content`, {
-        'x-learner-key': 'anon:test',
         accept: 'application/vnd.openmaic.asset-descriptor+json, */*;q=0.9',
       }),
       deps,
@@ -1901,10 +1579,7 @@ describe('embedded persistence route -- real handler boundary', () => {
   it('serves bytes directly when the byte layer declines to sign', async () => {
     const { id, deps, handlePersistenceRequest } = await storedAsset('unsigned', '');
 
-    const response = await handlePersistenceRequest(
-      authed(`/assets/${id}/content`, { 'x-learner-key': 'anon:test' }),
-      deps,
-    );
+    const response = await handlePersistenceRequest(authed(`/assets/${id}/content`), deps);
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('image/png');
@@ -1921,10 +1596,7 @@ describe('embedded persistence route -- real handler boundary', () => {
       '30000',
     );
 
-    const response = await handlePersistenceRequest(
-      authed(`/assets/${id}/content`, { 'x-learner-key': 'anon:test' }),
-      deps,
-    );
+    const response = await handlePersistenceRequest(authed(`/assets/${id}/content`), deps);
 
     expect(response.status).toBe(200);
     expect(Buffer.from(await response.arrayBuffer()).toString()).toBe('real-bytes');

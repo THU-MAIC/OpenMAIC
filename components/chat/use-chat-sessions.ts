@@ -42,7 +42,6 @@ import { isPiChatEnabled } from '@/lib/config/feature-flags';
 import type { CleanupSource } from '@/lib/playback/auto-resume';
 import { nanoid } from 'nanoid';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
-import { getPersistenceRequestHeaders } from '@/lib/persistence/bootstrap';
 import { refreshWhiteboardRuntimeProjection } from '@/lib/whiteboard/runtime/browser-projection';
 
 const log = createLogger('ChatSessions');
@@ -411,7 +410,6 @@ export async function runPiSingleRequest(
   onResponseAccepted?: (response: Response) => void,
 ): Promise<void> {
   const consumer = createConsumer(sessionId, controller, sessionType);
-  const persistenceHeaders = await getPersistenceRequestHeaders();
   // Every send re-samples the current Scene, including a follow-up with no reference.
   const interactiveState = await sampleInteractiveState(
     requestTemplate.storeState,
@@ -420,7 +418,7 @@ export async function runPiSingleRequest(
   if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
   const response = await fetch('/api/chat/pi', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...persistenceHeaders },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...requestTemplate, ...(interactiveState ? { interactiveState } : {}) }),
     signal: controller.signal,
   });
@@ -495,12 +493,10 @@ export async function respondToWhiteboardVisibilityQuery(
   signal: AbortSignal,
 ): Promise<void> {
   if (signal.aborted || useStageStore.getState().stage?.id !== data.stageId) return;
-  const headers = await getPersistenceRequestHeaders();
-  if (signal.aborted || useStageStore.getState().stage?.id !== data.stageId) return;
   const visibility = useCanvasStore.getState().whiteboardOpen ? 'open' : 'closed';
   const response = await fetch('/api/chat/pi/whiteboard-visibility', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       queryId: data.queryId,
       stageId: data.stageId,

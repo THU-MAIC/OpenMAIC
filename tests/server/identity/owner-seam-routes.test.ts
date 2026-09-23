@@ -92,7 +92,6 @@ describe('owner identity seam through the routes', () => {
     vi.resetModules();
     vi.unstubAllEnvs();
     vi.stubEnv('DATABASE_URL', `postgres://owner-seam-${randomUUID()}`);
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'configured');
     vi.stubEnv('ASSET_S3_BUCKET', '');
     vi.stubEnv('OPENMAIC_AGENT_RUNTIME_ENABLED', 'true');
     vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');

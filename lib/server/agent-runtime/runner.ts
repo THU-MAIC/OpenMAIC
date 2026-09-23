@@ -1362,6 +1362,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       stageAccess,
       onCheckpoint: (info) => emit(LIFECYCLE.checkpoint, info),
       sessionId: id,
+      ownerId: meta.ownerId,
       abortSignal: abort.signal,
       getActiveSkill: () => activeSkill,
     });

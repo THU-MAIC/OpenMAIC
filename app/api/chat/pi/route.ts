@@ -28,7 +28,7 @@ import { apiError } from '@/lib/server/api-response';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
-import { authenticatePersistenceHeaders } from '@/lib/persistence/server-auth';
+import { resolveRequestOwner } from '@/lib/server/identity/resolve';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { createWhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 import { hasNativeWhiteboardAction } from '@/lib/chat/pi/tools/native-whiteboard';
@@ -181,12 +181,13 @@ export async function POST(req: NextRequest) {
       nativeWhiteboardRequested &&
       validRequestStartStageId &&
       process.env.NEXT_PUBLIC_PERSISTENCE === '1' &&
-      process.env.DATABASE_URL &&
-      process.env.PERSISTENCE_DEV_TOKEN
+      process.env.DATABASE_URL
     ) {
-      const principal = authenticatePersistenceHeaders(req.headers);
-      const learnerKey = principal?.learnerKey;
-      if (learnerKey && learnerKey === learnerKey.trim()) {
+      // The runtime learner key is the request owner, exactly as on
+      // /api/persistence/runtime/*; nothing the client sends chooses it.
+      const owner = await resolveRequestOwner(req);
+      const learnerKey = owner.ok ? owner.principal.ownerId : undefined;
+      if (learnerKey) {
         try {
           const provider = await getServerPersistenceProvider(process.env.DATABASE_URL);
           nativeWhiteboardLearnerKey = learnerKey;
