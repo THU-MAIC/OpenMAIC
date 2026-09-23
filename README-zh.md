@@ -398,9 +398,47 @@ NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
 
 课程、文件夹、资料、Agent 会话与技能都按**所有者 id** 分区。服务端对每个请求只通过一个可插拔的**所有者认证器**（`lib/server/identity/`）解析一次所有者；所有按所有者划分的路由和 Server Action 都经由它，其他模块不读取身份 cookie 或请求头。
 
-内置两种认证器：默认的 `anonymousCookie`（每个浏览器一个所有者，`anon:<uuid>`，来自 30 天 `HttpOnly` 的 `anonymous_id` cookie，不能发布课程）；设置 `PERSISTENCE_SHARED_OWNER_ID`（必须同时设置 `ACCESS_CODE`）时启用 `sharedTeam`（所有请求共用该固定 id，可以发布课程）。授权只看 principal 的 `kind` 和 `roles`，不解析 id 的形状；核心角色为 `course:publish` 和 `admin`（保留，内置认证器均不授予）。
+内置三种认证器，由环境变量选择：默认的 `anonymousCookie`（每个浏览器一个所有者，`anon:<uuid>`，来自 30 天 `HttpOnly` 的 `anonymous_id` cookie，不能发布课程）；设置 `PERSISTENCE_SHARED_OWNER_ID`（必须同时设置 `ACCESS_CODE`）时启用 `sharedTeam`（所有请求共用该固定 id，可以发布课程）；设置 `OWNER_AUTHENTICATOR=trusted-proxy`（必须同时设置 `TRUSTED_PROXY_SECRET`）时启用 `trustedProxyHeader`（真实账号：身份网关登录后在请求头中转发的用户，所有者为 `proxy:<user>`，可以发布课程，见下文“通过身份网关接入账号”）。授权只看 principal 的 `kind` 和 `roles`，不解析 id 的形状；核心角色为 `course:publish` 和 `admin`（为管理类接口保留，只有 `trustedProxyHeader` 会授予配置的管理员组成员）。
 
-有自有账号体系的部署可实现 `OwnerAuthenticator`，并在 `instrumentation.ts` 的 `register()` 中调用一次 `configureOwnerAuthenticator(...)` 注册（示例见英文 README 的 “Owner identity” 一节）。无效凭证必须返回 `INVALID_CREDENTIAL`，各接口统一返回 `401`，绝不回退为新的匿名所有者。注册冲突在启动时报错：重复调用 `configureOwnerAuthenticator`，或同时设置了 `PERSISTENCE_SHARED_OWNER_ID`，都会让 `register()` 抛错、服务无法启动；principal 则按请求校验：owner id 不是 1–256 个可打印、无空格的 ASCII 字符（或 `kind` / `assurance` 未知）时，该请求返回 `500`，不会写入存储。同一个解析出的所有者也是 `/api/persistence` 的运行时学习者 key 和资产分区，因此注册的认证器同样管辖它们。
+##### 通过身份网关接入账号
+
+`trustedProxyHeader` 让每个人拥有自己的课程库，账号来自组织的身份提供方（OIDC、SAML、LDAP），OpenMAIC 本身不接触密码或令牌。应用前面的身份网关（oauth2-proxy、Authelia、基于 Keycloak 的代理、机构自己的反向代理）负责登录，并把验证过的用户放在请求头中转发；OpenMAIC 只在请求同时携带只有网关知道的密钥时才信任该请求头。
+
+```env
+OWNER_AUTHENTICATOR=trusted-proxy
+# 至少 32 个可打印、无空格的 ASCII 字符，例如 `openssl rand -hex 32`。
+TRUSTED_PROXY_SECRET=...
+# 可选，以下为默认值。
+# TRUSTED_PROXY_SECRET_HEADER=x-openmaic-proxy-secret
+# TRUSTED_PROXY_USER_HEADER=x-forwarded-user
+# 可选：为这些组的成员授予 `admin`（精确匹配，区分大小写）。
+# TRUSTED_PROXY_GROUPS_HEADER=x-forwarded-groups
+# TRUSTED_PROXY_ADMIN_GROUPS=openmaic-admins
+```
+
+| 请求 | 结果 |
+|---|---|
+| 密钥正确，单个用户 `alice` | 所有者 `proxy:alice`，`kind: 'user'`，`assurance: 'verified'`，角色 `course:publish`（管理员组成员另加 `admin`）。不设置 cookie。 |
+| 密钥缺失、错误或重复发送 | `401 INVALID_CREDENTIAL` |
+| 密钥正确，但用户头缺失或为空 | `401` |
+| 用户头含逗号（两行同名请求头会被合并为 `a, b`） | `401`：无法确定是哪个用户 |
+| `proxy:<user>` 不是 1–256 个可打印、无空格 ASCII 字符 | `401`：请转发 subject 或邮箱这类 ASCII 标识，而不是显示名 |
+
+被拒绝的请求绝不会被当作匿名所有者处理。用户值会去掉首尾空白，其余原样保留（包括大小写），因为各身份提供方对 subject 是否区分大小写并不一致。组按逗号拆分，忽略空项、超过 256 个字符的项以及第 256 项之后的项。路由和 Server Action 用同样的规则读取同样的请求头。
+
+**信任边界。** Next.js 不向路由、middleware 或 Server Action 提供 TCP 对端地址；最接近的 `x-forwarded-for` 只在客户端没有发送该头时才由 socket 填充。因此 OpenMAIC 无法凭地址识别网关，只能依赖密钥：密钥以常量时间比较，该模式下缺少密钥时服务拒绝启动。密钥不能代替网络隔离，因此还需要：
+
+- 让应用**只能**经由网关访问（绑定到内网，或用防火墙限制端口）；
+- 让网关在设置自己的值之前**剥离**客户端发来的用户、组和密钥请求头；
+- 密钥只放在服务端环境变量中，不要加 `NEXT_PUBLIC_` 前缀。
+
+`ACCESS_CODE` 与该模式相互独立。网关本身就是访问门槛，所以通常不设置 `ACCESS_CODE`（该模式下也不再输出“未设置 `ACCESS_CODE`”的启动警告）；如果设置了，访客需要同时通过两者。名字相近的 `TRUST_PROXY_HEADERS` 只影响访问码的限流，与此无关。
+
+配置在启动时校验，以下任一情况都会让服务无法启动：`OWNER_AUTHENTICATOR` 取值不是 `trusted-proxy`；未启用该模式却设置了 `TRUSTED_PROXY_*` 变量；同时设置了 `PERSISTENCE_SHARED_OWNER_ID` 或注册了宿主认证器；密钥缺失、过短或含不可打印字符；请求头名称格式错误、属于保留名称或彼此重复；设置了 `TRUSTED_PROXY_ADMIN_GROUPS` 却没有 `TRUSTED_PROXY_GROUPS_HEADER`。
+
+oauth2-proxy 的示例配置（用 `--alpha-config` 注入用户、组和密钥请求头，并替换客户端发来的同名请求头）见英文 README 的 “Accounts through an identity gateway” 一节。
+
+有自有账号体系的部署可实现 `OwnerAuthenticator`，并在 `instrumentation.ts` 的 `register()` 中调用一次 `configureOwnerAuthenticator(...)` 注册（示例见英文 README 的 “Owner identity” 一节）。无效凭证必须返回 `INVALID_CREDENTIAL`，各接口统一返回 `401`，绝不回退为新的匿名所有者。注册冲突在启动时报错：重复调用 `configureOwnerAuthenticator`，或同时设置了 `PERSISTENCE_SHARED_OWNER_ID` 或 `OWNER_AUTHENTICATOR`，都会让 `register()` 抛错、服务无法启动；principal 则按请求校验：注册的认证器返回的 owner id 不是 1–256 个可打印、无空格的 ASCII 字符（或 `kind` / `assurance` 未知）时，该请求返回 `500`，不会写入存储。同一个解析出的所有者也是 `/api/persistence` 的运行时学习者 key 和资产分区，因此注册的认证器同样管辖它们。
 
 ### 可选：MP4 视频导出（渲染服务）
 

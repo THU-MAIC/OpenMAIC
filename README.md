@@ -549,16 +549,137 @@ pluggable **owner authenticator** (`lib/server/identity/`). Every owner-scoped
 route and Server Action asks it, once per request; nothing else reads identity
 cookies or headers.
 
-Two built-ins cover the configurations OpenMAIC has always supported:
+Three built-ins are selected from the environment:
 
 | Authenticator | Selected when | Owner |
 |---|---|---|
 | `anonymousCookie` | default | One owner per browser: `anon:<uuid>` from a 30-day `HttpOnly` `anonymous_id` cookie, minted on first use. Cannot publish. |
 | `sharedTeam` | `PERSISTENCE_SHARED_OWNER_ID` is set (requires `ACCESS_CODE`) | That fixed id for every request, so the team behind the access code shares one library. May publish. |
+| `trustedProxyHeader` | `OWNER_AUTHENTICATOR=trusted-proxy` (requires `TRUSTED_PROXY_SECRET`) | A real account: `proxy:<user>`, the user an identity gateway signed in and forwarded in a header. May publish. See [Accounts through an identity gateway](#accounts-through-an-identity-gateway). |
 
 Authorization reads the principal's `kind` and `roles`, never the shape of the
 id. The core roles are `course:publish` (publish and unpublish a course) and
-`admin` (reserved; granted by no built-in).
+`admin` (reserved for administrative surfaces; only `trustedProxyHeader`
+grants it, to members of configured groups).
+
+##### Accounts through an identity gateway
+
+`trustedProxyHeader` gives every person their own library, backed by the
+organization's identity provider (OIDC, SAML, LDAP), without OpenMAIC handling
+a password or a token. An identity gateway in front of the app (oauth2-proxy,
+Authelia, a Keycloak-based proxy, an institutional reverse proxy) signs the
+user in and forwards the verified user in a request header; OpenMAIC trusts
+that header only on requests that also carry a secret only the gateway knows.
+
+```env
+OWNER_AUTHENTICATOR=trusted-proxy
+# 32+ printable ASCII characters without spaces, e.g. `openssl rand -hex 32`.
+TRUSTED_PROXY_SECRET=...
+# Optional; the defaults are shown.
+# TRUSTED_PROXY_SECRET_HEADER=x-openmaic-proxy-secret
+# TRUSTED_PROXY_USER_HEADER=x-forwarded-user
+# Optional: grant `admin` to members of these groups (exact, case-sensitive).
+# TRUSTED_PROXY_GROUPS_HEADER=x-forwarded-groups
+# TRUSTED_PROXY_ADMIN_GROUPS=openmaic-admins
+```
+
+| Request | Result |
+|---|---|
+| Correct secret, one user `alice` | Owner `proxy:alice`, `kind: 'user'`, `assurance: 'verified'`, roles `course:publish` (+ `admin` for an admin group member). No cookie is set. |
+| Secret missing, wrong, or sent twice | `401 INVALID_CREDENTIAL` |
+| Correct secret, user header missing or blank | `401` |
+| User header with a comma (two header lines arrive joined as `a, b`) | `401`: which user is meant is ambiguous |
+| A user whose `proxy:<user>` id is not 1-256 printable ASCII characters without spaces | `401`: forward an ASCII id such as the subject or email instead of a display name |
+
+A refused request is never served as an anonymous owner. The user value is
+trimmed and otherwise kept as sent, case included, because identity providers
+differ on whether subject ids are case-sensitive. Groups are split on commas;
+empty entries, entries over 256 characters and entries past the first 256 are
+ignored. Route handlers and Server Actions read the same headers with the same
+rules.
+
+**The trust boundary.** Next.js does not give route handlers, middleware or
+Server Actions the TCP peer address; the closest value, `x-forwarded-for`, is
+filled from the socket only when the client did not send one. OpenMAIC
+therefore cannot tell a gateway by its address, and relies on the secret: it
+is compared in constant time, and the server refuses to boot in this mode
+without it. The secret is not a substitute for the network setup, so also:
+
+- make the app reachable **only** through the gateway (bind it to a private
+  network, or firewall its port);
+- have the gateway **strip** any client-supplied copy of the user, groups and
+  secret headers before it sets its own;
+- keep the secret out of client-visible places (it is a server-side value; never
+  prefix it with `NEXT_PUBLIC_`).
+
+`ACCESS_CODE` is independent of this mode. The gateway is the access gate, so
+it is normally left unset (and the boot warning about an unset `ACCESS_CODE` is
+skipped in this mode); if it is set, visitors must pass both. The unrelated
+`TRUST_PROXY_HEADERS` only affects access-code rate limiting.
+
+Configuration is validated at boot, and each of these stops the server:
+`OWNER_AUTHENTICATOR` set to anything but `trusted-proxy`; a `TRUSTED_PROXY_*`
+variable set while the mode is off; `PERSISTENCE_SHARED_OWNER_ID` or a
+host-registered authenticator in addition; a missing, short or non-printable
+secret; a malformed, reserved or repeated header name; and
+`TRUSTED_PROXY_ADMIN_GROUPS` without `TRUSTED_PROXY_GROUPS_HEADER`.
+
+<details>
+<summary>Example: oauth2-proxy in front of OpenMAIC</summary>
+
+oauth2-proxy's structured configuration (`--alpha-config`) injects the signed-in
+user, the groups and the shared secret, and replaces any value the client sent
+for those headers:
+
+```yaml
+# oauth2-proxy alpha config. OPENMAIC_PROXY_SECRET holds the same value as
+# TRUSTED_PROXY_SECRET in OpenMAIC's environment.
+upstreamConfig:
+  upstreams:
+    - id: openmaic
+      path: /
+      uri: http://openmaic:3000
+injectRequestHeaders:
+  - name: X-Forwarded-User
+    values:
+      - claimSource:
+          claim: email # or another ASCII identifier, e.g. the subject
+  - name: X-Forwarded-Groups
+    values:
+      - claimSource:
+          claim: groups
+  - name: X-OpenMAIC-Proxy-Secret
+    values:
+      - secretSource:
+          fromEnv: OPENMAIC_PROXY_SECRET
+providers:
+  - id: idp
+    provider: oidc
+    clientID: openmaic
+    clientSecretFile: /run/secrets/oidc-client-secret
+    oidcConfig:
+      issuerURL: https://idp.example.org/
+      emailClaim: email
+      groupsClaim: groups
+      audienceClaims: [aud]
+server:
+  BindAddress: 0.0.0.0:4180
+```
+
+```env
+# OpenMAIC, reachable only from oauth2-proxy's network
+OWNER_AUTHENTICATOR=trusted-proxy
+TRUSTED_PROXY_SECRET=<same value as OPENMAIC_PROXY_SECRET>
+TRUSTED_PROXY_GROUPS_HEADER=x-forwarded-groups
+TRUSTED_PROXY_ADMIN_GROUPS=openmaic-admins
+```
+
+Cookie secret, email domain and other oauth2-proxy settings are unchanged from
+its own documentation. Any gateway that can set request headers works the same
+way: forward the user, optionally the groups, and the secret, and strip the
+client's copies.
+
+</details>
 
 A host with its own accounts implements `OwnerAuthenticator` and registers it
 once, from `instrumentation.ts` `register()`, before the server serves a
@@ -593,10 +714,11 @@ in a Server Action cookies must be written through `next/headers`, and an
 outcome carrying `setCookies` is refused.
 
 Registration is checked at boot: calling `configureOwnerAuthenticator` a second
-time, or while `PERSISTENCE_SHARED_OWNER_ID` is set, throws from `register()`
-and the server does not start. Principals are checked per request: an owner id
-that is not 1-256 printable non-space ASCII characters (or an unknown `kind` /
-`assurance`) is rejected with a `500` for that request rather than stored. The
+time, or while `PERSISTENCE_SHARED_OWNER_ID` or `OWNER_AUTHENTICATOR` is set,
+throws from `register()` and the server does not start. Principals are checked
+per request: an owner id that is not 1-256 printable non-space ASCII characters
+(or an unknown `kind` / `assurance`) returned by a registered authenticator is
+rejected with a `500` for that request rather than stored. The
 same resolved owner is the runtime learner key and the asset partition of
 `/api/persistence`, so a registered authenticator governs those too.
 
