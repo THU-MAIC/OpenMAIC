@@ -101,5 +101,7 @@ export function createSharedTeamAuthenticator(ownerId: string): OwnerAuthenticat
     name: 'sharedTeam',
     authenticate: async () => outcome,
     authenticateFromContext: async () => outcome,
+    describeStoredOwner: (storedId) =>
+      storedId === ownerId ? { kind: 'shared', roles: SHARED_ROLES } : undefined,
   };
 }

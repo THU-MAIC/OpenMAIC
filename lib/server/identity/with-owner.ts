@@ -37,7 +37,37 @@ export async function authenticateRequestOwner(
   if (!outcome.ok) return { ok: false, response: invalidOwnerCredentialResponse() };
   const responseHeaders = new Headers();
   for (const value of outcome.setCookies ?? []) responseHeaders.append('Set-Cookie', value);
-  return { ok: true, principal: outcome.principal, responseHeaders };
+  const principal = await autoClaim(outcome.principal, responseHeaders);
+  return { ok: true, principal, responseHeaders };
+}
+
+/**
+ * `OWNER_CLAIM_TRIGGER=auto`: claim a pending anonymous owner on the first
+ * route request that presents one, before the handler runs, so the handler
+ * already sees the claimed work. The default (`explicit`) leaves it to
+ * `POST /api/identity/claim`. A claim that fails for a reason other than a
+ * refusal is logged and the request goes on unclaimed; the next request tries
+ * again. Server Actions never trigger it.
+ */
+async function autoClaim(principal: OwnerPrincipal, responseHeaders: Headers) {
+  if (!principal.pendingClaim || principal.kind === 'anonymous') return principal;
+  if (!process.env.DATABASE_URL?.trim()) return principal;
+  const { resolveOwnerClaimTrigger, runPendingClaim } =
+    await import('@/lib/persistence/owner-claim-http');
+  if (resolveOwnerClaimTrigger() !== 'auto') return principal;
+  try {
+    const outcome = await runPendingClaim(principal);
+    for (const cookie of outcome.setCookies) responseHeaders.append('Set-Cookie', cookie);
+    if (!outcome.ok && outcome.setCookies.length === 0) return principal;
+  } catch (error) {
+    console.error(
+      '[owner-identity] automatic claim failed; the request continues unclaimed',
+      error,
+    );
+    return principal;
+  }
+  const { pendingClaim: _claimed, ...claimed } = principal;
+  return claimed;
 }
 
 /**

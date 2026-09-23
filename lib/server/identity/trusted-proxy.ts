@@ -2,6 +2,11 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 
 import { createLogger } from '@/lib/logger';
 
+import {
+  clearAnonymousCookieHeader,
+  isAnonymousCookieOwnerId,
+  readAnonymousOwnerId,
+} from './anonymous-cookie';
 import type { AuthOutcome, OwnerAuthenticator, OwnerPrincipal } from './types';
 import { isStorableOwnerId, OWNER_ROLES } from './types';
 
@@ -48,6 +53,10 @@ import { isStorableOwnerId, OWNER_ROLES } from './types';
  *   `TRUSTED_PROXY_ADMIN_GROUPS`, read from the optional groups header, adds
  *   `admin`.
  * - No cookie is set.
+ * - A request that also carries a valid anonymous owner cookie (from the
+ *   default `anonymousCookie` built-in, i.e. work done before signing in) gets
+ *   `pendingClaim` naming that anonymous owner. Nothing is claimed here; see
+ *   `lib/persistence/owner-claims.ts`.
  */
 
 const log = createLogger('OwnerIdentity');
@@ -321,14 +330,34 @@ export function authenticateTrustedProxyHeaders(
     const groups = groupsFrom(headers.get(config.groupsHeader));
     if (groups.some((group) => config.adminGroups.has(group))) roles.add(OWNER_ROLES.admin);
   }
+  const anonymousOwnerId = readAnonymousOwnerId(headers);
   const principal: OwnerPrincipal = {
     ownerId,
     kind: 'user',
     roles,
     assurance: 'verified',
     channel: 'proxy',
+    ...(anonymousOwnerId === undefined
+      ? {}
+      : { pendingClaim: { fromOwnerId: anonymousOwnerId, assurance: 'unverified-legacy' } }),
   };
   return { ok: true, principal };
+}
+
+const GATEWAY_USER_ROLES: ReadonlySet<string> = new Set([OWNER_ROLES.coursePublish]);
+
+/**
+ * A stored `proxy:<user>` id is a gateway user (with the role every gateway
+ * user holds; `admin` comes from a request's groups and is not known here),
+ * and a stored anonymous cookie id is still an anonymous owner: work done
+ * before signing in keeps its anonymous owner until it is claimed.
+ */
+export function describeTrustedProxyStoredOwner(ownerId: string) {
+  if (isAnonymousCookieOwnerId(ownerId)) return { kind: 'anonymous' as const };
+  return ownerId.slice(0, OWNER_ID_PREFIX.length) === OWNER_ID_PREFIX &&
+    ownerId.length > OWNER_ID_PREFIX.length
+    ? { kind: 'user' as const, roles: GATEWAY_USER_ROLES }
+    : undefined;
 }
 
 /**
@@ -344,5 +373,7 @@ export function createTrustedProxyAuthenticator(config: TrustedProxyConfig): Own
       const { headers } = await import('next/headers');
       return authenticateTrustedProxyHeaders(new Headers(await headers()), config);
     },
+    describeStoredOwner: describeTrustedProxyStoredOwner,
+    clearPendingClaim: () => [clearAnonymousCookieHeader()],
   };
 }

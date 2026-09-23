@@ -27,6 +27,7 @@ import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { ownerJson } from '@/lib/server/agent-runtime/route-response';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { isOwnerRetiredError, ownerRetiredResponse } from '@/lib/persistence/owner-merges';
 import { folderNameErrorResponse } from '@/lib/server/folder-name-errors';
 import { createFolderForOwner, listFoldersForOwner } from '@/lib/server/folder-persistence';
 import { validateFolderName } from '@/lib/utils/folder-name-validation';
@@ -102,6 +103,7 @@ export async function POST(req: NextRequest) {
       const { folder } = await createFolderForOwner(store, trimmed, { reuseExisting: false });
       return ownerJson({ folder: folderResponse(folder, ownerId) }, 200, responseHeaders);
     } catch (error) {
+      if (isOwnerRetiredError(error)) return ownerRetiredResponse(responseHeaders);
       // The storage re-checks duplicates + count limit inside its owner-scoped
       // transaction; map its refusals onto the same machine codes the
       // pre-checks use.

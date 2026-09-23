@@ -51,6 +51,42 @@ export interface OwnerPrincipal {
   readonly assurance: OwnerAssurance;
   /** Free-form transport label, e.g. `'web'`, `'api-key'`, `'proxy'`. Informational. */
   readonly channel?: string;
+  /**
+   * An anonymous identity the same request presented alongside this one: the
+   * candidate for claiming that anonymous owner's work into this owner (see
+   * `lib/persistence/owner-claims.ts`). Set only by an authenticator that
+   * resolved a non-anonymous principal and recognized a valid anonymous
+   * credential beside it; its presence is the authenticator's statement that
+   * `fromOwnerId` is an anonymous owner. Nothing is claimed until the host's
+   * trigger runs (`POST /api/identity/claim`, or `OWNER_CLAIM_TRIGGER=auto`).
+   */
+  readonly pendingClaim?: PendingOwnerClaim;
+}
+
+/** See {@link OwnerPrincipal.pendingClaim}. */
+export interface PendingOwnerClaim {
+  /** The anonymous owner id the request's anonymous credential names. */
+  readonly fromOwnerId: string;
+  /** What that credential proves; the anonymous cookie is `unverified-legacy`. */
+  readonly assurance: OwnerAssurance;
+}
+
+/**
+ * What an authenticator knows about an owner id it minted, without a request:
+ * see {@link OwnerAuthenticator.describeStoredOwner}.
+ */
+export interface StoredOwnerDescription {
+  readonly kind: SubjectKind;
+  /** Roles the id always carries. Roles granted per request (groups) are not known here. */
+  readonly roles?: ReadonlySet<string>;
+}
+
+/** The query surface {@link OwnerAuthenticator.canonicalize} runs on: an open transaction. */
+export interface OwnerIdentityQueryable {
+  query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+    text: string,
+    params?: unknown[],
+  ): Promise<{ rows: TRow[] }>;
 }
 
 export type AuthOutcome =
@@ -102,6 +138,31 @@ export interface OwnerAuthenticator {
    * `authenticate` mints cookies must implement this method.
    */
   authenticateFromContext?(): Promise<AuthOutcome>;
+  /**
+   * Resolve an owner id the host itself has retired (its own account merges)
+   * to the owner it now forwards to. Called by core after it has followed its
+   * own claim records (`owner_merges`), inside the caller's transaction, so a
+   * host that keeps its merges in the same database answers consistently with
+   * it. Must return a storable owner id; returning the id unchanged means
+   * "not retired". Optional: core's claim records are followed for every host.
+   */
+  canonicalize?(tx: OwnerIdentityQueryable, ownerId: string): Promise<string>;
+  /**
+   * Describe an owner id this authenticator minted, for work that holds only
+   * the stored id (an agent run, a claim). Answer `undefined` for an id it
+   * does not recognize. Optional: without it, `principalFromStoredOwner`
+   * describes every id as `kind: 'user'` with no roles, which is also what
+   * makes an unrecognized id ineligible as the anonymous side of a claim.
+   */
+  describeStoredOwner?(ownerId: string): StoredOwnerDescription | undefined;
+  /**
+   * `Set-Cookie` values that drop the anonymous credential behind a
+   * {@link OwnerPrincipal.pendingClaim}, sent once the claim is done (or can
+   * never succeed) so the browser stops presenting a retired identity.
+   * Optional: an authenticator that never sets `pendingClaim`, or whose
+   * anonymous credential is not a cookie, leaves it out.
+   */
+  clearPendingClaim?(): readonly string[];
 }
 
 /**

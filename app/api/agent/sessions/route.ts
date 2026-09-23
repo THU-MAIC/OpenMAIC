@@ -18,6 +18,7 @@ import {
   SessionMaterialBindingError,
 } from '@/lib/server/agent-runtime/session-materials';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { ownerRetiredResponse } from '@/lib/persistence/owner-merges';
 import { buildRequestOrigin, isValidClassroomId } from '@/lib/server/classroom-storage';
 import { decodeCourseRefs } from '@/lib/workbench/course-refs';
 
@@ -136,6 +137,11 @@ export async function POST(req: NextRequest) {
     // ownership validation is deferred until a later slice consumes stageId —
     // the upstream document store has no owner partition yet.
     const store = await getAgentSessionStore();
+    // A request still presenting an anonymous identity that was claimed into
+    // an account starts nothing under it (lib/persistence/owner-merges.ts).
+    if ((await store.readRetirement(ownerId)) !== null) {
+      return ownerRetiredResponse(responseHeaders);
+    }
     const hasOpeningContext = materialIds.length > 0 || decodedCourseRefs.refs.length > 0;
     const meta = await store.createSession({
       ownerId,

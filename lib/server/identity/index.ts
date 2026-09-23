@@ -20,8 +20,12 @@ export type {
   OwnerAssurance,
   OwnerAuthenticator,
   OwnerAuthRequest,
+  OwnerIdentityQueryable,
   OwnerPrincipal,
+  PendingOwnerClaim,
+  StoredOwnerDescription,
   SubjectKind,
 } from './types';
 export { OWNER_ROLES, principalHasRole } from './types';
 export { configureOwnerAuthenticator, getOwnerAuthenticator } from './registry';
+export { principalFromStoredOwner } from './stored-owner';

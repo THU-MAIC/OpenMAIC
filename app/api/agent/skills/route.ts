@@ -15,6 +15,7 @@ import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { listSkills } from '@/lib/server/agent-runtime/skills';
 import { createUserSkill, UserSkillError } from '@/lib/server/agent-runtime/user-skills';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { isOwnerRetiredError, ownerRetiredResponse } from '@/lib/persistence/owner-merges';
 import {
   parseUserSkillMarkdown,
   parseUserSkillZip,
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
       const input = upload.name.toLowerCase().endsWith('.zip')
         ? await parseUserSkillZip(bytes)
         : parseUserSkillMarkdown(bytes.toString('utf8'));
-      const skill = await createUserSkill(ownerId, input);
+      const skill = await createUserSkill(ownerId, input, { source: 'request' });
       return NextResponse.json(
         {
           id: skill.id,
@@ -95,6 +96,7 @@ export async function POST(req: NextRequest) {
           { status: 400, headers: responseHeaders },
         );
       }
+      if (isOwnerRetiredError(error)) return ownerRetiredResponse(responseHeaders);
       throw error;
     }
   });

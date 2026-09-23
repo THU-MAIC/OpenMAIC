@@ -776,6 +776,99 @@ rejected with a `500` for that request rather than stored. The
 same resolved owner is the runtime learner key and the asset partition of
 `/api/persistence`, so a registered authenticator governs those too.
 
+##### Claiming anonymous work
+
+A visitor who works anonymously and then signs in has two owners: the
+anonymous one their courses were written under, and the account. A **claim**
+moves everything the anonymous owner holds to the account in one database
+transaction, and retires the anonymous id.
+
+With `trustedProxyHeader`, a gateway request that also carries a valid
+`anonymous_id` cookie resolves to the account with a `pendingClaim` naming the
+anonymous owner. Nothing moves until the claim is triggered:
+
+- **Explicitly (the default):** the app calls `POST /api/identity/claim` with a
+  JSON body (`{}`) from its own pages. The answer is
+  `200 { status: 'claimed', moved }` or `200 { status: 'already-claimed' }`,
+  with a `Set-Cookie` that drops the anonymous cookie.
+- **Automatically:** `OWNER_CLAIM_TRIGGER=auto` claims on the first route
+  request that carries a pending claim, before the handler runs. Server Actions
+  never trigger it. Prefer the explicit trigger where one browser can be shared
+  by several people: whoever signs in first takes the anonymous work in it.
+
+| Request                                                                                                                         | Result                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Not same-origin JSON (`Sec-Fetch-Site` other than `same-origin`, a foreign `Origin`, or any content type but `application/json`) | `403 CROSS_ORIGIN_REFUSED`, nothing changes            |
+| An anonymous requester                                                                                                          | `403 TARGET_ANONYMOUS`                                 |
+| No anonymous cookie beside the account                                                                                          | `409 NO_PENDING_CLAIM`                                 |
+| The anonymous owner was already claimed by another account                                                                      | `409 ALREADY_CLAIMED_ELSEWHERE`; the cookie is dropped |
+| A claim the rules below refuse                                                                                                  | `4xx` with the rule's code; nothing changes            |
+
+What moves, in this fixed order (a host adds its own tables with
+`registerClaimParticipant`, see below):
+
+1. **Folders.** A folder whose name the account already uses (compared
+   case-insensitively, like `createFolder`) is merged into the account's; one
+   whose id the account already uses for another name moves under a fresh id;
+   the rest move as they are, after the account's own. Filing follows.
+2. **Courses** (`stage_meta`), including deleted ones.
+3. **Materials.**
+4. **Agent sessions** and their session-list history.
+5. **User skills.** A handle the account already uses is renamed (`my-notes-2`,
+   `my-notes-3`, ...).
+6. **Runtime sessions** (the learner key).
+7. **Asset entries** (the per-owner partition), so a claimed course keeps
+   rendering its media for every viewer.
+
+Quotas are not applied to what moves: the account keeps everything, and if it
+is now above its asset, material, skill or folder limit it cannot add more
+until it is back under. The claim is recorded in `owner_merges`.
+
+Rules: only an anonymous owner can be claimed, and only by a non-anonymous
+one; claiming the same pair again succeeds and does nothing; an anonymous owner
+already claimed by one account cannot be claimed by another; and there are no
+chains (a retired account cannot claim, and an owner that absorbed others
+cannot be claimed), so every retired id forwards in one step.
+
+After a claim the anonymous id is **retired**. A request that still presents
+it cannot write under it: document, folder, asset, material, skill, agent
+session and runtime writes answer `403 OWNER_RETIRED`, and its library reads as
+empty. Work that started
+before the claim and runs on without a request (an agent run, media
+generation) follows the id to the account instead, so a course that was still
+generating when its author signed in lands in their account.
+
+Every write that creates or changes an owner's rows takes a per-owner
+PostgreSQL advisory lock (the identity lock) in shared mode as its
+transaction's first statement, and a claim takes it in exclusive mode for both
+owners before touching a row. A write racing a claim therefore either commits
+first and is moved, or waits and is refused, and the two cannot deadlock.
+
+A host registers participants for its own owner-keyed tables from
+`instrumentation.ts`:
+
+```ts
+const { registerClaimParticipant } = await import('@/lib/persistence/owner-claims');
+registerClaimParticipant({
+  name: 'billing-ledger',
+  order: 1000, // after core's 100-700; see lib/persistence/owner-claims.ts
+  rekey: (tx, fromOwnerId, toOwnerId) =>
+    tx.query('UPDATE billing_ledger SET owner_id = $2 WHERE owner_id = $1', [
+      fromOwnerId,
+      toOwnerId,
+    ]),
+});
+```
+
+A participant runs inside the claim's transaction; if it throws, nothing any
+participant did is kept. `claimOwner(from, to)` and
+`claimPendingOwner(principal)` run a claim from host code. An
+`OwnerAuthenticator` may also implement `describeStoredOwner(ownerId)` (what
+kind of owner a stored id is, for work that holds only the id:
+`principalFromStoredOwner`), `canonicalize(tx, ownerId)` (its own account
+merges, applied after core's) and `clearPendingClaim()` (the `Set-Cookie`
+values that drop its anonymous credential).
+
 ##### Host extension hooks
 
 A host can add product behavior at four points without forking a route. They

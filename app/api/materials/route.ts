@@ -61,6 +61,7 @@ import {
   reclaimStaleOwnerMaterialUploads,
   registerOwnerMaterial,
 } from '@/lib/persistence/owner-materials';
+import { isOwnerRetiredError, ownerRetiredResponse } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getMaterialByteStore } from '@/lib/server/materials/bytes';
 import {
@@ -311,6 +312,9 @@ export async function POST(req: NextRequest) {
             'quota_exceeded',
             responseHeaders,
           );
+        }
+        if (isOwnerRetiredError(error)) {
+          return reject(ownerRetiredResponse(), 'owner_retired', responseHeaders);
         }
         throw error;
       }

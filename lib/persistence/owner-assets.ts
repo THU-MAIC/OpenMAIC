@@ -47,6 +47,8 @@ import {
 import type { AssetMeta, AssetRef, BinaryBlob } from '@openmaic/dsl';
 import type { Queryable, WithTransaction } from '@openmaic/storage/document/pg';
 
+import { fenceOwnerWrite } from './owner-merges';
+
 /**
  * The single asset partition every caller shared before per-owner partitions.
  * It has no `:` in it, so no {@link assetPrincipalForOwner} key can equal it —
@@ -177,7 +179,14 @@ export interface OwnerAssetStoreOptions {
   /** The owner every principal passed to this store was derived from. */
   ownerId: string;
   queryable: OwnerAssetQueryable;
-  /** Enables replacing and deleting legacy entries. Without it they are refused. */
+  /**
+   * Enables replacing and deleting legacy entries (without it they are
+   * refused), and fences allocations: with it, `put` runs in a transaction
+   * that first takes the owner's identity lock and refuses an owner a claim
+   * retired (`./owner-merges.ts`), so an upload racing a claim either lands
+   * before it (and is moved) or is refused -- never left behind under the
+   * retired owner.
+   */
   legacyMutations?: LegacyAssetMutations;
 }
 
@@ -229,7 +238,12 @@ export function createOwnerAssetStore(
 
   const store: AssetStore = {
     put: (principal: AssetPrincipal, data: BinaryBlob, meta?: AssetMeta) =>
-      inner.put(principal, data, meta),
+      legacyMutations === undefined
+        ? inner.put(principal, data, meta)
+        : legacyMutations.withTransaction(async (tx) => {
+            await fenceOwnerWrite(tx, ownerId);
+            return legacyMutations.storeIn(tx).put(principal, data, meta);
+          }),
     identify: (principal: AssetPrincipal, ref: AssetRef): Promise<AssetIdentity | null> =>
       readWithFallback(principal, ref, (as) => inner.identify(as, ref)),
     resolve: (principal: AssetPrincipal, ref: AssetRef): Promise<AssetBytes | null> =>

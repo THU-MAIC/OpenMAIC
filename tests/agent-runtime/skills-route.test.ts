@@ -82,12 +82,17 @@ describe('POST agent skills', () => {
     );
 
     expect(response.status).toBe(201);
-    expect(mocks.createUserSkill).toHaveBeenCalledWith('user:u1', {
-      name: 'my-uploaded',
-      title: 'Uploaded',
-      description: 'Uploaded description',
-      content: 'Uploaded instructions',
-    });
+    expect(mocks.createUserSkill).toHaveBeenCalledWith(
+      'user:u1',
+      {
+        name: 'my-uploaded',
+        title: 'Uploaded',
+        description: 'Uploaded description',
+        content: 'Uploaded instructions',
+      },
+      // A request creates as itself: a retired identity is refused, not forwarded.
+      { source: 'request' },
+    );
   });
 
   it('accepts bare SKILL.md and rejects invalid handles through create validation', async () => {
