@@ -126,7 +126,8 @@ describe('interactive runtime error banner', () => {
     });
     const banner = document.querySelector('[data-testid="interactive-runtime-error"]');
     expect(banner?.textContent).toContain('This interactive failed to run');
-    expect(banner?.textContent).toContain('Cannot read properties of undefined');
+    expect(banner?.textContent).toContain('second failure');
+    expect(banner?.textContent).not.toContain('Cannot read properties of undefined');
   });
 
   it('drops the banner when the scene document changes and clearScene runs', async () => {

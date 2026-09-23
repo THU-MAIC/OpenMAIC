@@ -60,6 +60,29 @@ describe('findInteractiveScriptSyntaxFailure', () => {
     ).toBeNull();
   });
 
+  it.each([
+    'application/x-javascript',
+    'application/x-ecmascript',
+    'text/x-javascript',
+    'text/x-ecmascript',
+    'text/jscript',
+    'text/livescript',
+    'text/javascript1.0',
+    'text/javascript1.1',
+    'text/javascript1.2',
+    'text/javascript1.3',
+    'text/javascript1.4',
+    'text/javascript1.5',
+    'text/javascript1.5; charset=utf-8',
+  ])('checks legacy classic MIME type %s', (type) => {
+    expect(
+      findInteractiveScriptSyntaxFailure(`<script type="${type}">state counts = [];</script>`),
+    ).toMatchObject({
+      scriptIndex: 1,
+      message: expect.stringMatching(/Unexpected identifier 'counts'/),
+    });
+  });
+
   it('accepts a classic script whose quoted attribute contains a greater-than', () => {
     expect(
       findInteractiveScriptSyntaxFailure(
@@ -147,6 +170,33 @@ describe('findInteractiveScriptSyntaxFailure', () => {
     ).toMatchObject({
       scriptIndex: 1,
       message: expect.stringMatching(/Invalid or unexpected token/),
+    });
+  });
+
+  it('accepts a classic script whose double-escaped script data contains </script>', () => {
+    expect(
+      findInteractiveScriptSyntaxFailure(
+        '<script><!--\nvar s = "<script>x</script>";\nwindow.widgetRan = true;\n--></script>',
+      ),
+    ).toBeNull();
+  });
+
+  it('does not syntax-check a script nested in a template', () => {
+    expect(
+      findInteractiveScriptSyntaxFailure(
+        '<template><script>state counts = [];</script></template><script>window.widgetRan = true;</script>',
+      ),
+    ).toBeNull();
+  });
+
+  it('counts a template script toward the index of a later classic script', () => {
+    expect(
+      findInteractiveScriptSyntaxFailure(
+        '<template><script>window.widgetRan = true;</script></template><script>state counts = [];</script>',
+      ),
+    ).toMatchObject({
+      scriptIndex: 2,
+      message: expect.stringMatching(/Unexpected identifier 'counts'/),
     });
   });
 });

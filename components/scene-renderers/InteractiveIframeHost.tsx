@@ -404,10 +404,10 @@ function PooledIframe({
     visibleViewport.height > 0 &&
     rect.width > 0 &&
     rect.height > 0;
-  const firstRuntimeError = runtimeErrors?.[0];
+  const latestRuntimeError = runtimeErrors?.[runtimeErrors.length - 1];
   const showRuntimeError =
     shown &&
-    typeof firstRuntimeError === 'string' &&
+    typeof latestRuntimeError === 'string' &&
     dismissedRuntimeSignature !== runtimeErrorSignature;
   const wrapStyle: CSSProperties = {
     position: 'fixed',
@@ -450,9 +450,9 @@ function PooledIframe({
         title={`Interactive Scene ${sceneId}`}
         sandbox="allow-scripts allow-forms allow-popups"
       />
-      {showRuntimeError && firstRuntimeError ? (
+      {showRuntimeError && latestRuntimeError ? (
         <InteractiveRuntimeErrorBanner
-          message={firstRuntimeError}
+          message={latestRuntimeError}
           onDismiss={() => setDismissedRuntimeSignature(runtimeErrorSignature)}
         />
       ) : null}

@@ -18,7 +18,6 @@ interface SceneRuntimeErrorsState {
   addError: (sceneId: string, message: string) => void;
   /** Drop a scene's errors (e.g. when it re-renders with new content). */
   clearScene: (sceneId: string) => void;
-  clearAll: () => void;
 }
 
 export const useSceneRuntimeErrors = create<SceneRuntimeErrorsState>((set) => ({
@@ -39,5 +38,4 @@ export const useSceneRuntimeErrors = create<SceneRuntimeErrorsState>((set) => ({
       delete errors[sceneId];
       return { errors };
     }),
-  clearAll: () => set({ errors: {} }),
 }));
