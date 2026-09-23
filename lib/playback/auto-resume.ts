@@ -1,13 +1,14 @@
 import type { EngineMode } from './types';
 
 /**
- * Where a chat-session cleanup originated. A confirmed or timed-out soft close
- * may auto-resume an interrupted lecture; other sources must not.
+ * Where a chat-session cleanup originated. A confirmed/timed-out soft close or
+ * the explicit resume-lesson control may resume lecture playback.
  */
 export type CleanupSource =
   | 'soft_close_enter'
   | 'soft_close_confirmed'
   | 'soft_close_timeout'
+  | 'resume_lesson'
   | 'manual_stop'
   | 'scene_switch'
   | 'error'
@@ -31,12 +32,22 @@ export interface AutoResumeArgs {
 /**
  * Decide whether an ended Q&A/discussion should auto-resume the lecture it
  * interrupted. Pure and conservative: it only returns true for the narrow
- * "completed soft close after a satisfied/back-to-lesson Q&A" case, and
- * requires the engine to be idle with content still remaining.
+ * "completed soft close after a satisfied/back-to-lesson Q&A" case or the
+ * explicit resume-lesson action, and requires the engine to be idle with
+ * content still remaining.
  */
 export function shouldAutoResumeLecture(args: AutoResumeArgs): boolean {
-  if (args.source !== 'soft_close_confirmed' && args.source !== 'soft_close_timeout') return false;
-  if (!args.hadLectureInterruption) return false;
+  const isExplicitResume = args.source === 'resume_lesson';
+  if (
+    args.source !== 'soft_close_confirmed' &&
+    args.source !== 'soft_close_timeout' &&
+    !isExplicitResume
+  ) {
+    return false;
+  }
+  // An explicit classroom control is authoritative even when the Q&A began
+  // before playback, so it can start the lesson instead of leaving the engine idle.
+  if (!isExplicitResume && !args.hadLectureInterruption) return false;
   if (args.endReason !== 'user_done' && args.endReason !== 'back_to_lesson') return false;
   if (args.engineMode !== 'idle') return false;
   if (args.isExhausted || args.playbackCompleted) return false;
