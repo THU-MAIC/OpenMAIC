@@ -579,9 +579,18 @@ TRUSTED_PROXY_SECRET=...
 # TRUSTED_PROXY_SECRET_HEADER=x-openmaic-proxy-secret
 # TRUSTED_PROXY_USER_HEADER=x-forwarded-user
 # Optional: grant `admin` to members of these groups (exact, case-sensitive).
+# See the warning below before enabling it.
 # TRUSTED_PROXY_GROUPS_HEADER=x-forwarded-groups
 # TRUSTED_PROXY_ADMIN_GROUPS=openmaic-admins
 ```
+
+> [!WARNING]
+> **`TRUSTED_PROXY_ADMIN_GROUPS` trusts the groups header on the strength of
+> the shared secret alone.** OpenMAIC cannot tell the gateway's groups value
+> from one a client sent through the gateway. Enable it only when the gateway
+> overwrites or strips the groups header on every request; otherwise any
+> signed-in user can grant themselves `admin`. The server logs a warning at
+> boot whenever it is set.
 
 | Request | Result |
 |---|---|
@@ -621,63 +630,108 @@ Configuration is validated at boot, and each of these stops the server:
 `OWNER_AUTHENTICATOR` set to anything but `trusted-proxy`; a `TRUSTED_PROXY_*`
 variable set while the mode is off; `PERSISTENCE_SHARED_OWNER_ID` or a
 host-registered authenticator in addition; a missing, short or non-printable
-secret; a malformed, reserved or repeated header name; and
+secret; a malformed or repeated header name, or one that HTTP, Next.js or a
+forwarding proxy sets itself (such as `cookie`, `x-forwarded-for`, `forwarded`,
+`x-real-ip`, `rsc`, `next-action`, or anything starting with `x-middleware-`,
+`x-invoke-`, `x-nextjs-` or `next-router-`); and
 `TRUSTED_PROXY_ADMIN_GROUPS` without `TRUSTED_PROXY_GROUPS_HEADER`.
 
 <details>
 <summary>Example: oauth2-proxy in front of OpenMAIC</summary>
 
-oauth2-proxy's structured configuration (`--alpha-config`) injects the signed-in
-user, the groups and the shared secret, and replaces any value the client sent
-for those headers:
+This example targets **oauth2-proxy v7.14 or later**, whose structured
+configuration (`--alpha-config`) uses the nested `claimSource` / `secretSource`
+header format; earlier versions use a different layout. It injects the
+signed-in user, the groups and the shared secret, and with
+`preserveRequestValue: false` (the default, spelled out here) strips any value
+the client sent for those headers before injecting its own.
 
 ```yaml
-# oauth2-proxy alpha config. OPENMAIC_PROXY_SECRET holds the same value as
-# TRUSTED_PROXY_SECRET in OpenMAIC's environment.
+# alpha.yaml (oauth2-proxy v7.14+)
+# OPENMAIC_PROXY_SECRET holds the literal secret, the same value as
+# TRUSTED_PROXY_SECRET in OpenMAIC's environment (not base64-encoded).
 upstreamConfig:
   upstreams:
     - id: openmaic
       path: /
       uri: http://openmaic:3000
+
 injectRequestHeaders:
   - name: X-Forwarded-User
+    preserveRequestValue: false
     values:
       - claimSource:
-          claim: email # or another ASCII identifier, e.g. the subject
+          claim: email # use `claim: user` to forward the OIDC subject (sub)
   - name: X-Forwarded-Groups
+    preserveRequestValue: false
     values:
       - claimSource:
           claim: groups
   - name: X-OpenMAIC-Proxy-Secret
+    preserveRequestValue: false
     values:
       - secretSource:
           fromEnv: OPENMAIC_PROXY_SECRET
+
 providers:
   - id: idp
     provider: oidc
     clientID: openmaic
     clientSecretFile: /run/secrets/oidc-client-secret
+    scope: 'openid email profile' # add the IdP's groups scope if it needs one
     oidcConfig:
       issuerURL: https://idp.example.org/
       emailClaim: email
       groupsClaim: groups
       audienceClaims: [aud]
+      insecureSkipNonce: false
+
 server:
-  BindAddress: 0.0.0.0:4180
+  bindAddress: 0.0.0.0:4180
+```
+
+```sh
+# HTTPS terminates at a trusted ingress in front of port 4180. Register the
+# callback URL with the IdP.
+oauth2-proxy --alpha-config=/etc/oauth2-proxy/alpha.yaml \
+  --email-domain=example.org \
+  --redirect-url=https://openmaic.example.org/oauth2/callback \
+  --cookie-secure=true
 ```
 
 ```env
-# OpenMAIC, reachable only from oauth2-proxy's network
+# oauth2-proxy's environment
+OPENMAIC_PROXY_SECRET=<32+ printable ASCII characters without spaces>
+OAUTH2_PROXY_COOKIE_SECRET=<a separate oauth2-proxy cookie secret>
+
+# OpenMAIC's environment; the app is reachable only from oauth2-proxy's network
 OWNER_AUTHENTICATOR=trusted-proxy
-TRUSTED_PROXY_SECRET=<same value as OPENMAIC_PROXY_SECRET>
+TRUSTED_PROXY_SECRET=<same literal value as OPENMAIC_PROXY_SECRET>
 TRUSTED_PROXY_GROUPS_HEADER=x-forwarded-groups
 TRUSTED_PROXY_ADMIN_GROUPS=openmaic-admins
 ```
 
-Cookie secret, email domain and other oauth2-proxy settings are unchanged from
-its own documentation. Any gateway that can set request headers works the same
-way: forward the user, optionally the groups, and the secret, and strip the
-client's copies.
+Notes:
+
+- **Legacy options.** Options that moved into the alpha configuration
+  (upstreams, header passing such as `--pass-user-headers` or
+  `--set-xauthrequest`, provider, client, scope and OIDC settings) must be
+  removed from oauth2-proxy's flags, config file and environment, even when set
+  to `false`. Core settings such as the cookie secret and email domains stay
+  where they are. Validate the result with `--config-test`.
+- **Do not exempt app routes** with `skip-auth-route`, `skip-auth-regex`,
+  `skip-auth-preflight` or `trusted-ip`. Such requests still reach OpenMAIC
+  with the injected secret but without a signed-in user.
+- **Groups** must actually be released by the IdP: `groupsClaim` names the
+  claim but does not request it, so add whatever scope or claim mapping the IdP
+  needs. Group names must not contain commas, because OpenMAIC splits the
+  header on commas.
+- **The user value** must fit the owner id rule above (ASCII, no spaces). With
+  `claim: email`, the owner is the email address; `claim: user` uses the OIDC
+  subject instead. Switching later changes every owner id.
+
+Any gateway that can set request headers works the same way: forward the user,
+optionally the groups, and the secret, and strip the client's copies.
 
 </details>
 

@@ -411,10 +411,13 @@ TRUSTED_PROXY_SECRET=...
 # 可选，以下为默认值。
 # TRUSTED_PROXY_SECRET_HEADER=x-openmaic-proxy-secret
 # TRUSTED_PROXY_USER_HEADER=x-forwarded-user
-# 可选：为这些组的成员授予 `admin`（精确匹配，区分大小写）。
+# 可选：为这些组的成员授予 `admin`（精确匹配，区分大小写）。启用前请阅读下方警告。
 # TRUSTED_PROXY_GROUPS_HEADER=x-forwarded-groups
 # TRUSTED_PROXY_ADMIN_GROUPS=openmaic-admins
 ```
+
+> [!WARNING]
+> **`TRUSTED_PROXY_ADMIN_GROUPS` 对组请求头的信任仅建立在共享密钥之上。** OpenMAIC 无法区分网关设置的组和客户端经网关透传的组。只有在网关对每个请求都覆盖或剥离组请求头时才可启用，否则任何已登录用户都能给自己授予 `admin`。设置该变量时，服务启动会输出一条警告。
 
 | 请求 | 结果 |
 |---|---|
@@ -434,9 +437,9 @@ TRUSTED_PROXY_SECRET=...
 
 `ACCESS_CODE` 与该模式相互独立。网关本身就是访问门槛，所以通常不设置 `ACCESS_CODE`（该模式下也不再输出“未设置 `ACCESS_CODE`”的启动警告）；如果设置了，访客需要同时通过两者。名字相近的 `TRUST_PROXY_HEADERS` 只影响访问码的限流，与此无关。
 
-配置在启动时校验，以下任一情况都会让服务无法启动：`OWNER_AUTHENTICATOR` 取值不是 `trusted-proxy`；未启用该模式却设置了 `TRUSTED_PROXY_*` 变量；同时设置了 `PERSISTENCE_SHARED_OWNER_ID` 或注册了宿主认证器；密钥缺失、过短或含不可打印字符；请求头名称格式错误、属于保留名称或彼此重复；设置了 `TRUSTED_PROXY_ADMIN_GROUPS` 却没有 `TRUSTED_PROXY_GROUPS_HEADER`。
+配置在启动时校验，以下任一情况都会让服务无法启动：`OWNER_AUTHENTICATOR` 取值不是 `trusted-proxy`；未启用该模式却设置了 `TRUSTED_PROXY_*` 变量；同时设置了 `PERSISTENCE_SHARED_OWNER_ID` 或注册了宿主认证器；密钥缺失、过短或含不可打印字符；请求头名称格式错误、彼此重复，或属于 HTTP、Next.js 或转发代理自行设置的请求头（如 `cookie`、`x-forwarded-for`、`forwarded`、`x-real-ip`、`rsc`、`next-action`，以及以 `x-middleware-`、`x-invoke-`、`x-nextjs-`、`next-router-` 开头的名称）；设置了 `TRUSTED_PROXY_ADMIN_GROUPS` 却没有 `TRUSTED_PROXY_GROUPS_HEADER`。
 
-oauth2-proxy 的示例配置（用 `--alpha-config` 注入用户、组和密钥请求头，并替换客户端发来的同名请求头）见英文 README 的 “Accounts through an identity gateway” 一节。
+oauth2-proxy（v7.14 及以上）的示例配置见英文 README 的 “Accounts through an identity gateway” 一节：用 `--alpha-config` 注入用户、组和密钥请求头，并剥离客户端发来的同名请求头。该节同时说明了需要从旧版参数中移除的选项、不要用 `skip-auth-route` 等选项豁免应用路由、组声明需要身份提供方实际下发，以及组名不能包含逗号。
 
 有自有账号体系的部署可实现 `OwnerAuthenticator`，并在 `instrumentation.ts` 的 `register()` 中调用一次 `configureOwnerAuthenticator(...)` 注册（示例见英文 README 的 “Owner identity” 一节）。无效凭证必须返回 `INVALID_CREDENTIAL`，各接口统一返回 `401`，绝不回退为新的匿名所有者。注册冲突在启动时报错：重复调用 `configureOwnerAuthenticator`，或同时设置了 `PERSISTENCE_SHARED_OWNER_ID` 或 `OWNER_AUTHENTICATOR`，都会让 `register()` 抛错、服务无法启动；principal 则按请求校验：注册的认证器返回的 owner id 不是 1–256 个可打印、无空格的 ASCII 字符（或 `kind` / `assurance` 未知）时，该请求返回 `500`，不会写入存储。同一个解析出的所有者也是 `/api/persistence` 的运行时学习者 key 和资产分区，因此注册的认证器同样管辖它们。
 
