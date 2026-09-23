@@ -15,7 +15,11 @@
 
 import { NextRequest } from 'next/server';
 import { streamLLM } from '@/lib/ai/llm';
-import { resolveFallbackModel, isRetryableLlmError } from '@/lib/server/llm-fallback';
+import {
+  resolveFallbackModel,
+  shouldFallbackFor,
+  logFallbackFired,
+} from '@/lib/server/llm-fallback';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import {
   formatImageDescription,
@@ -511,19 +515,21 @@ export async function POST(req: NextRequest) {
               abortSignal: req.signal,
             };
         let fellBack = false;
-        const maybeFallback = async (error: unknown): Promise<boolean> => {
+        // Shared decision (shared retryable-error + empty-output check) and the
+        // shared log line live in lib/server/llm-fallback.ts — one place, same
+        // semantics as the non-streaming callLLM path.
+        const maybeFallback = async (error: unknown, text?: string): Promise<boolean> => {
           if (fellBack) return false;
-          const retryable =
-            error === undefined
-              ? true // empty-output path: an empty response is always retryable
-              : isRetryableLlmError(error);
-          if (!retryable) return false;
+          if (!shouldFallbackFor(error, text)) return false;
           const fallback = await resolveFallbackModel('scene-outlines-stream');
           if (!fallback) return false;
           streamParams = { ...streamParams, model: fallback.model };
           fellBack = true;
-          log.warn(
-            `Outlines retryable failure on ${resolvedModelString ?? '?'}; falling back once to ${fallback.modelString}`,
+          logFallbackFired(
+            'scene-outlines-stream',
+            error !== undefined ? 'retryable failure' : 'empty output',
+            resolvedModelString ?? '?',
+            fallback.modelString,
           );
           const retryEvent = JSON.stringify({
             type: 'retry',
@@ -660,7 +666,7 @@ export async function POST(req: NextRequest) {
                   maxAttempts: MAX_STREAM_RETRIES + 1,
                 });
                 controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
-              } else if (fullText.trim().length === 0 && (await maybeFallback(undefined))) {
+              } else if (await maybeFallback(undefined, fullText)) {
                 // Same-model retries exhausted and the response was empty:
                 // retry once on the fallback model (loop is re-entered via
                 // attempt reset below).
