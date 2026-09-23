@@ -14,6 +14,15 @@ import type {
   SceneValidator,
   StageValidator,
 } from '@openmaic/storage';
+import { DocumentWriteRefusedError } from '@openmaic/storage';
+
+import type { OwnerPrincipal } from '@/lib/server/identity/types';
+import { getPersistenceHooks } from '@/lib/server/persistence-hooks/registry';
+import type {
+  CreateDecision,
+  DocumentActor,
+  PersistenceHooks,
+} from '@/lib/server/persistence-hooks/types';
 
 import { assetReferencePrincipalsForOwner } from './owner-assets';
 import { claimStageMeta, StageAccessError, tombstoneStageMeta } from './stage-meta';
@@ -34,6 +43,58 @@ export interface OwnerBoundDocumentStoreOptions {
   validateStage: StageValidator;
   /** Runner-only lease fence, evaluated inside every mutation transaction. */
   mutationFence?: (queryable: Queryable) => Promise<void>;
+  /**
+   * The principal the request writing through this store was resolved to.
+   * Passed to the create hooks; absent for a background agent run, which
+   * knows only the owner id. Must be the principal of `ownerId`.
+   */
+  principal?: OwnerPrincipal;
+  /** The create hooks; defaults to the registered ones (`configurePersistenceHooks`). */
+  createHooks?: Pick<PersistenceHooks, 'name' | 'authorizeCreate' | 'onCreate'>;
+}
+
+/** The code a refused course creation answers with, as `403`. */
+export const CREATE_REFUSED = 'CREATE_REFUSED';
+
+function isCreateDecision(value: unknown): value is CreateDecision {
+  if (!value || typeof value !== 'object') return false;
+  const decision = value as { allow?: unknown; message?: unknown };
+  if (decision.allow === true) return true;
+  return (
+    decision.allow === false &&
+    (decision.message === undefined || typeof decision.message === 'string')
+  );
+}
+
+/**
+ * Run the host create hooks inside the create transaction. Called only by the
+ * transaction that inserted the course's ownership row, so each created course
+ * sees them exactly once; a save of an existing course never does.
+ */
+async function runCreateHooks(
+  hooks: Pick<PersistenceHooks, 'name' | 'authorizeCreate' | 'onCreate'>,
+  queryable: Queryable,
+  actor: DocumentActor,
+  stageId: string,
+): Promise<void> {
+  if (hooks.authorizeCreate) {
+    const decision: unknown = await hooks.authorizeCreate(queryable, actor, stageId);
+    if (!isCreateDecision(decision)) {
+      // A host bug, not a refusal: surfaces as a 500 and still rolls back.
+      throw new Error(
+        `Persistence hooks ${hooks.name}: authorizeCreate must resolve { allow: true } or ` +
+          '{ allow: false, message? }',
+      );
+    }
+    if (!decision.allow) {
+      throw new DocumentWriteRefusedError(
+        stageId,
+        CREATE_REFUSED,
+        decision.message ?? 'course creation refused',
+      );
+    }
+  }
+  if (hooks.onCreate) await hooks.onCreate(queryable, actor, stageId);
 }
 
 type OwnershipMode = 'create' | 'mutate' | 'read' | 'delete' | 'library';
@@ -236,6 +297,13 @@ export function createOwnerBoundDocumentStore<
   TStage extends Stage = Stage,
 >(options: OwnerBoundDocumentStoreOptions): DocumentStore<TScene, TStage> & DocumentFolderStore {
   const pending: { operation?: PendingOperation } = {};
+  if (options.principal && options.principal.ownerId !== options.ownerId) {
+    throw new Error('createOwnerBoundDocumentStore: principal does not match ownerId');
+  }
+  const createHooks = options.createHooks ?? getPersistenceHooks();
+  const actor: DocumentActor = options.principal
+    ? { ownerId: options.ownerId, principal: options.principal }
+    : { ownerId: options.ownerId };
 
   const withTransaction: WithTransaction = async (body) => {
     const client = await options.pool.connect();
@@ -274,7 +342,15 @@ export function createOwnerBoundDocumentStore<
 
         const result = await body(queryable);
         if (operation?.mode === 'create') {
-          await claimStageMeta(queryable, operation.stageId!, options.ownerId);
+          // "Created" means exactly this: the transaction that inserts the
+          // ownership row. A save of a course the owner already holds -- found
+          // above, or committed by a concurrent create of the same id first --
+          // is an update and runs no create hook. The hooks run after the
+          // course rows are written and before COMMIT, on this transaction, so
+          // a refusal or a throw rolls the course and the ownership row back
+          // together with anything the hooks wrote.
+          const created = await claimStageMeta(queryable, operation.stageId!, options.ownerId);
+          if (created) await runCreateHooks(createHooks, queryable, actor, operation.stageId!);
         }
         if (operation && operation.mode !== 'read') await options.mutationFence?.(queryable);
         await client.query('COMMIT');

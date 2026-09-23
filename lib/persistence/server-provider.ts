@@ -13,7 +13,7 @@ import {
 import { Pool } from 'pg';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
-import { lazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
+import { configuredLazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { resolveAssetPendingTtlMs } from '@/lib/persistence/asset-pending-ttl';
 import { resolveAssetQuotaBytes } from '@/lib/persistence/asset-quota';
 import { ensureOwnerMaterialSchema } from '@/lib/persistence/owner-materials';
@@ -68,7 +68,7 @@ async function createServerPersistenceProvider(
     await ensureOwnerMaterialSchema(queryable);
     await ensureAssetSchema(queryable);
     const withTransaction = nodePostgresTransaction(queryable);
-    const byteStore = lazyAssetByteStore(process.env.ASSET_S3_BUCKET, queryable);
+    const byteStore = configuredLazyAssetByteStore(queryable);
     const documentStore = new PgDocumentStore(queryable, {
       withTransaction,
       validateScene: validateAppScene,

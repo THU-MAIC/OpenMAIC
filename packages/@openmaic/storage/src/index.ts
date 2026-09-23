@@ -107,6 +107,7 @@ export {
   DocumentFolderLimitError,
   DocumentNotFoundError,
   DocumentVersionError,
+  DocumentWriteRefusedError,
 } from './document/types.js';
 export { BrowserDocumentStore, type BrowserDocumentStoreOptions } from './document/browser.js';
 export {

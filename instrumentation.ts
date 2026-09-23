@@ -42,12 +42,25 @@ export async function register(): Promise<void> {
   // unusable.
   //
   // A host that brings its own identity registers its authenticator here,
-  // before validation and before the server serves a request:
+  // before validation and before the server serves a request, and with it any
+  // host extension hooks (course creation, library listing, upload admission,
+  // the asset byte store):
   //
   //   const { configureOwnerAuthenticator } = await import('@/lib/server/identity');
   //   configureOwnerAuthenticator(myOwnerAuthenticator);
+  //   const { configurePersistenceHooks, configureAssetByteStore } =
+  //     await import('@/lib/server/persistence-hooks');
+  //   configurePersistenceHooks(myPersistenceHooks);
+  //   configureAssetByteStore(myAssetByteStore);
   const { validateOwnerIdentityConfiguration } = await import('@/lib/server/identity/registry');
   const identityMode = validateOwnerIdentityConfiguration();
+
+  // The registered hooks, for the same reason and at the same moment: a host
+  // byte store that cannot sign under ASSET_BYTE_EGRESS=redirect would
+  // otherwise be discovered by the first asset read.
+  const { validatePersistenceHooksConfiguration } =
+    await import('@/lib/server/persistence-hooks/registry');
+  validatePersistenceHooksConfiguration();
 
   // Behind a trusted identity gateway the gateway is the access gate, so an
   // unset ACCESS_CODE is the expected configuration there, not an exposure.

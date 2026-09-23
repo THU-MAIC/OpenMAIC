@@ -16,7 +16,11 @@ import type {
   SceneValidator,
   StageValidator,
 } from '../document/types.js';
-import { DocumentNotFoundError, DocumentVersionError } from '../document/types.js';
+import {
+  DocumentNotFoundError,
+  DocumentVersionError,
+  DocumentWriteRefusedError,
+} from '../document/types.js';
 import { assertMaxBodyBytes, DEFAULT_MAX_BODY_BYTES, readJsonObject } from './read-json.js';
 
 export interface DocumentHttpPrincipal {
@@ -239,6 +243,9 @@ function validateDocument<TScene extends SceneLike, TStage extends Stage>(
 function classifyStoreError(error: unknown): never {
   if (error instanceof DocumentNotFoundError) {
     throw new DocumentHttpError(404, 'DOCUMENT_NOT_FOUND', error.message);
+  }
+  if (error instanceof DocumentWriteRefusedError) {
+    throw new DocumentHttpError(403, error.code, error.message);
   }
   if (error instanceof DocumentVersionError) {
     const details = { stageId: error.stageId, storedVersion: error.storedVersion };

@@ -67,6 +67,36 @@ export class DocumentNotFoundError extends Error {
   }
 }
 
+/** The machine-readable code a {@link DocumentWriteRefusedError} carries. */
+const REFUSAL_CODE = /^[A-Z][A-Z0-9_]{0,63}$/;
+
+/**
+ * A document write the store refused as a matter of policy -- the caller may
+ * not perform it -- rather than because the payload or the target is wrong.
+ *
+ * A store that wraps another (a host's owner-bound layer, say) throws it to
+ * refuse a write with a stable, machine-readable `code`; the HTTP handler
+ * answers `403` with that code, and the write is not applied. `code` is
+ * upper-case ASCII (`/^[A-Z][A-Z0-9_]{0,63}$/`), so it can travel in an error
+ * envelope unchanged.
+ */
+export class DocumentWriteRefusedError extends Error {
+  override readonly name = 'DocumentWriteRefusedError';
+
+  constructor(
+    readonly stageId: string,
+    readonly code: string,
+    message: string,
+  ) {
+    if (!REFUSAL_CODE.test(code)) {
+      throw new TypeError(
+        `@openmaic/storage: refusal code must match ${String(REFUSAL_CODE)}, got ${JSON.stringify(code)}`,
+      );
+    }
+    super(message);
+  }
+}
+
 /**
  * The portable, embedded form of a persisted course. Storage normalizes it into
  * per-entity rows on write and reassembles it on read.

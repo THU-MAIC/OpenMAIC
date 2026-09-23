@@ -776,6 +776,90 @@ rejected with a `500` for that request rather than stored. The
 same resolved owner is the runtime learner key and the asset partition of
 `/api/persistence`, so a registered authenticator governs those too.
 
+##### Host extension hooks
+
+A host can add product behavior at four points without forking a route. They
+are registered like the authenticator: once, from `instrumentation.ts`
+`register()`, and sealed on first use (a second call, or a call after the
+server started using them, throws). With nothing registered, every point
+behaves exactly as described above.
+
+```ts
+// instrumentation.ts, inside register(), next to configureOwnerAuthenticator
+const { configurePersistenceHooks, configureAssetByteStore } =
+  await import('@/lib/server/persistence-hooks');
+
+configurePersistenceHooks({
+  name: 'my-host',
+  // Course creation, inside the transaction that creates the course.
+  async authorizeCreate(tx, actor) {
+    const retired = await tx.query('SELECT 1 FROM host_retired_owners WHERE owner_id = $1', [
+      actor.ownerId,
+    ]);
+    return retired.rows.length ? { allow: false, message: 'account retired' } : { allow: true };
+  },
+  async onCreate(tx, actor, stageId) {
+    await tx.query('INSERT INTO host_library (owner_id, stage_id) VALUES ($1, $2)', [
+      actor.ownerId,
+      stageId,
+    ]);
+  },
+  // What GET /api/stages lists.
+  library: {
+    name: 'owned-and-saved',
+    async list({ principal, queryable, ownedStageIds }) {
+      const saved = await queryable.query<{ stage_id: string }>(
+        'SELECT stage_id FROM host_saved_courses WHERE owner_id = $1',
+        [principal.ownerId],
+      );
+      return [...(await ownedStageIds()), ...saved.rows.map((row) => row.stage_id)];
+    },
+  },
+  // Upload admission, before any byte is stored or counted.
+  async beforeAssetAllocate(principal, req) {
+    const exhausted = await uploadBudgetExhausted(principal.ownerId, req.headers); // host code
+    return exhausted
+      ? Response.json({ error: { code: 'UPLOAD_BUDGET' } }, { status: 429 })
+      : undefined;
+  },
+});
+
+// Where asset bytes live, for the request path and the collector alike.
+configureAssetByteStore({
+  name: 'my-object-store',
+  create: () => createMyObjectByteStore(), // host code: an AssetByteStore
+  signsReadUrls: true, // required for ASSET_BYTE_EGRESS=redirect
+});
+```
+
+| Hook | Called | Contract |
+|---|---|---|
+| `authorizeCreate(tx, actor, stageId)` | Once per created course, inside its transaction, after the course rows are written | Resolve `{ allow: true }` or `{ allow: false, message? }`. A refusal rolls everything back and answers `403 CREATE_REFUSED` (on `/api/persistence` and `POST /api/stages`). |
+| `onCreate(tx, actor, stageId)` | Right after `authorizeCreate` allowed it, same transaction | Statements on `tx` commit with the course; a throw rolls the whole create back. |
+| `library.list({ principal, queryable, ownedStageIds })` | `GET /api/stages` | Resolve stage ids. The route lists them in that order as the usual items, without duplicates, and drops every id the read path would refuse (deleted or unclaimed). `folderId` is shown only on the principal's own courses. |
+| `beforeAssetAllocate(principal, req)` | `POST /api/persistence/assets`, after the owner is resolved and before the body is read | Resolve `undefined` to proceed or a `Response` to answer with it; nothing is stored and no quota is counted. `req` carries `method`, `url` and `headers`. |
+| `configureAssetByteStore({ name, create, signsReadUrls? })` | Lazily, by the persistence route and by the asset collector | `create({ queryable })` returns an `AssetByteStore` (`@openmaic/storage`) that keeps bytes outside the registry database (`writesOutsideRegistryDatabase: true`). Replaces the `ASSET_S3_BUCKET` switch; setting both stops the server. |
+
+**What counts as a create.** A course is created by the transaction that
+records its owner for the first time: the first save of a new stage id, from a
+request or from an agent run. Saving, editing or renaming a course the owner
+already holds is an update and calls neither create hook; so is a create that
+loses a race to a concurrent create of the same id by the same owner.
+`actor.ownerId` is always the owner. `actor.principal` is the principal the
+request resolved to, and is absent when a background agent run writes on the
+owner's behalf, because a run records only the owner id.
+
+**What a library may list.** Course reads are capability-by-id, so listing an
+id hands it out: a provider lists another owner's course only when the
+principal is entitled to know its id (it saved it, it was shared with it). The
+route guarantees the rest: it never lists a course that `GET /api/stages/{id}`
+would not serve.
+
+**Redirect egress.** The built-in layers are unchanged (S3 signs; the
+PostgreSQL column falls back to direct bytes). A configured store that does not
+declare `signsReadUrls: true` stops the server at boot under
+`ASSET_BYTE_EGRESS=redirect`, instead of being discovered by the first read.
+
 ### Optional: Agent workbench and runtime
 
 The Pro workbench is a usable course-building surface entered from the home

@@ -3,7 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { DSL_VERSION_KEY } from '@openmaic/dsl';
 import { describe, expect, test } from 'vitest';
 import { BrowserDocumentStore } from '../src/document/browser.js';
-import { DocumentVersionError } from '../src/document/types.js';
+import { DocumentVersionError, DocumentWriteRefusedError } from '../src/document/types.js';
 import { HttpDocumentStore, HttpDocumentStoreError } from '../src/document/http.js';
 import type { StageValidator } from '../src/document/types.js';
 import { BrowserRuntimeStore } from '../src/runtime/browser.js';
@@ -156,6 +156,38 @@ describe('HttpDocumentStore contract mapping', () => {
       status: 403,
       code: 'FORBIDDEN_DOCUMENTS',
     });
+  });
+
+  test('maps a store refusal to 403 with the refusal code and applies nothing', async () => {
+    const { documents, client } = makeHarness();
+    const refusing = Object.create(documents) as typeof documents;
+    refusing.saveDocument = async (document) => {
+      throw new DocumentWriteRefusedError(document.stage.id, 'CREATE_REFUSED', 'not allowed');
+    };
+    const handler = createStorageHttpHandler(
+      new BrowserRuntimeStore({ indexedDB: new IDBFactory() }),
+      refusing,
+      {
+        authenticate: async () => ({ learnerKey: 'author' }),
+        authorizeDocuments: async () => true,
+      },
+    );
+    const refusedClient = new HttpDocumentStore({
+      baseUrl: BASE_URL,
+      fetch: handlerFetch(handler),
+    });
+
+    const failure = refusedClient.saveDocument(makeDocument());
+    await expect(failure).rejects.toBeInstanceOf(HttpDocumentStoreError);
+    await expect(failure).rejects.toMatchObject({ status: 403, code: 'CREATE_REFUSED' });
+    await expect(client.loadDocument('stage-1')).resolves.toBeNull();
+  });
+
+  test('refuses a refusal code outside the machine-readable alphabet', () => {
+    expect(() => new DocumentWriteRefusedError('stage-1', 'not a code', 'x')).toThrow(TypeError);
+    expect(new DocumentWriteRefusedError('stage-1', 'CREATE_REFUSED', 'x').code).toBe(
+      'CREATE_REFUSED',
+    );
   });
 
   test('maps malformed request JSON to VALIDATION_FAILED', async () => {

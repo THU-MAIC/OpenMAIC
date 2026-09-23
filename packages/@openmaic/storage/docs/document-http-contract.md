@@ -54,6 +54,7 @@ Every non-2xx response has a machine-readable JSON body:
 | Document does not exist | `404` | `DOCUMENT_NOT_FOUND` | `loadDocument` returns `null`; required-parent writes throw with `missing document` semantics |
 | Scene does not exist | `404` | `SCENE_NOT_FOUND` | `getScene` returns `null` |
 | Route does not exist | `404` | `ROUTE_NOT_FOUND` | Throw `HttpDocumentStoreError` |
+| The store refused the write as a matter of policy (`DocumentWriteRefusedError`) | `403` | the refusal's own code, e.g. `CREATE_REFUSED` | Throw `HttpDocumentStoreError`; nothing was written |
 | Input or stored document was written at a future DSL version | `409` | `FUTURE_VERSION` | Throw `HttpDocumentStoreError` with `newer than this client's`/version-guard semantics |
 | A server-exposed read value is not JSON-safe | `500` | `NOT_JSON_SAFE` | Throw `HttpDocumentStoreError` with the offending value path |
 | Unexpected server failure | `500` | `INTERNAL_ERROR` | Throw `HttpDocumentStoreError`; the reference handler does not expose internal details |

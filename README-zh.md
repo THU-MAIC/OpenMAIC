@@ -443,6 +443,10 @@ oauth2-proxy（v7.14 及以上）的示例配置见英文 README 的 “Accounts
 
 有自有账号体系的部署可实现 `OwnerAuthenticator`，并在 `instrumentation.ts` 的 `register()` 中调用一次 `configureOwnerAuthenticator(...)` 注册（示例见英文 README 的 “Owner identity” 一节）。无效凭证必须返回 `INVALID_CREDENTIAL`，各接口统一返回 `401`，绝不回退为新的匿名所有者。注册冲突在启动时报错：重复调用 `configureOwnerAuthenticator`，或同时设置了 `PERSISTENCE_SHARED_OWNER_ID` 或 `OWNER_AUTHENTICATOR`，都会让 `register()` 抛错、服务无法启动；principal 则按请求校验：注册的认证器返回的 owner id 不是 1–256 个可打印、无空格的 ASCII 字符（或 `kind` / `assurance` 未知）时，该请求返回 `500`，不会写入存储。同一个解析出的所有者也是 `/api/persistence` 的运行时学习者 key 和资产分区，因此注册的认证器同样管辖它们。
 
+##### 宿主扩展钩子
+
+宿主可以在四个位置扩展产品行为而无需分叉路由，注册方式与认证器相同：在 `instrumentation.ts` 的 `register()` 中调用一次，首次使用后即封存（重复调用或在服务已开始使用后调用都会抛错）。未注册任何钩子时，行为与上文完全一致。`configurePersistenceHooks({ name, authorizeCreate, onCreate, library, beforeAssetAllocate })` 提供：课程创建时在同一事务内的授权与副作用（拒绝返回 `403 CREATE_REFUSED`，抛错则整个创建回滚；已存在课程的保存与编辑不会触发）；`GET /api/stages` 列出哪些课程（提供方返回 stage id，路由会剔除读取路径会拒绝的 id）；以及资产上传前的准入（返回 `Response` 即拒绝，此时尚未存储任何字节、也未计入配额）。`configureAssetByteStore({ name, create, signsReadUrls })` 取代 `ASSET_S3_BUCKET` 开关，请求路径与资产回收器使用同一注册；在 `ASSET_BYTE_EGRESS=redirect` 下未声明 `signsReadUrls: true` 的存储会在启动时报错。示例与完整约定见英文 README 的 “Host extension hooks” 一节。
+
 ### 可选：MP4 视频导出（渲染服务）
 
 “导出视频”菜单在浏览器内构建一个自包含的 [Hyperframes](https://www.npmjs.com/package/@hyperframes/producer) 项目。要把它变成 MP4 需要 Chromium + FFmpeg（Node 22），因此运行在独立的 `render-service` 容器中，而不在应用内。

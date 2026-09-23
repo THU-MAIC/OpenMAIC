@@ -10,6 +10,7 @@ import {
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { createLogger } from '@/lib/logger';
+import { configuredAssetByteEgress } from '@/lib/persistence/asset-byte-egress';
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import {
   decideDocumentAccess,
@@ -25,7 +26,9 @@ import {
 } from '@/lib/persistence/server-provider';
 import { readStageMeta } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
+import type { OwnerPrincipal } from '@/lib/server/identity/types';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { getPersistenceHooks } from '@/lib/server/persistence-hooks/registry';
 
 export const runtime = 'nodejs';
 
@@ -61,22 +64,6 @@ function learnerKeyResponse(ownerId: string, responseHeaders: Headers): Response
 }
 
 /**
- * ASSET_BYTE_EGRESS: set to `redirect` to answer asset byte GETs with a 302 to
- * a short-lived signed URL, when the byte layer can sign (S3 can; the
- * PostgreSQL byte column cannot, and falls back to direct bytes). Anything
- * else, including unset and `direct`, keeps the default byte-for-byte
- * behavior. The tradeoff this opts into -- the redirect target names the
- * content hash -- is specified in the storage package's asset HTTP contract.
- */
-function configuredAssetByteEgress(value: string | undefined): 'redirect' | undefined {
-  const raw = value?.trim().toLowerCase();
-  if (raw === 'redirect') return 'redirect';
-  if (raw === undefined || raw === '' || raw === 'direct') return undefined;
-  console.warn(`ASSET_BYTE_EGRESS=${value} is not recognized; using direct byte egress`);
-  return undefined;
-}
-
-/**
  * Redirect egress and the collection grace must agree: a signed URL that
  * outlives its object turns a valid read into an object-store error. The
  * handler enforces that invariant itself, on the grace passed here, and this
@@ -104,20 +91,35 @@ function indirectEgressWithinGrace(
   return { mode: 'redirect', collectionGraceMs };
 }
 
+/**
+ * Where the upload-admission hook leaves the answer it wants sent. The package
+ * handler can only answer its own `403` when admission is refused, so the
+ * route substitutes the host's `Response` for it (see `handlePersistenceRequestInner`).
+ */
+interface AssetAdmission {
+  refusal?: Response;
+}
+
 async function createPersistenceHandler(
   connectionString: string,
-  ownerId: string,
+  principal: OwnerPrincipal,
   access: DocumentAccess,
+  request: Request,
+  admission: AssetAdmission,
   poolFactory?: PersistencePoolFactory,
 ): Promise<RequestListener> {
+  const { ownerId } = principal;
   const { pool, runtimeStore, assetStore, withTransaction, assetStoreIn } =
     await getServerPersistenceProvider(connectionString, poolFactory);
+  const hooks = getPersistenceHooks();
   const documentStore = createOwnerBoundDocumentStore({
     pool,
     ownerId,
+    principal,
     validateScene: validateAppScene,
     validateStage: validateAppStage,
   });
+  const beforeAssetAllocate = hooks.beforeAssetAllocate;
   // One identity for all three contracts, resolved server-side by the owner
   // identity seam (lib/server/identity/) for this request:
   //
@@ -151,6 +153,31 @@ async function createPersistenceHandler(
       if (request.url?.startsWith('/assets')) return assetPrincipal;
       return { learnerKey: ownerId };
     },
+    // Upload admission. The package calls this after it has matched the asset
+    // route and method and before it reads the body, and POST is accepted only
+    // on the collection route, so a POST here is exactly an allocation -- by
+    // the package's own routing, whatever spelling the path used -- and
+    // nothing has been stored or counted against the quota yet.
+    ...(beforeAssetAllocate === undefined
+      ? {}
+      : {
+          authorizeAssets: async (_assetPrincipal: unknown, req: { method?: string }) => {
+            if (req.method !== 'POST') return true;
+            const refusal: unknown = await beforeAssetAllocate(principal, {
+              method: request.method,
+              url: request.url,
+              headers: request.headers,
+            });
+            if (refusal === undefined) return true;
+            if (!(refusal instanceof Response)) {
+              throw new Error(
+                `Persistence hooks ${hooks.name}: beforeAssetAllocate must resolve undefined or a Response`,
+              );
+            }
+            admission.refusal = refusal;
+            return false;
+          },
+        }),
     authorizeMerge: async () => false,
     authorizeAdmin: async () => false,
     authorizeDocuments: async () => access === 'allow',
@@ -347,7 +374,8 @@ async function handlePersistenceRequestInner(
     return jsonError(404, 'PERSISTENCE_NOT_CONFIGURED', 'server persistence not configured');
   }
 
-  return withRequestOwner(request, async ({ ownerId }, responseHeaders) => {
+  return withRequestOwner(request, async (principal, responseHeaders) => {
+    const { ownerId } = principal;
     try {
       const path = routeRelativePath(request);
       if (path === LEARNER_KEY_PATH) {
@@ -375,14 +403,22 @@ async function handlePersistenceRequestInner(
         );
       }
 
-      const response =
+      const admission: AssetAdmission = {};
+      const handled =
         access === 'not-found'
           ? jsonError(404, 'DOCUMENT_NOT_FOUND', '@openmaic/storage: document not found')
           : await runNodeHandler(
-              await createPersistenceHandler(connectionString, ownerId, access, deps.poolFactory),
+              await createPersistenceHandler(
+                connectionString,
+                principal,
+                access,
+                request,
+                admission,
+                deps.poolFactory,
+              ),
               request,
             );
-      return withHeaders(response, responseHeaders);
+      return withHeaders(admission.refusal ?? handled, responseHeaders);
     } catch (error) {
       console.error('Embedded persistence route initialization failed', error);
       return withHeaders(

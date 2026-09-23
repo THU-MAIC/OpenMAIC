@@ -467,6 +467,34 @@ describe('asset collector schedule', () => {
     expect(harness.collectors[0]?.byteStore).toEqual({ kind: 's3' });
   });
 
+  it('reclaims through a host-configured byte store, the one the request path uses', async () => {
+    const harness = mockStorage(async () => ({}));
+    vi.stubEnv('DATABASE_URL', 'postgres://collector-host-store');
+    const hostStore = {
+      write: vi.fn(),
+      read: vi.fn(),
+      delete: vi.fn(),
+      writesOutsideRegistryDatabase: true as const,
+    };
+    const create = vi.fn((_context: unknown) => hostStore);
+    const hooks = await import('@/lib/server/persistence-hooks/registry');
+    hooks.resetPersistenceHooksForTests();
+    try {
+      hooks.configureAssetByteStore({ name: 'host-object-store', create });
+
+      schedule = await startSchedule();
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+
+      expect(create).toHaveBeenCalledOnce();
+      expect(create.mock.calls[0]?.[0]).toEqual({ queryable: harness.pools[0] });
+      expect(harness.collectors[0]?.byteStore).toBe(hostStore);
+      expect(harness.loadS3AssetByteStore).not.toHaveBeenCalled();
+      expect(harness.pgByteStores).toHaveLength(0);
+    } finally {
+      hooks.resetPersistenceHooksForTests();
+    }
+  });
+
   it('starts one schedule per process even if asked twice', async () => {
     const harness = mockStorage(async () => ({}));
     vi.stubEnv('DATABASE_URL', 'postgres://collector-once');

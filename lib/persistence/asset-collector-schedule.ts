@@ -37,7 +37,7 @@ import {
 import { Pool } from 'pg';
 
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
-import { configuredS3Bucket, createAssetByteStore } from '@/lib/persistence/asset-byte-store';
+import { resolveConfiguredAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { assetReferencePrincipalsForOwner } from '@/lib/persistence/owner-assets';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
@@ -165,10 +165,10 @@ export function startAssetCollectorSchedule(
     // shutdown hook that owns it.
     await getServerPersistenceProvider(connectionString);
     await ensureAssetSchema(queryable);
-    const byteStore = await createAssetByteStore(
-      configuredS3Bucket(process.env.ASSET_S3_BUCKET),
-      queryable,
-    );
+    // The same selection the request path makes (a host byte store, else
+    // the built-in one), so this pass deletes through the layer the route
+    // wrote through.
+    const byteStore = await resolveConfiguredAssetByteStore(queryable);
     return new AssetCollector(queryable, byteStore, {
       withTransaction: nodePostgresTransaction(queryable),
       graceMs,

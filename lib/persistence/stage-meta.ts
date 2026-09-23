@@ -100,11 +100,17 @@ export class StageAccessError extends DocumentNotFoundError {
   }
 }
 
+/**
+ * Record that `ownerId` owns `stageId`. Resolves `true` when this call inserted
+ * the ownership row -- the course was created by the calling transaction --
+ * and `false` when the owner already held it (a concurrent create by the same
+ * owner that committed first). A foreign owner is refused.
+ */
 export async function claimStageMeta(
   queryable: Queryable,
   stageId: string,
   ownerId: string,
-): Promise<void> {
+): Promise<boolean> {
   const inserted = await queryable.query<{ owner_id: string } & Record<string, unknown>>(
     `INSERT INTO stage_meta (stage_id, owner_id)
      VALUES ($1, $2)
@@ -112,7 +118,7 @@ export async function claimStageMeta(
      RETURNING owner_id`,
     [stageId, ownerId],
   );
-  if (inserted.rows[0]?.owner_id === ownerId) return;
+  if (inserted.rows[0]?.owner_id === ownerId) return true;
 
   const existing = await queryable.query<{ owner_id: string } & Record<string, unknown>>(
     'SELECT owner_id FROM stage_meta WHERE stage_id = $1',
@@ -121,6 +127,7 @@ export async function claimStageMeta(
   if (existing.rows[0]?.owner_id !== ownerId) {
     throw new StageAccessError(stageId, ownerId, 'foreign');
   }
+  return false;
 }
 
 export async function tombstoneStageMeta(queryable: Queryable, stageId: string): Promise<void> {

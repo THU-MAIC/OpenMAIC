@@ -6,9 +6,19 @@
  * through. A collector holding a PostgreSQL byte store while the route writes
  * to S3 would drop the blob row and leave the object behind forever, which is
  * the leak the collector exists to close.
+ *
+ * The two entry points below are the only ones either side uses:
+ * {@link configuredLazyAssetByteStore} for the persistence provider and
+ * {@link resolveConfiguredAssetByteStore} for the collector. Both read the one
+ * host registration (`configureAssetByteStore`, in
+ * `lib/server/persistence-hooks/`) and otherwise fall back to the built-in
+ * choice, S3 when `ASSET_S3_BUCKET` is set and the PostgreSQL column when not.
  */
 import { PgAssetByteStore } from '@openmaic/storage/asset/pg-bytes';
 import type { AssetByteStore, Queryable } from '@openmaic/storage/asset/pg';
+
+import { getAssetByteStoreRegistration } from '@/lib/server/persistence-hooks/registry';
+import type { AssetByteStoreRegistration } from '@/lib/server/persistence-hooks/types';
 
 // Tracing anchors for the standalone build. The store implementations below
 // reach both packages through deliberately untraced dynamic imports (they
@@ -152,4 +162,99 @@ export function lazyAssetByteStore(
       return typeof store.signReadUrl === 'function' ? store.signReadUrl(hash, headers) : undefined;
     },
   };
+}
+
+/**
+ * Check what a host factory built before anything uses it. A store that would
+ * deadlock the registry, or that was declared to sign and cannot, fails here
+ * -- on the asset request or collector pass that built it -- with the
+ * registration named, instead of misbehaving later.
+ */
+function checkedRegisteredStore(
+  registration: AssetByteStoreRegistration,
+  store: AssetByteStore,
+): AssetByteStore {
+  const label = `Asset byte store ${registration.name}`;
+  if (
+    !store ||
+    typeof store !== 'object' ||
+    typeof store.write !== 'function' ||
+    typeof store.read !== 'function' ||
+    typeof store.delete !== 'function'
+  ) {
+    throw new Error(`${label} returned something that is not an AssetByteStore`);
+  }
+  if (store.writesOutsideRegistryDatabase !== true) {
+    throw new Error(
+      `${label} must declare writesOutsideRegistryDatabase: true. A configured byte store keeps ` +
+        'its bytes outside the registry database; the in-database layer is the built-in default.',
+    );
+  }
+  if (registration.signsReadUrls === true && typeof store.signReadUrl !== 'function') {
+    throw new Error(`${label} declares signsReadUrls but has no signReadUrl()`);
+  }
+  return store;
+}
+
+async function createRegisteredStore(
+  registration: AssetByteStoreRegistration,
+  queryable: Queryable,
+): Promise<AssetByteStore> {
+  return checkedRegisteredStore(registration, await registration.create({ queryable }));
+}
+
+/**
+ * A host store behind the same deferred construction as
+ * {@link lazyAssetByteStore}, for the same reason: its failure must reach
+ * asset requests only, and be retried. Its shape is known without building
+ * it -- outside the registry database, signing exactly when declared -- so
+ * the wrapper advertises precisely that and nothing is probed lazily.
+ */
+function lazyRegisteredByteStore(
+  registration: AssetByteStoreRegistration,
+  queryable: Queryable,
+): AssetByteStore {
+  let pending: Promise<AssetByteStore> | undefined;
+  const resolve = (): Promise<AssetByteStore> =>
+    (pending ??= createRegisteredStore(registration, queryable).catch((error: unknown) => {
+      pending = undefined;
+      throw error;
+    }));
+  return {
+    write: async (hash, bytes) => (await resolve()).write(hash, bytes),
+    read: async (hash) => (await resolve()).read(hash),
+    delete: async (hash) => (await resolve()).delete(hash),
+    writesOutsideRegistryDatabase: true as const,
+    ...(registration.signsReadUrls === true
+      ? {
+          signReadUrl: async (hash, headers) => {
+            const store = await resolve();
+            return store.signReadUrl!(hash, headers);
+          },
+        }
+      : {}),
+  } satisfies AssetByteStore;
+}
+
+/** The built-in choice's one setting, read per call so a changed value is observed. */
+function builtInBucketSetting(): string | undefined {
+  return process.env.ASSET_S3_BUCKET;
+}
+
+/** The persistence provider's byte store: the host's, else the built-in choice. */
+export function configuredLazyAssetByteStore(queryable: Queryable): AssetByteStore {
+  const registration = getAssetByteStoreRegistration();
+  return registration
+    ? lazyRegisteredByteStore(registration, queryable)
+    : lazyAssetByteStore(builtInBucketSetting(), queryable);
+}
+
+/** The collector's byte store, built now: the host's, else the built-in choice. */
+export async function resolveConfiguredAssetByteStore(
+  queryable: Queryable,
+): Promise<AssetByteStore> {
+  const registration = getAssetByteStoreRegistration();
+  return registration
+    ? createRegisteredStore(registration, queryable)
+    : createAssetByteStore(configuredS3Bucket(builtInBucketSetting()), queryable);
 }
