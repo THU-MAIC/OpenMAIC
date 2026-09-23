@@ -26,6 +26,10 @@ import { getModel, parseModelString } from '@/lib/ai/providers';
 import { resolveApiKey, resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
 
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('LLM Fallback');
+
 export interface FallbackResolution {
   /** The fallback language model, ready to hand to callLLM/streamLLM. */
   model: LanguageModel;
@@ -100,4 +104,43 @@ export function isRetryableLlmError(error: unknown): boolean {
   // codes (undici). Unknown errors are conservative: fail in place.
   if (error instanceof TypeError) return true;
   return /ECONN|ENOTFOUND|ECONNRESET|UND_ERR|socket hang up|timeout/i.test(error.message);
+}
+
+/**
+ * Whether a model output counts as "empty" for the fallback decision.
+ *
+ * Only genuinely empty (or whitespace-only) text triggers the fallback on the
+ * validation path — a non-empty result that fails a caller-supplied validator
+ * (format/JSON checks) must NOT spend the fallback model's quota on it. This
+ * matches the PR contract: "empty output" is a retryable failure, "output
+ * quality is off" is not.
+ */
+export function isEmptyLlmOutput(text: string | null | undefined): boolean {
+  return !text || text.trim().length === 0;
+}
+
+/**
+ * Single, shared retryable-failure decision for both call paths.
+ *
+ * - `error` set: retryable iff `isRetryableLlmError(error)`.
+ * - `error` undefined (validation path): retryable iff the output is
+ *   empty/whitespace-only (see `isEmptyLlmOutput`).
+ */
+export function shouldFallbackFor(error: unknown, text: string | null | undefined): boolean {
+  if (error !== undefined) return isRetryableLlmError(error);
+  return isEmptyLlmOutput(text);
+}
+
+/**
+ * One log line per fired fallback, shared by callLLM and the outlines stream.
+ *
+ * Format: `[source] <reason> on <primary>; falling back once to <fallback>`
+ */
+export function logFallbackFired(
+  source: string,
+  reason: 'retryable failure' | 'empty output',
+  primary: string,
+  fallback: string,
+): void {
+  log.warn(`[${source}] ${reason} on ${primary}; falling back once to ${fallback}`);
 }
