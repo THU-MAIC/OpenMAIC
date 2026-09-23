@@ -850,10 +850,10 @@ A host registers participants for its own owner-keyed tables from
 ```ts
 const { registerClaimParticipant } = await import('@/lib/persistence/owner-claims');
 registerClaimParticipant({
-  name: 'billing-ledger',
+  name: 'course-notes',
   order: 1000, // after core's 100-700; see lib/persistence/owner-claims.ts
   rekey: (tx, fromOwnerId, toOwnerId) =>
-    tx.query('UPDATE billing_ledger SET owner_id = $2 WHERE owner_id = $1', [
+    tx.query('UPDATE course_notes SET owner_id = $2 WHERE owner_id = $1', [
       fromOwnerId,
       toOwnerId,
     ]),
