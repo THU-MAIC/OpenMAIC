@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Deprecated
 
-- `document_stages.owner_id`: no longer written or read. Existing installations keep the column (made nullable, its default removed) for this release so a rollback still finds it; it will be dropped in the next release.
+- `document_stages.owner_id`: the document store no longer reads or writes it (only the boot backfill reads it, and a claim mirrors the new owner into it while it exists, so a rollback still finds consistent ownership). Existing installations keep the column (made nullable, its default removed) for this release so a rollback still finds it; it will be dropped in the next release.
 
 ### Upgrade notes
 
