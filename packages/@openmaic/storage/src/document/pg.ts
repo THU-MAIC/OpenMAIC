@@ -82,6 +82,16 @@ export interface PgDocumentStoreOptions {
    * or not at all.
    */
   trackAssetReferences?: boolean;
+  /**
+   * With `trackAssetReferences`, reference and commit only asset entries held
+   * by these principals. An id naming another principal's entry records no
+   * reference and commits nothing -- the same as an unknown id -- and the
+   * write itself is never refused. Omit to reference any entry the registry
+   * holds (the default). A host whose asset registry is partitioned per
+   * owner sets this to the writing owner's principal, so one owner's document
+   * cannot commit or pin another owner's allocation.
+   */
+  assetReferencePrincipals?: readonly string[];
 }
 
 /**
@@ -542,6 +552,12 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     this.options = options;
   }
 
+  /** The `principals` argument of the reference sync calls, when configured. */
+  private referencePrincipals(): { principals?: readonly string[] } {
+    const principals = this.options.assetReferencePrincipals;
+    return principals === undefined ? {} : { principals };
+  }
+
   /** Bind document writes, listings, and folders to one trusted owner identity. */
   forOwner(ownerId: string): PgDocumentStore<TScene, TStage> {
     return new PgDocumentStore(this.queryable, { ...this.options, ownerId });
@@ -813,6 +829,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         await syncStageAssetReferences(queryable, {
           stageId,
           scopes: documentAssetScopes({ stage: stageRow, scenes: sceneRows }),
+          ...this.referencePrincipals(),
         });
       }
     });
@@ -1239,6 +1256,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         await syncDocumentAssetReferences(queryable, {
           stageId,
           scope: stageAssetScope(stageRow),
+          ...this.referencePrincipals(),
         });
       }
     });
@@ -1279,6 +1297,7 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
         await syncDocumentAssetReferences(queryable, {
           stageId,
           scope: sceneAssetScope(scene.id, scene),
+          ...this.referencePrincipals(),
         });
       }
     });

@@ -95,6 +95,14 @@ export interface AssetCollectorOptions {
   documentReferences?: boolean;
   /** Most documents one reference-backfill chunk reads. Defaults to fifty. */
   referenceBackfillBatchSize?: number;
+  /**
+   * The principals whose entries a document's backfilled references may name,
+   * given the document's `owner_id` (`null` for an unowned document), or
+   * `undefined` for any entry. Pass the same scoping the document store's
+   * `assetReferencePrincipals` applies, so the walk never records a
+   * reference a write by that document's owner would not have recorded.
+   */
+  assetReferencePrincipals?: (documentOwnerId: string | null) => readonly string[] | undefined;
 }
 
 /** What one bounded pass did, for a caller that needs more than the count. */
@@ -141,6 +149,10 @@ interface StageIdRow extends Record<string, unknown> {
 
 interface StageWalkRow extends StageIdRow {
   data: unknown;
+}
+
+interface OwnedStageWalkRow extends StageWalkRow {
+  owner_id: string | null;
 }
 
 interface SceneWalkRow extends StageWalkRow {
@@ -335,6 +347,7 @@ export class AssetCollector {
   private readonly now: () => Date;
   private readonly documentReferences: boolean;
   private readonly referenceBackfillBatchSize: number;
+  private readonly assetReferencePrincipals: AssetCollectorOptions['assetReferencePrincipals'];
   /**
    * Where the reference backfill walk has got to, as the id of the last stage
    * enumerated; `null` means "no walk in progress".
@@ -389,6 +402,7 @@ export class AssetCollector {
     this.now = options.now ?? (() => new Date());
     this.documentReferences = options.documentReferences === true;
     this.referenceBackfillBatchSize = referenceBackfillBatchSize;
+    this.assetReferencePrincipals = options.assetReferencePrincipals;
   }
 
   /** Every collection transaction: a fresh pinned one, plus a lock-wait budget. */
@@ -805,8 +819,8 @@ export class AssetCollector {
         // whole documents backfilled rather than half of one, and the walk is
         // restarted from scratch anyway.
         await this.lockBoundedTransaction(async (queryable) => {
-          const stage = await queryable.query<StageWalkRow>(
-            `SELECT id, data FROM document_stages WHERE id = $1 FOR SHARE`,
+          const stage = await queryable.query<OwnedStageWalkRow>(
+            `SELECT id, data, owner_id FROM document_stages WHERE id = $1 FOR SHARE`,
             [stageId],
           );
           const stageRow = stage.rows[0];
@@ -843,8 +857,13 @@ export class AssetCollector {
             queryable,
             scopes.flatMap((scope) => [...scope.candidates]),
           );
+          const principals = this.assetReferencePrincipals?.(stageRow.owner_id ?? null);
           for (const scope of scopes) {
-            await backfillDocumentAssetReferences(queryable, { stageId, scope });
+            await backfillDocumentAssetReferences(queryable, {
+              stageId,
+              scope,
+              ...(principals === undefined ? {} : { principals }),
+            });
           }
         });
       } catch (error) {

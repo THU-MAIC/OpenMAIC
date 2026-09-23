@@ -24,7 +24,7 @@ import type {
   RuntimeStore,
   RuntimeTailOptions,
 } from '../runtime/types.js';
-import { RuntimeAppendConflictError } from '../runtime/types.js';
+import { RuntimeAppendConflictError, RuntimeStageNotFoundError } from '../runtime/types.js';
 import type { Scene, Stage } from '@openmaic/dsl';
 import type { DocumentStore, SceneLike } from '../document/types.js';
 import type { AssetPrincipal, AssetStore } from '../asset/types.js';
@@ -353,6 +353,15 @@ function parsePath(req: IncomingMessage): { parts: string[]; url: URL } {
   }
 }
 
+function isStageNotFound(error: unknown): boolean {
+  if (error instanceof RuntimeStageNotFoundError) return true;
+  return (
+    error instanceof Error &&
+    error.name === 'RuntimeStageNotFoundError' &&
+    (error as { code?: unknown }).code === 'STAGE_NOT_FOUND'
+  );
+}
+
 function mappedError(error: unknown): { status: number; body: ErrorBody } {
   if (error instanceof RuntimeAppendConflictError) {
     return {
@@ -368,6 +377,12 @@ function mappedError(error: unknown): { status: number; body: ErrorBody } {
           },
         },
       },
+    };
+  }
+  if (isStageNotFound(error)) {
+    return {
+      status: 404,
+      body: { error: { code: 'STAGE_NOT_FOUND', message: '@openmaic/storage: stage not found' } },
     };
   }
   if (error instanceof RuntimeHttpError && error.status < 500) {
@@ -441,9 +456,12 @@ async function route(
       { ...init, runtimeDslVersion: RUNTIME_DSL_VERSION },
       `runtime session ${JSON.stringify(init.id)}`,
     );
+    // A taken id answers 409 whoever holds it. Session ids are one global key
+    // space, so a create over a taken id fails either way; checking the
+    // holder first would answer 403 for another learner's session and 409 for
+    // one's own, telling a caller whose sessions exist.
     const existing = await store.getSession(init.id);
     if (existing !== undefined) {
-      requireLearner(principal, existing.learnerKey);
       throw new RuntimeHttpError(
         409,
         'SESSION_ALREADY_EXISTS',
@@ -457,7 +475,6 @@ async function route(
       // depending on a database driver's message text.
       const raced = await store.getSession(init.id);
       if (raced !== undefined) {
-        requireLearner(principal, raced.learnerKey);
         throw new RuntimeHttpError(
           409,
           'SESSION_ALREADY_EXISTS',
@@ -692,7 +709,8 @@ export function createRuntimeHttpHandler(
       }
       if (
         (!(error instanceof RuntimeHttpError) || error.status >= 500) &&
-        !(error instanceof RuntimeAppendConflictError)
+        !(error instanceof RuntimeAppendConflictError) &&
+        !isStageNotFound(error)
       ) {
         console.error('@openmaic/storage: Runtime HTTP handler internal error', error);
       }

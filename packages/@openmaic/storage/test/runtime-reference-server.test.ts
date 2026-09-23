@@ -6,7 +6,11 @@ import type { AssetId } from '../src/asset/id.js';
 import type { AssetStore } from '../src/asset/types.js';
 import { BrowserRuntimeStore } from '../src/runtime/browser.js';
 import { HttpRuntimeStore } from '../src/runtime/http.js';
-import type { RuntimePayloadValidator, RuntimeStore } from '../src/runtime/types.js';
+import {
+  RuntimeStageNotFoundError,
+  type RuntimePayloadValidator,
+  type RuntimeStore,
+} from '../src/runtime/types.js';
 import { createRuntimeHttpHandler } from '../src/server/index.js';
 import {
   createReferenceRuntimeServer,
@@ -860,6 +864,99 @@ describe('reference HTTP handler cross-learner rejection matrix', () => {
     await expect(response.json()).resolves.toMatchObject({
       error: { code: testCase.expectedCode },
     });
+  });
+});
+
+describe('reference HTTP handler session-create collisions', () => {
+  function harness() {
+    const store = new BrowserRuntimeStore({ indexedDB: new IDBFactory() });
+    const handler = createRuntimeHttpHandler(store, {
+      authenticate: async () => ({ learnerKey: 'learner-a' }),
+    });
+    return { store, request: handlerFetch(handler, async () => 'Bearer learner-a') };
+  }
+
+  const create = (request: typeof globalThis.fetch, id: string) =>
+    request(`${BASE_URL}/runtime/sessions`, {
+      method: 'POST',
+      body: JSON.stringify(makeSession({ id, learnerKey: 'learner-a', stageId: 'stage-1' })),
+    });
+
+  test('answers a taken id identically whoever holds it, so a create reveals no owner', async () => {
+    const { store, request } = harness();
+    await store.createSession(
+      makeSession({ id: 'held-by-b', learnerKey: 'learner-b', stageId: 'stage-1' }),
+    );
+    await store.createSession(
+      makeSession({ id: 'held-by-a', learnerKey: 'learner-a', stageId: 'stage-1' }),
+    );
+
+    const foreign = await create(request, 'held-by-b');
+    const own = await create(request, 'held-by-a');
+
+    expect(foreign.status).toBe(409);
+    expect(own.status).toBe(409);
+    const foreignBody = (await foreign.json()) as { error: { code: string; message: string } };
+    const ownBody = (await own.json()) as { error: { code: string; message: string } };
+    expect(foreignBody.error.code).toBe('SESSION_ALREADY_EXISTS');
+    expect(ownBody.error.code).toBe('SESSION_ALREADY_EXISTS');
+    expect(foreignBody.error.message.replace('held-by-b', 'X')).toBe(
+      ownBody.error.message.replace('held-by-a', 'X'),
+    );
+    // The foreign session is untouched.
+    await expect(store.getSession('held-by-b')).resolves.toMatchObject({
+      learnerKey: 'learner-b',
+    });
+  });
+});
+
+describe('reference HTTP handler stage-not-found refusals', () => {
+  test.each([
+    ['the exported class', () => new RuntimeStageNotFoundError('stage-gone')],
+    [
+      'a same-named error from another realm',
+      () =>
+        Object.assign(new Error('no stage'), {
+          name: 'RuntimeStageNotFoundError',
+          code: 'STAGE_NOT_FOUND',
+        }),
+    ],
+  ])('answers 404 STAGE_NOT_FOUND for %s thrown by createSession', async (_label, makeError) => {
+    const inner = new BrowserRuntimeStore({ indexedDB: new IDBFactory() });
+    const store = new Proxy(inner, {
+      get(target, property) {
+        if (property === 'createSession') {
+          return async () => {
+            throw makeError();
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? (value as () => unknown).bind(target) : value;
+      },
+    }) as RuntimeStore;
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const handler = createRuntimeHttpHandler(store, {
+        authenticate: async () => ({ learnerKey: 'learner-a' }),
+      });
+      const response = await handlerFetch(handler, async () => 'Bearer learner-a')(
+        `${BASE_URL}/runtime/sessions`,
+        {
+          method: 'POST',
+          body: JSON.stringify(
+            makeSession({ id: 'new-session', learnerKey: 'learner-a', stageId: 'stage-gone' }),
+          ),
+        },
+      );
+
+      expect(response.status).toBe(404);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: 'STAGE_NOT_FOUND' },
+      });
+      expect(consoleError).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });
 

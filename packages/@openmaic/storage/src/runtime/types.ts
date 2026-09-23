@@ -63,6 +63,24 @@ export class RuntimeAppendConflictError extends Error {
   }
 }
 
+/**
+ * A store refused to create a session because its stage does not exist, as far
+ * as this store's host is concerned (for example a course the host deleted).
+ *
+ * Stores never raise it on their own; a host that wraps a store to enforce its
+ * own notion of which stages exist raises it from `createSession`. The HTTP
+ * handler answers it with `404 STAGE_NOT_FOUND`, and recognizes it by `code`
+ * as well as by class, so a store from another module realm still maps.
+ */
+export class RuntimeStageNotFoundError extends Error {
+  override readonly name = 'RuntimeStageNotFoundError';
+  readonly code = 'STAGE_NOT_FOUND' as const;
+
+  constructor(readonly stageId: string) {
+    super(`@openmaic/storage: no stage ${JSON.stringify(stageId)}`);
+  }
+}
+
 /** Optional compare-and-swap guard against a session's current record tail. */
 export interface RuntimeTailOptions {
   /**

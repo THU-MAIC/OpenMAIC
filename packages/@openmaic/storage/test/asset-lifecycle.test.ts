@@ -1324,6 +1324,95 @@ describe('asset entry lifecycle with PGlite', () => {
     });
   });
 
+  describe('reference principals', () => {
+    const OWN = { key: 'owner-a' } as const;
+    const FOREIGN = { key: 'owner-b' } as const;
+    const SHARED = { key: 'shared' } as const;
+
+    const scopedDocuments = (ownerId?: string): PgDocumentStore =>
+      new PgDocumentStore(db, {
+        withTransaction: transactions(db),
+        trackAssetReferences: true,
+        assetReferencePrincipals: [OWN.key, SHARED.key],
+        ...(ownerId === undefined ? {} : { ownerId }),
+      });
+
+    test('a full save references and commits only entries of the listed principals', async () => {
+      const own = await store.put(OWN, new Blob(['own']));
+      const foreign = await store.put(FOREIGN, new Blob(['foreign']));
+      const shared = await store.put(SHARED, new Blob(['shared']));
+
+      await scopedDocuments().saveDocument(
+        documentWith('stage-1', [sceneWithImages('stage-1', 'scene-a', 0, [own, foreign, shared])]),
+      );
+
+      expect((await refRows()).map((row) => row.asset_id).sort()).toEqual([own, shared].sort());
+      expect((await lifecycleOf(own))?.committed_at).not.toBeNull();
+      expect((await lifecycleOf(shared))?.committed_at).not.toBeNull();
+      // Another principal's pending allocation stays exactly as it was.
+      const untouched = await lifecycleOf(foreign);
+      expect(untouched?.committed_at).toBeNull();
+      expect(untouched?.expires_at).not.toBeNull();
+    });
+
+    test('incremental scene and stage writes are scoped the same way', async () => {
+      const documents = scopedDocuments();
+      await documents.saveDocument(
+        documentWith('stage-1', [sceneWithImages('stage-1', 's', 0, [])]),
+      );
+      const foreignScene = await store.put(FOREIGN, new Blob(['foreign scene']));
+      const foreignStage = await store.put(FOREIGN, new Blob(['foreign stage']));
+
+      await documents.putScene('stage-1', sceneWithImages('stage-1', 's', 0, [foreignScene]));
+      await documents.putStage(
+        'stage-1',
+        documentWith('stage-1', [], [foreignStage]).stage as Parameters<
+          PgDocumentStore['putStage']
+        >[1],
+      );
+
+      expect(await refRows()).toEqual([]);
+      expect((await lifecycleOf(foreignScene))?.committed_at).toBeNull();
+      expect((await lifecycleOf(foreignStage))?.committed_at).toBeNull();
+    });
+
+    test('without the option every held entry is referenced, as before', async () => {
+      const foreign = await store.put(FOREIGN, new Blob(['foreign']));
+      await documentStore(true).saveDocument(
+        documentWith('stage-1', [sceneWithImages('stage-1', 'scene-a', 0, [foreign])]),
+      );
+      expect((await refRows()).map((row) => row.asset_id)).toEqual([foreign]);
+    });
+
+    test('the backfill scopes each document by its owner', async () => {
+      await enableReferenceTracking();
+      const own = await store.put(OWN, new Blob(['own legacy']));
+      const foreign = await store.put(FOREIGN, new Blob(['foreign legacy']));
+      await db.query(
+        `UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = ANY($1)`,
+        [[own, foreign]],
+      );
+      // Written with tracking off: only the backfill will record its references.
+      await new PgDocumentStore(db, {
+        withTransaction: transactions(db),
+        ownerId: 'alice',
+      }).saveDocument(
+        documentWith('stage-1', [sceneWithImages('stage-1', 'scene-a', 0, [own, foreign])]),
+      );
+      const seen: (string | null)[] = [];
+
+      await collector({
+        assetReferencePrincipals: (documentOwnerId) => {
+          seen.push(documentOwnerId);
+          return documentOwnerId === 'alice' ? [OWN.key] : [];
+        },
+      }).collectPass();
+
+      expect(seen).toEqual(['alice']);
+      expect((await refRows()).map((row) => row.asset_id)).toEqual([own]);
+    });
+  });
+
   describe('collector reference backfill', () => {
     // A real grace period, so invariant (iii) is visible: an entry the
     // backfill finds unreferenced must wait rather than go on the same pass.
