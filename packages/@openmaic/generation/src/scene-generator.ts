@@ -891,30 +891,74 @@ async function generateQuizContent(
 
   log.debug(`Got ${generatedQuestions.length} questions for: ${outline.title}`);
 
-  // Ensure each question has an ID and normalize options format
+  // Ensure each question has an ID and normalize options format.
+  // Plain strings become letter/content pairs. Object fields stay as written.
   const questions: QuizQuestion[] = generatedQuestions.map((q) => {
     const isText = q.type === 'short_answer';
-    const record = q as unknown as Record<string, unknown>;
-    const normalized = isText ? undefined : normalizeQuizOptionsDetailed(q.options);
-    const options = normalized?.options;
-    const answerSource = isText
-      ? record
-      : rewriteSwappedQuizAnswer(record, normalized?.swappedLabels);
+    const options = isText ? undefined : normalizeQuizOptions(q.options);
     return {
       ...q,
       id: q.id || `q_${nanoid(8)}`,
       options,
-      answer: isText ? undefined : normalizeQuizAnswer(answerSource, options),
+      answer: isText
+        ? undefined
+        : normalizeQuizAnswer(q as unknown as Record<string, unknown>, options),
       hasAnswer: isText ? false : true,
     };
   });
 
+  const contractFailure = findQuizOptionsContractFailure(questions);
+  if (contractFailure) {
+    log.error(`Quiz option contract failed for "${outline.title}": ${contractFailure}`);
+    onFailure?.({ code: 'invalid-model-output' });
+    return null;
+  }
+
   return { questions };
 }
 
-/** A single ASCII selection letter. Not "A.", "(B)", "A ", or a full-width "Ｂ". */
-function isBareQuizLetter(value: string): boolean {
-  return /^[A-Z]$/i.test(value);
+const QUIZ_OPTION_VALUE = /^[A-Z]$/;
+
+/**
+ * Reason a built quiz breaks the choice-option contract, or null when it holds.
+ *
+ * Choice questions (everything except `short_answer`) need a non-empty option
+ * list whose `value`s are single ASCII letters A-Z, and every answer entry
+ * must equal one of those values exactly. Short-answer questions are skipped.
+ */
+export function findQuizOptionsContractFailure(questions: readonly QuizQuestion[]): string | null {
+  for (let index = 0; index < questions.length; index += 1) {
+    const question = questions[index];
+    if (!question || question.type === 'short_answer') continue;
+
+    const where = question.id ? `question ${index + 1} (${question.id})` : `question ${index + 1}`;
+    const options = question.options;
+    if (!options || options.length === 0) {
+      return `${where}: choice question has no options`;
+    }
+
+    for (let optionIndex = 0; optionIndex < options.length; optionIndex += 1) {
+      const value = options[optionIndex]?.value;
+      if (typeof value !== 'string' || !QUIZ_OPTION_VALUE.test(value)) {
+        const shown = JSON.stringify(value);
+        return `${where}: option ${optionIndex + 1} value ${shown} is not a single letter A-Z`;
+      }
+    }
+
+    const answer = question.answer;
+    if (!answer || answer.length === 0) {
+      return `${where}: answer key does not reference an option value`;
+    }
+
+    const values = new Set(options.map((option) => option.value));
+    for (const entry of answer) {
+      if (!values.has(entry)) {
+        return `${where}: answer ${JSON.stringify(entry)} does not match an option value`;
+      }
+    }
+  }
+
+  return null;
 }
 
 type NormalizedQuizOption = { value: string; label: string };
@@ -922,29 +966,16 @@ type NormalizedQuizOption = { value: string; label: string };
 /**
  * Normalize quiz options from AI response.
  * AI may generate plain strings ["OptionA", "OptionB"] or QuizOption objects.
- * This normalizes to QuizOption[] format: { value: "A", label: "OptionA" }
- *
- * Models sometimes emit those fields backwards (`value` holds the content,
- * `label` holds "A"). The quiz surface renders `value` as the badge and
- * `label` as the body, so the swapped shape shows the content in the badge.
+ * Plain strings become { value: "A", label: "OptionA" }. Object `value` and
+ * `label` are kept as provided — a letter in `label` with content in `value`
+ * is not swapped.
  */
 export function normalizeQuizOptions(
   options: unknown[] | undefined,
 ): NormalizedQuizOption[] | undefined {
-  return normalizeQuizOptionsDetailed(options).options;
-}
+  if (!options || !Array.isArray(options)) return undefined;
 
-/** Options plus the original bare labels that were moved onto `value`. */
-function normalizeQuizOptionsDetailed(options: unknown[] | undefined): {
-  options: NormalizedQuizOption[] | undefined;
-  swappedLabels: ReadonlySet<string>;
-} {
-  if (!options || !Array.isArray(options)) {
-    return { options: undefined, swappedLabels: new Set() };
-  }
-
-  const swappedLabels = new Set<string>();
-  const normalized = options.map((opt, index) => {
+  return options.map((opt, index) => {
     const letter = String.fromCharCode(65 + index); // A, B, C, D...
 
     if (typeof opt === 'string') {
@@ -953,69 +984,14 @@ function normalizeQuizOptionsDetailed(options: unknown[] | undefined): {
 
     if (typeof opt === 'object' && opt !== null) {
       const obj = opt as Record<string, unknown>;
-      const rawValue = obj.value;
-      const rawLabel = obj.label;
-      if (
-        typeof rawLabel === 'string' &&
-        isBareQuizLetter(rawLabel) &&
-        typeof rawValue === 'string' &&
-        rawValue.length > 0 &&
-        !isBareQuizLetter(rawValue)
-      ) {
-        swappedLabels.add(rawLabel);
-        return { value: rawLabel.toUpperCase(), label: rawValue };
-      }
-
       return {
-        value: typeof rawValue === 'string' ? rawValue : letter,
-        label: typeof rawLabel === 'string' ? rawLabel : String(rawValue || obj.text || letter),
+        value: typeof obj.value === 'string' ? obj.value : letter,
+        label: typeof obj.label === 'string' ? obj.label : String(obj.value || obj.text || letter),
       };
     }
 
     return { value: letter, label: String(opt) };
   });
-
-  return { options: normalized, swappedLabels };
-}
-
-const QUIZ_ANSWER_FIELDS = ['answer', 'correctAnswer', 'correct_answer'] as const;
-
-/**
- * Point a raw answer token at the uppercased letter a swapped label became.
- * Only an exact match of that original label is rewritten. A stored "a"
- * against an already-correct value "A" is not a swap and stays unresolved.
- */
-function rewriteSwappedQuizAnswer(
-  question: Record<string, unknown>,
-  swappedLabels: ReadonlySet<string> | undefined,
-): Record<string, unknown> {
-  if (!swappedLabels || swappedLabels.size === 0) return question;
-
-  const field = QUIZ_ANSWER_FIELDS.find((name) => question[name] != null);
-  if (!field) return question;
-
-  const raw = question[field];
-  const rewritten = rewriteSwappedAnswerTokens(raw, swappedLabels);
-  if (rewritten === raw) return question;
-  return { ...question, [field]: rewritten };
-}
-
-function rewriteSwappedAnswerTokens(raw: unknown, swappedLabels: ReadonlySet<string>): unknown {
-  if (typeof raw === 'string') {
-    const upper = swappedLabels.has(raw) ? raw.toUpperCase() : raw;
-    return upper === raw ? raw : upper;
-  }
-  if (!Array.isArray(raw)) return raw;
-
-  let changed = false;
-  const next = raw.map((entry) => {
-    if (typeof entry !== 'string' || !swappedLabels.has(entry)) return entry;
-    const upper = entry.toUpperCase();
-    if (upper === entry) return entry;
-    changed = true;
-    return upper;
-  });
-  return changed ? next : raw;
 }
 
 /**

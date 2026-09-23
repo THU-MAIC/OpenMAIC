@@ -173,8 +173,32 @@ function coordinateQuizOutline() {
   };
 }
 
-describe('generateSceneContent swapped letter keys', () => {
-  test('lowercase label key persists as the value and grades that submission', async () => {
+describe('generateSceneContent quiz option contract', () => {
+  test('rejects a swapped value/label shape instead of repairing it', async () => {
+    const failures: { code: string }[] = [];
+    const content = await generateSceneContent(
+      coordinateQuizOutline(),
+      async () =>
+        JSON.stringify([
+          {
+            id: 'q1',
+            type: 'single',
+            question: 'Which coordinate is (6, 2)?',
+            options: [
+              { value: '(6, 2)', label: 'a' },
+              { value: '(2, -4)', label: 'b' },
+            ],
+            answer: ['a'],
+          },
+        ]),
+      { onFailure: (failure) => failures.push(failure) },
+    );
+
+    expect(content).toBeNull();
+    expect(failures).toEqual([{ code: 'invalid-model-output' }]);
+  });
+
+  test('persists a correct letter value and grades that submission', async () => {
     const content = await generateSceneContent(coordinateQuizOutline(), async () =>
       JSON.stringify([
         {
@@ -182,10 +206,10 @@ describe('generateSceneContent swapped letter keys', () => {
           type: 'single',
           question: 'Which coordinate is (6, 2)?',
           options: [
-            { value: '(6, 2)', label: 'a' },
-            { value: '(2, -4)', label: 'b' },
+            { value: 'A', label: '(6, 2)' },
+            { value: 'B', label: '(2, -4)' },
           ],
-          answer: ['a'],
+          answer: ['A'],
         },
       ]),
     );
@@ -203,28 +227,28 @@ describe('generateSceneContent swapped letter keys', () => {
     expect(gradeChoiceQuestions([question], { q1: '(6, 2)' })[0].correct).toBe(false);
   });
 
-  test('lowercase key against an already-correct value stays unresolved', async () => {
-    const content = await generateSceneContent(coordinateQuizOutline(), async () =>
-      JSON.stringify([
-        {
-          id: 'q1',
-          type: 'single',
-          question: 'Which coordinate is (6, 2)?',
-          options: [
-            { value: 'A', label: '(6, 2)' },
-            { value: 'B', label: '(2, -4)' },
-          ],
-          answer: ['a'],
-        },
-      ]),
+  test('rejects a lowercase key that does not equal an option value', async () => {
+    const failures: { code: string }[] = [];
+    const content = await generateSceneContent(
+      coordinateQuizOutline(),
+      async () =>
+        JSON.stringify([
+          {
+            id: 'q1',
+            type: 'single',
+            question: 'Which coordinate is (6, 2)?',
+            options: [
+              { value: 'A', label: '(6, 2)' },
+              { value: 'B', label: '(2, -4)' },
+            ],
+            answer: ['a'],
+          },
+        ]),
+      { onFailure: (failure) => failures.push(failure) },
     );
 
-    expect(content && 'questions' in content).toBe(true);
-    if (!content || !('questions' in content)) return;
-    const question = content.questions[0];
-    expect(question.answer).toEqual(['a']);
-    expect(resolveAnswerKeyToValue(question, 'a')).toBe('a');
-    expect(gradeChoiceQuestions([question], { q1: 'A' })[0].correct).toBe(false);
+    expect(content).toBeNull();
+    expect(failures).toEqual([{ code: 'invalid-model-output' }]);
   });
 });
 
