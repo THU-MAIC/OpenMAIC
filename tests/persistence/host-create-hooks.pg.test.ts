@@ -15,6 +15,8 @@ import type { PersistenceHooks } from '@/lib/server/persistence-hooks/types';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
 const TEST_SCHEMA = 'openmaic_host_create_hooks_test';
+/** This suite's connections, told apart from other suites' in `pg_locks`. */
+const POOL_NAME = 'host-create-hooks-suite';
 const OWNER = 'user:alice';
 const NOW = 1_800_000_000_000;
 
@@ -48,6 +50,7 @@ describe.skipIf(!contractUrl)('host create hooks on PostgreSQL', () => {
       connectionString: contractUrl,
       options: `-c search_path=${TEST_SCHEMA}`,
       max: 6,
+      application_name: POOL_NAME,
     });
     const databaseUrl = `${contractUrl}${contractUrl!.includes('?') ? '&' : '?'}application_name=host-create-hooks`;
     process.env.DATABASE_URL = databaseUrl;
@@ -143,14 +146,16 @@ describe.skipIf(!contractUrl)('host create hooks on PostgreSQL', () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
     await expect(counts('stage-pg-race')).resolves.toEqual({ stages: 1, meta: 1, host: 1 });
 
-    // The lock is transaction-scoped: nothing is left held. (The schema
-    // bootstrap lock is left out: another suite may be booting a provider
-    // against this database at the same moment.)
+    // The lock is transaction-scoped: nothing is left held by this suite's
+    // connections. (Other suites may hold advisory locks of their own against
+    // this database at the same moment -- a schema bootstrap, or the owner
+    // identity locks the claim suite parks on -- so only this pool counts.)
     const held = await pool.query<{ n: string }>(
       `SELECT COUNT(*) AS n FROM pg_locks
         WHERE locktype = 'advisory' AND granted
-          AND NOT (classid = 0 AND objsubid = 1 AND objid = $1::bigint::oid)`,
-      [SCHEMA_BOOTSTRAP_LOCK_KEY],
+          AND NOT (classid = 0 AND objsubid = 1 AND objid = $1::bigint::oid)
+          AND pid IN (SELECT pid FROM pg_stat_activity WHERE application_name = $2)`,
+      [SCHEMA_BOOTSTRAP_LOCK_KEY, POOL_NAME],
     );
     expect(Number(held.rows[0]!.n)).toBe(0);
   });
