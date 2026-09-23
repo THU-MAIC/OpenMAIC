@@ -1398,6 +1398,7 @@ describe('asset entry lifecycle with PGlite', () => {
         ownerId: 'alice',
         // Principals follow the bound owner, not any ownership record.
         documentOwnership: false,
+        allowCrossOwnerDocumentAccess: true,
         assetReferencePrincipals: (ownerId) => (ownerId === null ? [] : [`owner:${ownerId}`]),
       }).forOwner('bob');
 

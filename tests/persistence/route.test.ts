@@ -2,6 +2,15 @@ import type { RequestListener } from 'node:http';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Schema bootstrap is serialized by a PostgreSQL advisory lock on a dedicated
+// connection; the fakes here have no connections, and the lock itself is
+// exercised against a real server in schema-bootstrap-concurrency.pg.test.ts.
+vi.mock('@/lib/persistence/schema-bootstrap-lock', () => ({
+  SCHEMA_BOOTSTRAP_LOCK_KEY: 0,
+  withSchemaBootstrapLock: <T>(pool: unknown, body: (queryable: never) => Promise<T>) =>
+    body(pool as never),
+}));
+
 interface AssetStoreLike {
   put(principal: { key: string }, data: Blob, meta?: unknown): Promise<string>;
 }

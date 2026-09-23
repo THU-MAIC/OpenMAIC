@@ -77,4 +77,5 @@ jobs:
             tests/persistence/asset-reference-backfill.pg.test.ts \
             tests/persistence/workbench-tool-asset-references.pg.test.ts \
             tests/persistence/host-create-hooks.pg.test.ts \
-            tests/persistence/stage-meta-tenancy.pg.test.ts
+            tests/persistence/stage-meta-tenancy.pg.test.ts \
+            tests/persistence/schema-bootstrap-concurrency.pg.test.ts

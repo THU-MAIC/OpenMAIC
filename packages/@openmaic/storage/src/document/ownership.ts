@@ -18,6 +18,12 @@
 /**
  * Where a host records which owner holds which document: one row per owned
  * document, keyed by the document id.
+ *
+ * The rows must go when their document goes: give the table a foreign key to
+ * `document_stages(id) ON DELETE CASCADE`, or delete the ownership row with
+ * the document. A row left behind keeps the id reserved for its owner, and no
+ * other owner can create a document under it (which is also how a host keeps
+ * retired ids from being reused).
  */
 export interface DocumentOwnershipRelation {
   /** The table (or view) holding one row per owned document; may be `schema.table`. */

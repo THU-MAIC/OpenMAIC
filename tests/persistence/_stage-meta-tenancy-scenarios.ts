@@ -186,7 +186,7 @@ export async function freshInstallScenario(pool: ScenarioPool): Promise<void> {
  * the document row (with its indexes), and a `stage_meta` that some courses
  * predate.
  */
-async function provisionPreviousRelease(pool: ScenarioPool): Promise<void> {
+export async function provisionPreviousRelease(pool: ScenarioPool): Promise<void> {
   const statements = [
     `CREATE TABLE document_folders (
        owner_id TEXT NOT NULL,

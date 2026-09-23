@@ -90,15 +90,32 @@ export interface PgDocumentStoreOptions {
   /**
    * Where document ownership lives: the host's relation, which an owner-bound
    * store scopes listings, writes, deletes and folder membership through.
-   * `false` declares that this store does not scope documents by owner at all
-   * -- a single-owner deployment, or a host that gates every call itself --
-   * and still lets it bind an owner for folders and asset principals.
    * Unset is allowed only on a store that is not owner-bound.
+   *
+   * The relation must cascade with the document rows (a foreign key to
+   * `document_stages(id) ON DELETE CASCADE`), or the host must delete the
+   * ownership row whenever it deletes a document. A leftover ownership row
+   * keeps the id reserved for its owner: no other owner can create a document
+   * under it. That is also how a host keeps retired ids from being reused.
+   *
+   * `false` means this store does not scope documents by owner at all: an
+   * owner-bound store would then list, write and delete every owner's
+   * documents, and file any of them into its folders. It is accepted on an
+   * owner-bound store only together with
+   * {@link allowCrossOwnerDocumentAccess}, for a single-owner deployment or a
+   * host that gates every document call itself. Binding an owner only for
+   * folders or asset principals is not a reason to pass it.
    *
    * A store that is not owner-bound is tenant-agnostic whatever this says: it
    * lists and writes every document.
    */
   documentOwnership?: DocumentOwnershipRelation | false;
+  /**
+   * The acknowledgement `documentOwnership: false` needs on an owner-bound
+   * store: every owner-bound call may reach every owner's documents. Ignored
+   * otherwise.
+   */
+  allowCrossOwnerDocumentAccess?: boolean;
   /**
    * Whether `document_stages` has the `folder_id` column the folder methods
    * use. Defaults to `true` (`ensureDocumentSchema` provisions it). A host
@@ -452,6 +469,12 @@ export function splitSqlStatements(sql: string): string[] {
 /**
  * Create the tables owned by this backend when absent. Safe to call repeatedly;
  * changing an existing table requires a real migration.
+ *
+ * Not safe to call from several sessions at once: `IF NOT EXISTS` and
+ * `CREATE OR REPLACE` are not atomic across sessions, so two instances
+ * starting together can fail on a catalog race. A host that starts several
+ * instances serializes its schema bootstrap, for example under a
+ * `pg_advisory_lock` held on one connection for the whole sequence.
  */
 export async function ensureDocumentSchema(queryable: Queryable): Promise<void> {
   // Keep Queryable minimal and PGlite-compatible: issue one statement at a time.
@@ -634,9 +657,20 @@ export class PgDocumentStore<TScene extends SceneLike = Scene, TStage extends St
     if (options.ownerId !== undefined && options.documentOwnership === undefined) {
       throw new Error(
         '@openmaic/storage: an owner-bound PgDocumentStore requires documentOwnership -- the ' +
-          "host's ownership relation, or false for a store that does not scope documents by " +
-          'owner. document_stages no longer records an owner, so there is nothing to scope ' +
+          "host's ownership relation (or false with allowCrossOwnerDocumentAccess). " +
+          'document_stages no longer records an owner, so there is nothing to scope ' +
           'through by default',
+      );
+    }
+    if (
+      options.ownerId !== undefined &&
+      options.documentOwnership === false &&
+      options.allowCrossOwnerDocumentAccess !== true
+    ) {
+      throw new Error(
+        '@openmaic/storage: documentOwnership: false on an owner-bound PgDocumentStore lets it ' +
+          "list, write and delete every owner's documents; pass " +
+          'allowCrossOwnerDocumentAccess: true to confirm that, or give it the ownership relation',
       );
     }
     this.ownerId = options.ownerId ?? null;

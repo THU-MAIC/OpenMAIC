@@ -98,10 +98,16 @@ a browser.
   reads stay addressable by id. The relation's ownership row is written by the
   host inside the store's transaction (its `withTransaction`), or by the store
   when `claimOnCreate` is set; a concurrent create of the same id by another
-  owner is rolled back. An owner-bound store must set `documentOwnership`
-  (`false` declares that it does not scope documents at all — a single-owner
-  deployment, or a host that gates every call itself); a store that is not
-  bound is tenant-agnostic and lists every document. Re-keying an owner (for
+  owner is rolled back. The relation must cascade with the document rows
+  (`REFERENCES document_stages(id) ON DELETE CASCADE`) or be cleaned alongside
+  them: a leftover ownership row keeps the id reserved for its owner. An
+  owner-bound store must set `documentOwnership`. `false` turns document
+  scoping off entirely, so an owner-bound store would list, write and delete
+  every owner's documents; it is accepted only with
+  `allowCrossOwnerDocumentAccess: true` (a single-owner deployment, or a host
+  that gates every document call itself), never just to bind an owner for
+  folders. A store that is not bound is tenant-agnostic and lists every
+  document. Re-keying an owner (for
   example when an anonymous visitor signs in) is then one update in one place.
 - **Owner-scoped folders.** An owner-bound `PgDocumentStore` also implements
   `DocumentFolderStore`: folders are durable entities, so empty folders are

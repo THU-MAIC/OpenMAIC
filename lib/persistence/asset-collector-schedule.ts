@@ -39,6 +39,7 @@ import { Pool } from 'pg';
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import { resolveConfiguredAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { assetReferencePrincipalsForOwner } from '@/lib/persistence/owner-assets';
+import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { STAGE_META_OWNERSHIP } from '@/lib/persistence/stage-meta-ownership';
 
@@ -165,7 +166,7 @@ export function startAssetCollectorSchedule(
     // the schedule's -- `stop()` ends it, while the provider's is ended by the
     // shutdown hook that owns it.
     await getServerPersistenceProvider(connectionString);
-    await ensureAssetSchema(queryable);
+    await withSchemaBootstrapLock(queryable, ensureAssetSchema);
     // The same selection the request path makes (a host byte store, else
     // the built-in one), so this pass deletes through the layer the route
     // wrote through.

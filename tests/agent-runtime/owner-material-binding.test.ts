@@ -17,6 +17,15 @@ import type { Queryable } from '@openmaic/storage/asset/pg';
 import { setMaterialByteStoreForTests } from '@/lib/server/materials/bytes';
 import { ensureOwnerMaterialSchema } from '@/lib/persistence/owner-materials';
 
+// Schema bootstrap is serialized by a PostgreSQL advisory lock on a dedicated
+// connection; the fakes here have no connections, and the lock itself is
+// exercised against a real server in schema-bootstrap-concurrency.pg.test.ts.
+vi.mock('@/lib/persistence/schema-bootstrap-lock', () => ({
+  SCHEMA_BOOTSTRAP_LOCK_KEY: 0,
+  withSchemaBootstrapLock: <T>(pool: unknown, body: (queryable: never) => Promise<T>) =>
+    body(pool as never),
+}));
+
 const mocks = vi.hoisted(() => ({
   getAgentSessionStore: vi.fn(),
   getServerPersistenceProvider: vi.fn(),

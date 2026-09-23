@@ -2,6 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AssetCollectorSchedule } from '@/lib/persistence/asset-collector-schedule';
 
+// Schema bootstrap is serialized by a PostgreSQL advisory lock on a dedicated
+// connection; the fakes here have no connections, and the lock itself is
+// exercised against a real server in schema-bootstrap-concurrency.pg.test.ts.
+vi.mock('@/lib/persistence/schema-bootstrap-lock', () => ({
+  SCHEMA_BOOTSTRAP_LOCK_KEY: 0,
+  withSchemaBootstrapLock: <T>(pool: unknown, body: (queryable: never) => Promise<T>) =>
+    body(pool as never),
+}));
+
 /**
  * Cleared between tests because the schedule keys itself on `globalThis` to
  * survive dev-time module reloads, which `vi.resetModules()` deliberately does

@@ -595,11 +595,55 @@ describe('PgDocumentStore Postgres behavior', () => {
     ).toThrow(/ownerIdColumn/);
   });
 
+  test('an owner-bound store without a relation needs the cross-owner acknowledgement', () => {
+    // A folders-only bind must not silently unscope documents.
+    const unscoped = new PgDocumentStore(db, {
+      ...transactionOptions(db),
+      documentOwnership: false,
+    });
+    expect(() => unscoped.forOwner('anon:alice')).toThrow(/allowCrossOwnerDocumentAccess/);
+    expect(
+      () =>
+        new PgDocumentStore(db, {
+          ...transactionOptions(db),
+          ownerId: 'anon:alice',
+          documentOwnership: false,
+          allowCrossOwnerDocumentAccess: false,
+        }),
+    ).toThrow(/allowCrossOwnerDocumentAccess/);
+  });
+
+  test('a leftover ownership row keeps its id reserved; a cascading relation frees it', async () => {
+    await provisionOwnershipRelation(db);
+    const root = new PgDocumentStore(db, {
+      ...transactionOptions(db),
+      documentOwnership: CLAIMING_OWNERSHIP,
+    });
+    const alice = root.forOwner('anon:alice');
+    const bob = root.forOwner('anon:bob');
+
+    // With the foreign key cascading, deleting the document frees the id.
+    await alice.saveDocument(makeDocument('cascading'));
+    await alice.deleteDocument('cascading');
+    await expect(bob.saveDocument(makeDocument('cascading'))).resolves.toBeUndefined();
+
+    // An ownership row with no document row (a relation that does not cascade,
+    // or a document deleted out of band) reserves the id for its owner.
+    await db.query('ALTER TABLE document_owners DROP CONSTRAINT document_owners_stage_id_fkey');
+    await alice.saveDocument(makeDocument('reserved'));
+    await db.query(`DELETE FROM document_stages WHERE id = 'reserved'`);
+    await expect(bob.saveDocument(makeDocument('reserved'))).rejects.toBeInstanceOf(
+      DocumentNotFoundError,
+    );
+    await expect(alice.saveDocument(makeDocument('reserved'))).resolves.toBeUndefined();
+  });
+
   test('an unbound store, and a store bound without a relation, are tenant-agnostic', async () => {
     await store.saveDocument(makeDocument('first-stage'));
     const agnostic = new PgDocumentStore(db, {
       ...transactionOptions(db),
       documentOwnership: false,
+      allowCrossOwnerDocumentAccess: true,
     }).forOwner('anon:agent');
     await agnostic.saveDocument(makeDocument('agent-stage'));
     await agnostic.saveDocument(makeDocument('first-stage'));
