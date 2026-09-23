@@ -3,7 +3,7 @@
 import { useCallback, useRef } from 'react';
 import { useStageStore } from '@/lib/store/stage';
 import { isSceneEditLocked } from '@/lib/edit/regen-lock';
-import { getCurrentModelConfig } from '@/lib/utils/model-config';
+import { getCurrentModelConfig, getStageRoutesHeaderValue } from '@/lib/utils/model-config';
 import { useSettingsStore } from '@/lib/store/settings';
 import { db } from '@/lib/utils/database';
 import type {
@@ -76,9 +76,11 @@ function getApiHeaders(): HeadersInit {
   const settings = useSettingsStore.getState();
   const imageProviderConfig = settings.imageProvidersConfig?.[settings.imageProviderId];
   const videoProviderConfig = settings.videoProvidersConfig?.[settings.videoProviderId];
+  const stageRoutesHeader = getStageRoutesHeaderValue();
 
   return {
     'Content-Type': 'application/json',
+    ...(stageRoutesHeader ? { 'x-model-routes': stageRoutesHeader } : {}),
     'x-model': config.modelString || '',
     'x-api-key': config.apiKey || '',
     'x-base-url': config.baseUrl || '',

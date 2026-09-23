@@ -270,3 +270,81 @@ export function getStageRoute(stage?: string): StageRoute | undefined {
 export function getStageModel(stage?: string): string | undefined {
   return getStageRoute(stage)?.model;
 }
+
+/**
+ * A user-level route entry (the `x-model-routes` header): everything an
+ * operator route can carry, plus the client's own connection params for the
+ * routed provider. Server-managed providers ignore the client credentials
+ * (resolveApiKey/resolveBaseUrl stay authoritative).
+ */
+export interface UserStageRoute extends StageRoute {
+  apiKey?: string;
+  baseUrl?: string;
+  providerType?: string;
+}
+
+const MAX_USER_ROUTES_HEADER_BYTES = 16 * 1024;
+
+/**
+ * Parse the user-level `x-model-routes` header: a JSON object of
+ * stage → `"provider:model"` or `{model, apiKey?, baseUrl?, providerType?}`.
+ * Only known stages are kept; malformed entries are dropped with a warning.
+ * Precedence in resolveModel: operator MODEL_ROUTES > these user routes >
+ * the client x-model > DEFAULT_MODEL.
+ */
+export function parseUserStageRoutes(
+  raw: string | null | undefined,
+): Record<string, UserStageRoute> {
+  const routes: Record<string, UserStageRoute> = {};
+  if (!raw || typeof raw !== 'string') return routes;
+  if (raw.length > MAX_USER_ROUTES_HEADER_BYTES) {
+    log.warn(`x-model-routes header exceeds ${MAX_USER_ROUTES_HEADER_BYTES} bytes; ignored.`);
+    return routes;
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      log.warn('x-model-routes must be a JSON object of stage -> model; ignoring.');
+      return routes;
+    }
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!(LLM_STAGES as readonly string[]).includes(key)) {
+        log.warn(`Unknown stage "${key}" in x-model-routes ignored.`);
+        continue;
+      }
+      const route = parseRouteValue(key, value);
+      if (!route) continue;
+      const userRoute: UserStageRoute = { ...route };
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const obj = value as Record<string, unknown>;
+        if (typeof obj.apiKey === 'string' && obj.apiKey) userRoute.apiKey = obj.apiKey;
+        if (typeof obj.baseUrl === 'string' && obj.baseUrl) userRoute.baseUrl = obj.baseUrl;
+        if (typeof obj.providerType === 'string' && obj.providerType)
+          userRoute.providerType = obj.providerType;
+      }
+      routes[key] = userRoute;
+    }
+  } catch (err) {
+    log.warn('Invalid x-model-routes JSON; ignoring.', err);
+  }
+  return routes;
+}
+
+/**
+ * Resolve a user route for a stage with the same composite-key fallback as
+ * operator routes (scene-content:quiz → scene-content).
+ */
+export function getUserStageRoute(
+  userRoutes: Record<string, UserStageRoute>,
+  stage?: string,
+): UserStageRoute | undefined {
+  if (!stage) return undefined;
+  let key: string | undefined = stage;
+  while (key) {
+    const route = userRoutes[key];
+    if (route) return route;
+    const lastColon = key.lastIndexOf(':');
+    key = lastColon > 0 ? key.slice(0, lastColon) : undefined;
+  }
+  return undefined;
+}

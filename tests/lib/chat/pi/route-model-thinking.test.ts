@@ -40,10 +40,12 @@ vi.mock('@/lib/logger', () => ({
   }),
 }));
 
-function makeRequest(body: Record<string, unknown>): NextRequest {
+function makeRequest(body: Record<string, unknown>, modelRoutes?: string): NextRequest {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (modelRoutes) headers['x-model-routes'] = modelRoutes;
   return new Request('http://localhost/api/chat/pi', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   }) as unknown as NextRequest;
 }
@@ -200,6 +202,25 @@ describe('POST /api/chat/pi model and thinking resolution', () => {
         languageModel: { id: 'language-model' },
         thinkingConfig: { enabled: false },
         maxOutputTokens: 4096,
+      }),
+    );
+  });
+
+  it('forwards parsed x-model-routes user routes into chat-adapter resolution', async () => {
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(
+      makeRequest(
+        makeBody(),
+        JSON.stringify({ 'chat-adapter': { model: 'anthropic:claude-sonnet-4' } }),
+      ),
+    );
+    await response.text();
+
+    expect(response.status).toBe(200);
+    expect(mocks.resolveModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: 'chat-adapter',
+        userRoutes: { 'chat-adapter': { model: 'anthropic:claude-sonnet-4' } },
       }),
     );
   });

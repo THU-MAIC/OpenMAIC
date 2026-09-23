@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatSession } from '@/lib/types/chat';
 import {
   consumePiSessionBoundaryContext,
@@ -7,6 +7,7 @@ import {
   createPiSessionBoundaryContext,
   getPiSessionBoundaryContext,
   getPiSingleRequestOutcome,
+  fetchStatelessChat,
   isOpenLiveSession,
   normalizeStoredSessionsForRestore,
   retireLiveRequestResources,
@@ -17,11 +18,13 @@ import {
   lectureActionPersistParams,
   withPiInclassWhiteboardTools,
   withPiWebSearchSettings,
+  withStageRoutesHeader,
   MANUAL_STOP_END_OPTIONS,
   takeSoftCloseRegistration,
 } from '@/components/chat/use-chat-sessions';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
+import { useSettingsStore } from '@/lib/store/settings';
 import type { ChatRequestTemplate } from '@/components/chat/use-chat-sessions';
 import type { UIMessage } from 'ai';
 import type { ChatMessageMetadata } from '@/lib/types/chat';
@@ -652,5 +655,109 @@ describe('Pi Native whiteboard Browser events', () => {
       }),
       signal: controller.signal,
     });
+  });
+});
+
+describe('per-stage user routes on classroom chat requests', () => {
+  const originalRoutes = useSettingsStore.getState().llmStageRoutes;
+  const originalProviders = useSettingsStore.getState().providersConfig;
+
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    const providers = useSettingsStore.getState().providersConfig;
+    useSettingsStore.setState({
+      llmStageRoutes: {
+        'chat-adapter': { providerId: 'openai', modelId: 'gpt-5.4-mini' },
+      },
+      providersConfig: {
+        ...providers,
+        openai: {
+          ...(providers.openai ?? {}),
+          apiKey: 'sk-test',
+          baseUrl: 'https://api.openai.com/v1',
+          enabled: true,
+          requiresApiKey: true,
+          models: [{ id: 'gpt-5.4-mini', name: 'gpt-5.4-mini' }],
+        },
+      } as typeof providers,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useSettingsStore.setState({
+      llmStageRoutes: originalRoutes,
+      providersConfig: originalProviders,
+    });
+  });
+
+  it('withStageRoutesHeader serializes the routed stages', () => {
+    const headers = withStageRoutesHeader({ 'Content-Type': 'application/json' });
+    expect(JSON.parse(headers['x-model-routes']!)).toEqual({
+      'chat-adapter': expect.objectContaining({ model: 'openai:gpt-5.4-mini' }),
+    });
+    expect(headers['Content-Type']).toBe('application/json');
+  });
+
+  it('omits x-model-routes when no stage is routed', () => {
+    useSettingsStore.setState({ llmStageRoutes: {} });
+    const headers = withStageRoutesHeader({ 'Content-Type': 'application/json' });
+    expect(headers).not.toHaveProperty('x-model-routes');
+  });
+
+  it('sends x-model-routes on the stateless /api/chat request', async () => {
+    const fetchMock = vi.fn(async () => new Response('data: {}\n\n', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchStatelessChat({ messages: [] }, new AbortController().signal);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/chat',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'x-model-routes': expect.stringContaining('chat-adapter'),
+        }),
+      }),
+    );
+  });
+
+  it('sends x-model-routes on the /api/chat/pi request', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn(async () => new Response(body, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await runPiSingleRequest(
+      'session-1',
+      {
+        messages: [],
+        storeState: {},
+        config: { agentIds: ['teacher-1'] },
+        apiKey: '',
+      } as unknown as Parameters<typeof runPiSingleRequest>[1],
+      new AbortController(),
+      'qa',
+      () => ({ onEvent: vi.fn(), onIterationEnd: vi.fn(async () => null) }),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      { current: vi.fn() },
+      (key) => key,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/chat/pi',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'x-model-routes': expect.stringContaining('chat-adapter'),
+        }),
+      }),
+    );
   });
 });

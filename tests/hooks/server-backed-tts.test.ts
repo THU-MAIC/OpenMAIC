@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/utils/model-config', () => ({
   getCurrentModelConfig: mocks.getCurrentModelConfig,
+  getStageRoutesHeaderValue: () => undefined,
 }));
 
 vi.mock('@/lib/store/settings', () => ({
