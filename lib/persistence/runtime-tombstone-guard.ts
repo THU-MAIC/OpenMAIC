@@ -21,6 +21,8 @@
 import type { RuntimeSession } from '@openmaic/dsl';
 import { RuntimeStageNotFoundError, type RuntimeStore } from '@openmaic/storage';
 
+import { readStageMeta } from './stage-meta';
+
 export type StageTombstoneReader = (stageId: string) => Promise<boolean>;
 
 const LONE_SURROGATE = /[\uD800-\uDFFF]/u;
@@ -28,6 +30,30 @@ const LONE_SURROGATE = /[\uD800-\uDFFF]/u;
 /** Whether PostgreSQL can bind the id; one it cannot bind names no row. */
 export function isQueryableStageId(stageId: string): boolean {
   return stageId !== '' && !stageId.includes('\0') && !LONE_SURROGATE.test(stageId);
+}
+
+/** Whether `stageId` names a course this server stored and then tombstoned. */
+export async function isStageTombstoned(
+  queryable: Parameters<typeof readStageMeta>[0],
+  stageId: string,
+): Promise<boolean> {
+  if (!isQueryableStageId(stageId)) return false;
+  const meta = await readStageMeta(queryable, stageId);
+  return meta !== null && meta.deletedAt !== null;
+}
+
+/**
+ * The server's runtime store for every server-side writer: the persistence
+ * route and the Pi native whiteboard alike. No server path should hold the
+ * unguarded store.
+ */
+export function guardedServerRuntimeStore(
+  inner: RuntimeStore,
+  queryable: Parameters<typeof readStageMeta>[0],
+): RuntimeStore {
+  return createTombstoneGuardedRuntimeStore(inner, (stageId) =>
+    isStageTombstoned(queryable, stageId),
+  );
 }
 
 export function createTombstoneGuardedRuntimeStore(

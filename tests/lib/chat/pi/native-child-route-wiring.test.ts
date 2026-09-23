@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   streamLLM: vi.fn(),
   searchWeb: vi.fn(),
   getServerPersistenceProvider: vi.fn(),
+  stageMetaQuery: vi.fn(),
 }));
 
 vi.mock('@/lib/server/resolve-model', () => ({ resolveModel: mocks.resolveModel }));
@@ -175,7 +176,11 @@ describe('PR2 Native Child route production wiring', () => {
     mocks.streamLLM.mockReset();
     mocks.searchWeb.mockReset();
     mocks.getServerPersistenceProvider.mockReset();
+    mocks.stageMetaQuery.mockReset();
+    // No stage_meta row: a course this server never stored, never tombstoned.
+    mocks.stageMetaQuery.mockResolvedValue({ rows: [] });
     mocks.getServerPersistenceProvider.mockResolvedValue({
+      pool: { query: mocks.stageMetaQuery },
       runtimeStore: new BrowserRuntimeStore({
         indexedDB: new IDBFactory(),
         payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
@@ -412,6 +417,78 @@ describe('PR2 Native Child route production wiring', () => {
     const records: RuntimeRecord[] = await provider.runtimeStore.listRecords(sessions[0]!.id);
     expect(records).toHaveLength(1);
     expect(records[0]?.seq).toBe(0);
+  }, 15_000);
+
+  it('writes no whiteboard runtime for a deleted course', async () => {
+    process.env.NEXT_PUBLIC_PERSISTENCE = '1';
+    process.env.DATABASE_URL = 'postgres://shared-provider-test';
+    mocks.stageMetaQuery.mockResolvedValue({
+      rows: [
+        {
+          stage_id: 'stage-1',
+          owner_id: LEARNER_KEY,
+          is_public: false,
+          published_at: null,
+          generation_complete: true,
+          deleted_at: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ],
+    });
+    const directorResponses = [
+      [
+        toolCall('delegate-1', 'call_agent', {
+          agentId: 'teacher-1',
+          instruction: 'Add one concise label to the whiteboard.',
+        }),
+        finish('tool-calls'),
+      ],
+      [toolCall('cue-1', 'cue_user', { prompt: 'Continue?' }), finish('tool-calls')],
+    ];
+    const childResponses = [
+      [
+        toolCall('wb-draw-1', 'wb_draw_text', {
+          expectedLastSeq: null,
+          content: 'Should not persist',
+          x: 80,
+          y: 100,
+        }),
+        finish('tool-calls'),
+      ],
+      [finish('stop')],
+    ];
+    mocks.streamLLM.mockImplementation((_options, source) => {
+      const parts =
+        source === 'pi-chat-native-child' ? childResponses.shift() : directorResponses.shift();
+      return resultFrom(parts ?? [finish('stop')]);
+    });
+
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(
+      makeRequest({
+        config: {
+          agentIds: ['teacher-1'],
+          piEnableWhiteboardTools: true,
+          agentConfigs: [
+            {
+              id: 'teacher-1',
+              name: 'Teacher',
+              role: 'teacher',
+              persona: 'Use the whiteboard directly.',
+              avatar: '',
+              color: '#3366ff',
+              allowedActions: ['wb_draw_text'],
+              priority: 10,
+            },
+          ],
+        },
+      }),
+    );
+    await readSseEvents(response);
+
+    expect(response.status).toBe(200);
+    expect(mocks.stageMetaQuery).toHaveBeenCalled();
+    const provider = await mocks.getServerPersistenceProvider.mock.results[0]?.value;
+    await expect(provider.runtimeStore.listSessions('stage-1', LEARNER_KEY)).resolves.toEqual([]);
   }, 15_000);
 
   it('executes wb_draw_text → wb_delete through the production route in one Child', async () => {

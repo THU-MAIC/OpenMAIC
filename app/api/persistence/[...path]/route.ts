@@ -18,10 +18,7 @@ import {
 } from '@/lib/persistence/document-access';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
 import { assetPrincipalForOwner, createOwnerAssetStore } from '@/lib/persistence/owner-assets';
-import {
-  createTombstoneGuardedRuntimeStore,
-  isQueryableStageId,
-} from '@/lib/persistence/runtime-tombstone-guard';
+import { guardedServerRuntimeStore } from '@/lib/persistence/runtime-tombstone-guard';
 import {
   getServerPersistenceProvider,
   type PersistencePoolFactory,
@@ -148,9 +145,7 @@ async function createPersistenceHandler(
   const byteEgress = indirectEgressWithinGrace(
     configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
   );
-  const guardedRuntimeStore = createTombstoneGuardedRuntimeStore(runtimeStore, (stageId) =>
-    isStageTombstoned(pool, stageId),
-  );
+  const guardedRuntimeStore = guardedServerRuntimeStore(runtimeStore, pool);
   return createStorageHttpHandler(guardedRuntimeStore, documentStore, {
     authenticate: async (request) => {
       if (request.url?.startsWith('/assets')) return assetPrincipal;
@@ -169,15 +164,6 @@ async function createPersistenceHandler(
     }),
     ...(byteEgress === undefined ? {} : { byteEgress }),
   });
-}
-
-async function isStageTombstoned(
-  queryable: Parameters<typeof readStageMeta>[0],
-  stageId: string,
-): Promise<boolean> {
-  if (!isQueryableStageId(stageId)) return false;
-  const meta = await readStageMeta(queryable, stageId);
-  return meta !== null && meta.deletedAt !== null;
 }
 
 function routeRelativePath(request: Request): string {

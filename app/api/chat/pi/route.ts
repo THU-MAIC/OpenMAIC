@@ -29,6 +29,7 @@ import type { ThinkingConfig } from '@/lib/types/provider';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 import { resolveRequestOwner } from '@/lib/server/identity/resolve';
+import { guardedServerRuntimeStore } from '@/lib/persistence/runtime-tombstone-guard';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { createWhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 import { hasNativeWhiteboardAction } from '@/lib/chat/pi/tools/native-whiteboard';
@@ -192,7 +193,9 @@ export async function POST(req: NextRequest) {
           const provider = await getServerPersistenceProvider(process.env.DATABASE_URL);
           nativeWhiteboardLearnerKey = learnerKey;
           nativeWhiteboardService = createWhiteboardRuntimeService({
-            store: provider.runtimeStore,
+            // Guarded like /api/persistence/runtime/*: a deleted course takes
+            // no new runtime from the whiteboard either.
+            store: guardedServerRuntimeStore(provider.runtimeStore, provider.pool),
             resolveLearnerKey: () => learnerKey,
           });
         } catch {

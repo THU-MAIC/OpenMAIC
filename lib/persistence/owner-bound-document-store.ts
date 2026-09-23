@@ -314,7 +314,7 @@ export function createOwnerBoundDocumentStore<
     // legacy shared ones. Naming another owner's id in a course records
     // nothing, so it can neither commit (and expose) another owner's pending
     // allocation nor pin their entry and quota.
-    assetReferencePrincipals: assetReferencePrincipalsForOwner(options.ownerId),
+    assetReferencePrincipals: assetReferencePrincipalsForOwner,
   };
   const inner = new PgDocumentStore<TScene, TStage>(queryable, {
     ...innerOptions,

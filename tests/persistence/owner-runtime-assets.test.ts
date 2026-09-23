@@ -359,6 +359,32 @@ describe('runtime and assets are keyed by the resolved owner', () => {
       },
     );
 
+    it('answers a taken id with 409 even when its session is hidden by a tombstone', async () => {
+      const stageId = 'stage-tombstoned-collision';
+      await saveCourse('alice', stageId);
+      await call('alice', '/runtime/sessions', {
+        method: 'POST',
+        json: sessionInit('session-hidden', stageId, ALICE),
+      });
+      await call('alice', `/documents/${stageId}`, { method: 'DELETE' });
+      expect((await call('alice', '/runtime/sessions/session-hidden')).status).toBe(404);
+
+      for (const who of ['alice', 'bob'] as const) {
+        const created = await call(who, '/runtime/sessions', {
+          method: 'POST',
+          json: sessionInit(
+            'session-hidden',
+            'stage-live-elsewhere',
+            who === 'alice' ? ALICE : BOB,
+          ),
+        });
+        expect(created.status).toBe(409);
+        await expect(created.json()).resolves.toMatchObject({
+          error: { code: 'SESSION_ALREADY_EXISTS' },
+        });
+      }
+    });
+
     it('leaves runtime of a course this server never stored alone', async () => {
       const created = await call('alice', '/runtime/sessions', {
         method: 'POST',
