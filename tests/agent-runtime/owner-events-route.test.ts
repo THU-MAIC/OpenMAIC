@@ -509,9 +509,10 @@ describe('GET owner session events', () => {
     expect(await readChunk(reader)).toBe(': ping\n\n');
     const moved = await readChunk(reader);
     expect(moved).toContain('event: owner_moved');
-    expect(moved).toContain(
-      'data: {"type":"owner_moved","newOwnerId":"user:new","action":"reconnect"}',
-    );
+    // Only that it moved: the claiming account's id is not disclosed to the
+    // holder of the retired identity.
+    expect(moved).toContain('data: {"type":"owner_moved","action":"reconnect"}');
+    expect(moved).not.toContain('user:new');
     expect(await reader.read()).toEqual({ done: true, value: undefined });
     expect(mocks.readOwnerRetirement).toHaveBeenCalledWith('anon:old');
     expect(vi.getTimerCount()).toBe(0);

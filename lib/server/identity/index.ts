@@ -20,7 +20,6 @@ export type {
   OwnerAssurance,
   OwnerAuthenticator,
   OwnerAuthRequest,
-  OwnerIdentityQueryable,
   OwnerPrincipal,
   PendingOwnerClaim,
   StoredOwnerDescription,

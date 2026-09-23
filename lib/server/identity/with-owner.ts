@@ -37,8 +37,23 @@ export async function authenticateRequestOwner(
   if (!outcome.ok) return { ok: false, response: invalidOwnerCredentialResponse() };
   const responseHeaders = new Headers();
   for (const value of outcome.setCookies ?? []) responseHeaders.append('Set-Cookie', value);
-  const principal = await autoClaim(outcome.principal, responseHeaders);
+  const principal = await autoClaim(req, outcome.principal, responseHeaders);
   return { ok: true, principal, responseHeaders };
+}
+
+/** The routes that perform a claim themselves: `POST /api/identity/claim` and the runtime learner merge. */
+const EXPLICIT_CLAIM_PATHS = ['/api/identity/claim', '/api/persistence/runtime/learners/merge'];
+
+function isExplicitClaimRoute(url: string | undefined): boolean {
+  if (!url) return false;
+  let pathname: string;
+  try {
+    pathname = new URL(url, 'http://localhost').pathname;
+  } catch {
+    return false;
+  }
+  const trimmed = pathname.replace(/\/+$/, '');
+  return EXPLICIT_CLAIM_PATHS.includes(trimmed);
 }
 
 /**
@@ -49,8 +64,16 @@ export async function authenticateRequestOwner(
  * refusal is logged and the request goes on unclaimed; the next request tries
  * again. Server Actions never trigger it.
  */
-async function autoClaim(principal: OwnerPrincipal, responseHeaders: Headers) {
+async function autoClaim(
+  req: OwnerAuthRequest,
+  principal: OwnerPrincipal,
+  responseHeaders: Headers,
+) {
   if (!principal.pendingClaim || principal.kind === 'anonymous') return principal;
+  // The explicit claim routes claim themselves and report the outcome: an
+  // automatic claim ahead of them would leave them nothing to report but a
+  // refusal ("no pending claim") for a claim that succeeded.
+  if (isExplicitClaimRoute(req.url)) return principal;
   if (!process.env.DATABASE_URL?.trim()) return principal;
   const { resolveOwnerClaimTrigger, runPendingClaim } =
     await import('@/lib/persistence/owner-claim-http');

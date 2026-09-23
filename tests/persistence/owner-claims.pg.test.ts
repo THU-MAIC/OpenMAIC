@@ -21,12 +21,14 @@ import {
   registerClaimParticipant,
   resetClaimParticipantsForTests,
 } from '@/lib/persistence/owner-claims';
-import { isOwnerRetiredError } from '@/lib/persistence/owner-merges';
+import { claimRefusalResponse, runPendingClaim } from '@/lib/persistence/owner-claim-http';
+import { isOwnerRetiredError, ownerIdentityLockKey } from '@/lib/persistence/owner-merges';
 
 import {
   ACCOUNT,
   ANON,
   OTHER_ACCOUNT,
+  accountPrincipal,
   anonymousPrincipal,
   atomicityScenario,
   bootClaimHarness,
@@ -46,6 +48,10 @@ const RACE_BUDGET_MS = 15_000;
 const BLOCKED_FOR_MS = 400;
 
 let serial = 0;
+
+function pendingFrom(fromOwnerId: string) {
+  return { fromOwnerId, assurance: 'unverified-legacy' as const };
+}
 
 interface Gate {
   reached: Promise<void>;
@@ -282,6 +288,135 @@ describe.skipIf(!contractUrl)('claiming anonymous work on PostgreSQL', () => {
       expect(results[0]).toMatchObject({ status: 'fulfilled', value: { status: 'claimed' } });
       expect(isOwnerRetiredError((results[1] as PromiseRejectedResult).reason)).toBe(true);
       expect(await rowsUnder(harness.pool, ANON)).toMatchObject({ assets: 0 });
+    });
+
+    it('a runtime session create racing a claim is refused, never left under the retired id', async () => {
+      // Parked after the runtime participant (600): the claim has already
+      // re-keyed the owner's runtime sessions when the create arrives.
+      await seedAnonymousWork(harness);
+      const parked = parkClaimsAt(650);
+      const claim = claimOwner(ANON, ACCOUNT, { provider: harness.provider });
+      await parked.reached;
+      const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+      const create = handlePersistenceRequest(
+        new Request('http://localhost/api/persistence/runtime/sessions', {
+          method: 'POST',
+          headers: {
+            cookie: `anonymous_id=${ANON.slice('anon:'.length)}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: 'race-runtime-session',
+            kind: 'chat',
+            stageId: 'anon-course',
+            learnerKey: ANON,
+            status: 'active',
+            createdAt: new Date(0).toISOString(),
+            updatedAt: new Date(0).toISOString(),
+          }),
+        }),
+        { poolFactory: () => pool },
+      );
+      expect(await stillPending(create)).toBe(true);
+      parked.release();
+
+      const { results } = await settleWithinBudget([claim, create]);
+      expect(results[0]).toMatchObject({ status: 'fulfilled', value: { status: 'claimed' } });
+      const response = (results[1] as PromiseFulfilledResult<Response>).value;
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toMatchObject({ error: { code: 'OWNER_RETIRED' } });
+      // The retired cookie is dropped so the browser recovers with a fresh owner.
+      expect(response.headers.getSetCookie().some((c) => c.startsWith('anonymous_id=;'))).toBe(
+        true,
+      );
+      const orphan = await pool.query('SELECT 1 FROM runtime_sessions WHERE id = $1', [
+        'race-runtime-session',
+      ]);
+      expect(orphan.rows).toHaveLength(0);
+      expect(await rowsUnder(harness.pool, ANON)).toMatchObject({ runtime: 0 });
+    });
+
+    it('a claim that cannot get the identity lock in time answers OWNER_BUSY and changes nothing', async () => {
+      await seedAnonymousWork(harness);
+      vi.stubEnv('OWNER_CLAIM_LOCK_WAIT_MS', '200');
+      // An in-flight write of the anonymous owner (an upload, say) holds its
+      // identity lock in shared mode.
+      const writer = await pool.connect();
+      try {
+        await writer.query('BEGIN');
+        await writer.query('SELECT pg_advisory_xact_lock_shared($1::bigint)', [
+          ownerIdentityLockKey(ANON).toString(),
+        ]);
+        const principal = { ...accountPrincipal(), pendingClaim: pendingFrom(ANON) };
+        const started = Date.now();
+        const outcome = await runPendingClaim(principal, { provider: harness.provider });
+        expect(Date.now() - started).toBeLessThan(5_000);
+        expect(outcome).toMatchObject({ ok: false, refusal: 'OWNER_BUSY', setCookies: [] });
+        const response = claimRefusalResponse(
+          outcome as Extract<typeof outcome, { ok: false }>,
+          new Headers(),
+        );
+        expect(response.status).toBe(503);
+        expect(response.headers.get('retry-after')).toBe('2');
+      } finally {
+        await writer.query('ROLLBACK');
+        writer.release();
+      }
+      expect(await rowsUnder(harness.pool, ACCOUNT)).toMatchObject({ courses: 1 });
+      // Once the writer is done, the same claim succeeds.
+      await expect(
+        claimOwner(ANON, ACCOUNT, { provider: harness.provider }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+    });
+
+    it('a write that cannot get the identity lock in time answers 503 OWNER_BUSY', async () => {
+      vi.stubEnv('OWNER_WRITE_LOCK_WAIT_MS', '200');
+      // A claim of the owner holds its identity lock exclusively.
+      const claimant = await pool.connect();
+      try {
+        await claimant.query('BEGIN');
+        await claimant.query('SELECT pg_advisory_xact_lock($1::bigint)', [
+          ownerIdentityLockKey(ANON).toString(),
+        ]);
+        const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+        const headers = {
+          cookie: `anonymous_id=${ANON.slice('anon:'.length)}`,
+          'content-type': 'application/json',
+        };
+        const save = await handlePersistenceRequest(
+          new Request('http://localhost/api/persistence/documents/busy-course', {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(courseNaming('busy-course')),
+          }),
+          { poolFactory: () => pool },
+        );
+        expect(save.status).toBe(503);
+        expect(save.headers.get('retry-after')).toBe('2');
+        await expect(save.json()).resolves.toMatchObject({ error: { code: 'OWNER_BUSY' } });
+        const runtime = await handlePersistenceRequest(
+          new Request('http://localhost/api/persistence/runtime/sessions', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              id: 'busy-runtime',
+              kind: 'chat',
+              stageId: 'busy-course',
+              learnerKey: ANON,
+              status: 'active',
+              createdAt: new Date(0).toISOString(),
+              updatedAt: new Date(0).toISOString(),
+            }),
+          }),
+          { poolFactory: () => pool },
+        );
+        expect(runtime.status).toBe(503);
+        await expect(runtime.json()).resolves.toMatchObject({ error: { code: 'OWNER_BUSY' } });
+      } finally {
+        await claimant.query('ROLLBACK');
+        claimant.release();
+      }
+      expect(await rowsUnder(harness.pool, ANON)).toMatchObject({ courses: 0, runtime: 0 });
     });
 
     it('a second claim of the same owner into another account waits, then is refused', async () => {

@@ -172,8 +172,8 @@ describe('pendingClaim and stored owners', () => {
       configureOwnerAuthenticator({
         name: 'host',
         authenticate: async () => ({ ok: false, status: 401, code: 'INVALID_CREDENTIAL' }),
-        canonicalize: 'nope' as never,
+        describeStoredOwner: 'nope' as never,
       }),
-    ).toThrow(/canonicalize/);
+    ).toThrow(/describeStoredOwner/);
   });
 });

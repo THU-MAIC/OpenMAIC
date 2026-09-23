@@ -11,6 +11,7 @@ import {
   UserSkillError,
 } from '@/lib/server/agent-runtime/user-skills';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { ownerRetiredResponseIfRetired } from '@/lib/persistence/owner-merges';
 
 export const runtime = 'nodejs';
 
@@ -42,6 +43,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       return new Response(null, { status: 204, headers: responseHeaders });
     } catch (error) {
       if (error instanceof UserSkillError && error.code === 'not-found') {
+        // A retired identity's skills moved with the claim.
+        const retired = await ownerRetiredResponseIfRetired(ownerId, responseHeaders);
+        if (retired) return retired;
         return new Response('Not found', { status: 404, headers: responseHeaders });
       }
       throw error;

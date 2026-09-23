@@ -18,7 +18,7 @@ import {
   SessionMaterialBindingError,
 } from '@/lib/server/agent-runtime/session-materials';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
-import { ownerRetiredResponse } from '@/lib/persistence/owner-merges';
+import { ownerRetiredResponse, ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import { buildRequestOrigin, isValidClassroomId } from '@/lib/server/classroom-storage';
 import { decodeCourseRefs } from '@/lib/workbench/course-refs';
 
@@ -143,18 +143,28 @@ export async function POST(req: NextRequest) {
       return ownerRetiredResponse(responseHeaders);
     }
     const hasOpeningContext = materialIds.length > 0 || decodedCourseRefs.refs.length > 0;
-    const meta = await store.createSession({
-      ownerId,
-      prompt,
-      ...(stageId ? { stageId } : {}),
-      ...(skillId ? { skillId } : {}),
-      existingCourse,
-      titleState: 'pending',
-      origin: buildRequestOrigin(req),
-      // Keep the runner from claiming the session until its opening materials
-      // and references are durable. postUserMessage below atomically requeues it.
-      ...(existingCourse || hasOpeningContext ? { status: 'succeeded' as const } : {}),
-    });
+    // A create racing a claim of this owner is written for the account, as if
+    // it had committed just before the claim (the store forwards under the
+    // owner's identity lock); a busy claim answers 503 OWNER_BUSY.
+    let meta: Awaited<ReturnType<typeof store.createSession>>;
+    try {
+      meta = await store.createSession({
+        ownerId,
+        prompt,
+        ...(stageId ? { stageId } : {}),
+        ...(skillId ? { skillId } : {}),
+        existingCourse,
+        titleState: 'pending',
+        origin: buildRequestOrigin(req),
+        // Keep the runner from claiming the session until its opening materials
+        // and references are durable. postUserMessage below atomically requeues it.
+        ...(existingCourse || hasOpeningContext ? { status: 'succeeded' as const } : {}),
+      });
+    } catch (error) {
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
+      throw error;
+    }
 
     if (!hasOpeningContext) {
       if (!existingCourse) scheduleConversationTitle(meta.id, ownerId);

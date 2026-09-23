@@ -278,6 +278,11 @@ export async function GET(req: NextRequest) {
           .readRetirement(ownerId)
           .then((newOwnerId) => {
             if (!newOwnerId || closed) return;
+            // The stream's owner was claimed into an account. Say only that it
+            // moved: whoever still holds the retired identity (a stale tab, a
+            // shared browser) must not learn the account's owner id, which is
+            // often a login or an email. The client reconnects, and a
+            // signed-in client reconnects as the account.
             // Native EventSource reconnects a clean 200 EOF with the same
             // Last-Event-ID. The client MUST close this instance, construct a
             // new EventSource without that cursor, and perform one full session
@@ -286,7 +291,6 @@ export async function GET(req: NextRequest) {
             write(
               `event: owner_moved\ndata: ${JSON.stringify({
                 type: 'owner_moved',
-                newOwnerId,
                 action: 'reconnect',
               })}\n\n`,
             );

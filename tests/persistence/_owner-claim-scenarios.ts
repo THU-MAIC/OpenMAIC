@@ -155,7 +155,7 @@ export async function bootClaimHarness(
       createOwnerAssetStore(provider.assetStore, {
         ownerId,
         queryable: pool,
-        legacyMutations: {
+        transactions: {
           withTransaction: provider.withTransaction,
           storeIn: provider.assetStoreIn,
         },
@@ -206,6 +206,13 @@ export async function seedAnonymousWork(h: ClaimHarness, owner = ANON): Promise<
     description: 'How I take notes',
     content: 'Take notes.',
   });
+  // The handle the claimed my-notes would first be renamed to: it must be skipped.
+  await h.skills.create(owner, {
+    name: 'my-notes-2',
+    title: 'More notes',
+    description: 'A second notes skill',
+    content: 'More notes.',
+  });
   await h.skills.create(ACCOUNT, {
     name: 'my-notes',
     title: 'Account notes',
@@ -237,10 +244,31 @@ export async function rowsUnder(pool: ClaimScenarioPool, owner: string) {
     materials: await count('owner_material WHERE owner_id = $1'),
     sessions: await count('agent_sessions WHERE owner_id = $1'),
     sessionEvents: await count('agent_owner_session_events WHERE owner_id = $1'),
+    sessionEventCounters: await count('agent_owner_session_event_counters WHERE owner_id = $1'),
     skills: await count('agent_user_skill WHERE owner_id = $1'),
     runtime: await count('runtime_sessions WHERE learner_key = $1'),
     assets: await count('asset_entries WHERE principal = $1', assetPrincipalForOwner(owner).key),
+    // The retired ownership column, where an installation still has it.
+    legacyDocumentOwners: (await hasLegacyOwnerColumn(pool))
+      ? await count('document_stages WHERE owner_id = $1')
+      : 0,
   };
+}
+
+async function hasLegacyOwnerColumn(pool: ClaimScenarioPool): Promise<boolean> {
+  const result = await pool.query<{ present: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM pg_attribute
+        WHERE attrelid = to_regclass('document_stages') AND attname = 'owner_id'
+          AND NOT attisdropped
+     ) AS present`,
+  );
+  return result.rows[0]?.present === true;
+}
+
+/** Give `document_stages` the retired ownership column, as an upgraded installation has it. */
+export async function addLegacyOwnerColumn(pool: ClaimScenarioPool): Promise<void> {
+  await pool.query('ALTER TABLE document_stages ADD COLUMN IF NOT EXISTS owner_id TEXT');
 }
 
 const NOTHING = {
@@ -249,9 +277,11 @@ const NOTHING = {
   materials: 0,
   sessions: 0,
   sessionEvents: 0,
+  sessionEventCounters: 0,
   skills: 0,
   runtime: 0,
   assets: 0,
+  legacyDocumentOwners: 0,
 };
 
 async function merges(pool: ClaimScenarioPool) {
@@ -265,8 +295,39 @@ async function merges(pool: ClaimScenarioPool) {
 /** Everything moves, the claimed courses keep rendering their media, and nothing stays behind. */
 export async function fullClaimScenario(h: ClaimHarness): Promise<void> {
   const seeded = await seedAnonymousWork(h);
+  // An upgraded installation still carrying the retired column, filled in as
+  // an older version wrote it.
+  await addLegacyOwnerColumn(h.pool);
+  await h.pool.query(
+    `UPDATE document_stages AS d SET owner_id = m.owner_id FROM stage_meta AS m
+      WHERE m.stage_id = d.id`,
+  );
+  // A runtime session written by a newer version: it no longer validates here,
+  // and must not stop the claim.
+  await h.provider.runtimeStore.createSession({
+    id: `rt-future-${ANON}`,
+    kind: 'chat',
+    stageId: 'anon-course',
+    learnerKey: ANON,
+    status: 'active',
+    createdAt: ISO_NOW,
+    updatedAt: ISO_NOW,
+  });
+  await h.pool.query(
+    `UPDATE runtime_sessions SET data = jsonb_set(data, '{runtimeDslVersion}', '"99.0.0"')
+      WHERE id = $1`,
+    [`rt-future-${ANON}`],
+  );
   const before = await rowsUnder(h.pool, ANON);
-  expect(before).toMatchObject({ courses: 2, folders: 2, materials: 1, sessions: 1, skills: 1 });
+  expect(before).toMatchObject({
+    courses: 2,
+    folders: 2,
+    materials: 1,
+    sessions: 1,
+    sessionEventCounters: 1,
+    skills: 2,
+    legacyDocumentOwners: 2,
+  });
 
   // Kinds come from the stored ids: `anon:<uuid v4>` is the anonymous
   // built-in's, `proxy:alice` is not anonymous.
@@ -278,8 +339,8 @@ export async function fullClaimScenario(h: ClaimHarness): Promise<void> {
       courses: 2,
       'owner-materials': 1,
       'agent-sessions': 1,
-      'user-skills': 1,
-      runtime: 1,
+      'user-skills': 2,
+      runtime: 2,
       assets: 1,
     },
   });
@@ -315,17 +376,27 @@ export async function fullClaimScenario(h: ClaimHarness): Promise<void> {
   ]);
   expect(await h.sessions.readMaxId(ACCOUNT)).toBeGreaterThan(BigInt(0));
   const skills = await h.skills.list(ACCOUNT);
-  // The claimed skill was created first; it yields its handle to the account's.
-  expect(skills.map((skill) => [skill.id === seeded.skillId, skill.name])).toEqual([
-    [true, 'my-notes-2'],
+  // The claimed my-notes yields its handle to the account's, and skips
+  // my-notes-2, which the claimed library already holds.
+  expect(
+    skills
+      .map((skill) => [skill.id === seeded.skillId, skill.name] as const)
+      .sort((a, b) => (a[1] < b[1] ? -1 : 1)),
+  ).toEqual([
     [false, 'my-notes'],
+    [false, 'my-notes-2'],
+    [true, 'my-notes-3'],
   ]);
 
   // Runtime sessions, readable under the account's learner key.
-  const runtime = await h.provider.runtimeStore.listSessions('anon-course', ACCOUNT);
-  expect(runtime.map((session) => [session.id, session.learnerKey])).toEqual([
-    [`rt-${ANON}`, ACCOUNT],
-  ]);
+  await expect(h.provider.runtimeStore.getSession(`rt-${ANON}`)).resolves.toMatchObject({
+    learnerKey: ACCOUNT,
+  });
+  const futureRow = await h.pool.query<{ learner_key: string }>(
+    'SELECT learner_key FROM runtime_sessions WHERE id = $1',
+    [`rt-future-${ANON}`],
+  );
+  expect(futureRow.rows[0]?.learner_key).toBe(ACCOUNT);
 
   // Assets: the account's own now, and still rendering in the claimed course
   // for another owner through the foreign-read rule.

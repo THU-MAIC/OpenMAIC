@@ -102,6 +102,8 @@ export async function storeGeneratedAsset(
   // the run's owner to an account while it generates. The forward and the
   // allocation share one transaction under the owner's identity lock, so a
   // claim cannot land between them and leave the entry under a retired owner.
+  // `input.assetStore` is a test seam for the refusal branch: it allocates
+  // exactly where it is told, unfenced. The production path below is fenced.
   const allocate: (meta: AssetMeta, blob: Blob) => Promise<string> = input.assetStore
     ? (meta, blob) => input.assetStore!.put(assetPrincipalForOwner(input.ownerId), blob, meta)
     : async (meta, blob) => {

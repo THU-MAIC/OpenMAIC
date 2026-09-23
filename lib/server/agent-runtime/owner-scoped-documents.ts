@@ -113,6 +113,10 @@ function forwardingDocumentStore(
     get(_target, property) {
       // Not a thenable: `await store` must yield the store, not call `then`.
       if (typeof property !== 'string' || property === 'then') return undefined;
+      // Only methods are forwarded (and re-resolved per call); anything else
+      // is read from the store bound now, as it is.
+      const value = (bound.store as unknown as Record<string, unknown>)[property];
+      if (typeof value !== 'function') return value;
       return async (...args: unknown[]) => {
         const invoke = (store: OwnerScopedDocumentStore) => {
           const method = (store as unknown as Record<string, unknown>)[property];

@@ -18,7 +18,7 @@ import { randomBytes } from 'node:crypto';
 
 import { isDocumentWriteRefusedError } from '@openmaic/storage';
 
-import { isOwnerRetiredError, ownerRetiredResponse } from '@/lib/persistence/owner-merges';
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
 import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
@@ -121,7 +121,8 @@ export async function POST(req: NextRequest) {
     } catch (error) {
       // A retired identity (claimed into an account), or a host's
       // authorizeCreate refusal; nothing was written either way.
-      if (isOwnerRetiredError(error)) return ownerRetiredResponse(responseHeaders);
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
       if (isDocumentWriteRefusedError(error)) {
         return ownerApiError('CREATE_REFUSED', 403, error.message, responseHeaders);
       }

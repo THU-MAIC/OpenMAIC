@@ -1,5 +1,5 @@
 import {
-  CLAIM_REFUSAL_STATUS,
+  claimRefusalResponse,
   isSameOriginJsonRequest,
   runPendingClaim,
 } from '@/lib/persistence/owner-claim-http';
@@ -24,7 +24,10 @@ function jsonError(status: number, code: string, message: string, headers: Heade
  * - `200 { status: 'claimed', moved }` or `200 { status: 'already-claimed' }`,
  *   both with `Set-Cookie` values that drop the anonymous cookie. A refusal
  *   answers `4xx { error: { code } }` and changes nothing; one that can never
- *   succeed (`ALREADY_CLAIMED_ELSEWHERE`) drops the cookie as well.
+ *   succeed (`ALREADY_CLAIMED_ELSEWHERE`) drops the cookie as well. A claim
+ *   that lost a lock race answers `503 OWNER_BUSY` with `Retry-After`.
+ * - Never claimed automatically before this handler (`OWNER_CLAIM_TRIGGER=auto`
+ *   skips this route), so the answer always reports this request's claim.
  */
 export async function POST(request: Request): Promise<Response> {
   if (!isSameOriginJsonRequest(request)) {
@@ -63,14 +66,7 @@ export async function POST(request: Request): Promise<Response> {
     const outcome = await runPendingClaim(principal);
     for (const cookie of outcome.setCookies) responseHeaders.append('Set-Cookie', cookie);
     responseHeaders.set('cache-control', 'no-store');
-    if (!outcome.ok) {
-      return jsonError(
-        CLAIM_REFUSAL_STATUS[outcome.refusal],
-        outcome.refusal,
-        outcome.message,
-        responseHeaders,
-      );
-    }
+    if (!outcome.ok) return claimRefusalResponse(outcome, responseHeaders);
     return Response.json(outcome.result, { status: 200, headers: responseHeaders });
   });
 }

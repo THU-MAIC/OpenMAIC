@@ -101,14 +101,14 @@ export function configureOwnerAuthenticator(authenticator: OwnerAuthenticator): 
     typeof authenticator.authenticate !== 'function' ||
     (authenticator.authenticateFromContext !== undefined &&
       typeof authenticator.authenticateFromContext !== 'function') ||
-    (['canonicalize', 'describeStoredOwner', 'clearPendingClaim'] as const).some(
+    (['describeStoredOwner', 'clearPendingClaim'] as const).some(
       (method) =>
         authenticator[method] !== undefined && typeof authenticator[method] !== 'function',
     )
   ) {
     throw new Error(
       'configureOwnerAuthenticator expects { name, authenticate(req), authenticateFromContext?(), ' +
-        'canonicalize?(tx, ownerId), describeStoredOwner?(ownerId), clearPendingClaim?() }',
+        'describeStoredOwner?(ownerId), clearPendingClaim?() }',
     );
   }
   if (process.env.PERSISTENCE_SHARED_OWNER_ID?.trim()) {

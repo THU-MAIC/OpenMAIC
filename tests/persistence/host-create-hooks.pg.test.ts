@@ -160,6 +160,69 @@ describe.skipIf(!contractUrl)('host create hooks on PostgreSQL', () => {
     expect(Number(held.rows[0]!.n)).toBe(0);
   });
 
+  it('a second create of one id waits for the first and saves as an update, never as reserved', async () => {
+    // The interleaving that used to refuse the second create: its ownership
+    // probe runs before the first create commits, and its document probe
+    // after. The second create's connection holds its document probe until
+    // the first create has committed, so without the per-id create lock that
+    // interleaving happens every time.
+    let firstParked!: () => void;
+    const parked = new Promise<void>((resolve) => (firstParked = resolve));
+    let releaseFirst!: () => void;
+    const released = new Promise<void>((resolve) => (releaseFirst = resolve));
+    let firstCommitted!: () => void;
+    const committed = new Promise<void>((resolve) => (firstCommitted = resolve));
+    const onCreate = vi.fn(
+      async (...args: Parameters<NonNullable<PersistenceHooks['onCreate']>>) => {
+        if (onCreate.mock.calls.length === 1) {
+          firstParked();
+          await released;
+        }
+        await recordHostRow!(...args);
+      },
+    );
+    const first = store({ name: 'host', onCreate }).saveDocument(
+      courseDocument('stage-pg-probe', 'First'),
+    );
+    await parked;
+
+    const heldBetweenProbes = {
+      async connect() {
+        const client = await pool.connect();
+        return {
+          query: async (text: string, params?: unknown[]) => {
+            if (text.includes('SELECT EXISTS(SELECT 1 FROM document_stages')) await committed;
+            return client.query(text, params);
+          },
+          release: () => client.release(),
+        };
+      },
+    };
+    const second = createOwnerBoundDocumentStore({
+      pool: heldBetweenProbes,
+      ownerId: OWNER,
+      validateScene: validateAppScene,
+      validateStage: validateAppStage,
+      createHooks: { name: 'host', onCreate },
+    }).saveDocument(courseDocument('stage-pg-probe', 'Second'));
+
+    // Let the second create reach whatever it waits on, then commit the first.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    releaseFirst();
+    await first;
+    firstCommitted();
+
+    await expect(second).resolves.toBeUndefined();
+    // One create, one update: the hooks ran once, and the second save won.
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    await expect(counts('stage-pg-probe')).resolves.toEqual({ stages: 1, meta: 1, host: 1 });
+    const name = await pool.query<{ name: string }>(
+      'SELECT name FROM document_stages WHERE id = $1',
+      ['stage-pg-probe'],
+    );
+    expect(name.rows[0]?.name).toBe('Second');
+  });
+
   it('gates concurrent operations on one shared store instance by their own operation', async () => {
     const onCreate = vi.fn(recordHostRow!);
     // One instance for every call, as an agent run shares one store with all

@@ -24,7 +24,7 @@ import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { ownerJson } from '@/lib/server/agent-runtime/route-response';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
-import { isOwnerRetiredError, ownerRetiredResponse } from '@/lib/persistence/owner-merges';
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 
 export const runtime = 'nodejs';
 
@@ -59,7 +59,8 @@ export async function POST(req: NextRequest) {
       }
       return ownerJson({ ok: true }, 200, responseHeaders);
     } catch (error) {
-      if (isOwnerRetiredError(error)) return ownerRetiredResponse(responseHeaders);
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
       console.error(
         `[Folders] Failed to set membership [owner=${ownerId}, stage=${stageId}]:`,
         error,

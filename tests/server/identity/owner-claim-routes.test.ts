@@ -230,6 +230,80 @@ describe('claiming anonymous work through the routes', () => {
     expect(await ownerOf('anon-course')).toBe(ALICE);
   });
 
+  it('under OWNER_CLAIM_TRIGGER=auto the explicit routes still report their claim as a success', async () => {
+    vi.stubEnv('OWNER_CLAIM_TRIGGER', 'auto');
+    const response = await claim(gateway('alice', { cookie: ANON_COOKIE, ...SAME_ORIGIN_JSON }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ status: 'claimed' });
+    expect(clearsAnonymousCookie(response)).toBe(true);
+    expect(await ownerOf('anon-course')).toBe(ALICE);
+
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const merge = await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/runtime/learners/merge', {
+        method: 'POST',
+        headers: gateway('alice', { cookie: ANON_COOKIE, ...SAME_ORIGIN_JSON }),
+        body: JSON.stringify({ fromLearnerKey: ANON, toLearnerKey: ALICE }),
+      }),
+      { poolFactory: () => pool as never },
+    );
+    expect(merge.status).toBe(200);
+    await expect(merge.json()).resolves.toEqual({ moved: 0 });
+  });
+
+  it('drops a retired anonymous cookie with every OWNER_RETIRED, so the browser recovers', async () => {
+    const { createUserSkill } = await import('@/lib/server/agent-runtime/user-skills');
+    vi.stubEnv('OPENMAIC_AGENT_RUNTIME_ENABLED', 'true');
+    const skill = await createUserSkill(ANON, {
+      name: 'my-early',
+      title: 'Early',
+      description: 'Written before signing in',
+      content: 'Early.',
+    });
+    const claimed = await claim(gateway('alice', { cookie: ANON_COOKIE, ...SAME_ORIGIN_JSON }));
+    expect(claimed.status).toBe(200);
+
+    // The browser never applied the claim's Set-Cookie and still presents
+    // the retired anonymous cookie, to a deployment that admits anonymous
+    // requests.
+    vi.stubEnv('OWNER_AUTHENTICATOR', '');
+    vi.stubEnv('TRUSTED_PROXY_SECRET', '');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const save = await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/documents/stale-course', {
+        method: 'PUT',
+        headers: { cookie: ANON_COOKIE, 'content-type': 'application/json' },
+        body: JSON.stringify(courseDocument('stale-course')),
+      }),
+      { poolFactory: () => pool as never },
+    );
+    expect(save.status).toBe(403);
+    await expect(save.json()).resolves.toMatchObject({ error: { code: 'OWNER_RETIRED' } });
+    expect(clearsAnonymousCookie(save)).toBe(true);
+
+    // A write by id to a row that moved says the same, not "not found".
+    const { DELETE } = await import('@/app/api/agent/skills/[id]/route');
+    const { NextRequest } = await import('next/server');
+    const removed = await DELETE(
+      new NextRequest(`http://localhost/api/agent/skills/${skill.id}`, {
+        method: 'DELETE',
+        headers: { cookie: ANON_COOKIE },
+      }),
+      { params: Promise.resolve({ id: skill.id }) },
+    );
+    expect(removed.status).toBe(403);
+    await expect(removed.json()).resolves.toMatchObject({ error: { code: 'OWNER_RETIRED' } });
+    expect(clearsAnonymousCookie(removed)).toBe(true);
+
+    // Without the cookie, the next request is a fresh anonymous owner.
+    const fresh = await handlePersistenceRequest(
+      new Request('http://localhost/api/persistence/learner-key'),
+      { poolFactory: () => pool as never },
+    );
+    const { learnerKey } = (await fresh.json()) as { learnerKey: string };
+    expect(learnerKey).not.toBe(ANON);
+  });
+
   it('refuses an unknown OWNER_CLAIM_TRIGGER at boot', async () => {
     vi.stubEnv('OWNER_CLAIM_TRIGGER', 'sometimes');
     const { validateOwnerIdentityConfiguration } = await import('@/lib/server/identity/registry');

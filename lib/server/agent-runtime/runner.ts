@@ -1444,7 +1444,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       // Skill created earlier IN THIS RUN is not in `installedSkills` (loaded
       // once at start), and a tool that appears only on the next run would be a
       // capability the model cannot discover when it needs it.
-      buildSkillEditTools(meta.ownerId),
+      buildSkillEditTools(meta.ownerId, currentOwner),
       // The native `read` tool is restricted to installed skill resources; it is
       // present exactly when skills exist. Discovery and invocation stay pi-native.
       skillReadTool ? [skillReadTool] : [],

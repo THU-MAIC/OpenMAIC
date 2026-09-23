@@ -156,5 +156,8 @@ export function createAnonymousCookieAuthenticator(): OwnerAuthenticator {
     authenticateFromContext: authenticateAnonymousContext,
     describeStoredOwner: (ownerId) =>
       isAnonymousCookieOwnerId(ownerId) ? { kind: 'anonymous', roles: NO_ROLES } : undefined,
+    // Dropping a retired cookie is all recovery takes: the next request mints
+    // a fresh anonymous owner.
+    clearPendingClaim: () => [clearAnonymousCookieHeader()],
   };
 }

@@ -31,24 +31,30 @@
  * |   700 | `assets`          | `asset_entries.principal`                              |
  *
  * Why this order. Every core write path takes the identity lock first, so none
- * of them can be holding a row a claim wants while it waits for the claim.
- * What the order protects against is a path that takes row locks without it:
- * the claim must lock tables in the same order those paths do. It follows the
- * document write, the one path that spans several of these tables: the
- * `stage_meta` row, then document rows, then the asset entries the document
- * commits. Folders come first because they must read ownership before it
- * moves (a course's folder is resolved against the owner that filed it).
- * Agent sessions come before anything derived from them, and the package's
- * own merge locks sessions before the projection counters, as an event append
- * does. Assets are last: the offline collector locks entries without the
- * identity lock, and entries are the last thing a document write locks too.
- * A host participant that locks core rows should take an order after the
+ * of them can be holding a row a claim wants while it waits for the claim: for
+ * the rows those paths write, the identity lock is the guarantee, whatever the
+ * order. The order is for lockers that do not take it (the offline asset
+ * collector, host paths). For the tables a document write spans, the claim
+ * locks rows in the order that write does: the `stage_meta` rows first (the
+ * folders participant locks the source's before it re-files any
+ * `document_stages` row), then document rows, then asset entries last, where
+ * the collector and the document write lock them too. Folders run before
+ * courses because they read ownership before it moves (a course's folder is
+ * resolved against the owner that filed it). The package's session merge
+ * locks sessions before the projection counters, as an event append does. A
+ * host participant that locks core rows should take an order after the core
  * tables it reads; one that touches only its own tables can take any order
- * (1000 and up is left free for hosts).
+ * (1000 and up is left free for hosts). This is what the tests show: no
+ * deadlock between a claim and the fenced writers, including a claim parked
+ * mid-way; the collector is not fenced, and a pass racing a claim over the
+ * same entries can still make PostgreSQL abort one side (answered as a
+ * retryable `OWNER_BUSY`).
  *
  * ## Rules
  *
- * - `from` must be an anonymous owner and `to` must not be.
+ * - `from` must be an owner the configured authenticator describes as
+ *   anonymous (`principalFromStoredOwner`), and `to` must not be anonymous.
+ *   An authenticator that sets `pendingClaim` describes those ids so.
  * - Idempotent: claiming a pair that is already merged succeeds and does
  *   nothing, so a retried request or a second tab is harmless.
  * - A `from` already claimed into a different account is refused: an anonymous
@@ -57,6 +63,11 @@
  *   absorbed other owners. Since only anonymous owners are claimed and only
  *   non-anonymous owners claim, a merge is always one hop, and canonicalizing
  *   an id is one lookup.
+ * - Waits are bounded: the identity locks for `OWNER_CLAIM_LOCK_WAIT_MS`
+ *   (default 5 s; while a claim waits, PostgreSQL queues new writers of both
+ *   owners behind it, so this wait is kept short), every later lock for 30 s.
+ *   Losing a lock race is `OwnerClaimError('OWNER_BUSY')`, which changes
+ *   nothing and may be retried as it is.
  * - Quotas are not enforced on the target: nothing is dropped, so an account
  *   can end up above its asset, material, skill or folder limit. It keeps
  *   everything and cannot add more until it is back under.
@@ -75,7 +86,12 @@ import { isStorableOwnerId } from '@/lib/server/identity/types';
 import { principalFromStoredOwner } from '@/lib/server/identity/stored-owner';
 
 import { assetPrincipalForOwner } from './owner-assets';
-import { lockOwnerIdentities } from './owner-merges';
+import {
+  isLockContention,
+  isOwnerBusyError,
+  lockOwnerIdentities,
+  resolveLockWaitMs,
+} from './owner-merges';
 import { ownerMaterialQuotaLockKey } from './owner-materials';
 import { getServerPersistenceProvider, type ServerPersistenceProvider } from './server-provider';
 import { STAGE_META_OWNERSHIP } from './stage-meta-ownership';
@@ -188,14 +204,21 @@ function coreParticipants(provider: ServerPersistenceProvider): ClaimParticipant
     {
       name: 'document-folders',
       order: 100,
-      rekey: async (tx, from, to) =>
-        (
+      rekey: async (tx, from, to) => {
+        // The source's ownership rows before any document row, the order a
+        // document write locks them in.
+        await tx.query(
+          'SELECT stage_id FROM stage_meta WHERE owner_id = $1 ORDER BY stage_id FOR UPDATE',
+          [from],
+        );
+        return (
           await reassignDocumentFolders(tx, {
             fromOwnerId: from,
             toOwnerId: to,
             documentOwnership: STAGE_META_OWNERSHIP,
           })
-        ).length,
+        ).length;
+      },
     },
     {
       name: 'courses',
@@ -276,13 +299,14 @@ function coreParticipants(provider: ServerPersistenceProvider): ClaimParticipant
       name: 'runtime',
       order: 600,
       rekey: async (tx, from, to) => {
-        // The package's own merge, pinned to this transaction: same session
-        // re-key (and validation) the runtime HTTP contract's merge performs.
+        // A plain re-key, pinned to this transaction. Not `mergeLearner`,
+        // which re-validates every session: one row a newer version wrote
+        // would make every claim of this owner fail. Readers keep validating.
         const store = new PgRuntimeStore(tx, {
           withTransaction: (body) => body(tx),
           payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
         });
-        return store.mergeLearner(from, to);
+        return store.reassignLearner(from, to);
       },
     },
     {
@@ -316,7 +340,8 @@ export type OwnerClaimRefusal =
   | 'TARGET_ANONYMOUS'
   | 'ALREADY_CLAIMED_ELSEWHERE'
   | 'TARGET_RETIRED'
-  | 'SOURCE_HAS_CLAIMS';
+  | 'SOURCE_HAS_CLAIMS'
+  | 'OWNER_BUSY';
 
 /** A claim the rules above refuse. Nothing was changed. */
 export class OwnerClaimError extends Error {
@@ -331,11 +356,10 @@ export class OwnerClaimError extends Error {
 
 export interface ClaimOwnerOptions {
   /**
-   * The kind of `fromOwnerId`. Defaults to what the configured authenticator
-   * says of the stored id (`principalFromStoredOwner`).
+   * The kind of `toOwnerId`. Defaults to what the configured authenticator
+   * says of the stored id (`principalFromStoredOwner`). The source's kind is
+   * always that: see the rules above.
    */
-  fromKind?: SubjectKind;
-  /** The kind of `toOwnerId`; defaults like {@link fromKind}. */
   toKind?: SubjectKind;
   /** What the anonymous credential proved; recorded on the merge row. */
   fromAssurance?: OwnerAssurance;
@@ -351,8 +375,10 @@ export type ClaimOwnerResult =
     }
   | { status: 'already-claimed' };
 
-/** How long a claim waits for any one lock before it gives up (and rolls back). */
+/** How long a claim waits for any row or store lock after its identity locks. */
 const CLAIM_LOCK_TIMEOUT_SQL = `SET LOCAL lock_timeout = '30s'`;
+/** How long a claim waits for the two identity locks (see the rules above). */
+const DEFAULT_CLAIM_LOCK_WAIT_MS = 5_000;
 
 /**
  * Move everything `fromOwnerId` owns to `toOwnerId` and retire `fromOwnerId`,
@@ -370,7 +396,7 @@ export async function claimOwner(
   if (fromOwnerId === toOwnerId) {
     throw new OwnerClaimError('SAME_OWNER', 'an owner cannot claim itself');
   }
-  const fromKind = options.fromKind ?? principalFromStoredOwner(fromOwnerId).kind;
+  const fromKind = principalFromStoredOwner(fromOwnerId).kind;
   const toKind = options.toKind ?? principalFromStoredOwner(toOwnerId).kind;
   if (fromKind !== 'anonymous') {
     throw new OwnerClaimError('SOURCE_NOT_ANONYMOUS', 'only an anonymous owner can be claimed');
@@ -382,9 +408,33 @@ export async function claimOwner(
     options.provider ?? (await getServerPersistenceProvider(process.env.DATABASE_URL ?? ''));
   const participants = participantsInOrder(provider);
 
-  return provider.withTransaction(async (tx) => {
+  const identityWaitMs = resolveLockWaitMs('OWNER_CLAIM_LOCK_WAIT_MS', DEFAULT_CLAIM_LOCK_WAIT_MS);
+  try {
+    return await provider.withTransaction((tx) =>
+      claimInTransaction(tx, fromOwnerId, toOwnerId, participants, identityWaitMs, options),
+    );
+  } catch (error) {
+    if (isOwnerBusyError(error) || isLockContention(error)) {
+      throw new OwnerClaimError(
+        'OWNER_BUSY',
+        'the owners are being written to; retry the claim shortly',
+      );
+    }
+    throw error;
+  }
+}
+
+async function claimInTransaction(
+  tx: Queryable,
+  fromOwnerId: string,
+  toOwnerId: string,
+  participants: readonly ClaimParticipant[],
+  identityWaitMs: number,
+  options: ClaimOwnerOptions,
+): Promise<ClaimOwnerResult> {
+  {
+    await lockOwnerIdentities(tx, [fromOwnerId, toOwnerId], 'exclusive', identityWaitMs);
     await tx.query(CLAIM_LOCK_TIMEOUT_SQL);
-    await lockOwnerIdentities(tx, [fromOwnerId, toOwnerId], 'exclusive');
     // After the locks, in statements of their own: see `./owner-merges.ts`.
     const merges = await tx.query<
       { from_owner_id: string; to_owner_id: string } & Record<string, unknown>
@@ -419,23 +469,27 @@ export async function claimOwner(
       [fromOwnerId, toOwnerId, options.fromAssurance ?? null, JSON.stringify(moved)],
     );
     return { status: 'claimed', moved } as const;
-  });
+  }
 }
 
 /**
  * Claim the anonymous owner a request presented beside `principal` (its
- * {@link OwnerPrincipal.pendingClaim}) into `principal`. The pending claim is
- * the authenticator's statement that its owner is anonymous.
+ * {@link OwnerPrincipal.pendingClaim}) into `principal`. The source must still
+ * be described as anonymous by the authenticator (`describeStoredOwner`).
+ *
+ * The anonymous cookie is a bearer credential: whoever presents it beside a
+ * signed-in account can claim that anonymous work into the account -- the
+ * same holder could already read and edit it. On a shared device, clear it
+ * (or let the claim do so) before another person signs in.
  */
 export async function claimPendingOwner(
   principal: OwnerPrincipal,
-  options: Omit<ClaimOwnerOptions, 'fromKind' | 'toKind' | 'fromAssurance'> = {},
+  options: Omit<ClaimOwnerOptions, 'toKind' | 'fromAssurance'> = {},
 ): Promise<ClaimOwnerResult> {
   const claim = principal.pendingClaim;
   if (!claim) throw new Error('claimPendingOwner requires a principal with a pendingClaim');
   return claimOwner(claim.fromOwnerId, principal.ownerId, {
     ...options,
-    fromKind: 'anonymous',
     toKind: principal.kind,
     fromAssurance: claim.assurance,
   });

@@ -15,7 +15,7 @@ import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { listSkills } from '@/lib/server/agent-runtime/skills';
 import { createUserSkill, UserSkillError } from '@/lib/server/agent-runtime/user-skills';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
-import { isOwnerRetiredError, ownerRetiredResponse } from '@/lib/persistence/owner-merges';
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import {
   parseUserSkillMarkdown,
   parseUserSkillZip,
@@ -96,7 +96,8 @@ export async function POST(req: NextRequest) {
           { status: 400, headers: responseHeaders },
         );
       }
-      if (isOwnerRetiredError(error)) return ownerRetiredResponse(responseHeaders);
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
       throw error;
     }
   });

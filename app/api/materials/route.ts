@@ -61,7 +61,7 @@ import {
   reclaimStaleOwnerMaterialUploads,
   registerOwnerMaterial,
 } from '@/lib/persistence/owner-materials';
-import { isOwnerRetiredError, ownerRetiredResponse } from '@/lib/persistence/owner-merges';
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getMaterialByteStore } from '@/lib/server/materials/bytes';
 import {
@@ -313,9 +313,8 @@ export async function POST(req: NextRequest) {
             responseHeaders,
           );
         }
-        if (isOwnerRetiredError(error)) {
-          return reject(ownerRetiredResponse(), 'owner_retired', responseHeaders);
-        }
+        const claimed = ownerWriteErrorResponse(error);
+        if (claimed) return reject(claimed, 'owner_claim', responseHeaders);
         throw error;
       }
 

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 
-import type { RuntimeStore } from '@openmaic/storage';
+import { DocumentWriteRefusedError, type RuntimeStore } from '@openmaic/storage';
 import type { Queryable } from '@openmaic/storage/document/pg';
 import {
   createStorageHttpHandler,
@@ -22,11 +22,17 @@ import {
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
 import { assetPrincipalForOwner, createOwnerAssetStore } from '@/lib/persistence/owner-assets';
 import {
-  CLAIM_REFUSAL_STATUS,
+  claimRefusalResponse,
   isSameOriginJsonRequest,
   runPendingClaim,
 } from '@/lib/persistence/owner-claim-http';
-import { isOwnerRetired, ownerRetiredResponse } from '@/lib/persistence/owner-merges';
+import {
+  isOwnerRetired,
+  OWNER_RETIRED,
+  OwnerBusyError,
+  ownerRetiredResponse,
+  retiredCredentialCookies,
+} from '@/lib/persistence/owner-merges';
 import { guardedServerRuntimeStore } from '@/lib/persistence/runtime-tombstone-guard';
 import {
   getServerPersistenceProvider,
@@ -159,7 +165,13 @@ function mergeThroughClaim(store: RuntimeStore, principal: OwnerPrincipal): Runt
     ...store,
     mergeLearner: async () => {
       const outcome = await runPendingClaim(principal);
-      if (!outcome.ok) throw new Error(`owner claim refused: ${outcome.refusal}`);
+      if (!outcome.ok) {
+        // Typed, so the handler answers them as the claim endpoint does
+        // (`503` for a busy claim, `403` with the refusal's code otherwise)
+        // rather than as an internal error.
+        if (outcome.refusal === 'OWNER_BUSY') throw new OwnerBusyError();
+        throw new DocumentWriteRefusedError('', outcome.refusal, outcome.message);
+      }
       return outcome.result.status === 'claimed' ? (outcome.result.moved.runtime ?? 0) : 0;
     },
   };
@@ -198,12 +210,7 @@ async function handleLearnerMerge(
   }
   const outcome = await runPendingClaim(principal);
   for (const cookie of outcome.setCookies) responseHeaders.append('Set-Cookie', cookie);
-  if (!outcome.ok) {
-    return withHeaders(
-      jsonError(CLAIM_REFUSAL_STATUS[outcome.refusal], outcome.refusal, outcome.message),
-      responseHeaders,
-    );
-  }
+  if (!outcome.ok) return claimRefusalResponse(outcome, responseHeaders);
   const moved = outcome.result.status === 'claimed' ? (outcome.result.moved.runtime ?? 0) : 0;
   return withHeaders(Response.json({ moved }, { status: 200 }), responseHeaders);
 }
@@ -313,7 +320,7 @@ async function createPersistenceHandler(
     assetStore: createOwnerAssetStore(assetStore, {
       ownerId,
       queryable: pool,
-      legacyMutations: { withTransaction, storeIn: assetStoreIn },
+      transactions: { withTransaction, storeIn: assetStoreIn },
     }),
     ...(byteEgress === undefined ? {} : { byteEgress }),
   });
@@ -516,9 +523,13 @@ async function handlePersistenceRequestInner(
         return await handleLearnerMerge(request, principal, responseHeaders);
       }
       // A request that still presents an identity a claim retired writes
-      // nothing: its work lives in the account now. The write paths fence
-      // this exactly inside their transactions; this answers the common case
-      // up front with one status for every contract.
+      // nothing: its work lives in the account now. What makes that exact is
+      // the fence inside every create transaction (documents, folders, asset
+      // allocations, runtime sessions), which answers `403 OWNER_RETIRED`
+      // itself. This check only answers the common case up front with the
+      // same status for every write, including writes by id to rows that
+      // moved (which would otherwise read as not found). It costs nothing for
+      // an owner that cannot be retired (see `isOwnerRetired`).
       if (!READ_METHODS.has(request.method)) {
         const { pool } = await getServerPersistenceProvider(connectionString, deps.poolFactory);
         if (await isOwnerRetired(pool as unknown as Queryable, ownerId)) {
@@ -557,7 +568,14 @@ async function handlePersistenceRequestInner(
               ),
               request,
             );
-      return withHeaders(admission.refusal ?? handled, responseHeaders);
+      const answered = admission.refusal ?? handled;
+      // A write the fence refused inside its transaction: drop the retired
+      // credential, as the up-front answer above does.
+      if (answered.status === 403 && (await responseErrorCode(answered)) === OWNER_RETIRED) {
+        for (const cookie of retiredCredentialCookies())
+          responseHeaders.append('Set-Cookie', cookie);
+      }
+      return withHeaders(answered, responseHeaders);
     } catch (error) {
       console.error('Embedded persistence route initialization failed', error);
       return withHeaders(

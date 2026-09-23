@@ -81,14 +81,6 @@ export interface StoredOwnerDescription {
   readonly roles?: ReadonlySet<string>;
 }
 
-/** The query surface {@link OwnerAuthenticator.canonicalize} runs on: an open transaction. */
-export interface OwnerIdentityQueryable {
-  query<TRow extends Record<string, unknown> = Record<string, unknown>>(
-    text: string,
-    params?: unknown[],
-  ): Promise<{ rows: TRow[] }>;
-}
-
 export type AuthOutcome =
   | {
       readonly ok: true;
@@ -139,28 +131,28 @@ export interface OwnerAuthenticator {
    */
   authenticateFromContext?(): Promise<AuthOutcome>;
   /**
-   * Resolve an owner id the host itself has retired (its own account merges)
-   * to the owner it now forwards to. Called by core after it has followed its
-   * own claim records (`owner_merges`), inside the caller's transaction, so a
-   * host that keeps its merges in the same database answers consistently with
-   * it. Must return a storable owner id; returning the id unchanged means
-   * "not retired". Optional: core's claim records are followed for every host.
-   */
-  canonicalize?(tx: OwnerIdentityQueryable, ownerId: string): Promise<string>;
-  /**
    * Describe an owner id this authenticator minted, for work that holds only
    * the stored id (an agent run, a claim). Answer `undefined` for an id it
    * does not recognize. Optional: without it, `principalFromStoredOwner`
    * describes every id as `kind: 'user'` with no roles, which is also what
    * makes an unrecognized id ineligible as the anonymous side of a claim.
+   *
+   * An authenticator that sets {@link OwnerPrincipal.pendingClaim} must
+   * describe those anonymous ids as `kind: 'anonymous'`: a claim is refused
+   * for any other source, and the write fences rely on it (only an id
+   * described as anonymous can ever be retired, so only those are looked up).
    */
   describeStoredOwner?(ownerId: string): StoredOwnerDescription | undefined;
   /**
-   * `Set-Cookie` values that drop the anonymous credential behind a
-   * {@link OwnerPrincipal.pendingClaim}, sent once the claim is done (or can
-   * never succeed) so the browser stops presenting a retired identity.
-   * Optional: an authenticator that never sets `pendingClaim`, or whose
-   * anonymous credential is not a cookie, leaves it out.
+   * `Set-Cookie` values that drop the anonymous credential this authenticator
+   * reads -- the one behind a {@link OwnerPrincipal.pendingClaim}, or the
+   * anonymous principal's own. Sent once a claim is done (or can never
+   * succeed), and with every `403 OWNER_RETIRED`, so a browser stops
+   * presenting a retired identity and gets a fresh one. An authenticator
+   * whose anonymous path keeps accepting a retired credential without this
+   * leaves that browser refused on every write. Optional: one with no
+   * anonymous credential, or whose credential is not a cookie, leaves it out
+   * and must treat a retired anonymous credential as absent itself.
    */
   clearPendingClaim?(): readonly string[];
 }

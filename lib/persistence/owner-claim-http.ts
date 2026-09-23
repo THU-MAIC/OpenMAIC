@@ -73,7 +73,30 @@ export const CLAIM_REFUSAL_STATUS: Record<OwnerClaimRefusal, number> = {
   ALREADY_CLAIMED_ELSEWHERE: 409,
   TARGET_RETIRED: 409,
   SOURCE_HAS_CLAIMS: 409,
+  OWNER_BUSY: 503,
 };
+
+/** The `Retry-After` (seconds) a refusal answers with, when retrying as is can succeed. */
+export const CLAIM_REFUSAL_RETRY_AFTER: Partial<Record<OwnerClaimRefusal, number>> = {
+  OWNER_BUSY: 2,
+};
+
+/**
+ * The response to a refused claim: its status and code, the cookies the
+ * outcome carries, and `Retry-After` for a retryable refusal.
+ */
+export function claimRefusalResponse(
+  outcome: Extract<PendingClaimOutcome, { ok: false }>,
+  headers: Headers,
+): Response {
+  const response = Response.json(
+    { error: { code: outcome.refusal, message: outcome.message } },
+    { status: CLAIM_REFUSAL_STATUS[outcome.refusal], headers },
+  );
+  const retryAfter = CLAIM_REFUSAL_RETRY_AFTER[outcome.refusal];
+  if (retryAfter !== undefined) response.headers.set('retry-after', String(retryAfter));
+  return response;
+}
 
 /**
  * Refusals after which the anonymous credential can never be claimed by this
