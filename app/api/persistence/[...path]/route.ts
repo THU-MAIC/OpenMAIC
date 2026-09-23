@@ -21,7 +21,6 @@ import { assetPrincipalForOwner, createOwnerAssetStore } from '@/lib/persistence
 import {
   createTombstoneGuardedRuntimeStore,
   isQueryableStageId,
-  runtimeSessionCreateStageId,
 } from '@/lib/persistence/runtime-tombstone-guard';
 import {
   getServerPersistenceProvider,
@@ -114,10 +113,8 @@ async function createPersistenceHandler(
   access: DocumentAccess,
   poolFactory?: PersistencePoolFactory,
 ): Promise<RequestListener> {
-  const { pool, runtimeStore, assetStore } = await getServerPersistenceProvider(
-    connectionString,
-    poolFactory,
-  );
+  const { pool, runtimeStore, assetStore, withTransaction, assetStoreIn } =
+    await getServerPersistenceProvider(connectionString, poolFactory);
   const documentStore = createOwnerBoundDocumentStore({
     pool,
     ownerId,
@@ -165,7 +162,11 @@ async function createPersistenceHandler(
     validateScene: validateAppScene,
     validateStage: validateAppStage,
     payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
-    assetStore: createOwnerAssetStore(assetStore, { ownerId, queryable: pool }),
+    assetStore: createOwnerAssetStore(assetStore, {
+      ownerId,
+      queryable: pool,
+      legacyMutations: { withTransaction, storeIn: assetStoreIn },
+    }),
     ...(byteEgress === undefined ? {} : { byteEgress }),
   });
 }
@@ -386,18 +387,6 @@ async function handlePersistenceRequestInner(
               .then((result) => result.rows.length > 0),
           (stageId) => readStageMeta(queryable, stageId),
         );
-      }
-
-      const createStageId = await runtimeSessionCreateStageId(request, path);
-      if (createStageId !== undefined) {
-        const { pool } = await getServerPersistenceProvider(connectionString, deps.poolFactory);
-        if (await isStageTombstoned(pool, createStageId)) {
-          // As if the course were absent: a deleted course takes no new runtime.
-          return withHeaders(
-            jsonError(404, 'STAGE_NOT_FOUND', '@openmaic/storage: stage not found'),
-            responseHeaders,
-          );
-        }
       }
 
       const response =

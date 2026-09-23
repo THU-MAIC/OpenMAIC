@@ -38,6 +38,7 @@ import { Pool } from 'pg';
 
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import { configuredS3Bucket, createAssetByteStore } from '@/lib/persistence/asset-byte-store';
+import { assetReferencePrincipalsForOwner } from '@/lib/persistence/owner-assets';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
 /**
@@ -179,6 +180,9 @@ export function startAssetCollectorSchedule(
       // comments in lib/persistence/server-provider.ts and
       // lib/persistence/owner-bound-document-store.ts.
       documentReferences: true,
+      // The backfill scopes each document's references exactly as a write by
+      // that document's owner would (lib/persistence/owner-bound-document-store.ts).
+      assetReferencePrincipals: assetReferencePrincipalsForOwner,
     });
   };
   const collector = (): Promise<AssetCollector> =>

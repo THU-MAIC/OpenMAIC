@@ -15,6 +15,7 @@ import type {
   StageValidator,
 } from '@openmaic/storage';
 
+import { assetReferencePrincipalsForOwner } from './owner-assets';
 import { claimStageMeta, StageAccessError, tombstoneStageMeta } from './stage-meta';
 
 export interface PoolClientLike {
@@ -309,6 +310,11 @@ export function createOwnerBoundDocumentStore<
     // runs without the other. It is also what `withdrawAssetReferences`
     // requires, and `deleteDocument` calls that on every retirement.
     trackAssetReferences: true,
+    // A write references and commits only this owner's own asset entries and
+    // legacy shared ones. Naming another owner's id in a course records
+    // nothing, so it can neither commit (and expose) another owner's pending
+    // allocation nor pin their entry and quota.
+    assetReferencePrincipals: assetReferencePrincipalsForOwner(options.ownerId),
   };
   const inner = new PgDocumentStore<TScene, TStage>(queryable, {
     ...innerOptions,

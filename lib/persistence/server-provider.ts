@@ -1,5 +1,10 @@
 import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
-import { PgDocumentStore, ensureDocumentSchema } from '@openmaic/storage/document/pg';
+import {
+  PgDocumentStore,
+  ensureDocumentSchema,
+  type Queryable,
+  type WithTransaction,
+} from '@openmaic/storage/document/pg';
 import { PgRuntimeStore, ensureSchema } from '@openmaic/storage/runtime/pg';
 import {
   nodePostgresTransaction,
@@ -22,6 +27,13 @@ export interface ServerPersistenceProvider {
   runtimeStore: PgRuntimeStore;
   documentStore: PgDocumentStore;
   assetStore: PgAssetStore;
+  /** Pin a body to one fresh transaction on the pool. */
+  withTransaction: WithTransaction;
+  /**
+   * The asset registry with every statement on `queryable`, an already open
+   * transaction, for a caller that must check and mutate atomically.
+   */
+  assetStoreIn(queryable: Queryable): ServerPersistenceProvider['assetStore'];
 }
 
 interface ProviderState {
@@ -86,6 +98,13 @@ async function createServerPersistenceProvider(
     // fresh initialization -- because a provider that came up without the
     // declaration would leave reclamation refused with nothing to notice it.
     await documentStore.declareAssetReferenceTracking();
+    const assetRegistry = (on: Queryable, transaction: WithTransaction) =>
+      new PgAssetStore(on, {
+        withTransaction: transaction,
+        byteStore,
+        pendingTtlMs,
+        ...(quotaBytes === undefined ? {} : { quotaBytes }),
+      });
     return {
       pool,
       runtimeStore: new PgRuntimeStore(queryable, {
@@ -93,12 +112,9 @@ async function createServerPersistenceProvider(
         payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
       }),
       documentStore,
-      assetStore: new PgAssetStore(queryable, {
-        withTransaction,
-        byteStore,
-        pendingTtlMs,
-        ...(quotaBytes === undefined ? {} : { quotaBytes }),
-      }),
+      assetStore: assetRegistry(queryable, withTransaction),
+      withTransaction,
+      assetStoreIn: (pinned) => assetRegistry(pinned, (body) => body(pinned)),
     };
   } catch (error) {
     await pool.end().catch(() => {});

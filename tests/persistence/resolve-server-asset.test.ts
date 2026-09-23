@@ -84,7 +84,12 @@ describe('resolveServerAsset', () => {
 
     expect(resolution.status).toBe('resolved');
     expect(mocks.assetStoreResolve).toHaveBeenLastCalledWith(foreign, toAssetId(ASSET_ID));
-    expect(mocks.poolQuery.mock.calls[0]?.[1]).toEqual([ASSET_ID, OWNER_PRINCIPAL.key, 'shared']);
+    expect(mocks.poolQuery.mock.calls[0]?.[1]).toEqual([
+      ASSET_ID,
+      OWNER_PRINCIPAL.key,
+      'shared',
+      'owner:',
+    ]);
   });
 
   it('answers too_large from the recorded length WITHOUT resolving the bytes', async () => {

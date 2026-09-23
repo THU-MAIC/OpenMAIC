@@ -7,9 +7,10 @@
  * a session whose course is tombstoned reads as absent, its stage lists no
  * sessions, and — because the HTTP handler reads a session before every write
  * to it — status changes and record appends answer 404 as for an unknown
- * session. Creating a session on a tombstoned course is refused by the route
- * before the handler runs (`runtimeSessionCreateStageId`), since the handler
- * would otherwise classify a store refusal as an internal error.
+ * session. Creating a session on a tombstoned course is refused by the store
+ * itself with `RuntimeStageNotFoundError`, which the handler answers with
+ * `404 STAGE_NOT_FOUND`. Refusing it here, below the router, means no spelling
+ * of the request path can route around it.
  *
  * A course without `stage_meta` (never stored on this server) is not
  * tombstoned: runtime for local-only courses keeps working.
@@ -18,7 +19,7 @@
  * through: removing data of a deleted course is what a user would want.
  */
 import type { RuntimeSession } from '@openmaic/dsl';
-import type { RuntimeStore } from '@openmaic/storage';
+import { RuntimeStageNotFoundError, type RuntimeStore } from '@openmaic/storage';
 
 export type StageTombstoneReader = (stageId: string) => Promise<boolean>;
 
@@ -36,7 +37,10 @@ export function createTombstoneGuardedRuntimeStore(
   const tombstoned = (stageId: string) =>
     isQueryableStageId(stageId) ? isTombstoned(stageId) : Promise.resolve(false);
   return {
-    createSession: (init) => inner.createSession(init),
+    async createSession(init) {
+      if (await tombstoned(init.stageId)) throw new RuntimeStageNotFoundError(init.stageId);
+      return inner.createSession(init);
+    },
     async getSession(sessionId: string): Promise<RuntimeSession | undefined> {
       const session = await inner.getSession(sessionId);
       if (session === undefined) return undefined;
@@ -56,23 +60,4 @@ export function createTombstoneGuardedRuntimeStore(
     deleteStageRuntime: (stageId) => inner.deleteStageRuntime(stageId),
     deleteAllRuntime: () => inner.deleteAllRuntime(),
   };
-}
-
-/**
- * The stage id a `POST /runtime/sessions` request would create a session on,
- * read from a clone of the request so the handler still receives the body.
- * `undefined` for any other request, and for a body the handler will reject
- * as malformed anyway.
- */
-export async function runtimeSessionCreateStageId(
-  request: Request,
-  path: string,
-): Promise<string | undefined> {
-  if (request.method !== 'POST' || path !== '/runtime/sessions') return undefined;
-  try {
-    const body = (await request.clone().json()) as { stageId?: unknown } | null;
-    return typeof body?.stageId === 'string' ? body.stageId : undefined;
-  } catch {
-    return undefined;
-  }
 }

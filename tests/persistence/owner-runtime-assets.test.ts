@@ -336,6 +336,29 @@ describe('runtime and assets are keyed by the resolved owner', () => {
       expect(rows.rows).toEqual([{ id: 'record-t-1' }]);
     });
 
+    it.each(['/runtime/%73essions', '/runtime/sess%69ons', '/%72untime/sessions'])(
+      'refuses a new session on a deleted course however the path is spelled (%s)',
+      async (spelling) => {
+        const stageId = 'stage-tombstoned-encoded';
+        await saveCourse('alice', stageId);
+        await call('alice', `/documents/${stageId}`, { method: 'DELETE' });
+
+        const created = await call('alice', spelling, {
+          method: 'POST',
+          json: sessionInit('session-encoded', stageId, ALICE),
+        });
+
+        expect(created.status).toBe(404);
+        await expect(created.json()).resolves.toMatchObject({
+          error: { code: 'STAGE_NOT_FOUND' },
+        });
+        const rows = await pool.query('SELECT id FROM runtime_sessions WHERE stage_id = $1', [
+          stageId,
+        ]);
+        expect(rows.rows).toEqual([]);
+      },
+    );
+
     it('leaves runtime of a course this server never stored alone', async () => {
       const created = await call('alice', '/runtime/sessions', {
         method: 'POST',
@@ -416,6 +439,101 @@ describe('runtime and assets are keyed by the resolved owner', () => {
       expect(over.status).toBe(507);
       // Alice filling her quota does not fill Bob's.
       await allocate('bob', [5, 6, 7, 8]);
+    });
+  });
+
+  describe('references are the owner’s own', () => {
+    async function lifecycle(assetId: string) {
+      const result = await pool.query(
+        'SELECT committed_at, expires_at, unreferenced_at FROM asset_entries WHERE id = $1',
+        [assetId],
+      );
+      return result.rows[0] as
+        | { committed_at: unknown; expires_at: unknown; unreferenced_at: unknown }
+        | undefined;
+    }
+
+    async function refStages(assetId: string): Promise<string[]> {
+      const result = await pool.query(
+        'SELECT stage_id FROM document_asset_refs WHERE asset_id = $1 ORDER BY stage_id',
+        [assetId],
+      );
+      return (result.rows as { stage_id: string }[]).map((row) => row.stage_id);
+    }
+
+    it('does not let another owner’s course commit, expose or pin a pending allocation', async () => {
+      const id = await allocate('alice', [1, 2, 3, 4]);
+
+      await saveCourse('bob', 'stage-bob-claims', [id]);
+
+      expect((await call('bob', `/assets/${id}/content`)).status).toBe(404);
+      expect((await call('bob', `/assets/${id}/content`, { method: 'HEAD' })).status).toBe(404);
+      expect(await refStages(id)).toEqual([]);
+      const row = await lifecycle(id);
+      expect(row?.committed_at).toBeNull();
+      expect(row?.expires_at).not.toBeNull();
+
+      // Alice's own course is what commits it.
+      await saveCourse('alice', 'stage-alice-owns', [id]);
+      expect(await refStages(id)).toEqual(['stage-alice-owns']);
+      expect((await lifecycle(id))?.committed_at).not.toBeNull();
+    });
+
+    it('does not let another owner’s course keep a committed entry alive or readable', async () => {
+      const id = await allocate('alice');
+      await saveCourse('alice', 'stage-alice-media', [id]);
+      await saveCourse('bob', 'stage-bob-copies', [id]);
+      expect(await refStages(id)).toEqual(['stage-alice-media']);
+
+      await call('alice', '/documents/stage-alice-media', { method: 'DELETE' });
+
+      expect((await call('bob', `/assets/${id}/content`)).status).toBe(404);
+      // Released on schedule: Bob's course naming it does not hold it.
+      expect((await lifecycle(id))?.unreferenced_at).not.toBeNull();
+    });
+
+    it('keeps a referenced but uncommitted entry private', async () => {
+      const id = await allocate('alice');
+      await saveCourse('alice', 'stage-alice-uncommitted');
+      // A reference row without the commit a document write would make: the
+      // normal lifecycle never leaves this state, so it is built directly.
+      await pool.query(
+        `INSERT INTO document_asset_refs (stage_id, scope, scene_id, asset_id)
+         VALUES ('stage-alice-uncommitted', 'scene', 'scene-x', $1)`,
+        [id],
+      );
+      expect((await lifecycle(id))?.committed_at).toBeNull();
+
+      expect((await call('bob', `/assets/${id}/content`)).status).toBe(404);
+    });
+
+    it('keeps an entry private once its only course is tombstoned, even with rows left', async () => {
+      const id = await allocate('alice');
+      await saveCourse('alice', 'stage-alice-stale', [id]);
+      expect((await call('bob', `/assets/${id}/content`)).status).toBe(200);
+      // A tombstone whose reference rows were not withdrawn (the product's
+      // delete withdraws them in the same transaction).
+      await pool.query(`UPDATE stage_meta SET deleted_at = now() WHERE stage_id = $1`, [
+        'stage-alice-stale',
+      ]);
+      expect(await refStages(id)).toEqual(['stage-alice-stale']);
+
+      expect((await call('bob', `/assets/${id}/content`)).status).toBe(404);
+    });
+
+    it('ignores a reference row from a course that is not the entry owner’s', async () => {
+      const id = await allocate('alice');
+      await saveCourse('alice', 'stage-alice-gone', [id]);
+      await call('alice', '/documents/stage-alice-gone', { method: 'DELETE' });
+      await saveCourse('bob', 'stage-bob-row');
+      // A row the scoped document writes would never produce, restored out of band.
+      await pool.query(
+        `INSERT INTO document_asset_refs (stage_id, scope, scene_id, asset_id)
+         VALUES ('stage-bob-row', 'scene', 'scene-x', $1)`,
+        [id],
+      );
+
+      expect((await call('bob', `/assets/${id}/content`)).status).toBe(404);
     });
   });
 
