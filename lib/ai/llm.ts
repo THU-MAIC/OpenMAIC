@@ -9,7 +9,7 @@ import type { GenerateTextResult, JSONValue, LanguageModel, StreamTextResult } f
 import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
-import { isRetryableLlmError } from '@/lib/server/llm-fallback';
+import { shouldFallbackFor, logFallbackFired } from '@/lib/server/llm-fallback';
 import { getModelMetadataKey } from './model-metadata';
 import { getCanonicalModelId } from './model-aliases';
 import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
@@ -398,12 +398,18 @@ export async function callLLM<T extends GenerateTextParams>(
         );
         continue;
       }
-      if (allowFallback && isRetryableLlmError(round.error)) triggerFallback = true;
+      if (allowFallback && shouldFallbackFor(round.error, undefined)) {
+        triggerFallback = true;
+      }
     } else {
-      // Validation failure (e.g. empty output) — keep the last billed result,
-      // and only consider a fallback once the same-model retries are exhausted.
+      // Validation failure — keep the last billed result. The fallback is only
+      // considered for genuinely empty/whitespace-only output, never for a
+      // non-empty result that fails a caller-supplied validator (that would
+      // spend the fallback model's quota on "output quality is off").
       lastResult = round.result;
-      if (attempt >= maxAttempts && allowFallback) triggerFallback = true;
+      if (attempt >= maxAttempts && allowFallback) {
+        if (shouldFallbackFor(undefined, round.result?.text)) triggerFallback = true;
+      }
     }
   }
 
@@ -412,10 +418,11 @@ export async function callLLM<T extends GenerateTextParams>(
     const fallback = await resolveFallbackModelSafe(source);
     if (fallback) {
       const primary = typeof params.model === 'string' ? params.model : getModelId(params);
-      log.warn(
-        `[${source}] ${lastError !== undefined ? 'retryable failure' : 'empty output'} on ${
-          primary || '?'
-        }; falling back once to ${fallback.modelString}`,
+      logFallbackFired(
+        source,
+        lastError !== undefined ? 'retryable failure' : 'empty output',
+        primary || '?',
+        fallback.modelString,
       );
       const round = await runRound({ ...params, model: fallback.model } as T, 'fallback');
       if (round.ok) return round.result;
