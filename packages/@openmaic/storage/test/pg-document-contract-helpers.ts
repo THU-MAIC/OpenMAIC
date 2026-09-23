@@ -58,8 +58,29 @@ export async function acquireDocumentPgContractLock(pool: Pool): Promise<() => P
  * revision row makes the next test read a revision the trigger never produced.
  */
 export async function truncateDocumentTables(queryable: Queryable): Promise<void> {
+  await provisionContractOwnership(queryable);
   await queryable.query(
     `TRUNCATE document_outlines, document_scenes, document_stages,
-            document_scene_revision, document_stage_revision`,
+            document_scene_revision, document_stage_revision, document_contract_owners`,
+  );
+}
+
+/**
+ * The ownership relation the owner-scoped PostgreSQL suites bind stores to, as
+ * a host would keep it beside the document tables: `document_stages` has no
+ * ownership column. Truncated with the document tables above, in the same
+ * statement, so its foreign key never blocks the reset.
+ */
+export const CONTRACT_OWNERSHIP = {
+  table: 'document_contract_owners',
+  claimOnCreate: true,
+} as const;
+
+export async function provisionContractOwnership(queryable: Queryable): Promise<void> {
+  await queryable.query(
+    `CREATE TABLE IF NOT EXISTS document_contract_owners (
+       stage_id TEXT PRIMARY KEY REFERENCES document_stages(id) ON DELETE CASCADE,
+       owner_id TEXT NOT NULL
+     )`,
   );
 }

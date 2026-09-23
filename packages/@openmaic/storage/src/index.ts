@@ -126,6 +126,7 @@ export {
   ensureDocumentSchema,
   readStageFreshnessManifest,
   splitSqlStatements,
+  type DocumentOwnershipRelation,
   type PgDocumentStoreOptions,
   type StorageLockUnavailableReason,
 } from './document/pg.js';

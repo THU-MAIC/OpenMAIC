@@ -17,6 +17,7 @@ import { configuredLazyAssetByteStore } from '@/lib/persistence/asset-byte-store
 import { resolveAssetPendingTtlMs } from '@/lib/persistence/asset-pending-ttl';
 import { resolveAssetQuotaBytes } from '@/lib/persistence/asset-quota';
 import { ensureOwnerMaterialSchema } from '@/lib/persistence/owner-materials';
+import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 import { ensureStageMetaSchema } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 
@@ -68,11 +69,16 @@ async function createServerPersistenceProvider(
   const pool = poolFactory(connectionString);
   const queryable = pool as unknown as ConnectableQueryable;
   try {
-    await ensureSchema(queryable);
-    await ensureDocumentSchema(queryable);
-    await ensureStageMetaSchema(queryable);
-    await ensureOwnerMaterialSchema(queryable);
-    await ensureAssetSchema(queryable);
+    // One instance at a time: see withSchemaBootstrapLock. The ownership
+    // backfill in ensureStageMetaSchema runs under the same lock, before any
+    // store below is built.
+    await withSchemaBootstrapLock(queryable, async (locked) => {
+      await ensureSchema(locked);
+      await ensureDocumentSchema(locked);
+      await ensureStageMetaSchema(locked);
+      await ensureOwnerMaterialSchema(locked);
+      await ensureAssetSchema(locked);
+    });
     const withTransaction = nodePostgresTransaction(queryable);
     const byteStore = configuredLazyAssetByteStore(queryable);
     const documentStore = new PgDocumentStore(queryable, {

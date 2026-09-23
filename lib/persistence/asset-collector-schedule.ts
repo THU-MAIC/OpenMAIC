@@ -39,7 +39,9 @@ import { Pool } from 'pg';
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import { resolveConfiguredAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { assetReferencePrincipalsForOwner } from '@/lib/persistence/owner-assets';
+import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
+import { STAGE_META_OWNERSHIP } from '@/lib/persistence/stage-meta-ownership';
 
 /**
  * Fifteen minutes. Short enough that a deleted asset's bytes go the same day,
@@ -164,7 +166,7 @@ export function startAssetCollectorSchedule(
     // the schedule's -- `stop()` ends it, while the provider's is ended by the
     // shutdown hook that owns it.
     await getServerPersistenceProvider(connectionString);
-    await ensureAssetSchema(queryable);
+    await withSchemaBootstrapLock(queryable, ensureAssetSchema);
     // The same selection the request path makes (a host byte store, else
     // the built-in one), so this pass deletes through the layer the route
     // wrote through.
@@ -181,8 +183,12 @@ export function startAssetCollectorSchedule(
       // lib/persistence/owner-bound-document-store.ts.
       documentReferences: true,
       // The backfill scopes each document's references exactly as a write by
-      // that document's owner would (lib/persistence/owner-bound-document-store.ts).
+      // that document's owner would (lib/persistence/owner-bound-document-store.ts),
+      // learning the owner from `stage_meta` -- the provider awaited above has
+      // already adopted any course whose owner was recorded only on its
+      // document row.
       assetReferencePrincipals: assetReferencePrincipalsForOwner,
+      documentOwnership: STAGE_META_OWNERSHIP,
     });
   };
   const collector = (): Promise<AssetCollector> =>

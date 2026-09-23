@@ -22,6 +22,27 @@ function transactionOptions(db: PGlite): PgDocumentStoreOptions {
   };
 }
 
+/**
+ * A host's ownership relation, as a host that keeps ownership beside the
+ * document tables provisions it: one row per owned document, cascading with
+ * it, with a tombstone column.
+ */
+async function provisionOwnershipRelation(db: PGlite): Promise<void> {
+  await db.query(`CREATE TABLE document_owners (
+    stage_id TEXT PRIMARY KEY REFERENCES document_stages(id) ON DELETE CASCADE,
+    owner_id TEXT NOT NULL,
+    retired_at TIMESTAMPTZ
+  )`);
+}
+
+const OWNERSHIP = {
+  table: 'document_owners',
+  tombstoneColumn: 'retired_at',
+} as const;
+
+/** The same relation, with the store claiming the rows of what it creates. */
+const CLAIMING_OWNERSHIP = { ...OWNERSHIP, claimOnCreate: true } as const;
+
 async function restamp(db: PGlite, stageId: string, version: string | undefined): Promise<void> {
   const result = await db.query<{ data: unknown }>(
     'SELECT data FROM document_stages WHERE id = $1',
@@ -65,7 +86,11 @@ describe('owner-scoped PgDocumentStore contract', () => {
     db = new PGlite();
     await db.waitReady;
     await ensureDocumentSchema(db);
-    store = new PgDocumentStore(db, transactionOptions(db)).forOwner('anon:contract-owner');
+    await provisionOwnershipRelation(db);
+    store = new PgDocumentStore(db, {
+      ...transactionOptions(db),
+      documentOwnership: CLAIMING_OWNERSHIP,
+    }).forOwner('anon:contract-owner');
   });
 
   afterEach(async () => {
@@ -87,7 +112,11 @@ describe('owner-scoped document folders', () => {
     db = new PGlite();
     await db.waitReady;
     await ensureDocumentSchema(db);
-    const root = new PgDocumentStore(db, transactionOptions(db));
+    await provisionOwnershipRelation(db);
+    const root = new PgDocumentStore(db, {
+      ...transactionOptions(db),
+      documentOwnership: CLAIMING_OWNERSHIP,
+    });
     alice = root.forOwner('anon:alice');
     bob = root.forOwner('anon:bob');
   });
@@ -237,6 +266,34 @@ describe('owner-scoped document folders', () => {
     await expect(alice.setStageFolder('alice-stage', 'folder-a')).resolves.toBe(true);
     await expect(bob.setStageFolder('alice-stage', 'folder-a')).resolves.toBe(false);
   });
+
+  test('folder membership is scoped by document ownership when two owners share a folder id', async () => {
+    // Folder ids are unique per owner only, and the document row no longer
+    // says whose it is: membership has to go through the ownership relation.
+    await alice.createFolder('same-id', 'Alice folder');
+    await bob.createFolder('same-id', 'Bob folder');
+    await alice.saveDocument(makeDocument('alice-stage'));
+    await bob.saveDocument(makeDocument('bob-stage'));
+    await expect(alice.setStageFolder('alice-stage', 'same-id')).resolves.toBe(true);
+    await expect(bob.setStageFolder('bob-stage', 'same-id')).resolves.toBe(true);
+
+    await expect(alice.listDocuments('same-id')).resolves.toEqual([
+      expect.objectContaining({ id: 'alice-stage', folderId: 'same-id' }),
+    ]);
+    // Un-filing another owner's course is a no-op, not a write.
+    await alice.setStageFolder('bob-stage', null);
+    await expect(bob.listDocuments('same-id')).resolves.toEqual([
+      expect.objectContaining({ id: 'bob-stage' }),
+    ]);
+    // Removing Alice's folder hands back Alice's course only, and leaves Bob's
+    // course filed in Bob's folder of the same id.
+    await expect(alice.deleteFolder('same-id', 'remove')).resolves.toEqual({
+      removedStageIds: ['alice-stage'],
+    });
+    await expect(bob.listDocuments('same-id')).resolves.toEqual([
+      expect.objectContaining({ id: 'bob-stage', folderId: 'same-id' }),
+    ]);
+  });
 });
 
 describe('PgDocumentStore Postgres behavior', () => {
@@ -275,11 +332,100 @@ describe('PgDocumentStore Postgres behavior', () => {
     ]);
   });
 
-  test('ensureDocumentSchema adds the nullable owner column to an existing stage table', async () => {
+  test('a fresh install has no ownership column on document_stages', async () => {
+    const columns = await db.query<{ column_name: string }>(
+      `SELECT column_name
+         FROM information_schema.columns
+        WHERE table_name = 'document_stages'
+        ORDER BY ordinal_position`,
+    );
+    expect(columns.rows.map((row) => row.column_name)).toEqual([
+      'id',
+      'name',
+      'description',
+      'interactive_mode',
+      'task_engine_mode',
+      'created_at',
+      'updated_at',
+      'folder_id',
+      'data',
+    ]);
+  });
+
+  test('ensureDocumentSchema keeps a legacy owner column, relaxes it, and drops its indexes', async () => {
     const legacy = new PGlite();
     await legacy.waitReady;
     try {
+      // The pre-change shape, hardened the way a host might have: NOT NULL
+      // and a default would fail or mislabel every write that no longer
+      // names the column.
       await legacy.query(`CREATE TABLE document_stages (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        interactive_mode BOOLEAN,
+        task_engine_mode BOOLEAN,
+        created_at DOUBLE PRECISION NOT NULL,
+        updated_at DOUBLE PRECISION NOT NULL,
+        owner_id TEXT NOT NULL DEFAULT 'nobody',
+        folder_id TEXT,
+        data JSONB NOT NULL
+      )`);
+      await legacy.query(
+        `CREATE INDEX document_stages_owner_idx ON document_stages (owner_id, id)
+          WHERE owner_id IS NOT NULL`,
+      );
+      await legacy.query(
+        `INSERT INTO document_stages (id, name, created_at, updated_at, owner_id, data)
+         VALUES ('old-stage', 'Old', 1, 1, 'anon:alice', '{}'::jsonb)`,
+      );
+      await ensureDocumentSchema(legacy);
+      await ensureDocumentSchema(legacy);
+
+      const columns = await legacy.query<{
+        column_name: string;
+        is_nullable: string;
+        column_default: string | null;
+      }>(
+        `SELECT column_name, is_nullable, column_default
+           FROM information_schema.columns
+          WHERE table_name = 'document_stages' AND column_name = 'owner_id'`,
+      );
+      expect(columns.rows).toEqual([
+        { column_name: 'owner_id', is_nullable: 'YES', column_default: null },
+      ]);
+      const indexes = await legacy.query<{ indexname: string }>(
+        `SELECT indexname FROM pg_indexes WHERE tablename = 'document_stages' ORDER BY indexname`,
+      );
+      expect(indexes.rows.map((row) => row.indexname)).toEqual([
+        'document_stages_folder_idx',
+        'document_stages_pkey',
+      ]);
+      // The recorded owner is kept for the host's backfill and a rollback.
+      const kept = await legacy.query<{ owner_id: string }>(
+        `SELECT owner_id FROM document_stages WHERE id = 'old-stage'`,
+      );
+      expect(kept.rows).toEqual([{ owner_id: 'anon:alice' }]);
+
+      // A new document is written without the column and leaves it NULL.
+      const legacyStore = new PgDocumentStore(legacy, transactionOptions(legacy));
+      await legacyStore.saveDocument(makeDocument('new-stage'));
+      const written = await legacy.query<{ owner_id: string | null }>(
+        `SELECT owner_id FROM document_stages WHERE id = 'new-stage'`,
+      );
+      expect(written.rows).toEqual([{ owner_id: null }]);
+    } finally {
+      await legacy.close();
+    }
+  });
+
+  test('works against a host table with no ownership column and no folder column', async () => {
+    const host = new PGlite();
+    await host.waitReady;
+    try {
+      // A host provisioning its own tables with only the columns the store
+      // needs, and its own ownership relation.
+      await host.query(`CREATE TABLE document_stages (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         description TEXT,
@@ -289,24 +435,70 @@ describe('PgDocumentStore Postgres behavior', () => {
         updated_at DOUBLE PRECISION NOT NULL,
         data JSONB NOT NULL
       )`);
-      await ensureDocumentSchema(legacy);
-      const columns = await legacy.query<{ column_name: string; is_nullable: string }>(
-        `SELECT column_name, is_nullable
-           FROM information_schema.columns
-          WHERE table_name = 'document_stages' AND column_name = 'owner_id'`,
+      await host.query(`CREATE TABLE document_scenes (
+        stage_id TEXT NOT NULL REFERENCES document_stages(id) ON DELETE CASCADE,
+        id TEXT NOT NULL,
+        scene_order DOUBLE PRECISION NOT NULL,
+        data JSONB NOT NULL,
+        PRIMARY KEY (stage_id, id)
+      )`);
+      await host.query(`CREATE TABLE document_outlines (
+        stage_id TEXT PRIMARY KEY REFERENCES document_stages(id) ON DELETE CASCADE,
+        data JSONB NOT NULL
+      )`);
+      await host.query(`CREATE TABLE host_course_owners (
+        course_id TEXT PRIMARY KEY REFERENCES document_stages(id) ON DELETE CASCADE,
+        account TEXT NOT NULL
+      )`);
+      const root = new PgDocumentStore(host, {
+        ...transactionOptions(host),
+        folders: false,
+        documentOwnership: {
+          table: 'host_course_owners',
+          stageIdColumn: 'course_id',
+          ownerIdColumn: 'account',
+          claimOnCreate: true,
+        },
+      });
+      const alice = root.forOwner('alice');
+      const bob = root.forOwner('bob');
+
+      await alice.saveDocument(makeDocument('alice-stage'));
+      await bob.saveDocument(makeDocument('bob-stage'));
+      await alice.putScene('alice-stage', slideScene('alice-stage', 'scene-c', 5));
+      await expect(alice.listDocuments()).resolves.toEqual([
+        expect.objectContaining({ id: 'alice-stage', sceneCount: 3 }),
+      ]);
+      expect((await alice.listDocuments())[0]).not.toHaveProperty('folderId');
+      await expect(bob.saveDocument(makeDocument('alice-stage'))).rejects.toBeInstanceOf(
+        DocumentNotFoundError,
       );
-      expect(columns.rows).toEqual([{ column_name: 'owner_id', is_nullable: 'YES' }]);
+      await expect(alice.loadDocument('bob-stage')).resolves.toMatchObject({
+        stage: { id: 'bob-stage' },
+      });
+      await expect(alice.listFolders()).rejects.toThrow(/folders: false/);
+      await expect(alice.listDocuments('any')).rejects.toThrow(/folders: false/);
+      await alice.deleteDocument('alice-stage');
+      await expect(root.listDocuments()).resolves.toEqual([
+        expect.objectContaining({ id: 'bob-stage' }),
+      ]);
     } finally {
-      await legacy.close();
+      await host.close();
     }
   });
 
-  test('owner scopes filter lists and writes while reads remain capability-by-id', async () => {
-    const alice = store.forOwner('anon:alice');
-    const bob = store.forOwner('anon:bob');
+  test('owner scopes filter lists and writes through the ownership relation', async () => {
+    await provisionOwnershipRelation(db);
+    const root = new PgDocumentStore(db, {
+      ...transactionOptions(db),
+      documentOwnership: CLAIMING_OWNERSHIP,
+    });
+    const alice = root.forOwner('anon:alice');
+    const bob = root.forOwner('anon:bob');
     await alice.saveDocument(makeDocument('alice-stage'));
     await bob.saveDocument(makeDocument('bob-stage'));
 
+    // Reads remain capability-by-id.
     await expect(alice.loadDocument('bob-stage')).resolves.toMatchObject({
       stage: { id: 'bob-stage' },
     });
@@ -316,45 +508,149 @@ describe('PgDocumentStore Postgres behavior', () => {
     await expect(alice.listDocuments()).resolves.toEqual([
       expect.objectContaining({ id: 'alice-stage' }),
     ]);
+    await expect(bob.listDocuments()).resolves.toEqual([
+      expect.objectContaining({ id: 'bob-stage' }),
+    ]);
+    await expect(bob.readFreshnessManifest('alice-stage')).resolves.toBeNull();
+    await expect(alice.readFreshnessManifest('alice-stage')).resolves.not.toBeNull();
+
+    // Every write path refuses the other owner's document.
     await expect(bob.saveDocument(makeDocument('alice-stage'))).rejects.toBeInstanceOf(
       DocumentNotFoundError,
     );
-
+    await expect(
+      bob.putStage('alice-stage', { id: 'alice-stage', name: 'Taken', createdAt: 1, updatedAt: 2 }),
+    ).rejects.toBeInstanceOf(DocumentNotFoundError);
+    await expect(
+      bob.putScene('alice-stage', slideScene('alice-stage', 'scene-x', 9)),
+    ).rejects.toBeInstanceOf(DocumentNotFoundError);
+    await bob.deleteScene('alice-stage', 'scene-a');
     await bob.deleteDocument('alice-stage');
-    await expect(alice.loadDocument('alice-stage')).resolves.not.toBeNull();
+    await expect(alice.loadDocument('alice-stage')).resolves.toMatchObject({
+      stage: { id: 'alice-stage', name: 'Intro Course' },
+      scenes: [expect.objectContaining({ id: 'scene-a' }), expect.anything()],
+    });
+
+    // The document row carries no owner; the relation holds exactly one.
+    const owners = await db.query<{ stage_id: string; owner_id: string }>(
+      'SELECT stage_id, owner_id FROM document_owners ORDER BY stage_id',
+    );
+    expect(owners.rows).toEqual([
+      { stage_id: 'alice-stage', owner_id: 'anon:alice' },
+      { stage_id: 'bob-stage', owner_id: 'anon:bob' },
+    ]);
+
+    // A retired document leaves the listing; the tombstone is the host's.
+    await db.query(`UPDATE document_owners SET retired_at = now() WHERE stage_id = 'alice-stage'`);
+    await expect(alice.listDocuments()).resolves.toEqual([]);
   });
 
-  test('the historical unowned path remains byte-identical beside owned documents', async () => {
-    const legacyDocument = makeDocument('legacy-stage');
-    await store.saveDocument(legacyDocument);
-    const beforeDocument = JSON.stringify(await store.loadDocument('legacy-stage'));
-    const beforeList = JSON.stringify(await store.listDocuments());
-    const beforeRows = JSON.stringify(
-      (
-        await db.query<{ data: unknown }>(
-          'SELECT data FROM document_stages WHERE id = $1 AND owner_id IS NULL',
-          ['legacy-stage'],
-        )
-      ).rows,
+  test('without claimOnCreate the host claims ownership, and a document nobody holds is not writable', async () => {
+    await provisionOwnershipRelation(db);
+    const alice = new PgDocumentStore(db, {
+      ...transactionOptions(db),
+      documentOwnership: OWNERSHIP,
+    }).forOwner('anon:alice');
+
+    // A new document is written, but it is nobody's until the host claims it.
+    await alice.saveDocument(makeDocument('alice-stage'));
+    await expect(alice.listDocuments()).resolves.toEqual([]);
+    const owners = await db.query('SELECT stage_id FROM document_owners');
+    expect(owners.rows).toEqual([]);
+
+    // Now it exists and nobody holds it: no owner-bound store may write it.
+    await expect(alice.saveDocument(makeDocument('alice-stage'))).rejects.toBeInstanceOf(
+      DocumentNotFoundError,
     );
 
-    await store.forOwner('anon:agent').saveDocument(makeDocument('agent-stage'));
+    await db.query(
+      `INSERT INTO document_owners (stage_id, owner_id) VALUES ('alice-stage', 'anon:alice')`,
+    );
+    await expect(alice.saveDocument(makeDocument('alice-stage'))).resolves.toBeUndefined();
+    await expect(alice.listDocuments()).resolves.toEqual([
+      expect.objectContaining({ id: 'alice-stage' }),
+    ]);
+  });
 
-    expect(JSON.stringify(await store.loadDocument('legacy-stage'))).toBe(beforeDocument);
-    expect(JSON.stringify(await store.listDocuments())).toBe(beforeList);
+  test('an owner-bound store must say where ownership lives', () => {
+    expect(() => store.forOwner('anon:alice')).toThrow(/requires documentOwnership/);
     expect(
-      JSON.stringify(
-        (
-          await db.query<{ data: unknown }>(
-            'SELECT data FROM document_stages WHERE id = $1 AND owner_id IS NULL',
-            ['legacy-stage'],
-          )
-        ).rows,
-      ),
-    ).toBe(beforeRows);
-    await expect(store.loadDocument('agent-stage')).resolves.toMatchObject({
-      stage: { id: 'agent-stage' },
+      () => new PgDocumentStore(db, { ...transactionOptions(db), ownerId: 'anon:alice' }),
+    ).toThrow(/requires documentOwnership/);
+    for (const table of ['stage meta', 'Stage_Meta', 'a.b.c', 'x;drop table y', '']) {
+      expect(
+        () =>
+          new PgDocumentStore(db, {
+            ...transactionOptions(db),
+            documentOwnership: { table },
+          }),
+      ).toThrow(/plain lower-case PostgreSQL identifier/);
+    }
+    expect(
+      () =>
+        new PgDocumentStore(db, {
+          ...transactionOptions(db),
+          documentOwnership: { table: 'public.owners', ownerIdColumn: 'owner-id' },
+        }),
+    ).toThrow(/ownerIdColumn/);
+  });
+
+  test('an owner-bound store without a relation needs the cross-owner acknowledgement', () => {
+    // A folders-only bind must not silently unscope documents.
+    const unscoped = new PgDocumentStore(db, {
+      ...transactionOptions(db),
+      documentOwnership: false,
     });
+    expect(() => unscoped.forOwner('anon:alice')).toThrow(/allowCrossOwnerDocumentAccess/);
+    expect(
+      () =>
+        new PgDocumentStore(db, {
+          ...transactionOptions(db),
+          ownerId: 'anon:alice',
+          documentOwnership: false,
+          allowCrossOwnerDocumentAccess: false,
+        }),
+    ).toThrow(/allowCrossOwnerDocumentAccess/);
+  });
+
+  test('a leftover ownership row keeps its id reserved; a cascading relation frees it', async () => {
+    await provisionOwnershipRelation(db);
+    const root = new PgDocumentStore(db, {
+      ...transactionOptions(db),
+      documentOwnership: CLAIMING_OWNERSHIP,
+    });
+    const alice = root.forOwner('anon:alice');
+    const bob = root.forOwner('anon:bob');
+
+    // With the foreign key cascading, deleting the document frees the id.
+    await alice.saveDocument(makeDocument('cascading'));
+    await alice.deleteDocument('cascading');
+    await expect(bob.saveDocument(makeDocument('cascading'))).resolves.toBeUndefined();
+
+    // An ownership row with no document row (a relation that does not cascade,
+    // or a document deleted out of band) reserves the id for its owner.
+    await db.query('ALTER TABLE document_owners DROP CONSTRAINT document_owners_stage_id_fkey');
+    await alice.saveDocument(makeDocument('reserved'));
+    await db.query(`DELETE FROM document_stages WHERE id = 'reserved'`);
+    await expect(bob.saveDocument(makeDocument('reserved'))).rejects.toBeInstanceOf(
+      DocumentNotFoundError,
+    );
+    await expect(alice.saveDocument(makeDocument('reserved'))).resolves.toBeUndefined();
+  });
+
+  test('an unbound store, and a store bound without a relation, are tenant-agnostic', async () => {
+    await store.saveDocument(makeDocument('first-stage'));
+    const agnostic = new PgDocumentStore(db, {
+      ...transactionOptions(db),
+      documentOwnership: false,
+      allowCrossOwnerDocumentAccess: true,
+    }).forOwner('anon:agent');
+    await agnostic.saveDocument(makeDocument('agent-stage'));
+    await agnostic.saveDocument(makeDocument('first-stage'));
+
+    const ids = ['agent-stage', 'first-stage'];
+    expect((await store.listDocuments()).map((summary) => summary.id)).toEqual(ids);
+    expect((await agnostic.listDocuments()).map((summary) => summary.id)).toEqual(ids);
   });
 
   test('requires a transaction hook at construction time', () => {

@@ -13,6 +13,8 @@ import { getServerPersistenceProvider } from '@/lib/persistence/server-provider'
 
 import type { Queryable, WithTransaction } from '@openmaic/storage/skill/pg';
 import type { Pool } from 'pg';
+import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
+import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 
 export type { Queryable, WithTransaction } from '@openmaic/storage/skill/pg';
 
@@ -50,7 +52,7 @@ export function nodePostgresTransaction(pool: Pool): WithTransaction {
 
 async function createUserSkillStore(connectionString: string): Promise<PgUserSkillStore> {
   const { pool } = await getServerPersistenceProvider(connectionString);
-  await ensureUserSkillSchema(pool);
+  await withSchemaBootstrapLock(pool as unknown as ConnectableQueryable, ensureUserSkillSchema);
   return new PgUserSkillStore(pool, { withTransaction: nodePostgresTransaction(pool) });
 }
 
