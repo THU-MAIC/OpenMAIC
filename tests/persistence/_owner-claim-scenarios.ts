@@ -487,6 +487,12 @@ export async function claimRulesScenario(h: ClaimHarness): Promise<void> {
     ANON_2,
   ]);
   await expect(refusal(claim(ANON_2, ACCOUNT))).resolves.toBe('SOURCE_HAS_CLAIMS');
+
+  // owner_merges holds claims of anonymous owners only: a row retiring any
+  // other owner would be followed but not fenced, so reading it fails loudly.
+  await expect(canonicalizeOwner(h.pool as never, 'proxy:old')).rejects.toThrow(
+    /does not describe as anonymous/,
+  );
 }
 
 /**

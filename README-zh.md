@@ -459,7 +459,7 @@ oauth2-proxy（v7.14 及以上）的示例配置见英文 README 的 “Accounts
 
 每个创建或修改所有者数据的写事务都以共享模式获取该所有者的 PostgreSQL advisory 锁（身份锁）作为第一条语句，认领则在修改任何行之前以独占模式获取双方的身份锁；因此受保护的写入与认领并发时，要么先提交并被移动，要么等待后被拒绝，测试中这些写入既未出现死锁，也未在退役 id 下残留数据。等待都有上限：认领获取两把身份锁最多等 `OWNER_CLAIM_LOCK_WAIT_MS`（默认 5000）毫秒（等待期间 PostgreSQL 会让双方新的写入排在它后面，因此这段等待要短）；写入获取所有者锁最多等 `OWNER_WRITE_LOCK_WAIT_MS`（默认 30000）毫秒；上传在写入字节期间持有该锁，因此认领会在上限内等待进行中的上传。超时返回 `503 OWNER_BUSY` 并附 `Retry-After`，不写入任何内容。资产回收器不获取身份锁，与认领并发处理同一批条目时 PostgreSQL 可能中止其中一方，被这样中止的认领同样返回 `OWNER_BUSY`。
 
-宿主可以在 `instrumentation.ts` 中用 `registerClaimParticipant({ name, order, rekey(tx, from, to) })` 为自有的按所有者划分的表注册参与方（在认领事务内运行，抛错则所有参与方的改动都不保留；核心参与方占用顺序 100–700，宿主建议从 1000 起），用 `claimOwner(from, to)` / `claimPendingOwner(principal)` 在宿主代码中发起认领；`OwnerAuthenticator` 还可以实现 `describeStoredOwner(ownerId)`（只持有已存储 id 的工作据此得知所有者类型，见 `principalFromStoredOwner`；认领的来源必须被描述为匿名）和 `clearPendingClaim()`（删除其匿名凭证的 `Set-Cookie` 值）。退役 id 的转发由核心的 `owner_merges` 负责，没有宿主钩子。示例见英文 README 的 “Claiming anonymous work” 一节。
+宿主可以在 `instrumentation.ts` 中用 `registerClaimParticipant({ name, order, rekey(tx, from, to) })` 为自有的按所有者划分的表注册参与方（在认领事务内运行，抛错则所有参与方的改动都不保留；核心参与方占用顺序 100–700，宿主建议从 1000 起），用 `claimOwner(from, to)` / `claimPendingOwner(principal)` 在宿主代码中发起认领；`OwnerAuthenticator` 还可以实现 `describeStoredOwner(ownerId)`（只持有已存储 id 的工作据此得知所有者类型，见 `principalFromStoredOwner`；认领的来源必须被描述为匿名）和 `clearPendingClaim()`（删除其匿名凭证的 `Set-Cookie` 值）。退役 id 的转发由核心的 `owner_merges` 负责，没有宿主钩子。`owner_merges` 只记录对匿名所有者的认领，因为写入保护只对认证器描述为匿名的 id 强制退役：`describeStoredOwner` 对同一 id 的描述必须保持稳定，读取到退役非匿名所有者的记录时会直接报错。宿主若要合并两个已登录账号，应自行移动数据（注册自己的参与方），并在认证器中拒绝被合并掉的账号。`OWNER_WRITE_LOCK_WAIT_MS` 与 `OWNER_CLAIM_LOCK_WAIT_MS` 在启动时校验。示例见英文 README 的 “Claiming anonymous work” 一节。
 
 ##### 宿主扩展钩子
 

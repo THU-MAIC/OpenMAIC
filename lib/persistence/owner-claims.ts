@@ -86,12 +86,8 @@ import { isStorableOwnerId } from '@/lib/server/identity/types';
 import { principalFromStoredOwner } from '@/lib/server/identity/stored-owner';
 
 import { assetPrincipalForOwner } from './owner-assets';
-import {
-  isLockContention,
-  isOwnerBusyError,
-  lockOwnerIdentities,
-  resolveLockWaitMs,
-} from './owner-merges';
+import { isLockContention, isOwnerBusyError, lockOwnerIdentities } from './owner-merges';
+import { resolveClaimLockWaitMs } from './owner-lock-waits';
 import { ownerMaterialQuotaLockKey } from './owner-materials';
 import { getServerPersistenceProvider, type ServerPersistenceProvider } from './server-provider';
 import { STAGE_META_OWNERSHIP } from './stage-meta-ownership';
@@ -377,8 +373,6 @@ export type ClaimOwnerResult =
 
 /** How long a claim waits for any row or store lock after its identity locks. */
 const CLAIM_LOCK_TIMEOUT_SQL = `SET LOCAL lock_timeout = '30s'`;
-/** How long a claim waits for the two identity locks (see the rules above). */
-const DEFAULT_CLAIM_LOCK_WAIT_MS = 5_000;
 
 /**
  * Move everything `fromOwnerId` owns to `toOwnerId` and retire `fromOwnerId`,
@@ -408,7 +402,7 @@ export async function claimOwner(
     options.provider ?? (await getServerPersistenceProvider(process.env.DATABASE_URL ?? ''));
   const participants = participantsInOrder(provider);
 
-  const identityWaitMs = resolveLockWaitMs('OWNER_CLAIM_LOCK_WAIT_MS', DEFAULT_CLAIM_LOCK_WAIT_MS);
+  const identityWaitMs = resolveClaimLockWaitMs();
   try {
     return await provider.withTransaction((tx) =>
       claimInTransaction(tx, fromOwnerId, toOwnerId, participants, identityWaitMs, options),

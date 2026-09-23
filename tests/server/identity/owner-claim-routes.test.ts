@@ -304,6 +304,19 @@ describe('claiming anonymous work through the routes', () => {
     expect(learnerKey).not.toBe(ANON);
   });
 
+  it.each(['OWNER_WRITE_LOCK_WAIT_MS', 'OWNER_CLAIM_LOCK_WAIT_MS'])(
+    'refuses a malformed %s at boot, and accepts a well-formed one',
+    async (variable) => {
+      const { validateOwnerIdentityConfiguration } = await import('@/lib/server/identity/registry');
+      for (const bad of ['5s', '0', '-1', '1.5', 'abc']) {
+        vi.stubEnv(variable, bad);
+        expect(() => validateOwnerIdentityConfiguration()).toThrow(variable);
+      }
+      vi.stubEnv(variable, '2500');
+      expect(() => validateOwnerIdentityConfiguration()).not.toThrow();
+    },
+  );
+
   it('refuses an unknown OWNER_CLAIM_TRIGGER at boot', async () => {
     vi.stubEnv('OWNER_CLAIM_TRIGGER', 'sometimes');
     const { validateOwnerIdentityConfiguration } = await import('@/lib/server/identity/registry');

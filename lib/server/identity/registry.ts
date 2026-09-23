@@ -7,6 +7,8 @@ import {
   trustedProxyModeSelected,
   warnAboutTrustedProxyAdminGroups,
 } from './trusted-proxy';
+import { resolveClaimLockWaitMs, resolveWriteLockWaitMs } from '@/lib/persistence/owner-lock-waits';
+
 import type { OwnerAuthenticator } from './types';
 
 /**
@@ -156,6 +158,10 @@ export function validateOwnerIdentityConfiguration(): OwnerIdentityMode {
       `OWNER_CLAIM_TRIGGER must be "explicit" or "auto", got ${JSON.stringify(trigger)}.`,
     );
   }
+  // Read on every owner write and claim: a malformed value must stop the
+  // server here, not fail each write as a 500.
+  resolveWriteLockWaitMs();
+  resolveClaimLockWaitMs();
   const configured = registry().configured;
   if (configured && trustedProxyModeSelected()) {
     throw new Error(

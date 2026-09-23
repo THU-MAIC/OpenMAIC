@@ -141,6 +141,11 @@ export interface OwnerAuthenticator {
    * describe those anonymous ids as `kind: 'anonymous'`: a claim is refused
    * for any other source, and the write fences rely on it (only an id
    * described as anonymous can ever be retired, so only those are looked up).
+   *
+   * The answer must be stable: an id once described as anonymous must keep
+   * being described so, or a retired id stops being fenced and a stale write
+   * under it succeeds. Classify from the id itself (as the built-ins do), not
+   * from state that can be pruned.
    */
   describeStoredOwner?(ownerId: string): StoredOwnerDescription | undefined;
   /**

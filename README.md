@@ -922,7 +922,13 @@ An `OwnerAuthenticator` may also implement:
   credential.
 
 Forwarding a retired id is core's own (`owner_merges`); there is no host hook
-for it.
+for it. `owner_merges` records claims of anonymous owners only, because the
+write fences enforce retirement only for ids the authenticator describes as
+anonymous: `describeStoredOwner` must keep describing an id the same way, and a
+row retiring any other owner is refused when read. A host that merges two
+signed-in accounts moves the rows itself (its own participants) and refuses the
+merged-away account in its authenticator. `OWNER_WRITE_LOCK_WAIT_MS` and
+`OWNER_CLAIM_LOCK_WAIT_MS` are checked at startup.
 
 ##### Host extension hooks
 

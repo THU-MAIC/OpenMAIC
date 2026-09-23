@@ -35,6 +35,8 @@ import { StorageBusyError } from '@openmaic/storage';
 import { getOwnerAuthenticator } from '@/lib/server/identity/registry';
 import { principalFromStoredOwner } from '@/lib/server/identity/stored-owner';
 
+import { resolveWriteLockWaitMs } from './owner-lock-waits';
+
 export const OWNER_MERGES_SCHEMA = `
 CREATE TABLE IF NOT EXISTS owner_merges (
   from_owner_id TEXT PRIMARY KEY,
@@ -76,22 +78,7 @@ export function ownerIdentityLockKey(ownerId: string): bigint {
 
 export type IdentityLockMode = 'shared' | 'exclusive';
 
-/**
- * How long a write waits for an owner's identity lock before it gives up with
- * {@link OwnerBusyError}: only as long as a claim of that owner holds it.
- * `OWNER_WRITE_LOCK_WAIT_MS` tunes it (a positive integer of milliseconds).
- */
-const DEFAULT_WRITE_LOCK_WAIT_MS = 30_000;
-
-export function resolveLockWaitMs(variable: string, fallback: number): number {
-  const raw = process.env[variable]?.trim();
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  if (!Number.isSafeInteger(parsed) || parsed < 1) {
-    throw new Error(`${variable} must be a positive integer number of milliseconds.`);
-  }
-  return parsed;
-}
+export { resolveLockWaitMs } from './owner-lock-waits';
 
 /** SQLSTATEs that mean "this could not run now; retry as it is". */
 const RETRYABLE_LOCK_CODES = new Set(['55P03', '40P01', '40001']);
@@ -154,7 +141,7 @@ export async function lockOwnerIdentities(
   tx: Queryable,
   ownerIds: readonly string[],
   mode: IdentityLockMode,
-  waitMs = resolveLockWaitMs('OWNER_WRITE_LOCK_WAIT_MS', DEFAULT_WRITE_LOCK_WAIT_MS),
+  waitMs = resolveWriteLockWaitMs(),
 ): Promise<void> {
   const ordered = [...new Set(ownerIds.map(ownerIdentityLockKey))].sort((a, b) =>
     a < b ? -1 : a > b ? 1 : 0,
@@ -193,12 +180,29 @@ export async function readOwnerRetirement(
 /**
  * The current owner of `ownerId`: the account a claim forwarded it to, or the
  * id itself. One indexed lookup: claims never chain (`./owner-claims.ts`).
- * Core owns forwarding for every host; there is no host hook here. A host with
- * account merges of its own moves the rows with `claimOwner` (or its own
- * participants) and records them in `owner_merges` the same way.
+ *
+ * Core owns forwarding, and `owner_merges` holds claims only: rows that retire
+ * an owner the authenticator describes as anonymous. That is also what the
+ * write fences enforce -- they read `owner_merges` only for such owners -- so
+ * a row retiring any other owner would be followed here but not enforced on
+ * writes. Such a row is refused loudly instead: a host cannot express its own
+ * merges of two signed-in accounts through `owner_merges` (or `claimOwner`,
+ * which refuses a non-anonymous source). A host that merges accounts moves
+ * the rows itself (its own participants' `rekey`, run in its transaction) and
+ * refuses writes under the merged-away account in its own authenticator,
+ * which then never resolves that id again.
  */
 export async function canonicalizeOwner(queryable: Queryable, ownerId: string): Promise<string> {
-  return (await readOwnerRetirement(queryable, ownerId)) ?? ownerId;
+  const retiredInto = await readOwnerRetirement(queryable, ownerId);
+  if (retiredInto === null) return ownerId;
+  if (!mayBeRetired(ownerId)) {
+    throw new Error(
+      `owner_merges retires an owner the configured authenticator does not describe as ` +
+        `anonymous; only claims of anonymous owners may be recorded there, because the write ` +
+        `fences enforce retirement for anonymous owners only. Check describeStoredOwner.`,
+    );
+  }
+  return retiredInto;
 }
 
 /**
@@ -209,6 +213,9 @@ export async function canonicalizeOwner(queryable: Queryable, ownerId: string): 
  * owner, because a claim locks its target too, and that is what keeps an
  * account's own writes from interleaving with a claim into it.
  */
+// This relies on `describeStoredOwner` answering stably: an id once described
+// as anonymous must keep that answer, or a retired id stops being fenced (see
+// `OwnerAuthenticator.describeStoredOwner`).
 function mayBeRetired(ownerId: string): boolean {
   return principalFromStoredOwner(ownerId).kind === 'anonymous';
 }
@@ -342,4 +349,12 @@ export async function ownerRetiredResponseIfRetired(
   return (await canonicalizeStoredOwner(ownerId)) !== ownerId
     ? ownerRetiredResponse(headers)
     : undefined;
+}
+
+/**
+ * Whether a stored owner id is retired, on this deployment's pool. No database
+ * work for an owner that cannot be retired (a non-anonymous one).
+ */
+export async function isRetiredStoredOwner(ownerId: string): Promise<boolean> {
+  return mayBeRetired(ownerId) && (await canonicalizeStoredOwner(ownerId)) !== ownerId;
 }
