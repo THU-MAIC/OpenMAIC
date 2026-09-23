@@ -13,6 +13,8 @@ const usageMock = vi.hoisted(() => ({
 const fallbackMock = vi.hoisted(() => ({
   resolveFallbackModel: vi.fn(),
   isRetryableLlmError: vi.fn(),
+  shouldFallbackFor: vi.fn(),
+  logFallbackFired: vi.fn(),
 }));
 
 vi.mock('ai', () => ({
@@ -42,11 +44,13 @@ describe('callLLM retryable-failure fallback', () => {
     aiMock.generateText.mockReset();
     fallbackMock.resolveFallbackModel.mockReset();
     fallbackMock.isRetryableLlmError.mockReset();
+    fallbackMock.shouldFallbackFor.mockReset();
+    fallbackMock.logFallbackFired.mockReset();
     aiMock.generateText.mockResolvedValue(okResult());
   });
 
   it('does not fall back when resolveFallbackModel returns null', async () => {
-    fallbackMock.isRetryableLlmError.mockReturnValue(true);
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
     fallbackMock.resolveFallbackModel.mockResolvedValue(null);
     aiMock.generateText.mockRejectedValueOnce(
       Object.assign(new Error('upstream timeout'), { statusCode: 408 }),
@@ -66,7 +70,7 @@ describe('callLLM retryable-failure fallback', () => {
   });
 
   it('falls back once on a retryable error and returns the fallback result', async () => {
-    fallbackMock.isRetryableLlmError.mockReturnValue(true);
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
     fallbackMock.resolveFallbackModel.mockResolvedValue({
       model: 'fallback-model' as never,
       modelString: 'qwen:deepseek-v4-pro',
@@ -91,7 +95,7 @@ describe('callLLM retryable-failure fallback', () => {
   });
 
   it('only runs the fallback once when it also fails', async () => {
-    fallbackMock.isRetryableLlmError.mockReturnValue(true);
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
     fallbackMock.resolveFallbackModel.mockResolvedValue({
       model: 'fallback-model' as never,
       modelString: 'qwen:deepseek-v4-pro',
@@ -113,7 +117,7 @@ describe('callLLM retryable-failure fallback', () => {
   });
 
   it('does not fall back when fallback is disabled for the call', async () => {
-    fallbackMock.isRetryableLlmError.mockReturnValue(true);
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
     fallbackMock.resolveFallbackModel.mockResolvedValue({
       model: 'fallback-model' as never,
       modelString: 'qwen:deepseek-v4-pro',
@@ -139,6 +143,11 @@ describe('callLLM retryable-failure fallback', () => {
   });
 
   it('falls back on an empty-output validation failure when retries are set and exhausted', async () => {
+    // The whitespace-only text is classified as a retryable empty output.
+    fallbackMock.shouldFallbackFor.mockImplementation(
+      (error: unknown, text: string | null | undefined) =>
+        error !== undefined ? false : !text || text.trim().length === 0,
+    );
     fallbackMock.resolveFallbackModel.mockResolvedValue({
       model: 'fallback-model' as never,
       modelString: 'qwen:deepseek-v4-pro',
@@ -163,7 +172,7 @@ describe('callLLM retryable-failure fallback', () => {
   });
 
   it('keeps existing behaviour when no fallback configured', async () => {
-    fallbackMock.isRetryableLlmError.mockReturnValue(true);
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
     fallbackMock.resolveFallbackModel.mockResolvedValue(null);
     aiMock.generateText
       .mockRejectedValueOnce(Object.assign(new Error('timeout'), { statusCode: 408 }))
@@ -180,5 +189,36 @@ describe('callLLM retryable-failure fallback', () => {
     );
     expect(result.text).toBe('ok');
     expect(aiMock.generateText).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not fall back when a non-empty result fails a custom validator', async () => {
+    // A non-empty output that fails a caller-supplied validator (format/JSON
+    // check) is "output quality is off", not an empty output — the fallback
+    // model's quota must not be spent on it.
+    fallbackMock.shouldFallbackFor.mockImplementation(
+      (error: unknown, text: string | null | undefined) =>
+        error !== undefined ? false : !text || text.trim().length === 0,
+    );
+    fallbackMock.resolveFallbackModel.mockResolvedValue({
+      model: 'fallback-model' as never,
+      modelString: 'qwen:deepseek-v4-pro',
+    });
+    const badOutput = { ...okResult(), text: '[not valid json]' };
+    aiMock.generateText.mockResolvedValue(badOutput);
+
+    const result = await callLLM(
+      {
+        model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+        prompt: 'hi',
+      } as never,
+      'scene-content',
+      { retries: 1, validate: () => false },
+    );
+
+    expect(result.text).toBe('[not valid json]');
+    // Primary + same-model retry only; no fallback round, no fallback log.
+    expect(aiMock.generateText).toHaveBeenCalledTimes(2);
+    expect(fallbackMock.resolveFallbackModel).not.toHaveBeenCalled();
+    expect(fallbackMock.logFallbackFired).not.toHaveBeenCalled();
   });
 });
