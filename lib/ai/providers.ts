@@ -57,6 +57,7 @@ import {
   pickThinkingEffort,
 } from './thinking-config';
 import { createLogger } from '@/lib/logger';
+import { withAppAttributionInit } from '@/lib/config/app-attribution';
 import { normalizeAzureBaseUrl } from './azure';
 // NOTE: Do NOT import thinking-context.ts here — it uses node:async_hooks
 // which is server-only, and this file is also used on the client via
@@ -2322,6 +2323,9 @@ export function getModel(config: ModelConfig): ModelWithInfo {
   // See LLM_FETCH_TIMEOUT_MS: every outbound LLM request — whatever transport
   // it ends up on — carries the extended-timeout dispatcher.
   const transportFetch: typeof fetch = async (fetchInput, fetchInit) => {
+    // App attribution first: gateways that support it (TokenDance) receive
+    // X-App-URL on every outbound request; every other provider is untouched.
+    fetchInit = withAppAttributionInit(fetchInput, fetchInit);
     // A caller-supplied dispatcher (config.fetchImpl may carry one) wins over
     // ours; only inject ours when the request doesn't already carry one.
     if ((fetchInit as (RequestInit & { dispatcher?: unknown }) | undefined)?.dispatcher) {
