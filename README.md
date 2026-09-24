@@ -402,7 +402,7 @@ persistence-unavailable toast and keeps the prior course list instead of
 misleadingly displaying an empty library.
 
 Every `/api/persistence` request is attributed to the owner the
-[owner authenticator](#owner-identity) resolves — by default the 30-day
+[owner identity seam](#owner-identity) resolves — by default the 30-day
 anonymous cookie, one owner per browser. There is no separate persistence
 credential:
 
@@ -429,9 +429,9 @@ credential:
   only by an owner who owns every course referencing them; the collector
   reclaims them as courses stop naming them, as before.
 
-Without a host authenticator the owner is only as strong as a cookie: this is
+Without a host auth method the owner is only as strong as a cookie: this is
 suitable for localhost, trusted-network, or single-team deployments. A
-deployment with its own accounts registers an authenticator (see
+deployment with its own accounts registers owner auth methods (see
 [Owner identity](#owner-identity)) and every surface above follows it.
 
 > [!WARNING]
@@ -447,7 +447,7 @@ deployment with its own accounts registers an authenticator (see
 > **If `PERSISTENCE_DEV_TOKEN` was your only access gate, act before upgrading.**
 > Without it the endpoint answers every visitor who reaches it, each as their
 > own anonymous owner. Put the deployment behind `ACCESS_CODE` or your own
-> gateway, register an owner authenticator backed by your accounts (see
+> gateway, register owner auth methods backed by your accounts (see
 > [Owner identity](#owner-identity)), or turn server persistence off
 > (`NEXT_PUBLIC_PERSISTENCE` unset) until you have one.
 
@@ -544,237 +544,197 @@ behavior.
 #### Owner identity
 
 Courses, folders, materials, agent sessions and skills are partitioned by an
-**owner id**, which the server resolves for every request through one
-pluggable **owner authenticator** (`lib/server/identity/`). Every owner-scoped
-route and Server Action asks it, once per request; nothing else reads identity
-cookies or headers.
+**owner id**, which the server resolves for every request in one place
+(`lib/server/identity/`). Every owner-scoped route and Server Action asks it,
+once per request; nothing else reads identity cookies or headers.
 
-Three built-ins are selected from the environment:
+Resolution asks an ordered list of **owner auth methods**. Each method looks
+for one kind of credential and answers exactly one of:
 
-| Authenticator | Selected when | Owner |
+| Answer | Meaning | Resolution |
 |---|---|---|
-| `anonymousCookie` | default | One owner per browser: `anon:<uuid>` from a 30-day `HttpOnly` `anonymous_id` cookie, minted on first use. Cannot publish. |
-| `sharedTeam` | `PERSISTENCE_SHARED_OWNER_ID` is set (requires `ACCESS_CODE`) | That fixed id for every request, so the team behind the access code shares one library. May publish. |
-| `trustedProxyHeader` | `OWNER_AUTHENTICATOR=trusted-proxy` (requires `TRUSTED_PROXY_SECRET`) | A real account: `proxy:<user>`, the user an identity gateway signed in and forwarded in a header. May publish. See [Accounts through an identity gateway](#accounts-through-an-identity-gateway). |
+| `authenticated` | Its credential is present and valid | That principal is the owner; later methods are not asked |
+| `not-applicable` | No credential of its kind is present | The next method is asked |
+| `invalid` | Its credential is present but invalid | `401 INVALID_CREDENTIAL` at once; no later method and no fallback is asked |
+
+When every method answers `not-applicable`, the built-in **anonymous
+fallback** resolves the request: one owner per browser, `anon:<uuid>` from a
+30-day `HttpOnly` `anonymous_id` cookie, minted on first use. It cannot
+publish. A host can turn the fallback off, and then such a request is a `401`
+too. A refused request is never served as an anonymous owner.
+
+Out of the box nothing is registered, so every request is an anonymous owner,
+unless `PERSISTENCE_SHARED_OWNER_ID` is set (requires `ACCESS_CODE`): then the
+built-in `sharedTeam` method resolves every request to that fixed id, so the
+team behind the access code shares one library and may publish.
 
 Authorization reads the principal's `kind` and `roles`, never the shape of the
 id. The core roles are `course:publish` (publish and unpublish a course) and
-`admin` (reserved for administrative surfaces; only `trustedProxyHeader`
-grants it, to members of configured groups).
+`admin` (reserved for administrative surfaces; no built-in grants it).
 
-##### Accounts through an identity gateway
+##### Registering methods
 
-`trustedProxyHeader` gives every person their own library, backed by the
-organization's identity provider (OIDC, SAML, LDAP), without OpenMAIC handling
-a password or a token. An identity gateway in front of the app (oauth2-proxy,
-Authelia, a Keycloak-based proxy, an institutional reverse proxy) signs the
-user in and forwards the verified user in a request header; OpenMAIC trusts
-that header only on requests that also carry a secret only the gateway knows.
-
-```env
-OWNER_AUTHENTICATOR=trusted-proxy
-# 32+ printable ASCII characters without spaces, e.g. `openssl rand -hex 32`.
-TRUSTED_PROXY_SECRET=...
-# Optional; the defaults are shown.
-# TRUSTED_PROXY_SECRET_HEADER=x-openmaic-proxy-secret
-# TRUSTED_PROXY_USER_HEADER=x-forwarded-user
-# Optional: grant `admin` to members of these groups (exact, case-sensitive).
-# See the warning below before enabling it.
-# TRUSTED_PROXY_GROUPS_HEADER=x-forwarded-groups
-# TRUSTED_PROXY_ADMIN_GROUPS=openmaic-admins
-```
-
-> [!WARNING]
-> **`TRUSTED_PROXY_ADMIN_GROUPS` trusts the groups header on the strength of
-> the shared secret alone.** OpenMAIC cannot tell the gateway's groups value
-> from one a client sent through the gateway. Enable it only when the gateway
-> overwrites or strips the groups header on every request; otherwise any
-> signed-in user can grant themselves `admin`. The server logs a warning at
-> boot whenever it is set.
-
-| Request | Result |
-|---|---|
-| Correct secret, one user `alice` | Owner `proxy:alice`, `kind: 'user'`, `assurance: 'verified'`, roles `course:publish` (+ `admin` for an admin group member). No cookie is set. |
-| Secret missing, wrong, or sent twice | `401 INVALID_CREDENTIAL` |
-| Correct secret, user header missing or blank | `401` |
-| User header with a comma (two header lines arrive joined as `a, b`) | `401`: which user is meant is ambiguous |
-| A user whose `proxy:<user>` id is not 1-256 printable ASCII characters without spaces | `401`: forward an ASCII id such as the subject or email instead of a display name |
-
-A refused request is never served as an anonymous owner. The user value is
-trimmed and otherwise kept as sent, case included, because identity providers
-differ on whether subject ids are case-sensitive. Groups are split on commas;
-empty entries, entries over 256 characters and entries past the first 256 are
-ignored. Route handlers and Server Actions read the same headers with the same
-rules.
-
-**The trust boundary.** Next.js does not give route handlers, middleware or
-Server Actions the TCP peer address; the closest value, `x-forwarded-for`, is
-filled from the socket only when the client did not send one. OpenMAIC
-therefore cannot tell a gateway by its address, and relies on the secret: it
-is compared in constant time, and the server refuses to boot in this mode
-without it. The secret is not a substitute for the network setup, so also:
-
-- make the app reachable **only** through the gateway (bind it to a private
-  network, or firewall its port);
-- have the gateway **strip** any client-supplied copy of the user, groups and
-  secret headers before it sets its own;
-- keep the secret out of client-visible places (it is a server-side value; never
-  prefix it with `NEXT_PUBLIC_`).
-
-`ACCESS_CODE` is independent of this mode. The gateway is the access gate, so
-it is normally left unset (and the boot warning about an unset `ACCESS_CODE` is
-skipped in this mode); if it is set, visitors must pass both. The unrelated
-`TRUST_PROXY_HEADERS` only affects access-code rate limiting.
-
-Configuration is validated at boot, and each of these stops the server:
-`OWNER_AUTHENTICATOR` set to anything but `trusted-proxy`; a `TRUSTED_PROXY_*`
-variable set while the mode is off; `PERSISTENCE_SHARED_OWNER_ID` or a
-host-registered authenticator in addition; a missing, short or non-printable
-secret; a malformed or repeated header name, or one that HTTP, Next.js or a
-forwarding proxy sets itself (such as `cookie`, `x-forwarded-for`, `forwarded`,
-`x-real-ip`, `rsc`, `next-action`, or anything starting with `x-middleware-`,
-`x-invoke-`, `x-nextjs-` or `next-router-`); and
-`TRUSTED_PROXY_ADMIN_GROUPS` without `TRUSTED_PROXY_GROUPS_HEADER`.
-
-<details>
-<summary>Example: oauth2-proxy in front of OpenMAIC</summary>
-
-This example targets **oauth2-proxy v7.14 or later**, whose structured
-configuration (`--alpha-config`) uses the nested `claimSource` / `secretSource`
-header format; earlier versions use a different layout. It injects the
-signed-in user, the groups and the shared secret, and with
-`preserveRequestValue: false` (the default, spelled out here) strips any value
-the client sent for those headers before injecting its own.
-
-```yaml
-# alpha.yaml (oauth2-proxy v7.14+)
-# OPENMAIC_PROXY_SECRET holds the literal secret, the same value as
-# TRUSTED_PROXY_SECRET in OpenMAIC's environment (not base64-encoded).
-upstreamConfig:
-  upstreams:
-    - id: openmaic
-      path: /
-      uri: http://openmaic:3000
-
-injectRequestHeaders:
-  - name: X-Forwarded-User
-    preserveRequestValue: false
-    values:
-      - claimSource:
-          claim: email # use `claim: user` to forward the OIDC subject (sub)
-  - name: X-Forwarded-Groups
-    preserveRequestValue: false
-    values:
-      - claimSource:
-          claim: groups
-  - name: X-OpenMAIC-Proxy-Secret
-    preserveRequestValue: false
-    values:
-      - secretSource:
-          fromEnv: OPENMAIC_PROXY_SECRET
-
-providers:
-  - id: idp
-    provider: oidc
-    clientID: openmaic
-    clientSecretFile: /run/secrets/oidc-client-secret
-    scope: 'openid email profile' # add the IdP's groups scope if it needs one
-    oidcConfig:
-      issuerURL: https://idp.example.org/
-      emailClaim: email
-      groupsClaim: groups
-      audienceClaims: [aud]
-      insecureSkipNonce: false
-
-server:
-  bindAddress: 0.0.0.0:4180
-```
-
-```sh
-# HTTPS terminates at a trusted ingress in front of port 4180. Register the
-# callback URL with the IdP.
-oauth2-proxy --alpha-config=/etc/oauth2-proxy/alpha.yaml \
-  --email-domain=example.org \
-  --redirect-url=https://openmaic.example.org/oauth2/callback \
-  --cookie-secure=true
-```
-
-```env
-# oauth2-proxy's environment
-OPENMAIC_PROXY_SECRET=<32+ printable ASCII characters without spaces>
-OAUTH2_PROXY_COOKIE_SECRET=<a separate oauth2-proxy cookie secret>
-
-# OpenMAIC's environment; the app is reachable only from oauth2-proxy's network
-OWNER_AUTHENTICATOR=trusted-proxy
-TRUSTED_PROXY_SECRET=<same literal value as OPENMAIC_PROXY_SECRET>
-TRUSTED_PROXY_GROUPS_HEADER=x-forwarded-groups
-TRUSTED_PROXY_ADMIN_GROUPS=openmaic-admins
-```
-
-Notes:
-
-- **Legacy options.** Options that moved into the alpha configuration
-  (upstreams, header passing such as `--pass-user-headers` or
-  `--set-xauthrequest`, provider, client, scope and OIDC settings) must be
-  removed from oauth2-proxy's flags, config file and environment, even when set
-  to `false`. Core settings such as the cookie secret and email domains stay
-  where they are. Validate the result with `--config-test`.
-- **Do not exempt app routes** with `skip-auth-route`, `skip-auth-regex`,
-  `skip-auth-preflight` or `trusted-ip`. Such requests still reach OpenMAIC
-  with the injected secret but without a signed-in user.
-- **Groups** must actually be released by the IdP: `groupsClaim` names the
-  claim but does not request it, so add whatever scope or claim mapping the IdP
-  needs. Group names must not contain commas, because OpenMAIC splits the
-  header on commas.
-- **The user value** must fit the owner id rule above (ASCII, no spaces). With
-  `claim: email`, the owner is the email address; `claim: user` uses the OIDC
-  subject instead. Switching later changes every owner id.
-
-Any gateway that can set request headers works the same way: forward the user,
-optionally the groups, and the secret, and strip the client's copies.
-
-</details>
-
-A host with its own accounts implements `OwnerAuthenticator` and registers it
-once, from `instrumentation.ts` `register()`, before the server serves a
-request:
+A host with its own accounts writes a method per credential it accepts and
+registers them once, from `instrumentation.ts` `register()`, before the server
+serves a request:
 
 ```ts
-const { configureOwnerAuthenticator } = await import('@/lib/server/identity');
-configureOwnerAuthenticator({
-  name: 'my-host',
-  async authenticate(req) {
-    const user = await verifySession(req.headers); // host code
-    if (user === 'invalid') return { ok: false, status: 401, code: 'INVALID_CREDENTIAL' };
-    return {
-      ok: true,
-      principal: {
-        ownerId: `user:${user.id}`,
-        kind: 'user',
-        roles: new Set(user.canPublish ? ['course:publish'] : []),
-        assurance: 'verified',
+const { configureOwnerAuthentication } = await import('@/lib/server/identity');
+configureOwnerAuthentication({
+  methods: [
+    {
+      name: 'session',
+      async authenticate(req) {
+        const session = await readSession(req.headers); // host code
+        if (session === undefined) return { status: 'not-applicable' };
+        if (!session.valid) return { status: 'invalid', reason: 'expired session' };
+        return {
+          status: 'authenticated',
+          principal: {
+            ownerId: `user:${session.userId}`,
+            kind: 'user',
+            roles: new Set(session.canPublish ? ['course:publish'] : []),
+            assurance: 'verified',
+          },
+        };
       },
-    };
-  },
+      describeStoredOwner: (ownerId) =>
+        ownerId.startsWith('user:') ? { kind: 'user' } : undefined,
+    },
+  ],
+  // anonymousFallback: false, // refuse requests no method applies to
 });
 ```
 
-An invalid credential must be answered with `INVALID_CREDENTIAL`, which every
-surface turns into a `401`; it is never re-identified as a fresh anonymous
-owner. `setCookies` on a successful outcome ride every response, errors
-included. Server Actions call `authenticateFromContext()` when the
-authenticator has one, and otherwise `authenticate()` with the request headers;
-in a Server Action cookies must be written through `next/headers`, and an
-outcome carrying `setCookies` is refused.
+- `setCookies` on an `authenticated` answer ride every response, errors
+  included. `reason` on an `invalid` answer is for server logs only.
+- Server Actions ask the same methods in the same order, through
+  `authenticateFromContext()` when a method has one and otherwise
+  `authenticate()` with the request headers. In a Server Action cookies must be
+  written through `next/headers`; an answer carrying `setCookies` is refused.
+- `describeStoredOwner(ownerId)` says what kind of owner a stored id is, for
+  work that holds only the id (an agent run, a claim). The anonymous fallback
+  is asked first, then the methods in order. An id nobody recognizes is a
+  `user` with no roles.
+- `clearCredential()` is only for a method that authenticates anonymous
+  principals itself with a cookie: its `Set-Cookie` values ride every
+  `403 OWNER_RETIRED`.
+- Principals are checked per request: an owner id that is not 1-256 printable
+  non-space ASCII characters, an unknown `kind` or `assurance`, or a
+  `pendingClaim` set by the method is a `500` for that request rather than
+  stored. The same resolved owner is the runtime learner key and the asset
+  partition of `/api/persistence`, so the methods govern those too.
 
-Registration is checked at boot: calling `configureOwnerAuthenticator` a second
-time, or while `PERSISTENCE_SHARED_OWNER_ID` or `OWNER_AUTHENTICATOR` is set,
-throws from `register()` and the server does not start. Principals are checked
-per request: an owner id that is not 1-256 printable non-space ASCII characters
-(or an unknown `kind` / `assurance`) returned by a registered authenticator is
-rejected with a `500` for that request rather than stored. The
-same resolved owner is the runtime learner key and the asset partition of
-`/api/persistence`, so a registered authenticator governs those too.
+Registration is checked at boot, and each of these throws from `register()`
+so the server does not start: a second call, a call after owner resolution has
+started, an empty method list, a malformed or duplicate-named method, and the
+`sharedTeam` rules below. To keep a shared team owner beside host methods,
+include `sharedTeamAuthMethod()` (also exported from `@/lib/server/identity`)
+as the **last** method: it always authenticates, so nothing after it would be
+asked. `PERSISTENCE_SHARED_OWNER_ID` set beside a registration that does not
+include it, or `sharedTeamAuthMethod()` registered without the variable, fails
+the boot rather than being ignored.
+
+##### Recipe: accounts through an identity gateway (signed JWT)
+
+OpenMAIC has no built-in gateway authenticator. A deployment behind an identity
+gateway writes a small method that verifies the **signed** assertion the
+gateway forwards, against the identity provider's published keys. Unlike a
+plain user header, a signed token cannot be forged by a client that reaches the
+app around the gateway. Common sources:
+
+| Gateway | Header | Issuer / keys |
+|---|---|---|
+| oauth2-proxy with `--pass-authorization-header` (or `injectRequestHeaders` in `--alpha-config` setting `Authorization: Bearer <id_token>`) | `Authorization: Bearer …` | The IdP's issuer and `jwks_uri`; the audience is the OAuth client id |
+| Cloudflare Access | `Cf-Access-Jwt-Assertion` | `https://<team>.cloudflareaccess.com`, keys at `/cdn-cgi/access/certs`; the audience is the application's AUD tag |
+| Google Cloud IAP | `x-goog-iap-jwt-assertion` | `https://cloud.google.com/iap`, keys at `https://www.gstatic.com/iap/verify/public_key-jwk` |
+
+The sketch below uses the [`jose`](https://github.com/panva/jose) library, which
+the host adds as its own dependency. **It is a recipe the host owns and must
+test**, not code OpenMAIC ships or maintains. Keep the file inside
+`lib/server/identity/` (the boundary test only allows identity headers to be
+read there), and register the method from `instrumentation.ts`.
+
+```ts
+// lib/server/identity/gateway-jwt.ts (host code)
+import { createRemoteJWKSet, errors, jwtVerify } from 'jose';
+
+import type { OwnerAuthMethod } from '@/lib/server/identity';
+
+const ISSUER = 'https://idp.example.org/';
+const AUDIENCE = 'openmaic';
+const JWKS = createRemoteJWKSet(new URL('https://idp.example.org/.well-known/jwks.json'));
+const ADMIN_GROUPS = new Set(['openmaic-admins']);
+
+/** The token, `undefined` when this method does not apply. */
+function bearerToken(headers: Headers): string | undefined {
+  // Cloudflare Access / IAP: return headers.get('cf-access-jwt-assertion') ?? undefined;
+  const match = /^Bearer\s+(\S+)$/i.exec(headers.get('authorization')?.trim() ?? '');
+  return match?.[1];
+}
+
+export const gatewayJwtMethod: OwnerAuthMethod = {
+  name: 'gatewayJwt',
+  async authenticate(req) {
+    const token = bearerToken(req.headers);
+    if (token === undefined) return { status: 'not-applicable' };
+    let payload;
+    try {
+      // Checks the signature against the IdP's keys, `iss`, `aud`, `exp` and `nbf`.
+      ({ payload } = await jwtVerify(token, JWKS, {
+        issuer: ISSUER,
+        audience: AUDIENCE,
+        algorithms: ['RS256', 'ES256'],
+        clockTolerance: 30,
+      }));
+    } catch (error) {
+      // An unreachable or broken key endpoint is a server fault, not a bad token.
+      if (error instanceof errors.JWKSTimeout || error instanceof errors.JWKSInvalid) throw error;
+      if (error instanceof errors.JOSEError) return { status: 'invalid', reason: error.code };
+      throw error;
+    }
+    const ownerId = `user:${payload.sub ?? ''}`;
+    if (!payload.sub || !/^[\x21-\x7e]{1,256}$/.test(ownerId)) {
+      return { status: 'invalid', reason: 'unusable sub' };
+    }
+    const groups: unknown[] = Array.isArray(payload.groups) ? payload.groups : [];
+    const roles = new Set(['course:publish']);
+    if (groups.some((group) => typeof group === 'string' && ADMIN_GROUPS.has(group))) {
+      roles.add('admin');
+    }
+    return {
+      status: 'authenticated',
+      principal: { ownerId, kind: 'user', roles, assurance: 'verified', channel: 'gateway' },
+    };
+  },
+  describeStoredOwner: (ownerId) =>
+    ownerId.startsWith('user:') ? { kind: 'user', roles: new Set(['course:publish']) } : undefined,
+};
+```
+
+```ts
+// instrumentation.ts, inside register()
+const { configureOwnerAuthentication } = await import('@/lib/server/identity');
+const { gatewayJwtMethod } = await import('@/lib/server/identity/gateway-jwt');
+configureOwnerAuthentication({ methods: [gatewayJwtMethod], anonymousFallback: false });
+```
+
+Notes for the host:
+
+- **Absent means not-applicable, present but bad means invalid.** A request
+  without the header falls through (to the anonymous fallback, or a `401`
+  with `anonymousFallback: false`, the usual choice when the gateway covers
+  every route). A wrong signature, issuer or audience, or an expired token, is
+  a `401`, never an anonymous owner.
+- **Pin `issuer`, `audience` and `algorithms`.** Without an audience check any
+  token the IdP issued for another application would be accepted.
+- **`sub` is the stable id**; an email can change or be reassigned. Choose the
+  owner id scheme once: changing it later changes every owner.
+- **Groups** are IdP-specific (a `groups` claim needs the IdP to release it;
+  IAP sends none). Drop the admin mapping if yours has no such claim.
+- The gateway still should not be bypassable, and must not exempt app routes
+  from authentication, but a client that reaches the app directly cannot mint
+  a valid token, so no shared secret is needed.
 
 ##### Claiming anonymous work
 
@@ -783,17 +743,16 @@ anonymous one their courses were written under, and the account. A **claim**
 moves everything the anonymous owner holds to the account in one database
 transaction, and retires the anonymous id.
 
-**When a claim can arise.** A request must present both an account and an
-anonymous identity. With the shipped authenticators that happens in one case:
-a deployment that switches from the default `anonymousCookie` to
-`trustedProxyHeader`, whose visitors still hold an `anonymous_id` cookie from
-before the switch. `trustedProxyHeader` then resolves the gateway user with a
-`pendingClaim` naming that anonymous owner, so this covers migrating an
-anonymous deployment to a gateway. A deployment where the same visitor is first
-anonymous and then signs in needs a host authenticator that admits both kinds
-of request (see `OwnerAuthenticator` below): it sets `pendingClaim` on the
-signed-in principal and describes those anonymous ids as anonymous
-(`describeStoredOwner`).
+**When a claim can arise.** Core attaches the claim candidate itself: when a
+host method authenticates a non-anonymous principal and the same request also
+carries a valid `anonymous_id` cookie, the principal gets a `pendingClaim`
+naming that anonymous owner. This covers a visitor who worked anonymously and
+then signed in (with the anonymous fallback on), and a deployment that moved
+from anonymous use to accounts while visitors still hold their old cookie
+(with the fallback on or off). There is no candidate without a valid cookie,
+for an anonymous principal, or for the built-in `sharedTeam` (it has no
+credential of its own, so nothing says whose browser work it is); a method
+cannot set one itself.
 
 Nothing moves until the claim is triggered:
 
@@ -857,7 +816,7 @@ it writes nothing under it:
 - A write by id to a row that moved (deleting a skill, posting to an agent
   session) answers `403 OWNER_RETIRED` too.
 - Every such response carries the `Set-Cookie` values that drop the retired
-  anonymous cookie (the authenticator's `clearPendingClaim`), so the browser
+  anonymous cookie (and those of any method that declares `clearCredential`), so the browser
   gets a fresh anonymous owner on its next request. The library of the retired
   id reads as empty.
 
@@ -913,27 +872,20 @@ A participant runs inside the claim's transaction; if it throws, nothing any
 participant did is kept. `claimOwner(from, to)` and
 `claimPendingOwner(principal)` run a claim from host code.
 
-An `OwnerAuthenticator` may also implement:
-
-- `describeStoredOwner(ownerId)`: what kind of owner a stored id is, for work
-  that holds only the id (`principalFromStoredOwner`). A claim's source must be
-  described as anonymous.
-- `clearPendingClaim()`: the `Set-Cookie` values that drop its anonymous
-  credential.
-
-Forwarding a retired id is core's own (`owner_merges`); there is no host hook
-for it. `owner_merges` records claims of anonymous owners only, because the
-write fences enforce retirement only for ids the authenticator describes as
-anonymous: `describeStoredOwner` must keep describing an id the same way, and a
-row retiring any other owner is refused when read. A host that merges two
-signed-in accounts moves the rows itself (its own participants) and refuses the
-merged-away account in its authenticator. `OWNER_WRITE_LOCK_WAIT_MS` and
+A claim's source must be described as anonymous (`describeStoredOwner`,
+through `principalFromStoredOwner`). Forwarding a retired id is core's own
+(`owner_merges`); there is no host hook for it. `owner_merges` records claims
+of anonymous owners only, because the write fences enforce retirement only for
+ids described as anonymous: `describeStoredOwner` must keep describing an id
+the same way, and a row retiring any other owner is refused when read. A host
+that merges two signed-in accounts moves the rows itself (its own
+participants) and refuses the merged-away account in its auth method. `OWNER_WRITE_LOCK_WAIT_MS` and
 `OWNER_CLAIM_LOCK_WAIT_MS` are checked at startup.
 
 ##### Host extension hooks
 
 A host can add product behavior at four points without forking a route. They
-are registered like the authenticator: once, from `instrumentation.ts`
+are registered like the owner auth methods: once, from `instrumentation.ts`
 `register()`, and sealed on first use (a second call, or a call after the
 server started using them, throws). A plain object or a class instance both
 work; each hook is read once at registration and bound to the object passed.
@@ -944,7 +896,7 @@ register a plain object. With
 nothing registered, every point behaves exactly as described above.
 
 ```ts
-// instrumentation.ts, inside register(), next to configureOwnerAuthenticator
+// instrumentation.ts, inside register(), next to configureOwnerAuthentication
 const { configurePersistenceHooks, configureAssetByteStore } =
   await import('@/lib/server/persistence-hooks');
 

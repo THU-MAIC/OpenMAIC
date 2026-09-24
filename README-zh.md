@@ -365,18 +365,18 @@ NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
 
 `NEXT_PUBLIC_PERSISTENCE` 是**编译期开关**，会打进浏览器 bundle。启用它的构建必须部署在具备可用运行时 `DATABASE_URL` 的环境中。否则浏览器会选择 HTTP 持久化但内嵌端点返回配置或初始化错误；首页会弹出持久化不可用的提示并保留原有课程列表，而不是误导性地显示空课程库。
 
-`/api/persistence` 的每个请求都归属于[所有者认证器](#所有者身份)解析出的所有者——默认为 30 天匿名 cookie，每个浏览器一个所有者。持久化不再有单独的凭证：
+`/api/persistence` 的每个请求都归属于[所有者身份](#所有者身份)机制解析出的所有者——默认为 30 天匿名 cookie，每个浏览器一个所有者。持久化不再有单独的凭证：
 
 - **文档**：读取是 capability-by-id：只要 stage meta 存在且未被墓碑化，`decideDocumentAccess` 就会放行且不比对所有者（`lib/persistence/document-access.ts`），因此能访问该端点并知道 stage id 的人都可以读这门课。写入和删除按所有者校验。
 - **运行时会话**（`/runtime/*`）按学习者 key 分区，而学习者 key **就是所有者 id**。浏览器通过 `GET /api/persistence/learner-key` 获取它；请求中写入任何其他学习者 key 都会被拒绝（`403 FORBIDDEN_LEARNER`），他人的会话返回 `404`。已删除（墓碑化）课程的运行时数据视为不存在，也不再接受写入。学习者合并与管理端清空仍然拒绝。
 - **资产**按所有者分区分配，因此 `ASSET_QUOTA_BYTES` 是每个所有者的上限，只有所有者本人可以替换或删除条目。为保证课程观看者能加载媒体，读取仍是 capability-by-id：所有者可读自己的条目；他人已提交、且被**该所有者本人**某门未删除课程引用的条目，任何人都可按 id 读取。课程只会引用（并提交）其所有者自己的媒体：在自己的课程里写入他人的资产 id 不会产生任何引用，因此既无法暴露对方尚未保存的上传，也无法让对方的媒体一直保留。按所有者分区之前写入的条目（旧的共享分区）仍可被所有人按 id 读取，只有拥有所有引用它的课程的所有者才能替换或删除；课程不再引用后照旧由回收器回收。
 
-在没有宿主认证器时，所有者的强度只等同于一个 cookie：适用于 localhost、可信网络或单团队部署。有自有账号体系的部署注册认证器（见[所有者身份](#所有者身份)）后，上述所有接口都随之生效。
+在没有宿主认证方法时，所有者的强度只等同于一个 cookie：适用于 localhost、可信网络或单团队部署。有自有账号体系的部署注册所有者认证方法（见[所有者身份](#所有者身份)）后，上述所有接口都随之生效。
 
 > [!WARNING]
 > **升级服务端持久化。** `PERSISTENCE_DEV_TOKEN`、`NEXT_PUBLIC_PERSISTENCE_TOKEN` 和 `PERSISTENCE_ALLOW_INSECURE_DEV_AUTH` 已移除并被忽略，请从环境变量和构建参数中删去。此前写入的运行时会话以浏览器自生成的学习者 key 为键，而不是所有者 id，因此**将无法再访问**（课程文档和媒体不受影响）。它们不会被自动迁移，因为信任客户端提交的旧 key 会重新引入客户端自选身份。
 >
-> **如果 `PERSISTENCE_DEV_TOKEN` 是你唯一的访问门槛，请在升级前处理。** 去掉它之后，端点会接受所有能访问到它的访客，每人作为各自的匿名所有者。请先用 `ACCESS_CODE` 或自己的网关保护部署、注册基于自有账号体系的所有者认证器（见[所有者身份](#所有者身份)），或在此之前关闭服务端持久化（不设置 `NEXT_PUBLIC_PERSISTENCE`）。
+> **如果 `PERSISTENCE_DEV_TOKEN` 是你唯一的访问门槛，请在升级前处理。** 去掉它之后，端点会接受所有能访问到它的访客，每人作为各自的匿名所有者。请先用 `ACCESS_CODE` 或自己的网关保护部署、注册基于自有账号体系的所有者认证方法（见[所有者身份](#所有者身份)），或在此之前关闭服务端持久化（不设置 `NEXT_PUBLIC_PERSISTENCE`）。
 
 `PERSISTENCE_POSTGRES_PASSWORD` 只在数据目录为空时初始化 PostgreSQL 角色，之后再修改不会轮换已有的 `openmaic-postgres` 卷。一次性本地库可以直接 `docker compose --profile server-persistence down -v` 后换密码重启；要保留数据则需以管理员执行 `ALTER ROLE openmaic WITH PASSWORD 'new-password';` 并更新 `DATABASE_URL`。
 
@@ -396,58 +396,31 @@ NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
 
 #### 所有者身份
 
-课程、文件夹、资料、Agent 会话与技能都按**所有者 id** 分区。服务端对每个请求只通过一个可插拔的**所有者认证器**（`lib/server/identity/`）解析一次所有者；所有按所有者划分的路由和 Server Action 都经由它，其他模块不读取身份 cookie 或请求头。
+课程、文件夹、资料、Agent 会话与技能都按**所有者 id** 分区。服务端对每个请求只在一处（`lib/server/identity/`）解析一次所有者；所有按所有者划分的路由和 Server Action 都经由它，其他模块不读取身份 cookie 或请求头。
 
-内置三种认证器，由环境变量选择：默认的 `anonymousCookie`（每个浏览器一个所有者，`anon:<uuid>`，来自 30 天 `HttpOnly` 的 `anonymous_id` cookie，不能发布课程）；设置 `PERSISTENCE_SHARED_OWNER_ID`（必须同时设置 `ACCESS_CODE`）时启用 `sharedTeam`（所有请求共用该固定 id，可以发布课程）；设置 `OWNER_AUTHENTICATOR=trusted-proxy`（必须同时设置 `TRUSTED_PROXY_SECRET`）时启用 `trustedProxyHeader`（真实账号：身份网关登录后在请求头中转发的用户，所有者为 `proxy:<user>`，可以发布课程，见下文“通过身份网关接入账号”）。授权只看 principal 的 `kind` 和 `roles`，不解析 id 的形状；核心角色为 `course:publish` 和 `admin`（为管理类接口保留，只有 `trustedProxyHeader` 会授予配置的管理员组成员）。
+解析时按顺序询问一组**所有者认证方法（owner auth method）**。每个方法只识别一种凭证，并且只给出以下三种回答之一：
 
-##### 通过身份网关接入账号
+| 回答 | 含义 | 解析结果 |
+|---|---|---|
+| `authenticated` | 该方法的凭证存在且有效 | 以该 principal 为所有者，不再询问后续方法 |
+| `not-applicable` | 请求中没有该方法的凭证 | 询问下一个方法 |
+| `invalid` | 凭证存在但无效 | 立即返回 `401 INVALID_CREDENTIAL`，不再询问后续方法，也不回退到匿名 |
 
-`trustedProxyHeader` 让每个人拥有自己的课程库，账号来自组织的身份提供方（OIDC、SAML、LDAP），OpenMAIC 本身不接触密码或令牌。应用前面的身份网关（oauth2-proxy、Authelia、基于 Keycloak 的代理、机构自己的反向代理）负责登录，并把验证过的用户放在请求头中转发；OpenMAIC 只在请求同时携带只有网关知道的密钥时才信任该请求头。
+所有方法都回答 `not-applicable` 时，由内置的**匿名回退**解析：每个浏览器一个所有者，`anon:<uuid>`，来自 30 天 `HttpOnly` 的 `anonymous_id` cookie，首次使用时生成，不能发布课程。宿主可以关闭该回退，此时这类请求同样返回 `401`。被拒绝的请求绝不会被当作匿名所有者处理。
 
-```env
-OWNER_AUTHENTICATOR=trusted-proxy
-# 至少 32 个可打印、无空格的 ASCII 字符，例如 `openssl rand -hex 32`。
-TRUSTED_PROXY_SECRET=...
-# 可选，以下为默认值。
-# TRUSTED_PROXY_SECRET_HEADER=x-openmaic-proxy-secret
-# TRUSTED_PROXY_USER_HEADER=x-forwarded-user
-# 可选：为这些组的成员授予 `admin`（精确匹配，区分大小写）。启用前请阅读下方警告。
-# TRUSTED_PROXY_GROUPS_HEADER=x-forwarded-groups
-# TRUSTED_PROXY_ADMIN_GROUPS=openmaic-admins
-```
+默认不注册任何方法，所有请求都是匿名所有者；设置 `PERSISTENCE_SHARED_OWNER_ID`（必须同时设置 `ACCESS_CODE`）时，内置的 `sharedTeam` 方法把所有请求解析为该固定 id，访问码背后的团队共用一个课程库，并可以发布课程。授权只看 principal 的 `kind` 和 `roles`，不解析 id 的形状；核心角色为 `course:publish` 和 `admin`（为管理类接口保留，内置方法都不授予）。
 
-> [!WARNING]
-> **`TRUSTED_PROXY_ADMIN_GROUPS` 对组请求头的信任仅建立在共享密钥之上。** OpenMAIC 无法区分网关设置的组和客户端经网关透传的组。只有在网关对每个请求都覆盖或剥离组请求头时才可启用，否则任何已登录用户都能给自己授予 `admin`。设置该变量时，服务启动会输出一条警告。
+有自有账号体系的部署为每种凭证实现一个 `OwnerAuthMethod`，并在 `instrumentation.ts` 的 `register()` 中调用一次 `configureOwnerAuthentication({ methods: [...], anonymousFallback? })` 按顺序注册（示例见英文 README 的 “Registering methods” 一节）。`authenticated` 回答中的 `setCookies` 会随该请求的每个响应返回（包括错误响应）；Server Action 按同样的顺序询问同样的方法，方法有 `authenticateFromContext()` 时调用它，否则以请求头调用 `authenticate()`，且 Server Action 中的 cookie 必须通过 `next/headers` 写入，带 `setCookies` 的回答会被拒绝。`describeStoredOwner(ownerId)` 让只持有已存储 id 的工作得知所有者类型（先问匿名回退，再按顺序问各方法）；`clearCredential()` 只用于自己以 cookie 认证匿名 principal 的方法，其 `Set-Cookie` 值会随每个 `403 OWNER_RETIRED` 返回。principal 按请求校验：方法返回的 owner id 不是 1–256 个可打印、无空格的 ASCII 字符、`kind` / `assurance` 未知，或方法自行设置了 `pendingClaim` 时，该请求返回 `500`，不会写入存储。同一个解析出的所有者也是 `/api/persistence` 的运行时学习者 key 和资产分区。
 
-| 请求 | 结果 |
-|---|---|
-| 密钥正确，单个用户 `alice` | 所有者 `proxy:alice`，`kind: 'user'`，`assurance: 'verified'`，角色 `course:publish`（管理员组成员另加 `admin`）。不设置 cookie。 |
-| 密钥缺失、错误或重复发送 | `401 INVALID_CREDENTIAL` |
-| 密钥正确，但用户头缺失或为空 | `401` |
-| 用户头含逗号（两行同名请求头会被合并为 `a, b`） | `401`：无法确定是哪个用户 |
-| `proxy:<user>` 不是 1–256 个可打印、无空格 ASCII 字符 | `401`：请转发 subject 或邮箱这类 ASCII 标识，而不是显示名 |
+注册在启动时校验，以下任一情况都会让 `register()` 抛错、服务无法启动：重复调用；在所有者解析开始后调用；方法列表为空；方法格式错误或重名；违反 `sharedTeam` 规则。若要在宿主方法之外保留共享团队所有者，需把 `sharedTeamAuthMethod()`（同样从 `@/lib/server/identity` 导出）放在**最后**：它总会认证成功，排在它后面的方法永远不会被询问。设置了 `PERSISTENCE_SHARED_OWNER_ID` 但注册中没有包含它，或注册了 `sharedTeamAuthMethod()` 却没有设置该变量，都会导致启动失败，而不是被静默忽略。
 
-被拒绝的请求绝不会被当作匿名所有者处理。用户值会去掉首尾空白，其余原样保留（包括大小写），因为各身份提供方对 subject 是否区分大小写并不一致。组按逗号拆分，忽略空项、超过 256 个字符的项以及第 256 项之后的项。路由和 Server Action 用同样的规则读取同样的请求头。
-
-**信任边界。** Next.js 不向路由、middleware 或 Server Action 提供 TCP 对端地址；最接近的 `x-forwarded-for` 只在客户端没有发送该头时才由 socket 填充。因此 OpenMAIC 无法凭地址识别网关，只能依赖密钥：密钥以常量时间比较，该模式下缺少密钥时服务拒绝启动。密钥不能代替网络隔离，因此还需要：
-
-- 让应用**只能**经由网关访问（绑定到内网，或用防火墙限制端口）；
-- 让网关在设置自己的值之前**剥离**客户端发来的用户、组和密钥请求头；
-- 密钥只放在服务端环境变量中，不要加 `NEXT_PUBLIC_` 前缀。
-
-`ACCESS_CODE` 与该模式相互独立。网关本身就是访问门槛，所以通常不设置 `ACCESS_CODE`（该模式下也不再输出“未设置 `ACCESS_CODE`”的启动警告）；如果设置了，访客需要同时通过两者。名字相近的 `TRUST_PROXY_HEADERS` 只影响访问码的限流，与此无关。
-
-配置在启动时校验，以下任一情况都会让服务无法启动：`OWNER_AUTHENTICATOR` 取值不是 `trusted-proxy`；未启用该模式却设置了 `TRUSTED_PROXY_*` 变量；同时设置了 `PERSISTENCE_SHARED_OWNER_ID` 或注册了宿主认证器；密钥缺失、过短或含不可打印字符；请求头名称格式错误、彼此重复，或属于 HTTP、Next.js 或转发代理自行设置的请求头（如 `cookie`、`x-forwarded-for`、`forwarded`、`x-real-ip`、`rsc`、`next-action`，以及以 `x-middleware-`、`x-invoke-`、`x-nextjs-`、`next-router-` 开头的名称）；设置了 `TRUSTED_PROXY_ADMIN_GROUPS` 却没有 `TRUSTED_PROXY_GROUPS_HEADER`。
-
-oauth2-proxy（v7.14 及以上）的示例配置见英文 README 的 “Accounts through an identity gateway” 一节：用 `--alpha-config` 注入用户、组和密钥请求头，并剥离客户端发来的同名请求头。该节同时说明了需要从旧版参数中移除的选项、不要用 `skip-auth-route` 等选项豁免应用路由、组声明需要身份提供方实际下发，以及组名不能包含逗号。
-
-有自有账号体系的部署可实现 `OwnerAuthenticator`，并在 `instrumentation.ts` 的 `register()` 中调用一次 `configureOwnerAuthenticator(...)` 注册（示例见英文 README 的 “Owner identity” 一节）。无效凭证必须返回 `INVALID_CREDENTIAL`，各接口统一返回 `401`，绝不回退为新的匿名所有者。注册冲突在启动时报错：重复调用 `configureOwnerAuthenticator`，或同时设置了 `PERSISTENCE_SHARED_OWNER_ID` 或 `OWNER_AUTHENTICATOR`，都会让 `register()` 抛错、服务无法启动；principal 则按请求校验：注册的认证器返回的 owner id 不是 1–256 个可打印、无空格的 ASCII 字符（或 `kind` / `assurance` 未知）时，该请求返回 `500`，不会写入存储。同一个解析出的所有者也是 `/api/persistence` 的运行时学习者 key 和资产分区，因此注册的认证器同样管辖它们。
+OpenMAIC 不内置身份网关认证器。部署在身份网关（带 `--pass-authorization-header` 的 oauth2-proxy、Cloudflare Access、Google Cloud IAP 等）之后时，可由宿主编写一个方法，用 IdP 公布的 JWKS 校验网关转发的**签名 JWT**（签名、`iss`、`aud`、`exp` / `nbf`），把 `sub` 映射为所有者 id、把组声明映射为角色：请求头不存在时回答 `not-applicable`，存在但无效时回答 `invalid`。基于 `jose` 库的示例见英文 README 的 “Recipe: accounts through an identity gateway (signed JWT)” 一节；该示例由宿主维护，必须由宿主自行测试。
 
 ##### 认领匿名工作
 
 访客先匿名使用、后登录，会同时拥有两个所有者：写入课程时的匿名所有者，以及登录后的账号。**认领（claim）**在一个数据库事务内把匿名所有者名下的全部内容转到账号，并让该匿名 id 退役。
 
-**何时会出现认领。** 请求必须同时带有账号身份和匿名身份。使用内置认证器时只有一种情况：部署从默认的 `anonymousCookie` 切换到 `trustedProxyHeader`，而访客仍持有切换前的 `anonymous_id` cookie。此时 `trustedProxyHeader` 解析出的网关用户会带有指向该匿名所有者的 `pendingClaim`，即覆盖“把匿名部署迁移到身份网关”的场景。若要在同一部署中让访客先匿名、后登录，需要一个同时接受两类请求的宿主认证器：它在已登录的 principal 上设置 `pendingClaim`，并通过 `describeStoredOwner` 把这些匿名 id 描述为匿名。
+**何时会出现认领。** 认领候选由核心自动附加：宿主方法认证出非匿名 principal，且同一请求还带有有效的 `anonymous_id` cookie 时，该 principal 会带有指向该匿名所有者的 `pendingClaim`。这覆盖访客先匿名使用、后登录（匿名回退开启时），以及部署从匿名使用切换到账号而访客仍持有旧 cookie（回退开启或关闭均可）两种情况。没有有效 cookie、principal 本身是匿名的，或由内置的 `sharedTeam` 解析（它没有自己的凭证，无法判断是谁的浏览器内容）时都不会附加；方法也不能自行设置。
 
 触发认领之前不会移动任何数据：默认由应用页面以 JSON 请求体（`{}`）显式调用 `POST /api/identity/claim`，成功返回 `200 { status: 'claimed', moved }` 或 `200 { status: 'already-claimed' }`，并通过 `Set-Cookie` 删除匿名 cookie；设置 `OWNER_CLAIM_TRIGGER=auto` 后，携带待认领身份的第一个路由请求会在处理前自动认领（显式认领路由除外，它们仍报告自己的认领结果；Server Action 不会触发）。同一浏览器可能由多人共用时建议保留显式触发，否则最先登录的人会拿走其中的匿名内容。**匿名 cookie 是持有者凭证（bearer credential）**：持有它的人可以读取、编辑这些匿名内容，并能在登录后把它们认领进自己的账号；在共用设备上，应在下一个人登录前清除它（认领会自动清除）。非同源 JSON 请求（`Sec-Fetch-Site` 不是 `same-origin`、`Origin` 不是本站，或内容类型不是 `application/json`）返回 `403 CROSS_ORIGIN_REFUSED`；匿名请求者返回 `403 TARGET_ANONYMOUS`；账号旁没有匿名 cookie 返回 `409 NO_PENDING_CLAIM`；该匿名所有者已被其他账号认领时返回 `409 ALREADY_CLAIMED_ELSEWHERE` 并删除 cookie；任一所有者正在写入、认领未能及时拿到锁时返回 `503 OWNER_BUSY` 并附 `Retry-After`，可原样重试。
 
@@ -455,15 +428,15 @@ oauth2-proxy（v7.14 及以上）的示例配置见英文 README 的 “Accounts
 
 规则：只能认领匿名所有者，且只能由非匿名所有者认领；重复认领同一对所有者会成功且不做任何事；已被某账号认领的匿名所有者不能再被其他账号认领；不允许链式认领（已退役的账号不能认领，已吸收过其他所有者的所有者不能被认领），因此每个退役 id 一步即可转到当前所有者。
 
-认领后该匿名 id **退役**：仍携带它的请求不会再以它写入任何内容。经 `/api/persistence` 的创建（文档、文件夹、资产、运行时会话）、文件夹、课程、资料和技能上传路由，以及 `/api/persistence` 的其他写入都返回 `403 OWNER_RETIRED`；按 id 写入已随认领移走的行（删除技能、向 Agent 会话发消息）同样返回 `403 OWNER_RETIRED`。这些响应都带有删除该退役匿名 cookie 的 `Set-Cookie`（认证器的 `clearPendingClaim`），浏览器的下一个请求会得到新的匿名所有者；退役 id 的课程库显示为空。认领之前已开始、脱离请求继续运行的工作（Agent 运行中的课程编辑、生成的媒体和新建技能）会随 id 转到账号，因此作者登录时仍在生成的课程会进入其账号；与认领并发、由请求创建的 Agent 会话会写入账号，如同在认领前创建。
+认领后该匿名 id **退役**：仍携带它的请求不会再以它写入任何内容。经 `/api/persistence` 的创建（文档、文件夹、资产、运行时会话）、文件夹、课程、资料和技能上传路由，以及 `/api/persistence` 的其他写入都返回 `403 OWNER_RETIRED`；按 id 写入已随认领移走的行（删除技能、向 Agent 会话发消息）同样返回 `403 OWNER_RETIRED`。这些响应都带有删除该退役匿名 cookie 的 `Set-Cookie`（以及声明了 `clearCredential` 的方法的清除值），浏览器的下一个请求会得到新的匿名所有者；退役 id 的课程库显示为空。认领之前已开始、脱离请求继续运行的工作（Agent 运行中的课程编辑、生成的媒体和新建技能）会随 id 转到账号，因此作者登录时仍在生成的课程会进入其账号；与认领并发、由请求创建的 Agent 会话会写入账号，如同在认领前创建。
 
 每个创建或修改所有者数据的写事务都以共享模式获取该所有者的 PostgreSQL advisory 锁（身份锁）作为第一条语句，认领则在修改任何行之前以独占模式获取双方的身份锁；因此受保护的写入与认领并发时，要么先提交并被移动，要么等待后被拒绝，测试中这些写入既未出现死锁，也未在退役 id 下残留数据。等待都有上限：认领获取两把身份锁最多等 `OWNER_CLAIM_LOCK_WAIT_MS`（默认 5000）毫秒（等待期间 PostgreSQL 会让双方新的写入排在它后面，因此这段等待要短）；写入获取所有者锁最多等 `OWNER_WRITE_LOCK_WAIT_MS`（默认 30000）毫秒；上传在写入字节期间持有该锁，因此认领会在上限内等待进行中的上传。超时返回 `503 OWNER_BUSY` 并附 `Retry-After`，不写入任何内容。资产回收器不获取身份锁，与认领并发处理同一批条目时 PostgreSQL 可能中止其中一方，被这样中止的认领同样返回 `OWNER_BUSY`。
 
-宿主可以在 `instrumentation.ts` 中用 `registerClaimParticipant({ name, order, rekey(tx, from, to) })` 为自有的按所有者划分的表注册参与方（在认领事务内运行，抛错则所有参与方的改动都不保留；核心参与方占用顺序 100–700，宿主建议从 1000 起），用 `claimOwner(from, to)` / `claimPendingOwner(principal)` 在宿主代码中发起认领；`OwnerAuthenticator` 还可以实现 `describeStoredOwner(ownerId)`（只持有已存储 id 的工作据此得知所有者类型，见 `principalFromStoredOwner`；认领的来源必须被描述为匿名）和 `clearPendingClaim()`（删除其匿名凭证的 `Set-Cookie` 值）。退役 id 的转发由核心的 `owner_merges` 负责，没有宿主钩子。`owner_merges` 只记录对匿名所有者的认领，因为写入保护只对认证器描述为匿名的 id 强制退役：`describeStoredOwner` 对同一 id 的描述必须保持稳定，读取到退役非匿名所有者的记录时会直接报错。宿主若要合并两个已登录账号，应自行移动数据（注册自己的参与方），并在认证器中拒绝被合并掉的账号。`OWNER_WRITE_LOCK_WAIT_MS` 与 `OWNER_CLAIM_LOCK_WAIT_MS` 在启动时校验。示例见英文 README 的 “Claiming anonymous work” 一节。
+宿主可以在 `instrumentation.ts` 中用 `registerClaimParticipant({ name, order, rekey(tx, from, to) })` 为自有的按所有者划分的表注册参与方（在认领事务内运行，抛错则所有参与方的改动都不保留；核心参与方占用顺序 100–700，宿主建议从 1000 起），用 `claimOwner(from, to)` / `claimPendingOwner(principal)` 在宿主代码中发起认领；认领的来源必须被 `describeStoredOwner` 描述为匿名（见 `principalFromStoredOwner`）。退役 id 的转发由核心的 `owner_merges` 负责，没有宿主钩子。`owner_merges` 只记录对匿名所有者的认领，因为写入保护只对被描述为匿名的 id 强制退役：`describeStoredOwner` 对同一 id 的描述必须保持稳定，读取到退役非匿名所有者的记录时会直接报错。宿主若要合并两个已登录账号，应自行移动数据（注册自己的参与方），并在其认证方法中拒绝被合并掉的账号。`OWNER_WRITE_LOCK_WAIT_MS` 与 `OWNER_CLAIM_LOCK_WAIT_MS` 在启动时校验。示例见英文 README 的 “Claiming anonymous work” 一节。
 
 ##### 宿主扩展钩子
 
-宿主可以在四个位置扩展产品行为而无需分叉路由，注册方式与认证器相同：在 `instrumentation.ts` 的 `register()` 中调用一次，首次使用后即封存（重复调用或在服务已开始使用后调用都会抛错）。未注册任何钩子时，行为与上文完全一致。`configurePersistenceHooks({ name, authorizeCreate, onCreate, library, beforeAssetAllocate })` 提供：课程创建时在同一事务内的授权与副作用（拒绝返回 `403 CREATE_REFUSED`，抛错则整个创建回滚；已存在课程的保存与编辑不会触发）；`GET /api/stages` 列出哪些课程（提供方返回 stage id，路由会剔除读取路径会拒绝的 id）；以及资产上传前的准入（新建 `POST /assets` 与替换 `PUT /assets/{id}/content` 都会经过，`req.operation` 区分二者；返回 `Response` 即拒绝，此时尚未存储任何字节、也未计入配额）。钩子的 `actor.source` 区分请求写入（附带 `principal`）与后台 Agent 运行写入（无 principal，拒绝时 Agent 只会得到固定的“已被部署拒绝”结果，不会看到宿主的 `message`）。普通对象与类实例均可注册。`configureAssetByteStore({ name, create, signsReadUrls })` 取代 `ASSET_S3_BUCKET` 开关，请求路径与资产回收器使用同一注册；在 `ASSET_BYTE_EGRESS=redirect` 下未声明 `signsReadUrls: true` 的存储会在启动时报错。示例与完整约定见英文 README 的 “Host extension hooks” 一节。
+宿主可以在四个位置扩展产品行为而无需分叉路由，注册方式与所有者认证方法相同：在 `instrumentation.ts` 的 `register()` 中调用一次，首次使用后即封存（重复调用或在服务已开始使用后调用都会抛错）。未注册任何钩子时，行为与上文完全一致。`configurePersistenceHooks({ name, authorizeCreate, onCreate, library, beforeAssetAllocate })` 提供：课程创建时在同一事务内的授权与副作用（拒绝返回 `403 CREATE_REFUSED`，抛错则整个创建回滚；已存在课程的保存与编辑不会触发）；`GET /api/stages` 列出哪些课程（提供方返回 stage id，路由会剔除读取路径会拒绝的 id）；以及资产上传前的准入（新建 `POST /assets` 与替换 `PUT /assets/{id}/content` 都会经过，`req.operation` 区分二者；返回 `Response` 即拒绝，此时尚未存储任何字节、也未计入配额）。钩子的 `actor.source` 区分请求写入（附带 `principal`）与后台 Agent 运行写入（无 principal，拒绝时 Agent 只会得到固定的“已被部署拒绝”结果，不会看到宿主的 `message`）。普通对象与类实例均可注册。`configureAssetByteStore({ name, create, signsReadUrls })` 取代 `ASSET_S3_BUCKET` 开关，请求路径与资产回收器使用同一注册；在 `ASSET_BYTE_EGRESS=redirect` 下未声明 `signsReadUrls: true` 的存储会在启动时报错。示例与完整约定见英文 README 的 “Host extension hooks” 一节。
 
 ### 可选：MP4 视频导出（渲染服务）
 

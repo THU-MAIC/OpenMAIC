@@ -83,7 +83,7 @@ NEXT_PUBLIC_PERSISTENCE=1 \
 docker compose --profile server-persistence up --build
 ```
 
-`NEXT_PUBLIC_PERSISTENCE` 是构建时变量。持久化不再有单独的凭证：每个请求都归属于所有者认证器解析出的所有者（默认是每个浏览器一个的匿名 cookie），运行时会话和媒体按该所有者分区。默认身份只隔离浏览器、并不认证任何人，面向真实用户的部署应注册基于自有账号体系的所有者认证器。早期版本使用的 `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` 已移除并被忽略；按旧的浏览器自生成学习者 key 存储的运行时会话将无法再访问。如果 `PERSISTENCE_DEV_TOKEN` 曾是唯一的访问门槛，请在升级前用 `ACCESS_CODE` 或网关保护部署、注册所有者认证器，或不设置 `NEXT_PUBLIC_PERSISTENCE`。
+`NEXT_PUBLIC_PERSISTENCE` 是构建时变量。持久化不再有单独的凭证：每个请求都归属于所有者解析得出的所有者（默认是每个浏览器一个的匿名 cookie），运行时会话和媒体按该所有者分区。默认身份只隔离浏览器、并不认证任何人，面向真实用户的部署应注册基于自有账号体系的所有者认证方法。早期版本使用的 `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` 已移除并被忽略；按旧的浏览器自生成学习者 key 存储的运行时会话将无法再访问。如果 `PERSISTENCE_DEV_TOKEN` 曾是唯一的访问门槛，请在升级前用 `ACCESS_CODE` 或网关保护部署、注册所有者认证方法，或不设置 `NEXT_PUBLIC_PERSISTENCE`。
 
 PostgreSQL 数据保存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRES_PASSWORD` 只会在数据库目录首次初始化时设置密码，之后修改环境变量不会自动修改已有数据库用户密码。
 
