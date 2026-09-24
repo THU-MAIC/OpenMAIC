@@ -18,6 +18,7 @@ import {
 } from '@/lib/types/chat';
 import type { DiscussionRequest } from '@/components/roundtable';
 import type { Action } from '@/lib/types/action';
+import type { Stage } from '@/lib/types/stage';
 import type { UIMessage } from 'ai';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { useStageStore } from '@/lib/store';
@@ -26,7 +27,7 @@ import { useSettingsStore, type SettingsState } from '@/lib/store/settings';
 import { useUserProfileStore } from '@/lib/store/user-profile';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { getCurrentModelConfig } from '@/lib/utils/model-config';
+import { getCurrentModelConfig, getStageRoutesHeaderValue } from '@/lib/utils/model-config';
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import { StreamBuffer } from '@/lib/buffer/stream-buffer';
 import type { AgentStartItem, ActionItem } from '@/lib/buffer/stream-buffer';
@@ -42,6 +43,7 @@ import { isPiChatEnabled } from '@/lib/config/feature-flags';
 import type { CleanupSource } from '@/lib/playback/auto-resume';
 import { nanoid } from 'nanoid';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
+import { isWhiteboardReferenceAvailable } from '@/lib/whiteboard/element-reference';
 import { getPersistenceRequestHeaders } from '@/lib/persistence/bootstrap';
 import { refreshWhiteboardRuntimeProjection } from '@/lib/whiteboard/runtime/browser-projection';
 
@@ -390,6 +392,30 @@ export function getPiSingleRequestOutcome(
   return { type: 'completed', directorState: doneData.directorState };
 }
 
+/**
+ * Attach the user's per-stage LLM routes (`x-model-routes`) to an outgoing chat
+ * request's headers, so the classroom-interaction override reaches the server.
+ * The header is omitted when no stage is routed (following the mainline).
+ */
+export function withStageRoutesHeader(headers: Record<string, string>): Record<string, string> {
+  const stageRoutesHeader = getStageRoutesHeaderValue();
+  if (stageRoutesHeader) headers['x-model-routes'] = stageRoutesHeader;
+  return headers;
+}
+
+/** POST /api/chat (the stateless agent loop) with per-stage user routes attached. */
+export function fetchStatelessChat(
+  body: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<Response> {
+  return fetch('/api/chat', {
+    method: 'POST',
+    headers: withStageRoutesHeader({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
 export async function runPiSingleRequest(
   sessionId: string,
   requestTemplate: ChatRequestTemplate & { storeState: AgentLoopStoreState },
@@ -418,14 +444,35 @@ export async function runPiSingleRequest(
     controller.signal,
   );
   if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+  const reference = requestTemplate.elementReference;
+  if (reference?.kind === 'whiteboard_element') {
+    const canvas = useCanvasStore.getState();
+    // Check the snapshot POSTed below; a runtime projection disables referencing.
+    if (
+      canvas.whiteboardClearing ||
+      !isWhiteboardReferenceAvailable(
+        reference,
+        requestTemplate.storeState.stage as Stage | null,
+        canvas.runtimeWhiteboardProjection,
+      )
+    ) {
+      throw new Error(t('chat.elementReference.whiteboardChanged'));
+    }
+  }
   const response = await fetch('/api/chat/pi', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...persistenceHeaders },
+    headers: withStageRoutesHeader({ 'Content-Type': 'application/json', ...persistenceHeaders }),
     body: JSON.stringify({ ...requestTemplate, ...(interactiveState ? { interactiveState } : {}) }),
     signal: controller.signal,
   });
 
   if (!response.ok) {
+    if (reference?.kind === 'whiteboard_element') {
+      const errorBody = await response.json().catch(() => null);
+      if (errorBody?.reason === 'whiteboard_reference_changed') {
+        throw new Error(t('chat.elementReference.whiteboardChanged'));
+      }
+    }
     throw new Error(`Pi chat request failed: ${response.status}`);
   }
   if (!response.body) {
@@ -1330,13 +1377,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             return currentSession?.messages ?? requestTemplate.messages;
           },
 
-          fetchChat: (body, signal) =>
-            fetch('/api/chat', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-              signal,
-            }),
+          fetchChat: (body, signal) => fetchStatelessChat(body, signal),
 
           onEvent: streamConsumer.onEvent,
           onIterationEnd: streamConsumer.onIterationEnd,

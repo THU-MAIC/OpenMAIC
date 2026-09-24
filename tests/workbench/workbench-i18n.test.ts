@@ -2,7 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
-import { createWorkbenchTranslator, workbenchEn, workbenchResourceFor } from '@/lib/i18n/workbench';
+import {
+  createWorkbenchTranslator,
+  workbenchEn,
+  workbenchResourceFor,
+  workbenchZh,
+} from '@/lib/i18n/workbench';
 import { supportedLocales } from '@/lib/i18n/locales';
 import { skillDisplayLabel, skillTitle } from '@/lib/workbench/agent-skills';
 
@@ -102,6 +107,56 @@ describe('workbench copy covers every supported locale', () => {
       const extra = overlayToolKeys.filter((key) => !baseToolKeys.includes(key));
       expect(missing, `${file} is missing tool keys the base has`).toEqual([]);
       expect(extra, `${file} has tool keys the base does not`).toEqual([]);
+    }
+  });
+
+  it('requires explicit material upload error copy in every supported locale', () => {
+    // workbenchResourceFor merges an overlay onto the base first, so a missing
+    // key still resolves. These two strings are user-visible upload errors;
+    // each base and each raw overlay file has to carry them itself.
+    const requiredMaterialErrorKeys = [
+      'material.fileTooLarge',
+      'material.fileTooLargeWithLimit',
+    ] as const;
+    const english = flatten(workbenchEn);
+    const bases: Array<[string, Map<string, string>]> = [
+      ['en', english],
+      ['zh-CN', flatten(workbenchZh)],
+    ];
+    for (const [name, map] of bases) {
+      for (const key of requiredMaterialErrorKeys) {
+        const value = map.get(key);
+        expect(value, `${name} is missing ${key}`).toEqual(expect.any(String));
+        expect(value?.trim(), `${name}.${key} is empty`).not.toBe('');
+        expect(interpolations(value!), `${name}.${key}`).toEqual(
+          key === 'material.fileTooLargeWithLimit' ? ['limit'] : [],
+        );
+      }
+    }
+
+    const overlayLocales = supportedLocales
+      .map((locale) => locale.code)
+      .filter((code) => code !== 'zh-CN' && code !== 'en-US');
+    expect(overlayLocales).toHaveLength(10);
+    for (const code of overlayLocales) {
+      const overlay = JSON.parse(
+        fs.readFileSync(
+          path.join(process.cwd(), 'lib/i18n/workbench-locales', `${code}.json`),
+          'utf8',
+        ),
+      ) as Record<string, unknown>;
+      const flat = flatten(overlay);
+      for (const key of requiredMaterialErrorKeys) {
+        const value = flat.get(key);
+        expect(value, `${code} overlay is missing ${key}`).toEqual(expect.any(String));
+        expect(value?.trim(), `${code}.${key} is empty`).not.toBe('');
+        expect(interpolations(value!), `${code}.${key} changed its interpolations`).toEqual(
+          key === 'material.fileTooLargeWithLimit' ? ['limit'] : [],
+        );
+        expect(workbenchResourceFor(code), `${code} did not register its overlay`).toMatchObject({
+          material: { [key.slice('material.'.length)]: value },
+        });
+      }
     }
   });
 });

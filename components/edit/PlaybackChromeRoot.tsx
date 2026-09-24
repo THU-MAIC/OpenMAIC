@@ -1,5 +1,6 @@
 'use client';
 
+import { toast } from 'sonner';
 import {
   forwardRef,
   useCallback,
@@ -56,6 +57,10 @@ import {
 import { AlertTriangle } from 'lucide-react';
 import { VisuallyHidden } from 'radix-ui';
 import type { PPTElement } from '@openmaic/dsl';
+import {
+  getDisplayedWhiteboard,
+  isWhiteboardReferenceAvailable,
+} from '@/lib/whiteboard/element-reference';
 import type { ElementReference } from '@/lib/types/chat';
 import type {
   PlaybackInteractiveComponentPick,
@@ -232,6 +237,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
     // Whiteboard state (from canvas store so AI tools can open it)
     const whiteboardOpen = useCanvasStore.use.whiteboardOpen();
+    const runtimeProjection = useCanvasStore.use.runtimeWhiteboardProjection();
+    const whiteboardClearing = useCanvasStore.use.whiteboardClearing();
+    const { whiteboard: displayedWhiteboard, source: displayedWhiteboardSource } =
+      getDisplayedWhiteboard(stage, runtimeProjection);
     const setWhiteboardOpenManually = useCanvasStore.use.setWhiteboardOpenManually();
 
     // Selected agents from settings store (Zustand)
@@ -1253,7 +1262,63 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const canPickInteractiveComponent = Boolean(
       showElementReference && !whiteboardOpen && isHtmlBackedInteractiveScene,
     );
-    const canPickElement = canPickSlideElement || canPickInteractiveComponent;
+    const canPickWhiteboardElement = Boolean(
+      showElementReference &&
+      whiteboardOpen &&
+      !whiteboardClearing &&
+      displayedWhiteboardSource === 'stage_snapshot' &&
+      displayedWhiteboard?.elements.length,
+    );
+    const canPickElement =
+      canPickSlideElement || canPickInteractiveComponent || canPickWhiteboardElement;
+
+    const handlePickWhiteboardElement = useCallback(
+      (element: PPTElement) => {
+        if (!elementPickActiveRef.current || !canPickWhiteboardElement || !stage) return;
+        if (
+          !displayedWhiteboard ||
+          displayedWhiteboard.elements.filter((item) => item.id === element.id).length !== 1
+        )
+          return;
+        setElementPickActive(false);
+        const selectionVersion = ++selectionVersionRef.current;
+        setDraftElementReference({
+          reference: {
+            kind: 'whiteboard_element',
+            whiteboardId: displayedWhiteboard.id,
+            elementId: element.id,
+          },
+          selectionVersion,
+          elementType: element.type,
+          displaySummary: getSlideElementPresentation(element, t).displaySummary,
+        });
+      },
+      [
+        canPickWhiteboardElement,
+        stage,
+        displayedWhiteboard,
+        setElementPickActive,
+        setDraftElementReference,
+        t,
+      ],
+    );
+
+    const canSendReferencedMessage = useCallback(() => {
+      const reference = draftElementReferenceRef.current?.reference;
+      if (reference?.kind !== 'whiteboard_element') return true;
+      const canvas = useCanvasStore.getState();
+      if (
+        !canvas.whiteboardClearing &&
+        isWhiteboardReferenceAvailable(
+          reference,
+          useStageStore.getState().stage,
+          canvas.runtimeWhiteboardProjection,
+        )
+      )
+        return true;
+      toast.info(t('chat.elementReference.whiteboardChanged'));
+      return false;
+    }, [t]);
 
     useEffect(() => {
       if (!elementPickActive || !canPickInteractiveComponent) return;
@@ -1354,7 +1419,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     }, [canPickElement, setElementPickActive]);
 
     useEffect(() => {
-      if (whiteboardOpen || !canPickElement) setElementPickActive(false);
+      if (!canPickElement) setElementPickActive(false);
     }, [canPickElement, setElementPickActive, whiteboardOpen]);
 
     useEffect(() => {
@@ -1403,7 +1468,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     useEffect(() => {
       const previousSceneId = elementReferenceSceneIdRef.current;
       elementReferenceSceneIdRef.current = currentSceneId;
-      if (previousSceneId === currentSceneId) return;
+      if (
+        previousSceneId === currentSceneId ||
+        draftElementReferenceRef.current?.reference.kind === 'whiteboard_element'
+      )
+        return;
       setDraftElementReference(null);
     }, [currentSceneId, setDraftElementReference]);
 
@@ -1684,6 +1753,13 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               elementPickActive={elementPickActive}
               onToggleElementPick={handleToggleElementPick}
               onPickElement={handlePickElement}
+              whiteboardElementReference={
+                showElementReference &&
+                draftElementReference?.reference.kind === 'whiteboard_element'
+                  ? draftElementReference.reference
+                  : undefined
+              }
+              onPickWhiteboardElement={handlePickWhiteboardElement}
               onCancelElementPick={() => setElementPickActive(false)}
               hideToolbar={mode === 'playback' || (isPresenting && !controlsVisible)}
               isPendingScene={isPendingScene}
@@ -1737,6 +1813,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 isSoftClosing={chatIsSoftClosing}
                 softCloseDeadline={softCloseDeadline}
                 isTopicPending={isTopicPending}
+                canSendMessage={canSendReferencedMessage}
                 onMessageSend={async (msg) => {
                   const draft = showElementReference ? draftElementReferenceRef.current : null;
                   const elementReferenceSnapshot: ElementReferenceSendSnapshot | undefined = draft
@@ -1862,9 +1939,12 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 elementReferencePill={
                   draftElementReference
                     ? {
-                        sceneLabel: t('chat.lectureNotes.pageLabel', {
-                          n: (draftElementReference.sceneOrder ?? 0) + 1,
-                        }),
+                        sceneLabel:
+                          draftElementReference.reference.kind === 'whiteboard_element'
+                            ? t('whiteboard.title')
+                            : t('chat.lectureNotes.pageLabel', {
+                                n: (draftElementReference.sceneOrder ?? 0) + 1,
+                              }),
                         elementType:
                           draftElementReference.elementType === 'interactive'
                             ? t('edit.sceneType.interactive')

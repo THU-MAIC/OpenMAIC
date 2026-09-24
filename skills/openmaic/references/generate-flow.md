@@ -135,7 +135,10 @@ GET {pollUrl}
 - Report progress to the user only when `status`, `step`, or visible progress meaningfully changes. Do not spam every poll result.
 - Do not try to recover from auth, provider, model, or base URL errors by changing request parameters. Tell the user to fix OpenMAIC server-side config and retry only after they confirm.
 - On `failed`, surface the server error and include the `jobId`.
-- On `succeeded`, use `result.classroomId` and `result.url` from the final poll response.
+- On `succeeded`, read `result.classroomId` and `result.url` from the final poll response, and also read `result.warning` and `result.ttsCoverage` before telling the user the classroom is ready.
+  - If `result.warning` is set, quote it in the same update and describe narration as incomplete.
+  - If `result.ttsCoverage` is set and `written` is less than `total`, tell the user how many narration clips were written and how many speech actions were left silent. The classroom URL is still usable, and narration is incomplete.
+  - A missing `ttsCoverage` means server TTS was not requested. A requested TTS run includes `ttsCoverage`. `warning` is set when `written` is less than `total`, or when the TTS phase failed. A run with no narratable speech (`written: 0`, `total: 0`) has coverage and no `warning`.
 
 ## If The Loop Ends First
 
@@ -153,6 +156,8 @@ Check back with me in a little while and I can continue tracking this same job w
 ## What To Return
 
 Return the generated classroom ID plus a directly clickable classroom URL.
+
+When the succeeded job includes `result.warning` or an incomplete `result.ttsCoverage` (`written` < `total`), say that narration is incomplete in the same reply, quoting `result.warning` when it is present, and still include the classroom ID and URL.
 
 Output the URL as a raw absolute URL on its own line.
 

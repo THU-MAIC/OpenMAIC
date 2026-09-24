@@ -31,11 +31,13 @@ import {
   FileText,
   Send,
   Download,
+  ExternalLink,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ProviderConfig } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { createVerifyModelRequest, formatContextWindow } from './utils';
+import { PROVIDER_SIGNUP_LINKS } from './provider-links';
 import { cn } from '@/lib/utils';
 
 interface ProviderConfigPanelProps {
@@ -74,6 +76,7 @@ export function ProviderConfigPanel({
   isBuiltIn,
 }: ProviderConfigPanelProps) {
   const { t } = useI18n();
+  const signupLinks = PROVIDER_SIGNUP_LINKS[provider.id];
 
   // Local state for this provider
   const [apiKey, setApiKey] = useState(initialApiKey);
@@ -221,6 +224,30 @@ export function ProviderConfigPanel({
           authoritative and not overridable here, so the editing inputs are hidden. */}
       {!isServerConfigured && (
         <>
+          {/* 推广位（如 Kimi）：获取 API key 的国内/海外双链接。 */}
+          {signupLinks && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              <span className="text-muted-foreground">{t('settings.providerLinks.getApiKey')}</span>
+              <a
+                href={signupLinks.domestic}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-sm text-primary underline-offset-2 hover:underline"
+              >
+                {t('settings.providerLinks.domestic')}
+                <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
+              </a>
+              <a
+                href={signupLinks.international}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-sm text-primary underline-offset-2 hover:underline"
+              >
+                {t('settings.providerLinks.international')}
+                <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
+              </a>
+            </div>
+          )}
           {/* API Key */}
           <div className="space-y-2">
             <Label>{t('settings.apiSecret')}</Label>

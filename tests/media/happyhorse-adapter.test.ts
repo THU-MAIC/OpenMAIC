@@ -41,6 +41,7 @@ describe('HappyHorse video adapter', () => {
       'https://dashscope.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis',
       {
         method: 'POST',
+        redirect: 'manual',
         headers: {
           Authorization: 'Bearer test-key',
           'Content-Type': 'application/json',

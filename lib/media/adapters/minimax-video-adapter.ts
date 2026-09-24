@@ -17,11 +17,27 @@ import type {
 } from '../types';
 import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
+import { appAttributionHeaders } from '@/lib/config/app-attribution';
 
 const BASE_URL = 'https://api.minimaxi.com';
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 120; // ~10 minutes max
+
+/**
+ * Auth headers for the configured gateway. The base URL is the origin of every
+ * request this adapter issues, so host-matching app attribution against it
+ * covers submit/poll/retrieve alike — TokenDance gateways receive X-App-URL,
+ * MiniMax's own endpoint is untouched.
+ */
+function gatewayAuthHeaders(config: VideoGenerationConfig): Record<string, string> {
+  const baseUrl = (config.baseUrl || BASE_URL).replace(/\/$/, '');
+  return {
+    Authorization: `Bearer ${config.apiKey}`,
+    ...appAttributionHeaders(baseUrl),
+  };
+}
 
 interface MiniMaxSubmitResponse {
   task_id: string;
@@ -103,8 +119,9 @@ async function submitTask(
     // duration below matches the delivered video.
     const response = await fetch(`${baseUrl}/v2/video_generation`, {
       method: 'POST',
+      redirect: 'manual',
       headers: {
-        Authorization: `Bearer ${config.apiKey}`,
+        ...gatewayAuthHeaders(config),
         'Content-Type': 'application/json; charset=utf-8',
       },
       body: JSON.stringify({
@@ -115,6 +132,8 @@ async function submitTask(
         content: [{ type: 'text', text: options.prompt }],
       }),
     });
+
+    assertNotRedirected(response, 'MiniMax Video');
 
     if (!response.ok) {
       const errText = await response.text().catch(() => response.statusText);
@@ -131,6 +150,7 @@ async function submitTask(
 
   const response = await fetch(`${baseUrl}/v1/video_generation`, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json; charset=utf-8',
@@ -143,6 +163,8 @@ async function submitTask(
       prompt_optimizer: false,
     }),
   });
+
+  assertNotRedirected(response, 'MiniMax Video');
 
   if (!response.ok) {
     const errText = await response.text().catch(() => response.statusText);
@@ -175,10 +197,13 @@ async function pollTaskStatus(
 
   const response = await fetch(url, {
     method: 'GET',
+    redirect: 'manual',
     headers: {
-      Authorization: `Bearer ${config.apiKey}`,
+      ...gatewayAuthHeaders(config),
     },
   });
+
+  assertNotRedirected(response, 'MiniMax Video');
 
   if (!response.ok) {
     const errText = await response.text().catch(() => response.statusText);
@@ -197,10 +222,13 @@ async function retrieveFileDownloadUrl(
 
   const response = await fetch(url, {
     method: 'GET',
+    redirect: 'manual',
     headers: {
-      Authorization: `Bearer ${config.apiKey}`,
+      ...gatewayAuthHeaders(config),
     },
   });
+
+  assertNotRedirected(response, 'MiniMax Video');
 
   if (!response.ok) {
     const errText = await response.text().catch(() => response.statusText);
@@ -304,7 +332,7 @@ export async function testMiniMaxVideoConnectivity(
           method: 'GET',
           redirect: 'manual',
           headers: {
-            Authorization: `Bearer ${config.apiKey}`,
+            ...gatewayAuthHeaders(config),
           },
         }),
     });
@@ -316,7 +344,7 @@ export async function testMiniMaxVideoConnectivity(
       method: 'POST',
       redirect: 'manual',
       headers: {
-        Authorization: `Bearer ${config.apiKey}`,
+        ...gatewayAuthHeaders(config),
         'Content-Type': 'application/json; charset=utf-8',
       },
       body: JSON.stringify({

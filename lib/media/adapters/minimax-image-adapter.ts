@@ -9,6 +9,7 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const BASE_URL = 'https://api.minimaxi.com';
@@ -25,6 +26,7 @@ export async function generateWithMiniMaxImage(
 
   const response = await fetch(`${baseUrl}/v1/image_generation`, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json; charset=utf-8',
@@ -39,6 +41,8 @@ export async function generateWithMiniMaxImage(
       prompt_optimizer: false,
     }),
   });
+
+  assertNotRedirected(response, 'MiniMax Image');
 
   if (!response.ok) {
     const errText = await response.text().catch(() => response.statusText);

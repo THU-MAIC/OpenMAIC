@@ -215,19 +215,23 @@ export function attachInteractiveState(
             OBSERVATION_SCOPE_ID,
           )}. Area facts are not properties of that component unless an object in the state says so, and this packet does not report whether the component sits inside that area. If a fact cannot be attributed to the referenced component, say which part of the activity it describes instead of guessing.`
         : resolved
-          ? `The student referenced a slide element. Any page-reported facts below describe the whole declared activity area ${JSON.stringify(
+          ? `The student referenced a ${resolved.reference.kind === 'whiteboard_element' ? 'whiteboard' : 'slide'} element. Any page-reported facts below describe the whole declared activity area ${JSON.stringify(
               OBSERVATION_SCOPE_ID,
-            )} of the current Scene, not properties of the referenced slide element. The sample does not select any component in that activity.`
+            )} of the current Scene, not properties of the referenced ${resolved.reference.kind === 'whiteboard_element' ? 'whiteboard' : 'slide'} element. The sample does not select any component in that activity.`
           : `No component is referenced this turn. Any page-reported facts below describe the whole declared activity area ${JSON.stringify(
               OBSERVATION_SCOPE_ID,
             )} and identify no particular component. Do not treat them as a selection, and do not carry a reference over from an earlier turn.`,
-      ...(resolved && resolved.reference.sceneId !== body.storeState.currentSceneId
+      ...(resolved &&
+      resolved.reference.kind !== 'whiteboard_element' &&
+      resolved.reference.sceneId !== body.storeState.currentSceneId
         ? [
             'The referenced component and the page-reported facts below come from different Scenes: the component was referenced on another Scene, while the state was sampled from the Scene the student is on now. Do not report the state below as a property of that component, and do not assume the component is present on the current Scene.',
           ]
         : []),
       'Read `summary` and `state` as the activity right now, and `rendered` — when present — as only the last completed result. Do not substitute source defaults, earlier messages or historical snapshots for anything the report does not state. If the state is unavailable, say the current state cannot be determined.',
-      'When current state is unavailable or unknown, neither Director nor Teacher may supply a value, a direction of change, or a claim about how the activity behaves — no source default, no earlier turn, and no general expectation about how pages or widgets usually work. State that it cannot be determined now, and delegate only that supported boundary.',
+      // read_scene may independently provide explicit source-authored rules. An
+      // unavailable sample forbids current-state claims, not those general rules.
+      'When current state is unavailable or unknown, neither Director nor Teacher may supply a current value, a current direction of change, or a current outcome from source defaults, earlier turns, static source instructions, or general expectations about similar activities. Explicit static source instructions may still support general task or rule explanations, but never prove what is currently visible or happening. State that unsupported current facts cannot be determined now, and delegate only that boundary.',
       'Confidence is time-specific: a new unavailable observation does not invalidate a previously supported answer. Do not recast an earlier conclusion as speculation, or apologize for it, solely because current evidence is unavailable. Distinguish what was known then from what can be determined now; neither transfers certainty nor uncertainty across sampling times.',
       'For genuinely unknown current information, give the supported facts and explain what cannot be determined. Do not revive historical values as a current explanation or guess, even with "maybe" or "cannot be certain". Discuss earlier results or hypotheses only when the student explicitly asks, clearly separated from current evidence.',
       'Explain in ordinary student-facing language; do not expose protocol fields, IDs, revision numbers, packet names or implementation jargon.',

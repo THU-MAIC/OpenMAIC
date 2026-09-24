@@ -18,6 +18,7 @@ import { useStageStore } from '@/lib/store';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
+import { collectSpeechText } from './narration';
 import type { Scene } from '@/lib/types/stage';
 
 const log = createLogger('ExportScript');
@@ -64,6 +65,11 @@ export function isScriptExportReady(
  * Collect each scene's narration: concatenate its `SpeechAction.text` values in
  * action order. Scenes with no speech text are omitted entirely. `slideFallback`
  * supplies the locale-appropriate label for scenes with an empty title.
+ *
+ * The speech walk itself lives in `./narration` so this exporter and the PPTX
+ * speaker-notes exporter can't drift on what counts as narration (#1142).
+ * Whitespace-only speech is dropped and kept text is trimmed — see the
+ * `keepWhitespaceOnly` / `trim` options there.
  */
 export function collectSceneScripts(
   scenes: Scene[],
@@ -71,13 +77,7 @@ export function collectSceneScripts(
 ): SceneScript[] {
   const scripts: SceneScript[] = [];
   for (const scene of scenes) {
-    const parts: string[] = [];
-    for (const action of scene.actions ?? []) {
-      if (action.type === 'speech' && action.text.trim()) {
-        parts.push(action.text.trim());
-      }
-    }
-    const text = parts.join('\n');
+    const text = collectSpeechText(scene, { keepWhitespaceOnly: false, trim: true });
     if (!text) continue;
     scripts.push({
       sceneId: scene.id,

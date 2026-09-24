@@ -996,7 +996,10 @@ async function generateSingleMedia(
         stageId,
         type: 'image',
         blob,
-        mimeType: 'image/png',
+        // The blob carries the type the provider reported — a data URL states
+        // its own — so recording a type here rather than a constant is what
+        // keeps a JPEG from being stored as a PNG.
+        mimeType: storedMediaType(blob, 'image/png'),
         size: blob.size,
         prompt: req.prompt,
         params: paramsJson,
@@ -1166,8 +1169,12 @@ async function callImageApi(
 
   // Result may have ossUrl (CDN direct), url, or base64
   const ossUrl = data.result?.ossUrl as string | undefined;
+  // A provider that answers with inline bytes reports what they are; a bare
+  // `base64` from a provider that does not keeps the PNG assumed here.
+  const inlineMime = (data.result?.mimeType as string | undefined) || 'image/png';
   const url =
-    data.result?.url || (data.result?.base64 ? `data:image/png;base64,${data.result.base64}` : '');
+    data.result?.url ||
+    (data.result?.base64 ? `data:${inlineMime};base64,${data.result.base64}` : '');
   if (!ossUrl && !url) throw new Error('No image URL in response');
   return { url, ossUrl };
 }
