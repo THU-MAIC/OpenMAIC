@@ -4,7 +4,7 @@ import type { AssetByteStoreRegistration, LibraryProvider, PersistenceHooks } fr
 
 /**
  * The process-wide host extension hooks, registered the way the owner
- * authenticator is (`lib/server/identity/registry.ts`): once, from
+ * auth methods are (`lib/server/identity/registry.ts`): once, from
  * `instrumentation.ts` `register()`, before the server serves a request.
  *
  * Two entry points, because they are consumed by different layers and sealed

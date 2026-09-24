@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { resetOwnerAuthenticatorForTests } from '@/lib/server/identity/registry';
+import { resetOwnerAuthenticationForTests } from '@/lib/server/identity/registry';
+import type { OwnerAuthMethod } from '@/lib/server/identity/types';
 
 // register() is exercised for its owner-identity validation only.
 vi.mock('@/lib/persistence/asset-quota', () => ({ resolveAssetQuotaBytes: vi.fn() }));
@@ -11,10 +12,15 @@ vi.mock('@/lib/persistence/asset-collector-schedule', () => ({
 vi.mock('@/lib/server/config-validation', () => ({ validateServerConfig: vi.fn() }));
 vi.mock('@/lib/config/feature-flags', () => ({ isAgentRuntimeConfigured: () => false }));
 
+const notApplicable: OwnerAuthMethod = {
+  name: 'host',
+  authenticate: async () => ({ status: 'not-applicable' }),
+};
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
-  resetOwnerAuthenticatorForTests();
+  resetOwnerAuthenticationForTests();
 });
 
 describe('owner identity validation at boot', () => {
@@ -37,40 +43,69 @@ describe('owner identity validation at boot', () => {
     await expect(register()).rejects.toThrow(/ACCESS_CODE/);
   });
 
-  it('fails the register() hook when trusted-proxy mode has no secret', async () => {
-    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
-    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
-    vi.stubEnv('OWNER_AUTHENTICATOR', 'trusted-proxy');
-    vi.stubEnv('TRUSTED_PROXY_SECRET', '');
-    const { register } = await import('@/instrumentation');
-
-    await expect(register()).rejects.toThrow(/requires TRUSTED_PROXY_SECRET/);
-  });
-
-  it('fails the register() hook on a trusted-proxy variable without the selector', async () => {
+  it('fails the register() hook on PERSISTENCE_SHARED_OWNER_ID a host registration ignores', async () => {
     vi.stubEnv('NEXT_RUNTIME', 'nodejs');
     vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
     vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
-    vi.stubEnv('OWNER_AUTHENTICATOR', '');
-    vi.stubEnv('TRUSTED_PROXY_SECRET', 'x'.repeat(40));
+    const { configureOwnerAuthentication } = await import('@/lib/server/identity');
+    configureOwnerAuthentication({ methods: [notApplicable] });
+    // Set after registration, so only boot validation can see it.
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', 'team-alpha');
     const { register } = await import('@/instrumentation');
 
-    await expect(register()).rejects.toThrow(/OWNER_AUTHENTICATOR/);
+    await expect(register()).rejects.toThrow(/do not include sharedTeam/);
   });
 
-  it('boots in trusted-proxy mode without an ACCESS_CODE warning', async () => {
+  it('fails the register() hook on a registered sharedTeam whose variable is unset', async () => {
     vi.stubEnv('NEXT_RUNTIME', 'nodejs');
-    vi.stubEnv('ACCESS_CODE', '');
+    vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', 'team-alpha');
+    const { configureOwnerAuthentication, sharedTeamAuthMethod } =
+      await import('@/lib/server/identity');
+    configureOwnerAuthentication({ methods: [notApplicable, sharedTeamAuthMethod()] });
     vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
-    vi.stubEnv('OWNER_AUTHENTICATOR', 'trusted-proxy');
-    vi.stubEnv('TRUSTED_PROXY_SECRET', 'x'.repeat(40));
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { resetAccessCodeWarningForTests } = await import('@/lib/server/access-code-warning');
-    resetAccessCodeWarningForTests();
+    const { register } = await import('@/instrumentation');
+
+    await expect(register()).rejects.toThrow(/PERSISTENCE_SHARED_OWNER_ID is not set/);
+  });
+
+  it('boots with host methods, and with sharedTeam included last', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', 'team-alpha');
+    const { configureOwnerAuthentication, sharedTeamAuthMethod } =
+      await import('@/lib/server/identity');
+    configureOwnerAuthentication({ methods: [notApplicable, sharedTeamAuthMethod()] });
+    const { validateOwnerIdentityConfiguration } = await import('@/lib/server/identity/registry');
     const { register } = await import('@/instrumentation');
 
     await expect(register()).resolves.toBeUndefined();
-    expect(warn.mock.calls.flat().join(' ')).not.toMatch(/ACCESS_CODE/);
+    expect(validateOwnerIdentityConfiguration()).toBe('configured');
+  });
+
+  it.each(['OWNER_AUTHENTICATOR', 'TRUSTED_PROXY_SECRET', 'TRUSTED_PROXY_USER_HEADER'])(
+    'fails the register() hook when the removed %s is set',
+    async (variable) => {
+      vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+      vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+      vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
+      vi.stubEnv(variable, 'anything');
+      const { register } = await import('@/instrumentation');
+
+      await expect(register()).rejects.toThrow(
+        new RegExp(`${variable} is set, but the built-in gateway-header authenticator was removed`),
+      );
+    },
+  );
+
+  it('ignores a removed variable that is set but blank', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
+    vi.stubEnv('OWNER_AUTHENTICATOR', ' ');
+    const { register } = await import('@/instrumentation');
+
+    await expect(register()).resolves.toBeUndefined();
   });
 
   it('boots with the default configuration', async () => {

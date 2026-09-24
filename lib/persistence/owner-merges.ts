@@ -32,7 +32,7 @@ import type { Queryable } from '@openmaic/storage/document/pg';
 
 import { StorageBusyError } from '@openmaic/storage';
 
-import { getOwnerAuthenticator } from '@/lib/server/identity/registry';
+import { retiredOwnerClearCookies } from '@/lib/server/identity/registry';
 import { principalFromStoredOwner } from '@/lib/server/identity/stored-owner';
 
 import { resolveWriteLockWaitMs } from './owner-lock-waits';
@@ -180,14 +180,14 @@ export async function readOwnerRetirement(
  * id itself. One indexed lookup: claims never chain (`./owner-claims.ts`).
  *
  * Core owns forwarding, and `owner_merges` holds claims only: rows that retire
- * an owner the authenticator describes as anonymous. That is also what the
+ * an owner the auth methods describe as anonymous. That is also what the
  * write fences enforce -- they read `owner_merges` only for such owners -- so
  * a row retiring any other owner would be followed here but not enforced on
  * writes. Such a row is refused loudly instead: a host cannot express its own
  * merges of two signed-in accounts through `owner_merges` (or `claimOwner`,
  * which refuses a non-anonymous source). A host that merges accounts moves
  * the rows itself (its own participants' `rekey`, run in its transaction) and
- * refuses writes under the merged-away account in its own authenticator,
+ * refuses writes under the merged-away account in its own auth method,
  * which then never resolves that id again.
  */
 export async function canonicalizeOwner(queryable: Queryable, ownerId: string): Promise<string> {
@@ -195,7 +195,7 @@ export async function canonicalizeOwner(queryable: Queryable, ownerId: string): 
   if (retiredInto === null) return ownerId;
   if (!mayBeRetired(ownerId)) {
     throw new Error(
-      `owner_merges retires an owner the configured authenticator does not describe as ` +
+      `owner_merges retires an owner the configured auth methods do not describe as ` +
         `anonymous; only claims of anonymous owners may be recorded there, because the write ` +
         `fences enforce retirement for anonymous owners only. Check describeStoredOwner.`,
     );
@@ -205,7 +205,7 @@ export async function canonicalizeOwner(queryable: Queryable, ownerId: string): 
 
 /**
  * Whether `ownerId` can have been retired at all. A claim only ever retires an
- * owner the configured authenticator describes as anonymous
+ * owner the configured auth methods describe as anonymous
  * (`principalFromStoredOwner`), so for any other owner the retirement read is
  * skipped: its answer is known. The identity lock is still taken for every
  * owner, because a claim locks its target too, and that is what keeps an
@@ -213,7 +213,7 @@ export async function canonicalizeOwner(queryable: Queryable, ownerId: string): 
  */
 // This relies on `describeStoredOwner` answering stably: an id once described
 // as anonymous must keep that answer, or a retired id stops being fenced (see
-// `OwnerAuthenticator.describeStoredOwner`).
+// `OwnerAuthMethod.describeStoredOwner`).
 function mayBeRetired(ownerId: string): boolean {
   return principalFromStoredOwner(ownerId).kind === 'anonymous';
 }
@@ -249,14 +249,14 @@ export function isOwnerRetiredError(error: unknown): error is OwnerRetiredError 
 
 /**
  * The `Set-Cookie` values that drop a retired anonymous credential: the
- * configured authenticator's `clearPendingClaim`. Every `OWNER_RETIRED`
+ * anonymous cookie's, plus any method's `clearCredential`. Every `OWNER_RETIRED`
  * response carries them, so a browser whose claim response was lost (a closed
  * tab, a parallel request with the old cookie) stops presenting the retired
  * identity and is given a fresh one on its next request, instead of being
  * refused forever.
  */
 export function retiredCredentialCookies(): readonly string[] {
-  return getOwnerAuthenticator().clearPendingClaim?.() ?? [];
+  return retiredOwnerClearCookies();
 }
 
 /** The response a route gives a request refused with {@link OwnerRetiredError}. */

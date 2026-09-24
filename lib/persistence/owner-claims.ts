@@ -52,9 +52,9 @@
  *
  * ## Rules
  *
- * - `from` must be an owner the configured authenticator describes as
- *   anonymous (`principalFromStoredOwner`), and `to` must not be anonymous.
- *   An authenticator that sets `pendingClaim` describes those ids so.
+ * - `from` must be an owner the auth methods describe as anonymous
+ *   (`principalFromStoredOwner`), and `to` must not be anonymous. A
+ *   `pendingClaim` always names an anonymous cookie owner, which is.
  * - Idempotent: claiming a pair that is already merged succeeds and does
  *   nothing, so a retried request or a second tab is harmless.
  * - A `from` already claimed into a different account is refused: an anonymous
@@ -352,7 +352,7 @@ export class OwnerClaimError extends Error {
 
 export interface ClaimOwnerOptions {
   /**
-   * The kind of `toOwnerId`. Defaults to what the configured authenticator
+   * The kind of `toOwnerId`. Defaults to what the configured auth methods
    * says of the stored id (`principalFromStoredOwner`). The source's kind is
    * always that: see the rules above.
    */
@@ -469,7 +469,7 @@ async function claimInTransaction(
 /**
  * Claim the anonymous owner a request presented beside `principal` (its
  * {@link OwnerPrincipal.pendingClaim}) into `principal`. The source must still
- * be described as anonymous by the authenticator (`describeStoredOwner`).
+ * be described as anonymous by the auth methods (`describeStoredOwner`).
  *
  * The anonymous cookie is a bearer credential: whoever presents it beside a
  * signed-in account can claim that anonymous work into the account -- the

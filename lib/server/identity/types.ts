@@ -4,13 +4,12 @@
  * Every owner-scoped surface — the persistence route, `/api/stages/*`,
  * folders, materials, agent sessions and skills, stage-meta, publish and
  * Server Actions — asks one question: who is making this request? The answer
- * is an {@link OwnerPrincipal}, produced by exactly one configured
- * {@link OwnerAuthenticator} (see `./registry.ts`).
+ * is an {@link OwnerPrincipal}, resolved in one place (`./resolve.ts`) from an
+ * ordered list of {@link OwnerAuthMethod}s the deployment registers at boot
+ * (`./registry.ts`), with the anonymous cookie as the fallback.
  *
- * The built-in authenticators (`./anonymous-cookie.ts`, `./shared-team.ts`,
- * `./trusted-proxy.ts`) cover per-browser, per-team and gateway-backed
- * identities. A host with its own
- * accounts implements this interface and registers it at boot instead of
+ * A host with its own accounts writes a method for its credential (a session
+ * cookie, a bearer token, a gateway-signed JWT) and registers it, instead of
  * patching every route.
  */
 
@@ -20,7 +19,7 @@ export type SubjectKind = 'anonymous' | 'user' | 'device' | 'shared' | 'service'
 /**
  * How much the credential behind a principal proves.
  *
- * - `verified`: a credential the authenticator checked (a signed token, a
+ * - `verified`: a credential the method checked (a signed token, a
  *   trusted gateway header).
  * - `unverified-legacy`: an identifier the client presented that nothing
  *   signs, such as the anonymous cookie, or a deployment-wide id.
@@ -35,13 +34,13 @@ export type OwnerAssurance = 'verified' | 'unverified-legacy' | 'minted';
 export const OWNER_ROLES = {
   /** May make a course public (`POST /api/stages/[id]/publish` and `/unpublish`). */
   coursePublish: 'course:publish',
-  /** Reserved for administrative surfaces. Granted only by the trusted-proxy built-in, to configured groups. */
+  /** Reserved for administrative surfaces. No built-in grants it; a host method may. */
   admin: 'admin',
 } as const;
 
 export interface OwnerPrincipal {
   /**
-   * Opaque, stable, authenticator-minted. Stored verbatim in every owner id
+   * Opaque, stable, minted by the method that authenticated the request. Stored verbatim in every owner id
    * column. Core never derives meaning from its shape: authorization decisions
    * read {@link kind} and {@link roles} instead.
    */
@@ -54,11 +53,11 @@ export interface OwnerPrincipal {
   /**
    * An anonymous identity the same request presented alongside this one: the
    * candidate for claiming that anonymous owner's work into this owner (see
-   * `lib/persistence/owner-claims.ts`). Set only by an authenticator that
-   * resolved a non-anonymous principal and recognized a valid anonymous
-   * credential beside it; its presence is the authenticator's statement that
-   * `fromOwnerId` is an anonymous owner. Nothing is claimed until the host's
-   * trigger runs (`POST /api/identity/claim`, or `OWNER_CLAIM_TRIGGER=auto`).
+   * `lib/persistence/owner-claims.ts`). Attached by core, never by a method:
+   * when a host method authenticates a non-anonymous principal and the
+   * request also carries a valid anonymous owner cookie, `fromOwnerId` is
+   * that cookie's owner. Nothing is claimed until the trigger runs
+   * (`POST /api/identity/claim`, or `OWNER_CLAIM_TRIGGER=auto`).
    */
   readonly pendingClaim?: PendingOwnerClaim;
 }
@@ -72,8 +71,8 @@ export interface PendingOwnerClaim {
 }
 
 /**
- * What an authenticator knows about an owner id it minted, without a request:
- * see {@link OwnerAuthenticator.describeStoredOwner}.
+ * What a method knows about an owner id it minted, without a request: see
+ * {@link OwnerAuthMethod.describeStoredOwner}.
  */
 export interface StoredOwnerDescription {
   readonly kind: SubjectKind;
@@ -81,6 +80,11 @@ export interface StoredOwnerDescription {
   readonly roles?: ReadonlySet<string>;
 }
 
+/**
+ * The resolved outcome for one request: a principal, or a refusal. Produced by
+ * core from the registered methods (`./resolve.ts`); a method answers with an
+ * {@link OwnerAuthMethodResult} instead.
+ */
 export type AuthOutcome =
   | {
       readonly ok: true;
@@ -94,72 +98,116 @@ export type AuthOutcome =
     }
   | {
       /**
-       * The request presented a credential and it is invalid. The request is
-       * refused with a 401; it is never re-identified as a fresh anonymous
-       * owner. "No credential at all" is not this case: an authenticator that
-       * admits anonymous visitors answers that with an anonymous principal.
+       * Refused with a 401: a method found its credential invalid, or no
+       * method applied and the anonymous fallback is off. Never answered as a
+       * fresh anonymous owner instead.
        */
       readonly ok: false;
       readonly status: 401;
       readonly code: 'INVALID_CREDENTIAL';
     };
 
-/** The parts of an incoming request an authenticator may read. */
+/** The parts of an incoming request a method may read. */
 export interface OwnerAuthRequest {
   readonly headers: Headers;
   readonly method?: string;
   readonly url?: string;
 }
 
-export interface OwnerAuthenticator {
-  /** Short label for logs and boot errors. */
+/**
+ * What one {@link OwnerAuthMethod} says about one request. Exactly one of:
+ *
+ * - `authenticated`: its credential is present and valid; `principal` is the
+ *   owner. Resolution stops here.
+ * - `not-applicable`: no credential of its kind is present at all. Core asks
+ *   the next method, and after the last one falls back to the anonymous
+ *   cookie (when enabled).
+ * - `invalid`: its credential is present but invalid (bad signature, expired,
+ *   wrong audience, malformed). Core refuses the request with 401
+ *   `INVALID_CREDENTIAL` at once: no later method and no anonymous fallback is
+ *   asked, so a broken credential can never quietly become a different
+ *   identity.
+ *
+ * Core cannot tell the two apart itself: a method that answers
+ * `not-applicable` for a malformed, expired or otherwise unusable credential
+ * of its own kind (its header or cookie is there, but it cannot use it)
+ * silently downgrades that request to the next method or to an anonymous
+ * owner. Answer `invalid` whenever the credential is present; answer
+ * `not-applicable` only when it is absent.
+ *
+ * A method that cannot decide (its key endpoint is down, its session store
+ * is unreachable) throws: the request fails as a server error, and neither a
+ * later method nor the fallback is asked.
+ */
+export type OwnerAuthMethodResult =
+  | {
+      readonly status: 'authenticated';
+      readonly principal: OwnerPrincipal;
+      /**
+       * `Set-Cookie` values for the response (see {@link AuthOutcome}). Route
+       * handler path only: a Server Action cannot forward them, so a method
+       * that mints cookies writes them itself in
+       * {@link OwnerAuthMethod.authenticateFromContext}.
+       */
+      readonly setCookies?: readonly string[];
+    }
+  | { readonly status: 'not-applicable' }
+  | {
+      readonly status: 'invalid';
+      /** For server logs only; never sent to the client. */
+      readonly reason?: string;
+    };
+
+/**
+ * One way a request can prove who it is. The deployment registers an ordered
+ * list of them at boot (`configureOwnerAuthentication` in `./registry.ts`);
+ * core asks them in order for every request and keeps the first
+ * `authenticated` answer.
+ */
+export interface OwnerAuthMethod {
+  /** Short, unique label for logs and boot errors. */
   readonly name: string;
-  /** Resolve the owner of a route handler request. */
-  authenticate(req: OwnerAuthRequest): Promise<AuthOutcome>;
+  /** Answer for a route handler request. */
+  authenticate(req: OwnerAuthRequest): Promise<OwnerAuthMethodResult>;
   /**
-   * Resolve the owner inside a Server Action, where no `Request` exists and
-   * cookies are read and written through `next/headers`.
+   * Answer inside a Server Action, where no `Request` exists and cookies are
+   * read and written through `next/headers`. Same semantics as
+   * {@link authenticate}; it must write any cookie it mints itself, through
+   * `cookies()`, and must not populate `setCookies` (refused with an error).
    *
-   * A Server Action cannot forward raw `Set-Cookie` values, so this method
-   * must write any cookie it mints itself, through `cookies()` from
-   * `next/headers`, and must not populate `setCookies`: an outcome that does is
-   * refused with an error.
-   *
-   * Optional: without it the request headers from `next/headers` are passed to
-   * {@link authenticate}, under the same rule — an authenticator whose
-   * `authenticate` mints cookies must implement this method.
+   * Optional: without it, the request headers from `next/headers` are passed
+   * to {@link authenticate} under the same rule — a method whose
+   * `authenticate` mints cookies must implement this.
    */
-  authenticateFromContext?(): Promise<AuthOutcome>;
+  authenticateFromContext?(): Promise<OwnerAuthMethodResult>;
   /**
-   * Describe an owner id this authenticator minted, for work that holds only
-   * the stored id (an agent run, a claim). Answer `undefined` for an id it
-   * does not recognize. Optional: without it, `principalFromStoredOwner`
-   * describes every id as `kind: 'user'` with no roles, which is also what
-   * makes an unrecognized id ineligible as the anonymous side of a claim.
+   * Describe an owner id this method minted, for work that holds only the
+   * stored id (an agent run, a claim). Answer `undefined` for an id it does
+   * not recognize; the first method with an answer wins. Without any answer,
+   * `principalFromStoredOwner` describes an id as `kind: 'user'` with no
+   * roles.
    *
-   * An authenticator that sets {@link OwnerPrincipal.pendingClaim} must
-   * describe those anonymous ids as `kind: 'anonymous'`: a claim is refused
-   * for any other source, and the write fences rely on it (only an id
-   * described as anonymous can ever be retired, so only those are looked up).
-   *
-   * The answer must be stable: an id once described as anonymous must keep
-   * being described so, or a retired id stops being fenced and a stale write
-   * under it succeeds. Classify from the id itself (as the built-ins do), not
-   * from state that can be pruned.
+   * The answer must be stable: a method that mints `kind: 'anonymous'` ids and
+   * describes them so must keep describing them so, or a retired id stops
+   * being fenced (only ids described as anonymous can be claimed and retired).
+   * Classify from the id itself, not from state that can be pruned.
    */
   describeStoredOwner?(ownerId: string): StoredOwnerDescription | undefined;
   /**
-   * `Set-Cookie` values that drop the anonymous credential this authenticator
-   * reads -- the one behind a {@link OwnerPrincipal.pendingClaim}, or the
-   * anonymous principal's own. Sent once a claim is done (or can never
-   * succeed), and with every `403 OWNER_RETIRED`, so a browser stops
-   * presenting a retired identity and gets a fresh one. An authenticator
-   * whose anonymous path keeps accepting a retired credential without this
-   * leaves that browser refused on every write. Optional: one with no
-   * anonymous credential, or whose credential is not a cookie, leaves it out
-   * and must treat a retired anonymous credential as absent itself.
+   * Whether this method authenticates `kind: 'anonymous'` principals itself
+   * (a host's own guest or device cookie). Only such a method's
+   * {@link clearCredential} is ever sent with a `403 OWNER_RETIRED`; for any
+   * other method core never calls it there, so an account session cookie is
+   * never cleared because some anonymous identity was retired.
    */
-  clearPendingClaim?(): readonly string[];
+  readonly issuesAnonymousOwners?: boolean;
+  /**
+   * `Set-Cookie` values that drop this method's anonymous credential. Sent
+   * with every `403 OWNER_RETIRED`, so a browser stops presenting an anonymous
+   * identity a claim retired — only when {@link issuesAnonymousOwners} is
+   * `true`. A throw is logged and skipped, so the 403 still goes out.
+   */
+  clearCredential?(): readonly string[];
 }
 
 /**

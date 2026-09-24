@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 /**
  * Runtime sessions and assets under the owner identity seam, end to end: the
  * real persistence route, the real storage handler and PostgreSQL stores (on
- * an in-memory database), and the built-in anonymous cookie authenticator. Two
+ * an in-memory database), and the built-in anonymous cookie method. Two
  * cookies are two owners.
  */
 
@@ -139,8 +139,8 @@ describe('runtime and assets are keyed by the resolved owner', () => {
   });
 
   afterEach(async () => {
-    const { resetOwnerAuthenticatorForTests } = await import('@/lib/server/identity/registry');
-    resetOwnerAuthenticatorForTests();
+    const { resetOwnerAuthenticationForTests } = await import('@/lib/server/identity/registry');
+    resetOwnerAuthenticationForTests();
     await pool.end();
     vi.unstubAllEnvs();
   });

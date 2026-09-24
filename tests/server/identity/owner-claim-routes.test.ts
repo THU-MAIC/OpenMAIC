@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
+import type { OwnerAuthMethod } from '@/lib/server/identity/types';
 
 /**
- * Claiming anonymous work through the routes, end to end: the trusted-proxy
- * built-in selected by environment, a real (in-memory) database, and the
+ * Claiming anonymous work through the routes, end to end: a fake host auth
+ * method registered ahead of the anonymous fallback (core attaches the claim
+ * candidate), a real (in-memory) database, and the
  * explicit trigger (`POST /api/identity/claim`), the automatic one
  * (`OWNER_CLAIM_TRIGGER=auto`) and the runtime contract's learner merge.
  */
@@ -32,14 +34,36 @@ class PGlitePool {
   }
 }
 
-const SECRET = 'owner-claim-route-secret-0123456789abcdef';
 const ANON_UUID = '5d1c9a8e-2b3f-4c4d-9e5f-6a7b8c9d0e1f';
 const ANON = `anon:${ANON_UUID}`;
-const ALICE = 'proxy:alice';
+const ALICE = 'user:alice';
 const ANON_COOKIE = `anonymous_id=${ANON_UUID}`;
 
+/**
+ * The host's credential in miniature: `x-test-session: <user>` signs `user:<user>`
+ * in, `x-test-session: bad` is an invalid session, and no header is not this
+ * method's business (the anonymous fallback answers).
+ */
+const sessionMethod: OwnerAuthMethod = {
+  name: 'test-session',
+  authenticate: async (req) => {
+    const user = req.headers.get('x-test-session');
+    if (!user) return { status: 'not-applicable' };
+    if (user === 'bad') return { status: 'invalid', reason: 'unknown session' };
+    return {
+      status: 'authenticated',
+      principal: {
+        ownerId: `user:${user}`,
+        kind: 'user',
+        roles: new Set(['course:publish']),
+        assurance: 'verified',
+      },
+    };
+  },
+};
+
 function gateway(user: string, extra: Record<string, string> = {}): Record<string, string> {
-  return { 'x-openmaic-proxy-secret': SECRET, 'x-forwarded-user': user, ...extra };
+  return { 'x-test-session': user, ...extra };
 }
 
 /** What a same-origin `fetch(..., { method: 'POST', body: JSON })` from the app sends. */
@@ -81,14 +105,14 @@ describe('claiming anonymous work through the routes', () => {
     vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
     vi.stubEnv('ACCESS_CODE', '');
     vi.stubEnv('OWNER_CLAIM_TRIGGER', '');
-    vi.stubEnv('OWNER_AUTHENTICATOR', 'trusted-proxy');
-    vi.stubEnv('TRUSTED_PROXY_SECRET', SECRET);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const db = new PGlite();
     await db.waitReady;
     pool = new PGlitePool(db);
     const { getServerPersistenceProvider } = await import('@/lib/persistence/server-provider');
     await getServerPersistenceProvider(process.env.DATABASE_URL!, () => pool as never);
+    const { configureOwnerAuthentication } = await import('@/lib/server/identity');
+    configureOwnerAuthentication({ methods: [sessionMethod] });
     // Work done before signing in.
     await createOwnerBoundDocumentStore({
       pool,
@@ -99,8 +123,8 @@ describe('claiming anonymous work through the routes', () => {
   });
 
   afterEach(async () => {
-    const { resetOwnerAuthenticatorForTests } = await import('@/lib/server/identity/registry');
-    resetOwnerAuthenticatorForTests();
+    const { resetOwnerAuthenticationForTests } = await import('@/lib/server/identity/registry');
+    resetOwnerAuthenticationForTests();
     await pool.end();
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
@@ -124,7 +148,7 @@ describe('claiming anonymous work through the routes', () => {
     return (result.rows[0] as { owner_id?: string } | undefined)?.owner_id;
   }
 
-  it('claims the anonymous cookie owner into the gateway user and drops the cookie', async () => {
+  it('claims the anonymous cookie owner into the signed-in user and drops the cookie', async () => {
     const response = await claim(gateway('alice', { cookie: ANON_COOKIE, ...SAME_ORIGIN_JSON }));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -161,20 +185,16 @@ describe('claiming anonymous work through the routes', () => {
   });
 
   it('refuses an anonymous claimant', async () => {
-    vi.stubEnv('OWNER_AUTHENTICATOR', '');
-    vi.stubEnv('TRUSTED_PROXY_SECRET', '');
     const response = await claim({ cookie: ANON_COOKIE, ...SAME_ORIGIN_JSON });
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toMatchObject({ error: { code: 'TARGET_ANONYMOUS' } });
     expect(await ownerOf('anon-course')).toBe(ANON);
   });
 
-  it('refuses a request whose gateway credential is invalid', async () => {
-    const response = await claim({
-      ...gateway('alice', { cookie: ANON_COOKIE, ...SAME_ORIGIN_JSON }),
-      'x-openmaic-proxy-secret': 'wrong',
-    });
+  it('refuses a request whose host credential is invalid, never as the anonymous owner', async () => {
+    const response = await claim(gateway('bad', { cookie: ANON_COOKIE, ...SAME_ORIGIN_JSON }));
     expect(response.status).toBe(401);
+    expect(setCookies(response)).toEqual([]);
     expect(await ownerOf('anon-course')).toBe(ANON);
   });
 
@@ -265,9 +285,7 @@ describe('claiming anonymous work through the routes', () => {
 
     // The browser never applied the claim's Set-Cookie and still presents
     // the retired anonymous cookie, to a deployment that admits anonymous
-    // requests.
-    vi.stubEnv('OWNER_AUTHENTICATOR', '');
-    vi.stubEnv('TRUSTED_PROXY_SECRET', '');
+    // requests, without the host session.
     const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
     const save = await handlePersistenceRequest(
       new Request('http://localhost/api/persistence/documents/stale-course', {
@@ -338,7 +356,7 @@ describe('claiming anonymous work through the routes', () => {
     // Someone else's learner, or into someone else: refused, nothing moves.
     const foreign = await merge({ fromLearnerKey: 'anon:someone-else', toLearnerKey: ALICE });
     expect(foreign.status).toBe(403);
-    const elsewhere = await merge({ fromLearnerKey: ANON, toLearnerKey: 'proxy:bob' });
+    const elsewhere = await merge({ fromLearnerKey: ANON, toLearnerKey: 'user:bob' });
     expect(elsewhere.status).toBe(403);
     const crossSite = await merge(
       { fromLearnerKey: ANON, toLearnerKey: ALICE },

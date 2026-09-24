@@ -1,17 +1,24 @@
 import { randomUUID } from 'node:crypto';
 
-import type { AuthOutcome, OwnerAuthenticator, OwnerAuthRequest, OwnerPrincipal } from './types';
+import type {
+  OwnerAuthMethod,
+  OwnerAuthMethodResult,
+  OwnerAuthRequest,
+  OwnerPrincipal,
+} from './types';
 
 /**
- * The `anonymousCookie` built-in: one owner per browser.
+ * The `anonymousCookie` built-in: one owner per browser, and the fallback
+ * core resolves to when no registered method applies (`./resolve.ts`).
  *
  * Owner-scoped data is user-visible and keyed by owner. A shared constant would
  * let unrelated visitors see one another's sessions and courses, while an
  * anonymous cookie provides the smallest useful isolation boundary.
  *
- * This is the only module that reads or writes the anonymous owner cookie. A
- * host that brings its own authenticator can therefore use its own cookie
- * without clashing with this one (`tests/server/identity/cookie-guard.test.ts`
+ * This is the only module that reads or writes the anonymous owner cookie,
+ * including the read core makes to attach a claim candidate beside a host
+ * method's principal. A host method can therefore use its own cookie without
+ * clashing with this one (`tests/server/identity/cookie-guard.test.ts`
  * keeps it that way).
  */
 
@@ -60,9 +67,9 @@ function anonymousCookieHeader(id: string): string {
 
 /**
  * The anonymous owner id a request's cookie names, when the cookie is present
- * and well-formed; `undefined` otherwise. Nothing is minted. Used by the
- * trusted-proxy built-in to recognize an anonymous identity presented beside a
- * gateway user (the claim candidate), so the cookie is still parsed only here.
+ * and well-formed; `undefined` otherwise. Nothing is minted. Core uses it to
+ * recognize an anonymous identity presented beside a host method's principal
+ * (the claim candidate), so the cookie is still parsed only here.
  */
 export function readAnonymousOwnerId(headers: Headers): string | undefined {
   const existingId = readCookie(headers, ANONYMOUS_COOKIE);
@@ -107,14 +114,17 @@ function anonymousPrincipal(uuid: string, assurance: 'unverified-legacy' | 'mint
  * undecodable or not a UUID v4 — a fresh id is minted and returned with the
  * `Set-Cookie` that persists it; the caller attaches it to every response.
  */
-function authenticateAnonymousRequest(req: OwnerAuthRequest): AuthOutcome {
+function authenticateAnonymousRequest(req: OwnerAuthRequest): OwnerAuthMethodResult {
   const existingId = readCookie(req.headers, ANONYMOUS_COOKIE);
   if (existingId && UUID_V4.test(existingId)) {
-    return { ok: true, principal: anonymousPrincipal(existingId, 'unverified-legacy') };
+    return {
+      status: 'authenticated',
+      principal: anonymousPrincipal(existingId, 'unverified-legacy'),
+    };
   }
   const id = randomUUID();
   return {
-    ok: true,
+    status: 'authenticated',
     principal: anonymousPrincipal(id, 'minted'),
     setCookies: [anonymousCookieHeader(id)],
   };
@@ -125,12 +135,15 @@ function authenticateAnonymousRequest(req: OwnerAuthRequest): AuthOutcome {
  * cookie is read and, when needed, minted through `next/headers` with the same
  * attributes as {@link anonymousCookieHeader}.
  */
-async function authenticateAnonymousContext(): Promise<AuthOutcome> {
+async function authenticateAnonymousContext(): Promise<OwnerAuthMethodResult> {
   const { cookies } = await import('next/headers');
   const cookieStore = await cookies();
   const existing = cookieStore.get(ANONYMOUS_COOKIE)?.value;
   if (existing && UUID_V4.test(existing)) {
-    return { ok: true, principal: anonymousPrincipal(existing, 'unverified-legacy') };
+    return {
+      status: 'authenticated',
+      principal: anonymousPrincipal(existing, 'unverified-legacy'),
+    };
   }
   const minted = randomUUID();
   cookieStore.set(ANONYMOUS_COOKIE, minted, {
@@ -140,24 +153,25 @@ async function authenticateAnonymousContext(): Promise<AuthOutcome> {
     maxAge: ANONYMOUS_COOKIE_MAX_AGE_SECONDS,
     secure: anonymousCookieSecure(),
   });
-  return { ok: true, principal: anonymousPrincipal(minted, 'minted') };
+  return { status: 'authenticated', principal: anonymousPrincipal(minted, 'minted') };
 }
 
 /**
- * Create the `anonymousCookie` authenticator: `kind: 'anonymous'`, no roles,
- * owner ids of the form `anon:<uuid>` backed by a 30-day `HttpOnly`,
- * `SameSite=Lax` cookie at `/`. It has no invalid-credential case: a malformed
- * cookie is re-minted, never refused.
+ * The `anonymousCookie` method: `kind: 'anonymous'`, no roles, owner ids of
+ * the form `anon:<uuid>` backed by a 30-day `HttpOnly`, `SameSite=Lax` cookie
+ * at `/`. It always authenticates: a missing or malformed cookie is re-minted,
+ * never refused. Core asks it last, and only when the fallback is enabled; its
+ * `describeStoredOwner` and `clearCredential` apply whatever the fallback
+ * setting, because anonymous owners minted earlier can still be claimed.
  */
-export function createAnonymousCookieAuthenticator(): OwnerAuthenticator {
-  return {
-    name: 'anonymousCookie',
-    authenticate: async (req) => authenticateAnonymousRequest(req),
-    authenticateFromContext: authenticateAnonymousContext,
-    describeStoredOwner: (ownerId) =>
-      isAnonymousCookieOwnerId(ownerId) ? { kind: 'anonymous', roles: NO_ROLES } : undefined,
-    // Dropping a retired cookie is all recovery takes: the next request mints
-    // a fresh anonymous owner.
-    clearPendingClaim: () => [clearAnonymousCookieHeader()],
-  };
-}
+export const anonymousCookieMethod: OwnerAuthMethod = {
+  name: 'anonymousCookie',
+  authenticate: async (req) => authenticateAnonymousRequest(req),
+  authenticateFromContext: authenticateAnonymousContext,
+  issuesAnonymousOwners: true,
+  describeStoredOwner: (ownerId) =>
+    isAnonymousCookieOwnerId(ownerId) ? { kind: 'anonymous', roles: NO_ROLES } : undefined,
+  // Dropping a retired cookie is all recovery takes: the next request mints
+  // a fresh anonymous owner.
+  clearCredential: () => [clearAnonymousCookieHeader()],
+};

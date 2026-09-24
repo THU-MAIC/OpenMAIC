@@ -4,7 +4,7 @@ import type { OwnerAuthRequest, OwnerPrincipal } from './types';
 /**
  * Route-handler helpers over {@link resolveRequestOwner}.
  *
- * The `Set-Cookie` values an authenticator returns (a minted anonymous owner,
+ * The `Set-Cookie` values resolution returns (a minted anonymous owner,
  * say) must ride every response, including 4xx and 5xx: a client that retries
  * after an error keeps the same owner, while a 500 that dropped the cookie
  * would silently make the retry a different owner. Both helpers therefore hand
@@ -12,8 +12,9 @@ import type { OwnerAuthRequest, OwnerPrincipal } from './types';
  */
 
 /**
- * The response to a request whose credential the authenticator rejected. It is
- * never answered as a fresh anonymous owner instead.
+ * The response to a request a method refused, or that no method accepted with
+ * the anonymous fallback off. It is never answered as a fresh anonymous owner
+ * instead.
  */
 export function invalidOwnerCredentialResponse(): Response {
   return Response.json(

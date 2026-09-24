@@ -5,8 +5,8 @@ import { BrowserRuntimeStore } from '@openmaic/storage';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
-import { configureOwnerAuthenticator } from '@/lib/server/identity';
-import { resetOwnerAuthenticatorForTests } from '@/lib/server/identity/registry';
+import { configureOwnerAuthentication } from '@/lib/server/identity';
+import { resetOwnerAuthenticationForTests } from '@/lib/server/identity/registry';
 
 const mocks = vi.hoisted(() => ({
   resolveModel: vi.fn(),
@@ -156,10 +156,9 @@ async function readSseEvents(response: Response) {
 }
 
 function rejectOwnerCredentials(): void {
-  resetOwnerAuthenticatorForTests();
-  configureOwnerAuthenticator({
-    name: 'rejecting',
-    authenticate: async () => ({ ok: false, status: 401, code: 'INVALID_CREDENTIAL' }),
+  resetOwnerAuthenticationForTests();
+  configureOwnerAuthentication({
+    methods: [{ name: 'rejecting', authenticate: async () => ({ status: 'invalid' }) }],
   });
 }
 
@@ -196,7 +195,7 @@ describe('PR2 Native Child route production wiring', () => {
   });
 
   afterEach(() => {
-    resetOwnerAuthenticatorForTests();
+    resetOwnerAuthenticationForTests();
     for (const name of envNames) {
       const value = originalEnv.get(name);
       if (value === undefined) delete process.env[name];

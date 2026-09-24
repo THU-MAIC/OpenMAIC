@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
 
   // Identity belongs to the request, not the URL. EventSource reconnects to
-  // this same stable path with whatever credential the owner authenticator
+  // this same stable path with whatever credential the owner auth methods
   // reads — by default the anonymous cookie minted on first attach.
   const owner = await authenticateRequestOwner(req);
   if (!owner.ok) return owner.response;

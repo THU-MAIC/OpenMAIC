@@ -5,7 +5,7 @@ import { NextRequest } from 'next/server';
 import { middleware } from '@/middleware';
 import { OWNER_ROLES } from '@/lib/server/identity';
 import {
-  resetOwnerAuthenticatorForTests,
+  resetOwnerAuthenticationForTests,
   validateOwnerIdentityConfiguration,
 } from '@/lib/server/identity/registry';
 import { resolveRequestOwner } from '@/lib/server/identity/resolve';
@@ -44,7 +44,7 @@ function configure(sharedOwnerId: string, accessCode: string | null = CODE): voi
 afterEach(() => {
   vi.unstubAllEnvs();
   delete process.env.ACCESS_CODE;
-  resetOwnerAuthenticatorForTests();
+  resetOwnerAuthenticationForTests();
 });
 
 describe('resolveSharedOwnerId', () => {

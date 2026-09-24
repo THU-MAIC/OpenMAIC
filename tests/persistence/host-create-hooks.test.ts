@@ -14,7 +14,7 @@ import type {
 /**
  * The document creation hooks, end to end: the real persistence and
  * `/api/stages` routes, the real owner-bound store on an in-memory PostgreSQL,
- * and the built-in anonymous cookie authenticator.
+ * and the built-in anonymous cookie method.
  */
 
 class PGlitePool {

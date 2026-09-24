@@ -11,7 +11,7 @@ import { OWNER_ROLES } from '@/lib/server/identity/types';
 /**
  * Route tests stub owner resolution with a plain function of the request that
  * returns an owner id and may append `Set-Cookie` values to the headers it is
- * given, exactly like a minting authenticator would. This adapts such a stub to
+ * given, exactly like a minting auth method would. This adapts such a stub to
  * the `@/lib/server/identity/resolve` module, so a test can write
  *
  *   vi.mock('@/lib/server/identity/resolve', async () =>

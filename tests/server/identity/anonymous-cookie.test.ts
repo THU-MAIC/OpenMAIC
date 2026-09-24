@@ -12,9 +12,9 @@ vi.mock('next/headers', () => ({
   }),
 }));
 
-import { createAnonymousCookieAuthenticator } from '@/lib/server/identity/anonymous-cookie';
-import { OWNER_ROLES, type AuthOutcome } from '@/lib/server/identity/types';
-import { resetOwnerAuthenticatorForTests } from '@/lib/server/identity/registry';
+import { anonymousCookieMethod } from '@/lib/server/identity/anonymous-cookie';
+import { OWNER_ROLES, type OwnerAuthMethodResult } from '@/lib/server/identity/types';
+import { resetOwnerAuthenticationForTests } from '@/lib/server/identity/registry';
 import { requireContextOwner, resolveRequestOwner } from '@/lib/server/identity/resolve';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
 
@@ -22,10 +22,10 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const EXISTING = 'a652e716-0e2e-47f5-8432-4ee60f6f0977';
 const COOKIE_SHAPE = /^anonymous_id=[0-9a-f-]+; Path=\/; HttpOnly; SameSite=Lax; Max-Age=2592000$/i;
 
-const anonymousCookie = createAnonymousCookieAuthenticator();
+const anonymousCookie = anonymousCookieMethod;
 
-function success(outcome: AuthOutcome) {
-  if (!outcome.ok) throw new Error('expected a principal');
+function success(outcome: OwnerAuthMethodResult) {
+  if (outcome.status !== 'authenticated') throw new Error('expected a principal');
   return outcome;
 }
 
@@ -33,7 +33,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
   cookieJar.values.clear();
   cookieJar.set.mockReset();
-  resetOwnerAuthenticatorForTests();
+  resetOwnerAuthenticationForTests();
 });
 
 describe('anonymousCookie: route requests', () => {
@@ -73,7 +73,7 @@ describe('anonymousCookie: route requests', () => {
       new Request('http://localhost/a', { headers: { cookie } }),
     );
 
-    expect(outcome.ok).toBe(true);
+    expect(outcome.status).toBe('authenticated');
     const { principal, setCookies } = success(outcome);
     expect(principal.assurance).toBe('minted');
     expect(setCookies).toHaveLength(1);
@@ -112,12 +112,10 @@ describe('anonymousCookie: route requests', () => {
 
 describe('anonymousCookie: the default seam', () => {
   it('is what resolves a request when nothing is configured', async () => {
-    const outcome = success(
-      await resolveRequestOwner(
-        new Request('http://localhost/a', { headers: { cookie: `anonymous_id=${EXISTING}` } }),
-      ),
+    const outcome = await resolveRequestOwner(
+      new Request('http://localhost/a', { headers: { cookie: `anonymous_id=${EXISTING}` } }),
     );
-    expect(outcome.principal.ownerId).toBe(`anon:${EXISTING}`);
+    expect(outcome).toMatchObject({ ok: true, principal: { ownerId: `anon:${EXISTING}` } });
   });
 
   it('carries a minted cookie on a success response', async () => {
