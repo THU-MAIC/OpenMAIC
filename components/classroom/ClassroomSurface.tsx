@@ -50,7 +50,6 @@ import {
 import {
   paneAvailabilityRetryDelay,
   resolveClassroomSurfaceView,
-  shouldResumeClassroomGeneration,
 } from '@/lib/classroom/progressive-load-policy';
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
 
@@ -85,7 +84,6 @@ export function ClassroomSurface({
    * deleted or never existed.
    */
   const [notFound, setNotFound] = useState(false);
-  const generationStartedRef = useRef(false);
   const activeClassroomIdRef = useRef<string | null>(null);
   const loadEpochRef = useRef(0);
 
@@ -95,10 +93,75 @@ export function ClassroomSurface({
     },
   });
 
+  const resumeGeneration = useCallback(() => {
+    const state = useStageStore.getState();
+    // Producer ownership is document data, not conversation status. A
+    // server-job course never starts a second browser-side generator.
+    if (state.outlineProducer === 'server-job') {
+      log.info('[Classroom] A server-side job owns this course; the browser will not generate.');
+      return;
+    }
+
+    const { outlines, scenes, stage, generationComplete } = state;
+    const completedOrders = new Set(scenes.map((s) => s.order));
+    const hasPending = !generationComplete && outlines.some((o) => !completedOrders.has(o.order));
+
+    if (hasPending && stage) {
+      // Load generation params from sessionStorage (stored by generation-preview before navigating)
+      const genParamsStr = sessionStorage.getItem('generationParams');
+      const params = genParamsStr ? JSON.parse(genParamsStr) : {};
+
+      // Reconstruct imageMapping for the resumed generation. The mapping may
+      // mix allocated asset ids and IndexedDB data URLs, so merge both.
+      const pdfImages = (params.pdfImages || []) as Array<
+        { id: string; assetId?: string; storageId?: string } & Record<string, unknown>
+      >;
+      const finishResume = (imageMapping: Record<string, string>) =>
+        generateRemaining({
+          pdfImages: params.pdfImages,
+          imageMapping,
+          stageInfo: {
+            name: stage.name || '',
+            description: stage.description,
+            style: stage.style,
+          },
+          agents: params.agents,
+          userProfile: params.userProfile,
+          languageDirective: params.languageDirective || stage.languageDirective,
+          taskEngineMode: stage.taskEngineMode,
+        });
+
+      const imageMapping: Record<string, string> = {};
+      for (const img of pdfImages) {
+        if (img.assetId) imageMapping[img.id] = img.assetId;
+      }
+      const storageIds = pdfImages
+        .filter((img) => !img.assetId && img.storageId)
+        .map((img) => img.storageId as string);
+      void (async () => {
+        if (storageIds.length > 0) {
+          Object.assign(imageMapping, await loadImageMapping(storageIds));
+        }
+        finishResume(imageMapping);
+      })();
+    } else if (outlines.length > 0 && stage) {
+      // All scenes are generated, but some media may not have finished.
+      useStageStore.getState().markGenerationCompleteIfDone();
+      const materializedOrders = new Set(scenes.map((s) => s.order));
+      const materializedOutlines = outlines.filter((o) => materializedOrders.has(o.order));
+      generateMediaForOutlines(materializedOutlines, stage.id).catch((err) => {
+        log.warn('[Classroom] Media generation resume error:', err);
+      });
+    }
+  }, [generateRemaining]);
+
   const { mayGenerate, refreshOwnership } = useClassroomSession({
     classroomId,
     variant,
     stopGeneration: stop,
+    loading,
+    error,
+    resumeGeneration,
   });
 
   const loadClassroom = useCallback(
@@ -232,8 +295,6 @@ export function ClassroomSurface({
     setLoadUnavailable(false);
     setNotFound(false);
     /* eslint-enable react-hooks/set-state-in-effect */
-    generationStartedRef.current = false;
-
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let availabilityAttempt = 0;
     /** Last pane gap reason — exhaustion must not claim not-found after a load error. */
@@ -301,113 +362,6 @@ export function ClassroomSurface({
   // mount this, so a course opened through the workbench pane converges its
   // narration exactly as the standalone page does.
   useNarrationAdoption(classroomId, { ready: !loading && !error, mayGenerate });
-
-  // Auto-resume generation for pending outlines (owner only). Two independent
-  // ownership facts gate it. The sidecar's per-viewer answer decides whether
-  // this browser may spend the operator's provider budget at all, and fails
-  // closed while unanswered; `generationStartedRef` is deliberately NOT
-  // latched while it refuses, so the effect starts once the answer arrives.
-  // `outlineProducer` then decides whether the browser is the producer: a
-  // course whose document a server job produced is server-owned, not
-  // client-authored, and therefore not this browser's to regenerate. The
-  // reference's transport-persistence UI fence has no counterpart here, so it
-  // stays a constant false.
-  useEffect(() => {
-    if (
-      !shouldResumeClassroomGeneration({
-        loading,
-        error,
-        transportPersistenceFenced: false,
-        generationStarted: generationStartedRef.current,
-        mayGenerate,
-      })
-    ) {
-      return;
-    }
-    const state = useStageStore.getState();
-    // Producer ownership is document data, not conversation status. A
-    // server-job course never starts a second browser-side generator no matter
-    // which chat is open (or whether any chat is open).
-    if (state.outlineProducer === 'server-job') {
-      generationStartedRef.current = true;
-      log.info('[Classroom] A server-side job owns this course; the browser will not generate.');
-      return;
-    }
-
-    const { outlines, scenes, stage, generationComplete } = state;
-
-    // Check if there are pending outlines. A finished deck is frozen for
-    // editing: deleting a slide leaves its outline orphaned, but that must not
-    // be treated as an interrupted generation and regenerated. Only resume
-    // when generation has not completed.
-    const completedOrders = new Set(scenes.map((s) => s.order));
-    const hasPending = !generationComplete && outlines.some((o) => !completedOrders.has(o.order));
-
-    if (hasPending && stage) {
-      generationStartedRef.current = true;
-
-      // Load generation params from sessionStorage (stored by generation-preview before navigating)
-      const genParamsStr = sessionStorage.getItem('generationParams');
-      const params = genParamsStr ? JSON.parse(genParamsStr) : {};
-
-      // Reconstruct imageMapping for the resumed generation. The mapping may
-      // MIX allocated asset ids and IndexedDB data URLs — a source whose cache
-      // write failed materialized its own images — so the resume mapping merges
-      // both, instead of choosing one transport for the whole set and silently
-      // dropping the other half.
-      const pdfImages = (params.pdfImages || []) as Array<
-        { id: string; assetId?: string; storageId?: string } & Record<string, unknown>
-      >;
-      const finishResume = (imageMapping: Record<string, string>) =>
-        generateRemaining({
-          pdfImages: params.pdfImages,
-          imageMapping,
-          stageInfo: {
-            name: stage.name || '',
-            description: stage.description,
-            style: stage.style,
-          },
-          agents: params.agents,
-          userProfile: params.userProfile,
-          languageDirective: params.languageDirective || stage.languageDirective,
-          taskEngineMode: stage.taskEngineMode,
-        });
-
-      const imageMapping: Record<string, string> = {};
-      for (const img of pdfImages) {
-        if (img.assetId) imageMapping[img.id] = img.assetId;
-      }
-      const storageIds = pdfImages
-        .filter((img) => !img.assetId && img.storageId)
-        .map((img) => img.storageId as string);
-      void (async () => {
-        if (storageIds.length > 0) {
-          Object.assign(imageMapping, await loadImageMapping(storageIds));
-        }
-        finishResume(imageMapping);
-      })();
-    } else if (outlines.length > 0 && stage) {
-      // All scenes are generated, but some media may not have finished.
-      // Resume media generation for any tasks not yet in IndexedDB.
-      // generateMediaForOutlines skips already-completed tasks automatically.
-      generationStartedRef.current = true;
-      // The deck reached the classroom already fully materialized (e.g. a
-      // single-slide course, or a deck whose last slide finished in
-      // generation-preview), so generateRemaining's completion path never
-      // ran. Record completion now so a later edit/delete is not treated as
-      // an interrupted generation. No-op if already complete or not all
-      // outlines have scenes.
-      useStageStore.getState().markGenerationCompleteIfDone();
-      // Resume media only for outlines that still have a scene. On a finished
-      // deck the user may have deleted a slide, leaving an orphaned outline;
-      // generating its media would waste API calls on a slide that is gone.
-      const materializedOrders = new Set(scenes.map((s) => s.order));
-      const materializedOutlines = outlines.filter((o) => materializedOrders.has(o.order));
-      generateMediaForOutlines(materializedOutlines, stage.id).catch((err) => {
-        log.warn('[Classroom] Media generation resume error:', err);
-      });
-    }
-  }, [loading, error, mayGenerate, generateRemaining]);
 
   const view = resolveClassroomSurfaceView({
     variant,

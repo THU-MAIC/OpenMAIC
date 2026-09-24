@@ -180,8 +180,13 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     expect(session).toContain('useMayGenerateForStage(classroomId)');
     // Reset on course switch, so a previous course's answer never carries over.
     expect(session).toContain("noteStageGenerationOwnership(classroomId, 'unresolved')");
-    // The resume effect re-runs when the answer lands.
-    expect(surface).toMatch(/\}, \[loading, error, mayGenerate, generateRemaining\]\);/);
+    // The shared session owns the resume gate and its one-shot latch.
+    expect(session).toContain('shouldResumeClassroomGeneration');
+    expect(session).toContain('generationStartedRef');
+    expect(session).toContain('resumeGeneration();');
+    expect(surface).not.toContain('generationStartedRef');
+    expect(surface).not.toContain('shouldResumeClassroomGeneration');
+    expect(surface).toContain('resumeGeneration');
     // An unresolved answer is asked again rather than accepted for the load.
     expect(session).toContain('retryWhileOwnershipUnresolved');
     // The outline-retry affordance is withheld, not merely refused.
