@@ -1,39 +1,87 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { APICallError, RetryError } from 'ai';
 import {
   isRetryableLlmError,
   isEmptyLlmOutput,
   shouldFallbackFor,
 } from '@/lib/server/llm-fallback';
 
-function apiError(statusCode: number, message: string): Error {
-  return Object.assign(new Error(message), { name: 'AI_APICallError', statusCode });
+// Real AI SDK error instances (not plain Errors), so the classification can
+// never regress against what generateText/streamText actually throw.
+
+function apiError(statusCode: number, message: string, isRetryable?: boolean): APICallError {
+  return new APICallError({
+    message,
+    url: 'https://api.example.com/v1/chat',
+    requestBodyValues: {},
+    statusCode,
+    responseBody: '',
+    isRetryable,
+  });
 }
 
-describe('isRetryableLlmError', () => {
+function networkError(message: string): APICallError {
+  return new APICallError({
+    message,
+    url: 'https://api.example.com/v1/chat',
+    requestBodyValues: {},
+    cause: new TypeError('fetch failed'),
+  });
+}
+
+function retryError(inner: unknown): RetryError {
+  return new RetryError({
+    message: `Failed after 3 attempts. Last error: ${String(inner)}`,
+    reason: 'maxRetriesExceeded',
+    errors: [inner],
+  });
+}
+
+describe('isRetryableLlmError (real AI SDK errors)', () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
   });
 
-  it('treats quota and capacity rejections as retryable', () => {
-    expect(isRetryableLlmError(apiError(429, 'You exceeded your current quota'))).toBe(true);
-    expect(isRetryableLlmError(apiError(503, 'Model overloaded'))).toBe(true);
+  it('unwraps a RetryError to its last APICallError (default maxRetries path)', () => {
+    // After the SDK's own retries, 429/5xx surface as AI_RetryError with the
+    // real APICallError in lastError/errors[] and no statusCode of its own.
+    expect(isRetryableLlmError(retryError(apiError(429, 'quota exceeded', true)))).toBe(true);
+    expect(isRetryableLlmError(retryError(apiError(503, 'model overloaded', true)))).toBe(true);
+    expect(isRetryableLlmError(retryError(apiError(500, 'internal error', true)))).toBe(true);
+    expect(isRetryableLlmError(retryError(apiError(408, 'request timeout', true)))).toBe(true);
   });
 
-  it('treats timeouts and server errors as retryable', () => {
+  it('never falls back through a RetryError wrapping content-safety or auth 4xx', () => {
+    expect(isRetryableLlmError(retryError(apiError(400, 'content policy violation', false)))).toBe(
+      false,
+    );
+    expect(isRetryableLlmError(retryError(apiError(401, 'unauthorized', false)))).toBe(false);
+    expect(isRetryableLlmError(retryError(apiError(403, 'forbidden', false)))).toBe(false);
+  });
+
+  it('trusts the SDK isRetryable flag on a bare APICallError (maxRetries=0 path)', () => {
+    expect(isRetryableLlmError(apiError(429, 'quota', true))).toBe(true);
+    expect(isRetryableLlmError(apiError(408, 'timeout', true))).toBe(true);
+    expect(isRetryableLlmError(apiError(400, 'bad request', false))).toBe(false);
+    expect(isRetryableLlmError(apiError(401, 'unauthorized', false))).toBe(false);
+  });
+
+  it('falls back to status codes (408/409/429/>=500) when the flag is unset', () => {
     expect(isRetryableLlmError(apiError(408, 'request timeout'))).toBe(true);
+    expect(isRetryableLlmError(apiError(409, 'conflict'))).toBe(true);
+    expect(isRetryableLlmError(apiError(429, 'quota'))).toBe(true);
     expect(isRetryableLlmError(apiError(500, 'internal error'))).toBe(true);
     expect(isRetryableLlmError(apiError(502, 'bad gateway'))).toBe(true);
+    expect(isRetryableLlmError(apiError(503, 'overloaded'))).toBe(true);
     expect(isRetryableLlmError(apiError(504, 'gateway timeout'))).toBe(true);
-  });
-
-  it('never treats content-safety or other 4xx rejections as retryable', () => {
-    expect(isRetryableLlmError(apiError(400, 'content policy violation'))).toBe(false);
-    expect(isRetryableLlmError(apiError(401, 'unauthorized'))).toBe(false);
-    expect(isRetryableLlmError(apiError(403, 'forbidden'))).toBe(false);
+    expect(isRetryableLlmError(apiError(400, 'bad request'))).toBe(false);
     expect(isRetryableLlmError(apiError(404, 'not found'))).toBe(false);
   });
 
-  it('treats transport-level failures as retryable', () => {
+  it('treats "Cannot connect to API" transport failures as retryable', () => {
+    expect(isRetryableLlmError(networkError('Cannot connect to API: connect ECONNRESET'))).toBe(
+      true,
+    );
     expect(isRetryableLlmError(new TypeError('fetch failed'))).toBe(true);
     expect(
       isRetryableLlmError(Object.assign(new Error('connect ECONNRESET'), { code: 'ECONNRESET' })),
@@ -43,8 +91,9 @@ describe('isRetryableLlmError', () => {
     ).toBe(true);
   });
 
-  it('is conservative with unknown non-AI errors', () => {
+  it('is conservative with unknown non-AI errors and programming errors', () => {
     expect(isRetryableLlmError(new Error('something else went wrong'))).toBe(false);
+    expect(isRetryableLlmError(new TypeError('x is not a function'))).toBe(false);
     expect(isRetryableLlmError(undefined)).toBe(false);
     expect(isRetryableLlmError('not an error')).toBe(false);
   });
@@ -64,8 +113,8 @@ describe('isEmptyLlmOutput', () => {
 
 describe('shouldFallbackFor', () => {
   it('delegates error decisions to isRetryableLlmError and ignores the text', () => {
-    expect(shouldFallbackFor(apiError(429, 'quota'), 'ok')).toBe(true);
-    expect(shouldFallbackFor(apiError(400, 'content policy'), 'ok')).toBe(false);
+    expect(shouldFallbackFor(apiError(429, 'quota', true), 'ok')).toBe(true);
+    expect(shouldFallbackFor(apiError(400, 'content policy', false), 'ok')).toBe(false);
   });
 
   it('only falls back on empty output when no error is present', () => {
