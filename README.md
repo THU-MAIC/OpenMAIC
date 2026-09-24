@@ -606,6 +606,12 @@ configureOwnerAuthentication({
 });
 ```
 
+- **Present but unusable is `invalid`, never `not-applicable`.** Answer
+  `not-applicable` only when the method's header or cookie is absent. A method
+  that answers `not-applicable` for a malformed or expired credential of its
+  own kind silently hands the request to the next method or to an anonymous
+  owner; core cannot tell. A method that cannot decide (its key endpoint or
+  session store is down) throws, and the request fails as a server error.
 - `setCookies` on an `authenticated` answer ride every response, errors
   included. `reason` on an `invalid` answer is for server logs only.
 - Server Actions ask the same methods in the same order, through
@@ -616,9 +622,11 @@ configureOwnerAuthentication({
   work that holds only the id (an agent run, a claim). The anonymous fallback
   is asked first, then the methods in order. An id nobody recognizes is a
   `user` with no roles.
-- `clearCredential()` is only for a method that authenticates anonymous
-  principals itself with a cookie: its `Set-Cookie` values ride every
-  `403 OWNER_RETIRED`.
+- `issuesAnonymousOwners: true` with `clearCredential()` is only for a method
+  that authenticates anonymous principals itself with a cookie: those
+  `Set-Cookie` values ride every `403 OWNER_RETIRED`. Core never calls
+  `clearCredential()` there on any other method, so an account's session
+  cookie is never cleared because an anonymous identity was retired.
 - Principals are checked per request: an owner id that is not 1-256 printable
   non-space ASCII characters, an unknown `kind` or `assurance`, or a
   `pendingClaim` set by the method is a `500` for that request rather than
@@ -634,6 +642,11 @@ as the **last** method: it always authenticates, so nothing after it would be
 asked. `PERSISTENCE_SHARED_OWNER_ID` set beside a registration that does not
 include it, or `sharedTeamAuthMethod()` registered without the variable, fails
 the boot rather than being ignored.
+
+`OWNER_AUTHENTICATOR` and the `TRUSTED_PROXY_*` variables of an earlier
+built-in gateway-header authenticator no longer exist; if any of them is set,
+the boot fails with a message pointing here, instead of silently serving every
+request as an anonymous owner.
 
 ##### Recipe: accounts through an identity gateway (signed JWT)
 
@@ -651,12 +664,14 @@ app around the gateway. Common sources:
 
 The sketch below uses the [`jose`](https://github.com/panva/jose) library, which
 the host adds as its own dependency. **It is a recipe the host owns and must
-test**, not code OpenMAIC ships or maintains. Keep the file inside
-`lib/server/identity/` (the boundary test only allows identity headers to be
-read there), and register the method from `instrumentation.ts`.
+test**, not code OpenMAIC ships or maintains. Put the file in
+`lib/server/identity/host/`: the boundary test
+(`tests/server/identity/cookie-guard.test.ts`) fails on reads of gateway
+identity headers or of an incoming `Authorization` header anywhere else, core
+identity files included. Register the method from `instrumentation.ts`.
 
 ```ts
-// lib/server/identity/gateway-jwt.ts (host code)
+// lib/server/identity/host/gateway-jwt.ts (host code)
 import { createRemoteJWKSet, errors, jwtVerify } from 'jose';
 
 import type { OwnerAuthMethod } from '@/lib/server/identity';
@@ -665,6 +680,18 @@ const ISSUER = 'https://idp.example.org/';
 const AUDIENCE = 'openmaic';
 const JWKS = createRemoteJWKSet(new URL('https://idp.example.org/.well-known/jwks.json'));
 const ADMIN_GROUPS = new Set(['openmaic-admins']);
+/** jose errors that mean "this token is bad", as opposed to "the keys could not be fetched". */
+const TOKEN_ERRORS = [
+  errors.JWTExpired, // exp / nbf
+  errors.JWTClaimValidationFailed, // iss, aud, other claim checks
+  errors.JWTInvalid, // not a usable JWT payload
+  errors.JWSInvalid, // malformed compact serialization
+  errors.JWSSignatureVerificationFailed,
+  errors.JWKSNoMatchingKey, // unknown kid
+  errors.JWKSMultipleMatchingKeys, // no kid and several candidate keys
+  errors.JOSEAlgNotAllowed, // alg outside `algorithms`
+  errors.JOSENotSupported, // alg or header this library cannot verify
+];
 
 /** The token, `undefined` when this method does not apply. */
 function bearerToken(headers: Headers): string | undefined {
@@ -688,9 +715,13 @@ export const gatewayJwtMethod: OwnerAuthMethod = {
         clockTolerance: 30,
       }));
     } catch (error) {
-      // An unreachable or broken key endpoint is a server fault, not a bad token.
-      if (error instanceof errors.JWKSTimeout || error instanceof errors.JWKSInvalid) throw error;
-      if (error instanceof errors.JOSEError) return { status: 'invalid', reason: error.code };
+      // Only a failure of the token itself is `invalid`. Anything else (the key
+      // endpoint unreachable, answering non-200 or unparsable data, a timeout)
+      // is a server fault: rethrown, it fails the request as a 500 instead of
+      // refusing every user as if their token were forged.
+      if (TOKEN_ERRORS.some((type) => error instanceof type)) {
+        return { status: 'invalid', reason: (error as errors.JOSEError).code };
+      }
       throw error;
     }
     const ownerId = `user:${payload.sub ?? ''}`;
@@ -715,7 +746,7 @@ export const gatewayJwtMethod: OwnerAuthMethod = {
 ```ts
 // instrumentation.ts, inside register()
 const { configureOwnerAuthentication } = await import('@/lib/server/identity');
-const { gatewayJwtMethod } = await import('@/lib/server/identity/gateway-jwt');
+const { gatewayJwtMethod } = await import('@/lib/server/identity/host/gateway-jwt');
 configureOwnerAuthentication({ methods: [gatewayJwtMethod], anonymousFallback: false });
 ```
 
@@ -726,6 +757,11 @@ Notes for the host:
   with `anonymousFallback: false`, the usual choice when the gateway covers
   every route). A wrong signature, issuer or audience, or an expired token, is
   a `401`, never an anonymous owner.
+- **A key endpoint outage is not a bad token.** Only the listed token errors
+  answer `invalid`. `jose` reports a JWKS endpoint that is unreachable, answers
+  non-200 or returns unparsable data as a generic `JOSEError`
+  (`ERR_JOSE_GENERIC`), which the recipe rethrows: the request fails as a
+  server error rather than refusing every user as if their token were forged.
 - **Pin `issuer`, `audience` and `algorithms`.** Without an audience check any
   token the IdP issued for another application would be accepted.
 - **`sub` is the stable id**; an email can change or be reassigned. Choose the
@@ -769,7 +805,14 @@ Nothing moves until the claim is triggered:
 **The anonymous cookie is a bearer credential.** Whoever presents it can read
 and edit that anonymous work, and, beside a signed-in account, claim it into
 the account. On shared devices, clear it (a claim does) before the next person
-signs in.
+signs in. The cookie is unsigned and not bound to the account, and it is the
+claim candidate core reads. It is host-only, but a sibling subdomain under the
+same registrable domain can set a Domain-scoped `anonymous_id` that the browser
+may send first, so a hostile subdomain could plant which anonymous identity a
+signed-in visitor claims. Serve OpenMAIC on a registrable domain of its own
+(or where no untrusted party controls a sibling subdomain). Hardening the
+cookie itself (a `__Host-` name on HTTPS deployments, refusing a request that
+presents more than one `anonymous_id`) is a deferred item.
 
 | Request                                                                                                                          | Result                                                 |
 | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
@@ -816,7 +859,7 @@ it writes nothing under it:
 - A write by id to a row that moved (deleting a skill, posting to an agent
   session) answers `403 OWNER_RETIRED` too.
 - Every such response carries the `Set-Cookie` values that drop the retired
-  anonymous cookie (and those of any method that declares `clearCredential`), so the browser
+  anonymous cookie (and those of any method that declares `issuesAnonymousOwners`), so the browser
   gets a fresh anonymous owner on its next request. The library of the retired
   id reads as empty.
 
