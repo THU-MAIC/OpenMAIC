@@ -521,7 +521,14 @@ export async function POST(req: NextRequest) {
         const maybeFallback = async (error: unknown, text?: string): Promise<boolean> => {
           if (fellBack) return false;
           if (!shouldFallbackFor(error, text)) return false;
-          const fallback = await resolveFallbackModel('scene-outlines-stream');
+          let fallback: Awaited<ReturnType<typeof resolveFallbackModel>>;
+          try {
+            fallback = await resolveFallbackModel('scene-outlines-stream');
+          } catch {
+            // Misconfigured fallback provider — keep the real error instead of
+            // surfacing e.g. "API key required for provider: …" to the client.
+            return false;
+          }
           if (!fallback) return false;
           streamParams = { ...streamParams, model: fallback.model };
           fellBack = true;
