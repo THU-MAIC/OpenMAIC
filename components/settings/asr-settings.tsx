@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 import { normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
+import { ApiKeySecurityNotice } from './api-key-security-notice';
 import { getASRServerDisabledError } from '@/lib/audio/asr-enablement';
 
 const log = createLogger('ASRSettings');
@@ -226,6 +227,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
           and not overridable from the client. */}
       {!isServerConfigured && (requiresApiKey || isCustom || isKeylessLocalProvider) && (
         <>
+          <ApiKeySecurityNotice />
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-sm">{t('settings.asrApiKey')}</Label>
