@@ -4,6 +4,53 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.0] - 2026-09-24
+
+Classroom chat now runs on an agent loop by default: learners can point at a slide element, an interactive component or a whiteboard drawing and ask about it, and the teacher can read the lesson, check the live state of an interactive experiment and search the web before answering. Settings are reorganized around the course workflow, with a model choice per generation step and first-class Token Plan connections (TokenDance, MiniMax, Seed and Kimi). Read **Behavior Changes** before upgrading.
+
+### Highlights
+
+- **Pi classroom chat is the default.** The in-class conversation moves from the director graph to an agent loop that can read slides on demand, search the web and call classroom tools within a single answer [#1628](https://github.com/THU-MAIC/OpenMAIC/pull/1628) [#1637](https://github.com/THU-MAIC/OpenMAIC/pull/1637)
+- **Ask about what you're looking at.** Reference a single PPT element, an interactive component or a whiteboard element from the playback bar and ask about it; interactive pages that declare state are sampled at question time, so the teacher can explain the result the learner is actually seeing, and `read_scene` exposes an interactive page's static instructions [#1508](https://github.com/THU-MAIC/OpenMAIC/pull/1508) [#1632](https://github.com/THU-MAIC/OpenMAIC/pull/1632) [#1656](https://github.com/THU-MAIC/OpenMAIC/pull/1656)
+- **Settings, rebuilt around the course workflow.** Choose a model for each generation step (outline, slides, interactive pages, scene actions and more), toggle each capability on or off, and manage Token Plans in one place [#1644](https://github.com/THU-MAIC/OpenMAIC/pull/1644)
+- **Token Plans.** One-key presets for TokenDance (every modality) and the Kimi Coding Plan (text only; other modalities stay on your own providers) [#1525](https://github.com/THU-MAIC/OpenMAIC/pull/1525) [#1664](https://github.com/THU-MAIC/OpenMAIC/pull/1664)
+
+### Features
+
+- Models: add OpenRouter image and video providers [#1356](https://github.com/THU-MAIC/OpenMAIC/pull/1356), Gemini 3.8 Flash and 3.7 Flash [#1629](https://github.com/THU-MAIC/OpenMAIC/pull/1629), and Xiaomi MiMo V2.6 [#1655](https://github.com/THU-MAIC/OpenMAIC/pull/1655)
+- TTS: pace classroom narration requests and classify MiniMax RPM limits so rate-limited runs slow down instead of failing [#1650](https://github.com/THU-MAIC/OpenMAIC/pull/1650); auto-detect Vietnamese for browser-native narration [#1487](https://github.com/THU-MAIC/OpenMAIC/pull/1487)
+- Storage: workbench image and video generation write through the asset pool (#1007 part 6) [#1524](https://github.com/THU-MAIC/OpenMAIC/pull/1524); ZIP imports persist media in the server asset pool [#1520](https://github.com/THU-MAIC/OpenMAIC/pull/1520)
+- Persistence: optional single-tenant mode that resolves every request to one shared owner (`PERSISTENCE_SHARED_OWNER_ID`) [#1639](https://github.com/THU-MAIC/OpenMAIC/pull/1639)
+- Render service: admission control and per-task resource budgets [#1492](https://github.com/THU-MAIC/OpenMAIC/pull/1492)
+- Attribution: TokenDance gateway requests carry an `X-APP-URL` header identifying the OpenMAIC deployment [#1675](https://github.com/THU-MAIC/OpenMAIC/pull/1675)
+
+### Bug Fixes
+
+- Generation: reject quiz options whose values are not A–Z and constrain them at the source [#1651](https://github.com/THU-MAIC/OpenMAIC/pull/1651); reject unusable interactive scripts and surface runtime errors on the page [#1649](https://github.com/THU-MAIC/OpenMAIC/pull/1649); keep narration speech free of formulas and LaTeX [#1586](https://github.com/THU-MAIC/OpenMAIC/pull/1586); tolerate non-array `mediaGenerations` in outlines [#1469](https://github.com/THU-MAIC/OpenMAIC/pull/1469); add a browser-safe package entry [#1609](https://github.com/THU-MAIC/OpenMAIC/pull/1609); stabilize model picker teardown [#1618](https://github.com/THU-MAIC/OpenMAIC/pull/1618)
+- Playback and audio: mobile narration survives past the first segment and discussion lines reuse one media element [#1477](https://github.com/THU-MAIC/OpenMAIC/pull/1477) [#1610](https://github.com/THU-MAIC/OpenMAIC/pull/1610); stop superseded scene engines [#1510](https://github.com/THU-MAIC/OpenMAIC/pull/1510); queue widget messages until the iframe is ready [#1532](https://github.com/THU-MAIC/OpenMAIC/pull/1532); resolve CDN-backed narration consistently [#1521](https://github.com/THU-MAIC/OpenMAIC/pull/1521); keep refused narration instead of re-billing it [#1523](https://github.com/THU-MAIC/OpenMAIC/pull/1523); derive the Azure SSML locale from the selected voice [#1566](https://github.com/THU-MAIC/OpenMAIC/pull/1566); rebuild FormData bodies for the undici transport [#1580](https://github.com/THU-MAIC/OpenMAIC/pull/1580)
+- PPTX import and editor: preserve tab columns, text insets, arrows, text/chart/image styling, shape autofit, Wingdings checkmarks, diagonal corners, table typography and punctuation wrapping; include every color attribute in the style cache key; share line bounds for alignment and dragging; bound ZIP inflation by default [#1518](https://github.com/THU-MAIC/OpenMAIC/pull/1518) [#1534](https://github.com/THU-MAIC/OpenMAIC/pull/1534) [#1577](https://github.com/THU-MAIC/OpenMAIC/pull/1577) [#1581](https://github.com/THU-MAIC/OpenMAIC/pull/1581) [#1571](https://github.com/THU-MAIC/OpenMAIC/pull/1571) [#1631](https://github.com/THU-MAIC/OpenMAIC/pull/1631) [#1588](https://github.com/THU-MAIC/OpenMAIC/pull/1588)
+- Media and web search: refuse redirects on adapter generation and poll calls [#1636](https://github.com/THU-MAIC/OpenMAIC/pull/1636); keep long Grok relay generations alive and inline image bytes [#1364](https://github.com/THU-MAIC/OpenMAIC/pull/1364); emit keyframe images as data URLs [#1444](https://github.com/THU-MAIC/OpenMAIC/pull/1444); stop leaking Brave's HTML challenge page into errors [#1553](https://github.com/THU-MAIC/OpenMAIC/pull/1553); bound the model-discovery response body timeout [#1478](https://github.com/THU-MAIC/OpenMAIC/pull/1478)
+- Export: surface video render rejection reasons [#1414](https://github.com/THU-MAIC/OpenMAIC/pull/1414); include active line geometry in bounds [#1626](https://github.com/THU-MAIC/OpenMAIC/pull/1626)
+- Server and storage: validate `pdfContent` input [#1578](https://github.com/THU-MAIC/OpenMAIC/pull/1578); sanitize agent session text [#1504](https://github.com/THU-MAIC/OpenMAIC/pull/1504); correlate 5xx responses with request IDs [#1601](https://github.com/THU-MAIC/OpenMAIC/pull/1601); warn when access-code protection is disabled [#1599](https://github.com/THU-MAIC/OpenMAIC/pull/1599); show effective upload limits in errors [#1418](https://github.com/THU-MAIC/OpenMAIC/pull/1418)
+- Docker: create `/app/data` owned by the runtime user so classroom persistence works [#1442](https://github.com/THU-MAIC/OpenMAIC/pull/1442); build workspace packages in the builder stage [#1598](https://github.com/THU-MAIC/OpenMAIC/pull/1598)
+- Misc: send `taskEngineMode` on the on-demand vocational scene path [#716](https://github.com/THU-MAIC/OpenMAIC/pull/716); POSIX zip entry names for exported skills on Windows [#1641](https://github.com/THU-MAIC/OpenMAIC/pull/1641); i18n and persistence fixes [#1595](https://github.com/THU-MAIC/OpenMAIC/pull/1595) [#1596](https://github.com/THU-MAIC/OpenMAIC/pull/1596)
+
+### Behavior Changes
+
+- **Pi is the default classroom chat runtime.** To keep the legacy director-graph chat, build with `NEXT_PUBLIC_PI_CHAT_ENABLED=false` [#1628](https://github.com/THU-MAIC/OpenMAIC/pull/1628)
+- **Stricter generated content.** Quizzes whose option values are not A–Z and interactive pages with unparseable scripts are now rejected as invalid model output and retried or skipped by the existing path, instead of being saved broken [#1651](https://github.com/THU-MAIC/OpenMAIC/pull/1651) [#1649](https://github.com/THU-MAIC/OpenMAIC/pull/1649)
+- **Settings layout.** The web-search toggle moved from the generation toolbar into Settings; an existing preference is migrated once on first load [#1644](https://github.com/THU-MAIC/OpenMAIC/pull/1644)
+- **Courseware references are opt-in.** The playback-bar reference entry (PPT, interactive and whiteboard) is enabled with `NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED=true` [#1656](https://github.com/THU-MAIC/OpenMAIC/pull/1656)
+
+### Other Changes
+
+- Docs: align security and behavior claims with shipped code, and document the Docker builder heap limit [#1592](https://github.com/THU-MAIC/OpenMAIC/pull/1592) [#1607](https://github.com/THU-MAIC/OpenMAIC/pull/1607)
+- Refactors and CI: shared per-course session lifecycle, shared narration walk for export, MIME policy from the format registry, Node 24 publish actions, Windows-safe media tests [#1619](https://github.com/THU-MAIC/OpenMAIC/pull/1619) [#1621](https://github.com/THU-MAIC/OpenMAIC/pull/1621) [#1590](https://github.com/THU-MAIC/OpenMAIC/pull/1590) [#1569](https://github.com/THU-MAIC/OpenMAIC/pull/1569) [#1584](https://github.com/THU-MAIC/OpenMAIC/pull/1584) [#1615](https://github.com/THU-MAIC/OpenMAIC/pull/1615)
+
+### Contributors
+
+Thanks to the community contributors in this release: @AbelWangYaBo, @acse-bq23, @Ai-Eastern, @BeAIcoder, @Cham1229, @ciclou1, @dajiaohuang, @Duang777, @Hosuke, @HuntercodeT, @hydraxman, @LeoParkerOu, @lianglaibin116-cloud, @ly-wang19, @mianbaofang, @nqthiep, @PassCode023, @puxiao, @Qnh233, @ttkm2023, @WizKid1968, @YizukiAme, @zdnemz.
+
 ## [1.0.3] - 2026-09-15
 
 A security release: access-code tokens now expire and verification is throttled behind a trusted proxy, the render service applies a network policy to the untrusted HTML it renders, audio provider requests validate redirects and pin their connections, and Next.js is upgraded to patch a critical RCE. It also carries the fixes and features merged since 1.0.2.
