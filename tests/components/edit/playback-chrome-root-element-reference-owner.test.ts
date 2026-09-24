@@ -32,6 +32,8 @@ const mocks = vi.hoisted(() => ({
   engineStart: vi.fn(),
   engineContinuePlayback: vi.fn(),
   handleUserInterrupt: vi.fn(),
+  confirmDiscussion: vi.fn(),
+  discussionPrime: vi.fn(),
 }));
 
 const textElement = {
@@ -236,6 +238,34 @@ vi.mock('@/components/roundtable', async () => {
           },
           'send',
         ),
+        React.createElement(
+          'button',
+          {
+            type: 'button',
+            'data-testid': 'join-discussion',
+            onClick: () =>
+              (props.onDiscussionStart as ((request?: unknown) => void) | undefined)?.(),
+          },
+          'join',
+        ),
+        React.createElement(
+          'button',
+          {
+            type: 'button',
+            'data-testid': 'resume-topic',
+            onClick: () => (props.onResumeTopic as (() => void) | undefined)?.(),
+          },
+          'resume topic',
+        ),
+        React.createElement(
+          'button',
+          {
+            type: 'button',
+            'data-testid': 'resume-discussion',
+            onClick: () => (props.onDiscussionResume as (() => void) | undefined)?.(),
+          },
+          'resume discussion',
+        ),
         pill
           ? React.createElement(
               'div',
@@ -315,7 +345,10 @@ vi.mock('@/lib/playback', () => ({
       mocks.engineContinuePlayback();
     }
     pause() {}
-    confirmDiscussion() {}
+    resume() {}
+    confirmDiscussion() {
+      mocks.confirmDiscussion();
+    }
     skipDiscussion() {}
   },
   computePlaybackView: () => ({ kind: 'idle', isTopicActive: mocks.topicActive }),
@@ -353,6 +386,7 @@ vi.mock('@/lib/hooks/use-discussion-tts', () => ({
     resume: vi.fn(),
     handleSegmentSealed: vi.fn(),
     shouldHold: vi.fn(() => false),
+    prime: mocks.discussionPrime,
   }),
 }));
 vi.mock('@/lib/store/widget-iframe', () => ({
@@ -401,6 +435,8 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
     mocks.engineStart.mockReset();
     mocks.engineContinuePlayback.mockReset();
     mocks.handleUserInterrupt.mockReset();
+    mocks.confirmDiscussion.mockReset();
+    mocks.discussionPrime.mockReset();
     stageState.scenes = [scene, secondScene];
     stageState.currentSceneId = scene.id;
     stageState.setCurrentSceneId.mockClear();
@@ -980,5 +1016,43 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('primes the discussion element synchronously in the gesture that starts speech', async () => {
+    await renderOwner();
+
+    click('join-discussion');
+    expect(mocks.discussionPrime).toHaveBeenCalledOnce();
+    expect(mocks.confirmDiscussion).toHaveBeenCalledOnce();
+    expect(mocks.discussionPrime.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.confirmDiscussion.mock.invocationCallOrder[0],
+    );
+
+    mocks.discussionPrime.mockClear();
+    click('send');
+    expect(mocks.discussionPrime).toHaveBeenCalledOnce();
+    expect(mocks.discussionPrime.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.sendMessage.mock.invocationCallOrder[0],
+    );
+
+    mocks.discussionPrime.mockClear();
+    click('resume-topic');
+    expect(mocks.discussionPrime).toHaveBeenCalledOnce();
+
+    mocks.discussionPrime.mockClear();
+    click('resume-discussion');
+    expect(mocks.discussionPrime).toHaveBeenCalledOnce();
+  });
+
+  it('primes before an interrupt send, while the click is still the gesture', async () => {
+    mocks.engineMode = 'playing';
+    await renderOwner();
+
+    click('send');
+    expect(mocks.handleUserInterrupt).toHaveBeenCalledOnce();
+    expect(mocks.discussionPrime).toHaveBeenCalledOnce();
+    expect(mocks.discussionPrime.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.handleUserInterrupt.mock.invocationCallOrder[0],
+    );
   });
 });

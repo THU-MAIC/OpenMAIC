@@ -12,6 +12,7 @@ import {
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import {
   getDiscussionAudioElement,
+  primeDiscussionAudioElement,
   releaseDiscussionAudioLine,
 } from '@/lib/audio/discussion-audio';
 import { useAllVoiceProfiles } from '@/lib/audio/voxcpm-voices';
@@ -580,11 +581,20 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
     };
   }, []);
 
+  /**
+   * Unlock the shared element inside the gesture that starts discussion.
+   * Must run synchronously, before any await — see `primeDiscussionAudioElement`.
+   */
+  const prime = useCallback(() => {
+    primeDiscussionAudioElement();
+  }, []);
+
   return {
     handleSegmentSealed,
     cleanup,
     pause,
     resume,
     shouldHold,
+    prime,
   };
 }

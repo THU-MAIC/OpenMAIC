@@ -583,27 +583,27 @@ describe('discussion TTS synthesis lookahead', () => {
 /**
  * Mobile autoplay policy for discussion narration.
  *
- * Mobile browsers only let a programmatic `play()` through on the element a
- * user gesture has already reached. A player that mints one element per
- * discussion line therefore goes silent from the second line on — the lesson
- * keeps advancing while the speech is refused with NotAllowedError.
+ * A strict per-element policy remembers an element only when `play()` runs
+ * inside the user gesture that started the discussion, and only if that play
+ * actually unlocks it (muted, or given a source). Creating the element after
+ * the TTS round-trip is outside the gesture, so the first line is refused with
+ * NotAllowedError and the lesson keeps advancing in silence. Later lines are
+ * allowed only on that same already-primed element.
  */
 describe('discussion TTS under a mobile autoplay policy', () => {
-  /**
-   * Mobile rule: activation is per element and sticky. An element that has never
-   * played is refused; the first element stands in for the one the user's gesture
-   * reached, so it is allowed to play once.
-   *
-   * What this can and cannot show: it shows that one element serves every line
-   * instead of one per line (the bug), and it shows the hook's behaviour when a
-   * play() is refused. It cannot show that the first play() of the discussion
-   * element is allowed on a real device — that element is created after an
-   * awaited TTS fetch, so whether the mobile rule covers it is a question only a
-   * device can answer.
-   */
+  /** True only for the synchronous stretch that stands in for the click. */
+  let gestureOpen = false;
+
   class PolicyAudio extends FakeAudio {
     activated = false;
+    muted = false;
     play = vi.fn(async () => {
+      // The gesture play has to reach this element before any await. A naked
+      // play() with no source does not unlock it; neither does a play() that
+      // happens after the gesture has closed.
+      if (gestureOpen && (this.muted || this.src !== '')) {
+        this.activated = true;
+      }
       if (!this.activated) {
         throw Object.assign(new Error('play() failed because the user did not interact'), {
           name: 'NotAllowedError',
@@ -611,16 +611,20 @@ describe('discussion TTS under a mobile autoplay policy', () => {
       }
       this.paused = false;
     });
+  }
 
-    constructor(src?: string) {
-      super(src);
-      // `super()` registers this instance, so the first element created is the
-      // one the gesture reached.
-      this.activated = FakeAudio.instances.length === 1;
+  /** The Join / send click: prime must call play() before this returns. */
+  function primeDuringGesture() {
+    gestureOpen = true;
+    try {
+      hook.prime();
+    } finally {
+      gestureOpen = false;
     }
   }
 
   beforeEach(() => {
+    gestureOpen = false;
     // Re-render with the policy stub so element creation is governed by it.
     resetDiscussionAudioElementForTests();
     act(() => root.unmount());
@@ -629,34 +633,88 @@ describe('discussion TTS under a mobile autoplay policy', () => {
     act(() => root.render(createElement(Probe)));
   });
 
-  it('plays every line through the single element the gesture unlocked', async () => {
+  it('refuses the first line when the shared element was never primed in the gesture', async () => {
+    await seal('A');
+    await respond(0);
+    const audio = FakeAudio.instances[0] as PolicyAudio;
+    expect(audio.activated).toBe(false);
+    expect(audio.play).toHaveBeenCalledOnce();
+    expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 1 });
+  });
+
+  it('plays lines fetched after the gesture on the element primed synchronously', async () => {
+    expect(FakeAudio.instances).toHaveLength(0);
+    primeDuringGesture();
+    const audio = FakeAudio.instances[0] as PolicyAudio;
+    expect(FakeAudio.instances).toHaveLength(1);
+    expect(audio.activated).toBe(true);
+    // load() would reset readyState and can drop the gesture on iOS. The silent
+    // clip stays loaded so the real line can replace it. This stub's `activated`
+    // flag is not a browser autoplay policy — jsdom does not enforce one.
+    expect(audio.load).not.toHaveBeenCalled();
+    expect(audio.muted).toBe(false);
+    expect(audio.src.startsWith('data:audio/wav;base64,')).toBe(true);
+
     await seal('A');
     await seal('B');
     await respond(0);
     await respond(1);
+    expect(FakeAudio.instances).toHaveLength(1);
+    expect(audio.paused).toBe(false);
+    expect(audio.src).toContain(btoa('audio-0'));
+    expect(audio.volume).toBe(0.7);
+    await act(async () => audio.end());
+    expect(FakeAudio.instances[0]).toBe(audio);
+    expect(audio.src).toContain(btoa('audio-1'));
+    expect(audio.paused).toBe(false);
+    expect(hook.shouldHold()).toEqual({ holding: true, segmentDone: 1 });
+    await act(async () => audio.end());
+    expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 2 });
+  });
+
+  it('does not unlock the element when prime runs after the gesture has closed', async () => {
+    await seal('A');
+    hook.prime();
+    await respond(0);
+    const audio = FakeAudio.instances[0] as PolicyAudio;
+    expect(audio.activated).toBe(false);
+    expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 1 });
+  });
+
+  it('plays every line through the single element the gesture unlocked', async () => {
+    primeDuringGesture();
     const audio = FakeAudio.instances[0];
-    expect(audio.play).toHaveBeenCalledOnce();
+    const playsAfterPrime = audio.play.mock.calls.length;
+    await seal('A');
+    await seal('B');
+    await respond(0);
+    await respond(1);
+    expect(audio.play.mock.calls.length).toBe(playsAfterPrime + 1);
     await act(async () => audio.end());
     expect(FakeAudio.instances).toHaveLength(1);
     expect(audio.src).toContain(btoa('audio-1'));
-    expect(audio.play).toHaveBeenCalledTimes(2);
+    expect(audio.play.mock.calls.length).toBe(playsAfterPrime + 2);
     expect(hook.shouldHold()).toEqual({ holding: true, segmentDone: 1 });
     await act(async () => audio.end());
     expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 2 });
   });
 
   it('keeps pause and resume on the reused element', async () => {
+    primeDuringGesture();
     await seal('A');
     await seal('B');
     await respond(0);
     await respond(1);
     const audio = FakeAudio.instances[0];
+    const pausesBefore = audio.pause.mock.calls.length;
     act(() => hook.pause());
-    expect(audio.pause).toHaveBeenCalledOnce();
+    expect(audio.paused).toBe(true);
+    expect(audio.pause.mock.calls.length).toBe(pausesBefore + 1);
     await act(async () => hook.resume());
-    expect(audio.play).toHaveBeenCalledTimes(2);
+    expect(audio.paused).toBe(false);
     await act(async () => audio.end());
+    expect(FakeAudio.instances).toHaveLength(1);
     expect(audio.src).toContain(btoa('audio-1'));
-    expect(audio.play).toHaveBeenCalledTimes(3);
+    expect(audio.paused).toBe(false);
   });
 });

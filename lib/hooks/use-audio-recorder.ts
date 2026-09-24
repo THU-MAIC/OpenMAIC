@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
 import { getASRServerDisabledError } from '@/lib/audio/asr-enablement';
+import { primeDiscussionAudioElement } from '@/lib/audio/discussion-audio';
 import { normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
 import { createLogger } from '@/lib/logger';
 
@@ -99,6 +100,10 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
     if (busyRef.current) return;
     busyRef.current = true;
     try {
+      // Still inside the mic click: the import below is the first await, and
+      // onTranscription runs only after the transcription response. A prime()
+      // from that callback is outside the user gesture.
+      primeDiscussionAudioElement();
       // Get current ASR configuration
       if (typeof window !== 'undefined') {
         const { useSettingsStore } = await import('@/lib/store/settings');

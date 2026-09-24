@@ -1815,6 +1815,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 isTopicPending={isTopicPending}
                 canSendMessage={canSendReferencedMessage}
                 onMessageSend={async (msg) => {
+                  // Send and interrupt are the gesture for the next spoken line.
+                  // Prime before cleanup or any await: the shared element has to
+                  // be touched while this click is still on the stack.
+                  discussionTTS.prime();
                   const draft = showElementReference ? draftElementReferenceRef.current : null;
                   const elementReferenceSnapshot: ElementReferenceSendSnapshot | undefined = draft
                     ? {
@@ -1871,7 +1875,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                   setThinkingState({ stage: 'director' });
                 }}
                 onDiscussionStart={() => {
-                  // User clicks "Join" on ProactiveCard
+                  // User clicks "Join" on ProactiveCard. Unlock before
+                  // confirmDiscussion reaches the discussion round-trip, or a
+                  // strict autoplay policy refuses the first line.
+                  discussionTTS.prime();
                   engineRef.current?.confirmDiscussion();
                 }}
                 onDiscussionSkip={() => {
@@ -1900,7 +1907,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                     engineRef.current.pause();
                   }
                 }}
-                onResumeTopic={doResumeTopic}
+                onResumeTopic={() => {
+                  // Resuming a topic speaks again after an await. Unlock first.
+                  discussionTTS.prime();
+                  void doResumeTopic();
+                }}
                 onPlayPause={handlePlayPause}
                 isDiscussionPaused={isDiscussionPaused}
                 onDiscussionPause={() => {
@@ -1911,6 +1922,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                   }
                 }}
                 onDiscussionResume={() => {
+                  // The line may still be generating, so resume()'s play() is
+                  // not always inside this click. Touch the element first.
+                  discussionTTS.prime();
                   chatAreaRef.current?.resumeActiveLiveBuffer();
                   discussionTTS.resume();
                   setIsDiscussionPaused(false);
