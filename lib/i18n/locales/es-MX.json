@@ -142,11 +142,12 @@
       "streamInterrupted": "El streaming terminó inesperadamente; el debate no se completó. Inténtalo de nuevo."
     },
     "elementReference": {
-      "button": "Referenciar contenido del curso",
-      "unavailable": "Solo se puede referenciar la diapositiva PPT actual o un componente interactivo compatible",
-      "instruction": "Haz clic en un elemento del material del curso · Esc para salir",
-      "fallback": "Otros elementos de la diapositiva ({{count}})",
-      "clear": "Quitar referencia del contenido del curso",
+      "whiteboardChanged": "El elemento del pizarrón cambió o ya no está disponible. Vuelve a seleccionarlo o quita la referencia antes de enviar.",
+      "button": "Referenciar contenido",
+      "unavailable": "El contenido actual no admite referencias a elementos.",
+      "instruction": "Haz clic en un elemento · Esc para salir",
+      "fallback": "Otros elementos ({{count}})",
+      "clear": "Quitar referencia",
       "summary": {
         "noText": "Sin texto",
         "emptyContent": "Sin contenido",

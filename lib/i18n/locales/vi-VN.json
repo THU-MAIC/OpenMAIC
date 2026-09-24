@@ -142,11 +142,12 @@
       "streamInterrupted": "Luồng dữ liệu dừng bất ngờ, thảo luận chưa hoàn tất. Vui lòng thử lại."
     },
     "elementReference": {
-      "button": "Tham chiếu học liệu",
-      "unavailable": "Chỉ có thể tham chiếu trang PPT hiện tại hoặc một thành phần tương tác được hỗ trợ",
-      "instruction": "Nhấp vào một phần tử trong học liệu · Esc để thoát",
+      "whiteboardChanged": "Phần tử bảng trắng đã thay đổi hoặc không còn khả dụng. Hãy chọn lại hoặc xóa tham chiếu trước khi gửi.",
+      "button": "Tham chiếu nội dung",
+      "unavailable": "Nội dung hiện tại không hỗ trợ tham chiếu phần tử.",
+      "instruction": "Nhấp vào phần tử · Esc để thoát",
       "fallback": "Các phần tử khác ({{count}})",
-      "clear": "Xóa tham chiếu học liệu",
+      "clear": "Xóa tham chiếu",
       "summary": {
         "noText": "Không có văn bản",
         "emptyContent": "Không có nội dung",

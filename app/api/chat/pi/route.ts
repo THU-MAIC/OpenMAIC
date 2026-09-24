@@ -98,7 +98,15 @@ export async function POST(req: NextRequest) {
       ));
     } catch (error) {
       if (error instanceof ElementReferenceValidationError) {
-        return apiError('INVALID_REQUEST', 400, error.message);
+        return apiError(
+          'INVALID_REQUEST',
+          400,
+          error.message,
+          undefined,
+          body.elementReference?.kind === 'whiteboard_element'
+            ? 'whiteboard_reference_changed'
+            : undefined,
+        );
       }
       throw error;
     }

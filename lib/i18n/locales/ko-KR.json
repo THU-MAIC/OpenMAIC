@@ -142,11 +142,12 @@
       "streamInterrupted": "스트림이 예기치 않게 종료되어 토론이 완료되지 않았습니다. 다시 시도해 주세요."
     },
     "elementReference": {
-      "button": "수업 자료 참조",
-      "unavailable": "현재 PPT 슬라이드 또는 지원되는 인터랙티브 컴포넌트만 참조할 수 있습니다",
-      "instruction": "강의 자료 요소를 클릭하세요 · Esc로 종료",
-      "fallback": "기타 슬라이드 요소 ({{count}})",
-      "clear": "수업 자료 참조 제거",
+      "whiteboardChanged": "참조한 화이트보드 요소가 변경되었거나 사용할 수 없습니다. 다시 선택하거나 참조를 제거한 후 보내세요.",
+      "button": "내용 참조",
+      "unavailable": "현재 콘텐츠는 요소 참조를 지원하지 않습니다.",
+      "instruction": "요소 클릭 · Esc로 종료",
+      "fallback": "기타 요소 ({{count}})",
+      "clear": "참조 제거",
       "summary": {
         "noText": "텍스트 없음",
         "emptyContent": "콘텐츠 없음",

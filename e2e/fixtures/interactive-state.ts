@@ -27,7 +27,11 @@ document.getElementById('value').oninput=e=>{value=Number(e.target.value);revisi
 
 export async function seedDatabase(
   page: import('@playwright/test').Page,
-  options: { html?: string; modelId?: string } = {},
+  options: {
+    html?: string;
+    modelId?: string;
+    whiteboard?: import('@openmaic/dsl').Whiteboard[];
+  } = {},
 ) {
   const settings = JSON.parse(SETTINGS_STORAGE);
   if (options.modelId) settings.state.modelId = options.modelId;
@@ -38,7 +42,7 @@ export async function seedDatabase(
 
   await page.goto('/', { waitUntil: 'networkidle' });
   await page.evaluate(
-    ({ stageId, sceneId, html }) =>
+    ({ stageId, sceneId, html, whiteboard }) =>
       new Promise<void>((resolve, reject) => {
         const request = indexedDB.open('maic-documents', 1);
         request.onupgradeneeded = () => {
@@ -55,6 +59,7 @@ export async function seedDatabase(
           tx.objectStore('stages').put({
             id: stageId,
             name: 'Interactive component reference',
+            ...(whiteboard ? { whiteboard } : {}),
             description: '',
             language: 'en-US',
             style: 'professional',
@@ -88,6 +93,11 @@ export async function seedDatabase(
         };
         request.onerror = () => reject(request.error);
       }),
-    { stageId: TEST_STAGE_ID, sceneId: SCENE_ID, html: options.html ?? INTERACTIVE_HTML },
+    {
+      stageId: TEST_STAGE_ID,
+      sceneId: SCENE_ID,
+      html: options.html ?? INTERACTIVE_HTML,
+      whiteboard: options.whiteboard,
+    },
   );
 }

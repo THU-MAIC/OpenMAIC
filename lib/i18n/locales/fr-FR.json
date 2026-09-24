@@ -142,11 +142,12 @@
       "streamInterrupted": "Le flux s’est interrompu de façon inattendue ; la discussion n’a pas abouti. Veuillez réessayer."
     },
     "elementReference": {
-      "button": "Référencer le contenu du cours",
-      "unavailable": "Seuls la diapositive PPT actuelle ou un composant interactif pris en charge peuvent être référencés",
-      "instruction": "Cliquez sur un élément du support de cours · Échap pour quitter",
-      "fallback": "Autres éléments de la diapositive ({{count}})",
-      "clear": "Retirer la référence au contenu du cours",
+      "whiteboardChanged": "L’élément du tableau blanc a changé ou n’est plus disponible. Sélectionnez-le à nouveau ou retirez la référence avant d’envoyer.",
+      "button": "Référencer du contenu",
+      "unavailable": "Le contenu actuel ne permet pas de référencer des éléments.",
+      "instruction": "Cliquez sur un élément · Échap pour quitter",
+      "fallback": "Autres éléments ({{count}})",
+      "clear": "Retirer la référence",
       "summary": {
         "noText": "Sans texte",
         "emptyContent": "Aucun contenu",

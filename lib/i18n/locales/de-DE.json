@@ -142,11 +142,12 @@
       "streamInterrupted": "Der Stream wurde unerwartet beendet; die Diskussion konnte nicht abgeschlossen werden. Versuche es erneut."
     },
     "elementReference": {
-      "button": "Kursinhalt referenzieren",
-      "unavailable": "Nur die aktuelle PPT-Folie oder eine unterstützte interaktive Komponente kann referenziert werden",
-      "instruction": "Kursmaterialelement anklicken · Esc zum Beenden",
-      "fallback": "Weitere Folienelemente ({{count}})",
-      "clear": "Kursinhaltsreferenz entfernen",
+      "whiteboardChanged": "Das referenzierte Whiteboard-Element wurde geändert oder ist nicht mehr verfügbar. Wählen Sie es erneut aus oder entfernen Sie die Referenz vor dem Senden.",
+      "button": "Inhalt referenzieren",
+      "unavailable": "Der aktuelle Inhalt unterstützt keine Elementreferenzen.",
+      "instruction": "Element anklicken · Esc zum Beenden",
+      "fallback": "Weitere Elemente ({{count}})",
+      "clear": "Referenz entfernen",
       "summary": {
         "noText": "Kein Text",
         "emptyContent": "Kein Inhalt",

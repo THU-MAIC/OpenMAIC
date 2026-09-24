@@ -142,11 +142,12 @@
       "streamInterrupted": "Stream ended unexpectedly; discussion didn't complete. Please try again."
     },
     "elementReference": {
-      "button": "Reference courseware",
-      "unavailable": "Only the current PPT slide or a supported interactive component can be referenced",
-      "instruction": "Click a courseware element · Esc to exit",
-      "fallback": "Other slide elements ({{count}})",
-      "clear": "Remove courseware reference",
+      "whiteboardChanged": "The referenced whiteboard element has changed or is no longer available. Select it again or remove the reference before sending.",
+      "button": "Reference content",
+      "unavailable": "The current content does not support element references.",
+      "instruction": "Click an element · Esc to exit",
+      "fallback": "Other elements ({{count}})",
+      "clear": "Remove reference",
       "summary": {
         "noText": "No text",
         "emptyContent": "No content",

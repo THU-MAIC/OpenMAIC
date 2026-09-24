@@ -321,7 +321,17 @@ export interface InteractiveComponentReference {
   selector: string;
 }
 
-export type ElementReference = SlideElementReference | InteractiveComponentReference;
+/** Identity only; content is resolved from this request's Stage snapshot. */
+export interface WhiteboardElementReference {
+  kind: 'whiteboard_element';
+  whiteboardId: string;
+  elementId: string;
+}
+
+export type ElementReference =
+  | SlideElementReference
+  | InteractiveComponentReference
+  | WhiteboardElementReference;
 
 /**
  * Request body for the stateless chat API

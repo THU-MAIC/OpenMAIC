@@ -4,12 +4,17 @@ import type { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
   buildAgent: vi.fn(),
+  persistenceProvider: vi.fn(),
   streamLLM: vi.fn(),
   resolveModel: vi.fn(),
   legacyChildPrompts: [] as string[],
   nativeChildPrompts: [] as string[],
   directorPrompts: [] as string[],
   callAgentExecutions: 0,
+}));
+
+vi.mock('@/lib/persistence/server-provider', () => ({
+  getServerPersistenceProvider: mocks.persistenceProvider,
 }));
 
 vi.mock('@/lib/agent/runtime/build-agent', () => ({ buildAgent: mocks.buildAgent }));
@@ -23,10 +28,13 @@ vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-function makeRequest(body: Record<string, unknown>): NextRequest {
+function makeRequest(
+  body: Record<string, unknown>,
+  headers: Record<string, string> = {},
+): NextRequest {
   return new Request('http://localhost/api/chat/pi', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   }) as unknown as NextRequest;
 }
@@ -280,6 +288,8 @@ describe('PPT element reference Route → Director → real call_agent L2', () =
     process.env[coursewareReferenceFlag] = 'true';
     delete process.env[nativeFlag];
     vi.resetModules();
+    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '0');
+    mocks.persistenceProvider.mockReset().mockResolvedValue({ runtimeStore: {} });
     mocks.buildAgent.mockReset();
     mocks.streamLLM.mockReset();
     mocks.resolveModel.mockReset();
@@ -297,6 +307,7 @@ describe('PPT element reference Route → Director → real call_agent L2', () =
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     if (originalPiFlag === undefined) delete process.env[piFlag];
     else process.env[piFlag] = originalPiFlag;
     if (originalCoursewareReferenceFlag === undefined) delete process.env[coursewareReferenceFlag];
@@ -726,6 +737,90 @@ describe('PPT element reference Route → Director → real call_agent L2', () =
       const { POST } = await import('@/app/api/chat/pi/route');
       expect((await POST(makeRequest(body))).status).toBe(400);
       expect(mocks.resolveModel).not.toHaveBeenCalled();
+    },
+  );
+
+  function whiteboardBody() {
+    const base = makeBody();
+    return {
+      ...base,
+      storeState: {
+        ...base.storeState,
+        stage: {
+          ...base.storeState.stage,
+          whiteboard: [
+            {
+              id: 'board',
+              elements: [
+                {
+                  ...base.storeState.scenes[0].content.canvas.elements[0],
+                  content: '<p>Whiteboard-only fact.</p>',
+                },
+              ],
+            },
+          ],
+        },
+      },
+      elementReference: {
+        kind: 'whiteboard_element',
+        whiteboardId: 'board',
+        elementId: 'text-1',
+      },
+    };
+  }
+
+  it.each(['Legacy', 'Native'] as const)(
+    'passes whiteboard evidence through the real route and call_agent to %s Teacher',
+    async (mode) => {
+      if (mode === 'Native') process.env[nativeFlag] = 'true';
+      installAgentShell('Whiteboard answer.');
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(whiteboardBody()));
+      await response.text();
+      expect(response.status).toBe(200);
+      expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBe('1');
+      const prompts = mode === 'Native' ? mocks.nativeChildPrompts : mocks.legacyChildPrompts;
+      expect(prompts.join('\n')).toContain('Whiteboard-only fact.');
+      expect(prompts.join('\n')).toContain('Selected whiteboard element evidence');
+      expect(mocks.directorPrompts.join('\n')).toContain('Selected whiteboard reference');
+      expect(mocks.persistenceProvider).not.toHaveBeenCalled();
+    },
+  );
+
+  it('resolves the request snapshot without accessing persistence even when enabled', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
+    installAgentShell('Snapshot answer.');
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(whiteboardBody()));
+    await response.text();
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBe('1');
+    expect(mocks.legacyChildPrompts.join('\n')).toContain('Whiteboard-only fact.');
+    expect(mocks.legacyChildPrompts.join('\n')).toContain('request_start_snapshot');
+    expect(mocks.persistenceProvider).not.toHaveBeenCalled();
+  });
+
+  it.each(['wrong-board', 'runtime-id', 'extra-stageId', 'extra-source', 'flag-off'])(
+    'rejects a whiteboard reference before model resolution on %s',
+    async (scenario) => {
+      const body = whiteboardBody();
+      if (scenario === 'wrong-board') body.elementReference.whiteboardId = 'other-board';
+      if (scenario === 'runtime-id')
+        body.elementReference.whiteboardId = 'runtime-whiteboard:stage-1';
+      if (scenario === 'extra-stageId')
+        Object.assign(body.elementReference, { stageId: 'stage-1' });
+      if (scenario === 'extra-source')
+        Object.assign(body.elementReference, { source: 'stage_snapshot' });
+      if (scenario === 'flag-off') process.env[coursewareReferenceFlag] = 'false';
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(body));
+      expect(response.status).toBe(400);
+      if (scenario !== 'flag-off')
+        expect(await response.json()).toMatchObject({ reason: 'whiteboard_reference_changed' });
+      expect(response.headers.has('X-OpenMAIC-Element-Reference-Accepted')).toBe(false);
+      expect(mocks.resolveModel).not.toHaveBeenCalled();
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      expect(mocks.persistenceProvider).not.toHaveBeenCalled();
     },
   );
 

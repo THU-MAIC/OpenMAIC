@@ -3,6 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Eraser, History, Minimize2, PencilLine, RotateCcw } from 'lucide-react';
+import type { PPTElement } from '@openmaic/dsl';
+import type { WhiteboardElementReference } from '@/lib/types/chat';
+import { ElementPickOverlay } from '@/components/canvas/slide-element-pick-overlay';
+import {
+  getDisplayedWhiteboard,
+  isWhiteboardReferenceAvailable,
+} from '@/lib/whiteboard/element-reference';
 import { WhiteboardCanvas } from './whiteboard-canvas';
 import type { WhiteboardCanvasHandle } from './whiteboard-canvas';
 import { WhiteboardHistory } from './whiteboard-history';
@@ -17,12 +24,23 @@ import { refreshWhiteboardRuntimeProjection } from '@/lib/whiteboard/runtime/bro
 interface WhiteboardProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
+  readonly elementPickActive?: boolean;
+  readonly whiteboardElementReference?: WhiteboardElementReference;
+  readonly onPickElement?: (element: PPTElement) => void;
+  readonly onCancelElementPick?: () => void;
 }
 
 /**
  * Whiteboard component
  */
-export function Whiteboard({ isOpen, onClose }: WhiteboardProps) {
+export function Whiteboard({
+  isOpen,
+  onClose,
+  elementPickActive,
+  whiteboardElementReference,
+  onPickElement,
+  onCancelElementPick,
+}: WhiteboardProps) {
   const { t } = useI18n();
   const stage = useStageStore.use.stage();
   const isClearing = useCanvasStore.use.whiteboardClearing();
@@ -31,16 +49,19 @@ export function Whiteboard({ isOpen, onClose }: WhiteboardProps) {
   const wasOpenRef = useRef(isOpen);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [viewModified, setViewModified] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<WhiteboardCanvasHandle>(null);
   const snapshotCount = useWhiteboardHistoryStore((s) => s.snapshots.length);
   const runtimeProjection = useCanvasStore.use.runtimeWhiteboardProjection();
 
   // Get element count for indicator
-  const runtimeAuthoritative =
-    runtimeProjection !== null &&
-    runtimeProjection.stageId === stage?.id &&
-    runtimeProjection.lastSeq !== null;
-  const whiteboard = runtimeAuthoritative ? runtimeProjection!.whiteboard : stage?.whiteboard?.[0];
+  const { source, whiteboard } = getDisplayedWhiteboard(stage, runtimeProjection);
+  const runtimeAuthoritative = source === 'runtime_store';
+  const selectedElementId =
+    whiteboardElementReference &&
+    isWhiteboardReferenceAvailable(whiteboardElementReference, stage, runtimeProjection)
+      ? whiteboardElementReference.elementId
+      : undefined;
   const elementCount = whiteboard?.elements?.length || 0;
 
   useEffect(() => {
@@ -202,12 +223,32 @@ export function Whiteboard({ isOpen, onClose }: WhiteboardProps) {
             </div>
 
             {/* Whiteboard Content Area */}
-            <div className="flex-1 relative bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#374151_1px,transparent_1px)] [background-size:24px_24px] overflow-hidden">
+            <div
+              ref={contentRef}
+              className="flex-1 relative bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#374151_1px,transparent_1px)] [background-size:24px_24px] overflow-hidden"
+            >
               <WhiteboardCanvas
                 ref={canvasRef}
                 whiteboard={whiteboard}
                 onViewModifiedChange={setViewModified}
               />
+              {(elementPickActive || selectedElementId) &&
+                !runtimeAuthoritative &&
+                !isClearing &&
+                whiteboard &&
+                onPickElement &&
+                onCancelElementPick && (
+                  <ElementPickOverlay
+                    key={elementPickActive ? 'picking' : 'selected'}
+                    elements={whiteboard.elements}
+                    picking={Boolean(elementPickActive)}
+                    selectedElementId={selectedElementId}
+                    scopeRef={contentRef}
+                    onPick={onPickElement}
+                    onCancel={onCancelElementPick}
+                    testId="whiteboard-element-pick-overlay"
+                  />
+                )}
             </div>
           </motion.div>
         )}

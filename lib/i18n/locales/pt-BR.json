@@ -142,11 +142,12 @@
       "streamInterrupted": "O fluxo de dados terminou inesperadamente; a discussão não foi concluída. Por favor, tente novamente."
     },
     "elementReference": {
-      "button": "Referenciar conteúdo do curso",
-      "unavailable": "Apenas o slide PPT atual ou um componente interativo compatível pode ser referenciado",
-      "instruction": "Clique em um elemento do material do curso · Esc para sair",
-      "fallback": "Outros elementos do slide ({{count}})",
-      "clear": "Remover referência do conteúdo do curso",
+      "whiteboardChanged": "O elemento do quadro branco mudou ou não está mais disponível. Selecione-o novamente ou remova a referência antes de enviar.",
+      "button": "Referenciar conteúdo",
+      "unavailable": "O conteúdo atual não permite referências a elementos.",
+      "instruction": "Clique em um elemento · Esc para sair",
+      "fallback": "Outros elementos ({{count}})",
+      "clear": "Remover referência",
       "summary": {
         "noText": "Sem texto",
         "emptyContent": "Sem conteúdo",

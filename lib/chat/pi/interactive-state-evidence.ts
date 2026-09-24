@@ -215,13 +215,15 @@ export function attachInteractiveState(
             OBSERVATION_SCOPE_ID,
           )}. Area facts are not properties of that component unless an object in the state says so, and this packet does not report whether the component sits inside that area. If a fact cannot be attributed to the referenced component, say which part of the activity it describes instead of guessing.`
         : resolved
-          ? `The student referenced a slide element. Any page-reported facts below describe the whole declared activity area ${JSON.stringify(
+          ? `The student referenced a ${resolved.reference.kind === 'whiteboard_element' ? 'whiteboard' : 'slide'} element. Any page-reported facts below describe the whole declared activity area ${JSON.stringify(
               OBSERVATION_SCOPE_ID,
-            )} of the current Scene, not properties of the referenced slide element. The sample does not select any component in that activity.`
+            )} of the current Scene, not properties of the referenced ${resolved.reference.kind === 'whiteboard_element' ? 'whiteboard' : 'slide'} element. The sample does not select any component in that activity.`
           : `No component is referenced this turn. Any page-reported facts below describe the whole declared activity area ${JSON.stringify(
               OBSERVATION_SCOPE_ID,
             )} and identify no particular component. Do not treat them as a selection, and do not carry a reference over from an earlier turn.`,
-      ...(resolved && resolved.reference.sceneId !== body.storeState.currentSceneId
+      ...(resolved &&
+      resolved.reference.kind !== 'whiteboard_element' &&
+      resolved.reference.sceneId !== body.storeState.currentSceneId
         ? [
             'The referenced component and the page-reported facts below come from different Scenes: the component was referenced on another Scene, while the state was sampled from the Scene the student is on now. Do not report the state below as a property of that component, and do not assume the component is present on the current Scene.',
           ]

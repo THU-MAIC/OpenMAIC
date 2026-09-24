@@ -18,6 +18,7 @@ import {
 } from '@/lib/types/chat';
 import type { DiscussionRequest } from '@/components/roundtable';
 import type { Action } from '@/lib/types/action';
+import type { Stage } from '@/lib/types/stage';
 import type { UIMessage } from 'ai';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { useStageStore } from '@/lib/store';
@@ -42,6 +43,7 @@ import { isPiChatEnabled } from '@/lib/config/feature-flags';
 import type { CleanupSource } from '@/lib/playback/auto-resume';
 import { nanoid } from 'nanoid';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
+import { isWhiteboardReferenceAvailable } from '@/lib/whiteboard/element-reference';
 import { refreshWhiteboardRuntimeProjection } from '@/lib/whiteboard/runtime/browser-projection';
 
 const log = createLogger('ChatSessions');
@@ -440,6 +442,21 @@ export async function runPiSingleRequest(
     controller.signal,
   );
   if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+  const reference = requestTemplate.elementReference;
+  if (reference?.kind === 'whiteboard_element') {
+    const canvas = useCanvasStore.getState();
+    // Check the snapshot POSTed below; a runtime projection disables referencing.
+    if (
+      canvas.whiteboardClearing ||
+      !isWhiteboardReferenceAvailable(
+        reference,
+        requestTemplate.storeState.stage as Stage | null,
+        canvas.runtimeWhiteboardProjection,
+      )
+    ) {
+      throw new Error(t('chat.elementReference.whiteboardChanged'));
+    }
+  }
   const response = await fetch('/api/chat/pi', {
     method: 'POST',
     headers: withStageRoutesHeader({ 'Content-Type': 'application/json' }),
@@ -448,6 +465,12 @@ export async function runPiSingleRequest(
   });
 
   if (!response.ok) {
+    if (reference?.kind === 'whiteboard_element') {
+      const errorBody = await response.json().catch(() => null);
+      if (errorBody?.reason === 'whiteboard_reference_changed') {
+        throw new Error(t('chat.elementReference.whiteboardChanged'));
+      }
+    }
     throw new Error(`Pi chat request failed: ${response.status}`);
   }
   if (!response.body) {

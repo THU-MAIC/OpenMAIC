@@ -42,7 +42,7 @@ test('actual classroom component reference samples declared area state on send w
 
   // Arming must still present the component picker; a declared state interface
   // never replaces per-component selection with a whole-area reference.
-  const referenceButton = page.getByRole('button', { name: 'Reference courseware' });
+  const referenceButton = page.getByRole('button', { name: 'Reference content' });
   await referenceButton.click();
   await expect(referenceButton).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('slide-element-reference-pill')).toBeHidden();

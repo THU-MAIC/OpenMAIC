@@ -142,11 +142,12 @@
       "streamInterrupted": "資料串流意外中斷,討論未能完成。請重新嘗試。"
     },
     "elementReference": {
-      "button": "引用課件",
-      "unavailable": "僅可引用目前的 PPT 頁面或支援的互動元件",
-      "instruction": "點選一個課件元素 · Esc 退出",
-      "fallback": "其他課件元素（{{count}}）",
-      "clear": "取消課件引用",
+      "whiteboardChanged": "引用的白板元素已變更或無法使用，請重新選擇或移除引用後再傳送。",
+      "button": "引用內容",
+      "unavailable": "目前內容暫不支援元素引用",
+      "instruction": "點擊一個元素 · Esc 退出",
+      "fallback": "其他元素（{{count}}）",
+      "clear": "取消引用",
       "summary": {
         "noText": "無文字",
         "emptyContent": "無內容",

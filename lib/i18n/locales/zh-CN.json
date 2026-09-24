@@ -142,11 +142,12 @@
       "streamInterrupted": "数据流意外中断,讨论未能完成。请重新尝试。"
     },
     "elementReference": {
-      "button": "引用课件",
-      "unavailable": "仅可引用当前 PPT 页面或受支持的互动组件",
-      "instruction": "点击一个课件元素 · Esc 退出",
-      "fallback": "其他课件元素（{{count}}）",
-      "clear": "取消课件引用",
+      "whiteboardChanged": "引用的白板元素已变化或不可用，请重新选择或移除引用后再发送。",
+      "button": "引用内容",
+      "unavailable": "当前内容暂不支持元素引用",
+      "instruction": "点击一个元素 · Esc 退出",
+      "fallback": "其他元素（{{count}}）",
+      "clear": "取消引用",
       "summary": {
         "noText": "无文字",
         "emptyContent": "无内容",

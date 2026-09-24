@@ -14,18 +14,32 @@ import zhTW from '@/lib/i18n/locales/zh-TW.json';
 
 const locales = { arSA, deDE, enUS, esMX, frFR, jaJP, koKR, ptBR, ruRU, viVN, zhCN, zhTW };
 const coursewareInstructions: Record<keyof typeof locales, string> = {
-  arSA: 'انقر على عنصر في المادة التعليمية · Esc للخروج',
-  deDE: 'Kursmaterialelement anklicken · Esc zum Beenden',
-  enUS: 'Click a courseware element · Esc to exit',
-  esMX: 'Haz clic en un elemento del material del curso · Esc para salir',
-  frFR: 'Cliquez sur un élément du support de cours · Échap pour quitter',
-  jaJP: '教材要素をクリック · Esc で終了',
-  koKR: '강의 자료 요소를 클릭하세요 · Esc로 종료',
-  ptBR: 'Clique em um elemento do material do curso · Esc para sair',
-  ruRU: 'Нажмите на элемент учебного материала · Esc для выхода',
-  viVN: 'Nhấp vào một phần tử trong học liệu · Esc để thoát',
-  zhCN: '点击一个课件元素 · Esc 退出',
-  zhTW: '點選一個課件元素 · Esc 退出',
+  arSA: 'انقر على عنصر · Esc للخروج',
+  deDE: 'Element anklicken · Esc zum Beenden',
+  enUS: 'Click an element · Esc to exit',
+  esMX: 'Haz clic en un elemento · Esc para salir',
+  frFR: 'Cliquez sur un élément · Échap pour quitter',
+  jaJP: '要素をクリック · Esc で終了',
+  koKR: '요소 클릭 · Esc로 종료',
+  ptBR: 'Clique em um elemento · Esc para sair',
+  ruRU: 'Нажмите на элемент · Esc для выхода',
+  viVN: 'Nhấp vào phần tử · Esc để thoát',
+  zhCN: '点击一个元素 · Esc 退出',
+  zhTW: '點擊一個元素 · Esc 退出',
+};
+const clearLabels: Record<keyof typeof locales, string> = {
+  arSA: 'إزالة الإشارة',
+  deDE: 'Referenz entfernen',
+  enUS: 'Remove reference',
+  esMX: 'Quitar referencia',
+  frFR: 'Retirer la référence',
+  jaJP: '参照を解除',
+  koKR: '참조 제거',
+  ptBR: 'Remover referência',
+  ruRU: 'Удалить ссылку',
+  viVN: 'Xóa tham chiếu',
+  zhCN: '取消引用',
+  zhTW: '取消引用',
 };
 const referenceKeys = [
   'button',
@@ -33,6 +47,7 @@ const referenceKeys = [
   'instruction',
   'fallback',
   'clear',
+  'whiteboardChanged',
   'summary.noText',
   'summary.emptyContent',
   'summary.code',
@@ -88,6 +103,7 @@ describe('courseware element reference locale coverage', () => {
       expect((value as string).trim(), `${code} has an empty edit.element.${key}`).not.toBe('');
     }
 
+    expect(data.chat.elementReference.clear).toBe(clearLabels[code as keyof typeof locales]);
     expect(typeof data.edit.sceneType.interactive).toBe('string');
     expect(data.edit.sceneType.interactive.trim()).not.toBe('');
   });
