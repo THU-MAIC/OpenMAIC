@@ -1392,6 +1392,7 @@
     "providerVoxCPMTTS": "VoxCPM2",
     "providerDoubaoTTS": "豆包 TTS 2.0（火山引擎）",
     "providerElevenLabsTTS": "ElevenLabs TTS",
+    "providerSpeechifyTTS": "Speechify TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerLemonadeTTS": "Lemonade TTS（本機）",
     "providerBrowserNativeTTS": "瀏覽器原生 TTS",

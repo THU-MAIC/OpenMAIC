@@ -30,6 +30,7 @@ const TTS_PROVIDER_NAME_KEYS: Record<string, string> = {
   'voxcpm-tts': 'settings.providerVoxCPMTTS',
   'doubao-tts': 'settings.providerDoubaoTTS',
   'elevenlabs-tts': 'settings.providerElevenLabsTTS',
+  'speechify-tts': 'settings.providerSpeechifyTTS',
   'minimax-tts': 'settings.providerMiniMaxTTS',
   'lemonade-tts': 'settings.providerLemonadeTTS',
   'browser-native-tts': 'settings.providerBrowserNativeTTS',

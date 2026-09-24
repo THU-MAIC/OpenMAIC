@@ -12,6 +12,7 @@
  * - MiniMax TTS: https://platform.minimaxi.com/docs/api-reference/speech-t2a-http
  * - Doubao TTS: https://www.volcengine.com/docs/6561/1257543
  * - ElevenLabs TTS: https://elevenlabs.io/docs/api-reference/text-to-speech/convert
+ * - Speechify TTS: https://docs.speechify.ai/build/api-reference/v1/audio/stream
  * - Browser Native: Web Speech API (client-side only)
  *
  * HOW TO ADD A NEW PROVIDER:
@@ -313,6 +314,8 @@ export async function generateTTS(
         return await generateDoubaoTTS(config, text, signal);
       case 'elevenlabs-tts':
         return await generateElevenLabsTTS(config, text, signal);
+      case 'speechify-tts':
+        return await generateSpeechifyTTS(config, text, signal);
 
       case 'lemonade-tts':
         return await generateLemonadeTTS(config, text, signal);
@@ -1177,6 +1180,55 @@ async function generateElevenLabsTTS(
   }
 
   return await validateTTSAudioResponse(response, 'ElevenLabs', requestedFormat);
+}
+
+/**
+ * Speechify TTS implementation (stream endpoint, returns raw audio bytes)
+ */
+async function generateSpeechifyTTS(
+  config: TTSModelConfig,
+  text: string,
+  signal: AbortSignal,
+): Promise<TTSGenerationResult> {
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['speechify-tts'].defaultBaseUrl || '').replace(
+    /\/$/,
+    '',
+  );
+  const requestedFormat = config.format || 'mp3';
+  const acceptMap: Record<string, string> = {
+    mp3: 'audio/mpeg',
+    ogg: 'audio/ogg',
+    aac: 'audio/aac',
+  };
+  // The API has no speed field; rate goes through SSML prosody instead.
+  const ratePercent = Math.round(((config.speed || 1.0) - 1.0) * 100);
+  const input =
+    ratePercent === 0
+      ? text
+      : `<speak><prosody rate="${ratePercent > 0 ? '+' : ''}${ratePercent}%">${escapeXml(text)}</prosody></speak>`;
+
+  const response = await ttsFetch(config.publicOnly, `${baseUrl}/audio/stream`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json; charset=utf-8',
+      Accept: acceptMap[requestedFormat] || acceptMap.mp3,
+    },
+    body: JSON.stringify({
+      input,
+      voice_id: config.voice,
+      model: config.modelId || 'simba-3.2',
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throwIfTtsRateLimited('Speechify', response.status, response.headers?.get('retry-after'));
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`Speechify TTS API error: ${errorText || response.statusText}`);
+  }
+
+  return await validateTTSAudioResponse(response, 'Speechify', requestedFormat);
 }
 
 /**

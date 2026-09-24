@@ -38,6 +38,7 @@ const TTS_PREFIXES = [
   'TTS_VOXCPM',
   'TTS_DOUBAO',
   'TTS_ELEVENLABS',
+  'TTS_SPEECHIFY',
   'TTS_LEMONADE',
   'TTS_MINIMAX',
 ] as const;
