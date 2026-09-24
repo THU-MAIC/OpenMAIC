@@ -83,6 +83,31 @@ describe('owner identity validation at boot', () => {
     expect(validateOwnerIdentityConfiguration()).toBe('configured');
   });
 
+  it.each(['OWNER_AUTHENTICATOR', 'TRUSTED_PROXY_SECRET', 'TRUSTED_PROXY_USER_HEADER'])(
+    'fails the register() hook when the removed %s is set',
+    async (variable) => {
+      vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+      vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+      vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
+      vi.stubEnv(variable, 'anything');
+      const { register } = await import('@/instrumentation');
+
+      await expect(register()).rejects.toThrow(
+        new RegExp(`${variable} is set, but the built-in gateway-header authenticator was removed`),
+      );
+    },
+  );
+
+  it('ignores a removed variable that is set but blank', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
+    vi.stubEnv('OWNER_AUTHENTICATOR', ' ');
+    const { register } = await import('@/instrumentation');
+
+    await expect(register()).resolves.toBeUndefined();
+  });
+
   it('boots with the default configuration', async () => {
     vi.stubEnv('NEXT_RUNTIME', 'nodejs');
     vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');

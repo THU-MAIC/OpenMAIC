@@ -168,6 +168,7 @@ export const anonymousCookieMethod: OwnerAuthMethod = {
   name: 'anonymousCookie',
   authenticate: async (req) => authenticateAnonymousRequest(req),
   authenticateFromContext: authenticateAnonymousContext,
+  issuesAnonymousOwners: true,
   describeStoredOwner: (ownerId) =>
     isAnonymousCookieOwnerId(ownerId) ? { kind: 'anonymous', roles: NO_ROLES } : undefined,
   // Dropping a retired cookie is all recovery takes: the next request mints

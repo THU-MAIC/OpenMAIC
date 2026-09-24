@@ -119,13 +119,25 @@ export interface OwnerAuthRequest {
  *
  * - `authenticated`: its credential is present and valid; `principal` is the
  *   owner. Resolution stops here.
- * - `not-applicable`: no credential of its kind is present. Core asks the next
- *   method, and after the last one falls back to the anonymous cookie (when
- *   enabled).
+ * - `not-applicable`: no credential of its kind is present at all. Core asks
+ *   the next method, and after the last one falls back to the anonymous
+ *   cookie (when enabled).
  * - `invalid`: its credential is present but invalid (bad signature, expired,
- *   wrong audience). Core refuses the request with 401 `INVALID_CREDENTIAL`
- *   at once: no later method and no anonymous fallback is asked, so a broken
- *   credential can never quietly become a different identity.
+ *   wrong audience, malformed). Core refuses the request with 401
+ *   `INVALID_CREDENTIAL` at once: no later method and no anonymous fallback is
+ *   asked, so a broken credential can never quietly become a different
+ *   identity.
+ *
+ * Core cannot tell the two apart itself: a method that answers
+ * `not-applicable` for a malformed, expired or otherwise unusable credential
+ * of its own kind (its header or cookie is there, but it cannot use it)
+ * silently downgrades that request to the next method or to an anonymous
+ * owner. Answer `invalid` whenever the credential is present; answer
+ * `not-applicable` only when it is absent.
+ *
+ * A method that cannot decide (its key endpoint is down, its session store
+ * is unreachable) throws: the request fails as a server error, and neither a
+ * later method nor the fallback is asked.
  */
 export type OwnerAuthMethodResult =
   | {
@@ -182,11 +194,18 @@ export interface OwnerAuthMethod {
    */
   describeStoredOwner?(ownerId: string): StoredOwnerDescription | undefined;
   /**
-   * `Set-Cookie` values that drop this method's credential. Sent with every
-   * `403 OWNER_RETIRED`, so a browser stops presenting an anonymous identity
-   * a claim retired. Implement it only for a method that authenticates
-   * `kind: 'anonymous'` principals with a cookie; a method for signed-in
-   * accounts leaves it out (a claim never retires an account).
+   * Whether this method authenticates `kind: 'anonymous'` principals itself
+   * (a host's own guest or device cookie). Only such a method's
+   * {@link clearCredential} is ever sent with a `403 OWNER_RETIRED`; for any
+   * other method core never calls it there, so an account session cookie is
+   * never cleared because some anonymous identity was retired.
+   */
+  readonly issuesAnonymousOwners?: boolean;
+  /**
+   * `Set-Cookie` values that drop this method's anonymous credential. Sent
+   * with every `403 OWNER_RETIRED`, so a browser stops presenting an anonymous
+   * identity a claim retired — only when {@link issuesAnonymousOwners} is
+   * `true`. A throw is logged and skipped, so the 403 still goes out.
    */
   clearCredential?(): readonly string[];
 }

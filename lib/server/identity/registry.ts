@@ -2,7 +2,12 @@ import { anonymousCookieMethod } from './anonymous-cookie';
 import { isSharedTeamAuthMethod, resolveSharedOwnerId, sharedTeamAuthMethod } from './shared-team';
 import { resolveClaimLockWaitMs, resolveWriteLockWaitMs } from '@/lib/persistence/owner-lock-waits';
 
+import { createLogger } from '@/lib/logger';
+
+import { assertNoRetiredIdentityConfiguration } from './retired-config';
 import type { OwnerAuthMethod, StoredOwnerDescription } from './types';
+
+const log = createLogger('OwnerIdentity');
 
 /**
  * Which {@link OwnerAuthMethod}s this process resolves owners with.
@@ -70,7 +75,7 @@ function configurationFromEnvironment(): OwnerAuthConfiguration {
 
 const METHOD_SHAPE =
   '{ name, authenticate(req), authenticateFromContext?(), describeStoredOwner?(ownerId), ' +
-  'clearCredential?() }';
+  'issuesAnonymousOwners?: boolean, clearCredential?() }';
 
 function assertMethodShape(method: OwnerAuthMethod, index: number): void {
   const valid =
@@ -81,7 +86,9 @@ function assertMethodShape(method: OwnerAuthMethod, index: number): void {
     typeof method.authenticate === 'function' &&
     (['authenticateFromContext', 'describeStoredOwner', 'clearCredential'] as const).every(
       (hook) => method[hook] === undefined || typeof method[hook] === 'function',
-    );
+    ) &&
+    (method.issuesAnonymousOwners === undefined ||
+      typeof method.issuesAnonymousOwners === 'boolean');
   if (!valid) {
     throw new Error(`configureOwnerAuthentication: methods[${index}] must be ${METHOD_SHAPE}.`);
   }
@@ -219,13 +226,23 @@ export function pendingClaimClearCookies(): readonly string[] {
 
 /**
  * `Set-Cookie` values sent with every `403 OWNER_RETIRED`: the anonymous
- * cookie's, and those of any configured method that declares
- * `clearCredential` (one that authenticates anonymous principals itself).
+ * cookie's, and the `clearCredential` of each configured method that declares
+ * `issuesAnonymousOwners: true`. No other method's hook is called, so an
+ * account's own session cookie is never cleared here. A hook that throws is
+ * logged and skipped: the refusal must still reach the browser.
  */
 export function retiredOwnerClearCookies(): readonly string[] {
   const cookies = [...pendingClaimClearCookies()];
   for (const method of ownerAuthConfigurationForResolution().methods) {
-    for (const cookie of method.clearCredential?.() ?? []) cookies.push(cookie);
+    if (method.issuesAnonymousOwners !== true || !method.clearCredential) continue;
+    try {
+      const values = method.clearCredential();
+      if (Array.isArray(values)) {
+        for (const value of values) if (typeof value === 'string') cookies.push(value);
+      }
+    } catch (error) {
+      log.error(`Owner auth method ${method.name} failed to clear its credential`, error);
+    }
   }
   return cookies;
 }
@@ -248,6 +265,7 @@ export function validateOwnerIdentityConfiguration(): OwnerIdentityMode {
       `OWNER_CLAIM_TRIGGER must be "explicit" or "auto", got ${JSON.stringify(trigger)}.`,
     );
   }
+  assertNoRetiredIdentityConfiguration();
   // Read on every owner write and claim: a malformed value must stop the
   // server here, not fail each write as a 500.
   resolveWriteLockWaitMs();

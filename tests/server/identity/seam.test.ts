@@ -413,18 +413,55 @@ describe('Server Actions', () => {
 });
 
 describe('retired credentials', () => {
-  it('clear the anonymous cookie, plus any method that declares clearCredential', () => {
-    const cleared = 'guest_session=; Path=/; Max-Age=0';
+  const guestCleared = 'guest_session=; Path=/; Max-Age=0';
+  const accountCleared = 'account_session=; Path=/; Max-Age=0';
+
+  it('clear the anonymous cookie and methods that issue anonymous owners, never an account session', () => {
+    const account = {
+      ...headerMethod('account', 'x-account'),
+      clearCredential: vi.fn(() => [accountCleared]),
+    };
     configureOwnerAuthentication({
       methods: [
-        headerMethod('bearer', 'authorization'),
-        { ...headerMethod('guest', 'x-guest'), clearCredential: () => [cleared] },
+        account,
+        {
+          ...headerMethod('guest', 'x-guest'),
+          issuesAnonymousOwners: true,
+          clearCredential: () => [guestCleared],
+        },
       ],
     });
     expect(retiredOwnerClearCookies()).toEqual([
       'anonymous_id=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
-      cleared,
+      guestCleared,
     ]);
+    expect(account.clearCredential).not.toHaveBeenCalled();
+  });
+
+  it('skip a clearCredential that throws, so the refusal still goes out', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    configureOwnerAuthentication({
+      methods: [
+        {
+          ...headerMethod('guest', 'x-guest'),
+          issuesAnonymousOwners: true,
+          clearCredential: () => {
+            throw new Error('boom');
+          },
+        },
+      ],
+    });
+    expect(retiredOwnerClearCookies()).toEqual([
+      'anonymous_id=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    ]);
+  });
+
+  it('refuse a non-boolean issuesAnonymousOwners', () => {
+    expect(() =>
+      configureOwnerAuthentication({
+        methods: [{ ...headerMethod('guest', 'x-guest'), issuesAnonymousOwners: 'yes' as never }],
+      }),
+    ).toThrow(/methods\[0\]/);
   });
 });
 
