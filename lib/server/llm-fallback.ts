@@ -2,9 +2,9 @@
  * Retryable-failure model fallback (PR #1614).
  *
  * A small, operator-configured safety net for generation calls: when a call
- * fails with a retryable error (timeout, empty output, network, quota 429,
- * capacity 503), retry once on a different model. Configuration lives on the
- * server like the existing routes:
+ * fails with a retryable failure (SDK-classified transient error, timeout,
+ * empty output, network error, quota 429, capacity 503), retry once on a
+ * different model. Configuration lives on the server like the existing routes:
  *
  *   MODEL_ROUTES='{"scene-content":{"model":"openai:gpt-5.4","fallback":"qwen:deepseek-v4-pro"}}'
  *   MODEL_FALLBACK='qwen:deepseek-v4-pro'   # optional global fallback
@@ -19,13 +19,13 @@
  * stays safe to bundle wherever it is transitively imported.
  */
 
+import { APICallError, RetryError } from 'ai';
 import type { LanguageModel } from 'ai';
 import type { LlmStage } from '@/lib/server/model-routes';
 import { getStageRoute } from '@/lib/server/model-routes';
 import { getModel, parseModelString } from '@/lib/ai/providers';
 import { resolveApiKey, resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
-
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('LLM Fallback');
@@ -66,44 +66,60 @@ export async function resolveFallbackModel(source: string): Promise<FallbackReso
 }
 
 /**
+ * Unwrap the AI SDK retry chain down to the innermost reportable error.
+ *
+ * `maxRetries` retries exhaust as a `RetryError` whose `lastError` (and
+ * `errors[]`) hold the original provider failure; an `APICallError` in turn may
+ * nest the HTTP failure itself in `cause`. Walk all three, cycle-safe.
+ */
+function unwrapRetryChain(error: unknown, seen: Set<unknown> = new Set()): unknown {
+  if (!(error instanceof Error) || seen.has(error)) return error;
+  seen.add(error);
+  if (RetryError.isInstance(error)) {
+    const last = error.lastError ?? error.errors?.[error.errors.length - 1];
+    return unwrapRetryChain(last, seen);
+  }
+  const cause = (error as { cause?: unknown }).cause;
+  return cause instanceof Error ? unwrapRetryChain(cause, seen) : error;
+}
+
+/** Explicit network-transport signal in a message (fetch-level failures). */
+const NETWORK_ERROR_RE =
+  /Cannot connect to API|failed to connect|ECONN|ENOTFOUND|EAI_AGAIN|UND_ERR|socket hang up|fetch failed|timed ?out|timeout/i;
+
+/**
  * Whether an error falls into the retryable set that may trigger a fallback.
  *
- * Retryable: upstream capacity/timing (408 timeout, 429 quota, 5xx), and
- * transport-level network failures. Anything else — 4xx validation/auth,
- * unknown non-AI errors — is kept as-is so the fallback never hides the real
- * cause (a bad prompt or a mis-keyed provider would only reproduce elsewhere).
+ * Decision order, matching what the AI SDK actually throws:
+ * 1. `APICallError.isRetryable` — the SDK already classifies upstream
+ *    rejections (quota/capacity/timeout are retryable; content-safety, auth
+ *    and other 4xx are not). Network errors stay retryable regardless.
+ * 2. Numeric status codes: 408, 409, 429, or >= 500.
+ * 3. Explicit network-transport signals in the message (e.g. the SDK's
+ *    "Cannot connect to API: connect ECONNRESET" from a maxRetries=0 call).
+ *
+ * Anything else — validation/auth 4xx without a retryable flag, unknown
+ * non-AI errors, programming errors — is kept as-is so the fallback never hides
+ * the real cause (a bad prompt or a mis-keyed provider would only reproduce
+ * elsewhere).
  */
 export function isRetryableLlmError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
+  const err = unwrapRetryChain(error);
+  if (!(err instanceof Error)) return false;
 
-  const asAny = error as { name?: unknown; statusCode?: unknown };
-  const statusCode = typeof asAny.statusCode === 'number' ? asAny.statusCode : undefined;
-
-  if (statusCode !== undefined) {
-    if (
-      statusCode === 408 ||
-      statusCode === 429 ||
-      statusCode === 500 ||
-      statusCode === 502 ||
-      statusCode === 503 ||
-      statusCode === 504
-    ) {
-      return true;
-    }
-    // 400/401/403/404 … are not transient — do not fall back.
-    return false;
+  if (APICallError.isInstance(err)) {
+    // A transport failure is transient even if the flag is unset or false
+    // (some providers wrap a TypeError as APICallError).
+    if (NETWORK_ERROR_RE.test(err.message)) return true;
+    if (typeof err.isRetryable === 'boolean') return err.isRetryable;
   }
 
-  if (asAny.name === 'AI_APICallError' || asAny.name === 'APICallError') {
-    // API error without a numeric status: treat as non-transient, except
-    // message-level timeout signals some runtimes report this way.
-    return /timeout|timed ?out/i.test(error.message);
+  const statusCode = (err as { statusCode?: unknown }).statusCode;
+  if (typeof statusCode === 'number') {
+    return statusCode === 408 || statusCode === 409 || statusCode === 429 || statusCode >= 500;
   }
 
-  // Transport-level failures surface as TypeErrors (fetch) or with connection
-  // codes (undici). Unknown errors are conservative: fail in place.
-  if (error instanceof TypeError) return true;
-  return /ECONN|ENOTFOUND|ECONNRESET|UND_ERR|socket hang up|timeout/i.test(error.message);
+  return NETWORK_ERROR_RE.test(err.message);
 }
 
 /**
