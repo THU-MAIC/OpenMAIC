@@ -769,6 +769,61 @@ describe('PPT element reference Route → Director → real call_agent L2', () =
     };
   }
 
+  it.each(['wrong-source', 'wrong-scene', 'malformed-packet'] as const)(
+    'does not label %s state errors as a changed whiteboard reference',
+    async (scenario) => {
+      const activity = runtimeBody();
+      const whiteboard = whiteboardBody();
+      const body = {
+        ...activity,
+        storeState: { ...activity.storeState, stage: whiteboard.storeState.stage },
+        elementReference: whiteboard.elementReference,
+      };
+      if (scenario === 'wrong-source') body.interactiveState.sourceHtmlHash = '0'.repeat(64);
+      if (scenario === 'wrong-scene')
+        body.interactiveState.snapshot.identity.sceneId = 'scene-other';
+      if (scenario === 'malformed-packet')
+        Object.assign(body.interactiveState.snapshot, { status: 'invalid' });
+
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(body));
+      expect(response.status).toBe(400);
+      const error = await response.json();
+      expect(error).toMatchObject({
+        errorCode: 'INVALID_REQUEST',
+        error:
+          scenario === 'malformed-packet'
+            ? 'Invalid interactive state packet'
+            : 'Interactive state does not match the current Scene source',
+      });
+      expect(error).not.toHaveProperty('reason');
+      expect(response.headers.has('X-OpenMAIC-Element-Reference-Accepted')).toBe(false);
+      expect(mocks.resolveModel).not.toHaveBeenCalled();
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      expect(mocks.streamLLM).not.toHaveBeenCalled();
+    },
+  );
+
+  it('passes a valid state packet together with a whiteboard reference to the Teacher', async () => {
+    const activity = runtimeBody();
+    const whiteboard = whiteboardBody();
+    installAgentShell('Whiteboard and activity answer.');
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(
+      makeRequest({
+        ...activity,
+        storeState: { ...activity.storeState, stage: whiteboard.storeState.stage },
+        elementReference: whiteboard.elementReference,
+      }),
+    );
+    await response.text();
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBe('1');
+    const prompts = mocks.legacyChildPrompts.join('\n');
+    expect(prompts).toContain('Whiteboard-only fact.');
+    expect(prompts).toContain('"density":1400');
+  });
+
   it.each(['Legacy', 'Native'] as const)(
     'passes whiteboard evidence through the real route and call_agent to %s Teacher',
     async (mode) => {
