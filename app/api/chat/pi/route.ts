@@ -50,12 +50,12 @@ export async function POST(req: NextRequest) {
     return apiError('INVALID_REQUEST', 404, 'Pi chat runtime is disabled');
   }
 
-  // Like every owner-resolving route, a request whose credential the owner
-  // authenticator rejects is refused here, before any model work. With the
-  // default anonymous authenticator resolution always succeeds, so this only
-  // refuses requests under an authenticator that can reject (a gateway
-  // without its secret, say). Memoized, so the whiteboard branch below reuses
-  // this resolution.
+  // Like every owner-resolving route, a request whose credential an owner
+  // auth method refuses is refused here, before any model work. With the
+  // default anonymous fallback resolution always succeeds, so this only
+  // refuses requests under a host method that can reject (an expired token,
+  // say) or with the fallback off. Memoized, so the whiteboard branch below
+  // reuses this resolution.
   const owner = await resolveRequestOwner(req);
   if (!owner.ok) {
     return invalidOwnerCredentialResponse();

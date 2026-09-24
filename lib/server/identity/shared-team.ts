@@ -23,9 +23,15 @@
  *
  * Unset — the default — changes nothing: every request keeps resolving to its
  * cookie partition.
+ *
+ * It is a method like any other (`./registry.ts`): with no host registration,
+ * setting the variable makes it the only method; a host that registers its
+ * own methods and wants the team owner too includes {@link sharedTeamAuthMethod}
+ * last in its list. It has no credential, so it always authenticates: nothing
+ * after it is ever asked, including the anonymous fallback.
  */
 
-import type { OwnerAuthenticator, OwnerPrincipal } from './types';
+import type { OwnerAuthMethod, OwnerAuthMethodResult, OwnerPrincipal } from './types';
 import { OWNER_ROLES } from './types';
 
 const SHARED_OWNER_ENV = 'PERSISTENCE_SHARED_OWNER_ID';
@@ -34,7 +40,7 @@ const SHARED_OWNER_ENV = 'PERSISTENCE_SHARED_OWNER_ID';
  * The value becomes an owner id and part of material object keys, so it is
  * restricted to characters that survive that path unchanged. `:` is excluded,
  * which also rules out the `anon:` namespace of the anonymous cookie
- * authenticator — an id there would alias onto a cookie owner.
+ * method — an id there would alias onto a cookie owner.
  */
 const SHARED_OWNER_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 
@@ -81,27 +87,49 @@ export function resolveSharedOwnerId(): string | undefined {
 
 const SHARED_ROLES: ReadonlySet<string> = new Set<string>([OWNER_ROLES.coursePublish]);
 
+const SHARED_TEAM_METHOD = Symbol.for('openmaic.owner-identity.shared-team-method');
+
+/** Whether `method` is the built-in from {@link sharedTeamAuthMethod}. */
+export function isSharedTeamAuthMethod(method: OwnerAuthMethod): boolean {
+  return (method as { [SHARED_TEAM_METHOD]?: true })[SHARED_TEAM_METHOD] === true;
+}
+
+function sharedOwnerIdOrThrow(): string {
+  const ownerId = resolveSharedOwnerId();
+  // Boot validation refuses a registration that includes this method without
+  // the variable; reaching here means it was unset after boot.
+  if (!ownerId) throw new Error(`sharedTeam is registered but ${SHARED_OWNER_ENV} is not set.`);
+  return ownerId;
+}
+
 /**
- * Create the `sharedTeam` authenticator for an already validated shared owner
- * id (see {@link resolveSharedOwnerId}): every request resolves to that id with
- * `kind: 'shared'` and the `course:publish` role, and no cookie is minted — there
- * is nothing to remember per browser. The access-code middleware in front of it
- * is what admits a request; this authenticator has no credential of its own, so
- * `assurance` is `unverified-legacy`.
+ * The `sharedTeam` method: every request resolves to the validated
+ * `PERSISTENCE_SHARED_OWNER_ID` (see {@link resolveSharedOwnerId}) with
+ * `kind: 'shared'` and the `course:publish` role, and no cookie is minted —
+ * there is nothing to remember per browser. The access-code middleware in
+ * front of it is what admits a request; the method has no credential of its
+ * own, so `assurance` is `unverified-legacy`, it never answers
+ * `not-applicable`, and core never attaches a claim candidate to its
+ * principal (nothing in the request proves which person is behind it).
+ *
+ * The id is read from the environment per call, like the variable itself.
  */
-export function createSharedTeamAuthenticator(ownerId: string): OwnerAuthenticator {
-  const principal = {
-    ownerId,
-    kind: 'shared',
-    roles: SHARED_ROLES,
-    assurance: 'unverified-legacy',
-  } satisfies OwnerPrincipal;
-  const outcome = { ok: true, principal } as const;
+export function sharedTeamAuthMethod(): OwnerAuthMethod {
+  const authenticate = async (): Promise<OwnerAuthMethodResult> => ({
+    status: 'authenticated',
+    principal: {
+      ownerId: sharedOwnerIdOrThrow(),
+      kind: 'shared',
+      roles: SHARED_ROLES,
+      assurance: 'unverified-legacy',
+    } satisfies OwnerPrincipal,
+  });
   return {
+    [SHARED_TEAM_METHOD]: true,
     name: 'sharedTeam',
-    authenticate: async () => outcome,
-    authenticateFromContext: async () => outcome,
+    authenticate,
+    authenticateFromContext: authenticate,
     describeStoredOwner: (storedId) =>
-      storedId === ownerId ? { kind: 'shared', roles: SHARED_ROLES } : undefined,
-  };
+      storedId === resolveSharedOwnerId() ? { kind: 'shared', roles: SHARED_ROLES } : undefined,
+  } as OwnerAuthMethod;
 }

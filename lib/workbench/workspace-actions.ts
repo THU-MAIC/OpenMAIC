@@ -6,7 +6,7 @@ import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 /**
  * Server Action mutation used by the workspace row menu.
  *
- * The owner comes from the same authenticator the routes use, through its
+ * The owner comes from the same auth methods the routes use, through their
  * Server Action entry point (a Server Action has no `Request`): with the
  * built-ins, the deployment-wide shared owner when one is configured,
  * otherwise the anonymous cookie, minted here when absent. So the workspace

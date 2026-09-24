@@ -3,7 +3,7 @@
  * `POST /api/identity/claim`, the runtime contract's learner merge route, and
  * the automatic trigger (`OWNER_CLAIM_TRIGGER=auto`).
  */
-import { getOwnerAuthenticator } from '@/lib/server/identity/registry';
+import { pendingClaimClearCookies } from '@/lib/server/identity/registry';
 import type { OwnerPrincipal } from '@/lib/server/identity/types';
 
 import {
@@ -111,7 +111,7 @@ export type PendingClaimOutcome =
 
 /**
  * Run the claim `principal.pendingClaim` names, and say which cookies to send
- * back: the authenticator's `clearPendingClaim` values once the anonymous
+ * back: the anonymous cookie's clearing values once the anonymous
  * credential is spent. A failure that is not a refusal (the database is down)
  * throws, and nothing is cleared.
  */
@@ -119,7 +119,7 @@ export async function runPendingClaim(
   principal: OwnerPrincipal,
   options: Pick<ClaimOwnerOptions, 'provider'> = {},
 ): Promise<PendingClaimOutcome> {
-  const clear = () => getOwnerAuthenticator().clearPendingClaim?.() ?? [];
+  const clear = pendingClaimClearCookies;
   try {
     const result = await claimPendingOwner(principal, options);
     return { ok: true, result, setCookies: clear() };

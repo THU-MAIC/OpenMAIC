@@ -6,7 +6,7 @@
  * a request parameter, and all reads and writes go through the owner-bound
  * document store (`getOwnerScopedDocumentStore`), the same seam the runner
  * binds for the stage tools. A stage created here is visible to this owner
- * (with the default authenticator, this browser) and to nobody else.
+ * (with the default anonymous owner, this browser) and to nobody else.
  *
  * The configured runtime gates the whole family: these routes serve the
  * workbench, which is agent-runtime territory, so a runtime that is off OR

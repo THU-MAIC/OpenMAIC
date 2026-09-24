@@ -1,24 +1,48 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { OwnerAuthenticator, OwnerPrincipal } from '@/lib/server/identity/types';
+const mocks = vi.hoisted(() => ({ requestHeaders: new Headers() }));
+vi.mock('next/headers', () => ({
+  headers: async () => mocks.requestHeaders,
+  cookies: async () => ({ get: () => undefined, set: vi.fn() }),
+}));
+
+import type {
+  OwnerAuthMethod,
+  OwnerAuthRequest,
+  OwnerPrincipal,
+} from '@/lib/server/identity/types';
 
 /**
- * The claim candidate on the principal, and what core knows about a stored
- * owner id: which built-ins set `pendingClaim` and when, the shape check core
- * applies to it, and `principalFromStoredOwner`.
+ * The claim candidate core attaches to a principal, and what core knows about
+ * a stored owner id: when `pendingClaim` is set and when it is not, and
+ * `principalFromStoredOwner` across the methods.
  */
 
-const SECRET = 'pending-claim-secret-0123456789abcdef012345';
 const ANON_UUID = '7e2d1b3c-4a5f-4b6e-8c7d-9e0f1a2b3c4d';
 const ANON = `anon:${ANON_UUID}`;
 
-function gatewayRequest(cookie?: string): Request {
+/** `x-session: <user>` signs `user:<user>` in; `x-session: guest-<n>` is the host's own anonymous visitor. */
+const sessionMethod: OwnerAuthMethod = {
+  name: 'session',
+  authenticate: async (req: OwnerAuthRequest) => {
+    const user = req.headers.get('x-session');
+    if (!user) return { status: 'not-applicable' };
+    const principal: OwnerPrincipal = user.startsWith('guest-')
+      ? { ownerId: user, kind: 'anonymous', roles: new Set(), assurance: 'minted' }
+      : { ownerId: `user:${user}`, kind: 'user', roles: new Set(), assurance: 'verified' };
+    return { status: 'authenticated', principal };
+  },
+  describeStoredOwner: (ownerId) =>
+    ownerId.startsWith('guest-')
+      ? { kind: 'anonymous' }
+      : ownerId.startsWith('user:')
+        ? { kind: 'user', roles: new Set(['course:publish']) }
+        : undefined,
+};
+
+function sessionRequest(cookie?: string, user = 'alice'): Request {
   return new Request('http://localhost/api/stages', {
-    headers: {
-      'x-openmaic-proxy-secret': SECRET,
-      'x-forwarded-user': 'alice',
-      ...(cookie ? { cookie } : {}),
-    },
+    headers: { 'x-session': user, ...(cookie ? { cookie } : {}) },
   });
 }
 
@@ -29,33 +53,52 @@ async function principalOf(request: Request): Promise<OwnerPrincipal> {
   return outcome.principal;
 }
 
+async function register(anonymousFallback?: boolean): Promise<void> {
+  const { configureOwnerAuthentication } = await import('@/lib/server/identity/registry');
+  configureOwnerAuthentication({ methods: [sessionMethod], anonymousFallback });
+}
+
 describe('pendingClaim and stored owners', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.unstubAllEnvs();
     vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
-    vi.stubEnv('OWNER_AUTHENTICATOR', '');
-    vi.stubEnv('TRUSTED_PROXY_SECRET', '');
+    mocks.requestHeaders = new Headers();
   });
 
   afterEach(async () => {
-    const { resetOwnerAuthenticatorForTests } = await import('@/lib/server/identity/registry');
-    resetOwnerAuthenticatorForTests();
+    const { resetOwnerAuthenticationForTests } = await import('@/lib/server/identity/registry');
+    resetOwnerAuthenticationForTests();
     vi.unstubAllEnvs();
   });
 
-  describe('trustedProxyHeader', () => {
-    beforeEach(() => {
-      vi.stubEnv('OWNER_AUTHENTICATOR', 'trusted-proxy');
-      vi.stubEnv('TRUSTED_PROXY_SECRET', SECRET);
-    });
-
-    it('names the anonymous cookie owner presented beside the gateway user', async () => {
-      const principal = await principalOf(gatewayRequest(`theme=dark; anonymous_id=${ANON_UUID}`));
-      expect(principal.ownerId).toBe('proxy:alice');
+  describe('a host method', () => {
+    it('gets the anonymous cookie owner presented beside it as the claim candidate', async () => {
+      await register();
+      const principal = await principalOf(sessionRequest(`theme=dark; anonymous_id=${ANON_UUID}`));
+      expect(principal.ownerId).toBe('user:alice');
       expect(principal.pendingClaim).toEqual({
         fromOwnerId: ANON,
         assurance: 'unverified-legacy',
+      });
+    });
+
+    it('gets one with the anonymous fallback off too: earlier anonymous work stays claimable', async () => {
+      await register(false);
+      const principal = await principalOf(sessionRequest(`anonymous_id=${ANON_UUID}`));
+      expect(principal.pendingClaim?.fromOwnerId).toBe(ANON);
+    });
+
+    it('gets one in a Server Action', async () => {
+      await register();
+      mocks.requestHeaders = new Headers({
+        'x-session': 'alice',
+        cookie: `anonymous_id=${ANON_UUID}`,
+      });
+      const { requireContextOwner } = await import('@/lib/server/identity/resolve');
+      await expect(requireContextOwner()).resolves.toMatchObject({
+        ownerId: 'user:alice',
+        pendingClaim: { fromOwnerId: ANON },
       });
     });
 
@@ -64,29 +107,40 @@ describe('pendingClaim and stored owners', () => {
       ['a malformed cookie', 'anonymous_id=not-a-uuid'],
       ['a UUID that is not v4', 'anonymous_id=7e2d1b3c-4a5f-1b6e-8c7d-9e0f1a2b3c4d'],
       ['another cookie only', 'session=abc'],
-    ])('sets none with %s', async (_label, cookie) => {
-      const principal = await principalOf(gatewayRequest(cookie));
+    ])('gets none with %s', async (_label, cookie) => {
+      await register();
+      const principal = await principalOf(sessionRequest(cookie));
       expect(principal.pendingClaim).toBeUndefined();
     });
 
-    it('describes stored gateway and anonymous ids', async () => {
+    it('gets none for an anonymous principal of its own', async () => {
+      await register();
+      const principal = await principalOf(sessionRequest(`anonymous_id=${ANON_UUID}`, 'guest-1'));
+      expect(principal).toMatchObject({ ownerId: 'guest-1', kind: 'anonymous' });
+      expect(principal.pendingClaim).toBeUndefined();
+    });
+
+    it('describes stored ids after the anonymous cookie method', async () => {
+      await register();
       const { principalFromStoredOwner } = await import('@/lib/server/identity/stored-owner');
-      const user = principalFromStoredOwner('proxy:alice');
+      const user = principalFromStoredOwner('user:alice');
       expect(user).toMatchObject({ kind: 'user', assurance: 'unverified-legacy' });
       expect([...user.roles]).toEqual(['course:publish']);
+      expect(principalFromStoredOwner('guest-1').kind).toBe('anonymous');
       expect(principalFromStoredOwner(ANON).kind).toBe('anonymous');
-      expect(principalFromStoredOwner('proxy:').kind).toBe('user');
+      expect(principalFromStoredOwner('tablet-1').kind).toBe('user');
     });
 
     it('drops the anonymous cookie once a claim is spent', async () => {
-      const { getOwnerAuthenticator } = await import('@/lib/server/identity/registry');
-      expect(getOwnerAuthenticator().clearPendingClaim?.()).toEqual([
+      await register();
+      const { pendingClaimClearCookies } = await import('@/lib/server/identity/registry');
+      expect(pendingClaimClearCookies()).toEqual([
         'anonymous_id=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
       ]);
     });
   });
 
-  it('the anonymous built-in never sets one, even with a cookie', async () => {
+  it('the anonymous fallback never gets one, even with a cookie', async () => {
     const principal = await principalOf(
       new Request('http://localhost/', { headers: { cookie: `anonymous_id=${ANON_UUID}` } }),
     );
@@ -94,7 +148,7 @@ describe('pendingClaim and stored owners', () => {
     expect(principal.pendingClaim).toBeUndefined();
   });
 
-  it('the shared-team built-in never sets one, and describes its own id', async () => {
+  it('the shared-team built-in never gets one, and describes its own id', async () => {
     vi.stubEnv('ACCESS_CODE', 'team-code');
     vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', 'team');
     const principal = await principalOf(
@@ -108,72 +162,11 @@ describe('pendingClaim and stored owners', () => {
     expect(principalFromStoredOwner(ANON).kind).toBe('anonymous');
   });
 
-  it('describes an id no authenticator recognizes as a user with no roles', async () => {
+  it('describes an id no method recognizes as a user with no roles', async () => {
     const { principalFromStoredOwner } = await import('@/lib/server/identity/stored-owner');
     const principal = principalFromStoredOwner('device:kiosk-1');
     expect(principal).toMatchObject({ ownerId: 'device:kiosk-1', kind: 'user' });
     expect(principal.roles.size).toBe(0);
     expect(() => principalFromStoredOwner('has space')).toThrow(/storable/);
-  });
-
-  it('asks a configured authenticator to describe stored ids', async () => {
-    const { configureOwnerAuthenticator } = await import('@/lib/server/identity/registry');
-    configureOwnerAuthenticator({
-      name: 'host',
-      authenticate: async () => ({ ok: false, status: 401, code: 'INVALID_CREDENTIAL' }),
-      describeStoredOwner: (ownerId) =>
-        ownerId.startsWith('guest-') ? { kind: 'anonymous' } : { kind: 'device' },
-    });
-    const { principalFromStoredOwner } = await import('@/lib/server/identity/stored-owner');
-    expect(principalFromStoredOwner('guest-1').kind).toBe('anonymous');
-    expect(principalFromStoredOwner('tablet-1').kind).toBe('device');
-  });
-
-  it.each<[string, Partial<OwnerPrincipal>]>([
-    [
-      'a pendingClaim on an anonymous principal',
-      { kind: 'anonymous', pendingClaim: { fromOwnerId: 'guest-2', assurance: 'minted' } },
-    ],
-    [
-      'a pendingClaim naming the owner itself',
-      { pendingClaim: { fromOwnerId: 'user-1', assurance: 'minted' } },
-    ],
-    [
-      'a pendingClaim.fromOwnerId outside',
-      { pendingClaim: { fromOwnerId: 'has space', assurance: 'minted' } },
-    ],
-    [
-      'a pendingClaim with an unknown assurance',
-      { pendingClaim: { fromOwnerId: 'guest-2', assurance: 'strong' as never } },
-    ],
-  ])('refuses an authenticator that returns %s', async (problem, override) => {
-    const { configureOwnerAuthenticator } = await import('@/lib/server/identity/registry');
-    const authenticator: OwnerAuthenticator = {
-      name: 'host',
-      authenticate: async () => ({
-        ok: true,
-        principal: {
-          ownerId: 'user-1',
-          kind: 'user',
-          roles: new Set(),
-          assurance: 'verified',
-          ...override,
-        },
-      }),
-    };
-    configureOwnerAuthenticator(authenticator);
-    const { resolveRequestOwner } = await import('@/lib/server/identity/resolve');
-    await expect(resolveRequestOwner(new Request('http://localhost/'))).rejects.toThrow(problem);
-  });
-
-  it('refuses a configured authenticator whose optional hooks are not functions', async () => {
-    const { configureOwnerAuthenticator } = await import('@/lib/server/identity/registry');
-    expect(() =>
-      configureOwnerAuthenticator({
-        name: 'host',
-        authenticate: async () => ({ ok: false, status: 401, code: 'INVALID_CREDENTIAL' }),
-        describeStoredOwner: 'nope' as never,
-      }),
-    ).toThrow(/describeStoredOwner/);
   });
 });

@@ -136,14 +136,13 @@ describe('resolveServerAsset', () => {
     expect(mocks.assetStoreResolve).toHaveBeenCalledTimes(1);
   });
 
-  it('reports unauthenticated when the owner authenticator rejects the credential', async () => {
-    const { configureOwnerAuthenticator } = await import('@/lib/server/identity');
-    const { resetOwnerAuthenticatorForTests } = await import('@/lib/server/identity/registry');
+  it('reports unauthenticated when an owner auth method rejects the credential', async () => {
+    const { configureOwnerAuthentication } = await import('@/lib/server/identity');
+    const { resetOwnerAuthenticationForTests } = await import('@/lib/server/identity/registry');
     // Earlier cases resolved owners through the built-ins; start from a clean registry.
-    resetOwnerAuthenticatorForTests();
-    configureOwnerAuthenticator({
-      name: 'rejecting',
-      authenticate: async () => ({ ok: false, status: 401, code: 'INVALID_CREDENTIAL' }),
+    resetOwnerAuthenticationForTests();
+    configureOwnerAuthentication({
+      methods: [{ name: 'rejecting', authenticate: async () => ({ status: 'invalid' }) }],
     });
     try {
       const resolution = await resolveServerAsset(ASSET_ID, ownerRequest());
@@ -151,7 +150,7 @@ describe('resolveServerAsset', () => {
       expect(resolution).toEqual({ status: 'unauthenticated' });
       expect(mocks.assetStoreResolve).not.toHaveBeenCalled();
     } finally {
-      resetOwnerAuthenticatorForTests();
+      resetOwnerAuthenticationForTests();
     }
   });
 

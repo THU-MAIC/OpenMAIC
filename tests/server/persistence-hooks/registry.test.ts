@@ -263,7 +263,6 @@ describe('boot validation', () => {
     vi.stubEnv('NEXT_RUNTIME', 'nodejs');
     vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
     vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
-    vi.stubEnv('OWNER_AUTHENTICATOR', '');
     vi.stubEnv('ASSET_BYTE_EGRESS', 'redirect');
     configureAssetByteStore(store);
     const { register } = await import('@/instrumentation');

@@ -6,11 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
-import type { AuthOutcome, OwnerAuthenticator } from '@/lib/server/identity/types';
+import type { OwnerAuthMethod } from '@/lib/server/identity/types';
 
 /**
  * The seam end to end: real routes, a real (in-memory) database, no mocked
- * owner resolution. One half registers a host authenticator and checks that it
+ * owner resolution. One half registers a host auth method and checks that it
  * alone decides who owns what across the persistence route, `/api/stages` and
  * publish; the other half pins that the built-ins still decide publish exactly
  * as before — refused for an anonymous cookie owner, allowed for the shared
@@ -60,19 +60,19 @@ function ownerStore(pool: PGlitePool, ownerId: string) {
   });
 }
 
-const INVALID: AuthOutcome = { ok: false, status: 401, code: 'INVALID_CREDENTIAL' };
-
 /**
  * `x-test-user: <name>` is a signed-in user who may publish, `x-test-user: bad`
- * an invalid credential. No anonymous fallback: a missing header is refused too.
+ * an invalid credential. Registered without the anonymous fallback, so a
+ * missing header is refused too.
  */
-const headerAuthenticator: OwnerAuthenticator = {
+const headerMethod: OwnerAuthMethod = {
   name: 'test-header',
-  authenticate: async (req): Promise<AuthOutcome> => {
+  authenticate: async (req) => {
     const user = req.headers.get('x-test-user');
-    if (!user || user === 'bad') return INVALID;
+    if (!user) return { status: 'not-applicable' };
+    if (user === 'bad') return { status: 'invalid' };
     return {
-      ok: true,
+      status: 'authenticated',
       principal: {
         ownerId: `user:${user}`,
         kind: 'user',
@@ -103,8 +103,8 @@ describe('owner identity seam through the routes', () => {
   });
 
   afterEach(async () => {
-    const { resetOwnerAuthenticatorForTests } = await import('@/lib/server/identity/registry');
-    resetOwnerAuthenticatorForTests();
+    const { resetOwnerAuthenticationForTests } = await import('@/lib/server/identity/registry');
+    resetOwnerAuthenticationForTests();
     await pool.end();
     vi.unstubAllEnvs();
   });
@@ -136,9 +136,9 @@ describe('owner identity seam through the routes', () => {
     );
   }
 
-  it('lets a configured authenticator decide ownership for persistence, /api/stages and publish', async () => {
-    const { configureOwnerAuthenticator } = await import('@/lib/server/identity');
-    configureOwnerAuthenticator(headerAuthenticator);
+  it('lets a host auth method decide ownership for persistence, /api/stages and publish', async () => {
+    const { configureOwnerAuthentication } = await import('@/lib/server/identity');
+    configureOwnerAuthentication({ methods: [headerMethod], anonymousFallback: false });
     const stageId = 'stage-seam-host';
 
     const created = await persistence(`/documents/${stageId}`, 'alice', {
@@ -169,8 +169,8 @@ describe('owner identity seam through the routes', () => {
   });
 
   it('answers an invalid credential with 401 on every surface, never as an anonymous owner', async () => {
-    const { configureOwnerAuthenticator } = await import('@/lib/server/identity');
-    configureOwnerAuthenticator(headerAuthenticator);
+    const { configureOwnerAuthentication } = await import('@/lib/server/identity');
+    configureOwnerAuthentication({ methods: [headerMethod], anonymousFallback: false });
     const stageId = 'stage-seam-invalid';
     await ownerStore(pool, 'user:alice').saveDocument(courseDocument(stageId));
 

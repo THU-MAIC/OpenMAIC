@@ -4,12 +4,11 @@ import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Cookie parsing lives only inside the authenticator, and authorization never
- * reads meaning into the shape of an owner id.
+ * Cookie parsing lives only inside the owner auth methods, and authorization
+ * never reads meaning into the shape of an owner id.
  *
  * Owner identity is resolved in exactly one place (`lib/server/identity/`), so
- * a host that registers its own authenticator changes identity everywhere at
- * once. A route that read the anonymous owner cookie itself, or decided
+ * a host that registers its own methods changes identity everywhere at once. A route that read the anonymous owner cookie itself, or decided
  * something from an `anon:` prefix, would silently keep the old identity in
  * that one place. These scans make such a regression fail here instead.
  */
@@ -47,11 +46,6 @@ const ANON_PREFIX_CHECK = new RegExp(
 );
 
 /**
- * The concrete built-ins. Only the registry's default wiring (inside
- * `lib/server/identity/`) may use them: anywhere else would pin that code to
- * the built-in identity and bypass a host's configured authenticator.
- */
-/**
  * The retired runtime identity: a client-chosen learner key header behind a
  * development bearer token that shipped in the public bundle. The runtime
  * learner key is the resolved owner id now; code that read either of these
@@ -61,14 +55,13 @@ const RETIRED_CLIENT_IDENTITY =
   /x-learner-key|PERSISTENCE_DEV_TOKEN|NEXT_PUBLIC_PERSISTENCE_TOKEN|PERSISTENCE_ALLOW_INSECURE_DEV_AUTH/i;
 
 /**
- * Identity asserted by a gateway: the trusted-proxy built-in's default header
- * names, the identity header families common gateways set (oauth2-proxy,
- * Authelia, Authentik, Azure App Service authentication, Cloudflare Access,
- * Google IAP, AWS ALB OIDC and similar), the gateway secret header and the
- * built-in's configuration. Such a
- * header is trustworthy only after the secret check in
- * `lib/server/identity/trusted-proxy.ts`; code that read one anywhere else
- * would take a client-chosen user at its word.
+ * Identity asserted by a gateway: the identity header families common gateways
+ * set (oauth2-proxy, Authelia, Authentik, Azure App Service authentication,
+ * Cloudflare Access, Google IAP, AWS ALB OIDC and similar). Such a header is
+ * trustworthy only after a host auth method verified it (a signed assertion
+ * checked against the identity provider's keys), and a host keeps that method
+ * inside `lib/server/identity/`; code that read one anywhere else would take a
+ * client-chosen user at its word.
  */
 const GATEWAY_IDENTITY = new RegExp(
   [
@@ -82,14 +75,28 @@ const GATEWAY_IDENTITY = new RegExp(
     String.raw`x-goog-authenticated-user-`,
     String.raw`x-goog-iap-jwt-assertion`,
     String.raw`x-amzn-oidc-`,
-    String.raw`x-openmaic-proxy-secret`,
-    String.raw`TRUSTED_PROXY_`,
   ].join('|'),
   'i',
 );
 
+/**
+ * The internals of owner resolution: the built-in methods, the anonymous
+ * cookie parser and clearer, and the resolved method list. Only
+ * `lib/server/identity/` may use them: anywhere else could ask a method
+ * directly (and read its credential) outside core's ordering and 401 rules,
+ * or pin that code to the built-in identity. Hosts use the index
+ * (`configureOwnerAuthentication`, `sharedTeamAuthMethod`).
+ */
 const BUILT_IN_IMPORT =
-  /createAnonymousCookieAuthenticator|createSharedTeamAuthenticator|createTrustedProxyAuthenticator|resolveSharedOwnerId|resolveTrustedProxyConfig|identity\/(?:anonymous-cookie|shared-team|trusted-proxy)['"]/;
+  /anonymousCookieMethod|readAnonymousOwnerId|clearAnonymousCookieHeader|isAnonymousCookieOwnerId|resolveSharedOwnerId|isSharedTeamAuthMethod|ownerAuthConfigurationForResolution|identity\/(?:anonymous-cookie|shared-team)['"]/;
+
+/**
+ * The configuration of the removed built-in gateway-header authenticator.
+ * Nothing may read it any more, inside `lib/server/identity/` or out: a
+ * deployment that still sets it gets no identity from it, and the recipe in
+ * the README replaces it.
+ */
+const RETIRED_GATEWAY_CONFIG = /TRUSTED_PROXY_|\bOWNER_AUTHENTICATOR\b/;
 
 function packageSourceDirs(): string[] {
   const dirs: string[] = [];
@@ -133,8 +140,9 @@ describe('owner identity boundary', () => {
     expect(cookieModule).toMatch(/anonymous_id/);
     const registry = readFileSync(join(ROOT, IDENTITY_MODULE, 'registry.ts'), 'utf8');
     expect(registry).toMatch(BUILT_IN_IMPORT);
-    const trustedProxy = readFileSync(join(ROOT, IDENTITY_MODULE, 'trusted-proxy.ts'), 'utf8');
-    expect(trustedProxy).toMatch(GATEWAY_IDENTITY);
+    expect('const x = process.env.TRUSTED_PROXY_SECRET;').toMatch(RETIRED_GATEWAY_CONFIG);
+    expect("env('OWNER_AUTHENTICATOR')").toMatch(RETIRED_GATEWAY_CONFIG);
+    expect('import { readAnonymousOwnerId }').toMatch(BUILT_IN_IMPORT);
   });
 
   it.each([
@@ -143,7 +151,6 @@ describe('owner identity boundary', () => {
     "headers.get('x-forwarded-email')",
     "headers.get('x-auth-request-user')",
     "headers.get('Remote-User')",
-    "headers.get('x-openmaic-proxy-secret')",
     "headers.get('X-Forwarded-Preferred-Username')",
     "headers.get('x-authentik-username')",
     "headers.get('X-authentik-groups')",
@@ -156,7 +163,6 @@ describe('owner identity boundary', () => {
     "headers.get('x-goog-iap-jwt-assertion')",
     "headers.get('x-amzn-oidc-identity')",
     "headers.get('X-Amzn-Oidc-Data')",
-    'process.env.TRUSTED_PROXY_SECRET',
   ])('recognizes the gateway identity read %s', (code) => {
     expect(code).toMatch(GATEWAY_IDENTITY);
   });
@@ -201,7 +207,17 @@ describe('owner identity boundary', () => {
     expect(offenders(GATEWAY_IDENTITY)).toEqual([]);
   });
 
-  it('keeps the concrete built-in authenticators inside lib/server/identity', () => {
+  it('keeps the built-in methods and resolution internals inside lib/server/identity', () => {
     expect(offenders(BUILT_IN_IMPORT)).toEqual([]);
+  });
+
+  it('reads no configuration of the removed gateway-header authenticator anywhere', () => {
+    const everywhere = [...SCANNED.flatMap(sourceFiles), '.env.example'];
+    expect(everywhere.some((file) => file.startsWith(IDENTITY_MODULE))).toBe(true);
+    expect(
+      everywhere.filter((file) =>
+        RETIRED_GATEWAY_CONFIG.test(readFileSync(join(ROOT, file), 'utf8')),
+      ),
+    ).toEqual([]);
   });
 });

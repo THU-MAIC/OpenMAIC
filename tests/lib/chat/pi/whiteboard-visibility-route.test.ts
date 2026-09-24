@@ -21,8 +21,8 @@ function request(
 describe('whiteboard visibility callback route', () => {
   beforeEach(() => vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', ''));
   afterEach(async () => {
-    const { resetOwnerAuthenticatorForTests } = await import('@/lib/server/identity/registry');
-    resetOwnerAuthenticatorForTests();
+    const { resetOwnerAuthenticationForTests } = await import('@/lib/server/identity/registry');
+    resetOwnerAuthenticationForTests();
     vi.unstubAllEnvs();
   });
 
@@ -64,13 +64,12 @@ describe('whiteboard visibility callback route', () => {
     await expect(pending).resolves.toBe('open');
   });
 
-  it('answers 401 for a credential the owner authenticator rejects', async () => {
-    const { configureOwnerAuthenticator } = await import('@/lib/server/identity');
-    const { resetOwnerAuthenticatorForTests } = await import('@/lib/server/identity/registry');
-    resetOwnerAuthenticatorForTests();
-    configureOwnerAuthenticator({
-      name: 'rejecting',
-      authenticate: async () => ({ ok: false, status: 401, code: 'INVALID_CREDENTIAL' }),
+  it('answers 401 for a credential an owner auth method rejects', async () => {
+    const { configureOwnerAuthentication } = await import('@/lib/server/identity');
+    const { resetOwnerAuthenticationForTests } = await import('@/lib/server/identity/registry');
+    resetOwnerAuthenticationForTests();
+    configureOwnerAuthentication({
+      methods: [{ name: 'rejecting', authenticate: async () => ({ status: 'invalid' }) }],
     });
     const { POST } = await import('@/app/api/chat/pi/whiteboard-visibility/route');
 

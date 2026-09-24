@@ -16,9 +16,9 @@ function jsonError(status: number, code: string, message: string, headers: Heade
  * browser used before signing in to the signed-in owner, and retire the
  * anonymous identity (`lib/persistence/owner-claims.ts`).
  *
- * - Needs a request the configured authenticator resolves to a non-anonymous
- *   owner that carries a `pendingClaim` (the trusted-proxy built-in sets one
- *   when the gateway user also holds an anonymous owner cookie).
+ * - Needs a request a host auth method resolves to a non-anonymous owner that
+ *   carries a `pendingClaim` (core attaches one when the request also holds a
+ *   valid anonymous owner cookie).
  * - Same-origin only, with a JSON content type (`isSameOriginJsonRequest`):
  *   it acts on cookies, so no other site may make a browser send it.
  * - `200 { status: 'claimed', moved }` or `200 { status: 'already-claimed' }`,

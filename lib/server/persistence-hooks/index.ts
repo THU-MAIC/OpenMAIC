@@ -2,7 +2,7 @@
  * Host extension hooks: the host-facing surface.
  *
  * Registered once, from `instrumentation.ts` `register()`, next to the owner
- * authenticator:
+ * auth methods:
  *
  * ```ts
  * const { configurePersistenceHooks, configureAssetByteStore } =

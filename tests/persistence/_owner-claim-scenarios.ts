@@ -50,9 +50,9 @@ export interface ClaimScenarioPool extends TransactionSource {
 
 export const ANON = 'anon:0b5a3f4e-8c1d-4e2f-9a3b-1c2d3e4f5a6b';
 export const ANON_2 = 'anon:1c6b4f5e-9d2e-4f3a-8b4c-2d3e4f5a6b7c';
-export const ACCOUNT = 'proxy:alice';
-export const OTHER_ACCOUNT = 'proxy:carol';
-export const VIEWER = 'proxy:bob';
+export const ACCOUNT = 'user:alice';
+export const OTHER_ACCOUNT = 'user:carol';
+export const VIEWER = 'user:bob';
 const NOW = 1_800_000_000_000;
 const ISO_NOW = new Date(NOW).toISOString();
 
@@ -330,7 +330,7 @@ export async function fullClaimScenario(h: ClaimHarness): Promise<void> {
   });
 
   // Kinds come from the stored ids: `anon:<uuid v4>` is the anonymous
-  // built-in's, `proxy:alice` is not anonymous.
+  // built-in's, `user:alice` is described by no method, so it is a user.
   const result = await claimOwner(ANON, ACCOUNT, { provider: h.provider });
   expect(result).toEqual({
     status: 'claimed',
@@ -467,7 +467,7 @@ export async function claimRulesScenario(h: ClaimHarness): Promise<void> {
   await expect(refusal(claim(ACCOUNT, VIEWER))).resolves.toBe('SOURCE_NOT_ANONYMOUS');
   await expect(refusal(claim(ANON, ANON_2))).resolves.toBe('TARGET_ANONYMOUS');
   await expect(refusal(claim('', ACCOUNT))).resolves.toBe('INVALID_OWNER');
-  // An id the authenticator does not recognize is never anonymous.
+  // An id no auth method recognizes is never anonymous.
   await expect(refusal(claim('device:1', ACCOUNT))).resolves.toBe('SOURCE_NOT_ANONYMOUS');
 
   expect((await claim(ANON, ACCOUNT)).status).toBe('claimed');
@@ -479,19 +479,19 @@ export async function claimRulesScenario(h: ClaimHarness): Promise<void> {
 
   // No chains: a retired target, or a source that absorbed others.
   await h.pool.query(
-    `INSERT INTO owner_merges (from_owner_id, to_owner_id) VALUES ('proxy:old', 'proxy:new')`,
+    `INSERT INTO owner_merges (from_owner_id, to_owner_id) VALUES ('user:old', 'user:new')`,
   );
-  await expect(refusal(claim(ANON_2, 'proxy:old'))).resolves.toBe('TARGET_RETIRED');
+  await expect(refusal(claim(ANON_2, 'user:old'))).resolves.toBe('TARGET_RETIRED');
   await h.pool.query(`INSERT INTO owner_merges (from_owner_id, to_owner_id) VALUES ($1, $2)`, [
-    'proxy:someone',
+    'user:someone',
     ANON_2,
   ]);
   await expect(refusal(claim(ANON_2, ACCOUNT))).resolves.toBe('SOURCE_HAS_CLAIMS');
 
   // owner_merges holds claims of anonymous owners only: a row retiring any
   // other owner would be followed but not fenced, so reading it fails loudly.
-  await expect(canonicalizeOwner(h.pool as never, 'proxy:old')).rejects.toThrow(
-    /does not describe as anonymous/,
+  await expect(canonicalizeOwner(h.pool as never, 'user:old')).rejects.toThrow(
+    /do not describe as anonymous/,
   );
 }
 

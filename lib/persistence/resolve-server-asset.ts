@@ -6,8 +6,8 @@
  * documents and SDK clients may still name an existing entry.
  *
  * The resolution answers in five states so the route can map each to an honest
- * HTTP status: not configured (no `DATABASE_URL`), unauthenticated (the owner
- * authenticator rejected the request's credential), missing (no entry under
+ * HTTP status: not configured (no `DATABASE_URL`), unauthenticated (owner
+ * resolution refused the request), missing (no entry under
  * this id that this owner may read), too large (the recorded byte length
  * exceeds the caller-supplied cap, rejected before any bytes are read), or
  * resolved.
