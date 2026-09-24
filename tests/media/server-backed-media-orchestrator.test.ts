@@ -1374,10 +1374,13 @@ describe('server-backed classic media orchestrator', () => {
     });
 
     const first = generateMediaForOutlines(outlines, stageId);
-    // Give the second pass every chance to run: if it were not waiting, its
-    // collection loop is synchronous and element two is only `pending`, so it
-    // would have called the provider by now.
-    for (let tick = 0; tick < 50; tick += 1) await Promise.resolve();
+    // Give the second pass every chance to run: wait until the first pass is
+    // actually inside its commit — the moment the retry path launches its
+    // replacement — instead of assuming a fixed number of microtask hops, whose
+    // depth is a property of the runtime's async primitives rather than of this
+    // code. The second pass parks on its serialization wait before it is even
+    // observed here, so once the overlap exists the pass has issued nothing.
+    await vi.waitFor(() => expect(overlapping).toBeDefined());
     expect(providerCallCount()).toBe(callsWhenOverlappingStarted);
 
     releaseCommit?.();
@@ -1429,8 +1432,10 @@ describe('server-backed classic media orchestrator', () => {
 
     const first = new AbortController();
     const pass1 = generateMediaForOutlines(outlines, stageId, first.signal).catch(() => undefined);
-    await Promise.resolve();
-    await Promise.resolve();
+    // Park the first pass inside its provider call — the state the retry path
+    // aborts from — instead of counting microtask hops, whose depth is a
+    // property of the runtime's async primitives rather than of this code.
+    await vi.waitFor(() => expect(calls).toBe(1));
 
     // Verbatim what the retry path does, in one synchronous block.
     first.abort();
