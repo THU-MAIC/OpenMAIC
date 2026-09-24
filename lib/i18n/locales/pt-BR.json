@@ -1987,7 +1987,12 @@
     },
     "enableThisProvider": "Habilitar este provedor",
     "enableThisProviderHint": "Desativado, este provedor não aparece mais na configuração de modelos do curso.",
-    "more": "Mais ações"
+    "more": "Mais ações",
+    "providerLinks": {
+      "getApiKey": "Obter chave de API",
+      "domestic": "China continental",
+      "international": "Internacional"
+    }
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

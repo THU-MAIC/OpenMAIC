@@ -1987,7 +1987,12 @@
     },
     "enableThisProvider": "Enable this provider",
     "enableThisProviderHint": "When off, this provider no longer appears in Course Model Config.",
-    "more": "More actions"
+    "more": "More actions",
+    "providerLinks": {
+      "getApiKey": "Get API key",
+      "domestic": "Mainland",
+      "international": "International"
+    }
   },
   "workspace": {
     "untitledCourse": "Untitled course",

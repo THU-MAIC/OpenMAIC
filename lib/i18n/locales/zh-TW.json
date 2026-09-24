@@ -1972,7 +1972,12 @@
     },
     "enableThisProvider": "啟用此提供方",
     "enableThisProviderHint": "關閉後，此提供方不再出現在課程模型設定中",
-    "more": "更多操作"
+    "more": "更多操作",
+    "providerLinks": {
+      "getApiKey": "取得 API Key",
+      "domestic": "國內",
+      "international": "海外"
+    }
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

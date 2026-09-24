@@ -1987,7 +1987,12 @@
     },
     "enableThisProvider": "Bật nhà cung cấp này",
     "enableThisProviderHint": "Khi tắt, nhà cung cấp này sẽ không còn xuất hiện trong Cấu hình mô hình khóa học.",
-    "more": "Thao tác khác"
+    "more": "Thao tác khác",
+    "providerLinks": {
+      "getApiKey": "Lấy khóa API",
+      "domestic": "Trung Quốc",
+      "international": "Quốc tế"
+    }
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

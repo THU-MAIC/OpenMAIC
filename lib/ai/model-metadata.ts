@@ -397,6 +397,12 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('atlascloud', 'deepseek-ai/deepseek-v4-pro')]: deepseekEffort,
 
   [getModelMetadataKey('kimi', 'kimi-k3')]: kimiK3Effort,
+  // Kimi Coding Plan 的套餐模型 id（K3 家族与 K2.8 coding 系列）：与对应
+  // 官方目录条目同款思考能力，token plan 播种目录后行内思考控件可用。
+  [getModelMetadataKey('kimi', 'k3')]: kimiK3Effort,
+  [getModelMetadataKey('kimi', 'k3-256k')]: kimiK3Effort,
+  [getModelMetadataKey('kimi', 'kimi-for-coding')]: fixedThinkingCapability,
+  [getModelMetadataKey('kimi', 'kimi-for-coding-highspeed')]: fixedThinkingCapability,
   [getModelMetadataKey('kimi', 'kimi-k2.7-code')]: fixedThinkingCapability,
   [getModelMetadataKey('kimi', 'kimi-k2.7-code-highspeed')]: fixedThinkingCapability,
   [getModelMetadataKey('kimi', 'kimi-k2.6')]: toggleCapability('kimi'),

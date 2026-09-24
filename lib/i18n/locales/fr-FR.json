@@ -1987,7 +1987,12 @@
     },
     "enableThisProvider": "Activer ce service",
     "enableThisProviderHint": "Désactivé, ce service n'apparaît plus dans la configuration des modèles de cours.",
-    "more": "Plus d'actions"
+    "more": "Plus d'actions",
+    "providerLinks": {
+      "getApiKey": "Obtenir une clé API",
+      "domestic": "Chine",
+      "international": "International"
+    }
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

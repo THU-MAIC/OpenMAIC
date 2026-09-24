@@ -1987,7 +1987,12 @@
     },
     "enableThisProvider": "이 서비스 제공자 사용",
     "enableThisProviderHint": "끄면 이 서비스 제공자는 코스 모델 설정에 더 이상 표시되지 않습니다.",
-    "more": "더보기"
+    "more": "더보기",
+    "providerLinks": {
+      "getApiKey": "API 키 받기",
+      "domestic": "중국 본토",
+      "international": "해외"
+    }
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

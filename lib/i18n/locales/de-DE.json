@@ -1987,7 +1987,12 @@
     },
     "enableThisProvider": "Diesen Anbieter aktivieren",
     "enableThisProviderHint": "Ausgeschaltet erscheint dieser Anbieter nicht mehr in der Kursmodell-Konfiguration.",
-    "more": "Weitere Aktionen"
+    "more": "Weitere Aktionen",
+    "providerLinks": {
+      "getApiKey": "API-Key holen",
+      "domestic": "Festland",
+      "international": "International"
+    }
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

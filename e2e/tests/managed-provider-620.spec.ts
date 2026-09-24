@@ -71,6 +71,10 @@ test.describe('#620 managed providers are read-only', () => {
   test('managed provider (openai) hides the key / base-URL override inputs', async ({ page }) => {
     await openProviderSettings(page);
 
+    // The providers column defaults to the promoted provider (Kimi); select
+    // openai explicitly — it is server-managed in this mock.
+    await page.getByRole('button', { name: /^OpenAI/ }).click();
+
     // openai is the selected provider (store providerId) and is server-managed:
     // the override inputs must be absent.
     await expect(page.locator('input[name="llm-api-key-openai"]')).toHaveCount(0);

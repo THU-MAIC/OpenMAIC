@@ -882,3 +882,90 @@ describe('shared ownership regressions from re-review', () => {
     expect(writes.some(([, cfg]) => cfg.apiKey === 'sk-td')).toBe(true);
   });
 });
+
+// ── Kimi Coding Plan 接入（LLM-only、末位优先级、K2.8 主线）──
+describe('kimi coding plan preset', () => {
+  const kimi = TOKEN_PLAN_PRESETS.find((p) => p.id === 'kimi')!;
+  const tokendance = TOKEN_PLAN_PRESETS.find((p) => p.id === 'tokendance')!;
+
+  it('声明在 TOKEN_PLAN_PRESETS 末位（多套餐仲裁中优先级最低）', () => {
+    expect(TOKEN_PLAN_PRESETS[TOKEN_PLAN_PRESETS.length - 1].id).toBe('kimi');
+    expect(TOKEN_PLAN_PRESETS.indexOf(kimi)).toBeGreaterThan(
+      TOKEN_PLAN_PRESETS.indexOf(tokendance),
+    );
+  });
+
+  it('仅声明 LLM 模态（其他模态不点亮、不触碰）', () => {
+    expect(Object.keys(kimi.modalities)).toEqual(['llm']);
+  });
+
+  it('连接后主线与目录覆写为 kimi-for-coding，且不写任何媒体配置', () => {
+    const actions = makeActions();
+    applyTokenPlan(kimi, 'sk-kimi', actions);
+    // 凭证与目录是两次独立写入（applyModality 先写 key，seed 再写目录）。
+    expect(actions.setProviderConfig).toHaveBeenCalledWith(
+      'kimi',
+      expect.objectContaining({
+        apiKey: 'sk-kimi',
+        // Coding Plan 专属端点（review P0）：不是 Moonshot 开放平台地址。
+        baseUrl: 'https://api.kimi.com/coding/v1',
+        enabled: true,
+      }),
+    );
+    expect(actions.setProviderConfig).toHaveBeenCalledWith(
+      'kimi',
+      expect.objectContaining({
+        models: [
+          expect.objectContaining({ id: 'k3' }),
+          expect.objectContaining({ id: 'k3-256k' }),
+          expect.objectContaining({ id: 'kimi-for-coding' }),
+          expect.objectContaining({ id: 'kimi-for-coding-highspeed' }),
+        ],
+      }),
+    );
+    expect(actions.setModel).toHaveBeenCalledWith('kimi', 'kimi-for-coding');
+    expect(actions.setImageProviderConfig).not.toHaveBeenCalled();
+    expect(actions.setVideoProviderConfig).not.toHaveBeenCalled();
+    expect(actions.setTTSProviderConfig).not.toHaveBeenCalled();
+    expect(actions.setWebSearchProviderConfig).not.toHaveBeenCalled();
+    expect(actions.setTokenPlanEnrolled).toHaveBeenCalledWith('kimi', 'kimi');
+  });
+
+  it('有更高优先级套餐生效时，Kimi 让位主线（末位语义）', () => {
+    const actions = makeActions();
+    actions.getTokenPlanPriorityState = vi.fn(() => ({
+      tokenPlanEnrollments: { tokendance: 'tokendance' },
+      providersConfig: { tokendance: { apiKey: 'sk-td' } },
+    }));
+    applyTokenPlan(kimi, 'sk-kimi', actions);
+    // TokenDance 声明了主线模型 → Kimi 不抢占。
+    expect(actions.setModel).not.toHaveBeenCalled();
+    // 目录照写（kimi provider 是独占槽位）。
+    expect(actions.setProviderConfig).toHaveBeenCalled();
+  });
+
+  it('断开 kimi 套餐：内置 provider 完整还原（key 清空/isBuiltIn/注册表目录）', () => {
+    const actions = makeActions();
+    actions.getTokenPlanEnrollments = vi.fn(() => ({ kimi: 'kimi' }));
+    removeTokenPlan(kimi, actions);
+    const restores = (
+      (actions.setProviderConfig as unknown as ReturnType<typeof vi.fn>).mock.calls as Array<
+        [string, Record<string, unknown>]
+      >
+    ).filter(([id, cfg]) => id === 'kimi' && 'isBuiltIn' in cfg);
+    expect(restores).toHaveLength(1);
+    expect(restores[0][1].apiKey).toBe('');
+    expect(restores[0][1].isBuiltIn).toBe(true);
+    expect(restores[0][1].enabled).toBe(true);
+    expect(actions.setTokenPlanEnrolled).toHaveBeenCalledWith('kimi', null);
+  });
+
+  it('个人 key 场景：kimi 上有 key 但未 enrollment，不被当作已连接套餐', () => {
+    const state: TokenPlanEnrollmentState = {
+      tokenPlanEnrollments: {},
+      providersConfig: { kimi: { apiKey: 'sk-personal' } },
+    };
+    expect(isTokenPlanActive(kimi, state)).toBe(false);
+    expect(isTokenPlanUsable(kimi, state)).toBe(false);
+  });
+});

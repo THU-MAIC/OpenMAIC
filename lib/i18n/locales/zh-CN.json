@@ -1987,7 +1987,12 @@
     },
     "enableThisProvider": "启用此提供方",
     "enableThisProviderHint": "关闭后，此提供方不再出现在课程模型配置中",
-    "more": "更多操作"
+    "more": "更多操作",
+    "providerLinks": {
+      "getApiKey": "获取 API Key",
+      "domestic": "国内",
+      "international": "海外"
+    }
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

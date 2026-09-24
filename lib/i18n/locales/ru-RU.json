@@ -1987,7 +1987,12 @@
     },
     "enableThisProvider": "Включить этот сервис",
     "enableThisProviderHint": "В выключенном состоянии этот сервис больше не отображается в настройке моделей курса.",
-    "more": "Ещё действия"
+    "more": "Ещё действия",
+    "providerLinks": {
+      "getApiKey": "Получить API-ключ",
+      "domestic": "Китай",
+      "international": "Международный"
+    }
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

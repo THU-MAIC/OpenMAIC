@@ -500,17 +500,46 @@ export function TokenPlanSettings() {
                           <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
                         </a>
                       )}
-                      {selected.websiteUrl && (
-                        <a
-                          href={selected.websiteUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                        >
+                      {/* 有订阅入口（如 Kimi）的套餐：「管理账号」只是分组标签
+                          （纯文本），跳转交给后面的国内/海外链接；无订阅入口
+                          的套餐维持「管理账号」外链。 */}
+                      {selected.subscribeUrls ? (
+                        <span className="text-xs leading-5 text-muted-foreground">
                           {t(`${tp}.manageAccount`)}
-                          <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
-                        </a>
+                        </span>
+                      ) : (
+                        selected.websiteUrl && (
+                          <a
+                            href={selected.websiteUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {t(`${tp}.manageAccount`)}
+                            <ExternalLink className="size-3 shrink-0" aria-hidden="true" />{' '}
+                          </a>
+                        )
                       )}
+                      {/* 订阅入口（如 Kimi Coding Plan）：紧跟「管理账号」，
+                          国内/海外双链接（aff 跟随 preset 数据）。 */}
+                      {selected.subscribeUrls &&
+                        (
+                          [
+                            ['domestic', selected.subscribeUrls.domestic],
+                            ['international', selected.subscribeUrls.international],
+                          ] as const
+                        ).map(([region, url]) => (
+                          <a
+                            key={region}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {t(`settings.providerLinks.${region}`)}
+                            <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
+                          </a>
+                        ))}
                       {/* 授权层开关：关闭后此套餐不再出现在课程模型配置中
                           （凭证与连接保留）。未连接时不可开启。 */}
                       <Tooltip>

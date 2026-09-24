@@ -59,6 +59,12 @@ export interface TokenPlanPreset {
   name: string;
   /** Optional vendor/docs link. */
   websiteUrl?: string;
+  /**
+   * Optional plan subscription links (domestic / international). Rendered as a
+   * links row in the plan panel; `websiteUrl` stays the generic manage-account
+   * link.
+   */
+  subscribeUrls?: { domestic: string; international: string };
   /** Example key prefix shown in the settings input placeholder. */
   apiKeyPlaceholder?: string;
   /** Icon path under /public (optional). */
@@ -282,6 +288,43 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
         baseUrl: 'https://openspeech.bytedance.com/api/v3/plan/tts',
         defaultModelId: 'seed-tts-2.0',
         defaultModels: ['seed-tts-2.0'],
+      },
+    },
+  },
+  // ── Kimi Coding Plan（末位 = 最低优先级）────────────────────────────────
+  // LLM-only: the Coding Plan key authenticates against the plan's DEDICATED
+  // endpoint (https://www.kimi.com/code/docs/) — api.kimi.com/coding/v1,
+  // international api.kimi.ai/coding/v1 — NOT Moonshot's Open Platform
+  // (api.moonshot.cn/v1): sending plan keys there fails with
+  // "Not found the model kimi-for-coding or Permission denied" (review P0 on
+  // #1664). The plan rides the EXISTING `kimi` direct provider (dual identity,
+  // same slot as minimax/doubao — the enrollment marker keeps personal keys
+  // safe, and connecting the plan intentionally takes over the slot, see
+  // #1645); disconnect restores the registry default (Moonshot endpoint) for
+  // personal keys. Seeding overrides the mainline to K2.8 (official model id
+  // `kimi-for-coding`); every follow-mainline LLM station inherits it. No
+  // image/video/TTS/web-search adaptation: those modalities are simply not
+  // declared and stay untouched. Priority note: placed LAST in
+  // TOKEN_PLAN_PRESETS, so when any other plan is enabled, Kimi yields the
+  // mainline/stage slots to it.
+  {
+    id: 'kimi',
+    name: 'Kimi',
+    websiteUrl: 'https://www.kimi.com/code?aff=openmaic',
+    subscribeUrls: {
+      domestic: 'https://www.kimi.com/code?aff=openmaic',
+      international: 'https://www.kimi.ai/code?aff=openmaic',
+    },
+    apiKeyPlaceholder: 'sk-...',
+    icon: '/logos/kimi.png',
+    category: 'token_plan',
+    modalities: {
+      llm: {
+        providerId: 'kimi',
+        baseUrl: 'https://api.kimi.com/coding/v1',
+        apiFormat: 'openai',
+        defaultModels: ['k3', 'k3-256k', 'kimi-for-coding', 'kimi-for-coding-highspeed'],
+        defaultModelId: 'kimi-for-coding',
       },
     },
   },

@@ -54,6 +54,7 @@ import { PROVIDERS, MONO_LOGO_PROVIDERS } from '@/lib/ai/providers';
 import { cn } from '@/lib/utils';
 import { createCustomProviderSettings, modelInfoFromId } from './utils';
 import { ProviderList } from './provider-list';
+import { PINNED_PROVIDER_ID } from './provider-links';
 import { ProviderConfigPanel } from './provider-config-panel';
 import { PDFSettings } from './pdf-settings';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
@@ -285,7 +286,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const { t } = useI18n();
 
   // Get settings from store
-  const providerId = useSettingsStore((state) => state.providerId);
   const _modelId = useSettingsStore((state) => state.modelId);
   const providersConfig = useSettingsStore((state) => state.providersConfig);
   const pdfProviderId = useSettingsStore((state) => state.pdfProviderId);
@@ -325,7 +325,11 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const [asrBrowseId, setAsrBrowseId] = useState<ASRProviderId | null>(null);
   // 旧的七个模态面板只在 model-services 分区内按 tab 渲染；其它分区下为 null
   const serviceSection: ServiceTab | null = activeSection === 'model-services' ? serviceTab : null;
-  const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>(providerId);
+  // 语言模型列的默认选中：推广位（Kimi）而不是当前主线 provider——进面板
+  // 先看到的是运营主推的服务；用户点选其他 provider 后仍以点击为准。
+  const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>(
+    PINNED_PROVIDER_ID as ProviderId,
+  );
   const [selectedPdfProviderId, setSelectedPdfProviderId] = useState<PDFProviderId>(pdfProviderId);
   const [selectedWebSearchProviderId, setSelectedWebSearchProviderId] =
     useState<WebSearchProviderId>(webSearchProviderId);
@@ -592,7 +596,10 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   };
 
   const handleDeleteProvider = (pid: ProviderId) => {
-    if (providersConfig[pid]?.isBuiltIn) {
+    // 以注册表为准而非持久化的 isBuiltIn 标志：token plan 连接内置双身份
+    // provider（kimi/minimax/doubao/tokendance）时会写 isBuiltIn:false，若只看
+    // 标志会让内置 provider 在套餐接管期间变成可删除。
+    if (providersConfig[pid]?.isBuiltIn || PROVIDERS[pid]) {
       toast.error(t('settings.cannotDeleteBuiltIn'));
       return;
     }
@@ -602,6 +609,12 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const confirmDeleteProvider = () => {
     if (!providerToDelete) return;
     const pid = providerToDelete;
+    // 双保险：确认弹窗期间状态可能已变（如刚连上套餐的内置 provider）。
+    if (providersConfig[pid]?.isBuiltIn || PROVIDERS[pid]) {
+      toast.error(t('settings.cannotDeleteBuiltIn'));
+      setProviderToDelete(null);
+      return;
+    }
     const updatedConfig = { ...providersConfig };
     delete updatedConfig[pid];
     // setProvidersConfig re-resolves the global (providerId, modelId)
@@ -626,17 +639,20 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   };
 
   // Get all providers from providersConfig
-  const allProviders = Object.entries(providersConfig).map(([id, config]) => ({
-    id: id as ProviderId,
-    name: config.name,
-    type: config.type,
-    defaultBaseUrl: config.defaultBaseUrl,
-    icon: config.icon,
-    requiresApiKey: config.requiresApiKey,
-    apiKey: config.apiKey,
-    models: config.models,
-    isServerConfigured: config.isServerConfigured,
-  }));
+  // Kimi 推广位：置顶排序列表首位（稳定排序，其余保持原顺序）。
+  const allProviders = Object.entries(providersConfig)
+    .map(([id, config]) => ({
+      id: id as ProviderId,
+      name: config.name,
+      type: config.type,
+      defaultBaseUrl: config.defaultBaseUrl,
+      icon: config.icon,
+      requiresApiKey: config.requiresApiKey,
+      apiKey: config.apiKey,
+      models: config.models,
+      isServerConfigured: config.isServerConfigured,
+    }))
+    .sort((a, b) => Number(b.id === PINNED_PROVIDER_ID) - Number(a.id === PINNED_PROVIDER_ID));
 
   // Get header content based on section
   const getHeaderContent = () => {
@@ -702,7 +718,9 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         enabledFlag = cfg.enabled !== false;
         setProviderEnabled = (checked) =>
           setProviderConfig(selectedProviderId, { enabled: checked });
-        providerDeletable = !cfg.isBuiltIn;
+        // 删除入口的可见性同样以注册表为准：套餐接管内置双身份 provider
+        // 期间 isBuiltIn 被写为 false，不能因此露出删除入口。
+        providerDeletable = !cfg.isBuiltIn && !PROVIDERS[selectedProviderId];
         break;
       }
       case 'pdf': {

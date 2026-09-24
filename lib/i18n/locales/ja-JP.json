@@ -1987,7 +1987,12 @@
     },
     "enableThisProvider": "このプロバイダーを有効化",
     "enableThisProviderHint": "オフにすると、このプロバイダーはコースモデル設定に表示されなくなります。",
-    "more": "その他の操作"
+    "more": "その他の操作",
+    "providerLinks": {
+      "getApiKey": "APIキーを取得",
+      "domestic": "中国国内",
+      "international": "海外"
+    }
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

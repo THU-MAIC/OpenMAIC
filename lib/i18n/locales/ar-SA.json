@@ -1987,7 +1987,12 @@
     },
     "enableThisProvider": "تمكين هذا المزوّد",
     "enableThisProviderHint": "عند الإيقاف لن يظهر هذا المزوّد في إعداد نماذج المقرر.",
-    "more": "إجراءات إضافية"
+    "more": "إجراءات إضافية",
+    "providerLinks": {
+      "getApiKey": "احصل على مفتاح API",
+      "domestic": "الصين",
+      "international": "دولي"
+    }
   },
   "workspace": {
     "untitledCourse": "未命名课堂",
