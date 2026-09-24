@@ -7,7 +7,6 @@ import { useStageStore } from '@/lib/store/stage';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   CLASSROOM_ZIP_FORMAT_VERSION,
-  CLASSROOM_ZIP_EXTENSION,
   manifestAgentFromConfig,
   type ClassroomManifest,
   type ManifestStage,
@@ -37,6 +36,7 @@ import { createProxiedFetch } from './proxied-fetch';
 import type { SceneContent, Scene, Stage } from '@/lib/types/stage';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { accessDocument, type DocumentMigrationDeps } from '@/lib/document-store';
+import { classroomFileName } from './classroom-filename';
 
 export async function inlineSceneContent(
   content: SceneContent,
@@ -97,6 +97,7 @@ export async function buildClassroomExportZip(
   const exportScenes = documentScenes;
 
   let zipBlob: Blob;
+  let fileName: string;
   let missingAudioCount = 0;
   const aggregateReport: InlineReport = { inlined: [], failed: [] };
   try {
@@ -230,6 +231,7 @@ export async function buildClassroomExportZip(
     };
 
     zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+    fileName = classroomFileName(latestName, stage.id, manifest.exportedAt);
 
     // 10. Add media blobs to ZIP
     for (const af of audioFiles) {
@@ -250,10 +252,9 @@ export async function buildClassroomExportZip(
   } catch (error) {
     throw error;
   }
-  const safeName = latestName.replace(/[\\/:*?"<>|]/g, '_') || 'classroom';
   return {
     zip: zipBlob,
-    fileName: `${safeName}${CLASSROOM_ZIP_EXTENSION}`,
+    fileName,
     inlineFailures: aggregateReport.failed,
     missingAudioCount,
   };
