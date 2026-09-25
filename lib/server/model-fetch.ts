@@ -7,6 +7,8 @@
  * suffix-strip fallback) and try each until one returns a model list.
  */
 
+import { appAttributionHeaders } from '@/lib/config/app-attribution';
+
 /** A model id discovered from a provider's /models endpoint. */
 export interface FetchedModel {
   id: string;
@@ -170,7 +172,10 @@ async function fetchModelsCandidate(
   try {
     const res = await fetch(url, {
       method: 'GET',
-      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      headers: {
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        ...appAttributionHeaders(url),
+      },
       redirect: 'manual',
       signal: controller.signal,
     });

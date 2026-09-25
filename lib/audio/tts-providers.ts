@@ -106,6 +106,7 @@ import {
 } from './voxcpm';
 import { createLogger } from '@/lib/logger';
 import { audioProviderFetch } from '@/lib/server/audio-provider-fetch';
+import { appAttributionHeaders } from '@/lib/config/app-attribution';
 
 const log = createLogger('TTSProviders');
 
@@ -1075,6 +1076,7 @@ async function generateMiniMaxTTS(
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json; charset=utf-8',
+      ...appAttributionHeaders(baseUrl),
     },
     body: JSON.stringify({
       model: config.modelId || 'speech-2.8-hd',
