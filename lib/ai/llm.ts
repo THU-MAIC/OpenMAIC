@@ -9,7 +9,7 @@ import type { GenerateTextResult, JSONValue, LanguageModel, StreamTextResult } f
 import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
-import { shouldFallbackFor, logFallbackFired } from '@/lib/server/llm-fallback';
+import { isEmptyLlmOutput, shouldFallbackFor, logFallbackFired } from '@/lib/server/llm-fallback';
 import { getModelMetadataKey } from './model-metadata';
 import { getCanonicalModelId } from './model-aliases';
 import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
@@ -337,6 +337,11 @@ export async function callLLM<T extends GenerateTextParams>(
   const validate = retryOptions?.validate ?? (maxAttempts > 1 ? DEFAULT_VALIDATE : undefined);
   // verify-model probes the exact primary model, so it never falls back.
   const allowFallback = fallbackOptions?.enabled !== false && source !== 'verify-model';
+  // Resolve the fallback once up front. The empty-output safety net below only
+  // arms when a fallback model is actually configured; without this gate an
+  // empty result would flip from success to failure for operators who never
+  // set MODEL_FALLBACK or a MODEL_ROUTES fallback.
+  const fallback = allowFallback ? await resolveFallbackModelSafe(source) : null;
 
   /** One generateText round for the given params; validates when asked to. */
   async function runRound(
@@ -370,8 +375,17 @@ export async function callLLM<T extends GenerateTextParams>(
       // which already prefers the aggregate.
       recordUsageSafe(result.totalUsage ?? result.usage, buildUsageMeta(injectedParams, source));
 
-      if (validate && !validate(result.text)) {
-        log.warn(`[${source}] Validation failed (${attemptLabel})`);
+      // Empty-output detection arms by default when a fallback model is
+      // configured and no caller-supplied validator is in play: an empty
+      // result that used to return as success now gets one fallback attempt.
+      // Non-empty results still succeed exactly as before — "output quality
+      // is off" is never a fallback trigger.
+      const emptyAsFailure =
+        fallback !== null && !validate && isEmptyLlmOutput(result.text);
+      if (emptyAsFailure || (validate && !validate(result.text))) {
+        log.warn(
+          `[${source}] ${emptyAsFailure ? 'Empty output' : 'Validation failed'} (${attemptLabel})`,
+        );
         return { ok: false, error: undefined, result };
       }
       return { ok: true, result };
@@ -407,7 +421,7 @@ export async function callLLM<T extends GenerateTextParams>(
       // non-empty result that fails a caller-supplied validator (that would
       // spend the fallback model's quota on "output quality is off").
       lastResult = round.result;
-      if (attempt >= maxAttempts && allowFallback) {
+      if (attempt >= maxAttempts && fallback !== null) {
         if (shouldFallbackFor(undefined, round.result?.text)) triggerFallback = true;
       }
     }
@@ -415,7 +429,6 @@ export async function callLLM<T extends GenerateTextParams>(
 
   // Phase 2 — fallback model, exactly one round (no further escalation).
   if (triggerFallback) {
-    const fallback = await resolveFallbackModelSafe(source);
     if (fallback) {
       const primary = typeof params.model === 'string' ? params.model : getModelId(params);
       logFallbackFired(
