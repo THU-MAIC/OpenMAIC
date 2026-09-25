@@ -380,8 +380,7 @@ export async function callLLM<T extends GenerateTextParams>(
       // result that used to return as success now gets one fallback attempt.
       // Non-empty results still succeed exactly as before — "output quality
       // is off" is never a fallback trigger.
-      const emptyAsFailure =
-        fallback !== null && !validate && isEmptyLlmOutput(result.text);
+      const emptyAsFailure = fallback !== null && !validate && isEmptyLlmOutput(result.text);
       if (emptyAsFailure || (validate && !validate(result.text))) {
         log.warn(
           `[${source}] ${emptyAsFailure ? 'Empty output' : 'Validation failed'} (${attemptLabel})`,
