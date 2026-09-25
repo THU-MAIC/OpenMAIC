@@ -39,6 +39,21 @@ const log = createLogger('Scene Content API');
 export const maxDuration = 300;
 
 /**
+ * Model calls need their own deadline in addition to the route/platform
+ * deadline. 120s leaves enough room for reasoning models while still
+ * allowing the route to return before the 300s platform cap.
+ */
+const SCENE_CONTENT_LLM_TIMEOUT_MS = 120_000;
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function createLLMAbortSignal(requestSignal: AbortSignal): AbortSignal {
+  return AbortSignal.any([requestSignal, AbortSignal.timeout(SCENE_CONTENT_LLM_TIMEOUT_MS)]);
+}
+
+/**
  * Aggregate budget for the WHOLE resolve-with-refill phase, reused from the
  * shared 15 s ingest-drain constant (the same constant the extraction cache's
  * probe phase reuses). Each probe is an unbounded server-side store round trip
@@ -120,6 +135,23 @@ export async function POST(req: NextRequest) {
     // Detect vision capability
     const hasVision = !!modelInfo?.capabilities?.vision;
 
+    const callTextOnly = async (systemPrompt: string, userPrompt: string): Promise<string> => {
+      const result = await callLLM(
+        {
+          model: languageModel,
+          system: systemPrompt,
+          prompt: userPrompt,
+          maxOutputTokens: modelInfo?.outputWindow,
+          maxRetries: 0,
+          abortSignal: createLLMAbortSignal(req.signal),
+        },
+        'scene-content',
+        undefined,
+        thinkingConfig,
+      );
+      return result.text;
+    };
+
     // Vision-aware AI call function. On a server-backed transport the
     // `imageMapping` values are allocated asset ids; the N3 pre-resolution
     // below has already resolved the vision slice's ids to bytes and stripped
@@ -135,43 +167,45 @@ export async function POST(req: NextRequest) {
       images?: Array<{ id: string; src: string }>,
     ): Promise<string> => {
       if (images?.length && hasVision) {
-        // Server-backed transport: `imageMapping` values are allocated asset
-        // ids, so the image srcs reach here as ids. Resolve them to the same
-        // bytes the base64 path would send BEFORE prompt assembly, keeping the
-        // vision prompt byte-identical in both modes (RFC #1153 part 2 B).
-        const resolvedImages = await resolveVisionImagesForPrompt(images, req.headers);
-        const result = await callLLM(
-          {
-            model: languageModel,
-            system: systemPrompt,
-            messages: [
-              {
-                role: 'user' as const,
-                content: buildVisionUserContent(userPrompt, resolvedImages),
-              },
-            ],
-            maxOutputTokens: modelInfo?.outputWindow,
-            maxRetries: 0,
-          },
-          'scene-content',
-          undefined,
-          thinkingConfig,
-        );
-        return result.text;
+        try {
+          // Server-backed transport: `imageMapping` values are allocated asset
+          // ids, so the image srcs reach here as ids. Resolve them to the same
+          // bytes the base64 path would send BEFORE prompt assembly, keeping the
+          // vision prompt byte-identical in both modes (RFC #1153 part 2 B).
+          const resolvedImages = await resolveVisionImagesForPrompt(images, req.headers);
+          const result = await callLLM(
+            {
+              model: languageModel,
+              system: systemPrompt,
+              messages: [
+                {
+                  role: 'user' as const,
+                  content: buildVisionUserContent(userPrompt, resolvedImages),
+                },
+              ],
+              maxOutputTokens: modelInfo?.outputWindow,
+              maxRetries: 0,
+              abortSignal: createLLMAbortSignal(req.signal),
+            },
+            'scene-content',
+            undefined,
+            thinkingConfig,
+          );
+          return result.text;
+        } catch (error) {
+          // Image/vision providers are optional for scene content. A missing
+          // asset, unavailable image store, or provider-side vision rejection
+          // must not turn an otherwise valid text generation into a 500.
+          log.warn(
+            `Vision input failed for "${outlineTitle ?? 'unknown'}"; falling back to text-only generation: ${errorMessage(error)}`,
+          );
+          return callTextOnly(systemPrompt, userPrompt);
+        }
       }
-      const result = await callLLM(
-        {
-          model: languageModel,
-          system: systemPrompt,
-          prompt: userPrompt,
-          maxOutputTokens: modelInfo?.outputWindow,
-          maxRetries: 0,
-        },
-        'scene-content',
-        undefined,
-        thinkingConfig,
-      );
-      return result.text;
+      // No vision capability or no usable image mapping is a supported
+      // text-only mode. Generated media remains a client-side placeholder and
+      // does not require an image/TTS provider in this route.
+      return callTextOnly(systemPrompt, userPrompt);
     };
 
     // ── Apply fallbacks ──
@@ -321,24 +355,43 @@ export async function POST(req: NextRequest) {
 
     const userLocale = req.headers?.get('x-user-locale') ?? '';
 
-    const content = await generateSceneContent(effectiveOutline, aiCall, {
-      assignedImages,
-      imageMapping: visionImageMapping,
-      visionEnabled: hasVision,
-      generatedMediaMapping,
-      resolvedVisionImages,
-      agents,
-      languageDirective,
-      targetLanguage: userLocale || undefined,
-      userRequirements: requirements,
-      allowProceduralSkill: vocationalActive,
-      ...(effectiveOutline.type === 'pbl'
-        ? {
-            pblLoopFallback: (input) =>
-              generatePBLV2Project(input, languageModel, callLLM, { logger: log }, thinkingConfig),
-          }
-        : {}),
-    });
+    let content: Awaited<ReturnType<typeof generateSceneContent>>;
+    try {
+      content = await generateSceneContent(effectiveOutline, aiCall, {
+        assignedImages,
+        imageMapping: visionImageMapping,
+        visionEnabled: hasVision,
+        generatedMediaMapping,
+        resolvedVisionImages,
+        agents,
+        languageDirective,
+        targetLanguage: userLocale || undefined,
+        userRequirements: requirements,
+        allowProceduralSkill: vocationalActive,
+        // The package already catches malformed model JSON and degrades bad
+        // elements, but it needs the route logger injected to expose the exact
+        // parse error/message in server logs.
+        logger: log,
+        ...(effectiveOutline.type === 'pbl'
+          ? {
+              pblLoopFallback: (input) =>
+                generatePBLV2Project(
+                  input,
+                  languageModel,
+                  callLLM,
+                  { logger: log },
+                  thinkingConfig,
+                ),
+            }
+          : {}),
+      });
+    } catch (error) {
+      log.error(
+        `Scene content model/parse step failed for "${effectiveOutline.title}": ${errorMessage(error)}`,
+        error,
+      );
+      throw error;
+    }
 
     if (!content) {
       log.error(`Failed to generate content for: "${effectiveOutline.title}"`);
@@ -354,8 +407,9 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ content, effectiveOutline });
   } catch (error) {
+    const message = errorMessage(error);
     log.error(
-      `Scene content generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,
+      `Scene content generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]: ${message}`,
       error,
     );
     return llmApiError(error);

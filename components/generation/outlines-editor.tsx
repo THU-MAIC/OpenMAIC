@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Check,
   ChevronDown,
+  FileCode2,
   GripVertical,
   Loader2,
   Minimize2,
@@ -29,6 +30,7 @@ import { cn } from '@/lib/utils';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { WidgetType } from '@/lib/types/widgets';
 import { changeOutlineType } from '@openmaic/generation/browser';
+import { buildJupyterNotebook, downloadNotebook } from '@/lib/export/jupyter';
 import { countBlockingOutlines, validateOutline } from '@/lib/edit/content-validation';
 
 type SceneType = SceneOutline['type'];
@@ -152,7 +154,21 @@ export function OutlinesEditor({
       node.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [isStreaming, lastOutlineId]);
-
+  const handleExportJupyter = () => {
+    if (!outlines || outlines.length === 0) return;
+    const notebook = buildJupyterNotebook({
+      title: 'OpenMAIC 交互式课程大纲',
+      outlines: outlines.map((o) => ({
+        title: o.title,
+        description: o.description,
+        keyPoints: o.keyPoints,
+        widgetType: o.widgetType,
+        widgetOutline: o.widgetOutline,
+        interactiveConfig: o.interactiveConfig,
+      })),
+    });
+    downloadNotebook(notebook, 'course-outline.ipynb');
+  };
   const addOutline = () => {
     if (editingDisabled) return;
     const newOutline: SceneOutline = {
@@ -381,6 +397,16 @@ export function OutlinesEditor({
             className="rounded-full px-4 text-muted-foreground hover:text-foreground"
           >
             {t('generation.backToRequirements')}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleExportJupyter}
+            disabled={isLoading || isStreaming || outlines.length === 0}
+            className="rounded-full px-4 border-orange-500/30 text-orange-600 hover:bg-orange-500/10 hover:text-orange-600 dark:text-orange-400 gap-1.5"
+          >
+            <FileCode2 className="size-4" />
+            <span>导出 Jupyter (.ipynb)</span>
           </Button>
           {!editingDisabled && blockingCount > 0 && (
             <button

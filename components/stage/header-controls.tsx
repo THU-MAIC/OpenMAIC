@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   Archive,
+  ChevronDown,
   Download,
+  FileCode2,
   FileDown,
   Film,
   Loader2,
@@ -12,6 +14,7 @@ import {
   NotebookText,
   Package,
   Settings,
+  Sparkles,
   Sun,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
@@ -24,6 +27,13 @@ import { useExportClassroom } from '@/lib/export/use-export-classroom';
 import { isScriptExportReady, useExportScript } from '@/lib/export/use-export-script';
 import { isVideoExportEnabled } from '@/lib/config/feature-flags';
 import { useVideoRenderStore } from '@/lib/store/video-render';
+import { buildJupyterNotebook, downloadNotebook } from '@/lib/export/jupyter';
+import {
+  buildInteractiveCourseFilename,
+  buildInteractiveCourseHtml,
+  downloadInteractiveCourseHtml,
+} from '@/lib/export/interactive-html';
+import { collectSpeechText } from '@/lib/export/narration';
 import { CircularProgress } from '@/components/ui/circular-progress';
 import { VideoExportDialog } from './video-export-dialog';
 import { LanguageSwitcher } from '../language-switcher';
@@ -39,6 +49,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import type { StageMode } from '@/lib/types/stage';
+import type { SceneOutline } from '@/lib/types/generation';
 
 interface HeaderControlsProps {
   readonly mode?: StageMode;
@@ -88,6 +99,7 @@ export function HeaderControls({
   // playback and edit chrome so the icon's screen position is stable
   // across mode swaps (was previously in `Header` only, missing from
   // CommandBar's right cluster).
+  const stage = useStageStore((s) => s.stage);
   const scenes = useStageStore((s) => s.scenes);
   const generatingOutlines = useStageStore((s) => s.generatingOutlines);
   const failedOutlines = useStageStore((s) => s.failedOutlines);
@@ -103,12 +115,80 @@ export function HeaderControls({
   );
   const videoRenderPercent = useVideoRenderStore((s) => s.percent);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [labExportFormat, setLabExportFormat] = useState<'html' | 'ipynb' | null>(null);
+  const labExportingRef = useRef(false);
 
   // Keep the original full-generation gate for the export menu. Script files
   // are text-only, but the latest review confirmed that this menu intentionally
   // stays unavailable until all media tasks have completed or failed.
   const canExport = isScriptExportReady({ scenes, generatingOutlines, failedOutlines }, mediaTasks);
   const exportLabel = canExport ? t('export.pptx') : t('share.notReady');
+  const canExportLab = Boolean(stage && scenes.length > 0);
+
+  const exportLab = useCallback(async (format: 'html' | 'ipynb') => {
+    if (labExportingRef.current) return;
+
+    labExportingRef.current = true;
+    setLabExportFormat(format);
+    console.log('[Metric][Export] trigger', { timestamp: Date.now(), format });
+
+    try {
+      // Let the menu close and the loading state paint before serializing the
+      // course. This also gives rapid repeated clicks a single-flight guard.
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      const current = useStageStore.getState();
+      if (!current.stage || current.scenes.length === 0) {
+        throw new Error('课程内容尚未准备完成');
+      }
+
+      const courseName = current.stage.name || '互动实验课';
+      const outlines: SceneOutline[] =
+        current.outlines.length > 0
+          ? current.outlines
+          : current.scenes.map((scene) => ({
+              id: scene.id,
+              type: scene.type,
+              title: scene.title,
+              description: collectSpeechText(scene, { keepWhitespaceOnly: false, trim: true }),
+              keyPoints: [],
+              order: scene.order,
+            }));
+
+      if (format === 'html') {
+        const html = buildInteractiveCourseHtml({
+          courseName,
+          courseDescription: current.stage.description,
+          scenes: current.scenes,
+          outlines,
+        });
+        downloadInteractiveCourseHtml(html, buildInteractiveCourseFilename(courseName));
+      } else {
+        const notebook = buildJupyterNotebook({
+          title: courseName,
+          outlines: outlines.map((outline) => ({
+            title: outline.title,
+            description: outline.description,
+            keyPoints: outline.keyPoints,
+            widgetType: outline.widgetType,
+            widgetOutline: outline.widgetOutline,
+            interactiveConfig: outline.interactiveConfig,
+          })),
+        });
+        downloadNotebook(notebook, `${courseName}_互动实验课件.ipynb`);
+      }
+
+      console.log('[Metric][Export] success', { timestamp: Date.now(), format });
+    } catch (error) {
+      console.log('[Metric][Export] error', {
+        timestamp: Date.now(),
+        format,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      labExportingRef.current = false;
+      setLabExportFormat(null);
+    }
+  }, []);
 
   const compact = variant === 'compact';
   const proChecked = proModeActive ?? mode === 'edit';
@@ -259,6 +339,62 @@ export function HeaderControls({
           />
         </label>
       )}
+
+      {/* One-click classroom export: the first item is the presentation-ready
+          offline HTML handout, while the submenu keeps a developer-friendly
+          Jupyter format close at hand. */}
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            disabled={!canExportLab || labExportFormat !== null}
+            className={cn(
+              'shrink-0 inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-all',
+              canExportLab && labExportFormat === null
+                ? 'border-violet-200/80 bg-white/70 text-violet-700 shadow-sm hover:border-violet-300 hover:bg-violet-50 dark:border-violet-500/30 dark:bg-gray-800/70 dark:text-violet-300 dark:hover:bg-violet-950/30'
+                : 'cursor-not-allowed border-gray-200/60 bg-gray-100/60 text-gray-400 opacity-70 dark:border-gray-700/60 dark:bg-gray-800/60 dark:text-gray-500',
+            )}
+            aria-label="导出实验课"
+            data-testid="export-interactive-course"
+          >
+            {labExportFormat ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Sparkles className="size-4" />
+            )}
+            <span>导出实验课</span>
+            <ChevronDown className="size-3.5 opacity-70" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={8} className="min-w-[280px]">
+          <DropdownMenuItem
+            disabled={!canExportLab || labExportFormat !== null}
+            onSelect={() => void exportLab('html')}
+            className="cursor-pointer gap-2.5 py-2.5"
+          >
+            <Sparkles className="size-4 shrink-0 text-violet-500" />
+            <div>
+              <div>极简交互式 HTML 课件</div>
+              <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                普通人双击即可打开，支持代码复制与随堂互动
+              </div>
+            </div>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={!canExportLab || labExportFormat !== null}
+            onSelect={() => void exportLab('ipynb')}
+            className="cursor-pointer gap-2.5 py-2.5"
+          >
+            <FileCode2 className="size-4 shrink-0 text-orange-500" />
+            <div>
+              <div>Jupyter Notebook (.ipynb)</div>
+              <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                面向开发者，可在 Jupyter 中继续实验
+              </div>
+            </div>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       {/* Export / Download — lives to the right of the Pro Switch.
           Not a settings function so it does not belong inside the

@@ -638,6 +638,7 @@ export async function POST(req: NextRequest) {
                 return;
               }
               lastError = error instanceof Error ? error.message : String(error);
+              console.log('>>> [捕获到底层真实报错]:', error);
               log.warn(
                 `Outlines stream error detail (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}): ${lastError}`,
               );
