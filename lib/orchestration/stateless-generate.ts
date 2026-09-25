@@ -282,6 +282,63 @@ export function looksLikeStructuredFragment(raw: string): boolean {
 }
 
 /**
+ * Open/close tags of the form `<||DSML|| calls>` / `</||DSML|| parameter>`,
+ * accepting ASCII `|` or fullwidth `｜` delimiters around the DSML marker
+ * (as observed from OpenAI-compatible DeepSeek-family gateways; see #1652).
+ */
+const PROVIDER_DSML_TAG =
+  /<\/?\s*[|｜]{0,4}\s*DSML\s*[|｜]{0,4}(?:\s+[a-zA-Z_][\w-]*)?(?:\s+[^>]*)?\s*>/gi;
+
+const PROVIDER_DSML_OPEN =
+  /<\s*[|｜]{0,4}\s*DSML\s*[|｜]{0,4}(?:\s+[a-zA-Z_][\w-]*)?(?:\s+[^>]*)?\s*>/i;
+
+/**
+ * Strip provider DSML / tool-call markup from a Legacy child buffer so it is
+ * never shown as teacher speech (#1652). Keeps natural-language prose around
+ * the markup; returns '' when nothing visible remains.
+ *
+ * Call sites: `finalizeParser` when JSON never started, and the Legacy
+ * `call_agent` raw last-assistant fallback.
+ */
+export function stripProviderToolCallMarkup(raw: string): string {
+  if (!raw) return '';
+  // Fast path: ordinary classroom text never mentions the DSML marker.
+  if (!/DSML/i.test(raw)) return raw;
+
+  let text = raw;
+  // Drop each markup region from the first DSML open tag through the last
+  // DSML close tag that follows it (or through EOS if the block is unclosed),
+  // so parameter payloads like `wb_clear` do not leak as visible speech.
+  for (;;) {
+    const open = PROVIDER_DSML_OPEN.exec(text);
+    PROVIDER_DSML_OPEN.lastIndex = 0;
+    if (!open) break;
+
+    const start = open.index;
+    let end = text.length;
+    const closer = new RegExp(PROVIDER_DSML_TAG.source, 'gi');
+    closer.lastIndex = start;
+    let lastClose: RegExpExecArray | null = null;
+    let match: RegExpExecArray | null;
+    while ((match = closer.exec(text)) !== null) {
+      if (match[0].startsWith('</')) {
+        lastClose = match;
+      }
+    }
+    if (lastClose && lastClose.index >= start) {
+      end = lastClose.index + lastClose[0].length;
+    }
+
+    text = text.slice(0, start) + text.slice(end);
+  }
+
+  // Orphan tags (close without open, etc.)
+  text = text.replace(PROVIDER_DSML_TAG, '');
+
+  return text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
  * When the model emits a bare structured object/array instead of the required
  * top-level array, extract visible text from well-formed `{type:'text'}` items.
  * Requires a strict parse: a malformed object (one that would need repair), or
@@ -336,8 +393,8 @@ export function finalizeParser(state: ParserState): ParseResult {
     return result;
   }
 
-  const content = state.buffer.trim();
-  if (!content) {
+  const rawContent = state.buffer.trim();
+  if (!rawContent) {
     state.isDone = true;
     return result;
   }
@@ -349,6 +406,20 @@ export function finalizeParser(state: ParserState): ParseResult {
   };
 
   if (!state.jsonStarted) {
+    // Strip provider DSML tool-call markup before any acceptance decision so it
+    // is never classified as teacher speech (#1652). Prose around the markup is
+    // preserved; an empty result falls through as an empty turn.
+    const content = stripProviderToolCallMarkup(rawContent).trim();
+    if (!content) {
+      if (/DSML/i.test(rawContent)) {
+        log.debug(
+          `[finalizeParser] Suppressed provider DSML markup (${rawContent.length} chars)`,
+        );
+      }
+      state.isDone = true;
+      return result;
+    }
+
     // Model never emitted the required top-level `[`. It may have produced a
     // bare structured object, a truncated JSON fragment, or genuine prose.
     const structured = extractCleanStructuredText(content);

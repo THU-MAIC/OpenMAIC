@@ -10,6 +10,7 @@ import {
   finalizeParser,
   looksLikeStructuredFragment,
   parseStructuredChunk,
+  stripProviderToolCallMarkup,
   type ParseResult,
 } from '@/lib/orchestration/stateless-generate';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
@@ -952,7 +953,9 @@ export function buildCallAgentTool(opts: {
       const emittedText = text.trim();
       const fallbackText = sawStructuredOutput
         ? ''
-        : sanitizeVisibleSpeech(extractLastAssistantText(child.state.messages)).trim();
+        : sanitizeVisibleSpeech(
+            stripProviderToolCallMarkup(extractLastAssistantText(child.state.messages)),
+          ).trim();
       // Bug 2 guard: only count a turn as real teaching when it produced genuine
       // visible speech. Two distinct sources need different trust levels:
       //   - `emittedText`: already streamed through processParseResult, where every
