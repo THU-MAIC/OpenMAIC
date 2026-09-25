@@ -15,6 +15,7 @@ const fallbackMock = vi.hoisted(() => ({
   isRetryableLlmError: vi.fn(),
   shouldFallbackFor: vi.fn(),
   logFallbackFired: vi.fn(),
+  isEmptyLlmOutput: vi.fn((text: string | null | undefined) => !text || text.trim().length === 0),
 }));
 
 vi.mock('ai', () => ({
@@ -46,6 +47,7 @@ describe('callLLM retryable-failure fallback', () => {
     fallbackMock.isRetryableLlmError.mockReset();
     fallbackMock.shouldFallbackFor.mockReset();
     fallbackMock.logFallbackFired.mockReset();
+    fallbackMock.isEmptyLlmOutput.mockClear();
     aiMock.generateText.mockResolvedValue(okResult());
   });
 
@@ -216,9 +218,14 @@ describe('callLLM retryable-failure fallback', () => {
     );
 
     expect(result.text).toBe('[not valid json]');
-    // Primary + same-model retry only; no fallback round, no fallback log.
+    // Primary + same-model retry only. The up-front resolveFallbackModel call
+    // is a config probe (it also arms the empty-output gate), but no fallback
+    // round runs and no fallback log fires.
     expect(aiMock.generateText).toHaveBeenCalledTimes(2);
-    expect(fallbackMock.resolveFallbackModel).not.toHaveBeenCalled();
     expect(fallbackMock.logFallbackFired).not.toHaveBeenCalled();
+    const calledModels = aiMock.generateText.mock.calls.map(
+      (c) => (c[0] as { model: unknown }).model,
+    );
+    expect(calledModels.every((m) => m !== 'fallback-model')).toBe(true);
   });
 });
