@@ -519,6 +519,9 @@ function optionalBoundedString(
 }
 
 export function normalizeElementHtml(value: string): string {
+  if (typeof value !== 'string') {
+    throw new ElementReferenceValidationError('Referenced element HTML must be a string');
+  }
   return value
     .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/giu, ' ')
     .replace(/<[^>]*>/gu, ' ')
@@ -588,6 +591,18 @@ function validNumberSeries(value: unknown): number[][] {
           row.every((item) => typeof item === 'number' && Number.isFinite(item)),
       )
     : [];
+}
+
+function findReferencedElements(elements: PPTElement[], elementId: string): PPTElement[] {
+  if (!Array.isArray(elements)) {
+    throw new ElementReferenceValidationError('Referenced elements must be an array');
+  }
+  return elements.filter((element) => {
+    if (!element || typeof element !== 'object' || Array.isArray(element)) {
+      throw new ElementReferenceValidationError('Referenced elements must contain objects');
+    }
+    return element.id === elementId;
+  });
 }
 
 function projectElement(element: PPTElement): ProjectedElementEvidence {
@@ -944,8 +959,9 @@ export function resolveSlideElementReference(
   if (scene.type !== 'slide' || scene.content.type !== 'slide') {
     throw new ElementReferenceValidationError('elementReference must resolve to a slide Scene');
   }
-  const matchingElements = scene.content.canvas.elements.filter(
-    (element) => element.id === reference.elementId,
+  const matchingElements = findReferencedElements(
+    scene.content.canvas.elements,
+    reference.elementId,
   );
   if (matchingElements.length !== 1) {
     throw new ElementReferenceValidationError(
@@ -1552,7 +1568,7 @@ function resolveWhiteboardElementReference(
       'The referenced whiteboard has changed or is unavailable; select it again.',
     );
   }
-  const matches = whiteboard.elements.filter((element) => element.id === reference.elementId);
+  const matches = findReferencedElements(whiteboard.elements, reference.elementId);
   if (matches.length !== 1 || !isPPTElementType(matches[0]?.type)) {
     throw new ElementReferenceValidationError(
       'The referenced whiteboard element is missing or ambiguous; select it again.',
