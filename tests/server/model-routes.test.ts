@@ -383,6 +383,45 @@ describe('model-routes', () => {
     );
   });
 
+  it('parses a per-stage fallback from the route object', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'scene-content': {
+        model: 'openai:gpt-5.4',
+        fallback: 'qwen:deepseek-v4-pro',
+      },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('scene-content')).toEqual({
+      model: 'openai:gpt-5.4',
+      fallback: 'qwen:deepseek-v4-pro',
+    });
+  });
+
+  it('ignores a blank fallback with a warn', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'scene-content': { model: 'openai:gpt-5.4', fallback: '   ' },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('scene-content')).toEqual({ model: 'openai:gpt-5.4' });
+  });
+
+  it('keeps string routes without a fallback', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': 'openai:gpt-5.4' });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('scene-content')).toEqual({ model: 'openai:gpt-5.4' });
+  });
+
+  it('never parses a fallback from the user x-model-routes header (server-only)', async () => {
+    const { parseUserStageRoutes } = await import('@/lib/server/model-routes');
+    const routes = parseUserStageRoutes(
+      JSON.stringify({
+        'chat-adapter': { model: 'minimax:MiniMax-M3', fallback: 'qwen:user-fb' },
+      }),
+    );
+    expect(routes['chat-adapter']).toEqual({ model: 'minimax:MiniMax-M3' });
+    expect(routes['chat-adapter']?.fallback).toBeUndefined();
+  });
+
   it('parses known user stages from x-model-routes and drops unknown ones', async () => {
     const { parseUserStageRoutes } = await import('@/lib/server/model-routes');
     const routes = parseUserStageRoutes(

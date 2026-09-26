@@ -15,6 +15,11 @@
 
 import { NextRequest } from 'next/server';
 import { streamLLM } from '@/lib/ai/llm';
+import {
+  resolveFallbackModel,
+  shouldFallbackFor,
+  logFallbackFired,
+} from '@/lib/server/llm-fallback';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import {
   formatImageDescription,
@@ -485,38 +490,77 @@ export async function POST(req: NextRequest) {
         // generation and must not be allowed to grow the heap unbounded.
         const MAX_OUTLINE_STREAM_BYTES = 512 * 1024;
 
+        // Retryable-failure fallback: after the same-model retries are
+        // exhausted, retry once on the stage's configured fallback model.
+        let streamParams = visionImages?.length
+          ? {
+              model: languageModel,
+              system: prompts.system,
+              messages: [
+                {
+                  role: 'user' as const,
+                  content: buildVisionUserContent(prompts.user, visionImages),
+                },
+              ],
+              maxOutputTokens: modelInfo?.outputWindow,
+              // Tear down the upstream LLM request when the client disconnects,
+              // instead of letting it run to completion for a dead connection.
+              abortSignal: req.signal,
+            }
+          : {
+              model: languageModel,
+              system: prompts.system,
+              prompt: prompts.user,
+              maxOutputTokens: modelInfo?.outputWindow,
+              abortSignal: req.signal,
+            };
+        let fellBack = false;
+        // Shared decision (shared retryable-error + empty-output check) and the
+        // shared log line live in lib/server/llm-fallback.ts — one place, same
+        // semantics as the non-streaming callLLM path.
+        const maybeFallback = async (error: unknown, text?: string): Promise<boolean> => {
+          if (fellBack) return false;
+          if (!shouldFallbackFor(error, text)) return false;
+          let fallback: Awaited<ReturnType<typeof resolveFallbackModel>>;
+          try {
+            fallback = await resolveFallbackModel('scene-outlines-stream');
+          } catch {
+            // Misconfigured fallback provider — keep the real error instead of
+            // surfacing e.g. "API key required for provider: …" to the client.
+            return false;
+          }
+          if (!fallback) return false;
+          streamParams = { ...streamParams, model: fallback.model };
+          fellBack = true;
+          logFallbackFired(
+            'scene-outlines-stream',
+            error !== undefined ? 'retryable failure' : 'empty output',
+            resolvedModelString ?? '?',
+            fallback.modelString,
+          );
+          const retryEvent = JSON.stringify({
+            type: 'retry',
+            attempt: MAX_STREAM_RETRIES + 1,
+            maxAttempts: MAX_STREAM_RETRIES + 1,
+            fallback: fallback.modelString,
+          });
+          controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+          return true;
+        };
+
         try {
           startHeartbeat();
-
-          const streamParams = visionImages?.length
-            ? {
-                model: languageModel,
-                system: prompts.system,
-                messages: [
-                  {
-                    role: 'user' as const,
-                    content: buildVisionUserContent(prompts.user, visionImages),
-                  },
-                ],
-                maxOutputTokens: modelInfo?.outputWindow,
-                // Tear down the upstream LLM request when the client disconnects,
-                // instead of letting it run to completion for a dead connection.
-                abortSignal: req.signal,
-              }
-            : {
-                model: languageModel,
-                system: prompts.system,
-                prompt: prompts.user,
-                maxOutputTokens: modelInfo?.outputWindow,
-                abortSignal: req.signal,
-              };
 
           let parsedOutlines: SceneOutline[] = [];
           let languageDirective: string | null = null;
           let courseTitle: string | null = null;
           let lastError: string | undefined;
 
-          for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
+          for (
+            let attempt = 1;
+            attempt <= MAX_STREAM_RETRIES + 1 && !(fellBack && attempt > 1);
+            attempt++
+          ) {
             try {
               let fullText = '';
               let scanFrom = 0;
@@ -629,6 +673,12 @@ export async function POST(req: NextRequest) {
                   maxAttempts: MAX_STREAM_RETRIES + 1,
                 });
                 controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+              } else if (await maybeFallback(undefined, fullText)) {
+                // Same-model retries exhausted and the response was empty:
+                // retry once on the fallback model (loop is re-entered via
+                // attempt reset below).
+                attempt = 0;
+                continue;
               }
             } catch (error) {
               // Client disconnected (AbortError from the now-propagated signal):
@@ -653,6 +703,13 @@ export async function POST(req: NextRequest) {
                   maxAttempts: MAX_STREAM_RETRIES + 1,
                 });
                 controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
+                continue;
+              }
+
+              // Same-model retries exhausted: retry once on the fallback model
+              // when the failure is retryable.
+              if (await maybeFallback(error)) {
+                attempt = 0;
                 continue;
               }
             }

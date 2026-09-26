@@ -70,6 +70,12 @@ export interface StageRoute {
    * Passed through to callLLM, which normalizes it against the model's capability.
    */
   thinking?: ThinkingConfig;
+  /**
+   * Operator-configured fallback model for this stage (set via MODEL_ROUTES
+   * only). Read exclusively by lib/server/llm-fallback.ts; user-supplied
+   * routes never carry it.
+   */
+  fallback?: string;
 }
 
 /** Validate/sanitize a route's `thinking` object into a ThinkingConfig (drops bad fields with a warn). */
@@ -195,6 +201,14 @@ function parseRouteValue(key: string, value: unknown): StageRoute | undefined {
       const thinking = parseThinking(key, obj.thinking);
       if (thinking) route.thinking = thinking;
     }
+    if (obj.fallback !== undefined) {
+      const fallback = typeof obj.fallback === 'string' ? obj.fallback.trim() : '';
+      if (fallback) {
+        route.fallback = fallback;
+      } else {
+        log.warn(`Invalid fallback for stage "${key}" in MODEL_ROUTES; ignored.`);
+      }
+    }
     if (obj.contextWindow !== undefined) {
       const contextWindow = obj.contextWindow;
       if (
@@ -315,6 +329,9 @@ export function parseUserStageRoutes(
       const route = parseRouteValue(key, value);
       if (!route) continue;
       const userRoute: UserStageRoute = { ...route };
+      // The fallback model is operator-only (MODEL_ROUTES / MODEL_FALLBACK, see
+      // lib/server/llm-fallback.ts); never accept it from the client header.
+      delete userRoute.fallback;
       if (value && typeof value === 'object' && !Array.isArray(value)) {
         const obj = value as Record<string, unknown>;
         if (typeof obj.apiKey === 'string' && obj.apiKey) userRoute.apiKey = obj.apiKey;
