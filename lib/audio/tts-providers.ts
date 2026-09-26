@@ -93,33 +93,29 @@
  * - URL-based: For providers returning audio URL (download in second step)
  */
 
-import type { TTSModelConfig } from "./types";
-import { isCustomTTSProvider } from "./types";
+import type { TTSModelConfig } from './types';
+import { isCustomTTSProvider } from './types';
 import {
   isQwenCloneVoice,
   resolveTTSModelForVoice,
   TTS_PROVIDERS,
   DEFAULT_TTS_VOICES,
-} from "./constants";
-import {
-  downloadAudio,
-  QwenVoiceCloneError,
-  synthesizeQwenVoiceClone,
-} from "./qwen-voice-clone";
-import { evictQwenVoiceRegistrationMemo } from "./qwen-voice-clone-registration";
-import { splitConcatenatedJsonObjects } from "./json-stream";
+} from './constants';
+import { downloadAudio, QwenVoiceCloneError, synthesizeQwenVoiceClone } from './qwen-voice-clone';
+import { evictQwenVoiceRegistrationMemo } from './qwen-voice-clone-registration';
+import { splitConcatenatedJsonObjects } from './json-stream';
 import {
   VOXCPM_VLLM_MODEL_ID,
   VOXCPM_AUTO_VOICE_ID,
   normalizeVoxCPMBackend,
   type VoxCPMProviderOptions,
-} from "./voxcpm";
-import { createLogger } from "@/lib/logger";
-import { audioProviderFetch } from "@/lib/server/audio-provider-fetch";
-import { appAttributionHeaders } from "@/lib/config/app-attribution";
-import { pcmS16leMonoToWav } from "./pcm-wav";
+} from './voxcpm';
+import { createLogger } from '@/lib/logger';
+import { audioProviderFetch } from '@/lib/server/audio-provider-fetch';
+import { appAttributionHeaders } from '@/lib/config/app-attribution';
+import { pcmS16leMonoToWav } from './pcm-wav';
 
-const log = createLogger("TTSProviders");
+const log = createLogger('TTSProviders');
 
 /**
  * Every server-side provider request goes through the strict redirect +
@@ -164,12 +160,8 @@ export class TTSRateLimitError extends Error {
     retryAfterMs?: number,
   ) {
     super(message);
-    this.name = "TTSRateLimitError";
-    if (
-      retryAfterMs !== undefined &&
-      Number.isFinite(retryAfterMs) &&
-      retryAfterMs > 0
-    ) {
+    this.name = 'TTSRateLimitError';
+    if (retryAfterMs !== undefined && Number.isFinite(retryAfterMs) && retryAfterMs > 0) {
       this.retryAfterMs = retryAfterMs;
     }
   }
@@ -177,12 +169,12 @@ export class TTSRateLimitError extends Error {
 
 /** Neutral identity for ordinary Qwen TTS failures (never VC-branded). */
 export class QwenTTSError extends Error {
-  readonly code = "QWEN_TTS_ERROR";
+  readonly code = 'QWEN_TTS_ERROR';
   readonly httpStatus: number;
 
   constructor(message: string, httpStatus = 502) {
     super(message);
-    this.name = "QwenTTSError";
+    this.name = 'QwenTTSError';
     this.httpStatus = httpStatus;
   }
 }
@@ -193,7 +185,7 @@ export class QwenTTSError extends Error {
  * Prevents non-audio bytes from being stored, referenced, or billed.
  */
 export class TTSInvalidResponseError extends Error {
-  readonly code = "TTS_INVALID_RESPONSE";
+  readonly code = 'TTS_INVALID_RESPONSE';
   readonly httpStatus: number;
 
   constructor(
@@ -202,7 +194,7 @@ export class TTSInvalidResponseError extends Error {
     httpStatus = 502,
   ) {
     super(message);
-    this.name = "TTSInvalidResponseError";
+    this.name = 'TTSInvalidResponseError';
     this.httpStatus = httpStatus;
   }
 }
@@ -219,9 +211,7 @@ const DEFAULT_TTS_REQUEST_TIMEOUT_MS = 30_000;
 function ttsRequestTimeoutMs(): number {
   const raw = process.env.TTS_REQUEST_TIMEOUT_MS?.trim();
   const parsed = raw ? Number(raw) : NaN;
-  return Number.isFinite(parsed) && parsed > 0
-    ? parsed
-    : DEFAULT_TTS_REQUEST_TIMEOUT_MS;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TTS_REQUEST_TIMEOUT_MS;
 }
 
 /**
@@ -235,7 +225,7 @@ export class TTSRequestTimeoutError extends Error {
     message: string,
   ) {
     super(message);
-    this.name = "TTSRequestTimeoutError";
+    this.name = 'TTSRequestTimeoutError';
   }
 }
 
@@ -248,9 +238,7 @@ function ttsRequestSignal(callerSignal?: AbortSignal): AbortSignal {
 /** True when `signal` aborted because the per-request timeout fired. */
 function isTimeoutSignal(signal: AbortSignal): boolean {
   return (
-    signal.aborted &&
-    signal.reason instanceof DOMException &&
-    signal.reason.name === "TimeoutError"
+    signal.aborted && signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError'
   );
 }
 
@@ -265,8 +253,7 @@ function parseRetryAfterMs(
   if (!header) return undefined;
   const trimmed = header.trim();
   if (!trimmed) return undefined;
-  if (/^\d+(?:\.\d+)?$/.test(trimmed))
-    return Math.max(0, Number(trimmed) * 1000);
+  if (/^\d+(?:\.\d+)?$/.test(trimmed)) return Math.max(0, Number(trimmed) * 1000);
   const dateMs = Date.parse(trimmed);
   if (Number.isNaN(dateMs)) return undefined;
   return Math.max(0, dateMs - now);
@@ -304,8 +291,7 @@ export async function generateTTS(
   config: TTSModelConfig,
   text: string,
 ): Promise<TTSGenerationResult> {
-  const provider =
-    TTS_PROVIDERS[config.providerId as keyof typeof TTS_PROVIDERS];
+  const provider = TTS_PROVIDERS[config.providerId as keyof typeof TTS_PROVIDERS];
 
   // Validate API key if required (only for built-in providers with known config)
   if (provider?.requiresApiKey && !config.apiKey) {
@@ -315,37 +301,37 @@ export async function generateTTS(
   const signal = ttsRequestSignal(config.signal);
   try {
     switch (config.providerId) {
-      case "openai-tts":
+      case 'openai-tts':
         return await generateOpenAITTS(config, text, signal);
 
-      case "azure-tts":
+      case 'azure-tts':
         return await generateAzureTTS(config, text, signal);
 
-      case "glm-tts":
+      case 'glm-tts':
         return await generateGLMTTS(config, text, signal);
 
-      case "qwen-tts":
+      case 'qwen-tts':
         return await generateQwenTTS(config, text, signal);
 
-      case "voxcpm-tts":
+      case 'voxcpm-tts':
         return await generateVoxCPMTTS(config, text, signal);
 
-      case "minimax-tts":
+      case 'minimax-tts':
         return await generateMiniMaxTTS(config, text, signal);
-      case "doubao-tts":
+      case 'doubao-tts':
         return await generateDoubaoTTS(config, text, signal);
-      case "elevenlabs-tts":
+      case 'elevenlabs-tts':
         return await generateElevenLabsTTS(config, text, signal);
 
-      case "google-tts":
+      case 'google-tts':
         return await generateGoogleTTS(config, text, signal);
 
-      case "lemonade-tts":
+      case 'lemonade-tts':
         return await generateLemonadeTTS(config, text, signal);
 
-      case "browser-native-tts":
+      case 'browser-native-tts':
         throw new Error(
-          "Browser Native TTS must be handled client-side using Web Speech API. This provider cannot be used on the server.",
+          'Browser Native TTS must be handled client-side using Web Speech API. This provider cannot be used on the server.',
         );
 
       default:
@@ -376,50 +362,38 @@ async function generateOpenAITTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = config.baseUrl || TTS_PROVIDERS["openai-tts"].defaultBaseUrl;
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['openai-tts'].defaultBaseUrl;
 
   // Use gpt-4o-mini-tts for best quality and intelligent realtime applications
-  const response = await ttsFetch(
-    config.publicOnly,
-    `${baseUrl}/audio/speech`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json; charset=utf-8",
-      },
-      body: JSON.stringify({
-        model: config.modelId || "gpt-4o-mini-tts",
-        input: text,
-        voice: config.voice,
-        speed: config.speed || 1.0,
-        // Ask for a container the browser can decode. OpenAI defaults to mp3, but
-        // this same function serves every custom OpenAI-compatible provider and
-        // their defaults differ — OpenRouter's /audio/speech defaults to raw
-        // `pcm`, which arrives headerless, gets labelled mp3 below, and fails in
-        // the client with "no supported source was found". Naming the format
-        // removes the guess. Providers that ignore the field are unaffected.
-        response_format: "mp3",
-      }),
-      signal,
+  const response = await ttsFetch(config.publicOnly, `${baseUrl}/audio/speech`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json; charset=utf-8',
     },
-  );
+    body: JSON.stringify({
+      model: config.modelId || 'gpt-4o-mini-tts',
+      input: text,
+      voice: config.voice,
+      speed: config.speed || 1.0,
+      // Ask for a container the browser can decode. OpenAI defaults to mp3, but
+      // this same function serves every custom OpenAI-compatible provider and
+      // their defaults differ — OpenRouter's /audio/speech defaults to raw
+      // `pcm`, which arrives headerless, gets labelled mp3 below, and fails in
+      // the client with "no supported source was found". Naming the format
+      // removes the guess. Providers that ignore the field are unaffected.
+      response_format: 'mp3',
+    }),
+    signal,
+  });
 
   if (!response.ok) {
-    throwIfTtsRateLimited(
-      "OpenAI",
-      response.status,
-      response.headers?.get("retry-after"),
-    );
-    const error = await response
-      .json()
-      .catch(() => ({ error: response.statusText }));
-    throw new Error(
-      `OpenAI TTS API error: ${error.error?.message || response.statusText}`,
-    );
+    throwIfTtsRateLimited('OpenAI', response.status, response.headers?.get('retry-after'));
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(`OpenAI TTS API error: ${error.error?.message || response.statusText}`);
   }
 
-  return await validateTTSAudioResponse(response, "OpenAI");
+  return await validateTTSAudioResponse(response, 'OpenAI');
 }
 
 /**
@@ -430,51 +404,35 @@ async function generateLemonadeTTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = (
-    config.baseUrl ||
-    TTS_PROVIDERS["lemonade-tts"].defaultBaseUrl ||
-    ""
-  ).replace(/\/$/, "");
-  const modelId =
-    config.modelId || TTS_PROVIDERS["lemonade-tts"].defaultModelId;
-  const voice = config.voice || "af_heart";
-
-  const response = await ttsFetch(
-    config.publicOnly,
-    `${baseUrl}/audio/speech`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        ...getBackendAuthHeaders(config.apiKey),
-      },
-      body: JSON.stringify({
-        model: modelId,
-        input: text,
-        voice,
-        speed: config.speed || 1.0,
-        response_format: config.format || "wav",
-      }),
-      signal,
-    },
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['lemonade-tts'].defaultBaseUrl || '').replace(
+    /\/$/,
+    '',
   );
+  const modelId = config.modelId || TTS_PROVIDERS['lemonade-tts'].defaultModelId;
+  const voice = config.voice || 'af_heart';
+
+  const response = await ttsFetch(config.publicOnly, `${baseUrl}/audio/speech`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      ...getBackendAuthHeaders(config.apiKey),
+    },
+    body: JSON.stringify({
+      model: modelId,
+      input: text,
+      voice,
+      speed: config.speed || 1.0,
+      response_format: config.format || 'wav',
+    }),
+    signal,
+  });
 
   if (!response.ok) {
-    throwIfTtsRateLimited(
-      "Lemonade",
-      response.status,
-      response.headers?.get("retry-after"),
-    );
-    throw new Error(
-      `Lemonade TTS API error: ${await readTTSApiError(response)}`,
-    );
+    throwIfTtsRateLimited('Lemonade', response.status, response.headers?.get('retry-after'));
+    throw new Error(`Lemonade TTS API error: ${await readTTSApiError(response)}`);
   }
 
-  return await validateTTSAudioResponse(
-    response,
-    "Lemonade",
-    config.format || "wav",
-  );
+  return await validateTTSAudioResponse(response, 'Lemonade', config.format || 'wav');
 }
 
 /**
@@ -488,45 +446,34 @@ async function generateVoxCPMTTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = (
-    config.baseUrl ||
-    TTS_PROVIDERS["voxcpm-tts"].defaultBaseUrl ||
-    ""
-  ).replace(/\/$/, "");
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['voxcpm-tts'].defaultBaseUrl || '').replace(
+    /\/$/,
+    '',
+  );
   if (!baseUrl) {
-    throw new Error("VoxCPM base URL is required");
+    throw new Error('VoxCPM base URL is required');
   }
 
   const options = (config.providerOptions || {}) as VoxCPMProviderOptions;
   const backend = normalizeVoxCPMBackend(options.backend);
   const voicePrompt =
     options.voicePrompt ||
-    (config.voice &&
-    config.voice !== "default" &&
-    config.voice !== VOXCPM_AUTO_VOICE_ID
+    (config.voice && config.voice !== 'default' && config.voice !== VOXCPM_AUTO_VOICE_ID
       ? config.voice
       : undefined);
   // A registered voice carries timbre by id, so no voice prompt is required.
   const registeredVoiceId = options.registeredVoiceId?.trim() || undefined;
-  if (
-    config.voice === VOXCPM_AUTO_VOICE_ID &&
-    !voicePrompt &&
-    !registeredVoiceId
-  ) {
-    throw new Error("VoxCPM Auto Voice requires agent context");
+  if (config.voice === VOXCPM_AUTO_VOICE_ID && !voicePrompt && !registeredVoiceId) {
+    throw new Error('VoxCPM Auto Voice requires agent context');
   }
   const cfgValue = options.cfgValue ?? 2.0;
   const inferenceTimesteps = options.inferenceTimesteps ?? 10;
   const normalize = options.normalize ?? false;
   const denoise = options.denoise ?? false;
-  const usePromptContinuation = Boolean(
-    options.promptText?.trim() && options.referenceAudioBase64,
-  );
+  const usePromptContinuation = Boolean(options.promptText?.trim() && options.referenceAudioBase64);
 
   const request = {
-    targetText: usePromptContinuation
-      ? text
-      : buildVoxCPMTargetText(text, voicePrompt),
+    targetText: usePromptContinuation ? text : buildVoxCPMTargetText(text, voicePrompt),
     rawText: text,
     registeredVoiceId,
     voicePrompt,
@@ -541,41 +488,25 @@ async function generateVoxCPMTTS(
   };
 
   const response =
-    backend === "nano-vllm"
-      ? await postVoxCPMNanoVLLM(
-          baseUrl,
-          request,
-          config.apiKey,
-          signal,
-          config.publicOnly,
-        )
-      : backend === "python-api"
-        ? await postVoxCPMPythonAPI(
-            baseUrl,
-            request,
-            config.apiKey,
-            signal,
-            config.publicOnly,
-          )
+    backend === 'nano-vllm'
+      ? await postVoxCPMNanoVLLM(baseUrl, request, config.apiKey, signal, config.publicOnly)
+      : backend === 'python-api'
+        ? await postVoxCPMPythonAPI(baseUrl, request, config.apiKey, signal, config.publicOnly)
         : await postVoxCPMVLLMOmni(baseUrl, request, config, signal);
 
   if (!response.ok) {
-    throwIfTtsRateLimited(
-      "VoxCPM",
-      response.status,
-      response.headers?.get("retry-after"),
-    );
+    throwIfTtsRateLimited('VoxCPM', response.status, response.headers?.get('retry-after'));
     throw new Error(`VoxCPM TTS API error: ${await readTTSApiError(response)}`);
   }
 
-  return await validateTTSAudioResponse(response, "VoxCPM", "wav");
+  return await validateTTSAudioResponse(response, 'VoxCPM', 'wav');
 }
 
 function buildVoxCPMTargetText(text: string, voicePrompt?: string): string {
   const prompt = voicePrompt
-    ?.replace(/[\p{C}]+/gu, " ")
-    .replace(/[()（）]/gu, "")
-    .replace(/\s+/gu, " ")
+    ?.replace(/[\p{C}]+/gu, ' ')
+    .replace(/[()（）]/gu, '')
+    .replace(/\s+/gu, ' ')
     .trim();
   return prompt ? `(${prompt})${text}` : text;
 }
@@ -583,12 +514,7 @@ function buildVoxCPMTargetText(text: string, voicePrompt?: string): string {
 function findFirstNonWhitespaceByte(bytes: Uint8Array): number | null {
   let i = 0;
   // Skip UTF-8 BOM if present: 0xEF, 0xBB, 0xBF
-  if (
-    bytes.length >= 3 &&
-    bytes[0] === 0xef &&
-    bytes[1] === 0xbb &&
-    bytes[2] === 0xbf
-  ) {
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
     i = 3;
   }
   for (; i < bytes.length; i++) {
@@ -615,9 +541,9 @@ function findFirstNonWhitespaceByte(bytes: Uint8Array): number | null {
 async function validateTTSAudioResponse(
   response: Response,
   provider: string,
-  fallbackFormat = "mp3",
+  fallbackFormat = 'mp3',
 ): Promise<TTSGenerationResult> {
-  const contentType = response.headers.get("content-type") || "";
+  const contentType = response.headers.get('content-type') || '';
   const lowerContentType = contentType.toLowerCase();
   const arrayBuffer = await response.arrayBuffer();
   const bytes = new Uint8Array(arrayBuffer);
@@ -632,7 +558,7 @@ async function validateTTSAudioResponse(
   // When Content-Type begins with audio/*, trust it as audio without inspecting
   // leading bytes, avoiding false positives on headerless formats (PCM, μ-law, A-law)
   // whose raw samples can start with '<', '{', or '[' (#1395).
-  if (lowerContentType.startsWith("audio/")) {
+  if (lowerContentType.startsWith('audio/')) {
     return {
       audio: bytes,
       format: getAudioResponseFormat(contentType, fallbackFormat),
@@ -648,12 +574,12 @@ async function validateTTSAudioResponse(
   }
 
   const isHtml =
-    lowerContentType.includes("text/html") ||
-    lowerContentType.includes("application/xhtml+xml") ||
+    lowerContentType.includes('text/html') ||
+    lowerContentType.includes('application/xhtml+xml') ||
     firstByte === 0x3c; // '<'
 
   if (isHtml) {
-    const textSnippet = new TextDecoder("utf-8").decode(bytes).slice(0, 300);
+    const textSnippet = new TextDecoder('utf-8').decode(bytes).slice(0, 300);
     log.warn(`${provider} TTS returned HTML instead of audio: ${textSnippet}`);
     throw new TTSInvalidResponseError(
       provider,
@@ -662,12 +588,12 @@ async function validateTTSAudioResponse(
   }
 
   const isJson =
-    lowerContentType.includes("application/json") ||
+    lowerContentType.includes('application/json') ||
     firstByte === 0x7b || // '{'
     firstByte === 0x5b; // '['
 
   if (isJson) {
-    const textSnippet = new TextDecoder("utf-8").decode(bytes).slice(0, 300);
+    const textSnippet = new TextDecoder('utf-8').decode(bytes).slice(0, 300);
     log.warn(`${provider} TTS returned JSON instead of audio: ${textSnippet}`);
     throw new TTSInvalidResponseError(
       provider,
@@ -675,11 +601,9 @@ async function validateTTSAudioResponse(
     );
   }
 
-  if (lowerContentType.includes("text/plain")) {
-    const textSnippet = new TextDecoder("utf-8").decode(bytes).slice(0, 300);
-    log.warn(
-      `${provider} TTS returned text/plain instead of audio: ${textSnippet}`,
-    );
+  if (lowerContentType.includes('text/plain')) {
+    const textSnippet = new TextDecoder('utf-8').decode(bytes).slice(0, 300);
+    log.warn(`${provider} TTS returned text/plain instead of audio: ${textSnippet}`);
     throw new TTSInvalidResponseError(
       provider,
       `${provider} TTS returned text/plain instead of audio.`,
@@ -692,47 +616,37 @@ async function validateTTSAudioResponse(
   };
 }
 
-function getAudioResponseFormat(
-  contentType: string,
-  fallbackFormat = "mp3",
-): string {
+function getAudioResponseFormat(contentType: string, fallbackFormat = 'mp3'): string {
   const lower = contentType.toLowerCase();
-  if (lower.includes("audio/wav") || lower.includes("audio/x-wav"))
-    return "wav";
-  if (lower.includes("audio/mpeg") || lower.includes("audio/mp3")) return "mp3";
-  if (lower.includes("audio/flac")) return "flac";
-  if (lower.includes("audio/ogg")) return "ogg";
-  if (lower.includes("audio/webm")) return "webm";
-  if (lower.includes("audio/aac")) return "aac";
-  if (lower.includes("audio/opus")) return "opus";
+  if (lower.includes('audio/wav') || lower.includes('audio/x-wav')) return 'wav';
+  if (lower.includes('audio/mpeg') || lower.includes('audio/mp3')) return 'mp3';
+  if (lower.includes('audio/flac')) return 'flac';
+  if (lower.includes('audio/ogg')) return 'ogg';
+  if (lower.includes('audio/webm')) return 'webm';
+  if (lower.includes('audio/aac')) return 'aac';
+  if (lower.includes('audio/opus')) return 'opus';
   return fallbackFormat;
 }
 
 function getVoxCPMAudioFormat(mimeType?: string, fileName?: string): string {
-  const lowerName = fileName?.toLowerCase() || "";
-  if (mimeType?.includes("wav") || lowerName.endsWith(".wav")) return "wav";
-  if (
-    mimeType?.includes("mpeg") ||
-    mimeType?.includes("mp3") ||
-    lowerName.endsWith(".mp3")
-  ) {
-    return "mp3";
+  const lowerName = fileName?.toLowerCase() || '';
+  if (mimeType?.includes('wav') || lowerName.endsWith('.wav')) return 'wav';
+  if (mimeType?.includes('mpeg') || mimeType?.includes('mp3') || lowerName.endsWith('.mp3')) {
+    return 'mp3';
   }
-  if (mimeType?.includes("flac") || lowerName.endsWith(".flac")) return "flac";
-  if (mimeType?.includes("ogg") || lowerName.endsWith(".ogg")) return "ogg";
-  if (mimeType?.includes("webm") || lowerName.endsWith(".webm")) return "webm";
-  return "wav";
+  if (mimeType?.includes('flac') || lowerName.endsWith('.flac')) return 'flac';
+  if (mimeType?.includes('ogg') || lowerName.endsWith('.ogg')) return 'ogg';
+  if (mimeType?.includes('webm') || lowerName.endsWith('.webm')) return 'webm';
+  return 'wav';
 }
 
 function getVLLMOmniSpeechUrl(baseUrl: string): string {
-  return baseUrl.endsWith("/v1")
-    ? `${baseUrl}/audio/speech`
-    : `${baseUrl}/v1/audio/speech`;
+  return baseUrl.endsWith('/v1') ? `${baseUrl}/audio/speech` : `${baseUrl}/v1/audio/speech`;
 }
 
 function getVLLMOmniModelId(config: TTSModelConfig): string {
   const modelId = config.modelId?.trim();
-  if (!modelId || modelId === "VoxCPM2") return VOXCPM_VLLM_MODEL_ID;
+  if (!modelId || modelId === 'VoxCPM2') return VOXCPM_VLLM_MODEL_ID;
   return modelId;
 }
 
@@ -757,8 +671,8 @@ async function postVoxCPMVLLMOmni(
   const payload: Record<string, unknown> = {
     model: getVLLMOmniModelId(config),
     input: params.targetText,
-    voice: "default",
-    response_format: "wav",
+    voice: 'default',
+    response_format: 'wav',
     stream: false,
   };
 
@@ -781,9 +695,9 @@ async function postVoxCPMVLLMOmni(
   }
 
   return ttsFetch(config.publicOnly, getVLLMOmniSpeechUrl(baseUrl), {
-    method: "POST",
+    method: 'POST',
     headers: {
-      "Content-Type": "application/json; charset=utf-8",
+      'Content-Type': 'application/json; charset=utf-8',
       ...getBackendAuthHeaders(config.apiKey),
     },
     body: JSON.stringify(payload),
@@ -791,23 +705,19 @@ async function postVoxCPMVLLMOmni(
   });
 }
 
-function getVoxCPMDataAudioUrl(
-  base64: string,
-  mimeType?: string,
-  fileName?: string,
-): string {
+function getVoxCPMDataAudioUrl(base64: string, mimeType?: string, fileName?: string): string {
   const format = getVoxCPMAudioFormat(mimeType, fileName);
   const mediaType =
     mimeType?.trim() ||
-    (format === "mp3"
-      ? "audio/mpeg"
-      : format === "flac"
-        ? "audio/flac"
-        : format === "ogg"
-          ? "audio/ogg"
-          : format === "webm"
-            ? "audio/webm"
-            : "audio/wav");
+    (format === 'mp3'
+      ? 'audio/mpeg'
+      : format === 'flac'
+        ? 'audio/flac'
+        : format === 'ogg'
+          ? 'audio/ogg'
+          : format === 'webm'
+            ? 'audio/webm'
+            : 'audio/wav');
   return `data:${mediaType};base64,${base64}`;
 }
 
@@ -817,7 +727,7 @@ function base64ToBlob(base64: string, mimeType?: string): Blob {
   for (let index = 0; index < binary.length; index++) {
     bytes[index] = binary.charCodeAt(index);
   }
-  return new Blob([bytes], { type: mimeType || "audio/wav" });
+  return new Blob([bytes], { type: mimeType || 'audio/wav' });
 }
 
 async function postVoxCPMPythonAPI(
@@ -838,27 +748,24 @@ async function postVoxCPMPythonAPI(
   publicOnly?: boolean,
 ): Promise<Response> {
   const formData = new FormData();
-  formData.set("text", params.targetText);
-  formData.set("cfg_value", String(params.cfgValue));
-  formData.set("inference_timesteps", String(params.inferenceTimesteps));
-  formData.set("normalize", String(params.normalize));
-  formData.set("denoise", String(params.denoise));
+  formData.set('text', params.targetText);
+  formData.set('cfg_value', String(params.cfgValue));
+  formData.set('inference_timesteps', String(params.inferenceTimesteps));
+  formData.set('normalize', String(params.normalize));
+  formData.set('denoise', String(params.denoise));
 
   if (params.referenceAudioBase64) {
-    const audioBlob = base64ToBlob(
-      params.referenceAudioBase64,
-      params.referenceAudioMimeType,
-    );
-    const audioName = params.referenceAudioName || "reference.wav";
-    formData.set("reference_audio", audioBlob, audioName);
+    const audioBlob = base64ToBlob(params.referenceAudioBase64, params.referenceAudioMimeType);
+    const audioName = params.referenceAudioName || 'reference.wav';
+    formData.set('reference_audio', audioBlob, audioName);
     if (params.promptText?.trim()) {
-      formData.set("prompt_audio", audioBlob, audioName);
-      formData.set("prompt_text", params.promptText.trim());
+      formData.set('prompt_audio', audioBlob, audioName);
+      formData.set('prompt_text', params.promptText.trim());
     }
   }
 
   return ttsFetch(publicOnly, `${baseUrl}/tts/upload`, {
-    method: "POST",
+    method: 'POST',
     headers: getBackendAuthHeaders(apiKey),
     body: formData,
     signal,
@@ -885,10 +792,7 @@ async function postVoxCPMNanoVLLM(
   };
 
   if (params.referenceAudioBase64) {
-    const format = getVoxCPMAudioFormat(
-      params.referenceAudioMimeType,
-      params.referenceAudioName,
-    );
+    const format = getVoxCPMAudioFormat(params.referenceAudioMimeType, params.referenceAudioName);
     payload.ref_audio_wav_base64 = params.referenceAudioBase64;
     payload.ref_audio_wav_format = format;
     if (params.promptText?.trim()) {
@@ -899,9 +803,9 @@ async function postVoxCPMNanoVLLM(
   }
 
   return ttsFetch(publicOnly, `${baseUrl}/generate`, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      "Content-Type": "application/json; charset=utf-8",
+      'Content-Type': 'application/json; charset=utf-8',
       ...getBackendAuthHeaders(apiKey),
     },
     body: JSON.stringify(payload),
@@ -917,8 +821,8 @@ async function readTTSApiError(response: Response): Promise<string> {
       detail?: unknown;
       error?: { message?: string } | string;
     };
-    if (typeof json.detail === "string") return json.detail;
-    if (typeof json.error === "string") return json.error;
+    if (typeof json.detail === 'string') return json.detail;
+    if (typeof json.error === 'string') return json.error;
     if (json.error?.message) return json.error.message;
   } catch {
     // Fall through to raw text.
@@ -934,13 +838,11 @@ async function generateAzureTTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = config.baseUrl || TTS_PROVIDERS["azure-tts"].defaultBaseUrl;
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['azure-tts'].defaultBaseUrl;
   const voiceLocale = resolveAzureVoiceLocale(config.voice);
 
   // Build SSML
-  const rate = config.speed
-    ? `${((config.speed - 1) * 100).toFixed(0)}%`
-    : "0%";
+  const rate = config.speed ? `${((config.speed - 1) * 100).toFixed(0)}%` : '0%';
   const ssml = `
     <speak version='1.0' xml:lang='${voiceLocale}'>
       <voice xml:lang='${voiceLocale}' name='${config.voice}'>
@@ -949,38 +851,28 @@ async function generateAzureTTS(
     </speak>
   `.trim();
 
-  const response = await ttsFetch(
-    config.publicOnly,
-    `${baseUrl}/cognitiveservices/v1`,
-    {
-      method: "POST",
-      headers: {
-        "Ocp-Apim-Subscription-Key": config.apiKey!,
-        "Content-Type": "application/ssml+xml; charset=utf-8",
-        "X-Microsoft-OutputFormat": "audio-16khz-128kbitrate-mono-mp3",
-      },
-      body: ssml,
-      signal,
+  const response = await ttsFetch(config.publicOnly, `${baseUrl}/cognitiveservices/v1`, {
+    method: 'POST',
+    headers: {
+      'Ocp-Apim-Subscription-Key': config.apiKey!,
+      'Content-Type': 'application/ssml+xml; charset=utf-8',
+      'X-Microsoft-OutputFormat': 'audio-16khz-128kbitrate-mono-mp3',
     },
-  );
+    body: ssml,
+    signal,
+  });
 
   if (!response.ok) {
-    throwIfTtsRateLimited(
-      "Azure",
-      response.status,
-      response.headers?.get("retry-after"),
-    );
+    throwIfTtsRateLimited('Azure', response.status, response.headers?.get('retry-after'));
     throw new Error(`Azure TTS API error: ${response.statusText}`);
   }
 
-  return await validateTTSAudioResponse(response, "Azure", "mp3");
+  return await validateTTSAudioResponse(response, 'Azure', 'mp3');
 }
 
 /** Resolve the BCP-47 locale encoded by an Azure voice identifier. */
 function resolveAzureVoiceLocale(voice: string): string {
-  const configuredVoice = TTS_PROVIDERS["azure-tts"].voices.find(
-    ({ id }) => id === voice,
-  );
+  const configuredVoice = TTS_PROVIDERS['azure-tts'].voices.find(({ id }) => id === voice);
   if (configuredVoice?.language) return configuredVoice.language;
 
   // Azure voice IDs conventionally start with a BCP-47 locale (for example,
@@ -990,7 +882,7 @@ function resolveAzureVoiceLocale(voice: string): string {
   return (
     voice.match(
       /^[a-z]{2,3}(?:-[A-Z][a-z]{3})?-(?:[A-Z]{2}|\d{3})(?:-(?:[a-z0-9]{5,8}|\d[a-z0-9]{3}))*(?=-[A-Z]|$)/,
-    )?.[0] ?? "zh-CN"
+    )?.[0] ?? 'zh-CN'
   );
 }
 
@@ -1002,35 +894,27 @@ async function generateGLMTTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = config.baseUrl || TTS_PROVIDERS["glm-tts"].defaultBaseUrl;
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['glm-tts'].defaultBaseUrl;
 
-  const response = await ttsFetch(
-    config.publicOnly,
-    `${baseUrl}/audio/speech`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json; charset=utf-8",
-      },
-      body: JSON.stringify({
-        model: config.modelId || "glm-tts",
-        input: text,
-        voice: config.voice,
-        speed: config.speed || 1.0,
-        volume: 1.0,
-        response_format: "wav",
-      }),
-      signal,
+  const response = await ttsFetch(config.publicOnly, `${baseUrl}/audio/speech`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json; charset=utf-8',
     },
-  );
+    body: JSON.stringify({
+      model: config.modelId || 'glm-tts',
+      input: text,
+      voice: config.voice,
+      speed: config.speed || 1.0,
+      volume: 1.0,
+      response_format: 'wav',
+    }),
+    signal,
+  });
 
   if (!response.ok) {
-    throwIfTtsRateLimited(
-      "GLM",
-      response.status,
-      response.headers?.get("retry-after"),
-    );
+    throwIfTtsRateLimited('GLM', response.status, response.headers?.get('retry-after'));
     const errorText = await response.text().catch(() => response.statusText);
     let errorMessage = `GLM TTS API error: ${errorText}`;
     try {
@@ -1044,7 +928,7 @@ async function generateGLMTTS(
     throw new Error(errorMessage);
   }
 
-  return await validateTTSAudioResponse(response, "GLM", "wav");
+  return await validateTTSAudioResponse(response, 'GLM', 'wav');
 }
 
 /**
@@ -1055,14 +939,14 @@ async function generateQwenTTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = config.baseUrl || TTS_PROVIDERS["qwen-tts"].defaultBaseUrl;
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['qwen-tts'].defaultBaseUrl;
   const cloneVoice = isQwenCloneVoice(config.voice);
 
   if (cloneVoice) {
     const targetModel =
       config.providerOptions?.qwenVoiceClone === true
         ? config.modelId
-        : resolveTTSModelForVoice("qwen-tts", config.voice, config.modelId);
+        : resolveTTSModelForVoice('qwen-tts', config.voice, config.modelId);
     try {
       return await synthesizeQwenVoiceClone(
         {
@@ -1077,10 +961,7 @@ async function generateQwenTTS(
         signal,
       );
     } catch (error) {
-      if (
-        error instanceof QwenVoiceCloneError &&
-        error.code === "QWEN_VC_VOICE_NOT_FOUND"
-      ) {
+      if (error instanceof QwenVoiceCloneError && error.code === 'QWEN_VC_VOICE_NOT_FOUND') {
         evictQwenVoiceRegistrationMemo(config.voice);
       }
       throw error;
@@ -1091,26 +972,22 @@ async function generateQwenTTS(
   // speed 1.0 = rate 0, speed 2.0 = rate 500, speed 0.5 = rate -250
   const rate = Math.round(((config.speed || 1.0) - 1.0) * 500);
 
-  const modelId = resolveTTSModelForVoice(
-    "qwen-tts",
-    config.voice,
-    config.modelId,
-  );
+  const modelId = resolveTTSModelForVoice('qwen-tts', config.voice, config.modelId);
   const response = await ttsFetch(
     config.publicOnly,
     `${baseUrl}/services/aigc/multimodal-generation/generation`,
     {
-      method: "POST",
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json; charset=utf-8",
+        'Content-Type': 'application/json; charset=utf-8',
       },
       body: JSON.stringify({
-        model: modelId || "qwen3-tts-flash",
+        model: modelId || 'qwen3-tts-flash',
         input: {
           text,
           voice: config.voice,
-          language_type: "Chinese", // Default to Chinese, can be made configurable
+          language_type: 'Chinese', // Default to Chinese, can be made configurable
         },
         parameters: {
           rate, // Speech rate from -500 to 500
@@ -1121,47 +998,35 @@ async function generateQwenTTS(
   );
 
   if (!response.ok) {
-    throwIfTtsRateLimited(
-      "Qwen",
-      response.status,
-      response.headers?.get("retry-after"),
-    );
+    throwIfTtsRateLimited('Qwen', response.status, response.headers?.get('retry-after'));
     const errorText = await response.text().catch(() => response.statusText);
-    throw new QwenTTSError(
-      `Qwen TTS request failed: ${errorText}`,
-      response.status,
-    );
+    throw new QwenTTSError(`Qwen TTS request failed: ${errorText}`, response.status);
   }
 
   const data = await response.json();
 
   // Check for audio URL in response
   if (!data.output?.audio?.url) {
-    throw new QwenTTSError("Qwen TTS returned no audio URL.");
+    throw new QwenTTSError('Qwen TTS returned no audio URL.');
   }
 
   // Download audio from URL
   let downloaded;
   try {
-    downloaded = await downloadAudio(
-      data.output.audio.url,
-      signal,
-      baseUrl,
-      config.publicOnly,
-    );
+    downloaded = await downloadAudio(data.output.audio.url, signal, baseUrl, config.publicOnly);
   } catch (error) {
     if (error instanceof QwenVoiceCloneError) {
       const host = (() => {
         try {
-          return new URL(String(data.output.audio.url)).hostname || "unknown";
+          return new URL(String(data.output.audio.url)).hostname || 'unknown';
         } catch {
-          return "invalid";
+          return 'invalid';
         }
       })();
       throw new QwenTTSError(
-        error.code === "QWEN_VC_AUDIO_URL_INVALID"
+        error.code === 'QWEN_VC_AUDIO_URL_INVALID'
           ? `The generated Qwen audio URL host "${host}" is not allowed.`
-          : "The generated Qwen audio could not be downloaded.",
+          : 'The generated Qwen audio could not be downloaded.',
         error.httpStatus,
       );
     }
@@ -1170,7 +1035,7 @@ async function generateQwenTTS(
 
   return {
     audio: downloaded.bytes,
-    format: "wav", // Qwen3 TTS returns WAV format
+    format: 'wav', // Qwen3 TTS returns WAV format
   };
 }
 
@@ -1182,8 +1047,8 @@ async function generateQwenTTS(
 const MINIMAX_RATE_LIMIT_STATUS_CODES = new Set([1002, 1039, 1041, 2045]);
 
 function minimaxStatusCode(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return parsed;
   }
@@ -1192,24 +1057,20 @@ function minimaxStatusCode(value: unknown): number | undefined {
 
 /** Any non-zero MiniMax `base_resp.status_code` is a failure, even with audio bytes. */
 function throwIfMiniMaxBaseRespFailed(
-  data:
-    | { base_resp?: { status_code?: unknown; status_msg?: unknown } }
-    | null
-    | undefined,
+  data: { base_resp?: { status_code?: unknown; status_msg?: unknown } } | null | undefined,
   retryAfterHeader?: string | null,
 ): void {
   const statusCode = minimaxStatusCode(data?.base_resp?.status_code);
   if (statusCode === undefined || statusCode === 0) return;
 
   const statusMsg =
-    typeof data?.base_resp?.status_msg === "string" &&
-    data.base_resp.status_msg.trim()
+    typeof data?.base_resp?.status_msg === 'string' && data.base_resp.status_msg.trim()
       ? data.base_resp.status_msg.trim()
       : `status ${statusCode}`;
 
   if (MINIMAX_RATE_LIMIT_STATUS_CODES.has(statusCode)) {
     throw new TTSRateLimitError(
-      "MiniMax",
+      'MiniMax',
       `MiniMax TTS rate limit exceeded: ${statusMsg}`,
       parseRetryAfterMs(retryAfterHeader),
     );
@@ -1226,23 +1087,22 @@ async function generateMiniMaxTTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = (
-    config.baseUrl ||
-    TTS_PROVIDERS["minimax-tts"].defaultBaseUrl ||
-    ""
-  ).replace(/\/$/, "");
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['minimax-tts'].defaultBaseUrl || '').replace(
+    /\/$/,
+    '',
+  );
   const response = await ttsFetch(config.publicOnly, `${baseUrl}/v1/t2a_v2`, {
-    method: "POST",
+    method: 'POST',
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json; charset=utf-8",
+      'Content-Type': 'application/json; charset=utf-8',
       ...appAttributionHeaders(baseUrl),
     },
     body: JSON.stringify({
-      model: config.modelId || "speech-2.8-hd",
+      model: config.modelId || 'speech-2.8-hd',
       text,
       stream: false,
-      output_format: "hex",
+      output_format: 'hex',
       voice_setting: {
         voice_id: config.voice,
         speed: config.speed || 1.0,
@@ -1252,45 +1112,38 @@ async function generateMiniMaxTTS(
       audio_setting: {
         sample_rate: 32000,
         bitrate: 128000,
-        format: config.format || "mp3",
+        format: config.format || 'mp3',
         channel: 1,
       },
-      language_boost: "auto",
+      language_boost: 'auto',
     }),
     signal,
   });
 
   if (!response.ok) {
-    throwIfTtsRateLimited(
-      "MiniMax",
-      response.status,
-      response.headers?.get("retry-after"),
-    );
+    throwIfTtsRateLimited('MiniMax', response.status, response.headers?.get('retry-after'));
     const errorText = await response.text().catch(() => response.statusText);
     throw new Error(`MiniMax TTS API error: ${errorText}`);
   }
 
   const data = await response.json();
-  throwIfMiniMaxBaseRespFailed(data, response.headers?.get("retry-after"));
+  throwIfMiniMaxBaseRespFailed(data, response.headers?.get('retry-after'));
   const hexAudio = data?.data?.audio;
-  if (!hexAudio || typeof hexAudio !== "string") {
-    throw new Error(
-      `MiniMax TTS error: No audio returned. Response: ${JSON.stringify(data)}`,
-    );
+  if (!hexAudio || typeof hexAudio !== 'string') {
+    throw new Error(`MiniMax TTS error: No audio returned. Response: ${JSON.stringify(data)}`);
   }
 
   const cleanedHex = hexAudio.trim();
   if (cleanedHex.length % 2 !== 0) {
-    throw new Error("MiniMax TTS error: invalid hex audio payload length");
+    throw new Error('MiniMax TTS error: invalid hex audio payload length');
   }
 
   const audio = new Uint8Array(
-    cleanedHex.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) ||
-      [],
+    cleanedHex.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || [],
   );
   return {
     audio,
-    format: data?.extra_info?.audio_format || config.format || "mp3",
+    format: data?.extra_info?.audio_format || config.format || 'mp3',
   };
 }
 
@@ -1303,91 +1156,73 @@ async function generateGoogleTTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = (
-    config.baseUrl ||
-    TTS_PROVIDERS["google-tts"].defaultBaseUrl ||
-    ""
-  ).replace(/\/$/, "");
-  const modelId = config.modelId || TTS_PROVIDERS["google-tts"].defaultModelId;
-  const voice = config.voice || DEFAULT_TTS_VOICES["google-tts"] || "Kore";
-
-  const response = await ttsFetch(
-    config.publicOnly,
-    `${baseUrl}/interactions`,
-    {
-      method: "POST",
-      headers: {
-        "x-goog-api-key": config.apiKey!,
-        "Content-Type": "application/json; charset=utf-8",
-        ...appAttributionHeaders(baseUrl),
-      },
-      body: JSON.stringify({
-        model: modelId,
-        input: text,
-        response_format: { type: "audio" },
-        generation_config: {
-          speech_config: [{ voice }],
-        },
-      }),
-      signal,
-    },
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['google-tts'].defaultBaseUrl || '').replace(
+    /\/$/,
+    '',
   );
+  const modelId = config.modelId || TTS_PROVIDERS['google-tts'].defaultModelId;
+  const voice = config.voice || DEFAULT_TTS_VOICES['google-tts'] || 'Kore';
+
+  const response = await ttsFetch(config.publicOnly, `${baseUrl}/interactions`, {
+    method: 'POST',
+    headers: {
+      'x-goog-api-key': config.apiKey!,
+      'Content-Type': 'application/json; charset=utf-8',
+      ...appAttributionHeaders(baseUrl),
+    },
+    body: JSON.stringify({
+      model: modelId,
+      input: text,
+      response_format: { type: 'audio' },
+      generation_config: {
+        speech_config: [{ voice }],
+      },
+    }),
+    signal,
+  });
 
   if (!response.ok) {
-    throwIfTtsRateLimited(
-      "Google",
-      response.status,
-      response.headers?.get("retry-after"),
-    );
+    throwIfTtsRateLimited('Google', response.status, response.headers?.get('retry-after'));
     const errorText = await response.text().catch(() => response.statusText);
-    throw new Error(
-      `Google Gemini TTS API error: ${errorText || response.statusText}`,
-    );
+    throw new Error(`Google Gemini TTS API error: ${errorText || response.statusText}`);
   }
 
-  const payload = (await response.json().catch(() => null)) as Record<
-    string,
-    unknown
-  > | null;
+  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
   const base64 = extractGoogleTtsAudioBase64(payload);
   if (!base64) {
-    throw new Error("Google Gemini TTS API error: response missing audio data");
+    throw new Error('Google Gemini TTS API error: response missing audio data');
   }
 
-  const pcm = new Uint8Array(Buffer.from(base64, "base64"));
+  const pcm = new Uint8Array(Buffer.from(base64, 'base64'));
   if (pcm.byteLength === 0) {
-    throw new Error("Google Gemini TTS API error: empty audio payload");
+    throw new Error('Google Gemini TTS API error: empty audio payload');
   }
 
   return {
     audio: pcmS16leMonoToWav(pcm, 24_000),
-    format: "wav",
+    format: 'wav',
   };
 }
 
 /** Pull base64 PCM from Interactions JSON (snake_case or camelCase). */
-function extractGoogleTtsAudioBase64(
-  payload: Record<string, unknown> | null,
-): string | null {
+function extractGoogleTtsAudioBase64(payload: Record<string, unknown> | null): string | null {
   if (!payload) return null;
 
   const fromBlock = (block: unknown): string | null => {
-    if (!block || typeof block !== "object") return null;
+    if (!block || typeof block !== 'object') return null;
     const obj = block as Record<string, unknown>;
     const data = obj.data ?? obj.Data;
-    return typeof data === "string" && data.length > 0 ? data : null;
+    return typeof data === 'string' && data.length > 0 ? data : null;
   };
 
   const direct =
-    fromBlock(payload.output_audio) ||
-    fromBlock(payload.outputAudio) ||
-    fromBlock(payload.audio);
+    fromBlock(payload.output_audio) || fromBlock(payload.outputAudio) || fromBlock(payload.audio);
   if (direct) return direct;
 
   const outputs = payload.outputs ?? payload.output;
   if (Array.isArray(outputs)) {
     for (const item of outputs) {
-      if (!item || typeof item !== "object") continue;
+      if (!item || typeof item !== 'object') continue;
       const obj = item as Record<string, unknown>;
       const nested =
         fromBlock(obj.audio) ||
@@ -1395,7 +1230,7 @@ function extractGoogleTtsAudioBase64(
         fromBlock(obj.inline_data) ||
         fromBlock(obj.inlineData);
       if (nested) return nested;
-      if (typeof obj.data === "string" && obj.data.length > 0) return obj.data;
+      if (typeof obj.data === 'string' && obj.data.length > 0) return obj.data;
     }
   }
 
@@ -1410,17 +1245,16 @@ async function generateElevenLabsTTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl =
-    config.baseUrl || TTS_PROVIDERS["elevenlabs-tts"].defaultBaseUrl;
-  const requestedFormat = config.format || "mp3";
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['elevenlabs-tts'].defaultBaseUrl;
+  const requestedFormat = config.format || 'mp3';
   const clampedSpeed = Math.min(1.2, Math.max(0.7, config.speed || 1.0));
   const outputFormatMap: Record<string, string> = {
-    mp3: "mp3_44100_128",
-    opus: "opus_48000_96",
-    pcm: "pcm_44100",
-    wav: "wav_44100",
-    ulaw: "ulaw_8000",
-    alaw: "alaw_8000",
+    mp3: 'mp3_44100_128',
+    opus: 'opus_48000_96',
+    pcm: 'pcm_44100',
+    wav: 'wav_44100',
+    ulaw: 'ulaw_8000',
+    alaw: 'alaw_8000',
   };
   const outputFormat = outputFormatMap[requestedFormat] || outputFormatMap.mp3;
 
@@ -1428,14 +1262,14 @@ async function generateElevenLabsTTS(
     config.publicOnly,
     `${baseUrl}/text-to-speech/${encodeURIComponent(config.voice)}?output_format=${outputFormat}`,
     {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "xi-api-key": config.apiKey!,
-        "Content-Type": "application/json; charset=utf-8",
+        'xi-api-key': config.apiKey!,
+        'Content-Type': 'application/json; charset=utf-8',
       },
       body: JSON.stringify({
         text,
-        model_id: config.modelId || "eleven_multilingual_v2",
+        model_id: config.modelId || 'eleven_multilingual_v2',
         voice_settings: {
           stability: 0.5,
           similarity_boost: 0.75,
@@ -1447,22 +1281,12 @@ async function generateElevenLabsTTS(
   );
 
   if (!response.ok) {
-    throwIfTtsRateLimited(
-      "ElevenLabs",
-      response.status,
-      response.headers?.get("retry-after"),
-    );
+    throwIfTtsRateLimited('ElevenLabs', response.status, response.headers?.get('retry-after'));
     const errorText = await response.text().catch(() => response.statusText);
-    throw new Error(
-      `ElevenLabs TTS API error: ${errorText || response.statusText}`,
-    );
+    throw new Error(`ElevenLabs TTS API error: ${errorText || response.statusText}`);
   }
 
-  return await validateTTSAudioResponse(
-    response,
-    "ElevenLabs",
-    requestedFormat,
-  );
+  return await validateTTSAudioResponse(response, 'ElevenLabs', requestedFormat);
 }
 
 /**
@@ -1470,16 +1294,13 @@ async function generateElevenLabsTTS(
  * Note: This function should only be called in browser context
  */
 export async function getCurrentTTSConfig(): Promise<TTSModelConfig> {
-  if (typeof window === "undefined") {
-    throw new Error(
-      "getCurrentTTSConfig() can only be called in browser context",
-    );
+  if (typeof window === 'undefined') {
+    throw new Error('getCurrentTTSConfig() can only be called in browser context');
   }
 
   // Lazy import to avoid circular dependency
-  const { useSettingsStore } = await import("@/lib/store/settings");
-  const { ttsProviderId, ttsVoice, ttsSpeed, ttsProvidersConfig } =
-    useSettingsStore.getState();
+  const { useSettingsStore } = await import('@/lib/store/settings');
+  const { ttsProviderId, ttsVoice, ttsSpeed, ttsProvidersConfig } = useSettingsStore.getState();
 
   const providerConfig = ttsProvidersConfig?.[ttsProviderId];
 
@@ -1487,9 +1308,8 @@ export async function getCurrentTTSConfig(): Promise<TTSModelConfig> {
     providerId: ttsProviderId,
     modelId:
       providerConfig?.modelId ||
-      TTS_PROVIDERS[ttsProviderId as keyof typeof TTS_PROVIDERS]
-        ?.defaultModelId ||
-      "",
+      TTS_PROVIDERS[ttsProviderId as keyof typeof TTS_PROVIDERS]?.defaultModelId ||
+      '',
     apiKey: providerConfig?.apiKey,
     baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
     voice: ttsVoice,
@@ -1498,7 +1318,7 @@ export async function getCurrentTTSConfig(): Promise<TTSModelConfig> {
 }
 
 // Re-export from constants for convenience
-export { getAllTTSProviders, getTTSProvider, getTTSVoices } from "./constants";
+export { getAllTTSProviders, getTTSProvider, getTTSVoices } from './constants';
 
 /**
  * Doubao TTS 2.0 implementation (Volcengine Seed-TTS 2.0).
@@ -1520,65 +1340,57 @@ async function generateDoubaoTTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const rawKey = config.apiKey || "";
+  const rawKey = config.apiKey || '';
   if (!rawKey) {
     throw new Error(
       'Doubao TTS requires an API key: an Agent Plan key, or "appId:accessKey" from the Volcengine speech console.',
     );
   }
-  const colonIdx = rawKey.indexOf(":");
+  const colonIdx = rawKey.indexOf(':');
   // A colon means the classic appId:accessKey pair; otherwise treat the whole
   // value as an Agent Plan single key (X-Api-Key auth on the /plan endpoint).
   const isPlanKey = colonIdx < 0;
-  const appId = isPlanKey ? "" : rawKey.slice(0, colonIdx);
-  const accessKey = isPlanKey ? "" : rawKey.slice(colonIdx + 1);
+  const appId = isPlanKey ? '' : rawKey.slice(0, colonIdx);
+  const accessKey = isPlanKey ? '' : rawKey.slice(colonIdx + 1);
   // A colon with an empty half is a malformed pair — fail clearly rather than
   // sending an empty appId/accessKey header that the API rejects opaquely.
   if (!isPlanKey && (!appId || !accessKey)) {
     throw new Error(
-      "Doubao TTS appId:accessKey is malformed — both halves are required (or use an Agent Plan key).",
+      'Doubao TTS appId:accessKey is malformed — both halves are required (or use an Agent Plan key).',
     );
   }
 
-  const baseUrl = config.baseUrl || TTS_PROVIDERS["doubao-tts"].defaultBaseUrl;
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['doubao-tts'].defaultBaseUrl;
   const speechRate = Math.round(((config.speed || 1.0) - 1.0) * 100);
 
   const authHeaders: Record<string, string> = isPlanKey
-    ? { "X-Api-Key": rawKey }
-    : { "X-Api-App-Id": appId, "X-Api-Access-Key": accessKey };
+    ? { 'X-Api-Key': rawKey }
+    : { 'X-Api-App-Id': appId, 'X-Api-Access-Key': accessKey };
 
-  const response = await ttsFetch(
-    config.publicOnly,
-    `${baseUrl}/unidirectional`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...authHeaders,
-        "X-Api-Resource-Id": "seed-tts-2.0",
-      },
-      body: JSON.stringify({
-        user: { uid: "openmaic" },
-        req_params: {
-          text,
-          speaker: config.voice,
-          audio_params: {
-            format: "mp3",
-            sample_rate: 24000,
-            speech_rate: speechRate,
-          },
-        },
-      }),
-      signal,
+  const response = await ttsFetch(config.publicOnly, `${baseUrl}/unidirectional`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders,
+      'X-Api-Resource-Id': 'seed-tts-2.0',
     },
-  );
+    body: JSON.stringify({
+      user: { uid: 'openmaic' },
+      req_params: {
+        text,
+        speaker: config.voice,
+        audio_params: {
+          format: 'mp3',
+          sample_rate: 24000,
+          speech_rate: speechRate,
+        },
+      },
+    }),
+    signal,
+  });
 
   if (!response.ok) {
-    throwIfTtsRateLimited(
-      "Doubao",
-      response.status,
-      response.headers?.get("retry-after"),
-    );
+    throwIfTtsRateLimited('Doubao', response.status, response.headers?.get('retry-after'));
     const errorText = await response.text().catch(() => response.statusText);
     throw new Error(`Doubao TTS API error (${response.status}): ${errorText}`);
   }
@@ -1599,24 +1411,19 @@ async function generateDoubaoTTS(
     }
 
     if (chunk.code === 0 && chunk.data) {
-      audioChunks.push(new Uint8Array(Buffer.from(chunk.data, "base64")));
+      audioChunks.push(new Uint8Array(Buffer.from(chunk.data, 'base64')));
     } else if (chunk.code === 20000000) {
       break;
     } else if (chunk.code && chunk.code !== 0) {
       if (chunk.code === 45000000 || chunk.code === 45000292) {
-        throw new TTSRateLimitError(
-          "doubao-tts",
-          chunk.message || "concurrency quota exceeded",
-        );
+        throw new TTSRateLimitError('doubao-tts', chunk.message || 'concurrency quota exceeded');
       }
-      throw new Error(
-        `Doubao TTS error: ${chunk.message || "unknown"} (code: ${chunk.code})`,
-      );
+      throw new Error(`Doubao TTS error: ${chunk.message || 'unknown'} (code: ${chunk.code})`);
     }
   }
 
   if (audioChunks.length === 0) {
-    throw new Error("Doubao TTS: no audio data received");
+    throw new Error('Doubao TTS: no audio data received');
   }
 
   const totalLength = audioChunks.reduce((sum, c) => sum + c.length, 0);
@@ -1627,7 +1434,7 @@ async function generateDoubaoTTS(
     offset += chunk.length;
   }
 
-  return { audio: combined, format: "mp3" };
+  return { audio: combined, format: 'mp3' };
 }
 
 /**
@@ -1635,9 +1442,9 @@ async function generateDoubaoTTS(
  */
 function escapeXml(text: string): string {
   return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
