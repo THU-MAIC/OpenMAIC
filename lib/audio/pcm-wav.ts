@@ -17,10 +17,10 @@ export function pcmS16leMonoToWav(
     }
   };
 
-  writeAscii(0, 'RIFF');
+  writeAscii(0, "RIFF");
   view.setUint32(4, 36 + dataSize, true);
-  writeAscii(8, 'WAVE');
-  writeAscii(12, 'fmt ');
+  writeAscii(8, "WAVE");
+  writeAscii(12, "fmt ");
   view.setUint32(16, 16, true); // PCM fmt chunk size
   view.setUint16(20, 1, true); // audio format = PCM
   view.setUint16(22, 1, true); // mono
@@ -28,7 +28,7 @@ export function pcmS16leMonoToWav(
   view.setUint32(28, sampleRate * 2, true); // byte rate
   view.setUint16(32, 2, true); // block align
   view.setUint16(34, 16, true); // bits per sample
-  writeAscii(36, 'data');
+  writeAscii(36, "data");
   view.setUint32(40, dataSize, true);
 
   new Uint8Array(buffer, 44).set(pcm);
