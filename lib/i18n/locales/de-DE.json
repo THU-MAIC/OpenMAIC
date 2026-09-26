@@ -1408,6 +1408,7 @@
     "providerDoubaoTTS": "Doubao TTS 2.0 (Volcengine)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (Lokal)",
     "providerBrowserNativeTTS": "Browserintegrierte TTS",
     "voxcpmBackend": "Backend",

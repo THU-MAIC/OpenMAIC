@@ -684,6 +684,12 @@ const getDefaultAudioConfig = () => ({
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: true },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: true },
     'minimax-tts': { apiKey: '', baseUrl: '', modelId: 'speech-2.8-hd', enabled: true },
+    'google-tts': {
+      apiKey: '',
+      baseUrl: '',
+      modelId: 'gemini-3.1-flash-tts-preview',
+      enabled: true,
+    },
     'lemonade-tts': {
       apiKey: '',
       baseUrl: '',

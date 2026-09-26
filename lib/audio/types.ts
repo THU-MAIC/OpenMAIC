@@ -10,6 +10,7 @@
  * - GLM TTS (https://docs.bigmodel.cn/cn/guide/models/sound-and-video/glm-tts)
  * - Qwen TTS (https://bailian.console.aliyun.com/)
  * - Doubao TTS (https://www.volcengine.com/docs/6561/1257543)
+ * - Google Gemini TTS (https://ai.google.dev/gemini-api/docs/speech-generation)
  * - Browser Native TTS (Web Speech API, client-side only)
  *
  * Currently Supported ASR Providers:
@@ -88,6 +89,7 @@ export type BuiltInTTSProviderId =
   | 'doubao-tts'
   | 'elevenlabs-tts'
   | 'minimax-tts'
+  | 'google-tts'
   | 'lemonade-tts'
   | 'browser-native-tts';
 

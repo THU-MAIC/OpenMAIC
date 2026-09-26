@@ -12,6 +12,7 @@
  * - MiniMax TTS: https://platform.minimaxi.com/docs/api-reference/speech-t2a-http
  * - Doubao TTS: https://www.volcengine.com/docs/6561/1257543
  * - ElevenLabs TTS: https://elevenlabs.io/docs/api-reference/text-to-speech/convert
+ * - Google Gemini TTS: https://ai.google.dev/gemini-api/docs/speech-generation
  * - Browser Native: Web Speech API (client-side only)
  *
  * HOW TO ADD A NEW PROVIDER:
@@ -94,7 +95,7 @@
 
 import type { TTSModelConfig } from './types';
 import { isCustomTTSProvider } from './types';
-import { isQwenCloneVoice, resolveTTSModelForVoice, TTS_PROVIDERS } from './constants';
+import { isQwenCloneVoice, resolveTTSModelForVoice, TTS_PROVIDERS, DEFAULT_TTS_VOICES } from './constants';
 import { downloadAudio, QwenVoiceCloneError, synthesizeQwenVoiceClone } from './qwen-voice-clone';
 import { evictQwenVoiceRegistrationMemo } from './qwen-voice-clone-registration';
 import { splitConcatenatedJsonObjects } from './json-stream';
@@ -107,6 +108,7 @@ import {
 import { createLogger } from '@/lib/logger';
 import { audioProviderFetch } from '@/lib/server/audio-provider-fetch';
 import { appAttributionHeaders } from '@/lib/config/app-attribution';
+import { pcmS16leMonoToWav } from './pcm-wav';
 
 const log = createLogger('TTSProviders');
 
@@ -313,6 +315,9 @@ export async function generateTTS(
         return await generateDoubaoTTS(config, text, signal);
       case 'elevenlabs-tts':
         return await generateElevenLabsTTS(config, text, signal);
+
+      case 'google-tts':
+        return await generateGoogleTTS(config, text, signal);
 
       case 'lemonade-tts':
         return await generateLemonadeTTS(config, text, signal);
