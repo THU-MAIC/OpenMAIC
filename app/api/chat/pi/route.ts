@@ -77,12 +77,8 @@ export async function POST(req: NextRequest) {
     }
 
     let elementReference;
-    let interactiveStateNote;
     try {
-      ({ elementReference, stateNote: interactiveStateNote } = attachInteractiveState(
-        body,
-        resolveElementReference(body),
-      ));
+      elementReference = resolveElementReference(body);
     } catch (error) {
       if (error instanceof ElementReferenceValidationError) {
         return apiError(
@@ -94,6 +90,19 @@ export async function POST(req: NextRequest) {
             ? 'whiteboard_reference_changed'
             : undefined,
         );
+      }
+      throw error;
+    }
+
+    let interactiveStateNote;
+    try {
+      ({ elementReference, stateNote: interactiveStateNote } = attachInteractiveState(
+        body,
+        elementReference,
+      ));
+    } catch (error) {
+      if (error instanceof ElementReferenceValidationError) {
+        return apiError('INVALID_REQUEST', 400, error.message);
       }
       throw error;
     }
