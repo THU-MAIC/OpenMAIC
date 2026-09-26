@@ -138,6 +138,55 @@ describe('fetchWithRedirectValidation — every redirect hop is re-validated', (
     expect(String(fetchMock.mock.calls[1][0])).toBe('http://127.0.0.1:8080/internal');
   });
 
+  it('refuses an HTTPS to HTTP redirect hop when requireHttps is set', async () => {
+    const { fetchWithRedirectValidation, REDIRECT_REQUIRES_HTTPS_MESSAGE } = await loadWrapper();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { location: 'http://127.0.0.1:8080/internal' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const error = await fetchWithRedirectValidation(
+      'https://api.public.example/v1/chat/completions',
+      undefined,
+      { requireHttps: true },
+    ).catch((caught: unknown) => caught);
+
+    const { UnsafeNetworkTargetError } = await import('@/lib/server/ssrf-guard');
+    expect(error).toBeInstanceOf(UnsafeNetworkTargetError);
+    expect((error as Error).message).toContain(REDIRECT_REQUIRES_HTTPS_MESSAGE);
+    // Only the origin request is issued; the HTTP target is never fetched.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('follows an HTTPS to HTTPS redirect hop when requireHttps is set', async () => {
+    const { fetchWithRedirectValidation } = await loadWrapper();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { location: 'https://cdn.public.example/v1/chat/completions' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await fetchWithRedirectValidation(
+      'https://api.public.example/v1/chat/completions',
+      undefined,
+      { requireHttps: true },
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1][0])).toBe(
+      'https://cdn.public.example/v1/chat/completions',
+    );
+  });
+
   it('drops credential headers before a cross-origin hop when init.headers is a Headers instance, keeping the other headers', async () => {
     const { fetchWithRedirectValidation } = await loadWrapper();
     const fetchMock = vi
