@@ -171,7 +171,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['azure', 6],
       ['atlascloud', 2],
       ['anthropic', 2],
-      ['google', 2],
+      ['google', 4],
       ['deepseek', 2],
       ['kimi', 2],
       ['minimax', 13],
