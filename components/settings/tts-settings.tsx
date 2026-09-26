@@ -226,6 +226,8 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         return getVoxCPMBackendEndpoint(voxcpmBackend);
       case 'elevenlabs-tts':
         return '/text-to-speech';
+      case 'speechify-tts':
+        return '/audio/stream';
       case 'doubao-tts':
         return '/unidirectional';
       default:

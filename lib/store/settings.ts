@@ -683,6 +683,7 @@ const getDefaultAudioConfig = () => ({
     },
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: true },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: true },
+    'speechify-tts': { apiKey: '', baseUrl: '', modelId: 'simba-3.2', enabled: true },
     'minimax-tts': { apiKey: '', baseUrl: '', modelId: 'speech-2.8-hd', enabled: true },
     'lemonade-tts': {
       apiKey: '',

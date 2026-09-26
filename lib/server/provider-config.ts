@@ -93,6 +93,7 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_VOXCPM: 'voxcpm-tts',
   TTS_DOUBAO: 'doubao-tts',
   TTS_ELEVENLABS: 'elevenlabs-tts',
+  TTS_SPEECHIFY: 'speechify-tts',
   TTS_MINIMAX: 'minimax-tts',
   TTS_LEMONADE: 'lemonade-tts',
 };

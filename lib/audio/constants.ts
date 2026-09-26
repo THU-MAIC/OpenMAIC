@@ -972,6 +972,30 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     speedRange: { min: 0.7, max: 1.2, default: 1.0 },
   },
 
+  'speechify-tts': {
+    id: 'speechify-tts',
+    name: 'Speechify TTS',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.speechify.ai/v1',
+    icon: '/logos/speechify.svg',
+    models: [
+      { id: 'simba-3.2', name: 'Simba 3.2' },
+      { id: 'simba-3.0', name: 'Simba 3.0' },
+    ],
+    defaultModelId: 'simba-3.2',
+    // A few shared English voices; the full catalog is at GET /v1/voices.
+    voices: [
+      { id: 'geffen_32', name: 'Geffen', language: 'en-US', gender: 'female' },
+      { id: 'sabrina', name: 'Sabrina', language: 'en-US', gender: 'female' },
+      { id: 'beatrice_32', name: 'Beatrice', language: 'en-GB', gender: 'female' },
+      { id: 'george', name: 'George', language: 'en-US', gender: 'male' },
+      { id: 'henry', name: 'Henry', language: 'en-US', gender: 'male' },
+      { id: 'archie', name: 'Archie', language: 'en-GB', gender: 'male' },
+    ],
+    supportedFormats: ['mp3', 'ogg', 'aac'],
+    speedRange: { min: 0.5, max: 2.0, default: 1.0 },
+  },
+
   'browser-native-tts': {
     id: 'browser-native-tts',
     name: '浏览器原生 (Web Speech API)',
@@ -1341,6 +1365,7 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'voxcpm-tts': VOXCPM_AUTO_VOICE_ID,
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
+  'speechify-tts': 'geffen_32',
   'minimax-tts': 'female-yujie',
   'lemonade-tts': 'af_heart',
   'browser-native-tts': 'default',
@@ -1354,6 +1379,7 @@ export const DEFAULT_TTS_MODELS: Record<BuiltInTTSProviderId, string> = {
   'voxcpm-tts': VOXCPM_VLLM_MODEL_ID,
   'doubao-tts': '',
   'elevenlabs-tts': 'eleven_multilingual_v2',
+  'speechify-tts': 'simba-3.2',
   'minimax-tts': 'speech-2.8-hd',
   'lemonade-tts': 'kokoro-v1',
   'browser-native-tts': '',

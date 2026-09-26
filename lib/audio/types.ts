@@ -87,6 +87,7 @@ export type BuiltInTTSProviderId =
   | 'voxcpm-tts'
   | 'doubao-tts'
   | 'elevenlabs-tts'
+  | 'speechify-tts'
   | 'minimax-tts'
   | 'lemonade-tts'
   | 'browser-native-tts';
