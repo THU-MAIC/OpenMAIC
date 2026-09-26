@@ -71,6 +71,14 @@ const INTERACTIVE_WIDGET_ACTIONS = [
   'widget_reveal',
 ];
 
+const SLIDE_CANVAS_WIDTH = 1000;
+const SLIDE_CANVAS_HEIGHT = 562.5;
+const IMAGE_MARGIN = 50;
+const IMAGE_MAX_WIDTH = SLIDE_CANVAS_WIDTH - IMAGE_MARGIN * 2;
+const IMAGE_MAX_HEIGHT = SLIDE_CANVAS_HEIGHT - IMAGE_MARGIN * 2;
+const DEFAULT_IMAGE_WIDTH = 400;
+const DEFAULT_IMAGE_HEIGHT = 300;
+
 // ── Options interfaces for scene generation functions ──
 
 export type SceneContentFailureCode = 'prompt-unavailable' | 'invalid-model-output';
@@ -468,6 +476,50 @@ function normalizeGeneratedVideoRefs(
     .filter((el): el is NonNullable<typeof el> => el !== null);
 }
 
+function positiveFinite(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function fitImageWithinBounds(
+  element: Extract<PPTElement, { type: 'image' }>,
+  knownRatio?: number,
+): Extract<PPTElement, { type: 'image' }> {
+  const ratio =
+    knownRatio !== undefined && Number.isFinite(knownRatio) && knownRatio > 0
+      ? knownRatio
+      : undefined;
+  let width = positiveFinite(element.width, DEFAULT_IMAGE_WIDTH);
+  let height: number;
+  if (ratio === undefined) {
+    height = positiveFinite(element.height, DEFAULT_IMAGE_HEIGHT);
+  } else {
+    const ratioHeight = width / ratio;
+    if (Number.isFinite(ratioHeight) && ratioHeight > 0) {
+      height = ratioHeight;
+    } else if (ratio < 1) {
+      height = IMAGE_MAX_HEIGHT;
+      width = positiveFinite(height * ratio, Number.MIN_VALUE);
+    } else {
+      height = Number.MIN_VALUE;
+    }
+  }
+  const scale = Math.min(1, IMAGE_MAX_WIDTH / width, IMAGE_MAX_HEIGHT / height);
+  const fittedWidth = positiveFinite(width * scale, Number.MIN_VALUE);
+  const fittedHeight = positiveFinite(height * scale, Number.MIN_VALUE);
+  const left = Number.isFinite(element.left) ? element.left : IMAGE_MARGIN;
+  const top = Number.isFinite(element.top) ? element.top : IMAGE_MARGIN;
+  const maxLeft = Math.max(IMAGE_MARGIN, SLIDE_CANVAS_WIDTH - fittedWidth - IMAGE_MARGIN);
+  const maxTop = Math.max(IMAGE_MARGIN, SLIDE_CANVAS_HEIGHT - fittedHeight - IMAGE_MARGIN);
+
+  return {
+    ...element,
+    left: Math.min(Math.max(left, IMAGE_MARGIN), maxLeft),
+    top: Math.min(Math.max(top, IMAGE_MARGIN), maxTop),
+    width: fittedWidth,
+    height: fittedHeight,
+  };
+}
+
 /**
  * Fill required element fields the model may have left off, plus image
  * aspect-ratio reconciliation.
@@ -521,19 +573,21 @@ function fixElementDefaults(
       // in the DSL's normalize.
       if (normalized.type === 'image' && assignedImages && typeof normalized.src === 'string') {
         const imgMeta = imageMetaById.get(normalized.src);
-        if (imgMeta?.width && imgMeta?.height) {
-          const knownRatio = imgMeta.width / imgMeta.height;
-          const curW = normalized.width || 400;
-          const curH = normalized.height || 300;
-          if (Math.abs(curW / curH - knownRatio) / knownRatio > 0.1) {
-            // Keep width, correct height
-            const newH = Math.round(curW / knownRatio);
-            if (newH > 462) {
-              // canvas 562.5 - margins 50×2
-              return { ...normalized, width: Math.round(462 * knownRatio), height: 462 };
-            }
-            return { ...normalized, height: newH };
+        if (imgMeta) {
+          const imageWidth = imgMeta.width;
+          const imageHeight = imgMeta.height;
+          let knownRatio: number | undefined;
+          if (
+            imageWidth !== undefined &&
+            imageHeight !== undefined &&
+            Number.isFinite(imageWidth) &&
+            Number.isFinite(imageHeight) &&
+            imageWidth > 0 &&
+            imageHeight > 0
+          ) {
+            knownRatio = imageWidth / imageHeight;
           }
+          return fitImageWithinBounds(normalized, knownRatio);
         }
       }
 
@@ -703,8 +757,8 @@ async function generateSlideContent(
   }
 
   // Canvas dimensions (matching viewportSize and viewportRatio)
-  const canvasWidth = 1000;
-  const canvasHeight = 562.5;
+  const canvasWidth = SLIDE_CANVAS_WIDTH;
+  const canvasHeight = SLIDE_CANVAS_HEIGHT;
 
   const teacherContext = formatTeacherPersonaForPrompt(agents);
 
