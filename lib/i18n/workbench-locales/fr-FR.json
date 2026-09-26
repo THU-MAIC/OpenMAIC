@@ -43,7 +43,9 @@
     "removeFailed": "Retirer l'envoi échoué",
     "uploadFailed": "Impossible d'envoyer {{name}}. Veuillez réessayer.",
     "fileTooLarge": "Fichier trop volumineux. Compressez-le ou divisez-le, puis réessayez.",
-    "fileTooLargeWithLimit": "Fichier trop volumineux. Sélectionnez un fichier de {{limit}} Mo maximum."
+    "fileTooLargeWithLimit": "Fichier trop volumineux. Sélectionnez un fichier de {{limit}} Mo maximum.",
+    "unsupportedType": "Type de fichier non pris en charge. Choisissez un fichier compatible.",
+    "quotaExceeded": "Limite de téléversement de ressources atteinte."
   },
   "skill": {
     "listFailed": "Impossible de charger la liste des skills",

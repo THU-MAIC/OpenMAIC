@@ -43,7 +43,9 @@
     "removeFailed": "Remover envio que falhou",
     "uploadFailed": "Não foi possível enviar {{name}}. Tente novamente.",
     "fileTooLarge": "O arquivo é muito grande. Comprima ou divida o arquivo e tente novamente.",
-    "fileTooLargeWithLimit": "O arquivo é muito grande. Selecione um arquivo de no máximo {{limit}} MB."
+    "fileTooLargeWithLimit": "O arquivo é muito grande. Selecione um arquivo de no máximo {{limit}} MB.",
+    "unsupportedType": "Tipo de arquivo não compatível. Selecione um arquivo compatível.",
+    "quotaExceeded": "Limite de upload de materiais atingido."
   },
   "skill": {
     "listFailed": "Não foi possível carregar a lista de skills",

@@ -123,6 +123,33 @@ describe('workbench material client', () => {
     });
   });
 
+  it.each([415, 429] as const)(
+    'keeps diagnostic details on a %s error while showing localized copy',
+    async (status) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          Response.json(
+            { error: 'raw server failure' },
+            { status, headers: { 'x-request-id': 'upload-trace-123' } },
+          ),
+        ),
+      );
+      const error = await uploadWorkbenchMaterial(new File(['x'], material.name)).catch(
+        (err) => err,
+      );
+      expect(error).toBeInstanceOf(WorkbenchMaterialUploadError);
+      expect(error).toMatchObject({
+        status,
+        requestId: 'upload-trace-123',
+        message: 'raw server failure [requestId=upload-trace-123]',
+      });
+      expect(error.userMessage(createWorkbenchTranslator('zh-CN'), 'zh-CN')).toBe(
+        status === 415 ? '不支持此文件类型，请选择受支持的文件。' : '已达到材料上传限额。',
+      );
+    },
+  );
+
   it.each([50, 100, 12.5])(
     'shows the configured %s MB limit without diagnostic details',
     async (mb) => {
@@ -328,7 +355,7 @@ describe('workbench material client', () => {
     expect(error.message).toContain('[requestId=upload-trace-123]');
   });
 
-  it.each([400, 415, 429, 500])('preserves status %s messages unchanged', (status) => {
+  it.each([400, 500])('preserves status %s messages unchanged', (status) => {
     const error = new WorkbenchMaterialUploadError('slow down', status);
     expect(error.userMessage(createWorkbenchTranslator('zh-CN'), 'zh-CN')).toBe('slow down');
   });

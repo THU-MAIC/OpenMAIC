@@ -112,11 +112,13 @@ describe('workbench copy covers every supported locale', () => {
 
   it('requires explicit material upload error copy in every supported locale', () => {
     // workbenchResourceFor merges an overlay onto the base first, so a missing
-    // key still resolves. These two strings are user-visible upload errors;
+    // key still resolves. These strings are user-visible upload errors;
     // each base and each raw overlay file has to carry them itself.
     const requiredMaterialErrorKeys = [
       'material.fileTooLarge',
       'material.fileTooLargeWithLimit',
+      'material.unsupportedType',
+      'material.quotaExceeded',
     ] as const;
     const english = flatten(workbenchEn);
     const bases: Array<[string, Map<string, string>]> = [

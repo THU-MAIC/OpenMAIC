@@ -43,7 +43,9 @@
     "removeFailed": "Bỏ tệp tải lên bị lỗi",
     "uploadFailed": "Không tải lên được {{name}}. Vui lòng thử lại.",
     "fileTooLarge": "Tệp quá lớn. Hãy nén hoặc chia nhỏ tệp rồi thử lại.",
-    "fileTooLargeWithLimit": "Tệp quá lớn. Vui lòng chọn tệp không vượt quá {{limit}} MB."
+    "fileTooLargeWithLimit": "Tệp quá lớn. Vui lòng chọn tệp không vượt quá {{limit}} MB.",
+    "unsupportedType": "Loại tệp không được hỗ trợ. Vui lòng chọn tệp được hỗ trợ.",
+    "quotaExceeded": "Đã đạt giới hạn tải tài liệu lên."
   },
   "skill": {
     "listFailed": "Không tải được danh sách skill",
