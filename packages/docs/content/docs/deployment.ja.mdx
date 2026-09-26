@@ -70,22 +70,20 @@ TLS 終端は nginx や Caddy などを前段に置いてください。デフ�
 
 リポジトリの `server-persistence` プロファイルは OpenMAIC と PostgreSQL の 2 つのコンテナを起動します。永続化用の HTTP API は OpenMAIC に組み込まれており、追加の永続化サービスは不要です。
 
-まず `.env.local` にデータベース接続情報と開発用トークンを追加します：
+まず `.env.local` にデータベース接続情報を追加します：
 
 ```bash
 DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
-PERSISTENCE_DEV_TOKEN=openmaic-local-dev
 ```
 
 次にプロファイルを起動します：
 
 ```bash
 NEXT_PUBLIC_PERSISTENCE=1 \
-NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev \
 docker compose --profile server-persistence up --build
 ```
 
-`NEXT_PUBLIC_PERSISTENCE` と `NEXT_PUBLIC_PERSISTENCE_TOKEN` はビルド時の変数であり、実行時のサーバー設定と一致させる必要があります。`PERSISTENCE_DEV_TOKEN` 方式はローカルまたは信頼できるネットワーク向けであり、真のユーザー分離は提供しません。公開本番環境の認証方式としては推奨されません。
+`NEXT_PUBLIC_PERSISTENCE` はビルド時の変数です。永続化専用の認証情報はありません。各リクエストはオーナー解決で得られたオーナー（既定ではブラウザごとの匿名 Cookie）に帰属し、ランタイムセッションとメディアはそのオーナーごとに分離されます。既定の識別はブラウザを分離するだけで誰も認証しないため、実ユーザー向けのデプロイでは自前のアカウントに基づくオーナー認証メソッドを登録してください。以前のリリースの `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` は削除され無視されます。旧来のブラウザ生成の学習者キーで保存されたランタイムセッションにはアクセスできなくなります。`PERSISTENCE_DEV_TOKEN` が唯一のアクセス制御だった場合は、アップグレード前に `ACCESS_CODE` やゲートウェイで保護する、オーナー認証メソッドを登録する、または `NEXT_PUBLIC_PERSISTENCE` を未設定にしてください。
 
 PostgreSQL のデータは `openmaic-postgres` ボリュームに保存されます。`PERSISTENCE_POSTGRES_PASSWORD` はデータベースディレクトリ初回初期化時にのみパスワードを設定し、その後の環境変数変更では既存ユーザーのパスワードは自動的に変更されません。
 

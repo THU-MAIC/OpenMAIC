@@ -32,6 +32,8 @@
 import { createLogger } from '@/lib/logger';
 import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation';
 
+import type { OwnerAuthRequest } from '@/lib/server/identity/types';
+
 import { resolveServerAsset } from './resolve-server-asset';
 
 const log = createLogger('VisionImageResolution');
@@ -58,7 +60,7 @@ function isConcreteImageSrc(src: string): boolean {
  */
 export async function resolveVisionImagesForPrompt(
   images: readonly VisionPromptImage[],
-  headers: Headers,
+  request: OwnerAuthRequest,
 ): Promise<VisionPromptImage[]> {
   const resolved: VisionPromptImage[] = [];
   for (const image of images) {
@@ -71,7 +73,7 @@ export async function resolveVisionImagesForPrompt(
     try {
       resolution = await resolveServerAsset(
         image.src,
-        headers,
+        request,
         MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES,
       );
     } catch (error) {

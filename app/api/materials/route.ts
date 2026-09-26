@@ -47,7 +47,7 @@ import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { apiError } from '@/lib/server/api-response';
 import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
 import { ownerJson, ownerNotFound } from '@/lib/server/agent-runtime/route-response';
-import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
 import {
   resolveOwnedSession,
   listSessionMaterials,
@@ -61,6 +61,7 @@ import {
   reclaimStaleOwnerMaterialUploads,
   registerOwnerMaterial,
 } from '@/lib/persistence/owner-materials';
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getMaterialByteStore } from '@/lib/server/materials/bytes';
 import {
@@ -150,7 +151,7 @@ export async function GET(req: NextRequest) {
   }
   const before = url.searchParams.get('before')?.trim() || undefined;
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const session = await resolveOwnedSession(sessionId, ownerId);
     if (!session) return ownerNotFound(responseHeaders);
     const materials = await listSessionMaterials(sessionId, {
@@ -198,7 +199,7 @@ export async function POST(req: NextRequest) {
 
   if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     try {
       phase = 'validate_request';
       const rawMime = (req.headers.get('content-type') ?? '').split(';', 1)[0];
@@ -312,6 +313,8 @@ export async function POST(req: NextRequest) {
             responseHeaders,
           );
         }
+        const claimed = ownerWriteErrorResponse(error);
+        if (claimed) return reject(claimed, 'owner_claim', responseHeaders);
         throw error;
       }
 

@@ -9,7 +9,15 @@ import {
   sceneAssetScope,
   stageAssetScope,
 } from './references.js';
+import {
+  ownerOfSql,
+  resolveDocumentOwnership,
+  type DocumentOwnershipRelation,
+  type ResolvedDocumentOwnership,
+} from '../document/ownership.js';
 import { asStorageLockUnavailable } from '../runtime/pg.js';
+
+export type { DocumentOwnershipRelation } from '../document/ownership.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
 /** One hour. A deployment may choose a longer retention window. */
@@ -95,6 +103,27 @@ export interface AssetCollectorOptions {
   documentReferences?: boolean;
   /** Most documents one reference-backfill chunk reads. Defaults to fifty. */
   referenceBackfillBatchSize?: number;
+  /**
+   * The principals whose entries a document's backfilled references may name,
+   * given the document's owner (`null` for a document with no owner), or
+   * `undefined` for any entry. Pass the same function as the document store's
+   * `assetReferencePrincipals`, so the walk never records a reference a write
+   * by that document's owner would not have recorded.
+   *
+   * Requires {@link documentOwnership}: the owner is read from the host's
+   * ownership relation, the same one the document store scopes through.
+   */
+  assetReferencePrincipals?: (documentOwnerId: string | null) => readonly string[] | undefined;
+  /**
+   * Where the backfill learns each document's owner, for
+   * {@link assetReferencePrincipals}: the host's ownership relation (the
+   * document store's `documentOwnership`), or `false` when documents have no
+   * owners and every one is asked about as `null`. Required whenever
+   * `assetReferencePrincipals` is set -- `document_stages` no longer records an
+   * owner, and a walk that silently asked about every document as unowned
+   * would scope its references to the wrong principals.
+   */
+  documentOwnership?: DocumentOwnershipRelation | false;
 }
 
 /** What one bounded pass did, for a caller that needs more than the count. */
@@ -335,6 +364,8 @@ export class AssetCollector {
   private readonly now: () => Date;
   private readonly documentReferences: boolean;
   private readonly referenceBackfillBatchSize: number;
+  private readonly assetReferencePrincipals: AssetCollectorOptions['assetReferencePrincipals'];
+  private readonly documentOwnership: ResolvedDocumentOwnership | null;
   /**
    * Where the reference backfill walk has got to, as the id of the last stage
    * enumerated; `null` means "no walk in progress".
@@ -389,6 +420,28 @@ export class AssetCollector {
     this.now = options.now ?? (() => new Date());
     this.documentReferences = options.documentReferences === true;
     this.referenceBackfillBatchSize = referenceBackfillBatchSize;
+    if (options.assetReferencePrincipals !== undefined && options.documentOwnership === undefined) {
+      throw new Error(
+        '@openmaic/storage: AssetCollector assetReferencePrincipals requires documentOwnership -- ' +
+          "the host's ownership relation, or false when documents have no owners; " +
+          'document_stages no longer records an owner',
+      );
+    }
+    this.assetReferencePrincipals = options.assetReferencePrincipals;
+    this.documentOwnership =
+      options.documentOwnership === undefined || options.documentOwnership === false
+        ? null
+        : resolveDocumentOwnership(options.documentOwnership);
+  }
+
+  /** The owner the host's relation records for a document, or `null`. */
+  private async documentOwner(queryable: Queryable, stageId: string): Promise<string | null> {
+    if (this.documentOwnership === null) return null;
+    const owner = await queryable.query<{ owner_id: string } & Record<string, unknown>>(
+      ownerOfSql(this.documentOwnership),
+      [stageId],
+    );
+    return owner.rows[0]?.owner_id ?? null;
   }
 
   /** Every collection transaction: a fresh pinned one, plus a lock-wait budget. */
@@ -843,8 +896,16 @@ export class AssetCollector {
             queryable,
             scopes.flatMap((scope) => [...scope.candidates]),
           );
+          const principals =
+            this.assetReferencePrincipals === undefined
+              ? undefined
+              : this.assetReferencePrincipals(await this.documentOwner(queryable, stageId));
           for (const scope of scopes) {
-            await backfillDocumentAssetReferences(queryable, { stageId, scope });
+            await backfillDocumentAssetReferences(queryable, {
+              stageId,
+              scope,
+              ...(principals === undefined ? {} : { principals }),
+            });
           }
         });
       } catch (error) {

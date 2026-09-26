@@ -87,7 +87,8 @@ import {
 import { getAgentSessionStore } from './store';
 import { listAgentUserMessages } from './user-messages';
 import { subscribeAgentEventWakeup } from './event-notify-bus';
-import { getOwnerScopedDocumentStore } from './owner-scoped-documents';
+import { getBackgroundDocumentStore } from './owner-scoped-documents';
+import { canonicalizeStoredOwner } from '@/lib/persistence/owner-merges';
 import { assertCurrentStageMutationActive } from './mutation-fence';
 import { inventorySlide } from './course-edit/apply';
 import {
@@ -1300,7 +1301,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // that carries them never persists a JSON-null key (reference semantics).
     // `getAgentSessionStore` above already guards on DATABASE_URL, so the
     // provider can only be reached with a configured connection string.
-    const ownerScopedStore = (await getOwnerScopedDocumentStore(
+    const ownerScopedStore = (await getBackgroundDocumentStore(
       meta.ownerId,
       async (transaction) => {
         assertCurrentStageMutationActive();
@@ -1314,7 +1315,11 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // legitimately patches the document minutes after its run ended, when
     // the lease is already released; wiring the run's store there would make
     // every post-run patch throw AgentSessionLeaseLostError.
-    const mediaJobStore = (await getOwnerScopedDocumentStore(meta.ownerId, async () => {
+    // The owner the run's courses belong to now. A claim can move the run's
+    // owner to an account mid-run; the probe then sees the moved courses as
+    // the run's own, as the forwarding stores above do.
+    const currentOwner = () => canonicalizeStoredOwner(meta.ownerId);
+    const mediaJobStore = (await getBackgroundDocumentStore(meta.ownerId, async () => {
       assertCurrentStageMutationActive();
     })) as CourseStore;
     const resolveFollowUpElementContext = async (
@@ -1322,7 +1327,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     ): Promise<FollowUpMessage> => {
       if (!message.elementRefs?.length) return message;
       const stageId = message.elementRefs[0]!.stageId;
-      const access = await probeStageAccess(meta.ownerId, stageId).catch(() => null);
+      const access = await probeStageAccess(await currentOwner(), stageId).catch(() => null);
       const stageTitle = access?.kind === 'owned' ? access.stage.name : undefined;
       const targets = await resolveElementRefsForContext(
         message.elementRefs,
@@ -1350,7 +1355,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // touches the store. One probe factory is threaded into the course+DSL
     // toolset, the curriculum toolset, and the scene-preview tool (reference
     // semantics: three call sites, one probe).
-    const stageAccess = (stageId: string) => probeStageAccess(meta.ownerId, stageId);
+    const stageAccess = async (stageId: string) => probeStageAccess(await currentOwner(), stageId);
     // The stage read/patch toolset and the stage-level CRUD it needs. All of
     // them write through `ownerScopedStore`; every stageId-bearing tool is
     // owner-gated by `withOwnerStageAuthorization`, and patch_stage is marked
@@ -1362,6 +1367,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       stageAccess,
       onCheckpoint: (info) => emit(LIFECYCLE.checkpoint, info),
       sessionId: id,
+      ownerId: meta.ownerId,
       abortSignal: abort.signal,
       getActiveSkill: () => activeSkill,
     });
@@ -1438,7 +1444,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       // Skill created earlier IN THIS RUN is not in `installedSkills` (loaded
       // once at start), and a tool that appears only on the next run would be a
       // capability the model cannot discover when it needs it.
-      buildSkillEditTools(meta.ownerId),
+      buildSkillEditTools(meta.ownerId, currentOwner),
       // The native `read` tool is restricted to installed skill resources; it is
       // present exactly when skills exist. Discovery and invocation stay pi-native.
       skillReadTool ? [skillReadTool] : [],

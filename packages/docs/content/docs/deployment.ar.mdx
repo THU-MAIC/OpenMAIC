@@ -70,22 +70,20 @@ pnpm start      # يستمع على المنفذ 3000 افتراضياً
 
 يبدأ ملف تعريف `server-persistence` في المستودع حاويتين: OpenMAIC وPostgreSQL. واجهة برمجة التطبيقات للتخزين الدائم مضمنة في OpenMAIC ولا تحتاج إلى خدمة تخزين منفصلة.
 
-أضف اتصال قاعدة البيانات ورمز التطوير في `.env.local`:
+أضف اتصال قاعدة البيانات في `.env.local`:
 
 ```bash
 DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
-PERSISTENCE_DEV_TOKEN=openmaic-local-dev
 ```
 
 ثم شغّل ملف التعريف:
 
 ```bash
 NEXT_PUBLIC_PERSISTENCE=1 \
-NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev \
 docker compose --profile server-persistence up --build
 ```
 
-`NEXT_PUBLIC_PERSISTENCE` و`NEXT_PUBLIC_PERSISTENCE_TOKEN` هما متغيرات بناء ويجب أن تتطابق مع إعدادات الخادم وقت التشغيل. رمز التطوير `PERSISTENCE_DEV_TOKEN` مناسب فقط للنشر المحلي أو الشبكات الموثوقة، ولا يوفر عزلاً حقيقياً للمستخدمين، ولا ينبغي استخدامه كآلية مصادقة في بيئة الإنتاج العامة.
+`NEXT_PUBLIC_PERSISTENCE` هو متغير بناء. لا توجد بيانات اعتماد منفصلة للتخزين الدائم: يُنسب كل طلب إلى المالك الذي تحدده آلية تحديد المالك (افتراضياً ملف تعريف ارتباط مجهول لكل متصفح)، وتُقسَّم جلسات وقت التشغيل والوسائط حسب هذا المالك. الهوية الافتراضية تعزل المتصفحات لكنها لا تصادق أحداً، لذا ينبغي للنشر الذي يخدم مستخدمين حقيقيين تسجيل طرق مصادقة للمالك مبنية على حساباته الخاصة. تمت إزالة `PERSISTENCE_DEV_TOKEN` و`NEXT_PUBLIC_PERSISTENCE_TOKEN` من الإصدارات السابقة ويتم تجاهلهما، ولم تعد جلسات وقت التشغيل المخزنة بمفتاح المتعلم القديم الذي أنشأه المتصفح قابلة للوصول. إذا كان `PERSISTENCE_DEV_TOKEN` هو بوابة الوصول الوحيدة لديك، فاحمِ النشر باستخدام `ACCESS_CODE` أو بوابة، أو سجّل طرق مصادقة للمالك، أو اترك `NEXT_PUBLIC_PERSISTENCE` غير معيّن قبل الترقية.
 
 يتم حفظ بيانات PostgreSQL في مجلد `openmaic-postgres`. يتم تعيين كلمة مرور `PERSISTENCE_POSTGRES_PASSWORD` فقط عند التهيئة الأولى لقاعدة البيانات، ولا يتم تعديلها تلقائياً عند تغيير متغير البيئة لاحقاً.
 

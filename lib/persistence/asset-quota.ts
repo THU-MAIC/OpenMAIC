@@ -3,9 +3,9 @@
  *
  * The asset store enforces this inside its write transaction, under a
  * per-principal advisory lock, so concurrent uploads cannot race past it. What
- * it needs from here is a number — and until real per-user principals land,
- * every caller of this deployment resolves to one shared principal, so the
- * number is a deployment-wide ceiling rather than a per-user one.
+ * it needs from here is a number. Every owner allocates under its own
+ * principal (`./owner-assets.ts`), so this is a per-owner ceiling; entries
+ * from before per-owner partitions count against the legacy shared one.
  *
  * A default is set deliberately rather than left off. Allocation is reachable
  * by any caller the deployment admits, and this application only began writing

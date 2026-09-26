@@ -1,5 +1,10 @@
 import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
-import { PgDocumentStore, ensureDocumentSchema } from '@openmaic/storage/document/pg';
+import {
+  PgDocumentStore,
+  ensureDocumentSchema,
+  type Queryable,
+  type WithTransaction,
+} from '@openmaic/storage/document/pg';
 import { PgRuntimeStore, ensureSchema } from '@openmaic/storage/runtime/pg';
 import {
   nodePostgresTransaction,
@@ -8,20 +13,35 @@ import {
 import { Pool } from 'pg';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
-import { lazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
+import { configuredLazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { resolveAssetPendingTtlMs } from '@/lib/persistence/asset-pending-ttl';
 import { resolveAssetQuotaBytes } from '@/lib/persistence/asset-quota';
 import { ensureOwnerMaterialSchema } from '@/lib/persistence/owner-materials';
+import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
+import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 import { ensureStageMetaSchema } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 
 export type PersistencePoolFactory = (connectionString: string) => Pool;
 
+/**
+ * The process's persistence stores. There is deliberately no document store
+ * here: an unscoped `PgDocumentStore` would write courses with no owner check
+ * and no host create hooks. Documents are reached only through the
+ * owner-bound store (`createOwnerBoundDocumentStore`,
+ * `getOwnerScopedDocumentStore`).
+ */
 export interface ServerPersistenceProvider {
   pool: Pool;
   runtimeStore: PgRuntimeStore;
-  documentStore: PgDocumentStore;
   assetStore: PgAssetStore;
+  /** Pin a body to one fresh transaction on the pool. */
+  withTransaction: WithTransaction;
+  /**
+   * The asset registry with every statement on `queryable`, an already open
+   * transaction, for a caller that must check and mutate atomically.
+   */
+  assetStoreIn(queryable: Queryable): ServerPersistenceProvider['assetStore'];
 }
 
 interface ProviderState {
@@ -50,13 +70,18 @@ async function createServerPersistenceProvider(
   const pool = poolFactory(connectionString);
   const queryable = pool as unknown as ConnectableQueryable;
   try {
-    await ensureSchema(queryable);
-    await ensureDocumentSchema(queryable);
-    await ensureStageMetaSchema(queryable);
-    await ensureOwnerMaterialSchema(queryable);
-    await ensureAssetSchema(queryable);
+    // One instance at a time: see withSchemaBootstrapLock. The ownership
+    // backfill in ensureStageMetaSchema runs under the same lock, before any
+    // store below is built.
+    await withSchemaBootstrapLock(queryable, async (locked) => {
+      await ensureSchema(locked);
+      await ensureDocumentSchema(locked);
+      await ensureStageMetaSchema(locked);
+      await ensureOwnerMaterialSchema(locked);
+      await ensureAssetSchema(locked);
+    });
     const withTransaction = nodePostgresTransaction(queryable);
-    const byteStore = lazyAssetByteStore(process.env.ASSET_S3_BUCKET, queryable);
+    const byteStore = configuredLazyAssetByteStore(queryable);
     const documentStore = new PgDocumentStore(queryable, {
       withTransaction,
       validateScene: validateAppScene,
@@ -86,19 +111,31 @@ async function createServerPersistenceProvider(
     // fresh initialization -- because a provider that came up without the
     // declaration would leave reclamation refused with nothing to notice it.
     await documentStore.declareAssetReferenceTracking();
+    const assetRegistry = (on: Queryable, transaction: WithTransaction) =>
+      new PgAssetStore(on, {
+        withTransaction: transaction,
+        byteStore,
+        pendingTtlMs,
+        ...(quotaBytes === undefined ? {} : { quotaBytes }),
+      });
     return {
       pool,
       runtimeStore: new PgRuntimeStore(queryable, {
         withTransaction,
         payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+        // Every runtime session is created by a request (the persistence
+        // route, the chat route's whiteboard), for the request's owner: the
+        // identity lock first, and a retired owner is refused
+        // (./owner-merges.ts), so a create racing a claim either lands before
+        // it and is moved, or is refused -- never left under the retired id.
+        resolveFinalLearner: async (transaction, learnerKey) => {
+          await fenceOwnerWrite(transaction, learnerKey);
+          return learnerKey;
+        },
       }),
-      documentStore,
-      assetStore: new PgAssetStore(queryable, {
-        withTransaction,
-        byteStore,
-        pendingTtlMs,
-        ...(quotaBytes === undefined ? {} : { quotaBytes }),
-      }),
+      assetStore: assetRegistry(queryable, withTransaction),
+      withTransaction,
+      assetStoreIn: (pinned) => assetRegistry(pinned, (body) => body(pinned)),
     };
   } catch (error) {
     await pool.end().catch(() => {});

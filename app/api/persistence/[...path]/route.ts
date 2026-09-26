@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 
+import { DocumentWriteRefusedError, type RuntimeStore } from '@openmaic/storage';
+import type { Queryable } from '@openmaic/storage/document/pg';
 import {
   createStorageHttpHandler,
   DEFAULT_SIGNED_URL_TTL_SECONDS,
@@ -10,6 +12,7 @@ import {
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { createLogger } from '@/lib/logger';
+import { configuredAssetByteEgress } from '@/lib/persistence/asset-byte-egress';
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import {
   decideDocumentAccess,
@@ -17,17 +20,29 @@ import {
   type DocumentAccess,
 } from '@/lib/persistence/document-access';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
+import { assetPrincipalForOwner, createOwnerAssetStore } from '@/lib/persistence/owner-assets';
 import {
-  authenticatePersistenceRequest,
-  SHARED_ASSET_PRINCIPAL,
-} from '@/lib/persistence/server-auth';
+  claimRefusalResponse,
+  isSameOriginJsonRequest,
+  runPendingClaim,
+} from '@/lib/persistence/owner-claim-http';
+import {
+  isOwnerRetired,
+  OWNER_RETIRED,
+  OwnerBusyError,
+  ownerRetiredResponse,
+  retiredCredentialCookies,
+} from '@/lib/persistence/owner-merges';
+import { guardedServerRuntimeStore } from '@/lib/persistence/runtime-tombstone-guard';
 import {
   getServerPersistenceProvider,
   type PersistencePoolFactory,
 } from '@/lib/persistence/server-provider';
 import { readStageMeta } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
-import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import type { OwnerPrincipal } from '@/lib/server/identity/types';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { getPersistenceHooks } from '@/lib/server/persistence-hooks/registry';
 
 export const runtime = 'nodejs';
 
@@ -39,20 +54,27 @@ function jsonError(status: number, code: string, message: string): Response {
   return Response.json({ error: { code, message } }, { status });
 }
 
+function withHeaders(response: Response, headers: Headers): Response {
+  for (const [name, value] of headers.entries()) response.headers.append(name, value);
+  return response;
+}
+
 /**
- * ASSET_BYTE_EGRESS: set to `redirect` to answer asset byte GETs with a 302 to
- * a short-lived signed URL, when the byte layer can sign (S3 can; the
- * PostgreSQL byte column cannot, and falls back to direct bytes). Anything
- * else, including unset and `direct`, keeps the default byte-for-byte
- * behavior. The tradeoff this opts into -- the redirect target names the
- * content hash -- is specified in the storage package's asset HTTP contract.
+ * `GET /api/persistence/learner-key`: the runtime learner key the server
+ * derives for this request's owner, so the browser can address its own runtime
+ * sessions (the runtime contract names the learner key in paths and bodies).
+ * The key is the owner id, which owner-scoped responses already carry
+ * (folders report it as `userKey`), so this discloses nothing new; it is
+ * uncacheable because it is per owner.
  */
-function configuredAssetByteEgress(value: string | undefined): 'redirect' | undefined {
-  const raw = value?.trim().toLowerCase();
-  if (raw === 'redirect') return 'redirect';
-  if (raw === undefined || raw === '' || raw === 'direct') return undefined;
-  console.warn(`ASSET_BYTE_EGRESS=${value} is not recognized; using direct byte egress`);
-  return undefined;
+const LEARNER_KEY_PATH = '/learner-key';
+
+function learnerKeyResponse(ownerId: string, responseHeaders: Headers): Response {
+  const response = Response.json(
+    { learnerKey: ownerId },
+    { status: 200, headers: { 'cache-control': 'private, no-store' } },
+  );
+  return withHeaders(response, responseHeaders);
 }
 
 /**
@@ -83,57 +105,154 @@ function indirectEgressWithinGrace(
   return { mode: 'redirect', collectionGraceMs };
 }
 
+/**
+ * The asset id of `PUT /assets/{id}/content`, decoded the way the storage
+ * handler decodes the path it routes (a leading slash dropped, each segment
+ * percent-decoded). The handler has already matched and decoded this path
+ * before admission runs, so a failure here cannot happen in practice.
+ */
+function routedAssetId(url: string | undefined): string | undefined {
+  const parts = (url ?? '/').split('#', 1)[0]!.split('/');
+  if (parts[0] === '') parts.shift();
+  try {
+    return parts[1] === undefined ? undefined : decodeURIComponent(parts[1]);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Where the upload-admission hook leaves the answer it wants sent. The package
+ * handler can only answer its own `403` when admission is refused, so the
+ * route substitutes the host's `Response` for it (see `handlePersistenceRequestInner`).
+ */
+interface AssetAdmission {
+  refusal?: Response;
+}
+
+/** The runtime contract's learner merge route, as this route sees it. */
+const LEARNER_MERGE_PATH = '/runtime/learners/merge';
+
+/**
+ * Whether `principal` may merge runtime learner `from` into `to`: only its own
+ * pending claim into itself, from a non-anonymous principal, on a same-origin
+ * JSON request (the merge acts on cookies; see `isSameOriginJsonRequest`).
+ */
+function mayMergeLearner(
+  principal: OwnerPrincipal,
+  request: Request,
+  fromLearnerKey: string,
+  toLearnerKey: string,
+): boolean {
+  return (
+    principal.kind !== 'anonymous' &&
+    principal.pendingClaim?.fromOwnerId === fromLearnerKey &&
+    toLearnerKey === principal.ownerId &&
+    isSameOriginJsonRequest(request)
+  );
+}
+
+/**
+ * The runtime store the handler gets, with its learner merge replaced by a
+ * claim: a runtime-only re-key would move an owner's sessions and leave its
+ * courses, folders and media behind under an id nothing retires. Reached only
+ * after `authorizeMerge` allowed it; the canonical spelling of the route is
+ * answered before the handler (`handleLearnerMerge`) so refusals get their own
+ * status codes, and this covers any other spelling the handler routes.
+ */
+function mergeThroughClaim(store: RuntimeStore, principal: OwnerPrincipal): RuntimeStore {
+  return {
+    ...store,
+    mergeLearner: async () => {
+      const outcome = await runPendingClaim(principal);
+      if (!outcome.ok) {
+        // Typed, so the handler answers them as the claim endpoint does
+        // (`503` for a busy claim, `403` with the refusal's code otherwise)
+        // rather than as an internal error.
+        if (outcome.refusal === 'OWNER_BUSY') throw new OwnerBusyError();
+        throw new DocumentWriteRefusedError('', outcome.refusal, outcome.message);
+      }
+      return outcome.result.status === 'claimed' ? (outcome.result.moved.runtime ?? 0) : 0;
+    },
+  };
+}
+
+/**
+ * `POST /runtime/learners/merge` for this app: the runtime contract's shape
+ * (`{ fromLearnerKey, toLearnerKey }` in, `{ moved }` out), performed as a
+ * claim, with the claim endpoint's refusals and cookie handling.
+ */
+async function handleLearnerMerge(
+  request: Request,
+  principal: OwnerPrincipal,
+  responseHeaders: Headers,
+): Promise<Response> {
+  let body: { fromLearnerKey?: unknown; toLearnerKey?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return withHeaders(
+      jsonError(400, 'VALIDATION_FAILED', 'request body must be JSON'),
+      responseHeaders,
+    );
+  }
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    typeof body.fromLearnerKey !== 'string' ||
+    typeof body.toLearnerKey !== 'string' ||
+    !mayMergeLearner(principal, request, body.fromLearnerKey, body.toLearnerKey)
+  ) {
+    return withHeaders(
+      jsonError(403, 'FORBIDDEN_LEARNER', 'only your own pending claim can be merged'),
+      responseHeaders,
+    );
+  }
+  const outcome = await runPendingClaim(principal);
+  for (const cookie of outcome.setCookies) responseHeaders.append('Set-Cookie', cookie);
+  if (!outcome.ok) return claimRefusalResponse(outcome, responseHeaders);
+  const moved = outcome.result.status === 'claimed' ? (outcome.result.moved.runtime ?? 0) : 0;
+  return withHeaders(Response.json({ moved }, { status: 200 }), responseHeaders);
+}
+
+/** Methods that only read; every other method may write under the owner. */
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
 async function createPersistenceHandler(
   connectionString: string,
-  ownerId: string,
+  principal: OwnerPrincipal,
   access: DocumentAccess,
+  request: Request,
+  admission: AssetAdmission,
   poolFactory?: PersistencePoolFactory,
 ): Promise<RequestListener> {
-  const { pool, runtimeStore, assetStore } = await getServerPersistenceProvider(
-    connectionString,
-    poolFactory,
-  );
+  const { ownerId } = principal;
+  const { pool, runtimeStore, assetStore, withTransaction, assetStoreIn } =
+    await getServerPersistenceProvider(connectionString, poolFactory);
+  const hooks = getPersistenceHooks();
   const documentStore = createOwnerBoundDocumentStore({
     pool,
     ownerId,
+    principal,
     validateScene: validateAppScene,
     validateStage: validateAppStage,
   });
-  // The asset posture, precisely.
+  const beforeAssetAllocate = hooks.beforeAssetAllocate;
+  // One identity for all three contracts, resolved server-side by the owner
+  // identity seam (lib/server/identity/) for this request:
   //
-  // Reading an asset and allocating one are open to any caller this deployment
-  // lets in, exactly as reading a document and creating one already are: assets
-  // live in a single shared partition by design (see the SHARED_ASSET_PRINCIPAL
-  // comment in lib/persistence/server-auth.ts), so there is nothing per-caller
-  // for the development authenticator to decide about them, and routing them
-  // through it made every asset request fail in a production build that had not
-  // opted into that authenticator — the build this project's own
-  // server-persistence recipe produces.
+  // - Documents act as the owner.
+  // - Runtime sessions are partitioned by learner key, and the learner key IS
+  //   the owner id. Nothing the client sends chooses it: a request that names
+  //   another learner's partition in its path or body answers 403
+  //   FORBIDDEN_LEARNER from the handler, and a session another learner holds
+  //   answers 404. The browser learns its key from GET /api/persistence/learner-key.
+  // - Assets are partitioned per owner (lib/persistence/owner-assets.ts), so
+  //   quota is per owner and replace/delete reach only the owner's own entries
+  //   (plus legacy shared entries only their courses reference). Reads stay
+  //   capability-by-id for committed media a live course references, so
+  //   viewers of a course keep loading its media.
   //
-  // Replacing and deleting are refused outright — to everyone, authenticated or
-  // not. Those operations scope by principal key alone, and every caller
-  // resolves to the same shared key, so authentication decides nothing here:
-  // any signed-in visitor who learned an id, and a document read hands out
-  // every id its slides name, could overwrite or destroy another author's
-  // media. There is no per-asset ownership to check against yet, and since this
-  // application began storing generated media the registry is the only copy a
-  // course has, so the answer is no mutations at all. Nothing in the app
-  // performs an asset PUT or DELETE, and none needs to: the server owns the
-  // entry lifecycle. A document write records what that document claims in the
-  // reference table and commits the allocations it names; deleting the document
-  // withdraws those claims; the collector's entry pass releases an entry whose
-  // last claim left longer ago than the grace period, and an allocation no
-  // document ever claimed once its pending TTL expires. The bytes follow after
-  // their own grace.
-  //
-  // What this is NOT: a per-caller access control. The deployment-level fence
-  // is the access code. Allocation is bounded by the asset store's per-principal
-  // quota, which with one shared principal is a deployment-wide cap.
-  //
-  // Runtime requests still take their partition key from a client-supplied
-  // header, because a runtime session genuinely is per-learner state. Before
-  // runtime routes carry production data, their authenticator must be replaced
-  // with real session verification.
   // Reclamation is not scheduled from here, and must not be: a route module
   // has no once-per-process guarantee and no shutdown hook. AssetCollector
   // runs from instrumentation.ts instead, over the byte store this same
@@ -142,31 +261,67 @@ async function createPersistenceHandler(
   // document store this handler mounts is the other half of that mechanism:
   // createOwnerBoundDocumentStore builds it with reference tracking on, which
   // is what gives the entry pass something to read.
+  const assetPrincipal = assetPrincipalForOwner(ownerId);
   const byteEgress = indirectEgressWithinGrace(
     configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
   );
-  return createStorageHttpHandler(runtimeStore, documentStore, {
+  const guardedRuntimeStore = mergeThroughClaim(
+    guardedServerRuntimeStore(runtimeStore, pool),
+    principal,
+  );
+  return createStorageHttpHandler(guardedRuntimeStore, documentStore, {
     authenticate: async (request) => {
-      if (request.url?.startsWith('/documents')) return { learnerKey: ownerId };
-      if (request.url?.startsWith('/assets')) {
-        return { key: SHARED_ASSET_PRINCIPAL, learnerKey: ownerId };
-      }
-      return authenticatePersistenceRequest(request);
+      if (request.url?.startsWith('/assets')) return assetPrincipal;
+      return { learnerKey: ownerId };
     },
-    authorizeAssets: async (_principal, request) => {
-      const method = (request.method ?? 'GET').toUpperCase();
-      // Reads and allocations for everyone; mutations for nobody, because the
-      // principal they would be scoped to is shared and therefore proves
-      // nothing about who is asking.
-      return method !== 'PUT' && method !== 'DELETE';
-    },
-    authorizeMerge: async () => false,
+    // Upload admission. The package calls this after it has matched the asset
+    // route and method and before it reads the body. POST is accepted only on
+    // the collection route and PUT only on the content route, so the method
+    // alone says which byte-storing operation this is -- by the package's own
+    // routing, whatever spelling the path used -- and nothing has been stored
+    // or counted against the quota yet.
+    ...(beforeAssetAllocate === undefined
+      ? {}
+      : {
+          authorizeAssets: async (_assetPrincipal: unknown, req: IncomingMessage) => {
+            const operation =
+              req.method === 'POST' ? 'create' : req.method === 'PUT' ? 'replace' : undefined;
+            if (operation === undefined) return true;
+            const assetId = operation === 'replace' ? routedAssetId(req.url) : undefined;
+            const refusal: unknown = await beforeAssetAllocate(principal, {
+              operation,
+              ...(assetId === undefined ? {} : { assetId }),
+              method: request.method,
+              url: request.url,
+              headers: request.headers,
+            });
+            if (refusal === undefined) return true;
+            if (!(refusal instanceof Response)) {
+              throw new Error(
+                `Persistence hooks ${hooks.name}: beforeAssetAllocate must resolve undefined or a Response`,
+              );
+            }
+            admission.refusal = refusal;
+            return false;
+          },
+        }),
+    // The runtime contract's learner merge is a claim: it is allowed only
+    // from the anonymous owner this request presents beside a non-anonymous
+    // one (its pendingClaim) into that owner, and it moves everything the
+    // anonymous owner holds, not only runtime sessions (see
+    // `mergeThroughClaim` below and lib/persistence/owner-claims.ts).
+    authorizeMerge: async (_runtimePrincipal, fromLearnerKey, toLearnerKey) =>
+      mayMergeLearner(principal, request, fromLearnerKey, toLearnerKey),
     authorizeAdmin: async () => false,
     authorizeDocuments: async () => access === 'allow',
     validateScene: validateAppScene,
     validateStage: validateAppStage,
     payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
-    assetStore,
+    assetStore: createOwnerAssetStore(assetStore, {
+      ownerId,
+      queryable: pool,
+      transactions: { withTransaction, storeIn: assetStoreIn },
+    }),
     ...(byteEgress === undefined ? {} : { byteEgress }),
   });
 }
@@ -351,17 +506,36 @@ async function handlePersistenceRequestInner(
   if (!connectionString) {
     return jsonError(404, 'PERSISTENCE_NOT_CONFIGURED', 'server persistence not configured');
   }
-  if (!process.env.PERSISTENCE_DEV_TOKEN) {
-    return jsonError(
-      503,
-      'PERSISTENCE_DEV_TOKEN_MISSING',
-      'server persistence requires PERSISTENCE_DEV_TOKEN (development auth only)',
-    );
-  }
 
-  return withRequestOwnerId(request, async (ownerId, responseHeaders) => {
+  return withRequestOwner(request, async (principal, responseHeaders) => {
+    const { ownerId } = principal;
     try {
       const path = routeRelativePath(request);
+      if (path === LEARNER_KEY_PATH) {
+        return request.method === 'GET'
+          ? learnerKeyResponse(ownerId, responseHeaders)
+          : withHeaders(
+              jsonError(405, 'METHOD_NOT_ALLOWED', 'learner-key accepts GET only'),
+              responseHeaders,
+            );
+      }
+      if (path === LEARNER_MERGE_PATH && request.method === 'POST') {
+        return await handleLearnerMerge(request, principal, responseHeaders);
+      }
+      // A request that still presents an identity a claim retired writes
+      // nothing: its work lives in the account now. What makes that exact is
+      // the fence inside every create transaction (documents, folders, asset
+      // allocations, runtime sessions), which answers `403 OWNER_RETIRED`
+      // itself. This check only answers the common case up front with the
+      // same status for every write, including writes by id to rows that
+      // moved (which would otherwise read as not found). It costs nothing for
+      // an owner that cannot be retired (see `isOwnerRetired`).
+      if (!READ_METHODS.has(request.method)) {
+        const { pool } = await getServerPersistenceProvider(connectionString, deps.poolFactory);
+        if (await isOwnerRetired(pool as unknown as Queryable, ownerId)) {
+          return withHeaders(ownerRetiredResponse(), responseHeaders);
+        }
+      }
       const action = parseDocumentAction(request.method, path);
       let access: DocumentAccess = 'allow';
       if (path === '/documents' || path.startsWith('/documents/')) {
@@ -379,24 +553,35 @@ async function handlePersistenceRequestInner(
         );
       }
 
-      const response =
+      const admission: AssetAdmission = {};
+      const handled =
         access === 'not-found'
           ? jsonError(404, 'DOCUMENT_NOT_FOUND', '@openmaic/storage: document not found')
           : await runNodeHandler(
-              await createPersistenceHandler(connectionString, ownerId, access, deps.poolFactory),
+              await createPersistenceHandler(
+                connectionString,
+                principal,
+                access,
+                request,
+                admission,
+                deps.poolFactory,
+              ),
               request,
             );
-      for (const [name, value] of responseHeaders.entries()) response.headers.append(name, value);
-      return response;
+      const answered = admission.refusal ?? handled;
+      // A write the fence refused inside its transaction: drop the retired
+      // credential, as the up-front answer above does.
+      if (answered.status === 403 && (await responseErrorCode(answered)) === OWNER_RETIRED) {
+        for (const cookie of retiredCredentialCookies())
+          responseHeaders.append('Set-Cookie', cookie);
+      }
+      return withHeaders(answered, responseHeaders);
     } catch (error) {
       console.error('Embedded persistence route initialization failed', error);
-      const response = jsonError(
-        500,
-        'PERSISTENCE_INIT_FAILED',
-        'server persistence initialization failed',
+      return withHeaders(
+        jsonError(500, 'PERSISTENCE_INIT_FAILED', 'server persistence initialization failed'),
+        responseHeaders,
       );
-      for (const [name, value] of responseHeaders.entries()) response.headers.append(name, value);
-      return response;
     }
   });
 }

@@ -182,6 +182,15 @@ describe('asset entry lifecycle with PGlite', () => {
     );
   };
 
+  /** A host's ownership relation, provisioned by the tests that scope by owner. */
+  const OWNERSHIP = { table: 'document_owners', claimOnCreate: true } as const;
+  const provisionOwnership = async (): Promise<void> => {
+    await db.query(`CREATE TABLE document_owners (
+      stage_id TEXT PRIMARY KEY REFERENCES document_stages(id) ON DELETE CASCADE,
+      owner_id TEXT NOT NULL
+    )`);
+  };
+
   const collector = (options: Partial<AssetCollectorOptions> = {}): AssetCollector =>
     new AssetCollector(db, byteStore, {
       withTransaction: transactions(db),
@@ -1147,10 +1156,12 @@ describe('asset entry lifecycle with PGlite', () => {
     });
 
     test('deleteDocument for a stage outside the scope drops nothing', async () => {
+      await provisionOwnership();
       const id = await store.put(PRINCIPAL, new Blob(['owned asset']));
       const owned = new PgDocumentStore(db, {
         withTransaction: transactions(db),
         trackAssetReferences: true,
+        documentOwnership: OWNERSHIP,
       }).forOwner('owner-a');
       await owned.saveDocument(
         documentWith('stage-1', [sceneWithImages('stage-1', 'scene-a', 0, [id])]),
@@ -1159,8 +1170,10 @@ describe('asset entry lifecycle with PGlite', () => {
       const foreign = new PgDocumentStore(db, {
         withTransaction: transactions(db),
         trackAssetReferences: true,
+        documentOwnership: OWNERSHIP,
       }).forOwner('owner-b');
       await foreign.deleteDocument('stage-1');
+      await expect(foreign.withdrawAssetReferences('stage-1')).resolves.toBe(false);
 
       expect(await refRows()).toEqual([
         { stage_id: 'stage-1', scope: 'scene', scene_id: 'scene-a', asset_id: id },
@@ -1321,6 +1334,152 @@ describe('asset entry lifecycle with PGlite', () => {
         legacyEntriesCommitted: 0,
       });
       expect(await lifecycleOf(id)).toBeDefined();
+    });
+  });
+
+  describe('reference principals', () => {
+    const OWN = { key: 'owner-a' } as const;
+    const FOREIGN = { key: 'owner-b' } as const;
+    const SHARED = { key: 'shared' } as const;
+
+    const scopedDocuments = (ownerId?: string): PgDocumentStore =>
+      new PgDocumentStore(db, {
+        withTransaction: transactions(db),
+        trackAssetReferences: true,
+        assetReferencePrincipals: () => [OWN.key, SHARED.key],
+        ...(ownerId === undefined ? {} : { ownerId }),
+      });
+
+    test('a full save references and commits only entries of the listed principals', async () => {
+      const own = await store.put(OWN, new Blob(['own']));
+      const foreign = await store.put(FOREIGN, new Blob(['foreign']));
+      const shared = await store.put(SHARED, new Blob(['shared']));
+
+      await scopedDocuments().saveDocument(
+        documentWith('stage-1', [sceneWithImages('stage-1', 'scene-a', 0, [own, foreign, shared])]),
+      );
+
+      expect((await refRows()).map((row) => row.asset_id).sort()).toEqual([own, shared].sort());
+      expect((await lifecycleOf(own))?.committed_at).not.toBeNull();
+      expect((await lifecycleOf(shared))?.committed_at).not.toBeNull();
+      // Another principal's pending allocation stays exactly as it was.
+      const untouched = await lifecycleOf(foreign);
+      expect(untouched?.committed_at).toBeNull();
+      expect(untouched?.expires_at).not.toBeNull();
+    });
+
+    test('incremental scene and stage writes are scoped the same way', async () => {
+      const documents = scopedDocuments();
+      await documents.saveDocument(
+        documentWith('stage-1', [sceneWithImages('stage-1', 's', 0, [])]),
+      );
+      const foreignScene = await store.put(FOREIGN, new Blob(['foreign scene']));
+      const foreignStage = await store.put(FOREIGN, new Blob(['foreign stage']));
+
+      await documents.putScene('stage-1', sceneWithImages('stage-1', 's', 0, [foreignScene]));
+      await documents.putStage(
+        'stage-1',
+        documentWith('stage-1', [], [foreignStage]).stage as Parameters<
+          PgDocumentStore['putStage']
+        >[1],
+      );
+
+      expect(await refRows()).toEqual([]);
+      expect((await lifecycleOf(foreignScene))?.committed_at).toBeNull();
+      expect((await lifecycleOf(foreignStage))?.committed_at).toBeNull();
+    });
+
+    test('a store re-bound with forOwner scopes writes to the new owner', async () => {
+      const alice = await store.put({ key: 'owner:alice' }, new Blob(['alice']));
+      const bob = await store.put({ key: 'owner:bob' }, new Blob(['bob']));
+      const bound = new PgDocumentStore(db, {
+        withTransaction: transactions(db),
+        trackAssetReferences: true,
+        ownerId: 'alice',
+        // Principals follow the bound owner, not any ownership record.
+        documentOwnership: false,
+        allowCrossOwnerDocumentAccess: true,
+        assetReferencePrincipals: (ownerId) => (ownerId === null ? [] : [`owner:${ownerId}`]),
+      }).forOwner('bob');
+
+      await bound.saveDocument(
+        documentWith('stage-bob', [sceneWithImages('stage-bob', 'scene-a', 0, [alice, bob])]),
+      );
+
+      expect((await refRows()).map((row) => row.asset_id)).toEqual([bob]);
+      expect((await lifecycleOf(bob))?.committed_at).not.toBeNull();
+      expect((await lifecycleOf(alice))?.committed_at).toBeNull();
+    });
+
+    test('without the option every held entry is referenced, as before', async () => {
+      const foreign = await store.put(FOREIGN, new Blob(['foreign']));
+      await documentStore(true).saveDocument(
+        documentWith('stage-1', [sceneWithImages('stage-1', 'scene-a', 0, [foreign])]),
+      );
+      expect((await refRows()).map((row) => row.asset_id)).toEqual([foreign]);
+    });
+
+    test('the backfill scopes each document by its owner', async () => {
+      await enableReferenceTracking();
+      const own = await store.put(OWN, new Blob(['own legacy']));
+      const foreign = await store.put(FOREIGN, new Blob(['foreign legacy']));
+      await db.query(
+        `UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = ANY($1)`,
+        [[own, foreign]],
+      );
+      await provisionOwnership();
+      // Written with tracking off: only the backfill will record its references.
+      await new PgDocumentStore(db, {
+        withTransaction: transactions(db),
+        ownerId: 'alice',
+        documentOwnership: OWNERSHIP,
+      }).saveDocument(
+        documentWith('stage-1', [sceneWithImages('stage-1', 'scene-a', 0, [own, foreign])]),
+      );
+      const seen: (string | null)[] = [];
+
+      await collector({
+        // The owner comes from the host's relation: the document row has none.
+        documentOwnership: OWNERSHIP,
+        assetReferencePrincipals: (documentOwnerId) => {
+          seen.push(documentOwnerId);
+          return documentOwnerId === 'alice' ? [OWN.key] : [];
+        },
+      }).collectPass();
+
+      expect(seen).toEqual(['alice']);
+      expect((await refRows()).map((row) => row.asset_id)).toEqual([own]);
+    });
+
+    test('the backfill asks about a document without an ownership row as unowned', async () => {
+      await enableReferenceTracking();
+      await provisionOwnership();
+      const legacy = await store.put(OWN, new Blob(['unowned legacy']));
+      await db.query(
+        `UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = $1`,
+        [legacy],
+      );
+      await documentStore(false).saveDocument(
+        documentWith('stage-1', [sceneWithImages('stage-1', 'scene-a', 0, [legacy])]),
+      );
+      const seen: (string | null)[] = [];
+      await collector({
+        documentOwnership: OWNERSHIP,
+        assetReferencePrincipals: (documentOwnerId) => {
+          seen.push(documentOwnerId);
+          return [];
+        },
+      }).collectPass();
+      expect(seen).toEqual([null]);
+    });
+
+    test('per-owner principals without an ownership relation are refused at construction', () => {
+      expect(() => collector({ assetReferencePrincipals: () => [OWN.key] })).toThrow(
+        /requires documentOwnership/,
+      );
+      expect(() =>
+        collector({ assetReferencePrincipals: () => [OWN.key], documentOwnership: false }),
+      ).not.toThrow();
     });
   });
 

@@ -67,6 +67,62 @@ export class DocumentNotFoundError extends Error {
   }
 }
 
+/** The machine-readable code a {@link DocumentWriteRefusedError} carries. */
+const REFUSAL_CODE = /^[A-Z][A-Z0-9_]{0,63}$/;
+
+/**
+ * A document write the store refused as a matter of policy -- the caller may
+ * not perform it -- rather than because the payload or the target is wrong.
+ *
+ * A store that wraps another (a host's owner-bound layer, say) throws it to
+ * refuse a write with a stable, machine-readable `code`; the HTTP handler
+ * answers `403` with that code, and the write is not applied. `code` is
+ * upper-case ASCII (`/^[A-Z][A-Z0-9_]{0,63}$/`), so it can travel in an error
+ * envelope unchanged.
+ */
+export class DocumentWriteRefusedError extends Error {
+  override readonly name = 'DocumentWriteRefusedError';
+
+  constructor(
+    readonly stageId: string,
+    readonly code: string,
+    message: string,
+  ) {
+    if (!REFUSAL_CODE.test(code)) {
+      throw new TypeError(
+        `@openmaic/storage: refusal code must match ${String(REFUSAL_CODE)}, got ${JSON.stringify(code)}`,
+      );
+    }
+    super(message);
+  }
+}
+
+/**
+ * Whether `error` is a {@link DocumentWriteRefusedError}: an instance of this
+ * class, or one from another copy of this package (a host store bundled
+ * separately).
+ *
+ * For the cross-copy case the `name` is the effective discriminator: the
+ * candidate must be an `Error` named `DocumentWriteRefusedError` with a string
+ * `message`, a string `stageId`, and a `code` of the refusal shape. The shape
+ * alone is not a discriminator -- unrelated errors carry upper-case codes too
+ * (a database error's SQLSTATE, for one) -- so an error that merely has such a
+ * code is never a refusal. Conversely, only an error that deliberately takes
+ * this name is treated as one.
+ */
+export function isDocumentWriteRefusedError(error: unknown): error is DocumentWriteRefusedError {
+  if (error instanceof DocumentWriteRefusedError) return true;
+  if (!(error instanceof Error)) return false;
+  const candidate = error as Error & { code?: unknown; stageId?: unknown };
+  return (
+    candidate.name === 'DocumentWriteRefusedError' &&
+    typeof candidate.message === 'string' &&
+    typeof candidate.code === 'string' &&
+    REFUSAL_CODE.test(candidate.code) &&
+    typeof candidate.stageId === 'string'
+  );
+}
+
 /**
  * The portable, embedded form of a persisted course. Storage normalizes it into
  * per-entity rows on write and reassembles it on read.
@@ -132,6 +188,8 @@ export class DocumentFolderLimitError extends Error {
  * Owner-scoped folder organization layered beside document storage. These
  * methods are intentionally available only on a bound server store: callers
  * choose the trusted owner with `forOwner`, never with method parameters.
+ * Which documents are the owner's is answered by the store's ownership
+ * relation (`documentOwnership`), not by the document rows.
  */
 export interface DocumentFolderStore {
   createFolder(
@@ -276,7 +334,8 @@ export interface StageFreshnessManifest {
 export interface StageFreshnessManifestStore {
   /**
    * Read the owner-scoped freshness manifest for one stage. `null` when the
-   * stage is absent from this store's scope (the same no-existence-oracle
+   * stage is absent from this store's scope -- missing, or not held by the
+   * bound owner in the store's ownership relation (the same no-existence-oracle
    * posture as `loadDocument`).
    */
   readFreshnessManifest(stageId: string): Promise<StageFreshnessManifest | null>;

@@ -103,10 +103,13 @@ export type {
   StageFreshnessManifest,
   StageFreshnessManifestStore,
 } from './document/types.js';
+export { StorageBusyError, isStorageBusyError } from './store-errors.js';
 export {
   DocumentFolderLimitError,
   DocumentNotFoundError,
   DocumentVersionError,
+  DocumentWriteRefusedError,
+  isDocumentWriteRefusedError,
 } from './document/types.js';
 export { BrowserDocumentStore, type BrowserDocumentStoreOptions } from './document/browser.js';
 export {
@@ -123,8 +126,12 @@ export {
   StorageLockUnavailableError,
   ensureDocumentSchema,
   readStageFreshnessManifest,
+  reassignDocumentFolders,
   splitSqlStatements,
+  type DocumentFolderReassignment,
+  type DocumentOwnershipRelation,
   type PgDocumentStoreOptions,
+  type ReassignDocumentFoldersInput,
   type StorageLockUnavailableReason,
 } from './document/pg.js';
 
@@ -135,7 +142,11 @@ export type {
   RuntimeAppendOptions,
   RuntimeTailOptions,
 } from './runtime/types.js';
-export { RuntimeAppendConflictError } from './runtime/types.js';
+export {
+  RuntimeAppendConflictError,
+  RuntimeSessionExistsError,
+  RuntimeStageNotFoundError,
+} from './runtime/types.js';
 export { BrowserRuntimeStore, type BrowserRuntimeStoreOptions } from './runtime/browser.js';
 
 export {
@@ -216,6 +227,7 @@ export {
   USER_SKILL_PG_SCHEMA,
   ensureUserSkillSchema,
   type PgUserSkillStoreOptions,
+  type UserSkillOwnerMerge,
   type UserSkillTableNames,
 } from './skill/pg.js';
 

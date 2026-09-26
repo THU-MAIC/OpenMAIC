@@ -383,47 +383,73 @@ and PostgreSQL. The persistence HTTP server is embedded in the app at
 
 ```bash
 cp .env.example .env.local
-printf '\nDATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic\nPERSISTENCE_DEV_TOKEN=openmaic-local-dev\n' >> .env.local
-NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docker compose --profile server-persistence up --build
+printf '\nDATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic\n' >> .env.local
+NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
 ```
 
-Add your provider API keys to `.env.local` as usual. Runtime sessions and course
-documents become server-backed; device-scoped KV data (including the anonymous
-device learner key and playback position) remains in the browser. Existing
-browser course data is copied into the configured server store lazily, one
-course at a time when it is first accessed, using the same verified migration
-path as browser persistence.
+Add your provider API keys to `.env.local` as usual. Runtime sessions, course
+documents and generated media become server-backed; device-scoped KV data
+(such as playback position) remains in the browser. Existing browser course
+data is copied into the configured server store lazily, one course at a time
+when it is first accessed, using the same verified migration path as browser
+persistence.
 
 `NEXT_PUBLIC_PERSISTENCE` is a **build-time switch** compiled into the browser
 bundle. A build with it enabled must be deployed with a working runtime
-`DATABASE_URL` and `PERSISTENCE_DEV_TOKEN`, while
-`NEXT_PUBLIC_PERSISTENCE_TOKEN` must match that server token at build time.
-Otherwise the browser selects HTTP persistence but the embedded endpoint
-returns configuration/authentication/initialization errors; the home page shows
-a persistence-unavailable toast and keeps the prior course list instead of
+`DATABASE_URL`. Otherwise the browser selects HTTP persistence but the embedded
+endpoint returns configuration or initialization errors; the home page shows a
+persistence-unavailable toast and keeps the prior course list instead of
 misleadingly displaying an empty library.
 
-`PERSISTENCE_DEV_TOKEN` and `NEXT_PUBLIC_PERSISTENCE_TOKEN` are **not a
-secret in any meaningful sense**: the `NEXT_PUBLIC_` token is compiled into
-the public JavaScript bundle, fully visible to every visitor, and therefore
-provides **no confidentiality and no user isolation whatsoever**. Document
-and asset requests skip that authenticator
-(`app/api/persistence/[...path]/route.ts`). The document owner is the
-30-day anonymous cookie (`lib/server/agent-runtime/owner.ts`), not
-`x-learner-key`. A document read is capability-by-id: if the stage meta
-exists and is not tombstoned, `decideDocumentAccess` allows it with no
-owner check (`lib/persistence/document-access.ts`), so anyone who can
-reach the endpoint and knows a stage id can read that course. Writes and
-deletes are owner-checked against the cookie. Only `/runtime/*` calls
-`authenticatePersistenceRequest`, where a client-chosen `x-learner-key`
-still partitions learner sessions. The token's only purpose on that
-runtime path is to keep unrelated network scanners out of an endpoint on
-a trusted network. This is suitable only for localhost or trusted-network,
-single-user deployments. Before production, replace
-[`lib/persistence/server-auth.ts`](lib/persistence/server-auth.ts) with real
-session verification that derives the learner partition from server-controlled
-identity, and change the document/merge/admin authorization policies as
-appropriate.
+Every `/api/persistence` request is attributed to the owner the
+[owner identity seam](#owner-identity) resolves — by default the 30-day
+anonymous cookie, one owner per browser. There is no separate persistence
+credential:
+
+- **Documents.** A read is capability-by-id: if the stage meta exists and is
+  not tombstoned, `decideDocumentAccess` allows it with no owner check
+  (`lib/persistence/document-access.ts`), so anyone who can reach the endpoint
+  and knows a stage id can read that course. Writes and deletes are
+  owner-checked.
+- **Runtime sessions** (`/runtime/*`) are partitioned by learner key, and the
+  learner key **is the owner id**. The browser learns it from
+  `GET /api/persistence/learner-key`; a request naming any other learner key
+  is refused (`403 FORBIDDEN_LEARNER`), and another learner's session answers
+  `404`. Runtime of a deleted (tombstoned) course reads as absent and takes no
+  new writes. Learner merge and the admin wipes stay refused.
+- **Assets** are allocated in a per-owner partition, so `ASSET_QUOTA_BYTES` is
+  a per-owner ceiling and only the owner can replace or delete an entry. Reads
+  stay capability-by-id for media a course viewer needs: an owner reads its own
+  entries, and anyone reads another owner's committed entry while a live course
+  of that same owner references it. A course only references (and commits) its
+  owner's own media: naming another owner's asset id in your course records
+  nothing, so it can neither expose their unsaved uploads nor keep their media
+  alive. Entries written before per-owner partitions (the old shared
+  partition) stay readable by id to everyone, and can be replaced or deleted
+  only by an owner who owns every course referencing them; the collector
+  reclaims them as courses stop naming them, as before.
+
+Without a host auth method the owner is only as strong as a cookie: this is
+suitable for localhost, trusted-network, or single-team deployments. A
+deployment with its own accounts registers owner auth methods (see
+[Owner identity](#owner-identity)) and every surface above follows it.
+
+> [!WARNING]
+> **Upgrading server persistence.** `PERSISTENCE_DEV_TOKEN`,
+> `NEXT_PUBLIC_PERSISTENCE_TOKEN` and `PERSISTENCE_ALLOW_INSECURE_DEV_AUTH` are
+> removed and ignored; drop them from your environment and build arguments.
+> Runtime sessions written before this change are keyed by a learner key the
+> browser minted, not by an owner id, so they are **no longer reachable** (course
+> documents and media are unaffected). They are not migrated automatically,
+> because trusting a client-supplied old key would bring client-chosen identity
+> back.
+>
+> **If `PERSISTENCE_DEV_TOKEN` was your only access gate, act before upgrading.**
+> Without it the endpoint answers every visitor who reaches it, each as their
+> own anonymous owner. Put the deployment behind `ACCESS_CODE` or your own
+> gateway, register owner auth methods backed by your accounts (see
+> [Owner identity](#owner-identity)), or turn server persistence off
+> (`NEXT_PUBLIC_PERSISTENCE` unset) until you have one.
 
 `PERSISTENCE_POSTGRES_PASSWORD` initializes the PostgreSQL role only when the
 data directory is empty; changing it later does not rotate an existing
@@ -478,24 +504,23 @@ storage while an expiry that fires early costs a course its media. A value that
 is not a positive integer stops the server from starting, for the same reason
 `ASSET_QUOTA_BYTES` does.
 
-One asset principal may hold `ASSET_QUOTA_BYTES` (default 10 GiB) of live
-assets — pending-unexpired or still referenced by a document — before further
+Each owner may hold `ASSET_QUOTA_BYTES` (default 10 GiB) of live assets —
+pending-unexpired or still referenced by a document — before further
 allocations are refused; the store enforces it inside the write transaction, so
-concurrent uploads cannot race past it. Until per-user asset principals land
-every caller shares one principal, which makes this a deployment-wide ceiling
-rather than a per-user one — and one worth having, because allocation is
-reachable by any caller the deployment admits. Set `ASSET_QUOTA_BYTES=0` to opt
-out and bound storage elsewhere; any spelling of zero does it. A value that is
-not a non-negative integer is refused when the server starts, rather than
-replaced by the default, so a mistyped ceiling stops the process instead of
-quietly running on a limit nobody chose.
+concurrent uploads cannot race past it. The ceiling is per owner, not per
+deployment: with the default anonymous-cookie owners a visitor who clears their
+cookie becomes a new owner with a fresh quota, so bound total storage elsewhere
+if that matters. Entries from before per-owner partitions keep counting against
+the old shared partition. Set `ASSET_QUOTA_BYTES=0` to opt out and bound
+storage elsewhere; any spelling of zero does it. A value that is not a
+non-negative integer is refused when the server starts, rather than replaced by
+the default, so a mistyped ceiling stops the process instead of quietly running
+on a limit nobody chose.
 
-Assets are read and allocated by any caller the deployment admits, and are never
-replaced or deleted through this endpoint: those operations would scope to the
-shared principal, so admitting them would let any caller overwrite or destroy
-another author's media. An asset nothing references is left to the collector
-rather than deleted by a browser, and nothing on the wire changes when one is
-committed — a document write does that as a side effect.
+The browser never deletes an asset: one nothing references is left to the
+collector, and nothing on the wire changes when one is committed — a document
+write does that as a side effect. Replacing or deleting through the endpoint is
+limited to the owner, as described above.
 
 Asset byte egress is direct by default: the embedded route materializes the
 bytes in the response body. Setting `ASSET_BYTE_EGRESS=redirect` opts into
@@ -515,6 +540,490 @@ and
 [DocumentStore HTTP contract](packages/@openmaic/storage/docs/document-http-contract.md).
 Leave `NEXT_PUBLIC_PERSISTENCE` unset to retain the existing browser-only
 behavior.
+
+#### Owner identity
+
+Courses, folders, materials, agent sessions and skills are partitioned by an
+**owner id**, which the server resolves for every request in one place
+(`lib/server/identity/`). Every owner-scoped route and Server Action asks it,
+once per request; nothing else reads identity cookies or headers.
+
+Resolution asks an ordered list of **owner auth methods**. Each method looks
+for one kind of credential and answers exactly one of:
+
+| Answer | Meaning | Resolution |
+|---|---|---|
+| `authenticated` | Its credential is present and valid | That principal is the owner; later methods are not asked |
+| `not-applicable` | No credential of its kind is present | The next method is asked |
+| `invalid` | Its credential is present but invalid | `401 INVALID_CREDENTIAL` at once; no later method and no fallback is asked |
+
+When every method answers `not-applicable`, the built-in **anonymous
+fallback** resolves the request: one owner per browser, `anon:<uuid>` from a
+30-day `HttpOnly` `anonymous_id` cookie, minted on first use. It cannot
+publish. A host can turn the fallback off, and then such a request is a `401`
+too. A refused request is never served as an anonymous owner.
+
+Out of the box nothing is registered, so every request is an anonymous owner,
+unless `PERSISTENCE_SHARED_OWNER_ID` is set (requires `ACCESS_CODE`): then the
+built-in `sharedTeam` method resolves every request to that fixed id, so the
+team behind the access code shares one library and may publish.
+
+Authorization reads the principal's `kind` and `roles`, never the shape of the
+id. The core roles are `course:publish` (publish and unpublish a course) and
+`admin` (reserved for administrative surfaces; no built-in grants it).
+
+##### Registering methods
+
+A host with its own accounts writes a method per credential it accepts and
+registers them once, from `instrumentation.ts` `register()`, before the server
+serves a request:
+
+```ts
+const { configureOwnerAuthentication } = await import('@/lib/server/identity');
+configureOwnerAuthentication({
+  methods: [
+    {
+      name: 'session',
+      async authenticate(req) {
+        const session = await readSession(req.headers); // host code
+        if (session === undefined) return { status: 'not-applicable' };
+        if (!session.valid) return { status: 'invalid', reason: 'expired session' };
+        return {
+          status: 'authenticated',
+          principal: {
+            ownerId: `user:${session.userId}`,
+            kind: 'user',
+            roles: new Set(session.canPublish ? ['course:publish'] : []),
+            assurance: 'verified',
+          },
+        };
+      },
+      describeStoredOwner: (ownerId) =>
+        ownerId.startsWith('user:') ? { kind: 'user' } : undefined,
+    },
+  ],
+  // anonymousFallback: false, // refuse requests no method applies to
+});
+```
+
+- **Present but unusable is `invalid`, never `not-applicable`.** Answer
+  `not-applicable` only when the method's header or cookie is absent. A method
+  that answers `not-applicable` for a malformed or expired credential of its
+  own kind silently hands the request to the next method or to an anonymous
+  owner; core cannot tell. A method that cannot decide (its key endpoint or
+  session store is down) throws, and the request fails as a server error.
+- `setCookies` on an `authenticated` answer ride every response, errors
+  included. `reason` on an `invalid` answer is for server logs only.
+- Server Actions ask the same methods in the same order, through
+  `authenticateFromContext()` when a method has one and otherwise
+  `authenticate()` with the request headers. In a Server Action cookies must be
+  written through `next/headers`; an answer carrying `setCookies` is refused.
+- `describeStoredOwner(ownerId)` says what kind of owner a stored id is, for
+  work that holds only the id (an agent run, a claim). The anonymous fallback
+  is asked first, then the methods in order. An id nobody recognizes is a
+  `user` with no roles.
+- `issuesAnonymousOwners: true` with `clearCredential()` is only for a method
+  that authenticates anonymous principals itself with a cookie: those
+  `Set-Cookie` values ride every `403 OWNER_RETIRED`. Core never calls
+  `clearCredential()` there on any other method, so an account's session
+  cookie is never cleared because an anonymous identity was retired.
+- Principals are checked per request: an owner id that is not 1-256 printable
+  non-space ASCII characters, an unknown `kind` or `assurance`, or a
+  `pendingClaim` set by the method is a `500` for that request rather than
+  stored. The same resolved owner is the runtime learner key and the asset
+  partition of `/api/persistence`, so the methods govern those too.
+
+Registration is checked at boot, and each of these throws from `register()`
+so the server does not start: a second call, a call after owner resolution has
+started, an empty method list, a malformed or duplicate-named method, and the
+`sharedTeam` rules below. To keep a shared team owner beside host methods,
+include `sharedTeamAuthMethod()` (also exported from `@/lib/server/identity`)
+as the **last** method: it always authenticates, so nothing after it would be
+asked. `PERSISTENCE_SHARED_OWNER_ID` set beside a registration that does not
+include it, or `sharedTeamAuthMethod()` registered without the variable, fails
+the boot rather than being ignored.
+
+`OWNER_AUTHENTICATOR` and the `TRUSTED_PROXY_*` variables of an earlier
+built-in gateway-header authenticator no longer exist; if any of them is set,
+the boot fails with a message pointing here, instead of silently serving every
+request as an anonymous owner.
+
+##### Recipe: accounts through an identity gateway (signed JWT)
+
+OpenMAIC has no built-in gateway authenticator. A deployment behind an identity
+gateway writes a small method that verifies the **signed** assertion the
+gateway forwards, against the identity provider's published keys. Unlike a
+plain user header, a signed token cannot be forged by a client that reaches the
+app around the gateway. Common sources:
+
+| Gateway | Header | Issuer / keys |
+|---|---|---|
+| oauth2-proxy with `--pass-authorization-header` (or `injectRequestHeaders` in `--alpha-config` setting `Authorization: Bearer <id_token>`) | `Authorization: Bearer …` | The IdP's issuer and `jwks_uri`; the audience is the OAuth client id |
+| Cloudflare Access | `Cf-Access-Jwt-Assertion` | `https://<team>.cloudflareaccess.com`, keys at `/cdn-cgi/access/certs`; the audience is the application's AUD tag |
+| Google Cloud IAP | `x-goog-iap-jwt-assertion` | `https://cloud.google.com/iap`, keys at `https://www.gstatic.com/iap/verify/public_key-jwk` |
+
+The sketch below uses the [`jose`](https://github.com/panva/jose) library, which
+the host adds as its own dependency. **It is a recipe the host owns and must
+test**, not code OpenMAIC ships or maintains. Put the file in
+`lib/server/identity/host/`: the boundary test
+(`tests/server/identity/cookie-guard.test.ts`) fails on reads of gateway
+identity headers or of an incoming `Authorization` header anywhere else, core
+identity files included. Register the method from `instrumentation.ts`.
+
+```ts
+// lib/server/identity/host/gateway-jwt.ts (host code)
+import { createRemoteJWKSet, errors, jwtVerify } from 'jose';
+
+import type { OwnerAuthMethod } from '@/lib/server/identity';
+
+const ISSUER = 'https://idp.example.org/';
+const AUDIENCE = 'openmaic';
+const JWKS = createRemoteJWKSet(new URL('https://idp.example.org/.well-known/jwks.json'));
+const ADMIN_GROUPS = new Set(['openmaic-admins']);
+/** jose errors that mean "this token is bad", as opposed to "the keys could not be fetched". */
+const TOKEN_ERRORS = [
+  errors.JWTExpired, // exp / nbf
+  errors.JWTClaimValidationFailed, // iss, aud, other claim checks
+  errors.JWTInvalid, // not a usable JWT payload
+  errors.JWSInvalid, // malformed compact serialization
+  errors.JWSSignatureVerificationFailed,
+  errors.JWKSNoMatchingKey, // unknown kid
+  errors.JWKSMultipleMatchingKeys, // no kid and several candidate keys
+  errors.JOSEAlgNotAllowed, // alg outside `algorithms`
+  errors.JOSENotSupported, // alg or header this library cannot verify
+];
+
+/** The token, `undefined` when this method does not apply. */
+function bearerToken(headers: Headers): string | undefined {
+  // Cloudflare Access / IAP: return headers.get('cf-access-jwt-assertion') ?? undefined;
+  const match = /^Bearer\s+(\S+)$/i.exec(headers.get('authorization')?.trim() ?? '');
+  return match?.[1];
+}
+
+export const gatewayJwtMethod: OwnerAuthMethod = {
+  name: 'gatewayJwt',
+  async authenticate(req) {
+    const token = bearerToken(req.headers);
+    if (token === undefined) return { status: 'not-applicable' };
+    let payload;
+    try {
+      // Checks the signature against the IdP's keys, `iss`, `aud`, `exp` and `nbf`.
+      ({ payload } = await jwtVerify(token, JWKS, {
+        issuer: ISSUER,
+        audience: AUDIENCE,
+        algorithms: ['RS256', 'ES256'],
+        clockTolerance: 30,
+      }));
+    } catch (error) {
+      // Only a failure of the token itself is `invalid`. Anything else (the key
+      // endpoint unreachable, answering non-200 or unparsable data, a timeout)
+      // is a server fault: rethrown, it fails the request as a 500 instead of
+      // refusing every user as if their token were forged.
+      if (TOKEN_ERRORS.some((type) => error instanceof type)) {
+        return { status: 'invalid', reason: (error as errors.JOSEError).code };
+      }
+      throw error;
+    }
+    const ownerId = `user:${payload.sub ?? ''}`;
+    if (!payload.sub || !/^[\x21-\x7e]{1,256}$/.test(ownerId)) {
+      return { status: 'invalid', reason: 'unusable sub' };
+    }
+    const groups: unknown[] = Array.isArray(payload.groups) ? payload.groups : [];
+    const roles = new Set(['course:publish']);
+    if (groups.some((group) => typeof group === 'string' && ADMIN_GROUPS.has(group))) {
+      roles.add('admin');
+    }
+    return {
+      status: 'authenticated',
+      principal: { ownerId, kind: 'user', roles, assurance: 'verified', channel: 'gateway' },
+    };
+  },
+  describeStoredOwner: (ownerId) =>
+    ownerId.startsWith('user:') ? { kind: 'user', roles: new Set(['course:publish']) } : undefined,
+};
+```
+
+```ts
+// instrumentation.ts, inside register()
+const { configureOwnerAuthentication } = await import('@/lib/server/identity');
+const { gatewayJwtMethod } = await import('@/lib/server/identity/host/gateway-jwt');
+configureOwnerAuthentication({ methods: [gatewayJwtMethod], anonymousFallback: false });
+```
+
+Notes for the host:
+
+- **Absent means not-applicable, present but bad means invalid.** A request
+  without the header falls through (to the anonymous fallback, or a `401`
+  with `anonymousFallback: false`, the usual choice when the gateway covers
+  every route). A wrong signature, issuer or audience, or an expired token, is
+  a `401`, never an anonymous owner.
+- **A key endpoint outage is not a bad token.** Only the listed token errors
+  answer `invalid`. `jose` reports a JWKS endpoint that is unreachable, answers
+  non-200 or returns unparsable data as a generic `JOSEError`
+  (`ERR_JOSE_GENERIC`), which the recipe rethrows: the request fails as a
+  server error rather than refusing every user as if their token were forged.
+- **Pin `issuer`, `audience` and `algorithms`.** Without an audience check any
+  token the IdP issued for another application would be accepted.
+- **`sub` is the stable id**; an email can change or be reassigned. Choose the
+  owner id scheme once: changing it later changes every owner.
+- **Groups** are IdP-specific (a `groups` claim needs the IdP to release it;
+  IAP sends none). Drop the admin mapping if yours has no such claim.
+- The gateway still should not be bypassable, and must not exempt app routes
+  from authentication, but a client that reaches the app directly cannot mint
+  a valid token, so no shared secret is needed.
+
+##### Claiming anonymous work
+
+A visitor who works anonymously and then signs in has two owners: the
+anonymous one their courses were written under, and the account. A **claim**
+moves everything the anonymous owner holds to the account in one database
+transaction, and retires the anonymous id.
+
+**When a claim can arise.** Core attaches the claim candidate itself: when a
+host method authenticates a non-anonymous principal and the same request also
+carries a valid `anonymous_id` cookie, the principal gets a `pendingClaim`
+naming that anonymous owner. This covers a visitor who worked anonymously and
+then signed in (with the anonymous fallback on), and a deployment that moved
+from anonymous use to accounts while visitors still hold their old cookie
+(with the fallback on or off). There is no candidate without a valid cookie,
+for an anonymous principal, or for the built-in `sharedTeam` (it has no
+credential of its own, so nothing says whose browser work it is); a method
+cannot set one itself.
+
+Nothing moves until the claim is triggered:
+
+- **Explicitly (the default):** the app calls `POST /api/identity/claim` with a
+  JSON body (`{}`) from its own pages. The answer is
+  `200 { status: 'claimed', moved }` or `200 { status: 'already-claimed' }`,
+  with a `Set-Cookie` that drops the anonymous cookie.
+- **Automatically:** `OWNER_CLAIM_TRIGGER=auto` claims on the first route
+  request that carries a pending claim, before the handler runs. The explicit
+  routes are exempt, so they still report their own claim. Server Actions never
+  trigger it. Prefer the explicit trigger where one browser can be shared by
+  several people: whoever signs in first takes the anonymous work in it.
+
+**The anonymous cookie is a bearer credential.** Whoever presents it can read
+and edit that anonymous work, and, beside a signed-in account, claim it into
+the account. On shared devices, clear it (a claim does) before the next person
+signs in. The cookie is unsigned and not bound to the account, and it is the
+claim candidate core reads. It is host-only, but a sibling subdomain under the
+same registrable domain can set a Domain-scoped `anonymous_id` that the browser
+may send first, so a hostile subdomain could plant which anonymous identity a
+signed-in visitor claims. Serve OpenMAIC on a registrable domain of its own
+(or where no untrusted party controls a sibling subdomain). Hardening the
+cookie itself (a `__Host-` name on HTTPS deployments, refusing a request that
+presents more than one `anonymous_id`) is a deferred item.
+
+| Request                                                                                                                          | Result                                                 |
+| -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Not same-origin JSON (`Sec-Fetch-Site` other than `same-origin`, a foreign `Origin`, or any content type but `application/json`) | `403 CROSS_ORIGIN_REFUSED`, nothing changes            |
+| An anonymous requester                                                                                                           | `403 TARGET_ANONYMOUS`                                 |
+| No anonymous cookie beside the account                                                                                           | `409 NO_PENDING_CLAIM`                                 |
+| The anonymous owner was already claimed by another account                                                                       | `409 ALREADY_CLAIMED_ELSEWHERE`; the cookie is dropped |
+| Either owner is being written (the claim could not take its locks in time)                                                       | `503 OWNER_BUSY` with `Retry-After`; retry as it is    |
+| A claim the rules below refuse                                                                                                   | `4xx` with the rule's code; nothing changes            |
+
+What moves, in this fixed order (a host adds its own tables with
+`registerClaimParticipant`, see below):
+
+1. **Folders.** A folder whose name the account already uses (compared
+   case-insensitively, like `createFolder`) is merged into the account's; one
+   whose id the account already uses for another name moves under a fresh id;
+   the rest move as they are, after the account's own. Filing follows.
+2. **Courses** (`stage_meta`), including deleted ones.
+3. **Materials.**
+4. **Agent sessions** and their session-list history.
+5. **User skills.** A handle the account already uses is renamed to the first
+   handle neither side holds (`my-notes-2`, `my-notes-3`, ...).
+6. **Runtime sessions** (the learner key). They are re-keyed as stored, so a
+   session written by a newer version does not stop the claim.
+7. **Asset entries** (the per-owner partition), so a claimed course keeps
+   rendering its media for every viewer.
+
+Quotas are not applied to what moves: the account keeps everything, and if it
+is now above its asset, material, skill or folder limit it cannot add more
+until it is back under. The claim is recorded in `owner_merges`.
+
+Rules: only an anonymous owner can be claimed, and only by a non-anonymous
+one; claiming the same pair again succeeds and does nothing; an anonymous owner
+already claimed by one account cannot be claimed by another; and there are no
+chains (a retired account cannot claim, and an owner that absorbed others
+cannot be claimed), so every retired id forwards in one step.
+
+After a claim the anonymous id is **retired**. A request that still presents
+it writes nothing under it:
+
+- Creates through `/api/persistence` (documents, folders, assets, runtime
+  sessions), the folder, course, material and skill-upload routes, and every
+  other write through `/api/persistence` answer `403 OWNER_RETIRED`.
+- A write by id to a row that moved (deleting a skill, posting to an agent
+  session) answers `403 OWNER_RETIRED` too.
+- Every such response carries the `Set-Cookie` values that drop the retired
+  anonymous cookie (and those of any method that declares `issuesAnonymousOwners`), so the browser
+  gets a fresh anonymous owner on its next request. The library of the retired
+  id reads as empty.
+
+Work that started before the claim and runs on without a request (an agent
+run's course edits, generated media and new skills) follows the id to the
+account instead, so a course that was still generating when its author signed
+in lands in their account. An agent session created by a request that races
+the claim is written for the account, as if it had been created just before
+the claim.
+
+Every write that creates or changes an owner's rows takes a per-owner
+PostgreSQL advisory lock (the identity lock) in shared mode as its
+transaction's first statement. A claim takes it in exclusive mode for both
+owners before touching a row. A fenced write racing a claim therefore either
+commits first and is moved, or waits and is refused; the tests show no
+deadlock and nothing left under the retired id for these writes.
+
+Waits are bounded:
+
+- A claim waits up to `OWNER_CLAIM_LOCK_WAIT_MS` (default 5000) for the two
+  identity locks. While it waits, PostgreSQL queues new writers of both owners
+  behind it, so this is kept short.
+- A write waits up to `OWNER_WRITE_LOCK_WAIT_MS` (default 30000) for its
+  owner's lock.
+- An upload holds the lock while its bytes are written, so a claim waits for
+  in-flight uploads, up to its bound.
+- Running out of time is `503 OWNER_BUSY` with `Retry-After`, and nothing is
+  written.
+
+The asset collector does not take the identity lock; a collector pass racing a
+claim over the same entries can make PostgreSQL abort one of them, and a
+claim aborted that way also answers `OWNER_BUSY`.
+
+A host registers participants for its own owner-keyed tables from
+`instrumentation.ts`:
+
+```ts
+const { registerClaimParticipant } = await import('@/lib/persistence/owner-claims');
+registerClaimParticipant({
+  name: 'course-notes',
+  order: 1000, // after core's 100-700; see lib/persistence/owner-claims.ts
+  rekey: async (tx, fromOwnerId, toOwnerId) =>
+    (
+      await tx.query('UPDATE course_notes SET owner_id = $2 WHERE owner_id = $1 RETURNING 1', [
+        fromOwnerId,
+        toOwnerId,
+      ])
+    ).rows.length,
+});
+```
+
+A participant runs inside the claim's transaction; if it throws, nothing any
+participant did is kept. `claimOwner(from, to)` and
+`claimPendingOwner(principal)` run a claim from host code.
+
+A claim's source must be described as anonymous (`describeStoredOwner`,
+through `principalFromStoredOwner`). Forwarding a retired id is core's own
+(`owner_merges`); there is no host hook for it. `owner_merges` records claims
+of anonymous owners only, because the write fences enforce retirement only for
+ids described as anonymous: `describeStoredOwner` must keep describing an id
+the same way, and a row retiring any other owner is refused when read. A host
+that merges two signed-in accounts moves the rows itself (its own
+participants) and refuses the merged-away account in its auth method. `OWNER_WRITE_LOCK_WAIT_MS` and
+`OWNER_CLAIM_LOCK_WAIT_MS` are checked at startup.
+
+##### Host extension hooks
+
+A host can add product behavior at four points without forking a route. They
+are registered like the owner auth methods: once, from `instrumentation.ts`
+`register()`, and sealed on first use (a second call, or a call after the
+server started using them, throws). A plain object or a class instance both
+work; each hook is read once at registration and bound to the object passed.
+A misspelled hook is refused rather than silently never called: a plain object
+may carry only the known keys, and a class instance may carry no public method
+other than a hook, so keep a host class's helpers private (`#helper`) or
+register a plain object. With
+nothing registered, every point behaves exactly as described above.
+
+```ts
+// instrumentation.ts, inside register(), next to configureOwnerAuthentication
+const { configurePersistenceHooks, configureAssetByteStore } =
+  await import('@/lib/server/persistence-hooks');
+
+configurePersistenceHooks({
+  name: 'my-host',
+  // Course creation, inside the transaction that creates the course.
+  async authorizeCreate(tx, actor) {
+    const retired = await tx.query('SELECT 1 FROM host_retired_owners WHERE owner_id = $1', [
+      actor.ownerId,
+    ]);
+    return retired.rows.length ? { allow: false, message: 'account retired' } : { allow: true };
+  },
+  async onCreate(tx, actor, stageId) {
+    await tx.query('INSERT INTO host_library (owner_id, stage_id) VALUES ($1, $2)', [
+      actor.ownerId,
+      stageId,
+    ]);
+  },
+  // What GET /api/stages lists.
+  library: {
+    name: 'owned-and-saved',
+    async list({ principal, queryable, ownedStageIds }) {
+      const saved = await queryable.query<{ stage_id: string }>(
+        'SELECT stage_id FROM host_saved_courses WHERE owner_id = $1',
+        [principal.ownerId],
+      );
+      return [...(await ownedStageIds()), ...saved.rows.map((row) => row.stage_id)];
+    },
+  },
+  // Upload admission (req.operation: 'create' | 'replace'), before any byte
+  // is stored or counted.
+  async beforeAssetAllocate(principal, req) {
+    const exhausted = await uploadBudgetExhausted(principal.ownerId, req.headers); // host code
+    return exhausted
+      ? Response.json({ error: { code: 'UPLOAD_BUDGET' } }, { status: 429 })
+      : undefined;
+  },
+});
+
+// Where asset bytes live, for the request path and the collector alike.
+configureAssetByteStore({
+  name: 'my-object-store',
+  create: () => createMyObjectByteStore(), // host code: an AssetByteStore
+  signsReadUrls: true, // required for ASSET_BYTE_EGRESS=redirect
+});
+```
+
+| Hook | Called | Contract |
+|---|---|---|
+| `authorizeCreate(tx, actor, stageId)` | Once per created course, inside its transaction, after the course rows are written | Resolve `{ allow: true }` or `{ allow: false, message? }`. A refusal rolls everything back and answers `403 CREATE_REFUSED` (on `/api/persistence` and `POST /api/stages`). |
+| `onCreate(tx, actor, stageId)` | Right after `authorizeCreate` allowed it, same transaction | Statements on `tx` commit with the course; a throw rolls the whole create back. |
+| `library.list({ principal, queryable, ownedStageIds })` | `GET /api/stages` | Resolve at most 5000 stage ids (more is a `500`). The route lists them in that order as the usual items, without duplicates, and drops every id the read path would refuse (deleted, unclaimed, or not addressable at all, such as `..` or one containing NUL). `folderId` is shown only on the principal's own courses. |
+| `beforeAssetAllocate(principal, req)` | Every upload over `/api/persistence/assets`: `POST /assets` (`req.operation: 'create'`) and `PUT /assets/{id}/content` (`'replace'`, with the decoded `req.assetId`), after the owner is resolved and before the body is read | Resolve `undefined` to proceed or a `Response` to answer with it; nothing is stored and no quota is counted. Decide on `operation` / `assetId`, which are the storage handler's own routing; `url` is the request as received. Media an agent run generates on the server is not an HTTP upload and does not pass this hook; the per-owner quota still bounds it. |
+| `configureAssetByteStore({ name, create, signsReadUrls? })` | Lazily, by the persistence route and by the asset collector | `create({ queryable })` returns an `AssetByteStore` (`@openmaic/storage`) that keeps bytes outside the registry database and declares it with `writesOutsideRegistryDatabase: true`. The flag is trusted: a store that sets it but writes through the registry database can deadlock. Replaces the `ASSET_S3_BUCKET` switch; setting both stops the server. |
+
+**What counts as a create.** A course is created by the transaction that
+records its owner for the first time: the first save of a new stage id, from a
+request or from an agent run. Saving, editing or renaming a course the owner
+already holds is an update and calls neither create hook; so is a create that
+loses a race to a concurrent create of the same id by the same owner.
+`actor.ownerId` is always the owner. `actor.source` says who is writing:
+`'request'` carries `actor.principal`, the principal the request resolved to;
+`'background'` is an agent run writing on the owner's behalf after its request
+ended, and has no principal because a run records only the owner id. A
+background write is not a trusted caller: the owner started it, so apply the
+same limits to it. On a background write a refusal reaches the agent as a fixed
+"refused by this deployment" result; `message` is only sent to request clients.
+
+Courses written before ownership rows existed are adopted by a one-time
+backfill when the server starts. That runs outside any request, so no create
+hook runs for them; the server logs how many it adopted.
+
+**What a library may list.** Course reads are capability-by-id, so listing an
+id hands it out: a provider lists another owner's course only when the
+principal is entitled to know its id (it saved it, it was shared with it). The
+route guarantees the rest: it never lists a course that `GET /api/stages/{id}`
+would not serve.
+
+**Redirect egress.** The built-in layers are unchanged (S3 signs; the
+PostgreSQL column falls back to direct bytes). A configured store that does not
+declare `signsReadUrls: true` stops the server at boot under
+`ASSET_BYTE_EGRESS=redirect`, instead of being discovered by the first read. One
+that declares it but turns out to have no `signReadUrl` is logged and served
+with direct bytes, like the built-in fallback; the collector never signs.
 
 ### Optional: Agent workbench and runtime
 

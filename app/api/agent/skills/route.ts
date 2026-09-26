@@ -14,7 +14,8 @@ import { NextResponse } from 'next/server';
 import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { listSkills } from '@/lib/server/agent-runtime/skills';
 import { createUserSkill, UserSkillError } from '@/lib/server/agent-runtime/user-skills';
-import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import {
   parseUserSkillMarkdown,
   parseUserSkillZip,
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
   if (!isAgentRuntimeConfigured()) {
     return new Response('Not found', { status: 404 });
   }
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const skills = await listSkills(ownerId);
     return NextResponse.json(
       skills.map((s) => ({
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest) {
 /** Upload one owner Skill as the exporter zip or a bare canonical SKILL.md. */
 export async function POST(req: NextRequest) {
   if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     try {
       const form = await req.formData();
       const upload = form.get('file');
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
       const input = upload.name.toLowerCase().endsWith('.zip')
         ? await parseUserSkillZip(bytes)
         : parseUserSkillMarkdown(bytes.toString('utf8'));
-      const skill = await createUserSkill(ownerId, input);
+      const skill = await createUserSkill(ownerId, input, { source: 'request' });
       return NextResponse.json(
         {
           id: skill.id,
@@ -95,6 +96,8 @@ export async function POST(req: NextRequest) {
           { status: 400, headers: responseHeaders },
         );
       }
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
       throw error;
     }
   });

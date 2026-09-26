@@ -1,6 +1,8 @@
 import { AssetQuotaExceededError, type AssetStore } from '@openmaic/storage';
+import type { AssetMeta } from '@openmaic/dsl';
 
-import { SHARED_ASSET_PRINCIPAL } from '@/lib/persistence/server-auth';
+import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
+import { forwardOwnerWrite } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
 /**
@@ -25,6 +27,12 @@ import { getServerPersistenceProvider } from '@/lib/persistence/server-provider'
 export type GeneratedAssetKind = 'image' | 'video' | 'poster';
 
 export interface StoreGeneratedAssetInput {
+  /**
+   * The owner the bytes are allocated for: the owner recorded on the run that
+   * generated them. The entry lands in that owner's asset partition and counts
+   * against that owner's quota.
+   */
+  ownerId: string;
   /** The course the bytes belong to. Recorded on the entry's metadata. */
   stageId: string;
   bytes: Uint8Array;
@@ -90,9 +98,21 @@ function isStorageFull(error: unknown): boolean {
 export async function storeGeneratedAsset(
   input: StoreGeneratedAssetInput,
 ): Promise<StoreGeneratedAssetResult> {
-  const store =
-    input.assetStore ??
-    (await getServerPersistenceProvider(process.env.DATABASE_URL ?? '')).assetStore;
+  // The allocation is for whoever owns the run's work now: a claim can move
+  // the run's owner to an account while it generates. The forward and the
+  // allocation share one transaction under the owner's identity lock, so a
+  // claim cannot land between them and leave the entry under a retired owner.
+  // `input.assetStore` is a test seam for the refusal branch: it allocates
+  // exactly where it is told, unfenced. The production path below is fenced.
+  const allocate: (meta: AssetMeta, blob: Blob) => Promise<string> = input.assetStore
+    ? (meta, blob) => input.assetStore!.put(assetPrincipalForOwner(input.ownerId), blob, meta)
+    : async (meta, blob) => {
+        const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+        return provider.withTransaction(async (tx) => {
+          const ownerId = await forwardOwnerWrite(tx, input.ownerId);
+          return provider.assetStoreIn(tx).put(assetPrincipalForOwner(ownerId), blob, meta);
+        });
+      };
   // `stageId` rides in the entry's metadata rather than in a dedicated column:
   // the browser chain's `putAsset(bytes, meta, { stageId })` never sends its
   // stage to the server at all (it retires a device-local "the store had no
@@ -110,11 +130,7 @@ export async function storeGeneratedAsset(
     input.bytes.byteLength,
   );
   try {
-    const assetId = await store.put(
-      { key: SHARED_ASSET_PRINCIPAL },
-      new Blob([part], { type: input.mimeType }),
-      meta,
-    );
+    const assetId = await allocate(meta, new Blob([part], { type: input.mimeType }));
     return { status: 'stored', assetId };
   } catch (error) {
     if (isStorageFull(error)) return { status: 'refused', reason: 'storage-full' };
