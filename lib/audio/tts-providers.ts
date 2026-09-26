@@ -12,6 +12,7 @@
  * - MiniMax TTS: https://platform.minimaxi.com/docs/api-reference/speech-t2a-http
  * - Doubao TTS: https://www.volcengine.com/docs/6561/1257543
  * - ElevenLabs TTS: https://elevenlabs.io/docs/api-reference/text-to-speech/convert
+ * - Google Gemini TTS: https://ai.google.dev/gemini-api/docs/speech-generation
  * - Browser Native: Web Speech API (client-side only)
  *
  * HOW TO ADD A NEW PROVIDER:
@@ -94,7 +95,12 @@
 
 import type { TTSModelConfig } from './types';
 import { isCustomTTSProvider } from './types';
-import { isQwenCloneVoice, resolveTTSModelForVoice, TTS_PROVIDERS } from './constants';
+import {
+  isQwenCloneVoice,
+  resolveTTSModelForVoice,
+  TTS_PROVIDERS,
+  DEFAULT_TTS_VOICES,
+} from './constants';
 import { downloadAudio, QwenVoiceCloneError, synthesizeQwenVoiceClone } from './qwen-voice-clone';
 import { evictQwenVoiceRegistrationMemo } from './qwen-voice-clone-registration';
 import { splitConcatenatedJsonObjects } from './json-stream';
@@ -107,6 +113,7 @@ import {
 import { createLogger } from '@/lib/logger';
 import { audioProviderFetch } from '@/lib/server/audio-provider-fetch';
 import { appAttributionHeaders } from '@/lib/config/app-attribution';
+import { pcmS16leMonoToWav } from './pcm-wav';
 
 const log = createLogger('TTSProviders');
 
@@ -123,7 +130,9 @@ function ttsFetch(
   // `publicOnly` is the route's server-side decision: a client BYOK target is
   // pinned to the strict public policy; a server-managed/default target falls
   // back to the process-wide ALLOW_LOCAL_NETWORKS behavior.
-  return audioProviderFetch(url, init, { allowLocalNetworks: publicOnly ? false : undefined });
+  return audioProviderFetch(url, init, {
+    allowLocalNetworks: publicOnly ? false : undefined,
+  });
 }
 
 /**
@@ -313,6 +322,9 @@ export async function generateTTS(
         return await generateDoubaoTTS(config, text, signal);
       case 'elevenlabs-tts':
         return await generateElevenLabsTTS(config, text, signal);
+
+      case 'google-tts':
+        return await generateGoogleTTS(config, text, signal);
 
       case 'lemonade-tts':
         return await generateLemonadeTTS(config, text, signal);
@@ -805,7 +817,10 @@ async function readTTSApiError(response: Response): Promise<string> {
   const text = await response.text().catch(() => response.statusText);
   if (!text) return response.statusText;
   try {
-    const json = JSON.parse(text) as { detail?: unknown; error?: { message?: string } | string };
+    const json = JSON.parse(text) as {
+      detail?: unknown;
+      error?: { message?: string } | string;
+    };
     if (typeof json.detail === 'string') return json.detail;
     if (typeof json.error === 'string') return json.error;
     if (json.error?.message) return json.error.message;
@@ -934,7 +949,12 @@ async function generateQwenTTS(
         : resolveTTSModelForVoice('qwen-tts', config.voice, config.modelId);
     try {
       return await synthesizeQwenVoiceClone(
-        { apiKey: config.apiKey, baseUrl, targetModel, publicOnly: config.publicOnly },
+        {
+          apiKey: config.apiKey,
+          baseUrl,
+          targetModel,
+          publicOnly: config.publicOnly,
+        },
         text,
         config.voice,
         config.speed,
@@ -1128,6 +1148,96 @@ async function generateMiniMaxTTS(
 }
 
 /**
+ * Google Gemini TTS via the Interactions API.
+ * Response audio is raw 24 kHz mono s16le PCM; wrap as WAV for classroom playback.
+ */
+async function generateGoogleTTS(
+  config: TTSModelConfig,
+  text: string,
+  signal: AbortSignal,
+): Promise<TTSGenerationResult> {
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['google-tts'].defaultBaseUrl || '').replace(
+    /\/$/,
+    '',
+  );
+  const modelId = config.modelId || TTS_PROVIDERS['google-tts'].defaultModelId;
+  const voice = config.voice || DEFAULT_TTS_VOICES['google-tts'] || 'Kore';
+
+  const response = await ttsFetch(config.publicOnly, `${baseUrl}/interactions`, {
+    method: 'POST',
+    headers: {
+      'x-goog-api-key': config.apiKey!,
+      'Content-Type': 'application/json; charset=utf-8',
+      ...appAttributionHeaders(baseUrl),
+    },
+    body: JSON.stringify({
+      model: modelId,
+      input: text,
+      response_format: { type: 'audio' },
+      generation_config: {
+        speech_config: [{ voice }],
+      },
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throwIfTtsRateLimited('Google', response.status, response.headers?.get('retry-after'));
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`Google Gemini TTS API error: ${errorText || response.statusText}`);
+  }
+
+  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  const base64 = extractGoogleTtsAudioBase64(payload);
+  if (!base64) {
+    throw new Error('Google Gemini TTS API error: response missing audio data');
+  }
+
+  const pcm = new Uint8Array(Buffer.from(base64, 'base64'));
+  if (pcm.byteLength === 0) {
+    throw new Error('Google Gemini TTS API error: empty audio payload');
+  }
+
+  return {
+    audio: pcmS16leMonoToWav(pcm, 24_000),
+    format: 'wav',
+  };
+}
+
+/** Pull base64 PCM from Interactions JSON (snake_case or camelCase). */
+function extractGoogleTtsAudioBase64(payload: Record<string, unknown> | null): string | null {
+  if (!payload) return null;
+
+  const fromBlock = (block: unknown): string | null => {
+    if (!block || typeof block !== 'object') return null;
+    const obj = block as Record<string, unknown>;
+    const data = obj.data ?? obj.Data;
+    return typeof data === 'string' && data.length > 0 ? data : null;
+  };
+
+  const direct =
+    fromBlock(payload.output_audio) || fromBlock(payload.outputAudio) || fromBlock(payload.audio);
+  if (direct) return direct;
+
+  const outputs = payload.outputs ?? payload.output;
+  if (Array.isArray(outputs)) {
+    for (const item of outputs) {
+      if (!item || typeof item !== 'object') continue;
+      const obj = item as Record<string, unknown>;
+      const nested =
+        fromBlock(obj.audio) ||
+        fromBlock(obj.output_audio) ||
+        fromBlock(obj.inline_data) ||
+        fromBlock(obj.inlineData);
+      if (nested) return nested;
+      if (typeof obj.data === 'string' && obj.data.length > 0) return obj.data;
+    }
+  }
+
+  return null;
+}
+
+/**
  * ElevenLabs TTS implementation (direct API call with voice-specific endpoint)
  */
 async function generateElevenLabsTTS(
@@ -1269,7 +1379,11 @@ async function generateDoubaoTTS(
       req_params: {
         text,
         speaker: config.voice,
-        audio_params: { format: 'mp3', sample_rate: 24000, speech_rate: speechRate },
+        audio_params: {
+          format: 'mp3',
+          sample_rate: 24000,
+          speech_rate: speechRate,
+        },
       },
     }),
     signal,

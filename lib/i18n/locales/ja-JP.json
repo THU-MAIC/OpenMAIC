@@ -1408,6 +1408,7 @@
     "providerDoubaoTTS": "Doubao TTS 2.0（火山エンジン）",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS（ローカル）",
     "providerBrowserNativeTTS": "ブラウザネイティブTTS",
     "voxcpmBackend": "バックエンド",
