@@ -2379,6 +2379,12 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         apiKey: effectiveApiKey,
         baseURL: effectiveBaseUrl,
         name: config.providerId,
+        // OpenCode Go gateway (https://opencode.ai/zen/go) requires a stable
+        // session id per conversation for routing/prompt caching; without it
+        // the gateway answers 400. Opt-in via env so other endpoints stay clean.
+        ...(config.providerId === 'deepseek' && process.env.OPENCODE_GO_SESSION?.trim()
+          ? { headers: { 'x-opencode-session': process.env.OPENCODE_GO_SESSION.trim() } }
+          : {}),
       };
 
       // A custom base URL makes the `openai` slot an OpenAI-compatible gateway,
