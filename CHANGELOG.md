@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.1] - 2026-09-27
+
+A security release: MinerU Cloud document parsing now holds the upload and result URLs returned by the provider to the strict public address policy, validates every redirect hop, and bounds what it reads and decompresses.
+
+### Security
+
+- MinerU Cloud parsing fetched the presigned upload URL and the result ZIP URL taken from the provider's response with a plain fetch, so when a caller supplied its own MinerU base URL (the provider not configured on the server), its endpoint could steer the server's `PUT` of the uploaded document and the result download at internal addresses. Every MinerU Cloud request now goes through the strict provider transport (per-hop redirect validation and DNS pinning); the response-supplied upload and ZIP URLs must be HTTPS public addresses under every policy, the upload no longer follows redirects, address-policy refusals are not retried, and JSON, ZIP and decompressed entry sizes are bounded. The shared SSRF guard also classifies IPv4-compatible IPv6 addresses (`::/96`) by their embedded IPv4 [GHSA-cpjc-vgjh-c5jp](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-cpjc-vgjh-c5jp) (reported by @AbelWangYaBo) [#1688](https://github.com/THU-MAIC/OpenMAIC/pull/1688)
+
 ## [1.1.0] - 2026-09-24
 
 Classroom chat now runs on an agent loop by default: learners can point at a slide element, an interactive component or a whiteboard drawing and ask about it, and the teacher can read the lesson, check the live state of an interactive experiment and search the web before answering. Settings are reorganized around the course workflow, with a model choice per generation step and first-class Token Plan connections (TokenDance, MiniMax, Seed and Kimi). Read **Behavior Changes** before upgrading.
