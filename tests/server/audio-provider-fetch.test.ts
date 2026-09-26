@@ -25,6 +25,7 @@ import {
   destroyAudioProviderDispatchersForTests,
 } from '@/lib/server/audio-provider-fetch';
 import { validateUrlForSSRFWithPolicy } from '@/lib/server/ssrf-guard';
+import { REDIRECT_REQUIRES_HTTPS_MESSAGE } from '@/lib/server/fetch-with-redirect-validation';
 
 const dnsMocks = vi.hoisted(() => ({
   // Used by the URL-layer guard (`node:dns` promises API).
@@ -197,6 +198,44 @@ describe('audioProviderFetch — redirect + rebinding hardening', () => {
     expect(response.status).toBe(200);
     await expect(response.text()).resolves.toBe('{"ok":true}');
     expect(internal.requests()).toBe(1);
+  });
+
+  it('still follows HTTP redirect hops when requireHttps is off (audio default)', async () => {
+    const internal = await startLoopback((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"ok":true}');
+    });
+    const origin = await startLoopback((_req, res) => {
+      res.writeHead(302, { Location: `http://127.0.0.1:${internal.port}/final` });
+      res.end();
+    });
+
+    // No `requireHttps`, so the http hop is still followed under the opt-in —
+    // proving the new field is opt-in and does not change audio behavior.
+    const response = await audioProviderFetch(`http://127.0.0.1:${origin.port}/start`, undefined, {
+      allowLocalNetworks: true,
+    });
+
+    expect(response.status).toBe(200);
+    expect(internal.requests()).toBe(1);
+  });
+
+  it('refuses an HTTP redirect hop when requireHttps is set', async () => {
+    const internal = await startLoopback();
+    const origin = await startLoopback((_req, res) => {
+      res.writeHead(302, { Location: `http://127.0.0.1:${internal.port}/final` });
+      res.end();
+    });
+
+    await expect(
+      audioProviderFetch(`http://127.0.0.1:${origin.port}/start`, undefined, {
+        allowLocalNetworks: true,
+        requireHttps: true,
+      }),
+    ).rejects.toThrow(REDIRECT_REQUIRES_HTTPS_MESSAGE);
+
+    expect(origin.requests()).toBe(1);
+    expect(internal.requests()).toBe(0);
   });
 
   it('refuses a hostname that rebinds to loopback between guard and connect', async () => {
