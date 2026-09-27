@@ -6,7 +6,8 @@ describe('classroom media download transport', () => {
   describe('data: URLs', () => {
     it('decodes a base64 data: URL without network requests', async () => {
       const fetchSpy = vi.spyOn(providerFetchModule, 'providerFetch');
-      const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      const pngBase64 =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
       const dataUrl = `data:image/png;base64,${pngBase64}`;
 
       const buf = await downloadToBuffer(dataUrl);
@@ -18,7 +19,8 @@ describe('classroom media download transport', () => {
 
     it('decodes a URI-encoded data: URL without network requests', async () => {
       const fetchSpy = vi.spyOn(providerFetchModule, 'providerFetch');
-      const dataUrl = 'data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3C%2Fsvg%3E';
+      const dataUrl =
+        'data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3C%2Fsvg%3E';
 
       const buf = await downloadToBuffer(dataUrl);
 
@@ -28,13 +30,12 @@ describe('classroom media download transport', () => {
     });
 
     it('rejects an invalid data: URL without a comma', async () => {
-      await expect(downloadToBuffer('data:image/png;base64')).rejects.toThrow(
-        /invalid data url/i,
-      );
+      await expect(downloadToBuffer('data:image/png;base64')).rejects.toThrow(/invalid data url/i);
     });
 
     it('rejects a data: URL that exceeds DOWNLOAD_MAX_SIZE', async () => {
-      const hugeData = 'data:text/plain;base64,' + Buffer.alloc(DOWNLOAD_MAX_SIZE + 1).toString('base64');
+      const hugeData =
+        'data:text/plain;base64,' + Buffer.alloc(DOWNLOAD_MAX_SIZE + 1).toString('base64');
       await expect(downloadToBuffer(hugeData)).rejects.toThrow(/File too large/);
     });
   });
@@ -67,9 +68,9 @@ describe('classroom media download transport', () => {
 
   describe('transport policy and streaming bounds', () => {
     it('passes strict options (allowLocalNetworks: false, requireHttps: true) to providerFetch', async () => {
-      const fetchSpy = vi.spyOn(providerFetchModule, 'providerFetch').mockResolvedValueOnce(
-        new Response(Buffer.from('ok'), { status: 200 }),
-      );
+      const fetchSpy = vi
+        .spyOn(providerFetchModule, 'providerFetch')
+        .mockResolvedValueOnce(new Response(Buffer.from('ok'), { status: 200 }));
 
       const buf = await downloadToBuffer('https://example.com/image.png');
       expect(buf).toEqual(Buffer.from('ok'));
@@ -82,9 +83,13 @@ describe('classroom media download transport', () => {
     });
 
     it('refuses an HTTPS to HTTP redirect hop via providerFetch policy', async () => {
-      const fetchSpy = vi.spyOn(providerFetchModule, 'providerFetch').mockRejectedValueOnce(
-        new Error('Redirect to non-HTTPS URL refused by policy: http://cdn.example.com/image.png'),
-      );
+      const fetchSpy = vi
+        .spyOn(providerFetchModule, 'providerFetch')
+        .mockRejectedValueOnce(
+          new Error(
+            'Redirect to non-HTTPS URL refused by policy: http://cdn.example.com/image.png',
+          ),
+        );
 
       await expect(downloadToBuffer('https://example.com/image.png')).rejects.toThrow(
         /Redirect to non-HTTPS URL refused/,
@@ -129,7 +134,9 @@ describe('classroom media download transport', () => {
         headers: {}, // No Content-Length
       });
 
-      const fetchSpy = vi.spyOn(providerFetchModule, 'providerFetch').mockResolvedValueOnce(mockResponse);
+      const fetchSpy = vi
+        .spyOn(providerFetchModule, 'providerFetch')
+        .mockResolvedValueOnce(mockResponse);
 
       await expect(downloadToBuffer('https://example.com/image.png')).rejects.toThrow(
         /File too large: \d+ bytes \(max 104857600\)/,

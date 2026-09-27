@@ -39,10 +39,7 @@ import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { resolveImageSize } from '@/lib/server/image-sizing';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { providerFetch } from '@/lib/server/provider-fetch';
-import {
-  UnsafeNetworkTargetError,
-  validateUrlForSSRFWithPolicy,
-} from '@/lib/server/ssrf-guard';
+import { UnsafeNetworkTargetError, validateUrlForSSRFWithPolicy } from '@/lib/server/ssrf-guard';
 
 const log = createLogger('ClassroomMedia');
 
