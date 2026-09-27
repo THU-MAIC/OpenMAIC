@@ -8,9 +8,25 @@
  * generation store keyed by the placeholder ref, so `lookupMediaTask` /
  * `resolveVideoMediaForElement` (lib/media/media-task-resolution.ts) resolve
  * the element still carrying the placeholder and its skeleton transitions to
- * the video (done) or the error state (failed) automatically. The server
- * already patched the persisted document on success, so the server-relative
- * src doubles as the task's renderable URL — it works as-is in the browser.
+ * the video (done) or the error state (failed) automatically.
+ *
+ * A done frame's `src` is the id the asset pool allocated, not a URL: the tools
+ * store their bytes in the pool and the server's completion patch writes that
+ * id onto the element (#1522). So `objectUrl` carries an IDENTITY here, which
+ * `lookupMediaTask` already allows for ("tasks that were re-keyed to an
+ * allocated id"), and the bytes come from leasing it: `useResolvedMediaRef`
+ * leases a pool id found on the task whenever the document's own reference is
+ * not leasable yet (`lib/media/resolve-media-ref.ts`), which is exactly this
+ * window — the element still holds the placeholder until the stage-freshness
+ * sync brings the patched scene in. The video therefore plays when the frame
+ * arrives, not when the sync lands.
+ *
+ * The lease is taken at the render boundary rather than here on purpose. A URL
+ * minted in this fold would be a shared pool snapshot stored in a field the
+ * media store revokes on its own schedule (`revokeObjectUrls`, `clearStage`),
+ * which would tear a URL other mounted surfaces are still using; and replaying
+ * a session's frames would pin one blob per completed video for the session.
+ * `use-asset-url` owns URL lifetimes, and it releases them on unmount.
  */
 import type { MediaReadyLifecycleData } from '@/lib/agent-runtime/lifecycle';
 import { useMediaGenerationStore, type MediaTask } from '@/lib/store/media-generation';

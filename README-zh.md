@@ -144,7 +144,7 @@ providers:
       - us.anthropic.claude-opus-4-8
 ```
 
-支持的服务商：**OpenAI**、**Azure OpenAI**、**Anthropic**、**Amazon Bedrock**、**Google Gemini**、**DeepSeek**、**通义千问 Qwen**、**Kimi**、**MiniMax**、**Grok (xAI)**、**OpenRouter**、**豆包**、**腾讯混元 / TokenHub**、**小米 MiMo**、**智谱 GLM**、**Ollama**（本地）、**Lemonade**（本地 LLM / 图像 / TTS / ASR）、**FunASR**（本地 ASR）以及任何兼容 OpenAI API 的服务。
+支持的服务商：**OpenAI**、**Azure OpenAI**、**Anthropic**、**Amazon Bedrock**、**Google Gemini**、**DeepSeek**、**通义千问 Qwen**、**Kimi**、**MiniMax**、**Grok (xAI)**、**OpenRouter**、**TokenDance**、**豆包**、**腾讯混元 / TokenHub**、**小米 MiMo**、**智谱 GLM**、**Ollama**（本地）、**Lemonade**（本地 LLM / 图像 / TTS / ASR）、**FunASR**（本地 ASR）以及任何兼容 OpenAI API 的服务。
 
 Amazon Bedrock 快速示例：
 
@@ -230,6 +230,31 @@ DEFAULT_MODEL=xiaomi:mimo-v2.5-pro
 
 新加坡或欧洲 Token Plan 集群可分别使用 `https://token-plan-sgp.xiaomimimo.com/v1`、`https://token-plan-ams.xiaomimimo.com/v1`。
 
+TokenDance 快速示例（一个 Key 同时覆盖对话、图像、视频、TTS 与联网搜索）：
+
+```env
+TOKENDANCE_API_KEY=sk-...
+TOKENDANCE_BASE_URL=https://tokendance.space/gateway/v1
+DEFAULT_MODEL=tokendance:deepseek-v4.1-flash
+
+IMAGE_SEEDREAM_API_KEY=sk-...
+IMAGE_SEEDREAM_BASE_URL=https://tokendance.space/gateway/ark/v3
+IMAGE_SEEDREAM_MODELS=seedream-5.0-lite
+
+VIDEO_MINIMAX_API_KEY=sk-...
+VIDEO_MINIMAX_BASE_URL=https://tokendance.space/gateway/minimax
+VIDEO_MINIMAX_MODELS=minimax-h3
+
+TTS_MINIMAX_API_KEY=sk-...
+TTS_MINIMAX_BASE_URL=https://tokendance.space/gateway/minimax
+TTS_MINIMAX_MODELS=minimax-speech-2.8-turbo
+
+BOCHA_API_KEY=sk-...
+BOCHA_BASE_URL=https://tokendance.space/gateway/bocha
+```
+
+不想改 `.env.local` 的话，在 **设置 → Token Plan → TokenDance** 中可以一键把同一个 Key 填入全部模态。
+
 智谱 GLM 快速示例：
 
 ```env
@@ -244,9 +269,7 @@ GLM_BASE_URL=https://api.z.ai/api/paas/v4
 DEFAULT_MODEL=glm:glm-5.1
 ```
 
-> **推荐模型：** **Gemini 3 Flash** — 效果与速度的最佳平衡。追求最高质量可选 **Gemini 3.1 Pro**（速度较慢）。
->
-> 如果希望 OpenMAIC 服务端默认走 Gemini，还需要额外设置 `DEFAULT_MODEL=google:gemini-3-flash-preview`。
+> **推荐配置：** 打开全部模态时 OpenMAIC 效果最好——配图、语音讲解、视频片段与联网检索都会参与生成。最省事的方式是用一个 Key 覆盖全部模态（见上方的一键示例），默认模型选 `deepseek-v4.1-flash` 这类速度快、长上下文的模型即可。
 >
 > 如果希望默认走 MiniMax，可设置 `DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed`。
 
@@ -272,7 +295,9 @@ pnpm build && pnpm start
 ACCESS_CODE=your-secret-code
 ```
 
-设置后，访客需要输入密码才能使用，所有 API 路由也会受到保护。不设置则无影响。
+设置后，访客需要输入密码才能使用，所有 API 路由也会受到保护。未设置时（`.env.example` 的默认），`middleware.ts` 不校验任何凭证，所有匹配到的路由——包括 API——均可访问。这是 fail-open：未配置的部署没有门禁，也没有第二道校验。请使用足够长的随机值（至少 16 个字符），因为该密码是保护部署的唯一密钥。
+
+验证通过后会在 HTTP-only cookie 中保存一个签名令牌，有效期 7 天，由服务端强制校验，过期后需要重新验证。只有当应用运行在会覆盖 `x-forwarded-for` / `x-real-ip` 的反向代理之后并设置 `TRUST_PROXY_HEADERS=true` 时才会限流：按客户端限流（每个客户端 60 秒内 10 次），受信任客户端验证成功会清空自己的计数。没有可信代理时，应用无法把请求归因到具体客户端，因此完全不限流，保护完全依赖密码的长度和随机性。
 
 ### Vercel 部署
 
@@ -341,11 +366,19 @@ NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docke
 `NEXT_PUBLIC_PERSISTENCE` 是**编译期开关**，会打进浏览器 bundle。启用它的构建必须部署在具备可用运行时 `DATABASE_URL` 和 `PERSISTENCE_DEV_TOKEN` 的环境中，且构建时的 `NEXT_PUBLIC_PERSISTENCE_TOKEN` 必须与服务端 token 一致。否则浏览器会选择 HTTP 持久化但内嵌端点返回配置/认证/初始化错误；首页会弹出持久化不可用的提示并保留原有课程列表，而不是误导性地显示空课程库。
 
 > [!WARNING]
-> `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` **不是严格意义上的密钥**：`NEXT_PUBLIC_` token 会被编译进公开的 JavaScript，任何访客都能提取它并指定任意 `x-learner-key`，从而读写**所有**学习者的分区和文档。它只用于把无关的网络扫描器挡在可信网络的端点之外。**该模式仅适用于 localhost 或可信网络下的单用户部署。**生产环境请将 [`lib/persistence/server-auth.ts`](lib/persistence/server-auth.ts) 替换为真正的会话校验，由服务端身份推导学习者分区，并相应调整文档/合并/管理端的授权策略。
+> `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` **不是严格意义上的密钥**：`NEXT_PUBLIC_` token 会被编译进公开的 JavaScript，对每个访客可见，因此**既无保密性也无用户隔离**。文档和资产请求会跳过该认证器（`app/api/persistence/[...path]/route.ts`）。文档所有者来自 30 天匿名 cookie（`lib/server/agent-runtime/owner.ts`），而不是 `x-learner-key`。文档读取是 capability-by-id：只要 stage meta 存在且未被墓碑化，`decideDocumentAccess` 就会放行且不比对所有者（`lib/persistence/document-access.ts`），因此能访问该端点并知道 stage id 的人都可以读这门课。写入和删除按 cookie 校验所有者。只有 `/runtime/*` 会调用 `authenticatePersistenceRequest`，此时客户端自选的 `x-learner-key` 仍用于划分学习者会话。该 token 在这条运行时路径上的唯一用途，是把无关的网络扫描器挡在可信网络的端点之外。**该模式仅适用于 localhost 或可信网络下的单用户部署。**生产环境请将 [`lib/persistence/server-auth.ts`](lib/persistence/server-auth.ts) 替换为真正的会话校验，由服务端身份推导学习者分区，并相应调整文档/合并/管理端的授权策略。
 
 `PERSISTENCE_POSTGRES_PASSWORD` 只在数据目录为空时初始化 PostgreSQL 角色，之后再修改不会轮换已有的 `openmaic-postgres` 卷。一次性本地库可以直接 `docker compose --profile server-persistence down -v` 后换密码重启；要保留数据则需以管理员执行 `ALTER ROLE openmaic WITH PASSWORD 'new-password';` 并更新 `DATABASE_URL`。
 
-资产的删除/替换只移除注册中心条目，底层字节随后由离线回收器清理。**本部署默认开启回收器**，资产存储不会无限增长：每 `ASSET_COLLECTION_INTERVAL_MS`（默认 15 分钟）执行一轮，清理已解除引用超过 `ASSET_COLLECTION_GRACE_MS`（默认 1 小时）的字节——grace period 就是用户删除的字节实际的保留窗口，调大请谨慎。设置 `ASSET_COLLECTION_ENABLED=0` 可在某个进程中关闭回收。多实例部署可以在每个实例上开启（每个 blob 行在被清理前会加锁并复查，并发回收器会串行化而非竞争），也可以全部关闭后单独运行。
+资产的回收由离线回收器完成，不在请求路径上。**本部署默认开启回收器**，资产存储不会无限增长：每 `ASSET_COLLECTION_INTERVAL_MS`（默认 15 分钟）执行一轮，一轮分两级——先释放注册中心条目（在待定窗口内始终没有文档引用的分配，以及最后一处文档引用消失已超过 `ASSET_COLLECTION_GRACE_MS`（默认 1 小时）的条目），再按同一 grace 清理失去最后一个条目的字节。两级是依次等待的：正是释放条目这一步才让它的字节变成无引用，所以字节要等条目熬完自己的 grace 之后才开始计时。因此从「最后一个文档不再引用它」到「字节被删除」，最坏情况是两个 grace period 而不是一个。这个窗口就是用户删除的媒体实际的保留时间，调大请谨慎。设置 `ASSET_COLLECTION_ENABLED=0` 可在某个进程中关闭回收。多实例部署可以在每个实例上开启（每一行在被清理前都会加锁并复查，并发回收器会串行化而非竞争），也可以全部关闭后单独运行。
+
+这套账目完全由服务端维护，且无需任何配置——因为在这里它不是可选项：每次文档写入都会记录该文档引用了哪些资产，并提交它所引用的分配，而这正是回收器读取的数据。浏览器从不删除资产，也不会被要求这么做。
+
+删除一门课会释放它所持有的资产。课程 id 本身是被永久退休而不是被移除的——正是这一点保证已删除的 id 不会再被占用——但它持有的引用会在同一个事务里被撤回，因此它的媒体会立刻不再计入配额。如上所述，条目在一个 grace period 后被释放，字节再等一个 grace period 才被清理。grace period 就是这里的撤销窗口：在它之内资产仍然存在。
+
+`ASSET_PENDING_TTL_MS`（默认 24 小时）是一次分配处于**待定**状态的时长——字节已入库，但还没有任何文档引用它的 id。客户端先存字节、之后才把 id 写进文档，这段间隙没有任何租约，因此该窗口必须长于一整轮生成过程加上一次仍在等待所属幻灯片的回写：媒体常常在那张幻灯片存在之前就已完成。默认给一天是刻意从宽的——未被引用的字节只是占用存储，而过早过期会让一门课丢掉自己的媒体。取值不是正整数时服务端会拒绝启动，理由与 `ASSET_QUOTA_BYTES` 相同。
+
+单个资产 principal 最多可持有 `ASSET_QUOTA_BYTES`（默认 10 GiB）的**存活**资产——待定且未过期的，或仍被某个文档引用的——超出后拒绝新的分配；该上限由存储层在写事务内、按 principal 的 advisory lock 强制执行，并发上传无法越过。在按用户划分的资产 principal 落地之前，所有调用方共享同一个 principal，因此这是一个部署级而非用户级的上限——而它值得存在，因为本部署放行的任何调用方都能触达分配。设置 `ASSET_QUOTA_BYTES=0` 可完全关闭配额并在别处限制存储，零的任何写法都有效。取值不是非负整数时服务端会拒绝启动，而不是退回默认值，这样写错的上限会让进程停下，而不是悄悄跑在一个没人选择的限制上。
 
 资产字节默认直接出站（内嵌路由把字节写入响应体）。设置 `ASSET_BYTE_EGRESS=redirect` 可选择**间接出站**：字节 `GET` 会在字节层支持签名（S3 支持；PostgreSQL 字节列不支持，回退为直接返回字节）时返回一个短时效的签名 S3 URL。间接出站有两个对象存储前提：bucket 的 CORS 需允许本应用来源并在签名响应上暴露 `Content-Type`；签名身份需持有 bucket 的 `s3:ListBucket`，缺失的 key 才能以 `404 NoSuchKey` 而非 `403` 返回。相关取舍见[资产 HTTP 契约](packages/@openmaic/storage/docs/asset-http-contract.md)。
 
@@ -669,6 +702,8 @@ clawhub install openmaic
 | **交互式 HTML** | 自包含的网页，包含交互式模拟实验 |
 | **课堂 ZIP** | 完整课堂导出（课程结构 + 媒体文件），可备份或分享 |
 
+启用服务端持久化后，导入课堂 ZIP 会先将包内音频、图片、视频及封面保存到服务器资源池，再保存课程。其他浏览器无需导入端的本地缓存即可读取这些资源。纯浏览器模式仍在本地保存。已有浏览器课程不会自动迁移：请在原浏览器导出课堂 ZIP，再导入目标部署。
+
 **离线 / 内网课堂：** 导出课堂（`.maic.zip`）或资源包时，OpenMAIC 会把互动场景引用的外部资源（KaTeX、Three.js 含 `three/addons`、Tailwind CDN、Google Fonts、图片）以 `data:` URI 形式内联进导出的 HTML。导出的课程在导入到内网/离线实例后即可完全离线播放，播放时不再访问任何公网 CDN。导出时无法抓取的资源（如开启了 CORS 限制的图床）会被记录并保留为原始 URL。本功能上线*之前*导出的课堂仍引用 CDN，需要重新导出才能离线播放。
 
 ### 更多功能
@@ -796,7 +831,7 @@ OpenMAIC/
 - **生成流水线** (`@openmaic/generation`) — 两阶段：大纲生成 → 场景内容生成
 - **多智能体编排** (`lib/orchestration/`) — 基于 LangGraph 的状态机，管理智能体轮次和讨论
 - **回放引擎** (`lib/playback/`) — 驱动课堂回放和实时互动的状态机
-- **动作引擎** (`lib/action/`) — 执行 28+ 种动作类型（语音、白板绘图/文字/形状/图表、聚光灯、激光笔…）
+- **动作引擎** (`lib/action/`) — 执行 21 种动作类型（语音、白板绘图/文字/形状/图表、聚光灯、激光笔…）
 - **存储层** (`@openmaic/storage`) — Runtime/Document/资产存储抽象，附 Postgres 参考实现，HTTP 契约可对接任意外部存储服务
 
 ### 贡献流程

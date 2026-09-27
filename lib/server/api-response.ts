@@ -47,6 +47,7 @@ export interface ApiErrorBody {
   errorCode: ApiErrorCode;
   error: string;
   details?: string;
+  reason?: string;
 }
 
 export function apiError(
@@ -54,6 +55,7 @@ export function apiError(
   status: number,
   error: string,
   details?: string,
+  reason?: string,
 ): NextResponse<ApiErrorBody> {
   return NextResponse.json(
     {
@@ -61,6 +63,7 @@ export function apiError(
       errorCode: code,
       error,
       ...(details ? { details } : {}),
+      ...(reason ? { reason } : {}),
     },
     { status },
   );

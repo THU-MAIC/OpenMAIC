@@ -210,9 +210,12 @@ describe('isPiChatEnabled', () => {
     }
   });
 
-  it('defaults off when unset', () => {
+  it('defaults on when unset or empty', () => {
     delete process.env[flag];
-    expect(isPiChatEnabled()).toBe(false);
+    expect(isPiChatEnabled()).toBe(true);
+
+    process.env[flag] = '';
+    expect(isPiChatEnabled()).toBe(true);
   });
 
   it("returns true for 'true' and '1'", () => {
@@ -223,8 +226,11 @@ describe('isPiChatEnabled', () => {
     expect(isPiChatEnabled()).toBe(true);
   });
 
-  it('returns false for other values', () => {
+  it("returns false for 'false', '0', and other values", () => {
     process.env[flag] = 'false';
+    expect(isPiChatEnabled()).toBe(false);
+
+    process.env[flag] = '0';
     expect(isPiChatEnabled()).toBe(false);
 
     process.env[flag] = 'yes';

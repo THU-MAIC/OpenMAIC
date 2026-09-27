@@ -48,16 +48,10 @@ import {
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
+import { detectSpeechLang } from '@/lib/audio/browser-tts-preview';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('PlaybackEngine');
-
-/**
- * If more than 30% of characters are CJK, treat the text as Chinese.
- * Intentionally low: mixed Chinese text often contains punctuation,
- * numbers, and short Latin fragments (e.g. "AI课堂").
- */
-const CJK_LANG_THRESHOLD = 0.3;
 
 export class PlaybackEngine {
   private scenes: Scene[] = [];
@@ -818,12 +812,17 @@ export class PlaybackEngine {
     }
     if (!voiceFound) {
       // No usable voice configured — detect text language so the browser
-      // auto-selects an appropriate voice.
-      const cjkRatio =
-        chunkText.length > 0
-          ? (chunkText.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length / chunkText.length
-          : 0;
-      utterance.lang = cjkRatio > CJK_LANG_THRESHOLD ? 'zh-CN' : 'en-US';
+      // auto-selects an appropriate voice. For Vietnamese additionally bind an
+      // installed vi voice when one exists, since browsers otherwise fall back
+      // to an English voice reading Vietnamese text.
+      utterance.lang = detectSpeechLang(chunkText);
+      if (utterance.lang === 'vi-VN') {
+        const viVoice = voices.find((v) => v.lang?.toLowerCase().startsWith('vi'));
+        if (viVoice) {
+          utterance.voice = viVoice;
+          utterance.lang = viVoice.lang;
+        }
+      }
     }
 
     utterance.onend = () => {

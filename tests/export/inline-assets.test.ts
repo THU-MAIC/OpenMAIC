@@ -894,3 +894,285 @@ describe('inlineHtmlAssets', () => {
     expect(out).toContain('src="data:text/javascript;base64,');
   });
 });
+
+describe('malformed authored CSS tolerance', () => {
+  // Regression for the stage-LHSa3TDAYh export failures: an LLM-authored
+  // <style> carried `-- crop-green: #22c55e;` (space after --). Browsers drop
+  // such declarations, but strict postcss parsing used to abort the whole
+  // resource-pack / classroom-zip export.
+  const malformedCss = `:root {\n  -- crop-green: #22c55e;\n}\nbody { color: red; }`;
+
+  it('collectAssetRefs does not throw on an unparsable <style> block', () => {
+    expect(() => collectAssetRefs(`<style>${malformedCss}</style>`)).not.toThrow();
+  });
+
+  it('inlineHtmlAssets keeps a malformed <style> block byte-for-byte and still succeeds', async () => {
+    const { html: out, report } = await inlineHtmlAssets(
+      `<style>${malformedCss}</style><img src="https://cdn.test/ok.png">`,
+      {
+        fetcher: async () => ({
+          bytes: new Uint8Array([1]),
+          contentType: 'image/png',
+        }),
+      },
+    );
+    expect(out).toContain(`-- crop-green: #22c55e;`);
+    expect(out).toContain('<img src="data:image/png;base64,');
+    expect(report.failed).toHaveLength(0);
+  });
+
+  it('inlineCssUrls returns the stylesheet untouched when it cannot parse', async () => {
+    const fetcher = async () => null as unknown as Awaited<ReturnType<typeof fetch>>;
+    const { css, failed, inlined } = await inlineCssUrls(
+      malformedCss,
+      'about:blank',
+      fetcher as never,
+    );
+    expect(css).toBe(malformedCss);
+    expect(failed).toHaveLength(0);
+    expect(inlined).toHaveLength(0);
+  });
+
+  it('collectCssAssetReferences still surfaces url() refs in malformed CSS', async () => {
+    const { collectCssAssetReferences } = await import('@/lib/export/css-asset-parser');
+    expect(
+      collectCssAssetReferences(
+        ':root { -- crop-green: #22c55e; } .a { background: url(https://x/a.png); }',
+      ),
+    ).toEqual([{ kind: 'css-url', url: 'https://x/a.png' }]);
+  });
+
+  it('ignores url() text inside quoted strings but keeps parenthesized quoted urls', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    expect(
+      collectCssAssetReferencesByRegex(
+        '.a { content: "url(https://x/text-only.png)"; } .b { src: url("https://x/font(foo).woff2"); }',
+      ),
+    ).toEqual([{ kind: 'css-url', url: 'https://x/font(foo).woff2' }]);
+  });
+
+  it('reports a malformed @import url() only once', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    expect(collectCssAssetReferencesByRegex('@import url(https://x/a.css);')).toEqual([
+      { kind: 'css-import', url: 'https://x/a.css' },
+    ]);
+  });
+
+  it('keeps collecting urls after a malformed unterminated @import', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    expect(
+      collectCssAssetReferencesByRegex(
+        '@import url(https://x/a.css) .a { background: url(https://x/b.png); }',
+      ),
+    ).toEqual([
+      { kind: 'css-import', url: 'https://x/a.css' },
+      { kind: 'css-url', url: 'https://x/b.png' },
+    ]);
+  });
+
+  it('ignores unterminated comments and non-url function names', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    expect(
+      collectCssAssetReferencesByRegex(
+        '.a { background: myurl(https://x/fake.png); } /* url(https://x/gone.png)',
+      ),
+    ).toEqual([]);
+  });
+
+  it('keeps an @import target across an interleaved comment', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    expect(collectCssAssetReferencesByRegex('@import /* x */ "https://x/a.css";')).toEqual([
+      { kind: 'css-import', url: 'https://x/a.css' },
+    ]);
+  });
+
+  it('recovers at a bad-string token and still collects later urls', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    // An unescaped newline ends the string; the browser applies .ok below.
+    expect(
+      collectCssAssetReferencesByRegex(
+        '.bad { content: "oops\n;}\n.ok { background: url(https://x/ok.png) }',
+      ),
+    ).toEqual([{ kind: 'css-url', url: 'https://x/ok.png' }]);
+    // Same for a quoted url( whose string is unterminated: the url function
+    // consumes everything up to the first ')', so .ok inside it is gone too.
+    expect(
+      collectCssAssetReferencesByRegex(
+        '.bad { src: url("oops\n;}\n.ok { background: url(https://x/ok.png) }',
+      ),
+    ).toEqual([]);
+    // With the ')' close by, scanning recovers and the later url is collected.
+    expect(
+      collectCssAssetReferencesByRegex(
+        '.bad { src: url("oops\n) }\n.ok { background: url(https://x/ok.png) }',
+      ),
+    ).toEqual([{ kind: 'css-url', url: 'https://x/ok.png' }]);
+  });
+
+  it('handles escaped and unescaped newlines per CSS string semantics', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    const tail = '.ok { background: url(https://x/ok.png) }';
+    // Escaped \n / \r\n continue the string; the url inside is taken.
+    expect(
+      collectCssAssetReferencesByRegex(`.a { content: "esc\\
+line" }
+.ok2 { src: url(https://x/a.png) }`),
+    ).toContainEqual({ kind: 'css-url', url: 'https://x/a.png' });
+    // Backslash + CR + LF is one escaped newline in CSS: string continues.
+    expect(
+      collectCssAssetReferencesByRegex('.a { content: "crlf\\\r\nend" }\n' + tail),
+    ).toContainEqual({ kind: 'css-url', url: 'https://x/ok.png' });
+    // Unescaped \r and \f are bad-string terminators like \n.
+    expect(
+      collectCssAssetReferencesByRegex(`.bad { content: "oops
+}
+${tail}`),
+    ).toEqual([{ kind: 'css-url', url: 'https://x/ok.png' }]);
+    expect(
+      collectCssAssetReferencesByRegex(`.bad { content: "oops}
+${tail}`),
+    ).toEqual([{ kind: 'css-url', url: 'https://x/ok.png' }]);
+    // Unterminated at EOF swallows nothing real afterwards (there is none).
+    expect(collectCssAssetReferencesByRegex('.bad { content: "oops')).toEqual([]);
+  });
+
+  it('keeps strings truncated at EOF, like browsers (CSS Syntax 4.3.5)', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    // EOF yields a valid string token: the dependency stays reportable.
+    expect(collectCssAssetReferencesByRegex('.a { background: url("https://x/a.png')).toEqual([
+      { kind: 'css-url', url: 'https://x/a.png' },
+    ]);
+    expect(collectCssAssetReferencesByRegex('@import "https://x/a.css')).toEqual([
+      { kind: 'css-import', url: 'https://x/a.css' },
+    ]);
+    // A backslash at EOF is consumed: url("a\ at EOF is the string "a".
+    expect(collectCssAssetReferencesByRegex('.a { background: url("a\\')).toEqual([
+      { kind: 'css-url', url: 'a' },
+    ]);
+    // The strict-path collectors agree on EOF-truncated quoted urls.
+    const { cssUrlReferences } = await import('@/lib/export/css-asset-parser');
+    expect(cssUrlReferences('url("https://x/a.png')).toEqual([
+      { raw: 'https://x/a.png', start: 0, end: 21 },
+    ]);
+    expect(cssUrlReferences('url("a\\')).toEqual([{ raw: 'a', start: 0, end: 8 }]);
+  });
+
+  it('continues a quoted url() string across escaped newlines', async () => {
+    const { collectCssAssetReferencesByRegex } = await import('@/lib/export/css-asset-parser');
+    // Escaped LF inside a double-quoted url(): CSS drops the escape, so the
+    // dependency URL is the concatenation across the line break.
+    expect(collectCssAssetReferencesByRegex('.a { src: url("https://x/a\\\nb.png") }')).toEqual([
+      { kind: 'css-url', url: 'https://x/ab.png' },
+    ]);
+    // Escaped CRLF inside a single-quoted url(): skip-3 continues the string.
+    expect(collectCssAssetReferencesByRegex(".a { src: url('https://x/c\\\r\nd.png') }")).toEqual([
+      { kind: 'css-url', url: 'https://x/cd.png' },
+    ]);
+    // Unescaped newline inside url("...") is a bad string: no URL taken,
+    // scanning resumes and the later dependency is still collected.
+    expect(
+      collectCssAssetReferencesByRegex(
+        '.bad { src: url("oops\n) }\n.ok { src: url(https://x/ok.png) }',
+      ),
+    ).toEqual([{ kind: 'css-url', url: 'https://x/ok.png' }]);
+    // Unescaped \r / \f inside a quoted url(...) are bad strings too.
+    const tail = '.ok { src: url(https://x/ok.png) }';
+    expect(collectCssAssetReferencesByRegex('.bad { src: url("oops\r) }\n' + tail)).toEqual([
+      { kind: 'css-url', url: 'https://x/ok.png' },
+    ]);
+    expect(collectCssAssetReferencesByRegex('.bad { src: url("oops\f) }\n' + tail)).toEqual([
+      { kind: 'css-url', url: 'https://x/ok.png' },
+    ]);
+  });
+
+  it('strict and fallback paths agree on newlines in url tokens', async () => {
+    const { cssUrlReferences, collectCssAssetReferencesByRegex } =
+      await import('@/lib/export/css-asset-parser');
+    // Quoted with escaped newline: escape dropped, same value both paths.
+    const cssQuoted = 'url("https://x/a\\\nb.png")';
+    expect(cssUrlReferences(cssQuoted)).toEqual([{ raw: 'https://x/ab.png', start: 0, end: 25 }]);
+    expect(collectCssAssetReferencesByRegex(`.a { src: ${cssQuoted} }`)).toEqual([
+      { kind: 'css-url', url: 'https://x/ab.png' },
+    ]);
+    // Multiple escaped newlines in one quoted url: all escapes dropped.
+    expect(cssUrlReferences('url("https://x/a\\\nb\\\nc.png")')).toEqual([
+      { raw: 'https://x/abc.png', start: 0, end: 28 },
+    ]);
+    // Unquoted with backslash-newline: bad-url token, no dependency either path.
+    const cssUnquoted = 'url(https://x/a\\\nb.png)';
+    expect(cssUrlReferences(cssUnquoted)).toEqual([]);
+    expect(collectCssAssetReferencesByRegex(`.a { src: ${cssUnquoted} }`)).toEqual([]);
+    // Quoted string containing a raw newline: bad-string, dropped both paths.
+    const cssRawNewline = 'url("https://x/a\nb.png")';
+    expect(cssUrlReferences(cssRawNewline)).toEqual([]);
+    expect(collectCssAssetReferencesByRegex(`.a { src: ${cssRawNewline} }`)).toEqual([]);
+    // Non-whitespace after the closing quote is a bad-url token: no
+    // dependency on either path.
+    expect(cssUrlReferences('url("https://x/a.png" foo)')).toEqual([]);
+    expect(collectCssAssetReferencesByRegex('.a { src: url("https://x/a.png" foo) }')).toEqual([]);
+    // Comments before the quoted payload are fine in the fallback scanner.
+    // (The strict path's value-parser lumps `/*c*/ "..."` into one word node;
+    // a pre-existing limitation of that parser, out of scope here.)
+    expect(collectCssAssetReferencesByRegex('.a { src: url(/*c*/ "https://x/a.png") }')).toEqual([
+      { kind: 'css-url', url: 'https://x/a.png' },
+    ]);
+    // An escaped ')' inside an unquoted url is part of the URL.
+    expect(collectCssAssetReferencesByRegex('.a { src: url(https://x/a\\)b.png) }')).toEqual([
+      { kind: 'css-url', url: 'https://x/a' + String.fromCharCode(92) + ')b.png' },
+    ]);
+    // Comments between the closing quote and ')' are fine, not a bad url.
+    expect(cssUrlReferences('url("https://x/a.png" /*c*/)')).toEqual([
+      { raw: 'https://x/a.png', start: 0, end: 28 },
+    ]);
+    expect(collectCssAssetReferencesByRegex('.a { src: url("https://x/a.png" /*c*/) }')).toEqual([
+      { kind: 'css-url', url: 'https://x/a.png' },
+    ]);
+    // A bad url consumes through its ')': a nested url inside it is not a
+    // dependency on either path.
+    expect(cssUrlReferences('url("x" url(https://x/nested.png))')).toEqual([]);
+    expect(
+      collectCssAssetReferencesByRegex('.a { src: url("x" url(https://x/nested.png)) }'),
+    ).toEqual([]);
+    // An escaped backslash before the newline leaves it unescaped: still a
+    // bad-string token, dropped on both paths.
+    const cssEscapedBackslash = 'url("https://x/a\\\\\nb.png")';
+    expect(cssUrlReferences(cssEscapedBackslash)).toEqual([]);
+    expect(collectCssAssetReferencesByRegex(`.a { src: ${cssEscapedBackslash} }`)).toEqual([]);
+  });
+
+  it('surfaces absolute and relative url() refs of unparseable CSS as failures', async () => {
+    const { css, failed } = await inlineCssUrls(
+      ':root { -- crop-green: #22c55e; } .a { background: url(https://x/a.png) ; } .b { background: url(imgs/b.png); } /* url(https://x/comment.png) */',
+      'https://cdn.test/page.html',
+      (async () => null) as never,
+    );
+    expect(css).toContain('-- crop-green');
+    expect(failed).toContainEqual({ url: 'https://x/a.png', reason: 'css parse failed' });
+    expect(failed).toContainEqual({
+      url: 'https://cdn.test/imgs/b.png',
+      reason: 'css parse failed',
+    });
+    expect(failed).not.toContainEqual({
+      url: 'https://x/comment.png',
+      reason: 'css parse failed',
+    });
+  });
+
+  it('does not rethrow when an @import pulls malformed nested CSS', async () => {
+    const imported = ':root { -- crop-green: #22c55e; }';
+    const { css, inlined, failed } = await inlineCssUrls(
+      '@import url(https://cdn.test/bad.css); body { color: red; }',
+      'https://cdn.test/a.css',
+      (async (url: string) =>
+        url === 'https://cdn.test/bad.css'
+          ? { bytes: new TextEncoder().encode(imported), contentType: 'text/css' }
+          : null) as never,
+    );
+    expect(css).toContain('@import url(https://cdn.test/bad.css)');
+    expect(inlined).not.toContain('https://cdn.test/bad.css');
+    expect(failed).toContainEqual({
+      url: 'https://cdn.test/bad.css',
+      reason: 'css parse failed',
+    });
+  });
+});

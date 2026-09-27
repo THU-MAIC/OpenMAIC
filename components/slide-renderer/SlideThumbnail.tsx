@@ -237,7 +237,7 @@ export function SlideThumbnail({
     return (
       <div className={containerClass} style={containerStyle}>
         <div className="placeholder w-full h-full flex justify-center items-center text-gray-400 text-sm">
-          加载中 ...
+          {t('common.loading')}
         </div>
       </div>
     );

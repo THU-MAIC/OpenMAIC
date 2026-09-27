@@ -2,6 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AssetManifestEntry } from '@openmaic/dsl';
 
 const mocks = vi.hoisted(() => ({
+  audioRows: new Map<
+    string,
+    {
+      id: string;
+      stageId: string;
+      blob: Blob;
+      format: string;
+      ossKey?: string;
+      createdAt: number;
+    }
+  >(),
+  fetchMediaUrl: vi.fn(),
   rows: new Map<string, { id: string; stageId: string; blob: Blob; mimeType?: string }>(),
   poolResolve: vi.fn(),
   poolRelease: vi.fn(),
@@ -13,7 +25,7 @@ vi.mock('@/lib/utils/database', () => ({
     mediaFiles: {
       get: async (id: string) => mocks.rows.get(id),
     },
-    audioFiles: { get: vi.fn() },
+    audioFiles: { get: async (id: string) => mocks.audioRows.get(id) },
   },
 }));
 
@@ -21,8 +33,13 @@ vi.mock('@/lib/media/asset-pool', () => ({
   getAssetPool: () => ({ resolve: mocks.poolResolve, release: mocks.poolRelease }),
 }));
 
+vi.mock('@/lib/media/fetch-media-url', () => ({
+  fetchMediaUrl: (...args: unknown[]) => mocks.fetchMediaUrl(...args),
+}));
+
 import {
   audioArchivePath,
+  collectAudioFiles,
   collectMediaFiles,
   legacyAudioArchivePath,
   mediaArchivePath,
@@ -38,9 +55,34 @@ function seedRow(ref: string, blob: Blob, stageId = 'stage-1') {
 
 describe('classroom ZIP media collection', () => {
   afterEach(() => {
+    mocks.audioRows.clear();
     mocks.rows.clear();
     vi.clearAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('ships CDN-backed narration when its compatibility blob was evicted', async () => {
+    const ref = 'ast_remote_audio';
+    const ossKey = 'https://cdn.example.com/audio/remote.mp3';
+    mocks.audioRows.set(ref, {
+      id: ref,
+      stageId: 'stage-1',
+      blob: new Blob([]),
+      format: 'mp3',
+      ossKey,
+      createdAt: 0,
+    });
+    mocks.poolResolve.mockResolvedValue(null);
+    mocks.fetchMediaUrl.mockResolvedValue(
+      new Response(new Blob(['remote-audio'], { type: 'audio/mpeg' }), { status: 200 }),
+    );
+
+    const collected = await collectAudioFiles([{ ref, kind: 'audio' }]);
+
+    expect(mocks.fetchMediaUrl).toHaveBeenCalledWith(ossKey, 15_000);
+    expect(collected).toHaveLength(1);
+    expect(collected[0]?.zipPath).toBe('audio/audio-1.mp3');
+    expect(await collected[0]?.record.blob.text()).toBe('remote-audio');
   });
 
   /**

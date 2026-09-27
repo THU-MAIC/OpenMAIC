@@ -20,6 +20,11 @@ import { describe, expect, it } from 'vitest';
 import type { Slide } from '@openmaic/dsl';
 
 import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
+import {
+  MISSING_ASSET_LEASE,
+  renderableMediaUrl,
+  resolveMediaRef,
+} from '@/lib/media/resolve-media-ref';
 import { poolLeasableSlideRefs } from '@/components/slide-renderer/use-resolved-slide';
 
 describe('references the pool cannot hold', () => {
@@ -136,6 +141,29 @@ describe('a slide leases only what the pool could hold', () => {
 
   it('opens no lease at all without a stage', () => {
     expect(poolLeasableSlideRefs(slideWith('ast_a', 'ast_b', 'ast_c'), undefined, {})).toEqual([]);
+  });
+
+  // The workbench tools now store their bytes in the pool and write the
+  // allocated id into the document (#1522), while documents written before
+  // that still hold `/api/classroom-media/...` paths and no converter is
+  // planned. Both shapes therefore appear on the same page, and each has to
+  // reach its own bytes: the id through the configured pool, the legacy path
+  // straight from the route that still serves it.
+  it('leases a workbench-written id while a legacy classroom-media path renders itself', () => {
+    const legacy = '/api/classroom-media/stage-1/media/generated-abc.mp4';
+    const refs = poolLeasableSlideRefs(slideWith('ast_generated', legacy, legacy), 'stage-1', {});
+    expect(refs).toEqual(['ast_generated', 'ast_generated']);
+
+    expect(
+      resolveMediaRef('ast_generated', undefined, { status: 'resolved', url: 'blob:pool' }),
+    ).toEqual({ kind: 'url', url: 'blob:pool' });
+    expect(resolveMediaRef(legacy, undefined, MISSING_ASSET_LEASE)).toEqual({
+      kind: 'raw',
+      value: legacy,
+    });
+    expect(renderableMediaUrl(resolveMediaRef(legacy, undefined, MISSING_ASSET_LEASE))).toBe(
+      legacy,
+    );
   });
 });
 

@@ -390,7 +390,11 @@ describe('PgDocumentStore Postgres behavior', () => {
     await instrumented.saveDocument(replacement);
 
     expect(transactionCalls).toBe(1);
-    expect(sql[0]).toMatch(/document_stages[\s\S]*FOR UPDATE/);
+    // A write transaction opens with its lock-wait budget: these take the
+    // stage row's lock, and with reference tracking on, rows the asset
+    // collector locks too, so an unbounded wait would hang the write.
+    expect(sql[0]).toBe("SET LOCAL lock_timeout = '30s'");
+    expect(sql[1]).toMatch(/document_stages[\s\S]*FOR UPDATE/);
     expect(sql.some((statement) => statement.includes('ON CONFLICT (id) DO UPDATE'))).toBe(true);
     expect(sql.some((statement) => statement.includes('DELETE FROM document_scenes'))).toBe(true);
     expect(sql.some((statement) => statement.includes('DELETE FROM document_outlines'))).toBe(true);

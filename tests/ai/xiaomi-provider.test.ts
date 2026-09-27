@@ -29,12 +29,35 @@ describe('Xiaomi MiMo provider defaults', () => {
     const modelIds = getProvider('xiaomi')?.models.map((model) => model.id) ?? [];
 
     expect(modelIds).toEqual([
+      'mimo-v2.6-pro',
+      'mimo-v2.6-flash',
       'mimo-v2.5-pro',
       'mimo-v2-pro',
       'mimo-v2.5',
       'mimo-v2-omni',
       'mimo-v2-flash',
     ]);
+  });
+
+  it('registers MiMo V2.6 models with their documented limits and capabilities', () => {
+    const models = getProvider('xiaomi')?.models ?? [];
+
+    for (const modelId of ['mimo-v2.6-pro', 'mimo-v2.6-flash']) {
+      expect(models.find((model) => model.id === modelId)).toMatchObject({
+        contextWindow: 1048576,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            control: 'toggle',
+            requestAdapter: 'xiaomi',
+            toggleable: true,
+          },
+        },
+      });
+    }
   });
 
   it('marks MiMo reasoning models as configurable thinking models', () => {

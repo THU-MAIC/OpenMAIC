@@ -1,7 +1,10 @@
 // ─── Format registry ─────────────────────────────────────────────────────────
-// Single source of truth for every document format the app knows about.
-// All lookup maps (MIME→ext, ext→MIME, label, accept string) derive from here,
-// so adding a format is a one-line change and per-format lists cannot drift.
+// Single source of truth for every format any upload path knows about — both
+// the classic document path and the workbench material policy
+// (lib/workbench/material-upload-policy.ts) derive their tables from here.
+// All lookup maps (MIME→ext, ext→MIME, label, accept string) derive from here
+// as well, so adding a format is a one-line change and per-format lists
+// cannot drift.
 
 interface DocumentFormat {
   /** Short identifier used as a key in DOCUMENT_MIME_TYPES. */
@@ -29,6 +32,7 @@ const DOCUMENT_FORMATS: readonly DocumentFormat[] = [
     id: 'docx',
     mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     extensions: ['.docx'],
+    aliasMimes: ['application/wps-office.docx'],
     label: 'DOCX',
   },
   { id: 'ppt', mime: 'application/vnd.ms-powerpoint', extensions: ['.ppt'], label: 'PPT' },
@@ -36,6 +40,7 @@ const DOCUMENT_FORMATS: readonly DocumentFormat[] = [
     id: 'pptx',
     mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     extensions: ['.pptx'],
+    aliasMimes: ['application/wps-office.pptx'],
     label: 'PPTX',
   },
   { id: 'xls', mime: 'application/vnd.ms-excel', extensions: ['.xls'], label: 'XLS' },
@@ -43,6 +48,7 @@ const DOCUMENT_FORMATS: readonly DocumentFormat[] = [
     id: 'xlsx',
     mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     extensions: ['.xlsx'],
+    aliasMimes: ['application/wps-office.xlsx'],
     label: 'XLSX',
   },
   { id: 'txt', mime: 'text/plain', extensions: ['.txt'], label: 'TXT' },
@@ -53,6 +59,9 @@ const DOCUMENT_FORMATS: readonly DocumentFormat[] = [
     aliasMimes: ['text/x-markdown'],
     label: 'MD',
   },
+  // Registered so the workbench material policy can accept it; no document
+  // provider handles it, so classic mode stays provider-rejected. (#1589)
+  { id: 'csv', mime: 'text/csv', extensions: ['.csv'], label: 'CSV' },
   { id: 'png', mime: 'image/png', extensions: ['.png'], label: 'PNG' },
   {
     id: 'jpeg',
@@ -86,6 +95,9 @@ const DOCUMENT_FORMATS: readonly DocumentFormat[] = [
   { id: 'avi', mime: 'video/x-msvideo', extensions: ['.avi'], label: 'AVI' },
   { id: 'mkv', mime: 'video/x-matroska', extensions: ['.mkv'], label: 'MKV' },
   { id: 'wmv', mime: 'video/x-ms-wmv', extensions: ['.wmv'], label: 'WMV' },
+  // WebM video; `audio/webm` has no distinct extension so it stays a
+  // media-list-only MIME (see LOCAL_FFMPEG_MEDIA_MIMES). (#1589)
+  { id: 'webm', mime: 'video/webm', extensions: ['.webm'], label: 'WebM' },
   {
     id: 'mp3',
     mime: 'audio/mpeg',
@@ -93,7 +105,13 @@ const DOCUMENT_FORMATS: readonly DocumentFormat[] = [
     aliasMimes: ['audio/mp3'],
     label: 'MP3',
   },
-  { id: 'm4a', mime: 'audio/mp4', extensions: ['.m4a'], label: 'M4A' },
+  {
+    id: 'm4a',
+    mime: 'audio/mp4',
+    extensions: ['.m4a'],
+    aliasMimes: ['audio/x-m4a'],
+    label: 'M4A',
+  },
   {
     id: 'wav',
     mime: 'audio/wav',
@@ -207,7 +225,7 @@ export const ALIDOCMIND_MEDIA_MIMES: readonly string[] = [
 export const LOCAL_FFMPEG_MEDIA_MIMES: readonly string[] = [
   M.mp4,
   M.mov,
-  'video/webm',
+  M.webm,
   M.mp3,
   M.wav,
   M.m4a,
@@ -249,6 +267,12 @@ const GENERIC_DOCUMENT_MIME_TYPES = new Set([
   'application/zip',
   'application/x-zip',
   'application/x-zip-compressed',
+  // Linux browsers resolve File.type against the XDG shared-mime-info
+  // database, and older databases (e.g. Kylin OS V10) map every OOXML
+  // extension to this generic container type instead of the concrete
+  // format MIME. Like the zip family, it carries no format specificity —
+  // the extension decides. (#1497)
+  'application/vnd.ms-office',
 ]);
 
 /**
@@ -256,9 +280,9 @@ const GENERIC_DOCUMENT_MIME_TYPES = new Set([
  *
  * Precedence:
  *   1. mimeType is missing or a generic upload fallback (octet-stream,
- *      zip-family): use the extension. Handles the common case where a
- *      browser has no more specific MIME to offer for Office/ZIP-based
- *      formats.
+ *      zip-family, or the generic Office container `vnd.ms-office`):
+ *      use the extension. Handles the common case where a browser has no
+ *      more specific MIME to offer for Office/ZIP-based formats.
  *   2. mimeType is a known alias (canonical MIME, or one of the
  *      registry's curated `aliasMimes` — e.g. `image/jpeg2000`,
  *      `text/x-markdown`, `application/x-msword`): map to the canonical

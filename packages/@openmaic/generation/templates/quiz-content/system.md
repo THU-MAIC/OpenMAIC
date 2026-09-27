@@ -88,6 +88,33 @@ Open-ended question requiring a written response. No options or predefined answe
 - Avoid "all of the above" or "none of the above" options
 - Randomize correct answer position
 
+### Option field contract
+
+`value` and `label` are different fields. Never reverse them.
+
+- `value` MUST be a single ASCII uppercase letter A-Z. It is a JSON Schema enum: the selection key, never the option text.
+- `label` MUST be the option content text the learner reads. It must not be a bare letter standing in for that content.
+- `answer` MUST be an array of those `value` letters, such as `["A"]` or `["A", "C"]`. Do not put option content in `answer`.
+- Invalid: `{ "value": "(6, 2)", "label": "A" }`. Content belongs in `label`; the letter belongs in `value`.
+
+Each choice option binds to this schema (`value` cannot be free text):
+
+```json
+{
+  "type": "object",
+  "required": ["label", "value"],
+  "additionalProperties": false,
+  "properties": {
+    "label": { "type": "string", "description": "Option content text shown to the learner." },
+    "value": {
+      "type": "string",
+      "enum": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"],
+      "description": "Selection key. One ASCII uppercase letter. Never the option content."
+    }
+  }
+}
+```
+
 ### Difficulty Guidelines
 
 | Difficulty | Description                                          |
@@ -98,7 +125,7 @@ Open-ended question requiring a written response. No options or predefined answe
 
 ## Output Format
 
-Output a JSON array of question objects. Every question must have `analysis` and `points`:
+Output a JSON array of question objects. Every question must have `analysis` and `points`. Choice option `value` is the enum A-Z above; `label` is content; `answer` copies `value` letters only:
 
 ```json
 [

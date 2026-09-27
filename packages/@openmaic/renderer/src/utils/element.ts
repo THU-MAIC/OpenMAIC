@@ -40,14 +40,36 @@ export const getRectRotatedRange = (element: RotatedElementData) => {
   };
 };
 
+// Preserve the existing endpoint-offset routing rule. Using the expanded
+// bounds here would let a control point change the double elbow's direction.
+const isHorizontalElbow = (start: number[], end: number[]) =>
+  Math.max(start[0], end[0]) >= Math.max(start[1], end[1]);
+
 export const getElementRange = (element: PPTElement) => {
   let minX: number, maxX: number, minY: number, maxY: number;
 
   if (element.type === 'line') {
-    minX = element.left;
-    maxX = element.left + Math.max(element.start[0], element.end[0]);
-    minY = element.top;
-    maxY = element.top + Math.max(element.start[1], element.end[1]);
+    const xs = [element.start[0], element.end[0]];
+    const ys = [element.start[1], element.end[1]];
+    // Follow the same path-variant precedence as getLineElementPath. Bezier
+    // control hulls conservatively enclose the curve; elbows use drawn vertices.
+    if (element.broken) {
+      xs.push(element.broken[0]);
+      ys.push(element.broken[1]);
+    } else if (element.broken2) {
+      if (isHorizontalElbow(element.start, element.end)) xs.push(element.broken2[0]);
+      else ys.push(element.broken2[1]);
+    } else if (element.curve) {
+      xs.push(element.curve[0]);
+      ys.push(element.curve[1]);
+    } else if (element.cubic) {
+      xs.push(element.cubic[0][0], element.cubic[1][0]);
+      ys.push(element.cubic[0][1], element.cubic[1][1]);
+    }
+    minX = element.left + Math.min(...xs);
+    maxX = element.left + Math.max(...xs);
+    minY = element.top + Math.min(...ys);
+    maxY = element.top + Math.max(...ys);
   } else if ('rotate' in element && element.rotate) {
     const { left, top, width, height, rotate } = element;
     const { xRange, yRange } = getRectRotatedRange({ left, top, width, height, rotate });
@@ -78,8 +100,7 @@ export const getLineElementPath = (element: PPTLineElement) => {
     const mid = element.broken.join(',');
     return `M${start} L${mid} L${end}`;
   } else if (element.broken2) {
-    const { minX, maxX, minY, maxY } = getElementRange(element);
-    if (maxX - minX >= maxY - minY)
+    if (isHorizontalElbow(startArr, endArr))
       return `M${start} L${element.broken2[0]},${startArr[1]} L${element.broken2[0]},${endArr[1]} ${end}`;
     return `M${start} L${startArr[0]},${element.broken2[1]} L${endArr[0]},${element.broken2[1]} ${end}`;
   } else if (element.curve) {

@@ -9,6 +9,7 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const DEFAULT_BASE_URL = 'http://localhost:13305/v1';
@@ -58,6 +59,7 @@ export async function generateWithLemonadeImage(
 
   const response = await fetch(`${baseUrl}/images/generations`, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       'Content-Type': 'application/json',
       ...authHeaders(config.apiKey),
@@ -70,6 +72,8 @@ export async function generateWithLemonadeImage(
       response_format: 'b64_json',
     }),
   });
+
+  assertNotRedirected(response, 'Lemonade Image');
 
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText);

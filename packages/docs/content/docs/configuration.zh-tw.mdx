@@ -196,7 +196,7 @@ Brave 和 SearXNG 不需要 API key；前端可以在每次生成時選擇是否
 ACCESS_CODE=your-secret-code
 ```
 
-訪客只會看到一次提示，密碼會儲存在 HTTP-only cookie 中。留空即可關閉此功能。
+請使用足夠長的隨機值（至少 16 個字元），因為該密碼是保護部署的唯一金鑰。驗證通過後會在 HTTP-only cookie 中儲存一個簽名權杖，有效期 7 天，由伺服器端強制檢查，過期後需要重新驗證。只有在受信任的反向代理後設定 `TRUST_PROXY_HEADERS=true`（由代理覆寫 `x-forwarded-for` / `x-real-ip`）時才會限制驗證速率：依用戶端限制（每個用戶端 60 秒內 10 次），驗證成功會清除該用戶端的計數；沒有可信代理時應用程式無法將請求歸因到特定用戶端，因此完全不限流，保護取決於密碼的長度與隨機性。留空即可關閉此功能。
 
 ## 預設模型和模型路由
 
@@ -210,14 +210,14 @@ DEFAULT_MODEL=openai:gpt-5.5
 
 ## 功能開關
 
-功能開關的值可設為 `true` 或 `1`，其他值都視為關閉。`NEXT_PUBLIC_*` 開關會在建置時編譯至用戶端，修改後需要重新建置：
+功能開關的值可設為 `true` 或 `1`；除非另有說明，其他值都視為關閉。`NEXT_PUBLIC_*` 開關會在建置時編譯至用戶端，修改後需要重新建置：
 
 ```bash
 # MAIC Editor（Pro 模式）
 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
 
-# Pi 對話執行時
-NEXT_PUBLIC_PI_CHAT_ENABLED=true
+# Pi 對話執行時預設開啟；取消下一行的註解可回復舊版鏈路
+# NEXT_PUBLIC_PI_CHAT_ENABLED=false
 
 # Pi 播放態中的 PPT 與互動頁課件引用（建置時開關；不影響編輯態引用）
 NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED=true
@@ -233,6 +233,14 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 
 # 顯示實驗性 PPTX 匯入入口
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+```
+
+Pi 對話執行時依賴模型的工具／函式呼叫能力。如果所選模型或 provider 不支援工具呼叫，請設定 `NEXT_PUBLIC_PI_CHAT_ENABLED=false`（或 `0`）並重新建置，以使用舊版對話鏈路。
+
+使用 Docker Compose 時，`.env.local` 由 `env_file` 在執行時載入，不參與建置參數插值。請依下方指令明確傳入建置時設定並重新建置；只修改執行時環境不會改變已建置的用戶端與伺服器對話路徑。
+
+```bash
+NEXT_PUBLIC_PI_CHAT_ENABLED=false docker compose up -d --build openmaic
 ```
 
 PPTX 匯入目前仍是實驗性入口，解析結果尚未完整整合至課堂資料流。以上 `NEXT_PUBLIC_*` 變數都是建置時開關；Docker 部署還需要透過 build args 傳入，不能只寫在容器執行時環境變數中。

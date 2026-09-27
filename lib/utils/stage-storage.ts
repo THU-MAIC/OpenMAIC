@@ -29,7 +29,6 @@ import {
   loadCurrentScene,
   mutateDocument,
   saveCurrentScene,
-  type AppDocument,
   type AppDocumentOutline,
 } from '@/lib/document-store';
 import { clearAllForScene } from '@/lib/quiz/persistence';
@@ -61,11 +60,7 @@ import {
   settleStageDeletionCascade,
   unmarkStageDeleted,
 } from './deleted-stages';
-import {
-  buildStageAssetReclamationPlan,
-  executeStageAssetReclamation,
-  loadStageAssetInventory,
-} from '@/lib/media/reclaim-stage-assets';
+import { clearStageMediaCache } from '@/lib/media/clear-stage-media-cache';
 import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
 import { applyKnownMediaAllocations } from '@/lib/media/reconcile-scene-media';
 import {
@@ -598,7 +593,9 @@ async function performStageDeletion(stageId: string): Promise<void> {
   // delete.
   discardPendingStageChanges(stageId);
   // Media allocations parked for slides this stage will never build now have
-  // no possible destination; the reclamation plan below owns their bytes.
+  // no possible destination. Their bytes are the server's to expire: an
+  // allocation no document ever commits is released once its pending TTL runs
+  // out, so dropping the record here loses nothing but the record.
   clearPendingMediaAllocations(stageId);
   let documentDeleted = false;
   try {
@@ -611,20 +608,6 @@ async function performStageDeletion(stageId: string): Promise<void> {
         // Lock order: per-stage document lock, then the exclusive runtime epoch.
         withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
           try {
-            const deletionDocument =
-              document ??
-              ({
-                stage: { id: stageId, name: '', createdAt: 0, updatedAt: 0 },
-                scenes: [],
-              } satisfies Pick<AppDocument, 'stage' | 'scenes'>);
-            const assetInventory = await loadStageAssetInventory(deletionDocument);
-            const assetPlan = buildStageAssetReclamationPlan(
-              stageId,
-              assetInventory.refs,
-              assetInventory.mediaRows,
-              assetInventory.audioRows,
-            );
-
             // Collect scene ids before deletion so we can sweep per-scene localStorage
             // keys (quiz draft / submitted answers / graded results).
             const legacyScenes = await db.scenes.where('stageId').equals(stageId).toArray();
@@ -638,9 +621,12 @@ async function performStageDeletion(stageId: string): Promise<void> {
             await store.deleteDocument(stageId);
             documentDeleted = true;
 
-            // Reclamation is intentionally after the authoritative document
-            // delete. The prepared plan has already captured Dexie-only orphans.
-            await executeStageAssetReclamation(assetPlan, null);
+            // Local cache only, and intentionally after the authoritative
+            // delete: liveness for the globally keyed audio rows is proved
+            // against the documents that survive, which requires this one to
+            // already be gone. The registry entries the document named are
+            // released by the server's own pass once the grace elapses.
+            await clearStageMediaCache(stageId);
 
             // Clear legacy chat rows and the device-scoped playback cursor. Runtime
             // rows of every kind are removed by the all-kind cascade below.

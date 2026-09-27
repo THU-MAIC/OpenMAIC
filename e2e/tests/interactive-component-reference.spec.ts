@@ -136,7 +136,7 @@ test('the global courseware entry selects one scaled source-authored component a
     )
     .toEqual({ sourceValue: '45', liveValue: '70' });
 
-  const referenceButton = page.getByRole('button', { name: 'Reference courseware' });
+  const referenceButton = page.getByRole('button', { name: 'Reference content' });
   await referenceButton.click();
   await expect(frame.locator('[data-maic-element-picker-overlay]')).toBeAttached();
   const [iframeBox, logicalViewport, sliderRect] = await Promise.all([

@@ -178,7 +178,7 @@ export function TtsConfigPopover() {
         </TooltipTrigger>
         <TooltipContent>{t('toolbar.ttsHint')}</TooltipContent>
       </Tooltip>
-      <PopoverContent align="start" className="w-[280px] p-0">
+      <PopoverContent align="start" className="w-[280px] max-w-[calc(100vw-2rem)] p-0">
         {/* Header with toggle */}
         <div className="flex items-center gap-2.5 px-3.5 py-3 border-b border-border/40">
           <Volume2

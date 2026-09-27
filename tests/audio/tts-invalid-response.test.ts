@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { generateTTS, TTSInvalidResponseError } from '@/lib/audio/tts-providers';
 
-const mockFetch = vi.fn() as Mock;
-vi.stubGlobal('fetch', mockFetch);
+const mockFetch = vi.hoisted(() => vi.fn() as Mock);
+// The provider adapters now issue requests through undici's fetch (with a
+// pinned dispatcher), not the Next-patched global, so the double lives here.
+vi.mock('undici', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('undici')>();
+  return { ...actual, fetch: mockFetch };
+});
 
 const mockRecordGenerationUsage = vi.fn();
 vi.mock('@/lib/server/usage-storage', () => ({

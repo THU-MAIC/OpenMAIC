@@ -17,6 +17,7 @@ import type {
   ImageGenerationResult,
 } from '../types';
 import { probeAuth } from '../probe-auth';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'qwen-image-max';
@@ -67,6 +68,7 @@ export async function generateWithQwenImage(
 
   const response = await fetch(`${baseUrl}/api/v1/services/aigc/multimodal-generation/generation`, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.apiKey}`,
@@ -93,6 +95,8 @@ export async function generateWithQwenImage(
       },
     }),
   });
+
+  assertNotRedirected(response, 'Qwen Image');
 
   if (!response.ok) {
     const text = await response.text();

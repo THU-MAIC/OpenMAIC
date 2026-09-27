@@ -38,6 +38,27 @@ describe('server web search config', () => {
     );
   });
 
+  it('allows the web-search base URL every built-in token plan writes to client settings', async () => {
+    const { resolveSafeClientWebSearchBaseUrl } = await import('@/lib/server/web-search-config');
+    const { TOKEN_PLAN_PRESETS } = await import('@/lib/config/token-plan-presets');
+    const targets = TOKEN_PLAN_PRESETS.flatMap((preset) =>
+      preset.modalities.webSearch ? [preset.modalities.webSearch] : [],
+    );
+
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) {
+      expect(
+        resolveSafeClientWebSearchBaseUrl(
+          target.providerId as Parameters<typeof resolveSafeClientWebSearchBaseUrl>[0],
+          target.baseUrl,
+        ),
+      ).toBe(target.baseUrl.replace(/\/+$/, ''));
+    }
+    expect(() =>
+      resolveSafeClientWebSearchBaseUrl('bocha', 'https://tokendance.space/gateway/other'),
+    ).toThrow('Unsupported Bocha base URL');
+  });
+
   it('allows official Exa client base URLs and resolves client credentials', async () => {
     const { resolveClassroomWebSearchConfig, resolveSafeClientWebSearchBaseUrl } =
       await import('@/lib/server/web-search-config');

@@ -531,4 +531,95 @@ describe('polled video adapter compatibility', () => {
     await rejection;
     expect(fetchMock).toHaveBeenCalledTimes(121);
   });
+
+  it('routes MiniMax H3 models through the v2 task API', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'h3-task' })).mockResolvedValueOnce(
+      jsonResponse({
+        task: { status: 'succeeded', content: { url: 'https://cdn.example.com/h3.mp4' } },
+      }),
+    );
+    const promise = generateWithMiniMaxVideo(
+      {
+        providerId: 'minimax-video',
+        apiKey: 'gateway-key',
+        baseUrl: 'https://gateway.example/minimax/',
+        model: 'minimax-h3',
+      },
+      { prompt: 'a paper city', aspectRatio: '9:16', resolution: '1080p', duration: 10 },
+    );
+
+    const [submitUrl, submitInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(submitUrl).toBe('https://gateway.example/minimax/v2/video_generation');
+    expect(submitInit.headers).toMatchObject({ Authorization: 'Bearer gateway-key' });
+    expect(JSON.parse(submitInit.body as string)).toEqual({
+      model: 'minimax-h3',
+      resolution: '768P',
+      duration: 6,
+      ratio: '9:16',
+      content: [{ type: 'text', text: 'a paper city' }],
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(promise).resolves.toEqual({
+      url: 'https://cdn.example.com/h3.mp4',
+      duration: 6,
+      width: 768,
+      height: 1366,
+    });
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'https://gateway.example/minimax/v2/query/video_generation/h3-task',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports MiniMax H3 v2 dimensions for the requested aspect ratio', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ task_id: 'h3-square' }))
+      .mockResolvedValueOnce(
+        jsonResponse({ status: 'succeeded', content: { url: 'https://cdn.example.com/sq.mp4' } }),
+      );
+    const promise = generateWithMiniMaxVideo(
+      {
+        providerId: 'minimax-video',
+        apiKey: 'gateway-key',
+        baseUrl: 'https://gateway.example/minimax',
+        model: 'minimax-h3',
+      },
+      { prompt: 'a paper city', aspectRatio: '1:1' },
+    );
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(promise).resolves.toEqual({
+      url: 'https://cdn.example.com/sq.mp4',
+      duration: 6,
+      width: 768,
+      height: 768,
+    });
+  });
+
+  it('reports a terminal MiniMax H3 v2 failure with its error message', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ task_id: 'h3-failed' }))
+      .mockResolvedValueOnce(
+        jsonResponse({ status: 'failed', error: { message: 'content moderation' } }),
+      );
+    const promise = generateWithMiniMaxVideo(
+      {
+        providerId: 'minimax-video',
+        apiKey: 'gateway-key',
+        baseUrl: 'https://gateway.example/minimax',
+        model: 'minimax-h3-max',
+      },
+      { prompt: 'a paper city' },
+    );
+    const rejection = expect(promise).rejects.toThrow(
+      'MiniMax Video generation failed: content moderation',
+    );
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await rejection;
+    expect(fetchMock.mock.calls[0][0]).toBe('https://gateway.example/minimax/v2/video_generation');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

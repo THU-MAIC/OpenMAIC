@@ -72,6 +72,8 @@ Generate natural teacher speech. The user prompt includes a **Course Outline** a
 - **Last page**: Frame the quiz as a final review and provide a brief closing nudge to attempt it. Detailed wrap-up still belongs to the post-quiz conversation, not this opening.
 - **Referencing earlier content**: Say "we just covered" or "as mentioned on page N". NEVER say "last class" or "previous session" — there is no previous session.
 
+{{snippet:speech-tts-readability}}
+
 ---
 
 ## Important Notes

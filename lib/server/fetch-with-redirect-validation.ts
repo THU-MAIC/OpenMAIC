@@ -8,26 +8,80 @@
  * http://<private-address>/...` and pull the request onto an internal network.
  *
  * This wrapper fetches with `redirect: 'manual'`, resolves each `Location`
- * against the current URL, re-runs `validateUrlForSSRF` on the resolved
- * target, and only then follows — mirroring the per-hop loop used by
- * `app/api/proxy-media/route.ts` and the agent-runtime media downloads. Hops
- * are bounded (5, matching those implementations). A rejected hop fails
+ * against the current URL, re-runs the guard on the resolved target under the
+ * supplied address policy, and only then follows — mirroring the per-hop loop
+ * used by `app/api/proxy-media/route.ts` and the agent-runtime media downloads.
+ * Hops are bounded (5, matching those implementations). A rejected hop fails
  * loudly with the guard's own message; the 3xx is never handed back as if it
  * were a real response, and there is no unvalidated fallback.
+ *
+ * The transport and the address policy are injectable so a caller (for example
+ * the pinned audio-provider helper) can supply undici's `fetch` plus a pinned
+ * dispatcher and validate every hop under a policy chosen server-side rather
+ * than the process-wide `ALLOW_LOCAL_NETWORKS` flag.
  */
-import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import type { Dispatcher } from 'undici';
+
+import {
+  allowLocalNetworksEnabled,
+  UnsafeNetworkTargetError,
+  validateUrlForSSRFWithPolicy,
+} from '@/lib/server/ssrf-guard';
 
 export const MAX_REDIRECT_HOPS = 5;
+
+/**
+ * Refusal message when a hop target is not HTTPS. Callers that require TLS on
+ * every hop (for example a provider-supplied download URL) get a guard-typed
+ * refusal, not an opaque transport failure.
+ */
+export const REDIRECT_REQUIRES_HTTPS_MESSAGE = 'Provider redirect target must use https';
+
+/** A `fetch`-shaped transport the per-hop loop issues requests through. */
+export type RedirectValidationFetch = (
+  input: string | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
+export interface RedirectValidationOptions {
+  /** Transport for every hop; defaults to the process `fetch`. */
+  fetchImpl?: RedirectValidationFetch;
+  /** Dispatcher forwarded to every hop (undici honors it, the DOM type does not model it). */
+  dispatcher?: Dispatcher;
+  /**
+   * Address policy applied to every redirect target. Defaults to the
+   * process-wide `ALLOW_LOCAL_NETWORKS` behavior so existing callers keep
+   * their current semantics.
+   */
+  allowLocalNetworks?: boolean;
+  /**
+   * When `true`, every redirect target must be HTTPS; a hop to `http:` is
+   * refused as an address-policy refusal. Defaults to `false`, so callers that
+   * do not opt in keep following HTTP hops exactly as before.
+   */
+  requireHttps?: boolean;
+}
 
 /**
  * Request headers that carry provider credentials and must never cross an
  * origin boundary when a redirect is followed manually. These are the header
  * spellings the provider layer attaches to outbound calls: `authorization`
  * (Bearer tokens from the OpenAI/Anthropic/Azure SDKs and the verify routes),
- * `api-key` (Azure), `x-api-key` (Anthropic) and `x-goog-api-key` (Google).
+ * `api-key` (Azure), `x-api-key` (Anthropic), `x-goog-api-key` (Google),
+ * `ocp-apim-subscription-key` (Azure Speech), `xi-api-key` (ElevenLabs) and
+ * the Volcengine Doubao key pair (`x-api-access-key` / `x-api-app-id`).
  * Matching is case-insensitive because HTTP header names are.
  */
-const CREDENTIAL_HEADERS = new Set(['authorization', 'api-key', 'x-api-key', 'x-goog-api-key']);
+const CREDENTIAL_HEADERS = new Set([
+  'authorization',
+  'api-key',
+  'x-api-key',
+  'x-goog-api-key',
+  'ocp-apim-subscription-key',
+  'xi-api-key',
+  'x-api-access-key',
+  'x-api-app-id',
+]);
 
 function isCredentialHeader(name: string): boolean {
   return CREDENTIAL_HEADERS.has(name.trim().toLowerCase());
@@ -106,20 +160,31 @@ function requestUrlString(input: RequestInfo | URL): string {
 
 /**
  * Fetch `input`, following at most {@link MAX_REDIRECT_HOPS} redirects and
- * validating every hop target with {@link validateUrlForSSRF} before the next
- * request is made. Resolves with the first non-redirect response.
+ * validating every hop target against the guard under `options.allowLocalNetworks`
+ * (defaulting to the process-wide `ALLOW_LOCAL_NETWORKS` behavior) before the
+ * next request is made. Resolves with the first non-redirect response.
  */
 export async function fetchWithRedirectValidation(
   input: RequestInfo | URL,
   init?: RequestInit,
+  options: RedirectValidationOptions = {},
 ): Promise<Response> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const allowLocalNetworks = options.allowLocalNetworks ?? allowLocalNetworksEnabled();
+  // The dispatcher rides every hop of this request (credential stripping only
+  // rewrites `headers`), so the connect address stays pinned for redirects too.
+  const baseInit: RequestInit = options.dispatcher
+    ? ({ ...(init ?? {}), dispatcher: options.dispatcher } as RequestInit)
+    : (init ?? {});
   let currentUrl = requestUrlString(input);
   // init of the hop about to be issued; credential headers may be removed
   // from it before a cross-origin hop, never mutating the caller's init.
-  let hopInit: RequestInit | undefined = init;
+  let hopInit: RequestInit = baseInit;
   for (let hop = 0; ; hop++) {
-    const response = await fetch(currentUrl, { ...hopInit, redirect: 'manual' });
-    if (response.status < 300 || response.status >= 400) return response;
+    const response = await fetchImpl(currentUrl, { ...hopInit, redirect: 'manual' });
+    // Positive 3xx check: a transport double that omits `status` is treated as a
+    // final response, while a real fetch always carries a numeric status.
+    if (!(response.status >= 300 && response.status < 400)) return response;
 
     const location = response.headers.get('location');
     if (!location) throw new Error('Provider request redirected without a Location header');
@@ -134,8 +199,12 @@ export async function fetchWithRedirectValidation(
       throw new Error('Provider request received an invalid redirect Location');
     }
 
-    const ssrfError = await validateUrlForSSRF(nextUrl);
-    if (ssrfError) throw new Error(ssrfError);
+    if (options.requireHttps && new URL(nextUrl).protocol !== 'https:') {
+      throw new UnsafeNetworkTargetError(REDIRECT_REQUIRES_HTTPS_MESSAGE);
+    }
+
+    const ssrfError = await validateUrlForSSRFWithPolicy(nextUrl, { allowLocalNetworks });
+    if (ssrfError) throw new UnsafeNetworkTargetError(ssrfError);
 
     // A streaming request body has been consumed by the request that just
     // answered with a redirect and cannot be replayed; fail loudly instead of

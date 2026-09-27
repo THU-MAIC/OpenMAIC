@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/storage",
-  "version": "0.29.1",
+  "version": "0.31.1",
   "description": "The MAIC pluggable persistence layer: document / runtime / KV / asset primitives with browser and HTTP backends, depending only on @openmaic/dsl.",
   "type": "module",
   "main": "./dist/index.js",
@@ -70,6 +70,10 @@
     "./server/reference": {
       "types": "./dist/server/reference.d.ts",
       "import": "./dist/server/reference.js"
+    },
+    "./pg-json": {
+      "types": "./dist/pg-json.d.ts",
+      "import": "./dist/pg-json.js"
     }
   },
   "files": [

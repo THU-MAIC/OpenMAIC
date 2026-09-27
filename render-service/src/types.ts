@@ -104,23 +104,45 @@ export interface RenderExecutionRequest {
   };
 }
 
+/** Resource-owner settlement. A service slot is not the resource reservation. */
+export type RenderResourceDiagnosticCode =
+  | 'main_pid_fields_not_ready'
+  | 'main_pid_startup_transient'
+  | 'main_pid_process_exited'
+  | 'main_pid_read_error'
+  | 'main_pid_identity_mismatch';
+
+export interface RenderResourceSettlement {
+  published: boolean | 'unknown';
+  cleanupVerified: boolean;
+  reservationReturned: boolean;
+  admissionClosed: boolean;
+  /** Bounded, path-free summary safe to expose over HTTP. */
+  diagnosticCode?: RenderResourceDiagnosticCode;
+  /** Exact JSON-safe owner cleanup/publication evidence, retained on failure too. */
+  details: Record<string, unknown>;
+}
+
 export type RenderExecutionResult =
   | {
       status: 'succeeded';
       performance?: RenderPerformanceSummary;
       metrics?: RenderExecutionMetrics;
+      resources?: RenderResourceSettlement;
     }
   | {
       status: 'cancelled';
       failure: RenderCancelledFailure;
       performance?: RenderPerformanceSummary;
       metrics?: RenderExecutionMetrics;
+      resources?: RenderResourceSettlement;
     }
   | {
       status: 'failed';
       failure: RenderFailedFailure;
       performance?: RenderPerformanceSummary;
       metrics?: RenderExecutionMetrics;
+      resources?: RenderResourceSettlement;
     };
 
 /**
@@ -148,6 +170,7 @@ export interface RenderJobRecord {
   failure?: RenderFailure;
   /** Executor-independent diagnostics for completed or failed attempts. */
   performance?: RenderPerformanceSummary;
+  resources?: RenderResourceSettlement;
 }
 
 export function isTerminal(status: RenderJobStatus): boolean {

@@ -958,26 +958,11 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
   // inside it (self-deadlock against our own exclusive hold).
   await mutateDocument(
     stageId,
-    async (document, store) =>
+    async (_document, store) =>
       withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
-        const {
-          buildStageAssetReclamationPlan,
-          executeStageAssetReclamation,
-          loadStageAssetInventory,
-        } = await import('@/lib/media/reclaim-stage-assets');
-        const deletionDocument = document ?? {
-          stage: { id: stageId, name: '', createdAt: 0, updatedAt: 0 },
-          scenes: [],
-        };
-        const inventory = await loadStageAssetInventory(deletionDocument);
-        const assetPlan = buildStageAssetReclamationPlan(
-          stageId,
-          inventory.refs,
-          inventory.mediaRows,
-          inventory.audioRows,
-        );
+        const { clearStageMediaCache } = await import('@/lib/media/clear-stage-media-cache');
         await store.deleteDocument(stageId);
-        await executeStageAssetReclamation(assetPlan, null);
+        await clearStageMediaCache(stageId);
         await db.transaction(
           'rw',
           [

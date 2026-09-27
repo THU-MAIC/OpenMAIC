@@ -5,7 +5,6 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -56,7 +55,6 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
-import { isTTSProviderConfigured, isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { isCustomTTSProvider } from '@/lib/audio/types';
 import {
   getVoxCPMProviderOptions,
@@ -91,8 +89,6 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const setTTSSpeed = useSettingsStore((state) => state.setTTSSpeed);
-  const ttsEnabled = useSettingsStore((state) => state.ttsEnabled);
-  const setTTSEnabled = useSettingsStore((state) => state.setTTSEnabled);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
   const activeProviderId = useSettingsStore((state) => state.ttsProviderId);
@@ -110,10 +106,6 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   // AVAILABLE provider (configured / server-managed). An unconfigured provider
   // can't be "enabled" into the picker, so its toggle is disabled. Server
   // force-disable also locks it. `checked` reflects the true effective state.
-  const providerServerDisabled = !!providerConfig?.serverDisabled;
-  const providerConfigured = isTTSProviderConfigured(selectedProviderId, providerConfig);
-  const providerEnableLocked = providerServerDisabled || !providerConfigured;
-  const providerEnabled = isTTSProviderEnabled(selectedProviderId, providerConfig);
   const isVoxCPM = selectedProviderId === 'voxcpm-tts';
   const voxcpmBackend = normalizeVoxCPMBackend(providerConfig?.providerOptions?.backend);
   const requiresApiKey = isCustom
@@ -250,18 +242,6 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
 
   return (
     <div className={cn('space-y-6', isVoxCPM ? 'max-w-5xl' : 'max-w-3xl')}>
-      <div className="flex items-center justify-between rounded-lg border border-border/60 bg-background px-3 py-2.5">
-        <div className="min-w-0 pr-3">
-          <p className="text-sm font-medium">{t('settings.enableTTS')}</p>
-          <p className="text-[11px] text-muted-foreground">{t('settings.ttsEnabledDescription')}</p>
-        </div>
-        <Switch
-          checked={ttsEnabled}
-          onCheckedChange={setTTSEnabled}
-          aria-label={t('settings.enableTTS')}
-        />
-      </div>
-
       {/* Browser-native TTS can't produce managed audio files, so the Pro-mode
           timeline's per-line audio (preview / regenerate / bulk voiceover) is
           unavailable on it — surface that when this provider is selected. */}
@@ -270,27 +250,6 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           {t('settings.ttsBrowserNativeTimelineNotice')}
         </div>
       )}
-
-      {/* Enable / disable this provider for the voice picker and auto-assignment (#665). */}
-      <div className="flex items-center justify-between rounded-lg border border-border/60 bg-background px-3 py-2.5">
-        <div className="min-w-0 pr-3">
-          <p className="text-sm font-medium">{t('settings.ttsProviderEnabledLabel')}</p>
-          <p className="text-[11px] text-muted-foreground">
-            {providerServerDisabled
-              ? t('settings.ttsProviderDisabledByAdmin')
-              : !providerConfigured
-                ? t('settings.ttsProviderUnavailableHint')
-                : t('settings.ttsProviderEnabledHint')}
-          </p>
-        </div>
-        <Switch
-          checked={providerEnabled}
-          disabled={providerEnableLocked}
-          onCheckedChange={(checked) =>
-            setTTSProviderConfig(selectedProviderId, { enabled: checked })
-          }
-        />
-      </div>
 
       {/* Server-configured notice */}
       {isServerConfigured && (
@@ -1400,9 +1359,11 @@ function QwenVoiceCloneManager() {
     !!navigator.mediaDevices?.getUserMedia;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pt-2">
       <div>
-        <Label className="text-base font-semibold">{t('settings.qwenCloneVoicesTitle')}</Label>
+        <Label className="text-base font-semibold leading-normal">
+          {t('settings.qwenCloneVoicesTitle')}
+        </Label>
         <p className="mt-1 text-xs text-muted-foreground">{t('settings.qwenCloneRefAudioHint')}</p>
         {!recordingSupported && (
           <p className="mt-1 text-xs text-amber-600 dark:text-amber-300">
@@ -1412,15 +1373,16 @@ function QwenVoiceCloneManager() {
       </div>
 
       <div className="overflow-hidden rounded-lg border border-border/70 bg-background">
-        <div className="grid lg:grid-cols-[minmax(280px,0.95fr)_minmax(0,1.15fr)]">
-          <section className="border-b border-border/60 lg:border-b-0 lg:border-r">
-            <div className="flex h-12 items-center justify-between border-b border-border/60 px-4">
+        <div className="grid lg:grid-cols-[minmax(0,45fr)_minmax(0,55fr)]">
+          {/* 左：音色池（结果展示区） */}
+          <section className="flex min-h-0 flex-col border-b border-border/50 lg:border-b-0">
+            <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/50 px-4">
               <span className="text-sm font-medium">{t('settings.voxcpmVoicePool')}</span>
               <span className="text-xs text-muted-foreground">
                 {t('settings.voxcpmVoiceCount', { count: profiles.length })}
               </span>
             </div>
-            <div className="max-h-[360px] overflow-y-auto">
+            <div className="max-h-[360px] min-h-[240px] overflow-y-auto">
               {profiles.length ? (
                 profiles.map((profile) => (
                   <VoiceProfileRow
@@ -1436,69 +1398,69 @@ function QwenVoiceCloneManager() {
                   />
                 ))
               ) : (
-                <div className="px-4 py-8 text-center text-sm text-muted-foreground/60">
+                <div className="flex min-h-[200px] items-center justify-center px-4 py-8 text-center text-sm text-muted-foreground/60">
                   {t('settings.voxcpmNoCustomVoices')}
                 </div>
               )}
             </div>
           </section>
 
-          <section className="space-y-3 p-4">
-            <Input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder={t('settings.voxcpmCloneVoiceNamePlaceholder')}
-              className="h-10 rounded-md text-sm"
-            />
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <label className="inline-flex h-10 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent hover:text-accent-foreground">
-                <Upload className="h-3.5 w-3.5 shrink-0" />
-                <span className="max-w-[240px] truncate">
-                  {referenceFile ? referenceFile.name : t('settings.voxcpmUploadReferenceAudio')}
-                </span>
-                <input
-                  type="file"
-                  accept="audio/*"
-                  className="hidden"
-                  onChange={(event) => {
-                    void handleFileChange(event.target.files?.[0] || null);
-                    event.target.value = '';
-                  }}
-                />
-              </label>
-              <Button
-                type="button"
-                variant={isRecording ? 'destructive' : 'outline'}
-                size="sm"
-                disabled={!recordingSupported}
-                onClick={isRecording ? stopRecording : startRecording}
-                className="h-10 gap-2 rounded-md"
-              >
-                {isRecording ? (
-                  <>
-                    <Square className="h-3.5 w-3.5" />
-                    {formatRecordingTime(recordingSeconds)}
-                  </>
-                ) : (
-                  <>
-                    <Mic className="h-3.5 w-3.5" />
-                    {t('settings.voxcpmRecord')}
-                  </>
-                )}
-              </Button>
-            </div>
-            <Textarea
-              value={refText}
-              onChange={(event) => setRefText(event.target.value)}
-              placeholder={t('settings.qwenCloneRefText')}
-              className="min-h-24 resize-none rounded-md text-sm"
-            />
-            <div className="flex justify-end">
+          {/* 右：创建音色（操作区，浅色卡片，暗表单自上而下按操作顺序） */}
+          <section className="p-3">
+            <div className="flex h-full flex-col gap-3 rounded-lg bg-muted/40 p-4">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="inline-flex h-10 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent hover:text-accent-foreground">
+                  <Upload className="h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {referenceFile ? referenceFile.name : t('settings.qwenCloneUploadShort')}
+                  </span>
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      void handleFileChange(event.target.files?.[0] || null);
+                      event.target.value = '';
+                    }}
+                  />
+                </label>
+                <Button
+                  type="button"
+                  variant={isRecording ? 'destructive' : 'outline'}
+                  disabled={!recordingSupported}
+                  onClick={isRecording ? stopRecording : startRecording}
+                  className="h-10 gap-2 rounded-md"
+                >
+                  {isRecording ? (
+                    <>
+                      <Square className="h-3.5 w-3.5" />
+                      {formatRecordingTime(recordingSeconds)}
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="h-3.5 w-3.5" />
+                      {t('settings.voxcpmRecord')}
+                    </>
+                  )}
+                </Button>
+              </div>
+              <Textarea
+                value={refText}
+                onChange={(event) => setRefText(event.target.value)}
+                placeholder={t('settings.qwenCloneRefText')}
+                className="min-h-24 resize-none rounded-md text-sm"
+              />
+              <Input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder={t('settings.voxcpmCloneVoiceNamePlaceholder')}
+                className="h-10 rounded-md text-sm"
+              />
               <Button
                 size="sm"
                 onClick={handleSave}
                 disabled={saving || !name.trim() || !refText.trim() || !referenceFile}
-                className="h-9 gap-1.5 rounded-md"
+                className="h-10 w-full gap-1.5 rounded-md"
               >
                 {saving ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />

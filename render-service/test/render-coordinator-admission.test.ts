@@ -106,6 +106,32 @@ describe('RenderCoordinator admission control', () => {
     expect(() => m.reserve('carol')).not.toThrow();
   });
 
+  it('releases the held slot when the resource owner closes before submit', async () => {
+    let accepting = true;
+    const m = new RenderCoordinator(
+      {
+        accepting: () => accepting,
+        async execute() {
+          return { status: 'succeeded' };
+        },
+      },
+      createMemoryJobStore(),
+      createMemoryArtifactStore().store,
+    );
+    const reservation = m.reserve('resource-user');
+    accepting = false;
+    await expect(
+      m.submit(reservation, '/tmp/whatever', {
+        fps: 30,
+        quality: 'draft',
+        format: 'mp4',
+      }),
+    ).rejects.toMatchObject({ reason: 'resource_unavailable' });
+
+    accepting = true;
+    expect(() => m.reserve('resource-user')).not.toThrow();
+  });
+
   it('labels a queue-cap rejection with reason queue_full', async () => {
     const m = new RenderCoordinator(
       succeedingExecutor,

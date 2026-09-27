@@ -18,6 +18,24 @@ const textElement: PPTTextElement = {
 };
 
 describe('BaseTextElement', () => {
+  it('does not add outer padding when rich text already owns frame insets', () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(BaseTextElement, {
+        elementInfo: {
+          ...textElement,
+          content: '<div style="padding: 4.8px 9.6px;"><p>Label</p></div>',
+        },
+      }),
+    );
+    expect(markup).toContain('box-sizing:border-box;padding:0');
+    expect(markup).not.toContain('padding:10px');
+  });
+  it('keeps default padding for ordinary authored text', () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(BaseTextElement, { elementInfo: textElement }),
+    );
+    expect(markup).toContain('padding:10px');
+  });
   it('preserves literal line endings in static text content', () => {
     const markup = renderToStaticMarkup(
       React.createElement(BaseTextElement, {
@@ -95,4 +113,52 @@ describe('BaseTextElement', () => {
     expect(markup).toContain('data-renderer-text-editor=""');
     expect(markup).not.toContain('ProseMirror-static');
   });
+});
+
+describe('BaseTextElement imported text insets', () => {
+  it.each([false, true])(
+    'does not add a second inset to imported text (vertical=%s)',
+    (vertical) => {
+      const markup = renderToStaticMarkup(
+        React.createElement(BaseTextElement, {
+          elementInfo: {
+            ...textElement,
+            vertical,
+            content: '<div style="padding: 4.8px 9.6px 4.8px 9.6px;"><p>优先级</p></div>',
+          },
+        }),
+      );
+      expect(markup).toContain('box-sizing:border-box;padding:0;');
+      expect(markup).toContain('padding: 4.8px 9.6px 4.8px 9.6px;');
+    },
+  );
+  it('retains the default inset for manually authored text', () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(BaseTextElement, { elementInfo: textElement }),
+    );
+    expect(markup).toContain('padding:10px');
+  });
+});
+
+it.each([
+  '<div data-pptx-text-insets="true"><p>Text</p></div>',
+  "<div class='imported' data-pptx-text-insets='true' style='padding:0px'><p>Text</p></div>",
+  '<div style="padding-block: 4px" data-pptx-text-insets="true"><p>Text</p></div>',
+])('recognizes explicit PPTX insets without relying on padding shorthand: %s', (content) => {
+  const markup = renderToStaticMarkup(
+    React.createElement(BaseTextElement, { elementInfo: { ...textElement, content } }),
+  );
+  expect(markup).toContain('box-sizing:border-box;padding:0;');
+});
+
+it('does not treat a marker on a nested div as outer text insets', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(BaseTextElement, {
+      elementInfo: {
+        ...textElement,
+        content: '<div><div data-pptx-text-insets="true">Text</div></div>',
+      },
+    }),
+  );
+  expect(markup).toContain('padding:10px');
 });

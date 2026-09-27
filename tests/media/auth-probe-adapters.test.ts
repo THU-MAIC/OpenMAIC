@@ -64,6 +64,44 @@ const authOnlyCases: AuthOnlyCase[] = [
     },
   },
   {
+    name: 'Seedream behind a versioned gateway route',
+    providerName: 'Seedream',
+    probe: () =>
+      testSeedreamConnectivity({
+        providerId: 'seedream',
+        apiKey: 'gateway-key',
+        baseUrl: 'https://gateway.example/ark/v3/',
+        model: 'seedream-test',
+      }),
+    assertRequest: () => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://gateway.example/ark/v3/images/generations',
+        expect.objectContaining({ method: 'POST', redirect: 'manual' }),
+      );
+    },
+  },
+  {
+    name: 'MiniMax Video H3 (v2 task API)',
+    providerName: 'MiniMax Video',
+    probe: () =>
+      testMiniMaxVideoConnectivity({
+        providerId: 'minimax-video',
+        apiKey: 'gateway-key',
+        baseUrl: 'https://gateway.example/minimax/',
+        model: 'minimax-h3',
+      }),
+    assertRequest: () => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://gateway.example/minimax/v2/query/video_generation/connectivity-check',
+        {
+          method: 'GET',
+          redirect: 'manual',
+          headers: { Authorization: 'Bearer gateway-key' },
+        },
+      );
+    },
+  },
+  {
     name: 'Qwen Image',
     providerName: 'Qwen Image',
     probe: () =>

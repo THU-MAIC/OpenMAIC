@@ -14,6 +14,9 @@ import { normalizeWebSearchQuery } from './utils';
 
 const BRAVE_DEFAULT_BASE_URL = 'https://search.brave.com';
 
+/** Longest upstream error body we will echo back verbatim. */
+const BRAVE_MAX_ERROR_DETAIL = 200;
+
 const BRAVE_HEADERS: Record<string, string> = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
@@ -108,6 +111,57 @@ export function parseBraveSearchHtml(html: string, maxResults: number): WebSearc
 const BRAVE_API_BASE_URL = 'https://api.search.brave.com';
 
 /**
+ * Read an error body only when it can plausibly be useful.
+ *
+ * Brave answers a throttled or blocked request with a full HTML challenge
+ * page. Pulling that into memory just to discard it wastes a large read, so
+ * cancel the stream as soon as the content type says it is markup.
+ */
+async function readBraveErrorDetail(res: Response): Promise<string> {
+  if (/\bhtml\b/i.test(res.headers.get('content-type') ?? '')) {
+    await res.body?.cancel().catch(() => {});
+    return '';
+  }
+  return res.text().catch(() => '');
+}
+
+/**
+ * Build a Brave error message that is safe to surface to callers.
+ *
+ * Brave answers an over-quota or blocked request with a full HTML challenge
+ * page, so the raw body is neither actionable nor safe to forward: it can be
+ * hundreds of kilobytes and ends up in thrown error messages and server logs.
+ * Only keep upstream text when it is short and not markup, and give 429 a
+ * dedicated message so callers can tell throttling apart from a real outage.
+ *
+ * The 429 guidance depends on the mode: the keyless scrape path can be fixed
+ * by configuring an API key, but the API path already sends one, so there the
+ * limit comes from the subscription plan.
+ */
+function formatBraveError(
+  mode: 'api' | 'scrape',
+  status: number,
+  statusText: string,
+  errorText: string,
+): string {
+  const label = mode === 'api' ? 'Brave API' : 'Brave Search';
+
+  if (status === 429) {
+    return mode === 'api'
+      ? `${label} is rate-limited (429) by the Brave Search API plan. Retry later, switch to another web search provider, or raise the plan's rate limit.`
+      : `${label} is temporarily rate-limited (429). Retry later, switch to another web search provider, or configure a Brave Search API key.`;
+  }
+
+  const detail = errorText.trim();
+  const isMarkup = detail.startsWith('<') || /<(!doctype|html)\b/i.test(detail);
+  if (!detail || isMarkup || detail.length > BRAVE_MAX_ERROR_DETAIL) {
+    return `${label} error (${status}): ${statusText || 'request failed'}`;
+  }
+
+  return `${label} error (${status}): ${detail}`;
+}
+
+/**
  * Use the official Brave Search API (requires API key).
  * Docs: https://api.search.brave.com/app/documentation/web-search
  */
@@ -131,8 +185,8 @@ async function searchWithBraveApi(
   });
 
   if (!res.ok) {
-    const errorText = await res.text().catch(() => '');
-    throw new Error(`Brave API error (${res.status}): ${errorText || res.statusText}`);
+    const errorText = await readBraveErrorDetail(res);
+    throw new Error(formatBraveError('api', res.status, res.statusText, errorText));
   }
 
   const data = (await res.json()) as {
@@ -172,8 +226,8 @@ async function searchWithBraveScrape(
   });
 
   if (!res.ok) {
-    const errorText = await res.text().catch(() => '');
-    throw new Error(`Brave Search error (${res.status}): ${errorText || res.statusText}`);
+    const errorText = await readBraveErrorDetail(res);
+    throw new Error(formatBraveError('scrape', res.status, res.statusText, errorText));
   }
 
   const html = await res.text();

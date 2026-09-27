@@ -4,6 +4,7 @@ import {
   type Node as ProseMirrorNode,
 } from 'prosemirror-model';
 import { textSchema } from './schema';
+import { normalizeInlineContainerMarks } from './inlineContainerMarks';
 
 const HTML_MARKUP_PATTERN = /<\/?[a-z][^>]*>|<![^>]*>/i;
 
@@ -23,7 +24,9 @@ export function createTextDocument(html: string): ProseMirrorNode {
       template.content.append(document.createTextNode(line));
     });
   }
-  return ProseMirrorDOMParser.fromSchema(textSchema).parse(template.content);
+  return normalizeInlineContainerMarks(
+    ProseMirrorDOMParser.fromSchema(textSchema).parse(template.content),
+  );
 }
 
 export function serializeTextDocument(doc: ProseMirrorNode): string {

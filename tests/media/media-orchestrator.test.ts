@@ -181,6 +181,44 @@ describe('classic media orchestrator', () => {
     });
   });
 
+  it('records the type an inline data URL declares, rather than assuming PNG', async () => {
+    // A provider that answers inline states its type in the data URL the
+    // adapter builds (`grok-image-adapter` does this for xAI's JPEG bytes). The
+    // row keeps that type, so the bytes are not stored — and later served — as
+    // a PNG they are not. The stub derives the response type from the URL, the
+    // way fetching a data URL does, so a URL that claimed PNG would fail here.
+    const jpegBase64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]).toString('base64');
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const request = String(input);
+      if (request === '/api/generate/image') {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            result: { url: `data:image/jpeg;base64,${jpegBase64}` },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (request.startsWith('data:')) {
+        return new Response(Buffer.from(jpegBase64, 'base64'), {
+          status: 200,
+          headers: { 'content-type': request.slice('data:'.length).split(';')[0] },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${request}`);
+    });
+
+    await generateMediaForOutlines(
+      [outlineWith({ type: 'image', prompt: 'A diagram', elementId: imageRef })],
+      stageId,
+    );
+
+    expect(mocks.mediaPut).toHaveBeenCalledTimes(1);
+    const row = mocks.mediaPut.mock.calls[0]![0] as { blob: Blob; mimeType: string };
+    expect(row.mimeType).toBe('image/jpeg');
+    expect(row.blob.type).toBe('image/jpeg');
+  });
+
   it('stores video and poster bytes in one placeholder-keyed classic row', async () => {
     serveVideo();
 

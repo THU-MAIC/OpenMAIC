@@ -15,11 +15,13 @@ import { PROVIDERS } from '@/lib/ai/providers';
 import { findModelById, getCanonicalModelId } from '@/lib/ai/model-aliases';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { getThinkingConfigKey, supportsConfigurableThinking } from '@/lib/ai/thinking-config';
+import { getCatalogThinkingCapability } from '@/lib/ai/model-metadata';
 import type { TTSProviderId, ASRProviderId, BuiltInTTSProviderId } from '@/lib/audio/types';
 import type { AgentVoiceOverride } from '@/lib/audio/voice-resolver';
 import { isCustomTTSProvider, isCustomASRProvider } from '@/lib/audio/types';
 import {
   ASR_PROVIDERS,
+  CUSTOM_ASR_DEFAULT_LANGUAGES,
   DEFAULT_TTS_VOICES,
   isQwenCatalogVoice,
   isQwenVoiceCloneModel,
@@ -28,6 +30,13 @@ import {
 import { DEFAULT_VOXCPM_BACKEND, VOXCPM_MODEL_ID, VOXCPM_VLLM_MODEL_ID } from '@/lib/audio/voxcpm';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
+import {
+  MODALITY_ORDER,
+  TOKEN_PLAN_PRESETS,
+  tokenPlanSeedFingerprint,
+} from '@/lib/config/token-plan-presets';
+import type { TokenPlanModality } from '@/lib/config/token-plan-presets';
+import { isTokenPlanUsable, seedPlanModels } from '@/lib/config/apply-token-plan';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
@@ -38,6 +47,7 @@ import {
   validateProvider,
   resolveSelectedModel,
   isLLMProviderConfigured,
+  buildUsableFallbackOrder,
 } from '@/lib/store/settings-validation';
 import { createKVPersistStorage, purgeLegacyPersistKey } from '@/lib/store/kv-persist';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
@@ -54,6 +64,75 @@ const SETTINGS_PERSIST_VERSION = 4;
  */
 const recovery: { rehydrate?: () => void | Promise<void> } = {};
 
+/**
+ * Whether a (non-LLM) plan modality's provider currently holds credentials —
+ * reconciliation only re-seeds modalities that can actually use the seeds.
+ */
+type ModalityCredMap = Record<string, { apiKey?: string; isServerConfigured?: boolean }>;
+
+function modalityHasCredentials(
+  modality: TokenPlanModality,
+  providerId: string,
+  state: Pick<
+    SettingsState,
+    | 'imageProvidersConfig'
+    | 'videoProvidersConfig'
+    | 'ttsProvidersConfig'
+    | 'webSearchProvidersConfig'
+  >,
+): boolean {
+  // The per-modality config maps are keyed by concrete id unions; view them
+  // through a string-keyed credential shape for this predicate.
+  const map: Record<Exclude<TokenPlanModality, 'llm'>, ModalityCredMap> = {
+    image: state.imageProvidersConfig as ModalityCredMap,
+    video: state.videoProvidersConfig as ModalityCredMap,
+    tts: state.ttsProvidersConfig as ModalityCredMap,
+    webSearch: state.webSearchProvidersConfig as ModalityCredMap,
+  };
+  if (modality === 'llm') return false;
+  const cfg = map[modality][providerId];
+  return !!cfg && (!!cfg.apiKey || !!cfg.isServerConfigured);
+}
+
+/**
+ * Drop user-level stage routes whose provider just became unusable (key
+ * cleared, authorization toggle off, provider deleted) — the stage-route
+ * counterpart of the mainline switch resolveLLMSelection performs. Returns
+ * null when nothing changed so callers can skip the write.
+ */
+function pruneUnusableStageRoutes(
+  routes: SettingsState['llmStageRoutes'],
+  providersConfig: ProvidersConfig,
+): SettingsState['llmStageRoutes'] | null {
+  let changed = false;
+  const next: SettingsState['llmStageRoutes'] = {};
+  for (const [stage, selection] of Object.entries(routes)) {
+    const cfg = providersConfig[selection.providerId];
+    if (cfg && cfg.enabled !== false && isLLMProviderConfigured(cfg)) {
+      next[stage] = selection;
+    } else {
+      changed = true;
+    }
+  }
+  return changed ? next : null;
+}
+
+/**
+ * Stage routes that are operator-only and can never take effect from the
+ * client-side Course Model Config UI. `maic-agent-driver` is resolved
+ * exclusively from the operator's MODEL_ROUTES (with an explicit api dialect
+ * and contextWindow) in agent-runtime/agent-driver-model.ts, so a persisted
+ * user route for it is dead weight. Drop any leftover entry; returns null when
+ * nothing changed so callers can skip the write.
+ */
+function pruneOperatorOnlyStageRoutes(
+  routes: SettingsState['llmStageRoutes'] | undefined,
+): SettingsState['llmStageRoutes'] | null {
+  if (!routes || !('maic-agent-driver' in routes)) return null;
+  const { 'maic-agent-driver': _retired, ...rest } = routes;
+  return rest;
+}
+
 function pruneThinkingConfigs(
   thinkingConfigs: Record<string, ThinkingConfig> | undefined,
   providersConfig: ProvidersConfig | undefined,
@@ -62,7 +141,9 @@ function pruneThinkingConfigs(
 
   const validKeys = new Set<string>();
   for (const [providerId, providerConfig] of Object.entries(providersConfig)) {
-    for (const model of providerConfig.models) {
+    // Partial writes (e.g. token-plan apply writes credentials before models)
+    // can leave a provider entry without a models array yet.
+    for (const model of providerConfig.models ?? []) {
       if (supportsConfigurableThinking(model.capabilities?.thinking)) {
         validKeys.add(getThinkingConfigKey(providerId, model.id));
       }
@@ -78,11 +159,87 @@ function pruneThinkingConfigs(
 export const PLAYBACK_SPEEDS = [1, 1.25, 1.5, 2] as const;
 export type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
 
+/**
+ * Validate and resolve ASR language for a given provider.
+ * Keeps current language if supported by the provider, otherwise falls back
+ * to the provider's default supported language (or 'auto').
+ */
+export function getValidASRLanguage(providerId: ASRProviderId, currentLanguage?: string): string {
+  if (!providerId || typeof providerId !== 'string') return 'auto';
+  let supportedLanguages: readonly string[];
+  if (isCustomASRProvider(providerId)) {
+    supportedLanguages = CUSTOM_ASR_DEFAULT_LANGUAGES;
+  } else {
+    supportedLanguages =
+      ASR_PROVIDERS[providerId as keyof typeof ASR_PROVIDERS]?.supportedLanguages || [];
+  }
+  const isLanguageValid = Boolean(
+    typeof currentLanguage === 'string' &&
+    currentLanguage &&
+    supportedLanguages.includes(currentLanguage),
+  );
+  return isLanguageValid && currentLanguage ? currentLanguage : supportedLanguages[0] || 'auto';
+}
+
 export interface SettingsState {
   // Model selection
   providerId: ProviderId;
   modelId: string;
   thinkingConfigs: Record<string, ThinkingConfig>;
+
+  /**
+   * User-level per-stage LLM routing (the user-facing counterpart of the
+   * operator env MODEL_ROUTES): stage key (e.g. 'scene-content',
+   * 'scene-content:slide') → explicit provider/model selection. Absent entry =
+   * follow the main model. Sent to the server via the `x-model-routes` header;
+   * the operator's MODEL_ROUTES still wins server-side.
+   */
+  llmStageRoutes: Record<
+    string,
+    { providerId: ProviderId; modelId: string; thinking?: ThinkingConfig }
+  >;
+
+  /** Course-level web search toggle: whether generation may search the web. */
+  webSearchEnabled: boolean;
+
+  /**
+   * preset id → tokenPlanSeedFingerprint recorded when the plan's model seeds
+   * were last applied. Startup reconciliation compares these against the
+   * shipped preset data and re-seeds enabled plans whose data changed.
+   * `null` in the setter clears the entry (plan disconnected).
+   */
+  tokenPlanSeedVersions: Record<string, string>;
+  setTokenPlanSeedVersion: (presetId: string, fingerprint: string | null) => void;
+  /**
+   * preset id → the LLM provider the plan is enrolled on. Enrollment is
+   * recorded ONLY by applyTokenPlan (explicit user action) — a provider merely
+   * having a key is never evidence a plan is enabled, because minimax /
+   * tokendance / doubao double as ordinary direct providers and personal keys
+   * must not be hijacked by startup reconciliation.
+   */
+  tokenPlanEnrollments: Record<string, string>;
+  setTokenPlanEnrolled: (presetId: string, llmProviderId: string | null) => void;
+  /**
+   * 授权层开关：被显式关闭的套餐 id 集合（值恒为 true）。与「模型服务」里
+   * provider 的 `enabled` 同层语义——凭证仍在、连接仍在，只是不再参与课程
+   * 模型配置的候选与覆盖。用「关闭集合」而非「启用集合」存储，这样新连接
+   * 的套餐与历史数据都默认启用，无需迁移回填。
+   */
+  tokenPlanDisabled: Record<string, boolean>;
+  setTokenPlanEnabled: (presetId: string, enabled: boolean) => void;
+  /**
+   * Re-seed model defaults for every ENROLLED plan whose preset data changed
+   * since its seeds were last applied. Credentials are never touched — only
+   * catalogues, main model, stage routes and active selections, and only for
+   * modalities that actually hold credentials.
+   */
+  reconcileTokenPlanSeeds: () => void;
+  /**
+   * 将静态目录中的思考能力元数据补写进已保存的模型目录（幂等）。目录条目
+   * 后来新增时（例如为 token plan 模型补 thinking 控制），已启用套餐的旧
+   * 目录不重种也能获得思考强度调节；key 与模型选择不受影响。
+   */
+  applyCatalogThinkingMetadata: () => void;
 
   // Provider configurations (unified JSON storage)
   providersConfig: ProvidersConfig;
@@ -257,6 +414,12 @@ export interface SettingsState {
 
   // Actions
   setModel: (providerId: ProviderId, modelId: string) => void;
+  /** Set (or clear, with null) the user-level route for one LLM stage. */
+  setStageRoute: (
+    stage: string,
+    route: { providerId: ProviderId; modelId: string; thinking?: ThinkingConfig } | null,
+  ) => void;
+  setWebSearchEnabled: (enabled: boolean) => void;
   setThinkingConfig: (
     providerId: ProviderId,
     modelId: string,
@@ -429,7 +592,11 @@ function resolveLLMSelection(
   currentProviderId: ProviderId,
   currentModelId: string,
 ): { providerId: ProviderId; modelId: string } {
-  const isUsable = (id: ProviderId) => !!config[id] && isLLMProviderConfigured(config[id]);
+  // Usable = configured AND not switched off via the authorization-layer
+  // per-provider toggle (ProviderSettings.enabled) — disabling the active
+  // mainline provider re-resolves the selection to another usable one.
+  const isUsable = (id: ProviderId) =>
+    !!config[id] && config[id].enabled !== false && isLLMProviderConfigured(config[id]);
   const providerId = isUsable(currentProviderId)
     ? currentProviderId
     : ((Object.keys(config) as ProviderId[]).find(isUsable) ?? ('' as ProviderId));
@@ -497,7 +664,7 @@ const getDefaultAudioConfig = () => ({
   ttsVoice: 'default',
   ttsSpeed: 1.0,
   asrProviderId: 'browser-native' as ASRProviderId,
-  asrLanguage: 'zh',
+  asrLanguage: 'zh-CN',
   ttsProvidersConfig: {
     // Built-in providers default enabled:true — they only ever surface once
     // configured (API key or server-managed), so "enabled" is a user opt-OUT,
@@ -571,6 +738,7 @@ const getDefaultImageConfig = () => ({
     'nano-banana': { apiKey: '', baseUrl: '', enabled: false },
     'minimax-image': { apiKey: '', baseUrl: '', enabled: false },
     'grok-image': { apiKey: '', baseUrl: '', enabled: false },
+    'openrouter-image': { apiKey: '', baseUrl: '', enabled: false },
     'comfyui-image': { apiKey: '', baseUrl: '', enabled: false },
     lemonade: { apiKey: '', baseUrl: '', enabled: false },
   } as Record<ImageProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
@@ -586,6 +754,7 @@ const getDefaultVideoConfig = () => ({
     veo: { apiKey: '', baseUrl: '', enabled: false },
     'minimax-video': { apiKey: '', baseUrl: '', enabled: false },
     'grok-video': { apiKey: '', baseUrl: '', enabled: false },
+    'openrouter-video': { apiKey: '', baseUrl: '', enabled: false },
     happyhorse: { apiKey: '', baseUrl: '', enabled: false },
   } as Record<VideoProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
@@ -655,7 +824,9 @@ const getDefaultWebSearchConfig = () => ({
  * Check whether a provider ID exists in the given provider registry.
  */
 function hasProviderId(providerMap: Record<string, unknown>, providerId?: string): boolean {
-  return typeof providerId === 'string' && providerId in providerMap;
+  return (
+    typeof providerId === 'string' && Object.prototype.hasOwnProperty.call(providerMap, providerId)
+  );
 }
 
 /**
@@ -693,7 +864,7 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
       state.ttsProviderId &&
       isCustomTTSProvider(state.ttsProviderId) &&
       state.ttsProvidersConfig &&
-      state.ttsProviderId in state.ttsProvidersConfig
+      Object.prototype.hasOwnProperty.call(state.ttsProvidersConfig, state.ttsProviderId)
     )
   ) {
     state.ttsProviderId = defaultAudioConfig.ttsProviderId;
@@ -705,10 +876,13 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
       state.asrProviderId &&
       isCustomASRProvider(state.asrProviderId) &&
       state.asrProvidersConfig &&
-      state.asrProviderId in state.asrProvidersConfig
+      Object.prototype.hasOwnProperty.call(state.asrProvidersConfig, state.asrProviderId)
     )
   ) {
     state.asrProviderId = defaultAudioConfig.asrProviderId;
+  }
+  if (state.asrProviderId) {
+    state.asrLanguage = getValidASRLanguage(state.asrProviderId, state.asrLanguage);
   }
 }
 
@@ -913,6 +1087,12 @@ export const useSettingsStore = create<SettingsState>()(
         providerId: 'openai' as ProviderId,
         modelId: '',
         thinkingConfigs: {},
+        llmStageRoutes: {},
+        webSearchEnabled: false,
+        /** preset id → seed fingerprint applied last (drives startup reconcile). */
+        tokenPlanSeedVersions: {},
+        tokenPlanEnrollments: {},
+        tokenPlanDisabled: {},
         providersConfig: getDefaultProvidersConfig(),
         ttsModel: 'openai-tts',
         selectedAgentIds: ['default-1', 'default-2', 'default-3'],
@@ -967,6 +1147,106 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Actions
         setModel: (providerId, modelId) => set({ providerId, modelId }),
+        setStageRoute: (stage, route) =>
+          set((state) => {
+            const next = { ...state.llmStageRoutes };
+            if (route) next[stage] = route;
+            else delete next[stage];
+            return { llmStageRoutes: next };
+          }),
+        setWebSearchEnabled: (enabled) => set({ webSearchEnabled: enabled }),
+
+        setTokenPlanSeedVersion: (presetId, fingerprint) =>
+          set((state) => {
+            const next = { ...state.tokenPlanSeedVersions };
+            if (fingerprint) next[presetId] = fingerprint;
+            else delete next[presetId];
+            return { tokenPlanSeedVersions: next };
+          }),
+
+        setTokenPlanEnrolled: (presetId, llmProviderId) =>
+          set((state) => {
+            const next = { ...state.tokenPlanEnrollments };
+            if (llmProviderId) next[presetId] = llmProviderId;
+            else delete next[presetId];
+            return { tokenPlanEnrollments: next };
+          }),
+
+        setTokenPlanEnabled: (presetId, enabled) =>
+          set((state) => {
+            const next = { ...state.tokenPlanDisabled };
+            // 只记录「被关掉的」：启用是默认态，删除条目即可恢复默认。
+            if (enabled) delete next[presetId];
+            else next[presetId] = true;
+            return { tokenPlanDisabled: next };
+          }),
+
+        reconcileTokenPlanSeeds: () => {
+          const state = get();
+          // 按 TOKEN_PLAN_PRESETS 顺序遍历，配合 priorityState 的让位判定，
+          // 使得独占槽位（主线模型 / stage route / 各模态选中项）稳定归属
+          // 列表中最靠前的生效套餐，与 reconcile 的先后无关。
+          // 用 isTokenPlanUsable 而非 isTokenPlanActive：被授权开关关掉的
+          // 套餐不参与播种——否则 preset 数据一变，stage route 会被写回一个
+          // enabled:false 的 provider，且 setStageRoute 不经过 prune，死路由
+          // 会一直留在 llmStageRoutes 里。重新开启时由开关清指纹触发补种。
+          for (const preset of TOKEN_PLAN_PRESETS) {
+            if (!isTokenPlanUsable(preset, state)) continue;
+            if (state.tokenPlanSeedVersions[preset.id] === tokenPlanSeedFingerprint(preset)) {
+              continue;
+            }
+            // Seed only modalities that actually hold credentials: seeding a
+            // keyless modality would flip its active selection onto nothing.
+            const modalities = MODALITY_ORDER.filter((m) => {
+              const target = preset.modalities[m];
+              if (!target) return false;
+              if (m === 'llm') return true; // enrollment implies the key is there
+              return modalityHasCredentials(m, target.providerId, state);
+            });
+            try {
+              const live = get();
+              seedPlanModels(preset, live, {
+                modalities,
+                priorityState: {
+                  tokenPlanEnrollments: live.tokenPlanEnrollments,
+                  providersConfig: live.providersConfig,
+                  tokenPlanDisabled: live.tokenPlanDisabled,
+                },
+              });
+              get().setTokenPlanSeedVersion(preset.id, tokenPlanSeedFingerprint(preset));
+            } catch (err) {
+              // One plan failing must not abort reconciliation of the rest.
+              log.warn(`Token plan seed reconcile failed for ${preset.id}:`, err);
+            }
+          }
+        },
+
+        applyCatalogThinkingMetadata: () => {
+          const { providersConfig } = get();
+          let changed = false;
+          const next: ProvidersConfig = { ...providersConfig };
+          for (const [pid, cfg] of Object.entries(providersConfig)) {
+            if (!cfg?.models?.length) continue;
+            let touched = false;
+            const models = cfg.models.map((model) => {
+              const thinking = getCatalogThinkingCapability(pid, model.id);
+              if (!thinking) return model;
+              // 目录条目是模块常量，新旧引用/深比较一致即已补写
+              if (model.capabilities?.thinking === thinking) return model;
+              touched = true;
+              return {
+                ...model,
+                capabilities: { ...model.capabilities, thinking },
+              };
+            });
+            if (touched) {
+              changed = true;
+              next[pid as ProviderId] = { ...cfg, models };
+            }
+          }
+          // 模型 id 集合未变，直接写入即可，无需重跑 LLM 选择解析
+          if (changed) set({ providersConfig: next });
+        },
 
         setThinkingConfig: (providerId, modelId, config) =>
           set((state) => {
@@ -1000,9 +1280,11 @@ export const useSettingsStore = create<SettingsState>()(
               state.providerId,
               state.modelId,
             );
+            const prunedRoutes = pruneUnusableStageRoutes(state.llmStageRoutes, providersConfig);
             return {
               providersConfig,
               thinkingConfigs: pruneThinkingConfigs(state.thinkingConfigs, providersConfig),
+              ...(prunedRoutes && { llmStageRoutes: prunedRoutes }),
               ...(nextProvider !== state.providerId && { providerId: nextProvider }),
               ...(nextModel !== state.modelId && { modelId: nextModel }),
             };
@@ -1018,9 +1300,11 @@ export const useSettingsStore = create<SettingsState>()(
               state.providerId,
               state.modelId,
             );
+            const prunedRoutes = pruneUnusableStageRoutes(state.llmStageRoutes, config);
             return {
               providersConfig: config,
               thinkingConfigs: pruneThinkingConfigs(state.thinkingConfigs, config),
+              ...(prunedRoutes && { llmStageRoutes: prunedRoutes }),
               ...(nextProvider !== state.providerId && { providerId: nextProvider }),
               ...(nextModel !== state.modelId && { modelId: nextModel }),
             };
@@ -1109,20 +1393,10 @@ export const useSettingsStore = create<SettingsState>()(
         // Reset language when switching providers, since language code formats differ
         // (e.g. browser-native uses BCP-47 "en-US", OpenAI Whisper uses ISO 639-1 "en")
         setASRProvider: (providerId) =>
-          set((state) => {
-            let supportedLanguages: string[];
-            if (isCustomASRProvider(providerId)) {
-              supportedLanguages = ['auto'];
-            } else {
-              supportedLanguages =
-                ASR_PROVIDERS[providerId as keyof typeof ASR_PROVIDERS]?.supportedLanguages || [];
-            }
-            const isLanguageValid = supportedLanguages.includes(state.asrLanguage);
-            return {
-              asrProviderId: providerId,
-              ...(isLanguageValid ? {} : { asrLanguage: supportedLanguages[0] || 'auto' }),
-            };
-          }),
+          set((state) => ({
+            asrProviderId: providerId,
+            asrLanguage: getValidASRLanguage(providerId, state.asrLanguage),
+          })),
 
         setASRLanguage: (language) => set({ asrLanguage: language }),
 
@@ -1342,7 +1616,10 @@ export const useSettingsStore = create<SettingsState>()(
         setImageGenerationEnabled: (enabled) => {
           if (enabled) {
             const cfg = get().imageProvidersConfig;
-            const hasUsable = Object.values(cfg).some((c) => c.isServerConfigured || c.apiKey);
+            // 与课程模型配置的提示守卫同口径：凭证 + 授权开关都要过。
+            const hasUsable = Object.values(cfg).some(
+              (c) => (c.isServerConfigured || c.apiKey) && c.enabled !== false,
+            );
             if (!hasUsable) return;
           }
           set({ imageGenerationEnabled: enabled });
@@ -1350,7 +1627,9 @@ export const useSettingsStore = create<SettingsState>()(
         setVideoGenerationEnabled: (enabled) => {
           if (enabled) {
             const cfg = get().videoProvidersConfig;
-            const hasUsable = Object.values(cfg).some((c) => c.isServerConfigured || c.apiKey);
+            const hasUsable = Object.values(cfg).some(
+              (c) => (c.isServerConfigured || c.apiKey) && c.enabled !== false,
+            );
             if (!hasUsable) return;
           }
           set({ videoGenerationEnabled: enabled });
@@ -1409,17 +1688,19 @@ export const useSettingsStore = create<SettingsState>()(
               },
             },
             asrProviderId: id,
+            asrLanguage: getValidASRLanguage(id, state.asrLanguage),
           })),
 
         removeCustomASRProvider: (id) =>
           set((state) => {
             if (!isCustomASRProvider(id)) return state;
             const { [id]: _, ...rest } = state.asrProvidersConfig;
+            const fallbackProvider: ASRProviderId = 'browser-native';
             return {
               asrProvidersConfig: rest as typeof state.asrProvidersConfig,
               ...(state.asrProviderId === id && {
-                asrProviderId: 'browser-native' as ASRProviderId,
-                asrLanguage: 'zh',
+                asrProviderId: fallbackProvider,
+                asrLanguage: getValidASRLanguage(fallbackProvider, state.asrLanguage),
               }),
             };
           }),
@@ -1543,7 +1824,7 @@ export const useSettingsStore = create<SettingsState>()(
                   };
                 }
               }
-              for (const [pid, info] of Object.entries(data.tts)) {
+              for (const [pid, info] of Object.entries(data.tts || {})) {
                 const key = pid as TTSProviderId;
                 if (newTTSConfig[key]) {
                   newTTSConfig[key] = {
@@ -1568,7 +1849,7 @@ export const useSettingsStore = create<SettingsState>()(
                   };
                 }
               }
-              for (const [pid, info] of Object.entries(data.asr)) {
+              for (const [pid, info] of Object.entries(data.asr || {})) {
                 const key = pid as ASRProviderId;
                 if (newASRConfig[key]) {
                   newASRConfig[key] = {
@@ -1689,28 +1970,22 @@ export const useSettingsStore = create<SettingsState>()(
               }
 
               // === Validate current selections against updated configs ===
-              // Build fallback: server-configured first, then client-key-only
-              const buildFallback = <T extends string>(
-                config: Record<
-                  string,
-                  { isServerConfigured?: boolean; apiKey?: string; serverDisabled?: boolean }
-                >,
-              ): T[] => [
-                // Server-disabled providers are never fallback targets.
-                ...Object.entries(config)
-                  .filter(([, c]) => c.isServerConfigured && !c.serverDisabled)
-                  .map(([id]) => id as T),
-                ...Object.entries(config)
-                  .filter(([, c]) => !c.isServerConfigured && !c.serverDisabled && !!c.apiKey)
-                  .map(([id]) => id as T),
-              ];
-
-              const llmFallback = buildFallback<ProviderId>(newProvidersConfig);
-              const ttsFallback = buildFallback<TTSProviderId>(newTTSConfig);
-              const asrFallback = buildFallback<ASRProviderId>(newASRConfig);
-              const pdfFallback = buildFallback<PDFProviderId>(newPDFConfig);
-              const imageFallback = buildFallback<ImageProviderId>(newImageConfig);
-              const videoFallback = buildFallback<VideoProviderId>(newVideoConfig);
+              // Fallback order: server-configured first, then client-key-only.
+              // Authorization-disabled entries are excluded so the auto-recover
+              // branch below cannot resurrect a disabled plan's provider after
+              // a refresh (review P0-02).
+              const llmFallback = buildUsableFallbackOrder<ProviderId>(newProvidersConfig);
+              const ttsFallback = buildUsableFallbackOrder<TTSProviderId>(newTTSConfig);
+              const asrFallback = buildUsableFallbackOrder<ASRProviderId>(newASRConfig);
+              const pdfFallback = buildUsableFallbackOrder<PDFProviderId>(newPDFConfig);
+              // image/video 的 enabled:false 是「尚未采纳」态，服务端条目
+              // 允许被采纳后翻开（auto-enable 流程），不按授权排除。
+              const imageFallback = buildUsableFallbackOrder<ImageProviderId>(newImageConfig, {
+                ignoreEnabledForServerConfigured: true,
+              });
+              const videoFallback = buildUsableFallbackOrder<VideoProviderId>(newVideoConfig, {
+                ignoreEnabledForServerConfigured: true,
+              });
               const webSearchFallback = buildWebSearchFallbackOrder(newWebSearchConfig);
 
               let validLLMProvider = validateProvider(
@@ -1799,6 +2074,10 @@ export const useSettingsStore = create<SettingsState>()(
                 validTTSProvider !== state.ttsProviderId
                   ? DEFAULT_TTS_VOICES[validTTSProvider as BuiltInTTSProviderId] || 'default'
                   : state.ttsVoice;
+              const validASRLanguage = getValidASRLanguage(
+                validASRProvider as ASRProviderId,
+                state.asrLanguage,
+              );
 
               // Auto-disable image/video generation when no provider is usable
               const shouldDisableImage = !validImageProvider && state.imageGenerationEnabled;
@@ -1808,6 +2087,7 @@ export const useSettingsStore = create<SettingsState>()(
               let autoTtsProvider: TTSProviderId | undefined;
               let autoTtsVoice: string | undefined;
               let autoAsrProvider: ASRProviderId | undefined;
+              let autoAsrLanguage: string | undefined;
               let autoPdfProvider: PDFProviderId | undefined;
               let autoImageProvider: ImageProviderId | undefined;
               let autoImageModel: string | undefined;
@@ -1829,7 +2109,7 @@ export const useSettingsStore = create<SettingsState>()(
 
                 // TTS: select first server provider if current is not server-configured.
                 // Skip server-disabled entries — they are force-off, not selectable.
-                const serverTtsIds = Object.entries(data.tts)
+                const serverTtsIds = Object.entries(data.tts || {})
                   .filter(([, info]) => !info.disabled)
                   .map(([id]) => id) as TTSProviderId[];
                 if (
@@ -1849,7 +2129,7 @@ export const useSettingsStore = create<SettingsState>()(
                 // ASR: select first server provider if current is not
                 // server-configured. Skip server-disabled entries — they are
                 // force-off, not selectable.
-                const serverAsrIds = Object.entries(data.asr)
+                const serverAsrIds = Object.entries(data.asr || {})
                   .filter(([, info]) => !info.disabled)
                   .map(([id]) => id) as ASRProviderId[];
                 if (
@@ -1857,6 +2137,7 @@ export const useSettingsStore = create<SettingsState>()(
                   !newASRConfig[state.asrProviderId]?.isServerConfigured
                 ) {
                   autoAsrProvider = serverAsrIds[0];
+                  autoAsrLanguage = getValidASRLanguage(autoAsrProvider, state.asrLanguage);
                 }
 
                 // Image: first server provider. Skip server-disabled entries —
@@ -1926,7 +2207,13 @@ export const useSettingsStore = create<SettingsState>()(
                 }),
                 ...(validASRProvider !== state.asrProviderId && {
                   asrProviderId: validASRProvider as ASRProviderId,
+                  asrLanguage: validASRLanguage,
                 }),
+                ...(validASRProvider === state.asrProviderId &&
+                  validASRLanguage !== state.asrLanguage &&
+                  !autoAsrProvider && {
+                    asrLanguage: validASRLanguage,
+                  }),
                 ...(validPDFProvider !== state.pdfProviderId && {
                   pdfProviderId: validPDFProvider as PDFProviderId,
                 }),
@@ -1955,7 +2242,10 @@ export const useSettingsStore = create<SettingsState>()(
                   ttsProviderId: autoTtsProvider,
                   ttsVoice: autoTtsVoice,
                 }),
-                ...(autoAsrProvider && { asrProviderId: autoAsrProvider }),
+                ...(autoAsrProvider && {
+                  asrProviderId: autoAsrProvider,
+                  asrLanguage: autoAsrLanguage,
+                }),
                 ...(autoImageProvider && {
                   imageProviderId: autoImageProvider,
                 }),
@@ -2205,12 +2495,33 @@ export const useSettingsStore = create<SettingsState>()(
         ensureBuiltInAudioProviders(state);
         ensureBuiltInWebSearchProviders(state);
         state.thinkingConfigs = pruneThinkingConfigs(state.thinkingConfigs, state.providersConfig);
+        const prunedOperatorOnly = pruneOperatorOnlyStageRoutes(state.llmStageRoutes);
+        if (prunedOperatorOnly) state.llmStageRoutes = prunedOperatorOnly;
 
         return state;
       },
       // Custom merge: always sync built-in providers on every rehydrate,
       // so newly added providers/models appear without clearing cache.
       merge: (persistedState, currentState) => {
+        // One-time import of the pre-refactor web-search toggle: the homepage
+        // used to persist it in localStorage['webSearchEnabled']; without
+        // this, users who had 联网调研 enabled would silently lose it.
+        if (typeof window !== 'undefined') {
+          try {
+            const legacyWebSearch = window.localStorage.getItem('webSearchEnabled');
+            if (legacyWebSearch !== null) {
+              window.localStorage.removeItem('webSearchEnabled');
+              if (
+                legacyWebSearch === 'true' &&
+                !(persistedState as Partial<SettingsState> | null)?.webSearchEnabled
+              ) {
+                (persistedState as Partial<SettingsState>).webSearchEnabled = true;
+              }
+            }
+          } catch {
+            // storage unavailable — skip the legacy import
+          }
+        }
         // The insert toolbar is draggable and no longer collapses. Sanitize
         // this retired property on every rehydrate instead of bumping the
         // storage version and replaying unrelated legacy migrations.
@@ -2231,6 +2542,8 @@ export const useSettingsStore = create<SettingsState>()(
           typedMerged.thinkingConfigs,
           typedMerged.providersConfig,
         );
+        const prunedOperatorOnly = pruneOperatorOnlyStageRoutes(typedMerged.llmStageRoutes);
+        if (prunedOperatorOnly) typedMerged.llmStageRoutes = prunedOperatorOnly;
         return merged as SettingsState;
       },
     },

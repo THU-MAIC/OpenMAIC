@@ -29,6 +29,8 @@ function formatSceneEvidenceForDelegation(evidence: DirectorSceneEvidencePacket[
 export async function runPiDirectorLoop(opts: {
   body: StatelessChatRequest;
   elementReference?: ResolvedElementReference;
+  /** Area state for the current Scene when it travels without a component reference. */
+  interactiveStateNote?: string;
   agentConfigs: AgentConfig[];
   send: SendEvent;
   languageModel: LanguageModel;
@@ -56,12 +58,17 @@ export async function runPiDirectorLoop(opts: {
   let endReason: string | undefined;
   let directorToolCalls = 0;
   const pendingSceneEvidence = new Map<string, DirectorSceneEvidencePacket>();
-  const elementReferenceEvidence = opts.elementReference
-    ? Object.freeze({
-        content: opts.elementReference.childEvidence,
-        metadata: opts.elementReference.evidence,
-      })
-    : undefined;
+  // Request-scoped read-only evidence. `metadata` exists only when a component was
+  // referenced; area state alone carries content without any element identity.
+  const elementReferenceEvidence =
+    opts.elementReference || opts.interactiveStateNote
+      ? Object.freeze({
+          content: [opts.elementReference?.childEvidence, opts.interactiveStateNote]
+            .filter(Boolean)
+            .join('\n\n'),
+          ...(opts.elementReference ? { metadata: opts.elementReference.evidence } : {}),
+        })
+      : undefined;
   const directorToolTrace: DirectorToolTraceEntry[] = [];
   const maxDirectorToolCalls = Math.max(opts.maxAgentTurns * 3, opts.maxAgentTurns + 3);
   const piAgentResponses: AgentTurnSummary[] = [];
@@ -245,13 +252,20 @@ export async function runPiDirectorLoop(opts: {
   });
 
   try {
-    await director.prompt(buildUserPrompt(opts.body, opts.elementReference?.directorSummary));
+    const directorEvidence = [opts.elementReference?.directorSummary, opts.interactiveStateNote]
+      .filter(Boolean)
+      .join('\n');
+    await director.prompt(buildUserPrompt(opts.body, directorEvidence || undefined));
     await director.waitForIdle();
   } finally {
     compactionRuntime.dispose();
   }
 
   if (opts.signal.aborted) return;
+
+  // Pi settles provider failures in state rather than rejecting prompt(). Let
+  // the route log and stream the actual reason instead of emitting a normal done.
+  if (director.state.errorMessage) throw new Error(director.state.errorMessage);
 
   if (!sessionClosed && !userCued && hasAgentContent()) {
     await cueUser({ fromAgentId: piAgentResponses.at(-1)?.agentId });

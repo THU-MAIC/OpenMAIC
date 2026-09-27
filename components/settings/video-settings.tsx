@@ -4,11 +4,11 @@ import { useState, useCallback, useMemo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
+import { useOpenRouterModels } from '@/lib/media/use-openrouter-models';
 import {
   Loader2,
   CheckCircle2,
@@ -32,8 +32,6 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
 
   const videoModelId = useSettingsStore((state) => state.videoModelId);
   const videoProvidersConfig = useSettingsStore((state) => state.videoProvidersConfig);
-  const videoGenerationEnabled = useSettingsStore((state) => state.videoGenerationEnabled);
-  const setVideoGenerationEnabled = useSettingsStore((state) => state.setVideoGenerationEnabled);
   const setVideoProviderConfig = useSettingsStore((state) => state.setVideoProviderConfig);
 
   const [showApiKey, setShowApiKey] = useState(false);
@@ -56,7 +54,15 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
 
   const currentConfig = videoProvidersConfig[selectedProviderId];
   const currentProvider = VIDEO_PROVIDERS[selectedProviderId];
-  const builtInModels = currentProvider?.models || [];
+  // OpenRouter's catalog is fetched live so the picker is never a curated
+  // shortlist; every other provider keeps its registry list.
+  const { models: builtInModels } = useOpenRouterModels(
+    'video',
+    selectedProviderId === 'openrouter-video',
+    currentProvider?.models || [],
+    currentConfig?.apiKey,
+    currentConfig?.baseUrl,
+  );
   const customModels = useMemo(
     () => currentConfig?.customModels || [],
     [currentConfig?.customModels],
@@ -149,20 +155,6 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <div className="flex items-center justify-between rounded-lg border border-border/60 bg-background px-3 py-2.5">
-        <div className="min-w-0 pr-3">
-          <p className="text-sm font-medium">{t('settings.enableVideoGeneration')}</p>
-          <p className="text-[11px] text-muted-foreground">
-            {t('settings.videoGenerationDisabledHint')}
-          </p>
-        </div>
-        <Switch
-          checked={videoGenerationEnabled}
-          onCheckedChange={setVideoGenerationEnabled}
-          aria-label={t('settings.enableVideoGeneration')}
-        />
-      </div>
-
       {/* Server-configured notice */}
       {isServerConfigured && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm text-blue-700 dark:text-blue-300">

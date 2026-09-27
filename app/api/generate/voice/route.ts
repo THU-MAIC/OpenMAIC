@@ -25,7 +25,7 @@ import {
 } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { findUnsafeNetworkTargetError, validatePublicUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { normalizeVoiceDesign } from '@/lib/audio/voice-design';
 import {
   getVoiceRegistrationAdapter,
@@ -122,8 +122,11 @@ export async function POST(req: NextRequest) {
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
     const managed = isServerConfiguredProvider('tts', providerId);
     const clientBaseUrl = managed ? undefined : body.ttsBaseUrl || undefined;
+    // A client BYOK base URL is always validated under the strict public policy;
+    // only a server-managed backend may inherit ALLOW_LOCAL_NETWORKS.
+    const publicOnly = Boolean(clientBaseUrl);
     if (clientBaseUrl) {
-      const ssrfError = await validateUrlForSSRF(clientBaseUrl);
+      const ssrfError = await validatePublicUrlForSSRF(clientBaseUrl);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }
@@ -138,6 +141,7 @@ export async function POST(req: NextRequest) {
     const cfg: VoiceRegistrationConfig = {
       baseUrl,
       apiKey,
+      publicOnly,
       model:
         providerId === 'qwen-tts'
           ? resolveQwenVoiceCloneModel()
@@ -234,6 +238,10 @@ export async function POST(req: NextRequest) {
       `Voice registration failed [provider=${providerId ?? 'unknown'}, voiceId=${voiceId ?? 'unknown'}]:`,
       error,
     );
+    const blocked = findUnsafeNetworkTargetError(error);
+    if (blocked) {
+      return apiError('INVALID_URL', 403, blocked.message);
+    }
     if (error instanceof QwenVoiceCloneError) {
       return apiError(error.code, error.httpStatus || 502, qwenVoiceCloneErrorMessage(error));
     }

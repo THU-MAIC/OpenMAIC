@@ -5,9 +5,11 @@ services:
       args:
         - ALPINE_MIRROR=${ALPINE_MIRROR:-}
         - NPM_REGISTRY=${NPM_REGISTRY:-}
-        # NEXT_PUBLIC_* values are compiled into the browser bundle. Leave them
-        # empty unless the corresponding client feature is explicitly enabled;
-        # persistence and other build-time flags can be supplied on the command line.
+        # NEXT_PUBLIC_* values are compiled into the browser bundle. Empty values
+        # follow each feature's documented default; explicit build-time overrides
+        # can be supplied on the command line.
+        # env_file below does not feed build args. For a legacy-chat rollback:
+        # NEXT_PUBLIC_PI_CHAT_ENABLED=false docker compose up -d --build openmaic
         - ALLOWED_FRAME_ANCESTORS=${ALLOWED_FRAME_ANCESTORS:-}
         - NEXT_PUBLIC_PERSISTENCE=${NEXT_PUBLIC_PERSISTENCE:-}
         - NEXT_PUBLIC_PERSISTENCE_TOKEN=${NEXT_PUBLIC_PERSISTENCE_TOKEN:-}
@@ -20,6 +22,7 @@ services:
         - NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=${NEXT_PUBLIC_ENABLE_VIDEO_EXPORT:-}
         - NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION=${NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION:-}
         - NEXT_PUBLIC_ENABLE_PPTX_IMPORT=${NEXT_PUBLIC_ENABLE_PPTX_IMPORT:-}
+        - NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=${NEXT_PUBLIC_PRO_WORKBENCH_ENABLED:-}
     ports:
       - '3000:3000'
     env_file:

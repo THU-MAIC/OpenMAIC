@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatSession } from '@/lib/types/chat';
 import {
   consumePiSessionBoundaryContext,
@@ -7,6 +7,7 @@ import {
   createPiSessionBoundaryContext,
   getPiSessionBoundaryContext,
   getPiSingleRequestOutcome,
+  fetchStatelessChat,
   isOpenLiveSession,
   normalizeStoredSessionsForRestore,
   retireLiveRequestResources,
@@ -14,13 +15,16 @@ import {
   resumeSoftClosingSessionWithoutMessage,
   runPiSingleRequest,
   shouldAwaitPresentationAction,
+  lectureActionPersistParams,
   withPiInclassWhiteboardTools,
   withPiWebSearchSettings,
+  withStageRoutesHeader,
   MANUAL_STOP_END_OPTIONS,
   takeSoftCloseRegistration,
 } from '@/components/chat/use-chat-sessions';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
+import { useSettingsStore } from '@/lib/store/settings';
 import type { ChatRequestTemplate } from '@/components/chat/use-chat-sessions';
 import type { UIMessage } from 'ai';
 import type { ChatMessageMetadata } from '@/lib/types/chat';
@@ -441,7 +445,206 @@ describe('shouldAwaitPresentationAction', () => {
   });
 });
 
+describe('lectureActionPersistParams', () => {
+  it('omits undefined spotlight dimOpacity so session JSON persist stays lossless', () => {
+    const omitted = lectureActionPersistParams({
+      id: 'spot-1',
+      type: 'spotlight',
+      elementId: 'el-1',
+    });
+    expect(omitted).toEqual({ elementId: 'el-1' });
+    expect(omitted).not.toHaveProperty('dimOpacity');
+    expect(JSON.stringify(omitted)).toBe('{"elementId":"el-1"}');
+
+    expect(
+      lectureActionPersistParams({
+        id: 'spot-1',
+        type: 'spotlight',
+        elementId: 'el-1',
+        dimOpacity: 0,
+      }),
+    ).toEqual({ elementId: 'el-1', dimOpacity: 0 });
+  });
+
+  it('omits undefined discussion prompt and keeps laser params required-only', () => {
+    expect(
+      lectureActionPersistParams({
+        id: 'disc-1',
+        type: 'discussion',
+        topic: 'Heat islands',
+      }),
+    ).toEqual({ topic: 'Heat islands' });
+    expect(
+      lectureActionPersistParams({
+        id: 'laser-1',
+        type: 'laser',
+        elementId: 'el-2',
+      }),
+    ).toEqual({ elementId: 'el-2' });
+  });
+});
+
 describe('runPiSingleRequest', () => {
+  it.each([
+    'removed-before-post',
+    'runtime-authoritative',
+    'server-rejected',
+    'unrelated-error',
+  ] as const)(
+    'does not silently send a question without its whiteboard reference on %s',
+    async (scenario) => {
+      const previousStage = useStageStore.getState().stage;
+      const previousCanvas = useCanvasStore.getState();
+      const stage = {
+        id: 'stage-1',
+        whiteboard: [
+          { id: 'board', elements: scenario === 'removed-before-post' ? [] : [{ id: 'text-1' }] },
+        ],
+      } as unknown as NonNullable<typeof previousStage>;
+      useStageStore.setState({ stage });
+      useCanvasStore.setState({
+        whiteboardClearing: false,
+        runtimeWhiteboardProjection:
+          scenario === 'runtime-authoritative'
+            ? { stageId: 'stage-1', lastSeq: 7, whiteboard: stage.whiteboard![0] }
+            : null,
+      });
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              reason: scenario === 'server-rejected' ? 'whiteboard_reference_changed' : undefined,
+            }),
+            { status: 400 },
+          ),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      const onResponseAccepted = vi.fn();
+      try {
+        await expect(
+          runPiSingleRequest(
+            'session-1',
+            {
+              messages: [],
+              storeState: { stage },
+              config: { agentIds: ['teacher-1'] },
+              apiKey: '',
+              elementReference: {
+                kind: 'whiteboard_element',
+                whiteboardId: 'board',
+                elementId: 'text-1',
+              },
+            } as unknown as Parameters<typeof runPiSingleRequest>[1],
+            new AbortController(),
+            'qa',
+            () => ({ onEvent: vi.fn(), onIterationEnd: vi.fn() }),
+            vi.fn(),
+            vi.fn(),
+            vi.fn(),
+            vi.fn(),
+            { current: vi.fn() },
+            (key) => key,
+            onResponseAccepted,
+          ),
+        ).rejects.toThrow(
+          scenario === 'unrelated-error'
+            ? 'Pi chat request failed: 400'
+            : 'chat.elementReference.whiteboardChanged',
+        );
+        expect(fetchMock).toHaveBeenCalledTimes(
+          scenario === 'removed-before-post' || scenario === 'runtime-authoritative' ? 0 : 1,
+        );
+        if (scenario === 'server-rejected') {
+          const init = (fetchMock.mock.calls as unknown as [string, RequestInit][])[0][1];
+          expect(JSON.parse(init.body as string).elementReference.kind).toBe('whiteboard_element');
+        }
+        expect(onResponseAccepted).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllGlobals();
+        useStageStore.setState({ stage: previousStage });
+        useCanvasStore.setState({
+          whiteboardClearing: previousCanvas.whiteboardClearing,
+          runtimeWhiteboardProjection: previousCanvas.runtimeWhiteboardProjection,
+        });
+      }
+    },
+  );
+
+  it.each([true, false])(
+    'checks the outgoing stage snapshot rather than the live stage (snapshot has element: %s)',
+    async (snapshotHasElement) => {
+      const previousStage = useStageStore.getState().stage;
+      const previousCanvas = useCanvasStore.getState();
+      const makeStage = (hasElement: boolean) =>
+        ({
+          id: 'stage-1',
+          whiteboard: [{ id: 'board', elements: hasElement ? [{ id: 'text-1' }] : [] }],
+        }) as unknown as NonNullable<typeof previousStage>;
+      const snapshot = makeStage(snapshotHasElement);
+      useStageStore.setState({ stage: makeStage(!snapshotHasElement) });
+      useCanvasStore.setState({ whiteboardClearing: false, runtimeWhiteboardProjection: null });
+      const fetchMock = vi.fn(
+        async () =>
+          new Response('data: {"type":"done","data":{}}\n\n', {
+            headers: { 'X-OpenMAIC-Element-Reference-Accepted': '1' },
+          }),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      const onResponseAccepted = vi.fn();
+      try {
+        const result = runPiSingleRequest(
+          'session-1',
+          {
+            messages: [],
+            storeState: { stage: snapshot },
+            config: { agentIds: ['teacher-1'] },
+            apiKey: '',
+            elementReference: {
+              kind: 'whiteboard_element',
+              whiteboardId: 'board',
+              elementId: 'text-1',
+            },
+          } as unknown as Parameters<typeof runPiSingleRequest>[1],
+          new AbortController(),
+          'qa',
+          () => ({
+            onEvent: vi.fn(),
+            onIterationEnd: vi.fn(async () => ({
+              directorState: undefined,
+              totalAgents: 0,
+              agentHadContent: false,
+            })),
+          }),
+          vi.fn(),
+          vi.fn(),
+          vi.fn(),
+          vi.fn(),
+          { current: vi.fn() },
+          (key) => key,
+          onResponseAccepted,
+        );
+        if (snapshotHasElement) {
+          await result;
+          expect(fetchMock).toHaveBeenCalledOnce();
+          const init = (fetchMock.mock.calls as unknown as [string, RequestInit][])[0][1];
+          expect(JSON.parse(init.body as string).storeState.stage).toEqual(snapshot);
+          expect(onResponseAccepted).toHaveBeenCalledOnce();
+        } else {
+          await expect(result).rejects.toThrow('chat.elementReference.whiteboardChanged');
+          expect(fetchMock).not.toHaveBeenCalled();
+          expect(onResponseAccepted).not.toHaveBeenCalled();
+        }
+      } finally {
+        vi.unstubAllGlobals();
+        useStageStore.setState({ stage: previousStage });
+        useCanvasStore.setState({
+          whiteboardClearing: previousCanvas.whiteboardClearing,
+          runtimeWhiteboardProjection: previousCanvas.runtimeWhiteboardProjection,
+        });
+      }
+    },
+  );
+
   it('does not accept the first-request context when fetch fails before a response', async () => {
     vi.stubGlobal(
       'fetch',
@@ -612,5 +815,109 @@ describe('Pi Native whiteboard Browser events', () => {
       }),
       signal: controller.signal,
     });
+  });
+});
+
+describe('per-stage user routes on classroom chat requests', () => {
+  const originalRoutes = useSettingsStore.getState().llmStageRoutes;
+  const originalProviders = useSettingsStore.getState().providersConfig;
+
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    const providers = useSettingsStore.getState().providersConfig;
+    useSettingsStore.setState({
+      llmStageRoutes: {
+        'chat-adapter': { providerId: 'openai', modelId: 'gpt-5.4-mini' },
+      },
+      providersConfig: {
+        ...providers,
+        openai: {
+          ...(providers.openai ?? {}),
+          apiKey: 'sk-test',
+          baseUrl: 'https://api.openai.com/v1',
+          enabled: true,
+          requiresApiKey: true,
+          models: [{ id: 'gpt-5.4-mini', name: 'gpt-5.4-mini' }],
+        },
+      } as typeof providers,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useSettingsStore.setState({
+      llmStageRoutes: originalRoutes,
+      providersConfig: originalProviders,
+    });
+  });
+
+  it('withStageRoutesHeader serializes the routed stages', () => {
+    const headers = withStageRoutesHeader({ 'Content-Type': 'application/json' });
+    expect(JSON.parse(headers['x-model-routes']!)).toEqual({
+      'chat-adapter': expect.objectContaining({ model: 'openai:gpt-5.4-mini' }),
+    });
+    expect(headers['Content-Type']).toBe('application/json');
+  });
+
+  it('omits x-model-routes when no stage is routed', () => {
+    useSettingsStore.setState({ llmStageRoutes: {} });
+    const headers = withStageRoutesHeader({ 'Content-Type': 'application/json' });
+    expect(headers).not.toHaveProperty('x-model-routes');
+  });
+
+  it('sends x-model-routes on the stateless /api/chat request', async () => {
+    const fetchMock = vi.fn(async () => new Response('data: {}\n\n', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchStatelessChat({ messages: [] }, new AbortController().signal);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/chat',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'x-model-routes': expect.stringContaining('chat-adapter'),
+        }),
+      }),
+    );
+  });
+
+  it('sends x-model-routes on the /api/chat/pi request', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn(async () => new Response(body, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await runPiSingleRequest(
+      'session-1',
+      {
+        messages: [],
+        storeState: {},
+        config: { agentIds: ['teacher-1'] },
+        apiKey: '',
+      } as unknown as Parameters<typeof runPiSingleRequest>[1],
+      new AbortController(),
+      'qa',
+      () => ({ onEvent: vi.fn(), onIterationEnd: vi.fn(async () => null) }),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      { current: vi.fn() },
+      (key) => key,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/chat/pi',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'x-model-routes': expect.stringContaining('chat-adapter'),
+        }),
+      }),
+    );
   });
 });

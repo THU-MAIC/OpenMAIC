@@ -7,6 +7,7 @@ import {
   hasUsableLLMProvider,
   isLLMProviderConfigured,
   type ProviderCfgLike,
+  buildUsableFallbackOrder,
 } from '@/lib/store/settings-validation';
 
 describe('isProviderUsable', () => {
@@ -286,5 +287,50 @@ describe('isLLMProviderConfigured', () => {
         models: [{ id: 'm1' }],
       } as never),
     ).toBe(true);
+  });
+});
+
+// ── Review P0-02：禁用套餐后，授权层必须在所有判定口径上一致生效 ──
+describe('authorization disable is enforced consistently (review P0-02)', () => {
+  const disabledProvider = {
+    apiKey: 'sk-plan',
+    baseUrl: 'https://gateway/v1',
+    requiresApiKey: true,
+    enabled: false,
+    models: [{ id: 'm1' }],
+  };
+
+  it('isLLMProviderConfigured rejects an authorization-disabled provider', () => {
+    expect(isLLMProviderConfigured(disabledProvider as never)).toBe(false);
+    // 同配置仅去掉 enabled 开关则可用——证明失败归因于开关本身。
+    expect(isLLMProviderConfigured({ ...disabledProvider, enabled: true } as never)).toBe(true);
+  });
+
+  it('hasUsableLLMProvider 仅剩被禁用 provider 时为 false（首页生成闸门关闭）', () => {
+    expect(hasUsableLLMProvider({ tokendance: disabledProvider as never })).toBe(false);
+  });
+
+  it('buildUsableFallbackOrder 不把禁用 provider 列为回退目标（刷新不得复活）', () => {
+    expect(
+      buildUsableFallbackOrder({
+        tokendance: { apiKey: 'sk-plan', enabled: false },
+        anthropic: { apiKey: 'sk-ant' },
+      }),
+    ).toEqual(['anthropic']);
+    // server-configured 分支同样要过滤。
+    expect(
+      buildUsableFallbackOrder({
+        openai: { isServerConfigured: true, enabled: false },
+      }),
+    ).toEqual([]);
+  });
+
+  it('禁用唯一已配置套餐：validateProvider 保持空选择，auto-recover 无目标可捞', () => {
+    const config = { tokendance: disabledProvider as never };
+    const fallback = buildUsableFallbackOrder(config);
+    // validateProvider 拒绝当前选择后，回退列表为空 ⇒ 选择保持 ''，
+    // 生成闸门（hasUsableLLMProvider=false）阻断提交。
+    expect(validateProvider('tokendance' as never, config, fallback)).toBe('');
+    expect(fallback.length).toBe(0);
   });
 });

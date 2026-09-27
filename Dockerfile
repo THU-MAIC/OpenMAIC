@@ -43,7 +43,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     if [ -n "$npm_registry" ]; then \
       pnpm config set registry "$npm_registry"; \
     fi && \
-    pnpm install --frozen-lockfile
+    pnpm install --frozen-lockfile --ignore-scripts
 
 # ---- Stage 3: Builder ----
 FROM base AS builder
@@ -60,6 +60,7 @@ ARG NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI
 ARG NEXT_PUBLIC_ENABLE_VIDEO_EXPORT
 ARG NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION
 ARG NEXT_PUBLIC_ENABLE_PPTX_IMPORT
+ARG NEXT_PUBLIC_PRO_WORKBENCH_ENABLED
 ENV ALLOWED_FRAME_ANCESTORS=$ALLOWED_FRAME_ANCESTORS
 ENV NEXT_PUBLIC_PERSISTENCE=$NEXT_PUBLIC_PERSISTENCE
 ENV NEXT_PUBLIC_PERSISTENCE_TOKEN=$NEXT_PUBLIC_PERSISTENCE_TOKEN
@@ -72,11 +73,21 @@ ENV NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=$NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI
 ENV NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=$NEXT_PUBLIC_ENABLE_VIDEO_EXPORT
 ENV NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION=$NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION
 ENV NEXT_PUBLIC_ENABLE_PPTX_IMPORT=$NEXT_PUBLIC_ENABLE_PPTX_IMPORT
+ENV NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=$NEXT_PUBLIC_PRO_WORKBENCH_ENABLED
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages ./packages
 COPY . .
-COPY --from=deps /app/public/vendor ./public/vendor
+
+# Build the workspace packages (rollup + tsc) here, not inside `pnpm install`,
+# so the deps stage only resolves and links dependencies. The importer's
+# rollup + terser pass is the heaviest step (see #1526). This is the same chain
+# the root `postinstall` runs locally, so local dev is unchanged.
+# The explicit V8 old-space size makes the heap limit predictable instead of
+# derived from the container's memory limit; with it, this step completes under
+# a 1 GiB container limit. It bounds the JS heap only, not the step's total
+# memory, so it does not by itself prevent a host- or VM-level OOM.
+RUN NODE_OPTIONS=--max-old-space-size=1024 pnpm run build:packages
 
 RUN pnpm build
 
@@ -106,6 +117,15 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# The app persists classrooms, classroom media, and usage records under
+# ./data, which docker-compose.yml mounts as the openmaic-data named volume.
+# Nothing above creates the directory, so on first run Docker materializes
+# the mountpoint as root:root and every write from the unprivileged runtime
+# user fails with EACCES — classroom persistence silently stores nothing
+# (THU-MAIC/OpenMAIC#1438). Creating it here makes the empty-volume copy-up
+# inherit the runtime user's ownership.
+RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
 
 USER nextjs
 

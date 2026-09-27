@@ -23,10 +23,15 @@
  */
 import { create } from 'zustand';
 import { isSkillLoadTool, skillLoadId } from './skill-load';
-import { defaultWorkbenchTranslator, type WorkbenchCopyKey } from '@/lib/i18n/workbench';
+import {
+  defaultWorkbenchTranslator,
+  type WorkbenchCopyKey,
+  type WorkbenchTranslator,
+} from '@/lib/i18n/workbench';
 import { parseElementRefs, type ElementRef } from './element-refs';
 import { parseCourseRefs, type CourseRef } from './course-refs';
 import { appendCourseSighting, courseSightingsOf } from './run-courses';
+import { resolveWorkbenchMaterialMime } from './material-upload-policy';
 
 export type ChatNodeKind =
   | 'user'
@@ -2121,23 +2126,69 @@ export interface WorkbenchMaterial {
   extractionStatus?: 'idle' | 'pending' | 'running' | 'done' | 'failed';
 }
 
+/**
+ * Display mebibytes for a byte cap. One fractional digit, rounded down, with
+ * the caller's decimal separator. A positive cap below 0.1 MiB, or a runtime
+ * that will not floor, returns undefined so the caller can use the generic
+ * message instead of showing 0 or an overstated limit.
+ */
+function formatMaterialUploadLimit(
+  maxBytes: number | undefined,
+  locale: string,
+): string | undefined {
+  if (typeof maxBytes !== 'number' || !Number.isFinite(maxBytes) || maxBytes <= 0) return undefined;
+  const limit = maxBytes / (1024 * 1024);
+  if (limit < 0.1) return undefined;
+  try {
+    const formatter = new Intl.NumberFormat(locale, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 1,
+      roundingMode: 'floor',
+      useGrouping: false,
+      numberingSystem: 'latn',
+    });
+    if (formatter.resolvedOptions().roundingMode !== 'floor') return undefined;
+    return formatter.format(limit);
+  } catch {
+    return undefined;
+  }
+}
+
 export class WorkbenchMaterialUploadError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly requestId?: string,
+    readonly maxBytes?: number,
   ) {
     super(message);
     this.name = 'WorkbenchMaterialUploadError';
+  }
+
+  userMessage(t: WorkbenchTranslator, locale: string): string {
+    if (this.status === 415) return t('workbench.material.unsupportedType');
+    if (this.status === 429) return t('workbench.material.quotaExceeded');
+    if (this.status !== 413) return this.message;
+    const limit = formatMaterialUploadLimit(this.maxBytes, locale);
+    return limit === undefined
+      ? t('workbench.material.fileTooLarge')
+      : t('workbench.material.fileTooLargeWithLimit', { limit });
   }
 }
 
 /** Upload one file into the caller's durable material library. */
 export async function uploadWorkbenchMaterial(file: File): Promise<WorkbenchMaterial> {
+  // Some Linux browsers report every OOXML file with the generic
+  // `application/vnd.ms-office` MIME (#1497) — resolve the concrete type
+  // from the filename so the server gate sees what the file actually is.
+  const mimeType = resolveWorkbenchMaterialMime({
+    mimeType: file.type,
+    fileName: file.name,
+  });
   const res = await fetch('/api/materials', {
     method: 'POST',
     headers: {
-      'content-type': file.type || 'application/octet-stream',
+      'content-type': mimeType || 'application/octet-stream',
       'x-material-filename': encodeURIComponent(file.name),
     },
     body: file,
@@ -2152,6 +2203,7 @@ export async function uploadWorkbenchMaterial(file: File): Promise<WorkbenchMate
     extraction?: { status?: WorkbenchMaterial['extractionStatus'] };
     error?: string;
     message?: string;
+    maxBytes?: unknown;
   };
   if (!res.ok || !body.materialId) {
     const requestId = res.headers.get('x-request-id') ?? undefined;
@@ -2160,13 +2212,19 @@ export async function uploadWorkbenchMaterial(file: File): Promise<WorkbenchMate
       requestId ? `${message} [requestId=${requestId}]` : message,
       res.status,
       requestId,
+      typeof body.maxBytes === 'number' && Number.isFinite(body.maxBytes) && body.maxBytes > 0
+        ? body.maxBytes
+        : undefined,
     );
   }
+  // Prefer the server's echo; fall back to the locally resolved MIME (never
+  // the raw browser value, which may be the generic Office container).
+  const recordMime = body.mime || mimeType || file.type;
   return {
     materialId: body.materialId,
     name: body.originalName ?? file.name,
     bytes: body.bytes ?? file.size,
-    ...(body.mime || file.type ? { mimeType: body.mime || file.type } : {}),
+    ...(recordMime ? { mimeType: recordMime } : {}),
     ...(body.extraction?.status ? { extractionStatus: body.extraction.status } : {}),
   };
 }

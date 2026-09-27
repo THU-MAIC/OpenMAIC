@@ -22,6 +22,7 @@
  * the pointer to the bytes.
  */
 import { splitSqlStatements, type Queryable } from '@openmaic/storage/document/pg';
+import { encodeJson } from '@openmaic/storage/pg-json';
 import {
   nodePostgresTransaction,
   type ConnectableQueryable,
@@ -332,7 +333,7 @@ export async function registerOwnerMaterial(
         input.bytes,
         input.originalName ?? null,
         input.ossKey,
-        input.extraction ? JSON.stringify(input.extraction) : null,
+        input.extraction ? encodeJson(input.extraction, 'owner material extraction') : null,
         Date.now(),
       ],
     );

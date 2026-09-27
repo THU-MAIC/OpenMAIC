@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import tinycolor from 'tinycolor2';
-import type { ChartData, ChartOptions, ChartType } from '@openmaic/dsl';
+import type { ChartData, ChartOptions, ChartType, ImportedChartStyle } from '@openmaic/dsl';
 import { getChartOption } from './chartOption';
 import { loadChartRuntime } from './chartRuntime';
 
@@ -15,6 +15,7 @@ interface ChartProps {
   textColor?: string;
   lineColor?: string;
   options?: ChartOptions;
+  importedStyle?: ImportedChartStyle;
 }
 
 export function Chart({
@@ -26,6 +27,7 @@ export function Chart({
   textColor,
   lineColor,
   options,
+  importedStyle,
 }: ChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<import('echarts/core').ECharts | null>(null);
@@ -56,18 +58,20 @@ export function Chart({
 
     const option = getChartOption({
       type,
+      importedStyle,
       data,
       themeColors,
       textColor,
       lineColor,
       lineSmooth: options?.lineSmooth || false,
       stack: options?.stack || false,
+      percentStack: options?.percentStack || false,
     });
 
     if (option) {
       chartInstance.current.setOption(option, true);
     }
-  }, [type, data, themeColors, textColor, lineColor, options]);
+  }, [type, data, themeColors, textColor, lineColor, options, importedStyle]);
 
   useEffect(() => {
     updateOptionRef.current = updateOption;

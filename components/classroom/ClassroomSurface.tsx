@@ -21,9 +21,9 @@
  * hydration, a transport-persistence UI fence and a background uploader; all
  * three depend on server-side machinery this workspace does not have, so they
  * are dropped and the load follows the ordinary path
- * (`app/classroom/[id]/page.tsx`). The stage-meta sidecar IS consulted, for one
- * purpose: gating generation on ownership so a viewer never spends the
- * operator's provider budget.
+ * (`app/classroom/[id]/page.tsx`). The stage-meta sidecar is still consulted:
+ * both variants gate generation on ownership, and the standalone page also
+ * applies its viewer-specific edit access.
  */
 
 import { Stage } from '@/components/stage';
@@ -34,12 +34,7 @@ import { claimStageSceneLoadToken, isCurrentStageSceneLoadToken } from '@/lib/st
 import { loadImageMapping } from '@/lib/utils/image-storage';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
-import { useMediaGenerationStore } from '@/lib/store/media-generation';
-import { clearNarrationAllocations } from '@/lib/audio/narration-allocations';
 import { useNarrationAdoption } from '@/lib/audio/use-narration-adoption';
-import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
-import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
-import { useCanvasStore } from '@/lib/store/canvas';
 import { createLogger } from '@/lib/logger';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
@@ -54,19 +49,15 @@ import {
 } from '@/lib/classroom/load-classroom';
 import {
   paneAvailabilityRetryDelay,
+  resolveClassroomSurfaceView,
   shouldResumeClassroomGeneration,
 } from '@/lib/classroom/progressive-load-policy';
-import { fetchStageMeta } from '@/lib/classroom/stage-meta-client';
-import { classroomGenerationOwnership } from '@/lib/classroom/stage-ownership-signal';
-import {
-  noteStageGenerationOwnership,
-  useMayGenerateForStage,
-} from '@/lib/classroom/generation-permission';
-import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
+import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
 
 const log = createLogger('Classroom');
 
-type ClassroomLoadOutcome = 'loaded' | 'unavailable' | 'failed' | 'cancelled';
+type ClassroomLoadOutcome = 'loaded' | 'unavailable' | 'absent' | 'failed' | 'cancelled';
+const LOAD_UNAVAILABLE_ERROR = 'load-unavailable';
 
 // stage_link can become visible shortly before its document. Probe only that
 // explicit availability gap, with a small bounded backoff; media conversion
@@ -81,16 +72,10 @@ export function ClassroomSurface({
   const { loadFromStorage } = useStageStore();
   const loadedClassroomId = useStageStore((s) => s.stage?.id ?? null);
   const { t } = useI18n();
-  // The retry loop below reads the message after async gaps, so it must see
-  // the CURRENT translation (a locale switch may have happened since mount).
-  // Written in an effect, not during render.
-  const notFoundMessageRef = useRef(t('classroom.notFound'));
-  useEffect(() => {
-    notFoundMessageRef.current = t('classroom.notFound');
-  }, [t]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadUnavailable, setLoadUnavailable] = useState(false);
   /**
    * The load resolved and no source has this course. A TERMINAL state, kept
    * separate from `error`: an error offers a retry, and there is nothing here
@@ -100,15 +85,9 @@ export function ClassroomSurface({
    * deleted or never existed.
    */
   const [notFound, setNotFound] = useState(false);
-  /**
-   * Whether this browser may start generation for this course, from the shared
-   * permission store the stage-meta sidecar feeds. Gates the resume effect and
-   * the outline-retry affordance alike, so what is offered and what is allowed
-   * cannot diverge.
-   */
-  const mayGenerate = useMayGenerateForStage(classroomId);
-
   const generationStartedRef = useRef(false);
+  const activeClassroomIdRef = useRef<string | null>(null);
+  const loadEpochRef = useRef(0);
 
   const { generateRemaining, retrySingleOutline, stop } = useSceneGenerator({
     onComplete: () => {
@@ -116,14 +95,19 @@ export function ClassroomSurface({
     },
   });
 
+  const { mayGenerate, refreshOwnership } = useClassroomSession({
+    classroomId,
+    variant,
+    stopGeneration: stop,
+  });
+
   const loadClassroom = useCallback(
-    async (isEffectCurrent: () => boolean = () => true): Promise<ClassroomLoadOutcome> => {
+    async (isEffectCurrent: () => boolean): Promise<ClassroomLoadOutcome> => {
       const loadToken = claimStageSceneLoadToken();
       const isCurrent = () => isEffectCurrent() && isCurrentStageSceneLoadToken(loadToken);
-      let outcome: ClassroomLoadOutcome = 'loaded';
 
       try {
-        await runClassroomLoad({
+        const loadResult = await runClassroomLoad({
           classroomId,
           loadToken,
           isCurrent,
@@ -151,23 +135,48 @@ export function ClassroomSurface({
           log,
         });
         if (!isCurrent()) return 'cancelled';
-        // The load completed without landing this course in the store. The
-        // reference learns the same fact from a server 404; here the absence
-        // of a stage after every source answered is the equivalent signal. A
-        // standalone URL can give a definitive answer; inside the workspace
-        // the pane treats it as the bounded availability gap instead of
-        // replacing its lifecycle.
-        if (useStageStore.getState().stage?.id !== classroomId) {
+
+        // Positive absence only: the course is gone, invalid, or never
+        // existed. Other failures stay on the error/retry path so we never
+        // claim "not found" without a positive answer (#1450).
+        if (loadResult.outcome === 'absent') {
           if (variant === 'page') {
             setNotFound(true);
-            return 'loaded';
           }
-          outcome = 'unavailable';
+          // Inside the workspace the pane treats a miss as the bounded
+          // availability gap (stage_link can land before the document).
+          return 'absent';
         }
-        return isCurrent() ? outcome : 'cancelled';
+
+        if (loadResult.outcome === 'unavailable') {
+          if (variant === 'pane') {
+            // Retry through the availability schedule; exhaustion lands on the
+            // error card with Retry, not the not-found claim.
+            return 'unavailable';
+          }
+          setLoadUnavailable(true);
+          setError(LOAD_UNAVAILABLE_ERROR);
+          setLoading(false);
+          return 'failed';
+        }
+
+        if (loadResult.outcome === 'cancelled') return 'cancelled';
+        if (loadResult.outcome === 'failed') return 'failed';
+
+        // Defensive: a "ready" load that somehow left the wrong course in the
+        // store still must not become not-found.
+        if (useStageStore.getState().stage?.id !== classroomId) {
+          if (variant === 'pane') return 'unavailable';
+          setLoadUnavailable(true);
+          setError(LOAD_UNAVAILABLE_ERROR);
+          setLoading(false);
+          return 'failed';
+        }
+        return 'loaded';
       } catch (error) {
         log.error('Failed to load classroom:', error);
         if (isCurrent()) {
+          setLoadUnavailable(false);
           setError(error instanceof Error ? error.message : 'Failed to load classroom');
           setLoading(false);
         }
@@ -177,49 +186,59 @@ export function ClassroomSurface({
     [classroomId, loadFromStorage, variant],
   );
 
+  const retryClassroom = useCallback(() => {
+    const loadEpoch = loadEpochRef.current + 1;
+    loadEpochRef.current = loadEpoch;
+    const isCurrent = () =>
+      activeClassroomIdRef.current === classroomId && loadEpochRef.current === loadEpoch;
+    setError(null);
+    setLoadUnavailable(false);
+    setNotFound(false);
+    setLoading(true);
+
+    void loadClassroom(isCurrent).then((outcome) => {
+      if (!isCurrent()) return;
+      if (outcome === 'loaded') {
+        refreshOwnership(isCurrent);
+        return;
+      }
+      if (variant === 'pane' && (outcome === 'unavailable' || outcome === 'absent')) {
+        setLoading(false);
+        if (outcome === 'absent') {
+          setNotFound(true);
+        } else {
+          setLoadUnavailable(true);
+          setError(LOAD_UNAVAILABLE_ERROR);
+        }
+      }
+    });
+  }, [classroomId, loadClassroom, refreshOwnership, variant]);
+
   useEffect(() => {
+    let cancelled = false;
+    const loadEpoch = loadEpochRef.current + 1;
+    loadEpochRef.current = loadEpoch;
+    activeClassroomIdRef.current = classroomId;
+    const isCurrent = () =>
+      !cancelled &&
+      activeClassroomIdRef.current === classroomId &&
+      loadEpochRef.current === loadEpoch;
+
     // Reset loading state on course switch to unmount Stage during transition,
     // preventing stale data from syncing back to the new course
     /* eslint-disable react-hooks/set-state-in-effect -- Course switch must hide stale Stage before async load */
     setLoading(true);
     setError(null);
+    setLoadUnavailable(false);
     setNotFound(false);
     /* eslint-enable react-hooks/set-state-in-effect */
-    // Ownership belongs to the departing course; the new one must re-earn it
-    // before anything it holds may be generated.
-    noteStageGenerationOwnership(classroomId, 'unresolved');
     generationStartedRef.current = false;
 
-    // Clear previous classroom's media tasks to prevent cross-classroom contamination.
-    // Placeholder IDs (gen_img_1, gen_vid_1) are NOT globally unique across stages,
-    // so stale tasks from a previous classroom would shadow the new one's.
-    const mediaStore = useMediaGenerationStore.getState();
-    mediaStore.revokeObjectUrls();
-    useMediaGenerationStore.setState({ tasks: {} });
-    // Allocations parked by an interrupted run on THIS id must go with them.
-    // Classic placeholders are reused across runs of the same course, so a
-    // survivor would be handed to a different slide of the next deck.
-    clearPendingMediaAllocations(classroomId);
-    clearNarrationAllocations(classroomId);
-
-    // Clear whiteboard history to prevent snapshots from a previous course leaking in.
-    useWhiteboardHistoryStore.getState().clearHistory();
-
-    // Reset edit-time canvas selection/scale: the classroom load paths set
-    // mode:'playback' via raw setState (not setMode), so an unfinished Pro-mode
-    // session in the previous course wouldn't otherwise clear its canvas state.
-    useCanvasStore.getState().resetCanvasState();
-
-    let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let availabilityAttempt = 0;
+    /** Last pane gap reason — exhaustion must not claim not-found after a load error. */
+    let lastGap: 'absent' | 'unavailable' | null = null;
 
-    // The sidecar carries the per-viewer ownership fact the document seam does
-    // not. It feeds only the generation gate here, so the pane's read-only and
-    // edit behaviour is untouched by its answer, and it is skipped entirely in
-    // browser-only mode, where the gate is inert and the request would be new
-    // observable behaviour on a path this change must not touch.
-    //
     // Asked only AFTER a document load succeeds, and again after every later
     // one, mirroring the page route. The load is what brings a course into the
     // server store the first time it is opened, so asking beforehand asks about
@@ -227,40 +246,39 @@ export function ClassroomSurface({
     // would lock its genuine author out of generation and of every retry
     // control for the rest of the mount. The gate stays closed until an answer
     // arrives, so asking again can only ever open it for someone entitled to it.
-    const refreshOwnership = () => {
-      if (cancelled || !isServerBackedMediaPersistence()) return;
-      void fetchStageMeta(classroomId)
-        .then((result) => {
-          if (cancelled) return;
-          noteStageGenerationOwnership(classroomId, classroomGenerationOwnership(result));
-        })
-        // The client reports transport failure as an outcome rather than
-        // throwing, so this only catches the unexpected. Ownership stays
-        // unresolved, which is the fail-closed answer.
-        .catch(() => undefined);
-    };
     const loadUntilAvailable = async () => {
-      if (cancelled) return;
+      if (!isCurrent()) return;
       // A previous pane attempt may have observed a transient read failure.
       // Clear only its presentation before retrying; do not raise `loading`
       // again, so an already mounted classroom never flashes away.
       if (variant === 'pane') setError(null);
-      const outcome = await loadClassroom(() => !cancelled);
-      if (cancelled) return;
-      if (variant !== 'pane' || outcome !== 'unavailable') {
-        // The document answered, so the sidecar now has something to say about
-        // this course — whether or not an availability retry was needed.
-        refreshOwnership();
-        return;
+      const outcome = await loadClassroom(isCurrent);
+      if (!isCurrent()) return;
+
+      if (outcome === 'absent' || outcome === 'unavailable') {
+        lastGap = outcome;
+        if (variant === 'pane') {
+          const delay = paneAvailabilityRetryDelay(availabilityAttempt);
+          availabilityAttempt += 1;
+          if (delay !== null) {
+            retryTimer = setTimeout(loadUntilAvailable, delay);
+            return;
+          }
+          setLoading(false);
+          if (lastGap === 'unavailable') {
+            setLoadUnavailable(true);
+            setError(LOAD_UNAVAILABLE_ERROR);
+          } else {
+            setNotFound(true);
+          }
+          return;
+        }
       }
 
-      const delay = paneAvailabilityRetryDelay(availabilityAttempt);
-      availabilityAttempt += 1;
-      if (delay !== null) {
-        retryTimer = setTimeout(loadUntilAvailable, delay);
-      } else {
-        setLoading(false);
-        setError(notFoundMessageRef.current);
+      // The document is now loaded, so the sidecar has something to say about
+      // this course. Absence and load failures must not establish ownership.
+      if (outcome === 'loaded') {
+        refreshOwnership(isCurrent);
       }
     };
     void loadUntilAvailable();
@@ -268,10 +286,15 @@ export function ClassroomSurface({
     // Cancel ongoing generation when classroomId changes or component unmounts
     return () => {
       cancelled = true;
+      if (loadEpochRef.current === loadEpoch) {
+        loadEpochRef.current += 1;
+      }
+      if (activeClassroomIdRef.current === classroomId) {
+        activeClassroomIdRef.current = null;
+      }
       if (retryTimer) clearTimeout(retryTimer);
-      stop();
     };
-  }, [classroomId, loadClassroom, stop, variant]);
+  }, [classroomId, loadClassroom, refreshOwnership, variant]);
 
   // Narration written before this application stored media server-side is a
   // derived key that only this browser can resolve. Both classroom surfaces
@@ -347,6 +370,7 @@ export function ClassroomSurface({
           agents: params.agents,
           userProfile: params.userProfile,
           languageDirective: params.languageDirective || stage.languageDirective,
+          taskEngineMode: stage.taskEngineMode,
         });
 
       const imageMapping: Record<string, string> = {};
@@ -385,6 +409,15 @@ export function ClassroomSurface({
     }
   }, [loading, error, mayGenerate, generateRemaining]);
 
+  const view = resolveClassroomSurfaceView({
+    variant,
+    loading,
+    error,
+    notFound,
+    loadedClassroomId,
+    classroomId,
+  });
+
   return (
     <ThemeProvider>
       <MediaStageProvider value={classroomId}>
@@ -399,14 +432,14 @@ export function ClassroomSurface({
               : 'h-screen flex flex-col overflow-hidden'
           }
         >
-          {loading || (variant === 'pane' && !error && loadedClassroomId !== classroomId) ? (
+          {view === 'loading' ? (
             <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
               <div className="flex flex-col items-center gap-3 text-muted-foreground">
                 <Loader2 className="h-8 w-8 animate-spin" />
                 <p>{t('common.loadingClassroom')}</p>
               </div>
             </div>
-          ) : notFound ? (
+          ) : view === 'not-found' ? (
             // Checked BEFORE `error`, and it renders no retry: the sources have
             // all answered, and running the same lookups again cannot change
             // the answer. One message for "deleted" and for "never existed" —
@@ -427,24 +460,29 @@ export function ClassroomSurface({
                 </Link>
               </div>
             </div>
-          ) : error ? (
-            <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+          ) : view === 'error' ? (
+            <div
+              className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900"
+              data-testid="classroom-load-error"
+            >
               <div className="text-center">
                 <p className="text-destructive mb-4">
-                  {t('common.errorPrefix')}
-                  {error}
+                  {loadUnavailable ? (
+                    t('classroom.loadUnavailable')
+                  ) : (
+                    <>
+                      {t('common.errorPrefix')}
+                      {error}
+                    </>
+                  )}
                 </p>
+                {loadUnavailable ? (
+                  <p className="mb-4 text-sm text-muted-foreground">
+                    {t('classroom.loadUnavailableDesc')}
+                  </p>
+                ) : null}
                 <button
-                  onClick={() => {
-                    setError(null);
-                    setLoading(true);
-                    void loadClassroom().then((outcome) => {
-                      if (variant === 'pane' && outcome === 'unavailable') {
-                        setLoading(false);
-                        setError(t('classroom.notFound'));
-                      }
-                    });
-                  }}
+                  onClick={retryClassroom}
                   className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
                 >
                   {t('common.retry')}

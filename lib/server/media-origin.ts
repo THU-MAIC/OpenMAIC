@@ -20,11 +20,12 @@
  * That env stays available for its other legitimate uses (auth redirects
  * etc.) — it must simply never be used to build media URLs.
  *
- * The agent RUNTIME persist paths (`classroom-media-bytes.ts`,
- * `generate-image.ts`, `generate-video.ts`) never call this resolver: they
- * run without an HTTP request and persist origin-independent RELATIVE
- * `/api/classroom-media/...` references instead, which stay valid no matter
- * which origin serves the app.
+ * The agent RUNTIME persist paths never call this resolver: they run without
+ * an HTTP request, so they persist references that carry no origin at all.
+ * `classroom-media-bytes.ts` writes a RELATIVE `/api/classroom-media/...`
+ * path, and `generate-image.ts` / `generate-video.ts` write the id the asset
+ * pool allocated (#1522). Both stay valid no matter which origin serves the
+ * app.
  */
 import type { NextRequest } from 'next/server';
 

@@ -68,6 +68,94 @@ describe('searchWithBrave', () => {
     proxyFetchMock.mockReset();
   });
 
+  it("gives a keyless 429 a dedicated message instead of leaking Brave's HTML challenge page", async () => {
+    proxyFetchMock.mockResolvedValueOnce(
+      new Response('<!doctype html><html><body>captcha challenge</body></html>', {
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers: { 'content-type': 'text/html' },
+      }),
+    );
+
+    const error = await searchWithBrave({ query: 'JavaScript Promise' }).catch((err: Error) => err);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('429');
+    expect((error as Error).message).toContain('rate-limited');
+    expect((error as Error).message).toContain('configure a Brave Search API key');
+    expect((error as Error).message).not.toContain('<');
+  });
+
+  it('points an API-key 429 at the plan limit instead of suggesting an API key', async () => {
+    proxyFetchMock.mockResolvedValueOnce(
+      new Response('{"type":"ErrorResponse","error":{"code":"RATE_LIMITED"}}', {
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    const error = await searchWithBrave({ query: 'JavaScript Promise', apiKey: 'k' }).catch(
+      (err: Error) => err,
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('Brave API');
+    expect((error as Error).message).toContain('429');
+    expect((error as Error).message).toContain('plan');
+    expect((error as Error).message).not.toContain('configure a Brave Search API key');
+  });
+
+  it('cancels the HTML error body instead of reading it into memory', async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('<!doctype html><html>huge</html>'));
+        controller.close();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    proxyFetchMock.mockResolvedValueOnce(
+      new Response(body, {
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      }),
+    );
+
+    await searchWithBrave({ query: 'JavaScript Promise' }).catch(() => undefined);
+
+    expect(cancelled).toBe(true);
+  });
+
+  it('drops an HTML error body on non-429 failures', async () => {
+    proxyFetchMock.mockResolvedValueOnce(
+      new Response('<!doctype html><html><body>blocked</body></html>', {
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: { 'content-type': 'text/html' },
+      }),
+    );
+
+    const error = await searchWithBrave({ query: 'JavaScript Promise' }).catch((err: Error) => err);
+
+    expect((error as Error).message).toBe('Brave Search error (503): Service Unavailable');
+  });
+
+  it('keeps a short plain-text error body from the API path', async () => {
+    proxyFetchMock.mockResolvedValueOnce(
+      new Response('Subscription token invalid', { status: 401, statusText: 'Unauthorized' }),
+    );
+
+    const error = await searchWithBrave({ query: 'JavaScript Promise', apiKey: 'k' }).catch(
+      (err: Error) => err,
+    );
+
+    expect((error as Error).message).toBe('Brave API error (401): Subscription token invalid');
+  });
+
   it('uses Brave public search without an API key and clamps long queries', async () => {
     proxyFetchMock.mockResolvedValueOnce(
       new Response(

@@ -21,11 +21,25 @@ import {
 import parseSrcset, { type SrcsetCandidate } from 'parse-srcset';
 import type { AtRule, Root } from 'postcss';
 import {
+  collectCssAssetReferencesByRegex,
   cssImportReference,
   cssUrlReferences,
   parseCss,
   rewriteCssValue,
 } from './css-asset-parser';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('InlineAssets');
+
+/** Best-effort parse for enhancement paths; null means "leave the CSS as-is". */
+function tryParseCss(css: string, cssUrl: string): Root | null {
+  try {
+    return parseCss(css, cssUrl);
+  } catch (error) {
+    log.warn(`CSS parse failed for ${cssUrl}; leaving value untouched`, error);
+    return null;
+  }
+}
 
 export { toDataUri } from './inline-assets-shared';
 export type { InlineReport, InlineOptions, FetchAsset } from './inline-assets-shared';
@@ -262,7 +276,26 @@ export async function inlineCssUrls(
 ): Promise<{ css: string; failed: { url: string; reason: string }[]; inlined: string[] }> {
   const failed: { url: string; reason: string }[] = [];
   const inlined: string[] = [];
-  const root = parseCss(css, cssUrl);
+  // Authored CSS can carry browser-tolerated syntax errors (e.g. `-- name`).
+  // Inlining is an enhancement, not a precondition: on a parse failure keep the
+  // stylesheet byte-for-byte and continue instead of failing the whole export.
+  let root: Root;
+  try {
+    root = parseCss(css, cssUrl);
+  } catch (error) {
+    log.warn(`CSS parse failed while inlining ${cssUrl}; leaving stylesheet untouched`, error);
+    // Zip exporters only consume `failed`, so remote refs inside the
+    // unparseable stylesheet must be surfaced here, not silently packaged.
+    for (const ref of collectCssAssetReferencesByRegex(css)) {
+      if (/^(?:data:|blob:|about:|#)/i.test(ref.url)) continue;
+      try {
+        failed.push({ url: new URL(ref.url, cssUrl).href, reason: 'css parse failed' });
+      } catch {
+        // Unresolvable values stay untouched, as elsewhere.
+      }
+    }
+    return { css, failed, inlined };
+  }
   const imports: AtRule[] = [];
   root.walkAtRules((rule) => {
     if (rule.name.toLowerCase() === 'import') imports.push(rule);
@@ -295,10 +328,19 @@ export async function inlineCssUrls(
       fetchAsset,
       new Set(activeCssUrls).add(abs),
     );
-    inlined.push(abs, ...nested.inlined);
     failed.push(...nested.failed);
     const wrapped = wrapImportedCss(nested.css, parseCssImportConditions(reference.conditions));
-    rule.replaceWith(...parseCss(wrapped, abs).nodes);
+    // nested.css is raw whenever the imported stylesheet failed strict parsing;
+    // re-parsing it here would rethrow. Keep the original @import rule then. The
+    // remote dependency stays in the output, so report it as a failure instead
+    // of claiming the import (and its nested assets) were inlined.
+    const wrappedRoot = tryParseCss(wrapped, abs);
+    if (wrappedRoot) {
+      rule.replaceWith(...wrappedRoot.nodes);
+      inlined.push(abs, ...nested.inlined);
+    } else {
+      failed.push({ url: abs, reason: 'css parse failed' });
+    }
   }
 
   // 1. Find @font-face blocks; build dropRefs (non-woff2 fonts in blocks that have a woff2).
@@ -323,11 +365,19 @@ export async function inlineCssUrls(
   return { css: root.toString(), failed, inlined };
 }
 
+/** Absolute http(s) refs inside unparseable CSS; surfaced as export failures. */
+function unresolvedCssRefs(css: string): { url: string; reason: string }[] {
+  return collectCssAssetReferencesByRegex(css)
+    .filter((ref) => /^https?:\/\//i.test(ref.url))
+    .map((ref) => ({ url: ref.url, reason: 'css parse failed' }));
+}
+
 async function inlineStyleAttributeUrls(
   css: string,
   fetchAsset: FetchAsset,
 ): Promise<{ css: string; failed: { url: string; reason: string }[]; inlined: string[] }> {
-  const root = parseCss(`.openmaic-style{${css}}`, 'style-attribute');
+  const root = tryParseCss(`.openmaic-style{${css}}`, 'style-attribute');
+  if (!root) return { css, failed: unresolvedCssRefs(css), inlined: [] };
   const result = await inlineParsedCssUrls(root, 'about:blank', fetchAsset, new Set());
   const serialized = root.toString();
   return {
@@ -341,10 +391,11 @@ async function inlineSvgPresentationAttributeUrls(
   cssValue: string,
   fetchAsset: FetchAsset,
 ): Promise<{ cssValue: string; failed: { url: string; reason: string }[]; inlined: string[] }> {
-  const root = parseCss(
+  const root = tryParseCss(
     `.openmaic-svg{${attributeName}:${cssValue}}`,
     'svg-presentation-attribute',
   );
+  if (!root) return { cssValue, failed: unresolvedCssRefs(cssValue), inlined: [] };
   let declarationValue = cssValue;
   const result = await inlineParsedCssUrls(root, 'about:blank', fetchAsset, new Set());
   root.walkDecls((declaration) => {

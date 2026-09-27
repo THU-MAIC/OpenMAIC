@@ -37,9 +37,58 @@ import type {
 } from './types.js';
 import { RuntimeAppendConflictError } from './types.js';
 import { assertJsonValue, isLosslessJsonString } from './json-value.js';
+import { encodeJson } from '../pg-json.js';
 
 export interface QueryResult<TRow extends Record<string, unknown> = Record<string, unknown>> {
   rows: TRow[];
+}
+
+/** Why a lock-bounded transaction gave up. */
+export type StorageLockUnavailableReason = 'lock-timeout' | 'deadlock';
+
+/**
+ * A write transaction gave up waiting for a row lock, or was chosen to break a
+ * deadlock.
+ *
+ * Both are contention, not corruption: the transaction rolled back, nothing it
+ * intended is half-written, and retrying later is the right response. They get
+ * a type because a host cannot otherwise tell "another writer is holding this
+ * row" from a generic database failure without matching on driver error codes
+ * -- and because these are the failures the package's own `lock_timeout`
+ * budget deliberately manufactures rather than inherits. The driver's error is
+ * kept as `cause`.
+ */
+export class StorageLockUnavailableError extends Error {
+  readonly reason: StorageLockUnavailableReason;
+
+  constructor(reason: StorageLockUnavailableReason, cause: unknown) {
+    super(
+      reason === 'deadlock'
+        ? '@openmaic/storage: the write transaction was chosen to break a deadlock'
+        : '@openmaic/storage: the write transaction timed out waiting for a row lock',
+      { cause },
+    );
+    this.name = 'StorageLockUnavailableError';
+    this.reason = reason;
+  }
+}
+
+/**
+ * Classify a driver error as lock contention, or `undefined` when it is
+ * something else.
+ *
+ * Reads only the SQLSTATE, which every PostgreSQL driver surfaces verbatim as
+ * `code`: `55P03` is `lock_not_available` (what `SET LOCAL lock_timeout`
+ * produces) and `40P01` is `deadlock_detected`. Message text is deliberately
+ * not consulted -- it is localized and version-dependent.
+ */
+export function asStorageLockUnavailable(error: unknown): StorageLockUnavailableError | undefined {
+  if (error instanceof StorageLockUnavailableError) return error;
+  if (typeof error !== 'object' || error === null) return undefined;
+  const code = (error as { code?: unknown }).code;
+  if (code === '55P03') return new StorageLockUnavailableError('lock-timeout', error);
+  if (code === '40P01') return new StorageLockUnavailableError('deadlock', error);
+  return undefined;
 }
 
 /** The common query surface implemented by a node-postgres Pool/Client and PGlite. */
@@ -163,16 +212,6 @@ function isPlainObject(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
-}
-
-function encodeJson(value: unknown, label: string): string {
-  try {
-    const encoded = JSON.stringify(value);
-    if (encoded === undefined) throw new TypeError('value is not JSON-serializable');
-    return encoded;
-  } catch (error) {
-    throw new Error(`@openmaic/storage: ${label} is not JSON-serializable`, { cause: error });
-  }
 }
 
 function isFutureRuntimeVersioned(row: unknown): boolean {

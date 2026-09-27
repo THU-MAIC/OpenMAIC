@@ -264,4 +264,53 @@ describe('resolveModel — per-stage resolution order', () => {
     const r = await resolveModel({});
     expect(r.modelString).toBe('openai:gpt-5.4-mini');
   });
+
+  it('lets a user route win over the client x-model for its stage', async () => {
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    const r = await resolveModel({
+      stage: 'chat-adapter',
+      modelString: 'openai:gpt-5.4-mini',
+      userRoutes: { 'chat-adapter': { model: 'anthropic:claude-sonnet-4' } },
+    });
+    expect(r.modelString).toBe('anthropic:claude-sonnet-4');
+    expect(r.providerId).toBe('anthropic');
+  });
+
+  it('keeps the operator MODEL_ROUTES route over a user route', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({ 'chat-adapter': 'openai:gpt-5.4' });
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    const r = await resolveModel({
+      stage: 'chat-adapter',
+      modelString: 'openai:gpt-5.4-mini',
+      userRoutes: { 'chat-adapter': { model: 'anthropic:claude-sonnet-4' } },
+    });
+    expect(r.modelString).toBe('openai:gpt-5.4');
+  });
+
+  it('uses the user route own connection params for the routed provider', async () => {
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    await resolveModel({
+      stage: 'chat-adapter',
+      modelString: 'openai:gpt-5.4-mini',
+      apiKey: 'client-openai-key',
+      baseUrl: 'https://client.example/v1',
+      providerType: 'openai',
+      userRoutes: {
+        'chat-adapter': {
+          model: 'anthropic:claude-sonnet-4',
+          apiKey: 'user-anthropic-key',
+          baseUrl: 'https://user.example/v1',
+          providerType: 'anthropic',
+        },
+      },
+    });
+    const call = mocks.getModelCalls.at(-1)!;
+    expect(call.providerId).toBe('anthropic');
+    expect(call.modelId).toBe('claude-sonnet-4');
+    // The user route carries its own connection; the client x-model's OpenAI
+    // params must not bleed onto the routed Anthropic model.
+    expect(call.providerType).toBe('anthropic');
+    expect(call.baseUrl).toBe('https://user.example/v1');
+    expect(call.apiKey).toBe('user-anthropic-key');
+  });
 });

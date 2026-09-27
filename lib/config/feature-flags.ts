@@ -3,12 +3,16 @@
  * Next.js inlines at build time so they are safe to read from client
  * components. Server-only flags must not use the `NEXT_PUBLIC_` prefix.
  *
- * Truthy values: `'true'` or `'1'`. Anything else (including unset) is
- * treated as disabled.
+ * Truthy values: `'true'` or `'1'`. Unless a flag documents a different
+ * default, anything else (including unset) is treated as disabled.
  */
 
 function readBoolean(envValue: string | undefined): boolean {
   return envValue === 'true' || envValue === '1';
+}
+
+function readDefaultOnBoolean(envValue: string | undefined): boolean {
+  return envValue === undefined || envValue === '' || readBoolean(envValue);
 }
 
 /**
@@ -83,11 +87,14 @@ export function isEditorRendererEnabled(): boolean {
 }
 
 /**
- * Experimental Pi-based classroom chat runtime. Default OFF. The same public
- * flag selects the client runtime and gates the corresponding server route.
+ * Pi-based classroom chat runtime. Default ON. The same public flag selects
+ * the client runtime and gates the corresponding server route. Operators can
+ * set it to `false` or `0` and rebuild to roll back to the legacy runtime.
+ * next.config.ts pins the default too, so runtime-only overrides cannot split
+ * the built client's choice from the server route gate.
  */
 export function isPiChatEnabled(): boolean {
-  return readBoolean(process.env.NEXT_PUBLIC_PI_CHAT_ENABLED);
+  return readDefaultOnBoolean(process.env.NEXT_PUBLIC_PI_CHAT_ENABLED);
 }
 
 /**

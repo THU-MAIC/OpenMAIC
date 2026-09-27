@@ -22,6 +22,7 @@ import type {
 } from '../types';
 import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'grok-imagine-video';
@@ -119,9 +120,12 @@ async function submitVideoGeneration(
 
   const response = await fetch(`${baseUrl}/videos/generations`, {
     method: 'POST',
+    redirect: 'manual',
     headers: apiHeaders(apiKey),
     body: JSON.stringify(body),
   });
+
+  assertNotRedirected(response, 'Grok Video');
 
   if (!response.ok) {
     const text = await response.text();
@@ -147,8 +151,11 @@ async function pollVideoStatus(
 ): Promise<GrokVideoPollResponse> {
   const response = await fetch(`${baseUrl}/videos/${requestId}`, {
     method: 'GET',
+    redirect: 'manual',
     headers: apiHeaders(apiKey),
   });
+
+  assertNotRedirected(response, 'Grok Video');
 
   if (!response.ok) {
     const text = await response.text();

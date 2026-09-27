@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   paneAvailabilityRetryDelay,
+  resolveClassroomSurfaceView,
   shouldResumeClassroomGeneration,
 } from '@/lib/classroom/progressive-load-policy';
 
@@ -44,5 +45,33 @@ describe('progressive classroom policy', () => {
 
   it('keeps an unsafe progressive state decisive even when generation is permitted', () => {
     expect(shouldResumeClassroomGeneration({ ...settled, loading: true })).toBe(false);
+  });
+});
+
+describe('classroom surface view', () => {
+  const settledPane = {
+    variant: 'pane',
+    loading: false,
+    error: null,
+    notFound: false,
+    loadedClassroomId: null,
+    classroomId: 'stage-a',
+  } as const;
+
+  it('shows not-found after an absent pane load exhausts its retry schedule', () => {
+    expect(resolveClassroomSurfaceView({ ...settledPane, notFound: true })).toBe('not-found');
+  });
+
+  it('shows Retry after an unavailable pane load exhausts its retry schedule', () => {
+    expect(
+      resolveClassroomSurfaceView({
+        ...settledPane,
+        error: 'Could not load this course',
+      }),
+    ).toBe('error');
+  });
+
+  it('keeps showing loading while a non-terminal pane waits for its classroom', () => {
+    expect(resolveClassroomSurfaceView(settledPane)).toBe('loading');
   });
 });

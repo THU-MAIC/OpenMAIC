@@ -357,7 +357,7 @@ describe('video render ZIP retry cache', () => {
     const unsubscribe = vi.spyOn(Dexie.on('storagemutated'), 'unsubscribe');
     mocks.build.mockRejectedValueOnce(new Error('compile failed'));
     await start();
-    expect(options().error).toBe('compile');
+    expect(options().error).toBe('compile failed');
     expect(mocks.fetch).not.toHaveBeenCalled();
     expect(unsubscribe).toHaveBeenCalledOnce();
     rejectSubmit();

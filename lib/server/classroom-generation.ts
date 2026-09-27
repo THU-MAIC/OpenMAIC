@@ -1,4 +1,3 @@
-import { nanoid } from 'nanoid';
 import { callLLM } from '@/lib/ai/llm';
 import { createStageAPI } from '@/lib/api/stage-api';
 import type { StageStore } from '@/lib/api/stage-api-types';
@@ -7,6 +6,7 @@ import {
   generateSceneOutlinesFromRequirements,
   generateSceneActions,
   generateSceneContent,
+  isAbortError,
   PBLGenerationError,
   withGenerationRetry,
   type AICallFn,
@@ -26,11 +26,21 @@ import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
-import { persistClassroom } from '@/lib/server/classroom-storage';
 import {
+  ClassroomAlreadyExistsError,
+  CLASSROOM_ID_MAX_ATTEMPTS,
+  generateClassroomId,
+  persistClassroom,
+  releaseClassroomReservation,
+  reserveClassroom,
+} from '@/lib/server/classroom-storage';
+import {
+  classroomTtsSummary,
+  countNarratableSpeechActions,
   generateMediaForClassroom,
   replaceMediaPlaceholders,
   generateTTSForClassroom,
+  type ClassroomTtsCoverage,
 } from '@/lib/server/classroom-media-generation';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import type { UserRequirements } from '@/lib/types/generation';
@@ -84,6 +94,16 @@ export interface GenerateClassroomResult {
   scenes: Scene[];
   scenesCount: number;
   createdAt: string;
+  /**
+   * Present when TTS was requested. Omitted when TTS is disabled.
+   * `written` is 0 when synthesis saved no clips.
+   */
+  ttsCoverage?: ClassroomTtsCoverage;
+  /**
+   * Set when requested narration is incomplete (`written` < `total`) or the TTS phase failed.
+   * A requested run with no narratable speech (`total` 0) has coverage and no warning.
+   */
+  warning?: string;
 }
 
 function createInMemoryStore(stage: Stage): StageStore {
@@ -173,10 +193,66 @@ Return a JSON object with this exact structure:
   }));
 }
 
+/**
+ * Reserve the classroom id before generating any media or TTS.
+ *
+ * Media and TTS write into `<CLASSROOMS_DIR>/<id>/{media,audio}`, so the id must
+ * be claimed first: if the collision were only detected at persist time, the
+ * retry would already have written the new classroom's media into an existing
+ * classroom's directory and the retried document's media URLs would still point
+ * at that other id. The reservation is an exclusive create of the classroom file
+ * with a placeholder document (`reserved: true`, empty scenes) — the only token
+ * that atomically covers the whole collision namespace, because a classroom
+ * created through `POST /api/classroom` has a JSON file but no directory.
+ * `readClassroom` hides reserved documents, so an in-flight (or crashed)
+ * reservation is never served as an empty classroom. On `EEXIST` a fresh id is
+ * generated and retried, bounded exactly like the create route. The process now
+ * owns the id, so the final persist is an ordinary overwrite of that same file.
+ */
+async function reserveGeneratedClassroom(
+  buildStage: (id: string) => Stage,
+): Promise<{ id: string; stage: Stage }> {
+  for (let attempt = 0; ; attempt += 1) {
+    const id = generateClassroomId();
+    const stage = buildStage(id);
+    try {
+      await reserveClassroom(id, stage);
+      return { id, stage };
+    } catch (error) {
+      if (
+        !(error instanceof ClassroomAlreadyExistsError) ||
+        attempt >= CLASSROOM_ID_MAX_ATTEMPTS - 1
+      ) {
+        throw error;
+      }
+      log.warn(`Classroom id "${id}" already exists; reserving a fresh id`);
+    }
+  }
+}
+
+const TTS_PHASE_FAILED_WARNING = 'TTS generation phase failed';
+
+function classroomTtsHeartbeatProgress(written: number, total: number): number {
+  if (total <= 0) return 94;
+  const ratio = Math.min(1, Math.max(0, written / total));
+  return 94 + Math.floor(ratio * 3);
+}
+
+function ttsResultWarning(
+  coverage: ClassroomTtsCoverage | undefined,
+  fallback?: string,
+): string | undefined {
+  if (coverage && coverage.written < coverage.total) {
+    return classroomTtsSummary(coverage.written, coverage.total);
+  }
+  return fallback;
+}
+
 export async function generateClassroom(
   input: GenerateClassroomInput,
   options: {
     baseUrl: string;
+    signal?: AbortSignal;
     onProgress?: (progress: ClassroomGenerationProgress) => Promise<void> | void;
   },
 ): Promise<GenerateClassroomResult> {
@@ -519,9 +595,8 @@ export async function generateClassroom(
     agents = getDefaultAgents();
   }
 
-  const stageId = nanoid(10);
-  const stage: Stage = {
-    id: stageId,
+  const { id: stageId, stage } = await reserveGeneratedClassroom((id) => ({
+    id,
     name: courseTitle || outlines[0]?.title || requirement.slice(0, 50),
     description: undefined,
     languageDirective,
@@ -547,192 +622,219 @@ export async function generateClassroom(
       : {
           agentIds: agents.map((a) => a.id),
         }),
-  };
+  }));
 
-  const store = createInMemoryStore(stage);
-  const api = createStageAPI(store);
+  // The reservation above claims the id; everything below owns it. If
+  // generation throws before `persistClassroom` succeeds, release the
+  // placeholder so a failed run does not burn the id or leave an unreadable
+  // file behind. `persisted` is the completion marker.
+  let persisted: Awaited<ReturnType<typeof persistClassroom>> | undefined;
+  try {
+    const store = createInMemoryStore(stage);
+    const api = createStageAPI(store);
 
-  log.info('Stage 2: Generating scene content and actions...');
-  let generatedScenes = 0;
+    log.info('Stage 2: Generating scene content and actions...');
+    let generatedScenes = 0;
 
-  for (const [index, outline] of outlines.entries()) {
-    const safeOutline = applyOutlineFallbacks(outline, true, {
-      allowProceduralSkill: vocationalActive,
-    });
-    const progressStart = 30 + Math.floor((index / Math.max(outlines.length, 1)) * 60);
+    for (const [index, outline] of outlines.entries()) {
+      const safeOutline = applyOutlineFallbacks(outline, true, {
+        allowProceduralSkill: vocationalActive,
+      });
+      const progressStart = 30 + Math.floor((index / Math.max(outlines.length, 1)) * 60);
 
-    await options.onProgress?.({
-      step: 'generating_scenes',
-      progress: Math.max(progressStart, 31),
-      message: `Generating scene ${index + 1}/${outlines.length}: ${safeOutline.title}`,
-      scenesGenerated: generatedScenes,
-      totalScenes: outlines.length,
-    });
-
-    const reportSceneRetry = async (
-      phase: 'content' | 'actions',
-      event: { attempt: number; maxAttempts: number; reason: string },
-    ) => {
-      const nextAttempt = Math.min(event.attempt + 1, event.maxAttempts);
-      const message = `Retrying scene ${index + 1}/${outlines.length} ${phase} (${nextAttempt}/${event.maxAttempts}): ${safeOutline.title}`;
-      log.warn(`${message} — ${event.reason}`);
       await options.onProgress?.({
         step: 'generating_scenes',
         progress: Math.max(progressStart, 31),
-        message,
+        message: `Generating scene ${index + 1}/${outlines.length}: ${safeOutline.title}`,
         scenesGenerated: generatedScenes,
         totalScenes: outlines.length,
       });
-    };
 
-    // Resolve this scene's content model lazily, per outline type. The package
-    // gets the provider-bound AICallFn and the app injects its agentic PBL loop
-    // as the classified fallback, preserving single-call → loop routing.
-    const contentCall = await resolveSceneContentCall(safeOutline.type);
-    const content = await (async () => {
+      const reportSceneRetry = async (
+        phase: 'content' | 'actions',
+        event: { attempt: number; maxAttempts: number; reason: string },
+      ) => {
+        const nextAttempt = Math.min(event.attempt + 1, event.maxAttempts);
+        const message = `Retrying scene ${index + 1}/${outlines.length} ${phase} (${nextAttempt}/${event.maxAttempts}): ${safeOutline.title}`;
+        log.warn(`${message} — ${event.reason}`);
+        await options.onProgress?.({
+          step: 'generating_scenes',
+          progress: Math.max(progressStart, 31),
+          message,
+          scenesGenerated: generatedScenes,
+          totalScenes: outlines.length,
+        });
+      };
+
+      // Resolve this scene's content model lazily, per outline type. The package
+      // gets the provider-bound AICallFn and the app injects its agentic PBL loop
+      // as the classified fallback, preserving single-call → loop routing.
+      const contentCall = await resolveSceneContentCall(safeOutline.type);
+      const content = await (async () => {
+        try {
+          return await withGenerationRetry(
+            () =>
+              generateSceneContent(safeOutline, contentCall.aiCall, {
+                agents,
+                languageDirective,
+                allowProceduralSkill: vocationalActive,
+                ...(safeOutline.type === 'pbl'
+                  ? {
+                      pblLoopFallback: (input) =>
+                        generatePBLV2Project(
+                          input,
+                          contentCall.model,
+                          callLLM,
+                          { logger: log },
+                          contentCall.thinking,
+                        ),
+                    }
+                  : {}),
+              }),
+            {
+              label: `scene ${index + 1}/${outlines.length} content`,
+              shouldRetryResult: (result) => result === null,
+              onRetry: (event) => reportSceneRetry('content', event),
+            },
+          );
+        } catch (error) {
+          return containPBLGenerationError(error, safeOutline.title);
+        }
+      })();
+      if (!content) {
+        log.warn(`Skipping scene "${safeOutline.title}" — content generation failed`);
+        continue;
+      }
+
+      const actionsAiCall = await getSceneActionsAiCall();
+      const actions = await withGenerationRetry(
+        () =>
+          generateSceneActions(safeOutline, content, actionsAiCall, {
+            agents,
+            languageDirective,
+          }),
+        {
+          label: `scene ${index + 1}/${outlines.length} actions`,
+          onRetry: (event) => reportSceneRetry('actions', event),
+        },
+      );
+      log.info(`Scene "${safeOutline.title}": ${actions.length} actions`);
+
+      const sceneId = createSceneWithActions(safeOutline, content, actions, api);
+      if (!sceneId) {
+        log.warn(`Skipping scene "${safeOutline.title}" — scene creation failed`);
+        continue;
+      }
+
+      generatedScenes += 1;
+      const progressEnd = 30 + Math.floor(((index + 1) / Math.max(outlines.length, 1)) * 60);
+      await options.onProgress?.({
+        step: 'generating_scenes',
+        progress: Math.min(progressEnd, 90),
+        message: `Generated ${generatedScenes}/${outlines.length} scenes`,
+        scenesGenerated: generatedScenes,
+        totalScenes: outlines.length,
+      });
+    }
+
+    const scenes = store.getState().scenes;
+    log.info(`Pipeline complete: ${scenes.length} scenes generated`);
+
+    if (scenes.length === 0) {
+      throw new Error('No scenes were generated');
+    }
+
+    // Phase: Media generation (after all scenes generated)
+    if (input.enableImageGeneration || input.enableVideoGeneration) {
+      await options.onProgress?.({
+        step: 'generating_media',
+        progress: 90,
+        message: 'Generating media files',
+        scenesGenerated: scenes.length,
+        totalScenes: outlines.length,
+      });
+
       try {
-        return await withGenerationRetry(
-          () =>
-            generateSceneContent(safeOutline, contentCall.aiCall, {
-              agents,
-              languageDirective,
-              allowProceduralSkill: vocationalActive,
-              ...(safeOutline.type === 'pbl'
-                ? {
-                    pblLoopFallback: (input) =>
-                      generatePBLV2Project(
-                        input,
-                        contentCall.model,
-                        callLLM,
-                        { logger: log },
-                        contentCall.thinking,
-                      ),
-                  }
-                : {}),
-            }),
-          {
-            label: `scene ${index + 1}/${outlines.length} content`,
-            shouldRetryResult: (result) => result === null,
-            onRetry: (event) => reportSceneRetry('content', event),
+        const mediaMap = await generateMediaForClassroom(outlines, stageId, options.baseUrl);
+        replaceMediaPlaceholders(scenes, mediaMap);
+        log.info(`Media generation complete: ${Object.keys(mediaMap).length} files`);
+      } catch (err) {
+        log.warn('Media generation phase failed, continuing:', err);
+      }
+    }
+
+    // Phase: TTS generation
+    let ttsCoverage: ClassroomTtsCoverage | undefined;
+    let ttsFailureWarning: string | undefined;
+    if (input.enableTTS) {
+      await options.onProgress?.({
+        step: 'generating_tts',
+        progress: 94,
+        message: 'Generating TTS audio',
+        scenesGenerated: scenes.length,
+        totalScenes: outlines.length,
+      });
+
+      try {
+        ttsCoverage = await generateTTSForClassroom(
+          scenes,
+          stageId,
+          options.baseUrl,
+          options.signal,
+          async ({ written, total }) => {
+            await options.onProgress?.({
+              step: 'generating_tts',
+              progress: classroomTtsHeartbeatProgress(written, total),
+              message: `Generating TTS audio (${written}/${total})`,
+              scenesGenerated: scenes.length,
+              totalScenes: outlines.length,
+            });
           },
         );
-      } catch (error) {
-        return containPBLGenerationError(error, safeOutline.title);
+      } catch (err) {
+        if (isAbortError(err)) throw err;
+        log.warn('TTS generation phase failed, continuing:', err);
+        ttsCoverage = { written: 0, total: countNarratableSpeechActions(scenes) };
+        ttsFailureWarning = TTS_PHASE_FAILED_WARNING;
       }
-    })();
-    if (!content) {
-      log.warn(`Skipping scene "${safeOutline.title}" — content generation failed`);
-      continue;
     }
+    const ttsWarning = ttsResultWarning(ttsCoverage, ttsFailureWarning);
 
-    const actionsAiCall = await getSceneActionsAiCall();
-    const actions = await withGenerationRetry(
-      () =>
-        generateSceneActions(safeOutline, content, actionsAiCall, {
-          agents,
-          languageDirective,
-        }),
-      {
-        label: `scene ${index + 1}/${outlines.length} actions`,
-        onRetry: (event) => reportSceneRetry('actions', event),
-      },
-    );
-    log.info(`Scene "${safeOutline.title}": ${actions.length} actions`);
-
-    const sceneId = createSceneWithActions(safeOutline, content, actions, api);
-    if (!sceneId) {
-      log.warn(`Skipping scene "${safeOutline.title}" — scene creation failed`);
-      continue;
-    }
-
-    generatedScenes += 1;
-    const progressEnd = 30 + Math.floor(((index + 1) / Math.max(outlines.length, 1)) * 60);
     await options.onProgress?.({
-      step: 'generating_scenes',
-      progress: Math.min(progressEnd, 90),
-      message: `Generated ${generatedScenes}/${outlines.length} scenes`,
-      scenesGenerated: generatedScenes,
-      totalScenes: outlines.length,
-    });
-  }
-
-  const scenes = store.getState().scenes;
-  log.info(`Pipeline complete: ${scenes.length} scenes generated`);
-
-  if (scenes.length === 0) {
-    throw new Error('No scenes were generated');
-  }
-
-  // Phase: Media generation (after all scenes generated)
-  if (input.enableImageGeneration || input.enableVideoGeneration) {
-    await options.onProgress?.({
-      step: 'generating_media',
-      progress: 90,
-      message: 'Generating media files',
+      step: 'persisting',
+      progress: 98,
+      message: 'Persisting classroom data',
       scenesGenerated: scenes.length,
       totalScenes: outlines.length,
     });
 
-    try {
-      const mediaMap = await generateMediaForClassroom(outlines, stageId, options.baseUrl);
-      replaceMediaPlaceholders(scenes, mediaMap);
-      log.info(`Media generation complete: ${Object.keys(mediaMap).length} files`);
-    } catch (err) {
-      log.warn('Media generation phase failed, continuing:', err);
-    }
-  }
+    // The id was reserved before media/TTS generation, so the process owns it and
+    // this is an ordinary overwrite that replaces the placeholder.
+    persisted = await persistClassroom({ id: stageId, stage, scenes }, options.baseUrl);
 
-  // Phase: TTS generation
-  if (input.enableTTS) {
+    log.info(`Classroom persisted: ${persisted.id}, URL: ${persisted.url}`);
+
     await options.onProgress?.({
-      step: 'generating_tts',
-      progress: 94,
-      message: 'Generating TTS audio',
-      scenesGenerated: scenes.length,
+      step: 'completed',
+      progress: 100,
+      message: ttsWarning ?? 'Classroom generation completed',
+      scenesGenerated: persisted.scenes.length,
       totalScenes: outlines.length,
     });
 
-    try {
-      await generateTTSForClassroom(scenes, stageId, options.baseUrl);
-      log.info('TTS generation complete');
-    } catch (err) {
-      log.warn('TTS generation phase failed, continuing:', err);
+    return {
+      id: persisted.id,
+      url: persisted.url,
+      stage: persisted.stage,
+      scenes: persisted.scenes,
+      scenesCount: persisted.scenes.length,
+      createdAt: persisted.createdAt,
+      ...(ttsCoverage ? { ttsCoverage } : {}),
+      ...(ttsWarning ? { warning: ttsWarning } : {}),
+    };
+  } finally {
+    if (!persisted) {
+      await releaseClassroomReservation(stageId);
     }
   }
-
-  await options.onProgress?.({
-    step: 'persisting',
-    progress: 98,
-    message: 'Persisting classroom data',
-    scenesGenerated: scenes.length,
-    totalScenes: outlines.length,
-  });
-
-  const persisted = await persistClassroom(
-    {
-      id: stageId,
-      stage,
-      scenes,
-    },
-    options.baseUrl,
-  );
-
-  log.info(`Classroom persisted: ${persisted.id}, URL: ${persisted.url}`);
-
-  await options.onProgress?.({
-    step: 'completed',
-    progress: 100,
-    message: 'Classroom generation completed',
-    scenesGenerated: scenes.length,
-    totalScenes: outlines.length,
-  });
-
-  return {
-    id: persisted.id,
-    url: persisted.url,
-    stage,
-    scenes,
-    scenesCount: scenes.length,
-    createdAt: persisted.createdAt,
-  };
 }

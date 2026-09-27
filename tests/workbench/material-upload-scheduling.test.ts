@@ -97,10 +97,20 @@ describe('composer material upload scheduling', () => {
     expect(maximum).toBe(3);
   });
 
-  it('retries 429 and 503 twice with exponential delays', async () => {
+  it('does not retry a quota 429', async () => {
+    const quotaError = Object.assign(new Error('quota exceeded'), { status: 429 });
+    const upload = vi.fn<() => Promise<string>>().mockRejectedValue(quotaError);
+    const sleep = vi.fn(async () => undefined);
+
+    await expect(retryMaterialUpload(upload, sleep)).rejects.toBe(quotaError);
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('retries 503 twice with exponential delays', async () => {
     const upload = vi
       .fn<() => Promise<string>>()
-      .mockRejectedValueOnce(Object.assign(new Error('busy'), { status: 429 }))
+      .mockRejectedValueOnce(Object.assign(new Error('unavailable'), { status: 503 }))
       .mockRejectedValueOnce(Object.assign(new Error('unavailable'), { status: 503 }))
       .mockResolvedValue('ok');
     const sleep = vi.fn(async () => undefined);

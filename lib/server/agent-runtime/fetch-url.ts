@@ -22,8 +22,6 @@
  * STRIPPED vs the reference: `runBilledCall`/`logDocCall` (billing) and the
  * managed extraction wrapper — the PDF path calls `provider.extract` directly.
  */
-import { lookup as dnsLookup, type LookupAddress } from 'node:dns';
-
 import { gfm } from '@joplin/turndown-plugin-gfm';
 import { Readability } from '@mozilla/readability';
 import { parseHTML } from 'linkedom/worker';
@@ -47,7 +45,8 @@ import {
   resolvePDFApiKey,
   resolvePDFBaseUrl,
 } from '@/lib/server/provider-config';
-import { assertSafeIp, normalizeUrlForStrictFetch } from '@/lib/server/ssrf-guard';
+import { normalizeUrlForStrictFetch } from '@/lib/server/ssrf-guard';
+import { createPinnedAgent } from '@/lib/server/pinned-dispatcher';
 import type { AgentSessionMaterial } from '@openmaic/storage';
 
 import { createWebMaterial } from './session-materials';
@@ -126,50 +125,14 @@ export interface FetchUrlOptions {
   signal?: AbortSignal;
 }
 
-function lookupAllThenPin(
-  hostname: string,
-  options: Record<string, unknown>,
-  callback: (...args: unknown[]) => void,
-): void {
-  dnsLookup(
-    hostname,
-    { ...options, all: true, verbatim: true },
-    (error: NodeJS.ErrnoException | null, addresses: LookupAddress[]) => {
-      if (error) {
-        callback(error);
-        return;
-      }
-      try {
-        assertSafeLookupAddresses(addresses);
-      } catch (lookupError) {
-        callback(lookupError);
-        return;
-      }
-      if (options.all === true) {
-        callback(null, addresses);
-      } else {
-        const first = addresses[0]!;
-        callback(null, first.address, first.family);
-      }
-    },
-  );
-}
-
-/** Reject the whole DNS answer set if any candidate could reach a non-public network. */
-export function assertSafeLookupAddresses(addresses: LookupAddress[]): void {
-  if (addresses.length === 0) throw new Error('DNS returned no addresses');
-  for (const answer of addresses) assertSafeIp(answer.address);
-}
+export { assertSafeLookupAddresses } from '@/lib/server/pinned-dispatcher';
 
 /** Pin connection-time DNS to the exact answer set that passed IP classification. */
 export function createPinnedFetchAgent(): Agent {
-  return new Agent({
+  return createPinnedAgent({
     headersTimeout: HEADERS_TIMEOUT_MS,
     bodyTimeout: BODY_TIMEOUT_MS,
-    connect: {
-      timeout: CONNECT_TIMEOUT_MS,
-      lookup: lookupAllThenPin as never,
-    },
+    connectTimeout: CONNECT_TIMEOUT_MS,
   });
 }
 

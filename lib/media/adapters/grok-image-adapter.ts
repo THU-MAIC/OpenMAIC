@@ -19,10 +19,30 @@ import type {
   ImageGenerationResult,
 } from '../types';
 import { probeAuth } from '../probe-auth';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'grok-imagine-image';
 const DEFAULT_BASE_URL = 'https://api.x.ai/v1';
+
+/**
+ * The base64 of a JPEG stream's opening bytes (`FF D8 FF`).
+ *
+ * `b64_json` declares no media type, so the container is the only signal — and
+ * four base64 characters are exactly those three bytes, so the signature test
+ * needs no decoder.
+ */
+const JPEG_BASE64_PREFIX = '/9j/';
+
+/**
+ * The media type of a Grok inline image.
+ *
+ * Anything without the JPEG signature keeps `image/png`, which is what this
+ * adapter recorded for every inline response before it read the container.
+ */
+function inlineImageMimeType(base64: string): string {
+  return base64.startsWith(JPEG_BASE64_PREFIX) ? 'image/jpeg' : 'image/png';
+}
 
 /**
  * Lightweight connectivity test — validates API key by making a minimal
@@ -59,6 +79,7 @@ export async function generateWithGrokImage(
 
   const response = await fetch(`${baseUrl}/images/generations`, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.apiKey}`,
@@ -67,9 +88,15 @@ export async function generateWithGrokImage(
       model: requireModel(config.model, 'Grok Image'),
       prompt: options.prompt,
       n: 1,
-      response_format: 'url',
+      // Inline the bytes instead of asking for a URL. The URL points at a
+      // relay/CDN host that may be unreachable from the server's network, which
+      // fails the generation at the follow-up fetch through /api/proxy-media
+      // even though the image was produced successfully.
+      response_format: 'b64_json',
     }),
   });
+
+  assertNotRedirected(response, 'Grok Image');
 
   if (!response.ok) {
     const text = await response.text();
@@ -78,15 +105,24 @@ export async function generateWithGrokImage(
 
   const data = await response.json();
 
-  // OpenAI-compatible response format: { data: [{ url, revised_prompt }] }
+  // OpenAI-compatible response format: { data: [{ url, b64_json, revised_prompt }] }
   const imageData = data.data?.[0];
   if (!imageData) {
     throw new Error('Grok returned empty image response');
   }
 
+  // Return a data URL rather than bare `base64`, for the same reason
+  // `openrouter-image-adapter` does: the orchestration layer wraps a bare
+  // `base64` as `data:image/png` unconditionally, which mislabels the JPEG that
+  // xAI returns inline. Carrying the type in the URL keeps the bytes and their
+  // type together, and callers already prefer `url` when it is present.
+  const inline = imageData.b64_json as string | undefined;
+  const mimeType = inline ? inlineImageMimeType(inline) : undefined;
+
   return {
-    url: imageData.url,
-    base64: imageData.b64_json,
+    url: imageData.url ?? (inline ? `data:${mimeType};base64,${inline}` : undefined),
+    base64: inline,
+    mimeType,
     width: options.width || 1024,
     height: options.height || 1024,
   };

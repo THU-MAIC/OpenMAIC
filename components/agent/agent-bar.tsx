@@ -241,7 +241,7 @@ function AgentVoicePill({
         side="bottom"
         align="end"
         sideOffset={4}
-        className="w-80 p-0 sm:w-96"
+        className="max-w-[calc(100vw-2rem)] overflow-hidden p-0 sm:w-96 w-80"
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
@@ -258,7 +258,7 @@ function AgentVoicePill({
             />
           </div>
         </div>
-        <div className="max-h-80 overflow-y-auto p-1">
+        <div className="max-h-[min(320px,calc(var(--radix-popover-content-available-height)-64px))] min-h-0 overflow-y-auto p-1">
           {visibleProviderGroups.length === 0 && (
             <div className="px-3 py-6 text-center text-sm text-muted-foreground/60">
               {t('agentBar.noMatchingVoices')}
@@ -511,7 +511,7 @@ function TeacherVoicePill({
         side="bottom"
         align="end"
         sideOffset={4}
-        className="w-80 p-0 sm:w-96"
+        className="max-w-[calc(100vw-2rem)] overflow-hidden p-0 sm:w-96 w-80"
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
@@ -528,7 +528,7 @@ function TeacherVoicePill({
             />
           </div>
         </div>
-        <div className="max-h-80 overflow-y-auto p-1">
+        <div className="max-h-[min(320px,calc(var(--radix-popover-content-available-height)-64px))] min-h-0 overflow-y-auto p-1">
           {visibleProviderGroups.length === 0 && (
             <div className="px-3 py-6 text-center text-sm text-muted-foreground/60">
               {t('agentBar.noMatchingVoices')}

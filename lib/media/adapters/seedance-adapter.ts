@@ -34,6 +34,7 @@ import type {
 } from '../types';
 import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
@@ -162,12 +163,15 @@ export async function submitSeedanceTask(
 
   const response = await fetch(`${resolveArkRoot(baseUrl)}/contents/generations/tasks`, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify(body),
   });
+
+  assertNotRedirected(response, 'Seedance');
 
   if (!response.ok) {
     const text = await response.text();
@@ -195,10 +199,13 @@ export async function pollSeedanceTask(
 
   const response = await fetch(`${resolveArkRoot(baseUrl)}/contents/generations/tasks/${taskId}`, {
     method: 'GET',
+    redirect: 'manual',
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
     },
   });
+
+  assertNotRedirected(response, 'Seedance');
 
   if (!response.ok) {
     const text = await response.text();

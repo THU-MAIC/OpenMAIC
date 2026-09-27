@@ -32,9 +32,12 @@ import {
   GenerateVideoParams,
   patchStageVideoPlaceholder,
 } from '@/lib/server/agent-runtime/generate-video';
+import { createFakeAssetStore } from './_fake-asset-store';
 import { makeDocument, makeSlideScene } from './_stage-fixtures';
 import { createFakeDocumentStore } from './_fake-document-store';
 import type { AppScene } from '@/lib/types/stage';
+import type { PPTVideoElement } from '@openmaic/dsl';
+import { resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
 
 const providerConfig = {
   providerId: 'seedance' as const,
@@ -154,7 +157,7 @@ describe('generate_video tool', () => {
     }>();
     const generateConfiguredVideo = vi.fn().mockReturnValue(providerCall.promise);
     const persistGeneratedVideo = vi.fn().mockResolvedValue({
-      src: '/api/classroom-media/stage-owner/media/generated-abc.webm',
+      src: 'ast_video_1',
       mime: 'video/webm',
     });
     const emitMediaReady = vi.fn();
@@ -222,7 +225,7 @@ describe('generate_video tool', () => {
       ref,
       stageId: 'stage-owner',
       status: 'done',
-      src: '/api/classroom-media/stage-owner/media/generated-abc.webm',
+      src: 'ast_video_1',
       mime: 'video/webm',
       durationSec: 5,
     } satisfies MediaReadyLifecycleData);
@@ -276,8 +279,9 @@ describe('generate_video tool', () => {
       resolveVideoProviderConfig: () => providerConfig,
       generateConfiguredVideo: vi.fn().mockReturnValue(providerCall.promise),
       persistGeneratedVideo: vi.fn().mockResolvedValue({
-        src: '/api/classroom-media/stage-owner/media/generated-abc.mp4',
+        src: 'ast_video_1',
         mime: 'video/mp4',
+        poster: 'ast_poster_1',
       }),
       emitMediaReady,
     });
@@ -305,11 +309,18 @@ describe('generate_video tool', () => {
     const elements = (persisted!.content as { canvas: { elements: unknown[] } }).canvas
       .elements as { id: string; src?: string; mediaRef?: string }[];
     // The placeholder element got the concrete src; the other video is untouched.
+    // Both allocated ids land in the same putScene: that one write commits
+    // the video entry and the poster entry together. The binding moves with
+    // the bytes -- `mediaRef` carries the id too, because every resolver reads
+    // it before `src` and would otherwise keep asking about a placeholder no
+    // job is running for.
     expect(elements[0]).toMatchObject({
       id: 'el-video',
-      mediaRef: ref,
-      src: '/api/classroom-media/stage-owner/media/generated-abc.mp4',
+      mediaRef: 'ast_video_1',
+      src: 'ast_video_1',
+      poster: 'ast_poster_1',
     });
+    expect(elements[0]?.mediaRef).not.toBe(ref);
     expect(elements[1]).toMatchObject({
       id: 'el-other',
       src: 'https://cdn.example.com/existing.mp4',
@@ -345,8 +356,9 @@ describe('generate_video tool', () => {
       resolveVideoProviderConfig: () => providerConfig,
       generateConfiguredVideo: vi.fn().mockReturnValue(providerCall.promise),
       persistGeneratedVideo: vi.fn().mockResolvedValue({
-        src: '/api/classroom-media/stage-owner/media/generated-abc.mp4',
+        src: 'ast_video_1',
         mime: 'video/mp4',
+        poster: 'ast_poster_1',
       }),
       emitMediaReady,
     });
@@ -402,8 +414,9 @@ describe('generate_video tool', () => {
       resolveVideoProviderConfig: () => providerConfig,
       generateConfiguredVideo: vi.fn().mockReturnValue(providerCall.promise),
       persistGeneratedVideo: vi.fn().mockResolvedValue({
-        src: '/api/classroom-media/stage-owner/media/generated-abc.mp4',
+        src: 'ast_video_1',
         mime: 'video/mp4',
+        poster: 'ast_poster_1',
       }),
       emitMediaReady,
     });
@@ -430,7 +443,7 @@ describe('generate_video tool', () => {
       expect.objectContaining({
         ref: result.details.ref,
         status: 'done',
-        src: '/api/classroom-media/stage-owner/media/generated-abc.mp4',
+        src: 'ast_video_1',
       }),
     );
   });
@@ -515,8 +528,9 @@ describe('generate_video tool', () => {
       resolveVideoProviderConfig: () => providerConfig,
       generateConfiguredVideo: vi.fn().mockReturnValue(providerCall.promise),
       persistGeneratedVideo: vi.fn().mockResolvedValue({
-        src: '/api/classroom-media/stage-owner/media/generated-abc.mp4',
+        src: 'ast_video_1',
         mime: 'video/mp4',
+        poster: 'ast_poster_1',
       }),
       emitMediaReady,
     });
@@ -558,7 +572,7 @@ describe('generate_video tool', () => {
     expect(generateConfiguredVideo).not.toHaveBeenCalled();
   });
 
-  it('materializes a provider download URL through classroom media', async () => {
+  it('materializes a provider download URL into the asset pool', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -567,27 +581,170 @@ describe('generate_video tool', () => {
         }),
       ),
     );
+    const pool = createFakeAssetStore();
     await expect(
-      defaultPersistGeneratedVideo({
-        result: {
-          url: 'https://cdn.example.com/generated/lesson.mov',
-          duration: 6,
-          width: 1280,
-          height: 720,
+      defaultPersistGeneratedVideo(
+        {
+          result: {
+            url: 'https://cdn.example.com/generated/lesson.mov',
+            duration: 6,
+            width: 1280,
+            height: 720,
+          },
+          stageId: 'stage-owner',
+          signal: new AbortController().signal,
         },
-        stageId: 'stage-owner',
-        signal: new AbortController().signal,
-      }),
-    ).resolves.toEqual({
-      src: expect.stringMatching(
-        /^\/api\/classroom-media\/stage-owner\/media\/generated-[a-f0-9]{64}\.mov$/,
+        pool.store,
       ),
-      mime: 'video/quicktime',
-    });
-    expect(mocks.writeFile).toHaveBeenCalledWith(
-      expect.stringMatching(/\.mov$/),
-      Buffer.from('real-video-bytes'),
+    ).resolves.toEqual({ src: 'ast_fake_1', mime: 'video/quicktime' });
+    expect(pool.puts).toEqual([
+      {
+        principalKey: 'shared',
+        bytes: Buffer.from('real-video-bytes'),
+        type: 'video/quicktime',
+        meta: { contentType: 'video/quicktime', stageId: 'stage-owner', kind: 'video' },
+      },
+    ]);
+    expect(mocks.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('stores the provider poster as its own asset alongside the video', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (url: string) =>
+        url.endsWith('.jpg')
+          ? new Response(Buffer.from('poster-bytes'), {
+              headers: { 'content-type': 'image/jpeg' },
+            })
+          : new Response(Buffer.from('real-video-bytes'), {
+              headers: { 'content-type': 'video/mp4' },
+            }),
+      ),
     );
+    const pool = createFakeAssetStore();
+    await expect(
+      defaultPersistGeneratedVideo(
+        {
+          result: {
+            url: 'https://cdn.example.com/generated/lesson.mp4',
+            poster: 'https://cdn.example.com/generated/lesson.jpg',
+            duration: 6,
+            width: 1280,
+            height: 720,
+          },
+          stageId: 'stage-owner',
+          signal: new AbortController().signal,
+        },
+        pool.store,
+      ),
+    ).resolves.toEqual({ src: 'ast_fake_1', mime: 'video/mp4', poster: 'ast_fake_2' });
+    expect(pool.puts.map((put) => put.meta)).toEqual([
+      { contentType: 'video/mp4', stageId: 'stage-owner', kind: 'video' },
+      { contentType: 'image/jpeg', stageId: 'stage-owner', kind: 'poster' },
+    ]);
+  });
+
+  it('keeps the video when the poster cannot be stored', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (url: string) =>
+        url.endsWith('.jpg')
+          ? new Response('nope', { status: 404 })
+          : new Response(Buffer.from('real-video-bytes'), {
+              headers: { 'content-type': 'video/mp4' },
+            }),
+      ),
+    );
+    const pool = createFakeAssetStore();
+    // A poster is an optimization; losing it costs the poster and nothing
+    // else, the way the classic chain treats it.
+    await expect(
+      defaultPersistGeneratedVideo(
+        {
+          result: {
+            url: 'https://cdn.example.com/generated/lesson.mp4',
+            poster: 'https://cdn.example.com/generated/lesson.jpg',
+            duration: 6,
+            width: 1280,
+            height: 720,
+          },
+          stageId: 'stage-owner',
+          signal: new AbortController().signal,
+        },
+        pool.store,
+      ),
+    ).resolves.toEqual({ src: 'ast_fake_1', mime: 'video/mp4' });
+    expect(pool.puts).toHaveLength(1);
+    expect(mocks.log.warn).toHaveBeenCalledWith(expect.stringContaining('poster'));
+  });
+
+  it('fails the job with a readable error and writes nothing when the store is full', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(Buffer.from('real-video-bytes'), {
+          headers: { 'content-type': 'video/mp4' },
+        }),
+      ),
+    );
+    const fake = createFakeDocumentStore();
+    const scene = makeSlideScene('scene-1', 'stage-owner', 1) as AppScene;
+    (scene.content as { canvas: { elements: unknown[] } }).canvas.elements.push({
+      id: 'el-video',
+      type: 'video',
+      mediaRef: 'gen_vid_pending',
+    });
+    fake.docs.set('stage-owner', makeDocument('stage-owner', 'Course', [scene]));
+    const pool = createFakeAssetStore({ full: true });
+    const emitMediaReady = vi.fn();
+    const tool = buildGenerateVideoTool({
+      sessionId: 'session-owner',
+      backgroundStore: fake.store,
+      getConfiguredVideoProviders: configured,
+      resolveVideoProviderConfig: () => providerConfig,
+      generateConfiguredVideo: vi.fn().mockResolvedValue({
+        url: 'https://cdn.example.com/generated/lesson.mp4',
+        duration: 4,
+        width: 1280,
+        height: 720,
+      }),
+      persistGeneratedVideo: (input) => defaultPersistGeneratedVideo(input, pool.store),
+      emitMediaReady,
+    });
+
+    const result = (await tool.execute('call-1', {
+      stageId: 'stage-owner',
+      prompt: 'motion',
+    })) as ToolResult;
+    const ref = result.details.ref as string;
+    const seeded = fake.docs.get('stage-owner')!.scenes[0]!;
+    (
+      seeded.content as { canvas: { elements: { mediaRef?: string }[] } }
+    ).canvas.elements[0]!.mediaRef = ref;
+
+    await vi.waitFor(() => expect(emitMediaReady).toHaveBeenCalledTimes(1));
+
+    // The refusal is its own outcome, in the code the browser's media-failure
+    // table already understands -- not a generic provider failure.
+    expect(emitMediaReady).toHaveBeenCalledWith('session-owner', {
+      ref,
+      stageId: 'stage-owner',
+      status: 'failed',
+      errorCode: 'ASSET_QUOTA_EXCEEDED',
+    } satisfies MediaReadyLifecycleData);
+    expect(getPendingMediaTask(ref)).toMatchObject({
+      status: 'failed',
+      errorCode: 'ASSET_QUOTA_EXCEEDED',
+    });
+    // Nothing was written anywhere: no asset, no local file, and the element
+    // still carries its placeholder.
+    expect(pool.puts).toEqual([]);
+    expect(mocks.writeFile).not.toHaveBeenCalled();
+    const persisted = await fake.store.getScene('stage-owner', 'scene-1');
+    const elements = (persisted!.content as { canvas: { elements: unknown[] } }).canvas
+      .elements as { src?: string; mediaRef?: string }[];
+    expect(elements[0]?.src).toBeUndefined();
+    expect(elements[0]?.mediaRef).toBe(ref);
   });
 
   it('fails loud when the generated video exceeds the byte cap', async () => {
@@ -751,12 +908,9 @@ describe('patchStageVideoPlaceholder', () => {
     );
     fake.docs.set('stage-owner', makeDocument('stage-owner', 'Course', [scene]));
 
-    const patched = await patchStageVideoPlaceholder(
-      fake.store,
-      'stage-owner',
-      'gen_vid_abc',
-      '/api/classroom-media/stage-owner/media/v.mp4',
-    );
+    const patched = await patchStageVideoPlaceholder(fake.store, 'stage-owner', 'gen_vid_abc', {
+      src: '/api/classroom-media/stage-owner/media/v.mp4',
+    });
 
     expect(patched).toBe(1);
     const persisted = await fake.store.getScene('stage-owner', 'scene-1');
@@ -772,6 +926,137 @@ describe('patchStageVideoPlaceholder', () => {
     expect(elements[7]?.src).toBe('/api/classroom-media/stage-owner/media/v.mp4');
     // Image placeholders belong to the (still synchronous) image flow.
     expect(elements[8]?.src).toBe('gen_img_abc');
+  });
+
+  it('moves every placeholder slot, mediaRef included, onto the allocated ids', async () => {
+    const fake = createFakeDocumentStore();
+    const scene = makeSlideScene('scene-1', 'stage-owner', 1) as AppScene;
+    (scene.content as { canvas: { elements: unknown[] } }).canvas.elements.push(
+      { id: 'by-ref', type: 'video', mediaRef: 'gen_vid_abc' },
+      { id: 'by-src', type: 'video', src: 'gen_vid_abc' },
+      { id: 'both-slots', type: 'video', mediaRef: 'gen_vid_abc', src: 'gen_vid_abc' },
+    );
+    fake.docs.set('stage-owner', makeDocument('stage-owner', 'Course', [scene]));
+
+    const patched = await patchStageVideoPlaceholder(fake.store, 'stage-owner', 'gen_vid_abc', {
+      src: 'ast_video_new',
+      poster: 'ast_poster_new',
+    });
+
+    expect(patched).toBe(1);
+    const persisted = await fake.store.getScene('stage-owner', 'scene-1');
+    const elements = (persisted!.content as { canvas: { elements: unknown[] } }).canvas
+      .elements as { id: string; src?: string; mediaRef?: string; poster?: string }[];
+    // No slot is left naming a job that has finished. `mediaRef` is what every
+    // resolver reads first, so leaving it behind is what made a stored,
+    // committed video unrenderable.
+    expect(elements[0]).toMatchObject({
+      mediaRef: 'ast_video_new',
+      src: 'ast_video_new',
+      poster: 'ast_poster_new',
+    });
+    expect(elements[1]).toMatchObject({ src: 'ast_video_new', poster: 'ast_poster_new' });
+    expect(elements[1]?.mediaRef).toBeUndefined();
+    expect(elements[2]).toMatchObject({ mediaRef: 'ast_video_new', src: 'ast_video_new' });
+    for (const element of elements.slice(0, 3)) {
+      expect(JSON.stringify(element)).not.toContain('gen_vid_abc');
+    }
+  });
+
+  it("keeps a user's own pick while retiring the placeholder it was bound to", async () => {
+    const fake = createFakeDocumentStore();
+    const scene = makeSlideScene('scene-1', 'stage-owner', 1) as AppScene;
+    (scene.content as { canvas: { elements: unknown[] } }).canvas.elements.push(
+      // A concrete src the user swapped in mid-job.
+      {
+        id: 'user-url',
+        type: 'video',
+        mediaRef: 'gen_vid_abc',
+        src: 'https://cdn.example.com/user.mp4',
+      },
+      // A pick from the shared material library, or the previous generation:
+      // an allocated id is a choice, not a placeholder, and the pre-#1522 rule
+      // preserved exactly such a value.
+      { id: 'user-pool-pick', type: 'video', mediaRef: 'gen_vid_abc', src: 'ast_user_choice' },
+      // An author-chosen poster is never overwritten by a generated one.
+      {
+        id: 'user-poster',
+        type: 'video',
+        mediaRef: 'gen_vid_abc',
+        poster: 'https://cdn.example.com/user.jpg',
+      },
+    );
+    fake.docs.set('stage-owner', makeDocument('stage-owner', 'Course', [scene]));
+
+    const patched = await patchStageVideoPlaceholder(fake.store, 'stage-owner', 'gen_vid_abc', {
+      src: 'ast_video_new',
+      poster: 'ast_poster_new',
+    });
+
+    expect(patched).toBe(1);
+    const persisted = await fake.store.getScene('stage-owner', 'scene-1');
+    const elements = (persisted!.content as { canvas: { elements: unknown[] } }).canvas
+      .elements as { id: string; src?: string; mediaRef?: string; poster?: string }[];
+    // Their src survives; the finished job's placeholder does not linger as a
+    // reference nothing can resolve. A concrete src still wins in
+    // `resolveVideoMediaForElement`, so what renders is their pick.
+    expect(elements[0]?.src).toBe('https://cdn.example.com/user.mp4');
+    expect(elements[0]?.mediaRef).toBe('ast_video_new');
+    expect(elements[1]?.src).toBe('ast_user_choice');
+    expect(elements[1]?.mediaRef).toBe('ast_video_new');
+    expect(elements[2]?.poster).toBe('https://cdn.example.com/user.jpg');
+    expect(elements[2]?.src).toBe('ast_video_new');
+  });
+
+  it('carries the new id on mediaRef when the agent re-points a bound element', async () => {
+    // Regeneration: the element still holds the previous generation's id in
+    // `src` while `mediaRef` names the new job. The id in `src` is preserved
+    // (it is a concrete choice), and the new video still renders because
+    // `sourceRef = concreteSrc ?? mediaRef ?? src` prefers `mediaRef` over a
+    // src that is not a concrete address.
+    const fake = createFakeDocumentStore();
+    const scene = makeSlideScene('scene-1', 'stage-owner', 1) as AppScene;
+    (scene.content as { canvas: { elements: unknown[] } }).canvas.elements.push({
+      id: 'regenerated',
+      type: 'video',
+      mediaRef: 'gen_vid_new',
+      src: 'ast_previous',
+    });
+    fake.docs.set('stage-owner', makeDocument('stage-owner', 'Course', [scene]));
+
+    await patchStageVideoPlaceholder(fake.store, 'stage-owner', 'gen_vid_new', {
+      src: 'ast_video_new',
+    });
+
+    const persisted = await fake.store.getScene('stage-owner', 'scene-1');
+    const element = (persisted!.content as { canvas: { elements: unknown[] } }).canvas
+      .elements[0] as { src?: string; mediaRef?: string };
+    expect(element.mediaRef).toBe('ast_video_new');
+    expect(element.src).toBe('ast_previous');
+    expect(
+      resolveVideoMediaForElement({}, element as PPTVideoElement, 'stage-owner').sourceRef,
+    ).toBe('ast_video_new');
+  });
+
+  it('leaves an element poster alone when the provider offered none', async () => {
+    const fake = createFakeDocumentStore();
+    const scene = makeSlideScene('scene-1', 'stage-owner', 1) as AppScene;
+    (scene.content as { canvas: { elements: unknown[] } }).canvas.elements.push({
+      id: 'by-ref',
+      type: 'video',
+      mediaRef: 'gen_vid_abc',
+      poster: 'ast_user_poster',
+    });
+    fake.docs.set('stage-owner', makeDocument('stage-owner', 'Course', [scene]));
+
+    await patchStageVideoPlaceholder(fake.store, 'stage-owner', 'gen_vid_abc', {
+      src: 'ast_video_new',
+    });
+
+    const persisted = await fake.store.getScene('stage-owner', 'scene-1');
+    const elements = (persisted!.content as { canvas: { elements: unknown[] } }).canvas
+      .elements as { poster?: string }[];
+    expect(elements[0]?.poster).toBe('ast_user_poster');
   });
 
   it('applies the swap to the freshest scene so a concurrent edit survives', async () => {
@@ -802,12 +1087,9 @@ describe('patchStageVideoPlaceholder', () => {
       return doc;
     });
 
-    const patched = await patchStageVideoPlaceholder(
-      fake.store,
-      'stage-owner',
-      'gen_vid_abc',
-      '/api/classroom-media/stage-owner/media/v.mp4',
-    );
+    const patched = await patchStageVideoPlaceholder(fake.store, 'stage-owner', 'gen_vid_abc', {
+      src: '/api/classroom-media/stage-owner/media/v.mp4',
+    });
 
     expect(patched).toBe(1);
     const persisted = await fake.store.getScene('stage-owner', 'scene-1');
@@ -849,12 +1131,9 @@ describe('patchStageVideoPlaceholder', () => {
       return doc;
     });
 
-    const patched = await patchStageVideoPlaceholder(
-      fake.store,
-      'stage-owner',
-      'gen_vid_abc',
-      '/api/classroom-media/stage-owner/media/v.mp4',
-    );
+    const patched = await patchStageVideoPlaceholder(fake.store, 'stage-owner', 'gen_vid_abc', {
+      src: '/api/classroom-media/stage-owner/media/v.mp4',
+    });
 
     expect(patched).toBe(0);
     const persisted = await fake.store.getScene('stage-owner', 'scene-1');
@@ -866,11 +1145,11 @@ describe('patchStageVideoPlaceholder', () => {
   it('returns 0 for a missing document or an unreferenced placeholder', async () => {
     const fake = createFakeDocumentStore();
     await expect(
-      patchStageVideoPlaceholder(fake.store, 'missing', 'gen_vid_abc', '/x.mp4'),
+      patchStageVideoPlaceholder(fake.store, 'missing', 'gen_vid_abc', { src: '/x.mp4' }),
     ).resolves.toBe(0);
     fake.docs.set('stage-owner', makeDocument('stage-owner', 'Course', []));
     await expect(
-      patchStageVideoPlaceholder(fake.store, 'stage-owner', 'gen_vid_abc', '/x.mp4'),
+      patchStageVideoPlaceholder(fake.store, 'stage-owner', 'gen_vid_abc', { src: '/x.mp4' }),
     ).resolves.toBe(0);
   });
 });

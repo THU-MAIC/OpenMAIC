@@ -19,13 +19,13 @@ import {
   type PPTElementLink,
 } from '@openmaic/dsl';
 import type { Scene, SlideContent } from '@/lib/types/stage';
-import type { SpeechAction } from '@/lib/types/action';
 import { getElementRange, getLineElementPath, getTableSubThemeColor } from '@/lib/utils/element';
 import { type AST, toAST } from '@/lib/export/html-parser';
 import { type SvgPoints, toPoints, getSvgPathRange } from '@/lib/export/svg-path-parser';
 import { svg2Base64 } from '@/lib/export/svg2base64';
 import { latexToOmml } from '@/lib/export/latex-to-omml';
 import { createLogger } from '@/lib/logger';
+import { collectSpeechText } from './narration';
 import { inlineHtmlAssets, createAssetFetcher } from './inline-assets';
 import type { FetchAsset } from './inline-assets';
 import { createProxiedFetch } from './proxied-fetch';
@@ -220,44 +220,49 @@ type Points = Array<
   | { close: true }
 >;
 
-function formatPoints(points: SvgPoints, ratioPx2Inch: number, scale = { x: 1, y: 1 }): Points {
+function formatPoints(
+  points: SvgPoints,
+  ratioPx2Inch: number,
+  scale = { x: 1, y: 1 },
+  origin = { x: 0, y: 0 },
+): Points {
   return points.map((point) => {
     if (point.close !== undefined) {
       return { close: true };
     } else if (point.type === 'M') {
       return {
-        x: ((point.x as number) / ratioPx2Inch) * scale.x,
-        y: ((point.y as number) / ratioPx2Inch) * scale.y,
+        x: (((point.x as number) - origin.x) / ratioPx2Inch) * scale.x,
+        y: (((point.y as number) - origin.y) / ratioPx2Inch) * scale.y,
         moveTo: true,
       };
     } else if (point.curve) {
       if (point.curve.type === 'cubic') {
         return {
-          x: ((point.x as number) / ratioPx2Inch) * scale.x,
-          y: ((point.y as number) / ratioPx2Inch) * scale.y,
+          x: (((point.x as number) - origin.x) / ratioPx2Inch) * scale.x,
+          y: (((point.y as number) - origin.y) / ratioPx2Inch) * scale.y,
           curve: {
             type: 'cubic' as const,
-            x1: ((point.curve.x1 as number) / ratioPx2Inch) * scale.x,
-            y1: ((point.curve.y1 as number) / ratioPx2Inch) * scale.y,
-            x2: ((point.curve.x2 as number) / ratioPx2Inch) * scale.x,
-            y2: ((point.curve.y2 as number) / ratioPx2Inch) * scale.y,
+            x1: (((point.curve.x1 as number) - origin.x) / ratioPx2Inch) * scale.x,
+            y1: (((point.curve.y1 as number) - origin.y) / ratioPx2Inch) * scale.y,
+            x2: (((point.curve.x2 as number) - origin.x) / ratioPx2Inch) * scale.x,
+            y2: (((point.curve.y2 as number) - origin.y) / ratioPx2Inch) * scale.y,
           },
         };
       } else if (point.curve.type === 'quadratic') {
         return {
-          x: ((point.x as number) / ratioPx2Inch) * scale.x,
-          y: ((point.y as number) / ratioPx2Inch) * scale.y,
+          x: (((point.x as number) - origin.x) / ratioPx2Inch) * scale.x,
+          y: (((point.y as number) - origin.y) / ratioPx2Inch) * scale.y,
           curve: {
             type: 'quadratic' as const,
-            x1: ((point.curve.x1 as number) / ratioPx2Inch) * scale.x,
-            y1: ((point.curve.y1 as number) / ratioPx2Inch) * scale.y,
+            x1: (((point.curve.x1 as number) - origin.x) / ratioPx2Inch) * scale.x,
+            y1: (((point.curve.y1 as number) - origin.y) / ratioPx2Inch) * scale.y,
           },
         };
       }
     }
     return {
-      x: ((point.x as number) / ratioPx2Inch) * scale.x,
-      y: ((point.y as number) / ratioPx2Inch) * scale.y,
+      x: (((point.x as number) - origin.x) / ratioPx2Inch) * scale.x,
+      y: (((point.y as number) - origin.y) / ratioPx2Inch) * scale.y,
     };
   });
 }
@@ -365,16 +370,14 @@ function isSVGImage(url: string) {
  * Extract speaker notes text from a scene's actions.
  * Concatenates speech text and action labels into plain text.
  */
+/**
+ * Speaker notes for one slide: the scene's speech text in action order.
+ * Delegates to the shared narration walk in `./narration` (#1142) with its
+ * historical options — whitespace-only speech is kept and parts are not
+ * trimmed, matching the pre-refactor notes output.
+ */
 function buildSpeakerNotes(scene: Scene): string {
-  if (!scene.actions || scene.actions.length === 0) return '';
-
-  const parts: string[] = [];
-  for (const action of scene.actions) {
-    if (action.type === 'speech') {
-      parts.push((action as SpeechAction).text);
-    }
-  }
-  return parts.join('\n');
+  return collectSpeechText(scene);
 }
 
 async function blobToDataUrl(blob: Blob): Promise<string> {
@@ -814,13 +817,18 @@ export async function buildPptxBlob(
       // ── LINE ──
       else if (el.type === 'line') {
         const path = getLineElementPath(el);
-        const points = formatPoints(toPoints(path), ratioPx2Inch);
         const { minX, maxX, minY, maxY } = getElementRange(el);
+        // Custom geometry points are relative to its bounding box, which need
+        // not begin at the element origin (negative controls / offset endpoints).
+        const points = formatPoints(toPoints(path), ratioPx2Inch, undefined, {
+          x: minX - el.left,
+          y: minY - el.top,
+        });
         const c = formatColor(el.color);
 
         const lineOptions: pptxgen.ShapeProps = {
-          x: el.left / ratioPx2Inch,
-          y: el.top / ratioPx2Inch,
+          x: minX / ratioPx2Inch,
+          y: minY / ratioPx2Inch,
           w: (maxX - minX) / ratioPx2Inch,
           h: (maxY - minY) / ratioPx2Inch,
           line: {

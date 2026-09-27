@@ -6,6 +6,7 @@
  */
 
 import { proxyFetch } from '@/lib/server/proxy-fetch';
+import { appAttributionHeaders } from '@/lib/config/app-attribution';
 import type { WebSearchResult, WebSearchSource } from '@/lib/types/web-search';
 
 const BOCHA_DEFAULT_BASE_URL = 'https://api.bocha.cn';
@@ -54,11 +55,13 @@ export async function searchWithBocha(params: {
   const { query, apiKey, maxResults = 10, baseUrl, signal } = params;
   const startedAt = Date.now();
 
-  const res = await proxyFetch(buildBochaWebSearchUrl(baseUrl), {
+  const url = buildBochaWebSearchUrl(baseUrl);
+  const res = await proxyFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
+      ...appAttributionHeaders(url),
     },
     body: JSON.stringify({
       query,

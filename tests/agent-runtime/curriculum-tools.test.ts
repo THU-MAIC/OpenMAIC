@@ -17,6 +17,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
+import { ensureAssetSchema } from '@openmaic/storage/asset/pg';
 import { ensureDocumentSchema } from '@openmaic/storage/document/pg';
 
 import {
@@ -430,6 +431,10 @@ describe('folder tool cross-owner isolation through the bound PostgreSQL store',
     await db.waitReady;
     await ensureDocumentSchema(db);
     await ensureStageMetaSchema(db);
+    // The server ensures the asset schema alongside the document schema and
+    // builds every document store as a reference writer, so a harness that
+    // stands in for the server has to provision both halves.
+    await ensureAssetSchema(db);
   });
 
   afterEach(async () => {

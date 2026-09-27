@@ -195,6 +195,69 @@ const ChartOptions = Type.Object(
   {
     lineSmooth: optionalBoolean(),
     stack: optionalBoolean(),
+    percentStack: optionalBoolean(),
+  },
+  { additionalProperties: false },
+);
+const ChartFill = Type.Union([
+  Type.String(),
+  Type.Object(
+    {
+      type: Type.Literal('linear'),
+      x: Type.Number(),
+      y: Type.Number(),
+      x2: Type.Number(),
+      y2: Type.Number(),
+      colorStops: Type.Array(
+        Type.Object(
+          { offset: Type.Number(), color: Type.String() },
+          { additionalProperties: false },
+        ),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+]);
+const ImportedChartAxis = Type.Object(
+  {
+    show: optionalBoolean(),
+    gridlines: optionalBoolean(),
+    gridlineColor: optionalString(),
+    lineColor: optionalString(),
+    lineVisible: optionalBoolean(),
+    labelVisible: optionalBoolean(),
+    labelColor: optionalString(),
+    labelFontSize: optionalNumber(),
+    labelBold: optionalBoolean(),
+    min: optionalNumber(),
+    max: optionalNumber(),
+    majorUnit: optionalNumber(),
+    numberFormat: optionalString(),
+  },
+  { additionalProperties: false },
+);
+const ImportedChartStyle = Type.Object(
+  {
+    series: Type.Array(
+      Type.Object(
+        {
+          fill: Type.Optional(ChartFill),
+          pointFills: Type.Optional(Type.Record(Type.String(), ChartFill)),
+          pointImages: Type.Optional(Type.Record(Type.String(), Type.String())),
+          showValue: optionalBoolean(),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    categoryAxis: Type.Optional(ImportedChartAxis),
+    valueAxis: Type.Optional(ImportedChartAxis),
+    gapWidth: optionalNumber(),
+    plotArea: Type.Optional(
+      Type.Object(
+        { x: Type.Number(), y: Type.Number(), w: Type.Number(), h: Type.Number() },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -364,6 +427,7 @@ const ChartElementPatch = Type.Object(
     chartType: Type.Optional(ChartType),
     data: Type.Optional(ChartData),
     options: Type.Optional(ChartOptions),
+    importedStyle: Type.Optional(ImportedChartStyle),
     outline: Type.Optional(Outline),
     themeColors: Type.Optional(Type.Array(Type.String())),
     textColor: optionalString(),

@@ -24,6 +24,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'TENCENT_HUNYUAN',
   'XIAOMI',
   'MIMO',
+  'TOKENDANCE',
   'HY3',
   'OLLAMA',
   'BEDROCK',
@@ -313,6 +314,17 @@ providers:
         'hunyuan-2.0-instruct-20251111',
       ]);
       expect(providers.xiaomi.models).toEqual(['mimo-v2.5-pro']);
+    });
+
+    it('maps TokenDance env vars to the built-in OpenAI-compatible provider', async () => {
+      vi.stubEnv('TOKENDANCE_API_KEY', 'sk-td');
+      vi.stubEnv('TOKENDANCE_BASE_URL', 'https://tokendance.space/gateway/v1');
+      vi.stubEnv('TOKENDANCE_MODELS', 'deepseek-v4.1-flash,glm-5.3');
+      const { getServerProviders, resolveBaseUrl } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.tokendance.models).toEqual(['deepseek-v4.1-flash', 'glm-5.3']);
+      expect(resolveBaseUrl('tokendance')).toBe('https://tokendance.space/gateway/v1');
     });
 
     it('does not treat HY3 as an env prefix', async () => {

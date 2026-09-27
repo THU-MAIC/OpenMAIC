@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 
@@ -8,6 +9,7 @@ import {
 } from '@openmaic/storage/server';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
+import { createLogger } from '@/lib/logger';
 import { resolveAssetCollectionGraceMs } from '@/lib/persistence/asset-collection-grace';
 import {
   decideDocumentAccess,
@@ -30,6 +32,8 @@ import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
 export const runtime = 'nodejs';
 
 const ROUTE_PREFIX = '/api/persistence';
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+const log = createLogger('Persistence');
 
 function jsonError(status: number, code: string, message: string): Response {
   return Response.json({ error: { code, message } }, { status });
@@ -114,8 +118,13 @@ async function createPersistenceHandler(
   // media. There is no per-asset ownership to check against yet, and since this
   // application began storing generated media the registry is the only copy a
   // course has, so the answer is no mutations at all. Nothing in the app
-  // performs an asset PUT or DELETE; an entry nothing references waits for
-  // server-side reclamation rather than being deleted from the browser.
+  // performs an asset PUT or DELETE, and none needs to: the server owns the
+  // entry lifecycle. A document write records what that document claims in the
+  // reference table and commits the allocations it names; deleting the document
+  // withdraws those claims; the collector's entry pass releases an entry whose
+  // last claim left longer ago than the grace period, and an allocation no
+  // document ever claimed once its pending TTL expires. The bytes follow after
+  // their own grace.
   //
   // What this is NOT: a per-caller access control. The deployment-level fence
   // is the access code. Allocation is bounded by the asset store's per-principal
@@ -129,7 +138,10 @@ async function createPersistenceHandler(
   // has no once-per-process guarantee and no shutdown hook. AssetCollector
   // runs from instrumentation.ts instead, over the byte store this same
   // lib/persistence/asset-byte-store selection produces, so the collector
-  // always deletes through the layer the request path wrote through.
+  // always deletes through the layer the request path wrote through. The
+  // document store this handler mounts is the other half of that mechanism:
+  // createOwnerBoundDocumentStore builds it with reference tracking on, which
+  // is what gives the entry pass something to read.
   const byteEgress = indirectEgressWithinGrace(
     configuredAssetByteEgress(process.env.ASSET_BYTE_EGRESS),
   );
@@ -302,9 +314,38 @@ interface PersistenceRequestDeps {
   poolFactory?: PersistencePoolFactory;
 }
 
+function persistenceRequestId(request: Request): string {
+  const upstream = request.headers.get('x-request-id')?.trim();
+  return upstream && REQUEST_ID_PATTERN.test(upstream) ? upstream : randomUUID();
+}
+
+async function responseErrorCode(response: Response): Promise<string> {
+  if (!response.headers.get('content-type')?.includes('application/json')) return '-';
+  const payload = (await response
+    .clone()
+    .json()
+    .catch(() => undefined)) as { error?: { code?: unknown } } | undefined;
+  return typeof payload?.error?.code === 'string' ? payload.error.code : '-';
+}
+
 export async function handlePersistenceRequest(
   request: Request,
   deps: PersistenceRequestDeps = {},
+): Promise<Response> {
+  const requestId = persistenceRequestId(request);
+  const response = await handlePersistenceRequestInner(request, deps);
+  if (response.status >= 500) {
+    const path = new URL(request.url).pathname;
+    const code = await responseErrorCode(response);
+    log.error(`${request.method} ${path} -> ${response.status} ${code} (requestId=${requestId})`);
+  }
+  response.headers.set('x-request-id', requestId);
+  return response;
+}
+
+async function handlePersistenceRequestInner(
+  request: Request,
+  deps: PersistenceRequestDeps,
 ): Promise<Response> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {

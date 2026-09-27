@@ -41,7 +41,11 @@
     "maxSelected": "Vous pouvez sélectionner au maximum {{count}} documents à la fois",
     "remove": "Retirer {{name}}",
     "removeFailed": "Retirer l'envoi échoué",
-    "uploadFailed": "Impossible d'envoyer {{name}}. Veuillez réessayer."
+    "uploadFailed": "Impossible d'envoyer {{name}}. Veuillez réessayer.",
+    "fileTooLarge": "Fichier trop volumineux. Compressez-le ou divisez-le, puis réessayez.",
+    "fileTooLargeWithLimit": "Fichier trop volumineux. Sélectionnez un fichier de {{limit}} Mo maximum.",
+    "unsupportedType": "Type de fichier non pris en charge. Choisissez un fichier compatible.",
+    "quotaExceeded": "Limite de téléversement de ressources atteinte."
   },
   "skill": {
     "listFailed": "Impossible de charger la liste des skills",
@@ -76,6 +80,7 @@
     "title": {
       "build-personal-skill": "Créer un Skill personnel",
       "curriculum-planner": "Planification de série",
+      "zone-of-proximal-development": "Séance d’exercices (zone proximale de développement)",
       "stage-dsl": "Structure du document de classe",
       "deep-interactive": "Interactif approfondi",
       "deep-research": "Recherche approfondie",

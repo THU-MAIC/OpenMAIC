@@ -11,7 +11,10 @@ export type SettingsSection =
   | 'image'
   | 'video'
   | 'web-search'
-  | 'skills';
+  | 'skills'
+  // 设置页新 IA：课程管线配置 + 收拢后的模型服务（旧模态值作为其内部 tab）
+  | 'course-models'
+  | 'model-services';
 
 /**
  * Unified provider configuration stored in JSON format
@@ -42,6 +45,13 @@ export interface ProviderSettings {
   // deliberately NOT exposed to the client.
   isServerConfigured?: boolean; // Server manages this provider's credentials
   serverModels?: string[]; // Server-restricted model list (if set)
+
+  /**
+   * 授权层 per-provider 开关（模型服务/Token Plan = 授权管理；课程模型配置 =
+   * 用途管理）。false = 已配置但不在课程模型配置中展示与配置，作为主线时
+   * 会被自动切走。Absent / true ⇒ 允许。
+   */
+  enabled?: boolean;
 }
 
 /**

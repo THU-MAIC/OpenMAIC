@@ -56,6 +56,23 @@ function markerTime(timeMs: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${seconds}`;
 }
 
+export function decodeMediaAssetData(data: string): Buffer {
+  const value = data.trim();
+  const dataUrl = /^data:([^,]*),([\s\S]*)$/i.exec(value);
+  if (!dataUrl) {
+    // Node's base64 decoder skips non-alphabet characters, so a malformed data
+    // URL falling through here would decode to garbage bytes instead of failing.
+    if (/^data:/i.test(value)) throw new Error('Malformed media asset data URL');
+    return Buffer.from(value, 'base64');
+  }
+  if (!/;base64$/i.test(dataUrl[1])) {
+    throw new Error('Unsupported media asset data URL encoding');
+  }
+  const bytes = Buffer.from(dataUrl[2], 'base64');
+  if (bytes.byteLength === 0) throw new Error('Empty media asset data URL payload');
+  return bytes;
+}
+
 export function mediaArtifactText(artifact: MediaArtifact): string {
   return (artifact.transcript ?? [])
     .filter((segment) => segment.text.trim())
@@ -151,7 +168,7 @@ export async function extractClaimedSessionMaterial(
     const images = [];
     for (const asset of artifact.assets ?? []) {
       if (asset.type !== 'image' || !asset.data) continue;
-      const bytes = Buffer.from(asset.data, 'base64');
+      const bytes = decodeMediaAssetData(asset.data);
       const rawAssetId = await putBytes(source.sessionId, bytes, asset.mimeType ?? 'image/webp');
       images.push({
         id: createMaterialId(),

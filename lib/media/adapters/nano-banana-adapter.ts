@@ -19,6 +19,7 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash-image';
@@ -108,6 +109,7 @@ export async function generateWithNanoBanana(
 
   const response = await fetch(`${baseUrl}/v1beta/models/${model}:generateContent`, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       'Content-Type': 'application/json',
       'x-goog-api-key': config.apiKey,
@@ -123,6 +125,8 @@ export async function generateWithNanoBanana(
       },
     }),
   });
+
+  assertNotRedirected(response, 'Nano Banana');
 
   if (!response.ok) {
     const text = await response.text();

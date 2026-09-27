@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { createObservationSession } from '@/lib/interactive/observation-bridge';
 import { createPortal } from 'react-dom';
 import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
 import {
@@ -23,6 +24,7 @@ import {
   INTERACTIVE_OUTERHTML_MAX,
   makeInteractiveElementRef,
 } from '@/lib/workbench/element-refs';
+import { InteractiveRuntimeErrorBanner } from './InteractiveRuntimeErrorBanner';
 
 type InteractivePickerMessage = {
   __maicInteractive?: boolean;
@@ -232,7 +234,66 @@ function PooledIframe({
 }: PooledIframeProps) {
   const { t } = useI18n();
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const runtimeErrors = useSceneRuntimeErrors((state) => state.errors[sceneId]);
+  const runtimeErrorSignature = runtimeErrors?.join('\n') ?? '';
+  const [dismissedRuntimeSignature, setDismissedRuntimeSignature] = useState<string | null>(null);
+  // `srcDoc` already carries every shim, the observation reader included; the
+  // reader is installed for each pooled document and one that publishes no
+  // outlet answers `no-interface`. This reads the identity baked into that
+  // document rather than minting a second, disagreeing one.
+  const observation = { html: entry.srcDoc, identity: entry.observationIdentity };
+  const observationSession = useRef<ReturnType<typeof createObservationSession> | null>(null);
+  const registerObservation = useWidgetIframeStore((s) => s.registerObservation);
+  useLayoutEffect(() => {
+    observationSession.current?.dispose();
+    observationSession.current = null;
+    registerObservation(sceneId, async (sourceHtml, signal) => {
+      const pool = useInteractiveIframePool.getState();
+      const current = pool.entries[sceneId];
+      if (
+        pool.activeSceneId !== sceneId ||
+        !current?.owner ||
+        current.sourceHtml !== sourceHtml ||
+        current.srcDoc !== entry.srcDoc
+      )
+        return undefined;
+      const session = observationSession.current;
+      if (!session) return undefined;
+      const moved = new AbortController();
+      const unsubscribe = useInteractiveIframePool.subscribe((next) => {
+        if (
+          next.activeSceneId !== sceneId ||
+          next.entries[sceneId]?.owner !== current.owner ||
+          next.entries[sceneId]?.srcDoc !== entry.srcDoc
+        )
+          moved.abort();
+      });
+      let result;
+      try {
+        result = await session.capture({ signal: AbortSignal.any([signal, moved.signal]) });
+      } finally {
+        unsubscribe();
+      }
+      if (moved.signal.aborted) return undefined;
+      const latest = useInteractiveIframePool.getState();
+      if (
+        latest.activeSceneId !== sceneId ||
+        !latest.entries[sceneId]?.owner ||
+        latest.entries[sceneId]?.srcDoc !== entry.srcDoc ||
+        observationSession.current !== session ||
+        !session.isActive()
+      )
+        return undefined;
+      return result;
+    });
+    return () => {
+      observationSession.current?.dispose();
+      observationSession.current = null;
+      registerObservation(sceneId, null);
+    };
+  }, [sceneId, entry.srcDoc, registerObservation]);
   const registerIframe = useWidgetIframeStore((s) => s.registerIframe);
+  const markIframeReady = useWidgetIframeStore((s) => s.markIframeReady);
   const getSendMessage = useWidgetIframeStore((s) => s.getSendMessage);
   const pickTarget = useCanvasStore.use.pickTarget();
   const refs = useElementRefsStore.use.refs();
@@ -245,17 +306,17 @@ function PooledIframe({
       ),
     [refs, sceneId],
   );
+  const documentToken = entry.srcDoc ? `srcDoc:${entry.srcDoc}` : `src:${entry.src ?? ''}`;
 
   // Register the postMessage callback for this scene (moved here from the
   // placeholder, since the iframe now lives in the host). Stable per scene:
   // the callback reads contentWindow lazily at send time.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const send = (type: string, payload: Record<string, unknown>) => {
       iframeRef.current?.contentWindow?.postMessage({ type, ...payload }, '*');
     };
-    registerIframe(sceneId, send);
-    return () => registerIframe(sceneId, null);
-  }, [sceneId, registerIframe]);
+    return registerIframe(sceneId, send, documentToken);
+  }, [documentToken, sceneId, registerIframe]);
 
   useEffect(() => {
     const send = getSendMessage(sceneId);
@@ -276,8 +337,8 @@ function PooledIframe({
     });
   }, [effectiveMode, entry.srcDoc, getSendMessage, playbackSelectedSelector, sceneId, selectors]);
 
-  // Capture runtime errors the iframe's error shim posts out (see iframe.ts), so
-  // the editor agent can diagnose a blank/broken page. Matched to THIS iframe by
+  // Capture runtime errors the iframe's error shim posts out (see iframe.ts).
+  // The active scene's banner reads this store. Matched to THIS iframe by
   // event.source (sandboxed null-origin iframes still postMessage to the parent).
   //
   // The errors that matter most (a JSON.parse that aborts setup) fire while srcDoc
@@ -322,6 +383,7 @@ function PooledIframe({
   // A content change reloads the iframe; drop the previous render's errors so the
   // captured set reflects the CURRENT page (e.g. after the agent applies a fix).
   useEffect(() => {
+    setDismissedRuntimeSignature(null);
     useSceneRuntimeErrors.getState().clearScene(sceneId);
   }, [sceneId, entry.srcDoc]);
 
@@ -342,6 +404,11 @@ function PooledIframe({
     visibleViewport.height > 0 &&
     rect.width > 0 &&
     rect.height > 0;
+  const latestRuntimeError = runtimeErrors?.[runtimeErrors.length - 1];
+  const showRuntimeError =
+    shown &&
+    typeof latestRuntimeError === 'string' &&
+    dismissedRuntimeSignature !== runtimeErrorSignature;
   const wrapStyle: CSSProperties = {
     position: 'fixed',
     left: visibleViewport?.left ?? 0,
@@ -369,12 +436,26 @@ function PooledIframe({
     <div style={wrapStyle}>
       <iframe
         ref={iframeRef}
-        srcDoc={entry.srcDoc}
+        srcDoc={observation.html}
+        onLoad={() => {
+          observationSession.current?.dispose();
+          observationSession.current =
+            iframeRef.current && observation.identity
+              ? createObservationSession(iframeRef.current, observation.identity)
+              : null;
+          markIframeReady(sceneId);
+        }}
         src={entry.srcDoc ? undefined : entry.src}
         style={iframeStyle}
         title={`Interactive Scene ${sceneId}`}
         sandbox="allow-scripts allow-forms allow-popups"
       />
+      {showRuntimeError && latestRuntimeError ? (
+        <InteractiveRuntimeErrorBanner
+          message={latestRuntimeError}
+          onDismiss={() => setDismissedRuntimeSignature(runtimeErrorSignature)}
+        />
+      ) : null}
       {playbackArmed && (
         <div
           data-testid="interactive-element-pick-instruction"

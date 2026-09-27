@@ -771,10 +771,11 @@ presetShapes.set('upArrow', (w, h, adjustments) => {
 });
 
 presetShapes.set('downArrow', (w, h, adjustments) => {
-  const a1 = adj(adjustments, 'adj1', 50000);
+  const a1 = Math.max(0, Math.min(1, adj(adjustments, 'adj1', 50000)));
   const a2 = adj(adjustments, 'adj2', 50000);
   const shaftHalfW = (w * a1) / 2;
-  const headLen = h * a2;
+  // OOXML uses ss (the shortest side), not h, for the head adjustment.
+  const headLen = Math.max(0, Math.min(h, Math.min(w, h) * a2));
   const cx = w / 2;
   const shaftEnd = h - headLen;
   return [
@@ -3509,16 +3510,20 @@ presetShapes.set('round2SameRect', (w, h, adjustments) => {
 });
 
 presetShapes.set('round2DiagRect', (w, h, adjustments) => {
-  const a1 = adj(adjustments, 'adj1', 16667);
-  const a2 = adj(adjustments, 'adj2', 0);
+  // Each adjustment controls a diagonal pair: adj1 = top-left/bottom-right,
+  // adj2 = top-right/bottom-left. OOXML pins both to 0–50000.
+  const a1 = Math.min(Math.max(adj(adjustments, 'adj1', 16667), 0), 0.5);
+  const a2 = Math.min(Math.max(adj(adjustments, 'adj2', 0), 0), 0.5);
   const r1 = Math.min(w, h) * a1;
   const r2 = Math.min(w, h) * a2;
   return [
     `M${r1},0`,
-    `L${w},0`,
-    `L${w},${h - r2}`,
-    `A${r2},${r2} 0 0,1 ${w - r2},${h}`,
-    `L0,${h}`,
+    `L${w - r2},0`,
+    `A${r2},${r2} 0 0,1 ${w},${r2}`,
+    `L${w},${h - r1}`,
+    `A${r1},${r1} 0 0,1 ${w - r1},${h}`,
+    `L${r2},${h}`,
+    `A${r2},${r2} 0 0,1 0,${h - r2}`,
     `L0,${r1}`,
     `A${r1},${r1} 0 0,1 ${r1},0`,
     'Z',

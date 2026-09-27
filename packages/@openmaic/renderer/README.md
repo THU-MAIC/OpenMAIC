@@ -236,3 +236,10 @@ import '@openmaic/renderer/fonts.css';
 ## License
 
 MIT
+
+## Geometry without rendering
+
+Import `getElementRange` and `getLineElementPath` from `@openmaic/renderer/geometry`
+to reuse the renderer's geometry in Node or server-side document operations without
+loading React components. Line ranges include endpoint minima and active control
+points; curves use a conservative control hull.

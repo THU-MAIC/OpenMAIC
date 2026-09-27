@@ -3,7 +3,7 @@
  * New TypeScript implementation; src1 is reference for data format.
  */
 
-import { parseZip } from './parser/ZipParser';
+import { parseZip, DEFAULT_ZIP_PARSE_LIMITS } from './parser/ZipParser';
 import { buildPresentation } from './model/Presentation';
 import { toPptxtojsonFormat } from './adapter/toPptxtojson';
 import type { Output } from './adapter/types';
@@ -27,9 +27,9 @@ export async function parse(buffer: ArrayBuffer, options?: ParseOptions): Promis
   return toPptxtojsonFormat(presentation, files, options?.mediaMode ?? 'base64');
 }
 
-export { parseZip, buildPresentation, toPptxtojsonFormat };
+export { parseZip, buildPresentation, toPptxtojsonFormat, DEFAULT_ZIP_PARSE_LIMITS };
 export type { Output, Slide, Element } from './adapter/types';
-export type { PptxFiles } from './parser/ZipParser';
+export type { PptxFiles, ZipParseLimits } from './parser/ZipParser';
 export type { PresentationData } from './model/Presentation';
 export type { MediaMode } from './serializer/RenderContext';
 

@@ -12,6 +12,7 @@ export async function GET() {
   return apiSuccess({
     status: 'ok',
     version,
+    accessCodeConfigured: Boolean(process.env.ACCESS_CODE),
     capabilities: {
       // A capability is available only when at least one provider is enabled —
       // force-disabled providers (disabled: true) do not count (#665).

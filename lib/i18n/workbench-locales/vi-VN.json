@@ -41,7 +41,11 @@
     "maxSelected": "Mỗi lần chỉ chọn được tối đa {{count}} tài liệu",
     "remove": "Bỏ {{name}}",
     "removeFailed": "Bỏ tệp tải lên bị lỗi",
-    "uploadFailed": "Không tải lên được {{name}}. Vui lòng thử lại."
+    "uploadFailed": "Không tải lên được {{name}}. Vui lòng thử lại.",
+    "fileTooLarge": "Tệp quá lớn. Hãy nén hoặc chia nhỏ tệp rồi thử lại.",
+    "fileTooLargeWithLimit": "Tệp quá lớn. Vui lòng chọn tệp không vượt quá {{limit}} MB.",
+    "unsupportedType": "Loại tệp không được hỗ trợ. Vui lòng chọn tệp được hỗ trợ.",
+    "quotaExceeded": "Đã đạt giới hạn tải tài liệu lên."
   },
   "skill": {
     "listFailed": "Không tải được danh sách skill",
@@ -76,6 +80,7 @@
     "title": {
       "build-personal-skill": "Tạo Skill riêng",
       "curriculum-planner": "Lập kế hoạch chuỗi bài",
+      "zone-of-proximal-development": "Tiết luyện tập (vùng phát triển gần)",
       "stage-dsl": "Cấu trúc tài liệu lớp học",
       "deep-interactive": "Tương tác chuyên sâu",
       "deep-research": "Nghiên cứu chuyên sâu",
