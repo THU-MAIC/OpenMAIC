@@ -176,6 +176,26 @@ describe('validateUrlForSSRF', () => {
     expect(lookupMock).not.toHaveBeenCalled();
   });
 
+  it('classifies deprecated IPv4-compatible (::/96) literals by their embedded IPv4', async () => {
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    // The WHATWG parser canonicalizes `[::127.0.0.1]` / `[::a.b.c.d]` to the
+    // compressed `[::xxxx:xxxx]` form, bypassing the IPv4-mapped decoder.
+    await expect(validateUrlForSSRF('http://[::127.0.0.1]/')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+    await expect(validateUrlForSSRF('http://[::7f00:1]/')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+    await expect(validateUrlForSSRF('http://[::a9fe:a9fe]/')).resolves.toBe(
+      CLOUD_METADATA_BLOCK_MESSAGE,
+    );
+    // A public embedded IPv4 stays allowed, mirroring the 6to4/NAT64 fixtures.
+    await expect(validateUrlForSSRF('http://[::8.8.8.8]/')).resolves.toBeNull();
+    await expect(validateUrlForSSRF('http://[::808:808]/')).resolves.toBeNull();
+    expect(lookupMock).not.toHaveBeenCalled();
+  });
+
   it('detects private IPv4 embedded in expanded and compressed ISATAP addresses', async () => {
     const { isPrivateIP } = await import('@/lib/server/ssrf-guard');
 
@@ -598,6 +618,17 @@ describe('assertSafeIp', () => {
     expect(() => assertSafeIp('::ffff:8.8.8.8')).not.toThrow();
   });
 
+  it('classifies deprecated IPv4-compatible (::/96) addresses by their embedded IPv4', async () => {
+    const { assertSafeIp, isPrivateIP } = await import('@/lib/server/ssrf-guard');
+
+    expect(isPrivateIP('::7f00:1')).toBe(true);
+    expect(isPrivateIP('::a9fe:a9fe')).toBe(true); // link-local metadata
+    expect(isPrivateIP('::808:808')).toBe(false); // 8.8.8.8
+    expect(() => assertSafeIp('::7f00:1')).toThrow(STRICT_BLOCK_MESSAGE);
+    expect(() => assertSafeIp('::a9fe:a9fe')).toThrow(STRICT_BLOCK_MESSAGE);
+    expect(() => assertSafeIp('::808:808')).not.toThrow();
+  });
+
   it('rejects ISATAP and NAT64 addresses that embed a metadata or private IPv4', async () => {
     const { assertSafeIp, isPrivateIP, UnsafeNetworkTargetError } =
       await import('@/lib/server/ssrf-guard');
@@ -751,5 +782,16 @@ describe('connectionAddressBlockReason', () => {
     expect(reason).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
     expect(reason).not.toContain('not-an-ip');
     expect(connectionAddressBlockReason('not-an-ip', true)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+  });
+
+  it('refuses deprecated IPv4-compatible (::/96) addresses at connect time', async () => {
+    const { connectionAddressBlockReason } = await import('@/lib/server/ssrf-guard');
+
+    expect(connectionAddressBlockReason('::7f00:1', false)).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+    expect(connectionAddressBlockReason('::7f00:1', true)).toBeNull();
+    // Metadata stays refused with the opt-in, exactly like its IPv4 form.
+    expect(connectionAddressBlockReason('::a9fe:a9fe', false)).toBe(CLOUD_METADATA_BLOCK_MESSAGE);
+    expect(connectionAddressBlockReason('::a9fe:a9fe', true)).toBe(CLOUD_METADATA_BLOCK_MESSAGE);
+    expect(connectionAddressBlockReason('::808:808', false)).toBeNull();
   });
 });

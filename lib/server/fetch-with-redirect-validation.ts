@@ -30,6 +30,13 @@ import {
 
 export const MAX_REDIRECT_HOPS = 5;
 
+/**
+ * Refusal message when a hop target is not HTTPS. Callers that require TLS on
+ * every hop (for example a provider-supplied download URL) get a guard-typed
+ * refusal, not an opaque transport failure.
+ */
+export const REDIRECT_REQUIRES_HTTPS_MESSAGE = 'Provider redirect target must use https';
+
 /** A `fetch`-shaped transport the per-hop loop issues requests through. */
 export type RedirectValidationFetch = (
   input: string | URL,
@@ -47,6 +54,12 @@ export interface RedirectValidationOptions {
    * their current semantics.
    */
   allowLocalNetworks?: boolean;
+  /**
+   * When `true`, every redirect target must be HTTPS; a hop to `http:` is
+   * refused as an address-policy refusal. Defaults to `false`, so callers that
+   * do not opt in keep following HTTP hops exactly as before.
+   */
+  requireHttps?: boolean;
 }
 
 /**
@@ -184,6 +197,10 @@ export async function fetchWithRedirectValidation(
       nextUrl = new URL(location, currentUrl).href; // resolve relative redirects
     } catch {
       throw new Error('Provider request received an invalid redirect Location');
+    }
+
+    if (options.requireHttps && new URL(nextUrl).protocol !== 'https:') {
+      throw new UnsafeNetworkTargetError(REDIRECT_REQUIRES_HTTPS_MESSAGE);
     }
 
     const ssrfError = await validateUrlForSSRFWithPolicy(nextUrl, { allowLocalNetworks });
