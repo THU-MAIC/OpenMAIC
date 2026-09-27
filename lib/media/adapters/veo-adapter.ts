@@ -2,19 +2,23 @@
  * Veo (Google) Video Generation Adapter
  *
  * Direct REST API calls for video generation with Google's Veo models.
- * Async task pattern: submit → poll → return inline base64 video.
+ * Async task pattern: submit → poll → download → return inline base64 video.
  *
- * REST endpoints (Gemini API):
+ * REST endpoints (Gemini API, https://ai.google.dev/gemini-api/docs/veo):
  * - Submit:   POST /v1beta/models/{model}:predictLongRunning
- * - Poll:     POST /v1beta/models/{model}:fetchPredictOperation  { operationName }
- *   Returns inline base64 video data in response.videos[]
+ * - Poll:     GET  /v1beta/{operationName}
+ *   Done operations carry response.generateVideoResponse.generatedSamples[].video.uri
+ * - Download: GET  {uri}  (same API key)
+ *
+ * (`fetchPredictOperation` and inline `response.videos[].bytesBase64Encoded`
+ * are the Vertex AI shapes; inline bytes are still accepted when present.)
  *
  * Supported models:
- * - veo-3.1-fast-generate-001  (fast, $0.15/sec)
- * - veo-3.1-generate-001       (quality, $0.40/sec)
- * - veo-3.0-fast-generate-001  (fast, $0.15/sec)
- * - veo-3.0-generate-001       (quality, $0.40/sec)
- * - veo-2.0-generate-001       (legacy, $0.50/sec)
+ * - veo-3.1-generate-preview
+ * - veo-3.1-fast-generate-preview
+ * - veo-3.1-lite-generate-preview
+ * - veo-3.0-generate-001, veo-3.0-fast-generate-001  (deprecated)
+ * - veo-2.0-generate-001                             (legacy)
  *
  * Authentication: x-goog-api-key header
  *
@@ -72,7 +76,13 @@ interface VeoOperation {
   name: string;
   done?: boolean;
   response?: {
-    /** fetchPredictOperation returns inline base64 video data */
+    /** Gemini API: the finished clip is a file URI fetched with the API key */
+    generateVideoResponse?: {
+      generatedSamples?: Array<{ video?: { uri?: string; mimeType?: string } }>;
+      raiMediaFilteredCount?: number;
+      raiMediaFilteredReasons?: string[];
+    };
+    /** Vertex AI shape: inline base64 video data */
     videos?: Array<{
       bytesBase64Encoded?: string; // base64-encoded video bytes
       mimeType?: string; // e.g. "video/mp4"
@@ -81,10 +91,45 @@ interface VeoOperation {
   error?: { code: number; message: string; status: string };
 }
 
-function resolveCompletedOperation(
+/**
+ * Download a generated clip and inline it as a data URL. The request always
+ * goes to the configured base URL's origin, so the API key is never sent to a
+ * host other than the one the SSRF guard already accepted.
+ */
+async function downloadVideo(
+  config: VideoGenerationConfig,
+  baseUrl: string,
+  uri: string,
+): Promise<string> {
+  const source = new URL(uri, baseUrl);
+  const url =
+    source.origin === new URL(baseUrl).origin
+      ? source.href
+      : `${baseUrl}${source.pathname}${source.search}`;
+  const response = await mediaFetchFor(config)(url, {
+    method: 'GET',
+    redirect: 'manual',
+    headers: { 'x-goog-api-key': config.apiKey },
+  });
+
+  assertNotRedirected(response, 'Veo');
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`Veo video download failed (${response.status}): ${text}`);
+  }
+
+  const mimeType = response.headers.get('content-type') || 'video/mp4';
+  const buffer = await response.arrayBuffer();
+  return `data:${mimeType};base64,${Buffer.from(buffer).toString('base64')}`;
+}
+
+async function resolveCompletedOperation(
   operation: VeoOperation,
   options: VideoGenerationOptions,
-): TerminalResult<VideoGenerationResult> {
+  config: VideoGenerationConfig,
+  baseUrl: string,
+): Promise<TerminalResult<VideoGenerationResult>> {
   if (operation.error) {
     return {
       status: 'failed',
@@ -92,28 +137,29 @@ function resolveCompletedOperation(
     };
   }
 
-  const videos = operation.response?.videos;
-  if (!videos || videos.length === 0) {
-    throw new Error('Veo returned no generated videos');
-  }
-
-  const first = videos[0];
-  if (!first.bytesBase64Encoded) {
-    throw new Error('Veo returned video entry without data');
-  }
-
-  const mimeType = first.mimeType || 'video/mp4';
   const { width, height } = getDimensions(options.aspectRatio);
-
-  return {
+  const result = (url: string): TerminalResult<VideoGenerationResult> => ({
     status: 'done',
-    result: {
-      url: `data:${mimeType};base64,${first.bytesBase64Encoded}`,
-      duration: options.duration || 8,
-      width,
-      height,
-    },
-  };
+    result: { url, duration: options.duration || 8, width, height },
+  });
+
+  const inline = operation.response?.videos?.[0];
+  if (inline?.bytesBase64Encoded) {
+    return result(`data:${inline.mimeType || 'video/mp4'};base64,${inline.bytesBase64Encoded}`);
+  }
+
+  const generated = operation.response?.generateVideoResponse;
+  const uri = generated?.generatedSamples?.[0]?.video?.uri;
+  if (uri) {
+    return result(await downloadVideo(config, baseUrl, uri));
+  }
+
+  const filtered = generated?.raiMediaFilteredReasons?.filter(Boolean);
+  if (filtered?.length) {
+    return { status: 'failed', message: `Veo generation was filtered: ${filtered.join('; ')}` };
+  }
+
+  throw new Error('Veo returned no generated videos');
 }
 
 // ---------------------------------------------------------------------------
@@ -166,16 +212,14 @@ async function pollOperation(
   fetchImpl: MediaProviderFetch,
   baseUrl: string,
   apiKey: string,
-  model: string,
   operationName: string,
 ): Promise<VeoOperation> {
-  const url = `${baseUrl}/v1beta/models/${model}:fetchPredictOperation`;
+  const url = `${baseUrl}/v1beta/${operationName}`;
 
   const response = await fetchImpl(url, {
-    method: 'POST',
+    method: 'GET',
     redirect: 'manual',
-    headers: apiHeaders(apiKey),
-    body: JSON.stringify({ operationName }),
+    headers: { 'x-goog-api-key': apiKey },
   });
 
   assertNotRedirected(response, 'Veo');
@@ -262,7 +306,7 @@ export async function generateWithVeo(
         throw new Error('Veo returned operation without name');
       }
       return operation.done
-        ? resolveCompletedOperation(operation, options)
+        ? resolveCompletedOperation(operation, options, config, baseUrl)
         : { status: 'submitted', taskId: operation.name };
     },
     poll: async (operationName) => {
@@ -270,10 +314,11 @@ export async function generateWithVeo(
         mediaFetchFor(config),
         baseUrl,
         config.apiKey,
-        model,
         operationName,
       );
-      return operation.done ? resolveCompletedOperation(operation, options) : { status: 'pending' };
+      return operation.done
+        ? resolveCompletedOperation(operation, options, config, baseUrl)
+        : { status: 'pending' };
     },
     intervalMs: POLL_INTERVAL_MS,
     maxAttempts: MAX_POLL_ATTEMPTS,
