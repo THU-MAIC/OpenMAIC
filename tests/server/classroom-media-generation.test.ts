@@ -18,6 +18,20 @@ vi.mock('fs', async (importOriginal) => {
   };
 });
 
+vi.mock('@/lib/server/provider-fetch', () => ({
+  providerFetch: vi.fn(async (input: string | URL, init?: RequestInit) => {
+    return fetch(input, init);
+  }),
+}));
+
+vi.mock('@/lib/server/ssrf-guard', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/server/ssrf-guard')>();
+  return {
+    ...actual,
+    validateUrlForSSRFWithPolicy: vi.fn().mockResolvedValue(null),
+  };
+});
+
 function slideScene(
   elements: Array<{ id: string; type: string; src?: string; mediaRef?: string }>,
 ) {

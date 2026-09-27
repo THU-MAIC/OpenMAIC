@@ -38,6 +38,11 @@ import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { resolveImageSize } from '@/lib/server/image-sizing';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
+import { providerFetch } from '@/lib/server/provider-fetch';
+import {
+  UnsafeNetworkTargetError,
+  validateUrlForSSRFWithPolicy,
+} from '@/lib/server/ssrf-guard';
 
 const log = createLogger('ClassroomMedia');
 
@@ -62,7 +67,7 @@ async function ensureDir(dir: string) {
 }
 
 const DOWNLOAD_TIMEOUT_MS = 120_000; // 2 minutes
-const DOWNLOAD_MAX_SIZE = 100 * 1024 * 1024; // 100 MB
+export const DOWNLOAD_MAX_SIZE = 100 * 1024 * 1024; // 100 MB
 
 /**
  * File extension for the image types this path writes.
@@ -78,14 +83,79 @@ const IMAGE_EXTENSION_BY_MIME: Record<string, string> = {
   'image/webp': 'webp',
 };
 
-async function downloadToBuffer(url: string): Promise<Buffer> {
-  const resp = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+export async function downloadToBuffer(url: string): Promise<Buffer> {
+  if (url.startsWith('data:')) {
+    const commaIndex = url.indexOf(',');
+    if (commaIndex === -1) {
+      throw new Error('Invalid data URL: missing comma');
+    }
+    const meta = url.slice(5, commaIndex);
+    const rawData = url.slice(commaIndex + 1);
+    const isBase64 = meta.split(';').includes('base64');
+    const buf = isBase64
+      ? Buffer.from(rawData, 'base64')
+      : Buffer.from(decodeURIComponent(rawData), 'utf8');
+    if (buf.byteLength > DOWNLOAD_MAX_SIZE) {
+      throw new Error(`File too large: ${buf.byteLength} bytes (max ${DOWNLOAD_MAX_SIZE})`);
+    }
+    return buf;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('Download failed: invalid URL');
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`Download failed: URL must use https (${parsed.protocol})`);
+  }
+
+  const ssrfError = await validateUrlForSSRFWithPolicy(parsed.href, { allowLocalNetworks: false });
+  if (ssrfError) throw new UnsafeNetworkTargetError(ssrfError);
+
+  const resp = await providerFetch(
+    url,
+    { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) },
+    { allowLocalNetworks: false, requireHttps: true },
+  );
   if (!resp.ok) throw new Error(`Download failed: ${resp.status} ${resp.statusText}`);
+
   const contentLength = Number(resp.headers.get('content-length') || 0);
   if (contentLength > DOWNLOAD_MAX_SIZE) {
     throw new Error(`File too large: ${contentLength} bytes (max ${DOWNLOAD_MAX_SIZE})`);
   }
-  return Buffer.from(await resp.arrayBuffer());
+
+  const body = resp.body;
+  if (!body) {
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (buf.byteLength > DOWNLOAD_MAX_SIZE) {
+      throw new Error(`File too large: ${buf.byteLength} bytes (max ${DOWNLOAD_MAX_SIZE})`);
+    }
+    return buf;
+  }
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > DOWNLOAD_MAX_SIZE) {
+        throw new Error(`File too large: ${total} bytes (max ${DOWNLOAD_MAX_SIZE})`);
+      }
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks);
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock?.();
+  }
 }
 
 function mediaServingUrl(baseUrl: string, classroomId: string, subPath: string): string {
@@ -160,7 +230,17 @@ export async function generateMediaForClassroom(
           ext = IMAGE_EXTENSION_BY_MIME[result.mimeType ?? ''] ?? 'png';
         } else if (result.url) {
           buf = await downloadToBuffer(result.url);
-          const urlExt = path.extname(new URL(result.url).pathname).replace('.', '');
+          let urlExt = '';
+          if (result.url.startsWith('data:')) {
+            const mime = result.url.slice(5).split(';')[0]?.toLowerCase();
+            urlExt = IMAGE_EXTENSION_BY_MIME[mime] ?? '';
+          } else {
+            try {
+              urlExt = path.extname(new URL(result.url).pathname).replace('.', '');
+            } catch {
+              urlExt = '';
+            }
+          }
           ext = ['png', 'jpg', 'jpeg', 'webp'].includes(urlExt) ? urlExt : 'png';
         } else {
           log.warn(`Image generation returned no data for ${req.elementId}`);
