@@ -421,7 +421,8 @@ export async function generateClassroom(
   let agentProfilesAiCall: AICallFn | undefined;
   const getAgentProfilesAiCall = async (): Promise<AICallFn> => {
     if (agentProfilesAiCall) return agentProfilesAiCall;
-    const { model, outputWindow, thinking, serverManaged } = await resolveStageModel('agent-profiles');
+    const { model, outputWindow, thinking, serverManaged } =
+      await resolveStageModel('agent-profiles');
     agentProfilesAiCall = async (systemPrompt, userPrompt, _images) => {
       const result = await callLLM(
         {
@@ -446,7 +447,8 @@ export async function generateClassroom(
   let sceneActionsAiCall: AICallFn | undefined;
   const getSceneActionsAiCall = async (): Promise<AICallFn> => {
     if (sceneActionsAiCall) return sceneActionsAiCall;
-    const { model, outputWindow, thinking, serverManaged } = await resolveStageModel('scene-actions');
+    const { model, outputWindow, thinking, serverManaged } =
+      await resolveStageModel('scene-actions');
     sceneActionsAiCall = async (systemPrompt, userPrompt, _images) => {
       const result = await callLLM(
         {

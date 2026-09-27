@@ -117,6 +117,11 @@ async function generateWithProgress(input: Partial<GenerateClassroomInput> = {})
 }
 
 describe('classroom scene generation retries', () => {
+  // Each test runs the full classroom pipeline, so retryable paths accrue real
+  // withGenerationRetry backoff (1s base, exponential) on top of the mocked
+  // stages; the 5s default times out under load. 30s keeps headroom on slow
+  // runners without masking genuine hangs.
+  vi.setConfig({ testTimeout: 30_000 });
   beforeEach(() => {
     for (const mock of Object.values(mocks)) {
       mock.mockReset();
@@ -194,6 +199,7 @@ describe('classroom scene generation retries', () => {
       providerId: 'test',
       apiKey: '',
       thinkingConfig,
+      serverManaged: true,
     });
     mocks.generateSceneContent.mockImplementation(async (_outline, aiCall) => {
       await aiCall('system', 'user');
