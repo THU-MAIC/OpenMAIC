@@ -15,8 +15,10 @@
  * never fall back — retrying a rejected prompt on a second model would spend
  * that model's quota to reproduce the same rejection.
  *
- * This module is imported lazily from lib/ai/llm.ts so the shared call layer
- * stays safe to bundle wherever it is transitively imported.
+ * This module is imported (top-level) from lib/ai/llm.ts for the shared
+ * callLLM decision helpers, and from the outlines stream route for its
+ * fallback resolution. Every importer is a server module, so the chain stays
+ * out of client bundles.
  */
 
 import { APICallError, RetryError } from 'ai';
@@ -79,6 +81,12 @@ function unwrapRetryChain(error: unknown, seen: Set<unknown> = new Set()): unkno
     const last = error.lastError ?? error.errors?.[error.errors.length - 1];
     return unwrapRetryChain(last, seen);
   }
+  // Stop at APICallError: the SDK has already classified it via `isRetryable`,
+  // while its `cause` holds the raw transport failure (e.g. an undici
+  // SocketError whose message would never match our network regex). Walking
+  // past it would discard the flag and mis-classify a retryable transport
+  // failure (a socket reset) as non-retryable.
+  if (APICallError.isInstance(error)) return error;
   const cause = (error as { cause?: unknown }).cause;
   return cause instanceof Error ? unwrapRetryChain(cause, seen) : error;
 }
@@ -108,10 +116,22 @@ export function isRetryableLlmError(error: unknown): boolean {
   if (!(err instanceof Error)) return false;
 
   if (APICallError.isInstance(err)) {
-    // A transport failure is transient even if the flag is unset or false
-    // (some providers wrap a TypeError as APICallError).
-    if (NETWORK_ERROR_RE.test(err.message)) return true;
+    // The SDK's own classification wins before any message matching: a
+    // message-based check first would misread e.g. a 400
+    // "Invalid value for 'timeout'" as a transport timeout.
     if (typeof err.isRetryable === 'boolean') return err.isRetryable;
+    if (typeof err.statusCode === 'number') {
+      return (
+        err.statusCode === 408 ||
+        err.statusCode === 409 ||
+        err.statusCode === 429 ||
+        err.statusCode >= 500
+      );
+    }
+    // No flag and no status: the only APICallError shape that can still be
+    // transient is a transport failure ("Cannot connect to API: …" thrown by a
+    // maxRetries=0 call), which some providers leave unflagged.
+    return NETWORK_ERROR_RE.test(err.message);
   }
 
   const statusCode = (err as { statusCode?: unknown }).statusCode;

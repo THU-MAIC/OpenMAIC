@@ -87,6 +87,9 @@ describe('callLLM retryable-failure fallback', () => {
         prompt: 'hi',
       } as never,
       'scene-content',
+      undefined,
+      undefined,
+      { serverManaged: true },
     );
 
     expect(result.text).toBe('ok');
@@ -113,6 +116,9 @@ describe('callLLM retryable-failure fallback', () => {
           prompt: 'hi',
         } as never,
         'scene-content',
+        undefined,
+        undefined,
+        { serverManaged: true },
       ),
     ).rejects.toBe(fallbackFail);
     expect(aiMock.generateText).toHaveBeenCalledTimes(2);
@@ -166,11 +172,74 @@ describe('callLLM retryable-failure fallback', () => {
       } as never,
       'scene-content',
       { retries: 1 },
+      undefined,
+      { serverManaged: true },
     );
 
     expect(result.text).toBe('ok');
     // Primary round (empty) + same-model retry + fallback round.
     expect(aiMock.generateText).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not arm the fallback when the primary is not server-managed', async () => {
+    // resolveModel stamps serverManaged on its result; a caller that does not
+    // pass it through (a client-supplied x-model) must never reach the
+    // operator's fallback key, even when the primary fails retryably.
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    aiMock.generateText.mockRejectedValueOnce(
+      Object.assign(new Error('quota exceeded'), { statusCode: 429 }),
+    );
+
+    await expect(
+      callLLM(
+        {
+          model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+          prompt: 'hi',
+        } as never,
+        'scene-content',
+      ),
+    ).rejects.toMatchObject({ statusCode: 429 });
+    expect(aiMock.generateText).toHaveBeenCalledTimes(1);
+    expect(fallbackMock.resolveFallbackModel).not.toHaveBeenCalled();
+    expect(fallbackMock.logFallbackFired).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back on a content-filter finish', async () => {
+    // A SAFETY block that returns empty text looks exactly like an empty
+    // output — but it is a refusal, so the fallback must stay untouched.
+    fallbackMock.shouldFallbackFor.mockImplementation(
+      (error: unknown, text: string | null | undefined) =>
+        error !== undefined ? false : !text || text.trim().length === 0,
+    );
+    fallbackMock.resolveFallbackModel.mockResolvedValue({
+      model: 'fallback-model' as never,
+      modelString: 'qwen:deepseek-v4-pro',
+    });
+    aiMock.generateText.mockResolvedValue({
+      ...okResult(),
+      text: '',
+      finishReason: 'content-filter',
+    });
+
+    const result = await callLLM(
+      {
+        model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+        prompt: 'hi',
+      } as never,
+      'scene-content',
+      { retries: 1 },
+      undefined,
+      { serverManaged: true },
+    );
+
+    expect(result.finishReason).toBe('content-filter');
+    // Primary + same-model retry only; no fallback round, no fallback log.
+    expect(aiMock.generateText).toHaveBeenCalledTimes(2);
+    const calledModels = aiMock.generateText.mock.calls.map(
+      (c) => (c[0] as { model: unknown }).model,
+    );
+    expect(calledModels.every((m) => m !== 'fallback-model')).toBe(true);
+    expect(fallbackMock.logFallbackFired).not.toHaveBeenCalled();
   });
 
   it('keeps existing behaviour when no fallback configured', async () => {

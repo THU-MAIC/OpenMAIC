@@ -322,21 +322,33 @@ function recordUsageSafe(
  * @param source - A short label for log grouping (e.g. 'scene-stream', 'pbl-chat')
  * @param retryOptions - Optional retry-on-validation-failure settings
  * @param thinking - Optional per-call thinking config (overrides global LLM_THINKING_DISABLED)
- * @param fallbackOptions - Optional `{ enabled }`; pass `{ enabled: false }` to
- *   skip the retryable-failure model fallback for this call (e.g. verify-model)
+ * @param fallbackOptions - Optional knobs. `{ enabled: false }` skips the
+ *   retryable-failure model fallback for this call (e.g. verify-model).
+ *   `serverManaged: true` must be passed (from resolveModel's stamp of the
+ *   same name) for the fallback to arm at all: it only protects primaries the
+ *   server resolved, never a client-supplied model.
  */
 export async function callLLM<T extends GenerateTextParams>(
   params: T,
   source: string,
   retryOptions?: LLMRetryOptions,
   thinking?: ThinkingConfig,
-  fallbackOptions?: { enabled?: boolean },
+  fallbackOptions?: { enabled?: boolean; serverManaged?: boolean },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<GenerateTextResult<any, any>> {
   const maxAttempts = (retryOptions?.retries ?? 0) + 1;
   const validate = retryOptions?.validate ?? (maxAttempts > 1 ? DEFAULT_VALIDATE : undefined);
-  // verify-model probes the exact primary model, so it never falls back.
-  const allowFallback = fallbackOptions?.enabled !== false && source !== 'verify-model';
+  // The fallback only protects primaries the SERVER resolved (a routed stage
+  // or a server-configured provider). resolveModel stamps `serverManaged` on
+  // its result and every production caller passes it through here; a
+  // client-supplied model (x-model with a garbage key) must never be allowed
+  // to burn the operator's fallback key, so an absent stamp means NOT armed.
+  // verify-model additionally probes the exact primary model, so it never
+  // falls back either.
+  const allowFallback =
+    fallbackOptions?.enabled !== false &&
+    fallbackOptions?.serverManaged === true &&
+    source !== 'verify-model';
   // Resolve the fallback once up front. The empty-output safety net below only
   // arms when a fallback model is actually configured; without this gate an
   // empty result would flip from success to failure for operators who never
@@ -351,7 +363,7 @@ export async function callLLM<T extends GenerateTextParams>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     | { ok: true; result: GenerateTextResult<any, any> }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    | { ok: false; error: unknown; result?: GenerateTextResult<any, any> }
+    | { ok: false; error: unknown; result?: GenerateTextResult<any, any>; finishReason?: string }
   > {
     try {
       const effectiveThinking = thinking ?? getGlobalThinkingConfig();
@@ -374,6 +386,16 @@ export async function callLLM<T extends GenerateTextParams>(
       // steps and equals `usage` for a single-step call. Mirrors streamLLM,
       // which already prefers the aggregate.
       recordUsageSafe(result.totalUsage ?? result.usage, buildUsageMeta(injectedParams, source));
+
+      // A content-filter finish (e.g. a Gemini SAFETY block) is a refusal, not
+      // a transient failure: retrying it on another model reproduces the
+      // refusal, so it must never reach the fallback decision — even when the
+      // refusal comes back with empty text (which would otherwise look exactly
+      // like an empty output).
+      if (result.finishReason === 'content-filter') {
+        log.warn(`[${source}] Content-filter finish (${attemptLabel})`);
+        return { ok: false, error: undefined, result, finishReason: 'content-filter' };
+      }
 
       // Empty-output detection arms by default when a fallback model is
       // configured and no caller-supplied validator is in play: an empty
@@ -420,7 +442,10 @@ export async function callLLM<T extends GenerateTextParams>(
       // non-empty result that fails a caller-supplied validator (that would
       // spend the fallback model's quota on "output quality is off").
       lastResult = round.result;
-      if (attempt >= maxAttempts && fallback !== null) {
+      // Content-filter refusals never reach the fallback decision — even when
+      // the refusal came back with empty text (a SAFETY block looks exactly
+      // like an empty output otherwise).
+      if (attempt >= maxAttempts && fallback !== null && round.finishReason !== 'content-filter') {
         if (shouldFallbackFor(undefined, round.result?.text)) triggerFallback = true;
       }
     }
@@ -436,7 +461,15 @@ export async function callLLM<T extends GenerateTextParams>(
         primary || '?',
         fallback.modelString,
       );
-      const round = await runRound({ ...params, model: fallback.model } as T, 'fallback');
+      // The fallback round is the LAST attempt: run it with no SDK-internal
+      // retries on top (a 503 on both models must not cost 3+3 upstream
+      // calls), and do not reuse the caller's abort signal — an
+      // AbortSignal.timeout that already fired would make the fallback round
+      // impossible to run.
+      const round = await runRound(
+        { ...params, model: fallback.model, maxRetries: 0, abortSignal: undefined } as T,
+        'fallback',
+      );
       if (round.ok) return round.result;
       if (round.error !== undefined) lastError = round.error;
       else lastResult = round.result;

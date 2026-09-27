@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { APICallError, RetryError } from 'ai';
+import { errors as undiciErrors } from 'undici';
 import {
   isRetryableLlmError,
   isEmptyLlmOutput,
@@ -21,11 +22,15 @@ function apiError(statusCode: number, message: string, isRetryable?: boolean): A
 }
 
 function networkError(message: string): APICallError {
+  // The shape the AI SDK actually throws on a transport failure with
+  // maxRetries=0: an APICallError flagged isRetryable: true whose cause is the
+  // raw undici failure (a SocketError here, not a synthetic TypeError).
   return new APICallError({
     message,
     url: 'https://api.example.com/v1/chat',
     requestBodyValues: {},
-    cause: new TypeError('fetch failed'),
+    isRetryable: true,
+    cause: new undiciErrors.SocketError('other side closed'),
   });
 }
 
@@ -96,6 +101,46 @@ describe('isRetryableLlmError (real AI SDK errors)', () => {
     expect(isRetryableLlmError(new TypeError('x is not a function'))).toBe(false);
     expect(isRetryableLlmError(undefined)).toBe(false);
     expect(isRetryableLlmError('not an error')).toBe(false);
+  });
+
+  it('never message-matches before the flag or status code', () => {
+    // A 400 whose message happens to contain "timeout" is a caller error, not
+    // a transport timeout: the flag/status decision must win over the regex.
+    expect(isRetryableLlmError(apiError(400, "Invalid value for 'timeout'", false))).toBe(false);
+    expect(isRetryableLlmError(apiError(400, "Invalid value for 'timeout'"))).toBe(false);
+    // A 401 that mentions ECONN-style wording stays non-retryable.
+    expect(isRetryableLlmError(apiError(401, 'connect failed: bad key', false))).toBe(false);
+  });
+
+  it('does not walk past an APICallError into its cause', () => {
+    // A flagged non-retryable APICallError whose cause message would match the
+    // network regex stays non-retryable — the classification stops at the
+    // APICallError instead of re-classifying the raw cause.
+    const blocked = new APICallError({
+      message: 'request rejected',
+      url: 'https://api.example.com/v1/chat',
+      requestBodyValues: {},
+      isRetryable: false,
+      cause: new TypeError('fetch failed'),
+    });
+    expect(isRetryableLlmError(blocked)).toBe(false);
+
+    // The SDK's real transport-failure shape: isRetryable: true with a raw
+    // undici SocketError as cause. The flag alone decides, so the cause never
+    // needs (and never gets) a message match.
+    expect(isRetryableLlmError(networkError('Cannot connect to API: other side closed'))).toBe(
+      true,
+    );
+  });
+
+  it('classifies a real undici connect timeout through an unflagged Error chain', () => {
+    // Plain-Error cause chains still unwrap and classify: a real undici
+    // ConnectTimeoutError (message "Connect Timeout Error") matches the
+    // transport regex even though no SDK wrapper flagged it.
+    const wrapped = new Error('upstream failed', {
+      cause: new undiciErrors.ConnectTimeoutError(),
+    });
+    expect(isRetryableLlmError(wrapped)).toBe(true);
   });
 });
 
