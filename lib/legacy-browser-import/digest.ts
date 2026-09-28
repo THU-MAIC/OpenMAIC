@@ -83,10 +83,14 @@ export function randomSalt(): string {
 
 /**
  * How the ledger records an owner: SHA-256 of the per-browser salt and the
- * owner id. Salted so that an owner id from a small space (an email, a
- * numeric account id) cannot be recovered from the ledger by a dictionary;
- * the server computes the same value to confirm a claim
- * (`GET /api/identity/merged-from`, which receives the salt).
+ * owner id, never the id itself (an anonymous owner id is a bearer
+ * credential, and 122 random bits cannot be guessed back from its digest).
+ * The salt defeats precomputed and cross-browser tables; it does not stop a
+ * targeted guess against one browser's ledger, since the salt is stored next
+ * to the digest, so an owner id from a small space (an email, a numeric
+ * account id) can still be confirmed by someone who can read that browser's
+ * storage and guesses it. The server computes the same value to confirm a
+ * claim (`GET /api/identity/merged-from`, which receives the salt).
  */
 export function ownerDigest(salt: string, ownerId: string): string {
   return sha256Hex(`${salt}\u0000${ownerId}`);

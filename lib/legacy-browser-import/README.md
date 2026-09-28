@@ -19,7 +19,8 @@ for the requesting owner's own `owner_merges` rows only, whether one of them
 hashes to the recorded digest. Nothing the browser observes (a refusal, a
 library listing, an empty ledger) moves the data; a 403 `OWNER_RETIRED` only
 stops the run. Any other owner gets nothing imported, and that answer is reused
-for an hour before the server is asked again. Courses already imported are
+for ten minutes before the server is asked again (a time further ahead than that,
+written by a clock that ran ahead, counts as passed). Courses already imported are
 never imported again.
 
 It is **temporary** and will be deleted a few releases after it ships (see
@@ -67,8 +68,10 @@ Settings → Clear Local Cache still leaves the legacy databases alone.
 | The id is free                                                       | Created under its own id, with chat, runtime, playback, roster, quiz state, folder membership and media.                                                   |
 | Another owner holds the id (ids are global)                          | Created under a fresh id, `<id>-i<16 hex of SHA-256(salt, id)>` with a random per-browser salt from the ledger; scene stage ids, runtime session and record ids (including chat restore markers), playback and editor positions and membership follow it. |
 | The owner deleted the course on the server (a write answers 404)     | Skipped; the deletion stands.                                                                                                                             |
-| The legacy record fails validation or cannot be read                 | Skipped with the reason (a document-store copy that cannot be read falls back to the original tables first); the other courses continue.                  |
+| The legacy record fails validation or cannot be migrated or parsed    | Skipped with the reason (a document-store copy that is unusable falls back to the original tables first); the other courses continue.                     |
+| Reading the old browser storage fails (an aborted transaction, a closed database) | Not a verdict on the record: the course (or, for the quiz-scene and speech indexes, the run) stays pending and a later load reads it again; never skipped, and never replaced by an older copy. |
 | Another tab of this browser is placing the same course (no Web Locks) | The library is listed again right before a course is placed; a course that appeared meanwhile is left to that tab.                                        |
+| Two tabs of different owners start together (no Web Locks)          | Every ledger write keeps the owner stored first; the run re-reads the stored owner after binding, before folders, before each course and before each course document, and the tab whose owner lost stops before writing anything. |
 
 ## Failures
 
@@ -92,9 +95,12 @@ Settings → Clear Local Cache still leaves the legacy databases alone.
 One ledger per browser in localStorage, `maic:legacy-import:v2` (`ledger.ts`). It
 never holds an owner id: the claiming owner is SHA-256 of the per-browser salt
 and the owner id (an anonymous owner id is the anonymous cookie's value, a bearer
-credential; the salt keeps an enumerable host id from being recovered by a
-dictionary, and the server computes the same value from the salt the browser
-sends). The same salt derives fresh ids. Every step is recorded when it lands, so
+credential, and its 122 random bits cannot be guessed back from the digest). The
+salt defeats precomputed and cross-browser tables but not a targeted guess against
+one browser's ledger (the salt sits next to the digest), so an owner id from a
+small space, such as an email, can still be confirmed by someone who can read that
+browser's storage. The server computes the same value from the salt the browser
+sends. The same salt derives fresh ids. Every step is recorded when it lands, so
 a crash or reload resumes at the first unfinished step; writes merge with the
 stored copy, so tabs without Web Locks do not erase each other's progress. Clear
 Local Cache keeps the ledger (and the old learner key), so it neither loses
