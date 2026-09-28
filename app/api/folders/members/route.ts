@@ -20,7 +20,7 @@ import { NextResponse } from 'next/server';
 
 import type { DocumentFolderStore } from '@openmaic/storage';
 
-import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
+import { isServerPersistenceConfigured } from '@/lib/config/feature-flags';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { ownerJson } from '@/lib/server/agent-runtime/route-response';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
@@ -34,7 +34,7 @@ function jsonError(status: number, code: string, message: string, headers?: Head
 
 // POST /api/folders/members
 export async function POST(req: NextRequest) {
-  if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
+  if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
 
   let body: unknown;
   try {

@@ -401,6 +401,14 @@ endpoint returns configuration or initialization errors; the home page shows a
 persistence-unavailable toast and keeps the prior course list instead of
 misleadingly displaying an empty library.
 
+The server course library and its folders (`/api/stages/**`, `/api/folders/**`)
+need only `DATABASE_URL`: they serve whether or not the
+[agent runtime](#optional-agent-workbench-and-runtime)
+(`OPENMAIC_AGENT_RUNTIME_ENABLED`) is on. Without a `DATABASE_URL` they answer
+`404`, as in browser-storage mode. `GET /api/agent/runtime` reports this as
+`persistence: true|false`, next to the runtime's own `enabled` and
+`runtimeEnabled`.
+
 Every `/api/persistence` request is attributed to the owner the
 [owner identity seam](#owner-identity) resolves — by default the 30-day
 anonymous cookie, one owner per browser. There is no separate persistence
@@ -540,6 +548,32 @@ and
 [DocumentStore HTTP contract](packages/@openmaic/storage/docs/document-http-contract.md).
 Leave `NEXT_PUBLIC_PERSISTENCE` unset to retain the existing browser-only
 behavior.
+
+Invalid configuration stops the server. The `register()` hook of
+`instrumentation.ts` refuses to start on:
+
+- a malformed `ASSET_QUOTA_BYTES`, `ASSET_PENDING_TTL_MS`,
+  `OWNER_WRITE_LOCK_WAIT_MS` or `OWNER_CLAIM_LOCK_WAIT_MS`;
+- `OWNER_CLAIM_TRIGGER` set to anything but `explicit` or `auto`;
+- the removed `OWNER_AUTHENTICATOR` / `TRUSTED_PROXY_*` variables, when set;
+- `PERSISTENCE_SHARED_OWNER_ID` that is malformed, set without `ACCESS_CODE`,
+  or set beside an owner auth registration that leaves out
+  `sharedTeamAuthMethod()`; `sharedTeamAuthMethod()` registered without the
+  variable, or not as the last method;
+- `ASSET_S3_BUCKET` set beside a registered asset byte store, or
+  `ASSET_BYTE_EGRESS=redirect` with a registered byte store that does not
+  declare `signsReadUrls: true`.
+
+For any of these, the Node.js server prints a single line,
+`[boot] Invalid server configuration; the server will not start:` followed by
+the reason, and exits with code `1` (under `next start` and the standalone
+`server.js` alike), so a supervisor or container runtime sees the failure
+instead of a process that listens and answers every request with `500`. Any
+other failure during boot, such as a module missing from the build or a host
+registration call that throws, also exits with code `1`, printed as
+`[boot] Server startup failed; the server will not start:` with its stack.
+Warnings, such as the unset `ACCESS_CODE` notice and the model-routing checks,
+never stop the server.
 
 #### Owner identity
 
@@ -1041,7 +1075,9 @@ MODEL_ROUTES='{"maic-agent-driver":{"model":"openai:gpt-5.5","api":"openai-compl
 ```
 
 While the flag is off, the `/api/agent/sessions*` and `/api/agent/owner-events`
-routes answer `404`. Enabling it
+routes answer `404`; the course library and folder routes do not depend on the
+flag, only on `DATABASE_URL` (see
+[Server-backed persistence](#server-backed-persistence-postgresql)). Enabling it
 without a `DATABASE_URL` never starts the runner and makes the session routes
 error, so the runtime is server-backed by design. `MODEL_ROUTES` must explicitly
 route `maic-agent-driver` to a provider-prefixed model with an

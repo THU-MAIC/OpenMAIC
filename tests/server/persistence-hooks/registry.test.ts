@@ -21,6 +21,9 @@ vi.mock('@/lib/persistence/asset-collector-schedule', () => ({
 }));
 vi.mock('@/lib/server/config-validation', () => ({ validateServerConfig: vi.fn() }));
 vi.mock('@/lib/config/feature-flags', () => ({ isAgentRuntimeConfigured: () => false }));
+// A refused configuration exits the process; stubbed so the throw can be asserted.
+const exitOnBootFailure = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('@/lib/server/boot-failure', () => ({ exitOnBootFailure }));
 
 const store: AssetByteStoreRegistration = {
   name: 'object-store',
@@ -268,6 +271,9 @@ describe('boot validation', () => {
     const { register } = await import('@/instrumentation');
 
     await expect(register()).rejects.toThrow(/ASSET_BYTE_EGRESS=redirect requires/);
+    expect(exitOnBootFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringMatching(/ASSET_BYTE_EGRESS=redirect/) }),
+    );
     // Validation does not seal: the slot still reports "already configured",
     // not "after a byte store was built", and the hooks are still open.
     expect(() => configureAssetByteStore(store)).toThrow(/already configured/);

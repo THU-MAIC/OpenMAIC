@@ -365,6 +365,8 @@ NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
 
 `NEXT_PUBLIC_PERSISTENCE` 是**编译期开关**，会打进浏览器 bundle。启用它的构建必须部署在具备可用运行时 `DATABASE_URL` 的环境中。否则浏览器会选择 HTTP 持久化但内嵌端点返回配置或初始化错误；首页会弹出持久化不可用的提示并保留原有课程列表，而不是误导性地显示空课程库。
 
+服务端课程库及其文件夹（`/api/stages/**`、`/api/folders/**`）只依赖 `DATABASE_URL`：无论 Agent 运行时（`OPENMAIC_AGENT_RUNTIME_ENABLED`）是否开启都可以使用。没有 `DATABASE_URL` 时它们返回 `404`，与纯浏览器存储模式一致。`GET /api/agent/runtime` 以 `persistence: true|false` 报告这一点，与运行时自身的 `enabled`、`runtimeEnabled` 并列。
+
 `/api/persistence` 的每个请求都归属于[所有者身份](#所有者身份)机制解析出的所有者——默认为 30 天匿名 cookie，每个浏览器一个所有者。持久化不再有单独的凭证：
 
 - **文档**：读取是 capability-by-id：只要 stage meta 存在且未被墓碑化，`decideDocumentAccess` 就会放行且不比对所有者（`lib/persistence/document-access.ts`），因此能访问该端点并知道 stage id 的人都可以读这门课。写入和删除按所有者校验。
@@ -393,6 +395,16 @@ NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
 资产字节默认直接出站（内嵌路由把字节写入响应体）。设置 `ASSET_BYTE_EGRESS=redirect` 可选择**间接出站**：字节 `GET` 会在字节层支持签名（S3 支持；PostgreSQL 字节列不支持，回退为直接返回字节）时返回一个短时效的签名 S3 URL。间接出站有两个对象存储前提：bucket 的 CORS 需允许本应用来源并在签名响应上暴露 `Content-Type`；签名身份需持有 bucket 的 `s3:ListBucket`，缺失的 key 才能以 `404 NoSuchKey` 而非 `403` 返回。相关取舍见[资产 HTTP 契约](packages/@openmaic/storage/docs/asset-http-contract.md)。
 
 内嵌端点实现了 [RuntimeStore HTTP 契约](packages/@openmaic/storage/docs/runtime-http-contract.md)和 [DocumentStore HTTP 契约](packages/@openmaic/storage/docs/document-http-contract.md)。不设置 `NEXT_PUBLIC_PERSISTENCE` 则保持原有的纯浏览器行为。
+
+配置无效时服务不会启动。`instrumentation.ts` 的 `register()` 遇到以下情况会拒绝启动：
+
+- `ASSET_QUOTA_BYTES`、`ASSET_PENDING_TTL_MS`、`OWNER_WRITE_LOCK_WAIT_MS` 或 `OWNER_CLAIM_LOCK_WAIT_MS` 取值格式错误；
+- `OWNER_CLAIM_TRIGGER` 不是 `explicit` 或 `auto`；
+- 设置了已移除的 `OWNER_AUTHENTICATOR` / `TRUSTED_PROXY_*` 变量；
+- `PERSISTENCE_SHARED_OWNER_ID` 格式错误、未同时设置 `ACCESS_CODE`，或与未包含 `sharedTeamAuthMethod()` 的所有者认证注册同时设置；注册了 `sharedTeamAuthMethod()` 却没有设置该变量，或它不是最后一个方法；
+- 注册了资产字节存储的同时设置了 `ASSET_S3_BUCKET`，或在 `ASSET_BYTE_EGRESS=redirect` 下注册的字节存储未声明 `signsReadUrls: true`。
+
+出现上述任一情况时，Node.js 服务会输出一行 `[boot] Invalid server configuration; the server will not start:` 加上原因，并以退出码 `1` 退出（`next start` 与 standalone `server.js` 均如此），使进程守护或容器运行时能看到失败，而不是留下一个仍在监听、却对每个请求都返回 `500` 的进程。启动期间的其他失败（如构建产物缺少模块，或宿主的注册调用抛错）同样以退出码 `1` 退出，输出为 `[boot] Server startup failed; the server will not start:` 并附带调用栈。警告（如未设置 `ACCESS_CODE` 的提示和模型路由检查）不会让服务停止。
 
 #### 所有者身份
 

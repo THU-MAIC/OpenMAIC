@@ -24,7 +24,7 @@
  */
 import type { NextRequest } from 'next/server';
 
-import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
+import { isServerPersistenceConfigured } from '@/lib/config/feature-flags';
 import { authenticateRequestOwner } from '@/lib/server/identity/with-owner';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { ownerNotFound } from '@/lib/server/agent-runtime/route-response';
@@ -44,7 +44,7 @@ export const STAGE_FRESHNESS_RETRY_MS = 3_000;
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(req: NextRequest, { params }: Params) {
-  if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
+  if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
 
   const owner = await authenticateRequestOwner(req);
   if (!owner.ok) return owner.response;
