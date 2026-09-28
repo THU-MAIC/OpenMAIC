@@ -386,6 +386,10 @@ describe('conflicts with what the server already has', () => {
     expect(outcome.ledger?.courses[DOCS_COURSE]).toMatchObject({ target: docsForB });
     expect(server.stageOwners.get(docsForB)).toBe(OWNER_B);
     expect(server.folders.get(OWNER_B)?.map((folder) => folder.name)).toEqual(['Physics', 'Empty']);
+    // Each owner keeps its own ledger: owner A's import is still recorded.
+    expect(loadLedger(storage, OWNER_A).completedAt).toBeDefined();
+    server.owner = OWNER_A;
+    expect((await runLegacyBrowserImport(server.options(storage))).status).toBe('already-complete');
   });
 });
 
