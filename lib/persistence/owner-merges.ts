@@ -25,7 +25,7 @@
  * same statement as a lock wait could miss a claim that committed during the
  * wait.
  */
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 import { DocumentWriteRefusedError } from '@openmaic/storage';
 import type { Queryable } from '@openmaic/storage/document/pg';
@@ -161,6 +161,31 @@ export async function lockOwnerIdentities(
     if (isLockContention(error)) throw new OwnerBusyError(error);
     throw error;
   }
+}
+
+/**
+ * Whether a claim merged into `ownerId` an owner whose salted digest is
+ * `digest`: SHA-256 (hex) of `<salt>\u0000<merged owner id>`. Answers for the
+ * owner's own merges only and never reveals which owner matched. The browser
+ * that imports its pre-server data records its first owner this way and asks
+ * this (through `GET /api/identity/merged-from`) before handing the import to
+ * a different owner.
+ */
+export async function ownerAbsorbedDigest(
+  queryable: Queryable,
+  ownerId: string,
+  salt: string,
+  digest: string,
+): Promise<boolean> {
+  const result = await queryable.query<{ from_owner_id: string } & Record<string, unknown>>(
+    'SELECT from_owner_id FROM owner_merges WHERE to_owner_id = $1',
+    [ownerId],
+  );
+  const expected = Buffer.from(digest, 'hex');
+  return result.rows.some((row) => {
+    const actual = createHash('sha256').update(`${salt}\u0000${row.from_owner_id}`).digest();
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
+  });
 }
 
 /** The owner a claim retired `ownerId` into, or `null`. One hop: see `./owner-claims.ts`. */
