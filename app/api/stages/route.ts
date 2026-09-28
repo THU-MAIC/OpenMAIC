@@ -1,5 +1,6 @@
 /**
- * /api/stages — the workbench's course-document index and create face.
+ * /api/stages — the server course library's document index and create face
+ * (the home library and the workbench both read it).
  *
  * Every handler is owner-scoped exactly like the agent tools: the owner
  * resolves through the owner identity seam (`withRequestOwner`) and is never
@@ -8,10 +9,11 @@
  * binds for the stage tools. A stage created here is visible to this owner
  * (with the default anonymous owner, this browser) and to nobody else.
  *
- * The configured runtime gates the whole family: these routes serve the
- * workbench, which is agent-runtime territory, so a runtime that is off OR
- * enabled without a DATABASE_URL answers the same plain 404 as the agent
- * control-plane routes — never a 500 from a store that cannot connect.
+ * Server persistence gates the whole family (`isServerPersistenceConfigured`,
+ * a non-empty DATABASE_URL): these routes need the database and nothing else,
+ * so they serve with or without the agent runtime. Without a DATABASE_URL
+ * (browser-storage mode) they answer a plain 404 — never a 500 from a store
+ * that cannot connect.
  */
 import type { NextRequest } from 'next/server';
 import { randomBytes } from 'node:crypto';
@@ -21,7 +23,7 @@ import { isDocumentWriteRefusedError } from '@openmaic/storage';
 import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
-import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
+import { isServerPersistenceConfigured } from '@/lib/config/feature-flags';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import { listLibraryStages } from '@/lib/persistence/library';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
@@ -43,7 +45,7 @@ function createStageId(): string {
 // document the caller owns; a host library provider may choose a different
 // set of readable courses (lib/persistence/library.ts has the access rule).
 export async function GET(req: NextRequest) {
-  if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
+  if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
 
   return withRequestOwner(req, async (principal, responseHeaders) => {
     const store = await getOwnerScopedDocumentStore(principal);
@@ -67,7 +69,7 @@ export async function GET(req: NextRequest) {
 // a malformed body must not mint an anonymous cookie partition for a request
 // that will not proceed.
 export async function POST(req: NextRequest) {
-  if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
+  if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
 
   let body: unknown;
   try {

@@ -6,13 +6,13 @@ import type { AppScene } from '@/lib/types/stage';
 import { createFakeDocumentStore } from './_fake-document-store';
 
 const mocks = vi.hoisted(() => ({
-  runtimeConfigured: true,
+  persistenceConfigured: true,
   resolveRequestOwnerId: vi.fn(),
   fakeStore: null as ReturnType<typeof createFakeDocumentStore> | null,
 }));
 
 vi.mock('@/lib/config/feature-flags', () => ({
-  isAgentRuntimeConfigured: () => mocks.runtimeConfigured,
+  isServerPersistenceConfigured: () => mocks.persistenceConfigured,
 }));
 vi.mock('@/lib/server/identity/resolve', async () =>
   (await import('../helpers/owner-resolution-mock')).ownerResolveModule(
@@ -50,7 +50,7 @@ function makeDocument(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.runtimeConfigured = true;
+  mocks.persistenceConfigured = true;
   mocks.resolveRequestOwnerId.mockReturnValue('owner-1');
   mocks.fakeStore = createFakeDocumentStore();
 });
@@ -83,8 +83,8 @@ describe('GET /api/stages', () => {
     expect(mocks.resolveRequestOwnerId).toHaveBeenCalledOnce();
   });
 
-  it('answers 404 when the agent runtime is not configured', async () => {
-    mocks.runtimeConfigured = false;
+  it('answers 404 when server persistence is not configured', async () => {
+    mocks.persistenceConfigured = false;
     const response = await GET(new NextRequest('http://localhost/api/stages'));
     expect(response.status).toBe(404);
     expect(mocks.resolveRequestOwnerId).not.toHaveBeenCalled();
@@ -240,8 +240,8 @@ describe('POST /api/stages', () => {
     expect(mocks.resolveRequestOwnerId).not.toHaveBeenCalled();
   });
 
-  it('answers 404 when the agent runtime is not configured', async () => {
-    mocks.runtimeConfigured = false;
+  it('answers 404 when server persistence is not configured', async () => {
+    mocks.persistenceConfigured = false;
     const response = await POST(
       new NextRequest('http://localhost/api/stages', {
         method: 'POST',
