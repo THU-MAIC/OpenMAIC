@@ -25,12 +25,31 @@ export async function clearLocalCache(): Promise<void> {
 const LEGACY_LEARNER_KEY_STORAGE_KEY = `maic:device:${LEARNER_KEY_KV_KEY}`;
 
 /**
- * `localStorage.clear()`, except for the one value the one-way importer needs
- * to find this browser's pre-server runtime data. Clearing the cache must not
- * orphan data the user has not moved to the server yet.
+ * The localStorage key of the one-way importer's completion ledger
+ * (`lib/legacy-browser-import/ledger.ts`). It records what has already moved
+ * to the server, so clearing the cache must keep it: without it, a course the
+ * user deleted on the server after it was imported could be imported again
+ * from the untouched browser copy. It holds no owner information.
+ */
+export const LEGACY_IMPORT_LEDGER_KEY = 'maic:legacy-import:v3';
+
+/**
+ * `localStorage.clear()`, except for the values the one-way importer needs:
+ * the learner key that finds this browser's pre-server runtime data, and the
+ * importer's ledger. Clearing the cache must not orphan data the user has not
+ * moved to the server yet, nor bring back data the user removed after it was
+ * moved.
  */
 export function clearLocalStorageKeepingImportState(storage: Storage = localStorage): void {
-  const legacyLearnerKey = storage.getItem(LEGACY_LEARNER_KEY_STORAGE_KEY);
+  const kept = new Map<string, string>();
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (key === null) continue;
+    if (key === LEGACY_LEARNER_KEY_STORAGE_KEY || key === LEGACY_IMPORT_LEDGER_KEY) {
+      const value = storage.getItem(key);
+      if (value !== null) kept.set(key, value);
+    }
+  }
   storage.clear();
-  if (legacyLearnerKey !== null) storage.setItem(LEGACY_LEARNER_KEY_STORAGE_KEY, legacyLearnerKey);
+  for (const [key, value] of kept) storage.setItem(key, value);
 }

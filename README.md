@@ -425,9 +425,11 @@ the Compose file if you do not want it.
 >   is now the same single owner.
 > - `--profile server-persistence` is still accepted and changes nothing;
 >   PostgreSQL always starts.
-> - Courses an earlier browser-only deployment stored in the browser stay there
->   and are not deleted; they are moved to the server by the one-way
->   browser-to-server importer that ships in the same release.
+> - Courses an earlier browser-only deployment stored in the browser are not
+>   deleted: the first time each browser opens the upgraded app, a one-way
+>   importer moves them to the server automatically (see
+>   [Server-backed persistence](#server-backed-persistence-postgresql)) and
+>   leaves the browser copy untouched.
 > - Courses an earlier server-backed deployment stored under each browser's
 >   anonymous cookie stay with those anonymous owners: nothing is merged into
 >   the single owner automatically. To bring them in, claim them explicitly
@@ -513,10 +515,26 @@ refused, kept for a retry), PDF images staged during generation, and TTS voice
 profiles registered from that browser. **Settings → Clear Local Cache** clears
 exactly that and nothing on the server.
 
-Courses an earlier browser-only build stored in the browser stay there and are
-not deleted: the app neither reads nor writes that pre-server browser storage
-on its regular paths any more, and the one-way browser-to-server importer that
-ships in the same release moves them to the server.
+**Upgrading from a browser-only build.** Courses an earlier browser-only build
+stored in the browser move to the server automatically, with no action and no
+UI: the first time that browser opens the upgraded app, once the page is idle,
+a one-way importer copies each course, with its chat, learner runtime, playback
+position, agent roster, folders and membership, quiz progress and media, to the
+owner the server resolves for that browser (the anonymous cookie owner by
+default), and the course appears in the library. This happens once per browser:
+the server binds the browser to the first owner that asks
+(`POST /api/identity/legacy-import-binding`), and a claim carries the binding to
+the account (an anonymous owner that signs in and is claimed). Every importer
+request carries the browser's id and is refused
+(`409 LEGACY_IMPORT_NOT_BOUND`) for any owner that does not hold the binding, so
+another owner that later uses the same browser gets nothing imported. The browser copy is left
+untouched, and **Settings → Clear Local Cache** does not delete it. A course the
+server already has for that owner stays as the server has it; one whose id
+another owner holds is imported under a new id; one deleted on the server is not
+brought back. The importer records its progress in the browser (with a random browser id and
+no owner information), so an interrupted import resumes on a later load and nothing is imported twice; problems are
+logged in the browser console under `[legacy-browser-import]`. The importer is
+temporary and will be removed a few releases later.
 
 The server course library and its folders (`/api/stages/**`, `/api/folders/**`)
 serve whether or not the [agent runtime](#optional-agent-workbench-and-runtime)
@@ -1048,6 +1066,9 @@ What moves, in this fixed order (a host adds its own tables with
    session written by a newer version does not stop the claim.
 7. **Asset entries** (the per-owner partition), so a claimed course keeps
    rendering its media for every viewer.
+8. **Legacy import bindings** (temporary, with the one-way legacy browser
+   import): a browser whose pre-server data the anonymous owner held is then
+   the account's, so the import continues for it.
 
 Quotas are not applied to what moves: the account keeps everything, and if it
 is now above its asset, material, skill or folder limit it cannot add more
@@ -1109,7 +1130,7 @@ A host registers participants for its own owner-keyed tables from
 const { registerClaimParticipant } = await import('@/lib/persistence/owner-claims');
 registerClaimParticipant({
   name: 'course-notes',
-  order: 1000, // after core's 100-700; see lib/persistence/owner-claims.ts
+  order: 1000, // after core's 100-800; see lib/persistence/owner-claims.ts
   rekey: async (tx, fromOwnerId, toOwnerId) =>
     (
       await tx.query('UPDATE course_notes SET owner_id = $2 WHERE owner_id = $1 RETURNING 1', [

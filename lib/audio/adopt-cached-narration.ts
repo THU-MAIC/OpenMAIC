@@ -102,7 +102,7 @@ export interface NarrationAdoptionOutcome {
 }
 
 /** A derived reference and the text of the action that carries it. */
-interface DerivedNarration {
+export interface DerivedNarration {
   readonly derivedRef: string;
   readonly text: string;
 }
@@ -205,8 +205,11 @@ function derivedKeyIsUnique(derivedRef: string): boolean {
  * matching text proves nothing there. Refusing such a row costs one course its
  * cached narration; adopting the wrong one writes another course's audio into
  * a shared document permanently.
+ *
+ * Also applied by the one-way importer (`lib/legacy-browser-import/`) to rows
+ * of the pre-server browser database, for the same reason.
  */
-function rowBelongsToAction(
+export function rowBelongsToAction(
   row: AudioFileRecord,
   stageId: string,
   action: DerivedNarration,

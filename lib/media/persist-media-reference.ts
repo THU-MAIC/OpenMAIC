@@ -34,7 +34,7 @@
  * reclaims is the one where nothing could possibly hold the id — no store write
  * was ever issued and no live scene took it.
  */
-import { mutateDocument } from '@/lib/document-store';
+import { mutateDocument, type DocumentMigrationDeps } from '@/lib/document-store';
 import { createLogger } from '@/lib/logger';
 import { markStagePersistenceDirty, useStageStore } from '@/lib/store/stage';
 import type { Scene } from '@/lib/types/stage';
@@ -170,6 +170,8 @@ export function placePendingMediaAllocations(stageId: string): boolean {
  */
 export async function persistGeneratedMediaReference(
   allocation: PendingMediaAllocation,
+  /** A document store other than the app's (the one-way importer's fenced one). */
+  deps: Pick<DocumentMigrationDeps, 'store'> = {},
 ): Promise<MediaReferenceWriteBackResult> {
   const { stageId } = allocation;
   const rewrite = rewriteOf(allocation);
@@ -190,21 +192,25 @@ export async function persistGeneratedMediaReference(
   };
 
   try {
-    await mutateDocument(stageId, async (document, store) => {
-      if (!document) return;
-      const now = Date.now();
-      for (const scene of document.scenes) {
-        if (!rewriteSceneMediaReference(scene, rewrite)) continue;
-        issuingWrite();
-        await store.putScene(stageId, { ...scene, updatedAt: now });
-        documentMatched = true;
-      }
-      if (rewriteStageMediaReference(document.stage, rewrite)) {
-        issuingWrite();
-        await store.putStage(stageId, { ...document.stage, updatedAt: now });
-        documentMatched = true;
-      }
-    });
+    await mutateDocument(
+      stageId,
+      async (document, store) => {
+        if (!document) return;
+        const now = Date.now();
+        for (const scene of document.scenes) {
+          if (!rewriteSceneMediaReference(scene, rewrite)) continue;
+          issuingWrite();
+          await store.putScene(stageId, { ...scene, updatedAt: now });
+          documentMatched = true;
+        }
+        if (rewriteStageMediaReference(document.stage, rewrite)) {
+          issuingWrite();
+          await store.putStage(stageId, { ...document.stage, updatedAt: now });
+          documentMatched = true;
+        }
+      },
+      deps,
+    );
   } catch (error) {
     // Whatever the document did or did not receive, the live store must not be
     // left behind it: the next ordinary flush writes the live snapshot, and a

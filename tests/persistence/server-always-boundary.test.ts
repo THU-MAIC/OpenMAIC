@@ -16,6 +16,9 @@
  *      whose schema holds no durable table.
  * 3. The legacy module has no write path: no table or store write outside
  *    the verbatim schema upgrade steps Dexie runs on open.
+ * 4. The importer reads legacy data only through that module: it never opens
+ *    the legacy database itself, and never deletes or clears a database or a
+ *    localStorage key (the legacy copy stays as it is after an import).
  *
  * Each rule is a function over `{ path, source }` pairs, exercised first on
  * synthetic sources (so a rule that stops matching fails here) and then on the
@@ -84,7 +87,7 @@ const configFiles = read(
 // ---------------------------------------------------------------------------
 
 const LEGACY_MODULE = 'lib/legacy-browser-storage/';
-/** The one-way importer (a later change) is the legacy module's only consumer. */
+/** The one-way importer is the legacy module's only consumer. */
 const IMPORTER_MODULE = 'lib/legacy-browser-import/';
 /** Copies browser-local voice profiles (a device preference) once; reads only. */
 const VOICE_PROFILE_CARRY_OVER = 'lib/device-storage/database.ts';
@@ -238,6 +241,36 @@ export function legacyWrites(files: readonly SourceFile[]): string[] {
     .map(({ path }) => path);
 }
 
+/**
+ * The importer writes to the server, the device cache and its own ledger, and
+ * to nothing a legacy store holds. Statically: no Dexie (so no handle of its
+ * own on a legacy database), no construction of the legacy schema, no
+ * database deletion, no localStorage removal or clear, and none of the quiz
+ * helpers that delete legacy keys. The behavioural proof is
+ * tests/legacy-browser-import/import.test.ts, which compares every legacy
+ * database byte for byte before and after an import.
+ */
+export function importerLegacyWrites(files: readonly SourceFile[]): string[] {
+  const forbidden = new RegExp(
+    [
+      String.raw`from\s*['"]dexie['"]`,
+      String.raw`\b(?:import|require)\s*\(\s*${CALL_COMMENTS}['"\`]dexie['"\`]`,
+      String.raw`\bnew\s+LegacyBrowserDatabase\b`,
+      String.raw`\bDexie\s*\.\s*delete\b`,
+      String.raw`\bdeleteDatabase\b`,
+      String.raw`\.removeItem\s*\(`,
+      String.raw`\blocalStorage\s*\.\s*clear\s*\(`,
+      String.raw`\bstorage\s*\.\s*clear\s*\(`,
+      String.raw`\bclearLegacyQuizStateSnapshot\b`,
+      String.raw`\bclearAllForScene\b`,
+    ].join('|'),
+  );
+  return files
+    .filter(({ path }) => path.startsWith(IMPORTER_MODULE))
+    .filter(({ source }) => forbidden.test(source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')))
+    .map(({ path }) => path);
+}
+
 // ---------------------------------------------------------------------------
 // The rules bite
 // ---------------------------------------------------------------------------
@@ -335,6 +368,28 @@ describe('the guards bite on synthetic sources', () => {
     ).toEqual(['stages']);
   });
 
+  it('flags an importer that opens, deletes or clears legacy data itself', () => {
+    expect(
+      importerLegacyWrites([
+        file('lib/legacy-browser-import/a.ts', "import Dexie from 'dexie';"),
+        file('lib/legacy-browser-import/b.ts', 'const legacy = new LegacyBrowserDatabase();'),
+        file('lib/legacy-browser-import/c.ts', "await Dexie.delete('MAIC-Database');"),
+        file('lib/legacy-browser-import/d.ts', "storage.removeItem('quizDraft:s');"),
+        file('lib/legacy-browser-import/e.ts', 'clearLegacyQuizStateSnapshot(sceneId, snapshot);'),
+        file('lib/legacy-browser-import/f.ts', 'localStorage.clear();'),
+        file('lib/legacy-browser-import/g.ts', 'await db.mediaFiles.put(row); // Dexie.delete'),
+        file('lib/other.ts', "await Dexie.delete('MAIC-Database');"),
+      ]),
+    ).toEqual([
+      'lib/legacy-browser-import/a.ts',
+      'lib/legacy-browser-import/b.ts',
+      'lib/legacy-browser-import/c.ts',
+      'lib/legacy-browser-import/d.ts',
+      'lib/legacy-browser-import/e.ts',
+      'lib/legacy-browser-import/f.ts',
+    ]);
+  });
+
   it('flags a write in the legacy module, but not a verbatim upgrade step', () => {
     expect(
       legacyWrites([
@@ -382,6 +437,12 @@ describe('server-backed persistence is the only persistence', () => {
     // And the legacy schema still declares every durable table the importer reads.
     const legacy = codeFiles.find(({ path }) => path === 'lib/legacy-browser-storage/schema.ts');
     expect(durableTablesDeclared(legacy!.source)).toEqual(DURABLE_TABLES);
+  });
+
+  it('keeps the importer read-only on legacy data', () => {
+    const importerFiles = codeFiles.filter(({ path }) => path.startsWith(IMPORTER_MODULE));
+    expect(importerFiles.length).toBeGreaterThan(5);
+    expect(importerLegacyWrites(importerFiles)).toEqual([]);
   });
 
   it('has no write path in the legacy module', () => {

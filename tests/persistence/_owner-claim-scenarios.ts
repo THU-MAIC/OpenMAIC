@@ -27,6 +27,7 @@ import {
   registerClaimParticipant,
   resetClaimParticipantsForTests,
 } from '@/lib/persistence/owner-claims';
+import { bindLegacyImport } from '@/lib/persistence/legacy-import-bindings';
 import { registerOwnerMaterial } from '@/lib/persistence/owner-materials';
 import {
   canonicalizeOwner,
@@ -228,6 +229,9 @@ export async function seedAnonymousWork(h: ClaimHarness, owner = ANON): Promise<
     createdAt: ISO_NOW,
     updatedAt: ISO_NOW,
   });
+  // The browser this owner used before signing in, bound to it for the
+  // one-way import of pre-server browser data.
+  await bindLegacyImport(h.pool, '0123456789abcdef0123456789abcdef', owner);
   return { assetId, sessionId: session.id, skillId: skill.id };
 }
 
@@ -248,6 +252,7 @@ export async function rowsUnder(pool: ClaimScenarioPool, owner: string) {
     skills: await count('agent_user_skill WHERE owner_id = $1'),
     runtime: await count('runtime_sessions WHERE learner_key = $1'),
     assets: await count('asset_entries WHERE principal = $1', assetPrincipalForOwner(owner).key),
+    legacyImportBindings: await count('legacy_import_bindings WHERE owner_id = $1'),
     // The retired ownership column, where an installation still has it.
     legacyDocumentOwners: (await hasLegacyOwnerColumn(pool))
       ? await count('document_stages WHERE owner_id = $1')
@@ -281,6 +286,7 @@ const NOTHING = {
   skills: 0,
   runtime: 0,
   assets: 0,
+  legacyImportBindings: 0,
   legacyDocumentOwners: 0,
 };
 
@@ -342,6 +348,7 @@ export async function fullClaimScenario(h: ClaimHarness): Promise<void> {
       'user-skills': 2,
       runtime: 2,
       assets: 1,
+      'legacy-import-bindings': 1,
     },
   });
   expect(await rowsUnder(h.pool, ANON)).toEqual(NOTHING);
