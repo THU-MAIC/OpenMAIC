@@ -8,6 +8,14 @@ banner, dialog or opt-in, and a course simply appears in the library once it is 
 the server. Problems are logged with `console.warn` under the prefix
 `[legacy-browser-import]`.
 
+It runs **once per browser**: the data belongs to whoever used this browser
+before the upgrade, so the first owner the importer runs for claims it, and any
+other owner that later loads in the same browser gets nothing imported. The one
+exception is a handoff: when the claiming owner is claimed into an account
+(observed as 403 `OWNER_RETIRED`, or inferred because the current owner now
+holds courses or folders the importer created), the account continues the
+unfinished items. Courses already imported are never imported again.
+
 It is **temporary** and will be deleted a few releases after it ships (see
 [Removal](#removal)).
 
@@ -51,9 +59,10 @@ Settings → Clear Local Cache still leaves the legacy databases alone.
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The owner already has the course id on the server                    | Server copy is authoritative and is not overwritten. Only media bytes that exist solely in this browser are uploaded, device-only rows copied, and an unfiled course filed in its old folder. |
 | The id is free                                                       | Created under its own id, with chat, runtime, playback, roster, quiz state, folder membership and media.                                                   |
-| Another owner holds the id (ids are global)                          | Created under a fresh id derived from the owner and the legacy id (`<id>-i<digest>`); scene stage ids, runtime session and record ids, playback and editor positions and membership follow it. |
+| Another owner holds the id (ids are global)                          | Created under a fresh id, `<id>-i<16 hex of SHA-256(salt, id)>` with a random per-browser salt from the ledger; scene stage ids, runtime session and record ids (including chat restore markers), playback and editor positions and membership follow it. |
 | The owner deleted the course on the server (a write answers 404)     | Skipped; the deletion stands.                                                                                                                             |
-| The legacy record fails validation or cannot be read                 | Skipped with the reason; the other courses continue.                                                                                                      |
+| The legacy record fails validation or cannot be read                 | Skipped with the reason (a document-store copy that cannot be read falls back to the original tables first); the other courses continue.                  |
+| Another tab of this browser is placing the same course (no Web Locks) | The library is listed again right before a course is placed; a course that appeared meanwhile is left to that tab.                                        |
 
 ## Failures
 
@@ -62,21 +71,31 @@ Settings → Clear Local Cache still leaves the legacy databases alone.
 | Server persistence unreachable, learner key unavailable | Nothing is done; the next load tries again.                                                                                           |
 | Network error, 5xx, 408/429, 409                         | The item stays pending; a later load retries it. Backoff between runs: 30 s, doubling, capped at 6 h.                                  |
 | 503 `OWNER_BUSY`                                         | The run pauses; the next run is allowed after `Retry-After` (2 s when not visible to the client).                                      |
-| 401 `INVALID_CREDENTIAL`, 403 `OWNER_RETIRED`            | The run stops; the item is recorded as failed and this owner's ledger is closed (a new owner starts its own).                          |
+| 401 (`INVALID_CREDENTIAL`, the access-code gate)         | The run pauses; items stay pending; a later load retries with backoff.                                                                 |
+| 403 `OWNER_RETIRED`                                      | The run stops, items stay pending, and the ledger notes the retirement: the owner that loads next (the account) continues.            |
+| 403 `FORBIDDEN_LEARNER` (the owner changed mid-run)      | The run stops; items stay pending for the next run.                                                                                   |
 | 400 / 422 validation on an item                          | That item is recorded as failed with the reason; the rest continue.                                                                  |
+| An upload refused for good (413, 400, 403)               | The element gets the app's ordinary failed-media record in the device cache (the one the generation pass writes), so it shows as failed with its usual affordance instead of a dangling reference. The legacy bytes stay. |
+| A whiteboard / PBL session is already active on the server | The legacy session of that kind is not created (the app keeps one active session per kind).                                         |
 | Asset quota exceeded                                     | The document is imported anyway. A generation placeholder's bytes go to the device cache's `mediaFiles` and narration to its `audioFiles`, where the app's own retry uploads them without a provider call; references with no such path (legacy pool ids, import-minted ids) stay pending and the importer retries them. Nothing is lost: the legacy copy is untouched. |
 | Folder name refused or folder limit reached              | The folder is recorded as failed; its courses stay unfiled.                                                                          |
+| The folder is gone when a course is filed (404)          | The course is imported and stays unfiled; the ledger notes it.                                                                       |
 
 ## Ledger
 
-One ledger per server owner in localStorage, `maic:legacy-import:v1:<ownerId>`
-(`ledger.ts`). Every step is recorded when it lands, so a crash or reload resumes
-at the first unfinished step. A different owner in the same browser has no ledger
-and re-evaluates everything. Clear Local Cache keeps the ledgers (and the old
-learner key), so it neither loses import state nor brings back a course the user
-deleted on the server after it was imported. Runs are serialized across tabs with
-the Web Lock `openmaic:legacy-browser-import`; without Web Locks a run just
-proceeds.
+One ledger per browser in localStorage, `maic:legacy-import:v2` (`ledger.ts`). It
+never holds an owner id: the claiming owner is a SHA-256 digest (an anonymous
+owner id is the anonymous cookie's value, a bearer credential). It holds the
+random salt fresh ids are derived from. Every step is recorded when it lands, so
+a crash or reload resumes at the first unfinished step; writes merge with the
+stored copy, so tabs without Web Locks do not erase each other's progress. Clear
+Local Cache keeps the ledger (and the old learner key), so it neither loses
+import state nor brings back a course the user deleted on the server after it
+was imported. Runs are serialized across tabs with the Web Lock
+`openmaic:legacy-browser-import`. If the ledger itself is deleted by hand, a
+rerun still creates no second copy of a course under its own id, but a course
+imported under a fresh id would be imported again (the salt is gone) and a
+half-copied runtime session is not completed.
 
 ## Removal
 
@@ -85,12 +104,13 @@ When the maintainers decide enough releases have passed:
 1. Delete `lib/legacy-browser-import/` and its tests (`tests/legacy-browser-import/`,
    `e2e/tests/legacy-browser-import.spec.ts`).
 2. Remove the dynamic import at the end of `lib/persistence/bootstrap.ts`.
-3. Optionally, drop what only the importer used: `LEGACY_IMPORT_LEDGER_PREFIX`
+3. Optionally, drop what only the importer used: `LEGACY_IMPORT_LEDGER_KEY`
    in `lib/device-storage/clear-local-cache.ts` (and the legacy learner key it
    keeps), `lib/legacy-browser-storage/`, `importLegacyQuizSnapshot` in
-   `lib/quiz/runtime.ts`, `canonicalizeLegacySnapshot`'s export, and the
-   `lib/legacy-browser-import/` entries in
-   `tests/persistence/server-always-boundary.test.ts`.
+   `lib/quiz/runtime.ts`, the exports of `canonicalizeLegacySnapshot` and
+   `rowBelongsToAction`, and the `lib/legacy-browser-import/` entries in
+   `tests/persistence/server-always-boundary.test.ts` and
+   `tests/media/media-placeholder-lease-guard.test.ts`.
 
 `LIBRARY_CHANGED_EVENT` (`lib/utils/stage-storage.ts`) is a generic
 "courses changed in the background" signal and can stay.
