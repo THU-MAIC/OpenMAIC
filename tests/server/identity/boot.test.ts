@@ -234,8 +234,31 @@ describe('owner identity validation at boot', () => {
       const { register } = await import('@/instrumentation');
 
       await expect(register()).resolves.toBeUndefined();
+      await expect(register()).resolves.toBeUndefined();
       expect(exit).not.toHaveBeenCalled();
       expect(singleUserWarnings()).toBe(1);
+      // The banner replaces the generic unset-ACCESS_CODE warning: one, not two.
+      expect(
+        warn.mock.calls.filter((args: unknown[]) =>
+          args.join(' ').includes('The access-code gate is disabled'),
+        ),
+      ).toHaveLength(0);
+    });
+
+    it('keeps the generic unset-ACCESS_CODE warning when single-user mode is off', async () => {
+      vi.stubEnv('ACCESS_CODE', '');
+      vi.stubEnv('OWNER_SINGLE_USER', 'false');
+      const { resetAccessCodeWarningForTests } = await import('@/lib/server/access-code-warning');
+      resetAccessCodeWarningForTests();
+      const { register } = await import('@/instrumentation');
+
+      await expect(register()).resolves.toBeUndefined();
+      expect(singleUserWarnings()).toBe(0);
+      expect(
+        warn.mock.calls.filter((args: unknown[]) =>
+          args.join(' ').includes('The access-code gate is disabled'),
+        ),
+      ).toHaveLength(1);
     });
 
     it('boots behind ACCESS_CODE without the single-user warning', async () => {

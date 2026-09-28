@@ -328,19 +328,21 @@ Compose 文件默认按**个人安装**配置：
 要让其他机器访问，请先加上保护：
 
 1. 在 `.env.local` 中设置足够长的随机 `ACCESS_CODE`（见 [ACCESS_CODE](#可选access_code共享部署)）。强烈建议这样做：没有访问码时，任何能访问该端口的人都是这唯一的所有者，可以共享、编辑甚至删除整个课程库。
-2. 首次启动前把 `PERSISTENCE_POSTGRES_PASSWORD` 设为 URL 安全的随机值（已有数据卷的做法见[服务端持久化](#服务端持久化postgresql)）。
+2. 首次启动前把 `PERSISTENCE_POSTGRES_PASSWORD` 设为只含字母和数字的随机值（已有数据卷的做法见[服务端持久化](#服务端持久化postgresql)）。
 3. 发布到网络地址：`OPENMAIC_PUBLISH_ADDRESS=0.0.0.0 docker compose up -d --build`。
 
 这些 Compose 层面的变量（`OPENMAIC_PUBLISH_ADDRESS`、宿主机端口 `OPENMAIC_PORT`、`PERSISTENCE_POSTGRES_PASSWORD`）来自 shell 或 `docker-compose.yml` 旁边的 `.env` 文件，而不是 `.env.local`。单用户模式下未设置 `ACCESS_CODE` 时，应用会在启动时输出醒目的警告；发布到回环以外却仍使用默认 PostgreSQL 密码时，应用也会警告；两者都不会阻止服务启动。之后的首次运行设置流程可能会提示设置访问码；在此之前，请自行设置 `ACCESS_CODE`。
 
-`docker-compose.defaults.env` 中的每个默认值都可以在 `.env.local` 中覆盖（Compose 会在它之后读取 `.env.local`）：例如设置 `OWNER_SINGLE_USER=false` 恢复每个浏览器一个匿名所有者（与 `pnpm dev` 相同），或改用 `PERSISTENCE_SHARED_OWNER_ID`。`DATABASE_URL` 由 `docker-compose.yml` 指向内置的 PostgreSQL，优先于 `.env.local`。
+`docker-compose.defaults.env` 中的每个默认值都可以在 `.env.local` 中覆盖（Compose 会在它之后读取 `.env.local`）：例如设置 `OWNER_SINGLE_USER=false` 恢复每个浏览器一个匿名所有者（与 `pnpm dev` 相同），或改用 `PERSISTENCE_SHARED_OWNER_ID`，或设置自己的 `DATABASE_URL` 使用外部数据库。此时内置的 `postgres` 服务仍会启动（应用会等待它的健康检查），但不会被使用；如不需要，可在 Compose 文件副本中删除它。
 
 > [!IMPORTANT]
 > **升级已有的 Compose 部署。** `docker compose up` 现在会启动 PostgreSQL，并以 `NEXT_PUBLIC_PERSISTENCE=1` 构建镜像；应用只发布在 `127.0.0.1` 上。
 >
 > - 如果此前供其他机器访问，请以 `OPENMAIC_PUBLISH_ADDRESS=0.0.0.0` 启动，并设置 `ACCESS_CODE`：现在每位访客都是同一个所有者。
 > - `--profile server-persistence` 仍可使用，但不再有任何作用；PostgreSQL 总会启动。
-> - 保存在浏览器存储中的课程会在打开时逐门复制到服务端。此前服务端部署中以某个浏览器匿名 cookie 保存的课程，会在该浏览器第一次请求时被认领到单一所有者名下（默认配置中 `OWNER_CLAIM_TRIGGER=auto`）。
+> - 此前纯浏览器部署保存在浏览器中的课程仍保留在浏览器里，不会被删除；它们将由随“默认服务端持久化”一同发布的浏览器到服务端自动迁移搬到服务端。
+> - 此前服务端部署中以各浏览器匿名 cookie 保存的课程仍归属于这些匿名所有者：不会被自动合并到单一所有者名下。如需并入，请显式认领（见[单用户模式](#单用户模式)）。如果该部署曾由多人使用，可以考虑改设 `OWNER_SINGLE_USER=false`，让每个人保留自己的课程库。
+> - `.env.local` 中的 `DATABASE_URL` 仍然优先（外部数据库，或已轮换的密码）；未设置时应用使用内置 PostgreSQL 和 `PERSISTENCE_POSTGRES_PASSWORD`。
 > - 如果 `.env.local` 设置了 `PERSISTENCE_SHARED_OWNER_ID`，请同时在其中设置 `OWNER_SINGLE_USER=false`：两者互斥，同时设置时应用拒绝启动。
 > - 如需纯浏览器存储的镜像，请以空值构建：`NEXT_PUBLIC_PERSISTENCE= docker compose up --build`（PostgreSQL 仍会启动，但不会被使用）。
 
@@ -388,7 +390,7 @@ NEXT_PUBLIC_PERSISTENCE=1 pnpm build
 DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
 ```
 
-和往常一样把服务商 API Key 填进 `.env.local`。之后运行时会话、课程文档和生成的媒体都由服务端存储；设备维度的 KV 数据（如播放进度）仍保留在浏览器中。已有的浏览器课程数据会在首次访问时逐门课程懒式迁移到服务端存储，迁移路径与浏览器持久化一致且经过校验。
+和往常一样把服务商 API Key 填进 `.env.local`。之后运行时会话、课程文档和生成的媒体都由服务端存储；设备维度的 KV 数据（如播放进度）仍保留在浏览器中。纯浏览器构建保存在浏览器中的课程仍保留在浏览器里，不会被删除；它们将由随“默认服务端持久化”一同发布的浏览器到服务端自动迁移搬到服务端。
 
 `NEXT_PUBLIC_PERSISTENCE` 是**编译期开关**，会打进浏览器 bundle。启用它的构建必须部署在具备可用运行时 `DATABASE_URL` 的环境中。否则浏览器会选择 HTTP 持久化但内嵌端点返回配置或初始化错误；首页会弹出持久化不可用的提示并保留原有课程列表，而不是误导性地显示空课程库。
 
@@ -407,7 +409,7 @@ DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
 >
 > **如果 `PERSISTENCE_DEV_TOKEN` 是你唯一的访问门槛，请在升级前处理。** 去掉它之后，端点会接受所有能访问到它的访客，每人作为各自的匿名所有者。请先用 `ACCESS_CODE` 或自己的网关保护部署、注册基于自有账号体系的所有者认证方法（见[所有者身份](#所有者身份)），或在此之前关闭服务端持久化（不设置 `NEXT_PUBLIC_PERSISTENCE`）。
 
-`PERSISTENCE_POSTGRES_PASSWORD`（默认 `openmaic-dev`，仅供本地使用）只在数据目录为空时初始化 PostgreSQL 角色；`docker-compose.yml` 也用同一个变量拼出应用的 `DATABASE_URL`，因此请使用 URL 安全的字符。之后再修改不会轮换已有的 `openmaic-postgres` 卷。一次性本地库可以直接 `docker compose down -v` 后换密码重启；要保留数据则执行 `docker compose exec postgres psql -U openmaic -d openmaic -c "ALTER ROLE openmaic WITH PASSWORD 'new-password';"`，然后以 `PERSISTENCE_POSTGRES_PASSWORD=new-password` 启动。
+`PERSISTENCE_POSTGRES_PASSWORD`（默认 `openmaic-dev`，仅供本地使用）只在数据目录为空时初始化 PostgreSQL 角色；`docker-compose.defaults.env` 中默认的 `DATABASE_URL` 也由同一个变量不经编码拼出，因此请只使用字母和数字（`@`、`/`、`#`、`?` 等字符会破坏 URL；这类密码请在 `.env.local` 中设置经过编码的 `DATABASE_URL`）。之后再修改不会轮换已有的 `openmaic-postgres` 卷。一次性本地库可以直接 `docker compose down -v` 后换密码重启；要保留数据则执行 `docker compose exec postgres psql -U openmaic -d openmaic -c "ALTER ROLE openmaic WITH PASSWORD 'new-password';"`，然后以 `PERSISTENCE_POSTGRES_PASSWORD=new-password` 启动（或在 `.env.local` 中设置对应的 `DATABASE_URL`）。
 
 资产的回收由离线回收器完成，不在请求路径上。**本部署默认开启回收器**，资产存储不会无限增长：每 `ASSET_COLLECTION_INTERVAL_MS`（默认 15 分钟）执行一轮，一轮分两级——先释放注册中心条目（在待定窗口内始终没有文档引用的分配，以及最后一处文档引用消失已超过 `ASSET_COLLECTION_GRACE_MS`（默认 1 小时）的条目），再按同一 grace 清理失去最后一个条目的字节。两级是依次等待的：正是释放条目这一步才让它的字节变成无引用，所以字节要等条目熬完自己的 grace 之后才开始计时。因此从「最后一个文档不再引用它」到「字节被删除」，最坏情况是两个 grace period 而不是一个。这个窗口就是用户删除的媒体实际的保留时间，调大请谨慎。设置 `ASSET_COLLECTION_ENABLED=0` 可在某个进程中关闭回收。多实例部署可以在每个实例上开启（每一行在被清理前都会加锁并复查，并发回收器会串行化而非竞争），也可以全部关闭后单独运行。
 
@@ -467,7 +469,12 @@ OpenMAIC 不内置身份网关认证器。部署在身份网关（带 `--pass-au
 
 之后的首次运行设置流程可能会提示设置访问码；目前请在服务可被他人访问之前自行设置 `ACCESS_CODE`。
 
-**此前的匿名工作。** 此前以匿名方式使用过该部署的浏览器仍会发送其 `anonymous_id` cookie。单用户模式只有一个人，所以该 cookie 只可能指向这个人自己的内容：principal 会带上指向它的 `pendingClaim`（见下文“认领匿名工作”），在 `OWNER_CLAIM_TRIGGER=auto`（Compose 默认）下，会在该浏览器第一次请求时认领到单一所有者名下。
+**此前的匿名工作。** 此前以匿名方式使用过该部署的浏览器仍会发送其 `anonymous_id` cookie。单用户 principal 会带上指向它的 `pendingClaim`（见下文“认领匿名工作”），但不会自动移动任何数据：默认触发方式是显式的。要把这些内容并入单一所有者，请从该浏览器发送 `POST /api/identity/claim`（同源 JSON，请求体 `{}`），或在清楚后果的前提下设置 `OWNER_CLAIM_TRIGGER=auto`。
+
+> [!WARNING]
+> 认领不可撤销。设置 `OWNER_CLAIM_TRIGGER=auto` 后，**每一个**访问的浏览器都会在第一次请求时把自己的匿名课程库合并进单一所有者。如果该部署此前曾被多人匿名使用，所有人的课程库都会被合并成一个共享、可被删除的课程库。
+
+**所有者 id 是永久的。** 之后修改 `OWNER_SINGLE_USER_ID`，或从 `PERSISTENCE_SHARED_OWNER_ID` 切换过来，原所有者的课程库都会被搁置：它不是匿名所有者，无法被认领。要保留共享团队的课程库，请把 `OWNER_SINGLE_USER_ID` 设为同一个 id。
 
 注册了自有方法、又希望以单一所有者兜底的宿主，可以把 `singleUserAuthMethod()`（从 `@/lib/server/identity` 导出）放在最后，规则与 `sharedTeamAuthMethod()` 相同。
 

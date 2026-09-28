@@ -344,14 +344,16 @@ export function validateOwnerIdentityConfiguration(): OwnerIdentityMode {
  * Startup warnings about the validated owner identity configuration, called
  * from `instrumentation.ts` after {@link validateOwnerIdentityConfiguration}:
  * single-user mode in effect (from the environment, or registered by a host)
- * without `ACCESS_CODE`. Never throws on a valid configuration.
+ * without `ACCESS_CODE`. Never throws on a valid configuration. Returns
+ * whether that warning applies, in which case it replaces the generic
+ * unset-`ACCESS_CODE` warning.
  */
-export function warnAboutOwnerIdentityConfiguration(): void {
+export function warnAboutOwnerIdentityConfiguration(): boolean {
   const configured = registry().configured;
   const singleUserActive = configured
     ? configured.methods.some(isSingleUserAuthMethod)
     : !resolveSharedOwnerId() && resolveSingleUserOwnerId() !== undefined;
-  warnIfSingleUserIsUnprotected(singleUserActive);
+  return warnIfSingleUserIsUnprotected(singleUserActive);
 }
 
 export function resetOwnerAuthenticationForTests(): void {

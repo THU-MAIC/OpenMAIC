@@ -236,6 +236,34 @@ describe('owner identity seam through the routes', () => {
     expect(response.headers.has('set-cookie')).toBe(false);
   });
 
+  it('keeps earlier anonymous courses apart until an explicit claim (singleUser, default trigger)', async () => {
+    vi.stubEnv('OWNER_SINGLE_USER', 'true');
+    vi.stubEnv('OWNER_CLAIM_TRIGGER', '');
+    const stageId = 'stage-seam-single-explicit';
+    await ownerStore(pool, `anon:${OWNER_COOKIE}`).saveDocument(courseDocument(stageId));
+    const cookie = `anonymous_id=${OWNER_COOKIE}`;
+
+    // The browser's own request does not merge anything by itself.
+    const before = await listStages({ cookie });
+    await expect(before.json()).resolves.toEqual({ stages: [] });
+    expect(before.headers.has('set-cookie')).toBe(false);
+
+    const { POST } = await import('@/app/api/identity/claim/route');
+    const claimed = await POST(
+      new Request('http://localhost/api/identity/claim', {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' },
+        body: '{}',
+      }),
+    );
+    expect(claimed.status).toBe(200);
+    await expect(claimed.json()).resolves.toMatchObject({ status: 'claimed' });
+
+    await expect((await listStages({})).json()).resolves.toMatchObject({
+      stages: [expect.objectContaining({ id: stageId })],
+    });
+  });
+
   it("claims a browser's earlier anonymous courses into the single owner (OWNER_CLAIM_TRIGGER=auto)", async () => {
     vi.stubEnv('OWNER_SINGLE_USER', 'true');
     vi.stubEnv('OWNER_CLAIM_TRIGGER', 'auto');

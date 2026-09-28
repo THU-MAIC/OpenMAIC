@@ -360,7 +360,7 @@ To reach it from other machines, protect it first:
    [ACCESS_CODE](#optional-access_code-shared-deployments)). This is strongly
    recommended: without it, anyone who can reach the port is the single owner
    and shares, edits and can delete the whole library.
-2. Set `PERSISTENCE_POSTGRES_PASSWORD` to a URL-safe random value before the
+2. Set `PERSISTENCE_POSTGRES_PASSWORD` to a random value of letters and digits before the
    first start (for an existing volume, see
    [Server-backed persistence](#server-backed-persistence-postgresql)).
 3. Publish on the network address:
@@ -377,8 +377,10 @@ an access code; until then, setting `ACCESS_CODE` is up to you.
 Each default in `docker-compose.defaults.env` can be overridden in `.env.local`,
 which Compose reads after it: for example `OWNER_SINGLE_USER=false` for one
 anonymous owner per browser (what `pnpm dev` does), or to use
-`PERSISTENCE_SHARED_OWNER_ID` instead. `DATABASE_URL` is set by
-`docker-compose.yml` for the bundled PostgreSQL and wins over `.env.local`.
+`PERSISTENCE_SHARED_OWNER_ID` instead, or your own `DATABASE_URL` for an
+external database. The bundled `postgres` service still starts in that case
+(the app waits for its health check) but is not used; remove it from a copy of
+the Compose file if you do not want it.
 
 > [!IMPORTANT]
 > **Upgrading an existing Compose deployment.** `docker compose up` now starts
@@ -390,10 +392,16 @@ anonymous owner per browser (what `pnpm dev` does), or to use
 >   is now the same single owner.
 > - `--profile server-persistence` is still accepted and changes nothing;
 >   PostgreSQL always starts.
-> - Courses kept in browser storage are copied to the server one course at a
->   time as they are opened. Courses an earlier server-backed deployment stored
->   under a browser's anonymous cookie are claimed into the single owner on
->   that browser's first request (`OWNER_CLAIM_TRIGGER=auto` in the defaults).
+> - Courses an earlier browser-only deployment stored in the browser stay there and are not deleted; they are moved to the server by the automatic browser-to-server migration that ships with server persistence by default, as part of the same release work.
+> - Courses an earlier server-backed deployment stored under each browser's
+>   anonymous cookie stay with those anonymous owners: nothing is merged into
+>   the single owner automatically. To bring them in, claim them explicitly
+>   (see [Single-user mode](#single-user-mode)). If several people used that
+>   deployment, consider `OWNER_SINGLE_USER=false` instead, so each keeps their
+>   own library.
+> - A `DATABASE_URL` in `.env.local` still wins (an external database, or a
+>   password you rotated); without one, the app uses the bundled PostgreSQL
+>   with `PERSISTENCE_POSTGRES_PASSWORD`.
 > - If `.env.local` sets `PERSISTENCE_SHARED_OWNER_ID`, also set
 >   `OWNER_SINGLE_USER=false` there: the two exclude each other and the app
 >   refuses to start with both.
@@ -454,10 +462,7 @@ DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
 
 Add your provider API keys to `.env.local` as usual. Runtime sessions, course
 documents and generated media become server-backed; device-scoped KV data
-(such as playback position) remains in the browser. Existing browser course
-data is copied into the configured server store lazily, one course at a time
-when it is first accessed, using the same verified migration path as browser
-persistence.
+(such as playback position) remains in the browser. Courses a browser-only build stored in the browser stay there and are not deleted; they are moved to the server by the automatic browser-to-server migration that ships with server persistence by default, as part of the same release work.
 
 `NEXT_PUBLIC_PERSISTENCE` is a **build-time switch** compiled into the browser
 bundle. A build with it enabled must be deployed with a working runtime
@@ -528,13 +533,16 @@ deployment with its own accounts registers owner auth methods (see
 
 `PERSISTENCE_POSTGRES_PASSWORD` (default `openmaic-dev`, for local use only)
 initializes the PostgreSQL role only when the data directory is empty, and
-`docker-compose.yml` builds the app's `DATABASE_URL` from the same variable, so
-use URL-safe characters. Changing it later does not rotate an existing
+the default `DATABASE_URL` in `docker-compose.defaults.env` is built from the
+same variable without encoding, so use letters and digits only (characters
+such as `@`, `/`, `#` or `?` break the URL; for such a password, set an
+encoded `DATABASE_URL` in `.env.local` instead). Changing it later does not rotate an existing
 `openmaic-postgres` volume. For a disposable local database, run
 `docker compose down -v`, set the new password, then start again. To preserve
 data, run
 `docker compose exec postgres psql -U openmaic -d openmaic -c "ALTER ROLE openmaic WITH PASSWORD 'new-password';"`,
-then start with `PERSISTENCE_POSTGRES_PASSWORD=new-password`.
+then start with `PERSISTENCE_POSTGRES_PASSWORD=new-password` (or set the
+matching `DATABASE_URL` in `.env.local`).
 
 Assets are reclaimed by an offline collector rather than on a request path.
 **This deployment runs that collector by default**, so nothing has to be
@@ -709,11 +717,22 @@ A later first-run setup flow may prompt for an access code; for now, set
 `ACCESS_CODE` yourself before the server is reachable by others.
 
 **Earlier anonymous work.** A browser that used the deployment anonymously
-before still sends its `anonymous_id` cookie. Single-user mode has exactly one
-person, so that cookie can only name their own work: the principal gets a
+before still sends its `anonymous_id` cookie. The single-user principal gets a
 `pendingClaim` for it (see [Claiming anonymous work](#claiming-anonymous-work)),
-and with `OWNER_CLAIM_TRIGGER=auto` (the Compose default) it is claimed into
-the single owner on the browser's first request.
+but nothing moves on its own: the default trigger is explicit. To bring that
+work into the single owner, send `POST /api/identity/claim` (same-origin JSON,
+body `{}`) from that browser, or set `OWNER_CLAIM_TRIGGER=auto` knowingly.
+
+> [!WARNING]
+> A claim is irreversible. With `OWNER_CLAIM_TRIGGER=auto`, **every** browser
+> that visits merges its anonymous library into the single owner on its first
+> request. If several people used the deployment anonymously before, that
+> merges all their libraries into one shared, deletable library.
+
+**The owner id is permanent.** Changing `OWNER_SINGLE_USER_ID` later, or
+switching from `PERSISTENCE_SHARED_OWNER_ID`, leaves the previous owner's
+library stranded: it is not anonymous, so it cannot be claimed. To keep a
+shared-team library, set `OWNER_SINGLE_USER_ID` to the same id.
 
 A host that registers its own methods and also wants the single owner as the
 last resort includes `singleUserAuthMethod()` (exported from

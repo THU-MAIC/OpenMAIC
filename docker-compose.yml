@@ -34,18 +34,15 @@ services:
     ports:
       - '${OPENMAIC_PUBLISH_ADDRESS:-127.0.0.1}:${OPENMAIC_PORT:-3000}:3000'
     env_file:
-      # Compose's defaults for this deployment (single-user owner, automatic
-      # claim of earlier anonymous work); .env.local is read after it, so a key
-      # set there overrides the default.
+      # Compose's defaults for this deployment (the bundled DATABASE_URL, the
+      # single-user owner); .env.local is read after it, so a key set there
+      # (for example an external DATABASE_URL) overrides the default.
       - docker-compose.defaults.env
       - .env.local
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      # Server-backed persistence against the bundled postgres service. Keys set
-      # here win over the same keys in .env.local.
-      - DATABASE_URL=postgres://openmaic:${PERSISTENCE_POSTGRES_PASSWORD:-openmaic-dev}@postgres:5432/openmaic
       # The address the port above is published on, passed in so the app can
       # warn when it is published beyond loopback with the default PostgreSQL
       # password below.
@@ -74,8 +71,9 @@ services:
       - POSTGRES_DB=openmaic
       - POSTGRES_USER=openmaic
       # Development default. It initializes the role only when the volume is
-      # empty; the app's DATABASE_URL above is built from the same variable.
-      # Set PERSISTENCE_POSTGRES_PASSWORD (URL-safe characters) before
+      # empty; the default DATABASE_URL in docker-compose.defaults.env is built
+      # from the same variable, so use letters and digits only (or set an
+      # encoded DATABASE_URL in .env.local). Set PERSISTENCE_POSTGRES_PASSWORD before
       # publishing the app beyond loopback; the app warns at startup if it is
       # published elsewhere with this default.
       - POSTGRES_PASSWORD=${PERSISTENCE_POSTGRES_PASSWORD:-openmaic-dev}

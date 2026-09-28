@@ -154,10 +154,14 @@ let warnedUnprotected = false;
  * server is the single owner. A warning, never a boot failure; the
  * deployment's network exposure is not something the app can see. Called
  * from `instrumentation.ts` after boot validation.
+ *
+ * Returns whether that condition holds (whether or not this call logged), so
+ * the caller can skip the generic unset-`ACCESS_CODE` warning it replaces.
  */
-export function warnIfSingleUserIsUnprotected(active: boolean): void {
+export function warnIfSingleUserIsUnprotected(active: boolean): boolean {
   // The middleware's truthiness check: an empty ACCESS_CODE leaves the gate open.
-  if (!active || process.env.ACCESS_CODE || warnedUnprotected) return;
+  if (!active || process.env.ACCESS_CODE) return false;
+  if (warnedUnprotected) return true;
   warnedUnprotected = true;
   log.warn(
     '\n' +
@@ -169,6 +173,7 @@ export function warnIfSingleUserIsUnprotected(active: boolean): void {
       '* long random value (at least 16 characters) in .env.local and restart.\n' +
       '************************************************************************',
   );
+  return true;
 }
 
 /** Reset the once-per-process guard. Exists mainly for tests. */

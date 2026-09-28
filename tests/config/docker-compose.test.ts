@@ -75,12 +75,13 @@ describe('docker-compose.yml', () => {
   it('starts the app only once PostgreSQL is healthy, wired to it', () => {
     expect(app.profiles).toBeUndefined();
     expect(app.depends_on?.postgres?.condition).toBe('service_healthy');
-    expect(defaultOf(app.environment, 'DATABASE_URL')).toBe(
-      'postgres://openmaic:openmaic-dev@postgres:5432/openmaic',
-    );
-    // The same variable initializes the role and builds the app's URL.
-    expect(app.environment).toContain(
-      'DATABASE_URL=postgres://openmaic:${PERSISTENCE_POSTGRES_PASSWORD:-openmaic-dev}@postgres:5432/openmaic',
+    // The default URL lives in the defaults file, so a DATABASE_URL in
+    // .env.local (an external database, an encoded password) wins over it;
+    // `environment:` would beat .env.local.
+    expect(defaultOf(app.environment, 'DATABASE_URL')).toBeUndefined();
+    // The same variable initializes the role and builds the default URL.
+    expect(readEnvFile('docker-compose.defaults.env').DATABASE_URL).toBe(
+      'postgres://openmaic:${PERSISTENCE_POSTGRES_PASSWORD:-openmaic-dev}@postgres:5432/openmaic',
     );
     expect(postgres.environment).toContain(
       'POSTGRES_PASSWORD=${PERSISTENCE_POSTGRES_PASSWORD:-openmaic-dev}',
@@ -103,16 +104,21 @@ describe('docker-compose.yml', () => {
   it('reads its defaults before .env.local, so .env.local overrides them', () => {
     expect(app.env_file).toEqual(['docker-compose.defaults.env', '.env.local']);
     // Keys in `environment` would beat .env.local; the owner settings must not be there.
-    for (const key of ['OWNER_SINGLE_USER', 'OWNER_CLAIM_TRIGGER']) {
+    for (const key of ['DATABASE_URL', 'OWNER_SINGLE_USER', 'OWNER_CLAIM_TRIGGER']) {
       expect(defaultOf(app.environment, key), key).toBeUndefined();
     }
   });
 
-  it('defaults to single-user mode with automatic claims', () => {
-    expect(readEnvFile('docker-compose.defaults.env')).toEqual({
+  it('defaults to single-user mode and leaves claims explicit', () => {
+    const defaults = readEnvFile('docker-compose.defaults.env');
+    expect(defaults).toEqual({
+      DATABASE_URL: expect.stringMatching(/@postgres:5432\/openmaic$/),
       OWNER_SINGLE_USER: 'true',
-      OWNER_CLAIM_TRIGGER: 'auto',
     });
+    // An automatic claim irreversibly merges every browser's anonymous library
+    // into the single owner; it must be an operator's explicit choice.
+    expect(defaults).not.toHaveProperty('OWNER_CLAIM_TRIGGER');
+    expect(JSON.stringify(app.environment)).not.toContain('OWNER_CLAIM_TRIGGER');
   });
 
   function stubComposeEnvironment(publishAddress: string, accessCode = ''): void {

@@ -15,8 +15,6 @@ export async function register(): Promise<void> {
   // want; the persistence stack is Node-only.
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
-  const { warnIfAccessCodeIsUnset } = await import('@/lib/server/access-code-warning');
-  warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
   const { warnIfDefaultDatabasePasswordIsPublished } =
     await import('@/lib/server/database-password-warning');
   warnIfDefaultDatabasePasswordIsPublished();
@@ -37,9 +35,14 @@ export async function register(): Promise<void> {
   }
 
   // Warn-only checks on the configuration that passed validation: single-user
-  // mode without ACCESS_CODE serves one library to whoever can reach the server.
+  // mode without ACCESS_CODE serves one library to whoever can reach the
+  // server. Its warning names ACCESS_CODE itself, so the generic unset-code
+  // warning is skipped then: one warning, not two.
   const { warnAboutOwnerIdentityConfiguration } = await import('@/lib/server/identity/registry');
-  warnAboutOwnerIdentityConfiguration();
+  if (!warnAboutOwnerIdentityConfiguration()) {
+    const { warnIfAccessCodeIsUnset } = await import('@/lib/server/access-code-warning');
+    warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
+  }
 
   // Imported dynamically so the Edge bundle never pulls in `pg`.
   const { startAssetCollectorSchedule } =
