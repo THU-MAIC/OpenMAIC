@@ -33,6 +33,7 @@
  */
 import { getDocumentStore } from '@/lib/document-store';
 import { hasLegacyBrowserStorage } from '@/lib/legacy-browser-storage';
+import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
 import { assetRefExists } from '@/lib/media/use-asset-url';
 import {
   ANSWERS_KEY_PREFIX,
@@ -205,7 +206,10 @@ async function runLocked(
       quizScenes,
       ledger,
       checkpoint,
-      assetExists: options.assetExists ?? ((ref) => assetRefExists(ref)),
+      assetExists:
+        options.assetExists ??
+        // A reference the pool never issued is not asked about (see mayNameAPoolAsset).
+        (async (ref) => mayNameAPoolAsset(ref) && assetRefExists(ref)),
       log,
       libraryChanged: false,
     };
