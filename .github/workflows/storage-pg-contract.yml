@@ -68,7 +68,11 @@ jobs:
       # it: the asset ones provision `stage_meta`, whose foreign key to
       # `document_stages` would break the package suite's non-cascading
       # TRUNCATE, so each works inside a schema of its own and drops it again.
-      # Both orders were checked, because nothing here guarantees one.
+      # Both orders were checked, because nothing here guarantees one. The
+      # others work in a schema or database of their own, or truncate only
+      # tables of their own. This list is every app `*.pg.test.ts`: a suite
+      # left off it skips everywhere, since no other job runs the app suites
+      # against a database.
       - name: App-domain PostgreSQL contracts
         run: |
           pnpm exec vitest run \
@@ -79,4 +83,11 @@ jobs:
             tests/persistence/host-create-hooks.pg.test.ts \
             tests/persistence/stage-meta-tenancy.pg.test.ts \
             tests/persistence/schema-bootstrap-concurrency.pg.test.ts \
-            tests/persistence/owner-claims.pg.test.ts
+            tests/persistence/owner-claims.pg.test.ts \
+            tests/persistence/owner-assets-legacy-race.pg.test.ts \
+            tests/persistence/owner-materials.pg.test.ts \
+            tests/persistence/runtime-tombstone-collision.pg.test.ts \
+            tests/agent-runtime/event-notify.pg.test.ts \
+            tests/agent-runtime/park-attempt-budget.pg.test.ts \
+            tests/agent-runtime/session-events-live.pg.test.ts \
+            tests/legacy-browser-import/import-routes.pg.test.ts
