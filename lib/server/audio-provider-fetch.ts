@@ -72,6 +72,13 @@ export type AudioProviderFetchPolicy = Partial<SsrfValidationPolicy> & {
    * issued with the caller's `redirect: 'error'` semantics intact.
    */
   rejectRedirects?: boolean;
+  /**
+   * When `true`, every followed redirect target must be HTTPS; a hop to `http:`
+   * is refused as an address-policy refusal and is not retried. Off by default
+   * so existing callers keep following HTTP hops; only redirect-following
+   * requests are affected (`rejectRedirects` already refuses every hop).
+   */
+  requireHttps?: boolean;
 };
 
 /** A `fetch`-shaped provider transport bound to one address policy. */
@@ -187,6 +194,7 @@ export async function audioProviderFetch(
       fetchImpl: undiciTransport,
       dispatcher,
       allowLocalNetworks,
+      ...(policy.requireHttps ? { requireHttps: true } : {}),
     });
   } catch (error) {
     // Undici reports a connect-time lookup refusal as `TypeError: fetch failed`

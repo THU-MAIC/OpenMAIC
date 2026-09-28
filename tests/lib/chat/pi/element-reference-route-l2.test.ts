@@ -769,6 +769,105 @@ describe('PPT element reference Route → Director → real call_agent L2', () =
     };
   }
 
+  describe.each(['whiteboard', 'slide'] as const)('%s snapshot validation', (kind) => {
+    it.each(['missing-elements', 'object-elements', 'null-element', 'object-content'] as const)(
+      'rejects %s with 400 before any model call',
+      async (shape) => {
+        const body = kind === 'whiteboard' ? whiteboardBody() : makeBody();
+        const elements = body.storeState.scenes[0].content.canvas.elements;
+        const owner =
+          kind === 'whiteboard'
+            ? body.storeState.stage.whiteboard[0]
+            : body.storeState.scenes[0].content.canvas;
+        if (shape === 'missing-elements') Object.assign(owner, { elements: undefined });
+        if (shape === 'object-elements') Object.assign(owner, { elements: {} });
+        if (shape === 'null-element') Object.assign(owner, { elements: [null] });
+        if (shape === 'object-content')
+          Object.assign(owner, { elements: [{ ...elements[0], content: {} }] });
+
+        const { POST } = await import('@/app/api/chat/pi/route');
+        const response = await POST(makeRequest(body));
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ errorCode: 'INVALID_REQUEST' });
+        expect(response.headers.has('X-OpenMAIC-Element-Reference-Accepted')).toBe(false);
+        expect(mocks.resolveModel).not.toHaveBeenCalled();
+        expect(mocks.buildAgent).not.toHaveBeenCalled();
+        expect(mocks.streamLLM).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  it('does not relabel unexpected resolver exceptions as invalid snapshot errors', async () => {
+    const references = await import('@/lib/chat/pi/element-reference');
+    const resolver = vi.spyOn(references, 'resolveElementReference').mockImplementation(() => {
+      throw new Error('Unexpected resolver failure');
+    });
+    try {
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(whiteboardBody()));
+      expect(response.status).toBe(500);
+      expect(await response.json()).toMatchObject({ errorCode: 'INTERNAL_ERROR' });
+      expect(mocks.resolveModel).not.toHaveBeenCalled();
+    } finally {
+      resolver.mockRestore();
+    }
+  });
+
+  it.each(['wrong-source', 'wrong-scene', 'malformed-packet'] as const)(
+    'does not label %s state errors as a changed whiteboard reference',
+    async (scenario) => {
+      const activity = runtimeBody();
+      const whiteboard = whiteboardBody();
+      const body = {
+        ...activity,
+        storeState: { ...activity.storeState, stage: whiteboard.storeState.stage },
+        elementReference: whiteboard.elementReference,
+      };
+      if (scenario === 'wrong-source') body.interactiveState.sourceHtmlHash = '0'.repeat(64);
+      if (scenario === 'wrong-scene')
+        body.interactiveState.snapshot.identity.sceneId = 'scene-other';
+      if (scenario === 'malformed-packet')
+        Object.assign(body.interactiveState.snapshot, { status: 'invalid' });
+
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(body));
+      expect(response.status).toBe(400);
+      const error = await response.json();
+      expect(error).toMatchObject({
+        errorCode: 'INVALID_REQUEST',
+        error:
+          scenario === 'malformed-packet'
+            ? 'Invalid interactive state packet'
+            : 'Interactive state does not match the current Scene source',
+      });
+      expect(error).not.toHaveProperty('reason');
+      expect(response.headers.has('X-OpenMAIC-Element-Reference-Accepted')).toBe(false);
+      expect(mocks.resolveModel).not.toHaveBeenCalled();
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      expect(mocks.streamLLM).not.toHaveBeenCalled();
+    },
+  );
+
+  it('passes a valid state packet together with a whiteboard reference to the Teacher', async () => {
+    const activity = runtimeBody();
+    const whiteboard = whiteboardBody();
+    installAgentShell('Whiteboard and activity answer.');
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(
+      makeRequest({
+        ...activity,
+        storeState: { ...activity.storeState, stage: whiteboard.storeState.stage },
+        elementReference: whiteboard.elementReference,
+      }),
+    );
+    await response.text();
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBe('1');
+    const prompts = mocks.legacyChildPrompts.join('\n');
+    expect(prompts).toContain('Whiteboard-only fact.');
+    expect(prompts).toContain('"density":1400');
+  });
+
   it.each(['Legacy', 'Native'] as const)(
     'passes whiteboard evidence through the real route and call_agent to %s Teacher',
     async (mode) => {

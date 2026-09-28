@@ -43,7 +43,9 @@
     "removeFailed": "Fehlgeschlagenen Upload entfernen",
     "uploadFailed": "{{name}} konnte nicht hochgeladen werden. Bitte erneut versuchen.",
     "fileTooLarge": "Die Datei ist zu groß. Komprimiere oder teile sie und versuche es erneut.",
-    "fileTooLargeWithLimit": "Die Datei ist zu groß. Wähle eine Datei mit höchstens {{limit}} MB aus."
+    "fileTooLargeWithLimit": "Die Datei ist zu groß. Wähle eine Datei mit höchstens {{limit}} MB aus.",
+    "unsupportedType": "Dieser Dateityp wird nicht unterstützt. Wähle eine unterstützte Datei aus.",
+    "quotaExceeded": "Upload-Limit für Materialien erreicht."
   },
   "skill": {
     "listFailed": "Die Skill-Liste konnte nicht geladen werden",

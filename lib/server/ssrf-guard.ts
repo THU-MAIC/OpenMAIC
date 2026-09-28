@@ -101,9 +101,11 @@ function canonicalizeIp(value: string): string | null {
  * IPv4 addresses carried inside an IPv6 literal by a transition mechanism:
  * 6to4 (2002::/16), Teredo (2001:0::/32, XOR-inverted), ISATAP interface
  * identifiers, NAT64 at the well-known (64:ff9b::/96) and RFC 8215 local-use
- * (64:ff9b:1::/48) prefixes, and the RFC 6145 IPv4-translatable prefix
- * (::ffff:0:0:0/96). Every NAT64/translation form embeds the IPv4 in the last
- * 32 bits. Empty when none applies.
+ * (64:ff9b:1::/48) prefixes, the RFC 6145 IPv4-translatable prefix
+ * (::ffff:0:0:0/96) and the deprecated IPv4-compatible range (::/96, excluding
+ * the unspecified `::` and loopback `::1`, which are classified directly).
+ * Every NAT64/translation form embeds the IPv4 in the last 32 bits. Empty when
+ * none applies.
  */
 function tunnelEmbeddedIPv4(normalized: string): string[] {
   const hextets = expandIPv6(normalized);
@@ -131,6 +133,20 @@ function tunnelEmbeddedIPv4(normalized: string): string[] {
     hextets[3] === 0x0000 &&
     hextets[4] === 0xffff &&
     hextets[5] === 0x0000
+  ) {
+    embedded.push(dotted(hextets[6], hextets[7]));
+  }
+  // Deprecated IPv4-compatible form `::a.b.c.d` (RFC 4291 §2.5.5.1), which the
+  // WHATWG URL parser canonicalizes to `::xxxx:xxxx`. `::` and `::1` are
+  // excluded because they are classified directly as unspecified/loopback.
+  if (
+    hextets[0] === 0x0000 &&
+    hextets[1] === 0x0000 &&
+    hextets[2] === 0x0000 &&
+    hextets[3] === 0x0000 &&
+    hextets[4] === 0x0000 &&
+    hextets[5] === 0x0000 &&
+    !(hextets[6] === 0x0000 && (hextets[7] === 0x0000 || hextets[7] === 0x0001))
   ) {
     embedded.push(dotted(hextets[6], hextets[7]));
   }
