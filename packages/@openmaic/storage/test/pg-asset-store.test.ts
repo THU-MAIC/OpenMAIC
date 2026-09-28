@@ -955,6 +955,49 @@ describe('PgAssetStore registry behavior with PGlite', () => {
   });
 });
 
+describe('PgAssetStore.reassignPrincipal with PGlite', () => {
+  let db: PGlite;
+  let store: PgAssetStore;
+
+  beforeEach(async () => {
+    db = new PGlite();
+    await db.waitReady;
+    await ensureAssetSchema(db);
+    store = new PgAssetStore(db, options(db, new PgAssetByteStore(db), { quotaBytes: 8 }));
+  });
+
+  afterEach(async () => {
+    await db.close();
+  });
+
+  test('moves every entry to the target, which then reads and removes them as its own', async () => {
+    const first = await store.put(PRINCIPAL, blob('abcd'));
+    const second = await store.put(PRINCIPAL, blob('efgh'));
+    const theirs = await store.put(OTHER_PRINCIPAL, blob('ijkl'));
+
+    await expect(store.reassignPrincipal(PRINCIPAL.key, OTHER_PRINCIPAL.key)).resolves.toBe(2);
+
+    await expect(store.resolve(PRINCIPAL, first)).resolves.toBeNull();
+    for (const id of [first, second, theirs]) {
+      await expect(store.resolve(OTHER_PRINCIPAL, id)).resolves.not.toBeNull();
+    }
+    // The merge does not refuse on quota (12 bytes against 8): the target
+    // keeps everything and cannot allocate until it is back under.
+    await expect(store.put(OTHER_PRINCIPAL, blob('m'))).rejects.toBeInstanceOf(
+      AssetQuotaExceededError,
+    );
+    await store.remove(OTHER_PRINCIPAL, first);
+    await expect(store.resolve(OTHER_PRINCIPAL, first)).resolves.toBeNull();
+    await expect(store.reassignPrincipal(PRINCIPAL.key, OTHER_PRINCIPAL.key)).resolves.toBe(0);
+  });
+
+  test('is a no-op for the same principal and refuses empty keys', async () => {
+    await store.put(PRINCIPAL, blob('abcd'));
+    await expect(store.reassignPrincipal(PRINCIPAL.key, PRINCIPAL.key)).resolves.toBe(0);
+    await expect(store.reassignPrincipal('', PRINCIPAL.key)).rejects.toThrow(/non-empty/);
+  });
+});
+
 describe('PgAssetStore indirect resolution with PGlite', () => {
   let db: PGlite;
 

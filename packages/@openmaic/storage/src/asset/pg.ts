@@ -770,4 +770,61 @@ export class PgAssetStore implements AssetStore {
       throw registryFailure('replace');
     }
   }
+
+  /**
+   * Move every entry held by principal `fromKey` to principal `toKey`: the
+   * re-key half of merging two owners' asset partitions. Answers how many
+   * entries moved.
+   *
+   * Nothing else about an entry changes -- its id, bytes, lifecycle columns
+   * and the document references naming it stay as they are -- so a document
+   * that renders the entry keeps rendering it, provided whatever decides who
+   * may read an entry (a host's read rule) agrees about the new principal.
+   *
+   * Both principals' write locks (the advisory lock `put` and `replace` take
+   * under a quota) are taken first, in key order, so the move cannot
+   * interleave with a quota check for either side. The quota itself is not
+   * checked: a merge never drops an entry, so the target may end up above its
+   * quota, and its next `put` is refused until it is back under.
+   *
+   * Runs in the store's write transaction; pin the store to an open
+   * transaction to make it part of a larger one.
+   */
+  async reassignPrincipal(fromKey: string, toKey: string): Promise<number> {
+    if (
+      typeof fromKey !== 'string' ||
+      fromKey === '' ||
+      typeof toKey !== 'string' ||
+      toKey === '' ||
+      !isLosslessJsonString(fromKey) ||
+      !isLosslessJsonString(toKey)
+    ) {
+      throw new Error('@openmaic/storage: asset principal keys must be non-empty text');
+    }
+    if (fromKey === toKey) return 0;
+    return this.writeTransaction(async (queryable) => {
+      const keys = await queryable.query<{ key: string }>(
+        `SELECT DISTINCT hashtextextended(principal, 0)::text AS key
+           FROM unnest($1::text[]) AS principal`,
+        [[fromKey, toKey]],
+      );
+      const ordered = keys.rows
+        .map((row) => BigInt(row.key))
+        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+      for (const key of ordered) {
+        await queryable.query('SELECT pg_advisory_xact_lock($1::bigint)', [key.toString()]);
+      }
+      // Row locks in id order, the order the collector's passes walk entries
+      // in, before the update touches them.
+      await queryable.query(
+        `SELECT id FROM asset_entries WHERE principal = $1 ORDER BY id FOR UPDATE`,
+        [fromKey],
+      );
+      const moved = await queryable.query<{ id: string }>(
+        `UPDATE asset_entries SET principal = $2 WHERE principal = $1 RETURNING id`,
+        [fromKey, toKey],
+      );
+      return moved.rows.length;
+    });
+  }
 }

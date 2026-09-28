@@ -43,7 +43,15 @@
  *
  * **Ids are opaque.** A candidate becomes a row only when `asset_entries`
  * already holds an entry with that id, established by a join in the caller's
- * transaction. Nothing here parses, validates, or prefix-matches a reference:
+ * transaction.
+ *
+ * **References can be scoped to principals.** A writer that passes
+ * `principals` references, and commits, only entries held by one of those
+ * principals: an id naming another principal's entry produces no row and no
+ * lifecycle change, exactly like an unknown id. Without it, a document naming
+ * an id it learned elsewhere would commit another principal's pending
+ * allocation and pin that entry (and its quota) for as long as the document
+ * names it. The document write itself is never refused either way. Nothing here parses, validates, or prefix-matches a reference:
  * placeholders, `data:` payloads, legacy URLs and ids from other id spaces
  * simply produce no row, which is the same rule the read paths apply when they
  * answer "unknown id" with a miss.
@@ -428,6 +436,7 @@ export async function lockBackfillEntries(
 async function commitReferencedEntries(
   queryable: Queryable,
   candidates: readonly string[],
+  principals: ReferencePrincipals,
 ): Promise<void> {
   const ids = queryableCandidates(candidates);
   if (ids.length === 0) return;
@@ -436,9 +445,21 @@ async function commitReferencedEntries(
         SET committed_at = COALESCE(committed_at, now()),
             expires_at = NULL,
             unreferenced_at = NULL
-      WHERE id = ANY($1::text[])`,
-    [ids],
+      WHERE id = ANY($1::text[])
+        AND ($2::text[] IS NULL OR principal = ANY($2::text[]))`,
+    [ids, principalFilter(principals)],
   );
+}
+
+/**
+ * The principals whose entries a writer may reference, or `undefined` for any
+ * entry. See the module docstring.
+ */
+type ReferencePrincipals = readonly string[] | undefined;
+
+function principalFilter(principals: ReferencePrincipals): string[] | null {
+  if (principals === undefined) return null;
+  return principals.filter((key) => typeof key === 'string' && isLosslessJsonString(key));
 }
 
 /**
@@ -479,19 +500,21 @@ async function replaceScopeRows(
   queryable: Queryable,
   stageId: string,
   scope: DocumentAssetScope,
+  principals: ReferencePrincipals,
 ): Promise<void> {
   await queryable.query(
     `DELETE FROM document_asset_refs
       WHERE stage_id = $1 AND scope = $2 AND scene_id = $3`,
     [stageId, scope.scope, scope.sceneId],
   );
-  await insertScopeRows(queryable, stageId, scope);
+  await insertScopeRows(queryable, stageId, scope, principals);
 }
 
 async function insertScopeRows(
   queryable: Queryable,
   stageId: string,
   scope: DocumentAssetScope,
+  principals: ReferencePrincipals,
 ): Promise<void> {
   const ids = queryableCandidates(scope.candidates);
   if (ids.length === 0) return;
@@ -512,9 +535,10 @@ async function insertScopeRows(
      SELECT $1, $2, $3, entries.id
        FROM asset_entries AS entries
       WHERE entries.id = ANY($4::text[])
+        AND ($5::text[] IS NULL OR entries.principal = ANY($5::text[]))
       ORDER BY entries.id ASC
      ON CONFLICT DO NOTHING`,
-    [stageId, scope.scope, scope.sceneId, ids],
+    [stageId, scope.scope, scope.sceneId, ids, principalFilter(principals)],
   );
 }
 
@@ -522,6 +546,11 @@ async function insertScopeRows(
 export interface SyncDocumentAssetReferencesInput {
   readonly stageId: string;
   readonly scope: DocumentAssetScope;
+  /**
+   * Reference only entries held by these principals. Omit to reference any
+   * entry the registry holds. See the module docstring.
+   */
+  readonly principals?: readonly string[];
 }
 
 /**
@@ -536,15 +565,15 @@ export async function syncDocumentAssetReferences(
   queryable: Queryable,
   input: SyncDocumentAssetReferencesInput,
 ): Promise<void> {
-  const { stageId, scope } = input;
+  const { stageId, scope, principals } = input;
   const previous = await referencedAssetIds(queryable, stageId, scope);
   // Every entry lock this transaction will need, ascending, before the first
   // write to either table -- see lockEntriesInOrder.
   await lockWriteEntries(queryable, scope.candidates, previous);
   await recordAssetReferenceTracking(queryable);
   await forgetDocumentAssetWithdrawal(queryable, stageId);
-  await replaceScopeRows(queryable, stageId, scope);
-  await commitReferencedEntries(queryable, scope.candidates);
+  await replaceScopeRows(queryable, stageId, scope, principals);
+  await commitReferencedEntries(queryable, scope.candidates, principals);
   await stampUnreferencedEntries(queryable, previous);
 }
 
@@ -552,6 +581,8 @@ export async function syncDocumentAssetReferences(
 export interface SyncStageAssetReferencesInput {
   readonly stageId: string;
   readonly scopes: readonly DocumentAssetScope[];
+  /** As {@link SyncDocumentAssetReferencesInput.principals}. */
+  readonly principals?: readonly string[];
 }
 
 /**
@@ -575,7 +606,7 @@ export async function syncStageAssetReferences(
   queryable: Queryable,
   input: SyncStageAssetReferencesInput,
 ): Promise<void> {
-  const { stageId, scopes } = input;
+  const { stageId, scopes, principals } = input;
   const previous = await referencedAssetIds(queryable, stageId);
   const next = scopes.flatMap((scope) => [...scope.candidates]);
   await lockWriteEntries(queryable, next, previous);
@@ -583,9 +614,9 @@ export async function syncStageAssetReferences(
   await forgetDocumentAssetWithdrawal(queryable, stageId);
   await queryable.query('DELETE FROM document_asset_refs WHERE stage_id = $1', [stageId]);
   for (const scope of scopes) {
-    await insertScopeRows(queryable, stageId, scope);
+    await insertScopeRows(queryable, stageId, scope, principals);
   }
-  await commitReferencedEntries(queryable, next);
+  await commitReferencedEntries(queryable, next, principals);
   await stampUnreferencedEntries(queryable, previous);
 }
 
@@ -661,7 +692,7 @@ export async function backfillDocumentAssetReferences(
   queryable: Queryable,
   input: SyncDocumentAssetReferencesInput,
 ): Promise<void> {
-  await insertScopeRows(queryable, input.stageId, input.scope);
+  await insertScopeRows(queryable, input.stageId, input.scope, input.principals);
 }
 
 /**

@@ -67,23 +67,54 @@ CREATE TABLE IF NOT EXISTS document_stages (
   task_engine_mode BOOLEAN,
   created_at DOUBLE PRECISION NOT NULL,
   updated_at DOUBLE PRECISION NOT NULL,
-  owner_id TEXT,
   folder_id TEXT,
   data JSONB NOT NULL
 );
 
 ALTER TABLE document_stages
-  ADD COLUMN IF NOT EXISTS owner_id TEXT;
-
-ALTER TABLE document_stages
   ADD COLUMN IF NOT EXISTS folder_id TEXT;
 
-CREATE INDEX IF NOT EXISTS document_stages_owner_idx
-  ON document_stages (owner_id, id) WHERE owner_id IS NOT NULL;
+-- Document ownership is not recorded here: a host keeps it in its own
+-- relation (see DocumentOwnershipRelation). An installation created before
+-- that keeps its owner_id column for one release -- so a rollback still finds
+-- it, and a host can copy it into its relation first -- but nothing reads or
+-- writes it any more, and the next release drops it. A NOT NULL or a default
+-- a host added to it would fail or mislabel every new document, so both are
+-- relaxed. The catalog is asked first, and each ALTER runs only when it has
+-- something to change: an ALTER naming a column that is not there is an error,
+-- and one with nothing to change would still take an exclusive table lock on
+-- every boot. The indexes below served only the column.
+DO $document_stages_owner_retirement$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM pg_attribute
+     WHERE attrelid = to_regclass('document_stages')
+       AND attname = 'owner_id'
+       AND NOT attisdropped
+       AND attnotnull
+  ) THEN
+    ALTER TABLE document_stages ALTER COLUMN owner_id DROP NOT NULL;
+  END IF;
+  IF EXISTS (
+    SELECT 1
+      FROM pg_attribute
+     WHERE attrelid = to_regclass('document_stages')
+       AND attname = 'owner_id'
+       AND NOT attisdropped
+       AND atthasdef
+  ) THEN
+    ALTER TABLE document_stages ALTER COLUMN owner_id DROP DEFAULT;
+  END IF;
+END
+$document_stages_owner_retirement$;
 
-CREATE INDEX IF NOT EXISTS document_stages_owner_folder_idx
-  ON document_stages (owner_id, folder_id, id)
-  WHERE owner_id IS NOT NULL AND folder_id IS NOT NULL;
+DROP INDEX IF EXISTS document_stages_owner_idx;
+
+DROP INDEX IF EXISTS document_stages_owner_folder_idx;
+
+CREATE INDEX IF NOT EXISTS document_stages_folder_idx
+  ON document_stages (folder_id, id) WHERE folder_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS document_scenes (
   stage_id TEXT NOT NULL REFERENCES document_stages(id) ON DELETE CASCADE,
@@ -806,11 +837,20 @@ describe.each(schemas)('$name is a pinned contract', ({ name, actual, expected, 
         /^DO \$agent_session_[a-z_]+_validation\$/.test(sql) &&
         /AND NOT convalidated/.test(sql) &&
         /VALIDATE CONSTRAINT [a-z0-9_]+/.test(sql);
+      // The retired document owner column: each ALTER is guarded by a catalog
+      // check that it has something to change, so a replay changes nothing.
+      const retiredColumnRelaxation =
+        /^DO \$document_stages_owner_retirement\$/.test(sql) &&
+        (sql.match(/ALTER TABLE/g) ?? []).length ===
+          (sql.match(/IF EXISTS \(\s*SELECT 1\s+FROM pg_attribute/g) ?? []).length &&
+        !/DROP COLUMN/.test(sql);
       expect(
         /^CREATE (TABLE|INDEX|UNIQUE INDEX) IF NOT EXISTS /.test(sql) ||
           /^ALTER TABLE [a-z_]+\s+ADD COLUMN IF NOT EXISTS /.test(sql) ||
           localConstraintMigration ||
           constraintValidation ||
+          retiredColumnRelaxation ||
+          /^DROP INDEX IF EXISTS [a-z0-9_]+$/.test(sql) ||
           /^CREATE OR REPLACE FUNCTION /.test(sql) ||
           /^DROP TRIGGER IF EXISTS /.test(sql) ||
           // CREATE TRIGGER is made idempotent by the paired DROP TRIGGER IF

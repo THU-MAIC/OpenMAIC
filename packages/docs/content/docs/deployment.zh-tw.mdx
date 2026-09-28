@@ -70,22 +70,20 @@ pnpm start      # 預設監聽 3000 連接埠
 
 儲存庫的 `server-persistence` profile 會啟動 OpenMAIC 和 PostgreSQL 兩個容器。持久化 HTTP API 內嵌在 OpenMAIC 中，不需要額外的 persistence 服務。
 
-先在 `.env.local` 中加入資料庫連線和開發token：
+先在 `.env.local` 中加入資料庫連線：
 
 ```bash
 DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
-PERSISTENCE_DEV_TOKEN=openmaic-local-dev
 ```
 
 然後啟動 profile：
 
 ```bash
 NEXT_PUBLIC_PERSISTENCE=1 \
-NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev \
 docker compose --profile server-persistence up --build
 ```
 
-`NEXT_PUBLIC_PERSISTENCE` 和 `NEXT_PUBLIC_PERSISTENCE_TOKEN` 是建置時變數，必須與執行時的伺服器端設定相符。`PERSISTENCE_DEV_TOKEN` 方案只適合本機或可信任的內部網路部署，不提供真正的使用者隔離，不應直接作為公開正式環境的驗證方案。
+`NEXT_PUBLIC_PERSISTENCE` 是建置時變數。持久化不再有單獨的憑證：每個請求都歸屬於所有者解析得出的所有者（預設是每個瀏覽器一個的匿名 cookie），執行時工作階段和媒體按該所有者分區。預設身分只隔離瀏覽器、並不驗證任何人，面向真實使用者的部署應註冊基於自有帳號體系的所有者驗證方法。早期版本使用的 `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` 已移除並被忽略；以舊的瀏覽器自行產生學習者 key 儲存的執行時工作階段將無法再存取。如果 `PERSISTENCE_DEV_TOKEN` 曾是唯一的存取門檻，請在升級前以 `ACCESS_CODE` 或閘道保護部署、註冊所有者驗證方法，或不設定 `NEXT_PUBLIC_PERSISTENCE`。
 
 PostgreSQL 資料儲存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRES_PASSWORD` 只會在資料庫目錄首次初始化時設定密碼，之後修改環境變數不會自動修改已有資料庫使用者密碼。
 

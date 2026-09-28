@@ -30,6 +30,7 @@ import {
 import type { MaicDocument } from '../src/document/types.js';
 import {
   acquireDocumentPgContractLock,
+  CONTRACT_OWNERSHIP,
   truncateDocumentTables,
 } from './pg-document-contract-helpers.js';
 
@@ -1503,11 +1504,13 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
       const owned = new PgDocumentStore(pool as Queryable, {
         withTransaction: transactionFor(pool),
         trackAssetReferences: true,
+        documentOwnership: CONTRACT_OWNERSHIP,
       }).forOwner('withdraw-owner-a');
       await owned.saveDocument(stageWithImage('owner-stage', 'owner-scene', id));
       const foreign = new PgDocumentStore(pool as Queryable, {
         withTransaction: transactionFor(pool),
         trackAssetReferences: true,
+        documentOwnership: CONTRACT_OWNERSHIP,
       }).forOwner('withdraw-owner-b');
 
       expect(await foreign.withdrawAssetReferences('owner-stage')).toBe(false);

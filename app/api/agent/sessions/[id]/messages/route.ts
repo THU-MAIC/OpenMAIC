@@ -8,7 +8,11 @@ import { apiError } from '@/lib/server/api-response';
 import { MAX_SESSION_TEXT_LENGTH } from '@/lib/server/agent-runtime/limits';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 import { scheduleConversationTitle } from '@/lib/server/agent-runtime/conversation-title-task';
-import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import {
+  ownerRetiredResponseIfRetired,
+  ownerWriteErrorResponse,
+} from '@/lib/persistence/owner-merges';
 import { decodeElementRefs } from '@/lib/workbench/element-refs';
 import { decodeCourseRefs } from '@/lib/workbench/course-refs';
 import {
@@ -23,7 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return new Response('Not found', { status: 404 });
   }
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const { id } = await params;
     const store = await getAgentSessionStore();
     const meta = await store.getSession(id);
@@ -116,8 +120,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return new Response('Not found', { status: 404, headers: responseHeaders });
       }
       if (error instanceof AgentSessionAccessError) {
+        // A retired identity: the session moved with the claim.
+        const retired = await ownerRetiredResponseIfRetired(ownerId, responseHeaders);
+        if (retired) return retired;
         return new Response('Forbidden', { status: 403, headers: responseHeaders });
       }
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
       throw error;
     }
   });

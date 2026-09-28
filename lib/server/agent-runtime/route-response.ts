@@ -8,7 +8,7 @@ import { apiError, type ApiErrorCode } from '@/lib/server/api-response';
  * Every response of an owner-scoped route must carry the response headers the
  * owner resolution produced: a freshly minted anonymous cookie must ride
  * success AND 4xx/5xx responses alike, so a client that retries after an error
- * keeps the same owner partition (see `with-owner.ts`).
+ * keeps the same owner partition (see `lib/server/identity/with-owner.ts`).
  */
 
 /** Attach the owner-resolution headers (e.g. a minted Set-Cookie) to a response. */

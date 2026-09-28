@@ -26,6 +26,19 @@ const LIMIT_TOAST = {
 
 const GENERIC_TOAST = '文件过大，请压缩或拆分后重试。';
 
+const STATUS_TOAST = {
+  415: {
+    'en-US': 'Unsupported file type. Please choose a supported file.',
+    'zh-CN': '不支持此文件类型，请选择受支持的文件。',
+    'de-DE': 'Dieser Dateityp wird nicht unterstützt. Wähle eine unterstützte Datei aus.',
+  },
+  429: {
+    'en-US': 'Material upload limit reached.',
+    'zh-CN': '已达到材料上传限额。',
+    'de-DE': 'Upload-Limit für Materialien erreicht.',
+  },
+} as const;
+
 function tooLargeResponse(): Response {
   return new Response(
     JSON.stringify({
@@ -135,6 +148,48 @@ describe('composer material upload toasts', () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
+
+  it.each([
+    [415, 'en-US'],
+    [415, 'zh-CN'],
+    [415, 'de-DE'],
+    [429, 'en-US'],
+    [429, 'zh-CN'],
+    [429, 'de-DE'],
+  ] as const)(
+    'shows localized %s in %s without server details or retries',
+    async (status, locale) => {
+      let materialPosts = 0;
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/agent/runtime')) return Response.json({ enabled: true });
+        if (url.includes('/api/materials')) {
+          materialPosts += 1;
+          return Response.json(
+            { error: 'raw server failure' },
+            { status, headers: { 'x-request-id': 'upload-trace-123' } },
+          );
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      });
+      const mounted = await mountComposer(locale, fetchMock);
+      dispose = mounted.dispose;
+
+      await mounted.act(async () => {
+        await vi.waitFor(() => expect(mounted.sink.current?.enabled).toBe(true));
+      });
+      await mounted.act(async () => {
+        mounted.sink.current?.addFiles([pdfFile()]);
+        await vi.waitFor(() => expect(mounted.errorSpy).toHaveBeenCalledTimes(1));
+      });
+
+      expect(mounted.errorSpy).toHaveBeenCalledWith(STATUS_TOAST[status][locale]);
+      expect(String(mounted.errorSpy.mock.calls[0]?.[0])).not.toContain('raw server failure');
+      expect(String(mounted.errorSpy.mock.calls[0]?.[0])).not.toContain('upload-trace-123');
+      expect(mounted.sink.current?.failed).toHaveLength(1);
+      expect(materialPosts).toBe(1);
+    },
+  );
 
   it.each(['de-DE', 'zh-CN', 'en-US'] as const)(
     'shows the localized effective limit in toast after a 413 upload (%s)',

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
-  withRequestOwnerId: vi.fn(),
+  resolveRequestOwnerId: vi.fn(),
   listSkills: vi.fn(),
   createUserSkill: vi.fn(),
   isAgentRuntimeEnabled: vi.fn(() => true),
@@ -12,9 +12,11 @@ vi.mock('@/lib/config/feature-flags', () => ({
   isAgentRuntimeEnabled: mocks.isAgentRuntimeEnabled,
   isAgentRuntimeConfigured: mocks.isAgentRuntimeEnabled,
 }));
-vi.mock('@/lib/server/agent-runtime/with-owner', () => ({
-  withRequestOwnerId: mocks.withRequestOwnerId,
-}));
+vi.mock('@/lib/server/identity/resolve', async () =>
+  (await import('../helpers/owner-resolution-mock')).ownerResolveModule(
+    mocks.resolveRequestOwnerId,
+  ),
+);
 vi.mock('@/lib/server/agent-runtime/skills', () => ({ listSkills: mocks.listSkills }));
 vi.mock('@/lib/server/agent-runtime/user-skills', async () => {
   const actual = await vi.importActual<typeof import('@/lib/server/agent-runtime/user-skills')>(
@@ -33,14 +35,9 @@ function uploadRequest(file: File) {
   return new NextRequest('http://localhost/api/agent/skills', { method: 'POST', body: form });
 }
 
-/** The route's owner seam: run the handler with a fixed owner + header bag. */
+/** The route's owner seam: resolve every request to a fixed owner. */
 function runWithOwner(ownerId: string) {
-  mocks.withRequestOwnerId.mockImplementation(
-    async (
-      _req: NextRequest,
-      handler: (ownerId: string, responseHeaders: Headers) => Promise<Response>,
-    ) => handler(ownerId, new Headers()),
-  );
+  mocks.resolveRequestOwnerId.mockReturnValue(ownerId);
 }
 
 beforeEach(() => {
@@ -85,12 +82,17 @@ describe('POST agent skills', () => {
     );
 
     expect(response.status).toBe(201);
-    expect(mocks.createUserSkill).toHaveBeenCalledWith('user:u1', {
-      name: 'my-uploaded',
-      title: 'Uploaded',
-      description: 'Uploaded description',
-      content: 'Uploaded instructions',
-    });
+    expect(mocks.createUserSkill).toHaveBeenCalledWith(
+      'user:u1',
+      {
+        name: 'my-uploaded',
+        title: 'Uploaded',
+        description: 'Uploaded description',
+        content: 'Uploaded instructions',
+      },
+      // A request creates as itself: a retired identity is refused, not forwarded.
+      { source: 'request' },
+    );
   });
 
   it('accepts bare SKILL.md and rejects invalid handles through create validation', async () => {

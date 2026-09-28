@@ -494,6 +494,32 @@ describe('POST /api/extract-document (asset-id form)', () => {
     expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
   });
 
+  it('rejects a client-supplied local baseUrl when ALLOW_LOCAL_NETWORKS is unset', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('ALLOW_LOCAL_NETWORKS', undefined);
+    mocks.resolveServerAsset.mockResolvedValue({
+      status: 'resolved',
+      buffer: Buffer.from('%PDF-1.4'),
+      mimeType: 'application/pdf',
+    });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'lesson.pdf',
+      mimeType: 'application/pdf',
+      providerId: 'mineru-cloud',
+      baseUrl: 'http://127.0.0.1:8000/v1/',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_URL',
+    });
+    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+  });
+
   it('lets the JSON path proceed when ALLOW_LOCAL_NETWORKS=true opts a local base URL in', async () => {
     vi.stubEnv('NODE_ENV', 'development');
     vi.stubEnv('ALLOW_LOCAL_NETWORKS', 'true');

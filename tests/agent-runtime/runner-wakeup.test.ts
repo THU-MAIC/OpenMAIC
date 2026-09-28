@@ -126,7 +126,7 @@ vi.mock('@/lib/server/agent-runtime/user-skills', async (importActual) => {
 // The owner-bound document store is setup-only in this harness; the tools
 // built around it are never invoked.
 vi.mock('@/lib/server/agent-runtime/owner-scoped-documents', () => ({
-  getOwnerScopedDocumentStore: vi.fn(async () => ({})),
+  getBackgroundDocumentStore: vi.fn(async () => ({})),
 }));
 
 // Capability resolution stays hermetic: no web search and no voice

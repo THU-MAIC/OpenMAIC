@@ -308,16 +308,13 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'Temporary: asset-byte-store selection still switches between concrete storage implementations.',
     [
       ['pg', 12],
-      ['s3', 16],
+      ['s3', 18],
     ],
   ),
   ...groupedDebt(
     'lib/persistence/server-provider.ts',
     'Temporary: server persistence composition still imports concrete storage implementations.',
-    [
-      ['pg', 13],
-      ['s3', 1],
-    ],
+    [['pg', 12]],
   ),
 ] as const;
 

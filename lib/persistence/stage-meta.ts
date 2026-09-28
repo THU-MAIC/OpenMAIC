@@ -1,6 +1,8 @@
 import { DocumentNotFoundError } from '@openmaic/storage';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
+import { ensureOwnerMergeSchema } from './owner-merges';
+
 export interface StageMetaRow {
   stageId: string;
   ownerId: string;
@@ -39,18 +41,102 @@ CREATE INDEX IF NOT EXISTS stage_meta_owner_idx ON stage_meta (owner_id, stage_i
 
 CREATE INDEX IF NOT EXISTS stage_meta_public_live_idx
   ON stage_meta (stage_id) WHERE is_public AND deleted_at IS NULL;
-
-INSERT INTO stage_meta (stage_id, owner_id)
-SELECT id, owner_id
-  FROM document_stages
- WHERE owner_id IS NOT NULL
-ON CONFLICT (stage_id) DO NOTHING;
 `;
 
+/** Whether `document_stages` still has the retired `owner_id` column. */
+async function hasLegacyDocumentOwnerColumn(queryable: Queryable): Promise<boolean> {
+  const result = await queryable.query<{ present: boolean } & Record<string, unknown>>(
+    `SELECT EXISTS (
+       SELECT 1
+         FROM pg_attribute
+        WHERE attrelid = to_regclass('document_stages')
+          AND attname = 'owner_id'
+          AND NOT attisdropped
+     ) AS present`,
+  );
+  return result.rows[0]?.present === true;
+}
+
+/** What {@link adoptLegacyDocumentOwners} found; all zero on a database without the column. */
+export interface LegacyOwnerAdoption {
+  /** Courses whose only ownership record was the document row, now in `stage_meta`. */
+  adopted: number;
+  /** Courses whose document row names a different owner than `stage_meta`, which wins. */
+  disagreeing: number;
+}
+
+/**
+ * Copy ownership recorded only on `document_stages.owner_id` into
+ * `stage_meta`.
+ *
+ * Nothing reads that column any more -- `stage_meta` is the only ownership
+ * record -- so a course written before `stage_meta` existed, whose owner is
+ * on its document row alone, would otherwise belong to no one. Idempotent: an
+ * existing ownership row is never touched (`ON CONFLICT DO NOTHING`), so a
+ * second boot adopts nothing, and where the two records disagree `stage_meta`
+ * stands and the disagreement is counted for an operator. A database created
+ * without the column has nothing to adopt.
+ */
+export async function adoptLegacyDocumentOwners(
+  queryable: Queryable,
+): Promise<LegacyOwnerAdoption> {
+  if (!(await hasLegacyDocumentOwnerColumn(queryable))) return { adopted: 0, disagreeing: 0 };
+  const adopted = await queryable.query<{ stage_id: string } & Record<string, unknown>>(
+    `INSERT INTO stage_meta (stage_id, owner_id)
+     SELECT id, owner_id
+       FROM document_stages
+      WHERE owner_id IS NOT NULL
+     ON CONFLICT (stage_id) DO NOTHING
+     RETURNING stage_id`,
+  );
+  const disagreeing = await queryable.query<{ count: string } & Record<string, unknown>>(
+    `SELECT COUNT(*)::text AS count
+       FROM document_stages AS stages
+       JOIN stage_meta AS meta ON meta.stage_id = stages.id
+      WHERE stages.owner_id IS NOT NULL
+        AND stages.owner_id <> meta.owner_id`,
+  );
+  return {
+    adopted: adopted.rows.length,
+    disagreeing: Number(disagreeing.rows[0]?.count ?? 0),
+  };
+}
+
+/**
+ * Ensure the schema, and adopt owned documents that have no ownership row.
+ *
+ * The adoption ({@link adoptLegacyDocumentOwners}) is a backfill for databases
+ * written before `stage_meta` existed, and must run before anything serves a
+ * course: nothing else reads the owner recorded on a document row. It runs at
+ * provider startup, outside any request, so it records ownership **without**
+ * the host create hooks (`authorizeCreate` / `onCreate`): there is no request,
+ * principal, or create transaction to run them in. On a database this version
+ * created, every course is claimed with its hooks at creation and the
+ * backfill adopts nothing; when it does adopt, it says how many so an operator
+ * can reconcile any host rows those courses lack.
+ */
 export async function ensureStageMetaSchema(queryable: Queryable): Promise<void> {
   for (const sql of STAGE_META_SCHEMA.split(';')) {
     const statement = sql.trim();
-    if (statement !== '') await queryable.query(statement);
+    if (statement === '') continue;
+    await queryable.query(statement);
+  }
+  // The record of ownership moving between owners (claims), provisioned with
+  // the record of ownership itself: every write path that checks one reads
+  // the other (see ./owner-merges.ts).
+  await ensureOwnerMergeSchema(queryable);
+  const { adopted, disagreeing } = await adoptLegacyDocumentOwners(queryable);
+  if (adopted > 0) {
+    console.warn(
+      `[stage-meta] adopted ${adopted} owned course(s) without an ownership row; ` +
+        'host create hooks do not run for adopted courses.',
+    );
+  }
+  if (disagreeing > 0) {
+    console.warn(
+      `[stage-meta] ${disagreeing} course(s) name a different owner on the retired ` +
+        'document_stages.owner_id column than in stage_meta; stage_meta is authoritative.',
+    );
   }
 }
 
@@ -100,11 +186,17 @@ export class StageAccessError extends DocumentNotFoundError {
   }
 }
 
+/**
+ * Record that `ownerId` owns `stageId`. Resolves `true` when this call inserted
+ * the ownership row -- the course was created by the calling transaction --
+ * and `false` when the owner already held it (a concurrent create by the same
+ * owner that committed first). A foreign owner is refused.
+ */
 export async function claimStageMeta(
   queryable: Queryable,
   stageId: string,
   ownerId: string,
-): Promise<void> {
+): Promise<boolean> {
   const inserted = await queryable.query<{ owner_id: string } & Record<string, unknown>>(
     `INSERT INTO stage_meta (stage_id, owner_id)
      VALUES ($1, $2)
@@ -112,7 +204,7 @@ export async function claimStageMeta(
      RETURNING owner_id`,
     [stageId, ownerId],
   );
-  if (inserted.rows[0]?.owner_id === ownerId) return;
+  if (inserted.rows[0]?.owner_id === ownerId) return true;
 
   const existing = await queryable.query<{ owner_id: string } & Record<string, unknown>>(
     'SELECT owner_id FROM stage_meta WHERE stage_id = $1',
@@ -121,6 +213,7 @@ export async function claimStageMeta(
   if (existing.rows[0]?.owner_id !== ownerId) {
     throw new StageAccessError(stageId, ownerId, 'foreign');
   }
+  return false;
 }
 
 export async function tombstoneStageMeta(queryable: Queryable, stageId: string): Promise<void> {

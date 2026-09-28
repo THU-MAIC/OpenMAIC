@@ -43,7 +43,9 @@
     "removeFailed": "移除上傳失敗的材料",
     "uploadFailed": "{{name}} 上傳失敗，請重試",
     "fileTooLarge": "檔案過大，請壓縮或分割後重試。",
-    "fileTooLargeWithLimit": "檔案過大，請選擇不超過 {{limit}}MB 的檔案。"
+    "fileTooLargeWithLimit": "檔案過大，請選擇不超過 {{limit}}MB 的檔案。",
+    "unsupportedType": "不支援此檔案類型，請選擇受支援的檔案。",
+    "quotaExceeded": "已達到材料上傳限額。"
   },
   "skill": {
     "listFailed": "Skill 清單載入失敗",

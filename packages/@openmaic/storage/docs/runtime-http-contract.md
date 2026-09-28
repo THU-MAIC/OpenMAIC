@@ -81,7 +81,8 @@ Every non-2xx response has this machine-readable JSON shape:
 | Session does not exist | `404` | `SESSION_NOT_FOUND` | `getSession` returns `undefined`; operations that require the session throw `HttpRuntimeStoreError` with the browser store's `no session` semantics |
 | Route does not exist | `404` | `ROUTE_NOT_FOUND` | Throw `HttpRuntimeStoreError` |
 | A stored session has a future runtime DSL version | `409` | `FUTURE_VERSION` | Throw `HttpRuntimeStoreError` with the browser store's fail-loud `newer than this client's` semantics |
-| Session id already exists | `409` | `SESSION_ALREADY_EXISTS` | Throw `HttpRuntimeStoreError` with the browser store's `already exists` semantics |
+| The store refused to create a session because the host considers its stage absent (`RuntimeStageNotFoundError`, for example a deleted course) | `404` | `STAGE_NOT_FOUND` | Throw `HttpRuntimeStoreError` |
+| Session id already exists, whichever learner holds it (the answer never depends on the holder, so a create cannot reveal whose session an id is) | `409` | `SESSION_ALREADY_EXISTS` | Throw `HttpRuntimeStoreError` with the browser store's `already exists` semantics |
 | `expectedLastSeq` does not match the current record tail | `409` | `RUNTIME_APPEND_CONFLICT` | Reconstitute and throw `RuntimeAppendConflictError` with `sessionId`, `expectedLastSeq`, and `actualLastSeq` from `error.details` |
 | Unexpected server failure | `500` | `INTERNAL_ERROR` | Throw `HttpRuntimeStoreError` |
 

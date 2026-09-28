@@ -43,7 +43,9 @@
     "removeFailed": "Quitar la carga fallida",
     "uploadFailed": "No se pudo subir {{name}}. Inténtalo de nuevo.",
     "fileTooLarge": "El archivo es demasiado grande. Comprímelo o divídelo e inténtalo de nuevo.",
-    "fileTooLargeWithLimit": "El archivo es demasiado grande. Selecciona uno de {{limit}} MB como máximo."
+    "fileTooLargeWithLimit": "El archivo es demasiado grande. Selecciona uno de {{limit}} MB como máximo.",
+    "unsupportedType": "Tipo de archivo no compatible. Elige un archivo compatible.",
+    "quotaExceeded": "Se alcanzó el límite de carga de materiales."
   },
   "skill": {
     "listFailed": "No se pudo cargar la lista de skills",
