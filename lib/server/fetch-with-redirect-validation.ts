@@ -60,6 +60,19 @@ export interface RedirectValidationOptions {
    * do not opt in keep following HTTP hops exactly as before.
    */
   requireHttps?: boolean;
+  /**
+   * Address policy for redirect targets when it differs from the origin's.
+   * Unset holds every hop to `allowLocalNetworks`. A caller whose origin is
+   * trusted configuration (allowed on a local network) sets this so a hop the
+   * origin answers with is still judged by the operator policy.
+   */
+  redirectAllowLocalNetworks?: boolean;
+  /**
+   * Dispatcher for redirect hops, paired with `redirectAllowLocalNetworks`, so
+   * the connect-time pin of a hop follows the hop policy. Unset keeps
+   * `dispatcher` on every hop.
+   */
+  redirectDispatcher?: Dispatcher;
 }
 
 /**
@@ -171,6 +184,7 @@ export async function fetchWithRedirectValidation(
 ): Promise<Response> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const allowLocalNetworks = options.allowLocalNetworks ?? allowLocalNetworksEnabled();
+  const hopAllowLocalNetworks = options.redirectAllowLocalNetworks ?? allowLocalNetworks;
   // The dispatcher rides every hop of this request (credential stripping only
   // rewrites `headers`), so the connect address stays pinned for redirects too.
   const baseInit: RequestInit = options.dispatcher
@@ -203,7 +217,9 @@ export async function fetchWithRedirectValidation(
       throw new UnsafeNetworkTargetError(REDIRECT_REQUIRES_HTTPS_MESSAGE);
     }
 
-    const ssrfError = await validateUrlForSSRFWithPolicy(nextUrl, { allowLocalNetworks });
+    const ssrfError = await validateUrlForSSRFWithPolicy(nextUrl, {
+      allowLocalNetworks: hopAllowLocalNetworks,
+    });
     if (ssrfError) throw new UnsafeNetworkTargetError(ssrfError);
 
     // A streaming request body has been consumed by the request that just
@@ -225,6 +241,10 @@ export async function fetchWithRedirectValidation(
       hasCredentialHeaders(hopInit.headers)
     ) {
       hopInit = { ...hopInit, headers: stripCredentialHeaders(hopInit.headers) };
+    }
+
+    if (options.redirectDispatcher) {
+      hopInit = { ...hopInit, dispatcher: options.redirectDispatcher } as RequestInit;
     }
 
     currentUrl = nextUrl;

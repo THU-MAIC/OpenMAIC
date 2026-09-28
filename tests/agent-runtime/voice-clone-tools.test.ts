@@ -43,6 +43,9 @@ vi.mock('@/lib/server/provider-config', async (importOriginal) => {
   return {
     ...actual,
     enabledServerTTSProviderIds: mocks.enabledServerTTSProviderIds,
+    // The enabled server TTS providers are the operator-configured ones.
+    isServerConfiguredProvider: (section: string, id: string) =>
+      section === 'tts' && (mocks.enabledServerTTSProviderIds() as string[]).includes(id),
     resolveTTSApiKey: mocks.resolveTTSApiKey,
     resolveTTSBaseUrl: mocks.resolveTTSBaseUrl,
   };
@@ -274,6 +277,7 @@ describe('voice clone agent tools', () => {
     expect(cfg).toEqual({
       baseUrl: 'https://fake.example',
       apiKey: 'sk-test',
+      managed: true,
       model: 'fake-model',
     });
     expect(params).toMatchObject({

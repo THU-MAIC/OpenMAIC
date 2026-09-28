@@ -48,6 +48,7 @@ import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import { validateReferenceAudio } from '@/lib/audio/wav-validate';
 import {
   enabledServerTTSProviderIds,
+  isServerConfiguredProvider,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
 } from '@/lib/server/provider-config';
@@ -361,6 +362,7 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
       const cfg: VoiceRegistrationConfig = {
         baseUrl: resolveTTSBaseUrl(providerId) ?? '',
         apiKey: resolveTTSApiKey(providerId),
+        managed: isServerConfiguredProvider('tts', providerId),
         model: adapter.resolveRegistrationModel(),
       };
       const registrationKey = createHash('sha256')

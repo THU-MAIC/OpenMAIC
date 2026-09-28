@@ -84,7 +84,17 @@ describe('transcription — client-supplied base URL guard applies in every envi
 
     expect(res.status).toBe(200);
     expect(mocks.transcribeAudio).toHaveBeenCalledWith(
-      expect.objectContaining({ providerId: 'openai', publicOnly: false }),
+      expect.objectContaining({ providerId: 'openai', publicOnly: false, managed: true }),
+      expect.any(File),
+    );
+  });
+
+  it('marks an unmanaged provider without a client base URL as not managed', async () => {
+    const res = await postTranscription('');
+
+    expect(res.status).toBe(200);
+    expect(mocks.transcribeAudio).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: 'openai', publicOnly: false, managed: false }),
       expect.any(File),
     );
   });

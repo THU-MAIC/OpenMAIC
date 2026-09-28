@@ -48,9 +48,12 @@ import {
   type RequestInit as UndiciRequestInit,
 } from 'undici';
 
+import { isIP } from 'node:net';
+
 import { createValidatedDispatcher } from '@/lib/server/pinned-dispatcher';
 import {
   allowLocalNetworksEnabled,
+  assertSafeConnectionAddress,
   findUnsafeNetworkTargetError,
   type SsrfValidationPolicy,
 } from '@/lib/server/ssrf-guard';
@@ -79,6 +82,21 @@ export type AudioProviderFetchPolicy = Partial<SsrfValidationPolicy> & {
    * requests are affected (`rejectRedirects` already refuses every hop).
    */
   requireHttps?: boolean;
+  /**
+   * Address policy for followed redirect hops when it differs from the
+   * origin's. Unset holds hops to the origin policy. A server-managed origin
+   * allowed on a local network sets this to the operator policy
+   * (`ALLOW_LOCAL_NETWORKS`), so the endpoint the operator configured may be
+   * local while a hop it answers with is judged like any other target. Each
+   * hop is validated and pinned under this policy.
+   */
+  redirectAllowLocalNetworks?: boolean;
+  /**
+   * Undici timeouts for the pinned dispatcher. Unset keeps undici's defaults;
+   * LLM calls raise both so a slow thinking model is not cut off.
+   */
+  headersTimeout?: number;
+  bodyTimeout?: number;
 };
 
 /** A `fetch`-shaped provider transport bound to one address policy. */
@@ -94,15 +112,24 @@ export function resolveAllowLocalNetworks(allowLocalNetworks?: boolean): boolean
   return allowLocalNetworks ?? allowLocalNetworksEnabled();
 }
 
-// One pooled dispatcher per policy. Keeping the pinned agents alive lets undici
-// reuse connections; they are replaced wholesale by the test reset below.
-const dispatchers = new Map<boolean, Dispatcher>();
+// One pooled dispatcher per policy (address policy plus timeouts). Keeping the
+// pinned agents alive lets undici reuse connections; they are replaced
+// wholesale by the test reset below.
+const dispatchers = new Map<string, Dispatcher>();
 
-function dispatcherFor(allowLocalNetworks: boolean): Dispatcher {
-  let dispatcher = dispatchers.get(allowLocalNetworks);
+function dispatcherFor(
+  allowLocalNetworks: boolean,
+  timeouts: Pick<AudioProviderFetchPolicy, 'headersTimeout' | 'bodyTimeout'> = {},
+): Dispatcher {
+  const key = `${allowLocalNetworks}:${timeouts.headersTimeout ?? ''}:${timeouts.bodyTimeout ?? ''}`;
+  let dispatcher = dispatchers.get(key);
   if (!dispatcher) {
-    dispatcher = createValidatedDispatcher({ allowLocalNetworks });
-    dispatchers.set(allowLocalNetworks, dispatcher);
+    dispatcher = createValidatedDispatcher({
+      allowLocalNetworks,
+      headersTimeout: timeouts.headersTimeout,
+      bodyTimeout: timeouts.bodyTimeout,
+    });
+    dispatchers.set(key, dispatcher);
   }
   return dispatcher;
 }
@@ -161,11 +188,29 @@ function normalizeProviderBodyForUndici(init: RequestInit | undefined): RequestI
 }
 
 /**
+ * Refuse an IP-literal request host the policy does not allow. Node never runs
+ * `connect.lookup` for an IP literal, so the pinned dispatcher alone cannot
+ * judge it; a hostname is judged by the pinned lookup at connect time.
+ */
+function assertIpLiteralHostAllowed(input: string | URL, allowLocalNetworks: boolean): void {
+  let hostname: string;
+  try {
+    hostname = new URL(input).hostname;
+  } catch {
+    return; // not a URL: the transport rejects it itself
+  }
+  const bare =
+    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+  if (isIP(bare)) assertSafeConnectionAddress(bare, allowLocalNetworks);
+}
+
+/**
  * Issue one provider request: a pinned dispatcher plus redirect handling under
  * the given policy. By default redirects are followed only after each hop is
  * re-validated; with `rejectRedirects` a 3xx is a hard failure instead. The
- * origin is validated by the caller (the route or the download helper, under
- * the same policy); this helper owns redirect handling and connect-time pinning.
+ * request origin is held to the same policy here (IP-literal hosts before the
+ * request, hostnames by the pinned lookup), so the transport enforces it even
+ * when a caller did not validate the URL first.
  */
 export async function audioProviderFetch(
   input: string | URL,
@@ -173,7 +218,8 @@ export async function audioProviderFetch(
   policy: AudioProviderFetchPolicy = {},
 ): Promise<Response> {
   const allowLocalNetworks = resolveAllowLocalNetworks(policy.allowLocalNetworks);
-  const dispatcher = dispatcherFor(allowLocalNetworks);
+  assertIpLiteralHostAllowed(input, allowLocalNetworks);
+  const dispatcher = dispatcherFor(allowLocalNetworks, policy);
   // Normalize the body once, before either transport path can serialize it:
   // both the direct `redirect: 'error'` request and the per-hop loop hand the
   // init to undici's fetch, whose serializer is the one that must recognize it.
@@ -190,10 +236,17 @@ export async function audioProviderFetch(
         dispatcher,
       } as RequestInit);
     }
+    const hopAllowLocalNetworks = policy.redirectAllowLocalNetworks ?? allowLocalNetworks;
     return await fetchWithRedirectValidation(input, normalizedInit, {
       fetchImpl: undiciTransport,
       dispatcher,
       allowLocalNetworks,
+      ...(hopAllowLocalNetworks !== allowLocalNetworks
+        ? {
+            redirectAllowLocalNetworks: hopAllowLocalNetworks,
+            redirectDispatcher: dispatcherFor(hopAllowLocalNetworks, policy),
+          }
+        : {}),
       ...(policy.requireHttps ? { requireHttps: true } : {}),
     });
   } catch (error) {
@@ -207,11 +260,45 @@ export async function audioProviderFetch(
   }
 }
 
+export { isRejectedRedirectError } from '@/lib/utils/rejected-redirect';
+
 /** Bind {@link audioProviderFetch} to one policy (e.g. for the AI SDK). */
 export function createAudioProviderFetch(
   policy: AudioProviderFetchPolicy = {},
 ): AudioProviderFetch {
   return (input, init) => audioProviderFetch(input, init, policy);
+}
+
+/**
+ * Who chose an audio provider endpoint, as the route resolved it server-side
+ * (never from request input).
+ */
+export interface AudioEndpointTarget {
+  /** A client-supplied BYOK base URL: held to the strict public policy. */
+  publicOnly?: boolean;
+  /**
+   * A server-configured provider: its base URL is operator configuration and
+   * may be on a local network without ALLOW_LOCAL_NETWORKS.
+   */
+  managed?: boolean;
+}
+
+/**
+ * Address policy for a request to an audio provider's own endpoint. A client
+ * BYOK endpoint gets the strict public policy; a server-configured one may be
+ * local, while redirect hops it answers with stay on the operator policy;
+ * anything else (an unmanaged provider's catalog default) gets the operator
+ * policy. Cloud metadata and reserved ranges are refused under all three.
+ * Provider-returned result URLs do not use this.
+ */
+export function audioEndpointPolicy(
+  target: AudioEndpointTarget | undefined,
+): AudioProviderFetchPolicy {
+  if (target?.publicOnly) return { allowLocalNetworks: false };
+  if (target?.managed) {
+    return { allowLocalNetworks: true, redirectAllowLocalNetworks: resolveAllowLocalNetworks() };
+  }
+  return { allowLocalNetworks: undefined };
 }
 
 /** Tear down the pooled pinned dispatchers between tests. */

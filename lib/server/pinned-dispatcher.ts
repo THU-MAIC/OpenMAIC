@@ -104,10 +104,17 @@ export function createPinnedAgent(options: PinnedDispatcherOptions = {}): Agent 
  * `allowLocalNetworks` explicitly; cloud metadata is refused either way.
  */
 export function createValidatedDispatcher(
-  options: { allowLocalNetworks?: boolean } = {},
+  options: {
+    allowLocalNetworks?: boolean;
+    /** Optional undici timeouts, e.g. for long-running LLM responses. */
+    headersTimeout?: number;
+    bodyTimeout?: number;
+  } = {},
 ): Dispatcher {
   const allowLocalNetworks = options.allowLocalNetworks ?? allowLocalNetworksEnabled();
   return createPinnedAgent({
     assertAddress: (address) => assertSafeConnectionAddress(address, allowLocalNetworks),
+    headersTimeout: options.headersTimeout,
+    bodyTimeout: options.bodyTimeout,
   });
 }

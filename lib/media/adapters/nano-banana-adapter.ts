@@ -19,6 +19,8 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { mediaFetchFor } from '../media-fetch';
+import { connectivityHttpFailure, connectivityTransportFailure } from '../probe-auth';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
@@ -57,10 +59,12 @@ export async function testNanoBananaConnectivity(
   const model = config.model || DEFAULT_MODEL;
   const url = `${baseUrl}/v1beta/models`;
 
+  const fetchImpl = mediaFetchFor(config);
+
   // Try ?key= query param first (direct Google API), fall back to x-goog-api-key header (proxy)
   let response: Response | null = null;
   try {
-    response = await fetch(`${url}?key=${config.apiKey}`, {
+    response = await fetchImpl(`${url}?key=${config.apiKey}`, {
       method: 'GET',
       redirect: 'manual',
     });
@@ -68,36 +72,30 @@ export async function testNanoBananaConnectivity(
     // Direct API unreachable, try header auth
   }
   if (!response || !response.ok) {
+    await response?.body?.cancel().catch(() => undefined);
     try {
-      response = await fetch(url, {
+      response = await fetchImpl(url, {
         method: 'GET',
         redirect: 'manual',
         headers: { 'x-goog-api-key': config.apiKey },
       });
-    } catch (_err) {
-      return {
-        success: false,
-        message: `Network error: unable to reach ${baseUrl}. Check your Base URL and network connection.`,
-      };
+    } catch (err) {
+      return connectivityTransportFailure('Nano Banana', err);
     }
   }
+  await response.body?.cancel().catch(() => undefined);
 
   if (response.ok) {
     return { success: true, message: `Connected to Nano Banana (${model})` };
   }
 
-  // Parse error body for user-friendly message
-  const text = await response.text().catch(() => '');
   if (response.status === 400 || response.status === 401 || response.status === 403) {
     return {
       success: false,
       message: `Invalid API key or unauthorized (${response.status}). Check your API Key and Base URL match the same provider.`,
     };
   }
-  return {
-    success: false,
-    message: `Nano Banana connectivity failed (${response.status}): ${text}`,
-  };
+  return connectivityHttpFailure('Nano Banana', response.status);
 }
 
 export async function generateWithNanoBanana(
@@ -107,24 +105,27 @@ export async function generateWithNanoBanana(
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
   const model = requireModel(config.model, 'Nano Banana');
 
-  const response = await fetch(`${baseUrl}/v1beta/models/${model}:generateContent`, {
-    method: 'POST',
-    redirect: 'manual',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': config.apiKey,
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [{ text: options.prompt }],
-        },
-      ],
-      generationConfig: {
-        responseModalities: ['IMAGE'],
+  const response = await mediaFetchFor(config)(
+    `${baseUrl}/v1beta/models/${model}:generateContent`,
+    {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': config.apiKey,
       },
-    }),
-  });
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: options.prompt }],
+          },
+        ],
+        generationConfig: {
+          responseModalities: ['IMAGE'],
+        },
+      }),
+    },
+  );
 
   assertNotRedirected(response, 'Nano Banana');
 

@@ -34,6 +34,7 @@ vi.mock('@/lib/server/provider-config', () => ({
 
 vi.mock('@/lib/server/ssrf-guard', () => ({
   validateUrlForSSRF: async () => null,
+  validateClientBaseUrl: async () => null,
 }));
 
 describe('resolveModel — per-stage resolution order', () => {

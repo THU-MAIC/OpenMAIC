@@ -29,8 +29,9 @@ describe('model discovery deadlines and retries', () => {
         if (phase === 'headers') return stalled(signal);
         return Promise.resolve({ ok: true, status: 200, json: () => stalled(signal) });
       });
-      vi.stubGlobal('fetch', fetchMock);
-      const result = fetchModels('https://example.com', '').catch((error) => error);
+      const result = fetchModels('https://example.com', '', {
+        fetchImpl: fetchMock as never,
+      }).catch((error) => error);
       await vi.advanceTimersByTimeAsync(14_999);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(signals[0].aborted).toBe(false);
@@ -53,8 +54,7 @@ describe('model discovery deadlines and retries', () => {
       await new Promise((resolve) => setTimeout(resolve, 10_000));
       return { ok: true, status: 200, json: () => stalled(init.signal) };
     });
-    vi.stubGlobal('fetch', fetchMock);
-    const result = fetchModels('https://example.com', '');
+    const result = fetchModels('https://example.com', '', { fetchImpl: fetchMock as never });
     await vi.advanceTimersByTimeAsync(15_000);
     expect(await result).toEqual([{ id: 'model', ownedBy: undefined }]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -70,8 +70,7 @@ describe('model discovery deadlines and retries', () => {
       json: () =>
         new Promise((resolve) => setTimeout(() => resolve({ data: [{ id: 'slow' }] }), 14_999)),
     }));
-    vi.stubGlobal('fetch', fetchMock);
-    const result = fetchModels('https://example.com', '');
+    const result = fetchModels('https://example.com', '', { fetchImpl: fetchMock as never });
     await vi.advanceTimersByTimeAsync(14_999);
     expect(await result).toEqual([{ id: 'slow', ownedBy: undefined }]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -79,7 +78,7 @@ describe('model discovery deadlines and retries', () => {
   });
 
   it.each([401, 403, 500])(
-    'preserves terminal HTTP %i when its error body stalls',
+    'preserves terminal HTTP %i without reading its stalled error body',
     async (status) => {
       vi.useFakeTimers();
       const fetchMock = vi.fn(async (_url, init) => ({
@@ -87,8 +86,9 @@ describe('model discovery deadlines and retries', () => {
         status,
         text: () => stalled(init.signal),
       }));
-      vi.stubGlobal('fetch', fetchMock);
-      const result = fetchModels('https://example.com', '').catch((error) => error);
+      const result = fetchModels('https://example.com', '', {
+        fetchImpl: fetchMock as never,
+      }).catch((error) => error);
       await vi.advanceTimersByTimeAsync(15_000);
       expect(await result).toBeInstanceOf(ModelFetchError);
       expect(await result).toMatchObject({ status });
@@ -102,12 +102,13 @@ describe('model discovery deadlines and retries', () => {
       .fn()
       .mockRejectedValueOnce(new TypeError('fetch failed'))
       .mockResolvedValueOnce(successful());
-    vi.stubGlobal('fetch', fetchMock);
-    expect(await fetchModels('https://example.com', '')).toHaveLength(1);
+    expect(
+      await fetchModels('https://example.com', '', { fetchImpl: fetchMock as never }),
+    ).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('does not retry malformed JSON', async () => {
+  it('does not retry malformed JSON and does not surface the parser message', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       status: 200,
@@ -115,8 +116,12 @@ describe('model discovery deadlines and retries', () => {
         throw new SyntaxError('bad JSON');
       },
     }));
-    vi.stubGlobal('fetch', fetchMock);
-    await expect(fetchModels('https://example.com', '')).rejects.toBeInstanceOf(SyntaxError);
+    await expect(
+      fetchModels('https://example.com', '', { fetchImpl: fetchMock as never }),
+    ).rejects.toMatchObject({
+      name: 'ModelFetchError',
+      message: 'The model list response is not valid JSON',
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -129,8 +134,9 @@ describe('model discovery deadlines and retries', () => {
       }
       return { ok: true, status: 200, json: () => stalled(init.signal) };
     });
-    vi.stubGlobal('fetch', fetchMock);
-    const result = fetchModels('https://example.com/anthropic', '').catch((error) => error);
+    const result = fetchModels('https://example.com/anthropic', '', {
+      fetchImpl: fetchMock as never,
+    }).catch((error) => error);
     await vi.advanceTimersByTimeAsync(30_000);
     expect(await result).toMatchObject({ name: 'TimeoutError' });
     expect(fetchMock).toHaveBeenCalledTimes(3);

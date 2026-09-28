@@ -129,6 +129,14 @@ export interface ImageProviderConfig {
  * Runtime configuration for making image generation API calls.
  * Combines provider selection with authentication credentials.
  */
+/**
+ * The `fetch`-shaped transport a media adapter issues every provider request
+ * with. Server callers pass the pinned provider transport
+ * (`lib/server/media-provider-fetch.ts`); left unset, adapters use the global
+ * `fetch`.
+ */
+export type MediaProviderFetch = (input: string, init?: RequestInit) => Promise<Response>;
+
 export interface ImageGenerationConfig {
   /** Which image provider to use */
   providerId: ImageProviderId;
@@ -138,6 +146,8 @@ export interface ImageGenerationConfig {
   baseUrl?: string;
   /** Optional model ID override (uses provider default if omitted) */
   model?: string;
+  /** Transport for provider requests (see {@link MediaProviderFetch}). */
+  fetchImpl?: MediaProviderFetch;
 }
 
 /**
@@ -261,6 +271,16 @@ export interface VideoGenerationConfig {
   baseUrl?: string;
   /** Optional model ID override (uses provider default if omitted) */
   model?: string;
+  /** Transport for provider requests (see {@link MediaProviderFetch}). */
+  fetchImpl?: MediaProviderFetch;
+  /**
+   * Transport for downloading a finished clip from a provider-returned file
+   * URI that may redirect to storage. It follows redirects, re-validating
+   * every hop and dropping credential headers on a cross-origin hop
+   * (`lib/server/media-provider-fetch.ts`). Left unset, the download uses
+   * `fetchImpl` and refuses redirects.
+   */
+  downloadFetchImpl?: MediaProviderFetch;
 }
 
 /**

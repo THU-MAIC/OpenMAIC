@@ -21,10 +21,13 @@
  */
 
 import type {
+  MediaProviderFetch,
   ImageGenerationConfig,
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { mediaFetchFor } from '../media-fetch';
+import { connectivityHttpFailure, connectivityTransportFailure } from '../probe-auth';
 import { aspectRatioToDimensions, IMAGE_PROVIDERS } from '../image-providers';
 import { assertNotRedirected } from '../redirect-guard';
 
@@ -449,12 +452,13 @@ function extractExecutionError(entry: HistoryEntry): string | undefined {
 }
 
 async function queuePrompt(
+  fetchImpl: MediaProviderFetch,
   baseUrl: string,
   workflow: Record<string, unknown>,
   clientId: string,
 ): Promise<string> {
   log.info(`Submitting workflow to queue [client_id: ${clientId}]`);
-  const response = await fetch(`${baseUrl}/prompt`, {
+  const response = await fetchImpl(`${baseUrl}/prompt`, {
     method: 'POST',
     redirect: 'manual',
     headers: { 'Content-Type': 'application/json' },
@@ -481,11 +485,15 @@ async function queuePrompt(
   return data.prompt_id;
 }
 
-async function pollHistory(baseUrl: string, promptId: string): Promise<HistoryEntry | null> {
+async function pollHistory(
+  fetchImpl: MediaProviderFetch,
+  baseUrl: string,
+  promptId: string,
+): Promise<HistoryEntry | null> {
   // A single poll timing out or blipping must not abort the whole generation —
   // return null so the caller's loop simply tries again on the next interval.
   try {
-    const response = await fetch(`${baseUrl}/history/${promptId}`, {
+    const response = await fetchImpl(`${baseUrl}/history/${promptId}`, {
       redirect: 'manual',
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -506,13 +514,14 @@ async function pollHistory(baseUrl: string, promptId: string): Promise<HistoryEn
 }
 
 async function fetchImageAsBase64(
+  fetchImpl: MediaProviderFetch,
   baseUrl: string,
   filename: string,
   subfolder: string,
   type: string,
 ): Promise<string> {
   const params = new URLSearchParams({ filename, subfolder, type });
-  const response = await fetch(`${baseUrl}/view?${params.toString()}`, {
+  const response = await fetchImpl(`${baseUrl}/view?${params.toString()}`, {
     redirect: 'manual',
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
@@ -551,27 +560,23 @@ export async function testComfyuiImageConnectivity(
 ): Promise<{ success: boolean; message: string }> {
   const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
   log.info(`Testing connectivity to ${baseUrl}`);
+  let response: Response;
   try {
-    const response = await fetch(`${baseUrl}/system_stats`, {
+    response = await mediaFetchFor(config)(`${baseUrl}/system_stats`, {
       redirect: 'manual',
       signal: AbortSignal.timeout(CONNECTIVITY_TIMEOUT_MS),
     });
-    if (response.ok) {
-      log.info(`Connectivity test passed — ComfyUI is reachable at ${baseUrl}`);
-      return { success: true, message: 'Connected to ComfyUI' };
-    }
-    log.warn(`Connectivity test failed — HTTP ${response.status} from ${baseUrl}`);
-    return {
-      success: false,
-      message: `ComfyUI returned HTTP ${response.status}. Is it running at ${baseUrl}?`,
-    };
   } catch (err) {
     log.error(`Connectivity test error: ${err}`);
-    return {
-      success: false,
-      message: `ComfyUI connectivity error: ${err}. Is it running at ${baseUrl}?`,
-    };
+    return connectivityTransportFailure('ComfyUI', err);
   }
+  await response.body?.cancel().catch(() => undefined);
+  if (response.ok) {
+    log.info(`Connectivity test passed — ComfyUI is reachable at ${baseUrl}`);
+    return { success: true, message: 'Connected to ComfyUI' };
+  }
+  log.warn(`Connectivity test failed — HTTP ${response.status} from ${baseUrl}`);
+  return connectivityHttpFailure('ComfyUI', response.status);
 }
 
 export async function generateWithComfyuiImage(
@@ -603,7 +608,7 @@ export async function generateWithComfyuiImage(
   const clientId = `openmaic-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   // 3. Submit to the queue ---------------------------------------------------
-  const promptId = await queuePrompt(baseUrl, workflow, clientId);
+  const promptId = await queuePrompt(mediaFetchFor(config), baseUrl, workflow, clientId);
 
   // 4. Poll history until complete -------------------------------------------
   const deadline = Date.now() + GENERATION_TIMEOUT_MS;
@@ -614,7 +619,7 @@ export async function generateWithComfyuiImage(
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     pollCount++;
-    entry = await pollHistory(baseUrl, promptId);
+    entry = await pollHistory(mediaFetchFor(config), baseUrl, promptId);
 
     // Fail fast on a runtime execution error. A workflow that errors mid-run
     // records completed:false with status_str:"error", so without this check
@@ -675,6 +680,7 @@ export async function generateWithComfyuiImage(
 
   // 6. Download and encode the image -----------------------------------------
   const base64 = await fetchImageAsBase64(
+    mediaFetchFor(config),
     baseUrl,
     imageInfo.filename,
     imageInfo.subfolder,

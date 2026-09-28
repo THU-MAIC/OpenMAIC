@@ -20,6 +20,11 @@ export interface DocumentExtractorConfig {
   accessKeySecret?: string;
   /** Allow AliDocMind to use server env credentials (trusted context only). */
   allowEnvFallback?: boolean;
+  /**
+   * The base URL is server configuration, not caller input: it may reach a
+   * local network without ALLOW_LOCAL_NETWORKS (cloud metadata stays refused).
+   */
+  managed?: boolean;
   /** Skip image extraction when the caller needs text only. */
   textOnly?: boolean;
 }

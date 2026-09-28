@@ -742,6 +742,39 @@ video:
       // section-scoped: an LLM provider id is not a video provider
       expect(isServerConfiguredProvider('video', 'openai')).toBe(false);
     });
+
+    it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+      'does not treat the inherited property name %s as a configured provider',
+      async (providerId) => {
+        vi.stubEnv('OPENAI_API_KEY', 'sk-openai');
+        const {
+          isServerConfiguredProvider,
+          resolveApiKey,
+          resolveBaseUrl,
+          resolveProxy,
+          resolveTTSApiKey,
+          resolveASRModel,
+          resolveImageModel,
+          resolveVideoModel,
+          resolveWebSearchModel,
+        } = await import('@/lib/server/provider-config');
+
+        for (const section of ['providers', 'tts', 'asr', 'pdf', 'image', 'video'] as const) {
+          expect(isServerConfiguredProvider(section, providerId)).toBe(false);
+        }
+        // Unmanaged: the client's values are used, not an inherited property.
+        expect(resolveApiKey(providerId, 'client-key')).toBe('client-key');
+        expect(resolveTTSApiKey(providerId, 'client-key')).toBe('client-key');
+        expect(resolveBaseUrl(providerId, 'https://client.example/v1')).toBe(
+          'https://client.example/v1',
+        );
+        expect(resolveProxy(providerId)).toBeUndefined();
+        expect(resolveASRModel(providerId, 'm')).toBe('m');
+        expect(resolveImageModel(providerId, 'm')).toBe('m');
+        expect(resolveVideoModel(providerId, 'm')).toBe('m');
+        expect(resolveWebSearchModel(providerId, 'm')).toBe('m');
+      },
+    );
   });
 
   describe('getServerTTSProviders force-disable (#665)', () => {

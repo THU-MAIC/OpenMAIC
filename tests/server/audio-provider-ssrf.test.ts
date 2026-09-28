@@ -296,6 +296,12 @@ describe('audio provider adapters — SSRF hardening', () => {
   });
 
   describe('a 302 to cloud metadata is never followed', () => {
+    // The loopback origins need the operator opt-in; metadata stays refused
+    // under every policy.
+    beforeEach(() => {
+      process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    });
+
     it.each(TTS_CASES)('$name', async ({ config }) => {
       const origin = await startLoopback(redirectTo('http://169.254.169.254/latest/meta-data/'));
 
@@ -344,6 +350,10 @@ describe('audio provider adapters — SSRF hardening', () => {
   });
 
   describe('a normal 200 response is returned', () => {
+    beforeEach(() => {
+      process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    });
+
     it('OpenAI-compatible TTS returns the audio bytes', async () => {
       const origin = await startLoopback((_req, res) => {
         res.writeHead(200, { 'Content-Type': 'audio/wav' });
@@ -435,6 +445,87 @@ describe('audio provider adapters — SSRF hardening', () => {
   });
 
   describe('server-selected policy', () => {
+    // ALLOW_LOCAL_NETWORKS is unset in these cases (beforeEach).
+    function audioBytes(_req: IncomingMessage, res: ServerResponse) {
+      res.writeHead(200, { 'Content-Type': 'audio/wav' });
+      res.end(Buffer.from([82, 73, 70, 70]));
+    }
+
+    it('reaches a server-configured TTS endpoint on a loopback IP without the opt-in', async () => {
+      const origin = await startLoopback(audioBytes);
+
+      const result = await generateTTS({ ...openAiTts(origin.url), managed: true }, 'Hello');
+
+      expect(result.audio).toEqual(new Uint8Array([82, 73, 70, 70]));
+      expect(origin.requests()).toBe(1);
+    });
+
+    it('reaches a server-configured ASR endpoint on a loopback IP without the opt-in', async () => {
+      const origin = await startLoopback(jsonResponse({ text: 'hello class' }));
+
+      const result = await transcribeAudio(
+        { ...openAiAsr(origin.url), managed: true },
+        wavBuffer(),
+      );
+
+      expect(result).toEqual({ text: 'hello class' });
+    });
+
+    it('reaches a server-configured voice registration backend on a loopback IP without the opt-in', async () => {
+      const origin = await startLoopback(
+        jsonResponse({ success: true, voice: { name: 'voxcpm:voice:abc' } }),
+      );
+
+      const id = await registerVoxCPMVoice(
+        { baseUrl: origin.url, apiKey: 'k', managed: true },
+        { voiceId: 'voxcpm:voice:abc', referenceAudioBase64: btoa('RIFFdata') },
+      );
+
+      expect(id).toBe('voxcpm:voice:abc');
+    });
+
+    it('holds an unmanaged default endpoint on a loopback IP to the operator policy', async () => {
+      const origin = await startLoopback(audioBytes);
+
+      await expect(generateTTS(openAiTts(origin.url), 'Hello')).rejects.toThrow(
+        PRIVATE_BLOCK_MESSAGE,
+      );
+      await expect(transcribeAudio(openAiAsr(origin.url), wavBuffer())).rejects.toThrow(
+        PRIVATE_BLOCK_MESSAGE,
+      );
+      expect(origin.requests()).toBe(0);
+    });
+
+    it('holds a client-supplied endpoint to the strict public policy even with the opt-in', async () => {
+      process.env.ALLOW_LOCAL_NETWORKS = 'true';
+      const origin = await startLoopback(audioBytes);
+
+      await expect(
+        generateTTS({ ...openAiTts(origin.url), publicOnly: true }, 'Hello'),
+      ).rejects.toThrow(PRIVATE_BLOCK_MESSAGE);
+      expect(origin.requests()).toBe(0);
+    });
+
+    it('refuses a server-configured endpoint on a cloud metadata IP', async () => {
+      await expect(
+        generateTTS({ ...openAiTts('http://169.254.169.254/v1'), managed: true }, 'Hello'),
+      ).rejects.toThrow(METADATA_BLOCK_MESSAGE);
+      await expect(
+        transcribeAudio({ ...openAiAsr('http://169.254.169.254/v1'), managed: true }, wavBuffer()),
+      ).rejects.toThrow(METADATA_BLOCK_MESSAGE);
+    });
+
+    it('holds a redirect from a server-configured endpoint to the operator policy', async () => {
+      const internal = await startLoopback(audioBytes);
+      const origin = await startLoopback(redirectTo(`${internal.url}/v1/audio/speech`));
+
+      await expect(
+        generateTTS({ ...openAiTts(origin.url), managed: true }, 'Hello'),
+      ).rejects.toThrow(PRIVATE_BLOCK_MESSAGE);
+      expect(origin.requests()).toBe(1);
+      expect(internal.requests()).toBe(0);
+    });
+
     it('permits a server-managed localhost backend when local networks are allowed', async () => {
       process.env.ALLOW_LOCAL_NETWORKS = 'true';
       const origin = await startLoopback(

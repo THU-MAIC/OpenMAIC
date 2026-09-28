@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/server/provider-config', () => ({
   getServerTTSProviders: mocks.providers,
+  isServerConfiguredProvider: vi.fn(() => true),
   resolveTTSApiKey: vi.fn(() => ''),
   resolveTTSBaseUrl: vi.fn(() => undefined),
   resolveTTSModel: vi.fn(() => ''),

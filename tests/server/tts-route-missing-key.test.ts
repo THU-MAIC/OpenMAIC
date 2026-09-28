@@ -149,6 +149,34 @@ describe('POST /api/generate/tts missing-key contract (#665)', () => {
     );
   });
 
+  it('marks a server-configured provider as managed, so its local endpoint needs no opt-in', async () => {
+    yamlOverride = 'tts:\n  voxcpm-tts:\n    baseUrl: http://127.0.0.1:8000/v1\n';
+    const { POST } = await import('@/app/api/generate/tts/route');
+    const res = await POST(ttsRequest({ ttsProviderId: 'voxcpm-tts', ttsVoice: 'auto' }));
+
+    expect(res.status).toBe(200);
+    expect(mocks.generateTTS).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'voxcpm-tts',
+        baseUrl: 'http://127.0.0.1:8000/v1',
+        managed: true,
+        publicOnly: false,
+      }),
+      'Hello',
+    );
+  });
+
+  it('does not mark an unmanaged provider on its catalog default endpoint as managed', async () => {
+    const { POST } = await import('@/app/api/generate/tts/route');
+    const res = await POST(ttsRequest({ ttsProviderId: 'voxcpm-tts', ttsVoice: 'auto' }));
+
+    expect(res.status).toBe(200);
+    expect(mocks.generateTTS).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: 'voxcpm-tts', managed: false, publicOnly: false }),
+      'Hello',
+    );
+  });
+
   it('refuses a client-supplied localhost base URL even with ALLOW_LOCAL_NETWORKS=true', async () => {
     // The local-network opt-in is for the operator's own providers, never for a
     // client-chosen BYOK endpoint.

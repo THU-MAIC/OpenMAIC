@@ -173,6 +173,13 @@ export interface TTSModelConfig {
    * `ALLOW_LOCAL_NETWORKS` behavior.
    */
   publicOnly?: boolean;
+  /**
+   * `true` when the provider is server-configured: its endpoint is operator
+   * configuration and may be on a local network without ALLOW_LOCAL_NETWORKS
+   * (cloud metadata stays refused). Set by the server, never from request
+   * input; an unmanaged provider's catalog default leaves it unset.
+   */
+  managed?: boolean;
 }
 
 // ============================================================================
@@ -224,6 +231,8 @@ export interface ASRModelConfig {
    * A client-supplied BYOK `baseUrl` sets this so the strict public policy wins.
    */
   publicOnly?: boolean;
+  /** Server-configured provider (see {@link TTSModelConfig.managed}). */
+  managed?: boolean;
 }
 
 /** Returns true if the provider ID is a user-defined custom TTS provider. */

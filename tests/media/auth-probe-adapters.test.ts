@@ -261,7 +261,7 @@ const strictProbeCases: StrictProbeCase[] = [
       }),
     expectedResult: {
       success: false,
-      message: 'OpenAI Image API error (302): redirect blocked',
+      message: 'OpenAI Image connectivity error: Redirects are not allowed',
     },
     assertRequest: () => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -289,7 +289,7 @@ const strictProbeCases: StrictProbeCase[] = [
       }),
     expectedResult: {
       success: false,
-      message: 'Lemonade API error (302): redirect blocked',
+      message: 'Lemonade connectivity error: Redirects are not allowed',
     },
     assertRequest: () => {
       expect(fetchMock).toHaveBeenCalledWith('https://lemonade.example.com/v1/models', {
@@ -312,7 +312,10 @@ const strictProbeCases: StrictProbeCase[] = [
         status: 302,
         headers: { Location: PRIVATE_REDIRECT_LOCATION },
       }),
-    expectedResult: { success: false, message: 'API error: redirect blocked' },
+    expectedResult: {
+      success: false,
+      message: 'MiniMax Image connectivity error: Redirects are not allowed',
+    },
     assertRequest: () => {
       expect(fetchMock).toHaveBeenCalledWith(
         'https://minimax-image.example.com/v1/image_generation',
@@ -347,7 +350,10 @@ const strictProbeCases: StrictProbeCase[] = [
         status: 302,
         headers: { Location: PRIVATE_REDIRECT_LOCATION },
       }),
-    expectedResult: { success: false, message: 'API error: redirect blocked' },
+    expectedResult: {
+      success: false,
+      message: 'MiniMax Video connectivity error: Redirects are not allowed',
+    },
     assertRequest: () => {
       expect(fetchMock).toHaveBeenCalledWith(
         'https://minimax-video.example.com/v1/video_generation',
@@ -383,7 +389,7 @@ const strictProbeCases: StrictProbeCase[] = [
       }),
     expectedResult: {
       success: false,
-      message: 'ComfyUI returned HTTP 302. Is it running at https://comfyui.example.com?',
+      message: 'ComfyUI connectivity error: Redirects are not allowed',
     },
     assertRequest: () => {
       expect(fetchMock).toHaveBeenCalledWith('https://comfyui.example.com/system_stats', {
@@ -416,26 +422,26 @@ describe('auth-only connectivity probe characterization', () => {
   );
 
   it.each(authOnlyCases)(
-    '$name preserves its 401 verdict and message',
+    '$name answers a 401 with a fixed message, never the body',
     async ({ providerName, probe }) => {
       fetchMock.mockResolvedValueOnce(new Response('invalid key', { status: 401 }));
 
       await expect(probe()).resolves.toEqual({
         success: false,
-        message: `${providerName} auth failed (401): invalid key`,
+        message: `${providerName} auth failed (401), please check the API Key`,
       });
       expect(fetchMock).toHaveBeenCalledTimes(1);
     },
   );
 
   it.each(authOnlyCases)(
-    '$name preserves its network-error verdict and message',
+    '$name answers a network error with a fixed message',
     async ({ providerName, probe }) => {
       fetchMock.mockRejectedValueOnce(new Error('offline'));
 
       await expect(probe()).resolves.toEqual({
         success: false,
-        message: `${providerName} connectivity error: Error: offline`,
+        message: `${providerName} connectivity error: cannot reach the provider, please check the Base URL`,
       });
       expect(fetchMock).toHaveBeenCalledTimes(1);
     },
@@ -449,7 +455,7 @@ describe('auth-only connectivity probe characterization', () => {
 
     expect(result).toEqual({
       success: false,
-      message: 'Kling connectivity error: Error: Kling apiKey must be "accessKey:secretKey" format',
+      message: 'Kling connectivity error: Kling apiKey must be "accessKey:secretKey" format',
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -469,7 +475,7 @@ describe('strict connectivity probe redirect handling', () => {
 });
 
 describe('non-matching connectivity probe sentinels', () => {
-  it('keeps MiniMax Image strict for non-2xx responses', async () => {
+  it('keeps MiniMax Image strict for non-2xx responses without echoing the body', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ base_resp: { status_msg: 'image unavailable' } }), {
         status: 500,
@@ -479,10 +485,10 @@ describe('non-matching connectivity probe sentinels', () => {
 
     await expect(
       testMiniMaxImageConnectivity({ providerId: 'minimax-image', apiKey: 'minimax-key' }),
-    ).resolves.toEqual({ success: false, message: 'API error: image unavailable' });
+    ).resolves.toEqual({ success: false, message: 'MiniMax Image returned HTTP 500' });
   });
 
-  it('keeps MiniMax Video strict for non-2xx responses', async () => {
+  it('keeps MiniMax Video strict for non-2xx responses without echoing the body', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ base_resp: { status_msg: 'video unavailable' } }), {
         status: 500,
@@ -492,7 +498,7 @@ describe('non-matching connectivity probe sentinels', () => {
 
     await expect(
       testMiniMaxVideoConnectivity({ providerId: 'minimax-video', apiKey: 'minimax-key' }),
-    ).resolves.toEqual({ success: false, message: 'API error: video unavailable' });
+    ).resolves.toEqual({ success: false, message: 'MiniMax Video returned HTTP 500' });
   });
 
   const googleCases = [
@@ -508,7 +514,7 @@ describe('non-matching connectivity probe sentinels', () => {
       successMessage: 'Connected to Veo (veo-test)',
       failureMessage:
         'Invalid API key or unauthorized (400). Check your API Key and Base URL match the same provider.',
-      redirectFailureMessage: 'Veo connectivity failed (302): redirect blocked',
+      redirectFailureMessage: 'Veo connectivity error: Redirects are not allowed',
     },
     {
       name: 'Nano Banana',
@@ -522,7 +528,7 @@ describe('non-matching connectivity probe sentinels', () => {
       successMessage: 'Connected to Nano Banana (nano-test)',
       failureMessage:
         'Invalid API key or unauthorized (400). Check your API Key and Base URL match the same provider.',
-      redirectFailureMessage: 'Nano Banana connectivity failed (302): redirect blocked',
+      redirectFailureMessage: 'Nano Banana connectivity error: Redirects are not allowed',
     },
   ];
 

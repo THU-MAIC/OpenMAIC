@@ -22,6 +22,7 @@ vi.mock('undici', async (importOriginal) => {
 
 vi.mock('@/lib/server/provider-config', () => ({
   getServerTTSProviders: mocks.providers,
+  isServerConfiguredProvider: () => true,
   resolveTTSApiKey: () => 'sk-test',
   resolveTTSBaseUrl: () => 'https://gw.example.com/v1',
   resolveTTSModel: () => '',

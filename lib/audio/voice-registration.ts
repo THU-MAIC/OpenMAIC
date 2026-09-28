@@ -23,6 +23,11 @@ export interface VoiceRegistrationConfig {
    * unset falls back to the process-wide `ALLOW_LOCAL_NETWORKS` behavior.
    */
   publicOnly?: boolean;
+  /**
+   * `true` for a server-configured provider: its `baseUrl` may be on a local
+   * network without ALLOW_LOCAL_NETWORKS.
+   */
+  managed?: boolean;
 }
 
 export interface VoiceRegistrationAdapter {

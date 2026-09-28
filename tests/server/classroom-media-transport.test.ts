@@ -36,7 +36,9 @@ describe('classroom media download transport', () => {
     it('rejects a data: URL that exceeds DOWNLOAD_MAX_SIZE', async () => {
       const hugeData =
         'data:text/plain;base64,' + Buffer.alloc(DOWNLOAD_MAX_SIZE + 1).toString('base64');
-      await expect(downloadToBuffer(hugeData)).rejects.toThrow(/File too large/);
+      await expect(downloadToBuffer(hugeData)).rejects.toThrow(
+        /data URL exceeds the \d+-byte limit/,
+      );
     });
   });
 

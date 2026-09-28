@@ -675,3 +675,79 @@ describe('parseWithMinerUCloud — bounded reads', () => {
     ).rejects.toThrow(/exceeds/);
   });
 });
+
+describe('parseWithMinerUCloud — caller-facing errors', () => {
+  const config = { providerId: 'mineru-cloud' as const, apiKey: 'k' };
+  const pdf = Buffer.from('%PDF');
+
+  afterEach(() => {
+    transport.providerFetch.mockReset();
+  });
+
+  function answerBatch(response: Response) {
+    transport.providerFetch.mockImplementation(async () => response);
+  }
+
+  it('reports an HTTP error by status without the envelope message', async () => {
+    answerBatch(
+      new Response(JSON.stringify({ code: 1, msg: 'internal-secret-msg' }), { status: 500 }),
+    );
+
+    const error = await parseWithMinerUCloud(config, pdf, 'lesson.pdf').catch((e: Error) => e);
+
+    expect((error as Error).message).toBe(
+      'MinerU Cloud create batch failed: MinerU Cloud file-urls/batch: HTTP 500',
+    );
+  });
+
+  it('reports a rejected request by numeric code without the envelope message', async () => {
+    answerBatch(new Response(JSON.stringify({ code: -60002, msg: 'internal-secret-msg' })));
+
+    const error = await parseWithMinerUCloud(config, pdf, 'lesson.pdf').catch((e: Error) => e);
+
+    expect((error as Error).message).toBe(
+      'MinerU Cloud create batch failed: MinerU Cloud file-urls/batch: request rejected (code -60002)',
+    );
+  });
+
+  it('drops a non-numeric code and never quotes it', async () => {
+    answerBatch(new Response(JSON.stringify({ code: 'internal-secret-code', msg: 'x' })));
+
+    const error = await parseWithMinerUCloud(config, pdf, 'lesson.pdf').catch((e: Error) => e);
+
+    expect((error as Error).message).toBe(
+      'MinerU Cloud create batch failed: MinerU Cloud file-urls/batch: request rejected',
+    );
+  });
+
+  it('reports a failed parse without the row error message', async () => {
+    transport.providerFetch.mockImplementation(async (input: string | URL) => {
+      const url = String(input);
+      if (url.endsWith('/file-urls/batch')) {
+        return new Response(
+          JSON.stringify({ code: 0, data: { batch_id: 'b1', file_urls: [PUBLIC_UPLOAD] } }),
+        );
+      }
+      if (url === PUBLIC_UPLOAD) return new Response('', { status: 200 });
+      return new Response(
+        JSON.stringify({
+          code: 0,
+          data: { extract_result: { state: 'failed', err_msg: 'internal-secret-err' } },
+        }),
+      );
+    });
+
+    const error = await parseWithMinerUCloud(config, pdf, 'lesson.pdf').catch((e: Error) => e);
+
+    expect((error as Error).message).toBe('MinerU Cloud parsing failed');
+  });
+
+  it('runs a server-managed API root with local networks allowed', async () => {
+    installMinerU();
+
+    await parseWithMinerUCloud({ ...config, managed: true }, pdf, 'lesson.pdf');
+
+    expect(policyFor('/file-urls/batch')?.allowLocalNetworks).toBe(true);
+    expect(policyFor(PUBLIC_UPLOAD)?.allowLocalNetworks).toBe(false);
+  });
+});

@@ -149,10 +149,10 @@ export async function applyWhiteboardRuntimeOperation(
     const deleted = new Set(edit.lineIds);
     editedLines = lines.filter((line) => !deleted.has(line.id));
   } else {
-    // Match the Legacy transition: anchor replacement at the first supplied target ID,
+    // Anchor replacement at the earliest targeted line in document order,
     // remove all targets, then insert the host-supplied replacement lines exactly.
-    const firstIndex = lines.findIndex((line) => line.id === edit.lineIds[0]);
     const replaced = new Set(edit.lineIds);
+    const firstIndex = lines.findIndex((line) => replaced.has(line.id));
     editedLines = lines.filter((line) => !replaced.has(line.id));
     assertIntroducedLineIdsDoNotConflict(editedLines, edit.lines);
     editedLines.splice(firstIndex, 0, ...edit.lines);

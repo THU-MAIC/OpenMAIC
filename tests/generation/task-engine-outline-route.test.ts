@@ -177,8 +177,13 @@ describe('task-engine outline route', () => {
     });
 
     streamLLMMock.mockReturnValue({
-      textStream: (async function* () {
-        yield outlineResponse;
+      fullStream: (async function* () {
+        for await (const delta of (async function* () {
+          yield outlineResponse;
+        })()) {
+          yield { type: 'text-delta', text: delta };
+        }
+        yield { type: 'finish', finishReason: 'stop' };
       })(),
     });
 
@@ -279,22 +284,27 @@ describe('task-engine outline route', () => {
     });
 
     streamLLMMock.mockReturnValue({
-      textStream: (async function* () {
-        yield JSON.stringify({
-          languageDirective: 'Teach in English.',
-          outlines: [
-            {
-              id: 'scene_1',
-              type: 'interactive',
-              title: 'Interactive Scene',
-              description: 'Explore a concept.',
-              keyPoints: ['Explore'],
-              order: 1,
-              widgetType: 'simulation',
-              widgetOutline: { concept: 'motion', keyVariables: ['speed'] },
-            },
-          ],
-        });
+      fullStream: (async function* () {
+        for await (const delta of (async function* () {
+          yield JSON.stringify({
+            languageDirective: 'Teach in English.',
+            outlines: [
+              {
+                id: 'scene_1',
+                type: 'interactive',
+                title: 'Interactive Scene',
+                description: 'Explore a concept.',
+                keyPoints: ['Explore'],
+                order: 1,
+                widgetType: 'simulation',
+                widgetOutline: { concept: 'motion', keyVariables: ['speed'] },
+              },
+            ],
+          });
+        })()) {
+          yield { type: 'text-delta', text: delta };
+        }
+        yield { type: 'finish', finishReason: 'stop' };
       })(),
     });
 
@@ -332,28 +342,33 @@ describe('task-engine outline route', () => {
     });
 
     streamLLMMock.mockReturnValue({
-      textStream: (async function* () {
-        yield JSON.stringify({
-          languageDirective: 'Teach in English.',
-          outlines: [
-            {
-              id: 'scene_1',
-              type: 'interactive',
-              title: 'Operation Process',
-              description: 'A model mistakenly emitted the gated widget type.',
-              keyPoints: ['Step A', 'Step B'],
-              order: 1,
-              widgetType: 'procedural-skill',
-              widgetOutline: {
-                procedureType: 'inspection',
-                task: 'Inspect the device',
-                tools: ['checklist'],
-                steps: ['Check A', 'Check B'],
-                successCriteria: ['Complete'],
+      fullStream: (async function* () {
+        for await (const delta of (async function* () {
+          yield JSON.stringify({
+            languageDirective: 'Teach in English.',
+            outlines: [
+              {
+                id: 'scene_1',
+                type: 'interactive',
+                title: 'Operation Process',
+                description: 'A model mistakenly emitted the gated widget type.',
+                keyPoints: ['Step A', 'Step B'],
+                order: 1,
+                widgetType: 'procedural-skill',
+                widgetOutline: {
+                  procedureType: 'inspection',
+                  task: 'Inspect the device',
+                  tools: ['checklist'],
+                  steps: ['Check A', 'Check B'],
+                  successCriteria: ['Complete'],
+                },
               },
-            },
-          ],
-        });
+            ],
+          });
+        })()) {
+          yield { type: 'text-delta', text: delta };
+        }
+        yield { type: 'finish', finishReason: 'stop' };
       })(),
     });
 
@@ -397,28 +412,33 @@ describe('task-engine outline route', () => {
     });
 
     streamLLMMock.mockReturnValue({
-      textStream: (async function* () {
-        yield JSON.stringify({
-          languageDirective: '用中文授课。',
-          outlines: [
-            {
-              id: 'scene_pbl',
-              type: 'pbl',
-              title: '同理沟通练习',
-              description: '练习安慰压力很大的朋友。',
-              keyPoints: ['倾听', '回应'],
-              order: 1,
-              pblConfig: {
-                projectTopic: '同理沟通练习',
-                projectDescription: '练习安慰压力很大的朋友。',
-                targetSkills: ['倾听', '回应'],
-                issueCount: 2,
-                scenarioRoleplay: true,
-                scenarioBrief: '朋友压力很大，学习者练习倾听和支持。',
+      fullStream: (async function* () {
+        for await (const delta of (async function* () {
+          yield JSON.stringify({
+            languageDirective: '用中文授课。',
+            outlines: [
+              {
+                id: 'scene_pbl',
+                type: 'pbl',
+                title: '同理沟通练习',
+                description: '练习安慰压力很大的朋友。',
+                keyPoints: ['倾听', '回应'],
+                order: 1,
+                pblConfig: {
+                  projectTopic: '同理沟通练习',
+                  projectDescription: '练习安慰压力很大的朋友。',
+                  targetSkills: ['倾听', '回应'],
+                  issueCount: 2,
+                  scenarioRoleplay: true,
+                  scenarioBrief: '朋友压力很大，学习者练习倾听和支持。',
+                },
               },
-            },
-          ],
-        });
+            ],
+          });
+        })()) {
+          yield { type: 'text-delta', text: delta };
+        }
+        yield { type: 'finish', finishReason: 'stop' };
       })(),
     });
 
@@ -455,28 +475,33 @@ describe('task-engine outline route', () => {
     });
 
     streamLLMMock.mockReturnValue({
-      textStream: (async function* () {
-        yield JSON.stringify({
-          languageDirective: 'Teach in English.',
-          outlines: [
-            {
-              id: 'scene_4',
-              type: 'slide',
-              title: 'First Scene',
-              description: 'First scene.',
-              keyPoints: ['A'],
-              order: 1,
-            },
-            {
-              id: 'scene_4',
-              type: 'slide',
-              title: 'Second Scene',
-              description: 'Second scene.',
-              keyPoints: ['B'],
-              order: 2,
-            },
-          ],
-        });
+      fullStream: (async function* () {
+        for await (const delta of (async function* () {
+          yield JSON.stringify({
+            languageDirective: 'Teach in English.',
+            outlines: [
+              {
+                id: 'scene_4',
+                type: 'slide',
+                title: 'First Scene',
+                description: 'First scene.',
+                keyPoints: ['A'],
+                order: 1,
+              },
+              {
+                id: 'scene_4',
+                type: 'slide',
+                title: 'Second Scene',
+                description: 'Second scene.',
+                keyPoints: ['B'],
+                order: 2,
+              },
+            ],
+          });
+        })()) {
+          yield { type: 'text-delta', text: delta };
+        }
+        yield { type: 'finish', finishReason: 'stop' };
       })(),
     });
 
@@ -512,20 +537,25 @@ describe('task-engine outline route', () => {
     });
 
     streamLLMMock.mockReturnValue({
-      textStream: (async function* () {
-        yield JSON.stringify({
-          languageDirective: 'Teach in English.',
-          outlines: [
-            {
-              id: 'scene_bad',
-              type: 'quiz',
-              title: 'Pythagorean theorem recap',
-              description: 'A non-vocational math topic with an invalid type.',
-              keyPoints: ['a squared plus b squared equals c squared'],
-              order: 1,
-            },
-          ],
-        });
+      fullStream: (async function* () {
+        for await (const delta of (async function* () {
+          yield JSON.stringify({
+            languageDirective: 'Teach in English.',
+            outlines: [
+              {
+                id: 'scene_bad',
+                type: 'quiz',
+                title: 'Pythagorean theorem recap',
+                description: 'A non-vocational math topic with an invalid type.',
+                keyPoints: ['a squared plus b squared equals c squared'],
+                order: 1,
+              },
+            ],
+          });
+        })()) {
+          yield { type: 'text-delta', text: delta };
+        }
+        yield { type: 'finish', finishReason: 'stop' };
       })(),
     });
 

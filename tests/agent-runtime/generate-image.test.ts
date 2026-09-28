@@ -15,6 +15,13 @@ vi.mock('@/lib/server/usage-storage', () => ({
 }));
 vi.mock('node:fs', () => ({ promises: { mkdir: mocks.mkdir, writeFile: mocks.writeFile } }));
 vi.mock('@/lib/server/ssrf-guard', () => ({ validateUrlForSSRF: async () => null }));
+// These tests cover storage and lifecycle; the provider-URL download policy
+// (HTTPS, strict public addresses, pinned transport) is covered in
+// tests/server/provider-result-fetch.test.ts. Delegate to the stubbed fetch.
+vi.mock('@/lib/server/provider-result-fetch', () => ({
+  fetchProviderResultUrl: (url: string, init?: { signal?: AbortSignal }) =>
+    globalThis.fetch(url, init),
+}));
 vi.mock('@/lib/logger', () => ({ createLogger: () => mocks.log }));
 
 import {

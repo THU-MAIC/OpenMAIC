@@ -157,7 +157,7 @@ describe('lemonade-image-adapter', () => {
     expect(result.success).toBe(true);
   });
 
-  it('reports connectivity failure with response text', async () => {
+  it('reports connectivity failure by status without the response text', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 503,
@@ -168,6 +168,6 @@ describe('lemonade-image-adapter', () => {
     const result = await testLemonadeImageConnectivity({ providerId: 'lemonade', apiKey: '' });
 
     expect(result.success).toBe(false);
-    expect(result.message).toBe('Lemonade API error (503): unavailable');
+    expect(result.message).toBe('Lemonade returned HTTP 503');
   });
 });

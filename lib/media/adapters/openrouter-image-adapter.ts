@@ -23,6 +23,8 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { mediaFetchFor } from '../media-fetch';
+import { connectivityHttpFailure, connectivityTransportFailure } from '../probe-auth';
 import { requireModel } from '../require-model';
 
 export const OPENROUTER_DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
@@ -82,17 +84,15 @@ export async function testOpenRouterImageConnectivity(
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/key`, {
+    response = await mediaFetchFor(config)(`${baseUrl}/key`, {
       method: 'GET',
       redirect: 'manual',
       headers: openRouterHeaders(config.apiKey),
     });
-  } catch {
-    return {
-      success: false,
-      message: `Network error: unable to reach ${baseUrl}. Check your Base URL and network connection.`,
-    };
+  } catch (err) {
+    return connectivityTransportFailure('OpenRouter', err);
   }
+  await response.body?.cancel().catch(() => undefined);
 
   if (response.ok) {
     return {
@@ -101,17 +101,13 @@ export async function testOpenRouterImageConnectivity(
     };
   }
 
-  const text = await response.text().catch(() => '');
   if (response.status === 401 || response.status === 403) {
     return {
       success: false,
       message: `Invalid API key or unauthorized (${response.status}). Check your OpenRouter key.`,
     };
   }
-  return {
-    success: false,
-    message: `OpenRouter image connectivity failed (${response.status}): ${text}`,
-  };
+  return connectivityHttpFailure('OpenRouter', response.status);
 }
 
 export async function generateWithOpenRouterImage(
@@ -125,7 +121,7 @@ export async function generateWithOpenRouterImage(
   // `aspect_ratio` accepts our four ratios verbatim; omit it and the model decides.
   if (options.aspectRatio) body.aspect_ratio = options.aspectRatio;
 
-  const response = await fetch(`${baseUrl}/images`, {
+  const response = await mediaFetchFor(config)(`${baseUrl}/images`, {
     method: 'POST',
     headers: openRouterHeaders(config.apiKey),
     // Never let a redirect carry the Authorization header to another host.

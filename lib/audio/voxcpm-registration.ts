@@ -14,7 +14,7 @@ import {
   voxCPMBackendSupportsVoiceRegistration,
 } from '@/lib/audio/voxcpm';
 import { resolveTTSModel } from '@/lib/server/provider-config';
-import { audioProviderFetch } from '@/lib/server/audio-provider-fetch';
+import { audioEndpointPolicy, audioProviderFetch } from '@/lib/server/audio-provider-fetch';
 import type {
   VoiceRegistrationAdapter,
   VoiceRegistrationConfig,
@@ -68,7 +68,7 @@ export async function voxCPMVoiceExists(
       method: 'GET',
       headers: authHeaders(cfg.apiKey),
     },
-    { allowLocalNetworks: cfg.publicOnly ? false : undefined },
+    audioEndpointPolicy(cfg),
   );
   if (!res.ok) return false;
   const data = (await res.json().catch(() => ({}))) as { voices?: unknown };
@@ -96,7 +96,7 @@ export async function registerVoxCPMVoice(
       headers: authHeaders(cfg.apiKey),
       body: form,
     },
-    { allowLocalNetworks: cfg.publicOnly ? false : undefined },
+    audioEndpointPolicy(cfg),
   );
   if (!res.ok) {
     throw new Error(`VoxCPM voice registration failed: ${res.status}`);
@@ -125,7 +125,7 @@ export async function bootstrapVoxCPMReferenceClip(
         stream: false,
       }),
     },
-    { allowLocalNetworks: cfg.publicOnly ? false : undefined },
+    audioEndpointPolicy(cfg),
   );
   if (!res.ok) {
     throw new Error(`VoxCPM bootstrap synthesis failed: ${res.status}`);

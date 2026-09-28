@@ -155,30 +155,56 @@ describe('audioProviderFetch — redirect + rebinding hardening', () => {
       res.end();
     });
 
+    // The loopback origin needs the local-network opt-in; metadata stays
+    // refused under every policy.
     await expect(
       audioProviderFetch(`http://127.0.0.1:${origin.port}/start`, undefined, {
-        allowLocalNetworks: false,
+        allowLocalNetworks: true,
       }),
     ).rejects.toThrow(METADATA_BLOCK_MESSAGE);
 
     expect(origin.requests()).toBe(1);
   });
 
-  it('refuses a 302 to a loopback address under the strict public policy', async () => {
+  it('refuses an IP-literal loopback origin under the strict public policy without connecting', async () => {
+    // Node never runs `connect.lookup` for an IP literal, so the transport
+    // must judge the host itself before the request.
     const internal = await startLoopback();
-    const origin = await startLoopback((_req, res) => {
-      res.writeHead(302, { Location: `http://127.0.0.1:${internal.port}/secret` });
-      res.end();
-    });
 
     await expect(
-      audioProviderFetch(`http://127.0.0.1:${origin.port}/start`, undefined, {
+      audioProviderFetch(`http://127.0.0.1:${internal.port}/secret`, undefined, {
         allowLocalNetworks: false,
       }),
     ).rejects.toThrow(PRIVATE_BLOCK_MESSAGE);
+    await expect(
+      audioProviderFetch(`http://[::1]:${internal.port}/secret`, undefined, {
+        allowLocalNetworks: false,
+        rejectRedirects: true,
+      }),
+    ).rejects.toThrow(PRIVATE_BLOCK_MESSAGE);
 
-    expect(origin.requests()).toBe(1);
     expect(internal.requests()).toBe(0);
+  });
+
+  it('refuses a loopback origin under the operator policy when the opt-in is unset', async () => {
+    const internal = await startLoopback();
+
+    await expect(
+      audioProviderFetch(`http://127.0.0.1:${internal.port}/secret`, undefined, {
+        rejectRedirects: true,
+      }),
+    ).rejects.toThrow(PRIVATE_BLOCK_MESSAGE);
+
+    expect(internal.requests()).toBe(0);
+  });
+
+  it('refuses a metadata IP-literal origin even when local networks are allowed', async () => {
+    await expect(
+      audioProviderFetch('http://169.254.169.254/latest/meta-data/', undefined, {
+        allowLocalNetworks: true,
+        rejectRedirects: true,
+      }),
+    ).rejects.toThrow(METADATA_BLOCK_MESSAGE);
   });
 
   it('follows a 302 to a loopback address when the operator policy allows local networks', async () => {

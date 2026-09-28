@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
+import { APICallError } from 'ai';
 
 const mocks = vi.hoisted(() => ({
   resolveModel: vi.fn(),
@@ -86,5 +87,49 @@ describe('POST /api/verify-model', () => {
       undefined,
       { mode: 'disabled', enabled: false },
     );
+  });
+
+  function apiCallError(statusCode: number) {
+    return new APICallError({
+      message: 'internal-secret-body',
+      url: 'http://10.0.0.5/v1/chat/completions',
+      requestBodyValues: {},
+      statusCode,
+      responseBody: 'internal-secret-body',
+    });
+  }
+
+  it.each([
+    [401, 'API key is invalid or expired'],
+    [403, 'API key is invalid or expired'],
+    [404, 'Model not found or API endpoint error'],
+    [429, 'API rate limit exceeded, please try again later'],
+    [502, 'API request failed (HTTP 5xx)'],
+    [418, 'API request failed (HTTP 4xx)'],
+  ])('maps an upstream %i by status and never echoes the body', async (status, message) => {
+    mocks.callLLM.mockRejectedValue(apiCallError(status));
+
+    const res = await postVerifyModel({ model: 'openai:gpt-4o-mini', apiKey: 'k' });
+    const json = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(json).toEqual({ success: false, errorCode: 'INTERNAL_ERROR', error: message });
+  });
+
+  it.each([
+    new TypeError('fetch failed', { cause: new Error('connect ECONNREFUSED 10.0.0.5:80') }),
+    new Error('getaddrinfo ENOTFOUND internal.test'),
+    new SyntaxError('Unexpected token < in JSON at position 0: <html>internal-secret</html>'),
+    Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }),
+  ])('answers a transport or parse failure with one fixed message (%s)', async (error) => {
+    mocks.callLLM.mockRejectedValue(error);
+
+    const res = await postVerifyModel({ model: 'openai:gpt-4o-mini', apiKey: 'k' });
+
+    expect(await res.json()).toEqual({
+      success: false,
+      errorCode: 'INTERNAL_ERROR',
+      error: 'Cannot connect to API server, please check the Base URL',
+    });
   });
 });

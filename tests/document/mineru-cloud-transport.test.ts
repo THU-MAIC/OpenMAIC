@@ -16,9 +16,10 @@
  *    connect-time lookup is refused by the pinned dispatcher.
  *
  * The redirect origin is a loopback server because a genuinely public HTTPS
- * origin is not reachable from a hermetic test; the transport does not validate
- * the initial URL (the parser does that), so what is under test here is the
- * per-hop re-validation that runs on the answer.
+ * origin is not reachable from a hermetic test. The transport holds an
+ * IP-literal origin to the policy itself, so the metadata case runs the origin
+ * under the local-network opt-in (metadata stays refused under every policy)
+ * and the strict public policy is shown refusing the loopback origin outright.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -163,19 +164,15 @@ describe('providerFetch — MinerU Cloud second-hop transport', () => {
 
     await expect(
       providerFetch(`http://127.0.0.1:${origin.port}/result.zip`, undefined, {
-        allowLocalNetworks: false,
+        allowLocalNetworks: true,
       }),
     ).rejects.toThrow('Cloud instance metadata endpoints are never allowed');
 
     expect(origin.requests()).toBe(1);
   });
 
-  it('refuses a redirect from the second hop to a private address and never follows it', async () => {
-    const internal = await startLoopback();
-    const origin = await startLoopback((_req, res) => {
-      res.writeHead(302, { Location: `http://127.0.0.1:${internal.port}/secret` });
-      res.end();
-    });
+  it('refuses a loopback second-hop origin under the strict public policy without connecting', async () => {
+    const origin = await startLoopback();
 
     await expect(
       providerFetch(`http://127.0.0.1:${origin.port}/result.zip`, undefined, {
@@ -183,8 +180,7 @@ describe('providerFetch — MinerU Cloud second-hop transport', () => {
       }),
     ).rejects.toThrow(/not allowed/);
 
-    expect(origin.requests()).toBe(1);
-    expect(internal.requests()).toBe(0);
+    expect(origin.requests()).toBe(0);
   });
 
   it.each([301, 302, 303, 307, 308])(

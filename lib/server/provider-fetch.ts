@@ -16,6 +16,7 @@ export {
   createAudioProviderFetch as createProviderFetch,
   resolveAllowLocalNetworks,
   destroyAudioProviderDispatchersForTests,
+  isRejectedRedirectError,
   type AudioProviderFetchPolicy as ProviderFetchPolicy,
   type AudioProviderFetch as ProviderFetch,
 } from '@/lib/server/audio-provider-fetch';

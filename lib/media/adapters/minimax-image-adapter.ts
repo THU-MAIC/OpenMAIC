@@ -9,6 +9,8 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { mediaFetchFor } from '../media-fetch';
+import { connectivityHttpFailure, connectivityTransportFailure } from '../probe-auth';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
@@ -24,7 +26,7 @@ export async function generateWithMiniMaxImage(
 
   const aspectRatio = options.aspectRatio || '1:1';
 
-  const response = await fetch(`${baseUrl}/v1/image_generation`, {
+  const response = await mediaFetchFor(config)(`${baseUrl}/v1/image_generation`, {
     method: 'POST',
     redirect: 'manual',
     headers: {
@@ -91,9 +93,10 @@ export async function generateWithMiniMaxImage(
 export async function testMiniMaxImageConnectivity(
   config: ImageGenerationConfig,
 ): Promise<{ success: boolean; message: string }> {
+  const baseUrl = (config.baseUrl || BASE_URL).replace(/\/$/, '');
+  let response: Response;
   try {
-    const baseUrl = (config.baseUrl || BASE_URL).replace(/\/$/, '');
-    const response = await fetch(`${baseUrl}/v1/image_generation`, {
+    response = await mediaFetchFor(config)(`${baseUrl}/v1/image_generation`, {
       method: 'POST',
       redirect: 'manual',
       headers: {
@@ -107,15 +110,13 @@ export async function testMiniMaxImageConnectivity(
         n: 1,
       }),
     });
-
-    if (response.ok) {
-      return { success: true, message: 'MiniMax Image API connected' };
-    }
-
-    const errData = await response.json().catch(() => ({}));
-    const msg = errData?.base_resp?.status_msg || response.statusText;
-    return { success: false, message: `API error: ${msg}` };
   } catch (err) {
-    return { success: false, message: `Connection failed: ${(err as Error).message}` };
+    return connectivityTransportFailure('MiniMax Image', err);
   }
+  await response.body?.cancel().catch(() => undefined);
+
+  if (response.ok) {
+    return { success: true, message: 'MiniMax Image API connected' };
+  }
+  return connectivityHttpFailure('MiniMax Image', response.status);
 }

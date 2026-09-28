@@ -11,6 +11,10 @@ import { createLogger } from '@/lib/logger';
 import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
 import { generateImage } from '@/lib/media/image-providers';
 import { generateVideo, normalizeVideoOptions } from '@/lib/media/video-providers';
+import {
+  managedMediaDownloadFetch,
+  managedMediaProviderFetch,
+} from '@/lib/server/media-provider-fetch';
 import { generateTTS, TTSRateLimitError } from '@/lib/audio/tts-providers';
 import { DEFAULT_TTS_VOICES, DEFAULT_TTS_MODELS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
@@ -19,6 +23,7 @@ import {
   getServerImageProviders,
   getServerVideoProviders,
   getServerTTSProviders,
+  isServerConfiguredProvider,
   resolveImageApiKey,
   resolveImageBaseUrl,
   resolveImageModel,
@@ -38,8 +43,7 @@ import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { resolveImageSize } from '@/lib/server/image-sizing';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
-import { providerFetch } from '@/lib/server/provider-fetch';
-import { UnsafeNetworkTargetError, validateUrlForSSRFWithPolicy } from '@/lib/server/ssrf-guard';
+import { decodeDataUrl, fetchProviderResultUrl } from '@/lib/server/provider-result-fetch';
 
 const log = createLogger('ClassroomMedia');
 
@@ -82,40 +86,13 @@ const IMAGE_EXTENSION_BY_MIME: Record<string, string> = {
 
 export async function downloadToBuffer(url: string): Promise<Buffer> {
   if (url.startsWith('data:')) {
-    const commaIndex = url.indexOf(',');
-    if (commaIndex === -1) {
-      throw new Error('Invalid data URL: missing comma');
-    }
-    const meta = url.slice(5, commaIndex);
-    const rawData = url.slice(commaIndex + 1);
-    const isBase64 = meta.split(';').includes('base64');
-    const buf = isBase64
-      ? Buffer.from(rawData, 'base64')
-      : Buffer.from(decodeURIComponent(rawData), 'utf8');
-    if (buf.byteLength > DOWNLOAD_MAX_SIZE) {
-      throw new Error(`File too large: ${buf.byteLength} bytes (max ${DOWNLOAD_MAX_SIZE})`);
-    }
-    return buf;
+    return decodeDataUrl(url, DOWNLOAD_MAX_SIZE).bytes;
   }
 
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error('Download failed: invalid URL');
-  }
-  if (parsed.protocol !== 'https:') {
-    throw new Error(`Download failed: URL must use https (${parsed.protocol})`);
-  }
-
-  const ssrfError = await validateUrlForSSRFWithPolicy(parsed.href, { allowLocalNetworks: false });
-  if (ssrfError) throw new UnsafeNetworkTargetError(ssrfError);
-
-  const resp = await providerFetch(
-    url,
-    { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) },
-    { allowLocalNetworks: false, requireHttps: true },
-  );
+  const resp = await fetchProviderResultUrl(url, {
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+    maxBytes: DOWNLOAD_MAX_SIZE,
+  });
   if (!resp.ok) throw new Error(`Download failed: ${resp.status} ${resp.statusText}`);
 
   const contentLength = Number(resp.headers.get('content-length') || 0);
@@ -210,7 +187,14 @@ export async function generateMediaForClassroom(
         const model = resolveImageModel(providerId) ?? providerConfig?.models?.[0]?.id;
 
         const result = await generateImage(
-          { providerId, apiKey, baseUrl: resolveImageBaseUrl(providerId), model },
+          {
+            providerId,
+            apiKey,
+            baseUrl: resolveImageBaseUrl(providerId),
+            model,
+            // Server-configured provider: its base URL is operator configuration.
+            fetchImpl: managedMediaProviderFetch,
+          },
           resolveImageSize(
             { prompt: req.prompt, aspectRatio: req.aspectRatio || '16:9' },
             { providerId, modelId: model },
@@ -278,7 +262,15 @@ export async function generateMediaForClassroom(
         });
 
         const result = await generateVideo(
-          { providerId, apiKey, baseUrl: resolveVideoBaseUrl(providerId), model },
+          {
+            providerId,
+            apiKey,
+            baseUrl: resolveVideoBaseUrl(providerId),
+            model,
+            // Server-configured provider: its base URL is operator configuration.
+            fetchImpl: managedMediaProviderFetch,
+            downloadFetchImpl: managedMediaDownloadFetch,
+          },
           normalized,
         );
 
@@ -506,6 +498,7 @@ export async function generateTTSForClassroom(
     );
   }
   const ttsBaseUrl = resolveTTSBaseUrl(providerId) || ttsProvider?.defaultBaseUrl;
+  const ttsManaged = isServerConfiguredProvider('tts', providerId);
   const voice = DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
   const format = ttsProvider?.supportedFormats?.[0] || 'mp3';
   if (providerId === VOXCPM_TTS_PROVIDER_ID && voice === VOXCPM_AUTO_VOICE_ID) {
@@ -572,6 +565,7 @@ export async function generateTTSForClassroom(
               modelId: DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
               apiKey,
               baseUrl: ttsBaseUrl,
+              managed: ttsManaged,
               voice,
               speed: speechAction.speed,
               signal,

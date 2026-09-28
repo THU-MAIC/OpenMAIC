@@ -22,6 +22,12 @@ const POLL_MAX_MS = 15 * 60 * 1_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Fixed verification messages: SDK and service error text stays in the log.
+const PROBE_REJECTED_MESSAGE =
+  'AliDocMind rejected the request, please check that the AccessKey has DocMind permission';
+const PROBE_FAILED_MESSAGE =
+  'Could not verify with AliDocMind, please check the AccessKey ID/Secret and endpoint';
+
 export interface AliDocMindCredentials {
   accessKeyId: string;
   accessKeySecret: string;
@@ -287,10 +293,11 @@ export async function verifyAliDocMindCredentials(
     if (isProbeOk) {
       return { ok: true };
     }
+    log.warn(`Credential probe rejected [code=${codeStr || 'empty'}]: ${res.body?.message ?? ''}`);
     return {
       ok: false,
       error: codeStr
-        ? `${codeStr}: ${res.body?.message ?? 'AliDocMind rejected the request'}`
+        ? PROBE_REJECTED_MESSAGE
         : 'AliDocMind returned an unrecognized response (empty status code)',
     };
   } catch (err) {
@@ -310,6 +317,9 @@ export async function verifyAliDocMindCredentials(
     if (isBizNotFound) {
       return { ok: true };
     }
-    return { ok: false, error: code ? `${code}: ${msg}` : msg };
+    // The SDK error (service code, transport errno, TLS or timeout detail) is
+    // logged only; the caller gets one fixed message.
+    log.warn(`Credential probe failed [code=${code || 'none'}]: ${msg}`);
+    return { ok: false, error: PROBE_FAILED_MESSAGE };
   }
 }

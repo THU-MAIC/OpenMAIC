@@ -726,7 +726,7 @@ describe('whiteboard RuntimeStore fold', () => {
     expect(cleared.whiteboard).not.toBeNull();
   });
 
-  it('matches Legacy line-edit ordering while preserving host replacement IDs and code metadata', async () => {
+  it('anchors replacement at the earliest document line while preserving host IDs and code metadata', async () => {
     const imported = payload({
       operation: {
         ...payload().operation,
@@ -760,11 +760,11 @@ describe('whiteboard RuntimeStore fold', () => {
       showLineNumbers: true,
       fontSize: 14,
       lines: [
-        { id: 'L2', content: 'const two = 2;' },
-        { id: 'L4', content: '' },
         { id: 'host-A', content: '' },
         { id: 'host-B', content: 'two' },
         { id: 'host-C', content: 'three' },
+        { id: 'L2', content: 'const two = 2;' },
+        { id: 'L4', content: '' },
       ],
     });
   });

@@ -297,6 +297,7 @@ function pdfExtractionCandidates(): Array<{
           apiKey: resolvePDFApiKey(id) || undefined,
           baseUrl: resolvePDFBaseUrl(id),
           allowEnvFallback: true,
+          managed: true,
           // fetch_url persists and returns text only. Avoid materializing
           // attacker-controlled PDF rasters in the application process.
           textOnly: true,

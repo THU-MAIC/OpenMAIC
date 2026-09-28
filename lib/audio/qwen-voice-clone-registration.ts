@@ -33,7 +33,7 @@ function registrationConfigKey(cfg: VoiceRegistrationConfig): string {
     .update('\0')
     .update(cfg.model || '')
     .update('\0')
-    .update(cfg.publicOnly ? 'public-only' : 'server-policy')
+    .update(cfg.publicOnly ? 'public-only' : cfg.managed ? 'managed' : 'server-policy')
     .digest('hex');
 }
 
@@ -93,6 +93,7 @@ async function registerVoice(
         baseUrl: cfg.baseUrl,
         targetModel: cfg.model || QWEN_TTS_VOICE_CLONE_MODEL,
         publicOnly: cfg.publicOnly,
+        managed: cfg.managed,
       },
       { name: params.voiceId, audio, text: refText },
       undefined,
@@ -165,6 +166,7 @@ async function voiceExists(
       baseUrl: cfg.baseUrl,
       targetModel: cfg.model,
       publicOnly: cfg.publicOnly,
+      managed: cfg.managed,
     },
     voiceId,
     signal,
@@ -196,6 +198,7 @@ async function deleteVoice(
       baseUrl: cfg.baseUrl,
       targetModel: cfg.model,
       publicOnly: cfg.publicOnly,
+      managed: cfg.managed,
     },
     voiceId,
     signal,

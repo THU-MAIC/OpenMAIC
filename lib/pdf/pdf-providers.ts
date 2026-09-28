@@ -146,6 +146,7 @@ import { createLogger } from '@/lib/logger';
 import { extractMinerUResult } from './mineru-parser';
 import { parseWithMinerUCloud } from './mineru-cloud';
 import { parseWithAliDocMindClient } from './alidocmind-client';
+import { providerFetch, type ProviderFetchPolicy } from '@/lib/server/provider-fetch';
 
 const log = createLogger('PDFProviders');
 const DEFAULT_MINERU_BACKEND = 'pipeline';
@@ -183,11 +184,25 @@ export function describeSelfHostedMinerUError(status: number, rawBody: string): 
     );
   }
 
-  // Unknown failure — keep the raw detail but bound its length so the UI stays
-  // readable rather than showing an entire JSON blob or traceback.
-  const detail = rawBody.trim().slice(0, 300);
-  return `MinerU API error (${status})${detail ? `: ${detail}` : ''}`;
+  // Unknown failure: report the status only. The body is logged by the caller
+  // and never echoed, so the parse route cannot relay a target's content.
+  return `MinerU API error (${status})`;
 }
+
+// A caller-supplied self-hosted MinerU URL runs under the operator address
+// policy (the same one the routes validated it against: `allowLocalNetworks`
+// unset falls back to ALLOW_LOCAL_NETWORKS); a server-managed one is operator
+// configuration and may reach a local network without the opt-in. Either way
+// the strict transport pins the connect address to the vetted DNS answers and
+// refuses a 3xx instead of following it.
+function selfHostedMinerUPolicy(managed: boolean | undefined): ProviderFetchPolicy {
+  return { allowLocalNetworks: managed ? true : undefined, rejectRedirects: true };
+}
+
+const SELF_HOSTED_MINERU_CONNECTION_FAILED =
+  'Cannot connect to the self-hosted MinerU server, please check the Base URL';
+const SELF_HOSTED_MINERU_INVALID_RESPONSE =
+  'The self-hosted MinerU server returned an invalid response';
 
 /**
  * Parse PDF using specified provider
@@ -662,27 +677,44 @@ export async function parseWithMinerUDocument(
   }
 
   // POST /file_parse
-  const response = await fetch(`${config.baseUrl}/file_parse`, {
-    method: 'POST',
-    headers,
-    body: formData,
-  });
+  let response: Response;
+  try {
+    response = await providerFetch(
+      `${config.baseUrl}/file_parse`,
+      { method: 'POST', headers, body: formData },
+      selfHostedMinerUPolicy(config.managed),
+    );
+  } catch (error) {
+    // Refused, unresolvable, policy-blocked and redirecting targets all get
+    // the same message; the transport detail stays in the server log.
+    log.error('[MinerU] Request to the self-hosted server failed:', error);
+    throw new Error(SELF_HOSTED_MINERU_CONNECTION_FAILED, { cause: error });
+  }
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => response.statusText);
+    const errorText = await response.text().catch(() => '');
+    log.error(`[MinerU] file_parse failed [status=${response.status}]: ${errorText.slice(0, 500)}`);
     throw new Error(describeSelfHostedMinerUError(response.status, errorText));
   }
 
-  const json = await response.json();
+  // A body that is not JSON must not surface the parser's message: Node's
+  // SyntaxError quotes a snippet of the input.
+  let json: { results?: Record<string, Record<string, unknown>> };
+  try {
+    json = await response.json();
+  } catch (error) {
+    log.error('[MinerU] file_parse returned a non-JSON body:', error);
+    throw new Error(SELF_HOSTED_MINERU_INVALID_RESPONSE, { cause: error });
+  }
 
   // Response: { results: { "<fileName>": { md_content, images, content_list, ... } } }
-  const fileResult = json.results?.[options.fileName];
+  const fileResult = json?.results?.[options.fileName];
   if (!fileResult) {
-    const keys = json.results ? Object.keys(json.results) : [];
+    const keys = json?.results ? Object.keys(json.results) : [];
     // Try first available key in case filename doesn't match exactly
-    const fallback = keys.length > 0 ? json.results[keys[0]] : null;
+    const fallback = keys.length > 0 ? json.results![keys[0]] : null;
     if (!fallback) {
-      throw new Error(`MinerU returned no results. Response keys: ${JSON.stringify(keys)}`);
+      throw new Error('MinerU returned no results');
     }
     log.warn(`[MinerU] Filename mismatch, using key "${keys[0]}" instead of "${options.fileName}"`);
     return extractMinerUResult(fallback);

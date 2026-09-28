@@ -150,7 +150,11 @@ import { experimental_transcribe as transcribe } from 'ai';
 import type { ASRModelConfig } from './types';
 import { isCustomASRProvider } from './types';
 import { ASR_PROVIDERS } from './constants';
-import { audioProviderFetch, createAudioProviderFetch } from '@/lib/server/audio-provider-fetch';
+import {
+  audioEndpointPolicy,
+  audioProviderFetch,
+  createAudioProviderFetch,
+} from '@/lib/server/audio-provider-fetch';
 
 /**
  * Result of ASR transcription
@@ -243,7 +247,7 @@ async function transcribeWavOpenAICompatibleASR(
       headers: getOptionalBearerAuthHeaders(config.apiKey),
       body: formData,
     },
-    { allowLocalNetworks: config.publicOnly ? false : undefined },
+    audioEndpointPolicy(config),
   );
 
   if (!response.ok) {
@@ -368,7 +372,7 @@ async function transcribeCustomOpenAICompatibleASR(
       headers: getOptionalBearerAuthHeaders(config.apiKey),
       body: formData,
     },
-    { allowLocalNetworks: config.publicOnly ? false : undefined },
+    audioEndpointPolicy(config),
   );
 
   if (!response.ok) {
@@ -401,9 +405,7 @@ async function transcribeOpenAIWhisper(
     // The AI SDK issues the multipart upload through this transport, so the
     // provider request inherits the same redirect + pinned-DNS protection as
     // the raw provider fetches.
-    fetch: createAudioProviderFetch({
-      allowLocalNetworks: config.publicOnly ? false : undefined,
-    }) as typeof fetch,
+    fetch: createAudioProviderFetch(audioEndpointPolicy(config)) as typeof fetch,
   });
 
   // Convert to Buffer or Uint8Array (which is required by the AI SDK)
@@ -497,7 +499,7 @@ async function transcribeQwenASR(
       },
       body: JSON.stringify(requestBody),
     },
-    { allowLocalNetworks: config.publicOnly ? false : undefined },
+    audioEndpointPolicy(config),
   );
 
   if (!response.ok) {
@@ -598,7 +600,7 @@ async function transcribeAzureASR(
       headers: { 'Ocp-Apim-Subscription-Key': config.apiKey! },
       body: formData,
     },
-    { allowLocalNetworks: config.publicOnly ? false : undefined },
+    audioEndpointPolicy(config),
   );
 
   if (!response.ok) {

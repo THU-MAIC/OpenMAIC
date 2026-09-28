@@ -11,7 +11,10 @@
  * following redirects.
  *
  * `fetch` with `redirect: 'manual'` returns the 3xx response itself rather than
- * an opaque one, so the status is readable here.
+ * an opaque one, so the status is readable here. On the server the adapters run
+ * on the pinned provider transport (`lib/server/media-provider-fetch.ts`),
+ * which refuses a 3xx before it reaches this check; this guard covers the
+ * global-`fetch` fallback.
  */
 export function assertNotRedirected(response: Response, providerName: string): void {
   if (response.status >= 300 && response.status < 400) {

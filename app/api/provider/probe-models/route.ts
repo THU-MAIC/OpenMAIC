@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { validateClientBaseUrl, validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { fetchModels, ModelFetchError } from '@/lib/server/model-fetch';
 
 const log = createLogger('ProbeModels');
@@ -17,8 +17,11 @@ const NON_CHAT_PATTERN = /(tts|asr|whisper|embedding|rerank|mineru|image|video|v
  * a typed status so the UI can fall back to manual model entry.
  */
 export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return apiError('INVALID_REQUEST', 400, 'Invalid JSON body');
+  }
   try {
-    const body = await req.json();
     const { baseUrl, apiKey, modelsUrl } = body as {
       baseUrl?: string;
       apiKey?: string;
@@ -29,9 +32,12 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'baseUrl is required');
     }
 
-    // SSRF guard on both the base URL and an explicit models URL override.
-    for (const url of [baseUrl, modelsUrl].filter(Boolean) as string[]) {
-      const ssrfError = await validateUrlForSSRF(url);
+    // SSRF guard on both the base URL and an explicit models URL override
+    // (a complete URL, so only the base URL is held to the base-URL shape).
+    const baseUrlError = await validateClientBaseUrl(baseUrl);
+    if (baseUrlError) return apiError('INVALID_REQUEST', 400, baseUrlError);
+    if (modelsUrl) {
+      const ssrfError = await validateUrlForSSRF(modelsUrl);
       if (ssrfError) return apiError('INVALID_REQUEST', 400, ssrfError);
     }
 
@@ -44,6 +50,9 @@ export async function POST(req: NextRequest) {
       filtered: models.length - chatModels.length,
     });
   } catch (error) {
+    // Only fixed messages reach the caller: the provider's body, parser output
+    // and transport errors are logged server-side.
+    log.warn('Model probe failed:', error);
     if (error instanceof ModelFetchError) {
       if (error.status >= 300 && error.status < 400) {
         return apiError('REDIRECT_NOT_ALLOWED', 403, 'Redirects are not allowed');
@@ -55,13 +64,21 @@ export async function POST(req: NextRequest) {
         // No /models endpoint — signal the UI (via 404) to use manual model entry.
         return apiError('INVALID_REQUEST', 404, 'This provider does not expose a model list');
       }
-      return apiError('INTERNAL_ERROR', 502, error.message);
+      if (error.status >= 200 && error.status < 300) {
+        return apiError('UPSTREAM_ERROR', 502, 'The provider returned an invalid model list');
+      }
+      return apiError(
+        'UPSTREAM_ERROR',
+        502,
+        `The provider rejected the model list request (HTTP ${Math.floor(error.status / 100)}xx)`,
+      );
     }
-    log.error('Model probe failed:', error);
+    // Refused, unresolvable, timed-out and policy-blocked targets all get the
+    // same answer.
     return apiError(
-      'INTERNAL_ERROR',
-      500,
-      error instanceof Error ? error.message : 'Failed to probe models',
+      'UPSTREAM_ERROR',
+      502,
+      'Cannot connect to the provider, please check the Base URL',
     );
   }
 }

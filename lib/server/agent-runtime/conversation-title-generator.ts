@@ -71,6 +71,7 @@ export async function generateConversationTitle(visibleUserText: string): Promis
       STAGE,
       undefined,
       thinking,
+      { serverManaged: connection.serverManaged },
     );
 
     const title = normalizeTitle(result.text);

@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto';
 
 import type { TTSGenerationResult } from '@/lib/audio/tts-providers';
 import { createLogger } from '@/lib/logger';
-import { audioProviderFetch, resolveAllowLocalNetworks } from '@/lib/server/audio-provider-fetch';
+import {
+  audioEndpointPolicy,
+  audioProviderFetch,
+  resolveAllowLocalNetworks,
+  type AudioEndpointTarget,
+} from '@/lib/server/audio-provider-fetch';
 import {
   findUnsafeNetworkTargetError,
   UnsafeNetworkTargetError,
@@ -54,6 +59,12 @@ export interface QwenVoiceCloneConfig {
    * falls back to the process-wide `ALLOW_LOCAL_NETWORKS` behavior.
    */
   publicOnly?: boolean;
+  /**
+   * `true` for a server-configured provider: its endpoint may be on a local
+   * network without ALLOW_LOCAL_NETWORKS. Provider-returned audio URLs are not
+   * affected.
+   */
+  managed?: boolean;
 }
 
 interface QwenResponse {
@@ -123,6 +134,7 @@ function resolveConfig(config: QwenVoiceCloneConfig): {
   baseUrl: URL;
   targetModel: string;
   publicOnly?: boolean;
+  managed?: boolean;
 } {
   const apiKey = config.apiKey?.trim() || '';
   const targetModel = config.targetModel?.trim() || '';
@@ -137,7 +149,7 @@ function resolveConfig(config: QwenVoiceCloneConfig): {
   if (baseUrl.protocol !== 'https:' && baseUrl.hostname !== 'localhost') {
     throw new QwenVoiceCloneError('QWEN_VC_ENDPOINT_INVALID', 400);
   }
-  return { apiKey, baseUrl, targetModel, publicOnly: config.publicOnly };
+  return { apiKey, baseUrl, targetModel, publicOnly: config.publicOnly, managed: config.managed };
 }
 
 function endpoint(baseUrl: URL, path: string): URL {
@@ -191,7 +203,7 @@ async function postJson(
   apiKey: string,
   body: unknown,
   signal?: AbortSignal,
-  publicOnly?: boolean,
+  target?: AudioEndpointTarget,
 ): Promise<QwenResponse> {
   const timeout = timeoutSignal(signal, REQUEST_TIMEOUT_MS);
   try {
@@ -208,7 +220,7 @@ async function postJson(
           body: JSON.stringify(body),
           signal: timeout.signal,
         },
-        { allowLocalNetworks: publicOnly ? false : undefined },
+        audioEndpointPolicy(target),
       );
     } catch (error) {
       // A pinned-dispatcher / redirect-guard refusal is an SSRF policy decision,
@@ -263,7 +275,7 @@ export async function registerQwenVoice(
       },
     },
     signal,
-    resolved.publicOnly,
+    resolved,
   );
   const voiceId = typeof body.output?.voice === 'string' ? body.output.voice.trim() : '';
   if (!voiceId) throw new QwenVoiceCloneError('QWEN_VC_RESPONSE_VOICE_MISSING', 502);
@@ -284,7 +296,7 @@ export async function deleteQwenVoice(
     resolved.apiKey,
     { model: QWEN_VOICE_ENROLLMENT_MODEL, input: { action: 'delete', voice } },
     signal,
-    resolved.publicOnly,
+    resolved,
   );
 }
 
@@ -311,7 +323,7 @@ export async function qwenVoiceExists(
           input: { action: 'list', page_size: pageSize, page_index: pageIndex },
         },
         signal,
-        resolved.publicOnly,
+        resolved,
       );
     } catch (error) {
       // A transient vendor failure (5xx or network error) makes the lookup
@@ -485,7 +497,7 @@ export async function synthesizeQwenVoiceClone(
       resolved.apiKey,
       { model: resolved.targetModel, input: { text, voice } },
       deadline.signal,
-      resolved.publicOnly,
+      resolved,
     );
     const rawAudioUrl =
       typeof body.output?.audio?.url === 'string' ? body.output.audio.url.trim() : '';

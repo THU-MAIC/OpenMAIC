@@ -579,6 +579,20 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
 }
 
 /**
+ * Validate a client-supplied provider base URL under the process-wide policy.
+ * Request paths are appended to a base URL as text, so a query string or
+ * fragment (even an empty `?` or `#`) would absorb the fixed path and leave the
+ * request target to the caller; such a base URL is refused before the address
+ * check.
+ */
+export async function validateClientBaseUrl(url: string): Promise<string | null> {
+  if (url.includes('?') || url.includes('#')) {
+    return 'Base URL must not contain a query string or fragment';
+  }
+  return validateUrlForSSRF(url);
+}
+
+/**
  * Validate a URL that must resolve to a globally routable public address, no
  * matter what the operator's `ALLOW_LOCAL_NETWORKS` opt-in says. This is the
  * policy for a client-supplied BYOK endpoint: metadata, private, loopback and

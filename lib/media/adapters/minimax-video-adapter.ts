@@ -15,7 +15,8 @@ import type {
   VideoGenerationOptions,
   VideoGenerationResult,
 } from '../types';
-import { probeAuth } from '../probe-auth';
+import { mediaFetchFor } from '../media-fetch';
+import { connectivityHttpFailure, connectivityTransportFailure, probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
@@ -117,7 +118,7 @@ async function submitTask(
   if (usesV2TaskApi(model)) {
     // H3 renders 768P clips; request the fixed 6s tier so the reported
     // duration below matches the delivered video.
-    const response = await fetch(`${baseUrl}/v2/video_generation`, {
+    const response = await mediaFetchFor(config)(`${baseUrl}/v2/video_generation`, {
       method: 'POST',
       redirect: 'manual',
       headers: {
@@ -148,7 +149,7 @@ async function submitTask(
     return taskId;
   }
 
-  const response = await fetch(`${baseUrl}/v1/video_generation`, {
+  const response = await mediaFetchFor(config)(`${baseUrl}/v1/video_generation`, {
     method: 'POST',
     redirect: 'manual',
     headers: {
@@ -195,7 +196,7 @@ async function pollTaskStatus(
     ? `${baseUrl}/v2/query/video_generation/${encodeURIComponent(taskId)}`
     : `${baseUrl}/v1/query/video_generation?task_id=${encodeURIComponent(taskId)}`;
 
-  const response = await fetch(url, {
+  const response = await mediaFetchFor(config)(url, {
     method: 'GET',
     redirect: 'manual',
     headers: {
@@ -220,7 +221,7 @@ async function retrieveFileDownloadUrl(
   const baseUrl = (config.baseUrl || BASE_URL).replace(/\/$/, '');
   const url = `${baseUrl}/v1/files/retrieve?file_id=${encodeURIComponent(fileId)}`;
 
-  const response = await fetch(url, {
+  const response = await mediaFetchFor(config)(url, {
     method: 'GET',
     redirect: 'manual',
     headers: {
@@ -328,7 +329,7 @@ export async function testMiniMaxVideoConnectivity(
     return probeAuth({
       providerName: 'MiniMax Video',
       request: () =>
-        fetch(`${baseUrl}/v2/query/video_generation/connectivity-check`, {
+        mediaFetchFor(config)(`${baseUrl}/v2/query/video_generation/connectivity-check`, {
           method: 'GET',
           redirect: 'manual',
           headers: {
@@ -338,9 +339,10 @@ export async function testMiniMaxVideoConnectivity(
     });
   }
 
+  let response: Response;
   try {
     // Submit a minimal task and immediately check if it returns a task_id
-    const response = await fetch(`${baseUrl}/v1/video_generation`, {
+    response = await mediaFetchFor(config)(`${baseUrl}/v1/video_generation`, {
       method: 'POST',
       redirect: 'manual',
       headers: {
@@ -354,15 +356,13 @@ export async function testMiniMaxVideoConnectivity(
         resolution: '768P',
       }),
     });
-
-    if (response.ok) {
-      return { success: true, message: 'MiniMax Video API connected' };
-    }
-
-    const errData = await response.json().catch(() => ({}));
-    const msg = errData?.base_resp?.status_msg || response.statusText;
-    return { success: false, message: `API error: ${msg}` };
   } catch (err) {
-    return { success: false, message: `Connection failed: ${(err as Error).message}` };
+    return connectivityTransportFailure('MiniMax Video', err);
   }
+  await response.body?.cancel().catch(() => undefined);
+
+  if (response.ok) {
+    return { success: true, message: 'MiniMax Video API connected' };
+  }
+  return connectivityHttpFailure('MiniMax Video', response.status);
 }

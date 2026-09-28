@@ -139,6 +139,8 @@ export async function POST(req: NextRequest) {
       apiKey,
       baseUrl,
       publicOnly,
+      // A server-configured provider's endpoint may be on a local network.
+      managed,
       providerOptions: {
         ...(ttsProviderOptions || {}),
         ...(qwenCloneVoice ? { qwenVoiceClone: true } : {}),

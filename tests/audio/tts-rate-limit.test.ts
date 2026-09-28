@@ -5,6 +5,7 @@ const fetchMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/server/audio-provider-fetch', () => ({
   audioProviderFetch: (url: string, init?: RequestInit) => fetchMock(url, init),
+  audioEndpointPolicy: () => ({}),
 }));
 
 function jsonResponse(body: unknown, status = 200): Response {

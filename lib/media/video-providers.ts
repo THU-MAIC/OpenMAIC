@@ -75,13 +75,15 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://generativelanguage.googleapis.com',
     models: [
-      { id: 'veo-3.1-fast-generate-001', name: 'Veo 3.1 Fast' },
-      { id: 'veo-3.1-generate-001', name: 'Veo 3.1' },
+      // Gemini API model IDs (the -001 names for 3.1 exist only on Vertex AI)
+      { id: 'veo-3.1-fast-generate-preview', name: 'Veo 3.1 Fast' },
+      { id: 'veo-3.1-generate-preview', name: 'Veo 3.1' },
+      { id: 'veo-3.1-lite-generate-preview', name: 'Veo 3.1 Lite' },
       { id: 'veo-3.0-fast-generate-001', name: 'Veo 3.0 Fast' },
       { id: 'veo-3.0-generate-001', name: 'Veo 3.0' },
       { id: 'veo-2.0-generate-001', name: 'Veo 2.0' },
     ],
-    supportedAspectRatios: ['16:9', '1:1', '9:16'],
+    supportedAspectRatios: ['16:9', '9:16'],
     supportedDurations: [8],
     supportedResolutions: ['720p'],
     maxDuration: 8,

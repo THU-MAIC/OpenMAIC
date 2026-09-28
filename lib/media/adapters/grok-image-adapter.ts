@@ -18,6 +18,7 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { mediaFetchFor } from '../media-fetch';
 import { probeAuth } from '../probe-auth';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
@@ -55,7 +56,7 @@ export async function testGrokImageConnectivity(
   return probeAuth({
     providerName: 'Grok Image',
     request: () =>
-      fetch(`${baseUrl}/images/generations`, {
+      mediaFetchFor(config)(`${baseUrl}/images/generations`, {
         method: 'POST',
         redirect: 'manual',
         headers: {
@@ -77,7 +78,7 @@ export async function generateWithGrokImage(
 ): Promise<ImageGenerationResult> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
 
-  const response = await fetch(`${baseUrl}/images/generations`, {
+  const response = await mediaFetchFor(config)(`${baseUrl}/images/generations`, {
     method: 'POST',
     redirect: 'manual',
     headers: {

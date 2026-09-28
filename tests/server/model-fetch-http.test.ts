@@ -18,6 +18,10 @@ it('aborts a real stalled response body before succeeding on one retry', async (
       res.end('{"data":[{"id":"recovered"}]}');
     }
   });
+  const originalAllowLocal = process.env.ALLOW_LOCAL_NETWORKS;
+  // The loopback server is a local-network target: opt in, as a self-hosted
+  // deployment would.
+  process.env.ALLOW_LOCAL_NETWORKS = 'true';
   try {
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
@@ -31,6 +35,8 @@ it('aborts a real stalled response body before succeeding on one retry', async (
     expect(Date.now() - started).toBeGreaterThanOrEqual(14_900);
     await expect.poll(() => closedFirstResponse).toBe(true);
   } finally {
+    if (originalAllowLocal === undefined) delete process.env.ALLOW_LOCAL_NETWORKS;
+    else process.env.ALLOW_LOCAL_NETWORKS = originalAllowLocal;
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }

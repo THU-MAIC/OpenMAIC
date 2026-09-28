@@ -9,7 +9,7 @@ import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { documentArtifactToParsedPdfContent, extractDocument } from '@/lib/document';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { checkClientDocumentExtractorBaseUrl } from '@/lib/server/client-extractor-endpoint';
 const log = createLogger('Parse PDF');
 
 export async function POST(req: NextRequest) {
@@ -43,18 +43,20 @@ export async function POST(req: NextRequest) {
 
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
     const managed = isServerConfiguredProvider('pdf', effectiveProviderId);
-    const clientBaseUrl = managed ? undefined : baseUrl || undefined;
+    let clientBaseUrl = managed ? undefined : baseUrl || undefined;
     if (clientBaseUrl) {
-      const ssrfError = await validateUrlForSSRF(clientBaseUrl);
-      if (ssrfError) {
-        return apiError('INVALID_URL', 403, ssrfError);
+      const checked = await checkClientDocumentExtractorBaseUrl(effectiveProviderId, clientBaseUrl);
+      if (!checked.ok) {
+        return apiError('INVALID_URL', 403, checked.message);
       }
+      clientBaseUrl = checked.baseUrl;
     }
 
     const config = {
       providerId: effectiveProviderId,
       apiKey: resolvePDFApiKey(effectiveProviderId, managed ? undefined : apiKey || undefined),
       baseUrl: resolvePDFBaseUrl(effectiveProviderId, clientBaseUrl),
+      managed,
     };
 
     // Convert PDF to buffer

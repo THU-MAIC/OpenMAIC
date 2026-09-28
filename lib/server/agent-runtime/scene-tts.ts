@@ -6,6 +6,7 @@ import type { LegacySpeechAction, SpeechAction } from '@/lib/types/action';
 import type { GeneratedAgentConfig, Scene } from '@/lib/types/stage';
 import {
   getServerTTSProviders,
+  isServerConfiguredProvider,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
   resolveTTSModel,
@@ -86,6 +87,7 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
           modelId,
           apiKey,
           baseUrl: resolveTTSBaseUrl(providerId),
+          managed: isServerConfiguredProvider('tts', providerId),
           voice,
           speed: speech.speed,
           signal: input.signal,

@@ -19,6 +19,7 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { mediaFetchFor } from '../media-fetch';
 import { probeAuth } from '../probe-auth';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
@@ -72,7 +73,7 @@ export async function testSeedreamConnectivity(
   return probeAuth({
     providerName: 'Seedream',
     request: () =>
-      fetch(url, {
+      mediaFetchFor(config)(url, {
         method: 'POST',
         redirect: 'manual',
         headers: {
@@ -96,7 +97,7 @@ export async function generateWithSeedream(
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
 
   const url = `${resolveArkRoot(baseUrl)}/images/generations`;
-  const response = await fetch(url, {
+  const response = await mediaFetchFor(config)(url, {
     method: 'POST',
     redirect: 'manual',
     headers: {

@@ -231,6 +231,7 @@ export async function extractClaimedSessionMaterial(
           apiKey: resolvePDFApiKey(provider.id) || undefined,
           baseUrl: resolvePDFBaseUrl(provider.id),
           allowEnvFallback: true,
+          managed: true,
         },
       });
       selected = provider;
