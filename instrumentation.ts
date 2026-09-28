@@ -18,17 +18,18 @@ export async function register(): Promise<void> {
   const { warnIfAccessCodeIsUnset } = await import('@/lib/server/access-code-warning');
   warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
 
-  // A configuration refused here must stop the process. Next.js logs a throw
-  // from `register` as "Failed to prepare server" but keeps listening and
-  // answers every request with a 500, so the throw alone leaves a deployment
-  // that looks alive and serves nothing. exitOnInvalidBootConfiguration prints
-  // the original message once and exits non-zero (see lib/server/boot-failure.ts);
-  // the rethrow is reached only where the exit is stubbed (tests).
+  // A boot that fails here must stop the process. Next.js logs a throw from
+  // `register` as "Failed to prepare server" but keeps listening and answers
+  // every request with a 500, so the throw alone leaves a deployment that
+  // looks alive and serves nothing. exitOnBootFailure prints the failure and
+  // exits non-zero (see lib/server/boot-failure.ts): a refused configuration as
+  // one line with the original message, anything else with its stack. The
+  // rethrow is reached only where the exit is stubbed (tests).
   try {
     await validateBootConfiguration();
   } catch (error) {
-    const { exitOnInvalidBootConfiguration } = await import('@/lib/server/boot-failure');
-    await exitOnInvalidBootConfiguration(error);
+    const { exitOnBootFailure } = await import('@/lib/server/boot-failure');
+    await exitOnBootFailure(error);
     throw error;
   }
 
@@ -117,10 +118,15 @@ export async function register(): Promise<void> {
 
 /**
  * The fatal boot validations: each throws on a configuration the server must
- * not start with. Warnings (the unset ACCESS_CODE warning, the model-routing
+ * not start with, and the throw stops the process (see `register`). Warnings (the unset ACCESS_CODE warning, the model-routing
  * checks in `validateServerConfig`) are not here and never stop the process.
  */
 async function validateBootConfiguration(): Promise<void> {
+  // Each check runs through runConfigurationCheck, so only what the check
+  // itself throws is reported as a refused configuration; a module that fails
+  // to load is reported as a startup failure, with its stack.
+  const { runConfigurationCheck } = await import('@/lib/server/boot-configuration-error');
+
   // The asset quota, read here rather than at the first persistence request.
   // The provider that consumes it is lazy and memoised, so a malformed ceiling
   // would otherwise let the process boot, pass its health check, and then fail
@@ -130,14 +136,14 @@ async function validateBootConfiguration(): Promise<void> {
   // start instead of failing to work. First, so the throw cannot skip the
   // teardown registration for something `register` has already started.
   const { resolveAssetQuotaBytes } = await import('@/lib/persistence/asset-quota');
-  resolveAssetQuotaBytes();
+  runConfigurationCheck(resolveAssetQuotaBytes);
 
   // The pending-allocation window, for the same reason and at the same moment.
   // Too short is worse than malformed: it silently expires allocations whose
   // document write was still coming, so it must fail the process rather than
   // the request that discovers it.
   const { resolveAssetPendingTtlMs } = await import('@/lib/persistence/asset-pending-ttl');
-  resolveAssetPendingTtlMs();
+  runConfigurationCheck(resolveAssetPendingTtlMs);
 
   // Owner identity, for the same reason and at the same moment. A malformed
   // PERSISTENCE_SHARED_OWNER_ID, or one a host registration would ignore,
@@ -158,13 +164,16 @@ async function validateBootConfiguration(): Promise<void> {
   //     await import('@/lib/server/persistence-hooks');
   //   configurePersistenceHooks(myPersistenceHooks);
   //   configureAssetByteStore(myAssetByteStore);
+  //
+  // A registration that throws stops the process too, reported as a startup
+  // failure with its stack (it is host code, not a setting).
   const { validateOwnerIdentityConfiguration } = await import('@/lib/server/identity/registry');
-  validateOwnerIdentityConfiguration();
+  runConfigurationCheck(validateOwnerIdentityConfiguration);
 
   // The registered hooks, for the same reason and at the same moment: a host
   // byte store that cannot sign under ASSET_BYTE_EGRESS=redirect would
   // otherwise be discovered by the first asset read.
   const { validatePersistenceHooksConfiguration } =
     await import('@/lib/server/persistence-hooks/registry');
-  validatePersistenceHooksConfiguration();
+  runConfigurationCheck(validatePersistenceHooksConfiguration);
 }

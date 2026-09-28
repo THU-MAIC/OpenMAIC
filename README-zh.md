@@ -396,7 +396,15 @@ NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
 
 内嵌端点实现了 [RuntimeStore HTTP 契约](packages/@openmaic/storage/docs/runtime-http-contract.md)和 [DocumentStore HTTP 契约](packages/@openmaic/storage/docs/document-http-contract.md)。不设置 `NEXT_PUBLIC_PERSISTENCE` 则保持原有的纯浏览器行为。
 
-配置无效时服务不会启动。本节与下一节所述在启动时校验的配置（`ASSET_QUOTA_BYTES`、`ASSET_PENDING_TTL_MS`、`OWNER_WRITE_LOCK_WAIT_MS`、`OWNER_CLAIM_LOCK_WAIT_MS`、`PERSISTENCE_SHARED_OWNER_ID` 及其对 `ACCESS_CODE` 的要求、已移除的 `OWNER_AUTHENTICATOR` / `TRUSTED_PROXY_*` 变量，以及所有者认证方法与宿主钩子的注册）都在 `instrumentation.ts` 的 `register()` 中校验。任一项被拒绝时，Node.js 服务会输出一行 `[boot] Invalid server configuration; the server will not start:` 加上原因，并以退出码 `1` 退出（`next start` 与 standalone `server.js` 均如此），使进程守护或容器运行时能看到失败，而不是留下一个仍在监听、却对每个请求都返回 `500` 的进程。警告（如未设置 `ACCESS_CODE` 的提示和模型路由检查）不会让服务停止。
+配置无效时服务不会启动。`instrumentation.ts` 的 `register()` 遇到以下情况会拒绝启动：
+
+- `ASSET_QUOTA_BYTES`、`ASSET_PENDING_TTL_MS`、`OWNER_WRITE_LOCK_WAIT_MS` 或 `OWNER_CLAIM_LOCK_WAIT_MS` 取值格式错误；
+- `OWNER_CLAIM_TRIGGER` 不是 `explicit` 或 `auto`；
+- 设置了已移除的 `OWNER_AUTHENTICATOR` / `TRUSTED_PROXY_*` 变量；
+- `PERSISTENCE_SHARED_OWNER_ID` 格式错误、未同时设置 `ACCESS_CODE`，或与未包含 `sharedTeamAuthMethod()` 的所有者认证注册同时设置；注册了 `sharedTeamAuthMethod()` 却没有设置该变量，或它不是最后一个方法；
+- 注册了资产字节存储的同时设置了 `ASSET_S3_BUCKET`，或在 `ASSET_BYTE_EGRESS=redirect` 下注册的字节存储未声明 `signsReadUrls: true`。
+
+出现上述任一情况时，Node.js 服务会输出一行 `[boot] Invalid server configuration; the server will not start:` 加上原因，并以退出码 `1` 退出（`next start` 与 standalone `server.js` 均如此），使进程守护或容器运行时能看到失败，而不是留下一个仍在监听、却对每个请求都返回 `500` 的进程。启动期间的其他失败（如构建产物缺少模块，或宿主的注册调用抛错）同样以退出码 `1` 退出，输出为 `[boot] Server startup failed; the server will not start:` 并附带调用栈。警告（如未设置 `ACCESS_CODE` 的提示和模型路由检查）不会让服务停止。
 
 #### 所有者身份
 

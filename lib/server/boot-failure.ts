@@ -1,46 +1,61 @@
 /**
- * Terminating the server process when its configuration is invalid.
+ * Terminating the server process when it cannot start.
  *
  * Next.js calls the instrumentation `register()` hook while it prepares the
  * server, but it does not stop when that hook throws: `next start` and the
  * standalone server log "Failed to prepare server", keep listening, and answer
- * every request with a 500. A deployment whose configuration was refused at
- * boot therefore looked alive (the port is open) while serving nothing.
+ * every request with a 500. A deployment whose boot failed therefore looked
+ * alive (the port is open) while serving nothing.
  *
- * {@link exitOnInvalidBootConfiguration} is the one place that turns such a
- * refusal into a process exit: one clear line on stderr carrying the original
- * validation message, then exit code 1, so a process supervisor or container
- * runtime sees the failure and reports it. It is deliberately a thin wrapper
- * in a module of its own, so tests that drive `register()` stub it and assert
- * the thrown error instead of losing the test process.
+ * {@link exitOnBootFailure} is the one place that turns such a failure into a
+ * process exit with code 1, after writing it to stderr, so a process supervisor
+ * or container runtime sees the failure and reports it:
  *
- * Node.js runtime only: `register()` returns before any validation on Edge,
- * where there is no process to exit.
+ * - a refused configuration (`isInvalidBootConfigurationError`, see
+ *   `./boot-configuration-error.ts`) is one line carrying the original
+ *   validation message, which names the setting and the fix;
+ * - anything else (a module that cannot be loaded, a bug in startup code) is
+ *   labelled as a startup failure and printed with its stack and cause, so it
+ *   is not mistaken for a bad setting.
+ *
+ * It is deliberately a thin wrapper in a module of its own, so tests that drive
+ * `register()` stub it and assert the thrown error instead of losing the test
+ * process. Node.js runtime only: `register()` returns before any validation on
+ * Edge, where there is no process to exit.
  */
+import { isInvalidBootConfigurationError } from '@/lib/server/boot-configuration-error';
 
-/** The exit code of a server that refused its configuration. */
-export const INVALID_BOOT_CONFIGURATION_EXIT_CODE = 1;
+/** The exit code of a server that failed to boot. */
+export const BOOT_FAILURE_EXIT_CODE = 1;
 
-/** The single stderr line printed before the process exits. */
-export function formatBootConfigurationFailure(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return `[boot] Invalid server configuration; the server will not start: ${message}`;
+function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const own = error.stack ?? `${error.name}: ${error.message}`;
+  return error.cause === undefined ? own : `${own}\nCaused by: ${describeError(error.cause)}`;
+}
+
+/** What is written to stderr before the process exits. */
+export function formatBootFailure(error: unknown): string {
+  if (isInvalidBootConfigurationError(error)) {
+    return `[boot] Invalid server configuration; the server will not start: ${error.message}`;
+  }
+  return `[boot] Server startup failed; the server will not start:\n${describeError(error)}`;
 }
 
 /**
- * Print the refusal and exit the process with
- * {@link INVALID_BOOT_CONFIGURATION_EXIT_CODE}. The exit waits for stderr to
- * flush (a pipe is asynchronous on some platforms), so the message is not lost
- * with the process. Returns only when `process.exit` itself is stubbed.
+ * Print the failure and exit the process with {@link BOOT_FAILURE_EXIT_CODE}.
+ * The exit waits for stderr to flush (a pipe is asynchronous on some
+ * platforms), so the message is not lost with the process. Returns only when
+ * `process.exit` itself is stubbed.
  */
-export async function exitOnInvalidBootConfiguration(error: unknown): Promise<void> {
-  const line = `${formatBootConfigurationFailure(error)}\n`;
+export async function exitOnBootFailure(error: unknown): Promise<void> {
+  const text = `${formatBootFailure(error)}\n`;
   await new Promise<void>((resolve) => {
     try {
-      process.stderr.write(line, () => resolve());
+      process.stderr.write(text, () => resolve());
     } catch {
       resolve();
     }
   });
-  process.exit(INVALID_BOOT_CONFIGURATION_EXIT_CODE);
+  process.exit(BOOT_FAILURE_EXIT_CODE);
 }

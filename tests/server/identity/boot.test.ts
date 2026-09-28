@@ -184,6 +184,33 @@ describe('owner identity validation at boot', () => {
     expect(exit).not.toHaveBeenCalled();
   });
 
+  it('exits on a startup failure that is not a configuration error, with its stack', async () => {
+    vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+    vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
+    // A module that cannot be loaded, as when a standalone build misses a chunk.
+    vi.resetModules();
+    vi.doMock('@/lib/persistence/asset-pending-ttl', () => {
+      throw new Error("Cannot find module './chunk-42.js'");
+    });
+    try {
+      const { register } = await import('@/instrumentation');
+
+      // The test runner wraps a failing mock factory; the original error is its cause.
+      await expect(register()).rejects.toThrow();
+      expect(exit).toHaveBeenCalledOnce();
+      expect(exit).toHaveBeenCalledWith(1);
+      expect(stderr).toHaveLength(1);
+      expect(stderr[0]).toMatch(/^\[boot\] Server startup failed; the server will not start:\n/);
+      expect(stderr[0]).not.toContain('Invalid server configuration');
+      expect(stderr[0]).toContain('chunk-42');
+      expect(stderr[0]).toMatch(/\n\s+at /);
+    } finally {
+      vi.doUnmock('@/lib/persistence/asset-pending-ttl');
+      vi.resetModules();
+    }
+  });
+
   it('never validates, or exits, on the Edge runtime', async () => {
     vi.stubEnv('NEXT_RUNTIME', 'edge');
     vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', 'team-alpha');

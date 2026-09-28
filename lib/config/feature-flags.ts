@@ -39,7 +39,8 @@ export function isAgentRuntimeConfigured(): boolean {
  * published) must gate on THIS, not on the agent runtime: the persistence
  * route resolves an owner for every request and the owner-bound document store
  * records one for every course, so those facts exist whether or not the runtime
- * is enabled. *
+ * is enabled.
+ *
  * The course library and folder routes (`/api/stages/**`, `/api/folders/**`)
  * gate on this too: they need the database and nothing the runtime adds.
  */

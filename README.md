@@ -549,19 +549,31 @@ and
 Leave `NEXT_PUBLIC_PERSISTENCE` unset to retain the existing browser-only
 behavior.
 
-Invalid configuration stops the server. The settings this section and the
-next describe as checked at startup (`ASSET_QUOTA_BYTES`,
-`ASSET_PENDING_TTL_MS`, `OWNER_WRITE_LOCK_WAIT_MS`, `OWNER_CLAIM_LOCK_WAIT_MS`,
-`PERSISTENCE_SHARED_OWNER_ID` and its `ACCESS_CODE` requirement, the removed
-`OWNER_AUTHENTICATOR` / `TRUSTED_PROXY_*` variables, and the owner auth and
-host hook registrations) are validated in the `register()` hook of
-`instrumentation.ts`. When one is refused, the Node.js server prints a single
-line, `[boot] Invalid server configuration; the server will not start:`
-followed by the reason, and exits with code `1` (under `next start` and the
-standalone `server.js` alike), so a supervisor or container runtime sees the
-failure instead of a process that listens and answers every request with
-`500`. Warnings, such as the unset `ACCESS_CODE` notice and the model-routing
-checks, never stop the server.
+Invalid configuration stops the server. The `register()` hook of
+`instrumentation.ts` refuses to start on:
+
+- a malformed `ASSET_QUOTA_BYTES`, `ASSET_PENDING_TTL_MS`,
+  `OWNER_WRITE_LOCK_WAIT_MS` or `OWNER_CLAIM_LOCK_WAIT_MS`;
+- `OWNER_CLAIM_TRIGGER` set to anything but `explicit` or `auto`;
+- the removed `OWNER_AUTHENTICATOR` / `TRUSTED_PROXY_*` variables, when set;
+- `PERSISTENCE_SHARED_OWNER_ID` that is malformed, set without `ACCESS_CODE`,
+  or set beside an owner auth registration that leaves out
+  `sharedTeamAuthMethod()`; `sharedTeamAuthMethod()` registered without the
+  variable, or not as the last method;
+- `ASSET_S3_BUCKET` set beside a registered asset byte store, or
+  `ASSET_BYTE_EGRESS=redirect` with a registered byte store that does not
+  declare `signsReadUrls: true`.
+
+For any of these, the Node.js server prints a single line,
+`[boot] Invalid server configuration; the server will not start:` followed by
+the reason, and exits with code `1` (under `next start` and the standalone
+`server.js` alike), so a supervisor or container runtime sees the failure
+instead of a process that listens and answers every request with `500`. Any
+other failure during boot, such as a module missing from the build or a host
+registration call that throws, also exits with code `1`, printed as
+`[boot] Server startup failed; the server will not start:` with its stack.
+Warnings, such as the unset `ACCESS_CODE` notice and the model-routing checks,
+never stop the server.
 
 #### Owner identity
 
