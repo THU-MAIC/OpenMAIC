@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
         // ids, so the image srcs reach here as ids. Resolve them to the same
         // bytes the base64 path would send BEFORE prompt assembly, keeping the
         // vision prompt byte-identical in both modes (RFC #1153 part 2 B).
-        const resolvedImages = await resolveVisionImagesForPrompt(images, req.headers);
+        const resolvedImages = await resolveVisionImagesForPrompt(images, req);
         const result = await callLLM(
           {
             model: languageModel,
@@ -256,7 +256,7 @@ export async function POST(req: NextRequest) {
                   ...(candidate.height !== undefined ? { height: candidate.height } : {}),
                 },
               ],
-              req.headers,
+              req,
             ),
             phaseBudget,
           ]);

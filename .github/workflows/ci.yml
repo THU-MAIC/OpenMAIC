@@ -6,7 +6,8 @@ on:
     # only ever proves one part merged into the branch, so without a push
     # trigger the accumulated state of the branch that eventually reaches main
     # is never built on its own.
-    branches: [main, integration/kv-asset-server-backend, integration/agent-workbench]
+    branches:
+      [main, integration/kv-asset-server-backend, integration/agent-workbench, feat/owner-identity-seam]
   pull_request:
     branches:
       [
@@ -16,6 +17,7 @@ on:
         runtime-server-backend,
         integration/kv-asset-server-backend,
         integration/agent-workbench,
+        feat/owner-identity-seam,
       ]
 
 concurrency:

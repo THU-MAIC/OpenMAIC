@@ -1,18 +1,20 @@
 /**
- * Deployment-wide owner identity, for single-tenant installations.
+ * The `sharedTeam` built-in: one deployment-wide owner, for single-tenant
+ * installations.
  *
  * Course documents, folders, materials and agent sessions are partitioned by an
  * owner id. Without a host auth layer that id comes from a 30-day anonymous
- * cookie (`./owner.ts`), which means one physical browser is one learner: a
+ * cookie (`./anonymous-cookie.ts`), which means one physical browser is one learner: a
  * second browser sees an empty course list, a cleared cookie looks like a new
  * installation, and `POST /api/stages/[id]/publish` refuses every owner because
- * publishing an anonymous partition is not something the product allows.
+ * an anonymous principal does not hold the `course:publish` role.
  *
  * For one team behind one `ACCESS_CODE` that partitioning buys nothing — those
  * visitors already share the site password and can read each other's courses by
  * id (`SECURITY.md` says as much about `ACCESS_CODE`). `PERSISTENCE_SHARED_OWNER_ID`
  * replaces the cookie-derived id with that fixed value, so the deployment has
- * one course library, and publishing works.
+ * one course library, and publishing works: the shared principal holds
+ * `course:publish`.
  *
  * It **requires** `ACCESS_CODE`, and refuses to run without one: see the note
  * in {@link resolveSharedOwnerId}. It is also not a substitute for server
@@ -21,15 +23,24 @@
  *
  * Unset — the default — changes nothing: every request keeps resolving to its
  * cookie partition.
+ *
+ * It is a method like any other (`./registry.ts`): with no host registration,
+ * setting the variable makes it the only method; a host that registers its
+ * own methods and wants the team owner too includes {@link sharedTeamAuthMethod}
+ * last in its list. It has no credential, so it always authenticates: nothing
+ * after it is ever asked, including the anonymous fallback.
  */
+
+import type { OwnerAuthMethod, OwnerAuthMethodResult, OwnerPrincipal } from './types';
+import { OWNER_ROLES } from './types';
 
 const SHARED_OWNER_ENV = 'PERSISTENCE_SHARED_OWNER_ID';
 
 /**
  * The value becomes an owner id and part of material object keys, so it is
  * restricted to characters that survive that path unchanged. `:` is excluded,
- * which also rules out the reserved `anon:` prefix — an id in that namespace
- * would still be refused by `publish` and would alias onto a cookie owner.
+ * which also rules out the `anon:` namespace of the anonymous cookie
+ * method — an id there would alias onto a cookie owner.
  */
 const SHARED_OWNER_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 
@@ -72,4 +83,53 @@ export function resolveSharedOwnerId(): string | undefined {
     );
   }
   return raw;
+}
+
+const SHARED_ROLES: ReadonlySet<string> = new Set<string>([OWNER_ROLES.coursePublish]);
+
+const SHARED_TEAM_METHOD = Symbol.for('openmaic.owner-identity.shared-team-method');
+
+/** Whether `method` is the built-in from {@link sharedTeamAuthMethod}. */
+export function isSharedTeamAuthMethod(method: OwnerAuthMethod): boolean {
+  return (method as { [SHARED_TEAM_METHOD]?: true })[SHARED_TEAM_METHOD] === true;
+}
+
+function sharedOwnerIdOrThrow(): string {
+  const ownerId = resolveSharedOwnerId();
+  // Boot validation refuses a registration that includes this method without
+  // the variable; reaching here means it was unset after boot.
+  if (!ownerId) throw new Error(`sharedTeam is registered but ${SHARED_OWNER_ENV} is not set.`);
+  return ownerId;
+}
+
+/**
+ * The `sharedTeam` method: every request resolves to the validated
+ * `PERSISTENCE_SHARED_OWNER_ID` (see {@link resolveSharedOwnerId}) with
+ * `kind: 'shared'` and the `course:publish` role, and no cookie is minted —
+ * there is nothing to remember per browser. The access-code middleware in
+ * front of it is what admits a request; the method has no credential of its
+ * own, so `assurance` is `unverified-legacy`, it never answers
+ * `not-applicable`, and core never attaches a claim candidate to its
+ * principal (nothing in the request proves which person is behind it).
+ *
+ * The id is read from the environment per call, like the variable itself.
+ */
+export function sharedTeamAuthMethod(): OwnerAuthMethod {
+  const authenticate = async (): Promise<OwnerAuthMethodResult> => ({
+    status: 'authenticated',
+    principal: {
+      ownerId: sharedOwnerIdOrThrow(),
+      kind: 'shared',
+      roles: SHARED_ROLES,
+      assurance: 'unverified-legacy',
+    } satisfies OwnerPrincipal,
+  });
+  return {
+    [SHARED_TEAM_METHOD]: true,
+    name: 'sharedTeam',
+    authenticate,
+    authenticateFromContext: authenticate,
+    describeStoredOwner: (storedId) =>
+      storedId === resolveSharedOwnerId() ? { kind: 'shared', roles: SHARED_ROLES } : undefined,
+  } as OwnerAuthMethod;
 }

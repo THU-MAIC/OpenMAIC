@@ -30,7 +30,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { createAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { ensureStageMetaSchema } from '@/lib/persistence/stage-meta';
-import { SHARED_ASSET_PRINCIPAL } from '@/lib/persistence/server-auth';
+import { LEGACY_SHARED_ASSET_PRINCIPAL } from '@/lib/persistence/owner-assets';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
@@ -107,12 +107,20 @@ describe.skipIf(!contractUrl)('asset reference backfill on an upgraded database'
       withTransaction,
       byteStore: await createAssetByteStore(undefined, queryable),
     });
-    referenced = await assets.put({ key: SHARED_ASSET_PRINCIPAL }, new Blob(['still-named']), {
-      contentType: 'image/png',
-    });
-    orphaned = await assets.put({ key: SHARED_ASSET_PRINCIPAL }, new Blob(['named-by-nobody']), {
-      contentType: 'image/png',
-    });
+    referenced = await assets.put(
+      { key: LEGACY_SHARED_ASSET_PRINCIPAL },
+      new Blob(['still-named']),
+      {
+        contentType: 'image/png',
+      },
+    );
+    orphaned = await assets.put(
+      { key: LEGACY_SHARED_ASSET_PRINCIPAL },
+      new Blob(['named-by-nobody']),
+      {
+        contentType: 'image/png',
+      },
+    );
     // A pre-lifecycle entry has neither column: no deadline, because allocation
     // did not set one, and no commit, because no write ever committed one.
     // `put` stamps `expires_at` now, so clearing both is what turns these two

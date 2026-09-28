@@ -1,8 +1,8 @@
 /**
  * POST /api/stages/[id]/unpublish — make a document-backed course private.
  *
- * Owner-only; anonymous owners are refused with the reference's
- * `login_required` (same rationale as publish).
+ * Owner-only, and only for a principal holding the `course:publish` role, with
+ * the same refusals as publish.
  */
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -10,7 +10,8 @@ import { NextResponse } from 'next/server';
 import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { setStagePublished } from '@/lib/persistence/stage-meta';
 import { getStageAccessDb, resolveStageAccess } from '@/lib/server/stage-access';
-import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { OWNER_ROLES, principalHasRole } from '@/lib/server/identity/types';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
 
 export const runtime = 'nodejs';
 
@@ -19,14 +20,19 @@ type Params = { params: Promise<{ id: string }> };
 export async function POST(req: NextRequest, { params }: Params) {
   if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async (principal, responseHeaders) => {
     const { id: stageId } = await params;
+    const { ownerId } = principal;
     try {
-      if (ownerId.startsWith('anon:')) {
-        return NextResponse.json(
-          { error: 'login_required' },
-          { status: 401, headers: responseHeaders },
-        );
+      if (!principalHasRole(principal, OWNER_ROLES.coursePublish)) {
+        // An anonymous owner is asked to sign in; any other principal was
+        // identified and simply lacks the role.
+        return principal.kind === 'anonymous'
+          ? NextResponse.json(
+              { error: 'login_required' },
+              { status: 401, headers: responseHeaders },
+            )
+          : NextResponse.json({ error: 'forbidden' }, { status: 403, headers: responseHeaders });
       }
 
       const access = await resolveStageAccess(stageId);

@@ -355,7 +355,7 @@ export async function POST(req: NextRequest) {
             ...(img.width !== undefined ? { width: img.width } : {}),
             ...(img.height !== undefined ? { height: img.height } : {}),
           })),
-          req.headers,
+          req,
         );
         const resolvedIds = new Set(resolvedVisionImages.map((img) => img.id));
         const visionImageById = new Map(sortedImages.map((img) => [img.id, img] as const));

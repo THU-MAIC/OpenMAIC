@@ -13,9 +13,11 @@ vi.mock('@/lib/config/feature-flags', () => ({
   isAgentRuntimeConfigured: () => mocks.runtimeConfigured,
   isServerPersistenceConfigured: () => mocks.persistenceConfigured,
 }));
-vi.mock('@/lib/server/agent-runtime/owner', () => ({
-  resolveRequestOwnerId: mocks.resolveRequestOwnerId,
-}));
+vi.mock('@/lib/server/identity/resolve', async () =>
+  (await import('../helpers/owner-resolution-mock')).ownerResolveModule(
+    mocks.resolveRequestOwnerId,
+  ),
+);
 vi.mock('@/lib/persistence/server-provider', () => ({
   getServerPersistenceProvider: async () => ({
     pool: {
@@ -208,6 +210,36 @@ describe('POST /api/stages/[id]/publish and unpublish', () => {
     );
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true });
+  });
+
+  it.each([
+    ['publish', postPublish],
+    ['unpublish', postUnpublish],
+  ] as const)(
+    'refuses %s with forbidden for a signed-in owner lacking course:publish',
+    async (action, handler) => {
+      mocks.resolveRequestOwnerId.mockReturnValue({
+        ownerId: 'owner-1',
+        kind: 'user',
+        roles: [],
+      });
+      const response = await handler(
+        new NextRequest(`http://localhost/api/stages/${STAGE_ID}/${action}`, { method: 'POST' }),
+        params(STAGE_ID),
+      );
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toEqual({ error: 'forbidden' });
+    },
+  );
+
+  it('refuses an anonymous owner of unpublish with login_required', async () => {
+    mocks.resolveRequestOwnerId.mockReturnValue('anon:00000000-0000-4000-8000-000000000000');
+    const response = await postUnpublish(
+      new NextRequest(`http://localhost/api/stages/${STAGE_ID}/unpublish`, { method: 'POST' }),
+      params(STAGE_ID),
+    );
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: 'login_required' });
   });
 
   it('refuses an anonymous owner with login_required', async () => {

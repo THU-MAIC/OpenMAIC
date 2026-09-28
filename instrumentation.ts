@@ -36,14 +36,34 @@ export async function register(): Promise<void> {
   const { resolveAssetPendingTtlMs } = await import('@/lib/persistence/asset-pending-ttl');
   resolveAssetPendingTtlMs();
 
-  // The shared owner id, for the same reason and at the same moment. A
-  // malformed value would otherwise boot, pass its health check, and then fail
-  // every owner-scoped request — and an operator who meant to share one course
-  // library has no way to tell from the outside that their setting was not
-  // accepted. `resolveSharedOwnerId` treats an empty value as unset, so this
-  // only rejects values that are present and unusable.
-  const { resolveSharedOwnerId } = await import('@/lib/server/agent-runtime/shared-owner');
-  resolveSharedOwnerId();
+  // Owner identity, for the same reason and at the same moment. A malformed
+  // PERSISTENCE_SHARED_OWNER_ID, or one a host registration would ignore,
+  // would otherwise boot, pass its health check, and then fail (or silently
+  // mis-identify) every owner-scoped request — and an operator has no way to
+  // tell from the outside that their setting was not accepted. An empty value
+  // is treated as unset, so this only rejects values that are present and
+  // unusable.
+  //
+  // A host that brings its own identity registers its owner auth methods
+  // here, in the order they are asked, before validation and before the
+  // server serves a request, and with them any host extension hooks (course
+  // creation, library listing, upload admission, the asset byte store):
+  //
+  //   const { configureOwnerAuthentication } = await import('@/lib/server/identity');
+  //   configureOwnerAuthentication({ methods: [myOwnerAuthMethod] });
+  //   const { configurePersistenceHooks, configureAssetByteStore } =
+  //     await import('@/lib/server/persistence-hooks');
+  //   configurePersistenceHooks(myPersistenceHooks);
+  //   configureAssetByteStore(myAssetByteStore);
+  const { validateOwnerIdentityConfiguration } = await import('@/lib/server/identity/registry');
+  validateOwnerIdentityConfiguration();
+
+  // The registered hooks, for the same reason and at the same moment: a host
+  // byte store that cannot sign under ASSET_BYTE_EGRESS=redirect would
+  // otherwise be discovered by the first asset read.
+  const { validatePersistenceHooksConfiguration } =
+    await import('@/lib/server/persistence-hooks/registry');
+  validatePersistenceHooksConfiguration();
 
   // Imported dynamically so the Edge bundle never pulls in `pg`.
   const { startAssetCollectorSchedule } =
