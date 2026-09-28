@@ -211,6 +211,71 @@ describe('owner identity validation at boot', () => {
     }
   });
 
+  describe('single-user mode', () => {
+    let warn: ReturnType<typeof vi.fn>;
+    const singleUserWarnings = () =>
+      warn.mock.calls.filter((args: unknown[]) => args.join(' ').includes('Single-user mode'))
+        .length;
+
+    beforeEach(async () => {
+      vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+      vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
+      vi.stubEnv('OWNER_SINGLE_USER', 'true');
+      vi.stubEnv('OWNER_SINGLE_USER_ID', '');
+      vi.stubEnv('OPENMAIC_PUBLISH_ADDRESS', '');
+      warn = vi.fn();
+      vi.spyOn(console, 'warn').mockImplementation(warn as never);
+      const { resetSingleUserWarningForTests } = await import('@/lib/server/identity/single-user');
+      resetSingleUserWarningForTests();
+    });
+
+    it('boots without ACCESS_CODE and warns once', async () => {
+      vi.stubEnv('ACCESS_CODE', '');
+      const { register } = await import('@/instrumentation');
+
+      await expect(register()).resolves.toBeUndefined();
+      expect(exit).not.toHaveBeenCalled();
+      expect(singleUserWarnings()).toBe(1);
+    });
+
+    it('boots behind ACCESS_CODE without the single-user warning', async () => {
+      vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+      vi.stubEnv('OPENMAIC_PUBLISH_ADDRESS', '0.0.0.0');
+      const { register } = await import('@/instrumentation');
+
+      await expect(register()).resolves.toBeUndefined();
+      expect(exit).not.toHaveBeenCalled();
+      expect(singleUserWarnings()).toBe(0);
+    });
+
+    it('exits on a malformed switch', async () => {
+      vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+      vi.stubEnv('OWNER_SINGLE_USER', 'yes');
+      const { register } = await import('@/instrumentation');
+
+      await expect(register()).rejects.toThrow(/OWNER_SINGLE_USER must be/);
+      expectBootExit(/OWNER_SINGLE_USER must be/);
+    });
+
+    it('exits beside PERSISTENCE_SHARED_OWNER_ID', async () => {
+      vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+      vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', 'team-alpha');
+      const { register } = await import('@/instrumentation');
+
+      await expect(register()).rejects.toThrow(/are both set/);
+      expectBootExit(/are both set/);
+    });
+
+    it('still exits on a removed identity variable', async () => {
+      vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+      vi.stubEnv('OWNER_AUTHENTICATOR', 'trusted-proxy');
+      const { register } = await import('@/instrumentation');
+
+      await expect(register()).rejects.toThrow(/OWNER_AUTHENTICATOR is set/);
+      expectBootExit(/OWNER_AUTHENTICATOR is set/);
+    });
+  });
+
   it('never validates, or exits, on the Edge runtime', async () => {
     vi.stubEnv('NEXT_RUNTIME', 'edge');
     vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', 'team-alpha');

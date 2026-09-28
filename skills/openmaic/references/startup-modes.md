@@ -41,6 +41,8 @@ Use only when the user explicitly wants containerized startup or wants to avoid 
 docker compose up --build
 ```
 
+This starts the app and PostgreSQL (courses are stored server-side) in single-user mode, published on `127.0.0.1:3000` only. To reach it from other machines, start with `OPENMAIC_PUBLISH_ADDRESS=0.0.0.0` and set `ACCESS_CODE` in `.env.local` first; without an access code anyone who can reach it shares, edits and can delete the single library (the server warns at startup but still runs).
+
 Tradeoff:
 
 - Cleaner isolation

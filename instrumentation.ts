@@ -17,6 +17,9 @@ export async function register(): Promise<void> {
 
   const { warnIfAccessCodeIsUnset } = await import('@/lib/server/access-code-warning');
   warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
+  const { warnIfDefaultDatabasePasswordIsPublished } =
+    await import('@/lib/server/database-password-warning');
+  warnIfDefaultDatabasePasswordIsPublished();
 
   // A boot that fails here must stop the process. Next.js logs a throw from
   // `register` as "Failed to prepare server" but keeps listening and answers
@@ -32,6 +35,11 @@ export async function register(): Promise<void> {
     await exitOnBootFailure(error);
     throw error;
   }
+
+  // Warn-only checks on the configuration that passed validation: single-user
+  // mode without ACCESS_CODE serves one library to whoever can reach the server.
+  const { warnAboutOwnerIdentityConfiguration } = await import('@/lib/server/identity/registry');
+  warnAboutOwnerIdentityConfiguration();
 
   // Imported dynamically so the Edge bundle never pulls in `pg`.
   const { startAssetCollectorSchedule } =
@@ -146,7 +154,8 @@ async function validateBootConfiguration(): Promise<void> {
   runConfigurationCheck(resolveAssetPendingTtlMs);
 
   // Owner identity, for the same reason and at the same moment. A malformed
-  // PERSISTENCE_SHARED_OWNER_ID, or one a host registration would ignore,
+  // PERSISTENCE_SHARED_OWNER_ID or single-user setting, the two together, or a
+  // setting a host registration would ignore,
   // would otherwise boot, pass its health check, and then fail (or silently
   // mis-identify) every owner-scoped request — and an operator has no way to
   // tell from the outside that their setting was not accepted. An empty value

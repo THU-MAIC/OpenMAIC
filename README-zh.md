@@ -318,6 +318,32 @@ cp .env.example .env.local
 docker compose up --build
 ```
 
+打开 **http://localhost:3000**。整套服务是两个容器：应用和 PostgreSQL；PostgreSQL 健康检查通过后应用才会启动。课程、生成的媒体和运行时会话都[存储在服务端](#服务端持久化postgresql)的命名卷（`openmaic-postgres`、`openmaic-data`）中，`docker compose down` 和重新构建后依然保留；`docker compose down -v` 会删除它们。
+
+Compose 文件默认按**个人安装**配置：
+
+- **单一所有者。** `docker-compose.defaults.env` 开启了[单用户模式](#单用户模式)：所有请求都解析为同一个所有者，因此每个浏览器看到的都是同一个课程库，并且可以发布课程；不会生成匿名 cookie。
+- **仅本机访问。** 应用端口只发布在 `127.0.0.1:3000`，只有本机能访问；PostgreSQL 完全不对外发布。
+
+要让其他机器访问，请先加上保护：
+
+1. 在 `.env.local` 中设置足够长的随机 `ACCESS_CODE`（见 [ACCESS_CODE](#可选access_code共享部署)）。强烈建议这样做：没有访问码时，任何能访问该端口的人都是这唯一的所有者，可以共享、编辑甚至删除整个课程库。
+2. 首次启动前把 `PERSISTENCE_POSTGRES_PASSWORD` 设为 URL 安全的随机值（已有数据卷的做法见[服务端持久化](#服务端持久化postgresql)）。
+3. 发布到网络地址：`OPENMAIC_PUBLISH_ADDRESS=0.0.0.0 docker compose up -d --build`。
+
+这些 Compose 层面的变量（`OPENMAIC_PUBLISH_ADDRESS`、宿主机端口 `OPENMAIC_PORT`、`PERSISTENCE_POSTGRES_PASSWORD`）来自 shell 或 `docker-compose.yml` 旁边的 `.env` 文件，而不是 `.env.local`。单用户模式下未设置 `ACCESS_CODE` 时，应用会在启动时输出醒目的警告；发布到回环以外却仍使用默认 PostgreSQL 密码时，应用也会警告；两者都不会阻止服务启动。之后的首次运行设置流程可能会提示设置访问码；在此之前，请自行设置 `ACCESS_CODE`。
+
+`docker-compose.defaults.env` 中的每个默认值都可以在 `.env.local` 中覆盖（Compose 会在它之后读取 `.env.local`）：例如设置 `OWNER_SINGLE_USER=false` 恢复每个浏览器一个匿名所有者（与 `pnpm dev` 相同），或改用 `PERSISTENCE_SHARED_OWNER_ID`。`DATABASE_URL` 由 `docker-compose.yml` 指向内置的 PostgreSQL，优先于 `.env.local`。
+
+> [!IMPORTANT]
+> **升级已有的 Compose 部署。** `docker compose up` 现在会启动 PostgreSQL，并以 `NEXT_PUBLIC_PERSISTENCE=1` 构建镜像；应用只发布在 `127.0.0.1` 上。
+>
+> - 如果此前供其他机器访问，请以 `OPENMAIC_PUBLISH_ADDRESS=0.0.0.0` 启动，并设置 `ACCESS_CODE`：现在每位访客都是同一个所有者。
+> - `--profile server-persistence` 仍可使用，但不再有任何作用；PostgreSQL 总会启动。
+> - 保存在浏览器存储中的课程会在打开时逐门复制到服务端。此前服务端部署中以某个浏览器匿名 cookie 保存的课程，会在该浏览器第一次请求时被认领到单一所有者名下（默认配置中 `OWNER_CLAIM_TRIGGER=auto`）。
+> - 如果 `.env.local` 设置了 `PERSISTENCE_SHARED_OWNER_ID`，请同时在其中设置 `OWNER_SINGLE_USER=false`：两者互斥，同时设置时应用拒绝启动。
+> - 如需纯浏览器存储的镜像，请以空值构建：`NEXT_PUBLIC_PERSISTENCE= docker compose up --build`（PostgreSQL 仍会启动，但不会被使用）。
+
 #### 慢速网络 / 中国大陆构建加速
 
 Docker 构建支持两个可选参数。两者默认均为空，因此上面的标准命令仍会使用
@@ -353,12 +379,13 @@ store；缓存只用于提升性能，不是正确完成构建的必要条件。
 
 ### 服务端持久化（PostgreSQL）
 
-`server-persistence` profile 只跑两个容器：OpenMAIC 应用本体和 PostgreSQL。持久化 HTTP 服务内嵌在应用中（`/api/persistence`），没有独立的持久化服务。
+[Docker 部署](#docker-部署)开箱即用服务端存储：只跑两个容器，OpenMAIC 应用本体和 PostgreSQL。持久化 HTTP 服务内嵌在应用中（`/api/persistence`），没有独立的持久化服务。
+
+不使用 Compose 时，以 `NEXT_PUBLIC_PERSISTENCE=1` 构建，并在运行时提供 `DATABASE_URL`：
 
 ```bash
-cp .env.example .env.local
-printf '\nDATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic\n' >> .env.local
-NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
+NEXT_PUBLIC_PERSISTENCE=1 pnpm build
+DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
 ```
 
 和往常一样把服务商 API Key 填进 `.env.local`。之后运行时会话、课程文档和生成的媒体都由服务端存储；设备维度的 KV 数据（如播放进度）仍保留在浏览器中。已有的浏览器课程数据会在首次访问时逐门课程懒式迁移到服务端存储，迁移路径与浏览器持久化一致且经过校验。
@@ -367,20 +394,20 @@ NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
 
 服务端课程库及其文件夹（`/api/stages/**`、`/api/folders/**`）只依赖 `DATABASE_URL`：无论 Agent 运行时（`OPENMAIC_AGENT_RUNTIME_ENABLED`）是否开启都可以使用。没有 `DATABASE_URL` 时它们返回 `404`，与纯浏览器存储模式一致。`GET /api/agent/runtime` 以 `persistence: true|false` 报告这一点，与运行时自身的 `enabled`、`runtimeEnabled` 并列。
 
-`/api/persistence` 的每个请求都归属于[所有者身份](#所有者身份)机制解析出的所有者——默认为 30 天匿名 cookie，每个浏览器一个所有者。持久化不再有单独的凭证：
+`/api/persistence` 的每个请求都归属于[所有者身份](#所有者身份)机制解析出的所有者——默认为 30 天匿名 cookie，每个浏览器一个所有者；在 Compose 部署中则是[单用户模式](#单用户模式)的唯一所有者。持久化不再有单独的凭证：
 
 - **文档**：读取是 capability-by-id：只要 stage meta 存在且未被墓碑化，`decideDocumentAccess` 就会放行且不比对所有者（`lib/persistence/document-access.ts`），因此能访问该端点并知道 stage id 的人都可以读这门课。写入和删除按所有者校验。
 - **运行时会话**（`/runtime/*`）按学习者 key 分区，而学习者 key **就是所有者 id**。浏览器通过 `GET /api/persistence/learner-key` 获取它；请求中写入任何其他学习者 key 都会被拒绝（`403 FORBIDDEN_LEARNER`），他人的会话返回 `404`。已删除（墓碑化）课程的运行时数据视为不存在，也不再接受写入。学习者合并与管理端清空仍然拒绝。
 - **资产**按所有者分区分配，因此 `ASSET_QUOTA_BYTES` 是每个所有者的上限，只有所有者本人可以替换或删除条目。为保证课程观看者能加载媒体，读取仍是 capability-by-id：所有者可读自己的条目；他人已提交、且被**该所有者本人**某门未删除课程引用的条目，任何人都可按 id 读取。课程只会引用（并提交）其所有者自己的媒体：在自己的课程里写入他人的资产 id 不会产生任何引用，因此既无法暴露对方尚未保存的上传，也无法让对方的媒体一直保留。按所有者分区之前写入的条目（旧的共享分区）仍可被所有人按 id 读取，只有拥有所有引用它的课程的所有者才能替换或删除；课程不再引用后照旧由回收器回收。
 
-在没有宿主认证方法时，所有者的强度只等同于一个 cookie：适用于 localhost、可信网络或单团队部署。有自有账号体系的部署注册所有者认证方法（见[所有者身份](#所有者身份)）后，上述所有接口都随之生效。
+在没有宿主认证方法时，所有者的强度只等同于一个 cookie（单用户模式下则等同于 `ACCESS_CODE` 或回环绑定）：适用于 localhost、可信网络或单团队部署。有自有账号体系的部署注册所有者认证方法（见[所有者身份](#所有者身份)）后，上述所有接口都随之生效。
 
 > [!WARNING]
 > **升级服务端持久化。** `PERSISTENCE_DEV_TOKEN`、`NEXT_PUBLIC_PERSISTENCE_TOKEN` 和 `PERSISTENCE_ALLOW_INSECURE_DEV_AUTH` 已移除并被忽略，请从环境变量和构建参数中删去。此前写入的运行时会话以浏览器自生成的学习者 key 为键，而不是所有者 id，因此**将无法再访问**（课程文档和媒体不受影响）。它们不会被自动迁移，因为信任客户端提交的旧 key 会重新引入客户端自选身份。
 >
 > **如果 `PERSISTENCE_DEV_TOKEN` 是你唯一的访问门槛，请在升级前处理。** 去掉它之后，端点会接受所有能访问到它的访客，每人作为各自的匿名所有者。请先用 `ACCESS_CODE` 或自己的网关保护部署、注册基于自有账号体系的所有者认证方法（见[所有者身份](#所有者身份)），或在此之前关闭服务端持久化（不设置 `NEXT_PUBLIC_PERSISTENCE`）。
 
-`PERSISTENCE_POSTGRES_PASSWORD` 只在数据目录为空时初始化 PostgreSQL 角色，之后再修改不会轮换已有的 `openmaic-postgres` 卷。一次性本地库可以直接 `docker compose --profile server-persistence down -v` 后换密码重启；要保留数据则需以管理员执行 `ALTER ROLE openmaic WITH PASSWORD 'new-password';` 并更新 `DATABASE_URL`。
+`PERSISTENCE_POSTGRES_PASSWORD`（默认 `openmaic-dev`，仅供本地使用）只在数据目录为空时初始化 PostgreSQL 角色；`docker-compose.yml` 也用同一个变量拼出应用的 `DATABASE_URL`，因此请使用 URL 安全的字符。之后再修改不会轮换已有的 `openmaic-postgres` 卷。一次性本地库可以直接 `docker compose down -v` 后换密码重启；要保留数据则执行 `docker compose exec postgres psql -U openmaic -d openmaic -c "ALTER ROLE openmaic WITH PASSWORD 'new-password';"`，然后以 `PERSISTENCE_POSTGRES_PASSWORD=new-password` 启动。
 
 资产的回收由离线回收器完成，不在请求路径上。**本部署默认开启回收器**，资产存储不会无限增长：每 `ASSET_COLLECTION_INTERVAL_MS`（默认 15 分钟）执行一轮，一轮分两级——先释放注册中心条目（在待定窗口内始终没有文档引用的分配，以及最后一处文档引用消失已超过 `ASSET_COLLECTION_GRACE_MS`（默认 1 小时）的条目），再按同一 grace 清理失去最后一个条目的字节。两级是依次等待的：正是释放条目这一步才让它的字节变成无引用，所以字节要等条目熬完自己的 grace 之后才开始计时。因此从「最后一个文档不再引用它」到「字节被删除」，最坏情况是两个 grace period 而不是一个。这个窗口就是用户删除的媒体实际的保留时间，调大请谨慎。设置 `ASSET_COLLECTION_ENABLED=0` 可在某个进程中关闭回收。多实例部署可以在每个实例上开启（每一行在被清理前都会加锁并复查，并发回收器会串行化而非竞争），也可以全部关闭后单独运行。
 
@@ -402,6 +429,7 @@ NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
 - `OWNER_CLAIM_TRIGGER` 不是 `explicit` 或 `auto`；
 - 设置了已移除的 `OWNER_AUTHENTICATOR` / `TRUSTED_PROXY_*` 变量；
 - `PERSISTENCE_SHARED_OWNER_ID` 格式错误、未同时设置 `ACCESS_CODE`，或与未包含 `sharedTeamAuthMethod()` 的所有者认证注册同时设置；注册了 `sharedTeamAuthMethod()` 却没有设置该变量，或它不是最后一个方法；
+- `OWNER_SINGLE_USER` 不是布尔值；`OWNER_SINGLE_USER_ID` 格式错误，或在该模式关闭时设置；单用户模式与 `PERSISTENCE_SHARED_OWNER_ID` 同时设置，或与未包含 `singleUserAuthMethod()` 的注册同时设置；注册了 `singleUserAuthMethod()` 却没有打开开关，或它不是最后一个方法；
 - 注册了资产字节存储的同时设置了 `ASSET_S3_BUCKET`，或在 `ASSET_BYTE_EGRESS=redirect` 下注册的字节存储未声明 `signsReadUrls: true`。
 
 出现上述任一情况时，Node.js 服务会输出一行 `[boot] Invalid server configuration; the server will not start:` 加上原因，并以退出码 `1` 退出（`next start` 与 standalone `server.js` 均如此），使进程守护或容器运行时能看到失败，而不是留下一个仍在监听、却对每个请求都返回 `500` 的进程。启动期间的其他失败（如构建产物缺少模块，或宿主的注册调用抛错）同样以退出码 `1` 退出，输出为 `[boot] Server startup failed; the server will not start:` 并附带调用栈。警告（如未设置 `ACCESS_CODE` 的提示和模型路由检查）不会让服务停止。
@@ -420,7 +448,7 @@ NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
 
 所有方法都回答 `not-applicable` 时，由内置的**匿名回退**解析：每个浏览器一个所有者，`anon:<uuid>`，来自 30 天 `HttpOnly` 的 `anonymous_id` cookie，首次使用时生成，不能发布课程。宿主可以关闭该回退，此时这类请求同样返回 `401`。被拒绝的请求绝不会被当作匿名所有者处理。
 
-默认不注册任何方法，所有请求都是匿名所有者；设置 `PERSISTENCE_SHARED_OWNER_ID`（必须同时设置 `ACCESS_CODE`）时，内置的 `sharedTeam` 方法把所有请求解析为该固定 id，访问码背后的团队共用一个课程库，并可以发布课程。授权只看 principal 的 `kind` 和 `roles`，不解析 id 的形状；核心角色为 `course:publish` 和 `admin`（为管理类接口保留，内置方法都不授予）。
+默认不注册任何方法，所有请求都是匿名所有者，除非环境变量选择了以下两个内置方法之一（二者互斥）：设置 `PERSISTENCE_SHARED_OWNER_ID`（必须同时设置 `ACCESS_CODE`）时，内置的 `sharedTeam` 方法把所有请求解析为该固定 id，访问码背后的团队共用一个课程库，并可以发布课程；设置 `OWNER_SINGLE_USER=true`（Compose 默认）时，内置的 `singleUser` 方法为个人安装把所有请求解析为同一个所有者，见[单用户模式](#单用户模式)。授权只看 principal 的 `kind` 和 `roles`，不解析 id 的形状；核心角色为 `course:publish` 和 `admin`（为管理类接口保留，内置方法都不授予）。
 
 有自有账号体系的部署为每种凭证实现一个 `OwnerAuthMethod`，并在 `instrumentation.ts` 的 `register()` 中调用一次 `configureOwnerAuthentication({ methods: [...], anonymousFallback? })` 按顺序注册（示例见英文 README 的 “Registering methods” 一节）。`authenticated` 回答中的 `setCookies` 会随该请求的每个响应返回（包括错误响应）；Server Action 按同样的顺序询问同样的方法，方法有 `authenticateFromContext()` 时调用它，否则以请求头调用 `authenticate()`，且 Server Action 中的 cookie 必须通过 `next/headers` 写入，带 `setCookies` 的回答会被拒绝。`describeStoredOwner(ownerId)` 让只持有已存储 id 的工作得知所有者类型（先问匿名回退，再按顺序问各方法）；凭证存在但无法使用（格式错误、已过期）时必须回答 `invalid`，绝不能回答 `not-applicable`：只有在该方法的请求头或 cookie 根本不存在时才回答 `not-applicable`，否则请求会被悄悄交给下一个方法或匿名所有者，核心无法察觉；无法作出判断（密钥端点或会话存储不可用）时应抛错，请求以服务器错误失败。`issuesAnonymousOwners: true` 加 `clearCredential()` 只用于自己以 cookie 认证匿名 principal 的方法，其 `Set-Cookie` 值会随每个 `403 OWNER_RETIRED` 返回；核心在此处绝不调用其他方法的 `clearCredential()`，因此账号的会话 cookie 不会因某个匿名身份退役而被清除。principal 按请求校验：方法返回的 owner id 不是 1–256 个可打印、无空格的 ASCII 字符、`kind` / `assurance` 未知，或方法自行设置了 `pendingClaim` 时，该请求返回 `500`，不会写入存储。同一个解析出的所有者也是 `/api/persistence` 的运行时学习者 key 和资产分区。
 
@@ -428,11 +456,26 @@ NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
 
 OpenMAIC 不内置身份网关认证器。部署在身份网关（带 `--pass-authorization-header` 的 oauth2-proxy、Cloudflare Access、Google Cloud IAP 等）之后时，可由宿主编写一个方法，用 IdP 公布的 JWKS 校验网关转发的**签名 JWT**（签名、`iss`、`aud`、`exp` / `nbf`），把 `sub` 映射为所有者 id、把组声明映射为角色：请求头不存在时回答 `not-applicable`，存在但无效时回答 `invalid`。只有令牌本身的错误才回答 `invalid`；JWKS 端点不可达、返回非 200 或无法解析的内容（`jose` 报告为通用的 `ERR_JOSE_GENERIC`）属于服务器故障，应重新抛出，而不是把所有用户当作令牌伪造而拒绝。该文件放在 `lib/server/identity/host/` 目录中：边界测试在其他任何位置（包括核心身份文件）读取网关身份请求头或传入的 `Authorization` 请求头都会失败。基于 `jose` 库的示例见英文 README 的 “Recipe: accounts through an identity gateway (signed JWT)” 一节；该示例由宿主维护，必须由宿主自行测试。
 
+##### 单用户模式
+
+`OWNER_SINGLE_USER=true` 把所有请求解析为一个固定所有者 `OWNER_SINGLE_USER_ID`（默认 `local`；1–128 个 `[A-Za-z0-9._-]` 字符，因此不可能使用保留的 `anon:` 前缀）。principal 为 `kind: 'user'` 并带有 `course:publish` 角色：这是某一个人自己的安装，因此可以发布；与 `sharedTeam`（一个访问码背后的团队，不对应某个人）不同，它会得到认领候选，见下文。不会生成匿名 cookie。
+
+**暴露。** 每个请求都会成为整个课程库的所有者，而路由处理函数无法区分本机客户端和远程客户端（看不到 TCP 对端，转发请求头由客户端设置），因此不检查请求。单用户模式有无 `ACCESS_CODE` 都会运行：
+
+- **设置了 `ACCESS_CODE`** 时，由访问码门禁放行请求，与 `sharedTeam` 相同。
+- **未设置**时，部署依赖于没有其他人能访问到服务：请把它绑定在回环地址或私有网络上（Compose 文件默认发布在 `127.0.0.1`；不使用 Compose 时例如 `pnpm start -H 127.0.0.1`）。服务在启动时输出一条醒目的警告，说明任何能访问它的人都会共享、编辑甚至删除这唯一的课程库，以及如何设置 `ACCESS_CODE`。服务不会因此拒绝启动。
+
+之后的首次运行设置流程可能会提示设置访问码；目前请在服务可被他人访问之前自行设置 `ACCESS_CODE`。
+
+**此前的匿名工作。** 此前以匿名方式使用过该部署的浏览器仍会发送其 `anonymous_id` cookie。单用户模式只有一个人，所以该 cookie 只可能指向这个人自己的内容：principal 会带上指向它的 `pendingClaim`（见下文“认领匿名工作”），在 `OWNER_CLAIM_TRIGGER=auto`（Compose 默认）下，会在该浏览器第一次请求时认领到单一所有者名下。
+
+注册了自有方法、又希望以单一所有者兜底的宿主，可以把 `singleUserAuthMethod()`（从 `@/lib/server/identity` 导出）放在最后，规则与 `sharedTeamAuthMethod()` 相同。
+
 ##### 认领匿名工作
 
 访客先匿名使用、后登录，会同时拥有两个所有者：写入课程时的匿名所有者，以及登录后的账号。**认领（claim）**在一个数据库事务内把匿名所有者名下的全部内容转到账号，并让该匿名 id 退役。
 
-**何时会出现认领。** 认领候选由核心自动附加：宿主方法认证出非匿名 principal，且同一请求还带有有效的 `anonymous_id` cookie 时，该 principal 会带有指向该匿名所有者的 `pendingClaim`。这覆盖访客先匿名使用、后登录（匿名回退开启时），以及部署从匿名使用切换到账号而访客仍持有旧 cookie（回退开启或关闭均可）两种情况。没有有效 cookie、principal 本身是匿名的，或由内置的 `sharedTeam` 解析（它没有自己的凭证，无法判断是谁的浏览器内容）时都不会附加；方法也不能自行设置。
+**何时会出现认领。** 认领候选由核心自动附加：宿主方法认证出非匿名 principal，且同一请求还带有有效的 `anonymous_id` cookie 时，该 principal 会带有指向该匿名所有者的 `pendingClaim`。这覆盖访客先匿名使用、后登录（匿名回退开启时），以及部署从匿名使用切换到账号而访客仍持有旧 cookie（回退开启或关闭均可）两种情况。没有有效 cookie、principal 本身是匿名的，或由内置的 `sharedTeam` 解析（它没有自己的凭证，无法判断是谁的浏览器内容）时都不会附加；方法也不能自行设置。内置的 `singleUser` 会附加：它的部署只有一个人，cookie 指向的就是此人此前的匿名内容。
 
 触发认领之前不会移动任何数据：默认由应用页面以 JSON 请求体（`{}`）显式调用 `POST /api/identity/claim`，成功返回 `200 { status: 'claimed', moved }` 或 `200 { status: 'already-claimed' }`，并通过 `Set-Cookie` 删除匿名 cookie；设置 `OWNER_CLAIM_TRIGGER=auto` 后，携带待认领身份的第一个路由请求会在处理前自动认领（显式认领路由除外，它们仍报告自己的认领结果；Server Action 不会触发）。同一浏览器可能由多人共用时建议保留显式触发，否则最先登录的人会拿走其中的匿名内容。**匿名 cookie 是持有者凭证（bearer credential）**：持有它的人可以读取、编辑这些匿名内容，并能在登录后把它们认领进自己的账号；在共用设备上，应在下一个人登录前清除它（认领会自动清除）。非同源 JSON 请求（`Sec-Fetch-Site` 不是 `same-origin`、`Origin` 不是本站，或内容类型不是 `application/json`）返回 `403 CROSS_ORIGIN_REFUSED`；匿名请求者返回 `403 TARGET_ANONYMOUS`；账号旁没有匿名 cookie 返回 `409 NO_PENDING_CLAIM`；该匿名所有者已被其他账号认领时返回 `409 ALREADY_CLAIMED_ELSEWHERE` 并删除 cookie；任一所有者正在写入、认领未能及时拿到锁时返回 `503 OWNER_BUSY` 并附 `Retry-After`，可原样重试。
 

@@ -339,6 +339,68 @@ cp .env.example .env.local
 docker compose up --build
 ```
 
+Open **http://localhost:3000**. The stack is two containers, the app and
+PostgreSQL; the app starts once PostgreSQL reports healthy. Courses, generated
+media and runtime sessions are [stored on the server](#server-backed-persistence-postgresql)
+in named volumes (`openmaic-postgres`, `openmaic-data`), so they survive
+`docker compose down` and rebuilds; `docker compose down -v` deletes them.
+
+The Compose file is set up as a **personal installation**:
+
+- **One owner.** `docker-compose.defaults.env` turns on
+  [single-user mode](#single-user-mode): every request resolves to one owner,
+  so every browser sees the same course library and publishing works. No
+  anonymous cookie is minted.
+- **Loopback only.** The app is published on `127.0.0.1:3000`, so only this
+  machine can reach it. PostgreSQL is not published at all.
+
+To reach it from other machines, protect it first:
+
+1. Set a long random `ACCESS_CODE` in `.env.local` (see
+   [ACCESS_CODE](#optional-access_code-shared-deployments)). This is strongly
+   recommended: without it, anyone who can reach the port is the single owner
+   and shares, edits and can delete the whole library.
+2. Set `PERSISTENCE_POSTGRES_PASSWORD` to a URL-safe random value before the
+   first start (for an existing volume, see
+   [Server-backed persistence](#server-backed-persistence-postgresql)).
+3. Publish on the network address:
+   `OPENMAIC_PUBLISH_ADDRESS=0.0.0.0 docker compose up -d --build`.
+
+These Compose-level variables (`OPENMAIC_PUBLISH_ADDRESS`, `OPENMAIC_PORT` for
+the host port, `PERSISTENCE_POSTGRES_PASSWORD`) come from your shell or a `.env`
+file next to `docker-compose.yml`, not from `.env.local`. Single-user mode
+without `ACCESS_CODE` logs a prominent warning at startup, and the app also
+warns when it is published beyond loopback with the default PostgreSQL
+password; neither stops the server. A later first-run setup flow may prompt for
+an access code; until then, setting `ACCESS_CODE` is up to you.
+
+Each default in `docker-compose.defaults.env` can be overridden in `.env.local`,
+which Compose reads after it: for example `OWNER_SINGLE_USER=false` for one
+anonymous owner per browser (what `pnpm dev` does), or to use
+`PERSISTENCE_SHARED_OWNER_ID` instead. `DATABASE_URL` is set by
+`docker-compose.yml` for the bundled PostgreSQL and wins over `.env.local`.
+
+> [!IMPORTANT]
+> **Upgrading an existing Compose deployment.** `docker compose up` now starts
+> PostgreSQL and builds the image with `NEXT_PUBLIC_PERSISTENCE=1`, and the app
+> is published on `127.0.0.1` only.
+>
+> - If you served the app to other machines, start with
+>   `OPENMAIC_PUBLISH_ADDRESS=0.0.0.0`, and set `ACCESS_CODE`: every visitor
+>   is now the same single owner.
+> - `--profile server-persistence` is still accepted and changes nothing;
+>   PostgreSQL always starts.
+> - Courses kept in browser storage are copied to the server one course at a
+>   time as they are opened. Courses an earlier server-backed deployment stored
+>   under a browser's anonymous cookie are claimed into the single owner on
+>   that browser's first request (`OWNER_CLAIM_TRIGGER=auto` in the defaults).
+> - If `.env.local` sets `PERSISTENCE_SHARED_OWNER_ID`, also set
+>   `OWNER_SINGLE_USER=false` there: the two exclude each other and the app
+>   refuses to start with both.
+> - For a browser-storage-only image, build with an empty value:
+>   `NEXT_PUBLIC_PERSISTENCE= docker compose up --build` (PostgreSQL still
+>   starts, unused).
+
 #### Slow-network / China build acceleration
 
 Docker builds support two optional build arguments. Both are empty by default,
@@ -377,14 +439,17 @@ the cache only improves performance and is not required for a correct build.
 
 ### Server-backed persistence (PostgreSQL)
 
-The `server-persistence` profile runs exactly two containers: the OpenMAIC app
-and PostgreSQL. The persistence HTTP server is embedded in the app at
-`/api/persistence`; there is no standalone persistence service.
+The [Docker deployment](#docker-deployment) is server-backed out of the box: it
+runs exactly two containers, the OpenMAIC app and PostgreSQL. The persistence
+HTTP server is embedded in the app at `/api/persistence`; there is no
+standalone persistence service.
+
+Outside Compose, build with `NEXT_PUBLIC_PERSISTENCE=1` and run with a
+`DATABASE_URL`:
 
 ```bash
-cp .env.example .env.local
-printf '\nDATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic\n' >> .env.local
-NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
+NEXT_PUBLIC_PERSISTENCE=1 pnpm build
+DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
 ```
 
 Add your provider API keys to `.env.local` as usual. Runtime sessions, course
@@ -411,7 +476,8 @@ need only `DATABASE_URL`: they serve whether or not the
 
 Every `/api/persistence` request is attributed to the owner the
 [owner identity seam](#owner-identity) resolves — by default the 30-day
-anonymous cookie, one owner per browser. There is no separate persistence
+anonymous cookie, one owner per browser; in the Compose deployment, the one
+[single-user](#single-user-mode) owner. There is no separate persistence
 credential:
 
 - **Documents.** A read is capability-by-id: if the stage meta exists and is
@@ -437,8 +503,9 @@ credential:
   only by an owner who owns every course referencing them; the collector
   reclaims them as courses stop naming them, as before.
 
-Without a host auth method the owner is only as strong as a cookie: this is
-suitable for localhost, trusted-network, or single-team deployments. A
+Without a host auth method the owner is only as strong as a cookie (or, in
+single-user mode, as `ACCESS_CODE` or the loopback binding): this is suitable
+for localhost, trusted-network, or single-team deployments. A
 deployment with its own accounts registers owner auth methods (see
 [Owner identity](#owner-identity)) and every surface above follows it.
 
@@ -459,18 +526,15 @@ deployment with its own accounts registers owner auth methods (see
 > [Owner identity](#owner-identity)), or turn server persistence off
 > (`NEXT_PUBLIC_PERSISTENCE` unset) until you have one.
 
-`PERSISTENCE_POSTGRES_PASSWORD` initializes the PostgreSQL role only when the
-data directory is empty; changing it later does not rotate an existing
+`PERSISTENCE_POSTGRES_PASSWORD` (default `openmaic-dev`, for local use only)
+initializes the PostgreSQL role only when the data directory is empty, and
+`docker-compose.yml` builds the app's `DATABASE_URL` from the same variable, so
+use URL-safe characters. Changing it later does not rotate an existing
 `openmaic-postgres` volume. For a disposable local database, run
-`docker compose --profile server-persistence down -v`, set the new password and
-matching `DATABASE_URL`, then start the profile again. To preserve data, connect
-as an administrator and run `ALTER ROLE openmaic WITH PASSWORD 'new-password';`,
-then update `DATABASE_URL`.
-
-Compose cannot attach `depends_on` to `openmaic` only when this optional profile
-is active without also affecting the default deployment. Startup therefore
-relies on the embedded route's retry-on-next-request behavior while PostgreSQL
-becomes healthy.
+`docker compose down -v`, set the new password, then start again. To preserve
+data, run
+`docker compose exec postgres psql -U openmaic -d openmaic -c "ALTER ROLE openmaic WITH PASSWORD 'new-password';"`,
+then start with `PERSISTENCE_POSTGRES_PASSWORD=new-password`.
 
 Assets are reclaimed by an offline collector rather than on a request path.
 **This deployment runs that collector by default**, so nothing has to be
@@ -560,6 +624,11 @@ Invalid configuration stops the server. The `register()` hook of
   or set beside an owner auth registration that leaves out
   `sharedTeamAuthMethod()`; `sharedTeamAuthMethod()` registered without the
   variable, or not as the last method;
+- `OWNER_SINGLE_USER` that is not a boolean, a malformed
+  `OWNER_SINGLE_USER_ID` or one set while the mode is off, single-user mode
+  beside `PERSISTENCE_SHARED_OWNER_ID`, or beside a registration that leaves out
+  `singleUserAuthMethod()`; `singleUserAuthMethod()` registered without the
+  switch, or not as the last method;
 - `ASSET_S3_BUCKET` set beside a registered asset byte store, or
   `ASSET_BYTE_EGRESS=redirect` with a registered byte store that does not
   declare `signsReadUrls: true`.
@@ -598,13 +667,57 @@ publish. A host can turn the fallback off, and then such a request is a `401`
 too. A refused request is never served as an anonymous owner.
 
 Out of the box nothing is registered, so every request is an anonymous owner,
-unless `PERSISTENCE_SHARED_OWNER_ID` is set (requires `ACCESS_CODE`): then the
-built-in `sharedTeam` method resolves every request to that fixed id, so the
-team behind the access code shares one library and may publish.
+unless one of two built-ins is selected by the environment (they exclude each
+other):
+
+- `PERSISTENCE_SHARED_OWNER_ID` (requires `ACCESS_CODE`): the built-in
+  `sharedTeam` method resolves every request to that fixed id, so the team
+  behind the access code shares one library and may publish.
+- `OWNER_SINGLE_USER=true` (the Compose default): the built-in `singleUser`
+  method resolves every request to one owner for a personal installation; see
+  [Single-user mode](#single-user-mode).
 
 Authorization reads the principal's `kind` and `roles`, never the shape of the
 id. The core roles are `course:publish` (publish and unpublish a course) and
 `admin` (reserved for administrative surfaces; no built-in grants it).
+
+##### Single-user mode
+
+`OWNER_SINGLE_USER=true` resolves every request to one fixed owner,
+`OWNER_SINGLE_USER_ID` (default `local`; 1-128 characters of `[A-Za-z0-9._-]`,
+so the reserved `anon:` prefix is impossible). The principal is
+`kind: 'user'` with the `course:publish` role: it is one person's own
+installation, so publishing works, and unlike `sharedTeam` (a team behind one
+code, no one person) it gets a claim candidate, see below. No anonymous cookie
+is minted.
+
+**Exposure.** Every request becomes the owner of the whole library, and a route
+handler cannot tell a local client from a remote one (it does not see the TCP
+peer, and forwarding headers are set by the client), so nothing inspects
+requests. Single-user mode runs with or without `ACCESS_CODE`:
+
+- **With `ACCESS_CODE`**, the access-code gate admits requests, as for
+  `sharedTeam`.
+- **Without it**, the deployment relies on nobody else reaching the server:
+  bind it to loopback or a private network (the Compose file publishes on
+  `127.0.0.1` by default; outside Compose, for example
+  `pnpm start -H 127.0.0.1`). The server logs one prominent warning at startup
+  explaining that anyone who can reach it shares, edits and can delete the
+  single library, and how to set `ACCESS_CODE`. It does not refuse to start.
+
+A later first-run setup flow may prompt for an access code; for now, set
+`ACCESS_CODE` yourself before the server is reachable by others.
+
+**Earlier anonymous work.** A browser that used the deployment anonymously
+before still sends its `anonymous_id` cookie. Single-user mode has exactly one
+person, so that cookie can only name their own work: the principal gets a
+`pendingClaim` for it (see [Claiming anonymous work](#claiming-anonymous-work)),
+and with `OWNER_CLAIM_TRIGGER=auto` (the Compose default) it is claimed into
+the single owner on the browser's first request.
+
+A host that registers its own methods and also wants the single owner as the
+last resort includes `singleUserAuthMethod()` (exported from
+`@/lib/server/identity`) last, under the same rules as `sharedTeamAuthMethod()`.
 
 ##### Registering methods
 
@@ -822,7 +935,8 @@ from anonymous use to accounts while visitors still hold their old cookie
 (with the fallback on or off). There is no candidate without a valid cookie,
 for an anonymous principal, or for the built-in `sharedTeam` (it has no
 credential of its own, so nothing says whose browser work it is); a method
-cannot set one itself.
+cannot set one itself. The built-in `singleUser` does get one: its deployment
+has one person, so the cookie names that person's earlier anonymous work.
 
 Nothing moves until the claim is triggered:
 
@@ -1085,8 +1199,8 @@ route `maic-agent-driver` to a provider-prefixed model with an
 no fallback.
 
 To make the browser use the same server-backed document and runtime stores,
-also build with `NEXT_PUBLIC_PERSISTENCE=1` and configure the matching
-development tokens described in [Server-backed persistence](#server-backed-persistence-postgresql).
+also build with `NEXT_PUBLIC_PERSISTENCE=1` (the Docker deployment does), as
+described in [Server-backed persistence](#server-backed-persistence-postgresql).
 Without these opt-ins, OpenMAIC retains its existing browser-only behavior.
 Runner cadence (scan interval, heartbeat, lease TTL, concurrency, attempts) and
 the reserved compaction knobs are listed in `.env.example`.

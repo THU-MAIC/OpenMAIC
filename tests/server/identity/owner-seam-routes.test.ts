@@ -215,4 +215,46 @@ describe('owner identity seam through the routes', () => {
     await expect(response.json()).resolves.toMatchObject({ success: true });
     expect(response.headers.has('set-cookie')).toBe(false);
   });
+
+  it('serves one library to every browser, allows publish and mints nothing (built-in singleUser)', async () => {
+    vi.stubEnv('OWNER_SINGLE_USER', 'true');
+    const stageId = 'stage-seam-single';
+    await ownerStore(pool, 'local').saveDocument(courseDocument(stageId));
+
+    // A browser with no cookie at all sees the single owner's library, and is
+    // not handed an anonymous identity.
+    const listed = await listStages({});
+    expect(listed.status).toBe(200);
+    expect(listed.headers.has('set-cookie')).toBe(false);
+    await expect(listed.json()).resolves.toMatchObject({
+      stages: [expect.objectContaining({ id: stageId })],
+    });
+
+    const response = await publish(stageId, {});
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ success: true });
+    expect(response.headers.has('set-cookie')).toBe(false);
+  });
+
+  it("claims a browser's earlier anonymous courses into the single owner (OWNER_CLAIM_TRIGGER=auto)", async () => {
+    vi.stubEnv('OWNER_SINGLE_USER', 'true');
+    vi.stubEnv('OWNER_CLAIM_TRIGGER', 'auto');
+    const stageId = 'stage-seam-single-claimed';
+    await ownerStore(pool, `anon:${OWNER_COOKIE}`).saveDocument(courseDocument(stageId));
+
+    // Before the browser that owns it shows up, the course is not the single owner's.
+    await expect((await listStages({})).json()).resolves.toEqual({ stages: [] });
+
+    const listed = await listStages({ cookie: `anonymous_id=${OWNER_COOKIE}` });
+    expect(listed.status).toBe(200);
+    await expect(listed.json()).resolves.toMatchObject({
+      stages: [expect.objectContaining({ id: stageId })],
+    });
+    // The spent anonymous cookie is dropped.
+    expect(listed.headers.get('set-cookie')).toMatch(/anonymous_id=;/);
+
+    await expect((await listStages({})).json()).resolves.toMatchObject({
+      stages: [expect.objectContaining({ id: stageId })],
+    });
+  });
 });
