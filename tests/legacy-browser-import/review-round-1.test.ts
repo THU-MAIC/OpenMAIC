@@ -335,7 +335,8 @@ describe('legacy sources', () => {
     const sources = {
       documents: {
         loadDocument: async () => {
-          throw new Error('invalid scene');
+          // A record the DSL cannot migrate: unusable, not a storage failure.
+          throw new Error('@openmaic/dsl: no migration path from "9.9.9" to "0.1.0"');
         },
         listDocuments: async () => [],
       },
@@ -348,5 +349,27 @@ describe('legacy sources', () => {
     const found = await readLegacyCourse(sources, 'both');
 
     expect(found).toMatchObject({ source: 'tables', document: { stage: { name: 'Tables copy' } } });
+  });
+
+  it('does not fall back to an older copy when the storage merely failed to read', async () => {
+    const legacy = new LegacyBrowserDatabase();
+    await legacy.stages.put({ id: 'both', name: 'Tables copy', createdAt: NOW, updatedAt: NOW });
+    await legacy.scenes.put(slideScene('both', { id: 'b', order: 0 }) as unknown as SceneRecord);
+    legacy.close();
+    const aborted = new DOMException('The transaction was aborted', 'AbortError');
+    const sources = {
+      documents: {
+        loadDocument: async () => {
+          throw aborted;
+        },
+        listDocuments: async () => [],
+      },
+      runtime: null,
+      assets: null,
+      learnerKey: null,
+      close: async () => undefined,
+    } as unknown as LegacySources;
+
+    await expect(readLegacyCourse(sources, 'both')).rejects.toBe(aborted);
   });
 });

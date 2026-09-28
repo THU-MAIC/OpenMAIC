@@ -146,5 +146,12 @@ describe('GET /api/identity/merged-from', () => {
   it('refuses a malformed query', async () => {
     expect((await ask({ 'x-test-session': 'alice' }, 'salt=zz&digest=00')).status).toBe(400);
     expect((await ask({ 'x-test-session': 'alice' }, `salt=${SALT}`)).status).toBe(400);
+    // A valid digest does not excuse a malformed salt.
+    expect(
+      (await ask({ 'x-test-session': 'alice' }, query(digestOf(ANON), 'NOT-HEX-SALT-000'))).status,
+    ).toBe(400);
+    expect((await ask({ 'x-test-session': 'alice' }, query(digestOf(ANON), 'abcd'))).status).toBe(
+      400,
+    );
   });
 });
