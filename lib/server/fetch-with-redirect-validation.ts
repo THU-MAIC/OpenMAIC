@@ -24,10 +24,17 @@ export const MAX_REDIRECT_HOPS = 5;
  * origin boundary when a redirect is followed manually. These are the header
  * spellings the provider layer attaches to outbound calls: `authorization`
  * (Bearer tokens from the OpenAI/Anthropic/Azure SDKs and the verify routes),
- * `api-key` (Azure), `x-api-key` (Anthropic) and `x-goog-api-key` (Google).
+ * `api-key` (Azure), `x-api-key` (Anthropic), `x-goog-api-key` (Google) and
+ * `x-opencode-session` (OpenCode Go gateway session credential).
  * Matching is case-insensitive because HTTP header names are.
  */
-const CREDENTIAL_HEADERS = new Set(['authorization', 'api-key', 'x-api-key', 'x-goog-api-key']);
+const CREDENTIAL_HEADERS = new Set([
+  'authorization',
+  'api-key',
+  'x-api-key',
+  'x-goog-api-key',
+  'x-opencode-session',
+]);
 
 function isCredentialHeader(name: string): boolean {
   return CREDENTIAL_HEADERS.has(name.trim().toLowerCase());

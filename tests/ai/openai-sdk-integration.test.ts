@@ -358,6 +358,7 @@ describe('OpenAI SDK integration', () => {
           providerId: 'deepseek',
           modelId: 'deepseek-v4-pro',
           apiKey: 'sk-test',
+          baseUrl: 'https://opencode.ai/zen/go/v1',
         });
         const result = streamText({ model, prompt: 'hi', maxRetries: 0 });
         await result.consumeStream();
@@ -377,6 +378,117 @@ describe('OpenAI SDK integration', () => {
       vi.stubEnv('OPENCODE_GO_SESSION', '');
 
       expect(await driveOneTurn()).toBeNull();
+    });
+
+    it('sends no session header to a non-gateway base URL', async () => {
+      vi.stubEnv('OPENCODE_GO_SESSION', 'session-123');
+      let sessionHeader: string | null | undefined = 'unset';
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        sessionHeader = new Headers(init?.headers).get('x-opencode-session');
+        const encoder = new TextEncoder();
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    id: 'chatcmpl-1',
+                    object: 'chat.completion.chunk',
+                    created: 1,
+                    model: 'deepseek-v4-pro',
+                    choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: null }],
+                  })}\n\n`,
+                ),
+              );
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    id: 'chatcmpl-1',
+                    object: 'chat.completion.chunk',
+                    created: 1,
+                    model: 'deepseek-v4-pro',
+                    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+                    usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+                  })}\n\n`,
+                ),
+              );
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+              controller.close();
+            },
+          }),
+          { headers: { 'content-type': 'text/event-stream' } },
+        );
+      }) as typeof globalThis.fetch;
+
+      try {
+        const { model } = getModel({
+          providerId: 'deepseek',
+          modelId: 'deepseek-v4-pro',
+          apiKey: 'sk-test',
+          baseUrl: 'https://other.example/v1',
+        });
+        const result = streamText({ model, prompt: 'hi', maxRetries: 0 });
+        await result.consumeStream();
+        expect(sessionHeader).toBeNull();
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('sends no session header for other providers', async () => {
+      vi.stubEnv('OPENCODE_GO_SESSION', 'session-123');
+      let sessionHeader: string | null | undefined = 'unset';
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        sessionHeader = new Headers(init?.headers).get('x-opencode-session');
+        const encoder = new TextEncoder();
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    id: 'chatcmpl-1',
+                    object: 'chat.completion.chunk',
+                    created: 1,
+                    model: 'kimi-k3',
+                    choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: null }],
+                  })}\n\n`,
+                ),
+              );
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    id: 'chatcmpl-1',
+                    object: 'chat.completion.chunk',
+                    created: 1,
+                    model: 'kimi-k3',
+                    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+                    usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+                  })}\n\n`,
+                ),
+              );
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+              controller.close();
+            },
+          }),
+          { headers: { 'content-type': 'text/event-stream' } },
+        );
+      }) as typeof globalThis.fetch;
+
+      try {
+        const { model } = getModel({
+          providerId: 'kimi',
+          modelId: 'kimi-k3',
+          apiKey: 'sk-test',
+        });
+        const result = streamText({ model, prompt: 'hi', maxRetries: 0 });
+        await result.consumeStream();
+        expect(sessionHeader).toBeNull();
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
   });
 });
