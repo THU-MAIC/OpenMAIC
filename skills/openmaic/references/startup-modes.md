@@ -8,9 +8,10 @@ Help the user choose how OpenMAIC should run before you start anything.
 
 ### 1. Development Mode
 
-Recommended for first-time setup and debugging.
+Recommended for first-time setup and debugging. Courses are stored in PostgreSQL and the server refuses to start without `DATABASE_URL`, so start the local development database first (a separate PostgreSQL in Docker on `127.0.0.1:5432`) and uncomment the local `DATABASE_URL` line in `.env.local`:
 
 ```bash
+pnpm db:up
 pnpm dev
 ```
 
@@ -22,7 +23,7 @@ Tradeoff:
 
 ### 2. Production-Like Local Mode
 
-Recommended when the user wants behavior closer to a deployed server.
+Recommended when the user wants behavior closer to a deployed server. Needs `DATABASE_URL` too (`pnpm db:up` locally).
 
 ```bash
 pnpm build && pnpm start

@@ -26,6 +26,7 @@ To avoid duplicate effort, please **comment on an issue** to claim it before you
 
 - [Node.js](https://nodejs.org/) >= 22.19.0
 - [pnpm](https://pnpm.io/) (latest)
+- [Docker](https://docs.docker.com/get-docker/) for the local PostgreSQL database (`pnpm db:up`), or any PostgreSQL 16 you can point `DATABASE_URL` at
 - A copy of `.env.local` — see [`.env.example`](.env.example) for reference
 
 ## Getting Started
@@ -42,9 +43,18 @@ pnpm install
 cp .env.example .env.local
 # Edit .env.local with your API keys
 
-# Start the development server
+# Start the local development database (a separate PostgreSQL on 127.0.0.1:5432;
+# set OPENMAIC_DB_PORT for another port), then uncomment the local
+# DATABASE_URL line in .env.local:
+#   DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
+pnpm db:up
+
+# Start the development server (it refuses to start without DATABASE_URL)
 pnpm dev
 ```
+
+`pnpm db:down` stops the development database and keeps its data. The E2E
+suite (`pnpm test:e2e`) also needs `DATABASE_URL`.
 
 ## Development Workflow
 

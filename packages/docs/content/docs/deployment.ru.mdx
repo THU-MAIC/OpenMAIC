@@ -70,7 +70,7 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # п
 
 OpenMAIC хранит курсы, историю чатов, прогресс учащихся и сгенерированные медиа в PostgreSQL, поэтому **`DATABASE_URL` обязателен**: без него сервер выводит `[boot] Invalid server configuration; the server will not start: DATABASE_URL is not set. ...` с подсказкой и завершается с кодом `1`. HTTP API персистентности встроено в OpenMAIC, отдельный сервис не требуется.
 
-`docker compose up` запускает PostgreSQL рядом с приложением и задаёт для него `DATABASE_URL`. Для локальной разработки `pnpm db:up` запускает только этот сервис PostgreSQL на `127.0.0.1` (порт `OPENMAIC_DB_PORT`, по умолчанию `5432`), а `pnpm db:down` останавливает его. Затем укажите подключение в `.env.local`:
+`docker compose up` запускает PostgreSQL рядом с приложением и задаёт для него `DATABASE_URL`. Для локальной разработки `pnpm db:up` запускает по тому же описанию сервиса отдельную базу для разработки (свой проект Compose и volume `openmaic-dev-db`, база стека не затрагивается) на `127.0.0.1` (порт `OPENMAIC_DB_PORT`, по умолчанию `5432`), а `pnpm db:down` останавливает его. Затем укажите подключение в `.env.local`:
 
 ```bash
 DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic

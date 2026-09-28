@@ -76,7 +76,7 @@ Put nginx or Caddy in front for TLS termination. Courses, runtime data and gener
 
 OpenMAIC stores courses, chat history, learner progress and generated media in PostgreSQL, and **`DATABASE_URL` is required**: without it the server prints `[boot] Invalid server configuration; the server will not start: DATABASE_URL is not set. ...` with the fix and exits with code `1`. The persistence HTTP API is embedded in OpenMAIC; no separate persistence service is required.
 
-`docker compose up` starts PostgreSQL next to the app and sets `DATABASE_URL` for it. For local development, `pnpm db:up` starts only that PostgreSQL service, published on `127.0.0.1` (port `OPENMAIC_DB_PORT`, default `5432`); `pnpm db:down` stops it again. Then set the connection in `.env.local`:
+`docker compose up` starts PostgreSQL next to the app and sets `DATABASE_URL` for it. For local development, `pnpm db:up` starts a separate development database from the same service definition (its own Compose project and volume, `openmaic-dev-db`, so it never touches the stack's database), published on `127.0.0.1` (port `OPENMAIC_DB_PORT`, default `5432`); `pnpm db:down` stops it again. Then set the connection in `.env.local`:
 
 ```bash
 DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic

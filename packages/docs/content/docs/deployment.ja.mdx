@@ -70,7 +70,7 @@ TLS 終端は nginx や Caddy などを前段に置いてください。授業�
 
 OpenMAIC は授業、チャット履歴、学習の進捗、生成メディアを PostgreSQL に保存するため、**`DATABASE_URL` は必須**です。未設定の場合、サーバーは `[boot] Invalid server configuration; the server will not start: DATABASE_URL is not set. ...` と対処方法を出力し、終了コード `1` で終了します。永続化用の HTTP API は OpenMAIC に組み込まれており、追加の永続化サービスは不要です。
 
-`docker compose up` はアプリの横で PostgreSQL を起動し、`DATABASE_URL` を設定します。ローカル開発では、`pnpm db:up` がその PostgreSQL サービスだけを `127.0.0.1`（ポート `OPENMAIC_DB_PORT`、既定 `5432`）で起動し、`pnpm db:down` で停止します。その後 `.env.local` に接続情報を設定します：
+`docker compose up` はアプリの横で PostgreSQL を起動し、`DATABASE_URL` を設定します。ローカル開発では、`pnpm db:up` が同じサービス定義から独立した開発用データベース（専用の Compose プロジェクトとボリューム `openmaic-dev-db`。スタックのデータベースには影響しません）を `127.0.0.1`（ポート `OPENMAIC_DB_PORT`、既定 `5432`）で起動し、`pnpm db:down` で停止します。その後 `.env.local` に接続情報を設定します：
 
 ```bash
 DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic

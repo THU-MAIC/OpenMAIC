@@ -45,6 +45,14 @@ OLLAMA_BASE_URL=http://localhost:11434/v1
 
 ## Запуск
 
+Курсы хранятся в PostgreSQL, и без `DATABASE_URL` сервер отказывается запускаться. Запустите локальную базу для разработки (отдельный PostgreSQL в Docker на `127.0.0.1:5432`; другой порт задаётся `OPENMAIC_DB_PORT`) и раскомментируйте строку локального `DATABASE_URL` в `.env.local`:
+
+```bash
+pnpm db:up
+# .env.local
+# DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
+```
+
 Запустите сервер разработки:
 
 ```bash
@@ -57,7 +65,7 @@ pnpm dev
 
 ```bash
 pnpm build
-pnpm start
+DATABASE_URL=postgres://... pnpm start
 ```
 
 Также можно развернуть OpenMAIC на Vercel, Docker или собственном сервере — см. [Руководство по развертыванию](./deployment.mdx).

@@ -280,7 +280,7 @@ DEFAULT_MODEL=glm:glm-5.1
 pnpm db:up
 ```
 
-这会在 `127.0.0.1:5432` 上启动 Compose 的 `postgres` 服务（可用 `OPENMAIC_DB_PORT` 换端口）。然后取消 `.env.local` 中本地 `DATABASE_URL` 那一行的注释：
+这会在 `127.0.0.1:5432` 上启动一个独立的开发用 PostgreSQL（可用 `OPENMAIC_DB_PORT` 换端口）。它是单独的 Compose 项目（`openmaic-dev-db`），有自己的容器和数据卷，因此不会重启或停止 `docker compose up` 栈的数据库，两者也不共享数据。然后取消 `.env.local` 中本地 `DATABASE_URL` 那一行的注释：
 
 ```env
 DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
@@ -407,7 +407,7 @@ pnpm build
 DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
 ```
 
-本地开发时，`pnpm db:up` 只启动 Compose 的 `postgres` 服务并发布到 `127.0.0.1`（端口 `OPENMAIC_DB_PORT`，默认 `5432`）；对应的 `DATABASE_URL` 已在 `.env.example` 中以注释给出，`pnpm db:down` 可将其停止。Serverless 平台（见 [Vercel 部署](#vercel-部署)）请把 `DATABASE_URL` 指向外部 PostgreSQL。
+本地开发时，`pnpm db:up` 启动一个独立的开发数据库（以单独的项目和数据卷 `openmaic-dev-db` 运行 Compose 的 `postgres` 服务定义）并发布到 `127.0.0.1`（端口 `OPENMAIC_DB_PORT`，默认 `5432`）；对应的 `DATABASE_URL` 已在 `.env.example` 中以注释给出，`pnpm db:down` 可将其停止。Serverless 平台（见 [Vercel 部署](#vercel-部署)）请把 `DATABASE_URL` 指向外部 PostgreSQL。
 
 和往常一样把服务商 API Key 填进 `.env.local`。课程文档、文件夹、对话历史与学习者运行时会话、生成的媒体都保存在服务端。留在浏览器里的只有属于该设备、丢失也不会丢课的数据：应用设置与界面偏好、播放进度与编辑器当前场景、编辑器撤销历史、服务端已保存的讲解与媒体的本地缓存（以及因存储已满被拒、为重试保留的字节）、生成期间暂存的 PDF 图片，以及在该浏览器注册的 TTS 音色。**设置 → 清除本地缓存**只清除这些，不会动服务端的任何数据。
 

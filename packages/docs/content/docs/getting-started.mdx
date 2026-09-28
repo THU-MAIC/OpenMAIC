@@ -45,6 +45,14 @@ See [Configuration](./configuration.mdx) for complete provider, image/video gene
 
 ## Run
 
+Courses are stored in PostgreSQL, and the server refuses to start without `DATABASE_URL`. Start a local development database (a separate PostgreSQL in Docker on `127.0.0.1:5432`; set `OPENMAIC_DB_PORT` for another port) and uncomment the local `DATABASE_URL` line in `.env.local`:
+
+```bash
+pnpm db:up
+# .env.local
+# DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
+```
+
 Start the development server:
 
 ```bash
@@ -57,7 +65,7 @@ Open [http://localhost:3000](http://localhost:3000). You should see the OpenMAIC
 
 ```bash
 pnpm build
-pnpm start
+DATABASE_URL=postgres://... pnpm start
 ```
 
 Or deploy to Vercel, Docker, or your own server—see the [Deployment guide](./deployment.mdx).
