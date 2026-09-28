@@ -45,12 +45,14 @@ OLLAMA_BASE_URL=http://localhost:11434/v1
 
 ## التشغيل
 
-تُحفظ الدروس في PostgreSQL، ويرفض الخادم البدء بدون `DATABASE_URL`. ابدأ قاعدة بيانات تطوير محلية (PostgreSQL منفصل في Docker على `127.0.0.1:5432`، مشترك بين كل النسخ على هذا الجهاز؛ استخدم `OPENMAIC_DB_PORT` لمنفذ آخر) وأزل التعليق عن سطر `DATABASE_URL` المحلي في `.env.local`:
+تُحفظ الدروس في PostgreSQL، ويرفض الخادم البدء بدون `DATABASE_URL`. ابدأ قاعدة بيانات تطوير محلية (PostgreSQL منفصل في Docker على `127.0.0.1:5432`، مشترك بين كل النسخ على هذا الجهاز؛ استخدم `OPENMAIC_DB_PORT` لمنفذ آخر) واضبط `DATABASE_URL` في `.env.local`:
 
 ```bash
 pnpm db:up
-# .env.local
-# DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
+```
+
+```bash title=".env.local"
+DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
 ```
 
 شغّل خادم التطوير:
