@@ -1066,6 +1066,9 @@ What moves, in this fixed order (a host adds its own tables with
    session written by a newer version does not stop the claim.
 7. **Asset entries** (the per-owner partition), so a claimed course keeps
    rendering its media for every viewer.
+8. **Legacy import bindings** (temporary, with the one-way legacy browser
+   import): a browser whose pre-server data the anonymous owner held is then
+   the account's, so the import continues for it.
 
 Quotas are not applied to what moves: the account keeps everything, and if it
 is now above its asset, material, skill or folder limit it cannot add more
@@ -1127,7 +1130,7 @@ A host registers participants for its own owner-keyed tables from
 const { registerClaimParticipant } = await import('@/lib/persistence/owner-claims');
 registerClaimParticipant({
   name: 'course-notes',
-  order: 1000, // after core's 100-700; see lib/persistence/owner-claims.ts
+  order: 1000, // after core's 100-800; see lib/persistence/owner-claims.ts
   rekey: async (tx, fromOwnerId, toOwnerId) =>
     (
       await tx.query('UPDATE course_notes SET owner_id = $2 WHERE owner_id = $1 RETURNING 1', [
