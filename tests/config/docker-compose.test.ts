@@ -179,11 +179,14 @@ describe('docker-compose.db.yml (`pnpm db:up`)', () => {
   });
 
   it('is what the db:up and db:down scripts run, and nothing else', () => {
+    // The project is pinned on the command line: `-p` beats COMPOSE_PROJECT_NAME
+    // from the shell or a .env file, which would otherwise override the file's
+    // `name:` and point these scripts at the stack's own database.
     expect(packageJson.scripts['db:up']).toBe(
-      'docker compose -f docker-compose.db.yml up -d --wait postgres',
+      'docker compose -p openmaic-dev-db -f docker-compose.db.yml up -d --wait postgres',
     );
     expect(packageJson.scripts['db:down']).toBe(
-      'docker compose -f docker-compose.db.yml stop postgres',
+      'docker compose -p openmaic-dev-db -f docker-compose.db.yml stop postgres',
     );
   });
 

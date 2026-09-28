@@ -45,7 +45,7 @@ OLLAMA_BASE_URL=http://localhost:11434/v1
 
 ## 実行
 
-授業は PostgreSQL に保存され、`DATABASE_URL` がないとサーバーは起動を拒否します。まずローカル開発用データベース（Docker 上の独立した PostgreSQL、`127.0.0.1:5432`。別のポートは `OPENMAIC_DB_PORT` で指定）を起動し、`.env.local` のローカル用 `DATABASE_URL` の行のコメントを外します：
+授業は PostgreSQL に保存され、`DATABASE_URL` がないとサーバーは起動を拒否します。まずローカル開発用データベース（Docker 上の独立した PostgreSQL、`127.0.0.1:5432`、このマシン上のすべてのチェックアウトで共有。別のポートは `OPENMAIC_DB_PORT` で指定）を起動し、`.env.local` のローカル用 `DATABASE_URL` の行のコメントを外します：
 
 ```bash
 pnpm db:up

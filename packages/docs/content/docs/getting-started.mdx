@@ -45,7 +45,7 @@ See [Configuration](./configuration.mdx) for complete provider, image/video gene
 
 ## Run
 
-Courses are stored in PostgreSQL, and the server refuses to start without `DATABASE_URL`. Start a local development database (a separate PostgreSQL in Docker on `127.0.0.1:5432`; set `OPENMAIC_DB_PORT` for another port) and uncomment the local `DATABASE_URL` line in `.env.local`:
+Courses are stored in PostgreSQL, and the server refuses to start without `DATABASE_URL`. Start a local development database (a separate PostgreSQL in Docker on `127.0.0.1:5432`, shared by every checkout on this machine; set `OPENMAIC_DB_PORT` for another port) and uncomment the local `DATABASE_URL` line in `.env.local`:
 
 ```bash
 pnpm db:up

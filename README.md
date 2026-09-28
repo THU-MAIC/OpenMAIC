@@ -302,7 +302,8 @@ pnpm db:up
 
 This starts a separate development PostgreSQL on `127.0.0.1:5432` (set
 `OPENMAIC_DB_PORT` to use another port). It is its own Compose project
-(`openmaic-dev-db`) with its own container and data volume, so it never
+(`openmaic-dev-db`, shared by every checkout on this machine) with its own
+container and data volume, so it never
 restarts or stops the database of a `docker compose up` stack, and the two do
 not share data. Then uncomment the local
 `DATABASE_URL` line in `.env.local`:
@@ -497,7 +498,7 @@ DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
 
 For local development, `pnpm db:up` starts a separate development database
 (the Compose `postgres` service definition under its own project and volume,
-`openmaic-dev-db`) and publishes it on `127.0.0.1` (port `OPENMAIC_DB_PORT`, default `5432`); the
+`openmaic-dev-db`, shared by every checkout on this machine) and publishes it on `127.0.0.1` (port `OPENMAIC_DB_PORT`, default `5432`); the
 matching `DATABASE_URL` is commented in `.env.example`, and `pnpm db:down` stops
 it again. Serverless hosts (see [Vercel Deployment](#vercel-deployment)) point
 `DATABASE_URL` at an external PostgreSQL database.

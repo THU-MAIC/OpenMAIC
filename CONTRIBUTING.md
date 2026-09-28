@@ -43,7 +43,8 @@ pnpm install
 cp .env.example .env.local
 # Edit .env.local with your API keys
 
-# Start the local development database (a separate PostgreSQL on 127.0.0.1:5432;
+# Start the local development database (a separate PostgreSQL on 127.0.0.1:5432,
+# shared by every checkout on this machine;
 # set OPENMAIC_DB_PORT for another port), then uncomment the local
 # DATABASE_URL line in .env.local:
 #   DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
