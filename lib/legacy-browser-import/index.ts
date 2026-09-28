@@ -12,9 +12,9 @@
  * - Read-only on legacy data. It reads the pre-server databases through the
  *   read-only legacy module (`lib/legacy-browser-storage`) and the pre-runtime
  *   quiz keys, and never writes, clears or deletes any of them. What it writes
- *   goes to the server (through the app's own persistence seams), to the
- *   device cache, to device-scoped positions (playback, editor scene), and to
- *   its own ledger.
+ *   goes to the server (through its own fenced clients, `./server.ts`, never
+ *   the app's persistence seams), to the device cache, to device-scoped
+ *   positions (playback, editor scene), and to its own ledger.
  * - Silent. No UI: a course simply appears in the library once it is on the
  *   server. Problems are reported with `console.warn` under a stable prefix.
  * - Off the critical path. It starts after the page has loaded and the
@@ -49,6 +49,7 @@ import {
   createKv,
   importLegacyCourse,
   legacySceneIds,
+  forgetRecoveredReadFailures,
   readWithBudget,
   type CourseImportContext,
   type OwnedStage,
@@ -72,6 +73,7 @@ import {
   legacySpeechHolders,
   listLegacyCourseIds,
   openLegacySources,
+  type LegacySources,
   type SpeechHolders,
 } from './sources';
 
@@ -80,6 +82,12 @@ export const LOG_PREFIX = '[legacy-browser-import]';
 
 /** The Web Lock that serializes runs across tabs of one browser profile. */
 export const IMPORT_LOCK_NAME = 'openmaic:legacy-browser-import';
+
+/**
+ * How long a browser whose legacy data another owner holds waits before it
+ * asks the server again (a claim may have moved the binding to this owner).
+ */
+export const OTHER_OWNER_RECHECK_MS = 10 * 60 * 1000;
 
 export interface LegacyImportOptions {
   /** localStorage by default. Holds the ledger and reads the legacy keys. */
@@ -176,7 +184,9 @@ async function runLocked(
     ...(options.folders ? { folders: options.folders } : {}),
   };
 
-  const sources = await openLegacySources(storage);
+  // Opened only once the server bound the browser to this owner: a browser
+  // whose data another owner holds never opens (or upgrades) the old databases.
+  let sources: LegacySources | undefined;
   let context: CourseImportContext | undefined;
   let stopped: ImportRunStop | undefined;
   try {
@@ -185,9 +195,16 @@ async function runLocked(
     // requesting owner; every request after this one is refused unless that
     // owner still holds it.
     if (!(await clients.bind())) {
+      // Ask again only after a while: a claim that moves the binding to this
+      // owner is picked up then, and a browser another owner holds does not
+      // send a write on every page load.
+      ledger.nextRunAt = now() + OTHER_OWNER_RECHECK_MS;
+      trySave(storage, ledger, log);
       log("Another owner holds this browser's legacy data; nothing is imported for this one");
       return { status: 'claimed-by-another-owner', ledger };
     }
+    sources = await openLegacySources(storage);
+    const opened = sources;
     // Asked now, fenced, and never taken from the page's memo: the runtime
     // key of the owner this run writes for.
     const learnerKey = await clients.learnerKey();
@@ -207,13 +224,13 @@ async function runLocked(
 
     const runTime = now();
     const readFailedThisRun = new Set<string>();
-    const legacyIds = await listLegacyCourseIds(sources);
+    const legacyIds = await listLegacyCourseIds(opened);
 
     context = {
       learnerKey,
       storage,
       kv: createKv(storage),
-      sources,
+      sources: opened,
       clients,
       documents: clients.documents,
       runtime: clients.runtime,
@@ -230,6 +247,7 @@ async function runLocked(
       checkpoint,
       now: runTime,
       readFailedThisRun,
+      readSucceededThisRun: new Set(),
       assetExists: (ref) => clients.assetExists(ref),
       log,
       libraryChanged: false,
@@ -243,7 +261,7 @@ async function runLocked(
     if (run.quizKeyScenes.size > 0) {
       for (const legacyStageId of legacyIds) {
         const sceneIds = await readWithBudget(run, legacyStageId, (settle) =>
-          legacySceneIds(sources, legacyStageId, settle),
+          legacySceneIds(opened, legacyStageId, settle),
         );
         if (sceneIds === undefined) {
           run.quizUnindexed.add(legacyStageId);
@@ -259,7 +277,7 @@ async function runLocked(
     }
     let speechHolders: Promise<SpeechHolders> | undefined;
     run.speechHolders = () =>
-      (speechHolders ??= legacySpeechHolders(sources, legacyIds, (id, read) =>
+      (speechHolders ??= legacySpeechHolders(opened, legacyIds, (id, read) =>
         readWithBudget(run, id, read),
       ));
 
@@ -278,6 +296,8 @@ async function runLocked(
       if (legacySet.has(stageId) || !owned.has(stageId)) continue;
       await importLegacyCourse(run, stageId, { target: stageId, origin: 'existing' });
     }
+
+    forgetRecoveredReadFailures(run);
 
     if (!ledger.autoVoiceCache) {
       await copyAutoVoiceCache();
@@ -298,7 +318,7 @@ async function runLocked(
       return { status: 'pending', ledger };
     }
   } finally {
-    await sources.close();
+    await sources?.close();
     if (context?.libraryChanged) announceLibraryChange();
   }
 

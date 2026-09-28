@@ -12,7 +12,7 @@ import {
   clearLocalStorageKeepingImportState,
 } from '@/lib/device-storage/clear-local-cache';
 import { db } from '@/lib/device-storage/database';
-import { runLegacyBrowserImport } from '@/lib/legacy-browser-import';
+import { OTHER_OWNER_RECHECK_MS, runLegacyBrowserImport } from '@/lib/legacy-browser-import';
 import { freshStageId } from '@/lib/legacy-browser-import/ids';
 import { LEDGER_KEY, loadLedger } from '@/lib/legacy-browser-import/ledger';
 import { loadCursorValue } from '@/lib/playback/cursor';
@@ -406,7 +406,7 @@ describe('conflicts with what the server already has', () => {
     // The first owner finishes its own import on its next load.
     server.owner = OWNER_A;
     const resumed = await runLegacyBrowserImport(
-      server.options(storage, { now: () => first.ledger!.nextRunAt! }),
+      server.options(storage, { now: () => first.ledger!.nextRunAt! + OTHER_OWNER_RECHECK_MS }),
     );
     expect(resumed.status).toBe('complete');
     expect(server.stageOwners.get(TABLES_COURSE)).toBe(OWNER_A);

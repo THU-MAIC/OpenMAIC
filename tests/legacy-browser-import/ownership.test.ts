@@ -11,7 +11,7 @@ import 'fake-indexeddb/auto';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { runLegacyBrowserImport } from '@/lib/legacy-browser-import';
+import { OTHER_OWNER_RECHECK_MS, runLegacyBrowserImport } from '@/lib/legacy-browser-import';
 import { freshStageId } from '@/lib/legacy-browser-import/ids';
 import { loadLedger } from '@/lib/legacy-browser-import/ledger';
 import type { ImportClients } from '@/lib/legacy-browser-import/server';
@@ -123,9 +123,13 @@ describe('an unrelated second owner never gets the data', () => {
     expect(other.status).toBe('claimed-by-another-owner');
     expect(writesBy(OWNER_B)).toBe(0);
 
-    // The first owner finishes its own import on its next load.
+    // The first owner finishes its own import on a load after the recheck
+    // delay the refused owner's load recorded (the ledger names no owner).
     server.owner = OWNER_A;
-    expect((await runLegacyBrowserImport(at(LATER))).status).toBe('complete');
+    expect((await runLegacyBrowserImport(at(LATER))).status).toBe('deferred');
+    expect((await runLegacyBrowserImport(at(LATER + OTHER_OWNER_RECHECK_MS))).status).toBe(
+      'complete',
+    );
     expect(heldBy(OWNER_A)).toEqual([DOCS_COURSE, TABLES_COURSE]);
   });
 

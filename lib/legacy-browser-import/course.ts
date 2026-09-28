@@ -104,6 +104,8 @@ export interface CourseImportContext {
   readonly now: number;
   /** Courses whose storage read already failed this run (counted once per run). */
   readonly readFailedThisRun: Set<string>;
+  /** Legacy courses a storage read succeeded for during this run. */
+  readonly readSucceededThisRun: Set<string>;
   readonly assetExists: (ref: string) => Promise<boolean>;
   readonly log: (message: string, ...details: unknown[]) => void;
   /** Set when the owner's library visibly changed (a course or its folder). */
@@ -505,6 +507,7 @@ export async function importLegacyCourse(
   try {
     try {
       await runCourse(context, legacyStageId, entry);
+      context.readSucceededThisRun.add(legacyStageId);
     } catch (error) {
       if (!(error instanceof LegacyReadError)) throw error;
       // The old storage failed to read this course. It stays pending; once it
@@ -576,10 +579,12 @@ export async function legacySceneIds(
 /** Whether a course's storage reads have failed often enough, for long enough, to settle it. */
 export function readBudgetSpent(entry: CourseEntry | undefined, now: number): boolean {
   const failures = entry?.readFailures;
+  // A first failure recorded while the clock ran ahead counts from now (the
+  // next failure rewrites it), so it never holds the course open until then.
   return (
     failures !== undefined &&
     failures.count >= READ_FAILURE_BUDGET.runs &&
-    now - failures.since >= READ_FAILURE_BUDGET.spanMs
+    now - Math.min(failures.since, now) >= READ_FAILURE_BUDGET.spanMs
   );
 }
 
@@ -592,8 +597,29 @@ function noteReadFailure(
   if (context.readFailedThisRun.has(legacyStageId)) return;
   context.readFailedThisRun.add(legacyStageId);
   const previous = entry.readFailures;
-  entry.readFailures = { count: (previous?.count ?? 0) + 1, since: previous?.since ?? context.now };
+  entry.readFailures = {
+    count: (previous?.count ?? 0) + 1,
+    since: previous !== undefined && previous.since <= context.now ? previous.since : context.now,
+  };
   context.checkpoint();
+}
+
+/**
+ * Forget the read failures of every course that read without one in this run:
+ * the budget counts consecutive failing runs, so a course that recovered does
+ * not settle on the next single failure a day later. Called at the end of a
+ * run.
+ */
+export function forgetRecoveredReadFailures(context: CourseImportContext): void {
+  let changed = false;
+  for (const legacyStageId of context.readSucceededThisRun) {
+    if (context.readFailedThisRun.has(legacyStageId)) continue;
+    const entry = context.ledger.courses[legacyStageId];
+    if (entry?.readFailures === undefined) continue;
+    delete entry.readFailures;
+    changed = true;
+  }
+  if (changed) context.checkpoint();
 }
 
 /**
@@ -609,7 +635,9 @@ export async function readWithBudget<T>(
   const entry = courseEntry(context.ledger, legacyStageId);
   if (readBudgetSpent(entry, context.now)) return read(true);
   try {
-    return await read(false);
+    const value = await read(false);
+    context.readSucceededThisRun.add(legacyStageId);
+    return value;
   } catch (error) {
     if (!(error instanceof LegacyReadError)) throw error;
     noteReadFailure(context, entry, legacyStageId);
