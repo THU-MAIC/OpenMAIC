@@ -39,7 +39,7 @@ function indexedRows<T extends { id: string; stageId?: string }>(rows: T[]) {
   };
 }
 
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: {
     mediaFiles: indexedRows(mocks.mediaRows),
     audioFiles: indexedRows(mocks.audioRows),
@@ -49,7 +49,6 @@ vi.mock('@/lib/utils/database', () => ({
 import {
   collectPersistedDocumentAssetRefs,
   collectStageAssetRefs,
-  loadSurvivingDocumentAssetRefs,
 } from '@/lib/media/collect-stage-asset-refs';
 import { clearStageMediaCache } from '@/lib/media/clear-stage-media-cache';
 
@@ -120,23 +119,6 @@ function matrixDocument(): StageAssetDocument {
   } as unknown as StageAssetDocument;
 }
 
-function documentWithSpeechAudio(id: string, audioId: string): StageAssetDocument {
-  return {
-    stage: { id, name: id, createdAt: 1, updatedAt: 1 },
-    scenes: [
-      {
-        id: `${id}-scene`,
-        stageId: id,
-        type: 'slide',
-        title: id,
-        order: 1,
-        content: { type: 'slide', canvas: slide(`${id}-slide`, []) },
-        actions: [{ id: `${id}-speech`, type: 'speech', text: 'Shared', audioId }],
-      },
-    ],
-  } as unknown as StageAssetDocument;
-}
-
 function documentWithImage(id: string, ref: string): StageAssetDocument {
   return {
     stage: { id, name: id, createdAt: 1, updatedAt: 1 },
@@ -153,38 +135,6 @@ function documentWithImage(id: string, ref: string): StageAssetDocument {
         },
       },
     ],
-  } as unknown as StageAssetDocument;
-}
-
-function documentWithSlideAudio(id: string, ref: string): StageAssetDocument {
-  return {
-    stage: { id, name: id, createdAt: 1, updatedAt: 1 },
-    scenes: [
-      {
-        id: `${id}-scene`,
-        stageId: id,
-        type: 'slide',
-        title: id,
-        order: 1,
-        content: {
-          type: 'slide',
-          canvas: slide(`${id}-slide`, [{ id: `${id}-audio`, type: 'audio', src: ref }]),
-        },
-      },
-    ],
-  } as unknown as StageAssetDocument;
-}
-
-function documentWithManifestRef(id: string, ref: string): StageAssetDocument {
-  return {
-    stage: {
-      id,
-      name: id,
-      createdAt: 1,
-      updatedAt: 1,
-      videoManifest: { [ref]: { type: 'video', prompt: 'Finishing before insertion' } },
-    },
-    scenes: [],
   } as unknown as StageAssetDocument;
 }
 
@@ -281,16 +231,17 @@ describe('stage deletion: document references and the local media cache', () => 
     ]);
   });
 
-  it('leaves stage-less legacy audio rows and other stages rows alone', async () => {
+  it('keeps every audio row, including the deleted stage rows', async () => {
+    const before = [...mocks.audioRows];
+
     await clearStageMediaCache(stageId);
 
-    // A stage-less legacy audio id is derived from scene order and action id,
-    // so the same value occurs in unrelated documents; it is never attributed
-    // to this stage. `other-audio` belongs to a different stage outright.
-    expect(mocks.audioRows).toEqual([
-      { id: 'tts_s1_action_1' },
-      { id: 'other-audio', stageId: 'other-stage' },
-    ]);
+    // Audio rows are keyed globally by audio id, and another course (a copy,
+    // or another owner's course opened here) may play from the same id. No
+    // browser can enumerate every such course, so the rows stay until the
+    // local cache is cleared, and no document listing is attempted.
+    expect(mocks.audioRows).toEqual(before);
+    expect(mocks.listDocuments).not.toHaveBeenCalled();
   });
 
   it('never asks the asset pool to delete anything', async () => {
@@ -329,144 +280,6 @@ describe('stage deletion: document references and the local media cache', () => 
     expect(mocks.removeAsset).not.toHaveBeenCalledWith(sharedRef);
     expect(mocks.mediaRows).toEqual([]);
     expect(await resolveImageBytes(survivingDocument)).toBe('shared-surviving-bytes');
-  });
-
-  it('preserves an audio row a surviving slide-audio element still plays', async () => {
-    const sharedRef = 'ast_cross_role_alias';
-    const deletedStageId = 'stage-deleted';
-    const deletedDocument = documentWithSpeechAudio(deletedStageId, sharedRef);
-    // The survivor names the same id in a different role: a slide audio
-    // element's `src` rather than a speech cue's `audioId`. Liveness is about
-    // the id, not the slot it sits in.
-    const survivingDocument = documentWithSlideAudio('stage-surviving', sharedRef);
-    mocks.mediaRows.splice(0, mocks.mediaRows.length);
-    mocks.audioRows.splice(0, mocks.audioRows.length, {
-      id: sharedRef,
-      stageId: deletedStageId,
-    });
-    mocks.documents.set(deletedDocument.stage.id, deletedDocument);
-    mocks.documents.set(survivingDocument.stage.id, survivingDocument);
-    mocks.documents.delete(deletedStageId);
-
-    await clearStageMediaCache(deletedStageId);
-
-    expect(mocks.audioRows.map((row) => row.id)).toContain(sharedRef);
-  });
-
-  it('preserves the compatibility row of an audio ref a surviving document shares', async () => {
-    const sharedAudioId = 'ast_shared_audio_alias';
-    const deletedStageId = 'stage-deleted';
-    const deletedDocument = documentWithSpeechAudio(deletedStageId, sharedAudioId);
-    const survivingDocument = documentWithSpeechAudio('stage-surviving', sharedAudioId);
-    mocks.mediaRows.splice(0, mocks.mediaRows.length);
-    // The row is keyed globally by audioId and only the deleted stage carries it.
-    mocks.audioRows.splice(0, mocks.audioRows.length, {
-      id: sharedAudioId,
-      stageId: deletedStageId,
-    });
-    mocks.poolBytes.set(sharedAudioId, new Blob(['shared-audio-bytes']));
-    mocks.documents.set(deletedDocument.stage.id, deletedDocument);
-    mocks.documents.set(survivingDocument.stage.id, survivingDocument);
-    mocks.documents.delete(deletedStageId);
-
-    await clearStageMediaCache(deletedStageId);
-
-    // Playback, classroom export and video export read this table directly, so
-    // the survivor keeps both the pool entry and its compatibility row.
-    expect(mocks.removeAsset).not.toHaveBeenCalledWith(sharedAudioId);
-    expect(mocks.audioRows.map((row) => row.id)).toContain(sharedAudioId);
-  });
-
-  it('keeps a shared audio row when surviving-document enumeration fails', async () => {
-    const sharedAudioId = 'ast_shared_audio_unknown_liveness';
-    const deletedStageId = 'stage-deleted';
-    const deletedDocument = documentWithSpeechAudio(deletedStageId, sharedAudioId);
-    const survivingDocument = documentWithSpeechAudio('stage-surviving', sharedAudioId);
-    mocks.mediaRows.splice(0, mocks.mediaRows.length);
-    mocks.audioRows.splice(0, mocks.audioRows.length, {
-      id: sharedAudioId,
-      stageId: deletedStageId,
-    });
-    mocks.poolBytes.set(sharedAudioId, new Blob(['shared-audio-bytes']));
-    mocks.documents.set(deletedDocument.stage.id, deletedDocument);
-    mocks.documents.set(survivingDocument.stage.id, survivingDocument);
-    mocks.documents.delete(deletedStageId);
-    mocks.listDocuments.mockRejectedValue(new Error('document repository unavailable'));
-
-    await clearStageMediaCache(deletedStageId);
-
-    // Unknown liveness is not absence: the row the survivor plays from stays.
-    expect(mocks.removeAsset).not.toHaveBeenCalled();
-    expect(mocks.audioRows.map((row) => row.id)).toContain(sharedAudioId);
-  });
-
-  it('removes audio compatibility rows no surviving document references', async () => {
-    const exclusiveAudioId = 'ast_exclusive_audio';
-    const legacyAudioId = 'tts_s1_legacy';
-    const deletedStageId = 'stage-deleted';
-    const deletedDocument = documentWithSpeechAudio(deletedStageId, exclusiveAudioId);
-    mocks.mediaRows.splice(0, mocks.mediaRows.length);
-    mocks.audioRows.splice(
-      0,
-      mocks.audioRows.length,
-      { id: exclusiveAudioId, stageId: deletedStageId },
-      // Legacy rows never had a pool entry; they are still removable.
-      { id: legacyAudioId, stageId: deletedStageId },
-    );
-    mocks.poolBytes.set(exclusiveAudioId, new Blob(['exclusive-audio']));
-    mocks.documents.set(deletedDocument.stage.id, deletedDocument);
-    mocks.documents.delete(deletedStageId);
-
-    await clearStageMediaCache(deletedStageId);
-
-    expect(mocks.audioRows).toEqual([]);
-  });
-
-  it('counts a ref a surviving document names only in its video manifest as live', async () => {
-    const sharedRef = 'ast_manifest_before_scene_insert';
-    mocks.documents.set('stage-surviving', documentWithManifestRef('stage-surviving', sharedRef));
-
-    const liveRefs = await loadSurvivingDocumentAssetRefs();
-
-    // Media that finished before its slide was inserted is named by the
-    // manifest alone; reading only rendered elements would call it dead.
-    expect(liveRefs?.has(sharedRef)).toBe(true);
-  });
-
-  it('enumerates surviving documents once for a whole stage deletion', async () => {
-    mocks.documents.set('stage-one', documentWithImage('stage-one', 'unrelated-one'));
-    mocks.documents.set('stage-two', documentWithManifestRef('stage-two', 'unrelated-two'));
-
-    await clearStageMediaCache(stageId);
-
-    expect(mocks.listDocuments).toHaveBeenCalledTimes(1);
-    expect(mocks.loadDocument).toHaveBeenCalledTimes(2);
-  });
-
-  it('does not enumerate at all when the stage owns no audio rows', async () => {
-    mocks.audioRows.splice(0, mocks.audioRows.length, { id: 'other-audio', stageId: 'other' });
-
-    await clearStageMediaCache(stageId);
-
-    // The media half needs no liveness proof, so a stage with no audio rows
-    // costs no document reads at all.
-    expect(mocks.listDocuments).not.toHaveBeenCalled();
-    expect(mocks.mediaRows.every((row) => row.stageId !== stageId)).toBe(true);
-  });
-
-  it('fails closed for audio rows when surviving document enumeration fails', async () => {
-    mocks.listDocuments.mockRejectedValue(new Error('document repository unavailable'));
-
-    await clearStageMediaCache(stageId);
-
-    expect(mocks.removeAsset).not.toHaveBeenCalled();
-    expect(mocks.mediaRows.every((row) => row.stageId !== stageId)).toBe(true);
-    // Audio rows are globally keyed, so losing one is as irreversible for
-    // playback and the export paths as removing the pool entry: unknown
-    // liveness keeps them and leaves bounded garbage behind.
-    expect(mocks.audioRows.map((row) => row.id)).toEqual(
-      expect.arrayContaining(['audio-exclusive', 'audio-orphan']),
-    );
   });
 
   it('holds no registry reclamation of its own', () => {

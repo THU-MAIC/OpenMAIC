@@ -11,7 +11,7 @@ OpenMAIC 是一个标准的 Next.js 应用，Next.js 能跑的地方它就能跑
 
 Vercel 会在每次提交后重新构建并部署 Next.js 应用。部署时需要在项目设置中配置至少一个 LLM 提供方。
 
-Vercel 部署默认使用浏览器端持久化。若需要服务端持久化，请使用外部 PostgreSQL 和服务端部署方案；`server-persistence` Compose profile 不能直接用于 Vercel。
+Vercel 以 Serverless 函数运行 OpenMAIC，无法自带数据库。请在项目设置中把 `DATABASE_URL` 指向外部 PostgreSQL 数据库（托管服务；有连接池端点时优先使用）；没有它服务会拒绝启动。
 
 ## Docker
 
@@ -20,7 +20,7 @@ Vercel 部署默认使用浏览器端持久化。若需要服务端持久化，�
 ```bash
 docker build -t openmaic .
 
-docker run --env-file .env.local -p 3000:3000 openmaic
+docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-host:5432/openmaic -p 3000:3000 openmaic
 ```
 
 推荐使用仓库里的 Docker Compose 配置：
@@ -31,7 +31,7 @@ cp .env.example .env.local
 docker compose up --build
 ```
 
-默认 Compose 部署会启动 OpenMAIC 应用，并挂载 `openmaic-data` 数据卷。其他 provider 和功能按需配置，详见[配置说明](./configuration.mdx)。
+默认 Compose 部署会启动 OpenMAIC 应用和 PostgreSQL 两个容器，自动配置两者之间的 `DATABASE_URL`，并挂载 `openmaic-data` 与 `openmaic-postgres` 数据卷。其他 provider 和功能按需配置，详见[配置说明](./configuration.mdx)。
 
 `NEXT_PUBLIC_*` 功能开关会在 Docker 构建时注入，不能只写在运行时的 `.env.local` 中。例如启用视频导出和实验性 PPTX 导入：
 
@@ -61,33 +61,26 @@ Docker 容器中的 `localhost` 指向容器自身。若 Ollama、Lemonade、Vox
 ```bash
 pnpm install
 pnpm build
-pnpm start      # 默认监听 3000 端口
+DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # 默认监听 3000 端口
 ```
 
-前面套 nginx 或 Caddy 做 TLS 终止。默认情况下，课堂状态保存在浏览器 IndexedDB 中；启用服务端持久化后，运行时数据和课程文档会保存到服务端存储和 PostgreSQL。多实例部署前应先选择合适的持久化方案。
+前面套 nginx 或 Caddy 做 TLS 终止。课程、运行时数据和生成的媒体都保存在 PostgreSQL 中，多个实例可以共用同一个数据库。
 
 ## 服务端持久化（PostgreSQL）
 
-仓库的 `server-persistence` profile 会启动 OpenMAIC 和 PostgreSQL 两个容器。持久化 HTTP API 内嵌在 OpenMAIC 中，不需要额外的 persistence 服务。
+OpenMAIC 把课程、对话历史、学习进度和生成的媒体保存在 PostgreSQL 中，**必须提供 `DATABASE_URL`**：没有它服务会输出 `[boot] Invalid server configuration; the server will not start: DATABASE_URL is not set. ...` 及修复方法，并以退出码 `1` 退出。持久化 HTTP API 内嵌在 OpenMAIC 中，不需要额外的 persistence 服务。
 
-先在 `.env.local` 中加入数据库连接：
-
-```bash
-DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
-```
-
-然后启动 profile：
+`docker compose up` 会在应用旁启动 PostgreSQL 并为其设置 `DATABASE_URL`。本地开发时，`pnpm db:up` 以同一服务定义启动一个独立的开发数据库（单独的 Compose 项目和数据卷 `openmaic-dev-db`，本机所有检出共用，不会影响该栈的数据库），并发布到 `127.0.0.1`（端口 `OPENMAIC_DB_PORT`，默认 `5432`）；`pnpm db:down` 可将其停止。然后在 `.env.local` 中设置连接：
 
 ```bash
-NEXT_PUBLIC_PERSISTENCE=1 \
-docker compose --profile server-persistence up --build
+DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
 ```
 
-`NEXT_PUBLIC_PERSISTENCE` 是构建时变量。持久化不再有单独的凭证：每个请求都归属于所有者解析得出的所有者（默认是每个浏览器一个的匿名 cookie），运行时会话和媒体按该所有者分区。默认身份只隔离浏览器、并不认证任何人，面向真实用户的部署应注册基于自有账号体系的所有者认证方法。早期版本使用的 `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` 已移除并被忽略；按旧的浏览器自生成学习者 key 存储的运行时会话将无法再访问。如果 `PERSISTENCE_DEV_TOKEN` 曾是唯一的访问门槛，请在升级前用 `ACCESS_CODE` 或网关保护部署、注册所有者认证方法，或不设置 `NEXT_PUBLIC_PERSISTENCE`。
+持久化不再有单独的凭证：每个请求都归属于所有者解析得出的所有者（默认是每个浏览器一个的匿名 cookie），运行时会话和媒体按该所有者分区。默认身份只隔离浏览器、并不认证任何人，面向真实用户的部署应注册基于自有账号体系的所有者认证方法。早期版本使用的 `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` 已移除并被忽略；按旧的浏览器自生成学习者 key 存储的运行时会话将无法再访问。如果 `PERSISTENCE_DEV_TOKEN` 曾是唯一的访问门槛，请在升级前用 `ACCESS_CODE` 或网关保护部署，或注册所有者认证方法。
 
 PostgreSQL 数据保存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRES_PASSWORD` 只会在数据库目录首次初始化时设置密码，之后修改环境变量不会自动修改已有数据库用户密码。
 
-不设置 `NEXT_PUBLIC_PERSISTENCE` 即保持原有的浏览器端持久化行为。
+早期版本可以把课程保存在浏览器（IndexedDB）中。该模式已移除，`NEXT_PUBLIC_PERSISTENCE` 构建变量会被忽略。以这种方式保存在浏览器中的课程会原样保留在该浏览器里，直到同一版本中发布的单向“浏览器到服务端”导入器把它们搬到服务端。
 
 ## 可选：MP4 视频导出
 

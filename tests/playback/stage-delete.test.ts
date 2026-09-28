@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const { clearCursor, deleteLegacyPlaybackRow } = vi.hoisted(() => ({
+const { clearCursor } = vi.hoisted(() => ({
   clearCursor: vi.fn().mockResolvedValue(undefined),
-  deleteLegacyPlaybackRow: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/lib/playback/cursor', () => ({ clearCursor }));
@@ -22,32 +21,11 @@ vi.mock('@/lib/runtime/store', () => ({
     settlement: Promise.resolve(),
   })),
 }));
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: {
-    transaction: vi.fn(async (_mode, _tables, work) => work()),
-    stages: { delete: vi.fn().mockResolvedValue(undefined) },
-    stageOutlines: { delete: vi.fn().mockResolvedValue(undefined) },
-    stageFolders: { delete: vi.fn().mockResolvedValue(undefined) },
-    playbackState: { delete: deleteLegacyPlaybackRow },
     mediaFiles: {
       where: () => ({ equals: () => ({ toArray: vi.fn().mockResolvedValue([]) }) }),
       bulkDelete: vi.fn().mockResolvedValue(undefined),
-    },
-    audioFiles: {
-      where: () => ({ equals: () => ({ toArray: vi.fn().mockResolvedValue([]) }) }),
-      bulkGet: vi.fn().mockResolvedValue([]),
-      bulkDelete: vi.fn().mockResolvedValue(undefined),
-    },
-    generatedAgents: {
-      where: () => ({ equals: () => ({ delete: vi.fn().mockResolvedValue(0) }) }),
-    },
-    scenes: {
-      where: () => ({
-        equals: () => ({
-          toArray: vi.fn().mockResolvedValue([]),
-          delete: vi.fn().mockResolvedValue(0),
-        }),
-      }),
     },
   },
 }));
@@ -57,7 +35,6 @@ vi.mock('@/lib/media/asset-pool', () => ({
 vi.mock('@/lib/utils/chat-storage', () => ({
   saveChatSessions: vi.fn(),
   loadChatSessions: vi.fn(),
-  deleteChatSessions: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('@/lib/quiz/persistence', () => ({ clearAllForScene: vi.fn() }));
 vi.mock('@/lib/pbl/v2/runtime/drain', () => ({
@@ -76,6 +53,5 @@ describe('stage deletion playback cleanup', () => {
   it('clears the device-scoped playback cursor', async () => {
     await deleteStageData('stage-delete');
     expect(clearCursor).toHaveBeenCalledExactlyOnceWith('stage-delete');
-    expect(deleteLegacyPlaybackRow).toHaveBeenCalledExactlyOnceWith('stage-delete');
   });
 });

@@ -10,7 +10,7 @@
  * their provider supports registration; this module is provider-agnostic.
  */
 
-import { db } from '@/lib/utils/database';
+import { db } from '@/lib/device-storage/database';
 import { getDeterministicVoiceId, type VoiceDesign } from '@/lib/audio/voice-design';
 import { clearVoiceBindingUnavailable } from '@/lib/audio/unavailable-voice-bindings';
 

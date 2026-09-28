@@ -18,8 +18,9 @@ let resolutionStarted = false;
  * bootstrap, before rendering any runtime consumer; a component effect is too
  * late. A second call always throws, even if runtime storage has not been used
  * yet. Once resolution has started, configuration stays sealed so a live app
- * cannot split data across backends or learner partitions. Omitted fields
- * retain the browser IndexedDB backend and anonymous device-key behavior.
+ * cannot split data across backends or learner partitions. The browser
+ * persistence bootstrap (`lib/persistence/bootstrap.ts`) is the production
+ * caller; without a configured store, runtime storage does not resolve.
  *
  * A store factory is called lazily by `getRuntimeStore()` until it first
  * succeeds. The configured learner-key provider is invoked only on first

@@ -88,8 +88,13 @@ describe('docker-compose.yml', () => {
     );
   });
 
-  it('builds a server-backed browser bundle unless told otherwise', () => {
-    expect(app.build?.args).toContain('NEXT_PUBLIC_PERSISTENCE=${NEXT_PUBLIC_PERSISTENCE-1}');
+  it('has no build-time persistence switch: the app is always server-backed', () => {
+    expect(JSON.stringify(app.build?.args)).not.toContain('NEXT_PUBLIC_PERSISTENCE');
+  });
+
+  it('passes its default DATABASE_URL through boot validation', async () => {
+    const { requireDatabaseUrl } = await import('@/lib/server/database-requirement');
+    expect(() => requireDatabaseUrl(readEnvFile('docker-compose.defaults.env'))).not.toThrow();
   });
 
   it('publishes the app on loopback by default, from the variable it passes to the app', () => {
@@ -141,5 +146,56 @@ describe('docker-compose.yml', () => {
     expect(validateOwnerIdentityConfiguration()).toBe('singleUser');
     stubComposeEnvironment('0.0.0.0', 'demo-code-that-is-long-enough');
     expect(validateOwnerIdentityConfiguration()).toBe('singleUser');
+  });
+});
+
+describe('docker-compose.db.yml (`pnpm db:up`)', () => {
+  const devDb = yaml.load(readFileSync(path.join(root, 'docker-compose.db.yml'), 'utf8')) as {
+    name?: string;
+    services: Record<string, ComposeService & { extends?: { file?: string; service?: string } }>;
+    volumes: Record<string, unknown>;
+  };
+  const packageJson = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as {
+    scripts: Record<string, string>;
+  };
+
+  it('is a separate Compose project, so it never restarts or stops a running stack database', () => {
+    // Without its own project name it would share the checkout's default
+    // project (and so the stack's postgres container) with `docker compose up`.
+    expect(devDb.name).toBe('openmaic-dev-db');
+  });
+
+  it('runs the postgres service definition of docker-compose.yml, on its own data volume', () => {
+    expect(Object.keys(devDb.services)).toEqual(['postgres']);
+    expect(devDb.services.postgres.extends).toEqual({
+      file: 'docker-compose.yml',
+      service: 'postgres',
+    });
+    expect(devDb.volumes).toHaveProperty('openmaic-postgres');
+  });
+
+  it('publishes the database on loopback only', () => {
+    expect(devDb.services.postgres.ports).toEqual(['127.0.0.1:${OPENMAIC_DB_PORT:-5432}:5432']);
+  });
+
+  it('is what the db:up and db:down scripts run, and nothing else', () => {
+    // The project is pinned on the command line: `-p` beats COMPOSE_PROJECT_NAME
+    // from the shell or a .env file, which would otherwise override the file's
+    // `name:` and point these scripts at the stack's own database.
+    expect(packageJson.scripts['db:up']).toBe(
+      'docker compose -p openmaic-dev-db -f docker-compose.db.yml up -d --wait postgres',
+    );
+    expect(packageJson.scripts['db:down']).toBe(
+      'docker compose -p openmaic-dev-db -f docker-compose.db.yml stop postgres',
+    );
+  });
+
+  it('matches the local DATABASE_URL documented in .env.example', () => {
+    const example = readFileSync(path.join(root, '.env.example'), 'utf8');
+    expect(example).toContain(
+      '# DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic',
+    );
+    expect(postgres.environment).toContain('POSTGRES_USER=openmaic');
+    expect(postgres.environment).toContain('POSTGRES_DB=openmaic');
   });
 });

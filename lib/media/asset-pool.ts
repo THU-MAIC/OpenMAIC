@@ -1,9 +1,7 @@
 import '@/lib/persistence/bootstrap';
 
 import type { AssetMeta, BinaryBlob } from '@openmaic/dsl';
-import { BrowserAssetStore } from '@openmaic/storage';
 import {
-  isAssetPoolServerBacked,
   registerAssetPoolStorageResetHook,
   resolveConfiguredAssetPoolStore,
   type AssetPoolStore,
@@ -15,7 +13,6 @@ import {
 import { bindAssetReplacementChannel, observeAssetReplacements } from './asset-replacement-events';
 import { clearAssetStorageFull } from './asset-storage-full';
 
-const ASSET_POOL_DATABASE_NAME = 'maic-asset-pool';
 let pool: AssetPoolStore | undefined;
 let clearing: Promise<void> | undefined;
 
@@ -30,14 +27,6 @@ export {
   resetAssetPoolStorageForTests,
 } from './asset-pool-config';
 export type { AssetPoolStorageOptions, AssetPoolStore } from './asset-pool-config';
-
-export class AssetPoolDeletionDeferredError extends Error {
-  override readonly name = 'AssetPoolDeletionDeferredError';
-
-  constructor() {
-    super('Asset pool deletion is deferred until other database connections close.');
-  }
-}
 
 // Replacement notifications originate here, so registration must not depend
 // on a renderer importing the React lease module first.
@@ -71,16 +60,20 @@ if (typeof window !== 'undefined') {
     });
 }
 
-/** Lazy browser-wide asset pool. Default construction is forbidden during SSR. */
+/**
+ * Lazy browser-wide asset pool: the server-backed store the persistence
+ * bootstrap configures. There is no browser-storage backend.
+ */
 export function getAssetPool(): AssetPoolStore {
   if (clearing) throw new Error('The browser asset pool is being cleared.');
   return (pool ??= (() => {
     const configured = resolveConfiguredAssetPoolStore();
-    if (configured) return configured;
-    if (typeof indexedDB === 'undefined') {
-      throw new Error('The browser asset pool requires IndexedDB.');
+    if (!configured) {
+      throw new Error(
+        'The asset pool is not configured: the browser persistence bootstrap configures it',
+      );
     }
-    return new BrowserAssetStore({ dbName: ASSET_POOL_DATABASE_NAME });
+    return configured;
   })());
 }
 
@@ -122,42 +115,21 @@ export async function putAsset(
   return ref;
 }
 
-function deleteAssetPoolDatabase(): Promise<void> {
-  if (typeof indexedDB === 'undefined') return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(ASSET_POOL_DATABASE_NAME);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error ?? new Error('Failed to delete the asset pool.'));
-    request.onblocked = () => reject(new AssetPoolDeletionDeferredError());
-  });
-}
-
 /**
- * Clear local asset storage without ever treating server assets as cache.
+ * Close the local asset client without ever treating server assets as cache.
  *
- * A server-backed pool only closes its client, which revokes every locally
- * minted object URL. Calling `remove` here would destroy durable user data in
+ * Closing revokes every locally minted object URL. The assets themselves are
+ * durable user data on the server: calling `remove` here would destroy them in
  * response to a local-cache action, so no remote deletion is attempted.
  */
 export function clearAssetPool(): Promise<void> {
   if (clearing) return clearing;
   const current = pool;
-  const serverBacked = isAssetPoolServerBacked();
   clearing = (async () => {
     try {
       if (current) await current.close();
-      if (!serverBacked) await deleteAssetPoolDatabase();
-    } catch (error) {
-      // A blocked delete stays pending until every other connection closes.
-      // Keep the closed singleton installed so writes fail loudly instead of
-      // opening a connection that queues indefinitely behind that delete.
-      if (!(error instanceof AssetPoolDeletionDeferredError) && pool === current) {
-        pool = undefined;
-      }
-      throw error;
-    }
-    if (pool === current) {
-      pool = undefined;
+    } finally {
+      if (pool === current) pool = undefined;
     }
   })().finally(() => {
     clearing = undefined;

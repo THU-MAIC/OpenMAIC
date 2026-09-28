@@ -14,7 +14,7 @@ import {
   type StageSceneLoadToken,
 } from '@/lib/store/stage';
 import { resolveStageFallbackAccess } from '@/lib/classroom/stage-ownership-signal';
-import type { MediaFileRecord } from '@/lib/utils/database';
+import type { MediaFileRecord } from '@/lib/device-storage/database';
 import { unmarkStageDeleted } from '@/lib/utils/deleted-stages';
 import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
 import type { DocumentMigrationDeps } from '@/lib/document-store/migration';
@@ -409,7 +409,7 @@ export function collectPriorityMediaRefs(
 
 export async function loadRestoredMediaTasksFromDB(stageId: string): Promise<RestoredMediaTasks> {
   try {
-    const { db } = await import('@/lib/utils/database');
+    const { db } = await import('@/lib/device-storage/database');
     const records = await db.mediaFiles.where('stageId').equals(stageId).toArray();
     const state = useStageStore.getState();
     const sameStage = state.stage?.id === stageId;
@@ -691,41 +691,18 @@ export function mergeLegacyAgentFallbacks(
 }
 
 /**
- * Read the legacy roster mirror for a stage as contract-shaped configs.
- * Read-only: production code only reads this table as a migration source for
- * pre-single-source classrooms (plus deletion hygiene when a stage is
- * removed); nothing writes new rows. Returns `null` when the read fails so
- * the caller can distinguish "empty mirror" (memoizable) from "read failed"
- * (retry on the next load).
+ * The legacy roster mirror for a stage, as contract-shaped configs.
+ *
+ * The mirror lived in the pre-server browser database, which the load path no
+ * longer reads: a course whose roster predates the document-embedded model
+ * reaches the server through the one-way importer, which lifts the roster with
+ * {@link mergeLegacyAgentFallbacks} on the way. A course loaded here is a server
+ * document, so its mirror is empty.
  */
 export async function loadLegacyAgentFallbacksFromDB(
-  stageId: string,
+  _stageId: string,
 ): Promise<GeneratedAgentConfig[] | null> {
-  try {
-    const { getGeneratedAgentsByStageId } = await import('@/lib/utils/database');
-    const records = await getGeneratedAgentsByStageId(stageId);
-    return records.map((record) => {
-      // Historical mirror rows spread the whole generated profile, so rows may
-      // carry a voiceConfig that never made it into the declared record type.
-      const voiceConfig = (record as { voiceConfig?: GeneratedAgentConfig['voiceConfig'] })
-        .voiceConfig;
-      return {
-        id: record.id,
-        name: record.name,
-        role: record.role,
-        persona: record.persona,
-        avatar: record.avatar,
-        color: record.color,
-        priority: record.priority,
-        ...(voiceConfig ? { voiceConfig } : {}),
-        ...(record.voiceDesign ? { voiceDesign: record.voiceDesign } : {}),
-      };
-    });
-  } catch {
-    // Signal failure (vs. an empty mirror): the probe memo must not treat a
-    // transient IndexedDB error as "nothing to migrate".
-    return null;
-  }
+  return [];
 }
 
 /**

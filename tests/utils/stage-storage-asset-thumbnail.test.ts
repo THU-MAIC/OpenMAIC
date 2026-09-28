@@ -15,7 +15,7 @@ vi.mock('@/lib/document-store', () => ({
   mutateDocument: vi.fn(),
   saveCurrentScene: vi.fn(),
 }));
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: {
     mediaFiles: {
       where: () => ({ equals: () => ({ toArray: mocks.mediaToArray }) }),

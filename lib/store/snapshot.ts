@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { IndexableTypeArray } from 'dexie';
-import { db, type Snapshot } from '@/lib/utils/database';
+import { db, type Snapshot } from '@/lib/device-storage/database';
 import { useStageStore } from './stage';
 import type { Scene } from '@/lib/types/stage';
 

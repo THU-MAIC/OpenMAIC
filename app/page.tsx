@@ -69,7 +69,7 @@ import {
   FolderNameError,
   type DeleteFolderMode,
 } from '@/lib/utils/stage-storage';
-import type { FolderRecord } from '@/lib/utils/database';
+import type { FolderRecord } from '@/lib/types/folder';
 import { displayNameWidth, FOLDER_NAME_MAX_WIDTH } from '@/lib/utils/folder-name-validation';
 import { FolderCard } from '@/components/discovery/folder-card';
 import { NewFolderDialog } from '@/components/discovery/folder-dialogs';

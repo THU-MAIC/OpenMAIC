@@ -183,7 +183,7 @@ function hasWriteCutoverSnapshot(records: readonly RuntimeRecord[]): boolean {
 export async function synchronizePBLProjectRuntime(args: HydratePBLProjectArgs): Promise<void> {
   await withRuntimeStorageSharedLockUntilSettled(async () => {
     const kv = args.kv ?? getDefaultKv();
-    const learnerKey = args.learnerKey ?? (await getLearnerKey(kv));
+    const learnerKey = args.learnerKey ?? (await getLearnerKey(args.kv));
     const store = args.store ?? getRuntimeStore();
     const transactionKey = `${args.stageId}:${args.sceneId}:${learnerKey}`;
 
@@ -236,7 +236,7 @@ export async function hydratePBLProjectFromRuntime(
 ): Promise<HydratePBLProjectResult> {
   return withRuntimeStorageSharedLockUntilSettled(async () => {
     const kv = args.kv ?? getDefaultKv();
-    const learnerKey = args.learnerKey ?? (await getLearnerKey(kv));
+    const learnerKey = args.learnerKey ?? (await getLearnerKey(args.kv));
     const store = args.store ?? getRuntimeStore();
     const transactionKey = `${args.stageId}:${args.sceneId}:${learnerKey}`;
 

@@ -19,16 +19,12 @@ const mocks = vi.hoisted(() => ({
   mutateDocument: vi.fn(),
   saveStageDataIncremental: vi.fn(),
   saveStageData: vi.fn(),
-  serverBacked: vi.fn(),
 }));
 
 vi.mock('@/lib/document-store', () => ({ mutateDocument: mocks.mutateDocument }));
 vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageDataIncremental: mocks.saveStageDataIncremental,
   saveStageData: mocks.saveStageData,
-}));
-vi.mock('@/lib/persistence/media-persistence', () => ({
-  isServerBackedMediaPersistence: mocks.serverBacked,
 }));
 
 import { clearNarrationAllocations } from '@/lib/audio/narration-allocations';
@@ -76,7 +72,6 @@ describe('a queued autosave cannot revert narration adoption', () => {
     vi.useFakeTimers();
     saves = [];
     clearNarrationAllocations();
-    mocks.serverBacked.mockReset().mockReturnValue(true);
     mocks.saveStageDataIncremental.mockReset();
     mocks.saveStageData.mockReset().mockResolvedValue(undefined);
     mocks.mutateDocument.mockReset().mockResolvedValue(undefined);

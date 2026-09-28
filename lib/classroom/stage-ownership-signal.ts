@@ -90,22 +90,16 @@ export function classroomGenerationOwnership(
 /**
  * May this browser start generation for this course?
  *
- * Generation spends the operator's provider budget, and under server-backed
- * persistence a course is shared and any visitor may open it, so the gate
+ * Generation spends the operator's provider budget, and a course is stored on
+ * the server where any visitor may open it, so the gate
  * admits exactly one state: a viewer the sidecar named as the owner. Every
  * other answer refuses, including the two that are not "somebody else owns
  * this" — a 404 and a silent sidecar are both "this browser has no reason to
  * believe it may spend", which is the only reading that keeps a visitor from
  * billing the operator. A viewer therefore sees unresolved placeholders and no
  * generation; the owner's own load, which does get an answer, converges them.
- * Browser-only mode has one viewer who is by construction the author, so the
- * gate is inert there and behaviour is unchanged.
  */
-export function mayStartOwnerGeneration(
-  serverBackedMedia: boolean,
-  ownership: ClassroomGenerationOwnership,
-): boolean {
-  if (!serverBackedMedia) return true;
+export function mayStartOwnerGeneration(ownership: ClassroomGenerationOwnership): boolean {
   return ownership === 'owner';
 }
 

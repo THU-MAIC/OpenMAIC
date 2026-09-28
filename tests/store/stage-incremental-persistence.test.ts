@@ -1,4 +1,3 @@
-import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { fullSave, incrementalSave } = vi.hoisted(() => ({
@@ -13,9 +12,10 @@ vi.mock('@/lib/utils/stage-storage', () => ({
 }));
 
 import { flushStageSave, restorePendingStageChanges, useStageStore } from '@/lib/store/stage';
-import { clearAssetPool, getAssetPool } from '@/lib/media/asset-pool';
+import { getAssetPool } from '@/lib/media/asset-pool';
 import type { ChatSession } from '@/lib/types/chat';
 import type { Scene, Stage } from '@/lib/types/stage';
+import { useInMemoryAssetPool } from '@/tests/helpers/in-memory-document-store';
 
 const stage = (id = 'stage-1'): Stage => ({
   id,
@@ -104,7 +104,7 @@ describe('incremental stage flush', () => {
 
   it('keeps allocated bytes intact across scene deletion and undo', async () => {
     vi.useRealTimers();
-    vi.stubGlobal('indexedDB', new IDBFactory());
+    const { teardown } = await useInMemoryAssetPool();
     const ref = await getAssetPool().put(new Blob(['undo-safe-media'], { type: 'image/png' }));
     const deleted = scene('scene-media');
     if (deleted.content.type !== 'slide') throw new Error('Expected a slide scene');
@@ -138,7 +138,7 @@ describe('incremental stage flush', () => {
     expect(url).not.toBeNull();
     await expect(fetch(url!).then((response) => response.text())).resolves.toBe('undo-safe-media');
     await getAssetPool().release(ref);
-    await clearAssetPool();
+    await teardown();
   });
 
   it('persists current-scene state without marking document data', async () => {

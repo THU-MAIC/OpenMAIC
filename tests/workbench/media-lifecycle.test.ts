@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The media generation store imports Dexie at module scope; the fold under
 // test never touches it, so a stub is enough.
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
   db: { mediaFiles: { where: vi.fn(), put: vi.fn(), delete: vi.fn() } },
 }));

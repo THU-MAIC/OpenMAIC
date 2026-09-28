@@ -1,6 +1,6 @@
 import { expect, test } from '../fixtures/base';
 import { ClassroomPage } from '../pages/classroom.page';
-import { TEST_STAGE_ID, SCENE_ID, IFRAME_TITLE, seedDatabase } from '../fixtures/interactive-state';
+import { SCENE_ID, IFRAME_TITLE, seedDatabase } from '../fixtures/interactive-state';
 test.setTimeout(120_000);
 
 test('actual classroom component reference samples declared area state on send without changing activity', async ({
@@ -30,9 +30,9 @@ test('actual classroom component reference samples declared area state on send w
     if (path === '/api/comfyui-workflows') return route.fulfill({ json: { workflows: [] } });
     await route.continue();
   });
-  await seedDatabase(page);
+  const stageId = await seedDatabase(page);
   const classroom = new ClassroomPage(page);
-  await classroom.goto(TEST_STAGE_ID);
+  await classroom.goto(stageId);
   await classroom.waitForLoaded();
   const frame = page.frameLocator(`iframe[title="${IFRAME_TITLE}"]`);
   await expect(frame.locator('#value')).toBeVisible({ timeout: 30000 });
@@ -46,6 +46,9 @@ test('actual classroom component reference samples declared area state on send w
   await referenceButton.click();
   await expect(referenceButton).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('slide-element-reference-pill')).toBeHidden();
+  // The picker installs into the iframe asynchronously; clicking before it is
+  // there races it (as in interactive-component-reference.spec.ts).
+  await expect(frame.locator('[data-maic-element-picker-overlay]')).toBeAttached();
 
   const iframe = page.locator(`iframe[title="${IFRAME_TITLE}"]`);
   const [iframeBox, logical, targetRect] = await Promise.all([
@@ -173,9 +176,9 @@ test('missing AbortSignal.any still sends the classroom question without state',
     if (path === '/api/comfyui-workflows') return route.fulfill({ json: { workflows: [] } });
     await route.continue();
   });
-  await seedDatabase(page);
+  const stageId = await seedDatabase(page);
   const classroom = new ClassroomPage(page);
-  await classroom.goto(TEST_STAGE_ID);
+  await classroom.goto(stageId);
   await classroom.waitForLoaded();
   await expect(
     page.frameLocator(`iframe[title="${IFRAME_TITLE}"]`).locator('#value'),

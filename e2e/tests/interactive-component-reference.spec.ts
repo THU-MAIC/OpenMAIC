@@ -1,8 +1,9 @@
 import { expect, test } from '../fixtures/base';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
 import { ClassroomPage } from '../pages/classroom.page';
+import { seedServerDocument, setCurrentScene, uniqueStageId } from '../fixtures/server-seed';
 
-const TEST_STAGE_ID = 'e2e-interactive-component-reference';
+const TEST_STAGE_PREFIX = 'e2e-interactive-component-reference';
 const SCENE_ID = 'scene-interactive-slider';
 const IFRAME_TITLE = `Interactive Scene ${SCENE_ID}`;
 const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
@@ -18,65 +19,39 @@ const INTERACTIVE_HTML = `<!DOCTYPE html><html><head><meta charset="utf-8"></hea
   <script>document.getElementById('angle-slider').value = '70';</script>
 </body></html>`;
 
-async function seedDatabase(page: import('@playwright/test').Page) {
+async function seedDatabase(page: import('@playwright/test').Page): Promise<string> {
   await page.addInitScript((settings) => {
     localStorage.setItem('maic:account:settings-storage', settings);
   }, SETTINGS_STORAGE);
 
   await page.goto('/', { waitUntil: 'networkidle' });
-  await page.evaluate(
-    ({ stageId, sceneId, html }) =>
-      new Promise<void>((resolve, reject) => {
-        const request = indexedDB.open('maic-documents', 1);
-        request.onupgradeneeded = () => {
-          const db = request.result;
-          db.createObjectStore('stages', { keyPath: 'id' });
-          const scenes = db.createObjectStore('scenes', { keyPath: ['stageId', 'id'] });
-          scenes.createIndex('by-stage', 'stageId');
-          db.createObjectStore('outlines', { keyPath: 'stageId' });
-        };
-        request.onsuccess = (event) => {
-          const db = (event.target as IDBOpenDBRequest).result;
-          const tx = db.transaction(['stages', 'scenes', 'outlines'], 'readwrite');
-          const now = Date.now();
-          tx.objectStore('stages').put({
-            id: stageId,
-            name: 'Interactive component reference',
-            description: '',
-            language: 'en-US',
-            style: 'professional',
-            createdAt: now,
-            updatedAt: now,
-            dslVersion: '0.1.0',
-          });
-          tx.objectStore('scenes').put({
-            id: sceneId,
-            stageId,
-            type: 'interactive',
-            title: 'Slider experiment',
-            order: 0,
-            content: { type: 'interactive', url: '', html },
-            createdAt: now,
-            updatedAt: now,
-          });
-          tx.objectStore('outlines').put({
-            stageId,
-            outline: { outlines: [], createdAt: now, updatedAt: now },
-          });
-          localStorage.setItem(
-            `maic:device:editor-current-scene:${stageId}`,
-            JSON.stringify({ sceneId, updatedAt: new Date(now).toISOString() }),
-          );
-          tx.oncomplete = () => {
-            db.close();
-            resolve();
-          };
-          tx.onerror = () => reject(tx.error);
-        };
-        request.onerror = () => reject(request.error);
-      }),
-    { stageId: TEST_STAGE_ID, sceneId: SCENE_ID, html: INTERACTIVE_HTML },
-  );
+  const stageId = uniqueStageId(TEST_STAGE_PREFIX);
+  const now = Date.now();
+  await seedServerDocument(page, {
+    stage: {
+      id: stageId,
+      name: 'Interactive component reference',
+      description: '',
+      style: 'professional',
+      createdAt: now,
+      updatedAt: now,
+    },
+    scenes: [
+      {
+        id: SCENE_ID,
+        stageId,
+        type: 'interactive',
+        title: 'Slider experiment',
+        order: 0,
+        content: { type: 'interactive', url: '', html: INTERACTIVE_HTML },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    outline: { outlines: [], createdAt: now, updatedAt: now },
+  });
+  await setCurrentScene(page, stageId, SCENE_ID);
+  return stageId;
 }
 
 test('the global courseware entry selects one scaled source-authored component and clears it after acceptance', async ({
@@ -117,9 +92,9 @@ test('the global courseware entry selects one scaled source-authored component a
     });
   });
 
-  await seedDatabase(page);
+  const stageId = await seedDatabase(page);
   const classroom = new ClassroomPage(page);
-  await classroom.goto(TEST_STAGE_ID);
+  await classroom.goto(stageId);
   await classroom.waitForLoaded();
 
   const iframe = page.locator(`iframe[title="${IFRAME_TITLE}"]`);

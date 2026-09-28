@@ -11,7 +11,7 @@ const { fetchMediaUrlMock, resolveAudioBlobMock } = vi.hoisted(() => ({
 vi.mock('@/lib/media/fetch-media-url', () => ({
   fetchMediaUrl: (...args: unknown[]) => fetchMediaUrlMock(...args),
 }));
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: { audioFiles: { get: vi.fn() } },
 }));
 vi.mock('@/lib/media/convert-legacy-asset-refs', () => ({
@@ -135,7 +135,7 @@ describe('legacy audio URL export', () => {
     // collectLegacyAudioForExport skipped the live co-present URL.
     const url = 'https://server.example.com/audio/evicted.mp3';
     const audioId = 'ast_evicted';
-    const { db } = await import('@/lib/utils/database');
+    const { db } = await import('@/lib/device-storage/database');
     (db.audioFiles.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: audioId,
       stageId: 'stage-1',
@@ -213,7 +213,7 @@ describe('legacy audio URL export', () => {
     // The pool resolve can fail (pool unavailable) while the compatibility
     // row itself carries the narration; that row must still reach the ZIP.
     const audioId = 'ast_row_backed';
-    const { db } = await import('@/lib/utils/database');
+    const { db } = await import('@/lib/device-storage/database');
     (db.audioFiles.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: audioId,
       stageId: 'stage-1',
@@ -233,7 +233,7 @@ describe('legacy audio URL export', () => {
 
   it('assigns distinct safe paths without interpolating adversarial audio refs', async () => {
     const refs = ['../evil', 'a/b', 'a/../collision', 'collision'];
-    const { db } = await import('@/lib/utils/database');
+    const { db } = await import('@/lib/device-storage/database');
     (db.audioFiles.get as ReturnType<typeof vi.fn>).mockImplementation(async (id: string) => ({
       id,
       stageId: 'stage-1',
@@ -261,7 +261,7 @@ describe('legacy audio URL export', () => {
     're-exports imported audio format %s under a safe canonical path',
     async (format) => {
       const audioId = 'ast_imported_audio';
-      const { db } = await import('@/lib/utils/database');
+      const { db } = await import('@/lib/device-storage/database');
       (db.audioFiles.get as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: audioId,
         stageId: 'stage-1',

@@ -29,7 +29,6 @@ const mocks = vi.hoisted(() => ({
   putAsset: vi.fn(),
   audioGet: vi.fn(),
   audioPut: vi.fn(),
-  serverBacked: vi.fn(),
 }));
 
 vi.mock('@/lib/document-store', () => ({ mutateDocument: mocks.mutateDocument }));
@@ -38,11 +37,8 @@ vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageData: mocks.saveStageData,
 }));
 vi.mock('@/lib/media/asset-pool', () => ({ putAsset: mocks.putAsset }));
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: { audioFiles: { get: mocks.audioGet, put: mocks.audioPut } },
-}));
-vi.mock('@/lib/persistence/media-persistence', () => ({
-  isServerBackedMediaPersistence: mocks.serverBacked,
 }));
 
 import { setAssetStorageFullStoreForTests } from '@/lib/media/asset-storage-full';
@@ -137,7 +133,6 @@ describe('narration adoption across a course re-entry', () => {
     mocks.saveStageData.mockReset().mockResolvedValue(undefined);
     mocks.saveStageDataIncremental.mockReset().mockResolvedValue(undefined);
     mocks.audioPut.mockReset().mockResolvedValue(undefined);
-    mocks.serverBacked.mockReset().mockReturnValue(true);
     // Rows of the shape a course narrated before allocation existed actually
     // has: the derived key, and neither a stage nor the text.
     mocks.audioGet.mockReset().mockImplementation(async (id: string) => ({

@@ -20,7 +20,7 @@
   <a href="https://jcst.ict.ac.cn/en/article/doi/10.1007/s11390-025-6000-0"><img src="https://img.shields.io/badge/Paper-JCST'26-blue?style=flat-square" alt="Paper"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License: MIT"/></a>
   <a href="https://open.maic.chat/"><img src="https://img.shields.io/badge/Demo-Live-brightgreen?style=flat-square" alt="Live Demo"/></a>
-  <a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&envDescription=Configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).%20All%20providers%20are%20optional.&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs"><img src="https://vercel.com/button" alt="Deploy with Vercel" height="20"/></a>
+  <a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&env=DATABASE_URL&envDescription=DATABASE_URL%20must%20point%20to%20an%20external%20PostgreSQL%20database.%20Also%20configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs"><img src="https://vercel.com/button" alt="Deploy with Vercel" height="20"/></a>
   <a href="#-agent-工作台集成"><img src="https://img.shields.io/badge/OpenClaw-集成-F4511E?style=flat-square" alt="OpenClaw 集成"/></a>
   <a href="#lemonade-local-ai"><img src="https://img.shields.io/badge/Lemonade-Local_AI-FFD43B?style=flat-square" alt="Lemonade Local AI"/></a>
   <a href="https://github.com/THU-MAIC/OpenMAIC/stargazers"><img src="https://img.shields.io/github/stars/THU-MAIC/OpenMAIC?style=flat-square" alt="Stars"/></a>
@@ -94,6 +94,7 @@ https://github.com/user-attachments/assets/f4a2f1be-6615-4330-aea1-b86ccf42045e
 
 - **Node.js** >= 22.19
 - **pnpm** >= 10
+- **PostgreSQL** 16——课程保存在服务端。本地开发可用 `pnpm db:up` 在 Docker 中启动一个。
 
 ### 1. 克隆 & 安装
 
@@ -273,18 +274,32 @@ DEFAULT_MODEL=glm:glm-5.1
 >
 > 如果希望默认走 MiniMax，可设置 `DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed`。
 
-### 3. 启动
+### 3. 启动数据库
+
+```bash
+pnpm db:up
+```
+
+这会在 `127.0.0.1:5432` 上启动一个独立的开发用 PostgreSQL（可用 `OPENMAIC_DB_PORT` 换端口）。它是单独的 Compose 项目（`openmaic-dev-db`，本机所有检出共用这一个），有自己的容器和数据卷，因此不会重启或停止 `docker compose up` 栈的数据库，两者也不共享数据。然后取消 `.env.local` 中本地 `DATABASE_URL` 那一行的注释：
+
+```env
+DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
+```
+
+也可以使用任何其他 PostgreSQL，把 `DATABASE_URL` 指向它即可。`pnpm db:down` 会停止该容器并保留数据卷。
+
+### 4. 启动
 
 ```bash
 pnpm dev
 ```
 
-打开 **http://localhost:3000** 开始学习！
+打开 **http://localhost:3000** 开始学习！未设置 `DATABASE_URL` 时服务会拒绝启动，并提示如何提供（见[服务端持久化](#服务端持久化postgresql)）。
 
-### 4. 生产环境构建
+### 5. 生产环境构建
 
 ```bash
-pnpm build && pnpm start
+pnpm build && DATABASE_URL=postgres://... pnpm start
 ```
 
 ### 可选：ACCESS_CODE（共享部署）
@@ -301,14 +316,16 @@ ACCESS_CODE=your-secret-code
 
 ### Vercel 部署
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&envDescription=Configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).%20All%20providers%20are%20optional.&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&env=DATABASE_URL&envDescription=DATABASE_URL%20must%20point%20to%20an%20external%20PostgreSQL%20database.%20Also%20configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs)
 
 或者手动部署：
 
 1. Fork 本仓库
 2. 导入到 [Vercel](https://vercel.com/new)
-3. 配置环境变量（至少一个 LLM API Key）
+3. 配置环境变量：指向外部 PostgreSQL 数据库的 `DATABASE_URL`（Serverless 函数无法自己运行数据库），以及至少一个 LLM API Key
 4. 部署
+
+没有 `DATABASE_URL` 时服务会拒绝启动。请使用 Vercel 网络可达的连接串（启用 TLS 的托管 PostgreSQL；服务商提供连接池端点时优先使用）。其他 Serverless 或容器平台同理：先准备好数据库，再部署。
 
 ### Docker 部署
 
@@ -336,15 +353,15 @@ Compose 文件默认按**个人安装**配置：
 `docker-compose.defaults.env` 中的每个默认值都可以在 `.env.local` 中覆盖（Compose 会在它之后读取 `.env.local`）：例如设置 `OWNER_SINGLE_USER=false` 恢复每个浏览器一个匿名所有者（与 `pnpm dev` 相同），或改用 `PERSISTENCE_SHARED_OWNER_ID`，或设置自己的 `DATABASE_URL` 使用外部数据库。此时内置的 `postgres` 服务仍会启动（应用会等待它的健康检查），但不会被使用；如不需要，可在 Compose 文件副本中删除它。
 
 > [!IMPORTANT]
-> **升级已有的 Compose 部署。** `docker compose up` 现在会启动 PostgreSQL，并以 `NEXT_PUBLIC_PERSISTENCE=1` 构建镜像；应用只发布在 `127.0.0.1` 上。
+> **升级已有的 Compose 部署。** `docker compose up` 现在会启动 PostgreSQL，应用始终把课程保存在其中；应用只发布在 `127.0.0.1` 上。
 >
 > - 如果此前供其他机器访问，请以 `OPENMAIC_PUBLISH_ADDRESS=0.0.0.0` 启动，并设置 `ACCESS_CODE`：现在每位访客都是同一个所有者。
 > - `--profile server-persistence` 仍可使用，但不再有任何作用；PostgreSQL 总会启动。
-> - 此前纯浏览器部署保存在浏览器中的课程仍保留在浏览器里，不会被删除；它们将由随“默认服务端持久化”一同发布的浏览器到服务端自动迁移搬到服务端。
+> - 此前纯浏览器部署保存在浏览器中的课程仍保留在浏览器里，不会被删除；它们将由同一版本中发布的单向“浏览器到服务端”导入器搬到服务端。
 > - 此前服务端部署中以各浏览器匿名 cookie 保存的课程仍归属于这些匿名所有者：不会被自动合并到单一所有者名下。如需并入，请显式认领（见[单用户模式](#单用户模式)）。如果该部署曾由多人使用，可以考虑改设 `OWNER_SINGLE_USER=false`，让每个人保留自己的课程库。
 > - `.env.local` 中的 `DATABASE_URL` 仍然优先（外部数据库，或已轮换的密码）；未设置时应用使用内置 PostgreSQL 和 `PERSISTENCE_POSTGRES_PASSWORD`。
 > - 如果 `.env.local` 设置了 `PERSISTENCE_SHARED_OWNER_ID`，请同时在其中设置 `OWNER_SINGLE_USER=false`：两者互斥，同时设置时应用拒绝启动。
-> - 如需纯浏览器存储的镜像，请以空值构建：`NEXT_PUBLIC_PERSISTENCE= docker compose up --build`（PostgreSQL 仍会启动，但不会被使用）。
+> - 不再提供纯浏览器存储的镜像：`NEXT_PUBLIC_PERSISTENCE` 构建参数已移除并被忽略。
 
 #### 慢速网络 / 中国大陆构建加速
 
@@ -381,20 +398,22 @@ store；缓存只用于提升性能，不是正确完成构建的必要条件。
 
 ### 服务端持久化（PostgreSQL）
 
-[Docker 部署](#docker-部署)开箱即用服务端存储：只跑两个容器，OpenMAIC 应用本体和 PostgreSQL。持久化 HTTP 服务内嵌在应用中（`/api/persistence`），没有独立的持久化服务。
+OpenMAIC 始终把课程保存在服务端。[Docker 部署](#docker-部署)只跑两个容器：OpenMAIC 应用本体和 PostgreSQL。持久化 HTTP 服务内嵌在应用中（`/api/persistence`），没有独立的持久化服务。
 
-不使用 Compose 时，以 `NEXT_PUBLIC_PERSISTENCE=1` 构建，并在运行时提供 `DATABASE_URL`：
+**必须提供 `DATABASE_URL`。** 没有它服务不会启动：会输出 `[boot] Invalid server configuration; the server will not start: DATABASE_URL is not set. ...` 及修复方法，并以退出码 `1` 退出。不使用 Compose 时，正常构建并在运行时提供 `DATABASE_URL`：
 
 ```bash
-NEXT_PUBLIC_PERSISTENCE=1 pnpm build
+pnpm build
 DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
 ```
 
-和往常一样把服务商 API Key 填进 `.env.local`。之后运行时会话、课程文档和生成的媒体都由服务端存储；设备维度的 KV 数据（如播放进度）仍保留在浏览器中。纯浏览器构建保存在浏览器中的课程仍保留在浏览器里，不会被删除；它们将由随“默认服务端持久化”一同发布的浏览器到服务端自动迁移搬到服务端。
+本地开发时，`pnpm db:up` 启动一个独立的开发数据库（以单独的项目和数据卷 `openmaic-dev-db` 运行 Compose 的 `postgres` 服务定义，本机所有检出共用）并发布到 `127.0.0.1`（端口 `OPENMAIC_DB_PORT`，默认 `5432`）；对应的 `DATABASE_URL` 已在 `.env.example` 中以注释给出，`pnpm db:down` 可将其停止。Serverless 平台（见 [Vercel 部署](#vercel-部署)）请把 `DATABASE_URL` 指向外部 PostgreSQL。
 
-`NEXT_PUBLIC_PERSISTENCE` 是**编译期开关**，会打进浏览器 bundle。启用它的构建必须部署在具备可用运行时 `DATABASE_URL` 的环境中。否则浏览器会选择 HTTP 持久化但内嵌端点返回配置或初始化错误；首页会弹出持久化不可用的提示并保留原有课程列表，而不是误导性地显示空课程库。
+和往常一样把服务商 API Key 填进 `.env.local`。课程文档、文件夹、对话历史与学习者运行时会话、生成的媒体都保存在服务端。留在浏览器里的只有属于该设备、丢失也不会丢课的数据：应用设置与界面偏好、播放进度与编辑器当前场景、编辑器撤销历史、服务端已保存的讲解与媒体的本地缓存（以及因存储已满被拒、为重试保留的字节）、生成期间暂存的 PDF 图片，以及在该浏览器注册的 TTS 音色。**设置 → 清除本地缓存**只清除这些，不会动服务端的任何数据。
 
-服务端课程库及其文件夹（`/api/stages/**`、`/api/folders/**`）只依赖 `DATABASE_URL`：无论 Agent 运行时（`OPENMAIC_AGENT_RUNTIME_ENABLED`）是否开启都可以使用。没有 `DATABASE_URL` 时它们返回 `404`，与纯浏览器存储模式一致。`GET /api/agent/runtime` 以 `persistence: true|false` 报告这一点，与运行时自身的 `enabled`、`runtimeEnabled` 并列。
+此前纯浏览器构建保存在浏览器中的课程仍保留在浏览器里，不会被删除：应用的常规路径不再读写这些服务端化之前的浏览器存储，由同一版本中发布的单向“浏览器到服务端”导入器把它们搬到服务端。
+
+服务端课程库及其文件夹（`/api/stages/**`、`/api/folders/**`）无论 Agent 运行时（`OPENMAIC_AGENT_RUNTIME_ENABLED`）是否开启都可以使用。`GET /api/agent/runtime` 报告 `persistence`，与运行时自身的 `enabled`、`runtimeEnabled` 并列。
 
 `/api/persistence` 的每个请求都归属于[所有者身份](#所有者身份)机制解析出的所有者——默认为 30 天匿名 cookie，每个浏览器一个所有者；在 Compose 部署中则是[单用户模式](#单用户模式)的唯一所有者。持久化不再有单独的凭证：
 
@@ -407,7 +426,7 @@ DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
 > [!WARNING]
 > **升级服务端持久化。** `PERSISTENCE_DEV_TOKEN`、`NEXT_PUBLIC_PERSISTENCE_TOKEN` 和 `PERSISTENCE_ALLOW_INSECURE_DEV_AUTH` 已移除并被忽略，请从环境变量和构建参数中删去。此前写入的运行时会话以浏览器自生成的学习者 key 为键，而不是所有者 id，因此**将无法再访问**（课程文档和媒体不受影响）。它们不会被自动迁移，因为信任客户端提交的旧 key 会重新引入客户端自选身份。
 >
-> **如果 `PERSISTENCE_DEV_TOKEN` 是你唯一的访问门槛，请在升级前处理。** 去掉它之后，端点会接受所有能访问到它的访客，每人作为各自的匿名所有者。请先用 `ACCESS_CODE` 或自己的网关保护部署、注册基于自有账号体系的所有者认证方法（见[所有者身份](#所有者身份)），或在此之前关闭服务端持久化（不设置 `NEXT_PUBLIC_PERSISTENCE`）。
+> **如果 `PERSISTENCE_DEV_TOKEN` 是你唯一的访问门槛，请在升级前处理。** 去掉它之后，端点会接受所有能访问到它的访客，每人作为各自的匿名所有者。请先用 `ACCESS_CODE` 或自己的网关保护部署，或注册基于自有账号体系的所有者认证方法（见[所有者身份](#所有者身份)）。
 
 `PERSISTENCE_POSTGRES_PASSWORD`（默认 `openmaic-dev`，仅供本地使用）只在数据目录为空时初始化 PostgreSQL 角色；`docker-compose.defaults.env` 中默认的 `DATABASE_URL` 也由同一个变量不经编码拼出，因此请只使用字母和数字（`@`、`/`、`#`、`?` 等字符会破坏 URL；这类密码请在 `.env.local` 中设置经过编码的 `DATABASE_URL`）。之后再修改不会轮换已有的 `openmaic-postgres` 卷。一次性本地库可以直接 `docker compose down -v` 后换密码重启；要保留数据则执行 `docker compose exec postgres psql -U openmaic -d openmaic -c "ALTER ROLE openmaic WITH PASSWORD 'new-password';"`，然后以 `PERSISTENCE_POSTGRES_PASSWORD=new-password` 启动（或在 `.env.local` 中设置对应的 `DATABASE_URL`）。
 
@@ -423,10 +442,11 @@ DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
 
 资产字节默认直接出站（内嵌路由把字节写入响应体）。设置 `ASSET_BYTE_EGRESS=redirect` 可选择**间接出站**：字节 `GET` 会在字节层支持签名（S3 支持；PostgreSQL 字节列不支持，回退为直接返回字节）时返回一个短时效的签名 S3 URL。间接出站有两个对象存储前提：bucket 的 CORS 需允许本应用来源并在签名响应上暴露 `Content-Type`；签名身份需持有 bucket 的 `s3:ListBucket`，缺失的 key 才能以 `404 NoSuchKey` 而非 `403` 返回。相关取舍见[资产 HTTP 契约](packages/@openmaic/storage/docs/asset-http-contract.md)。
 
-内嵌端点实现了 [RuntimeStore HTTP 契约](packages/@openmaic/storage/docs/runtime-http-contract.md)和 [DocumentStore HTTP 契约](packages/@openmaic/storage/docs/document-http-contract.md)。不设置 `NEXT_PUBLIC_PERSISTENCE` 则保持原有的纯浏览器行为。
+内嵌端点实现了 [RuntimeStore HTTP 契约](packages/@openmaic/storage/docs/runtime-http-contract.md)和 [DocumentStore HTTP 契约](packages/@openmaic/storage/docs/document-http-contract.md)。
 
 配置无效时服务不会启动。`instrumentation.ts` 的 `register()` 遇到以下情况会拒绝启动：
 
+- 未设置 `DATABASE_URL`；
 - `ASSET_QUOTA_BYTES`、`ASSET_PENDING_TTL_MS`、`OWNER_WRITE_LOCK_WAIT_MS` 或 `OWNER_CLAIM_LOCK_WAIT_MS` 取值格式错误；
 - `OWNER_CLAIM_TRIGGER` 不是 `explicit` 或 `auto`；
 - 设置了已移除的 `OWNER_AUTHENTICATOR` / `TRUSTED_PROXY_*` 变量；
@@ -549,7 +569,7 @@ TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
 
 - **Auto Voice**（默认）：合成时根据每个智能体的人设动态生成 voice prompt，零配置。
 - **Prompt 音色**：用自然语言描述音色，例如 *"温暖的女性教师嗓音，平静而鼓励，中等音调"*。
-- **Clone 音色**：上传一段参考音频或在浏览器里录一段。音频存在 IndexedDB 中，每次合成时发给后端。
+- **Clone 音色**：上传一段参考音频或在浏览器里录一段。音频保存在当前浏览器（IndexedDB）中，每次合成时发给后端。
 
 ---
 
@@ -820,7 +840,7 @@ clawhub install openmaic
 | **交互式 HTML** | 自包含的网页，包含交互式模拟实验 |
 | **课堂 ZIP** | 完整课堂导出（课程结构 + 媒体文件），可备份或分享 |
 
-启用服务端持久化后，导入课堂 ZIP 会先将包内音频、图片、视频及封面保存到服务器资源池，再保存课程。其他浏览器无需导入端的本地缓存即可读取这些资源。纯浏览器模式仍在本地保存。已有浏览器课程不会自动迁移：请在原浏览器导出课堂 ZIP，再导入目标部署。
+导入课堂 ZIP 会先将包内音频、图片、视频及封面保存到服务器资源池，再保存课程，因此其他浏览器无需导入端的本地缓存即可读取这些资源。ZIP 也可用于在部署之间迁移课程：从一处导出，在另一处导入。
 
 **离线 / 内网课堂：** 导出课堂（`.maic.zip`）或资源包时，OpenMAIC 会把互动场景引用的外部资源（KaTeX、Three.js 含 `three/addons`、Tailwind CDN、Google Fonts、图片）以 `data:` URI 形式内联进导出的 HTML。导出的课程在导入到内网/离线实例后即可完全离线播放，播放时不再访问任何公网 CDN。导出时无法抓取的资源（如开启了 CORS 限制的图床）会被记录并保留为原始 URL。本功能上线*之前*导出的课堂仍引用 CDN，需要重新导出才能离线播放。
 

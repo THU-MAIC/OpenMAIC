@@ -11,7 +11,7 @@ The fastest path is the Deploy button in the [repository README](https://github.
 
 Vercel rebuilds and deploys the Next.js application after every commit. Configure at least one LLM provider in the project settings for deployment.
 
-Vercel deployments use browser-side persistence by default. For server-side persistence, use an external PostgreSQL database and a server deployment; the `server-persistence` Compose profile cannot be used directly with Vercel.
+Vercel runs OpenMAIC as serverless functions, which cannot host a database. Set `DATABASE_URL` to an external PostgreSQL database (a managed service; prefer its pooled connection endpoint) in the project settings; the server refuses to start without it.
 
 ## Docker
 
@@ -20,7 +20,7 @@ The repository includes a production-ready `Dockerfile`. The image uses Node.js 
 ```bash
 docker build -t openmaic .
 
-docker run --env-file .env.local -p 3000:3000 openmaic
+docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-host:5432/openmaic -p 3000:3000 openmaic
 ```
 
 We recommend the repository's Docker Compose configuration:
@@ -31,7 +31,7 @@ cp .env.example .env.local
 docker compose up --build
 ```
 
-The default Compose deployment starts the OpenMAIC app and mounts the `openmaic-data` volume. Configure other providers and features as needed; see [Configuration](./configuration.mdx).
+The default Compose deployment starts two containers, the OpenMAIC app and PostgreSQL, wires `DATABASE_URL` between them, and mounts the `openmaic-data` and `openmaic-postgres` volumes. Configure other providers and features as needed; see [Configuration](./configuration.mdx).
 
 The image creates the volume's data directory with the runtime user's ownership, so fresh volumes persist classrooms and usage records out of the box. A volume created by an older image may be root-owned, which makes every server-side save fail with `EACCES` while the app keeps serving normally (classrooms silently never reach disk; the log shows `Failed to record usage ... EACCES: permission denied`). Repair such a volume once, then restart the app:
 
@@ -67,33 +67,26 @@ The host needs Node.js `22.19.0` or later and pnpm `10.28.0`. Build and start wi
 ```bash
 pnpm install
 pnpm build
-pnpm start      # listens on port 3000 by default
+DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # listens on port 3000 by default
 ```
 
-Put nginx or Caddy in front for TLS termination. By default, classroom state is stored in browser IndexedDB. With server-side persistence enabled, runtime data and course documents are stored in server storage and PostgreSQL. Choose an appropriate persistence strategy before deploying multiple instances.
+Put nginx or Caddy in front for TLS termination. Courses, runtime data and generated media are stored in PostgreSQL, so several instances can share one database.
 
 ## Server-side persistence (PostgreSQL)
 
-The repository's `server-persistence` profile starts OpenMAIC and PostgreSQL in two containers. The persistence HTTP API is embedded in OpenMAIC; no separate persistence service is required.
+OpenMAIC stores courses, chat history, learner progress and generated media in PostgreSQL, and **`DATABASE_URL` is required**: without it the server prints `[boot] Invalid server configuration; the server will not start: DATABASE_URL is not set. ...` with the fix and exits with code `1`. The persistence HTTP API is embedded in OpenMAIC; no separate persistence service is required.
 
-First add the database connection to `.env.local`:
-
-```bash
-DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
-```
-
-Then start the profile:
+`docker compose up` starts PostgreSQL next to the app and sets `DATABASE_URL` for it. For local development, `pnpm db:up` starts a separate development database from the same service definition (its own Compose project and volume, `openmaic-dev-db`, shared by every checkout on this machine, so it never touches the stack's database), published on `127.0.0.1` (port `OPENMAIC_DB_PORT`, default `5432`); `pnpm db:down` stops it again. Then set the connection in `.env.local`:
 
 ```bash
-NEXT_PUBLIC_PERSISTENCE=1 \
-docker compose --profile server-persistence up --build
+DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
 ```
 
-`NEXT_PUBLIC_PERSISTENCE` is a build-time variable. There is no separate persistence credential: every request is attributed to the owner that owner resolution returns (by default an anonymous per-browser cookie), and runtime sessions and media are partitioned by that owner. The default identity isolates browsers but authenticates nobody, so a deployment serving real users should register owner auth methods backed by its own accounts. Earlier releases used `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN`; both are removed and ignored, and runtime sessions stored under the old browser-minted learner key are no longer reachable. If `PERSISTENCE_DEV_TOKEN` was your only access gate, put the deployment behind `ACCESS_CODE` or a gateway, register owner auth methods, or leave `NEXT_PUBLIC_PERSISTENCE` unset before upgrading.
+There is no separate persistence credential: every request is attributed to the owner that owner resolution returns (by default an anonymous per-browser cookie), and runtime sessions and media are partitioned by that owner. The default identity isolates browsers but authenticates nobody, so a deployment serving real users should register owner auth methods backed by its own accounts. Earlier releases used `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN`; both are removed and ignored, and runtime sessions stored under the old browser-minted learner key are no longer reachable. If `PERSISTENCE_DEV_TOKEN` was your only access gate, put the deployment behind `ACCESS_CODE` or a gateway, or register owner auth methods, before upgrading.
 
 PostgreSQL data is stored in the `openmaic-postgres` volume. `PERSISTENCE_POSTGRES_PASSWORD` sets the password only when the database directory is first initialized. Changing the environment variable later does not automatically change the existing database user's password.
 
-Leave `NEXT_PUBLIC_PERSISTENCE` unset to keep the original browser-side persistence behavior.
+Earlier releases could keep courses in the browser (IndexedDB). That mode is gone, and the `NEXT_PUBLIC_PERSISTENCE` build variable is ignored. Courses a browser stored that way stay in that browser, untouched, until the one-way browser-to-server importer that ships in the same release moves them to the server.
 
 ## Optional: MP4 video export
 

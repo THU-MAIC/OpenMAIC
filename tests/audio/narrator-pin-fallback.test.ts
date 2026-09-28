@@ -37,7 +37,7 @@ vi.mock('@/lib/store/settings', () => ({
   },
 }));
 
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: {
     audioFiles: {
       put: mocks.audioPut,
@@ -165,7 +165,7 @@ describe('generateAndStoreTTS — pinned narrator fallback (bound == global)', (
       );
 
     await expect(generateAndStoreTTS('request-pinned-ghost', 'Hello class')).resolves.toBe(
-      'request-pinned-ghost',
+      'ast_audio_allocated',
     );
 
     // The broken clone was attempted, then the deterministic enabled pick was
@@ -205,7 +205,7 @@ describe('generateAndStoreTTS — pinned narrator fallback (bound == global)', (
     );
 
     await expect(generateAndStoreTTS('request-pinned-disabled', 'Hello class')).resolves.toBe(
-      'request-pinned-disabled',
+      'ast_audio_allocated',
     );
 
     // The unusable pinned voice was never sent; narration used the enabled pick.

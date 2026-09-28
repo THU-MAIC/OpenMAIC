@@ -11,10 +11,6 @@ services:
         # env_file below does not feed build args. For a legacy-chat rollback:
         # NEXT_PUBLIC_PI_CHAT_ENABLED=false docker compose up -d --build openmaic
         - ALLOWED_FRAME_ANCESTORS=${ALLOWED_FRAME_ANCESTORS:-}
-        # The Compose deployment is server-backed: the browser uses the embedded
-        # /api/persistence endpoint against the postgres service below. Pass
-        # NEXT_PUBLIC_PERSISTENCE= (empty) to build a browser-storage-only image.
-        - NEXT_PUBLIC_PERSISTENCE=${NEXT_PUBLIC_PERSISTENCE-1}
         - NEXT_PUBLIC_MAIC_EDITOR_ENABLED=${NEXT_PUBLIC_MAIC_EDITOR_ENABLED:-}
         - NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED=${NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED:-}
         - NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED=${NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED:-}
@@ -64,7 +60,9 @@ services:
     restart: unless-stopped
 
   # PostgreSQL for the app-embedded persistence API. Started by default; the
-  # app waits for its health check. Its port is not published to the host.
+  # app waits for its health check. Its port is not published to the host here;
+  # `pnpm db:up` runs this service definition as a separate development
+  # database (its own project and volume, see docker-compose.db.yml).
   postgres:
     image: postgres:16
     environment:

@@ -7,21 +7,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  serverBacked: vi.fn(),
   settings: vi.fn(),
   mediaDelete: vi.fn(),
   mediaGet: vi.fn(),
-}));
-
-vi.mock('@/lib/persistence/media-persistence', () => ({
-  isServerBackedMediaPersistence: mocks.serverBacked,
 }));
 
 vi.mock('@/lib/store/settings', () => ({
   useSettingsStore: { getState: mocks.settings },
 }));
 
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
   db: {
     mediaFiles: {
@@ -47,7 +42,6 @@ const stageId = 'permission-stage';
 describe('shared generation permission', () => {
   beforeEach(() => {
     resetGenerationPermissionsForTests();
-    mocks.serverBacked.mockReset().mockReturnValue(true);
   });
 
   it('refuses a course nobody has recorded an answer for', () => {
@@ -67,12 +61,6 @@ describe('shared generation permission', () => {
   it.each(['not-owner', 'ownerless', 'unresolved'] as const)('refuses %s', (ownership) => {
     noteStageGenerationOwnership(stageId, ownership);
     expect(mayGenerateForStage(stageId)).toBe(false);
-  });
-
-  it('permits everything in browser-only mode', () => {
-    mocks.serverBacked.mockReturnValue(false);
-    noteStageGenerationOwnership(stageId, 'not-owner');
-    expect(mayGenerateForStage(stageId)).toBe(true);
   });
 });
 
@@ -104,7 +92,6 @@ describe('withdrawing the retry affordance', () => {
 describe('retryMediaTask honours the same permission', () => {
   beforeEach(() => {
     resetGenerationPermissionsForTests();
-    mocks.serverBacked.mockReset().mockReturnValue(true);
     mocks.mediaDelete.mockReset().mockResolvedValue(undefined);
     mocks.mediaGet.mockReset().mockResolvedValue(undefined);
     mocks.settings.mockReset().mockReturnValue({

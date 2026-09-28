@@ -25,16 +25,13 @@ vi.mock('@/lib/hooks/use-i18n', () => ({ useI18n: () => ({ t: (key: string) => k
 vi.mock('sonner', () => ({
   toast: { loading: () => 'import-toast', error: mocks.toastError, success: mocks.toastSuccess },
 }));
-vi.mock('@/lib/persistence/media-persistence', () => ({
-  isServerBackedMediaPersistence: () => true,
-}));
 vi.mock('@/lib/media/asset-pool', () => ({ putAsset: mocks.poolPut }));
 vi.mock('@/lib/document-store', () => ({
   canonicalizeLegacyScene: (scene: unknown) => scene,
   mutateDocument: (_id: string, work: (document: null, store: unknown) => unknown) =>
     work(null, { saveDocument: mocks.save, deleteDocument: mocks.remove }),
 }));
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
   db: {
     audioFiles: {

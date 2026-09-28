@@ -214,7 +214,6 @@ export async function POST(req: NextRequest) {
       enableWhiteboardTools &&
       nativeWhiteboardRequested &&
       validRequestStartStageId &&
-      process.env.NEXT_PUBLIC_PERSISTENCE === '1' &&
       process.env.DATABASE_URL
     ) {
       // The runtime learner key is the request owner, exactly as on

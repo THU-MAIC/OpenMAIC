@@ -1,0 +1,28 @@
+# Local development database: `pnpm db:up` / `pnpm db:down`.
+#
+# A separate development database. It runs the `postgres` service definition
+# of docker-compose.yml (same image and settings, through `extends`) under its
+# own Compose project, `openmaic-dev-db`, so it has its own container and its
+# own data volume (`openmaic-dev-db_openmaic-postgres`). Starting or stopping
+# it never touches the database of a `docker compose up` stack from the same
+# checkout, and that stack's data is not visible here. The project name is
+# fixed (and pinned with `-p` in package.json, so COMPOSE_PROJECT_NAME cannot
+# redirect it), which makes this one development database shared by every
+# checkout and worktree on the machine: `pnpm db:down` in one stops it for all.
+# For a separate one, run this file with your own `-p` and OPENMAIC_DB_PORT.
+#
+# It is published on the loopback interface only, so a `pnpm dev` server on
+# this machine can reach it. Set OPENMAIC_DB_PORT when 5432 is already taken on
+# this machine, and use the same port in DATABASE_URL (see .env.example).
+name: openmaic-dev-db
+
+services:
+  postgres:
+    extends:
+      file: docker-compose.yml
+      service: postgres
+    ports:
+      - '127.0.0.1:${OPENMAIC_DB_PORT:-5432}:5432'
+
+volumes:
+  openmaic-postgres:

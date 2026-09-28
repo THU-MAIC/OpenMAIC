@@ -1,7 +1,7 @@
 import Dexie, { type ObservabilitySet } from 'dexie';
 import { useStageStore } from '@/lib/store/stage';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
-import { db } from '@/lib/utils/database';
+import { db } from '@/lib/device-storage/database';
 import { observeAssetReplacements } from '@/lib/media/asset-replacement-events';
 import i18n from '@/lib/i18n/config';
 

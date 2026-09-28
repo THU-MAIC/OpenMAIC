@@ -34,8 +34,9 @@ let resolutionStarted = false;
  * before rendering any document consumer; a component effect is too late. A
  * second call always throws, even if document storage has not been used yet.
  * Once resolution has started, configuration stays sealed so a live app cannot
- * split documents across backends. Omitting the store retains the browser
- * IndexedDB backend.
+ * split documents across backends. The browser persistence bootstrap
+ * (`lib/persistence/bootstrap.ts`) is the production caller; without a
+ * configured store, document storage does not resolve.
  *
  * A store factory is called lazily by `getDocumentStore()` until it first
  * succeeds. It receives `validateAppScene` and `validateAppStage`; inject those

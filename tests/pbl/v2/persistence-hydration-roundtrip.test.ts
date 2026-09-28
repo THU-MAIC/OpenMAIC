@@ -6,6 +6,7 @@ import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 import { extractLearnerState, stripToDesignTemplate } from '@/lib/pbl/v2/runtime/learner-state';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
+import { inMemoryDocumentStore } from '@/tests/helpers/in-memory-document-store';
 
 const LEARNER_KEY = 'anon:persistence-roundtrip';
 
@@ -152,8 +153,7 @@ async function createHarness(label: string) {
   const documentStoreModule = await import('@/lib/document-store');
   const runtimeStoreModule = await import('@/lib/runtime/store');
   const documentStore = documentStoreModule.getDocumentStore({
-    indexedDB: documentIndexedDB,
-    dbName: `pbl-persistence-roundtrip-documents-${label}`,
+    store: inMemoryDocumentStore(`pbl-persistence-roundtrip-documents-${label}`, documentIndexedDB),
   });
   const runtimeStore = new BrowserRuntimeStore({
     indexedDB: runtimeIndexedDB,
@@ -161,16 +161,19 @@ async function createHarness(label: string) {
   });
 
   documentStoreModule.configureDocumentStorage({ store: documentStore });
-  runtimeStoreModule.configureRuntimeStorage({ store: runtimeStore });
+  // The learner key is the server-derived one, supplied through configuration
+  // exactly as the persistence bootstrap does.
+  runtimeStoreModule.configureRuntimeStorage({
+    store: runtimeStore,
+    learnerKey: () => LEARNER_KEY,
+  });
 
   return { documentStore, runtimeStore };
 }
 
 beforeEach(() => {
   vi.resetModules();
-  const localStorage = new MemoryStorage();
-  localStorage.setItem('maic:device:runtime.learnerKey', JSON.stringify(LEARNER_KEY));
-  vi.stubGlobal('localStorage', localStorage);
+  vi.stubGlobal('localStorage', new MemoryStorage());
   vi.stubGlobal('IDBKeyRange', IDBKeyRange);
 });
 

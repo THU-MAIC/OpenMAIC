@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { db, type VoiceProfileRecord } from '@/lib/utils/database';
+import { db, type VoiceProfileRecord } from '@/lib/device-storage/database';
 import type { TTSVoiceInfo } from '@/lib/audio/types';
 import {
   VOXCPM_AUTO_VOICE,

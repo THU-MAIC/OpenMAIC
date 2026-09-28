@@ -1,18 +1,14 @@
 // @vitest-environment jsdom
 
 /**
- * PG mode home listing — the owner-scoped course list.
+ * Home listing — the owner-scoped course list.
  *
- * With server persistence on (`NEXT_PUBLIC_PERSISTENCE=1`) the generic
- * `GET /api/persistence/documents` listing is refused server-side
+ * The generic `GET /api/persistence/documents` listing is refused server-side
  * (`403 FORBIDDEN_DOCUMENTS`) by the capability model: reads are by-id and
- * listings are owner-only. The home/workspace library must therefore list
- * through the owner-scoped workbench surface (`GET /api/stages`, the same
+ * listings are owner-only. The home/workspace library therefore lists through
+ * the owner-scoped workbench surface (`GET /api/stages`, the same
  * anonymous-owner cookie the workbench uses) instead of the generic listing —
  * and must surface no persistence warning when that listing succeeds.
- *
- * The storage seams (IndexedDB document store, Dexie) are mocked so the local
- * fallback path is inert; the real `listStages` PG-mode branch is what runs.
  */
 import { act, createElement, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -20,9 +16,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   listDocuments: vi.fn(),
-  listLegacyStages: vi.fn(),
-  readLegacyStage: vi.fn(),
-  folders: vi.fn(),
   toastError: vi.fn(),
 }));
 
@@ -48,26 +41,15 @@ vi.mock('@/lib/import/use-import-classroom', () => ({
     handleFileChange: vi.fn(),
   }),
 }));
-// The device-local storage seams: `stage-storage` must load, but the PG-mode
-// branch never consults the document store or the legacy listing.
+// `stage-storage` must load, but the listing never consults the document store.
 vi.mock('@/lib/document-store', () => ({
   getDocumentStore: () => ({ listDocuments: mocks.listDocuments }),
-  getLegacyDocumentStore: () => ({
-    listStages: mocks.listLegacyStages,
-    read: mocks.readLegacyStage,
-  }),
 }));
-vi.mock('@/lib/utils/database', () => ({
-  db: {
-    stageFolders: { toArray: () => Promise.resolve([]) },
-    folders: { toArray: mocks.folders },
-  },
-}));
+vi.mock('@/lib/device-storage/database', () => ({ db: {} }));
 vi.mock('@/lib/utils/chat-storage', () => ({
   ChatStorageLockUnavailableError: class extends Error {},
   saveChatSessions: vi.fn(),
   loadChatSessions: vi.fn(),
-  deleteChatSessions: vi.fn(),
 }));
 vi.mock('@/lib/playback/cursor', () => ({ clearCursor: vi.fn() }));
 vi.mock('@/lib/quiz/persistence', () => ({ clearAllForScene: vi.fn() }));
@@ -120,15 +102,12 @@ function ownerListingsFetch() {
   return fetchMock;
 }
 
-describe('PG-mode home listing', () => {
+describe('home listing', () => {
   beforeEach(() => {
     discovery = null;
-    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
     vi.stubGlobal('fetch', vi.fn());
     mocks.toastError.mockClear();
-    mocks.folders.mockResolvedValue([]);
     mocks.listDocuments.mockClear();
-    mocks.listLegacyStages.mockClear();
   });
 
   afterEach(async () => {
@@ -147,7 +126,7 @@ describe('PG-mode home listing', () => {
     const { listStages } = await import('@/lib/utils/stage-storage');
     const stages = await listStages();
 
-    // The list mirrors the local path's newest-first order.
+    // Newest first.
     expect(stages).toEqual([
       expect.objectContaining({ id: 'stage-2', name: '二次函数', sceneCount: 0 }),
       expect.objectContaining({ id: 'stage-1', name: '光的折射', sceneCount: 12 }),
@@ -157,9 +136,8 @@ describe('PG-mode home listing', () => {
     expect(String(url)).toBe('/api/stages');
     expect(init).toMatchObject({ credentials: 'include' });
     expect(String(url)).not.toContain('/api/persistence/documents');
-    // The local document seams are not consulted in PG mode.
+    // The generic document listing is never consulted.
     expect(mocks.listDocuments).not.toHaveBeenCalled();
-    expect(mocks.listLegacyStages).not.toHaveBeenCalled();
   });
 
   it('mounts the home library on the owner listing with no persistence warning', async () => {
@@ -195,20 +173,5 @@ describe('PG-mode home listing', () => {
     const { listStages } = await import('@/lib/utils/stage-storage');
     await expect(listStages()).rejects.toThrow(/403/);
     expect(mocks.listDocuments).not.toHaveBeenCalled();
-    expect(mocks.listLegacyStages).not.toHaveBeenCalled();
-  });
-
-  it('keeps the local IndexedDB listing when server persistence is off', async () => {
-    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '');
-    mocks.listDocuments.mockResolvedValue([
-      { id: 'local-1', name: 'Local course', sceneCount: 1, createdAt: 1, updatedAt: 2 },
-    ]);
-    mocks.listLegacyStages.mockResolvedValue([]);
-
-    const { listStages } = await import('@/lib/utils/stage-storage');
-    const stages = await listStages();
-
-    expect(stages).toEqual([expect.objectContaining({ id: 'local-1', name: 'Local course' })]);
-    expect(fetch).not.toHaveBeenCalled();
   });
 });

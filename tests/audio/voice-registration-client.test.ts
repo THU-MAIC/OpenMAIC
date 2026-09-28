@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // db is browser-only (Dexie); stub it so the client module loads in node.
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: {
     autoVoiceCache: {
       get: vi.fn(async () => undefined),

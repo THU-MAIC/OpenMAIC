@@ -3,11 +3,11 @@
 /**
  * Convert a course's pre-allocation narration to stored assets, for free.
  *
- * A course narrated before this application stored media server-side holds a
- * derived key on every speech action -- `tts_s<order>_<action>` -- and the
- * bytes for it only in this browser's local audio table. The document outlives
- * the browser now, so those references are a promise the course cannot keep:
- * the author's next device, and every visitor, reads an id nothing can resolve.
+ * A speech action whose narration the store refused for want of room keeps a
+ * derived key -- `tts_s<order>_<action>` -- and the bytes for it only in this
+ * browser's local audio table. The document outlives the browser, so that
+ * reference is a promise the course cannot keep: the author's next device, and
+ * every visitor, reads an id nothing can resolve.
  *
  * The bytes are already paid for, so the author's own browser converts them
  * rather than re-synthesizing: allocate the clip in the pool, write the
@@ -29,8 +29,6 @@
  *   matches the action being converted.
  * - It does not run for a visitor. Ownership is the same gate every other
  *   spending or writing path uses, and it fails closed.
- * - It does not run in browser-only mode, where a derived key is a complete
- *   address and the document and the audio share one lifetime.
  * - It does not synthesize anything. A speech action whose bytes are not here,
  *   or whose only candidate row cannot be shown to belong to it, is left
  *   exactly as it is, still carrying its derived id. That narration is lost,
@@ -42,8 +40,7 @@ import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { createLogger } from '@/lib/logger';
 import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
-import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
-import { db, type AudioFileRecord } from '@/lib/utils/database';
+import { db, type AudioFileRecord } from '@/lib/device-storage/database';
 
 import { persistNarrationReference } from './persist-narration-reference';
 
@@ -318,7 +315,6 @@ async function adoptCachedNarrationRun(
   abortSignal?: AbortSignal,
 ): Promise<NarrationAdoptionOutcome> {
   const idle: NarrationAdoptionOutcome = { adopted: 0, unbacked: 0 };
-  if (!isServerBackedMediaPersistence()) return idle;
   // Fail-closed: 'owner' is the only answer that may write.
   if (!mayGenerateForStage(stageId)) return idle;
 

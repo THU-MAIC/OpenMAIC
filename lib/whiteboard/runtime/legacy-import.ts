@@ -1,11 +1,9 @@
 import type { MaicDocument } from '@openmaic/storage';
 import type { Whiteboard } from '@openmaic/dsl';
 
-import { isDocumentStorageConfigured } from '@/lib/document-store/config';
 import { withDocumentLock } from '@/lib/document-store/migration';
 import type { AppStage } from '@/lib/document-store/persistence-types';
 import { getDocumentStore } from '@/lib/document-store/store';
-import { isRuntimeStorageConfigured } from '@/lib/runtime/config';
 import type { AppScene } from '@/lib/types/stage';
 
 import { type WhiteboardRuntimeService, getWhiteboardRuntimeService } from './store';
@@ -39,13 +37,17 @@ export interface LegacyWhiteboardImporterDeps {
   withDocumentLock: <T>(stageId: string, work: () => Promise<T>) => Promise<T>;
 }
 
-/** @internal Sealed configuration-derived provenance predicate. */
+/**
+ * @internal Sealed provenance predicate.
+ *
+ * Auto-import was eligible only where the document and the whiteboard runtime
+ * shared one browser-local lifetime. Every document and runtime session now
+ * lives on the server, so no deployment has that provenance and the predicate
+ * is constant. Legacy browser data reaches the server through the one-way
+ * importer instead.
+ */
 export function isLegacyWhiteboardAutoImportEligible(): boolean {
-  return (
-    process.env.NEXT_PUBLIC_PERSISTENCE !== '1' &&
-    !isDocumentStorageConfigured() &&
-    !isRuntimeStorageConfigured()
-  );
+  return false;
 }
 
 function createLegacyWhiteboardImporter(deps: LegacyWhiteboardImporterDeps) {

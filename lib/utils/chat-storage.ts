@@ -1,9 +1,10 @@
 /**
  * Chat persistence on the learner RuntimeStore.
  *
- * The legacy Dexie table remains as a one-time migration source. Runtime
- * records are append-only, while the latest session-state record describes
- * the current message window and mutable chat metadata.
+ * Runtime records are append-only, while the latest session-state record
+ * describes the current message window and mutable chat metadata. Legacy chat
+ * rows are migrated only from an injected `legacyStore` (the one-way importer
+ * hands in a read-only one); the regular load and save paths have none.
  */
 
 import type { RuntimeSession } from '@openmaic/dsl';
@@ -15,7 +16,6 @@ import { nanoid } from 'nanoid';
 import { getLearnerKey } from '@/lib/runtime/learner-key';
 import { getRuntimeStore } from '@/lib/runtime/store';
 import type { ChatSession } from '@/lib/types/chat';
-import { db } from './database';
 import {
   buildChatRecordInit,
   chatRuntimeCandidates,
@@ -35,11 +35,7 @@ import {
   type LegacyChatConversion,
   type SkippedLegacyChatRow,
 } from './chat-storage-core';
-import {
-  chatStoragePartitionLockName,
-  withChatStorageExclusiveLock,
-  withChatStorageSharedLock,
-} from './chat-storage-lock';
+import { chatStoragePartitionLockName, withChatStorageSharedLock } from './chat-storage-lock';
 
 const RESTORE_MARKER_PREFIX = 'chat-restore-marker:';
 const DELETION_MARKER_PREFIX = 'chat-deletion:';
@@ -69,10 +65,6 @@ export interface ChatStorageOptions {
 
 export type ChatSyncSleep = (milliseconds: number) => Promise<void>;
 
-interface ChatStorageRestoreOptions extends ChatStorageOptions {
-  rollbackLegacyRows?: () => Promise<void>;
-}
-
 export interface ChatStorageReadOptions extends ChatStorageOptions {
   fallbackToLegacyOnError?: boolean;
   observe?: boolean;
@@ -87,25 +79,14 @@ export interface ChatStorageSnapshot {
 
 export * from './chat-storage-core';
 
-const dexieLegacyStore: LegacyChatStore = {
-  async load(stageId) {
-    const staged = await db.chatRestoreStaging.where('stageId').equals(stageId).sortBy('createdAt');
-    const records =
-      staged.length > 0
-        ? staged
-        : await db.chatSessions.where('stageId').equals(stageId).sortBy('createdAt');
-    return records;
-  },
-  async clear(stageId) {
-    await db.transaction('rw', [db.chatSessions, db.chatRestoreStaging], async () => {
-      await db.chatSessions.where('stageId').equals(stageId).delete();
-      await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
-    });
-  },
+/** The regular paths' legacy source: none. */
+const noLegacyStore: LegacyChatStore = {
+  load: async () => [],
+  clear: async () => undefined,
 };
 
 // Stage saves are debounced but can overlap. Keep each RuntimeStore partition
-// sequential locally. The shared legacy table requires Web Locks across realms;
+// sequential locally. The regular paths require Web Locks across realms;
 // injected legacy stores retain the isolated generation fallback used by
 // concurrency tests and non-browser adapters.
 const storeQueues = new WeakMap<RuntimeStore, Map<string, Promise<void>>>();
@@ -277,13 +258,12 @@ async function context(options: ChatStorageOptions): Promise<{
   requiresCrossRealmLock: boolean;
   sleep: ChatSyncSleep;
 }> {
-  const legacyStore = options.legacyStore ?? dexieLegacyStore;
   return {
     store: options.store ?? getRuntimeStore(),
     learnerKey: options.learnerKey ?? (await getLearnerKey(options.kv)),
-    legacyStore,
+    legacyStore: options.legacyStore ?? noLegacyStore,
     sleep: options.sleep ?? defaultChatSyncSleep,
-    requiresCrossRealmLock: legacyStore === dexieLegacyStore,
+    requiresCrossRealmLock: options.legacyStore === undefined,
   };
 }
 
@@ -1322,134 +1302,4 @@ async function clearRuntimeChatSessionsUnlocked(
   await Promise.all(views.map((view) => store.deleteSession(view.runtimeSession.id)));
   rememberObservedIds(store, queueKey, []);
   rememberObservedSessions(store, queueKey, []);
-}
-
-/** Stage legacy backup rows and clear their runtime partitions under the same locks. */
-export async function restoreChatSessionsFromBackup(
-  stageIds: string[],
-  restoreLegacyRows: () => Promise<void>,
-  options: ChatStorageRestoreOptions = {},
-): Promise<void> {
-  const resolved = await context(options);
-  const orderedStageIds = [...new Set(stageIds)].sort();
-  const queueKeys = orderedStageIds.map((stageId) => `${stageId}\0${resolved.learnerKey}`);
-  // Snapshot only work that predates this restore. A later save may be queued
-  // behind an exclusive maintenance request; awaiting it while holding the
-  // shared global lock would create a cycle (restore -> save -> maintenance -> restore).
-  const existingQueues = storeQueues.get(resolved.store);
-  const precedingWrites = queueKeys
-    .map((queueKey) => existingQueues?.get(queueKey))
-    .filter((pending): pending is Promise<void> => pending !== undefined);
-
-  async function withStageLock(index: number, isolatedWrites = false): Promise<void> {
-    if (index < orderedStageIds.length) {
-      const stageId = orderedStageIds[index]!;
-      const queueKey = queueKeys[index]!;
-      await withPartitionLocks(stageId, queueKey, resolved.requiresCrossRealmLock, (isolated) =>
-        withStageLock(index + 1, isolatedWrites || isolated),
-      );
-      return;
-    }
-
-    const existingByStage = new Map<string, ChatRuntimeView[]>();
-    for (const stageId of orderedStageIds) {
-      existingByStage.set(
-        stageId,
-        await runtimeViews(resolved.store, stageId, resolved.learnerKey),
-      );
-    }
-    await restoreLegacyRows();
-    const restoredByStage = new Map<string, ChatSession[]>();
-    const invalidRestoreRows: string[] = [];
-    for (const stageId of orderedStageIds) {
-      const conversion = normalizeLegacyConversion(await resolved.legacyStore.load(stageId));
-      restoredByStage.set(stageId, conversion.sessions);
-      if (conversion.skippedRows.length > 0) {
-        invalidRestoreRows.push(
-          `${JSON.stringify(stageId)}: ${legacyRowLabels(conversion.skippedRows)}`,
-        );
-      }
-    }
-    if (invalidRestoreRows.length > 0) {
-      await options.rollbackLegacyRows?.();
-      throw new Error(
-        `Cannot restore malformed legacy chat rows (${invalidRestoreRows.join('; ')})`,
-      );
-    }
-    const restoreMarkers: RuntimeSession[] = [];
-    try {
-      for (const stageId of orderedStageIds) {
-        restoreMarkers.push(
-          await createRestoreMarker(
-            resolved.store,
-            stageId,
-            resolved.learnerKey,
-            (existingByStage.get(stageId) ?? []).map((view) => view.runtimeSession.id),
-          ),
-        );
-      }
-    } catch (error) {
-      await Promise.allSettled(
-        restoreMarkers.map((marker) => resolved.store.deleteSession(marker.id)),
-      );
-      await options.rollbackLegacyRows?.();
-      throw error;
-    }
-    for (const stageId of orderedStageIds) {
-      await Promise.all(
-        (existingByStage.get(stageId) ?? []).map((view) =>
-          resolved.store.deleteSession(view.runtimeSession.id),
-        ),
-      );
-    }
-    for (const stageId of orderedStageIds) {
-      const marker = restoreMarkers.find((candidate) => candidate.stageId === stageId)!;
-      await finalizeRestoreMarker(resolved.store, marker);
-      const beforeMigration = await runtimeViews(resolved.store, stageId, resolved.learnerKey);
-      const restored = restoredByStage.get(stageId)!;
-      await syncSessions(
-        resolved.store,
-        stageId,
-        resolved.learnerKey,
-        restored,
-        false,
-        isolatedWrites,
-        undefined,
-        undefined,
-        beforeMigration,
-        resolved.sleep,
-      );
-      await resolved.legacyStore.clear(stageId);
-    }
-  }
-
-  const restoreAfterPrecedingWrites = async (): Promise<void> => {
-    await Promise.all(precedingWrites);
-    await withStageLock(0);
-  };
-
-  if (options.globalLockHeld) {
-    await restoreAfterPrecedingWrites();
-    return;
-  }
-  if (typeof navigator !== 'undefined' && navigator.locks) {
-    // The queue snapshot and shared-lock request are synchronous with respect
-    // to other JavaScript tasks. New saves either join this shared epoch and
-    // coordinate on partition locks, or wait behind a later exclusive request.
-    await withChatStorageSharedLock(restoreAfterPrecedingWrites);
-    return;
-  }
-  if (resolved.requiresCrossRealmLock) {
-    throw new ChatStorageLockUnavailableError(
-      'Chat storage requires the Web Locks API in this browser',
-    );
-  }
-  // Without Web Locks, serialize the whole restore against same-realm writers.
-  await Promise.all(precedingWrites);
-  await withChatStorageExclusiveLock(() => withStageLock(0));
-}
-
-/** Clear the legacy table during stage deletion; RuntimeStore cascades separately. */
-export async function deleteChatSessions(stageId: string): Promise<void> {
-  await dexieLegacyStore.clear(stageId);
 }

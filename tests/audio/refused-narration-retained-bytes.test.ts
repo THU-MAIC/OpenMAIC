@@ -38,7 +38,6 @@ const mocks = vi.hoisted(() => ({
   resolveAgentVoiceOptions: vi.fn(),
   listAgents: vi.fn(),
   toastWarning: vi.fn(),
-  serverBacked: vi.fn(),
 }));
 
 vi.mock('@/lib/utils/model-config', () => ({
@@ -53,7 +52,7 @@ vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageData: mocks.saveStageData,
   saveStageDataIncremental: mocks.saveStageDataIncremental,
 }));
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
   db: {
     audioFiles: { get: mocks.audioGet, put: mocks.audioPut, delete: mocks.audioDelete },
@@ -73,9 +72,6 @@ vi.mock('@/lib/media/asset-pool-config', async (importOriginal) => {
       ({ put: mocks.poolPut }) as unknown as import('@/lib/media/asset-pool-config').AssetPoolStore,
   };
 });
-vi.mock('@/lib/persistence/media-persistence', () => ({
-  isServerBackedMediaPersistence: mocks.serverBacked,
-}));
 vi.mock('@/lib/audio/provider-enablement', () => ({
   isTTSProviderEnabled: mocks.isTTSProviderEnabled,
 }));
@@ -191,7 +187,6 @@ describe('narration refused for want of room', () => {
     mocks.mediaPut.mockReset().mockResolvedValue(undefined);
     mocks.mediaGet.mockReset().mockResolvedValue(undefined);
     mocks.mediaDelete.mockReset().mockResolvedValue(undefined);
-    mocks.serverBacked.mockReset().mockReturnValue(true);
     mocks.getCurrentModelConfig.mockReturnValue({});
     mocks.settingsState.mockReturnValue({
       imageProviderId: '',
@@ -350,20 +345,5 @@ describe('narration refused for want of room', () => {
 
     await expect(generateAndStoreTTS('tts_s2_action_1', 'Hello class')).resolves.toBeNull();
     expect(mocks.audioPut).not.toHaveBeenCalled();
-  });
-
-  // Browser-only mode has no pool to refuse anything: document and audio share
-  // one lifetime, and the derived key is a complete address.
-  it('leaves browser-only narration exactly as it was', async () => {
-    const rows = modelAudioTable();
-    mocks.serverBacked.mockReturnValue(false);
-    mockFetch.mockResolvedValueOnce(ttsResponse());
-
-    const scene = sceneWithOneLine();
-    await expect(generateTTSForScene(scene)).resolves.toEqual({ success: true, failedCount: 0 });
-
-    expect(mocks.poolPut).not.toHaveBeenCalled();
-    expect(audioIdOf(scene)).toBe(derivedRef);
-    expect(rows.get(derivedRef)).toBeDefined();
   });
 });

@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   poolRelease: vi.fn(),
 }));
 
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
   db: { mediaFiles: { get: mocks.mediaGet } },
 }));

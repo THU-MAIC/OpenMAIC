@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import type { FolderRecord } from '@/lib/utils/database';
+import type { FolderRecord } from '@/lib/types/folder';
 
 /**
  * Move-course-to-folder menu. Rendered as the 📂 button on a course tile

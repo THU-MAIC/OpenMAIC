@@ -45,6 +45,14 @@ OLLAMA_BASE_URL=http://localhost:11434/v1
 
 ## 執行
 
+課程儲存在 PostgreSQL 中，未設定 `DATABASE_URL` 時服務會拒絕啟動。先啟動本機開發資料庫（Docker 中一個獨立的 PostgreSQL，位於 `127.0.0.1:5432`，本機所有檢出共用；可用 `OPENMAIC_DB_PORT` 換連接埠），並取消 `.env.local` 中本機 `DATABASE_URL` 那一行的註解：
+
+```bash
+pnpm db:up
+# .env.local
+# DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
+```
+
 啟動開發伺服器：
 
 ```bash
@@ -57,7 +65,7 @@ pnpm dev
 
 ```bash
 pnpm build
-pnpm start
+DATABASE_URL=postgres://... pnpm start
 ```
 
 也可以部署到 Vercel、Docker 或你自己的伺服器上——請見[部署指南](./deployment.mdx)。

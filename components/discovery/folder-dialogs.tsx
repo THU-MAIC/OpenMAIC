@@ -17,7 +17,7 @@ import {
   FOLDER_COUNT_LIMIT,
   validateFolderName,
 } from '@/lib/utils/folder-name-validation';
-import type { FolderRecord } from '@/lib/utils/database';
+import type { FolderRecord } from '@/lib/types/folder';
 import { FolderNameError } from '@/lib/utils/stage-storage';
 
 // ============ F1: New folder dialog ============
