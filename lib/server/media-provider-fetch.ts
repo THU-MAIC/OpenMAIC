@@ -15,7 +15,11 @@
  * import this server transport themselves; every server caller injects it
  * through the config's `fetchImpl`.
  */
-import { providerFetch, type ProviderFetchPolicy } from '@/lib/server/provider-fetch';
+import {
+  providerFetch,
+  resolveAllowLocalNetworks,
+  type ProviderFetchPolicy,
+} from '@/lib/server/provider-fetch';
 import type { MediaProviderFetch } from '@/lib/media/types';
 
 const MEDIA_PROVIDER_POLICY: ProviderFetchPolicy = {
@@ -36,10 +40,44 @@ export const mediaProviderFetch: MediaProviderFetch = (input, init) =>
 export const managedMediaProviderFetch: MediaProviderFetch = (input, init) =>
   providerFetch(input, init, MANAGED_MEDIA_PROVIDER_POLICY);
 
+/**
+ * Transport for downloading a finished clip from a provider-returned file URI
+ * (`VideoGenerationConfig.downloadFetchImpl`). Unlike the transports above it
+ * follows a redirect — a file URI may answer with one to storage — but every
+ * hop is re-validated under the operator address policy, pinned to the vetted
+ * DNS answers, and stripped of credential headers once it leaves the origin.
+ */
+export const mediaDownloadFetch: MediaProviderFetch = (input, init) =>
+  providerFetch(input, init, { allowLocalNetworks: undefined });
+
+/**
+ * {@link mediaDownloadFetch} for a server-managed provider: its origin may sit
+ * on a local network, but the hops it redirects to stay on the operator policy.
+ */
+export const managedMediaDownloadFetch: MediaProviderFetch = (input, init) =>
+  providerFetch(input, init, {
+    allowLocalNetworks: true,
+    redirectAllowLocalNetworks: resolveAllowLocalNetworks(),
+  });
+
 /** `config` with the pinned media transport for its provider installed. */
 export function withMediaProviderFetch<T extends object>(
   config: T,
   managed: boolean,
 ): T & { fetchImpl: MediaProviderFetch } {
   return { ...config, fetchImpl: managed ? managedMediaProviderFetch : mediaProviderFetch };
+}
+
+/**
+ * {@link withMediaProviderFetch} for video generation, also installing the
+ * redirect-following transport for the finished clip's download.
+ */
+export function withVideoProviderFetch<T extends object>(
+  config: T,
+  managed: boolean,
+): T & { fetchImpl: MediaProviderFetch; downloadFetchImpl: MediaProviderFetch } {
+  return {
+    ...withMediaProviderFetch(config, managed),
+    downloadFetchImpl: managed ? managedMediaDownloadFetch : mediaDownloadFetch,
+  };
 }

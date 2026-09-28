@@ -11,7 +11,10 @@ import { createLogger } from '@/lib/logger';
 import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
 import { generateImage } from '@/lib/media/image-providers';
 import { generateVideo, normalizeVideoOptions } from '@/lib/media/video-providers';
-import { managedMediaProviderFetch } from '@/lib/server/media-provider-fetch';
+import {
+  managedMediaDownloadFetch,
+  managedMediaProviderFetch,
+} from '@/lib/server/media-provider-fetch';
 import { generateTTS, TTSRateLimitError } from '@/lib/audio/tts-providers';
 import { DEFAULT_TTS_VOICES, DEFAULT_TTS_MODELS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
@@ -266,6 +269,7 @@ export async function generateMediaForClassroom(
             model,
             // Server-configured provider: its base URL is operator configuration.
             fetchImpl: managedMediaProviderFetch,
+            downloadFetchImpl: managedMediaDownloadFetch,
           },
           normalized,
         );

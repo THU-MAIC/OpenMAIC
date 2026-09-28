@@ -4,7 +4,10 @@ import { nanoid } from 'nanoid';
 import { Type, type Static } from 'typebox';
 
 import { generateVideo, normalizeVideoOptions, VIDEO_PROVIDERS } from '@/lib/media/video-providers';
-import { managedMediaProviderFetch } from '@/lib/server/media-provider-fetch';
+import {
+  managedMediaDownloadFetch,
+  managedMediaProviderFetch,
+} from '@/lib/server/media-provider-fetch';
 import type {
   VideoGenerationConfig,
   VideoGenerationOptions,
@@ -296,6 +299,7 @@ function defaultResolveVideoProviderConfig(providerId: VideoProviderId): VideoGe
     model: resolveVideoModel(providerId),
     // Server-configured provider: its base URL is operator configuration.
     fetchImpl: managedMediaProviderFetch,
+    downloadFetchImpl: managedMediaDownloadFetch,
   };
 }
 

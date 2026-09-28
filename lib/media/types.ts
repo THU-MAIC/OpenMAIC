@@ -273,6 +273,14 @@ export interface VideoGenerationConfig {
   model?: string;
   /** Transport for provider requests (see {@link MediaProviderFetch}). */
   fetchImpl?: MediaProviderFetch;
+  /**
+   * Transport for downloading a finished clip from a provider-returned file
+   * URI that may redirect to storage. It follows redirects, re-validating
+   * every hop and dropping credential headers on a cross-origin hop
+   * (`lib/server/media-provider-fetch.ts`). Left unset, the download uses
+   * `fetchImpl` and refuses redirects.
+   */
+  downloadFetchImpl?: MediaProviderFetch;
 }
 
 /**

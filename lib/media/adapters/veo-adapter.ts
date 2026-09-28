@@ -8,7 +8,7 @@
  * - Submit:   POST /v1beta/models/{model}:predictLongRunning
  * - Poll:     GET  /v1beta/{operationName}
  *   Done operations carry response.generateVideoResponse.generatedSamples[].video.uri
- * - Download: GET  {uri}  (same API key)
+ * - Download: GET  {uri}  (same API key; may answer with a redirect to storage)
  *
  * (`fetchPredictOperation` and inline `response.videos[].bytesBase64Encoded`
  * are the Vertex AI shapes; inline bytes are still accepted when present.)
@@ -95,6 +95,12 @@ interface VeoOperation {
  * Download a generated clip and inline it as a data URL. The request always
  * goes to the configured base URL's origin, so the API key is never sent to a
  * host other than the one the SSRF guard already accepted.
+ *
+ * The file URI may answer with a redirect to storage (Google's own example
+ * downloads it with `curl -L`). A server caller injects `downloadFetchImpl`,
+ * which follows it with every hop re-validated and the API key dropped on a
+ * cross-origin hop; without it the download refuses redirects like every other
+ * adapter call.
  */
 async function downloadVideo(
   config: VideoGenerationConfig,
@@ -106,13 +112,15 @@ async function downloadVideo(
     source.origin === new URL(baseUrl).origin
       ? source.href
       : `${baseUrl}${source.pathname}${source.search}`;
-  const response = await mediaFetchFor(config)(url, {
-    method: 'GET',
-    redirect: 'manual',
-    headers: { 'x-goog-api-key': config.apiKey },
-  });
+  const headers = { 'x-goog-api-key': config.apiKey };
 
-  assertNotRedirected(response, 'Veo');
+  let response: Response;
+  if (config.downloadFetchImpl) {
+    response = await config.downloadFetchImpl(url, { method: 'GET', headers });
+  } else {
+    response = await mediaFetchFor(config)(url, { method: 'GET', redirect: 'manual', headers });
+    assertNotRedirected(response, 'Veo');
+  }
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
