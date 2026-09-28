@@ -39,7 +39,49 @@ export async function authenticateRequestOwner(
   const responseHeaders = new Headers();
   for (const value of outcome.setCookies ?? []) responseHeaders.append('Set-Cookie', value);
   const principal = await autoClaim(req, outcome.principal, responseHeaders);
+  const fenced = await legacyImportFence(req, principal.ownerId, responseHeaders);
+  if (fenced) return { ok: false, response: fenced };
   return { ok: true, principal, responseHeaders };
+}
+
+/**
+ * The server side of the one-way import of pre-server browser data
+ * (`lib/legacy-browser-import/`): a request that carries a browser id in
+ * `X-OpenMAIC-Legacy-Import` is the importer's, and is refused with
+ * `409 LEGACY_IMPORT_NOT_BOUND` unless the owner it resolves to holds that
+ * browser's binding (`lib/persistence/legacy-import-bindings.ts`). Checked
+ * here, in the one resolution every owner-scoped route goes through, so no
+ * route the importer writes to can skip it; a request without the header is
+ * not affected. A malformed id answers 400.
+ */
+async function legacyImportFence(
+  req: OwnerAuthRequest,
+  ownerId: string,
+  responseHeaders: Headers,
+): Promise<Response | undefined> {
+  const browserId = req.headers.get('x-openmaic-legacy-import');
+  if (browserId === null) return undefined;
+  const refuse = (status: number, code: string, message: string) =>
+    Response.json({ error: { code, message } }, { status, headers: responseHeaders });
+  const { BROWSER_ID_PATTERN, LEGACY_IMPORT_NOT_BOUND, legacyImportBindingOwner } =
+    await import('@/lib/persistence/legacy-import-bindings');
+  if (!BROWSER_ID_PATTERN.test(browserId)) {
+    return refuse(400, 'INVALID_REQUEST', 'the legacy import browser id is malformed');
+  }
+  const connectionString = process.env.DATABASE_URL?.trim();
+  if (!connectionString) {
+    return refuse(409, LEGACY_IMPORT_NOT_BOUND, 'this browser is not bound to this owner');
+  }
+  const { getServerPersistenceProvider } = await import('@/lib/persistence/server-provider');
+  const { pool } = await getServerPersistenceProvider(connectionString);
+  const holder = await legacyImportBindingOwner(
+    pool as unknown as Parameters<typeof legacyImportBindingOwner>[0],
+    browserId,
+  );
+  if (holder !== ownerId) {
+    return refuse(409, LEGACY_IMPORT_NOT_BOUND, 'this browser is not bound to this owner');
+  }
+  return undefined;
 }
 
 /** The routes that perform a claim themselves: `POST /api/identity/claim` and the runtime learner merge. */
