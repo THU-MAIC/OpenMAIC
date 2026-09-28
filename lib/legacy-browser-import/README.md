@@ -8,20 +8,21 @@ banner, dialog or opt-in, and a course simply appears in the library once it is 
 the server. Problems are logged with `console.warn` under the prefix
 `[legacy-browser-import]`.
 
-It runs **once per browser**, and moves to another owner only when that owner
-claimed the original one. The data belongs to whoever used this browser before
-the upgrade, so the first owner the server confirms (the run's first
-authenticated request of its own, the library listing, succeeded) claims it; a
-run that dies before that binds nobody. A different owner continues the
-unfinished items only when the server confirms that it absorbed the claiming
-owner through a claim: `GET /api/identity/merged-from?salt=&digest=` answers,
-for the requesting owner's own `owner_merges` rows only, whether one of them
-hashes to the recorded digest. Nothing the browser observes (a refusal, a
-library listing, an empty ledger) moves the data; a 403 `OWNER_RETIRED` only
-stops the run. Any other owner gets nothing imported, and that answer is reused
-for ten minutes before the server is asked again (a time further ahead than that,
-written by a clock that ran ahead, counts as passed). Courses already imported are
-never imported again.
+It runs **once per browser; the server binds the browser to the first owner; a
+claim carries the binding to the account.** The ledger holds a random 128-bit
+browser id and no owner information. A run first asks
+`POST /api/identity/legacy-import-binding` (`{ browserId }`): one atomic insert
+into `legacy_import_bindings` binds the id to the requesting owner unless another
+owner holds it, and the answer says only whether the requesting owner holds it
+now. A claim participant re-keys the claimed owner's bindings to the account in
+the claim transaction. Every other request the importer sends carries the id in
+`X-OpenMAIC-Legacy-Import`, and owner resolution
+(`lib/server/identity/with-owner.ts`) refuses it with `409
+LEGACY_IMPORT_NOT_BOUND` unless the owner the request resolves to holds the
+binding. So the data can reach no other owner, whatever the page believes the
+owner is: a cookie switch in another tab, a stale page, a tab that lost the race.
+The importer uses its own fenced clients (`server.ts`), never the app's
+persistence seams, and asks for the runtime learner key during each run.
 
 It is **temporary** and will be deleted a few releases after it ships (see
 [Removal](#removal)).
@@ -66,12 +67,12 @@ Settings → Clear Local Cache still leaves the legacy databases alone.
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The owner already has the course id on the server                    | Server copy is authoritative and is not overwritten. Only media bytes that exist solely in this browser are uploaded, device-only rows copied, and an unfiled course filed in its old folder. |
 | The id is free                                                       | Created under its own id, with chat, runtime, playback, roster, quiz state, folder membership and media.                                                   |
-| Another owner holds the id (ids are global)                          | Created under a fresh id, `<id>-i<16 hex of SHA-256(salt, id)>` with a random per-browser salt from the ledger; scene stage ids, runtime session and record ids (including chat restore markers), playback and editor positions and membership follow it. |
+| Another owner holds the id (ids are global)                          | Created under a fresh id, `<id>-i<16 hex of SHA-256(browser id, id)>`; scene stage ids, runtime session and record ids (only their course segment, including chat restore markers), playback and editor positions and membership follow it. |
 | The owner deleted the course on the server (a write answers 404)     | Skipped; the deletion stands.                                                                                                                             |
 | The legacy record fails validation or cannot be migrated or parsed    | Skipped with the reason (a document-store copy that is unusable falls back to the original tables first); the other courses continue.                     |
-| Reading the old browser storage fails (an aborted transaction, a closed database) | Not a verdict on the record: the course (or, for the quiz-scene and speech indexes, the run) stays pending and a later load reads it again; never skipped, and never replaced by an older copy. |
+| Reading the old browser storage fails (an aborted transaction, a closed database) | Not a verdict on the record: the course stays pending and a later load reads it again. The quiz-scene and speech indexes leave such a course out as unindexed, which holds up only the quiz state or narration it could own; every other course imports. The failures are counted per course: after 5 failing runs spanning at least 24 hours, a document-store copy that still cannot be read falls back to the older table copy when there is one (noted in the ledger), and the course is skipped with the reason when there is not. |
 | Another tab of this browser is placing the same course (no Web Locks) | The library is listed again right before a course is placed; a course that appeared meanwhile is left to that tab.                                        |
-| Two tabs of different owners start together (no Web Locks)          | Every ledger write keeps the owner stored first; the run re-reads the stored owner after binding, before folders, before each course and before each course document, and the tab whose owner lost stops before writing anything. |
+| Two tabs of different owners start together (no Web Locks)          | The server's insert decides: one owner holds the browser, the other is told no and writes nothing (and any write it tried would be refused by the fence). |
 
 ## Failures
 
@@ -81,7 +82,8 @@ Settings → Clear Local Cache still leaves the legacy databases alone.
 | Network error, 5xx, 408/429, 409                         | The item stays pending; a later load retries it. Backoff between runs: 30 s, doubling, capped at 6 h.                                  |
 | 503 `OWNER_BUSY`                                         | The run pauses; the next run is allowed after `Retry-After` (2 s when not visible to the client).                                      |
 | 401 (`INVALID_CREDENTIAL`, the access-code gate)         | The run pauses; items stay pending; a later load retries with backoff. This holds for a failure from any call of a course.            |
-| 403 `OWNER_RETIRED`                                      | The run stops and items stay pending; the account continues them once the server confirms the claim.                                 |
+| 403 `OWNER_RETIRED`                                      | The run stops and items stay pending; the claim carried the binding, so the account continues them.                                  |
+| 409 `LEGACY_IMPORT_NOT_BOUND`                            | The owner this request resolved to does not hold the browser (the cookie changed): the run stops, items stay pending, and a later load asks for the binding again. |
 | 403 `FORBIDDEN_LEARNER` (the owner changed mid-run)      | The run stops; items stay pending for the next run.                                                                                   |
 | 400 / 422 validation on an item                          | That item is recorded as failed with the reason; the rest continue.                                                                  |
 | An upload refused for good (413, 400, 403)               | The element gets the app's ordinary failed-media record in the device cache (the one the generation pass writes) instead of a dangling reference: with Retry (regenerate) when the legacy row has a generation request, without it (`ASSET_REFUSED`) for the user's own media. The legacy bytes stay. |
@@ -92,24 +94,18 @@ Settings → Clear Local Cache still leaves the legacy databases alone.
 
 ## Ledger
 
-One ledger per browser in localStorage, `maic:legacy-import:v2` (`ledger.ts`). It
-never holds an owner id: the claiming owner is SHA-256 of the per-browser salt
-and the owner id (an anonymous owner id is the anonymous cookie's value, a bearer
-credential, and its 122 random bits cannot be guessed back from the digest). The
-salt defeats precomputed and cross-browser tables but not a targeted guess against
-one browser's ledger (the salt sits next to the digest), so an owner id from a
-small space, such as an email, can still be confirmed by someone who can read that
-browser's storage. The server computes the same value from the salt the browser
-sends. The same salt derives fresh ids. Every step is recorded when it lands, so
-a crash or reload resumes at the first unfinished step; writes merge with the
-stored copy, so tabs without Web Locks do not erase each other's progress. Clear
-Local Cache keeps the ledger (and the old learner key), so it neither loses
-import state nor brings back a course the user deleted on the server after it
-was imported. Runs are serialized across tabs with the Web Lock
-`openmaic:legacy-browser-import`. If the ledger itself is deleted by hand, a
-rerun still creates no second copy of a course under its own id, but a course
-imported under a fresh id would be imported again (the salt is gone) and a
-half-copied runtime session is not completed.
+One ledger per browser in localStorage, `maic:legacy-import:v3` (`ledger.ts`),
+holding a random browser id and no owner information. The same id derives fresh
+course ids. Every step is recorded when it lands, so a crash or reload resumes at
+the first unfinished step; writes merge with the stored copy, so tabs without Web
+Locks do not erase each other's progress. Clear Local Cache keeps the ledger (and
+the old learner key), so it neither loses import state nor brings back a course
+the user deleted on the server after it was imported. Runs are serialized across
+tabs with the Web Lock `openmaic:legacy-browser-import`. If the ledger itself is
+deleted by hand, the next run creates a new browser id, which the server binds
+afresh: a course under its own id is still not duplicated, but a course imported
+under a fresh id would be imported again and a half-copied runtime session is not
+completed.
 
 ## Removal
 
@@ -118,18 +114,23 @@ When the maintainers decide enough releases have passed:
 1. Delete `lib/legacy-browser-import/` and its tests (`tests/legacy-browser-import/`,
    `e2e/tests/legacy-browser-import.spec.ts`).
 2. Remove the dynamic import at the end of `lib/persistence/bootstrap.ts`.
-   Optionally remove `GET /api/identity/merged-from`
-   (`app/api/identity/merged-from/`, `ownerAbsorbedDigest` in
-   `lib/persistence/owner-merges.ts` and its route test) and the
-   `ASSET_REFUSED` code in `lib/media/media-failure.ts` once no device record
-   carries it.
-3. Optionally, drop what only the importer used: `LEGACY_IMPORT_LEDGER_KEY`
+3. Remove the server side: `app/api/identity/legacy-import-binding/`,
+   `lib/persistence/legacy-import-bindings.ts` (and its call in
+   `ensureStageMetaSchema`), the `legacy-import-bindings` claim participant in
+   `lib/persistence/owner-claims.ts`, the `legacyImportFence` in
+   `lib/server/identity/with-owner.ts`, and
+   `tests/server/identity/legacy-import-binding-route.test.ts`. A later
+   migration may drop the `legacy_import_bindings` table.
+4. Optionally remove the `ASSET_REFUSED` code in `lib/media/media-failure.ts`
+   once no device record carries it.
+5. Optionally, drop what only the importer used: `LEGACY_IMPORT_LEDGER_KEY`
    in `lib/device-storage/clear-local-cache.ts` (and the legacy learner key it
    keeps), `lib/legacy-browser-storage/`, `importLegacyQuizSnapshot` in
    `lib/quiz/runtime.ts`, the exports of `canonicalizeLegacySnapshot` and
-   `rowBelongsToAction`, and the `lib/legacy-browser-import/` entries in
-   `tests/persistence/server-always-boundary.test.ts` and
-   `tests/media/media-placeholder-lease-guard.test.ts`.
+   `rowBelongsToAction`, the optional store/put/runtime parameters of the
+   write-back funnels, `commitToPool` and `preparePBLScenesForDocumentPersistence`,
+   and the `lib/legacy-browser-import/` entries in
+   `tests/persistence/server-always-boundary.test.ts`.
 
 `LIBRARY_CHANGED_EVENT` (`lib/utils/stage-storage.ts`) is a generic
 "courses changed in the background" signal and can stay.
