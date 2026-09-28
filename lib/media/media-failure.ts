@@ -31,6 +31,14 @@
 export const ASSET_QUOTA_EXCEEDED = 'ASSET_QUOTA_EXCEEDED';
 
 /**
+ * The store refused these bytes for good (too large, an unsupported type) and
+ * nothing can produce them again: media the user inserted or imported, which
+ * has no generation request to retry. Written by the one-way import of
+ * pre-server browser data; the element shows as failed, without a Retry.
+ */
+export const ASSET_REFUSED = 'ASSET_REFUSED';
+
+/**
  * Codes no retry can change.
  *
  * `CONTENT_SENSITIVE` is the provider's refusal of this content and
@@ -45,6 +53,7 @@ export const ASSET_QUOTA_EXCEEDED = 'ASSET_QUOTA_EXCEEDED';
 const PERMANENT_MEDIA_FAILURE_CODES: ReadonlySet<string> = new Set([
   'CONTENT_SENSITIVE',
   'GENERATION_DISABLED',
+  ASSET_REFUSED,
 ]);
 
 /** Whether a failed task may be tried again, by a person asking for it. */

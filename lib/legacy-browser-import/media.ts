@@ -45,6 +45,7 @@ import {
   type RefusedPoolBytes,
 } from '@/lib/media/commit-to-pool';
 import { putAsset } from '@/lib/media/asset-pool';
+import { ASSET_REFUSED } from '@/lib/media/media-failure';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
 import { persistGeneratedMediaReference } from '@/lib/media/persist-media-reference';
@@ -332,7 +333,10 @@ async function recordRefusal(
     prompt: upload.request?.prompt ?? '',
     params: upload.request?.params ?? '{}',
     error: `The server refused these bytes when this course moved from browser storage (${failure.reason})`,
-    errorCode: failure.code ?? 'ASSET_REFUSED',
+    // With a generation request, Retry regenerates (the media pass's usual
+    // failure). Without one -- media the user inserted or imported -- there
+    // is nothing to retry, so the element shows as failed without the control.
+    errorCode: upload.request?.prompt ? (failure.code ?? ASSET_REFUSED) : ASSET_REFUSED,
     createdAt: Date.now(),
   });
 }

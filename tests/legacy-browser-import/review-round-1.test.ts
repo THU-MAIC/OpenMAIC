@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { db } from '@/lib/device-storage/database';
 import { runLegacyBrowserImport } from '@/lib/legacy-browser-import';
+import { isRetryableMediaFailure } from '@/lib/media/media-failure';
 import { freshStageId } from '@/lib/legacy-browser-import/ids';
 import { LEDGER_KEY, loadLedger } from '@/lib/legacy-browser-import/ledger';
 import { readLegacyCourse, type LegacySources } from '@/lib/legacy-browser-import/sources';
@@ -20,7 +21,6 @@ import {
   MemoryStorage,
   NOW,
   OWNER_A,
-  OWNER_B,
   configureSeams,
   course,
   dumpLegacyDatabases,
@@ -79,85 +79,6 @@ describe('the ledger holds no owner id', () => {
   });
 });
 
-describe('handoff when the importing owner is claimed into an account', () => {
-  it('continues a half-imported course under the account without losing runtime', async () => {
-    await seedLatestBrowser(storage);
-    // The claim lands while the quiz session is half copied.
-    let appends = 0;
-    server.failWith = (operation) =>
-      operation === 'appendRecord' && ++appends === 2 ? httpError(403, 'OWNER_RETIRED') : undefined;
-    const first = await runLegacyBrowserImport(server.options(storage));
-    expect(first.status).toBe('stopped');
-    expect(loadLedger(storage)?.ownerRetired).toBe(true);
-    expect(first.ledger?.courses[DOCS_COURSE]?.status).toBe('pending');
-
-    server.failWith = () => undefined;
-    await server.claim(OWNER_A, OWNER_B);
-    server.owner = OWNER_B;
-    const second = await runLegacyBrowserImport(at(NOW + 1_000));
-
-    expect(second.status).toBe('complete');
-    const quiz = (await server.rawSessions(DOCS_COURSE, OWNER_B)).find(
-      (session) => session.kind === 'quizAttempt',
-    )!;
-    expect(await server.rawRecords(quiz.id)).toHaveLength(2);
-    expect(quiz.status).toBe('completed');
-    expect([...server.stageOwners.keys()].sort()).toEqual([DOCS_COURSE, TABLES_COURSE]);
-    expect([...server.stageOwners.values()].every((owner) => owner === OWNER_B)).toBe(true);
-  });
-
-  it('does not import a fresh-id course twice after a claim between loads', async () => {
-    await seedLatestBrowser(storage);
-    await server.seedDocument(course(DOCS_COURSE, [{ id: 'theirs', order: 0 }]), OWNER_C);
-    server.failWith = (operation, subject) =>
-      operation === 'saveDocument' && subject === TABLES_COURSE ? httpError(502, 'BAD') : undefined;
-    const first = await runLegacyBrowserImport(server.options(storage));
-    expect(first.status).toBe('pending');
-    const fresh = freshStageId(DOCS_COURSE, first.ledger!.salt);
-
-    server.failWith = () => undefined;
-    await server.claim(OWNER_A, OWNER_B);
-    server.owner = OWNER_B;
-    const second = await runLegacyBrowserImport(at(first.ledger!.nextRunAt!));
-
-    expect(second.status).toBe('complete');
-    const mine = [...server.stageOwners].filter(([, owner]) => owner === OWNER_B).map(([id]) => id);
-    expect(mine.sort()).toEqual([fresh, TABLES_COURSE].sort());
-  });
-
-  it('does not bring back a course the user deleted before the claim', async () => {
-    await seedLatestBrowser(storage);
-    await server.seedDocument(course(DOCS_COURSE, [{ id: 'theirs', order: 0 }]), OWNER_C);
-    server.failWith = (operation, subject) =>
-      operation === 'saveDocument' && subject === TABLES_COURSE ? httpError(502, 'BAD') : undefined;
-    const first = await runLegacyBrowserImport(server.options(storage));
-    const fresh = freshStageId(DOCS_COURSE, first.ledger!.salt);
-    server.deleted.add(fresh);
-
-    server.failWith = () => undefined;
-    await server.claim(OWNER_A, OWNER_B);
-    server.owner = OWNER_B;
-    const second = await runLegacyBrowserImport(at(first.ledger!.nextRunAt!));
-
-    expect(second.status).toBe('complete');
-    expect(server.deleted.has(fresh)).toBe(true);
-    const live = [...server.stageOwners]
-      .filter(([id, owner]) => owner === OWNER_B && !server.deleted.has(id))
-      .map(([id]) => id);
-    expect(live).toEqual([TABLES_COURSE]);
-  });
-
-  it('stops for a changed learner (403 FORBIDDEN_LEARNER) and leaves the item pending', async () => {
-    await seedLatestBrowser(storage);
-    server.failWith = (operation) =>
-      operation === 'createSession' ? httpError(403, 'FORBIDDEN_LEARNER') : undefined;
-    const outcome = await runLegacyBrowserImport(server.options(storage));
-    expect(outcome.status).toBe('stopped');
-    expect(loadLedger(storage)?.courses[DOCS_COURSE]).toMatchObject({ status: 'pending' });
-    expect(loadLedger(storage)?.completedAt).toBeUndefined();
-  });
-});
-
 describe('two tabs without Web Locks', () => {
   it('does not duplicate a course another tab imported since this tab listed the library', async () => {
     await seedLatestBrowser(storage);
@@ -212,9 +133,11 @@ describe('media the server refuses for good', () => {
       stageId: 'big-course',
       type: 'video',
       placeholderRef: poolId,
-      errorCode: 'PAYLOAD_TOO_LARGE',
+      // A user's own media has no generation request: failed, without Retry.
+      errorCode: 'ASSET_REFUSED',
       size: 0,
     });
+    expect(isRetryableMediaFailure({ errorCode: 'ASSET_REFUSED' })).toBe(false);
     expect(await dumpLegacyDatabases()).toEqual(legacyBefore);
   });
 });

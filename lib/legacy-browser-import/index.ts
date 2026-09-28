@@ -27,10 +27,11 @@
  *   the tabs share, so a second tab finds the first tab's copy instead of
  *   making another.
  * - Once per browser. The data belongs to whoever used this browser before
- *   the upgrade, so the first owner the import runs for claims it and any
- *   other owner gets nothing, unless the claiming owner was claimed into it
- *   (retired into an account), in which case the account continues the
- *   unfinished items. The ledger records the owner only as a SHA-256 digest.
+ *   the upgrade, so the first owner the server confirms claims it and any
+ *   other owner gets nothing. It moves to another owner only when the server
+ *   confirms (`GET /api/identity/merged-from`) that this owner absorbed the
+ *   first one through a claim. The ledger records owners only as salted
+ *   SHA-256 digests.
  *
  * Transient failures (network, 5xx, 409, 503 OWNER_BUSY, 401) leave work pending
  * and a later page load retries it with a bounded backoff. Permanent ones are
@@ -64,14 +65,15 @@ import {
   type OwnedStage,
 } from './course';
 import { copyAutoVoiceCache } from './device-rows';
-import { classifyFailure, ImportRunStop } from './errors';
+import { asRunStop, classifyFailure, ImportRunStop } from './errors';
 import { importFolders, legacyMembership, type FolderApi } from './folders';
-import { sha256Hex } from './digest';
+import { ownerDigest } from './digest';
 import {
   backoffMs,
   ensureLedger,
   ledgerIsSettled,
   loadLedger,
+  recordHandoff,
   saveLedger,
   type ImportLedger,
 } from './ledger';
@@ -101,6 +103,8 @@ export interface LegacyImportOptions {
   folders?: FolderApi;
   /** Whether the server's asset pool serves this id. */
   assetExists?: (ref: string) => Promise<boolean>;
+  /** Whether the requesting owner absorbed the owner with this salted digest (a claim). */
+  mergedFrom?: (salt: string, digest: string) => Promise<boolean>;
   log?: (message: string, ...details: unknown[]) => void;
 }
 
@@ -175,64 +179,55 @@ async function withImportLock<T>(
   );
 }
 
-/** Whether the claiming owner has written anything to the server yet. */
-function claimHasWritten(ledger: ImportLedger): boolean {
-  return (
-    Object.values(ledger.courses).some((entry) => entry.steps.document === 'done') ||
-    Object.values(ledger.folders).some((entry) => entry.serverId !== undefined)
-  );
-}
-
-/** Courses or folders the importer created that the current owner now holds. */
-async function holdsImportedWork(
-  ledger: ImportLedger,
-  owned: ReadonlyMap<string, unknown>,
-  listFolderIds: () => Promise<Set<string>>,
-): Promise<boolean> {
-  const course = Object.values(ledger.courses).some(
-    (entry) =>
-      entry.origin === 'created' &&
-      entry.target !== undefined &&
-      entry.steps.document === 'done' &&
-      owned.has(entry.target),
-  );
-  if (course) return true;
-  const folderIds = Object.values(ledger.folders)
-    .map((entry) => entry.serverId)
-    .filter((id): id is string => id !== undefined);
-  if (folderIds.length === 0) return false;
-  const held = await listFolderIds();
-  return folderIds.some((id) => held.has(id));
-}
+/** How long a "this owner did not absorb the claiming one" answer is reused. */
+const OTHER_OWNER_RECHECK_MS = 60 * 60 * 1000;
 
 /**
- * Whose import this is. The first owner claims the browser's legacy data. A
- * different owner takes over only when the claiming owner is gone into it:
- * observed retired (403 OWNER_RETIRED), or the current owner holds what the
- * importer created (a claim moves an anonymous owner's courses and folders
- * into the account), or the claiming owner never wrote anything.
+ * Whose import this is. The first owner the server confirmed claims the
+ * browser's legacy data. A different owner continues it only when the server
+ * confirms that this owner absorbed the claiming one through a claim; nothing
+ * the browser could observe (a listing, a refusal, an empty ledger) moves it.
  */
 async function decideOwnership(
   ledger: ImportLedger,
   digest: string,
-  owned: ReadonlyMap<string, unknown>,
-  listFolderIds: () => Promise<Set<string>>,
+  mergedFrom: (salt: string, digest: string) => Promise<boolean>,
+  now: number,
 ): Promise<'mine' | 'taken-over' | 'other-owner'> {
   if (ledger.ownerDigest === undefined) {
     ledger.ownerDigest = digest;
     return 'mine';
   }
   if (ledger.ownerDigest === digest) return 'mine';
-  if (
-    ledger.ownerRetired ||
-    !claimHasWritten(ledger) ||
-    (await holdsImportedWork(ledger, owned, listFolderIds))
-  ) {
+  if (await mergedFrom(ledger.salt, ledger.ownerDigest)) {
+    recordHandoff(ledger, ledger.ownerDigest);
     ledger.ownerDigest = digest;
-    delete ledger.ownerRetired;
+    delete ledger.otherOwners;
     return 'taken-over';
   }
+  (ledger.otherOwners ??= {})[digest] = now + OTHER_OWNER_RECHECK_MS;
   return 'other-owner';
+}
+
+/** `GET /api/identity/merged-from`: did the requesting owner absorb the owner with this digest? */
+async function serverMergedFrom(salt: string, digest: string): Promise<boolean> {
+  const query = new URLSearchParams({ salt, digest });
+  const response = await fetch(`/api/identity/merged-from?${query}`, {
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: { code?: unknown };
+    } | null;
+    const code = typeof body?.error?.code === 'string' ? body.error.code : undefined;
+    throw Object.assign(new Error(`merged-from answered ${response.status}`), {
+      status: response.status,
+      ...(code ? { code } : {}),
+    });
+  }
+  const body = (await response.json()) as { merged?: unknown };
+  return body.merged === true;
 }
 
 async function runLocked(
@@ -247,6 +242,14 @@ async function runLocked(
   if (ledger.completedAt) return { status: 'already-complete', ownerId, ledger };
   const checkpoint = () => saveLedger(storage, ledger);
   const listOwned = options.listOwnedStages ?? listStages;
+  const digest = ownerDigest(ledger.salt, ownerId);
+  const recheckAfter = ledger.otherOwners?.[digest];
+  if (ledger.ownerDigest !== undefined && ledger.ownerDigest !== digest) {
+    // Answered for this owner recently: do not ask the server on every load.
+    if (recheckAfter !== undefined && recheckAfter > now()) {
+      return { status: 'claimed-by-another-owner', ownerId, ledger };
+    }
+  }
 
   const sources = await openLegacySources(storage);
   let context: CourseImportContext | undefined;
@@ -263,15 +266,22 @@ async function runLocked(
         });
       }
     };
+    // The listing is the run's first authenticated request of its own: only
+    // once it succeeded is this owner confirmed, and only then may it claim
+    // the browser's legacy data. A run that dies before this binds nothing.
     await refreshOwned();
 
     const folders = options.folders ?? defaultFolders;
-    const ownership = await decideOwnership(ledger, sha256Hex(ownerId), owned, async () => {
-      return new Set((await folders.list()).map((folder) => folder.id));
-    });
+    const ownership = await decideOwnership(
+      ledger,
+      digest,
+      options.mergedFrom ?? serverMergedFrom,
+      now(),
+    );
     if (ownership === 'other-owner') {
-      // This browser's legacy data was claimed by another owner. Nothing is
-      // imported for this one, and the ledger is left for the claiming owner.
+      // This browser's legacy data belongs to another owner, which this one
+      // did not absorb. Nothing is imported for it; the ledger stays theirs.
+      trySave(storage, ledger, log);
       return { status: 'claimed-by-another-owner', ownerId, ledger };
     }
     if (ownership === 'taken-over') {
@@ -341,8 +351,9 @@ async function runLocked(
       checkpoint();
     }
   } catch (error) {
-    if (error instanceof ImportRunStop) {
-      stopped = error;
+    const stop = asRunStop(error);
+    if (stop) {
+      stopped = stop;
     } else {
       // Listing the library or opening a store failed: nothing is known to be
       // wrong with any item, so the whole run is retried later.
@@ -360,11 +371,10 @@ async function runLocked(
   if (stopped) {
     const { failure } = stopped;
     if (failure.kind === 'retired') {
-      // This owner was claimed into an account. The owner that loads next
-      // (the account) takes over what is unfinished.
-      ledger.ownerRetired = true;
+      // This owner was claimed into an account. The items stay pending; the
+      // account continues them once the server confirms the claim.
       ledger.nextRunAt = now() + 1_000;
-      log(`Paused: this owner was retired (${failure.reason}); the next owner continues`);
+      log(`Paused: this owner was retired (${failure.reason}); its account can continue`);
     } else if (failure.kind === 'unauthorized') {
       // A credential expired or the access gate closed: the same owner can
       // come back, so this is a pause with backoff, never an end.

@@ -80,3 +80,14 @@ export function randomSalt(): string {
   globalThis.crypto.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
+
+/**
+ * How the ledger records an owner: SHA-256 of the per-browser salt and the
+ * owner id. Salted so that an owner id from a small space (an email, a
+ * numeric account id) cannot be recovered from the ledger by a dictionary;
+ * the server computes the same value to confirm a claim
+ * (`GET /api/identity/merged-from`, which receives the salt).
+ */
+export function ownerDigest(salt: string, ownerId: string): string {
+  return sha256Hex(`${salt}\u0000${ownerId}`);
+}

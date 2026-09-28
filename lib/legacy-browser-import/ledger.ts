@@ -4,17 +4,16 @@
  *
  * Once per browser, not once per owner. The data in the old browser stores
  * belongs to whoever used this browser before the upgrade, so the first owner
- * the importer runs for claims it, and any other owner that later loads in the
- * same browser gets nothing imported. The one exception is a handoff: when the
- * claiming owner is retired (claimed into an account) -- observed as 403
- * OWNER_RETIRED, or inferred because the current owner now holds courses or
- * folders the importer created -- the current owner takes over the unfinished
- * items (see `index.ts`).
+ * the server confirms (an authenticated request of the run succeeded) claims
+ * it, and any other owner that later loads in the same browser gets nothing
+ * imported. It moves to another owner only when the server confirms that this
+ * owner absorbed the first one through a claim (`index.ts`).
  *
  * One key, `maic:legacy-import:v2`, in localStorage. It never holds an owner
- * id: the claiming owner is recorded as a SHA-256 digest, because an anonymous
- * owner id is the anonymous cookie's value, a bearer credential. It also holds
- * the random salt fresh course ids are derived from (`ids.ts`). Clear Local
+ * id: the claiming owner is recorded as a salted SHA-256 digest
+ * (`ownerDigest` in `digest.ts`), because an anonymous owner id is the
+ * anonymous cookie's value, a bearer credential. It also holds the random
+ * salt, which fresh course ids are derived from too (`ids.ts`). Clear Local
  * Cache keeps it (`LEGACY_IMPORT_LEDGER_KEY`), so clearing the cache does not
  * bring back a course the user deleted after it was imported.
  *
@@ -84,10 +83,13 @@ export interface ImportLedger {
   version: typeof LEDGER_VERSION;
   /** Random, per browser: the input fresh course ids are derived from. */
   salt: string;
-  /** SHA-256 (hex) of the owner id that claimed this browser's legacy data. */
+  /** Salted SHA-256 (hex) of the owner that claimed this browser's legacy data. */
   ownerDigest?: string;
-  /** The claiming owner was observed retired; the next owner takes over. */
-  ownerRetired?: boolean;
+  /**
+   * Digests of other owners the server said did not absorb the claiming one,
+   * with the time (epoch ms) until which the answer is reused.
+   */
+  otherOwners?: Record<string, number>;
   /** Runs that ended with work still pending, for the backoff. */
   failedRuns: number;
   /** Earliest time (epoch ms) the next run may start. */
@@ -160,13 +162,30 @@ function progress(entry: { status: ItemStatus; steps?: object }): number {
   return Object.keys(entry.steps ?? {}).length;
 }
 
+/** Ledgers whose owner this tab changed through a confirmed handoff. */
+const handoffs = new WeakMap<ImportLedger, string>();
+
+/** Record that `ledger` passed from the owner with digest `from` to its current one. */
+export function recordHandoff(ledger: ImportLedger, from: string): void {
+  handoffs.set(ledger, from);
+}
+
 /**
  * Fold what another tab stored into `ledger`, in place: an item keeps
  * whichever copy got further, and runtime-session intents are unioned (an
  * intent dropped here would make a half-copied session look like the app's).
+ * The claiming owner stored first wins unless this tab handed the import over
+ * from exactly that owner; completion is kept if either copy has it.
  */
 export function mergeStoredLedger(ledger: ImportLedger, stored: ImportLedger | undefined): void {
   if (!stored || stored.salt !== ledger.salt) return;
+  if (stored.ownerDigest !== undefined && stored.ownerDigest !== ledger.ownerDigest) {
+    if (handoffs.get(ledger) !== stored.ownerDigest) ledger.ownerDigest = stored.ownerDigest;
+  }
+  ledger.completedAt ??= stored.completedAt;
+  if (stored.otherOwners) {
+    ledger.otherOwners = { ...stored.otherOwners, ...ledger.otherOwners };
+  }
   for (const [id, theirs] of Object.entries(stored.courses)) {
     const ours = ledger.courses[id];
     if (!ours) {

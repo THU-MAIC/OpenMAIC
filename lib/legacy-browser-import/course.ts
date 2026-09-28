@@ -50,7 +50,7 @@ import type { AppScene, GeneratedAgentConfig, Scene } from '@/lib/types/stage';
 import { fromLegacyRecords, loadChatSessions } from '@/lib/utils/chat-storage';
 
 import { copyCourseDeviceRows } from './device-rows';
-import { classifyFailure, failureOrStop, ImportRunStop } from './errors';
+import { asRunStop, classifyFailure, failureOrStop } from './errors';
 import type { FolderApi } from './folders';
 import { freshStageId } from './ids';
 import { courseEntry, type CourseEntry, type ImportLedger } from './ledger';
@@ -464,12 +464,14 @@ export async function importLegacyCourse(
   try {
     await runCourse(context, legacyStageId, entry);
   } catch (error) {
-    if (error instanceof ImportRunStop) {
-      // The item itself is fine: it stays pending for the next run (or, after
-      // a retirement, for the owner that takes over).
-      entry.reason = error.failure.reason;
+    // A run-level failure from any call of the course -- the "is the id
+    // taken" read, the library re-list, the chat or quiz copy -- stops the run
+    // and leaves the course pending, exactly like one from a wrapped call.
+    const stop = asRunStop(error);
+    if (stop) {
+      entry.reason = stop.failure.reason;
       context.checkpoint();
-      throw error;
+      throw stop;
     }
     if (error instanceof InvalidLegacyRecordError) {
       Object.assign(entry, {

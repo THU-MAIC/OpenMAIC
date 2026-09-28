@@ -95,6 +95,9 @@ async function copySession(
     );
     if (active) {
       context.log(`Runtime session ${session.id} was not imported: the server has an active one`);
+      const note = `${session.kind} session not imported: one is already active on the server`;
+      const notes = (entry.notes ??= []);
+      if (!notes.includes(note)) notes.push(note);
       return 'kept-server';
     }
   }

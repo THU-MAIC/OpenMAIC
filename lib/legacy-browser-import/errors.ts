@@ -118,12 +118,19 @@ export class ImportRunStop extends Error {
 }
 
 /** Failures that end the whole run rather than one item. */
-const RUN_STOPS: ReadonlySet<FailureKind> = new Set([
+export const RUN_STOPS: ReadonlySet<FailureKind> = new Set([
   'busy',
   'unauthorized',
   'retired',
   'owner-changed',
 ]);
+
+/** The failure as a run stop when it is one (whatever call it came from), else undefined. */
+export function asRunStop(error: unknown): ImportRunStop | undefined {
+  if (error instanceof ImportRunStop) return error;
+  const failure = classifyFailure(error);
+  return RUN_STOPS.has(failure.kind) ? new ImportRunStop(failure) : undefined;
+}
 
 /** Rethrow run-level failures as a run stop; hand every other failure back. */
 export function failureOrStop(error: unknown): Failure {

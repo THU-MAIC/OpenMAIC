@@ -15,6 +15,8 @@
  */
 import 'fake-indexeddb/auto';
 
+import { createHash } from 'node:crypto';
+
 import type { RuntimeRecordInit, RuntimeSession } from '@openmaic/dsl';
 import {
   BrowserAssetStore,
@@ -351,6 +353,7 @@ export class FakeServer {
    * course (tombstones included), runtime session, asset and folder moves.
    */
   async claim(from: string, to: string): Promise<void> {
+    this.merges.set(from, to);
     for (const [id, owner] of this.stageOwners) if (owner === from) this.stageOwners.set(id, to);
     await this.runtimeInner.mergeLearner(from, to);
     for (const entry of this.assets.values()) if (entry.owner === from) entry.owner = to;
@@ -358,6 +361,19 @@ export class FakeServer {
     this.folders.set(to, [...(this.folders.get(to) ?? []), ...moved]);
     this.folders.delete(from);
   }
+
+  /** `owner_merges`: retired owner -> the owner it was claimed into. */
+  readonly merges = new Map<string, string>();
+
+  /** `GET /api/identity/merged-from` as the server answers it, for the current owner. */
+  mergedFrom = async (salt: string, digest: string): Promise<boolean> => {
+    this.check('mergedFrom', digest);
+    return [...this.merges].some(
+      ([from, to]) =>
+        to === this.owner &&
+        createHash('sha256').update(`${salt}\u0000${from}`).digest('hex') === digest,
+    );
+  };
 
   /** The importer options that point it at this server. */
   options(storage: Storage, extra: Record<string, unknown> = {}) {
@@ -368,6 +384,7 @@ export class FakeServer {
       ownerId: this.ownerId,
       listOwnedStages: this.listOwnedStages,
       folders: this.folderApi,
+      mergedFrom: this.mergedFrom,
       log: () => undefined,
       ...extra,
     };
