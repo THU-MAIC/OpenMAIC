@@ -1,5 +1,12 @@
+import { LEDGER_KEY, legacyImportIsComplete } from '@/lib/legacy-browser-import/ledger';
 import { clearAssetPool } from '@/lib/media/asset-pool';
 import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
+import {
+  ANSWERS_KEY_PREFIX,
+  ATTEMPT_ID_KEY_PREFIX,
+  DRAFT_KEY_PREFIX,
+  RESULTS_KEY_PREFIX,
+} from '@/lib/quiz/persistence';
 import { LEARNER_KEY_KV_KEY } from '@/lib/runtime/learner-key';
 
 import { clearDeviceStorage } from './database';
@@ -25,27 +32,45 @@ export async function clearLocalCache(): Promise<void> {
 const LEGACY_LEARNER_KEY_STORAGE_KEY = `maic:device:${LEARNER_KEY_KV_KEY}`;
 
 /**
- * The localStorage key of the one-way importer's completion ledger
- * (`lib/legacy-browser-import/ledger.ts`). It records what has already moved
- * to the server, so clearing the cache must keep it: without it, a course the
- * user deleted on the server after it was imported could be imported again
- * from the untouched browser copy. It holds no owner information.
+ * The localStorage key of the one-way importer's completion ledger. It records
+ * what has already moved to the server, so clearing the cache must keep it:
+ * without it, a course the user deleted on the server after it was imported
+ * could be imported again from the untouched browser copy. It holds no owner
+ * information.
  */
-export const LEGACY_IMPORT_LEDGER_KEY = 'maic:legacy-import:v3';
+export const LEGACY_IMPORT_LEDGER_KEY = LEDGER_KEY;
+
+/**
+ * Pre-runtime quiz state (drafts, answers, results, attempt ids) that earlier
+ * builds kept in localStorage. It exists nowhere else, and the importer copies
+ * it to the server with the course, so it is kept until the import is complete.
+ */
+const LEGACY_QUIZ_KEY_PREFIXES = [
+  DRAFT_KEY_PREFIX,
+  ANSWERS_KEY_PREFIX,
+  RESULTS_KEY_PREFIX,
+  ATTEMPT_ID_KEY_PREFIX,
+];
 
 /**
  * `localStorage.clear()`, except for the values the one-way importer needs:
- * the learner key that finds this browser's pre-server runtime data, and the
- * importer's ledger. Clearing the cache must not orphan data the user has not
- * moved to the server yet, nor bring back data the user removed after it was
- * moved.
+ * the learner key that finds this browser's pre-server runtime data, the
+ * importer's ledger, and, until the ledger records the import as complete,
+ * the pre-runtime quiz keys. Clearing the cache must not orphan data the user
+ * has not moved to the server yet, nor bring back data the user removed after
+ * it was moved.
  */
 export function clearLocalStorageKeepingImportState(storage: Storage = localStorage): void {
+  const keepQuizState = !legacyImportIsComplete(storage);
   const kept = new Map<string, string>();
   for (let index = 0; index < storage.length; index += 1) {
     const key = storage.key(index);
     if (key === null) continue;
-    if (key === LEGACY_LEARNER_KEY_STORAGE_KEY || key === LEGACY_IMPORT_LEDGER_KEY) {
+    const keep =
+      key === LEGACY_LEARNER_KEY_STORAGE_KEY ||
+      key === LEGACY_IMPORT_LEDGER_KEY ||
+      (keepQuizState && LEGACY_QUIZ_KEY_PREFIXES.some((prefix) => key.startsWith(prefix)));
+    if (keep) {
       const value = storage.getItem(key);
       if (value !== null) kept.set(key, value);
     }

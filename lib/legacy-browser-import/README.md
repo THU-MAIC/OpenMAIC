@@ -65,7 +65,9 @@ load path still migrates and removes any keys the importer left.
 Nothing is ever written, cleared or deleted in a legacy database or legacy
 localStorage key. (Opening an old `MAIC-Database` runs Dexie's own upgrade steps,
 which the legacy schema keeps verbatim; that is the only change an open makes.)
-Settings → Clear Local Cache still leaves the legacy databases alone.
+Settings → Clear Local Cache still leaves the legacy databases alone, and keeps the
+pre-runtime quiz keys until the ledger records the import as complete
+(`legacyImportIsComplete` in `ledger.ts`): they exist nowhere else.
 
 ## Where a course goes
 
@@ -119,7 +121,10 @@ completed.
 When the maintainers decide enough releases have passed:
 
 1. Delete `lib/legacy-browser-import/` and its tests (`tests/legacy-browser-import/`,
-   `e2e/tests/legacy-browser-import.spec.ts`).
+   `e2e/tests/legacy-browser-import.spec.ts`). `lib/device-storage/clear-local-cache.ts`
+   imports `LEDGER_KEY` and `legacyImportIsComplete` from `ledger.ts`: define the
+   ledger key there again (or drop it with step 5) and drop the quiz-key retention,
+   with its cases in `tests/settings/general-settings.test.ts`.
 2. Remove the dynamic import at the end of `lib/persistence/bootstrap.ts`.
 3. Remove the server side:
    - `app/api/identity/legacy-import-binding/` and
@@ -151,7 +156,8 @@ When the maintainers decide enough releases have passed:
    once no device record carries it.
 5. Optionally, drop what only the importer used: `LEGACY_IMPORT_LEDGER_KEY`
    in `lib/device-storage/clear-local-cache.ts` (and the legacy learner key it
-   keeps), `lib/legacy-browser-storage/`, `importLegacyQuizSnapshot` in
+   keeps; the regular quiz load path still migrates and removes leftover quiz
+   keys), `lib/legacy-browser-storage/`, `importLegacyQuizSnapshot` in
    `lib/quiz/runtime.ts`, the exports of `canonicalizeLegacySnapshot` and
    `rowBelongsToAction`, the optional store/put/runtime parameters of the
    write-back funnels, `commitToPool` and `preparePBLScenesForDocumentPersistence`,

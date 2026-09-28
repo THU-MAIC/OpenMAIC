@@ -14,7 +14,7 @@ import {
 import { db } from '@/lib/device-storage/database';
 import { OTHER_OWNER_RECHECK_MS, runLegacyBrowserImport } from '@/lib/legacy-browser-import';
 import { freshStageId } from '@/lib/legacy-browser-import/ids';
-import { LEDGER_KEY, loadLedger } from '@/lib/legacy-browser-import/ledger';
+import { ensureLedger, LEDGER_KEY, loadLedger } from '@/lib/legacy-browser-import/ledger';
 import { loadCursorValue } from '@/lib/playback/cursor';
 import { loadCurrentSceneValue } from '@/lib/document-store/current-scene';
 import { BrowserKVStore } from '@openmaic/storage';
@@ -44,6 +44,18 @@ import {
   TABLE_NARRATION_KEY,
   seedLatestBrowser,
 } from './fixtures';
+
+const QUIZ_KEY_PREFIXES = ['quizDraft:', 'quizAnswers:', 'quizResults:', 'quizAttemptId:'];
+
+/** The pre-runtime quiz keys in `storage`, with their values, sorted. */
+function quizKeys(storage: MemoryStorage): [string, string | null][] {
+  const keys: string[] = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (key && QUIZ_KEY_PREFIXES.some((prefix) => key.startsWith(prefix))) keys.push(key);
+  }
+  return keys.sort().map((key) => [key, storage.getItem(key)]);
+}
 
 /** Read chat back without the cross-tab lock the regular path requires (none in Node). */
 const NO_LEGACY_CHAT = { legacyStore: { load: async () => [], clear: async () => undefined } };
@@ -250,6 +262,40 @@ describe('idempotency and resumption', () => {
     expect((await runLegacyBrowserImport(server.options(storage))).status).toBe('already-complete');
     expect(server.deleted.has(DOCS_COURSE)).toBe(true);
     expect(await dumpLegacyDatabases()).toEqual(legacyBefore);
+  });
+
+  it('keeps pre-runtime quiz state through Clear Local Cache while the import is pending', async () => {
+    await seedLatestBrowser(storage);
+    // The importer waits for an idle page and can stay pending after a
+    // failure; a ledger that has not completed stands for both.
+    ensureLedger(storage);
+    const quizBefore = quizKeys(storage);
+    expect(quizBefore.length).toBeGreaterThan(0);
+
+    await clearLocalCache();
+    clearLocalStorageKeepingImportState(storage);
+
+    expect(quizKeys(storage)).toEqual(quizBefore);
+    expect((await runLegacyBrowserImport(server.options(storage))).status).toBe('complete');
+    const quizAttempts = (await server.rawSessions(TABLES_COURSE)).filter(
+      (session) => session.kind === 'quizAttempt',
+    );
+    expect(quizAttempts).toHaveLength(1);
+    const payloads = (await server.rawRecords(quizAttempts[0]!.id)).map(
+      (record) => record.payload as { phase: string },
+    );
+    expect(payloads.at(-1)).toMatchObject({ phase: 'reviewed', answers: { q1: 'C' } });
+  });
+
+  it('lets Clear Local Cache delete pre-runtime quiz state once the import is complete', async () => {
+    await seedLatestBrowser(storage);
+    expect((await runLegacyBrowserImport(server.options(storage))).status).toBe('complete');
+    expect(quizKeys(storage).length).toBeGreaterThan(0);
+
+    clearLocalStorageKeepingImportState(storage);
+
+    expect(quizKeys(storage)).toEqual([]);
+    expect(loadLedger(storage)?.completedAt).toBeDefined();
   });
 
   it('resumes after a crash mid-import without duplicating anything', async () => {

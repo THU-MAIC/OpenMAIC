@@ -10,7 +10,7 @@
  *
  * One key, `maic:legacy-import:v3`, in localStorage. The browser id also
  * derives fresh course ids (`ids.ts`). Clear Local Cache keeps the ledger
- * (`LEGACY_IMPORT_LEDGER_KEY`), so clearing the cache neither loses import
+ * (and, until the import is complete, the pre-runtime quiz keys), so clearing the cache neither loses import
  * state nor brings back a course the user deleted after it was imported.
  *
  * Every step is recorded as soon as it lands, so a reload or crash mid-import
@@ -19,8 +19,6 @@
  * server is still the authority for what exists: a step whose ledger write was
  * lost is re-checked against it (see `course.ts`), never blindly repeated.
  */
-import { LEGACY_IMPORT_LEDGER_KEY } from '@/lib/device-storage/clear-local-cache';
-
 import { randomBrowserId } from './digest';
 
 export const LEDGER_VERSION = 3;
@@ -104,7 +102,13 @@ export interface ImportLedger {
 /** A course whose storage reads failed this often, over this long, settles. */
 export const READ_FAILURE_BUDGET = { runs: 5, spanMs: 24 * 60 * 60 * 1000 } as const;
 
-export const LEDGER_KEY = LEGACY_IMPORT_LEDGER_KEY;
+/**
+ * The ledger's localStorage key. Clear Local Cache keeps it
+ * (`lib/device-storage/clear-local-cache.ts`): without it, a course the user
+ * deleted on the server after it was imported could be imported again from
+ * the untouched browser copy.
+ */
+export const LEDGER_KEY = 'maic:legacy-import:v3';
 
 function newLedger(): ImportLedger {
   return {
@@ -212,6 +216,16 @@ export function saveLedger(storage: Storage, ledger: ImportLedger): void {
 
 export function courseEntry(ledger: ImportLedger, legacyStageId: string): CourseEntry {
   return (ledger.courses[legacyStageId] ??= { status: 'pending', steps: {} });
+}
+
+/**
+ * Whether this browser's import has finished: the stored ledger records
+ * completion. False when there is no ledger (the import has not run yet, or
+ * there was nothing to import) or it is unreadable. Clear Local Cache asks
+ * this before it deletes legacy localStorage the importer still reads.
+ */
+export function legacyImportIsComplete(storage: Storage): boolean {
+  return typeof loadLedger(storage)?.completedAt === 'number';
 }
 
 /** Whether a later run has nothing left to do. */
