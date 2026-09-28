@@ -18,6 +18,8 @@ beforeEach(() => {
   resetAccessCodeWarningForTests();
   vi.stubEnv('LOG_LEVEL', 'warn');
   vi.stubEnv('ACCESS_CODE', undefined);
+  // register() refuses to boot without a database; these cases start past it.
+  vi.stubEnv('DATABASE_URL', 'postgres://access-code-test/openmaic');
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 

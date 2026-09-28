@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the IndexedDB layer so importing AudioPlayer doesn't pull in Dexie.
 const getMock = vi.fn();
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: { audioFiles: { get: getMock } },
 }));
 

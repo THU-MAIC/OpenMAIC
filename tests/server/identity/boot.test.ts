@@ -18,6 +18,8 @@ let exit: ReturnType<typeof vi.spyOn>;
 let stderr: string[];
 
 beforeEach(() => {
+  // The database requirement is checked first; these cases start past it.
+  vi.stubEnv('DATABASE_URL', 'postgres://boot-test/openmaic');
   stderr = [];
   exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
   vi.spyOn(process.stderr, 'write').mockImplementation(((

@@ -35,6 +35,14 @@ import { resolveActionVideoMedia } from '@/lib/action/engine';
 import type { StageStore } from '@/lib/api/stage-api';
 
 const stageId = 'stage-matrix';
+// The owner's view: Retry affordances answer to generation permission, which
+// only the course owner holds (tests/classroom/generation-permission.test.ts
+// covers the refusal). Static markup reads a store's initial state, so the
+// permission hook is answered directly.
+vi.mock('@/lib/classroom/generation-permission', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/classroom/generation-permission')>()),
+  useMayGenerateForStage: () => true,
+}));
 const posterRef = 'ast_video_poster';
 const posterLease = { status: 'resolved', url: 'blob:poster' } satisfies AssetUrlLeaseState;
 

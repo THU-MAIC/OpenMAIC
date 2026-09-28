@@ -14,13 +14,10 @@
  * call. Render condition and action precondition are then the same value.
  *
  * Fail closed: a course nobody has recorded an answer for is `'unresolved'`,
- * which refuses under server-backed persistence. Browser-only mode has one
- * viewer who is by construction the author, so every answer permits.
+ * which refuses.
  */
 
 import { create } from 'zustand';
-
-import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 
 import {
   mayStartOwnerGeneration,
@@ -61,13 +58,13 @@ export function useStageGenerationOwnership(
 
 /** Imperative gate, for the functions a generation affordance calls. */
 export function mayGenerateForStage(stageId: string | undefined): boolean {
-  return mayStartOwnerGeneration(isServerBackedMediaPersistence(), ownershipOf(stageId));
+  return mayStartOwnerGeneration(ownershipOf(stageId));
 }
 
 /** Reactive gate, for the components that decide whether to offer generation. */
 export function useMayGenerateForStage(stageId: string | undefined): boolean {
   const ownership = useStageGenerationOwnership(stageId);
-  return mayStartOwnerGeneration(isServerBackedMediaPersistence(), ownership);
+  return mayStartOwnerGeneration(ownership);
 }
 
 /** @internal Test-only reset. */

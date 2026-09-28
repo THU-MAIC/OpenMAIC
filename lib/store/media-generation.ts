@@ -8,7 +8,7 @@
 
 import { create } from 'zustand';
 import type { MediaGenerationRequest } from '@/lib/media/types';
-import { db } from '@/lib/utils/database';
+import { db } from '@/lib/device-storage/database';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('MediaGenerationStore');

@@ -5,24 +5,18 @@
  * Runs entirely on the frontend — calls /api/generate/image and /api/generate/video,
  * fetches result blobs and updates the Zustand store.
  *
- * Where the bytes land, and what the document ends up pointing at, depends on
- * how durable the document is:
- *
- * - Browser-only: bytes go to the local `mediaFiles` table and the document
- *   keeps its `gen_img_*` / `gen_vid_*` placeholder. Document and media share
- *   one lifetime, so the placeholder is a complete address.
- * - Server-backed: the document outlives this browser, so the bytes go to the
- *   asset pool first and the id the pool allocated is written back into the
- *   document. Only then is the task done. The local table becomes a cache for
- *   this tab, never the source of truth, and "already generated?" is answered
- *   by the document instead of by that cache.
+ * The document outlives this browser, so the bytes go to the asset pool first
+ * and the id the pool allocated is written back into the document. Only then
+ * is the task done. The local `mediaFiles` table is a device cache (and the
+ * keeper of bytes a full store refused), never the source of truth, and
+ * "already generated?" is answered by the document instead of by that cache.
  */
 
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useStageStore } from '@/lib/store/stage';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
-import { db, mediaFileKey, type MediaFileRecord } from '@/lib/utils/database';
+import { db, mediaFileKey, type MediaFileRecord } from '@/lib/device-storage/database';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import { commitToPool } from '@/lib/media/commit-to-pool';
@@ -50,7 +44,6 @@ import {
 } from '@/lib/media/pending-media-allocations';
 import { isAssetStorageFull, markAssetStorageFull } from '@/lib/media/asset-storage-full';
 import { fetchProxiedMediaUrl } from '@/lib/media/proxy-media-cache';
-import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('MediaOrchestrator');
@@ -176,16 +169,13 @@ export async function generateMediaForOutlines(
   stageId: string,
   abortSignal?: AbortSignal,
 ): Promise<void> {
-  if (!isServerBackedMediaPersistence()) {
-    return collectAndGenerate(outlines, stageId, abortSignal, false);
-  }
   // Serial per stage. The caller aborts the previous pass before starting this
   // one; waiting for that pass to actually settle is what makes the handoff
   // safe without tracking individual elements. A commit already under way is
   // uncancellable — `putAsset` and the write-back run to completion — so
   // waiting is also what stops the replacement from paying for it twice.
   const pass = awaitCurrentPass(stageId).then(() =>
-    collectAndGenerate(outlines, stageId, abortSignal, true),
+    collectAndGenerate(outlines, stageId, abortSignal),
   );
   passesByStage.set(stageId, pass);
   try {
@@ -199,7 +189,6 @@ async function collectAndGenerate(
   outlines: SceneOutline[],
   stageId: string,
   abortSignal: AbortSignal | undefined,
-  serverBacked: boolean,
 ): Promise<void> {
   // Everything below this point may be running long after the caller queued it:
   // a server-backed pass waits for its predecessor, and a predecessor's
@@ -219,30 +208,26 @@ async function collectAndGenerate(
   // on exactly the path where the table has just been cleared — so every
   // element the predecessor committed would be generated again. Not deciding is
   // the only safe answer, and a pass that cannot decide simply ends.
-  let documentIndex: GeneratedMediaDocumentIndex | undefined;
-  if (serverBacked) {
-    if (abortSignal?.aborted) return;
-    documentIndex = documentSkipIndex(stageId);
-    if (!documentIndex) {
-      log.info(`Media pass for ${stageId} stood down: the course is no longer open here.`);
-      return;
-    }
-    // Before deciding anything: hand every parked allocation to the slide that
-    // now wants it. A held allocation whose scene has since arrived must become
-    // a rewrite, not an answer to the skip test — otherwise the placeholder it
-    // was waiting to replace would be treated as handled and never replaced.
-    placePendingMediaAllocations(stageId);
-    // The drain may have resolved slides, so ask the document again.
-    documentIndex = documentSkipIndex(stageId);
-    if (!documentIndex) return;
+  if (abortSignal?.aborted) return;
+  let documentIndex: GeneratedMediaDocumentIndex | undefined = documentSkipIndex(stageId);
+  if (!documentIndex) {
+    log.info(`Media pass for ${stageId} stood down: the course is no longer open here.`);
+    return;
   }
+  // Before deciding anything: hand every parked allocation to the slide that
+  // now wants it. A held allocation whose scene has since arrived must become
+  // a rewrite, not an answer to the skip test — otherwise the placeholder it
+  // was waiting to replace would be treated as handled and never replaced.
+  placePendingMediaAllocations(stageId);
+  // The drain may have resolved slides, so ask the document again.
+  documentIndex = documentSkipIndex(stageId);
+  if (!documentIndex) return;
 
   const settings = useSettingsStore.getState();
   const store = useMediaGenerationStore.getState();
-  // Under server-backed persistence the document, not this browser's task
-  // table, decides what still needs generating: the table is per-browser, so
-  // reading it is exactly how every new browser re-ran (and re-billed) an
-  // already-generated course.
+  // The document, not this browser's task table, decides what still needs
+  // generating: the table is per-browser, so reading it is exactly how every
+  // new browser re-ran (and re-billed) an already-generated course.
 
   // Collect all media requests
   const allRequests: MediaGenerationRequest[] = [];
@@ -253,31 +238,26 @@ async function collectAndGenerate(
       if (mg.type === 'image' && !settings.imageGenerationEnabled) continue;
       if (mg.type === 'video' && !settings.videoGenerationEnabled) continue;
       const existing = store.getTask(mg.elementId);
-      if (documentIndex) {
-        // The document is the authority. A permanently failed task (content
-        // policy, generation disabled) is still honoured: it is a refusal to
-        // call the provider again, never a claim that media exists.
-        if (isGeneratedMediaSatisfied(documentIndex, outline.order, mg.elementId)) continue;
-        // Stored, waiting for its slide to exist. The drain above already gave
-        // away every allocation whose slide has arrived, so what is left here
-        // genuinely has nowhere to go yet; asking the provider again would pay
-        // twice for bytes this session already holds.
-        if (pendingMediaAllocation(stageId, mg.elementId)) continue;
-        // A permanently failed task (content policy, generation disabled) is a
-        // refusal to call the provider again, never a claim that media exists.
-        if (existing?.status === 'failed') continue;
-        // `generating` is the one status that means "something is working on
-        // this right now". Passes are serial, so it can only be a single-element
-        // retry running alongside this pass; letting the pass take it too would
-        // pay for the element twice. `pending` is deliberately NOT skipped: it
-        // means a pass once intended to reach this element, and an abandoned
-        // pass leaves that intent behind with nobody acting on it — reading it
-        // as answered is what stranded elements in earlier designs.
-        if (existing?.status === 'generating') continue;
-      } else {
-        // Skip already completed or permanently failed (restored from DB)
-        if (existing?.status === 'done' || existing?.status === 'failed') continue;
-      }
+      // The document is the authority. A permanently failed task (content
+      // policy, generation disabled) is still honoured: it is a refusal to
+      // call the provider again, never a claim that media exists.
+      if (isGeneratedMediaSatisfied(documentIndex, outline.order, mg.elementId)) continue;
+      // Stored, waiting for its slide to exist. The drain above already gave
+      // away every allocation whose slide has arrived, so what is left here
+      // genuinely has nowhere to go yet; asking the provider again would pay
+      // twice for bytes this session already holds.
+      if (pendingMediaAllocation(stageId, mg.elementId)) continue;
+      // A permanently failed task (content policy, generation disabled) is a
+      // refusal to call the provider again, never a claim that media exists.
+      if (existing?.status === 'failed') continue;
+      // `generating` is the one status that means "something is working on
+      // this right now". Passes are serial, so it can only be a single-element
+      // retry running alongside this pass; letting the pass take it too would
+      // pay for the element twice. `pending` is deliberately NOT skipped: it
+      // means a pass once intended to reach this element, and an abandoned
+      // pass leaves that intent behind with nobody acting on it — reading it
+      // as answered is what stranded elements in earlier designs.
+      if (existing?.status === 'generating') continue;
       allRequests.push(mg);
     }
   }
@@ -293,7 +273,7 @@ async function collectAndGenerate(
   // be refused at exactly the same point. The elements are shown the condition
   // they are waiting on, each with its Retry; the first upload that succeeds
   // clears the marker and the next pass runs normally.
-  if (serverBacked && (await isAssetStorageFull(stageId))) {
+  if (await isAssetStorageFull(stageId)) {
     log.info(`Asset storage was full for ${stageId}; standing down without generating.`);
     markStorageFull(allRequests);
     return;
@@ -445,9 +425,7 @@ export async function retryMediaTask(
   // Read BEFORE anything is removed, and the row is NOT removed first: it is
   // the only copy until an upload succeeds.
   const dbKey = mediaFileKey(task.stageId, elementId);
-  const refused = isServerBackedMediaPersistence()
-    ? await refusedMediaBytes(task.stageId, elementId, task.type)
-    : undefined;
+  const refused = await refusedMediaBytes(task.stageId, elementId, task.type);
   if (!refused) {
     // Nothing to keep. Clearing the persisted failure is what lets a fresh
     // result be written under this key.
@@ -831,12 +809,12 @@ async function loadCachedMediaByPlaceholder(
  * Adopt bytes this browser already holds for a placeholder, without asking a
  * provider for them again.
  *
- * The local media table is keyed by `stageId:ref`, and a course from before
- * server-backed storage carries its generated bytes there under the very
- * placeholder its document still names. Committing them through the ordinary
- * path stores them in the pool and writes the allocated id back, so the course
- * converges on the author's next load at no cost — and a visitor, who has no
- * such table, simply sees the media once the author has been through.
+ * The local media table is keyed by `stageId:ref`, and bytes a full store
+ * refused are kept there under the very placeholder the document still names.
+ * Committing them through the ordinary path stores them in the pool and writes
+ * the allocated id back, so the course converges on the author's next load at
+ * no cost — and a visitor, who has no such table, simply sees the media once
+ * the author has been through.
  *
  * A row that records only a hosted URL (`ossKey`) and no bytes is treated as
  * absent: that URL is the provider's address, not something a document may
@@ -927,9 +905,7 @@ async function generateSingleMedia(
       style: req.style,
     });
 
-    const serverBacked = isServerBackedMediaPersistence();
-
-    if (serverBacked && refusedBytes) {
+    if (refusedBytes) {
       await commitPooledMedia({
         req,
         stageId,
@@ -942,138 +918,46 @@ async function generateSingleMedia(
       return ATTEMPT_COMMITTED;
     }
 
-    // A course generated before this application stored media server-side holds
-    // placeholders in its document and its bytes only in the author's local
-    // tables. Those bytes are already paid for, so the author's first
-    // server-backed load converts them instead of buying them again.
-    if (serverBacked && (await commitCachedMedia(req, stageId, paramsJson, abortSignal, scan))) {
+    // Bytes this browser already holds for the placeholder (a store that
+    // refused them earlier kept them) are already paid for, so they are
+    // committed instead of bought again.
+    if (await commitCachedMedia(req, stageId, paramsJson, abortSignal, scan)) {
       return ATTEMPT_COMMITTED;
     }
 
     if (req.type === 'image') {
       const result = await callImageApi(req, stageId, abortSignal);
-
-      if (serverBacked) {
-        // A hosted URL is the provider's address, not a durable reference the
-        // document may hold, so the bytes are fetched and put to the pool.
-        throwIfAborted(abortSignal);
-        const blob = await fetchAsBlob(result.ossUrl || result.url);
-        throwIfAborted(abortSignal);
-        await commitPooledMedia({
-          req,
-          stageId,
-          paramsJson,
-          blob,
-          mimeType: storedMediaType(blob, 'image/png'),
-        });
-        return ATTEMPT_COMMITTED;
-      }
-
-      // CDN path: server already uploaded to OSS
-      if (result.ossUrl) {
-        throwIfAborted(abortSignal);
-        await db.mediaFiles.put({
-          id: mediaFileKey(stageId, req.elementId),
-          stageId,
-          type: 'image',
-          blob: new Blob([]),
-          mimeType: 'image/png',
-          size: 0,
-          ossKey: result.ossUrl,
-          prompt: req.prompt,
-          params: paramsJson,
-          createdAt: Date.now(),
-        });
-        useMediaGenerationStore.getState().markDone(req.elementId, result.ossUrl);
-        return ATTEMPT_COMMITTED;
-      }
-
-      // Fallback: fetch blob via proxy-media
+      // A hosted URL is the provider's address, not a durable reference the
+      // document may hold, so the bytes are fetched and put to the pool.
       throwIfAborted(abortSignal);
-      const blob = await fetchAsBlob(result.url);
-      await db.mediaFiles.put({
-        id: mediaFileKey(stageId, req.elementId),
+      const blob = await fetchAsBlob(result.ossUrl || result.url);
+      throwIfAborted(abortSignal);
+      await commitPooledMedia({
+        req,
         stageId,
-        type: 'image',
+        paramsJson,
         blob,
-        // The blob carries the type the provider reported — a data URL states
-        // its own — so recording a type here rather than a constant is what
-        // keeps a JPEG from being stored as a PNG.
         mimeType: storedMediaType(blob, 'image/png'),
-        size: blob.size,
-        prompt: req.prompt,
-        params: paramsJson,
-        createdAt: Date.now(),
       });
-      const objectUrl = URL.createObjectURL(blob);
-      useMediaGenerationStore.getState().markDone(req.elementId, objectUrl);
-    } else {
-      const result = await callVideoApi(req, abortSignal);
-
-      if (serverBacked) {
-        throwIfAborted(abortSignal);
-        const blob = await fetchAsBlob(result.ossUrl || result.url);
-        const posterSource = result.posterOssUrl || result.poster;
-        const posterBlob = posterSource
-          ? await fetchAsBlob(posterSource).catch(() => undefined)
-          : undefined;
-        throwIfAborted(abortSignal);
-        await commitPooledMedia({
-          req,
-          stageId,
-          paramsJson,
-          blob,
-          mimeType: storedMediaType(blob, 'video/mp4'),
-          posterBlob,
-          ...(posterBlob ? { posterMimeType: storedMediaType(posterBlob, 'image/jpeg') } : {}),
-        });
-        return ATTEMPT_COMMITTED;
-      }
-
-      // CDN path: server already uploaded to OSS
-      if (result.ossUrl) {
-        throwIfAborted(abortSignal);
-        await db.mediaFiles.put({
-          id: mediaFileKey(stageId, req.elementId),
-          stageId,
-          type: 'video',
-          blob: new Blob([]),
-          mimeType: 'video/mp4',
-          size: 0,
-          ossKey: result.ossUrl,
-          posterOssKey: result.posterOssUrl,
-          prompt: req.prompt,
-          params: paramsJson,
-          createdAt: Date.now(),
-        });
-        useMediaGenerationStore
-          .getState()
-          .markDone(req.elementId, result.ossUrl, result.posterOssUrl);
-        return ATTEMPT_COMMITTED;
-      }
-
-      // Fallback: fetch blob via proxy-media
-      throwIfAborted(abortSignal);
-      const blob = await fetchAsBlob(result.url);
-      const posterBlob = result.poster
-        ? await fetchAsBlob(result.poster).catch(() => undefined)
-        : undefined;
-      await db.mediaFiles.put({
-        id: mediaFileKey(stageId, req.elementId),
-        stageId,
-        type: 'video',
-        blob,
-        mimeType: 'video/mp4',
-        size: blob.size,
-        poster: posterBlob,
-        prompt: req.prompt,
-        params: paramsJson,
-        createdAt: Date.now(),
-      });
-      const objectUrl = URL.createObjectURL(blob);
-      const posterObjectUrl = posterBlob ? URL.createObjectURL(posterBlob) : undefined;
-      useMediaGenerationStore.getState().markDone(req.elementId, objectUrl, posterObjectUrl);
+      return ATTEMPT_COMMITTED;
     }
+    const result = await callVideoApi(req, abortSignal);
+    throwIfAborted(abortSignal);
+    const blob = await fetchAsBlob(result.ossUrl || result.url);
+    const posterSource = result.posterOssUrl || result.poster;
+    const posterBlob = posterSource
+      ? await fetchAsBlob(posterSource).catch(() => undefined)
+      : undefined;
+    throwIfAborted(abortSignal);
+    await commitPooledMedia({
+      req,
+      stageId,
+      paramsJson,
+      blob,
+      mimeType: storedMediaType(blob, 'video/mp4'),
+      posterBlob,
+      ...(posterBlob ? { posterMimeType: storedMediaType(posterBlob, 'image/jpeg') } : {}),
+    });
     return ATTEMPT_COMMITTED;
   } catch (err) {
     if (abortSignal?.aborted) {

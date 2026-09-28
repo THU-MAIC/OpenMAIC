@@ -9,12 +9,12 @@ import {
 import { resolveMediaRef } from '@/lib/media/resolve-media-ref';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useStageStore } from '@/lib/store/stage';
-import type { MediaFileRecord } from '@/lib/utils/database';
+import type { MediaFileRecord } from '@/lib/device-storage/database';
 import type { Scene, Stage } from '@/lib/types/stage';
 
 const dbState = vi.hoisted(() => ({ records: [] as MediaFileRecord[] }));
 
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: {
     mediaFiles: {
       where: () => ({

@@ -21,22 +21,8 @@ describe('persistence client bootstrap', () => {
     vi.unstubAllGlobals();
   });
 
-  it('leaves all sealed storage seams untouched when the flag is unset', async () => {
-    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '');
-
-    const runtime = await import('@/lib/runtime/store');
-    const documents = await import('@/lib/document-store');
-    const assets = await import('@/lib/media/asset-pool-config');
-
-    expect(runtime.isRuntimeStorageConfigured()).toBe(false);
-    expect(documents.isDocumentStorageConfigured()).toBe(false);
-    expect(assets.isAssetPoolStorageConfigured()).toBe(false);
-  });
-
-  it('configures the runtime, document and asset HTTP stores together', async () => {
-    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
-    // A token left in an old environment file must not reach any request.
-    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE_TOKEN', 'test-dev-token');
+  it('configures the runtime, document and asset HTTP stores together, in every browser', async () => {
+    // No build-time switch: a browser always gets the server-backed seams.
     vi.stubGlobal('window', {});
     vi.stubGlobal('localStorage', memoryStorage());
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -86,7 +72,6 @@ describe('persistence client bootstrap', () => {
     // The asset pool is a server-backed pool over the same endpoint.
     const assetStore = assets.resolveConfiguredAssetPoolStore();
     expect(assetStore).toBeInstanceOf(HttpAssetStore);
-    expect(assets.isAssetPoolServerBacked()).toBe(true);
     expect((assetStore as unknown as { baseUrl: string }).baseUrl).toBe('/api/persistence');
     expect((assetStore as unknown as { headersHook?: unknown }).headersHook).toBeUndefined();
 
@@ -99,7 +84,6 @@ describe('persistence client bootstrap', () => {
   });
 
   it('does not cache a failed learner-key request', async () => {
-    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
     vi.stubGlobal('window', {});
     const fetchMock = vi
       .fn()
@@ -113,7 +97,6 @@ describe('persistence client bootstrap', () => {
   });
 
   it('refuses a malformed learner-key answer', async () => {
-    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
     vi.stubGlobal('window', {});
     vi.stubGlobal(
       'fetch',
@@ -124,22 +107,7 @@ describe('persistence client bootstrap', () => {
     await expect(getPersistenceLearnerKey()).rejects.toThrow('malformed');
   });
 
-  it('leaves the asset pool on its browser default in browser-only mode', async () => {
-    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '');
-    vi.stubGlobal('window', {});
-    vi.stubGlobal('localStorage', memoryStorage());
-
-    const assets = await import('@/lib/media/asset-pool-config');
-    await import('@/lib/document-store');
-
-    expect(assets.isAssetPoolStorageConfigured()).toBe(false);
-    expect(assets.resolveConfiguredAssetPoolStore()).toBeUndefined();
-    expect(assets.isAssetPoolServerBacked()).toBe(false);
-  });
-
   it('does not run client configuration during server module evaluation', async () => {
-    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
-
     const runtime = await import('@/lib/runtime/store');
     const documents = await import('@/lib/document-store');
     const assets = await import('@/lib/media/asset-pool-config');
@@ -150,7 +118,6 @@ describe('persistence client bootstrap', () => {
   });
 
   it('preflights both configured seams so a failure cannot partially configure bootstrap', async () => {
-    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
     vi.stubGlobal('window', {});
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const documents = await import('@/lib/document-store/config');
@@ -167,7 +134,6 @@ describe('persistence client bootstrap', () => {
   });
 
   it('preflights the asset seam too, so a sealed pool cannot half-configure bootstrap', async () => {
-    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
     vi.stubGlobal('window', {});
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const assets = await import('@/lib/media/asset-pool-config');

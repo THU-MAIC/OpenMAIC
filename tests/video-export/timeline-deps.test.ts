@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mediaRows = new Map<string, MediaFileRecord>();
 const mediaGet = vi.fn((id: string) => Promise.resolve(mediaRows.get(id)));
 const audioGet = vi.fn<(id: string) => Promise<unknown>>((_id) => Promise.resolve(undefined));
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
   db: {
     audioFiles: { get: (id: string) => audioGet(id) },
@@ -54,7 +54,7 @@ import { collectVideoAssets } from '@/lib/video-export-app/collect';
 import { compileVideoTimeline } from '@/lib/video-export';
 import { resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
-import type { MediaFileRecord } from '@/lib/utils/database';
+import type { MediaFileRecord } from '@/lib/device-storage/database';
 import type { Scene } from '@/lib/types/stage';
 
 const STAGE_ID = 'stage-1';

@@ -1,4 +1,4 @@
-import type { StageOutlinesRecord, StageRecord } from '@/lib/utils/database';
+import type { StageOutlinesRecord, StageRecord } from '@/lib/legacy-browser-storage/schema';
 import type { AppScene } from '@/lib/types/stage';
 
 import type { AppDocumentOutline, AppStage } from './persistence-types';

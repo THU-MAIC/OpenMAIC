@@ -5,7 +5,7 @@
  * Images are stored as ArrayBuffers for cross-browser IndexedDB compatibility.
  */
 
-import { db, type ImageFileRecord } from './database';
+import { db, type ImageFileRecord } from '@/lib/device-storage/database';
 import { nanoid } from 'nanoid';
 import { createLogger } from '@/lib/logger';
 

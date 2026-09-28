@@ -138,6 +138,14 @@ async function validateBootConfiguration(): Promise<void> {
   // to load is reported as a startup failure, with its stack.
   const { runConfigurationCheck } = await import('@/lib/server/boot-configuration-error');
 
+  // The database, before anything else: every course, chat and asset lives in
+  // it and there is no browser-storage fallback, so a server without one would
+  // boot, pass its health check and then fail every persistence request. The
+  // refusal names the fix (`pnpm db:up` locally, DATABASE_URL or
+  // `docker compose up` for a deployment).
+  const { requireDatabaseUrl } = await import('@/lib/server/database-requirement');
+  runConfigurationCheck(() => requireDatabaseUrl());
+
   // The asset quota, read here rather than at the first persistence request.
   // The provider that consumes it is lazy and memoised, so a malformed ceiling
   // would otherwise let the process boot, pass its health check, and then fail

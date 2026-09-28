@@ -1,0 +1,21 @@
+# Local development database: `pnpm db:up` / `pnpm db:down`.
+#
+# Starts only the `postgres` service of docker-compose.yml (same image,
+# settings and data volume, through `extends`), and publishes it on the
+# loopback interface so a `pnpm dev` server on this machine can reach it.
+# Nothing is published on other interfaces, and the app service is not part of
+# this file. The plain `docker compose up` deployment does not read it, so its
+# database stays unpublished there.
+#
+# Set OPENMAIC_DB_PORT when 5432 is already taken on this machine, and use the
+# same port in DATABASE_URL (see .env.example).
+services:
+  postgres:
+    extends:
+      file: docker-compose.yml
+      service: postgres
+    ports:
+      - '127.0.0.1:${OPENMAIC_DB_PORT:-5432}:5432'
+
+volumes:
+  openmaic-postgres:

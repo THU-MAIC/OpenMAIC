@@ -21,7 +21,6 @@ const mocks = vi.hoisted(() => ({
   putAsset: vi.fn(),
   audioGet: vi.fn(),
   audioPut: vi.fn(),
-  serverBacked: vi.fn(),
 }));
 
 vi.mock('@/lib/document-store', () => ({ mutateDocument: mocks.mutateDocument }));
@@ -45,11 +44,8 @@ vi.mock('@/lib/media/asset-pool-config', async (importOriginal) => {
       }) as unknown as import('@/lib/media/asset-pool-config').AssetPoolStore,
   };
 });
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: { audioFiles: { get: mocks.audioGet, put: mocks.audioPut } },
-}));
-vi.mock('@/lib/persistence/media-persistence', () => ({
-  isServerBackedMediaPersistence: mocks.serverBacked,
 }));
 
 import { adoptCachedNarration } from '@/lib/audio/adopt-cached-narration';
@@ -246,7 +242,6 @@ describe('adopting cached narration', () => {
     mocks.putAsset.mockReset().mockResolvedValue('ast_narration');
     mocks.audioGet.mockReset().mockResolvedValue(undefined);
     mocks.audioPut.mockReset().mockResolvedValue(undefined);
-    mocks.serverBacked.mockReset().mockReturnValue(true);
     noteStageGenerationOwnership(stageId, 'owner');
     useStageStore.setState({
       stage: { id: stageId, name: 'Course' } as never,
@@ -483,16 +478,6 @@ describe('adopting cached narration', () => {
     serveDocument();
     mocks.audioGet.mockResolvedValue(cachedRow());
     noteStageGenerationOwnership(stageId, 'unresolved');
-
-    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 0 });
-
-    expect(mocks.putAsset).not.toHaveBeenCalled();
-  });
-
-  it('does nothing in browser-only mode, where the derived id is a complete address', async () => {
-    serveDocument();
-    mocks.audioGet.mockResolvedValue(cachedRow());
-    mocks.serverBacked.mockReturnValue(false);
 
     await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 0 });
 

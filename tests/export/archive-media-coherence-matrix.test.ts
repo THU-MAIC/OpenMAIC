@@ -39,7 +39,7 @@ const mocks = vi.hoisted(() => ({
   fetchMediaUrl: vi.fn(),
 }));
 
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
   db: {
     audioFiles: { get: async (id: string) => mocks.audioRows.get(id) },

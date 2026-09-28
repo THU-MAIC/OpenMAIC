@@ -15,7 +15,6 @@ import {
   type ClassroomGenerationOwnership,
 } from '@/lib/classroom/stage-ownership-signal';
 import { clearPendingMediaAllocations } from '@/lib/media/pending-media-allocations';
-import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useStageStore } from '@/lib/store';
@@ -47,7 +46,7 @@ export function useClassroomSession({
 
   const refreshOwnership = useCallback(
     (isCurrent: () => boolean) => {
-      if (!isCurrent() || !isServerBackedMediaPersistence()) return;
+      if (!isCurrent()) return;
 
       const askOwnership = async (): Promise<ClassroomGenerationOwnership> => {
         try {

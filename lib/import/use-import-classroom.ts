@@ -4,8 +4,8 @@ import { useState, useCallback, useRef } from 'react';
 import { nanoid } from 'nanoid';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { db, mediaFileKey } from '@/lib/utils/database';
-import type { AudioFileRecord } from '@/lib/utils/database';
+import { db, mediaFileKey } from '@/lib/device-storage/database';
+import type { AudioFileRecord } from '@/lib/device-storage/database';
 import type { GeneratedAgentConfig } from '@/lib/types/stage';
 import {
   agentConfigFromManifest,
@@ -19,7 +19,6 @@ import { canonicalizeLegacyScene, mutateDocument, type AppDocument } from '@/lib
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { putAsset } from '@/lib/media/asset-pool';
-import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { isStorageFullFailure } from '@/lib/media/media-failure';
 import type JSZip from 'jszip';
 import type { AssetMeta, Slide } from '@openmaic/dsl';
@@ -33,14 +32,10 @@ async function allocateImportedAsset(
   stageId: string,
 ): Promise<string> {
   // A shared document must name stored bytes, not a browser-only cache key.
-  return isServerBackedMediaPersistence() ? putAsset(blob, meta, { stageId }) : nanoid();
+  return putAsset(blob, meta, { stageId });
 }
 
 async function writeImportedMediaCache(write: () => Promise<unknown>): Promise<void> {
-  if (!isServerBackedMediaPersistence()) {
-    await write();
-    return;
-  }
   try {
     await write();
   } catch (error) {

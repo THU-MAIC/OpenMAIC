@@ -9,7 +9,12 @@ const ALIASED_GET_POOL_IMPORT =
 const NAMESPACE_POOL_IMPORT =
   /import\s+\*\s+as\s+\w+\s+from\s*['"](?:@\/lib\/media\/asset-pool|(?:\.\.?\/)+(?:[\w.-]+\/)*asset-pool(?:\.[cm]?[jt]s)?)['"]/;
 const FORBIDDEN = [
-  { pattern: /\bnew\s+BrowserAssetStore\s*\(/, allowed: new Set(['lib/media/asset-pool.ts']) },
+  // The app pool is the server-backed store the bootstrap configures; the only
+  // browser store left is the read-only reader of pre-server data.
+  {
+    pattern: /\bnew\s+BrowserAssetStore\s*\(/,
+    allowed: new Set(['lib/legacy-browser-storage/index.ts']),
+  },
   {
     pattern: /\bgetAssetPool\s*\(/,
     allowed: new Set(['lib/media/asset-pool.ts', 'lib/media/use-asset-url.ts']),

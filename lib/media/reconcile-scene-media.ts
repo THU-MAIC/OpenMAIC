@@ -14,7 +14,6 @@
  * and rebuilding it would lose the identity the store's own migration relies
  * on.
  */
-import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 
@@ -44,17 +43,12 @@ export function sceneHasPendingMediaAllocation(scene: Scene): boolean {
 }
 
 export function reconcileSceneMediaAllocations(scene: Scene): void {
-  if (!isServerBackedMediaPersistence()) return;
   applyPendingMediaAllocationsToScene(scene);
 }
 
 /**
  * Drain every allocation this scene's placeholders claim, rewriting the scene
  * in place. Returns whether anything changed.
- *
- * Unguarded by the persistence mode on purpose: callers that already know they
- * are server-backed (the write-back funnel) must not pay for the check twice,
- * and the registry is empty in browser-only mode anyway.
  */
 export function applyPendingMediaAllocationsToScene(scene: Scene): boolean {
   const stageId = scene.stageId;
@@ -118,8 +112,6 @@ export function applyKnownMediaAllocations(
   stage: Stage | null | undefined,
   scenes: readonly Scene[],
 ): { stage: Stage | null | undefined; scenes: readonly Scene[] } | null {
-  if (!isServerBackedMediaPersistence()) return null;
-
   const rewritesFor = (refs: Iterable<string>): GeneratedMediaReferenceRewrite[] => {
     const rewrites: GeneratedMediaReferenceRewrite[] = [];
     for (const ref of refs) {

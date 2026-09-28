@@ -84,7 +84,7 @@ vi.mock('@/lib/utils/chat-storage-lock', () => ({
     async (fn: (release: (value: unknown) => void) => Promise<unknown>) => fn(() => undefined),
   ),
 }));
-vi.mock('@/lib/utils/database', () => ({ db: dbMock }));
+vi.mock('@/lib/device-storage/database', () => ({ db: dbMock }));
 vi.mock('@/lib/media/asset-pool', () => ({
   removeAsset: vi.fn().mockResolvedValue(undefined),
 }));

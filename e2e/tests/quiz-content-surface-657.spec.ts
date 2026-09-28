@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import { ClassroomPage } from '../pages/classroom.page';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
 import type { QuizQuestion } from '../../lib/types/stage';
+import { seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
 
 const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
 
@@ -17,71 +18,46 @@ const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
  *     submit, grade). Asserts the Pro-mode edit actually reaches playback and
  *     that the produced quiz is playable and gradable end to end.
  *
- * The quiz scene is seeded straight into IndexedDB (the editor + generation
+ * The quiz scene is seeded through the server (the editor + generation
  * pipeline don't emit quiz scenes through the mock generator), mirroring how
  * classroom-interaction / interactive-keepalive specs set up a stage.
  */
-async function seedQuiz(page: Page, stageId: string, questions: QuizQuestion[]) {
+async function seedQuiz(page: Page, prefix: string, questions: QuizQuestion[]): Promise<string> {
   await page.addInitScript((settings) => {
     localStorage.setItem('maic:account:settings-storage', settings);
   }, SETTINGS_STORAGE);
   await page.goto('/', { waitUntil: 'networkidle' });
-  await page.evaluate(
-    ({ id, qs }) => {
-      return new Promise<void>((resolve, reject) => {
-        const request = indexedDB.open('maic-documents', 1);
-        request.onupgradeneeded = () => {
-          const db = request.result;
-          db.createObjectStore('stages', { keyPath: 'id' });
-          const scenes = db.createObjectStore('scenes', { keyPath: ['stageId', 'id'] });
-          scenes.createIndex('by-stage', 'stageId');
-          db.createObjectStore('outlines', { keyPath: 'stageId' });
-        };
-        request.onsuccess = (event) => {
-          const db = (event.target as IDBOpenDBRequest).result;
-          const tx = db.transaction(['stages', 'scenes', 'outlines'], 'readwrite');
-          const now = Date.now();
-          tx.objectStore('stages').put({
-            id,
-            name: 'Quiz deck',
-            description: '',
-            language: 'en-US',
-            style: 'professional',
-            createdAt: now,
-            updatedAt: now,
-            dslVersion: '0.1.0',
-          });
-          tx.objectStore('scenes').put({
-            id: 'scene-quiz',
-            stageId: id,
-            type: 'quiz',
-            title: 'Checkpoint',
-            order: 0,
-            content: { type: 'quiz', questions: qs },
-            createdAt: now,
-            updatedAt: now,
-          });
-          tx.objectStore('outlines').put({
-            stageId: id,
-            outline: { outlines: [], createdAt: now, updatedAt: now },
-          });
-          tx.oncomplete = () => {
-            db.close();
-            resolve();
-          };
-          tx.onerror = () => reject(tx.error);
-        };
-        request.onerror = () => reject(request.error);
-      });
+  const stageId = uniqueStageId(prefix);
+  const now = Date.now();
+  await seedServerDocument(page, {
+    stage: {
+      id: stageId,
+      name: 'Quiz deck',
+      description: '',
+      style: 'professional',
+      createdAt: now,
+      updatedAt: now,
     },
-    { id: stageId, qs: questions },
-  );
+    scenes: [
+      {
+        id: 'scene-quiz',
+        stageId,
+        type: 'quiz',
+        title: 'Checkpoint',
+        order: 0,
+        content: { type: 'quiz', questions },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    outline: { outlines: [], createdAt: now, updatedAt: now },
+  });
+  return stageId;
 }
 
 test.describe('Quiz content surface (#657)', () => {
   test('authoring: add every question type, edit, and delete', async ({ page }, testInfo) => {
-    const STAGE = 'e2e-quiz-authoring';
-    await seedQuiz(page, STAGE, [
+    const STAGE = await seedQuiz(page, 'e2e-quiz-authoring', [
       {
         id: 'seed-q1',
         type: 'single',
@@ -142,8 +118,7 @@ test.describe('Quiz content surface (#657)', () => {
   test('round trip: edit in Pro mode, then take the quiz and grade it', async ({
     page,
   }, testInfo) => {
-    const STAGE = 'e2e-quiz-roundtrip';
-    await seedQuiz(page, STAGE, [
+    const STAGE = await seedQuiz(page, 'e2e-quiz-roundtrip', [
       {
         id: 'q-single',
         type: 'single',

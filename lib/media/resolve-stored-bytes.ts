@@ -1,4 +1,4 @@
-import { db, mediaFileKey, type MediaFileRecord } from '@/lib/utils/database';
+import { db, mediaFileKey, type MediaFileRecord } from '@/lib/device-storage/database';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { mayNameAPoolAsset } from './media-placeholder';
 import { withAssetUrl } from './use-asset-url';

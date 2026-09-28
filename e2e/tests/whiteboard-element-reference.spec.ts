@@ -1,6 +1,6 @@
 import { expect, test } from '../fixtures/base';
 import { ClassroomPage } from '../pages/classroom.page';
-import { TEST_STAGE_ID, seedDatabase } from '../fixtures/interactive-state';
+import { seedDatabase } from '../fixtures/interactive-state';
 
 test.setTimeout(120_000);
 
@@ -31,7 +31,7 @@ test('selects a panned/zoomed whiteboard element, sends its identity, and retain
     if (path === '/api/comfyui-workflows') return route.fulfill({ json: { workflows: [] } });
     await route.continue();
   });
-  await seedDatabase(page, {
+  const stageId = await seedDatabase(page, {
     whiteboard: [
       {
         id: 'board',
@@ -55,7 +55,7 @@ test('selects a panned/zoomed whiteboard element, sends its identity, and retain
     ],
   });
   const classroom = new ClassroomPage(page);
-  await classroom.goto(TEST_STAGE_ID);
+  await classroom.goto(stageId);
   await classroom.waitForLoaded();
   await page.getByTitle('Open Whiteboard', { exact: true }).click();
   const fact = page.locator('[id="screen-element-board-fact"] > div').first();
