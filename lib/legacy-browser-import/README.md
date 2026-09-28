@@ -8,13 +8,19 @@ banner, dialog or opt-in, and a course simply appears in the library once it is 
 the server. Problems are logged with `console.warn` under the prefix
 `[legacy-browser-import]`.
 
-It runs **once per browser**: the data belongs to whoever used this browser
-before the upgrade, so the first owner the importer runs for claims it, and any
-other owner that later loads in the same browser gets nothing imported. The one
-exception is a handoff: when the claiming owner is claimed into an account
-(observed as 403 `OWNER_RETIRED`, or inferred because the current owner now
-holds courses or folders the importer created), the account continues the
-unfinished items. Courses already imported are never imported again.
+It runs **once per browser**, and moves to another owner only when that owner
+claimed the original one. The data belongs to whoever used this browser before
+the upgrade, so the first owner the server confirms (the run's first
+authenticated request of its own, the library listing, succeeded) claims it; a
+run that dies before that binds nobody. A different owner continues the
+unfinished items only when the server confirms that it absorbed the claiming
+owner through a claim: `GET /api/identity/merged-from?salt=&digest=` answers,
+for the requesting owner's own `owner_merges` rows only, whether one of them
+hashes to the recorded digest. Nothing the browser observes (a refusal, a
+library listing, an empty ledger) moves the data; a 403 `OWNER_RETIRED` only
+stops the run. Any other owner gets nothing imported, and that answer is reused
+for an hour before the server is asked again. Courses already imported are
+never imported again.
 
 It is **temporary** and will be deleted a few releases after it ships (see
 [Removal](#removal)).
@@ -71,11 +77,11 @@ Settings → Clear Local Cache still leaves the legacy databases alone.
 | Server persistence unreachable, learner key unavailable | Nothing is done; the next load tries again.                                                                                           |
 | Network error, 5xx, 408/429, 409                         | The item stays pending; a later load retries it. Backoff between runs: 30 s, doubling, capped at 6 h.                                  |
 | 503 `OWNER_BUSY`                                         | The run pauses; the next run is allowed after `Retry-After` (2 s when not visible to the client).                                      |
-| 401 (`INVALID_CREDENTIAL`, the access-code gate)         | The run pauses; items stay pending; a later load retries with backoff.                                                                 |
-| 403 `OWNER_RETIRED`                                      | The run stops, items stay pending, and the ledger notes the retirement: the owner that loads next (the account) continues.            |
+| 401 (`INVALID_CREDENTIAL`, the access-code gate)         | The run pauses; items stay pending; a later load retries with backoff. This holds for a failure from any call of a course.            |
+| 403 `OWNER_RETIRED`                                      | The run stops and items stay pending; the account continues them once the server confirms the claim.                                 |
 | 403 `FORBIDDEN_LEARNER` (the owner changed mid-run)      | The run stops; items stay pending for the next run.                                                                                   |
 | 400 / 422 validation on an item                          | That item is recorded as failed with the reason; the rest continue.                                                                  |
-| An upload refused for good (413, 400, 403)               | The element gets the app's ordinary failed-media record in the device cache (the one the generation pass writes), so it shows as failed with its usual affordance instead of a dangling reference. The legacy bytes stay. |
+| An upload refused for good (413, 400, 403)               | The element gets the app's ordinary failed-media record in the device cache (the one the generation pass writes) instead of a dangling reference: with Retry (regenerate) when the legacy row has a generation request, without it (`ASSET_REFUSED`) for the user's own media. The legacy bytes stay. |
 | A whiteboard / PBL session is already active on the server | The legacy session of that kind is not created (the app keeps one active session per kind).                                         |
 | Asset quota exceeded                                     | The document is imported anyway. A generation placeholder's bytes go to the device cache's `mediaFiles` and narration to its `audioFiles`, where the app's own retry uploads them without a provider call; references with no such path (legacy pool ids, import-minted ids) stay pending and the importer retries them. Nothing is lost: the legacy copy is untouched. |
 | Folder name refused or folder limit reached              | The folder is recorded as failed; its courses stay unfiled.                                                                          |
@@ -84,9 +90,11 @@ Settings → Clear Local Cache still leaves the legacy databases alone.
 ## Ledger
 
 One ledger per browser in localStorage, `maic:legacy-import:v2` (`ledger.ts`). It
-never holds an owner id: the claiming owner is a SHA-256 digest (an anonymous
-owner id is the anonymous cookie's value, a bearer credential). It holds the
-random salt fresh ids are derived from. Every step is recorded when it lands, so
+never holds an owner id: the claiming owner is SHA-256 of the per-browser salt
+and the owner id (an anonymous owner id is the anonymous cookie's value, a bearer
+credential; the salt keeps an enumerable host id from being recovered by a
+dictionary, and the server computes the same value from the salt the browser
+sends). The same salt derives fresh ids. Every step is recorded when it lands, so
 a crash or reload resumes at the first unfinished step; writes merge with the
 stored copy, so tabs without Web Locks do not erase each other's progress. Clear
 Local Cache keeps the ledger (and the old learner key), so it neither loses
@@ -104,6 +112,11 @@ When the maintainers decide enough releases have passed:
 1. Delete `lib/legacy-browser-import/` and its tests (`tests/legacy-browser-import/`,
    `e2e/tests/legacy-browser-import.spec.ts`).
 2. Remove the dynamic import at the end of `lib/persistence/bootstrap.ts`.
+   Optionally remove `GET /api/identity/merged-from`
+   (`app/api/identity/merged-from/`, `ownerAbsorbedDigest` in
+   `lib/persistence/owner-merges.ts` and its route test) and the
+   `ASSET_REFUSED` code in `lib/media/media-failure.ts` once no device record
+   carries it.
 3. Optionally, drop what only the importer used: `LEGACY_IMPORT_LEDGER_KEY`
    in `lib/device-storage/clear-local-cache.ts` (and the legacy learner key it
    keeps), `lib/legacy-browser-storage/`, `importLegacyQuizSnapshot` in

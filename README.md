@@ -522,14 +522,16 @@ a one-way importer copies each course, with its chat, learner runtime, playback
 position, agent roster, folders and membership, quiz progress and media, to the
 owner the server resolves for that browser (the anonymous cookie owner by
 default), and the course appears in the library. This happens once per browser:
-the first owner to load the upgraded app in it claims the browser's data, and
-another owner that later uses the same browser gets nothing imported (if the
-first owner is an anonymous one that signs in and is claimed into an account,
-the account continues the import). The browser copy is left
+the first owner the server confirms in it claims the browser's data, and it
+moves to another owner only when that owner claimed the original one (an
+anonymous owner that signs in and is claimed into an account; the server
+confirms the claim through `GET /api/identity/merged-from`). Any other owner
+that later uses the same browser gets nothing imported. The browser copy is left
 untouched, and **Settings → Clear Local Cache** does not delete it. A course the
 server already has for that owner stays as the server has it; one whose id
 another owner holds is imported under a new id; one deleted on the server is not
-brought back. The importer records its progress in the browser (without the owner id), so an
+brought back. The importer records its progress in the browser (the owner only as a salted
+digest), so an
 interrupted import resumes on a later load and nothing is imported twice; problems are
 logged in the browser console under `[legacy-browser-import]`. The importer is
 temporary and will be removed a few releases later.
