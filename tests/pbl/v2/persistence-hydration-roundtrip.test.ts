@@ -161,16 +161,19 @@ async function createHarness(label: string) {
   });
 
   documentStoreModule.configureDocumentStorage({ store: documentStore });
-  runtimeStoreModule.configureRuntimeStorage({ store: runtimeStore });
+  // The learner key is the server-derived one, supplied through configuration
+  // exactly as the persistence bootstrap does.
+  runtimeStoreModule.configureRuntimeStorage({
+    store: runtimeStore,
+    learnerKey: () => LEARNER_KEY,
+  });
 
   return { documentStore, runtimeStore };
 }
 
 beforeEach(() => {
   vi.resetModules();
-  const localStorage = new MemoryStorage();
-  localStorage.setItem('maic:device:runtime.learnerKey', JSON.stringify(LEARNER_KEY));
-  vi.stubGlobal('localStorage', localStorage);
+  vi.stubGlobal('localStorage', new MemoryStorage());
   vi.stubGlobal('IDBKeyRange', IDBKeyRange);
 });
 
