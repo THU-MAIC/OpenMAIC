@@ -174,6 +174,9 @@ describe('runtime sessions the server already has', () => {
     expect(active.map((session) => session.id)).toEqual([
       `whiteboard:${DOCS_COURSE}:${encodeURIComponent(OWNER_A)}`,
     ]);
+    expect(loadLedger(storage)?.courses[DOCS_COURSE]?.notes).toEqual([
+      'whiteboard session not imported: one is already active on the server',
+    ]);
   });
 
   it('leaves a session the app wrote under a legacy session id alone', async () => {

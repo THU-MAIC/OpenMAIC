@@ -12,6 +12,7 @@ import {
   LEDGER_KEY,
   ledgerIsSettled,
   loadLedger,
+  recordHandoff,
   saveLedger,
 } from '@/lib/legacy-browser-import/ledger';
 
@@ -128,6 +129,25 @@ describe('the ledger', () => {
     expect(Object.keys(stored.courses).sort()).toEqual(['c1', 'c2']);
     expect(stored.courses.c1!.steps).toEqual({ document: 'done', media: 'done' });
     expect(stored.courses.c1!.sessions).toEqual({ s1: 's1', s2: 's2' });
+  });
+
+  it('keeps the stored claiming owner and completion when a stale tab saves', () => {
+    const storage = new MemoryStorage();
+    const tabA = ensureLedger(storage);
+    const tabB = structuredClone(tabA);
+    tabA.ownerDigest = 'a'.repeat(64);
+    tabA.completedAt = 5;
+    saveLedger(storage, tabA);
+    tabB.ownerDigest = 'b'.repeat(64);
+    saveLedger(storage, tabB);
+    expect(loadLedger(storage)).toMatchObject({ ownerDigest: 'a'.repeat(64), completedAt: 5 });
+
+    // A confirmed handoff from exactly that owner does replace it.
+    const tabC = structuredClone(loadLedger(storage)!);
+    recordHandoff(tabC, tabC.ownerDigest!);
+    tabC.ownerDigest = 'c'.repeat(64);
+    saveLedger(storage, tabC);
+    expect(loadLedger(storage)?.ownerDigest).toBe('c'.repeat(64));
   });
 
   it('is settled only when nothing is pending', () => {
