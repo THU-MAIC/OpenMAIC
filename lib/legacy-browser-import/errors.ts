@@ -4,8 +4,14 @@
  *
  * The persistence clients carry the server's answer as `status` + `code` on
  * their error classes (documents, runtime, assets); a write-back failure wraps
- * the store's error in `cause`. Anything without a status -- a dropped
- * connection, a fetch that never reached the server -- is transient.
+ * the store's error in `cause`. Only a refusal the server sent (4xx) or a
+ * local validation failure is ever final. Everything else is transient:
+ * anything without a status (the document, runtime, folder and binding
+ * clients let a rejected fetch through as it is), the asset client's
+ * `status 0 HTTP_REQUEST_FAILED` (it wraps a rejected or timed-out fetch, the
+ * existence probe's deadline included), and a 2xx/3xx answer the client could
+ * not use (`MALFORMED_RESPONSE`, an unfollowed redirect), which the server
+ * never meant as a refusal.
  */
 export type FailureKind =
   /** Network, 5xx, 408/429, 409: leave the item pending and retry on a later load. */
@@ -105,6 +111,12 @@ export function classifyFailure(error: unknown): Failure {
   if (code === 'LEGACY_IMPORT_NOT_BOUND') return failure('not-bound');
   if (status === 401 || code === 'INVALID_CREDENTIAL') return failure('unauthorized');
   if (status === 507 || code === 'ASSET_QUOTA_EXCEEDED') return failure('quota');
+  if (status === 0) {
+    // The asset client's local failures: a request that never got an answer
+    // is transient; a local validation failure is final.
+    return failure(code === 'HTTP_REQUEST_FAILED' ? 'transient' : 'permanent');
+  }
+  if (status < 400) return failure('transient');
   if (status >= 500 || status === 408 || status === 409 || status === 425 || status === 429) {
     return failure('transient');
   }

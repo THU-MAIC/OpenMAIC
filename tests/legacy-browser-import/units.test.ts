@@ -1,11 +1,13 @@
 /** The importer's pure parts: derived ids, failure classification, the ledger. */
 import { createHash } from 'node:crypto';
 
+import { HttpAssetStore } from '@openmaic/storage';
 import { describe, expect, it } from 'vitest';
 
 import { sha256Hex } from '@/lib/legacy-browser-import/digest';
 import { classifyFailure } from '@/lib/legacy-browser-import/errors';
 import { freshStageId, rewriteStageSegment } from '@/lib/legacy-browser-import/ids';
+import { connectImportServer } from '@/lib/legacy-browser-import/server';
 import {
   backoffMs,
   ensureLedger,
@@ -103,6 +105,83 @@ describe('failure classification', () => {
       kind: 'permanent',
       reason: '400 VALIDATION_FAILED',
     });
+  });
+
+  it('reads a request that never got an answer as transient, from every client the importer uses', async () => {
+    const rejected: typeof fetch = async () => {
+      throw new TypeError('Failed to fetch');
+    };
+    // A captive portal or a proxy page: 200, but not the JSON the client asked for.
+    const portal: typeof fetch = async () =>
+      new Response('<html>sign in</html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      });
+    const BROWSER = '0123456789abcdef0123456789abcdef';
+    for (const fetchImpl of [rejected, portal]) {
+      const clients = connectImportServer(BROWSER, fetchImpl);
+      const calls: [string, () => Promise<unknown>][] = [
+        ['bind', () => clients.bind()],
+        ['learner key', () => clients.learnerKey()],
+        ['load document', () => clients.documents.loadDocument('course')],
+        ['get session', () => clients.runtime.getSession('session')],
+        ['list sessions', () => clients.runtime.listSessions('course', 'learner')],
+        ['list courses', () => clients.listOwnedStages()],
+        ['list folders', () => clients.folders.list()],
+        ['create folder', () => clients.folders.create('Folder')],
+        ['file course', () => clients.folders.setMembership('course', 'folder')],
+        ['upload', () => clients.putAsset(new Blob(['x'], { type: 'image/png' }), {})],
+      ];
+      if (fetchImpl === rejected) calls.push(['probe', () => clients.assetExists('ast_x')]);
+      for (const [label, call] of calls) {
+        const error = await call().then(
+          () => undefined,
+          (caught: unknown) => caught,
+        );
+        expect(error, label).toBeDefined();
+        expect(classifyFailure(error).kind, label).toBe('transient');
+      }
+    }
+  });
+
+  it('reads the asset client’s status-0 failures by code: a dropped request or probe timeout is transient, local validation is final', async () => {
+    const dropped = new HttpAssetStore({
+      baseUrl: '/api/persistence',
+      fetch: async () => {
+        throw new TypeError('Failed to fetch');
+      },
+    });
+    const upload = await dropped
+      .put(new Blob(['x'], { type: 'image/png' }))
+      .catch((e: unknown) => e);
+    expect(upload).toMatchObject({ status: 0, code: 'HTTP_REQUEST_FAILED' });
+    expect(classifyFailure(upload).kind).toBe('transient');
+
+    const hanging = new HttpAssetStore({
+      baseUrl: '/api/persistence',
+      probeTimeoutMs: 5,
+      fetch: (_input, init) =>
+        new Promise<Response>((_resolve, reject) =>
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          ),
+        ),
+    });
+    const probe = await hanging.exists('ast_x').catch((e: unknown) => e);
+    expect(probe).toMatchObject({ status: 0, code: 'HTTP_REQUEST_FAILED' });
+    expect(classifyFailure(probe).kind).toBe('transient');
+
+    const invalid = await dropped
+      .put(new Blob(['x']), { principal: 'someone' } as never)
+      .catch((e: unknown) => e);
+    expect(invalid).toMatchObject({ status: 0, code: 'VALIDATION_FAILED' });
+    expect(classifyFailure(invalid).kind).toBe('permanent');
+    expect(classifyFailure(Object.assign(new Error('x'), { status: 0 })).kind).toBe('permanent');
+  });
+
+  it('reads an answer the client could not use (2xx/3xx) as transient, never as a refusal', () => {
+    expect(failure(200, 'MALFORMED_RESPONSE').kind).toBe('transient');
+    expect(failure(302).kind).toBe('transient');
   });
 
   it('finds the status on a wrapped cause', () => {
