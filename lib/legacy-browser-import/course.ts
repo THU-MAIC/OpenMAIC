@@ -406,6 +406,11 @@ async function runCourse(
           checkpoint: context.checkpoint,
           log: context.log,
         });
+      } else if (context.sources.runtime) {
+        // The browser runtime store lists sessions only by learner key, and the
+        // key it used is no longer in this browser's localStorage.
+        addNote(entry, 'learner runtime not imported: the old device learner key is gone');
+        context.log(`Course ${legacyStageId}: the old device learner key is gone; runtime skipped`);
       }
       step('runtime');
     }
