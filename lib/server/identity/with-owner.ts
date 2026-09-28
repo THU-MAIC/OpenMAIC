@@ -1,3 +1,5 @@
+import { LEGACY_IMPORT_HEADER } from '@/lib/persistence/legacy-import-bindings';
+
 import { resolveRequestOwner } from './resolve';
 import type { OwnerAuthRequest, OwnerPrincipal } from './types';
 
@@ -52,14 +54,16 @@ export async function authenticateRequestOwner(
  * browser's binding (`lib/persistence/legacy-import-bindings.ts`). Checked
  * here, in the one resolution every owner-scoped route goes through, so no
  * route the importer writes to can skip it; a request without the header is
- * not affected. A malformed id answers 400.
+ * not affected. A malformed id answers 400; a binding that cannot be read
+ * (the database is down) answers 503, which the importer retries. Every
+ * answer carries the resolution's `Set-Cookie` values.
  */
 async function legacyImportFence(
   req: OwnerAuthRequest,
   ownerId: string,
   responseHeaders: Headers,
 ): Promise<Response | undefined> {
-  const browserId = req.headers.get('x-openmaic-legacy-import');
+  const browserId = req.headers.get(LEGACY_IMPORT_HEADER);
   if (browserId === null) return undefined;
   const refuse = (status: number, code: string, message: string) =>
     Response.json({ error: { code, message } }, { status, headers: responseHeaders });
@@ -72,12 +76,18 @@ async function legacyImportFence(
   if (!connectionString) {
     return refuse(409, LEGACY_IMPORT_NOT_BOUND, 'this browser is not bound to this owner');
   }
-  const { getServerPersistenceProvider } = await import('@/lib/persistence/server-provider');
-  const { pool } = await getServerPersistenceProvider(connectionString);
-  const holder = await legacyImportBindingOwner(
-    pool as unknown as Parameters<typeof legacyImportBindingOwner>[0],
-    browserId,
-  );
+  let holder: string | null;
+  try {
+    const { getServerPersistenceProvider } = await import('@/lib/persistence/server-provider');
+    const { pool } = await getServerPersistenceProvider(connectionString);
+    holder = await legacyImportBindingOwner(
+      pool as unknown as Parameters<typeof legacyImportBindingOwner>[0],
+      browserId,
+    );
+  } catch (error) {
+    console.error('[owner-identity] the legacy import binding could not be read', error);
+    return refuse(503, 'PERSISTENCE_UNAVAILABLE', 'the legacy import binding could not be read');
+  }
   if (holder !== ownerId) {
     return refuse(409, LEGACY_IMPORT_NOT_BOUND, 'this browser is not bound to this owner');
   }

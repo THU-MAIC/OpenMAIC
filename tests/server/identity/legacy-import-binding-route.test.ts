@@ -6,7 +6,12 @@ import { PGlite } from '@electric-sql/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
-import { BINDING_ENDPOINT, FENCED_ENDPOINTS } from '@/lib/legacy-browser-import/server';
+import {
+  BINDING_ENDPOINT,
+  FENCED_ENDPOINTS,
+  LEGACY_IMPORT_HEADER as CLIENT_HEADER,
+} from '@/lib/legacy-browser-import/server';
+import { LEGACY_IMPORT_HEADER } from '@/lib/persistence/legacy-import-bindings';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
 import type { OwnerAuthMethod } from '@/lib/server/identity/types';
 
@@ -175,6 +180,36 @@ describe('the legacy import binding and its fence', () => {
     expect(await bound(as('bob'))).toBe(false);
   });
 
+  it('refuses a bind by an owner a claim retired, and binds nothing', async () => {
+    await createOwnerBoundDocumentStore({
+      pool,
+      ownerId: ANON,
+      validateScene: validateAppScene,
+      validateStage: validateAppStage,
+    }).saveDocument({
+      stage: { id: 'anon-course', name: 'x', createdAt: 1, updatedAt: 1 },
+      scenes: [],
+    } as never);
+    const { POST } = await import('@/app/api/identity/claim/route');
+    const claimed = await POST(
+      new Request('http://localhost/api/identity/claim', {
+        method: 'POST',
+        headers: { ...as('alice'), cookie: ANON_COOKIE, ...SAME_ORIGIN_JSON },
+        body: '{}',
+      }),
+    );
+    expect(claimed.status).toBe(200);
+
+    // A stale tab still carrying the retired anonymous cookie.
+    const stale = await bind({ cookie: ANON_COOKIE });
+    expect(stale.status).toBe(403);
+    await expect(stale.json()).resolves.toMatchObject({ error: { code: 'OWNER_RETIRED' } });
+    const rows = await pool.query('SELECT browser_id FROM legacy_import_bindings');
+    expect(rows.rows).toEqual([]);
+    // The account can still bind the browser.
+    expect(await bound(as('alice'))).toBe(true);
+  });
+
   // ---- the fence -----------------------------------------------------------
 
   function concrete(path: string): string {
@@ -254,6 +289,24 @@ describe('the legacy import binding and its fence', () => {
       'x-openmaic-legacy-import': 'not-hex',
     });
     expect(response.status).toBe(400);
+  });
+
+  it('answers 503 with the minted cookie when the binding cannot be read', async () => {
+    const query = vi.spyOn(pool, 'query').mockRejectedValue(new Error('database is down'));
+    try {
+      const response = await send(FENCED_ENDPOINTS[0], { [LEGACY_IMPORT_HEADER]: BROWSER });
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: 'PERSISTENCE_UNAVAILABLE' },
+      });
+      expect(response.headers.get('set-cookie')).toMatch(/^anonymous_id=/);
+    } finally {
+      query.mockRestore();
+    }
+  });
+
+  it('uses one header name on both sides', () => {
+    expect(CLIENT_HEADER).toBe(LEGACY_IMPORT_HEADER);
   });
 
   it('lists every route the importer clients reach', () => {
