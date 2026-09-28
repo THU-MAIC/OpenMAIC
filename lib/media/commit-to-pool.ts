@@ -56,6 +56,7 @@ import type { AssetMeta } from '@openmaic/dsl';
 
 import { createLogger } from '@/lib/logger';
 import { putAsset } from '@/lib/media/asset-pool';
+import { clearAssetStorageFull } from '@/lib/media/asset-storage-full';
 import { ASSET_QUOTA_EXCEEDED, isStorageFullFailure } from '@/lib/media/media-failure';
 
 const log = createLogger('PoolCommit');
@@ -156,6 +157,11 @@ export interface PoolCommitPlan<TPlacement> {
    * else. A commit must not be reported as failed over it.
    */
   readonly mirror: (assetId: string, placement: TPlacement) => Promise<void>;
+  /**
+   * Store the bytes somewhere other than the app's pool seam (the one-way
+   * importer's fenced client). Same contract as the pool's `put`.
+   */
+  readonly put?: (data: Blob, meta: AssetMeta) => Promise<string>;
 }
 
 /**
@@ -191,15 +197,21 @@ export async function commitToPool<TPlacement>(
 ): Promise<PoolCommitOutcome<TPlacement>> {
   let assetId: string;
   try {
-    assetId = await putAsset(
-      plan.bytes,
-      { contentType: plan.mimeType, ...plan.meta },
-      // The stage goes to the seam, which is the one place a successful write
-      // retires this course's "no room" note. A write-back that fails for its
-      // own reasons afterwards therefore does not leave the course standing
-      // down.
-      { ...(plan.stageId ? { stageId: plan.stageId } : {}) },
-    );
+    const meta = { contentType: plan.mimeType, ...plan.meta };
+    if (plan.put) {
+      assetId = await plan.put(plan.bytes, meta);
+      if (plan.stageId) await clearAssetStorageFull(plan.stageId);
+    } else {
+      assetId = await putAsset(
+        plan.bytes,
+        meta,
+        // The stage goes to the seam, which is the one place a successful write
+        // retires this course's "no room" note. A write-back that fails for its
+        // own reasons afterwards therefore does not leave the course standing
+        // down.
+        { ...(plan.stageId ? { stageId: plan.stageId } : {}) },
+      );
+    }
   } catch (error) {
     if (!poolRefusedForRoom(error)) return { status: 'failed', error };
     const refused: RefusedPoolBytes = {

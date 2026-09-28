@@ -2,20 +2,16 @@
  * The importer's completion ledger: what has already moved to the server from
  * this browser.
  *
- * Once per browser, not once per owner. The data in the old browser stores
- * belongs to whoever used this browser before the upgrade, so the first owner
- * the server confirms (an authenticated request of the run succeeded) claims
- * it, and any other owner that later loads in the same browser gets nothing
- * imported. It moves to another owner only when the server confirms that this
- * owner absorbed the first one through a claim (`index.ts`).
+ * Once per browser, not once per owner, and the server decides whose: the
+ * ledger holds a random browser id (128 bits), and the server binds that id
+ * to the first owner that asks (`lib/persistence/legacy-import-bindings.ts`).
+ * A claim carries the binding to the account. The ledger itself holds no
+ * owner information at all.
  *
- * One key, `maic:legacy-import:v2`, in localStorage. It never holds an owner
- * id: the claiming owner is recorded as a salted SHA-256 digest
- * (`ownerDigest` in `digest.ts`), because an anonymous owner id is the
- * anonymous cookie's value, a bearer credential. It also holds the random
- * salt, which fresh course ids are derived from too (`ids.ts`). Clear Local
- * Cache keeps it (`LEGACY_IMPORT_LEDGER_KEY`), so clearing the cache does not
- * bring back a course the user deleted after it was imported.
+ * One key, `maic:legacy-import:v3`, in localStorage. The browser id also
+ * derives fresh course ids (`ids.ts`). Clear Local Cache keeps the ledger
+ * (`LEGACY_IMPORT_LEDGER_KEY`), so clearing the cache neither loses import
+ * state nor brings back a course the user deleted after it was imported.
  *
  * Every step is recorded as soon as it lands, so a reload or crash mid-import
  * resumes at the first unfinished step. Writes merge with what is stored, so
@@ -25,9 +21,9 @@
  */
 import { LEGACY_IMPORT_LEDGER_KEY } from '@/lib/device-storage/clear-local-cache';
 
-import { randomSalt } from './digest';
+import { randomBrowserId } from './digest';
 
-export const LEDGER_VERSION = 2;
+export const LEDGER_VERSION = 3;
 
 /** Terminal states never run again for this owner; `pending` resumes on a later load. */
 export type ItemStatus = 'pending' | 'done' | 'failed' | 'skipped';
@@ -69,6 +65,13 @@ export interface CourseEntry {
   sessionsDone?: string[];
   /** Things that did not come across but do not keep the course pending. */
   notes?: string[];
+  /**
+   * Runs in which reading this course from the old browser storage failed
+   * (not an unusable record: the storage itself), and when the first did.
+   * After enough runs over enough time the course settles on what can be read
+   * (`READ_FAILURE_BUDGET`), so one broken record cannot hold the import open.
+   */
+  readFailures?: { count: number; since: number };
   /** Per-reference media outcomes that are not simply "converted". */
   media?: Record<string, { status: 'pending' | 'failed'; reason: string }>;
 }
@@ -81,15 +84,11 @@ export interface FolderEntry {
 
 export interface ImportLedger {
   version: typeof LEDGER_VERSION;
-  /** Random, per browser: the input fresh course ids are derived from. */
-  salt: string;
-  /** Salted SHA-256 (hex) of the owner that claimed this browser's legacy data. */
-  ownerDigest?: string;
   /**
-   * Digests of other owners the server said did not absorb the claiming one,
-   * with the time (epoch ms) until which the answer is reused.
+   * Random, 128 bits, lowercase hex: this browser's id. The server binds it to
+   * an owner; fresh course ids are derived from it.
    */
-  otherOwners?: Record<string, number>;
+  browserId: string;
   /** Runs that ended with work still pending, for the backoff. */
   failedRuns: number;
   /** Earliest time (epoch ms) the next run may start. */
@@ -102,10 +101,19 @@ export interface ImportLedger {
   autoVoiceCache?: 'done';
 }
 
+/** A course whose storage reads failed this often, over this long, settles. */
+export const READ_FAILURE_BUDGET = { runs: 5, spanMs: 24 * 60 * 60 * 1000 } as const;
+
 export const LEDGER_KEY = LEGACY_IMPORT_LEDGER_KEY;
 
 function newLedger(): ImportLedger {
-  return { version: LEDGER_VERSION, salt: randomSalt(), failedRuns: 0, courses: {}, folders: {} };
+  return {
+    version: LEDGER_VERSION,
+    browserId: randomBrowserId(),
+    failedRuns: 0,
+    courses: {},
+    folders: {},
+  };
 }
 
 function isLedger(value: unknown): value is ImportLedger {
@@ -113,8 +121,8 @@ function isLedger(value: unknown): value is ImportLedger {
   const candidate = value as Partial<ImportLedger>;
   return (
     candidate.version === LEDGER_VERSION &&
-    typeof candidate.salt === 'string' &&
-    candidate.salt !== '' &&
+    typeof candidate.browserId === 'string' &&
+    /^[0-9a-f]{32}$/.test(candidate.browserId) &&
     typeof candidate.courses === 'object' &&
     candidate.courses !== null &&
     typeof candidate.folders === 'object' &&
@@ -146,7 +154,9 @@ export function loadLedger(storage: Storage): ImportLedger | undefined {
 
 /**
  * The stored ledger, creating it when there is none. Written and then read
- * back, so two tabs starting at once settle on the same salt.
+ * back, so two tabs starting at once settle on the same browser id (and if
+ * two do not, the server binds each id on its own; the one bound to the
+ * other owner is refused).
  */
 export function ensureLedger(storage: Storage): ImportLedger {
   const existing = loadLedger(storage);
@@ -162,42 +172,15 @@ function progress(entry: { status: ItemStatus; steps?: object }): number {
   return Object.keys(entry.steps ?? {}).length;
 }
 
-/** Ledgers whose owner this tab changed through a confirmed handoff. */
-const handoffs = new WeakMap<ImportLedger, string>();
-
-/** Record that `ledger` passed from the owner with digest `from` to its current one. */
-export function recordHandoff(ledger: ImportLedger, from: string): void {
-  handoffs.set(ledger, from);
-}
-
 /**
  * Fold what another tab stored into `ledger`, in place: an item keeps
  * whichever copy got further, and runtime-session intents are unioned (an
  * intent dropped here would make a half-copied session look like the app's).
- * The claiming owner stored first wins unless this tab handed the import over
- * from exactly that owner; completion is kept if either copy has it.
+ * Completion is kept if either copy has it.
  */
-export function mergeStoredLedger(
-  ledger: ImportLedger,
-  stored: ImportLedger | undefined,
-  now?: number,
-): void {
-  if (!stored || stored.salt !== ledger.salt) return;
-  if (stored.ownerDigest !== undefined && stored.ownerDigest !== ledger.ownerDigest) {
-    if (handoffs.get(ledger) !== stored.ownerDigest) ledger.ownerDigest = stored.ownerDigest;
-  }
+export function mergeStoredLedger(ledger: ImportLedger, stored: ImportLedger | undefined): void {
+  if (!stored || stored.browserId !== ledger.browserId) return;
   ledger.completedAt ??= stored.completedAt;
-  if (stored.otherOwners) {
-    ledger.otherOwners = { ...stored.otherOwners, ...ledger.otherOwners };
-  }
-  if (ledger.otherOwners && now !== undefined) {
-    // Expired answers are only noise; drop them so the map does not grow
-    // with every owner that ever loaded in a shared browser.
-    for (const [digest, until] of Object.entries(ledger.otherOwners)) {
-      if (until <= now) delete ledger.otherOwners[digest];
-    }
-    if (Object.keys(ledger.otherOwners).length === 0) delete ledger.otherOwners;
-  }
   for (const [id, theirs] of Object.entries(stored.courses)) {
     const ours = ledger.courses[id];
     if (!ours) {
@@ -222,8 +205,8 @@ export function mergeStoredLedger(
 }
 
 /** Persist the ledger, merged with the stored copy. A full storage throws (transient). */
-export function saveLedger(storage: Storage, ledger: ImportLedger, now?: number): void {
-  mergeStoredLedger(ledger, loadLedger(storage), now);
+export function saveLedger(storage: Storage, ledger: ImportLedger): void {
+  mergeStoredLedger(ledger, loadLedger(storage));
   storage.setItem(LEDGER_KEY, JSON.stringify(ledger));
 }
 

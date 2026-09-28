@@ -32,7 +32,11 @@
 import { rowBelongsToAction } from '@/lib/audio/adopt-cached-narration';
 import { persistNarrationReference } from '@/lib/audio/persist-narration-reference';
 import { db, mediaFileKey } from '@/lib/device-storage/database';
-import type { AppDocument } from '@/lib/document-store';
+import type { AssetMeta } from '@openmaic/dsl';
+import type { DocumentStore } from '@openmaic/storage';
+
+import type { AppDocument, AppStage } from '@/lib/document-store';
+import type { AppScene } from '@/lib/types/stage';
 import {
   readLegacyAudioFile,
   readLegacyMediaFiles,
@@ -44,7 +48,6 @@ import {
   type PoolCommitOutcome,
   type RefusedPoolBytes,
 } from '@/lib/media/commit-to-pool';
-import { putAsset } from '@/lib/media/asset-pool';
 import { ASSET_REFUSED } from '@/lib/media/media-failure';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
@@ -57,7 +60,7 @@ import {
 
 import { failureOrStop } from './errors';
 import type { CourseEntry } from './ledger';
-import type { LegacySources } from './sources';
+import type { LegacySources, SpeechHolders } from './sources';
 
 /** Every media reference a document holds, with where it is held. */
 export interface DocumentMediaRefs {
@@ -108,7 +111,11 @@ export interface MediaFillContext {
   /** Persist the ledger after each settled reference. */
   readonly checkpoint: () => void;
   /** Derived speech audio id -> the legacy courses that name it (see `sources.ts`). */
-  readonly speechHolders: () => Promise<Map<string, Set<string>>>;
+  readonly speechHolders: () => Promise<SpeechHolders>;
+  /** The importer's fenced document store: write-backs go through it. */
+  readonly documents: DocumentStore<AppScene, AppStage>;
+  /** The importer's fenced asset upload. */
+  readonly putAsset: (data: Blob, meta: AssetMeta) => Promise<string>;
 }
 
 export interface MediaFillResult {
@@ -160,7 +167,13 @@ function retainNarrationRow(stageId: string, row: AudioFileRecord) {
   };
 }
 
-async function planUploads(document: AppDocument, context: MediaFillContext): Promise<Upload[]> {
+/** What to upload, and references whose owner cannot be decided this run. */
+interface UploadPlan {
+  readonly uploads: Upload[];
+  readonly undecided: string[];
+}
+
+async function planUploads(document: AppDocument, context: MediaFillContext): Promise<UploadPlan> {
   const { slides, speech } = collectDocumentMediaRefs(document);
   const { sources, legacyStageId, stageId, entry } = context;
   const mediaRows = new Map<string, MediaFileRecord>();
@@ -178,6 +191,7 @@ async function planUploads(document: AppDocument, context: MediaFillContext): Pr
   };
 
   const uploads: Upload[] = [];
+  const undecided: string[] = [];
   for (const [ref, kinds] of slides) {
     if (!isLocalReference(ref) || entry.media?.[ref]?.status === 'failed') continue;
     const mediaType =
@@ -250,7 +264,14 @@ async function planUploads(document: AppDocument, context: MediaFillContext): Pr
     // course names can only be this course's.
     if (!rowBelongsToAction(row, legacyStageId, { derivedRef: ref, text })) {
       if (row.stageId !== undefined) continue;
-      const holders = (await context.speechHolders()).get(ref);
+      const index = await context.speechHolders();
+      // A course the index could not read might name this key too: undecided,
+      // retried on a later run rather than refused for good.
+      if (index.unindexed.size > 0) {
+        undecided.push(ref);
+        continue;
+      }
+      const holders = index.holders.get(ref);
       if (holders?.size !== 1 || !holders.has(legacyStageId)) continue;
     }
     uploads.push({
@@ -262,12 +283,18 @@ async function planUploads(document: AppDocument, context: MediaFillContext): Pr
       retain: retainNarrationRow(stageId, row),
     });
   }
-  return uploads;
+  return { uploads, undecided };
 }
 
-async function commitUpload(upload: Upload, stageId: string): Promise<PoolCommitOutcome<unknown>> {
+async function commitUpload(
+  upload: Upload,
+  stageId: string,
+  context: MediaFillContext,
+): Promise<PoolCommitOutcome<unknown>> {
+  const deps = { store: context.documents };
   if (upload.family === 'speech') {
     return commitToPool<boolean>({
+      put: context.putAsset,
       stageId,
       slot: upload.ref,
       bytes: upload.bytes,
@@ -276,7 +303,7 @@ async function commitUpload(upload: Upload, stageId: string): Promise<PoolCommit
         ? {}
         : { meta: { durationSeconds: upload.durationSeconds } }),
       ...(upload.retain ? { retain: upload.retain } : {}),
-      writeBack: (assetId) => persistNarrationReference(stageId, upload.ref, assetId),
+      writeBack: (assetId) => persistNarrationReference(stageId, upload.ref, assetId, deps),
       mirror: async () => undefined,
     });
   }
@@ -286,29 +313,31 @@ async function commitUpload(upload: Upload, stageId: string): Promise<PoolCommit
   let posterAssetId: string | undefined;
   if (upload.poster) {
     try {
-      posterAssetId = await putAsset(
-        upload.poster,
-        { contentType: upload.poster.type || 'image/jpeg' },
-        { stageId },
-      );
+      posterAssetId = await context.putAsset(upload.poster, {
+        contentType: upload.poster.type || 'image/jpeg',
+      });
     } catch (error) {
       const failure = failureOrStop(error);
       if (failure.kind !== 'permanent' && failure.kind !== 'forbidden') throw error;
     }
   }
   return commitToPool({
+    put: context.putAsset,
     stageId,
     slot: upload.ref,
     bytes: upload.bytes,
     mimeType: upload.mimeType,
     ...(upload.retain ? { retain: upload.retain } : {}),
     writeBack: (assetId) =>
-      persistGeneratedMediaReference({
-        stageId,
-        placeholderRef: upload.ref,
-        assetId,
-        ...(posterAssetId ? { posterAssetId } : {}),
-      }),
+      persistGeneratedMediaReference(
+        {
+          stageId,
+          placeholderRef: upload.ref,
+          assetId,
+          ...(posterAssetId ? { posterAssetId } : {}),
+        },
+        deps,
+      ),
     mirror: async () => undefined,
   });
 }
@@ -360,7 +389,7 @@ export async function fillLegacyMedia(
   context: MediaFillContext,
 ): Promise<MediaFillResult> {
   const { entry } = context;
-  const uploads = await planUploads(document, context);
+  const { uploads, undecided } = await planUploads(document, context);
   let converted = 0;
   let pending = 0;
   const settle = (
@@ -376,7 +405,7 @@ export async function fillLegacyMedia(
   for (const upload of uploads) {
     let outcome: PoolCommitOutcome<unknown>;
     try {
-      outcome = await commitUpload(upload, context.stageId);
+      outcome = await commitUpload(upload, context.stageId, context);
     } catch (error) {
       // The write-back threw: the bytes are stored, the document write is not
       // known to have landed. A later run finds the reference still in the
@@ -414,9 +443,17 @@ export async function fillLegacyMedia(
     settle(upload.ref, { status: permanent ? 'failed' : 'pending', reason: failure.reason });
   }
 
+  for (const ref of undecided) {
+    pending += 1;
+    settle(ref, {
+      status: 'pending',
+      reason: 'waiting for a legacy course that could not be read yet',
+    });
+  }
+
   // References that were pending but are no longer candidates (converted by
   // the app, or edited away) are settled.
-  const planned = new Set(uploads.map((upload) => upload.ref));
+  const planned = new Set([...uploads.map((upload) => upload.ref), ...undecided]);
   for (const [ref, outcome] of Object.entries(entry.media ?? {})) {
     if (outcome.status === 'pending' && !planned.has(ref)) settle(ref, null);
   }

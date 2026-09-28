@@ -25,6 +25,13 @@ export type FailureKind =
   | 'retired'
   /** 403 FORBIDDEN_LEARNER: the browser's owner changed during the run. */
   | 'owner-changed'
+  /**
+   * 409 LEGACY_IMPORT_NOT_BOUND: the server refused a request because the
+   * owner it resolved to does not hold this browser's binding (another owner
+   * does, or the cookie changed since the run bound). Stop; a later load asks
+   * for the binding again.
+   */
+  | 'not-bound'
   /** The asset store has no room for these bytes. */
   | 'quota'
   /** 403 on a document this owner does not own. */
@@ -95,6 +102,7 @@ export function classifyFailure(error: unknown): Failure {
   }
   if (code === 'OWNER_RETIRED') return failure('retired');
   if (code === 'FORBIDDEN_LEARNER') return failure('owner-changed');
+  if (code === 'LEGACY_IMPORT_NOT_BOUND') return failure('not-bound');
   if (status === 401 || code === 'INVALID_CREDENTIAL') return failure('unauthorized');
   if (status === 507 || code === 'ASSET_QUOTA_EXCEEDED') return failure('quota');
   if (status >= 500 || status === 408 || status === 409 || status === 425 || status === 429) {
@@ -123,6 +131,7 @@ export const RUN_STOPS: ReadonlySet<FailureKind> = new Set([
   'unauthorized',
   'retired',
   'owner-changed',
+  'not-bound',
 ]);
 
 /** The failure as a run stop when it is one (whatever call it came from), else undefined. */

@@ -53,14 +53,17 @@ import { copyCourseDeviceRows } from './device-rows';
 import { asRunStop, classifyFailure, failureOrStop } from './errors';
 import type { FolderApi } from './folders';
 import { freshStageId } from './ids';
-import { courseEntry, type CourseEntry, type ImportLedger } from './ledger';
+import { courseEntry, READ_FAILURE_BUDGET, type CourseEntry, type ImportLedger } from './ledger';
 import { fillLegacyMedia } from './media';
 import { copyLegacyRuntime } from './runtime';
+import type { ImportClients } from './server';
 import {
   InvalidLegacyRecordError,
+  LegacyReadError,
   readLegacyCourse,
   unlessUnusable,
   type LegacySources,
+  type SpeechHolders,
 } from './sources';
 
 export interface OwnedStage {
@@ -70,10 +73,13 @@ export interface OwnedStage {
 
 /** Everything a course import needs, resolved once per run. */
 export interface CourseImportContext {
-  readonly ownerId: string;
+  /** The runtime learner key of the owner holding the binding, asked this run. */
+  readonly learnerKey: string;
   readonly storage: Storage;
   readonly kv: KVStore;
   readonly sources: LegacySources;
+  /** The fenced server clients (`./server.ts`); every write goes through them. */
+  readonly clients: ImportClients;
   readonly documents: DocumentStore<AppScene, AppStage>;
   readonly runtime: RuntimeStore;
   /** This owner's library, as listed at the start of the run. */
@@ -82,18 +88,24 @@ export interface CourseImportContext {
   readonly owned: Map<string, OwnedStage>;
   readonly refreshOwned: () => Promise<void>;
   /** Derived speech audio id -> the legacy courses whose speech actions name it. */
-  readonly speechHolders: () => Promise<Map<string, Set<string>>>;
+  speechHolders: () => Promise<SpeechHolders>;
   readonly folders: FolderApi;
   /** Legacy course id -> legacy folder id. */
   readonly membership: Map<string, string>;
+  /** Scene ids the pre-runtime quiz keys name. */
+  readonly quizKeyScenes: ReadonlySet<string>;
   /** Scene ids that pre-runtime quiz keys name, and the legacy courses holding each. */
   readonly quizScenes: Map<string, Set<string>>;
+  /** Courses the quiz-scene index could not read this run. */
+  readonly quizUnindexed: Set<string>;
   readonly ledger: ImportLedger;
   readonly checkpoint: () => void;
+  /** This run's clock (epoch ms). */
+  readonly now: number;
+  /** Courses whose storage read already failed this run (counted once per run). */
+  readonly readFailedThisRun: Set<string>;
   readonly assetExists: (ref: string) => Promise<boolean>;
   readonly log: (message: string, ...details: unknown[]) => void;
-  /** Throws a run stop when another owner holds the browser's legacy data now. */
-  readonly assertClaimant: () => void;
   /** Set when the owner's library visibly changed (a course or its folder). */
   libraryChanged: boolean;
 }
@@ -124,6 +136,7 @@ async function documentForServer(
   original: AppDocument,
   legacyStageId: string,
   stageId: string,
+  runtime: { store: RuntimeStore; learnerKey: string },
 ): Promise<AppDocument> {
   const document = structuredClone(original);
   if (stageId !== legacyStageId) {
@@ -135,6 +148,7 @@ async function documentForServer(
   document.scenes = (await preparePBLScenesForDocumentPersistence(
     stageId,
     document.scenes as Scene[],
+    runtime,
   )) as AppScene[];
   // A roster from before it lived on the stage document is lifted from the
   // old table, the way the classroom loader used to on open.
@@ -157,7 +171,7 @@ async function settleDocument(
   legacyStageId: string,
   entry: CourseEntry,
 ): Promise<boolean> {
-  const fresh = freshStageId(legacyStageId, context.ledger.salt);
+  const fresh = freshStageId(legacyStageId, context.ledger.browserId);
   const markDocument = (target: string, origin: CourseEntry['origin']) => {
     Object.assign(entry, { target, origin });
     entry.steps.document = 'done';
@@ -180,7 +194,11 @@ async function settleDocument(
     }
   }
 
-  const course = await readLegacyCourse(context.sources, legacyStageId);
+  const course = await readLegacyCourse(
+    context.sources,
+    legacyStageId,
+    readBudgetSpent(context.ledger.courses[legacyStageId], context.now),
+  );
   if (!course) {
     Object.assign(entry, { status: 'skipped', reason: 'no longer in this browser' });
     context.checkpoint();
@@ -204,10 +222,12 @@ async function settleDocument(
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const target = entry.target!;
-    context.assertClaimant();
     try {
       await context.documents.saveDocument(
-        await documentForServer(course.document, legacyStageId, target),
+        await documentForServer(course.document, legacyStageId, target, {
+          store: context.runtime,
+          learnerKey: context.learnerKey,
+        }),
       );
       break;
     } catch (error) {
@@ -228,6 +248,7 @@ async function settleDocument(
       throw error;
     }
   }
+  for (const note of course.notes ?? []) addNote(entry, note);
   if (course.currentSceneId) {
     const existing = await loadCurrentSceneValue(entry.target!, context.kv);
     if (!existing) {
@@ -264,7 +285,7 @@ async function copyChat(
   }
   await loadChatSessions(stageId, {
     store: context.runtime,
-    learnerKey: context.ownerId,
+    learnerKey: context.learnerKey,
     // Read-only: the old rows stay where they are.
     legacyStore: { load: async () => moved, clear: async () => undefined },
     observe: false,
@@ -305,12 +326,17 @@ async function copyPlayback(
   });
 }
 
+/** Copy the course's pre-runtime quiz state. `false` = undecided (retry on a later run). */
 async function copyQuizState(
   context: CourseImportContext,
   legacyStageId: string,
   document: AppDocument,
-) {
+): Promise<boolean> {
   for (const scene of document.scenes) {
+    if (!context.quizKeyScenes.has(scene.id)) continue;
+    // A course the index could not read might name this scene too; until it
+    // can be read (or settles), whose answers these are is undecided.
+    if (context.quizUnindexed.size > 0) return false;
     const holders = context.quizScenes.get(scene.id);
     if (!holders) continue;
     // The keys name a scene, not a course. A scene id two legacy courses share
@@ -323,9 +349,10 @@ async function copyQuizState(
     if (!snapshot.hasState) continue;
     await importLegacyQuizSnapshot({ stageId: document.stage.id, sceneId: scene.id }, snapshot, {
       store: context.runtime,
-      learnerKey: context.ownerId,
+      learnerKey: context.learnerKey,
     });
   }
+  return true;
 }
 
 /** File the course in the server folder its legacy folder maps to. `false` = retry later. */
@@ -395,6 +422,8 @@ async function runCourse(
       entry,
       checkpoint: context.checkpoint,
       speechHolders: context.speechHolders,
+      documents: context.documents,
+      putAsset: (data, meta) => context.clients.putAsset(data, meta),
     });
     if (media.converted > 0) document = (await context.documents.loadDocument(stageId)) ?? document;
     if (media.pending === 0) step('media');
@@ -407,7 +436,7 @@ async function runCourse(
           legacy: context.sources.runtime,
           legacyLearnerKey: context.sources.learnerKey,
           server: context.runtime,
-          learnerKey: context.ownerId,
+          learnerKey: context.learnerKey,
           legacyStageId,
           stageId,
           entry,
@@ -430,8 +459,7 @@ async function runCourse(
       await copyPlayback(context, legacyStageId, document);
       step('playback');
     }
-    if (!entry.steps.quiz) {
-      await copyQuizState(context, legacyStageId, document);
+    if (!entry.steps.quiz && (await copyQuizState(context, legacyStageId, document))) {
       step('quiz');
     }
   }
@@ -443,12 +471,17 @@ async function runCourse(
   }
 
   const pendingMedia = Object.values(entry.media ?? {}).filter((m) => m.status === 'pending');
-  if (entry.steps.media && entry.steps.folder) {
+  const quizPending = entry.origin === 'created' && !entry.steps.quiz;
+  if (entry.steps.media && entry.steps.folder && !quizPending) {
     entry.status = 'done';
     delete entry.reason;
   } else {
     entry.reason =
-      pendingMedia.length > 0 ? `media pending: ${pendingMedia[0]!.reason}` : 'folder pending';
+      pendingMedia.length > 0
+        ? `media pending: ${pendingMedia[0]!.reason}`
+        : quizPending
+          ? 'quiz state pending: another legacy course could not be read yet'
+          : 'folder pending';
   }
   context.checkpoint();
 }
@@ -470,8 +503,17 @@ export async function importLegacyCourse(
     entry.steps.document = 'done';
   }
   try {
-    context.assertClaimant();
-    await runCourse(context, legacyStageId, entry);
+    try {
+      await runCourse(context, legacyStageId, entry);
+    } catch (error) {
+      if (!(error instanceof LegacyReadError)) throw error;
+      // The old storage failed to read this course. It stays pending; once it
+      // has failed in enough runs over enough time, it settles on what can be
+      // read (the table copy, or a skip) instead of holding the import open.
+      noteReadFailure(context, entry, legacyStageId);
+      if (!readBudgetSpent(entry, context.now)) throw error;
+      await runCourse(context, legacyStageId, entry);
+    }
   } catch (error) {
     // A run-level failure from any call of the course -- the "is the id
     // taken" read, the library re-list, the chat or quiz copy -- stops the run
@@ -502,18 +544,76 @@ export async function importLegacyCourse(
   }
 }
 
-/** The legacy course the pre-document-store tables keep, if any (for the quiz scene index). */
+/**
+ * The scene ids of a legacy course, for the quiz-scene index. A storage
+ * failure throws `LegacyReadError` (the course is left out of the index and
+ * holds up only the quiz decisions it could affect); once the course's read
+ * budget is spent (`settle`), whatever can be read is used instead.
+ */
 export async function legacySceneIds(
   sources: LegacySources,
   legacyStageId: string,
+  settle = false,
 ): Promise<string[]> {
-  // A storage failure propagates and pauses the run: a scene index missing a
-  // course would drop that course's quiz state for good.
   const documents = sources.documents;
   if (documents) {
-    const document = await unlessUnusable(() => documents.loadDocument(legacyStageId));
-    if (document) return document.scenes.map((scene) => scene.id);
+    try {
+      const document = await unlessUnusable(() => documents.loadDocument(legacyStageId));
+      if (document) return document.scenes.map((scene) => scene.id);
+    } catch (error) {
+      if (!settle) throw new LegacyReadError(legacyStageId, error);
+    }
   }
-  const snapshot = await unlessUnusable(() => readLegacyDocumentSnapshots().read(legacyStageId));
-  return snapshot ? snapshot.scenes.map((scene) => scene.id) : [];
+  try {
+    const snapshot = await unlessUnusable(() => readLegacyDocumentSnapshots().read(legacyStageId));
+    return snapshot ? snapshot.scenes.map((scene) => scene.id) : [];
+  } catch (error) {
+    if (!settle) throw new LegacyReadError(legacyStageId, error);
+    return [];
+  }
+}
+
+/** Whether a course's storage reads have failed often enough, for long enough, to settle it. */
+export function readBudgetSpent(entry: CourseEntry | undefined, now: number): boolean {
+  const failures = entry?.readFailures;
+  return (
+    failures !== undefined &&
+    failures.count >= READ_FAILURE_BUDGET.runs &&
+    now - failures.since >= READ_FAILURE_BUDGET.spanMs
+  );
+}
+
+/** Count a storage read failure of a course, once per run. */
+function noteReadFailure(
+  context: CourseImportContext,
+  entry: CourseEntry,
+  legacyStageId: string,
+): void {
+  if (context.readFailedThisRun.has(legacyStageId)) return;
+  context.readFailedThisRun.add(legacyStageId);
+  const previous = entry.readFailures;
+  entry.readFailures = { count: (previous?.count ?? 0) + 1, since: previous?.since ?? context.now };
+  context.checkpoint();
+}
+
+/**
+ * Run a read of a legacy course under its read budget: a storage failure is
+ * counted and answers undefined (the caller treats the course as unindexed),
+ * and once the budget is spent the read runs again in settle mode.
+ */
+export async function readWithBudget<T>(
+  context: CourseImportContext,
+  legacyStageId: string,
+  read: (settle: boolean) => Promise<T>,
+): Promise<T | undefined> {
+  const entry = courseEntry(context.ledger, legacyStageId);
+  if (readBudgetSpent(entry, context.now)) return read(true);
+  try {
+    return await read(false);
+  } catch (error) {
+    if (!(error instanceof LegacyReadError)) throw error;
+    noteReadFailure(context, entry, legacyStageId);
+    if (readBudgetSpent(entry, context.now)) return read(true);
+    return undefined;
+  }
 }

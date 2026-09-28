@@ -29,9 +29,9 @@ const LEGACY_LEARNER_KEY_STORAGE_KEY = `maic:device:${LEARNER_KEY_KV_KEY}`;
  * (`lib/legacy-browser-import/ledger.ts`). It records what has already moved
  * to the server, so clearing the cache must keep it: without it, a course the
  * user deleted on the server after it was imported could be imported again
- * from the untouched browser copy. It holds no owner id, only a digest.
+ * from the untouched browser copy. It holds no owner information.
  */
-export const LEGACY_IMPORT_LEDGER_KEY = 'maic:legacy-import:v2';
+export const LEGACY_IMPORT_LEDGER_KEY = 'maic:legacy-import:v3';
 
 /**
  * `localStorage.clear()`, except for the values the one-way importer needs:
