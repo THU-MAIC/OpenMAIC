@@ -73,8 +73,10 @@ import {
   ensureLedger,
   ledgerIsSettled,
   loadLedger,
+  MAX_BACKOFF_MS,
   recordHandoff,
   saveLedger,
+  stillWaiting,
   type ImportLedger,
 } from './ledger';
 import {
@@ -180,7 +182,7 @@ async function withImportLock<T>(
 }
 
 /** How long a "this owner did not absorb the claiming one" answer is reused. */
-const OTHER_OWNER_RECHECK_MS = 60 * 60 * 1000;
+export const OTHER_OWNER_RECHECK_MS = 10 * 60 * 1000;
 
 /**
  * Whose import this is. The first owner the server confirmed claims the
@@ -202,7 +204,6 @@ async function decideOwnership(
   if (await mergedFrom(ledger.salt, ledger.ownerDigest)) {
     recordHandoff(ledger, ledger.ownerDigest);
     ledger.ownerDigest = digest;
-    delete ledger.otherOwners;
     return 'taken-over';
   }
   (ledger.otherOwners ??= {})[digest] = now + OTHER_OWNER_RECHECK_MS;
@@ -210,7 +211,7 @@ async function decideOwnership(
 }
 
 /** `GET /api/identity/merged-from`: did the requesting owner absorb the owner with this digest? */
-async function serverMergedFrom(salt: string, digest: string): Promise<boolean> {
+export async function serverMergedFrom(salt: string, digest: string): Promise<boolean> {
   const query = new URLSearchParams({ salt, digest });
   const response = await fetch(`/api/identity/merged-from?${query}`, {
     credentials: 'same-origin',
@@ -240,16 +241,32 @@ async function runLocked(
   // Re-read inside the lock: another tab may have finished meanwhile.
   const ledger = ensureLedger(storage);
   if (ledger.completedAt) return { status: 'already-complete', ownerId, ledger };
-  const checkpoint = () => saveLedger(storage, ledger);
+  const checkpoint = () => saveLedger(storage, ledger, now());
   const listOwned = options.listOwnedStages ?? listStages;
   const digest = ownerDigest(ledger.salt, ownerId);
-  const recheckAfter = ledger.otherOwners?.[digest];
   if (ledger.ownerDigest !== undefined && ledger.ownerDigest !== digest) {
     // Answered for this owner recently: do not ask the server on every load.
-    if (recheckAfter !== undefined && recheckAfter > now()) {
+    if (stillWaiting(ledger.otherOwners?.[digest], now(), OTHER_OWNER_RECHECK_MS)) {
       return { status: 'claimed-by-another-owner', ownerId, ledger };
     }
   }
+  /**
+   * Stop unless the stored ledger still names this run's owner. Without Web
+   * Locks, two tabs of different owners can both find the ledger unbound;
+   * every ledger write keeps the owner stored first, so the tab that lost
+   * that race sees another owner here and stops before it writes anything.
+   * Checked after binding, before folders, and before each course and each
+   * course document is created.
+   */
+  const assertClaimant = () => {
+    const stored = loadLedger(storage)?.ownerDigest;
+    if (stored !== undefined && stored !== digest) {
+      throw new ImportRunStop({
+        kind: 'owner-changed',
+        reason: "another owner claimed this browser's legacy data",
+      });
+    }
+  };
 
   const sources = await openLegacySources(storage);
   let context: CourseImportContext | undefined;
@@ -288,6 +305,7 @@ async function runLocked(
       log('The owner that started this import was claimed into this one; continuing for it');
     }
     checkpoint();
+    assertClaimant();
 
     const legacyIds = await listLegacyCourseIds(sources);
 
@@ -326,9 +344,11 @@ async function runLocked(
         // A reference the pool never issued is not asked about (see mayNameAPoolAsset).
         (async (ref) => mayNameAPoolAsset(ref) && assetRefExists(ref)),
       log,
+      assertClaimant,
       libraryChanged: false,
     };
 
+    assertClaimant();
     const folderRun = await importFolders(ledger, folders, checkpoint);
     if (folderRun.created > 0) context.libraryChanged = true;
 
@@ -442,7 +462,7 @@ export async function runLegacyBrowserImport(
     const now = options.now ?? Date.now;
     const early = loadLedger(storage);
     if (early?.completedAt) return { status: 'already-complete', ledger: early };
-    if (early?.nextRunAt !== undefined && early.nextRunAt > now()) {
+    if (stillWaiting(early?.nextRunAt, now(), MAX_BACKOFF_MS)) {
       return { status: 'deferred', ledger: early };
     }
 

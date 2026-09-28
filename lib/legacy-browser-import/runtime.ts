@@ -119,7 +119,9 @@ async function copySession(
         updatedAt: session.updatedAt,
       });
     } catch (error) {
-      const raced = await server.getSession(targetId).catch(() => undefined);
+      // A failed read propagates (the run retries later); only a read that
+      // succeeded and found nothing this learner may see means "taken".
+      const raced = await server.getSession(targetId);
       if (!raced) {
         // Taken, yet not readable: another learner holds this session id.
         if ((error as { code?: unknown } | null)?.code === 'SESSION_ALREADY_EXISTS') {

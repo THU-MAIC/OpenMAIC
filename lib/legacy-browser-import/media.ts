@@ -280,14 +280,21 @@ async function commitUpload(upload: Upload, stageId: string): Promise<PoolCommit
       mirror: async () => undefined,
     });
   }
-  // A poster that cannot be stored costs the poster, not the video.
+  // A poster the server refuses for good costs the poster, not the video; a
+  // failure that may pass (network, 5xx, quota) leaves the video pending so
+  // the next run stores both.
   let posterAssetId: string | undefined;
   if (upload.poster) {
-    posterAssetId = await putAsset(
-      upload.poster,
-      { contentType: upload.poster.type || 'image/jpeg' },
-      { stageId },
-    ).catch(() => undefined);
+    try {
+      posterAssetId = await putAsset(
+        upload.poster,
+        { contentType: upload.poster.type || 'image/jpeg' },
+        { stageId },
+      );
+    } catch (error) {
+      const failure = failureOrStop(error);
+      if (failure.kind !== 'permanent' && failure.kind !== 'forbidden') throw error;
+    }
   }
   return commitToPool({
     stageId,
@@ -336,7 +343,9 @@ async function recordRefusal(
     // With a generation request, Retry regenerates (the media pass's usual
     // failure). Without one -- media the user inserted or imported -- there
     // is nothing to retry, so the element shows as failed without the control.
-    errorCode: upload.request?.prompt ? (failure.code ?? ASSET_REFUSED) : ASSET_REFUSED,
+    // A refusal with no code (a proxy's 413 page) must not cost generated
+    // media its Retry either.
+    errorCode: upload.request?.prompt ? (failure.code ?? 'UPLOAD_REFUSED') : ASSET_REFUSED,
     createdAt: Date.now(),
   });
 }

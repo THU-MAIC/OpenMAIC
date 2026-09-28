@@ -56,7 +56,12 @@ import { freshStageId } from './ids';
 import { courseEntry, type CourseEntry, type ImportLedger } from './ledger';
 import { fillLegacyMedia } from './media';
 import { copyLegacyRuntime } from './runtime';
-import { InvalidLegacyRecordError, readLegacyCourse, type LegacySources } from './sources';
+import {
+  InvalidLegacyRecordError,
+  readLegacyCourse,
+  unlessUnusable,
+  type LegacySources,
+} from './sources';
 
 export interface OwnedStage {
   readonly id: string;
@@ -87,6 +92,8 @@ export interface CourseImportContext {
   readonly checkpoint: () => void;
   readonly assetExists: (ref: string) => Promise<boolean>;
   readonly log: (message: string, ...details: unknown[]) => void;
+  /** Throws a run stop when another owner holds the browser's legacy data now. */
+  readonly assertClaimant: () => void;
   /** Set when the owner's library visibly changed (a course or its folder). */
   libraryChanged: boolean;
 }
@@ -197,6 +204,7 @@ async function settleDocument(
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const target = entry.target!;
+    context.assertClaimant();
     try {
       await context.documents.saveDocument(
         await documentForServer(course.document, legacyStageId, target),
@@ -462,6 +470,7 @@ export async function importLegacyCourse(
     entry.steps.document = 'done';
   }
   try {
+    context.assertClaimant();
     await runCourse(context, legacyStageId, entry);
   } catch (error) {
     // A run-level failure from any call of the course -- the "is the id
@@ -498,12 +507,13 @@ export async function legacySceneIds(
   sources: LegacySources,
   legacyStageId: string,
 ): Promise<string[]> {
-  if (sources.documents) {
-    const document = await sources.documents.loadDocument(legacyStageId).catch(() => null);
+  // A storage failure propagates and pauses the run: a scene index missing a
+  // course would drop that course's quiz state for good.
+  const documents = sources.documents;
+  if (documents) {
+    const document = await unlessUnusable(() => documents.loadDocument(legacyStageId));
     if (document) return document.scenes.map((scene) => scene.id);
   }
-  const snapshot = await readLegacyDocumentSnapshots()
-    .read(legacyStageId)
-    .catch(() => null);
+  const snapshot = await unlessUnusable(() => readLegacyDocumentSnapshots().read(legacyStageId));
   return snapshot ? snapshot.scenes.map((scene) => scene.id) : [];
 }

@@ -177,7 +177,11 @@ export function recordHandoff(ledger: ImportLedger, from: string): void {
  * The claiming owner stored first wins unless this tab handed the import over
  * from exactly that owner; completion is kept if either copy has it.
  */
-export function mergeStoredLedger(ledger: ImportLedger, stored: ImportLedger | undefined): void {
+export function mergeStoredLedger(
+  ledger: ImportLedger,
+  stored: ImportLedger | undefined,
+  now?: number,
+): void {
   if (!stored || stored.salt !== ledger.salt) return;
   if (stored.ownerDigest !== undefined && stored.ownerDigest !== ledger.ownerDigest) {
     if (handoffs.get(ledger) !== stored.ownerDigest) ledger.ownerDigest = stored.ownerDigest;
@@ -185,6 +189,14 @@ export function mergeStoredLedger(ledger: ImportLedger, stored: ImportLedger | u
   ledger.completedAt ??= stored.completedAt;
   if (stored.otherOwners) {
     ledger.otherOwners = { ...stored.otherOwners, ...ledger.otherOwners };
+  }
+  if (ledger.otherOwners && now !== undefined) {
+    // Expired answers are only noise; drop them so the map does not grow
+    // with every owner that ever loaded in a shared browser.
+    for (const [digest, until] of Object.entries(ledger.otherOwners)) {
+      if (until <= now) delete ledger.otherOwners[digest];
+    }
+    if (Object.keys(ledger.otherOwners).length === 0) delete ledger.otherOwners;
   }
   for (const [id, theirs] of Object.entries(stored.courses)) {
     const ours = ledger.courses[id];
@@ -210,8 +222,8 @@ export function mergeStoredLedger(ledger: ImportLedger, stored: ImportLedger | u
 }
 
 /** Persist the ledger, merged with the stored copy. A full storage throws (transient). */
-export function saveLedger(storage: Storage, ledger: ImportLedger): void {
-  mergeStoredLedger(ledger, loadLedger(storage));
+export function saveLedger(storage: Storage, ledger: ImportLedger, now?: number): void {
+  mergeStoredLedger(ledger, loadLedger(storage), now);
   storage.setItem(LEDGER_KEY, JSON.stringify(ledger));
 }
 
@@ -227,9 +239,22 @@ export function ledgerIsSettled(ledger: ImportLedger): boolean {
   );
 }
 
+/** The longest backoff between runs. */
+export const MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Whether a stored "not before" time still holds at `now`. A time further
+ * ahead than the longest wait the importer ever sets was written by a clock
+ * that ran ahead (or was set forward), and counts as passed, so a corrected
+ * clock cannot strand the import until that far-off date.
+ */
+export function stillWaiting(until: number | undefined, now: number, longest: number): boolean {
+  return until !== undefined && until > now && until <= now + longest;
+}
+
 /** Backoff after a run that left work pending: 30 s, doubling, capped at six hours. */
 export function backoffMs(failedRuns: number): number {
   const base = 30_000;
-  const cap = 6 * 60 * 60 * 1000;
+  const cap = MAX_BACKOFF_MS;
   return Math.min(cap, base * 2 ** Math.max(0, failedRuns - 1));
 }

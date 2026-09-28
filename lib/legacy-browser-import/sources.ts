@@ -2,6 +2,8 @@
  * What this browser still holds from before persistence moved to the server,
  * read through the read-only legacy module. Nothing here writes.
  */
+import { DocumentVersionError } from '@openmaic/storage';
+
 import {
   canonicalizeLegacySnapshot,
   validateAppScene,
@@ -76,6 +78,37 @@ export class InvalidLegacyRecordError extends Error {
 }
 
 /**
+ * Whether a failed read says something about the record (it cannot be
+ * migrated, parsed or validated) rather than about the storage reading it.
+ * Only the first kind may settle a course as skipped; a storage failure (an
+ * aborted IndexedDB transaction, a closed database) is transient and leaves
+ * the course pending for a later load.
+ */
+export function isUnusableRecordError(error: unknown): boolean {
+  if (error instanceof InvalidLegacyRecordError || error instanceof DocumentVersionError) {
+    return true;
+  }
+  if (error instanceof SyntaxError || error instanceof TypeError || error instanceof RangeError) {
+    return true;
+  }
+  if (typeof DOMException !== 'undefined' && error instanceof DOMException) return false;
+  // The DSL and storage packages report a record they cannot migrate or
+  // accept with a prefixed message; storage failures are DOMExceptions or
+  // Dexie errors, which carry no such prefix.
+  return error instanceof Error && /^@openmaic\/(?:dsl|storage): /.test(error.message);
+}
+
+/** A read that answers null for an unusable record and rethrows a storage failure. */
+async function unlessUnusable<T>(read: () => Promise<T>): Promise<T | null> {
+  try {
+    return await read();
+  } catch (error) {
+    if (isUnusableRecordError(error)) return null;
+    throw error;
+  }
+}
+
+/**
  * The checks the document store runs on a save, run first so a record it
  * would refuse is skipped as invalid instead of retried as a failed write.
  */
@@ -123,7 +156,12 @@ export async function readLegacyCourse(
       document = await sources.documents.loadDocument(stageId);
       if (document) assertImportable(document, stageId);
     } catch (error) {
-      // The store validates on read: a document it refuses is unusable as is.
+      // A storage failure is not a verdict on the document: the course stays
+      // pending and a later load reads it again. Falling back to the tables
+      // here would import an older copy for good while the newer one is
+      // merely unreadable right now.
+      if (!isUnusableRecordError(error)) throw error;
+      // A document that cannot be migrated or validated is unusable as is.
       // The original tables may still hold a usable (older) copy.
       unreadable =
         error instanceof InvalidLegacyRecordError
@@ -180,6 +218,8 @@ export async function legacyMediaCourseIndex(): Promise<{
  * name it. A narration row from before the course column names no course; a
  * key only one legacy course uses can still only be that course's.
  */
+export { unlessUnusable };
+
 export async function legacySpeechHolders(
   sources: LegacySources,
   legacyIds: readonly string[],
@@ -193,13 +233,16 @@ export async function legacySpeechHolders(
   };
   for (const stageId of legacyIds) {
     const seen = new Set<string>();
+    // A storage failure propagates (the run pauses): an index missing a
+    // course would wrongly make a shared key look unique, or unowned.
     const scenesOf = async (): Promise<{ actions?: unknown[] }[][]> => {
       const lists: { actions?: unknown[] }[][] = [];
-      const document = await sources.documents?.loadDocument(stageId).catch(() => null);
+      const documents = sources.documents;
+      const document = documents
+        ? await unlessUnusable(() => documents.loadDocument(stageId))
+        : null;
       if (document) lists.push(document.scenes as { actions?: unknown[] }[]);
-      const snapshot = await readLegacyDocumentSnapshots()
-        .read(stageId)
-        .catch(() => null);
+      const snapshot = await unlessUnusable(() => readLegacyDocumentSnapshots().read(stageId));
       if (snapshot) lists.push(snapshot.scenes as { actions?: unknown[] }[]);
       return lists;
     };
