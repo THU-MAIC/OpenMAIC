@@ -20,7 +20,7 @@
   <a href="https://jcst.ict.ac.cn/en/article/doi/10.1007/s11390-025-6000-0"><img src="https://img.shields.io/badge/Paper-JCST'26-blue?style=flat-square" alt="Paper"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License: MIT"/></a>
   <a href="https://open.maic.chat/"><img src="https://img.shields.io/badge/Demo-Live-brightgreen?style=flat-square" alt="Live Demo"/></a>
-  <a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&envDescription=Configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).%20All%20providers%20are%20optional.&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs"><img src="https://vercel.com/button" alt="Deploy with Vercel" height="20"/></a>
+  <a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&env=DATABASE_URL&envDescription=DATABASE_URL%20must%20point%20to%20an%20external%20PostgreSQL%20database.%20Also%20configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs"><img src="https://vercel.com/button" alt="Deploy with Vercel" height="20"/></a>
   <a href="#-agent-workbench-integration"><img src="https://img.shields.io/badge/OpenClaw-Integration-F4511E?style=flat-square" alt="OpenClaw Integration"/></a>
   <a href="#lemonade-local-ai"><img src="https://img.shields.io/badge/Lemonade-Local_AI-FFD43B?style=flat-square" alt="Lemonade Local AI"/></a>
   <a href="https://github.com/THU-MAIC/OpenMAIC/stargazers"><img src="https://img.shields.io/github/stars/THU-MAIC/OpenMAIC?style=flat-square" alt="Stars"/></a>
@@ -107,6 +107,8 @@ https://github.com/user-attachments/assets/8f3f1e5f-1468-4e93-8054-afeeea683a61
 
 - **Node.js** >= 22.19
 - **pnpm** >= 10
+- **PostgreSQL** 16 — courses are stored on the server. For local development
+  `pnpm db:up` starts one in Docker for you.
 
 ### 1. Clone & Install
 
@@ -292,18 +294,37 @@ DEFAULT_MODEL=glm:glm-5.1
 >
 > If you want to use MiniMax as the default server model, set `DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed`.
 
-### 3. Run
+### 3. Start the database
+
+```bash
+pnpm db:up
+```
+
+This starts the Compose `postgres` service on `127.0.0.1:5432` (set
+`OPENMAIC_DB_PORT` to use another port). Then uncomment the local
+`DATABASE_URL` line in `.env.local`:
+
+```env
+DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
+```
+
+Any other PostgreSQL works too; point `DATABASE_URL` at it. `pnpm db:down` stops
+the container and keeps its data volume.
+
+### 4. Run
 
 ```bash
 pnpm dev
 ```
 
-Open **http://localhost:3000** and start learning!
+Open **http://localhost:3000** and start learning! Without a `DATABASE_URL` the
+server refuses to start and tells you how to provide one (see
+[Server-backed persistence](#server-backed-persistence-postgresql)).
 
-### 4. Build for Production
+### 5. Build for Production
 
 ```bash
-pnpm build && pnpm start
+pnpm build && DATABASE_URL=postgres://... pnpm start
 ```
 
 ### Optional: ACCESS_CODE (Shared Deployments)
@@ -322,14 +343,22 @@ The code is remembered in a signed token stored in an HTTP-only cookie for 7 day
 
 ### Vercel Deployment
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&envDescription=Configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).%20All%20providers%20are%20optional.&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&env=DATABASE_URL&envDescription=DATABASE_URL%20must%20point%20to%20an%20external%20PostgreSQL%20database.%20Also%20configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs)
 
 Or manually:
 
 1. Fork this repository
 2. Import into [Vercel](https://vercel.com/new)
-3. Set environment variables (at minimum one LLM API key)
+3. Set environment variables: `DATABASE_URL` pointing to an external PostgreSQL
+   database (a serverless function cannot run one itself), and at least one LLM
+   API key
 4. Deploy
+
+The server refuses to start without `DATABASE_URL`. Use a connection string your
+functions can reach from Vercel's network (a managed PostgreSQL service with
+TLS, or a pooled connection endpoint when your provider offers one). The same
+applies to any other serverless or container host: provide the database, then
+deploy.
 
 ### Docker Deployment
 
@@ -384,15 +413,17 @@ the Compose file if you do not want it.
 
 > [!IMPORTANT]
 > **Upgrading an existing Compose deployment.** `docker compose up` now starts
-> PostgreSQL and builds the image with `NEXT_PUBLIC_PERSISTENCE=1`, and the app
-> is published on `127.0.0.1` only.
+> PostgreSQL, the app always stores courses there, and the app is published on
+> `127.0.0.1` only.
 >
 > - If you served the app to other machines, start with
 >   `OPENMAIC_PUBLISH_ADDRESS=0.0.0.0`, and set `ACCESS_CODE`: every visitor
 >   is now the same single owner.
 > - `--profile server-persistence` is still accepted and changes nothing;
 >   PostgreSQL always starts.
-> - Courses an earlier browser-only deployment stored in the browser stay there and are not deleted; they are moved to the server by the automatic browser-to-server migration that ships with server persistence by default, as part of the same release work.
+> - Courses an earlier browser-only deployment stored in the browser stay there
+>   and are not deleted; they are moved to the server by the one-way
+>   browser-to-server importer that ships in the same release.
 > - Courses an earlier server-backed deployment stored under each browser's
 >   anonymous cookie stay with those anonymous owners: nothing is merged into
 >   the single owner automatically. To bring them in, claim them explicitly
@@ -405,9 +436,8 @@ the Compose file if you do not want it.
 > - If `.env.local` sets `PERSISTENCE_SHARED_OWNER_ID`, also set
 >   `OWNER_SINGLE_USER=false` there: the two exclude each other and the app
 >   refuses to start with both.
-> - For a browser-storage-only image, build with an empty value:
->   `NEXT_PUBLIC_PERSISTENCE= docker compose up --build` (PostgreSQL still
->   starts, unused).
+> - There is no browser-storage-only image any more: the
+>   `NEXT_PUBLIC_PERSISTENCE` build argument is gone and ignored.
 
 #### Slow-network / China build acceleration
 
@@ -447,37 +477,46 @@ the cache only improves performance and is not required for a correct build.
 
 ### Server-backed persistence (PostgreSQL)
 
-The [Docker deployment](#docker-deployment) is server-backed out of the box: it
-runs exactly two containers, the OpenMAIC app and PostgreSQL. The persistence
-HTTP server is embedded in the app at `/api/persistence`; there is no
-standalone persistence service.
+OpenMAIC always stores courses on the server. The
+[Docker deployment](#docker-deployment) runs exactly two containers, the
+OpenMAIC app and PostgreSQL. The persistence HTTP server is embedded in the app
+at `/api/persistence`; there is no standalone persistence service.
 
-Outside Compose, build with `NEXT_PUBLIC_PERSISTENCE=1` and run with a
-`DATABASE_URL`:
+**`DATABASE_URL` is required.** Without it the server does not start: it prints
+`[boot] Invalid server configuration; the server will not start: DATABASE_URL is
+not set. ...` with the fix and exits with code `1`. Outside Compose, build
+normally and run with a `DATABASE_URL`:
 
 ```bash
-NEXT_PUBLIC_PERSISTENCE=1 pnpm build
+pnpm build
 DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
 ```
 
-Add your provider API keys to `.env.local` as usual. Runtime sessions, course
-documents and generated media become server-backed; device-scoped KV data
-(such as playback position) remains in the browser. Courses a browser-only build stored in the browser stay there and are not deleted; they are moved to the server by the automatic browser-to-server migration that ships with server persistence by default, as part of the same release work.
+For local development, `pnpm db:up` starts the Compose `postgres` service alone
+and publishes it on `127.0.0.1` (port `OPENMAIC_DB_PORT`, default `5432`); the
+matching `DATABASE_URL` is commented in `.env.example`, and `pnpm db:down` stops
+it again. Serverless hosts (see [Vercel Deployment](#vercel-deployment)) point
+`DATABASE_URL` at an external PostgreSQL database.
 
-`NEXT_PUBLIC_PERSISTENCE` is a **build-time switch** compiled into the browser
-bundle. A build with it enabled must be deployed with a working runtime
-`DATABASE_URL`. Otherwise the browser selects HTTP persistence but the embedded
-endpoint returns configuration or initialization errors; the home page shows a
-persistence-unavailable toast and keeps the prior course list instead of
-misleadingly displaying an empty library.
+Add your provider API keys to `.env.local` as usual. Course documents, folders,
+chat history and learner runtime sessions, and generated media are stored on
+the server. What stays in the browser is what belongs to the device and can be
+lost without losing a course: app settings and UI preferences, the playback
+position and the editor's current scene, the editor's undo history, a local
+cache of narration and media the server already stores (and bytes a full store
+refused, kept for a retry), PDF images staged during generation, and TTS voice
+profiles registered from that browser. **Settings → Clear Local Cache** clears
+exactly that and nothing on the server.
+
+Courses an earlier browser-only build stored in the browser stay there and are
+not deleted: the app neither reads nor writes that pre-server browser storage
+on its regular paths any more, and the one-way browser-to-server importer that
+ships in the same release moves them to the server.
 
 The server course library and its folders (`/api/stages/**`, `/api/folders/**`)
-need only `DATABASE_URL`: they serve whether or not the
-[agent runtime](#optional-agent-workbench-and-runtime)
-(`OPENMAIC_AGENT_RUNTIME_ENABLED`) is on. Without a `DATABASE_URL` they answer
-`404`, as in browser-storage mode. `GET /api/agent/runtime` reports this as
-`persistence: true|false`, next to the runtime's own `enabled` and
-`runtimeEnabled`.
+serve whether or not the [agent runtime](#optional-agent-workbench-and-runtime)
+(`OPENMAIC_AGENT_RUNTIME_ENABLED`) is on. `GET /api/agent/runtime` reports
+`persistence`, next to the runtime's own `enabled` and `runtimeEnabled`.
 
 Every `/api/persistence` request is attributed to the owner the
 [owner identity seam](#owner-identity) resolves — by default the 30-day
@@ -527,9 +566,8 @@ deployment with its own accounts registers owner auth methods (see
 > **If `PERSISTENCE_DEV_TOKEN` was your only access gate, act before upgrading.**
 > Without it the endpoint answers every visitor who reaches it, each as their
 > own anonymous owner. Put the deployment behind `ACCESS_CODE` or your own
-> gateway, register owner auth methods backed by your accounts (see
-> [Owner identity](#owner-identity)), or turn server persistence off
-> (`NEXT_PUBLIC_PERSISTENCE` unset) until you have one.
+> gateway, or register owner auth methods backed by your accounts (see
+> [Owner identity](#owner-identity)).
 
 `PERSISTENCE_POSTGRES_PASSWORD` (default `openmaic-dev`, for local use only)
 initializes the PostgreSQL role only when the data directory is empty, and
@@ -618,12 +656,11 @@ The embedded endpoint implements the package's
 [RuntimeStore HTTP contract](packages/@openmaic/storage/docs/runtime-http-contract.md)
 and
 [DocumentStore HTTP contract](packages/@openmaic/storage/docs/document-http-contract.md).
-Leave `NEXT_PUBLIC_PERSISTENCE` unset to retain the existing browser-only
-behavior.
 
 Invalid configuration stops the server. The `register()` hook of
 `instrumentation.ts` refuses to start on:
 
+- a missing `DATABASE_URL`;
 - a malformed `ASSET_QUOTA_BYTES`, `ASSET_PENDING_TTL_MS`,
   `OWNER_WRITE_LOCK_WAIT_MS` or `OWNER_CLAIM_LOCK_WAIT_MS`;
 - `OWNER_CLAIM_TRIGGER` set to anything but `explicit` or `auto`;
@@ -1197,8 +1234,8 @@ with direct bytes, like the built-in fallback; the collector never signs.
 The Pro workbench is a usable course-building surface entered from the home
 page. Its collapsible navigation rail, conversation pane, and tabbed classroom
 pane share `/api/agent/*` control-plane routes and an in-process session runner.
-It is off by default. Enable its build-time entry point and the server runtime
-with the same PostgreSQL connection used by server-backed persistence:
+It is off by default. Enable its build-time entry point and the server runtime;
+it uses the same PostgreSQL connection as the rest of the app:
 
 ```env
 NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=true
@@ -1209,18 +1246,11 @@ MODEL_ROUTES='{"maic-agent-driver":{"model":"openai:gpt-5.5","api":"openai-compl
 
 While the flag is off, the `/api/agent/sessions*` and `/api/agent/owner-events`
 routes answer `404`; the course library and folder routes do not depend on the
-flag, only on `DATABASE_URL` (see
-[Server-backed persistence](#server-backed-persistence-postgresql)). Enabling it
-without a `DATABASE_URL` never starts the runner and makes the session routes
-error, so the runtime is server-backed by design. `MODEL_ROUTES` must explicitly
+flag (see [Server-backed persistence](#server-backed-persistence-postgresql)). `MODEL_ROUTES` must explicitly
 route `maic-agent-driver` to a provider-prefixed model with an
 `openai-completions` or `openai-responses` `api`/`dialect`; there is intentionally
 no fallback.
 
-To make the browser use the same server-backed document and runtime stores,
-also build with `NEXT_PUBLIC_PERSISTENCE=1` (the Docker deployment does), as
-described in [Server-backed persistence](#server-backed-persistence-postgresql).
-Without these opt-ins, OpenMAIC retains its existing browser-only behavior.
 Runner cadence (scan interval, heartbeat, lease TTL, concurrency, attempts) and
 the reserved compaction knobs are listed in `.env.example`.
 
@@ -1272,7 +1302,7 @@ TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
 
 - **Auto Voice** (default): OpenMAIC generates a voice prompt from each agent's persona at synthesis time. No setup required.
 - **Prompt voice**: describe the voice in natural language, e.g. *"warm female teacher voice, calm and encouraging, mid-pitch"*.
-- **Clone voice**: upload a short reference audio clip or record one in the browser. The clip is stored in IndexedDB and sent to your VoxCPM backend on each synthesis.
+- **Clone voice**: upload a short reference audio clip or record one in the browser. The clip is stored in this browser (IndexedDB) and sent to your VoxCPM backend on each synthesis.
 
 ---
 
@@ -1328,13 +1358,14 @@ vendor.
 
 ### Pluggable Storage
 
-OpenMAIC runs without a database by default: course documents, learner runtime
-records, device/account KV values, and assets use browser storage. The
-`@openmaic/storage` package defines swappable stores for those primitives and
-adds PostgreSQL-backed documents, learner runtime, assets, durable agent
-sessions, session materials, and user skills. HTTP clients connect the browser
-to the embedded persistence endpoint, while the server asset layer can keep
-bytes in PostgreSQL or S3.
+OpenMAIC stores course documents, learner runtime records and assets on the
+server, in PostgreSQL. The `@openmaic/storage` package defines swappable stores
+for those primitives — PostgreSQL-backed documents, learner runtime, assets,
+durable agent sessions, session materials, and user skills, plus browser
+implementations for embedders — and HTTP clients connect the browser to the
+embedded persistence endpoint, while the server asset layer can keep bytes in
+PostgreSQL or S3. Device-scoped KV values (settings, playback position) stay in
+the browser.
 
 ### Deep Interactive Mode (New!)
 
@@ -1606,7 +1637,7 @@ Optional config in `~/.openclaw/openclaw.json`:
 | **Interactive HTML** | Self-contained web pages with interactive simulations |
 | **Classroom ZIP** | Full classroom export (course structure + media) for backup or sharing |
 
-With server-backed persistence enabled, importing a classroom ZIP stores its embedded audio, images, video, and posters in the server asset pool before saving the course. Other browsers can resolve those imported assets without the importing browser's cache. Browser-only imports remain local. This does not automatically migrate existing browser courses; export them from the original browser and import the ZIP on the destination deployment.
+Importing a classroom ZIP stores its embedded audio, images, video, and posters in the server asset pool before saving the course, so other browsers resolve those assets without the importing browser's cache. A ZIP is also a way to move a course between deployments: export it from one and import it on the other.
 
 **Offline / intranet classrooms:** When you export a classroom (`.maic.zip`) or a Resource Pack, OpenMAIC inlines the external assets referenced by interactive scenes (KaTeX, Three.js incl. `three/addons`, Tailwind CDN, Google Fonts, images) into the exported HTML as `data:` URIs. The exported course then plays fully offline after import into an air-gapped/intranet instance — no public CDN is contacted at playback time. Assets that can't be fetched at export time (e.g. CORS-restricted image hosts) are reported and left as URLs. Classrooms exported *before* this feature still reference CDNs and must be re-exported to gain offline support.
 
