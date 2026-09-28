@@ -129,14 +129,46 @@ export function browserStoreConstructions(files: readonly SourceFile[]): string[
     .map(({ path }) => path);
 }
 
+/**
+ * A module specifier that names the legacy module: the `@/` alias, or a
+ * relative path of any depth (`./`, `../`, `../../lib/`, ...).
+ */
+const LEGACY_SPECIFIER = String.raw`(?:@\/lib\/|(?:\.\.?\/)+(?:[\w.-]+\/)*)legacy-browser-storage(?:\/[^'"]*)?`;
+
 export function legacyModuleValueImports(files: readonly SourceFile[]): string[] {
-  // `import type` and `export type` are erased; anything else loads the module.
-  const valueImport =
-    /^\s*(?:import|export)\s+(?!type\b)[^;]*?from\s*['"](?:@\/lib\/legacy-browser-storage|(?:\.\.?\/)+legacy-browser-storage)[^'"]*['"]|import\(\s*['"]@\/lib\/legacy-browser-storage[^'"]*['"]\s*\)/m;
+  // `import type` and `export type` are erased; anything else loads the module:
+  // a static value import or re-export, a side-effect import, a dynamic
+  // `import()` or a `require()`.
+  const valueImport = new RegExp(
+    [
+      String.raw`^\s*(?:import|export)\s+(?!type\b)[^;]*?from\s*['"]${LEGACY_SPECIFIER}['"]`,
+      String.raw`^\s*import\s*['"]${LEGACY_SPECIFIER}['"]`,
+      String.raw`\b(?:import|require)\s*\(\s*['"\`]${LEGACY_SPECIFIER}['"\`]\s*\)`,
+    ].join('|'),
+    'm',
+  );
   return files
     .filter(
       ({ path, source }) =>
         !inLegacyOrImporter(path) && path !== VOICE_PROFILE_CARRY_OVER && valueImport.test(source),
+    )
+    .map(({ path }) => path);
+}
+
+/**
+ * The runtime learner key must come from runtime configuration (the
+ * server-derived key). `getLearnerKey(kv)` with a KV store the caller made up
+ * itself reads or MINTS a device key instead, which the server refuses and
+ * which pollutes the storage slot the importer reads. The only accepted
+ * argument is an explicitly injected store passed straight through.
+ */
+export function learnerKeyFromLocalStore(files: readonly SourceFile[]): string[] {
+  const call = /\bgetLearnerKey\s*\(\s*([^)]*?)\s*\)/g;
+  const injected = /^(?:(?:args|options|deps)\.kv|injectedKv)?$/;
+  return files
+    .filter(({ path }) => path !== 'lib/runtime/learner-key.ts')
+    .filter(({ source }) =>
+      [...source.matchAll(call)].some((match) => !injected.test(match[1] ?? '')),
     )
     .map(({ path }) => path);
 }
@@ -221,10 +253,38 @@ describe('the guards bite on synthetic sources', () => {
         file('lib/a.ts', "import { readLegacyFolders } from '@/lib/legacy-browser-storage';"),
         file('lib/b.ts', "const m = await import('@/lib/legacy-browser-storage');"),
         file('lib/c.ts', "import type { StageRecord } from '@/lib/legacy-browser-storage/schema';"),
+        file('lib/utils/d.ts', "export const y = () => import('../legacy-browser-storage/index');"),
+        file('lib/utils/e.ts', "import { readLegacyFolders } from '../legacy-browser-storage';"),
+        file('app/f.tsx', "import { x } from '../../lib/legacy-browser-storage/index';"),
+        file('lib/g.ts', "import './legacy-browser-storage';"),
+        file('lib/h.ts', "const m = require('../lib/legacy-browser-storage');"),
+        file('lib/i.ts', "export type { StageRecord } from '../legacy-browser-storage/schema';"),
         file(
           'lib/legacy-browser-import/run.ts',
           "import { x } from '@/lib/legacy-browser-storage';",
         ),
+      ]),
+    ).toEqual([
+      'lib/a.ts',
+      'lib/b.ts',
+      'lib/utils/d.ts',
+      'lib/utils/e.ts',
+      'app/f.tsx',
+      'lib/g.ts',
+      'lib/h.ts',
+    ]);
+  });
+
+  it('flags a learner key read from a store the caller made up', () => {
+    expect(
+      learnerKeyFromLocalStore([
+        file('lib/a.ts', 'const key = await getLearnerKey(kv);'),
+        file('lib/b.ts', 'const key = await getLearnerKey(getDefaultKv());'),
+        file('lib/c.ts', 'const key = await getLearnerKey();'),
+        file('lib/d.ts', 'const key = args.learnerKey ?? (await getLearnerKey(args.kv));'),
+        file('lib/e.ts', 'const key = await getLearnerKey(options.kv);'),
+        file('lib/f.ts', 'resolveLearnerKey: getLearnerKey,'),
+        file('lib/runtime/learner-key.ts', 'if (kv) return readOrMint(kv); getLearnerKey(kv)'),
       ]),
     ).toEqual(['lib/a.ts', 'lib/b.ts']);
   });
@@ -275,6 +335,10 @@ describe('server-backed persistence is the only persistence', () => {
 
   it('loads the legacy module only from itself, the importer and the voice-profile carry-over', () => {
     expect(legacyModuleValueImports(codeFiles)).toEqual([]);
+  });
+
+  it('takes the runtime learner key from runtime configuration everywhere', () => {
+    expect(learnerKeyFromLocalStore(codeFiles)).toEqual([]);
   });
 
   it('imports Dexie only for the legacy module and the device-local cache', () => {
