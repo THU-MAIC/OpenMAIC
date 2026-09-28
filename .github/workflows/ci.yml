@@ -243,6 +243,25 @@ jobs:
     name: E2E Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The app stores every course in PostgreSQL and refuses to start without
+    # DATABASE_URL, so the browser suite runs against a real database; specs
+    # seed their courses through the app's own persistence endpoint.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: openmaic
+          POSTGRES_USER: openmaic
+          POSTGRES_PASSWORD: openmaic-e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U openmaic -d openmaic"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://openmaic:openmaic-e2e@localhost:5432/openmaic
     steps:
       - uses: actions/checkout@v5
 
