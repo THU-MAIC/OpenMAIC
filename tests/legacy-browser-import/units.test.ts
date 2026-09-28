@@ -12,20 +12,19 @@ import {
   LEDGER_KEY,
   ledgerIsSettled,
   loadLedger,
-  recordHandoff,
   saveLedger,
 } from '@/lib/legacy-browser-import/ledger';
 
 import { MemoryStorage } from './harness';
 
 describe('derived ids', () => {
-  it('derives the same fresh id from the same salt and course, and different ones otherwise', () => {
-    expect(freshStageId('course', 'salt-a')).toBe(freshStageId('course', 'salt-a'));
-    expect(freshStageId('course', 'salt-a')).not.toBe(freshStageId('course', 'salt-b'));
-    expect(freshStageId('course', 'salt-a')).not.toBe(freshStageId('course-2', 'salt-a'));
-    expect(freshStageId('course', 'salt-a')).toMatch(/^course-i[0-9a-f]{16}$/);
-    expect(freshStageId('course', 'salt-a')).toBe(
-      `course-i${sha256Hex('salt-a\u0000course').slice(0, 16)}`,
+  it('derives the same fresh id from the same browser id and course, and different ones otherwise', () => {
+    expect(freshStageId('course', 'browser-a')).toBe(freshStageId('course', 'browser-a'));
+    expect(freshStageId('course', 'browser-a')).not.toBe(freshStageId('course', 'browser-b'));
+    expect(freshStageId('course', 'browser-a')).not.toBe(freshStageId('course-2', 'browser-a'));
+    expect(freshStageId('course', 'browser-a')).toMatch(/^course-i[0-9a-f]{16}$/);
+    expect(freshStageId('course', 'browser-a')).toBe(
+      `course-i${sha256Hex('browser-a\u0000course').slice(0, 16)}`,
     );
   });
 
@@ -52,6 +51,29 @@ describe('derived ids', () => {
     );
     expect(rewriteStageSegment('chat:c1:anon%3Ax:c', 'c1', 'c1')).toBe('chat:c1:anon%3Ax:c');
     expect(rewriteStageSegment('random-id', 'c1', 'c2')).toBe('random-id');
+  });
+
+  it('replaces only the course segment when the course id is short', () => {
+    const fresh = 'a-i0123456789abcdef';
+    expect(rewriteStageSegment('chat:a:anon%3Alegacy:session', 'a', fresh)).toBe(
+      `chat:${fresh}:anon%3Alegacy:session`,
+    );
+    expect(rewriteStageSegment('chat:a:anon%3Alegacy:session~2:tok', 'a', fresh)).toBe(
+      `chat:${fresh}:anon%3Alegacy:session~2:tok`,
+    );
+    expect(rewriteStageSegment('whiteboard:a:anon%3Aa', 'a', fresh)).toBe(
+      `whiteboard:${fresh}:anon%3Aa`,
+    );
+    expect(rewriteStageSegment('quiz-attempt:a:scene-a:anon%3Aa:retry:1', 'a', fresh)).toBe(
+      `quiz-attempt:${fresh}:scene-a:anon%3Aa:retry:1`,
+    );
+    expect(rewriteStageSegment('chat-restore-marker:a:anon%3Aa:m1:targets', 'a', fresh)).toBe(
+      `chat-restore-marker:${fresh}:anon%3Aa:m1:targets`,
+    );
+    expect(rewriteStageSegment('pbl-a-anon:a', 'a', fresh)).toBe(`pbl-${fresh}-anon:a`);
+    // Another course whose id merely contains the short one is untouched.
+    expect(rewriteStageSegment('chat:ab:anon%3Aa:s', 'a', fresh)).toBe('chat:ab:anon%3Aa:s');
+    expect(rewriteStageSegment('something-a', 'a', fresh)).toBe('something-a');
   });
 });
 
@@ -92,16 +114,16 @@ describe('failure classification', () => {
 });
 
 describe('the ledger', () => {
-  it('is one key per browser with a random salt, and survives a round trip', () => {
+  it('is one key per browser with a random browser id, and survives a round trip', () => {
     const storage = new MemoryStorage();
     const ledger = ensureLedger(storage);
-    expect(ledger.salt).toMatch(/^[0-9a-f]{32}$/);
-    expect(ensureLedger(storage).salt).toBe(ledger.salt);
+    expect(ledger.browserId).toMatch(/^[0-9a-f]{32}$/);
+    expect(ensureLedger(storage).browserId).toBe(ledger.browserId);
     ledger.courses.c = { status: 'done', steps: { document: 'done' } };
     saveLedger(storage, ledger);
     expect([...storage.values.keys()]).toEqual([LEDGER_KEY]);
     expect(loadLedger(storage)).toEqual(ledger);
-    expect(ensureLedger(new MemoryStorage()).salt).not.toBe(ledger.salt);
+    expect(ensureLedger(new MemoryStorage()).browserId).not.toBe(ledger.browserId);
   });
 
   it('starts over from an unreadable or old-format ledger', () => {
@@ -131,23 +153,14 @@ describe('the ledger', () => {
     expect(stored.courses.c1!.sessions).toEqual({ s1: 's1', s2: 's2' });
   });
 
-  it('keeps the stored claiming owner and completion when a stale tab saves', () => {
+  it('keeps completion when a stale tab saves', () => {
     const storage = new MemoryStorage();
     const tabA = ensureLedger(storage);
     const tabB = structuredClone(tabA);
-    tabA.ownerDigest = 'a'.repeat(64);
     tabA.completedAt = 5;
     saveLedger(storage, tabA);
-    tabB.ownerDigest = 'b'.repeat(64);
     saveLedger(storage, tabB);
-    expect(loadLedger(storage)).toMatchObject({ ownerDigest: 'a'.repeat(64), completedAt: 5 });
-
-    // A confirmed handoff from exactly that owner does replace it.
-    const tabC = structuredClone(loadLedger(storage)!);
-    recordHandoff(tabC, tabC.ownerDigest!);
-    tabC.ownerDigest = 'c'.repeat(64);
-    saveLedger(storage, tabC);
-    expect(loadLedger(storage)?.ownerDigest).toBe('c'.repeat(64));
+    expect(loadLedger(storage)).toMatchObject({ completedAt: 5 });
   });
 
   it('is settled only when nothing is pending', () => {

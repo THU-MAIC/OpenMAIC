@@ -34,6 +34,8 @@ describe.skipIf(!contractUrl)('the legacy browser importer against the app route
   let pool: Pool;
   let cookie = COOKIE_A;
   let storage: MemoryStorage;
+  /** Called with every routed request before its cookie is read (a test may switch it). */
+  let onRequest: (method: string, path: string) => void = () => undefined;
   const realFetch = globalThis.fetch;
   const previousEnv = {
     DATABASE_URL: process.env.DATABASE_URL,
@@ -45,6 +47,7 @@ describe.skipIf(!contractUrl)('the legacy browser importer against the app route
     const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (!raw.startsWith('/') && !raw.startsWith('http://localhost')) return realFetch(input, init);
     const url = new URL(raw, 'http://localhost');
+    onRequest(init?.method ?? 'GET', url.pathname);
     const headers = new Headers(init?.headers);
     headers.set('cookie', `anonymous_id=${cookie}`);
     // Same-origin, as a browser request to its own origin is.
@@ -67,6 +70,10 @@ describe.skipIf(!contractUrl)('the legacy browser importer against the app route
     if (path === '/api/folders/members') {
       const route = await import('@/app/api/folders/members/route');
       return route.POST(request as never);
+    }
+    if (path === '/api/identity/legacy-import-binding') {
+      const route = await import('@/app/api/identity/legacy-import-binding/route');
+      return route.POST(request);
     }
     throw new Error(`No route for ${method} ${path}`);
   }
@@ -154,6 +161,7 @@ describe.skipIf(!contractUrl)('the legacy browser importer against the app route
     );
     await freshBrowser();
     cookie = COOKIE_A;
+    onRequest = () => undefined;
     storage = new MemoryStorage();
     vi.stubGlobal('localStorage', storage);
     vi.stubGlobal('window', Object.assign(new EventTarget(), { localStorage: storage }));
@@ -174,7 +182,8 @@ describe.skipIf(!contractUrl)('the legacy browser importer against the app route
     const outcome = await runLegacyBrowserImport({ storage, locks: null, now: () => NOW });
 
     expect(outcome.status).toBe('complete');
-    expect(outcome.ownerId).toBe(OWNER_A);
+    const binding = await pool.query('SELECT owner_id FROM legacy_import_bindings');
+    expect(binding.rows).toEqual([{ owner_id: OWNER_A }]);
     expect(await libraryIds()).toEqual([DOCS_COURSE, TABLES_COURSE]);
 
     const docs = (await (await call(`/api/persistence/documents/${DOCS_COURSE}`)).json()) as {
@@ -240,7 +249,7 @@ describe.skipIf(!contractUrl)('the legacy browser importer against the app route
     const outcome = await runLegacyBrowserImport({ storage, locks: null, now: () => NOW });
 
     expect(outcome.status).toBe('complete');
-    const fresh = freshStageId(DOCS_COURSE, loadLedger(storage)!.salt);
+    const fresh = freshStageId(DOCS_COURSE, loadLedger(storage)!.browserId);
     expect(await libraryIds()).toEqual([fresh, TABLES_COURSE].sort());
     cookie = COOKIE_B;
     const theirs = (await (await call(`/api/persistence/documents/${DOCS_COURSE}`)).json()) as {
@@ -271,6 +280,47 @@ describe.skipIf(!contractUrl)('the legacy browser importer against the app route
       reason: 'deleted on the server',
     });
     expect(await libraryIds()).toEqual([TABLES_COURSE]);
+  });
+
+  it('imports nothing for a second owner of the same browser', async () => {
+    await seedLatestBrowser(storage);
+    // Owner A's run binds the browser, then stops on its first course write.
+    let failed = false;
+    onRequest = (method, path) => {
+      if (!failed && method === 'PUT' && path.startsWith('/api/persistence/documents/')) {
+        failed = true;
+        throw new TypeError('Failed to fetch');
+      }
+    };
+    await runLegacyBrowserImport({ storage, locks: null, now: () => NOW });
+    onRequest = () => undefined;
+
+    cookie = COOKIE_B;
+    const other = await runLegacyBrowserImport({
+      storage,
+      locks: null,
+      now: () => NOW + 7 * 86_400_000,
+    });
+
+    expect(other.status).toBe('claimed-by-another-owner');
+    expect(await libraryIds()).toEqual([]);
+  });
+
+  it('refuses the writes of a run whose cookie switches after it bound', async () => {
+    await seedLatestBrowser(storage);
+    // Another tab signs in as an unrelated owner right before the first
+    // course is written: the server resolves B for that write.
+    onRequest = (method, path) => {
+      if (method === 'PUT' && path.startsWith('/api/persistence/documents/')) cookie = COOKIE_B;
+    };
+
+    const outcome = await runLegacyBrowserImport({ storage, locks: null, now: () => NOW });
+
+    expect(outcome.status).toBe('stopped');
+    onRequest = () => undefined;
+    expect(await libraryIds()).toEqual([]);
+    cookie = COOKIE_A;
+    expect(await libraryIds()).toEqual([]);
   });
 
   it('keeps an existing server course and fills in its media only', async () => {

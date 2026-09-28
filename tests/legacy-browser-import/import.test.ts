@@ -325,9 +325,9 @@ describe('conflicts with what the server already has', () => {
 
     const outcome = await runLegacyBrowserImport(server.options(storage));
 
-    const salt = outcome.ledger!.salt;
-    const docsId = freshStageId(DOCS_COURSE, salt);
-    const tablesId = freshStageId(TABLES_COURSE, salt);
+    const browserId = outcome.ledger!.browserId;
+    const docsId = freshStageId(DOCS_COURSE, browserId);
+    const tablesId = freshStageId(TABLES_COURSE, browserId);
     expect(outcome.ledger?.courses[DOCS_COURSE]).toMatchObject({ status: 'done', target: docsId });
     // The other owner's courses are untouched.
     expect((await server.rawDocument(DOCS_COURSE))!.scenes.map((scene) => scene.id)).toEqual([
@@ -553,13 +553,14 @@ describe('failures', () => {
   it('does nothing when server persistence is unavailable', async () => {
     await seedLatestBrowser(storage);
     server.failWith = (operation) =>
-      operation === 'ownerId' ? new Error('Runtime learner key request failed: 500') : undefined;
+      operation === 'bind' ? new Error('Failed to fetch') : undefined;
 
     const outcome = await runLegacyBrowserImport(server.options(storage));
 
-    expect(outcome.status).toBe('unavailable');
+    expect(outcome.status).toBe('pending');
     expect(server.stageOwners.size).toBe(0);
-    expect(storage.getItem(LEDGER_KEY)).toBeNull();
+    expect(server.bindings.size).toBe(0);
+    expect(loadLedger(storage)?.nextRunAt).toBe(NOW + 30_000);
   });
 
   it('does nothing in a browser that never stored anything locally', async () => {

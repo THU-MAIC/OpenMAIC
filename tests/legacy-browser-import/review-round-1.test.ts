@@ -63,8 +63,8 @@ function speechIds(document: { scenes: { actions?: unknown[] }[] }): string[] {
   );
 }
 
-describe('the ledger holds no owner id', () => {
-  it('stores only a digest of the owner, under one browser-wide key', async () => {
+describe('the ledger holds no owner information', () => {
+  it('stores only a random browser id, under one browser-wide key', async () => {
     await seedLatestBrowser(storage);
     await runLegacyBrowserImport(server.options(storage));
     const uuid = OWNER_A.slice('anon:'.length);
@@ -72,7 +72,19 @@ describe('the ledger holds no owner id', () => {
       expect(key).not.toContain(uuid);
       expect(value).not.toContain(uuid);
     }
-    expect(loadLedger(storage)?.ownerDigest).toMatch(/^[0-9a-f]{64}$/);
+    const ledger = loadLedger(storage)!;
+    expect(ledger.browserId).toMatch(/^[0-9a-f]{32}$/);
+    expect(Object.keys(ledger).sort()).toEqual(
+      [
+        'autoVoiceCache',
+        'browserId',
+        'completedAt',
+        'courses',
+        'failedRuns',
+        'folders',
+        'version',
+      ].sort(),
+    );
     expect(
       [...storage.values.keys()].filter((key) => key.startsWith('maic:legacy-import')),
     ).toEqual([LEDGER_KEY]);
@@ -83,13 +95,13 @@ describe('two tabs without Web Locks', () => {
   it('does not duplicate a course another tab imported since this tab listed the library', async () => {
     await seedLatestBrowser(storage);
     const before = storage.getItem(LEDGER_KEY);
-    // Tab A creates the ledger (and its salt) and imports everything.
+    // Tab A creates the ledger (and its browser id) and imports everything.
     const tabA = await runLegacyBrowserImport(server.options(storage));
     expect(tabA.status).toBe('complete');
     const ownedByA = [...server.stageOwners.keys()].sort();
 
     // Tab B started at the same time: it saw the ledger as it was when both
-    // began (same salt, nothing done) and listed the library before A saved.
+    // began (same browser id, nothing done) and listed the library before A saved.
     const started = JSON.parse(storage.getItem(LEDGER_KEY)!) as Record<string, unknown>;
     expect(before).toBeNull();
     storage.setItem(
@@ -243,7 +255,7 @@ describe('runtime sessions the server already has', () => {
 
     const outcome = await runLegacyBrowserImport(server.options(storage));
 
-    const fresh = freshStageId('marked', outcome.ledger!.salt);
+    const fresh = freshStageId('marked', outcome.ledger!.browserId);
     const [marker] = await server.rawSessions(fresh);
     expect(marker!.id).toBe(
       `chat-restore-marker:${fresh}:${encodeURIComponent(LEGACY_LEARNER)}:m1`,
@@ -370,6 +382,9 @@ describe('legacy sources', () => {
       close: async () => undefined,
     } as unknown as LegacySources;
 
-    await expect(readLegacyCourse(sources, 'both')).rejects.toBe(aborted);
+    await expect(readLegacyCourse(sources, 'both')).rejects.toMatchObject({
+      name: 'LegacyReadError',
+      cause: aborted,
+    });
   });
 });

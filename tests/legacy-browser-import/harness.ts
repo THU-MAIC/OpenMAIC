@@ -15,8 +15,6 @@
  */
 import 'fake-indexeddb/auto';
 
-import { createHash } from 'node:crypto';
-
 import type { RuntimeRecordInit, RuntimeSession } from '@openmaic/dsl';
 import {
   BrowserAssetStore,
@@ -34,6 +32,7 @@ import { IDBFactory } from 'fake-indexeddb';
 
 import type { AppDocument, AppStage } from '@/lib/document-store/persistence-types';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
+import type { ImportClients } from '@/lib/legacy-browser-import/server';
 import type { AssetPoolStore } from '@/lib/media/asset-pool-config';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 import type { FolderRecord } from '@/lib/types/folder';
@@ -353,7 +352,9 @@ export class FakeServer {
    * course (tombstones included), runtime session, asset and folder moves.
    */
   async claim(from: string, to: string): Promise<void> {
-    this.merges.set(from, to);
+    // The claim participant: the account holds the browser afterwards.
+    for (const [browserId, owner] of this.bindings)
+      if (owner === from) this.bindings.set(browserId, to);
     for (const [id, owner] of this.stageOwners) if (owner === from) this.stageOwners.set(id, to);
     await this.runtimeInner.mergeLearner(from, to);
     for (const entry of this.assets.values()) if (entry.owner === from) entry.owner = to;
@@ -362,18 +363,69 @@ export class FakeServer {
     this.folders.delete(from);
   }
 
-  /** `owner_merges`: retired owner -> the owner it was claimed into. */
-  readonly merges = new Map<string, string>();
+  /** `legacy_import_bindings`: browser id -> the owner holding it. */
+  readonly bindings = new Map<string, string>();
 
-  /** `GET /api/identity/merged-from` as the server answers it, for the current owner. */
-  mergedFrom = async (salt: string, digest: string): Promise<boolean> => {
-    this.check('mergedFrom', digest);
-    return [...this.merges].some(
-      ([from, to]) =>
-        to === this.owner &&
-        createHash('sha256').update(`${salt}\u0000${from}`).digest('hex') === digest,
-    );
-  };
+  /**
+   * The importer's fenced clients, as the server treats them: every call but
+   * the bind is refused with 409 LEGACY_IMPORT_NOT_BOUND unless the owner the
+   * call resolves to (`as`, or the current cookie owner) holds `browserId`.
+   * The fence is checked after the call's `failWith` hook, so a test can
+   * switch the owner between a run's check and its write.
+   */
+  clients(browserId: string, as?: string): ImportClients {
+    const ownerOf = () => as ?? this.owner;
+    const fenced =
+      <A extends unknown[], R>(operation: string, call: (...args: A) => Promise<R>) =>
+      async (...args: A): Promise<R> => {
+        // One request resolves its owner once: the fence and the write see
+        // the same owner (a hook may switch the cookie before resolution).
+        const hook = this.failWith(`fenced:${operation}`, browserId);
+        if (hook) throw hook;
+        const owner = ownerOf();
+        if (this.bindings.get(browserId) !== owner) {
+          throw Object.assign(new Error('not bound'), {
+            status: 409,
+            code: 'LEGACY_IMPORT_NOT_BOUND',
+          });
+        }
+        this.owner = owner;
+        return call(...args);
+      };
+    const fenceAll = <T extends object>(target: T): T =>
+      new Proxy(target, {
+        get: (object, property) => {
+          const value = Reflect.get(object, property) as unknown;
+          return typeof value === 'function'
+            ? fenced(
+                String(property),
+                (value as (...a: unknown[]) => Promise<unknown>).bind(object),
+              )
+            : value;
+        },
+      });
+    return {
+      bind: async () => {
+        this.check('bind', browserId);
+        const owner = ownerOf();
+        if (!this.bindings.has(browserId)) this.bindings.set(browserId, owner);
+        return this.bindings.get(browserId) === owner;
+      },
+      learnerKey: fenced('learnerKey', async () => ownerOf()),
+      documents: fenceAll(this.documents),
+      runtime: fenceAll(this.runtime),
+      putAsset: fenced(
+        'putAsset',
+        (data: Blob, meta) => this.assetPool.put(data, meta) as Promise<string>,
+      ),
+      assetExists: fenced(
+        'assetExists',
+        async (ref: string) => (await this.assetPool.exists?.(ref)) ?? false,
+      ),
+      listOwnedStages: fenced('listOwnedStages', () => this.listOwnedStages()),
+      folders: fenceAll(this.folderApi),
+    };
+  }
 
   /** The importer options that point it at this server. */
   options(storage: Storage, extra: Record<string, unknown> = {}) {
@@ -381,10 +433,7 @@ export class FakeServer {
       storage,
       locks: null,
       now: () => NOW,
-      ownerId: this.ownerId,
-      listOwnedStages: this.listOwnedStages,
-      folders: this.folderApi,
-      mergedFrom: this.mergedFrom,
+      connect: (browserId: string) => this.clients(browserId),
       log: () => undefined,
       ...extra,
     };

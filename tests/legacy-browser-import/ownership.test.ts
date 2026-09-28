@@ -1,17 +1,20 @@
 /**
- * Once per browser: the first owner the server confirms claims the browser's
- * legacy data, and it moves to a different owner only when the server
- * confirms that owner absorbed the first one through a claim.
+ * Once per browser, decided by the server: the browser's random id is bound to
+ * the first owner that asks, every importer request of any other owner is
+ * refused (409 LEGACY_IMPORT_NOT_BOUND), and a claim carries the binding to
+ * the account. The fake server models the real one (atomic bind, fence on
+ * every call, claim re-keying the binding); the route suite
+ * (`tests/server/identity/legacy-import-binding-route.test.ts`) and the `.pg`
+ * suite run the real routes.
  */
 import 'fake-indexeddb/auto';
-
-import { createHash } from 'node:crypto';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { runLegacyBrowserImport } from '@/lib/legacy-browser-import';
 import { freshStageId } from '@/lib/legacy-browser-import/ids';
 import { loadLedger } from '@/lib/legacy-browser-import/ledger';
+import type { ImportClients } from '@/lib/legacy-browser-import/server';
 
 import {
   FakeServer,
@@ -55,6 +58,7 @@ const heldBy = (owner: string) =>
     .filter(([, holder]) => holder === owner)
     .map(([id]) => id)
     .sort();
+const writesBy = (owner: string) => heldBy(owner).length + (server.folders.get(owner)?.length ?? 0);
 
 describe('an unrelated second owner never gets the data', () => {
   const deaths: [string, () => void][] = [
@@ -111,15 +115,13 @@ describe('an unrelated second owner never gets the data', () => {
     die();
     const first = await runLegacyBrowserImport(server.options(storage));
     expect(first.status).not.toBe('complete');
-    expect(loadLedger(storage)?.ownerDigest).toBeDefined();
 
     server.failWith = () => undefined;
     server.owner = OWNER_B;
     const other = await runLegacyBrowserImport(at(LATER));
 
     expect(other.status).toBe('claimed-by-another-owner');
-    expect(heldBy(OWNER_B)).toEqual([]);
-    expect(server.folders.get(OWNER_B)).toBeUndefined();
+    expect(writesBy(OWNER_B)).toBe(0);
 
     // The first owner finishes its own import on its next load.
     server.owner = OWNER_A;
@@ -127,7 +129,7 @@ describe('an unrelated second owner never gets the data', () => {
     expect(heldBy(OWNER_A)).toEqual([DOCS_COURSE, TABLES_COURSE]);
   });
 
-  it('does not count a course a host library lists for it as a claim', async () => {
+  it('does not count a course a host library lists for it', async () => {
     await seedLatestBrowser(storage);
     server.failWith = (operation, subject) =>
       operation === 'saveDocument' && subject === TABLES_COURSE ? httpError(502, 'BAD') : undefined;
@@ -143,7 +145,7 @@ describe('an unrelated second owner never gets the data', () => {
     );
 
     expect(other.status).toBe('claimed-by-another-owner');
-    expect(heldBy(OWNER_B)).toEqual([]);
+    expect(writesBy(OWNER_B)).toBe(0);
   });
 
   it('does not count a claim into a third owner', async () => {
@@ -156,52 +158,108 @@ describe('an unrelated second owner never gets the data', () => {
 
     server.owner = OWNER_B;
     expect((await runLegacyBrowserImport(at(LATER))).status).toBe('claimed-by-another-owner');
-    expect(heldBy(OWNER_B)).toEqual([]);
+    expect(writesBy(OWNER_B)).toBe(0);
+  });
+});
+
+describe('two owners racing for the binding', () => {
+  it('lets exactly one win; the other writes nothing', async () => {
+    await seedLatestBrowser(storage);
+    // Two tabs of two owners, no Web Locks, both past their first request.
+    const [a, b] = await Promise.all([
+      runLegacyBrowserImport(
+        server.options(storage, { connect: (id: string) => server.clients(id, OWNER_A) }),
+      ),
+      runLegacyBrowserImport(
+        server.options(storage, { connect: (id: string) => server.clients(id, OWNER_B) }),
+      ),
+    ]);
+
+    expect([a.status, b.status].sort()).toEqual(['claimed-by-another-owner', 'complete']);
+    const winner = a.status === 'complete' ? OWNER_A : OWNER_B;
+    const loser = winner === OWNER_A ? OWNER_B : OWNER_A;
+    expect([...server.bindings.values()]).toEqual([winner]);
+    expect(writesBy(loser)).toBe(0);
   });
 
-  it('asks the server again only after a while', async () => {
+  it('fences the loser even when its client believes it is bound', async () => {
+    await seedLatestBrowser(storage);
+    server.owner = OWNER_A;
+    expect((await runLegacyBrowserImport(server.options(storage))).status).toBe('complete');
+    const ledger = loadLedger(storage)!;
+    // Replay the import for B from a pristine ledger, with a client whose
+    // bind answers "yes" regardless: every write must still be refused.
+    storage.setItem(
+      'maic:legacy-import:v3',
+      JSON.stringify({ ...ledger, courses: {}, folders: {}, completedAt: undefined }),
+    );
+    server.owner = OWNER_B;
+    const lying = (id: string): ImportClients => ({
+      ...server.clients(id),
+      bind: async () => true,
+    });
+
+    const outcome = await runLegacyBrowserImport(at(NOW, { connect: lying }));
+
+    expect(outcome.status).toBe('stopped');
+    expect(writesBy(OWNER_B)).toBe(0);
+  });
+});
+
+describe('the page owner and the cookie owner differ', () => {
+  it('lands nothing under the cookie owner when the browser is bound to another', async () => {
     await seedLatestBrowser(storage);
     server.failWith = (operation, subject) =>
       operation === 'saveDocument' && subject === TABLES_COURSE ? httpError(502, 'BAD') : undefined;
     await runLegacyBrowserImport(server.options(storage));
     server.failWith = () => undefined;
+    // The page was loaded as A; B signed in in another tab without a claim.
+    // The importer never uses the page's owner: the server resolves B.
     server.owner = OWNER_B;
-    await runLegacyBrowserImport(at(LATER));
 
-    server.calls.length = 0;
-    expect((await runLegacyBrowserImport(at(LATER + 60_000))).status).toBe(
-      'claimed-by-another-owner',
-    );
-    expect(server.calls).toEqual(['ownerId ']);
+    expect((await runLegacyBrowserImport(at(LATER))).status).toBe('claimed-by-another-owner');
+    expect(writesBy(OWNER_B)).toBe(0);
+  });
+
+  it('stops at the next write when the cookie switches mid-run', async () => {
+    await seedLatestBrowser(storage);
+    // The switch lands between the run's binding and its first course write
+    // (the gap between any check the client makes and the write).
+    server.failWith = (operation) => {
+      if (operation === 'fenced:saveDocument') server.owner = OWNER_B;
+      return undefined;
+    };
+
+    const outcome = await runLegacyBrowserImport(server.options(storage));
+
+    expect(outcome.status).toBe('stopped');
+    expect(writesBy(OWNER_B)).toBe(0);
+    expect(loadLedger(storage)?.completedAt).toBeUndefined();
+  });
+
+  it('never asks the page for its learner key', async () => {
+    await seedLatestBrowser(storage);
+    const learnerKeys: string[] = [];
+    const tracking = (id: string): ImportClients => {
+      const clients = server.clients(id);
+      return {
+        ...clients,
+        learnerKey: async () => {
+          const key = await clients.learnerKey();
+          learnerKeys.push(key);
+          return key;
+        },
+      };
+    };
+    await runLegacyBrowserImport(server.options(storage, { connect: tracking }));
+    expect(learnerKeys).toEqual([OWNER_A]);
+    const quiz = (await server.rawSessions(DOCS_COURSE)).find((s) => s.kind === 'quizAttempt');
+    expect(quiz?.learnerKey).toBe(OWNER_A);
   });
 });
 
-describe('the first owner is bound only once the server confirmed it', () => {
-  it('leaves the ledger unclaimed when the run dies before any authenticated request', async () => {
-    await seedLatestBrowser(storage);
-    server.failWith = (operation) =>
-      operation === 'listOwnedStages' ? httpError(502, 'BAD') : undefined;
-    await runLegacyBrowserImport(server.options(storage));
-    expect(loadLedger(storage)?.ownerDigest).toBeUndefined();
-
-    server.failWith = () => undefined;
-    server.owner = OWNER_B;
-    expect((await runLegacyBrowserImport(at(LATER))).status).toBe('complete');
-    expect(heldBy(OWNER_B)).toEqual([DOCS_COURSE, TABLES_COURSE]);
-  });
-
-  it('records the owner as SHA-256 of the salt and the owner id', async () => {
-    await seedLatestBrowser(storage);
-    await runLegacyBrowserImport(server.options(storage));
-    const ledger = loadLedger(storage)!;
-    expect(ledger.ownerDigest).toBe(
-      createHash('sha256').update(`${ledger.salt}\u0000${OWNER_A}`).digest('hex'),
-    );
-  });
-});
-
-describe('the owner that claimed the first one gets the rest', () => {
-  it('continues a half-imported course after a retirement mid-run, runtime included', async () => {
+describe('a claim carries the binding to the account', () => {
+  it('lets the account finish a half-imported course after a retirement mid-run', async () => {
     await seedLatestBrowser(storage);
     let appends = 0;
     server.failWith = (operation) =>
@@ -224,21 +282,19 @@ describe('the owner that claimed the first one gets the rest', () => {
     expect(heldBy(OWNER_B)).toEqual([DOCS_COURSE, TABLES_COURSE]);
   });
 
-  it('continues after a claim between loads, without a second fresh-id copy', async () => {
+  it('lets the account continue after a claim between loads, without a second fresh-id copy', async () => {
     await seedLatestBrowser(storage);
     await server.seedDocument(course(DOCS_COURSE, [{ id: 'theirs', order: 0 }]), OWNER_C);
     server.failWith = (operation, subject) =>
       operation === 'saveDocument' && subject === TABLES_COURSE ? httpError(502, 'BAD') : undefined;
     const first = await runLegacyBrowserImport(server.options(storage));
     expect(first.status).toBe('pending');
-    const fresh = freshStageId(DOCS_COURSE, first.ledger!.salt);
+    const fresh = freshStageId(DOCS_COURSE, first.ledger!.browserId);
 
     server.failWith = () => undefined;
     await server.claim(OWNER_A, OWNER_B);
     server.owner = OWNER_B;
-    const second = await runLegacyBrowserImport(at(LATER));
-
-    expect(second.status).toBe('complete');
+    expect((await runLegacyBrowserImport(at(LATER))).status).toBe('complete');
     expect(heldBy(OWNER_B)).toEqual([fresh, TABLES_COURSE].sort());
   });
 
@@ -248,16 +304,29 @@ describe('the owner that claimed the first one gets the rest', () => {
     server.failWith = (operation, subject) =>
       operation === 'saveDocument' && subject === TABLES_COURSE ? httpError(502, 'BAD') : undefined;
     const first = await runLegacyBrowserImport(server.options(storage));
-    const fresh = freshStageId(DOCS_COURSE, first.ledger!.salt);
+    const fresh = freshStageId(DOCS_COURSE, first.ledger!.browserId);
     server.deleted.add(fresh);
 
     server.failWith = () => undefined;
     await server.claim(OWNER_A, OWNER_B);
     server.owner = OWNER_B;
     expect((await runLegacyBrowserImport(at(LATER))).status).toBe('complete');
-
     expect(server.deleted.has(fresh)).toBe(true);
     expect(heldBy(OWNER_B).filter((id) => !server.deleted.has(id))).toEqual([TABLES_COURSE]);
+  });
+});
+
+describe('the binding is decided only by a successful bind', () => {
+  it('leaves the browser unbound when the bind itself fails', async () => {
+    await seedLatestBrowser(storage);
+    server.failWith = (operation) => (operation === 'bind' ? httpError(502, 'BAD') : undefined);
+    await runLegacyBrowserImport(server.options(storage));
+    expect(server.bindings.size).toBe(0);
+
+    server.failWith = () => undefined;
+    server.owner = OWNER_B;
+    expect((await runLegacyBrowserImport(at(LATER))).status).toBe('complete');
+    expect(heldBy(OWNER_B)).toEqual([DOCS_COURSE, TABLES_COURSE]);
   });
 });
 
@@ -286,6 +355,7 @@ describe('run-level failures from any call stop the run', () => {
     [403, 'OWNER_RETIRED'],
     [403, 'FORBIDDEN_LEARNER'],
     [503, 'OWNER_BUSY'],
+    [409, 'LEGACY_IMPORT_NOT_BOUND'],
   ])(
     'stops on %i %s from the library re-list and leaves the course pending',
     async (status, code) => {

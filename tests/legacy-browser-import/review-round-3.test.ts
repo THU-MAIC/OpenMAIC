@@ -7,13 +7,8 @@ import 'fake-indexeddb/auto';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  OTHER_OWNER_RECHECK_MS,
-  runLegacyBrowserImport,
-  serverMergedFrom,
-} from '@/lib/legacy-browser-import';
-import { ownerDigest } from '@/lib/legacy-browser-import/digest';
-import { LEDGER_KEY, loadLedger, saveLedger } from '@/lib/legacy-browser-import/ledger';
+import { runLegacyBrowserImport } from '@/lib/legacy-browser-import';
+import { LEDGER_KEY, loadLedger } from '@/lib/legacy-browser-import/ledger';
 import { LegacyBrowserDatabase } from '@/lib/legacy-browser-storage/schema';
 import { isRetryableMediaFailure } from '@/lib/media/media-failure';
 import { db } from '@/lib/device-storage/database';
@@ -23,7 +18,6 @@ import {
   MemoryStorage,
   NOW,
   OWNER_A,
-  OWNER_B,
   configureSeams,
   course,
   freshBrowser,
@@ -35,6 +29,8 @@ import { DOCS_COURSE, TABLES_COURSE, seedLatestBrowser } from './fixtures';
 const hooks = vi.hoisted(() => ({
   documentLoads: [] as ((stageId: string) => Error | undefined)[],
   tableReads: [] as ((stageId: string) => Error | undefined)[],
+  /** Courses whose document-store read always fails (a broken record). */
+  brokenDocuments: new Set<string>(),
 }));
 
 vi.mock('@/lib/legacy-browser-storage', async (importOriginal) => {
@@ -55,6 +51,9 @@ vi.mock('@/lib/legacy-browser-storage', async (importOriginal) => {
         reader && {
           ...reader,
           loadDocument: async (id: string) => {
+            if (hooks.brokenDocuments.has(id)) {
+              throw new DOMException('Failed to read large IndexedDB value', 'DataError');
+            }
             fail(hooks.documentLoads, id);
             return reader.loadDocument(id);
           },
@@ -84,6 +83,7 @@ let teardown: () => Promise<void>;
 beforeEach(async () => {
   hooks.documentLoads.length = 0;
   hooks.tableReads.length = 0;
+  hooks.brokenDocuments.clear();
   await freshBrowser();
   storage = new MemoryStorage();
   vi.stubGlobal('localStorage', storage);
@@ -101,11 +101,6 @@ const at = (time: number, extra: Record<string, unknown> = {}) =>
   server.options(storage, { now: () => time, ...extra });
 const httpError = (status: number, code?: string) =>
   Object.assign(new Error(code ?? `HTTP ${status}`), { status, ...(code ? { code } : {}) });
-const heldBy = (owner: string, on = server) =>
-  [...on.stageOwners]
-    .filter(([, holder]) => holder === owner)
-    .map(([id]) => id)
-    .sort();
 
 describe('a storage failure while reading legacy data leaves work pending', () => {
   it('keeps a course pending when its document-store copy fails to read', async () => {
@@ -124,16 +119,20 @@ describe('a storage failure while reading legacy data leaves work pending', () =
     expect((await server.rawDocument(DOCS_COURSE))?.stage.name).toBe('Documents course');
   });
 
-  it('pauses instead of dropping quiz state when the scene index fails to read', async () => {
+  it('holds up only the quiz decision when the scene index fails to read a course', async () => {
     await seedLatestBrowser(storage);
-    // The first reader call of the run is the quiz-scene index.
+    // The first reader call of the run is the quiz-scene index of the tables course.
     hooks.tableReads.push((id) => (id === TABLES_COURSE ? aborted() : undefined));
 
     const first = await runLegacyBrowserImport(server.options(storage));
-    expect(first.status).toBe('pending');
-    expect(Object.values(first.ledger?.courses ?? {}).every((e) => e.status === 'pending')).toBe(
-      true,
-    );
+    // Every course reaches the server; only the quiz state waits.
+    expect(first.ledger?.courses[DOCS_COURSE]?.status).toBe('done');
+    expect(first.ledger?.courses[TABLES_COURSE]).toMatchObject({
+      status: 'pending',
+      steps: { document: 'done', chat: 'done' },
+    });
+    expect(first.ledger?.courses[TABLES_COURSE]?.steps.quiz).toBeUndefined();
+    expect(first.ledger?.courses[TABLES_COURSE]?.readFailures?.count).toBe(1);
 
     expect((await runLegacyBrowserImport(at(LATER))).status).toBe('complete');
     const attempts = (await server.rawSessions(TABLES_COURSE)).filter(
@@ -173,6 +172,112 @@ describe('a storage failure while reading legacy data leaves work pending', () =
   });
 });
 
+describe('the document-store branch of the preliminary indexes', () => {
+  it('holds up only the quiz decision when the quiz index cannot read a document-store course', async () => {
+    await seedDocumentsStore([course('quizzed', [{ id: 'quizzed-scene', order: 0 }])]);
+    storage.setItem('quizAnswers:quizzed-scene', JSON.stringify({ q1: 'A' }));
+    // The first document read of the run is the quiz index's.
+    hooks.documentLoads.push((id) => (id === 'quizzed' ? aborted() : undefined));
+
+    const first = await runLegacyBrowserImport(server.options(storage));
+    expect(first.ledger?.courses.quizzed).toMatchObject({ status: 'pending' });
+    expect(first.ledger?.courses.quizzed?.steps.document).toBe('done');
+    expect(first.ledger?.courses.quizzed?.steps.quiz).toBeUndefined();
+
+    expect((await runLegacyBrowserImport(at(LATER))).status).toBe('complete');
+    const attempts = (await server.rawSessions('quizzed')).filter((s) => s.kind === 'quizAttempt');
+    expect(attempts).toHaveLength(1);
+  });
+
+  it('holds up only the narration decision when the speech index cannot read a document-store course', async () => {
+    await seedDocumentsStore([
+      course('deck-a', [
+        {
+          id: 'deck-a-scene',
+          order: 0,
+          audioIds: [{ id: 'speech-scene-p1', audioId: 'tts_s1_speech-scene-p1', text: 'x' }],
+        },
+      ]),
+    ]);
+    const legacy = new LegacyBrowserDatabase();
+    await legacy.audioFiles.put({
+      id: 'tts_s1_speech-scene-p1',
+      blob: new Blob(['voice'], { type: 'audio/mpeg' }),
+      format: 'mp3',
+      createdAt: NOW,
+    });
+    legacy.close();
+    // Read 1 is the course itself; read 2 is the speech index's.
+    let reads = 0;
+    hooks.documentLoads.push((id) => (id === 'deck-a' && ++reads === 2 ? aborted() : undefined));
+
+    const first = await runLegacyBrowserImport(server.options(storage));
+    expect(first.ledger?.courses['deck-a']?.status).toBe('pending');
+    const pendingAudio = (await server.rawDocument('deck-a'))!.scenes[0]!.actions![0] as {
+      audioId: string;
+    };
+    expect(pendingAudio.audioId).toBe('tts_s1_speech-scene-p1');
+
+    expect((await runLegacyBrowserImport(at(LATER))).status).toBe('complete');
+    const actions = (await server.rawDocument('deck-a'))!.scenes[0]!.actions!;
+    expect((actions[0] as { audioId: string }).audioId).toMatch(/^ast_server/);
+  });
+});
+
+describe('a course the old storage can never read', () => {
+  const HOUR = 60 * 60 * 1000;
+
+  it('lets every other course import, and settles after five runs over a day', async () => {
+    await seedLatestBrowser(storage);
+    hooks.brokenDocuments.add(DOCS_COURSE);
+
+    const first = await runLegacyBrowserImport(server.options(storage));
+    // Every other course is on the server after the first run.
+    expect(first.ledger?.courses[TABLES_COURSE]?.steps.document).toBe('done');
+    expect(server.stageOwners.get(TABLES_COURSE)).toBe(OWNER_A);
+    expect(first.ledger?.courses[DOCS_COURSE]).toMatchObject({
+      status: 'pending',
+      readFailures: { count: 1, since: NOW },
+    });
+
+    let outcome = first;
+    for (const hours of [6, 12, 18]) {
+      outcome = await runLegacyBrowserImport(at(NOW + hours * HOUR));
+      expect(outcome.ledger?.courses[DOCS_COURSE]?.status).toBe('pending');
+    }
+    // The fifth failing run, a day after the first: the course settles. It has
+    // no older table copy, so it is skipped with the reason.
+    outcome = await runLegacyBrowserImport(at(NOW + 24 * HOUR));
+    expect(outcome.status).toBe('complete');
+    expect(outcome.ledger?.courses[DOCS_COURSE]).toMatchObject({ status: 'skipped' });
+    expect(outcome.ledger?.courses[DOCS_COURSE]?.reason).toMatch(/could not be read/);
+    // The quiz state it was holding up came across.
+    const attempts = (await server.rawSessions(TABLES_COURSE)).filter(
+      (session) => session.kind === 'quizAttempt',
+    );
+    expect(attempts).toHaveLength(1);
+  });
+
+  it('falls back to the older table copy when there is one', async () => {
+    await seedDocumentsStore([course('both', [{ id: 'both-new', order: 0 }], 'Newer copy')]);
+    const legacy = new LegacyBrowserDatabase();
+    await legacy.stages.put({ id: 'both', name: 'Older copy', createdAt: NOW, updatedAt: NOW });
+    legacy.close();
+    hooks.brokenDocuments.add('both');
+
+    for (const hours of [0, 6, 12, 18]) {
+      const run = await runLegacyBrowserImport(at(NOW + hours * HOUR));
+      expect(run.ledger?.courses.both?.status).toBe('pending');
+      expect(server.stageOwners.has('both')).toBe(false);
+    }
+    const settled = await runLegacyBrowserImport(at(NOW + 24 * HOUR));
+
+    expect(settled.ledger?.courses.both?.status).toBe('done');
+    expect((await server.rawDocument('both'))?.stage.name).toBe('Older copy');
+    expect(settled.ledger?.courses.both?.notes?.[0]).toMatch(/older table copy/);
+  });
+});
+
 describe('a failed read after a session-id collision', () => {
   it('retries the session instead of skipping it', async () => {
     await seedLatestBrowser(storage);
@@ -204,142 +309,18 @@ describe('a failed read after a session-id collision', () => {
   });
 });
 
-describe('two owners starting in two tabs without Web Locks', () => {
-  it('lets only the owner whose binding was stored first write anything', async () => {
-    await seedLatestBrowser(storage);
-    const other = new FakeServer();
-    other.owner = OWNER_B;
-    // Both tabs finish their first library listing before either binds.
-    let arrived = 0;
-    let release!: () => void;
-    const together = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const barrier = (list: () => Promise<{ id: string }[]>) => {
-      let first = true;
-      return async () => {
-        const listed = await list();
-        if (first) {
-          first = false;
-          arrived += 1;
-          if (arrived === 2) release();
-          await together;
-        }
-        return listed;
-      };
-    };
-
-    const [a, b] = await Promise.all([
-      runLegacyBrowserImport(
-        server.options(storage, { listOwnedStages: barrier(server.listOwnedStages) }),
-      ),
-      runLegacyBrowserImport(
-        other.options(storage, { listOwnedStages: barrier(other.listOwnedStages) }),
-      ),
-    ]);
-
-    expect([a.status, b.status].sort()).toEqual(['complete', 'stopped']);
-    const winner = a.status === 'complete' ? OWNER_A : OWNER_B;
-    const salt = loadLedger(storage)!.salt;
-    expect(loadLedger(storage)?.ownerDigest).toBe(ownerDigest(salt, winner));
-    // The losing tab created nothing: no folder on its side, and each course
-    // was saved once (by the winner).
-    const loserFolders = winner === OWNER_A ? other : server;
-    expect(loserFolders.calls.filter((call) => call.startsWith('createFolder'))).toEqual([]);
-    expect(server.calls.filter((call) => call.startsWith('saveDocument'))).toHaveLength(2);
-  });
-});
-
-describe('the "not yours" answer', () => {
-  async function partlyImportedByA(): Promise<void> {
+describe('a clock that ran ahead', () => {
+  it('does not defer the import until a far-off date', async () => {
     await seedLatestBrowser(storage);
     server.failWith = (operation, subject) =>
       operation === 'saveDocument' && subject === TABLES_COURSE ? httpError(502, 'BAD') : undefined;
     await runLegacyBrowserImport(server.options(storage));
     server.failWith = () => undefined;
-  }
-
-  it('expires, so an owner that claims the first one later still gets the rest', async () => {
-    await partlyImportedByA();
-    server.owner = OWNER_B;
-    expect((await runLegacyBrowserImport(at(LATER))).status).toBe('claimed-by-another-owner');
-    await server.claim(OWNER_A, OWNER_B);
-
-    expect((await runLegacyBrowserImport(at(LATER + 60_000))).status).toBe(
-      'claimed-by-another-owner',
-    );
-    const after = await runLegacyBrowserImport(at(LATER + OTHER_OWNER_RECHECK_MS + 1));
-    expect(after.status).toBe('complete');
-    expect(heldBy(OWNER_B)).toEqual([DOCS_COURSE, TABLES_COURSE]);
-    // The handoff is stored: the ledger now names the claimant.
     const ledger = loadLedger(storage)!;
-    expect(ledger.ownerDigest).toBe(ownerDigest(ledger.salt, OWNER_B));
-  });
-
-  it('written by a clock that ran ahead does not strand the claimant', async () => {
-    await partlyImportedByA();
-    const ledger = loadLedger(storage)!;
-    const skewed = NOW + 3 * 365 * 24 * 60 * 60 * 1000;
-    ledger.otherOwners = { [ownerDigest(ledger.salt, OWNER_B)]: skewed };
-    ledger.nextRunAt = skewed;
+    ledger.nextRunAt = NOW + 3 * 365 * 24 * 60 * 60 * 1000;
     storage.setItem(LEDGER_KEY, JSON.stringify(ledger));
-    await server.claim(OWNER_A, OWNER_B);
 
-    server.owner = OWNER_B;
     expect((await runLegacyBrowserImport(at(LATER))).status).toBe('complete');
-  });
-
-  it('drops expired entries when the ledger is saved', () => {
-    const fresh = new MemoryStorage();
-    const ledger = { ...loadLedgerOrNew(fresh), otherOwners: { a: NOW - 1, b: NOW + 5 } };
-    saveLedger(fresh, ledger, NOW);
-    expect(loadLedger(fresh)?.otherOwners).toEqual({ b: NOW + 5 });
-  });
-});
-
-function loadLedgerOrNew(backing: Storage) {
-  backing.setItem(
-    LEDGER_KEY,
-    JSON.stringify({ version: 2, salt: 'ab'.repeat(16), failedRuns: 0, courses: {}, folders: {} }),
-  );
-  return loadLedger(backing)!;
-}
-
-describe('the client side of the claim confirmation', () => {
-  it('asks the owner-scoped route with the salt and digest and reads only merged: true', async () => {
-    const fetchSpy = vi.fn(
-      async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        new Response(JSON.stringify({ merged: true }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-    );
-    vi.stubGlobal('fetch', fetchSpy);
-    expect(await serverMergedFrom('ab'.repeat(16), 'c'.repeat(64))).toBe(true);
-    expect(String(fetchSpy.mock.calls[0]![0])).toBe(
-      `/api/identity/merged-from?salt=${'ab'.repeat(16)}&digest=${'c'.repeat(64)}`,
-    );
-    expect(fetchSpy.mock.calls[0]![1]).toMatchObject({ cache: 'no-store' });
-
-    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ merged: 'yes' })));
-    expect(await serverMergedFrom('ab'.repeat(16), 'c'.repeat(64))).toBe(false);
-  });
-
-  it('carries the status and code of a refusal so the run can pause or stop', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () =>
-          new Response(JSON.stringify({ error: { code: 'INVALID_CREDENTIAL' } }), {
-            status: 401,
-            headers: { 'content-type': 'application/json' },
-          }),
-      ),
-    );
-    await expect(serverMergedFrom('ab'.repeat(16), 'c'.repeat(64))).rejects.toMatchObject({
-      status: 401,
-      code: 'INVALID_CREDENTIAL',
-    });
   });
 });
 
