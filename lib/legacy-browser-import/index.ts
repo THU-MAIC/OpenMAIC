@@ -33,7 +33,7 @@
  */
 import { getDocumentStore } from '@/lib/document-store';
 import { hasLegacyBrowserStorage } from '@/lib/legacy-browser-storage';
-import { getAssetPool } from '@/lib/media/asset-pool';
+import { assetRefExists } from '@/lib/media/use-asset-url';
 import {
   ANSWERS_KEY_PREFIX,
   ATTEMPT_ID_KEY_PREFIX,
@@ -127,13 +127,6 @@ const defaultFolders: FolderApi = {
   setMembership: (stageId, folderId) => setStageFolder(stageId, folderId),
 };
 
-/** Whether the server's pool serves this id (a HEAD in production). */
-async function serverAssetExists(ref: string): Promise<boolean> {
-  const pool = getAssetPool();
-  if (pool.exists) return pool.exists(ref);
-  return (await pool.resolve(ref)) !== null;
-}
-
 /** Scene ids the pre-runtime quiz keys name. */
 function quizKeySceneIds(storage: Storage): Set<string> {
   const prefixes = [
@@ -212,7 +205,7 @@ async function runLocked(
       quizScenes,
       ledger,
       checkpoint,
-      assetExists: options.assetExists ?? serverAssetExists,
+      assetExists: options.assetExists ?? ((ref) => assetRefExists(ref)),
       log,
       libraryChanged: false,
     };
