@@ -106,6 +106,8 @@ export interface MediaFillContext {
   readonly entry: CourseEntry;
   /** Persist the ledger after each settled reference. */
   readonly checkpoint: () => void;
+  /** Derived speech audio id -> the legacy courses that name it (see `sources.ts`). */
+  readonly speechHolders: () => Promise<Map<string, Set<string>>>;
 }
 
 export interface MediaFillResult {
@@ -120,6 +122,10 @@ type Upload =
       readonly bytes: Blob;
       readonly mimeType: string;
       readonly poster?: Blob;
+      /** The media element kind, for the failure record a refusal leaves. */
+      readonly mediaType?: 'image' | 'video';
+      /** The generation request the legacy row recorded, if any. */
+      readonly request?: { readonly prompt: string; readonly params: string };
       readonly retain?: (refused: RefusedPoolBytes) => Promise<void>;
     }
   | {
@@ -173,6 +179,12 @@ async function planUploads(document: AppDocument, context: MediaFillContext): Pr
   const uploads: Upload[] = [];
   for (const [ref, kinds] of slides) {
     if (!isLocalReference(ref) || entry.media?.[ref]?.status === 'failed') continue;
+    const mediaType =
+      kinds.has('video-src') || kinds.has('video-media-ref')
+        ? ('video' as const)
+        : kinds.has('image-src') || kinds.has('background-image') || kinds.has('video-poster')
+          ? ('image' as const)
+          : undefined;
     if (mayNameAPoolAsset(ref)) {
       const bytes = await poolBlob(ref);
       if (bytes) {
@@ -181,6 +193,7 @@ async function planUploads(document: AppDocument, context: MediaFillContext): Pr
           ref,
           bytes,
           mimeType: bytes.type || 'application/octet-stream',
+          ...(mediaType ? { mediaType } : {}),
         });
       }
       continue;
@@ -194,6 +207,8 @@ async function planUploads(document: AppDocument, context: MediaFillContext): Pr
         bytes,
         mimeType: bytes.type || row.mimeType,
         ...(blobOf(row.poster) ? { poster: row.poster } : {}),
+        ...(mediaType ? { mediaType } : {}),
+        request: { prompt: row.prompt ?? '', params: row.params ?? '{}' },
         // Only a generation placeholder has a retry path that reads these
         // bytes back: the media pass adopts the cached row for it.
         ...(isGeneratedMediaPlaceholder(ref) ? { retain: retainMediaRow(stageId, ref, row) } : {}),
@@ -229,7 +244,14 @@ async function planUploads(document: AppDocument, context: MediaFillContext): Pr
     if (!row || !bytes) continue;
     // The table is keyed by audio id alone, so two courses can hold the same
     // derived key; narration adoption's ownership rule decides, unchanged.
-    if (!rowBelongsToAction(row, legacyStageId, { derivedRef: ref, text })) continue;
+    // The importer knows one more thing adoption does not: every legacy
+    // course. A row from before the course column whose key only this legacy
+    // course names can only be this course's.
+    if (!rowBelongsToAction(row, legacyStageId, { derivedRef: ref, text })) {
+      if (row.stageId !== undefined) continue;
+      const holders = (await context.speechHolders()).get(ref);
+      if (holders?.size !== 1 || !holders.has(legacyStageId)) continue;
+    }
     uploads.push({
       family: 'speech',
       ref,
@@ -284,6 +306,38 @@ async function commitUpload(upload: Upload, stageId: string): Promise<PoolCommit
 }
 
 /**
+ * A reference the server refused for good (too large, an unsupported type, an
+ * admission refusal): the element is put into the app's ordinary failed-media
+ * state -- the same device-cache record the generation pass writes when it
+ * fails -- so the course shows the usual failed/regenerate affordance instead
+ * of silently naming bytes nothing can serve. The legacy bytes stay where they
+ * are. Speech and slide audio have no such state; the ledger records them.
+ */
+async function recordRefusal(
+  upload: Upload,
+  stageId: string,
+  failure: { reason: string; code?: string },
+): Promise<void> {
+  if (upload.family !== 'slide' || !upload.mediaType) return;
+  const id = mediaFileKey(stageId, upload.ref);
+  if (await db.mediaFiles.get(id)) return;
+  await db.mediaFiles.put({
+    id,
+    stageId,
+    type: upload.mediaType,
+    blob: new Blob(),
+    mimeType: upload.mimeType,
+    size: 0,
+    placeholderRef: upload.ref,
+    prompt: upload.request?.prompt ?? '',
+    params: upload.request?.params ?? '{}',
+    error: `The server refused these bytes when this course moved from browser storage (${failure.reason})`,
+    errorCode: failure.code ?? 'ASSET_REFUSED',
+    createdAt: Date.now(),
+  });
+}
+
+/**
  * Upload every reference of `document` whose bytes only a legacy store holds,
  * and write the allocated ids back. `document` is the server's current copy;
  * the write-back re-reads it under the document lock.
@@ -316,6 +370,7 @@ export async function fillLegacyMedia(
       // document (and uploads again) or finds it converted.
       const failure = failureOrStop(error);
       const permanent = failure.kind === 'permanent' || failure.kind === 'forbidden';
+      if (permanent) await recordRefusal(upload, context.stageId, failure);
       settle(upload.ref, { status: permanent ? 'failed' : 'pending', reason: failure.reason });
       if (!permanent) pending += 1;
       continue;
@@ -341,6 +396,7 @@ export async function fillLegacyMedia(
     }
     const failure = failureOrStop(outcome.error);
     const permanent = failure.kind === 'permanent' || failure.kind === 'forbidden';
+    if (permanent) await recordRefusal(upload, context.stageId, failure);
     if (!permanent) pending += 1;
     settle(upload.ref, { status: permanent ? 'failed' : 'pending', reason: failure.reason });
   }

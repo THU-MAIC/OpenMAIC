@@ -14,7 +14,7 @@ import {
 import { db } from '@/lib/device-storage/database';
 import { runLegacyBrowserImport } from '@/lib/legacy-browser-import';
 import { freshStageId } from '@/lib/legacy-browser-import/ids';
-import { ledgerKey, loadLedger } from '@/lib/legacy-browser-import/ledger';
+import { LEDGER_KEY, loadLedger } from '@/lib/legacy-browser-import/ledger';
 import { loadCursorValue } from '@/lib/playback/cursor';
 import { loadCurrentSceneValue } from '@/lib/document-store/current-scene';
 import { BrowserKVStore } from '@openmaic/storage';
@@ -218,11 +218,11 @@ describe('idempotency and resumption', () => {
     // The ledger says complete: a second run does not even touch the server.
     server.calls.length = 0;
     expect((await runLegacyBrowserImport(server.options(storage))).status).toBe('already-complete');
-    expect(server.calls).toEqual(['ownerId ']);
+    expect(server.calls).toEqual([]);
 
     // And with the ledger gone, the server-side checks still keep it from
     // duplicating anything.
-    storage.removeItem(ledgerKey(OWNER_A));
+    storage.removeItem(LEDGER_KEY);
     expect((await runLegacyBrowserImport(server.options(storage))).status).toBe('complete');
     expect(server.assets.size).toBe(assets);
     expect(await server.rawSessions(DOCS_COURSE)).toHaveLength(sessions);
@@ -246,7 +246,7 @@ describe('idempotency and resumption', () => {
     await clearLocalCache();
     clearLocalStorageKeepingImportState(storage);
 
-    expect(loadLedger(storage, OWNER_A).completedAt).toBeDefined();
+    expect(loadLedger(storage)?.completedAt).toBeDefined();
     expect((await runLegacyBrowserImport(server.options(storage))).status).toBe('already-complete');
     expect(server.deleted.has(DOCS_COURSE)).toBe(true);
     expect(await dumpLegacyDatabases()).toEqual(legacyBefore);
@@ -325,8 +325,9 @@ describe('conflicts with what the server already has', () => {
 
     const outcome = await runLegacyBrowserImport(server.options(storage));
 
-    const docsId = freshStageId(DOCS_COURSE, OWNER_A);
-    const tablesId = freshStageId(TABLES_COURSE, OWNER_A);
+    const salt = outcome.ledger!.salt;
+    const docsId = freshStageId(DOCS_COURSE, salt);
+    const tablesId = freshStageId(TABLES_COURSE, salt);
     expect(outcome.ledger?.courses[DOCS_COURSE]).toMatchObject({ status: 'done', target: docsId });
     // The other owner's courses are untouched.
     expect((await server.rawDocument(DOCS_COURSE))!.scenes.map((scene) => scene.id)).toEqual([
@@ -372,24 +373,43 @@ describe('conflicts with what the server already has', () => {
     expect(outcome.status).toBe('complete');
   });
 
-  it('re-evaluates everything for a different owner in the same browser', async () => {
+  it('imports once per browser: a different owner later gets nothing', async () => {
     await seedLatestBrowser(storage);
     await runLegacyBrowserImport(server.options(storage));
-    expect(loadLedger(storage, OWNER_A).completedAt).toBeDefined();
+    expect(loadLedger(storage)?.completedAt).toBeDefined();
 
     server.owner = OWNER_B;
     const outcome = await runLegacyBrowserImport(server.options(storage));
 
-    expect(outcome.status).toBe('complete');
-    // The courses belong to owner A now, so owner B gets its own copies.
-    const docsForB = freshStageId(DOCS_COURSE, OWNER_B);
-    expect(outcome.ledger?.courses[DOCS_COURSE]).toMatchObject({ target: docsForB });
-    expect(server.stageOwners.get(docsForB)).toBe(OWNER_B);
-    expect(server.folders.get(OWNER_B)?.map((folder) => folder.name)).toEqual(['Physics', 'Empty']);
-    // Each owner keeps its own ledger: owner A's import is still recorded.
-    expect(loadLedger(storage, OWNER_A).completedAt).toBeDefined();
+    expect(outcome.status).toBe('already-complete');
+    expect([...server.stageOwners.values()]).not.toContain(OWNER_B);
+    expect(server.folders.get(OWNER_B)).toBeUndefined();
+  });
+
+  it('gives a different owner nothing while the first owner is still importing', async () => {
+    await seedLatestBrowser(storage);
+    server.failWith = (operation, subject) =>
+      operation === 'saveDocument' && subject === TABLES_COURSE
+        ? Object.assign(new Error('bad gateway'), { status: 502 })
+        : undefined;
+    const first = await runLegacyBrowserImport(server.options(storage));
+    expect(first.status).toBe('pending');
+
+    server.failWith = () => undefined;
+    server.owner = OWNER_B;
+    const other = await runLegacyBrowserImport(
+      server.options(storage, { now: () => first.ledger!.nextRunAt! }),
+    );
+
+    expect(other.status).toBe('claimed-by-another-owner');
+    expect([...server.stageOwners.values()]).not.toContain(OWNER_B);
+    // The first owner finishes its own import on its next load.
     server.owner = OWNER_A;
-    expect((await runLegacyBrowserImport(server.options(storage))).status).toBe('already-complete');
+    const resumed = await runLegacyBrowserImport(
+      server.options(storage, { now: () => first.ledger!.nextRunAt! }),
+    );
+    expect(resumed.status).toBe('complete');
+    expect(server.stageOwners.get(TABLES_COURSE)).toBe(OWNER_A);
   });
 });
 
@@ -426,27 +446,34 @@ describe('failures', () => {
 
     const first = await runLegacyBrowserImport(server.options(storage));
     expect(first.status).toBe('stopped');
-    expect(loadLedger(storage, OWNER_A).nextRunAt).toBe(NOW + 5_000);
+    expect(loadLedger(storage)?.nextRunAt).toBe(NOW + 5_000);
     expect((await runLegacyBrowserImport(server.options(storage))).status).toBe('deferred');
     server.failWith = () => undefined;
     const later = await runLegacyBrowserImport(server.options(storage, { now: () => NOW + 5_000 }));
     expect(later.status).toBe('complete');
   });
 
-  it('stops for a retired owner and records why', async () => {
+  it('pauses on a 401 and imports everything once the credential is back', async () => {
     await seedLatestBrowser(storage);
     server.failWith = (operation) =>
       operation === 'saveDocument'
-        ? Object.assign(new Error('retired'), { status: 403, code: 'OWNER_RETIRED' })
+        ? Object.assign(new Error('expired'), { status: 401, code: 'INVALID_CREDENTIAL' })
         : undefined;
 
-    const outcome = await runLegacyBrowserImport(server.options(storage));
+    const first = await runLegacyBrowserImport(server.options(storage));
 
-    expect(outcome.status).toBe('stopped');
-    const ledger = loadLedger(storage, OWNER_A);
-    expect(ledger.stoppedReason).toBe('403 OWNER_RETIRED');
-    expect(ledger.completedAt).toBeDefined();
-    expect(Object.values(ledger.courses).some((entry) => entry.status === 'failed')).toBe(true);
+    expect(first.status).toBe('stopped');
+    const ledger = loadLedger(storage)!;
+    expect(ledger.completedAt).toBeUndefined();
+    expect(ledger.nextRunAt).toBe(NOW + 30_000);
+    expect(Object.values(ledger.courses).every((entry) => entry.status === 'pending')).toBe(true);
+
+    server.failWith = () => undefined;
+    const second = await runLegacyBrowserImport(
+      server.options(storage, { now: () => ledger.nextRunAt! }),
+    );
+    expect(second.status).toBe('complete');
+    expect([...server.stageOwners.keys()].sort()).toEqual([DOCS_COURSE, TABLES_COURSE]);
   });
 
   it('records a validation refusal on that course and continues with the rest', async () => {
@@ -532,7 +559,7 @@ describe('failures', () => {
 
     expect(outcome.status).toBe('unavailable');
     expect(server.stageOwners.size).toBe(0);
-    expect(storage.getItem(ledgerKey(OWNER_A))).toBeNull();
+    expect(storage.getItem(LEDGER_KEY)).toBeNull();
   });
 
   it('does nothing in a browser that never stored anything locally', async () => {

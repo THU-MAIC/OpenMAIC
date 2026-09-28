@@ -2,32 +2,19 @@
  * Ids the importer derives.
  *
  * A course id is global on the server. When another owner already holds the
- * legacy id, the course is imported under a fresh id -- and "fresh" is derived
- * from the owner and the legacy id rather than drawn at random, so a run that
- * lost its ledger (or crashed between the save and the ledger write) finds its
- * own earlier copy under the same id instead of importing a second one.
+ * legacy id, the course is imported under a fresh id. "Fresh" is derived, not
+ * drawn at random, from the legacy id and a random salt this browser keeps in
+ * its ledger: a run that crashed between the save and the ledger write, or a
+ * second tab running without Web Locks, computes the same id and finds its own
+ * earlier copy instead of importing a second one. The salt makes the id
+ * unlinkable to the owner and impossible for anyone else to predict and take
+ * first.
  */
-
-/** 32-bit FNV-1a over UTF-16 code units, with a caller-chosen offset basis. */
-function fnv1a(text: string, basis: number): number {
-  let hash = basis >>> 0;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return hash >>> 0;
-}
-
-/** A stable 12-hex-digit digest of `text` (two independent FNV-1a lanes). */
-export function stableDigest(text: string): string {
-  const high = fnv1a(text, 0x811c9dc5).toString(16).padStart(8, '0');
-  const low = fnv1a(text, 0x050c5d1f).toString(16).padStart(8, '0');
-  return `${high}${low}`.slice(0, 12);
-}
+import { sha256Hex } from './digest';
 
 /** The id a legacy course takes when its own id is held by another owner. */
-export function freshStageId(legacyStageId: string, ownerId: string): string {
-  return `${legacyStageId}-i${stableDigest(`${ownerId}\u0000${legacyStageId}`)}`;
+export function freshStageId(legacyStageId: string, salt: string): string {
+  return `${legacyStageId}-i${sha256Hex(`${salt}\u0000${legacyStageId}`).slice(0, 16)}`;
 }
 
 /**

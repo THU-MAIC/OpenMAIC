@@ -17,7 +17,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { runLegacyBrowserImport } from '@/lib/legacy-browser-import';
 import { freshStageId } from '@/lib/legacy-browser-import/ids';
-import { ledgerKey } from '@/lib/legacy-browser-import/ledger';
+import { LEDGER_KEY, loadLedger } from '@/lib/legacy-browser-import/ledger';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
 import { MemoryStorage, NOW, course, dumpLegacyDatabases, freshBrowser } from './harness';
@@ -215,7 +215,7 @@ describe.skipIf(!contractUrl)('the legacy browser importer against the app route
     const assetCount = async () =>
       Number((await pool.query('SELECT count(*)::int AS n FROM asset_entries')).rows[0].n);
     const before = await assetCount();
-    storage.removeItem(ledgerKey(OWNER_A));
+    storage.removeItem(LEDGER_KEY);
     expect((await runLegacyBrowserImport({ storage, locks: null, now: () => NOW })).status).toBe(
       'complete',
     );
@@ -240,7 +240,7 @@ describe.skipIf(!contractUrl)('the legacy browser importer against the app route
     const outcome = await runLegacyBrowserImport({ storage, locks: null, now: () => NOW });
 
     expect(outcome.status).toBe('complete');
-    const fresh = freshStageId(DOCS_COURSE, OWNER_A);
+    const fresh = freshStageId(DOCS_COURSE, loadLedger(storage)!.salt);
     expect(await libraryIds()).toEqual([fresh, TABLES_COURSE].sort());
     cookie = COOKIE_B;
     const theirs = (await (await call(`/api/persistence/documents/${DOCS_COURSE}`)).json()) as {

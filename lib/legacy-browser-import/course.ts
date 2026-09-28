@@ -45,9 +45,9 @@ import {
 import { loadCursor, loadCursorValue, saveCursorValue } from '@/lib/playback/cursor';
 import { readLegacyQuizStateSnapshot } from '@/lib/quiz/persistence';
 import { importLegacyQuizSnapshot } from '@/lib/quiz/runtime';
-import type { GeneratedAgentConfig } from '@/lib/types/stage';
-import type { AppScene } from '@/lib/types/stage';
-import { loadChatSessions } from '@/lib/utils/chat-storage';
+import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
+import type { AppScene, GeneratedAgentConfig, Scene } from '@/lib/types/stage';
+import { fromLegacyRecords, loadChatSessions } from '@/lib/utils/chat-storage';
 
 import { copyCourseDeviceRows } from './device-rows';
 import { classifyFailure, failureOrStop, ImportRunStop } from './errors';
@@ -72,7 +72,12 @@ export interface CourseImportContext {
   readonly documents: DocumentStore<AppScene, AppStage>;
   readonly runtime: RuntimeStore;
   /** This owner's library, as listed at the start of the run. */
+  readonly initiallyOwned: ReadonlySet<string>;
+  /** This owner's library as last listed; `refreshOwned` lists it again. */
   readonly owned: Map<string, OwnedStage>;
+  readonly refreshOwned: () => Promise<void>;
+  /** Derived speech audio id -> the legacy courses whose speech actions name it. */
+  readonly speechHolders: () => Promise<Map<string, Set<string>>>;
   readonly folders: FolderApi;
   /** Legacy course id -> legacy folder id. */
   readonly membership: Map<string, string>;
@@ -118,6 +123,12 @@ async function documentForServer(
     document.stage.id = stageId;
     for (const scene of document.scenes) scene.stageId = stageId;
   }
+  // The regular save paths strip PBL v2 learner state to the design template
+  // (moving it to the runtime); an imported document gets the same boundary.
+  document.scenes = (await preparePBLScenesForDocumentPersistence(
+    stageId,
+    document.scenes as Scene[],
+  )) as AppScene[];
   // A roster from before it lived on the stage document is lifted from the
   // old table, the way the classroom loader used to on open.
   if (rosterNeedsLegacyFallback(document.stage.generatedAgentConfigs)) {
@@ -131,13 +142,15 @@ async function documentForServer(
 /**
  * Decide where the course goes and create it there. Leaves `entry.target`,
  * `entry.origin` and the `document` step set, or marks the course skipped.
+ * Answers false when another tab of this browser is importing the course right
+ * now (a browser without Web Locks); a later load settles it.
  */
 async function settleDocument(
   context: CourseImportContext,
   legacyStageId: string,
   entry: CourseEntry,
-): Promise<void> {
-  const fresh = freshStageId(legacyStageId, context.ownerId);
+): Promise<boolean> {
+  const fresh = freshStageId(legacyStageId, context.ledger.salt);
   const markDocument = (target: string, origin: CourseEntry['origin']) => {
     Object.assign(entry, { target, origin });
     entry.steps.document = 'done';
@@ -147,16 +160,16 @@ async function settleDocument(
   // A save whose ledger write was lost: the owner lists the target already.
   if (entry.target && context.owned.has(entry.target)) {
     markDocument(entry.target, entry.origin ?? 'created');
-    return;
+    return true;
   }
   if (!entry.target) {
-    if (context.owned.has(legacyStageId)) {
+    if (context.initiallyOwned.has(legacyStageId)) {
       markDocument(legacyStageId, 'existing');
-      return;
+      return true;
     }
-    if (context.owned.has(fresh)) {
+    if (context.initiallyOwned.has(fresh)) {
       markDocument(fresh, 'created');
-      return;
+      return true;
     }
   }
 
@@ -164,12 +177,20 @@ async function settleDocument(
   if (!course) {
     Object.assign(entry, { status: 'skipped', reason: 'no longer in this browser' });
     context.checkpoint();
-    return;
+    return true;
   }
 
   if (!entry.target) {
-    // Readable by id but not in this owner's library: another owner holds it.
+    // Readable by id means someone holds it. The library is listed again
+    // AFTER that read, so a copy another tab of this browser saved in the
+    // meantime shows up as this owner's instead of passing for another
+    // owner's (which would import a second copy under the fresh id).
     const taken = (await context.documents.loadDocument(legacyStageId)) !== null;
+    await context.refreshOwned();
+    if (context.owned.has(legacyStageId) || context.owned.has(fresh)) {
+      context.log(`Course ${legacyStageId} is being imported by another tab; leaving it to it`);
+      return false;
+    }
     Object.assign(entry, { target: taken ? fresh : legacyStageId, origin: 'created' });
     context.checkpoint();
   }
@@ -194,7 +215,7 @@ async function settleDocument(
         // This owner deleted the course on the server; the deletion stands.
         Object.assign(entry, { status: 'skipped', reason: 'deleted on the server' });
         context.checkpoint();
-        return;
+        return true;
       }
       throw error;
     }
@@ -214,12 +235,25 @@ async function settleDocument(
   }
   context.libraryChanged = true;
   markDocument(entry.target!, 'created');
+  return true;
 }
 
-async function copyChat(context: CourseImportContext, legacyStageId: string, stageId: string) {
+async function copyChat(
+  context: CourseImportContext,
+  legacyStageId: string,
+  stageId: string,
+  entry: CourseEntry,
+) {
   const rows = await readLegacyChatSessions(legacyStageId);
   if (rows.length === 0) return;
   const moved = rows.map((row) => ({ ...row, stageId }));
+  // Rows the chat serializer cannot convert stay in the browser (the regular
+  // path left them there too); say so rather than drop them silently.
+  const skipped = fromLegacyRecords(moved).skippedRows.length;
+  if (skipped > 0) {
+    addNote(entry, `${skipped} chat session(s) could not be converted and stay in this browser`);
+    context.log(`Course ${legacyStageId}: ${skipped} chat session(s) could not be converted`);
+  }
   await loadChatSessions(stageId, {
     store: context.runtime,
     learnerKey: context.ownerId,
@@ -298,11 +332,27 @@ async function copyMembership(
   const legacyFolderId = context.membership.get(legacyStageId);
   if (!legacyFolderId) return true;
   const folder = context.ledger.folders[legacyFolderId];
-  if (!folder || folder.status === 'pending') return false;
+  // A membership row naming a folder the old database no longer has: unfiled.
+  if (!folder) return true;
+  if (folder.status === 'pending') return false;
   if (folder.status !== 'done' || !folder.serverId) return true; // the folder could not be created
-  await context.folders.setMembership(stageId, folder.serverId);
+  try {
+    await context.folders.setMembership(stageId, folder.serverId);
+  } catch (error) {
+    const failure = failureOrStop(error);
+    if (failure.kind === 'transient' || failure.kind === 'quota') throw error;
+    // The folder is gone (deleted meanwhile) or refused: the course is on the
+    // server either way, it just stays unfiled.
+    addNote(entry, `left unfiled: ${failure.reason}`);
+    return true;
+  }
   context.libraryChanged = true;
   return true;
+}
+
+function addNote(entry: CourseEntry, note: string): void {
+  const notes = (entry.notes ??= []);
+  if (!notes.includes(note)) notes.push(note);
 }
 
 async function runCourse(
@@ -311,7 +361,7 @@ async function runCourse(
   entry: CourseEntry,
 ): Promise<void> {
   if (!entry.steps.document) {
-    await settleDocument(context, legacyStageId, entry);
+    if (!(await settleDocument(context, legacyStageId, entry))) return;
     if (entry.status !== 'pending') return;
   }
   const stageId = entry.target!;
@@ -336,6 +386,7 @@ async function runCourse(
       assetExists: context.assetExists,
       entry,
       checkpoint: context.checkpoint,
+      speechHolders: context.speechHolders,
     });
     if (media.converted > 0) document = (await context.documents.loadDocument(stageId)) ?? document;
     if (media.pending === 0) step('media');
@@ -359,7 +410,7 @@ async function runCourse(
       step('runtime');
     }
     if (!entry.steps.chat) {
-      await copyChat(context, legacyStageId, stageId);
+      await copyChat(context, legacyStageId, stageId, entry);
       step('chat');
     }
     if (!entry.steps.playback) {
@@ -409,11 +460,9 @@ export async function importLegacyCourse(
     await runCourse(context, legacyStageId, entry);
   } catch (error) {
     if (error instanceof ImportRunStop) {
-      if (error.failure.kind === 'owner') {
-        Object.assign(entry, { status: 'failed', reason: error.failure.reason });
-      } else {
-        entry.reason = error.failure.reason;
-      }
+      // The item itself is fine: it stays pending for the next run (or, after
+      // a retirement, for the owner that takes over).
+      entry.reason = error.failure.reason;
       context.checkpoint();
       throw error;
     }

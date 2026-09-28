@@ -346,6 +346,19 @@ export class FakeServer {
     },
   };
 
+  /**
+   * What claiming anonymous owner `from` into `to` does on the server: every
+   * course (tombstones included), runtime session, asset and folder moves.
+   */
+  async claim(from: string, to: string): Promise<void> {
+    for (const [id, owner] of this.stageOwners) if (owner === from) this.stageOwners.set(id, to);
+    await this.runtimeInner.mergeLearner(from, to);
+    for (const entry of this.assets.values()) if (entry.owner === from) entry.owner = to;
+    const moved = this.folders.get(from) ?? [];
+    this.folders.set(to, [...(this.folders.get(to) ?? []), ...moved]);
+    this.folders.delete(from);
+  }
+
   /** The importer options that point it at this server. */
   options(storage: Storage, extra: Record<string, unknown> = {}) {
     return {

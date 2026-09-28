@@ -40,6 +40,9 @@ export interface RuntimeCopyContext {
   readonly log: (message: string, ...details: unknown[]) => void;
 }
 
+/** Kinds of which the app keeps a single active session per learner and course. */
+const SINGLE_ACTIVE_KINDS: ReadonlySet<string> = new Set(['whiteboard', 'pbl']);
+
 /** Payload fields that name other runtime sessions (chat restore markers). */
 function rewritePayload(payload: unknown, from: string, to: string): unknown {
   if (from === to || typeof payload !== 'object' || payload === null) return payload;
@@ -79,6 +82,22 @@ async function copySession(
 
   let existing = await server.getSession(targetId);
   if (existing && !ours) return 'kept-server';
+  if (!existing && session.status === 'active' && SINGLE_ACTIVE_KINDS.has(session.kind)) {
+    // The app keeps one active session of these kinds per learner and course,
+    // and a whiteboard read refuses two ("ambiguous"). One the learner already
+    // started on the server (after the course arrived, before this retry)
+    // wins; the legacy one stays in the browser.
+    const active = (await server.listSessions(stageId, context.learnerKey)).some(
+      (candidate) =>
+        candidate.kind === session.kind &&
+        candidate.status === 'active' &&
+        candidate.id !== targetId,
+    );
+    if (active) {
+      context.log(`Runtime session ${session.id} was not imported: the server has an active one`);
+      return 'kept-server';
+    }
+  }
   if (!existing) {
     // Recorded before the create: a crash after the create must still find
     // this session to be the importer's own.

@@ -12,8 +12,19 @@ export type FailureKind =
   | 'transient'
   /** 503 OWNER_BUSY: the owner is being claimed; wait `retryAfterMs` and retry. */
   | 'busy'
-  /** 401 INVALID_CREDENTIAL / 403 OWNER_RETIRED: nothing this owner writes will land. */
-  | 'owner'
+  /**
+   * 401 (an expired or rejected credential, or the access-code gate): the
+   * owner may come back with the same id after signing in again, so the run
+   * pauses and a later load retries.
+   */
+  | 'unauthorized'
+  /**
+   * 403 OWNER_RETIRED: this owner was claimed into an account and writes
+   * nothing any more. The owner that loads next continues the import.
+   */
+  | 'retired'
+  /** 403 FORBIDDEN_LEARNER: the browser's owner changed during the run. */
+  | 'owner-changed'
   /** The asset store has no room for these bytes. */
   | 'quota'
   /** 403 on a document this owner does not own. */
@@ -26,6 +37,8 @@ export type FailureKind =
 export interface Failure {
   readonly kind: FailureKind;
   readonly reason: string;
+  /** The server's error code, when it sent one. */
+  readonly code?: string;
   readonly retryAfterMs?: number;
 }
 
@@ -71,21 +84,25 @@ export function classifyFailure(error: unknown): Failure {
   const { status, code, retryAfterMs } = statusOf(error);
   if (status === undefined) return { kind: 'transient', reason: describe(error) };
   const reason = code ? `${status} ${code}` : `HTTP ${status}`;
+  const failure = (kind: FailureKind, extra: object = {}): Failure => ({
+    kind,
+    reason,
+    ...(code ? { code } : {}),
+    ...extra,
+  });
   if (code === 'OWNER_BUSY') {
-    return { kind: 'busy', reason, retryAfterMs: retryAfterMs ?? DEFAULT_BUSY_RETRY_MS };
+    return failure('busy', { retryAfterMs: retryAfterMs ?? DEFAULT_BUSY_RETRY_MS });
   }
-  if (code === 'OWNER_RETIRED' || code === 'INVALID_CREDENTIAL' || status === 401) {
-    return { kind: 'owner', reason };
-  }
-  if (status === 507 || code === 'ASSET_QUOTA_EXCEEDED') {
-    return { kind: 'quota', reason };
-  }
+  if (code === 'OWNER_RETIRED') return failure('retired');
+  if (code === 'FORBIDDEN_LEARNER') return failure('owner-changed');
+  if (status === 401 || code === 'INVALID_CREDENTIAL') return failure('unauthorized');
+  if (status === 507 || code === 'ASSET_QUOTA_EXCEEDED') return failure('quota');
   if (status >= 500 || status === 408 || status === 409 || status === 425 || status === 429) {
-    return { kind: 'transient', reason };
+    return failure('transient');
   }
-  if (status === 403) return { kind: 'forbidden', reason };
-  if (status === 404) return { kind: 'not-found', reason };
-  return { kind: 'permanent', reason };
+  if (status === 403) return failure('forbidden');
+  if (status === 404) return failure('not-found');
+  return failure('permanent');
 }
 
 /**
@@ -100,10 +117,18 @@ export class ImportRunStop extends Error {
   }
 }
 
-/** Rethrow owner-level failures as a run stop; hand every other failure back. */
+/** Failures that end the whole run rather than one item. */
+const RUN_STOPS: ReadonlySet<FailureKind> = new Set([
+  'busy',
+  'unauthorized',
+  'retired',
+  'owner-changed',
+]);
+
+/** Rethrow run-level failures as a run stop; hand every other failure back. */
 export function failureOrStop(error: unknown): Failure {
   if (error instanceof ImportRunStop) throw error;
   const failure = classifyFailure(error);
-  if (failure.kind === 'owner' || failure.kind === 'busy') throw new ImportRunStop(failure);
+  if (RUN_STOPS.has(failure.kind)) throw new ImportRunStop(failure);
   return failure;
 }

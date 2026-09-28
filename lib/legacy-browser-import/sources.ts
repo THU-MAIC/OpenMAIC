@@ -116,23 +116,30 @@ export async function readLegacyCourse(
   sources: LegacySources,
   stageId: string,
 ): Promise<LegacyCourse | null> {
+  let unreadable: InvalidLegacyRecordError | undefined;
   if (sources.documents) {
-    let document: AppDocument | null;
+    let document: AppDocument | null = null;
     try {
       document = await sources.documents.loadDocument(stageId);
+      if (document) assertImportable(document, stageId);
     } catch (error) {
       // The store validates on read: a document it refuses is unusable as is.
-      throw new InvalidLegacyRecordError(
-        `document ${JSON.stringify(stageId)} cannot be read: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      // The original tables may still hold a usable (older) copy.
+      unreadable =
+        error instanceof InvalidLegacyRecordError
+          ? error
+          : new InvalidLegacyRecordError(
+              `document ${JSON.stringify(stageId)} cannot be read: ${error instanceof Error ? error.message : String(error)}`,
+            );
+      document = null;
     }
-    if (document) {
-      assertImportable(document, stageId);
-      return { document, source: 'documents' };
-    }
+    if (document) return { document, source: 'documents' };
   }
   const snapshot = await readLegacyDocumentSnapshots().read(stageId);
-  if (!snapshot) return null;
+  if (!snapshot) {
+    if (unreadable) throw unreadable;
+    return null;
+  }
   let document: AppDocument;
   try {
     document = canonicalizeLegacySnapshot(snapshot);
@@ -166,4 +173,47 @@ export async function legacyMediaCourseIndex(): Promise<{
     stageIds: new Set([...media, ...audio.stageIds]),
     hasUnscopedNarration: audio.hasUnscopedRows,
   };
+}
+
+/**
+ * Every derived speech audio id, and the legacy courses whose speech actions
+ * name it. A narration row from before the course column names no course; a
+ * key only one legacy course uses can still only be that course's.
+ */
+export async function legacySpeechHolders(
+  sources: LegacySources,
+  legacyIds: readonly string[],
+): Promise<Map<string, Set<string>>> {
+  const holders = new Map<string, Set<string>>();
+  const add = (audioId: unknown, stageId: string) => {
+    if (typeof audioId !== 'string' || audioId === '') return;
+    const set = holders.get(audioId) ?? new Set<string>();
+    set.add(stageId);
+    holders.set(audioId, set);
+  };
+  for (const stageId of legacyIds) {
+    const seen = new Set<string>();
+    const scenesOf = async (): Promise<{ actions?: unknown[] }[][]> => {
+      const lists: { actions?: unknown[] }[][] = [];
+      const document = await sources.documents?.loadDocument(stageId).catch(() => null);
+      if (document) lists.push(document.scenes as { actions?: unknown[] }[]);
+      const snapshot = await readLegacyDocumentSnapshots()
+        .read(stageId)
+        .catch(() => null);
+      if (snapshot) lists.push(snapshot.scenes as { actions?: unknown[] }[]);
+      return lists;
+    };
+    for (const scenes of await scenesOf()) {
+      for (const scene of scenes) {
+        for (const action of scene.actions ?? []) {
+          const speech = action as { type?: unknown; audioId?: unknown };
+          if (speech.type !== 'speech' || typeof speech.audioId !== 'string') continue;
+          if (seen.has(speech.audioId)) continue;
+          seen.add(speech.audioId);
+          add(speech.audioId, stageId);
+        }
+      }
+    }
+  }
+  return holders;
 }

@@ -19,15 +19,20 @@
  *   server. Problems are reported with `console.warn` under a stable prefix.
  * - Off the critical path. It starts after the page has loaded and the
  *   browser is idle, and never blocks rendering.
- * - Idempotent and resumable. A per-owner ledger (`./ledger.ts`) records every
- *   step; a crash or reload resumes, and nothing is imported twice. Tabs are
- *   serialized with the Web Locks API (a browser without it just proceeds:
- *   the ledger and the server-side checks still keep a second run from
- *   duplicating anything).
- * - Owner-scoped. Imported data belongs to whichever owner the server
- *   resolves for this browser; a different owner re-evaluates from scratch.
+ * - Idempotent and resumable. One ledger for the browser (`./ledger.ts`)
+ *   records every step; a crash or reload resumes, and nothing is imported
+ *   twice. Tabs are serialized with the Web Locks API. A browser without it
+ *   runs tabs side by side: ledger writes merge, the library is listed again
+ *   right before each course is placed, and fresh ids are derived from a salt
+ *   the tabs share, so a second tab finds the first tab's copy instead of
+ *   making another.
+ * - Once per browser. The data belongs to whoever used this browser before
+ *   the upgrade, so the first owner the import runs for claims it and any
+ *   other owner gets nothing, unless the claiming owner was claimed into it
+ *   (retired into an account), in which case the account continues the
+ *   unfinished items. The ledger records the owner only as a SHA-256 digest.
  *
- * Transient failures (network, 5xx, 409, 503 OWNER_BUSY) leave work pending
+ * Transient failures (network, 5xx, 409, 503 OWNER_BUSY, 401) leave work pending
  * and a later page load retries it with a bounded backoff. Permanent ones are
  * recorded per item with the reason. See ./README.md for the full table.
  */
@@ -61,8 +66,21 @@ import {
 import { copyAutoVoiceCache } from './device-rows';
 import { classifyFailure, ImportRunStop } from './errors';
 import { importFolders, legacyMembership, type FolderApi } from './folders';
-import { backoffMs, ledgerIsSettled, loadLedger, saveLedger, type ImportLedger } from './ledger';
-import { legacyMediaCourseIndex, listLegacyCourseIds, openLegacySources } from './sources';
+import { sha256Hex } from './digest';
+import {
+  backoffMs,
+  ensureLedger,
+  ledgerIsSettled,
+  loadLedger,
+  saveLedger,
+  type ImportLedger,
+} from './ledger';
+import {
+  legacyMediaCourseIndex,
+  legacySpeechHolders,
+  listLegacyCourseIds,
+  openLegacySources,
+} from './sources';
 
 /** The prefix of every console line the importer writes. */
 export const LOG_PREFIX = '[legacy-browser-import]';
@@ -91,7 +109,7 @@ export type LegacyImportStatus =
   | 'no-legacy-data'
   /** Server persistence could not be reached; a later load tries again. */
   | 'unavailable'
-  /** This owner's import finished on an earlier load. */
+  /** This browser's import finished on an earlier load. */
   | 'already-complete'
   /** Backing off after a failed run. */
   | 'deferred'
@@ -102,7 +120,9 @@ export type LegacyImportStatus =
   /** Some items are pending; a later load continues. */
   | 'pending'
   /** The owner refused writes or asked to wait; see the ledger's reason. */
-  | 'stopped';
+  | 'stopped'
+  /** Another owner claimed this browser's legacy data; nothing is imported. */
+  | 'claimed-by-another-owner';
 
 export interface LegacyImportOutcome {
   status: LegacyImportStatus;
@@ -155,6 +175,66 @@ async function withImportLock<T>(
   );
 }
 
+/** Whether the claiming owner has written anything to the server yet. */
+function claimHasWritten(ledger: ImportLedger): boolean {
+  return (
+    Object.values(ledger.courses).some((entry) => entry.steps.document === 'done') ||
+    Object.values(ledger.folders).some((entry) => entry.serverId !== undefined)
+  );
+}
+
+/** Courses or folders the importer created that the current owner now holds. */
+async function holdsImportedWork(
+  ledger: ImportLedger,
+  owned: ReadonlyMap<string, unknown>,
+  listFolderIds: () => Promise<Set<string>>,
+): Promise<boolean> {
+  const course = Object.values(ledger.courses).some(
+    (entry) =>
+      entry.origin === 'created' &&
+      entry.target !== undefined &&
+      entry.steps.document === 'done' &&
+      owned.has(entry.target),
+  );
+  if (course) return true;
+  const folderIds = Object.values(ledger.folders)
+    .map((entry) => entry.serverId)
+    .filter((id): id is string => id !== undefined);
+  if (folderIds.length === 0) return false;
+  const held = await listFolderIds();
+  return folderIds.some((id) => held.has(id));
+}
+
+/**
+ * Whose import this is. The first owner claims the browser's legacy data. A
+ * different owner takes over only when the claiming owner is gone into it:
+ * observed retired (403 OWNER_RETIRED), or the current owner holds what the
+ * importer created (a claim moves an anonymous owner's courses and folders
+ * into the account), or the claiming owner never wrote anything.
+ */
+async function decideOwnership(
+  ledger: ImportLedger,
+  digest: string,
+  owned: ReadonlyMap<string, unknown>,
+  listFolderIds: () => Promise<Set<string>>,
+): Promise<'mine' | 'taken-over' | 'other-owner'> {
+  if (ledger.ownerDigest === undefined) {
+    ledger.ownerDigest = digest;
+    return 'mine';
+  }
+  if (ledger.ownerDigest === digest) return 'mine';
+  if (
+    ledger.ownerRetired ||
+    !claimHasWritten(ledger) ||
+    (await holdsImportedWork(ledger, owned, listFolderIds))
+  ) {
+    ledger.ownerDigest = digest;
+    delete ledger.ownerRetired;
+    return 'taken-over';
+  }
+  return 'other-owner';
+}
+
 async function runLocked(
   ownerId: string,
   storage: Storage,
@@ -163,21 +243,42 @@ async function runLocked(
   const now = options.now ?? Date.now;
   const log = options.log ?? defaultLog;
   // Re-read inside the lock: another tab may have finished meanwhile.
-  const ledger = loadLedger(storage, ownerId);
+  const ledger = ensureLedger(storage);
   if (ledger.completedAt) return { status: 'already-complete', ownerId, ledger };
   const checkpoint = () => saveLedger(storage, ledger);
+  const listOwned = options.listOwnedStages ?? listStages;
 
   const sources = await openLegacySources(storage);
   let context: CourseImportContext | undefined;
   let stopped: ImportRunStop | undefined;
   try {
-    const owned = new Map(
-      (await (options.listOwnedStages ?? listStages)()).map((stage) => [
-        stage.id,
-        { id: stage.id, ...(stage.folderId ? { folderId: stage.folderId } : {}) },
-      ]),
-    );
+    const owned = new Map<string, OwnedStage>();
+    const refreshOwned = async () => {
+      const listed = await listOwned();
+      owned.clear();
+      for (const stage of listed) {
+        owned.set(stage.id, {
+          id: stage.id,
+          ...(stage.folderId ? { folderId: stage.folderId } : {}),
+        });
+      }
+    };
+    await refreshOwned();
+
     const folders = options.folders ?? defaultFolders;
+    const ownership = await decideOwnership(ledger, sha256Hex(ownerId), owned, async () => {
+      return new Set((await folders.list()).map((folder) => folder.id));
+    });
+    if (ownership === 'other-owner') {
+      // This browser's legacy data was claimed by another owner. Nothing is
+      // imported for this one, and the ledger is left for the claiming owner.
+      return { status: 'claimed-by-another-owner', ownerId, ledger };
+    }
+    if (ownership === 'taken-over') {
+      log('The owner that started this import was claimed into this one; continuing for it');
+    }
+    checkpoint();
+
     const legacyIds = await listLegacyCourseIds(sources);
 
     const quizKeyScenes = quizKeySceneIds(storage);
@@ -192,6 +293,7 @@ async function runLocked(
         }
       }
     }
+    let speechHolders: Promise<Map<string, Set<string>>> | undefined;
 
     context = {
       ownerId,
@@ -200,7 +302,10 @@ async function runLocked(
       sources,
       documents: getDocumentStore(),
       runtime: getRuntimeStore(),
+      initiallyOwned: new Set(owned.keys()),
       owned,
+      refreshOwned,
+      speechHolders: () => (speechHolders ??= legacySpeechHolders(sources, legacyIds)),
       folders,
       membership: await legacyMembership(),
       quizScenes,
@@ -254,11 +359,18 @@ async function runLocked(
 
   if (stopped) {
     const { failure } = stopped;
-    if (failure.kind === 'owner') {
-      // Nothing this owner writes will land again; a new owner gets its own ledger.
-      ledger.stoppedReason = failure.reason;
-      ledger.completedAt = now();
-      log(`Stopped: the server refused this owner (${failure.reason})`);
+    if (failure.kind === 'retired') {
+      // This owner was claimed into an account. The owner that loads next
+      // (the account) takes over what is unfinished.
+      ledger.ownerRetired = true;
+      ledger.nextRunAt = now() + 1_000;
+      log(`Paused: this owner was retired (${failure.reason}); the next owner continues`);
+    } else if (failure.kind === 'unauthorized') {
+      // A credential expired or the access gate closed: the same owner can
+      // come back, so this is a pause with backoff, never an end.
+      ledger.failedRuns += 1;
+      ledger.nextRunAt = now() + backoffMs(ledger.failedRuns);
+      log(`Paused: the server refused the credential (${failure.reason}); retrying later`);
     } else {
       ledger.nextRunAt = now() + Math.max(failure.retryAfterMs ?? 0, 1_000);
       log(`Paused: ${failure.reason}; retrying on a later load`);
@@ -304,8 +416,8 @@ function trySave(
 }
 
 /**
- * Run the import once for the owner the server resolves. Never throws: every
- * failure is logged and left for a later load.
+ * Run the import once. Never throws: every failure is logged and left for a
+ * later load.
  */
 export async function runLegacyBrowserImport(
   options: LegacyImportOptions = {},
@@ -316,19 +428,20 @@ export async function runLegacyBrowserImport(
     if (!storage) return { status: 'unavailable' };
     if (!(await hasLegacyBrowserStorage())) return { status: 'no-legacy-data' };
 
+    // Cheap exits first: a finished or backing-off import asks the server nothing.
+    const now = options.now ?? Date.now;
+    const early = loadLedger(storage);
+    if (early?.completedAt) return { status: 'already-complete', ledger: early };
+    if (early?.nextRunAt !== undefined && early.nextRunAt > now()) {
+      return { status: 'deferred', ledger: early };
+    }
+
     let ownerId: string;
     try {
       ownerId = await (options.ownerId ?? (() => getLearnerKey()))();
     } catch (error) {
       log('Server persistence is unavailable; retrying on a later load:', error);
       return { status: 'unavailable' };
-    }
-
-    const now = options.now ?? Date.now;
-    const early = loadLedger(storage, ownerId);
-    if (early.completedAt) return { status: 'already-complete', ownerId, ledger: early };
-    if (early.nextRunAt !== undefined && early.nextRunAt > now()) {
-      return { status: 'deferred', ownerId, ledger: early };
     }
 
     const locks =
