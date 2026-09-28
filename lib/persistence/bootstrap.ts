@@ -98,4 +98,10 @@ if (typeof window !== 'undefined') {
       error,
     );
   }
+
+  // One-way import of what earlier builds stored in this browser. Temporary;
+  // loaded on demand after the page is idle. See lib/legacy-browser-import.
+  void import('@/lib/legacy-browser-import')
+    .then(({ scheduleLegacyBrowserImport }) => scheduleLegacyBrowserImport())
+    .catch((error: unknown) => console.warn('[legacy-browser-import] Could not load:', error));
 }
