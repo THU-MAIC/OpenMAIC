@@ -263,7 +263,11 @@ export function getLegacyDocumentStore(
   return deps.legacyStore ?? NO_LEGACY_DOCUMENTS;
 }
 
-function canonicalize(snapshot: LegacyDocumentSnapshot): AppDocument {
+/**
+ * The document a pre-document-store snapshot becomes. Shared with the one-way
+ * importer, which moves such snapshots to the server.
+ */
+export function canonicalizeLegacySnapshot(snapshot: LegacyDocumentSnapshot): AppDocument {
   const { stage } = canonicalizeLegacyStage(snapshot.stage);
   const scenes = snapshot.scenes.map(canonicalizeLegacyScene).sort((a, b) => a.order - b.order);
   const document: AppDocument = { stage, scenes };
@@ -422,7 +426,7 @@ async function migrateLocked(
         metadataPending = true;
       } else {
         try {
-          assertMigrationVerified(canonicalize(snapshot), existing, deps.migrateDsl);
+          assertMigrationVerified(canonicalizeLegacySnapshot(snapshot), existing, deps.migrateDsl);
           metadataPending = true;
         } catch (error) {
           log.warn(
@@ -460,7 +464,7 @@ async function migrateLocked(
   // ladder preserves) verifies consistently.
   const expected =
     probe && !probe.existing && probe.snapshot
-      ? await convertLoadedDocument(canonicalize(probe.snapshot), deps, passLedger)
+      ? await convertLoadedDocument(canonicalizeLegacySnapshot(probe.snapshot), deps, passLedger)
       : null;
 
   // Phase 3, shared lock: fence, reconcile, commit.
@@ -495,7 +499,7 @@ async function migrateLocked(
         return { document: null, readOnlyLegacy: false };
       }
       const freshExpected = await convertLoadedDocument(
-        canonicalize(freshSnapshot),
+        canonicalizeLegacySnapshot(freshSnapshot),
         deps,
         passLedger,
       );
@@ -627,7 +631,7 @@ export async function accessDocument(
     const snapshot = await getLegacyDocumentStore(deps).read(stageId);
     if (!snapshot) return { document: null, readOnlyLegacy: false };
     return {
-      document: canonicalize(snapshot),
+      document: canonicalizeLegacySnapshot(snapshot),
       legacyCurrentSceneId: snapshot.stage.currentSceneId,
       readOnlyLegacy: true,
     };

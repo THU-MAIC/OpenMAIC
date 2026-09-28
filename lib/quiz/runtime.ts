@@ -10,6 +10,7 @@ import {
   clearDraftRecovery,
   clearLegacyQuizStateSnapshot,
   readLegacyQuizStateSnapshot,
+  type LegacyQuizStateSnapshot,
   type QuizAnswers,
 } from '@/lib/quiz/persistence';
 import { getLearnerKey } from '@/lib/runtime/learner-key';
@@ -292,6 +293,41 @@ async function migrateLegacyQuizState(
   const legacySnapshot = readLegacyQuizStateSnapshot(input.sceneId);
   if (!legacySnapshot.hasState) return;
 
+  await commitLegacyQuizSnapshot(input, legacySnapshot, store, learnerKey, deps);
+
+  // Legacy state is deleted only after every required runtime write succeeds.
+  // Delete only the values this migration read; a newer recovery journal may
+  // have arrived while its RuntimeStore writes were in flight.
+  clearLegacyQuizStateSnapshot(input.sceneId, legacySnapshot);
+}
+
+/**
+ * Commit the strongest state of one legacy snapshot to the learner's runtime
+ * partition, leaving the localStorage keys it came from alone. Idempotent: a
+ * snapshot whose state the partition already holds writes nothing.
+ *
+ * The regular load path (above) deletes the keys afterwards; the one-way
+ * importer (`lib/legacy-browser-import/`) calls this directly, because it
+ * never deletes legacy data.
+ */
+export async function importLegacyQuizSnapshot(
+  input: QuizAttemptStateInput,
+  legacySnapshot: LegacyQuizStateSnapshot,
+  deps: QuizAttemptRuntimeDeps = {},
+): Promise<void> {
+  if (!legacySnapshot.hasState) return;
+  const store = deps.store ?? getRuntimeStore();
+  const learnerKey = deps.learnerKey ?? (await getLearnerKey());
+  await commitLegacyQuizSnapshot(input, legacySnapshot, store, learnerKey, deps);
+}
+
+async function commitLegacyQuizSnapshot(
+  input: QuizAttemptStateInput,
+  legacySnapshot: LegacyQuizStateSnapshot,
+  store: RuntimeStore,
+  learnerKey: string,
+  deps: QuizAttemptRuntimeDeps,
+): Promise<void> {
   const existing = await readLatestQuizAttemptState(input, store, learnerKey);
   const { submitted, draft, attemptId: legacyAttemptId } = legacySnapshot;
   const legacyPhase: QuizAttemptPhase | undefined =
@@ -357,11 +393,6 @@ async function migrateLegacyQuizState(
       );
     }
   }
-
-  // Legacy state is deleted only after every required runtime write succeeds.
-  // Delete only the values this migration read; a newer recovery journal may
-  // have arrived while its RuntimeStore writes were in flight.
-  clearLegacyQuizStateSnapshot(input.sceneId, legacySnapshot);
 }
 
 /** Load the learner's latest quiz state, migrating legacy localStorage once. */

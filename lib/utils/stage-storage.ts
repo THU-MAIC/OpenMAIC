@@ -69,6 +69,13 @@ import { slideMediaReferenceSlots } from '@/lib/media/slide-media-slots';
 
 const log = createLogger('StageStorage');
 
+/**
+ * Dispatched on `window` when something other than the library page changed
+ * the owner's courses or folders in the background (the one-way importer of
+ * pre-server browser data does), so an open library can list them again.
+ */
+export const LIBRARY_CHANGED_EVENT = 'openmaic:library-changed';
+
 export interface StageStoreData {
   stage: Stage;
   scenes: Scene[];

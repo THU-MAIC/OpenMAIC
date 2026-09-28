@@ -30,6 +30,7 @@ import Dexie from 'dexie';
 import {
   BrowserAssetStore,
   BrowserDocumentStore,
+  BrowserKVStore,
   BrowserRuntimeStore,
   type DocumentStore,
   type RuntimeStore,
@@ -38,6 +39,7 @@ import {
 import type { LegacyDocumentSnapshot, LegacyDocumentStore } from '@/lib/document-store/migration';
 import type { AppStage } from '@/lib/document-store/persistence-types';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
+import { LEARNER_KEY_KV_KEY } from '@/lib/runtime/learner-key';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 import type { AppScene } from '@/lib/types/stage';
 
@@ -45,6 +47,7 @@ import {
   LEGACY_DATABASE_NAME,
   LegacyBrowserDatabase,
   type AudioFileRecord,
+  type AutoVoiceCacheRecord,
   type ChatSessionRecord,
   type FolderRecord,
   type GeneratedAgentRecord,
@@ -179,6 +182,59 @@ export async function readLegacyVoiceProfiles(): Promise<VoiceProfileRecord[]> {
   return database ? database.voiceProfiles.toArray() : [];
 }
 
+/** Auto-voice reference clips, keyed by their deterministic voice id. */
+export async function readLegacyAutoVoiceCache(): Promise<AutoVoiceCacheRecord[]> {
+  const database = await openLegacyDatabase();
+  return database ? database.autoVoiceCache.toArray() : [];
+}
+
+/** The course ids the generated-media rows name. */
+export async function readLegacyMediaFileStageIds(): Promise<string[]> {
+  const database = await openLegacyDatabase();
+  if (!database) return [];
+  return (await database.mediaFiles.orderBy('stageId').uniqueKeys()).map(String);
+}
+
+/**
+ * The course ids the narration rows name, and whether any row names none.
+ * Rows from before the `stageId` column are keyed by audio id alone, so the
+ * course they belong to is found only through the speech actions that name
+ * them.
+ */
+export async function readLegacyAudioFileStageIndex(): Promise<{
+  stageIds: string[];
+  hasUnscopedRows: boolean;
+}> {
+  const database = await openLegacyDatabase();
+  if (!database) return { stageIds: [], hasUnscopedRows: false };
+  const [stageIds, scoped, total] = await Promise.all([
+    database.audioFiles.orderBy('stageId').uniqueKeys(),
+    database.audioFiles.where('stageId').above('').count(),
+    database.audioFiles.count(),
+  ]);
+  return { stageIds: stageIds.map(String), hasUnscopedRows: scoped < total };
+}
+
+/**
+ * The learner key browser storage partitioned runtime data by (the KV
+ * `device` scope of the `maic` namespace), or null when it never minted one.
+ * Read only: the regular paths take the server-derived key instead.
+ */
+export async function readLegacyLearnerKey(storage?: Storage): Promise<string | null> {
+  const backing = storage ?? (typeof localStorage === 'undefined' ? undefined : localStorage);
+  if (!backing) return null;
+  try {
+    const value = await new BrowserKVStore({ storage: backing }).get<unknown>(
+      LEARNER_KEY_KV_KEY,
+      'device',
+    );
+    return typeof value === 'string' && value !== '' ? value : null;
+  } catch {
+    // An unparsable value is no key at all.
+    return null;
+  }
+}
+
 // ==================== Browser document, runtime and asset stores ====================
 
 /** The read half of a document store. */
@@ -218,9 +274,14 @@ export async function openLegacyRuntimeReader(): Promise<LegacyRuntimeReader | n
   };
 }
 
-/** The read half of the browser asset pool. `resolve` answers an object URL the caller revokes. */
+/**
+ * The read half of the browser asset pool. `resolve` answers an object URL
+ * the caller revokes; `readBlob` answers the bytes themselves. `close`
+ * revokes every URL this reader minted.
+ */
 export interface LegacyAssetReader {
   resolve(ref: string): Promise<string | null>;
+  readBlob(ref: string): Promise<Blob | null>;
   exists(ref: string): Promise<boolean>;
   close(): Promise<void>;
 }
@@ -231,6 +292,12 @@ export async function openLegacyAssetReader(): Promise<LegacyAssetReader | null>
   const store = new BrowserAssetStore({ dbName: LEGACY_ASSET_POOL_DATABASE_NAME });
   return {
     resolve: (ref) => store.resolve(ref),
+    async readBlob(ref) {
+      const url = await store.resolve(ref);
+      if (!url) return null;
+      // The URL stays registered with the store; `close` revokes it.
+      return (await fetch(url)).blob();
+    },
     exists: (ref) => store.exists(ref),
     close: () => store.close(),
   };
