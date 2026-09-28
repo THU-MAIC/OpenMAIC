@@ -151,6 +151,7 @@ describe('docker-compose.yml', () => {
 
 describe('docker-compose.db.yml (`pnpm db:up`)', () => {
   const devDb = yaml.load(readFileSync(path.join(root, 'docker-compose.db.yml'), 'utf8')) as {
+    name?: string;
     services: Record<string, ComposeService & { extends?: { file?: string; service?: string } }>;
     volumes: Record<string, unknown>;
   };
@@ -158,7 +159,13 @@ describe('docker-compose.db.yml (`pnpm db:up`)', () => {
     scripts: Record<string, string>;
   };
 
-  it('starts only the postgres service of docker-compose.yml, on its data volume', () => {
+  it('is a separate Compose project, so it never restarts or stops a running stack database', () => {
+    // Without its own project name it would share the checkout's default
+    // project (and so the stack's postgres container) with `docker compose up`.
+    expect(devDb.name).toBe('openmaic-dev-db');
+  });
+
+  it('runs the postgres service definition of docker-compose.yml, on its own data volume', () => {
     expect(Object.keys(devDb.services)).toEqual(['postgres']);
     expect(devDb.services.postgres.extends).toEqual({
       file: 'docker-compose.yml',
