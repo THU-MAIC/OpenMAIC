@@ -12,7 +12,6 @@ services:
         # NEXT_PUBLIC_PI_CHAT_ENABLED=false docker compose up -d --build openmaic
         - ALLOWED_FRAME_ANCESTORS=${ALLOWED_FRAME_ANCESTORS:-}
         - NEXT_PUBLIC_PERSISTENCE=${NEXT_PUBLIC_PERSISTENCE:-}
-        - NEXT_PUBLIC_PERSISTENCE_TOKEN=${NEXT_PUBLIC_PERSISTENCE_TOKEN:-}
         - NEXT_PUBLIC_MAIC_EDITOR_ENABLED=${NEXT_PUBLIC_MAIC_EDITOR_ENABLED:-}
         - NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED=${NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED:-}
         - NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED=${NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED:-}
@@ -45,8 +44,8 @@ services:
     restart: unless-stopped
 
   # Optional PostgreSQL backing for the app-embedded persistence API.
-  # The app reads DATABASE_URL and PERSISTENCE_DEV_TOKEN from .env.local; keeping
-  # those values there avoids changing the default browser-only deployment.
+  # The app reads DATABASE_URL from .env.local; keeping
+  # that value there avoids changing the default browser-only deployment.
   postgres:
     image: postgres:16
     profiles:

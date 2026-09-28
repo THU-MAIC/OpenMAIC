@@ -1,12 +1,12 @@
 /**
- * GET/POST /api/folders — the workbench's course-folder API (server-side
- * counterpart of the local `lib/utils/stage-storage.ts` folder API; the
- * configured runtime routes the seam through these handlers instead of the
+ * GET/POST /api/folders — the server course library's folder API (server-side
+ * counterpart of the local `lib/utils/stage-storage.ts` folder API; with
+ * server persistence on, the seam routes through these handlers instead of the
  * Dexie tables).
  *
- * Every handler is owner-scoped exactly like the other workbench routes: the
- * owner resolves from the anonymous cookie (`withRequestOwnerId`) and is never
- * a request parameter, and all reads and writes go through the owner-bound
+ * Every handler is owner-scoped exactly like the stage routes: the
+ * owner resolves through the owner identity seam (`withRequestOwner`) and is
+ * never a request parameter, and all reads and writes go through the owner-bound
  * document store (`getOwnerScopedDocumentStore`), the same seam the runner
  * binds for the stage tools. A folder created here is visible to this browser
  * and to nobody else.
@@ -15,18 +15,20 @@
  * = 1, ≤ 40) from `lib/utils/folder-name-validation.ts` — the same module the
  * client dialogs import, so the two ends cannot drift.
  *
- * The configured runtime gates the whole family (see `app/api/stages/route.ts`):
- * off, or on without a DATABASE_URL, answers the same plain 404.
+ * Server persistence gates the whole family (see `app/api/stages/route.ts`):
+ * without a DATABASE_URL it answers a plain 404; the agent runtime is not
+ * required.
  */
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import type { DocumentFolder, DocumentFolderStore } from '@openmaic/storage';
 
-import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
+import { isServerPersistenceConfigured } from '@/lib/config/feature-flags';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { ownerJson } from '@/lib/server/agent-runtime/route-response';
-import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import { folderNameErrorResponse } from '@/lib/server/folder-name-errors';
 import { createFolderForOwner, listFoldersForOwner } from '@/lib/server/folder-persistence';
 import { validateFolderName } from '@/lib/utils/folder-name-validation';
@@ -50,9 +52,9 @@ function jsonError(status: number, code: string, message: string, headers?: Head
 
 // GET /api/folders — list the caller's folders, ordered by `order` asc.
 export async function GET(req: NextRequest) {
-  if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
+  if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     try {
       const store = (await getOwnerScopedDocumentStore(ownerId)) as unknown as DocumentFolderStore;
       const folders = await listFoldersForOwner(store);
@@ -74,7 +76,7 @@ export async function GET(req: NextRequest) {
 // malformed body must not mint an anonymous cookie partition for a request
 // that will not proceed.
 export async function POST(req: NextRequest) {
-  if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
+  if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
 
   let body: unknown;
   try {
@@ -96,12 +98,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     try {
       const store = (await getOwnerScopedDocumentStore(ownerId)) as unknown as DocumentFolderStore;
       const { folder } = await createFolderForOwner(store, trimmed, { reuseExisting: false });
       return ownerJson({ folder: folderResponse(folder, ownerId) }, 200, responseHeaders);
     } catch (error) {
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
       // The storage re-checks duplicates + count limit inside its owner-scoped
       // transaction; map its refusals onto the same machine codes the
       // pre-checks use.

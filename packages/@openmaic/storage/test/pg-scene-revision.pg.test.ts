@@ -10,6 +10,7 @@ import type { MaicDocument, StageFreshnessManifest } from '../src/document/types
 import {
   acquireDocumentPgContractLock,
   truncateDocumentTables,
+  CONTRACT_OWNERSHIP,
 } from './pg-document-contract-helpers.js';
 import { slideScene } from './document-contract.js';
 
@@ -89,6 +90,7 @@ describe.skipIf(!contractUrl)('per-scene monotonic revisions (freshness)', () =>
     await truncateDocumentTables(pool as Queryable);
     ownerStore = new PgDocumentStore(pool as Queryable, {
       withTransaction: transactionFor(pool),
+      documentOwnership: CONTRACT_OWNERSHIP,
     }).forOwner(OWNER);
   });
 
@@ -243,6 +245,7 @@ describe.skipIf(!contractUrl)('per-scene monotonic revisions (freshness)', () =>
     // A different owner cannot read this owner's manifest.
     const otherOwner = new PgDocumentStore(pool as Queryable, {
       withTransaction: transactionFor(pool),
+      documentOwnership: CONTRACT_OWNERSHIP,
     }).forOwner('owner-2');
     expect(await otherOwner.readFreshnessManifest('owned-stage')).toBeNull();
   });

@@ -1,28 +1,38 @@
 /**
- * /api/stages — the workbench's course-document index and create face.
+ * /api/stages — the server course library's document index and create face
+ * (the home library and the workbench both read it).
  *
  * Every handler is owner-scoped exactly like the agent tools: the owner
- * resolves from the anonymous cookie (`withRequestOwnerId`) and is never a
- * request parameter, and all reads and writes go through the owner-bound
+ * resolves through the owner identity seam (`withRequestOwner`) and is never
+ * a request parameter, and all reads and writes go through the owner-bound
  * document store (`getOwnerScopedDocumentStore`), the same seam the runner
- * binds for the stage tools. A stage created here is visible to this browser
- * and to nobody else.
+ * binds for the stage tools. A stage created here is visible to this owner
+ * (with the default anonymous owner, this browser) and to nobody else.
  *
- * The configured runtime gates the whole family: these routes serve the
- * workbench, which is agent-runtime territory, so a runtime that is off OR
- * enabled without a DATABASE_URL answers the same plain 404 as the agent
- * control-plane routes — never a 500 from a store that cannot connect.
+ * Server persistence gates the whole family (`isServerPersistenceConfigured`,
+ * a non-empty DATABASE_URL): these routes need the database and nothing else,
+ * so they serve with or without the agent runtime. Without a DATABASE_URL
+ * (browser-storage mode) they answer a plain 404 — never a 500 from a store
+ * that cannot connect.
  */
 import type { NextRequest } from 'next/server';
 import { randomBytes } from 'node:crypto';
 
-import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
+import { isDocumentWriteRefusedError } from '@openmaic/storage';
+
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
+import type { Queryable } from '@openmaic/storage/document/pg';
+
+import { isServerPersistenceConfigured } from '@/lib/config/feature-flags';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
+import { listLibraryStages } from '@/lib/persistence/library';
+import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { apiError } from '@/lib/server/api-response';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
-import { ownerJson } from '@/lib/server/agent-runtime/route-response';
+import { ownerApiError, ownerJson } from '@/lib/server/agent-runtime/route-response';
+import { getPersistenceHooks } from '@/lib/server/persistence-hooks/registry';
 import { STAGE_NAME_MAX_LENGTH } from '@/lib/server/agent-runtime/stage-limits';
-import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
 
 export const runtime = 'nodejs';
 
@@ -31,13 +41,24 @@ function createStageId(): string {
   return `stage-${randomBytes(9).toString('base64url')}`;
 }
 
-// GET /api/stages — list every stage document owned by the caller.
+// GET /api/stages — the caller's course library: by default every stage
+// document the caller owns; a host library provider may choose a different
+// set of readable courses (lib/persistence/library.ts has the access rule).
 export async function GET(req: NextRequest) {
-  if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
+  if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
-    const store = await getOwnerScopedDocumentStore(ownerId);
-    const stages = await store.listDocuments();
+  return withRequestOwner(req, async (principal, responseHeaders) => {
+    const store = await getOwnerScopedDocumentStore(principal);
+    const ownedStages = () => store.listDocuments();
+    const provider = getPersistenceHooks().library;
+    if (!provider) return ownerJson({ stages: await ownedStages() }, 200, responseHeaders);
+    const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+    const stages = await listLibraryStages({
+      provider,
+      principal,
+      queryable: pool as unknown as Queryable,
+      ownedStageIds: async () => (await ownedStages()).map((stage) => stage.id),
+    });
     return ownerJson({ stages }, 200, responseHeaders);
   });
 }
@@ -48,7 +69,7 @@ export async function GET(req: NextRequest) {
 // a malformed body must not mint an anonymous cookie partition for a request
 // that will not proceed.
 export async function POST(req: NextRequest) {
-  if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
+  if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
 
   let body: unknown;
   try {
@@ -76,7 +97,7 @@ export async function POST(req: NextRequest) {
   }
   const trimmedDescription = description?.trim();
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async (principal, responseHeaders) => {
     const id = createStageId();
     const now = Date.now();
     const outline: AppDocumentOutline = {
@@ -86,18 +107,29 @@ export async function POST(req: NextRequest) {
       createdAt: now,
       updatedAt: now,
     };
-    const store = await getOwnerScopedDocumentStore(ownerId);
-    await store.saveDocument({
-      stage: {
-        id,
-        name: trimmedName,
-        ...(trimmedDescription ? { description: trimmedDescription } : {}),
-        createdAt: now,
-        updatedAt: now,
-      },
-      scenes: [],
-      outline,
-    });
+    const store = await getOwnerScopedDocumentStore(principal);
+    try {
+      await store.saveDocument({
+        stage: {
+          id,
+          name: trimmedName,
+          ...(trimmedDescription ? { description: trimmedDescription } : {}),
+          createdAt: now,
+          updatedAt: now,
+        },
+        scenes: [],
+        outline,
+      });
+    } catch (error) {
+      // A retired identity (claimed into an account), or a host's
+      // authorizeCreate refusal; nothing was written either way.
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
+      if (isDocumentWriteRefusedError(error)) {
+        return ownerApiError('CREATE_REFUSED', 403, error.message, responseHeaders);
+      }
+      throw error;
+    }
     return ownerJson(
       {
         stage: {

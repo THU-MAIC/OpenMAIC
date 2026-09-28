@@ -44,11 +44,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Resolve model from request headers/body
-    const { model: languageModel, thinkingConfig } = await resolveModelFromRequest(
-      req,
-      body,
-      'quiz-grade',
-    );
+    const {
+      model: languageModel,
+      thinkingConfig,
+      serverManaged,
+    } = await resolveModelFromRequest(req, body, 'quiz-grade');
 
     const isZh = language === 'zh-CN';
 
@@ -77,6 +77,7 @@ ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${
       'quiz-grade',
       undefined,
       thinkingConfig,
+      { serverManaged },
     );
 
     // Parse the LLM response as JSON

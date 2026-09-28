@@ -37,6 +37,18 @@ export interface ResolvedModel extends ModelWithInfo {
   baseUrl?: string;
   /** Optional per-request thinking configuration from the client. */
   thinkingConfig?: ThinkingConfig;
+  /**
+   * Whether the primary model was chosen by the SERVER rather than the client:
+   * an operator MODEL_ROUTES/DEFAULT_MODEL resolution (env route) or a
+   * server-configured provider (managed key). User-level routes (the
+   * 「课程模型配置」 per-stage selection) are USER choices — even though they
+   * route the stage, they are not server-managed. Only server-managed
+   * primaries may arm the retryable-failure fallback in callLLM: a
+   * client-supplied model with a garbage key must never be allowed to burn the
+   * operator's fallback key. Callers pass this through to callLLM's
+   * `fallbackOptions.serverManaged`.
+   */
+  serverManaged: boolean;
 }
 
 /**
@@ -168,6 +180,12 @@ export async function resolveModel(params: {
     apiKey,
     baseUrl,
     thinkingConfig,
+    // An operator route (MODEL_ROUTES) or DEFAULT_MODEL pick is the operator's
+    // choice, and a server-configured provider key is operator-owned — either
+    // way the primary is server-managed and may arm the fallback. A user-level
+    // route or a plain client x-model on an unmanaged provider is NOT
+    // server-managed.
+    serverManaged: Boolean(envRoute) || managed,
   };
 }
 

@@ -6,10 +6,10 @@
  * store to the app's PostgreSQL pool through `user-skill-store.ts`, so tools,
  * routes and the runner import from one place.
  *
- * The owner model here is the anonymous-cookie owner from
- * `lib/server/agent-runtime/owner.ts`. There is deliberately no owner-merge
- * machinery: identity consolidation is a live-product concern, and the
- * `resolveFinalOwner` seam on the agent-session store is left untouched.
+ * The owner model here is the request owner resolved by the owner identity
+ * seam (`lib/server/identity/`). A claim of anonymous work moves a skill
+ * library with the rest of the owner's rows (`lib/persistence/owner-claims.ts`),
+ * and creates forward a retired owner (`./user-skill-store.ts`).
  */
 import type {
   UserSkillPatchOpInput,
@@ -17,7 +17,7 @@ import type {
   UserSkillRecord,
 } from '@openmaic/storage';
 
-import { getUserSkillStore } from './user-skill-store';
+import { getRequestUserSkillStore, getUserSkillStore } from './user-skill-store';
 
 export {
   USER_SKILL_EDITABLE_PATHS,
@@ -61,11 +61,18 @@ export async function findUserSkillByRef(
   return store.findByRef(ownerId, ref);
 }
 
+/**
+ * Create a skill. `source: 'request'` (an upload route) refuses an owner a
+ * claim retired; the default, an agent run's create, forwards it to the
+ * account instead.
+ */
 export async function createUserSkill(
   ownerId: string,
   input: { name: string; title: string; description: string; content: string },
+  options: { source?: 'request' | 'background' } = {},
 ): Promise<UserSkillRecord> {
-  const store = await getUserSkillStore();
+  const store =
+    options.source === 'request' ? await getRequestUserSkillStore() : await getUserSkillStore();
   return store.create(ownerId, input);
 }
 

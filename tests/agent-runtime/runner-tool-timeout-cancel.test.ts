@@ -78,7 +78,7 @@ vi.mock('@/lib/server/agent-runtime/runner-contract', () => ({
 }));
 
 vi.mock('@/lib/server/agent-runtime/owner-scoped-documents', () => ({
-  getOwnerScopedDocumentStore: mocks.getOwnerScopedDocumentStore,
+  getBackgroundDocumentStore: mocks.getOwnerScopedDocumentStore,
 }));
 
 // Skills are orthogonal to the behaviour under test; pin the runner to a

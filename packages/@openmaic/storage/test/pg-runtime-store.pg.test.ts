@@ -6,6 +6,7 @@ import {
   type Queryable,
   type WithTransaction,
 } from '../src/runtime/pg.js';
+import { RuntimeSessionExistsError } from '../src/runtime/types.js';
 import { makeRecordInit, makeSession, runRuntimeStoreContract } from './runtime-contract.js';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
@@ -71,6 +72,15 @@ describe.skipIf(!contractUrl)('PgRuntimeStore with PostgreSQL 16', () => {
   });
 
   runRuntimeStoreContract('PostgreSQL 16 (node-postgres)', () => store);
+
+  test('a taken id raises the typed conflict, from the real unique violation', async () => {
+    await store.createSession(makeSession({ id: 'taken' }));
+    const error = await store
+      .createSession(makeSession({ id: 'taken', stageId: 'another-stage' }))
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RuntimeSessionExistsError);
+    expect((error as RuntimeSessionExistsError).sessionId).toBe('taken');
+  });
 
   test('genuinely concurrent appends assign distinct gapless sequences', async () => {
     const concurrentTransactions = 8;

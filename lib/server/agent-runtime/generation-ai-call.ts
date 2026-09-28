@@ -33,6 +33,7 @@ export function createGenerationAiCallFactory(options?: {
         stage,
         undefined,
         resolved.thinkingConfig,
+        { serverManaged: resolved.serverManaged },
       );
       return result.text;
     };

@@ -40,6 +40,9 @@ export function isAgentRuntimeConfigured(): boolean {
  * route resolves an owner for every request and the owner-bound document store
  * records one for every course, so those facts exist whether or not the runtime
  * is enabled.
+ *
+ * The course library and folder routes (`/api/stages/**`, `/api/folders/**`)
+ * gate on this too: they need the database and nothing the runtime adds.
  */
 export function isServerPersistenceConfigured(): boolean {
   return Boolean(process.env.DATABASE_URL?.trim());

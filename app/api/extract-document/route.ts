@@ -532,7 +532,7 @@ export async function POST(req: NextRequest) {
       try {
         resolution = await resolveServerAsset(
           body.assetId,
-          req.headers,
+          req,
           MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES,
         );
       } catch (error) {
@@ -557,7 +557,7 @@ export async function POST(req: NextRequest) {
         return apiError(
           'UNAUTHENTICATED',
           401,
-          'Asset-id extraction requires server persistence credentials.',
+          'Asset-id extraction requires a valid owner credential.',
         );
       }
       if (resolution.status === 'missing') {

@@ -288,7 +288,7 @@ let materialsProbe: Promise<boolean> | null = null;
  * The branch substitution: the reference's probe reads `materialsEnabled`
  * (its runtime answers `enabled && isAgentMaterialsEnabled()`). This port has
  * no separate materials flag — the materials routes gate on the runtime
- * itself, like the stages — so the probe reads the runtime's `enabled` field,
+ * itself (materials are consumed by agent sessions) — so the probe reads the runtime's `enabled` field,
  * which IS the upload action's precondition (`POST /api/materials` 404s when
  * it is false).
  */

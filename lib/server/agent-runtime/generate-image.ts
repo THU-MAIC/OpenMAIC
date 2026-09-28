@@ -69,11 +69,16 @@ interface PersistImageInput {
   result: ImageGenerationResult;
   stageId: string;
   signal: AbortSignal;
+  /** The run's owner; the bytes are allocated in its asset partition. */
+  ownerId?: string;
 }
 
 type PersistGeneratedImage = (input: PersistImageInput) => Promise<string>;
 
-export interface GenerateImageToolDeps extends Pick<CourseToolDeps, 'sessionId' | 'abortSignal'> {
+export interface GenerateImageToolDeps extends Pick<
+  CourseToolDeps,
+  'sessionId' | 'abortSignal' | 'ownerId'
+> {
   getConfiguredProviders?: typeof getServerImageProviders;
   resolveProviderConfig?: (providerId: ImageProviderId) => ImageGenerationConfig;
   generateConfiguredImage?: GenerateConfiguredImage;
@@ -160,12 +165,14 @@ async function imageBytes(
  * get this deployment's PostgreSQL store.
  */
 export async function defaultPersistGeneratedImage(
-  { result, stageId, signal }: PersistImageInput,
+  { result, stageId, signal, ownerId }: PersistImageInput,
   assetStore?: AssetStore,
 ): Promise<string> {
+  if (!ownerId) throw new Error('Generated media cannot be stored without the run owner');
   const { bytes, mime } = await imageBytes(result, signal);
   throwIfAborted(signal);
   const assetId = await storeGeneratedAssetOrThrow({
+    ownerId,
     stageId,
     bytes,
     mimeType: mime,
@@ -320,7 +327,12 @@ export function buildGenerateImageTool(
         });
         throwIfAborted(ioSignal);
 
-        const src = await persist({ result, stageId, signal: ioSignal });
+        const src = await persist({
+          result,
+          stageId,
+          signal: ioSignal,
+          ...(deps.ownerId ? { ownerId: deps.ownerId } : {}),
+        });
         throwIfAborted(ioSignal);
         void recordGenerationUsage({
           kind: 'image',
