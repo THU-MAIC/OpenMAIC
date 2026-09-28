@@ -80,7 +80,7 @@ DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
 
 PostgreSQL 資料儲存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRES_PASSWORD` 只會在資料庫目錄首次初始化時設定密碼，之後修改環境變數不會自動修改已有資料庫使用者密碼。
 
-早期版本可以把課程儲存在瀏覽器（IndexedDB）中。該模式已移除，`NEXT_PUBLIC_PERSISTENCE` 建置變數會被忽略。以這種方式儲存在瀏覽器中的課程會原樣保留在該瀏覽器裡，直到同一版本中發布的單向「瀏覽器到伺服器」匯入器把它們搬到伺服器。
+早期版本可以把課程儲存在瀏覽器（IndexedDB）中。該模式已移除，`NEXT_PUBLIC_PERSISTENCE` 建置變數會被忽略。以這種方式儲存在瀏覽器中的課程，會在該瀏覽器首次開啟升級後的應用程式時自動搬到伺服器：單向匯入器把它們（連同對話、學習進度、資料夾和媒體）複製給伺服器為該瀏覽器解析出的擁有者，瀏覽器中的原始資料保持不變。整個過程無需操作，也沒有介面提示；如有問題，會以 `[legacy-browser-import]` 前綴記錄在瀏覽器主控台中。
 
 ## 選用：MP4 影片匯出
 
