@@ -133,6 +133,9 @@ export function browserStoreConstructions(files: readonly SourceFile[]): string[
  * A module specifier that names the legacy module: the `@/` alias, or a
  * relative path of any depth (`./`, `../`, `../../lib/`, ...).
  */
+// Comments allowed inside `import(` / `require(`, such as a webpackIgnore hint.
+const CALL_COMMENTS = String.raw`(?:\/\*[\s\S]*?\*\/\s*|\/\/[^\n]*\n\s*)*`;
+
 const LEGACY_SPECIFIER = String.raw`(?:@\/lib\/|(?:\.\.?\/)+(?:[\w.-]+\/)*)legacy-browser-storage(?:\/[^'"]*)?`;
 
 export function legacyModuleValueImports(files: readonly SourceFile[]): string[] {
@@ -143,7 +146,7 @@ export function legacyModuleValueImports(files: readonly SourceFile[]): string[]
     [
       String.raw`^\s*(?:import|export)\s+(?!type\b)[^;]*?from\s*['"]${LEGACY_SPECIFIER}['"]`,
       String.raw`^\s*import\s*['"]${LEGACY_SPECIFIER}['"]`,
-      String.raw`\b(?:import|require)\s*\(\s*['"\`]${LEGACY_SPECIFIER}['"\`]\s*\)`,
+      String.raw`\b(?:import|require)\s*\(\s*${CALL_COMMENTS}['"\`]${LEGACY_SPECIFIER}['"\`]\s*\)`,
     ].join('|'),
     'm',
   );
@@ -156,6 +159,11 @@ export function legacyModuleValueImports(files: readonly SourceFile[]): string[]
 }
 
 /**
+ * Name-based by nature: it cannot follow a store threaded through other
+ * functions (for example a caller that stops forwarding `learnerKey` so a
+ * default store arrives as `injectedKv`). The behavioural test
+ * tests/pbl/v2/server-learner-key.test.ts is the guard for that.
+ *
  * The runtime learner key must come from runtime configuration (the
  * server-derived key). `getLearnerKey(kv)` with a KV store the caller made up
  * itself reads or MINTS a device key instead, which the server refuses and
@@ -165,17 +173,28 @@ export function legacyModuleValueImports(files: readonly SourceFile[]): string[]
 export function learnerKeyFromLocalStore(files: readonly SourceFile[]): string[] {
   const call = /\bgetLearnerKey\s*\(\s*([^)]*?)\s*\)/g;
   const injected = /^(?:(?:args|options|deps)\.kv|injectedKv)?$/;
+  // A name alone is not enough: the injected name must not itself be bound to
+  // a default local store (`const injectedKv = args.kv ?? getDefaultKv()`).
+  const defaultedBinding = (name: string) =>
+    new RegExp(
+      String.raw`\b${name.replace('.', '\\.')}\s*(?::[^=;]+)?(?:\?\?)?=\s*[^;]*?(?:getDefaultKv\s*\(|new\s+BrowserKVStore\s*\()`,
+    );
   return files
     .filter(({ path }) => path !== 'lib/runtime/learner-key.ts')
     .filter(({ source }) =>
-      [...source.matchAll(call)].some((match) => !injected.test(match[1] ?? '')),
+      [...source.matchAll(call)].some((match) => {
+        const argument = match[1] ?? '';
+        if (!injected.test(argument)) return true;
+        return argument !== '' && defaultedBinding(argument).test(source);
+      }),
     )
     .map(({ path }) => path);
 }
 
 export function dexieImports(files: readonly SourceFile[]): string[] {
-  const pattern =
-    /from\s*['"]dexie['"]|import\(\s*['"]dexie['"]\s*\)|require\(\s*['"]dexie['"]\s*\)/;
+  const pattern = new RegExp(
+    String.raw`from\s*['"]dexie['"]|\b(?:import|require)\s*\(\s*${CALL_COMMENTS}['"\`]dexie['"\`]\s*\)`,
+  );
   return files
     .filter(
       ({ path, source }) =>
@@ -255,6 +274,10 @@ describe('the guards bite on synthetic sources', () => {
         file('lib/c.ts', "import type { StageRecord } from '@/lib/legacy-browser-storage/schema';"),
         file('lib/utils/d.ts', "export const y = () => import('../legacy-browser-storage/index');"),
         file('lib/utils/e.ts', "import { readLegacyFolders } from '../legacy-browser-storage';"),
+        file(
+          'lib/utils/j.ts',
+          "const m = await import(/* webpackIgnore: true */ '@/lib/legacy-browser-storage');",
+        ),
         file('app/f.tsx', "import { x } from '../../lib/legacy-browser-storage/index';"),
         file('lib/g.ts', "import './legacy-browser-storage';"),
         file('lib/h.ts', "const m = require('../lib/legacy-browser-storage');"),
@@ -269,6 +292,7 @@ describe('the guards bite on synthetic sources', () => {
       'lib/b.ts',
       'lib/utils/d.ts',
       'lib/utils/e.ts',
+      'lib/utils/j.ts',
       'app/f.tsx',
       'lib/g.ts',
       'lib/h.ts',
@@ -284,9 +308,14 @@ describe('the guards bite on synthetic sources', () => {
         file('lib/d.ts', 'const key = args.learnerKey ?? (await getLearnerKey(args.kv));'),
         file('lib/e.ts', 'const key = await getLearnerKey(options.kv);'),
         file('lib/f.ts', 'resolveLearnerKey: getLearnerKey,'),
+        file(
+          'lib/g.ts',
+          'const injectedKv = args.kv ?? getDefaultKv();\nawait getLearnerKey(injectedKv);',
+        ),
+        file('lib/h.ts', 'args.kv ??= new BrowserKVStore();\nawait getLearnerKey(args.kv);'),
         file('lib/runtime/learner-key.ts', 'if (kv) return readOrMint(kv); getLearnerKey(kv)'),
       ]),
-    ).toEqual(['lib/a.ts', 'lib/b.ts']);
+    ).toEqual(['lib/a.ts', 'lib/b.ts', 'lib/g.ts', 'lib/h.ts']);
   });
 
   it('flags Dexie outside the legacy module and the device cache', () => {
@@ -295,8 +324,9 @@ describe('the guards bite on synthetic sources', () => {
         file('lib/utils/database.ts', "import Dexie from 'dexie';"),
         file('lib/device-storage/database.ts', "import Dexie from 'dexie';"),
         file('lib/legacy-browser-storage/schema.ts', "import Dexie from 'dexie';"),
+        file('lib/x.ts', "const { default: D } = await import(/* webpackIgnore: true */ 'dexie');"),
       ]),
-    ).toEqual(['lib/utils/database.ts']);
+    ).toEqual(['lib/utils/database.ts', 'lib/x.ts']);
   });
 
   it('flags a durable table in a device schema', () => {

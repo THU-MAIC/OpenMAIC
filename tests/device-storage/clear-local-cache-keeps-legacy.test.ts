@@ -40,6 +40,17 @@ const LEGACY_NAMES = [
 const NOW = '2026-09-01T00:00:00.000Z';
 let assetId = '';
 
+/**
+ * Close a browser store's IndexedDB connection. The stores have no public
+ * close(); a connection left open would make a regression that deletes the
+ * database block until the test times out, instead of failing on the
+ * assertion that names the database.
+ */
+async function closeSeedConnection(store: object): Promise<void> {
+  const open = (store as { openDb(): Promise<IDBDatabase> }).openDb.bind(store);
+  (await open()).close();
+}
+
 async function seedLegacyDatabases(): Promise<void> {
   // MAIC-Database at its full schema, with rows in durable tables.
   const legacy = new LegacyBrowserDatabase();
@@ -79,6 +90,7 @@ async function seedLegacyDatabases(): Promise<void> {
     stage: { id: 'doc-stage', name: 'Browser document', createdAt: 1, updatedAt: 2 },
     scenes: [],
   });
+  await closeSeedConnection(documents);
 
   const runtime = new BrowserRuntimeStore({ dbName: LEGACY_RUNTIME_DATABASE_NAME });
   await runtime.createSession({
@@ -90,14 +102,15 @@ async function seedLegacyDatabases(): Promise<void> {
     createdAt: NOW,
     updatedAt: NOW,
   });
+  await closeSeedConnection(runtime);
 
   const assets = new BrowserAssetStore({ dbName: LEGACY_ASSET_POOL_DATABASE_NAME });
   assetId = await assets.put(new Blob(['asset-bytes'], { type: 'text/plain' }));
   await assets.close();
 }
 
-// Seeded once. The stores keep their connections open, so the databases are
-// not deleted afterwards; this file's fake IndexedDB goes away with it.
+// Seeded once, with every seeding connection closed. The databases are not
+// deleted afterwards; this file's fake IndexedDB goes away with it.
 beforeAll(async () => {
   resetLegacyBrowserStorageForTests();
   await seedLegacyDatabases();
