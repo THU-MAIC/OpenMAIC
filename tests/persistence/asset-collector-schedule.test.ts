@@ -545,12 +545,16 @@ describe('instrumentation registration', () => {
     }));
     vi.stubEnv('NEXT_RUNTIME', 'nodejs');
     vi.stubEnv('ASSET_PENDING_TTL_MS', '24h');
+    // A refused configuration exits the process; stubbed so the throw can be asserted.
+    const exitOnInvalidBootConfiguration = vi.fn(async () => {});
+    vi.doMock('@/lib/server/boot-failure', () => ({ exitOnInvalidBootConfiguration }));
 
     const { register } = await import('@/instrumentation');
 
     // `register` runs before the server is ready, so throwing here is what
     // makes a misconfigured deployment fail to start rather than fail to work.
     await expect(register()).rejects.toThrow(/ASSET_PENDING_TTL_MS/);
+    expect(exitOnInvalidBootConfiguration).toHaveBeenCalledOnce();
     expect(startAssetCollectorSchedule).not.toHaveBeenCalled();
   });
 

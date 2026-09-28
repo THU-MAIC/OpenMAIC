@@ -18,52 +18,19 @@ export async function register(): Promise<void> {
   const { warnIfAccessCodeIsUnset } = await import('@/lib/server/access-code-warning');
   warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
 
-  // The asset quota, read here rather than at the first persistence request.
-  // The provider that consumes it is lazy and memoised, so a malformed ceiling
-  // would otherwise let the process boot, pass its health check, and then fail
-  // every persistence request -- documents and runtime included -- until it was
-  // fixed and the process restarted. `register` runs before the server is
-  // ready, so throwing here is what makes a misconfigured deployment fail to
-  // start instead of failing to work. First, so the throw cannot skip the
-  // teardown registration for something this function has already started.
-  const { resolveAssetQuotaBytes } = await import('@/lib/persistence/asset-quota');
-  resolveAssetQuotaBytes();
-
-  // The pending-allocation window, for the same reason and at the same moment.
-  // Too short is worse than malformed: it silently expires allocations whose
-  // document write was still coming, so it must fail the process rather than
-  // the request that discovers it.
-  const { resolveAssetPendingTtlMs } = await import('@/lib/persistence/asset-pending-ttl');
-  resolveAssetPendingTtlMs();
-
-  // Owner identity, for the same reason and at the same moment. A malformed
-  // PERSISTENCE_SHARED_OWNER_ID, or one a host registration would ignore,
-  // would otherwise boot, pass its health check, and then fail (or silently
-  // mis-identify) every owner-scoped request — and an operator has no way to
-  // tell from the outside that their setting was not accepted. An empty value
-  // is treated as unset, so this only rejects values that are present and
-  // unusable.
-  //
-  // A host that brings its own identity registers its owner auth methods
-  // here, in the order they are asked, before validation and before the
-  // server serves a request, and with them any host extension hooks (course
-  // creation, library listing, upload admission, the asset byte store):
-  //
-  //   const { configureOwnerAuthentication } = await import('@/lib/server/identity');
-  //   configureOwnerAuthentication({ methods: [myOwnerAuthMethod] });
-  //   const { configurePersistenceHooks, configureAssetByteStore } =
-  //     await import('@/lib/server/persistence-hooks');
-  //   configurePersistenceHooks(myPersistenceHooks);
-  //   configureAssetByteStore(myAssetByteStore);
-  const { validateOwnerIdentityConfiguration } = await import('@/lib/server/identity/registry');
-  validateOwnerIdentityConfiguration();
-
-  // The registered hooks, for the same reason and at the same moment: a host
-  // byte store that cannot sign under ASSET_BYTE_EGRESS=redirect would
-  // otherwise be discovered by the first asset read.
-  const { validatePersistenceHooksConfiguration } =
-    await import('@/lib/server/persistence-hooks/registry');
-  validatePersistenceHooksConfiguration();
+  // A configuration refused here must stop the process. Next.js logs a throw
+  // from `register` as "Failed to prepare server" but keeps listening and
+  // answers every request with a 500, so the throw alone leaves a deployment
+  // that looks alive and serves nothing. exitOnInvalidBootConfiguration prints
+  // the original message once and exits non-zero (see lib/server/boot-failure.ts);
+  // the rethrow is reached only where the exit is stubbed (tests).
+  try {
+    await validateBootConfiguration();
+  } catch (error) {
+    const { exitOnInvalidBootConfiguration } = await import('@/lib/server/boot-failure');
+    await exitOnInvalidBootConfiguration(error);
+    throw error;
+  }
 
   // Imported dynamically so the Edge bundle never pulls in `pg`.
   const { startAssetCollectorSchedule } =
@@ -146,4 +113,58 @@ export async function register(): Promise<void> {
 
   process.once('SIGTERM', () => void shutdown());
   process.once('SIGINT', () => void shutdown());
+}
+
+/**
+ * The fatal boot validations: each throws on a configuration the server must
+ * not start with. Warnings (the unset ACCESS_CODE warning, the model-routing
+ * checks in `validateServerConfig`) are not here and never stop the process.
+ */
+async function validateBootConfiguration(): Promise<void> {
+  // The asset quota, read here rather than at the first persistence request.
+  // The provider that consumes it is lazy and memoised, so a malformed ceiling
+  // would otherwise let the process boot, pass its health check, and then fail
+  // every persistence request -- documents and runtime included -- until it was
+  // fixed and the process restarted. `register` runs before the server is
+  // ready, so throwing here is what makes a misconfigured deployment fail to
+  // start instead of failing to work. First, so the throw cannot skip the
+  // teardown registration for something `register` has already started.
+  const { resolveAssetQuotaBytes } = await import('@/lib/persistence/asset-quota');
+  resolveAssetQuotaBytes();
+
+  // The pending-allocation window, for the same reason and at the same moment.
+  // Too short is worse than malformed: it silently expires allocations whose
+  // document write was still coming, so it must fail the process rather than
+  // the request that discovers it.
+  const { resolveAssetPendingTtlMs } = await import('@/lib/persistence/asset-pending-ttl');
+  resolveAssetPendingTtlMs();
+
+  // Owner identity, for the same reason and at the same moment. A malformed
+  // PERSISTENCE_SHARED_OWNER_ID, or one a host registration would ignore,
+  // would otherwise boot, pass its health check, and then fail (or silently
+  // mis-identify) every owner-scoped request — and an operator has no way to
+  // tell from the outside that their setting was not accepted. An empty value
+  // is treated as unset, so this only rejects values that are present and
+  // unusable.
+  //
+  // A host that brings its own identity registers its owner auth methods
+  // here, in the order they are asked, before validation and before the
+  // server serves a request, and with them any host extension hooks (course
+  // creation, library listing, upload admission, the asset byte store):
+  //
+  //   const { configureOwnerAuthentication } = await import('@/lib/server/identity');
+  //   configureOwnerAuthentication({ methods: [myOwnerAuthMethod] });
+  //   const { configurePersistenceHooks, configureAssetByteStore } =
+  //     await import('@/lib/server/persistence-hooks');
+  //   configurePersistenceHooks(myPersistenceHooks);
+  //   configureAssetByteStore(myAssetByteStore);
+  const { validateOwnerIdentityConfiguration } = await import('@/lib/server/identity/registry');
+  validateOwnerIdentityConfiguration();
+
+  // The registered hooks, for the same reason and at the same moment: a host
+  // byte store that cannot sign under ASSET_BYTE_EGRESS=redirect would
+  // otherwise be discovered by the first asset read.
+  const { validatePersistenceHooksConfiguration } =
+    await import('@/lib/server/persistence-hooks/registry');
+  validatePersistenceHooksConfiguration();
 }
