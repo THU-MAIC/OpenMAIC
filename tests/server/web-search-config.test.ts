@@ -118,6 +118,22 @@ describe('server web search config', () => {
     });
   });
 
+  it("keeps a classroom request's own provider and key over the server's configured one", async () => {
+    vi.stubEnv('TAVILY_API_KEY', 'server-tavily');
+    const { resolveClassroomWebSearchConfig, resolveWebSearchConnection } =
+      await import('@/lib/server/web-search-config');
+    const requested = { webSearchProviderId: 'exa' as const, webSearchApiKey: 'exa-client-key' };
+
+    expect(await resolveClassroomWebSearchConfig(null, requested)).toMatchObject({
+      providerId: 'exa',
+      apiKey: 'exa-client-key',
+    });
+    // /api/web-search always preferred the operator's backend.
+    expect(
+      await resolveWebSearchConnection(null, requested, { preferServerProvider: true }),
+    ).toMatchObject({ providerId: 'tavily', apiKey: 'server-tavily' });
+  });
+
   it('rejects unsupported client base URLs at the classroom server boundary', async () => {
     const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
 

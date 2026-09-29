@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
           webSearchModelId: claudeModelId,
           baiduSubSources,
         },
-        { refuseDisabled: true },
+        { refuseDisabled: true, preferServerProvider: true },
       );
     } catch (error) {
       const refused = mediaResolutionResponse(error, 'Web search');

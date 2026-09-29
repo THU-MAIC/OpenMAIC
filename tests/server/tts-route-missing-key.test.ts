@@ -116,6 +116,17 @@ describe('POST /api/generate/tts missing-key contract (#665)', () => {
     );
   });
 
+  it("keeps the request's voice on the server's provider when it names no provider", async () => {
+    yamlOverride = 'tts:\n  openai-tts:\n    apiKey: sk-server\n';
+    const { POST } = await import('@/app/api/generate/tts/route');
+
+    expect((await POST(ttsRequest({ ttsVoice: 'nova' }))).status).toBe(200);
+    expect(mocks.generateTTS).toHaveBeenLastCalledWith(
+      expect.objectContaining({ providerId: 'openai-tts', voice: 'nova' }),
+      'Hello',
+    );
+  });
+
   it('accepts a client-supplied key for an unmanaged keyed provider', async () => {
     const { POST } = await import('@/app/api/generate/tts/route');
     const res = await POST(

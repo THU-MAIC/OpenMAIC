@@ -92,10 +92,10 @@ export async function POST(req: NextRequest) {
       throw error;
     }
     ttsProviderId = connection.providerId;
-    // A voice belongs to its provider: the request's voice only for the
-    // provider it was chosen for, else the provider's default voice.
+    // A voice belongs to its provider: the request's voice unless it was
+    // chosen for another provider, in which case the provider's default.
     ttsVoice =
-      requestedVoice && requestedProviderId === ttsProviderId
+      requestedVoice && (!requestedProviderId || requestedProviderId === ttsProviderId)
         ? requestedVoice
         : DEFAULT_TTS_VOICES[ttsProviderId as keyof typeof DEFAULT_TTS_VOICES] || requestedVoice;
     if (!ttsVoice) {

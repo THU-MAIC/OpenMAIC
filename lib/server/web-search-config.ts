@@ -134,14 +134,24 @@ export class WebSearchConfigError extends Error {
   }
 }
 
+interface LegacySearchRules {
+  /** Refuse a force-disabled provider (403) instead of skipping it. */
+  refuseDisabled?: boolean;
+  /**
+   * Prefer the operator's configured backend over an unmanaged request
+   * choice, as `/api/web-search` always did; classroom search honored the
+   * request's own provider and key.
+   */
+  preferServerProvider?: boolean;
+}
+
 /**
  * The provider a request names the old way (deprecated), with its key and base
- * URL for an unmanaged provider. The operator's configured backend is preferred
- * over an unmanaged request choice, as it always was.
+ * URL for an unmanaged provider, under the caller's legacy rules.
  */
 function requestedWebSearchConnection(
   input: RequestedWebSearch,
-  refuseDisabled: boolean,
+  { refuseDisabled = false, preferServerProvider = false }: LegacySearchRules,
 ): MediaConnection | undefined {
   const requested = assertWebSearchProviderId(input.webSearchProviderId)
     ? input.webSearchProviderId
@@ -150,6 +160,7 @@ function requestedWebSearchConnection(
   const serverProviderId = resolveServerWebSearchProviderId() as WebSearchProviderId | undefined;
   let providerId: WebSearchProviderId = requested;
   if (
+    preferServerProvider &&
     serverProviderId &&
     isServerConfiguredProvider('webSearch', serverProviderId) &&
     providerId !== serverProviderId &&
@@ -240,11 +251,11 @@ export function webSearchConfigFromConnection(
 export async function resolveWebSearchConnection(
   workspaceId: string | null,
   requested: RequestedWebSearch = {},
-  { refuseDisabled = false }: { refuseDisabled?: boolean } = {},
+  rules: LegacySearchRules = {},
 ): Promise<WebSearchConfig> {
   const connection = await resolveMediaSlot('webSearch', {
     workspaceId,
-    legacyRequest: async () => requestedWebSearchConnection(requested, refuseDisabled),
+    legacyRequest: async () => requestedWebSearchConnection(requested, rules),
   });
   return webSearchConfigFromConnection(connection, requested);
 }
