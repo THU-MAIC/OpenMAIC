@@ -16,11 +16,15 @@ vi.mock('@/lib/persistence/owner-materials', async (importOriginal) => ({
 vi.mock('@/lib/server/materials/bytes', () => ({
   getMaterialByteStore: () => ({ get: mocks.byteGet }),
 }));
+vi.mock('@/lib/server/material-extraction/availability', () => ({
+  resolveExtractableMimeTypes: async () => new Set(['application/pdf', 'text/markdown']),
+}));
 vi.mock('@/lib/server/material-extraction/extract', () => ({
   extractMaterialSource: mocks.extractMaterialSource,
 }));
 
 import {
+  ClassroomMaterialsRejectedError,
   ClassroomMaterialsUnavailableError,
   loadClassroomMaterialText,
   resolveClassroomMaterials,
@@ -71,6 +75,22 @@ describe('resolveClassroomMaterials', () => {
   it('refuses when any id does not resolve for the owner', async () => {
     await expect(resolveClassroomMaterials('owner-1', ['mat_a', 'mat_x'])).rejects.toBeInstanceOf(
       ClassroomMaterialsUnavailableError,
+    );
+  });
+
+  it('refuses a material type no available extractor reads', async () => {
+    mocks.getReadyOwnerMaterials.mockResolvedValue([record('mat_a', 'clip.mp4', 'video/mp4')]);
+    await expect(resolveClassroomMaterials('owner-1', ['mat_a'])).rejects.toBeInstanceOf(
+      ClassroomMaterialsRejectedError,
+    );
+  });
+
+  it('refuses a selection over the bundle total size', async () => {
+    mocks.getReadyOwnerMaterials.mockResolvedValue([
+      { ...record('mat_a', 'a.pdf'), bytes: 151 * 1024 * 1024 },
+    ]);
+    await expect(resolveClassroomMaterials('owner-1', ['mat_a'])).rejects.toThrow(
+      /byte total for one classroom/,
     );
   });
 });

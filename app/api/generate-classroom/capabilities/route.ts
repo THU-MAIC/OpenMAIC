@@ -1,17 +1,22 @@
 /**
  * GET /api/generate-classroom/capabilities — what a classroom generation job
- * on this server will do, and which uploads `POST /api/materials` accepts for
- * it. Read-only and owner-free; it sits behind the same access-code gate as
- * every other API route.
+ * on this server is configured to do, and which uploads it can generate from.
+ * Read-only and owner-free; it sits behind the same access-code gate as every
+ * other API route.
  *
- * Every fact is derived, never restated: the capabilities are the ones the
- * generation pipeline itself reads, and the formats and byte caps are the
- * upload route's own policy and limits, and `maxCount` is the most
- * `materialIds` one generation request accepts.
+ * Every fact is derived, never restated: `capabilities` is what the generation
+ * pipeline itself reads; `formats` are the upload policy's formats that an
+ * extractor available on this server can read (the same check a submission's
+ * `materialIds` must pass); the byte caps are the upload route's own limits;
+ * `maxCount` and `maxTotalBytes` bound one request's `materialIds`.
  */
 import { apiSuccess } from '@/lib/server/api-response';
-import { MAX_CLASSROOM_MATERIALS } from '@/lib/server/classroom-materials';
+import {
+  MAX_CLASSROOM_MATERIAL_TOTAL_BYTES,
+  MAX_CLASSROOM_MATERIALS,
+} from '@/lib/server/classroom-materials';
 import { resolveServerGenerationCapabilities } from '@/lib/server/generation-capabilities';
+import { resolveExtractableMimeTypes } from '@/lib/server/material-extraction/availability';
 import {
   MATERIAL_DOCUMENT_UPLOAD_LIMIT,
   MATERIAL_MEDIA_UPLOAD_LIMIT,
@@ -21,11 +26,13 @@ import { WORKBENCH_MATERIAL_FORMATS } from '@/lib/workbench/material-upload-poli
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  const extractable = await resolveExtractableMimeTypes();
   return apiSuccess({
     capabilities: resolveServerGenerationCapabilities(),
     materials: {
-      formats: WORKBENCH_MATERIAL_FORMATS,
+      formats: WORKBENCH_MATERIAL_FORMATS.filter((format) => extractable.has(format.mime)),
       maxCount: MAX_CLASSROOM_MATERIALS,
+      maxTotalBytes: MAX_CLASSROOM_MATERIAL_TOTAL_BYTES,
       maxDocumentBytes: MATERIAL_DOCUMENT_UPLOAD_LIMIT,
       maxMediaBytes: MATERIAL_MEDIA_UPLOAD_LIMIT,
     },

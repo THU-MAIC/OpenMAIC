@@ -13,6 +13,12 @@ import {
   defaultMediaCommands,
 } from '@/lib/document/extractors/local-media';
 
+// No operator ASR configuration: local transcription has no provider.
+vi.mock('@/lib/server/provider-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/server/provider-config')>()),
+  resolveServerASRProviderId: () => undefined,
+}));
+
 const execFileAsync = promisify(execFile);
 const unavailableCommands = {
   resolve: vi.fn(async (name: 'ffmpeg' | 'ffprobe') => {
@@ -52,6 +58,16 @@ describe('optional local media extractor availability', () => {
     await expect(local.availability?.(input)).resolves.toMatchObject({ available: false });
     expect(unavailableCommands.resolve).toHaveBeenCalledWith('ffmpeg');
     expect(unavailableCommands.resolve).toHaveBeenCalledWith('ffprobe');
+  });
+
+  it('does not offer the local provider without a server ASR provider', async () => {
+    const commands = { resolve: vi.fn(async () => '/usr/bin/tool'), run: vi.fn() };
+    const local = createLocalMediaExtractorProvider({ commands });
+
+    await expect(local.availability?.(input)).resolves.toMatchObject({
+      available: false,
+      reason: expect.stringContaining('ASR'),
+    });
   });
 
   it('falls back to a configured cloud provider without calling local extraction', async () => {

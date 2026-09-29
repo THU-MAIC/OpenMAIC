@@ -1,11 +1,11 @@
 import { after, type NextRequest } from 'next/server';
 import { nanoid } from 'nanoid';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { apiSuccess } from '@/lib/server/api-response';
 import { type GenerateClassroomInput } from '@/lib/server/classroom-generation';
 import { runClassroomGenerationJob } from '@/lib/server/classroom-job-runner';
 import { createClassroomGenerationJob } from '@/lib/server/classroom-job-store';
 import {
-  ClassroomMaterialsUnavailableError,
+  ClassroomMaterialsRejectedError,
   MAX_CLASSROOM_MATERIALS,
   resolveClassroomMaterials,
 } from '@/lib/server/classroom-materials';
@@ -21,9 +21,14 @@ export const maxDuration = 30;
 const PDF_CONTENT_REMOVED_MESSAGE =
   'pdfContent is no longer accepted: upload the document with POST /api/materials and pass the returned materialId in materialIds';
 
-const INVALID_MATERIAL_IDS_MESSAGE = `materialIds must be an array of at most ${MAX_CLASSROOM_MATERIALS} non-empty strings`;
+/** Material ids are `mat_` plus a 26-character ULID; anything much longer is not one. */
+const MAX_MATERIAL_ID_LENGTH = 64;
 
-type ParsedBody = { ok: true; input: GenerateClassroomInput } | { ok: false; response: Response };
+const INVALID_MATERIAL_IDS_MESSAGE = `materialIds must be an array of at most ${MAX_CLASSROOM_MATERIALS} material ids`;
+
+type ParsedBody =
+  | { ok: true; input: GenerateClassroomInput }
+  | { ok: false; code: 'INVALID_REQUEST' | 'MISSING_REQUIRED_FIELD'; message: string };
 
 /**
  * The request body is `{ requirement, materialIds? }`. Optional capabilities
@@ -35,27 +40,30 @@ type ParsedBody = { ok: true; input: GenerateClassroomInput } | { ok: false; res
 function parseBody(raw: unknown): ParsedBody {
   const body = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
   if (body.pdfContent !== undefined) {
-    return { ok: false, response: apiError('INVALID_REQUEST', 400, PDF_CONTENT_REMOVED_MESSAGE) };
+    return { ok: false, code: 'INVALID_REQUEST', message: PDF_CONTENT_REMOVED_MESSAGE };
   }
 
   const requirement = body.requirement;
   if (typeof requirement !== 'string' || !requirement) {
     return {
       ok: false,
-      response: apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: requirement'),
+      code: 'MISSING_REQUIRED_FIELD',
+      message: 'Missing required field: requirement',
     };
   }
 
   if (body.materialIds === undefined) return { ok: true, input: { requirement } };
   if (
     !Array.isArray(body.materialIds) ||
-    body.materialIds.some((id) => typeof id !== 'string' || !id.trim())
+    body.materialIds.some(
+      (id) => typeof id !== 'string' || !id.trim() || id.trim().length > MAX_MATERIAL_ID_LENGTH,
+    )
   ) {
-    return { ok: false, response: apiError('INVALID_REQUEST', 400, INVALID_MATERIAL_IDS_MESSAGE) };
+    return { ok: false, code: 'INVALID_REQUEST', message: INVALID_MATERIAL_IDS_MESSAGE };
   }
   const materialIds = [...new Set((body.materialIds as string[]).map((id) => id.trim()))];
   if (materialIds.length > MAX_CLASSROOM_MATERIALS) {
-    return { ok: false, response: apiError('INVALID_REQUEST', 400, INVALID_MATERIAL_IDS_MESSAGE) };
+    return { ok: false, code: 'INVALID_REQUEST', message: INVALID_MATERIAL_IDS_MESSAGE };
   }
   return {
     ok: true,
@@ -64,26 +72,27 @@ function parseBody(raw: unknown): ParsedBody {
 }
 
 export async function POST(req: NextRequest) {
-  let raw: unknown;
-  try {
-    raw = await req.json();
-  } catch {
-    return apiError('INVALID_REQUEST', 400, 'Invalid JSON body');
-  }
-  const parsed = parseBody(raw);
-  if (!parsed.ok) return parsed.response;
-  const body = parsed.input;
-
   // Materials are owner-scoped, so generation runs as the request owner: the
-  // same owner that uploaded them (see `withRequestOwner` for how a request
-  // resolves one, and why every response carries its cookies).
+  // same owner that uploaded them. The owner is resolved before anything else
+  // so every response, including a 400, carries its cookies (see
+  // `withRequestOwner`).
   return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
+    let raw: unknown;
+    try {
+      raw = await req.json();
+    } catch {
+      return ownerApiError('INVALID_REQUEST', 400, 'Invalid JSON body', responseHeaders);
+    }
+    const parsed = parseBody(raw);
+    if (!parsed.ok) return ownerApiError(parsed.code, 400, parsed.message, responseHeaders);
+    const body = parsed.input;
+
     try {
       if (body.materialIds) {
         try {
           await resolveClassroomMaterials(ownerId, body.materialIds);
         } catch (error) {
-          if (error instanceof ClassroomMaterialsUnavailableError) {
+          if (error instanceof ClassroomMaterialsRejectedError) {
             return ownerApiError('INVALID_REQUEST', 400, error.message, responseHeaders);
           }
           throw error;

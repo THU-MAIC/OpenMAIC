@@ -19,13 +19,13 @@
 - `requirement` (string, required) — what the classroom should teach. The course language follows the requirement (and any uploaded material); there is no `language` field.
 - `materialIds` (string array, optional) — up to 5 ids returned by `POST {url}/api/materials`, used as source documents in the order given.
 
-Nothing else is a request field. Web search, image generation, video generation and TTS narration run automatically whenever the OpenMAIC server has a provider configured for them; they cannot be switched on or off per request, and requests never carry provider choices or API keys. Other fields are ignored, except `pdfContent`, which is rejected with `400 INVALID_REQUEST` (upload the document instead, see below).
+Nothing else is a request field. Web search, image generation, video generation and TTS narration are attempted automatically whenever the OpenMAIC server has a provider configured for them; they cannot be switched on or off per request, and requests never carry provider choices or API keys. Other fields are ignored, except `pdfContent`, which is rejected with `400 INVALID_REQUEST` (upload the document instead, see below).
 
 Do not rely on request-time model or provider override parameters. To change what a generation job can do, change the OpenMAIC server-side provider config.
 
 ## Optional: Check Capabilities
 
-To tell the user in advance what the job will include, or which files can be uploaded, query:
+To tell the user in advance what the job is configured to attempt, or which files it can generate from, query:
 
 ```text
 GET {url}/api/generate-classroom/capabilities
@@ -43,13 +43,16 @@ GET {url}/api/generate-classroom/capabilities
   "materials": {
     "formats": [{ "id": "pdf", "mime": "application/pdf", "extensions": [".pdf"] }],
     "maxCount": 5,
+    "maxTotalBytes": 157286400,
     "maxDocumentBytes": 52428800,
     "maxMediaBytes": 52428800
   }
 }
 ```
 
-`capabilities` describes what a job on this server will do; nothing needs to be sent back. `materials.formats` lists every accepted upload type (documents, images, audio and video), `maxCount` the most `materialIds` one request accepts, and the byte limits apply per file (`maxMediaBytes` for audio/video, `maxDocumentBytes` for everything else).
+`capabilities` says which optional features the server has a provider configured for; nothing needs to be sent back. It is best-effort, not a promise: if a configured provider fails at run time, the job continues and completes without that output. Today only narration reports this — through `result.ttsCoverage` and `result.warning` — so a missing image, video or search context is not flagged in the result.
+
+`materials.formats` lists the upload types this server can extract text from with its current configuration (plain text, Markdown and PDF always; Office documents, images, audio and video only when a matching extraction service or local media pipeline is configured). `maxCount` and `maxTotalBytes` bound one request's `materialIds`; the byte limits apply per file (`maxMediaBytes` for audio/video, `maxDocumentBytes` for everything else). `POST /api/materials` may accept more types than are listed here, but a submission with a material of an unlisted type is refused.
 
 ## Requirement-Only Generation
 
@@ -80,7 +83,7 @@ Treat the `POST` response as job submission only. Expect fields such as:
 
 ## Generation From Local Files
 
-Use this when the user wants the classroom built from their own documents (PDF, PPTX, DOCX, XLSX, images, text/Markdown/CSV, or audio/video).
+Use this when the user wants the classroom built from their own files. Check `materials.formats` from the capabilities endpoint first when the file is not plain text, Markdown or PDF.
 
 1. Resolve the absolute path of each file.
 2. Confirm before reading the files.
@@ -103,7 +106,7 @@ curl -sS -c cookies.txt -b cookies.txt \
   {url}/api/materials
 ```
 
-A successful upload answers `201` with `{ "materialId": "...", "originalName": "...", "bytes": ..., "mime": "...", "extraction": { "status": "idle" } }`. Other answers: `413` (the file exceeds the limit; the body's `maxBytes` gives it), `415` (unsupported type), `429` (the owner's material library is full). Extraction happens later, inside the generation job, so `status: "idle"` is expected.
+A successful upload answers `201` with `{ "materialId": "...", "originalName": "...", "bytes": ..., "mime": "...", "extraction": { "status": "idle" } }`. Other answers: `413` (the file exceeds the limit; the body's `maxBytes` gives it), `415` (unsupported type), `429` (the owner's material library is full — it holds a bounded number of files and bytes per owner, 100 files and 2 GiB by default; delete materials you no longer need, see below). Extraction happens later, inside the generation job, so `status: "idle"` is expected.
 
 4. Submit the job with the returned ids, in the order the documents should be read:
 
@@ -114,14 +117,28 @@ A successful upload answers `201` with `{ "materialId": "...", "originalName": "
 }
 ```
 
-An id that is unknown, not yet fully uploaded, or belongs to someone else answers `400` with `One or more materials are unavailable`. If a document cannot be extracted, the job fails (it never silently generates without the document); surface the error to the user.
+The submission is checked before a job is created, and answers `400 INVALID_REQUEST` when:
+
+- an id is unknown, not fully uploaded, deleted, or belongs to someone else (`One or more materials are unavailable`, the same answer for all of these);
+- a material's type has no extractor available on this server;
+- the materials together exceed `maxTotalBytes`.
+
+If a document still cannot be extracted when the job runs (for example the extraction service fails, or the file contains no text), the job fails rather than generating without it; surface the error to the user.
+
+5. After the job reaches `succeeded` or `failed`, delete the uploads you no longer need:
+
+```text
+DELETE {url}/api/materials/{materialId}
+```
+
+It answers `200` with `{ "materialId": "...", "deleted": true }`, or a plain `404` for an id the owner does not have. Do not delete before the job is finished: the job reads the files when it runs, and a job whose material was deleted fails. Deleting frees the owner's library quota; with a shared team owner every caller shares that one quota, so cleaning up matters.
 
 ### Uploads And Generation Must Use The Same Owner
 
 Uploaded materials belong to the owner the server resolves for the upload request, and `materialIds` only resolve for that same owner.
 
 - If the server resolves a fixed owner — a shared team owner (`PERSISTENCE_SHARED_OWNER_ID` together with `ACCESS_CODE`) or single-user mode (`OWNER_SINGLE_USER=true`) — or the deployment resolves the owner from a credential you send on every request, this is automatic.
-- Otherwise the server identifies callers by an anonymous owner cookie that it sets on the first response. Keep that cookie and send it on every later request (uploads, generation, polling), for example with one curl cookie jar (`-c cookies.txt -b cookies.txt`) on all calls. Without it, each request is a new owner and the upload ids will be unavailable.
+- Otherwise the server identifies callers by an anonymous owner cookie that it sets on the first response (including error responses). Keep that cookie and send it on every later request (uploads, generation, polling, deletion), for example with one curl cookie jar (`-c cookies.txt -b cookies.txt`) on all calls. Without it, each request is a new owner and the upload ids will be unavailable.
 
 ### URLs Are Not Accepted
 
