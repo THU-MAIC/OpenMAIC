@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import type {
   OwnerAuthMethod,
   OwnerAuthMethodResult,
@@ -20,6 +18,10 @@ import type {
  * method's principal. A host method can therefore use its own cookie without
  * clashing with this one (`tests/server/identity/cookie-guard.test.ts`
  * keeps it that way).
+ *
+ * It uses only Web APIs (`crypto.randomUUID`, `Headers`), so the Edge
+ * middleware mints the same cookie through it (`./navigation.ts`): one format,
+ * one set of attributes, whichever side mints.
  */
 
 const ANONYMOUS_COOKIE = 'anonymous_id';
@@ -30,6 +32,11 @@ const ANONYMOUS_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
  */
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ANONYMOUS_OWNER_PREFIX = 'anon:';
+
+/** A fresh anonymous cookie value: a random UUID v4 (Web Crypto, so Edge-safe). */
+function mintAnonymousId(): string {
+  return globalThis.crypto.randomUUID();
+}
 
 function readCookie(headers: Headers, name: string): string | undefined {
   const encoded = headers.get('cookie');
@@ -84,6 +91,30 @@ export function clearAnonymousCookieHeader(): string {
   return `${ANONYMOUS_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
 }
 
+/**
+ * The anonymous owner a page request establishes (`./navigation.ts`), or
+ * `undefined` when the request already presents a valid anonymous cookie: an
+ * established identity is never replaced. Otherwise a fresh id is minted
+ * exactly as a route handler would mint it, and returned as the `Set-Cookie`
+ * for the page response plus the request's `Cookie` header rewritten to carry
+ * it (any malformed value dropped), so the rest of the same request resolves
+ * the same owner.
+ */
+export function establishAnonymousCookie(
+  headers: Headers,
+): { readonly setCookie: string; readonly requestCookie: string } | undefined {
+  if (readAnonymousOwnerId(headers) !== undefined) return undefined;
+  const id = mintAnonymousId();
+  const others = (headers.get('cookie') ?? '')
+    .split(';')
+    .map((item) => item.trim())
+    .filter((item) => item !== '' && item.split('=', 1)[0]!.trim() !== ANONYMOUS_COOKIE);
+  return {
+    setCookie: anonymousCookieHeader(id),
+    requestCookie: [...others, `${ANONYMOUS_COOKIE}=${id}`].join('; '),
+  };
+}
+
 /** Whether `ownerId` has the shape this built-in mints: `anon:<uuid v4>`. */
 export function isAnonymousCookieOwnerId(ownerId: string): boolean {
   return (
@@ -122,7 +153,7 @@ function authenticateAnonymousRequest(req: OwnerAuthRequest): OwnerAuthMethodRes
       principal: anonymousPrincipal(existingId, 'unverified-legacy'),
     };
   }
-  const id = randomUUID();
+  const id = mintAnonymousId();
   return {
     status: 'authenticated',
     principal: anonymousPrincipal(id, 'minted'),
@@ -145,7 +176,7 @@ async function authenticateAnonymousContext(): Promise<OwnerAuthMethodResult> {
       principal: anonymousPrincipal(existing, 'unverified-legacy'),
     };
   }
-  const minted = randomUUID();
+  const minted = mintAnonymousId();
   cookieStore.set(ANONYMOUS_COOKIE, minted, {
     httpOnly: true,
     sameSite: 'lax',

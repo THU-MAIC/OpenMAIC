@@ -14,3 +14,8 @@ the public surface (`@/lib/server/identity`), not the resolution internals.
 
 Register the methods from `instrumentation.ts` with
 `configureOwnerAuthentication({ methods: [...] })`.
+
+The middleware mints the anonymous owner cookie on page navigations
+(`anonymousOwnerForNavigation` in `middleware.ts`, see `../navigation.ts`); it
+cannot see these registrations. Skip it there for requests your methods own if
+you do not want an anonymous cookie next to your credential.

@@ -730,8 +730,10 @@ for one kind of credential and answers exactly one of:
 
 When every method answers `not-applicable`, the built-in **anonymous
 fallback** resolves the request: one owner per browser, `anon:<uuid>` from a
-30-day `HttpOnly` `anonymous_id` cookie, minted on first use. It cannot
-publish. A host can turn the fallback off, and then such a request is a `401`
+30-day `HttpOnly` `anonymous_id` cookie. The middleware mints it on the page
+response of a browser's first load, so every request the page sends presents
+one owner; a route handler reached without a valid cookie mints one the same
+way, and a valid cookie is never replaced. It cannot publish. A host can turn the fallback off, and then such a request is a `401`
 too. A refused request is never served as an anonymous owner.
 
 Out of the box nothing is registered, so every request is an anonymous owner,
@@ -848,6 +850,13 @@ configureOwnerAuthentication({
   work that holds only the id (an agent run, a claim). The anonymous fallback
   is asked first, then the methods in order. An id nobody recognizes is a
   `user` with no roles.
+- The middleware mints the anonymous cookie on page navigations whenever
+  neither `OWNER_SINGLE_USER` nor `PERSISTENCE_SHARED_OWNER_ID` is set: it can
+  run in the Edge runtime and cannot see this registration. A page cookie next
+  to a host credential is a claim candidate like any other anonymous cookie. A
+  host that does not want one for requests its methods own (with
+  `anonymousFallback: false`, say, or `OWNER_CLAIM_TRIGGER=auto`) skips
+  `anonymousOwnerForNavigation` in `middleware.ts` for those requests.
 - `issuesAnonymousOwners: true` with `clearCredential()` is only for a method
   that authenticates anonymous principals itself with a cookie: those
   `Set-Cookie` values ride every `403 OWNER_RETIRED`. Core never calls
