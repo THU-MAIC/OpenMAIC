@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 
+import { OwnerRetiredError } from '@/lib/persistence/owner-merges';
 import {
   deleteOwnerMaterial,
   ensureOwnerMaterialSchema,
@@ -350,6 +351,32 @@ describe('owner material reservations', () => {
     expect(deleteBytes).not.toHaveBeenCalled();
     expect(await rowById(pool.db, 'mat_other')).toMatchObject({ status: 'ready' });
     expect(await rowById(pool.db, 'mat_uploading')).toMatchObject({ status: 'uploading' });
+  });
+
+  it('refuses to delete for a retired owner, behind the owner write fence', async () => {
+    const anonymousOwner = 'anon:0f8fad5b-d9cb-469f-a165-70867728950e';
+    await insertRawUpload(pool.db, {
+      id: 'mat_ready',
+      ownerId: anonymousOwner,
+      ossKey: 'materials/anon/mat_ready',
+      status: 'ready',
+    });
+    await pool.db.query(
+      `INSERT INTO owner_merges (from_owner_id, to_owner_id) VALUES ($1, 'user-1')`,
+      [anonymousOwner],
+    );
+    const deleteBytes = vi.fn();
+
+    await expect(
+      deleteOwnerMaterial(
+        pool as unknown as ConnectableQueryable,
+        anonymousOwner,
+        'mat_ready',
+        deleteBytes,
+      ),
+    ).rejects.toBeInstanceOf(OwnerRetiredError);
+    expect(deleteBytes).not.toHaveBeenCalled();
+    expect(await rowById(pool.db, 'mat_ready')).toMatchObject({ status: 'ready' });
   });
 
   it('keeps a deleted row whose byte deletion failed until the reclaim sweep removes it', async () => {

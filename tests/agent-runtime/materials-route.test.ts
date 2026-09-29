@@ -68,6 +68,7 @@ vi.mock('@/lib/persistence/owner-materials', async (importOriginal) => {
 
 import { GET, POST } from '@/app/api/materials/route';
 import { DELETE } from '@/app/api/materials/[id]/route';
+import { OwnerRetiredError } from '@/lib/persistence/owner-merges';
 import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
 
 const SESSION_ID = 'session-1';
@@ -479,6 +480,15 @@ describe('DELETE /api/materials/[id]', () => {
     const response = await del(`mat_${'z'.repeat(26)}`);
     expect(response.status).toBe(404);
     await expect(response.text()).resolves.toBe('Not found');
+  });
+
+  it('maps a retired owner to the owner-retired response', async () => {
+    mocks.deleteOwnerMaterial.mockRejectedValue(new OwnerRetiredError('owner-1'));
+    const response = await del();
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'OWNER_RETIRED' },
+    });
   });
 
   it('answers a malformed id with the same 404 before touching the database', async () => {
