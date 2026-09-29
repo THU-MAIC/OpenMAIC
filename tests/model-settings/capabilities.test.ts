@@ -26,6 +26,24 @@ describe('modelCapabilities', () => {
     expect(mediaGenerationDisabled(capabilities, 'image')).toBe(false);
   });
 
+  it("keeps the browser's own speech recognition while the asr slot is unassigned", () => {
+    expect(modelCapabilities(modelSettingsViewFor({})).asr?.registryId).toBe('browser-native');
+    expect(modelCapabilities(null).asr?.registryId).toBe('browser-native');
+    // A server speech service when one is assigned...
+    expect(
+      modelCapabilities(modelSettingsViewFor({ asr: { registryId: 'openai-whisper' } })).asr
+        ?.registryId,
+    ).toBe('openai-whisper');
+    // ...and none once the slot is turned off.
+    const off = modelSettingsViewFor({});
+    off.slots = off.slots.map((slot) =>
+      slot.slot === 'asr'
+        ? { ...slot, effective: { status: 'disabled', resolvedAt: 'asr', source: 'workspace' } }
+        : slot,
+    );
+    expect(modelCapabilities(off).asr).toBeNull();
+  });
+
   it('reads the target each root resolves to', () => {
     const view = modelSettingsViewFor({
       llm: { registryId: 'openai', providerId: 'my-openai', modelId: 'gpt-5' },

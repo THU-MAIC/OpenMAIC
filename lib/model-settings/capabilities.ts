@@ -57,12 +57,32 @@ export function effectiveTarget(
   return target;
 }
 
+/**
+ * The browser's own speech recognition: it needs no server provider, so it is
+ * speech input while the asr slot is unassigned, as it always was; turning the
+ * slot off (null) turns speech input off.
+ */
+const BROWSER_NATIVE_ASR_PROVIDER_ID = 'browser-native';
+const BROWSER_SPEECH_RECOGNITION = {
+  providerId: BROWSER_NATIVE_ASR_PROVIDER_ID,
+  providerSource: 'default',
+  presetId: BROWSER_NATIVE_ASR_PROVIDER_ID,
+  registryId: BROWSER_NATIVE_ASR_PROVIDER_ID,
+} as EffectiveTarget;
+
+function speechInput(view: ModelSettingsView | null | undefined): EffectiveTarget | null {
+  const assigned = effectiveTarget(view, 'asr');
+  if (assigned) return assigned;
+  const status = view ? findSlot(view, 'asr')?.effective.status : undefined;
+  return !view || status === 'unassigned' ? BROWSER_SPEECH_RECOGNITION : null;
+}
+
 export function modelCapabilities(view: ModelSettingsView | null | undefined): ModelCapabilities {
   return {
     known: !!view,
     llm: effectiveTarget(view, 'llm'),
     tts: effectiveTarget(view, 'tts'),
-    asr: effectiveTarget(view, 'asr'),
+    asr: speechInput(view),
     image: effectiveTarget(view, 'image'),
     video: effectiveTarget(view, 'video'),
     webSearch: effectiveTarget(view, 'webSearch'),
