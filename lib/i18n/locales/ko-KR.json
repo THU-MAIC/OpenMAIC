@@ -716,15 +716,7 @@
     "aiGrading": "AI가 채점 중...",
     "aiGradingWait": "잠시만 기다려주세요, 답변을 분석하고 있어요",
     "quizReport": "퀴즈 결과",
-    "retry": "다시 풀기",
-    "invalidContent": {
-      "title": "유효하지 않은 퀴즈 내용",
-      "missingQuestionId": "{{question}}번 문제에 ID가 없습니다.",
-      "duplicateQuestionId": "{{question}}번 문제에서 문제 ID \"{{value}}\"가 중복됩니다.",
-      "missingOptions": "{{question}}번 문제에 답변 선택지가 없습니다.",
-      "missingOptionValue": "{{question}}번 문제의 {{option}}번째 선택지에 값이 없습니다.",
-      "duplicateOptionValue": "{{question}}번 문제에서 선택지 값 \"{{value}}\"가 중복됩니다."
-    }
+    "retry": "다시 풀기"
   },
   "roundtable": {
     "teacher": "선생님",

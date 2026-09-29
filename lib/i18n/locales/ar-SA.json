@@ -716,15 +716,7 @@
     "aiGrading": "الذكاء الاصطناعي يصحح...",
     "aiGradingWait": "يرجى الانتظار، جارٍ تحليل إجاباتك",
     "quizReport": "تقرير الاختبار",
-    "retry": "إعادة المحاولة",
-    "invalidContent": {
-      "title": "محتوى الاختبار غير صالح",
-      "missingQuestionId": "السؤال {{question}} يفتقد معرّفًا.",
-      "duplicateQuestionId": "السؤال {{question}} يكرر معرّف السؤال \"{{value}}\".",
-      "missingOptions": "السؤال {{question}} لا يحتوي على خيارات إجابة.",
-      "missingOptionValue": "السؤال {{question}}، الخيار {{option}} يفتقد قيمة.",
-      "duplicateOptionValue": "السؤال {{question}} يكرر قيمة الخيار \"{{value}}\"."
-    }
+    "retry": "إعادة المحاولة"
   },
   "roundtable": {
     "teacher": "المعلم",

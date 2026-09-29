@@ -716,15 +716,7 @@
     "aiGrading": "AIが採点中...",
     "aiGradingWait": "回答を分析しています。お待ちください",
     "quizReport": "クイズレポート",
-    "retry": "やり直す",
-    "invalidContent": {
-      "title": "クイズの内容が無効です",
-      "missingQuestionId": "問題 {{question}} に ID がありません。",
-      "duplicateQuestionId": "問題 {{question}} で問題 ID「{{value}}」が重複しています。",
-      "missingOptions": "問題 {{question}} に回答選択肢がありません。",
-      "missingOptionValue": "問題 {{question}} の選択肢 {{option}} に値がありません。",
-      "duplicateOptionValue": "問題 {{question}} で選択肢の値「{{value}}」が重複しています。"
-    }
+    "retry": "やり直す"
   },
   "roundtable": {
     "teacher": "教師",

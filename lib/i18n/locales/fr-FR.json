@@ -716,15 +716,7 @@
     "aiGrading": "Correction par l’IA…",
     "aiGradingWait": "Veuillez patienter, analyse de vos réponses en cours",
     "quizReport": "Bilan du quiz",
-    "retry": "Recommencer",
-    "invalidContent": {
-      "title": "Contenu du quiz invalide",
-      "missingQuestionId": "La question {{question}} n’a pas d’identifiant.",
-      "duplicateQuestionId": "La question {{question}} répète l’identifiant « {{value}} ».",
-      "missingOptions": "La question {{question}} n’a aucune option de réponse.",
-      "missingOptionValue": "Dans la question {{question}}, l’option {{option}} n’a pas de valeur.",
-      "duplicateOptionValue": "La question {{question}} répète la valeur d’option « {{value}} »."
-    }
+    "retry": "Recommencer"
   },
   "roundtable": {
     "teacher": "PROFESSEUR",

@@ -716,15 +716,7 @@
     "aiGrading": "AI đang chấm…",
     "aiGradingWait": "Vui lòng đợi, đang phân tích câu trả lời của bạn",
     "quizReport": "Báo cáo kết quả",
-    "retry": "Làm lại",
-    "invalidContent": {
-      "title": "Nội dung bài kiểm tra không hợp lệ",
-      "missingQuestionId": "Câu hỏi {{question}} thiếu ID.",
-      "duplicateQuestionId": "Câu hỏi {{question}} lặp lại ID câu hỏi \"{{value}}\".",
-      "missingOptions": "Câu hỏi {{question}} không có lựa chọn trả lời.",
-      "missingOptionValue": "Câu hỏi {{question}}, lựa chọn {{option}} thiếu giá trị.",
-      "duplicateOptionValue": "Câu hỏi {{question}} lặp lại giá trị lựa chọn \"{{value}}\"."
-    }
+    "retry": "Làm lại"
   },
   "roundtable": {
     "teacher": "GIẢNG VIÊN",

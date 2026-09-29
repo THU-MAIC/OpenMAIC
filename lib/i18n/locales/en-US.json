@@ -716,15 +716,7 @@
     "aiGrading": "AI is grading...",
     "aiGradingWait": "Please wait, analyzing your answers",
     "quizReport": "Quiz Report",
-    "retry": "Retry",
-    "invalidContent": {
-      "title": "Invalid quiz content",
-      "missingQuestionId": "Question {{question}} is missing an id.",
-      "duplicateQuestionId": "Question {{question}} repeats question id \"{{value}}\".",
-      "missingOptions": "Question {{question}} has no answer options.",
-      "missingOptionValue": "Question {{question}}, option {{option}} is missing a value.",
-      "duplicateOptionValue": "Question {{question}} repeats option value \"{{value}}\"."
-    }
+    "retry": "Retry"
   },
   "roundtable": {
     "teacher": "TEACHER",

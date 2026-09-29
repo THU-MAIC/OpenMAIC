@@ -716,15 +716,7 @@
     "aiGrading": "AI проверяет...",
     "aiGradingWait": "Пожалуйста подождите, анализируем ваши ответы",
     "quizReport": "Результаты теста",
-    "retry": "Повторить",
-    "invalidContent": {
-      "title": "Некорректное содержимое теста",
-      "missingQuestionId": "У вопроса {{question}} отсутствует идентификатор.",
-      "duplicateQuestionId": "В вопросе {{question}} повторяется идентификатор \"{{value}}\".",
-      "missingOptions": "У вопроса {{question}} нет вариантов ответа.",
-      "missingOptionValue": "В вопросе {{question}} у варианта {{option}} отсутствует значение.",
-      "duplicateOptionValue": "В вопросе {{question}} повторяется значение варианта \"{{value}}\"."
-    }
+    "retry": "Повторить"
   },
   "roundtable": {
     "teacher": "УЧИТЕЛЬ",

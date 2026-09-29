@@ -716,15 +716,7 @@
     "aiGrading": "AI 正在批改中...",
     "aiGradingWait": "请稍候，正在分析你的答案",
     "quizReport": "答题报告",
-    "retry": "重新答题",
-    "invalidContent": {
-      "title": "测验内容无效",
-      "missingQuestionId": "第 {{question}} 题缺少 ID。",
-      "duplicateQuestionId": "第 {{question}} 题重复使用了题目 ID“{{value}}”。",
-      "missingOptions": "第 {{question}} 题没有答案选项。",
-      "missingOptionValue": "第 {{question}} 题的第 {{option}} 个选项缺少值。",
-      "duplicateOptionValue": "第 {{question}} 题重复使用了选项值“{{value}}”。"
-    }
+    "retry": "重新答题"
   },
   "roundtable": {
     "teacher": "教师",

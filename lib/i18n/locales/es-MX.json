@@ -716,15 +716,7 @@
     "aiGrading": "La IA está calificando...",
     "aiGradingWait": "Espera un momento, analizando tus respuestas",
     "quizReport": "Reporte del cuestionario",
-    "retry": "Reintentar",
-    "invalidContent": {
-      "title": "Contenido del cuestionario no válido",
-      "missingQuestionId": "A la pregunta {{question}} le falta un ID.",
-      "duplicateQuestionId": "La pregunta {{question}} repite el ID \"{{value}}\".",
-      "missingOptions": "La pregunta {{question}} no tiene opciones de respuesta.",
-      "missingOptionValue": "En la pregunta {{question}}, a la opción {{option}} le falta un valor.",
-      "duplicateOptionValue": "La pregunta {{question}} repite el valor de opción \"{{value}}\"."
-    }
+    "retry": "Reintentar"
   },
   "roundtable": {
     "teacher": "DOCENTE",
