@@ -54,26 +54,21 @@ export function setWorkspaceLayerLoaderForTests(loader?: WorkspaceLayerLoader): 
 }
 
 /**
- * The owner's web settings as a layer, or null when there are none. The owner
- * is forwarded through a claim, for background work that outlives one; a
- * request's owner is checked by {@link requestWorkspaceId} instead.
+ * The web settings of exactly `ownerId` as a layer, or null when there are
+ * none. Never forwarded through a claim: a request's owner claimed between its
+ * check and this read finds nothing rather than the account's settings.
+ * Background work that may outlive a claim passes the owner it works for now
+ * (canonicalizeStoredOwner) instead.
  */
 export async function workspaceLayer(ownerId: string): Promise<ModelConfigLayer | null> {
   const databaseUrl = process.env.DATABASE_URL?.trim();
   if (!databaseUrl) return null;
-  const [
-    { getServerPersistenceProvider },
-    { readWorkspaceModelConfig },
-    { canonicalizeStoredOwner },
-  ] = await Promise.all([
+  const [{ getServerPersistenceProvider }, { readWorkspaceModelConfig }] = await Promise.all([
     import('@/lib/persistence/server-provider'),
     import('@/lib/persistence/workspace-model-config'),
-    import('@/lib/persistence/owner-merges'),
   ]);
   const { pool } = await getServerPersistenceProvider(databaseUrl);
-  // Background work may outlive a claim of its owner; the settings moved with it.
-  const owner = await canonicalizeStoredOwner(ownerId);
-  const stored = await readWorkspaceModelConfig(pool, owner);
+  const stored = await readWorkspaceModelConfig(pool, ownerId);
   if (!stored) return null;
   if (stored.unreadableSecrets.length) {
     log.warn(

@@ -134,6 +134,39 @@ describe('resolveStageModel', () => {
     ).resolves.toMatchObject({ modelId: 'm' });
   });
 
+  it('refuses a model the catalogue says cannot meet the slot, before any fallback', async () => {
+    state.lookup = lookupFromLayers('agent', {
+      deployment: null,
+      workspace: layer('workspace', {
+        providers: { ac: { preset: 'atlascloud', apiKey: 'k' } },
+        slots: { agent: 'ac:qwen/qwen3.5-flash' },
+      }),
+      defaults: null,
+    });
+    const legacyRequest = vi.fn(async () => legacyModel);
+    await expect(
+      resolveStageModel({ stage: 'maic-agent-driver', workspaceId: 'u', legacyRequest }),
+    ).rejects.toThrow(/does not meet its requirement \(toolCalling\)/);
+    expect(legacyRequest).not.toHaveBeenCalled();
+  });
+
+  it("never lends a workspace provider the deployment's key", async () => {
+    state.lookup = lookupFromLayers('llm', {
+      deployment: layer('deployment', {
+        providers: { deepseek: { preset: 'deepseek', apiKey: 'sk-operator' } },
+      }),
+      // A workspace provider of the same vendor whose key did not open.
+      workspace: layer('workspace', {
+        providers: { mine: { preset: 'deepseek' } },
+        slots: { llm: 'mine:deepseek-v4-pro' },
+      }),
+      defaults: null,
+    });
+    await expect(
+      resolveStageModel({ stage: 'generate-classroom', workspaceId: 'u' }),
+    ).rejects.toThrow(/API key required/);
+  });
+
   it('checks a workspace endpoint like a caller-supplied one, and trusts the deployment', async () => {
     const provider = {
       preset: 'openai-compatible',

@@ -81,18 +81,43 @@ describe('requestWorkspaceId', () => {
 });
 
 describe('workspaceLayer', () => {
-  it('forwards a claimed owner for background work', async () => {
+  it('reads exactly the owner it is given, never forwarded through a claim', async () => {
+    // Claimed after the request's owner check: the settings moved to the account.
     mocks.forwarded.set('anon:old', 'user:alice');
     mocks.stored.set('user:alice', {
       config: { slots: { video: null } },
       revision: 1,
       unreadableSecrets: [],
     });
-    expect(await runtime.workspaceLayer('anon:old')).toEqual({
+    expect(await runtime.workspaceLayer('anon:old')).toBeNull();
+    expect(await runtime.workspaceLayer('user:alice')).toEqual({
       source: 'workspace',
       config: { slots: { video: null } },
     });
-    expect(await runtime.workspaceLayer('user:bob')).toBeNull();
+  });
+
+  it('lets a database failure fail the call, without falling back', async () => {
+    runtime.setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: { providers: { o: { preset: 'openai', apiKey: 'k' } } },
+      },
+      defaults: { source: 'default', config: { slots: { llm: 'o:gpt-5.6' } } },
+      notices: [],
+    });
+    runtime.setWorkspaceLayerLoaderForTests(async () => {
+      throw new Error('connection refused');
+    });
+    const legacyRequest = vi.fn();
+    const { resolveStageModel } = await import('@/lib/server/model-config/llm');
+    try {
+      await expect(
+        resolveStageModel({ stage: 'quiz-grade', workspaceId: 'user:alice', legacyRequest }),
+      ).rejects.toThrow('connection refused');
+      expect(legacyRequest).not.toHaveBeenCalled();
+    } finally {
+      runtime.setWorkspaceLayerLoaderForTests();
+    }
   });
 
   it('reads nothing without a database', async () => {

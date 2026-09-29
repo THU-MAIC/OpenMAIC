@@ -74,7 +74,22 @@ export async function languageModelFor(
   };
 }
 
+export class SlotRequirementError extends Error {
+  constructor(
+    readonly slot: string,
+    readonly requirement: string,
+  ) {
+    super(
+      `The model assigned to ${slot} does not meet its requirement (${requirement}); choose another model for it.`,
+    );
+    this.name = 'SlotRequirementError';
+  }
+}
+
 export async function slotLanguageModel(resolution: AssignedSlot): Promise<SlotResolvedModel> {
+  // Only a requirement the catalogue says is unmet refuses; unknown models pass.
+  const unmet = resolution.requirements.find((check) => check.status === 'unmet');
+  if (unmet) throw new SlotRequirementError(resolution.slot, unmet.requirement);
   return { ...(await languageModelFor(resolution, resolution.thinking)), resolution };
 }
 
