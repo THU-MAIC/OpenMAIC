@@ -51,11 +51,16 @@ import {
 } from '@/lib/store/settings-validation';
 import { createKVPersistStorage, purgeLegacyPersistKey } from '@/lib/store/kv-persist';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
+import {
+  buildModelSettingsProposal,
+  saveModelSettingsProposal,
+  type LegacyModelSettingsState,
+} from '@/lib/legacy-browser-import/model-settings';
 
 const log = createLogger('Settings');
 
 /** Persisted-blob version for zustand's `persist` `migrate` ladder. */
-const SETTINGS_PERSIST_VERSION = 4;
+const SETTINGS_PERSIST_VERSION = 5;
 
 /**
  * Bound after the store exists; see `onWriteRefused` for why it is not inlined.
@@ -2287,6 +2292,13 @@ export const useSettingsStore = create<SettingsState>()(
       // Migrate persisted state
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Partial<SettingsState>;
+
+        // v4 → v5: model settings move to the server (RFC #1701). What this
+        // browser configured is kept for a one-time import into the workspace
+        // (lib/legacy-browser-import/model-settings.ts).
+        if (version < 5) {
+          saveModelSettingsProposal(buildModelSettingsProposal(state as LegacyModelSettingsState));
+        }
 
         // v0 → v1: clear hardcoded default model so user must actively select
         if (version === 0) {

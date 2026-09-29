@@ -3,6 +3,7 @@
 import { useEffect, useState, ReactNode } from 'react';
 import { AccessCodeModal } from '@/components/access-code-modal';
 import { useSettingsStore } from '@/lib/store/settings';
+import { importLegacyModelSettings } from '@/components/model-settings-init';
 
 export function AccessCodeGuard({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<{
@@ -51,6 +52,8 @@ export function AccessCodeGuard({ children }: { children: ReactNode }) {
             // provider reads as unconfigured until a manual reload. Re-fetch
             // now that the request will be authorized.
             void useSettingsStore.getState().fetchServerProviders();
+            // The same holds for the one-time import of browser model settings.
+            void importLegacyModelSettings();
           }}
         />
       )}

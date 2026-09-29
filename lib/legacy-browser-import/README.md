@@ -121,12 +121,62 @@ afresh: a course under its own id is still not duplicated, but a course imported
 under a fresh id would be imported again and a half-copied runtime session is not
 completed.
 
+## Model settings
+
+Earlier builds also kept the model settings in the browser, in the persisted
+settings store (`maic:account:settings-storage`): providers with their API keys
+and base URLs, the chosen model, token plan enrollment and the selection of
+each capability (speech, transcription, images, video, web search, document
+extraction). Model settings now live on the server (`/api/model-config`), and
+`model-settings.ts` carries them over once:
+
+1. The settings store's migration to version 5 builds a proposal from the old
+   state (`buildModelSettingsProposal`, pure) and keeps it under
+   `maic:legacy-import:model-settings`, only when it holds something: a key, a
+   custom endpoint or a model choice. The store then drops those fields.
+2. Once the store has hydrated, `components/model-settings-init.tsx` posts the
+   proposal to `POST /api/model-config/import`, which merges it item by item
+   and never replaces an existing setting (a provider id already declared, a
+   slot the workspace already sets or the deployment locks).
+
+| Answer                                   | Handling                                                                                     |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 2xx                                      | The proposal, and every key in it, is removed from the browser. Skipped items are logged.    |
+| 400                                      | The proposal is dropped: sending it again cannot succeed.                                    |
+| 404 (no server persistence), 401, 409, 5xx, network error | The proposal stays; a later load (or unlocking the access code) tries again. |
+
+What the proposal holds:
+
+| Browser state                                                   | Proposed as                                                                                       |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| A built-in chat provider with a key or its own base URL         | a provider of preset `presetIdFor('chat', id)`                                                     |
+| A custom chat provider (OpenAI-compatible)                      | a provider of preset `openai-compatible` with its base URL and model ids (Anthropic / Google custom providers keep their own preset) |
+| An enrolled token plan                                          | one provider of preset `tokenPlanPresetId(plan)` with the plan's key; the services the plan filled with the same key are that provider |
+| A speech, transcription, image, video, web search or document provider with a key | a provider of preset `presetIdFor(capability, id)`                              |
+| The chosen model                                                | `slots.llm` = `provider:model`; a server-configured provider is named by its preset id, as the server names translated legacy providers |
+| An enabled selection whose provider is proposed                 | the capability's root slot (`tts`, `asr`, `image`, `video`, `webSearch`, `document`)              |
+| Browser speech synthesis or recognition, when selected          | a `browser-native-tts` / `browser-native` provider and its root slot                              |
+
+Not imported: per-stage routes (`llmStageRoutes`), which do not map one to one
+onto slots; custom speech and transcription providers; AliDocMind's key pair
+(a workspace provider holds one key); thinking settings. A base URL a
+workspace may not set (any service but chat) makes the server skip that
+provider, with the reason in the log. Provider ids are derived to match
+`^[a-z0-9][a-z0-9-]{0,62}$` and made unique within the proposal.
+
+Clear Local Cache keeps a proposal that is still waiting: it exists nowhere
+else.
+
 ## Removal
 
 When the maintainers decide enough releases have passed:
 
 1. Delete `lib/legacy-browser-import/` and its tests (`tests/legacy-browser-import/`,
-   `e2e/tests/legacy-browser-import.spec.ts`). `lib/device-storage/clear-local-cache.ts`
+   `e2e/tests/legacy-browser-import.spec.ts`), with `components/model-settings-init.tsx`
+   (and its uses in `app/layout.tsx` and `components/access-code-guard.tsx`), the
+   version 5 step of the settings store's migration and
+   `tests/store/settings-model-settings-migration.test.ts`;
+   `lib/device-storage/clear-local-cache.ts` keeps `MODEL_SETTINGS_IMPORT_KEY`: drop it. `lib/device-storage/clear-local-cache.ts`
    imports `LEDGER_KEY` and `legacyImportIsComplete` from `ledger.ts`: define the
    ledger key there again (or drop it with step 5) and drop the quiz-key retention,
    with its cases in `tests/settings/general-settings.test.ts`.
