@@ -149,6 +149,66 @@ const T = (key: string, options?: Record<string, unknown>) =>
   options ? [key, ...Object.values(options)].join('|') : key;
 
 describe('provider form → change', () => {
+  it('retries an add it could not confirm under the same id', async () => {
+    const view = makeView();
+    const changes: ModelSettingsChange[] = [];
+    const answers: ApplyResult[] = [
+      { ok: false, reason: 'unconfirmed', message: 'lost' },
+      { ok: true, view },
+    ];
+    const apply = vi.fn(async (change: ModelSettingsChange) => {
+      changes.push(change);
+      return answers.shift()!;
+    });
+    const { render } = mount(createElement(ProvidersPanel, { view, apply, t: T }));
+
+    click(byText('settings.modelSettings.providers.add'));
+    type(document.body.querySelector('select')!, chatPreset.id);
+    type(document.body.querySelector<HTMLInputElement>('input[type="password"]')!, 'sk-1');
+    click(byText('settings.modelSettings.providers.add'));
+    await flush();
+    expect(document.body.textContent).toContain('settings.modelSettings.picker.unconfirmed');
+
+    // Later the settings read again and show the provider: the retry updates it.
+    render(
+      createElement(ProvidersPanel, {
+        view: makeView({ providers: [workspaceProvider('acme')] }),
+        apply,
+        t: T,
+      }),
+    );
+    click(byText('settings.modelSettings.providers.add'));
+    await flush();
+
+    expect(changes.map((change) => change.kind === 'provider' && change.id)).toEqual([
+      'acme',
+      'acme',
+    ]);
+  });
+
+  it('closes the form when the reload after a lost answer shows the provider', async () => {
+    const view = makeView();
+    const saved = makeView({ providers: [workspaceProvider('acme')] });
+    const apply = vi.fn(
+      async (): Promise<ApplyResult> => ({
+        ok: false,
+        reason: 'unconfirmed',
+        message: 'lost',
+        view: saved,
+      }),
+    );
+    mount(createElement(ProvidersPanel, { view, apply, t: T }));
+
+    click(byText('settings.modelSettings.providers.add'));
+    type(document.body.querySelector('select')!, chatPreset.id);
+    click(byText('settings.modelSettings.providers.add'));
+    await flush();
+
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(document.body.querySelector('select')).toBeNull();
+    expect(document.body.textContent).not.toContain('settings.modelSettings.picker.unconfirmed');
+  });
+
   it('asks for a new key when the stored one is unreadable, and sends the one typed', async () => {
     const broken = { ...workspaceProvider('acme'), key: { set: true, unreadable: true } };
     const view = makeView({ providers: [broken] });
@@ -429,6 +489,62 @@ describe('first-run setup', () => {
     expect(methods).toEqual(['GET', 'PUT', 'GET', 'PUT']);
     expect(document.body.textContent).not.toContain('settings.modelSettings.setup.connecting');
     expect(document.body.textContent).not.toContain('settings.modelSettings.setup.partial');
+  });
+
+  it('reconciles a provider add whose request failed after the server saved it', async () => {
+    const withProvider = makeView({ revision: 1, providers: [workspaceProvider('acme')] });
+    const methods: string[] = [];
+    const answers: (() => Response)[] = [
+      () => json(makeView({ revision: null })),
+      () => {
+        throw new TypeError('Failed to fetch');
+      },
+      () => json(withProvider),
+      () => json(withSlots(withProvider, { llm: { assignment: 'acme:acme-large' } })),
+    ];
+    const fetchImpl = vi.fn(async (_input: string, init?: RequestInit) => {
+      methods.push(init?.method ?? 'GET');
+      return answers.shift()!();
+    });
+    mount(createElement(ModelSettingsPanel, { client: createModelSettingsClient(fetchImpl) }));
+    await flush();
+
+    await connect();
+
+    expect(methods).toEqual(['GET', 'PUT', 'GET', 'PUT']);
+    expect(document.body.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('keeps an add it cannot confirm as a notice, and checks again', async () => {
+    const withProvider = makeView({ revision: 1, providers: [workspaceProvider('acme')] });
+    const methods: string[] = [];
+    const answers: (() => Response)[] = [
+      () => json(makeView({ revision: null })),
+      () => {
+        throw new TypeError('Failed to fetch');
+      },
+      () => {
+        throw new TypeError('Failed to fetch');
+      },
+      () => json(withProvider),
+      () => json(withSlots(withProvider, { llm: { assignment: 'acme:acme-large' } })),
+    ];
+    const fetchImpl = vi.fn(async (_input: string, init?: RequestInit) => {
+      methods.push(init?.method ?? 'GET');
+      return answers.shift()!();
+    });
+    mount(createElement(ModelSettingsPanel, { client: createModelSettingsClient(fetchImpl) }));
+    await flush();
+
+    await connect();
+    const notice = byText('settings.modelSettings.setup.unconfirmedAdd', '[role="alert"]');
+    expect(notice.textContent).toContain('Acme');
+
+    click(byText('settings.modelSettings.setup.checkAgain'));
+    await flush();
+
+    expect(methods).toEqual(['GET', 'PUT', 'GET', 'GET', 'PUT']);
+    expect(document.body.textContent).not.toContain('settings.modelSettings.setup.unconfirmedAdd');
   });
 
   it('says so, and frees the form, when the answer is lost and nothing was saved', async () => {

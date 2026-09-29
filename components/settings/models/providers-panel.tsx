@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { AlertCircle, KeyRound, Loader2, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import {
@@ -92,15 +92,32 @@ function ProviderEditor({
   const problem = draftProblem(preset, draft);
   const hint = draft.preset ? problemMessage(problem, t) : undefined;
 
+  // A new provider's id, kept across tries: an add whose answer was lost may
+  // have saved it, and a retry must update that provider, not add a second.
+  const attempt = useRef<{ id: string; preset: string; unconfirmed: boolean } | null>(null);
+
+  const newId = (presetId: string) => {
+    const previous = attempt.current;
+    const taken = view.providers.some((provider) => provider.id === previous?.id);
+    return previous && previous.preset === presetId && (previous.unconfirmed || !taken)
+      ? previous.id
+      : newProviderId(view, presetId);
+  };
+
   const save = async () => {
     if (!preset || problem) return;
     setSaving(true);
     setMessage(null);
     try {
-      const id = existing?.id ?? newProviderId(view, preset.id);
+      const id = existing?.id ?? newId(preset.id);
       const result = await apply(providerChange(id, draft, preset, existing));
-      if (result.ok) onDone();
-      else setMessage(applyErrorText(result, t));
+      if (result.ok) return onDone();
+      if (!existing) {
+        attempt.current = { id, preset: preset.id, unconfirmed: result.reason === 'unconfirmed' };
+        // The reloaded view has it: the add went through after all.
+        if (result.view?.providers.some((provider) => provider.id === id)) return onDone();
+      }
+      setMessage(applyErrorText(result, t));
     } finally {
       setSaving(false);
     }
