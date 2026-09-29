@@ -9,8 +9,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
+
 const mocks = vi.hoisted(() => ({
-  settings: vi.fn(),
   mediaPut: vi.fn(),
   mediaDelete: vi.fn(),
   mediaGet: vi.fn(),
@@ -24,10 +25,6 @@ const mocks = vi.hoisted(() => ({
   takeAllocations: vi.fn(),
   mediaWhere: vi.fn(),
   placeAllocations: vi.fn(),
-}));
-
-vi.mock('@/lib/store/settings', () => ({
-  useSettingsStore: { getState: mocks.settings },
 }));
 
 vi.mock('@/lib/store/stage', () => ({
@@ -196,15 +193,10 @@ describe('server-backed classic media orchestrator', () => {
       scenes: [sceneWithImage(1, imageRef)],
       generationComplete: false,
     });
-    mocks.settings.mockReset().mockReturnValue({
-      imageGenerationEnabled: true,
-      videoGenerationEnabled: true,
-      imageProviderId: 'image-provider',
-      imageModelId: 'image-model',
-      imageProvidersConfig: {},
-      videoProviderId: 'video-provider',
-      videoModelId: 'video-model',
-      videoProvidersConfig: {},
+    // The workspace's image and video slots resolve to a provider.
+    setModelSettingsViewForTests({
+      image: { registryId: 'seedream' },
+      video: { registryId: 'seedance' },
     });
     useMediaGenerationStore.setState({ tasks: {} });
 

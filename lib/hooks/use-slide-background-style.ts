@@ -3,7 +3,8 @@ import type { SlideBackground } from '@openmaic/dsl';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
 import { renderableMediaUrl, useResolvedMediaRef } from '@/lib/media/resolve-media-ref';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
-import { useSettingsStore } from '@/lib/store/settings';
+import { mediaGenerationDisabled as isMediaGenerationDisabled } from '@/lib/model-settings/capabilities';
+import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 
 /**
  * Convert slide background data to CSS styles
@@ -19,7 +20,7 @@ export function useSlideBackgroundStyle(background: SlideBackground | undefined)
       (candidate) => candidate.stageId === stageId && candidate.placeholderRef === ref,
     );
   });
-  const imageGenerationDisabled = useSettingsStore((state) => !state.imageGenerationEnabled);
+  const imageGenerationDisabled = isMediaGenerationDisabled(useModelCapabilities(), 'image');
   const resolution = useResolvedMediaRef(ref, task, imageGenerationDisabled);
   const resolvedSrc = renderableMediaUrl(resolution);
   const backgroundStyle = useMemo<React.CSSProperties>(() => {

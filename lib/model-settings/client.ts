@@ -16,9 +16,17 @@ import type {
   PresetView,
   ProviderView,
   SlotView,
+  TargetView,
 } from '@/lib/server/model-config/settings';
 
-export type { ModelSettingsChange, ModelSettingsView, PresetView, ProviderView, SlotView };
+export type {
+  ModelSettingsChange,
+  ModelSettingsView,
+  PresetView,
+  ProviderView,
+  SlotView,
+  TargetView,
+};
 
 export const MODEL_SETTINGS_ENDPOINT = '/api/model-config';
 

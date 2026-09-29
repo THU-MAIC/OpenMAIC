@@ -44,7 +44,9 @@
     "ttsPreview": "Pré-visualizar",
     "ttsPreviewing": "Reproduzindo...",
     "interactiveModeHint": "Ative o modo interativo para conteúdos mais práticos",
-    "interactiveModeLabel": "Modo Interativo"
+    "interactiveModeLabel": "Modo Interativo",
+    "modelChangeFailed": "Não foi possível trocar o modelo: {{message}}",
+    "modelLockedHint": "O modelo usado pelos cursos, definido por este servidor"
   },
   "export": {
     "pptx": "Exportar PPTX",

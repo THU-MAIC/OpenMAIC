@@ -29,8 +29,6 @@ import {
   TTS_PROVIDERS,
   DEFAULT_TTS_VOICES,
   isQwenCloneVoice,
-  QWEN_TTS_VOICE_CLONE_MODEL,
-  resolveTTSModelForVoice,
   getManuallySelectableTTSModels,
 } from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
@@ -178,20 +176,8 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       await startPreview({
         text: testText,
         providerId: selectedProviderId,
-        modelId: resolveTTSModelForVoice(
-          selectedProviderId,
-          effectiveVoice,
-          ttsProvidersConfig[selectedProviderId]?.modelId || ttsProvider?.defaultModelId || '',
-        ),
         voice: effectiveVoice,
         speed: ttsSpeed,
-        apiKey: ttsProvidersConfig[selectedProviderId]?.apiKey,
-        // Managed providers resolve their base URL server-side; only send the
-        // client's own base URL (custom providers).
-        baseUrl:
-          ttsProvidersConfig[selectedProviderId]?.baseUrl ||
-          providerConfig?.customDefaultBaseUrl ||
-          '',
         providerOptions,
       });
       setTestStatus('success');
@@ -847,12 +833,8 @@ function VoxCPMVoiceManager() {
       await startPreview({
         text: t('settings.ttsTestTextDefault'),
         providerId: VOXCPM_TTS_PROVIDER_ID,
-        modelId:
-          providerConfig?.modelId || TTS_PROVIDERS[VOXCPM_TTS_PROVIDER_ID]?.defaultModelId || '',
         voice: voiceId,
         speed: ttsSpeed,
-        apiKey: providerConfig?.apiKey,
-        baseUrl,
         providerOptions: {
           ...(providerConfig?.providerOptions || {}),
           ...providerOptions,
@@ -1163,11 +1145,9 @@ function QwenVoiceCloneManager() {
   const ttsProviderId = useSettingsStore((state) => state.ttsProviderId);
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
-  const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
   const setTTSVoice = useSettingsStore((state) => state.setTTSVoice);
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
   const { previewing, startPreview, stopPreview } = useTTSPreview();
-  const providerConfig = ttsProvidersConfig['qwen-tts'];
 
   const [name, setName] = useState('');
   const [refText, setRefText] = useState('');
@@ -1297,13 +1277,7 @@ function QwenVoiceCloneManager() {
     if (!name.trim() || !refText.trim() || !referenceFile) return;
     setSaving(true);
     try {
-      const voiceId = await addCloneVoice(
-        { name, referenceAudio: referenceFile, refText },
-        {
-          ttsApiKey: providerConfig?.apiKey || undefined,
-          ttsBaseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl || undefined,
-        },
-      );
+      const voiceId = await addCloneVoice({ name, referenceAudio: referenceFile, refText }, {});
       if (ttsProviderId === 'qwen-tts') setTTSVoice(voiceId);
       setName('');
       setRefText('');
@@ -1327,11 +1301,8 @@ function QwenVoiceCloneManager() {
       await startPreview({
         text: t('settings.ttsTestTextDefault'),
         providerId: 'qwen-tts',
-        modelId: QWEN_TTS_VOICE_CLONE_MODEL,
         voice: voiceId,
         speed: ttsSpeed,
-        apiKey: providerConfig?.apiKey,
-        baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
       });
     } catch (error) {
       setPreviewingVoiceId(null);
@@ -1340,10 +1311,7 @@ function QwenVoiceCloneManager() {
   };
 
   const handleDelete = async (voiceId: string) => {
-    const vendorDeleted = await deleteVoice(voiceId, {
-      ttsApiKey: providerConfig?.apiKey || undefined,
-      ttsBaseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl || undefined,
-    });
+    const vendorDeleted = await deleteVoice(voiceId, {});
     if (!vendorDeleted) toast.warning(t('settings.qwenCloneDeleteWarning'));
     if (ttsProviderId === 'qwen-tts' && ttsVoice === voiceId) {
       setTTSVoice(DEFAULT_TTS_VOICES['qwen-tts']);

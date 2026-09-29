@@ -17,7 +17,6 @@ import {
   resolveNarratorVoiceForGeneration,
 } from '@/lib/audio/voice-resolver';
 import { isQwenCloneVoice, resolveTTSModelForVoice } from '@/lib/audio/constants';
-import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { useAllVoiceProfiles } from '@/lib/audio/voxcpm-voices';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
@@ -33,7 +32,8 @@ import {
   cleanupOldImages,
   storeImages,
 } from '@/lib/utils/image-storage';
-import { getCurrentModelConfig, getStageRoutesHeaderValue } from '@/lib/utils/model-config';
+import { currentModelCapabilities, loadModelCapabilities } from '@/lib/model-settings/capabilities';
+import { serverTTSAvailable, ttsSelection } from '@/lib/audio/tts-selection';
 import { resolveSessionDocumentSources } from '@/lib/document/session-sources';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import {
@@ -250,39 +250,16 @@ function GenerationPreviewContent() {
     };
   }, []);
 
-  // Get API credentials from localStorage
+  // The server resolves every model and provider from the workspace's model
+  // settings; the client only says which media the outline may plan for.
+  // (`startGeneration` reads the settings before the first request.)
   const getApiHeaders = () => {
-    const modelConfig = getCurrentModelConfig();
-    const settings = useSettingsStore.getState();
-    const imageProviderConfig = settings.imageProvidersConfig?.[settings.imageProviderId];
-    const videoProviderConfig = settings.videoProvidersConfig?.[settings.videoProviderId];
-    const stageRoutesHeader = getStageRoutesHeaderValue();
+    const capabilities = currentModelCapabilities();
     return {
       'Content-Type': 'application/json',
-      ...(stageRoutesHeader ? { 'x-model-routes': stageRoutesHeader } : {}),
-      'x-model': modelConfig.modelString,
-      'x-api-key': modelConfig.apiKey,
-      'x-base-url': modelConfig.baseUrl,
-      'x-provider-type': modelConfig.providerType || '',
-      // Image generation provider
-      'x-image-provider': settings.imageProviderId || '',
-      'x-image-model': settings.imageModelId || '',
-      'x-image-api-key': imageProviderConfig?.apiKey || '',
-      'x-image-base-url': imageProviderConfig?.baseUrl || '',
-      // Video generation provider
-      'x-video-provider': settings.videoProviderId || '',
-      'x-video-model': settings.videoModelId || '',
-      'x-video-api-key': videoProviderConfig?.apiKey || '',
-      'x-video-base-url': videoProviderConfig?.baseUrl || '',
-      // Media generation toggles
-      'x-image-generation-enabled': String(settings.imageGenerationEnabled ?? false),
-      'x-video-generation-enabled': String(settings.videoGenerationEnabled ?? false),
+      'x-image-generation-enabled': String(!!capabilities.image),
+      'x-video-generation-enabled': String(!!capabilities.video),
     };
-  };
-
-  const withThinkingConfig = <T extends Record<string, unknown>>(body: T) => {
-    const { thinkingConfig } = getCurrentModelConfig();
-    return thinkingConfig ? { ...body, thinkingConfig } : body;
   };
 
   // Auto-start generation when session is loaded
@@ -322,6 +299,9 @@ function GenerationPreviewContent() {
     setCurrentStepIndex(0);
 
     try {
+      // The workspace's model settings, read once for the whole run.
+      await loadModelCapabilities();
+
       // Compute active steps for this session (recomputed after session mutations)
       let activeSteps = getActiveSteps(currentSession);
 
@@ -341,18 +321,6 @@ function GenerationPreviewContent() {
         const sortedDocumentSources = [...documentSources].sort((a, b) => a.order - b.order);
         const parsedParts = await Promise.all(
           sortedDocumentSources.map(async (source): Promise<ParsedDocumentPart> => {
-            const providerId = source.providerId || currentSession.pdfProviderId;
-            const legacySourceConfig = (
-              source as SessionDocumentSource & {
-                providerConfig?: {
-                  apiKey?: string;
-                  baseUrl?: string;
-                  accessKeyId?: string;
-                  accessKeySecret?: string;
-                };
-              }
-            ).providerConfig;
-            const providerConfig = currentSession.pdfProviderConfig || legacySourceConfig;
             const documentBlob = await loadDocumentBlob(source.storageKey);
             if (!(documentBlob instanceof Blob) || documentBlob.size === 0) {
               throw new Error(t('generation.courseMaterialLoadFailed'));
@@ -360,19 +328,9 @@ function GenerationPreviewContent() {
             const documentFile = new File([documentBlob], source.name || 'document.pdf', {
               type: source.mimeType || documentBlob.type || 'application/pdf',
             });
+            // The workspace's document slot names the extractor on the server.
             const parseFormData = new FormData();
             parseFormData.append('file', documentFile);
-            if (providerId) parseFormData.append('providerId', providerId);
-            if (providerConfig?.apiKey?.trim())
-              parseFormData.append('apiKey', providerConfig.apiKey);
-            if (providerConfig?.baseUrl?.trim())
-              parseFormData.append('baseUrl', providerConfig.baseUrl);
-            if (providerConfig?.accessKeyId?.trim()) {
-              parseFormData.append('accessKeyId', providerConfig.accessKeyId);
-            }
-            if (providerConfig?.accessKeySecret?.trim()) {
-              parseFormData.append('accessKeySecret', providerConfig.accessKeySecret);
-            }
             const parseResponse = await fetch('/api/extract-document', {
               method: 'POST',
               body: parseFormData,
@@ -408,7 +366,6 @@ function GenerationPreviewContent() {
                 lastModified: source.lastModified,
                 mimeType: source.mimeType,
                 order: source.order,
-                providerId,
               },
               text: parseData.text as string,
               rawTextLength: (parseData.text as string).length,
@@ -476,23 +433,14 @@ function GenerationPreviewContent() {
         setCurrentStepIndex(webSearchStepIdx);
         setWebSearchSources([]);
 
-        const wsSettings = useSettingsStore.getState();
-        const wsProviderId = wsSettings.webSearchProviderId;
-        const wsConfig = wsSettings.webSearchProvidersConfig?.[wsProviderId];
+        // The workspace's webSearch slot names the provider on the server.
         const res = await fetch('/api/web-search', {
           method: 'POST',
           headers: getApiHeaders(),
-          body: JSON.stringify(
-            withThinkingConfig({
-              query: currentSession.requirements.requirement,
-              pdfText: currentSession.pdfText || undefined,
-              providerId: wsProviderId,
-              apiKey: wsConfig?.apiKey || undefined,
-              baseUrl: wsProviderId === 'searxng' ? undefined : wsConfig?.baseUrl || undefined,
-              baiduSubSources: wsProviderId === 'baidu' ? wsSettings.baiduSubSources : undefined,
-              claudeModelId: wsProviderId === 'claude' ? wsConfig?.modelId || undefined : undefined,
-            }),
-          ),
+          body: JSON.stringify({
+            query: currentSession.requirements.requirement,
+            pdfText: currentSession.pdfText || undefined,
+          }),
           signal,
         });
 
@@ -570,15 +518,13 @@ function GenerationPreviewContent() {
           fetch('/api/generate/scene-outlines-stream', {
             method: 'POST',
             headers: getApiHeaders(),
-            body: JSON.stringify(
-              withThinkingConfig({
-                requirements: currentSession.requirements,
-                pdfText: currentSession.pdfText,
-                pdfImages: currentSession.pdfImages,
-                imageMapping,
-                researchContext: currentSession.researchContext,
-              }),
-            ),
+            body: JSON.stringify({
+              requirements: currentSession.requirements,
+              pdfText: currentSession.pdfText,
+              pdfImages: currentSession.pdfImages,
+              imageMapping,
+              researchContext: currentSession.researchContext,
+            }),
             signal,
           })
             .then((res) => {
@@ -736,6 +682,8 @@ function GenerationPreviewContent() {
 
       // ── Agent generation (after outlines — uses languageDirective + outlines) ──
       const settings = useSettingsStore.getState();
+      // The tts slot's provider, and the user's voice for it.
+      const tts = ttsSelection();
       let agents: Array<{
         id: string;
         name: string;
@@ -800,10 +748,9 @@ function GenerationPreviewContent() {
           ];
 
           const getAvailableVoicesForGeneration = () => {
-            const providers = getEnabledProvidersWithVoices(
-              settings.ttsProvidersConfig,
-              voiceProfiles,
-            );
+            const providers = tts
+              ? getEnabledProvidersWithVoices(tts.providersConfig, voiceProfiles)
+              : [];
             return providers.flatMap((p) =>
               p.voices.map((v) => {
                 const cloneModelGroup =
@@ -834,29 +781,29 @@ function GenerationPreviewContent() {
           // provider) is NOT pinned — the LLM then picks a working advertised
           // voice and the narration fallback machinery stays alive.
           const getNarratorVoiceForGeneration = () =>
-            resolveNarratorVoiceForGeneration(
-              settings.ttsProviderId,
-              settings.ttsVoice,
-              settings.ttsProvidersConfig[settings.ttsProviderId],
-            );
+            tts
+              ? resolveNarratorVoiceForGeneration(
+                  tts.providerId,
+                  tts.voice,
+                  tts.providersConfig[tts.providerId],
+                )
+              : undefined;
 
           const agentResp = await fetch('/api/generate/agent-profiles', {
             method: 'POST',
             headers: getApiHeaders(),
-            body: JSON.stringify(
-              withThinkingConfig({
-                stageInfo: { name: stage.name, description: stage.description },
-                sceneOutlines: outlines.map((o) => ({
-                  title: o.title,
-                  description: o.description,
-                })),
-                languageDirective,
-                availableAvatars: allAvatars.map((a) => a.path),
-                avatarDescriptions: allAvatars.map((a) => ({ path: a.path, desc: a.desc })),
-                availableVoices: getAvailableVoicesForGeneration(),
-                narratorVoice: getNarratorVoiceForGeneration(),
-              }),
-            ),
+            body: JSON.stringify({
+              stageInfo: { name: stage.name, description: stage.description },
+              sceneOutlines: outlines.map((o) => ({
+                title: o.title,
+                description: o.description,
+              })),
+              languageDirective,
+              availableAvatars: allAvatars.map((a) => a.path),
+              avatarDescriptions: allAvatars.map((a) => ({ path: a.path, desc: a.desc })),
+              availableVoices: getAvailableVoicesForGeneration(),
+              narratorVoice: getNarratorVoiceForGeneration(),
+            }),
             signal,
           });
 
@@ -1013,14 +960,7 @@ function GenerationPreviewContent() {
       const firstScene = data.scene;
 
       // Generate TTS for first scene (part of actions step — blocking)
-      if (
-        settings.ttsEnabled &&
-        settings.ttsProviderId !== 'browser-native-tts' &&
-        isTTSProviderEnabled(
-          settings.ttsProviderId,
-          settings.ttsProvidersConfig?.[settings.ttsProviderId],
-        )
-      ) {
+      if (serverTTSAvailable()) {
         const ttsResult = await generateTTSForScene(
           firstScene,
           languageDirective,

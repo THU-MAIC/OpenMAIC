@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+
+import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
 import type { SceneOutline } from '@/lib/types/generation';
 
 const mocks = vi.hoisted(() => ({
-  getCurrentModelConfig: vi.fn(),
+  parallelSceneConcurrency: 0,
   settingsState: vi.fn(),
   audioPut: vi.fn(),
   audioDelete: vi.fn(),
@@ -16,9 +18,9 @@ const mocks = vi.hoisted(() => ({
   toastWarning: vi.fn(),
 }));
 
-vi.mock('@/lib/utils/model-config', () => ({
-  getCurrentModelConfig: mocks.getCurrentModelConfig,
-  getStageRoutesHeaderValue: () => undefined,
+// How many narration clips may be generated at once (GET /api/health).
+vi.mock('@/lib/generation/server-generation-settings', () => ({
+  getParallelSceneConcurrency: async () => mocks.parallelSceneConcurrency,
 }));
 
 vi.mock('@/lib/store/settings', () => ({
@@ -90,6 +92,7 @@ function jsonResponse(status: number, body: unknown) {
 
 describe('scene generation retry wrappers', () => {
   beforeEach(() => {
+    mocks.parallelSceneConcurrency = 0;
     mockFetch.mockReset();
     mocks.audioPut.mockReset();
     mocks.audioDelete.mockReset().mockResolvedValue(undefined);
@@ -97,7 +100,6 @@ describe('scene generation retry wrappers', () => {
     mocks.poolReplace.mockReset().mockResolvedValue(undefined);
     mocks.poolRemove.mockReset().mockResolvedValue(undefined);
     mocks.poolPut.mockResolvedValue('ast_audio_allocated');
-    mocks.getCurrentModelConfig.mockReturnValue({});
     mocks.settingsState.mockReturnValue({
       imageProviderId: '',
       imageProvidersConfig: {},
@@ -115,6 +117,8 @@ describe('scene generation retry wrappers', () => {
       ttsVoice: 'narrator',
       ttsSpeed: 1,
     });
+    // The workspace's tts slot resolves to this provider.
+    setModelSettingsViewForTests({ tts: { registryId: 'server-tts', modelId: 'tts-model' } });
     mocks.isTTSProviderEnabled.mockReturnValue(true);
     mocks.pickNarratorAgent.mockReturnValue(undefined);
     mocks.resolveAgentVoiceOptions.mockResolvedValue({});
@@ -302,6 +306,10 @@ describe('scene generation retry wrappers', () => {
         'qwen-tts': { apiKey: 'tts-key', modelId: 'qwen3-tts-vc-2026-01-22' },
       },
     });
+    // The workspace's tts slot resolves to this provider.
+    setModelSettingsViewForTests({
+      tts: { registryId: 'qwen-tts', modelId: 'qwen3-tts-vc-2026-01-22' },
+    });
     mocks.pickNarratorAgent.mockReturnValue({
       id: 'teacher-missing-clone',
       role: 'teacher',
@@ -329,9 +337,8 @@ describe('scene generation retry wrappers', () => {
     const secondBody = JSON.parse(String(mockFetch.mock.calls[1][1]?.body));
     expect(firstBody).toMatchObject({
       ttsVoice: 'deleted-clone-id',
-      ttsModelId: 'qwen3-tts-vc-2026-01-22',
     });
-    expect(secondBody).toMatchObject({ ttsVoice: 'Cherry', ttsModelId: 'qwen3-tts-flash' });
+    expect(secondBody).toMatchObject({ ttsVoice: 'Cherry' });
     expect(mocks.toastWarning).toHaveBeenCalledOnce();
   });
 
@@ -392,10 +399,7 @@ describe('scene generation retry wrappers', () => {
 
   it('waits for parallel TTS workers before rolling back an abandoned scene', async () => {
     const { generateTTSForScene } = await import('@/lib/hooks/use-scene-generator');
-    mocks.settingsState.mockReturnValue({
-      ...mocks.settingsState(),
-      parallelSceneConcurrency: 2,
-    });
+    mocks.parallelSceneConcurrency = 2;
     const abort = Object.assign(new Error('Aborted'), { name: 'AbortError' });
     let releaseSibling!: () => void;
     const siblingMayFinish = new Promise<void>((resolve) => {

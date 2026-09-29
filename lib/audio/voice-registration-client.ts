@@ -14,9 +14,11 @@ import { db } from '@/lib/device-storage/database';
 import { getDeterministicVoiceId, type VoiceDesign } from '@/lib/audio/voice-design';
 import { clearVoiceBindingUnavailable } from '@/lib/audio/unavailable-voice-bindings';
 
+/**
+ * What a registration request says about the model. The provider's key and
+ * endpoint are the `tts` slot's, resolved on the server.
+ */
 export interface VoiceRegistrationRequestConfig {
-  ttsApiKey?: string;
-  ttsBaseUrl?: string;
   ttsModelId?: string;
 }
 
@@ -95,17 +97,14 @@ export async function deleteRegisteredVoice(
   }
 }
 
-// Confirmed-registered + in-flight memos, keyed by (voiceId, backend, credential).
-// The same voiceId may be unregistered — or inaccessible — on a different backend
-// or under different credentials, so both the base URL and the API key are part
-// of the key. Otherwise switching the VoxCPM base URL or account mid-session
-// would skip re-registration and reuse an id from the old backend/credentials.
+// Confirmed-registered + in-flight memos, keyed by (voiceId, model). The
+// provider's endpoint and key are the server's (the `tts` slot), so a change
+// there is only seen on the next page load.
 const registeredThisSession = new Set<string>();
 const inFlight = new Map<string, Promise<string | undefined>>();
 
 function memoKeyFor(voiceId: string, request: VoiceRegistrationRequestConfig): string {
-  // In-memory only (never persisted or logged), so the raw key identity is fine.
-  return `${voiceId}::${request.ttsBaseUrl ?? ''}::${request.ttsApiKey ?? ''}`;
+  return `${voiceId}::${request.ttsModelId ?? ''}`;
 }
 
 async function getCachedClip(

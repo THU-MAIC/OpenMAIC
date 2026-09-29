@@ -6,14 +6,11 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
+
 const mocks = vi.hoisted(() => ({
-  settings: vi.fn(),
   mediaDelete: vi.fn(),
   mediaGet: vi.fn(),
-}));
-
-vi.mock('@/lib/store/settings', () => ({
-  useSettingsStore: { getState: mocks.settings },
 }));
 
 vi.mock('@/lib/device-storage/database', () => ({
@@ -94,15 +91,10 @@ describe('retryMediaTask honours the same permission', () => {
     resetGenerationPermissionsForTests();
     mocks.mediaDelete.mockReset().mockResolvedValue(undefined);
     mocks.mediaGet.mockReset().mockResolvedValue(undefined);
-    mocks.settings.mockReset().mockReturnValue({
-      imageGenerationEnabled: true,
-      videoGenerationEnabled: true,
-      imageProviderId: 'p',
-      imageModelId: 'm',
-      imageProvidersConfig: {},
-      videoProviderId: 'p',
-      videoModelId: 'm',
-      videoProvidersConfig: {},
+    // The workspace's image and video slots resolve to a provider.
+    setModelSettingsViewForTests({
+      image: { registryId: 'seedream' },
+      video: { registryId: 'seedance' },
     });
     useMediaGenerationStore.setState({
       tasks: {

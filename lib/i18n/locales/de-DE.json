@@ -44,7 +44,9 @@
     "ttsPreview": "Vorschau",
     "ttsPreviewing": "Wird abgespielt...",
     "interactiveModeHint": "Aktiviere den interaktiven Modus, damit bevorzugt interaktive Inhalte erzeugt werden",
-    "interactiveModeLabel": "Interaktiver Modus"
+    "interactiveModeLabel": "Interaktiver Modus",
+    "modelChangeFailed": "Das Modell konnte nicht geändert werden: {{message}}",
+    "modelLockedHint": "Das Modell für Kurse, von diesem Server festgelegt"
   },
   "export": {
     "pptx": "PPTX exportieren",

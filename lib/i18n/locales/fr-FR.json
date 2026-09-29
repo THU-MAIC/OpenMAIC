@@ -44,7 +44,9 @@
     "ttsPreview": "Écouter",
     "ttsPreviewing": "Lecture…",
     "interactiveModeHint": "Activez le mode interactif pour obtenir un contenu plus pratique",
-    "interactiveModeLabel": "Mode interactif"
+    "interactiveModeLabel": "Mode interactif",
+    "modelChangeFailed": "Impossible de changer de modèle : {{message}}",
+    "modelLockedHint": "Le modèle utilisé pour les cours, défini par ce serveur"
   },
   "export": {
     "pptx": "Exporter en PPTX",

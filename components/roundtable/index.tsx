@@ -25,6 +25,8 @@ import { useAudioRecorder } from '@/lib/hooks/use-audio-recorder';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { toast } from 'sonner';
 import { useSettingsStore, PLAYBACK_SPEEDS } from '@/lib/store/settings';
+import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
+import { useASRAvailable } from '@/lib/hooks/use-asr-available';
 import { ProactiveCard } from '@/components/chat/proactive-card';
 import { PresentationSpeechOverlay } from '@/components/roundtable/presentation-speech-overlay';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
@@ -212,8 +214,10 @@ export function Roundtable({
   const { t } = useI18n();
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
   const setTTSMuted = useSettingsStore((s) => s.setTTSMuted);
-  const ttsEnabled = useSettingsStore((state) => state.ttsEnabled);
-  const asrEnabled = useSettingsStore((state) => state.asrEnabled);
+  // The workspace's tts and asr slots decide whether narration and speech
+  // input are available.
+  const ttsEnabled = !!useModelCapabilities().tts;
+  const asrEnabled = useASRAvailable();
   const chatAreaWidth = useSettingsStore((s) => s.chatAreaWidth);
   const ttsVolume = useSettingsStore((s) => s.ttsVolume);
   const setTTSVolume = useSettingsStore((s) => s.setTTSVolume);

@@ -44,7 +44,9 @@
     "ttsPreview": "試聽",
     "ttsPreviewing": "播放中...",
     "interactiveModeHint": "啟用互動優先模式以獲得更多實作內容",
-    "interactiveModeLabel": "互動模式"
+    "interactiveModeLabel": "互動模式",
+    "modelChangeFailed": "無法切換模型：{{message}}",
+    "modelLockedHint": "課程使用的模型，由此伺服器設定"
   },
   "export": {
     "pptx": "匯出 PPTX",

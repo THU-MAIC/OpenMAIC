@@ -349,7 +349,7 @@ describe('settings rehydrate — built-in provider models', () => {
       SETTINGS_KV_KEY,
       JSON.stringify({
         state: { editInsertToolbarCollapsed: true },
-        version: 4,
+        version: 5,
       }),
     );
 
@@ -1080,7 +1080,7 @@ describe('fetchServerProviders — ASR provider-language invariant (#1082)', () 
           asrProvidersConfig: {},
           autoConfigApplied: true,
         },
-        version: 4,
+        version: 5,
       }),
     );
 
@@ -1153,7 +1153,7 @@ describe('fetchServerProviders — ASR provider-language invariant (#1082)', () 
           asrProvidersConfig: {},
           autoConfigApplied: true,
         },
-        version: 4,
+        version: 5,
       }),
     );
     const store1 = await getStore();
@@ -1170,7 +1170,7 @@ describe('fetchServerProviders — ASR provider-language invariant (#1082)', () 
           asrProvidersConfig: {},
           autoConfigApplied: true,
         },
-        version: 4,
+        version: 5,
       }),
     );
     vi.resetModules();
@@ -1189,7 +1189,7 @@ describe('fetchServerProviders — ASR provider-language invariant (#1082)', () 
           asrProvidersConfig: {},
           autoConfigApplied: true,
         },
-        version: 4,
+        version: 5,
       }),
     );
     const store1 = await getStore();
@@ -1205,7 +1205,7 @@ describe('fetchServerProviders — ASR provider-language invariant (#1082)', () 
           asrProvidersConfig: {},
           autoConfigApplied: true,
         },
-        version: 4,
+        version: 5,
       }),
     );
     vi.resetModules();
@@ -1226,7 +1226,7 @@ describe('fetchServerProviders — ASR provider-language invariant (#1082)', () 
             asrProvidersConfig: { 'custom-asr-test': customASRConfig() },
             autoConfigApplied: true,
           },
-          version: 4,
+          version: 5,
         }),
       );
 
@@ -1361,7 +1361,7 @@ describe('fetchServerProviders — ASR provider-language invariant (#1082)', () 
             asrProvidersConfig: { 'custom-asr-test': customASRConfig() },
             autoConfigApplied: true,
           },
-          version: 4,
+          version: 5,
         }),
       );
 

@@ -44,7 +44,9 @@
     "ttsPreview": "Nghe thử",
     "ttsPreviewing": "Đang phát…",
     "interactiveModeHint": "Bật chế độ ưu tiên tương tác để có nhiều nội dung thực hành hơn",
-    "interactiveModeLabel": "Chế độ tương tác"
+    "interactiveModeLabel": "Chế độ tương tác",
+    "modelChangeFailed": "Không thể đổi mô hình: {{message}}",
+    "modelLockedHint": "Mô hình dùng cho khóa học, do máy chủ này đặt"
   },
   "export": {
     "pptx": "Xuất PPTX",

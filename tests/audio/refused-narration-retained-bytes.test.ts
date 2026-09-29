@@ -20,8 +20,10 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
+import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
+
 const mocks = vi.hoisted(() => ({
-  getCurrentModelConfig: vi.fn(),
+  parallelSceneConcurrency: 0,
   settingsState: vi.fn(),
   audioGet: vi.fn(),
   audioPut: vi.fn(),
@@ -40,10 +42,11 @@ const mocks = vi.hoisted(() => ({
   toastWarning: vi.fn(),
 }));
 
-vi.mock('@/lib/utils/model-config', () => ({
-  getCurrentModelConfig: mocks.getCurrentModelConfig,
-  getStageRoutesHeaderValue: () => undefined,
+// How many narration clips may be generated at once (GET /api/health).
+vi.mock('@/lib/generation/server-generation-settings', () => ({
+  getParallelSceneConcurrency: async () => mocks.parallelSceneConcurrency,
 }));
+
 vi.mock('@/lib/store/settings', () => ({
   useSettingsStore: { getState: mocks.settingsState },
 }));
@@ -187,7 +190,6 @@ describe('narration refused for want of room', () => {
     mocks.mediaPut.mockReset().mockResolvedValue(undefined);
     mocks.mediaGet.mockReset().mockResolvedValue(undefined);
     mocks.mediaDelete.mockReset().mockResolvedValue(undefined);
-    mocks.getCurrentModelConfig.mockReturnValue({});
     mocks.settingsState.mockReturnValue({
       imageProviderId: '',
       imageProvidersConfig: {},
@@ -200,6 +202,8 @@ describe('narration refused for want of room', () => {
       ttsVoice: 'narrator',
       ttsSpeed: 1,
     });
+    // The workspace's tts slot resolves to this provider.
+    setModelSettingsViewForTests({ tts: { registryId: 'server-tts', modelId: 'tts-model' } });
     mocks.isTTSProviderEnabled.mockReturnValue(true);
     mocks.pickNarratorAgent.mockReturnValue(undefined);
     mocks.resolveAgentVoiceOptions.mockResolvedValue({});

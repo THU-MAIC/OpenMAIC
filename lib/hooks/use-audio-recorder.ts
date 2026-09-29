@@ -1,10 +1,30 @@
 import { useState, useRef, useCallback } from 'react';
-import { ASR_PROVIDERS } from '@/lib/audio/constants';
-import { getASRServerDisabledError } from '@/lib/audio/asr-enablement';
+import type { ASRProviderId } from '@/lib/audio/types';
 import { normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
+import { loadModelCapabilities } from '@/lib/model-settings/capabilities';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('AudioRecorder');
+
+/** Shown when the workspace's asr slot resolves to nothing. */
+export const ASR_NOT_CONFIGURED_MESSAGE = 'Speech recognition is not set up';
+
+/**
+ * The provider the workspace's asr slot resolves to (its registry id), and the
+ * user's language for it. The provider, model and key are the server's.
+ */
+async function asrSetup(): Promise<{ providerId: ASRProviderId; language: string } | null> {
+  const [{ asr }, { useSettingsStore, getValidASRLanguage }] = await Promise.all([
+    loadModelCapabilities(),
+    import('@/lib/store/settings'),
+  ]);
+  if (!asr) return null;
+  const providerId = asr.registryId as ASRProviderId;
+  return {
+    providerId,
+    language: getValidASRLanguage(providerId, useSettingsStore.getState().asrLanguage),
+  };
+}
 
 // Window.SpeechRecognition / webkitSpeechRecognition have minimal constructor
 // declarations in types/web-speech.d.ts; this hook casts the richer instance.
@@ -39,33 +59,13 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
       try {
         const formData = new FormData();
 
-        // Get current ASR configuration from settings store
-        // Note: This requires importing useSettingsStore in browser context
-        if (typeof window !== 'undefined') {
-          const { useSettingsStore } = await import('@/lib/store/settings');
-          const { asrProviderId, asrLanguage, asrProvidersConfig } = useSettingsStore.getState();
-          const uploadAudio = await normalizeASRUploadAudio(asrProviderId, audioBlob);
+        // The asr slot names the provider and model on the server; the
+        // upload format and the language follow the provider it resolves to.
+        const setup = typeof window !== 'undefined' ? await asrSetup() : null;
+        if (setup) {
+          const uploadAudio = await normalizeASRUploadAudio(setup.providerId, audioBlob);
           formData.append('audio', uploadAudio.blob, uploadAudio.fileName);
-
-          formData.append('providerId', asrProviderId);
-          formData.append(
-            'modelId',
-            asrProvidersConfig?.[asrProviderId]?.modelId ||
-              ASR_PROVIDERS[asrProviderId as keyof typeof ASR_PROVIDERS]?.defaultModelId ||
-              '',
-          );
-          formData.append('language', asrLanguage);
-
-          // Append API key and base URL if configured
-          const providerConfig = asrProvidersConfig?.[asrProviderId];
-          if (providerConfig?.apiKey?.trim()) {
-            formData.append('apiKey', providerConfig.apiKey);
-          }
-          const effectiveBaseUrl =
-            providerConfig?.baseUrl?.trim() || providerConfig?.customDefaultBaseUrl || '';
-          if (effectiveBaseUrl) {
-            formData.append('baseUrl', effectiveBaseUrl);
-          }
+          formData.append('language', setup.language);
         } else {
           formData.append('audio', audioBlob, 'recording.webm');
         }
@@ -101,19 +101,16 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
     try {
       // Get current ASR configuration
       if (typeof window !== 'undefined') {
-        const { useSettingsStore } = await import('@/lib/store/settings');
-        const { asrProviderId, asrLanguage, asrProvidersConfig } = useSettingsStore.getState();
-
-        // Browser-native ASR never reaches the server route, so enforce the
-        // operator force-off locally before invoking the Web Speech API.
-        const serverDisabledError = getASRServerDisabledError(asrProvidersConfig[asrProviderId]);
-        if (serverDisabledError) {
-          onError?.(serverDisabledError);
+        // Nothing to record with when the asr slot is off or unassigned.
+        const setup = await asrSetup();
+        if (!setup) {
+          onError?.(ASR_NOT_CONFIGURED_MESSAGE);
           return;
         }
+        const asrLanguage = setup.language;
 
         // Use browser native ASR if configured
-        if (asrProviderId === 'browser-native') {
+        if (setup.providerId === 'browser-native') {
           // Check if Speech Recognition is supported
           if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
             onError?.('您的浏览器不支持语音识别功能');

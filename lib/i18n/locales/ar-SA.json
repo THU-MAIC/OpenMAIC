@@ -44,7 +44,9 @@
     "ttsTitle": "تحويل النص إلى كلام",
     "ttsHint": "اختر صوتًا للمعلم الذكي",
     "ttsPreview": "معاينة",
-    "ttsPreviewing": "جارٍ التشغيل..."
+    "ttsPreviewing": "جارٍ التشغيل...",
+    "modelChangeFailed": "تعذّر تغيير النموذج: {{message}}",
+    "modelLockedHint": "النموذج الذي تستخدمه المقررات، ويحدده هذا الخادم"
   },
   "export": {
     "pptx": "تصدير PPTX",

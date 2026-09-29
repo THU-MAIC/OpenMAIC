@@ -34,6 +34,18 @@ vi.mock('@/lib/store/settings', () => ({
   useSettingsStore: (selector: (state: typeof mocks.settings) => unknown) =>
     selector(mocks.settings),
 }));
+// The providers the voices may come from. The workspace's tts slot names one;
+// the queue logic under test is the same for any set, so these tests offer
+// several (a browser and two server providers) to exercise the ordering.
+const selection = {
+  providerId: mocks.settings.ttsProviderId,
+  voice: mocks.settings.ttsVoice,
+  speed: 1,
+  providersConfig: mocks.settings.ttsProvidersConfig,
+};
+vi.mock('@/lib/audio/use-tts-selection', () => ({
+  useTTSSelection: () => selection,
+}));
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({ locale: 'en', t: (key: string) => key }),
 }));
@@ -495,7 +507,8 @@ describe('discussion TTS synthesis lookahead', () => {
     expect(mocks.warning).not.toHaveBeenCalled();
     await act(async () => FakeAudio.instances[0].end());
     expect(requests.map((r) => r.body.audioId)).toEqual(['A', 'B', 'B']);
-    expect(requests[2].body).toMatchObject({ ttsProviderId: 'openai-tts', ttsVoice: 'alloy' });
+    expect(requests[2].body).toMatchObject({ ttsVoice: 'alloy' });
+    expect(requests[2].body).not.toHaveProperty('ttsProviderId');
     expect(hook.shouldHold()).toEqual({ holding: true, segmentDone: 1 });
     expect(mocks.warning).toHaveBeenCalledOnce();
     await respond(2);
