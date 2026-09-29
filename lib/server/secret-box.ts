@@ -59,26 +59,49 @@ function deriveKey(secret: string): InstanceKey {
   return { key, kid };
 }
 
+/** A generated secret is 32 random bytes in base64; anything else is refused. */
+function checkedSecret(contents: string, file: string): string {
+  const secret = contents.trim();
+  if (Buffer.from(secret, 'base64').length !== 32 || !/^[A-Za-z0-9+/]{43}=$/.test(secret)) {
+    throw new Error(
+      `${file} is not a complete instance secret. Restore it from a backup, or set OPENMAIC_SECRET_KEY; keys saved under a lost secret have to be entered again.`,
+    );
+  }
+  return secret;
+}
+
 function readOrCreateSecretFile(dataDir: string): string {
   const file = path.join(dataDir, INSTANCE_SECRET_FILE);
   try {
-    return fs.readFileSync(file, 'utf8').trim();
+    return checkedSecret(fs.readFileSync(file, 'utf8'), file);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
   fs.mkdirSync(dataDir, { recursive: true });
   const secret = randomBytes(32).toString('base64');
+  // Written and flushed under a private name, then published with an
+  // exclusive link: the file is never visible half written, and of two
+  // processes starting together exactly one publishes, the other reads it.
+  const temporary = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+  const fd = fs.openSync(temporary, 'wx', 0o600);
   try {
-    // Exclusive create: two processes starting together agree on one secret.
-    fs.writeFileSync(file, `${secret}\n`, { flag: 'wx', mode: 0o600 });
-    log.warn(
-      `OPENMAIC_SECRET_KEY is not set; created ${file}. Keep it with the database: stored keys cannot be read without it. Set OPENMAIC_SECRET_KEY when running more than one instance.`,
-    );
-    return secret;
+    fs.writeSync(fd, `${secret}\n`);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  try {
+    fs.linkSync(temporary, file);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    return fs.readFileSync(file, 'utf8').trim();
+    return checkedSecret(fs.readFileSync(file, 'utf8'), file);
+  } finally {
+    fs.rmSync(temporary, { force: true });
   }
+  log.warn(
+    `OPENMAIC_SECRET_KEY is not set; created ${file}. Keep it with the database: stored keys cannot be read without it. Set OPENMAIC_SECRET_KEY when running more than one instance.`,
+  );
+  return secret;
 }
 
 let cached: { source: string; key: InstanceKey } | undefined;

@@ -199,6 +199,26 @@ describe('instance secret file', () => {
       expect(instanceKey({}, dir).kid).toBe(first.kid);
       resetInstanceKeyForTests();
       expect(instanceKey({ OPENMAIC_SECRET_KEY: 'x' }, dir).kid).not.toBe(first.kid);
+      expect(fs.readdirSync(dir)).toEqual(['instance-secret.key']);
+    } finally {
+      resetInstanceKeyForTests();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('a damaged instance secret file', () => {
+  it.each([
+    ['empty', ''],
+    ['truncated', 'c2VjcmV0'],
+    ['not base64', `${'!'.repeat(43)}=`],
+  ])('is refused when %s', async (_label, contents) => {
+    const { instanceKey } = await import('@/lib/server/secret-box');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openmaic-secret-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'instance-secret.key'), contents);
+      resetInstanceKeyForTests();
+      expect(() => instanceKey({}, dir)).toThrow(/is not a complete instance secret/);
     } finally {
       resetInstanceKeyForTests();
       fs.rmSync(dir, { recursive: true, force: true });
