@@ -83,3 +83,24 @@ export function withSlots(
     slots: view.slots.map((slot) => (patch[slot.slot] ? { ...slot, ...patch[slot.slot] } : slot)),
   };
 }
+
+/** The view with `llm` set to a workspace provider's model, as the server answers it. */
+export function withLlm(view: ModelSettingsView, ref = 'acme:acme-large'): ModelSettingsView {
+  const [providerId, modelId] = ref.split(':');
+  return withSlots(view, {
+    llm: {
+      assignment: ref,
+      effective: {
+        status: 'assigned',
+        resolvedAt: 'llm',
+        source: 'workspace',
+        requirements: [],
+        providerId,
+        providerSource: 'workspace',
+        presetId: providerId,
+        registryId: 'x',
+        modelId,
+      },
+    },
+  });
+}

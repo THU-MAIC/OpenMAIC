@@ -2095,7 +2095,8 @@
         "answerLost": "phản hồi của máy chủ bị mất",
         "unconfirmedAdd": "Không rõ {{name}} đã được thêm hay chưa: phản hồi của máy chủ bị mất và không đọc lại được thiết lập.",
         "notAdded": "{{name}} chưa được thêm. Hãy kết nối lại.",
-        "checkAgain": "Kiểm tra lại"
+        "checkAgain": "Kiểm tra lại",
+        "llmMissing": "Đã kết nối {{name}} nhưng mô hình mặc định vẫn chưa được đặt. Hãy chọn trên thẻ của nó."
       },
       "providers": {
         "title": "Nhà cung cấp",

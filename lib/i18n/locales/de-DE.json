@@ -2095,7 +2095,8 @@
         "answerLost": "die Antwort des Servers ging verloren",
         "unconfirmedAdd": "Ob {{name}} hinzugefügt wurde, ist unklar: Die Antwort des Servers ging verloren und die Einstellungen konnten nicht neu gelesen werden.",
         "notAdded": "{{name}} wurde nicht hinzugefügt. Verbinde es erneut.",
-        "checkAgain": "Erneut prüfen"
+        "checkAgain": "Erneut prüfen",
+        "llmMissing": "{{name}} ist verbunden, aber das Standardmodell ist noch nicht festgelegt. Wähle es auf seiner Karte."
       },
       "providers": {
         "title": "Anbieter",

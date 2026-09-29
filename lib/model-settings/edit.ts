@@ -428,6 +428,9 @@ export type FirstRunResult =
    * refused them (`reason`, `message`), or the provider offers no chat model
    * to use (neither). {@link fillRecommended} tries the filling again.
    *
+   * `reason: 'llm-missing'`: slots were filled but the default model is
+   * still not set (changed elsewhere meanwhile); it is for the user to pick.
+   *
    * `reason: 'unconfirmed-add'`: whether the provider was added at all is not
    * known (its answer was lost and the settings could not be read again);
    * {@link resumeFirstRun} finds out.
@@ -459,6 +462,11 @@ export async function fillRecommended(
       return { status: 'done', providerId, assigned };
     }
     return { status: 'partial', providerId, reason: filled.reason, message: filled.message };
+  }
+  // Done means a default model: the write may have filled only media slots
+  // (llm set, or switched off, elsewhere meanwhile).
+  if (!isLlmConfigured(filled.view)) {
+    return { status: 'partial', providerId, reason: 'llm-missing' };
   }
   return { status: 'done', providerId, assigned };
 }

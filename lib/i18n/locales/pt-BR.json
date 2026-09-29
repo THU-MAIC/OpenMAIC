@@ -2095,7 +2095,8 @@
         "answerLost": "a resposta do servidor se perdeu",
         "unconfirmedAdd": "Não se sabe se {{name}} foi adicionado: a resposta do servidor se perdeu e as configurações não puderam ser lidas de novo.",
         "notAdded": "{{name}} não foi adicionado. Conecte-o novamente.",
-        "checkAgain": "Verificar novamente"
+        "checkAgain": "Verificar novamente",
+        "llmMissing": "{{name}} está conectado, mas o modelo padrão ainda não foi definido. Escolha um no cartão dele."
       },
       "providers": {
         "title": "Provedores",

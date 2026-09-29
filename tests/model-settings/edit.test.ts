@@ -24,7 +24,14 @@ import {
   wizardAssignments,
 } from '@/lib/model-settings/edit';
 
-import { chatPreset, compatiblePreset, makeView, withSlots, workspaceProvider } from './fixtures';
+import {
+  chatPreset,
+  compatiblePreset,
+  makeView,
+  withLlm,
+  withSlots,
+  workspaceProvider,
+} from './fixtures';
 
 function slot(overrides: Partial<SlotView> & Pick<SlotView, 'slot'>): SlotView {
   return {
@@ -392,7 +399,7 @@ describe('first-run setup', () => {
     const calls: ModelSettingsChange[] = [];
     const apply = vi.fn(async (change: ModelSettingsChange): Promise<ApplyResult> => {
       calls.push(change);
-      return { ok: true, view: afterProvider };
+      return { ok: true, view: change.kind === 'slots' ? withLlm(afterProvider) : afterProvider };
     });
 
     const result = await runFirstRunSetup(apply, before, chatPreset, {
@@ -423,7 +430,7 @@ describe('first-run setup', () => {
     const apply = vi
       .fn()
       .mockResolvedValueOnce({ ok: false, reason: 'unconfirmed', message: 'lost', view: reloaded })
-      .mockResolvedValueOnce({ ok: true, view: reloaded });
+      .mockResolvedValueOnce({ ok: true, view: withLlm(reloaded) });
     const result = await runFirstRunSetup(apply, makeView(), chatPreset, emptyDraft('acme'));
     expect(result).toMatchObject({ status: 'done', providerId: 'acme' });
     expect(apply).toHaveBeenCalledTimes(2);
@@ -474,7 +481,10 @@ describe('first-run setup', () => {
     });
 
     const fill = vi.fn(
-      async (): Promise<ApplyResult> => ({ ok: true, view: makeView({ revision: 2 }) }),
+      async (): Promise<ApplyResult> => ({
+        ok: true,
+        view: withLlm(makeView({ revision: 2, providers: [workspaceProvider('acme')] })),
+      }),
     );
     expect(await resumeFirstRun(fill, makeView(), chatPreset, 'acme')).toEqual({
       status: 'partial',
@@ -485,6 +495,23 @@ describe('first-run setup', () => {
     const landed = makeView({ revision: 1, providers: [workspaceProvider('acme')] });
     expect(await resumeFirstRun(fill, landed, chatPreset, 'acme')).toMatchObject({
       status: 'done',
+    });
+  });
+
+  it('is not done while the default model is still missing after the write', async () => {
+    // Another session turned llm off meanwhile: only media slots were filled.
+    const turnedOff = withSlots(makeView({ revision: 2, providers: [workspaceProvider('acme')] }), {
+      llm: {
+        assignment: null,
+        effective: { status: 'disabled', resolvedAt: 'llm', source: 'workspace' },
+      },
+    });
+    const apply = vi.fn(async (): Promise<ApplyResult> => ({ ok: true, view: turnedOff }));
+    const stale = makeView({ revision: 1, providers: [workspaceProvider('acme')] });
+    expect(await fillRecommended(apply, stale, chatPreset, 'acme')).toEqual({
+      status: 'partial',
+      providerId: 'acme',
+      reason: 'llm-missing',
     });
   });
 

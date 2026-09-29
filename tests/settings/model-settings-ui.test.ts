@@ -53,6 +53,7 @@ vi.mock('@/components/ui/select', async () => {
 import { ModelSettingsPanel } from '@/components/settings/models';
 import { ModelMap, revealBox } from '@/components/settings/models/model-map';
 import { ProvidersPanel } from '@/components/settings/models/providers-panel';
+import { SetupNotice } from '@/components/settings/models/setup-notice';
 import { SlotPicker } from '@/components/settings/models/slot-picker';
 import {
   createModelSettingsClient,
@@ -62,7 +63,13 @@ import {
   type SlotView,
 } from '@/lib/model-settings/client';
 
-import { chatPreset, makeView, withSlots, workspaceProvider } from '../model-settings/fixtures';
+import {
+  chatPreset,
+  makeView,
+  withLlm,
+  withSlots,
+  workspaceProvider,
+} from '../model-settings/fixtures';
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -451,6 +458,23 @@ describe('picker keyboard', () => {
 });
 
 describe('first-run setup', () => {
+  it('says the default model is still missing, with nothing to retry, when only media got filled', () => {
+    mount(
+      createElement(SetupNotice, {
+        outcome: {
+          preset: chatPreset,
+          result: { status: 'partial', providerId: 'acme', reason: 'llm-missing' },
+        },
+        onRetry: async () => {},
+        onProviders: () => {},
+        onDismiss: () => {},
+        t: T,
+      }),
+    );
+    expect(document.body.textContent).toContain('settings.modelSettings.setup.llmMissing|Acme');
+    expect(document.body.textContent).not.toContain('settings.modelSettings.setup.retry');
+  });
+
   function json(body: unknown, status = 200) {
     return new Response(JSON.stringify(body), {
       status,
@@ -474,7 +498,7 @@ describe('first-run setup', () => {
       json(makeView({ revision: null })),
       new Response('{"revision":1,"prov', { status: 200 }),
       json(withProvider),
-      json(withSlots(withProvider, { llm: { assignment: 'acme:acme-large' } })),
+      json(withLlm(withProvider)),
     ];
     const fetchImpl = vi.fn(async (_input: string, init?: RequestInit) => {
       methods.push(init?.method ?? 'GET');
@@ -500,7 +524,7 @@ describe('first-run setup', () => {
         throw new TypeError('Failed to fetch');
       },
       () => json(withProvider),
-      () => json(withSlots(withProvider, { llm: { assignment: 'acme:acme-large' } })),
+      () => json(withLlm(withProvider)),
     ];
     const fetchImpl = vi.fn(async (_input: string, init?: RequestInit) => {
       methods.push(init?.method ?? 'GET');
@@ -527,7 +551,7 @@ describe('first-run setup', () => {
         throw new TypeError('Failed to fetch');
       },
       () => json(withProvider),
-      () => json(withSlots(withProvider, { llm: { assignment: 'acme:acme-large' } })),
+      () => json(withLlm(withProvider)),
     ];
     const fetchImpl = vi.fn(async (_input: string, init?: RequestInit) => {
       methods.push(init?.method ?? 'GET');
@@ -568,7 +592,7 @@ describe('first-run setup', () => {
     const empty = makeView({ revision: null });
     const withProvider = makeView({ revision: 1, providers: [workspaceProvider('acme')] });
     const reloaded = makeView({ revision: 2, providers: [workspaceProvider('acme')] });
-    const done = withSlots(reloaded, { llm: { assignment: 'acme:acme-large' } });
+    const done = withLlm(reloaded);
     const requests: { method: string; body?: unknown }[] = [];
     const answers = [
       json(empty),

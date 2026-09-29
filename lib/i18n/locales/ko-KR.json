@@ -2095,7 +2095,8 @@
         "answerLost": "서버 응답이 유실되었습니다",
         "unconfirmedAdd": "{{name}}이(가) 추가되었는지 알 수 없습니다. 서버 응답이 유실되었고 설정을 다시 읽지 못했습니다.",
         "notAdded": "{{name}}이(가) 추가되지 않았습니다. 다시 연결하세요.",
-        "checkAgain": "다시 확인"
+        "checkAgain": "다시 확인",
+        "llmMissing": "{{name}}이(가) 연결되었지만 기본 모델이 아직 설정되지 않았습니다. 카드에서 선택하세요."
       },
       "providers": {
         "title": "제공자",

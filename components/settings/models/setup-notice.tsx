@@ -37,6 +37,8 @@ export function SetupNotice({
   // Whether the provider was added is not known yet, or it turned out it was not.
   const unknownAdd = reason === 'unconfirmed-add';
   const notAdded = reason === 'not-added';
+  // Connected, but the default model is still to be chosen: nothing to retry.
+  const llmMissing = reason === 'llm-missing';
   const why =
     reason === 'conflict' || reason === 'locked'
       ? t(`${MS}.setup.changedMeanwhile`)
@@ -61,32 +63,36 @@ export function SetupNotice({
               ? t(`${MS}.setup.unconfirmedAdd`, { name })
               : notAdded
                 ? t(`${MS}.setup.notAdded`, { name })
-                : t(`${MS}.setup.partial`, { name, message: why })}
+                : llmMissing
+                  ? t(`${MS}.setup.llmMissing`, { name })
+                  : t(`${MS}.setup.partial`, { name, message: why })}
         </p>
-        <div className={notAdded ? 'hidden' : 'mt-2 flex flex-wrap gap-2'}>
-          {noModel ? (
-            <Button size="xs" variant="outline" onClick={onProviders}>
-              {t(`${MS}.setup.openProviders`)}
-            </Button>
-          ) : (
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={retrying}
-              onClick={async () => {
-                setRetrying(true);
-                try {
-                  await onRetry();
-                } finally {
-                  setRetrying(false);
-                }
-              }}
-            >
-              {retrying && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
-              {unknownAdd ? t(`${MS}.setup.checkAgain`) : t(`${MS}.setup.retry`)}
-            </Button>
-          )}
-        </div>
+        {!notAdded && !llmMissing && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {noModel ? (
+              <Button size="xs" variant="outline" onClick={onProviders}>
+                {t(`${MS}.setup.openProviders`)}
+              </Button>
+            ) : (
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={retrying}
+                onClick={async () => {
+                  setRetrying(true);
+                  try {
+                    await onRetry();
+                  } finally {
+                    setRetrying(false);
+                  }
+                }}
+              >
+                {retrying && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
+                {unknownAdd ? t(`${MS}.setup.checkAgain`) : t(`${MS}.setup.retry`)}
+              </Button>
+            )}
+          </div>
+        )}
       </div>
       <button
         type="button"

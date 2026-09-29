@@ -2095,7 +2095,8 @@
         "answerLost": "the server's answer was lost",
         "unconfirmedAdd": "It is not known whether {{name}} was added: the server's answer was lost and the settings could not be read again.",
         "notAdded": "{{name}} was not added. Connect it again.",
-        "checkAgain": "Check again"
+        "checkAgain": "Check again",
+        "llmMissing": "{{name}} is connected, but the default model is still not set. Choose one on its card."
       },
       "providers": {
         "title": "Providers",
