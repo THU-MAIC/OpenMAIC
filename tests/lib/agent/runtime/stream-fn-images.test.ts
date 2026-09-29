@@ -61,41 +61,49 @@ function transcript(): Message[] {
 }
 
 describe('tool-result image transport', () => {
-  it('keeps receipts and text but explicitly omits images for a known text-only model', () => {
-    const history = transcript();
-    const messages = toModelMessages(history, { includeToolImages: false });
-    expect(messages.map((message) => message.role)).toEqual(['user', 'assistant', 'tool', 'tool']);
-    expect(JSON.stringify(messages)).not.toContain(PNG);
-    expect(messages[2]).toMatchObject({
-      content: [
-        {
-          toolCallId: 'call-1',
-          output: {
-            type: 'text',
-            value: 'Image observation omitted: the selected model does not support image input.',
+  it.each([false, undefined])(
+    'keeps receipts and text but omits images for capability=%s',
+    (includeToolImages) => {
+      const history = transcript();
+      const messages = toModelMessages(history, { includeToolImages });
+      expect(messages.map((message) => message.role)).toEqual([
+        'user',
+        'assistant',
+        'tool',
+        'tool',
+      ]);
+      expect(JSON.stringify(messages)).not.toContain(PNG);
+      expect(messages[2]).toMatchObject({
+        content: [
+          {
+            toolCallId: 'call-1',
+            output: {
+              type: 'text',
+              value: 'Image observation omitted: the selected model does not support image input.',
+            },
           },
-        },
-      ],
-    });
-    expect(messages[3]).toMatchObject({
-      content: [
-        {
-          toolCallId: 'call-2',
-          output: {
-            type: 'text',
-            value:
-              'Second preview\nImage observation omitted: the selected model does not support image input.',
+        ],
+      });
+      expect(messages[3]).toMatchObject({
+        content: [
+          {
+            toolCallId: 'call-2',
+            output: {
+              type: 'text',
+              value:
+                'Second preview\nImage observation omitted: the selected model does not support image input.',
+            },
           },
-        },
-      ],
-    });
-    // Suppression is a model-specific transport view, not destructive history editing.
-    expect(toModelMessages(history)).toHaveLength(5);
-  });
+        ],
+      });
+      // Suppression is a model-specific transport view, not destructive history editing.
+      expect(toModelMessages(history, { includeToolImages: true })).toHaveLength(5);
+    },
+  );
   it('preserves images after all tool receipts without changing durable history', () => {
     const history = transcript();
     const before = JSON.stringify(history);
-    const messages = toModelMessages(history);
+    const messages = toModelMessages(history, { includeToolImages: true });
     expect(messages.map((message) => message.role)).toEqual([
       'user',
       'assistant',
@@ -125,11 +133,14 @@ describe('tool-result image transport', () => {
   });
 
   it('flushes observations before the next assistant turn, not at the end of history', () => {
-    const messages = toModelMessages([
-      ...transcript(),
-      assistant([{ type: 'text', text: 'I see two previews' }]),
-      { role: 'user', content: 'Continue', timestamp: 0 },
-    ]);
+    const messages = toModelMessages(
+      [
+        ...transcript(),
+        assistant([{ type: 'text', text: 'I see two previews' }]),
+        { role: 'user', content: 'Continue', timestamp: 0 },
+      ],
+      { includeToolImages: true },
+    );
     expect(messages.map((message) => message.role)).toEqual([
       'user',
       'assistant',
@@ -146,9 +157,10 @@ describe('tool-result image transport', () => {
   });
 
   it('preserves multiple images and MIME types from a single tool result', () => {
-    const messages = toModelMessages([
-      result('multi', [image, { ...image, mimeType: 'image/webp', data: 'd2VicA==' }]),
-    ]);
+    const messages = toModelMessages(
+      [result('multi', [image, { ...image, mimeType: 'image/webp', data: 'd2VicA==' }])],
+      { includeToolImages: true },
+    );
     expect(messages[1]).toMatchObject({
       content: [
         { type: 'text' },
@@ -160,13 +172,16 @@ describe('tool-result image transport', () => {
   });
 
   it.each([false, true])('preserves mixed text and image results with isError=%s', (isError) => {
-    const messages = toModelMessages([
-      result(
-        'mixed',
-        [{ type: 'text', text: 'first' }, image, { type: 'text', text: 'second' }],
-        isError,
-      ),
-    ]);
+    const messages = toModelMessages(
+      [
+        result(
+          'mixed',
+          [{ type: 'text', text: 'first' }, image, { type: 'text', text: 'second' }],
+          isError,
+        ),
+      ],
+      { includeToolImages: true },
+    );
     expect(messages[0]).toMatchObject({
       content: [{ output: { type: isError ? 'error-text' : 'text', value: 'firstsecond' } }],
     });
@@ -233,7 +248,7 @@ describe('tool-result image transport', () => {
           : createAnthropic({ apiKey: 'offline-test', fetch })('test');
       await generateText({
         model,
-        messages: toModelMessages(transcript()),
+        messages: toModelMessages(transcript(), { includeToolImages: true }),
         maxOutputTokens: 16,
         maxRetries: 0,
       });

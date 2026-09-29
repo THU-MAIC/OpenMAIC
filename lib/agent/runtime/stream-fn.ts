@@ -140,7 +140,7 @@ export function hasLengthToolCallProvenance(message: AssistantMessage): boolean 
 export interface CallLlmStreamFnOptions {
   /** Resolved Vercel AI SDK model instance (from resolveModelFromRequest). */
   languageModel: LanguageModel;
-  /** Explicitly false for a known text-only model; unknown/custom models are not guessed. */
+  /** Only explicitly vision-capable models receive tool images; unknown defaults to omission. */
   supportsToolImages?: boolean;
   maxOutputTokens?: number;
   /**
@@ -531,7 +531,7 @@ export function toModelMessages(
     } else if (m.role === 'toolResult') {
       const text = m.content.map((c) => (c.type === 'text' ? c.text : '')).join('');
       for (const c of m.content) {
-        if (c.type === 'image' && options.includeToolImages !== false) {
+        if (c.type === 'image' && options.includeToolImages === true) {
           pendingImages.push(
             {
               type: 'text',
@@ -543,7 +543,7 @@ export function toModelMessages(
       }
       const hasImages = m.content.some((c) => c.type === 'image');
       const receipt =
-        hasImages && options.includeToolImages === false
+        hasImages && options.includeToolImages !== true
           ? [text, 'Image observation omitted: the selected model does not support image input.']
               .filter(Boolean)
               .join('\n')

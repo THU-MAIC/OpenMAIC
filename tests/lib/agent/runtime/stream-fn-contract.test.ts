@@ -76,7 +76,7 @@ describe('createCallLlmStreamFn terminal contract', () => {
       });
       await stream.result();
       const messages = mocks.streamLLM.mock.calls[0][0].messages;
-      if (supportsToolImages === false) {
+      if (supportsToolImages !== true) {
         expect(messages).toHaveLength(1);
         expect(JSON.stringify(messages)).not.toContain('cG5n');
         expect(JSON.stringify(messages)).toContain('does not support image input');

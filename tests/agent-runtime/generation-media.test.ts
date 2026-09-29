@@ -88,16 +88,19 @@ describe('generation media tools', () => {
     expect(rendered.content[0]).toMatchObject({ type: 'image', mimeType: 'image/png' });
     // A successful render must remain visible after the shared LLM adapter,
     // not become an empty tool receipt on the next agent turn.
-    const modelMessages = toModelMessages([
-      {
-        role: 'toolResult',
-        toolCallId: 'preview',
-        toolName: owned!.name,
-        content: rendered.content,
-        isError: false,
-        timestamp: 0,
-      },
-    ]);
+    const modelMessages = toModelMessages(
+      [
+        {
+          role: 'toolResult',
+          toolCallId: 'preview',
+          toolName: owned!.name,
+          content: rendered.content,
+          isError: false,
+          timestamp: 0,
+        },
+      ],
+      { includeToolImages: true },
+    );
     expect(modelMessages[0]).toMatchObject({
       role: 'tool',
       content: [{ type: 'tool-result', toolCallId: 'preview' }],
