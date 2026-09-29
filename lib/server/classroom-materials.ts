@@ -60,6 +60,8 @@ export class ClassroomMaterialsUnavailableError extends ClassroomMaterialsReject
 export async function resolveClassroomMaterials(
   ownerId: string,
   materialIds: readonly string[],
+  /** False for a request's own owner, which must not follow a claim. */
+  { forward = true }: { forward?: boolean } = {},
 ): Promise<OwnerMaterialRecord[]> {
   if (materialIds.length === 0) return [];
   const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
@@ -71,7 +73,7 @@ export async function resolveClassroomMaterials(
     return record;
   });
 
-  const extractable = await resolveExtractableMimeTypes({ ownerId });
+  const extractable = await resolveExtractableMimeTypes({ ownerId, forward });
   if (records.some((record) => !record.mime || !extractable.has(record.mime.toLowerCase()))) {
     throw new ClassroomMaterialsRejectedError(
       'One or more materials have a type this server cannot extract; see GET /api/generate-classroom/capabilities',

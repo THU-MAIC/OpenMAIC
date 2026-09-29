@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   resolveRequestOwnerId: vi.fn(),
   getReadyOwnerMaterials: vi.fn(),
   extractable: new Set<string>(),
+  extractError: undefined as unknown,
 }));
 
 vi.mock('next/server', async (importOriginal) => {
@@ -44,7 +45,10 @@ vi.mock('@/lib/persistence/owner-materials', async (importOriginal) => ({
 }));
 
 vi.mock('@/lib/server/material-extraction/availability', () => ({
-  resolveExtractableMimeTypes: async () => mocks.extractable,
+  resolveExtractableMimeTypes: async () => {
+    if (mocks.extractError) throw mocks.extractError;
+    return mocks.extractable;
+  },
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -99,6 +103,7 @@ describe('POST /api/generate-classroom', () => {
       mock.mockReset();
     }
     mocks.extractable = new Set(['application/pdf']);
+    mocks.extractError = undefined;
 
     mocks.buildRequestOrigin.mockReturnValue('http://localhost');
     mocks.resolveRequestOwnerId.mockReturnValue('owner-1');
@@ -159,6 +164,19 @@ describe('POST /api/generate-classroom', () => {
     expect(res.headers.getSetCookie()).toContain('openmaic_owner=minted; Path=/; HttpOnly');
     await mocks.after.mock.calls[0][0]();
     expect(mocks.runClassroomGenerationJob.mock.calls[0][3]).toEqual({ ownerId: 'anon:minted' });
+  });
+
+  it('answers 403 when the workspace document service is one it may not use', async () => {
+    const { WorkspaceEndpointError } = await import('@/lib/server/model-config/media');
+    mocks.extractError = new WorkspaceEndpointError('deployment only');
+    const res = await postGenerateClassroom({
+      requirement: 'Teach from my notes',
+      materialIds: ['mat_mmmmmmmmmmmmmmmmmmmmmmmmm1'],
+    });
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).errorCode).toBe('INVALID_URL');
+    expect(mocks.createClassroomGenerationJob).not.toHaveBeenCalled();
   });
 
   it('passes owned materialIds to the job, deduplicated and in the given order', async () => {

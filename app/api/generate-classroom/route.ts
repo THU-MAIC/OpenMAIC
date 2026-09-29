@@ -13,6 +13,7 @@ import { buildRequestOrigin } from '@/lib/server/classroom-storage';
 import { isMaterialId } from '@/lib/server/materials/material-id';
 import { ownerApiError, withOwnerResponseHeaders } from '@/lib/server/agent-runtime/route-response';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { WorkspaceEndpointError } from '@/lib/server/model-config/media';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('GenerateClassroom API');
@@ -86,10 +87,14 @@ export async function POST(req: NextRequest) {
     try {
       if (body.materialIds) {
         try {
-          await resolveClassroomMaterials(ownerId, body.materialIds);
+          await resolveClassroomMaterials(ownerId, body.materialIds, { forward: false });
         } catch (error) {
           if (error instanceof ClassroomMaterialsRejectedError) {
             return ownerApiError('INVALID_REQUEST', 400, error.message, responseHeaders);
+          }
+          // A document or speech service this workspace may not use.
+          if (error instanceof WorkspaceEndpointError) {
+            return ownerApiError('INVALID_URL', 403, error.message, responseHeaders);
           }
           throw error;
         }
