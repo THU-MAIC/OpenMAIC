@@ -162,19 +162,6 @@ describe('parseModelConfig', () => {
     ]);
   });
 
-  it('reports schema and cross-check problems together', () => {
-    const text =
-      'providers:\n  a:\n    preset: nope\n  b:\n    preset: minimax\n    extra: 1\nslots:\n  llm: 123\n  video: b:x\n  tts: ghost:y\n';
-    expect([...issuesOf(text)].sort()).toEqual(
-      [
-        'providers.b: Unrecognized key: "extra"',
-        'slots.llm: expected null, "providerId:modelId" or a mapping',
-        'providers.a.preset: unknown preset "nope"',
-        'slots.tts: provider "ghost" is not declared under providers',
-      ].sort(),
-    );
-  });
-
   it('only reads variables the environment really has', () => {
     const text = 'providers:\n  m:\n    preset: minimax\n    apiKey: ${constructor}\n';
     expect(issuesOf(text, {})).toEqual([
@@ -188,6 +175,41 @@ describe('parseModelConfig', () => {
     ).toEqual(['providers.m.apiKey: environment variable INHERITED is not set']);
   });
 
+  it('reports every reference problem together once the document is valid', () => {
+    const text = 'providers:\n  a:\n    preset: nope\nslots:\n  llm: ghost:m\n  tts: phantom:v\n';
+    expect([...issuesOf(text)].sort()).toEqual(
+      [
+        'providers.a.preset: unknown preset "nope"',
+        'slots.llm: provider "ghost" is not declared under providers',
+        'slots.tts: provider "phantom" is not declared under providers',
+      ].sort(),
+    );
+  });
+
+  it('checks references only after the document itself is valid', () => {
+    const text =
+      'providers:\n  a:\n    preset: nope\n  b:\n    preset: minimax\n    extra: 1\nslots:\n  llm:\n    model: ghost:m\n    thinking: { mode: wrong }\n  course.summary: 123\n';
+    const issues = issuesOf(text);
+    expect(issues).toContainEqual('providers.b: Unrecognized key: "extra"');
+    expect(issues).toContainEqual('slots.course.summary: unknown slot');
+    expect(issues.some((issue) => issue.startsWith('slots.llm.thinking.mode:'))).toBe(true);
+    expect(issues).toHaveLength(3); // one diagnostic per path
+    expect(issues.join('\n')).not.toMatch(/unknown preset|not declared/);
+  });
+
+  it('does not check references built from a failed placeholder', () => {
+    expect(issuesOf('slots:\n  llm: missing${M}:m\n', {})).toEqual([
+      'slots.llm: environment variable M is not set',
+    ]);
+  });
+
+  it('refuses __proto__ as a slot or provider id', () => {
+    expect(issuesOf('slots:\n  __proto__: null\n')).toEqual(['slots.__proto__: unknown slot']);
+    expect(issuesOf('providers:\n  __proto__:\n    preset: minimax\n')).toContainEqual(
+      'providers.__proto__: invalid provider id',
+    );
+  });
+
   it('never prints a substituted secret or YAML source in diagnostics', () => {
     const secret = 'sk-do-not-print-7f3a';
     const preset = issuesOf('providers:\n  m:\n    preset: ${S}\n', { S: secret });
@@ -198,8 +220,12 @@ describe('parseModelConfig', () => {
     expect(ref.join('\n')).not.toContain('ghostprovider');
     const broken = issuesOf(`providers:\n  m:\n    apiKey: ${secret}\n    bad: [\n`);
     expect(broken).toHaveLength(1);
-    expect(broken[0]).toMatch(/^not valid YAML: .+ at line \d+, column \d+$/);
+    expect(broken[0]).toMatch(/^not valid YAML at line \d+, column \d+$/);
     expect(broken[0]).not.toContain(secret);
+    for (const text of [`apiKey: *${secret}\n`, `apiKey: !${secret} x\n`]) {
+      const issues = issuesOf(text);
+      expect(issues.join('\n')).not.toContain(secret);
+    }
   });
 
   it.each([
@@ -215,26 +241,6 @@ describe('parseModelConfig', () => {
         env,
       }),
     ).not.toThrow();
-  });
-
-  it('reports problems in the same entry together', () => {
-    const text =
-      'slots:\n  llm:\n    model: ghost:m\n    thinking: { mode: wrong }\n  course.summary: 123\n';
-    const issues = issuesOf(text);
-    expect(issues).toContainEqual(
-      'slots.llm.model: provider "ghost" is not declared under providers',
-    );
-    expect(issues).toContainEqual('slots.course.summary: unknown slot');
-    expect(issues.some((issue) => issue.startsWith('slots.llm.thinking.mode:'))).toBe(true);
-    expect(issues).toContainEqual(
-      'slots.course.summary: expected null, "providerId:modelId" or a mapping',
-    );
-  });
-
-  it('reports every problem at once', () => {
-    const text =
-      'providers:\n  a:\n    preset: nope\nslots:\n  llm: ghost:m\n  course.summary: null\n';
-    expect(issuesOf(text)).toHaveLength(3);
   });
 });
 

@@ -191,28 +191,17 @@ function modelRefProvider(ref: string): string {
   return MODEL_REF.exec(ref)![1];
 }
 
-type Providers = Record<string, z.infer<typeof providerSchema>>;
-type Slots = Record<string, SlotAssignment>;
-
-/** What the cross-checks need to know about the file beyond its valid entries. */
-interface CrossCheckContext {
-  /** Every provider id the file declares, valid or not. */
-  declaredProviderIds: ReadonlySet<string>;
-  /** Paths whose value came from `${VAR}`: never printed in diagnostics. */
-  secretPaths: ReadonlySet<string>;
-}
-
 /**
- * Checks that need the whole file: presets, slot ids, provider references.
- * Runs on every entry and reference that is valid on its own, so a schema error
- * elsewhere, even in the same entry, does not hide these problems.
+ * Checks that need the whole file: presets and provider references. They run
+ * only on a file that passed the schema, so they never see a half-valid value.
+ * Values that came from `${VAR}` are never printed.
  */
 function crossCheck(
-  providers: Providers,
-  slots: Slots,
+  config: ModelConfigFile,
+  secretPaths: ReadonlySet<string>,
   issues: string[],
-  { declaredProviderIds, secretPaths }: CrossCheckContext,
 ): void {
+  const providers = config.providers ?? {};
   const shown = (value: string, at: string) =>
     secretPaths.has(at) ? '(value from an environment variable)' : `"${value}"`;
 
@@ -233,10 +222,7 @@ function crossCheck(
     // Own keys only: `constructor` and friends are not declared providers.
     const provider = Object.hasOwn(providers, providerId) ? providers[providerId] : undefined;
     if (!provider) {
-      // A provider that is declared but invalid has its own error already.
-      if (!declaredProviderIds.has(providerId)) {
-        issues.push(`${at}: provider ${shown(providerId, at)} is not declared under providers`);
-      }
+      issues.push(`${at}: provider ${shown(providerId, at)} is not declared under providers`);
       return;
     }
     const preset = getProviderPreset(provider.preset);
@@ -248,18 +234,14 @@ function crossCheck(
     }
   };
 
-  for (const [slot, assignment] of Object.entries(slots)) {
+  for (const [slot, assignment] of Object.entries(config.slots ?? {})) {
+    if (!isSlotId(slot) || assignment === null) continue;
     const at = `slots.${slot}`;
-    if (!isSlotId(slot)) {
-      issues.push(`${at}: unknown slot`);
-      continue;
-    }
-    if (assignment === null) continue;
     if (typeof assignment === 'string') {
       covers(assignment, slot, at);
       continue;
     }
-    if (assignment.model) covers(assignment.model, slot, `${at}.model`);
+    covers(assignment.model, slot, `${at}.model`);
     if (assignment.fallback) covers(assignment.fallback, slot, `${at}.fallback`);
     if (
       (assignment.api !== undefined || assignment.contextWindow !== undefined) &&
@@ -270,39 +252,19 @@ function crossCheck(
   }
 }
 
-/** The entries of a section that are valid on their own, for cross-checking. */
-function validEntries<T>(section: unknown, schema: z.ZodType<T>): Record<string, T> {
-  if (!isPlainMapping(section)) return {};
-  const entries: Record<string, T> = {};
-  for (const [key, value] of Object.entries(section)) {
-    const result = schema.safeParse(value);
-    if (result.success) entries[key] = result.data;
-  }
-  return entries;
-}
-
 /**
- * Every slot key, with whatever is checkable in its value: the whole assignment
- * when it is valid, otherwise just its valid model references, so an invalid
- * option in an entry does not hide an undeclared provider or an unknown slot.
+ * Key checks on the document as written, before the schema: the schema's
+ * record type silently drops a `__proto__` key, and it does not know slot ids.
  */
-function checkableSlots(section: unknown): Slots {
-  if (!isPlainMapping(section)) return {};
-  const slots: Slots = {};
-  for (const [key, value] of Object.entries(section)) {
-    const result = assignmentSchema.safeParse(value);
-    if (result.success) {
-      slots[key] = result.data;
-      continue;
-    }
-    const refs: { model?: string; fallback?: string } = {};
-    if (isPlainMapping(value)) {
-      if (modelRef.safeParse(value.model).success) refs.model = value.model as string;
-      if (modelRef.safeParse(value.fallback).success) refs.fallback = value.fallback as string;
-    }
-    slots[key] = refs.model || refs.fallback ? (refs as SlotAssignment) : null;
+function checkKeys(document: Record<string, unknown>, issues: string[]): void {
+  if (isPlainMapping(document.providers) && Object.hasOwn(document.providers, '__proto__')) {
+    issues.push('providers.__proto__: invalid provider id');
   }
-  return slots;
+  if (isPlainMapping(document.slots)) {
+    for (const slot of Object.keys(document.slots)) {
+      if (!isSlotId(slot)) issues.push(`slots.${slot}: unknown slot`);
+    }
+  }
 }
 
 /** Parses and validates the text of a model configuration file. */
@@ -314,49 +276,37 @@ export function parseModelConfig(
   try {
     raw = yaml.load(text);
   } catch (error) {
-    // The reason and position only: js-yaml's message quotes the surrounding
-    // source, which can hold a literal key.
-    const { reason, mark } = error as { reason?: string; mark?: { line: number; column: number } };
+    // Position only: js-yaml's message and reason can quote source text,
+    // which may be a literal key.
+    const mark = (error as { mark?: { line: number; column: number } }).mark;
     const where = mark ? ` at line ${mark.line + 1}, column ${mark.column + 1}` : '';
-    throw new ModelConfigError(file, [`not valid YAML: ${reason ?? 'parse error'}${where}`]);
+    throw new ModelConfigError(file, [`not valid YAML${where}`]);
   }
   if (raw === undefined || raw === null) return {};
 
+  // Phase 1: the document itself (placeholders, keys, schema). Any problem here
+  // stops before the cross-checks, which only ever see a fully valid file.
   const issues: string[] = [];
   const secretPaths = new Set<string>();
   const interpolated = interpolate(raw, env, [], issues, secretPaths);
-  // The whole document was refused (for example a bare timestamp).
   if (interpolated === undefined) throw new ModelConfigError(file, issues);
+  if (isPlainMapping(interpolated)) checkKeys(interpolated, issues);
   const parsed = fileSchema.safeParse(interpolated);
-  if (parsed.success) {
-    crossCheck(parsed.data.providers ?? {}, parsed.data.slots ?? {}, issues, {
-      declaredProviderIds: new Set(Object.keys(parsed.data.providers ?? {})),
-      secretPaths,
-    });
-  } else {
+  if (!parsed.success) {
     // A value whose placeholder already failed is reported once, not again
     // for being empty after substitution.
-    const failedPaths = new Set(issues.map((issue) => issue.slice(0, issue.indexOf(': '))));
+    const reported = new Set(issues.map((issue) => issue.slice(0, issue.indexOf(': '))));
     for (const issue of parsed.error.issues) {
       const at = formatPath(issue.path);
-      if (!failedPaths.has(at)) issues.push(`${at}: ${issue.message}`);
-    }
-    if (isPlainMapping(interpolated)) {
-      crossCheck(
-        validEntries(interpolated.providers, providerSchema),
-        checkableSlots(interpolated.slots),
-        issues,
-        {
-          declaredProviderIds: new Set(
-            isPlainMapping(interpolated.providers) ? Object.keys(interpolated.providers) : [],
-          ),
-          secretPaths,
-        },
-      );
+      if (!reported.has(at)) issues.push(`${at}: ${issue.message}`);
     }
   }
+  if (issues.length || !parsed.success) throw new ModelConfigError(file, issues);
+
+  // Phase 2: references between entries.
+  crossCheck(parsed.data, secretPaths, issues);
   if (issues.length) throw new ModelConfigError(file, issues);
-  return parsed.data!;
+  return parsed.data;
 }
 
 /**
