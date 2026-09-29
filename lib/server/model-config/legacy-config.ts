@@ -14,7 +14,8 @@
  */
 import { PROVIDERS, parseModelString } from '@/lib/ai/providers';
 import type { SlotCapability, SlotId } from '@/lib/config/model-slots';
-import { PRESET_ID_OVERRIDES, getProviderPreset } from '@/lib/config/provider-presets';
+import { presetIdFor } from '@/lib/config/preset-ids';
+import { getProviderPreset } from '@/lib/config/provider-presets';
 import {
   providerSchema,
   type ModelConfigFile,
@@ -59,7 +60,7 @@ const DISABLE_SECTION: Partial<Record<Section, keyof ServerConfig['disabled']>> 
 
 /** The preset (and so provider) id for a registry entry of a capability. */
 export function legacyProviderId(capability: SlotCapability, registryId: string): string {
-  return PRESET_ID_OVERRIDES[capability]?.[registryId] ?? registryId;
+  return presetIdFor(capability, registryId);
 }
 
 function translateProvider(entry: ServerProviderEntry, presetId: string) {
