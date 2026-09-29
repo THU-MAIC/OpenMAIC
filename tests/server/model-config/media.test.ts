@@ -118,6 +118,17 @@ describe('serverMediaConnection forwarding', () => {
   });
 });
 
+describe('extraction services', () => {
+  it('offers no server transcription for speech recognition that runs in the browser', async () => {
+    workspaces.set('user:alice', {
+      providers: { bn: { preset: 'browser-native' } },
+      slots: { asr: 'bn' },
+    });
+    const services = await resolveExtractionServices('user:alice', { forward: false });
+    expect(services.asr).toBeUndefined();
+  });
+});
+
 describe('document slot and deprecated request fields', () => {
   const request = {
     providerId: 'alidocmind',

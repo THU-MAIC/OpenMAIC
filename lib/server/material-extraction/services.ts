@@ -10,6 +10,7 @@ import {
   getDocumentExtractorManifestEntry,
   getMediaExtractorManifestEntry,
 } from '@/lib/document/extractors/manifest';
+import { BROWSER_NATIVE_ASR_PROVIDER_ID } from '@/lib/audio/provider-enablement';
 import { createLogger } from '@/lib/logger';
 import {
   serverMediaConnection,
@@ -53,7 +54,8 @@ export async function resolveExtractionServices(
       return null;
     }),
   ]);
-  const speech = usable(asr);
+  // Speech recognition that runs in the browser cannot transcribe server-side.
+  const speech = usable(asr)?.providerId === BROWSER_NATIVE_ASR_PROVIDER_ID ? null : usable(asr);
   return {
     document: usable(document),
     documentStatus:

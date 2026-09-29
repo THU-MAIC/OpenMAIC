@@ -26,6 +26,8 @@ import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import { isCustomTTSProvider, type TTSProviderId } from '@/lib/audio/types';
 
 export const BROWSER_NATIVE_TTS_PROVIDER_ID = 'browser-native-tts' as const;
+/** Speech recognition in the browser: nothing the server can transcribe with. */
+export const BROWSER_NATIVE_ASR_PROVIDER_ID = 'browser-native' as const;
 
 /** The slice of a persisted ttsProvidersConfig entry the predicates rely on. */
 export interface TTSEnablementConfig {
