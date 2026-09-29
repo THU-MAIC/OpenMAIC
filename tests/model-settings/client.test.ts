@@ -1,0 +1,180 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import {
+  createModelSettingsClient,
+  isLlmConfigured,
+  needsFirstRunSetup,
+  type ModelSettingsView,
+} from '@/lib/model-settings/client';
+
+import { makeView, withSlots } from './fixtures';
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+describe('model settings client', () => {
+  it('loads the view and notifies subscribers', async () => {
+    const view = makeView({ revision: 3 });
+    const fetchImpl = vi.fn(async () => json(view));
+    const client = createModelSettingsClient(fetchImpl);
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    const state = await client.load();
+
+    expect(state).toEqual({ phase: 'ready', view });
+    expect(client.getState().view).toEqual(state.view);
+    expect(listener).toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledWith('/api/model-config', { cache: 'no-store' });
+  });
+
+  it('shares one request between concurrent loads', async () => {
+    const fetchImpl = vi.fn(async () => json(makeView()));
+    const client = createModelSettingsClient(fetchImpl);
+    await Promise.all([client.load(), client.load()]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a server without persistence as unavailable', async () => {
+    const client = createModelSettingsClient(
+      async () => new Response('Not found', { status: 404 }),
+    );
+    expect((await client.load()).phase).toBe('unavailable');
+    const result = await client.apply({ kind: 'slots', clear: ['llm'] });
+    expect(result).toMatchObject({ ok: false, reason: 'unavailable' });
+  });
+
+  it('keeps the last view when a reload fails', async () => {
+    const view = makeView({ revision: 1 });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(view))
+      .mockRejectedValueOnce(new Error('offline'));
+    const client = createModelSettingsClient(fetchImpl);
+    await client.load();
+    const state = await client.load();
+    expect(state).toMatchObject({ phase: 'error', view, error: 'offline' });
+  });
+
+  it('writes against the revision it read and takes the answered view', async () => {
+    const before = makeView({ revision: 4 });
+    const after = makeView({ revision: 5 });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(before))
+      .mockResolvedValueOnce(json(after));
+    const client = createModelSettingsClient(fetchImpl);
+    await client.load();
+
+    const change = { kind: 'slots', set: { llm: 'acme:acme-large' } } as const;
+    const result = await client.apply(change);
+
+    expect(result).toEqual({ ok: true, view: after });
+    expect(client.getState().view?.revision).toBe(5);
+    const [, init] = fetchImpl.mock.calls[1] as [string, RequestInit];
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body as string)).toEqual({ revision: 4, change });
+  });
+
+  it('loads first when nothing was read yet', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(makeView({ revision: null })))
+      .mockResolvedValueOnce(json(makeView({ revision: 1 })));
+    const client = createModelSettingsClient(fetchImpl);
+    const result = await client.apply({ kind: 'remove-provider', id: 'acme' });
+    expect(result.ok).toBe(true);
+    const [, init] = fetchImpl.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(init.body as string).revision).toBeNull();
+  });
+
+  it('reloads on a stale revision and says so', async () => {
+    const stale = makeView({ revision: 1 });
+    const fresh = makeView({ revision: 2 });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(stale))
+      .mockResolvedValueOnce(
+        json({ error: { code: 'CONFLICT', message: 'The settings changed; reload them' } }, 409),
+      )
+      .mockResolvedValueOnce(json(fresh));
+    const client = createModelSettingsClient(fetchImpl);
+    await client.load();
+
+    const result = await client.apply({ kind: 'slots', clear: ['tts'] });
+
+    expect(result).toMatchObject({ ok: false, reason: 'conflict', code: 'CONFLICT' });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(client.getState()).toMatchObject({ phase: 'ready', view: fresh });
+  });
+
+  it('reloads when the deployment has locked a slot meanwhile', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(makeView({ revision: 1 })))
+      .mockResolvedValueOnce(
+        json({ error: { code: 'SLOT_LOCKED', message: 'llm is set by the deployment' } }, 409),
+      )
+      .mockResolvedValueOnce(json(makeView({ revision: 1 })));
+    const client = createModelSettingsClient(fetchImpl);
+    await client.load();
+    const result = await client.apply({ kind: 'slots', set: { llm: 'a:b' } });
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'locked',
+      message: 'llm is set by the deployment',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('passes a refused change through with the server message and keeps the view', async () => {
+    const view = makeView({ revision: 1 });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(view))
+      .mockResolvedValueOnce(
+        json({ error: { code: 'INVALID_PROVIDER', message: 'The preset needs a base URL' } }, 400),
+      );
+    const client = createModelSettingsClient(fetchImpl);
+    await client.load();
+    const result = await client.apply({ kind: 'provider', id: 'x', preset: 'openai-compatible' });
+    expect(result).toEqual({
+      ok: false,
+      reason: 'invalid',
+      code: 'INVALID_PROVIDER',
+      message: 'The preset needs a base URL',
+    });
+    expect(client.getState().view).toEqual(view);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('language model helpers', () => {
+  const assigned: ModelSettingsView['slots'][number]['effective'] = {
+    status: 'assigned',
+    resolvedAt: 'llm',
+    source: 'workspace',
+    requirements: [],
+    providerId: 'acme',
+    providerSource: 'workspace',
+    presetId: 'acme',
+    registryId: 'openai',
+    modelId: 'acme-large',
+  };
+
+  it('knows whether a language model is configured', () => {
+    expect(isLlmConfigured(null)).toBe(false);
+    expect(isLlmConfigured(makeView())).toBe(false);
+    expect(isLlmConfigured(withSlots(makeView(), { llm: { effective: assigned } }))).toBe(true);
+  });
+
+  it('offers the first-run setup only while llm is empty and not locked', () => {
+    expect(needsFirstRunSetup(makeView())).toBe(true);
+    expect(needsFirstRunSetup(withSlots(makeView(), { llm: { locked: true } }))).toBe(false);
+    expect(needsFirstRunSetup(withSlots(makeView(), { llm: { effective: assigned } }))).toBe(false);
+  });
+});
