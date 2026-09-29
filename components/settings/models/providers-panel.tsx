@@ -133,9 +133,22 @@ function ProviderEditor({
         return;
       }
       if (!existing) {
-        attempt.current = { id, preset: preset.id, unconfirmed: result.reason === 'unconfirmed' };
-        // The reloaded view has it: the add went through after all.
-        if (result.view?.providers.some((provider) => provider.id === id)) return onDone();
+        if (result.reason === 'unconfirmed') {
+          // Whether the add landed is unknown: the reloaded view tells, and a
+          // retry must reach the same provider rather than add a second one.
+          attempt.current = { id, preset: preset.id, unconfirmed: true };
+          if (result.view?.providers.some((provider) => provider.id === id)) return onDone();
+        } else if (result.view) {
+          // Refused (another tab took this id meanwhile, say): nothing of ours
+          // was saved. Keep the draft and retry under an id still free.
+          attempt.current = {
+            id: newProviderId(result.view, preset.id),
+            preset: preset.id,
+            unconfirmed: false,
+          };
+        } else {
+          attempt.current = { id, preset: preset.id, unconfirmed: false };
+        }
       }
       setMessage(applyErrorText(result, t));
     } finally {

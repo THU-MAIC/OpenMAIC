@@ -200,6 +200,58 @@ describe('provider form → change', () => {
     ]);
   });
 
+  it('keeps the draft when another tab took the same id, and retries under a free one', async () => {
+    // Two tabs add the same preset; the other tab's add lands first as "acme".
+    let server = makeView({ revision: 1 });
+    const puts: { revision: number | null; change: ModelSettingsChange }[] = [];
+    const fetchImpl = vi.fn(async (_input: string, init?: RequestInit) => {
+      if (init?.method !== 'PUT') return json(server);
+      const body = JSON.parse(init.body as string);
+      puts.push(body);
+      if (body.revision !== server.revision) {
+        return json({ error: { code: 'CONFLICT', message: 'The settings changed' } }, 409);
+      }
+      server = {
+        ...server,
+        revision: server.revision! + 1,
+        providers: [...server.providers, workspaceProvider(body.change.id)],
+      };
+      return json(server);
+    });
+    const client = createModelSettingsClient(fetchImpl);
+    client.adopt(server);
+    const panel = (view: ModelSettingsView) =>
+      createElement(ProvidersPanel, { view, apply: client.apply, t: T });
+    const { render } = mount(panel(server));
+
+    click(byText('settings.modelSettings.providers.add'));
+    type(document.body.querySelector('select')!, chatPreset.id);
+    type(document.body.querySelector<HTMLInputElement>('input[type="password"]')!, 'sk-mine');
+    // Meanwhile the other tab adds "acme".
+    server = { ...server, revision: 2, providers: [workspaceProvider('acme')] };
+    click(byText('settings.modelSettings.providers.add'));
+    await flush();
+    render(panel(client.getState().view!));
+
+    // Refused, not "landed": the form and the typed key stay, with the conflict shown.
+    expect(document.body.querySelector('select')).not.toBeNull();
+    expect(document.body.querySelector<HTMLInputElement>('input[type="password"]')!.value).toBe(
+      'sk-mine',
+    );
+    expect(document.body.textContent).toContain('settings.modelSettings.picker.conflict');
+
+    click(byText('settings.modelSettings.providers.add'));
+    await flush();
+
+    expect(
+      puts.map((put) => [put.revision, put.change.kind === 'provider' && put.change.id]),
+    ).toEqual([
+      [1, 'acme'],
+      [2, 'acme-2'],
+    ]);
+    expect(server.providers.map((provider) => provider.id)).toEqual(['acme', 'acme-2']);
+  });
+
   it('closes the form when the reload after a lost answer shows the provider', async () => {
     const view = makeView();
     const saved = makeView({ providers: [workspaceProvider('acme')] });
