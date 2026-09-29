@@ -28,7 +28,7 @@ import {
 import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 
 import { isLocalEndpoint } from './media';
-import type { ModelConfigFile, SlotAssignment } from './openmaic-yml';
+import { checkModelConfigShape, type ModelConfigFile, type SlotAssignment } from './openmaic-yml';
 import {
   resolveSlot,
   SlotResolutionError,
@@ -69,8 +69,15 @@ export interface PresetView {
   recommended: Partial<Record<SlotId, string>>;
 }
 
-/** A resolved target without anything secret. */
-export type TargetView = Omit<ResolvedModelTarget, 'apiKey' | 'credentials' | 'proxy'>;
+/**
+ * A resolved target without anything secret or internal: no credentials or
+ * proxy, and an endpoint only for the workspace's own providers (a
+ * deployment's endpoint may name internal hosts).
+ */
+export type TargetView = Omit<
+  ResolvedModelTarget,
+  'apiKey' | 'credentials' | 'proxy' | 'baseUrl' | 'customBaseUrl'
+> & { baseUrl?: string };
 
 export type EffectiveView =
   | ({
@@ -146,11 +153,22 @@ function maskKey(key: string): string {
   return key.length >= 12 ? `…${key.slice(-4)}` : '…';
 }
 
-function capabilityModels(preset: ProviderPreset | undefined, pinned?: string[]): CapabilityModels {
+/**
+ * What a provider can be assigned to, with its models: a workspace provider
+ * with its own endpoint serves chat only (see media.ts), and a preset whose
+ * registry catalogue says nothing about the endpoint (an OpenAI-compatible
+ * server) offers only the models the provider lists.
+ */
+function capabilityModels(
+  preset: ProviderPreset | undefined,
+  pinned?: string[],
+  { chatOnly = false }: { chatOnly?: boolean } = {},
+): CapabilityModels {
   const result: CapabilityModels = {};
   if (!preset) return result;
   for (const capability of Object.keys(preset.capabilities) as SlotCapability[]) {
-    const offered = presetModels(preset, capability);
+    if (chatOnly && capability !== 'chat') continue;
+    const offered = preset.trustsModelCatalogue === false ? [] : presetModels(preset, capability);
     // A provider's own model list narrows (or names) the chat models it serves.
     const models =
       capability === 'chat' && pinned?.length
@@ -167,6 +185,19 @@ function capabilityModels(preset: ProviderPreset | undefined, pinned?: string[])
  * self-hosted media, search or document service lives on the server's own
  * network (or needs an endpoint only the deployment may set).
  */
+/** A chat preset whose default endpoint is on the server's own network (a local model server). */
+function localChatDefault(preset: ProviderPreset): boolean {
+  const chat = preset.capabilities.chat;
+  if (!chat) return false;
+  const endpoint = chat.baseUrl ?? registryDefaultBaseUrl('chat', chat.registryId);
+  return endpoint !== undefined && isLocalEndpoint(endpoint);
+}
+
+/** Whether a workspace provider of this preset must name its own endpoint. */
+function needsOwnEndpoint(preset: ProviderPreset): boolean {
+  return preset.requiresBaseUrl === true || localChatDefault(preset);
+}
+
 function workspacePresetProblem(preset: ProviderPreset): string | undefined {
   if (preset.capabilities.chat?.registryId === 'bedrock') {
     return 'Amazon Bedrock can only be configured by the deployment (openmaic.yml)';
@@ -188,8 +219,15 @@ function workspacePresetProblem(preset: ProviderPreset): string | undefined {
 }
 
 function stripTarget(target: ResolvedModelTarget): TargetView {
-  const { apiKey: _apiKey, credentials: _credentials, proxy: _proxy, ...rest } = target;
-  return rest;
+  const {
+    apiKey: _apiKey,
+    credentials: _credentials,
+    proxy: _proxy,
+    baseUrl,
+    customBaseUrl: _customBaseUrl,
+    ...rest
+  } = target;
+  return { ...rest, ...(target.providerSource === 'workspace' && baseUrl ? { baseUrl } : {}) };
 }
 
 function effectiveView(resolution: SlotResolution): EffectiveView {
@@ -257,7 +295,9 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
       source: 'workspace' as const,
       ...(provider.baseUrl ? { baseUrl: provider.baseUrl } : {}),
       ...(provider.models ? { models: [...provider.models] } : {}),
-      capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models),
+      capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
+        chatOnly: provider.baseUrl !== undefined,
+      }),
       key: {
         set: Boolean(provider.apiKey) || unreadable.has(id),
         ...(provider.apiKey ? { mask: maskKey(provider.apiKey) } : {}),
@@ -291,7 +331,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
         name: preset.name,
         kind: preset.kind,
         capabilities: capabilityModels(preset),
-        requiresBaseUrl: preset.requiresBaseUrl === true,
+        requiresBaseUrl: needsOwnEndpoint(preset),
         customEndpoint: Boolean(preset.capabilities.chat),
         recommended: { ...(preset.recommended ?? {}) },
       }))
@@ -327,7 +367,9 @@ async function checkProvider(id: string, provider: Provider): Promise<void> {
       `A custom endpoint for ${preset.name} can only be configured by the deployment (openmaic.yml)`,
     );
   }
-  if (preset.requiresBaseUrl && !provider.baseUrl) {
+  // A local model server's default endpoint is the server's own network: a
+  // workspace names where its own one runs.
+  if (needsOwnEndpoint(preset) && !provider.baseUrl) {
     throw new ModelSettingsError('INVALID_PROVIDER', `The ${preset.name} preset needs a base URL`);
   }
   if (provider.baseUrl) {
@@ -414,6 +456,15 @@ export async function applyModelSettingsChange(
   if (!Object.keys(slots).length) delete next.slots;
   if (!Object.keys(providers).length) delete next.providers;
 
+  // The stored shape (provider ids, fields, references), as persistence checks it.
+  const shape = checkModelConfigShape(next);
+  if (!shape.config) {
+    throw new ModelSettingsError(
+      change.kind === 'slots' ? 'INVALID_ASSIGNMENT' : 'INVALID_PROVIDER',
+      shape.issues.join('; '),
+    );
+  }
+
   // Every slot the workspace writes must resolve against the whole
   // configuration: providers declared, capabilities offered.
   const layers: ModelConfigLayer[] = [
@@ -441,6 +492,15 @@ export async function applyModelSettingsChange(
     }
   }
   return next;
+}
+
+/**
+ * The workspace providers whose stored key a change removes on purpose (an
+ * empty key), so that a key the instance can no longer open is deleted too
+ * rather than carried over.
+ */
+export function keysClearedBy(change: ModelSettingsChange): string[] {
+  return change.kind === 'provider' && change.apiKey === '' ? [change.id] : [];
 }
 
 /** Providers and slot assignments proposed from elsewhere (settings a browser kept). */

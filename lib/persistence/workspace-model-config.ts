@@ -137,6 +137,8 @@ export async function saveWorkspaceModelConfig(
   ownerId: string,
   next: ModelConfigFile,
   expectedRevision: number | null,
+  /** Providers whose stored key is removed even if it can no longer be opened. */
+  { clearKeys = [] }: { clearKeys?: readonly string[] } = {},
 ): Promise<number> {
   const { config, issues } = checkModelConfigShape(next);
   if (!config) throw new WorkspaceConfigInvalidError(issues);
@@ -166,7 +168,11 @@ export async function saveWorkspaceModelConfig(
         stored.providers[id] = rest;
         if (secret) {
           secrets[id] = sealSecret(JSON.stringify(secret), secretContext(id));
-        } else if (unreadable.has(id) && isSealedSecret(row!.secrets[id])) {
+        } else if (
+          unreadable.has(id) &&
+          !clearKeys.includes(id) &&
+          isSealedSecret(row!.secrets[id])
+        ) {
           secrets[id] = row!.secrets[id] as SealedSecret;
         }
       }

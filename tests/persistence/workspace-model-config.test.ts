@@ -108,6 +108,21 @@ describe('workspace model configuration store', () => {
     expect(await readWorkspaceModelConfig(pool, OWNER)).toBeNull();
   });
 
+  it('deletes a key it cannot open when the save clears it on purpose', async () => {
+    await saveWorkspaceModelConfig(pool, OWNER, withKey, null);
+    resetInstanceKeyForTests();
+    vi.stubEnv('OPENMAIC_SECRET_KEY', 'a-different-secret');
+    const read = await readWorkspaceModelConfig(pool, OWNER);
+    await saveWorkspaceModelConfig(pool, OWNER, read!.config, 1, { clearKeys: ['ds'] });
+
+    // Back under the original secret, the key is gone for good.
+    resetInstanceKeyForTests();
+    vi.stubEnv('OPENMAIC_SECRET_KEY', 'test-instance-secret');
+    const after = await readWorkspaceModelConfig(pool, OWNER);
+    expect(after?.config.providers?.ds).toEqual({ preset: 'deepseek' });
+    expect(after?.unreadableSecrets).toEqual([]);
+  });
+
   it('reports keys sealed under another instance secret and keeps them across saves', async () => {
     await saveWorkspaceModelConfig(pool, OWNER, withKey, null);
     resetInstanceKeyForTests();

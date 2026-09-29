@@ -225,4 +225,92 @@ describe('/api/model-config', () => {
 
     expect((await importFor('alice', { providers: 'nope' })).status).toBe(400);
   });
+
+  it('answers malformed changes with 400, never a server error', async () => {
+    const { PUT } = await import('@/app/api/model-config/route');
+    const raw = (body: string) =>
+      PUT(
+        new Request('http://localhost/api/model-config', {
+          method: 'PUT',
+          headers: { 'x-test-session': 'alice', 'content-type': 'application/json' },
+          body,
+        }) as never,
+      );
+    for (const body of [
+      'null',
+      JSON.stringify({ revision: null, change: { kind: 'slots', clear: {} } }),
+      JSON.stringify({ revision: null, change: { kind: 'provider', id: 'x' } }),
+      JSON.stringify({ revision: 1.5, change: { kind: 'remove-provider', id: 'x' } }),
+      JSON.stringify({ revision: null, change: { kind: 'nope' } }),
+    ]) {
+      expect((await raw(body)).status).toBe(400);
+    }
+  });
+
+  it('imports the valid items of a batch and skips the malformed ones', async () => {
+    const { POST } = await import('@/app/api/model-config/import/route');
+    const response = await POST(
+      new Request('http://localhost/api/model-config/import', {
+        method: 'POST',
+        headers: { 'x-test-session': 'alice', 'content-type': 'application/json' },
+        body: JSON.stringify({
+          providers: {
+            bad_id: { preset: 'openai', apiKey: SECRET },
+            good: { preset: 'openai', apiKey: SECRET },
+          },
+          slots: { llm: 'good:gpt-5.6', 'course.outline': { model: 'good:gpt-5.6', bogus: 1 } },
+        }),
+      }) as never,
+    );
+    expect(response.status).toBe(200);
+    const answer = await response.json();
+    expect(answer.imported).toEqual(['good', 'llm']);
+    expect(answer.skipped.map((entry: { item: string }) => entry.item)).toEqual([
+      'bad_id',
+      'course.outline',
+    ]);
+  });
+
+  it('recomputes an import against a settings write that won the race', async () => {
+    const persistence = await import('@/lib/persistence/workspace-model-config');
+    const { POST } = await import('@/app/api/model-config/import/route');
+    const importOnce = () =>
+      POST(
+        new Request('http://localhost/api/model-config/import', {
+          method: 'POST',
+          headers: { 'x-test-session': 'alice', 'content-type': 'application/json' },
+          body: JSON.stringify({
+            providers: { mine: { preset: 'openai', apiKey: SECRET } },
+            slots: { llm: 'mine:gpt-5.6' },
+          }),
+        }) as never,
+      );
+    const save = persistence.saveWorkspaceModelConfig;
+    const spy = vi.spyOn(persistence, 'saveWorkspaceModelConfig');
+    // A competing write lands between this import's read and its save.
+    spy.mockImplementationOnce(async (queryable, ownerId) => {
+      await save(queryable, ownerId, { slots: { llm: 'operator:deepseek-v4-pro' } }, null);
+      throw new persistence.WorkspaceConfigConflictError();
+    });
+    let answer = await (await importOnce()).json();
+    expect(answer.imported).toEqual(['mine']);
+    expect(answer.skipped).toEqual([
+      { item: 'llm', reason: 'The workspace already sets this slot' },
+    ]);
+    expect(answer.view.revision).toBe(2);
+
+    // Losing every time answers 409 and writes nothing.
+    spy.mockRejectedValue(new persistence.WorkspaceConfigConflictError());
+    const response = await POST(
+      new Request('http://localhost/api/model-config/import', {
+        method: 'POST',
+        headers: { 'x-test-session': 'alice', 'content-type': 'application/json' },
+        body: JSON.stringify({ providers: { other: { preset: 'openai', apiKey: SECRET } } }),
+      }) as never,
+    );
+    expect(response.status).toBe(409);
+    spy.mockRestore();
+    answer = await (await get('alice')).json();
+    expect(answer.revision).toBe(2);
+  });
 });

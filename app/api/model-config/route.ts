@@ -10,6 +10,7 @@
  */
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { isServerPersistenceConfigured } from '@/lib/config/feature-flags';
 import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
@@ -23,6 +24,7 @@ import {
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
 import {
   applyModelSettingsChange,
+  keysClearedBy,
   modelSettingsView,
   ModelSettingsError,
   type ModelSettingsChange,
@@ -46,32 +48,56 @@ export async function GET(req: NextRequest) {
   });
 }
 
-const CHANGE_KINDS = new Set(['slots', 'provider', 'remove-provider']);
+const id = z.string().min(1).max(128);
+/** An assignment's own shape is checked with the whole configuration it lands in. */
+const assignment = z.union([z.string().min(1), z.null(), z.record(z.string(), z.unknown())]);
+
+const bodySchema = z
+  .object({
+    revision: z.number().int().nonnegative().nullable(),
+    change: z.discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('slots'),
+          set: z.record(id, assignment).optional(),
+          clear: z.array(id).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal('provider'),
+          id,
+          preset: id,
+          apiKey: z.string().optional(),
+          baseUrl: z.string().min(1).nullable().optional(),
+          models: z.array(z.string().min(1)).nullable().optional(),
+        })
+        .strict(),
+      z.object({ kind: z.literal('remove-provider'), id }).strict(),
+    ]),
+  })
+  .strict();
 
 export async function PUT(req: NextRequest) {
   if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
-  let body: { revision?: unknown; change?: unknown };
+  let raw: unknown;
   try {
-    body = (await req.json()) as typeof body;
+    raw = await req.json();
   } catch {
     return NextResponse.json(
       { error: { code: 'INVALID_REQUEST', message: 'Body must be JSON' } },
       { status: 400 },
     );
   }
-  const revision = body.revision;
-  const change = body.change as ModelSettingsChange | undefined;
-  if (
-    !(revision === null || (typeof revision === 'number' && Number.isInteger(revision))) ||
-    !change ||
-    typeof change !== 'object' ||
-    !CHANGE_KINDS.has((change as { kind?: string }).kind ?? '')
-  ) {
+  const parsed = bodySchema.safeParse(raw);
+  if (!parsed.success) {
     return NextResponse.json(
       { error: { code: 'INVALID_REQUEST', message: 'Expected { revision, change }' } },
       { status: 400 },
     );
   }
+  const revision = parsed.data.revision;
+  const change = parsed.data.change as ModelSettingsChange;
 
   return withRequestOwner(req, async ({ ownerId }, headers) => {
     const queryable = await pool();
@@ -81,7 +107,9 @@ export async function PUT(req: NextRequest) {
         return jsonError(409, 'CONFLICT', 'The settings changed; reload them', headers);
       }
       const next = await applyModelSettingsChange(current?.config ?? null, change);
-      await saveWorkspaceModelConfig(queryable, ownerId, next, revision as number | null);
+      await saveWorkspaceModelConfig(queryable, ownerId, next, revision, {
+        clearKeys: keysClearedBy(change),
+      });
       const stored = await readWorkspaceModelConfig(queryable, ownerId);
       return NextResponse.json(modelSettingsView(stored), { headers });
     } catch (error) {

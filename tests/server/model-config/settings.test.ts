@@ -80,6 +80,41 @@ describe('modelSettingsView', () => {
     expect(modelSettingsView(null).presets).toEqual([]);
   });
 
+  it('names no deployment endpoint anywhere in the view', () => {
+    deployment({
+      providers: {
+        operator: {
+          preset: 'openai-compatible',
+          apiKey: 'sk-operator',
+          baseUrl: 'https://gateway.internal.example/v1?token=endpoint-secret',
+          models: ['m1', 'm2'],
+        },
+      },
+      slots: { llm: { model: 'operator:m1', fallback: 'operator:m2' } },
+    });
+    const json = JSON.stringify(modelSettingsView(null));
+    expect(json).not.toContain('gateway.internal');
+    expect(json).not.toContain('endpoint-secret');
+  });
+
+  it("offers a workspace provider's models only where the calls can reach them", () => {
+    const view = modelSettingsView({
+      config: {
+        providers: {
+          mm: { preset: 'minimax', apiKey: 'sk-k', baseUrl: 'https://1.1.1.1/v1' },
+          oc: { preset: 'openai-compatible', apiKey: 'sk-k', baseUrl: 'https://1.1.1.1/v1' },
+        },
+      },
+      revision: 1,
+      unreadableSecrets: [],
+    });
+    const provider = (id: string) => view.providers.find((entry) => entry.id === id)!;
+    // Its own endpoint serves chat only.
+    expect(Object.keys(provider('mm').capabilities)).toEqual(['chat']);
+    // An OpenAI-compatible server's models are the ones the provider lists.
+    expect(provider('oc').capabilities.chat?.models).toEqual([]);
+  });
+
   it('flags a key that no longer opens', () => {
     const view = modelSettingsView({
       config: { providers: { mine: { preset: 'openai' } } },
@@ -159,6 +194,8 @@ describe('applyModelSettingsChange', () => {
       ],
       [{ id: 'z', preset: 'openai-compatible' }, /needs a base URL/],
       [{ id: 'c', preset: 'comfyui-image' }, /server's own network/],
+      [{ id: 'o', preset: 'ollama' }, /needs a base URL/],
+      [{ id: 'bad_id', preset: 'openai', apiKey: 'sk-k' }, /providers/],
     ] as const) {
       await expect(
         applyModelSettingsChange(null, { kind: 'provider', ...provider }),
