@@ -37,7 +37,7 @@ function convertLatexDelimiters(html: string): string {
   const scriptBlocks: string[] = [];
 
   // Protect script tags by replacing them with placeholders
-  let processed = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, (match) => {
+  let processed = html.replace(/<script\b[^>]*>[\s\S]*?(?:<\/script>|$)/gi, (match) => {
     scriptBlocks.push(match);
     return `__SCRIPT_BLOCK_${scriptBlocks.length - 1}__`;
   });
@@ -47,7 +47,7 @@ function convertLatexDelimiters(html: string): string {
 
   // Convert inline math: $...$ -> \(...\)
   // Use non-greedy match and exclude newlines to avoid false positives
-  processed = processed.replace(/\$([^$\n]+?)\$/g, '\\($1\\)');
+  processed = processed.replace(/\$(?!\{)([^$\n]+?)\$(?!\{)/g, '\\($1\\)');
 
   // Restore script blocks in a single pass. A replacer FUNCTION (not a string)
   // is safe even when script content contains `$` — a function's return value
