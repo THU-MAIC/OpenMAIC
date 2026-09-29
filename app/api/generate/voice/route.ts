@@ -163,10 +163,12 @@ export async function POST(req: NextRequest) {
       model:
         providerId === 'qwen-tts'
           ? resolveQwenVoiceCloneModel()
-          : resolveTTSModel(
-              providerId,
-              connection.origin === 'request' ? body.ttsModelId : connection.modelId,
-            ),
+          : connection.origin === 'configuration'
+            ? connection.modelId
+            : resolveTTSModel(
+                providerId,
+                connection.origin === 'request' ? body.ttsModelId : connection.modelId,
+              ),
     };
 
     if (deleting) {

@@ -31,7 +31,10 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   // The formats this caller's document and speech services can read.
   const workspaceId = await requestWorkspaceId(req);
-  const extractable = await resolveExtractableMimeTypes({ ownerId: workspaceId ?? undefined });
+  const extractable = await resolveExtractableMimeTypes({
+    ownerId: workspaceId ?? undefined,
+    forward: false,
+  });
   return apiSuccess({
     capabilities: await resolveServerGenerationCapabilities(workspaceId),
     materials: {

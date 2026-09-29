@@ -17,7 +17,6 @@ import type { SlotId } from '@/lib/config/model-slots';
 import { apiError } from '@/lib/server/api-response';
 import { InvalidOwnerCredentialError } from '@/lib/server/identity/resolve';
 import { invalidOwnerCredentialResponse } from '@/lib/server/identity/with-owner';
-import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 
 import { isServerProviderDisabled } from '@/lib/server/provider-config';
 
@@ -37,6 +36,14 @@ const FORCE_OFF_SECTION = {
   video: 'video',
   webSearch: 'webSearch',
 } as const;
+
+/** A workspace provider tried to reach a media capability at its own endpoint. */
+export class WorkspaceEndpointError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WorkspaceEndpointError';
+  }
+}
 
 export type MediaSlot = Extract<
   SlotId,
@@ -79,12 +86,20 @@ async function fromTarget(
   }
   const managed = target.providerSource !== 'workspace';
   if (!managed) {
+    // Media, search and document adapters each connect their own way; a
+    // workspace provider reaches them only at the preset's own endpoints. A
+    // custom endpoint (and a proxy) is the deployment's to configure; for chat
+    // a workspace endpoint goes through the pinned, redirect-refusing
+    // transport instead (lib/server/model-config/llm.ts).
     if (target.proxy) {
-      throw new Error('A proxy can only be configured by the deployment (openmaic.yml)');
+      throw new WorkspaceEndpointError(
+        'A proxy can only be configured by the deployment (openmaic.yml)',
+      );
     }
-    if (target.baseUrl) {
-      const problem = await validateClientBaseUrl(target.baseUrl);
-      if (problem) throw new Error(problem);
+    if (target.customBaseUrl) {
+      throw new WorkspaceEndpointError(
+        `A custom endpoint for ${slot} can only be configured by the deployment (openmaic.yml)`,
+      );
     }
   }
   return {
@@ -95,7 +110,8 @@ async function fromTarget(
     ...(target.credentials !== undefined ? { credentials: target.credentials } : {}),
     ...(target.proxy !== undefined ? { proxy: target.proxy } : {}),
     managed,
-    userEndpoint: !managed && target.baseUrl !== undefined,
+    // A workspace provider here only ever uses its preset's endpoint.
+    userEndpoint: false,
     origin,
   };
 }
@@ -161,6 +177,7 @@ export function mediaResolutionResponse(error: unknown, what: string): Response 
   }
   if (error instanceof InvalidOwnerCredentialError) return invalidOwnerCredentialResponse();
   if (error instanceof RequestedProviderRefusedError) return error.response;
+  if (error instanceof WorkspaceEndpointError) return apiError('INVALID_URL', 403, error.message);
   return undefined;
 }
 
@@ -172,8 +189,22 @@ export function mediaResolutionResponse(error: unknown, what: string): Response 
 export async function serverMediaConnection(
   slot: MediaSlot,
   storedOwnerId?: string,
+  {
+    forward = true,
+  }: {
+    /**
+     * Follow a claim to the owner the work belongs to now: true for owners
+     * taken from durable records; false for a request's own workspace id,
+     * which must never become the account's (see requestWorkspaceId).
+     */
+    forward?: boolean;
+  } = {},
 ): Promise<MediaConnection | 'off' | null> {
-  const workspaceId = storedOwnerId ? await backgroundWorkspaceId(storedOwnerId) : null;
+  const workspaceId = storedOwnerId
+    ? forward
+      ? await backgroundWorkspaceId(storedOwnerId)
+      : storedOwnerId
+    : null;
   try {
     return await resolveMediaSlot(slot, { workspaceId });
   } catch (error) {

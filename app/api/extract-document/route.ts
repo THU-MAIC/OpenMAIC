@@ -18,8 +18,10 @@ import {
 import type { MediaArtifact } from '@/lib/document';
 import type { DocumentExtractorConfig, DocumentExtractorProvider } from '@/lib/document/types';
 import {
+  documentSlotGoverns,
   extractorConfigFor,
   resolveExtractionServices,
+  slotGovernedRequest,
   slotMediaExtractorConfig,
   type ExtractionServices,
 } from '@/lib/server/material-extraction/services';
@@ -236,6 +238,10 @@ async function runExtraction(
   isAssetIdForm: boolean,
 ) {
   const { fileName, fileSize, mimeType, buffer } = source;
+  // A configured or turned-off document slot decides the service; the
+  // deprecated request fields may only pick a self-contained extractor.
+  const governed = documentSlotGoverns(services);
+  requestConfig = slotGovernedRequest(services, requestConfig);
 
   async function extractionResponse(
     extractor: DocumentExtractorProvider,
@@ -291,6 +297,7 @@ async function runExtraction(
     const slotMedia = slotMediaExtractorConfig(services, requestConfig.providerId);
     const mediaManaged =
       !slotMedia &&
+      !governed &&
       requestConfig.providerId !== 'local-ffmpeg' &&
       isServerConfiguredProvider('pdf', 'alidocmind');
     // When managed, resolve the server-owned AK/SK (env OR YAML) explicitly so
@@ -411,7 +418,18 @@ async function runExtraction(
   }
   logState.resolvedProviderId = provider.id;
 
-  if (slotService && slotService.providerId === provider.id) {
+  const usesSlotService = slotService?.providerId === provider.id;
+  if (governed && provider.requiresServiceConfig && !usesSlotService) {
+    return apiError(
+      'INVALID_REQUEST',
+      422,
+      `${requestedTypeLabel(mimeType)} extraction needs a document service, and ${
+        services.document ? 'the configured one cannot read this type' : 'none is configured'
+      }. Assign one to the document slot in the model settings or openmaic.yml.`,
+    );
+  }
+
+  if (slotService && usesSlotService) {
     let slotConfig = extractorConfigFor(provider.id, services);
     // A workspace provider's endpoint was typed by a user: the extractor's
     // endpoint rule applies as to a client one.
@@ -700,7 +718,10 @@ async function extract(req: NextRequest, ownerCookies: OwnerCookies): Promise<Re
     }
 
     // The document and speech services of the request's workspace (slots).
-    const services = await resolveExtractionServices((await requestWorkspaceId(req)) ?? undefined);
+    // A request's own workspace: never forwarded through a claim.
+    const services = await resolveExtractionServices((await requestWorkspaceId(req)) ?? undefined, {
+      forward: false,
+    });
     return await runExtraction(services, source, requestConfig, logState, isAssetIdForm);
   } catch (error) {
     log.error(

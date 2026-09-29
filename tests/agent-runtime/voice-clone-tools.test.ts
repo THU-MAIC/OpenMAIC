@@ -332,6 +332,7 @@ describe('voice clone agent tools', () => {
       apiKey: 'sk-test',
       managed: true,
       model: 'fake-model',
+      publicOnly: false,
     });
     expect(params).toMatchObject({
       voiceId: 'Andrew Ng',

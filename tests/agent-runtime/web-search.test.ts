@@ -58,6 +58,20 @@ describe('resolveWebSearchCapability', () => {
     expect(capability?.providerId).toBe('searxng');
   });
 
+  it("forwards the slot's whole search configuration, model included", async () => {
+    mocked.mockResolvedValue({
+      providerId: 'claude',
+      apiKey: 'sk-ant',
+      claudeModelId: 'claude-sonnet-5-5',
+    });
+    searchWebMock.mockResolvedValue({ answer: '', query: 'q', responseTime: 0, sources: [] });
+    const capability = await resolveWebSearchCapability('user:alice');
+    await buildWebSearchTool(capability!).execute('call_1', { query: 'q' } as never, undefined);
+    expect(searchWebMock).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: 'claude', claudeModelId: 'claude-sonnet-5-5' }),
+    );
+  });
+
   it('stays unregistered when the resolver finds nothing usable', async () => {
     mocked.mockResolvedValue(undefined);
     expect(await resolveWebSearchCapability(null)).toBeNull();

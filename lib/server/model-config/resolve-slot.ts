@@ -58,6 +58,8 @@ export interface ResolvedModelTarget {
   /** Multi-part credentials for vendors without a single key. */
   credentials?: Record<string, string>;
   proxy?: string;
+  /** The base URL is the provider's own, not the preset's or registry's. */
+  customBaseUrl?: true;
   /** Absent: the provider's default model (never for chat). */
   modelId?: string;
 }
@@ -165,6 +167,7 @@ function resolveTarget(
     presetId: preset.id,
     registryId: target.registryId,
     baseUrl: provider.baseUrl ?? target.baseUrl,
+    ...(provider.baseUrl !== undefined ? { customBaseUrl: true as const } : {}),
     ...(provider.apiKey !== undefined ? { apiKey: provider.apiKey } : {}),
     ...(provider.credentials !== undefined ? { credentials: provider.credentials } : {}),
     ...(provider.proxy !== undefined ? { proxy: provider.proxy } : {}),

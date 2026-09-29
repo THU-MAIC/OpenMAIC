@@ -262,6 +262,55 @@ describe('POST /api/extract-document', () => {
     );
   });
 
+  const deploymentDocumentSlot = async (
+    config: import('@/lib/server/model-config/openmaic-yml').ModelConfigFile,
+  ) =>
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
+      layer: { source: 'deployment', config },
+      defaults: null,
+      notices: [],
+    });
+
+  it("never lets a request's provider or key replace a configured document slot", async () => {
+    await deploymentDocumentSlot({
+      providers: { mc: { preset: 'mineru-cloud', apiKey: 'slot-key' } },
+      slots: { document: 'mc' },
+    });
+    for (const request of [
+      { providerId: 'mineru-cloud', apiKey: 'client-key' },
+      { providerId: 'mineru', baseUrl: 'https://mineru.example' },
+    ]) {
+      mocks.parseWithMinerUCloud.mockClear();
+      const res = await postExtractDocument({
+        file: new File(['%PDF-1.4'], 'lesson.pdf', { type: 'application/pdf' }),
+        ...request,
+      });
+      expect(res.status).toBe(200);
+      expect(mocks.parseWithMinerUCloud).toHaveBeenCalledWith(
+        expect.objectContaining({ providerId: 'mineru-cloud', apiKey: 'slot-key' }),
+        expect.any(Buffer),
+        'lesson.pdf',
+      );
+    }
+  });
+
+  it('uses no document service, requested or operator-configured, once the slot is off', async () => {
+    mocks.isServerConfiguredProvider.mockReturnValue(true);
+    await deploymentDocumentSlot({ slots: { document: null } });
+    const res = await postExtractDocument({
+      file: new File(['not really docx'], 'lesson.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+      providerId: 'mineru-cloud',
+      apiKey: 'client-key',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(422);
+    expect(json.error).toContain('none is configured');
+    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+  });
+
   it('fails loudly instead of silently falling back to MinerU Cloud for DOCX when self-hosted MinerU is unavailable', async () => {
     const res = await postExtractDocument({
       file: new File(['not really docx'], 'lesson.docx', {

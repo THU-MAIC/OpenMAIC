@@ -22,6 +22,7 @@ import {
   resolveTTSApiKey,
   resolveTTSBaseUrl,
   resolveTTSModel,
+  slotTTSModel,
   TTSModelNotAllowedError,
 } from '@/lib/server/provider-config';
 import type { TTSProviderId } from '@/lib/audio/types';
@@ -145,13 +146,17 @@ export async function POST(req: NextRequest) {
     // Build TTS config (managed providers may pin the model server-side)
     const qwenCloneVoice = ttsProviderId === 'qwen-tts' && isQwenCloneVoice(ttsVoice);
     const requestedSpeed = ttsSpeed ?? 1.0;
-    // The slot's model, or on the request path the client's; Qwen voice-clone
-    // voices switch to the clone model either way.
-    const resolvedModelId = resolveTTSModel(
-      ttsProviderId,
-      connection.origin === 'request' ? ttsModelId : connection.modelId,
-      ttsVoice,
-    );
+    // A configured slot's own model; on the deprecated and default paths the
+    // client's (or default) model under the legacy server pins. Qwen
+    // voice-clone voices switch to the clone model either way.
+    const resolvedModelId =
+      connection.origin === 'configuration'
+        ? slotTTSModel(ttsProviderId, connection.modelId, ttsVoice)
+        : resolveTTSModel(
+            ttsProviderId,
+            connection.origin === 'request' ? ttsModelId : connection.modelId,
+            ttsVoice,
+          );
     const config = {
       providerId: ttsProviderId as TTSProviderId,
       modelId: resolvedModelId,

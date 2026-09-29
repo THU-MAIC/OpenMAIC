@@ -5,7 +5,7 @@ import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement'
 import type { LegacySpeechAction, SpeechAction } from '@/lib/types/action';
 import type { GeneratedAgentConfig, Scene } from '@/lib/types/stage';
 import { serverMediaConnection } from '@/lib/server/model-config/media';
-import { resolveTTSModel } from '@/lib/server/provider-config';
+import { resolveTTSModel, slotTTSModel } from '@/lib/server/provider-config';
 import { persistClassroomMediaBytes } from '@/lib/server/classroom-media-bytes';
 
 export interface SceneTtsSummary {
@@ -56,13 +56,13 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
     bound?.providerId === providerId && bound.voiceId
       ? bound.voiceId
       : DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] || '';
+  const model =
+    connection.modelId ?? (DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '');
+  // A configured slot's own model; the legacy server pins apply only to a default.
   const modelId =
-    resolveTTSModel(
-      providerId,
-      connection.modelId ??
-        (DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || ''),
-      voice,
-    ) || '';
+    (connection.origin === 'configuration'
+      ? slotTTSModel(providerId, model, voice)
+      : resolveTTSModel(providerId, model, voice)) || '';
   let generated = 0;
   let skipped = 0;
   const failed: string[] = [];

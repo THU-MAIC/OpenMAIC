@@ -141,10 +141,10 @@ describe('translateLegacyConfig: media defaults', () => {
     expect(
       translateLegacyConfig(images, { defaultImageProvider: 'qwen-image' }).config.slots,
     ).toEqual({ image: 'qwen-image' });
-    // One that does not carry over leaves the first usable provider.
-    expect(
-      translateLegacyConfig(images, { defaultImageProvider: 'grok-image' }).config.slots,
-    ).toEqual({ image: 'seedream' });
+    // One that is not usable leaves the slot unassigned, never another vendor.
+    const unusable = translateLegacyConfig(images, { defaultImageProvider: 'grok-image' });
+    expect(unusable.config.slots).toBeUndefined();
+    expect(unusable.notices.join('\n')).toContain('DEFAULT_IMAGE_PROVIDER "grok-image"');
   });
 
   it('skips providers that were switched off or did not carry over', () => {

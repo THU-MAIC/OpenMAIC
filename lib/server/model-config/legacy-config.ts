@@ -215,6 +215,14 @@ export function translateLegacyConfig(
         : section === 'image' && settings.defaultImageProvider
           ? usable.find(([registryId]) => registryId === settings.defaultImageProvider)
           : undefined;
+    // An explicit image default that is not configured stays unassigned (the
+    // agent's image tool failed on it before): never another vendor instead.
+    if (section === 'image' && settings.defaultImageProvider && !preferred) {
+      notices.push(
+        `DEFAULT_IMAGE_PROVIDER "${settings.defaultImageProvider}" has no usable configuration, so no image model is assigned; set the image slot in openmaic.yml`,
+      );
+      continue;
+    }
     const picked = preferred ?? usable[0];
     if (!picked) continue;
     const [registryId, entry] = picked;

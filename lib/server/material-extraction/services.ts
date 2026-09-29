@@ -6,11 +6,21 @@
  */
 import type { ASRModelConfig, ASRProviderId } from '@/lib/audio/types';
 import type { DocumentExtractorConfig } from '@/lib/document/types';
+import {
+  getDocumentExtractorManifestEntry,
+  getMediaExtractorManifestEntry,
+} from '@/lib/document/extractors/manifest';
 import { serverMediaConnection, type MediaConnection } from '@/lib/server/model-config/media';
 
 export interface ExtractionServices {
   /** The document slot's service, or null for self-contained extraction only. */
   document: MediaConnection | null;
+  /**
+   * How the document slot resolved: configured (openmaic.yml or the model
+   * settings), a legacy default, turned off (self-contained extraction only),
+   * or unassigned (a request may still name a provider the old way).
+   */
+  documentStatus?: 'configured' | 'default' | 'disabled' | 'unassigned';
   /** The asr slot's connection, or undefined when speech recognition is off or unset. */
   asr?: ASRModelConfig;
 }
@@ -22,14 +32,25 @@ const usable = (connection: MediaConnection | 'off' | null) =>
  * Resolve the services for `ownerId`: a stored owner of background work, or a
  * request's workspace id, or none for the deployment's configuration alone.
  */
-export async function resolveExtractionServices(ownerId?: string): Promise<ExtractionServices> {
+export async function resolveExtractionServices(
+  ownerId?: string,
+  { forward = true }: { forward?: boolean } = {},
+): Promise<ExtractionServices> {
   const [document, asr] = await Promise.all([
-    serverMediaConnection('document', ownerId),
-    serverMediaConnection('asr', ownerId),
+    serverMediaConnection('document', ownerId, { forward }),
+    serverMediaConnection('asr', ownerId, { forward }),
   ]);
   const speech = usable(asr);
   return {
     document: usable(document),
+    documentStatus:
+      document === 'off'
+        ? 'disabled'
+        : !document
+          ? 'unassigned'
+          : document.origin === 'configuration'
+            ? 'configured'
+            : 'default',
     ...(speech
       ? {
           asr: {
@@ -38,10 +59,54 @@ export async function resolveExtractionServices(ownerId?: string): Promise<Extra
             ...(speech.apiKey ? { apiKey: speech.apiKey } : {}),
             ...(speech.baseUrl ? { baseUrl: speech.baseUrl } : {}),
             language: 'auto',
+            // The same network policy the transcription route applies.
+            managed: speech.managed,
+            publicOnly: speech.userEndpoint,
           },
         }
       : {}),
   };
+}
+
+/**
+ * Whether the extractor `id` runs without a document service (its own code, or
+ * the asr slot for speech); an extractor that needs one is registered under
+ * the same id as a document extractor requiring service configuration.
+ */
+export function isSelfContainedExtractor(id: string): boolean {
+  if (!getDocumentExtractorManifestEntry(id) && !getMediaExtractorManifestEntry(id)) return false;
+  return getDocumentExtractorManifestEntry(id)?.requiresServiceConfig !== true;
+}
+
+/** Whether the document slot, not the deprecated request fields, decides the service. */
+export function documentSlotGoverns(services: ExtractionServices): boolean {
+  return services.documentStatus === 'configured' || services.documentStatus === 'disabled';
+}
+
+interface RequestedExtraction {
+  providerId?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  accessKeyId?: string;
+  accessKeySecret?: string;
+}
+
+/**
+ * The deprecated request fields that still apply: all of them while the
+ * document slot is unassigned (or a legacy default); once it is configured or
+ * turned off, only the choice of a self-contained extractor or of the slot's
+ * own service, and never request credentials or endpoints.
+ */
+export function slotGovernedRequest<T extends RequestedExtraction>(
+  services: ExtractionServices,
+  request: T,
+): RequestedExtraction {
+  if (!documentSlotGoverns(services)) return request;
+  const providerId = request.providerId;
+  const keep =
+    providerId &&
+    (isSelfContainedExtractor(providerId) || providerId === services.document?.providerId);
+  return keep ? { providerId } : {};
 }
 
 /** The extractor config for `providerId`: the document service's credentials when it is the one. */

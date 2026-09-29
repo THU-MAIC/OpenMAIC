@@ -372,6 +372,11 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
             : '',
         managed:
           deps.ttsConnection && deps.ttsConnection !== 'off' ? deps.ttsConnection.managed : true,
+        // A user-typed endpoint is held to the public-only network policy.
+        publicOnly:
+          deps.ttsConnection && deps.ttsConnection !== 'off'
+            ? deps.ttsConnection.userEndpoint
+            : false,
         model: adapter.resolveRegistrationModel(),
       };
       const registrationKey = createHash('sha256')

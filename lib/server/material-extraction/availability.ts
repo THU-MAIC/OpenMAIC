@@ -19,6 +19,8 @@ export interface ExtractorAvailabilityDependencies {
   services?: ExtractionServices;
   /** Whose slots apply when `services` is not given. */
   ownerId?: string;
+  /** Whether `ownerId` is a stored owner to follow through a claim; false for a request's own workspace. */
+  forward?: boolean;
 }
 
 /**
@@ -35,7 +37,11 @@ export interface ExtractorAvailabilityDependencies {
 export async function resolveExtractableMimeTypes(
   dependencies: ExtractorAvailabilityDependencies = {},
 ): Promise<Set<string>> {
-  const services = dependencies.services ?? (await resolveExtractionServices(dependencies.ownerId));
+  const services =
+    dependencies.services ??
+    (await resolveExtractionServices(dependencies.ownerId, {
+      forward: dependencies.forward ?? true,
+    }));
   const configured = new Set(
     dependencies.configuredProviderIds?.() ??
       (services.document ? [services.document.providerId] : []),

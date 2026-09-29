@@ -12,13 +12,13 @@ import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
-import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
+import {
+  resolveClassroomWebSearchConfig,
+  type WebSearchConfig,
+} from '@/lib/server/web-search-config';
 
-export interface WebSearchCapability {
-  providerId: Parameters<typeof searchWeb>[0]['providerId'];
-  apiKey: string;
-  baseUrl?: string;
-}
+/** The resolved search configuration, forwarded whole (model, sub-sources, endpoint). */
+export type WebSearchCapability = WebSearchConfig;
 
 /** The web-search capability for a workspace, or null when unconfigured or off. */
 export async function resolveWebSearchCapability(
@@ -29,13 +29,7 @@ export async function resolveWebSearchCapability(
   // capability force-off plumbing (a disabled-only config resolves to nothing).
   // An extra non-empty-key check here would silently unregister web_search on
   // exactly the keyless deployments.
-  const config = await resolveClassroomWebSearchConfig(workspaceId);
-  if (!config) return null;
-  return {
-    providerId: config.providerId,
-    apiKey: config.apiKey,
-    ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
-  };
+  return (await resolveClassroomWebSearchConfig(workspaceId)) ?? null;
 }
 
 const SEARCH_SCHEMA = Type.Object({
@@ -60,10 +54,8 @@ export function buildWebSearchTool(
       // in-flight request is cut short rather than merely abandoned.
       if (signal?.aborted) throw new Error('aborted');
       const result = await searchWeb({
-        providerId: capability.providerId,
+        ...capability,
         query: params.query,
-        apiKey: capability.apiKey,
-        ...(capability.baseUrl ? { baseUrl: capability.baseUrl } : {}),
         ...(signal ? { signal } : {}),
       });
       if (signal?.aborted) throw new Error('aborted');

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/server/provider-config', () => ({
   resolveTTSModel: vi.fn(() => ''),
+  slotTTSModel: vi.fn(() => ''),
 }));
 vi.mock('@/lib/server/model-config/media', () => ({
   serverMediaConnection: (...args: unknown[]) => mocks.providers(...args),
