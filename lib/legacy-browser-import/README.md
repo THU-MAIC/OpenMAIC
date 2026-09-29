@@ -177,6 +177,8 @@ What the proposal holds:
 | The chosen model                                                | `slots.llm` = `provider:model`; a server-configured provider is named by its preset id, as the server names translated legacy providers |
 | An enabled selection whose provider is proposed or server-configured | the capability's root slot (`tts`, `asr`, `image`, `video`, `webSearch`, `document`), with the selected model; a server-configured provider by its preset id, without credentials |
 | Browser speech synthesis or recognition, when selected          | a `browser-native-tts` / `browser-native` provider and its root slot                              |
+| A keyless search service (Brave) selected with research switched on | a provider of its preset (no key) and `slots.webSearch`; a self-hosted one (SearXNG) needs an endpoint only the deployment may set and is not proposed |
+| The model picked for Claude web search | `slots.webSearch` = `claude:<model>` |
 | Speech input turned off (`asrEnabled` stored as false)             | `slots.asr = null` (off): without an `asr` slot the browser's own speech recognition would take over. The other switches (`ttsEnabled`, `imageGenerationEnabled`, `videoGenerationEnabled`, `webSearchEnabled`) are not carried over: availability follows the slots, and a lasting `null` would override the deployment's defaults |
 
 Not imported: per-stage routes (`llmStageRoutes`), which do not map one to one

@@ -133,7 +133,19 @@ const TOKEN_PLAN_CAPABILITY: Record<TokenPlanModality, SlotCapability> = {
 };
 
 /** Capabilities a slot names without a model: the provider's own default. */
-const PROVIDER_ONLY: ReadonlySet<ServiceCapability> = new Set(['webSearch', 'document']);
+const PROVIDER_ONLY: ReadonlySet<ServiceCapability> = new Set(['document']);
+
+/**
+ * Search services that need no key (Brave): selecting one and turning research
+ * on is a choice, with nothing to key. Self-hosted ones (SearXNG) need an
+ * endpoint only the deployment may set, so they are not proposed.
+ */
+function keylessSearchService(registryId: string): boolean {
+  const entry = (
+    WEB_SEARCH_PROVIDERS as Record<string, { requiresApiKey?: boolean; requiresBaseUrl?: boolean }>
+  )[registryId];
+  return !!entry && entry.requiresApiKey === false && !entry.requiresBaseUrl;
+}
 
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
@@ -410,6 +422,8 @@ export function buildModelSettingsProposal(
       selected: state.webSearchProviderId,
       on: state.webSearchEnabled === true,
       explicitlyOff: false,
+      // Model-based search (Claude) runs the model the user picked.
+      model: state.webSearchProvidersConfig?.[text(state.webSearchProviderId)]?.modelId,
     },
     // Document extraction had no switch: the selected extractor was used.
     { capability: 'document', selected: state.pdfProviderId, on: true, explicitlyOff: false },
@@ -458,7 +472,11 @@ export function buildModelSettingsProposal(
     const chosen = text(selectedId);
     if (!on || !chosen) continue;
     let id = ids.get(chosen) ?? serverIds.get(chosen);
-    if (!id && BROWSER_SERVICES[capability] === chosen) {
+    if (
+      !id &&
+      (BROWSER_SERVICES[capability] === chosen ||
+        (capability === 'webSearch' && keylessSearchService(chosen)))
+    ) {
       const preset = presetIdFor(capability, chosen);
       id = claim(preset, { preset });
     }

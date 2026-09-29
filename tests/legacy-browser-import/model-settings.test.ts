@@ -301,6 +301,46 @@ describe('buildModelSettingsProposal', () => {
     });
   });
 
+  it('imports a keyless search service the user selected and switched on', () => {
+    expect(
+      buildModelSettingsProposal({
+        webSearchEnabled: true,
+        webSearchProviderId: 'brave',
+        webSearchProvidersConfig: {
+          brave: { apiKey: '', baseUrl: 'https://search.brave.com', enabled: true },
+        },
+      }),
+    ).toEqual({ providers: { brave: { preset: 'brave' } }, slots: { webSearch: 'brave' } });
+    // Selected but research off, or an untouched default: nothing.
+    expect(
+      buildModelSettingsProposal({
+        webSearchEnabled: false,
+        webSearchProviderId: 'brave',
+        webSearchProvidersConfig: { brave: { apiKey: '', baseUrl: '' } },
+      }),
+    ).toBeUndefined();
+    expect(buildModelSettingsProposal({ webSearchProviderId: 'tavily' })).toBeUndefined();
+    // A self-hosted one needs an endpoint only the deployment may set.
+    expect(
+      buildModelSettingsProposal({ webSearchEnabled: true, webSearchProviderId: 'searxng' }),
+    ).toBeUndefined();
+  });
+
+  it('carries the model the user picked for Claude web search', () => {
+    expect(
+      buildModelSettingsProposal({
+        webSearchEnabled: true,
+        webSearchProviderId: 'claude',
+        webSearchProvidersConfig: {
+          claude: { apiKey: 'sk-ant', baseUrl: '', modelId: 'claude-opus-4-7' },
+        },
+      }),
+    ).toEqual({
+      providers: { claude: { preset: 'claude', apiKey: 'sk-ant' } },
+      slots: { webSearch: 'claude:claude-opus-4-7' },
+    });
+  });
+
   it('keeps an explicit browser speech choice', () => {
     expect(
       buildModelSettingsProposal({

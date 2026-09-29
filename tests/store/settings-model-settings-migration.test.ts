@@ -207,4 +207,20 @@ describe('settings store v4 → v5', () => {
       slots: { tts: 'openai-tts:tts-1-hd', webSearch: 'tavily' },
     });
   });
+
+  it('sets aside a keyless search service the user selected and switched on', async () => {
+    await hydrate(
+      {
+        webSearchEnabled: true,
+        webSearchProviderId: 'brave',
+        webSearchProvidersConfig: { brave: { apiKey: '', baseUrl: '', enabled: true } },
+        playbackSpeed: 1,
+      },
+      4,
+    );
+    expect(JSON.parse(localStorageStub.getItem(MODEL_SETTINGS_IMPORT_KEY)!)).toEqual({
+      providers: { brave: { preset: 'brave' } },
+      slots: { webSearch: 'brave' },
+    });
+  });
 });
