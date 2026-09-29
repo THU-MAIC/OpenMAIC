@@ -164,3 +164,53 @@ test('a course stored only in the browser moves to the server on first load', as
     await fresh.close();
   }
 });
+
+test('a first visit without an owner cookie imports under one owner, whatever order the first answers arrive in', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const stageId = uniqueStageId('legacy-first-visit-e2e');
+  const name = `First visit ${stageId.slice(-8)}`;
+  await seedLegacyDatabase(page, stageId, name);
+  // A browser that has never been given an owner: the upgrade's first load.
+  await page.context().clearCookies();
+
+  // Hold the answer to the page's first owner-scoped request until the importer
+  // has bound the browser, so it reaches the browser last. Before the page
+  // response established the owner, that answer minted an owner of its own and
+  // replaced the cookie the binding was made with.
+  let releaseHeld: () => void = () => undefined;
+  const bindingDone = new Promise<void>((resolve) => {
+    releaseHeld = resolve;
+  });
+  let holding = false;
+  await page.route(/\/api\/(stages|folders|persistence)(\/|\?|$)/, async (route) => {
+    const response = await route.fetch();
+    if (!holding) {
+      holding = true;
+      await Promise.race([bindingDone, new Promise((resolve) => setTimeout(resolve, 45_000))]);
+    }
+    await route.fulfill({ response });
+  });
+  await page.route('**/api/identity/legacy-import-binding', async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response });
+    releaseHeld();
+  });
+
+  await page.goto('/');
+
+  await expect(page.getByText(name).first()).toBeVisible({ timeout: 60_000 });
+  expect(holding).toBe(true);
+  const cookies = (await page.context().cookies()).filter(
+    (cookie) => cookie.name === 'anonymous_id',
+  );
+  expect(cookies).toHaveLength(1);
+
+  // After a reload the course is still this browser's.
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  await page.reload();
+  await expect(page.getByText(name).first()).toBeVisible({ timeout: 30_000 });
+  const after = (await page.context().cookies()).filter((cookie) => cookie.name === 'anonymous_id');
+  expect(after.map((cookie) => cookie.value)).toEqual(cookies.map((cookie) => cookie.value));
+});

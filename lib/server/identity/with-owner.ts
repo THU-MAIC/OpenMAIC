@@ -1,6 +1,7 @@
 import { LEGACY_IMPORT_HEADER } from '@/lib/persistence/legacy-import-bindings';
 
 import { resolveRequestOwner } from './resolve';
+import { resolveResponseSetCookies } from './set-cookie';
 import type { OwnerAuthRequest, OwnerPrincipal } from './types';
 
 /**
@@ -147,6 +148,32 @@ async function autoClaim(
 }
 
 /**
+ * Attach the `Set-Cookie` values an owner resolution returned (a minted
+ * anonymous owner, or the renewal of a presented one) to a response a route
+ * built itself, keeping only the clearing value for a cookie the response
+ * also clears. For routes that call {@link resolveRequestOwner} directly
+ * instead of {@link withRequestOwner}: every response of such a route,
+ * success or error, goes through this, so an identity used only there is
+ * renewed too. A streaming response gets them before it is returned, i.e.
+ * before its body starts.
+ */
+export function attachOwnerCookies(
+  response: Response,
+  setCookies: readonly string[] | undefined,
+): Response {
+  if (!setCookies?.length) return response;
+  const headers = new Headers(response.headers);
+  for (const value of setCookies) headers.append('Set-Cookie', value);
+  return resolveResponseSetCookies(
+    new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    }),
+  );
+}
+
+/**
  * Resolve the request owner and run a handler with it and the response
  * headers every response must carry. A handler that throws answers a 500 that
  * still carries them.
@@ -159,7 +186,9 @@ export async function withRequestOwner(
   if (!resolution.ok) return resolution.response;
   const { principal, responseHeaders } = resolution;
   try {
-    return await handler(principal, responseHeaders);
+    // A response that clears the anonymous cookie (a claim, a retired owner)
+    // must not also renew it, whatever order the handler merged them in.
+    return resolveResponseSetCookies(await handler(principal, responseHeaders));
   } catch (error) {
     console.error('[owner-identity] owner-scoped request failed', error);
     return new Response('Internal Server Error', { status: 500, headers: responseHeaders });

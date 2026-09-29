@@ -11,6 +11,7 @@ import 'fake-indexeddb/auto';
 
 import { HttpAssetStore, HttpDocumentStore } from '@openmaic/storage';
 import { HttpRuntimeStore } from '@openmaic/storage/runtime/http';
+import { NextRequest } from 'next/server';
 import { Pool } from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,10 +33,13 @@ const OWNER_A = `anon:${COOKIE_A}`;
 describe.skipIf(!contractUrl)('the legacy browser importer against the app routes', () => {
   let admin: Pool;
   let pool: Pool;
-  let cookie = COOKIE_A;
+  /** The browser's owner cookie; `undefined` is a browser that holds none. */
+  let cookie: string | undefined = COOKIE_A;
   let storage: MemoryStorage;
   /** Called with every routed request before its cookie is read (a test may switch it). */
   let onRequest: (method: string, path: string) => void = () => undefined;
+  /** Called with every routed response as it reaches the browser. */
+  let onResponse: (path: string, response: Response) => void = () => undefined;
   const realFetch = globalThis.fetch;
   const previousEnv = {
     DATABASE_URL: process.env.DATABASE_URL,
@@ -48,8 +52,14 @@ describe.skipIf(!contractUrl)('the legacy browser importer against the app route
     if (!raw.startsWith('/') && !raw.startsWith('http://localhost')) return realFetch(input, init);
     const url = new URL(raw, 'http://localhost');
     onRequest(init?.method ?? 'GET', url.pathname);
+    const response = await dispatch(url, init);
+    onResponse(url.pathname, response);
+    return response;
+  }
+
+  async function dispatch(url: URL, init?: RequestInit): Promise<Response> {
     const headers = new Headers(init?.headers);
-    headers.set('cookie', `anonymous_id=${cookie}`);
+    if (cookie !== undefined) headers.set('cookie', `anonymous_id=${cookie}`);
     // Same-origin, as a browser request to its own origin is.
     headers.set('origin', 'http://localhost');
     const request = new Request(url, { ...init, headers });
@@ -162,6 +172,7 @@ describe.skipIf(!contractUrl)('the legacy browser importer against the app route
     await freshBrowser();
     cookie = COOKIE_A;
     onRequest = () => undefined;
+    onResponse = () => undefined;
     storage = new MemoryStorage();
     vi.stubGlobal('localStorage', storage);
     vi.stubGlobal('window', Object.assign(new EventTarget(), { localStorage: storage }));
@@ -340,5 +351,97 @@ describe.skipIf(!contractUrl)('the legacy browser importer against the app route
     expect(after.stage.name).toBe('Kept');
     const src = after.scenes[0]!.content.canvas.elements[0]!.src;
     expect(await assetText(src)).toBe(Buffer.from(await GEN_IMAGE.arrayBuffer()).toString());
+  });
+
+  // ---- a first visit: the browser holds no owner cookie yet ------------------
+
+  /** A response reaching the browser: it keeps the owner cookie the response sets. */
+  function arrive(response: Response): void {
+    const match = /^anonymous_id=([^;]+);/.exec(response.headers.get('set-cookie') ?? '');
+    if (match) cookie = match[1];
+  }
+
+  /** The browser loading a page: the document request, through the middleware. */
+  async function loadPage(path = '/'): Promise<void> {
+    const { middleware } = await import('@/middleware');
+    const response = await middleware(
+      new NextRequest(`http://localhost${path}`, {
+        headers: {
+          accept: 'text/html',
+          'sec-fetch-dest': 'document',
+          'sec-fetch-mode': 'navigate',
+          ...(cookie === undefined ? {} : { cookie: `anonymous_id=${cookie}` }),
+        },
+      }),
+    );
+    arrive(response);
+  }
+
+  async function bindingOwners(): Promise<string[]> {
+    const rows = await pool.query('SELECT owner_id FROM legacy_import_bindings');
+    return rows.rows.map((row: { owner_id: string }) => row.owner_id);
+  }
+
+  async function courseOwners(): Promise<string[]> {
+    const rows = await pool.query('SELECT DISTINCT owner_id FROM stage_meta ORDER BY 1');
+    return rows.rows.map((row: { owner_id: string }) => row.owner_id);
+  }
+
+  it('imports under the one owner the page established, in whatever order the first answers arrive', async () => {
+    await seedLatestBrowser(storage);
+    cookie = undefined;
+    await loadPage();
+
+    // The page's first requests go out together. The first one's answer is
+    // held until after the importer has bound the browser, and only then
+    // reaches the browser.
+    const [slow, fast] = await Promise.all([
+      call('/api/stages'),
+      call('/api/persistence/learner-key'),
+    ]);
+    arrive(fast);
+    let held: Response | undefined = slow;
+    onResponse = (path, response) => {
+      arrive(response);
+      if (held && path === '/api/identity/legacy-import-binding') {
+        arrive(held);
+        held = undefined;
+      }
+    };
+
+    const outcome = await runLegacyBrowserImport({ storage, locks: null, now: () => NOW });
+
+    expect(held).toBeUndefined();
+    expect(outcome.status).toBe('complete');
+    expect(cookie).toBeDefined();
+    const owner = `anon:${cookie}`;
+    expect(await bindingOwners()).toEqual([owner]);
+    expect(await courseOwners()).toEqual([owner]);
+    expect(await libraryIds()).toEqual([DOCS_COURSE, TABLES_COURSE]);
+  });
+
+  it('binds no owner the binding request itself minted, and imports once the owner is established', async () => {
+    await seedLatestBrowser(storage);
+    // No page response set a cookie (the first request is the importer's).
+    cookie = undefined;
+    onResponse = (_path, response) => arrive(response);
+
+    const first = await runLegacyBrowserImport({ storage, locks: null, now: () => NOW });
+
+    expect(first.status).toBe('pending');
+    expect(first.ledger?.completedAt).toBeUndefined();
+    expect(await bindingOwners()).toEqual([]);
+    // The refusal still carried the minted cookie: the browser presents it now.
+    expect(cookie).toBeDefined();
+
+    const later = await runLegacyBrowserImport({
+      storage,
+      locks: null,
+      now: () => NOW + 86_400_000,
+    });
+
+    expect(later.status).toBe('complete');
+    expect(await bindingOwners()).toEqual([`anon:${cookie}`]);
+    expect(await courseOwners()).toEqual([`anon:${cookie}`]);
   });
 });

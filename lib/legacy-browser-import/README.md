@@ -14,8 +14,13 @@ browser id and no owner information. A run first asks
 `POST /api/identity/legacy-import-binding` (`{ browserId }`): one atomic insert
 into `legacy_import_bindings` binds the id to the requesting owner unless another
 owner holds it, and the answer says only whether the requesting owner holds it
-now. A claim participant re-keys the claimed owner's bindings to the account in
-the claim transaction. Every other request the importer sends carries the id in
+now. It binds only an owner the browser already presents: a binding request
+that arrives without an owner cookie (and so mints one) answers `409
+OWNER_NOT_ESTABLISHED`, and the run is retried on a later load. The page
+response establishes the owner cookie before any script runs
+(`lib/server/identity/navigation.ts`), so this is the exception. A claim
+participant re-keys the claimed owner's bindings to the account in the claim
+transaction. Every other request the importer sends carries the id in
 `X-OpenMAIC-Legacy-Import`, and owner resolution
 (`lib/server/identity/with-owner.ts`) refuses it with `409
 LEGACY_IMPORT_NOT_BOUND` unless the owner the request resolves to holds the

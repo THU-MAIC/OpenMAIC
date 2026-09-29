@@ -240,14 +240,13 @@ describe('a course the old storage can never read', () => {
       readFailures: { count: 1, since: NOW },
     });
 
-    let outcome = first;
     for (const hours of [6, 12, 18]) {
-      outcome = await runLegacyBrowserImport(at(NOW + hours * HOUR));
-      expect(outcome.ledger?.courses[DOCS_COURSE]?.status).toBe('pending');
+      const retry = await runLegacyBrowserImport(at(NOW + hours * HOUR));
+      expect(retry.ledger?.courses[DOCS_COURSE]?.status).toBe('pending');
     }
     // The fifth failing run, a day after the first: the course settles. It has
     // no older table copy, so it is skipped with the reason.
-    outcome = await runLegacyBrowserImport(at(NOW + 24 * HOUR));
+    const outcome = await runLegacyBrowserImport(at(NOW + 24 * HOUR));
     expect(outcome.status).toBe('complete');
     expect(outcome.ledger?.courses[DOCS_COURSE]).toMatchObject({ status: 'skipped' });
     expect(outcome.ledger?.courses[DOCS_COURSE]?.reason).toMatch(/could not be read/);

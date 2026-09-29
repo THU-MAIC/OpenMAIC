@@ -77,6 +77,29 @@ describe('POST /api/extract-document', () => {
     delete process.env.PDF_MINERU_API_KEY;
   });
 
+  it.each([
+    ['missing', 404],
+    ['too_large', 413],
+    ['unauthenticated', 401],
+  ] as const)(
+    'carries the owner resolution cookies on an asset-id answer (%s)',
+    async (status, httpStatus) => {
+      const renewal =
+        'anonymous_id=44444444-4444-4444-8444-444444444444; Path=/; HttpOnly; SameSite=Lax; Max-Age=34560000';
+      mocks.resolveServerAsset.mockResolvedValue({ status, setCookies: [renewal] });
+      const { POST } = await import('@/app/api/extract-document/route');
+      const res = await POST(
+        new Request('http://localhost/api/extract-document', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ assetId: 'ast_1', fileName: 'a.pdf' }),
+        }) as unknown as NextRequest,
+      );
+      expect(res.status).toBe(httpStatus);
+      expect(res.headers.getSetCookie()).toEqual([renewal]);
+    },
+  );
+
   it('returns 400 for unsupported course material MIME types', async () => {
     const res = await postExtractDocument({
       file: new File(['x,y'], 'sheet.csv', { type: 'text/csv' }),

@@ -311,7 +311,13 @@ async function runLocked(
     } else {
       // Binding, listing the library or opening a store failed: nothing is
       // known to be wrong with any item, so the whole run is retried later.
-      log('Import run failed; retrying on a later load:', error);
+      if (classifyFailure(error).code === 'OWNER_NOT_ESTABLISHED') {
+        // The bind itself was the request that created the owner: the server
+        // binds only an owner the browser already presents.
+        log('Not started: the owner is not established yet; retrying on a later load');
+      } else {
+        log('Import run failed; retrying on a later load:', error);
+      }
       ledger.failedRuns += 1;
       ledger.nextRunAt = now() + backoffMs(ledger.failedRuns);
       trySave(storage, ledger, log);
@@ -331,11 +337,16 @@ async function runLocked(
       ledger.nextRunAt = now() + backoffMs(ledger.failedRuns);
       log(`Paused: the server refused the credential (${failure.reason}); retrying later`);
     } else if (failure.kind === 'not-bound') {
-      // The owner this page's requests resolve to does not hold the browser
-      // (the cookie changed since the run bound it). Items stay pending; a
-      // later load asks for the binding again.
+      // Every request that can answer this follows this run's own successful
+      // bind, so the owner the page's requests resolve to changed during the
+      // run (its owner cookie was replaced). Nothing is marked complete: items
+      // stay pending, and a later load asks for the binding again.
       ledger.nextRunAt = now() + 1_000;
-      log('Stopped: this browser is not bound to the current owner; a later load asks again');
+      log(
+        'Stopped: the owner changed during this run (the server bound this browser, then ' +
+          'refused a later request as another owner, so the owner cookie was replaced). ' +
+          'Items stay pending; a later load asks for the binding again',
+      );
     } else {
       // Retired (the account continues once the claim carried the binding),
       // busy, or the learner changed: pending, and a later load resumes.
