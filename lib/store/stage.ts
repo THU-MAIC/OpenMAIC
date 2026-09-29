@@ -961,8 +961,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
               // flag: the warm state IS the live classroom again (the failure
               // path re-queued the discarded dirt before settling) — keep it.
               // Mirror of the success-path identity guard below: a tokenless
-              // store writer (applyClassroomStageAndScenes via a database
-              // import) can replace the stage during the park without claiming
+              // store writer (a database import applying another classroom)
+              // can replace the stage during the park without claiming
               // the load token, and then there is no warm state of THIS stage
               // left to keep — fall through to the cold load instead of
               // reporting a classroom the store no longer holds as live.

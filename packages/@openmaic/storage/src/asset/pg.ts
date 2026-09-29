@@ -687,6 +687,69 @@ export class PgAssetStore implements AssetStore {
     }
   }
 
+  /**
+   * Delete one entry only while it is still an unclaimed allocation: this
+   * principal's, still pending (no document write has committed it, and its
+   * deadline stands), and named by no document. Answers whether it deleted.
+   *
+   * For a writer that allocated ids and then failed to write the document
+   * that would name them: releasing them at once keeps a retry from holding
+   * two copies. The guard is what makes that safe when the writer cannot be
+   * sure its write failed (a lost COMMIT acknowledgement): an entry the
+   * document did commit is no longer pending, and one it references has a
+   * reference row, so neither is touched. The blob is stamped like
+   * {@link remove} does when no entry names it any more.
+   */
+  async releasePending(principal: AssetPrincipal, ref: AssetRef): Promise<boolean> {
+    if (!isLosslessJsonString(ref) || !isLosslessJsonString(principal.key)) return false;
+    try {
+      return await this.writeTransaction(async (queryable) => {
+        // TWO statements, for the reason the collector's entry pass gives
+        // (`AssetCollector.releaseEntries`). The first locks the entry while
+        // it is still this principal's pending allocation; a document write
+        // racing it updates the row, so a lock wait re-evaluates the pending
+        // predicate against the new row and skips it. The reference check has
+        // to be a separate statement: a reference-only writer (the backfill)
+        // inserts into `document_asset_refs` under `KEY SHARE` without
+        // updating the entry, so a `NOT EXISTS` folded into the locking or
+        // deleting statement would keep its statement-start answer ("no
+        // reference") after waiting on that writer, and the delete would
+        // cascade its committed reference away. Under READ COMMITTED the
+        // second statement takes a fresh snapshot and sees it, and the
+        // `FOR UPDATE` held since keeps any later reference insert waiting
+        // until this transaction ends.
+        const locked = await queryable.query<HashRow>(
+          `SELECT content_hash
+             FROM asset_entries
+            WHERE id = $1 AND principal = $2
+              AND committed_at IS NULL AND expires_at IS NOT NULL
+            FOR UPDATE`,
+          [ref, principal.key],
+        );
+        const hash = locked.rows[0]?.content_hash;
+        if (!hash) return false;
+        const referenced = await queryable.query(
+          'SELECT 1 FROM document_asset_refs WHERE asset_id = $1 LIMIT 1',
+          [ref],
+        );
+        if (referenced.rows.length > 0) return false;
+        await queryable.query('DELETE FROM asset_entries WHERE id = $1', [ref]);
+        await queryable.query(
+          `UPDATE asset_blobs
+              SET unreferenced_at = now()
+            WHERE content_hash = $1
+              AND NOT EXISTS (
+                SELECT 1 FROM asset_entries WHERE content_hash = $1
+              )`,
+          [hash],
+        );
+        return true;
+      });
+    } catch {
+      throw registryFailure('releasePending');
+    }
+  }
+
   async replace(
     principal: AssetPrincipal,
     ref: AssetId,

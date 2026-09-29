@@ -7,7 +7,10 @@ import type {
 import { withPlainJsonDocumentWrites } from '@/lib/document-store/plain-json-store';
 import type { AppStage } from '@/lib/document-store/persistence-types';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
-import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
+import {
+  createOwnerBoundDocumentStore,
+  type CreateOnlyDocumentStore,
+} from '@/lib/persistence/owner-bound-document-store';
 import { canonicalizeOwner, isOwnerRetiredError } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import type { OwnerPrincipal } from '@/lib/server/identity/types';
@@ -20,7 +23,8 @@ import type { Queryable } from '@openmaic/storage/document/pg';
  */
 export type OwnerScopedDocumentStore = DocumentStore<AppScene, AppStage> &
   DocumentFolderStore &
-  StageFreshnessManifestStore;
+  StageFreshnessManifestStore &
+  CreateOnlyDocumentStore<AppScene, AppStage>;
 
 /**
  * The owner-bound document store for one HTTP request.

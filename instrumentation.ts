@@ -44,6 +44,13 @@ export async function register(): Promise<void> {
     warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
   }
 
+  // The one-time import of classrooms earlier versions stored as files
+  // (lib/server/legacy-classroom-import.ts). It reads the disk and the
+  // database, so it runs in the background, retrying with backoff until it
+  // completes: `register` must not wait on it.
+  const { startLegacyClassroomImport } = await import('@/lib/server/legacy-classroom-import');
+  const legacyClassroomImport = startLegacyClassroomImport();
+
   // Imported dynamically so the Edge bundle never pulls in `pg`.
   const { startAssetCollectorSchedule } =
     await import('@/lib/persistence/asset-collector-schedule');
@@ -102,6 +109,11 @@ export async function register(): Promise<void> {
         await stopAgentEventNotifyBus?.();
       } catch (error) {
         console.error('[instrumentation] Agent event notify bus drain failed', error);
+      }
+      try {
+        await legacyClassroomImport.stop();
+      } catch (error) {
+        console.error('[instrumentation] Legacy classroom import drain failed', error);
       }
       try {
         await assetSchedule?.stop();

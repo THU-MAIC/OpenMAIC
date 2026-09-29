@@ -1,16 +1,13 @@
-import { promises as fs } from 'fs';
-import path from 'path';
 import type {
   ClassroomGenerationProgress,
   ClassroomGenerationStep,
   GenerateClassroomInput,
   GenerateClassroomResult,
 } from '@/lib/server/classroom-generation';
-import {
-  CLASSROOM_JOBS_DIR,
-  ensureClassroomJobsDir,
-  writeJsonFileAtomic,
-} from '@/lib/server/classroom-storage';
+import type { Queryable } from '@openmaic/storage/document/pg';
+
+import { canonicalizeOwner } from '@/lib/persistence/owner-merges';
+import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
 export type ClassroomGenerationJobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
@@ -40,8 +37,16 @@ export interface ClassroomGenerationJob {
   error?: string;
 }
 
-function jobFilePath(jobId: string) {
-  return path.join(CLASSROOM_JOBS_DIR, `${jobId}.json`);
+/**
+ * Jobs live in PostgreSQL (`classroom_generation_jobs`, see
+ * `lib/persistence/classroom-generation-jobs.ts`), beside the course they
+ * produce, so a job can be polled from any instance and survives a restart as
+ * a record (a restarted process does not resume the run; the stale check below
+ * reports it as failed).
+ */
+async function jobsPool() {
+  const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+  return pool;
 }
 
 function buildInputSummary(input: GenerateClassroomInput): ClassroomGenerationJob['inputSummary'] {
@@ -50,25 +55,6 @@ function buildInputSummary(input: GenerateClassroomInput): ClassroomGenerationJo
       input.requirement.length > 200 ? `${input.requirement.slice(0, 197)}...` : input.requirement,
     materialCount: input.materialIds?.length ?? 0,
   };
-}
-
-/** Simple per-job mutex to serialize read-modify-write on the same job file. */
-const jobLocks = new Map<string, Promise<void>>();
-
-async function withJobLock<T>(jobId: string, fn: () => Promise<T>): Promise<T> {
-  const prev = jobLocks.get(jobId) ?? Promise.resolve();
-  let resolve: () => void;
-  const next = new Promise<void>((r) => {
-    resolve = r;
-  });
-  jobLocks.set(jobId, next);
-  try {
-    await prev;
-    return await fn();
-  } finally {
-    resolve!();
-    if (jobLocks.get(jobId) === next) jobLocks.delete(jobId);
-  }
 }
 
 /** Max age (ms) before a "running" job without an active runner is considered stale. */
@@ -98,6 +84,7 @@ export function isValidClassroomJobId(jobId: string): boolean {
 export async function createClassroomGenerationJob(
   jobId: string,
   input: GenerateClassroomInput,
+  { ownerId }: { ownerId: string },
 ): Promise<ClassroomGenerationJob> {
   const now = new Date().toISOString();
   const job: ClassroomGenerationJob = {
@@ -112,66 +99,74 @@ export async function createClassroomGenerationJob(
     scenesGenerated: 0,
   };
 
-  await ensureClassroomJobsDir();
-  await writeJsonFileAtomic(jobFilePath(jobId), job);
+  const pool = await jobsPool();
+  await pool.query(
+    'INSERT INTO classroom_generation_jobs (id, owner_id, record) VALUES ($1, $2, $3::jsonb)',
+    [jobId, ownerId, JSON.stringify(job)],
+  );
   return job;
 }
 
+/**
+ * The job, for the owner asking about it. A job another owner created answers
+ * `null`, exactly like an unknown id, so a job id is not an existence oracle.
+ * The owner a job was created for may since have been claimed into an account
+ * (a visitor who signed in while the course generated); that account sees the
+ * job too, as it sees the course.
+ */
 export async function readClassroomGenerationJob(
   jobId: string,
+  ownerId: string,
 ): Promise<ClassroomGenerationJob | null> {
-  try {
-    const content = await fs.readFile(jobFilePath(jobId), 'utf-8');
-    const job = JSON.parse(content) as ClassroomGenerationJob;
-    return markStaleIfNeeded(job);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return null;
-    }
-    throw error;
+  const pool = await jobsPool();
+  const result = await pool.query<{ owner_id: string; record: ClassroomGenerationJob }>(
+    'SELECT owner_id, record FROM classroom_generation_jobs WHERE id = $1',
+    [jobId],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  if (
+    row.owner_id !== ownerId &&
+    (await canonicalizeOwner(pool as unknown as Queryable, row.owner_id)) !== ownerId
+  ) {
+    return null;
   }
+  return markStaleIfNeeded(row.record);
 }
 
-export async function updateClassroomGenerationJob(
+/**
+ * Merge `patch` into the job record in one statement, so concurrent progress
+ * writes of one job never lose each other's fields. `startedAt` is kept once
+ * set: the last operand re-applies the stored value over the patch.
+ */
+async function updateClassroomGenerationJob(
   jobId: string,
   patch: Partial<ClassroomGenerationJob>,
 ): Promise<ClassroomGenerationJob> {
-  return withJobLock(jobId, async () => {
-    const existing = await readClassroomGenerationJob(jobId);
-    if (!existing) {
-      throw new Error(`Classroom generation job not found: ${jobId}`);
-    }
-
-    const updated: ClassroomGenerationJob = {
-      ...existing,
-      ...patch,
-      updatedAt: new Date().toISOString(),
-    };
-
-    await writeJsonFileAtomic(jobFilePath(jobId), updated);
-    return updated;
-  });
+  const pool = await jobsPool();
+  const result = await pool.query<{ record: ClassroomGenerationJob }>(
+    `UPDATE classroom_generation_jobs
+        SET record = record || $2::jsonb
+                     || jsonb_strip_nulls(jsonb_build_object('startedAt', record->'startedAt')),
+            updated_at = now()
+      WHERE id = $1
+      RETURNING record`,
+    [jobId, JSON.stringify({ ...patch, updatedAt: new Date().toISOString() })],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new Error(`Classroom generation job not found: ${jobId}`);
+  }
+  return row.record;
 }
 
 export async function markClassroomGenerationJobRunning(
   jobId: string,
 ): Promise<ClassroomGenerationJob> {
-  return withJobLock(jobId, async () => {
-    const existing = await readClassroomGenerationJob(jobId);
-    if (!existing) {
-      throw new Error(`Classroom generation job not found: ${jobId}`);
-    }
-
-    const updated: ClassroomGenerationJob = {
-      ...existing,
-      status: 'running',
-      startedAt: existing.startedAt || new Date().toISOString(),
-      message: 'Classroom generation started',
-      updatedAt: new Date().toISOString(),
-    };
-
-    await writeJsonFileAtomic(jobFilePath(jobId), updated);
-    return updated;
+  return updateClassroomGenerationJob(jobId, {
+    status: 'running',
+    startedAt: new Date().toISOString(),
+    message: 'Classroom generation started',
   });
 }
 

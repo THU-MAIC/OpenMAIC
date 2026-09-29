@@ -1,25 +1,15 @@
 import { promises as fs, createReadStream, type ReadStream } from 'fs';
 import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
-import { CLASSROOMS_DIR, isValidClassroomId } from '@/lib/server/classroom-storage';
+import {
+  CLASSROOMS_DIR,
+  classroomMediaMimeType,
+  isValidClassroomId,
+} from '@/lib/server/classroom-storage';
 import { parseRangeHeader } from '@/lib/server/http-range';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ClassroomMedia');
-
-const MIME_TYPES: Record<string, string> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
-  '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
-  '.mp3': 'audio/mpeg',
-  '.wav': 'audio/wav',
-  '.ogg': 'audio/ogg',
-  '.aac': 'audio/aac',
-};
 
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=86400, immutable' } as const;
 
@@ -76,7 +66,7 @@ export async function GET(
     }
 
     const ext = path.extname(realPath).toLowerCase();
-    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+    const contentType = classroomMediaMimeType(ext) ?? 'application/octet-stream';
 
     // Range requests enable progressive playback and seeking for hosted media
     // (e.g. <video> streams the moov atom first, then fetches on seek).

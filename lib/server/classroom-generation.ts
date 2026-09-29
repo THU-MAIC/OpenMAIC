@@ -27,14 +27,7 @@ import type { ThinkingConfig } from '@/lib/types/provider';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
-import {
-  ClassroomAlreadyExistsError,
-  CLASSROOM_ID_MAX_ATTEMPTS,
-  generateClassroomId,
-  persistClassroom,
-  releaseClassroomReservation,
-  reserveClassroom,
-} from '@/lib/server/classroom-storage';
+import { generateClassroomId, saveGeneratedClassroom } from '@/lib/server/classroom-persistence';
 import {
   classroomTtsSummary,
   countNarratableSpeechActions,
@@ -191,44 +184,8 @@ Return a JSON object with this exact structure:
   }));
 }
 
-/**
- * Reserve the classroom id before generating any media or TTS.
- *
- * Media and TTS write into `<CLASSROOMS_DIR>/<id>/{media,audio}`, so the id must
- * be claimed first: if the collision were only detected at persist time, the
- * retry would already have written the new classroom's media into an existing
- * classroom's directory and the retried document's media URLs would still point
- * at that other id. The reservation is an exclusive create of the classroom file
- * with a placeholder document (`reserved: true`, empty scenes) — the only token
- * that atomically covers the whole collision namespace, because a classroom
- * created through `POST /api/classroom` has a JSON file but no directory.
- * `readClassroom` hides reserved documents, so an in-flight (or crashed)
- * reservation is never served as an empty classroom. On `EEXIST` a fresh id is
- * generated and retried, bounded exactly like the create route. The process now
- * owns the id, so the final persist is an ordinary overwrite of that same file.
- */
-async function reserveGeneratedClassroom(
-  buildStage: (id: string) => Stage,
-): Promise<{ id: string; stage: Stage }> {
-  for (let attempt = 0; ; attempt += 1) {
-    const id = generateClassroomId();
-    const stage = buildStage(id);
-    try {
-      await reserveClassroom(id, stage);
-      return { id, stage };
-    } catch (error) {
-      if (
-        !(error instanceof ClassroomAlreadyExistsError) ||
-        attempt >= CLASSROOM_ID_MAX_ATTEMPTS - 1
-      ) {
-        throw error;
-      }
-      log.warn(`Classroom id "${id}" already exists; reserving a fresh id`);
-    }
-  }
-}
-
 const TTS_PHASE_FAILED_WARNING = 'TTS generation phase failed';
+const ASSET_STORAGE_FULL_WARNING = 'Asset storage is full; stopped storing';
 
 function classroomTtsHeartbeatProgress(written: number, total: number): number {
   if (total <= 0) return 94;
@@ -250,7 +207,11 @@ export async function generateClassroom(
   input: GenerateClassroomInput,
   options: {
     baseUrl: string;
-    /** The request owner; `materialIds` resolve against this owner's library. */
+    /**
+     * The request owner: `materialIds` resolve against this owner's library,
+     * its media are allocated in this owner's asset partition, and the
+     * finished course is saved into this owner's library.
+     */
     ownerId: string;
     signal?: AbortSignal;
     onProgress?: (progress: ClassroomGenerationProgress) => Promise<void> | void;
@@ -621,8 +582,11 @@ export async function generateClassroom(
     agents = getDefaultAgents();
   }
 
-  const { id: stageId, stage } = await reserveGeneratedClassroom((id) => ({
-    id,
+  // The id is only a name until the finished course is saved: nothing is
+  // written under it before then, so there is nothing to reserve or release.
+  const stageId = generateClassroomId();
+  const stage: Stage = {
+    id: stageId,
     name: courseTitle || outlines[0]?.title || requirement.slice(0, 50),
     description: undefined,
     languageDirective,
@@ -631,7 +595,7 @@ export async function generateClassroom(
     createdAt: Date.now(),
     updatedAt: Date.now(),
     // For LLM-generated agents, embed full configs so the client can
-    // hydrate the agent registry without prior IndexedDB data.
+    // hydrate the agent registry from the document alone.
     // For default agents, just record IDs — the client already has them.
     ...(agentsGenerated
       ? {
@@ -648,14 +612,10 @@ export async function generateClassroom(
       : {
           agentIds: agents.map((a) => a.id),
         }),
-  }));
+  };
 
-  // The reservation above claims the id; everything below owns it. If
-  // generation throws before `persistClassroom` succeeds, release the
-  // placeholder so a failed run does not burn the id or leave an unreadable
-  // file behind. `persisted` is the completion marker.
-  let persisted: Awaited<ReturnType<typeof persistClassroom>> | undefined;
-  try {
+  // Scoped so the in-memory scene store does not outlive the pipeline.
+  {
     const store = createInMemoryStore(stage);
     const api = createStageAPI(store);
 
@@ -770,6 +730,11 @@ export async function generateClassroom(
       throw new Error('No scenes were generated');
     }
 
+    // The phases the owner's asset store refused for room. Each stopped at its
+    // first refusal rather than keep paying a provider for bytes it would
+    // refuse; the others went on.
+    const storageFullPhases: string[] = [];
+
     // Phase: Media generation (after all scenes generated)
     if (capabilities.imageGeneration || capabilities.videoGeneration) {
       await options.onProgress?.({
@@ -781,9 +746,11 @@ export async function generateClassroom(
       });
 
       try {
-        const mediaMap = await generateMediaForClassroom(outlines, stageId, options.baseUrl);
-        replaceMediaPlaceholders(scenes, mediaMap);
-        log.info(`Media generation complete: ${Object.keys(mediaMap).length} files`);
+        const media = await generateMediaForClassroom(outlines, stageId, options.ownerId);
+        replaceMediaPlaceholders(scenes, media.assets);
+        if (media.storageFull.images) storageFullPhases.push('images');
+        if (media.storageFull.video) storageFullPhases.push('video');
+        log.info(`Media generation complete: ${Object.keys(media.assets).length} files`);
       } catch (err) {
         log.warn('Media generation phase failed, continuing:', err);
       }
@@ -802,10 +769,10 @@ export async function generateClassroom(
       });
 
       try {
-        ttsCoverage = await generateTTSForClassroom(
+        const { storageFull: ttsStorageFull, ...coverage } = await generateTTSForClassroom(
           scenes,
           stageId,
-          options.baseUrl,
+          options.ownerId,
           options.signal,
           async ({ written, total }) => {
             await options.onProgress?.({
@@ -817,6 +784,8 @@ export async function generateClassroom(
             });
           },
         );
+        ttsCoverage = coverage;
+        if (ttsStorageFull) storageFullPhases.push('narration');
       } catch (err) {
         if (isAbortError(err)) throw err;
         log.warn('TTS generation phase failed, continuing:', err);
@@ -824,7 +793,15 @@ export async function generateClassroom(
         ttsFailureWarning = TTS_PHASE_FAILED_WARNING;
       }
     }
-    const ttsWarning = ttsResultWarning(ttsCoverage, ttsFailureWarning);
+    const ttsWarning =
+      [
+        ttsResultWarning(ttsCoverage, ttsFailureWarning),
+        storageFullPhases.length > 0
+          ? `${ASSET_STORAGE_FULL_WARNING}: ${storageFullPhases.join(', ')}`
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join('; ') || undefined;
 
     await options.onProgress?.({
       step: 'persisting',
@@ -834,11 +811,13 @@ export async function generateClassroom(
       totalScenes: outlines.length,
     });
 
-    // The id was reserved before media/TTS generation, so the process owns it and
-    // this is an ordinary overwrite that replaces the placeholder.
-    persisted = await persistClassroom({ id: stageId, stage, scenes }, options.baseUrl);
+    // Saved once, complete and create-only: the course and the ownership of
+    // every asset allocated above are committed by this one document write.
+    const persisted = await saveGeneratedClassroom(options.ownerId, { stage, scenes, outlines });
+    const classroomId = persisted.stage.id;
+    const url = `${options.baseUrl}/classroom/${classroomId}`;
 
-    log.info(`Classroom persisted: ${persisted.id}, URL: ${persisted.url}`);
+    log.info(`Classroom persisted: ${classroomId}, URL: ${url}`);
 
     await options.onProgress?.({
       step: 'completed',
@@ -849,18 +828,14 @@ export async function generateClassroom(
     });
 
     return {
-      id: persisted.id,
-      url: persisted.url,
+      id: classroomId,
+      url,
       stage: persisted.stage,
       scenes: persisted.scenes,
       scenesCount: persisted.scenes.length,
-      createdAt: persisted.createdAt,
+      createdAt: new Date(stage.createdAt ?? Date.now()).toISOString(),
       ...(ttsCoverage ? { ttsCoverage } : {}),
       ...(ttsWarning ? { warning: ttsWarning } : {}),
     };
-  } finally {
-    if (!persisted) {
-      await releaseClassroomReservation(stageId);
-    }
   }
 }

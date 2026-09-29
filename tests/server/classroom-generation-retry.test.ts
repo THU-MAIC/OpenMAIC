@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ClassroomAlreadyExistsError } from '@/lib/server/classroom-storage';
 import type { GenerateClassroomInput } from '@/lib/server/classroom-generation';
 
 const mocks = vi.hoisted(() => ({
@@ -10,9 +9,7 @@ const mocks = vi.hoisted(() => ({
   generateSceneContent: vi.fn(),
   generateSceneActions: vi.fn(),
   createSceneWithActions: vi.fn(),
-  reserveClassroom: vi.fn(),
-  releaseClassroomReservation: vi.fn(),
-  persistClassroom: vi.fn(),
+  saveGeneratedClassroom: vi.fn(),
   generateClassroomId: vi.fn(),
   generateMediaForClassroom: vi.fn(),
   replaceMediaPlaceholders: vi.fn(),
@@ -71,14 +68,8 @@ vi.mock('@/lib/server/scene-generation', () => ({
   createSceneWithActions: mocks.createSceneWithActions,
 }));
 
-vi.mock('@/lib/server/classroom-storage', async (importOriginal) => ({
-  // Keep the real module (including the real ClassroomAlreadyExistsError) and
-  // stub only the calls that touch the filesystem, so the generation path's
-  // collision handling is exercised against the actual error class.
-  ...(await importOriginal<typeof import('@/lib/server/classroom-storage')>()),
-  reserveClassroom: mocks.reserveClassroom,
-  releaseClassroomReservation: mocks.releaseClassroomReservation,
-  persistClassroom: mocks.persistClassroom,
+vi.mock('@/lib/server/classroom-persistence', () => ({
+  saveGeneratedClassroom: mocks.saveGeneratedClassroom,
   generateClassroomId: mocks.generateClassroomId,
 }));
 
@@ -200,16 +191,14 @@ function resetPipelineMocks() {
     });
     return sceneResult.success ? (sceneResult.data ?? null) : null;
   });
-  mocks.persistClassroom.mockImplementation(async ({ id, stage, scenes }) => ({
-    id,
-    url: `http://localhost/classroom/${id}`,
+  mocks.saveGeneratedClassroom.mockImplementation(async (_ownerId, { stage, scenes }) => ({
     stage,
     scenes,
-    createdAt: '2026-06-22T00:00:00.000Z',
   }));
-  mocks.reserveClassroom.mockResolvedValue(undefined);
-  mocks.releaseClassroomReservation.mockResolvedValue(undefined);
-  mocks.generateMediaForClassroom.mockResolvedValue({});
+  mocks.generateMediaForClassroom.mockResolvedValue({
+    assets: {},
+    storageFull: { images: false, video: false },
+  });
   mocks.replaceMediaPlaceholders.mockImplementation(() => undefined);
   mocks.generateTTSForClassroom.mockResolvedValue({ written: 0, total: 0 });
   mocks.generateClassroomId.mockReturnValue('stagegen01');
@@ -422,31 +411,28 @@ describe('classroom scene generation retries', () => {
     }
   });
 
-  it('reserves the id before generating and overwrites it on persist', async () => {
+  it('saves the finished classroom once, for the job owner, with its outlines', async () => {
     mocks.generateSceneContent.mockResolvedValue(slideContent);
 
-    await generateWithProgress();
+    const { result } = await generateWithProgress();
 
-    expect(mocks.reserveClassroom).toHaveBeenCalledTimes(1);
-    const [reservedId, reservedStage] = mocks.reserveClassroom.mock.calls[0];
-    expect(reservedId).toBe('stagegen01');
-    expect(reservedStage.id).toBe('stagegen01');
-
-    // The id is already owned, so the final persist is a plain overwrite.
-    expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
-    const [data, baseUrl, options] = mocks.persistClassroom.mock.calls[0];
-    expect(baseUrl).toBe('http://localhost');
-    expect(options).toBeUndefined();
-    expect(data.id).toBe('stagegen01');
-    expect(data.stage.id).toBe('stagegen01');
-    for (const scene of data.scenes) {
+    expect(mocks.saveGeneratedClassroom).toHaveBeenCalledTimes(1);
+    const [ownerId, saved] = mocks.saveGeneratedClassroom.mock.calls[0];
+    expect(ownerId).toBe('owner-1');
+    expect(saved.stage.id).toBe('stagegen01');
+    expect(saved.outlines).toEqual([outline]);
+    expect(saved.scenes).toHaveLength(1);
+    for (const scene of saved.scenes) {
       expect(scene.stageId).toBe('stagegen01');
     }
+    expect(result).toMatchObject({
+      id: 'stagegen01',
+      url: 'http://localhost/classroom/stagegen01',
+      scenesCount: 1,
+    });
   });
 
-  it('releases the reservation when generation fails before the final persist', async () => {
-    // Zero outlines reach the "No scenes were generated" failure after the id
-    // has already been reserved.
+  it('writes nothing when generation fails before the final save', async () => {
     mocks.generateSceneOutlinesFromRequirements.mockResolvedValue({
       success: true,
       data: { languageDirective: 'Use English.', outlines: [] },
@@ -454,62 +440,67 @@ describe('classroom scene generation retries', () => {
 
     await expect(generateWithProgress()).rejects.toThrow('No scenes were generated');
 
-    expect(mocks.reserveClassroom).toHaveBeenCalledTimes(1);
-    expect(mocks.reserveClassroom).toHaveBeenCalledWith('stagegen01', expect.anything());
-    expect(mocks.persistClassroom).not.toHaveBeenCalled();
-    expect(mocks.releaseClassroomReservation).toHaveBeenCalledTimes(1);
-    expect(mocks.releaseClassroomReservation).toHaveBeenCalledWith('stagegen01');
+    expect(mocks.saveGeneratedClassroom).not.toHaveBeenCalled();
   });
 
-  it('does not release the reservation after a successful persist', async () => {
+  it('allocates media and narration for the job owner before the save', async () => {
     mocks.generateSceneContent.mockResolvedValue(slideContent);
+
+    await generateWithProgress({}, { imageGeneration: true, tts: true });
+
+    expect(mocks.generateMediaForClassroom).toHaveBeenCalledWith(
+      [outline],
+      'stagegen01',
+      'owner-1',
+    );
+    expect(mocks.generateTTSForClassroom.mock.calls[0]?.[1]).toBe('stagegen01');
+    expect(mocks.generateTTSForClassroom.mock.calls[0]?.[2]).toBe('owner-1');
+    const saveOrder = mocks.saveGeneratedClassroom.mock.invocationCallOrder[0];
+    expect(mocks.generateMediaForClassroom.mock.invocationCallOrder[0]).toBeLessThan(saveOrder);
+    expect(mocks.generateTTSForClassroom.mock.invocationCallOrder[0]).toBeLessThan(saveOrder);
+  });
+
+  it('reports the id the save stored the classroom under', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    mocks.saveGeneratedClassroom.mockImplementation(async (_ownerId, { stage, scenes }) => ({
+      stage: { ...stage, id: 'stagegen02' },
+      scenes,
+    }));
 
     const { result } = await generateWithProgress();
 
-    expect(result.id).toBe('stagegen01');
-    expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
-    expect(mocks.releaseClassroomReservation).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      id: 'stagegen02',
+      url: 'http://localhost/classroom/stagegen02',
+    });
   });
 
-  it('retries a colliding reservation before media and only generates for the final id', async () => {
+  it('keeps narrating after a video is refused for room, and names the stopped phase', async () => {
     mocks.generateSceneContent.mockResolvedValue(slideContent);
-    mocks.generateClassroomId.mockReturnValueOnce('stagegen01').mockReturnValueOnce('stagegen02');
-    mocks.reserveClassroom
-      .mockRejectedValueOnce(new ClassroomAlreadyExistsError('stagegen01'))
-      .mockResolvedValueOnce(undefined);
+    mocks.generateMediaForClassroom.mockResolvedValue({
+      assets: {},
+      storageFull: { images: false, video: true },
+    });
+    mocks.generateTTSForClassroom.mockResolvedValue({ written: 2, total: 2 });
 
-    const { result } = await generateWithProgress({}, { imageGeneration: true, tts: true });
+    const { result } = await generateWithProgress({}, { videoGeneration: true, tts: true });
 
-    expect(result.id).toBe('stagegen02');
-    expect(result.stage.id).toBe('stagegen02');
-
-    // The colliding id is rejected at reservation time and replaced.
-    expect(mocks.reserveClassroom).toHaveBeenCalledTimes(2);
-    expect(mocks.reserveClassroom.mock.calls[0][0]).toBe('stagegen01');
-    expect(mocks.reserveClassroom.mock.calls[1][0]).toBe('stagegen02');
-
-    // Media and TTS run only after the winning reservation, and only for the
-    // final id — never for the id that collided.
-    expect(mocks.generateMediaForClassroom).toHaveBeenCalledTimes(1);
-    expect(mocks.generateMediaForClassroom.mock.calls[0][1]).toBe('stagegen02');
     expect(mocks.generateTTSForClassroom).toHaveBeenCalledTimes(1);
-    expect(mocks.generateTTSForClassroom.mock.calls[0][1]).toBe('stagegen02');
-    const winningReservationOrder = mocks.reserveClassroom.mock.invocationCallOrder[1];
-    expect(winningReservationOrder).toBeLessThan(
-      mocks.generateMediaForClassroom.mock.invocationCallOrder[0],
-    );
-    expect(winningReservationOrder).toBeLessThan(
-      mocks.generateTTSForClassroom.mock.invocationCallOrder[0],
-    );
+    expect(result.ttsCoverage).toEqual({ written: 2, total: 2 });
+    expect(result.warning).toBe('Asset storage is full; stopped storing: video');
+  });
 
-    // The final persist overwrites the reserved id; there is no post-media retry.
-    expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
-    const [retry] = mocks.persistClassroom.mock.calls[0];
-    expect(retry.id).toBe('stagegen02');
-    expect(retry.stage.id).toBe('stagegen02');
-    for (const scene of retry.scenes) {
-      expect(scene.stageId).toBe('stagegen02');
-    }
+  it('adds the storage warning beside incomplete narration', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    mocks.generateTTSForClassroom.mockResolvedValue({ written: 1, total: 3, storageFull: true });
+
+    const { result } = await generateWithProgress({}, { tts: true });
+
+    expect(result.ttsCoverage).toEqual({ written: 1, total: 3 });
+    expect(result.warning).toBe(
+      'TTS generation INCOMPLETE: 1 written, 2 speech actions left silent; ' +
+        'Asset storage is full; stopped storing: narration',
+    );
   });
 
   it('surfaces partial TTS coverage on the classroom result', async () => {
@@ -572,7 +563,7 @@ describe('classroom scene generation retries', () => {
       async (
         _scenes: unknown,
         _classroomId: unknown,
-        _baseUrl: unknown,
+        _ownerId: unknown,
         _signal: unknown,
         onProgress?: (progress: { written: number; total: number }) => Promise<void> | void,
       ) => {
@@ -612,7 +603,7 @@ describe('classroom scene generation retries', () => {
     expect(failed.result.ttsCoverage).toEqual({ written: 0, total: 0 });
     expect(failed.result.warning).toBe('TTS generation phase failed');
     expect(failed.result.id).toBe('stagegen01');
-    expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
+    expect(mocks.saveGeneratedClassroom).toHaveBeenCalledTimes(1);
   });
 
   it('propagates TTS cancellation instead of recording a successful warning', async () => {
@@ -622,7 +613,7 @@ describe('classroom scene generation retries', () => {
     await expect(generateWithProgress({}, { tts: true })).rejects.toMatchObject({
       name: 'AbortError',
     });
-    expect(mocks.persistClassroom).not.toHaveBeenCalled();
+    expect(mocks.saveGeneratedClassroom).not.toHaveBeenCalled();
   });
 });
 
@@ -736,7 +727,7 @@ describe('classroom generation inputs', () => {
       undefined,
     );
     expect(result.scenesCount).toBe(1);
-    expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
+    expect(mocks.saveGeneratedClassroom).toHaveBeenCalledTimes(1);
   });
 
   it('skips web search when the configured provider resolves to no usable configuration', async () => {
@@ -761,7 +752,7 @@ describe('classroom generation inputs', () => {
 
     expect(mocks.generateMediaForClassroom).toHaveBeenCalledTimes(1);
     expect(mocks.replaceMediaPlaceholders).not.toHaveBeenCalled();
-    expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
+    expect(mocks.saveGeneratedClassroom).toHaveBeenCalledTimes(1);
     expect(result.scenesCount).toBe(1);
     expect(result.warning).toBeUndefined();
     expect(progress.at(-1)).toMatchObject({ step: 'completed' });

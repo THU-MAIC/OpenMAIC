@@ -42,11 +42,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { FileQuestion, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
-import {
-  applyClassroomStageAndScenes,
-  defaultClassroomLoadDeps,
-  runClassroomLoad,
-} from '@/lib/classroom/load-classroom';
+import { defaultClassroomLoadDeps, runClassroomLoad } from '@/lib/classroom/load-classroom';
 import {
   paneAvailabilityRetryDelay,
   resolveClassroomSurfaceView,
@@ -113,13 +109,6 @@ export function ClassroomSurface({
           isCurrent,
           loadFromStorage,
           getCurrentStage: () => useStageStore.getState().stage,
-          fetchClassroom: defaultClassroomLoadDeps.fetchClassroom,
-          applyFallbackScenes: (args) =>
-            defaultClassroomLoadDeps.applyFallbackScenes({
-              ...args,
-              isCurrent,
-              applyStageAndScenes: applyClassroomStageAndScenes,
-            }),
           loadRestoredMediaTasks: defaultClassroomLoadDeps.loadRestoredMediaTasks,
           applyRestoredMediaTasks: (restored) =>
             defaultClassroomLoadDeps.applyRestoredMediaTasks(restored, isCurrent),
@@ -146,18 +135,6 @@ export function ClassroomSurface({
           // Inside the workspace the pane treats a miss as the bounded
           // availability gap (stage_link can land before the document).
           return 'absent';
-        }
-
-        if (loadResult.outcome === 'unavailable') {
-          if (variant === 'pane') {
-            // Retry through the availability schedule; exhaustion lands on the
-            // error card with Retry, not the not-found claim.
-            return 'unavailable';
-          }
-          setLoadUnavailable(true);
-          setError(LOAD_UNAVAILABLE_ERROR);
-          setLoading(false);
-          return 'failed';
         }
 
         if (loadResult.outcome === 'cancelled') return 'cancelled';

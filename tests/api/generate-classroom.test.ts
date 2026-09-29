@@ -129,9 +129,13 @@ describe('POST /api/generate-classroom', () => {
         pollUrl: expect.stringMatching(/^http:\/\/localhost\/api\/generate-classroom\//),
       }),
     );
-    expect(mocks.createClassroomGenerationJob).toHaveBeenCalledWith(expect.any(String), {
-      requirement: 'Teach photosynthesis',
-    });
+    expect(mocks.createClassroomGenerationJob).toHaveBeenCalledWith(
+      expect.any(String),
+      {
+        requirement: 'Teach photosynthesis',
+      },
+      { ownerId: 'owner-1' },
+    );
     expect(mocks.after).toHaveBeenCalledTimes(1);
 
     await mocks.after.mock.calls[0][0]();
@@ -172,10 +176,14 @@ describe('POST /api/generate-classroom', () => {
       'mat_mmmmmmmmmmmmmmmmmmmmmmmmm2',
       'mat_mmmmmmmmmmmmmmmmmmmmmmmmm1',
     ]);
-    expect(mocks.createClassroomGenerationJob).toHaveBeenCalledWith(expect.any(String), {
-      requirement: 'Teach from my notes',
-      materialIds: ['mat_mmmmmmmmmmmmmmmmmmmmmmmmm2', 'mat_mmmmmmmmmmmmmmmmmmmmmmmmm1'],
-    });
+    expect(mocks.createClassroomGenerationJob).toHaveBeenCalledWith(
+      expect.any(String),
+      {
+        requirement: 'Teach from my notes',
+        materialIds: ['mat_mmmmmmmmmmmmmmmmmmmmmmmmm2', 'mat_mmmmmmmmmmmmmmmmmmmmmmmmm1'],
+      },
+      { ownerId: 'owner-1' },
+    );
   });
 
   it('rejects pdfContent and points the caller at the materials upload', async () => {
@@ -254,9 +262,13 @@ describe('POST /api/generate-classroom', () => {
     });
 
     expect(res.status).toBe(202);
-    expect(mocks.createClassroomGenerationJob).toHaveBeenCalledWith(expect.any(String), {
-      requirement: 'Teach photosynthesis',
-    });
+    expect(mocks.createClassroomGenerationJob).toHaveBeenCalledWith(
+      expect.any(String),
+      {
+        requirement: 'Teach photosynthesis',
+      },
+      { ownerId: 'owner-1' },
+    );
   });
 
   it('returns 400 without a requirement', async () => {
