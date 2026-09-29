@@ -100,6 +100,7 @@ policy:
 | `models` | 否 | 該供應商提供的對話模型 ID，也就是模型設定中列出的選項。對 `openai-compatible` 來說，這是模型設定唯一的清單來源。它不會限制 `slots` 能寫哪些模型。 |
 | `proxy` | 否 | 該供應商請求使用的 HTTP 代理位址。 |
 | `credentials` | 部分範本需要 | 不使用單一 key 的服務所需的金鑰對。AliDocMind 使用 `accessKeyId` 和 `accessKeySecret`。 |
+| `options` | 否 | 非機密、供應商特有的設定，例如 `voxcpm-tts` 的 `backend`。名稱由字母、數字、`_` 和 `-` 組成；值為字串、數字或布林值（不能巢狀對應或清單），可以使用 `${VAR}`。模型設定會顯示 options，因此絕對不要在其中放 key。僅限部署：模型設定無法設定它們。 |
 
 大多數範本只涵蓋一種能力，與內建 registry 一一對應：`openai` 範本只有對話，OpenAI 的圖像、語音合成和語音辨識分別是 `openai-image`、`openai-tts` 和 `openai-whisper` 範本。每種能力宣告一個供應商；同一把 key 涵蓋多種能力時，引用同一個 `${VAR}` 即可。**Token Plan 範本**（`minimax`、`tokendance`、`volcengine-ark`、`kimi-coding-plan`）用一把 key 涵蓋多種能力，每種能力使用該方案自己的端點。供應商上的 `baseUrl` 會取代它涵蓋的所有能力的端點，因此只有當 Token Plan 的全部能力都一起搬移時，才為它設定 `baseUrl`。
 

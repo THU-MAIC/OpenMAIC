@@ -15,7 +15,7 @@ description: 自託管 TTS 與聲音複製。後端選擇、設定和聲音管�
 
 ## 1. 啟動 VoxCPM 後端
 
-OpenMAIC 支援三種部署形態，三種都使用同一個 OpenMAIC 適配器。你只需要在設定中切換對應的後端類型即可。
+OpenMAIC 支援三種部署形態，三種都使用同一個 OpenMAIC 適配器；在 `openmaic.yml` 中透過供應商的 `options.backend` 選擇你執行的那一種（見第 2 步）。
 
 | 後端           | 端點               | 適用場景                                     |
 | -------------- | ------------------ | -------------------------------------------- |
@@ -34,19 +34,23 @@ python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
 
 ## 2. 讓 OpenMAIC 對接它
 
-VoxCPM2 執行在你自己的網路中，因此它的端點由部署設定，工作區不能在 **設定 → 模型** 中新增它。請在 `openmaic.yml` 中宣告它並指派給 `tts` 插槽，不需要 API key：
+VoxCPM2 執行在你自己的網路中，因此它的端點由部署設定，工作區不能在 **設定 → 模型** 中新增它。請在 `openmaic.yml` 中宣告它，用 `options.backend` 選擇後端，並指派給 `tts` 插槽，不需要 API key：
 
 ```yaml title="openmaic.yml"
 providers:
   voxcpm:
     preset: voxcpm-tts
     baseUrl: http://localhost:8000/v1
+    options:
+      backend: vllm-omni          # vllm-omni（預設）| python-api | nano-vllm
 
 slots:
   tts: voxcpm
 ```
 
-沒有 `openmaic.yml` 時，舊版變數可以達到相同效果：
+供應商的 `options.backend` 適用於 `tts` 插槽上的所有請求。聲音註冊只在 `vllm-omni` 後端可用；使用 `python-api` 和 `nano-vllm` 時，聲音提示會隨每次請求傳送。
+
+沒有 `openmaic.yml` 時，舊版變數可以設定端點，但無法選擇後端；如需 `python-api` 或 `nano-vllm`，請使用 `openmaic.yml`：
 
 ```bash
 TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
@@ -76,7 +80,7 @@ OpenMAIC 會在合成時根據每個 Agent 的人設動態生成 voice prompt。
 
 | 現象                     | 可能原因                                                        |
 | ------------------------ | --------------------------------------------------------------- |
-| Request URL 預覽回傳 404 | 後端類型選錯了，請對照第 1 步的端點表。                          |
+| 請求回傳 404 | `options.backend` 與你執行的後端不一致，請對照第 1 步的端點表。 |
 | 第一次複製請求要等 ~30s  | 後端冷啟動；後續複製會重用已暖機的 runtime。                     |
 | 音訊說到一半就中斷       | 後端輸出 token 數受限，請調高 `--max-tokens` 或對應的 VoxCPM 設定。 |
 | 401 / 403                | 為不需要 key 的後端設定了 `TTS_VOXCPM_API_KEY`，留空即可。       |

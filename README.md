@@ -1351,7 +1351,7 @@ Without `openmaic.yml`, the legacy variables `PDF_MINERU_CLOUD_API_KEY` or `PDF_
 
 [VoxCPM2](https://github.com/OpenBMB/VoxCPM) is an open-source TTS model from OpenBMB with voice cloning. OpenMAIC ships an adapter; run VoxCPM on your own hardware and OpenMAIC will talk to it.
 
-**1. Run a VoxCPM backend.** Three deployment styles, all behind the same OpenMAIC adapter. You toggle which one in Settings.
+**1. Run a VoxCPM backend.** Three deployment styles, all behind the same OpenMAIC adapter. You pick which one with `options.backend` in `openmaic.yml` (step 2).
 
 | Backend | Endpoint | When to use |
 | --- | --- | --- |
@@ -1368,12 +1368,16 @@ providers:
   voxcpm:
     preset: voxcpm-tts
     baseUrl: http://localhost:8000/v1
+    options:
+      backend: vllm-omni          # vllm-omni (default) | python-api | nano-vllm
 
 slots:
   tts: voxcpm
 ```
 
-Without `openmaic.yml`, the legacy `TTS_VOXCPM_BASE_URL=http://localhost:8000/v1` does the same.
+Voice registration works only on the `vllm-omni` backend; `python-api` and `nano-vllm` send the voice prompt with each request.
+
+Without `openmaic.yml`, the legacy `TTS_VOXCPM_BASE_URL=http://localhost:8000/v1` sets the endpoint but cannot choose a backend.
 
 **3. Manage voices.** Three voice modes, all under **Settings → Text-to-Speech → VoxCPM2 → VoxCPM Voices**.
 

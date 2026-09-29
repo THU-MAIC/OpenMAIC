@@ -548,7 +548,7 @@ slots:
 
 [VoxCPM2](https://github.com/OpenBMB/VoxCPM) 是 OpenBMB 开源的 TTS 模型，支持声音克隆。OpenMAIC 自带适配器，把 VoxCPM 跑在自己机器上即可对接。
 
-**1. 部署 VoxCPM 后端。** 三种部署形态，背后是同一套 OpenMAIC 适配器，在设置里切换即可。
+**1. 部署 VoxCPM 后端。** 三种部署形态，背后是同一套 OpenMAIC 适配器，在 `openmaic.yml` 中用 `options.backend` 选择（见第 2 步）。
 
 | 后端 | 接口 | 适用场景 |
 | --- | --- | --- |
@@ -565,12 +565,16 @@ providers:
   voxcpm:
     preset: voxcpm-tts
     baseUrl: http://localhost:8000/v1
+    options:
+      backend: vllm-omni          # vllm-omni（默认）| python-api | nano-vllm
 
 slots:
   tts: voxcpm
 ```
 
-没有 `openmaic.yml` 时，旧版的 `TTS_VOXCPM_BASE_URL=http://localhost:8000/v1` 可以达到同样效果。
+音色注册只在 `vllm-omni` 后端可用；`python-api` 和 `nano-vllm` 会随每次请求发送音色提示。
+
+没有 `openmaic.yml` 时，旧版的 `TTS_VOXCPM_BASE_URL=http://localhost:8000/v1` 可以设置端点，但无法选择后端。
 
 **3. 管理音色。** 三种音色模式，都在 **设置 → 语音合成 → VoxCPM2 → VoxCPM 音色** 里。
 

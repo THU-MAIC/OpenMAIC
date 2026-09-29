@@ -100,6 +100,7 @@ Each entry under `providers` declares one provider. The key is its id, which slo
 | `models` | No | Model ids this provider offers for chat, as the model settings list them. For `openai-compatible` it is the only list the settings have. It does not restrict what `slots` may name. |
 | `proxy` | No | HTTP proxy URL for this provider's requests. |
 | `credentials` | Some presets | Key pairs for services that do not use one key. AliDocMind takes `accessKeyId` and `accessKeySecret`. |
+| `options` | No | Non-secret, provider-specific settings, such as `backend` for `voxcpm-tts`. Names are letters, digits, `_` and `-`; values are strings, numbers or booleans (no nested maps or lists), and `${VAR}` works. The model settings show options, so never put a key in them. Deployment only: the model settings cannot set them. |
 
 Most presets cover one capability, following the built-in registries: the `openai` preset is chat only, and OpenAI images and speech are the `openai-image`, `openai-tts` and `openai-whisper` presets. Declare one provider per capability, and reference the same `${VAR}` when one key covers several. **Token plan presets** (`minimax`, `tokendance`, `volcengine-ark`, `kimi-coding-plan`) cover several capabilities with one key, each at the plan's own endpoint. A `baseUrl` on a provider replaces the endpoint for every capability that provider covers, so give a token plan a `baseUrl` only when all of its capabilities move with it.
 
