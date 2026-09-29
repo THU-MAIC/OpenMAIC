@@ -1991,6 +1991,228 @@
       "getApiKey": "Lấy khóa API",
       "domestic": "Trung Quốc",
       "international": "Quốc tế"
+    },
+    "modelSettings": {
+      "nav": "Mô hình",
+      "title": "Mô hình",
+      "description": "Mỗi bước tạo khóa học dùng mô hình nào. Nhấp vào một mô hình để đổi; các bước không có thiết lập riêng sẽ theo bước cha.",
+      "loading": "Đang tải thiết lập mô hình…",
+      "loadFailed": "Không tải được thiết lập mô hình: {{message}}",
+      "retry": "Thử lại",
+      "tabs": {
+        "map": "Sơ đồ mô hình",
+        "providers": "Nhà cung cấp"
+      },
+      "legend": {
+        "label": "Chú giải",
+        "follows": "Theo bước cha",
+        "own": "Thiết lập riêng",
+        "locked": "Do máy chủ đặt"
+      },
+      "actions": {
+        "save": "Lưu",
+        "cancel": "Hủy"
+      },
+      "unavailable": {
+        "title": "Mô hình do máy chủ quản lý",
+        "body": "Máy chủ này không lưu thiết lập mô hình theo không gian làm việc, nên dùng các mô hình do quản trị viên cấu hình.",
+        "openLegacy": "Mở dịch vụ mô hình"
+      },
+      "map": {
+        "label": "Sơ đồ mô hình của khóa học. Kéo để di chuyển, dùng các nút thu phóng để phóng to hoặc thu nhỏ.",
+        "outside": "Ngoài quy trình",
+        "standalone": "Độc lập",
+        "perPage": "Theo từng trang",
+        "zoom": "Thu phóng",
+        "zoomIn": "Phóng to (+)",
+        "zoomOut": "Thu nhỏ (-)",
+        "fit": "Vừa khung nhìn (0)",
+        "reset": "Đặt lại 100%",
+        "hint": "Kéo để di chuyển · ⌘/Ctrl + cuộn để thu phóng · nhấp đúp vào chỗ trống để vừa khung"
+      },
+      "stations": {
+        "research": "Tìm hiểu trên web",
+        "media": "Hình ảnh / video",
+        "lines": {
+          "rewrite": "Truy vấn",
+          "search": "Tìm kiếm",
+          "image": "Ảnh",
+          "video": "Video"
+        }
+      },
+      "card": {
+        "edit": "{{name}}: {{value}}. Thay đổi",
+        "toggle": "Bật hoặc tắt {{name}}",
+        "providerDefault": "Mô hình mặc định",
+        "off": "Tắt",
+        "unassigned": "Chưa đặt",
+        "invalid": "Thiết lập không hợp lệ",
+        "locked": "Do máy chủ đặt",
+        "lockedHint": "Được đặt bởi cấu hình máy chủ. Không thể thay đổi tại đây.",
+        "followers": "Số bước theo nó: {{count}}",
+        "childrenFollow": "Loại trang · tất cả theo",
+        "childrenOwn": "Loại trang · {{count}} riêng"
+      },
+      "source": {
+        "inherited": "Theo {{name}}",
+        "deployment": "Máy chủ",
+        "default": "Mặc định của máy chủ"
+      },
+      "picker": {
+        "follow": "Theo {{name}}",
+        "providers": "Nhà cung cấp",
+        "providerDefault": "Mô hình mặc định",
+        "modelId": "ID mô hình",
+        "use": "Dùng",
+        "off": "Tắt",
+        "offHint": "Bước này không chạy",
+        "noProviders": "Chưa có nhà cung cấp nào cung cấp tính năng này.",
+        "fallback": "Dự phòng",
+        "noFallback": "Không",
+        "manageProviders": "Quản lý nhà cung cấp",
+        "conflict": "Thiết lập đã được thay đổi ở nơi khác và đã tải lại. Hãy kiểm tra rồi thử lại.",
+        "lockedNow": "Máy chủ hiện đặt mục này nên không có gì thay đổi."
+      },
+      "setup": {
+        "prompt": "Chưa có mô hình mặc định. Kết nối một dịch vụ và các mô hình được đề xuất sẽ điền vào mọi bước chưa đặt.",
+        "open": "Kết nối dịch vụ",
+        "orProvider": "Hoặc thêm nhà cung cấp",
+        "askAdmin": "Chưa cấu hình mô hình ngôn ngữ nào. Hãy nhờ quản trị viên máy chủ thiết lập.",
+        "title": "Kết nối dịch vụ",
+        "body": "Chọn một dịch vụ và dán khóa API của nó. Các mô hình được đề xuất sẽ điền vào mọi bước chưa được đặt.",
+        "connect": "Kết nối",
+        "connecting": "Đang kết nối…",
+        "done": "Đã kết nối {{name}}",
+        "partial": "Đã thêm nhà cung cấp nhưng không gán được mô hình của nó: {{message}}",
+        "noModel": "Đã thêm nhà cung cấp nhưng nó không liệt kê mô hình ngôn ngữ nào. Hãy thêm ID mô hình trong mục Nhà cung cấp."
+      },
+      "providers": {
+        "title": "Nhà cung cấp",
+        "hint": "Nguồn của các mô hình. Khóa được lưu trên máy chủ và không bao giờ hiển thị lại.",
+        "empty": "Chưa có nhà cung cấp",
+        "add": "Thêm nhà cung cấp",
+        "addTitle": "Nhà cung cấp mới",
+        "edit": "Sửa {{name}}",
+        "remove": "Xóa {{name}}",
+        "removeTitle": "Xóa {{name}}?",
+        "removeBody": "Các bước đang dùng nó sẽ quay lại theo bước cha.",
+        "removeConfirm": "Xóa",
+        "server": "Máy chủ",
+        "serverHint": "Do máy chủ cấu hình; chỉ đọc",
+        "preset": "Dịch vụ",
+        "pickPreset": "Chọn dịch vụ",
+        "apiKey": "Khóa API",
+        "apiKeyPlaceholder": "Dán khóa API",
+        "showKey": "Hiện khóa",
+        "hideKey": "Ẩn khóa",
+        "keepKey": "Giữ",
+        "replaceKey": "Thay",
+        "removeKey": "Xóa",
+        "keySet": "Khóa {{mask}}",
+        "keySetNoMask": "Đã đặt khóa",
+        "noKey": "Chưa có khóa",
+        "keyUnreadable": "Không đọc được khóa; hãy nhập lại",
+        "keyWillBeRemoved": "Khóa sẽ bị xóa khi bạn lưu.",
+        "baseUrl": "URL cơ sở",
+        "baseUrlOptional": "Endpoint tùy chỉnh (không bắt buộc)",
+        "models": "Mô hình",
+        "modelsHint": "ID mô hình, phân tách bằng dấu phẩy",
+        "needsBaseUrl": "Nhập URL cơ sở.",
+        "needsModels": "Nhập ít nhất một ID mô hình.",
+        "groups": {
+          "bundle": "Gói có nhiều dịch vụ",
+          "chat": "Mô hình ngôn ngữ",
+          "tts": "Tổng hợp giọng nói",
+          "asr": "Nhận dạng giọng nói",
+          "image": "Hình ảnh",
+          "video": "Video",
+          "webSearch": "Tìm kiếm web",
+          "document": "Tài liệu"
+        }
+      },
+      "capabilities": {
+        "chat": "Ngôn ngữ",
+        "tts": "Tổng hợp giọng nói",
+        "asr": "Nhận dạng giọng nói",
+        "image": "Hình ảnh",
+        "video": "Video",
+        "webSearch": "Tìm kiếm web",
+        "document": "Tài liệu"
+      },
+      "slots": {
+        "llm": {
+          "name": "Mô hình mặc định",
+          "desc": "Mô hình ngôn ngữ mà mọi bước không có thiết lập riêng sử dụng."
+        },
+        "courseResearch": {
+          "name": "Truy vấn tìm kiếm",
+          "desc": "Chuyển chủ đề khóa học thành truy vấn tìm kiếm web."
+        },
+        "courseOutline": {
+          "name": "Dàn ý",
+          "desc": "Lên kế hoạch các trang của khóa học."
+        },
+        "courseAgents": {
+          "name": "Vai trò",
+          "desc": "Tạo giáo viên và bạn học trong lớp."
+        },
+        "courseContent": {
+          "name": "Nội dung trang",
+          "desc": "Viết từng trang. Các loại trang không có thiết lập riêng sẽ theo nó."
+        },
+        "courseContentSlide": {
+          "name": "Trang chiếu",
+          "desc": "Viết các trang chiếu."
+        },
+        "courseContentQuiz": {
+          "name": "Bài kiểm tra",
+          "desc": "Viết các trang kiểm tra."
+        },
+        "courseContentInteractive": {
+          "name": "Trang tương tác",
+          "desc": "Viết các trang tương tác."
+        },
+        "courseContentPbl": {
+          "name": "Dự án",
+          "desc": "Viết các trang học tập theo dự án."
+        },
+        "courseActions": {
+          "name": "Hoạt động giảng dạy",
+          "desc": "Lên kịch bản giáo viên nói và làm gì trên mỗi trang."
+        },
+        "classroom": {
+          "name": "Lớp học",
+          "desc": "Thảo luận, chấm bài kiểm tra và dự án trong khi học."
+        },
+        "agent": {
+          "name": "Tác tử",
+          "desc": "Cùng bạn tạo và chỉnh sửa khóa học. Cần mô hình hỗ trợ gọi công cụ."
+        },
+        "tts": {
+          "name": "Lồng tiếng",
+          "desc": "Đọc to bài giảng."
+        },
+        "asr": {
+          "name": "Nhập bằng giọng nói",
+          "desc": "Chuyển câu hỏi nói trong lớp thành văn bản."
+        },
+        "image": {
+          "name": "Hình ảnh",
+          "desc": "Tạo hình ảnh cho các trang."
+        },
+        "video": {
+          "name": "Video",
+          "desc": "Tạo đoạn video cho các trang."
+        },
+        "webSearch": {
+          "name": "Tìm kiếm web",
+          "desc": "Tìm kiếm trên web khi tạo khóa học."
+        },
+        "document": {
+          "name": "Phân tích tài liệu",
+          "desc": "Đọc các tài liệu đã tải lên."
+        }
+      }
     }
   },
   "workspace": {

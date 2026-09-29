@@ -45,6 +45,7 @@ import {
   Boxes,
   GraduationCap,
   Sparkles,
+  Workflow,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -78,6 +79,7 @@ import { GeneralSettings } from './general-settings';
 import { SkillSettings } from './skill-settings';
 import { TokenPlanSettings } from './token-plan-settings';
 import { CourseModelConfigPanel } from './course-model-config';
+import { ModelSettingsPanel } from './models';
 import { ModelEditDialog } from './model-edit-dialog';
 import { AddProviderDialog, type NewProviderData } from './add-provider-dialog';
 import { AddAudioProviderDialog, type NewAudioProviderData } from './add-audio-provider-dialog';
@@ -315,7 +317,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const setWebSearchProviderConfig = useSettingsStore((state) => state.setWebSearchProviderConfig);
 
   // Navigation
-  const [activeSection, setActiveSection] = useState<SettingsSection>('token-plan');
+  const [activeSection, setActiveSection] = useState<SettingsSection>('models');
   // 「模型服务」分区内的服务 tab（沿用旧一级分区值）
   const [serviceTab, setServiceTab] = useState<ServiceTab>('providers');
   // TTS/ASR 列表是「浏览配置」而非「切换使用」：本地选中态（默认跟随全局），
@@ -665,6 +667,15 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
       );
     }
     switch (activeSection) {
+      case 'models':
+        return (
+          <div>
+            <h2 className="text-lg font-semibold">{t('settings.modelSettings.title')}</h2>
+            <p className="text-xs text-muted-foreground max-sm:hidden">
+              {t('settings.modelSettings.description')}
+            </p>
+          </div>
+        );
       case 'course-models':
         return <h2 className="text-lg font-semibold">{t('settings.courseModels.nav')}</h2>;
       case 'general':
@@ -899,16 +910,36 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-[85vh] p-0 gap-0 block" showCloseButton={false}>
+      <DialogContent
+        className="h-[85vh] p-0 gap-0 block max-sm:h-[100dvh] max-sm:max-w-none max-sm:rounded-none"
+        showCloseButton={false}
+      >
         <DialogTitle className="sr-only">{t('settings.title')}</DialogTitle>
         <DialogDescription className="sr-only">{t('settings.description')}</DialogDescription>
-        <div className="flex h-full overflow-hidden">
+        {/* Below `sm` the nav becomes a strip above the panel. */}
+        <div className="flex h-full flex-col overflow-hidden sm:flex-row">
           {/* Left Sidebar - Navigation */}
-          <div className="flex-shrink-0 bg-muted/30 p-3 space-y-1" style={{ width: sidebarWidth }}>
+          <div
+            className="flex flex-shrink-0 gap-1 overflow-x-auto border-b bg-muted/30 p-2 sm:block sm:w-[var(--settings-nav-width)] sm:space-y-1 sm:overflow-visible sm:border-b-0 sm:p-3"
+            style={{ '--settings-nav-width': `${sidebarWidth}px` } as React.CSSProperties}
+          >
+            <button
+              onClick={() => setActiveSection('models')}
+              className={cn(
+                'flex shrink-0 items-center gap-3 whitespace-nowrap px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0 sm:w-full sm:whitespace-normal',
+                activeSection === 'models'
+                  ? 'bg-primary/10 text-primary font-medium'
+                  : 'hover:bg-muted',
+              )}
+            >
+              <Workflow className="h-4 w-4 shrink-0" />
+              <span className="truncate">{t('settings.modelSettings.nav')}</span>
+            </button>
+
             <button
               onClick={() => setActiveSection('token-plan')}
               className={cn(
-                'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
+                'flex shrink-0 items-center gap-3 whitespace-nowrap px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0 sm:w-full sm:whitespace-normal',
                 activeSection === 'token-plan'
                   ? 'bg-primary/10 text-primary font-medium'
                   : 'hover:bg-muted',
@@ -921,7 +952,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             <button
               onClick={() => setActiveSection('model-services')}
               className={cn(
-                'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
+                'flex shrink-0 items-center gap-3 whitespace-nowrap px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0 sm:w-full sm:whitespace-normal',
                 activeSection === 'model-services'
                   ? 'bg-primary/10 text-primary font-medium'
                   : 'hover:bg-muted',
@@ -934,7 +965,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             <button
               onClick={() => setActiveSection('course-models')}
               className={cn(
-                'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
+                'flex shrink-0 items-center gap-3 whitespace-nowrap px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0 sm:w-full sm:whitespace-normal',
                 activeSection === 'course-models'
                   ? 'bg-primary/10 text-primary font-medium'
                   : 'hover:bg-muted',
@@ -947,7 +978,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             <button
               onClick={() => setActiveSection('skills')}
               className={cn(
-                'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
+                'flex shrink-0 items-center gap-3 whitespace-nowrap px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0 sm:w-full sm:whitespace-normal',
                 activeSection === 'skills'
                   ? 'bg-primary/10 text-primary font-medium'
                   : 'hover:bg-muted',
@@ -960,7 +991,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             <button
               onClick={() => setActiveSection('general')}
               className={cn(
-                'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
+                'flex shrink-0 items-center gap-3 whitespace-nowrap px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0 sm:w-full sm:whitespace-normal',
                 activeSection === 'general'
                   ? 'bg-primary/10 text-primary font-medium'
                   : 'hover:bg-muted',
@@ -974,7 +1005,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
           {/* Sidebar resize handle */}
           <div
             onMouseDown={(e) => handleResizeStart(e)}
-            className="flex-shrink-0 w-[5px] cursor-col-resize group flex justify-center"
+            className="hidden flex-shrink-0 w-[5px] cursor-col-resize group sm:flex justify-center"
           >
             <div className="w-px h-full bg-border group-hover:bg-primary/50 transition-colors" />
           </div>
@@ -982,7 +1013,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
           {/* Right - Configuration Panel */}
           <div className="flex-1 flex flex-col overflow-hidden min-w-0">
             {/* Header */}
-            <div className="flex items-center justify-between p-5 border-b">
+            <div className="flex items-center justify-between gap-3 border-b p-4 sm:p-5">
               <div className="flex items-center gap-3">{getHeaderContent()}</div>
               <div className="flex items-center gap-2">
                 <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)}>
@@ -994,12 +1025,16 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             {/* Content */}
             <div
               className={cn(
-                'p-5',
-                activeSection === 'model-services'
+                'p-3 sm:p-5',
+                activeSection === 'model-services' || activeSection === 'models'
                   ? 'flex min-h-0 flex-1 flex-col pt-3'
                   : 'flex-1 overflow-y-auto',
               )}
             >
+              {activeSection === 'models' && (
+                <ModelSettingsPanel onOpenLegacy={() => setActiveSection('model-services')} />
+              )}
+
               {activeSection === 'general' && <GeneralSettings />}
 
               {activeSection === 'skills' && <SkillSettings />}

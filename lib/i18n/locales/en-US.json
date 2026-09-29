@@ -1991,6 +1991,228 @@
       "getApiKey": "Get API key",
       "domestic": "Mainland",
       "international": "International"
+    },
+    "modelSettings": {
+      "nav": "Models",
+      "title": "Models",
+      "description": "Which model each part of course generation uses. Click a model to change it; parts without their own setting follow the one above them.",
+      "loading": "Loading model settings…",
+      "loadFailed": "Could not load the model settings: {{message}}",
+      "retry": "Retry",
+      "tabs": {
+        "map": "Model map",
+        "providers": "Providers"
+      },
+      "legend": {
+        "label": "Legend",
+        "follows": "Follows parent",
+        "own": "Own setting",
+        "locked": "Set by the server"
+      },
+      "actions": {
+        "save": "Save",
+        "cancel": "Cancel"
+      },
+      "unavailable": {
+        "title": "Models are managed by the server",
+        "body": "This server does not keep model settings per workspace, so it uses the models its administrator configured.",
+        "openLegacy": "Open model services"
+      },
+      "map": {
+        "label": "Course model map. Drag to pan, use the zoom controls to zoom.",
+        "outside": "Outside the pipeline",
+        "standalone": "Standalone",
+        "perPage": "Page by page",
+        "zoom": "Zoom",
+        "zoomIn": "Zoom in (+)",
+        "zoomOut": "Zoom out (-)",
+        "fit": "Fit to view (0)",
+        "reset": "Reset to 100%",
+        "hint": "Drag to pan · ⌘/Ctrl + scroll to zoom · double-click empty space to fit"
+      },
+      "stations": {
+        "research": "Web research",
+        "media": "Images / video",
+        "lines": {
+          "rewrite": "Query",
+          "search": "Search",
+          "image": "Image",
+          "video": "Video"
+        }
+      },
+      "card": {
+        "edit": "{{name}}: {{value}}. Change",
+        "toggle": "Turn {{name}} on or off",
+        "providerDefault": "Default model",
+        "off": "Off",
+        "unassigned": "Not set",
+        "invalid": "Invalid setting",
+        "locked": "Set by the server",
+        "lockedHint": "Set by the server's configuration. It cannot be changed here.",
+        "followers": "Parts following it: {{count}}",
+        "childrenFollow": "Page types · all follow",
+        "childrenOwn": "Page types · {{count}} own"
+      },
+      "source": {
+        "inherited": "Follows {{name}}",
+        "deployment": "Server",
+        "default": "Server default"
+      },
+      "picker": {
+        "follow": "Follow {{name}}",
+        "providers": "Providers",
+        "providerDefault": "Default model",
+        "modelId": "Model ID",
+        "use": "Use",
+        "off": "Off",
+        "offHint": "This part does not run",
+        "noProviders": "No provider offers this yet.",
+        "fallback": "Fallback",
+        "noFallback": "None",
+        "manageProviders": "Manage providers",
+        "conflict": "The settings changed elsewhere and were reloaded. Check them and try again.",
+        "lockedNow": "The server now sets this, so it was not changed."
+      },
+      "setup": {
+        "prompt": "No default model yet. Connect a service and its recommended models fill every part that is not set.",
+        "open": "Connect a service",
+        "orProvider": "Or add a provider",
+        "askAdmin": "No language model is configured. Ask the server's administrator to set one up.",
+        "title": "Connect a service",
+        "body": "Choose a service and paste its API key. Its recommended models fill every part that is not set yet.",
+        "connect": "Connect",
+        "connecting": "Connecting…",
+        "done": "{{name}} is connected",
+        "partial": "The provider was added, but its models could not be assigned: {{message}}",
+        "noModel": "The provider was added, but it lists no language model. Add its model IDs under Providers."
+      },
+      "providers": {
+        "title": "Providers",
+        "hint": "Where the models come from. Keys are kept on the server and never shown again.",
+        "empty": "No providers yet",
+        "add": "Add provider",
+        "addTitle": "New provider",
+        "edit": "Edit {{name}}",
+        "remove": "Remove {{name}}",
+        "removeTitle": "Remove {{name}}?",
+        "removeBody": "Parts that use it go back to following the part above them.",
+        "removeConfirm": "Remove",
+        "server": "Server",
+        "serverHint": "Configured by the server; read-only",
+        "preset": "Service",
+        "pickPreset": "Choose a service",
+        "apiKey": "API key",
+        "apiKeyPlaceholder": "Paste the API key",
+        "showKey": "Show key",
+        "hideKey": "Hide key",
+        "keepKey": "Keep",
+        "replaceKey": "Replace",
+        "removeKey": "Remove",
+        "keySet": "Key {{mask}}",
+        "keySetNoMask": "Key set",
+        "noKey": "No key",
+        "keyUnreadable": "Key cannot be read; enter it again",
+        "keyWillBeRemoved": "The key will be removed when you save.",
+        "baseUrl": "Base URL",
+        "baseUrlOptional": "Custom endpoint (optional)",
+        "models": "Models",
+        "modelsHint": "Model IDs, separated by commas",
+        "needsBaseUrl": "Enter the base URL.",
+        "needsModels": "Enter at least one model ID.",
+        "groups": {
+          "bundle": "Plans with several services",
+          "chat": "Language models",
+          "tts": "Speech",
+          "asr": "Speech recognition",
+          "image": "Images",
+          "video": "Video",
+          "webSearch": "Web search",
+          "document": "Documents"
+        }
+      },
+      "capabilities": {
+        "chat": "Language",
+        "tts": "Speech",
+        "asr": "Speech recognition",
+        "image": "Images",
+        "video": "Video",
+        "webSearch": "Web search",
+        "document": "Documents"
+      },
+      "slots": {
+        "llm": {
+          "name": "Default model",
+          "desc": "The language model every part uses unless it has its own."
+        },
+        "courseResearch": {
+          "name": "Search queries",
+          "desc": "Turns the course topic into web search queries."
+        },
+        "courseOutline": {
+          "name": "Outline",
+          "desc": "Plans the course's pages."
+        },
+        "courseAgents": {
+          "name": "Roles",
+          "desc": "Creates the teachers and classmates of the classroom."
+        },
+        "courseContent": {
+          "name": "Page content",
+          "desc": "Writes each page. Page types without their own setting follow it."
+        },
+        "courseContentSlide": {
+          "name": "Slides",
+          "desc": "Writes slide pages."
+        },
+        "courseContentQuiz": {
+          "name": "Quizzes",
+          "desc": "Writes quiz pages."
+        },
+        "courseContentInteractive": {
+          "name": "Interactive pages",
+          "desc": "Writes interactive pages."
+        },
+        "courseContentPbl": {
+          "name": "Projects",
+          "desc": "Writes project-based learning pages."
+        },
+        "courseActions": {
+          "name": "Lecture actions",
+          "desc": "Scripts what the teachers say and do on each page."
+        },
+        "classroom": {
+          "name": "Classroom",
+          "desc": "Discussion, quiz grading and projects while learning."
+        },
+        "agent": {
+          "name": "Agent",
+          "desc": "Builds and edits courses with you. Needs a model that supports tool calling."
+        },
+        "tts": {
+          "name": "Narration",
+          "desc": "Reads the lectures aloud."
+        },
+        "asr": {
+          "name": "Voice input",
+          "desc": "Turns spoken questions in the classroom into text."
+        },
+        "image": {
+          "name": "Images",
+          "desc": "Generates images for pages."
+        },
+        "video": {
+          "name": "Video",
+          "desc": "Generates video clips for pages."
+        },
+        "webSearch": {
+          "name": "Web search",
+          "desc": "Searches the web while generating a course."
+        },
+        "document": {
+          "name": "Document parsing",
+          "desc": "Reads uploaded documents."
+        }
+      }
     }
   },
   "workspace": {

@@ -1991,6 +1991,228 @@
       "getApiKey": "APIキーを取得",
       "domestic": "中国国内",
       "international": "海外"
+    },
+    "modelSettings": {
+      "nav": "モデル",
+      "title": "モデル",
+      "description": "コース生成の各工程でどのモデルを使うか。モデル名をクリックすると変更できます。個別に設定していない工程は上位に従います。",
+      "loading": "モデル設定を読み込み中…",
+      "loadFailed": "モデル設定を読み込めませんでした：{{message}}",
+      "retry": "再試行",
+      "tabs": {
+        "map": "モデルマップ",
+        "providers": "プロバイダー"
+      },
+      "legend": {
+        "label": "凡例",
+        "follows": "上位に従う",
+        "own": "個別設定",
+        "locked": "サーバーで設定"
+      },
+      "actions": {
+        "save": "保存",
+        "cancel": "キャンセル"
+      },
+      "unavailable": {
+        "title": "モデルはサーバーで管理されています",
+        "body": "このサーバーはワークスペースごとのモデル設定を保存しないため、管理者が設定したモデルを使用します。",
+        "openLegacy": "モデルサービスを開く"
+      },
+      "map": {
+        "label": "コースモデルマップ。ドラッグで移動、ズームボタンで拡大縮小できます。",
+        "outside": "パイプライン外",
+        "standalone": "独立機能",
+        "perPage": "ページごとに生成",
+        "zoom": "ズーム",
+        "zoomIn": "拡大（+）",
+        "zoomOut": "縮小（-）",
+        "fit": "全体を表示（0）",
+        "reset": "100% に戻す",
+        "hint": "ドラッグで移動 · ⌘/Ctrl + スクロールでズーム · 空白をダブルクリックで全体表示"
+      },
+      "stations": {
+        "research": "Web 調査",
+        "media": "画像 / 動画",
+        "lines": {
+          "rewrite": "クエリ",
+          "search": "検索",
+          "image": "画像",
+          "video": "動画"
+        }
+      },
+      "card": {
+        "edit": "{{name}}：{{value}}。変更する",
+        "toggle": "{{name}}のオン／オフ",
+        "providerDefault": "既定のモデル",
+        "off": "オフ",
+        "unassigned": "未設定",
+        "invalid": "無効な設定",
+        "locked": "サーバーで設定",
+        "lockedHint": "サーバーの設定で決まっています。ここでは変更できません。",
+        "followers": "これに従う工程：{{count}}",
+        "childrenFollow": "ページ種別 · すべて従う",
+        "childrenOwn": "ページ種別 · 個別設定 {{count}} 件"
+      },
+      "source": {
+        "inherited": "{{name}}に従う",
+        "deployment": "サーバー",
+        "default": "サーバー既定"
+      },
+      "picker": {
+        "follow": "{{name}}に従う",
+        "providers": "プロバイダー",
+        "providerDefault": "既定のモデル",
+        "modelId": "モデル ID",
+        "use": "使用",
+        "off": "オフ",
+        "offHint": "この工程は実行されません",
+        "noProviders": "この機能を提供するプロバイダーはまだありません。",
+        "fallback": "フォールバック",
+        "noFallback": "なし",
+        "manageProviders": "プロバイダーを管理",
+        "conflict": "設定が別の場所で変更されたため再読み込みしました。確認してもう一度お試しください。",
+        "lockedNow": "サーバーがこの項目を設定したため、変更されませんでした。"
+      },
+      "setup": {
+        "prompt": "既定のモデルがまだありません。サービスを接続すると、推奨モデルが未設定の工程をすべて埋めます。",
+        "open": "サービスを接続",
+        "orProvider": "またはプロバイダーを追加",
+        "askAdmin": "言語モデルが設定されていません。サーバーの管理者に設定を依頼してください。",
+        "title": "サービスを接続",
+        "body": "サービスを選んで API キーを貼り付けてください。推奨モデルが未設定の工程をすべて埋めます。",
+        "connect": "接続",
+        "connecting": "接続中…",
+        "done": "{{name}} を接続しました",
+        "partial": "プロバイダーは追加されましたが、モデルを割り当てられませんでした：{{message}}",
+        "noModel": "プロバイダーは追加されましたが、言語モデルが一覧にありません。プロバイダーでモデル ID を追加してください。"
+      },
+      "providers": {
+        "title": "プロバイダー",
+        "hint": "モデルの提供元です。キーはサーバーに保存され、再表示されません。",
+        "empty": "プロバイダーはまだありません",
+        "add": "プロバイダーを追加",
+        "addTitle": "新しいプロバイダー",
+        "edit": "{{name}} を編集",
+        "remove": "{{name}} を削除",
+        "removeTitle": "{{name}} を削除しますか？",
+        "removeBody": "これを使っている工程は上位に従う状態に戻ります。",
+        "removeConfirm": "削除",
+        "server": "サーバー",
+        "serverHint": "サーバーで設定されています（読み取り専用）",
+        "preset": "サービス",
+        "pickPreset": "サービスを選択",
+        "apiKey": "API キー",
+        "apiKeyPlaceholder": "API キーを貼り付け",
+        "showKey": "キーを表示",
+        "hideKey": "キーを隠す",
+        "keepKey": "保持",
+        "replaceKey": "置き換え",
+        "removeKey": "削除",
+        "keySet": "キー {{mask}}",
+        "keySetNoMask": "キー設定済み",
+        "noKey": "キーなし",
+        "keyUnreadable": "キーを読み取れません。もう一度入力してください",
+        "keyWillBeRemoved": "保存するとキーが削除されます。",
+        "baseUrl": "Base URL",
+        "baseUrlOptional": "カスタムエンドポイント（任意）",
+        "models": "モデル",
+        "modelsHint": "モデル ID（カンマ区切り）",
+        "needsBaseUrl": "Base URL を入力してください。",
+        "needsModels": "モデル ID を 1 つ以上入力してください。",
+        "groups": {
+          "bundle": "複数サービスのプラン",
+          "chat": "言語モデル",
+          "tts": "音声合成",
+          "asr": "音声認識",
+          "image": "画像",
+          "video": "動画",
+          "webSearch": "Web 検索",
+          "document": "ドキュメント"
+        }
+      },
+      "capabilities": {
+        "chat": "言語",
+        "tts": "音声合成",
+        "asr": "音声認識",
+        "image": "画像",
+        "video": "動画",
+        "webSearch": "Web 検索",
+        "document": "ドキュメント"
+      },
+      "slots": {
+        "llm": {
+          "name": "既定のモデル",
+          "desc": "個別に設定していない工程はすべてこの言語モデルを使います。"
+        },
+        "courseResearch": {
+          "name": "検索クエリ",
+          "desc": "コースのテーマを Web 検索クエリに書き換えます。"
+        },
+        "courseOutline": {
+          "name": "アウトライン",
+          "desc": "コースのページ構成を計画します。"
+        },
+        "courseAgents": {
+          "name": "ロール",
+          "desc": "教室の先生とクラスメートを作成します。"
+        },
+        "courseContent": {
+          "name": "ページ内容",
+          "desc": "各ページを作成します。個別に設定していないページ種別はこれに従います。"
+        },
+        "courseContentSlide": {
+          "name": "スライド",
+          "desc": "スライドページを作成します。"
+        },
+        "courseContentQuiz": {
+          "name": "クイズ",
+          "desc": "クイズページを作成します。"
+        },
+        "courseContentInteractive": {
+          "name": "インタラクティブ",
+          "desc": "インタラクティブページを作成します。"
+        },
+        "courseContentPbl": {
+          "name": "プロジェクト",
+          "desc": "プロジェクト型学習ページを作成します。"
+        },
+        "courseActions": {
+          "name": "講義アクション",
+          "desc": "各ページで先生が話す内容と動作を組み立てます。"
+        },
+        "classroom": {
+          "name": "教室",
+          "desc": "学習中のディスカッション、クイズ採点、プロジェクト。"
+        },
+        "agent": {
+          "name": "エージェント",
+          "desc": "一緒にコースを作成・編集します。ツール呼び出しに対応したモデルが必要です。"
+        },
+        "tts": {
+          "name": "ナレーション",
+          "desc": "講義を読み上げます。"
+        },
+        "asr": {
+          "name": "音声入力",
+          "desc": "教室で声で質問したとき、音声を文字に変換します。"
+        },
+        "image": {
+          "name": "画像",
+          "desc": "ページ用の画像を生成します。"
+        },
+        "video": {
+          "name": "動画",
+          "desc": "ページ用の動画クリップを生成します。"
+        },
+        "webSearch": {
+          "name": "Web 検索",
+          "desc": "コース生成中に Web を検索します。"
+        },
+        "document": {
+          "name": "ドキュメント解析",
+          "desc": "アップロードされたドキュメントを読み取ります。"
+        }
+      }
     }
   },
   "workspace": {

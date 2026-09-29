@@ -1976,6 +1976,228 @@
       "getApiKey": "取得 API Key",
       "domestic": "國內",
       "international": "海外"
+    },
+    "modelSettings": {
+      "nav": "模型",
+      "title": "模型",
+      "description": "課程生成的每個環節使用哪個模型。點選模型名稱即可更換；未單獨設定的環節會跟隨上層。",
+      "loading": "正在載入模型設定…",
+      "loadFailed": "無法載入模型設定：{{message}}",
+      "retry": "重試",
+      "tabs": {
+        "map": "模型圖",
+        "providers": "Provider"
+      },
+      "legend": {
+        "label": "圖例",
+        "follows": "跟隨上層",
+        "own": "單獨設定",
+        "locked": "由伺服器設定"
+      },
+      "actions": {
+        "save": "儲存",
+        "cancel": "取消"
+      },
+      "unavailable": {
+        "title": "模型由伺服器管理",
+        "body": "此伺服器不依工作區儲存模型設定，因此使用管理員設定的模型。",
+        "openLegacy": "開啟模型服務"
+      },
+      "map": {
+        "label": "課程模型圖。拖曳可平移，使用縮放按鈕縮放。",
+        "outside": "流程之外",
+        "standalone": "獨立功能",
+        "perPage": "逐頁生成",
+        "zoom": "縮放",
+        "zoomIn": "放大（+）",
+        "zoomOut": "縮小（-）",
+        "fit": "符合視窗（0）",
+        "reset": "重設為 100%",
+        "hint": "拖曳平移 · ⌘/Ctrl + 滾輪縮放 · 在空白處按兩下以符合視窗"
+      },
+      "stations": {
+        "research": "網路研究",
+        "media": "配圖 / 影片",
+        "lines": {
+          "rewrite": "改寫",
+          "search": "搜尋",
+          "image": "圖像",
+          "video": "影片"
+        }
+      },
+      "card": {
+        "edit": "{{name}}：{{value}}，點選以更換",
+        "toggle": "開啟或關閉{{name}}",
+        "providerDefault": "預設模型",
+        "off": "已關閉",
+        "unassigned": "未設定",
+        "invalid": "設定無效",
+        "locked": "由伺服器設定",
+        "lockedHint": "由伺服器設定，無法在此變更。",
+        "followers": "跟隨它的環節：{{count}}",
+        "childrenFollow": "頁型 · 全部跟隨",
+        "childrenOwn": "頁型 · {{count}} 個單獨設定"
+      },
+      "source": {
+        "inherited": "跟隨{{name}}",
+        "deployment": "伺服器",
+        "default": "伺服器預設"
+      },
+      "picker": {
+        "follow": "跟隨{{name}}",
+        "providers": "Provider",
+        "providerDefault": "預設模型",
+        "modelId": "模型 ID",
+        "use": "使用",
+        "off": "關閉",
+        "offHint": "此環節不執行",
+        "noProviders": "還沒有提供此能力的 Provider。",
+        "fallback": "備用",
+        "noFallback": "無",
+        "manageProviders": "管理 Provider",
+        "conflict": "設定已在別處變更並已重新載入，請檢查後再試一次。",
+        "lockedNow": "伺服器現在設定了此項，因此未變更。"
+      },
+      "setup": {
+        "prompt": "還沒有預設模型。連接一項服務後，它建議的模型會填滿所有未設定的環節。",
+        "open": "連接服務",
+        "orProvider": "或新增 Provider",
+        "askAdmin": "尚未設定語言模型，請聯絡伺服器管理員設定。",
+        "title": "連接服務",
+        "body": "選擇一項服務並貼上其 API Key。它建議的模型會填滿所有尚未設定的環節。",
+        "connect": "連接",
+        "connecting": "正在連接…",
+        "done": "已連接 {{name}}",
+        "partial": "已新增 Provider，但無法指派其模型：{{message}}",
+        "noModel": "已新增 Provider，但它沒有列出語言模型。請在 Provider 中新增模型 ID。"
+      },
+      "providers": {
+        "title": "Provider",
+        "hint": "模型的來源。Key 儲存在伺服器上，不會再次顯示。",
+        "empty": "還沒有 Provider",
+        "add": "新增 Provider",
+        "addTitle": "新的 Provider",
+        "edit": "編輯 {{name}}",
+        "remove": "移除 {{name}}",
+        "removeTitle": "要移除 {{name}} 嗎？",
+        "removeBody": "使用它的環節會恢復跟隨上層。",
+        "removeConfirm": "移除",
+        "server": "伺服器",
+        "serverHint": "由伺服器設定，唯讀",
+        "preset": "服務",
+        "pickPreset": "選擇服務",
+        "apiKey": "API Key",
+        "apiKeyPlaceholder": "貼上 API Key",
+        "showKey": "顯示 Key",
+        "hideKey": "隱藏 Key",
+        "keepKey": "保留",
+        "replaceKey": "取代",
+        "removeKey": "移除",
+        "keySet": "Key {{mask}}",
+        "keySetNoMask": "已設定 Key",
+        "noKey": "未設定 Key",
+        "keyUnreadable": "無法讀取 Key，請重新輸入",
+        "keyWillBeRemoved": "儲存後將移除 Key。",
+        "baseUrl": "Base URL",
+        "baseUrlOptional": "自訂端點（選填）",
+        "models": "模型",
+        "modelsHint": "模型 ID，以逗號分隔",
+        "needsBaseUrl": "請輸入 Base URL。",
+        "needsModels": "請至少輸入一個模型 ID。",
+        "groups": {
+          "bundle": "多服務方案",
+          "chat": "語言模型",
+          "tts": "語音合成",
+          "asr": "語音辨識",
+          "image": "圖像",
+          "video": "影片",
+          "webSearch": "網路搜尋",
+          "document": "文件"
+        }
+      },
+      "capabilities": {
+        "chat": "語言",
+        "tts": "語音合成",
+        "asr": "語音辨識",
+        "image": "圖像",
+        "video": "影片",
+        "webSearch": "網路搜尋",
+        "document": "文件"
+      },
+      "slots": {
+        "llm": {
+          "name": "預設模型",
+          "desc": "未單獨設定的環節都使用這個語言模型。"
+        },
+        "courseResearch": {
+          "name": "搜尋詞改寫",
+          "desc": "將課程主題改寫為搜尋詞。"
+        },
+        "courseOutline": {
+          "name": "大綱",
+          "desc": "規劃課程的各個頁面。"
+        },
+        "courseAgents": {
+          "name": "角色",
+          "desc": "產生課堂中的老師與同學。"
+        },
+        "courseContent": {
+          "name": "課件內容",
+          "desc": "撰寫每一頁。未單獨設定的頁型會跟隨這裡。"
+        },
+        "courseContentSlide": {
+          "name": "投影片",
+          "desc": "撰寫投影片頁。"
+        },
+        "courseContentQuiz": {
+          "name": "測驗",
+          "desc": "撰寫測驗頁。"
+        },
+        "courseContentInteractive": {
+          "name": "互動頁",
+          "desc": "撰寫互動頁。"
+        },
+        "courseContentPbl": {
+          "name": "專題",
+          "desc": "撰寫專題式學習頁。"
+        },
+        "courseActions": {
+          "name": "講解動作",
+          "desc": "安排老師在每一頁說什麼、做什麼。"
+        },
+        "classroom": {
+          "name": "課堂互動",
+          "desc": "學習過程中的討論、測驗批改與專題。"
+        },
+        "agent": {
+          "name": "智慧體",
+          "desc": "與你一起建立和編輯課程。需要支援工具呼叫的模型。"
+        },
+        "tts": {
+          "name": "配音",
+          "desc": "朗讀講解內容。"
+        },
+        "asr": {
+          "name": "語音輸入",
+          "desc": "在課堂中以語音提問時，將語音轉為文字。"
+        },
+        "image": {
+          "name": "配圖",
+          "desc": "為頁面產生圖片。"
+        },
+        "video": {
+          "name": "影片",
+          "desc": "為頁面產生影片片段。"
+        },
+        "webSearch": {
+          "name": "網路搜尋",
+          "desc": "產生課程時搜尋網路。"
+        },
+        "document": {
+          "name": "文件解析",
+          "desc": "讀取上傳的文件。"
+        }
+      }
     }
   },
   "workspace": {

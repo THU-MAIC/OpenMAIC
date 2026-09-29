@@ -1,6 +1,8 @@
 import type { ProviderId, ModelInfo, ProviderType } from '@/lib/types/provider';
 
 export type SettingsSection =
+  // Server-side model settings: the slot map and the workspace's providers.
+  | 'models'
   | 'general'
   | 'token-plan'
   | 'providers'

@@ -1991,6 +1991,228 @@
       "getApiKey": "API 키 받기",
       "domestic": "중국 본토",
       "international": "해외"
+    },
+    "modelSettings": {
+      "nav": "모델",
+      "title": "모델",
+      "description": "코스 생성의 각 단계에서 어떤 모델을 쓸지 정합니다. 모델 이름을 클릭하면 바꿀 수 있고, 따로 설정하지 않은 단계는 상위를 따릅니다.",
+      "loading": "모델 설정을 불러오는 중…",
+      "loadFailed": "모델 설정을 불러오지 못했습니다: {{message}}",
+      "retry": "다시 시도",
+      "tabs": {
+        "map": "모델 맵",
+        "providers": "제공자"
+      },
+      "legend": {
+        "label": "범례",
+        "follows": "상위를 따름",
+        "own": "개별 설정",
+        "locked": "서버에서 설정"
+      },
+      "actions": {
+        "save": "저장",
+        "cancel": "취소"
+      },
+      "unavailable": {
+        "title": "모델은 서버에서 관리됩니다",
+        "body": "이 서버는 워크스페이스별 모델 설정을 저장하지 않으므로 관리자가 설정한 모델을 사용합니다.",
+        "openLegacy": "모델 서비스 열기"
+      },
+      "map": {
+        "label": "코스 모델 맵. 드래그하여 이동하고 확대/축소 버튼으로 크기를 조절합니다.",
+        "outside": "파이프라인 외부",
+        "standalone": "독립 기능",
+        "perPage": "페이지별 생성",
+        "zoom": "확대/축소",
+        "zoomIn": "확대 (+)",
+        "zoomOut": "축소 (-)",
+        "fit": "화면에 맞추기 (0)",
+        "reset": "100%로 재설정",
+        "hint": "드래그하여 이동 · ⌘/Ctrl + 스크롤로 확대/축소 · 빈 곳을 더블클릭하면 화면에 맞춤"
+      },
+      "stations": {
+        "research": "웹 조사",
+        "media": "이미지 / 동영상",
+        "lines": {
+          "rewrite": "쿼리",
+          "search": "검색",
+          "image": "이미지",
+          "video": "동영상"
+        }
+      },
+      "card": {
+        "edit": "{{name}}: {{value}}. 변경",
+        "toggle": "{{name}} 켜기 또는 끄기",
+        "providerDefault": "기본 모델",
+        "off": "꺼짐",
+        "unassigned": "설정 안 됨",
+        "invalid": "잘못된 설정",
+        "locked": "서버에서 설정",
+        "lockedHint": "서버 설정으로 정해져 있어 여기서 변경할 수 없습니다.",
+        "followers": "이를 따르는 단계: {{count}}",
+        "childrenFollow": "페이지 유형 · 모두 따름",
+        "childrenOwn": "페이지 유형 · 개별 설정 {{count}}개"
+      },
+      "source": {
+        "inherited": "{{name}} 따름",
+        "deployment": "서버",
+        "default": "서버 기본값"
+      },
+      "picker": {
+        "follow": "{{name}} 따르기",
+        "providers": "제공자",
+        "providerDefault": "기본 모델",
+        "modelId": "모델 ID",
+        "use": "사용",
+        "off": "끄기",
+        "offHint": "이 단계는 실행되지 않습니다",
+        "noProviders": "이 기능을 제공하는 제공자가 아직 없습니다.",
+        "fallback": "대체 모델",
+        "noFallback": "없음",
+        "manageProviders": "제공자 관리",
+        "conflict": "설정이 다른 곳에서 변경되어 다시 불러왔습니다. 확인 후 다시 시도하세요.",
+        "lockedNow": "이제 서버가 이 항목을 설정하므로 변경되지 않았습니다."
+      },
+      "setup": {
+        "prompt": "아직 기본 모델이 없습니다. 서비스를 연결하면 추천 모델이 설정되지 않은 모든 단계를 채웁니다.",
+        "open": "서비스 연결",
+        "orProvider": "또는 제공자 추가",
+        "askAdmin": "언어 모델이 설정되지 않았습니다. 서버 관리자에게 설정을 요청하세요.",
+        "title": "서비스 연결",
+        "body": "서비스를 선택하고 API 키를 붙여 넣으세요. 추천 모델이 아직 설정되지 않은 모든 단계를 채웁니다.",
+        "connect": "연결",
+        "connecting": "연결 중…",
+        "done": "{{name}}이(가) 연결되었습니다",
+        "partial": "제공자는 추가되었지만 모델을 할당하지 못했습니다: {{message}}",
+        "noModel": "제공자는 추가되었지만 언어 모델 목록이 없습니다. 제공자에서 모델 ID를 추가하세요."
+      },
+      "providers": {
+        "title": "제공자",
+        "hint": "모델의 출처입니다. 키는 서버에 저장되며 다시 표시되지 않습니다.",
+        "empty": "아직 제공자가 없습니다",
+        "add": "제공자 추가",
+        "addTitle": "새 제공자",
+        "edit": "{{name}} 편집",
+        "remove": "{{name}} 제거",
+        "removeTitle": "{{name}}을(를) 제거할까요?",
+        "removeBody": "이를 사용하던 단계는 다시 상위를 따릅니다.",
+        "removeConfirm": "제거",
+        "server": "서버",
+        "serverHint": "서버에서 설정됨, 읽기 전용",
+        "preset": "서비스",
+        "pickPreset": "서비스 선택",
+        "apiKey": "API 키",
+        "apiKeyPlaceholder": "API 키 붙여 넣기",
+        "showKey": "키 표시",
+        "hideKey": "키 숨기기",
+        "keepKey": "유지",
+        "replaceKey": "교체",
+        "removeKey": "제거",
+        "keySet": "키 {{mask}}",
+        "keySetNoMask": "키 설정됨",
+        "noKey": "키 없음",
+        "keyUnreadable": "키를 읽을 수 없습니다. 다시 입력하세요",
+        "keyWillBeRemoved": "저장하면 키가 제거됩니다.",
+        "baseUrl": "Base URL",
+        "baseUrlOptional": "사용자 지정 엔드포인트 (선택)",
+        "models": "모델",
+        "modelsHint": "모델 ID, 쉼표로 구분",
+        "needsBaseUrl": "Base URL을 입력하세요.",
+        "needsModels": "모델 ID를 하나 이상 입력하세요.",
+        "groups": {
+          "bundle": "여러 서비스를 포함한 요금제",
+          "chat": "언어 모델",
+          "tts": "음성 합성",
+          "asr": "음성 인식",
+          "image": "이미지",
+          "video": "동영상",
+          "webSearch": "웹 검색",
+          "document": "문서"
+        }
+      },
+      "capabilities": {
+        "chat": "언어",
+        "tts": "음성 합성",
+        "asr": "음성 인식",
+        "image": "이미지",
+        "video": "동영상",
+        "webSearch": "웹 검색",
+        "document": "문서"
+      },
+      "slots": {
+        "llm": {
+          "name": "기본 모델",
+          "desc": "따로 설정하지 않은 모든 단계가 이 언어 모델을 사용합니다."
+        },
+        "courseResearch": {
+          "name": "검색 쿼리",
+          "desc": "코스 주제를 웹 검색 쿼리로 바꿉니다."
+        },
+        "courseOutline": {
+          "name": "개요",
+          "desc": "코스의 페이지를 계획합니다."
+        },
+        "courseAgents": {
+          "name": "역할",
+          "desc": "교실의 교사와 학급 친구를 만듭니다."
+        },
+        "courseContent": {
+          "name": "페이지 내용",
+          "desc": "각 페이지를 작성합니다. 따로 설정하지 않은 페이지 유형은 이를 따릅니다."
+        },
+        "courseContentSlide": {
+          "name": "슬라이드",
+          "desc": "슬라이드 페이지를 작성합니다."
+        },
+        "courseContentQuiz": {
+          "name": "퀴즈",
+          "desc": "퀴즈 페이지를 작성합니다."
+        },
+        "courseContentInteractive": {
+          "name": "인터랙티브",
+          "desc": "인터랙티브 페이지를 작성합니다."
+        },
+        "courseContentPbl": {
+          "name": "프로젝트",
+          "desc": "프로젝트 기반 학습 페이지를 작성합니다."
+        },
+        "courseActions": {
+          "name": "강의 동작",
+          "desc": "각 페이지에서 교사가 말하고 행동할 내용을 구성합니다."
+        },
+        "classroom": {
+          "name": "교실",
+          "desc": "학습 중의 토론, 퀴즈 채점, 프로젝트."
+        },
+        "agent": {
+          "name": "에이전트",
+          "desc": "함께 코스를 만들고 편집합니다. 도구 호출을 지원하는 모델이 필요합니다."
+        },
+        "tts": {
+          "name": "내레이션",
+          "desc": "강의를 소리 내어 읽습니다."
+        },
+        "asr": {
+          "name": "음성 입력",
+          "desc": "교실에서 음성으로 질문하면 텍스트로 바꿉니다."
+        },
+        "image": {
+          "name": "이미지",
+          "desc": "페이지용 이미지를 생성합니다."
+        },
+        "video": {
+          "name": "동영상",
+          "desc": "페이지용 동영상 클립을 생성합니다."
+        },
+        "webSearch": {
+          "name": "웹 검색",
+          "desc": "코스를 생성하는 동안 웹을 검색합니다."
+        },
+        "document": {
+          "name": "문서 분석",
+          "desc": "업로드한 문서를 읽습니다."
+        }
+      }
     }
   },
   "workspace": {

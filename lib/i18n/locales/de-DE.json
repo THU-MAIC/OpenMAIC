@@ -1991,6 +1991,228 @@
       "getApiKey": "API-Key holen",
       "domestic": "Festland",
       "international": "International"
+    },
+    "modelSettings": {
+      "nav": "Modelle",
+      "title": "Modelle",
+      "description": "Welches Modell jeder Schritt der Kurserstellung verwendet. Klicke auf ein Modell, um es zu ändern; Schritte ohne eigene Einstellung folgen dem übergeordneten.",
+      "loading": "Modelleinstellungen werden geladen…",
+      "loadFailed": "Die Modelleinstellungen konnten nicht geladen werden: {{message}}",
+      "retry": "Erneut versuchen",
+      "tabs": {
+        "map": "Modellkarte",
+        "providers": "Anbieter"
+      },
+      "legend": {
+        "label": "Legende",
+        "follows": "Folgt übergeordnetem",
+        "own": "Eigene Einstellung",
+        "locked": "Vom Server festgelegt"
+      },
+      "actions": {
+        "save": "Speichern",
+        "cancel": "Abbrechen"
+      },
+      "unavailable": {
+        "title": "Modelle werden vom Server verwaltet",
+        "body": "Dieser Server speichert keine Modelleinstellungen pro Arbeitsbereich und verwendet daher die vom Administrator konfigurierten Modelle.",
+        "openLegacy": "Modelldienste öffnen"
+      },
+      "map": {
+        "label": "Kursmodellkarte. Zum Verschieben ziehen, zum Zoomen die Zoomschaltflächen verwenden.",
+        "outside": "Außerhalb der Pipeline",
+        "standalone": "Eigenständig",
+        "perPage": "Seite für Seite",
+        "zoom": "Zoom",
+        "zoomIn": "Vergrößern (+)",
+        "zoomOut": "Verkleinern (-)",
+        "fit": "An Ansicht anpassen (0)",
+        "reset": "Auf 100 % zurücksetzen",
+        "hint": "Ziehen zum Verschieben · ⌘/Strg + Scrollen zum Zoomen · Doppelklick auf freie Fläche zum Anpassen"
+      },
+      "stations": {
+        "research": "Webrecherche",
+        "media": "Bilder / Video",
+        "lines": {
+          "rewrite": "Anfrage",
+          "search": "Suche",
+          "image": "Bild",
+          "video": "Video"
+        }
+      },
+      "card": {
+        "edit": "{{name}}: {{value}}. Ändern",
+        "toggle": "{{name}} ein- oder ausschalten",
+        "providerDefault": "Standardmodell",
+        "off": "Aus",
+        "unassigned": "Nicht festgelegt",
+        "invalid": "Ungültige Einstellung",
+        "locked": "Vom Server festgelegt",
+        "lockedHint": "Durch die Serverkonfiguration festgelegt. Kann hier nicht geändert werden.",
+        "followers": "Schritte, die ihm folgen: {{count}}",
+        "childrenFollow": "Seitentypen · alle folgen",
+        "childrenOwn": "Seitentypen · {{count}} eigene"
+      },
+      "source": {
+        "inherited": "Folgt {{name}}",
+        "deployment": "Server",
+        "default": "Serverstandard"
+      },
+      "picker": {
+        "follow": "{{name}} folgen",
+        "providers": "Anbieter",
+        "providerDefault": "Standardmodell",
+        "modelId": "Modell-ID",
+        "use": "Verwenden",
+        "off": "Aus",
+        "offHint": "Dieser Schritt läuft nicht",
+        "noProviders": "Noch bietet kein Anbieter dies an.",
+        "fallback": "Ersatz",
+        "noFallback": "Keiner",
+        "manageProviders": "Anbieter verwalten",
+        "conflict": "Die Einstellungen wurden an anderer Stelle geändert und neu geladen. Prüfe sie und versuche es erneut.",
+        "lockedNow": "Der Server legt dies jetzt fest, daher wurde nichts geändert."
+      },
+      "setup": {
+        "prompt": "Noch kein Standardmodell. Verbinde einen Dienst, und seine empfohlenen Modelle füllen alle Schritte, die noch nicht festgelegt sind.",
+        "open": "Dienst verbinden",
+        "orProvider": "Oder einen Anbieter hinzufügen",
+        "askAdmin": "Es ist kein Sprachmodell konfiguriert. Bitte den Administrator des Servers, eines einzurichten.",
+        "title": "Dienst verbinden",
+        "body": "Wähle einen Dienst und füge seinen API-Schlüssel ein. Seine empfohlenen Modelle füllen alle Schritte, die noch nicht festgelegt sind.",
+        "connect": "Verbinden",
+        "connecting": "Wird verbunden…",
+        "done": "{{name}} ist verbunden",
+        "partial": "Der Anbieter wurde hinzugefügt, aber seine Modelle konnten nicht zugewiesen werden: {{message}}",
+        "noModel": "Der Anbieter wurde hinzugefügt, listet aber kein Sprachmodell. Füge seine Modell-IDs unter Anbieter hinzu."
+      },
+      "providers": {
+        "title": "Anbieter",
+        "hint": "Woher die Modelle kommen. Schlüssel werden auf dem Server gespeichert und nie wieder angezeigt.",
+        "empty": "Noch keine Anbieter",
+        "add": "Anbieter hinzufügen",
+        "addTitle": "Neuer Anbieter",
+        "edit": "{{name}} bearbeiten",
+        "remove": "{{name}} entfernen",
+        "removeTitle": "{{name}} entfernen?",
+        "removeBody": "Schritte, die ihn verwenden, folgen wieder dem übergeordneten Schritt.",
+        "removeConfirm": "Entfernen",
+        "server": "Server",
+        "serverHint": "Vom Server konfiguriert; schreibgeschützt",
+        "preset": "Dienst",
+        "pickPreset": "Dienst auswählen",
+        "apiKey": "API-Schlüssel",
+        "apiKeyPlaceholder": "API-Schlüssel einfügen",
+        "showKey": "Schlüssel anzeigen",
+        "hideKey": "Schlüssel verbergen",
+        "keepKey": "Behalten",
+        "replaceKey": "Ersetzen",
+        "removeKey": "Entfernen",
+        "keySet": "Schlüssel {{mask}}",
+        "keySetNoMask": "Schlüssel festgelegt",
+        "noKey": "Kein Schlüssel",
+        "keyUnreadable": "Schlüssel nicht lesbar; bitte erneut eingeben",
+        "keyWillBeRemoved": "Der Schlüssel wird beim Speichern entfernt.",
+        "baseUrl": "Basis-URL",
+        "baseUrlOptional": "Eigener Endpunkt (optional)",
+        "models": "Modelle",
+        "modelsHint": "Modell-IDs, durch Kommas getrennt",
+        "needsBaseUrl": "Gib die Basis-URL ein.",
+        "needsModels": "Gib mindestens eine Modell-ID ein.",
+        "groups": {
+          "bundle": "Tarife mit mehreren Diensten",
+          "chat": "Sprachmodelle",
+          "tts": "Sprachausgabe",
+          "asr": "Spracherkennung",
+          "image": "Bilder",
+          "video": "Video",
+          "webSearch": "Websuche",
+          "document": "Dokumente"
+        }
+      },
+      "capabilities": {
+        "chat": "Sprache",
+        "tts": "Sprachausgabe",
+        "asr": "Spracherkennung",
+        "image": "Bilder",
+        "video": "Video",
+        "webSearch": "Websuche",
+        "document": "Dokumente"
+      },
+      "slots": {
+        "llm": {
+          "name": "Standardmodell",
+          "desc": "Das Sprachmodell, das jeder Schritt ohne eigene Einstellung verwendet."
+        },
+        "courseResearch": {
+          "name": "Suchanfragen",
+          "desc": "Formt das Kursthema in Websuchanfragen um."
+        },
+        "courseOutline": {
+          "name": "Gliederung",
+          "desc": "Plant die Seiten des Kurses."
+        },
+        "courseAgents": {
+          "name": "Rollen",
+          "desc": "Erstellt die Lehrkräfte und Mitlernenden des Klassenzimmers."
+        },
+        "courseContent": {
+          "name": "Seiteninhalt",
+          "desc": "Schreibt jede Seite. Seitentypen ohne eigene Einstellung folgen ihm."
+        },
+        "courseContentSlide": {
+          "name": "Folien",
+          "desc": "Schreibt Folienseiten."
+        },
+        "courseContentQuiz": {
+          "name": "Quizze",
+          "desc": "Schreibt Quizseiten."
+        },
+        "courseContentInteractive": {
+          "name": "Interaktive Seiten",
+          "desc": "Schreibt interaktive Seiten."
+        },
+        "courseContentPbl": {
+          "name": "Projekte",
+          "desc": "Schreibt Seiten für projektbasiertes Lernen."
+        },
+        "courseActions": {
+          "name": "Vortragsaktionen",
+          "desc": "Legt fest, was die Lehrkräfte auf jeder Seite sagen und tun."
+        },
+        "classroom": {
+          "name": "Klassenzimmer",
+          "desc": "Diskussion, Quizbewertung und Projekte beim Lernen."
+        },
+        "agent": {
+          "name": "Agent",
+          "desc": "Erstellt und bearbeitet Kurse mit dir. Benötigt ein Modell mit Tool-Aufrufen."
+        },
+        "tts": {
+          "name": "Sprecher",
+          "desc": "Liest die Vorträge vor."
+        },
+        "asr": {
+          "name": "Spracheingabe",
+          "desc": "Wandelt gesprochene Fragen im Klassenzimmer in Text um."
+        },
+        "image": {
+          "name": "Bilder",
+          "desc": "Erzeugt Bilder für Seiten."
+        },
+        "video": {
+          "name": "Video",
+          "desc": "Erzeugt Videoclips für Seiten."
+        },
+        "webSearch": {
+          "name": "Websuche",
+          "desc": "Durchsucht das Web bei der Kurserstellung."
+        },
+        "document": {
+          "name": "Dokumentanalyse",
+          "desc": "Liest hochgeladene Dokumente."
+        }
+      }
     }
   },
   "workspace": {

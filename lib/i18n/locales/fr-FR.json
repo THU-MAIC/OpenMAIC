@@ -1991,6 +1991,228 @@
       "getApiKey": "Obtenir une clé API",
       "domestic": "Chine",
       "international": "International"
+    },
+    "modelSettings": {
+      "nav": "Modèles",
+      "title": "Modèles",
+      "description": "Le modèle utilisé par chaque étape de la génération de cours. Cliquez sur un modèle pour le changer ; les étapes sans réglage propre suivent l’étape parente.",
+      "loading": "Chargement des réglages des modèles…",
+      "loadFailed": "Impossible de charger les réglages des modèles : {{message}}",
+      "retry": "Réessayer",
+      "tabs": {
+        "map": "Carte des modèles",
+        "providers": "Fournisseurs"
+      },
+      "legend": {
+        "label": "Légende",
+        "follows": "Suit le parent",
+        "own": "Réglage propre",
+        "locked": "Défini par le serveur"
+      },
+      "actions": {
+        "save": "Enregistrer",
+        "cancel": "Annuler"
+      },
+      "unavailable": {
+        "title": "Les modèles sont gérés par le serveur",
+        "body": "Ce serveur ne conserve pas de réglages de modèles par espace de travail ; il utilise donc les modèles configurés par son administrateur.",
+        "openLegacy": "Ouvrir les services de modèles"
+      },
+      "map": {
+        "label": "Carte des modèles du cours. Faites glisser pour vous déplacer, utilisez les boutons de zoom pour zoomer.",
+        "outside": "Hors du pipeline",
+        "standalone": "Autonome",
+        "perPage": "Page par page",
+        "zoom": "Zoom",
+        "zoomIn": "Zoom avant (+)",
+        "zoomOut": "Zoom arrière (-)",
+        "fit": "Ajuster à la vue (0)",
+        "reset": "Revenir à 100 %",
+        "hint": "Glisser pour se déplacer · ⌘/Ctrl + molette pour zoomer · double-clic sur le vide pour ajuster"
+      },
+      "stations": {
+        "research": "Recherche web",
+        "media": "Images / vidéo",
+        "lines": {
+          "rewrite": "Requête",
+          "search": "Recherche",
+          "image": "Image",
+          "video": "Vidéo"
+        }
+      },
+      "card": {
+        "edit": "{{name}} : {{value}}. Modifier",
+        "toggle": "Activer ou désactiver {{name}}",
+        "providerDefault": "Modèle par défaut",
+        "off": "Désactivé",
+        "unassigned": "Non défini",
+        "invalid": "Réglage invalide",
+        "locked": "Défini par le serveur",
+        "lockedHint": "Défini par la configuration du serveur. Impossible de le modifier ici.",
+        "followers": "Étapes qui le suivent : {{count}}",
+        "childrenFollow": "Types de page · tous suivent",
+        "childrenOwn": "Types de page · {{count}} propres"
+      },
+      "source": {
+        "inherited": "Suit {{name}}",
+        "deployment": "Serveur",
+        "default": "Défaut du serveur"
+      },
+      "picker": {
+        "follow": "Suivre {{name}}",
+        "providers": "Fournisseurs",
+        "providerDefault": "Modèle par défaut",
+        "modelId": "ID du modèle",
+        "use": "Utiliser",
+        "off": "Désactivé",
+        "offHint": "Cette étape ne s’exécute pas",
+        "noProviders": "Aucun fournisseur ne propose encore cela.",
+        "fallback": "Secours",
+        "noFallback": "Aucun",
+        "manageProviders": "Gérer les fournisseurs",
+        "conflict": "Les réglages ont été modifiés ailleurs et rechargés. Vérifiez-les puis réessayez.",
+        "lockedNow": "Le serveur définit désormais ce réglage ; rien n’a été modifié."
+      },
+      "setup": {
+        "prompt": "Pas encore de modèle par défaut. Connectez un service : ses modèles recommandés rempliront toutes les étapes non définies.",
+        "open": "Connecter un service",
+        "orProvider": "Ou ajouter un fournisseur",
+        "askAdmin": "Aucun modèle de langage n’est configuré. Demandez à l’administrateur du serveur d’en configurer un.",
+        "title": "Connecter un service",
+        "body": "Choisissez un service et collez sa clé API. Ses modèles recommandés rempliront toutes les étapes encore non définies.",
+        "connect": "Connecter",
+        "connecting": "Connexion…",
+        "done": "{{name}} est connecté",
+        "partial": "Le fournisseur a été ajouté, mais ses modèles n’ont pas pu être attribués : {{message}}",
+        "noModel": "Le fournisseur a été ajouté, mais il ne liste aucun modèle de langage. Ajoutez ses ID de modèle dans Fournisseurs."
+      },
+      "providers": {
+        "title": "Fournisseurs",
+        "hint": "D’où viennent les modèles. Les clés sont conservées sur le serveur et ne sont plus jamais affichées.",
+        "empty": "Aucun fournisseur pour l’instant",
+        "add": "Ajouter un fournisseur",
+        "addTitle": "Nouveau fournisseur",
+        "edit": "Modifier {{name}}",
+        "remove": "Supprimer {{name}}",
+        "removeTitle": "Supprimer {{name}} ?",
+        "removeBody": "Les étapes qui l’utilisent suivront de nouveau leur étape parente.",
+        "removeConfirm": "Supprimer",
+        "server": "Serveur",
+        "serverHint": "Configuré par le serveur ; lecture seule",
+        "preset": "Service",
+        "pickPreset": "Choisir un service",
+        "apiKey": "Clé API",
+        "apiKeyPlaceholder": "Collez la clé API",
+        "showKey": "Afficher la clé",
+        "hideKey": "Masquer la clé",
+        "keepKey": "Conserver",
+        "replaceKey": "Remplacer",
+        "removeKey": "Supprimer",
+        "keySet": "Clé {{mask}}",
+        "keySetNoMask": "Clé définie",
+        "noKey": "Aucune clé",
+        "keyUnreadable": "Clé illisible ; saisissez-la de nouveau",
+        "keyWillBeRemoved": "La clé sera supprimée à l’enregistrement.",
+        "baseUrl": "URL de base",
+        "baseUrlOptional": "Point de terminaison personnalisé (facultatif)",
+        "models": "Modèles",
+        "modelsHint": "ID de modèles, séparés par des virgules",
+        "needsBaseUrl": "Saisissez l’URL de base.",
+        "needsModels": "Saisissez au moins un ID de modèle.",
+        "groups": {
+          "bundle": "Offres à plusieurs services",
+          "chat": "Modèles de langage",
+          "tts": "Synthèse vocale",
+          "asr": "Reconnaissance vocale",
+          "image": "Images",
+          "video": "Vidéo",
+          "webSearch": "Recherche web",
+          "document": "Documents"
+        }
+      },
+      "capabilities": {
+        "chat": "Langage",
+        "tts": "Synthèse vocale",
+        "asr": "Reconnaissance vocale",
+        "image": "Images",
+        "video": "Vidéo",
+        "webSearch": "Recherche web",
+        "document": "Documents"
+      },
+      "slots": {
+        "llm": {
+          "name": "Modèle par défaut",
+          "desc": "Le modèle de langage utilisé par chaque étape sans réglage propre."
+        },
+        "courseResearch": {
+          "name": "Requêtes de recherche",
+          "desc": "Transforme le sujet du cours en requêtes de recherche web."
+        },
+        "courseOutline": {
+          "name": "Plan",
+          "desc": "Planifie les pages du cours."
+        },
+        "courseAgents": {
+          "name": "Rôles",
+          "desc": "Crée les enseignants et les camarades de la classe."
+        },
+        "courseContent": {
+          "name": "Contenu des pages",
+          "desc": "Rédige chaque page. Les types de page sans réglage propre le suivent."
+        },
+        "courseContentSlide": {
+          "name": "Diapositives",
+          "desc": "Rédige les pages de diapositives."
+        },
+        "courseContentQuiz": {
+          "name": "Quiz",
+          "desc": "Rédige les pages de quiz."
+        },
+        "courseContentInteractive": {
+          "name": "Pages interactives",
+          "desc": "Rédige les pages interactives."
+        },
+        "courseContentPbl": {
+          "name": "Projets",
+          "desc": "Rédige les pages d’apprentissage par projet."
+        },
+        "courseActions": {
+          "name": "Actions de cours",
+          "desc": "Scénarise ce que les enseignants disent et font sur chaque page."
+        },
+        "classroom": {
+          "name": "Classe",
+          "desc": "Discussion, correction des quiz et projets pendant l’apprentissage."
+        },
+        "agent": {
+          "name": "Agent",
+          "desc": "Crée et modifie des cours avec vous. Nécessite un modèle prenant en charge l’appel d’outils."
+        },
+        "tts": {
+          "name": "Narration",
+          "desc": "Lit les cours à voix haute."
+        },
+        "asr": {
+          "name": "Saisie vocale",
+          "desc": "Transcrit en texte les questions posées à l’oral en classe."
+        },
+        "image": {
+          "name": "Images",
+          "desc": "Génère des images pour les pages."
+        },
+        "video": {
+          "name": "Vidéo",
+          "desc": "Génère des clips vidéo pour les pages."
+        },
+        "webSearch": {
+          "name": "Recherche web",
+          "desc": "Effectue des recherches sur le web pendant la génération d’un cours."
+        },
+        "document": {
+          "name": "Analyse de documents",
+          "desc": "Lit les documents importés."
+        }
+      }
     }
   },
   "workspace": {
