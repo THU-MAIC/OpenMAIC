@@ -62,7 +62,7 @@ services:
 
 不要掛載主機上不存在的路徑：Docker 會在該位置建立一個目錄，導致服務拒絕啟動。使用 `docker run` 時，加上 `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`。修改檔案後需要重新啟動容器。`openmaic.yml` 已列入 `.dockerignore`，不會被打包進從儲存庫建置的映像檔：請在執行時掛載它。沒有 `openmaic.yml` 時，仍會從 `/app/server-providers.yml` 讀取舊版的 `server-providers.yml`。
 
-Docker 容器中的 `localhost` 指向容器本身。若 Ollama、Lemonade、VoxCPM 或 ComfyUI 執行在主機上，請使用 `host.docker.internal`，例如 `http://host.docker.internal:11434/v1` 或 `http://host.docker.internal:8188`。Linux Docker 通常還需要為 `openmaic` 服務新增 `extra_hosts: ["host.docker.internal:host-gateway"]`。ComfyUI 目前不是伺服器端託管 provider，因此正式環境還必須設定 `ALLOW_LOCAL_NETWORKS=true`，否則 SSRF 防護會拒絕此位址。
+Docker 容器中的 `localhost` 指向容器本身。若 Ollama、Lemonade、VoxCPM 或 ComfyUI 執行在主機上，請使用 `host.docker.internal`，例如 `http://host.docker.internal:11434/v1` 或 `http://host.docker.internal:8188`。Linux Docker 通常還需要為 `openmaic` 服務加上 `extra_hosts: ["host.docker.internal:host-gateway"]`。在 `openmaic.yml`（或舊版變數）中宣告的供應商由伺服器端管理，其端點可以位於主機或內網，不需要 `ALLOW_LOCAL_NETWORKS`。該變數只影響使用者自行填寫的端點：在 **設定 → 模型** 中新增的對話 Base URL，以及已棄用的請求欄位。
 
 ## 自建 VM
 

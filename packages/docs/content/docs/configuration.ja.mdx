@@ -507,7 +507,7 @@ AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
 AZURE_OPENAI_MODELS=your-deployment-name
 ```
 
-他の OpenAI 互換 LLM サービスに接続する場合は、**設定 → モデルプロバイダー** からカスタム provider を追加し、対応するプロトコルタイプを選択してください。
+別の OpenAI 互換 LLM サービスに接続するには、`openmaic.yml` で `baseUrl` と `models` を指定した `openai-compatible` プロバイダーを宣言するか、**設定 → モデル** の **プロバイダー**（Providers）タブで追加してください。
 
 ### ローカルモデル（Ollama と Lemonade）
 
@@ -545,7 +545,7 @@ TTS_VOXCPM_BASE_URL=http://localhost:8000
 
 管理者は `TTS_<PROVIDER>_ENABLED=false` で特定の TTS プロバイダーをサーバー側で強制無効化できます。VoxCPM2（セルフホスト TTS＋音声クローン）については専用の [VoxCPM2](./voxcpm.mdx) ページを参照してください。
 
-カスタム OpenAI 互換 TTS provider は設定画面から追加可能で、Base URL、モデル、音色を指定します。これらはクライアント設定に保存され、任意の `TTS_*` 環境変数や YAML provider ID では登録されません。
+別の OpenAI 互換 TTS エンドポイントを使うには、`openmaic.yml` でその `baseUrl` を指定した `openai-tts` プロバイダーを宣言し、`tts` スロットに割り当ててください。ワークスペースはモデル設定で独自の TTS エンドポイントを追加できません。
 
 ### ASR（音声認識）
 
@@ -573,7 +573,18 @@ ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
 
 ブラウザのネイティブ ASR はサーバー設定不要です。
 
-カスタム OpenAI 互換 ASR provider も設定画面から追加可能で、Base URL、モデル、対応言語を指定します。これらはクライアント設定に保存されます。
+別の OpenAI 互換 ASR エンドポイントを使うには、`openmaic.yml` で `openai-whisper` プリセットとその `baseUrl` を指定して宣言し、`asr` スロットに割り当ててください。ワークスペースはモデル設定で独自の ASR エンドポイントを追加できません。
+
+```yaml title="openmaic.yml"
+providers:
+  my-asr:
+    preset: openai-whisper
+    apiKey: ${MY_ASR_API_KEY}
+    baseUrl: https://asr.example.com/v1
+
+slots:
+  asr: my-asr:whisper-1
+```
 
 ### 画像生成プロバイダー
 
@@ -587,7 +598,19 @@ Lemonade はローカルサービスで API key 不要です：
 IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
 
-ComfyUI Image は API key 不要で、デフォルトで `http://localhost:8188` に接続します。設定画面で ComfyUI Base URL を指定し、OpenMAIC の `public/` ディレクトリに API 形式でエクスポートした workflow JSON（`comfyui-*.json` またはファイル名に `workflow` を含む）を置くと自動検出され、選択可能になります。Docker 本番環境ではビルド前に workflow を追加するか、単一の workflow ファイルをコンテナの `/app/public/` にマウントしてください。`comfyui-image` はサーバー管理 provider ではないため、本番環境でホストの ComfyUI に接続する場合は `ALLOW_LOCAL_NETWORKS=true` を設定してください。
+ComfyUI Image に API キーは不要です。自分のネットワーク上で動くため、デプロイ側で設定します。`openmaic.yml` で ComfyUI サーバーのアドレスを指定して宣言し、`image` スロットに割り当ててください。
+
+```yaml title="openmaic.yml"
+providers:
+  comfyui:
+    preset: comfyui-image
+    baseUrl: http://host.docker.internal:8188
+
+slots:
+  image: comfyui
+```
+
+API 形式でエクスポートしたワークフロー JSON を OpenMAIC の `public/` ディレクトリに置きます。ファイル名は `comfyui-*.json` に一致するか `workflow` を含む必要があり、OpenMAIC はこれらを自動的に検出してワークフローとして提供します。Docker では、イメージをビルドする前にワークフローを追加するか、個々のワークフローファイルをコンテナ内の `/app/public/` にマウントしてください。プロバイダーはデプロイで宣言されているため、ホストやプライベートネットワーク上の ComfyUI に `ALLOW_LOCAL_NETWORKS` は不要です。
 
 ### 動画生成プロバイダー
 

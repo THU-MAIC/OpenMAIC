@@ -62,7 +62,7 @@ services:
 
 Do not mount a path that does not exist on the host: Docker creates a directory in its place, and the server refuses to start. With `docker run`, add `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`. Restart the container after editing the file. `openmaic.yml` is listed in `.dockerignore`, so it is never baked into an image built from the repository: mount it at run time instead. The legacy `server-providers.yml` is still read from `/app/server-providers.yml` when there is no `openmaic.yml`.
 
-Inside a Docker container, `localhost` refers to the container itself. If Ollama, Lemonade, VoxCPM, or ComfyUI runs on the host, use `host.docker.internal`, for example `http://host.docker.internal:11434/v1` or `http://host.docker.internal:8188`. Linux Docker usually also requires `extra_hosts: ["host.docker.internal:host-gateway"]` on the `openmaic` service. Because ComfyUI is not currently a server-managed provider, production deployments must also set `ALLOW_LOCAL_NETWORKS=true`, or the SSRF guard will reject the address.
+Inside a Docker container, `localhost` refers to the container itself. If Ollama, Lemonade, VoxCPM, or ComfyUI runs on the host, use `host.docker.internal`, for example `http://host.docker.internal:11434/v1` or `http://host.docker.internal:8188`. Linux Docker usually also requires `extra_hosts: ["host.docker.internal:host-gateway"]` on the `openmaic` service. Providers declared in `openmaic.yml` (or through the legacy variables) are server-managed, so their endpoints may be on the host or a private network without `ALLOW_LOCAL_NETWORKS`. That variable only matters for endpoints a user types: chat base URLs added in **Settings → Models**, and the deprecated request fields.
 
 ## Self-host on a VM
 

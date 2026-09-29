@@ -1333,7 +1333,19 @@ The app auto-detects the service via `RENDER_SERVICE_URL` (preset in `docker-com
 
 [MinerU](https://github.com/opendatalab/MinerU) provides enhanced parsing for complex tables, formulas, and OCR. You can use the [MinerU official API](https://mineru.net/) or [self-host your own instance](https://opendatalab.github.io/MinerU/quick_start/docker_deployment/).
 
-Set `PDF_MINERU_BASE_URL` (and `PDF_MINERU_API_KEY` if needed) in `.env.local`.
+Declare it in `openmaic.yml` and assign the `document` slot to it: `mineru-cloud` for the official API, or `mineru` with the `baseUrl` of your own instance.
+
+```yaml
+providers:
+  mineru:
+    preset: mineru-cloud
+    apiKey: ${PDF_MINERU_CLOUD_API_KEY}
+
+slots:
+  document: mineru
+```
+
+Without `openmaic.yml`, the legacy variables `PDF_MINERU_CLOUD_API_KEY` or `PDF_MINERU_BASE_URL` in `.env.local` still work.
 
 ### Optional: VoxCPM2 (Self-Hosted TTS with Voice Cloning)
 
@@ -1349,15 +1361,19 @@ Set `PDF_MINERU_BASE_URL` (and `PDF_MINERU_API_KEY` if needed) in `.env.local`.
 
 See the [VoxCPM repo](https://github.com/OpenBMB/VoxCPM) for backend setup.
 
-**2. Point OpenMAIC at it.** Open Settings → **Text-to-Speech** → **VoxCPM2**, pick the backend, and paste your Base URL. The Request URL preview confirms OpenMAIC will hit the right endpoint.
+**2. Point OpenMAIC at it.** VoxCPM2 runs on your own network, so the deployment configures it in `openmaic.yml` (no API key required); workspaces cannot add it in **Settings → Models**:
 
-<img src="assets/voxcpm/voxcpm-connection.png" width="85%" alt="VoxCPM2 connection settings: backend selector, Base URL, model" />
+```yaml
+providers:
+  voxcpm:
+    preset: voxcpm-tts
+    baseUrl: http://localhost:8000/v1
 
-Or pre-configure it via env var (no API key required):
-
-```env
-TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+slots:
+  tts: voxcpm
 ```
+
+Without `openmaic.yml`, the legacy `TTS_VOXCPM_BASE_URL=http://localhost:8000/v1` does the same.
 
 **3. Manage voices.** Three voice modes, all under **Settings → Text-to-Speech → VoxCPM2 → VoxCPM Voices**.
 

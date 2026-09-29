@@ -507,7 +507,7 @@ AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
 AZURE_OPENAI_MODELS=your-deployment-name
 ```
 
-To connect another OpenAI-compatible LLM service, add a custom provider under **Settings → Model providers** and select the corresponding protocol type.
+To connect another OpenAI-compatible LLM service, declare an `openai-compatible` provider with its `baseUrl` and `models` in `openmaic.yml`, or add one in the **Providers** tab of **Settings → Models**.
 
 ### Local models (Ollama and Lemonade)
 
@@ -545,7 +545,7 @@ Supported TTS prefixes include `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWE
 
 Administrators can force-disable a TTS provider on the server with `TTS_<PROVIDER>_ENABLED=false`. See the dedicated [VoxCPM2](./voxcpm.mdx) section for self-hosted TTS and voice cloning.
 
-You can also add a custom OpenAI-compatible TTS provider in Settings by entering its Base URL, model, and voice. Custom providers are stored in client settings and cannot be registered through arbitrary `TTS_*` environment variables or YAML provider IDs.
+To use another OpenAI-compatible TTS endpoint, declare an `openai-tts` provider with that `baseUrl` in `openmaic.yml` and assign the `tts` slot to it. Workspaces cannot add custom TTS endpoints in the model settings.
 
 ### ASR (speech to text)
 
@@ -573,7 +573,18 @@ Start the OpenAI-compatible FunASR service with `funasr-server --device cuda`. I
 
 Browser-native ASR requires no server configuration.
 
-You can also add a custom OpenAI-compatible ASR provider in Settings by entering its Base URL, model, and supported languages; this configuration is stored in client settings.
+To use another OpenAI-compatible ASR endpoint, declare it in `openmaic.yml` with the `openai-whisper` preset and its `baseUrl`, and assign the `asr` slot to it. Workspaces cannot add custom ASR endpoints in the model settings:
+
+```yaml title="openmaic.yml"
+providers:
+  my-asr:
+    preset: openai-whisper
+    apiKey: ${MY_ASR_API_KEY}
+    baseUrl: https://asr.example.com/v1
+
+slots:
+  asr: my-asr:whisper-1
+```
 
 ### Image generation providers
 
@@ -587,7 +598,19 @@ Lemonade is a local service and does not require a key:
 IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
 
-ComfyUI Image does not require an API key and connects to `http://localhost:8188` by default. Enter the ComfyUI Base URL in Settings, and place workflow JSON exported in API format in OpenMAIC's `public/` directory. Use filenames matching `comfyui-*.json` or containing `workflow`; the Settings page discovers these files automatically and offers them as workflows. With Docker, add the workflow before building the image or mount an individual workflow file into `/app/public/` in the container. Because `comfyui-image` is not a server-managed provider, production deployments connecting to host-side ComfyUI must also set `ALLOW_LOCAL_NETWORKS=true`.
+ComfyUI Image does not require an API key. It runs on your own network, so it is configured by the deployment: declare it in `openmaic.yml` with the address of your ComfyUI server and assign the `image` slot to it.
+
+```yaml title="openmaic.yml"
+providers:
+  comfyui:
+    preset: comfyui-image
+    baseUrl: http://host.docker.internal:8188
+
+slots:
+  image: comfyui
+```
+
+Place workflow JSON exported in API format in OpenMAIC's `public/` directory. Use filenames matching `comfyui-*.json` or containing `workflow`; OpenMAIC discovers these files automatically and offers them as workflows. With Docker, add the workflow before building the image or mount an individual workflow file into `/app/public/` in the container. Because the provider is declared by the deployment, a ComfyUI server on the host or a private network does not need `ALLOW_LOCAL_NETWORKS`.
 
 ### Video generation providers
 

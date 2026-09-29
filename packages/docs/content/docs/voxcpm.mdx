@@ -34,23 +34,7 @@ python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
 
 ## 2. Point OpenMAIC at it
 
-Choose one of the following methods.
-
-### A. Per-user (Settings UI, no server change)
-
-Open **Settings → Text to speech → VoxCPM2**, choose the backend type, and paste the Base URL. The Request URL preview below shows the actual address OpenMAIC will call.
-
-This is suitable for personal testing and per-browser overrides, and does not affect other users.
-
-### B. Server default (environment variable, shared by everyone)
-
-Add the following line to `.env.local` or the YAML configuration. No API key is required.
-
-```bash
-TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
-```
-
-With `openmaic.yml`, declare VoxCPM2 as a provider and assign it to the `tts` slot instead; the variable above is the legacy form:
+VoxCPM2 runs on your own network, so its endpoint is configured by the deployment; workspaces cannot add it in **Settings → Models**. Declare it in `openmaic.yml` and assign it to the `tts` slot. No API key is required:
 
 ```yaml title="openmaic.yml"
 providers:
@@ -62,7 +46,13 @@ slots:
   tts: voxcpm
 ```
 
-Server configuration is sent to users. If the provider is server-managed, clients cannot override these settings.
+Without `openmaic.yml`, the legacy variable does the same:
+
+```bash
+TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+```
+
+Because the provider is server-managed, its endpoint may be on a private network without `ALLOW_LOCAL_NETWORKS`, and users cannot override it.
 
 ## 3. Voice management
 

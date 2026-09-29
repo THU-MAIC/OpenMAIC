@@ -62,7 +62,7 @@ services:
 
 Не монтируйте путь, которого нет на хосте: Docker создаст на его месте каталог, и сервер откажется запускаться. Для `docker run` добавьте `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`. После изменения файла перезапустите контейнер. `openmaic.yml` указан в `.dockerignore`, поэтому никогда не попадает в образ, собранный из репозитория: монтируйте его при запуске. Если `openmaic.yml` нет, устаревший `server-providers.yml` по-прежнему читается из `/app/server-providers.yml`.
 
-В Docker контейнере `localhost` указывает на сам контейнер. Если Ollama, Lemonade, VoxCPM или ComfyUI запущены на хосте, используйте `host.docker.internal`, например `http://host.docker.internal:11434/v1` или `http://host.docker.internal:8188`. В Linux обычно также нужно добавить `extra_hosts: ["host.docker.internal:host-gateway"]` для сервиса `openmaic`. ComfyUI пока не является серверным провайдером, поэтому в продакшене нужно задать `ALLOW_LOCAL_NETWORKS=true`, иначе SSRF-защита отклонит запросы к этому адресу.
+Внутри Docker-контейнера `localhost` указывает на сам контейнер. Если Ollama, Lemonade, VoxCPM или ComfyUI запущены на хосте, используйте `host.docker.internal`, например `http://host.docker.internal:11434/v1` или `http://host.docker.internal:8188`. В Linux Docker обычно также нужно добавить `extra_hosts: ["host.docker.internal:host-gateway"]` сервису `openmaic`. Провайдеры, объявленные в `openmaic.yml` (или через устаревшие переменные), управляются сервером, поэтому их адреса могут находиться на хосте или в частной сети без `ALLOW_LOCAL_NETWORKS`. Эта переменная важна только для адресов, которые вводит пользователь: базовых URL чата, добавленных в **Настройки → Модели**, и устаревших полей запроса.
 
 ## Самостоятельный хостинг на виртуальной машине
 

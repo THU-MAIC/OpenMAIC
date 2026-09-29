@@ -34,23 +34,7 @@ python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
 
 ## 2. 讓 OpenMAIC 對接它
 
-請選擇下列其中一種方式。
-
-### A. 單一使用者（設定 UI，不修改伺服器）
-
-開啟 **設定 → 語音合成 → VoxCPM2**，選擇後端類型並貼上 Base URL。下方的 Request URL 預覽會顯示 OpenMAIC 實際呼叫的位址。
-
-此方式適合個人測試，也能讓每個瀏覽器各自覆寫設定，不會影響其他使用者。
-
-### B. 伺服器端預設（環境變數，所有人共用）
-
-在 `.env.local` 或 YAML 設定中加入下列內容，不需要 API key。
-
-```bash
-TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
-```
-
-使用 `openmaic.yml` 時，改為把 VoxCPM2 宣告為供應商並指派給 `tts` 插槽；上面的變數是舊版寫法：
+VoxCPM2 執行在你自己的網路中，因此它的端點由部署設定，工作區不能在 **設定 → 模型** 中新增它。請在 `openmaic.yml` 中宣告它並指派給 `tts` 插槽，不需要 API key：
 
 ```yaml title="openmaic.yml"
 providers:
@@ -62,7 +46,13 @@ slots:
   tts: voxcpm
 ```
 
-伺服器端設定會傳送給使用者；如果 provider 由伺服器端託管，用戶端便無法覆寫這些設定。
+沒有 `openmaic.yml` 時，舊版變數可以達到相同效果：
+
+```bash
+TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+```
+
+由於該供應商由伺服器端管理，它的端點可以位於內網而不需要 `ALLOW_LOCAL_NETWORKS`，使用者也無法覆寫它。
 
 ## 3. 聲音管理
 

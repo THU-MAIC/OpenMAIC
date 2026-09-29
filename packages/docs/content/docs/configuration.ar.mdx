@@ -507,7 +507,7 @@ AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
 AZURE_OPENAI_MODELS=your-deployment-name
 ```
 
-للاتصال بخدمات LLM متوافقة مع OpenAI أخرى، أضف موفرًا مخصصًا في **الإعدادات → موفرو النماذج** واختر نوع البروتوكول المناسب.
+للاتصال بخدمة LLM أخرى متوافقة مع OpenAI، أعلن في `openmaic.yml` مزودًا من نوع `openai-compatible` مع `baseUrl` و`models` الخاصة به، أو أضفه في تبويب **المزودون** (Providers) ضمن **الإعدادات ← النماذج**.
 
 ### النماذج المحلية (Ollama و Lemonade)
 
@@ -545,7 +545,7 @@ TTS_VOXCPM_BASE_URL=http://localhost:8000
 
 يمكن للمسؤولين تعطيل موفر TTS معين على الخادم باستخدام `TTS_<PROVIDER>_ENABLED=false`. لمزيد من التفاصيل عن VoxCPM2 (TTS ذاتي الاستضافة واستنساخ الصوت)، راجع الفصل الخاص بـ [VoxCPM2](./voxcpm.mdx).
 
-يمكن أيضًا إضافة provider مخصص متوافق مع OpenAI لـ TTS من الإعدادات عبر إدخال Base URL والنموذج والصوت. يُحفظ هذا provider المخصص في إعدادات العميل ولا يمكن تسجيله عبر متغيرات بيئة `TTS_*` عشوائية أو YAML provider ID.
+لاستخدام عنوان TTS آخر متوافق مع OpenAI، أعلن في `openmaic.yml` مزودًا من نوع `openai-tts` بذلك `baseUrl` وعيّن له خانة `tts`. لا يمكن لمساحات العمل إضافة عناوين TTS مخصصة في إعدادات النماذج.
 
 ### ASR (تحويل الكلام إلى نص)
 
@@ -573,7 +573,18 @@ ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
 
 ASR المدمج في المتصفح لا يحتاج إلى إعدادات خادم.
 
-يمكن أيضًا إضافة موفري ASR مخصصين متوافقين مع OpenAI من الإعدادات، مع إدخال عنوان URL الأساسي، النموذج، واللغات المدعومة. تحفظ هذه الإعدادات في إعدادات العميل.
+لاستخدام عنوان ASR آخر متوافق مع OpenAI، أعلنه في `openmaic.yml` بالإعداد المسبق `openai-whisper` و`baseUrl` الخاص به، وعيّن له خانة `asr`. لا يمكن لمساحات العمل إضافة عناوين ASR مخصصة في إعدادات النماذج:
+
+```yaml title="openmaic.yml"
+providers:
+  my-asr:
+    preset: openai-whisper
+    apiKey: ${MY_ASR_API_KEY}
+    baseUrl: https://asr.example.com/v1
+
+slots:
+  asr: my-asr:whisper-1
+```
 
 ### موفرو توليد الصور
 
@@ -587,7 +598,19 @@ Lemonade خدمة محلية ولا تحتاج إلى مفتاح API:
 IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
 
-ComfyUI Image لا يحتاج إلى مفتاح API، ويتصل افتراضيًا بـ `http://localhost:8188`. أدخل عنوان URL الأساسي لـ ComfyUI في الإعدادات، وضع ملفات workflow بصيغة JSON المصدرة من ComfyUI API في مجلد `public/` الخاص بـ OpenMAIC؛ يجب أن يكون اسم الملف مطابقًا لـ `comfyui-*.json` أو يحتوي على `workflow`. ستكتشف صفحة الإعدادات هذه الملفات تلقائيًا وتعرضها كخيارات workflow. عند نشر Docker، يجب تضمين ملفات workflow أثناء بناء الصورة أو ربط ملف workflow واحد بمجلد `/app/public/` داخل الحاوية. لأن `comfyui-image` ليس موفرًا مستضافًا على الخادم، عند تشغيل ComfyUI على المضيف مع Docker في الإنتاج، يجب تعيين `ALLOW_LOCAL_NETWORKS=true` للسماح بالوصول المحلي، وإلا سيرفض حارس SSRF العنوان المحلي المرسل من العميل.
+لا يحتاج ComfyUI Image إلى مفتاح API. يعمل على شبكتك الخاصة، لذا يضبطه النشر: أعلنه في `openmaic.yml` بعنوان خادم ComfyUI وعيّن له خانة `image`.
+
+```yaml title="openmaic.yml"
+providers:
+  comfyui:
+    preset: comfyui-image
+    baseUrl: http://host.docker.internal:8188
+
+slots:
+  image: comfyui
+```
+
+ضع ملفات JSON لسير العمل المصدّرة بصيغة API في مجلد `public/` الخاص بـ OpenMAIC. يجب أن تطابق أسماء الملفات `comfyui-*.json` أو تحتوي على `workflow`؛ يكتشف OpenMAIC هذه الملفات تلقائيًا ويعرضها كسير عمل. مع Docker، أضف سير العمل قبل بناء الصورة أو اربط ملف سير عمل منفردًا في `/app/public/` داخل الحاوية. بما أن المزود مُعلن من النشر، فلا يحتاج خادم ComfyUI على المضيف أو على شبكة خاصة إلى `ALLOW_LOCAL_NETWORKS`.
 
 ### موفرو توليد الفيديو
 

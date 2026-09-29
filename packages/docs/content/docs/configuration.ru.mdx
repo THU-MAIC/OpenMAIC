@@ -507,7 +507,7 @@ AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
 AZURE_OPENAI_MODELS=your-deployment-name
 ```
 
-Для подключения других OpenAI-совместимых LLM сервисов добавьте кастомный провайдер в **Настройки → Модельные провайдеры** и выберите соответствующий тип протокола.
+Чтобы подключить другой OpenAI-совместимый LLM-сервис, объявите в `openmaic.yml` провайдера `openai-compatible` с его `baseUrl` и `models` или добавьте его на вкладке **Провайдеры** (Providers) в **Настройки → Модели**.
 
 ### Локальные модели (Ollama и Lemonade)
 
@@ -545,7 +545,7 @@ TTS_VOXCPM_BASE_URL=http://localhost:8000
 
 Администратор может принудительно отключить TTS провайдер на сервере, установив `TTS_<PROVIDER>_ENABLED=false`. VoxCPM2 (self-hosted TTS + клонирование голоса) описан на отдельной странице [VoxCPM2](./voxcpm.mdx).
 
-Кастомные OpenAI-совместимые TTS провайдеры можно добавить в настройках, указав Base URL, модели и голоса. Такие кастомные провайдеры сохраняются в клиентских настройках и не регистрируются через произвольные env vars `TTS_*` или YAML ID.
+Чтобы использовать другой OpenAI-совместимый адрес TTS, объявите в `openmaic.yml` провайдера `openai-tts` с этим `baseUrl` и назначьте ему слот `tts`. Рабочие пространства не могут добавлять собственные адреса TTS в настройках моделей.
 
 ### ASR (распознавание речи)
 
@@ -573,7 +573,18 @@ ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
 
 Встроенный в браузер ASR не требует серверной настройки.
 
-Кастомные OpenAI-совместимые ASR провайдеры можно добавить в настройках, указав Base URL, модели и поддерживаемые языки. Эти настройки сохраняются в клиенте.
+Чтобы использовать другой OpenAI-совместимый адрес ASR, объявите его в `openmaic.yml` с пресетом `openai-whisper` и его `baseUrl` и назначьте ему слот `asr`. Рабочие пространства не могут добавлять собственные адреса ASR в настройках моделей:
+
+```yaml title="openmaic.yml"
+providers:
+  my-asr:
+    preset: openai-whisper
+    apiKey: ${MY_ASR_API_KEY}
+    baseUrl: https://asr.example.com/v1
+
+slots:
+  asr: my-asr:whisper-1
+```
 
 ### Провайдеры генерации изображений
 
@@ -587,7 +598,19 @@ Lemonade — локальный сервис, не требует ключа:
 IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
 
-ComfyUI Image не требует API key, по умолчанию подключается к `http://localhost:8188`. В настройках укажите ComfyUI Base URL и положите экспортированный в формате API workflow JSON в папку `public/` OpenMAIC; имя файла должно соответствовать `comfyui-*.json` или содержать `workflow`. Настройки автоматически обнаружат эти файлы и предложат их как опции workflow. При Docker-деплое нужно добавить workflow в образ или смонтировать отдельный файл в `/app/public/`. Поскольку `comfyui-image` — не серверный провайдер, в продакшене для подключения к ComfyUI на хосте нужно установить `ALLOW_LOCAL_NETWORKS=true`.
+ComfyUI Image не требует API-ключа. Он работает в вашей собственной сети, поэтому настраивается развёртыванием: объявите его в `openmaic.yml` с адресом сервера ComfyUI и назначьте ему слот `image`.
+
+```yaml title="openmaic.yml"
+providers:
+  comfyui:
+    preset: comfyui-image
+    baseUrl: http://host.docker.internal:8188
+
+slots:
+  image: comfyui
+```
+
+Поместите JSON рабочего процесса, экспортированный в формате API, в каталог `public/` OpenMAIC. Имена файлов должны соответствовать `comfyui-*.json` или содержать `workflow`; OpenMAIC автоматически находит эти файлы и предлагает их как рабочие процессы. В Docker добавьте рабочий процесс до сборки образа или смонтируйте отдельный файл в `/app/public/` контейнера. Поскольку провайдер объявлен развёртыванием, серверу ComfyUI на хосте или в частной сети не нужен `ALLOW_LOCAL_NETWORKS`.
 
 ### Провайдеры генерации видео
 

@@ -530,7 +530,19 @@ docker compose --profile video-export up --build
 
 [MinerU](https://github.com/opendatalab/MinerU) 提供更强的表格、公式和 OCR 解析能力。你可以使用 [MinerU 官方 API](https://mineru.net/) 或[自行部署](https://opendatalab.github.io/MinerU/quick_start/docker_deployment/)。
 
-在 `.env.local` 中设置 `PDF_MINERU_BASE_URL`（如需认证则同时设置 `PDF_MINERU_API_KEY`）。
+在 `openmaic.yml` 中声明它并分配给 `document` 槽位：官方 API 使用 `mineru-cloud`，自行部署的实例使用 `mineru` 并填写其 `baseUrl`。
+
+```yaml
+providers:
+  mineru:
+    preset: mineru-cloud
+    apiKey: ${PDF_MINERU_CLOUD_API_KEY}
+
+slots:
+  document: mineru
+```
+
+没有 `openmaic.yml` 时，在 `.env.local` 中设置旧版变量 `PDF_MINERU_CLOUD_API_KEY` 或 `PDF_MINERU_BASE_URL` 仍然有效。
 
 ### 可选：VoxCPM2（自托管 TTS，支持音色克隆）
 
@@ -546,15 +558,19 @@ docker compose --profile video-export up --build
 
 每种后端的具体启动步骤见 [VoxCPM 仓库](https://github.com/OpenBMB/VoxCPM)。
 
-**2. 在 OpenMAIC 中配置。** 打开 设置 → **语音合成** → **VoxCPM2**，选择后端类型并填入 Base URL，下方的 Request URL 预览会显示实际请求地址。
+**2. 在 OpenMAIC 中配置。** VoxCPM2 运行在你自己的网络中，因此由部署在 `openmaic.yml` 中配置（不需要 API Key）；工作区不能在 **设置 → 模型** 中添加它：
 
-<img src="assets/voxcpm/voxcpm-connection.png" width="85%" alt="VoxCPM2 连接设置：后端选择、Base URL、模型名" />
+```yaml
+providers:
+  voxcpm:
+    preset: voxcpm-tts
+    baseUrl: http://localhost:8000/v1
 
-也可以通过环境变量预先配置（不需要 API Key）：
-
-```env
-TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+slots:
+  tts: voxcpm
 ```
+
+没有 `openmaic.yml` 时，旧版的 `TTS_VOXCPM_BASE_URL=http://localhost:8000/v1` 可以达到同样效果。
 
 **3. 管理音色。** 三种音色模式，都在 **设置 → 语音合成 → VoxCPM2 → VoxCPM 音色** 里。
 

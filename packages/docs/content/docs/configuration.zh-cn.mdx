@@ -507,7 +507,7 @@ AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
 AZURE_OPENAI_MODELS=your-deployment-name
 ```
 
-如需连接其他 OpenAI 兼容的 LLM 服务，请在 **设置 → 模型提供方** 中添加自定义 provider，并选择对应的协议类型。
+如需连接其他 OpenAI 兼容的 LLM 服务，请在 `openmaic.yml` 中声明一个带 `baseUrl` 和 `models` 的 `openai-compatible` 服务商，或在 **设置 → 模型** 的 **服务商**（Providers）标签页中添加。
 
 ### 本地模型（Ollama 和 Lemonade）
 
@@ -545,7 +545,7 @@ TTS_VOXCPM_BASE_URL=http://localhost:8000
 
 管理员可以使用 `TTS_<PROVIDER>_ENABLED=false` 在服务端强制关闭某个 TTS 提供方。VoxCPM2（自托管 TTS + 声音克隆）请见单独的 [VoxCPM2](./voxcpm.mdx) 章节。
 
-也可以在设置中添加自定义 OpenAI 兼容 TTS provider，填写 Base URL、模型和音色。这类自定义 provider 保存在客户端设置中，不通过任意 `TTS_*` 环境变量或 YAML provider ID 注册。
+如需使用其他 OpenAI 兼容的 TTS 端点，请在 `openmaic.yml` 中声明一个带该 `baseUrl` 的 `openai-tts` 服务商，并把 `tts` 槽位分配给它。工作区不能在模型设置中添加自定义 TTS 端点。
 
 ### ASR（语音转文字）
 
@@ -573,7 +573,18 @@ ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
 
 浏览器原生 ASR 不需要服务端配置。
 
-也可以在设置中添加自定义 OpenAI 兼容 ASR provider，填写 Base URL、模型和支持语言；该配置保存在客户端设置中。
+如需使用其他 OpenAI 兼容的 ASR 端点，请在 `openmaic.yml` 中以 `openai-whisper` 预设和它的 `baseUrl` 声明该服务，并把 `asr` 槽位分配给它。工作区不能在模型设置中添加自定义 ASR 端点：
+
+```yaml title="openmaic.yml"
+providers:
+  my-asr:
+    preset: openai-whisper
+    apiKey: ${MY_ASR_API_KEY}
+    baseUrl: https://asr.example.com/v1
+
+slots:
+  asr: my-asr:whisper-1
+```
 
 ### 图像生成提供方
 
@@ -587,7 +598,19 @@ Lemonade 是本地服务，不需要 key：
 IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
 
-ComfyUI Image 不需要 API key，默认连接 `http://localhost:8188`。在设置中填写 ComfyUI Base URL，并把以 API 格式导出的 workflow JSON 放入 OpenMAIC 的 `public/` 目录；文件名使用 `comfyui-*.json` 或包含 `workflow`，设置页会自动发现这些文件并将其作为可选 workflow。Docker 部署时还需要在构建镜像前加入 workflow，或把单个 workflow 文件挂载到容器的 `/app/public/` 目录。由于 `comfyui-image` 不是服务端托管 provider，生产环境连接宿主机 ComfyUI 时还需要设置 `ALLOW_LOCAL_NETWORKS=true`。
+ComfyUI Image 不需要 API key。它运行在你自己的网络中，因此由部署配置：在 `openmaic.yml` 中用 ComfyUI 服务的地址声明它，并把 `image` 槽位分配给它。
+
+```yaml title="openmaic.yml"
+providers:
+  comfyui:
+    preset: comfyui-image
+    baseUrl: http://host.docker.internal:8188
+
+slots:
+  image: comfyui
+```
+
+把以 API 格式导出的工作流 JSON 放到 OpenMAIC 的 `public/` 目录中，文件名需匹配 `comfyui-*.json` 或包含 `workflow`；OpenMAIC 会自动发现这些文件并作为工作流提供。使用 Docker 时，请在构建镜像前加入工作流，或把单个工作流文件挂载到容器内的 `/app/public/`。由于该服务商由部署声明，运行在宿主机或内网中的 ComfyUI 不需要 `ALLOW_LOCAL_NETWORKS`。
 
 ### 视频生成提供方
 
