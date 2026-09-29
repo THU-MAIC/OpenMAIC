@@ -28,7 +28,12 @@ import {
   type SlotAssignment,
 } from '@/lib/server/model-config/openmaic-yml';
 
-export type ConfigSource = 'deployment' | 'workspace';
+/**
+ * `deployment`: openmaic.yml, which locks what it sets. `workspace`: the web
+ * settings. `default`: what an older deployment configured through
+ * DEFAULT_MODEL and friends; it locks nothing and ranks below both.
+ */
+export type ConfigSource = 'deployment' | 'workspace' | 'default';
 
 export interface ModelConfigLayer {
   source: ConfigSource;
@@ -38,6 +43,11 @@ export interface ModelConfigLayer {
 /** Where a model comes from: one declared provider and one of its models. */
 export interface ResolvedModelTarget {
   providerId: string;
+  /**
+   * The layer that declares the provider. A workspace provider's endpoint was
+   * typed by a user, so callers treat it as untrusted.
+   */
+  providerSource: ConfigSource;
   /** False when the registry's model catalogue does not describe this endpoint. */
   catalogue?: false;
   presetId: string;
@@ -45,6 +55,9 @@ export interface ResolvedModelTarget {
   /** The provider's own base URL, else the preset's (token plans); undefined means the registry default. */
   baseUrl?: string;
   apiKey?: string;
+  /** Multi-part credentials for vendors without a single key. */
+  credentials?: Record<string, string>;
+  proxy?: string;
   modelId: string;
 }
 
@@ -109,7 +122,9 @@ function findAssignment(
 function findProvider(providerId: string, layers: readonly ModelConfigLayer[]) {
   for (const layer of layers) {
     const providers = layer.config.providers;
-    if (providers && Object.hasOwn(providers, providerId)) return providers[providerId];
+    if (providers && Object.hasOwn(providers, providerId)) {
+      return { provider: providers[providerId], source: layer.source };
+    }
   }
   return undefined;
 }
@@ -127,10 +142,11 @@ function resolveTarget(
     throw new SlotResolutionError(`${at}: invalid model reference`);
   }
   const { providerId, modelId } = parsed;
-  const provider = findProvider(providerId, layers);
+  const found = findProvider(providerId, layers);
   // Errors name the path, never a value taken from the reference: a key pasted
   // into the provider position must not end up in a log.
-  if (!provider) throw new SlotResolutionError(`${at}: the provider is not declared`);
+  if (!found) throw new SlotResolutionError(`${at}: the provider is not declared`);
+  const { provider } = found;
   const preset = getProviderPreset(provider.preset);
   if (!preset) throw new SlotResolutionError(`${at}: the provider has an unknown preset`);
   const target = preset.capabilities[capability];
@@ -141,10 +157,13 @@ function resolveTarget(
   }
   return {
     providerId,
+    providerSource: found.source,
     presetId: preset.id,
     registryId: target.registryId,
     baseUrl: provider.baseUrl ?? target.baseUrl,
     ...(provider.apiKey !== undefined ? { apiKey: provider.apiKey } : {}),
+    ...(provider.credentials !== undefined ? { credentials: provider.credentials } : {}),
+    ...(provider.proxy !== undefined ? { proxy: provider.proxy } : {}),
     modelId,
     ...(preset.trustsModelCatalogue === false ? { catalogue: false as const } : {}),
   };
@@ -178,19 +197,18 @@ function isLockedByDeployment(slot: SlotId, layers: readonly ModelConfigLayer[])
   );
 }
 
-/** Deployment layers first, whatever order the caller passed them in. */
-function deploymentFirst(layers: readonly ModelConfigLayer[]): ModelConfigLayer[] {
-  return [
-    ...layers.filter((layer) => layer.source === 'deployment'),
-    ...layers.filter((layer) => layer.source !== 'deployment'),
-  ];
+const SOURCE_RANK: Record<ConfigSource, number> = { deployment: 0, workspace: 1, default: 2 };
+
+/** Deployment, then workspace, then default layers, whatever order the caller passed them in. */
+function inPrecedence(layers: readonly ModelConfigLayer[]): ModelConfigLayer[] {
+  return [...layers].sort((a, b) => SOURCE_RANK[a.source] - SOURCE_RANK[b.source]);
 }
 
 export function resolveSlot(
   slot: SlotId,
   givenLayers: readonly ModelConfigLayer[],
 ): SlotResolution {
-  const layers = deploymentFirst(givenLayers);
+  const layers = inPrecedence(givenLayers);
   const capability = getSlot(slot).capability;
   for (const node of slotLineage(slot)) {
     const found = findAssignment(node, layers);

@@ -13,8 +13,15 @@ import { loadModelConfigFile } from '@/lib/server/model-config/openmaic-yml';
 import type { ModelConfigLayer } from '@/lib/server/model-config/resolve-slot';
 
 export interface DeploymentLayer {
+  /** Providers and locked assignments: openmaic.yml, or the legacy providers. */
   layer: ModelConfigLayer | null;
-  /** How the layer was built, and what did not carry over. */
+  /**
+   * Assignments translated from DEFAULT_MODEL and MODEL_FALLBACK. They lock
+   * nothing and rank below the workspace, as DEFAULT_MODEL used to rank below
+   * the model a user picked.
+   */
+  defaults: ModelConfigLayer | null;
+  /** How the layers were built, and what did not carry over. */
   notices: string[];
 }
 
@@ -58,6 +65,7 @@ export function loadDeploymentLayer(): DeploymentLayer {
   if (file) {
     return {
       layer: { source: 'deployment', config: file },
+      defaults: null,
       notices: legacy
         ? [
             'openmaic.yml is present, so slot resolution uses it and not the legacy provider variables, server-providers.yml, DEFAULT_MODEL, MODEL_ROUTES or MODEL_FALLBACK',
@@ -65,15 +73,17 @@ export function loadDeploymentLayer(): DeploymentLayer {
         : [],
     };
   }
-  if (!legacy) return { layer: null, notices: [] };
+  if (!legacy) return { layer: null, defaults: null, notices: [] };
   if (process.env.MODEL_ROUTES?.trim()) throw new LegacyRoutesError();
   const { config, notices } = translateLegacyConfig(getServerProviderConfig(), {
     defaultModel: process.env.DEFAULT_MODEL?.trim() || undefined,
     globalFallback: process.env.MODEL_FALLBACK?.trim() || undefined,
   });
-  const empty = !config.providers && !config.slots;
   return {
-    layer: empty ? null : { source: 'deployment', config },
+    layer: config.providers
+      ? { source: 'deployment', config: { providers: config.providers } }
+      : null,
+    defaults: config.slots ? { source: 'default', config: { slots: config.slots } } : null,
     notices: [
       'The model configuration comes from the legacy provider variables, server-providers.yml, DEFAULT_MODEL and MODEL_FALLBACK, which are deprecated; move it to openmaic.yml',
       ...notices,

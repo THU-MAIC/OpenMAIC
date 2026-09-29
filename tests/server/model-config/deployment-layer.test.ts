@@ -53,21 +53,23 @@ afterEach(() => {
 
 describe('loadDeploymentLayer', () => {
   it('has no layer when nothing is configured', () => {
-    expect(loadDeploymentLayer()).toEqual({ layer: null, notices: [] });
+    expect(loadDeploymentLayer()).toEqual({ layer: null, defaults: null, notices: [] });
   });
 
   it('translates the legacy configuration when there is no openmaic.yml', () => {
     legacy.providers = { openai: { apiKey: 'sk-openai' } };
     vi.stubEnv('DEFAULT_MODEL', ' openai:gpt-5.6 ');
-    const { layer, notices } = loadDeploymentLayer();
+    const { layer, defaults, notices } = loadDeploymentLayer();
     expect(notices).toHaveLength(1);
     expect(notices[0]).toMatch(DEPRECATED);
+    // Providers stay with the deployment; the default model locks nothing.
     expect(layer).toEqual({
       source: 'deployment',
-      config: {
-        providers: { openai: { preset: 'openai', apiKey: 'sk-openai' } },
-        slots: { llm: 'openai:gpt-5.6', agent: null },
-      },
+      config: { providers: { openai: { preset: 'openai', apiKey: 'sk-openai' } } },
+    });
+    expect(defaults).toEqual({
+      source: 'default',
+      config: { slots: { llm: 'openai:gpt-5.6', agent: null } },
     });
   });
 
@@ -117,6 +119,7 @@ describe('loadDeploymentLayer', () => {
     vi.stubEnv('OPENMAIC_CONFIG', 'custom.yml');
     expect(loadDeploymentLayer()).toEqual({
       layer: { source: 'deployment', config: { slots: { video: null } } },
+      defaults: null,
       notices: [],
     });
   });
