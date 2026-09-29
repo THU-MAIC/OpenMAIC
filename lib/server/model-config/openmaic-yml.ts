@@ -86,9 +86,19 @@ const assignmentSchema = z.unknown().transform((value, ctx): SlotAssignment => {
   return z.NEVER;
 });
 
-/** A provider's non-secret options: short keys, scalar values. */
+/**
+ * A provider's non-secret options: short names, scalar values. They are shown
+ * in the settings view, so a name that sounds like a credential is refused:
+ * credentials belong in `apiKey` or `credentials`.
+ */
 export const providerOptionsSchema = z.record(
-  z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/, 'invalid option name'),
+  z
+    .string()
+    .regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/, 'invalid option name')
+    .refine(
+      (name) => !/key|secret|token|password/i.test(name),
+      'options are shown in the settings; put credentials in apiKey or credentials',
+    ),
   z.union([z.string().max(1024), z.number().finite(), z.boolean()]),
 );
 

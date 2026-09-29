@@ -80,6 +80,10 @@ describe('options in openmaic.yml', () => {
     ['a nested value', '      nested:\n        a: 1'],
     ['a list value', '      list: [1, 2]'],
     ['an invalid option name', '      "bad name": x'],
+    ['a credential-like name (apiKey)', '      apiKey: x'],
+    ['a credential-like name (secret)', '      clientSecret: x'],
+    ['a credential-like name (token)', '      accessToken: x'],
+    ['a credential-like name (password)', '      PASSWORD: x'],
   ])('refuses %s', (_label, line) => {
     expect(() =>
       parseModelConfig(
