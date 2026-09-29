@@ -1,7 +1,13 @@
 import { NextRequest } from 'next/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { resetOwnerAuthenticationForTests } from '@/lib/server/identity/registry';
+import { configureOwnerAuthentication } from '@/lib/server/identity';
+import {
+  resetOwnerAuthenticationForTests,
+  validateOwnerIdentityConfiguration,
+  warnAboutOwnerIdentityConfiguration,
+} from '@/lib/server/identity/registry';
+import type { OwnerAuthMethod } from '@/lib/server/identity/types';
 import { resolveRequestOwner } from '@/lib/server/identity/resolve';
 import { isDocumentNavigation } from '@/lib/server/identity/navigation';
 import { middleware } from '@/middleware';
@@ -151,6 +157,28 @@ describe('the page request establishes the anonymous owner', () => {
     expect(response.headers.get('set-cookie')).toBeNull();
   });
 
+  it.each(['false', '0', 'FALSE'])(
+    'does not mint when OWNER_ANONYMOUS_PREMINT=%s turns it off',
+    async (value) => {
+      vi.stubEnv('OWNER_ANONYMOUS_PREMINT', value);
+      const response = await middleware(pageRequest());
+      expect(response.headers.get('set-cookie')).toBeNull();
+      expect(response.headers.get('x-middleware-request-cookie')).toBeNull();
+    },
+  );
+
+  it.each(['true', '1', ''])('mints with OWNER_ANONYMOUS_PREMINT=%j', async (value) => {
+    vi.stubEnv('OWNER_ANONYMOUS_PREMINT', value);
+    const response = await middleware(pageRequest());
+    expect(mintedId(response.headers.get('set-cookie'))).toMatch(UUID_V4);
+  });
+
+  it('does not mint on a malformed OWNER_ANONYMOUS_PREMINT, which the boot refuses', async () => {
+    vi.stubEnv('OWNER_ANONYMOUS_PREMINT', 'off');
+    const response = await middleware(pageRequest());
+    expect(response.headers.get('set-cookie')).toBeNull();
+  });
+
   it('mints when single-user mode is explicitly off', async () => {
     vi.stubEnv('OWNER_SINGLE_USER', 'false');
     const response = await middleware(pageRequest());
@@ -182,5 +210,58 @@ describe('isDocumentNavigation', () => {
     expect(isDocumentNavigation(request({ 'sec-fetch-dest': 'document' }, '/api/stages'))).toBe(
       false,
     );
+  });
+});
+
+describe('OWNER_ANONYMOUS_PREMINT at boot', () => {
+  const hostMethod: OwnerAuthMethod = {
+    name: 'host-session',
+    authenticate: async () => ({ status: 'not-applicable' }),
+  };
+  let warn: MockInstance<(...args: unknown[]) => void>;
+  const premintWarnings = () =>
+    warn.mock.calls.flat().filter((line) => String(line).includes('OWNER_ANONYMOUS_PREMINT'))
+      .length;
+
+  beforeEach(() => {
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {}) as MockInstance<
+      (...args: unknown[]) => void
+    >;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('refuses a malformed value and accepts the documented ones', () => {
+    vi.stubEnv('OWNER_ANONYMOUS_PREMINT', 'off');
+    expect(() => validateOwnerIdentityConfiguration()).toThrow(
+      /OWNER_ANONYMOUS_PREMINT must be "true", "1", "false" or "0", got "off"/,
+    );
+    for (const value of ['', 'true', '1', 'false', '0', 'False']) {
+      vi.stubEnv('OWNER_ANONYMOUS_PREMINT', value);
+      expect(validateOwnerIdentityConfiguration()).toBe('anonymousCookie');
+    }
+  });
+
+  it('warns once when a host turns the anonymous fallback off but pages still mint', () => {
+    configureOwnerAuthentication({ methods: [hostMethod], anonymousFallback: false });
+    warnAboutOwnerIdentityConfiguration();
+    warnAboutOwnerIdentityConfiguration();
+    expect(premintWarnings()).toBe(1);
+    expect(warn.mock.calls.flat().join(' ')).toMatch(/Set OWNER_ANONYMOUS_PREMINT=false/);
+  });
+
+  it('does not warn once pre-minting is off, or while the anonymous fallback is on', () => {
+    vi.stubEnv('OWNER_ANONYMOUS_PREMINT', 'false');
+    configureOwnerAuthentication({ methods: [hostMethod], anonymousFallback: false });
+    warnAboutOwnerIdentityConfiguration();
+    resetOwnerAuthenticationForTests();
+    vi.stubEnv('OWNER_ANONYMOUS_PREMINT', '');
+    configureOwnerAuthentication({ methods: [hostMethod] });
+    warnAboutOwnerIdentityConfiguration();
+    resetOwnerAuthenticationForTests();
+    warnAboutOwnerIdentityConfiguration();
+    expect(premintWarnings()).toBe(0);
   });
 });

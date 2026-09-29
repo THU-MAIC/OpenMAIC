@@ -24,10 +24,14 @@
  * no request ever resolves to an anonymous owner and no cookie is minted
  * anywhere. With the default configuration -- no host registration -- that is
  * exactly when a request falls back to the anonymous cookie. A host that
- * registers its own methods decides in `middleware.ts`: a page cookie next to
- * its own credential is the same claim candidate an anonymous API request
- * would have left (`./resolve.ts`), so a host that does not want one skips
- * {@link anonymousOwnerForNavigation} for requests its methods own.
+ * registers its own methods turns minting off with
+ * `OWNER_ANONYMOUS_PREMINT=false` ({@link resolveAnonymousPremint}) or narrows
+ * it in `middleware.ts`: a page cookie next to its own credential is the same
+ * claim candidate an anonymous API request would have left (`./resolve.ts`).
+ * With `anonymousFallback: false` that candidate is pointless, and with
+ * `OWNER_CLAIM_TRIGGER=auto` it is claimed and cleared on the next request,
+ * again after every cookieless page load; the boot warns about that
+ * combination (`warnAboutOwnerIdentityConfiguration` in `./registry.ts`).
  */
 import { establishAnonymousCookie } from './anonymous-cookie';
 import { resolveSharedOwnerId } from './shared-team';
@@ -65,15 +69,42 @@ export function isDocumentNavigation(request: NavigationRequest): boolean {
   return (headers.get('accept') ?? '').includes('text/html');
 }
 
+/** The switch that turns page-response minting off; see {@link resolveAnonymousPremint}. */
+export const ANONYMOUS_PREMINT_ENV = 'OWNER_ANONYMOUS_PREMINT';
+
+/**
+ * Whether page responses mint the anonymous cookie: `OWNER_ANONYMOUS_PREMINT`,
+ * default on. Unset or blank is `true`; `true`/`1` and `false`/`0` (any case)
+ * are accepted; anything else throws. Read in the middleware (an environment
+ * variable, so it is visible in the Edge runtime too) and validated at boot
+ * (`validateOwnerIdentityConfiguration`), so a typo fails the deployment
+ * rather than silently leaving minting on.
+ */
+export function resolveAnonymousPremint(): boolean {
+  const raw = process.env[ANONYMOUS_PREMINT_ENV]?.trim().toLowerCase();
+  if (!raw) return true;
+  if (raw === 'true' || raw === '1') return true;
+  if (raw === 'false' || raw === '0') return false;
+  throw new Error(
+    `${ANONYMOUS_PREMINT_ENV} must be "true", "1", "false" or "0", got ` +
+      `${JSON.stringify(process.env[ANONYMOUS_PREMINT_ENV])}.`,
+  );
+}
+
 /**
  * Whether the environment leaves anonymous owners in use: neither
- * `PERSISTENCE_SHARED_OWNER_ID` nor `OWNER_SINGLE_USER` is set. A malformed
- * value of either fails the boot (`validateOwnerIdentityConfiguration`), so
- * one seen here mints nothing.
+ * `PERSISTENCE_SHARED_OWNER_ID` nor `OWNER_SINGLE_USER` is set, and
+ * `OWNER_ANONYMOUS_PREMINT` does not turn minting off. A malformed value of
+ * any of them fails the boot (`validateOwnerIdentityConfiguration`), so one
+ * seen here mints nothing.
  */
 function anonymousOwnersInUse(): boolean {
   try {
-    return resolveSharedOwnerId() === undefined && resolveSingleUserOwnerId() === undefined;
+    return (
+      resolveAnonymousPremint() &&
+      resolveSharedOwnerId() === undefined &&
+      resolveSingleUserOwnerId() === undefined
+    );
   } catch {
     return false;
   }

@@ -11,6 +11,7 @@ import { resolveClaimLockWaitMs, resolveWriteLockWaitMs } from '@/lib/persistenc
 
 import { createLogger } from '@/lib/logger';
 
+import { ANONYMOUS_PREMINT_ENV, resolveAnonymousPremint } from './navigation';
 import { assertNoRetiredIdentityConfiguration } from './retired-config';
 import type { OwnerAuthMethod, StoredOwnerDescription } from './types';
 
@@ -324,6 +325,9 @@ export function validateOwnerIdentityConfiguration(): OwnerIdentityMode {
     );
   }
   assertNoRetiredIdentityConfiguration();
+  // Read by the middleware on every page load, where a malformed value can
+  // only mint nothing: refuse it here instead.
+  resolveAnonymousPremint();
   // Read on every owner write and claim: a malformed value must stop the
   // server here, not fail each write as a 500.
   resolveWriteLockWaitMs();
@@ -350,12 +354,45 @@ export function validateOwnerIdentityConfiguration(): OwnerIdentityMode {
  */
 export function warnAboutOwnerIdentityConfiguration(): boolean {
   const configured = registry().configured;
+  warnIfPremintingWithoutAnonymousFallback(configured);
   const singleUserActive = configured
     ? configured.methods.some(isSingleUserAuthMethod)
     : !resolveSharedOwnerId() && resolveSingleUserOwnerId() !== undefined;
   return warnIfSingleUserIsUnprotected(singleUserActive);
 }
 
+let warnedPremint = false;
+
+/**
+ * One prominent warning per process when a host registration turned the
+ * anonymous fallback off but page responses still mint the anonymous cookie
+ * (`OWNER_ANONYMOUS_PREMINT`, default on; `./navigation.ts`). The middleware
+ * cannot see the registration, so the cookie it mints serves no request, and
+ * next to a host credential it is a claim candidate: with
+ * `OWNER_CLAIM_TRIGGER=auto` each cookieless page load leads to a claim of an
+ * empty anonymous owner. A warning, like the other startup notes: every owner
+ * still resolves correctly.
+ */
+function warnIfPremintingWithoutAnonymousFallback(
+  configured: OwnerAuthConfiguration | undefined,
+): void {
+  if (!configured || configured.anonymousFallback || !resolveAnonymousPremint()) return;
+  if (warnedPremint) return;
+  warnedPremint = true;
+  log.warn(
+    '\n' +
+      '************************************************************************\n' +
+      '* The registered owner auth methods turn the anonymous fallback off, but\n' +
+      `* ${ANONYMOUS_PREMINT_ENV} is not "false": page responses still mint an\n` +
+      '* anonymous owner cookie that no request resolves to. Beside your own\n' +
+      '* credential it is a claim candidate, claimed and cleared again after\n' +
+      '* every cookieless page load with OWNER_CLAIM_TRIGGER=auto.\n' +
+      `* Set ${ANONYMOUS_PREMINT_ENV}=false.\n` +
+      '************************************************************************',
+  );
+}
+
 export function resetOwnerAuthenticationForTests(): void {
+  warnedPremint = false;
   delete globalState[REGISTRY_KEY];
 }
