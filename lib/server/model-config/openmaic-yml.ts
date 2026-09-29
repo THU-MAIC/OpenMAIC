@@ -86,6 +86,10 @@ const providerSchema = z
     apiKey: z.string().min(1).optional(),
     baseUrl: z.url().optional(),
     models: z.array(z.string().min(1)).min(1).optional(),
+    /** HTTP proxy for this provider's requests. */
+    proxy: z.url().optional(),
+    /** Multi-part credentials for vendors that do not use a single key. */
+    credentials: z.record(z.string().min(1), z.string().min(1)).optional(),
   })
   .strict();
 

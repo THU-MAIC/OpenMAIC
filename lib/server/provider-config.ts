@@ -22,7 +22,7 @@ const log = createLogger('ServerProviderConfig');
 // Types
 // ---------------------------------------------------------------------------
 
-interface ServerProviderEntry {
+export interface ServerProviderEntry {
   apiKey: string;
   baseUrl?: string;
   models?: string[];
@@ -39,7 +39,7 @@ interface ServerProviderEntry {
   enabled?: boolean;
 }
 
-interface ServerConfig {
+export interface ServerConfig {
   providers: Record<string, ServerProviderEntry>;
   tts: Record<string, ServerProviderEntry>;
   asr: Record<string, ServerProviderEntry>;
@@ -639,6 +639,15 @@ function resolveSectionBaseUrl(
 // ---------------------------------------------------------------------------
 // Public API — LLM
 // ---------------------------------------------------------------------------
+
+/**
+ * The resolved server provider configuration (YAML plus environment, with the
+ * operator's force-off switches), for translating it into the model
+ * configuration of RFC #1701. Read-only: callers must not mutate it.
+ */
+export function getServerProviderConfig(): Readonly<ServerConfig> {
+  return getConfig();
+}
 
 /**
  * Returns server-configured LLM providers. Exposes only the allowed model list
