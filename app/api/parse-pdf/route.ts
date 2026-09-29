@@ -9,6 +9,7 @@ import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { documentArtifactToParsedPdfContent, extractDocument } from '@/lib/document';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { isSelfContainedExtractor } from '@/lib/server/material-extraction/services';
 import { checkClientDocumentExtractorBaseUrl } from '@/lib/server/client-extractor-endpoint';
 import {
   mediaResolutionResponse,
@@ -50,13 +51,17 @@ export async function POST(req: NextRequest) {
     pdfFileName = pdfFile?.name;
     // The document slot's service; the provider a request names (deprecated)
     // only when it is unassigned; the local parser when there is none.
+    // An explicit self-contained extractor (local parsing) needs no service
+    // and sends the file nowhere, whatever the slot names.
+    const selfContained = providerId && isSelfContainedExtractor(providerId) ? providerId : null;
     let service: MediaConnection | undefined;
     try {
-      service = await resolveMediaSlot('document', {
-        workspaceId: await requestWorkspaceId(req),
-        legacyRequest: async () =>
-          providerId ? requestedDocumentProvider(providerId, apiKey, baseUrl) : undefined,
-      });
+      if (!selfContained)
+        service = await resolveMediaSlot('document', {
+          workspaceId: await requestWorkspaceId(req),
+          legacyRequest: async () =>
+            providerId ? requestedDocumentProvider(providerId, apiKey, baseUrl) : undefined,
+        });
     } catch (error) {
       if (!(error instanceof SlotDisabledError || error instanceof SlotUnassignedError)) {
         const refused = mediaResolutionResponse(error, 'Document parsing');
@@ -72,7 +77,7 @@ export async function POST(req: NextRequest) {
       if (!checked.ok) return apiError('INVALID_URL', 403, checked.message);
       service = { ...service, baseUrl: checked.baseUrl };
     }
-    resolvedProviderId = service?.providerId ?? 'unpdf';
+    resolvedProviderId = selfContained ?? service?.providerId ?? 'unpdf';
     const config = {
       providerId: resolvedProviderId as PDFProviderId,
       ...(service?.apiKey ? { apiKey: service.apiKey } : {}),
