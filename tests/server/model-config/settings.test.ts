@@ -171,6 +171,11 @@ describe('modelSettingsView', () => {
     ).rejects.toMatchObject({ code: 'INVALID_ASSIGNMENT' });
   });
 
+  it('lists the models of a search provider that searches through a model', () => {
+    const search = modelSettingsView(null).presets.find((preset) => preset.id === 'claude');
+    expect(search?.capabilities.webSearch?.models.length).toBeGreaterThan(0);
+  });
+
   it('flags a key that no longer opens', () => {
     const view = modelSettingsView({
       config: { providers: { mine: { preset: 'openai' } } },
