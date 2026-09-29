@@ -32,7 +32,8 @@ import {
   cleanupOldImages,
   storeImages,
 } from '@/lib/utils/image-storage';
-import { loadModelCapabilities } from '@/lib/model-settings/capabilities';
+import { requireModelCapabilities } from '@/lib/model-settings/capabilities';
+import { withResearchDecision } from '@/lib/generation/research-decision';
 import { narrationPlan, ttsSelection } from '@/lib/audio/tts-selection';
 import { resolveSessionDocumentSources } from '@/lib/document/session-sources';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
@@ -291,8 +292,17 @@ function GenerationPreviewContent() {
     setCurrentStepIndex(0);
 
     try {
-      // The workspace's model settings, read once for the whole run.
-      await loadModelCapabilities();
+      // The workspace's model settings, read once for the whole run (again
+      // after a failed read; generation does not start without them). Research
+      // follows the webSearch slot as read now, not as the session saved it.
+      const capabilities = await requireModelCapabilities();
+      if (!capabilities) throw new Error(t('generation.modelSettingsUnavailable'));
+      const decided = withResearchDecision(currentSession, capabilities);
+      if (decided !== currentSession) {
+        currentSession = decided;
+        setSession(decided);
+        sessionStorage.setItem('generationSession', JSON.stringify(decided));
+      }
 
       // Compute active steps for this session (recomputed after session mutations)
       let activeSteps = getActiveSteps(currentSession);

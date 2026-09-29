@@ -51,7 +51,11 @@ import type {
   SessionDocumentSource,
   UserRequirements,
 } from '@/lib/types/generation';
-import { courseGenerationUsable, loadModelCapabilities } from '@/lib/model-settings/capabilities';
+import {
+  courseGenerationUsable,
+  requireModelCapabilities,
+} from '@/lib/model-settings/capabilities';
+import { withResearchDecision } from '@/lib/generation/research-decision';
 import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
 import {
@@ -593,11 +597,19 @@ function HomePage() {
         requirement: form.requirement,
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
-        // Research runs when the workspace's webSearch slot names a provider.
-        webSearch: !!(await loadModelCapabilities()).webSearch || undefined,
+        // Research follows the workspace's webSearch slot; decided below from
+        // a successful read (and again when generation starts).
         interactiveMode: form.vocationalTestMode ? true : form.interactiveMode,
         ...(form.vocationalTestMode ? { taskEngineMode: true } : {}),
       };
+
+      // Nothing is saved from settings that could not be read.
+      const capabilities = await requireModelCapabilities();
+      if (!capabilities) throw new Error(t('generation.modelSettingsUnavailable'));
+      Object.assign(
+        requirements,
+        withResearchDecision({ requirements }, capabilities).requirements,
+      );
 
       let documentSources: SessionDocumentSource[] | undefined;
 
