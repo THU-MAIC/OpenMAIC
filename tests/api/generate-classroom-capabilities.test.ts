@@ -161,4 +161,29 @@ describe('GET /api/generate-classroom/capabilities', () => {
     );
     expect(gated.status).toBe(401);
   });
+
+  it('answers a refused credential or workspace service as the owner routes do, not 500', async () => {
+    const runtime = await import('@/lib/server/model-config/runtime');
+    const { InvalidOwnerCredentialError } = await import('@/lib/server/identity/resolve');
+    await configureSlots({});
+    const spy = vi.spyOn(runtime, 'requestWorkspaceId');
+    try {
+      spy.mockRejectedValueOnce(new InvalidOwnerCredentialError());
+      expect((await getCapabilities(capabilitiesRequest())).status).toBe(401);
+
+      vi.stubEnv('DATABASE_URL', 'postgres://test');
+      runtime.setWorkspaceLayerLoaderForTests(async () => ({
+        source: 'workspace',
+        config: {
+          providers: { mc: { preset: 'mineru-cloud', apiKey: 'k', baseUrl: 'https://1.1.1.1' } },
+          slots: { document: 'mc' },
+        },
+      }));
+      spy.mockResolvedValueOnce('user:alice');
+      expect((await getCapabilities(capabilitiesRequest())).status).toBe(403);
+    } finally {
+      runtime.setWorkspaceLayerLoaderForTests();
+      spy.mockRestore();
+    }
+  });
 });

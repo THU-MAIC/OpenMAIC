@@ -221,6 +221,15 @@ describe('server web search config', () => {
     });
   });
 
+  it("applies the request's Claude model to the server's default search provider", async () => {
+    vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'sk-server-key');
+    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
+
+    expect(
+      await resolveClassroomWebSearchConfig(null, { webSearchModelId: 'claude-opus-5' }),
+    ).toMatchObject({ providerId: 'claude', claudeModelId: 'claude-opus-5' });
+  });
+
   it('pins the Claude model from WEB_SEARCH_CLAUDE_MODELS over the client model', async () => {
     vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'sk-server-key');
     vi.stubEnv('WEB_SEARCH_CLAUDE_BASE_URL', 'https://api.anthropic.com/v1');

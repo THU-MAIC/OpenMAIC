@@ -12,6 +12,7 @@
  */
 import type { NextRequest } from 'next/server';
 
+import { mediaResolutionResponse } from '@/lib/server/model-config/media';
 import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
 import { apiSuccess } from '@/lib/server/api-response';
 import {
@@ -30,13 +31,22 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   // The formats this caller's document and speech services can read.
-  const workspaceId = await requestWorkspaceId(req);
-  const extractable = await resolveExtractableMimeTypes({
-    ownerId: workspaceId ?? undefined,
-    forward: false,
-  });
+  let extractable: Set<string>;
+  let capabilities: Awaited<ReturnType<typeof resolveServerGenerationCapabilities>>;
+  try {
+    const workspaceId = await requestWorkspaceId(req);
+    extractable = await resolveExtractableMimeTypes({
+      ownerId: workspaceId ?? undefined,
+      forward: false,
+    });
+    capabilities = await resolveServerGenerationCapabilities(workspaceId);
+  } catch (error) {
+    const refused = mediaResolutionResponse(error, 'Capability discovery');
+    if (refused) return refused;
+    throw error;
+  }
   return apiSuccess({
-    capabilities: await resolveServerGenerationCapabilities(workspaceId),
+    capabilities,
     materials: {
       formats: WORKBENCH_MATERIAL_FORMATS.filter((format) => extractable.has(format.mime)),
       maxCount: MAX_CLASSROOM_MATERIALS,

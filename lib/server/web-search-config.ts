@@ -145,6 +145,16 @@ interface LegacySearchRules {
   preferServerProvider?: boolean;
 }
 
+/** The search model a request names the old way, under the server's pins (one provider has models). */
+function requestedSearchModel(
+  providerId: WebSearchProviderId,
+  input: RequestedWebSearch,
+): string | undefined {
+  return providerId === 'claude'
+    ? resolveWebSearchModel(providerId, input.webSearchModelId)
+    : undefined;
+}
+
 /**
  * The provider a request names the old way (deprecated), with its key and base
  * URL for an unmanaged provider, under the caller's legacy rules.
@@ -180,8 +190,7 @@ function requestedWebSearchConnection(
   // SearXNG base URLs are operator-managed only; never trust client input.
   const clientBaseUrl = managed || providerId === 'searxng' ? undefined : input.webSearchBaseUrl;
   const baseUrl = resolveWebSearchRouteBaseUrl(providerId, clientBaseUrl);
-  const model =
-    providerId === 'claude' ? resolveWebSearchModel('claude', input.webSearchModelId) : undefined;
+  const model = requestedSearchModel(providerId, input);
   return {
     providerId,
     apiKey: resolveWebSearchApiKey(providerId, managed ? undefined : input.webSearchApiKey),
@@ -233,12 +242,18 @@ export function webSearchConfigFromConnection(
       providerId,
     );
   }
+  // On the legacy default provider the request's model still applies through
+  // its allowlist, as before slots.
+  const model =
+    connection.origin === 'default'
+      ? requestedSearchModel(providerId, requested)
+      : connection.modelId;
   return {
     providerId,
     apiKey,
     ...(baseUrl ? { baseUrl } : {}),
     ...(requested.baiduSubSources ? { baiduSubSources: requested.baiduSubSources } : {}),
-    ...(connection.modelId ? { claudeModelId: connection.modelId } : {}),
+    ...(model ? { claudeModelId: model } : {}),
   };
 }
 

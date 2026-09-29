@@ -295,7 +295,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['tavily', 3],
       ['bocha', 7],
       ['brave', 4],
-      ['claude', 4],
+      ['claude', 3],
       ['anthropic', 2],
       ['minimax', 9],
       ['doubao', 1],
