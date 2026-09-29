@@ -11,6 +11,7 @@ vi.mock('@/lib/server/classroom-media-bytes', () => ({
 
 import { buildMaterialMediaTool } from '@/lib/server/agent-runtime/material-media';
 import { buildScenePreviewTools } from '@/lib/server/agent-runtime/scene-preview';
+import { toModelMessages } from '@/lib/agent/runtime/stream-fn';
 import type { CourseStore } from '@/lib/server/agent-runtime/course-tools';
 
 function textOf(result: unknown): string {
@@ -85,6 +86,29 @@ describe('generation media tools', () => {
       sceneId: 'scene-a',
     } as never);
     expect(rendered.content[0]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+    // A successful render must remain visible after the shared LLM adapter,
+    // not become an empty tool receipt on the next agent turn.
+    const modelMessages = toModelMessages([
+      {
+        role: 'toolResult',
+        toolCallId: 'preview',
+        toolName: owned!.name,
+        content: rendered.content,
+        isError: false,
+        timestamp: 0,
+      },
+    ]);
+    expect(modelMessages[0]).toMatchObject({
+      role: 'tool',
+      content: [{ type: 'tool-result', toolCallId: 'preview' }],
+    });
+    expect(modelMessages[1]).toMatchObject({
+      role: 'user',
+      content: [
+        { type: 'text', text: expect.stringContaining('render_scene_preview') },
+        { type: 'image', image: 'iVBORw==', mediaType: 'image/png' },
+      ],
+    });
 
     const foreignStore = { loadDocument: vi.fn(async () => null) } as unknown as CourseStore;
     const [foreign] = buildScenePreviewTools({
