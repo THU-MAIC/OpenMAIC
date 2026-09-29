@@ -91,10 +91,9 @@ export function Stage({
   }, [proWorkbenchFlag]);
   const proWorkbenchEntry = proWorkbenchFlag && proRuntime === 'on';
   const currentScene = useStageStore((s) => s.getCurrentScene());
-  // The reference implementation makes editing owner-only. `isOwner` is true for the stage creator and
-  // defaults to true with browser storage (single-user IndexedDB), so this gate is
-  // a no-op upstream but hides Pro mode from visitors / bookmarked viewers in
-  // server-backed mode — their saves would not pass the owner check anyway.
+  // The reference implementation makes editing owner-only. `isOwner` is true for the stage creator,
+  // so this gate hides Pro mode from visitors / bookmarked viewers — their saves
+  // would not pass the owner check anyway.
   const isOwner = useStageStore((s) => s.isOwner);
   const readOnly = useStageStore((s) => s.readOnly);
   const canEditOwnedStage = isOwner && !readOnly;

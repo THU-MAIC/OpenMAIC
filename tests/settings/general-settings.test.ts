@@ -1,47 +1,48 @@
 import { describe, expect, it, vi } from 'vitest';
-import { clearCacheErrorMessage } from '@/components/settings/clear-cache-error-message';
-import { AssetPoolDeletionDeferredError } from '@/lib/media/asset-pool';
-import { runClearCache, shouldReloadAfterClear } from '@/components/settings/clear-cache-workflow';
-import arSA from '@/lib/i18n/locales/ar-SA.json';
+
+import { runClearCache } from '@/components/settings/clear-cache-workflow';
+import { clearLocalStorageKeepingImportState } from '@/lib/device-storage/clear-local-cache';
 import enUS from '@/lib/i18n/locales/en-US.json';
-import esMX from '@/lib/i18n/locales/es-MX.json';
-import jaJP from '@/lib/i18n/locales/ja-JP.json';
-import koKR from '@/lib/i18n/locales/ko-KR.json';
-import ptBR from '@/lib/i18n/locales/pt-BR.json';
-import ruRU from '@/lib/i18n/locales/ru-RU.json';
-import zhCN from '@/lib/i18n/locales/zh-CN.json';
-import zhTW from '@/lib/i18n/locales/zh-TW.json';
 
-const locales = { arSA, enUS, esMX, jaJP, koKR, ptBR, ruRU, zhCN, zhTW } as const;
+/** A Map-backed `Storage` with the enumeration the clear walks. */
+function mapStorage(storage: Map<string, string>): Storage {
+  return {
+    get length() {
+      return storage.size;
+    },
+    key: (index: number) => [...storage.keys()][index] ?? null,
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => void storage.set(key, value),
+    removeItem: (key: string) => void storage.delete(key),
+    clear: () => storage.clear(),
+  };
+}
 
-describe('general settings clear-cache errors', () => {
-  it('finishes independent cleanup and reports a blocked asset-pool delete as deferred', async () => {
-    const deferred = new AssetPoolDeletionDeferredError();
-    const clearLocalStorage = vi.fn();
-    const clearSessionStorage = vi.fn();
-    const clearPersistedStores = vi.fn().mockResolvedValue(undefined);
-
-    await expect(
-      runClearCache({
-        clearDatabase: vi.fn().mockRejectedValue(deferred),
-        clearLocalStorage,
-        clearSessionStorage,
-        clearPersistedStores,
+describe('general settings: clear local cache', () => {
+  it('clears the device cache, then storage, then the persisted stores', async () => {
+    const order: string[] = [];
+    await runClearCache({
+      clearLocalCache: vi.fn(async () => {
+        order.push('local cache');
       }),
-    ).resolves.toEqual({ status: 'asset-pool-deferred', error: deferred });
-    expect(clearLocalStorage).toHaveBeenCalledOnce();
-    expect(clearSessionStorage).toHaveBeenCalledOnce();
-    expect(clearPersistedStores).toHaveBeenCalledOnce();
+      clearLocalStorage: () => order.push('localStorage'),
+      clearSessionStorage: () => order.push('sessionStorage'),
+      clearPersistedStores: vi.fn(async () => {
+        order.push('persisted stores');
+      }),
+    });
+
+    expect(order).toEqual(['local cache', 'localStorage', 'sessionStorage', 'persisted stores']);
   });
 
-  it('stops subsequent cleanup for a hard database failure', async () => {
+  it('stops subsequent cleanup when the device cache cannot be cleared', async () => {
     const clearLocalStorage = vi.fn();
     const clearSessionStorage = vi.fn();
     const clearPersistedStores = vi.fn().mockResolvedValue(undefined);
 
     await expect(
       runClearCache({
-        clearDatabase: vi.fn().mockRejectedValue(new Error('hard failure')),
+        clearLocalCache: vi.fn().mockRejectedValue(new Error('hard failure')),
         clearLocalStorage,
         clearSessionStorage,
         clearPersistedStores,
@@ -52,37 +53,65 @@ describe('general settings clear-cache errors', () => {
     expect(clearPersistedStores).not.toHaveBeenCalled();
   });
 
-  it.each(Object.entries(locales))('%s defines the blocked-by-tabs guidance', (_code, locale) => {
-    expect(locale.settings.clearCacheBlockedByOtherTabs.trim()).not.toBe('');
+  it('keeps the pre-server learner key, the import ledger and, while the import is pending, the pre-runtime quiz keys', () => {
+    const storage = new Map<string, string>([
+      ['maic:device:runtime.learnerKey', '"anon:legacy-device"'],
+      ['maic:device:playback-cursor:stage-1', '{}'],
+      ['maic:legacy-import:v3', '{"version":3}'],
+      ['maic:legacy-import:v1:anon:owner-a', '{"version":1}'],
+      ['settings-storage', '{}'],
+      ['quizDraft:scene-1', '{}'],
+      ['quizAnswers:scene-1', '{}'],
+      ['quizResults:scene-1', '[]'],
+      ['quizAttemptId:scene-1', 'attempt-1'],
+    ]);
+
+    clearLocalStorageKeepingImportState(mapStorage(storage));
+
+    expect([...storage.entries()]).toEqual([
+      ['maic:device:runtime.learnerKey', '"anon:legacy-device"'],
+      ['maic:legacy-import:v3', '{"version":3}'],
+      ['quizDraft:scene-1', '{}'],
+      ['quizAnswers:scene-1', '{}'],
+      ['quizResults:scene-1', '[]'],
+      ['quizAttemptId:scene-1', 'attempt-1'],
+    ]);
   });
 
-  it('maps the deferred deletion error to the actionable English guidance', () => {
-    const t = (key: string) => {
-      if (key === 'settings.clearCacheBlockedByOtherTabs') {
-        return enUS.settings.clearCacheBlockedByOtherTabs;
-      }
-      return enUS.settings.clearCacheFailed;
-    };
+  it('deletes the pre-runtime quiz keys once the ledger records the import as complete', () => {
+    const ledger = JSON.stringify({
+      version: 3,
+      browserId: '0123456789abcdef0123456789abcdef',
+      failedRuns: 0,
+      completedAt: 1,
+      courses: {},
+      folders: {},
+    });
+    const storage = new Map<string, string>([
+      ['maic:legacy-import:v3', ledger],
+      ['quizDraft:scene-1', '{}'],
+      ['quizAttemptId:scene-1', 'attempt-1'],
+    ]);
 
-    expect(clearCacheErrorMessage(new AssetPoolDeletionDeferredError(), t)).toBe(
-      'Close other app tabs and retry.',
+    clearLocalStorageKeepingImportState(mapStorage(storage));
+
+    expect([...storage.entries()]).toEqual([['maic:legacy-import:v3', ledger]]);
+  });
+
+  it('clears everything when there is no pre-server learner key', () => {
+    const storage = new Map<string, string>([['settings-storage', '{}']]);
+
+    clearLocalStorageKeepingImportState(mapStorage(storage));
+
+    expect(storage.size).toBe(0);
+  });
+
+  it('does not tell the user that clearing deletes their classrooms', () => {
+    // Courses and chat history are server data; clearing this browser's cache
+    // leaves them in place.
+    expect(enUS.settings.clearCacheDescription).toMatch(
+      /stored on the server and are not affected/,
     );
-  });
-});
-
-describe('reload decision after clearing', () => {
-  it('reloads only when the clear completed', () => {
-    expect(shouldReloadAfterClear({ status: 'cleared' })).toBe(true);
-  });
-
-  it('stays on the page when the asset-pool deletion is deferred', () => {
-    // Reloading would discard the guidance asking the user to close the other
-    // tab and retry, while the pool database is still on disk.
-    expect(
-      shouldReloadAfterClear({
-        status: 'asset-pool-deferred',
-        error: new AssetPoolDeletionDeferredError(),
-      }),
-    ).toBe(false);
+    expect(enUS.settings.clearCacheConfirmItems).not.toMatch(/Classrooms|Chat history/);
   });
 });

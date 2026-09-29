@@ -21,18 +21,18 @@ Two distinct cases:
 
 **Gotcha:** OpenMAIC has **no hardcoded model fallback**. If `DEFAULT_MODEL` is unset, generation fails rather than picking a default — always set it.
 
-## Task 2 — Enable Server-Side Persistence (PostgreSQL / S3)
+## Task 2 — Server-Side Persistence (PostgreSQL / S3)
 
-**Goal:** persist documents, runtime state, and assets beyond the browser.
+**Goal:** understand where documents, runtime state and assets live, and point them at your database.
 
-Accurate topology (there is **no local-file backend**):
+Accurate topology (there is **no local-file backend**, and no browser-storage mode):
 
-- **Default:** browser-local storage (in-browser stores). Nothing leaves the device.
-- **Opt into server persistence:** set `NEXT_PUBLIC_PERSISTENCE=1` — see `lib/persistence/bootstrap.ts` (this runs **client-side**; when enabled, the browser switches to HTTP-backed `HttpRuntimeStore` / `HttpDocumentStore` / `HttpAssetStore` that call `/api/persistence`). Those calls carry no credential of their own: the server attributes them to the owner the owner identity seam (`lib/server/identity/`) resolves, and the runtime learner key is that owner id.
+- **Always server-backed:** documents, runtime state and assets are stored on the server. The server **refuses to start without `DATABASE_URL`**; locally, `pnpm db:up` starts a separate development PostgreSQL (its own Compose project and volume) on `127.0.0.1` and `.env.example` carries the matching `DATABASE_URL`.
+- **Client side:** `lib/persistence/bootstrap.ts` configures the browser's HTTP-backed `HttpRuntimeStore` / `HttpDocumentStore` / `HttpAssetStore`, which call `/api/persistence`. Those calls carry no credential of their own: the server attributes them to the owner the owner identity seam (`lib/server/identity/`) resolves, and the runtime learner key is that owner id. Only device-local state (settings, playback position, local media cache) stays in the browser (`lib/device-storage/`).
 - **Server side:** the `/api/persistence` catch-all (`app/api/persistence/[...path]/route.ts`) persists **documents + runtime to PostgreSQL**, and **asset bytes to PostgreSQL or S3**. The byte-layer selection lives in `lib/persistence/asset-byte-store.ts` (`configuredS3Bucket` / `lazyAssetByteStore`) and is strictly three-way: **unset/empty** `ASSET_S3_BUCKET` ⇒ `PgAssetByteStore`; a **valid** bucket ⇒ S3; an **invalid** bucket name ⇒ asset operations **fail** — validation throws, there is no fallback to PG. (The failure isn't cached: the next asset request retries, and only asset traffic is affected — document/runtime requests keep working.)
 - The backends themselves come from `@openmaic/storage` subpaths (`@openmaic/storage/document/pg`, `@openmaic/storage/runtime/pg`, `@openmaic/storage/asset/pg-bytes`, `@openmaic/storage/asset/s3-bytes`) — see the storage table in [extend-sdk.md](extend-sdk.md).
 
-**Gotcha:** bootstrap is client-side and gated on `NEXT_PUBLIC_PERSISTENCE`; restart the dev server after changing `.env.local`. S3 additionally needs `@aws-sdk/client-s3` (optional peer of `@openmaic/storage`) installed in the app, and PG needs a reachable Postgres + the package's schema-ensure step.
+**Gotcha:** S3 additionally needs `@aws-sdk/client-s3` (optional peer of `@openmaic/storage`) installed in the app, and PG needs a reachable Postgres + the package's schema-ensure step. The removed `NEXT_PUBLIC_PERSISTENCE` build switch is ignored.
 
 ## Task 3 — Branding / UI / Theme
 

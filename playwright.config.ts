@@ -25,6 +25,12 @@ export default defineConfig({
     // Playwright, so this only boots the already-built server (`pnpm start`).
     // The 120s budget covers startup, not the (much slower) build. Locally we
     // run the dev server.
+    //
+    // The server refuses to start without DATABASE_URL (courses are stored in
+    // PostgreSQL). CI provides a Postgres service and sets it for the job;
+    // locally run `pnpm db:up` and set it in .env.local or the environment.
+    // Specs seed their courses through the app's persistence endpoint
+    // (e2e/fixtures/server-seed.ts), each under a fresh id.
     command: process.env.CI ? 'pnpm start' : 'pnpm dev',
     url: 'http://localhost:3002',
     reuseExistingServer: !process.env.CI,

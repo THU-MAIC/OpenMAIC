@@ -418,15 +418,8 @@ describe('dormant Legacy whiteboard import seam', () => {
     expect((await service.read('stage-1')).whiteboard?.id).toBe('runtime-winner');
   });
 
-  it('disables automatic import whenever server persistence is requested', () => {
-    const previous = process.env.NEXT_PUBLIC_PERSISTENCE;
-    process.env.NEXT_PUBLIC_PERSISTENCE = '1';
-    try {
-      expect(isLegacyWhiteboardAutoImportEligible()).toBe(false);
-    } finally {
-      if (previous === undefined) delete process.env.NEXT_PUBLIC_PERSISTENCE;
-      else process.env.NEXT_PUBLIC_PERSISTENCE = previous;
-    }
+  it('never imports automatically: documents and runtime always live on the server', () => {
+    expect(isLegacyWhiteboardAutoImportEligible()).toBe(false);
   });
 
   it('disables automatic import for any explicit storage configuration', () => {

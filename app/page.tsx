@@ -67,9 +67,10 @@ import {
   deleteFolder,
   setStageFolder,
   FolderNameError,
+  LIBRARY_CHANGED_EVENT,
   type DeleteFolderMode,
 } from '@/lib/utils/stage-storage';
-import type { FolderRecord } from '@/lib/utils/database';
+import type { FolderRecord } from '@/lib/types/folder';
 import { displayNameWidth, FOLDER_NAME_MAX_WIDTH } from '@/lib/utils/folder-name-validation';
 import { FolderCard } from '@/components/discovery/folder-card';
 import { NewFolderDialog } from '@/components/discovery/folder-dialogs';
@@ -338,7 +339,15 @@ function HomePage() {
     // not thrash as each lands independently.
     void Promise.all([loadClassrooms(), loadFolders()]).finally(() => setHydrated(true));
 
+    // Courses can arrive in the background (the one-way import of what this
+    // browser stored before persistence moved to the server).
+    const onLibraryChanged = () => {
+      void Promise.all([loadClassrooms(), loadFolders()]);
+    };
+    window.addEventListener(LIBRARY_CHANGED_EVENT, onLibraryChanged);
+
     return () => {
+      window.removeEventListener(LIBRARY_CHANGED_EVENT, onLibraryChanged);
       revokeThumbnailSlideMediaUrls(thumbnailsRef.current);
       thumbnailsRef.current = {};
     };

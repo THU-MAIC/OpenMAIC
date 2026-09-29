@@ -1,9 +1,17 @@
 import { anonymousCookieMethod } from './anonymous-cookie';
 import { isSharedTeamAuthMethod, resolveSharedOwnerId, sharedTeamAuthMethod } from './shared-team';
+import {
+  isSingleUserAuthMethod,
+  resolveSingleUserOwnerId,
+  SINGLE_USER_ENV,
+  singleUserAuthMethod,
+  warnIfSingleUserIsUnprotected,
+} from './single-user';
 import { resolveClaimLockWaitMs, resolveWriteLockWaitMs } from '@/lib/persistence/owner-lock-waits';
 
 import { createLogger } from '@/lib/logger';
 
+import { ANONYMOUS_PREMINT_ENV, resolveAnonymousPremint } from './navigation';
 import { assertNoRetiredIdentityConfiguration } from './retired-config';
 import type { OwnerAuthMethod, StoredOwnerDescription } from './types';
 
@@ -20,7 +28,8 @@ const log = createLogger('OwnerIdentity');
  *
  * Unregistered — the default — the list comes from the environment on every
  * request: `PERSISTENCE_SHARED_OWNER_ID` (validated, and requiring
- * `ACCESS_CODE`) makes it `[sharedTeam]`, otherwise it is empty and every
+ * `ACCESS_CODE`) makes it `[sharedTeam]`, `OWNER_SINGLE_USER=true`
+ * (validated) makes it `[singleUser]`, setting both is refused, and otherwise it is empty and every
  * request is an anonymous owner. Reading the environment per call keeps a
  * value changed for a test observable without a module reload.
  *
@@ -65,10 +74,36 @@ function registry(): RegistryState {
 }
 
 const sharedTeamFromEnvironment = sharedTeamAuthMethod();
+const singleUserFromEnvironment = singleUserAuthMethod();
+
+/**
+ * `sharedTeam` and `singleUser` both answer every request, so at most one of
+ * them can be in effect; a deployment that sets both has not decided whose
+ * library it serves.
+ */
+function assertOneCatchAllOwner(
+  sharedOwnerId: string | undefined,
+  singleOwnerId: string | undefined,
+) {
+  if (sharedOwnerId && singleOwnerId) {
+    throw new Error(
+      `PERSISTENCE_SHARED_OWNER_ID and ${SINGLE_USER_ENV}=true are both set, but only one ` +
+        'fixed owner can answer every request. Unset one of them (with Docker Compose, ' +
+        `set ${SINGLE_USER_ENV}=false to keep the shared team owner).`,
+    );
+  }
+}
 
 function configurationFromEnvironment(): OwnerAuthConfiguration {
+  const sharedOwnerId = resolveSharedOwnerId();
+  const singleOwnerId = resolveSingleUserOwnerId();
+  assertOneCatchAllOwner(sharedOwnerId, singleOwnerId);
   return {
-    methods: resolveSharedOwnerId() ? [sharedTeamFromEnvironment] : [],
+    methods: sharedOwnerId
+      ? [sharedTeamFromEnvironment]
+      : singleOwnerId
+        ? [singleUserFromEnvironment]
+        : [],
     anonymousFallback: true,
   };
 }
@@ -95,39 +130,62 @@ function assertMethodShape(method: OwnerAuthMethod, index: number): void {
 }
 
 /**
- * The `sharedTeam` rules for a host registration, checked when it is made and
- * again at boot validation (the environment may be read by either first):
+ * The rules for the two catch-all built-ins in a host registration, checked
+ * when it is made and again at boot validation (the environment may be read by
+ * either first):
  *
  * - {@link sharedTeamAuthMethod} included requires `PERSISTENCE_SHARED_OWNER_ID`
- *   (and, through it, `ACCESS_CODE`);
- * - it must be the last method, since it always authenticates and anything
- *   after it would never be asked;
- * - `PERSISTENCE_SHARED_OWNER_ID` set while the registration does not include
- *   it is refused: the variable would be silently ignored.
+ *   (and, through it, `ACCESS_CODE`); {@link singleUserAuthMethod} included
+ *   requires `OWNER_SINGLE_USER=true`;
+ * - either must be the last method, since it always authenticates and anything
+ *   after it would never be asked, so at most one of them is included;
+ * - the variable set while the registration does not include its method is
+ *   refused: it would be silently ignored;
+ * - both variables set is refused, as without a registration.
  */
-function assertSharedTeamPlacement(methods: readonly OwnerAuthMethod[]): void {
-  const sharedIndex = methods.findIndex(isSharedTeamAuthMethod);
+function assertCatchAllPlacement(methods: readonly OwnerAuthMethod[]): void {
   const sharedOwnerId = resolveSharedOwnerId();
-  if (sharedIndex < 0) {
-    if (sharedOwnerId) {
+  const singleOwnerId = resolveSingleUserOwnerId();
+  assertOneCatchAllOwner(sharedOwnerId, singleOwnerId);
+  const names = methods.map((method) => method.name).join(', ');
+  const builtIns = [
+    {
+      index: methods.findIndex(isSharedTeamAuthMethod),
+      configured: sharedOwnerId !== undefined,
+      label: 'sharedTeam',
+      factory: 'sharedTeamAuthMethod()',
+      variable: 'PERSISTENCE_SHARED_OWNER_ID',
+      unset: 'PERSISTENCE_SHARED_OWNER_ID is not set',
+    },
+    {
+      index: methods.findIndex(isSingleUserAuthMethod),
+      configured: singleOwnerId !== undefined,
+      label: 'singleUser',
+      factory: 'singleUserAuthMethod()',
+      variable: `${SINGLE_USER_ENV}=true`,
+      unset: `${SINGLE_USER_ENV} is not "true"`,
+    },
+  ];
+  for (const builtIn of builtIns) {
+    if (builtIn.index < 0) {
+      if (builtIn.configured) {
+        throw new Error(
+          `${builtIn.variable.replace(/=true$/, '')} is set but the registered owner auth methods ` +
+            `(${names}) do not include ${builtIn.label}, so it would be ignored. Add ` +
+            `${builtIn.factory} as the last method, or unset it.`,
+        );
+      }
+      continue;
+    }
+    if (!builtIn.configured) {
+      throw new Error(`${builtIn.factory} is registered but ${builtIn.unset}.`);
+    }
+    if (builtIn.index !== methods.length - 1) {
       throw new Error(
-        'PERSISTENCE_SHARED_OWNER_ID is set but the registered owner auth methods ' +
-          `(${methods.map((method) => method.name).join(', ')}) do not include sharedTeam, so it ` +
-          'would be ignored. Add sharedTeamAuthMethod() as the last method, or unset it.',
+        `${builtIn.factory} must be the last owner auth method: it authenticates every ` +
+          'request, so the methods after it would never be asked.',
       );
     }
-    return;
-  }
-  if (!sharedOwnerId) {
-    throw new Error(
-      'sharedTeamAuthMethod() is registered but PERSISTENCE_SHARED_OWNER_ID is not set.',
-    );
-  }
-  if (sharedIndex !== methods.length - 1) {
-    throw new Error(
-      'sharedTeamAuthMethod() must be the last owner auth method: it authenticates every ' +
-        'request, so the methods after it would never be asked.',
-    );
   }
 }
 
@@ -136,8 +194,8 @@ function assertSharedTeamPlacement(methods: readonly OwnerAuthMethod[]): void {
  * call it once from `instrumentation.ts` `register()` before the server serves
  * a request. Throws — failing the boot — when called twice, after owner
  * resolution has already started, with no methods, with something that is not
- * a method, with two methods of one name, or against the `sharedTeam` rules
- * above.
+ * a method, with two methods of one name, or against the `sharedTeam` /
+ * `singleUser` rules above.
  */
 export function configureOwnerAuthentication(options: OwnerAuthenticationOptions): void {
   if (typeof window !== 'undefined') {
@@ -179,7 +237,7 @@ export function configureOwnerAuthentication(options: OwnerAuthenticationOptions
         `"${anonymousCookieMethod.name}" (the built-in fallback); got ${names.join(', ')}.`,
     );
   }
-  assertSharedTeamPlacement(options.methods);
+  assertCatchAllPlacement(options.methods);
   state.configured = {
     methods: Object.freeze([...options.methods]),
     anonymousFallback: options.anonymousFallback ?? true,
@@ -248,12 +306,13 @@ export function retiredOwnerClearCookies(): readonly string[] {
 }
 
 /** Which configuration a validated process resolves owners with. */
-export type OwnerIdentityMode = 'configured' | 'sharedTeam' | 'anonymousCookie';
+export type OwnerIdentityMode = 'configured' | 'sharedTeam' | 'singleUser' | 'anonymousCookie';
 
 /**
  * Boot-time validation, called from `instrumentation.ts` after any
  * registration. A malformed `PERSISTENCE_SHARED_OWNER_ID`, one set without
- * `ACCESS_CODE`, one a host registration would ignore, or a malformed claim
+ * `ACCESS_CODE`, one a host registration would ignore, a malformed
+ * single-user setting or one beside the shared owner, or a malformed claim
  * setting would otherwise boot, pass its health check, and then fail — or
  * silently mis-identify — every owner-scoped request; throwing here makes the
  * deployment fail to start instead.
@@ -266,18 +325,74 @@ export function validateOwnerIdentityConfiguration(): OwnerIdentityMode {
     );
   }
   assertNoRetiredIdentityConfiguration();
+  // Read by the middleware on every page load, where a malformed value can
+  // only mint nothing: refuse it here instead.
+  resolveAnonymousPremint();
   // Read on every owner write and claim: a malformed value must stop the
   // server here, not fail each write as a 500.
   resolveWriteLockWaitMs();
   resolveClaimLockWaitMs();
   const configured = registry().configured;
   if (configured) {
-    assertSharedTeamPlacement(configured.methods);
+    assertCatchAllPlacement(configured.methods);
     return 'configured';
   }
-  return resolveSharedOwnerId() ? 'sharedTeam' : 'anonymousCookie';
+  const sharedOwnerId = resolveSharedOwnerId();
+  const singleOwnerId = resolveSingleUserOwnerId();
+  assertOneCatchAllOwner(sharedOwnerId, singleOwnerId);
+  if (sharedOwnerId) return 'sharedTeam';
+  return singleOwnerId ? 'singleUser' : 'anonymousCookie';
+}
+
+/**
+ * Startup warnings about the validated owner identity configuration, called
+ * from `instrumentation.ts` after {@link validateOwnerIdentityConfiguration}:
+ * single-user mode in effect (from the environment, or registered by a host)
+ * without `ACCESS_CODE`. Never throws on a valid configuration. Returns
+ * whether that warning applies, in which case it replaces the generic
+ * unset-`ACCESS_CODE` warning.
+ */
+export function warnAboutOwnerIdentityConfiguration(): boolean {
+  const configured = registry().configured;
+  warnIfPremintingWithoutAnonymousFallback(configured);
+  const singleUserActive = configured
+    ? configured.methods.some(isSingleUserAuthMethod)
+    : !resolveSharedOwnerId() && resolveSingleUserOwnerId() !== undefined;
+  return warnIfSingleUserIsUnprotected(singleUserActive);
+}
+
+let warnedPremint = false;
+
+/**
+ * One prominent warning per process when a host registration turned the
+ * anonymous fallback off but page responses still mint the anonymous cookie
+ * (`OWNER_ANONYMOUS_PREMINT`, default on; `./navigation.ts`). The middleware
+ * cannot see the registration, so the cookie it mints serves no request, and
+ * next to a host credential it is a claim candidate: with
+ * `OWNER_CLAIM_TRIGGER=auto` each cookieless page load leads to a claim of an
+ * empty anonymous owner. A warning, like the other startup notes: every owner
+ * still resolves correctly.
+ */
+function warnIfPremintingWithoutAnonymousFallback(
+  configured: OwnerAuthConfiguration | undefined,
+): void {
+  if (!configured || configured.anonymousFallback || !resolveAnonymousPremint()) return;
+  if (warnedPremint) return;
+  warnedPremint = true;
+  log.warn(
+    '\n' +
+      '************************************************************************\n' +
+      '* The registered owner auth methods turn the anonymous fallback off, but\n' +
+      `* ${ANONYMOUS_PREMINT_ENV} is not "false": page responses still mint an\n` +
+      '* anonymous owner cookie that no request resolves to. Beside your own\n' +
+      '* credential it is a claim candidate, claimed and cleared again after\n' +
+      '* every cookieless page load with OWNER_CLAIM_TRIGGER=auto.\n' +
+      `* Set ${ANONYMOUS_PREMINT_ENV}=false.\n` +
+      '************************************************************************',
+  );
 }
 
 export function resetOwnerAuthenticationForTests(): void {
+  warnedPremint = false;
   delete globalState[REGISTRY_KEY];
 }

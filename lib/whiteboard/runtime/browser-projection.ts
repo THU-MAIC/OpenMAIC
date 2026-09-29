@@ -1,6 +1,5 @@
 'use client';
 
-import { isBrowserPersistenceEnabled } from '@/lib/persistence/bootstrap';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store';
 import { getWhiteboardRuntimeService } from './store';
@@ -9,7 +8,9 @@ export async function refreshWhiteboardRuntimeProjection(
   stageId: string,
   minimumLastSeq?: number,
 ): Promise<boolean> {
-  if (!isBrowserPersistenceEnabled()) {
+  // The runtime lives behind the browser's HTTP persistence seam; a server
+  // render has no projection to refresh.
+  if (typeof window === 'undefined') {
     useCanvasStore.getState().clearRuntimeWhiteboardProjection();
     return false;
   }

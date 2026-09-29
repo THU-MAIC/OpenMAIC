@@ -6,7 +6,7 @@ const imageFilesMock = vi.hoisted(() => ({
   delete: vi.fn(),
 }));
 
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: {
     imageFiles: imageFilesMock,
   },

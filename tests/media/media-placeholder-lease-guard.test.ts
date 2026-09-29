@@ -172,7 +172,6 @@ describe('a slide leases only what the pool could hold', () => {
 describe('every lease and probe entry point carries the guard', () => {
   const GUARDED = [
     'components/slide-renderer/use-resolved-slide.ts',
-    'lib/audio/regenerate-speech-tts.ts',
     'lib/media/resolve-audio-bytes.ts',
     'lib/media/resolve-media-ref.ts',
     'lib/media/resolve-stored-bytes.ts',

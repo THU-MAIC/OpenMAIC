@@ -1,7 +1,8 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { BrowserAssetStore, HttpAssetStore, toAssetId } from '@openmaic/storage';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearAssetPool, getAssetPool } from '@/lib/media/asset-pool';
+import { getAssetPool } from '@/lib/media/asset-pool';
+import { useInMemoryAssetPool } from '@/tests/helpers/in-memory-document-store';
 import { resolveMediaRef } from '@/lib/media/resolve-media-ref';
 import {
   __resetAssetReplacementChannelForTesting,
@@ -111,7 +112,7 @@ describe('asset URL ownership', () => {
   });
 
   it('publishes same-id replacement bytes to an active lease', async () => {
-    vi.stubGlobal('indexedDB', new IDBFactory());
+    const { teardown } = await useInMemoryAssetPool();
     // Same-id replacement is a store capability, not an application one: the
     // browser-facing `AssetPoolStore` surface deliberately does not expose it,
     // so the concrete store is what this reaches through.
@@ -143,7 +144,7 @@ describe('asset URL ownership', () => {
 
     cleanup();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    await clearAssetPool();
+    await teardown();
   });
 
   it('makes a replacement broadcast outrank an older in-flight HTTP resolve', async () => {

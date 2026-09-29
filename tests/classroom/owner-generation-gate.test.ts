@@ -2,12 +2,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The gate is inert in browser-only mode, where one viewer is by construction
-// the author. These cases are about the server-backed reading.
-vi.mock('@/lib/persistence/media-persistence', () => ({
-  isServerBackedMediaPersistence: () => true,
-}));
-
 import {
   classroomGenerationOwnership,
   mayStartOwnerGeneration,
@@ -48,10 +42,6 @@ describe('sidecar outcome to generation ownership', () => {
 });
 
 describe('classroom generation owner gate', () => {
-  it.each(OWNERSHIPS)('is inert in browser-only mode: %s', (ownership) => {
-    expect(mayStartOwnerGeneration(false, ownership)).toBe(true);
-  });
-
   it.each([
     ['owner', true],
     ['not-owner', false],
@@ -60,12 +50,12 @@ describe('classroom generation owner gate', () => {
     // guesses a shared course URL must never bill the operator.
     ['ownerless', false],
     ['unresolved', false],
-  ] as const)('under server-backed persistence, %s => %s', (ownership, allowed) => {
-    expect(mayStartOwnerGeneration(true, ownership)).toBe(allowed);
+  ] as const)('%s => %s', (ownership, allowed) => {
+    expect(mayStartOwnerGeneration(ownership)).toBe(allowed);
   });
 
   it('admits exactly one state, so a new one cannot be silently permitted', () => {
-    const permitted = OWNERSHIPS.filter((ownership) => mayStartOwnerGeneration(true, ownership));
+    const permitted = OWNERSHIPS.filter((ownership) => mayStartOwnerGeneration(ownership));
     expect(permitted).toEqual(['owner']);
   });
 });
@@ -98,7 +88,7 @@ describe('asking the sidecar until it answers', () => {
       const result = answers.shift() ?? found(true);
       const ownership = classroomGenerationOwnership(result);
       noteStageGenerationOwnership(stageId, ownership);
-      seen.push(mayStartOwnerGeneration(true, ownership));
+      seen.push(mayStartOwnerGeneration(ownership));
       return ownership;
     };
 
@@ -208,7 +198,7 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     expect(surface).toContain('useClassroomSession({');
   });
 
-  it('does not ask the sidecar from the shared surface in browser-only mode', () => {
+  it('asks the sidecar from the shared surface, retrying while it is unresolved', () => {
     const source = readFileSync(
       join(process.cwd(), 'lib/classroom/use-classroom-session.ts'),
       'utf8',
@@ -216,7 +206,7 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     const refreshStart = source.indexOf('const refreshOwnership = useCallback(');
     const refresh = source.slice(refreshStart);
     expect(refreshStart).toBeGreaterThan(0);
-    expect(refresh).toContain('!isServerBackedMediaPersistence()');
+    expect(refresh).toContain('fetchStageMeta(classroomId)');
     expect(refresh).toContain('retryWhileOwnershipUnresolved');
   });
 

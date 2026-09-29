@@ -3,7 +3,7 @@
  * installations.
  *
  * Course documents, folders, materials and agent sessions are partitioned by an
- * owner id. Without a host auth layer that id comes from a 30-day anonymous
+ * owner id. Without a host auth layer that id comes from a renewed 400-day anonymous
  * cookie (`./anonymous-cookie.ts`), which means one physical browser is one learner: a
  * second browser sees an empty course list, a cleared cookie looks like a new
  * installation, and `POST /api/stages/[id]/publish` refuses every owner because

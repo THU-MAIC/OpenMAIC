@@ -65,7 +65,7 @@ const mocks = vi.hoisted(() => ({
   calls: [] as string[],
 }));
 
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: { mediaFiles: { get: mocks.mediaGet } },
   mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
 }));
@@ -77,7 +77,7 @@ vi.mock('@/lib/store/media-generation', () => ({
 }));
 
 import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
-import { db, mediaFileKey, type MediaFileRecord } from '@/lib/utils/database';
+import { db, mediaFileKey, type MediaFileRecord } from '@/lib/device-storage/database';
 import { withAssetUrl } from '@/lib/media/use-asset-url';
 import type { AssetUrlLeaseState } from '@/lib/media/use-asset-url';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';

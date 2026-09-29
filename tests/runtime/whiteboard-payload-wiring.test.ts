@@ -117,10 +117,14 @@ beforeEach(() => {
   vi.stubGlobal('IDBKeyRange', IDBKeyRange);
 });
 
-describe('default BrowserRuntimeStore app payload wiring', () => {
+describe('app runtime payload validators', () => {
   it('retains chat/quiz gates and adds the whiteboard gate', async () => {
-    const { getRuntimeStore } = await import('@/lib/runtime/store');
-    const store = getRuntimeStore();
+    // The same validator map the embedded persistence endpoint applies.
+    const store = new BrowserRuntimeStore({
+      indexedDB: new IDBFactory(),
+      dbName: 'whiteboard-payload-wiring',
+      payloadValidators: APP_RUNTIME_PAYLOAD_VALIDATORS,
+    });
     const now = '2026-08-06T00:00:00.000Z';
     for (const kind of ['chat', 'quizAttempt', 'whiteboard']) {
       await store.createSession({

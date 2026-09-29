@@ -14,7 +14,7 @@
  *
  * This module lives in `lib/video-export-app/` — the impure, app-side companion
  * to the pure `lib/video-export/` compiler — precisely because it reaches into
- * `@/lib/utils/database` and (for video probing) the DOM, the two concerns the
+ * `@/lib/device-storage/database` and (for video probing) the DOM, the two concerns the
  * compiler's purity boundary keeps out.
  */
 import type {
@@ -37,7 +37,12 @@ import type { Scene, SlideContent, Stage } from '@/lib/types/stage';
 import { enumerateAssetManifest } from '@openmaic/dsl';
 import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import { measureSlideElementGeometry, type MeasuredGeometry } from '@openmaic/renderer/snapshot';
-import { db, mediaFileKey, type AudioFileRecord, type MediaFileRecord } from '@/lib/utils/database';
+import {
+  db,
+  mediaFileKey,
+  type AudioFileRecord,
+  type MediaFileRecord,
+} from '@/lib/device-storage/database';
 import {
   emptyPreparedInteractiveHtmlSet,
   prepareInteractiveHtmlScenes,

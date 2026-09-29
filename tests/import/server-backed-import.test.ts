@@ -8,17 +8,13 @@ import type { AssetMeta, Slide } from '@openmaic/dsl';
 import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
 
 const mocks = vi.hoisted(() => ({
-  serverBacked: vi.fn(),
   put: vi.fn(),
   mediaPut: vi.fn(),
   audioPut: vi.fn(),
 }));
 
-vi.mock('@/lib/persistence/media-persistence', () => ({
-  isServerBackedMediaPersistence: mocks.serverBacked,
-}));
 vi.mock('@/lib/media/asset-pool', () => ({ putAsset: mocks.put }));
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
   db: { mediaFiles: { put: mocks.mediaPut }, audioFiles: { put: mocks.audioPut } },
 }));
@@ -69,7 +65,6 @@ describe('server-backed classroom ZIP import', () => {
 
   beforeEach(() => {
     stored = new Map();
-    mocks.serverBacked.mockReset().mockReturnValue(true);
     mocks.put.mockReset().mockImplementation(async (blob: Blob, meta: AssetMeta) => {
       const id = `ast_imported_${stored.size}`;
       stored.set(id, { blob, meta });
@@ -173,21 +168,6 @@ describe('server-backed classroom ZIP import', () => {
     await materializeImportedAudio(zip, manifest, 'new-course', 2);
     await materializeImportedMedia(zip, manifest, 'new-course', 2);
     expect(mocks.put).not.toHaveBeenCalled();
-  });
-
-  it('keeps browser-only imports local, including cache failure behavior', async () => {
-    mocks.serverBacked.mockReturnValue(false);
-    const { zip, manifest } = archive();
-    const audio = await materializeImportedAudio(zip, manifest, 'new-course', 2);
-    const media = await materializeImportedMedia(zip, manifest, 'new-course', 2);
-    expect(audio.pathToId.get('audio/speech.mp3')).not.toMatch(/^ast_/);
-    expect(media.refToNewId.get('clip')).not.toMatch(/^ast_/);
-    expect(mocks.put).not.toHaveBeenCalled();
-    const failure = new Error('local storage full');
-    mocks.audioPut.mockRejectedValue(failure);
-    mocks.mediaPut.mockRejectedValue(failure);
-    await expect(materializeImportedAudio(zip, manifest, 'new-course', 2)).rejects.toBe(failure);
-    await expect(materializeImportedMedia(zip, manifest, 'new-course', 2)).rejects.toBe(failure);
   });
 
   it('serves imported bytes to an independent HTTP client with no importing-browser cache', async () => {

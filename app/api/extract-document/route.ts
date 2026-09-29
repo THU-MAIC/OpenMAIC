@@ -22,6 +22,7 @@ import {
   resolveServerAsset,
   type ServerAssetResolution,
 } from '@/lib/persistence/resolve-server-asset';
+import { attachOwnerCookies } from '@/lib/server/identity/with-owner';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
   checkClientDocumentExtractorBaseUrl,
@@ -443,7 +444,20 @@ async function runExtraction(
   return apiSuccess({ data: resultWithMetadata });
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest): Promise<Response> {
+  const ownerCookies: OwnerCookies = {};
+  // The asset-id form resolves the request owner: every answer after that,
+  // success or error, carries the resolution's cookies (the anonymous
+  // owner's renewal).
+  return attachOwnerCookies(await extract(req, ownerCookies), ownerCookies.setCookies);
+}
+
+/** Filled in once the asset-id form has resolved the request owner. */
+interface OwnerCookies {
+  setCookies?: readonly string[];
+}
+
+async function extract(req: NextRequest, ownerCookies: OwnerCookies): Promise<Response> {
   const logState: ExtractLogState = {};
   // Whether this request took the asset-id (JSON) form. The multipart byte
   // form's observable behavior is frozen; a few JSON-path-only responses use
@@ -541,6 +555,7 @@ export async function POST(req: NextRequest) {
           req,
           MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES,
         );
+        ownerCookies.setCookies = resolution.setCookies;
       } catch (error) {
         // A failure from the server asset store (DB outage, registry failure)
         // must not reach the client as raw `error.message`; log the real error

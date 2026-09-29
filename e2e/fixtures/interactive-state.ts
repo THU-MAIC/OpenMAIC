@@ -1,4 +1,7 @@
-export const TEST_STAGE_ID = 'e2e-interactive-state-reference';
+import { seedServerDocument, setCurrentScene, uniqueStageId } from './server-seed';
+
+/** Prefix of the seeded course id; each seed appends a unique suffix. */
+export const TEST_STAGE_PREFIX = 'e2e-interactive-state-reference';
 export const SCENE_ID = 'scene-interactive-state';
 export const IFRAME_TITLE = `Interactive Scene ${SCENE_ID}`;
 const SETTINGS_STORAGE = JSON.stringify({
@@ -25,6 +28,11 @@ function draw(){document.getElementById('result').textContent=String(value);rend
 document.getElementById('value').oninput=e=>{value=Number(e.target.value);revision++;if(document.getElementById('pause').checked)publish();else draw();};document.getElementById('draw').onclick=draw;draw();
 </script></body></html>`;
 
+/**
+ * Seed the interactive course as this page's owner and return its id. Course
+ * ids are global on the server and another owner's id cannot be written, so
+ * every seed gets a fresh one.
+ */
 export async function seedDatabase(
   page: import('@playwright/test').Page,
   options: {
@@ -32,7 +40,8 @@ export async function seedDatabase(
     modelId?: string;
     whiteboard?: import('@openmaic/dsl').Whiteboard[];
   } = {},
-) {
+): Promise<string> {
+  const stageId = uniqueStageId(TEST_STAGE_PREFIX);
   const settings = JSON.parse(SETTINGS_STORAGE);
   if (options.modelId) settings.state.modelId = options.modelId;
   await page.addInitScript((settings) => {
@@ -41,63 +50,31 @@ export async function seedDatabase(
   }, JSON.stringify(settings));
 
   await page.goto('/', { waitUntil: 'networkidle' });
-  await page.evaluate(
-    ({ stageId, sceneId, html, whiteboard }) =>
-      new Promise<void>((resolve, reject) => {
-        const request = indexedDB.open('maic-documents', 1);
-        request.onupgradeneeded = () => {
-          const db = request.result;
-          db.createObjectStore('stages', { keyPath: 'id' });
-          const scenes = db.createObjectStore('scenes', { keyPath: ['stageId', 'id'] });
-          scenes.createIndex('by-stage', 'stageId');
-          db.createObjectStore('outlines', { keyPath: 'stageId' });
-        };
-        request.onsuccess = (event) => {
-          const db = (event.target as IDBOpenDBRequest).result;
-          const tx = db.transaction(['stages', 'scenes', 'outlines'], 'readwrite');
-          const now = Date.now();
-          tx.objectStore('stages').put({
-            id: stageId,
-            name: 'Interactive component reference',
-            ...(whiteboard ? { whiteboard } : {}),
-            description: '',
-            language: 'en-US',
-            style: 'professional',
-            createdAt: now,
-            updatedAt: now,
-            dslVersion: '0.1.0',
-          });
-          tx.objectStore('scenes').put({
-            id: sceneId,
-            stageId,
-            type: 'interactive',
-            title: 'Slider experiment',
-            order: 0,
-            content: { type: 'interactive', url: '', html },
-            createdAt: now,
-            updatedAt: now,
-          });
-          tx.objectStore('outlines').put({
-            stageId,
-            outline: { outlines: [], createdAt: now, updatedAt: now },
-          });
-          localStorage.setItem(
-            `maic:device:editor-current-scene:${stageId}`,
-            JSON.stringify({ sceneId, updatedAt: new Date(now).toISOString() }),
-          );
-          tx.oncomplete = () => {
-            db.close();
-            resolve();
-          };
-          tx.onerror = () => reject(tx.error);
-        };
-        request.onerror = () => reject(request.error);
-      }),
-    {
-      stageId: TEST_STAGE_ID,
-      sceneId: SCENE_ID,
-      html: options.html ?? INTERACTIVE_HTML,
-      whiteboard: options.whiteboard,
+  const now = Date.now();
+  await seedServerDocument(page, {
+    stage: {
+      id: stageId,
+      name: 'Interactive component reference',
+      ...(options.whiteboard ? { whiteboard: options.whiteboard } : {}),
+      description: '',
+      style: 'professional',
+      createdAt: now,
+      updatedAt: now,
     },
-  );
+    scenes: [
+      {
+        id: SCENE_ID,
+        stageId,
+        type: 'interactive',
+        title: 'Slider experiment',
+        order: 0,
+        content: { type: 'interactive', url: '', html: options.html ?? INTERACTIVE_HTML },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    outline: { outlines: [], createdAt: now, updatedAt: now },
+  });
+  await setCurrentScene(page, stageId, SCENE_ID);
+  return stageId;
 }

@@ -5,7 +5,7 @@ import { useStageStore } from '@/lib/store/stage';
 import { isSceneEditLocked } from '@/lib/edit/regen-lock';
 import { getCurrentModelConfig, getStageRoutesHeaderValue } from '@/lib/utils/model-config';
 import { useSettingsStore } from '@/lib/store/settings';
-import { db } from '@/lib/utils/database';
+import { db } from '@/lib/device-storage/database';
 import type {
   SceneOutline,
   PdfImage,
@@ -30,7 +30,6 @@ import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { commitToPool } from '@/lib/media/commit-to-pool';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
-import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
 import { toast } from 'sonner';
@@ -271,7 +270,6 @@ export async function generateAndStoreTTS(
   language?: string,
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<TTSApiResponse>,
-  existingAudioId?: string,
   stageId?: string,
   // Internal: an explicit voice that bypasses narrator binding resolution — used
   // to retry narration against the deterministic enabled-provider pick when the
@@ -428,7 +426,6 @@ export async function generateAndStoreTTS(
             language,
             signal,
             retryOptions,
-            existingAudioId,
             stageId,
             undefined,
             fallbackHops + 1,
@@ -446,7 +443,6 @@ export async function generateAndStoreTTS(
               language,
               signal,
               retryOptions,
-              existingAudioId,
               stageId,
               fallbackVoice,
               fallbackHops + 1,
@@ -486,17 +482,7 @@ export async function generateAndStoreTTS(
     voice: ttsVoice,
     createdAt: Date.now(),
   });
-  const serverBacked = isServerBackedMediaPersistence();
-  // Browser-only keeps the historical derived key: document and audio share one
-  // lifetime there, and nothing outside this browser reads either.
-  if (!serverBacked) {
-    const audioId = existingAudioId ?? requestId;
-    await db.audioFiles.put(cachedNarrationRow(audioId));
-    return audioId;
-  }
-
-  // Server-backed: the bytes go to the pool and the pool allocates the
-  // identity, so the id the speech action ends up holding names durable audio
+  // The bytes go to the pool and the pool allocates the identity, so the id the speech action ends up holding names durable audio
   // rather than this browser's local table. Bytes land BEFORE the caller stamps
   // the action, so a document can never name narration that was not stored.
   const outcome = await commitToPool<void>({
@@ -561,14 +547,11 @@ export async function generateAndStoreTTS(
 /**
  * Why a fresh clip never replaces the bytes behind an id it is superseding.
  *
- * Regeneration always forks; the caller's `existingAudioId` is deliberately
- * ignored on the server-backed path. Replacing bytes behind a live id requires
- * proof that no other document holds it, and that proof is unavailable by
- * construction once references can leave this browser — asking the pool who
- * else holds an id would be exactly the existence oracle the asset contract
- * forbids, so `proveExclusiveAssetOwnership` fails closed under server-backed
- * persistence and every caller forks. Keeping a branch that can never be taken
- * would only describe a capability this deployment shape does not have.
+ * Regeneration always forks to a fresh allocation. Replacing bytes behind a
+ * live id requires proof that no other document holds it, and that proof is
+ * unavailable by construction once references can leave this browser — asking
+ * the pool who else holds an id would be exactly the existence oracle the
+ * asset contract forbids.
  *
  * The superseded id is NOT removed either. Nothing at this point has observed
  * the new id reaching a durable document, so deleting the old bytes could leave
@@ -632,7 +615,6 @@ export async function generateTTSForScene(
    * stop. A sibling line failing is not a reason to throw them away.
    */
   const retainedRefusals = new Set<SpeechAction>();
-  const serverBacked = isServerBackedMediaPersistence();
 
   // Scene order keeps the provider request correlation label unique. Storage
   // identity is allocated by the pool and is never derived from this value.
@@ -664,17 +646,14 @@ export async function generateTTSForScene(
         language,
         signal,
         retryOptions,
-        undefined,
         scene.stageId,
       );
       if (assetId) {
         action.audioId = assetId;
-        // Under server-backed persistence the pool answers with an allocated
-        // id, so the request key coming back means one thing only: the store
-        // refused these bytes and they were kept under it. Browser-only always
-        // returns the request key and always rolls back with the scene, which
-        // is right there -- the bytes and the document share one lifetime.
-        if (serverBacked && assetId === requestId) retainedRefusals.add(action);
+        // The pool answers with an allocated id, so the request key coming
+        // back means one thing only: the store refused these bytes and they
+        // were kept under it.
+        if (assetId === requestId) retainedRefusals.add(action);
         else freshAllocations.push(assetId);
       }
     } catch (error) {
@@ -809,15 +788,13 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       store.getState().setGeneratingOutlines(pending);
 
       // Launch media generation in parallel — does not block content/action generation.
-      // Under server-backed persistence, abort whatever the ref held first:
-      // replacing it would orphan that loop with a signal nothing can ever
-      // fire, leaving it calling providers and storing assets — real spend and
-      // real storage — for a course the user may already have left, and leaving
-      // `stop()` able to reach only the newest pass. The orchestrator then
-      // waits for the aborted pass to settle before collecting, so the two
-      // never overlap. Browser-only mode keeps its original behaviour, where an
-      // overlapping pass costs a duplicate download and nothing else.
-      if (isServerBackedMediaPersistence()) mediaAbortRef.current?.abort();
+      // Abort whatever the ref held first: replacing it would orphan that loop
+      // with a signal nothing can ever fire, leaving it calling providers and
+      // storing assets — real spend and real storage — for a course the user
+      // may already have left, and leaving `stop()` able to reach only the
+      // newest pass. The orchestrator then waits for the aborted pass to
+      // settle before collecting, so the two never overlap.
+      mediaAbortRef.current?.abort();
       mediaAbortRef.current = new AbortController();
       generateMediaForOutlines(outlines, stage.id, mediaAbortRef.current.signal).catch((err) => {
         log.warn('Media generation error:', err);

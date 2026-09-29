@@ -29,6 +29,7 @@
  * |   500 | `user-skills`     | `agent_user_skill`                                     |
  * |   600 | `runtime`         | `runtime_sessions` (records follow their session)      |
  * |   700 | `assets`          | `asset_entries.principal`                              |
+ * |   800 | `legacy-import-bindings` | `legacy_import_bindings` (which owner a browser's pre-server data belongs to) |
  *
  * Why this order. Every core write path takes the identity lock first, so none
  * of them can be holding a row a claim wants while it waits for the claim: for
@@ -86,6 +87,7 @@ import { isStorableOwnerId } from '@/lib/server/identity/types';
 import { principalFromStoredOwner } from '@/lib/server/identity/stored-owner';
 
 import { assetPrincipalForOwner } from './owner-assets';
+import { rekeyLegacyImportBindings } from './legacy-import-bindings';
 import { isLockContention, isOwnerBusyError, lockOwnerIdentities } from './owner-merges';
 import { resolveClaimLockWaitMs } from './owner-lock-waits';
 import { ownerMaterialQuotaLockKey } from './owner-materials';
@@ -125,6 +127,7 @@ export const CORE_CLAIM_PARTICIPANTS = [
   'user-skills',
   'runtime',
   'assets',
+  'legacy-import-bindings',
 ] as const;
 
 /**
@@ -316,6 +319,13 @@ function coreParticipants(provider: ServerPersistenceProvider): ClaimParticipant
         provider
           .assetStoreIn(tx)
           .reassignPrincipal(assetPrincipalForOwner(from).key, assetPrincipalForOwner(to).key),
+    },
+    {
+      // The account the visitor signs in to holds the browser afterwards, so
+      // the one-way import of pre-server browser data finishes there.
+      name: 'legacy-import-bindings',
+      order: 800,
+      rekey: async (tx, from, to) => rekeyLegacyImportBindings(tx, from, to),
     },
   ];
 }

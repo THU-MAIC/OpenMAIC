@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import type { Slide } from '@openmaic/dsl';
-import type { FolderRecord } from '@/lib/utils/database';
+import type { FolderRecord } from '@/lib/types/folder';
 import type { DeleteFolderMode } from '@/lib/utils/stage-storage';
 
 /** Maximum number of course covers stacked on a folder tile. */

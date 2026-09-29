@@ -2,6 +2,7 @@ import { test, expect } from '../fixtures/base';
 import { ClassroomPage } from '../pages/classroom.page';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
 import { defaultTheme } from '../fixtures/test-data/scene-content';
+import { seedServerDocument, setCurrentScene, uniqueStageId } from '../fixtures/server-seed';
 
 /**
  * E2E for #619: interactive scene iframes must NOT reload on remount.
@@ -18,7 +19,7 @@ import { defaultTheme } from '../fixtures/test-data/scene-content';
  * the assertion clean of that noise.
  */
 
-const TEST_STAGE_ID = 'e2e-iframe-keepalive';
+const TEST_STAGE_PREFIX = 'e2e-iframe-keepalive';
 const INTERACTIVE_SCENE_ID = 'scene-interactive';
 const IFRAME_TITLE = `Interactive Scene ${INTERACTIVE_SCENE_ID}`;
 const SHOTS = 'e2e/__screenshots-619';
@@ -38,106 +39,69 @@ const INTERACTIVE_HTML = `<!DOCTYPE html><html><head><meta charset="utf-8"></hea
   </script>
 </body></html>`;
 
-async function seedDatabase(page: import('@playwright/test').Page) {
+async function seedDatabase(page: import('@playwright/test').Page): Promise<string> {
   await page.addInitScript((settings) => {
     localStorage.setItem('maic:account:settings-storage', settings);
   }, SETTINGS_STORAGE);
 
   await page.goto('/', { waitUntil: 'networkidle' });
 
-  await page.evaluate(
-    ({ stageId, interactiveId, html, theme }) => {
-      return new Promise<void>((resolve, reject) => {
-        const request = indexedDB.open('maic-documents', 1);
-        request.onupgradeneeded = () => {
-          const db = request.result;
-          db.createObjectStore('stages', { keyPath: 'id' });
-          const scenes = db.createObjectStore('scenes', { keyPath: ['stageId', 'id'] });
-          scenes.createIndex('by-stage', 'stageId');
-          db.createObjectStore('outlines', { keyPath: 'stageId' });
-        };
-        request.onsuccess = (event) => {
-          const db = (event.target as IDBOpenDBRequest).result;
-          const tx = db.transaction(['stages', 'scenes', 'outlines'], 'readwrite');
-          const now = Date.now();
-
-          tx.objectStore('stages').put({
-            id: stageId,
-            name: 'Keep-alive test',
-            description: '',
-            language: 'en-US',
-            style: 'professional',
-            createdAt: now,
-            updatedAt: now,
-            dslVersion: '0.1.0',
-          });
-
-          tx.objectStore('scenes').put({
-            id: interactiveId,
-            stageId,
-            type: 'interactive',
-            title: 'Interactive',
-            order: 0,
-            content: { type: 'interactive', url: '', html },
-            createdAt: now,
-            updatedAt: now,
-          });
-          tx.objectStore('scenes').put({
-            id: 'scene-slide',
-            stageId,
-            type: 'slide',
-            title: 'A slide',
-            order: 1,
-            content: {
-              type: 'slide',
-              canvas: {
-                id: 'slide-1',
-                viewportSize: 1000,
-                viewportRatio: 0.5625,
-                theme,
-                elements: [
-                  {
-                    type: 'text',
-                    id: 'el-1',
-                    content: 'A slide',
-                    left: 50,
-                    top: 50,
-                    width: 900,
-                    height: 100,
-                  },
-                ],
+  const stageId = uniqueStageId(TEST_STAGE_PREFIX);
+  const now = Date.now();
+  await seedServerDocument(page, {
+    stage: {
+      id: stageId,
+      name: 'Keep-alive test',
+      description: '',
+      style: 'professional',
+      createdAt: now,
+      updatedAt: now,
+    },
+    scenes: [
+      {
+        id: INTERACTIVE_SCENE_ID,
+        stageId,
+        type: 'interactive',
+        title: 'Interactive',
+        order: 0,
+        content: { type: 'interactive', url: '', html: INTERACTIVE_HTML },
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'scene-slide',
+        stageId,
+        type: 'slide',
+        title: 'A slide',
+        order: 1,
+        content: {
+          type: 'slide',
+          canvas: {
+            id: 'slide-1',
+            viewportSize: 1000,
+            viewportRatio: 0.5625,
+            theme: defaultTheme,
+            elements: [
+              {
+                type: 'text',
+                id: 'el-1',
+                content: 'A slide',
+                left: 50,
+                top: 50,
+                width: 900,
+                height: 100,
               },
-            },
-            createdAt: now,
-            updatedAt: now,
-          });
-
-          tx.objectStore('outlines').put({
-            stageId,
-            outline: { outlines: [], createdAt: now, updatedAt: now },
-          });
-
-          localStorage.setItem(
-            `maic:device:editor-current-scene:${stageId}`,
-            JSON.stringify({ sceneId: interactiveId, updatedAt: new Date(now).toISOString() }),
-          );
-
-          tx.oncomplete = () => {
-            db.close();
-            resolve();
-          };
-          tx.onerror = () => reject(tx.error);
-        };
-        request.onerror = () => reject(request.error);
-      });
-    },
-    {
-      stageId: TEST_STAGE_ID,
-      interactiveId: INTERACTIVE_SCENE_ID,
-      html: INTERACTIVE_HTML,
-      theme: defaultTheme,
-    },
-  );
+            ],
+          },
+        },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    outline: { outlines: [], createdAt: now, updatedAt: now },
+  });
+  await setCurrentScene(page, stageId, INTERACTIVE_SCENE_ID);
+  return stageId;
 }
 
 const keepAliveMutations = (page: import('@playwright/test').Page) =>
@@ -150,10 +114,10 @@ const resetMutations = (page: import('@playwright/test').Page) =>
 
 test.describe('#619 interactive iframe keep-alive', () => {
   test('insert toolbar keeps its position across unsupported surfaces', async ({ page }) => {
-    await seedDatabase(page);
+    const stageId = await seedDatabase(page);
 
     const classroom = new ClassroomPage(page);
-    await classroom.goto(TEST_STAGE_ID);
+    await classroom.goto(stageId);
     await classroom.waitForLoaded();
     await page.getByRole('switch').first().click();
 
@@ -204,10 +168,10 @@ test.describe('#619 interactive iframe keep-alive', () => {
       );
     }, IFRAME_TITLE);
 
-    await seedDatabase(page);
+    const stageId = await seedDatabase(page);
 
     const classroom = new ClassroomPage(page);
-    await classroom.goto(TEST_STAGE_ID);
+    await classroom.goto(stageId);
     await classroom.waitForLoaded();
 
     const iframeEl = page.locator(`iframe[title="${IFRAME_TITLE}"]`);

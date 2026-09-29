@@ -11,7 +11,7 @@ OpenMAIC は標準的な Next.js アプリケーションであり、Next.js が
 
 Vercel は各コミットごとに Next.js アプリを再ビルド・再デプロイします。デプロイ時にはプロジェクト設定で少なくとも 1 つの LLM プロバイダーを設定する必要があります。
 
-Vercel のデプロイはデフォルトでブラウザ側の永続化を使用します。サーバー側の永続化が必要な場合は、外部の PostgreSQL とサーバー側のデプロイ方法を利用してください。`server-persistence` Compose プロファイルは Vercel では直接利用できません。
+Vercel は OpenMAIC をサーバーレス関数として実行するため、データベースを同梱できません。プロジェクト設定で `DATABASE_URL` を外部の PostgreSQL データベース（マネージドサービス。接続プールのエンドポイントがあればそちらを推奨）に向けてください。未設定の場合、サーバーは起動を拒否します。
 
 ## Docker
 
@@ -20,7 +20,7 @@ Vercel のデプロイはデフォルトでブラウザ側の永続化を使用�
 ```bash
 docker build -t openmaic .
 
-docker run --env-file .env.local -p 3000:3000 openmaic
+docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-host:5432/openmaic -p 3000:3000 openmaic
 ```
 
 リポジトリにある Docker Compose 設定の利用を推奨します：
@@ -31,7 +31,7 @@ cp .env.example .env.local
 docker compose up --build
 ```
 
-デフォルトの Compose デプロイは OpenMAIC アプリを起動し、`openmaic-data` ボリュームをマウントします。その他のプロバイダーや機能は必要に応じて設定してください。詳細は[設定説明](./configuration.mdx)を参照してください。
+デフォルトの Compose デプロイは OpenMAIC アプリと PostgreSQL の 2 つのコンテナを起動し、両者の間の `DATABASE_URL` を設定して、`openmaic-data` と `openmaic-postgres` ボリュームをマウントします。その他のプロバイダーや機能は必要に応じて設定してください。詳細は[設定説明](./configuration.mdx)を参照してください。
 
 `NEXT_PUBLIC_*` の機能フラグは Docker ビルド時に注入されるため、実行時の `.env.local` に書くだけでは反映されません。例えば動画エクスポートと実験的な PPTX インポートを有効にする場合：
 
@@ -61,33 +61,26 @@ Docker コンテナ内の `localhost` はコンテナ自身を指します。ホ
 ```bash
 pnpm install
 pnpm build
-pnpm start      # デフォルトでポート 3000 をリッスンします
+DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # デフォルトでポート 3000 をリッスンします
 ```
 
-TLS 終端は nginx や Caddy などを前段に置いてください。デフォルトでは授業の状態はブラウザの IndexedDB に保存されます。サーバー側永続化を有効にすると、実行時データや授業ドキュメントはサーバー側ストレージと PostgreSQL に保存されます。複数インスタンスでの運用を検討する場合は、適切な永続化方式を選択してください。
+TLS 終端は nginx や Caddy などを前段に置いてください。授業、実行時データ、生成メディアは PostgreSQL に保存されるため、複数のインスタンスで 1 つのデータベースを共有できます。
 
 ## サーバー側永続化（PostgreSQL）
 
-リポジトリの `server-persistence` プロファイルは OpenMAIC と PostgreSQL の 2 つのコンテナを起動します。永続化用の HTTP API は OpenMAIC に組み込まれており、追加の永続化サービスは不要です。
+OpenMAIC は授業、チャット履歴、学習の進捗、生成メディアを PostgreSQL に保存するため、**`DATABASE_URL` は必須**です。未設定の場合、サーバーは `[boot] Invalid server configuration; the server will not start: DATABASE_URL is not set. ...` と対処方法を出力し、終了コード `1` で終了します。永続化用の HTTP API は OpenMAIC に組み込まれており、追加の永続化サービスは不要です。
 
-まず `.env.local` にデータベース接続情報を追加します：
-
-```bash
-DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
-```
-
-次にプロファイルを起動します：
+`docker compose up` はアプリの横で PostgreSQL を起動し、`DATABASE_URL` を設定します。ローカル開発では、`pnpm db:up` が同じサービス定義から独立した開発用データベース（専用の Compose プロジェクトとボリューム `openmaic-dev-db`。このマシン上のすべてのチェックアウトで共有。スタックのデータベースには影響しません）を `127.0.0.1`（ポート `OPENMAIC_DB_PORT`、既定 `5432`）で起動し、`pnpm db:down` で停止します。その後 `.env.local` に接続情報を設定します：
 
 ```bash
-NEXT_PUBLIC_PERSISTENCE=1 \
-docker compose --profile server-persistence up --build
+DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
 ```
 
-`NEXT_PUBLIC_PERSISTENCE` はビルド時の変数です。永続化専用の認証情報はありません。各リクエストはオーナー解決で得られたオーナー（既定ではブラウザごとの匿名 Cookie）に帰属し、ランタイムセッションとメディアはそのオーナーごとに分離されます。既定の識別はブラウザを分離するだけで誰も認証しないため、実ユーザー向けのデプロイでは自前のアカウントに基づくオーナー認証メソッドを登録してください。以前のリリースの `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` は削除され無視されます。旧来のブラウザ生成の学習者キーで保存されたランタイムセッションにはアクセスできなくなります。`PERSISTENCE_DEV_TOKEN` が唯一のアクセス制御だった場合は、アップグレード前に `ACCESS_CODE` やゲートウェイで保護する、オーナー認証メソッドを登録する、または `NEXT_PUBLIC_PERSISTENCE` を未設定にしてください。
+永続化専用の認証情報はありません。各リクエストはオーナー解決で得られたオーナー（既定ではブラウザごとの匿名 Cookie）に帰属し、ランタイムセッションとメディアはそのオーナーごとに分離されます。既定の識別はブラウザを分離するだけで誰も認証しないため、実ユーザー向けのデプロイでは自前のアカウントに基づくオーナー認証メソッドを登録してください。以前のリリースの `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` は削除され無視されます。旧来のブラウザ生成の学習者キーで保存されたランタイムセッションにはアクセスできなくなります。`PERSISTENCE_DEV_TOKEN` が唯一のアクセス制御だった場合は、アップグレード前に `ACCESS_CODE` やゲートウェイで保護するか、オーナー認証メソッドを登録してください。
 
 PostgreSQL のデータは `openmaic-postgres` ボリュームに保存されます。`PERSISTENCE_POSTGRES_PASSWORD` はデータベースディレクトリ初回初期化時にのみパスワードを設定し、その後の環境変数変更では既存ユーザーのパスワードは自動的に変更されません。
 
-`NEXT_PUBLIC_PERSISTENCE` を設定しなければ、従来通りブラウザ側の永続化が維持されます。
+以前のリリースでは授業をブラウザ（IndexedDB）に保存できました。このモードは廃止され、`NEXT_PUBLIC_PERSISTENCE` ビルド変数は無視されます。その方法でブラウザに保存された授業は、そのブラウザでアップグレード後のアプリを初めて開いたときに自動的にサーバーへ移されます。一方向のインポーターが、それらを（チャット、学習の進捗、フォルダー、メディアとともに）サーバーがそのブラウザについて解決した所有者にコピーし、ブラウザ内の元のデータには手を加えません。インポートはブラウザごとに一度だけです。サーバーはそのブラウザを、アップグレード後のアプリを最初に読み込んだ所有者に紐付け、統合（サインイン時に匿名の所有者がアカウントに統合されること）によって紐付けはアカウントに移ります。サーバーはそれ以外の所有者のためのインポーターの要求を拒否します。それ以外に同じブラウザを後から使う所有者には何もインポートされません。操作は不要で、UI も表示されません。問題があればブラウザのコンソールに `[legacy-browser-import]` という接頭辞で記録されます。
 
 ## オプション：MP4 動画エクスポート
 

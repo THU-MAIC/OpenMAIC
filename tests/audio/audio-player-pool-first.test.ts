@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   poolRelease: vi.fn(),
 }));
 
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: { audioFiles: { get: mocks.audioGet } },
 }));
 

@@ -86,10 +86,10 @@ const GATEWAY_IDENTITY = new RegExp(
  * `lib/server/identity/` may use them: anywhere else could ask a method
  * directly (and read its credential) outside core's ordering and 401 rules,
  * or pin that code to the built-in identity. Hosts use the index
- * (`configureOwnerAuthentication`, `sharedTeamAuthMethod`).
+ * (`configureOwnerAuthentication`, `sharedTeamAuthMethod`, `singleUserAuthMethod`).
  */
 const BUILT_IN_IMPORT =
-  /anonymousCookieMethod|readAnonymousOwnerId|clearAnonymousCookieHeader|isAnonymousCookieOwnerId|resolveSharedOwnerId|isSharedTeamAuthMethod|ownerAuthConfigurationForResolution|identity\/(?:anonymous-cookie|shared-team)['"]/;
+  /anonymousCookieMethod|readAnonymousOwnerId|clearAnonymousCookieHeader|isAnonymousCookieOwnerId|resolveSharedOwnerId|isSharedTeamAuthMethod|resolveSingleUserOwnerId|isSingleUserAuthMethod|ownerAuthConfigurationForResolution|identity\/(?:anonymous-cookie|shared-team|single-user)['"]/;
 
 /**
  * Reading an incoming request's `Authorization` (or `Proxy-Authorization`)

@@ -1,6 +1,7 @@
 import { DocumentNotFoundError } from '@openmaic/storage';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
+import { ensureLegacyImportBindingSchema } from './legacy-import-bindings';
 import { ensureOwnerMergeSchema } from './owner-merges';
 
 export interface StageMetaRow {
@@ -125,6 +126,9 @@ export async function ensureStageMetaSchema(queryable: Queryable): Promise<void>
   // the record of ownership itself: every write path that checks one reads
   // the other (see ./owner-merges.ts).
   await ensureOwnerMergeSchema(queryable);
+  // Which owner a browser's pre-server data belongs to: a claim moves these
+  // with the rest of the owner's rows (see ./legacy-import-bindings.ts).
+  await ensureLegacyImportBindingSchema(queryable);
   const { adopted, disagreeing } = await adoptLegacyDocumentOwners(queryable);
   if (adopted > 0) {
     console.warn(

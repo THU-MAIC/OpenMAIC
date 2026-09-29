@@ -20,7 +20,7 @@
   <a href="https://jcst.ict.ac.cn/en/article/doi/10.1007/s11390-025-6000-0"><img src="https://img.shields.io/badge/Paper-JCST'26-blue?style=flat-square" alt="Paper"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License: MIT"/></a>
   <a href="https://open.maic.chat/"><img src="https://img.shields.io/badge/Demo-Live-brightgreen?style=flat-square" alt="Live Demo"/></a>
-  <a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&envDescription=Configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).%20All%20providers%20are%20optional.&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs"><img src="https://vercel.com/button" alt="Deploy with Vercel" height="20"/></a>
+  <a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&env=DATABASE_URL&envDescription=DATABASE_URL%20must%20point%20to%20an%20external%20PostgreSQL%20database.%20Also%20configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs"><img src="https://vercel.com/button" alt="Deploy with Vercel" height="20"/></a>
   <a href="#-agent-workbench-integration"><img src="https://img.shields.io/badge/OpenClaw-Integration-F4511E?style=flat-square" alt="OpenClaw Integration"/></a>
   <a href="#lemonade-local-ai"><img src="https://img.shields.io/badge/Lemonade-Local_AI-FFD43B?style=flat-square" alt="Lemonade Local AI"/></a>
   <a href="https://github.com/THU-MAIC/OpenMAIC/stargazers"><img src="https://img.shields.io/github/stars/THU-MAIC/OpenMAIC?style=flat-square" alt="Stars"/></a>
@@ -57,6 +57,12 @@ Take the full tour in [Features](#-features), then set it up with [Agent workben
 
 ## 🗞️ News
 
+- **2026-09-28** — [v1.1.2 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.2) Security release. When a provider is not configured on the server, the routes that accept a caller-supplied base URL (PDF parsing and connectivity checks, the Azure voice list, model listing, image and video providers, LLM calls) now connect only to addresses that passed validation and refuse redirects ([GHSA-g87c-cm4q-cw5x](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-g87c-cm4q-cw5x)); classroom media downloads use the same transport. Read the **Behavior Changes** section of the changelog before upgrading. See [changelog](CHANGELOG.md).
+- **2026-09-27** — [v1.1.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.1) Security release. MinerU Cloud document parsing now holds the presigned upload and result URLs returned by the provider to the same strict public-address policy, validates every redirect hop, and bounds what it reads and decompresses ([GHSA-cpjc-vgjh-c5jp](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-cpjc-vgjh-c5jp)). See [changelog](CHANGELOG.md).
+- **2026-09-24** — [v1.1.0 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.0) Classroom chat now runs on an agent loop: reference a slide element, an interactive component or a whiteboard drawing from the playback bar and ask about it, and the teacher can read the lesson, check an experiment's live state and search the web before answering. Settings are rebuilt around the course workflow with a model choice per generation step, plus first-class Token Plan connections. Read the **Behavior Changes** section before upgrading — Pi is the default chat runtime. See [changelog](CHANGELOG.md).
+- **2026-09-15** — [v1.0.3 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.3) Security release. Access-code verification tokens now expire and verification is rate-limited ([GHSA-qpmr-534w-hhpg](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-qpmr-534w-hhpg)); the render service applies a network policy to the untrusted HTML it renders ([GHSA-vqq3-22q7-289w](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-vqq3-22q7-289w)); audio provider requests validate redirects and pin their connections ([GHSA-9p8q-rcmg-pmjw](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-9p8q-rcmg-pmjw)); and Next.js is upgraded to patch a critical RCE. See [changelog](CHANGELOG.md).
+- **2026-09-14** — [v1.0.2 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.2) Security release. Closes a cloud-metadata SSRF gap, a DNS-rebinding bypass on media proxying and a classroom overwrite, and tightens two request paths. Read the **Breaking Changes** section before upgrading. See [changelog](CHANGELOG.md).
+- **2026-09-06** — [v1.0.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.1) Security and stability release; everyone on 1.0.0 should upgrade, as it tightens two defaults. See [changelog](CHANGELOG.md).
 - **2026-08-27** — **OpenMAIC v1.0.0:** an agent workbench, durable course-building sessions, reusable skills, session materials, provider-neutral server capabilities, and a pluggable persistence stack.
 - **2026-08-14** — [v0.3.2 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.2) Video export hardening (deterministic Quiz/PBL covers, fidelity polish, interactive HTML capture, CPU resource profiles); server-backed persistence completed (full document cutover, one-command Postgres stack, incremental saves) plus the asset registry; the `@openmaic/generation` package; four new locales; Amazon Bedrock, Atlas Cloud, and Claude search providers; FunASR ASR. See [changelog](CHANGELOG.md).
 - **2026-07-21** — [v0.3.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.1) One-click MP4 video export; server-backed runtime storage with a Postgres reference server; direct slide manipulation in the editor (drag, resize, rotate, multi-select); smarter "Edit with AI" (validated JSON Patch edits, multi-session history); expanded Document Parsing (multi-format upload, audio/video extraction, AliDocMind, MinerU); new providers (Azure OpenAI, SearXNG, ComfyUI) and the GPT-5.6 model family; action-level playback navigation; SSRF hardening. See [changelog](CHANGELOG.md).
@@ -107,6 +113,8 @@ https://github.com/user-attachments/assets/8f3f1e5f-1468-4e93-8054-afeeea683a61
 
 - **Node.js** >= 22.19
 - **pnpm** >= 10
+- **PostgreSQL** 16 — courses are stored on the server. For local development
+  `pnpm db:up` starts one in Docker for you.
 
 ### 1. Clone & Install
 
@@ -292,18 +300,41 @@ DEFAULT_MODEL=glm:glm-5.1
 >
 > If you want to use MiniMax as the default server model, set `DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed`.
 
-### 3. Run
+### 3. Start the database
+
+```bash
+pnpm db:up
+```
+
+This starts a separate development PostgreSQL on `127.0.0.1:5432` (set
+`OPENMAIC_DB_PORT` to use another port). It is its own Compose project
+(`openmaic-dev-db`, shared by every checkout on this machine) with its own
+container and data volume, so it never
+restarts or stops the database of a `docker compose up` stack, and the two do
+not share data. Then uncomment the local
+`DATABASE_URL` line in `.env.local`:
+
+```env
+DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
+```
+
+Any other PostgreSQL works too; point `DATABASE_URL` at it. `pnpm db:down` stops
+the container and keeps its data volume.
+
+### 4. Run
 
 ```bash
 pnpm dev
 ```
 
-Open **http://localhost:3000** and start learning!
+Open **http://localhost:3000** and start learning! Without a `DATABASE_URL` the
+server refuses to start and tells you how to provide one (see
+[Server-backed persistence](#server-backed-persistence-postgresql)).
 
-### 4. Build for Production
+### 5. Build for Production
 
 ```bash
-pnpm build && pnpm start
+pnpm build && DATABASE_URL=postgres://... pnpm start
 ```
 
 ### Optional: ACCESS_CODE (Shared Deployments)
@@ -322,14 +353,22 @@ The code is remembered in a signed token stored in an HTTP-only cookie for 7 day
 
 ### Vercel Deployment
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&envDescription=Configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).%20All%20providers%20are%20optional.&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&env=DATABASE_URL&envDescription=DATABASE_URL%20must%20point%20to%20an%20external%20PostgreSQL%20database.%20Also%20configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs)
 
 Or manually:
 
 1. Fork this repository
 2. Import into [Vercel](https://vercel.com/new)
-3. Set environment variables (at minimum one LLM API key)
+3. Set environment variables: `DATABASE_URL` pointing to an external PostgreSQL
+   database (a serverless function cannot run one itself), and at least one LLM
+   API key
 4. Deploy
+
+The server refuses to start without `DATABASE_URL`. Use a connection string your
+functions can reach from Vercel's network (a managed PostgreSQL service with
+TLS, or a pooled connection endpoint when your provider offers one). The same
+applies to any other serverless or container host: provide the database, then
+deploy.
 
 ### Docker Deployment
 
@@ -338,6 +377,79 @@ cp .env.example .env.local
 # Edit .env.local with your API keys, then:
 docker compose up --build
 ```
+
+Open **http://localhost:3000**. The stack is two containers, the app and
+PostgreSQL; the app starts once PostgreSQL reports healthy. Courses, generated
+media and runtime sessions are [stored on the server](#server-backed-persistence-postgresql)
+in named volumes (`openmaic-postgres`, `openmaic-data`), so they survive
+`docker compose down` and rebuilds; `docker compose down -v` deletes them.
+
+The Compose file is set up as a **personal installation**:
+
+- **One owner.** `docker-compose.defaults.env` turns on
+  [single-user mode](#single-user-mode): every request resolves to one owner,
+  so every browser sees the same course library and publishing works. No
+  anonymous cookie is minted.
+- **Loopback only.** The app is published on `127.0.0.1:3000`, so only this
+  machine can reach it. PostgreSQL is not published at all.
+
+To reach it from other machines, protect it first:
+
+1. Set a long random `ACCESS_CODE` in `.env.local` (see
+   [ACCESS_CODE](#optional-access_code-shared-deployments)). This is strongly
+   recommended: without it, anyone who can reach the port is the single owner
+   and shares, edits and can delete the whole library.
+2. Set `PERSISTENCE_POSTGRES_PASSWORD` to a random value of letters and digits before the
+   first start (for an existing volume, see
+   [Server-backed persistence](#server-backed-persistence-postgresql)).
+3. Publish on the network address:
+   `OPENMAIC_PUBLISH_ADDRESS=0.0.0.0 docker compose up -d --build`.
+
+These Compose-level variables (`OPENMAIC_PUBLISH_ADDRESS`, `OPENMAIC_PORT` for
+the host port, `PERSISTENCE_POSTGRES_PASSWORD`) come from your shell or a `.env`
+file next to `docker-compose.yml`, not from `.env.local`. Single-user mode
+without `ACCESS_CODE` logs a prominent warning at startup, and the app also
+warns when it is published beyond loopback with the default PostgreSQL
+password; neither stops the server. A later first-run setup flow may prompt for
+an access code; until then, setting `ACCESS_CODE` is up to you.
+
+Each default in `docker-compose.defaults.env` can be overridden in `.env.local`,
+which Compose reads after it: for example `OWNER_SINGLE_USER=false` for one
+anonymous owner per browser (what `pnpm dev` does), or to use
+`PERSISTENCE_SHARED_OWNER_ID` instead, or your own `DATABASE_URL` for an
+external database. The bundled `postgres` service still starts in that case
+(the app waits for its health check) but is not used; remove it from a copy of
+the Compose file if you do not want it.
+
+> [!IMPORTANT]
+> **Upgrading an existing Compose deployment.** `docker compose up` now starts
+> PostgreSQL, the app always stores courses there, and the app is published on
+> `127.0.0.1` only.
+>
+> - If you served the app to other machines, start with
+>   `OPENMAIC_PUBLISH_ADDRESS=0.0.0.0`, and set `ACCESS_CODE`: every visitor
+>   is now the same single owner.
+> - `--profile server-persistence` is still accepted and changes nothing;
+>   PostgreSQL always starts.
+> - Courses an earlier browser-only deployment stored in the browser are not
+>   deleted: the first time each browser opens the upgraded app, a one-way
+>   importer moves them to the server automatically (see
+>   [Server-backed persistence](#server-backed-persistence-postgresql)) and
+>   leaves the browser copy untouched.
+> - Courses an earlier server-backed deployment stored under each browser's
+>   anonymous cookie stay with those anonymous owners: nothing is merged into
+>   the single owner automatically. To bring them in, claim them explicitly
+>   (see [Single-user mode](#single-user-mode)). If several people used that
+>   deployment, consider `OWNER_SINGLE_USER=false` instead, so each keeps their
+>   own library.
+> - A `DATABASE_URL` in `.env.local` still wins (an external database, or a
+>   password you rotated); without one, the app uses the bundled PostgreSQL
+>   with `PERSISTENCE_POSTGRES_PASSWORD`.
+> - If `.env.local` sets `PERSISTENCE_SHARED_OWNER_ID`, also set
+>   `OWNER_SINGLE_USER=false` there: the two exclude each other and the app
+>   refuses to start with both.
+> - There is no browser-storage-only image any more: the
+>   `NEXT_PUBLIC_PERSISTENCE` build argument is gone and ignored.
 
 #### Slow-network / China build acceleration
 
@@ -377,41 +489,68 @@ the cache only improves performance and is not required for a correct build.
 
 ### Server-backed persistence (PostgreSQL)
 
-The `server-persistence` profile runs exactly two containers: the OpenMAIC app
-and PostgreSQL. The persistence HTTP server is embedded in the app at
-`/api/persistence`; there is no standalone persistence service.
+OpenMAIC always stores courses on the server. The
+[Docker deployment](#docker-deployment) runs exactly two containers, the
+OpenMAIC app and PostgreSQL. The persistence HTTP server is embedded in the app
+at `/api/persistence`; there is no standalone persistence service.
+
+**`DATABASE_URL` is required.** Without it the server does not start: it prints
+`[boot] Invalid server configuration; the server will not start: DATABASE_URL is
+not set. ...` with the fix and exits with code `1`. Outside Compose, build
+normally and run with a `DATABASE_URL`:
 
 ```bash
-cp .env.example .env.local
-printf '\nDATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic\n' >> .env.local
-NEXT_PUBLIC_PERSISTENCE=1 docker compose --profile server-persistence up --build
+pnpm build
+DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
 ```
 
-Add your provider API keys to `.env.local` as usual. Runtime sessions, course
-documents and generated media become server-backed; device-scoped KV data
-(such as playback position) remains in the browser. Existing browser course
-data is copied into the configured server store lazily, one course at a time
-when it is first accessed, using the same verified migration path as browser
-persistence.
+For local development, `pnpm db:up` starts a separate development database
+(the Compose `postgres` service definition under its own project and volume,
+`openmaic-dev-db`, shared by every checkout on this machine) and publishes it on `127.0.0.1` (port `OPENMAIC_DB_PORT`, default `5432`); the
+matching `DATABASE_URL` is commented in `.env.example`, and `pnpm db:down` stops
+it again. Serverless hosts (see [Vercel Deployment](#vercel-deployment)) point
+`DATABASE_URL` at an external PostgreSQL database.
 
-`NEXT_PUBLIC_PERSISTENCE` is a **build-time switch** compiled into the browser
-bundle. A build with it enabled must be deployed with a working runtime
-`DATABASE_URL`. Otherwise the browser selects HTTP persistence but the embedded
-endpoint returns configuration or initialization errors; the home page shows a
-persistence-unavailable toast and keeps the prior course list instead of
-misleadingly displaying an empty library.
+Add your provider API keys to `.env.local` as usual. Course documents, folders,
+chat history and learner runtime sessions, and generated media are stored on
+the server. What stays in the browser is what belongs to the device and can be
+lost without losing a course: app settings and UI preferences, the playback
+position and the editor's current scene, the editor's undo history, a local
+cache of narration and media the server already stores (and bytes a full store
+refused, kept for a retry), PDF images staged during generation, and TTS voice
+profiles registered from that browser. **Settings → Clear Local Cache** clears
+exactly that and nothing on the server.
+
+**Upgrading from a browser-only build.** Courses an earlier browser-only build
+stored in the browser move to the server automatically, with no action and no
+UI: the first time that browser opens the upgraded app, once the page is idle,
+a one-way importer copies each course, with its chat, learner runtime, playback
+position, agent roster, folders and membership, quiz progress and media, to the
+owner the server resolves for that browser (the anonymous cookie owner by
+default), and the course appears in the library. This happens once per browser:
+the server binds the browser to the first owner that asks
+(`POST /api/identity/legacy-import-binding`), and a claim carries the binding to
+the account (an anonymous owner that signs in and is claimed). Every importer
+request carries the browser's id and is refused
+(`409 LEGACY_IMPORT_NOT_BOUND`) for any owner that does not hold the binding, so
+another owner that later uses the same browser gets nothing imported. The browser copy is left
+untouched, and **Settings → Clear Local Cache** does not delete it. A course the
+server already has for that owner stays as the server has it; one whose id
+another owner holds is imported under a new id; one deleted on the server is not
+brought back. The importer records its progress in the browser (with a random browser id and
+no owner information), so an interrupted import resumes on a later load and nothing is imported twice; problems are
+logged in the browser console under `[legacy-browser-import]`. The importer is
+temporary and will be removed a few releases later.
 
 The server course library and its folders (`/api/stages/**`, `/api/folders/**`)
-need only `DATABASE_URL`: they serve whether or not the
-[agent runtime](#optional-agent-workbench-and-runtime)
-(`OPENMAIC_AGENT_RUNTIME_ENABLED`) is on. Without a `DATABASE_URL` they answer
-`404`, as in browser-storage mode. `GET /api/agent/runtime` reports this as
-`persistence: true|false`, next to the runtime's own `enabled` and
-`runtimeEnabled`.
+serve whether or not the [agent runtime](#optional-agent-workbench-and-runtime)
+(`OPENMAIC_AGENT_RUNTIME_ENABLED`) is on. `GET /api/agent/runtime` reports
+`persistence`, next to the runtime's own `enabled` and `runtimeEnabled`.
 
 Every `/api/persistence` request is attributed to the owner the
-[owner identity seam](#owner-identity) resolves — by default the 30-day
-anonymous cookie, one owner per browser. There is no separate persistence
+[owner identity seam](#owner-identity) resolves — by default the
+anonymous cookie (400 days, renewed while in use), one owner per browser; in the Compose deployment, the one
+[single-user](#single-user-mode) owner. There is no separate persistence
 credential:
 
 - **Documents.** A read is capability-by-id: if the stage meta exists and is
@@ -437,8 +576,9 @@ credential:
   only by an owner who owns every course referencing them; the collector
   reclaims them as courses stop naming them, as before.
 
-Without a host auth method the owner is only as strong as a cookie: this is
-suitable for localhost, trusted-network, or single-team deployments. A
+Without a host auth method the owner is only as strong as a cookie (or, in
+single-user mode, as `ACCESS_CODE` or the loopback binding): this is suitable
+for localhost, trusted-network, or single-team deployments. A
 deployment with its own accounts registers owner auth methods (see
 [Owner identity](#owner-identity)) and every surface above follows it.
 
@@ -455,22 +595,21 @@ deployment with its own accounts registers owner auth methods (see
 > **If `PERSISTENCE_DEV_TOKEN` was your only access gate, act before upgrading.**
 > Without it the endpoint answers every visitor who reaches it, each as their
 > own anonymous owner. Put the deployment behind `ACCESS_CODE` or your own
-> gateway, register owner auth methods backed by your accounts (see
-> [Owner identity](#owner-identity)), or turn server persistence off
-> (`NEXT_PUBLIC_PERSISTENCE` unset) until you have one.
+> gateway, or register owner auth methods backed by your accounts (see
+> [Owner identity](#owner-identity)).
 
-`PERSISTENCE_POSTGRES_PASSWORD` initializes the PostgreSQL role only when the
-data directory is empty; changing it later does not rotate an existing
+`PERSISTENCE_POSTGRES_PASSWORD` (default `openmaic-dev`, for local use only)
+initializes the PostgreSQL role only when the data directory is empty, and
+the default `DATABASE_URL` in `docker-compose.defaults.env` is built from the
+same variable without encoding, so use letters and digits only (characters
+such as `@`, `/`, `#` or `?` break the URL; for such a password, set an
+encoded `DATABASE_URL` in `.env.local` instead). Changing it later does not rotate an existing
 `openmaic-postgres` volume. For a disposable local database, run
-`docker compose --profile server-persistence down -v`, set the new password and
-matching `DATABASE_URL`, then start the profile again. To preserve data, connect
-as an administrator and run `ALTER ROLE openmaic WITH PASSWORD 'new-password';`,
-then update `DATABASE_URL`.
-
-Compose cannot attach `depends_on` to `openmaic` only when this optional profile
-is active without also affecting the default deployment. Startup therefore
-relies on the embedded route's retry-on-next-request behavior while PostgreSQL
-becomes healthy.
+`docker compose down -v`, set the new password, then start again. To preserve
+data, run
+`docker compose exec postgres psql -U openmaic -d openmaic -c "ALTER ROLE openmaic WITH PASSWORD 'new-password';"`,
+then start with `PERSISTENCE_POSTGRES_PASSWORD=new-password` (or set the
+matching `DATABASE_URL` in `.env.local`).
 
 Assets are reclaimed by an offline collector rather than on a request path.
 **This deployment runs that collector by default**, so nothing has to be
@@ -546,20 +685,25 @@ The embedded endpoint implements the package's
 [RuntimeStore HTTP contract](packages/@openmaic/storage/docs/runtime-http-contract.md)
 and
 [DocumentStore HTTP contract](packages/@openmaic/storage/docs/document-http-contract.md).
-Leave `NEXT_PUBLIC_PERSISTENCE` unset to retain the existing browser-only
-behavior.
 
 Invalid configuration stops the server. The `register()` hook of
 `instrumentation.ts` refuses to start on:
 
+- a missing `DATABASE_URL`;
 - a malformed `ASSET_QUOTA_BYTES`, `ASSET_PENDING_TTL_MS`,
   `OWNER_WRITE_LOCK_WAIT_MS` or `OWNER_CLAIM_LOCK_WAIT_MS`;
 - `OWNER_CLAIM_TRIGGER` set to anything but `explicit` or `auto`;
+- `OWNER_ANONYMOUS_PREMINT` that is not a boolean;
 - the removed `OWNER_AUTHENTICATOR` / `TRUSTED_PROXY_*` variables, when set;
 - `PERSISTENCE_SHARED_OWNER_ID` that is malformed, set without `ACCESS_CODE`,
   or set beside an owner auth registration that leaves out
   `sharedTeamAuthMethod()`; `sharedTeamAuthMethod()` registered without the
   variable, or not as the last method;
+- `OWNER_SINGLE_USER` that is not a boolean, a malformed
+  `OWNER_SINGLE_USER_ID` or one set while the mode is off, single-user mode
+  beside `PERSISTENCE_SHARED_OWNER_ID`, or beside a registration that leaves out
+  `singleUserAuthMethod()`; `singleUserAuthMethod()` registered without the
+  switch, or not as the last method;
 - `ASSET_S3_BUCKET` set beside a registered asset byte store, or
   `ASSET_BYTE_EGRESS=redirect` with a registered byte store that does not
   declare `signsReadUrls: true`.
@@ -592,19 +736,84 @@ for one kind of credential and answers exactly one of:
 | `invalid` | Its credential is present but invalid | `401 INVALID_CREDENTIAL` at once; no later method and no fallback is asked |
 
 When every method answers `not-applicable`, the built-in **anonymous
-fallback** resolves the request: one owner per browser, `anon:<uuid>` from a
-30-day `HttpOnly` `anonymous_id` cookie, minted on first use. It cannot
-publish. A host can turn the fallback off, and then such a request is a `401`
+fallback** resolves the request: one owner per browser, `anon:<uuid>` from an
+`HttpOnly` `anonymous_id` cookie that lasts 400 days (the longest browsers
+keep one) and is renewed, same value, on every route handler and Server Action
+response that resolves to it, so it expires only after 400 days without use.
+Page responses do not renew it, so pages stay cacheable, and a response that
+clears it (a claim, a retired owner) never renews it. Losing it (a manual
+clear, or 400 days idle) loses access to that owner's library from the
+browser: anonymous identity has no other key, which is why the Compose
+deployment defaults to single-user mode and a multi-user host should use
+accounts. The middleware mints it on the page
+response of a browser's first load, so every request the page sends presents
+one owner; a route handler reached without a valid cookie mints one the same
+way, and a valid cookie is never replaced. It cannot publish. A host can turn the fallback off, and then such a request is a `401`
 too. A refused request is never served as an anonymous owner.
 
 Out of the box nothing is registered, so every request is an anonymous owner,
-unless `PERSISTENCE_SHARED_OWNER_ID` is set (requires `ACCESS_CODE`): then the
-built-in `sharedTeam` method resolves every request to that fixed id, so the
-team behind the access code shares one library and may publish.
+unless one of two built-ins is selected by the environment (they exclude each
+other):
+
+- `PERSISTENCE_SHARED_OWNER_ID` (requires `ACCESS_CODE`): the built-in
+  `sharedTeam` method resolves every request to that fixed id, so the team
+  behind the access code shares one library and may publish.
+- `OWNER_SINGLE_USER=true` (the Compose default): the built-in `singleUser`
+  method resolves every request to one owner for a personal installation; see
+  [Single-user mode](#single-user-mode).
 
 Authorization reads the principal's `kind` and `roles`, never the shape of the
 id. The core roles are `course:publish` (publish and unpublish a course) and
 `admin` (reserved for administrative surfaces; no built-in grants it).
+
+##### Single-user mode
+
+`OWNER_SINGLE_USER=true` resolves every request to one fixed owner,
+`OWNER_SINGLE_USER_ID` (default `local`; 1-128 characters of `[A-Za-z0-9._-]`,
+so the reserved `anon:` prefix is impossible). The principal is
+`kind: 'user'` with the `course:publish` role: it is one person's own
+installation, so publishing works, and unlike `sharedTeam` (a team behind one
+code, no one person) it gets a claim candidate, see below. No anonymous cookie
+is minted.
+
+**Exposure.** Every request becomes the owner of the whole library, and a route
+handler cannot tell a local client from a remote one (it does not see the TCP
+peer, and forwarding headers are set by the client), so nothing inspects
+requests. Single-user mode runs with or without `ACCESS_CODE`:
+
+- **With `ACCESS_CODE`**, the access-code gate admits requests, as for
+  `sharedTeam`.
+- **Without it**, the deployment relies on nobody else reaching the server:
+  bind it to loopback or a private network (the Compose file publishes on
+  `127.0.0.1` by default; outside Compose, for example
+  `pnpm start -H 127.0.0.1`). The server logs one prominent warning at startup
+  explaining that anyone who can reach it shares, edits and can delete the
+  single library, and how to set `ACCESS_CODE`. It does not refuse to start.
+
+A later first-run setup flow may prompt for an access code; for now, set
+`ACCESS_CODE` yourself before the server is reachable by others.
+
+**Earlier anonymous work.** A browser that used the deployment anonymously
+before still sends its `anonymous_id` cookie. The single-user principal gets a
+`pendingClaim` for it (see [Claiming anonymous work](#claiming-anonymous-work)),
+but nothing moves on its own: the default trigger is explicit. To bring that
+work into the single owner, send `POST /api/identity/claim` (same-origin JSON,
+body `{}`) from that browser, or set `OWNER_CLAIM_TRIGGER=auto` knowingly.
+
+> [!WARNING]
+> A claim is irreversible. With `OWNER_CLAIM_TRIGGER=auto`, **every** browser
+> that visits merges its anonymous library into the single owner on its first
+> request. If several people used the deployment anonymously before, that
+> merges all their libraries into one shared, deletable library.
+
+**The owner id is permanent.** Changing `OWNER_SINGLE_USER_ID` later, or
+switching from `PERSISTENCE_SHARED_OWNER_ID`, leaves the previous owner's
+library stranded: it is not anonymous, so it cannot be claimed. To keep a
+shared-team library, set `OWNER_SINGLE_USER_ID` to the same id.
+
+A host that registers its own methods and also wants the single owner as the
+last resort includes `singleUserAuthMethod()` (exported from
+`@/lib/server/identity`) last, under the same rules as `sharedTeamAuthMethod()`.
 
 ##### Registering methods
 
@@ -656,6 +865,20 @@ configureOwnerAuthentication({
   work that holds only the id (an agent run, a claim). The anonymous fallback
   is asked first, then the methods in order. An id nobody recognizes is a
   `user` with no roles.
+- The middleware mints the anonymous cookie on page navigations whenever
+  neither `OWNER_SINGLE_USER` nor `PERSISTENCE_SHARED_OWNER_ID` is set: it can
+  run in the Edge runtime and cannot see this registration. A page cookie next
+  to a host credential is a claim candidate like any other anonymous cookie.
+  - With `anonymousFallback: false`, set `OWNER_ANONYMOUS_PREMINT=false`: the
+    cookie would serve no request, and with `OWNER_CLAIM_TRIGGER=auto` it
+    would be claimed and cleared after every cookieless page load. The server
+    warns at startup when this registration leaves pre-minting on.
+  - With the anonymous fallback on (the default), keep pre-minting: without
+    it, an anonymous visitor's first API requests each mint their own owner
+    again. To avoid a claim candidate beside your credential, skip
+    `anonymousOwnerForNavigation` in `middleware.ts` only for the requests your
+    methods authenticate themselves (a page request carrying your session
+    cookie, say).
 - `issuesAnonymousOwners: true` with `clearCredential()` is only for a method
   that authenticates anonymous principals itself with a cookie: those
   `Set-Cookie` values ride every `403 OWNER_RETIRED`. Core never calls
@@ -822,7 +1045,8 @@ from anonymous use to accounts while visitors still hold their old cookie
 (with the fallback on or off). There is no candidate without a valid cookie,
 for an anonymous principal, or for the built-in `sharedTeam` (it has no
 credential of its own, so nothing says whose browser work it is); a method
-cannot set one itself.
+cannot set one itself. The built-in `singleUser` does get one: its deployment
+has one person, so the cookie names that person's earlier anonymous work.
 
 Nothing moves until the claim is triggered:
 
@@ -873,6 +1097,9 @@ What moves, in this fixed order (a host adds its own tables with
    session written by a newer version does not stop the claim.
 7. **Asset entries** (the per-owner partition), so a claimed course keeps
    rendering its media for every viewer.
+8. **Legacy import bindings** (temporary, with the one-way legacy browser
+   import): a browser whose pre-server data the anonymous owner held is then
+   the account's, so the import continues for it.
 
 Quotas are not applied to what moves: the account keeps everything, and if it
 is now above its asset, material, skill or folder limit it cannot add more
@@ -934,7 +1161,7 @@ A host registers participants for its own owner-keyed tables from
 const { registerClaimParticipant } = await import('@/lib/persistence/owner-claims');
 registerClaimParticipant({
   name: 'course-notes',
-  order: 1000, // after core's 100-700; see lib/persistence/owner-claims.ts
+  order: 1000, // after core's 100-800; see lib/persistence/owner-claims.ts
   rekey: async (tx, fromOwnerId, toOwnerId) =>
     (
       await tx.query('UPDATE course_notes SET owner_id = $2 WHERE owner_id = $1 RETURNING 1', [
@@ -1064,8 +1291,8 @@ with direct bytes, like the built-in fallback; the collector never signs.
 The Pro workbench is a usable course-building surface entered from the home
 page. Its collapsible navigation rail, conversation pane, and tabbed classroom
 pane share `/api/agent/*` control-plane routes and an in-process session runner.
-It is off by default. Enable its build-time entry point and the server runtime
-with the same PostgreSQL connection used by server-backed persistence:
+It is off by default. Enable its build-time entry point and the server runtime;
+it uses the same PostgreSQL connection as the rest of the app:
 
 ```env
 NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=true
@@ -1076,18 +1303,11 @@ MODEL_ROUTES='{"maic-agent-driver":{"model":"openai:gpt-5.5","api":"openai-compl
 
 While the flag is off, the `/api/agent/sessions*` and `/api/agent/owner-events`
 routes answer `404`; the course library and folder routes do not depend on the
-flag, only on `DATABASE_URL` (see
-[Server-backed persistence](#server-backed-persistence-postgresql)). Enabling it
-without a `DATABASE_URL` never starts the runner and makes the session routes
-error, so the runtime is server-backed by design. `MODEL_ROUTES` must explicitly
+flag (see [Server-backed persistence](#server-backed-persistence-postgresql)). `MODEL_ROUTES` must explicitly
 route `maic-agent-driver` to a provider-prefixed model with an
 `openai-completions` or `openai-responses` `api`/`dialect`; there is intentionally
 no fallback.
 
-To make the browser use the same server-backed document and runtime stores,
-also build with `NEXT_PUBLIC_PERSISTENCE=1` and configure the matching
-development tokens described in [Server-backed persistence](#server-backed-persistence-postgresql).
-Without these opt-ins, OpenMAIC retains its existing browser-only behavior.
 Runner cadence (scan interval, heartbeat, lease TTL, concurrency, attempts) and
 the reserved compaction knobs are listed in `.env.example`.
 
@@ -1139,7 +1359,7 @@ TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
 
 - **Auto Voice** (default): OpenMAIC generates a voice prompt from each agent's persona at synthesis time. No setup required.
 - **Prompt voice**: describe the voice in natural language, e.g. *"warm female teacher voice, calm and encouraging, mid-pitch"*.
-- **Clone voice**: upload a short reference audio clip or record one in the browser. The clip is stored in IndexedDB and sent to your VoxCPM backend on each synthesis.
+- **Clone voice**: upload a short reference audio clip or record one in the browser. The clip is stored in this browser (IndexedDB) and sent to your VoxCPM backend on each synthesis.
 
 ---
 
@@ -1195,13 +1415,14 @@ vendor.
 
 ### Pluggable Storage
 
-OpenMAIC runs without a database by default: course documents, learner runtime
-records, device/account KV values, and assets use browser storage. The
-`@openmaic/storage` package defines swappable stores for those primitives and
-adds PostgreSQL-backed documents, learner runtime, assets, durable agent
-sessions, session materials, and user skills. HTTP clients connect the browser
-to the embedded persistence endpoint, while the server asset layer can keep
-bytes in PostgreSQL or S3.
+OpenMAIC stores course documents, learner runtime records and assets on the
+server, in PostgreSQL. The `@openmaic/storage` package defines swappable stores
+for those primitives — PostgreSQL-backed documents, learner runtime, assets,
+durable agent sessions, session materials, and user skills, plus browser
+implementations for embedders — and HTTP clients connect the browser to the
+embedded persistence endpoint, while the server asset layer can keep bytes in
+PostgreSQL or S3. Device-scoped KV values (settings, playback position) stay in
+the browser.
 
 ### Deep Interactive Mode (New!)
 
@@ -1473,7 +1694,7 @@ Optional config in `~/.openclaw/openclaw.json`:
 | **Interactive HTML** | Self-contained web pages with interactive simulations |
 | **Classroom ZIP** | Full classroom export (course structure + media) for backup or sharing |
 
-With server-backed persistence enabled, importing a classroom ZIP stores its embedded audio, images, video, and posters in the server asset pool before saving the course. Other browsers can resolve those imported assets without the importing browser's cache. Browser-only imports remain local. This does not automatically migrate existing browser courses; export them from the original browser and import the ZIP on the destination deployment.
+Importing a classroom ZIP stores its embedded audio, images, video, and posters in the server asset pool before saving the course, so other browsers resolve those assets without the importing browser's cache. A ZIP is also a way to move a course between deployments: export it from one and import it on the other.
 
 **Offline / intranet classrooms:** When you export a classroom (`.maic.zip`) or a Resource Pack, OpenMAIC inlines the external assets referenced by interactive scenes (KaTeX, Three.js incl. `three/addons`, Tailwind CDN, Google Fonts, images) into the exported HTML as `data:` URIs. The exported course then plays fully offline after import into an air-gapped/intranet instance — no public CDN is contacted at playback time. Assets that can't be fetched at export time (e.g. CORS-restricted image hosts) are reported and left as URLs. Classrooms exported *before* this feature still reference CDNs and must be re-exported to gain offline support.
 

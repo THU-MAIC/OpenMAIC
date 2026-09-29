@@ -1,16 +1,17 @@
 /**
- * Device-anonymous learner identity for the runtime layer (#869).
+ * Learner identity for the runtime layer (#869).
  *
- * `learnerKey` partitions all learner-runtime data (RuntimeStore sessions).
- * Until sign-in exists it is a per-device anonymous key: minted once and kept
- * in the KV `device` scope, which never syncs across devices — a synced key
- * would merge two people's runtime into one partition. When sign-in lands,
- * `RuntimeStore.mergeLearner(anonKey, accountKey)` is the migration path.
+ * `learnerKey` partitions all learner-runtime data (RuntimeStore sessions). In
+ * the browser it is the key the server derives from the request owner, fetched
+ * by the persistence bootstrap and supplied through runtime configuration.
  *
- * Client-only: the default KV store lazily touches `localStorage`. Server
- * code must not import this without injecting its own `KVStore`.
+ * An injected KV store keeps the device-anonymous scheme this layer started
+ * with -- a key minted once and kept in the KV `device` scope -- for tests and
+ * callers with their own storage. Browser runtime data written before
+ * persistence moved to the server is partitioned by such a key, stored under
+ * {@link LEARNER_KEY_KV_KEY}; the one-way importer reads it from there.
  */
-import { BrowserKVStore, type KVStore } from '@openmaic/storage';
+import type { KVStore } from '@openmaic/storage';
 
 import { registerRuntimeStorageResetHook, resolveConfiguredLearnerKey } from './config';
 
@@ -18,14 +19,10 @@ export const LEARNER_KEY_KV_KEY = 'runtime.learnerKey';
 
 const LEARNER_KEY_LOCK = 'maic:learner-key';
 
-let defaultKv: KVStore | undefined;
-let defaultInFlight: Promise<string> | undefined;
 let configuredInFlight: Promise<string> | undefined;
 
 registerRuntimeStorageResetHook(() => {
   configuredInFlight = undefined;
-  defaultInFlight = undefined;
-  defaultKv = undefined;
 });
 
 function mintLearnerKey(): string {
@@ -69,7 +66,7 @@ async function readOrMint(store: KVStore): Promise<string> {
  * Resolve the client session's learner partition key.
  *
  * An explicit KV store takes priority over app-wide configuration. Without an
- * explicit store, a configured provider is invoked only on first resolution:
+ * explicit store, the configured provider is invoked only on first resolution:
  * concurrent calls share its in-flight promise and the first resolved value is
  * retained for the session. Identity changes mid-session belong in the
  * application layer (reload or a `mergeLearner` flow).
@@ -84,18 +81,16 @@ export function getLearnerKey(kv?: KVStore): Promise<string> {
   if (kv) return readOrMint(kv);
 
   const configured = configuredInFlight ?? resolveConfiguredLearnerKey();
-  if (configured) {
-    configuredInFlight ??= configured.catch((error) => {
-      configuredInFlight = undefined;
-      throw error;
-    });
-    return configuredInFlight;
+  if (!configured) {
+    return Promise.reject(
+      new Error(
+        'The runtime learner key is not configured: the browser persistence bootstrap configures it',
+      ),
+    );
   }
-  // Concurrent same-bundle callers share one in-flight read/mint. A failure
-  // is not cached — a transient storage error must not pin every later call.
-  defaultInFlight ??= readOrMint((defaultKv ??= new BrowserKVStore())).catch((error) => {
-    defaultInFlight = undefined;
+  configuredInFlight ??= configured.catch((error) => {
+    configuredInFlight = undefined;
     throw error;
   });
-  return defaultInFlight;
+  return configuredInFlight;
 }

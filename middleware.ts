@@ -2,6 +2,25 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { isAgentRuntimeConfigured, isProWorkbenchEnabled } from '@/lib/config/feature-flags';
 import { verifyAccessTokenEdge } from '@/lib/server/access-token-edge';
+import {
+  anonymousOwnerForNavigation,
+  type NavigationIdentity,
+} from '@/lib/server/identity/navigation';
+
+/**
+ * Let the request through, carrying the anonymous owner a page request
+ * establishes: the cookie is set on the page response, and the forwarded
+ * request carries it too, so the page and every request it sends resolve one
+ * owner (see `lib/server/identity/navigation.ts`).
+ */
+function next(request: NextRequest, identity: NavigationIdentity | undefined): NextResponse {
+  if (!identity) return NextResponse.next();
+  const headers = new Headers(request.headers);
+  headers.set('cookie', identity.requestCookie);
+  const response = NextResponse.next({ request: { headers } });
+  response.headers.append('set-cookie', identity.setCookie);
+  return response;
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -17,20 +36,28 @@ export async function middleware(request: NextRequest) {
     return new NextResponse('Not found', { status: 404 });
   }
 
+  // One anonymous owner per browser, established on the page response before
+  // any API request can mint its own.
+  const identity = anonymousOwnerForNavigation({
+    method: request.method,
+    headers: request.headers,
+    pathname,
+  });
+
   const accessCode = process.env.ACCESS_CODE;
   if (!accessCode) {
-    return NextResponse.next();
+    return next(request, identity);
   }
 
   // Whitelist: access-code endpoints, health check
   if (pathname.startsWith('/api/access-code/') || pathname === '/api/health') {
-    return NextResponse.next();
+    return next(request, identity);
   }
 
   // Check cookie — validate HMAC signature, not just existence
   const cookie = request.cookies.get('openmaic_access');
   if (cookie?.value && (await verifyAccessTokenEdge(cookie.value, accessCode))) {
-    return NextResponse.next();
+    return next(request, identity);
   }
 
   // API requests without valid cookie → 401
@@ -42,7 +69,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Page requests → let through, frontend shows modal
-  return NextResponse.next();
+  return next(request, identity);
 }
 
 export const config = {

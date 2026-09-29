@@ -1,4 +1,7 @@
+import { LEGACY_IMPORT_HEADER } from '@/lib/persistence/legacy-import-bindings';
+
 import { resolveRequestOwner } from './resolve';
+import { resolveResponseSetCookies } from './set-cookie';
 import type { OwnerAuthRequest, OwnerPrincipal } from './types';
 
 /**
@@ -39,7 +42,57 @@ export async function authenticateRequestOwner(
   const responseHeaders = new Headers();
   for (const value of outcome.setCookies ?? []) responseHeaders.append('Set-Cookie', value);
   const principal = await autoClaim(req, outcome.principal, responseHeaders);
+  const fenced = await legacyImportFence(req, principal.ownerId, responseHeaders);
+  if (fenced) return { ok: false, response: fenced };
   return { ok: true, principal, responseHeaders };
+}
+
+/**
+ * The server side of the one-way import of pre-server browser data
+ * (`lib/legacy-browser-import/`): a request that carries a browser id in
+ * `X-OpenMAIC-Legacy-Import` is the importer's, and is refused with
+ * `409 LEGACY_IMPORT_NOT_BOUND` unless the owner it resolves to holds that
+ * browser's binding (`lib/persistence/legacy-import-bindings.ts`). Checked
+ * here, in the one resolution every owner-scoped route goes through, so no
+ * route the importer writes to can skip it; a request without the header is
+ * not affected. A malformed id answers 400; a binding that cannot be read
+ * (the database is down) answers 503, which the importer retries. Every
+ * answer carries the resolution's `Set-Cookie` values.
+ */
+async function legacyImportFence(
+  req: OwnerAuthRequest,
+  ownerId: string,
+  responseHeaders: Headers,
+): Promise<Response | undefined> {
+  const browserId = req.headers.get(LEGACY_IMPORT_HEADER);
+  if (browserId === null) return undefined;
+  const refuse = (status: number, code: string, message: string) =>
+    Response.json({ error: { code, message } }, { status, headers: responseHeaders });
+  const { BROWSER_ID_PATTERN, LEGACY_IMPORT_NOT_BOUND, legacyImportBindingOwner } =
+    await import('@/lib/persistence/legacy-import-bindings');
+  if (!BROWSER_ID_PATTERN.test(browserId)) {
+    return refuse(400, 'INVALID_REQUEST', 'the legacy import browser id is malformed');
+  }
+  const connectionString = process.env.DATABASE_URL?.trim();
+  if (!connectionString) {
+    return refuse(409, LEGACY_IMPORT_NOT_BOUND, 'this browser is not bound to this owner');
+  }
+  let holder: string | null;
+  try {
+    const { getServerPersistenceProvider } = await import('@/lib/persistence/server-provider');
+    const { pool } = await getServerPersistenceProvider(connectionString);
+    holder = await legacyImportBindingOwner(
+      pool as unknown as Parameters<typeof legacyImportBindingOwner>[0],
+      browserId,
+    );
+  } catch (error) {
+    console.error('[owner-identity] the legacy import binding could not be read', error);
+    return refuse(503, 'PERSISTENCE_UNAVAILABLE', 'the legacy import binding could not be read');
+  }
+  if (holder !== ownerId) {
+    return refuse(409, LEGACY_IMPORT_NOT_BOUND, 'this browser is not bound to this owner');
+  }
+  return undefined;
 }
 
 /** The routes that perform a claim themselves: `POST /api/identity/claim` and the runtime learner merge. */
@@ -95,6 +148,32 @@ async function autoClaim(
 }
 
 /**
+ * Attach the `Set-Cookie` values an owner resolution returned (a minted
+ * anonymous owner, or the renewal of a presented one) to a response a route
+ * built itself, keeping only the clearing value for a cookie the response
+ * also clears. For routes that call {@link resolveRequestOwner} directly
+ * instead of {@link withRequestOwner}: every response of such a route,
+ * success or error, goes through this, so an identity used only there is
+ * renewed too. A streaming response gets them before it is returned, i.e.
+ * before its body starts.
+ */
+export function attachOwnerCookies(
+  response: Response,
+  setCookies: readonly string[] | undefined,
+): Response {
+  if (!setCookies?.length) return response;
+  const headers = new Headers(response.headers);
+  for (const value of setCookies) headers.append('Set-Cookie', value);
+  return resolveResponseSetCookies(
+    new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    }),
+  );
+}
+
+/**
  * Resolve the request owner and run a handler with it and the response
  * headers every response must carry. A handler that throws answers a 500 that
  * still carries them.
@@ -107,7 +186,9 @@ export async function withRequestOwner(
   if (!resolution.ok) return resolution.response;
   const { principal, responseHeaders } = resolution;
   try {
-    return await handler(principal, responseHeaders);
+    // A response that clears the anonymous cookie (a claim, a retired owner)
+    // must not also renew it, whatever order the handler merged them in.
+    return resolveResponseSetCookies(await handler(principal, responseHeaders));
   } catch (error) {
     console.error('[owner-identity] owner-scoped request failed', error);
     return new Response('Internal Server Error', { status: 500, headers: responseHeaders });

@@ -1,22 +1,20 @@
 /**
  * Stage Storage Manager
  *
- * Manages multiple stage data in IndexedDB
- * Each stage has its own storage key based on stageId
+ * Saves, loads, lists and deletes courses through the server-backed document
+ * store, and manages the owner's folders through the `/api/folders` routes.
  */
 
 import { Stage, Scene } from '../types/stage';
 import { ChatSession } from '../types/chat';
-import { db } from './database';
-import type { FolderRecord } from './database';
-import { nanoid } from 'nanoid';
-import { validateFolderName, FOLDER_COUNT_LIMIT, FolderNameError } from './folder-name-validation';
+import { db } from '@/lib/device-storage/database';
+import type { FolderRecord } from '@/lib/types/folder';
+import { FolderNameError } from './folder-name-validation';
 export { FolderNameError } from './folder-name-validation';
 import {
   ChatStorageLockUnavailableError,
   saveChatSessions,
   loadChatSessions,
-  deleteChatSessions,
   type ChatStorageSnapshot,
 } from './chat-storage';
 import isEqual from 'lodash/isEqual';
@@ -25,7 +23,6 @@ import {
   accessDocument,
   clearCurrentScene,
   getDocumentStore,
-  getLegacyDocumentStore,
   loadCurrentScene,
   mutateDocument,
   saveCurrentScene,
@@ -40,7 +37,6 @@ import {
   withRuntimeStorageSharedLock,
 } from './chat-storage-lock';
 import { DocumentVersionError, type DocumentSummary } from '@openmaic/storage';
-import { isBrowserPersistenceEnabled } from '@/lib/persistence/bootstrap';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import {
   MISSING_ASSET_LEASE,
@@ -72,6 +68,13 @@ import {
 import { slideMediaReferenceSlots } from '@/lib/media/slide-media-slots';
 
 const log = createLogger('StageStorage');
+
+/**
+ * Dispatched on `window` when something other than the library page changed
+ * the owner's courses or folders in the background (the one-way importer of
+ * pre-server browser data does), so an open library can list them again.
+ */
+export const LIBRARY_CHANGED_EVENT = 'openmaic:library-changed';
 
 export interface StageStoreData {
   stage: Stage;
@@ -610,13 +613,7 @@ async function performStageDeletion(stageId: string): Promise<void> {
           try {
             // Collect scene ids before deletion so we can sweep per-scene localStorage
             // keys (quiz draft / submitted answers / graded results).
-            const legacyScenes = await db.scenes.where('stageId').equals(stageId).toArray();
-            const sceneIds = [
-              ...new Set([
-                ...(document?.scenes.map((s) => s.id) ?? []),
-                ...legacyScenes.map((s) => s.id),
-              ]),
-            ];
+            const sceneIds = [...new Set(document?.scenes.map((s) => s.id) ?? [])];
 
             await store.deleteDocument(stageId);
             documentDeleted = true;
@@ -628,11 +625,8 @@ async function performStageDeletion(stageId: string): Promise<void> {
             // released by the server's own pass once the grace elapses.
             await clearStageMediaCache(stageId);
 
-            // Clear legacy chat rows and the device-scoped playback cursor. Runtime
-            // rows of every kind are removed by the all-kind cascade below.
-            await deleteChatSessions(stageId);
-            // An unmigrated legacy playback row must not outlive its stage.
-            await db.playbackState.delete(stageId);
+            // Clear the device-scoped playback cursor. Runtime rows of every
+            // kind are removed by the all-kind cascade below.
             try {
               await clearCursor(stageId);
             } catch (error) {
@@ -649,32 +643,9 @@ async function performStageDeletion(stageId: string): Promise<void> {
               clearAllForScene(sceneId);
             }
 
-            // Migration retains legacy rows, but an explicit whole-stage deletion does not.
-            // Folder membership is device-local organization metadata; drop it too.
-            await db.transaction(
-              'rw',
-              [db.stages, db.scenes, db.stageOutlines, db.stageFolders],
-              async () => {
-                await db.stages.delete(stageId);
-                await db.scenes.where('stageId').equals(stageId).delete();
-                await db.stageOutlines.delete(stageId);
-                await db.stageFolders.delete(stageId);
-              },
-            );
-
-            // Mirror hygiene: the legacy roster mirror is read-only migration
-            // input, but a deleted stage needs no migration source — drop its
-            // rows. Best-effort: a failure here must not abort the deletion.
-            try {
-              await db.generatedAgents.where('stageId').equals(stageId).delete();
-            } catch (error) {
-              log.warn(`Failed to clear legacy agent mirror rows for stage ${stageId}:`, error);
-            }
-
-            // Learner-runtime data lives in a separate IndexedDB database, so it is
-            // cascaded after the Dexie work: it cannot join those transactions, and a
-            // runtime failure must not abort them (the helper warns instead of
-            // throwing).
+            // Learner-runtime data is a separate store, so it is cascaded after
+            // the document: a runtime failure must not undo the deletion (the
+            // helper warns instead of throwing).
             const runtimeDeletion = beginStageRuntimeDeletionSafely(stageId);
             await runtimeDeletion.completion;
             try {
@@ -740,91 +711,39 @@ async function performStageDeletion(stageId: string): Promise<void> {
 }
 
 /**
- * PG mode: the owner-scoped course listing.
+ * List the owner's courses, newest first.
  *
  * The generic `GET /api/persistence/documents` listing is deliberately refused
  * server-side (`403 FORBIDDEN_DOCUMENTS`): the capability model serves reads by
- * id and listings owner-only, so the home's course list must not ask for an
- * unscoped listing at all. `GET /api/stages` IS the owner listing — it resolves
- * the anonymous owner from the same cookie the workbench uses and returns that
- * owner's stage documents. Folders list through the owner-scoped
- * `GET /api/folders` (see `listOwnerFoldersFromServer`), while membership stays
- * device-local (Dexie), so the same membership overlay the local path applies
- * keeps courses filed in this browser grouped.
- */
-async function listOwnerStagesFromServer(): Promise<StageListItem[]> {
-  const res = await fetch('/api/stages', { credentials: 'include' });
-  if (!res.ok) {
-    throw new Error(`Failed to list owner stages: HTTP ${res.status}`);
-  }
-  const body = (await res.json().catch(() => null)) as { stages?: unknown } | null;
-  if (!body || !Array.isArray(body.stages)) {
-    throw new Error('Malformed /api/stages response: expected { stages: [...] }');
-  }
-  const memberships = await db.stageFolders.toArray();
-  const folderByStage = new Map(memberships.map((m) => [m.stageId, m.folderId]));
-  return (body.stages as DocumentSummary[])
-    .map((item) => {
-      const base: StageListItem = {
-        id: item.id,
-        name: item.name,
-        sceneCount: item.sceneCount,
-        createdAt: item.createdAt,
-        updatedAt: item.updatedAt,
-        ...(item.description !== undefined ? { description: item.description } : {}),
-        ...(item.interactiveMode !== undefined ? { interactiveMode: item.interactiveMode } : {}),
-        ...(item.taskEngineMode !== undefined ? { taskEngineMode: item.taskEngineMode } : {}),
-      };
-      const folderId = folderByStage.get(item.id) ?? item.folderId;
-      return folderId ? { ...base, folderId } : base;
-    })
-    .sort((a, b) => b.updatedAt - a.updatedAt);
-}
-
-/**
- * List all stages
+ * id and listings owner-only, so the course list must not ask for an unscoped
+ * listing at all. `GET /api/stages` IS the owner listing — it resolves the
+ * owner from the same cookie the workbench uses and returns that owner's stage
+ * documents, each with the folder it is filed in.
  */
 export async function listStages(): Promise<StageListItem[]> {
   try {
-    if (isBrowserPersistenceEnabled()) {
-      // Server persistence is on: the generic document listing answers 403 by
-      // design, so the home/workspace library lists through the owner-scoped
-      // workbench surface instead.
-      return await listOwnerStagesFromServer();
+    const res = await fetch('/api/stages', { credentials: 'include' });
+    if (!res.ok) {
+      throw new Error(`Failed to list owner stages: HTTP ${res.status}`);
     }
-    const summaries = await getDocumentStore().listDocuments();
-    const ids = new Set(summaries.map((summary) => summary.id));
-    const legacy = await getLegacyDocumentStore().listStages();
-    const legacyOnly = await Promise.all(
-      legacy
-        .filter((stage) => !ids.has(stage.id))
-        .map(async (stage) => {
-          const snapshot = await getLegacyDocumentStore().read(stage.id);
-          return snapshot ? { ...stage, sceneCount: snapshot.scenes.length } : null;
-        }),
-    );
-    // Folder membership is device-local metadata kept in this Dexie database,
-    // not in the DocumentStore; join it in so callers can group courses.
-    const memberships = await db.stageFolders.toArray();
-    const folderByStage = new Map(memberships.map((m) => [m.stageId, m.folderId]));
-    return [
-      ...summaries,
-      ...legacyOnly
-        .filter((stage) => stage !== null)
-        .map((stage) => ({
-          id: stage.id,
-          name: stage.name,
-          description: stage.description,
-          sceneCount: stage.sceneCount,
-          createdAt: stage.createdAt,
-          updatedAt: stage.updatedAt,
-          interactiveMode: stage.interactiveMode,
-          taskEngineMode: stage.taskEngineMode,
-        })),
-    ]
-      .map((item) =>
-        folderByStage.get(item.id) ? { ...item, folderId: folderByStage.get(item.id) } : item,
-      )
+    const body = (await res.json().catch(() => null)) as { stages?: unknown } | null;
+    if (!body || !Array.isArray(body.stages)) {
+      throw new Error('Malformed /api/stages response: expected { stages: [...] }');
+    }
+    return (body.stages as DocumentSummary[])
+      .map((item) => {
+        const base: StageListItem = {
+          id: item.id,
+          name: item.name,
+          sceneCount: item.sceneCount,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          ...(item.description !== undefined ? { description: item.description } : {}),
+          ...(item.interactiveMode !== undefined ? { interactiveMode: item.interactiveMode } : {}),
+          ...(item.taskEngineMode !== undefined ? { taskEngineMode: item.taskEngineMode } : {}),
+        };
+        return item.folderId ? { ...base, folderId: item.folderId } : base;
+      })
       .sort((a, b) => b.updatedAt - a.updatedAt);
   } catch (error) {
     log.error('Failed to list stages:', error);
@@ -1106,9 +1025,7 @@ export async function renameStage(stageId: string, newName: string): Promise<voi
  */
 export async function stageExists(stageId: string): Promise<boolean> {
   try {
-    const summaries = await getDocumentStore().listDocuments();
-    if (summaries.some((stage) => stage.id === stageId)) return true;
-    return (await getLegacyDocumentStore().read(stageId)) !== null;
+    return (await getDocumentStore().loadDocument(stageId)) !== null;
   } catch (error) {
     log.error('Failed to check stage existence:', error);
     return false;
@@ -1117,15 +1034,11 @@ export async function stageExists(stageId: string): Promise<boolean> {
 
 // ==================== Course Folders ====================
 //
-// Folders are course-grouping metadata. Without server persistence they are
-// device-local, living in this Dexie database (`folders` + `stageFolders`
-// tables) and never touching the course document aggregate owned by the
-// `@openmaic/storage` DocumentStore. With server persistence on (`listStages`
-// reads `/api/stages`, the workspace rail's folder family writes
-// `/api/folders`), the folder list and every folder mutation go through the
-// same owner-scoped server store, so a folder created there is visible to the
-// very list that rendered the create action. A course with no `stageFolders`
-// row (or one with `folderId === undefined`) is unfiled.
+// Folders are course-grouping metadata owned by the same owner as the courses.
+// The list and every folder mutation go through the owner-scoped
+// `/api/folders` routes — the same store the workspace rail and the agent's
+// `create_folder` tool write to — and membership through
+// `/api/folders/members`. A course with no membership is unfiled.
 
 /** The wire shape of the owner-scoped folder routes (`/api/folders`). */
 type FolderRouteBody = {
@@ -1137,8 +1050,7 @@ type FolderRouteBody = {
 
 /**
  * Map a route refusal (`{ error: { code, message } }`) onto the shared
- * `FolderNameError`, exactly like the local storage boundary throws — one
- * error type for every dialog, whichever store refused the name.
+ * `FolderNameError`, so every dialog maps one error type.
  */
 function folderRouteError(body: FolderRouteBody | null | undefined): Error {
   const code = body?.error?.code;
@@ -1170,13 +1082,9 @@ function toFolderRecord(folder: FolderRecord): FolderRecord {
 }
 
 /**
- * PG mode: the owner-scoped folder listing — the same store the workspace
- * rail's `/api/folders` family and the agent's `create_folder` tool write to.
- * With server persistence on, a Dexie snapshot can never contain a
- * server-created folder, so the list the sidebar renders must read the server
- * or a created folder would not appear without a reload.
+ * List the owner's folders, ordered by their `order` field (ascending).
  */
-async function listOwnerFoldersFromServer(): Promise<FolderRecord[]> {
+export async function listFolders(): Promise<FolderRecord[]> {
   const res = await fetch('/api/folders', { credentials: 'include' });
   if (!res.ok) {
     throw new Error(`Failed to list owner folders: HTTP ${res.status}`);
@@ -1189,39 +1097,11 @@ async function listOwnerFoldersFromServer(): Promise<FolderRecord[]> {
 }
 
 /**
- * List all folders, ordered by their `order` field (ascending).
+ * Create a folder. The route validates the name (width + uniqueness) and the
+ * count limit inside its owner-scoped transaction; its refusals map onto
+ * `FolderNameError`.
  */
-export async function listFolders(): Promise<FolderRecord[]> {
-  if (isBrowserPersistenceEnabled()) {
-    return await listOwnerFoldersFromServer();
-  }
-  const folders = await db.folders.toArray();
-  return folders.sort((a, b) => a.order - b.order);
-}
-
-/** Validate a folder name against the width rule and (optionally) duplicates. */
-function assertFolderName(name: string, existing: FolderRecord[], currentId?: string): void {
-  const result = validateFolderName(name);
-  if (!result.ok) {
-    throw new FolderNameError(
-      result.kind === 'empty' ? 'Folder name must not be empty' : 'Folder name is too long',
-      result.kind,
-    );
-  }
-  const trimmed = name.trim();
-  const clash = existing.some(
-    (f) => f.name.toLowerCase() === trimmed.toLowerCase() && f.id !== currentId,
-  );
-  if (clash) throw new FolderNameError('A folder with this name already exists', 'duplicate');
-}
-
-/**
- * PG mode: create a folder through the owner-scoped route. The route re-checks
- * duplicates and the count limit inside its owner-scoped transaction; its
- * refusals map onto the same `FolderNameError` the local path throws, so the
- * classic home and the workbench dialogs map one error type.
- */
-async function createOwnerFolderFromServer(name: string): Promise<FolderRecord> {
+export async function createFolder(name: string): Promise<FolderRecord> {
   const res = await fetch('/api/folders', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -1232,44 +1112,12 @@ async function createOwnerFolderFromServer(name: string): Promise<FolderRecord> 
   if (!body?.folder) {
     throw new Error('Malformed /api/folders response: expected { folder: { ... } }');
   }
+  log.info(`Created folder "${name}" (${body.folder.id})`);
   return toFolderRecord(body.folder);
 }
 
-/**
- * Create a folder. `order` is placed after the current maximum so new folders
- * land at the end of the list. Validates the name (width + uniqueness) at the
- * storage boundary, with the read-check-write inside a read-write transaction
- * so two tabs cannot both pass the duplicate check before either write commits.
- * With server persistence on, the create goes through `POST /api/folders` —
- * the same store the workspace rail and this module's `listFolders` read.
- */
-export async function createFolder(name: string): Promise<FolderRecord> {
-  if (isBrowserPersistenceEnabled()) {
-    return await createOwnerFolderFromServer(name);
-  }
-  const now = Date.now();
-  return db.transaction('rw', db.folders, async () => {
-    const existing = await db.folders.toArray();
-    if (existing.length >= FOLDER_COUNT_LIMIT) {
-      throw new FolderNameError('Folder count limit reached', 'limit');
-    }
-    assertFolderName(name, existing);
-    const order = existing.reduce((max, folder) => Math.max(max, folder.order), -1) + 1;
-    const folder: FolderRecord = {
-      id: nanoid(),
-      name: name.trim(),
-      order,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await db.folders.put(folder);
-    log.info(`Created folder "${name}" (${folder.id})`);
-    return folder;
-  });
-}
-
-/** PG mode: rename a folder through the owner-scoped route. */
-async function renameOwnerFolderFromServer(id: string, name: string): Promise<void> {
+/** Rename a folder (`PATCH /api/folders/:id`); refusals map onto `FolderNameError`. */
+export async function renameFolder(id: string, name: string): Promise<void> {
   const res = await fetch(`/api/folders/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
@@ -1278,39 +1126,21 @@ async function renameOwnerFolderFromServer(id: string, name: string): Promise<vo
   if (!res.ok) {
     throw folderRouteError((await res.json().catch(() => null)) as FolderRouteBody | null);
   }
-}
-
-/**
- * Rename a folder. Validates the name (width + uniqueness excluding itself) at
- * the storage boundary, with the read-check-write inside a read-write
- * transaction so the UI invariant cannot be bypassed or raced across tabs.
- * With server persistence on, the rename goes through `PATCH /api/folders/:id`.
- */
-export async function renameFolder(id: string, name: string): Promise<void> {
-  if (isBrowserPersistenceEnabled()) {
-    await renameOwnerFolderFromServer(id, name);
-    return;
-  }
-  const now = Date.now();
-  await db.transaction('rw', db.folders, async () => {
-    const existing = await db.folders.toArray();
-    assertFolderName(name, existing, id);
-    const folder = existing.find((f) => f.id === id);
-    if (!folder) throw new Error(`Folder not found: ${id}`);
-    await db.folders.put({ ...folder, name: name.trim(), updatedAt: now });
-    log.info(`Renamed folder ${id} to "${name}"`);
-  });
+  log.info(`Renamed folder ${id} to "${name}"`);
 }
 
 export type DeleteFolderMode = 'ungroup' | 'remove';
 
 /**
- * PG mode: delete a folder through the owner-scoped route. `mode=remove`
- * returns the captured member course ids, which this module then runs through
- * the same `deleteStageData` cascade the local path uses, so both modes leave
- * the server store and the device-side mirrors in the same state.
+ * Delete a folder (`DELETE /api/folders/:id`).
+ *
+ * - `'ungroup'` (default): drop the folder; its courses become unfiled.
+ * - `'remove'`: drop the folder AND delete every course that was filed in it.
+ *   The route returns the captured member ids, and each runs through
+ *   {@link deleteStageData} so the full deletion cascade (document, runtime,
+ *   device-local caches) applies.
  */
-async function deleteOwnerFolderFromServer(id: string, mode: DeleteFolderMode): Promise<void> {
+export async function deleteFolder(id: string, mode: DeleteFolderMode = 'ungroup'): Promise<void> {
   const res = await fetch(`/api/folders/${encodeURIComponent(id)}?mode=${mode}`, {
     method: 'DELETE',
   });
@@ -1320,79 +1150,26 @@ async function deleteOwnerFolderFromServer(id: string, mode: DeleteFolderMode): 
     const removedStageIds = body?.removedStageIds ?? [];
     await Promise.all(removedStageIds.map((stageId) => deleteStageData(stageId)));
   }
-}
-
-/**
- * Delete a folder.
- *
- * - `'ungroup'` (default): drop the folder; its courses become unfiled (their
- *   `stageFolders` rows are deleted, so `listStages` reports them without a
- *   `folderId`).
- * - `'remove'`: drop the folder AND delete every course that was filed in it,
- *   running each through {@link deleteStageData} so the full deletion cascade
- *   (document, scenes, chats, runtime, mirrors) applies.
- *
- * With server persistence on, the delete goes through `DELETE /api/folders/:id`
- * and the `remove` cascade deletes the returned member ids.
- */
-export async function deleteFolder(id: string, mode: DeleteFolderMode = 'ungroup'): Promise<void> {
-  if (isBrowserPersistenceEnabled()) {
-    await deleteOwnerFolderFromServer(id, mode);
-    return;
-  }
-  // Atomically capture members, delete the folder row, and clear all membership
-  // rows in ONE transaction BEFORE the course-deletion cascade. This makes the
-  // folder invisible to `setStageFolder` (which checks folder existence in its
-  // own transaction) for the entire duration of the cascade, preventing an
-  // orphan membership from being written while courses are being deleted.
-  const members = await db.transaction('rw', [db.folders, db.stageFolders], async () => {
-    const rows = await db.stageFolders.where('folderId').equals(id).toArray();
-    await db.folders.delete(id);
-    for (const row of rows) {
-      await db.stageFolders.delete(row.stageId);
-    }
-    return rows;
-  });
-
-  if (mode === 'remove') {
-    // Now delete each member course through the full cascade. The folder is
-    // already gone, so a concurrent setStageFolder will reject the assignment.
-    for (const member of members) {
-      if (member.stageId) await deleteStageData(member.stageId);
-    }
-  }
   log.info(`Deleted folder ${id} (mode=${mode})`);
 }
 
 /**
  * Move a course into a folder, or out of all folders when `folderId` is
- * `undefined`. Idempotent.
- *
- * Membership is device-local either way (the `stageFolders` overlay keeps
- * courses filed in this browser even when the folders themselves live on the
- * server), so only the destination's existence check differs between modes:
- * locally the `folders` table is checked inside the same transaction, while
- * with server persistence on the folder list came from `/api/folders` and the
- * local table has no row for it — the id is trusted from the rendered tree,
- * and the server re-checks existence on its own membership writes.
+ * `undefined` (`POST /api/folders/members`). Idempotent. The route checks that
+ * the folder exists and belongs to the owner; a missing folder is refused.
  */
 export async function setStageFolder(stageId: string, folderId: string | undefined): Promise<void> {
-  const now = Date.now();
-  // Validate the destination folder exists before writing the membership row.
-  // Without this, an import that started inside a folder which is then deleted
-  // would write an orphan membership pointing at a gone folder. The check+write
-  // is in one transaction so deletion cannot race between them. Unfiling
-  // (folderId undefined) always succeeds — it just removes the membership.
-  if (folderId !== undefined) {
-    await db.transaction('rw', [db.folders, db.stageFolders], async () => {
-      if (!isBrowserPersistenceEnabled()) {
-        const folder = await db.folders.get(folderId);
-        if (!folder) throw new Error(`Folder not found: ${folderId}`);
-      }
-      await db.stageFolders.put({ stageId, folderId, updatedAt: now });
-    });
-  } else {
-    await db.stageFolders.put({ stageId, folderId: undefined, updatedAt: now });
+  const res = await fetch('/api/folders/members', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ stageId, folderId: folderId ?? null }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as FolderRouteBody | null;
+    if (body?.error?.code === 'FOLDER_NOT_FOUND') {
+      throw new Error(`Folder not found: ${folderId}`);
+    }
+    throw folderRouteError(body);
   }
   log.info(`Set stage ${stageId} folder -> ${folderId ?? '(unfiled)'}`);
 }

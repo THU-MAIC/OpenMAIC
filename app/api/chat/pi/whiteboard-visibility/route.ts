@@ -3,7 +3,10 @@ import { NextRequest } from 'next/server';
 import { settleWhiteboardVisibility } from '@/lib/chat/pi/whiteboard-visibility';
 import { apiError } from '@/lib/server/api-response';
 import { resolveRequestOwner } from '@/lib/server/identity/resolve';
-import { invalidOwnerCredentialResponse } from '@/lib/server/identity/with-owner';
+import {
+  attachOwnerCookies,
+  invalidOwnerCredentialResponse,
+} from '@/lib/server/identity/with-owner';
 
 export const runtime = 'nodejs';
 
@@ -36,7 +39,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!owner.ok) {
     return invalidOwnerCredentialResponse();
   }
+  // Every answer carries the resolution's cookies (the anonymous owner's
+  // renewal), errors included.
+  return attachOwnerCookies(await settle(req, owner.principal.ownerId), owner.setCookies);
+}
 
+async function settle(req: NextRequest, learnerKey: string): Promise<Response> {
   let body: unknown;
   try {
     body = await req.json();
@@ -50,7 +58,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (
     !settleWhiteboardVisibility({
       ...body,
-      learnerKey: owner.principal.ownerId,
+      learnerKey,
     })
   ) {
     return apiError('INVALID_REQUEST', 404, 'Whiteboard visibility query is not pending here');

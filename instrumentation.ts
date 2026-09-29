@@ -15,8 +15,9 @@ export async function register(): Promise<void> {
   // want; the persistence stack is Node-only.
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
-  const { warnIfAccessCodeIsUnset } = await import('@/lib/server/access-code-warning');
-  warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
+  const { warnIfDefaultDatabasePasswordIsPublished } =
+    await import('@/lib/server/database-password-warning');
+  warnIfDefaultDatabasePasswordIsPublished();
 
   // A boot that fails here must stop the process. Next.js logs a throw from
   // `register` as "Failed to prepare server" but keeps listening and answers
@@ -31,6 +32,16 @@ export async function register(): Promise<void> {
     const { exitOnBootFailure } = await import('@/lib/server/boot-failure');
     await exitOnBootFailure(error);
     throw error;
+  }
+
+  // Warn-only checks on the configuration that passed validation: single-user
+  // mode without ACCESS_CODE serves one library to whoever can reach the
+  // server. Its warning names ACCESS_CODE itself, so the generic unset-code
+  // warning is skipped then: one warning, not two.
+  const { warnAboutOwnerIdentityConfiguration } = await import('@/lib/server/identity/registry');
+  if (!warnAboutOwnerIdentityConfiguration()) {
+    const { warnIfAccessCodeIsUnset } = await import('@/lib/server/access-code-warning');
+    warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
   }
 
   // Imported dynamically so the Edge bundle never pulls in `pg`.
@@ -127,6 +138,14 @@ async function validateBootConfiguration(): Promise<void> {
   // to load is reported as a startup failure, with its stack.
   const { runConfigurationCheck } = await import('@/lib/server/boot-configuration-error');
 
+  // The database, before anything else: every course, chat and asset lives in
+  // it and there is no browser-storage fallback, so a server without one would
+  // boot, pass its health check and then fail every persistence request. The
+  // refusal names the fix (`pnpm db:up` locally, DATABASE_URL or
+  // `docker compose up` for a deployment).
+  const { requireDatabaseUrl } = await import('@/lib/server/database-requirement');
+  runConfigurationCheck(() => requireDatabaseUrl());
+
   // The asset quota, read here rather than at the first persistence request.
   // The provider that consumes it is lazy and memoised, so a malformed ceiling
   // would otherwise let the process boot, pass its health check, and then fail
@@ -146,7 +165,8 @@ async function validateBootConfiguration(): Promise<void> {
   runConfigurationCheck(resolveAssetPendingTtlMs);
 
   // Owner identity, for the same reason and at the same moment. A malformed
-  // PERSISTENCE_SHARED_OWNER_ID, or one a host registration would ignore,
+  // PERSISTENCE_SHARED_OWNER_ID or single-user setting, the two together, or a
+  // setting a host registration would ignore,
   // would otherwise boot, pass its health check, and then fail (or silently
   // mis-identify) every owner-scoped request — and an operator has no way to
   // tell from the outside that their setting was not accepted. An empty value

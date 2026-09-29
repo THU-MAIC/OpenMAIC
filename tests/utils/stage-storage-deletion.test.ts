@@ -28,8 +28,6 @@ const {
     putStage: vi.fn().mockResolvedValue(undefined),
     deleteDocument: vi.fn().mockResolvedValue(undefined),
   };
-  const generatedAgentsDelete = vi.fn().mockResolvedValue(0);
-  const scenesDelete = vi.fn().mockResolvedValue(0);
   const mediaToArray = vi.fn().mockResolvedValue([]);
   const mediaDelete = vi.fn().mockResolvedValue(0);
   const mediaBulkDelete = vi.fn().mockResolvedValue(undefined);
@@ -40,18 +38,6 @@ const {
   const poolRemove = vi.fn().mockResolvedValue(undefined);
   const assetRefExists = vi.fn().mockResolvedValue(false);
   const dbMock = {
-    stages: { delete: vi.fn().mockResolvedValue(undefined) },
-    scenes: {
-      where: () => ({
-        equals: () => ({
-          toArray: vi.fn().mockResolvedValue([]),
-          delete: scenesDelete,
-        }),
-      }),
-    },
-    stageOutlines: { delete: vi.fn().mockResolvedValue(undefined) },
-    stageFolders: { delete: vi.fn().mockResolvedValue(undefined) },
-    playbackState: { delete: vi.fn().mockResolvedValue(undefined) },
     mediaFiles: {
       where: (field: string) => ({
         equals: (value: unknown) => ({
@@ -80,13 +66,6 @@ const {
       _bulkGet: audioBulkGet,
       _bulkDelete: audioBulkDelete,
     },
-    generatedAgents: {
-      where: () => ({
-        equals: () => ({ delete: generatedAgentsDelete }),
-      }),
-      _delete: generatedAgentsDelete,
-    },
-    transaction: vi.fn(async (_mode: string, _tables: unknown[], fn: () => Promise<void>) => fn()),
   };
   return {
     clearStoreForDeletedStage: vi.fn(),
@@ -108,7 +87,6 @@ vi.mock('@/lib/document-store', () => ({
     listDocuments: vi.fn().mockResolvedValue([]),
     loadDocument: vi.fn().mockResolvedValue(null),
   })),
-  getLegacyDocumentStore: vi.fn(),
   loadCurrentScene: vi.fn().mockResolvedValue(null),
   mutateDocument,
   saveCurrentScene: vi.fn().mockResolvedValue(undefined),
@@ -117,7 +95,6 @@ vi.mock('@/lib/utils/chat-storage', () => ({
   ChatStorageLockUnavailableError: class ChatStorageLockUnavailableError extends Error {},
   saveChatSessions: vi.fn().mockResolvedValue(undefined),
   loadChatSessions: vi.fn().mockResolvedValue([]),
-  deleteChatSessions: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('@/lib/utils/chat-storage-lock', () => ({
   withRuntimeStorageSharedLock: vi.fn(async (fn: () => Promise<unknown>) => fn()),
@@ -125,7 +102,7 @@ vi.mock('@/lib/utils/chat-storage-lock', () => ({
     async (fn: (release: (value: unknown) => void) => Promise<unknown>) => fn(() => undefined),
   ),
 }));
-vi.mock('@/lib/utils/database', () => ({ db: dbMock }));
+vi.mock('@/lib/device-storage/database', () => ({ db: dbMock }));
 vi.mock('@/lib/media/asset-pool', () => ({
   removeAsset: poolRemove,
 }));
@@ -579,12 +556,7 @@ describe('deleteStageData wiring', () => {
     expect(isStageDeleted(stageId)).toBe(true);
   });
 
-  it('clears the legacy roster-mirror rows for the deleted stage', async () => {
-    await deleteStageData(stageId);
-    expect(dbMock.generatedAgents._delete).toHaveBeenCalledOnce();
-  });
-
-  it('deletes stage compatibility rows without touching registry entries', async () => {
+  it('deletes the stage media cache rows without touching registry entries or the audio cache', async () => {
     const document = {
       stage: {
         id: stageId,
@@ -656,16 +628,8 @@ describe('deleteStageData wiring', () => {
       ['ast_image', 'ast_video', 'ast_poster', 'ast_media_row'].map((ref) => `${stageId}:${ref}`),
     );
     expect(dbMock.mediaFiles._delete).not.toHaveBeenCalled();
-    expect(dbMock.audioFiles._bulkDelete).toHaveBeenCalledExactlyOnceWith(['ast_audio']);
-    expect(dbMock.audioFiles._bulkDelete).not.toHaveBeenCalledWith(
-      expect.arrayContaining(['tts_s1_speech-1']),
-    );
-  });
-
-  it('tolerates a mirror-row cleanup failure without failing the deletion', async () => {
-    dbMock.generatedAgents._delete.mockRejectedValueOnce(new Error('mirror gone wrong'));
-    await expect(deleteStageData(stageId)).resolves.toBeUndefined();
-    expect(dbMock.stages.delete).toHaveBeenCalledWith(stageId);
+    // Audio rows are keyed globally; another course may play from the same id.
+    expect(dbMock.audioFiles._bulkDelete).not.toHaveBeenCalled();
   });
 
   it('evicts the warm in-memory store after a successful deletion', async () => {
@@ -716,7 +680,7 @@ describe('deleteStageData wiring', () => {
   });
 
   it('settles the cascade when it fails after the document was removed', async () => {
-    dbMock.stageOutlines.delete.mockRejectedValueOnce(new Error('partial cascade'));
+    dbMock.mediaFiles._toArray.mockRejectedValueOnce(new Error('partial cascade'));
     await expect(deleteStageData(stageId)).rejects.toThrow('partial cascade');
     // Settled + still-deleted = the ghost may now be discarded by readers.
     expect(isStageDeletionInFlight(stageId)).toBe(false);
@@ -736,7 +700,7 @@ describe('deleteStageData wiring', () => {
   });
 
   it('keeps the tombstone when the cascade fails after the document was removed', async () => {
-    dbMock.stageOutlines.delete.mockRejectedValueOnce(new Error('partial cascade'));
+    dbMock.mediaFiles._toArray.mockRejectedValueOnce(new Error('partial cascade'));
     await expect(deleteStageData(stageId)).rejects.toThrow('partial cascade');
     // The document is gone; dropping later writes is what prevents resurrection.
     expect(isStageDeleted(stageId)).toBe(true);
@@ -966,7 +930,7 @@ describe('deleteStageData wiring', () => {
     snapshotPendingStageChangesForDeletion.mockReturnValueOnce([
       { kind: 'stage' },
     ] satisfies PendingChange[]);
-    dbMock.stageOutlines.delete.mockRejectedValueOnce(new Error('partial cascade'));
+    dbMock.mediaFiles._toArray.mockRejectedValueOnce(new Error('partial cascade'));
 
     await expect(deleteStageData(stageId)).rejects.toThrow('partial cascade');
 

@@ -35,57 +35,16 @@ describe('getAssetPool', () => {
     }
   });
 
-  it('is lazy, singleton-scoped, and does not construct during SSR', async () => {
-    vi.stubGlobal('indexedDB', undefined);
+  it('has no browser-storage fallback: an unconfigured pool refuses to resolve', async () => {
+    // Outside the browser the persistence bootstrap does not run, so nothing
+    // configures the pool; it must fail loudly rather than open IndexedDB.
+    const indexedDB = new IDBFactory();
+    vi.stubGlobal('indexedDB', indexedDB);
     vi.resetModules();
     const { getAssetPool } = await import('@/lib/media/asset-pool');
 
-    expect(() => getAssetPool()).toThrow(/requires IndexedDB/);
-
-    const indexedDB = new IDBFactory();
-    vi.stubGlobal('indexedDB', indexedDB);
-    const first = getAssetPool();
-    const second = getAssetPool();
-    const { BrowserAssetStore } = await import('@openmaic/storage');
-
-    expect(second).toBe(first);
-    expect(first).toBeInstanceOf(BrowserAssetStore);
+    expect(() => getAssetPool()).toThrow(/asset pool is not configured/);
     expect(await indexedDB.databases()).toEqual([]);
-
-    await first.put(new Blob(['asset'], { type: 'text/plain' }));
-    expect((await indexedDB.databases()).map((entry) => entry.name)).toContain('maic-asset-pool');
-    await first.close();
-  });
-
-  it('fails loudly while deletion is deferred, then reopens after a successful retry', async () => {
-    const indexedDB = new IDBFactory();
-    vi.stubGlobal('indexedDB', indexedDB);
-    vi.resetModules();
-    const { AssetPoolDeletionDeferredError, clearAssetPool, getAssetPool } =
-      await import('@/lib/media/asset-pool');
-    const first = getAssetPool();
-    await first.put(new Blob(['old'], { type: 'text/plain' }));
-    const blocker = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('maic-asset-pool');
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-
-    await expect(clearAssetPool()).rejects.toBeInstanceOf(AssetPoolDeletionDeferredError);
-    const blockedPut = Promise.race([
-      getAssetPool().put(new Blob(['blocked'], { type: 'text/plain' })),
-      new Promise<string>((_resolve, reject) => {
-        setTimeout(() => reject(new Error('putAsset hung behind the pending delete.')), 100);
-      }),
-    ]);
-    await expect(blockedPut).rejects.toThrow('BrowserAssetStore is closed.');
-    blocker.close();
-
-    await expect(clearAssetPool()).resolves.toBeUndefined();
-    const fresh = getAssetPool();
-    expect(fresh).not.toBe(first);
-    await expect(fresh.put(new Blob(['new'], { type: 'text/plain' }))).resolves.toMatch(/^ast_/);
-    await fresh.close();
   });
 
   it('uses a configured instance and seals the seam after resolution', async () => {
@@ -99,7 +58,7 @@ describe('getAssetPool', () => {
       close: vi.fn(),
     } as never;
     const config = await import('@/lib/media/asset-pool-config');
-    config.configureAssetPoolStorage({ store: injected, serverBacked: true });
+    config.configureAssetPoolStorage({ store: injected });
     const { getAssetPool } = await import('@/lib/media/asset-pool');
 
     expect(getAssetPool()).toBe(injected);
@@ -127,7 +86,7 @@ describe('getAssetPool', () => {
       .mockRejectedValue(new Error('remote asset deletion was attempted'));
     const close = vi.spyOn(client, 'close');
     const config = await import('@/lib/media/asset-pool-config');
-    config.configureAssetPoolStorage({ store: client, serverBacked: true });
+    config.configureAssetPoolStorage({ store: client });
     const { clearAssetPool, getAssetPool } = await import('@/lib/media/asset-pool');
 
     await expect(getAssetPool().resolve('ast_server')).resolves.toBe('blob:server-asset');
@@ -153,7 +112,7 @@ describe('getAssetPool', () => {
     const secondClient = makeClient('blob:second-client');
     const factory = vi.fn().mockReturnValueOnce(firstClient).mockReturnValueOnce(secondClient);
     const config = await import('@/lib/media/asset-pool-config');
-    config.configureAssetPoolStorage({ store: factory, serverBacked: true });
+    config.configureAssetPoolStorage({ store: factory });
     const { clearAssetPool, getAssetPool } = await import('@/lib/media/asset-pool');
 
     const first = getAssetPool();
@@ -181,7 +140,7 @@ describe('getAssetPool', () => {
       close: vi.fn().mockResolvedValue(undefined),
     } as never;
     const config = await import('@/lib/media/asset-pool-config');
-    config.configureAssetPoolStorage({ store: injected, serverBacked: true });
+    config.configureAssetPoolStorage({ store: injected });
     const { clearAssetPool, getAssetPool } = await import('@/lib/media/asset-pool');
 
     expect(getAssetPool()).toBe(injected);

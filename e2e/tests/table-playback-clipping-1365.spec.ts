@@ -2,8 +2,9 @@ import type { Locator, Page } from '@playwright/test';
 import { test, expect } from '../fixtures/base';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
 import { defaultTheme } from '../fixtures/test-data/scene-content';
+import { seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
 
-const STAGE_ID = 'e2e-table-clipping-1365';
+const STAGE_PREFIX = 'e2e-table-clipping-1365';
 const FINAL_ROW_TEXT = 'Issue1365FinalRow';
 const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
 
@@ -21,7 +22,7 @@ const ROW_TEXTS = [
   '最后一行是报告者截图里丢失的那一行必须在两条渲染链中完整可见',
 ];
 
-async function seedTableClassroom(page: Page) {
+async function seedTableClassroom(page: Page): Promise<string> {
   await page.addInitScript(
     ({ settings }) => {
       localStorage.setItem('maic:account:settings-storage', settings);
@@ -32,106 +33,73 @@ async function seedTableClassroom(page: Page) {
 
   await page.goto('/', { waitUntil: 'networkidle' });
 
-  await page.evaluate(
-    ({ stageId, finalRowText, rowTexts, theme, geometry }) =>
-      new Promise<void>((resolve, reject) => {
-        const request = indexedDB.open('MAIC-Database');
-
-        request.onsuccess = (event) => {
-          const db = (event.target as IDBOpenDBRequest).result;
-          const tx = db.transaction(['stages', 'scenes', 'stageOutlines'], 'readwrite');
-          const now = Date.now();
-
-          tx.objectStore('stages').put({
-            id: stageId,
-            name: 'Table clipping regression',
-            description: '',
-            language: 'zh-CN',
-            style: 'professional',
-            createdAt: now,
-            updatedAt: now,
-          });
-
-          tx.objectStore('scenes').put({
-            id: 'scene-table',
-            stageId,
-            type: 'slide',
-            title: 'Table clipping regression',
-            order: 0,
-            content: {
-              type: 'slide',
-              canvas: {
-                id: 'slide-table',
-                viewportSize: 1000,
-                viewportRatio: 0.5625,
-                background: { type: 'solid', color: '#ffffff' },
-                theme,
-                elements: [
-                  {
-                    id: 'table-near-bottom',
-                    type: 'table',
-                    left: 50,
-                    top: geometry.top,
-                    width: geometry.width,
-                    height: geometry.height,
-                    rotate: geometry.rotate,
-                    colWidths: [0.5, 0.5],
-                    rowHeights: [20, 20, 20, 20, 20],
-                    cellMinHeight: 20,
-                    outline: { width: 1, color: '#334155', style: 'solid' },
-                    data: rowTexts.map((text, rowIndex) => [
-                      {
-                        id: `label-${rowIndex}`,
-                        colspan: 1,
-                        rowspan: 1,
-                        text,
-                        style: { fontsize: '14px' },
-                      },
-                      {
-                        id: `value-${rowIndex}`,
-                        colspan: 1,
-                        rowspan: 1,
-                        text:
-                          rowIndex === rowTexts.length - 1 ? finalRowText : `Value${rowIndex + 1}`,
-                        style: { fontsize: '14px' },
-                      },
-                    ]),
-                  },
-                ],
-              },
-            },
-            createdAt: now,
-            updatedAt: now,
-          });
-
-          tx.objectStore('stageOutlines').put({
-            stageId,
-            outlines: [],
-            createdAt: now,
-            updatedAt: now,
-          });
-
-          tx.oncomplete = () => {
-            db.close();
-            resolve();
-          };
-          tx.onerror = () => reject(tx.error);
-        };
-        request.onerror = () => reject(request.error);
-      }),
-    {
-      stageId: STAGE_ID,
-      finalRowText: FINAL_ROW_TEXT,
-      rowTexts: ROW_TEXTS,
-      theme: defaultTheme,
-      geometry: {
-        top: TABLE_TOP,
-        width: TABLE_WIDTH,
-        height: TABLE_HEIGHT,
-        rotate: TABLE_ROTATE,
-      },
+  const stageId = uniqueStageId(STAGE_PREFIX);
+  const now = Date.now();
+  await seedServerDocument(page, {
+    stage: {
+      id: stageId,
+      name: 'Table clipping regression',
+      description: '',
+      style: 'professional',
+      createdAt: now,
+      updatedAt: now,
     },
-  );
+    scenes: [
+      {
+        id: 'scene-table',
+        stageId,
+        type: 'slide',
+        title: 'Table clipping regression',
+        order: 0,
+        content: {
+          type: 'slide',
+          canvas: {
+            id: 'slide-table',
+            viewportSize: 1000,
+            viewportRatio: 0.5625,
+            background: { type: 'solid', color: '#ffffff' },
+            theme: defaultTheme,
+            elements: [
+              {
+                id: 'table-near-bottom',
+                type: 'table',
+                left: 50,
+                top: TABLE_TOP,
+                width: TABLE_WIDTH,
+                height: TABLE_HEIGHT,
+                rotate: TABLE_ROTATE,
+                colWidths: [0.5, 0.5],
+                rowHeights: [20, 20, 20, 20, 20],
+                cellMinHeight: 20,
+                outline: { width: 1, color: '#334155', style: 'solid' },
+                data: ROW_TEXTS.map((text, rowIndex) => [
+                  {
+                    id: `label-${rowIndex}`,
+                    colspan: 1,
+                    rowspan: 1,
+                    text,
+                    style: { fontsize: '14px' },
+                  },
+                  {
+                    id: `value-${rowIndex}`,
+                    colspan: 1,
+                    rowspan: 1,
+                    text:
+                      rowIndex === ROW_TEXTS.length - 1 ? FINAL_ROW_TEXT : `Value${rowIndex + 1}`,
+                    style: { fontsize: '14px' },
+                  },
+                ]),
+              },
+            ],
+          },
+        },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    outline: { outlines: [], createdAt: now, updatedAt: now },
+  });
+  return stageId;
 }
 
 async function readSurface(locator: Locator) {
@@ -182,8 +150,8 @@ test('keeps wrapped table rows visible in the thumbnail and default classroom ca
 }, testInfo) => {
   expect(TABLE_ROTATE, 'bounding-box assertions require an unrotated fixture').toBe(0);
 
-  await seedTableClassroom(page);
-  await page.goto(`/classroom/${STAGE_ID}`);
+  const stageId = await seedTableClassroom(page);
+  await page.goto(`/classroom/${stageId}`);
   await page.getByText('Loading classroom...').waitFor({ state: 'hidden', timeout: 15_000 });
 
   const legacyTable = page

@@ -20,7 +20,7 @@
  * it exists, so its allocation has to wait somewhere; a speech action being
  * converted is by definition already in the document being read.
  */
-import { mutateDocument } from '@/lib/document-store';
+import { mutateDocument, type DocumentMigrationDeps } from '@/lib/document-store';
 import { markStagePersistenceDirty, useStageStore } from '@/lib/store/stage';
 import type { Scene } from '@/lib/types/stage';
 import type { PendingChange } from '@/lib/utils/stage-storage';
@@ -93,6 +93,8 @@ export async function persistNarrationReference(
   stageId: string,
   derivedRef: string,
   assetId: string,
+  /** A document store other than the app's (the one-way importer's fenced one). */
+  deps: Pick<DocumentMigrationDeps, 'store'> = {},
 ): Promise<boolean> {
   let documentMatched = false;
   // Recorded before the first write is issued, not after the round trip ends:
@@ -101,15 +103,19 @@ export async function persistNarrationReference(
   // already exists.
   recordNarrationAllocation(stageId, derivedRef, assetId);
   try {
-    await mutateDocument(stageId, async (document, store) => {
-      if (!document) return;
-      const now = Date.now();
-      for (const scene of document.scenes) {
-        if (!rewriteSceneNarrationReference(scene, derivedRef, assetId)) continue;
-        await store.putScene(stageId, { ...scene, updatedAt: now });
-        documentMatched = true;
-      }
-    });
+    await mutateDocument(
+      stageId,
+      async (document, store) => {
+        if (!document) return;
+        const now = Date.now();
+        for (const scene of document.scenes) {
+          if (!rewriteSceneNarrationReference(scene, derivedRef, assetId)) continue;
+          await store.putScene(stageId, { ...scene, updatedAt: now });
+          documentMatched = true;
+        }
+      },
+      deps,
+    );
   } catch (error) {
     const placedLive = applyToLiveStage(stageId, derivedRef, assetId);
     if (!placedLive) throw error;

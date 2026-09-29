@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BrowserRuntimeStore, type RuntimeStore } from '@openmaic/storage';
+import type { RuntimeStore } from '@openmaic/storage';
 
-import { deleteStageRuntimeSafely } from '@/lib/runtime/store';
+import {
+  configureRuntimeStorage,
+  deleteStageRuntimeSafely,
+  resetRuntimeStorageForTests,
+} from '@/lib/runtime/store';
 
 function stubStore(deleteStageRuntime: (stageId: string) => Promise<void>): RuntimeStore {
   return { deleteStageRuntime } as unknown as RuntimeStore;
@@ -14,52 +18,16 @@ describe('deleteStageRuntimeSafely', () => {
     vi.useRealTimers();
   });
 
-  it('skips the cascade entirely when the runtime DB was never created', async () => {
-    // The probe must not fall into openDb(), which would CREATE the database
-    // just to delete nothing from it.
-    vi.stubGlobal('indexedDB', {
-      databases: vi.fn().mockResolvedValue([{ name: 'some-other-db', version: 1 }]),
-    });
-    const deleteStageRuntime = vi
-      .spyOn(BrowserRuntimeStore.prototype, 'deleteStageRuntime')
-      .mockResolvedValue(undefined);
-
-    await expect(deleteStageRuntimeSafely('stage-42')).resolves.toBeUndefined();
-    expect(deleteStageRuntime).not.toHaveBeenCalled();
-  });
-
-  it('cascades when the probe reports the runtime DB exists', async () => {
-    const databases = vi.fn().mockResolvedValue([{ name: 'maic-runtime', version: 1 }]);
-    vi.stubGlobal('indexedDB', { databases });
-    const deleteStageRuntime = vi
-      .spyOn(BrowserRuntimeStore.prototype, 'deleteStageRuntime')
-      .mockResolvedValue(undefined);
-
-    await deleteStageRuntimeSafely('stage-42');
-    expect(databases).toHaveBeenCalledOnce();
-    expect(deleteStageRuntime).toHaveBeenCalledExactlyOnceWith('stage-42');
-  });
-
-  it('bypasses the local DB probe for an explicitly injected store', async () => {
-    vi.stubGlobal('indexedDB', {
-      databases: vi.fn().mockResolvedValue([]),
-    });
+  it('cascades through the configured runtime store', async () => {
+    resetRuntimeStorageForTests();
     const deleteStageRuntime = vi.fn().mockResolvedValue(undefined);
-
-    await deleteStageRuntimeSafely('stage-42', stubStore(deleteStageRuntime));
-    expect(deleteStageRuntime).toHaveBeenCalledExactlyOnceWith('stage-42');
-  });
-
-  it('cascades when the probe API is unavailable', async () => {
-    // Older Firefox: indexedDB exists but has no databases(). Skipping here
-    // would strand real cleanup, so the bounded cascade proceeds.
-    vi.stubGlobal('indexedDB', {});
-    const deleteStageRuntime = vi
-      .spyOn(BrowserRuntimeStore.prototype, 'deleteStageRuntime')
-      .mockResolvedValue(undefined);
-
-    await deleteStageRuntimeSafely('stage-42');
-    expect(deleteStageRuntime).toHaveBeenCalledExactlyOnceWith('stage-42');
+    configureRuntimeStorage({ store: stubStore(deleteStageRuntime) });
+    try {
+      await deleteStageRuntimeSafely('stage-42');
+      expect(deleteStageRuntime).toHaveBeenCalledExactlyOnceWith('stage-42');
+    } finally {
+      resetRuntimeStorageForTests();
+    }
   });
 
   it('cascades the deletion to the runtime store with the right stageId', async () => {

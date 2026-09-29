@@ -110,7 +110,10 @@ function checkedResult(
  * request that also carries a valid anonymous owner cookie, gets
  * `pendingClaim` naming that cookie's owner. Not for the anonymous fallback
  * itself, and not for `sharedTeam`, which has no credential of its own:
- * nothing in such a request says which person's browser work it is.
+ * nothing in such a request says which person's browser work it is. The
+ * built-in `singleUser` does get one: it has no credential either, but its
+ * deployment has exactly one person, so the cookie can only name that
+ * person's own earlier anonymous work (see `./single-user.ts`).
  */
 async function withPendingClaim(
   principal: OwnerPrincipal,

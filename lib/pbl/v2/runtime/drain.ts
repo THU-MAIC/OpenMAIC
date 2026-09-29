@@ -251,7 +251,10 @@ async function drainProjectRuntimeWork(
   deadline: PBLDrainDeadline,
 ): Promise<void> {
   const kv = injectedKv ?? getDefaultKv();
-  const learnerKey = injectedLearnerKey ?? (await getLearnerKey(kv));
+  // The learner key is the server-derived one (runtime configuration); only an
+  // explicitly injected KV store mints its own. The default KV holds the
+  // watermarks and nothing else.
+  const learnerKey = injectedLearnerKey ?? (await getLearnerKey(injectedKv));
   const store = injectedStore ?? getRuntimeStore();
   const key = watermarkKey(stageId, sceneId, learnerKey);
   const watermark = await readWatermark(kv, key);
@@ -328,7 +331,7 @@ async function waitForActiveDrainWork(key: string): Promise<void> {
 
 async function drainProjectRuntimeSerialized(args: DrainProjectRuntimeArgs): Promise<void> {
   const kv = args.kv ?? getDefaultKv();
-  const learnerKey = args.learnerKey ?? (await getLearnerKey(kv));
+  const learnerKey = args.learnerKey ?? (await getLearnerKey(args.kv));
   const store = args.store ?? getRuntimeStore();
   const inFlightKey = `${args.stageId}:${args.sceneId}:${learnerKey}`;
   const previous = inFlightPblDrains.get(inFlightKey) ?? Promise.resolve();
@@ -380,7 +383,7 @@ export async function withDrainedProjectRuntime<T>(
 ): Promise<T> {
   const run = async (): Promise<T> => {
     const kv = args.kv ?? getDefaultKv();
-    const learnerKey = args.learnerKey ?? (await getLearnerKey(kv));
+    const learnerKey = args.learnerKey ?? (await getLearnerKey(args.kv));
     const store = args.store ?? getRuntimeStore();
     const inFlightKey = `${args.stageId}:${args.sceneId}:${learnerKey}`;
     const previous = inFlightPblDrains.get(inFlightKey) ?? Promise.resolve();

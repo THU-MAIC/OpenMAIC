@@ -18,6 +18,8 @@ let exit: ReturnType<typeof vi.spyOn>;
 let stderr: string[];
 
 beforeEach(() => {
+  // The database requirement is checked first; these cases start past it.
+  vi.stubEnv('DATABASE_URL', 'postgres://boot-test/openmaic');
   stderr = [];
   exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
   vi.spyOn(process.stderr, 'write').mockImplementation(((
@@ -209,6 +211,94 @@ describe('owner identity validation at boot', () => {
       vi.doUnmock('@/lib/persistence/asset-pending-ttl');
       vi.resetModules();
     }
+  });
+
+  describe('single-user mode', () => {
+    let warn: ReturnType<typeof vi.fn>;
+    const singleUserWarnings = () =>
+      warn.mock.calls.filter((args: unknown[]) => args.join(' ').includes('Single-user mode'))
+        .length;
+
+    beforeEach(async () => {
+      vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+      vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
+      vi.stubEnv('OWNER_SINGLE_USER', 'true');
+      vi.stubEnv('OWNER_SINGLE_USER_ID', '');
+      vi.stubEnv('OPENMAIC_PUBLISH_ADDRESS', '');
+      warn = vi.fn();
+      vi.spyOn(console, 'warn').mockImplementation(warn as never);
+      const { resetSingleUserWarningForTests } = await import('@/lib/server/identity/single-user');
+      resetSingleUserWarningForTests();
+    });
+
+    it('boots without ACCESS_CODE and warns once', async () => {
+      vi.stubEnv('ACCESS_CODE', '');
+      const { register } = await import('@/instrumentation');
+
+      await expect(register()).resolves.toBeUndefined();
+      await expect(register()).resolves.toBeUndefined();
+      expect(exit).not.toHaveBeenCalled();
+      expect(singleUserWarnings()).toBe(1);
+      // The banner replaces the generic unset-ACCESS_CODE warning: one, not two.
+      expect(
+        warn.mock.calls.filter((args: unknown[]) =>
+          args.join(' ').includes('The access-code gate is disabled'),
+        ),
+      ).toHaveLength(0);
+    });
+
+    it('keeps the generic unset-ACCESS_CODE warning when single-user mode is off', async () => {
+      vi.stubEnv('ACCESS_CODE', '');
+      vi.stubEnv('OWNER_SINGLE_USER', 'false');
+      const { resetAccessCodeWarningForTests } = await import('@/lib/server/access-code-warning');
+      resetAccessCodeWarningForTests();
+      const { register } = await import('@/instrumentation');
+
+      await expect(register()).resolves.toBeUndefined();
+      expect(singleUserWarnings()).toBe(0);
+      expect(
+        warn.mock.calls.filter((args: unknown[]) =>
+          args.join(' ').includes('The access-code gate is disabled'),
+        ),
+      ).toHaveLength(1);
+    });
+
+    it('boots behind ACCESS_CODE without the single-user warning', async () => {
+      vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+      vi.stubEnv('OPENMAIC_PUBLISH_ADDRESS', '0.0.0.0');
+      const { register } = await import('@/instrumentation');
+
+      await expect(register()).resolves.toBeUndefined();
+      expect(exit).not.toHaveBeenCalled();
+      expect(singleUserWarnings()).toBe(0);
+    });
+
+    it('exits on a malformed switch', async () => {
+      vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+      vi.stubEnv('OWNER_SINGLE_USER', 'yes');
+      const { register } = await import('@/instrumentation');
+
+      await expect(register()).rejects.toThrow(/OWNER_SINGLE_USER must be/);
+      expectBootExit(/OWNER_SINGLE_USER must be/);
+    });
+
+    it('exits beside PERSISTENCE_SHARED_OWNER_ID', async () => {
+      vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+      vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', 'team-alpha');
+      const { register } = await import('@/instrumentation');
+
+      await expect(register()).rejects.toThrow(/are both set/);
+      expectBootExit(/are both set/);
+    });
+
+    it('still exits on a removed identity variable', async () => {
+      vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
+      vi.stubEnv('OWNER_AUTHENTICATOR', 'trusted-proxy');
+      const { register } = await import('@/instrumentation');
+
+      await expect(register()).rejects.toThrow(/OWNER_AUTHENTICATOR is set/);
+      expectBootExit(/OWNER_AUTHENTICATOR is set/);
+    });
   });
 
   it('never validates, or exits, on the Edge runtime', async () => {
