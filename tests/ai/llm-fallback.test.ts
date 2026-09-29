@@ -81,6 +81,21 @@ describe('callLLM retryable-failure fallback', () => {
     expect(fallbackMock.resolveFallbackModel).not.toHaveBeenCalled();
   });
 
+  it('arms a slot fallback without the serverManaged stamp (PBL callers pass none)', async () => {
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    const primary = { provider: 'deepseek', modelId: 'deepseek-v4-pro' } as never;
+    attachModelFallback(primary, async () => ({
+      model: 'slot-fallback' as never,
+      modelString: 'deepseek:deepseek-v4-flash',
+    }));
+    aiMock.generateText
+      .mockRejectedValueOnce(Object.assign(new Error('quota exceeded'), { statusCode: 429 }))
+      .mockResolvedValueOnce(okResult());
+
+    await callLLM({ model: primary, prompt: 'hi' } as never, 'pbl-v2-runtime');
+    expect(aiMock.generateText.mock.calls[1]?.[0]?.model).toBe('slot-fallback');
+  });
+
   it('does not retry a slot model whose slot has no fallback, even with MODEL_FALLBACK', async () => {
     fallbackMock.shouldFallbackFor.mockReturnValue(true);
     fallbackMock.resolveFallbackModel.mockResolvedValue({

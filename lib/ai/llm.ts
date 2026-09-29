@@ -350,9 +350,13 @@ export async function callLLM<T extends GenerateTextParams>(
   // to burn the operator's fallback key, so an absent stamp means NOT armed.
   // verify-model additionally probes the exact primary model, so it never
   // falls back either.
+  // A model resolved through a slot carries its slot's fallback, which is
+  // server configuration by construction: that is authorization enough. The
+  // serverManaged stamp gates only MODEL_FALLBACK on the request path.
+  const attached = attachedModelFallback(params.model);
   const allowFallback =
     fallbackOptions?.enabled !== false &&
-    fallbackOptions?.serverManaged === true &&
+    (attached !== undefined || fallbackOptions?.serverManaged === true) &&
     source !== 'verify-model';
   // Resolve the fallback once up front. The empty-output safety net below only
   // arms when a fallback model is actually configured; without this gate an
@@ -360,7 +364,6 @@ export async function callLLM<T extends GenerateTextParams>(
   // configured one. A model resolved through a slot brings its slot's
   // fallback (possibly none); only a model from the older request path falls
   // back to MODEL_FALLBACK.
-  const attached = attachedModelFallback(params.model);
   const fallback = allowFallback
     ? await (attached ? loadFallbackSafe(attached, source) : resolveFallbackModelSafe(source))
     : null;

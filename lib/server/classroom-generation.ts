@@ -233,7 +233,7 @@ export async function generateClassroom(
   // slot without a model of its own inherits its parent's, so a deployment
   // with one default model uses it throughout, as the browser UI does through
   // /api/generate/*. Outlines resolve through course.outline like the UI's.
-  const workspaceId = await backgroundWorkspaceId(options.ownerId);
+
   interface StageModel {
     model: LanguageModel;
     outputWindow?: number;
@@ -245,20 +245,24 @@ export async function generateClassroom(
   const resolveStageModel = (stage: LlmStage): Promise<StageModel> => {
     let pending = stageModels.get(stage);
     if (!pending) {
-      pending = resolveModel({ stage, workspaceId }).then((resolved) => {
-        if (isProviderKeyRequired(resolved.providerId) && !resolved.apiKey) {
-          throw new Error(
-            `No API key configured for the ${stage} model (provider "${resolved.providerId}").`,
-          );
-        }
-        return {
-          model: resolved.model,
-          outputWindow: resolved.modelInfo?.outputWindow,
-          thinking: resolved.thinkingConfig,
-          serverManaged: resolved.serverManaged,
-          modelString: resolved.modelString,
-        };
-      });
+      // The owner the job works for now, per stage: a claim during the job
+      // moves the settings, and later stages follow them.
+      pending = backgroundWorkspaceId(options.ownerId)
+        .then((workspaceId) => resolveModel({ stage, workspaceId }))
+        .then((resolved) => {
+          if (isProviderKeyRequired(resolved.providerId) && !resolved.apiKey) {
+            throw new Error(
+              `No API key configured for the ${stage} model (provider "${resolved.providerId}").`,
+            );
+          }
+          return {
+            model: resolved.model,
+            outputWindow: resolved.modelInfo?.outputWindow,
+            thinking: resolved.thinkingConfig,
+            serverManaged: resolved.serverManaged,
+            modelString: resolved.modelString,
+          };
+        });
       stageModels.set(stage, pending);
     }
     return pending;
