@@ -31,6 +31,11 @@ Uploaded materials belong to the owner the server resolves for the upload reques
 - If the server resolves a fixed owner — a shared team owner (`PERSISTENCE_SHARED_OWNER_ID` together with `ACCESS_CODE`), single-user mode (`OWNER_SINGLE_USER=true`), or a host that resolves the owner from a credential you send on every request — every request is the same owner automatically.
 - Otherwise the server identifies callers by an anonymous owner cookie that it sets on the first owner-scoped response (including error responses). Reuse one cookie jar on every request of the flow — uploads, the submission, polls and deletions — for example `curl -c cookies.txt -b cookies.txt` on all calls. An upload made without the cookie belongs to a different owner, and its id is unavailable to the submission.
 
+The job and the classroom it produces belong to the owner that submitted it:
+
+- A job can only be polled by that owner. A poll without the submission's cookie (or credential) is a different owner, and gets the same `404` as an unknown job.
+- The finished classroom is saved in that owner's course library. With a fixed owner it is editable wherever that owner signs in. With an anonymous owner cookie, the classroom opens read-only for anyone who has its URL but cannot be edited from a user's browser, because the browser is a different anonymous owner. If the user wants to edit classrooms generated through the API, the server needs a fixed owner or host authentication.
+
 ## Optional: Check Capabilities
 
 To tell the user in advance what the job is configured to attempt, or which files it can generate from, query:
@@ -165,7 +170,7 @@ GET {pollUrl}
 
 - Never restart the job just because a poll request fails once.
 - If a poll request returns a transient network error or `5xx`, wait about 60 seconds and retry the same `pollUrl`.
-- Treat a `404` on the `pollUrl` as terminal: the server does not know that job. Stop polling, report the `jobId` to the user, and do not resubmit without their confirmation.
+- Treat a `404` on the `pollUrl` as terminal: the server does not know that job for this owner. Check that the poll carries the submission's cookie (or credential); if it does, stop polling, report the `jobId` to the user, and do not resubmit without their confirmation.
 - If the job is still running after many polls, tell the user it is still in progress and continue polling instead of resubmitting.
 - Prefer fewer poll attempts over aggressive polling. Long-running jobs are more likely to survive agent-loop limits if the tool-call cadence stays low.
 - Within a single agent turn, cap active polling to about 10 minutes. If the job is still not finished, tell the user it is still running and include the `jobId` and `pollUrl` so a later turn can continue checking without resubmitting.
@@ -173,7 +178,7 @@ GET {pollUrl}
 - Do not try to recover from auth, provider, model, or base URL errors by changing request parameters. Tell the user to fix OpenMAIC server-side config and retry only after they confirm.
 - On `failed`, surface the server error and include the `jobId`.
 - On `succeeded`, read `result.classroomId` and `result.url` from the final poll response, and also read `result.warning` and `result.ttsCoverage` before telling the user the classroom is ready.
-  - If `result.warning` is set, quote it in the same update and describe narration as incomplete.
+  - If `result.warning` is set, quote it in the same update and describe narration as incomplete. A warning that says the asset storage is full names the outputs (images, video, narration) the server stopped storing; tell the user those were left out of the classroom.
   - If `result.ttsCoverage` is set and `written` is less than `total`, tell the user how many narration clips were written and how many speech actions were left silent. The classroom URL is still usable, and narration is incomplete.
   - A missing `ttsCoverage` means the server has no TTS provider configured, so no narration was generated. A TTS run includes `ttsCoverage`. `warning` is set when `written` is less than `total`, or when the TTS phase failed. A run with no narratable speech (`written: 0`, `total: 0`) has coverage and no `warning`.
 
