@@ -15,7 +15,7 @@ import {
 } from '@/lib/server/model-routes';
 import { getServerProviderConfig } from '@/lib/server/provider-config';
 import { translateLegacyConfig } from '@/lib/server/model-config/legacy-config';
-import { loadModelConfigFile, type ConfigEnv } from '@/lib/server/model-config/openmaic-yml';
+import { loadModelConfigFile } from '@/lib/server/model-config/openmaic-yml';
 import type { ModelConfigLayer } from '@/lib/server/model-config/resolve-slot';
 
 export interface DeploymentLayer {
@@ -33,7 +33,7 @@ function effectiveStageRoutes(): Partial<Record<LlmStage, StageRoute>> {
   return routes;
 }
 
-function hasLegacyConfiguration(env: ConfigEnv): boolean {
+function hasLegacyConfiguration(): boolean {
   const server = getServerProviderConfig();
   const sections = [
     server.providers,
@@ -46,32 +46,42 @@ function hasLegacyConfiguration(env: ConfigEnv): boolean {
   ];
   return (
     sections.some((section) => Object.keys(section).length > 0) ||
-    !!env.DEFAULT_MODEL?.trim() ||
-    !!env.MODEL_ROUTES?.trim() ||
-    !!env.MODEL_FALLBACK?.trim()
+    Object.values(server.disabled).some((ids) => ids.size > 0) ||
+    !!process.env.DEFAULT_MODEL?.trim() ||
+    !!process.env.MODEL_ROUTES?.trim() ||
+    !!process.env.MODEL_FALLBACK?.trim()
   );
 }
 
-export function loadDeploymentLayer(
-  env: ConfigEnv = process.env,
-  cwd: string = process.cwd(),
-): DeploymentLayer {
-  const file = loadModelConfigFile(env, cwd);
+/**
+ * Reads the process environment and working directory, like the legacy
+ * loaders it translates (which cache what they read).
+ */
+export function loadDeploymentLayer(): DeploymentLayer {
+  const file = loadModelConfigFile();
+  const legacy = hasLegacyConfiguration();
   if (file) {
     return {
       layer: { source: 'deployment', config: file },
-      notices: hasLegacyConfiguration(env)
+      notices: legacy
         ? [
             'openmaic.yml is present, so slot resolution uses it and not the legacy provider variables, server-providers.yml, DEFAULT_MODEL, MODEL_ROUTES or MODEL_FALLBACK',
           ]
         : [],
     };
   }
+  if (!legacy) return { layer: null, notices: [] };
   const { config, notices } = translateLegacyConfig(getServerProviderConfig(), {
-    defaultModel: env.DEFAULT_MODEL?.trim() || undefined,
+    defaultModel: process.env.DEFAULT_MODEL?.trim() || undefined,
     stageRoutes: effectiveStageRoutes(),
-    globalFallback: env.MODEL_FALLBACK?.trim() || undefined,
+    globalFallback: process.env.MODEL_FALLBACK?.trim() || undefined,
   });
   const empty = !config.providers && !config.slots;
-  return { layer: empty ? null : { source: 'deployment', config }, notices };
+  return {
+    layer: empty ? null : { source: 'deployment', config },
+    notices: [
+      'The model configuration comes from the legacy provider variables, server-providers.yml, DEFAULT_MODEL, MODEL_ROUTES and MODEL_FALLBACK, which are deprecated; move it to openmaic.yml',
+      ...notices,
+    ],
+  };
 }
