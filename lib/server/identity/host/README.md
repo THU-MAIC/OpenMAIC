@@ -17,5 +17,6 @@ Register the methods from `instrumentation.ts` with
 
 The middleware mints the anonymous owner cookie on page navigations
 (`anonymousOwnerForNavigation` in `middleware.ts`, see `../navigation.ts`); it
-cannot see these registrations. Skip it there for requests your methods own if
-you do not want an anonymous cookie next to your credential.
+cannot see these registrations. Set `OWNER_ANONYMOUS_PREMINT=false` to turn it
+off (the server warns at startup when `anonymousFallback: false` leaves it on),
+or skip it there for requests your methods own.

@@ -687,6 +687,7 @@ Invalid configuration stops the server. The `register()` hook of
 - a malformed `ASSET_QUOTA_BYTES`, `ASSET_PENDING_TTL_MS`,
   `OWNER_WRITE_LOCK_WAIT_MS` or `OWNER_CLAIM_LOCK_WAIT_MS`;
 - `OWNER_CLAIM_TRIGGER` set to anything but `explicit` or `auto`;
+- `OWNER_ANONYMOUS_PREMINT` that is not a boolean;
 - the removed `OWNER_AUTHENTICATOR` / `TRUSTED_PROXY_*` variables, when set;
 - `PERSISTENCE_SHARED_OWNER_ID` that is malformed, set without `ACCESS_CODE`,
   or set beside an owner auth registration that leaves out
@@ -853,10 +854,13 @@ configureOwnerAuthentication({
 - The middleware mints the anonymous cookie on page navigations whenever
   neither `OWNER_SINGLE_USER` nor `PERSISTENCE_SHARED_OWNER_ID` is set: it can
   run in the Edge runtime and cannot see this registration. A page cookie next
-  to a host credential is a claim candidate like any other anonymous cookie. A
-  host that does not want one for requests its methods own (with
-  `anonymousFallback: false`, say, or `OWNER_CLAIM_TRIGGER=auto`) skips
-  `anonymousOwnerForNavigation` in `middleware.ts` for those requests.
+  to a host credential is a claim candidate like any other anonymous cookie.
+  Set `OWNER_ANONYMOUS_PREMINT=false` to turn page minting off (with
+  `anonymousFallback: false` the cookie serves no request, and with
+  `OWNER_CLAIM_TRIGGER=auto` it would be claimed and cleared after every
+  cookieless page load; the server warns at startup about that combination),
+  or narrow `anonymousOwnerForNavigation` in `middleware.ts` to the requests
+  your methods do not own.
 - `issuesAnonymousOwners: true` with `clearCredential()` is only for a method
   that authenticates anonymous principals itself with a cookie: those
   `Set-Cookie` values ride every `403 OWNER_RETIRED`. Core never calls
