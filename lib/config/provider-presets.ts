@@ -37,6 +37,8 @@ export interface PresetCapabilityTarget {
   baseUrl?: string;
   /** Models offered through this preset, best first (token plans). */
   models?: readonly string[];
+  /** The model a provider-only reference means (token plans); else the registry's default. */
+  defaultModel?: string;
 }
 
 export interface ProviderPreset {
@@ -143,12 +145,13 @@ export function tokenPlanToPreset(plan: TokenPlanPreset): ProviderPreset {
     NonNullable<TokenPlanPreset['modalities'][TokenPlanModality]>,
   ][]) {
     const capability = MODALITY_CAPABILITY[modality];
+    const lead = target.defaultModelId ?? target.defaultModels?.[0];
     capabilities[capability] = {
       registryId: target.providerId,
       baseUrl: target.baseUrl,
       ...(target.defaultModels ? { models: target.defaultModels } : {}),
+      ...(lead ? { defaultModel: lead } : {}),
     };
-    const lead = target.defaultModelId ?? target.defaultModels?.[0];
     const root = capability === 'chat' ? 'llm' : capability;
     if (lead) recommended[root as SlotId] = lead;
     for (const [stage, model] of Object.entries(target.stageRoutes ?? {})) {
@@ -174,4 +177,13 @@ const PRESET_BY_ID = new Map(PROVIDER_PRESETS.map((preset) => [preset.id, preset
 
 export function getProviderPreset(id: string): ProviderPreset | undefined {
   return PRESET_BY_ID.get(id);
+}
+
+/** The registry's default endpoint for a capability's provider, if it has one. */
+export function registryDefaultBaseUrl(
+  capability: SlotCapability,
+  registryId: string,
+): string | undefined {
+  const entry = REGISTRIES[capability][registryId] as { defaultBaseUrl?: string } | undefined;
+  return entry?.defaultBaseUrl || undefined;
 }

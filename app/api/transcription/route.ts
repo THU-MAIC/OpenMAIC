@@ -59,7 +59,12 @@ export async function POST(req: NextRequest) {
 
     const config = {
       providerId: connection.providerId as ASRProviderId,
-      modelId: connection.modelId,
+      // On the legacy default provider the request's model still applies
+      // through its allowlist, as before slots.
+      modelId:
+        connection.origin === 'default'
+          ? resolveASRModel(connection.providerId, modelId)
+          : connection.modelId,
       language: language || 'auto',
       apiKey: connection.apiKey ?? '',
       baseUrl: connection.baseUrl,

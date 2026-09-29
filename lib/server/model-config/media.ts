@@ -13,12 +13,15 @@
  * workspace provider's endpoint was typed by a user: it is validated like a
  * caller-supplied base URL, and a workspace may not set a proxy.
  */
-import type { SlotId } from '@/lib/config/model-slots';
+import { getSlot, type SlotId } from '@/lib/config/model-slots';
+import { registryDefaultBaseUrl } from '@/lib/config/provider-presets';
 import { apiError } from '@/lib/server/api-response';
 import { InvalidOwnerCredentialError } from '@/lib/server/identity/resolve';
 import { invalidOwnerCredentialResponse } from '@/lib/server/identity/with-owner';
 
 import { isServerProviderDisabled } from '@/lib/server/provider-config';
+import { isIP } from 'node:net';
+import { isPrivateIP } from '@/lib/server/ssrf-guard';
 
 import type { ResolvedModelTarget, SlotResolution } from './resolve-slot';
 import {
@@ -73,6 +76,28 @@ export interface MediaConnection {
 
 type Assigned = Extract<SlotResolution, { status: 'assigned' }>;
 
+/**
+ * Whether an endpoint names this server's own network by its spelling
+ * (localhost, a local name, a private address): the default endpoint of a
+ * self-hosted preset. No DNS lookup: the public-only transports check the
+ * resolved address when they connect.
+ */
+export function isLocalEndpoint(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  } catch {
+    return true;
+  }
+  return (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal') ||
+    (isIP(host) !== 0 && isPrivateIP(host))
+  );
+}
+
 async function fromTarget(
   slot: MediaSlot,
   target: ResolvedModelTarget,
@@ -101,6 +126,14 @@ async function fromTarget(
         `A custom endpoint for ${slot} can only be configured by the deployment (openmaic.yml)`,
       );
     }
+    // A self-hosted preset's default endpoint is on the server's own network.
+    const endpoint =
+      target.baseUrl ?? registryDefaultBaseUrl(getSlot(slot).capability, target.registryId);
+    if (endpoint && isLocalEndpoint(endpoint)) {
+      throw new WorkspaceEndpointError(
+        `The ${target.presetId} preset runs on the server's own network; only the deployment (openmaic.yml) can configure it`,
+      );
+    }
   }
   return {
     providerId: target.registryId,
@@ -110,8 +143,9 @@ async function fromTarget(
     ...(target.credentials !== undefined ? { credentials: target.credentials } : {}),
     ...(target.proxy !== undefined ? { proxy: target.proxy } : {}),
     managed,
-    // A workspace provider here only ever uses its preset's endpoint.
-    userEndpoint: false,
+    // A workspace provider is user input: its (public) preset endpoint runs
+    // under the strict public-network policy wherever the transport has one.
+    userEndpoint: !managed,
     origin,
   };
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PROVIDER_PRESETS } from '@/lib/config/provider-presets';
 import { parseModelConfig } from '@/lib/server/model-config/openmaic-yml';
 import {
   SlotResolutionError,
@@ -274,6 +275,21 @@ describe('resolveSlot', () => {
     const resolved = resolveSlot('webSearch', [search]);
     expect(resolved).toMatchObject({ status: 'assigned', registryId: 'tavily', apiKey: 'k' });
     expect(resolved).not.toHaveProperty('modelId');
+  });
+
+  it("resolves a provider-only reference to a token plan's own default model", () => {
+    const plan = PROVIDER_PRESETS.find(
+      (preset) => preset.kind === 'token-plan' && preset.capabilities.video?.defaultModel,
+    )!;
+    for (const slot of ['video', 'image', 'tts'] as const) {
+      const expected = plan.capabilities[slot]?.defaultModel;
+      if (!expected) continue;
+      const layer: ModelConfigLayer = {
+        source: 'deployment',
+        config: { providers: { p: { preset: plan.id, apiKey: 'k' } }, slots: { [slot]: 'p' } },
+      };
+      expect(resolveSlot(slot, [layer])).toMatchObject({ status: 'assigned', modelId: expected });
+    }
   });
 
   it('reports a malformed reference by path, without echoing it', () => {

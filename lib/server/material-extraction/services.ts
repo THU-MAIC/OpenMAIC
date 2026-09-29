@@ -10,7 +10,14 @@ import {
   getDocumentExtractorManifestEntry,
   getMediaExtractorManifestEntry,
 } from '@/lib/document/extractors/manifest';
-import { serverMediaConnection, type MediaConnection } from '@/lib/server/model-config/media';
+import { createLogger } from '@/lib/logger';
+import {
+  serverMediaConnection,
+  WorkspaceEndpointError,
+  type MediaConnection,
+} from '@/lib/server/model-config/media';
+
+const log = createLogger('ExtractionServices');
 
 export interface ExtractionServices {
   /** The document slot's service, or null for self-contained extraction only. */
@@ -38,7 +45,13 @@ export async function resolveExtractionServices(
 ): Promise<ExtractionServices> {
   const [document, asr] = await Promise.all([
     serverMediaConnection('document', ownerId, { forward }),
-    serverMediaConnection('asr', ownerId, { forward }),
+    // Speech only serves media extraction: an asr assignment this workspace
+    // may not use leaves transcription unavailable, not every extraction.
+    serverMediaConnection('asr', ownerId, { forward }).catch((error: unknown) => {
+      if (!(error instanceof WorkspaceEndpointError)) throw error;
+      log.warn(`Speech recognition unavailable for extraction: ${error.message}`);
+      return null;
+    }),
   ]);
   const speech = usable(asr);
   return {

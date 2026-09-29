@@ -71,8 +71,15 @@ export async function POST(request: NextRequest) {
         `No API key configured for video provider: ${providerId}`,
       );
     }
-    // A slot without a model uses the provider's first catalogue model.
-    const model = connection.modelId ?? VIDEO_PROVIDERS[providerId]?.models?.[0]?.id;
+    // A configured slot without a model uses the provider's first catalogue
+    // model. On the legacy default provider the request's model still applies
+    // through its allowlist, as before slots.
+    const model =
+      connection.origin === 'configuration'
+        ? (connection.modelId ?? VIDEO_PROVIDERS[providerId]?.models?.[0]?.id)
+        : connection.origin === 'default'
+          ? resolveVideoModel(providerId, request.headers.get('x-video-model')?.trim() || undefined)
+          : connection.modelId;
     if (!model) {
       return apiError(
         'MISSING_MODEL',

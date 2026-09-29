@@ -46,7 +46,20 @@ describe('workspace media endpoints', () => {
       slots: { webSearch: 'tv' },
     });
     const connection = await resolveMediaSlot('webSearch', { workspaceId: 'user:alice' });
-    expect(connection).toMatchObject({ providerId: 'tavily', managed: false, userEndpoint: false });
+    // User input: the public-only network policy applies where the transport has one.
+    expect(connection).toMatchObject({ providerId: 'tavily', managed: false, userEndpoint: true });
+  });
+
+  it("refuses a self-hosted preset whose default endpoint is on the server's network", async () => {
+    workspaces.set('user:alice', {
+      providers: { cu: { preset: 'comfyui-image' }, fa: { preset: 'funasr-asr' } },
+      slots: { image: 'cu', asr: 'fa' },
+    });
+    for (const slot of ['image', 'asr'] as const) {
+      await expect(resolveMediaSlot(slot, { workspaceId: 'user:alice' })).rejects.toBeInstanceOf(
+        WorkspaceEndpointError,
+      );
+    }
   });
 
   it('refuses a custom endpoint typed into the workspace settings', async () => {

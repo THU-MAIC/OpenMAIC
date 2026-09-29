@@ -171,7 +171,11 @@ function resolveTarget(
     ...(provider.apiKey !== undefined ? { apiKey: provider.apiKey } : {}),
     ...(provider.credentials !== undefined ? { credentials: provider.credentials } : {}),
     ...(provider.proxy !== undefined ? { proxy: provider.proxy } : {}),
-    ...(modelId !== undefined ? { modelId } : {}),
+    // A provider-only reference means the preset's own default (a token
+    // plan's), else the registry's, which the adapter applies.
+    ...((modelId ?? target.defaultModel) !== undefined
+      ? { modelId: modelId ?? target.defaultModel }
+      : {}),
     ...(preset.trustsModelCatalogue === false ? { catalogue: false as const } : {}),
   };
 }

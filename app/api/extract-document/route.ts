@@ -25,6 +25,7 @@ import {
   slotMediaExtractorConfig,
   type ExtractionServices,
 } from '@/lib/server/material-extraction/services';
+import { mediaResolutionResponse } from '@/lib/server/model-config/media';
 import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
 import { normalizeDocumentMimeType, SUPPORTED_MEDIA_MIME_TYPES } from '@/lib/document/mime';
 import { createLogger } from '@/lib/logger';
@@ -719,9 +720,16 @@ async function extract(req: NextRequest, ownerCookies: OwnerCookies): Promise<Re
 
     // The document and speech services of the request's workspace (slots).
     // A request's own workspace: never forwarded through a claim.
-    const services = await resolveExtractionServices((await requestWorkspaceId(req)) ?? undefined, {
-      forward: false,
-    });
+    let services: ExtractionServices;
+    try {
+      services = await resolveExtractionServices((await requestWorkspaceId(req)) ?? undefined, {
+        forward: false,
+      });
+    } catch (error) {
+      const refused = mediaResolutionResponse(error, 'Document extraction');
+      if (refused) return refused;
+      throw error;
+    }
     return await runExtraction(services, source, requestConfig, logState, isAssetIdForm);
   } catch (error) {
     log.error(

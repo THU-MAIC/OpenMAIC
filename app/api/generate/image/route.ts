@@ -79,8 +79,15 @@ export async function POST(request: NextRequest) {
         `No API key configured for image provider: ${providerId}`,
       );
     }
-    // A slot without a model uses the provider's first catalogue model.
-    const model = connection.modelId ?? provider?.models?.[0]?.id;
+    // A configured slot without a model uses the provider's first catalogue
+    // model. On the legacy default provider the request's model still applies
+    // through its allowlist, as before slots.
+    const model =
+      connection.origin === 'configuration'
+        ? (connection.modelId ?? provider?.models?.[0]?.id)
+        : connection.origin === 'default'
+          ? resolveImageModel(providerId, request.headers.get('x-image-model')?.trim() || undefined)
+          : connection.modelId;
     // Workflow-based providers (e.g. comfyui-image) have no model catalog and
     // need no model; everyone else must resolve one.
     if (!model && provider?.models && provider.models.length > 0) {
