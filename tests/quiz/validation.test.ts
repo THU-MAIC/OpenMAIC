@@ -2,9 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { findQuizRenderingIssue } from '@/lib/quiz/validation';
 import type { QuizQuestion } from '@/lib/types/stage';
 
-function choiceQuestion(
-  overrides: Partial<QuizQuestion> = {},
-): QuizQuestion {
+function choiceQuestion(overrides: Partial<QuizQuestion> = {}): QuizQuestion {
   return {
     id: 'q1',
     type: 'single',
@@ -37,7 +35,11 @@ describe('findQuizRenderingIssue', () => {
           ],
         }),
       ]),
-    ).toBe('Question 1 repeats option value "B".');
+    ).toEqual({
+      code: 'duplicate-option-value',
+      question: 1,
+      value: 'B',
+    });
   });
 
   it('rejects duplicate question ids', () => {
@@ -46,7 +48,11 @@ describe('findQuizRenderingIssue', () => {
         choiceQuestion({ id: 'same' }),
         choiceQuestion({ id: 'same', question: 'Second question?' }),
       ]),
-    ).toBe('Question 2 repeats question id "same".');
+    ).toEqual({
+      code: 'duplicate-question-id',
+      question: 2,
+      value: 'same',
+    });
   });
 
   it('allows short-answer questions without options', () => {

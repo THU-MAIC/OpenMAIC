@@ -701,7 +701,15 @@
     "aiGrading": "AI 正在批改中...",
     "aiGradingWait": "請稍候，正在分析你的答案",
     "quizReport": "答題報告",
-    "retry": "重新答題"
+    "retry": "重新答題",
+    "invalidContent": {
+      "title": "測驗內容無效",
+      "missingQuestionId": "第 {{question}} 題缺少 ID。",
+      "duplicateQuestionId": "第 {{question}} 題重複使用了題目 ID「{{value}}」。",
+      "missingOptions": "第 {{question}} 題沒有答案選項。",
+      "missingOptionValue": "第 {{question}} 題的第 {{option}} 個選項缺少值。",
+      "duplicateOptionValue": "第 {{question}} 題重複使用了選項值「{{value}}」。"
+    }
   },
   "roundtable": {
     "teacher": "教師",

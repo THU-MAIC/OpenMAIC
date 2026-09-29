@@ -716,7 +716,15 @@
     "aiGrading": "Die KI wertet aus...",
     "aiGradingWait": "Bitte warten, deine Antworten werden ausgewertet",
     "quizReport": "Quizbericht",
-    "retry": "Erneut versuchen"
+    "retry": "Erneut versuchen",
+    "invalidContent": {
+      "title": "Ungültiger Quizinhalt",
+      "missingQuestionId": "Frage {{question}} hat keine ID.",
+      "duplicateQuestionId": "Frage {{question}} verwendet die Frage-ID „{{value}}“ mehrfach.",
+      "missingOptions": "Frage {{question}} hat keine Antwortoptionen.",
+      "missingOptionValue": "Bei Frage {{question}} hat Option {{option}} keinen Wert.",
+      "duplicateOptionValue": "Frage {{question}} verwendet den Optionswert „{{value}}“ mehrfach."
+    }
   },
   "roundtable": {
     "teacher": "LEHRKRAFT",

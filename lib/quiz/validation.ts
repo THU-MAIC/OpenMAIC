@@ -1,7 +1,14 @@
 import type { QuizQuestion } from '@/lib/types/stage';
 
+export type QuizRenderingIssue =
+  | { code: 'missing-question-id'; question: number }
+  | { code: 'duplicate-question-id'; question: number; value: string }
+  | { code: 'missing-options'; question: number }
+  | { code: 'missing-option-value'; question: number; option: number }
+  | { code: 'duplicate-option-value'; question: number; value: string };
+
 /**
- * Return a learner-facing reason a quiz cannot be rendered safely.
+ * Detect quiz data that cannot be rendered safely.
  *
  * This is intentionally narrower than generation validation. Its job is to
  * protect playback from malformed persisted/imported quiz data that would
@@ -9,18 +16,23 @@ import type { QuizQuestion } from '@/lib/types/stage';
  */
 export function findQuizRenderingIssue(
   questions: readonly QuizQuestion[],
-): string | null {
+): QuizRenderingIssue | null {
   const questionIds = new Set<string>();
 
   for (let questionIndex = 0; questionIndex < questions.length; questionIndex += 1) {
     const question = questions[questionIndex];
+    const questionNumber = questionIndex + 1;
 
     if (!question.id) {
-      return `Question ${questionIndex + 1} is missing an id.`;
+      return { code: 'missing-question-id', question: questionNumber };
     }
 
     if (questionIds.has(question.id)) {
-      return `Question ${questionIndex + 1} repeats question id "${question.id}".`;
+      return {
+        code: 'duplicate-question-id',
+        question: questionNumber,
+        value: question.id,
+      };
     }
     questionIds.add(question.id);
 
@@ -28,7 +40,7 @@ export function findQuizRenderingIssue(
 
     const options = question.options;
     if (!options || options.length === 0) {
-      return `Question ${questionIndex + 1} has no answer options.`;
+      return { code: 'missing-options', question: questionNumber };
     }
 
     const optionValues = new Set<string>();
@@ -37,11 +49,19 @@ export function findQuizRenderingIssue(
       const value = options[optionIndex]?.value;
 
       if (!value) {
-        return `Question ${questionIndex + 1}, option ${optionIndex + 1} is missing a value.`;
+        return {
+          code: 'missing-option-value',
+          question: questionNumber,
+          option: optionIndex + 1,
+        };
       }
 
       if (optionValues.has(value)) {
-        return `Question ${questionIndex + 1} repeats option value "${value}".`;
+        return {
+          code: 'duplicate-option-value',
+          question: questionNumber,
+          value,
+        };
       }
 
       optionValues.add(value);
