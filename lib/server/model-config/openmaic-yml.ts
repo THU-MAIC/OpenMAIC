@@ -187,8 +187,15 @@ function interpolate(
   return result;
 }
 
+/** Splits a validated `providerId:modelId` reference; the model id may contain colons. */
+export function parseModelRef(ref: string): { providerId: string; modelId: string } {
+  const match = MODEL_REF.exec(ref);
+  if (!match) throw new Error(`Invalid model reference "${ref}"`);
+  return { providerId: match[1], modelId: match[2] };
+}
+
 function modelRefProvider(ref: string): string {
-  return MODEL_REF.exec(ref)![1];
+  return parseModelRef(ref).providerId;
 }
 
 /**
