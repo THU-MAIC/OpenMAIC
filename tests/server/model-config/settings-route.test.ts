@@ -256,6 +256,7 @@ describe('/api/model-config', () => {
         body: JSON.stringify({
           providers: {
             bad_id: { preset: 'openai', apiKey: SECRET },
+            typed: { preset: 'openai', apiKey: 42 },
             good: { preset: 'openai', apiKey: SECRET },
           },
           slots: { llm: 'good:gpt-5.6', 'course.outline': { model: 'good:gpt-5.6', bogus: 1 } },
@@ -267,6 +268,7 @@ describe('/api/model-config', () => {
     expect(answer.imported).toEqual(['good', 'llm']);
     expect(answer.skipped.map((entry: { item: string }) => entry.item)).toEqual([
       'bad_id',
+      'typed',
       'course.outline',
     ]);
   });

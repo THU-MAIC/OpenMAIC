@@ -67,7 +67,14 @@ describe('modelSettingsView', () => {
     const ids = presets.map((preset) => preset.id);
     expect(ids).toContain('openai');
     expect(ids).toContain('tavily');
-    for (const deploymentOnly of ['bedrock', 'searxng', 'mineru', 'comfyui-image', 'funasr-asr']) {
+    for (const deploymentOnly of [
+      'bedrock',
+      'searxng',
+      'mineru',
+      'comfyui-image',
+      'funasr-asr',
+      'alidocmind',
+    ]) {
       expect(ids).not.toContain(deploymentOnly);
     }
     const compatible = presets.find((preset) => preset.id === 'openai-compatible')!;
@@ -95,6 +102,24 @@ describe('modelSettingsView', () => {
     const json = JSON.stringify(modelSettingsView(null));
     expect(json).not.toContain('gateway.internal');
     expect(json).not.toContain('endpoint-secret');
+  });
+
+  it('never shows credentials a stored endpoint carries', () => {
+    const view = modelSettingsView({
+      config: {
+        providers: {
+          oc: {
+            preset: 'openai-compatible',
+            apiKey: 'sk-k',
+            baseUrl: 'https://u:hunter2@1.1.1.1/v1',
+          },
+        },
+        slots: { llm: 'oc:m1' },
+      },
+      revision: 1,
+      unreadableSecrets: [],
+    });
+    expect(JSON.stringify(view)).not.toContain('hunter2');
   });
 
   it("offers a workspace provider's models only where the calls can reach them", () => {
@@ -195,6 +220,11 @@ describe('applyModelSettingsChange', () => {
       [{ id: 'z', preset: 'openai-compatible' }, /needs a base URL/],
       [{ id: 'c', preset: 'comfyui-image' }, /server's own network/],
       [{ id: 'o', preset: 'ollama' }, /needs a base URL/],
+      [
+        { id: 'u', preset: 'openai-compatible', baseUrl: 'https://user:pw@1.1.1.1/v1' },
+        /not in the base URL/,
+      ],
+      [{ id: 'a', preset: 'alidocmind', apiKey: 'k' }, /key pair/],
       [{ id: 'bad_id', preset: 'openai', apiKey: 'sk-k' }, /providers/],
     ] as const) {
       await expect(

@@ -30,17 +30,8 @@ export const runtime = 'nodejs';
 const proposalSchema = z
   .object({
     providers: z
-      .record(
-        z.string().min(1).max(64),
-        z
-          .object({
-            preset: z.string().min(1),
-            apiKey: z.string().min(1).optional(),
-            baseUrl: z.string().min(1).optional(),
-            models: z.array(z.string().min(1)).min(1).optional(),
-          })
-          .strict(),
-      )
+      // Each provider is checked on its own: a malformed one is skipped.
+      .record(z.string().min(1).max(64), z.unknown())
       .optional(),
     slots: z.record(z.string().min(1), z.unknown()).optional(),
   })

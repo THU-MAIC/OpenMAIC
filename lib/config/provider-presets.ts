@@ -51,6 +51,8 @@ export interface ProviderPreset {
   recommended?: Partial<Record<SlotId, string>>;
   /** True when the preset needs a caller-supplied base URL. */
   requiresBaseUrl?: boolean;
+  /** True when the preset authenticates with a key pair (`credentials`) rather than one key. */
+  requiresCredentials?: boolean;
   /**
    * False when the registry entry only supplies the transport, so its model
    * catalogue says nothing about the models behind the endpoint (a custom
@@ -59,7 +61,7 @@ export interface ProviderPreset {
   trustsModelCatalogue?: false;
 }
 
-type RegistryEntry = { name?: string; requiresBaseUrl?: boolean };
+type RegistryEntry = { name?: string; requiresBaseUrl?: boolean; requiresCredentials?: boolean };
 
 const REGISTRIES: Record<SlotCapability, Record<string, RegistryEntry>> = {
   chat: PROVIDERS,
@@ -107,6 +109,7 @@ function singlePresets(): ProviderPreset[] {
         kind: 'single',
         capabilities: { [capability]: { registryId } },
         ...(requiresBaseUrl ? { requiresBaseUrl } : {}),
+        ...(entry.requiresCredentials ? { requiresCredentials: true } : {}),
       });
     }
   }

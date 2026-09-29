@@ -14,6 +14,8 @@ export interface PDFProviderConfig {
   id: PDFProviderId;
   name: string;
   requiresApiKey: boolean;
+  /** Authenticates with a key pair (`credentials`) rather than one API key. */
+  requiresCredentials?: boolean;
   baseUrl?: string;
   icon?: string;
   features: string[]; // ['text', 'images', 'tables', 'formulas', 'layout-analysis', etc.]

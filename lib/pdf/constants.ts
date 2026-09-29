@@ -40,6 +40,7 @@ export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
     id: 'alidocmind',
     name: 'AliDocMind',
     requiresApiKey: true,
+    requiresCredentials: true,
     icon: '/logos/aliyun.svg',
     features: ['text', 'images', 'tables', 'formulas', 'layout-analysis', 'ocr'],
   },

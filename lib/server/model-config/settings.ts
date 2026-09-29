@@ -10,6 +10,8 @@
  * read-only. Every change is validated against the whole configuration before
  * it is stored, so a stored workspace configuration always resolves.
  */
+import { z } from 'zod';
+
 import {
   MODEL_SLOTS,
   getSlot,
@@ -148,6 +150,28 @@ export class ModelSettingsError extends Error {
   }
 }
 
+function hasUserinfo(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.username !== '' || parsed.password !== '';
+  } catch {
+    return false;
+  }
+}
+
+/** An endpoint as a view shows it: never with credentials in it. */
+function viewEndpoint(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.username && !parsed.password) return url;
+    parsed.username = '';
+    parsed.password = '';
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 /** A key's last four characters, as far as that says nothing useful. */
 function maskKey(key: string): string {
   return key.length >= 12 ? `…${key.slice(-4)}` : '…';
@@ -202,6 +226,10 @@ function workspacePresetProblem(preset: ProviderPreset): string | undefined {
   if (preset.capabilities.chat?.registryId === 'bedrock') {
     return 'Amazon Bedrock can only be configured by the deployment (openmaic.yml)';
   }
+  // The settings take one key per provider; a key pair stays in openmaic.yml.
+  if (preset.requiresCredentials) {
+    return `${preset.name} authenticates with a key pair, which only the deployment (openmaic.yml) can configure`;
+  }
   if (preset.requiresBaseUrl && !preset.capabilities.chat) {
     return `A custom endpoint for ${preset.name} can only be configured by the deployment (openmaic.yml)`;
   }
@@ -227,7 +255,10 @@ function stripTarget(target: ResolvedModelTarget): TargetView {
     customBaseUrl: _customBaseUrl,
     ...rest
   } = target;
-  return { ...rest, ...(target.providerSource === 'workspace' && baseUrl ? { baseUrl } : {}) };
+  return {
+    ...rest,
+    ...(target.providerSource === 'workspace' && baseUrl ? { baseUrl: viewEndpoint(baseUrl) } : {}),
+  };
 }
 
 function effectiveView(resolution: SlotResolution): EffectiveView {
@@ -293,7 +324,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
       id,
       preset: provider.preset,
       source: 'workspace' as const,
-      ...(provider.baseUrl ? { baseUrl: provider.baseUrl } : {}),
+      ...(provider.baseUrl ? { baseUrl: viewEndpoint(provider.baseUrl) } : {}),
       ...(provider.models ? { models: [...provider.models] } : {}),
       capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
         chatOnly: provider.baseUrl !== undefined,
@@ -373,6 +404,13 @@ async function checkProvider(id: string, provider: Provider): Promise<void> {
     throw new ModelSettingsError('INVALID_PROVIDER', `The ${preset.name} preset needs a base URL`);
   }
   if (provider.baseUrl) {
+    // An endpoint is stored and shown in the clear: a password in it is not.
+    if (hasUserinfo(provider.baseUrl)) {
+      throw new ModelSettingsError(
+        'INVALID_PROVIDER',
+        'Put credentials in the API key, not in the base URL',
+      );
+    }
     const problem = await validateClientBaseUrl(provider.baseUrl);
     if (problem) throw new ModelSettingsError('INVALID_PROVIDER', problem);
   }
@@ -505,10 +543,8 @@ export function keysClearedBy(change: ModelSettingsChange): string[] {
 
 /** Providers and slot assignments proposed from elsewhere (settings a browser kept). */
 export interface ModelSettingsProposal {
-  providers?: Record<
-    string,
-    { preset: string; apiKey?: string; baseUrl?: string; models?: string[] }
-  >;
+  /** Each checked on its own (see {@link importedProviderSchema}). */
+  providers?: Record<string, unknown>;
   slots?: Record<string, SlotAssignment>;
 }
 
@@ -519,6 +555,16 @@ export interface ModelSettingsImport {
   /** What was left out, and why. Never an existing setting: those always win. */
   skipped: { item: string; reason: string }[];
 }
+
+/** One proposed provider: what an edit may set. */
+const importedProviderSchema = z
+  .object({
+    preset: z.string().min(1),
+    apiKey: z.string().min(1).optional(),
+    baseUrl: z.string().min(1).optional(),
+    models: z.array(z.string().min(1)).min(1).optional(),
+  })
+  .strict();
 
 /**
  * Merge a proposal into a workspace's configuration, one item at a time and
@@ -553,7 +599,12 @@ export async function importModelSettings(
       skipped.push({ item: id, reason: 'A provider with this id already exists' });
       continue;
     }
-    await attempt(id, { kind: 'provider', id, ...provider });
+    const parsed = importedProviderSchema.safeParse(provider);
+    if (!parsed.success) {
+      skipped.push({ item: id, reason: 'Malformed provider settings' });
+      continue;
+    }
+    await attempt(id, { kind: 'provider', id, ...parsed.data });
   }
   for (const [slot, assignment] of Object.entries(proposal.slots ?? {})) {
     if (Object.hasOwn(config.slots ?? {}, slot)) {
