@@ -717,6 +717,56 @@ describe('classroom generation inputs', () => {
     expect(result.ttsCoverage).toEqual({ written: 1, total: 1 });
   });
 
+  it('continues without research context when the configured web search fails', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    mocks.resolveClassroomWebSearchConfig.mockReturnValue({ providerId: 'tavily', apiKey: 'k' });
+    mocks.buildSearchQuery.mockResolvedValue({
+      query: 'retry basics',
+      hasPdfContext: false,
+      rawRequirementLength: 18,
+      rewriteAttempted: false,
+      finalQueryLength: 12,
+    });
+    mocks.searchWeb.mockRejectedValue(new Error('search provider down'));
+
+    const { result } = await generateWithProgress({}, { webSearch: true });
+
+    expect(mocks.searchWeb).toHaveBeenCalledTimes(1);
+    expect(mocks.generateSceneOutlinesFromRequirements.mock.calls[0][4].researchContext).toBe(
+      undefined,
+    );
+    expect(result.scenesCount).toBe(1);
+    expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips web search when the configured provider resolves to no usable configuration', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    mocks.resolveClassroomWebSearchConfig.mockReturnValue(undefined);
+
+    const { result } = await generateWithProgress({}, { webSearch: true });
+
+    expect(mocks.resolveClassroomWebSearchConfig).toHaveBeenCalledWith({});
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
+    expect(mocks.generateSceneOutlinesFromRequirements.mock.calls[0][4].researchContext).toBe(
+      undefined,
+    );
+    expect(result.scenesCount).toBe(1);
+  });
+
+  it('still persists the classroom when configured media generation fails', async () => {
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    mocks.generateMediaForClassroom.mockRejectedValue(new Error('image provider down'));
+
+    const { result, progress } = await generateWithProgress({}, { imageGeneration: true });
+
+    expect(mocks.generateMediaForClassroom).toHaveBeenCalledTimes(1);
+    expect(mocks.replaceMediaPlaceholders).not.toHaveBeenCalled();
+    expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
+    expect(result.scenesCount).toBe(1);
+    expect(result.warning).toBeUndefined();
+    expect(progress.at(-1)).toMatchObject({ step: 'completed' });
+  });
+
   it('embeds generated agent profiles in the stage by default', async () => {
     mocks.generateSceneContent.mockResolvedValue(slideContent);
     mocks.callLLM.mockResolvedValue({
