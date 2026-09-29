@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils';
 
 import { FirstRunSetup, type SetupOutcome } from './first-run-setup';
 import { SlotPicker } from './slot-picker';
-import { MS, SlotIcon, slotName } from './slot-meta';
+import { MS, SlotIcon, applyErrorText, slotName } from './slot-meta';
 import { lineText } from './station-text';
 
 type T = (key: string, options?: Record<string, unknown>) => string;
@@ -139,6 +139,15 @@ function SlotLine({
             collisionPadding={12}
             className="w-[272px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl p-0"
             onWheelCapture={(event) => event.stopPropagation()}
+            // Open on the picker's Tab stop: the current choice, else the first row.
+            onOpenAutoFocus={(event) => {
+              const row = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>(
+                '[data-picker-row][tabindex="0"]',
+              );
+              if (!row) return;
+              event.preventDefault();
+              row.focus();
+            }}
           >
             <SlotPicker
               view={view}
@@ -170,13 +179,12 @@ function SlotLine({
               return;
             }
             setSwitching(true);
-            const result = await apply(change);
-            setSwitching(false);
-            if (on && result.ok) ctx.offMemory.delete(slot.slot);
-            if (!result.ok) {
-              toast.error(
-                result.reason === 'conflict' ? t(`${MS}.picker.conflict`) : result.message,
-              );
+            try {
+              const result = await apply(change);
+              if (on && result.ok) ctx.offMemory.delete(slot.slot);
+              if (!result.ok) toast.error(applyErrorText(result, t));
+            } finally {
+              setSwitching(false);
             }
           }}
         />

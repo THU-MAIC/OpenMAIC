@@ -271,7 +271,7 @@ describe('the map', () => {
     await flush();
 
     expect(apply).not.toHaveBeenCalled();
-    expect(document.body.querySelector('[role="listbox"][aria-label="tts"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot-picker="tts"]')).not.toBeNull();
   });
 
   it('pans with the arrow keys while the canvas has focus', () => {
@@ -336,6 +336,60 @@ describe('the picker of a root slot', () => {
   });
 });
 
+describe('picker keyboard', () => {
+  function key(element: Element, name: string) {
+    act(() => {
+      element.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true }));
+    });
+  }
+
+  it('is one Tab stop, moved through with the arrows, Home and End, chosen with Enter', async () => {
+    const view = makeView({ providers: [workspaceProvider('acme')] });
+    const { apply, changes } = recordingApply(view);
+    const slot = view.slots.find((entry) => entry.slot === 'classroom')!;
+    mount(createElement(SlotPicker, { view, slot, apply, onDone: () => {}, t: T }));
+
+    const rows = [...document.body.querySelectorAll<HTMLElement>('[data-picker-row]')];
+    const labels = rows.map((row) => row.textContent);
+    // Follow, the provider's two chat models, off: the current choice is the one Tab stop.
+    expect(rows.filter((row) => row.tabIndex === 0)).toEqual([rows[0]]);
+    expect(rows[0].getAttribute('aria-pressed')).toBe('true');
+
+    act(() => rows[0].focus());
+    key(rows[0], 'ArrowDown');
+    expect(document.activeElement?.textContent).toBe(labels[1]);
+    key(document.activeElement!, 'End');
+    expect(document.activeElement).toBe(rows[rows.length - 1]);
+    key(document.activeElement!, 'ArrowDown');
+    expect(document.activeElement).toBe(rows[rows.length - 1]);
+    key(document.activeElement!, 'Home');
+    expect(document.activeElement).toBe(rows[0]);
+    key(document.activeElement!, 'ArrowDown');
+    key(document.activeElement!, 'Enter');
+    await flush();
+
+    expect(changes).toEqual([{ kind: 'slots', set: { classroom: 'acme:acme-large' } }]);
+  });
+
+  it('makes the current model the Tab stop, and chooses with Space', async () => {
+    const view = withSlots(makeView({ providers: [workspaceProvider('acme')] }), {
+      classroom: { assignment: 'acme:acme-small' },
+    });
+    const { apply, changes } = recordingApply(view);
+    const slot = view.slots.find((entry) => entry.slot === 'classroom')!;
+    mount(createElement(SlotPicker, { view, slot, apply, onDone: () => {}, t: T }));
+
+    const stop = document.body.querySelector<HTMLElement>('[data-picker-row][tabindex="0"]')!;
+    expect(stop.textContent).toBe('Acme Small');
+    act(() => stop.focus());
+    key(stop, 'ArrowUp');
+    key(document.activeElement!, ' ');
+    await flush();
+
+    expect(changes).toEqual([{ kind: 'slots', set: { classroom: 'acme:acme-large' } }]);
+  });
+});
+
 describe('first-run setup', () => {
   function json(body: unknown, status = 200) {
     return new Response(JSON.stringify(body), {
@@ -343,6 +397,56 @@ describe('first-run setup', () => {
       headers: { 'Content-Type': 'application/json' },
     });
   }
+
+  async function connect() {
+    click(byText('settings.modelSettings.setup.open'));
+    await flush();
+    type(document.body.querySelector('select')!, chatPreset.id);
+    type(document.body.querySelector<HTMLInputElement>('input[type="password"]')!, 'sk-test');
+    click(byText('settings.modelSettings.setup.connect'));
+    await flush();
+  }
+
+  it('goes on when the answer to adding the provider is lost but the provider was saved', async () => {
+    const withProvider = makeView({ revision: 1, providers: [workspaceProvider('acme')] });
+    const methods: string[] = [];
+    const answers = [
+      json(makeView({ revision: null })),
+      new Response('{"revision":1,"prov', { status: 200 }),
+      json(withProvider),
+      json(withSlots(withProvider, { llm: { assignment: 'acme:acme-large' } })),
+    ];
+    const fetchImpl = vi.fn(async (_input: string, init?: RequestInit) => {
+      methods.push(init?.method ?? 'GET');
+      return answers.shift()!;
+    });
+    mount(createElement(ModelSettingsPanel, { client: createModelSettingsClient(fetchImpl) }));
+    await flush();
+
+    await connect();
+
+    // Added (answer lost), reloaded, then the slots filled against the reloaded view.
+    expect(methods).toEqual(['GET', 'PUT', 'GET', 'PUT']);
+    expect(document.body.textContent).not.toContain('settings.modelSettings.setup.connecting');
+    expect(document.body.textContent).not.toContain('settings.modelSettings.setup.partial');
+  });
+
+  it('says so, and frees the form, when the answer is lost and nothing was saved', async () => {
+    const answers = [
+      json(makeView({ revision: null })),
+      new Response('', { status: 200 }),
+      json(makeView({ revision: null })),
+    ];
+    const fetchImpl = vi.fn(async () => answers.shift()!);
+    mount(createElement(ModelSettingsPanel, { client: createModelSettingsClient(fetchImpl) }));
+    await flush();
+
+    await connect();
+
+    const connectButton = byText('settings.modelSettings.setup.connect');
+    expect(connectButton.hasAttribute('disabled')).toBe(false);
+    expect(document.body.textContent).toContain('settings.modelSettings.picker.unconfirmed');
+  });
 
   it('keeps a partial setup on screen through the reload a conflict causes, and recovers', async () => {
     const empty = makeView({ revision: null });

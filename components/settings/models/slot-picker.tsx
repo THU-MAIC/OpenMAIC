@@ -32,17 +32,23 @@ import {
 } from '@/lib/model-settings/edit';
 import { cn } from '@/lib/utils';
 
-import { MS, slotDescription, slotName } from './slot-meta';
+import { MS, applyErrorText, slotDescription, slotName } from './slot-meta';
 import { lineText } from './station-text';
 
 type T = (key: string, options?: Record<string, unknown>) => string;
 
 const NO_FALLBACK = '__none__';
 
+/**
+ * One choice of the picker: a plain button (pressed when it is the slot's
+ * current choice). Only one row per list is a Tab stop; the arrow keys move
+ * between rows (see {@link rovingKeys}).
+ */
 function Row({
   current,
   busy,
   disabled,
+  tabStop,
   onClick,
   children,
   note,
@@ -50,6 +56,7 @@ function Row({
   current?: boolean;
   busy?: boolean;
   disabled?: boolean;
+  tabStop: boolean;
   onClick: () => void;
   children: React.ReactNode;
   note?: string;
@@ -57,8 +64,9 @@ function Row({
   return (
     <button
       type="button"
-      role="option"
-      aria-selected={!!current}
+      data-picker-row=""
+      aria-pressed={!!current}
+      tabIndex={tabStop ? 0 : -1}
       disabled={disabled}
       onClick={onClick}
       className={cn(
@@ -80,6 +88,37 @@ function Row({
       </span>
     </button>
   );
+}
+
+/**
+ * Roving focus over the rows of a list: ArrowUp/ArrowDown step, Home/End jump,
+ * Enter/Space choose. Other keys (and keys in the typed-model field) pass.
+ */
+export function rovingKeys(event: React.KeyboardEvent<HTMLElement>) {
+  const target = event.target as HTMLElement;
+  if (!target.matches('[data-picker-row]')) return;
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    target.click();
+    return;
+  }
+  const rows = [
+    ...event.currentTarget.querySelectorAll<HTMLElement>('[data-picker-row]:not(:disabled)'),
+  ];
+  const at = rows.indexOf(target);
+  const next =
+    event.key === 'ArrowDown'
+      ? rows[Math.min(at + 1, rows.length - 1)]
+      : event.key === 'ArrowUp'
+        ? rows[Math.max(at - 1, 0)]
+        : event.key === 'Home'
+          ? rows[0]
+          : event.key === 'End'
+            ? rows[rows.length - 1]
+            : undefined;
+  if (!next) return;
+  event.preventDefault();
+  next.focus();
 }
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
@@ -162,25 +201,42 @@ export function SlotPicker({
   const run = async (key: string, change: ModelSettingsChange, close = true) => {
     setBusy(key);
     setMessage(null);
-    const result = await apply(change);
-    setBusy(null);
-    if (result.ok) {
-      if (close) onDone();
-      return;
+    try {
+      const result = await apply(change);
+      if (result.ok) {
+        if (close) onDone();
+        return;
+      }
+      setMessage(applyErrorText(result, t));
+    } finally {
+      setBusy(null);
     }
-    setMessage(
-      result.reason === 'conflict'
-        ? t(`${MS}.picker.conflict`)
-        : result.reason === 'locked'
-          ? t(`${MS}.picker.lockedNow`)
-          : result.message,
-    );
   };
   const pick = (ref: string) => {
     if (current.kind === 'model' && current.model === ref) return onDone();
     void run(ref, modelChange(slot, ref));
   };
   const isCurrent = (ref: string) => current.kind === 'model' && current.model === ref;
+
+  // The rows in order, to make the current one (else the first) the Tab stop.
+  const rowKeys = [
+    ...(parent ? ['follow'] : []),
+    ...(!parent && slot.assignment !== undefined ? ['clear'] : []),
+    ...providers.flatMap((provider) =>
+      providerOnly
+        ? [provider.id]
+        : [
+            ...(chat ? [] : [provider.id]),
+            ...(provider.capabilities[slot.capability]?.models ?? []).map((model) =>
+              modelRef(provider.id, model.id),
+            ),
+          ],
+    ),
+    ...(slot.slot !== 'llm' ? ['off'] : []),
+  ];
+  const currentKey =
+    current.kind === 'model' ? current.model : current.kind === 'off' ? 'off' : 'follow';
+  const tabStop = rowKeys.includes(currentKey) ? currentKey : rowKeys[0];
 
   return (
     <div className="flex max-h-[min(420px,var(--radix-popover-content-available-height))] flex-col">
@@ -191,11 +247,14 @@ export function SlotPicker({
 
       <div
         className="min-h-0 flex-1 overflow-y-auto p-1"
-        role="listbox"
+        role="group"
         aria-label={slotName(t, slot.slot)}
+        data-slot-picker={slot.slot}
+        onKeyDown={rovingKeys}
       >
         {parent && (
           <Row
+            tabStop={tabStop === 'follow'}
             current={current.kind === 'follow'}
             busy={busy === 'follow'}
             disabled={!!busy}
@@ -214,6 +273,7 @@ export function SlotPicker({
             whatever the server provides (its value or default), if anything. */}
         {!parent && slot.assignment !== undefined && (
           <Row
+            tabStop={tabStop === 'clear'}
             busy={busy === 'follow'}
             disabled={!!busy}
             onClick={() => void run('follow', slotChange(slot, { kind: 'follow' }))}
@@ -233,6 +293,7 @@ export function SlotPicker({
             {providers.map((provider) => (
               <Row
                 key={provider.id}
+                tabStop={tabStop === provider.id}
                 current={isCurrent(provider.id)}
                 busy={busy === provider.id}
                 disabled={!!busy}
@@ -252,6 +313,7 @@ export function SlotPicker({
                 <GroupLabel>{providerLabel(view, provider.id)}</GroupLabel>
                 {!chat && (
                   <Row
+                    tabStop={tabStop === provider.id}
                     current={isCurrent(provider.id)}
                     busy={busy === provider.id}
                     disabled={!!busy}
@@ -265,6 +327,7 @@ export function SlotPicker({
                   return (
                     <Row
                       key={model.id}
+                      tabStop={tabStop === ref}
                       current={isCurrent(ref)}
                       busy={busy === ref}
                       disabled={!!busy}
@@ -285,6 +348,7 @@ export function SlotPicker({
           <>
             <div className="mx-2 my-1 border-t" role="presentation" />
             <Row
+              tabStop={tabStop === 'off'}
               current={current.kind === 'off'}
               busy={busy === 'off'}
               disabled={!!busy}
