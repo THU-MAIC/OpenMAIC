@@ -128,6 +128,24 @@ describe('the legacy import binding and its fence', () => {
     ]);
   });
 
+  it('binds only an owner the browser already presented, never one the bind minted', async () => {
+    // No credential and no anonymous cookie: the request mints an owner.
+    const minted = await bind({});
+    expect(minted.status).toBe(409);
+    await expect(minted.json()).resolves.toMatchObject({
+      error: { code: 'OWNER_NOT_ESTABLISHED' },
+    });
+    // The minted cookie still rides the answer, so the next request presents it.
+    const setCookie = minted.headers.get('set-cookie') ?? '';
+    expect(setCookie).toMatch(/^anonymous_id=[0-9a-f-]{36};/);
+    expect((await pool.query('SELECT browser_id FROM legacy_import_bindings')).rows).toEqual([]);
+
+    const presented = await bind({ cookie: setCookie.split(';')[0]! });
+    expect(presented.status).toBe(200);
+    await expect(presented.json()).resolves.toEqual({ bound: true });
+    expect(presented.headers.get('set-cookie')).toBeNull();
+  });
+
   it('decides a race of two owners with one winner', async () => {
     const answers = await Promise.all(
       ['alice', 'bob', 'carol', 'dave'].map((user) => bound(as(user))),
