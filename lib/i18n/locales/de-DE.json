@@ -46,7 +46,8 @@
     "interactiveModeHint": "Aktiviere den interaktiven Modus, damit bevorzugt interaktive Inhalte erzeugt werden",
     "interactiveModeLabel": "Interaktiver Modus",
     "modelChangeFailed": "Das Modell konnte nicht geändert werden: {{message}}",
-    "modelLockedHint": "Das Modell für Kurse, von diesem Server festgelegt"
+    "modelLockedHint": "Das Modell für Kurse, von diesem Server festgelegt",
+    "pickModel": "Modell wählen"
   },
   "export": {
     "pptx": "PPTX exportieren",

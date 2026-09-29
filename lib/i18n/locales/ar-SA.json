@@ -46,7 +46,8 @@
     "ttsPreview": "معاينة",
     "ttsPreviewing": "جارٍ التشغيل...",
     "modelChangeFailed": "تعذّر تغيير النموذج: {{message}}",
-    "modelLockedHint": "النموذج الذي تستخدمه المقررات، ويحدده هذا الخادم"
+    "modelLockedHint": "النموذج الذي تستخدمه المقررات، ويحدده هذا الخادم",
+    "pickModel": "اختر نموذجًا"
   },
   "export": {
     "pptx": "تصدير PPTX",

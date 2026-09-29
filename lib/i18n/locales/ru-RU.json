@@ -46,7 +46,8 @@
     "interactiveModeHint": "Включить интерактивный режим для более практического контента",
     "interactiveModeLabel": "Интерактивный режим",
     "modelChangeFailed": "Не удалось сменить модель: {{message}}",
-    "modelLockedHint": "Модель для курсов, заданная этим сервером"
+    "modelLockedHint": "Модель для курсов, заданная этим сервером",
+    "pickModel": "Выберите модель"
   },
   "export": {
     "pptx": "Экспорт PPTX",

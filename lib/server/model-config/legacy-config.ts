@@ -168,7 +168,9 @@ export function translateLegacyConfig(
     // A chat provider from the providers section; other sections' ids never
     // served a chat stage.
     if (!Object.hasOwn(server.providers, providerId) || !chatProviders.has(id)) {
-      notices.push(`${what} uses ${named} without server configuration; it is left to the browser`);
+      notices.push(
+        `${what} uses ${named} without server configuration; each workspace chooses its model in Settings → Models, or configure that provider and set DEFAULT_MODEL`,
+      );
       return undefined;
     }
     const ref = `${id}:${modelId}`;

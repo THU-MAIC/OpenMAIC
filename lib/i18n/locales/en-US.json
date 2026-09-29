@@ -46,7 +46,8 @@
     "interactiveModeHint": "Enable interactive-first mode for more hands-on content",
     "interactiveModeLabel": "Interactive Mode",
     "modelChangeFailed": "Could not change the model: {{message}}",
-    "modelLockedHint": "The model courses use, set by this server"
+    "modelLockedHint": "The model courses use, set by this server",
+    "pickModel": "Pick a model"
   },
   "export": {
     "pptx": "Export PPTX",

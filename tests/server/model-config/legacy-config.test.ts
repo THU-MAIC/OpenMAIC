@@ -202,7 +202,7 @@ describe('translateLegacyConfig: models', () => {
     });
     expect(chatSlots(config.slots)).toBeUndefined();
     expect(notices).toEqual([
-      'DEFAULT_MODEL uses provider "anthropic" without server configuration; it is left to the browser',
+      'DEFAULT_MODEL uses provider "anthropic" without server configuration; each workspace chooses its model in Settings → Models, or configure that provider and set DEFAULT_MODEL',
     ]);
   });
 
@@ -213,7 +213,7 @@ describe('translateLegacyConfig: models', () => {
       globalFallback: `openai:gpt-5.6`,
     });
     expect(notices).toEqual([
-      'DEFAULT_MODEL uses a provider without server configuration; it is left to the browser',
+      'DEFAULT_MODEL uses a provider without server configuration; each workspace chooses its model in Settings → Models, or configure that provider and set DEFAULT_MODEL',
       'MODEL_FALLBACK is not carried over without DEFAULT_MODEL, so calls that retried on it no longer do; set the llm slot with a fallback in openmaic.yml',
     ]);
     const fallback = translateLegacyConfig(withProviders, {
@@ -236,7 +236,7 @@ describe('translateLegacyConfig: models', () => {
     expect(chatSlots(config.slots)).toBeUndefined();
     expect(notices).toEqual([
       'An entry in providers has no matching preset and is not carried over',
-      'DEFAULT_MODEL uses a provider without server configuration; it is left to the browser',
+      'DEFAULT_MODEL uses a provider without server configuration; each workspace chooses its model in Settings → Models, or configure that provider and set DEFAULT_MODEL',
     ]);
   });
 

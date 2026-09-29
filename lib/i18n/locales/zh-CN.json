@@ -46,7 +46,8 @@
     "interactiveModeHint": "开启深度交互模式，生成更多互动内容",
     "interactiveModeLabel": "深度交互",
     "modelChangeFailed": "无法切换模型：{{message}}",
-    "modelLockedHint": "课程使用的模型，由此服务器设定"
+    "modelLockedHint": "课程使用的模型，由此服务器设定",
+    "pickModel": "选择模型"
   },
   "export": {
     "pptx": "导出 PPTX",

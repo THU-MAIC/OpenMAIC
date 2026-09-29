@@ -46,7 +46,8 @@
     "interactiveModeHint": "Bật chế độ ưu tiên tương tác để có nhiều nội dung thực hành hơn",
     "interactiveModeLabel": "Chế độ tương tác",
     "modelChangeFailed": "Không thể đổi mô hình: {{message}}",
-    "modelLockedHint": "Mô hình dùng cho khóa học, do máy chủ này đặt"
+    "modelLockedHint": "Mô hình dùng cho khóa học, do máy chủ này đặt",
+    "pickModel": "Chọn mô hình"
   },
   "export": {
     "pptx": "Xuất PPTX",

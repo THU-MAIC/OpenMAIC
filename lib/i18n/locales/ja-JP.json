@@ -46,7 +46,8 @@
     "interactiveModeHint": "インタラクティブ優先モードを有効にして、より実践的なコンテンツを生成",
     "interactiveModeLabel": "インタラクティブモード",
     "modelChangeFailed": "モデルを変更できませんでした: {{message}}",
-    "modelLockedHint": "コースで使用するモデル（このサーバーで設定）"
+    "modelLockedHint": "コースで使用するモデル（このサーバーで設定）",
+    "pickModel": "モデルを選択"
   },
   "export": {
     "pptx": "PPTXエクスポート",

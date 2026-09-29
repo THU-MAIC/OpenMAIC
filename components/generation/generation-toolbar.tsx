@@ -189,12 +189,15 @@ export function GenerationToolbar({
   return (
     <div className="flex items-center gap-1 flex-wrap">
       {/* ── Course model: pill (picker popover), read-only pill, or Set-up CTA (#580) ── */}
-      {llm && llmEditable ? (
+      {llmEditable ? (
+        // Editable: the picker, with nothing selected while `llm` resolves to
+        // nothing (no default model); picking a model sets the llm slot.
         <ModelPicker
           groups={llmPickerGroups}
           value={providerId && modelId ? { providerId, modelId } : null}
           onSelect={(pid, mid) => void selectModel(pid, mid)}
-          ariaLabel={`${currentProviderName} / ${modelId}`}
+          placeholder={t('toolbar.pickModel')}
+          ariaLabel={llm ? `${currentProviderName} / ${modelId}` : t('toolbar.pickModel')}
           className="h-8 w-auto max-w-[260px] gap-1.5 rounded-full px-2.5 text-xs"
           t={t}
         />

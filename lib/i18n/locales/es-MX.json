@@ -46,7 +46,8 @@
     "interactiveModeHint": "Activa el modo interactivo para obtener contenido más práctico",
     "interactiveModeLabel": "Modo interactivo",
     "modelChangeFailed": "No se pudo cambiar el modelo: {{message}}",
-    "modelLockedHint": "El modelo que usan los cursos, definido por este servidor"
+    "modelLockedHint": "El modelo que usan los cursos, definido por este servidor",
+    "pickModel": "Elige un modelo"
   },
   "export": {
     "pptx": "Exportar PPTX",
