@@ -24,12 +24,20 @@ import type { OwnerAuthRequest } from '@/lib/server/identity/types';
 import { assetPrincipalForOwner, createOwnerAssetStore } from './owner-assets';
 import { getServerPersistenceProvider } from './server-provider';
 
-export type ServerAssetResolution =
+export type ServerAssetResolution = (
   | { status: 'resolved'; buffer: Buffer; mimeType: string }
   | { status: 'unconfigured' }
   | { status: 'unauthenticated' }
   | { status: 'missing' }
-  | { status: 'too_large' };
+  | { status: 'too_large' }
+) & {
+  /**
+   * The owner resolution's `Set-Cookie` values (a minted anonymous owner, or
+   * the renewal of a presented one). The route attaches them to its response
+   * with `attachOwnerCookies`, whatever the status.
+   */
+  setCookies?: readonly string[];
+};
 
 /**
  * Resolve an allocated asset id to its bytes for extraction.
@@ -50,12 +58,28 @@ export async function resolveServerAsset(
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) return { status: 'unconfigured' };
 
-  // The same memoized owner resolution the rest of the request uses. A cookie
-  // this resolution mints is not sent back from here; such an owner holds no
-  // entries yet, so it can only read what any owner may read.
+  // The same memoized owner resolution the rest of the request uses. Its
+  // cookies ride every answer below, for the route to send back.
   const outcome = await resolveRequestOwner(request);
   if (!outcome.ok) return { status: 'unauthenticated' };
-  const { ownerId } = outcome.principal;
+  const cookies = outcome.setCookies?.length ? { setCookies: outcome.setCookies } : {};
+  return {
+    ...(await resolveOwnedAsset(
+      assetId,
+      outcome.principal.ownerId,
+      connectionString,
+      maxByteLength,
+    )),
+    ...cookies,
+  };
+}
+
+async function resolveOwnedAsset(
+  assetId: string,
+  ownerId: string,
+  connectionString: string,
+  maxByteLength: number | undefined,
+): Promise<ServerAssetResolution> {
   const assetPrincipal = assetPrincipalForOwner(ownerId);
 
   try {

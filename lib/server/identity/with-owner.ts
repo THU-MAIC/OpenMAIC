@@ -148,6 +148,32 @@ async function autoClaim(
 }
 
 /**
+ * Attach the `Set-Cookie` values an owner resolution returned (a minted
+ * anonymous owner, or the renewal of a presented one) to a response a route
+ * built itself, keeping only the clearing value for a cookie the response
+ * also clears. For routes that call {@link resolveRequestOwner} directly
+ * instead of {@link withRequestOwner}: every response of such a route,
+ * success or error, goes through this, so an identity used only there is
+ * renewed too. A streaming response gets them before it is returned, i.e.
+ * before its body starts.
+ */
+export function attachOwnerCookies(
+  response: Response,
+  setCookies: readonly string[] | undefined,
+): Response {
+  if (!setCookies?.length) return response;
+  const headers = new Headers(response.headers);
+  for (const value of setCookies) headers.append('Set-Cookie', value);
+  return resolveResponseSetCookies(
+    new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    }),
+  );
+}
+
+/**
  * Resolve the request owner and run a handler with it and the response
  * headers every response must carry. A handler that throws answers a 500 that
  * still carries them.

@@ -26,6 +26,9 @@ const SIZE_CAP = 1024 * 1024;
 const OWNER_COOKIE = '33333333-3333-4333-8333-333333333333';
 const OWNER_PRINCIPAL = { key: `owner:anon:${OWNER_COOKIE}`, learnerKey: `anon:${OWNER_COOKIE}` };
 
+/** The renewal of that owner's cookie, which every resolved answer hands back. */
+const OWNER_COOKIES = [expect.stringMatching(new RegExp(`^anonymous_id=${OWNER_COOKIE};`))];
+
 /** A request from the owner above; a fresh object, so a fresh owner resolution. */
 function ownerRequest(): { headers: Headers } {
   return { headers: new Headers({ cookie: `anonymous_id=${OWNER_COOKIE}` }) };
@@ -65,12 +68,33 @@ describe('resolveServerAsset', () => {
       status: 'resolved',
       buffer: RESOLVED_BYTES,
       mimeType: RESOLVED_MIME,
+      // The owner resolution's renewal, for the route to send back.
+      setCookies: [expect.stringMatching(new RegExp(`^anonymous_id=${OWNER_COOKIE};`))],
     });
     expect(mocks.getServerPersistenceProvider).toHaveBeenCalledWith('postgres://test');
     // The owner's own partition answers first; no foreign lookup is needed.
     expect(mocks.assetStoreIdentify).toHaveBeenCalledWith(OWNER_PRINCIPAL, toAssetId(ASSET_ID));
     expect(mocks.assetStoreResolve).toHaveBeenCalledWith(OWNER_PRINCIPAL, toAssetId(ASSET_ID));
     expect(mocks.poolQuery).not.toHaveBeenCalled();
+  });
+
+  it('hands back the owner resolution cookies whatever the answer', async () => {
+    mocks.assetStoreIdentify.mockResolvedValue(null);
+    const missing = await resolveServerAsset(ASSET_ID, ownerRequest(), SIZE_CAP);
+    expect(missing).toMatchObject({
+      status: 'missing',
+      setCookies: [expect.stringMatching(new RegExp(`^anonymous_id=${OWNER_COOKIE};`))],
+    });
+    mocks.assetStoreIdentify.mockResolvedValue({
+      mime: RESOLVED_MIME,
+      revision: 1,
+      byteLength: 10,
+    });
+    const tooLarge = await resolveServerAsset(ASSET_ID, ownerRequest(), 1);
+    expect(tooLarge).toMatchObject({ status: 'too_large', setCookies: [expect.any(String)] });
+    // A request without a cookie gets the minted owner's cookie.
+    const minted = await resolveServerAsset(ASSET_ID, { headers: new Headers() }, 1);
+    expect(minted.setCookies).toEqual([expect.stringMatching(/^anonymous_id=[0-9a-f-]{36};/)]);
   });
 
   it('reads another owner’s entry only under the rule the persistence route applies', async () => {
@@ -101,7 +125,7 @@ describe('resolveServerAsset', () => {
 
     const resolution = await resolveServerAsset(ASSET_ID, ownerRequest(), SIZE_CAP);
 
-    expect(resolution).toEqual({ status: 'too_large' });
+    expect(resolution).toEqual({ status: 'too_large', setCookies: OWNER_COOKIES });
     expect(mocks.assetStoreIdentify).toHaveBeenCalledTimes(1);
     // The whole point: the store is never asked to materialize the bytes.
     expect(mocks.assetStoreResolve).not.toHaveBeenCalled();
@@ -121,6 +145,7 @@ describe('resolveServerAsset', () => {
       status: 'resolved',
       buffer: RESOLVED_BYTES,
       mimeType: RESOLVED_MIME,
+      setCookies: OWNER_COOKIES,
     });
     expect(mocks.assetStoreIdentify).toHaveBeenCalledTimes(1);
     expect(mocks.assetStoreResolve).toHaveBeenCalledTimes(1);
@@ -180,7 +205,7 @@ describe('resolveServerAsset', () => {
 
     const resolution = await resolveServerAsset(ASSET_ID, ownerRequest(), SIZE_CAP);
 
-    expect(resolution).toEqual({ status: 'missing' });
+    expect(resolution).toEqual({ status: 'missing', setCookies: OWNER_COOKIES });
   });
 
   it('reports missing when the identity read finds no entry (resolve never called)', async () => {
@@ -188,7 +213,7 @@ describe('resolveServerAsset', () => {
 
     const resolution = await resolveServerAsset(ASSET_ID, ownerRequest(), SIZE_CAP);
 
-    expect(resolution).toEqual({ status: 'missing' });
+    expect(resolution).toEqual({ status: 'missing', setCookies: OWNER_COOKIES });
     expect(mocks.assetStoreIdentify).toHaveBeenCalledTimes(1);
     expect(mocks.assetStoreResolve).not.toHaveBeenCalled();
   });
@@ -198,7 +223,7 @@ describe('resolveServerAsset', () => {
 
     const resolution = await resolveServerAsset(ASSET_ID, ownerRequest());
 
-    expect(resolution).toEqual({ status: 'missing' });
+    expect(resolution).toEqual({ status: 'missing', setCookies: OWNER_COOKIES });
   });
 
   it('rethrows any other store failure so the route can map it to a generic 500', async () => {
