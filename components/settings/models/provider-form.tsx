@@ -144,11 +144,6 @@ export function ProviderFields({
             </button>
           </div>
         )}
-        {unreadable && draft.keyAction === 'replace' && (
-          <p className="text-[11px] text-amber-600 dark:text-amber-400">
-            {t(`${MS}.providers.keyUnreadable`)}
-          </p>
-        )}
       </div>
 
       {fields.baseUrl && (

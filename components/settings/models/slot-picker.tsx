@@ -67,8 +67,10 @@ function Row({
         current && 'bg-primary/10 hover:bg-primary/10',
       )}
     >
-      <span className="min-w-0 truncate">{children}</span>
-      {note && <span className="min-w-0 truncate text-[11px] text-muted-foreground">{note}</span>}
+      <span className="min-w-0 max-w-[80%] shrink-0 truncate">{children}</span>
+      {note && (
+        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{note}</span>
+      )}
       <span className="ml-auto flex shrink-0 items-center">
         {busy ? (
           <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-hidden="true" />
