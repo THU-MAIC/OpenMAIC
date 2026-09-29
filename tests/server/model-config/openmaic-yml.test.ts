@@ -103,6 +103,15 @@ describe('parseModelConfig', () => {
     ]);
   });
 
+  it('refuses a fallback on every slot whose calls never use one', () => {
+    const base = 'providers:\n  m:\n    preset: minimax\n    apiKey: k\nslots:\n';
+    for (const slot of ['tts', 'asr', 'image', 'video', 'webSearch', 'document']) {
+      expect(issuesOf(`${base}  ${slot}:\n    model: m\n    fallback: m\n`)).toContain(
+        `slots.${slot}.fallback: only language model slots use a fallback`,
+      );
+    }
+  });
+
   it('keeps agent driver parameters on the agent slot', () => {
     const base = 'providers:\n  m:\n    preset: minimax\n    apiKey: k\nslots:\n';
     expect(() =>

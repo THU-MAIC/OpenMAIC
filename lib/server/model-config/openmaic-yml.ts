@@ -261,7 +261,14 @@ function crossCheck(
       continue;
     }
     covers(assignment.model, slot, `${at}.model`);
-    if (assignment.fallback) covers(assignment.fallback, slot, `${at}.fallback`);
+    if (assignment.fallback) {
+      // Only language-model calls retry on a fallback (resolve-slot.ts).
+      if (getSlot(slot).capability !== 'chat') {
+        issues.push(`${at}.fallback: only language model slots use a fallback`);
+      } else {
+        covers(assignment.fallback, slot, `${at}.fallback`);
+      }
+    }
     if (
       (assignment.api !== undefined || assignment.contextWindow !== undefined) &&
       slot !== 'agent'
