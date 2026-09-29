@@ -23,14 +23,13 @@ Nothing else is a request field. Web search, image generation, video generation 
 
 Do not rely on request-time model or provider override parameters. To change what a generation job can do, change the OpenMAIC server-side provider config.
 
-## One Owner For The Whole Flow
+## Keep One Owner Across Requests
 
-Uploaded materials, generation jobs and the generated course all belong to the owner the server resolves for each request. Material ids resolve, and a job's `pollUrl` answers, only for the owner that created them; anyone else gets a `400` (materials) or `404` (poll).
+Uploaded materials belong to the owner the server resolves for the upload request, and `materialIds` only resolve for that same owner.
 
 - `GET {url}/api/generate-classroom/capabilities` needs no owner.
 - If the server resolves a fixed owner — a shared team owner (`PERSISTENCE_SHARED_OWNER_ID` together with `ACCESS_CODE`), single-user mode (`OWNER_SINGLE_USER=true`), or a host that resolves the owner from a credential you send on every request — every request is the same owner automatically.
-- Otherwise the server identifies callers by an anonymous owner cookie that it sets on the first owner-scoped response (including error responses). Reuse one cookie jar for the entire flow — every upload, the submission, every poll and every deletion — for example `curl -c cookies.txt -b cookies.txt` on all calls. A request without the cookie is a different owner: its upload ids are unavailable and its polls answer `404`.
-- In anonymous-cookie mode, a course generated this way belongs to that anonymous owner. Its classroom URL is readable by anyone with the link, but it cannot be edited from a user's own browser session, which is a different owner. Tell the user this when it matters to them. Deployments that want API-generated courses to be editable should use a fixed owner (shared team or single user) or host authentication.
+- Otherwise the server identifies callers by an anonymous owner cookie that it sets on the first owner-scoped response (including error responses). Reuse one cookie jar on every request of the flow — uploads, the submission, polls and deletions — for example `curl -c cookies.txt -b cookies.txt` on all calls. An upload made without the cookie belongs to a different owner, and its id is unavailable to the submission.
 
 ## Optional: Check Capabilities
 
@@ -61,7 +60,7 @@ GET {url}/api/generate-classroom/capabilities
 
 `capabilities` says which optional features the server has a provider configured for; nothing needs to be sent back. It is best-effort, not a promise: if a configured provider fails at run time, the job continues and completes without that output. Today only narration reports this — through `result.ttsCoverage` and `result.warning` — so a missing image, video or search context is not flagged in the result.
 
-`materials.formats` lists the upload types this server can extract text from with its current configuration (plain text, Markdown and PDF always; Office documents, images, audio and video only when a matching extraction service or local media pipeline is configured). `maxCount` and `maxTotalBytes` bound one request's `materialIds`; the byte limits apply per file (`maxMediaBytes` for audio/video, `maxDocumentBytes` for everything else). `POST /api/materials` may accept more types than are listed here, but a submission with a material of an unlisted type is refused.
+`materials.formats` lists the upload types this server can extract text from with its current configuration (plain text, Markdown and PDF always; Office documents, images, audio and video only when a matching extraction service or local media pipeline is configured). With the local media pipeline (ffmpeg) but no server ASR provider, video is listed and audio is not: a video without an audio track is read from its keyframes, but a video with an audio track then fails when the job runs, because its speech cannot be transcribed. `maxCount` and `maxTotalBytes` bound one request's `materialIds`; the byte limits apply per file (`maxMediaBytes` for audio/video, `maxDocumentBytes` for everything else). `POST /api/materials` may accept more types than are listed here, but a submission with a material of an unlisted type is refused.
 
 ## Requirement-Only Generation
 
@@ -140,7 +139,7 @@ If a document still cannot be extracted when the job runs (for example the extra
 DELETE {url}/api/materials/{materialId}
 ```
 
-It answers `200` with `{ "materialId": "...", "deleted": true }`, or a plain `404` for an id the owner does not have. Do not delete before the job is finished: the job reads the files when it runs, and a job whose material was deleted fails. Deleting frees the owner's library quota; with a shared team owner every caller shares that one quota, so cleaning up matters.
+It answers `200` with `{ "materialId": "...", "deleted": true }`, or a plain `404` for an id the owner does not have — including one already deleted, so a `404` after an earlier successful delete just means it is gone. Do not delete before the job is finished: the job reads the files when it runs, and a job whose material was deleted fails. Deleting frees the owner's library quota; with a shared team owner every caller shares that one quota, so cleaning up matters.
 
 ### URLs Are Not Accepted
 
@@ -166,7 +165,7 @@ GET {pollUrl}
 
 - Never restart the job just because a poll request fails once.
 - If a poll request returns a transient network error or `5xx`, wait about 60 seconds and retry the same `pollUrl`.
-- Treat a `404` on the `pollUrl` as terminal: the job is unknown to this owner (a missing or different owner cookie or credential, or an unknown job id). Stop polling, report the `jobId` to the user, and do not resubmit without their confirmation — the original job may still be running for the owner that created it.
+- Treat a `404` on the `pollUrl` as terminal: the server does not know that job. Stop polling, report the `jobId` to the user, and do not resubmit without their confirmation.
 - If the job is still running after many polls, tell the user it is still in progress and continue polling instead of resubmitting.
 - Prefer fewer poll attempts over aggressive polling. Long-running jobs are more likely to survive agent-loop limits if the tool-call cadence stays low.
 - Within a single agent turn, cap active polling to about 10 minutes. If the job is still not finished, tell the user it is still running and include the `jobId` and `pollUrl` so a later turn can continue checking without resubmitting.

@@ -25,7 +25,7 @@ Follow the same generation flow as [generate-flow.md](generate-flow.md) with the
 
 ### Capabilities in Live Demo Mode
 
-Optional features (web search, image and video generation, TTS) follow the Live Demo server's configuration; there are no request flags for them. To see which features a job is configured to attempt and which file types it can use, query `GET /api/generate-classroom/capabilities` on the Live Demo base URL (with the auth header). Upload local files with `POST /api/materials` and pass the returned ids as `materialIds`, then delete them after the job finishes, exactly as in [generate-flow.md](generate-flow.md). Send the same `Authorization` header on every request of the flow (uploads, submission, every poll), so they all resolve to the same owner. The Live Demo instance may update on a different schedule than the local codebase: if the capabilities endpoint answers `404`, the instance predates this contract.
+Optional features (web search, image and video generation, TTS) follow the Live Demo server's configuration; there are no request flags for them. To see which features a job is configured to attempt and which file types it can use, query `GET /api/generate-classroom/capabilities` on the Live Demo base URL (with the auth header). Upload local files with `POST /api/materials` and pass the returned ids as `materialIds`, then delete them after the job finishes, exactly as in [generate-flow.md](generate-flow.md). Send the same `Authorization` header on every request of the flow (uploads, submission, polls, deletions). The Live Demo instance may update on a different schedule than the local codebase: if the capabilities endpoint answers `404`, the instance predates this contract.
 
 ## Quota
 
