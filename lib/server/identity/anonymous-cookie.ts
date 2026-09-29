@@ -25,7 +25,14 @@ import type {
  */
 
 const ANONYMOUS_COOKIE = 'anonymous_id';
-const ANONYMOUS_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+/**
+ * 400 days: the longest lifetime browsers keep a cookie (RFC 6265bis caps
+ * Max-Age there). The cookie is the only key to an anonymous owner's library,
+ * so it lasts as long as a browser allows and is renewed while in use (see
+ * {@link authenticateAnonymousRequest}): an active visitor never loses it to
+ * expiry, and an idle one keeps it for 400 days after the last use.
+ */
+export const ANONYMOUS_COOKIE_MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
 /**
  * An over-strict guard is fail-safe: a forged or malformed value merely gets a
  * fresh id, nobody is locked out of their own data.
@@ -141,9 +148,14 @@ function anonymousPrincipal(uuid: string, assurance: 'unverified-legacy' | 'mint
 /**
  * Resolve the anonymous owner of a route handler request.
  *
- * A valid cookie is reused and nothing is sent back. Otherwise — absent,
- * undecodable or not a UUID v4 — a fresh id is minted and returned with the
- * `Set-Cookie` that persists it; the caller attaches it to every response.
+ * A valid cookie is reused and renewed: the same value is sent back with a
+ * fresh Max-Age, so the identity expires 400 days after its last use, not
+ * after its first. Otherwise — absent, undecodable or not a UUID v4 — a fresh
+ * id is minted and returned with the `Set-Cookie` that persists it. Either
+ * way the caller attaches it to every response; a response that also clears
+ * the cookie (a claim, a retired owner) drops the renewal
+ * (`./set-cookie.ts`). Page responses never renew (the middleware leaves a
+ * valid cookie alone), so pages stay cacheable.
  */
 function authenticateAnonymousRequest(req: OwnerAuthRequest): OwnerAuthMethodResult {
   const existingId = readCookie(req.headers, ANONYMOUS_COOKIE);
@@ -151,6 +163,7 @@ function authenticateAnonymousRequest(req: OwnerAuthRequest): OwnerAuthMethodRes
     return {
       status: 'authenticated',
       principal: anonymousPrincipal(existingId, 'unverified-legacy'),
+      setCookies: [anonymousCookieHeader(existingId)],
     };
   }
   const id = mintAnonymousId();
@@ -161,35 +174,48 @@ function authenticateAnonymousRequest(req: OwnerAuthRequest): OwnerAuthMethodRes
   };
 }
 
+/** {@link anonymousCookieHeader}'s attributes, for `next/headers`. */
+function anonymousCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge: ANONYMOUS_COOKIE_MAX_AGE_SECONDS,
+    secure: anonymousCookieSecure(),
+  };
+}
+
 /**
  * The Server Action counterpart. A Server Action has no `Request`, so the same
  * cookie is read and, when needed, minted through `next/headers` with the same
- * attributes as {@link anonymousCookieHeader}.
+ * attributes as {@link anonymousCookieHeader}. A valid cookie is renewed the
+ * same way; the renewal is best-effort, since `next/headers` refuses writes
+ * outside a Server Action or route handler (a render), where the identity
+ * still resolves.
  */
 async function authenticateAnonymousContext(): Promise<OwnerAuthMethodResult> {
   const { cookies } = await import('next/headers');
   const cookieStore = await cookies();
   const existing = cookieStore.get(ANONYMOUS_COOKIE)?.value;
   if (existing && UUID_V4.test(existing)) {
+    try {
+      cookieStore.set(ANONYMOUS_COOKIE, existing, anonymousCookieOptions());
+    } catch {
+      // Not writable here: nothing to renew, the cookie keeps its lifetime.
+    }
     return {
       status: 'authenticated',
       principal: anonymousPrincipal(existing, 'unverified-legacy'),
     };
   }
   const minted = mintAnonymousId();
-  cookieStore.set(ANONYMOUS_COOKIE, minted, {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: ANONYMOUS_COOKIE_MAX_AGE_SECONDS,
-    secure: anonymousCookieSecure(),
-  });
+  cookieStore.set(ANONYMOUS_COOKIE, minted, anonymousCookieOptions());
   return { status: 'authenticated', principal: anonymousPrincipal(minted, 'minted') };
 }
 
 /**
  * The `anonymousCookie` method: `kind: 'anonymous'`, no roles, owner ids of
- * the form `anon:<uuid>` backed by a 30-day `HttpOnly`, `SameSite=Lax` cookie
+ * the form `anon:<uuid>` backed by a 400-day, renewed-on-use `HttpOnly`, `SameSite=Lax` cookie
  * at `/`. It always authenticates: a missing or malformed cookie is re-minted,
  * never refused. Core asks it last, and only when the fallback is enabled; its
  * `describeStoredOwner` and `clearCredential` apply whatever the fallback

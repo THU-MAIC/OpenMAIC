@@ -1,6 +1,7 @@
 import { LEGACY_IMPORT_HEADER } from '@/lib/persistence/legacy-import-bindings';
 
 import { resolveRequestOwner } from './resolve';
+import { resolveResponseSetCookies } from './set-cookie';
 import type { OwnerAuthRequest, OwnerPrincipal } from './types';
 
 /**
@@ -159,7 +160,9 @@ export async function withRequestOwner(
   if (!resolution.ok) return resolution.response;
   const { principal, responseHeaders } = resolution;
   try {
-    return await handler(principal, responseHeaders);
+    // A response that clears the anonymous cookie (a claim, a retired owner)
+    // must not also renew it, whatever order the handler merged them in.
+    return resolveResponseSetCookies(await handler(principal, responseHeaders));
   } catch (error) {
     console.error('[owner-identity] owner-scoped request failed', error);
     return new Response('Internal Server Error', { status: 500, headers: responseHeaders });

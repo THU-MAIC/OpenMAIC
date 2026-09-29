@@ -20,7 +20,10 @@ import { withRequestOwner } from '@/lib/server/identity/with-owner';
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EXISTING = 'a652e716-0e2e-47f5-8432-4ee60f6f0977';
-const COOKIE_SHAPE = /^anonymous_id=[0-9a-f-]+; Path=\/; HttpOnly; SameSite=Lax; Max-Age=2592000$/i;
+const MAX_AGE_400_DAYS = 400 * 24 * 60 * 60;
+const COOKIE_SHAPE =
+  /^anonymous_id=[0-9a-f-]+; Path=\/; HttpOnly; SameSite=Lax; Max-Age=34560000$/i;
+const RENEWAL = `anonymous_id=${'a652e716-0e2e-47f5-8432-4ee60f6f0977'}; Path=/; HttpOnly; SameSite=Lax; Max-Age=34560000`;
 
 const anonymousCookie = anonymousCookieMethod;
 
@@ -50,7 +53,7 @@ describe('anonymousCookie: route requests', () => {
     ]);
   });
 
-  it('reuses a valid anonymous cookie without returning another cookie', async () => {
+  it('reuses a valid anonymous cookie and renews that same value for 400 days', async () => {
     const outcome = success(
       await anonymousCookie.authenticate(
         new Request('http://localhost/a', {
@@ -61,7 +64,8 @@ describe('anonymousCookie: route requests', () => {
 
     expect(outcome.principal.ownerId).toBe(`anon:${EXISTING}`);
     expect(outcome.principal.assurance).toBe('unverified-legacy');
-    expect(outcome.setCookies).toBeUndefined();
+    expect(outcome.setCookies).toEqual([RENEWAL]);
+    expect(MAX_AGE_400_DAYS).toBe(34_560_000);
   });
 
   it.each([
@@ -144,15 +148,105 @@ describe('anonymousCookie: the default seam', () => {
   });
 });
 
+describe('anonymousCookie: renewal on route responses', () => {
+  const presenting = (cookie: string) => new Request('http://localhost/a', { headers: { cookie } });
+
+  it('renews the presented value on a success, an error and a 500', async () => {
+    for (const status of [200, 404]) {
+      const response = await withRequestOwner(
+        presenting(`anonymous_id=${EXISTING}`),
+        async (_p, h) => Response.json({}, { status, headers: h }),
+      );
+      expect(response.headers.getSetCookie()).toEqual([RENEWAL]);
+    }
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const failed = await withRequestOwner(presenting(`anonymous_id=${EXISTING}`), async () => {
+      throw new Error('boom');
+    });
+    expect(failed.headers.getSetCookie()).toEqual([RENEWAL]);
+  });
+
+  it('never renews a value other than the one presented', async () => {
+    const response = await withRequestOwner(
+      presenting(`anonymous_id=not-a-uuid; theme=${EXISTING}`),
+      async (_p, h) => Response.json({}, { headers: h }),
+    );
+    const [value] = response.headers.getSetCookie();
+    expect(value).toMatch(COOKIE_SHAPE);
+    expect(value).not.toContain(EXISTING);
+  });
+
+  it.each([
+    ['before', true],
+    ['after', false],
+  ])(
+    'drops the renewal from a response that clears the cookie (clear merged %s it)',
+    async (_order, clearFirst) => {
+      const clear = 'anonymous_id=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
+      const response = await withRequestOwner(
+        presenting(`anonymous_id=${EXISTING}`),
+        async (_p, h) => {
+          const built = Response.json({}, { status: 403 });
+          if (clearFirst) built.headers.append('set-cookie', clear);
+          for (const [name, value] of h.entries()) built.headers.append(name, value);
+          if (!clearFirst) built.headers.append('set-cookie', clear);
+          return built;
+        },
+      );
+      expect(response.headers.getSetCookie()).toEqual([clear]);
+    },
+  );
+
+  it('does not renew for a principal a host method authenticated', async () => {
+    const { configureOwnerAuthentication } = await import('@/lib/server/identity');
+    configureOwnerAuthentication({
+      methods: [
+        {
+          name: 'host',
+          authenticate: async () => ({
+            status: 'authenticated',
+            principal: {
+              ownerId: 'user:alice',
+              kind: 'user',
+              roles: new Set(),
+              assurance: 'verified',
+            },
+          }),
+        },
+      ],
+    });
+    const response = await withRequestOwner(presenting(`anonymous_id=${EXISTING}`), async (_p, h) =>
+      Response.json({}, { headers: h }),
+    );
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+});
+
 describe('anonymousCookie: Server Actions', () => {
-  it('reuses a valid cookie', async () => {
+  it('reuses a valid cookie and renews the same value for 400 days', async () => {
     cookieJar.values.set('anonymous_id', EXISTING);
 
     await expect(requireContextOwner()).resolves.toMatchObject({
       ownerId: `anon:${EXISTING}`,
       kind: 'anonymous',
     });
-    expect(cookieJar.set).not.toHaveBeenCalled();
+    expect(cookieJar.set).toHaveBeenCalledOnce();
+    expect(cookieJar.set).toHaveBeenCalledWith('anonymous_id', EXISTING, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: MAX_AGE_400_DAYS,
+      secure: false,
+    });
+  });
+
+  it('still resolves a valid cookie where next/headers refuses writes (a render)', async () => {
+    cookieJar.values.set('anonymous_id', EXISTING);
+    cookieJar.set.mockImplementation(() => {
+      throw new Error('Cookies can only be modified in a Server Action or Route Handler.');
+    });
+
+    await expect(requireContextOwner()).resolves.toMatchObject({ ownerId: `anon:${EXISTING}` });
   });
 
   it('mints through next/headers with the same attributes as the route cookie', async () => {
@@ -166,7 +260,7 @@ describe('anonymousCookie: Server Actions', () => {
       httpOnly: true,
       sameSite: 'lax',
       path: '/',
-      maxAge: 2592000,
+      maxAge: MAX_AGE_400_DAYS,
       secure: false,
     });
   });

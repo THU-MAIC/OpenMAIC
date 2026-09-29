@@ -143,7 +143,10 @@ describe('the legacy import binding and its fence', () => {
     const presented = await bind({ cookie: setCookie.split(';')[0]! });
     expect(presented.status).toBe(200);
     await expect(presented.json()).resolves.toEqual({ bound: true });
-    expect(presented.headers.get('set-cookie')).toBeNull();
+    // Only the renewal of the same value, never a different owner.
+    expect(presented.headers.getSetCookie()).toEqual([
+      setCookie.replace(/Max-Age=\d+/, 'Max-Age=34560000'),
+    ]);
   });
 
   it('decides a race of two owners with one winner', async () => {
@@ -227,6 +230,95 @@ describe('the legacy import binding and its fence', () => {
     // The account can still bind the browser.
     expect(await bound(as('alice'))).toBe(true);
   });
+
+  it.each(['explicit', 'auto'])(
+    'a renewal that lands after a claim cleared the cookie writes nothing (%s trigger)',
+    async (trigger) => {
+      vi.stubEnv('OWNER_CLAIM_TRIGGER', trigger);
+      await createOwnerBoundDocumentStore({
+        pool,
+        ownerId: ANON,
+        validateScene: validateAppScene,
+        validateStage: validateAppStage,
+      }).saveDocument({
+        stage: { id: 'anon-course', name: 'x', createdAt: 1, updatedAt: 1 },
+        scenes: [],
+      } as never);
+      const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+      const { GET: listStages } = await import('@/app/api/stages/route');
+      // A read the anonymous tab sent before the claim; its answer arrives after.
+      const lateRead = new Request('http://localhost/api/stages', {
+        headers: { ...SAME_ORIGIN_JSON, cookie: ANON_COOKIE },
+      });
+
+      const { POST: claim } = await import('@/app/api/identity/claim/route');
+      const claimed = await claim(
+        new Request('http://localhost/api/identity/claim', {
+          method: 'POST',
+          headers: { ...as('alice'), cookie: ANON_COOKIE, ...SAME_ORIGIN_JSON },
+          body: '{}',
+        }),
+      );
+      expect(claimed.status).toBe(200);
+      expect(claimed.headers.getSetCookie()).toEqual([
+        expect.stringMatching(/^anonymous_id=;.*Max-Age=0/),
+      ]);
+
+      // The late answer renews the retired value: the browser holds it again.
+      const late = await listStages(lateRead as never);
+      expect(late.headers.getSetCookie()).toEqual([
+        expect.stringMatching(new RegExp(`^anonymous_id=${ANON_UUID};.*Max-Age=34560000`)),
+      ]);
+      const merges = async () =>
+        Number(
+          (
+            (await pool.query('SELECT count(*)::int AS n FROM owner_merges')).rows[0] as {
+              n: number;
+            }
+          ).n,
+        );
+      const mergesAfterClaim = await merges();
+
+      // Its next writes, alone or beside the account, write nothing under it.
+      const retiredWrite = await handlePersistenceRequest(
+        new Request('http://localhost/api/persistence/documents/after-claim', {
+          method: 'PUT',
+          headers: { ...SAME_ORIGIN_JSON, cookie: ANON_COOKIE },
+          body: JSON.stringify({
+            stage: { id: 'after-claim', name: 'y', createdAt: 2, updatedAt: 2 },
+            scenes: [],
+          }),
+        }),
+      );
+      expect(retiredWrite.status).toBe(403);
+      await expect(retiredWrite.json()).resolves.toMatchObject({
+        error: { code: 'OWNER_RETIRED' },
+      });
+      // Cleared again, and not renewed by the same answer.
+      expect(retiredWrite.headers.getSetCookie()).toEqual([
+        expect.stringMatching(/^anonymous_id=;.*Max-Age=0/),
+      ]);
+      const retiredBind = await bind({ cookie: ANON_COOKIE });
+      expect(retiredBind.status).toBe(403);
+      expect(retiredBind.headers.getSetCookie()).toEqual([
+        expect.stringMatching(/^anonymous_id=;.*Max-Age=0/),
+      ]);
+      const beside = await bind({ ...as('alice'), cookie: ANON_COOKIE });
+      expect(beside.status).toBe(200);
+      expect(beside.headers.getSetCookie().some((value) => value.includes(ANON_UUID))).toBe(false);
+
+      expect(
+        (await pool.query("SELECT stage_id FROM stage_meta WHERE stage_id = 'after-claim'")).rows,
+      ).toEqual([]);
+      expect(
+        (await pool.query('SELECT owner_id FROM stage_meta WHERE owner_id = $1', [ANON])).rows,
+      ).toEqual([]);
+      expect((await pool.query('SELECT owner_id FROM legacy_import_bindings')).rows).toEqual([
+        { owner_id: 'user:alice' },
+      ]);
+      expect(await merges()).toBe(mergesAfterClaim);
+    },
+  );
 
   // ---- the fence -----------------------------------------------------------
 
