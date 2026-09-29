@@ -24,14 +24,15 @@
  * no request ever resolves to an anonymous owner and no cookie is minted
  * anywhere. With the default configuration -- no host registration -- that is
  * exactly when a request falls back to the anonymous cookie. A host that
- * registers its own methods turns minting off with
- * `OWNER_ANONYMOUS_PREMINT=false` ({@link resolveAnonymousPremint}) or narrows
- * it in `middleware.ts`: a page cookie next to its own credential is the same
- * claim candidate an anonymous API request would have left (`./resolve.ts`).
- * With `anonymousFallback: false` that candidate is pointless, and with
- * `OWNER_CLAIM_TRIGGER=auto` it is claimed and cleared on the next request,
- * again after every cookieless page load; the boot warns about that
- * combination (`warnAboutOwnerIdentityConfiguration` in `./registry.ts`).
+ * registers its own methods with `anonymousFallback: false` turns minting off
+ * with `OWNER_ANONYMOUS_PREMINT=false` ({@link resolveAnonymousPremint}): the
+ * cookie would serve no request, and beside its credential it is a claim
+ * candidate that `OWNER_CLAIM_TRIGGER=auto` claims and clears after every
+ * cookieless page load; the boot warns when such a registration leaves it on
+ * (`warnAboutOwnerIdentityConfiguration` in `./registry.ts`). A host that keeps
+ * anonymous visitors needs minting for them and skips
+ * {@link anonymousOwnerForNavigation} in `middleware.ts` only for the requests
+ * its methods authenticate.
  */
 import { establishAnonymousCookie } from './anonymous-cookie';
 import { resolveSharedOwnerId } from './shared-team';

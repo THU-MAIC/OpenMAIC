@@ -542,8 +542,8 @@ serve whether or not the [agent runtime](#optional-agent-workbench-and-runtime)
 `persistence`, next to the runtime's own `enabled` and `runtimeEnabled`.
 
 Every `/api/persistence` request is attributed to the owner the
-[owner identity seam](#owner-identity) resolves — by default the 30-day
-anonymous cookie, one owner per browser; in the Compose deployment, the one
+[owner identity seam](#owner-identity) resolves — by default the
+anonymous cookie (400 days, renewed while in use), one owner per browser; in the Compose deployment, the one
 [single-user](#single-user-mode) owner. There is no separate persistence
 credential:
 
@@ -730,8 +730,16 @@ for one kind of credential and answers exactly one of:
 | `invalid` | Its credential is present but invalid | `401 INVALID_CREDENTIAL` at once; no later method and no fallback is asked |
 
 When every method answers `not-applicable`, the built-in **anonymous
-fallback** resolves the request: one owner per browser, `anon:<uuid>` from a
-30-day `HttpOnly` `anonymous_id` cookie. The middleware mints it on the page
+fallback** resolves the request: one owner per browser, `anon:<uuid>` from an
+`HttpOnly` `anonymous_id` cookie that lasts 400 days (the longest browsers
+keep one) and is renewed, same value, on every route handler and Server Action
+response that resolves to it, so it expires only after 400 days without use.
+Page responses do not renew it, so pages stay cacheable, and a response that
+clears it (a claim, a retired owner) never renews it. Losing it (a manual
+clear, or 400 days idle) loses access to that owner's library from the
+browser: anonymous identity has no other key, which is why the Compose
+deployment defaults to single-user mode and a multi-user host should use
+accounts. The middleware mints it on the page
 response of a browser's first load, so every request the page sends presents
 one owner; a route handler reached without a valid cookie mints one the same
 way, and a valid cookie is never replaced. It cannot publish. A host can turn the fallback off, and then such a request is a `401`
@@ -855,12 +863,16 @@ configureOwnerAuthentication({
   neither `OWNER_SINGLE_USER` nor `PERSISTENCE_SHARED_OWNER_ID` is set: it can
   run in the Edge runtime and cannot see this registration. A page cookie next
   to a host credential is a claim candidate like any other anonymous cookie.
-  Set `OWNER_ANONYMOUS_PREMINT=false` to turn page minting off (with
-  `anonymousFallback: false` the cookie serves no request, and with
-  `OWNER_CLAIM_TRIGGER=auto` it would be claimed and cleared after every
-  cookieless page load; the server warns at startup about that combination),
-  or narrow `anonymousOwnerForNavigation` in `middleware.ts` to the requests
-  your methods do not own.
+  - With `anonymousFallback: false`, set `OWNER_ANONYMOUS_PREMINT=false`: the
+    cookie would serve no request, and with `OWNER_CLAIM_TRIGGER=auto` it
+    would be claimed and cleared after every cookieless page load. The server
+    warns at startup when this registration leaves pre-minting on.
+  - With the anonymous fallback on (the default), keep pre-minting: without
+    it, an anonymous visitor's first API requests each mint their own owner
+    again. To avoid a claim candidate beside your credential, skip
+    `anonymousOwnerForNavigation` in `middleware.ts` only for the requests your
+    methods authenticate themselves (a page request carrying your session
+    cookie, say).
 - `issuesAnonymousOwners: true` with `clearCredential()` is only for a method
   that authenticates anonymous principals itself with a cookie: those
   `Set-Cookie` values ride every `403 OWNER_RETIRED`. Core never calls
