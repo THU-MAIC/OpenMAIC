@@ -7,6 +7,9 @@ import type { BaiduSubSources, WebSearchProviderId, WebSearchProviderConfig } fr
 /**
  * Web Search Provider Registry
  */
+/** The provider a search that names none means when the server configures none. */
+export const DEFAULT_WEB_SEARCH_PROVIDER_ID: WebSearchProviderId = 'tavily';
+
 export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProviderConfig> = {
   tavily: {
     id: 'tavily',

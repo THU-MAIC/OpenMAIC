@@ -16,7 +16,7 @@ import {
 } from '@/lib/server/search-query-builder';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import type { AICallFn } from '@openmaic/generation';
-import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import { DEFAULT_WEB_SEARCH_PROVIDER_ID, WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 import {
   resolveWebSearchConnection,
@@ -68,7 +68,11 @@ export async function POST(req: NextRequest) {
           webSearchModelId: claudeModelId,
           baiduSubSources,
         },
-        { refuseDisabled: true, preferServerProvider: true },
+        {
+          refuseDisabled: true,
+          preferServerProvider: true,
+          fallbackProviderId: DEFAULT_WEB_SEARCH_PROVIDER_ID,
+        },
       );
     } catch (error) {
       const refused = mediaResolutionResponse(error, 'Web search');

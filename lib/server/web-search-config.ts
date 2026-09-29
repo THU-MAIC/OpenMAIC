@@ -143,6 +143,11 @@ interface LegacySearchRules {
    * request's own provider and key.
    */
   preferServerProvider?: boolean;
+  /**
+   * The provider a request that names none means, after the server's own
+   * (`/api/web-search` always searched with one, using the request's key).
+   */
+  fallbackProviderId?: WebSearchProviderId;
 }
 
 /** The search model a request names the old way, under the server's pins (one provider has models). */
@@ -161,13 +166,13 @@ function requestedSearchModel(
  */
 function requestedWebSearchConnection(
   input: RequestedWebSearch,
-  { refuseDisabled = false, preferServerProvider = false }: LegacySearchRules,
+  { refuseDisabled = false, preferServerProvider = false, fallbackProviderId }: LegacySearchRules,
 ): MediaConnection | undefined {
+  const serverProviderId = resolveServerWebSearchProviderId() as WebSearchProviderId | undefined;
   const requested = assertWebSearchProviderId(input.webSearchProviderId)
     ? input.webSearchProviderId
-    : undefined;
+    : fallbackProviderId && (serverProviderId ?? fallbackProviderId);
   if (!requested) return undefined;
-  const serverProviderId = resolveServerWebSearchProviderId() as WebSearchProviderId | undefined;
   let providerId: WebSearchProviderId = requested;
   if (
     preferServerProvider &&
