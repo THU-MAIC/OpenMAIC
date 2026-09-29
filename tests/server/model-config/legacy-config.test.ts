@@ -144,7 +144,7 @@ describe('translateLegacyConfig: models', () => {
       defaultModel: `${secret}:m`,
       globalFallback: `${secret}:m`,
       stageRoutes: {
-        'scene-actions': route(`${secret}:m`),
+        'scene-actions': route(`${secret}:other`),
         'agent-profiles': route('openai:gpt-5.6', { fallback: `${secret}:m` }),
         'maic-agent-driver': driver(`${secret}:m`),
       },
@@ -342,6 +342,8 @@ describe('translateLegacyConfig: models', () => {
     expect(config.slots?.['course.actions']).toBe('openai:gpt-5.6');
     expect(notices).toEqual([
       'MODEL_ROUTES (scene-actions) fallback uses provider "anthropic" without server configuration; it is left to the browser',
+      // The browserless flow retried scene actions on MODEL_FALLBACK instead.
+      "/api/generate-classroom retried scene content and actions on MODEL_FALLBACK and agent profiles on the generate-classroom route's fallback; they now retry on their slot's fallback",
     ]);
   });
 
@@ -367,6 +369,102 @@ describe('translateLegacyConfig: models', () => {
       'MODEL_ROUTES (maic-agent-driver): contextWindow is not carried over (not a positive integer)',
     ]);
     expect(parseModelConfig(yaml.dump(config), { env: {} })).toEqual(config);
+  });
+});
+
+describe('translateLegacyConfig: review round 2', () => {
+  const route = (model: string, extra: Partial<StageRoute> = {}): StageRoute => ({
+    model,
+    ...extra,
+  });
+
+  it('reports where the retry model followed another label than the model', () => {
+    const { config, notices } = translateLegacyConfig(withProviders, {
+      defaultModel: 'openai:gpt-5.6',
+      stageRoutes: {
+        'scene-content': route('deepseek:deepseek-v4-pro', { fallback: 'openai:gpt-5.6' }),
+        'scene-content:slide': route('deepseek:deepseek-v4-pro', {
+          fallback: 'deepseek:deepseek-v4-flash',
+        }),
+        'scene-content:quiz': route('deepseek:deepseek-v4-pro', { fallback: 'openai:gpt-5.6' }),
+      },
+    });
+    expect(config.slots?.['course.content.slide']).toEqual({
+      model: 'deepseek:deepseek-v4-pro',
+      fallback: 'deepseek:deepseek-v4-flash',
+    });
+    expect(notices).toEqual([
+      // interactive and pbl have no route of their own here, so they retry like the base.
+      "scene-content:slide, scene-content:interactive, scene-content:pbl retried on the scene-content route's fallback; they now retry on their own",
+      "/api/generate-classroom retried scene content and actions on MODEL_FALLBACK and agent profiles on the generate-classroom route's fallback; they now retry on their slot's fallback",
+    ]);
+  });
+
+  it('says nothing about retries when every label retries the same way', () => {
+    const { notices } = translateLegacyConfig(withProviders, {
+      defaultModel: 'openai:gpt-5.6',
+      globalFallback: 'deepseek:deepseek-v4-flash',
+      stageRoutes: { 'scene-actions': route('deepseek:deepseek-v4-pro') },
+    });
+    expect(notices).toEqual([]);
+  });
+
+  it('refers only to chat providers with a well-formed model id', () => {
+    const { config, notices } = translateLegacyConfig(withProviders, {
+      defaultModel: 'minimax-tts:speech-2.8-turbo',
+      globalFallback: 'openai:gpt\nsecond-line',
+    });
+    expect(config.slots).toBeUndefined();
+    expect(notices).toEqual([
+      'MODEL_FALLBACK is not a valid model reference and is not carried over',
+      'DEFAULT_MODEL uses a provider without server configuration; it is left to the browser',
+    ]);
+    expect(parseModelConfig(yaml.dump(config), { env: {} })).toEqual(config);
+  });
+
+  it('does not repeat keys that are not registry ids', () => {
+    const secret = 'sk-live-0123456789';
+    const { config, notices } = translateLegacyConfig(
+      server({
+        providers: { [secret]: { apiKey: 'x' }, deepseek: { apiKey: 'sk-ds' } },
+        disabled: {
+          tts: new Set([secret]),
+          asr: new Set(),
+          image: new Set(),
+          video: new Set(),
+          webSearch: new Set(),
+        },
+      }),
+    );
+    expect(Object.keys(config.providers ?? {})).toEqual(['deepseek']);
+    expect(notices).toEqual([
+      'An entry in providers has no matching preset and is not carried over',
+    ]);
+  });
+
+  it('treats routes that behave the same as the same', () => {
+    const routed = route('openai:gpt-5.6-mini');
+    const { config, notices } = translateLegacyConfig(withProviders, {
+      defaultModel: 'openai:gpt-5.6',
+      stageRoutes: {
+        'chat-adapter': routed,
+        // api and contextWindow are inert outside the agent driver.
+        'quiz-grade': route('openai:gpt-5.6-mini', { api: 'openai-completions' }),
+        'pbl-v2-runtime': routed,
+        'pbl-v2-runtime:instructor': routed,
+        'pbl-v2-runtime:open-task': routed,
+        'pbl-v2-runtime:evaluate': routed,
+        'pbl-v2-runtime:simulator': routed,
+        // A bare id is an openai model; a route to the default model is no route.
+        'scene-actions': route('gpt-5.6'),
+      },
+    });
+    expect(notices).toEqual([]);
+    expect(config.slots).toEqual({
+      llm: 'openai:gpt-5.6',
+      classroom: 'openai:gpt-5.6-mini',
+      agent: null,
+    });
   });
 });
 

@@ -110,6 +110,30 @@ function rejectedFields(error: { issues: readonly { path: readonly PropertyKey[]
   return [...fields].join(', ');
 }
 
+/** What `providerId:modelId` looks like in openmaic.yml (no line breaks in the model id). */
+const MODEL_REF_SHAPE = /^[a-z0-9][a-z0-9-]{0,62}:.+$/;
+
+/** A registry id with a preset for this capability, safe to name in a notice. */
+function isKnown(capability: SlotCapability, registryId: string): boolean {
+  const preset = getProviderPreset(legacyProviderId(capability, registryId));
+  return preset?.capabilities[capability]?.registryId === registryId;
+}
+
+/** A model string as the legacy code resolves it: a bare id means openai. */
+function normalRef(modelString: string): string {
+  const { providerId, modelId } = parseModelString(modelString);
+  return `${providerId}:${modelId}`;
+}
+
+/** What a route changes for a callLLM stage; api and contextWindow are inert there. */
+function routeKey(route: StageRoute): string {
+  return JSON.stringify([
+    normalRef(route.model),
+    route.thinking ?? null,
+    route.fallback ? normalRef(route.fallback) : null,
+  ]);
+}
+
 function same(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -128,8 +152,9 @@ export function translateLegacyConfig(
       if (disabled?.has(registryId)) continue;
       const id = legacyProviderId(capability, registryId);
       const preset = getProviderPreset(id);
-      if (!preset || preset.capabilities[capability]?.registryId !== registryId) {
-        notices.push(`${section}.${registryId} has no matching preset and is not carried over`);
+      if (!preset || !isKnown(capability, registryId)) {
+        // Not a registry id, so possibly anything: the key is not repeated.
+        notices.push(`An entry in ${section} has no matching preset and is not carried over`);
         continue;
       }
       const provider = translateProvider(entry, id);
@@ -149,6 +174,7 @@ export function translateLegacyConfig(
     // A force-off switch hides a provider from users; the new configuration
     // expresses that by leaving it out, which is only true of configured ones.
     for (const registryId of disabled ?? []) {
+      if (!isKnown(capability, registryId)) continue;
       notices.push(
         `${section}.${registryId} is switched off by the operator; openmaic.yml has no such switch, so leave it out or set its slot to null`,
       );
@@ -162,15 +188,20 @@ export function translateLegacyConfig(
    */
   const chatRef = (modelString: string, what: string): string | undefined => {
     const { providerId, modelId } = parseModelString(modelString);
+    const named = Object.hasOwn(PROVIDERS, providerId) ? `provider "${providerId}"` : 'a provider';
     const id = legacyProviderId('chat', providerId);
-    if (!modelId || !Object.hasOwn(providers, id)) {
-      const named = Object.hasOwn(PROVIDERS, providerId)
-        ? `provider "${providerId}"`
-        : 'a provider';
+    // A chat provider from the providers section; other sections' ids never
+    // served a chat stage.
+    if (!Object.hasOwn(server.providers, providerId) || !Object.hasOwn(providers, id)) {
       notices.push(`${what} uses ${named} without server configuration; it is left to the browser`);
       return undefined;
     }
-    return `${id}:${modelId}`;
+    const ref = `${id}:${modelId}`;
+    if (!MODEL_REF_SHAPE.test(ref)) {
+      notices.push(`${what} is not a valid model reference and is not carried over`);
+      return undefined;
+    }
+    return ref;
   };
 
   const globalFallback = settings.globalFallback
@@ -243,13 +274,15 @@ export function translateLegacyConfig(
     bySlot.set(slot, [...(bySlot.get(slot) ?? []), stage]);
   }
   // A value of undefined: routed to a model that stays with the browser.
+  // An unrouted stage behaves like a route to DEFAULT_MODEL with no options.
+  const defaultKey = settings.defaultModel ? routeKey({ model: settings.defaultModel }) : 'browser';
   const routed = new Map<SlotId, SlotAssignment | undefined>();
   const conflicted = new Set<SlotId>();
   for (const [slot, stages] of bySlot) {
     if (AGENT_SLOTS.has(slot)) continue;
     const routes = stages.map((stage) => stageRoutes[stage]);
-    if (routes.every((route) => !route)) continue;
-    const keys = new Set(routes.map((route) => (route ? JSON.stringify(route) : 'default')));
+    const keys = new Set(routes.map((route) => (route ? routeKey(route) : defaultKey)));
+    if (keys.size === 1 && keys.has(defaultKey)) continue;
     if (keys.size > 1) {
       notices.push(
         `MODEL_ROUTES gives the stages that now share the slot ${slot} different models (${stages.join(', ')}); set it in openmaic.yml`,
@@ -257,7 +290,7 @@ export function translateLegacyConfig(
       conflicted.add(slot);
       continue;
     }
-    const route = routes[0]!;
+    const route = routes.find((candidate) => candidate)!;
     const what = `MODEL_ROUTES (${stages.join(', ')})`;
     const model = chatRef(route.model, what);
     routed.set(slot, model ? assignment(model, route, what) : undefined);
@@ -300,6 +333,34 @@ export function translateLegacyConfig(
   if (browserOnly.length) {
     notices.push(
       `${browserOnly.join(', ')} used the browser's model and now inherit a server model; set them in openmaic.yml to change that`,
+    );
+  }
+
+  // Retries now follow the slot. Some call sites picked their retry model by
+  // another label than their model (llm-fallback.ts reads the route of the
+  // label callLLM is given): report where that changes the retry model.
+  const retryOf = (stage: string): string | undefined => {
+    const fallback = stageRoutes[stage as LlmStage]?.fallback ?? settings.globalFallback;
+    return fallback ? normalRef(fallback) : undefined;
+  };
+  const sceneStages = (Object.keys(STAGE_SLOTS) as LlmStage[]).filter((stage) =>
+    stage.startsWith('scene-content'),
+  );
+  const sceneTypes = sceneStages.filter(
+    (stage) => stage !== 'scene-content' && retryOf(stage) !== retryOf('scene-content'),
+  );
+  if (sceneTypes.length) {
+    notices.push(
+      `${sceneTypes.join(', ')} retried on the scene-content route's fallback; they now retry on their own`,
+    );
+  }
+  const globalRetry = settings.globalFallback ? normalRef(settings.globalFallback) : undefined;
+  if (
+    [...sceneStages, 'scene-actions'].some((stage) => retryOf(stage) !== globalRetry) ||
+    retryOf('agent-profiles') !== retryOf('generate-classroom')
+  ) {
+    notices.push(
+      "/api/generate-classroom retried scene content and actions on MODEL_FALLBACK and agent profiles on the generate-classroom route's fallback; they now retry on their slot's fallback",
     );
   }
 
