@@ -181,12 +181,28 @@ What the proposal holds:
 | The model picked for Claude web search | `slots.webSearch` = `claude:<model>` |
 | Speech input turned off (`asrEnabled` stored as false)             | `slots.asr = null` (off): without an `asr` slot the browser's own speech recognition would take over. The other switches (`ttsEnabled`, `imageGenerationEnabled`, `videoGenerationEnabled`, `webSearchEnabled`) are not carried over: availability follows the slots, and a lasting `null` would override the deployment's defaults |
 
-Not imported: per-stage routes (`llmStageRoutes`), which do not map one to one
-onto slots; custom speech and transcription providers; AliDocMind's key pair
-(a workspace provider holds one key); thinking settings. A base URL a
-workspace may not set (any service but chat) makes the server skip that
-provider, with the reason in the server's answer. Provider ids are derived to
-match `^[a-z0-9][a-z0-9-]{0,62}$` and made unique within the proposal.
+Not carried over:
+
+- per-stage routes (`llmStageRoutes`), which do not map one to one onto
+  slots: set per-stage models in Settings → Models (or `slots` in
+  `openmaic.yml`);
+- the per-browser switches for image, video, narration and research
+  (`imageGenerationEnabled`, `videoGenerationEnabled`, `ttsEnabled`,
+  `webSearchEnabled`): each capability now runs whenever its slot resolves,
+  and turning one off is setting its slot off (only speech input's off switch
+  carries over, see above);
+- Baidu search sub-sources (`baiduSubSources`): the server's defaults apply;
+- thinking settings (`thinkingConfigs`, per-route `thinking`): set `thinking`
+  on a slot assignment instead;
+- the VoxCPM backend (`providerOptions.backend`): set `options.backend` on the
+  provider in `openmaic.yml`;
+- custom speech and transcription providers, and AliDocMind's key pair (a
+  workspace provider holds one key).
+
+A base URL a workspace may not set (any service but chat) makes the server
+skip that provider, with the reason in the server's answer. Provider ids are
+derived to match `^[a-z0-9][a-z0-9-]{0,62}$` and made unique within the
+proposal.
 
 Clear Local Cache keeps a proposal that is still waiting: it exists nowhere
 else.
