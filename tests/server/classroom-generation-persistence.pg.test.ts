@@ -146,7 +146,22 @@ describe.skipIf(!contractUrl)('generated classroom persistence on PostgreSQL', (
     await getServerPersistenceProvider(databaseUrl, () => pool);
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // The media the job generates comes from the deployment's slots.
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: {
+            img: { preset: 'seedream', apiKey: 'image-key' },
+            voice: { preset: 'openai-tts', apiKey: 'tts-key' },
+          },
+          slots: { image: 'img:image-model', tts: 'voice', video: null },
+        },
+      },
+      defaults: null,
+      notices: [],
+    });
     for (const mock of Object.values(mocks)) mock.mockReset();
     mocks.generateSceneOutlinesFromRequirements.mockResolvedValue({
       success: true,
