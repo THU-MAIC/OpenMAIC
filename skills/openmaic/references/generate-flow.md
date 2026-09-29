@@ -23,6 +23,15 @@ Nothing else is a request field. Web search, image generation, video generation 
 
 Do not rely on request-time model or provider override parameters. To change what a generation job can do, change the OpenMAIC server-side provider config.
 
+## One Owner For The Whole Flow
+
+Uploaded materials, generation jobs and the generated course all belong to the owner the server resolves for each request. Material ids resolve, and a job's `pollUrl` answers, only for the owner that created them; anyone else gets a `400` (materials) or `404` (poll).
+
+- `GET {url}/api/generate-classroom/capabilities` needs no owner.
+- If the server resolves a fixed owner — a shared team owner (`PERSISTENCE_SHARED_OWNER_ID` together with `ACCESS_CODE`), single-user mode (`OWNER_SINGLE_USER=true`), or a host that resolves the owner from a credential you send on every request — every request is the same owner automatically.
+- Otherwise the server identifies callers by an anonymous owner cookie that it sets on the first owner-scoped response (including error responses). Reuse one cookie jar for the entire flow — every upload, the submission, every poll and every deletion — for example `curl -c cookies.txt -b cookies.txt` on all calls. A request without the cookie is a different owner: its upload ids are unavailable and its polls answer `404`.
+- In anonymous-cookie mode, a course generated this way belongs to that anonymous owner. Its classroom URL is readable by anyone with the link, but it cannot be edited from a user's own browser session, which is a different owner. Tell the user this when it matters to them. Deployments that want API-generated courses to be editable should use a fixed owner (shared team or single user) or host authentication.
+
 ## Optional: Check Capabilities
 
 To tell the user in advance what the job is configured to attempt, or which files it can generate from, query:
@@ -133,13 +142,6 @@ DELETE {url}/api/materials/{materialId}
 
 It answers `200` with `{ "materialId": "...", "deleted": true }`, or a plain `404` for an id the owner does not have. Do not delete before the job is finished: the job reads the files when it runs, and a job whose material was deleted fails. Deleting frees the owner's library quota; with a shared team owner every caller shares that one quota, so cleaning up matters.
 
-### Uploads And Generation Must Use The Same Owner
-
-Uploaded materials belong to the owner the server resolves for the upload request, and `materialIds` only resolve for that same owner.
-
-- If the server resolves a fixed owner — a shared team owner (`PERSISTENCE_SHARED_OWNER_ID` together with `ACCESS_CODE`) or single-user mode (`OWNER_SINGLE_USER=true`) — or the deployment resolves the owner from a credential you send on every request, this is automatic.
-- Otherwise the server identifies callers by an anonymous owner cookie that it sets on the first response (including error responses). Keep that cookie and send it on every later request (uploads, generation, polling, deletion), for example with one curl cookie jar (`-c cookies.txt -b cookies.txt`) on all calls. Without it, each request is a new owner and the upload ids will be unavailable.
-
 ### URLs Are Not Accepted
 
 There is no way to pass a document URL. The server intentionally never fetches caller-supplied URLs; download the file locally (with the user's confirmation) and upload its bytes instead.
@@ -164,6 +166,7 @@ GET {pollUrl}
 
 - Never restart the job just because a poll request fails once.
 - If a poll request returns a transient network error or `5xx`, wait about 60 seconds and retry the same `pollUrl`.
+- Treat a `404` on the `pollUrl` as terminal: the job is unknown to this owner (a missing or different owner cookie or credential, or an unknown job id). Stop polling, report the `jobId` to the user, and do not resubmit without their confirmation — the original job may still be running for the owner that created it.
 - If the job is still running after many polls, tell the user it is still in progress and continue polling instead of resubmitting.
 - Prefer fewer poll attempts over aggressive polling. Long-running jobs are more likely to survive agent-loop limits if the tool-call cadence stays low.
 - Within a single agent turn, cap active polling to about 10 minutes. If the job is still not finished, tell the user it is still running and include the `jobId` and `pollUrl` so a later turn can continue checking without resubmitting.
