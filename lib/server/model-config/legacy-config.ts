@@ -125,12 +125,16 @@ function normalRef(modelString: string): string {
   return `${providerId}:${modelId}`;
 }
 
-/** What a route changes for a callLLM stage; api and contextWindow are inert there. */
-function routeKey(route: StageRoute): string {
+/**
+ * What a route changes for a callLLM stage: model, thinking and retry model
+ * (its own fallback, else MODEL_FALLBACK). api and contextWindow are inert there.
+ */
+function routeKey(route: StageRoute, globalFallback: string | undefined): string {
+  const fallback = route.fallback ?? globalFallback;
   return JSON.stringify([
     normalRef(route.model),
     route.thinking ?? null,
-    route.fallback ? normalRef(route.fallback) : null,
+    fallback ? normalRef(fallback) : null,
   ]);
 }
 
@@ -144,6 +148,8 @@ export function translateLegacyConfig(
 ): LegacyTranslation {
   const notices: string[] = [];
   const providers: NonNullable<ModelConfigFile['providers']> = {};
+  /** Provider ids translated from the providers (chat) section. */
+  const chatProviders = new Set<string>();
 
   for (const section of Object.keys(SECTION_CAPABILITY) as Section[]) {
     const capability = SECTION_CAPABILITY[section];
@@ -170,6 +176,7 @@ export function translateLegacyConfig(
         continue;
       }
       providers[id] = checked.data;
+      if (capability === 'chat') chatProviders.add(id);
     }
     // A force-off switch hides a provider from users; the new configuration
     // expresses that by leaving it out, which is only true of configured ones.
@@ -192,7 +199,7 @@ export function translateLegacyConfig(
     const id = legacyProviderId('chat', providerId);
     // A chat provider from the providers section; other sections' ids never
     // served a chat stage.
-    if (!Object.hasOwn(server.providers, providerId) || !Object.hasOwn(providers, id)) {
+    if (!Object.hasOwn(server.providers, providerId) || !chatProviders.has(id)) {
       notices.push(`${what} uses ${named} without server configuration; it is left to the browser`);
       return undefined;
     }
@@ -275,13 +282,17 @@ export function translateLegacyConfig(
   }
   // A value of undefined: routed to a model that stays with the browser.
   // An unrouted stage behaves like a route to DEFAULT_MODEL with no options.
-  const defaultKey = settings.defaultModel ? routeKey({ model: settings.defaultModel }) : 'browser';
+  const defaultKey = settings.defaultModel
+    ? routeKey({ model: settings.defaultModel }, settings.globalFallback)
+    : 'browser';
   const routed = new Map<SlotId, SlotAssignment | undefined>();
   const conflicted = new Set<SlotId>();
   for (const [slot, stages] of bySlot) {
     if (AGENT_SLOTS.has(slot)) continue;
     const routes = stages.map((stage) => stageRoutes[stage]);
-    const keys = new Set(routes.map((route) => (route ? routeKey(route) : defaultKey)));
+    const keys = new Set(
+      routes.map((route) => (route ? routeKey(route, settings.globalFallback) : defaultKey)),
+    );
     if (keys.size === 1 && keys.has(defaultKey)) continue;
     if (keys.size > 1) {
       notices.push(
@@ -336,31 +347,16 @@ export function translateLegacyConfig(
     );
   }
 
-  // Retries now follow the slot. Some call sites picked their retry model by
-  // another label than their model (llm-fallback.ts reads the route of the
-  // label callLLM is given): report where that changes the retry model.
-  const retryOf = (stage: string): string | undefined => {
-    const fallback = stageRoutes[stage as LlmStage]?.fallback ?? settings.globalFallback;
-    return fallback ? normalRef(fallback) : undefined;
-  };
-  const sceneStages = (Object.keys(STAGE_SLOTS) as LlmStage[]).filter((stage) =>
-    stage.startsWith('scene-content'),
-  );
-  const sceneTypes = sceneStages.filter(
-    (stage) => stage !== 'scene-content' && retryOf(stage) !== retryOf('scene-content'),
-  );
-  if (sceneTypes.length) {
-    notices.push(
-      `${sceneTypes.join(', ')} retried on the scene-content route's fallback; they now retry on their own`,
-    );
-  }
-  const globalRetry = settings.globalFallback ? normalRef(settings.globalFallback) : undefined;
+  // Retries now follow the slot. Today some calls pick their retry model by
+  // another label than their model, and some never retry (streaming, calls
+  // outside server-managed routing); rather than list every call site, say so
+  // whenever a retry model is configured.
   if (
-    [...sceneStages, 'scene-actions'].some((stage) => retryOf(stage) !== globalRetry) ||
-    retryOf('agent-profiles') !== retryOf('generate-classroom')
+    settings.globalFallback ||
+    Object.values(stageRoutes).some((route) => route?.fallback !== undefined)
   ) {
     notices.push(
-      "/api/generate-classroom retried scene content and actions on MODEL_FALLBACK and agent profiles on the generate-classroom route's fallback; they now retry on their slot's fallback",
+      "Retry models now follow the slot: every call retries on its slot's fallback, where today some calls retry on another stage's fallback or not at all; check the fallbacks in the translated configuration",
     );
   }
 
