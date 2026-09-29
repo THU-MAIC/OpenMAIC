@@ -10,6 +10,11 @@ import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
 import { isEmptyLlmOutput, shouldFallbackFor, logFallbackFired } from '@/lib/server/llm-fallback';
+import {
+  attachedModelFallback,
+  type FallbackLoader,
+  type FallbackModel,
+} from '@/lib/ai/model-fallbacks';
 import { getModelMetadataKey } from './model-metadata';
 import { getCanonicalModelId } from './model-aliases';
 import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
@@ -352,8 +357,13 @@ export async function callLLM<T extends GenerateTextParams>(
   // Resolve the fallback once up front. The empty-output safety net below only
   // arms when a fallback model is actually configured; without this gate an
   // empty result would flip from success to failure for operators who never
-  // set MODEL_FALLBACK or a MODEL_ROUTES fallback.
-  const fallback = allowFallback ? await resolveFallbackModelSafe(source) : null;
+  // configured one. A model resolved through a slot brings its slot's
+  // fallback (possibly none); only a model from the older request path falls
+  // back to MODEL_FALLBACK.
+  const attached = attachedModelFallback(params.model);
+  const fallback = allowFallback
+    ? await (attached ? loadFallbackSafe(attached, source) : resolveFallbackModelSafe(source))
+    : null;
 
   /** One generateText round for the given params; validates when asked to. */
   async function runRound(
@@ -483,13 +493,26 @@ export async function callLLM<T extends GenerateTextParams>(
   throw lastError;
 }
 
+/** Load a slot's fallback model; never throws (fallback is best-effort). */
+async function loadFallbackSafe(
+  load: FallbackLoader,
+  source: string,
+): Promise<FallbackModel | null> {
+  try {
+    return await load();
+  } catch (err) {
+    log.warn(`[${source}] Fallback model resolution failed, skipping fallback:`, err);
+    return null;
+  }
+}
+
 /** Lazily resolve the fallback model; never throws (fallback is best-effort). */
 async function resolveFallbackModelSafe(
   source: string,
 ): Promise<{ model: LanguageModel; modelString: string } | null> {
   try {
     const { resolveFallbackModel } = await import('@/lib/server/llm-fallback');
-    return await resolveFallbackModel(source);
+    return await resolveFallbackModel();
   } catch (err) {
     log.warn(`[${source}] Fallback model resolution failed, skipping fallback:`, err);
     return null;

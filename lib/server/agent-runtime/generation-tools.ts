@@ -253,7 +253,10 @@ export function filterKnownActions(actions: readonly Action[]): Action[] {
 }
 
 export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never, never>[] {
-  const routed = createGenerationAiCallFactory({ abortSignal: deps.abortSignal });
+  const routed = createGenerationAiCallFactory({
+    abortSignal: deps.abortSignal,
+    ownerId: deps.ownerId,
+  });
   const aiCallFor = (stage: Parameters<typeof routed>[0]) => deps.aiCall ?? routed(stage);
   const actionGenerator = deps.generateActions ?? generateSceneActions;
 

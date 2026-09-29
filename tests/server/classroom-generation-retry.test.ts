@@ -224,6 +224,17 @@ describe('classroom scene generation retries', () => {
     );
   });
 
+  it("resolves every step through its slot for the job's owner, the outline through course.outline", async () => {
+    vi.stubEnv('DATABASE_URL', '');
+    mocks.generateSceneContent.mockResolvedValue(slideContent);
+    await generateWithProgress();
+    const stages = mocks.resolveModel.mock.calls.map(([request]) => request);
+    expect(stages[0]).toEqual({ stage: 'scene-outlines-stream', workspaceId: 'owner-1' });
+    expect(stages.every((request) => request.workspaceId === 'owner-1')).toBe(true);
+    expect(stages.map((request) => request.stage)).not.toContain('generate-classroom');
+    vi.unstubAllEnvs();
+  });
+
   it('forwards classroom thinking config to scene retry LLM calls', async () => {
     const thinkingConfig = { enabled: true, effort: 'high' };
     mocks.resolveModel.mockResolvedValue({

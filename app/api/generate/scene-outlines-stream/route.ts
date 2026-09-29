@@ -13,6 +13,7 @@
  *   { type: 'error', error: string }
  */
 
+import { attachedModelFallback } from '@/lib/ai/model-fallbacks';
 import { NextRequest } from 'next/server';
 import { streamLLM } from '@/lib/ai/llm';
 import {
@@ -529,7 +530,9 @@ export async function POST(req: NextRequest) {
           if (!shouldFallbackFor(error, text)) return false;
           let fallback: Awaited<ReturnType<typeof resolveFallbackModel>>;
           try {
-            fallback = await resolveFallbackModel('scene-outlines-stream');
+            // The slot's own fallback when the model came from a slot.
+            const attached = attachedModelFallback(languageModel);
+            fallback = attached ? await attached() : await resolveFallbackModel();
           } catch {
             // Misconfigured fallback provider — keep the real error instead of
             // surfacing e.g. "API key required for provider: …" to the client.

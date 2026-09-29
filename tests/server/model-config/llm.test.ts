@@ -134,6 +134,23 @@ describe('resolveStageModel', () => {
     ).resolves.toMatchObject({ modelId: 'm' });
   });
 
+  it('attaches no retry when the fallback cannot meet the slot either', async () => {
+    const { attachedModelFallback } = await import('@/lib/ai/model-fallbacks');
+    state.lookup = lookupFromLayers('agent', {
+      deployment: null,
+      workspace: layer('workspace', {
+        providers: {
+          td: { preset: 'tokendance', apiKey: 'k' },
+          ac: { preset: 'atlascloud', apiKey: 'k' },
+        },
+        slots: { agent: { model: 'td:deepseek-v4-pro', fallback: 'ac:qwen/qwen3.5-flash' } },
+      }),
+      defaults: null,
+    });
+    const resolved = await resolveStageModel({ stage: 'maic-agent-driver', workspaceId: 'u' });
+    expect(await attachedModelFallback(resolved.model)!()).toBeNull();
+  });
+
   it('refuses a model the catalogue says cannot meet the slot, before any fallback', async () => {
     state.lookup = lookupFromLayers('agent', {
       deployment: null,

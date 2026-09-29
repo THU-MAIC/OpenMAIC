@@ -90,65 +90,24 @@ describe('validateServerConfig — warning matrix', () => {
     vi.stubEnv('OPENAI_API_KEY', 'sk-test');
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-test');
     vi.stubEnv('DEFAULT_MODEL', 'openai:gpt-5.4-mini');
-    vi.stubEnv(
-      'MODEL_ROUTES',
-      JSON.stringify({
-        'scene-content': 'openai:gpt-5.4',
-        'pbl-chat': { model: 'anthropic:claude-sonnet-4', thinking: { enabled: false } },
-      }),
-    );
     const { validateServerConfig } = await import('@/lib/server/config-validation');
     validateServerConfig();
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
-  it('warns when MODEL_ROUTES is not valid JSON', async () => {
-    vi.stubEnv('MODEL_ROUTES', '{not valid json');
-    const { validateServerConfig } = await import('@/lib/server/config-validation');
-    validateServerConfig();
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(String(warnSpy.mock.calls[0][0])).toContain('MODEL_ROUTES');
-    expect(String(warnSpy.mock.calls[0][0])).toContain('JSON');
-  });
-
-  it('warns naming an unknown stage key (typo detection)', async () => {
-    vi.stubEnv('MODEL_ROUTES', JSON.stringify({ 'scene-contnet': 'openai:gpt-5.4' }));
-    const { validateServerConfig } = await import('@/lib/server/config-validation');
-    validateServerConfig();
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(String(warnSpy.mock.calls[0][0])).toContain('scene-contnet');
-  });
-
-  it('warns for an unknown provider prefix in a route', async () => {
-    vi.stubEnv('MODEL_ROUTES', JSON.stringify({ 'scene-content': 'anhtropic:claude-sonnet-4' }));
+  it('warns for an unknown provider prefix in DEFAULT_MODEL', async () => {
+    vi.stubEnv('DEFAULT_MODEL', 'anhtropic:claude-sonnet-4');
     const { validateServerConfig } = await import('@/lib/server/config-validation');
     validateServerConfig();
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(String(warnSpy.mock.calls[0][0])).toContain('anhtropic');
   });
 
-  it('warns when a routed provider has no API key configured', async () => {
-    vi.stubEnv('MODEL_ROUTES', JSON.stringify({ 'scene-content': 'deepseek:deepseek-v4-pro' }));
-    const { validateServerConfig } = await import('@/lib/server/config-validation');
-    validateServerConfig();
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(String(warnSpy.mock.calls[0][0])).toContain('deepseek');
-    expect(String(warnSpy.mock.calls[0][0])).toContain('API key');
-  });
-
   it('does not warn about a keyless provider (ollama)', async () => {
-    vi.stubEnv('MODEL_ROUTES', JSON.stringify({ 'scene-content': 'ollama:llama3.3' }));
+    vi.stubEnv('DEFAULT_MODEL', 'ollama:llama3.3');
     const { validateServerConfig } = await import('@/lib/server/config-validation');
     validateServerConfig();
     expect(warnSpy).not.toHaveBeenCalled();
-  });
-
-  it('emits the deprecation warning for a bare model id in a route', async () => {
-    vi.stubEnv('MODEL_ROUTES', JSON.stringify({ 'scene-content': 'gpt-5.4' }));
-    const { validateServerConfig } = await import('@/lib/server/config-validation');
-    validateServerConfig();
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(String(warnSpy.mock.calls[0][0])).toContain(BARE_MODEL_ID_DEPRECATION_MSG);
   });
 
   it('emits the deprecation warning for a bare DEFAULT_MODEL', async () => {
@@ -203,7 +162,6 @@ describe('validateServerConfig — warning matrix', () => {
   });
 
   it('does not throw on garbage config (warn-only)', async () => {
-    vi.stubEnv('MODEL_ROUTES', '{{{');
     vi.stubEnv('DEFAULT_MODEL', ':::::');
     const { validateServerConfig } = await import('@/lib/server/config-validation');
     expect(() => validateServerConfig()).not.toThrow();
@@ -211,7 +169,7 @@ describe('validateServerConfig — warning matrix', () => {
 
   it('does not warn when a provider is configured via server-providers.yml', async () => {
     yamlOverride = 'providers:\n  deepseek:\n    apiKey: sk-yaml\n';
-    vi.stubEnv('MODEL_ROUTES', JSON.stringify({ 'scene-content': 'deepseek:deepseek-v4-pro' }));
+    vi.stubEnv('DEFAULT_MODEL', 'deepseek:deepseek-v4-pro');
     vi.stubEnv('DEEPSEEK_MODELS', 'deepseek-v4-pro');
     const { validateServerConfig } = await import('@/lib/server/config-validation');
     validateServerConfig();
@@ -219,17 +177,11 @@ describe('validateServerConfig — warning matrix', () => {
   });
 
   it('warns once per distinct problem when a config has several', async () => {
-    vi.stubEnv(
-      'MODEL_ROUTES',
-      JSON.stringify({
-        'scene-contnet': 'openai:gpt-5.4', // unknown stage
-        'scene-content': 'anhtropic:claude-sonnet-4', // unknown provider
-        'pbl-chat': 'claude-sonnet-4', // bare id
-      }),
-    );
+    vi.stubEnv('DEFAULT_MODEL', 'anhtropic:claude-sonnet-4'); // unknown provider
+    vi.stubEnv('DEEPSEEK_MODELS', 'deepseek-v4-pro'); // pinned models, no key
     const { validateServerConfig } = await import('@/lib/server/config-validation');
     validateServerConfig();
-    expect(warnSpy).toHaveBeenCalledTimes(3);
+    expect(warnSpy).toHaveBeenCalledTimes(2);
   });
 
   describe('agent runtime configuration', () => {
@@ -301,7 +253,7 @@ describe('parseModelString — request-derived strings never warn', () => {
       expect(warnBareModelIdDeprecation('gpt-5.5', 'DEFAULT_MODEL')).toBe(false);
       expect(warnSpy).toHaveBeenCalledTimes(1);
 
-      expect(warnBareModelIdDeprecation('gpt-4.1', 'MODEL_ROUTES stage "pbl-chat"')).toBe(true);
+      expect(warnBareModelIdDeprecation('gpt-4.1', 'DEFAULT_MODEL')).toBe(true);
       expect(warnSpy).toHaveBeenCalledTimes(2);
     } finally {
       warnSpy.mockRestore();

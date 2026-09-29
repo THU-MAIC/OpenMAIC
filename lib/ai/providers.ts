@@ -2736,7 +2736,7 @@ const warnedBareModelIds = new Set<string>();
 
 /**
  * Warn once per unique bare model id. `where` names the config site (e.g.
- * `DEFAULT_MODEL` or a MODEL_ROUTES stage). Callers must pass only
+ * `DEFAULT_MODEL`). Callers must pass only
  * config-derived ids (the config surface is finite, so the dedupe set is
  * bounded); request-derived strings must never reach this function.
  */

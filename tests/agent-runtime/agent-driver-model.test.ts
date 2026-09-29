@@ -1,9 +1,35 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ resolveModel: vi.fn(), streamLLM: vi.fn() }));
+import type { ModelConfigLayer } from '@/lib/server/model-config/resolve-slot';
 
-vi.mock('@/lib/server/resolve-model', () => ({ resolveModel: mocks.resolveModel }));
+const mocks = vi.hoisted(() => ({
+  streamLLM: vi.fn(),
+  modelInfo: undefined as unknown,
+  workspaceReads: [] as string[],
+}));
+
 vi.mock('@/lib/ai/llm', () => ({ streamLLM: mocks.streamLLM }));
+// The connection itself is lib/server/model-config/llm.ts's business; here it
+// only echoes the resolution, with the catalogue info a case sets.
+vi.mock('@/lib/server/model-config/llm', () => ({
+  slotLanguageModel: async (resolution: {
+    registryId: string;
+    modelId: string;
+    baseUrl?: string;
+    thinking?: unknown;
+  }) => ({
+    model: {},
+    modelInfo: mocks.modelInfo,
+    modelString: `${resolution.registryId}:${resolution.modelId}`,
+    providerId: resolution.registryId,
+    modelId: resolution.modelId,
+    apiKey: 'secret',
+    baseUrl: resolution.baseUrl,
+    thinkingConfig: resolution.thinking,
+    serverManaged: true,
+    resolution,
+  }),
+}));
 
 const ZERO_USAGE = {
   inputTokens: 0,
@@ -26,97 +52,96 @@ async function drain(stream: AsyncIterable<unknown>): Promise<void> {
   }
 }
 
-describe('agent driver model route', () => {
+const providers = {
+  openai: { preset: 'openai', apiKey: 'sk' },
+  ac: { preset: 'atlascloud', apiKey: 'sk' },
+};
+
+async function configure(
+  agent: unknown,
+  { workspace, defaults }: { workspace?: ModelConfigLayer; defaults?: ModelConfigLayer } = {},
+) {
+  const runtime = await import('@/lib/server/model-config/runtime');
+  const slots = agent === undefined ? {} : { agent };
+  runtime.setDeploymentConfigForTests({
+    layer: { source: 'deployment', config: { providers, slots } as ModelConfigLayer['config'] },
+    defaults: defaults ?? null,
+    notices: [],
+  });
+  runtime.setWorkspaceLayerLoaderForTests(async (ownerId) => {
+    mocks.workspaceReads.push(ownerId);
+    return workspace ?? null;
+  });
+  return (await import('@/lib/server/agent-runtime/agent-driver-model')).resolveAgentDriverModel;
+}
+
+describe('agent driver model', () => {
   beforeEach(() => {
     vi.resetModules();
-    mocks.resolveModel.mockReset();
     mocks.streamLLM.mockReset();
-    delete process.env.MODEL_ROUTES;
+    mocks.modelInfo = { contextWindow: 200_000, outputWindow: 16_384 };
+    mocks.workspaceReads.length = 0;
   });
 
-  it('fails loud when the dedicated route is missing', async () => {
-    const { resolveAgentDriverModel } =
-      await import('@/lib/server/agent-runtime/agent-driver-model');
-    await expect(resolveAgentDriverModel()).rejects.toThrow('must explicitly configure');
-    expect(mocks.resolveModel).not.toHaveBeenCalled();
+  afterEach(async () => {
+    const runtime = await import('@/lib/server/model-config/runtime');
+    runtime.setDeploymentConfigForTests();
+    runtime.setWorkspaceLayerLoaderForTests();
+  });
+
+  it('fails loud when nothing assigns the agent', async () => {
+    const resolve = await configure(undefined);
+    await expect(resolve()).rejects.toThrow('No model is configured for agent');
+  });
+
+  it('stays off where an older deployment had no driver route', async () => {
+    const resolve = await configure(undefined, {
+      defaults: { source: 'default', config: { slots: { llm: 'openai:gpt-5.6', agent: null } } },
+    });
+    await expect(resolve()).rejects.toThrow('agent capability is turned off');
+  });
+
+  it("uses the owner's workspace model", async () => {
+    const resolve = await configure(undefined, {
+      workspace: { source: 'workspace', config: { slots: { llm: 'openai:gpt-5.6-luna' } } },
+    });
+    const resolved = await resolve('user:alice');
+    expect(mocks.workspaceReads).toEqual(['user:alice']);
+    expect(resolved.piModel).toMatchObject({ id: 'gpt-5.6-luna', provider: 'openai' });
   });
 
   it('fails loud when reasoning effort is configured for the tool-using driver', async () => {
-    process.env.MODEL_ROUTES = JSON.stringify({
-      'maic-agent-driver': {
-        model: 'openai:gpt-5.6-luna',
-        thinking: { effort: 'medium' },
-        api: 'openai-completions',
-      },
+    const resolve = await configure({
+      model: 'openai:gpt-5.6-luna',
+      thinking: { effort: 'medium' },
     });
-    const { resolveAgentDriverModel } =
-      await import('@/lib/server/agent-runtime/agent-driver-model');
-    await expect(resolveAgentDriverModel()).rejects.toThrow('must not set thinking.effort');
+    await expect(resolve()).rejects.toThrow('must not set thinking.effort');
   });
 
-  it('requires an explicit provider prefix', async () => {
-    process.env.MODEL_ROUTES = JSON.stringify({
-      'maic-agent-driver': {
-        model: 'gpt-5.6-luna',
-        api: 'openai-completions',
-      },
-    });
-    const { resolveAgentDriverModel } =
-      await import('@/lib/server/agent-runtime/agent-driver-model');
-    await expect(resolveAgentDriverModel()).rejects.toThrow('explicit provider prefix');
-    expect(mocks.resolveModel).not.toHaveBeenCalled();
+  it('refuses a model the catalogue says cannot call tools', async () => {
+    const resolve = await configure('ac:qwen/qwen3.5-flash');
+    await expect(resolve()).rejects.toThrow('does not support tool calling');
   });
 
-  it.each(['gpt-5.6-terra', 'gpt-5.6-luna'])(
-    'accepts configured driver model %s and passes the explicit pi API dialect',
-    async (modelId) => {
-      process.env.MODEL_ROUTES = JSON.stringify({
-        'maic-agent-driver': {
-          model: `openai:${modelId}`,
-          api: 'openai-completions',
-        },
-      });
-      mocks.resolveModel.mockResolvedValue({
-        model: {},
-        modelInfo: { contextWindow: 1_050_000, outputWindow: 128_000 },
-        modelString: `openai:${modelId}`,
-        providerId: 'openai',
-        modelId,
-        apiKey: 'secret',
-        baseUrl: 'https://gateway.example/v1',
-        thinkingConfig: undefined,
-      });
-      const { resolveAgentDriverModel } =
-        await import('@/lib/server/agent-runtime/agent-driver-model');
-      const resolved = await resolveAgentDriverModel();
+  it('defaults the pi API dialect and passes an explicit one through', async () => {
+    let resolve = await configure('openai:gpt-5.6-luna');
+    expect((await resolve()).piModel).toMatchObject({
+      id: 'gpt-5.6-luna',
+      provider: 'openai',
+      api: 'openai-completions',
+    });
+    vi.resetModules();
+    resolve = await configure({ model: 'openai:gpt-5.6-luna', api: 'openai-responses' });
+    expect((await resolve()).piModel.api).toBe('openai-responses');
+  });
 
-      expect(mocks.resolveModel).toHaveBeenCalledWith({ stage: 'maic-agent-driver' });
-      expect(resolved.piModel).toMatchObject({
-        id: modelId,
-        provider: 'openai',
-        api: 'openai-completions',
-      });
-    },
-  );
+  it('fails loud for an incompatible pi API dialect', async () => {
+    const resolve = await configure({ model: 'openai:gpt-5.6-luna', api: 'anthropic-messages' });
+    await expect(resolve()).rejects.toThrow('unsupported pi api/dialect');
+  });
 
   it('uses the provider catalog window when the model is known', async () => {
-    process.env.MODEL_ROUTES = JSON.stringify({
-      'maic-agent-driver': { model: 'openai:gpt-5.6-luna', api: 'openai-completions' },
-    });
-    mocks.resolveModel.mockResolvedValue({
-      model: {},
-      modelInfo: { contextWindow: 200_000, outputWindow: 16_384 },
-      modelString: 'openai:gpt-5.6-luna',
-      providerId: 'openai',
-      modelId: 'gpt-5.6-luna',
-      apiKey: 'secret',
-      baseUrl: 'https://gateway.example/v1',
-      thinkingConfig: undefined,
-    });
-    const { resolveAgentDriverModel } =
-      await import('@/lib/server/agent-runtime/agent-driver-model');
-    const resolved = await resolveAgentDriverModel();
-
+    const resolved = await (await configure('openai:gpt-5.6-luna'))();
     expect(resolved.piModel.contextWindow).toBe(200_000);
     expect(resolved.piModel.maxTokens).toBe(16_384);
     expect(resolved.wireMaxOutputTokens).toBe(16_384);
@@ -124,23 +149,8 @@ describe('agent driver model route', () => {
   });
 
   it('falls back to a conservative real window for an unknown model', async () => {
-    process.env.MODEL_ROUTES = JSON.stringify({
-      'maic-agent-driver': { model: 'custom:some-model', api: 'openai-completions' },
-    });
-    mocks.resolveModel.mockResolvedValue({
-      model: {},
-      modelInfo: null,
-      modelString: 'custom:some-model',
-      providerId: 'custom',
-      modelId: 'some-model',
-      apiKey: 'secret',
-      baseUrl: 'https://gateway.example/v1',
-      thinkingConfig: undefined,
-    });
-    const { resolveAgentDriverModel } =
-      await import('@/lib/server/agent-runtime/agent-driver-model');
-    const resolved = await resolveAgentDriverModel();
-
+    mocks.modelInfo = null;
+    const resolved = await (await configure('openai:some-model'))();
     // The old 1_050_000 fallback made pi's compaction threshold unreachable;
     // the calibrated fallback is a conservative real window.
     expect(resolved.piModel.contextWindow).toBe(128_000);
@@ -182,84 +192,11 @@ describe('agent driver model route', () => {
     expect(mocks.streamLLM.mock.calls[0]?.[0]?.maxOutputTokens).toBe(16_384);
   });
 
-  it('lets the route pin a contextWindow below the catalog value', async () => {
-    process.env.MODEL_ROUTES = JSON.stringify({
-      'maic-agent-driver': {
-        model: 'openai:gpt-5.6-luna',
-        api: 'openai-completions',
-        contextWindow: 32_000,
-      },
-    });
-    mocks.resolveModel.mockResolvedValue({
-      model: {},
-      modelInfo: { contextWindow: 1_050_000, outputWindow: 128_000 },
-      modelString: 'openai:gpt-5.6-luna',
-      providerId: 'openai',
-      modelId: 'gpt-5.6-luna',
-      apiKey: 'secret',
-      baseUrl: 'https://gateway.example/v1',
-      thinkingConfig: undefined,
-    });
-    const { resolveAgentDriverModel } =
-      await import('@/lib/server/agent-runtime/agent-driver-model');
-    const resolved = await resolveAgentDriverModel();
-
+  it('lets the slot pin a contextWindow below the catalog value', async () => {
+    mocks.modelInfo = { contextWindow: 1_050_000, outputWindow: 128_000 };
+    const resolved = await (
+      await configure({ model: 'openai:gpt-5.6-luna', contextWindow: 32_000 })
+    )();
     expect(resolved.piModel.contextWindow).toBe(32_000);
-  });
-
-  it('propagates an unresolvable provider failure', async () => {
-    process.env.MODEL_ROUTES = JSON.stringify({
-      'maic-agent-driver': {
-        model: 'custom:gpt-5.6-luna',
-        api: 'openai-completions',
-      },
-    });
-    mocks.resolveModel.mockRejectedValue(new Error('Unknown provider: custom'));
-    const { resolveAgentDriverModel } =
-      await import('@/lib/server/agent-runtime/agent-driver-model');
-    await expect(resolveAgentDriverModel()).rejects.toThrow('Unknown provider: custom');
-  });
-
-  it('fails loud for an incompatible pi API dialect', async () => {
-    process.env.MODEL_ROUTES = JSON.stringify({
-      'maic-agent-driver': {
-        model: 'openai:gpt-5.6-luna',
-        api: 'anthropic-messages',
-      },
-    });
-    mocks.resolveModel.mockResolvedValue({
-      model: {},
-      modelInfo: {},
-      modelString: 'openai:gpt-5.6-luna',
-      providerId: 'openai',
-      modelId: 'gpt-5.6-luna',
-      apiKey: 'secret',
-      baseUrl: 'https://gateway.example/v1',
-      thinkingConfig: { effort: 'medium' },
-    });
-    const { resolveAgentDriverModel } =
-      await import('@/lib/server/agent-runtime/agent-driver-model');
-    await expect(resolveAgentDriverModel()).rejects.toThrow('unsupported pi api/dialect');
-  });
-
-  it('fails loud when api/dialect is omitted', async () => {
-    process.env.MODEL_ROUTES = JSON.stringify({
-      'maic-agent-driver': {
-        model: 'openai:gpt-5.6-luna',
-      },
-    });
-    mocks.resolveModel.mockResolvedValue({
-      model: {},
-      modelInfo: {},
-      modelString: 'openai:gpt-5.6-luna',
-      providerId: 'openai',
-      modelId: 'gpt-5.6-luna',
-      apiKey: 'secret',
-      baseUrl: 'https://gateway.example/v1',
-      thinkingConfig: undefined,
-    });
-    const { resolveAgentDriverModel } =
-      await import('@/lib/server/agent-runtime/agent-driver-model');
-    await expect(resolveAgentDriverModel()).rejects.toThrow('unsupported pi api/dialect');
   });
 });

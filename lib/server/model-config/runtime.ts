@@ -102,6 +102,18 @@ export async function requestWorkspaceId(req: OwnerAuthRequest): Promise<string 
   return (await isOwnerRetired(pool, ownerId)) ? null : ownerId;
 }
 
+/**
+ * The workspace for background work on behalf of a stored owner (an agent
+ * run, a generation job): the owner it belongs to now, forwarded through a
+ * claim that happened since the work started. Only for owners taken from
+ * durable records; a request's owner goes through {@link requestWorkspaceId}.
+ */
+export async function backgroundWorkspaceId(storedOwnerId: string): Promise<string> {
+  if (!process.env.DATABASE_URL?.trim()) return storedOwnerId;
+  const { canonicalizeStoredOwner } = await import('@/lib/persistence/owner-merges');
+  return canonicalizeStoredOwner(storedOwnerId);
+}
+
 export interface SlotLookup {
   /** Through the deployment and the workspace. */
   configured: SlotResolution;

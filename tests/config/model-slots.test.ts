@@ -27,7 +27,6 @@ const EXPECTED_STAGE_SLOTS: Record<LlmStage, SlotId> = {
   'scene-actions': 'course.actions',
   'agent-profiles': 'course.agents',
   'quiz-grade': 'classroom',
-  'pbl-chat': 'classroom',
   'pbl-v2-runtime': 'classroom',
   'pbl-v2-runtime:instructor': 'classroom',
   'pbl-v2-runtime:open-task': 'classroom',
@@ -36,7 +35,6 @@ const EXPECTED_STAGE_SLOTS: Record<LlmStage, SlotId> = {
   'chat-adapter': 'classroom',
   'generate-classroom': 'llm',
   'web-search-query-rewrite': 'course.research',
-  'maic-agent': 'agent',
   'maic-agent-driver': 'agent',
   'conversation-title': 'agent.title',
 };

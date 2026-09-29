@@ -7,6 +7,7 @@
  * transport refuses redirects; deployment and default providers keep the
  * operator transport, which re-validates every redirect hop.
  */
+import { attachModelFallback } from '@/lib/ai/model-fallbacks';
 import { getModel, getProvider } from '@/lib/ai/providers';
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
 import { clientBaseUrlLlmFetch } from '@/lib/server/llm-provider-fetch';
@@ -90,7 +91,17 @@ export async function slotLanguageModel(resolution: AssignedSlot): Promise<SlotR
   // Only a requirement the catalogue says is unmet refuses; unknown models pass.
   const unmet = resolution.requirements.find((check) => check.status === 'unmet');
   if (unmet) throw new SlotRequirementError(resolution.slot, unmet.requirement);
-  return { ...(await languageModelFor(resolution, resolution.thinking)), resolution };
+  const resolved = await languageModelFor(resolution, resolution.thinking);
+  // Retries go to the slot's fallback and nowhere else: none attached means none.
+  const { fallback } = resolution;
+  const fallbackUnmet = resolution.fallbackRequirements?.some((check) => check.status === 'unmet');
+  attachModelFallback(resolved.model, async () => {
+    // A retry on a model that cannot do what the slot needs would only fail again.
+    if (!fallback || fallbackUnmet) return null;
+    const built = await languageModelFor(fallback, resolution.thinking);
+    return { model: built.model, modelString: built.modelString };
+  });
+  return { ...resolved, resolution };
 }
 
 export interface StageModelOptions {

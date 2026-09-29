@@ -44,7 +44,8 @@ export function getCurrentModelConfig() {
  * Each entry carries the routed provider's own connection params so the server
  * can build the model even when it differs from the main model's provider;
  * server-managed providers ignore the client credentials regardless.
- * Precedence server-side: operator MODEL_ROUTES > these routes > x-model.
+ * Deprecated: the server consults these only for a slot its model
+ * configuration leaves unassigned, before x-model.
  */
 export function getStageRoutesHeaderValue(): string | undefined {
   const { llmStageRoutes, providersConfig } = useSettingsStore.getState();

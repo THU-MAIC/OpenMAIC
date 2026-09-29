@@ -65,13 +65,10 @@ export type SlotId = (typeof MODEL_SLOTS)[number]['id'];
 /**
  * Every LLM stage key and the one slot it resolves through.
  *
- * Two keys have no resolution point today and are mapped by ownership only:
- * `pbl-chat` (see #1663) and `maic-agent` (a log label of the agent stream).
- * `generate-classroom` is the browserless API's own model, so it is the `llm`
- * root. Its scene content, actions and agent profiles resolve through their own
- * slots when a route is set, but its outline currently runs on the
- * `generate-classroom` model rather than `scene-outlines-stream`; routing it
- * through `course.outline` is part of the resolver migration (#1725).
+ * `generate-classroom` is the `llm` root. The browserless API resolves each of
+ * its steps through the same slots as the browser UI (its outline through
+ * `course.outline`). `maic-agent-driver` belongs to `agent`, which the agent
+ * runtime resolves directly.
  */
 export const STAGE_SLOTS = {
   'scene-outlines-stream': 'course.outline',
@@ -83,7 +80,6 @@ export const STAGE_SLOTS = {
   'scene-actions': 'course.actions',
   'agent-profiles': 'course.agents',
   'quiz-grade': 'classroom',
-  'pbl-chat': 'classroom',
   'pbl-v2-runtime': 'classroom',
   'pbl-v2-runtime:instructor': 'classroom',
   'pbl-v2-runtime:open-task': 'classroom',
@@ -92,7 +88,6 @@ export const STAGE_SLOTS = {
   'chat-adapter': 'classroom',
   'generate-classroom': 'llm',
   'web-search-query-rewrite': 'course.research',
-  'maic-agent': 'agent',
   'maic-agent-driver': 'agent',
   'conversation-title': 'agent.title',
 } as const satisfies Record<LlmStage, SlotId>;
