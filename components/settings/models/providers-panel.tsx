@@ -22,6 +22,7 @@ import type {
   ModelSettingsChange,
   ModelSettingsView,
   ProviderView,
+  ApplyChange,
 } from '@/lib/model-settings/client';
 import {
   draftFor,
@@ -38,7 +39,7 @@ import { PresetSelect, ProviderFields } from './provider-form';
 import { CAPABILITY_ICONS, MS, applyErrorText } from './slot-meta';
 
 type T = (key: string, options?: Record<string, unknown>) => string;
-type Apply = (change: ModelSettingsChange) => Promise<ApplyResult>;
+type Apply = ApplyChange;
 
 function problemMessage(problem: ReturnType<typeof draftProblem>, t: T): string | undefined {
   if (problem === 'baseUrl') return t(`${MS}.providers.needsBaseUrl`);
@@ -110,7 +111,7 @@ function ProviderEditor({
     setMessage(null);
     try {
       const id = existing?.id ?? newId(preset.id);
-      const result = await apply(providerChange(id, draft, preset, existing));
+      const result = await apply(providerChange(id, draft, preset, existing), view);
       if (result.ok) return onDone();
       if (!existing) {
         attempt.current = { id, preset: preset.id, unconfirmed: result.reason === 'unconfirmed' };
@@ -191,7 +192,7 @@ export function ProvidersPanel({
   const remove = async () => {
     if (!removing) return;
     try {
-      const result = await apply({ kind: 'remove-provider', id: removing.id });
+      const result = await apply({ kind: 'remove-provider', id: removing.id }, view);
       if (!result.ok) setRemoveError(applyErrorText(result, t));
     } finally {
       setRemoving(null);

@@ -51,6 +51,12 @@ export type ApplyResult =
       view?: ModelSettingsView;
     };
 
+/** How the UI applies a change: with the view it was worked out from (see the client's apply). */
+export type ApplyChange = (
+  change: ModelSettingsChange,
+  basis?: ModelSettingsView,
+) => Promise<ApplyResult>;
+
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 async function errorBody(response: Response): Promise<{ code?: string; message?: string }> {
@@ -158,11 +164,20 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
     return read;
   }
 
-  /** Apply one change against the revision of the cached view. */
-  async function apply(change: ModelSettingsChange): Promise<ApplyResult> {
+  /**
+   * Apply one change. It is sent against the revision of `basis`, the view it
+   * was worked out from, so that when the settings changed since (a reload
+   * landing meanwhile included) the server refuses it (409) rather than it
+   * overwriting what it never saw; the caller works it out again from the
+   * reloaded view. Without `basis`, the held view's revision.
+   */
+  async function apply(
+    change: ModelSettingsChange,
+    basis?: ModelSettingsView,
+  ): Promise<ApplyResult> {
     if (loading) await loading;
-    if (!state.view) await load();
-    const view = state.view;
+    if (!state.view && !basis) await load();
+    const view = basis ?? state.view;
     if (!view) {
       return state.phase === 'unavailable'
         ? { ok: false, reason: 'unavailable', message: 'Model settings are not available' }

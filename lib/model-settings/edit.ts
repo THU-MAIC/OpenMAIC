@@ -412,8 +412,10 @@ export function providerLabel(view: ModelSettingsView, providerId: string): stri
   return preset && preset.id === providerId ? preset.name : providerId;
 }
 
+/** A client's apply: the change, and the view it was worked out from. */
 type Apply = (
   change: ModelSettingsChange,
+  basis?: ModelSettingsView,
 ) => Promise<
   | { ok: true; view: ModelSettingsView }
   | { ok: false; reason: string; message: string; view?: ModelSettingsView }
@@ -455,7 +457,7 @@ export async function fillRecommended(
       ? { status: 'done', providerId, assigned }
       : { status: 'partial', providerId };
   }
-  const filled = await apply({ kind: 'slots', set });
+  const filled = await apply({ kind: 'slots', set }, view);
   if (!filled.ok) {
     // An answer lost after the write: the reloaded view tells whether it landed.
     if (filled.reason === 'unconfirmed' && filled.view && isLlmConfigured(filled.view)) {
@@ -482,7 +484,7 @@ export async function runFirstRunSetup(
   draft: ProviderDraft,
 ): Promise<FirstRunResult> {
   const providerId = newProviderId(view, preset.id);
-  const added = await apply(providerChange(providerId, draft, preset));
+  const added = await apply(providerChange(providerId, draft, preset), view);
   if (added.ok) return fillRecommended(apply, added.view, preset, providerId);
   if (added.reason === 'unconfirmed') {
     // The answer was lost: the reloaded view tells whether the provider landed.

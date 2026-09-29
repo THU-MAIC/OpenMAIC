@@ -2,12 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   createModelSettingsClient,
+  findSlot,
   isLlmConfigured,
   needsFirstRunSetup,
   type ModelSettingsView,
 } from '@/lib/model-settings/client';
 
-import { makeView, withSlots } from './fixtures';
+import { fillRecommended } from '@/lib/model-settings/edit';
+
+import { chatPreset, makeView, withLlm, withSlots, workspaceProvider } from './fixtures';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -383,5 +386,53 @@ describe('read ordering', () => {
     pending[2].resolve(json(makeView({ revision: 7 })));
     await next;
     expect(client.getState().view?.revision).toBe(7);
+  });
+});
+
+describe('changes are bound to the view they were worked out from', () => {
+  it('does not let a retry overwrite a slot a pending reload shows was set meanwhile', async () => {
+    // A tiny server: a revision and the stored slots; a stale revision is refused.
+    const server = {
+      view: makeView({ revision: 1, providers: [workspaceProvider('acme')] }),
+    };
+    const puts: { revision: number | null }[] = [];
+    let releaseReload: (() => void) | undefined;
+    let gets = 0;
+    const fetchImpl = vi.fn(async (_input: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        const body = JSON.parse(init.body as string) as { revision: number | null };
+        puts.push(body);
+        if (body.revision !== server.view.revision) {
+          return json({ error: { code: 'CONFLICT', message: 'The settings changed' } }, 409);
+        }
+        server.view = {
+          ...withLlm(server.view, 'acme:acme-large'),
+          revision: (body.revision ?? 0) + 1,
+        };
+        return json(server.view);
+      }
+      gets++;
+      // The second read is held back until the test releases it.
+      if (gets === 2) await new Promise<void>((resolve) => (releaseReload = resolve));
+      return json(server.view);
+    });
+    const client = createModelSettingsClient(fetchImpl);
+    const seen = (await client.load()).view!;
+
+    // Another session sets the default model; a reload is on its way.
+    server.view = { ...withLlm(server.view, 'acme:acme-small'), revision: 2 };
+    const reload = client.load({ fresh: true });
+    // A retry works out its assignments from the view it saw (llm empty) …
+    const fill = fillRecommended(client.apply, seen, chatPreset, 'acme');
+    await new Promise((settle) => setTimeout(settle, 0));
+    releaseReload!();
+    await reload;
+    const result = await fill;
+
+    // … and is sent against that view's revision, so the server refuses it.
+    expect(puts.map((put) => put.revision)).toEqual([1]);
+    expect(result).toMatchObject({ status: 'partial', reason: 'conflict' });
+    expect(findSlot(server.view, 'llm')?.assignment).toBe('acme:acme-small');
+    expect(client.getState().view?.revision).toBe(2);
   });
 });

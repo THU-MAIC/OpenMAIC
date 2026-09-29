@@ -7,6 +7,7 @@ import type {
   ApplyResult,
   ModelSettingsChange,
   ModelSettingsView,
+  ApplyChange,
 } from '@/lib/model-settings/client';
 import { needsFirstRunSetup } from '@/lib/model-settings/client';
 import {
@@ -144,7 +145,7 @@ export function ModelMap({
   onSetupOutcome,
 }: {
   view: ModelSettingsView;
-  apply: (change: ModelSettingsChange) => Promise<ApplyResult>;
+  apply: ApplyChange;
   t: T;
   onManageProviders: () => void;
   offMemory: OffMemory;

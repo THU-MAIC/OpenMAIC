@@ -19,6 +19,7 @@ import {
   type ModelSettingsChange,
   type ModelSettingsView,
   type SlotView,
+  type ApplyChange,
 } from '@/lib/model-settings/client';
 import {
   PROVIDER_ONLY_CAPABILITIES,
@@ -183,7 +184,7 @@ export function SlotPicker({
 }: {
   view: ModelSettingsView;
   slot: SlotView;
-  apply: (change: ModelSettingsChange) => Promise<ApplyResult>;
+  apply: ApplyChange;
   onDone: () => void;
   onManageProviders?: () => void;
   t: T;
@@ -202,7 +203,7 @@ export function SlotPicker({
     setBusy(key);
     setMessage(null);
     try {
-      const result = await apply(change);
+      const result = await apply(change, view);
       if (result.ok) {
         if (close) onDone();
         return;

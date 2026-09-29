@@ -13,6 +13,7 @@ import type {
   ModelSettingsChange,
   ModelSettingsView,
   SlotView,
+  ApplyChange,
 } from '@/lib/model-settings/client';
 import { stationLit, type PlacedStation, type StationLine } from '@/lib/model-settings/diagram';
 import { switchOffChange, switchOnChange, type OffMemory } from '@/lib/model-settings/edit';
@@ -24,7 +25,7 @@ import { MS, SlotIcon, applyErrorText, slotName } from './slot-meta';
 import { lineText } from './station-text';
 
 type T = (key: string, options?: Record<string, unknown>) => string;
-type Apply = (change: ModelSettingsChange) => Promise<ApplyResult>;
+type Apply = ApplyChange;
 
 /** Shared by every node: which picker is open, how to apply, where providers are managed. */
 export interface NodeContext {
@@ -180,7 +181,7 @@ function SlotLine({
             }
             setSwitching(true);
             try {
-              const result = await apply(change);
+              const result = await apply(change, view);
               if (on && result.ok) ctx.offMemory.delete(slot.slot);
               if (!result.ok) toast.error(applyErrorText(result, t));
             } finally {

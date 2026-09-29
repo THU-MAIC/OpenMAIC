@@ -10,6 +10,7 @@ import type {
   ModelSettingsChange,
   ModelSettingsView,
   PresetView,
+  ApplyChange,
 } from '@/lib/model-settings/client';
 import {
   draftProblem,
@@ -47,7 +48,7 @@ export function FirstRunSetup({
   t,
 }: {
   view: ModelSettingsView;
-  apply: (change: ModelSettingsChange) => Promise<ApplyResult>;
+  apply: ApplyChange;
   onOutcome: (outcome: SetupOutcome) => void;
   t: T;
 }) {
