@@ -571,6 +571,33 @@ async function peekFirstPart(
   return { first, stream: replay };
 }
 
+/**
+ * Status codes for the transient error types providers send as a stream's
+ * error part (an SSE `error` event), which arrive as plain `{ type, message }`
+ * payloads rather than errors; an authentication or request error keeps its
+ * own type and is not retried.
+ */
+const TRANSIENT_STREAM_ERROR_STATUS: Record<string, number> = {
+  overloaded_error: 529,
+  api_error: 500,
+  rate_limit_error: 429,
+  server_error: 500,
+};
+
+/** A stream's error part as an error the fallback classifier understands. */
+function streamPartError(error: unknown): unknown {
+  if (error instanceof Error || !error || typeof error !== 'object') return error;
+  const payload = ((error as { error?: unknown }).error ?? error) as {
+    type?: unknown;
+    message?: unknown;
+  };
+  const type = typeof payload?.type === 'string' ? payload.type : undefined;
+  const statusCode = type ? TRANSIENT_STREAM_ERROR_STATUS[type] : undefined;
+  if (!statusCode) return error;
+  const message = typeof payload.message === 'string' ? payload.message : type!;
+  return Object.assign(new Error(message), { statusCode, cause: error });
+}
+
 /** What one streamLLM call has seen, across its steps and the SDK's retries. */
 interface StreamFallbackState {
   /** A content part (text, reasoning, a tool call, ...) reached the caller. */
@@ -649,16 +676,18 @@ function withStreamFallback(
       try {
         const result = await doStream();
         const peeked = await peekFirstPart(result.stream);
+        const firstError =
+          peeked.first?.type === 'error' ? streamPartError(peeked.first.error) : undefined;
         if (
           state.contentStarted ||
-          peeked.first?.type !== 'error' ||
-          !shouldFallbackFor(peeked.first.error, undefined)
+          firstError === undefined ||
+          !shouldFallbackFor(firstError, undefined)
         ) {
           state.primaryAttempts = 0;
           return track({ ...result, stream: peeked.stream }, model);
         }
         await peeked.stream.cancel().catch(() => undefined);
-        failure = peeked.first.error;
+        failure = firstError;
       } catch (error) {
         if (state.contentStarted || !shouldFallbackFor(error, undefined)) throw error;
         // The SDK retries a retryable refusal of the primary itself: the

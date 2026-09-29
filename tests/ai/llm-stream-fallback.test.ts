@@ -89,6 +89,30 @@ describe('streamLLM slot fallback', () => {
     expect(await textOf(primary)).toBe('from fallback');
   });
 
+  it('falls back on a transient error payload a provider streams as its first part', async () => {
+    const payloadFailure = (type: string) =>
+      new MockLanguageModelV3({
+        provider: 'mock',
+        modelId: 'main',
+        doStream: async () => ({
+          stream: simulateReadableStream({
+            chunks: [
+              { type: 'stream-start', warnings: [] },
+              { type: 'error', error: { type, message: 'upstream says no' } },
+            ],
+          }),
+        }),
+      });
+    const overloadedPrimary = payloadFailure('overloaded_error');
+    attach(overloadedPrimary);
+    expect(await textOf(overloadedPrimary)).toBe('from fallback');
+
+    const unauthorized = payloadFailure('authentication_error');
+    attach(unauthorized);
+    await expect(textOf(unauthorized)).rejects.toBeDefined();
+    expect(fallback.doStreamCalls).toHaveLength(1);
+  });
+
   it('keeps the primary once it has streamed content', async () => {
     const primary = textModel('main', 'from primary');
     attach(primary);
