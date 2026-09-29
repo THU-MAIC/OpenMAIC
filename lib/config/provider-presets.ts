@@ -48,6 +48,12 @@ export interface ProviderPreset {
   recommended?: Partial<Record<SlotId, string>>;
   /** True when the preset needs a caller-supplied base URL. */
   requiresBaseUrl?: boolean;
+  /**
+   * False when the registry entry only supplies the transport, so its model
+   * catalogue says nothing about the models behind the endpoint (a custom
+   * OpenAI-compatible server).
+   */
+  trustsModelCatalogue?: false;
 }
 
 type RegistryEntry = { name?: string; requiresBaseUrl?: boolean };
@@ -122,6 +128,7 @@ function singlePresets(): ProviderPreset[] {
     kind: 'single',
     capabilities: { chat: { registryId: 'openai' } },
     requiresBaseUrl: true,
+    trustsModelCatalogue: false,
   });
   return presets;
 }

@@ -38,6 +38,8 @@ export interface ModelConfigLayer {
 /** Where a model comes from: one declared provider and one of its models. */
 export interface ResolvedModelTarget {
   providerId: string;
+  /** False when the registry's model catalogue does not describe this endpoint. */
+  catalogue?: false;
   presetId: string;
   registryId: string;
   /** The provider's own base URL, else the preset's (token plans); undefined means the registry default. */
@@ -56,8 +58,13 @@ interface ResolvedNode {
   slot: SlotId;
   /** The node that held the assignment: the slot itself or an ancestor. */
   resolvedAt: SlotId;
+  /** The layer that held the assignment. */
   source: ConfigSource;
-  /** Set by the deployment layer, so the web UI cannot change it. */
+  /**
+   * Whether the requested slot itself is written in the deployment layer, so
+   * the web UI cannot change it. Inheriting a deployment value does not lock a
+   * slot: the workspace may still assign it.
+   */
   locked: boolean;
 }
 
@@ -71,6 +78,8 @@ export type SlotResolution =
         contextWindow?: number;
         fallback?: ResolvedModelTarget;
         requirements: RequirementCheck[];
+        /** The same requirements checked against the fallback model. */
+        fallbackRequirements?: RequirementCheck[];
       })
   | (ResolvedNode & { status: 'disabled' })
   | { status: 'unassigned'; slot: SlotId };
@@ -111,7 +120,13 @@ function resolveTarget(
   layers: readonly ModelConfigLayer[],
   at: string,
 ): ResolvedModelTarget {
-  const { providerId, modelId } = parseModelRef(ref);
+  let parsed: { providerId: string; modelId: string };
+  try {
+    parsed = parseModelRef(ref);
+  } catch {
+    throw new SlotResolutionError(`${at}: invalid model reference`);
+  }
+  const { providerId, modelId } = parsed;
   const provider = findProvider(providerId, layers);
   if (!provider) throw new SlotResolutionError(`${at}: provider "${providerId}" is not declared`);
   const preset = getProviderPreset(provider.preset);
@@ -131,6 +146,7 @@ function resolveTarget(
     baseUrl: provider.baseUrl ?? target.baseUrl,
     ...(provider.apiKey !== undefined ? { apiKey: provider.apiKey } : {}),
     modelId,
+    ...(preset.trustsModelCatalogue === false ? { catalogue: false as const } : {}),
   };
 }
 
@@ -140,7 +156,7 @@ function checkRequirement(
   capability: SlotCapability,
   target: ResolvedModelTarget,
 ): RequirementCheck {
-  if (requirement !== 'toolCalling' || capability !== 'chat') {
+  if (requirement !== 'toolCalling' || capability !== 'chat' || target.catalogue === false) {
     return { requirement, status: 'unknown' };
   }
   const registry = (PROVIDERS as Record<string, { models?: readonly ModelLike[] }>)[
@@ -153,6 +169,15 @@ function checkRequirement(
 
 type ModelLike = { id: string; capabilities?: { tools?: boolean } };
 
+function isLockedByDeployment(slot: SlotId, layers: readonly ModelConfigLayer[]): boolean {
+  return layers.some(
+    (layer) =>
+      layer.source === 'deployment' &&
+      !!layer.config.slots &&
+      Object.hasOwn(layer.config.slots, slot),
+  );
+}
+
 export function resolveSlot(slot: SlotId, layers: readonly ModelConfigLayer[]): SlotResolution {
   const capability = getSlot(slot).capability;
   for (const node of slotLineage(slot)) {
@@ -162,7 +187,7 @@ export function resolveSlot(slot: SlotId, layers: readonly ModelConfigLayer[]): 
       slot,
       resolvedAt: node,
       source: found.layer.source,
-      locked: found.layer.source === 'deployment',
+      locked: isLockedByDeployment(slot, layers),
     };
     const { assignment } = found;
     if (assignment === null) return { ...base, status: 'disabled' };
@@ -175,9 +200,14 @@ export function resolveSlot(slot: SlotId, layers: readonly ModelConfigLayer[]): 
       : undefined;
     // Requirements are the requested slot's own, checked against the model it
     // resolves to, whether assigned here or inherited.
-    const requirements = (getSlot(slot).requires ?? []).map((requirement) =>
+    const requires = getSlot(slot).requires ?? [];
+    const requirements = requires.map((requirement) =>
       checkRequirement(requirement, capability, target),
     );
+    const fallbackRequirements =
+      fallback && requires.length
+        ? requires.map((requirement) => checkRequirement(requirement, capability, fallback))
+        : undefined;
     return {
       ...base,
       ...target,
@@ -190,6 +220,7 @@ export function resolveSlot(slot: SlotId, layers: readonly ModelConfigLayer[]): 
         : {}),
       ...(fallback ? { fallback } : {}),
       requirements,
+      ...(fallbackRequirements ? { fallbackRequirements } : {}),
     };
   }
   return { status: 'unassigned', slot };
