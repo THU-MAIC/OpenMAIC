@@ -2019,7 +2019,7 @@
         "openLegacy": "打开模型服务"
       },
       "map": {
-        "label": "课程模型图。拖动可平移，使用缩放按钮缩放。",
+        "label": "课程模型图。拖动或使用方向键平移，使用缩放按钮缩放。",
         "outside": "流水线之外",
         "standalone": "独立功能",
         "perPage": "逐页生成",
@@ -2071,7 +2071,9 @@
         "noFallback": "无",
         "manageProviders": "管理 Provider",
         "conflict": "设置已在别处更改并已重新加载，请检查后重试。",
-        "lockedNow": "服务端现在设置了此项，因此未作更改。"
+        "lockedNow": "服务端现在设置了此项，因此未作更改。",
+        "clear": "清除单独设置",
+        "clearHint": "改用服务端的设置（如有）"
       },
       "setup": {
         "prompt": "还没有默认模型。接入一个服务后，它推荐的模型会填满所有未设置的环节。",
@@ -2083,8 +2085,12 @@
         "connect": "接入",
         "connecting": "正在接入…",
         "done": "已接入 {{name}}",
-        "partial": "Provider 已添加，但未能分配其模型：{{message}}",
-        "noModel": "Provider 已添加，但它没有列出语言模型。请在 Provider 中添加模型 ID。"
+        "partial": "已添加 {{name}}，但未能分配其模型：{{message}}",
+        "noModel": "已添加 {{name}}，但它没有列出语言模型。请在 Provider 中添加模型 ID。",
+        "retry": "分配模型",
+        "dismiss": "关闭",
+        "changedMeanwhile": "设置在此期间已被更改",
+        "openProviders": "打开 Provider"
       },
       "providers": {
         "title": "Provider",
@@ -2128,7 +2134,8 @@
           "video": "视频",
           "webSearch": "联网搜索",
           "document": "文档"
-        }
+        },
+        "endpointChatOnly": "使用自定义端点时，Provider 只提供语言模型。"
       },
       "capabilities": {
         "chat": "语言",

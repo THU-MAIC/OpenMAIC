@@ -2004,7 +2004,7 @@
         "openLegacy": "開啟模型服務"
       },
       "map": {
-        "label": "課程模型圖。拖曳可平移，使用縮放按鈕縮放。",
+        "label": "課程模型圖。拖曳或使用方向鍵平移，使用縮放按鈕縮放。",
         "outside": "流程之外",
         "standalone": "獨立功能",
         "perPage": "逐頁生成",
@@ -2056,7 +2056,9 @@
         "noFallback": "無",
         "manageProviders": "管理 Provider",
         "conflict": "設定已在別處變更並已重新載入，請檢查後再試一次。",
-        "lockedNow": "伺服器現在設定了此項，因此未變更。"
+        "lockedNow": "伺服器現在設定了此項，因此未變更。",
+        "clear": "清除單獨設定",
+        "clearHint": "改用伺服器的設定（如有）"
       },
       "setup": {
         "prompt": "還沒有預設模型。連接一項服務後，它建議的模型會填滿所有未設定的環節。",
@@ -2068,8 +2070,12 @@
         "connect": "連接",
         "connecting": "正在連接…",
         "done": "已連接 {{name}}",
-        "partial": "已新增 Provider，但無法指派其模型：{{message}}",
-        "noModel": "已新增 Provider，但它沒有列出語言模型。請在 Provider 中新增模型 ID。"
+        "partial": "已新增 {{name}}，但無法指派其模型：{{message}}",
+        "noModel": "已新增 {{name}}，但它沒有列出語言模型。請在 Provider 中新增模型 ID。",
+        "retry": "指派模型",
+        "dismiss": "關閉",
+        "changedMeanwhile": "設定在此期間已被變更",
+        "openProviders": "開啟 Provider"
       },
       "providers": {
         "title": "Provider",
@@ -2113,7 +2119,8 @@
           "video": "影片",
           "webSearch": "網路搜尋",
           "document": "文件"
-        }
+        },
+        "endpointChatOnly": "使用自訂端點時，Provider 只提供語言模型。"
       },
       "capabilities": {
         "chat": "語言",

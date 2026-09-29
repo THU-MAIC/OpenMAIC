@@ -208,6 +208,19 @@ export function SlotPicker({
           </Row>
         )}
 
+        {/* A root has no parent to follow: dropping its own setting leaves
+            whatever the server provides (its value or default), if anything. */}
+        {!parent && slot.assignment !== undefined && (
+          <Row
+            busy={busy === 'follow'}
+            disabled={!!busy}
+            onClick={() => void run('follow', slotChange(slot, { kind: 'follow' }))}
+            note={t(`${MS}.picker.clearHint`)}
+          >
+            {t(`${MS}.picker.clear`)}
+          </Row>
+        )}
+
         {providers.length === 0 && (
           <p className="px-2 py-2 text-xs text-muted-foreground">{t(`${MS}.picker.noProviders`)}</p>
         )}

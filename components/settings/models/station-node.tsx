@@ -15,10 +15,10 @@ import type {
   SlotView,
 } from '@/lib/model-settings/client';
 import { stationLit, type PlacedStation, type StationLine } from '@/lib/model-settings/diagram';
-import { toggleChange } from '@/lib/model-settings/edit';
+import { switchOffChange, switchOnChange, type OffMemory } from '@/lib/model-settings/edit';
 import { cn } from '@/lib/utils';
 
-import { FirstRunSetup } from './first-run-setup';
+import { FirstRunSetup, type SetupOutcome } from './first-run-setup';
 import { SlotPicker } from './slot-picker';
 import { MS, SlotIcon, slotName } from './slot-meta';
 import { lineText } from './station-text';
@@ -34,6 +34,10 @@ export interface NodeContext {
   openKey: string | null;
   setOpenKey: (key: string | null) => void;
   onManageProviders: () => void;
+  /** What each switched-off slot held, to restore when it is switched on. */
+  offMemory: OffMemory;
+  /** Where a first-run setup that added its provider reports (outlives the card). */
+  onSetupOutcome: (outcome: SetupOutcome) => void;
 }
 
 function SlotLine({
@@ -157,9 +161,18 @@ function SlotLine({
           aria-label={t(`${MS}.card.toggle`, { name })}
           className="mr-1 h-4 w-7 [&>span]:size-3 [&>span]:data-[state=checked]:translate-x-3"
           onCheckedChange={async (on) => {
+            const change = on
+              ? switchOnChange(slot, ctx.offMemory)
+              : switchOffChange(slot, ctx.offMemory);
+            // Not known what it held before: let the user choose rather than guess.
+            if (!change) {
+              setOpenKey(slot.slot);
+              return;
+            }
             setSwitching(true);
-            const result = await apply(toggleChange(slot, on));
+            const result = await apply(change);
             setSwitching(false);
+            if (on && result.ok) ctx.offMemory.delete(slot.slot);
             if (!result.ok) {
               toast.error(
                 result.reason === 'conflict' ? t(`${MS}.picker.conflict`) : result.message,
@@ -292,9 +305,9 @@ export const StationNode = forwardRef<
               <FirstRunSetup
                 view={ctx.view}
                 apply={ctx.apply}
-                onDone={(name) => {
+                onOutcome={(outcome) => {
                   ctx.setOpenKey(null);
-                  toast.success(t(`${MS}.setup.done`, { name }));
+                  ctx.onSetupOutcome(outcome);
                 }}
                 t={t}
               />

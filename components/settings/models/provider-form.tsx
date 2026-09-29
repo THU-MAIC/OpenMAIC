@@ -78,8 +78,13 @@ export function ProviderFields({
 }) {
   const id = useId();
   const [showKey, setShowKey] = useState(false);
-  const fields = providerFields(preset, draft);
-  const storedKey = existing?.key?.set && !existing.key.unreadable;
+  const fields = providerFields(preset, draft, existing);
+  const storedKey = !!existing?.key?.set;
+  // A key the server cannot read can only be replaced or removed, not kept.
+  const unreadable = !!existing?.key?.unreadable;
+  const keyActions = unreadable
+    ? (['replace', 'remove'] as const)
+    : (['keep', 'replace', 'remove'] as const);
 
   return (
     <div className="grid gap-3">
@@ -90,7 +95,7 @@ export function ProviderFields({
           </Label>
           {storedKey && (
             <div className="flex items-center gap-2 text-[11px]">
-              {(['keep', 'replace', 'remove'] as const).map((action) => (
+              {keyActions.map((action) => (
                 <button
                   key={action}
                   type="button"
@@ -139,6 +144,11 @@ export function ProviderFields({
             </button>
           </div>
         )}
+        {unreadable && draft.keyAction === 'replace' && (
+          <p className="text-[11px] text-amber-600 dark:text-amber-400">
+            {t(`${MS}.providers.keyUnreadable`)}
+          </p>
+        )}
       </div>
 
       {fields.baseUrl && (
@@ -158,6 +168,11 @@ export function ProviderFields({
             placeholder="https://"
             className="h-8 font-mono text-xs"
           />
+          {fields.chatOnlyEndpoint && (
+            <p className="text-[11px] text-muted-foreground">
+              {t(`${MS}.providers.endpointChatOnly`)}
+            </p>
+          )}
         </div>
       )}
 

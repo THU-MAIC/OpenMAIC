@@ -9,11 +9,13 @@ import type {
   ApplyResult,
   ModelSettingsChange,
   ModelSettingsView,
+  PresetView,
 } from '@/lib/model-settings/client';
 import {
   draftProblem,
   emptyDraft,
   runFirstRunSetup,
+  type FirstRunResult,
   type ProviderDraft,
 } from '@/lib/model-settings/edit';
 
@@ -22,20 +24,31 @@ import { MS } from './slot-meta';
 
 type T = (key: string, options?: Record<string, unknown>) => string;
 
+/** A first-run setup that added its provider: done, or with the slots still to fill. */
+export interface SetupOutcome {
+  preset: PresetView;
+  result: Exclude<FirstRunResult, { status: 'failed' }>;
+}
+
 /**
  * The first-run setup, opened from the default model's card while no language
  * model is configured: pick a service and give its key; it is added and its
  * recommended models fill every slot that is still empty.
+ *
+ * Once the provider exists the outcome goes to `onOutcome`, which outlives
+ * this form (the view reloads, the card may change): a provider added but not
+ * assigned must not be forgotten with it. Only a provider that could not be
+ * added is reported here, next to the fields to correct.
  */
 export function FirstRunSetup({
   view,
   apply,
-  onDone,
+  onOutcome,
   t,
 }: {
   view: ModelSettingsView;
   apply: (change: ModelSettingsChange) => Promise<ApplyResult>;
-  onDone: (serviceName: string) => void;
+  onOutcome: (outcome: SetupOutcome) => void;
   t: T;
 }) {
   const id = useId();
@@ -55,15 +68,10 @@ export function FirstRunSetup({
     setMessage(null);
     const result = await runFirstRunSetup(apply, view, preset, draft);
     setWorking(false);
-    if (result.status === 'done') onDone(preset.name);
-    else if (result.status === 'partial') {
-      setMessage(
-        result.message
-          ? t(`${MS}.setup.partial`, { message: result.message })
-          : t(`${MS}.setup.noModel`),
-      );
-    } else {
+    if (result.status === 'failed') {
       setMessage(result.reason === 'conflict' ? t(`${MS}.picker.conflict`) : result.message);
+    } else {
+      onOutcome({ preset, result });
     }
   };
 

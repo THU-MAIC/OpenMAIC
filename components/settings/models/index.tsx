@@ -3,11 +3,17 @@
 import { useState } from 'react';
 import { AlertCircle, Loader2, Lock, RefreshCw, Server } from 'lucide-react';
 
+import { toast } from 'sonner';
+
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { modelSettingsClient, type ModelSettingsClient } from '@/lib/model-settings/client';
+import { fillRecommended, type OffMemory } from '@/lib/model-settings/edit';
 import { useModelSettings } from '@/lib/model-settings/use-model-settings';
 import { cn } from '@/lib/utils';
 
+import { SetupNotice } from './setup-notice';
+import type { SetupOutcome } from './first-run-setup';
 import { ModelMap } from './model-map';
 import { ProvidersPanel } from './providers-panel';
 import { MS } from './slot-meta';
@@ -20,11 +26,31 @@ type Tab = 'map' | 'providers';
  * from. Everything is read from and written to the server
  * (`/api/model-config`); nothing is kept in the browser.
  */
-export function ModelSettingsPanel({ onOpenLegacy }: { onOpenLegacy?: () => void }) {
+export function ModelSettingsPanel({
+  onOpenLegacy,
+  client,
+}: {
+  onOpenLegacy?: () => void;
+  /** The settings client; the page's shared one unless a test passes its own. */
+  client?: ModelSettingsClient;
+}) {
   const { t } = useI18n();
-  const { state, apply, reload } = useModelSettings();
+  const { state, apply, reload } = useModelSettings(client);
   const [tab, setTab] = useState<Tab>('map');
+  const [offMemory] = useState<OffMemory>(() => new Map());
+  // A first-run setup that added its provider but could not assign it stays
+  // on screen, whatever reloads meanwhile, until it is resolved or dismissed.
+  const [setupNotice, setSetupNotice] = useState<SetupOutcome | null>(null);
   const view = state.view;
+
+  const onSetupOutcome = (outcome: SetupOutcome) => {
+    if (outcome.result.status === 'done') {
+      setSetupNotice(null);
+      toast.success(t(`${MS}.setup.done`, { name: outcome.preset.name }));
+    } else {
+      setSetupNotice(outcome);
+    }
+  };
 
   if (state.phase === 'unavailable') {
     return (
@@ -129,8 +155,36 @@ export function ModelSettingsPanel({ onOpenLegacy }: { onOpenLegacy?: () => void
         </p>
       )}
 
+      {setupNotice && setupNotice.result.status === 'partial' && (
+        <SetupNotice
+          outcome={setupNotice}
+          onRetry={async () => {
+            const current = (client ?? modelSettingsClient).getState().view ?? view;
+            onSetupOutcome({
+              preset: setupNotice.preset,
+              result: await fillRecommended(
+                apply,
+                current,
+                setupNotice.preset,
+                setupNotice.result.providerId,
+              ),
+            });
+          }}
+          onProviders={() => setTab('providers')}
+          onDismiss={() => setSetupNotice(null)}
+          t={t}
+        />
+      )}
+
       {tab === 'map' ? (
-        <ModelMap view={view} apply={apply} t={t} onManageProviders={() => setTab('providers')} />
+        <ModelMap
+          view={view}
+          apply={apply}
+          t={t}
+          onManageProviders={() => setTab('providers')}
+          offMemory={offMemory}
+          onSetupOutcome={onSetupOutcome}
+        />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="max-w-3xl">

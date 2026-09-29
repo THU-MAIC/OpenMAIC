@@ -2019,7 +2019,7 @@
         "openLegacy": "Abrir servicios de modelos"
       },
       "map": {
-        "label": "Mapa de modelos del curso. Arrastra para desplazarte y usa los botones de zoom para acercar o alejar.",
+        "label": "Mapa de modelos del curso. Arrastra o usa las flechas para desplazarte; usa los botones de zoom para acercar o alejar.",
         "outside": "Fuera del flujo",
         "standalone": "Independiente",
         "perPage": "Página por página",
@@ -2071,7 +2071,9 @@
         "noFallback": "Ninguno",
         "manageProviders": "Administrar proveedores",
         "conflict": "La configuración cambió en otro lugar y se volvió a cargar. Revísala e inténtalo de nuevo.",
-        "lockedNow": "Ahora el servidor define esto, así que no se cambió."
+        "lockedNow": "Ahora el servidor define esto, así que no se cambió.",
+        "clear": "Quitar ajuste propio",
+        "clearHint": "Usar el ajuste del servidor, si tiene uno"
       },
       "setup": {
         "prompt": "Aún no hay modelo predeterminado. Conecta un servicio y sus modelos recomendados llenarán todos los pasos sin definir.",
@@ -2083,8 +2085,12 @@
         "connect": "Conectar",
         "connecting": "Conectando…",
         "done": "{{name}} está conectado",
-        "partial": "Se agregó el proveedor, pero no se pudieron asignar sus modelos: {{message}}",
-        "noModel": "Se agregó el proveedor, pero no incluye ningún modelo de lenguaje. Agrega sus ID de modelo en Proveedores."
+        "partial": "Se agregó {{name}}, pero no se asignaron sus modelos: {{message}}",
+        "noModel": "Se agregó {{name}}, pero no incluye ningún modelo de lenguaje. Agrega sus ID de modelo en Proveedores.",
+        "retry": "Asignar modelos",
+        "dismiss": "Descartar",
+        "changedMeanwhile": "la configuración cambió mientras tanto",
+        "openProviders": "Abrir proveedores"
       },
       "providers": {
         "title": "Proveedores",
@@ -2128,7 +2134,8 @@
           "video": "Video",
           "webSearch": "Búsqueda web",
           "document": "Documentos"
-        }
+        },
+        "endpointChatOnly": "Con su propio endpoint, un proveedor solo ofrece modelos de lenguaje."
       },
       "capabilities": {
         "chat": "Lenguaje",

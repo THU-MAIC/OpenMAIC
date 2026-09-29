@@ -2019,7 +2019,7 @@
         "openLegacy": "Modelldienste öffnen"
       },
       "map": {
-        "label": "Kursmodellkarte. Zum Verschieben ziehen, zum Zoomen die Zoomschaltflächen verwenden.",
+        "label": "Kursmodellkarte. Ziehen oder Pfeiltasten zum Verschieben, Zoomschaltflächen zum Zoomen.",
         "outside": "Außerhalb der Pipeline",
         "standalone": "Eigenständig",
         "perPage": "Seite für Seite",
@@ -2071,7 +2071,9 @@
         "noFallback": "Keiner",
         "manageProviders": "Anbieter verwalten",
         "conflict": "Die Einstellungen wurden an anderer Stelle geändert und neu geladen. Prüfe sie und versuche es erneut.",
-        "lockedNow": "Der Server legt dies jetzt fest, daher wurde nichts geändert."
+        "lockedNow": "Der Server legt dies jetzt fest, daher wurde nichts geändert.",
+        "clear": "Eigene Einstellung entfernen",
+        "clearHint": "Die Einstellung des Servers verwenden, falls vorhanden"
       },
       "setup": {
         "prompt": "Noch kein Standardmodell. Verbinde einen Dienst, und seine empfohlenen Modelle füllen alle Schritte, die noch nicht festgelegt sind.",
@@ -2083,8 +2085,12 @@
         "connect": "Verbinden",
         "connecting": "Wird verbunden…",
         "done": "{{name}} ist verbunden",
-        "partial": "Der Anbieter wurde hinzugefügt, aber seine Modelle konnten nicht zugewiesen werden: {{message}}",
-        "noModel": "Der Anbieter wurde hinzugefügt, listet aber kein Sprachmodell. Füge seine Modell-IDs unter Anbieter hinzu."
+        "partial": "{{name}} wurde hinzugefügt, aber seine Modelle wurden nicht zugewiesen: {{message}}",
+        "noModel": "{{name}} wurde hinzugefügt, listet aber kein Sprachmodell. Füge seine Modell-IDs unter Anbieter hinzu.",
+        "retry": "Modelle zuweisen",
+        "dismiss": "Schließen",
+        "changedMeanwhile": "die Einstellungen wurden inzwischen geändert",
+        "openProviders": "Anbieter öffnen"
       },
       "providers": {
         "title": "Anbieter",
@@ -2128,7 +2134,8 @@
           "video": "Video",
           "webSearch": "Websuche",
           "document": "Dokumente"
-        }
+        },
+        "endpointChatOnly": "Mit eigenem Endpunkt stellt ein Anbieter nur Sprachmodelle bereit."
       },
       "capabilities": {
         "chat": "Sprache",

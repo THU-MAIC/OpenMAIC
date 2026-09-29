@@ -2019,7 +2019,7 @@
         "openLegacy": "Open model services"
       },
       "map": {
-        "label": "Course model map. Drag to pan, use the zoom controls to zoom.",
+        "label": "Course model map. Drag or use the arrow keys to pan; use the zoom controls to zoom.",
         "outside": "Outside the pipeline",
         "standalone": "Standalone",
         "perPage": "Page by page",
@@ -2071,7 +2071,9 @@
         "noFallback": "None",
         "manageProviders": "Manage providers",
         "conflict": "The settings changed elsewhere and were reloaded. Check them and try again.",
-        "lockedNow": "The server now sets this, so it was not changed."
+        "lockedNow": "The server now sets this, so it was not changed.",
+        "clear": "Clear own setting",
+        "clearHint": "Use the server's setting, if it has one"
       },
       "setup": {
         "prompt": "No default model yet. Connect a service and its recommended models fill every part that is not set.",
@@ -2083,8 +2085,12 @@
         "connect": "Connect",
         "connecting": "Connecting…",
         "done": "{{name}} is connected",
-        "partial": "The provider was added, but its models could not be assigned: {{message}}",
-        "noModel": "The provider was added, but it lists no language model. Add its model IDs under Providers."
+        "partial": "{{name}} was added, but its models were not assigned: {{message}}",
+        "noModel": "{{name}} was added, but it lists no language model. Add its model IDs under Providers.",
+        "retry": "Assign models",
+        "dismiss": "Dismiss",
+        "changedMeanwhile": "the settings changed meanwhile",
+        "openProviders": "Open providers"
       },
       "providers": {
         "title": "Providers",
@@ -2128,7 +2134,8 @@
           "video": "Video",
           "webSearch": "Web search",
           "document": "Documents"
-        }
+        },
+        "endpointChatOnly": "With its own endpoint, a provider serves language models only."
       },
       "capabilities": {
         "chat": "Language",

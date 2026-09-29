@@ -2019,7 +2019,7 @@
         "openLegacy": "Ouvrir les services de modèles"
       },
       "map": {
-        "label": "Carte des modèles du cours. Faites glisser pour vous déplacer, utilisez les boutons de zoom pour zoomer.",
+        "label": "Carte des modèles du cours. Faites glisser ou utilisez les flèches pour vous déplacer, et les boutons de zoom pour zoomer.",
         "outside": "Hors du pipeline",
         "standalone": "Autonome",
         "perPage": "Page par page",
@@ -2071,7 +2071,9 @@
         "noFallback": "Aucun",
         "manageProviders": "Gérer les fournisseurs",
         "conflict": "Les réglages ont été modifiés ailleurs et rechargés. Vérifiez-les puis réessayez.",
-        "lockedNow": "Le serveur définit désormais ce réglage ; rien n’a été modifié."
+        "lockedNow": "Le serveur définit désormais ce réglage ; rien n’a été modifié.",
+        "clear": "Retirer le réglage propre",
+        "clearHint": "Utiliser le réglage du serveur, s’il en a un"
       },
       "setup": {
         "prompt": "Pas encore de modèle par défaut. Connectez un service : ses modèles recommandés rempliront toutes les étapes non définies.",
@@ -2083,8 +2085,12 @@
         "connect": "Connecter",
         "connecting": "Connexion…",
         "done": "{{name}} est connecté",
-        "partial": "Le fournisseur a été ajouté, mais ses modèles n’ont pas pu être attribués : {{message}}",
-        "noModel": "Le fournisseur a été ajouté, mais il ne liste aucun modèle de langage. Ajoutez ses ID de modèle dans Fournisseurs."
+        "partial": "{{name}} a été ajouté, mais ses modèles n’ont pas été attribués : {{message}}",
+        "noModel": "{{name}} a été ajouté, mais il ne liste aucun modèle de langage. Ajoutez ses ID de modèle dans Fournisseurs.",
+        "retry": "Attribuer les modèles",
+        "dismiss": "Fermer",
+        "changedMeanwhile": "les réglages ont changé entre-temps",
+        "openProviders": "Ouvrir les fournisseurs"
       },
       "providers": {
         "title": "Fournisseurs",
@@ -2128,7 +2134,8 @@
           "video": "Vidéo",
           "webSearch": "Recherche web",
           "document": "Documents"
-        }
+        },
+        "endpointChatOnly": "Avec son propre point de terminaison, un fournisseur ne sert que des modèles de langage."
       },
       "capabilities": {
         "chat": "Langage",

@@ -2019,7 +2019,7 @@
         "openLegacy": "Mở dịch vụ mô hình"
       },
       "map": {
-        "label": "Sơ đồ mô hình của khóa học. Kéo để di chuyển, dùng các nút thu phóng để phóng to hoặc thu nhỏ.",
+        "label": "Sơ đồ mô hình của khóa học. Kéo hoặc dùng phím mũi tên để di chuyển; dùng các nút thu phóng để phóng to hoặc thu nhỏ.",
         "outside": "Ngoài quy trình",
         "standalone": "Độc lập",
         "perPage": "Theo từng trang",
@@ -2071,7 +2071,9 @@
         "noFallback": "Không",
         "manageProviders": "Quản lý nhà cung cấp",
         "conflict": "Thiết lập đã được thay đổi ở nơi khác và đã tải lại. Hãy kiểm tra rồi thử lại.",
-        "lockedNow": "Máy chủ hiện đặt mục này nên không có gì thay đổi."
+        "lockedNow": "Máy chủ hiện đặt mục này nên không có gì thay đổi.",
+        "clear": "Xóa thiết lập riêng",
+        "clearHint": "Dùng thiết lập của máy chủ, nếu có"
       },
       "setup": {
         "prompt": "Chưa có mô hình mặc định. Kết nối một dịch vụ và các mô hình được đề xuất sẽ điền vào mọi bước chưa đặt.",
@@ -2083,8 +2085,12 @@
         "connect": "Kết nối",
         "connecting": "Đang kết nối…",
         "done": "Đã kết nối {{name}}",
-        "partial": "Đã thêm nhà cung cấp nhưng không gán được mô hình của nó: {{message}}",
-        "noModel": "Đã thêm nhà cung cấp nhưng nó không liệt kê mô hình ngôn ngữ nào. Hãy thêm ID mô hình trong mục Nhà cung cấp."
+        "partial": "Đã thêm {{name}} nhưng chưa gán được mô hình của nó: {{message}}",
+        "noModel": "Đã thêm {{name}} nhưng nó không liệt kê mô hình ngôn ngữ nào. Hãy thêm ID mô hình trong mục Nhà cung cấp.",
+        "retry": "Gán mô hình",
+        "dismiss": "Bỏ qua",
+        "changedMeanwhile": "thiết lập đã thay đổi trong lúc đó",
+        "openProviders": "Mở nhà cung cấp"
       },
       "providers": {
         "title": "Nhà cung cấp",
@@ -2128,7 +2134,8 @@
           "video": "Video",
           "webSearch": "Tìm kiếm web",
           "document": "Tài liệu"
-        }
+        },
+        "endpointChatOnly": "Khi dùng endpoint riêng, nhà cung cấp chỉ cung cấp mô hình ngôn ngữ."
       },
       "capabilities": {
         "chat": "Ngôn ngữ",

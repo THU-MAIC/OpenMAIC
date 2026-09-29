@@ -25,20 +25,22 @@ import {
   stationLit,
   type PlacedStation,
 } from '@/lib/model-settings/diagram';
+import type { OffMemory } from '@/lib/model-settings/edit';
 import { cn } from '@/lib/utils';
 
 import { MS } from './slot-meta';
+import type { SetupOutcome } from './first-run-setup';
 import { StationNode, type NodeContext } from './station-node';
 
 type T = (key: string, options?: Record<string, unknown>) => string;
 
-interface Box {
+export interface Box {
   x: number;
   y: number;
   w: number;
   h: number;
 }
-interface Viewport {
+export interface Viewport {
   x: number;
   y: number;
   k: number;
@@ -65,6 +67,32 @@ function fitView(width: number, height: number, worldHeight: number): Viewport {
     x: (width - CANVAS_WIDTH * k) / 2,
     y: Math.max(16, (height - worldHeight * k) / 2),
   };
+}
+
+const PAN_STEP = 60;
+/** Arrow keys move the map (the content follows the arrow's opposite, like scrolling). */
+const PAN_KEYS: Record<string, [number, number]> = {
+  ArrowLeft: [PAN_STEP, 0],
+  ArrowRight: [-PAN_STEP, 0],
+  ArrowUp: [0, PAN_STEP],
+  ArrowDown: [0, -PAN_STEP],
+};
+
+/**
+ * The viewport moved just enough for a box (world coordinates) to show inside
+ * the canvas with a margin; the same viewport when it already shows. A box
+ * larger than the canvas shows from its top left.
+ */
+export function revealBox(v: Viewport, box: Box, width: number, height: number): Viewport {
+  const margin = 16;
+  const shift = (start: number, size: number, extent: number) => {
+    if (start < margin || size > extent - margin * 2) return margin - start;
+    if (start + size > extent - margin) return extent - margin - (start + size);
+    return 0;
+  };
+  const dx = shift(v.x + box.x * v.k, box.w * v.k, width);
+  const dy = shift(v.y + box.y * v.k, box.h * v.k, height);
+  return dx || dy ? { ...v, x: v.x + dx, y: v.y + dy } : v;
 }
 
 function ZoomButton({
@@ -112,11 +140,15 @@ export function ModelMap({
   apply,
   t,
   onManageProviders,
+  offMemory,
+  onSetupOutcome,
 }: {
   view: ModelSettingsView;
   apply: (change: ModelSettingsChange) => Promise<ApplyResult>;
   t: T;
   onManageProviders: () => void;
+  offMemory: OffMemory;
+  onSetupOutcome: (outcome: SetupOutcome) => void;
 }) {
   const stations = useMemo(() => placeStations(view), [view]);
   const [openKey, setOpenKey] = useState<string | null>(null);
@@ -357,7 +389,32 @@ export function ModelMap({
       }
     : null;
 
-  const ctx: NodeContext = { view, apply, t, openKey, setOpenKey, onManageProviders };
+  const ctx: NodeContext = {
+    view,
+    apply,
+    t,
+    openKey,
+    setOpenKey,
+    onManageProviders,
+    offMemory,
+    onSetupOutcome,
+  };
+
+  // Keyboard focus on a card outside the view pans the map to it.
+  const revealFocused = (event: React.FocusEvent) => {
+    const element = canvas.current;
+    const id = (event.target as HTMLElement)
+      .closest?.('[data-station]')
+      ?.getAttribute('data-station');
+    const box = id ? boxes.get(id) : undefined;
+    if (!element || !box || !element.clientWidth) return;
+    setViewport((v) => {
+      const next = revealBox(v, box, element.clientWidth, element.clientHeight);
+      if (next === v) return v;
+      touched.current = true;
+      return next;
+    });
+  };
   const setup = needsFirstRunSetup(view)
     ? view.presets.some((preset) => preset.capabilities.chat)
       ? ('offer' as const)
@@ -397,9 +454,16 @@ export function ModelMap({
         onDoubleClick={(event) => {
           if (!(event.target as HTMLElement).closest('[data-station]')) fit(true);
         }}
+        onFocus={revealFocused}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget) return;
-          if (event.key === '+' || event.key === '=') zoomBy(1.2);
+          const pan = PAN_KEYS[event.key];
+          if (pan) {
+            event.preventDefault();
+            touched.current = true;
+            setOpenKey(null);
+            setViewport((v) => ({ ...v, x: v.x + pan[0], y: v.y + pan[1] }));
+          } else if (event.key === '+' || event.key === '=') zoomBy(1.2);
           else if (event.key === '-') zoomBy(1 / 1.2);
           else if (event.key === '0') fit(true);
         }}
