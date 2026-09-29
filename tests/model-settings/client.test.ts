@@ -146,6 +146,39 @@ describe('model settings client', () => {
     expect(client.getState().phase).toBe('error');
   });
 
+  it.each([
+    [500, json({ error: { code: 'INTERNAL', message: 'Could not save' } }, 500)],
+    [504, new Response('<html>Gateway Timeout</html>', { status: 504 })],
+  ])('treats a %i answer to a write as unconfirmed: it may have committed', async (_, answer) => {
+    const committed = makeView({ revision: 2 });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(makeView({ revision: 1 })))
+      .mockResolvedValueOnce(answer)
+      .mockResolvedValueOnce(json(committed));
+    const client = createModelSettingsClient(fetchImpl);
+    await client.load();
+
+    const result = await client.apply({ kind: 'provider', id: 'acme', preset: 'acme' });
+
+    expect(result).toMatchObject({ ok: false, reason: 'unconfirmed', view: committed });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not reload after a refusal (4xx): nothing was saved', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(makeView({ revision: 1 })))
+      .mockResolvedValueOnce(json({ error: { code: 'X', message: 'no' } }, 422));
+    const client = createModelSettingsClient(fetchImpl);
+    await client.load();
+    expect(await client.apply({ kind: 'slots', clear: ['tts'] })).toMatchObject({
+      ok: false,
+      reason: 'failed',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it('reloads on a stale revision and says so', async () => {
     const stale = makeView({ revision: 1 });
     const fresh = makeView({ revision: 2 });
@@ -230,5 +263,63 @@ describe('language model helpers', () => {
     expect(needsFirstRunSetup(makeView())).toBe(true);
     expect(needsFirstRunSetup(withSlots(makeView(), { llm: { locked: true } }))).toBe(false);
     expect(needsFirstRunSetup(withSlots(makeView(), { llm: { effective: assigned } }))).toBe(false);
+  });
+});
+
+describe('read ordering', () => {
+  /** A fetch whose answers are released by hand, in any order. */
+  function manualFetch() {
+    const pending: { init?: RequestInit; resolve: (response: Response) => void }[] = [];
+    const fetchImpl = vi.fn(
+      (_input: string, init?: RequestInit) =>
+        new Promise<Response>((resolve) => pending.push({ init, resolve })),
+    );
+    return { fetchImpl, pending };
+  }
+  const tick = () => new Promise((settle) => setTimeout(settle, 0));
+
+  it('never lets a read that started before a write answer replace it', async () => {
+    const { fetchImpl, pending } = manualFetch();
+    const client = createModelSettingsClient(fetchImpl);
+    const first = client.load();
+    pending[0].resolve(json(makeView({ revision: 4 })));
+    await first;
+
+    const write = client.apply({ kind: 'slots', clear: ['tts'] });
+    await tick();
+    const read = client.load({ fresh: true });
+    await tick();
+    pending[1].resolve(json(makeView({ revision: 5 })));
+    await write;
+    // The read began before the write's answer was adopted: dropped, even
+    // though its revision is not older.
+    pending[2].resolve(json(makeView({ revision: 5, presets: [] })));
+    await read;
+
+    expect(client.getState()).toMatchObject({ phase: 'ready', view: { revision: 5 } });
+    expect(client.getState().view?.presets.length).toBeGreaterThan(0);
+  });
+
+  it('drops an older read that answers after a newer one', async () => {
+    const { fetchImpl, pending } = manualFetch();
+    const client = createModelSettingsClient(fetchImpl);
+    const older = client.load();
+    const newer = client.load({ fresh: true });
+    pending[1].resolve(json(makeView({ revision: 7 })));
+    await newer;
+    pending[0].resolve(json(makeView({ revision: 6 })));
+    await older;
+    expect(client.getState()).toMatchObject({ phase: 'ready', view: { revision: 7 } });
+  });
+
+  it('drops an answer older than the view it holds', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(makeView({ revision: 5 })))
+      .mockResolvedValueOnce(json(makeView({ revision: 3 })));
+    const client = createModelSettingsClient(fetchImpl);
+    await client.load();
+    await client.load();
+    expect(client.getState()).toMatchObject({ phase: 'ready', view: { revision: 5 } });
   });
 });

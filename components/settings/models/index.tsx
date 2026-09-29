@@ -166,7 +166,7 @@ export function ModelSettingsPanel({
               setupNotice.result.reason === 'unconfirmed-add'
             ) {
               // Read the settings again first; while that fails, nothing is known yet.
-              const reloaded = await settings.load();
+              const reloaded = await settings.load({ fresh: true });
               if (reloaded.phase !== 'ready' || !reloaded.view) return;
               current = reloaded.view;
             }

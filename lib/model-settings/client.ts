@@ -62,10 +62,22 @@ async function errorBody(response: Response): Promise<{ code?: string; message?:
   }
 }
 
+/** A view's revision for ordering: none yet (null) is older than any. */
+function revisionOf(view: ModelSettingsView | null): number {
+  return view?.revision ?? -1;
+}
+
 export function createModelSettingsClient(fetchImpl: Fetch) {
   let state: ModelSettingsState = { phase: 'idle', view: null };
   let loading: Promise<ModelSettingsState> | null = null;
   const listeners = new Set<() => void>();
+  // Reads and adopted write answers are numbered in the order they start (a
+  // read) or land (a write's answer). A read's answer is dropped when a later
+  // read was started or a view adopted after it began, or when it is older
+  // than the view held: an older answer never replaces a newer one.
+  let sequence = 0;
+  let latestRead = 0;
+  let latestAdopted = 0;
 
   const setState = (next: ModelSettingsState) => {
     state = next;
@@ -90,19 +102,44 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
     }
   }
 
-  /** Read the view again. Concurrent calls share one request. */
-  function load(): Promise<ModelSettingsState> {
-    if (loading) return loading;
+  /** Take a write's answer as the view. */
+  function adopt(view: ModelSettingsView) {
+    latestAdopted = ++sequence;
+    setState({ phase: 'ready', view });
+  }
+
+  /**
+   * Read the view again. Concurrent calls share one request, unless `fresh`:
+   * a read that must see a write just made starts its own, and the older one
+   * is dropped when it answers.
+   */
+  function load({ fresh = false }: { fresh?: boolean } = {}): Promise<ModelSettingsState> {
+    if (loading && !fresh) return loading;
+    const number = (latestRead = ++sequence);
     setState({ ...state, phase: 'loading', error: undefined });
-    loading = fetchView()
+    const read = fetchView()
       .then((next) => {
-        setState(next);
-        return next;
+        const superseded =
+          number < latestRead ||
+          number < latestAdopted ||
+          (next.phase === 'ready' &&
+            state.view !== null &&
+            revisionOf(next.view) < revisionOf(state.view));
+        if (!superseded) {
+          setState(next);
+          return next;
+        }
+        // The newest read settles the phase; an older one leaves the state alone.
+        if (number === latestRead && state.phase === 'loading') {
+          setState({ ...state, phase: state.view ? 'ready' : 'idle' });
+        }
+        return state;
       })
       .finally(() => {
-        loading = null;
+        if (loading === read) loading = null;
       });
-    return loading;
+    loading = read;
+    return read;
   }
 
   /** Apply one change against the revision of the cached view. */
@@ -121,7 +158,7 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
     // settings again to tell, and say it is unconfirmed. `view` is the reloaded
     // view when that read worked.
     const unconfirmed = async (error: unknown): Promise<ApplyResult> => {
-      const reloaded = await load();
+      const reloaded = await load({ fresh: true });
       return {
         ok: false,
         reason: 'unconfirmed',
@@ -148,7 +185,7 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
       } catch (error) {
         return unconfirmed(error);
       }
-      setState({ phase: 'ready', view: next });
+      adopt(next);
       return { ok: true, view: next };
     }
     if (response.status === 404) {
@@ -156,8 +193,11 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
       return { ok: false, reason: 'unavailable', message: 'Model settings are not available' };
     }
     const { code, message = `HTTP ${response.status}` } = await errorBody(response);
+    // A server error (or a gateway giving up) may come after the change was
+    // saved: as ambiguous as a lost answer.
+    if (response.status >= 500) return unconfirmed(new Error(message));
     if (response.status === 409) {
-      await load();
+      await load({ fresh: true });
       return { ok: false, reason: code === 'SLOT_LOCKED' ? 'locked' : 'conflict', code, message };
     }
     return {
