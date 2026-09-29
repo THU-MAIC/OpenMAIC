@@ -9,6 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MODEL_SETTINGS_IMPORT_KEY } from '@/lib/legacy-browser-import/model-settings';
 
 const backing = new Map<string, string>();
+/** Keys whose writes fail (a full storage). */
+const failing = new Set<string>();
 const localStorageStub: Storage = {
   get length() {
     return backing.size;
@@ -17,7 +19,14 @@ const localStorageStub: Storage = {
   getItem: (k: string) => backing.get(k) ?? null,
   key: (i: number) => [...backing.keys()][i] ?? null,
   removeItem: (k: string) => void backing.delete(k),
-  setItem: (k: string, v: string) => void backing.set(k, v),
+  setItem: (k: string, v: string) => {
+    if (failing.has(k)) {
+      throw Object.assign(new Error('The quota has been exceeded.'), {
+        name: 'QuotaExceededError',
+      });
+    }
+    backing.set(k, v);
+  },
 };
 vi.stubGlobal('localStorage', localStorageStub);
 vi.stubGlobal('window', { localStorage: localStorageStub });
@@ -26,6 +35,7 @@ const kv = new BrowserKVStore({ storage: localStorageStub });
 
 beforeEach(() => {
   backing.clear();
+  failing.clear();
   vi.resetModules();
 });
 
@@ -43,7 +53,6 @@ describe('settings store v4 → v5', () => {
         providerId: 'openai',
         modelId: 'gpt-5',
         providersConfig: { openai: { apiKey: 'sk-browser', baseUrl: '' } },
-        asrEnabled: false,
         playbackSpeed: 1.5,
       },
       4,
@@ -113,7 +122,7 @@ describe('settings store v4 → v5', () => {
   });
 
   it('sets nothing aside when the browser kept no model settings', async () => {
-    await hydrate({ asrEnabled: false, playbackSpeed: 1.25 }, 4);
+    await hydrate({ playbackSpeed: 1.25 }, 4);
     expect(localStorageStub.getItem(MODEL_SETTINGS_IMPORT_KEY)).toBeNull();
   });
 
@@ -129,5 +138,73 @@ describe('settings store v4 → v5', () => {
     expect(localStorageStub.getItem(MODEL_SETTINGS_IMPORT_KEY)).toBeNull();
     // Fields of earlier builds never reach the state.
     expect(store.getState()).not.toHaveProperty('providersConfig');
+  });
+
+  it('keeps the keys when they cannot be set aside, and stages them on a later load', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    failing.add(MODEL_SETTINGS_IMPORT_KEY);
+    const store = await hydrate(
+      {
+        providerId: 'openai',
+        modelId: 'gpt-5',
+        providersConfig: { openai: { apiKey: 'sk-kept', baseUrl: '' } },
+        playbackSpeed: 1.5,
+      },
+      4,
+    );
+
+    // Nothing was staged, so nothing was dropped: the old settings stay,
+    // and the blob written back still holds them.
+    expect(localStorageStub.getItem(MODEL_SETTINGS_IMPORT_KEY)).toBeNull();
+    expect(store.getState().legacyModelSettings).toMatchObject({
+      providersConfig: { openai: { apiKey: 'sk-kept' } },
+    });
+    await vi.waitFor(async () => {
+      const blob = await kv.get<{ state: Record<string, unknown>; version: number }>(
+        'settings-storage',
+        'account',
+      );
+      expect(blob?.version).toBe(5);
+      expect(JSON.stringify(blob?.state)).toContain('sk-kept');
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('sk-kept');
+
+    // Room again: the next load stages them and writes the store back without them.
+    failing.clear();
+    vi.resetModules();
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    await useSettingsStore.persist.rehydrate();
+    expect(JSON.parse(localStorageStub.getItem(MODEL_SETTINGS_IMPORT_KEY)!)).toEqual({
+      providers: { openai: { preset: 'openai', apiKey: 'sk-kept' } },
+      slots: { llm: 'openai:gpt-5' },
+    });
+    expect(useSettingsStore.getState().legacyModelSettings).toBeUndefined();
+    expect(useSettingsStore.getState().playbackSpeed).toBe(1.5);
+    await vi.waitFor(async () => {
+      const blob = await kv.get<{ state: Record<string, unknown> }>('settings-storage', 'account');
+      expect(JSON.stringify(blob?.state)).not.toContain('sk-kept');
+    });
+    warn.mockRestore();
+  });
+
+  it('normalises an older shape before setting it aside', async () => {
+    await hydrate(
+      {
+        webSearchApiKey: 'tvly-old',
+        webSearchEnabled: true,
+        ttsModel: 'openai-tts',
+        ttsModelId: 'tts-1-hd',
+        ttsEnabled: true,
+        ttsProvidersConfig: { 'openai-tts': { apiKey: 'sk-tts' } },
+      },
+      1,
+    );
+    expect(JSON.parse(localStorageStub.getItem(MODEL_SETTINGS_IMPORT_KEY)!)).toEqual({
+      providers: {
+        'openai-tts': { preset: 'openai-tts', apiKey: 'sk-tts' },
+        tavily: { preset: 'tavily', apiKey: 'tvly-old' },
+      },
+      slots: { tts: 'openai-tts:tts-1-hd', webSearch: 'tavily' },
+    });
   });
 });

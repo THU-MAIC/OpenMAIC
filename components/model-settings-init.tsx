@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 
-import { runModelSettingsImport } from '@/lib/legacy-browser-import/model-settings';
+import { runModelSettingsImport } from '@/lib/legacy-browser-import/model-settings-import';
 import { modelSettingsClient } from '@/lib/model-settings/client';
 import { useSettingsStore } from '@/lib/store/settings';
 

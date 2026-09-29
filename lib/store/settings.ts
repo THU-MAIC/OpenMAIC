@@ -22,6 +22,7 @@ import { ASR_PROVIDERS, CUSTOM_ASR_DEFAULT_LANGUAGES } from '@/lib/audio/constan
 import { createKVPersistStorage, purgeLegacyPersistKey } from '@/lib/store/kv-persist';
 import {
   buildModelSettingsProposal,
+  normalizeLegacyModelSettings,
   saveModelSettingsProposal,
   type LegacyModelSettingsState,
 } from '@/lib/legacy-browser-import/model-settings';
@@ -109,6 +110,14 @@ export interface SettingsState {
   editRailCollapsed: boolean;
   editRailWidth: number;
 
+  /**
+   * The model settings of an earlier build, kept only while they could not be
+   * set aside for the one-time import (storage full): they hold keys, which
+   * are never dropped before they are durably staged. Staging is retried on
+   * every load, and the field is removed once it succeeds.
+   */
+  legacyModelSettings?: Record<string, unknown>;
+
   // Voice actions
   /** Pick the narration voice of a speech provider (its registry id). */
   setTTSVoice: (voice: string, providerId: string) => void;
@@ -159,6 +168,7 @@ const PERSISTED_FIELDS = [
   'chatAreaWidth',
   'editRailCollapsed',
   'editRailWidth',
+  'legacyModelSettings',
 ] as const satisfies readonly (keyof SettingsState)[];
 
 export type PersistedSettings = Pick<SettingsState, (typeof PERSISTED_FIELDS)[number]>;
@@ -174,21 +184,40 @@ function pickPersisted(state: unknown): Partial<PersistedSettings> {
   return picked as Partial<PersistedSettings>;
 }
 
+/** Stage the model settings of an earlier build for import; whether they are durably kept. */
+function stageLegacyModelSettings(legacy: LegacyModelSettingsState): boolean {
+  return saveModelSettingsProposal(buildModelSettingsProposal(legacy));
+}
+
 /**
- * The version 5 migration of a persisted blob: model settings set aside for
- * import, the voice tied to the provider it was picked for, and every
- * provider field dropped.
+ * The version 5 migration of a persisted blob of an earlier `version`: the
+ * old shapes normalised, model settings set aside for import, the voice tied
+ * to the provider it was picked for, and every provider field dropped, unless
+ * setting them aside failed: then they are kept (in `legacyModelSettings`)
+ * until a later load stages them.
  */
-export function migrateSettingsToV5(state: Record<string, unknown>): Partial<PersistedSettings> {
-  saveModelSettingsProposal(buildModelSettingsProposal(state as LegacyModelSettingsState));
-  const next = pickPersisted(state);
-  if (typeof state.ttsProviderId === 'string' && next.ttsVoiceProviderId === undefined) {
-    next.ttsVoiceProviderId = state.ttsProviderId;
+export function migrateSettingsToV5(
+  persisted: Record<string, unknown>,
+  version = 4,
+): Partial<PersistedSettings> {
+  const legacy = normalizeLegacyModelSettings(persisted, version);
+  const next = pickPersisted(persisted);
+  if (typeof legacy.ttsProviderId === 'string' && next.ttsVoiceProviderId === undefined) {
+    next.ttsVoiceProviderId = legacy.ttsProviderId;
   }
   // Blobs from before the auto agent mode kept the preset roster.
   if (next.agentMode === undefined) next.agentMode = 'preset';
+  if (!stageLegacyModelSettings(legacy)) {
+    next.legacyModelSettings = legacy as Record<string, unknown>;
+  }
   return next;
 }
+
+/** Set when a load staged kept model settings: the store writes itself back without them. */
+let stagedOnLoad = false;
+
+/** Bound after the store exists, like `recovery` (a self-reference would widen its type). */
+const rewrite: { run?: () => void } = {};
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
@@ -266,14 +295,26 @@ export const useSettingsStore = create<SettingsState>()(
       migrate: (persistedState: unknown, version: number) => {
         const state = { ...((persistedState as Record<string, unknown> | null) ?? {}) };
         // v4 → v5: model settings move to the server (RFC #1701).
-        return version < 5 ? migrateSettingsToV5(state) : pickPersisted(state);
+        return version < 5 ? migrateSettingsToV5(state, version) : pickPersisted(state);
       },
       // Only known preference fields reach the state; anything else a blob
-      // carries (fields of earlier builds) is ignored.
-      merge: (persistedState, currentState) => ({
-        ...currentState,
-        ...pickPersisted(persistedState),
-      }),
+      // carries (fields of earlier builds) is ignored. Model settings kept
+      // because staging them failed are staged again here.
+      merge: (persistedState, currentState) => {
+        const persisted = pickPersisted(persistedState);
+        const legacy = persisted.legacyModelSettings;
+        if (legacy && stageLegacyModelSettings(legacy as LegacyModelSettingsState)) {
+          delete persisted.legacyModelSettings;
+          stagedOnLoad = true;
+        }
+        return { ...currentState, ...persisted };
+      },
+      onRehydrateStorage: () => (state) => {
+        if (!stagedOnLoad || !state) return;
+        stagedOnLoad = false;
+        // Write the store back without the staged model settings (and keys).
+        rewrite.run?.();
+      },
     },
   ),
 );
@@ -281,6 +322,7 @@ export const useSettingsStore = create<SettingsState>()(
 // Bound after the store exists so the `onWriteRefused` hook above stays free of
 // a self-reference (see the comment there).
 recovery.rehydrate = () => useSettingsStore.persist.rehydrate();
+rewrite.run = () => useSettingsStore.setState({ legacyModelSettings: undefined });
 
 // Best-effort, fire-and-forget: drop the pre-cutover raw `localStorage` blob.
 // It is never read (this store does not migrate legacy data), and the old blob

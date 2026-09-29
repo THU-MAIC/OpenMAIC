@@ -35,7 +35,7 @@ export const MODEL_SETTINGS_IMPORT_KEY = 'maic:legacy-import:model-settings';
 export const MODEL_SETTINGS_IMPORT_ENDPOINT = '/api/model-config/import';
 
 /** The prefix of every console line this import writes (shared with the course import). */
-const LOG_PREFIX = '[legacy-browser-import]';
+export const LOG_PREFIX = '[legacy-browser-import]';
 
 export interface ProposedProvider {
   preset: string;
@@ -47,7 +47,8 @@ export interface ProposedProvider {
 /** The body of `POST /api/model-config/import`. */
 export interface ModelSettingsProposal {
   providers?: Record<string, ProposedProvider>;
-  slots?: Record<string, string>;
+  /** `provider:model`, a provider alone, or null for a capability the user turned off. */
+  slots?: Record<string, string | null>;
 }
 
 interface LegacyChatProvider {
@@ -98,6 +99,8 @@ export interface LegacyModelSettingsState {
   webSearchProvidersConfig?: ServiceMap;
   pdfProviderId?: string;
   pdfProvidersConfig?: ServiceMap;
+  /** Set once the first sync with the server's providers ran (it could switch media on). */
+  autoConfigApplied?: boolean;
 }
 
 type ServiceCapability = Exclude<SlotCapability, 'chat'>;
@@ -155,6 +158,72 @@ export function safeProviderId(raw: string): string {
 }
 
 /**
+ * A settings state of any earlier version in the shape of version 4: the
+ * steps the store's migration used to apply before the builder reads it
+ * (the ladder the version 5 migration replaced). Returns a copy.
+ */
+export function normalizeLegacyModelSettings(
+  persisted: Record<string, unknown>,
+  version: number,
+): LegacyModelSettingsState {
+  const state: Record<string, unknown> = { ...persisted };
+  const record = (value: unknown): Record<string, Record<string, unknown>> | undefined =>
+    value && typeof value === 'object'
+      ? Object.fromEntries(
+          Object.entries(value as Record<string, unknown>).map(([id, config]) => [
+            id,
+            config && typeof config === 'object' ? { ...(config as Record<string, unknown>) } : {},
+          ]),
+        )
+      : undefined;
+  const tts = record(state.ttsProvidersConfig);
+  const asr = record(state.asrProvidersConfig);
+  if (tts) state.ttsProvidersConfig = tts;
+  if (asr) state.asrProvidersConfig = asr;
+
+  // v0: the hardcoded default model was never the user's choice.
+  if (version === 0 && state.providerId === 'openai' && state.modelId === 'gpt-4o-mini') {
+    state.modelId = '';
+  }
+  // The single TTS model setting became a provider selection.
+  if (typeof state.ttsModel === 'string' && !state.ttsProviderId) {
+    state.ttsProviderId = state.ttsModel === 'azure-tts' ? 'azure-tts' : 'openai-tts';
+  }
+  // Global TTS/ASR model ids became per-provider ones.
+  for (const [field, map, selected] of [
+    ['ttsModelId', tts, state.ttsProviderId],
+    ['asrModelId', asr, state.asrProviderId],
+  ] as const) {
+    const modelId = state[field];
+    if (typeof modelId === 'string' && modelId && typeof selected === 'string' && map?.[selected]) {
+      map[selected].modelId ??= modelId;
+    }
+    delete state[field];
+  }
+  // A TTS provider's `model` became `modelId`.
+  for (const config of Object.values(tts ?? {})) {
+    if (typeof config.model === 'string' && !config.modelId) config.modelId = config.model;
+    delete config.model;
+  }
+  // The flat web search key became Tavily's provider entry.
+  if (!state.webSearchProvidersConfig) {
+    const apiKey = typeof state.webSearchApiKey === 'string' ? state.webSearchApiKey : '';
+    const isServerConfigured = state.webSearchIsServerConfigured === true;
+    if (apiKey || isServerConfigured) {
+      state.webSearchProviderId = 'tavily';
+      state.webSearchProvidersConfig = {
+        tavily: { apiKey, baseUrl: '', enabled: true, isServerConfigured },
+      };
+    }
+  }
+  delete state.webSearchApiKey;
+  delete state.webSearchIsServerConfigured;
+  // Browsers from before the first-run sync existed had already set things up.
+  if (state.autoConfigApplied === undefined) state.autoConfigApplied = true;
+  return state as LegacyModelSettingsState;
+}
+
+/**
  * The proposal for a version 4 settings state: the providers it holds keys or
  * endpoints for, and the slots its selections name. Undefined when there is
  * nothing to import (no key, no custom endpoint, no model choice).
@@ -164,7 +233,7 @@ export function buildModelSettingsProposal(
 ): ModelSettingsProposal | undefined {
   if (!state || typeof state !== 'object') return undefined;
   const providers: Record<string, ProposedProvider> = {};
-  const slots: Record<string, string> = {};
+  const slots: Record<string, string | null> = {};
 
   const claim = (raw: string, provider: ProposedProvider): string => {
     const base = safeProviderId(raw);
@@ -257,49 +326,67 @@ export function buildModelSettingsProposal(
     if (id) slots.llm = `${id}:${modelId}`;
   }
 
+  // Whether a switch was explicitly off. Speech, image and video switches
+  // defaulted to off until the first sync with the server's providers (which
+  // could switch them on), so before that sync an off switch says nothing.
+  const synced = state.autoConfigApplied === true;
+  const off = (flag: boolean | undefined, meaningfulBeforeSync: boolean) =>
+    flag === false && (synced || meaningfulBeforeSync);
+
   const services: Array<{
     capability: ServiceCapability;
     selected?: string;
     on: boolean;
+    /** The user turned the capability off: the slot is proposed as off (null). */
+    explicitlyOff: boolean;
     model?: string;
   }> = [
     {
       capability: 'tts',
       selected: state.ttsProviderId,
       on: state.ttsEnabled === true,
+      explicitlyOff: off(state.ttsEnabled, false),
       model: state.ttsProvidersConfig?.[text(state.ttsProviderId)]?.modelId,
     },
     {
       capability: 'asr',
       selected: state.asrProviderId,
       on: state.asrEnabled !== false,
+      // Speech input defaulted to on: off was always the user's choice.
+      explicitlyOff: off(state.asrEnabled, true),
       model: state.asrProvidersConfig?.[text(state.asrProviderId)]?.modelId,
     },
     {
       capability: 'image',
       selected: state.imageProviderId,
       on: state.imageGenerationEnabled === true,
+      explicitlyOff: off(state.imageGenerationEnabled, false),
       model: state.imageModelId,
     },
     {
       capability: 'video',
       selected: state.videoProviderId,
       on: state.videoGenerationEnabled === true,
+      explicitlyOff: off(state.videoGenerationEnabled, false),
       model: state.videoModelId,
     },
     {
       capability: 'webSearch',
       selected: state.webSearchProviderId,
       on: state.webSearchEnabled === true,
+      // Research was opt-in and never switched on by a sync: off is the choice.
+      explicitlyOff: off(state.webSearchEnabled, true),
     },
     // Document extraction had no switch: the selected extractor was used.
-    { capability: 'document', selected: state.pdfProviderId, on: true },
+    { capability: 'document', selected: state.pdfProviderId, on: true, explicitlyOff: false },
   ];
 
-  for (const { capability, selected: selectedId, on, model } of services) {
+  for (const { capability, selected: selectedId, on, explicitlyOff, model } of services) {
     const registry = SERVICE_REGISTRIES[capability];
     /** Registry id → proposed id, for this capability. */
     const ids = new Map<string, string>();
+    /** Registry id → the id of the server's provider, for this capability. */
+    const serverIds = new Map<string, string>();
     for (const [registryId, config] of Object.entries(serviceMap(state, capability) ?? {})) {
       const plan = planServices.get(`${capability}:${registryId}`);
       if (plan) {
@@ -307,7 +394,13 @@ export function buildModelSettingsProposal(
         continue;
       }
       // Custom TTS/ASR providers and unknown ids have no preset.
-      if (!config || config.isServerConfigured || !Object.hasOwn(registry, registryId)) continue;
+      if (!config || !Object.hasOwn(registry, registryId)) continue;
+      // A server-configured provider is the server's: named by its preset id
+      // (as the server names translated legacy providers), never imported.
+      if (config.isServerConfigured) {
+        serverIds.set(registryId, presetIdFor(capability, registryId));
+        continue;
+      }
       const apiKey = text(config.apiKey);
       const baseUrl = text(config.baseUrl);
       const customEndpoint = baseUrl && !sameUrl(baseUrl, registry[registryId]?.defaultBaseUrl);
@@ -324,9 +417,13 @@ export function buildModelSettingsProposal(
       );
     }
 
+    if (explicitlyOff) {
+      slots[capability] = null;
+      continue;
+    }
     const chosen = text(selectedId);
     if (!on || !chosen) continue;
-    let id = ids.get(chosen);
+    let id = ids.get(chosen) ?? serverIds.get(chosen);
     if (!id && BROWSER_SERVICES[capability] === chosen) {
       const preset = presetIdFor(capability, chosen);
       id = claim(preset, { preset });
@@ -365,9 +462,9 @@ function serviceMap(
   }
 }
 
-type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+export type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
-function defaultStorage(): StorageLike | null {
+export function defaultStorage(): StorageLike | null {
   try {
     return typeof localStorage === 'undefined' ? null : localStorage;
   } catch {
@@ -375,105 +472,47 @@ function defaultStorage(): StorageLike | null {
   }
 }
 
+/** A fixed description of a failure: never its message, which may quote the stored text. */
+export function errorCategory(error: unknown): string {
+  return error instanceof Error && /^[A-Za-z]+$/.test(error.name) ? error.name : 'unknown error';
+}
+
 /**
- * Keep a proposal for {@link runModelSettingsImport}. A proposal already
- * waiting is merged under the new one, so a second migration (another tab)
- * does not lose the first.
+ * Keep a proposal for the import (`./model-settings-import.ts`). A proposal
+ * already waiting is merged under the new one, so a second migration (another
+ * tab) does not lose the first. Answers whether the proposal is durably kept
+ * (true when there is nothing to keep): callers must not drop the settings it
+ * came from otherwise. An unreadable proposal already waiting is not
+ * overwritten (the import drops it, and a later attempt then succeeds).
  */
 export function saveModelSettingsProposal(
   proposal: ModelSettingsProposal | undefined,
   storage: StorageLike | null = defaultStorage(),
-): void {
-  if (!proposal || !storage) return;
+): boolean {
+  if (!proposal) return true;
+  if (!storage) return false;
   try {
     const waiting = readProposal(storage);
-    const merged: ModelSettingsProposal = waiting
-      ? {
-          providers: { ...waiting.providers, ...proposal.providers },
-          slots: { ...waiting.slots, ...proposal.slots },
-        }
-      : proposal;
+    const providers = { ...waiting?.providers, ...proposal.providers };
+    const slots = { ...waiting?.slots, ...proposal.slots };
+    const merged: ModelSettingsProposal = {
+      ...(Object.keys(providers).length ? { providers } : {}),
+      ...(Object.keys(slots).length ? { slots } : {}),
+    };
     storage.setItem(MODEL_SETTINGS_IMPORT_KEY, JSON.stringify(merged));
+    return true;
   } catch (error) {
-    console.warn(`${LOG_PREFIX} Could not keep the model settings for import:`, error);
+    console.warn(
+      `${LOG_PREFIX} Could not keep the model settings for import (${errorCategory(error)}); they stay in the settings store`,
+    );
+    return false;
   }
 }
 
-function readProposal(storage: StorageLike): ModelSettingsProposal | undefined {
+/** The waiting proposal. Throws on unreadable text: callers log only its category. */
+export function readProposal(storage: StorageLike): ModelSettingsProposal | undefined {
   const raw = storage.getItem(MODEL_SETTINGS_IMPORT_KEY);
   if (!raw) return undefined;
   const parsed = JSON.parse(raw) as unknown;
   return parsed && typeof parsed === 'object' ? (parsed as ModelSettingsProposal) : undefined;
-}
-
-export type ModelSettingsImportOutcome =
-  /** Nothing was waiting. */
-  | 'none'
-  /** The server took the proposal; it is gone from the browser. */
-  | 'imported'
-  /** The server refused it for good (400); it is gone from the browser. */
-  | 'dropped'
-  /** Not now (no server persistence, a conflict, a server or network error); kept for a later load. */
-  | 'kept';
-
-type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
-
-/**
- * Post a waiting proposal to the server. On a 2xx answer the proposal (and
- * with it every key) is removed from the browser; a 400 drops it, since
- * sending it again cannot succeed; anything else keeps it for a later load.
- */
-export async function runModelSettingsImport(
-  options: { fetch?: Fetch; storage?: StorageLike | null } = {},
-): Promise<ModelSettingsImportOutcome> {
-  const storage = options.storage === undefined ? defaultStorage() : options.storage;
-  if (!storage) return 'none';
-  let proposal: ModelSettingsProposal | undefined;
-  try {
-    proposal = readProposal(storage);
-  } catch (error) {
-    console.warn(`${LOG_PREFIX} Dropping unreadable model settings:`, error);
-    storage.removeItem(MODEL_SETTINGS_IMPORT_KEY);
-    return 'dropped';
-  }
-  if (!proposal) return 'none';
-
-  const fetchImpl: Fetch = options.fetch ?? ((input, init) => fetch(input, init));
-  let response: Response;
-  try {
-    response = await fetchImpl(MODEL_SETTINGS_IMPORT_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(proposal),
-    });
-  } catch (error) {
-    console.warn(`${LOG_PREFIX} Model settings import failed; retrying on a later load:`, error);
-    return 'kept';
-  }
-
-  if (response.ok) {
-    storage.removeItem(MODEL_SETTINGS_IMPORT_KEY);
-    try {
-      const body = (await response.json()) as {
-        skipped?: Array<{ item: string; reason: string }>;
-      };
-      for (const { item, reason } of body.skipped ?? []) {
-        console.warn(`${LOG_PREFIX} Model setting ${item} was not imported: ${reason}`);
-      }
-    } catch {
-      // The answer's details are informational only.
-    }
-    return 'imported';
-  }
-  if (response.status === 400) {
-    storage.removeItem(MODEL_SETTINGS_IMPORT_KEY);
-    console.warn(`${LOG_PREFIX} The server refused the model settings; they are not imported`);
-    return 'dropped';
-  }
-  if (response.status !== 404) {
-    console.warn(
-      `${LOG_PREFIX} Model settings import answered HTTP ${response.status}; retrying on a later load`,
-    );
-  }
-  return 'kept';
 }

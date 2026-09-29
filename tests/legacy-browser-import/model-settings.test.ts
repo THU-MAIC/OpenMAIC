@@ -3,9 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   buildModelSettingsProposal,
-  MODEL_SETTINGS_IMPORT_ENDPOINT,
   MODEL_SETTINGS_IMPORT_KEY,
-  runModelSettingsImport,
+  normalizeLegacyModelSettings,
   safeProviderId,
   saveModelSettingsProposal,
   type LegacyModelSettingsState,
@@ -23,7 +22,6 @@ describe('buildModelSettingsProposal', () => {
         providersConfig: {
           openai: { apiKey: '', baseUrl: '', defaultBaseUrl: 'https://api.openai.com/v1' },
         },
-        asrEnabled: false,
         pdfProviderId: 'unpdf',
         pdfProvidersConfig: { unpdf: { apiKey: '', baseUrl: '', enabled: true } },
       }),
@@ -43,7 +41,6 @@ describe('buildModelSettingsProposal', () => {
         },
         google: { apiKey: '', baseUrl: '' },
       },
-      asrEnabled: false,
     });
     expect(proposal).toEqual({
       providers: {
@@ -64,7 +61,6 @@ describe('buildModelSettingsProposal', () => {
             defaultBaseUrl: 'https://api.openai.com/v1',
           },
         },
-        asrEnabled: false,
       }),
     ).toBeUndefined();
   });
@@ -85,7 +81,6 @@ describe('buildModelSettingsProposal', () => {
         // No endpoint: nothing to call.
         'custom-empty': { apiKey: 'sk', baseUrl: '', type: 'openai', isBuiltIn: false },
       },
-      asrEnabled: false,
     });
     expect(proposal).toEqual({
       providers: {
@@ -111,7 +106,6 @@ describe('buildModelSettingsProposal', () => {
         'custom-A': { baseUrl: 'https://a.example.com', type: 'openai', isBuiltIn: false },
         'custom-a': { baseUrl: 'https://b.example.com', type: 'openai', isBuiltIn: false },
       },
-      asrEnabled: false,
     });
     expect(Object.keys(proposal?.providers ?? {})).toEqual(['custom-a', 'custom-a-2']);
   });
@@ -124,7 +118,6 @@ describe('buildModelSettingsProposal', () => {
         providersConfig: {
           deepseek: { apiKey: 'stale', baseUrl: '', isServerConfigured: true },
         },
-        asrEnabled: false,
       }),
     ).toEqual({ slots: { llm: 'deepseek:deepseek-chat' } });
   });
@@ -135,7 +128,6 @@ describe('buildModelSettingsProposal', () => {
         providerId: 'openai',
         modelId: 'gpt-5',
         providersConfig: { openai: { apiKey: 'sk', baseUrl: '', enabled: false } },
-        asrEnabled: false,
       }),
     ).toEqual({ providers: { openai: { preset: 'openai', apiKey: 'sk' } } });
     expect(
@@ -143,7 +135,6 @@ describe('buildModelSettingsProposal', () => {
         providerId: 'openai',
         modelId: 'gpt-5',
         providersConfig: { openai: { apiKey: '', baseUrl: '' } },
-        asrEnabled: false,
       }),
     ).toBeUndefined();
   });
@@ -172,7 +163,6 @@ describe('buildModelSettingsProposal', () => {
       imageProvidersConfig: {
         'minimax-image': { apiKey: planKey, baseUrl: 'https://api.minimaxi.com' },
       },
-      asrEnabled: false,
     });
     expect(proposal).toEqual({
       providers: { minimax: { preset: 'minimax', apiKey: planKey } },
@@ -188,7 +178,6 @@ describe('buildModelSettingsProposal', () => {
     expect(
       buildModelSettingsProposal({
         providersConfig: { tokendance: { apiKey: 'sk-own', baseUrl: '' } },
-        asrEnabled: false,
       }),
     ).toEqual({ providers: { tokendance: { preset: 'tokendance', apiKey: 'sk-own' } } });
   });
@@ -270,108 +259,207 @@ describe('buildModelSettingsProposal', () => {
       llmStageRoutes: {
         'scene-content:slide': { providerId: 'openai', modelId: 'gpt-5-mini' },
       },
-      asrEnabled: false,
     } as LegacyModelSettingsState;
     const proposal = buildModelSettingsProposal(state);
     expect(proposal?.slots).toEqual({ llm: 'openai:gpt-5' });
     expect(JSON.stringify(proposal)).not.toContain('gpt-5-mini');
   });
+  it('proposes turning off what the user explicitly turned off', () => {
+    expect(
+      buildModelSettingsProposal({
+        autoConfigApplied: true,
+        ttsEnabled: false,
+        asrEnabled: false,
+        imageGenerationEnabled: false,
+        videoGenerationEnabled: false,
+        webSearchEnabled: false,
+      }),
+    ).toEqual({
+      slots: { tts: null, asr: null, image: null, video: null, webSearch: null },
+    });
+  });
+
+  it('reads nothing into switches that were only never switched on', () => {
+    // Before the first sync with the server's providers, speech, image and
+    // video were off by default: that is no choice. Speech input defaulted
+    // on and research was opt-in, so their off switches always were one.
+    expect(
+      buildModelSettingsProposal({
+        ttsEnabled: false,
+        imageGenerationEnabled: false,
+        videoGenerationEnabled: false,
+      }),
+    ).toBeUndefined();
+    expect(buildModelSettingsProposal({ asrEnabled: false })).toEqual({ slots: { asr: null } });
+    expect(buildModelSettingsProposal({ webSearchEnabled: false })).toEqual({
+      slots: { webSearch: null },
+    });
+    // Absent switches are not choices either.
+    expect(buildModelSettingsProposal({ autoConfigApplied: true })).toBeUndefined();
+  });
+
+  it('names a selected server-configured media provider by its preset id', () => {
+    expect(
+      buildModelSettingsProposal({
+        ttsEnabled: true,
+        ttsProviderId: 'minimax-tts',
+        ttsProvidersConfig: {
+          'minimax-tts': {
+            apiKey: 'stale',
+            baseUrl: '',
+            isServerConfigured: true,
+            modelId: 'speech-2.8-hd',
+          },
+        },
+        webSearchEnabled: true,
+        webSearchProviderId: 'minimax',
+        webSearchProvidersConfig: {
+          minimax: { apiKey: '', baseUrl: '', isServerConfigured: true },
+        },
+        imageGenerationEnabled: true,
+        imageProviderId: 'seedream',
+        imageModelId: 'seedream-5',
+        imageProvidersConfig: { seedream: { apiKey: '', baseUrl: '', isServerConfigured: true } },
+      }),
+    ).toEqual({
+      slots: {
+        tts: 'minimax-tts:speech-2.8-hd',
+        image: 'seedream:seedream-5',
+        webSearch: 'minimax-search',
+      },
+    });
+  });
+});
+
+describe('normalizeLegacyModelSettings', () => {
+  it('clears the version 0 default model', () => {
+    const state = normalizeLegacyModelSettings(
+      {
+        providerId: 'openai',
+        modelId: 'gpt-4o-mini',
+        providersConfig: { openai: { apiKey: 'sk' } },
+      },
+      0,
+    );
+    expect(state.modelId).toBe('');
+    expect(buildModelSettingsProposal(state)?.slots).toBeUndefined();
+    // Only version 0 carried that default.
+    expect(
+      normalizeLegacyModelSettings({ providerId: 'openai', modelId: 'gpt-4o-mini' }, 1).modelId,
+    ).toBe('gpt-4o-mini');
+  });
+
+  it('turns the single TTS model setting into a provider selection', () => {
+    expect(normalizeLegacyModelSettings({ ttsModel: 'azure-tts' }, 1).ttsProviderId).toBe(
+      'azure-tts',
+    );
+    expect(normalizeLegacyModelSettings({ ttsModel: 'other' }, 1).ttsProviderId).toBe('openai-tts');
+  });
+
+  it('moves global TTS and ASR model ids onto the selected providers', () => {
+    const state = normalizeLegacyModelSettings(
+      {
+        ttsProviderId: 'openai-tts',
+        ttsModelId: 'tts-1-hd',
+        ttsProvidersConfig: { 'openai-tts': { apiKey: 'sk-tts' } },
+        asrProviderId: 'qwen-asr',
+        asrModelId: 'qwen3-asr',
+        asrProvidersConfig: { 'qwen-asr': { apiKey: 'sk-asr' } },
+        ttsEnabled: true,
+      },
+      1,
+    );
+    expect(state.ttsProvidersConfig?.['openai-tts']?.modelId).toBe('tts-1-hd');
+    expect(state.asrProvidersConfig?.['qwen-asr']?.modelId).toBe('qwen3-asr');
+    expect(state).not.toHaveProperty('ttsModelId');
+    expect(buildModelSettingsProposal(state)?.slots).toMatchObject({
+      tts: 'openai-tts:tts-1-hd',
+      asr: 'qwen-asr:qwen3-asr',
+    });
+  });
+
+  it("renames a TTS provider's model field", () => {
+    const state = normalizeLegacyModelSettings(
+      { ttsProvidersConfig: { 'minimax-tts': { apiKey: 'k', model: 'speech-2.8-hd' } } },
+      2,
+    );
+    expect(state.ttsProvidersConfig?.['minimax-tts']).toEqual({
+      apiKey: 'k',
+      modelId: 'speech-2.8-hd',
+    });
+  });
+
+  it("moves the flat web search key to Tavily's entry", () => {
+    const state = normalizeLegacyModelSettings(
+      { webSearchApiKey: 'tvly-key', webSearchEnabled: true },
+      1,
+    );
+    expect(state.webSearchProvidersConfig).toMatchObject({ tavily: { apiKey: 'tvly-key' } });
+    expect(buildModelSettingsProposal(state)).toEqual({
+      providers: { tavily: { preset: 'tavily', apiKey: 'tvly-key' } },
+      slots: { webSearch: 'tavily' },
+    });
+  });
+
+  it('does not change the stored object', () => {
+    const persisted = {
+      ttsModelId: 'x',
+      ttsProviderId: 'openai-tts',
+      ttsProvidersConfig: { 'openai-tts': {} },
+    };
+    normalizeLegacyModelSettings(persisted, 1);
+    expect(persisted).toEqual({
+      ttsModelId: 'x',
+      ttsProviderId: 'openai-tts',
+      ttsProvidersConfig: { 'openai-tts': {} },
+    });
+  });
 });
 
 describe('saveModelSettingsProposal', () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  afterEach(() => warn.mockClear());
+
+  it('reports failure when the proposal cannot be written, without quoting it', () => {
+    const storage = new MemoryStorage();
+    storage.setItem = () => {
+      throw Object.assign(new Error('quota exceeded while writing sk-secret-value'), {
+        name: 'QuotaExceededError',
+      });
+    };
+    expect(
+      saveModelSettingsProposal(
+        { providers: { a: { preset: 'openai', apiKey: 'sk-secret-value' } } },
+        storage,
+      ),
+    ).toBe(false);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('sk-secret-value');
+    expect(JSON.stringify(warn.mock.calls)).toContain('QuotaExceededError');
+  });
+
+  it('reports failure over an unreadable proposal already waiting, without quoting it', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(MODEL_SETTINGS_IMPORT_KEY, '{"providers":{"a":{"apiKey":"sk-old-secret"');
+    expect(saveModelSettingsProposal({ slots: { llm: 'a:m' } }, storage)).toBe(false);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('sk-old-secret');
+  });
+
+  it('reports success when there is nothing to keep', () => {
+    expect(saveModelSettingsProposal(undefined, new MemoryStorage())).toBe(true);
+  });
+
   it('keeps the proposal under its own key and merges one already waiting', () => {
     const storage = new MemoryStorage();
     saveModelSettingsProposal(undefined, storage);
     expect(storage.getItem(MODEL_SETTINGS_IMPORT_KEY)).toBeNull();
 
-    saveModelSettingsProposal({ providers: { a: { preset: 'openai', apiKey: 'k1' } } }, storage);
-    saveModelSettingsProposal({ slots: { llm: 'a:m' } }, storage);
+    expect(
+      saveModelSettingsProposal({ providers: { a: { preset: 'openai', apiKey: 'k1' } } }, storage),
+    ).toBe(true);
+    expect(saveModelSettingsProposal({ slots: { llm: 'a:m' } }, storage)).toBe(true);
     expect(JSON.parse(storage.getItem(MODEL_SETTINGS_IMPORT_KEY)!)).toEqual({
       providers: { a: { preset: 'openai', apiKey: 'k1' } },
       slots: { llm: 'a:m' },
     });
-  });
-});
-
-describe('runModelSettingsImport', () => {
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-  afterEach(() => warn.mockClear());
-
-  const waiting = () => {
-    const storage = new MemoryStorage();
-    storage.setItem(
-      MODEL_SETTINGS_IMPORT_KEY,
-      JSON.stringify({ providers: { openai: { preset: 'openai', apiKey: 'sk' } } }),
-    );
-    return storage;
-  };
-
-  it('does nothing when no proposal is waiting', async () => {
-    const fetch = vi.fn();
-    expect(await runModelSettingsImport({ fetch, storage: new MemoryStorage() })).toBe('none');
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('posts the proposal and clears it from the browser on success', async () => {
-    const storage = waiting();
-    const fetch = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            imported: [],
-            skipped: [{ item: 'openai', reason: 'A provider with this id already exists' }],
-          }),
-          { status: 200 },
-        ),
-    );
-    expect(await runModelSettingsImport({ fetch, storage })).toBe('imported');
-    expect(fetch).toHaveBeenCalledWith(
-      MODEL_SETTINGS_IMPORT_ENDPOINT,
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ providers: { openai: { preset: 'openai', apiKey: 'sk' } } }),
-      }),
-    );
-    expect(storage.getItem(MODEL_SETTINGS_IMPORT_KEY)).toBeNull();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[legacy-browser-import]'));
-  });
-
-  it('keeps the proposal when the server keeps no settings (404)', async () => {
-    const storage = waiting();
-    const fetch = vi.fn(async () => new Response('Not found', { status: 404 }));
-    expect(await runModelSettingsImport({ fetch, storage })).toBe('kept');
-    expect(storage.getItem(MODEL_SETTINGS_IMPORT_KEY)).not.toBeNull();
-  });
-
-  it.each([409, 500, 503])('keeps the proposal on HTTP %i', async (status) => {
-    const storage = waiting();
-    const fetch = vi.fn(async () => new Response('{}', { status }));
-    expect(await runModelSettingsImport({ fetch, storage })).toBe('kept');
-    expect(storage.getItem(MODEL_SETTINGS_IMPORT_KEY)).not.toBeNull();
-  });
-
-  it('keeps the proposal on a network error', async () => {
-    const storage = waiting();
-    const fetch = vi.fn(async () => {
-      throw new TypeError('network');
-    });
-    expect(await runModelSettingsImport({ fetch, storage })).toBe('kept');
-    expect(storage.getItem(MODEL_SETTINGS_IMPORT_KEY)).not.toBeNull();
-  });
-
-  it('drops a proposal the server refuses (400)', async () => {
-    const storage = waiting();
-    const fetch = vi.fn(async () => new Response('{}', { status: 400 }));
-    expect(await runModelSettingsImport({ fetch, storage })).toBe('dropped');
-    expect(storage.getItem(MODEL_SETTINGS_IMPORT_KEY)).toBeNull();
-  });
-
-  it('drops an unreadable proposal without sending it', async () => {
-    const storage = new MemoryStorage();
-    storage.setItem(MODEL_SETTINGS_IMPORT_KEY, '{not json');
-    const fetch = vi.fn();
-    expect(await runModelSettingsImport({ fetch, storage })).toBe('dropped');
-    expect(fetch).not.toHaveBeenCalled();
-    expect(storage.getItem(MODEL_SETTINGS_IMPORT_KEY)).toBeNull();
   });
 });

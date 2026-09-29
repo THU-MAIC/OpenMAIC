@@ -128,25 +128,43 @@ settings store (`maic:account:settings-storage`): providers with their API keys
 and base URLs, the chosen model, token plan enrollment and the selection of
 each capability (speech, transcription, images, video, web search, document
 extraction). Model settings now live on the server (`/api/model-config`), and
-`model-settings.ts` carries them over once:
+`model-settings.ts` with `model-settings-import.ts` carry them over once:
 
-1. The settings store's migration to version 5 builds a proposal from the old
-   state (`buildModelSettingsProposal`, pure) and keeps it under
-   `maic:legacy-import:model-settings`, only when it holds something: a key, a
-   custom endpoint or a model choice (`migrateSettingsToV5` in
-   `lib/store/settings.ts`). The store then drops those fields; it keeps only
-   the user's preferences, with the narration voice tied to the provider it was
-   picked for.
-2. Once the store has hydrated, `components/model-settings-init.tsx` posts the
-   proposal to `POST /api/model-config/import`, which merges it item by item
-   and never replaces an existing setting (a provider id already declared, a
-   slot the workspace already sets or the deployment locks).
+1. The settings store's migration to version 5 (`migrateSettingsToV5` in
+   `lib/store/settings.ts`) first brings older shapes to the version 4 one
+   (`normalizeLegacyModelSettings`: the version 0 default model, the single
+   TTS model setting, global TTS/ASR model ids, a TTS provider's `model`, the
+   flat web search key), builds a proposal (`buildModelSettingsProposal`, pure)
+   and keeps it under `maic:legacy-import:model-settings`, only when it holds
+   something: a key, a custom endpoint, a model choice or a capability turned
+   off. The store then drops those fields; it keeps only the user's
+   preferences, with the narration voice tied to the provider it was picked
+   for. **Keys are never dropped before they are staged**: when the proposal
+   cannot be written (a full storage, an unreadable proposal already waiting),
+   the old fields stay in the store (`legacyModelSettings`) and every load
+   tries again, writing the store back without them once staging succeeds.
+2. Once the store has hydrated, `components/model-settings-init.tsx` runs the
+   import. The proposal holds this browser's keys, so like the course import
+   it goes only to the owner the browser is bound to: it asks for the binding
+   (`POST /api/identity/legacy-import-binding` with the ledger's browser id)
+   and sends the import with `X-OpenMAIC-Legacy-Import`, so owner resolution
+   refuses it (409 `LEGACY_IMPORT_NOT_BOUND`) for any other owner. The import
+   route is one of `FENCED_ENDPOINTS`. `POST /api/model-config/import` merges
+   the proposal item by item and never replaces an existing setting (a
+   provider id already declared, a slot the workspace already sets or the
+   deployment locks).
 
 | Answer                                   | Handling                                                                                     |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------- |
-| 2xx                                      | The proposal, and every key in it, is removed from the browser. Skipped items are logged.    |
-| 400                                      | The proposal is dropped: sending it again cannot succeed.                                    |
-| 404 (no server persistence), 401, 409, 5xx, network error | The proposal stays; a later load (or unlocking the access code) tries again. |
+| Binding held by another owner, or not asked for yet | Nothing is sent; the proposal stays for a later load.                            |
+| 2xx                                      | The proposal, and every key in it, is removed from the browser. Skipped item ids are logged. |
+| 400, or an unreadable proposal           | The proposal is dropped: sending it again cannot succeed.                                    |
+| 401, 404, 409 (including `LEGACY_IMPORT_NOT_BOUND`), 5xx, network error | The proposal stays; a later load (or unlocking the access code) tries again. |
+
+Its completion is its own: the proposal's key is removed once the server took
+it (or refused it for good); the ledger's course state is not involved. Nothing
+it logs quotes the proposal or an error message (only fixed text, item ids
+and error names), since either could contain a key.
 
 What the proposal holds:
 
@@ -157,15 +175,16 @@ What the proposal holds:
 | An enrolled token plan                                          | one provider of preset `tokenPlanPresetId(plan)` with the plan's key; the services the plan filled with the same key are that provider |
 | A speech, transcription, image, video, web search or document provider with a key | a provider of preset `presetIdFor(capability, id)`                              |
 | The chosen model                                                | `slots.llm` = `provider:model`; a server-configured provider is named by its preset id, as the server names translated legacy providers |
-| An enabled selection whose provider is proposed                 | the capability's root slot (`tts`, `asr`, `image`, `video`, `webSearch`, `document`)              |
+| An enabled selection whose provider is proposed or server-configured | the capability's root slot (`tts`, `asr`, `image`, `video`, `webSearch`, `document`), with the selected model; a server-configured provider by its preset id, without credentials |
 | Browser speech synthesis or recognition, when selected          | a `browser-native-tts` / `browser-native` provider and its root slot                              |
+| A capability the user turned off (`ttsEnabled`, `asrEnabled`, `imageGenerationEnabled`, `videoGenerationEnabled`, `webSearchEnabled` stored as false) | its root slot set to `null` (off). Speech, image and video switches count only after the first sync with the server's providers (`autoConfigApplied`), before which they were off by default; speech input defaulted to on and research was opt-in, so their off switches always count |
 
 Not imported: per-stage routes (`llmStageRoutes`), which do not map one to one
 onto slots; custom speech and transcription providers; AliDocMind's key pair
 (a workspace provider holds one key); thinking settings. A base URL a
 workspace may not set (any service but chat) makes the server skip that
-provider, with the reason in the log. Provider ids are derived to match
-`^[a-z0-9][a-z0-9-]{0,62}$` and made unique within the proposal.
+provider, with the reason in the server's answer. Provider ids are derived to
+match `^[a-z0-9][a-z0-9-]{0,62}$` and made unique within the proposal.
 
 Clear Local Cache keeps a proposal that is still waiting: it exists nowhere
 else.
@@ -177,9 +196,11 @@ When the maintainers decide enough releases have passed:
 1. Delete `lib/legacy-browser-import/` and its tests (`tests/legacy-browser-import/`,
    `e2e/tests/legacy-browser-import.spec.ts`), with `components/model-settings-init.tsx`
    (and its uses in `app/layout.tsx` and `components/access-code-guard.tsx`), the
-   proposal saving in `migrateSettingsToV5` (`lib/store/settings.ts`; the fields
-   are still dropped) and its cases in
-   `tests/store/settings-model-settings-migration.test.ts`;
+   proposal saving and `legacyModelSettings` in `lib/store/settings.ts` (the
+   fields are still dropped) and its cases in
+   `tests/store/settings-model-settings-migration.test.ts`, and the model
+   settings import route in the handler table of
+   `tests/server/identity/legacy-import-binding-route.test.ts`;
    `lib/device-storage/clear-local-cache.ts` keeps `MODEL_SETTINGS_IMPORT_KEY`: drop it. `lib/device-storage/clear-local-cache.ts`
    imports `LEDGER_KEY` and `legacyImportIsComplete` from `ledger.ts`: define the
    ledger key there again (or drop it with step 5) and drop the quiz-key retention,
