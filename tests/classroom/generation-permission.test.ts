@@ -130,4 +130,23 @@ describe('retryMediaTask honours the same permission', () => {
     expect(fetchMock).toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
+
+  it('leaves the task alone when the model settings cannot be read', async () => {
+    noteStageGenerationOwnership(stageId, 'owner');
+    // Nothing read yet, and every read fails.
+    setModelSettingsViewForTests(null);
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('offline'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await retryMediaTask('gen_img_x');
+
+    // Not marked "generation disabled": unknown settings are no refusal.
+    expect(useMediaGenerationStore.getState().tasks.gen_img_x).toMatchObject({
+      status: 'failed',
+      error: 'transient',
+    });
+    expect(mocks.mediaDelete).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.every(([url]) => url === '/api/model-config')).toBe(true);
+    vi.unstubAllGlobals();
+  });
 });

@@ -1130,7 +1130,8 @@
     "webSearchFailed": "網路搜尋失敗",
     "outlinesReadyCount": "{{ready}} / {{total}} 章節就緒",
     "jumpToBlankTitle": "跳至待補充標題的章節",
-    "analyzingMediaMaterial": "解析音影片內容"
+    "analyzingMediaMaterial": "解析音影片內容",
+    "modelSettingsUnavailable": "無法讀取模型設定，已停止生成。請重試。"
   },
   "settings": {
     "title": "設定",

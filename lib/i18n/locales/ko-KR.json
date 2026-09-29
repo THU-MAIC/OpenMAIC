@@ -1145,7 +1145,8 @@
     "webSearchFailed": "웹 검색에 실패했습니다",
     "outlinesReadyCount": "{{ready}} / {{total}}개 섹션 준비됨",
     "jumpToBlankTitle": "제목이 필요한 섹션으로 이동",
-    "analyzingMediaMaterial": "오디오/비디오 분석 중"
+    "analyzingMediaMaterial": "오디오/비디오 분석 중",
+    "modelSettingsUnavailable": "모델 설정을 읽을 수 없어 생성을 중단했습니다. 다시 시도해 주세요."
   },
   "settings": {
     "title": "설정",

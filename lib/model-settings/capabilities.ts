@@ -212,3 +212,17 @@ export function ensureModelSettings(client: ModelSettingsClient = modelSettingsC
     void client.load().then(() => ensureModelSettings(client));
   }, delay);
 }
+
+/**
+ * The capabilities for work that must not guess: read (again after a failed
+ * read), and null when the settings still cannot be read. Generation stops
+ * rather than silently leaving out what the workspace would have given it.
+ */
+export async function requireModelCapabilities(
+  client: ModelSettingsClient = modelSettingsClient,
+): Promise<ModelCapabilities | null> {
+  const first = await loadModelCapabilities(client);
+  if (first.known) return first;
+  const again = modelCapabilities((await client.load()).view);
+  return again.known ? again : null;
+}

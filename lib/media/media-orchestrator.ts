@@ -13,7 +13,7 @@
  */
 
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
-import { loadModelCapabilities } from '@/lib/model-settings/capabilities';
+import { requireModelCapabilities } from '@/lib/model-settings/capabilities';
 import { useStageStore } from '@/lib/store/stage';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { db, mediaFileKey, type MediaFileRecord } from '@/lib/device-storage/database';
@@ -211,9 +211,14 @@ async function collectAndGenerate(
   //
   // The workspace's image and video slots decide which media may be generated;
   // read them before the checks, so nothing can change between those and the
-  // decisions below.
-  const capabilities = await loadModelCapabilities();
+  // decisions below. Settings that cannot be read (even after another try)
+  // decide nothing: the pass stands down and a later one generates the media.
+  const capabilities = await requireModelCapabilities();
   if (abortSignal?.aborted) return;
+  if (!capabilities) {
+    log.warn(`Media pass for ${stageId} stood down: the model settings could not be read.`);
+    return;
+  }
   let documentIndex: GeneratedMediaDocumentIndex | undefined = documentSkipIndex(stageId);
   if (!documentIndex) {
     log.info(`Media pass for ${stageId} stood down: the course is no longer open here.`);
@@ -340,8 +345,13 @@ export async function retryMediaTask(
   _target?: { readonly elementId: string; readonly sceneId?: string; readonly slideId?: string },
 ): Promise<void> {
   // Whether the workspace can still generate this kind of media (read first,
-  // so the task checked below is the one acted on).
-  const capabilities = await loadModelCapabilities();
+  // so the task checked below is the one acted on). Settings that cannot be
+  // read leave the task as it is: that is no refusal.
+  const capabilities = await requireModelCapabilities();
+  if (!capabilities) {
+    log.warn(`Media retry for ${elementId} skipped: the model settings could not be read.`);
+    return;
+  }
   const store = useMediaGenerationStore.getState();
   const task = store.getTask(elementId);
   if (!task || task.status !== 'failed') return;

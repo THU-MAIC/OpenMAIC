@@ -1145,7 +1145,8 @@
     "webSearchFailed": "Tìm trên web không thành công",
     "outlinesReadyCount": "{{ready}} / {{total}} phần đã xong",
     "jumpToBlankTitle": "Nhảy tới phần còn thiếu tên",
-    "analyzingMediaMaterial": "Đang phân tích âm thanh/video"
+    "analyzingMediaMaterial": "Đang phân tích âm thanh/video",
+    "modelSettingsUnavailable": "Không đọc được cài đặt mô hình nên quá trình tạo đã dừng. Vui lòng thử lại."
   },
   "settings": {
     "title": "Cài đặt",

@@ -4,7 +4,7 @@ import { useCallback, useRef } from 'react';
 import { useStageStore } from '@/lib/store/stage';
 import { isSceneEditLocked } from '@/lib/edit/regen-lock';
 import { loadModelCapabilities } from '@/lib/model-settings/capabilities';
-import { serverTTSAvailable, ttsSelection } from '@/lib/audio/tts-selection';
+import { narrationPlan, ttsSelection } from '@/lib/audio/tts-selection';
 import { getParallelSceneConcurrency } from '@/lib/generation/server-generation-settings';
 import { db } from '@/lib/device-storage/database';
 import type {
@@ -73,16 +73,19 @@ type ClientRetryOptions<T> = Partial<
 
 /**
  * Headers for the generation routes. The server resolves every model and
- * provider from the workspace's model settings; the client only says which
- * media the outline may plan for (the image and video slots it can use).
+ * provider, and which media may be planned, from the workspace's model
+ * settings.
  */
 async function getApiHeaders(): Promise<HeadersInit> {
-  const capabilities = await loadModelCapabilities();
-  return {
-    'Content-Type': 'application/json',
-    'x-image-generation-enabled': String(!!capabilities.image),
-    'x-video-generation-enabled': String(!!capabilities.video),
-  };
+  return { 'Content-Type': 'application/json' };
+}
+
+/** Why generation stopped when the model settings could not be read. */
+const MODEL_SETTINGS_UNAVAILABLE = 'The model settings could not be read';
+
+/** Tell the user generation stopped because the model settings could not be read. */
+function notifyModelSettingsUnavailable(): void {
+  toast.error(getClientTranslation('generation.modelSettingsUnavailable'));
 }
 
 async function readJsonResponse(response: Response): Promise<Record<string, unknown>> {
@@ -910,8 +913,19 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
           if (actionsResult.success && actionsResult.scene) {
             const scene = actionsResult.scene;
-            // TTS generation — failure means the whole scene fails
-            if (serverTTSAvailable(await loadModelCapabilities())) {
+            // TTS generation — failure means the whole scene fails, and so do
+            // model settings that cannot be read: narration is never dropped
+            // silently.
+            const narration = await narrationPlan();
+            if (narration === 'unknown') {
+              store.getState().addFailedOutline(outline);
+              notifyModelSettingsUnavailable();
+              options.onSceneFailed?.(outline, MODEL_SETTINGS_UNAVAILABLE);
+              store.getState().setGenerationStatus('paused');
+              pausedByFailureOrAbort = true;
+              break;
+            }
+            if (narration === 'server') {
               const ttsResult = await generateTTSForScene(
                 scene,
                 params.languageDirective || params.stageInfo.language,
@@ -1091,8 +1105,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           return;
         }
 
-        // Step 3: TTS
-        if (serverTTSAvailable(await loadModelCapabilities())) {
+        // Step 3: TTS (model settings that cannot be read fail the retry)
+        const narration = await narrationPlan();
+        if (narration === 'unknown') {
+          notifyModelSettingsUnavailable();
+          store.getState().addFailedOutline(outline);
+          return;
+        }
+        if (narration === 'server') {
           const ttsResult = await generateTTSForScene(
             actionsResult.scene,
             params.languageDirective || params.stageInfo.language,

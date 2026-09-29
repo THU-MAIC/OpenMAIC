@@ -1145,7 +1145,8 @@
     "webSearchFailed": "Échec de la recherche web",
     "outlinesReadyCount": "{{ready}} / {{total}} sections prêtes",
     "jumpToBlankTitle": "Aller à une section dont le titre manque encore",
-    "analyzingMediaMaterial": "Analyse de l’audio et de la vidéo"
+    "analyzingMediaMaterial": "Analyse de l’audio et de la vidéo",
+    "modelSettingsUnavailable": "Les réglages des modèles n'ont pas pu être lus : la génération s'est arrêtée. Réessayez."
   },
   "settings": {
     "title": "Paramètres",

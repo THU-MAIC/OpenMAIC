@@ -1145,7 +1145,8 @@
     "webSearchFailed": "Ошибка веб-поиска",
     "outlinesReadyCount": "Готово разделов: {{ready}} / {{total}}",
     "jumpToBlankTitle": "Перейти к разделу без заголовка",
-    "analyzingMediaMaterial": "Анализ аудио/видео"
+    "analyzingMediaMaterial": "Анализ аудио/видео",
+    "modelSettingsUnavailable": "Не удалось прочитать настройки моделей, поэтому создание остановлено. Попробуйте ещё раз."
   },
   "settings": {
     "title": "Настройки",

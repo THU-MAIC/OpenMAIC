@@ -43,6 +43,8 @@ import type {
 import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { resolveServerGenerationCapabilities } from '@/lib/server/generation-capabilities';
+import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVisionImagesForPrompt } from '@/lib/persistence/resolve-vision-images';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
@@ -409,8 +411,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Build media snippet conditions based on enabled flags.
-    const imageGenerationEnabled = req.headers.get('x-image-generation-enabled') === 'true';
-    const videoGenerationEnabled = req.headers.get('x-video-generation-enabled') === 'true';
+    // The workspace's image and video slots decide whether the outline may
+    // plan media (the same facts the generation pipeline and the capabilities
+    // endpoint read). An API client may still opt out with an explicit
+    // `false` header; `true` never turns on what the slots do not offer.
+    const capabilities = await resolveServerGenerationCapabilities(await requestWorkspaceId(req));
+    const imageGenerationEnabled =
+      capabilities.imageGeneration && req.headers.get('x-image-generation-enabled') !== 'false';
+    const videoGenerationEnabled =
+      capabilities.videoGeneration && req.headers.get('x-video-generation-enabled') !== 'false';
     const mediaGenerationEnabled = imageGenerationEnabled || videoGenerationEnabled;
     const hasSourceImages = (pdfImages?.length ?? 0) > 0;
 

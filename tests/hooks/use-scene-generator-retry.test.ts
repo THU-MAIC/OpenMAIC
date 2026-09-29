@@ -145,6 +145,25 @@ describe('scene generation retry wrappers', () => {
 
     expect(result).toMatchObject({ success: true, content: { elements: [] } });
     expect(mockFetch).toHaveBeenCalledTimes(2);
+    // The server decides which media may be planned: no media headers.
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+  });
+
+  it('narration plan: stops rather than guessing when the model settings cannot be read', async () => {
+    const { narrationPlan } = await import('@/lib/audio/tts-selection');
+    setModelSettingsViewForTests(null);
+    mockFetch.mockRejectedValue(new TypeError('offline'));
+    expect(await narrationPlan()).toBe('unknown');
+    // Read once, then once more.
+    expect(mockFetch.mock.calls.filter(([url]) => url === '/api/model-config')).toHaveLength(2);
+
+    setModelSettingsViewForTests({ tts: { registryId: 'server-tts' } });
+    expect(await narrationPlan()).toBe('server');
+    setModelSettingsViewForTests({ tts: { registryId: 'browser-native-tts' } });
+    expect(await narrationPlan()).toBe('none');
+    setModelSettingsViewForTests({});
+    expect(await narrationPlan()).toBe('none');
   });
 
   it('does not retry permanent scene action HTTP failures', async () => {

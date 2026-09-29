@@ -1145,7 +1145,8 @@
     "webSearchFailed": "Falha na pesquisa na web",
     "outlinesReadyCount": "{{ready}} / {{total}} seções prontas",
     "jumpToBlankTitle": "Ir para uma seção que ainda precisa de título",
-    "analyzingMediaMaterial": "Analisando áudio/vídeo"
+    "analyzingMediaMaterial": "Analisando áudio/vídeo",
+    "modelSettingsUnavailable": "Não foi possível ler as configurações de modelos, então a geração parou. Tente novamente."
   },
   "settings": {
     "title": "Configurações",

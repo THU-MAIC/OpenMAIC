@@ -1145,7 +1145,8 @@
     "webSearchFailed": "Websuche fehlgeschlagen",
     "outlinesReadyCount": "Abschnitte bereit: {{ready}} / {{total}}",
     "jumpToBlankTitle": "Zu einem Abschnitt ohne Titel springen",
-    "analyzingMediaMaterial": "Audio- und Videomaterial wird analysiert"
+    "analyzingMediaMaterial": "Audio- und Videomaterial wird analysiert",
+    "modelSettingsUnavailable": "Die Modelleinstellungen konnten nicht gelesen werden; die Erstellung wurde angehalten. Bitte erneut versuchen."
   },
   "settings": {
     "title": "Einstellungen",

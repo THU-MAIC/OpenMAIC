@@ -32,8 +32,8 @@ import {
   cleanupOldImages,
   storeImages,
 } from '@/lib/utils/image-storage';
-import { currentModelCapabilities, loadModelCapabilities } from '@/lib/model-settings/capabilities';
-import { serverTTSAvailable, ttsSelection } from '@/lib/audio/tts-selection';
+import { loadModelCapabilities } from '@/lib/model-settings/capabilities';
+import { narrationPlan, ttsSelection } from '@/lib/audio/tts-selection';
 import { resolveSessionDocumentSources } from '@/lib/document/session-sources';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import {
@@ -250,17 +250,9 @@ function GenerationPreviewContent() {
     };
   }, []);
 
-  // The server resolves every model and provider from the workspace's model
-  // settings; the client only says which media the outline may plan for.
-  // (`startGeneration` reads the settings before the first request.)
-  const getApiHeaders = () => {
-    const capabilities = currentModelCapabilities();
-    return {
-      'Content-Type': 'application/json',
-      'x-image-generation-enabled': String(!!capabilities.image),
-      'x-video-generation-enabled': String(!!capabilities.video),
-    };
-  };
+  // The server resolves every model and provider, and which media the
+  // outline may plan, from the workspace's model settings.
+  const getApiHeaders = () => ({ 'Content-Type': 'application/json' });
 
   // Auto-start generation when session is loaded
   useEffect(() => {
@@ -959,8 +951,12 @@ function GenerationPreviewContent() {
       }
       const firstScene = data.scene;
 
-      // Generate TTS for first scene (part of actions step — blocking)
-      if (serverTTSAvailable()) {
+      // Generate TTS for first scene (part of actions step — blocking). Model
+      // settings that cannot be read stop generation: narration is never
+      // dropped silently.
+      const narration = await narrationPlan();
+      if (narration === 'unknown') throw new Error(t('generation.modelSettingsUnavailable'));
+      if (narration === 'server') {
         const ttsResult = await generateTTSForScene(
           firstScene,
           languageDirective,

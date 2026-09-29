@@ -1145,7 +1145,8 @@
     "webSearchFailed": "ウェブ検索に失敗しました",
     "outlinesReadyCount": "{{ready}} / {{total}} セクション準備完了",
     "jumpToBlankTitle": "タイトルが未入力のセクションへ移動",
-    "analyzingMediaMaterial": "音声・動画を解析中"
+    "analyzingMediaMaterial": "音声・動画を解析中",
+    "modelSettingsUnavailable": "モデル設定を読み込めなかったため、生成を停止しました。もう一度お試しください。"
   },
   "settings": {
     "title": "設定",

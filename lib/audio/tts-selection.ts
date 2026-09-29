@@ -11,6 +11,7 @@ import { normalizeVoxCPMBackend } from '@/lib/audio/voxcpm';
 import type { BuiltInTTSProviderId, TTSProviderId } from '@/lib/audio/types';
 import {
   currentModelCapabilities,
+  requireModelCapabilities,
   type EffectiveTarget,
   type ModelCapabilities,
 } from '@/lib/model-settings/capabilities';
@@ -124,4 +125,16 @@ export function serverTTSAvailable(
   capabilities: ModelCapabilities = currentModelCapabilities(),
 ): boolean {
   return !!capabilities.tts && capabilities.tts.registryId !== BROWSER_NATIVE_TTS_PROVIDER_ID;
+}
+
+/**
+ * How narration is produced for a generation: on the server, not at all (the
+ * tts slot is off or browser speech), or unknown (the model settings could
+ * not be read even after another try): the caller stops rather than
+ * silently generating without narration.
+ */
+export async function narrationPlan(): Promise<'server' | 'none' | 'unknown'> {
+  const capabilities = await requireModelCapabilities();
+  if (!capabilities) return 'unknown';
+  return serverTTSAvailable(capabilities) ? 'server' : 'none';
 }

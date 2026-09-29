@@ -1145,7 +1145,8 @@
     "webSearchFailed": "网络搜索失败",
     "outlinesReadyCount": "{{ready}} / {{total}} 章节就绪",
     "jumpToBlankTitle": "跳到待补充标题的章节",
-    "analyzingMediaMaterial": "解析音视频内容"
+    "analyzingMediaMaterial": "解析音视频内容",
+    "modelSettingsUnavailable": "无法读取模型设置，已停止生成。请重试。"
   },
   "settings": {
     "title": "设置",

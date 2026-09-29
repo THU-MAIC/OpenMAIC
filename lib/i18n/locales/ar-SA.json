@@ -1145,7 +1145,8 @@
     "webSearchFailed": "فشل البحث في الإنترنت",
     "outlinesReadyCount": "{{ready}} / {{total}} أقسام جاهزة",
     "jumpToBlankTitle": "الانتقال إلى قسم بحاجة إلى عنوان",
-    "analyzingMediaMaterial": "تحليل الصوت/الفيديو"
+    "analyzingMediaMaterial": "تحليل الصوت/الفيديو",
+    "modelSettingsUnavailable": "تعذّرت قراءة إعدادات النماذج، فتوقف التوليد. حاول مرة أخرى."
   },
   "settings": {
     "title": "الإعدادات",

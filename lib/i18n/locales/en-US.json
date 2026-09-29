@@ -1145,7 +1145,8 @@
     "webSearchFailed": "Web search failed",
     "outlinesReadyCount": "{{ready}} / {{total}} sections ready",
     "jumpToBlankTitle": "Jump to a section that still needs a title",
-    "analyzingMediaMaterial": "Analyzing audio/video"
+    "analyzingMediaMaterial": "Analyzing audio/video",
+    "modelSettingsUnavailable": "The model settings could not be read, so generation stopped. Please try again."
   },
   "settings": {
     "title": "Settings",
