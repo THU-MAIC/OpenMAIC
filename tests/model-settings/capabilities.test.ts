@@ -111,6 +111,22 @@ describe('modelCapabilities', () => {
     // Chat still needs its own slot.
     expect(classroomChatUsable(capabilities)).toBe(false);
 
+    // Agents and research are not required: both fall back (preset agents,
+    // the raw requirement as the search query).
+    const withOptionalOff = modelSettingsViewFor({
+      'course.outline': target,
+      'course.actions': target,
+      'course.content': target,
+    });
+    for (const slot of ['course.agents', 'course.research'] as const) {
+      withOptionalOff.slots.find((entry) => entry.slot === slot)!.effective = {
+        status: 'disabled',
+        resolvedAt: slot,
+        source: 'workspace',
+      };
+    }
+    expect(courseGenerationUsable(modelCapabilities(withOptionalOff))).toBe(true);
+
     // Without a content model for any scene type, nothing can be generated.
     expect(
       courseGenerationUsable(

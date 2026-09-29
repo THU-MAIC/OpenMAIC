@@ -121,6 +121,11 @@ const CONTENT_SLOTS: readonly SlotId[] = [
  * Whether a course can be generated: the outline and the scene actions
  * resolve, and so does the content of at least one scene type (each scene
  * resolves its own content slot; the server refuses a type without one).
+ *
+ * The other course slots are not required: with `course.agents` off the
+ * generated roster falls back to the preset agents, and with
+ * `course.research` off web search runs on the raw requirement instead of a
+ * rewritten query; neither request is refused.
  */
 export function courseGenerationUsable(capabilities: ModelCapabilities): boolean {
   return (
