@@ -55,6 +55,37 @@ describe('findQuizRenderingIssue', () => {
     });
   });
 
+  it('rejects a missing question id', () => {
+    expect(findQuizRenderingIssue([choiceQuestion({ id: '' })])).toEqual({
+      code: 'missing-question-id',
+      question: 1,
+    });
+  });
+
+  it('rejects a choice question with no options', () => {
+    expect(findQuizRenderingIssue([choiceQuestion({ options: [] })])).toEqual({
+      code: 'missing-options',
+      question: 1,
+    });
+  });
+
+  it('rejects an option with a missing value', () => {
+    expect(
+      findQuizRenderingIssue([
+        choiceQuestion({
+          options: [
+            { value: 'A', label: 'Alpha' },
+            { value: '', label: 'Missing identity' },
+          ],
+        }),
+      ]),
+    ).toEqual({
+      code: 'missing-option-value',
+      question: 1,
+      option: 2,
+    });
+  });
+
   it('allows short-answer questions without options', () => {
     expect(
       findQuizRenderingIssue([
