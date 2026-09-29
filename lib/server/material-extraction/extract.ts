@@ -15,6 +15,7 @@ import {
 } from '@/lib/document';
 import {
   getServerPDFProviders,
+  resolveManagedAliDocMindCredentials,
   resolvePDFApiKey,
   resolvePDFBaseUrl,
   resolveServerMediaExtractorConfig,
@@ -184,6 +185,11 @@ export async function extractMaterialSource(
   let artifact: DocumentArtifact | undefined;
   let selected: DocumentExtractorProvider | undefined;
   for (const provider of candidates) {
+    // AliDocMind authenticates with an access key pair: pass the server-owned
+    // pair (env OR YAML), as /api/extract-document does, so a YAML-only
+    // deployment extracts too — the extractor's env fallback reads env only.
+    const aliCredentials =
+      provider.id === 'alidocmind' ? resolveManagedAliDocMindCredentials() : undefined;
     try {
       artifact = await provider.extract({
         buffer: raw.bytes,
@@ -193,7 +199,13 @@ export async function extractMaterialSource(
         config: {
           providerId: provider.id,
           apiKey: resolvePDFApiKey(provider.id) || undefined,
-          baseUrl: resolvePDFBaseUrl(provider.id),
+          baseUrl: aliCredentials?.baseUrl ?? resolvePDFBaseUrl(provider.id),
+          ...(aliCredentials
+            ? {
+                accessKeyId: aliCredentials.accessKeyId,
+                accessKeySecret: aliCredentials.accessKeySecret,
+              }
+            : {}),
           allowEnvFallback: true,
           managed: true,
         },
