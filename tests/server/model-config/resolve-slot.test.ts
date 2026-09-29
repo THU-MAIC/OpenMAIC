@@ -114,6 +114,24 @@ describe('resolveSlot', () => {
     });
   });
 
+  it('puts the deployment first whatever order the layers come in', () => {
+    const workspace = layer(
+      'workspace',
+      'providers:\n  mm:\n    preset: deepseek\n    apiKey: other\n  mv:\n    preset: minimax\n    apiKey: other\nslots:\n  llm: mm:deepseek-v4-pro\n  video: mv:MiniMax-Hailuo-2.3\n',
+    );
+    const reversed = [workspace, deployment];
+    expect(resolveSlot('llm', reversed)).toMatchObject({
+      source: 'deployment',
+      locked: true,
+      presetId: 'minimax',
+      apiKey: 'sk-test',
+    });
+    expect(resolveSlot('video', reversed)).toMatchObject({
+      status: 'disabled',
+      source: 'deployment',
+    });
+  });
+
   it('does not let a workspace shadow a provider the deployment declares', () => {
     const workspace = layer(
       'workspace',
@@ -197,14 +215,31 @@ describe('resolveSlot', () => {
       config: { slots: { llm: 'ghost:m' } },
     };
     expect(() => resolveSlot('llm', [broken])).toThrow(SlotResolutionError);
-    expect(() => resolveSlot('llm', [broken])).toThrow(
-      'slots.llm: provider "ghost" is not declared',
-    );
+    expect(() => resolveSlot('llm', [broken])).toThrow('slots.llm: the provider is not declared');
     const wrongCapability: ModelConfigLayer = {
       source: 'workspace',
       config: { providers: { k: { preset: 'kimi-coding-plan' } }, slots: { tts: 'k:voice' } },
     };
     expect(() => resolveSlot('tts', [wrongCapability])).toThrow(/does not offer tts/);
+  });
+
+  it('does not echo a key pasted into the provider position', () => {
+    const secret = 'sk-0123456789abcdef';
+    for (const slots of [
+      { agent: `${secret}:MiniMax-M3` },
+      { agent: { model: 'mm:MiniMax-M3', fallback: `${secret}:MiniMax-M3` } },
+    ]) {
+      const misplaced: ModelConfigLayer = {
+        source: 'workspace',
+        config: { providers: { mm: { preset: 'minimax' } }, slots } as ModelConfigLayer['config'],
+      };
+      expect(() => resolveSlot('agent', [misplaced])).toThrow(/the provider is not declared/);
+      try {
+        resolveSlot('agent', [misplaced]);
+      } catch (error) {
+        expect((error as Error).message).not.toContain(secret);
+      }
+    }
   });
 
   it('reports a malformed reference by path, without echoing it', () => {

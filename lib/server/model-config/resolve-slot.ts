@@ -128,15 +128,15 @@ function resolveTarget(
   }
   const { providerId, modelId } = parsed;
   const provider = findProvider(providerId, layers);
-  if (!provider) throw new SlotResolutionError(`${at}: provider "${providerId}" is not declared`);
+  // Errors name the path, never a value taken from the reference: a key pasted
+  // into the provider position must not end up in a log.
+  if (!provider) throw new SlotResolutionError(`${at}: the provider is not declared`);
   const preset = getProviderPreset(provider.preset);
-  if (!preset) {
-    throw new SlotResolutionError(`${at}: provider "${providerId}" has an unknown preset`);
-  }
+  if (!preset) throw new SlotResolutionError(`${at}: the provider has an unknown preset`);
   const target = preset.capabilities[capability];
   if (!target) {
     throw new SlotResolutionError(
-      `${at}: provider "${providerId}" (preset "${preset.id}") does not offer ${capability}`,
+      `${at}: the provider (preset "${preset.id}") does not offer ${capability}`,
     );
   }
   return {
@@ -178,7 +178,19 @@ function isLockedByDeployment(slot: SlotId, layers: readonly ModelConfigLayer[])
   );
 }
 
-export function resolveSlot(slot: SlotId, layers: readonly ModelConfigLayer[]): SlotResolution {
+/** Deployment layers first, whatever order the caller passed them in. */
+function deploymentFirst(layers: readonly ModelConfigLayer[]): ModelConfigLayer[] {
+  return [
+    ...layers.filter((layer) => layer.source === 'deployment'),
+    ...layers.filter((layer) => layer.source !== 'deployment'),
+  ];
+}
+
+export function resolveSlot(
+  slot: SlotId,
+  givenLayers: readonly ModelConfigLayer[],
+): SlotResolution {
+  const layers = deploymentFirst(givenLayers);
   const capability = getSlot(slot).capability;
   for (const node of slotLineage(slot)) {
     const found = findAssignment(node, layers);
