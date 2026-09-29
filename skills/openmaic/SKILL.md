@@ -15,9 +15,9 @@ Use this as a guided, confirmation-heavy SOP. Do not compress the whole setup in
 - Before any state-changing action, ask for confirmation.
 - If local state already exists, show what you found and ask whether to keep it.
 - Do not assume the OpenClaw agent's own model or API key will be reused by OpenMAIC.
-- OpenMAIC classroom generation uses OpenMAIC server-side provider config.
+- OpenMAIC classroom generation uses OpenMAIC's server-side model configuration (`openmaic.yml` and the model settings in the web app).
 - This skill must not rely on any request-time model or provider overrides.
-- Only OpenMAIC server-side config files may control provider selection and defaults.
+- Only that server-side configuration may control provider selection and defaults.
 - Do not default to asking the user to paste API keys into chat.
 - Prefer guiding the user to edit local config files themselves.
 - Do not offer to write API keys into config files on the user's behalf.
@@ -81,9 +81,9 @@ Use this after the repo location is confirmed. Present the available startup mod
 
 Load [references/provider-keys.md](references/provider-keys.md).
 
-Use this before starting classroom generation. Recommend a provider path and tell the user exactly which config file to edit themselves. If generation later fails due to provider/model/auth issues, return to this phase and direct the user to update the same server-side config files.
+Use this before starting classroom generation. Recommend a provider path and tell the user exactly what to edit themselves (`openmaic.yml` and `.env.local`, or the model settings in the web app). If generation later fails due to provider/model/auth issues, return to this phase and direct the user to update the same configuration.
 
-After the core LLM key is configured, ask the user if they want to enable optional features (web search, image generation, video generation, TTS). Each requires its own provider key — see the "Optional Features" section in provider-keys.md.
+After the core LLM key is configured, ask the user if they want to enable optional features (web search, image generation, video generation, TTS). Each is a slot with its own provider — see the "Optional Features" section in provider-keys.md.
 
 ### 4. Start And Verify OpenMAIC
 

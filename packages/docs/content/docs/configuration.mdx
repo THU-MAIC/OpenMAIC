@@ -1,192 +1,396 @@
 ---
 title: Configuration
-description: LLM providers, media generation, document parsing, TTS, ASR, access control, and feature flags.
+description: Models and providers (openmaic.yml and the model settings), access control, feature flags and other server options.
 ---
 
-OpenMAIC reads environment variables when the server starts. Every setting is optional—enable only what you need. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) in the repository for environment variable examples. See [Supported models](./supported-models.mdx) for built-in model IDs.
+OpenMAIC has three configuration sources, and each has one job:
 
-In addition to environment variables, you can configure server-side providers registered in the code through `server-providers.yml` in the project root. Environment variables override matching YAML fields one by one. Custom OpenAI-compatible providers can only be added in Settings; they cannot be registered with arbitrary environment variable prefixes or unknown YAML provider IDs.
+| Source | Written by | Holds | Takes effect |
+| --- | --- | --- | --- |
+| `openmaic.yml` | The operator | Providers, slot assignments and policy for AI models | At startup (restart to apply) |
+| Model settings in the web app | Users of a workspace | The providers and assignments `openmaic.yml` leaves open, stored in the database | Immediately |
+| Environment variables (`.env.local`, a container secret) | The operator | Secrets that `openmaic.yml` references, and every other server option | At startup |
 
-## LLM providers
+Every environment variable is optional except `DATABASE_URL` (see [Deployment](./deployment.mdx)). See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for all of them, [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) for a model configuration to start from, and [Supported models](./supported-models.mdx) for preset and model IDs.
 
-Cloud providers generally use three environment variables: an API key, a base URL, and a model list. The API key is usually required; the base URL and model list are optional. Azure OpenAI requires a resource endpoint, while Ollama and Lemonade do not require an API key.
+Earlier releases configured models only through provider environment variables, `server-providers.yml`, `DEFAULT_MODEL` and `MODEL_ROUTES`. Those still work for now, with the exception of `MODEL_ROUTES`, and are deprecated; see [Migrating from the legacy configuration](#migrating-from-the-legacy-configuration).
+
+## Models and providers
+
+### Concepts
+
+- **Provider**: an account the server can call, such as an OpenAI key, a MiniMax token plan or a self-hosted OpenAI-compatible server. Each provider has an id you choose and a **preset** that says which vendor it is and which capabilities it covers.
+- **Slot**: a use of AI in the product, such as the course outline, slide content, text to speech or web search. Slots form one tree per capability; a slot without an assignment follows its parent.
+- **Assignment**: which provider and model a slot uses (`provider:model`), optionally with call parameters and a fallback model, or `null` to turn the slot off.
+
+A capability is available exactly when its slot resolves to an assignment. There are no separate on/off switches.
+
+### openmaic.yml
+
+The server reads `openmaic.yml` from the directory it starts in (the repository root; `/app` in the Docker image). Set `OPENMAIC_CONFIG` to use another path; a relative path is resolved against the same directory, and the file must then exist. Without the file, the server uses the web settings and, while they are still set, the [legacy variables](#migrating-from-the-legacy-configuration).
+
+The file is read once at startup: restart the server after changing it. It is validated completely before the server starts. An unset `${VAR}`, an unknown preset or slot, a reference to a provider that is not declared, or a provider that does not offer a slot's capability stops the server, and each problem is listed with its location:
+
+```text
+[boot] Invalid server configuration; the server will not start: Invalid model configuration in /app/openmaic.yml:
+  - providers.openai.apiKey: environment variable OPENAI_API_KEY is not set
+  - slots.course.outlines: unknown slot
+```
+
+Keep secrets out of the file itself: reference them as `${VAR}` and set the variable in the environment. Values that came from a variable are never printed in these messages.
+
+### A complete example
+
+```yaml title="openmaic.yml"
+providers:
+  # <provider id>: lowercase letters, digits and dashes
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}      # read from the environment at startup
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+  openai-image:                    # the same key, used for images
+    preset: openai-image
+    apiKey: ${OPENAI_API_KEY}
+  minimax:                         # a token plan: chat, image, video, TTS, search
+    preset: minimax
+    apiKey: ${MINIMAX_API_KEY}
+  tavily:
+    preset: tavily
+    apiKey: ${TAVILY_API_KEY}
+  local:                           # any OpenAI-compatible server
+    preset: openai-compatible
+    baseUrl: http://ollama:11434/v1
+    models: [qwen3:8b]
+
+slots:
+  llm: openai:gpt-5.5              # default for every chat slot below
+  course.outline:
+    model: anthropic:claude-sonnet-4-6
+    fallback: openai:gpt-5.4-mini  # tried once on a retryable failure
+  course.content.slide:
+    model: minimax:MiniMax-M3
+    thinking: { enabled: false }
+    fallback: minimax:MiniMax-M2.7
+  classroom: local:qwen3:8b        # the model id may contain colons
+  agent:
+    model: openai:gpt-5.5          # needs tool calling
+    api: openai-completions
+  tts: minimax:speech-2.8-turbo
+  image: openai-image:gpt-image-2
+  webSearch: tavily                # provider only: its default model
+  video: null                      # off, and locked off
+
+policy:
+  allowWorkspaceProviders: false   # users cannot add providers of their own
+```
+
+With this file, every slot listed is fixed for all users. A chat slot it leaves out, such as `course.agents`, follows its parent (`llm`); a capability root it leaves out, such as `asr` or `document`, stays unconfigured. Users can assign either in the model settings, choosing among the declared providers.
+
+### Providers
+
+Each entry under `providers` declares one provider. The key is its id, which slots use in references: 1 to 63 lowercase letters, digits and dashes, starting with a letter or digit.
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `preset` | Yes | Which built-in preset this provider uses. See [Supported models → Presets](./supported-models.mdx#presets). |
+| `apiKey` | Usually | The API key. Keyless services (local servers, Brave, SearXNG, unpdf) omit it. |
+| `baseUrl` | Some presets | Endpoint to call instead of the preset's own. Required for `openai-compatible`, `azure`, `searxng` and `mineru`. |
+| `models` | No | Model ids this provider offers for chat, as the model settings list them. For `openai-compatible` it is the only list the settings have. It does not restrict what `slots` may name. |
+| `proxy` | No | HTTP proxy URL for this provider's requests. |
+| `credentials` | Some presets | Key pairs for services that do not use one key. AliDocMind takes `accessKeyId` and `accessKeySecret`. |
+
+Most presets cover one capability, following the built-in registries: the `openai` preset is chat only, and OpenAI images and speech are the `openai-image`, `openai-tts` and `openai-whisper` presets. Declare one provider per capability, and reference the same `${VAR}` when one key covers several. **Token plan presets** (`minimax`, `tokendance`, `volcengine-ark`, `kimi-coding-plan`) cover several capabilities with one key, each at the plan's own endpoint. A `baseUrl` on a provider replaces the endpoint for every capability that provider covers, so give a token plan a `baseUrl` only when all of its capabilities move with it.
+
+Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain of the server (environment, profile or role) and reads the region from `BEDROCK_REGION`, `AWS_REGION` or `AWS_DEFAULT_REGION`; `apiKey` is an optional bearer token.
+
+### Slots
+
+| Slot | Capability | Parent | What it drives |
+| --- | --- | --- | --- |
+| `llm` | chat | — | The default chat model: every chat call no slot below covers, including the steps of the browserless `/api/generate-classroom` API that have no slot of their own |
+| `course.research` | chat | `llm` | Rewriting the web search query while researching a course |
+| `course.outline` | chat | `llm` | Scene outlines |
+| `course.agents` | chat | `llm` | Teacher and classmate agent profiles |
+| `course.content` | chat | `llm` | Scene content, for scene types without a slot of their own |
+| `course.content.slide` | chat | `course.content` | Slide scenes |
+| `course.content.quiz` | chat | `course.content` | Quiz scenes |
+| `course.content.interactive` | chat | `course.content` | Interactive scenes |
+| `course.content.pbl` | chat | `course.content` | Project-based learning scenes |
+| `course.actions` | chat | `llm` | Scene actions (what the agents say and do on each scene) |
+| `classroom` | chat | `llm` | Classroom chat, quiz grading and the project-based learning runtime |
+| `agent` | chat | `llm` | The Pro workbench agent. **Requires tool calling.** Also accepts `api` and `contextWindow` |
+| `agent.title` | chat | `agent` | Pro session titles. Configurable in `openmaic.yml` only; the model settings do not show it |
+| `tts` | tts | — | Text to speech |
+| `asr` | asr | — | Speech recognition (voice input, audio and video transcripts) |
+| `image` | image | — | Image generation |
+| `video` | video | — | Video generation |
+| `webSearch` | webSearch | — | Web search |
+| `document` | document | — | The document parsing service (MinerU, MinerU Cloud, AliDocMind). The built-in PDF text extraction needs no service |
+
+How a slot resolves:
+
+- Resolution starts at the slot of the call and walks up to its capability root. The first assignment found wins, so a parent's assignment is the default for its whole subtree. Changing a parent changes every child without its own assignment.
+- At each slot, `openmaic.yml` is consulted before the workspace's model settings.
+- `null` stops the walk: the slot and every slot below it that has no assignment of its own are off.
+- Reaching the root without an assignment leaves the capability unconfigured. Calls fail with an error that names the slot; there is no fallback to any vendor.
+- Requirements belong to the slot that declares them and are checked against the model it resolves to, assigned or inherited. `agent` requires tool calling; if the built-in catalogue says its model lacks it, the agent refuses to run instead of making do. A model the catalogue does not know is allowed. `agent.title` has no requirement, so it can use a smaller model.
+
+### Assignments
+
+An assignment has one of four forms:
+
+```yaml
+slots:
+  llm: openai:gpt-5.5            # provider:model
+  webSearch: tavily              # provider only: the provider's default model
+  course.outline:                # an object with parameters
+    model: openai:gpt-5.5
+    fallback: anthropic:claude-sonnet-4-6
+    thinking: { effort: low }
+  video: null                    # off
+```
+
+The object form accepts:
+
+| Field | Meaning |
+| --- | --- |
+| `model` | Required. `provider:model`, or `provider` alone outside chat slots. |
+| `fallback` | A model to retry on once, in the same form. See [Fallbacks](#fallbacks). |
+| `thinking` | Reasoning parameters for chat models: `enabled` (true/false), `mode` (`default`, `disabled`, `enabled`, `auto`), `effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`), `level` (`minimal`, `low`, `medium`, `high`), `budgetTokens`, `excludeReasoningOutput`. Each provider adapter applies what its API supports. |
+| `api` | `agent` only: the transport dialect, `openai-completions` (the default) or `openai-responses`. |
+| `contextWindow` | `agent` only: the context window to assume for compaction, when it should be lower than the catalogue's. |
+
+The `agent` slot must not set `thinking.effort`: its tool-calling transport cannot combine reasoning effort with function tools.
+
+### Provider-only references
+
+A reference without `:model` means the provider's default model: the model a token plan recommends for that capability, else the default of the built-in registry. Search and document services mostly have no model to pick, so `webSearch: tavily` or `document: mineru-cloud` is the usual form. Chat slots always name a model; `llm: openai` is refused at startup.
+
+### Fallbacks
+
+A slot's `fallback` is tried once when a call on the primary model fails after its own retries with a retryable failure: a transient SDK error, a timeout, a network error, quota exhaustion (429), capacity (503), or empty output. Content-safety refusals and other 4xx errors never fall back. The fallback applies to both regular and streaming calls and uses the slot's `thinking` parameters.
+
+The fallback belongs to the assignment and is inherited with it: `course.content.slide` without an assignment of its own uses the model and the fallback of `course.content`. A slot with a requirement does not retry on a fallback that fails it.
+
+### Turning a capability off
+
+Write `null` on its slot. `video: null` turns video generation off for every workspace and locks it off; `course.content.pbl: null` turns off project-based learning scene generation while the rest of `course.content` keeps working. A call on a slot that is off fails immediately, and the media routes answer `403` instead of choosing another vendor.
+
+### Locks and the model settings
+
+Everything written under `slots` in `openmaic.yml` is **locked**: the model settings show it as set by the deployment and cannot change it. Only the slots that are written are locked. A workspace can still assign a child of a locked slot, which overrides the locked value for that child's subtree. To fix a whole subtree, write each of its slots.
+
+The model settings (**Settings → Models** in the web app) read and edit the same tree for the current workspace:
+
+- **Course model map**: each slot is a card that shows its effective model, where it comes from (the deployment, the workspace, or inherited from a parent) and whether it is locked. The model on a card is edited on the card itself; slots written in `openmaic.yml` are read-only there.
+- **Providers**: the providers the workspace can use. Providers from `openmaic.yml` are listed read-only and without anything about their keys. Providers the workspace adds are editable; their keys are write-only and shown only as a mask such as `…abcd`.
+- **Connect a service**: when no chat model is configured yet, a first-run setup adds a provider and fills the slots its preset recommends that are still unassigned. After that it is an ordinary provider.
+
+Provider settings that a browser stored in earlier versions (providers, keys and the chosen model) are imported into the workspace once. Anything the workspace already has, and every slot `openmaic.yml` locks, is kept; per-stage models from the browser are not imported and have to be set again on the model map.
+
+A workspace is an owner in the sense of the [persistence documentation](./deployment.mdx#server-side-persistence-postgresql): with the default Docker Compose setup (single-user mode) there is one workspace, and in a multi-user deployment each signed-in account has its own.
+
+### Policy
+
+```yaml
+policy:
+  allowWorkspaceProviders: false
+```
+
+`allowWorkspaceProviders` (default `true`) decides whether workspaces may add providers of their own. With `false`, users only choose among the providers `openmaic.yml` declares, for the slots it leaves open; a multi-user deployment that pays for all usage typically sets it and locks the slots it wants fixed.
+
+### Secrets and OPENMAIC_SECRET_KEY
+
+- Keys in `openmaic.yml` come from the environment through `${VAR}`. They are never stored in the database and never sent to the browser.
+- Keys a workspace enters in the model settings are stored in the database, encrypted with AES-256-GCM under the instance secret `OPENMAIC_SECRET_KEY`.
+- When `OPENMAIC_SECRET_KEY` is unset, the server creates a random secret on first use in `data/instance-secret.key` (inside the `openmaic-data` volume with Docker Compose) and uses it from then on.
+
+Keep the secret with the database backups: keys saved under a lost or changed secret cannot be read and have to be entered again (the model settings mark them). Set `OPENMAIC_SECRET_KEY` explicitly when more than one instance shares the database, or on hosts without a persistent data directory such as Vercel; any string works, for example the output of `openssl rand -base64 32`.
+
+```bash
+OPENMAIC_SECRET_KEY=...        # instance secret for keys saved in the model settings
+OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # optional: another path for openmaic.yml
+```
+
+### What workspaces may add
+
+Providers from `openmaic.yml` can be anything the schema accepts. Providers a workspace adds in the model settings are more restricted, because their endpoint and key are typed by a user of the web app:
+
+- Amazon Bedrock is not offered: it would sign with the server's own AWS credentials.
+- No `proxy`, and no key pairs (`credentials`): presets that authenticate with a key pair, such as AliDocMind, are deployment-only.
+- A custom `baseUrl` is allowed only for presets that offer chat, and a provider with one serves chat slots only. The URL must not contain credentials, a query string or a fragment, and must resolve to a public address unless the server sets `ALLOW_LOCAL_NETWORKS=true`. Requests to it do not follow redirects.
+- Local model servers (Ollama, Lemonade) must name their own endpoint rather than use the preset's `localhost` default.
+- Self-hosted media, search and document services (VoxCPM2, FunASR, Lemonade speech and images, ComfyUI, SearXNG, self-hosted MinerU) run on the server's own network and are deployment-only.
+- Providers the operator switched off with a legacy `<CAP>_<VENDOR>_ENABLED=false` variable are not offered.
+- A workspace cannot declare a provider id that `openmaic.yml` already declares.
+
+A deployment that wants users to reach internal services declares those providers in `openmaic.yml`.
+
+### API clients and deprecated request fields
+
+Generation requests no longer need to carry keys or model choices: browserless API calls such as `/api/generate-classroom` resolve through the same slots as the web app, for the workspace of the caller.
+
+The older request headers `x-model`, `x-api-key`, `x-base-url`, `x-provider-type`, `x-model-routes`, `x-image-provider`, `x-image-model`, `x-video-provider` and `x-video-model`, and the equivalent body fields of the speech, search and document routes, are deprecated. They are honoured only while the slot they would affect has no assignment in `openmaic.yml` or the workspace; once it has one, the configuration wins, and a slot set to `null` refuses the request whatever it names. The server logs a warning the first time a request uses them. They will be removed two minor versions after the model settings described above ship.
+
+### Migrating from the legacy configuration
+
+When `openmaic.yml` is absent, the server translates the legacy configuration at startup and logs a deprecation notice, plus a notice for each entry that could not carry over:
+
+| Legacy setting | Becomes |
+| --- | --- |
+| Provider variables (`OPENAI_API_KEY`, `TTS_MINIMAX_API_KEY`, …) and `server-providers.yml` | Deployment providers (read-only in the model settings). The provider id is the preset id, which is the legacy provider id except for web search MiniMax (`minimax-search`), web search Doubao (`doubao-search`) and Lemonade images (`lemonade-image`) |
+| `<PREFIX>_MODELS` | The provider's `models` |
+| `DEFAULT_MODEL` | The `llm` assignment, as a default a workspace can override (not locked). The `agent` slot stays off, as before |
+| `MODEL_FALLBACK` | The fallback of `DEFAULT_MODEL`. Without `DEFAULT_MODEL` it is dropped with a notice |
+| The first configured TTS, ASR, image, video and document provider, and web search in the old priority order | The default assignment of that capability (`DEFAULT_IMAGE_PROVIDER` picks the image provider) |
+| `MODEL_ROUTES` | **Not translated.** The server refuses to start (see below) |
+| `<CAP>_<VENDOR>_ENABLED=false` | Still honoured: the provider stays off whatever assigns it |
+
+When `openmaic.yml` exists, the provider variables, `server-providers.yml`, `DEFAULT_MODEL`, `MODEL_FALLBACK` and `MODEL_ROUTES` are ignored for model resolution, with a notice. `<CAP>_<VENDOR>_ENABLED=false` still applies; to turn a capability off, set its slot to `null` instead.
+
+**Environment variables.** Before:
 
 ```bash
 OPENAI_API_KEY=sk-...
-OPENAI_BASE_URL=                # optional base URL override
-OPENAI_MODELS=                  # optional model allowlist (comma-separated)
+ANTHROPIC_API_KEY=sk-ant-...
+DEFAULT_MODEL=openai:gpt-5.5
+MODEL_FALLBACK=anthropic:claude-sonnet-4-6
+TTS_MINIMAX_API_KEY=...
+TAVILY_API_KEY=tvly-...
 ```
 
-Supported provider prefixes:
+After (the keys stay in the environment):
 
-| Prefix             | Provider                                      |
-| ------------------ | --------------------------------------------- |
-| `OPENAI_`          | OpenAI                                        |
-| `AZURE_OPENAI_`    | Azure OpenAI                                  |
-| `ANTHROPIC_`       | Anthropic                                     |
-| `GOOGLE_`          | Google Gemini                                 |
-| `DEEPSEEK_`        | DeepSeek                                      |
-| `QWEN_`            | Alibaba Qwen                                  |
-| `KIMI_`            | Moonshot Kimi                                 |
-| `MINIMAX_`         | MiniMax (Anthropic-compatible endpoint by default) |
-| `GLM_`             | Zhipu GLM                                     |
-| `SILICONFLOW_`     | SiliconFlow                                   |
-| `DOUBAO_`          | Doubao (ByteDance)                            |
-| `OPENROUTER_`      | OpenRouter                                    |
-| `GROK_`            | xAI Grok                                      |
-| `TENCENT_`         | Tencent Hunyuan                               |
-| `TENCENT_HUNYUAN_` | Tencent Hunyuan (alias)                       |
-| `XIAOMI_`          | Xiaomi MiMo                                   |
-| `MIMO_`            | Xiaomi MiMo (alias)                           |
-| `OLLAMA_`          | Ollama (local)                                |
-| `LEMONADE_`        | Lemonade (local)                              |
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+  minimax-tts:
+    preset: minimax-tts
+    apiKey: ${TTS_MINIMAX_API_KEY}
+  tavily:
+    preset: tavily
+    apiKey: ${TAVILY_API_KEY}
 
-Azure OpenAI uses the deployment name as the model ID:
+slots:
+  llm:
+    model: openai:gpt-5.5
+    fallback: anthropic:claude-sonnet-4-6
+  tts: minimax-tts
+  webSearch: tavily
+```
+
+Remove `DEFAULT_MODEL` and `MODEL_FALLBACK` afterwards. The provider variables can stay as the source of the `${VAR}` references. Unlike the translated `DEFAULT_MODEL`, the `llm` written here is locked; leave it out of `slots` to let workspaces choose. And unlike the translation, `agent` now follows `llm`: write `agent: null` to keep the Pro agent off.
+
+**server-providers.yml.** Before:
+
+```yaml title="server-providers.yml"
+providers:
+  azure:
+    apiKey: ...
+    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
+    models: [my-deployment]
+pdf:
+  alidocmind:
+    accessKeyId: ...
+    accessKeySecret: ...
+web-search:
+  searxng:
+    baseUrl: http://searxng:8080
+```
+
+After:
+
+```yaml title="openmaic.yml"
+providers:
+  azure:
+    preset: azure
+    apiKey: ${AZURE_OPENAI_API_KEY}
+    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
+    models: [my-deployment]
+  alidocmind:
+    preset: alidocmind
+    credentials:
+      accessKeyId: ${ALIDOCMIND_ACCESS_KEY_ID}
+      accessKeySecret: ${ALIDOCMIND_ACCESS_KEY_SECRET}
+  searxng:
+    preset: searxng
+    baseUrl: http://searxng:8080
+
+slots:
+  llm: azure:my-deployment
+  document: alidocmind
+  webSearch: searxng
+```
+
+Each section of `server-providers.yml` becomes providers with the matching preset (`providers` → chat presets, `tts`, `asr`, `pdf` → document, `image`, `video`, `web-search`), and `accessKeyId`/`accessKeySecret` move under `credentials`.
+
+**MODEL_ROUTES.** A server that sets `MODEL_ROUTES` without `openmaic.yml` does not start:
+
+```text
+MODEL_ROUTES does not carry over to the model configuration: write the per-stage models as slots in openmaic.yml (or the file named by OPENMAIC_CONFIG) and remove MODEL_ROUTES
+```
+
+Per-stage routes do not map one to one onto slots, so they are not translated. Rewrite each route as the slot its stage belongs to:
+
+| `MODEL_ROUTES` stage | Slot |
+| --- | --- |
+| `web-search-query-rewrite` | `course.research` |
+| `scene-outlines-stream` | `course.outline` |
+| `agent-profiles` | `course.agents` |
+| `scene-content` | `course.content` |
+| `scene-content:slide`, `:quiz`, `:interactive`, `:pbl` | `course.content.slide`, `.quiz`, `.interactive`, `.pbl` |
+| `scene-actions` | `course.actions` |
+| `chat-adapter`, `quiz-grade`, `pbl-v2-runtime` and its `:instructor`, `:open-task`, `:evaluate`, `:simulator` variants | `classroom` |
+| `generate-classroom` | `llm` |
+| `maic-agent-driver` | `agent` |
+| `conversation-title` | `agent.title` |
+
+Several stages share a slot: give the slot the one model they should use. A route's `thinking` moves to the slot's `thinking`, and a `maic-agent-driver` route's `api` and `contextWindow` move to the `agent` slot. Before:
 
 ```bash
-AZURE_OPENAI_API_KEY=...
-AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
-AZURE_OPENAI_MODELS=your-deployment-name
+DEFAULT_MODEL=openai:gpt-5.5
+MODEL_ROUTES='{"scene-outlines-stream":"anthropic:claude-sonnet-4-6","scene-content:slide":{"model":"openai:gpt-5.4","thinking":{"effort":"low"}},"maic-agent-driver":{"model":"openai:gpt-5.5","api":"openai-completions"}}'
 ```
 
-To connect another OpenAI-compatible LLM service, add a custom provider under **Settings → Model providers** and select the corresponding protocol type.
+After:
 
-## Local models (Ollama and Lemonade)
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
 
-Ollama and Lemonade do not require an API key. Put the local service base URL in the server configuration so it passes SSRF validation:
-
-```bash
-OLLAMA_BASE_URL=http://localhost:11434/v1
-# LEMONADE_BASE_URL=http://localhost:13305/v1
+slots:
+  llm: openai:gpt-5.5
+  course.outline: anthropic:claude-sonnet-4-6
+  course.content.slide:
+    model: openai:gpt-5.4
+    thinking: { effort: low }
+  agent:
+    model: openai:gpt-5.5
+    api: openai-completions
 ```
 
-To limit available models, use `OLLAMA_MODELS` or `LEMONADE_MODELS` as a model allowlist.
+Then remove `MODEL_ROUTES`, `DEFAULT_MODEL` and `MODEL_FALLBACK`.
 
-## TTS providers
+**Docker.** Mount the file next to the app and keep the keys in `.env.local`:
 
-Server-side TTS providers use `TTS_<PROVIDER>_API_KEY` and optionally `TTS_<PROVIDER>_BASE_URL`.
-
-```bash
-# Doubao TTS (Volcengine Seed-TTS, native MP3)
-TTS_DOUBAO_API_KEY=appId:accessKey
-TTS_DOUBAO_BASE_URL=       # optional override
-
-# Qwen TTS
-TTS_QWEN_API_KEY=
-TTS_QWEN_BASE_URL=         # optional override
-
-# Any OpenAI-compatible TTS endpoint
-TTS_OPENAI_API_KEY=
-TTS_OPENAI_BASE_URL=
-
-# VoxCPM2 (self-hosted TTS with voice cloning; see the dedicated VoxCPM2 page)
-TTS_VOXCPM_BASE_URL=http://localhost:8000
+```yaml
+services:
+  openmaic:
+    volumes:
+      - ./openmaic.yml:/app/openmaic.yml:ro
 ```
-
-Supported TTS prefixes include `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_ELEVENLABS_`, `TTS_VOXCPM_`, and `TTS_LEMONADE_`. Local Lemonade TTS and VoxCPM2 do not require an API key. Browser-native TTS requires no server configuration.
-
-Administrators can force-disable a TTS provider on the server with `TTS_<PROVIDER>_ENABLED=false`. See the dedicated [VoxCPM2](./voxcpm.mdx) section for self-hosted TTS and voice cloning.
-
-You can also add a custom OpenAI-compatible TTS provider in Settings by entering its Base URL, model, and voice. Custom providers are stored in client settings and cannot be registered through arbitrary `TTS_*` environment variables or YAML provider IDs.
-
-## ASR (speech to text)
-
-```bash
-# OpenAI Whisper
-ASR_OPENAI_API_KEY=
-ASR_OPENAI_BASE_URL=       # optional override
-
-# Qwen ASR
-ASR_QWEN_API_KEY=
-ASR_QWEN_BASE_URL=         # optional override
-
-# Azure ASR
-ASR_AZURE_API_KEY=
-ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
-
-# FunASR (local, no key required)
-ASR_FUNASR_BASE_URL=http://localhost:8000/v1
-
-# Lemonade ASR (local, no key required)
-ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
-```
-
-Start the OpenAI-compatible FunASR service with `funasr-server --device cuda`. It accepts WAV uploads at `/v1/audio/transcriptions` and provides SenseVoiceSmall, Paraformer, and Fun-ASR-Nano through the model selector.
-
-Browser-native ASR requires no server configuration.
-
-You can also add a custom OpenAI-compatible ASR provider in Settings by entering its Base URL, model, and supported languages; this configuration is stored in client settings.
-
-## Image generation providers
-
-Image generation providers use `IMAGE_<PROVIDER>_API_KEY` and optionally `IMAGE_<PROVIDER>_BASE_URL`. Supported prefixes include:
-
-`IMAGE_OPENAI_`, `IMAGE_SEEDREAM_`, `IMAGE_QWEN_IMAGE_`, `IMAGE_NANO_BANANA_`, `IMAGE_MINIMAX_`, `IMAGE_GROK_`, and `IMAGE_LEMONADE_`.
-
-Lemonade is a local service and does not require a key:
-
-```bash
-IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
-```
-
-ComfyUI Image does not require an API key and connects to `http://localhost:8188` by default. Enter the ComfyUI Base URL in Settings, and place workflow JSON exported in API format in OpenMAIC's `public/` directory. Use filenames matching `comfyui-*.json` or containing `workflow`; the Settings page discovers these files automatically and offers them as workflows. With Docker, add the workflow before building the image or mount an individual workflow file into `/app/public/` in the container. Because `comfyui-image` is not a server-managed provider, production deployments connecting to host-side ComfyUI must also set `ALLOW_LOCAL_NETWORKS=true`.
-
-## Video generation providers
-
-Video generation providers use `VIDEO_<PROVIDER>_API_KEY` and optionally `VIDEO_<PROVIDER>_BASE_URL`. Supported prefixes include:
-
-`VIDEO_SEEDANCE_`, `VIDEO_KLING_`, `VIDEO_VEO_`, `VIDEO_SORA_`, `VIDEO_MINIMAX_`, `VIDEO_GROK_`, and `VIDEO_HAPPYHORSE_`.
-
-## Document and media parsing
-
-The exact course-material formats depend on the selected parser. OpenMAIC currently supports text, PDF, Office documents, images, and some audio/video formats; supported formats and capabilities vary by provider.
-
-```bash
-# MinerU self-hosted
-PDF_MINERU_BASE_URL=http://localhost:8888
-
-# Optional backend for self-hosted MinerU
-PDF_MINERU_BACKEND=pipeline
-
-# MinerU Cloud
-PDF_MINERU_CLOUD_API_KEY=
-PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
-
-# AliDocMind (uses Alibaba Cloud AccessKey, not a separate API key)
-ALIDOCMIND_ACCESS_KEY_ID=
-ALIDOCMIND_ACCESS_KEY_SECRET=
-ALIDOCMIND_BASE_URL=       # optional override
-```
-
-`unpdf` is built into OpenMAIC and supports basic PDF parsing. For Office documents, images, and material requiring OCR, table, formula, or layout analysis, select a compatible MinerU or AliDocMind provider.
-
-AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, BMP, and GIF. Audio and video material is currently supported only through AliDocMind: MP4, MOV, AVI, MKV, and WMV for video; MP3, WAV, and AAC for audio. M4A is not supported.
-
-## Web search
-
-Configure Tavily, Exa, Bocha, Brave, Baidu, SearXNG, or MiniMax:
-
-```bash
-TAVILY_API_KEY=
-TAVILY_BASE_URL=           # optional override
-
-EXA_API_KEY=
-EXA_BASE_URL=https://api.exa.ai  # optional override
-
-BOCHA_API_KEY=
-BOCHA_BASE_URL=            # optional override
-
-BAIDU_API_KEY=
-BAIDU_BASE_URL=https://qianfan.baidubce.com  # optional override
-
-# Self-hosted SearXNG, no API key required
-SEARXNG_BASE_URL=
-
-WEB_SEARCH_MINIMAX_API_KEY=
-WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # optional override
-```
-
-Brave and SearXNG do not require an API key. The frontend lets users choose whether to enable search for each generation. Grok web search is provided through the Grok LLM search tool, not a standalone web-search provider.
 
 ## ACCESS_CODE — site-wide password
 
@@ -197,16 +401,6 @@ ACCESS_CODE=your-secret-code
 ```
 
 Use a long random value (at least 16 characters) — this code is the only secret guarding the deployment. The code is remembered in a signed token stored in an HTTP-only cookie for 7 days; the lifetime is enforced server-side, so visitors re-verify after it expires. Verification is rate limited only when `TRUST_PROXY_HEADERS=true` is set behind a trusted proxy that overwrites `x-forwarded-for` / `x-real-ip`: each client gets 10 attempts per 60 seconds, and a successful verification clears that client's counter. Without a trusted proxy the app cannot attribute a request to a client, so there is no throttle; rely on the length and randomness of the code. Leave it empty to disable access control.
-
-## Default model and model routing
-
-When the server API receives no client model, set the default with `DEFAULT_MODEL`. Use the format `provider:model-id`, for example:
-
-```bash
-DEFAULT_MODEL=openai:gpt-5.5
-```
-
-Use `MODEL_ROUTES` to choose models for individual generation stages. Unconfigured stages continue to resolve through the client model and `DEFAULT_MODEL`. Its value is a JSON object whose keys are generation stages and whose values can be model strings or objects containing `model` and `thinking`. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for the complete stage list and examples.
 
 ## Feature flags
 
@@ -265,7 +459,194 @@ LOG_FORMAT=pretty
 LLM_THINKING_DISABLED=false
 ```
 
-## Using a YAML configuration file
+## Legacy provider environment variables
+
+These variables and `server-providers.yml` are the configuration of earlier releases. They still work when there is no `openmaic.yml` (see [Migrating from the legacy configuration](#migrating-from-the-legacy-configuration)) and are deprecated: they will be removed two minor versions after the model settings ship. With `openmaic.yml`, use them only as the source of `${VAR}` references. `DEFAULT_MODEL` and `MODEL_FALLBACK` are covered in the migration section; `MODEL_ROUTES` is no longer read.
+
+### LLM providers
+
+Cloud providers generally use three environment variables: an API key, a base URL, and a model list. The API key is usually required; the base URL and model list are optional. Azure OpenAI requires a resource endpoint, while Ollama and Lemonade do not require an API key.
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=                # optional base URL override
+OPENAI_MODELS=                  # optional model allowlist (comma-separated)
+```
+
+Supported provider prefixes:
+
+| Prefix             | Provider                                      |
+| ------------------ | --------------------------------------------- |
+| `OPENAI_`          | OpenAI                                        |
+| `AZURE_OPENAI_`    | Azure OpenAI                                  |
+| `ANTHROPIC_`       | Anthropic                                     |
+| `GOOGLE_`          | Google Gemini                                 |
+| `DEEPSEEK_`        | DeepSeek                                      |
+| `QWEN_`            | Alibaba Qwen                                  |
+| `KIMI_`            | Moonshot Kimi                                 |
+| `MINIMAX_`         | MiniMax (Anthropic-compatible endpoint by default) |
+| `GLM_`             | Zhipu GLM                                     |
+| `SILICONFLOW_`     | SiliconFlow                                   |
+| `DOUBAO_`          | Doubao (ByteDance)                            |
+| `OPENROUTER_`      | OpenRouter                                    |
+| `GROK_`            | xAI Grok                                      |
+| `TENCENT_`         | Tencent Hunyuan                               |
+| `TENCENT_HUNYUAN_` | Tencent Hunyuan (alias)                       |
+| `XIAOMI_`          | Xiaomi MiMo                                   |
+| `MIMO_`            | Xiaomi MiMo (alias)                           |
+| `OLLAMA_`          | Ollama (local)                                |
+| `LEMONADE_`        | Lemonade (local)                              |
+
+Azure OpenAI uses the deployment name as the model ID:
+
+```bash
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
+AZURE_OPENAI_MODELS=your-deployment-name
+```
+
+To connect another OpenAI-compatible LLM service, add a custom provider under **Settings → Model providers** and select the corresponding protocol type.
+
+### Local models (Ollama and Lemonade)
+
+Ollama and Lemonade do not require an API key. Put the local service base URL in the server configuration so it passes SSRF validation:
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434/v1
+# LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+To limit available models, use `OLLAMA_MODELS` or `LEMONADE_MODELS` as a model allowlist.
+
+### TTS providers
+
+Server-side TTS providers use `TTS_<PROVIDER>_API_KEY` and optionally `TTS_<PROVIDER>_BASE_URL`.
+
+```bash
+# Doubao TTS (Volcengine Seed-TTS, native MP3)
+TTS_DOUBAO_API_KEY=appId:accessKey
+TTS_DOUBAO_BASE_URL=       # optional override
+
+# Qwen TTS
+TTS_QWEN_API_KEY=
+TTS_QWEN_BASE_URL=         # optional override
+
+# Any OpenAI-compatible TTS endpoint
+TTS_OPENAI_API_KEY=
+TTS_OPENAI_BASE_URL=
+
+# VoxCPM2 (self-hosted TTS with voice cloning; see the dedicated VoxCPM2 page)
+TTS_VOXCPM_BASE_URL=http://localhost:8000
+```
+
+Supported TTS prefixes include `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_ELEVENLABS_`, `TTS_VOXCPM_`, and `TTS_LEMONADE_`. Local Lemonade TTS and VoxCPM2 do not require an API key. Browser-native TTS requires no server configuration.
+
+Administrators can force-disable a TTS provider on the server with `TTS_<PROVIDER>_ENABLED=false`. See the dedicated [VoxCPM2](./voxcpm.mdx) section for self-hosted TTS and voice cloning.
+
+You can also add a custom OpenAI-compatible TTS provider in Settings by entering its Base URL, model, and voice. Custom providers are stored in client settings and cannot be registered through arbitrary `TTS_*` environment variables or YAML provider IDs.
+
+### ASR (speech to text)
+
+```bash
+# OpenAI Whisper
+ASR_OPENAI_API_KEY=
+ASR_OPENAI_BASE_URL=       # optional override
+
+# Qwen ASR
+ASR_QWEN_API_KEY=
+ASR_QWEN_BASE_URL=         # optional override
+
+# Azure ASR
+ASR_AZURE_API_KEY=
+ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
+
+# FunASR (local, no key required)
+ASR_FUNASR_BASE_URL=http://localhost:8000/v1
+
+# Lemonade ASR (local, no key required)
+ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+Start the OpenAI-compatible FunASR service with `funasr-server --device cuda`. It accepts WAV uploads at `/v1/audio/transcriptions` and provides SenseVoiceSmall, Paraformer, and Fun-ASR-Nano through the model selector.
+
+Browser-native ASR requires no server configuration.
+
+You can also add a custom OpenAI-compatible ASR provider in Settings by entering its Base URL, model, and supported languages; this configuration is stored in client settings.
+
+### Image generation providers
+
+Image generation providers use `IMAGE_<PROVIDER>_API_KEY` and optionally `IMAGE_<PROVIDER>_BASE_URL`. Supported prefixes include:
+
+`IMAGE_OPENAI_`, `IMAGE_SEEDREAM_`, `IMAGE_QWEN_IMAGE_`, `IMAGE_NANO_BANANA_`, `IMAGE_MINIMAX_`, `IMAGE_GROK_`, and `IMAGE_LEMONADE_`.
+
+Lemonade is a local service and does not require a key:
+
+```bash
+IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+ComfyUI Image does not require an API key and connects to `http://localhost:8188` by default. Enter the ComfyUI Base URL in Settings, and place workflow JSON exported in API format in OpenMAIC's `public/` directory. Use filenames matching `comfyui-*.json` or containing `workflow`; the Settings page discovers these files automatically and offers them as workflows. With Docker, add the workflow before building the image or mount an individual workflow file into `/app/public/` in the container. Because `comfyui-image` is not a server-managed provider, production deployments connecting to host-side ComfyUI must also set `ALLOW_LOCAL_NETWORKS=true`.
+
+### Video generation providers
+
+Video generation providers use `VIDEO_<PROVIDER>_API_KEY` and optionally `VIDEO_<PROVIDER>_BASE_URL`. Supported prefixes include:
+
+`VIDEO_SEEDANCE_`, `VIDEO_KLING_`, `VIDEO_VEO_`, `VIDEO_SORA_`, `VIDEO_MINIMAX_`, `VIDEO_GROK_`, and `VIDEO_HAPPYHORSE_`.
+
+### Document and media parsing
+
+The exact course-material formats depend on the selected parser. OpenMAIC currently supports text, PDF, Office documents, images, and some audio/video formats; supported formats and capabilities vary by provider.
+
+```bash
+# MinerU self-hosted
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# Optional backend for self-hosted MinerU
+PDF_MINERU_BACKEND=pipeline
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+
+# AliDocMind (uses Alibaba Cloud AccessKey, not a separate API key)
+ALIDOCMIND_ACCESS_KEY_ID=
+ALIDOCMIND_ACCESS_KEY_SECRET=
+ALIDOCMIND_BASE_URL=       # optional override
+```
+
+`unpdf` is built into OpenMAIC and supports basic PDF parsing. For Office documents, images, and material requiring OCR, table, formula, or layout analysis, select a compatible MinerU or AliDocMind provider.
+
+AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, BMP, and GIF. Audio and video material is currently supported only through AliDocMind: MP4, MOV, AVI, MKV, and WMV for video; MP3, WAV, and AAC for audio. M4A is not supported.
+
+### Web search
+
+Configure Tavily, Exa, Bocha, Brave, Baidu, SearXNG, or MiniMax:
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # optional override
+
+EXA_API_KEY=
+EXA_BASE_URL=https://api.exa.ai  # optional override
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # optional override
+
+BAIDU_API_KEY=
+BAIDU_BASE_URL=https://qianfan.baidubce.com  # optional override
+
+# Self-hosted SearXNG, no API key required
+SEARXNG_BASE_URL=
+
+WEB_SEARCH_MINIMAX_API_KEY=
+WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # optional override
+```
+
+Brave and SearXNG do not require an API key. The frontend lets users choose whether to enable search for each generation. Grok web search is provided through the Grok LLM search tool, not a standalone web-search provider.
+
+### server-providers.yml
+
+Deprecated in favour of `openmaic.yml`. When both exist, only `openmaic.yml` configures models.
 
 In addition to environment variables, place configuration for providers registered in the code in `server-providers.yml` at the project root. The server loads it at startup, and its structure follows the environment variable categories:
 

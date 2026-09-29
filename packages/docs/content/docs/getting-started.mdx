@@ -41,6 +41,8 @@ ANTHROPIC_API_KEY=sk-ant-...
 OLLAMA_BASE_URL=http://localhost:11434/v1
 ```
 
+These provider variables are the legacy configuration and still work. The newer way is `openmaic.yml`: copy `openmaic.example.yml` to `openmaic.yml`, keep the keys in `.env.local` and reference them as `${VAR}`. You can also connect a model service in the model settings after starting the app.
+
 See [Configuration](./configuration.mdx) for complete provider, image/video generation, TTS, ASR, document parsing, web search, access control, and feature flag configuration.
 
 ## Run

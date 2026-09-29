@@ -1,0 +1,97 @@
+# =============================================================================
+# openmaic.yml: the model configuration of an OpenMAIC deployment
+#
+# Copy this file to openmaic.yml in the directory the server starts in (the
+# repository root; /app in the Docker image), or point OPENMAIC_CONFIG at it,
+# then restart the server. The file is read once at startup.
+#
+# - providers: the accounts the server can call.
+# - slots: which provider and model each use of AI gets. Every slot written
+#   here is locked: the web settings show it as set by the deployment and
+#   cannot change it. Slots left out can be chosen in the web settings.
+# - policy: what the web settings may add.
+#
+# Secrets stay in the environment (.env.local, a Docker or Kubernetes secret)
+# and are referenced as ${VAR}. An unset variable, an unknown preset or slot,
+# or a reference to an undeclared provider stops the server at startup with
+# the exact location of the problem.
+#
+# Full reference: packages/docs/content/docs/configuration.mdx
+# =============================================================================
+
+providers:
+  # A provider id (the key) is lowercase letters, digits and dashes. Slots
+  # refer to models as "<provider id>:<model id>".
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+
+  # Most presets cover one capability. The same OpenAI key used for images is
+  # a second provider with the openai-image preset.
+  openai-image:
+    preset: openai-image
+    apiKey: ${OPENAI_API_KEY}
+
+  # A token plan preset covers several capabilities with one key: chat,
+  # images, video, text to speech and web search for MiniMax.
+  minimax:
+    preset: minimax
+    apiKey: ${MINIMAX_API_KEY}
+
+  tavily:
+    preset: tavily
+    apiKey: ${TAVILY_API_KEY}
+
+  # Any OpenAI-compatible server: baseUrl is required, and models lists what
+  # the web settings offer from it.
+  # local:
+  #   preset: openai-compatible
+  #   baseUrl: http://host.docker.internal:11434/v1
+  #   models: [qwen3:8b]
+
+  # Services that authenticate with a key pair use credentials.
+  # alidocmind:
+  #   preset: alidocmind
+  #   credentials:
+  #     accessKeyId: ${ALIDOCMIND_ACCESS_KEY_ID}
+  #     accessKeySecret: ${ALIDOCMIND_ACCESS_KEY_SECRET}
+
+slots:
+  # The default chat model. Every chat slot without an assignment of its own
+  # follows it.
+  llm: openai:gpt-5.5
+
+  # An object adds call parameters and a fallback model, tried once when the
+  # primary fails with a retryable error after its own retries.
+  course.outline:
+    model: anthropic:claude-sonnet-4-6
+    fallback: openai:gpt-5.4-mini
+
+  course.content.slide:
+    model: minimax:MiniMax-M3
+    thinking: { enabled: false }
+    fallback: minimax:MiniMax-M2.7
+
+  # The Pro workbench agent needs a model with tool calling.
+  agent:
+    model: openai:gpt-5.5
+    api: openai-completions
+
+  tts: minimax:speech-2.8-turbo
+  image: openai-image:gpt-image-2
+
+  # A provider id alone means that provider's default model (search and
+  # document services mostly have none to pick).
+  webSearch: tavily
+
+  # null turns a capability off, and locks it off.
+  video: null
+
+policy:
+  # false: the web settings cannot add providers; users only choose among the
+  # providers declared above, for slots this file leaves open.
+  allowWorkspaceProviders: true

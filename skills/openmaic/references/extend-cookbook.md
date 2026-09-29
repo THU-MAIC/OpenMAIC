@@ -12,14 +12,15 @@ Entry points below are given as **file + symbol name** (not line numbers — the
 
 Two distinct cases:
 
-- **Use an already-supported provider** (it's in the union below): no source change. Configure keys/models in `.env.local` or `server-providers.yml` — follow [provider-keys.md](provider-keys.md). Mind the `DEFAULT_MODEL=provider:model` prefix (without a prefix, parsing defaults to OpenAI).
+- **Use an already-supported provider** (it's in the union below): no source change. Declare it in `openmaic.yml` with its preset and assign it to a slot, key in `.env.local` as `${VAR}` — follow [provider-keys.md](provider-keys.md). Chat slots always name `<provider id>:<model id>`.
 - **Register a NEW provider** (source change):
   1. Add the id to the `BuiltInProviderId` union in `lib/types/provider.ts`.
   2. Register its config + models in the `PROVIDERS` registry in `lib/ai/providers.ts`.
-  3. **Env wiring — required if you want `.env.local` to work:** add a `PREFIX: 'your-id'` entry to `LLM_ENV_MAP` in `lib/server/provider-config.ts`. That map is what actually reads `<PREFIX>_API_KEY` / `_BASE_URL` / `_MODELS` from env — without an entry, your env vars are **silently ignored**. (Bedrock is special-cased separately via `applyBedrockProviderConfig`.)
-  4. Then set the key in `.env.local`. **Alternatively**, skip step 3 and configure via `server-providers.yml` — its entries are keyed by provider id and do not need an `LLM_ENV_MAP` entry.
+  3. The registry entry becomes a preset automatically (`lib/config/provider-presets.ts`; the preset id is the registry id unless `lib/config/preset-ids.ts` overrides it), so `openmaic.yml` can declare it with `preset: your-id` and the model settings offer it. No env wiring is needed.
+  4. Optional, legacy only: to also accept `<PREFIX>_API_KEY` / `_BASE_URL` / `_MODELS` from the environment without `openmaic.yml`, add a `PREFIX: 'your-id'` entry to `LLM_ENV_MAP` in `lib/server/provider-config.ts`. That path is deprecated.
+  5. A new token plan (one key, several capabilities) is one entry in `lib/config/token-plan-presets.ts`; it becomes a preset whose recommended models fill the slots it covers in the first-run setup.
 
-**Gotcha:** OpenMAIC has **no hardcoded model fallback**. If `DEFAULT_MODEL` is unset, generation fails rather than picking a default — always set it.
+**Gotcha:** OpenMAIC has **no hardcoded model fallback**. If no model is assigned to the `llm` slot (or the more specific slot a call uses), generation fails with `No model is configured for <slot>` rather than picking a vendor — always assign one.
 
 ## Task 2 — Server-Side Persistence (PostgreSQL / S3)
 

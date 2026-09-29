@@ -108,54 +108,99 @@ pnpm install
 
 ```bash
 cp .env.example .env.local
+cp openmaic.example.yml openmaic.yml
 ```
 
-至少填写一个 LLM 服务商的 API Key：
-
-```env
-OPENAI_API_KEY=sk-...
-AZURE_OPENAI_API_KEY=...
-AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
-AZURE_OPENAI_MODELS=YOUR-DEPLOYMENT-NAME
-ANTHROPIC_API_KEY=sk-ant-...
-GOOGLE_API_KEY=...
-GROK_API_KEY=xai-...
-OPENROUTER_API_KEY=sk-or-...
-TENCENT_API_KEY=sk-...
-XIAOMI_API_KEY=...
-# 或使用 AWS 凭证和 BEDROCK_REGION 配置 Amazon Bedrock。
-```
-
-也可以通过 `server-providers.yml` 配置服务商：
+`openmaic.yml` 声明服务端可以调用哪些**服务商**（账号），以及每个**槽位**（一处用到 AI 的地方：大纲、幻灯片内容、语音合成、联网搜索……）使用哪个模型。Key 留在 `.env.local` 里，通过 `${VAR}` 引用：
 
 ```yaml
 providers:
   openai:
-    apiKey: sk-...
-  azure:
-    apiKey: ...
-    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
-    models:
-      - YOUR-DEPLOYMENT-NAME
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}      # 在 .env.local 里写 OPENAI_API_KEY=sk-...
   anthropic:
-    apiKey: sk-ant-...
-  bedrock:
-    models:
-      - us.anthropic.claude-sonnet-5
-      - us.anthropic.claude-opus-4-8
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+
+slots:
+  llm: openai:gpt-5.5              # 默认对话模型
+  course.outline: anthropic:claude-sonnet-4-6
+  video: null                      # 关闭某项能力
 ```
+
+写进文件的槽位会被锁定；没写的槽位沿用父槽位，可以在 Web 端的模型设置里选择，用户也可以在那里接入自己的服务（在那里保存的 Key 用 `OPENMAIC_SECRET_KEY` 加密存储）。服务启动时会校验该文件，出错时会指出具体位置。槽位说明、预设、回退模型和策略见[配置说明](packages/docs/content/docs/configuration.zh-cn.mdx)，预设和模型 ID 见[支持的模型](packages/docs/content/docs/supported-models.zh-cn.mdx)。
 
 支持的服务商：**OpenAI**、**Azure OpenAI**、**Anthropic**、**Amazon Bedrock**、**Google Gemini**、**DeepSeek**、**通义千问 Qwen**、**Kimi**、**MiniMax**、**Grok (xAI)**、**OpenRouter**、**TokenDance**、**豆包**、**腾讯混元 / TokenHub**、**小米 MiMo**、**智谱 GLM**、**Ollama**（本地）、**Lemonade**（本地 LLM / 图像 / TTS / ASR）、**FunASR**（本地 ASR）以及任何兼容 OpenAI API 的服务。
 
-Amazon Bedrock 快速示例：
+> **从旧版本升级？** 没有 `openmaic.yml` 时，服务商环境变量（`OPENAI_API_KEY`、`TTS_*`、`IMAGE_*` 等）、`server-providers.yml`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 仍然有效：服务启动时会自动转换，并在日志里给出弃用提示。`MODEL_ROUTES` 不再读取，在没有 `openmaic.yml` 的情况下设置它会导致服务拒绝启动。详见[从旧配置迁移](packages/docs/content/docs/configuration.zh-cn.mdx#从旧配置迁移)。
 
-```env
-BEDROCK_REGION=us-east-1
-BEDROCK_MODELS=us.anthropic.claude-sonnet-5,us.anthropic.claude-opus-4-8
-DEFAULT_MODEL=bedrock:us.anthropic.claude-sonnet-5
+Token Plan 快速示例（一个 Key 同时覆盖对话、图像、视频、TTS 与联网搜索；`tokendance` 用法相同）：
+
+```yaml
+providers:
+  minimax:
+    preset: minimax
+    apiKey: ${MINIMAX_API_KEY}
+
+slots:
+  llm: minimax:MiniMax-M3
+  image: minimax                   # 只写服务商 ID：使用该套餐的默认模型
+  video: minimax
+  tts: minimax
+  webSearch: minimax
 ```
 
-Bedrock 使用 AWS 环境凭证或 AWS SDK 凭证链。临时凭证可设置 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY` 和 `AWS_SESSION_TOKEN`，也可以使用运行环境可用的 AWS profile / role。
+TokenDance 快速示例（默认模型选速度快、长上下文的模型）：
+
+```yaml
+providers:
+  tokendance:
+    preset: tokendance
+    apiKey: ${TOKENDANCE_API_KEY}
+
+slots:
+  llm: tokendance:deepseek-v4.1-flash
+  image: tokendance
+  video: tokendance
+  tts: tokendance
+  webSearch: tokendance
+```
+
+小米 MiMo Token Plan 与智谱 GLM 快速示例：
+
+```yaml
+providers:
+  mimo:
+    preset: xiaomi
+    apiKey: ${MIMO_API_KEY}
+    baseUrl: https://token-plan-cn.xiaomimimo.com/v1
+  glm:
+    preset: glm
+    apiKey: ${GLM_API_KEY}
+    baseUrl: https://open.bigmodel.cn/api/paas/v4   # 国际站用 https://api.z.ai/api/paas/v4
+
+slots:
+  llm: mimo:mimo-v2.5-pro
+  course.content: glm:glm-5.1
+```
+
+新加坡或欧洲 Token Plan 集群可分别使用 `https://token-plan-sgp.xiaomimimo.com/v1`、`https://token-plan-ams.xiaomimimo.com/v1`。
+
+Amazon Bedrock 快速示例：
+
+```yaml
+providers:
+  bedrock:
+    preset: bedrock
+    models: [us.anthropic.claude-sonnet-5, us.anthropic.claude-opus-4-8]
+
+slots:
+  llm: bedrock:us.anthropic.claude-sonnet-5
+```
+
+Bedrock 使用 AWS 环境凭证或 AWS SDK 凭证链，区域取自 `BEDROCK_REGION`（例如在 `.env.local` 中设置 `BEDROCK_REGION=us-east-1`）。临时凭证可设置 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY` 和 `AWS_SESSION_TOKEN`，也可以使用运行环境可用的 AWS profile / role。
+
+> **推荐配置：** 打开全部模态时 OpenMAIC 效果最好——配图、语音讲解、视频片段与联网检索都会参与生成。最省事的方式是用一个 Key 覆盖全部模态（见上方的 Token Plan 示例），默认模型选 `deepseek-v4.1-flash` 这类速度快、长上下文的模型即可。
 
 <a id="lemonade-local-ai"></a>
 
@@ -165,12 +210,29 @@ OpenMAIC 支持将 Lemonade 作为本地 OpenAI 兼容服务商使用，可用�
 
 本地启动 Lemonade 后，在 OpenMAIC 中配置：
 
-```env
-LEMONADE_BASE_URL=http://localhost:13305/v1
-TTS_LEMONADE_BASE_URL=http://localhost:13305/v1
-ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
-IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```yaml
+providers:
+  lemonade:
+    preset: lemonade
+    baseUrl: http://localhost:13305/v1
+  lemonade-tts:
+    preset: lemonade-tts
+    baseUrl: http://localhost:13305/v1
+  lemonade-asr:
+    preset: lemonade-asr
+    baseUrl: http://localhost:13305/v1
+  lemonade-image:
+    preset: lemonade-image
+    baseUrl: http://localhost:13305/v1
+
+slots:
+  llm: lemonade:Gemma-4-26B-A4B-it-GGUF
+  tts: lemonade-tts
+  asr: lemonade-asr
+  image: lemonade-image
 ```
+
+旧版环境变量的等价写法是 `LEMONADE_BASE_URL`、`TTS_LEMONADE_BASE_URL`、`ASR_LEMONADE_BASE_URL` 和 `IMAGE_LEMONADE_BASE_URL`。
 
 <a id="funasr-local-asr"></a>
 
@@ -188,91 +250,19 @@ funasr-server --device cuda --model fun-asr-nano
 
 将 OpenMAIC 指向该服务：
 
-```env
-ASR_FUNASR_BASE_URL=http://localhost:8000/v1
+```yaml
+providers:
+  funasr:
+    preset: funasr-asr
+    baseUrl: http://localhost:8000/v1
+
+slots:
+  asr: funasr
 ```
+
+（旧版环境变量写法：`ASR_FUNASR_BASE_URL=http://localhost:8000/v1`。）
 
 纯 CPU 环境可运行 `funasr-server --device cpu --model sensevoice`。生产部署方式参见 [FunASR 部署指南](https://github.com/modelscope/FunASR#deploy)。
-
-OpenAI 快速示例：
-
-```env
-OPENAI_API_KEY=sk-...
-DEFAULT_MODEL=openai:gpt-5.5
-```
-
-MiniMax 快速示例：
-
-```env
-MINIMAX_API_KEY=...
-MINIMAX_BASE_URL=https://api.minimaxi.com/anthropic/v1
-DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed
-
-TTS_MINIMAX_API_KEY=...
-TTS_MINIMAX_BASE_URL=https://api.minimaxi.com
-
-IMAGE_MINIMAX_API_KEY=...
-IMAGE_MINIMAX_BASE_URL=https://api.minimaxi.com
-
-IMAGE_OPENAI_API_KEY=...
-IMAGE_OPENAI_BASE_URL=https://api.openai.com/v1
-
-VIDEO_MINIMAX_API_KEY=...
-VIDEO_MINIMAX_BASE_URL=https://api.minimaxi.com
-```
-
-小米 MiMo Token Plan 快速示例：
-
-```env
-MIMO_API_KEY=tp-...
-MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
-DEFAULT_MODEL=xiaomi:mimo-v2.5-pro
-```
-
-新加坡或欧洲 Token Plan 集群可分别使用 `https://token-plan-sgp.xiaomimimo.com/v1`、`https://token-plan-ams.xiaomimimo.com/v1`。
-
-TokenDance 快速示例（一个 Key 同时覆盖对话、图像、视频、TTS 与联网搜索）：
-
-```env
-TOKENDANCE_API_KEY=sk-...
-TOKENDANCE_BASE_URL=https://tokendance.space/gateway/v1
-DEFAULT_MODEL=tokendance:deepseek-v4.1-flash
-
-IMAGE_SEEDREAM_API_KEY=sk-...
-IMAGE_SEEDREAM_BASE_URL=https://tokendance.space/gateway/ark/v3
-IMAGE_SEEDREAM_MODELS=seedream-5.0-lite
-
-VIDEO_MINIMAX_API_KEY=sk-...
-VIDEO_MINIMAX_BASE_URL=https://tokendance.space/gateway/minimax
-VIDEO_MINIMAX_MODELS=minimax-h3
-
-TTS_MINIMAX_API_KEY=sk-...
-TTS_MINIMAX_BASE_URL=https://tokendance.space/gateway/minimax
-TTS_MINIMAX_MODELS=minimax-speech-2.8-turbo
-
-BOCHA_API_KEY=sk-...
-BOCHA_BASE_URL=https://tokendance.space/gateway/bocha
-```
-
-不想改 `.env.local` 的话，在 **设置 → 模型** 中添加 **TokenDance** 服务，即可一键把同一个 Key 用于它覆盖的全部能力。
-
-智谱 GLM 快速示例：
-
-```env
-# 国内站（默认）
-GLM_API_KEY=...
-GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-
-# 国际站（z.ai）
-GLM_API_KEY=...
-GLM_BASE_URL=https://api.z.ai/api/paas/v4
-
-DEFAULT_MODEL=glm:glm-5.1
-```
-
-> **推荐配置：** 打开全部模态时 OpenMAIC 效果最好——配图、语音讲解、视频片段与联网检索都会参与生成。最省事的方式是用一个 Key 覆盖全部模态（见上方的一键示例），默认模型选 `deepseek-v4.1-flash` 这类速度快、长上下文的模型即可。
->
-> 如果希望默认走 MiniMax，可设置 `DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed`。
 
 ### 3. 启动数据库
 
@@ -334,6 +324,8 @@ cp .env.example .env.local
 # 编辑 .env.local 填入你的 API Key，然后：
 docker compose up --build
 ```
+
+如需用 `openmaic.yml` 配置模型，请先从 `openmaic.example.yml` 复制出该文件，再取消 `docker-compose.yml` 中对应挂载行的注释；否则启动后在模型设置里接入模型服务即可。
 
 打开 **http://localhost:3000**。整套服务是两个容器：应用和 PostgreSQL；PostgreSQL 健康检查通过后应用才会启动。课程、生成的媒体和运行时会话都[存储在服务端](#服务端持久化postgresql)的命名卷（`openmaic-postgres`、`openmaic-data`）中，`docker compose down` 和重新构建后依然保留；`docker compose down -v` 会删除它们。
 

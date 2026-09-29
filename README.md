@@ -128,54 +128,99 @@ pnpm install
 
 ```bash
 cp .env.example .env.local
+cp openmaic.example.yml openmaic.yml
 ```
 
-Fill in at least one LLM provider key:
-
-```env
-OPENAI_API_KEY=sk-...
-AZURE_OPENAI_API_KEY=...
-AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
-AZURE_OPENAI_MODELS=YOUR-DEPLOYMENT-NAME
-ANTHROPIC_API_KEY=sk-ant-...
-GOOGLE_API_KEY=...
-GROK_API_KEY=xai-...
-OPENROUTER_API_KEY=sk-or-...
-TENCENT_API_KEY=sk-...
-XIAOMI_API_KEY=...
-# Or configure Amazon Bedrock with AWS credentials and BEDROCK_REGION.
-```
-
-You can also configure providers via `server-providers.yml`:
+`openmaic.yml` says which **providers** (accounts) the server can call and which model each **slot** (a use of AI: the outline, slide content, text to speech, web search, …) uses. Keys stay in `.env.local` and are referenced as `${VAR}`:
 
 ```yaml
 providers:
   openai:
-    apiKey: sk-...
-  azure:
-    apiKey: ...
-    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
-    models:
-      - YOUR-DEPLOYMENT-NAME
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}      # OPENAI_API_KEY=sk-... in .env.local
   anthropic:
-    apiKey: sk-ant-...
-  bedrock:
-    models:
-      - us.anthropic.claude-sonnet-5
-      - us.anthropic.claude-opus-4-8
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+
+slots:
+  llm: openai:gpt-5.5              # the default chat model
+  course.outline: anthropic:claude-sonnet-4-6
+  video: null                      # turn a capability off
 ```
+
+Slots you write are locked; slots you leave out follow their parent and can be chosen in the model settings of the web app, where users can also connect services of their own (keys saved there are encrypted with `OPENMAIC_SECRET_KEY`). The server validates the file at startup and names the exact line of any mistake. See [Configuration](packages/docs/content/docs/configuration.mdx) for the slot reference, presets, fallbacks and policy, and [Supported models](packages/docs/content/docs/supported-models.mdx) for preset and model IDs.
 
 Supported providers: **OpenAI**, **Azure OpenAI**, **Anthropic**, **Amazon Bedrock**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **TokenDance**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), **Lemonade** (local LLM / image / TTS / ASR), **FunASR** (local ASR), and any OpenAI-compatible API.
 
-Amazon Bedrock quick example:
+> **Upgrading?** Provider environment variables (`OPENAI_API_KEY`, `TTS_*`, `IMAGE_*`, …), `server-providers.yml`, `DEFAULT_MODEL` and `MODEL_FALLBACK` still work while there is no `openmaic.yml`: the server translates them at startup and logs a deprecation notice. `MODEL_ROUTES` is no longer read, and a server that sets it without `openmaic.yml` refuses to start. See [Migrating from the legacy configuration](packages/docs/content/docs/configuration.mdx#migrating-from-the-legacy-configuration).
 
-```env
-BEDROCK_REGION=us-east-1
-BEDROCK_MODELS=us.anthropic.claude-sonnet-5,us.anthropic.claude-opus-4-8
-DEFAULT_MODEL=bedrock:us.anthropic.claude-sonnet-5
+Token plan quick example (one key for chat, image, video, TTS and web search; `tokendance` works the same way):
+
+```yaml
+providers:
+  minimax:
+    preset: minimax
+    apiKey: ${MINIMAX_API_KEY}
+
+slots:
+  llm: minimax:MiniMax-M3
+  image: minimax                   # a provider id alone: the plan's default model
+  video: minimax
+  tts: minimax
+  webSearch: minimax
 ```
 
-Bedrock uses AWS environment credentials or the AWS SDK credential provider chain. For temporary credentials, set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN`, or use an AWS profile / role available to the runtime.
+TokenDance quick example with a fast long-context default model:
+
+```yaml
+providers:
+  tokendance:
+    preset: tokendance
+    apiKey: ${TOKENDANCE_API_KEY}
+
+slots:
+  llm: tokendance:deepseek-v4.1-flash
+  image: tokendance
+  video: tokendance
+  tts: tokendance
+  webSearch: tokendance
+```
+
+Xiaomi MiMo Token Plan and GLM (Zhipu) quick example:
+
+```yaml
+providers:
+  mimo:
+    preset: xiaomi
+    apiKey: ${MIMO_API_KEY}
+    baseUrl: https://token-plan-cn.xiaomimimo.com/v1
+  glm:
+    preset: glm
+    apiKey: ${GLM_API_KEY}
+    baseUrl: https://open.bigmodel.cn/api/paas/v4   # or https://api.z.ai/api/paas/v4
+
+slots:
+  llm: mimo:mimo-v2.5-pro
+  course.content: glm:glm-5.1
+```
+
+Use `https://token-plan-sgp.xiaomimimo.com/v1` or `https://token-plan-ams.xiaomimimo.com/v1` for the Singapore or Europe Token Plan clusters.
+
+Amazon Bedrock quick example:
+
+```yaml
+providers:
+  bedrock:
+    preset: bedrock
+    models: [us.anthropic.claude-sonnet-5, us.anthropic.claude-opus-4-8]
+
+slots:
+  llm: bedrock:us.anthropic.claude-sonnet-5
+```
+
+Bedrock uses AWS environment credentials or the AWS SDK credential provider chain, with the region from `BEDROCK_REGION` (for example `BEDROCK_REGION=us-east-1` in `.env.local`). For temporary credentials, set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN`, or use an AWS profile / role available to the runtime.
+
+> **Recommended setup:** OpenMAIC is at its best with every modality turned on — generated illustrations, narration, video clips, and web-grounded research. The least friction is a single key that covers all of them (see the token plan examples above), with a fast long-context model such as `deepseek-v4.1-flash` as the default.
 
 <a id="lemonade-local-ai"></a>
 
@@ -185,12 +230,29 @@ OpenMAIC supports Lemonade as a local, OpenAI-compatible provider for LLMs, imag
 
 Run Lemonade locally, then point OpenMAIC to it:
 
-```env
-LEMONADE_BASE_URL=http://localhost:13305/v1
-TTS_LEMONADE_BASE_URL=http://localhost:13305/v1
-ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
-IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```yaml
+providers:
+  lemonade:
+    preset: lemonade
+    baseUrl: http://localhost:13305/v1
+  lemonade-tts:
+    preset: lemonade-tts
+    baseUrl: http://localhost:13305/v1
+  lemonade-asr:
+    preset: lemonade-asr
+    baseUrl: http://localhost:13305/v1
+  lemonade-image:
+    preset: lemonade-image
+    baseUrl: http://localhost:13305/v1
+
+slots:
+  llm: lemonade:Gemma-4-26B-A4B-it-GGUF
+  tts: lemonade-tts
+  asr: lemonade-asr
+  image: lemonade-image
 ```
+
+With the legacy variables, the same is `LEMONADE_BASE_URL`, `TTS_LEMONADE_BASE_URL`, `ASR_LEMONADE_BASE_URL` and `IMAGE_LEMONADE_BASE_URL`.
 
 <a id="funasr-local-asr"></a>
 
@@ -208,97 +270,25 @@ funasr-server --device cuda --model fun-asr-nano
 
 Point OpenMAIC at the server:
 
-```env
-ASR_FUNASR_BASE_URL=http://localhost:8000/v1
+```yaml
+providers:
+  funasr:
+    preset: funasr-asr
+    baseUrl: http://localhost:8000/v1
+
+slots:
+  asr: funasr
 ```
+
+(Legacy variable: `ASR_FUNASR_BASE_URL=http://localhost:8000/v1`.)
 
 Use `funasr-server --device cpu --model sensevoice` for a CPU-only setup. See the [FunASR deployment guide](https://github.com/modelscope/FunASR#deploy) for production options.
 
 ### Optional: Local Audio and Video Extraction
 
-OpenMAIC can extract timestamped transcripts and prepared video keyframes locally. Install the system `ffmpeg` package so both `ffmpeg` and `ffprobe` are executable on `PATH`, then configure one server ASR provider (for example FunASR, Lemonade, or OpenAI) using the variables above. The application resolves the executables at extraction time; ffmpeg is not an npm dependency and is not required to start or use OpenMAIC.
+OpenMAIC can extract timestamped transcripts and prepared video keyframes locally. Install the system `ffmpeg` package so both `ffmpeg` and `ffprobe` are executable on `PATH`, then assign the `asr` slot (for example FunASR, Lemonade, or OpenAI) as above. The application resolves the executables at extraction time; ffmpeg is not an npm dependency and is not required to start or use OpenMAIC.
 
 If the executables are unavailable, the local extractor is skipped. A configured AliDocMind provider remains available as the cloud extraction path. When neither local ffmpeg extraction nor AliDocMind is available, audio/video materials are marked failed with an actionable setup message instead of hanging or completing with an empty transcript.
-
-OpenAI quick example:
-
-```env
-OPENAI_API_KEY=sk-...
-DEFAULT_MODEL=openai:gpt-5.5
-```
-
-MiniMax quick examples:
-
-```env
-MINIMAX_API_KEY=...
-MINIMAX_BASE_URL=https://api.minimaxi.com/anthropic/v1
-DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed
-
-TTS_MINIMAX_API_KEY=...
-TTS_MINIMAX_BASE_URL=https://api.minimaxi.com
-
-IMAGE_MINIMAX_API_KEY=...
-IMAGE_MINIMAX_BASE_URL=https://api.minimaxi.com
-
-IMAGE_OPENAI_API_KEY=...
-IMAGE_OPENAI_BASE_URL=https://api.openai.com/v1
-
-VIDEO_MINIMAX_API_KEY=...
-VIDEO_MINIMAX_BASE_URL=https://api.minimaxi.com
-```
-
-Xiaomi MiMo Token Plan quick example:
-
-```env
-MIMO_API_KEY=tp-...
-MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
-DEFAULT_MODEL=xiaomi:mimo-v2.5-pro
-```
-
-Use `https://token-plan-sgp.xiaomimimo.com/v1` or `https://token-plan-ams.xiaomimimo.com/v1` for the Singapore or Europe Token Plan clusters.
-
-TokenDance quick example (one key for chat, image, video, TTS, and web search):
-
-```env
-TOKENDANCE_API_KEY=sk-...
-TOKENDANCE_BASE_URL=https://tokendance.space/gateway/v1
-DEFAULT_MODEL=tokendance:deepseek-v4.1-flash
-
-IMAGE_SEEDREAM_API_KEY=sk-...
-IMAGE_SEEDREAM_BASE_URL=https://tokendance.space/gateway/ark/v3
-IMAGE_SEEDREAM_MODELS=seedream-5.0-lite
-
-VIDEO_MINIMAX_API_KEY=sk-...
-VIDEO_MINIMAX_BASE_URL=https://tokendance.space/gateway/minimax
-VIDEO_MINIMAX_MODELS=minimax-h3
-
-TTS_MINIMAX_API_KEY=sk-...
-TTS_MINIMAX_BASE_URL=https://tokendance.space/gateway/minimax
-TTS_MINIMAX_MODELS=minimax-speech-2.8-turbo
-
-BOCHA_API_KEY=sk-...
-BOCHA_BASE_URL=https://tokendance.space/gateway/bocha
-```
-
-Without touching `.env.local`, adding a **TokenDance** provider in **Settings → Models** applies the same key to every capability it covers in one step.
-
-GLM (Zhipu) quick examples:
-
-```env
-# China (default)
-GLM_API_KEY=...
-GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-
-# International (z.ai)
-GLM_API_KEY=...
-GLM_BASE_URL=https://api.z.ai/api/paas/v4
-
-DEFAULT_MODEL=glm:glm-5.1
-```
-
-> **Recommended setup:** OpenMAIC is at its best with every modality turned on — generated illustrations, narration, video clips, and web-grounded research. The least friction is a single key that covers all of them (see the one-key example above), with a fast long-context model such as `deepseek-v4.1-flash` as the default.
->
-> If you want to use MiniMax as the default server model, set `DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed`.
 
 ### 3. Start the database
 
@@ -377,6 +367,8 @@ cp .env.example .env.local
 # Edit .env.local with your API keys, then:
 docker compose up --build
 ```
+
+To configure models with `openmaic.yml`, create it from `openmaic.example.yml` and uncomment its mount in `docker-compose.yml`; otherwise connect a model service in the model settings once the app is running.
 
 Open **http://localhost:3000**. The stack is two containers, the app and
 PostgreSQL; the app starts once PostgreSQL reports healthy. Courses, generated
@@ -1298,15 +1290,29 @@ it uses the same PostgreSQL connection as the rest of the app:
 NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=true
 OPENMAIC_AGENT_RUNTIME_ENABLED=true
 DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
-MODEL_ROUTES='{"maic-agent-driver":{"model":"openai:gpt-5.5","api":"openai-completions"}}'
+```
+
+The agent runs on the `agent` slot of `openmaic.yml` (or the model settings), which follows the default chat model unless it has its own assignment and needs a model with tool calling:
+
+```yaml
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+
+slots:
+  llm: openai:gpt-5.5
+  agent:
+    model: openai:gpt-5.5
+    api: openai-completions        # or openai-responses
 ```
 
 While the flag is off, the `/api/agent/sessions*` and `/api/agent/owner-events`
 routes answer `404`; the course library and folder routes do not depend on the
-flag (see [Server-backed persistence](#server-backed-persistence-postgresql)). `MODEL_ROUTES` must explicitly
-route `maic-agent-driver` to a provider-prefixed model with an
-`openai-completions` or `openai-responses` `api`/`dialect`; there is intentionally
-no fallback.
+flag (see [Server-backed persistence](#server-backed-persistence-postgresql)). The `agent` slot's
+`api` is `openai-completions` (the default) or `openai-responses`, and it must not set
+`thinking.effort`. A deployment still configured only through `DEFAULT_MODEL` has the
+agent turned off until the `agent` slot is assigned.
 
 Runner cadence (scan interval, heartbeat, lease TTL, concurrency, attempts) and
 the reserved compaction knobs are listed in `.env.example`.

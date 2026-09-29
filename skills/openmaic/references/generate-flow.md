@@ -19,9 +19,9 @@
 - `requirement` (string, required) — what the classroom should teach. The course language follows the requirement (and any uploaded material); there is no `language` field.
 - `materialIds` (string array, optional) — up to 5 ids returned by `POST {url}/api/materials`, used as source documents in the order given.
 
-Nothing else is a request field. Web search, image generation, video generation and TTS narration are attempted automatically whenever the OpenMAIC server has a provider configured for them; they cannot be switched on or off per request, and requests never carry provider choices or API keys. Other fields are ignored, except `pdfContent`, which is rejected with `400 INVALID_REQUEST` (upload the document instead, see below).
+Nothing else is a request field. Web search, image generation, video generation and TTS narration are attempted automatically whenever their slot (`webSearch`, `image`, `video`, `tts`) resolves to a provider in the server's model configuration for the caller's workspace; they cannot be switched on or off per request, and requests never carry provider choices or API keys. Other fields are ignored, except `pdfContent`, which is rejected with `400 INVALID_REQUEST` (upload the document instead, see below).
 
-Do not rely on request-time model or provider override parameters. To change what a generation job can do, change the OpenMAIC server-side provider config.
+Do not rely on request-time model or provider override parameters. To change what a generation job can do, change the slots in `openmaic.yml` or in the model settings (a slot set to `null` is off).
 
 ## Keep One Owner Across Requests
 
@@ -223,7 +223,7 @@ If the job fails, return the job ID plus the server error.
 
 If generation fails, surface the server error directly instead of paraphrasing it away.
 
-If the error suggests a provider or model configuration problem, explicitly tell the user to update `.env.local` or `server-providers.yml` instead of attempting a runtime override.
+If the error suggests a provider or model configuration problem, explicitly tell the user to update `openmaic.yml` (with the key in `.env.local`) or the model settings in the web app instead of attempting a runtime override. See [provider-keys.md](provider-keys.md#recognizing-configuration-errors) for the common messages.
 
 ## Confirmation Requirements
 
