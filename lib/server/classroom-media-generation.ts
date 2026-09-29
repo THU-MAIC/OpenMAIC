@@ -14,12 +14,7 @@ import { classroomMediaMimeType } from '@/lib/server/classroom-storage';
 import { storeGeneratedAsset, type GeneratedAssetKind } from '@/lib/server/store-generated-asset';
 import { generateImage } from '@/lib/media/image-providers';
 import { generateVideo, normalizeVideoOptions } from '@/lib/media/video-providers';
-import {
-  managedMediaDownloadFetch,
-  managedMediaProviderFetch,
-  mediaDownloadFetch,
-  mediaProviderFetch,
-} from '@/lib/server/media-provider-fetch';
+import { mediaNetworkPolicy, mediaTransports } from '@/lib/server/media-provider-fetch';
 import { generateTTS, TTSRateLimitError } from '@/lib/audio/tts-providers';
 import { DEFAULT_TTS_VOICES, DEFAULT_TTS_MODELS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
@@ -198,7 +193,7 @@ export async function generateMediaForClassroom(
             apiKey,
             baseUrl: image!.baseUrl,
             model,
-            fetchImpl: image!.managed ? managedMediaProviderFetch : mediaProviderFetch,
+            fetchImpl: mediaTransports(mediaNetworkPolicy(image!)).fetchImpl,
           },
           resolveImageSize(
             { prompt: req.prompt, aspectRatio: req.aspectRatio || '16:9' },
@@ -276,8 +271,7 @@ export async function generateMediaForClassroom(
             apiKey,
             baseUrl: video!.baseUrl,
             model,
-            fetchImpl: video!.managed ? managedMediaProviderFetch : mediaProviderFetch,
-            downloadFetchImpl: video!.managed ? managedMediaDownloadFetch : mediaDownloadFetch,
+            ...mediaTransports(mediaNetworkPolicy(video!)),
           },
           normalized,
         );

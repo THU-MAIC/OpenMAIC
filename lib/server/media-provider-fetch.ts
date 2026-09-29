@@ -60,12 +60,66 @@ export const managedMediaDownloadFetch: MediaProviderFetch = (input, init) =>
     redirectAllowLocalNetworks: resolveAllowLocalNetworks(),
   });
 
+const PUBLIC_MEDIA_PROVIDER_POLICY: ProviderFetchPolicy = {
+  allowLocalNetworks: false,
+  rejectRedirects: true,
+};
+
+/**
+ * Transport for a provider a workspace configured (RFC #1701): its endpoint is
+ * user input, so it runs under the strict public policy whatever the operator
+ * opted into for their own backends.
+ */
+export const publicMediaProviderFetch: MediaProviderFetch = (input, init) =>
+  providerFetch(input, init, PUBLIC_MEDIA_PROVIDER_POLICY);
+
+/** {@link mediaDownloadFetch} under the strict public policy, every hop included. */
+export const publicMediaDownloadFetch: MediaProviderFetch = (input, init) =>
+  providerFetch(input, init, { allowLocalNetworks: false });
+
+/**
+ * Whose address policy a connection runs under: the operator's own provider
+ * (`managed`, local networks allowed), a workspace's (`public`), or a
+ * deprecated per-request one (`operator`, the operator's opt-in).
+ */
+export type MediaNetworkPolicy = 'managed' | 'operator' | 'public';
+
+/** The policy for a resolved media connection. */
+export function mediaNetworkPolicy(connection: {
+  managed: boolean;
+  origin: 'configuration' | 'request' | 'default';
+}): MediaNetworkPolicy {
+  if (connection.managed) return 'managed';
+  return connection.origin === 'configuration' ? 'public' : 'operator';
+}
+
+const PROVIDER_FETCH: Record<MediaNetworkPolicy, MediaProviderFetch> = {
+  managed: managedMediaProviderFetch,
+  operator: mediaProviderFetch,
+  public: publicMediaProviderFetch,
+};
+
+const DOWNLOAD_FETCH: Record<MediaNetworkPolicy, MediaProviderFetch> = {
+  managed: managedMediaDownloadFetch,
+  operator: mediaDownloadFetch,
+  public: publicMediaDownloadFetch,
+};
+
+/** The request and download transports for a policy (true/false: managed/operator). */
+export function mediaTransports(policy: MediaNetworkPolicy | boolean): {
+  fetchImpl: MediaProviderFetch;
+  downloadFetchImpl: MediaProviderFetch;
+} {
+  const key = policy === true ? 'managed' : policy === false ? 'operator' : policy;
+  return { fetchImpl: PROVIDER_FETCH[key], downloadFetchImpl: DOWNLOAD_FETCH[key] };
+}
+
 /** `config` with the pinned media transport for its provider installed. */
 export function withMediaProviderFetch<T extends object>(
   config: T,
-  managed: boolean,
+  policy: MediaNetworkPolicy | boolean,
 ): T & { fetchImpl: MediaProviderFetch } {
-  return { ...config, fetchImpl: managed ? managedMediaProviderFetch : mediaProviderFetch };
+  return { ...config, fetchImpl: mediaTransports(policy).fetchImpl };
 }
 
 /**
@@ -74,10 +128,7 @@ export function withMediaProviderFetch<T extends object>(
  */
 export function withVideoProviderFetch<T extends object>(
   config: T,
-  managed: boolean,
+  policy: MediaNetworkPolicy | boolean,
 ): T & { fetchImpl: MediaProviderFetch; downloadFetchImpl: MediaProviderFetch } {
-  return {
-    ...withMediaProviderFetch(config, managed),
-    downloadFetchImpl: managed ? managedMediaDownloadFetch : mediaDownloadFetch,
-  };
+  return { ...config, ...mediaTransports(policy) };
 }

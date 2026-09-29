@@ -3,7 +3,7 @@ import type { AssetStore } from '@openmaic/storage';
 import { Type, type Static } from 'typebox';
 
 import { generateImage, IMAGE_PROVIDERS } from '@/lib/media/image-providers';
-import { managedMediaProviderFetch, mediaProviderFetch } from '@/lib/server/media-provider-fetch';
+import { mediaNetworkPolicy, mediaTransports } from '@/lib/server/media-provider-fetch';
 import { serverMediaConnection } from '@/lib/server/model-config/media';
 import type {
   ImageGenerationConfig,
@@ -200,7 +200,7 @@ function slotImageProvider(ownerId: string | undefined) {
         ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
         // A slot without a model uses the provider's first catalogue model.
         model: resolved.modelId ?? IMAGE_PROVIDERS[providerId]?.models?.[0]?.id,
-        fetchImpl: resolved.managed ? managedMediaProviderFetch : mediaProviderFetch,
+        fetchImpl: mediaTransports(mediaNetworkPolicy(resolved)).fetchImpl,
       };
     },
   };

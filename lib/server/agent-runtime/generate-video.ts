@@ -4,12 +4,7 @@ import { nanoid } from 'nanoid';
 import { Type, type Static } from 'typebox';
 
 import { generateVideo, normalizeVideoOptions, VIDEO_PROVIDERS } from '@/lib/media/video-providers';
-import {
-  managedMediaDownloadFetch,
-  managedMediaProviderFetch,
-  mediaDownloadFetch,
-  mediaProviderFetch,
-} from '@/lib/server/media-provider-fetch';
+import { mediaNetworkPolicy, mediaTransports } from '@/lib/server/media-provider-fetch';
 import type { MediaConnection } from '@/lib/server/model-config/media';
 import type {
   VideoGenerationConfig,
@@ -313,8 +308,7 @@ function slotVideoConfig(
     ...(connection.baseUrl ? { baseUrl: connection.baseUrl } : {}),
     // A slot without a model uses the provider's first catalogue model.
     model: connection.modelId ?? VIDEO_PROVIDERS[providerId]?.models?.[0]?.id,
-    fetchImpl: connection.managed ? managedMediaProviderFetch : mediaProviderFetch,
-    downloadFetchImpl: connection.managed ? managedMediaDownloadFetch : mediaDownloadFetch,
+    ...mediaTransports(mediaNetworkPolicy(connection)),
   };
 }
 

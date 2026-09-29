@@ -28,7 +28,7 @@ import type { VideoProviderId, VideoGenerationOptions } from '@/lib/media/types'
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
-import { withVideoProviderFetch } from '@/lib/server/media-provider-fetch';
+import { mediaNetworkPolicy, withVideoProviderFetch } from '@/lib/server/media-provider-fetch';
 import {
   mediaResolutionResponse,
   RequestedProviderRefusedError,
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
       throw error;
     }
     const providerId = connection.providerId as VideoProviderId;
-    const { apiKey, baseUrl, managed } = connection;
+    const { apiKey, baseUrl } = connection;
     if (!apiKey) {
       return apiError(
         'MISSING_API_KEY',
@@ -98,7 +98,10 @@ export async function POST(request: NextRequest) {
     );
 
     const result = await generateVideo(
-      withVideoProviderFetch({ providerId, apiKey, baseUrl, model }, managed),
+      withVideoProviderFetch(
+        { providerId, apiKey, baseUrl, model },
+        mediaNetworkPolicy(connection),
+      ),
       options,
     );
 
