@@ -17,7 +17,8 @@ import {
   slotKey,
   slotSource,
   splitRef,
-  toggleChange,
+  switchOffChange,
+  switchOnChange,
   wizardAssignments,
 } from '@/lib/model-settings/edit';
 
@@ -120,10 +121,27 @@ describe('slot changes', () => {
     });
   });
 
-  it('switches a media slot off with null and back on by clearing it', () => {
+  it('switches a media slot off with null and back on to exactly what it held', () => {
+    const memory = new Map();
+    const tts = slot({ slot: 'tts', parent: null, capability: 'tts', assignment: 'acme:voice' });
+    expect(switchOffChange(tts, memory)).toEqual({ kind: 'slots', set: { tts: null } });
+    const off = { ...tts, assignment: null };
+    expect(switchOnChange(off, memory)).toEqual({ kind: 'slots', set: { tts: 'acme:voice' } });
+  });
+
+  it('switches a slot that had nothing of its own back on by clearing it', () => {
+    const memory = new Map();
     const image = slot({ slot: 'image', parent: null, capability: 'image' });
-    expect(toggleChange(image, false)).toEqual({ kind: 'slots', set: { image: null } });
-    expect(toggleChange(image, true)).toEqual({ kind: 'slots', clear: ['image'] });
+    switchOffChange(image, memory);
+    expect(switchOnChange({ ...image, assignment: null }, memory)).toEqual({
+      kind: 'slots',
+      clear: ['image'],
+    });
+  });
+
+  it('does not guess when it does not know what an off slot held', () => {
+    const video = slot({ slot: 'video', parent: null, capability: 'video', assignment: null });
+    expect(switchOnChange(video, new Map())).toBeUndefined();
   });
 });
 
@@ -186,14 +204,16 @@ describe('providers', () => {
       baseUrl: true,
       baseUrlRequired: false,
       models: false,
+      chatOnlyEndpoint: false,
     });
     expect(
       providerFields(chatPreset, { ...emptyDraft('acme'), baseUrl: 'https://x.test' }),
-    ).toMatchObject({ models: true });
+    ).toMatchObject({ models: true, chatOnlyEndpoint: true });
     expect(providerFields(compatiblePreset, emptyDraft(compatiblePreset.id))).toEqual({
       baseUrl: true,
       baseUrlRequired: true,
       models: true,
+      chatOnlyEndpoint: false,
     });
     expect(draftProblem(compatiblePreset, emptyDraft(compatiblePreset.id))).toBe('baseUrl');
     expect(
@@ -232,16 +252,40 @@ describe('providers', () => {
     });
   });
 
+  it('asks for a new key when the stored one cannot be read, and sends it', () => {
+    const broken = { ...workspaceProvider('acme'), key: { set: true, unreadable: true } };
+    const draft = draftFor(broken);
+    expect(draft.keyAction).toBe('replace');
+    expect(
+      providerChange('acme', { ...draft, apiKey: 'sk-new' }, chatPreset, broken),
+    ).toMatchObject({ apiKey: 'sk-new' });
+    expect(
+      providerChange('acme', { ...draft, keyAction: 'remove' }, chatPreset, broken),
+    ).toMatchObject({ apiKey: '' });
+  });
+
+  it('keeps a pinned model list editable, and clears it only when emptied', () => {
+    const pinned = { ...workspaceProvider('acme'), models: ['acme-large'] };
+    const draft = draftFor(pinned);
+    expect(providerFields(chatPreset, draft, pinned).models).toBe(true);
+    expect(providerChange('acme', draft, chatPreset, pinned)).toMatchObject({
+      models: ['acme-large'],
+    });
+    expect(providerChange('acme', { ...draft, models: ' ' }, chatPreset, pinned)).toMatchObject({
+      models: null,
+    });
+  });
+
   it('keeps, replaces or removes the stored key of an existing provider', () => {
     const existing = workspaceProvider('acme');
     const draft = draftFor(existing);
     expect(draft.keyAction).toBe('keep');
+    // A key-only edit: the hidden model list is left out, so the server keeps it.
     expect(providerChange('acme', draft, chatPreset, existing)).toEqual({
       kind: 'provider',
       id: 'acme',
       preset: 'acme',
       baseUrl: null,
-      models: null,
     });
     expect(
       providerChange(
@@ -292,6 +336,45 @@ describe('first-run setup', () => {
     };
     const view = makeView({ providers: [provider] });
     expect(wizardAssignments(view, compatiblePreset, 'compat')).toEqual({ llm: 'compat:m-1' });
+  });
+
+  it('assigns only what the provider as created offers: an own endpoint is chat only', () => {
+    const chatOnly = {
+      ...workspaceProvider('acme'),
+      baseUrl: 'https://llm.example.test/v1',
+      capabilities: { chat: chatPreset.capabilities.chat! },
+    };
+    const view = makeView({ providers: [chatOnly] });
+    expect(wizardAssignments(view, chatPreset, 'acme')).toEqual({
+      llm: 'acme:acme-large',
+      'course.content.slide': 'acme:acme-small',
+    });
+  });
+
+  it('lets a model list the user gave win over the recommended chat models', () => {
+    const pinned = {
+      ...workspaceProvider('acme'),
+      models: ['house-model'],
+      capabilities: {
+        ...chatPreset.capabilities,
+        chat: { models: [{ id: 'house-model', name: 'house-model' }] },
+      },
+    };
+    const view = makeView({ providers: [pinned] });
+    expect(wizardAssignments(view, chatPreset, 'acme')).toEqual({
+      llm: 'acme:house-model',
+      tts: 'acme:acme-voice',
+    });
+  });
+
+  it('assigns a provider without a catalogue by itself, and nothing for a missing one', () => {
+    const preset = { ...chatPreset, recommended: { webSearch: 'acme-search' } };
+    const view = makeView({ providers: [workspaceProvider('acme')] });
+    expect(wizardAssignments(view, preset, 'acme')).toEqual({
+      webSearch: 'acme',
+      llm: 'acme:acme-large',
+    });
+    expect(wizardAssignments(makeView(), chatPreset, 'acme')).toEqual({});
   });
 
   it('does not touch slots the workspace has set, even to off', () => {
@@ -351,6 +434,6 @@ describe('first-run setup', () => {
       .mockResolvedValueOnce({ ok: false, reason: 'conflict', message: 'changed' });
     expect(
       await runFirstRunSetup(slotsRefused, makeView(), chatPreset, emptyDraft('acme')),
-    ).toEqual({ status: 'partial', providerId: 'acme', message: 'changed' });
+    ).toEqual({ status: 'partial', providerId: 'acme', reason: 'conflict', message: 'changed' });
   });
 });

@@ -107,11 +107,29 @@ export function fallbackChange(slot: SlotView, ref: string | undefined): ModelSe
 }
 
 /**
- * The change behind a card's switch: off writes `null`; on drops the `null`
- * so the slot resolves as before (its parent, the server's value or default).
+ * What a slot held before its card's switch turned it off, so turning it on
+ * restores exactly that: its own assignment, or nothing of its own (follow
+ * the parent, the server's value or default). Kept per page, by slot.
  */
-export function toggleChange(slot: SlotView, on: boolean): ModelSettingsChange {
-  return on ? { kind: 'slots', clear: [slot.slot] } : { kind: 'slots', set: { [slot.slot]: null } };
+export type OffMemory = Map<string, SlotAssignment | undefined>;
+
+/** The change that turns a slot off, remembering what it held. */
+export function switchOffChange(slot: SlotView, memory: OffMemory): ModelSettingsChange {
+  memory.set(slot.slot, slot.assignment);
+  return { kind: 'slots', set: { [slot.slot]: null } };
+}
+
+/**
+ * The change that turns a slot back on: what it held before it was turned
+ * off here. Undefined when that is not known (turned off elsewhere or
+ * earlier): the caller asks the user to pick instead of guessing.
+ */
+export function switchOnChange(slot: SlotView, memory: OffMemory): ModelSettingsChange | undefined {
+  if (!memory.has(slot.slot)) return undefined;
+  const previous = memory.get(slot.slot);
+  return previous === undefined || previous === null
+    ? { kind: 'slots', clear: [slot.slot] }
+    : { kind: 'slots', set: { [slot.slot]: previous } };
 }
 
 /** Providers that offer a capability, deployment ones first as the server lists them. */
@@ -149,26 +167,37 @@ export function isFillable(slot: SlotView | undefined): slot is SlotView {
 /**
  * The assignments the first-run wizard writes after adding a provider of a
  * preset: the preset's recommendations for every slot still empty (prefixed
- * with the new provider's id), and at least `llm` on the provider's first
- * chat model. Reads the view returned after adding the provider, so a model
- * list the user gave counts.
+ * with the new provider's id), and at least `llm` on one of the provider's
+ * chat models.
+ *
+ * Checked against the provider as the server answered it, not the preset: a
+ * provider with its own endpoint serves chat only, and a model list the user
+ * gave replaces the catalogue, so a recommendation for a capability it does
+ * not offer, or a model it does not list, is left out.
  */
 export function wizardAssignments(
   view: ModelSettingsView,
   preset: PresetView,
   providerId: string,
 ): Record<string, string> {
+  const provider = view.providers.find((entry) => entry.id === providerId);
+  if (!provider) return {};
   const slots = new Map<string, SlotView>(view.slots.map((slot) => [slot.slot, slot]));
   const set: Record<string, string> = {};
-  for (const [slot, model] of Object.entries(preset.recommended)) {
-    if (model && isFillable(slots.get(slot))) set[slot] = modelRef(providerId, model);
+  for (const [slotId, model] of Object.entries(preset.recommended)) {
+    const slot = slots.get(slotId);
+    if (!model || !isFillable(slot)) continue;
+    const offered = provider.capabilities[slot.capability];
+    if (!offered) continue;
+    if (offered.models.some((entry) => entry.id === model)) {
+      set[slotId] = modelRef(providerId, model);
+    } else if (offered.models.length === 0 && slot.capability !== 'chat') {
+      // No catalogue to check against: the provider's default model.
+      set[slotId] = providerId;
+    }
   }
-  if (!set.llm && isFillable(slots.get('llm'))) {
-    const provider = view.providers.find((entry) => entry.id === providerId);
-    const first =
-      provider?.capabilities.chat?.models[0]?.id ?? preset.capabilities.chat?.models[0]?.id;
-    if (first) set.llm = modelRef(providerId, first);
-  }
+  const first = provider.capabilities.chat?.models[0]?.id;
+  if (!set.llm && first && isFillable(slots.get('llm'))) set.llm = modelRef(providerId, first);
   return set;
 }
 
@@ -208,7 +237,8 @@ export function emptyDraft(preset: string): ProviderDraft {
 export function draftFor(provider: ProviderView): ProviderDraft {
   return {
     preset: provider.preset,
-    keyAction: provider.key?.set ? 'keep' : 'replace',
+    // A key the server can no longer read is worth nothing kept: ask for a new one.
+    keyAction: provider.key?.set && !provider.key.unreadable ? 'keep' : 'replace',
     apiKey: '',
     baseUrl: provider.baseUrl ?? '',
     models: (provider.models ?? []).join(', '),
@@ -226,18 +256,35 @@ export function parseModelList(text: string): string[] {
   ];
 }
 
-/** Which of the provider form's optional fields apply to a preset. */
-export function providerFields(preset: PresetView | undefined, draft?: ProviderDraft) {
-  if (!preset) return { baseUrl: false, baseUrlRequired: false, models: false };
+/**
+ * Which of the provider form's optional fields apply to a preset (and, when
+ * editing, to the provider as it is: a model list it has stays editable).
+ */
+export function providerFields(
+  preset: PresetView | undefined,
+  draft?: ProviderDraft,
+  existing?: ProviderView,
+) {
+  if (!preset) {
+    return { baseUrl: false, baseUrlRequired: false, models: false, chatOnlyEndpoint: false };
+  }
   const chat = preset.capabilities.chat;
   const baseUrl = preset.requiresBaseUrl || preset.customEndpoint;
+  const ownEndpoint = !!draft?.baseUrl.trim();
   return {
     baseUrl,
     baseUrlRequired: preset.requiresBaseUrl,
     // A chat provider needs its model list when the preset has no catalogue
     // or points somewhere the catalogue may not describe.
     models:
-      !!chat && (preset.requiresBaseUrl || chat.models.length === 0 || !!draft?.baseUrl.trim()),
+      !!chat &&
+      (preset.requiresBaseUrl ||
+        chat.models.length === 0 ||
+        ownEndpoint ||
+        !!existing?.models?.length),
+    // With its own endpoint a workspace provider serves chat only.
+    chatOnlyEndpoint:
+      ownEndpoint && Object.keys(preset.capabilities).some((capability) => capability !== 'chat'),
   };
 }
 
@@ -261,8 +308,10 @@ export function draftProblem(
 
 /**
  * The change that saves the form: adds the provider (`existing` undefined) or
- * updates it. For an update, an emptied base URL or model list is removed and
- * the key follows `keyAction`; for a new provider empty fields are left out.
+ * updates it. An update carries only what the form shows: a field it hides is
+ * left out (the server keeps it), a shown field emptied is removed, and the
+ * key follows `keyAction` (an empty replacement keeps the stored key). For a
+ * new provider empty fields are left out.
  */
 export function providerChange(
   id: string,
@@ -270,7 +319,7 @@ export function providerChange(
   preset: PresetView | undefined,
   existing?: ProviderView,
 ): ModelSettingsChange {
-  const fields = providerFields(preset, draft);
+  const fields = providerFields(preset, draft, existing);
   const baseUrl = fields.baseUrl ? draft.baseUrl.trim() : '';
   const models = fields.models ? parseModelList(draft.models) : [];
   const apiKey = draft.apiKey.trim();
@@ -282,8 +331,8 @@ export function providerChange(
   if (existing) {
     if (draft.keyAction === 'remove') change.apiKey = '';
     else if (draft.keyAction === 'replace' && apiKey) change.apiKey = apiKey;
-    change.baseUrl = baseUrl || null;
-    change.models = models.length ? models : null;
+    if (fields.baseUrl) change.baseUrl = baseUrl || null;
+    if (fields.models) change.models = models.length ? models : null;
   } else {
     if (apiKey) change.apiKey = apiKey;
     if (baseUrl) change.baseUrl = baseUrl;
@@ -374,9 +423,30 @@ export type FirstRunResult =
   | { status: 'failed'; reason: string; message: string }
   /**
    * The provider was added but the slots could not be filled: the server
-   * refused them (`message`), or the provider offers no chat model to use.
+   * refused them (`reason`, `message`), or the provider offers no chat model
+   * to use (neither). {@link fillRecommended} tries the filling again.
    */
-  | { status: 'partial'; providerId: string; message?: string };
+  | { status: 'partial'; providerId: string; reason?: string; message?: string };
+
+/**
+ * Fill the slots still empty with a provider's recommendations, against the
+ * view as it is now (after a reload, say).
+ */
+export async function fillRecommended(
+  apply: Apply,
+  view: ModelSettingsView,
+  preset: PresetView,
+  providerId: string,
+): Promise<Exclude<FirstRunResult, { status: 'failed' }>> {
+  const set = wizardAssignments(view, preset, providerId);
+  const assigned = Object.keys(set);
+  if (!assigned.length) return { status: 'partial', providerId };
+  const filled = await apply({ kind: 'slots', set });
+  if (!filled.ok) {
+    return { status: 'partial', providerId, reason: filled.reason, message: filled.message };
+  }
+  return { status: 'done', providerId, assigned };
+}
 
 /**
  * The first-run wizard: add a provider of the preset, then fill the slots
@@ -391,12 +461,5 @@ export async function runFirstRunSetup(
   const providerId = newProviderId(view, preset.id);
   const added = await apply(providerChange(providerId, draft, preset));
   if (!added.ok) return { status: 'failed', reason: added.reason, message: added.message };
-  const set = wizardAssignments(added.view, preset, providerId);
-  const assigned = Object.keys(set);
-  if (!assigned.length) {
-    return { status: 'partial', providerId };
-  }
-  const filled = await apply({ kind: 'slots', set });
-  if (!filled.ok) return { status: 'partial', providerId, message: filled.message };
-  return { status: 'done', providerId, assigned };
+  return fillRecommended(apply, added.view, preset, providerId);
 }
