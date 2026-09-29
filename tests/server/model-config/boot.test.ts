@@ -62,6 +62,17 @@ describe('model configuration at boot', () => {
     expect(startAssetCollectorSchedule).not.toHaveBeenCalled();
   });
 
+  it('boots unchanged without a configuration file', async () => {
+    vi.stubEnv('OPENMAIC_CONFIG', '');
+    vi.spyOn(process, 'cwd').mockReturnValue(dir);
+    const { register } = await import('@/instrumentation');
+
+    await expect(register()).resolves.toBeUndefined();
+
+    expect(exit).not.toHaveBeenCalled();
+    expect(startAssetCollectorSchedule).toHaveBeenCalledOnce();
+  });
+
   it('boots with a valid configuration file', async () => {
     vi.stubEnv('MINIMAX_API_KEY', 'sk-test');
     vi.stubEnv(

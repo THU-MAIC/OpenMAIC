@@ -50,7 +50,9 @@ export interface ProviderPreset {
   requiresBaseUrl?: boolean;
 }
 
-const REGISTRIES: Record<SlotCapability, Record<string, { name?: string }>> = {
+type RegistryEntry = { name?: string; requiresBaseUrl?: boolean };
+
+const REGISTRIES: Record<SlotCapability, Record<string, RegistryEntry>> = {
   chat: PROVIDERS,
   tts: TTS_PROVIDERS,
   asr: ASR_PROVIDERS,
@@ -77,6 +79,17 @@ export const PRESET_ID_OVERRIDES: Partial<Record<SlotCapability, Record<string, 
  */
 const TOKEN_PLAN_ID_OVERRIDES: Record<string, string> = { kimi: 'kimi-coding-plan' };
 
+/**
+ * Registry entries with no usable default endpoint, besides those whose
+ * registry entry already says `requiresBaseUrl` (SearXNG): an Azure OpenAI
+ * resource has its own endpoint, and self-hosted MinerU runs wherever the
+ * operator put it.
+ */
+const REQUIRES_BASE_URL: Partial<Record<SlotCapability, readonly string[]>> = {
+  chat: ['azure'],
+  document: ['mineru'],
+};
+
 const MODALITY_CAPABILITY: Record<TokenPlanModality, SlotCapability> = {
   llm: 'chat',
   image: 'image',
@@ -89,14 +102,17 @@ function singlePresets(): ProviderPreset[] {
   const presets: ProviderPreset[] = [];
   for (const [capability, registry] of Object.entries(REGISTRIES) as [
     SlotCapability,
-    Record<string, { name?: string }>,
+    Record<string, RegistryEntry>,
   ][]) {
     for (const [registryId, entry] of Object.entries(registry)) {
+      const requiresBaseUrl =
+        entry.requiresBaseUrl === true || !!REQUIRES_BASE_URL[capability]?.includes(registryId);
       presets.push({
         id: PRESET_ID_OVERRIDES[capability]?.[registryId] ?? registryId,
         name: entry.name ?? registryId,
         kind: 'single',
         capabilities: { [capability]: { registryId } },
+        ...(requiresBaseUrl ? { requiresBaseUrl } : {}),
       });
     }
   }

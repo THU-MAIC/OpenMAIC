@@ -175,6 +175,62 @@ describe('parseModelConfig', () => {
     );
   });
 
+  it('only reads variables the environment really has', () => {
+    const text = 'providers:\n  m:\n    preset: minimax\n    apiKey: ${constructor}\n';
+    expect(issuesOf(text, {})).toEqual([
+      'providers.m.apiKey: environment variable constructor is not set',
+    ]);
+    expect(() => parseModelConfig(text)).toThrow(/environment variable constructor is not set/);
+    // An inherited string value is not a variable of this environment either.
+    const inherited = Object.create({ INHERITED: 'from-prototype' }) as Record<string, string>;
+    expect(
+      issuesOf('providers:\n  m:\n    preset: minimax\n    apiKey: ${INHERITED}\n', inherited),
+    ).toEqual(['providers.m.apiKey: environment variable INHERITED is not set']);
+  });
+
+  it('never prints a substituted secret or YAML source in diagnostics', () => {
+    const secret = 'sk-do-not-print-7f3a';
+    const preset = issuesOf('providers:\n  m:\n    preset: ${S}\n', { S: secret });
+    expect(preset).toEqual([
+      'providers.m.preset: unknown preset (value from an environment variable)',
+    ]);
+    const ref = issuesOf('slots:\n  llm: ${S}:model\n', { S: 'ghostprovider' });
+    expect(ref.join('\n')).not.toContain('ghostprovider');
+    const broken = issuesOf(`providers:\n  m:\n    apiKey: ${secret}\n    bad: [\n`);
+    expect(broken).toHaveLength(1);
+    expect(broken[0]).toMatch(/^not valid YAML: .+ at line \d+, column \d+$/);
+    expect(broken[0]).not.toContain(secret);
+  });
+
+  it.each([
+    ['searxng', 'webSearch'],
+    ['azure', 'chat'],
+    ['mineru', 'document'],
+  ])('requires a baseUrl for %s', (preset) => {
+    expect(issuesOf(`providers:\n  p:\n    preset: ${preset}\n`)).toEqual([
+      `providers.p.baseUrl: preset "${preset}" needs a baseUrl`,
+    ]);
+    expect(() =>
+      parseModelConfig(`providers:\n  p:\n    preset: ${preset}\n    baseUrl: http://host:8080\n`, {
+        env,
+      }),
+    ).not.toThrow();
+  });
+
+  it('reports problems in the same entry together', () => {
+    const text =
+      'slots:\n  llm:\n    model: ghost:m\n    thinking: { mode: wrong }\n  course.summary: 123\n';
+    const issues = issuesOf(text);
+    expect(issues).toContainEqual(
+      'slots.llm.model: provider "ghost" is not declared under providers',
+    );
+    expect(issues).toContainEqual('slots.course.summary: unknown slot');
+    expect(issues.some((issue) => issue.startsWith('slots.llm.thinking.mode:'))).toBe(true);
+    expect(issues).toContainEqual(
+      'slots.course.summary: expected null, "providerId:modelId" or a mapping',
+    );
+  });
+
   it('reports every problem at once', () => {
     const text =
       'providers:\n  a:\n    preset: nope\nslots:\n  llm: ghost:m\n  course.summary: null\n';

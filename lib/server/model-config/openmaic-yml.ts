@@ -135,9 +135,11 @@ function interpolate(
   env: ConfigEnv,
   at: PropertyKey[],
   issues: string[],
+  secretPaths: Set<string>,
   ancestors: Set<object> = new Set(),
 ): unknown {
   if (typeof value === 'string') {
+    if (value.includes('${')) secretPaths.add(formatPath(at));
     if (UNCLOSED_ENV_REF.test(value)) {
       issues.push(`${formatPath(at)}: "\${" has no closing "}"`);
     }
@@ -146,8 +148,9 @@ function interpolate(
         issues.push(`${formatPath(at)}: "\${${name}}" is not a valid environment variable name`);
         return '';
       }
-      const resolved = env[name];
-      if (!resolved) {
+      // Own, non-empty string values only: `${constructor}` is not a variable.
+      const resolved = Object.hasOwn(env, name) ? env[name] : undefined;
+      if (typeof resolved !== 'string' || resolved === '') {
         issues.push(`${formatPath(at)}: environment variable ${name} is not set`);
         return '';
       }
@@ -171,11 +174,13 @@ function interpolate(
   }
   ancestors.add(value);
   const result = Array.isArray(value)
-    ? value.map((item, index) => interpolate(item, env, [...at, index], issues, ancestors))
+    ? value.map((item, index) =>
+        interpolate(item, env, [...at, index], issues, secretPaths, ancestors),
+      )
     : Object.fromEntries(
         Object.entries(value).map(([key, item]) => [
           key,
-          interpolate(item, env, [...at, key], issues, ancestors),
+          interpolate(item, env, [...at, key], issues, secretPaths, ancestors),
         ]),
       );
   ancestors.delete(value);
@@ -189,21 +194,33 @@ function modelRefProvider(ref: string): string {
 type Providers = Record<string, z.infer<typeof providerSchema>>;
 type Slots = Record<string, SlotAssignment>;
 
+/** What the cross-checks need to know about the file beyond its valid entries. */
+interface CrossCheckContext {
+  /** Every provider id the file declares, valid or not. */
+  declaredProviderIds: ReadonlySet<string>;
+  /** Paths whose value came from `${VAR}`: never printed in diagnostics. */
+  secretPaths: ReadonlySet<string>;
+}
+
 /**
  * Checks that need the whole file: presets, slot ids, provider references.
- * Runs on every entry that is valid on its own, so a schema error elsewhere in
- * the file does not hide these problems.
+ * Runs on every entry and reference that is valid on its own, so a schema error
+ * elsewhere, even in the same entry, does not hide these problems.
  */
 function crossCheck(
   providers: Providers,
   slots: Slots,
   issues: string[],
-  declaredProviderIds: ReadonlySet<string> = new Set(Object.keys(providers)),
+  { declaredProviderIds, secretPaths }: CrossCheckContext,
 ): void {
+  const shown = (value: string, at: string) =>
+    secretPaths.has(at) ? '(value from an environment variable)' : `"${value}"`;
+
   for (const [id, provider] of Object.entries(providers)) {
+    const at = `providers.${id}.preset`;
     const preset = getProviderPreset(provider.preset);
     if (!preset) {
-      issues.push(`providers.${id}.preset: unknown preset "${provider.preset}"`);
+      issues.push(`${at}: unknown preset ${shown(provider.preset, at)}`);
       continue;
     }
     if (preset.requiresBaseUrl && !provider.baseUrl) {
@@ -218,7 +235,7 @@ function crossCheck(
     if (!provider) {
       // A provider that is declared but invalid has its own error already.
       if (!declaredProviderIds.has(providerId)) {
-        issues.push(`${at}: provider "${providerId}" is not declared under providers`);
+        issues.push(`${at}: provider ${shown(providerId, at)} is not declared under providers`);
       }
       return;
     }
@@ -226,7 +243,7 @@ function crossCheck(
     const capability = getSlot(slot).capability;
     if (preset && !preset.capabilities[capability]) {
       issues.push(
-        `${at}: provider "${providerId}" (preset "${preset.id}") does not offer ${capability}`,
+        `${at}: provider ${shown(providerId, at)} (preset "${preset.id}") does not offer ${capability}`,
       );
     }
   };
@@ -242,7 +259,7 @@ function crossCheck(
       covers(assignment, slot, at);
       continue;
     }
-    covers(assignment.model, slot, `${at}.model`);
+    if (assignment.model) covers(assignment.model, slot, `${at}.model`);
     if (assignment.fallback) covers(assignment.fallback, slot, `${at}.fallback`);
     if (
       (assignment.api !== undefined || assignment.contextWindow !== undefined) &&
@@ -264,6 +281,30 @@ function validEntries<T>(section: unknown, schema: z.ZodType<T>): Record<string,
   return entries;
 }
 
+/**
+ * Every slot key, with whatever is checkable in its value: the whole assignment
+ * when it is valid, otherwise just its valid model references, so an invalid
+ * option in an entry does not hide an undeclared provider or an unknown slot.
+ */
+function checkableSlots(section: unknown): Slots {
+  if (!isPlainMapping(section)) return {};
+  const slots: Slots = {};
+  for (const [key, value] of Object.entries(section)) {
+    const result = assignmentSchema.safeParse(value);
+    if (result.success) {
+      slots[key] = result.data;
+      continue;
+    }
+    const refs: { model?: string; fallback?: string } = {};
+    if (isPlainMapping(value)) {
+      if (modelRef.safeParse(value.model).success) refs.model = value.model as string;
+      if (modelRef.safeParse(value.fallback).success) refs.fallback = value.fallback as string;
+    }
+    slots[key] = refs.model || refs.fallback ? (refs as SlotAssignment) : null;
+  }
+  return slots;
+}
+
 /** Parses and validates the text of a model configuration file. */
 export function parseModelConfig(
   text: string,
@@ -273,27 +314,44 @@ export function parseModelConfig(
   try {
     raw = yaml.load(text);
   } catch (error) {
-    throw new ModelConfigError(file, [`not valid YAML: ${(error as Error).message}`]);
+    // The reason and position only: js-yaml's message quotes the surrounding
+    // source, which can hold a literal key.
+    const { reason, mark } = error as { reason?: string; mark?: { line: number; column: number } };
+    const where = mark ? ` at line ${mark.line + 1}, column ${mark.column + 1}` : '';
+    throw new ModelConfigError(file, [`not valid YAML: ${reason ?? 'parse error'}${where}`]);
   }
   if (raw === undefined || raw === null) return {};
 
   const issues: string[] = [];
-  const interpolated = interpolate(raw, env, [], issues);
+  const secretPaths = new Set<string>();
+  const interpolated = interpolate(raw, env, [], issues, secretPaths);
   // The whole document was refused (for example a bare timestamp).
   if (interpolated === undefined) throw new ModelConfigError(file, issues);
   const parsed = fileSchema.safeParse(interpolated);
   if (parsed.success) {
-    crossCheck(parsed.data.providers ?? {}, parsed.data.slots ?? {}, issues);
+    crossCheck(parsed.data.providers ?? {}, parsed.data.slots ?? {}, issues, {
+      declaredProviderIds: new Set(Object.keys(parsed.data.providers ?? {})),
+      secretPaths,
+    });
   } else {
+    // A value whose placeholder already failed is reported once, not again
+    // for being empty after substitution.
+    const failedPaths = new Set(issues.map((issue) => issue.slice(0, issue.indexOf(': '))));
     for (const issue of parsed.error.issues) {
-      issues.push(`${formatPath(issue.path)}: ${issue.message}`);
+      const at = formatPath(issue.path);
+      if (!failedPaths.has(at)) issues.push(`${at}: ${issue.message}`);
     }
     if (isPlainMapping(interpolated)) {
       crossCheck(
         validEntries(interpolated.providers, providerSchema),
-        validEntries(interpolated.slots, assignmentSchema),
+        checkableSlots(interpolated.slots),
         issues,
-        new Set(isPlainMapping(interpolated.providers) ? Object.keys(interpolated.providers) : []),
+        {
+          declaredProviderIds: new Set(
+            isPlainMapping(interpolated.providers) ? Object.keys(interpolated.providers) : [],
+          ),
+          secretPaths,
+        },
       );
     }
   }
