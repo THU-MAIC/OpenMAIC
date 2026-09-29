@@ -6,6 +6,7 @@ import {
 } from '@/lib/document';
 import {
   getServerPDFProviders,
+  resolveServerASRProviderId,
   resolveServerMediaExtractorConfig,
 } from '@/lib/server/provider-config';
 
@@ -13,6 +14,7 @@ export interface ExtractorAvailabilityDependencies {
   providers?: () => DocumentExtractorProvider[];
   mediaProviders?: () => MediaExtractorProvider[];
   configuredProviderIds?: () => string[];
+  serverASRConfigured?: () => boolean;
 }
 
 /**
@@ -20,7 +22,10 @@ export interface ExtractorAvailabilityDependencies {
  * a document extractor counts when it is self-contained or the operator
  * configured its service, a media extractor when its own `availability` check
  * passes against the server media configuration (the same check extraction
- * runs). This is the single answer to "can this upload be used as a source
+ * runs). An extractor that transcribes through a server ASR provider counts
+ * for audio only when one is configured; it still counts for video, which it
+ * can read without an audio track (a video WITH an audio track then fails at
+ * run time). This is the single answer to "can this upload be used as a source
  * document here", for both what is advertised and what is accepted.
  */
 export async function resolveExtractableMimeTypes(
@@ -45,9 +50,16 @@ export async function resolveExtractableMimeTypes(
     mimeType: '',
     config: resolveServerMediaExtractorConfig(),
   };
+  const serverASRConfigured =
+    dependencies.serverASRConfigured?.() ?? Boolean(resolveServerASRProviderId());
   for (const provider of dependencies.mediaProviders?.() ?? getMediaExtractorProviders()) {
     const availability = await provider.availability?.(mediaInput);
-    if (!availability || availability.available) add(provider.supportedMimeTypes);
+    if (availability && !availability.available) continue;
+    add(
+      provider.requiresServerASR && !serverASRConfigured
+        ? provider.supportedMimeTypes.filter((mime) => !mime.toLowerCase().startsWith('audio/'))
+        : provider.supportedMimeTypes,
+    );
   }
   return mimes;
 }

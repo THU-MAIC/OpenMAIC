@@ -55,6 +55,11 @@ export interface MediaExtractorManifestEntry {
   version: string;
   supportedMimeTypes: readonly string[];
   capabilities: MediaExtractorCapabilities;
+  /**
+   * Whether transcribing an audio track needs a server ASR provider. Such an
+   * extractor can still read a video without an audio track (keyframes only).
+   */
+  requiresServerASR: boolean;
 }
 
 /**
@@ -153,6 +158,7 @@ const MEDIA_EXTRACTOR_MANIFEST: Record<string, MediaExtractorManifestEntry> = {
     displayName: 'AliDocMind',
     version: '1',
     supportedMimeTypes: ALIDOCMIND_MEDIA_MIMES,
+    requiresServerASR: false,
     capabilities: {
       transcript: true,
       keyframes: true,
@@ -166,6 +172,7 @@ const MEDIA_EXTRACTOR_MANIFEST: Record<string, MediaExtractorManifestEntry> = {
     displayName: 'Local ffmpeg',
     version: '1',
     supportedMimeTypes: LOCAL_FFMPEG_MEDIA_MIMES,
+    requiresServerASR: true,
     capabilities: {
       transcript: true,
       keyframes: true,

@@ -60,14 +60,17 @@ describe('optional local media extractor availability', () => {
     expect(unavailableCommands.resolve).toHaveBeenCalledWith('ffprobe');
   });
 
-  it('does not offer the local provider without a server ASR provider', async () => {
+  it('still selects the local provider for a silent video without a server ASR provider', async () => {
     const commands = { resolve: vi.fn(async () => '/usr/bin/tool'), run: vi.fn() };
     const local = createLocalMediaExtractorProvider({ commands });
 
-    await expect(local.availability?.(input)).resolves.toMatchObject({
-      available: false,
-      reason: expect.stringContaining('ASR'),
-    });
+    await expect(
+      selectMediaExtractorProvider({
+        mimeType: input.mimeType,
+        input,
+        providers: [cloudProvider(false), local],
+      }),
+    ).resolves.toBe(local);
   });
 
   it('falls back to a configured cloud provider without calling local extraction', async () => {

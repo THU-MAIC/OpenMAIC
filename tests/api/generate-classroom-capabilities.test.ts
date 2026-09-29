@@ -7,7 +7,16 @@ import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
 import { WORKBENCH_MATERIAL_MIME_TYPES } from '@/lib/workbench/material-upload-policy';
 import { middleware } from '@/middleware';
 
-const config = vi.hoisted(() => ({ pdf: {} as Record<string, object> }));
+const config = vi.hoisted(() => ({
+  pdf: {} as Record<string, object>,
+  // The machine's own ffmpeg must not decide what this suite sees.
+  mediaProviders: [] as unknown[],
+}));
+
+vi.mock('@/lib/document', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/document')>()),
+  getMediaExtractorProviders: () => config.mediaProviders,
+}));
 
 vi.mock('@/lib/server/provider-config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/server/provider-config')>()),
@@ -23,6 +32,7 @@ vi.mock('@/lib/server/provider-config', async (importOriginal) => ({
 afterEach(() => {
   vi.unstubAllEnvs();
   config.pdf = {};
+  config.mediaProviders = [];
 });
 
 const mimesOf = (formats: Array<{ mime: string }>) => formats.map((format) => format.mime);
@@ -83,6 +93,25 @@ describe('GET /api/generate-classroom/capabilities', () => {
       ]),
     );
     for (const mime of mimes) expect(WORKBENCH_MATERIAL_MIME_TYPES).toContain(mime);
+  });
+
+  it('advertises video but not audio for an ASR-backed media extractor without server ASR', async () => {
+    config.mediaProviders = [
+      {
+        id: 'local-ffmpeg',
+        displayName: 'Local ffmpeg',
+        version: '1',
+        supportedMimeTypes: ['video/mp4', 'audio/mpeg'],
+        capabilities: {},
+        requiresServerASR: true,
+        availability: async () => ({ available: true }),
+        extract: vi.fn(),
+      },
+    ];
+    const body = await (await getCapabilities()).json();
+    const mimes = mimesOf(body.materials.formats);
+    expect(mimes).toContain('video/mp4');
+    expect(mimes).not.toContain('audio/mpeg');
   });
 
   it('reports the same capabilities as /api/health', async () => {

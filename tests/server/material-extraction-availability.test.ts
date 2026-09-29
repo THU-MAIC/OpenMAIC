@@ -62,4 +62,21 @@ describe('resolveExtractableMimeTypes', () => {
 
     expect([...mimes].sort()).toEqual(['application/pdf', 'application/vnd.docx', 'audio/mpeg']);
   });
+
+  it('counts audio for an ASR-backed media extractor only when a server ASR provider exists', async () => {
+    const local = {
+      ...mediaProvider('local', ['video/mp4', 'audio/mpeg'], true),
+      requiresServerASR: true,
+    };
+    const run = (serverASRConfigured: boolean) =>
+      resolveExtractableMimeTypes({
+        providers: () => [],
+        configuredProviderIds: () => [],
+        mediaProviders: () => [local],
+        serverASRConfigured: () => serverASRConfigured,
+      });
+
+    expect([...(await run(false))]).toEqual(['video/mp4']);
+    expect([...(await run(true))].sort()).toEqual(['audio/mpeg', 'video/mp4']);
+  });
 });

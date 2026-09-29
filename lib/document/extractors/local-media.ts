@@ -818,21 +818,13 @@ export function createLocalMediaExtractorProvider(
     async availability() {
       try {
         await Promise.all([commands.resolve('ffmpeg'), commands.resolve('ffprobe')]);
+        return { available: true };
       } catch (error) {
         return {
           available: false,
           reason: error instanceof Error ? error.message : String(error),
         };
       }
-      // Transcription needs a server ASR provider; without one every
-      // extraction would fail after probing, so the provider is not offered.
-      if (!dependencies.resolveASRConfig && !resolveServerASRProviderId()) {
-        return {
-          available: false,
-          reason: 'No server ASR provider is configured for local media extraction',
-        };
-      }
-      return { available: true };
     },
     extract(input) {
       return extractMediaMaterial(input, { ...dependencies, commands });

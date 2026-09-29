@@ -89,6 +89,8 @@ export interface MediaExtractorProvider {
    */
   supportedMimeTypes: readonly string[];
   capabilities: MediaExtractorCapabilities;
+  /** Whether an audio track needs a server ASR provider (see the extractor manifest). */
+  requiresServerASR?: boolean;
   /**
    * Provider version. Bump it whenever this provider's extraction output
    * shape or quality changes; it is the version half of the
