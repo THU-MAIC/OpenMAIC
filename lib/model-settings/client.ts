@@ -71,13 +71,26 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
   let state: ModelSettingsState = { phase: 'idle', view: null };
   let loading: Promise<ModelSettingsState> | null = null;
   const listeners = new Set<() => void>();
-  // Reads and adopted write answers are numbered in the order they start (a
-  // read) or land (a write's answer). A read's answer is dropped when a later
-  // read was started or a view adopted after it began, or when it is older
-  // than the view held: an older answer never replaces a newer one.
+  // The revision decides which view is newer: a view (a read's or a write's
+  // answer) with a lower revision than the one held never replaces it, and one
+  // with a higher revision always does, whenever it arrives. Only at an equal
+  // revision does order decide: reads and adopted views are numbered as they
+  // start (a read) or land (an adoption), and a read that began before a later
+  // read or adoption is dropped.
   let sequence = 0;
   let latestRead = 0;
   let latestAdopted = 0;
+
+  /** Whether a view that arrived (from a read begun at `started`, or a write's answer) replaces the one held. */
+  const newer = (view: ModelSettingsView, started?: number) => {
+    const inOrder = started === undefined || (started >= latestRead && started >= latestAdopted);
+    // Nothing held (never read, or forgotten): only order can tell, so a read
+    // begun before the view was forgotten does not bring it back.
+    if (!state.view) return inOrder;
+    const incoming = revisionOf(view);
+    const held = revisionOf(state.view);
+    return incoming !== held ? incoming > held : inOrder;
+  };
 
   const setState = (next: ModelSettingsState) => {
     state = next;
@@ -102,10 +115,14 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
     }
   }
 
-  /** Take a write's answer as the view. */
-  function adopt(view: ModelSettingsView) {
+  /**
+   * Take a view as current (a write's answer, or one handed in from outside);
+   * `null` forgets the held view. Numbered like a read, so reads begun before
+   * it cannot put back what it replaced.
+   */
+  function adopt(view: ModelSettingsView | null) {
     latestAdopted = ++sequence;
-    setState({ phase: 'ready', view });
+    setState(view ? { phase: 'ready', view } : { phase: 'idle', view: null });
   }
 
   /**
@@ -119,12 +136,11 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
     setState({ ...state, phase: 'loading', error: undefined });
     const read = fetchView()
       .then((next) => {
+        // A view is judged by its revision; an error or "unavailable" only by order.
         const superseded =
-          number < latestRead ||
-          number < latestAdopted ||
-          (next.phase === 'ready' &&
-            state.view !== null &&
-            revisionOf(next.view) < revisionOf(state.view));
+          next.phase === 'ready' && next.view
+            ? !newer(next.view, number)
+            : number < latestRead || number < latestAdopted;
         if (!superseded) {
           setState(next);
           return next;
@@ -185,8 +201,10 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
       } catch (error) {
         return unconfirmed(error);
       }
-      adopt(next);
-      return { ok: true, view: next };
+      // An answer older than a view read meanwhile does not replace it: the
+      // caller gets the view that is current.
+      if (newer(next)) adopt(next);
+      return { ok: true, view: state.view ?? next };
     }
     if (response.status === 404) {
       setState({ phase: 'unavailable', view: null });
@@ -218,6 +236,7 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
     },
     load,
     apply,
+    adopt,
   };
 }
 

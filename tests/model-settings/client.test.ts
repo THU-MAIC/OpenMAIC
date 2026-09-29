@@ -322,4 +322,66 @@ describe('read ordering', () => {
     await client.load();
     expect(client.getState()).toMatchObject({ phase: 'ready', view: { revision: 5 } });
   });
+
+  it('keeps a newer read when an older write answer arrives after it', async () => {
+    const { fetchImpl, pending } = manualFetch();
+    const client = createModelSettingsClient(fetchImpl);
+    const first = client.load();
+    pending[0].resolve(json(makeView({ revision: 4 })));
+    await first;
+
+    const write = client.apply({ kind: 'slots', clear: ['tts'] });
+    await tick();
+    const read = client.load({ fresh: true });
+    await tick();
+    // The read answers first with a later revision (another change landed too) …
+    pending[2].resolve(json(makeView({ revision: 6 })));
+    await read;
+    // … then the write's own answer, at revision 5, arrives late.
+    pending[1].resolve(json(makeView({ revision: 5 })));
+    const result = await write;
+
+    expect(client.getState().view?.revision).toBe(6);
+    expect(result).toMatchObject({ ok: true, view: { revision: 6 } });
+  });
+
+  it('takes a later revision from a read that began before an older write answer landed', async () => {
+    const { fetchImpl, pending } = manualFetch();
+    const client = createModelSettingsClient(fetchImpl);
+    const first = client.load();
+    pending[0].resolve(json(makeView({ revision: 4 })));
+    await first;
+
+    const write = client.apply({ kind: 'slots', clear: ['tts'] });
+    await tick();
+    const read = client.load({ fresh: true });
+    await tick();
+    pending[1].resolve(json(makeView({ revision: 5 })));
+    await write;
+    // The read began before revision 5 was adopted, but it carries revision 6.
+    pending[2].resolve(json(makeView({ revision: 6 })));
+    await read;
+
+    expect(client.getState()).toMatchObject({ phase: 'ready', view: { revision: 6 } });
+  });
+
+  it('does not let a read begun before the view was forgotten bring it back', async () => {
+    const { fetchImpl, pending } = manualFetch();
+    const client = createModelSettingsClient(fetchImpl);
+    const first = client.load();
+    pending[0].resolve(json(makeView({ revision: 4 })));
+    await first;
+
+    const read = client.load({ fresh: true });
+    client.adopt(null);
+    pending[1].resolve(json(makeView({ revision: 4 })));
+    await read;
+
+    expect(client.getState().view).toBeNull();
+    // A read begun after it is taken.
+    const next = client.load();
+    pending[2].resolve(json(makeView({ revision: 7 })));
+    await next;
+    expect(client.getState().view?.revision).toBe(7);
+  });
 });
