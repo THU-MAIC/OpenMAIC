@@ -4,8 +4,14 @@
  * All LLM interactions should go through callLLM / streamLLM.
  */
 
-import { generateText, streamText } from 'ai';
-import type { GenerateTextResult, JSONValue, LanguageModel, StreamTextResult } from 'ai';
+import { generateText, streamText, wrapLanguageModel } from 'ai';
+import type {
+  GenerateTextResult,
+  JSONValue,
+  LanguageModel,
+  LanguageModelMiddleware,
+  StreamTextResult,
+} from 'ai';
 import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
@@ -522,6 +528,93 @@ async function resolveFallbackModelSafe(
   }
 }
 
+type ModelV3 = Parameters<typeof wrapLanguageModel>[0]['model'];
+type StreamResultV3 = Awaited<ReturnType<ModelV3['doStream']>>;
+type StreamPartV3 = StreamResultV3['stream'] extends ReadableStream<infer P> ? P : never;
+
+/** Parts a stream may send before its first content (or error). */
+const PREAMBLE_PARTS = new Set(['stream-start', 'response-metadata']);
+
+/**
+ * Read a stream up to its first content or error part, and hand back that part
+ * with a stream that replays everything read so far and then the rest.
+ */
+async function peekFirstPart(
+  stream: ReadableStream<StreamPartV3>,
+): Promise<{ first: StreamPartV3 | undefined; stream: ReadableStream<StreamPartV3> }> {
+  const reader = stream.getReader();
+  const read: StreamPartV3[] = [];
+  let first: StreamPartV3 | undefined;
+  let done = false;
+  while (!first) {
+    const next = await reader.read();
+    if (next.done) {
+      done = true;
+      break;
+    }
+    read.push(next.value);
+    if (!PREAMBLE_PARTS.has(next.value.type)) first = next.value;
+  }
+  const replay = new ReadableStream<StreamPartV3>({
+    async pull(controller) {
+      const buffered = read.shift();
+      if (buffered) return controller.enqueue(buffered);
+      if (done) return controller.close();
+      const next = await reader.read();
+      if (next.done) controller.close();
+      else controller.enqueue(next.value);
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+  return { first, stream: replay };
+}
+
+/**
+ * The model with its slot's fallback for streaming: a stream that fails
+ * before any content (the request is refused, or the first part is an error)
+ * runs once on the fallback model instead. A failure after content has
+ * started is the caller's, as before: the text already sent cannot be taken
+ * back.
+ */
+function withStreamFallback(
+  model: ModelV3,
+  load: FallbackLoader,
+  source: string,
+  onFallback: (fallback: FallbackModel) => void,
+): ModelV3 {
+  const middleware: LanguageModelMiddleware = {
+    specificationVersion: 'v3',
+    wrapStream: async ({ doStream, params }) => {
+      let failure: unknown;
+      try {
+        const result = await doStream();
+        const peeked = await peekFirstPart(result.stream);
+        if (peeked.first?.type !== 'error' || !shouldFallbackFor(peeked.first.error, undefined)) {
+          return { ...result, stream: peeked.stream };
+        }
+        await peeked.stream.cancel().catch(() => undefined);
+        failure = peeked.first.error;
+      } catch (error) {
+        if (!shouldFallbackFor(error, undefined)) throw error;
+        failure = error;
+      }
+      const fallback = await loadFallbackSafe(load, source);
+      if (!fallback || typeof fallback.model !== 'object') throw failure;
+      logFallbackFired(
+        source,
+        'retryable failure',
+        `${model.provider}:${model.modelId}`,
+        fallback.modelString,
+      );
+      onFallback(fallback);
+      return (fallback.model as ModelV3).doStream(params);
+    },
+  };
+  return wrapLanguageModel({ model, middleware });
+}
+
 /**
  * Unified wrapper around `streamText`.
  *
@@ -535,6 +628,7 @@ export function streamLLM<T extends StreamTextParams>(
   params: T,
   source: string,
   thinking?: ThinkingConfig,
+  fallbackOptions?: { enabled?: boolean },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): StreamTextResult<any, any> {
   // Resolve effective thinking config and wrap in thinkingContext
@@ -542,7 +636,19 @@ export function streamLLM<T extends StreamTextParams>(
 
   // Wrap onFinish to capture usage when the stream completes, preserving any
   // caller-supplied onFinish. totalUsage aggregates across steps.
-  const usageMeta = buildUsageMeta(params, source);
+  let usageMeta = buildUsageMeta(params, source);
+  // A model resolved through a slot streams with its slot's fallback (see
+  // withStreamFallback); a caller with its own fallback handling opts out.
+  const attached =
+    fallbackOptions?.enabled === false ? undefined : attachedModelFallback(params.model);
+  if (attached && typeof params.model === 'object') {
+    params = {
+      ...params,
+      model: withStreamFallback(params.model as ModelV3, attached, source, (fallback) => {
+        usageMeta = buildUsageMeta({ ...params, model: fallback.model }, source);
+      }),
+    };
+  }
   const callerOnFinish = (params as Record<string, unknown>).onFinish as
     | ((event: { totalUsage?: unknown; usage?: unknown }) => void | Promise<void>)
     | undefined;

@@ -585,11 +585,10 @@ export async function POST(req: NextRequest) {
               // fallback path.
               let streamError: unknown = undefined;
               let finishReason: string | undefined = undefined;
-              const fullStream = streamLLM(
-                streamParams,
-                'scene-outlines-stream',
-                thinkingConfig,
-              ).fullStream;
+              // This route retries and falls back itself (maybeFallback).
+              const fullStream = streamLLM(streamParams, 'scene-outlines-stream', thinkingConfig, {
+                enabled: false,
+              }).fullStream;
 
               for await (const part of fullStream) {
                 // Stop doing work the moment the client goes away — otherwise
