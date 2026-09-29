@@ -221,6 +221,34 @@ export function normalizeLegacyModelSettings(
   return state as LegacyModelSettingsState;
 }
 
+/** The model ids of a chat registry entry's catalogue. */
+function registryModelIds(registryId: string): string[] {
+  const entry = (PROVIDERS as Record<string, { models?: Array<{ id: string }> }>)[registryId];
+  return (entry?.models ?? []).map((model) => model.id);
+}
+
+/** The model ids a legacy chat provider config lists. */
+function listedModelIds(config: LegacyChatProvider | undefined): string[] {
+  return (config?.models ?? []).map((model) => text(model?.id)).filter((id) => id.length > 0);
+}
+
+/**
+ * The model list to propose for a provider whose models come from a
+ * catalogue (a registry's, or a token plan's): the catalogue with the models
+ * the user added, when there are any; else none. A provider's model list
+ * names the chat models it serves, so listing only the added ones would hide
+ * the catalogue.
+ */
+function withAddedModels(
+  registryId: string,
+  catalogue: readonly string[],
+  listed: readonly string[],
+): string[] {
+  const known = catalogue.map((id) => ({ id }));
+  const added = listed.filter((modelId) => !findModelById(registryId, known, modelId));
+  return added.length ? [...new Set([...catalogue, ...added])] : [];
+}
+
 /**
  * The proposal for a version 4 settings state: the providers it holds keys or
  * endpoints for, and the slots its selections name. Undefined when there is
@@ -256,9 +284,16 @@ export function buildModelSettingsProposal(
     if (!llm || state.tokenPlanEnrollments?.[plan.id] !== llm.providerId) continue;
     const key = text(chat[llm.providerId]?.apiKey);
     if (!key) continue;
+    // The plan's catalogue is its own model list, else its registry entry's.
+    const planModels = withAddedModels(
+      llm.providerId,
+      llm.defaultModels ?? registryModelIds(llm.providerId),
+      listedModelIds(chat[llm.providerId]),
+    );
     const id = claim(tokenPlanPresetId(plan.id), {
       preset: tokenPlanPresetId(plan.id),
       apiKey: key,
+      ...(planModels.length ? { models: planModels } : {}),
     });
     chatIds.set(llm.providerId, id);
     for (const [modality, target] of Object.entries(plan.modalities)) {
@@ -303,14 +338,7 @@ export function buildModelSettingsProposal(
     if (!apiKey && !customEndpoint) continue;
     const preset = presetIdFor('chat', legacyId);
     // Models the user added to a built-in provider (not in its catalogue).
-    // A provider's model list names the chat models it serves, so when there
-    // are any the catalogue's are listed with them, or they would be hidden.
-    const catalogue = (PROVIDERS as Record<string, { models?: Array<{ id: string }> }>)[legacyId]
-      ?.models;
-    const added = models.filter((modelId) => !findModelById(legacyId, catalogue, modelId));
-    const listed = added.length
-      ? [...new Set([...(catalogue ?? []).map((model) => model.id), ...added])]
-      : [];
+    const listed = withAddedModels(legacyId, registryModelIds(legacyId), models);
     chatIds.set(
       legacyId,
       claim(preset, {

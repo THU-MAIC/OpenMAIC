@@ -11,6 +11,7 @@ import {
 } from '@/lib/legacy-browser-import/model-settings';
 
 import { PROVIDERS } from '@/lib/ai/providers';
+import { TOKEN_PLAN_PRESETS } from '@/lib/config/token-plan-presets';
 
 import { MemoryStorage } from './harness';
 
@@ -205,6 +206,39 @@ describe('buildModelSettingsProposal', () => {
         image: 'minimax:image-01',
       },
     });
+  });
+
+  it('carries models the user added to an enrolled plan', () => {
+    const plan = TOKEN_PLAN_PRESETS.find((entry) => entry.id === 'minimax')!;
+    const catalogue = [...plan.modalities.llm!.defaultModels!];
+    const proposal = buildModelSettingsProposal({
+      providerId: 'minimax',
+      modelId: 'MiniMax-Custom-Preview',
+      tokenPlanEnrollments: { minimax: 'minimax' },
+      providersConfig: {
+        minimax: {
+          apiKey: 'sk-plan',
+          baseUrl: 'https://api.minimaxi.com/anthropic/v1',
+          models: [...catalogue.map((id) => ({ id })), { id: 'MiniMax-Custom-Preview' }],
+        },
+      },
+    });
+    expect(proposal?.providers?.minimax).toEqual({
+      preset: 'minimax',
+      apiKey: 'sk-plan',
+      models: [...catalogue, 'MiniMax-Custom-Preview'],
+    });
+    expect(proposal?.slots).toEqual({ llm: 'minimax:MiniMax-Custom-Preview' });
+
+    // Only the plan's own models: nothing to list.
+    expect(
+      buildModelSettingsProposal({
+        tokenPlanEnrollments: { minimax: 'minimax' },
+        providersConfig: {
+          minimax: { apiKey: 'sk-plan', baseUrl: '', models: catalogue.map((id) => ({ id })) },
+        },
+      })?.providers?.minimax,
+    ).toEqual({ preset: 'minimax', apiKey: 'sk-plan' });
   });
 
   it('treats a key on a plan provider without enrollment as a personal key', () => {

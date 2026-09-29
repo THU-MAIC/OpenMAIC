@@ -172,7 +172,7 @@ What the proposal holds:
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | A built-in chat provider with a key or its own base URL         | a provider of preset `presetIdFor('chat', id)`; models the user added (not in the catalogue) are listed with the catalogue's |
 | A custom chat provider (OpenAI-compatible)                      | a provider of preset `openai-compatible` with its base URL and model ids (Anthropic / Google custom providers keep their own preset) |
-| An enrolled token plan                                          | one provider of preset `tokenPlanPresetId(plan)` with the plan's key; the services the plan filled with the same key are that provider |
+| An enrolled token plan                                          | one provider of preset `tokenPlanPresetId(plan)` with the plan's key (and, when the user added models, the plan's models with them); the services the plan filled with the same key are that provider |
 | A speech, transcription, image, video, web search or document provider with a key | a provider of preset `presetIdFor(capability, id)`                              |
 | The chosen model                                                | `slots.llm` = `provider:model`; a server-configured provider is named by its preset id, as the server names translated legacy providers |
 | An enabled selection whose provider is proposed or server-configured | the capability's root slot (`tts`, `asr`, `image`, `video`, `webSearch`, `document`), with the selected model; a server-configured provider by its preset id, without credentials |
