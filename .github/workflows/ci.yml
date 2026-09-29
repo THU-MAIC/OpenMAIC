@@ -7,7 +7,7 @@ on:
     # trigger the accumulated state of the branch that eventually reaches main
     # is never built on its own.
     branches:
-      [main, integration/kv-asset-server-backend, integration/agent-workbench, feat/persistence-default]
+      [main, integration/kv-asset-server-backend, integration/agent-workbench]
   pull_request:
     branches:
       [
@@ -17,7 +17,6 @@ on:
         runtime-server-backend,
         integration/kv-asset-server-backend,
         integration/agent-workbench,
-        feat/persistence-default,
       ]
 
 concurrency:
