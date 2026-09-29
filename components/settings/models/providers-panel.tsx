@@ -33,6 +33,7 @@ import {
   providerChange,
   providerLabel,
   type ProviderDraft,
+  rebaseDraft,
 } from '@/lib/model-settings/edit';
 
 import { PresetSelect, ProviderFields } from './provider-form';
@@ -87,6 +88,13 @@ function ProviderEditor({
   const [draft, setDraft] = useState<ProviderDraft>(() =>
     existing ? draftFor(existing) : emptyDraft(''),
   );
+  // An edit's basis: the provider as the edit began, and the view it came
+  // from. Only the fields changed against it are sent, against that view's
+  // revision; when the provider changed elsewhere meanwhile (a 409), the
+  // edit moves onto the provider as it now is.
+  const [basis, setBasis] = useState<{ draft: ProviderDraft; view: ModelSettingsView } | null>(
+    () => (existing ? { draft: draftFor(existing), view } : null),
+  );
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const preset = view.presets.find((entry) => entry.id === draft.preset);
@@ -111,8 +119,19 @@ function ProviderEditor({
     setMessage(null);
     try {
       const id = existing?.id ?? newId(preset.id);
-      const result = await apply(providerChange(id, draft, preset, existing), view);
+      const result = await apply(
+        providerChange(id, draft, preset, existing, basis?.draft),
+        basis?.view ?? view,
+      );
       if (result.ok) return onDone();
+      const fresh = result.view?.providers.find((provider) => provider.id === id);
+      if (existing && basis && result.reason === 'conflict' && result.view && fresh) {
+        const freshDraft = draftFor(fresh);
+        setDraft(rebaseDraft(draft, basis.draft, freshDraft));
+        setBasis({ draft: freshDraft, view: result.view });
+        setMessage(t(`${MS}.providers.changedMeanwhile`));
+        return;
+      }
       if (!existing) {
         attempt.current = { id, preset: preset.id, unconfirmed: result.reason === 'unconfirmed' };
         // The reloaded view has it: the add went through after all.

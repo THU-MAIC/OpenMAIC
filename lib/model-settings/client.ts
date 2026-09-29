@@ -230,8 +230,15 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
     // saved: as ambiguous as a lost answer.
     if (response.status >= 500) return unconfirmed(new Error(message));
     if (response.status === 409) {
-      await load({ fresh: true });
-      return { ok: false, reason: code === 'SLOT_LOCKED' ? 'locked' : 'conflict', code, message };
+      const reloaded = await load({ fresh: true });
+      return {
+        ok: false,
+        reason: code === 'SLOT_LOCKED' ? 'locked' : 'conflict',
+        code,
+        message,
+        // The settings as they are now, to work the change out again from.
+        ...(reloaded.view ? { view: reloaded.view } : {}),
+      };
     }
     return {
       ok: false,

@@ -2141,7 +2141,8 @@
           "webSearch": "웹 검색",
           "document": "문서"
         },
-        "endpointChatOnly": "자체 엔드포인트를 쓰는 제공자는 언어 모델만 제공합니다."
+        "endpointChatOnly": "자체 엔드포인트를 쓰는 제공자는 언어 모델만 제공합니다.",
+        "changedMeanwhile": "이 제공자는 그 사이에 다른 곳에서 변경되었습니다. 수정한 내용은 새 설정 위에 유지됩니다. 확인 후 다시 저장하세요."
       },
       "capabilities": {
         "chat": "언어",

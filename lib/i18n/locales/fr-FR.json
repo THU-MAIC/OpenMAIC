@@ -2141,7 +2141,8 @@
           "webSearch": "Recherche web",
           "document": "Documents"
         },
-        "endpointChatOnly": "Avec son propre point de terminaison, un fournisseur ne sert que des modèles de langage."
+        "endpointChatOnly": "Avec son propre point de terminaison, un fournisseur ne sert que des modèles de langage.",
+        "changedMeanwhile": "Ce fournisseur a été modifié ailleurs entre-temps. Vos modifications sont conservées par-dessus ses nouveaux réglages : vérifiez-les et enregistrez de nouveau."
       },
       "capabilities": {
         "chat": "Langage",

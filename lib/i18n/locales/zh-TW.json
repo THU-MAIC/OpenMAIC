@@ -2126,7 +2126,8 @@
           "webSearch": "網路搜尋",
           "document": "文件"
         },
-        "endpointChatOnly": "使用自訂端點時，Provider 只提供語言模型。"
+        "endpointChatOnly": "使用自訂端點時，Provider 只提供語言模型。",
+        "changedMeanwhile": "此 Provider 在此期間已在別處變更。你的修改已套用到它的新設定上：請檢查後再次儲存。"
       },
       "capabilities": {
         "chat": "語言",

@@ -2141,7 +2141,8 @@
           "webSearch": "联网搜索",
           "document": "文档"
         },
-        "endpointChatOnly": "使用自定义端点时，Provider 只提供语言模型。"
+        "endpointChatOnly": "使用自定义端点时，Provider 只提供语言模型。",
+        "changedMeanwhile": "此 Provider 在此期间已在别处被更改。你的修改已叠加到它的新设置上：请检查后再次保存。"
       },
       "capabilities": {
         "chat": "语言",

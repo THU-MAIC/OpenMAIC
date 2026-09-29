@@ -2141,7 +2141,8 @@
           "webSearch": "Tìm kiếm web",
           "document": "Tài liệu"
         },
-        "endpointChatOnly": "Khi dùng endpoint riêng, nhà cung cấp chỉ cung cấp mô hình ngôn ngữ."
+        "endpointChatOnly": "Khi dùng endpoint riêng, nhà cung cấp chỉ cung cấp mô hình ngôn ngữ.",
+        "changedMeanwhile": "Nhà cung cấp này đã được thay đổi ở nơi khác trong lúc đó. Chỉnh sửa của bạn được giữ trên thiết lập mới: hãy kiểm tra rồi lưu lại."
       },
       "capabilities": {
         "chat": "Ngôn ngữ",

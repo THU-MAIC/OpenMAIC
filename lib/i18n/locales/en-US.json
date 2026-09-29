@@ -2141,7 +2141,8 @@
           "webSearch": "Web search",
           "document": "Documents"
         },
-        "endpointChatOnly": "With its own endpoint, a provider serves language models only."
+        "endpointChatOnly": "With its own endpoint, a provider serves language models only.",
+        "changedMeanwhile": "This provider was changed elsewhere meanwhile. Your edits are kept on top of its new settings: check them and save again."
       },
       "capabilities": {
         "chat": "Language",

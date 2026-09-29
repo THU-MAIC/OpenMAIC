@@ -307,18 +307,49 @@ export function draftProblem(
   return undefined;
 }
 
+/** Which fields of an edit differ from the provider it started from. */
+export function draftEdits(draft: ProviderDraft, basis: ProviderDraft) {
+  return {
+    key: draft.keyAction !== basis.keyAction || draft.apiKey.trim() !== '',
+    baseUrl: draft.baseUrl.trim() !== basis.baseUrl.trim(),
+    models: parseModelList(draft.models).join('\n') !== parseModelList(basis.models).join('\n'),
+  };
+}
+
+/**
+ * An edit moved onto the provider as it is now (changed elsewhere meanwhile):
+ * what the user changed is kept, everything else is taken from `fresh`.
+ */
+export function rebaseDraft(
+  draft: ProviderDraft,
+  basis: ProviderDraft,
+  fresh: ProviderDraft,
+): ProviderDraft {
+  const edits = draftEdits(draft, basis);
+  return {
+    preset: fresh.preset,
+    keyAction: edits.key ? draft.keyAction : fresh.keyAction,
+    apiKey: edits.key ? draft.apiKey : '',
+    baseUrl: edits.baseUrl ? draft.baseUrl : fresh.baseUrl,
+    models: edits.models ? draft.models : fresh.models,
+  };
+}
+
 /**
  * The change that saves the form: adds the provider (`existing` undefined) or
  * updates it. An update carries only what the form shows: a field it hides is
  * left out (the server keeps it), a shown field emptied is removed, and the
- * key follows `keyAction` (an empty replacement keeps the stored key). For a
- * new provider empty fields are left out.
+ * key follows `keyAction` (an empty replacement keeps the stored key). With
+ * `basis` (the provider as the edit began), an update carries only the fields
+ * the user changed, so it cannot put back values another session changed.
+ * For a new provider empty fields are left out.
  */
 export function providerChange(
   id: string,
   draft: ProviderDraft,
   preset: PresetView | undefined,
   existing?: ProviderView,
+  basis?: ProviderDraft,
 ): ModelSettingsChange {
   const fields = providerFields(preset, draft, existing);
   const baseUrl = fields.baseUrl ? draft.baseUrl.trim() : '';
@@ -332,8 +363,9 @@ export function providerChange(
   if (existing) {
     if (draft.keyAction === 'remove') change.apiKey = '';
     else if (draft.keyAction === 'replace' && apiKey) change.apiKey = apiKey;
-    if (fields.baseUrl) change.baseUrl = baseUrl || null;
-    if (fields.models) change.models = models.length ? models : null;
+    const edits = basis ? draftEdits(draft, basis) : undefined;
+    if (fields.baseUrl && (!edits || edits.baseUrl)) change.baseUrl = baseUrl || null;
+    if (fields.models && (!edits || edits.models)) change.models = models.length ? models : null;
   } else {
     if (apiKey) change.apiKey = apiKey;
     if (baseUrl) change.baseUrl = baseUrl;

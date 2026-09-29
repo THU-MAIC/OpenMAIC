@@ -152,6 +152,13 @@ function recordingApply(view: ModelSettingsView) {
 }
 
 /** The same keys-with-values the mocked i18n hook returns. */
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 const T = (key: string, options?: Record<string, unknown>) =>
   options ? [key, ...Object.values(options)].join('|') : key;
 
@@ -229,8 +236,67 @@ describe('provider form → change', () => {
     click(byText('settings.modelSettings.actions.save'));
     await flush();
 
-    expect(changes).toEqual([
-      { kind: 'provider', id: 'acme', preset: 'acme', apiKey: 'sk-new', baseUrl: null },
+    // Only what was changed: the key.
+    expect(changes).toEqual([{ kind: 'provider', id: 'acme', preset: 'acme', apiKey: 'sk-new' }]);
+  });
+
+  it('moves a key-only edit onto a provider changed meanwhile, and sends only the key', async () => {
+    // A tiny server: another session changes the provider's endpoint and models
+    // while this edit is open, so the first save meets a stale revision.
+    const provider = {
+      ...workspaceProvider('acme'),
+      baseUrl: 'https://old.example.test/v1',
+      models: ['old-model'],
+    };
+    const opened = makeView({ revision: 1, providers: [provider] });
+    const changedElsewhere = makeView({
+      revision: 2,
+      providers: [{ ...provider, baseUrl: 'https://new.example.test/v1', models: ['new-model'] }],
+    });
+    let server = changedElsewhere;
+    const puts: { revision: number | null; change: ModelSettingsChange }[] = [];
+    const fetchImpl = vi.fn(async (_input: string, init?: RequestInit) => {
+      if (init?.method !== 'PUT') return json(server);
+      const body = JSON.parse(init.body as string);
+      puts.push(body);
+      if (body.revision !== server.revision) {
+        return json({ error: { code: 'CONFLICT', message: 'The settings changed' } }, 409);
+      }
+      server = { ...server, revision: server.revision! + 1 };
+      return json(server);
+    });
+    const client = createModelSettingsClient(fetchImpl);
+    client.adopt(opened);
+    const panel = (view: ModelSettingsView) =>
+      createElement(ProvidersPanel, { view, apply: client.apply, t: T });
+    const { render } = mount(panel(opened));
+
+    click(byLabel('settings.modelSettings.providers.edit|Acme'));
+    click(byText('settings.modelSettings.providers.replaceKey'));
+    type(document.body.querySelector<HTMLInputElement>('input[type="password"]')!, 'sk-new');
+    click(byText('settings.modelSettings.actions.save'));
+    await flush();
+    // The panel shows the reloaded settings, as the section would.
+    render(panel(client.getState().view!));
+
+    expect(document.body.textContent).toContain(
+      'settings.modelSettings.providers.changedMeanwhile',
+    );
+    // The fields show the other session's values; the typed key is kept.
+    expect(document.body.querySelector<HTMLInputElement>('input[type="url"]')!.value).toBe(
+      'https://new.example.test/v1',
+    );
+    expect(document.body.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe('new-model');
+    expect(document.body.querySelector<HTMLInputElement>('input[type="password"]')!.value).toBe(
+      'sk-new',
+    );
+
+    click(byText('settings.modelSettings.actions.save'));
+    await flush();
+
+    expect(puts).toEqual([
+      { revision: 1, change: { kind: 'provider', id: 'acme', preset: 'acme', apiKey: 'sk-new' } },
+      { revision: 2, change: { kind: 'provider', id: 'acme', preset: 'acme', apiKey: 'sk-new' } },
     ]);
   });
 
@@ -260,16 +326,8 @@ describe('provider form → change', () => {
     click(byText('settings.modelSettings.actions.save'));
     await flush();
 
-    expect(changes).toEqual([
-      {
-        kind: 'provider',
-        id: 'acme',
-        preset: 'acme',
-        apiKey: 'sk-2',
-        baseUrl: null,
-        models: ['acme-large'],
-      },
-    ]);
+    // The model list is not sent, so the server keeps it.
+    expect(changes).toEqual([{ kind: 'provider', id: 'acme', preset: 'acme', apiKey: 'sk-2' }]);
   });
 });
 
@@ -474,13 +532,6 @@ describe('first-run setup', () => {
     expect(document.body.textContent).toContain('settings.modelSettings.setup.llmMissing|Acme');
     expect(document.body.textContent).not.toContain('settings.modelSettings.setup.retry');
   });
-
-  function json(body: unknown, status = 200) {
-    return new Response(JSON.stringify(body), {
-      status,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
 
   async function connect() {
     click(byText('settings.modelSettings.setup.open'));

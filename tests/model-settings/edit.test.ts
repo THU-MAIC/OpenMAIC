@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ApplyResult, ModelSettingsChange, SlotView } from '@/lib/model-settings/client';
 import {
+  draftEdits,
   draftFor,
   draftProblem,
   emptyDraft,
@@ -12,6 +13,7 @@ import {
   providerChange,
   providerFields,
   providerLabel,
+  rebaseDraft,
   resumeFirstRun,
   refComplete,
   runFirstRunSetup,
@@ -283,6 +285,20 @@ describe('providers', () => {
     expect(providerChange('acme', { ...draft, models: ' ' }, chatPreset, pinned)).toMatchObject({
       models: null,
     });
+  });
+
+  it('moves an edit onto a changed provider, keeping only what the user changed', () => {
+    const basis = { ...draftFor(workspaceProvider('acme')), baseUrl: 'https://a', models: 'm1' };
+    const fresh = { ...basis, baseUrl: 'https://b', models: 'm2' };
+    const keyOnly = { ...basis, keyAction: 'replace' as const, apiKey: 'sk-new' };
+    expect(draftEdits(keyOnly, basis)).toEqual({ key: true, baseUrl: false, models: false });
+    expect(rebaseDraft(keyOnly, basis, fresh)).toEqual({
+      ...fresh,
+      keyAction: 'replace',
+      apiKey: 'sk-new',
+    });
+    const urlEdit = { ...basis, baseUrl: 'https://mine' };
+    expect(rebaseDraft(urlEdit, basis, fresh)).toEqual({ ...fresh, baseUrl: 'https://mine' });
   });
 
   it('keeps, replaces or removes the stored key of an existing provider', () => {

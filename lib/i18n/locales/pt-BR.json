@@ -2141,7 +2141,8 @@
           "webSearch": "Busca na web",
           "document": "Documentos"
         },
-        "endpointChatOnly": "Com endpoint próprio, um provedor oferece apenas modelos de linguagem."
+        "endpointChatOnly": "Com endpoint próprio, um provedor oferece apenas modelos de linguagem.",
+        "changedMeanwhile": "Este provedor foi alterado em outro lugar nesse meio-tempo. Suas edições foram mantidas sobre as novas configurações: confira e salve novamente."
       },
       "capabilities": {
         "chat": "Linguagem",

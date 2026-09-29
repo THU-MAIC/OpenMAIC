@@ -2141,7 +2141,8 @@
           "webSearch": "Websuche",
           "document": "Dokumente"
         },
-        "endpointChatOnly": "Mit eigenem Endpunkt stellt ein Anbieter nur Sprachmodelle bereit."
+        "endpointChatOnly": "Mit eigenem Endpunkt stellt ein Anbieter nur Sprachmodelle bereit.",
+        "changedMeanwhile": "Dieser Anbieter wurde inzwischen an anderer Stelle geändert. Deine Änderungen bleiben auf seinen neuen Einstellungen erhalten: Prüfe sie und speichere erneut."
       },
       "capabilities": {
         "chat": "Sprache",
