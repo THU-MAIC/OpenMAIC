@@ -68,7 +68,10 @@ export type SlotId = (typeof MODEL_SLOTS)[number]['id'];
  * Two keys have no resolution point today and are mapped by ownership only:
  * `pbl-chat` (see #1663) and `maic-agent` (a log label of the agent stream).
  * `generate-classroom` is the browserless API's own model, so it is the `llm`
- * root; its sub-stages keep resolving through their own slots.
+ * root. Its scene content, actions and agent profiles resolve through their own
+ * slots when a route is set, but its outline currently runs on the
+ * `generate-classroom` model rather than `scene-outlines-stream`; routing it
+ * through `course.outline` is part of the resolver migration (#1725).
  */
 export const STAGE_SLOTS = {
   'scene-outlines-stream': 'course.outline',

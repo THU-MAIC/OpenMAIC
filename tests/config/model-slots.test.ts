@@ -13,6 +13,44 @@ import { LLM_STAGES, type LlmStage } from '@/lib/server/model-routes';
 
 const ids = MODEL_SLOTS.map((slot) => slot.id as SlotId);
 
+/**
+ * The intended destinations, written out independently of the module under
+ * test so that re-pointing any stage fails here.
+ */
+const EXPECTED_STAGE_SLOTS: Record<LlmStage, SlotId> = {
+  'scene-outlines-stream': 'course.outline',
+  'scene-content': 'course.content',
+  'scene-content:slide': 'course.content.slide',
+  'scene-content:quiz': 'course.content.quiz',
+  'scene-content:interactive': 'course.content.interactive',
+  'scene-content:pbl': 'course.content.pbl',
+  'scene-actions': 'course.actions',
+  'agent-profiles': 'course.agents',
+  'quiz-grade': 'classroom',
+  'pbl-chat': 'classroom',
+  'pbl-v2-runtime': 'classroom',
+  'pbl-v2-runtime:instructor': 'classroom',
+  'pbl-v2-runtime:open-task': 'classroom',
+  'pbl-v2-runtime:evaluate': 'classroom',
+  'pbl-v2-runtime:simulator': 'classroom',
+  'chat-adapter': 'classroom',
+  'generate-classroom': 'llm',
+  'web-search-query-rewrite': 'course.research',
+  'maic-agent': 'agent',
+  'maic-agent-driver': 'agent',
+  'conversation-title': 'agent.title',
+};
+
+const EXPECTED_ROOTS = {
+  llm: 'chat',
+  tts: 'tts',
+  asr: 'asr',
+  image: 'image',
+  video: 'video',
+  webSearch: 'webSearch',
+  document: 'document',
+} as const;
+
 describe('capability slot tree', () => {
   it('has unique slot ids', () => {
     expect(new Set(ids).size).toBe(ids.length);
@@ -26,10 +64,11 @@ describe('capability slot tree', () => {
     }
   });
 
-  it('has exactly one root per capability', () => {
-    const roots = MODEL_SLOTS.filter((slot) => slot.parent === null);
-    const capabilities = new Set(MODEL_SLOTS.map((slot) => slot.capability));
-    expect(roots.map((slot) => slot.capability).sort()).toEqual([...capabilities].sort());
+  it('has exactly the expected capability roots', () => {
+    const roots = Object.fromEntries(
+      MODEL_SLOTS.filter((slot) => slot.parent === null).map((slot) => [slot.id, slot.capability]),
+    );
+    expect(roots).toEqual(EXPECTED_ROOTS);
   });
 
   it('ends every lineage at its capability root without cycles', () => {
@@ -59,11 +98,21 @@ describe('capability slot tree', () => {
     expect(getSlot('agent').requires).toEqual(['toolCalling']);
     expect(getSlot('agent.title').requires).toBeUndefined();
   });
+
+  it('keeps agent.title out of the settings UI', () => {
+    expect(getSlot('agent.title').configOnly).toBe(true);
+    const shown = MODEL_SLOTS.filter((slot) => 'configOnly' in slot && slot.configOnly);
+    expect(shown.map((slot) => slot.id)).toEqual(['agent.title']);
+  });
 });
 
 describe('stage → slot mapping', () => {
   it('maps every LLM stage, and nothing else', () => {
     expect(Object.keys(STAGE_SLOTS).sort()).toEqual([...LLM_STAGES].sort());
+  });
+
+  it('sends every stage to its intended slot', () => {
+    expect(STAGE_SLOTS).toEqual(EXPECTED_STAGE_SLOTS);
   });
 
   it('maps every stage to a chat slot', () => {
