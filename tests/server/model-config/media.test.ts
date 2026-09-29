@@ -46,8 +46,8 @@ describe('workspace media endpoints', () => {
       slots: { webSearch: 'tv' },
     });
     const connection = await resolveMediaSlot('webSearch', { workspaceId: 'user:alice' });
-    // User input: the public-only network policy applies where the transport has one.
-    expect(connection).toMatchObject({ providerId: 'tavily', managed: false, userEndpoint: true });
+    // Only the preset's own endpoint: nothing user-typed for the transports to police.
+    expect(connection).toMatchObject({ providerId: 'tavily', managed: false, userEndpoint: false });
   });
 
   it("refuses a self-hosted preset whose default endpoint is on the server's network", async () => {

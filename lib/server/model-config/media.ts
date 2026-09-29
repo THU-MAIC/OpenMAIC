@@ -143,9 +143,11 @@ async function fromTarget(
     ...(target.credentials !== undefined ? { credentials: target.credentials } : {}),
     ...(target.proxy !== undefined ? { proxy: target.proxy } : {}),
     managed,
-    // A workspace provider is user input: its (public) preset endpoint runs
-    // under the strict public-network policy wherever the transport has one.
-    userEndpoint: !managed,
+    // A workspace provider reaches only its preset's own public endpoint (a
+    // custom one and a local-default preset are refused above), exactly the
+    // endpoint a deployment's default would use: no user-typed endpoint, so
+    // the transports keep the operator's policy.
+    userEndpoint: false,
     origin,
   };
 }

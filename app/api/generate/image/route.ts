@@ -35,7 +35,7 @@ import type { ImageProviderId, ImageGenerationOptions } from '@/lib/media/types'
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
-import { mediaNetworkPolicy, withMediaProviderFetch } from '@/lib/server/media-provider-fetch';
+import { withMediaProviderFetch } from '@/lib/server/media-provider-fetch';
 import { resolveImageSize } from '@/lib/server/image-sizing';
 
 const log = createLogger('ImageGeneration API');
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       if (refused) return refused;
       throw error;
     }
-    const { providerId, apiKey, baseUrl } = connection as MediaConnection & {
+    const { providerId, apiKey, baseUrl, managed } = connection as MediaConnection & {
       providerId: ImageProviderId;
     };
     const provider = IMAGE_PROVIDERS[providerId];
@@ -106,10 +106,7 @@ export async function POST(request: NextRequest) {
     );
 
     const result = await generateImage(
-      withMediaProviderFetch(
-        { providerId, apiKey: apiKey ?? '', baseUrl, model },
-        mediaNetworkPolicy(connection),
-      ),
+      withMediaProviderFetch({ providerId, apiKey: apiKey ?? '', baseUrl, model }, managed),
       sizedOptions,
     );
 
