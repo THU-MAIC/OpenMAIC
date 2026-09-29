@@ -13,6 +13,8 @@
 import { db } from '@/lib/device-storage/database';
 import { getDeterministicVoiceId, type VoiceDesign } from '@/lib/audio/voice-design';
 import { clearVoiceBindingUnavailable } from '@/lib/audio/unavailable-voice-bindings';
+import { effectiveTarget } from '@/lib/model-settings/capabilities';
+import { modelSettingsClient } from '@/lib/model-settings/client';
 
 /**
  * The model a voice is registered for. It derives the deterministic voice id
@@ -96,14 +98,33 @@ export async function deleteRegisteredVoice(providerId: string, voiceId: string)
   }
 }
 
-// Confirmed-registered + in-flight memos, keyed by (voiceId, model). The
-// provider's endpoint and key are the server's (the `tts` slot), so a change
-// there is only seen on the next page load.
+// Confirmed-registered + in-flight memos, keyed by (voiceId, model) within the
+// provider the workspace's `tts` slot resolves to. The same voice id may be
+// unregistered on another backend serving the same model, so the memo is
+// scoped to that provider (its id, registry entry and endpoint) and to the
+// settings revision: switching the slot, or editing its provider, registers
+// again (the server's existence check makes that cheap).
 const registeredThisSession = new Set<string>();
 const inFlight = new Map<string, Promise<string | undefined>>();
 
-function memoKeyFor(voiceId: string, request: VoiceRegistrationRequestConfig): string {
-  return `${voiceId}::${request.ttsModelId ?? ''}`;
+/** The TTS provider registrations are made with, as far as the page knows it. */
+function registrationScope(): string {
+  const view = modelSettingsClient.getState().view;
+  const tts = effectiveTarget(view, 'tts');
+  return JSON.stringify([
+    tts?.providerId ?? '',
+    tts?.registryId ?? '',
+    tts?.baseUrl ?? '',
+    view?.revision ?? null,
+  ]);
+}
+
+function memoKeyFor(
+  voiceId: string,
+  request: VoiceRegistrationRequestConfig,
+  scope = registrationScope(),
+): string {
+  return `${scope}::${voiceId}::${request.ttsModelId ?? ''}`;
 }
 
 async function getCachedClip(
@@ -132,14 +153,15 @@ export async function ensureRegisteredVoice(
     providerId,
     model: request.ttsModelId,
   });
-  const memoKey = memoKeyFor(voiceId, request);
+  const scope = registrationScope();
+  const memoKey = memoKeyFor(voiceId, request, scope);
   if (registeredThisSession.has(memoKey)) return voiceId;
 
   // Coalesce concurrent calls for the same (voiceId, backend) into one request.
   const existing = inFlight.get(memoKey);
   if (existing) return existing;
 
-  const promise = registerOnce(providerId, voiceId, memoKey, params, request).finally(() =>
+  const promise = registerOnce(providerId, voiceId, scope, params, request).finally(() =>
     inFlight.delete(memoKey),
   );
   inFlight.set(memoKey, promise);
@@ -149,10 +171,11 @@ export async function ensureRegisteredVoice(
 async function registerOnce(
   providerId: string,
   voiceId: string,
-  memoKey: string,
+  scope: string,
   params: { voiceDesign?: VoiceDesign; language?: string },
   request: VoiceRegistrationRequestConfig,
 ): Promise<string | undefined> {
+  const memoKey = memoKeyFor(voiceId, request, scope);
   const cached = await getCachedClip(voiceId);
   const res = await fetch('/api/generate/voice', {
     method: 'POST',
@@ -185,7 +208,7 @@ async function registerOnce(
   clearVoiceBindingUnavailable({ providerId, voiceId: registeredVoiceId });
   registeredThisSession.add(memoKey);
   if (registeredVoiceId !== voiceId) {
-    registeredThisSession.add(memoKeyFor(registeredVoiceId, request));
+    registeredThisSession.add(memoKeyFor(registeredVoiceId, request, scope));
   }
   return registeredVoiceId;
 }

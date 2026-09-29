@@ -17,6 +17,9 @@ import {
   registerVoiceFromReference,
 } from '@/lib/audio/voice-registration-client';
 
+import { modelSettingsViewFor, setModelSettingsViewForTests } from '../helpers/model-settings-view';
+import { modelSettingsClient } from '@/lib/model-settings/client';
+
 function okFetch() {
   const f = vi.fn(
     async () => new Response(JSON.stringify({ voiceId: 'x', registered: true }), { status: 200 }),
@@ -26,7 +29,37 @@ function okFetch() {
 }
 
 describe('ensureRegisteredVoice memoization', () => {
-  beforeEach(() => vi.unstubAllGlobals());
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    setModelSettingsViewForTests(null);
+  });
+
+  it('registers again when the tts slot moves to another backend serving the same model', async () => {
+    const f = okFetch();
+    const voiceDesign = { identity: 'backend-switch teacher', texture: 'warm', delivery: 'calm' };
+    const request = { ttsModelId: 'voxcpm-model' };
+
+    setModelSettingsViewForTests({ tts: { registryId: 'voxcpm-tts', providerId: 'voxcpm-a' } });
+    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, request);
+    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, request);
+    expect(f).toHaveBeenCalledTimes(1);
+
+    // Another backend (another provider of the same preset), same model.
+    setModelSettingsViewForTests({ tts: { registryId: 'voxcpm-tts', providerId: 'voxcpm-b' } });
+    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, request);
+    expect(f).toHaveBeenCalledTimes(2);
+
+    // The same provider after an edit to the settings (a new revision).
+    const edited = modelSettingsViewFor({
+      tts: { registryId: 'voxcpm-tts', providerId: 'voxcpm-b' },
+    });
+    edited.revision = 7;
+    modelSettingsClient.adopt(edited);
+    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, request);
+    expect(f).toHaveBeenCalledTimes(3);
+    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, request);
+    expect(f).toHaveBeenCalledTimes(3);
+  });
 
   it('registers a voice once per session and again for another model', async () => {
     const f = okFetch();
