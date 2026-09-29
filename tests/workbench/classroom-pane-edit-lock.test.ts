@@ -15,7 +15,10 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveStageChromeMode, type StageChromeModeContext } from '@/lib/edit/stage-mode';
-import { useWorkbenchPanelState, type WorkbenchPanelState } from '@/lib/workbench/panel-context';
+import {
+  useWorkbenchPanelState,
+  type WorkbenchPanelState,
+} from '@/lib/workbench/panel-context';
 
 const probe = vi.hoisted(() => ({ states: [] as WorkbenchPanelState[] }));
 const setPlaybackOn = vi.fn();
@@ -50,7 +53,11 @@ import { WorkspaceClassroomPane } from '@/components/workbench/workspace/Workspa
 
 let root: Root | null = null;
 
-async function mountPane(props: { hidden: boolean; playback: boolean }): Promise<void> {
+async function mountPane(props: {
+  hidden: boolean;
+  playback: boolean;
+  onRequestInteractiveRepair?: (sceneId: string, runtimeError: string) => void;
+}): Promise<void> {
   const container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -172,6 +179,28 @@ describe('workspace classroom pane edit lock', () => {
     // Folded is not learning: the editor drops, but unfolding must not
     // cross-fade a classroom's playback chrome out over the reopened pane.
     expect(hostedChrome(panel)).toBe('loading');
+  });
+
+  it('exposes repair only to an editable visible Pro pane with a conversation capability', async () => {
+    const requestRepair = vi.fn();
+    await mountPane({
+      hidden: false,
+      playback: false,
+      onRequestInteractiveRepair: requestRepair,
+    });
+    const panel = probe.states[0];
+
+    expect(panel.requestInteractiveRepair).toBe(requestRepair);
+
+    await act(async () => root?.unmount());
+    root = null;
+    probe.states.length = 0;
+    await mountPane({
+      hidden: false,
+      playback: true,
+      onRequestInteractiveRepair: requestRepair,
+    });
+    expect(probe.states[0]?.requestInteractiveRepair).toBeUndefined();
   });
 
   it('releases the lock only through Start Learning', async () => {

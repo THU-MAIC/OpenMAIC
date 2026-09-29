@@ -20,9 +20,11 @@ function truncateRuntimeErrorPreview(message: string): string {
 export function InteractiveRuntimeErrorBanner({
   message,
   onDismiss,
+  onFix,
 }: {
   readonly message: string;
   readonly onDismiss: () => void;
+  readonly onFix?: () => void;
 }) {
   const { t } = useI18n();
   return (
@@ -30,12 +32,26 @@ export function InteractiveRuntimeErrorBanner({
       data-testid="interactive-runtime-error"
       className="pointer-events-auto absolute inset-x-3 bottom-3 z-10"
     >
-      <Alert variant="destructive" className="px-3 py-2 shadow-lg">
+      <Alert
+        variant="destructive"
+        className={onFix ? 'px-3 py-2 pr-44 shadow-lg' : 'px-3 py-2 shadow-lg'}
+      >
         <AlertTitle>{t('chat.interactiveRuntimeError.title')}</AlertTitle>
         <AlertDescription className="break-all">
           {truncateRuntimeErrorPreview(message)}
         </AlertDescription>
-        <AlertAction>
+        <AlertAction className="flex gap-1">
+          {onFix ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              data-testid="interactive-runtime-error-fix"
+              onClick={onFix}
+            >
+              {t('workbench.interactiveRepair.action')}
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="outline"

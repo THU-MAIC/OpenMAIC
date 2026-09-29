@@ -125,6 +125,13 @@ export function Stage({
   // pane's answer being read back rather than a second derivation that could
   // disagree with it.
   const workbenchShowingClassroom = hosted && workbenchPanel.editPinned;
+  // The repair affordance exists only on an editable hosted classroom with a
+  // visible Pro conversation capability. Standalone/viewer/learning surfaces
+  // therefore keep the runtime-error banner read-only.
+  const requestInteractiveRepair =
+    canEditOwnedStage && workbenchShowingClassroom
+      ? workbenchPanel.requestInteractiveRepair
+      : undefined;
 
   // Single decision for the classroom chrome's top-left back affordance:
   // plain classroom → home arrow; full-screen playback → "Back to workspace";
@@ -406,6 +413,7 @@ export function Stage({
         playbackPicker={playbackInteractivePicker}
         onPlaybackPick={handlePlaybackInteractivePick}
         onPlaybackCancel={handlePlaybackInteractiveCancel}
+        onRequestInteractiveRepair={requestInteractiveRepair}
       />
     </div>
   );

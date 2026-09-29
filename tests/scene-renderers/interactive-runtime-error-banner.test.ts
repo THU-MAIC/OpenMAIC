@@ -14,6 +14,7 @@ vi.mock('@/lib/hooks/use-i18n', () => ({
     t: (key: string) => {
       if (key === 'chat.interactiveRuntimeError.title') return 'This interactive failed to run';
       if (key === 'chat.interactiveRuntimeError.dismiss') return 'Dismiss';
+      if (key === 'workbench.interactiveRepair.action') return 'Fix with agent';
       return key;
     },
   }),
@@ -24,12 +25,14 @@ const resetInteractiveIframePool = useInteractiveIframePool.getState().reset;
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
-async function renderHost() {
+async function renderHost(
+  onRequestInteractiveRepair?: (sceneId: string, runtimeError: string) => void,
+) {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root?.render(createElement(InteractiveIframeHost));
+    root?.render(createElement(InteractiveIframeHost, { onRequestInteractiveRepair }));
     await Promise.resolve();
   });
 }
@@ -92,6 +95,43 @@ describe('interactive runtime error banner', () => {
     expect(banner?.textContent).toContain('x'.repeat(40));
     expect(banner?.textContent).not.toContain(longDetail);
     expect(banner?.textContent).not.toContain('idle only');
+  });
+
+  it('shows Fix with agent only when a repair capability is available', async () => {
+    useInteractiveIframePool.setState({
+      entries: { 'scene-active': poolEntry('<div>Active</div>') },
+      activeSceneId: 'scene-active',
+      tick: 1,
+    });
+    await renderHost();
+
+    await act(async () => {
+      useSceneRuntimeErrors
+        .getState()
+        .addError('scene-active', '[error] TypeError: Cannot read properties of undefined');
+    });
+
+    expect(document.querySelector('[data-testid="interactive-runtime-error-fix"]')).toBeNull();
+
+    const requestRepair = vi.fn();
+    await act(async () => {
+      root?.render(
+        createElement(InteractiveIframeHost, { onRequestInteractiveRepair: requestRepair }),
+      );
+      await Promise.resolve();
+    });
+
+    const fix = document.querySelector<HTMLButtonElement>(
+      '[data-testid="interactive-runtime-error-fix"]',
+    );
+    expect(fix?.textContent).toBe('Fix with agent');
+    await act(async () => {
+      fix?.click();
+    });
+    expect(requestRepair).toHaveBeenCalledWith(
+      'scene-active',
+      '[error] TypeError: Cannot read properties of undefined',
+    );
   });
 
   it('hides the banner on dismiss and shows it again when a new error arrives', async () => {
