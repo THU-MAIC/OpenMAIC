@@ -58,7 +58,8 @@ export interface ResolvedModelTarget {
   /** Multi-part credentials for vendors without a single key. */
   credentials?: Record<string, string>;
   proxy?: string;
-  modelId: string;
+  /** Absent: the provider's default model (never for chat). */
+  modelId?: string;
 }
 
 export interface RequirementCheck {
@@ -135,13 +136,16 @@ function resolveTarget(
   layers: readonly ModelConfigLayer[],
   at: string,
 ): ResolvedModelTarget {
-  let parsed: { providerId: string; modelId: string };
+  let parsed: { providerId: string; modelId?: string };
   try {
     parsed = parseModelRef(ref);
   } catch {
     throw new SlotResolutionError(`${at}: invalid model reference`);
   }
   const { providerId, modelId } = parsed;
+  if (modelId === undefined && capability === 'chat') {
+    throw new SlotResolutionError(`${at}: a chat model needs "providerId:modelId"`);
+  }
   const found = findProvider(providerId, layers);
   // Errors name the path, never a value taken from the reference: a key pasted
   // into the provider position must not end up in a log.
@@ -164,7 +168,7 @@ function resolveTarget(
     ...(provider.apiKey !== undefined ? { apiKey: provider.apiKey } : {}),
     ...(provider.credentials !== undefined ? { credentials: provider.credentials } : {}),
     ...(provider.proxy !== undefined ? { proxy: provider.proxy } : {}),
-    modelId,
+    ...(modelId !== undefined ? { modelId } : {}),
     ...(preset.trustsModelCatalogue === false ? { catalogue: false as const } : {}),
   };
 }
@@ -178,6 +182,7 @@ function checkRequirement(
   if (requirement !== 'toolCalling' || capability !== 'chat' || target.catalogue === false) {
     return { requirement, status: 'unknown' };
   }
+  if (target.modelId === undefined) return { requirement, status: 'unknown' };
   const registry = (PROVIDERS as Record<string, { models?: readonly ModelLike[] }>)[
     target.registryId
   ];

@@ -32,6 +32,9 @@ export async function languageModelFor(
   thinkingConfig?: ThinkingConfig,
 ): Promise<ResolvedModel> {
   const registryId = target.registryId as ProviderId;
+  const modelId = target.modelId;
+  // resolveSlot refuses a chat reference without one; this is the type's guard.
+  if (!modelId) throw new Error(`A chat model needs "providerId:modelId"`);
   const registered = getProvider(registryId);
   if (!registered) throw new Error(`The ${target.presetId} preset has no chat adapter`);
   const userEndpoint = target.providerSource === 'workspace';
@@ -54,7 +57,7 @@ export async function languageModelFor(
   const apiKey = target.apiKey ?? '';
   const { model, modelInfo } = getModel({
     providerId: registryId,
-    modelId: target.modelId,
+    modelId,
     apiKey,
     baseUrl: target.baseUrl,
     proxy: target.proxy,
@@ -63,9 +66,9 @@ export async function languageModelFor(
   return {
     model,
     modelInfo,
-    modelString: `${registryId}:${target.modelId}`,
+    modelString: `${registryId}:${modelId}`,
     providerId: registryId,
-    modelId: target.modelId,
+    modelId,
     apiKey,
     baseUrl: target.baseUrl,
     thinkingConfig,

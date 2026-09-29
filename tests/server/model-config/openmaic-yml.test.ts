@@ -244,6 +244,25 @@ describe('parseModelConfig', () => {
   });
 });
 
+describe('provider-only references', () => {
+  it('name the default model of a provider without models to pick', () => {
+    const config = parseModelConfig(
+      'providers:\n  tv:\n    preset: tavily\n    apiKey: k\nslots:\n  webSearch: tv\n',
+      { env: {} },
+    );
+    expect(config.slots).toEqual({ webSearch: 'tv' });
+  });
+
+  it('are refused for a chat slot', () => {
+    expect(() =>
+      parseModelConfig(
+        'providers:\n  mm:\n    preset: minimax\n    apiKey: k\nslots:\n  llm: mm\n',
+        { env: {} },
+      ),
+    ).toThrow('slots.llm: a chat model needs "providerId:modelId"');
+  });
+});
+
 describe('loadModelConfigFile', () => {
   const dirs: string[] = [];
   const tempDir = () => {

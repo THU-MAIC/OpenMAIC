@@ -25,8 +25,12 @@ export const DEFAULT_MODEL_CONFIG_FILE = 'openmaic.yml';
 export type ConfigEnv = Readonly<Record<string, string | undefined>>;
 
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
-/** `providerId:modelId`; the model id may itself contain colons. */
-const MODEL_REF = /^([a-z0-9][a-z0-9-]{0,62}):(.+)$/;
+/**
+ * `providerId:modelId`, or `providerId` alone for the provider's default model
+ * (search and document providers mostly have no model to pick). The model id
+ * may itself contain colons.
+ */
+const MODEL_REF = /^([a-z0-9][a-z0-9-]{0,62})(?::(.+))?$/;
 const ENV_REF = /\$\{([^}]*)\}/g;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** A `${` with no closing brace, checked on the text as written. */
@@ -43,7 +47,9 @@ const thinkingSchema = z
   })
   .strict();
 
-const modelRef = z.string().regex(MODEL_REF, 'expected "providerId:modelId"');
+const modelRef = z
+  .string()
+  .regex(MODEL_REF, 'expected "providerId:modelId" (or "providerId" for its default model)');
 
 const assignmentObjectSchema = z
   .object({
@@ -192,15 +198,13 @@ function interpolate(
 }
 
 /** Splits a validated `providerId:modelId` reference; the model id may contain colons. */
-export function parseModelRef(ref: string): { providerId: string; modelId: string } {
+export function parseModelRef(ref: string): { providerId: string; modelId?: string } {
   const match = MODEL_REF.exec(ref);
   // The value is not echoed: a misplaced key is a common reason it is malformed.
   if (!match) throw new Error('Invalid model reference: expected "providerId:modelId"');
-  return { providerId: match[1], modelId: match[2] };
-}
-
-function modelRefProvider(ref: string): string {
-  return parseModelRef(ref).providerId;
+  return match[2] === undefined
+    ? { providerId: match[1] }
+    : { providerId: match[1], modelId: match[2] };
 }
 
 /**
@@ -230,7 +234,10 @@ function crossCheck(
   }
 
   const covers = (ref: string, slot: SlotId, at: string) => {
-    const providerId = modelRefProvider(ref);
+    const { providerId, modelId } = parseModelRef(ref);
+    if (modelId === undefined && getSlot(slot).capability === 'chat') {
+      issues.push(`${at}: a chat model needs "providerId:modelId"`);
+    }
     // Own keys only: `constructor` and friends are not declared providers.
     const provider = Object.hasOwn(providers, providerId) ? providers[providerId] : undefined;
     if (!provider) {

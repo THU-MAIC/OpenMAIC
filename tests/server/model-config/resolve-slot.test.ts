@@ -266,6 +266,16 @@ describe('resolveSlot', () => {
     }
   });
 
+  it("resolves a provider-only reference to the provider's default model", () => {
+    const search: ModelConfigLayer = {
+      source: 'deployment',
+      config: { providers: { tv: { preset: 'tavily', apiKey: 'k' } }, slots: { webSearch: 'tv' } },
+    };
+    const resolved = resolveSlot('webSearch', [search]);
+    expect(resolved).toMatchObject({ status: 'assigned', registryId: 'tavily', apiKey: 'k' });
+    expect(resolved).not.toHaveProperty('modelId');
+  });
+
   it('reports a malformed reference by path, without echoing it', () => {
     const secret = 'sk-misplaced-key-9c1e';
     for (const [slots, path] of [
@@ -280,7 +290,11 @@ describe('resolveSlot', () => {
       const run = () =>
         resolveSlot(slots === undefined ? 'llm' : (Object.keys(slots)[0] as 'llm'), [malformed]);
       expect(run).toThrow(SlotResolutionError);
-      expect(run).toThrow(`${path}: invalid model reference`);
+      // A key shaped like a provider id reads as a bare reference; either way
+      // the error names the path and not the value.
+      expect(run).toThrow(
+        new RegExp(`^${path.replace('.', '\\.')}: (invalid model reference|a chat model needs)`),
+      );
       try {
         run();
       } catch (error) {
