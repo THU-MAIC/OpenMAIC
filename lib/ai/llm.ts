@@ -4,7 +4,7 @@
  * All LLM interactions should go through callLLM / streamLLM.
  */
 
-import { generateText, streamText, wrapLanguageModel } from 'ai';
+import { APICallError, generateText, streamText, wrapLanguageModel } from 'ai';
 import type {
   GenerateTextResult,
   JSONValue,
@@ -571,33 +571,102 @@ async function peekFirstPart(
   return { first, stream: replay };
 }
 
+/** What one streamLLM call has seen, across its steps and the SDK's retries. */
+interface StreamFallbackState {
+  /** A content part (text, reasoning, a tool call, ...) reached the caller. */
+  contentStarted: boolean;
+  /** Primary attempts for the current step (the SDK retries a step itself). */
+  primaryAttempts: number;
+  /** The fallback, once it took over: later steps stay on it. */
+  fallback?: FallbackModel;
+  /** The fallback's own failure: never retried, never called again. */
+  fallbackFailure?: { error: unknown };
+  /** The model that served each started step, in order, for usage. */
+  servedBy: ModelV3[];
+}
+
+/** Parts that carry no content (or signal a failure). */
+const NON_CONTENT_PARTS = new Set([...PREAMBLE_PARTS, 'error', 'finish', 'raw']);
+
 /**
- * The model with its slot's fallback for streaming: a stream that fails
- * before any content (the request is refused, or the first part is an error)
- * runs once on the fallback model instead. A failure after content has
- * started is the caller's, as before: the text already sent cannot be taken
- * back.
+ * The model with its slot's fallback for streaming. The fallback is the last
+ * attempt of a call that has not streamed any content yet: the primary's own
+ * retries (the SDK's `maxRetries`) come first, then the fallback runs once,
+ * with the thinking options built for it. A failure after content has reached
+ * the caller in any step is the caller's, as before: what was sent cannot be
+ * taken back, and a tool that ran must not run again on another model. Once
+ * the fallback took over, the call's later steps stay on it.
  */
 function withStreamFallback(
   model: ModelV3,
-  load: FallbackLoader,
-  source: string,
-  onFallback: (fallback: FallbackModel) => void,
+  options: {
+    load: FallbackLoader;
+    source: string;
+    /** The SDK retries of each step (streamText's `maxRetries`, 2 by default). */
+    maxRetries: number;
+    /** The provider options to call the fallback with (thinking built for it). */
+    providerOptionsFor: (fallback: FallbackModel) => unknown;
+    state: StreamFallbackState;
+  },
 ): ModelV3 {
+  const { load, source, maxRetries, providerOptionsFor, state } = options;
+
+  /** Mark content as it passes and remember which model served the step. */
+  const track = (result: StreamResultV3, served: ModelV3): StreamResultV3 => {
+    state.servedBy.push(served);
+    const marker = new TransformStream<StreamPartV3, StreamPartV3>({
+      transform(part, controller) {
+        if (!NON_CONTENT_PARTS.has(part.type)) state.contentStarted = true;
+        controller.enqueue(part);
+      },
+    });
+    return { ...result, stream: result.stream.pipeThrough(marker) };
+  };
+
+  const serveFallback = async (
+    fallback: FallbackModel,
+    params: Parameters<ModelV3['doStream']>[0],
+  ): Promise<StreamResultV3> => {
+    if (state.fallbackFailure) throw state.fallbackFailure.error;
+    const served = fallback.model as ModelV3;
+    try {
+      const result = await served.doStream({
+        ...params,
+        providerOptions: providerOptionsFor(fallback) as typeof params.providerOptions,
+      });
+      return track(result, served);
+    } catch (error) {
+      state.fallbackFailure = { error };
+      throw error;
+    }
+  };
+
   const middleware: LanguageModelMiddleware = {
     specificationVersion: 'v3',
     wrapStream: async ({ doStream, params }) => {
+      if (state.fallback) return serveFallback(state.fallback, params);
       let failure: unknown;
       try {
         const result = await doStream();
         const peeked = await peekFirstPart(result.stream);
-        if (peeked.first?.type !== 'error' || !shouldFallbackFor(peeked.first.error, undefined)) {
-          return { ...result, stream: peeked.stream };
+        if (
+          state.contentStarted ||
+          peeked.first?.type !== 'error' ||
+          !shouldFallbackFor(peeked.first.error, undefined)
+        ) {
+          state.primaryAttempts = 0;
+          return track({ ...result, stream: peeked.stream }, model);
         }
         await peeked.stream.cancel().catch(() => undefined);
         failure = peeked.first.error;
       } catch (error) {
-        if (!shouldFallbackFor(error, undefined)) throw error;
+        if (state.contentStarted || !shouldFallbackFor(error, undefined)) throw error;
+        // The SDK retries a retryable refusal of the primary itself: the
+        // fallback is its last attempt.
+        state.primaryAttempts += 1;
+        if (APICallError.isInstance(error) && error.isRetryable) {
+          if (state.primaryAttempts <= maxRetries) throw error;
+        }
         failure = error;
       }
       const fallback = await loadFallbackSafe(load, source);
@@ -608,8 +677,8 @@ function withStreamFallback(
         `${model.provider}:${model.modelId}`,
         fallback.modelString,
       );
-      onFallback(fallback);
-      return (fallback.model as ModelV3).doStream(params);
+      state.fallback = fallback;
+      return serveFallback(fallback, params);
     },
   };
   return wrapLanguageModel({ model, middleware });
@@ -636,29 +705,56 @@ export function streamLLM<T extends StreamTextParams>(
 
   // Wrap onFinish to capture usage when the stream completes, preserving any
   // caller-supplied onFinish. totalUsage aggregates across steps.
-  let usageMeta = buildUsageMeta(params, source);
-  // A model resolved through a slot streams with its slot's fallback (see
-  // withStreamFallback); a caller with its own fallback handling opts out.
-  const attached =
-    fallbackOptions?.enabled === false ? undefined : attachedModelFallback(params.model);
-  if (attached && typeof params.model === 'object') {
-    params = {
-      ...params,
-      model: withStreamFallback(params.model as ModelV3, attached, source, (fallback) => {
-        usageMeta = buildUsageMeta({ ...params, model: fallback.model }, source);
-      }),
-    };
-  }
+  const usageMeta = buildUsageMeta(params, source);
   const callerOnFinish = (params as Record<string, unknown>).onFinish as
     | ((event: { totalUsage?: unknown; usage?: unknown }) => void | Promise<void>)
     | undefined;
-  const wrappedParams = {
-    ...params,
-    onFinish: async (event: { totalUsage?: unknown; usage?: unknown }) => {
-      recordUsageSafe(event.totalUsage ?? event.usage, usageMeta);
-      if (callerOnFinish) await callerOnFinish(event);
-    },
-  } as T;
+  const callerOnStepFinish = (params as Record<string, unknown>).onStepFinish as
+    | ((event: { usage?: unknown }) => void | Promise<void>)
+    | undefined;
+
+  // A model resolved through a slot streams with its slot's fallback (see
+  // withStreamFallback); a caller with its own fallback handling opts out.
+  // Its usage is recorded per step, against the model that served the step.
+  const attached =
+    fallbackOptions?.enabled === false ? undefined : attachedModelFallback(params.model);
+  const state: StreamFallbackState = { contentStarted: false, primaryAttempts: 0, servedBy: [] };
+  const streamsWithFallback = attached !== undefined && typeof params.model === 'object';
+  const original = params;
+  let wrappedParams: T;
+  if (streamsWithFallback) {
+    wrappedParams = {
+      ...params,
+      model: withStreamFallback(params.model as ModelV3, {
+        load: attached,
+        source,
+        maxRetries: (params as { maxRetries?: number }).maxRetries ?? 2,
+        providerOptionsFor: (fallback) =>
+          (
+            injectProviderOptions({ ...original, model: fallback.model }, effectiveThinking) as {
+              providerOptions?: unknown;
+            }
+          ).providerOptions,
+        state,
+      }),
+      onStepFinish: async (event: { usage?: unknown }) => {
+        const served = state.servedBy.shift();
+        recordUsageSafe(
+          event.usage,
+          served ? buildUsageMeta({ ...original, model: served }, source) : usageMeta,
+        );
+        if (callerOnStepFinish) await callerOnStepFinish(event);
+      },
+    } as T;
+  } else {
+    wrappedParams = {
+      ...params,
+      onFinish: async (event: { totalUsage?: unknown; usage?: unknown }) => {
+        recordUsageSafe(event.totalUsage ?? event.usage, usageMeta);
+        if (callerOnFinish) await callerOnFinish(event);
+      },
+    } as T;
+  }
 
   const injectedParams = injectProviderOptions(wrappedParams, effectiveThinking);
   const result = thinkingContext.run(effectiveThinking, () => streamText(injectedParams));
