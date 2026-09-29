@@ -2093,7 +2093,8 @@
         "unsupported": "이 유형의 사용자 지정 공급자는 옮길 수 없습니다. OpenAI 호환 엔드포인트로 다시 추가하세요.",
         "unconfirmed": "서버가 가져오기를 확인하지 않았습니다."
       }
-    }
+    },
+    "apiKeySecurityNotice": "Credentials you enter here will be sent to the server hosting this instance. Only enter them if you trust the deployment operator."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

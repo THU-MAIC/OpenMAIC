@@ -26,6 +26,7 @@ import { QwenVoiceCloneManager, VoxCPMVoiceManager } from './tts-voice-managers'
 import { TTSSpeedField } from './tts-speed-field';
 import {
   ApiKeyField,
+  ApiKeySecurityNotice,
   EndpointServerOnlyHint,
   RegionalEndpointField,
   ServerConfiguredNotice,
@@ -240,6 +241,7 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
       {/* API Key & Base URL — the server's services are the operator's. */}
       {editable && (
         <>
+          {!isVoxCPM && <ApiKeySecurityNotice />}
           <div className={cn('grid gap-4', isDoubao ? 'grid-cols-3' : 'grid-cols-2')}>
             {isDoubao ? (
               <DoubaoKeyFields onSave={save} />

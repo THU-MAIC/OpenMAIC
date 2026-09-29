@@ -2093,7 +2093,8 @@
         "unsupported": "Diese Art von eigenem Anbieter kann nicht übertragen werden: Fügen Sie ihn als OpenAI-kompatiblen Endpunkt erneut hinzu.",
         "unconfirmed": "Der Server hat den Import nicht bestätigt."
       }
-    }
+    },
+    "apiKeySecurityNotice": "Credentials you enter here will be sent to the server hosting this instance. Only enter them if you trust the deployment operator."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",
