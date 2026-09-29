@@ -1263,6 +1263,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     const driver = await resolveAgentDriverModel();
     const streamFn = createCallLlmStreamFn({
       languageModel: driver.connection.model,
+      supportsToolImages: driver.connection.modelInfo?.capabilities?.vision,
       maxOutputTokens: driver.wireMaxOutputTokens,
       omitMaxOutputTokens: driver.wireMaxOutputTokens === undefined,
       thinkingConfig: driver.connection.thinkingConfig,

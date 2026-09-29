@@ -246,6 +246,26 @@ async function runToBuildAgent(): Promise<BuildAgentOptions> {
 }
 
 describe('web_search runner registration', () => {
+  it.each([true, false, undefined])(
+    'passes the resolved model vision capability (%s) to the transport',
+    async (vision) => {
+      mocks.resolveWebSearchCapability.mockReturnValue(null);
+      mocks.resolveAgentDriverModel.mockResolvedValue({
+        connection: {
+          model: {},
+          modelInfo: vision === undefined ? null : { capabilities: { vision } },
+        },
+        piModel: { api: 'openai-completions', provider: 'openai', id: 'driver-model' },
+        wireMaxOutputTokens: undefined,
+        reservedOutputTokens: 8192,
+      });
+      await runToBuildAgent();
+      expect(mocks.createCallLlmStreamFn).toHaveBeenCalledWith(
+        expect.objectContaining({ supportsToolImages: vision }),
+      );
+    },
+  );
+
   it('registers both tools and the web-search prompt block when a backend is configured', async () => {
     mocks.resolveWebSearchCapability.mockReturnValue({
       providerId: 'searxng',

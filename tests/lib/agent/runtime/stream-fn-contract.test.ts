@@ -57,6 +57,38 @@ async function collect(
 describe('createCallLlmStreamFn terminal contract', () => {
   beforeEach(() => mocks.streamLLM.mockReset());
 
+  it.each([true, false, undefined])(
+    'applies tool-image capability (%s) on the actual stream path',
+    async (supportsToolImages) => {
+      mocks.streamLLM.mockReturnValue(resultFrom([finish('stop')]));
+      const streamFn = createCallLlmStreamFn({ languageModel: {} as never, supportsToolImages });
+      const stream = await streamFn({} as never, {
+        messages: [
+          {
+            role: 'toolResult',
+            toolCallId: 'preview',
+            toolName: 'render_scene_preview',
+            content: [{ type: 'image', data: 'cG5n', mimeType: 'image/png' }],
+            isError: false,
+            timestamp: 0,
+          },
+        ],
+      });
+      await stream.result();
+      const messages = mocks.streamLLM.mock.calls[0][0].messages;
+      if (supportsToolImages !== true) {
+        expect(messages).toHaveLength(1);
+        expect(JSON.stringify(messages)).not.toContain('cG5n');
+        expect(JSON.stringify(messages)).toContain('does not support image input');
+      } else {
+        expect(messages).toHaveLength(2);
+        expect(messages[1]).toMatchObject({
+          content: [{ type: 'text' }, { type: 'image', image: 'cG5n' }],
+        });
+      }
+    },
+  );
+
   it.each([
     { name: 'plain stop', reason: 'stop', withTool: false, stopReason: 'stop', event: 'done' },
     {
