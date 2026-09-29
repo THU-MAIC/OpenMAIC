@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { AlertCircle, KeyRound, Loader2, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import {
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { SlotCapability } from '@/lib/config/model-slots';
 import type {
@@ -85,6 +86,7 @@ function ProviderEditor({
   onDone: () => void;
   t: T;
 }) {
+  const presetFieldId = useId();
   const [draft, setDraft] = useState<ProviderDraft>(() =>
     existing ? draftFor(existing) : emptyDraft(''),
   );
@@ -159,12 +161,18 @@ function ProviderEditor({
   return (
     <div className="grid gap-3">
       {!existing && (
-        <PresetSelect
-          presets={view.presets}
-          value={draft.preset}
-          onChange={(presetId) => setDraft({ ...draft, preset: presetId })}
-          t={t}
-        />
+        <div className="grid gap-1.5">
+          <Label htmlFor={presetFieldId} className="text-xs">
+            {t(`${MS}.providers.preset`)}
+          </Label>
+          <PresetSelect
+            id={presetFieldId}
+            presets={view.presets}
+            value={draft.preset}
+            onChange={(presetId) => setDraft({ ...draft, preset: presetId })}
+            t={t}
+          />
+        </div>
       )}
       {preset && (
         <ProviderFields
