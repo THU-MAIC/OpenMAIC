@@ -30,8 +30,8 @@ import type {
 
 const log = createLogger('model-routes');
 
-const VALID_MODES: readonly ThinkingMode[] = ['default', 'disabled', 'enabled', 'auto'];
-const VALID_EFFORTS: readonly ThinkingEffort[] = [
+export const VALID_MODES: readonly ThinkingMode[] = ['default', 'disabled', 'enabled', 'auto'];
+export const VALID_EFFORTS: readonly ThinkingEffort[] = [
   'none',
   'minimal',
   'low',
@@ -40,7 +40,7 @@ const VALID_EFFORTS: readonly ThinkingEffort[] = [
   'xhigh',
   'max',
 ];
-const VALID_LEVELS: readonly ThinkingLevel[] = ['minimal', 'low', 'medium', 'high'];
+export const VALID_LEVELS: readonly ThinkingLevel[] = ['minimal', 'low', 'medium', 'high'];
 
 /**
  * A resolved route entry: the model string plus an optional full thinking config.

@@ -146,6 +146,14 @@ async function validateBootConfiguration(): Promise<void> {
   const { requireDatabaseUrl } = await import('@/lib/server/database-requirement');
   runConfigurationCheck(() => requireDatabaseUrl());
 
+  // The operator's model configuration (openmaic.yml, or the file named by
+  // OPENMAIC_CONFIG), when there is one. A malformed file, an unset `${VAR}`
+  // or a slot pointing at an undeclared provider is refused here with every
+  // problem listed, rather than skipped and discovered by the first generation.
+  // Without a file this is a no-op.
+  const { validateModelConfiguration } = await import('@/lib/server/model-config/openmaic-yml');
+  runConfigurationCheck(validateModelConfiguration);
+
   // The asset quota, read here rather than at the first persistence request.
   // The provider that consumes it is lazy and memoised, so a malformed ceiling
   // would otherwise let the process boot, pass its health check, and then fail
