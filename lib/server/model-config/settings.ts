@@ -172,6 +172,9 @@ function viewEndpoint(url: string): string {
   }
 }
 
+/** A provider id as model references name it (openmaic.yml's grammar). */
+const PROVIDER_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
 /** A key's last four characters, as far as that says nothing useful. */
 function maskKey(key: string): string {
   return key.length >= 12 ? `…${key.slice(-4)}` : '…';
@@ -471,6 +474,12 @@ export async function applyModelSettingsChange(
       slots[slot] = assignment as SlotAssignment;
     }
   } else if (change.kind === 'provider') {
+    if (!PROVIDER_ID.test(change.id)) {
+      throw new ModelSettingsError(
+        'INVALID_PROVIDER',
+        'A provider id is lowercase letters, digits and dashes',
+      );
+    }
     if (!allowProviders) {
       throw new ModelSettingsError(
         'PROVIDERS_NOT_ALLOWED',

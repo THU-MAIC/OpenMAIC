@@ -256,7 +256,8 @@ describe('applyModelSettingsChange', () => {
         /not in the base URL/,
       ],
       [{ id: 'a', preset: 'alidocmind', apiKey: 'k' }, /key pair/],
-      [{ id: 'bad_id', preset: 'openai', apiKey: 'sk-k' }, /providers/],
+      [{ id: 'bad_id', preset: 'openai', apiKey: 'sk-k' }, /lowercase letters/],
+      [{ id: '__proto__', preset: 'openai', apiKey: 'sk-k' }, /lowercase letters/],
     ] as const) {
       await expect(
         applyModelSettingsChange(null, { kind: 'provider', ...provider }),
