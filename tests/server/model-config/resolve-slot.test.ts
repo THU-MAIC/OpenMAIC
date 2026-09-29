@@ -183,6 +183,19 @@ describe('resolveSlot', () => {
     });
   });
 
+  it('looks up aliases in the catalogue but keeps the configured model id', () => {
+    const alias = layer(
+      'deployment',
+      'providers:\n  o:\n    preset: openai\n    apiKey: k\nslots:\n  agent:\n    model: o:gpt-5.6-sol\n    fallback: o:gpt-5.6-sol\n',
+    );
+    expect(resolveSlot('agent', [alias])).toMatchObject({
+      modelId: 'gpt-5.6-sol',
+      requirements: [{ requirement: 'toolCalling', status: 'met' }],
+      fallback: { modelId: 'gpt-5.6-sol' },
+      fallbackRequirements: [{ requirement: 'toolCalling', status: 'met' }],
+    });
+  });
+
   it('checks the fallback against the slot’s requirements too', () => {
     const agent = layer(
       'deployment',
@@ -221,6 +234,17 @@ describe('resolveSlot', () => {
       config: { providers: { k: { preset: 'kimi-coding-plan' } }, slots: { tts: 'k:voice' } },
     };
     expect(() => resolveSlot('tts', [wrongCapability])).toThrow(/does not offer tts/);
+    // Built directly so the parser's own checks cannot mask the resolver's.
+    const wrongFallback: ModelConfigLayer = {
+      source: 'workspace',
+      config: {
+        providers: { mm: { preset: 'minimax' }, k: { preset: 'kimi-coding-plan' } },
+        slots: { tts: { model: 'mm:speech-2.8-hd', fallback: 'k:voice' } },
+      } as ModelConfigLayer['config'],
+    };
+    expect(() => resolveSlot('tts', [wrongFallback])).toThrow(
+      /slots\.tts\.fallback: .*does not offer tts/,
+    );
   });
 
   it('does not echo a key pasted into the provider position', () => {
