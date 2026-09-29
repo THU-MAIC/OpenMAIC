@@ -2214,6 +2214,16 @@
           "desc": "讀取上傳的文件。"
         }
       }
+    },
+    "voiceSettings": {
+      "nav": "語音",
+      "title": "語音",
+      "description": "你的講解語音與語音輸入偏好。使用哪些服務在「模型」中設定。",
+      "narrationProvider": "講解語音使用 {{provider}}",
+      "narrationOff": "講解語音已關閉：「模型」中未設定語音合成模型。",
+      "recognitionProvider": "語音輸入使用 {{provider}}",
+      "recognitionOff": "語音輸入已關閉：「模型」中未設定語音辨識模型。",
+      "openModels": "開啟「模型」"
     }
   },
   "workspace": {

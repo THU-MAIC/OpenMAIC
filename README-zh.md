@@ -254,7 +254,7 @@ BOCHA_API_KEY=sk-...
 BOCHA_BASE_URL=https://tokendance.space/gateway/bocha
 ```
 
-不想改 `.env.local` 的话，在 **设置 → Token Plan → TokenDance** 中可以一键把同一个 Key 填入全部模态。
+不想改 `.env.local` 的话，在 **设置 → 模型** 中添加 **TokenDance** 服务，即可一键把同一个 Key 用于它覆盖的全部能力。
 
 智谱 GLM 快速示例：
 

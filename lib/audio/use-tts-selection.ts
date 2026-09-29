@@ -10,7 +10,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 export function useTTSSelection(): TTSSelection | null {
   const capabilities = useModelCapabilities();
   const voice = useSettingsStore((s) => s.ttsVoice);
-  const voiceProviderId = useSettingsStore((s) => s.ttsProviderId);
+  const voiceProviderId = useSettingsStore((s) => s.ttsVoiceProviderId);
   const speed = useSettingsStore((s) => s.ttsSpeed);
   return useMemo(
     () => ttsSelection(capabilities, { voice, providerId: voiceProviderId, speed }),

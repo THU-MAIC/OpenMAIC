@@ -344,8 +344,8 @@ describe('the settings surface mounts the section', () => {
     const dialog = read('components/settings/index.tsx');
     expect(dialog).toContain("import { SkillSettings } from './skill-settings'");
     expect(dialog).toContain("{activeSection === 'skills' && <SkillSettings />}");
-    expect(dialog).toContain("setActiveSection('skills')");
-    expect(dialog).toContain("t('settings.skills.nav')");
+    // The nav lists the sections as data.
+    expect(dialog).toContain("{ id: 'skills', icon: Sparkles, label: 'settings.skills.nav' }");
     expect(dialog).toContain("t('settings.skills.title')");
   });
 });

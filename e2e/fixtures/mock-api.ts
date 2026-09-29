@@ -2,6 +2,11 @@ import type { Page } from '@playwright/test';
 import { mockOutlines } from './test-data/scene-outlines';
 import { mockSceneContentResponse } from './test-data/scene-content';
 import { createMockSceneActionsResponse } from './test-data/scene-actions';
+import {
+  createModelSettingsView,
+  DEFAULT_MODEL_SETTINGS,
+  type ModelSettingsOptions,
+} from './test-data/model-settings';
 
 /**
  * Wraps Playwright's page.route() to mock OpenMAIC API endpoints.
@@ -66,18 +71,29 @@ export class MockApi {
     });
   }
 
-  /** Mock the server providers endpoint (returns empty — client-side config only) */
-  async mockServerProviders() {
-    await this.page.route('**/api/server-providers', (route) => {
-      route.fulfill({
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ providers: {} }),
-      });
+  /**
+   * Answer the workspace model settings (`/api/model-config`): the view the
+   * app reads, and a PUT that sets the course model (the toolbar picker). The
+   * one-time import of browser settings finds nothing to do (404).
+   */
+  async mockModelSettings(options: ModelSettingsOptions = DEFAULT_MODEL_SETTINGS) {
+    let current = { ...options };
+    await this.page.route('**/api/model-config/import', (route) =>
+      route.fulfill({ status: 404, body: 'Not found' }),
+    );
+    await this.page.route('**/api/model-config', async (route) => {
+      if (route.request().method() === 'PUT') {
+        const body = route.request().postDataJSON() as {
+          change?: { kind?: string; set?: Record<string, unknown> };
+        };
+        const llm = body.change?.kind === 'slots' ? body.change.set?.llm : undefined;
+        if (typeof llm === 'string') current = { ...current, llm };
+      }
+      await route.fulfill({ json: createModelSettingsView(current) });
     });
   }
 
-  /** Set up API mocks for the generation flow. Note: server-providers is already mocked by the base fixture. */
+  /** Set up API mocks for the generation flow. Note: model settings are already mocked by the base fixture. */
   async setupGenerationMocks(stageId?: string) {
     await this.mockSceneOutlinesStream();
     await this.mockSceneContent();

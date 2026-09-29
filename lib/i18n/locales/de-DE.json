@@ -2229,6 +2229,16 @@
           "desc": "Liest hochgeladene Dokumente."
         }
       }
+    },
+    "voiceSettings": {
+      "nav": "Stimme",
+      "title": "Stimme",
+      "description": "Ihre Einstellungen für Vorlesen und Spracheingabe. Welche Dienste genutzt werden, legen Sie unter „Modelle“ fest.",
+      "narrationProvider": "Vorlesen nutzt {{provider}}",
+      "narrationOff": "Vorlesen ist aus: Unter „Modelle“ ist kein Sprachmodell festgelegt.",
+      "recognitionProvider": "Spracheingabe nutzt {{provider}}",
+      "recognitionOff": "Spracheingabe ist aus: Unter „Modelle“ ist kein Spracherkennungsmodell festgelegt.",
+      "openModels": "Modelle öffnen"
     }
   },
   "workspace": {

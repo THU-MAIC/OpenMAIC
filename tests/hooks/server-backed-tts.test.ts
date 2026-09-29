@@ -102,7 +102,7 @@ describe('server-backed narration storage', () => {
       videoProviderId: '',
       videoProvidersConfig: {},
       videoGenerationEnabled: false,
-      ttsProviderId: 'server-tts',
+      ttsVoiceProviderId: 'server-tts',
       ttsProvidersConfig: { 'server-tts': { apiKey: 'tts-key', modelId: 'tts-model' } },
       ttsVoice: 'narrator',
       ttsSpeed: 1,

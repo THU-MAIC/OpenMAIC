@@ -139,7 +139,7 @@ describe('generateAndStoreTTS — pinned narrator fallback (bound == global)', (
   it('falls back with a notice when the pinned ghost clone is missing (bound == global)', async () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
     mocks.settingsState.mockReturnValue({
-      ttsProviderId: 'qwen-tts',
+      ttsVoiceProviderId: 'qwen-tts',
       ttsProvidersConfig: {
         'qwen-tts': { apiKey: 'tts-key', modelId: QWEN_TTS_VOICE_CLONE_MODEL },
       },
@@ -188,7 +188,7 @@ describe('generateAndStoreTTS — pinned narrator fallback (bound == global)', (
   it('falls back to the enabled provider instead of silently skipping when the pinned provider is disabled', async () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
     mocks.settingsState.mockReturnValue({
-      ttsProviderId: 'qwen-tts',
+      ttsVoiceProviderId: 'qwen-tts',
       ttsProvidersConfig: {
         'qwen-tts': { apiKey: '', modelId: QWEN_TTS_VOICE_CLONE_MODEL },
       },
@@ -242,7 +242,7 @@ describe('generateAndStoreTTS — bound clone dead, global clone dead (review fi
   it('rejects after exactly 2 attempts when the bound clone differs from the global clone and both are missing', async () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
     mocks.settingsState.mockReturnValue({
-      ttsProviderId: 'qwen-tts',
+      ttsVoiceProviderId: 'qwen-tts',
       ttsProvidersConfig: {
         'qwen-tts': { apiKey: 'tts-key', modelId: QWEN_TTS_VOICE_CLONE_MODEL },
       },

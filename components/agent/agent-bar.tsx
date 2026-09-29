@@ -355,7 +355,6 @@ function TeacherVoicePill({
   const selection = useTTSSelection();
   const ttsProviderId = selection?.providerId;
   const ttsVoice = selection?.voice;
-  const setTTSProvider = useSettingsStore((s) => s.setTTSProvider);
   const setTTSVoice = useSettingsStore((s) => s.setTTSVoice);
   const ttsProvidersConfig = useSlotTTSProvidersConfig();
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -550,8 +549,7 @@ function TeacherVoicePill({
                       <button
                         type="button"
                         onClick={() => {
-                          setTTSProvider(provider.providerId);
-                          setTTSVoice(voice.id);
+                          setTTSVoice(voice.id, provider.providerId);
                           setPopoverOpen(false);
                         }}
                         className={cn(

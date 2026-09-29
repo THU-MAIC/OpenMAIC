@@ -133,7 +133,10 @@ extraction). Model settings now live on the server (`/api/model-config`), and
 1. The settings store's migration to version 5 builds a proposal from the old
    state (`buildModelSettingsProposal`, pure) and keeps it under
    `maic:legacy-import:model-settings`, only when it holds something: a key, a
-   custom endpoint or a model choice. The store then drops those fields.
+   custom endpoint or a model choice (`migrateSettingsToV5` in
+   `lib/store/settings.ts`). The store then drops those fields; it keeps only
+   the user's preferences, with the narration voice tied to the provider it was
+   picked for.
 2. Once the store has hydrated, `components/model-settings-init.tsx` posts the
    proposal to `POST /api/model-config/import`, which merges it item by item
    and never replaces an existing setting (a provider id already declared, a
@@ -174,7 +177,8 @@ When the maintainers decide enough releases have passed:
 1. Delete `lib/legacy-browser-import/` and its tests (`tests/legacy-browser-import/`,
    `e2e/tests/legacy-browser-import.spec.ts`), with `components/model-settings-init.tsx`
    (and its uses in `app/layout.tsx` and `components/access-code-guard.tsx`), the
-   version 5 step of the settings store's migration and
+   proposal saving in `migrateSettingsToV5` (`lib/store/settings.ts`; the fields
+   are still dropped) and its cases in
    `tests/store/settings-model-settings-migration.test.ts`;
    `lib/device-storage/clear-local-cache.ts` keeps `MODEL_SETTINGS_IMPORT_KEY`: drop it. `lib/device-storage/clear-local-cache.ts`
    imports `LEDGER_KEY` and `legacyImportIsComplete` from `ledger.ts`: define the

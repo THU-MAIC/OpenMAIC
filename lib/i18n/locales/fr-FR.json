@@ -2229,6 +2229,16 @@
           "desc": "Lit les documents importés."
         }
       }
+    },
+    "voiceSettings": {
+      "nav": "Voix",
+      "title": "Voix",
+      "description": "Vos préférences de narration et de saisie vocale. Les services utilisés se choisissent dans Modèles.",
+      "narrationProvider": "La narration utilise {{provider}}",
+      "narrationOff": "La narration est désactivée : aucun modèle vocal n'est défini dans Modèles.",
+      "recognitionProvider": "La saisie vocale utilise {{provider}}",
+      "recognitionOff": "La saisie vocale est désactivée : aucun modèle de reconnaissance vocale n'est défini dans Modèles.",
+      "openModels": "Ouvrir Modèles"
     }
   },
   "workspace": {

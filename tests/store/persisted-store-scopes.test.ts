@@ -67,13 +67,13 @@ describe('settings store', () => {
   });
 
   it('ignores an existing raw blob and purges it, rather than migrating it', async () => {
-    localStorageStub.setItem('settings-storage', JSON.stringify({ state: { modelId: 'gpt-4o' } }));
+    localStorageStub.setItem('settings-storage', JSON.stringify({ state: { playbackSpeed: 2 } }));
 
     const { useSettingsStore } = await import('@/lib/store/settings');
     await useSettingsStore.persist.rehydrate();
 
     // The seeded value is not migrated — the store hydrates to its default.
-    expect(useSettingsStore.getState().modelId).toBe('');
+    expect(useSettingsStore.getState().playbackSpeed).toBe(1);
     // And the stale blob (which held plaintext API keys) is purged from
     // localStorage rather than left forever.
     expect(localStorageStub.getItem('settings-storage')).toBeNull();
@@ -97,8 +97,7 @@ describe('settings store — no pre-persist migration', () => {
     const { useSettingsStore } = await import('@/lib/store/settings');
     await useSettingsStore.persist.rehydrate();
 
-    expect(useSettingsStore.getState().modelId).toBe('');
-    expect(useSettingsStore.getState().providersConfig.openai?.apiKey).not.toBe(ANCIENT_KEY);
+    expect(JSON.stringify(useSettingsStore.getState())).not.toContain(ANCIENT_KEY);
     expect(await kv.get('settings-storage', 'account')).toBeNull();
   });
 

@@ -2229,6 +2229,16 @@
           "desc": "Đọc các tài liệu đã tải lên."
         }
       }
+    },
+    "voiceSettings": {
+      "nav": "Giọng nói",
+      "title": "Giọng nói",
+      "description": "Tùy chọn thuyết minh và nhập giọng nói của bạn. Dịch vụ được dùng được đặt trong Mô hình.",
+      "narrationProvider": "Thuyết minh dùng {{provider}}",
+      "narrationOff": "Thuyết minh đang tắt: chưa đặt mô hình giọng nói trong Mô hình.",
+      "recognitionProvider": "Nhập giọng nói dùng {{provider}}",
+      "recognitionOff": "Nhập giọng nói đang tắt: chưa đặt mô hình nhận dạng giọng nói trong Mô hình.",
+      "openModels": "Mở Mô hình"
     }
   },
   "workspace": {

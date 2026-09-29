@@ -63,8 +63,8 @@ export interface TTSSelection {
 
 /** The user's voice preference and the provider it was picked for. */
 export function voicePreference(): { voice: string; providerId: string; speed: number } {
-  const { ttsVoice, ttsProviderId, ttsSpeed } = useSettingsStore.getState();
-  return { voice: ttsVoice, providerId: ttsProviderId, speed: ttsSpeed };
+  const { ttsVoice, ttsVoiceProviderId, ttsSpeed } = useSettingsStore.getState();
+  return { voice: ttsVoice, providerId: ttsVoiceProviderId, speed: ttsSpeed };
 }
 
 /** Speech synthesis for these capabilities, or null when the `tts` slot resolves to nothing. */

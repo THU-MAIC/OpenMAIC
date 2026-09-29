@@ -2229,6 +2229,16 @@
           "desc": "Lee los documentos subidos."
         }
       }
+    },
+    "voiceSettings": {
+      "nav": "Voz",
+      "title": "Voz",
+      "description": "Tus preferencias de narración y entrada de voz. Los servicios que se usan se definen en Modelos.",
+      "narrationProvider": "La narración usa {{provider}}",
+      "narrationOff": "La narración está desactivada: no hay un modelo de voz definido en Modelos.",
+      "recognitionProvider": "La entrada de voz usa {{provider}}",
+      "recognitionOff": "La entrada de voz está desactivada: no hay un modelo de reconocimiento de voz definido en Modelos.",
+      "openModels": "Abrir Modelos"
     }
   },
   "workspace": {

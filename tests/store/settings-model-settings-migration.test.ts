@@ -57,13 +57,68 @@ describe('settings store v4 → v5', () => {
     expect(store.getState().playbackSpeed).toBe(1.5);
   });
 
+  it('drops every provider field and keeps the voice with the provider it was picked for', async () => {
+    const store = await hydrate(
+      {
+        providerId: 'openai',
+        modelId: 'gpt-5',
+        providersConfig: { openai: { apiKey: 'sk-browser', baseUrl: '' } },
+        llmStageRoutes: { 'scene-content:slide': { providerId: 'openai', modelId: 'gpt-5' } },
+        tokenPlanEnrollments: {},
+        ttsEnabled: true,
+        ttsProviderId: 'qwen-tts',
+        ttsVoice: 'Cherry',
+        ttsSpeed: 1.2,
+        ttsProvidersConfig: { 'qwen-tts': { apiKey: 'sk-tts', baseUrl: '' } },
+        imageGenerationEnabled: true,
+        asrLanguage: 'en',
+        selectedAgentIds: ['default-1'],
+      },
+      4,
+    );
+
+    const state = store.getState() as unknown as Record<string, unknown>;
+    expect(state).toMatchObject({
+      ttsVoice: 'Cherry',
+      ttsVoiceProviderId: 'qwen-tts',
+      ttsSpeed: 1.2,
+      asrLanguage: 'en',
+      selectedAgentIds: ['default-1'],
+    });
+    for (const field of [
+      'providerId',
+      'modelId',
+      'providersConfig',
+      'llmStageRoutes',
+      'tokenPlanEnrollments',
+      'ttsEnabled',
+      'ttsProviderId',
+      'ttsProvidersConfig',
+      'imageGenerationEnabled',
+    ]) {
+      expect(state).not.toHaveProperty(field);
+    }
+
+    // What is written back holds no key.
+    store.getState().setPlaybackSpeed(1.25);
+    await vi.waitFor(async () => {
+      const blob = await kv.get<{ state: Record<string, unknown>; version: number }>(
+        'settings-storage',
+        'account',
+      );
+      expect(blob?.state.playbackSpeed).toBe(1.25);
+      expect(blob?.version).toBe(5);
+      expect(JSON.stringify(blob)).not.toContain('sk-');
+    });
+  });
+
   it('sets nothing aside when the browser kept no model settings', async () => {
     await hydrate({ asrEnabled: false, playbackSpeed: 1.25 }, 4);
     expect(localStorageStub.getItem(MODEL_SETTINGS_IMPORT_KEY)).toBeNull();
   });
 
   it('does not run again for a state already at version 5', async () => {
-    await hydrate(
+    const store = await hydrate(
       {
         providerId: 'openai',
         modelId: 'gpt-5',
@@ -72,5 +127,7 @@ describe('settings store v4 → v5', () => {
       5,
     );
     expect(localStorageStub.getItem(MODEL_SETTINGS_IMPORT_KEY)).toBeNull();
+    // Fields of earlier builds never reach the state.
+    expect(store.getState()).not.toHaveProperty('providersConfig');
   });
 });

@@ -2229,6 +2229,16 @@
           "desc": "업로드한 문서를 읽습니다."
         }
       }
+    },
+    "voiceSettings": {
+      "nav": "음성",
+      "title": "음성",
+      "description": "내레이션과 음성 입력 환경설정입니다. 사용할 서비스는 '모델'에서 설정합니다.",
+      "narrationProvider": "내레이션에 {{provider}}을(를) 사용합니다",
+      "narrationOff": "내레이션이 꺼져 있습니다. '모델'에 음성 합성 모델이 설정되지 않았습니다.",
+      "recognitionProvider": "음성 입력에 {{provider}}을(를) 사용합니다",
+      "recognitionOff": "음성 입력이 꺼져 있습니다. '모델'에 음성 인식 모델이 설정되지 않았습니다.",
+      "openModels": "모델 열기"
     }
   },
   "workspace": {

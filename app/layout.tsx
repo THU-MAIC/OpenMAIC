@@ -8,7 +8,6 @@ import 'katex/dist/katex.min.css';
 import { ThemeProvider } from '@/lib/hooks/use-theme';
 import { I18nProvider } from '@/lib/hooks/use-i18n';
 import { Toaster } from '@/components/ui/sonner';
-import { ServerProvidersInit } from '@/components/server-providers-init';
 import { ModelSettingsInit } from '@/components/model-settings-init';
 import { StorageHealthNotice } from '@/components/storage-health-notice';
 import { AccessCodeGuard } from '@/components/access-code-guard';
@@ -48,7 +47,6 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <I18nProvider>
-            <ServerProvidersInit />
             <ModelSettingsInit />
             <ProSwapWatcher />
             <AccessCodeGuard>{children}</AccessCodeGuard>

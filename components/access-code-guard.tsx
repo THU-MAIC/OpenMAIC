@@ -2,8 +2,8 @@
 
 import { useEffect, useState, ReactNode } from 'react';
 import { AccessCodeModal } from '@/components/access-code-modal';
-import { useSettingsStore } from '@/lib/store/settings';
 import { importLegacyModelSettings } from '@/components/model-settings-init';
+import { modelSettingsClient } from '@/lib/model-settings/client';
 
 export function AccessCodeGuard({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<{
@@ -45,14 +45,12 @@ export function AccessCodeGuard({ children }: { children: ReactNode }) {
           open={true}
           onSuccess={() => {
             setStatus((s) => ({ ...s, authenticated: true }));
-            // ServerProvidersInit runs on mount, which on an ACCESS_CODE-gated
+            // Model settings are read on mount, which on an ACCESS_CODE-gated
             // deployment is before any access cookie exists: the middleware
-            // answers 401 and the store silently keeps its blank defaults.
-            // Nothing re-fetches afterwards, so every server-configured
-            // provider reads as unconfigured until a manual reload. Re-fetch
-            // now that the request will be authorized.
-            void useSettingsStore.getState().fetchServerProviders();
-            // The same holds for the one-time import of browser model settings.
+            // answers 401 and nothing is known about the workspace's models
+            // until a reload. Read them again now that the request will be
+            // authorized, and retry the one-time import of browser settings.
+            void modelSettingsClient.load();
             void importLegacyModelSettings();
           }}
         />

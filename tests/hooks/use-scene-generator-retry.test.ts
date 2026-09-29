@@ -107,7 +107,7 @@ describe('scene generation retry wrappers', () => {
       videoProviderId: '',
       videoProvidersConfig: {},
       videoGenerationEnabled: false,
-      ttsProviderId: 'server-tts',
+      ttsVoiceProviderId: 'server-tts',
       ttsProvidersConfig: {
         'server-tts': {
           apiKey: 'tts-key',
@@ -300,7 +300,7 @@ describe('scene generation retry wrappers', () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
     mocks.settingsState.mockReturnValue({
       ...mocks.settingsState(),
-      ttsProviderId: 'qwen-tts',
+      ttsVoiceProviderId: 'qwen-tts',
       ttsVoice: 'Cherry',
       ttsProvidersConfig: {
         'qwen-tts': { apiKey: 'tts-key', modelId: 'qwen3-tts-vc-2026-01-22' },

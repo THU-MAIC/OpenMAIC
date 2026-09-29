@@ -1,34 +1,17 @@
 import { test, expect } from '../fixtures/base';
-import { createSettingsStorage } from '../fixtures/test-data/settings';
 
 // These are deliberate repeated-open stress cases. Parallel dev-server runs
 // can spend most of the default 30s budget compiling before the ten cycles.
 test.describe.configure({ timeout: 60_000 });
 
 for (const method of ['click', 'Enter', 'Space']) {
-  test(`model picker selects and closes with ${method}`, async ({ page }) => {
+  test(`model picker selects and closes with ${method}`, async ({ page, mockApi }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.route('**/api/server-providers', (route) =>
-      route.fulfill({
-        json: {
-          providers: {
-            openai: { models: ['gpt-4o', 'gpt-4o-mini'] },
-            anthropic: { models: ['claude-sonnet-4-6'] },
-          },
-          tts: {},
-          asr: {},
-          pdf: {},
-          image: {},
-          video: {},
-          webSearch: {},
-        },
-      }),
-    );
-    await page.addInitScript(
-      (settings) => localStorage.setItem('maic:account:settings-storage', settings),
-      createSettingsStorage({ providersConfig: { openai: { apiKey: '' } } }),
-    );
+    await mockApi.mockModelSettings({
+      providers: { openai: ['gpt-4o', 'gpt-4o-mini'], anthropic: ['claude-sonnet-4-6'] },
+      llm: 'openai:gpt-4o',
+    });
     await page.goto('/');
     const picker = page.locator('button[aria-label*=" / "]').first();
     await expect(picker).toBeVisible();
@@ -51,42 +34,25 @@ for (const method of ['click', 'Enter', 'Space']) {
   });
 }
 
-test('provider switch and nested thinking popup remain usable', async ({ page }) => {
+test('provider switch and repeated dismissal remain usable', async ({ page, mockApi }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.route('**/api/server-providers', (route) =>
-    route.fulfill({
-      json: {
-        providers: { openai: { models: ['gpt-4o'] }, anthropic: { models: ['claude-sonnet-4-6'] } },
-        tts: {},
-        asr: {},
-        pdf: {},
-        image: {},
-        video: {},
-        webSearch: {},
-      },
-    }),
-  );
-  await page.addInitScript(
-    (settings) => localStorage.setItem('maic:account:settings-storage', settings),
-    createSettingsStorage({ providersConfig: { openai: { apiKey: '' } } }),
-  );
+  await mockApi.mockModelSettings({
+    providers: { openai: ['gpt-4o'], anthropic: ['claude-sonnet-4-6'] },
+    llm: 'openai:gpt-4o',
+  });
   await page.goto('/');
   const picker = page.locator('button[aria-label*=" / "]').first();
   await picker.click();
   let dialog = page.getByRole('dialog');
-  // Post-restructure picker: providers are group headings (not tabs), so a
-  // provider switch is just selecting a row from the Claude group.
+  // Providers are group headings (not tabs), so a provider switch is just
+  // selecting a row from the Claude group; it sets the workspace's llm slot.
   await dialog.locator('div[role="button"]').filter({ hasText: 'claude-sonnet-4-6' }).click();
   await expect(dialog).toBeHidden();
   await expect(picker).toHaveAttribute('aria-label', /Claude/);
   for (let i = 0; i < 10; i++) {
     await picker.click();
     dialog = page.getByRole('dialog');
-    // Inline thinking control on the selected row (nested Select popover).
-    await dialog.getByRole('combobox').first().click();
-    const options = page.getByRole('option');
-    await options.first().click();
     await expect(dialog).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
@@ -94,26 +60,13 @@ test('provider switch and nested thinking popup remain usable', async ({ page })
   expect(errors).toEqual([]);
 });
 
-test('outside click closes and keyboard dismissal restores trigger focus', async ({ page }) => {
+test('outside click closes and keyboard dismissal restores trigger focus', async ({
+  page,
+  mockApi,
+}) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.route('**/api/server-providers', (route) =>
-    route.fulfill({
-      json: {
-        providers: { openai: { models: ['gpt-4o'] } },
-        tts: {},
-        asr: {},
-        pdf: {},
-        image: {},
-        video: {},
-        webSearch: {},
-      },
-    }),
-  );
-  await page.addInitScript(
-    (settings) => localStorage.setItem('maic:account:settings-storage', settings),
-    createSettingsStorage({ providersConfig: { openai: { apiKey: '' } } }),
-  );
+  await mockApi.mockModelSettings({ providers: { openai: ['gpt-4o'] }, llm: 'openai:gpt-4o' });
   await page.goto('/');
   const picker = page.locator('button[aria-label*=" / "]').first();
   await picker.click();

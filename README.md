@@ -280,7 +280,7 @@ BOCHA_API_KEY=sk-...
 BOCHA_BASE_URL=https://tokendance.space/gateway/bocha
 ```
 
-Without touching `.env.local`, **Settings → Token Plan → TokenDance** applies the same key to every modality in one step.
+Without touching `.env.local`, adding a **TokenDance** provider in **Settings → Models** applies the same key to every capability it covers in one step.
 
 GLM (Zhipu) quick examples:
 

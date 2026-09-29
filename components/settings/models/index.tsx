@@ -27,10 +27,8 @@ type Tab = 'map' | 'providers';
  * (`/api/model-config`); nothing is kept in the browser.
  */
 export function ModelSettingsPanel({
-  onOpenLegacy,
   client,
 }: {
-  onOpenLegacy?: () => void;
   /** The settings client; the page's shared one unless a test passes its own. */
   client?: ModelSettingsClient;
 }) {
@@ -62,11 +60,6 @@ export function ModelSettingsPanel({
         <p className="text-xs leading-relaxed text-muted-foreground">
           {t(`${MS}.unavailable.body`)}
         </p>
-        {onOpenLegacy && (
-          <Button variant="outline" size="sm" onClick={onOpenLegacy}>
-            {t(`${MS}.unavailable.openLegacy`)}
-          </Button>
-        )}
       </div>
     );
   }

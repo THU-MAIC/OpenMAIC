@@ -2229,6 +2229,16 @@
           "desc": "读取上传的文档。"
         }
       }
+    },
+    "voiceSettings": {
+      "nav": "语音",
+      "title": "语音",
+      "description": "你的讲解语音与语音输入偏好。使用哪些服务在「模型」中设置。",
+      "narrationProvider": "讲解语音使用 {{provider}}",
+      "narrationOff": "讲解语音已关闭：「模型」中未设置语音合成模型。",
+      "recognitionProvider": "语音输入使用 {{provider}}",
+      "recognitionOff": "语音输入已关闭：「模型」中未设置语音识别模型。",
+      "openModels": "打开「模型」"
     }
   },
   "workspace": {

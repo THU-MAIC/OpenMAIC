@@ -25,8 +25,8 @@ test('actual classroom component reference samples declared area state on send w
     // Keep this isolated test away from every provider/model endpoint.
     if (path.includes('/chat') || path.includes('/generate') || path.includes('/tts'))
       return route.abort();
-    if (path === '/api/server-providers')
-      return route.fulfill({ json: { providers: {}, mediaProviders: {}, defaultModel: null } });
+    // The model settings are the fixture's (a course model is set up).
+    if (path.startsWith('/api/model-config')) return route.fallback();
     if (path === '/api/comfyui-workflows') return route.fulfill({ json: { workflows: [] } });
     await route.continue();
   });
@@ -171,8 +171,8 @@ test('missing AbortSignal.any still sends the classroom question without state',
       });
     if (path.includes('/chat') || path.includes('/generate') || path.includes('/tts'))
       return route.abort();
-    if (path === '/api/server-providers')
-      return route.fulfill({ json: { providers: {}, mediaProviders: {}, defaultModel: null } });
+    // The model settings are the fixture's (a course model is set up).
+    if (path.startsWith('/api/model-config')) return route.fallback();
     if (path === '/api/comfyui-workflows') return route.fulfill({ json: { workflows: [] } });
     await route.continue();
   });

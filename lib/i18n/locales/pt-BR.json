@@ -2229,6 +2229,16 @@
           "desc": "Lê os documentos enviados."
         }
       }
+    },
+    "voiceSettings": {
+      "nav": "Voz",
+      "title": "Voz",
+      "description": "Suas preferências de narração e entrada de voz. Os serviços usados são definidos em Modelos.",
+      "narrationProvider": "A narração usa {{provider}}",
+      "narrationOff": "A narração está desativada: nenhum modelo de voz está definido em Modelos.",
+      "recognitionProvider": "A entrada de voz usa {{provider}}",
+      "recognitionOff": "A entrada de voz está desativada: nenhum modelo de reconhecimento de voz está definido em Modelos.",
+      "openModels": "Abrir Modelos"
     }
   },
   "workspace": {

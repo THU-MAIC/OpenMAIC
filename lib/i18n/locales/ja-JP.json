@@ -2229,6 +2229,16 @@
           "desc": "アップロードされたドキュメントを読み取ります。"
         }
       }
+    },
+    "voiceSettings": {
+      "nav": "音声",
+      "title": "音声",
+      "description": "ナレーションと音声入力の設定です。使用するサービスは「モデル」で設定します。",
+      "narrationProvider": "ナレーションには {{provider}} を使用します",
+      "narrationOff": "ナレーションはオフです。「モデル」で音声合成モデルが設定されていません。",
+      "recognitionProvider": "音声入力には {{provider}} を使用します",
+      "recognitionOff": "音声入力はオフです。「モデル」で音声認識モデルが設定されていません。",
+      "openModels": "モデルを開く"
     }
   },
   "workspace": {

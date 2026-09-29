@@ -2229,6 +2229,16 @@
           "desc": "Reads uploaded documents."
         }
       }
+    },
+    "voiceSettings": {
+      "nav": "Voice",
+      "title": "Voice",
+      "description": "Your narration and speech input preferences. Which services are used is set in Models.",
+      "narrationProvider": "Narration uses {{provider}}",
+      "narrationOff": "Narration is off: no speech model is set in Models.",
+      "recognitionProvider": "Speech input uses {{provider}}",
+      "recognitionOff": "Speech input is off: no speech recognition model is set in Models.",
+      "openModels": "Open Models"
     }
   },
   "workspace": {

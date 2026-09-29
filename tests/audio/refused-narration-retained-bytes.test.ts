@@ -197,7 +197,7 @@ describe('narration refused for want of room', () => {
       videoProviderId: '',
       videoProvidersConfig: {},
       videoGenerationEnabled: false,
-      ttsProviderId: 'server-tts',
+      ttsVoiceProviderId: 'server-tts',
       ttsProvidersConfig: { 'server-tts': { apiKey: 'tts-key', modelId: 'tts-model' } },
       ttsVoice: 'narrator',
       ttsSpeed: 1,
