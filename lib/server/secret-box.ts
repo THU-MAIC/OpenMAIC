@@ -23,6 +23,8 @@ const log = createLogger('SecretBox');
 
 export const INSTANCE_SECRET_FILE = 'instance-secret.key';
 const ALGORITHM = 'aes-256-gcm';
+const IV_BYTES = 12;
+const TAG_BYTES = 16;
 
 export interface SealedSecret {
   v: 1;
@@ -83,18 +85,25 @@ function readOrCreateSecretFile(dataDir: string): string {
   // exclusive link: the file is never visible half written, and of two
   // processes starting together exactly one publishes, the other reads it.
   const temporary = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
-  const fd = fs.openSync(temporary, 'wx', 0o600);
   try {
-    fs.writeSync(fd, `${secret}\n`);
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-  try {
-    fs.linkSync(temporary, file);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    return checkedSecret(fs.readFileSync(file, 'utf8'), file);
+    const fd = fs.openSync(temporary, 'wx', 0o600);
+    try {
+      // writeFileSync on a descriptor writes until everything is written.
+      fs.writeFileSync(fd, `${secret}\n`);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    // What gets published is what was read back, never only what was meant.
+    if (checkedSecret(fs.readFileSync(temporary, 'utf8'), temporary) !== secret) {
+      throw new Error(`${temporary} does not hold the secret that was written`);
+    }
+    try {
+      fs.linkSync(temporary, file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      return checkedSecret(fs.readFileSync(file, 'utf8'), file);
+    }
   } finally {
     fs.rmSync(temporary, { force: true });
   }
@@ -132,8 +141,8 @@ export function resetInstanceKeyForTests(): void {
  * another.
  */
 export function sealSecret(plaintext: string, context: string, key = instanceKey()): SealedSecret {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv(ALGORITHM, key.key, iv);
+  const iv = randomBytes(IV_BYTES);
+  const cipher = createCipheriv(ALGORITHM, key.key, iv, { authTagLength: TAG_BYTES });
   cipher.setAAD(Buffer.from(context, 'utf8'));
   const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   return {
@@ -159,10 +168,14 @@ export function isSealedSecret(value: unknown): value is SealedSecret {
 
 export function openSecret(sealed: SealedSecret, context: string, key = instanceKey()): string {
   if (sealed.kid !== key.kid) throw new SecretKeyMismatchError();
+  const iv = Buffer.from(sealed.iv, 'base64');
+  const tag = Buffer.from(sealed.tag, 'base64');
+  // A shortened tag would weaken the authentication; only the full one is accepted.
+  if (iv.length !== IV_BYTES || tag.length !== TAG_BYTES) throw new SecretCorruptError();
   try {
-    const decipher = createDecipheriv(ALGORITHM, key.key, Buffer.from(sealed.iv, 'base64'));
+    const decipher = createDecipheriv(ALGORITHM, key.key, iv, { authTagLength: TAG_BYTES });
     decipher.setAAD(Buffer.from(context, 'utf8'));
-    decipher.setAuthTag(Buffer.from(sealed.tag, 'base64'));
+    decipher.setAuthTag(tag);
     return Buffer.concat([
       decipher.update(Buffer.from(sealed.ct, 'base64')),
       decipher.final(),

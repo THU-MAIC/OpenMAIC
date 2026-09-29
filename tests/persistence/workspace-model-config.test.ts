@@ -225,3 +225,34 @@ describe('a damaged instance secret file', () => {
     }
   });
 });
+
+describe('sealed values', () => {
+  it('refuse a shortened authentication tag or IV', async () => {
+    const { openSecret, sealSecret, SecretCorruptError } = await import('@/lib/server/secret-box');
+    const key = { key: Buffer.alloc(32, 7), kid: 'k' };
+    const sealed = sealSecret('sk-value', 'ctx', key);
+    expect(openSecret(sealed, 'ctx', key)).toBe('sk-value');
+    const shortTag = Buffer.from(sealed.tag, 'base64').subarray(0, 4).toString('base64');
+    expect(() => openSecret({ ...sealed, tag: shortTag }, 'ctx', key)).toThrow(SecretCorruptError);
+    const shortIv = Buffer.from(sealed.iv, 'base64').subarray(0, 8).toString('base64');
+    expect(() => openSecret({ ...sealed, iv: shortIv }, 'ctx', key)).toThrow(SecretCorruptError);
+    expect(() => openSecret(sealed, 'other', key)).toThrow(SecretCorruptError);
+  });
+
+  it('leave no temporary file behind when the secret cannot be written', async () => {
+    const { instanceKey } = await import('@/lib/server/secret-box');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openmaic-secret-'));
+    const write = vi.spyOn(fs, 'fsyncSync').mockImplementation(() => {
+      throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    });
+    try {
+      resetInstanceKeyForTests();
+      expect(() => instanceKey({}, dir)).toThrow(/disk full/);
+      expect(fs.readdirSync(dir)).toEqual([]);
+    } finally {
+      write.mockRestore();
+      resetInstanceKeyForTests();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
