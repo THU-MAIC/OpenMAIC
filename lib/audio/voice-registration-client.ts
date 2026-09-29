@@ -15,8 +15,9 @@ import { getDeterministicVoiceId, type VoiceDesign } from '@/lib/audio/voice-des
 import { clearVoiceBindingUnavailable } from '@/lib/audio/unavailable-voice-bindings';
 
 /**
- * What a registration request says about the model. The provider's key and
- * endpoint are the `tts` slot's, resolved on the server.
+ * The model a voice is registered for. It derives the deterministic voice id
+ * and keys the session memo; it is not sent: the server registers with the
+ * provider and model the `tts` slot resolves to.
  */
 export interface VoiceRegistrationRequestConfig {
   ttsModelId?: string;
@@ -48,23 +49,25 @@ async function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-/** Register a user-provided sample and return the provider's authoritative voice id. */
+/**
+ * Register a user-provided sample with the `tts` slot's provider (`providerId`
+ * is the provider the voice is recorded for locally) and return the provider's
+ * authoritative voice id.
+ */
 export async function registerVoiceFromReference(
   providerId: string,
   params: UserVoiceRegistrationParams,
-  request: VoiceRegistrationRequestConfig,
 ): Promise<string> {
   const referenceAudioBase64 = await blobToBase64(params.referenceAudio);
   const res = await fetch('/api/generate/voice', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    // The tts slot names the provider on the server.
     body: JSON.stringify({
-      providerId,
       voiceId: params.name.trim(),
       referenceAudioBase64,
       mimeType: params.referenceAudio.type || 'audio/wav',
       refText: params.refText,
-      ...request,
     }),
   });
   const data = (await res.json().catch(() => ({}))) as { voiceId?: unknown; error?: unknown };
@@ -79,16 +82,12 @@ export async function registerVoiceFromReference(
 }
 
 /** Request provider-side deletion. Returns false so callers can still remove local state. */
-export async function deleteRegisteredVoice(
-  providerId: string,
-  voiceId: string,
-  request: VoiceRegistrationRequestConfig,
-): Promise<boolean> {
+export async function deleteRegisteredVoice(providerId: string, voiceId: string): Promise<boolean> {
   try {
     const res = await fetch('/api/generate/voice', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ providerId, voiceId, action: 'delete', ...request }),
+      body: JSON.stringify({ voiceId, action: 'delete' }),
     });
     const data = (await res.json().catch(() => ({}))) as { vendorDeleted?: unknown };
     return res.ok && data.vendorDeleted === true;
@@ -159,13 +158,11 @@ async function registerOnce(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      providerId,
       voiceId,
       descriptor: params.voiceDesign,
       language: params.language,
       referenceAudioBase64: cached?.base64,
       mimeType: cached?.mimeType,
-      ...request,
     }),
   });
   if (!res.ok) return undefined; // graceful fallback to the inline prompt path

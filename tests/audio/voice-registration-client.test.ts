@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // db is browser-only (Dexie); stub it so the client module loads in node.
@@ -10,7 +11,11 @@ vi.mock('@/lib/device-storage/database', () => ({
   },
 }));
 
-import { ensureRegisteredVoice } from '@/lib/audio/voice-registration-client';
+import {
+  deleteRegisteredVoice,
+  ensureRegisteredVoice,
+  registerVoiceFromReference,
+} from '@/lib/audio/voice-registration-client';
 
 function okFetch() {
   const f = vi.fn(
@@ -51,15 +56,31 @@ describe('ensureRegisteredVoice memoization', () => {
     expect(f).toHaveBeenCalledTimes(1);
   });
 
-  it('sends no provider key or endpoint: the server uses the tts slot', async () => {
+  it('sends no provider, model, key or endpoint: the server uses the tts slot', async () => {
     const f = okFetch();
     const voiceDesign = { identity: 'slot teacher', texture: 'warm', delivery: 'calm' };
 
     await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, { ttsModelId: 'model-d' });
     const [, init] = f.mock.calls[0] as unknown as [string, RequestInit];
     const body = JSON.parse(String(init.body));
-    expect(body).toMatchObject({ providerId: 'voxcpm-tts', ttsModelId: 'model-d' });
-    expect(body).not.toHaveProperty('ttsApiKey');
-    expect(body).not.toHaveProperty('ttsBaseUrl');
+    for (const field of ['providerId', 'ttsModelId', 'ttsApiKey', 'ttsBaseUrl']) {
+      expect(body).not.toHaveProperty(field);
+    }
+  });
+
+  it('registers and deletes a user voice without routing fields', async () => {
+    const f = okFetch();
+    await registerVoiceFromReference('qwen-tts', {
+      name: 'My voice',
+      referenceAudio: new Blob(['wav'], { type: 'audio/wav' }),
+      refText: 'Hello',
+    });
+    await deleteRegisteredVoice('qwen-tts', 'x');
+    for (const call of f.mock.calls as unknown as [string, RequestInit][]) {
+      const body = JSON.parse(String(call[1].body));
+      expect(body).not.toHaveProperty('providerId');
+      expect(body).not.toHaveProperty('ttsModelId');
+    }
+    expect(f).toHaveBeenCalledTimes(2);
   });
 });

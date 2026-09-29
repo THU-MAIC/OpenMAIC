@@ -872,7 +872,7 @@ function QwenVoiceCloneManager() {
     if (!name.trim() || !refText.trim() || !referenceFile) return;
     setSaving(true);
     try {
-      const voiceId = await addCloneVoice({ name, referenceAudio: referenceFile, refText }, {});
+      const voiceId = await addCloneVoice({ name, referenceAudio: referenceFile, refText });
       // A new clone becomes the narration voice (this manager shows only while
       // the tts slot is Qwen).
       setTTSVoice(voiceId, 'qwen-tts');
@@ -908,7 +908,7 @@ function QwenVoiceCloneManager() {
   };
 
   const handleDelete = async (voiceId: string) => {
-    const vendorDeleted = await deleteVoice(voiceId, {});
+    const vendorDeleted = await deleteVoice(voiceId);
     if (!vendorDeleted) toast.warning(t('settings.qwenCloneDeleteWarning'));
     if (ttsVoiceProviderId === 'qwen-tts' && ttsVoice === voiceId) {
       setTTSVoice(DEFAULT_TTS_VOICES['qwen-tts'], 'qwen-tts');
