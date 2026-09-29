@@ -104,13 +104,67 @@ describe('translateLegacyConfig: providers', () => {
   });
 });
 
+/** The chat part of translated slots (the media defaults are tested apart). */
+function chatSlots(slots: Record<string, unknown> | undefined) {
+  if (!slots) return undefined;
+  const chat = Object.fromEntries(
+    Object.entries(slots).filter(([slot]) => slot === 'llm' || slot === 'agent'),
+  );
+  return Object.keys(chat).length ? chat : undefined;
+}
+
+describe('translateLegacyConfig: media defaults', () => {
+  it('assigns each media root the provider the server picked when a request named none', () => {
+    const { config } = translateLegacyConfig(
+      server({
+        tts: { 'minimax-tts': { apiKey: 'sk', models: ['speech-2.8-turbo'] } },
+        image: { seedream: { apiKey: 'sk' }, 'qwen-image': { apiKey: 'sk' } },
+        webSearch: { claude: { apiKey: 'c' }, exa: { apiKey: 'e' } },
+        pdf: { mineru: { apiKey: 'm', baseUrl: 'https://mineru.example' } },
+      }),
+    );
+    expect(config.slots).toEqual({
+      tts: 'minimax-tts:speech-2.8-turbo',
+      image: 'seedream',
+      // By the old priority, not by order: exa before claude.
+      webSearch: 'exa',
+      document: 'mineru',
+    });
+    const layers = [{ source: 'deployment' as const, config }];
+    expect(resolveSlot('webSearch', layers)).toMatchObject({ registryId: 'exa', apiKey: 'e' });
+  });
+
+  it('prefers DEFAULT_IMAGE_PROVIDER when it names a usable image provider', () => {
+    const images = server({
+      image: { seedream: { apiKey: 'sk' }, 'qwen-image': { apiKey: 'sk' } },
+    });
+    expect(
+      translateLegacyConfig(images, { defaultImageProvider: 'qwen-image' }).config.slots,
+    ).toEqual({ image: 'qwen-image' });
+    // One that does not carry over leaves the first usable provider.
+    expect(
+      translateLegacyConfig(images, { defaultImageProvider: 'grok-image' }).config.slots,
+    ).toEqual({ image: 'seedream' });
+  });
+
+  it('skips providers that were switched off or did not carry over', () => {
+    const { config } = translateLegacyConfig(
+      server({
+        video: { seedance: { apiKey: 'sk' }, kling: { apiKey: 'sk' } },
+        disabled: { ...noDisabled(), video: new Set(['seedance']) },
+      }),
+    );
+    expect(config.slots).toEqual({ video: 'kling' });
+  });
+});
+
 describe('translateLegacyConfig: models', () => {
   it('puts DEFAULT_MODEL on the llm root and keeps the agent off', () => {
     const { config, notices } = translateLegacyConfig(withProviders, {
       defaultModel: 'openai:gpt-5.6',
     });
     expect(notices).toEqual([]);
-    expect(config.slots).toEqual({ llm: 'openai:gpt-5.6', agent: null });
+    expect(chatSlots(config.slots)).toEqual({ llm: 'openai:gpt-5.6', agent: null });
     const layers = [{ source: 'deployment' as const, config }];
     expect(resolveSlot('course.content.slide', layers)).toMatchObject({ modelId: 'gpt-5.6' });
     expect(resolveSlot('agent', layers)).toMatchObject({ status: 'disabled' });
@@ -122,7 +176,7 @@ describe('translateLegacyConfig: models', () => {
       defaultModel: 'openai:gpt-5.6',
       globalFallback: 'deepseek:deepseek-v4-flash',
     });
-    expect(config.slots).toEqual({
+    expect(chatSlots(config.slots)).toEqual({
       llm: { model: 'openai:gpt-5.6', fallback: 'deepseek:deepseek-v4-flash' },
       agent: null,
     });
@@ -132,21 +186,21 @@ describe('translateLegacyConfig: models', () => {
     const { config, notices } = translateLegacyConfig(withProviders, {
       globalFallback: 'deepseek:deepseek-v4-flash',
     });
-    expect(config.slots).toBeUndefined();
+    expect(chatSlots(config.slots)).toBeUndefined();
     expect(notices).toEqual([
       'MODEL_FALLBACK is not carried over without DEFAULT_MODEL, so calls that retried on it no longer do; set the llm slot with a fallback in openmaic.yml',
     ]);
   });
 
   it('leaves the agent open when there is no server model at all', () => {
-    expect(translateLegacyConfig(withProviders).config.slots).toBeUndefined();
+    expect(chatSlots(translateLegacyConfig(withProviders).config.slots)).toBeUndefined();
   });
 
   it('leaves a model whose provider has no server configuration to the browser', () => {
     const { config, notices } = translateLegacyConfig(withProviders, {
       defaultModel: 'anthropic:claude',
     });
-    expect(config.slots).toBeUndefined();
+    expect(chatSlots(config.slots)).toBeUndefined();
     expect(notices).toEqual([
       'DEFAULT_MODEL uses provider "anthropic" without server configuration; it is left to the browser',
     ]);
@@ -166,7 +220,7 @@ describe('translateLegacyConfig: models', () => {
       defaultModel: 'openai:gpt-5.6',
       globalFallback: `${secret}:m`,
     });
-    expect(fallback.config.slots).toEqual({ llm: 'openai:gpt-5.6', agent: null });
+    expect(chatSlots(fallback.config.slots)).toEqual({ llm: 'openai:gpt-5.6', agent: null });
     for (const notice of [...notices, ...fallback.notices]) expect(notice).not.toContain(secret);
   });
 
@@ -179,7 +233,7 @@ describe('translateLegacyConfig: models', () => {
       }),
       { defaultModel: 'minimax-tts:speech-2.8-turbo' },
     );
-    expect(config.slots).toBeUndefined();
+    expect(chatSlots(config.slots)).toBeUndefined();
     expect(notices).toEqual([
       'An entry in providers has no matching preset and is not carried over',
       'DEFAULT_MODEL uses a provider without server configuration; it is left to the browser',
@@ -190,7 +244,7 @@ describe('translateLegacyConfig: models', () => {
     const { config, notices } = translateLegacyConfig(withProviders, {
       defaultModel: 'openai:gpt\nsecond-line',
     });
-    expect(config.slots).toBeUndefined();
+    expect(chatSlots(config.slots)).toBeUndefined();
     expect(notices).toEqual([
       'DEFAULT_MODEL is not a valid model reference and is not carried over',
     ]);
@@ -225,6 +279,6 @@ describe('translateLegacyConfig output', () => {
       modelId: 'gpt-5.6',
       fallback: { providerId: 'deepseek', modelId: 'deepseek-v4-flash' },
     });
-    expect(resolveSlot('tts', layers)).toMatchObject({ status: 'unassigned' });
+    expect(resolveSlot('tts', layers)).toMatchObject({ registryId: 'minimax-tts' });
   });
 });

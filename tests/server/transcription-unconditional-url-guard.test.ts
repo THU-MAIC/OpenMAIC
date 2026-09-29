@@ -28,6 +28,23 @@ vi.mock('@/lib/server/provider-config', () => ({
   resolveASRBaseUrl: (_id: string, clientBaseUrl?: string | null) => clientBaseUrl || undefined,
   resolveASRModel: (_id: string, clientModel?: string | null) => clientModel || 'whisper-1',
   resolveServerASRProviderId: () => undefined,
+  // No legacy configuration: the request's own provider is what resolves.
+  getServerProviderConfig: () => ({
+    providers: {},
+    tts: {},
+    asr: {},
+    pdf: {},
+    image: {},
+    video: {},
+    webSearch: {},
+    disabled: {
+      tts: new Set(),
+      asr: new Set(),
+      image: new Set(),
+      video: new Set(),
+      webSearch: new Set(),
+    },
+  }),
 }));
 
 vi.mock('@/lib/logger', () => ({

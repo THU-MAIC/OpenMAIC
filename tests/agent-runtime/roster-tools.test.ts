@@ -42,6 +42,24 @@ vi.mock('@/lib/server/provider-config', async (importOriginal) => {
   };
 });
 
+/** The tts slot as the mocked server listing describes it (first enabled provider). */
+function ttsFromMocks() {
+  const [providerId] = (mocks.enabledServerTTSProviderIds() as string[] | undefined) ?? [];
+  if (!providerId) return null;
+  const apiKey = mocks.resolveTTSApiKey(providerId) as string | undefined;
+  const baseUrl = (
+    mocks as { resolveTTSBaseUrl?: (id: string) => string | undefined }
+  ).resolveTTSBaseUrl?.(providerId);
+  return {
+    providerId,
+    ...(apiKey ? { apiKey } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
+    managed: true,
+    userEndpoint: false,
+    origin: 'configuration' as const,
+  };
+}
+
 /** In-memory DocumentStore stub: just the methods the roster tools use. */
 function makeStore(initial: CourseDocument | null = null): CourseStore {
   let doc = initial;
@@ -77,6 +95,7 @@ interface ToolResultShape {
 
 function buildTools(deps: Record<string, unknown> = {}): AgentTool<never, never>[] {
   return buildRosterTools({
+    ttsConnection: ttsFromMocks(),
     store: makeStore(makeDoc()),
     onCheckpoint: () => {},
     ...deps,
@@ -90,6 +109,7 @@ async function runTool(
   deps: Record<string, unknown> = {},
 ): Promise<ToolResultShape> {
   const tools = buildRosterTools({
+    ttsConnection: ttsFromMocks(),
     store,
     onCheckpoint: () => {},
     ...deps,
@@ -396,12 +416,20 @@ describe('list_voices', () => {
   // Paid vendor showcase presets must never reach the agent even when the
   // provider is served AND keyed — explicit provider flag, not "no env so
   // absent" (declared exclusion mechanism).
-  it('never exposes paid qwen-tts presets even when served and keyed', async () => {
-    mocks.enabledServerTTSProviderIds.mockReturnValue(['qwen-tts', 'doubao-tts']);
+  it('lists the voices of the tts slot provider only', async () => {
+    mocks.enabledServerTTSProviderIds.mockReturnValue(['doubao-tts']);
     const result = await runTool(makeStore(makeDoc()), 'list_voices', {});
     const voices = (result.details?.voices ?? []) as Array<Record<string, unknown>>;
     const bindings = voices.map((voice) => voice.binding);
     expect(bindings).toContain('doubao-tts::zh_female_vv_uranus_bigtts');
+    expect(bindings.every((binding) => String(binding).startsWith('doubao-tts::'))).toBe(true);
+  });
+
+  it('never exposes paid qwen-tts presets even when it is the keyed tts provider', async () => {
+    mocks.enabledServerTTSProviderIds.mockReturnValue(['qwen-tts']);
+    const result = await runTool(makeStore(makeDoc()), 'list_voices', {});
+    const voices = (result.details?.voices ?? []) as Array<Record<string, unknown>>;
+    const bindings = voices.map((voice) => voice.binding);
     expect(bindings).not.toContain('qwen-tts::Cherry');
     expect(bindings.some((binding) => String(binding).startsWith('qwen-tts::'))).toBe(false);
   });
@@ -429,6 +457,7 @@ describe('roster abort handling', () => {
     const controller = new AbortController();
     controller.abort();
     const tools = buildRosterTools({
+      ttsConnection: ttsFromMocks(),
       store,
       onCheckpoint: () => {},
     });
@@ -453,9 +482,12 @@ describe('roster owner gate (reference semantics)', () => {
     mocks.resolveTTSApiKey.mockReturnValue('sk-test');
     const store = makeStore(makeDoc());
     const save = vi.spyOn(store as unknown as { saveDocument(): Promise<void> }, 'saveDocument');
-    const tools = withOwnerStageAuthorization(buildRosterTools({ store, onCheckpoint: () => {} }), {
-      stageAccess: async () => ({ kind: 'foreign' as const }),
-    });
+    const tools = withOwnerStageAuthorization(
+      buildRosterTools({ ttsConnection: ttsFromMocks(), store, onCheckpoint: () => {} }),
+      {
+        stageAccess: async () => ({ kind: 'foreign' as const }),
+      },
+    );
     const set = tools.find((candidate) => candidate.name === 'set_roster');
     if (!set) throw new Error('set_roster not registered');
 
@@ -473,7 +505,11 @@ describe('roster owner gate (reference semantics)', () => {
 
   it('list_voices (no stage target) passes through the owner gate untouched', async () => {
     const tools = withOwnerStageAuthorization(
-      buildRosterTools({ store: makeStore(makeDoc()), onCheckpoint: () => {} }),
+      buildRosterTools({
+        ttsConnection: ttsFromMocks(),
+        store: makeStore(makeDoc()),
+        onCheckpoint: () => {},
+      }),
       {
         stageAccess: async () => ({ kind: 'foreign' as const }),
       },

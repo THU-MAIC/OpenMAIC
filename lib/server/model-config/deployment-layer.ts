@@ -78,6 +78,7 @@ export function loadDeploymentLayer(): DeploymentLayer {
   const { config, notices } = translateLegacyConfig(getServerProviderConfig(), {
     defaultModel: process.env.DEFAULT_MODEL?.trim() || undefined,
     globalFallback: process.env.MODEL_FALLBACK?.trim() || undefined,
+    defaultImageProvider: process.env.DEFAULT_IMAGE_PROVIDER?.trim() || undefined,
   });
   return {
     layer: config.providers

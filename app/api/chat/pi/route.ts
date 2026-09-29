@@ -244,11 +244,11 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
         log.warn('Native whiteboard capability unavailable: persistence initialization failed');
       }
     }
-    let nativeWebSearchConfig: ReturnType<typeof resolveClassroomWebSearchConfig>;
+    let nativeWebSearchConfig: Awaited<ReturnType<typeof resolveClassroomWebSearchConfig>>;
     try {
       nativeWebSearchConfig =
         childRuntimeMode === 'native'
-          ? resolveClassroomWebSearchConfig({
+          ? await resolveClassroomWebSearchConfig(await requestWorkspaceId(req), {
               webSearchProviderId: body.webSearchProviderId,
               webSearchApiKey: body.webSearchApiKey,
               webSearchBaseUrl: body.webSearchBaseUrl,

@@ -630,8 +630,15 @@ describe('generateTTSForClassroom pacing and coverage', () => {
     vi.stubEnv('TTS_GLM_API_KEY', 'test-glm-key');
     vi.stubEnv('TTS_GLM_ENABLED', 'true');
     vi.resetModules();
-    const providerConfig = await import('@/lib/server/provider-config');
-    vi.spyOn(providerConfig, 'resolveTTSApiKey').mockReturnValue('');
+    // The tts slot resolves to GLM, whose key did not come through.
+    const media = await import('@/lib/server/model-config/media');
+    vi.spyOn(media, 'serverMediaConnection').mockResolvedValue({
+      providerId: 'glm-tts',
+      apiKey: '',
+      managed: true,
+      userEndpoint: false,
+      origin: 'configuration',
+    });
     const long = '句子。'.repeat(400);
     const scene = speechScene([{ id: 'action_0', text: long }]);
     const { splitLongSpeechActions } = await import('@/lib/audio/tts-utils');

@@ -10,6 +10,9 @@
  * `materialIds` must pass); the byte caps are the upload route's own limits;
  * `maxCount` and `maxTotalBytes` bound one request's `materialIds`.
  */
+import type { NextRequest } from 'next/server';
+
+import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
 import { apiSuccess } from '@/lib/server/api-response';
 import {
   MAX_CLASSROOM_MATERIAL_TOTAL_BYTES,
@@ -25,10 +28,12 @@ import { WORKBENCH_MATERIAL_FORMATS } from '@/lib/workbench/material-upload-poli
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-  const extractable = await resolveExtractableMimeTypes();
+export async function GET(req: NextRequest) {
+  // The formats this caller's document and speech services can read.
+  const workspaceId = await requestWorkspaceId(req);
+  const extractable = await resolveExtractableMimeTypes({ ownerId: workspaceId ?? undefined });
   return apiSuccess({
-    capabilities: resolveServerGenerationCapabilities(),
+    capabilities: await resolveServerGenerationCapabilities(workspaceId),
     materials: {
       formats: WORKBENCH_MATERIAL_FORMATS.filter((format) => extractable.has(format.mime)),
       maxCount: MAX_CLASSROOM_MATERIALS,

@@ -14,12 +14,11 @@ import {
   type MediaExtractorProvider,
 } from '@/lib/document';
 import {
-  getServerPDFProviders,
-  resolveManagedAliDocMindCredentials,
-  resolvePDFApiKey,
-  resolvePDFBaseUrl,
-  resolveServerMediaExtractorConfig,
-} from '@/lib/server/provider-config';
+  extractorConfigFor,
+  mediaExtractorConfig,
+  resolveExtractionServices,
+  type ExtractionServices,
+} from './services';
 import {
   getAgentSessionMaterialStore,
   resolveSessionMaterialRawAsset,
@@ -36,6 +35,10 @@ export interface MaterialExtractionExecutionDependencies {
   providers?: () => DocumentExtractorProvider[];
   mediaProviders?: () => MediaExtractorProvider[];
   configuredProviderIds?: () => string[];
+  /** The owner's document and speech services; resolved from its slots by default. */
+  services?: ExtractionServices;
+  /** The owner a session belongs to, whose slots apply. */
+  sessionOwner?: (sessionId: string) => Promise<string | undefined>;
   putText?: (sessionId: string, text: Buffer) => Promise<string>;
   putBytes?: (sessionId: string, bytes: Buffer, mime: string) => Promise<string>;
   complete?: (input: CompleteMaterialExtractionInput) => Promise<boolean>;
@@ -125,9 +128,10 @@ export async function extractMaterialSource(
   raw: { bytes: Buffer; mime: string; fileName?: string },
   dependencies: Pick<
     MaterialExtractionExecutionDependencies,
-    'providers' | 'mediaProviders' | 'configuredProviderIds'
-  > = {},
+    'providers' | 'mediaProviders' | 'configuredProviderIds' | 'services'
+  > & { ownerId?: string } = {},
 ): Promise<MaterialSourceExtraction> {
+  const services = dependencies.services ?? (await resolveExtractionServices(dependencies.ownerId));
   const mediaProviders = dependencies.mediaProviders?.() ?? getMediaExtractorProviders();
   const isMedia = mediaProviders.some((provider) =>
     provider.supportedMimeTypes.includes(raw.mime.toLowerCase()),
@@ -138,7 +142,7 @@ export async function extractMaterialSource(
       fileName: raw.fileName,
       fileSize: raw.bytes.byteLength,
       mimeType: raw.mime,
-      config: resolveServerMediaExtractorConfig(),
+      config: mediaExtractorConfig(services),
     };
     let selected: MediaExtractorProvider;
     let artifact: MediaArtifact;
@@ -176,7 +180,8 @@ export async function extractMaterialSource(
 
   const providers = dependencies.providers?.() ?? getDocumentExtractorProviders();
   const configuredIds =
-    dependencies.configuredProviderIds?.() ?? Object.keys(getServerPDFProviders());
+    dependencies.configuredProviderIds?.() ??
+    (services.document ? [services.document.providerId] : []);
   const candidates = extractorCandidates(raw.mime, providers, configuredIds);
   if (candidates.length === 0) throw new Error(`no document extractor supports ${raw.mime}`);
 
@@ -185,30 +190,13 @@ export async function extractMaterialSource(
   let artifact: DocumentArtifact | undefined;
   let selected: DocumentExtractorProvider | undefined;
   for (const provider of candidates) {
-    // AliDocMind authenticates with an access key pair: pass the server-owned
-    // pair (env OR YAML), as /api/extract-document does, so a YAML-only
-    // deployment extracts too — the extractor's env fallback reads env only.
-    const aliCredentials =
-      provider.id === 'alidocmind' ? resolveManagedAliDocMindCredentials() : undefined;
     try {
       artifact = await provider.extract({
         buffer: raw.bytes,
         fileName: raw.fileName,
         fileSize: raw.bytes.byteLength,
         mimeType: raw.mime,
-        config: {
-          providerId: provider.id,
-          apiKey: resolvePDFApiKey(provider.id) || undefined,
-          baseUrl: aliCredentials?.baseUrl ?? resolvePDFBaseUrl(provider.id),
-          ...(aliCredentials
-            ? {
-                accessKeyId: aliCredentials.accessKeyId,
-                accessKeySecret: aliCredentials.accessKeySecret,
-              }
-            : {}),
-          allowEnvFallback: true,
-          managed: true,
-        },
+        config: extractorConfigFor(provider.id, services),
       });
       selected = provider;
       break;
@@ -232,6 +220,14 @@ export async function extractMaterialSource(
 }
 
 /** Extract one lease-fenced source through the upstream extractor registry. */
+/** The owner of a session, whose slots its material extraction uses. */
+async function defaultSessionOwner(sessionId: string): Promise<string | undefined> {
+  // Sessions live in the database; without one there is no owner to ask.
+  if (!process.env.DATABASE_URL?.trim()) return undefined;
+  const { getAgentSessionStore } = await import('@/lib/server/agent-runtime/store');
+  return (await (await getAgentSessionStore()).getSession(sessionId))?.ownerId;
+}
+
 export async function extractClaimedSessionMaterial(
   claim: ClaimedMaterialExtraction,
   dependencies: MaterialExtractionExecutionDependencies = {},
@@ -242,9 +238,10 @@ export async function extractClaimedSessionMaterial(
   const raw = await resolveSource(source.sessionId, source.rawAssetId);
   if (!raw) throw new Error(`source bytes are unavailable for material ${source.id}`);
 
+  const ownerId = await (dependencies.sessionOwner ?? defaultSessionOwner)(source.sessionId);
   const extraction = await extractMaterialSource(
     { bytes: raw.bytes, mime: raw.mime, fileName: source.title ?? undefined },
-    dependencies,
+    { ...dependencies, ownerId },
   );
   const { text, extractorVersion } = extraction;
 

@@ -20,14 +20,16 @@ export interface WebSearchCapability {
   baseUrl?: string;
 }
 
-/** This deployment's web-search capability, or null when unconfigured. */
-export function resolveWebSearchCapability(): WebSearchCapability | null {
+/** The web-search capability for a workspace, or null when unconfigured or off. */
+export async function resolveWebSearchCapability(
+  workspaceId: string | null,
+): Promise<WebSearchCapability | null> {
   // The resolver's own per-provider rules decide usability — including
   // keyless providers (brave/searxng carry no apiKey by definition) and the
   // capability force-off plumbing (a disabled-only config resolves to nothing).
   // An extra non-empty-key check here would silently unregister web_search on
   // exactly the keyless deployments.
-  const config = resolveClassroomWebSearchConfig({});
+  const config = await resolveClassroomWebSearchConfig(workspaceId);
   if (!config) return null;
   return {
     providerId: config.providerId,

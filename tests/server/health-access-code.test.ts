@@ -4,12 +4,23 @@ import { NextRequest } from 'next/server';
 import { GET } from '@/app/api/health/route';
 import { middleware } from '@/middleware';
 
-vi.mock('@/lib/server/provider-config', () => ({
-  getServerWebSearchProviders: () => ({}),
-  getServerImageProviders: () => ({ image: { disabled: true } }),
-  getServerVideoProviders: () => ({}),
-  getServerTTSProviders: () => ({ tts: { disabled: false } }),
-}));
+/** The deployment's slots behind the capabilities these tests expect. */
+async function configureSlots(slots: Record<string, unknown>) {
+  (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
+    layer: {
+      source: 'deployment',
+      config: {
+        providers: {
+          tv: { preset: 'tavily', apiKey: 'k' },
+          mm: { preset: 'minimax-tts', apiKey: 'k' },
+        },
+        slots,
+      } as never,
+    },
+    defaults: null,
+    notices: [],
+  });
+}
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -18,6 +29,7 @@ describe('health access-code configuration', () => {
     'reports runtime configuration without exposing ACCESS_CODE=%j',
     async (code) => {
       vi.stubEnv('ACCESS_CODE', code);
+      await configureSlots({ tts: 'mm', image: null });
 
       // Health remains available to deployment probes without an access cookie.
       const gate = await middleware(new NextRequest('http://localhost/api/health'));

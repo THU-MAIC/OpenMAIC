@@ -8,6 +8,6 @@ export async function GET() {
     status: 'ok',
     version,
     accessCodeConfigured: Boolean(process.env.ACCESS_CODE),
-    capabilities: resolveServerGenerationCapabilities(),
+    capabilities: await resolveServerGenerationCapabilities(),
   });
 }

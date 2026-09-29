@@ -13,7 +13,7 @@
  * values, only registry ids and configuration names.
  */
 import { PROVIDERS, parseModelString } from '@/lib/ai/providers';
-import type { SlotCapability } from '@/lib/config/model-slots';
+import type { SlotCapability, SlotId } from '@/lib/config/model-slots';
 import { PRESET_ID_OVERRIDES, getProviderPreset } from '@/lib/config/provider-presets';
 import {
   providerSchema,
@@ -27,6 +27,8 @@ export interface LegacyModelSettings {
   defaultModel?: string;
   /** `MODEL_FALLBACK`: the retry model. */
   globalFallback?: string;
+  /** `DEFAULT_IMAGE_PROVIDER`: the image provider to prefer. */
+  defaultImageProvider?: string;
 }
 
 export interface LegacyTranslation {
@@ -81,6 +83,22 @@ function rejectedFields(error: { issues: readonly { path: readonly PropertyKey[]
   );
   return [...fields].join(', ');
 }
+
+/** Section → the media slot its server default provider fills. */
+const MEDIA_DEFAULTS: ReadonlyArray<[Section, SlotId]> = [
+  ['tts', 'tts'],
+  ['asr', 'asr'],
+  ['image', 'image'],
+  ['video', 'video'],
+  ['webSearch', 'webSearch'],
+  ['pdf', 'document'],
+];
+
+/** The order the server preferred web search providers in (with a key). */
+const WEB_SEARCH_PRIORITY = ['tavily', 'exa', 'bocha', 'baidu', 'minimax', 'claude'];
+
+/** `providerId` or `providerId:modelId`, as openmaic.yml accepts it. */
+const MODEL_REF_SHAPE_ANY = /^[a-z0-9][a-z0-9-]{0,62}(?::.+)?$/;
 
 /** What `providerId:modelId` looks like in openmaic.yml (no line breaks in the model id). */
 const MODEL_REF_SHAPE = /^[a-z0-9][a-z0-9-]{0,62}:.+$/;
@@ -179,6 +197,30 @@ export function translateLegacyConfig(
     notices.push(
       'MODEL_FALLBACK is not carried over without DEFAULT_MODEL, so calls that retried on it no longer do; set the llm slot with a fallback in openmaic.yml',
     );
+  }
+
+  // Media and tool capabilities: the provider the server picked when a
+  // request named none (the first configured one; web search by its old
+  // priority), with the first pinned model, else the provider's default.
+  for (const [section, slot] of MEDIA_DEFAULTS) {
+    const capability = SECTION_CAPABILITY[section];
+    const usable = Object.entries(server[section]).filter(([registryId]) =>
+      Object.hasOwn(providers, legacyProviderId(capability, registryId)),
+    );
+    const preferred =
+      section === 'webSearch'
+        ? WEB_SEARCH_PRIORITY.map((id) => usable.find(([registryId]) => registryId === id)).find(
+            (entry) => entry?.[1].apiKey,
+          )
+        : section === 'image' && settings.defaultImageProvider
+          ? usable.find(([registryId]) => registryId === settings.defaultImageProvider)
+          : undefined;
+    const picked = preferred ?? usable[0];
+    if (!picked) continue;
+    const [registryId, entry] = picked;
+    const model = entry.models?.find(Boolean);
+    const ref = legacyProviderId(capability, registryId) + (model ? `:${model}` : '');
+    if (MODEL_REF_SHAPE_ANY.test(ref)) slots[slot] = ref;
   }
 
   const config: ModelConfigFile = {};

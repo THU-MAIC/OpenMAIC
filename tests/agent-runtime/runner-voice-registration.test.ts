@@ -100,6 +100,24 @@ vi.mock('@/lib/server/provider-config', async (importActual) => {
   };
 });
 
+// The run's tts and video slots, as the mocked server listing describes them.
+vi.mock('@/lib/server/model-config/media', async (importActual) => ({
+  ...(await importActual<typeof import('@/lib/server/model-config/media')>()),
+  serverMediaConnection: async (slot: string) => {
+    if (slot !== 'tts') return null;
+    const [providerId] = (mocks.enabledServerTTSProviderIds() as string[] | undefined) ?? [];
+    if (!providerId) return null;
+    const apiKey = mocks.resolveTTSApiKey(providerId) as string | undefined;
+    return {
+      providerId,
+      ...(apiKey ? { apiKey } : {}),
+      managed: true,
+      userEndpoint: false,
+      origin: 'configuration',
+    };
+  },
+}));
+
 vi.mock('@/lib/audio/voice-registration', async (importActual) => {
   const actual = await importActual<typeof import('@/lib/audio/voice-registration')>();
   return {

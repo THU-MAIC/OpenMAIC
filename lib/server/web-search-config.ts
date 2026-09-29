@@ -7,6 +7,14 @@ import {
   resolveWebSearchModel,
 } from '@/lib/server/provider-config';
 import { TOKEN_PLAN_PRESETS } from '@/lib/config/token-plan-presets';
+import {
+  RequestedProviderRefusedError,
+  resolveMediaSlot,
+  type MediaConnection,
+} from '@/lib/server/model-config/media';
+import { apiError } from '@/lib/server/api-response';
+import { SlotDisabledError, SlotUnassignedError } from '@/lib/server/model-config/runtime';
+import type { searchWeb } from '@/lib/web-search';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 
@@ -101,51 +109,161 @@ export function resolveWebSearchRouteBaseUrl(
   return resolveWebSearchBaseUrl(providerId, safeClientBaseUrl);
 }
 
-export function resolveClassroomWebSearchConfig(input: {
+export interface RequestedWebSearch {
   webSearchProviderId?: WebSearchProviderId;
   webSearchApiKey?: string;
   webSearchBaseUrl?: string;
   webSearchModelId?: string;
   baiduSubSources?: BaiduSubSources;
-}):
-  | {
-      providerId: WebSearchProviderId;
-      apiKey: string;
-      baseUrl?: string;
-      baiduSubSources?: BaiduSubSources;
-      claudeModelId?: string;
-    }
-  | undefined {
-  const requestedProviderId = assertWebSearchProviderId(input.webSearchProviderId)
+}
+
+/** What searchWeb needs besides the query. */
+export type WebSearchConfig = Omit<Parameters<typeof searchWeb>[0], 'query' | 'apiKey'> & {
+  apiKey: string;
+};
+
+/** Why a resolved web search provider cannot be used, in the route's terms. */
+export class WebSearchConfigError extends Error {
+  constructor(
+    readonly code: 'MISSING_API_KEY' | 'MISSING_REQUIRED_FIELD' | 'INVALID_REQUEST',
+    message: string,
+    readonly providerId?: WebSearchProviderId,
+  ) {
+    super(message);
+    this.name = 'WebSearchConfigError';
+  }
+}
+
+/**
+ * The provider a request names the old way (deprecated), with its key and base
+ * URL for an unmanaged provider. The operator's configured backend is preferred
+ * over an unmanaged request choice, as it always was.
+ */
+function requestedWebSearchConnection(
+  input: RequestedWebSearch,
+  refuseDisabled: boolean,
+): MediaConnection | undefined {
+  const requested = assertWebSearchProviderId(input.webSearchProviderId)
     ? input.webSearchProviderId
     : undefined;
-  // A force-disabled requested provider yields to the operator's server default
-  // (server precedence, #665); resolveServerWebSearchProviderId already skips
-  // disabled providers internally.
-  const providerId =
-    (requestedProviderId && !isServerProviderDisabled('webSearch', requestedProviderId)
-      ? requestedProviderId
-      : undefined) ?? (resolveServerWebSearchProviderId() as WebSearchProviderId | undefined);
-  if (!providerId) return undefined;
-
-  const provider = WEB_SEARCH_PROVIDERS[providerId];
-  const apiKey = resolveWebSearchApiKey(providerId, input.webSearchApiKey);
-  if (provider.requiresApiKey && !apiKey) return undefined;
-
+  if (!requested) return undefined;
+  const serverProviderId = resolveServerWebSearchProviderId() as WebSearchProviderId | undefined;
+  let providerId: WebSearchProviderId = requested;
+  if (
+    serverProviderId &&
+    isServerConfiguredProvider('webSearch', serverProviderId) &&
+    providerId !== serverProviderId &&
+    !isServerConfiguredProvider('webSearch', providerId)
+  ) {
+    providerId = serverProviderId;
+  }
+  // A force-disabled provider is off for everyone (#665): refused, or passed
+  // over for the server's own default where the caller simply skips search.
+  if (isServerProviderDisabled('webSearch', providerId)) {
+    if (!refuseDisabled) return undefined;
+    throw new RequestedProviderRefusedError(
+      apiError('PROVIDER_DISABLED', 403, 'This web search provider is disabled by the server'),
+    );
+  }
   const managed = isServerConfiguredProvider('webSearch', providerId);
+  // SearXNG base URLs are operator-managed only; never trust client input.
   const clientBaseUrl = managed || providerId === 'searxng' ? undefined : input.webSearchBaseUrl;
   const baseUrl = resolveWebSearchRouteBaseUrl(providerId, clientBaseUrl);
-  if (provider.requiresBaseUrl && !baseUrl) return undefined;
+  const model =
+    providerId === 'claude' ? resolveWebSearchModel('claude', input.webSearchModelId) : undefined;
+  return {
+    providerId,
+    apiKey: resolveWebSearchApiKey(providerId, managed ? undefined : input.webSearchApiKey),
+    ...(baseUrl ? { baseUrl } : {}),
+    ...(model ? { modelId: model } : {}),
+    managed,
+    userEndpoint: Boolean(clientBaseUrl?.trim()),
+    origin: 'request',
+  };
+}
 
+/**
+ * The search configuration for a resolved connection. A base URL from a
+ * workspace provider is held to the same official endpoints as a client one
+ * (SearXNG aside, which the workspace names itself and resolveMediaSlot checks).
+ */
+export function webSearchConfigFromConnection(
+  connection: MediaConnection,
+  requested: RequestedWebSearch = {},
+): WebSearchConfig {
+  if (!assertWebSearchProviderId(connection.providerId)) {
+    throw new WebSearchConfigError('INVALID_REQUEST', 'Unsupported web search provider');
+  }
+  const providerId = connection.providerId;
+  const provider = WEB_SEARCH_PROVIDERS[providerId];
+  const apiKey = connection.apiKey ?? '';
+  if (provider.requiresApiKey && !apiKey) {
+    throw new WebSearchConfigError(
+      'MISSING_API_KEY',
+      `${provider.name} API key is not configured.`,
+      providerId,
+    );
+  }
+  let baseUrl = connection.baseUrl;
+  if (
+    connection.origin === 'configuration' &&
+    !connection.managed &&
+    baseUrl &&
+    // A provider the operator must point at (self-hosted search) has no
+    // official endpoint to hold a user-typed one to.
+    !provider.requiresBaseUrl
+  ) {
+    baseUrl = resolveSafeClientWebSearchBaseUrl(providerId, baseUrl);
+  }
+  if (provider.requiresBaseUrl && !baseUrl) {
+    throw new WebSearchConfigError(
+      'MISSING_REQUIRED_FIELD',
+      `${provider.name} needs a base URL.`,
+      providerId,
+    );
+  }
   return {
     providerId,
     apiKey,
-    baseUrl,
-    ...(providerId === 'baidu' && input.baiduSubSources
-      ? { baiduSubSources: input.baiduSubSources }
-      : {}),
-    ...(providerId === 'claude'
-      ? { claudeModelId: resolveWebSearchModel('claude', input.webSearchModelId) }
-      : {}),
+    ...(baseUrl ? { baseUrl } : {}),
+    ...(requested.baiduSubSources ? { baiduSubSources: requested.baiduSubSources } : {}),
+    ...(connection.modelId ? { claudeModelId: connection.modelId } : {}),
   };
+}
+
+/**
+ * The web search connection for a workspace: the webSearch slot, else the
+ * provider a request names (deprecated), else the server's configured one.
+ * Throws what resolveMediaSlot throws (turned off, unassigned) and
+ * WebSearchConfigError.
+ */
+export async function resolveWebSearchConnection(
+  workspaceId: string | null,
+  requested: RequestedWebSearch = {},
+  { refuseDisabled = false }: { refuseDisabled?: boolean } = {},
+): Promise<WebSearchConfig> {
+  const connection = await resolveMediaSlot('webSearch', {
+    workspaceId,
+    legacyRequest: async () => requestedWebSearchConnection(requested, refuseDisabled),
+  });
+  return webSearchConfigFromConnection(connection, requested);
+}
+
+/**
+ * {@link resolveWebSearchConnection} for work that simply skips search when it
+ * is unavailable: undefined when the slot is off, unassigned or incomplete.
+ * An invalid base URL still throws.
+ */
+export async function resolveClassroomWebSearchConfig(
+  workspaceId: string | null,
+  requested: RequestedWebSearch = {},
+): Promise<WebSearchConfig | undefined> {
+  try {
+    return await resolveWebSearchConnection(workspaceId, requested);
+  } catch (error) {
+    if (error instanceof SlotDisabledError || error instanceof SlotUnassignedError)
+      return undefined;
+    if (error instanceof WebSearchConfigError && error.code !== 'INVALID_REQUEST') return undefined;
+    throw error;
+  }
 }

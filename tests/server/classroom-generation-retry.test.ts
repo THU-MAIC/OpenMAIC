@@ -703,7 +703,7 @@ describe('classroom generation inputs', () => {
     );
 
     // No request-supplied provider, key or model: the server default is used.
-    expect(mocks.resolveClassroomWebSearchConfig).toHaveBeenCalledWith({});
+    expect(mocks.resolveClassroomWebSearchConfig).toHaveBeenCalledWith('owner-1');
     expect(mocks.searchWeb).toHaveBeenCalledWith(
       expect.objectContaining({ providerId: 'tavily', apiKey: 'k', query: 'retry basics' }),
     );
@@ -747,7 +747,7 @@ describe('classroom generation inputs', () => {
 
     const { result } = await generateWithProgress({}, { webSearch: true });
 
-    expect(mocks.resolveClassroomWebSearchConfig).toHaveBeenCalledWith({});
+    expect(mocks.resolveClassroomWebSearchConfig).toHaveBeenCalledWith('owner-1');
     expect(mocks.searchWeb).not.toHaveBeenCalled();
     expect(mocks.generateSceneOutlinesFromRequirements.mock.calls[0][4].researchContext).toBe(
       undefined,

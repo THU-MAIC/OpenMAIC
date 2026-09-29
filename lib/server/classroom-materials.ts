@@ -71,7 +71,7 @@ export async function resolveClassroomMaterials(
     return record;
   });
 
-  const extractable = await resolveExtractableMimeTypes();
+  const extractable = await resolveExtractableMimeTypes({ ownerId });
   if (records.some((record) => !record.mime || !extractable.has(record.mime.toLowerCase()))) {
     throw new ClassroomMaterialsRejectedError(
       'One or more materials have a type this server cannot extract; see GET /api/generate-classroom/capabilities',
@@ -109,11 +109,14 @@ export async function loadClassroomMaterialText(
     } catch {
       throw new ClassroomMaterialsUnavailableError();
     }
-    const extraction = await extractMaterialSource({
-      bytes,
-      mime: record.mime ?? 'application/octet-stream',
-      fileName: name,
-    });
+    const extraction = await extractMaterialSource(
+      {
+        bytes,
+        mime: record.mime ?? 'application/octet-stream',
+        fileName: name,
+      },
+      { ownerId },
+    );
     if (!extraction.text.trim()) {
       throw new Error(`Material "${name}" produced no extractable text`);
     }

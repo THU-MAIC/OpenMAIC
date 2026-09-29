@@ -17,25 +17,14 @@ import { generateVideo, normalizeVideoOptions } from '@/lib/media/video-provider
 import {
   managedMediaDownloadFetch,
   managedMediaProviderFetch,
+  mediaDownloadFetch,
+  mediaProviderFetch,
 } from '@/lib/server/media-provider-fetch';
 import { generateTTS, TTSRateLimitError } from '@/lib/audio/tts-providers';
 import { DEFAULT_TTS_VOICES, DEFAULT_TTS_MODELS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
-import {
-  getServerImageProviders,
-  getServerVideoProviders,
-  getServerTTSProviders,
-  isServerConfiguredProvider,
-  resolveImageApiKey,
-  resolveImageBaseUrl,
-  resolveImageModel,
-  resolveVideoApiKey,
-  resolveVideoBaseUrl,
-  resolveVideoModel,
-  resolveTTSApiKey,
-  resolveTTSBaseUrl,
-} from '@/lib/server/provider-config';
+import { serverMediaConnection } from '@/lib/server/model-config/media';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
@@ -170,49 +159,46 @@ export async function generateMediaForClassroom(
   const requests = outlines.flatMap((o) => o.mediaGenerations ?? []);
   if (requests.length === 0) return { assets: {}, storageFull: { images: false, video: false } };
 
-  // Resolve providers, excluding operator force-disabled ones (server
-  // precedence, #665 — mirror the TTS listing's disabled flag).
-  const imageProviderIds = Object.entries(getServerImageProviders())
-    .filter(([, info]) => !info.disabled)
-    .map(([id]) => id);
-  const videoProviderIds = Object.entries(getServerVideoProviders())
-    .filter(([, info]) => !info.disabled)
-    .map(([id]) => id);
+  // The image and video slots for this job's owner; a slot turned off or
+  // unassigned generates nothing of its kind.
+  const [imageSlot, videoSlot] = await Promise.all([
+    serverMediaConnection('image', ownerId),
+    serverMediaConnection('video', ownerId),
+  ]);
+  const image = imageSlot && imageSlot !== 'off' ? imageSlot : undefined;
+  const video = videoSlot && videoSlot !== 'off' ? videoSlot : undefined;
 
   const mediaMap: Record<string, string> = {};
   const storageFull = { images: false, video: false };
 
   // Separate image and video requests, generate each type sequentially
   // but run the two types in parallel (providers often have limited concurrency).
-  const imageRequests = requests.filter((r) => r.type === 'image' && imageProviderIds.length > 0);
-  const videoRequests = requests.filter((r) => r.type === 'video' && videoProviderIds.length > 0);
+  const imageRequests = image ? requests.filter((r) => r.type === 'image') : [];
+  const videoRequests = video ? requests.filter((r) => r.type === 'video') : [];
 
   const generateImages = async () => {
     for (const req of imageRequests) {
       try {
-        const providerId = imageProviderIds[0] as ImageProviderId;
-        const apiKey = resolveImageApiKey(providerId);
+        const providerId = image!.providerId as ImageProviderId;
+        const apiKey = image!.apiKey ?? '';
         const providerConfig = IMAGE_PROVIDERS[providerId];
         if (providerConfig?.requiresApiKey && !apiKey) {
           log.warn(`No API key for image provider "${providerId}", skipping ${req.elementId}`);
           continue;
         }
-        // No client model here — the server-side `IMAGE_<PREFIX>_MODELS` pin
-        // (first entry) is authoritative when set; otherwise fall back to the
-        // first catalog model so key-only deployments keep generating. This
-        // path is internal (no HTTP response to fail loud with), so the
-        // adapter's requireModel must stay a backstop, never the primary
-        // failure mode.
-        const model = resolveImageModel(providerId) ?? providerConfig?.models?.[0]?.id;
+        // The slot's model, else the first catalog model so a provider-only
+        // assignment keeps generating. This path is internal (no HTTP response
+        // to fail loud with), so the adapter's requireModel must stay a
+        // backstop, never the primary failure mode.
+        const model = image!.modelId ?? providerConfig?.models?.[0]?.id;
 
         const result = await generateImage(
           {
             providerId,
             apiKey,
-            baseUrl: resolveImageBaseUrl(providerId),
+            baseUrl: image!.baseUrl,
             model,
-            // Server-configured provider: its base URL is operator configuration.
-            fetchImpl: managedMediaProviderFetch,
+            fetchImpl: image!.managed ? managedMediaProviderFetch : mediaProviderFetch,
           },
           resolveImageSize(
             { prompt: req.prompt, aspectRatio: req.aspectRatio || '16:9' },
@@ -269,20 +255,15 @@ export async function generateMediaForClassroom(
   const generateVideos = async () => {
     for (const req of videoRequests) {
       try {
-        const providerId = videoProviderIds[0] as VideoProviderId;
-        const apiKey = resolveVideoApiKey(providerId);
+        const providerId = video!.providerId as VideoProviderId;
+        const apiKey = video!.apiKey ?? '';
         if (!apiKey) {
           log.warn(`No API key for video provider "${providerId}", skipping ${req.elementId}`);
           continue;
         }
-        // No client model here — the server-side `VIDEO_<PREFIX>_MODELS` pin
-        // (first entry) is authoritative when set; otherwise fall back to the
-        // first catalog model so key-only deployments keep generating. This
-        // path is internal (no HTTP response to fail loud with), so the
-        // adapter's requireModel must stay a backstop, never the primary
-        // failure mode.
+        // The slot's model, else the first catalog model (see images above).
         const providerConfig = VIDEO_PROVIDERS[providerId];
-        const model = resolveVideoModel(providerId) ?? providerConfig?.models?.[0]?.id;
+        const model = video!.modelId ?? providerConfig?.models?.[0]?.id;
 
         const normalized = normalizeVideoOptions(providerId, {
           prompt: req.prompt,
@@ -293,11 +274,10 @@ export async function generateMediaForClassroom(
           {
             providerId,
             apiKey,
-            baseUrl: resolveVideoBaseUrl(providerId),
+            baseUrl: video!.baseUrl,
             model,
-            // Server-configured provider: its base URL is operator configuration.
-            fetchImpl: managedMediaProviderFetch,
-            downloadFetchImpl: managedMediaDownloadFetch,
+            fetchImpl: video!.managed ? managedMediaProviderFetch : mediaProviderFetch,
+            downloadFetchImpl: video!.managed ? managedMediaDownloadFetch : mediaDownloadFetch,
           },
           normalized,
         );
@@ -501,17 +481,14 @@ export async function generateTTSForClassroom(
   signal?: AbortSignal,
   onProgress?: (progress: ClassroomTtsProgress) => void | Promise<void>,
 ): Promise<ClassroomTtsResult> {
-  // Resolve TTS provider (exclude browser-native-tts and operator force-disabled
-  // providers — server precedence, #665).
-  const ttsProviderIds = Object.entries(getServerTTSProviders())
-    .filter(([id, info]) => id !== 'browser-native-tts' && !info.disabled)
-    .map(([id]) => id);
-  if (ttsProviderIds.length === 0) {
+  // The tts slot for this job's owner; browser-native speech is the client's.
+  const tts = await serverMediaConnection('tts', ownerId);
+  if (!tts || tts === 'off' || tts.providerId === 'browser-native-tts') {
     return skippedTtsCoverage(scenes, 'No server TTS provider configured, skipping TTS generation');
   }
 
-  const providerId = ttsProviderIds[0] as TTSProviderId;
-  const apiKey = resolveTTSApiKey(providerId);
+  const providerId = tts.providerId as TTSProviderId;
+  const apiKey = tts.apiKey ?? '';
   const ttsProvider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
   if (ttsProvider?.requiresApiKey && !apiKey) {
     return skippedTtsCoverage(
@@ -520,8 +497,8 @@ export async function generateTTSForClassroom(
       providerId,
     );
   }
-  const ttsBaseUrl = resolveTTSBaseUrl(providerId) || ttsProvider?.defaultBaseUrl;
-  const ttsManaged = isServerConfiguredProvider('tts', providerId);
+  const ttsBaseUrl = tts.baseUrl || ttsProvider?.defaultBaseUrl;
+  const ttsManaged = tts.managed;
   const voice = DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
   const format = ttsProvider?.supportedFormats?.[0] || 'mp3';
   if (providerId === VOXCPM_TTS_PROVIDER_ID && voice === VOXCPM_AUTO_VOICE_ID) {
@@ -587,10 +564,13 @@ export async function generateTTSForClassroom(
           const result = await generateTTS(
             {
               providerId,
-              modelId: DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
+              modelId:
+                tts.modelId ??
+                (DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || ''),
               apiKey,
               baseUrl: ttsBaseUrl,
               managed: ttsManaged,
+              publicOnly: tts.userEndpoint,
               voice,
               speed: speechAction.speed,
               signal,

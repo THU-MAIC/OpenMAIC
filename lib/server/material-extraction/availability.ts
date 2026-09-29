@@ -5,16 +5,20 @@ import {
   type MediaExtractorProvider,
 } from '@/lib/document';
 import {
-  getServerPDFProviders,
-  resolveServerASRProviderId,
-  resolveServerMediaExtractorConfig,
-} from '@/lib/server/provider-config';
+  mediaExtractorConfig,
+  resolveExtractionServices,
+  type ExtractionServices,
+} from './services';
 
 export interface ExtractorAvailabilityDependencies {
   providers?: () => DocumentExtractorProvider[];
   mediaProviders?: () => MediaExtractorProvider[];
   configuredProviderIds?: () => string[];
   serverASRConfigured?: () => boolean;
+  /** The owner's document and speech services; resolved from its slots by default. */
+  services?: ExtractionServices;
+  /** Whose slots apply when `services` is not given. */
+  ownerId?: string;
 }
 
 /**
@@ -31,8 +35,10 @@ export interface ExtractorAvailabilityDependencies {
 export async function resolveExtractableMimeTypes(
   dependencies: ExtractorAvailabilityDependencies = {},
 ): Promise<Set<string>> {
+  const services = dependencies.services ?? (await resolveExtractionServices(dependencies.ownerId));
   const configured = new Set(
-    dependencies.configuredProviderIds?.() ?? Object.keys(getServerPDFProviders()),
+    dependencies.configuredProviderIds?.() ??
+      (services.document ? [services.document.providerId] : []),
   );
   const mimes = new Set<string>();
   const add = (supported: readonly string[]) => {
@@ -48,10 +54,9 @@ export async function resolveExtractableMimeTypes(
   const mediaInput = {
     buffer: Buffer.alloc(0),
     mimeType: '',
-    config: resolveServerMediaExtractorConfig(),
+    config: mediaExtractorConfig(services),
   };
-  const serverASRConfigured =
-    dependencies.serverASRConfigured?.() ?? Boolean(resolveServerASRProviderId());
+  const serverASRConfigured = dependencies.serverASRConfigured?.() ?? Boolean(services.asr);
   for (const provider of dependencies.mediaProviders?.() ?? getMediaExtractorProviders()) {
     const availability = await provider.availability?.(mediaInput);
     if (availability && !availability.available) continue;

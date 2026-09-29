@@ -8,13 +8,6 @@
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
-import {
-  isServerConfiguredProvider,
-  isServerProviderDisabled,
-  resolveServerWebSearchProviderId,
-  resolveWebSearchApiKey,
-  resolveWebSearchModel,
-} from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
@@ -25,7 +18,13 @@ import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import type { AICallFn } from '@openmaic/generation';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
-import { resolveWebSearchRouteBaseUrl } from '@/lib/server/web-search-config';
+import {
+  resolveWebSearchConnection,
+  WebSearchConfigError,
+  type WebSearchConfig,
+} from '@/lib/server/web-search-config';
+import { mediaResolutionResponse } from '@/lib/server/model-config/media';
+import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
 
 const log = createLogger('WebSearch');
 
@@ -56,67 +55,38 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'query is required');
     }
 
-    const serverProviderId = resolveServerWebSearchProviderId() as WebSearchProviderId | undefined;
-    let providerId: WebSearchProviderId =
-      requestProviderId && WEB_SEARCH_PROVIDERS[requestProviderId]
-        ? requestProviderId
-        : (serverProviderId ?? 'tavily');
-
-    // Prefer the operator's server-configured backend over stale client defaults
-    // (e.g. Tavily without a key, or Brave HTML scrape with empty results).
-    if (
-      serverProviderId &&
-      isServerConfiguredProvider('webSearch', serverProviderId) &&
-      providerId !== serverProviderId &&
-      !isServerConfiguredProvider('webSearch', providerId)
-    ) {
-      log.info(
-        `Using server-configured web search provider "${serverProviderId}" instead of "${providerId}"`,
-      );
-      providerId = serverProviderId;
-    }
-
-    // Enforce server precedence: a force-disabled provider is off for everyone,
-    // regardless of any client key/selection — mirror the TTS contract (#665).
-    // Checked after the server-preference override so a disabled client choice
-    // yields to the operator's enabled backend.
-    if (isServerProviderDisabled('webSearch', providerId)) {
-      return apiError(
-        'PROVIDER_DISABLED',
-        403,
-        'This web search provider is disabled by the server',
-      );
-    }
-
-    const provider = WEB_SEARCH_PROVIDERS[providerId];
-    // Managed providers are admin-owned: ignore (don't reject) any client-sent
-    // key/baseUrl. The server config is authoritative, so a stale client base
-    // URL is dropped rather than failing the request.
-    const managed = isServerConfiguredProvider('webSearch', providerId);
-    const clientApiKey = managed ? undefined : bodyApiKey;
-    // SearXNG base URLs are operator-managed only (SEARXNG_BASE_URL); never trust client input.
-    const clientBaseUrl = managed || providerId === 'searxng' ? undefined : bodyBaseUrl;
-    const apiKey = resolveWebSearchApiKey(providerId, clientApiKey);
-    if (provider.requiresApiKey && !apiKey) {
-      return apiError(
-        'MISSING_API_KEY',
-        400,
-        `${provider.name} API key is not configured. Set it in Settings -> Web Search or configure ${getWebSearchEnvKey(providerId)} on the server.`,
-      );
-    }
-    let baseUrl: string | undefined;
+    // The webSearch slot decides; the provider, key and base URL a request
+    // names (deprecated) count only when it is unassigned.
+    let config: WebSearchConfig;
     try {
-      baseUrl = resolveWebSearchRouteBaseUrl(providerId, clientBaseUrl);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Invalid web search base URL';
-      return apiError('INVALID_REQUEST', 400, message);
-    }
-    if (provider.requiresBaseUrl && !baseUrl) {
-      return apiError(
-        'MISSING_REQUIRED_FIELD',
-        400,
-        getMissingBaseUrlMessage(providerId, provider.name),
+      config = await resolveWebSearchConnection(
+        await requestWorkspaceId(req),
+        {
+          webSearchProviderId: requestProviderId,
+          webSearchApiKey: bodyApiKey,
+          webSearchBaseUrl: bodyBaseUrl,
+          webSearchModelId: claudeModelId,
+          baiduSubSources,
+        },
+        { refuseDisabled: true },
       );
+    } catch (error) {
+      const refused = mediaResolutionResponse(error, 'Web search');
+      if (refused) return refused;
+      if (error instanceof WebSearchConfigError) {
+        const provider = error.providerId ? WEB_SEARCH_PROVIDERS[error.providerId] : undefined;
+        const message =
+          error.providerId && provider && error.code === 'MISSING_API_KEY'
+            ? `${provider.name} API key is not configured. Set it in the model settings or configure ${getWebSearchEnvKey(error.providerId)} on the server.`
+            : error.providerId && provider && error.code === 'MISSING_REQUIRED_FIELD'
+              ? getMissingBaseUrlMessage(error.providerId, provider.name)
+              : error.message;
+        return apiError(error.code, 400, message);
+      }
+      if (error instanceof Error && /base URL/.test(error.message)) {
+        return apiError('INVALID_REQUEST', 400, error.message);
+      }
+      throw error;
     }
 
     // Clamp rewrite input at the route boundary; framework body limits still apply to total request size.
@@ -159,18 +129,7 @@ export async function POST(req: NextRequest) {
       finalQueryLength: searchQuery.finalQueryLength,
     });
 
-    const result = await searchWeb({
-      providerId,
-      query: searchQuery.query,
-      apiKey,
-      baseUrl,
-      ...(providerId === 'baidu' && baiduSubSources ? { baiduSubSources } : {}),
-      // A server-pinned model (WEB_SEARCH_CLAUDE_MODELS) is authoritative over
-      // the client-selected one, matching how managed keys/base URLs behave.
-      ...(providerId === 'claude'
-        ? { claudeModelId: resolveWebSearchModel('claude', claudeModelId) }
-        : {}),
-    });
+    const result = await searchWeb({ ...config, query: searchQuery.query });
     const context = formatSearchResultsAsContext(result);
 
     return apiSuccess({
@@ -191,7 +150,7 @@ function getMissingBaseUrlMessage(providerId: WebSearchProviderId, providerName:
   if (providerId === 'searxng') {
     return `${providerName} base URL is not configured. Set SEARXNG_BASE_URL on the server.`;
   }
-  return `${providerName} base URL is not configured. Set ${getWebSearchEnvKey(providerId)} on the server or configure the base URL in Settings -> Web Search.`;
+  return `${providerName} base URL is not configured. Set ${getWebSearchEnvKey(providerId)} on the server or configure the base URL in the model settings.`;
 }
 
 function getWebSearchEnvKey(providerId: WebSearchProviderId): string {

@@ -219,7 +219,9 @@ export async function generateClassroom(
   },
 ): Promise<GenerateClassroomResult> {
   const { requirement } = input;
-  const capabilities = resolveServerGenerationCapabilities();
+  const capabilities = await resolveServerGenerationCapabilities(
+    await backgroundWorkspaceId(options.ownerId),
+  );
 
   await options.onProgress?.({
     step: 'initializing',
@@ -351,7 +353,9 @@ export async function generateClassroom(
   let researchContext: string | undefined;
   if (capabilities.webSearch) {
     // The server's default provider; requests carry no provider choice or key.
-    const webSearchConfig = resolveClassroomWebSearchConfig({});
+    const webSearchConfig = await resolveClassroomWebSearchConfig(
+      await backgroundWorkspaceId(options.ownerId),
+    );
     if (webSearchConfig) {
       // A rewrite that fails (its model included) skips the search context below.
       try {

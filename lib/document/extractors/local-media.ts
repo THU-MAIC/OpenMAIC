@@ -6,17 +6,12 @@ import { tmpdir } from 'node:os';
 import { basename, delimiter, extname, join, resolve as resolvePath } from 'node:path';
 
 import { transcribeAudio, type ASRTranscriptionResult } from '@/lib/audio/asr-providers';
-import type { ASRModelConfig, ASRProviderId } from '@/lib/audio/types';
-import {
-  resolveASRApiKey,
-  resolveASRBaseUrl,
-  resolveASRModel,
-  resolveServerASRProviderId,
-} from '@/lib/server/provider-config';
+import type { ASRModelConfig } from '@/lib/audio/types';
 
 import { LOCAL_FFMPEG_MEDIA_MIMES } from '../mime';
 import type {
   DocumentAsset,
+  DocumentExtractorConfig,
   MediaArtifact,
   MediaExtractorInput,
   MediaExtractorProvider,
@@ -407,21 +402,15 @@ function derivedStem(originalName: string | null, fallback: string): string {
   return extension ? name.slice(0, -extension.length) : name;
 }
 
-function configuredASR(): ASRModelConfig {
-  const providerId = resolveServerASRProviderId();
-  if (!providerId) {
+/** The asr slot's connection the server resolved for this extraction. */
+function configuredASR(config: DocumentExtractorConfig): ASRModelConfig {
+  if (!config.asr) {
     throw new MaterialExtractionError(
-      'No server ASR provider is configured for local media extraction',
+      'No speech recognition provider is configured for local media extraction',
       false,
     );
   }
-  return {
-    providerId: providerId as ASRProviderId,
-    modelId: resolveASRModel(providerId),
-    apiKey: resolveASRApiKey(providerId) || undefined,
-    baseUrl: resolveASRBaseUrl(providerId),
-    language: 'auto',
-  };
+  return { ...config.asr, language: config.asr.language ?? 'auto' };
 }
 
 function frameTimes(stderr: string): number[] {
@@ -663,7 +652,7 @@ export async function extractMediaMaterial(
         );
       }
       asrChunks = chunkPaths.length;
-      const asr = dependencies.resolveASRConfig?.() ?? configuredASR();
+      const asr = dependencies.resolveASRConfig?.() ?? configuredASR(input.config);
       segments = await deadline.beforeAwait(() =>
         transcribeChunks(chunkPaths, windows, asr, transcribe, deadline),
       );

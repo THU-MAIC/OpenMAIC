@@ -6,8 +6,14 @@ import {
   resolveASRApiKey,
   resolveASRBaseUrl,
   resolveASRModel,
-  resolveServerASRProviderId,
 } from '@/lib/server/provider-config';
+import {
+  mediaResolutionResponse,
+  RequestedProviderRefusedError,
+  resolveMediaSlot,
+  type MediaConnection,
+} from '@/lib/server/model-config/media';
+import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
 import type { ASRProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -35,49 +41,33 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Audio file is required');
     }
 
-    // Prefer an enabled operator-configured backend when the client omitted its
-    // selection. Never guess a vendor: fail loudly when no backend is enabled.
-    const effectiveProviderId =
-      providerId || (resolveServerASRProviderId() as ASRProviderId | undefined);
-    if (!effectiveProviderId) {
-      return apiError('MISSING_PROVIDER', 400, 'No enabled ASR provider is configured');
+    // The asr slot decides; the provider, key and base URL a request names
+    // (deprecated) count only when it is unassigned.
+    let connection: MediaConnection;
+    try {
+      connection = await resolveMediaSlot('asr', {
+        workspaceId: await requestWorkspaceId(req),
+        legacyRequest: async () =>
+          providerId ? requestedASRProvider(providerId, modelId, apiKey, baseUrl) : undefined,
+      });
+    } catch (error) {
+      const refused = mediaResolutionResponse(error, 'Speech recognition');
+      if (refused) return refused;
+      throw error;
     }
-    resolvedProviderId = effectiveProviderId;
-    resolvedModelId = modelId;
-
-    // Enforce server precedence: a force-disabled provider is off for everyone,
-    // regardless of any client key/selection — mirror the TTS contract (#665).
-    if (isServerProviderDisabled('asr', effectiveProviderId)) {
-      return apiError('PROVIDER_DISABLED', 403, 'This ASR provider is disabled by the server');
-    }
-
-    // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
-    const managed = isServerConfiguredProvider('asr', effectiveProviderId);
-    const clientBaseUrl = managed ? undefined : baseUrl || undefined;
-    // A client-supplied BYOK base URL is always judged under the strict public
-    // policy, even when the operator enabled local networks for their own
-    // server-configured ASR backend.
-    const publicOnly = Boolean(clientBaseUrl);
-    if (clientBaseUrl) {
-      const ssrfError = await validatePublicUrlForSSRF(clientBaseUrl);
-      if (ssrfError) {
-        return apiError('INVALID_URL', 403, ssrfError);
-      }
-    }
+    resolvedProviderId = connection.providerId;
 
     const config = {
-      providerId: effectiveProviderId,
-      // A managed provider may pin its model list server-side
-      // (ASR_<PREFIX>_MODELS): an allowlisted client choice wins, otherwise the
-      // first pinned entry is the managed default; unmanaged providers use the
-      // client model directly.
-      modelId: resolveASRModel(effectiveProviderId, modelId),
+      providerId: connection.providerId as ASRProviderId,
+      modelId: connection.modelId,
       language: language || 'auto',
-      apiKey: resolveASRApiKey(effectiveProviderId, managed ? undefined : apiKey || undefined),
-      baseUrl: resolveASRBaseUrl(effectiveProviderId, clientBaseUrl),
-      publicOnly,
+      apiKey: connection.apiKey ?? '',
+      baseUrl: connection.baseUrl,
+      // A user-supplied endpoint is judged under the strict public policy,
+      // even when the operator enabled local networks for their own backend.
+      publicOnly: connection.userEndpoint,
       // A server-configured provider's endpoint may be on a local network.
-      managed,
+      managed: connection.managed,
     };
     // Reflect the resolved (possibly server-pinned) model in failure logs.
     resolvedModelId = config.modelId;
@@ -102,4 +92,40 @@ export async function POST(req: NextRequest) {
       error instanceof Error ? error.message : 'Unknown error',
     );
   }
+}
+
+/** The ASR provider a request names in its form (deprecated). */
+async function requestedASRProvider(
+  providerId: ASRProviderId,
+  clientModel: string | undefined,
+  clientApiKey: string | null,
+  clientBaseUrl: string | null,
+): Promise<MediaConnection> {
+  // A force-disabled provider is off for everyone (#665).
+  if (isServerProviderDisabled('asr', providerId)) {
+    throw new RequestedProviderRefusedError(
+      apiError('PROVIDER_DISABLED', 403, 'This ASR provider is disabled by the server'),
+    );
+  }
+  // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
+  const managed = isServerConfiguredProvider('asr', providerId);
+  const baseUrlFromClient = managed ? undefined : clientBaseUrl || undefined;
+  if (baseUrlFromClient) {
+    const ssrfError = await validatePublicUrlForSSRF(baseUrlFromClient);
+    if (ssrfError) throw new RequestedProviderRefusedError(apiError('INVALID_URL', 403, ssrfError));
+  }
+  // A managed provider may pin its model list server-side
+  // (ASR_<PREFIX>_MODELS): an allowlisted client choice wins, otherwise the
+  // first pinned entry is the managed default.
+  const model = resolveASRModel(providerId, clientModel);
+  const baseUrl = resolveASRBaseUrl(providerId, baseUrlFromClient);
+  return {
+    providerId,
+    ...(model ? { modelId: model } : {}),
+    apiKey: resolveASRApiKey(providerId, managed ? undefined : clientApiKey || undefined),
+    ...(baseUrl ? { baseUrl } : {}),
+    managed,
+    userEndpoint: Boolean(baseUrlFromClient),
+    origin: 'request',
+  };
 }

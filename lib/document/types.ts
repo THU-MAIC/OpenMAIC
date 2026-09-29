@@ -1,3 +1,4 @@
+import type { ASRModelConfig } from '@/lib/audio/types';
 export type DocumentExtractorProviderId = string;
 
 export interface DocumentExtractorCapabilities {
@@ -27,6 +28,11 @@ export interface DocumentExtractorConfig {
   managed?: boolean;
   /** Skip image extraction when the caller needs text only. */
   textOnly?: boolean;
+  /**
+   * The speech recognition connection, resolved by the server from its asr
+   * slot, for media extractors that transcribe an audio track.
+   */
+  asr?: ASRModelConfig;
 }
 
 export interface DocumentExtractorInput {

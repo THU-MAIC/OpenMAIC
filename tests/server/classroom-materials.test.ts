@@ -103,11 +103,15 @@ describe('loadClassroomMaterialText', () => {
       'materials/owner-1/mat_a',
       'materials/owner-1/mat_b',
     ]);
-    expect(mocks.extractMaterialSource).toHaveBeenCalledWith({
-      bytes: Buffer.from('bytes of materials/owner-1/mat_a'),
-      mime: 'application/pdf',
-      fileName: 'first.pdf',
-    });
+    // Extracted with the owner's document and speech services.
+    expect(mocks.extractMaterialSource).toHaveBeenCalledWith(
+      {
+        bytes: Buffer.from('bytes of materials/owner-1/mat_a'),
+        mime: 'application/pdf',
+        fileName: 'first.pdf',
+      },
+      { ownerId: 'owner-1' },
+    );
     expect(text).toContain('## Source Document 1: first.pdf');
     expect(text).toContain('## Source Document 2: second.md');
     expect(text!.indexOf('Text of first.pdf')).toBeLessThan(text!.indexOf('Text of second.md'));

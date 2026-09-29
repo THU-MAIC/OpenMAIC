@@ -24,6 +24,13 @@ vi.mock('@/lib/server/provider-config', () => ({
   resolvePDFBaseUrl: mocks.resolvePDFBaseUrl,
 }));
 
+// No model configuration: these cases exercise the providers a request names.
+// (The deployment config lives on globalThis; the setup file clears it before
+// each test.)
+vi.mock('@/lib/server/model-config/deployment-layer', () => ({
+  loadDeploymentLayer: () => ({ layer: null, defaults: null, notices: [] }),
+}));
+
 vi.mock('@/lib/pdf/mineru-cloud', () => ({
   parseWithMinerUCloud: mocks.parseWithMinerUCloud,
 }));
@@ -226,6 +233,30 @@ describe('POST /api/extract-document', () => {
         apiKey: 'cloud-key',
         baseUrl: undefined,
       }),
+      expect.any(Buffer),
+      'lesson.pdf',
+    );
+  });
+
+  it("uses the document slot's service and key when the request names none", async () => {
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: { mc: { preset: 'mineru-cloud', apiKey: 'slot-key' } },
+          slots: { document: 'mc' },
+        },
+      },
+      defaults: null,
+      notices: [],
+    });
+    const res = await postExtractDocument({
+      file: new File(['%PDF-1.4'], 'lesson.pdf', { type: 'application/pdf' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mocks.parseWithMinerUCloud).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: 'mineru-cloud', apiKey: 'slot-key' }),
       expect.any(Buffer),
       'lesson.pdf',
     );

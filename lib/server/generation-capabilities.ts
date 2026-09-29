@@ -1,9 +1,4 @@
-import {
-  getServerImageProviders,
-  getServerTTSProviders,
-  getServerVideoProviders,
-  getServerWebSearchProviders,
-} from '@/lib/server/provider-config';
+import { resolveMediaSlot, type MediaSlot } from '@/lib/server/model-config/media';
 
 export interface ServerGenerationCapabilities {
   webSearch: boolean;
@@ -12,23 +7,35 @@ export interface ServerGenerationCapabilities {
   tts: boolean;
 }
 
+/** Whether a media slot resolves to a provider the server can call. */
+async function available(slot: MediaSlot, workspaceId: string | null): Promise<boolean> {
+  try {
+    const connection = await resolveMediaSlot(slot, { workspaceId });
+    // Browser-native speech is the client's own, never a server capability.
+    return !(slot === 'tts' && connection.providerId === 'browser-native-tts');
+  } catch {
+    return false;
+  }
+}
+
 /**
- * The optional generation capabilities this server can run, derived from its
- * provider configuration. `GET /api/health`, `GET /api/generate-classroom/capabilities`
- * and the classroom generation pipeline all read this one function, so what a
- * caller is told is available is exactly what a generation job uses.
- *
- * A capability is available only when at least one provider is enabled —
- * force-disabled providers (disabled: true) do not count (#665).
- *
- * This is the single place to switch to slot resolution once server-side model
- * configuration (#1701) lands.
+ * The optional generation capabilities a workspace can run on this server,
+ * from its capability slots (RFC #1701): a capability is available when its
+ * slot resolves to a provider, and not when it is turned off or unassigned
+ * (a force-disabled legacy provider counts as off, #665). `GET /api/health`
+ * (the deployment alone), `GET /api/generate-classroom/capabilities` (the
+ * caller's workspace) and the classroom generation pipeline (the job's owner)
+ * all read this one function, so what a caller is told is available is exactly
+ * what a generation job uses.
  */
-export function resolveServerGenerationCapabilities(): ServerGenerationCapabilities {
-  return {
-    webSearch: Object.values(getServerWebSearchProviders()).some((info) => !info.disabled),
-    imageGeneration: Object.values(getServerImageProviders()).some((info) => !info.disabled),
-    videoGeneration: Object.values(getServerVideoProviders()).some((info) => !info.disabled),
-    tts: Object.values(getServerTTSProviders()).some((info) => !info.disabled),
-  };
+export async function resolveServerGenerationCapabilities(
+  workspaceId: string | null = null,
+): Promise<ServerGenerationCapabilities> {
+  const [webSearch, imageGeneration, videoGeneration, tts] = await Promise.all([
+    available('webSearch', workspaceId),
+    available('image', workspaceId),
+    available('video', workspaceId),
+    available('tts', workspaceId),
+  ]);
+  return { webSearch, imageGeneration, videoGeneration, tts };
 }

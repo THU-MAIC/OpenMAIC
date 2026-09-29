@@ -35,11 +35,31 @@ afterEach(() => {
   config.mediaProviders = [];
 });
 
+/** The deployment's slots behind the capabilities these tests expect. */
+async function configureSlots(slots: Record<string, unknown>) {
+  (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
+    layer: {
+      source: 'deployment',
+      config: {
+        providers: {
+          tv: { preset: 'tavily', apiKey: 'k' },
+          mm: { preset: 'minimax-tts', apiKey: 'k' },
+        },
+        slots,
+      } as never,
+    },
+    defaults: null,
+    notices: [],
+  });
+}
 const mimesOf = (formats: Array<{ mime: string }>) => formats.map((format) => format.mime);
+const capabilitiesRequest = () =>
+  new NextRequest('http://localhost/api/generate-classroom/capabilities');
 
 describe('GET /api/generate-classroom/capabilities', () => {
   it('reports the server capabilities and the extractable upload formats', async () => {
-    const response = await getCapabilities();
+    await configureSlots({ webSearch: 'tv', tts: 'mm', image: null });
+    const response = await getCapabilities(capabilitiesRequest());
     expect(response.status).toBe(200);
     const body = await response.json();
 
@@ -81,9 +101,20 @@ describe('GET /api/generate-classroom/capabilities', () => {
     });
   });
 
-  it('adds the formats of a configured extraction service, within the upload whitelist', async () => {
-    config.pdf = { 'mineru-cloud': {} };
-    const body = await (await getCapabilities()).json();
+  it("adds the formats of the document slot's service, within the upload whitelist", async () => {
+    const runtime = await import('@/lib/server/model-config/runtime');
+    runtime.setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: { mc: { preset: 'mineru-cloud', apiKey: 'k' } },
+          slots: { document: 'mc' },
+        },
+      },
+      defaults: null,
+      notices: [],
+    });
+    const body = await (await getCapabilities(capabilitiesRequest())).json();
     const mimes = mimesOf(body.materials.formats);
     expect(mimes).toEqual(
       expect.arrayContaining([
@@ -108,15 +139,16 @@ describe('GET /api/generate-classroom/capabilities', () => {
         extract: vi.fn(),
       },
     ];
-    const body = await (await getCapabilities()).json();
+    const body = await (await getCapabilities(capabilitiesRequest())).json();
     const mimes = mimesOf(body.materials.formats);
     expect(mimes).toContain('video/mp4');
     expect(mimes).not.toContain('audio/mpeg');
   });
 
   it('reports the same capabilities as /api/health', async () => {
+    await configureSlots({ webSearch: 'tv', tts: 'mm', image: null });
     const [capabilities, health] = await Promise.all([
-      getCapabilities().then((response) => response.json()),
+      getCapabilities(capabilitiesRequest()).then((response) => response.json()),
       getHealth().then((response) => response.json()),
     ]);
     expect(capabilities.capabilities).toEqual(health.capabilities);

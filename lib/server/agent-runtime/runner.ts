@@ -5,6 +5,7 @@
  * claims, lease generations, event ordering, cancellation, and conversation
  * recovery. A client connection is never part of the execution lifetime.
  */
+import { serverMediaConnection } from '@/lib/server/model-config/media';
 import { backgroundWorkspaceId } from '@/lib/server/model-config/runtime';
 import { randomUUID } from 'node:crypto';
 import { Session, type AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core';
@@ -1286,7 +1287,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // unconfigured deployment gets no tool, so the model never sees a dead one.
     // Every result URL is registered with this session's durable URL trust
     // gate before the tool result is returned (reference semantics).
-    const search = resolveWebSearchCapability();
+    const search = await resolveWebSearchCapability(await backgroundWorkspaceId(meta.ownerId));
     const webSearchTools = search
       ? [
           buildWebSearchTool(search, (urls) =>
@@ -1363,9 +1364,15 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // owner-gated by `withOwnerStageAuthorization`, and patch_stage is marked
     // sequential by the shared STAGE_WRITER_TOOL_NAMES registry
     // (course-tools.ts).
+    // The tts slot for this run's owner: narration, the voice catalog and
+    // voice registration all use its provider.
+    const ttsConnection = await serverMediaConnection('tts', meta.ownerId);
     const dslTools = buildDslCourseToolset({
       store: ownerScopedStore,
       backgroundStore: mediaJobStore,
+      // The video slot for this run's owner; generate_video exists only when
+      // it resolves to a usable provider.
+      videoConnection: await serverMediaConnection('video', meta.ownerId),
       stageAccess,
       onCheckpoint: (info) => emit(LIFECYCLE.checkpoint, info),
       sessionId: id,
@@ -1413,6 +1420,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         onCheckpoint: (info) => emit(LIFECYCLE.checkpoint, info),
         sessionId: id,
         registeredVoices: sessionRegisteredVoices,
+        ttsConnection,
       }),
       { stageAccess },
     );
@@ -1424,8 +1432,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     const voiceCloneTools = buildVoiceCloneTools({
       sessionId: id,
       registeredVoices: sessionRegisteredVoices,
+      ttsConnection,
     });
-    const voiceRegistrationEnabled = hasConfiguredVoiceRegistrationCapability();
+    const voiceRegistrationEnabled = hasConfiguredVoiceRegistrationCapability(ttsConnection);
     const personalHistoryTools = buildPersonalHistoryTools(
       meta.ownerId,
       createPersonalHistorySource({
@@ -1455,7 +1464,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       // web_search). The URL trust gate — not registration — is what keeps a
       // fetch inside the session's observed origins, and it is the tool's core
       // security property.
-      [buildFetchUrlTool({ sessionId: id })],
+      [buildFetchUrlTool({ sessionId: id, ownerId: meta.ownerId })],
       dslTools,
       curriculumTools,
       scenePreviewTools,
