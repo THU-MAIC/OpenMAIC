@@ -2,12 +2,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { StageRoute } from '@/lib/server/model-routes';
 import type { ServerConfig } from '@/lib/server/provider-config';
 
 const legacy = vi.hoisted(() => ({
   providers: {} as ServerConfig['providers'],
-  routes: {} as Record<string, StageRoute>,
   disabledTts: new Set<string>(),
 }));
 
@@ -30,12 +28,8 @@ vi.mock('@/lib/server/provider-config', () => ({
   }),
 }));
 
-vi.mock('@/lib/server/model-routes', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/server/model-routes')>()),
-  getStageRoute: (stage: string) => legacy.routes[stage],
-}));
-
-const { loadDeploymentLayer } = await import('@/lib/server/model-config/deployment-layer');
+const { LegacyRoutesError, loadDeploymentLayer } =
+  await import('@/lib/server/model-config/deployment-layer');
 
 const DEPRECATED = /^The model configuration comes from the legacy provider variables/;
 
@@ -48,7 +42,6 @@ beforeEach(() => {
     vi.stubEnv(name, '');
   }
   legacy.providers = {};
-  legacy.routes = {};
   legacy.disabledTts = new Set();
 });
 
@@ -65,7 +58,6 @@ describe('loadDeploymentLayer', () => {
 
   it('translates the legacy configuration when there is no openmaic.yml', () => {
     legacy.providers = { openai: { apiKey: 'sk-openai' } };
-    legacy.routes = { 'conversation-title': { model: 'openai:gpt-5.6-mini' } };
     vi.stubEnv('DEFAULT_MODEL', ' openai:gpt-5.6 ');
     const { layer, notices } = loadDeploymentLayer();
     expect(notices).toHaveLength(1);
@@ -74,13 +66,27 @@ describe('loadDeploymentLayer', () => {
       source: 'deployment',
       config: {
         providers: { openai: { preset: 'openai', apiKey: 'sk-openai' } },
-        slots: {
-          llm: 'openai:gpt-5.6',
-          agent: null,
-          'agent.title': { model: 'openai:gpt-5.6-mini', thinking: { mode: 'disabled' } },
-        },
+        slots: { llm: 'openai:gpt-5.6', agent: null },
       },
     });
+  });
+
+  it('asks for openmaic.yml when MODEL_ROUTES is set', () => {
+    legacy.providers = { openai: { apiKey: 'sk-openai' } };
+    vi.stubEnv('MODEL_ROUTES', '{"scene-content":{"model":"openai:gpt-5.6"}}');
+    expect(() => loadDeploymentLayer()).toThrow(LegacyRoutesError);
+    expect(() => loadDeploymentLayer()).toThrow(
+      /write the per-stage models as slots in openmaic\.yml/,
+    );
+  });
+
+  it('ignores MODEL_ROUTES once openmaic.yml exists', () => {
+    vi.stubEnv('MODEL_ROUTES', '{"scene-content":{"model":"openai:gpt-5.6"}}');
+    fs.writeFileSync(path.join(dir, 'openmaic.yml'), 'slots:\n  video: null\n');
+    const { layer, notices } = loadDeploymentLayer();
+    expect(layer?.config).toEqual({ slots: { video: null } });
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatch(/^openmaic\.yml is present/);
   });
 
   it('reports a legacy configuration that only switches providers off', () => {

@@ -2,17 +2,11 @@
  * The deployment layer for slot resolution (RFC #1701, tracked in #1725).
  *
  * `openmaic.yml` (or the file named by OPENMAIC_CONFIG) is the deployment
- * layer when it exists. Otherwise the legacy configuration (provider variables,
- * `server-providers.yml`, DEFAULT_MODEL, MODEL_ROUTES, MODEL_FALLBACK) is
- * translated into one, so existing deployments resolve the same way without
- * changing anything.
+ * layer when it exists. Otherwise providers, DEFAULT_MODEL and MODEL_FALLBACK
+ * are translated into one (see legacy-config.ts). MODEL_ROUTES is not: a
+ * deployment that sets it without openmaic.yml gets an error asking for the
+ * file.
  */
-import {
-  LLM_STAGES,
-  getStageRoute,
-  type LlmStage,
-  type StageRoute,
-} from '@/lib/server/model-routes';
 import { getServerProviderConfig } from '@/lib/server/provider-config';
 import { translateLegacyConfig } from '@/lib/server/model-config/legacy-config';
 import { loadModelConfigFile } from '@/lib/server/model-config/openmaic-yml';
@@ -24,13 +18,13 @@ export interface DeploymentLayer {
   notices: string[];
 }
 
-function effectiveStageRoutes(): Partial<Record<LlmStage, StageRoute>> {
-  const routes: Partial<Record<LlmStage, StageRoute>> = {};
-  for (const stage of LLM_STAGES) {
-    const route = getStageRoute(stage);
-    if (route) routes[stage] = route;
+export class LegacyRoutesError extends Error {
+  constructor() {
+    super(
+      'MODEL_ROUTES does not carry over to the model configuration: write the per-stage models as slots in openmaic.yml (or the file named by OPENMAIC_CONFIG) and remove MODEL_ROUTES',
+    );
+    this.name = 'LegacyRoutesError';
   }
-  return routes;
 }
 
 function hasLegacyConfiguration(): boolean {
@@ -55,7 +49,8 @@ function hasLegacyConfiguration(): boolean {
 
 /**
  * Reads the process environment and working directory, like the legacy
- * loaders it translates (which cache what they read).
+ * loaders it translates (which cache what they read). Throws
+ * LegacyRoutesError for MODEL_ROUTES without openmaic.yml.
  */
 export function loadDeploymentLayer(): DeploymentLayer {
   const file = loadModelConfigFile();
@@ -71,16 +66,16 @@ export function loadDeploymentLayer(): DeploymentLayer {
     };
   }
   if (!legacy) return { layer: null, notices: [] };
+  if (process.env.MODEL_ROUTES?.trim()) throw new LegacyRoutesError();
   const { config, notices } = translateLegacyConfig(getServerProviderConfig(), {
     defaultModel: process.env.DEFAULT_MODEL?.trim() || undefined,
-    stageRoutes: effectiveStageRoutes(),
     globalFallback: process.env.MODEL_FALLBACK?.trim() || undefined,
   });
   const empty = !config.providers && !config.slots;
   return {
     layer: empty ? null : { source: 'deployment', config },
     notices: [
-      'The model configuration comes from the legacy provider variables, server-providers.yml, DEFAULT_MODEL, MODEL_ROUTES and MODEL_FALLBACK, which are deprecated; move it to openmaic.yml',
+      'The model configuration comes from the legacy provider variables, server-providers.yml, DEFAULT_MODEL and MODEL_FALLBACK, which are deprecated; move it to openmaic.yml',
       ...notices,
     ],
   };
