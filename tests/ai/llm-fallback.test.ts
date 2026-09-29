@@ -18,9 +18,20 @@ const fallbackMock = vi.hoisted(() => ({
   isEmptyLlmOutput: vi.fn((text: string | null | undefined) => !text || text.trim().length === 0),
 }));
 
+const loggerMock = vi.hoisted(() => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
 vi.mock('ai', () => ({
   generateText: aiMock.generateText,
   streamText: aiMock.streamText,
+}));
+
+vi.mock('@/lib/logger', () => ({
+  createLogger: vi.fn(() => loggerMock),
 }));
 
 vi.mock('@/lib/usage/normalize', () => ({
@@ -47,6 +58,10 @@ describe('callLLM retryable-failure fallback', () => {
     fallbackMock.isRetryableLlmError.mockReset();
     fallbackMock.shouldFallbackFor.mockReset();
     fallbackMock.logFallbackFired.mockReset();
+    loggerMock.debug.mockClear();
+    loggerMock.info.mockClear();
+    loggerMock.warn.mockClear();
+    loggerMock.error.mockClear();
     fallbackMock.isEmptyLlmOutput.mockClear();
     aiMock.generateText.mockResolvedValue(okResult());
   });
@@ -233,13 +248,44 @@ describe('callLLM retryable-failure fallback', () => {
     );
 
     expect(result.finishReason).toBe('content-filter');
-    // Primary + same-model retry only; no fallback round, no fallback log.
-    expect(aiMock.generateText).toHaveBeenCalledTimes(2);
+    // A refusal cannot change on a same-model retry: the primary loop breaks
+    // after the first content-filter finish, so only ONE call happens.
+    expect(aiMock.generateText).toHaveBeenCalledTimes(1);
     const calledModels = aiMock.generateText.mock.calls.map(
       (c) => (c[0] as { model: unknown }).model,
     );
     expect(calledModels.every((m) => m !== 'fallback-model')).toBe(true);
     expect(fallbackMock.logFallbackFired).not.toHaveBeenCalled();
+  });
+
+  it('skips the no-fallback-configured warning when no fallback model exists', async () => {
+    // With MODEL_FALLBACK unset, every retryable exhaustion used to log
+    // "fallback requested but none configured" — pure noise. The final error
+    // is the signal; the warn must stay silent.
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    fallbackMock.resolveFallbackModel.mockResolvedValue(null);
+    const firstFailure = Object.assign(new Error('upstream unavailable'), { statusCode: 503 });
+    const secondFailure = Object.assign(new Error('upstream unavailable again'), {
+      statusCode: 503,
+    });
+    aiMock.generateText.mockRejectedValueOnce(firstFailure).mockRejectedValueOnce(secondFailure);
+
+    await expect(
+      callLLM(
+        {
+          model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+          prompt: 'hi',
+        } as never,
+        'scene-content',
+        { retries: 1 },
+      ),
+    ).rejects.toBe(secondFailure);
+
+    expect(aiMock.generateText).toHaveBeenCalledTimes(2);
+    const noneConfigured = loggerMock.warn.mock.calls.filter((c) =>
+      String(c[0]).includes('none configured'),
+    );
+    expect(noneConfigured).toHaveLength(0);
   });
 
   it('keeps existing behaviour when no fallback configured', async () => {

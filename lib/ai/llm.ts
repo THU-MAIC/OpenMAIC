@@ -26,7 +26,7 @@ export type { ThinkingConfig } from '@/lib/types/provider';
 
 // Re-export the parameter types accepted by AI SDK
 type GenerateTextParams = Parameters<typeof generateText>[0];
-type StreamTextParams = Parameters<typeof streamText>[0];
+export type StreamTextParams = Parameters<typeof streamText>[0];
 
 function _extractRequestInfo(params: GenerateTextParams | StreamTextParams) {
   const tools = params.tools ? Object.keys(params.tools as Record<string, unknown>) : undefined;
@@ -442,6 +442,10 @@ export async function callLLM<T extends GenerateTextParams>(
       // non-empty result that fails a caller-supplied validator (that would
       // spend the fallback model's quota on "output quality is off").
       lastResult = round.result;
+      // A content-filter finish is a refusal: retrying the same model cannot
+      // change the outcome, so stop the primary loop here. It is already
+      // excluded from the fallback decision below.
+      if (round.finishReason === 'content-filter') break;
       // Content-filter refusals never reach the fallback decision — even when
       // the refusal came back with empty text (a SAFETY block looks exactly
       // like an empty output otherwise).
@@ -473,9 +477,11 @@ export async function callLLM<T extends GenerateTextParams>(
       if (round.ok) return round.result;
       if (round.error !== undefined) lastError = round.error;
       else lastResult = round.result;
-    } else {
-      log.warn(`[${source}] fallback requested but none configured; giving up`);
     }
+    // No `else` branch for fallback === null: when no fallback is configured,
+    // the armed-but-unavailable state is the normal steady case (MODEL_FALLBACK
+    // unset) and the final failure below already reports it — a per-call warn
+    // here would just be noise on every retryable exhaustion.
   }
 
   // All attempts exhausted — return last result or throw last error

@@ -176,4 +176,61 @@ describe('scene-outlines-stream route fallback wiring', () => {
     const errorEvent = events.find((e) => e.type === 'error');
     expect(errorEvent?.error).toBe('LLM response blocked by content filter');
   });
+
+  it('does not emit a stray retry event when the fallback round also fails', async () => {
+    // Same-model retries exhaust (3 rounds), the fallback round runs (4th) and
+    // also fails. The fallback already consumed the retry budget: no further
+    // same-model attempt and no plain "retry" event may flash right before the
+    // final error.
+    streamLLMMock.mockImplementation(() =>
+      fullStreamOf([{ type: 'error', error: streamError(429, 'quota exceeded') }]),
+    );
+    fallbackMocks.shouldFallbackFor.mockReturnValue(true);
+
+    const res = await POST(makeRequest());
+    const events = parseSse(await res.text());
+
+    // 3 same-model rounds + exactly 1 fallback round — no extra rounds after it.
+    expect(streamLLMMock).toHaveBeenCalledTimes(4);
+    const fallbackRoundParams = streamLLMMock.mock.calls[3][0] as { model: unknown };
+    expect(fallbackRoundParams.model).toBe('fallback-model');
+    // Retry events: one per same-model retry (plain) plus the annotated
+    // fallback one — the post-fallback stray must NOT appear.
+    const retryEvents = events.filter((e) => e.type === 'retry');
+    expect(retryEvents).toHaveLength(3);
+    const lastRetry = retryEvents[retryEvents.length - 1];
+    expect(lastRetry.fallback).toBe('qwen:deepseek-v4-pro');
+    expect(events.some((e) => e.type === 'error' && e.error === 'quota exceeded')).toBe(true);
+  });
+
+  it('runs the fallback round with maxRetries 0 like callLLM does', async () => {
+    streamLLMMock
+      .mockImplementationOnce(() =>
+        fullStreamOf([{ type: 'error', error: streamError(429, 'quota exceeded') }]),
+      )
+      .mockImplementationOnce(() =>
+        fullStreamOf([{ type: 'error', error: streamError(429, 'quota exceeded') }]),
+      )
+      .mockImplementationOnce(() =>
+        fullStreamOf([{ type: 'error', error: streamError(429, 'quota exceeded') }]),
+      )
+      .mockImplementationOnce(() =>
+        fullStreamOf([
+          { type: 'text-delta', text: OUTLINE_TEXT },
+          { type: 'finish', finishReason: 'stop' },
+        ]),
+      );
+    fallbackMocks.shouldFallbackFor.mockReturnValue(true);
+
+    const res = await POST(makeRequest());
+    const events = parseSse(await res.text());
+
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    // Primary rounds keep the SDK default retries; the fallback round is the
+    // last attempt and must not stack SDK-internal retries on top.
+    const primaryParams = streamLLMMock.mock.calls[0][0] as { maxRetries?: number };
+    const fallbackParams = streamLLMMock.mock.calls[3][0] as { maxRetries?: number };
+    expect(fallbackParams.maxRetries).toBe(0);
+    expect(primaryParams.maxRetries).toBeUndefined();
+  });
 });
