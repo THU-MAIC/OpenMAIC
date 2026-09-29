@@ -170,7 +170,7 @@ What the proposal holds:
 
 | Browser state                                                   | Proposed as                                                                                       |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| A built-in chat provider with a key or its own base URL         | a provider of preset `presetIdFor('chat', id)`                                                     |
+| A built-in chat provider with a key or its own base URL         | a provider of preset `presetIdFor('chat', id)`; models the user added (not in the catalogue) are listed with the catalogue's |
 | A custom chat provider (OpenAI-compatible)                      | a provider of preset `openai-compatible` with its base URL and model ids (Anthropic / Google custom providers keep their own preset) |
 | An enrolled token plan                                          | one provider of preset `tokenPlanPresetId(plan)` with the plan's key; the services the plan filled with the same key are that provider |
 | A speech, transcription, image, video, web search or document provider with a key | a provider of preset `presetIdFor(capability, id)`                              |

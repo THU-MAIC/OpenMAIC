@@ -10,6 +10,8 @@ import {
   type LegacyModelSettingsState,
 } from '@/lib/legacy-browser-import/model-settings';
 
+import { PROVIDERS } from '@/lib/ai/providers';
+
 import { MemoryStorage } from './harness';
 
 describe('buildModelSettingsProposal', () => {
@@ -49,6 +51,37 @@ describe('buildModelSettingsProposal', () => {
       },
       slots: { llm: 'openai:gpt-5' },
     });
+  });
+
+  it('carries models the user added to a built-in provider', () => {
+    const catalogue = PROVIDERS.openai.models.map((model) => model.id);
+    const proposal = buildModelSettingsProposal({
+      providerId: 'openai',
+      modelId: 'ft:gpt-4o:my-org',
+      providersConfig: {
+        openai: {
+          apiKey: 'sk-openai',
+          baseUrl: '',
+          models: [...catalogue.map((id) => ({ id })), { id: 'ft:gpt-4o:my-org' }],
+        },
+      },
+    });
+    // The catalogue stays listed: a provider's list names the models it serves.
+    expect(proposal?.providers?.openai).toEqual({
+      preset: 'openai',
+      apiKey: 'sk-openai',
+      models: [...catalogue, 'ft:gpt-4o:my-org'],
+    });
+    expect(proposal?.slots).toEqual({ llm: 'openai:ft:gpt-4o:my-org' });
+
+    // Only catalogue models: nothing to list.
+    expect(
+      buildModelSettingsProposal({
+        providersConfig: {
+          openai: { apiKey: 'sk', baseUrl: '', models: catalogue.map((id) => ({ id })) },
+        },
+      })?.providers?.openai,
+    ).toEqual({ preset: 'openai', apiKey: 'sk' });
   });
 
   it('does not count a base URL equal to the default as a custom endpoint', () => {

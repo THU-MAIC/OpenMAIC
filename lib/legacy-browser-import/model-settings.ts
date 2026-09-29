@@ -19,6 +19,8 @@
  * authenticate with a key pair (AliDocMind), which a workspace provider cannot
  * express; thinking settings.
  */
+import { findModelById } from '@/lib/ai/model-aliases';
+import { PROVIDERS } from '@/lib/ai/providers';
 import { ASR_PROVIDERS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import type { SlotCapability } from '@/lib/config/model-slots';
 import { presetIdFor, tokenPlanPresetId } from '@/lib/config/preset-ids';
@@ -300,12 +302,22 @@ export function buildModelSettingsProposal(
     const customEndpoint = baseUrl && !sameUrl(baseUrl, text(config.defaultBaseUrl) || undefined);
     if (!apiKey && !customEndpoint) continue;
     const preset = presetIdFor('chat', legacyId);
+    // Models the user added to a built-in provider (not in its catalogue).
+    // A provider's model list names the chat models it serves, so when there
+    // are any the catalogue's are listed with them, or they would be hidden.
+    const catalogue = (PROVIDERS as Record<string, { models?: Array<{ id: string }> }>)[legacyId]
+      ?.models;
+    const added = models.filter((modelId) => !findModelById(legacyId, catalogue, modelId));
+    const listed = added.length
+      ? [...new Set([...(catalogue ?? []).map((model) => model.id), ...added])]
+      : [];
     chatIds.set(
       legacyId,
       claim(preset, {
         preset,
         ...(apiKey ? { apiKey } : {}),
         ...(customEndpoint ? { baseUrl } : {}),
+        ...(listed.length ? { models: listed } : {}),
       }),
     );
   }
