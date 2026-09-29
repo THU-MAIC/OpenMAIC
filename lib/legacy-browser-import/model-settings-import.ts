@@ -29,6 +29,8 @@ import {
   type ModelSettingsProposal,
   type StorageLike,
 } from './model-settings';
+import type { ModelSettingsView } from '@/lib/model-settings/client';
+
 import { BINDING_ENDPOINT, LEGACY_IMPORT_HEADER } from './protocol';
 
 export type ModelSettingsImportOutcome =
@@ -86,7 +88,12 @@ async function bind(fetchImpl: Fetch, browserId: string): Promise<boolean> {
  * succeed; anything else keeps it for a later load.
  */
 export async function runModelSettingsImport(
-  options: { fetch?: Fetch; storage?: StorageLike | null } = {},
+  options: {
+    fetch?: Fetch;
+    storage?: StorageLike | null;
+    /** Called with the settings view the import answered, when it answered one. */
+    onImported?: (view: ModelSettingsView) => void | Promise<void>;
+  } = {},
 ): Promise<ModelSettingsImportOutcome> {
   const storage = options.storage === undefined ? defaultStorage() : options.storage;
   if (!storage) return 'none';
@@ -133,8 +140,15 @@ export async function runModelSettingsImport(
 
   if (response.ok) {
     storage.removeItem(MODEL_SETTINGS_IMPORT_KEY);
+    let view: ModelSettingsView | undefined;
     try {
-      const body = (await response.json()) as { skipped?: Array<{ item?: unknown }> };
+      const body = (await response.json()) as {
+        skipped?: Array<{ item?: unknown }>;
+        view?: ModelSettingsView;
+      };
+      if (body.view && typeof body.view === 'object' && Array.isArray(body.view.slots)) {
+        view = body.view;
+      }
       // Item ids only: a reason may repeat what was submitted.
       const skipped = (body.skipped ?? [])
         .map(({ item }) => (typeof item === 'string' ? item : ''))
@@ -145,6 +159,7 @@ export async function runModelSettingsImport(
     } catch {
       // The answer's details are informational only.
     }
+    if (view) await options.onImported?.(view);
     return 'imported';
   }
   if (response.status === 400) {

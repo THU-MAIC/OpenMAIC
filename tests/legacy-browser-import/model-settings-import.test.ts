@@ -97,6 +97,19 @@ describe('runModelSettingsImport', () => {
     expect(consoleOutput()).not.toContain(SECRET);
   });
 
+  it('hands the view the import answered to the caller', async () => {
+    const view = { revision: 3, slots: [] };
+    const onImported = vi.fn();
+    expect(
+      await runModelSettingsImport({
+        fetch: server({ importBody: { imported: ['openai'], skipped: [], view } }),
+        storage: waiting(),
+        onImported,
+      }),
+    ).toBe('imported');
+    expect(onImported).toHaveBeenCalledWith(view);
+  });
+
   it('keeps its completion apart from the course import', async () => {
     const storage = waiting();
     await runModelSettingsImport({ fetch: server({}), storage });
