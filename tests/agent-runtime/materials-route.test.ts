@@ -6,6 +6,7 @@ import type { OwnerMaterialRecord } from '@/lib/persistence/owner-materials';
 
 const mocks = vi.hoisted(() => ({
   runtimeConfigured: true,
+  persistenceConfigured: true,
   resolveRequestOwnerId: vi.fn(),
   resolveOwnedSession: vi.fn(),
   listSessionMaterials: vi.fn(),
@@ -27,6 +28,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/config/feature-flags', () => ({
   isAgentRuntimeConfigured: () => mocks.runtimeConfigured,
+  isServerPersistenceConfigured: () => mocks.persistenceConfigured,
 }));
 vi.mock('@/lib/server/identity/resolve', async () =>
   (await import('../helpers/owner-resolution-mock')).ownerResolveModule(
@@ -106,6 +108,7 @@ function ownerMaterial(overrides: Partial<OwnerMaterialRecord> = {}): OwnerMater
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.runtimeConfigured = true;
+  mocks.persistenceConfigured = true;
   mocks.resolveRequestOwnerId.mockReturnValue('owner-1');
   mocks.resolveOwnedSession.mockResolvedValue({ id: SESSION_ID, ownerId: 'owner-1' });
   mocks.listSessionMaterials.mockResolvedValue([material()]);
@@ -381,10 +384,16 @@ describe('POST /api/materials', () => {
     expect(mocks.abandonOwnerMaterial).not.toHaveBeenCalled();
   });
 
-  it('answers 404 when the agent runtime is not configured', async () => {
-    mocks.runtimeConfigured = false;
+  it('answers 404 when server persistence is not configured', async () => {
+    mocks.persistenceConfigured = false;
     const response = await post(Buffer.from('x'));
     expect(response.status).toBe(404);
+  });
+
+  it('uploads without the agent runtime (classroom generation consumes the library)', async () => {
+    mocks.runtimeConfigured = false;
+    const response = await post(Buffer.from('hello'));
+    expect(response.status).toBe(201);
   });
 });
 

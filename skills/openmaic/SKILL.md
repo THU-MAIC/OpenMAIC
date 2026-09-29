@@ -22,7 +22,7 @@ Use this as a guided, confirmation-heavy SOP. Do not compress the whole setup in
 - Prefer guiding the user to edit local config files themselves.
 - Do not offer to write API keys into config files on the user's behalf.
 - Once setup is complete and the user clearly asks to generate a classroom, do not ask for a second confirmation before submitting the generation job.
-- Keep confirmations for local file reads such as reading a PDF from disk.
+- Keep confirmations for local file reads such as reading a PDF from disk before uploading it.
 
 ## Optional Skill Config
 
@@ -93,7 +93,7 @@ After the user has chosen a startup mode and configured keys, start OpenMAIC usi
 
 Load [references/generate-flow.md](references/generate-flow.md).
 
-Use this only after the service is healthy. Confirm before reading local PDFs. If the user has already clearly asked to generate, do not ask for a second confirmation before submitting the generation job, and then follow the polling loop until it succeeds or fails. Only send the supported content fields for generation requests. For long-running jobs, prefer sparse polling and tell the user to check back later if the turn ends before completion.
+Use this only after the service is healthy. Confirm before reading local files to upload. If the user has already clearly asked to generate, do not ask for a second confirmation before submitting the generation job, and then follow the polling loop until it succeeds or fails. Only send the supported fields (`requirement`, `materialIds`) for generation requests; optional features follow the server's provider config. For long-running jobs, prefer sparse polling and tell the user to check back later if the turn ends before completion.
 
 ## Response Style
 

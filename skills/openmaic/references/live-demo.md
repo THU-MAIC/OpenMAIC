@@ -23,9 +23,9 @@ Follow the same generation flow as [generate-flow.md](generate-flow.md) with the
 - **Authorization**: Include header `Authorization: Bearer <access-code>` on all API requests
 - **Classroom URL**: `https://open.maic.chat/classroom/{id}`
 
-### Feature Detection in Live Demo Mode
+### Capabilities in Live Demo Mode
 
-Before generating, query `GET https://open.maic.chat/api/health` (with auth header) to check `capabilities`. Automatically include optional feature flags (`enableWebSearch`, `enableImageGeneration`, etc.) based on what the server supports. Do not send new fields if the server does not return `capabilities` (older version). This ensures forward compatibility — the Live Demo instance may update on a different schedule than the local codebase.
+Optional features (web search, image and video generation, TTS) follow the Live Demo server's configuration; there are no request flags for them. To see what a job will include, query `GET /api/generate-classroom/capabilities` on the Live Demo base URL (with the auth header). Upload local files with `POST /api/materials` and pass the returned ids as `materialIds`, exactly as in [generate-flow.md](generate-flow.md). The Live Demo instance may update on a different schedule than the local codebase: if the capabilities endpoint answers `404`, the instance predates this contract.
 
 ## Quota
 

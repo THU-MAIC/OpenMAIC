@@ -12,10 +12,13 @@ import { makeDocument, makeSlideScene } from './_stage-fixtures';
  *
  *   - `persistence` (`isServerPersistenceConfigured()`, a DATABASE_URL): the
  *     course library and folders (`/api/stages/**`, `/api/folders/**`,
- *     `/api/stage-meta/**`). They need the database and nothing else, so they
- *     serve with the agent runtime on OR off.
+ *     `/api/stage-meta/**`) and the owner-library material upload
+ *     (`POST /api/materials`, which `POST /api/generate-classroom` consumes).
+ *     They need the database and nothing else, so they serve with the agent
+ *     runtime on OR off.
  *   - `runtime` (`isAgentRuntimeConfigured()`, the flag AND a DATABASE_URL):
- *     agent features (materials, which only agent sessions consume).
+ *     agent features (the session-scoped material reads, which name an agent
+ *     session).
  *
  * Neither may answer a 500 from a store that cannot connect: without a
  * DATABASE_URL both answer a clean 404. This suite drives the REAL
@@ -229,7 +232,7 @@ const ROUTES: RouteCase[] = [
   },
   {
     name: 'POST /api/materials',
-    gate: 'runtime',
+    gate: 'persistence',
     call: () =>
       postMaterials(
         new NextRequest(`http://localhost/api/materials?sessionId=${SESSION_ID}`, {

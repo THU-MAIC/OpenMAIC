@@ -18,6 +18,8 @@ import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
+import { resolveServerGenerationCapabilities } from '@/lib/server/generation-capabilities';
+import { loadClassroomMaterialText } from '@/lib/server/classroom-materials';
 import { resolveModel } from '@/lib/server/resolve-model';
 import { getStageModel, type LlmStage } from '@/lib/server/model-routes';
 import type { LanguageModel } from 'ai';
@@ -25,7 +27,6 @@ import type { ThinkingConfig } from '@/lib/types/provider';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
-import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 import {
   ClassroomAlreadyExistsError,
   CLASSROOM_ID_MAX_ATTEMPTS,
@@ -55,18 +56,15 @@ export function containPBLGenerationError(error: unknown, sceneTitle: string): n
   return null;
 }
 
+/**
+ * The generation request. Optional capabilities (web search, image and video
+ * generation, TTS) are not request fields: they follow the server's provider
+ * configuration (`resolveServerGenerationCapabilities`).
+ */
 export interface GenerateClassroomInput {
   requirement: string;
-  pdfContent?: { text: string; images: string[] };
-  enableWebSearch?: boolean;
-  webSearchProviderId?: WebSearchProviderId;
-  webSearchApiKey?: string;
-  webSearchModelId?: string;
-  baiduSubSources?: BaiduSubSources;
-  enableImageGeneration?: boolean;
-  enableVideoGeneration?: boolean;
-  enableTTS?: boolean;
-  agentMode?: 'default' | 'generate';
+  /** Owner-library uploads (`POST /api/materials`) to generate from, in order. */
+  materialIds?: string[];
 }
 
 export type ClassroomGenerationStep =
@@ -95,13 +93,13 @@ export interface GenerateClassroomResult {
   scenesCount: number;
   createdAt: string;
   /**
-   * Present when TTS was requested. Omitted when TTS is disabled.
+   * Present when TTS ran (the server has a TTS provider). Omitted otherwise.
    * `written` is 0 when synthesis saved no clips.
    */
   ttsCoverage?: ClassroomTtsCoverage;
   /**
-   * Set when requested narration is incomplete (`written` < `total`) or the TTS phase failed.
-   * A requested run with no narratable speech (`total` 0) has coverage and no warning.
+   * Set when narration is incomplete (`written` < `total`) or the TTS phase failed.
+   * A TTS run with no narratable speech (`total` 0) has coverage and no warning.
    */
   warning?: string;
 }
@@ -252,11 +250,14 @@ export async function generateClassroom(
   input: GenerateClassroomInput,
   options: {
     baseUrl: string;
+    /** The request owner; `materialIds` resolve against this owner's library. */
+    ownerId: string;
     signal?: AbortSignal;
     onProgress?: (progress: ClassroomGenerationProgress) => Promise<void> | void;
   },
 ): Promise<GenerateClassroomResult> {
-  const { requirement, pdfContent } = input;
+  const { requirement } = input;
+  const capabilities = resolveServerGenerationCapabilities();
 
   await options.onProgress?.({
     step: 'initializing',
@@ -492,7 +493,17 @@ export async function generateClassroom(
     requirement,
   };
   const vocationalActive = resolveVocationalActive(requirements);
-  const pdfText = pdfContent?.text || undefined;
+
+  let pdfText: string | undefined;
+  if (input.materialIds?.length) {
+    await options.onProgress?.({
+      step: 'initializing',
+      progress: 7,
+      message: `Extracting ${input.materialIds.length} uploaded material(s)`,
+      scenesGenerated: 0,
+    });
+    pdfText = await loadClassroomMaterialText(options.ownerId, input.materialIds);
+  }
 
   await options.onProgress?.({
     step: 'researching',
@@ -503,8 +514,9 @@ export async function generateClassroom(
 
   // Web search (optional, graceful degradation)
   let researchContext: string | undefined;
-  if (input.enableWebSearch) {
-    const webSearchConfig = resolveClassroomWebSearchConfig(input);
+  if (capabilities.webSearch) {
+    // The server's default provider; requests carry no provider choice or key.
+    const webSearchConfig = resolveClassroomWebSearchConfig({});
     if (webSearchConfig) {
       // Re-resolve the query-rewrite model only when explicitly routed. If
       // resolution itself fails (e.g. unknown provider in the route), fall back
@@ -551,7 +563,7 @@ export async function generateClassroom(
         log.warn('Web search failed, continuing without search context:', e);
       }
     } else {
-      log.warn('enableWebSearch is true but no web search API key configured, skipping web search');
+      log.warn('No usable web search provider configuration, skipping web search');
     }
   }
 
@@ -568,8 +580,8 @@ export async function generateClassroom(
     undefined,
     aiCall,
     {
-      imageGenerationEnabled: input.enableImageGeneration,
-      videoGenerationEnabled: input.enableVideoGeneration,
+      imageGenerationEnabled: capabilities.imageGeneration,
+      videoGenerationEnabled: capabilities.videoGeneration,
       researchContext,
       // NO teacherContext — agents haven't been generated yet
     },
@@ -593,20 +605,19 @@ export async function generateClassroom(
     totalScenes: outlines.length,
   });
 
-  // Resolve agents based on agentMode — now AFTER outlines so we can use languageDirective
+  // Generate course-specific agent profiles, the default a fresh browser
+  // install uses (settings `agentMode: 'auto'`). Runs AFTER outlines so it can
+  // follow languageDirective; a failure falls back to the built-in agents.
   let agents: AgentInfo[];
-  const agentMode = input.agentMode || 'default';
-  if (agentMode === 'generate') {
-    log.info('Generating custom agent profiles via LLM...');
-    try {
-      const agentProfilesCall = await getAgentProfilesAiCall();
-      agents = await generateAgentProfiles(requirement, languageDirective, agentProfilesCall);
-      log.info(`Generated ${agents.length} agent profiles`);
-    } catch (e) {
-      log.warn('Agent profile generation failed, falling back to defaults:', e);
-      agents = getDefaultAgents();
-    }
-  } else {
+  let agentsGenerated = false;
+  log.info('Generating custom agent profiles via LLM...');
+  try {
+    const agentProfilesCall = await getAgentProfilesAiCall();
+    agents = await generateAgentProfiles(requirement, languageDirective, agentProfilesCall);
+    agentsGenerated = true;
+    log.info(`Generated ${agents.length} agent profiles`);
+  } catch (e) {
+    log.warn('Agent profile generation failed, falling back to defaults:', e);
     agents = getDefaultAgents();
   }
 
@@ -622,7 +633,7 @@ export async function generateClassroom(
     // For LLM-generated agents, embed full configs so the client can
     // hydrate the agent registry without prior IndexedDB data.
     // For default agents, just record IDs — the client already has them.
-    ...(agentMode === 'generate'
+    ...(agentsGenerated
       ? {
           generatedAgentConfigs: agents.map((a, i) => ({
             id: a.id,
@@ -760,7 +771,7 @@ export async function generateClassroom(
     }
 
     // Phase: Media generation (after all scenes generated)
-    if (input.enableImageGeneration || input.enableVideoGeneration) {
+    if (capabilities.imageGeneration || capabilities.videoGeneration) {
       await options.onProgress?.({
         step: 'generating_media',
         progress: 90,
@@ -781,7 +792,7 @@ export async function generateClassroom(
     // Phase: TTS generation
     let ttsCoverage: ClassroomTtsCoverage | undefined;
     let ttsFailureWarning: string | undefined;
-    if (input.enableTTS) {
+    if (capabilities.tts) {
       await options.onProgress?.({
         step: 'generating_tts',
         progress: 94,

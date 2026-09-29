@@ -12,59 +12,58 @@
 > Include `Authorization: Bearer <access-code>` header on all requests below.
 > See [live-demo.md](live-demo.md) for details.
 
+## Request Contract
+
+`POST {url}/api/generate-classroom` accepts exactly two fields:
+
+- `requirement` (string, required) — what the classroom should teach. The course language follows the requirement (and any uploaded material); there is no `language` field.
+- `materialIds` (string array, optional) — up to 5 ids returned by `POST {url}/api/materials`, used as source documents in the order given.
+
+Nothing else is a request field. Web search, image generation, video generation and TTS narration run automatically whenever the OpenMAIC server has a provider configured for them; they cannot be switched on or off per request, and requests never carry provider choices or API keys. Other fields are ignored, except `pdfContent`, which is rejected with `400 INVALID_REQUEST` (upload the document instead, see below).
+
+Do not rely on request-time model or provider override parameters. To change what a generation job can do, change the OpenMAIC server-side provider config.
+
+## Optional: Check Capabilities
+
+To tell the user in advance what the job will include, or which files can be uploaded, query:
+
+```text
+GET {url}/api/generate-classroom/capabilities
+```
+
+```json
+{
+  "success": true,
+  "capabilities": {
+    "webSearch": true,
+    "imageGeneration": false,
+    "videoGeneration": false,
+    "tts": true
+  },
+  "materials": {
+    "formats": [{ "id": "pdf", "mime": "application/pdf", "extensions": [".pdf"] }],
+    "maxCount": 5,
+    "maxDocumentBytes": 52428800,
+    "maxMediaBytes": 52428800
+  }
+}
+```
+
+`capabilities` describes what a job on this server will do; nothing needs to be sent back. `materials.formats` lists every accepted upload type (documents, images, audio and video), `maxCount` the most `materialIds` one request accepts, and the byte limits apply per file (`maxMediaBytes` for audio/video, `maxDocumentBytes` for everything else).
+
 ## Requirement-Only Generation
 
 If the user has already clearly asked to generate the classroom and the preconditions are satisfied, submit the generation job immediately. Do not ask for a second confirmation just before calling `/api/generate-classroom`.
 
-Submit the job with:
-
 ```text
 POST {url}/api/generate-classroom
 ```
-
-Request body:
 
 ```json
 {
   "requirement": "Create an introductory classroom on quantum mechanics for high school students"
 }
 ```
-
-Only send supported content fields:
-
-- `requirement` (required)
-- optional `pdfContent` object with the required shape `{ "text": string, "images": string[] }`; malformed values are rejected with `400 INVALID_REQUEST`
-- optional `language` (`"zh-CN"` | `"en-US"`, defaults to `"zh-CN"`) — any other value silently falls back to `"zh-CN"`
-- optional `enableWebSearch` (boolean) — include web search context in outline generation
-- optional `enableImageGeneration` (boolean) — allow image generation metadata in outlines
-- optional `enableVideoGeneration` (boolean) — allow video generation metadata in outlines
-- optional `enableTTS` (boolean) — enable server-side TTS audio generation for speech actions
-- optional `agentMode` (`"default"` | `"generate"`) — controls agent profile strategy:
-  - `"default"` (or omitted): uses built-in default agents
-  - `"generate"`: uses LLM to generate custom agent profiles tailored to the course content
-
-All optional boolean fields default to `false` when omitted. Omitting them preserves backward compatibility.
-
-### Feature Detection
-
-Before sending optional feature flags, query `GET {url}/api/health` and check the `capabilities` object:
-
-```json
-{
-  "status": "ok",
-  "version": "...",
-  "capabilities": {
-    "webSearch": true,
-    "imageGeneration": false,
-    "videoGeneration": false,
-    "tts": true
-  }
-}
-```
-
-Only set a feature flag to `true` if the corresponding capability is `true`. If the server does not return `capabilities` (older version), do not send the new fields.
-
-Do not rely on request-time model or provider override parameters.
 
 Treat the `POST` response as job submission only. Expect fields such as:
 
@@ -79,35 +78,54 @@ Treat the `POST` response as job submission only. Expect fields such as:
 }
 ```
 
-## PDF-Based Generation
+## Generation From Local Files
 
-1. Resolve the absolute path to the PDF.
-2. Confirm before reading the file.
-3. Parse the PDF first:
+Use this when the user wants the classroom built from their own documents (PDF, PPTX, DOCX, XLSX, images, text/Markdown/CSV, or audio/video).
 
-```text
-POST {url}/api/parse-pdf
-```
-
-4. Then send `requirement` plus `pdfContent` to:
+1. Resolve the absolute path of each file.
+2. Confirm before reading the files.
+3. Upload each file as the raw request body (not multipart):
 
 ```text
-POST {url}/api/generate-classroom
+POST {url}/api/materials
+Content-Type: <the file's MIME type, e.g. application/pdf>
+X-Material-Filename: <the file name, percent-encoded if it is not ASCII>
+<raw file bytes>
 ```
 
-Use this request shape:
+For example, with curl:
+
+```bash
+curl -sS -c cookies.txt -b cookies.txt \
+  -H 'Content-Type: application/pdf' \
+  -H 'X-Material-Filename: lecture-notes.pdf' \
+  --data-binary @/path/to/lecture-notes.pdf \
+  {url}/api/materials
+```
+
+A successful upload answers `201` with `{ "materialId": "...", "originalName": "...", "bytes": ..., "mime": "...", "extraction": { "status": "idle" } }`. Other answers: `413` (the file exceeds the limit; the body's `maxBytes` gives it), `415` (unsupported type), `429` (the owner's material library is full). Extraction happens later, inside the generation job, so `status: "idle"` is expected.
+
+4. Submit the job with the returned ids, in the order the documents should be read:
 
 ```json
 {
-  "requirement": "Create a classroom from this PDF",
-  "pdfContent": {
-    "text": "Parsed PDF text...",
-    "images": []
-  }
+  "requirement": "Create a classroom from these lecture notes",
+  "materialIds": ["mat_01...", "mat_02..."]
 }
 ```
 
-Both `pdfContent.text` and `pdfContent.images` are required when `pdfContent` is present. `text` must be a string and every entry in `images` must be a string. The current generation pipeline consumes `pdfContent.text`; `images` is still part of the API contract and is counted in generation job metadata.
+An id that is unknown, not yet fully uploaded, or belongs to someone else answers `400` with `One or more materials are unavailable`. If a document cannot be extracted, the job fails (it never silently generates without the document); surface the error to the user.
+
+### Uploads And Generation Must Use The Same Owner
+
+Uploaded materials belong to the owner the server resolves for the upload request, and `materialIds` only resolve for that same owner.
+
+- If the server resolves a fixed owner — a shared team owner (`PERSISTENCE_SHARED_OWNER_ID` together with `ACCESS_CODE`) or single-user mode (`OWNER_SINGLE_USER=true`) — or the deployment resolves the owner from a credential you send on every request, this is automatic.
+- Otherwise the server identifies callers by an anonymous owner cookie that it sets on the first response. Keep that cookie and send it on every later request (uploads, generation, polling), for example with one curl cookie jar (`-c cookies.txt -b cookies.txt`) on all calls. Without it, each request is a new owner and the upload ids will be unavailable.
+
+### URLs Are Not Accepted
+
+There is no way to pass a document URL. The server intentionally never fetches caller-supplied URLs; download the file locally (with the user's confirmation) and upload its bytes instead.
 
 ## Polling Loop
 
@@ -138,7 +156,7 @@ GET {pollUrl}
 - On `succeeded`, read `result.classroomId` and `result.url` from the final poll response, and also read `result.warning` and `result.ttsCoverage` before telling the user the classroom is ready.
   - If `result.warning` is set, quote it in the same update and describe narration as incomplete.
   - If `result.ttsCoverage` is set and `written` is less than `total`, tell the user how many narration clips were written and how many speech actions were left silent. The classroom URL is still usable, and narration is incomplete.
-  - A missing `ttsCoverage` means server TTS was not requested. A requested TTS run includes `ttsCoverage`. `warning` is set when `written` is less than `total`, or when the TTS phase failed. A run with no narratable speech (`written: 0`, `total: 0`) has coverage and no `warning`.
+  - A missing `ttsCoverage` means the server has no TTS provider configured, so no narration was generated. A TTS run includes `ttsCoverage`. `warning` is set when `written` is less than `total`, or when the TTS phase failed. A run with no narratable speech (`written: 0`, `total: 0`) has coverage and no `warning`.
 
 ## If The Loop Ends First
 
@@ -185,5 +203,5 @@ If the error suggests a provider or model configuration problem, explicitly tell
 
 ## Confirmation Requirements
 
-- Ask before reading a local PDF.
+- Ask before reading local files for upload.
 - Do not ask for a second confirmation before the generation request if the user has already clearly asked you to generate the classroom.

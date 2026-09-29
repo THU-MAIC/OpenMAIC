@@ -31,8 +31,12 @@
  * - Every response echoes the `x-request-id` header so the uploader can pair
  *   a failure with its log line.
  *
- * The configured runtime gates the family (the workbench is agent-runtime
- * territory): off, or on without a DATABASE_URL, answers the same plain 404.
+ * Gates: the upload writes only the owner-scoped material library, so it is
+ * served whenever server persistence is configured (a DATABASE_URL), with the
+ * agent runtime on or off — `POST /api/generate-classroom` consumes these
+ * uploads by id. The list stays behind the agent runtime gate: it names an
+ * agent session (`sessionId`) and reads that session's materials, which only
+ * exist with the runtime on. Either gate closed answers the same plain 404.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
@@ -43,7 +47,10 @@ import { NextResponse } from 'next/server';
 import { createMaterialId } from '@openmaic/storage';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 
-import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
+import {
+  isAgentRuntimeConfigured,
+  isServerPersistenceConfigured,
+} from '@/lib/config/feature-flags';
 import { apiError } from '@/lib/server/api-response';
 import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
 import { ownerJson, ownerNotFound } from '@/lib/server/agent-runtime/route-response';
@@ -65,6 +72,10 @@ import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getMaterialByteStore } from '@/lib/server/materials/bytes';
 import {
+  MATERIAL_DOCUMENT_UPLOAD_LIMIT,
+  MATERIAL_MEDIA_UPLOAD_LIMIT,
+} from '@/lib/server/materials/upload-limits';
+import {
   isWorkbenchMaterialMime,
   MEDIA_MIME_TYPES,
   resolveWorkbenchMaterialMime,
@@ -72,10 +83,6 @@ import {
 
 export const runtime = 'nodejs';
 
-const DOCUMENT_UPLOAD_LIMIT = Math.min(
-  agentRuntimeConfig.maxDocumentBytes,
-  agentRuntimeConfig.maxUploadBytes,
-);
 const MEDIA_MIME_SET = new Set<string>(MEDIA_MIME_TYPES);
 
 /** The store's keyset-paging ceiling (default 50, capped at 200). */
@@ -197,7 +204,7 @@ export async function POST(req: NextRequest) {
     return response;
   };
 
-  if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
+  if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
 
   return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     try {
@@ -222,8 +229,8 @@ export async function POST(req: NextRequest) {
         );
       }
       const uploadLimit = MEDIA_MIME_SET.has(mime)
-        ? agentRuntimeConfig.maxUploadBytes
-        : DOCUMENT_UPLOAD_LIMIT;
+        ? MATERIAL_MEDIA_UPLOAD_LIMIT
+        : MATERIAL_DOCUMENT_UPLOAD_LIMIT;
 
       declaredBytes = Number(req.headers.get('content-length') ?? 0);
       if (Number.isFinite(declaredBytes) && declaredBytes > uploadLimit) {
