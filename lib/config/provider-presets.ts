@@ -187,3 +187,24 @@ export function registryDefaultBaseUrl(
   const entry = REGISTRIES[capability][registryId] as { defaultBaseUrl?: string } | undefined;
   return entry?.defaultBaseUrl || undefined;
 }
+
+export interface CatalogueModel {
+  id: string;
+  name: string;
+}
+
+/**
+ * The models a preset offers for a capability, best first: a token plan's own
+ * list, else the registry's catalogue. Empty for a capability without one
+ * (web search, document extraction) or a preset that does not offer it.
+ */
+export function presetModels(preset: ProviderPreset, capability: SlotCapability): CatalogueModel[] {
+  const target = preset.capabilities[capability];
+  if (!target) return [];
+  const entry = REGISTRIES[capability][target.registryId] as
+    | { models?: readonly { id: string; name?: string }[] }
+    | undefined;
+  const known = entry?.models ?? [];
+  const ids = target.models ?? known.map((model) => model.id);
+  return ids.map((id) => ({ id, name: known.find((model) => model.id === id)?.name ?? id }));
+}
