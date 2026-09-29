@@ -297,22 +297,29 @@ export async function reclaimStaleOwnerMaterialUploads(
  *   unfinished upload and another owner's material are indistinguishable).
  */
 export async function deleteOwnerMaterial(
-  queryable: Queryable,
+  queryable: ConnectableQueryable,
   ownerId: string,
   materialId: string,
   deleteBytes: (ossKey: string) => Promise<void>,
 ): Promise<boolean> {
-  const marked = await queryable.query<{ oss_key: string }>(
-    `UPDATE owner_material
-        SET deleted_at = $3
-      WHERE id = $1
-        AND owner_id = $2
-        AND status = 'ready'
-        AND deleted_at IS NULL
-      RETURNING oss_key`,
-    [materialId, ownerId, Date.now()],
-  );
-  const row = marked.rows[0];
+  const withTransaction = nodePostgresTransaction(queryable);
+  const row = await withTransaction(async (tx) => {
+    // The identity lock first, as every owner write takes it: a delete racing
+    // a claim of this owner lands before the claim or is refused (a retired
+    // owner) -- see ./owner-merges.ts.
+    await fenceOwnerWrite(tx, ownerId);
+    const marked = await tx.query<{ oss_key: string }>(
+      `UPDATE owner_material
+          SET deleted_at = $3
+        WHERE id = $1
+          AND owner_id = $2
+          AND status = 'ready'
+          AND deleted_at IS NULL
+        RETURNING oss_key`,
+      [materialId, ownerId, Date.now()],
+    );
+    return marked.rows[0];
+  });
   if (!row) return false;
   if (row.oss_key !== '') {
     try {

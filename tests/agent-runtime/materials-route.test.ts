@@ -476,9 +476,15 @@ describe('DELETE /api/materials/[id]', () => {
 
   it('answers a plain 404 for a material the owner does not have', async () => {
     mocks.deleteOwnerMaterial.mockResolvedValue(false);
-    const response = await del('mat_foreign');
+    const response = await del(`mat_${'z'.repeat(26)}`);
     expect(response.status).toBe(404);
     await expect(response.text()).resolves.toBe('Not found');
+  });
+
+  it('answers a malformed id with the same 404 before touching the database', async () => {
+    const response = await del(`mat_${'0'.repeat(25)}\u0000`);
+    expect(response.status).toBe(404);
+    expect(mocks.deleteOwnerMaterial).not.toHaveBeenCalled();
   });
 
   it('serves without the agent runtime and 404s without server persistence', async () => {

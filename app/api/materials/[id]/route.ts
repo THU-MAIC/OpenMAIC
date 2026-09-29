@@ -20,9 +20,13 @@ import {
   isAgentRuntimeConfigured,
   isServerPersistenceConfigured,
 } from '@/lib/config/feature-flags';
+import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
+
 import { deleteOwnerMaterial } from '@/lib/persistence/owner-materials';
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getMaterialByteStore } from '@/lib/server/materials/bytes';
+import { isMaterialId } from '@/lib/server/materials/material-id';
 import { apiError } from '@/lib/server/api-response';
 import {
   getSessionMaterial,
@@ -57,11 +61,22 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
   return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const { id } = await params;
+    if (!isMaterialId(id)) return ownerNotFound(responseHeaders);
     const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
     const byteStore = getMaterialByteStore();
-    const deleted = await deleteOwnerMaterial(provider.pool, ownerId, id, (ossKey) =>
-      byteStore.delete(ossKey),
-    );
+    let deleted: boolean;
+    try {
+      deleted = await deleteOwnerMaterial(
+        provider.pool as unknown as ConnectableQueryable,
+        ownerId,
+        id,
+        (ossKey) => byteStore.delete(ossKey),
+      );
+    } catch (error) {
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
+      throw error;
+    }
     if (!deleted) return ownerNotFound(responseHeaders);
     return ownerJson({ materialId: id, deleted: true }, 200, responseHeaders);
   });

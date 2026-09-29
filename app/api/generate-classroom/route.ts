@@ -10,6 +10,7 @@ import {
   resolveClassroomMaterials,
 } from '@/lib/server/classroom-materials';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
+import { isMaterialId } from '@/lib/server/materials/material-id';
 import { ownerApiError, withOwnerResponseHeaders } from '@/lib/server/agent-runtime/route-response';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
 import { createLogger } from '@/lib/logger';
@@ -20,9 +21,6 @@ export const maxDuration = 30;
 
 const PDF_CONTENT_REMOVED_MESSAGE =
   'pdfContent is no longer accepted: upload the document with POST /api/materials and pass the returned materialId in materialIds';
-
-/** Material ids are `mat_` plus a 26-character ULID; anything much longer is not one. */
-const MAX_MATERIAL_ID_LENGTH = 64;
 
 const INVALID_MATERIAL_IDS_MESSAGE = `materialIds must be an array of at most ${MAX_CLASSROOM_MATERIALS} material ids`;
 
@@ -55,9 +53,7 @@ function parseBody(raw: unknown): ParsedBody {
   if (body.materialIds === undefined) return { ok: true, input: { requirement } };
   if (
     !Array.isArray(body.materialIds) ||
-    body.materialIds.some(
-      (id) => typeof id !== 'string' || !id.trim() || id.trim().length > MAX_MATERIAL_ID_LENGTH,
-    )
+    body.materialIds.some((id) => typeof id !== 'string' || !isMaterialId(id.trim()))
   ) {
     return { ok: false, code: 'INVALID_REQUEST', message: INVALID_MATERIAL_IDS_MESSAGE };
   }
@@ -125,12 +121,12 @@ export async function POST(req: NextRequest) {
         `Classroom generation job creation failed [requirement="${body.requirement.substring(0, 60)}..."]:`,
         error,
       );
+      // The error is logged above; its text (a database error, say) stays off the wire.
       return ownerApiError(
         'INTERNAL_ERROR',
         500,
         'Failed to create classroom generation job',
         responseHeaders,
-        error instanceof Error ? error.message : 'Unknown error',
       );
     }
   });

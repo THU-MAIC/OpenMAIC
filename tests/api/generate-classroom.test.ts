@@ -111,7 +111,7 @@ describe('POST /api/generate-classroom', () => {
     mocks.getReadyOwnerMaterials.mockImplementation(
       async (_pool: unknown, ownerId: string, ids: string[]) =>
         ownerId === 'owner-1'
-          ? ids.filter((id) => id.startsWith('mat_mine')).map((id) => readyMaterial(id))
+          ? ids.filter((id) => id.startsWith('mat_mmmm')).map((id) => readyMaterial(id))
           : [],
     );
   });
@@ -160,17 +160,21 @@ describe('POST /api/generate-classroom', () => {
   it('passes owned materialIds to the job, deduplicated and in the given order', async () => {
     const res = await postGenerateClassroom({
       requirement: 'Teach from my notes',
-      materialIds: ['mat_mine_2', ' mat_mine_1 ', 'mat_mine_2'],
+      materialIds: [
+        'mat_mmmmmmmmmmmmmmmmmmmmmmmmm2',
+        ' mat_mmmmmmmmmmmmmmmmmmmmmmmmm1 ',
+        'mat_mmmmmmmmmmmmmmmmmmmmmmmmm2',
+      ],
     });
 
     expect(res.status).toBe(202);
     expect(mocks.getReadyOwnerMaterials).toHaveBeenCalledWith(expect.anything(), 'owner-1', [
-      'mat_mine_2',
-      'mat_mine_1',
+      'mat_mmmmmmmmmmmmmmmmmmmmmmmmm2',
+      'mat_mmmmmmmmmmmmmmmmmmmmmmmmm1',
     ]);
     expect(mocks.createClassroomGenerationJob).toHaveBeenCalledWith(expect.any(String), {
       requirement: 'Teach from my notes',
-      materialIds: ['mat_mine_2', 'mat_mine_1'],
+      materialIds: ['mat_mmmmmmmmmmmmmmmmmmmmmmmmm2', 'mat_mmmmmmmmmmmmmmmmmmmmmmmmm1'],
     });
   });
 
@@ -190,11 +194,13 @@ describe('POST /api/generate-classroom', () => {
   });
 
   it.each([
-    ['a string', 'mat_mine_1'],
-    ['a non-string entry', ['mat_mine_1', 7]],
-    ['an empty entry', ['mat_mine_1', '  ']],
-    ['too many ids', ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => `mat_mine_${id}`)],
-    ['an overlong id', [`mat_mine_${'x'.repeat(64)}`]],
+    ['a string', 'mat_mmmmmmmmmmmmmmmmmmmmmmmmm1'],
+    ['a non-string entry', ['mat_mmmmmmmmmmmmmmmmmmmmmmmmm1', 7]],
+    ['an empty entry', ['mat_mmmmmmmmmmmmmmmmmmmmmmmmm1', '  ']],
+    ['too many ids', ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => `mat_${'m'.repeat(25)}${id}`)],
+    ['an overlong id', [`mat_${'m'.repeat(64)}`]],
+    ['an id with an embedded NUL', [`mat_${'m'.repeat(24)}\u00001`]],
+    ['an id outside the material id alphabet', [`mat_${'m'.repeat(25)}u`]],
   ])('returns 400 when materialIds is %s', async (_label, materialIds) => {
     const res = await postGenerateClassroom({ requirement: 'Teach', materialIds });
 
@@ -204,18 +210,20 @@ describe('POST /api/generate-classroom', () => {
       errorCode: 'INVALID_REQUEST',
       error: 'materialIds must be an array of at most 5 material ids',
     });
+    // Malformed ids never reach the database.
+    expect(mocks.getReadyOwnerMaterials).not.toHaveBeenCalled();
     expect(mocks.createClassroomGenerationJob).not.toHaveBeenCalled();
   });
 
   it('answers unknown and foreign materials with one uniform error', async () => {
     const unknown = await postGenerateClassroom({
       requirement: 'Teach',
-      materialIds: ['mat_mine_1', 'mat_missing'],
+      materialIds: ['mat_mmmmmmmmmmmmmmmmmmmmmmmmm1', 'mat_xxxxxxxxxxxxxxxxxxxxxxxxxx'],
     });
     mocks.resolveRequestOwnerId.mockReturnValue('owner-2');
     const foreign = await postGenerateClassroom({
       requirement: 'Teach',
-      materialIds: ['mat_mine_1'],
+      materialIds: ['mat_mmmmmmmmmmmmmmmmmmmmmmmmm1'],
     });
 
     const expected = {
@@ -252,7 +260,7 @@ describe('POST /api/generate-classroom', () => {
   });
 
   it('returns 400 without a requirement', async () => {
-    const res = await postGenerateClassroom({ materialIds: ['mat_mine_1'] });
+    const res = await postGenerateClassroom({ materialIds: ['mat_mmmmmmmmmmmmmmmmmmmmmmmmm1'] });
 
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual(
@@ -262,10 +270,13 @@ describe('POST /api/generate-classroom', () => {
 
   it('refuses materials whose type this server cannot extract', async () => {
     mocks.getReadyOwnerMaterials.mockResolvedValue([
-      { ...readyMaterial('mat_mine_1'), mime: 'application/vnd.ms-powerpoint' },
+      { ...readyMaterial('mat_mmmmmmmmmmmmmmmmmmmmmmmmm1'), mime: 'application/vnd.ms-powerpoint' },
     ]);
 
-    const res = await postGenerateClassroom({ requirement: 'Teach', materialIds: ['mat_mine_1'] });
+    const res = await postGenerateClassroom({
+      requirement: 'Teach',
+      materialIds: ['mat_mmmmmmmmmmmmmmmmmmmmmmmmm1'],
+    });
 
     expect(res.status).toBe(400);
     const json = await res.json();
@@ -276,13 +287,13 @@ describe('POST /api/generate-classroom', () => {
 
   it('refuses materials over the bundle total size', async () => {
     mocks.getReadyOwnerMaterials.mockResolvedValue([
-      { ...readyMaterial('mat_mine_1'), bytes: 100 * 1024 * 1024 },
-      { ...readyMaterial('mat_mine_2'), bytes: 60 * 1024 * 1024 },
+      { ...readyMaterial('mat_mmmmmmmmmmmmmmmmmmmmmmmmm1'), bytes: 100 * 1024 * 1024 },
+      { ...readyMaterial('mat_mmmmmmmmmmmmmmmmmmmmmmmmm2'), bytes: 60 * 1024 * 1024 },
     ]);
 
     const res = await postGenerateClassroom({
       requirement: 'Teach',
-      materialIds: ['mat_mine_1', 'mat_mine_2'],
+      materialIds: ['mat_mmmmmmmmmmmmmmmmmmmmmmmmm1', 'mat_mmmmmmmmmmmmmmmmmmmmmmmmm2'],
     });
 
     expect(res.status).toBe(400);
@@ -306,7 +317,11 @@ describe('POST /api/generate-classroom', () => {
       ['a missing requirement', {}, 400],
       ['pdfContent', { requirement: 'Teach', pdfContent: { text: '', images: [] } }, 400],
       ['malformed materialIds', { requirement: 'Teach', materialIds: 'x' }, 400],
-      ['unavailable materials', { requirement: 'Teach', materialIds: ['mat_missing'] }, 400],
+      [
+        'unavailable materials',
+        { requirement: 'Teach', materialIds: ['mat_xxxxxxxxxxxxxxxxxxxxxxxxxx'] },
+        400,
+      ],
     ])('on %s', async (_label, body, status) => {
       const res = await postGenerateClassroom(body);
       expect(res.status).toBe(status);
@@ -326,11 +341,18 @@ describe('POST /api/generate-classroom', () => {
       expect(res.headers.getSetCookie()).toContain(minted);
     });
 
-    it('on a job creation failure', async () => {
-      mocks.createClassroomGenerationJob.mockRejectedValue(new Error('disk full'));
+    it('on a job creation failure, without leaking the underlying error text', async () => {
+      mocks.createClassroomGenerationJob.mockRejectedValue(
+        new Error('invalid byte sequence for encoding "UTF8": 0x00'),
+      );
       const res = await postGenerateClassroom({ requirement: 'Teach' });
       expect(res.status).toBe(500);
       expect(res.headers.getSetCookie()).toContain(minted);
+      await expect(res.json()).resolves.toEqual({
+        success: false,
+        errorCode: 'INTERNAL_ERROR',
+        error: 'Failed to create classroom generation job',
+      });
     });
   });
 });
