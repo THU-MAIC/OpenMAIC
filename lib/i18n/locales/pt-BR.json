@@ -2092,7 +2092,10 @@
         "dismiss": "Dispensar",
         "changedMeanwhile": "as configurações mudaram nesse meio-tempo",
         "openProviders": "Abrir provedores",
-        "answerLost": "a resposta do servidor se perdeu"
+        "answerLost": "a resposta do servidor se perdeu",
+        "unconfirmedAdd": "Não se sabe se {{name}} foi adicionado: a resposta do servidor se perdeu e as configurações não puderam ser lidas de novo.",
+        "notAdded": "{{name}} não foi adicionado. Conecte-o novamente.",
+        "checkAgain": "Verificar novamente"
       },
       "providers": {
         "title": "Provedores",

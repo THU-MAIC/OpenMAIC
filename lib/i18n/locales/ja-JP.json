@@ -2092,7 +2092,10 @@
         "dismiss": "閉じる",
         "changedMeanwhile": "その間に設定が変更されました",
         "openProviders": "プロバイダーを開く",
-        "answerLost": "サーバーの応答が失われました"
+        "answerLost": "サーバーの応答が失われました",
+        "unconfirmedAdd": "{{name}} が追加されたか分かりません。サーバーの応答が失われ、設定を再読み込みできませんでした。",
+        "notAdded": "{{name}} は追加されていません。もう一度接続してください。",
+        "checkAgain": "再確認"
       },
       "providers": {
         "title": "プロバイダー",

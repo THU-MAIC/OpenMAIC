@@ -110,6 +110,42 @@ describe('model settings client', () => {
     expect(client.getState()).toMatchObject({ phase: 'ready', view: after });
   });
 
+  it('reconciles a write whose request fails in transport: it may have been saved', async () => {
+    const after = makeView({ revision: 2 });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(makeView({ revision: 1 })))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(json(after));
+    const client = createModelSettingsClient(fetchImpl);
+    await client.load();
+
+    const result = await client.apply({ kind: 'remove-provider', id: 'acme' });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'unconfirmed',
+      message: 'Failed to fetch',
+      view: after,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('stays unconfirmed, without a view, when the reload fails too', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(makeView({ revision: 1 })))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const client = createModelSettingsClient(fetchImpl);
+    await client.load();
+
+    const result = await client.apply({ kind: 'slots', clear: ['tts'] });
+
+    expect(result).toEqual({ ok: false, reason: 'unconfirmed', message: 'Failed to fetch' });
+    expect(client.getState().phase).toBe('error');
+  });
+
   it('reloads on a stale revision and says so', async () => {
     const stale = makeView({ revision: 1 });
     const fresh = makeView({ revision: 2 });

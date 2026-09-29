@@ -427,6 +427,10 @@ export type FirstRunResult =
    * The provider was added but the slots could not be filled: the server
    * refused them (`reason`, `message`), or the provider offers no chat model
    * to use (neither). {@link fillRecommended} tries the filling again.
+   *
+   * `reason: 'unconfirmed-add'`: whether the provider was added at all is not
+   * known (its answer was lost and the settings could not be read again);
+   * {@link resumeFirstRun} finds out.
    */
   | { status: 'partial'; providerId: string; reason?: string; message?: string };
 
@@ -472,10 +476,31 @@ export async function runFirstRunSetup(
   const providerId = newProviderId(view, preset.id);
   const added = await apply(providerChange(providerId, draft, preset));
   if (added.ok) return fillRecommended(apply, added.view, preset, providerId);
-  // An answer lost after the write: if the reloaded view has the provider, go on.
-  const landed =
-    added.reason === 'unconfirmed' &&
-    added.view?.providers.some((provider) => provider.id === providerId);
-  if (landed && added.view) return fillRecommended(apply, added.view, preset, providerId);
+  if (added.reason === 'unconfirmed') {
+    // The answer was lost: the reloaded view tells whether the provider landed.
+    if (!added.view) {
+      return { status: 'partial', providerId, reason: 'unconfirmed-add', message: added.message };
+    }
+    if (added.view.providers.some((provider) => provider.id === providerId)) {
+      return fillRecommended(apply, added.view, preset, providerId);
+    }
+  }
   return { status: 'failed', reason: added.reason, message: added.message };
+}
+
+/**
+ * Pick up a first-run setup whose outcome was left open, against the view as
+ * it now is: fill the slots if the provider is there; when an unconfirmed add
+ * turns out not to have landed, say so (`reason: 'not-added'`).
+ */
+export async function resumeFirstRun(
+  apply: Apply,
+  view: ModelSettingsView,
+  preset: PresetView,
+  providerId: string,
+): Promise<Exclude<FirstRunResult, { status: 'failed' }>> {
+  if (!view.providers.some((provider) => provider.id === providerId)) {
+    return { status: 'partial', providerId, reason: 'not-added' };
+  }
+  return fillRecommended(apply, view, preset, providerId);
 }

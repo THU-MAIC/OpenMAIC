@@ -2092,7 +2092,10 @@
         "dismiss": "Dismiss",
         "changedMeanwhile": "the settings changed meanwhile",
         "openProviders": "Open providers",
-        "answerLost": "the server's answer was lost"
+        "answerLost": "the server's answer was lost",
+        "unconfirmedAdd": "It is not known whether {{name}} was added: the server's answer was lost and the settings could not be read again.",
+        "notAdded": "{{name}} was not added. Connect it again.",
+        "checkAgain": "Check again"
       },
       "providers": {
         "title": "Providers",

@@ -2092,7 +2092,10 @@
         "dismiss": "Fermer",
         "changedMeanwhile": "les réglages ont changé entre-temps",
         "openProviders": "Ouvrir les fournisseurs",
-        "answerLost": "la réponse du serveur a été perdue"
+        "answerLost": "la réponse du serveur a été perdue",
+        "unconfirmedAdd": "On ne sait pas si {{name}} a été ajouté : la réponse du serveur a été perdue et les réglages n’ont pas pu être relus.",
+        "notAdded": "{{name}} n’a pas été ajouté. Connectez-le de nouveau.",
+        "checkAgain": "Vérifier à nouveau"
       },
       "providers": {
         "title": "Fournisseurs",

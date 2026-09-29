@@ -2077,7 +2077,10 @@
         "dismiss": "關閉",
         "changedMeanwhile": "設定在此期間已被變更",
         "openProviders": "開啟 Provider",
-        "answerLost": "伺服器的回應遺失"
+        "answerLost": "伺服器的回應遺失",
+        "unconfirmedAdd": "無法確認 {{name}} 是否已新增：伺服器的回應遺失，且無法重新讀取設定。",
+        "notAdded": "{{name}} 未被新增，請重新連接。",
+        "checkAgain": "再次檢查"
       },
       "providers": {
         "title": "Provider",

@@ -2092,7 +2092,10 @@
         "dismiss": "Bỏ qua",
         "changedMeanwhile": "thiết lập đã thay đổi trong lúc đó",
         "openProviders": "Mở nhà cung cấp",
-        "answerLost": "phản hồi của máy chủ bị mất"
+        "answerLost": "phản hồi của máy chủ bị mất",
+        "unconfirmedAdd": "Không rõ {{name}} đã được thêm hay chưa: phản hồi của máy chủ bị mất và không đọc lại được thiết lập.",
+        "notAdded": "{{name}} chưa được thêm. Hãy kết nối lại.",
+        "checkAgain": "Kiểm tra lại"
       },
       "providers": {
         "title": "Nhà cung cấp",

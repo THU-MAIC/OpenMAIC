@@ -2092,7 +2092,10 @@
         "dismiss": "Schließen",
         "changedMeanwhile": "die Einstellungen wurden inzwischen geändert",
         "openProviders": "Anbieter öffnen",
-        "answerLost": "die Antwort des Servers ging verloren"
+        "answerLost": "die Antwort des Servers ging verloren",
+        "unconfirmedAdd": "Ob {{name}} hinzugefügt wurde, ist unklar: Die Antwort des Servers ging verloren und die Einstellungen konnten nicht neu gelesen werden.",
+        "notAdded": "{{name}} wurde nicht hinzugefügt. Verbinde es erneut.",
+        "checkAgain": "Erneut prüfen"
       },
       "providers": {
         "title": "Anbieter",

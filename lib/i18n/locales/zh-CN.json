@@ -2092,7 +2092,10 @@
         "dismiss": "关闭",
         "changedMeanwhile": "设置在此期间已被更改",
         "openProviders": "打开 Provider",
-        "answerLost": "服务端的响应丢失"
+        "answerLost": "服务端的响应丢失",
+        "unconfirmedAdd": "无法确认 {{name}} 是否已添加：服务端的响应丢失，且无法重新读取设置。",
+        "notAdded": "{{name}} 未被添加，请重新接入。",
+        "checkAgain": "再次检查"
       },
       "providers": {
         "title": "Provider",

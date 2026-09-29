@@ -116,6 +116,20 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
         : { ok: false, reason: 'failed', message: state.error ?? 'Could not load the settings' };
     }
 
+    // A write whose answer never arrives (the connection lost before or after
+    // the server read it, a body cut short) may have been saved: read the
+    // settings again to tell, and say it is unconfirmed. `view` is the reloaded
+    // view when that read worked.
+    const unconfirmed = async (error: unknown): Promise<ApplyResult> => {
+      const reloaded = await load();
+      return {
+        ok: false,
+        reason: 'unconfirmed',
+        message: error instanceof Error ? error.message : String(error),
+        ...(reloaded.phase === 'ready' && reloaded.view ? { view: reloaded.view } : {}),
+      };
+    };
+
     let response: Response;
     try {
       response = await fetchImpl(MODEL_SETTINGS_ENDPOINT, {
@@ -124,11 +138,7 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
         body: JSON.stringify({ revision: view.revision, change }),
       });
     } catch (error) {
-      return {
-        ok: false,
-        reason: 'failed',
-        message: error instanceof Error ? error.message : String(error),
-      };
+      return unconfirmed(error);
     }
 
     if (response.ok) {
@@ -136,14 +146,7 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
       try {
         next = (await response.json()) as ModelSettingsView;
       } catch (error) {
-        // The change may have been saved: read the settings again to reconcile.
-        const reloaded = await load();
-        return {
-          ok: false,
-          reason: 'unconfirmed',
-          message: error instanceof Error ? error.message : String(error),
-          ...(reloaded.view ? { view: reloaded.view } : {}),
-        };
+        return unconfirmed(error);
       }
       setState({ phase: 'ready', view: next });
       return { ok: true, view: next };

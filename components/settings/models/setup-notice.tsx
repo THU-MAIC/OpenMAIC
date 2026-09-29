@@ -34,6 +34,9 @@ export function SetupNotice({
   const name = outcome.preset.name;
   // Without a reason the provider simply lists no language model to assign.
   const noModel = reason === undefined;
+  // Whether the provider was added is not known yet, or it turned out it was not.
+  const unknownAdd = reason === 'unconfirmed-add';
+  const notAdded = reason === 'not-added';
   const why =
     reason === 'conflict' || reason === 'locked'
       ? t(`${MS}.setup.changedMeanwhile`)
@@ -54,9 +57,13 @@ export function SetupNotice({
         <p className="text-xs leading-relaxed">
           {noModel
             ? t(`${MS}.setup.noModel`, { name })
-            : t(`${MS}.setup.partial`, { name, message: why })}
+            : unknownAdd
+              ? t(`${MS}.setup.unconfirmedAdd`, { name })
+              : notAdded
+                ? t(`${MS}.setup.notAdded`, { name })
+                : t(`${MS}.setup.partial`, { name, message: why })}
         </p>
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className={notAdded ? 'hidden' : 'mt-2 flex flex-wrap gap-2'}>
           {noModel ? (
             <Button size="xs" variant="outline" onClick={onProviders}>
               {t(`${MS}.setup.openProviders`)}
@@ -76,7 +83,7 @@ export function SetupNotice({
               }}
             >
               {retrying && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
-              {t(`${MS}.setup.retry`)}
+              {unknownAdd ? t(`${MS}.setup.checkAgain`) : t(`${MS}.setup.retry`)}
             </Button>
           )}
         </div>

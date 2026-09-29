@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { modelSettingsClient, type ModelSettingsClient } from '@/lib/model-settings/client';
-import { fillRecommended, type OffMemory } from '@/lib/model-settings/edit';
+import { resumeFirstRun, type OffMemory } from '@/lib/model-settings/edit';
 import { useModelSettings } from '@/lib/model-settings/use-model-settings';
 import { cn } from '@/lib/utils';
 
@@ -159,10 +159,20 @@ export function ModelSettingsPanel({
         <SetupNotice
           outcome={setupNotice}
           onRetry={async () => {
-            const current = (client ?? modelSettingsClient).getState().view ?? view;
+            const settings = client ?? modelSettingsClient;
+            let current = settings.getState().view ?? view;
+            if (
+              setupNotice.result.status === 'partial' &&
+              setupNotice.result.reason === 'unconfirmed-add'
+            ) {
+              // Read the settings again first; while that fails, nothing is known yet.
+              const reloaded = await settings.load();
+              if (reloaded.phase !== 'ready' || !reloaded.view) return;
+              current = reloaded.view;
+            }
             onSetupOutcome({
               preset: setupNotice.preset,
-              result: await fillRecommended(
+              result: await resumeFirstRun(
                 apply,
                 current,
                 setupNotice.preset,

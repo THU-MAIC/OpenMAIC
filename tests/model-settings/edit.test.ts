@@ -12,6 +12,7 @@ import {
   providerChange,
   providerFields,
   providerLabel,
+  resumeFirstRun,
   refComplete,
   runFirstRunSetup,
   slotChange,
@@ -458,6 +459,32 @@ describe('first-run setup', () => {
     ).toMatchObject({
       status: 'done',
       assigned: [],
+    });
+  });
+
+  it('keeps an add it cannot confirm open, and resumes it once the settings read again', async () => {
+    const lost = vi.fn(
+      async (): Promise<ApplyResult> => ({ ok: false, reason: 'unconfirmed', message: 'lost' }),
+    );
+    expect(await runFirstRunSetup(lost, makeView(), chatPreset, emptyDraft('acme'))).toEqual({
+      status: 'partial',
+      providerId: 'acme',
+      reason: 'unconfirmed-add',
+      message: 'lost',
+    });
+
+    const fill = vi.fn(
+      async (): Promise<ApplyResult> => ({ ok: true, view: makeView({ revision: 2 }) }),
+    );
+    expect(await resumeFirstRun(fill, makeView(), chatPreset, 'acme')).toEqual({
+      status: 'partial',
+      providerId: 'acme',
+      reason: 'not-added',
+    });
+    expect(fill).not.toHaveBeenCalled();
+    const landed = makeView({ revision: 1, providers: [workspaceProvider('acme')] });
+    expect(await resumeFirstRun(fill, landed, chatPreset, 'acme')).toMatchObject({
+      status: 'done',
     });
   });
 
