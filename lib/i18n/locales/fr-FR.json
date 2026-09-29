@@ -2073,7 +2073,8 @@
         "conflict": "Les réglages ont été modifiés ailleurs et rechargés. Vérifiez-les puis réessayez.",
         "lockedNow": "Le serveur définit désormais ce réglage ; rien n’a été modifié.",
         "clear": "Retirer le réglage propre",
-        "clearHint": "Utiliser le réglage du serveur, s’il en a un"
+        "clearHint": "Utiliser le réglage du serveur, s’il en a un",
+        "unconfirmed": "La réponse du serveur a été perdue ; les réglages ont été rechargés. Vérifiez si la modification a été prise en compte."
       },
       "setup": {
         "prompt": "Pas encore de modèle par défaut. Connectez un service : ses modèles recommandés rempliront toutes les étapes non définies.",
@@ -2090,7 +2091,8 @@
         "retry": "Attribuer les modèles",
         "dismiss": "Fermer",
         "changedMeanwhile": "les réglages ont changé entre-temps",
-        "openProviders": "Ouvrir les fournisseurs"
+        "openProviders": "Ouvrir les fournisseurs",
+        "answerLost": "la réponse du serveur a été perdue"
       },
       "providers": {
         "title": "Fournisseurs",

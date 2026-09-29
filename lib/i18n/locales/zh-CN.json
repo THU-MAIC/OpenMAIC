@@ -2073,7 +2073,8 @@
         "conflict": "设置已在别处更改并已重新加载，请检查后重试。",
         "lockedNow": "服务端现在设置了此项，因此未作更改。",
         "clear": "清除单独设置",
-        "clearHint": "改用服务端的设置（如有）"
+        "clearHint": "改用服务端的设置（如有）",
+        "unconfirmed": "服务端的响应丢失，设置已重新加载。请检查更改是否已生效。"
       },
       "setup": {
         "prompt": "还没有默认模型。接入一个服务后，它推荐的模型会填满所有未设置的环节。",
@@ -2090,7 +2091,8 @@
         "retry": "分配模型",
         "dismiss": "关闭",
         "changedMeanwhile": "设置在此期间已被更改",
-        "openProviders": "打开 Provider"
+        "openProviders": "打开 Provider",
+        "answerLost": "服务端的响应丢失"
       },
       "providers": {
         "title": "Provider",

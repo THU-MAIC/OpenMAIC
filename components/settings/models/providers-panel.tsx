@@ -35,15 +35,10 @@ import {
 } from '@/lib/model-settings/edit';
 
 import { PresetSelect, ProviderFields } from './provider-form';
-import { CAPABILITY_ICONS, MS } from './slot-meta';
+import { CAPABILITY_ICONS, MS, applyErrorText } from './slot-meta';
 
 type T = (key: string, options?: Record<string, unknown>) => string;
 type Apply = (change: ModelSettingsChange) => Promise<ApplyResult>;
-
-function resultMessage(result: Extract<ApplyResult, { ok: false }>, t: T): string {
-  if (result.reason === 'conflict') return t(`${MS}.picker.conflict`);
-  return result.message;
-}
 
 function problemMessage(problem: ReturnType<typeof draftProblem>, t: T): string | undefined {
   if (problem === 'baseUrl') return t(`${MS}.providers.needsBaseUrl`);
@@ -101,11 +96,14 @@ function ProviderEditor({
     if (!preset || problem) return;
     setSaving(true);
     setMessage(null);
-    const id = existing?.id ?? newProviderId(view, preset.id);
-    const result = await apply(providerChange(id, draft, preset, existing));
-    setSaving(false);
-    if (result.ok) onDone();
-    else setMessage(resultMessage(result, t));
+    try {
+      const id = existing?.id ?? newProviderId(view, preset.id);
+      const result = await apply(providerChange(id, draft, preset, existing));
+      if (result.ok) onDone();
+      else setMessage(applyErrorText(result, t));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -175,9 +173,12 @@ export function ProvidersPanel({
 
   const remove = async () => {
     if (!removing) return;
-    const result = await apply({ kind: 'remove-provider', id: removing.id });
-    if (!result.ok) setRemoveError(resultMessage(result, t));
-    setRemoving(null);
+    try {
+      const result = await apply({ kind: 'remove-provider', id: removing.id });
+      if (!result.ok) setRemoveError(applyErrorText(result, t));
+    } finally {
+      setRemoving(null);
+    }
   };
 
   return (

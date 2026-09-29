@@ -41,10 +41,14 @@ export type ApplyResult =
        * `conflict`: someone else changed the settings; the view was reloaded.
        * `locked`: the deployment locks a slot this change touched; reloaded too.
        * `invalid`: the server refused the change (message says why).
+       * `unconfirmed`: the server took the request but its answer was lost, so
+       * the change may or may not have been saved; the view was reloaded to
+       * tell (`view`, when the reload worked).
        */
-      reason: 'conflict' | 'locked' | 'invalid' | 'unavailable' | 'failed';
+      reason: 'conflict' | 'locked' | 'invalid' | 'unavailable' | 'failed' | 'unconfirmed';
       code?: string;
       message: string;
+      view?: ModelSettingsView;
     };
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
@@ -128,7 +132,19 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
     }
 
     if (response.ok) {
-      const next = (await response.json()) as ModelSettingsView;
+      let next: ModelSettingsView;
+      try {
+        next = (await response.json()) as ModelSettingsView;
+      } catch (error) {
+        // The change may have been saved: read the settings again to reconcile.
+        const reloaded = await load();
+        return {
+          ok: false,
+          reason: 'unconfirmed',
+          message: error instanceof Error ? error.message : String(error),
+          ...(reloaded.view ? { view: reloaded.view } : {}),
+        };
+      }
       setState({ phase: 'ready', view: next });
       return { ok: true, view: next };
     }

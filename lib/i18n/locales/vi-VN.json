@@ -2073,7 +2073,8 @@
         "conflict": "Thiết lập đã được thay đổi ở nơi khác và đã tải lại. Hãy kiểm tra rồi thử lại.",
         "lockedNow": "Máy chủ hiện đặt mục này nên không có gì thay đổi.",
         "clear": "Xóa thiết lập riêng",
-        "clearHint": "Dùng thiết lập của máy chủ, nếu có"
+        "clearHint": "Dùng thiết lập của máy chủ, nếu có",
+        "unconfirmed": "Phản hồi của máy chủ bị mất nên thiết lập đã được tải lại. Hãy kiểm tra xem thay đổi đã có hiệu lực chưa."
       },
       "setup": {
         "prompt": "Chưa có mô hình mặc định. Kết nối một dịch vụ và các mô hình được đề xuất sẽ điền vào mọi bước chưa đặt.",
@@ -2090,7 +2091,8 @@
         "retry": "Gán mô hình",
         "dismiss": "Bỏ qua",
         "changedMeanwhile": "thiết lập đã thay đổi trong lúc đó",
-        "openProviders": "Mở nhà cung cấp"
+        "openProviders": "Mở nhà cung cấp",
+        "answerLost": "phản hồi của máy chủ bị mất"
       },
       "providers": {
         "title": "Nhà cung cấp",

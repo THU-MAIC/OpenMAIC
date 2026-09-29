@@ -6,6 +6,7 @@ import {
   draftProblem,
   emptyDraft,
   fallbackChange,
+  fillRecommended,
   modelChange,
   newProviderId,
   providerChange,
@@ -414,6 +415,50 @@ describe('first-run setup', () => {
         },
       },
     ]);
+  });
+
+  it('goes on after a lost answer when the reloaded view has the provider', async () => {
+    const reloaded = makeView({ revision: 1, providers: [workspaceProvider('acme')] });
+    const apply = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, reason: 'unconfirmed', message: 'lost', view: reloaded })
+      .mockResolvedValueOnce({ ok: true, view: reloaded });
+    const result = await runFirstRunSetup(apply, makeView(), chatPreset, emptyDraft('acme'));
+    expect(result).toMatchObject({ status: 'done', providerId: 'acme' });
+    expect(apply).toHaveBeenCalledTimes(2);
+  });
+
+  it('counts a lost answer to the slot write as done when the reload shows it landed', async () => {
+    const withProvider = makeView({ revision: 1, providers: [workspaceProvider('acme')] });
+    const landed = withSlots(withProvider, {
+      llm: {
+        assignment: 'acme:acme-large',
+        effective: {
+          status: 'assigned',
+          resolvedAt: 'llm',
+          source: 'workspace',
+          requirements: [],
+          providerId: 'acme',
+          providerSource: 'workspace',
+          presetId: 'acme',
+          registryId: 'x',
+          modelId: 'acme-large',
+        },
+      },
+    });
+    const apply = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, reason: 'unconfirmed', message: 'lost', view: landed });
+    expect(await fillRecommended(apply, withProvider, chatPreset, 'acme')).toMatchObject({
+      status: 'done',
+    });
+    // Retried later with nothing left to fill and llm set: done, without a write.
+    expect(
+      await fillRecommended(apply, landed, { ...chatPreset, recommended: {} }, 'acme'),
+    ).toMatchObject({
+      status: 'done',
+      assigned: [],
+    });
   });
 
   it('stops when the provider is refused, and reports a partial setup', async () => {

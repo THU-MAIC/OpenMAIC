@@ -92,6 +92,24 @@ describe('model settings client', () => {
     expect(JSON.parse(init.body as string).revision).toBeNull();
   });
 
+  it('returns an unconfirmed outcome, reloaded, when the answer to a write is lost', async () => {
+    const before = makeView({ revision: 1 });
+    const after = makeView({ revision: 2 });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(before))
+      .mockResolvedValueOnce(new Response('{"revision":2,"pol', { status: 200 }))
+      .mockResolvedValueOnce(json(after));
+    const client = createModelSettingsClient(fetchImpl);
+    await client.load();
+
+    const result = await client.apply({ kind: 'slots', clear: ['tts'] });
+
+    expect(result).toMatchObject({ ok: false, reason: 'unconfirmed', view: after });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(client.getState()).toMatchObject({ phase: 'ready', view: after });
+  });
+
   it('reloads on a stale revision and says so', async () => {
     const stale = makeView({ revision: 1 });
     const fresh = makeView({ revision: 2 });

@@ -20,7 +20,7 @@ import {
 } from '@/lib/model-settings/edit';
 
 import { PresetSelect, ProviderFields } from './provider-form';
-import { MS } from './slot-meta';
+import { MS, applyErrorText } from './slot-meta';
 
 type T = (key: string, options?: Record<string, unknown>) => string;
 
@@ -66,12 +66,14 @@ export function FirstRunSetup({
     if (!preset || problem) return;
     setWorking(true);
     setMessage(null);
-    const result = await runFirstRunSetup(apply, view, preset, draft);
-    setWorking(false);
-    if (result.status === 'failed') {
-      setMessage(result.reason === 'conflict' ? t(`${MS}.picker.conflict`) : result.message);
-    } else {
-      onOutcome({ preset, result });
+    try {
+      const result = await runFirstRunSetup(apply, view, preset, draft);
+      if (result.status === 'failed') setMessage(applyErrorText(result, t));
+      else onOutcome({ preset, result });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWorking(false);
     }
   };
 

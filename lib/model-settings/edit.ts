@@ -6,12 +6,13 @@
  */
 import type { SlotCapability } from '@/lib/config/model-slots';
 
-import type {
-  ModelSettingsChange,
-  ModelSettingsView,
-  PresetView,
-  ProviderView,
-  SlotView,
+import {
+  isLlmConfigured,
+  type ModelSettingsChange,
+  type ModelSettingsView,
+  type PresetView,
+  type ProviderView,
+  type SlotView,
 } from './client';
 
 /** A slot's own assignment: null turns it off. */
@@ -414,7 +415,8 @@ export function providerLabel(view: ModelSettingsView, providerId: string): stri
 type Apply = (
   change: ModelSettingsChange,
 ) => Promise<
-  { ok: true; view: ModelSettingsView } | { ok: false; reason: string; message: string }
+  | { ok: true; view: ModelSettingsView }
+  | { ok: false; reason: string; message: string; view?: ModelSettingsView }
 >;
 
 export type FirstRunResult =
@@ -440,9 +442,18 @@ export async function fillRecommended(
 ): Promise<Exclude<FirstRunResult, { status: 'failed' }>> {
   const set = wizardAssignments(view, preset, providerId);
   const assigned = Object.keys(set);
-  if (!assigned.length) return { status: 'partial', providerId };
+  // Nothing left to fill because an earlier attempt did it (its answer lost).
+  if (!assigned.length) {
+    return isLlmConfigured(view)
+      ? { status: 'done', providerId, assigned }
+      : { status: 'partial', providerId };
+  }
   const filled = await apply({ kind: 'slots', set });
   if (!filled.ok) {
+    // An answer lost after the write: the reloaded view tells whether it landed.
+    if (filled.reason === 'unconfirmed' && filled.view && isLlmConfigured(filled.view)) {
+      return { status: 'done', providerId, assigned };
+    }
     return { status: 'partial', providerId, reason: filled.reason, message: filled.message };
   }
   return { status: 'done', providerId, assigned };
@@ -460,6 +471,11 @@ export async function runFirstRunSetup(
 ): Promise<FirstRunResult> {
   const providerId = newProviderId(view, preset.id);
   const added = await apply(providerChange(providerId, draft, preset));
-  if (!added.ok) return { status: 'failed', reason: added.reason, message: added.message };
-  return fillRecommended(apply, added.view, preset, providerId);
+  if (added.ok) return fillRecommended(apply, added.view, preset, providerId);
+  // An answer lost after the write: if the reloaded view has the provider, go on.
+  const landed =
+    added.reason === 'unconfirmed' &&
+    added.view?.providers.some((provider) => provider.id === providerId);
+  if (landed && added.view) return fillRecommended(apply, added.view, preset, providerId);
+  return { status: 'failed', reason: added.reason, message: added.message };
 }

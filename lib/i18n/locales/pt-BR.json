@@ -2073,7 +2073,8 @@
         "conflict": "As configurações mudaram em outro lugar e foram recarregadas. Confira e tente novamente.",
         "lockedNow": "O servidor agora define isto, então nada foi alterado.",
         "clear": "Remover configuração própria",
-        "clearHint": "Usar a configuração do servidor, se houver"
+        "clearHint": "Usar a configuração do servidor, se houver",
+        "unconfirmed": "A resposta do servidor se perdeu, então as configurações foram recarregadas. Verifique se a alteração foi aplicada."
       },
       "setup": {
         "prompt": "Ainda não há modelo padrão. Conecte um serviço e os modelos recomendados preencherão todas as etapas não definidas.",
@@ -2090,7 +2091,8 @@
         "retry": "Atribuir modelos",
         "dismiss": "Dispensar",
         "changedMeanwhile": "as configurações mudaram nesse meio-tempo",
-        "openProviders": "Abrir provedores"
+        "openProviders": "Abrir provedores",
+        "answerLost": "a resposta do servidor se perdeu"
       },
       "providers": {
         "title": "Provedores",

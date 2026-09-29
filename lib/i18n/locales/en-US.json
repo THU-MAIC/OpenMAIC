@@ -2073,7 +2073,8 @@
         "conflict": "The settings changed elsewhere and were reloaded. Check them and try again.",
         "lockedNow": "The server now sets this, so it was not changed.",
         "clear": "Clear own setting",
-        "clearHint": "Use the server's setting, if it has one"
+        "clearHint": "Use the server's setting, if it has one",
+        "unconfirmed": "The server's answer was lost, so the settings were reloaded. Check whether the change took effect."
       },
       "setup": {
         "prompt": "No default model yet. Connect a service and its recommended models fill every part that is not set.",
@@ -2090,7 +2091,8 @@
         "retry": "Assign models",
         "dismiss": "Dismiss",
         "changedMeanwhile": "the settings changed meanwhile",
-        "openProviders": "Open providers"
+        "openProviders": "Open providers",
+        "answerLost": "the server's answer was lost"
       },
       "providers": {
         "title": "Providers",

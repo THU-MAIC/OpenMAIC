@@ -37,7 +37,9 @@ export function SetupNotice({
   const why =
     reason === 'conflict' || reason === 'locked'
       ? t(`${MS}.setup.changedMeanwhile`)
-      : (message ?? '');
+      : reason === 'unconfirmed'
+        ? t(`${MS}.setup.answerLost`)
+        : (message ?? '');
 
   return (
     <div
@@ -66,8 +68,11 @@ export function SetupNotice({
               disabled={retrying}
               onClick={async () => {
                 setRetrying(true);
-                await onRetry();
-                setRetrying(false);
+                try {
+                  await onRetry();
+                } finally {
+                  setRetrying(false);
+                }
               }}
             >
               {retrying && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}

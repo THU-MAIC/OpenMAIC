@@ -2073,7 +2073,8 @@
         "conflict": "La configuración cambió en otro lugar y se volvió a cargar. Revísala e inténtalo de nuevo.",
         "lockedNow": "Ahora el servidor define esto, así que no se cambió.",
         "clear": "Quitar ajuste propio",
-        "clearHint": "Usar el ajuste del servidor, si tiene uno"
+        "clearHint": "Usar el ajuste del servidor, si tiene uno",
+        "unconfirmed": "Se perdió la respuesta del servidor, así que la configuración se volvió a cargar. Comprueba si el cambio se aplicó."
       },
       "setup": {
         "prompt": "Aún no hay modelo predeterminado. Conecta un servicio y sus modelos recomendados llenarán todos los pasos sin definir.",
@@ -2090,7 +2091,8 @@
         "retry": "Asignar modelos",
         "dismiss": "Descartar",
         "changedMeanwhile": "la configuración cambió mientras tanto",
-        "openProviders": "Abrir proveedores"
+        "openProviders": "Abrir proveedores",
+        "answerLost": "se perdió la respuesta del servidor"
       },
       "providers": {
         "title": "Proveedores",

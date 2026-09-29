@@ -63,6 +63,17 @@ export function SlotIcon({
   return createElement(Icon, { className, 'aria-hidden': true });
 }
 
+/** Why a change did not go through, in the user's language where it is ours to say. */
+export function applyErrorText(
+  result: { reason: string; message: string },
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  if (result.reason === 'conflict') return t(`${MS}.picker.conflict`);
+  if (result.reason === 'locked') return t(`${MS}.picker.lockedNow`);
+  if (result.reason === 'unconfirmed') return t(`${MS}.picker.unconfirmed`);
+  return result.message;
+}
+
 /** A slot's name, or its id for a slot this build has no name for. */
 export function slotName(t: (key: string) => string, slot: string): string {
   const key = `${MS}.slots.${slotKey(slot)}.name`;

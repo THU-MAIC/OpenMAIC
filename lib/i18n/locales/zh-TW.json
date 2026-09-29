@@ -2058,7 +2058,8 @@
         "conflict": "設定已在別處變更並已重新載入，請檢查後再試一次。",
         "lockedNow": "伺服器現在設定了此項，因此未變更。",
         "clear": "清除單獨設定",
-        "clearHint": "改用伺服器的設定（如有）"
+        "clearHint": "改用伺服器的設定（如有）",
+        "unconfirmed": "伺服器的回應遺失，設定已重新載入。請檢查變更是否已生效。"
       },
       "setup": {
         "prompt": "還沒有預設模型。連接一項服務後，它建議的模型會填滿所有未設定的環節。",
@@ -2075,7 +2076,8 @@
         "retry": "指派模型",
         "dismiss": "關閉",
         "changedMeanwhile": "設定在此期間已被變更",
-        "openProviders": "開啟 Provider"
+        "openProviders": "開啟 Provider",
+        "answerLost": "伺服器的回應遺失"
       },
       "providers": {
         "title": "Provider",
