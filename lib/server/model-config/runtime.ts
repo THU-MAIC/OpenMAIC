@@ -53,7 +53,11 @@ export function setWorkspaceLayerLoaderForTests(loader?: WorkspaceLayerLoader): 
   loadWorkspace = loader;
 }
 
-/** The owner's web settings as a layer, or null when there are none. */
+/**
+ * The owner's web settings as a layer, or null when there are none. The owner
+ * is forwarded through a claim, for background work that outlives one; a
+ * request's owner is checked by {@link requestWorkspaceId} instead.
+ */
 export async function workspaceLayer(ownerId: string): Promise<ModelConfigLayer | null> {
   const databaseUrl = process.env.DATABASE_URL?.trim();
   if (!databaseUrl) return null;
@@ -80,14 +84,27 @@ export async function workspaceLayer(ownerId: string): Promise<ModelConfigLayer 
 }
 
 /**
- * The workspace a request belongs to: its owner, when the request names one.
- * An owner minted for this request has no settings yet, so it has none.
+ * The workspace a request belongs to: its owner. A refused credential throws
+ * (InvalidOwnerCredentialError, 401) rather than falling through to the
+ * deployment's models. An owner minted for this request has no settings yet,
+ * and a retired owner's settings moved to the account that claimed it: the
+ * request gets no workspace, never the account's.
  */
 export async function requestWorkspaceId(req: OwnerAuthRequest): Promise<string | null> {
-  const { resolveRequestOwner } = await import('@/lib/server/identity/resolve');
+  const { resolveRequestOwner, InvalidOwnerCredentialError } =
+    await import('@/lib/server/identity/resolve');
   const outcome = await resolveRequestOwner(req);
-  if (!outcome.ok || outcome.principal.assurance === 'minted') return null;
-  return outcome.principal.ownerId;
+  if (!outcome.ok) throw new InvalidOwnerCredentialError();
+  if (outcome.principal.assurance === 'minted') return null;
+  const ownerId = outcome.principal.ownerId;
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (!databaseUrl) return null;
+  const [{ getServerPersistenceProvider }, { isOwnerRetired }] = await Promise.all([
+    import('@/lib/persistence/server-provider'),
+    import('@/lib/persistence/owner-merges'),
+  ]);
+  const { pool } = await getServerPersistenceProvider(databaseUrl);
+  return (await isOwnerRetired(pool, ownerId)) ? null : ownerId;
 }
 
 export interface SlotLookup {

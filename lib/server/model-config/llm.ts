@@ -34,6 +34,17 @@ export async function languageModelFor(
   const registered = getProvider(registryId);
   if (!registered) throw new Error(`The ${target.presetId} preset has no chat adapter`);
   const userEndpoint = target.providerSource === 'workspace';
+  if (userEndpoint) {
+    // Bedrock signs with the server's AWS credential chain when it has no key
+    // of its own, and a proxy would route around the transport below: neither
+    // is something a workspace may set.
+    if (registered.type === 'bedrock') {
+      throw new Error('Amazon Bedrock can only be configured by the deployment (openmaic.yml)');
+    }
+    if (target.proxy) {
+      throw new Error('A proxy can only be configured by the deployment (openmaic.yml)');
+    }
+  }
   const endpoint = target.baseUrl ?? registered.defaultBaseUrl;
   if (userEndpoint && endpoint) {
     const problem = await validateClientBaseUrl(endpoint);

@@ -103,6 +103,37 @@ describe('resolveStageModel', () => {
     ).rejects.toBeInstanceOf(SlotUnassignedError);
   });
 
+  it('refuses Bedrock and proxies from a workspace, where the deployment may set them', async () => {
+    const ws = (provider: Record<string, unknown>) =>
+      lookupFromLayers('llm', {
+        deployment: null,
+        workspace: layer('workspace', {
+          providers: { p: provider },
+          slots: { llm: 'p:m' },
+        } as never),
+        defaults: null,
+      });
+    state.lookup = ws({ preset: 'bedrock' });
+    await expect(
+      resolveStageModel({ stage: 'generate-classroom', workspaceId: 'u' }),
+    ).rejects.toThrow(/Amazon Bedrock can only be configured by the deployment/);
+    state.lookup = ws({ preset: 'openai', apiKey: 'k', proxy: 'http://10.0.0.1:3128' });
+    await expect(
+      resolveStageModel({ stage: 'generate-classroom', workspaceId: 'u' }),
+    ).rejects.toThrow(/A proxy can only be configured by the deployment/);
+    state.lookup = lookupFromLayers('llm', {
+      deployment: layer('deployment', {
+        providers: { p: { preset: 'openai', apiKey: 'k', proxy: 'http://10.0.0.1:3128' } },
+        slots: { llm: 'p:m' },
+      }),
+      workspace: null,
+      defaults: null,
+    });
+    await expect(
+      resolveStageModel({ stage: 'generate-classroom', workspaceId: null }),
+    ).resolves.toMatchObject({ modelId: 'm' });
+  });
+
   it('checks a workspace endpoint like a caller-supplied one, and trusts the deployment', async () => {
     const provider = {
       preset: 'openai-compatible',
