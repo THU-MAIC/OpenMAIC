@@ -157,7 +157,7 @@ slots:
 | 字段 | 含义 |
 | --- | --- |
 | `model` | 必填。`服务商:模型`；对话以外的槽位也可以只写 `服务商`。 |
-| `fallback` | 换用一次的回退模型，写法同上。见[回退模型](#回退模型)。 |
+| `fallback` | 换用一次的回退模型，写法同上。仅适用于语言模型槽位，见[回退模型](#回退模型)。 |
 | `thinking` | 对话模型的推理参数：`enabled`（true/false）、`mode`（`default`、`disabled`、`enabled`、`auto`）、`effort`（`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`）、`level`（`minimal`、`low`、`medium`、`high`）、`budgetTokens`、`excludeReasoningOutput`。各服务商适配器只应用其 API 支持的部分。 |
 | `api` | 仅 `agent`：传输协议，`openai-completions`（默认）或 `openai-responses`。 |
 | `contextWindow` | 仅 `agent`：压缩上下文时假定的窗口大小，用于比模型目录中的值更小的情况。 |
@@ -169,6 +169,8 @@ slots:
 不带 `:model` 的引用表示该服务商的默认模型：Token Plan 为该能力推荐的模型，否则是内置 registry 的默认模型。搜索和文档服务大多没有可选的模型，所以通常写成 `webSearch: tavily` 或 `document: mineru-cloud`。对话槽位必须写明模型，`llm: openai` 会在启动时被拒绝。
 
 ### 回退模型
+
+回退模型只适用于语言模型槽位，即 `llm` 及其下的所有槽位。在 `tts`、`asr`、`image`、`video`、`webSearch` 或 `document` 槽位上写 `fallback` 会被拒绝：`openmaic.yml` 在启动时拒绝，模型设置在保存时拒绝。
 
 当主模型的调用在自身重试之后仍然以可重试的方式失败时，会换用槽位的 `fallback` 再试一次。可重试的失败包括：SDK 判定的临时错误、超时、网络错误、额度用尽（429）、容量不足（503）或输出为空。内容安全拒绝和其他 4xx 错误不会触发回退。回退对普通调用和流式调用都生效，并沿用槽位的 `thinking` 参数。
 

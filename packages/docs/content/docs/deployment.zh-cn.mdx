@@ -35,6 +35,12 @@ docker compose up --build
 
 模型有两种配置方式。个人安装时，启动服务后打开应用，在模型设置中接入模型服务，配置保存在数据库中。如果希望以文件方式管理部署，把 `openmaic.example.yml` 复制为 `openmaic.yml`，key 放在 `.env.local` 中，再挂载该文件（见下文）。详见[配置说明](./configuration.mdx#模型与服务商)。
 
+镜像会以运行用户的身份创建数据卷中的数据目录，因此新建的数据卷可以直接持久化课程和用量记录。旧版镜像创建的数据卷可能归 root 所有，这会让所有服务端保存都因 `EACCES` 失败，而应用仍照常提供服务（课程悄无声息地从未写入磁盘；日志中出现 `Failed to record usage ... EACCES: permission denied`）。请修复一次这样的数据卷，然后重启应用：
+
+```bash
+docker exec -u root <container> chown -R 1001:1001 /app/data
+```
+
 `NEXT_PUBLIC_*` 功能开关会在 Docker 构建时注入，不能只写在运行时的 `.env.local` 中。例如启用视频导出和实验性 PPTX 导入：
 
 ```bash

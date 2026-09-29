@@ -131,7 +131,7 @@ cp .env.example .env.local
 cp openmaic.example.yml openmaic.yml
 ```
 
-`openmaic.yml` says which **providers** (accounts) the server can call and which model each **slot** (a use of AI: the outline, slide content, text to speech, web search, …) uses. Keys stay in `.env.local` and are referenced as `${VAR}`:
+The copied example needs only `OPENAI_API_KEY` in `.env.local` (or change its provider to one you have a key for); its other providers and slots are commented out until you want them. `openmaic.yml` says which **providers** (accounts) the server can call and which model each **slot** (a use of AI: the outline, slide content, text to speech, web search, …) uses. Keys stay in `.env.local` and are referenced as `${VAR}`:
 
 ```yaml
 providers:

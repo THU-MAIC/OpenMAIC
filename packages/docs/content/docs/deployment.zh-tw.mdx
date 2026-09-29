@@ -35,6 +35,12 @@ docker compose up --build
 
 模型有兩種設定方式。個人安裝時，啟動服務後開啟應用程式，在模型設定中連接模型服務，設定儲存在資料庫中。若希望以檔案方式管理部署，把 `openmaic.example.yml` 複製為 `openmaic.yml`，key 放在 `.env.local` 中，再掛載該檔案（見下文）。詳見[設定說明](./configuration.mdx#模型與供應商)。
 
+映像檔會以執行使用者的身分建立資料卷中的資料目錄，因此新建立的資料卷可以直接持久保存課程和用量紀錄。舊版映像檔建立的資料卷可能屬於 root，這會讓所有伺服器端儲存都因 `EACCES` 失敗，而應用程式仍照常提供服務（課程悄悄地從未寫入磁碟；日誌中出現 `Failed to record usage ... EACCES: permission denied`）。請修復一次這樣的資料卷，然後重新啟動應用程式：
+
+```bash
+docker exec -u root <container> chown -R 1001:1001 /app/data
+```
+
 `NEXT_PUBLIC_*` 功能開關會在 Docker 建置時編譯至用戶端，不能只寫在執行時的 `.env.local` 中。例如啟用影片匯出和實驗性 PPTX 匯入：
 
 ```bash

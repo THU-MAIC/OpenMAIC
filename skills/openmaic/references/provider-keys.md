@@ -30,6 +30,8 @@ cp .env.example .env.local
 cp openmaic.example.yml openmaic.yml
 ```
 
+As shipped, the example has one active provider (`openai`, reading `OPENAI_API_KEY`) and the `llm` slot; everything else is commented out. Startup refuses any `${VAR}` that is not set, so tell the user to either set that one key or replace the provider with the path they chose below, and to uncomment optional blocks only together with the variables they name.
+
 Three concepts:
 
 - **Provider** — an account the server can call: an id the user chooses, a `preset` (which vendor), and `apiKey: ${VAR}`.

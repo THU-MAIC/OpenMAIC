@@ -111,7 +111,7 @@ cp .env.example .env.local
 cp openmaic.example.yml openmaic.yml
 ```
 
-`openmaic.yml` 声明服务端可以调用哪些**服务商**（账号），以及每个**槽位**（一处用到 AI 的地方：大纲、幻灯片内容、语音合成、联网搜索……）使用哪个模型。Key 留在 `.env.local` 里，通过 `${VAR}` 引用：
+复制出的示例只需要在 `.env.local` 中设置 `OPENAI_API_KEY`（也可以把其中的服务商换成你有 key 的那家）；其余服务商和槽位都已注释，需要时再取消注释。`openmaic.yml` 声明服务端可以调用哪些**服务商**（账号），以及每个**槽位**（一处用到 AI 的地方：大纲、幻灯片内容、语音合成、联网搜索……）使用哪个模型。Key 留在 `.env.local` 里，通过 `${VAR}` 引用：
 
 ```yaml
 providers:

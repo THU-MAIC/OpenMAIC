@@ -5,6 +5,10 @@
 # repository root; /app in the Docker image), or point OPENMAIC_CONFIG at it,
 # then restart the server. The file is read once at startup.
 #
+# As shipped, it needs one key: set OPENAI_API_KEY in .env.local (or change
+# the provider below to one you have a key for). The commented blocks are
+# optional; uncomment the ones you want and set the variables they name.
+#
 # - providers: the accounts the server can call.
 # - slots: which provider and model each use of AI gets. Every slot written
 #   here is locked: Settings > Models marks it "Set by the server" and
@@ -26,25 +30,29 @@ providers:
     preset: openai
     apiKey: ${OPENAI_API_KEY}
 
-  anthropic:
-    preset: anthropic
-    apiKey: ${ANTHROPIC_API_KEY}
+  # --- Optional providers ----------------------------------------------------
 
-  # Most presets cover one capability. The same OpenAI key used for images is
-  # a second provider with the openai-image preset.
-  openai-image:
-    preset: openai-image
-    apiKey: ${OPENAI_API_KEY}
+  # Another chat vendor.
+  # anthropic:
+  #   preset: anthropic
+  #   apiKey: ${ANTHROPIC_API_KEY}
 
-  # A token plan preset covers several capabilities with one key: chat,
-  # images, video, text to speech and web search for MiniMax.
-  minimax:
-    preset: minimax
-    apiKey: ${MINIMAX_API_KEY}
+  # Web search.
+  # tavily:
+  #   preset: tavily
+  #   apiKey: ${TAVILY_API_KEY}
 
-  tavily:
-    preset: tavily
-    apiKey: ${TAVILY_API_KEY}
+  # Most presets cover one capability: OpenAI images are a second provider
+  # with the openai-image preset (the same key works).
+  # openai-image:
+  #   preset: openai-image
+  #   apiKey: ${OPENAI_API_KEY}
+
+  # A token plan covers several capabilities with one key: chat, images,
+  # video, text to speech and web search for MiniMax.
+  # minimax:
+  #   preset: minimax
+  #   apiKey: ${MINIMAX_API_KEY}
 
   # Any OpenAI-compatible server: baseUrl is required, and models lists what
   # the web settings offer from it.
@@ -65,33 +73,30 @@ slots:
   # follows it.
   llm: openai:gpt-5.5
 
-  # An object adds call parameters and a fallback model, tried once when the
-  # primary fails with a retryable error after its own retries.
-  course.outline:
-    model: anthropic:claude-sonnet-4-6
-    fallback: openai:gpt-5.4-mini
+  # --- Optional slots (each needs its provider above) -------------------------
 
-  course.content.slide:
-    model: minimax:MiniMax-M3
-    thinking: { enabled: false }
-    fallback: minimax:MiniMax-M2.7
+  # An object adds call parameters and a fallback model, tried once when the
+  # primary fails with a retryable error after its own retries. Fallbacks
+  # apply to language-model slots (llm and the slots below it) only.
+  # course.outline:
+  #   model: anthropic:claude-sonnet-4-6
+  #   fallback: openai:gpt-5.4-mini
 
   # The Pro workbench agent needs a model with tool calling.
-  agent:
-    model: openai:gpt-5.5
-    api: openai-completions
-
-  tts: minimax:speech-2.8-turbo
-  image: openai-image:gpt-image-2
+  # agent:
+  #   model: openai:gpt-5.5
+  #   api: openai-completions
 
   # A provider id alone means that provider's default model (search and
   # document services mostly have none to pick).
-  webSearch: tavily
+  # webSearch: tavily
+  # image: openai-image:gpt-image-2
+  # tts: minimax:speech-2.8-turbo
 
   # null turns a capability off, and locks it off.
-  video: null
+  # video: null
 
-policy:
-  # false: the web settings cannot add providers; users only choose among the
-  # providers declared above, for slots this file leaves open.
-  allowWorkspaceProviders: true
+# policy:
+#   # false: the web settings cannot add providers; users only choose among
+#   # the providers declared above, for slots this file leaves open.
+#   allowWorkspaceProviders: true

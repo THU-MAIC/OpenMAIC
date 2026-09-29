@@ -157,7 +157,7 @@ slots:
 | 欄位 | 意義 |
 | --- | --- |
 | `model` | 必填。`供應商:模型`；對話以外的插槽也可以只寫 `供應商`。 |
-| `fallback` | 改用一次的備援模型，寫法同上。請見[備援模型](#備援模型)。 |
+| `fallback` | 改用一次的備援模型，寫法同上。僅適用於語言模型插槽，請見[備援模型](#備援模型)。 |
 | `thinking` | 對話模型的推理參數：`enabled`（true/false）、`mode`（`default`、`disabled`、`enabled`、`auto`）、`effort`（`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`）、`level`（`minimal`、`low`、`medium`、`high`）、`budgetTokens`、`excludeReasoningOutput`。各供應商轉接器只套用其 API 支援的部分。 |
 | `api` | 僅 `agent`：傳輸協定，`openai-completions`（預設）或 `openai-responses`。 |
 | `contextWindow` | 僅 `agent`：壓縮上下文時假定的視窗大小，用於比模型目錄中的值更小的情況。 |
@@ -169,6 +169,8 @@ slots:
 不帶 `:model` 的引用代表該供應商的預設模型：Token Plan 為該能力推薦的模型，否則是內建 registry 的預設模型。搜尋和文件服務大多沒有可選的模型，所以通常寫成 `webSearch: tavily` 或 `document: mineru-cloud`。對話插槽必須寫明模型，`llm: openai` 會在啟動時被拒絕。
 
 ### 備援模型
+
+備援模型只適用於語言模型插槽，也就是 `llm` 及其下的所有插槽。在 `tts`、`asr`、`image`、`video`、`webSearch` 或 `document` 插槽上寫 `fallback` 會被拒絕：`openmaic.yml` 在啟動時拒絕，模型設定在儲存時拒絕。
 
 當主模型的呼叫在自身重試之後仍以可重試的方式失敗時，會改用插槽的 `fallback` 再試一次。可重試的失敗包括：SDK 判定的暫時性錯誤、逾時、網路錯誤、額度用盡（429）、容量不足（503）或輸出為空。內容安全拒絕和其他 4xx 錯誤不會觸發備援。備援對一般呼叫和串流呼叫都有效，並沿用插槽的 `thinking` 參數。
 

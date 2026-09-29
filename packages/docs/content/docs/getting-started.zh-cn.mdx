@@ -47,7 +47,7 @@ slots:
   llm: openai:gpt-5.5
 ```
 
-更完整的示例见 `openmaic.example.yml`。不使用该文件时，旧版服务商变量仍然有效，前提是用 `DEFAULT_MODEL` 指定模型：
+`openmaic.example.yml` 就是这个起点，另外附有已注释的可选服务商和槽位。不使用该文件时，旧版服务商变量仍然有效，前提是用 `DEFAULT_MODEL` 指定模型：
 
 ```bash title=".env.local"
 ANTHROPIC_API_KEY=sk-ant-...

@@ -157,7 +157,7 @@ The object form accepts:
 | Field | Meaning |
 | --- | --- |
 | `model` | Required. `provider:model`, or `provider` alone outside chat slots. |
-| `fallback` | A model to retry on once, in the same form. See [Fallbacks](#fallbacks). |
+| `fallback` | A model to retry on once, in the same form. Language-model slots only; see [Fallbacks](#fallbacks). |
 | `thinking` | Reasoning parameters for chat models: `enabled` (true/false), `mode` (`default`, `disabled`, `enabled`, `auto`), `effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`), `level` (`minimal`, `low`, `medium`, `high`), `budgetTokens`, `excludeReasoningOutput`. Each provider adapter applies what its API supports. |
 | `api` | `agent` only: the transport dialect, `openai-completions` (the default) or `openai-responses`. |
 | `contextWindow` | `agent` only: the context window to assume for compaction, when it should be lower than the catalogue's. |
@@ -169,6 +169,8 @@ The `agent` slot must not set `thinking.effort`: its tool-calling transport cann
 A reference without `:model` means the provider's default model: the model a token plan recommends for that capability, else the default of the built-in registry. Search and document services mostly have no model to pick, so `webSearch: tavily` or `document: mineru-cloud` is the usual form. Chat slots always name a model; `llm: openai` is refused at startup.
 
 ### Fallbacks
+
+Fallbacks apply to language-model slots: `llm` and every slot below it. A `fallback` on a `tts`, `asr`, `image`, `video`, `webSearch` or `document` slot is refused, at startup for `openmaic.yml` and on save in the model settings.
 
 A slot's `fallback` is tried once when a call on the primary model fails after its own retries with a retryable failure: a transient SDK error, a timeout, a network error, quota exhaustion (429), capacity (503), or empty output. Content-safety refusals and other 4xx errors never fall back. The fallback applies to both regular and streaming calls and uses the slot's `thinking` parameters.
 
