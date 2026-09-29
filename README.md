@@ -107,6 +107,12 @@ https://github.com/user-attachments/assets/8f3f1e5f-1468-4e93-8054-afeeea683a61
 
 ---
 
+## 🎬 Launch video
+
+<a href="assets/openmaic-launch.mp4"><img src="assets/openmaic-launch.jpg" width="280" alt="OpenMAIC launch video"></a>
+
+A 22-second 9:16 launch video with sound ([captions](assets/openmaic-launch.srt)). Click the poster to play.
+
 ## 🚀 Quick Start
 
 ### Prerequisites
