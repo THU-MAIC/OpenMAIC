@@ -7,6 +7,7 @@
  * other provider unavailable.
  */
 import { DEFAULT_TTS_VOICES, TTS_PROVIDERS, voiceServesModel } from '@/lib/audio/constants';
+import { normalizeVoxCPMBackend } from '@/lib/audio/voxcpm';
 import type { BuiltInTTSProviderId, TTSProviderId } from '@/lib/audio/types';
 import {
   currentModelCapabilities,
@@ -24,6 +25,8 @@ export interface SlotTTSProviderConfig {
   enabled: boolean;
   isServerConfigured?: boolean;
   modelId?: string;
+  /** The provider's non-secret options (a VoxCPM `backend`, say), as the server configures them. */
+  providerOptions?: Record<string, string | number | boolean>;
 }
 
 export type SlotTTSProvidersConfig = Record<string, SlotTTSProviderConfig>;
@@ -54,6 +57,7 @@ export function slotTTSProvidersConfig(target: EffectiveTarget | null): SlotTTSP
       enabled: true,
       isServerConfigured: target.registryId !== BROWSER_NATIVE_TTS_PROVIDER_ID,
       ...(modelId ? { modelId } : {}),
+      ...(target.options ? { providerOptions: { ...target.options } } : {}),
     };
   }
   return map;
@@ -108,6 +112,11 @@ export function ttsSelection(
     speed: preference.speed,
     providersConfig: slotTTSProvidersConfig(target),
   };
+}
+
+/** The VoxCPM backend the `tts` slot's provider runs on (its `backend` option; else the default). */
+export function slotVoxCPMBackend(target: EffectiveTarget | null | undefined) {
+  return normalizeVoxCPMBackend(target?.options?.backend);
 }
 
 /** Whether narration is generated on the server (a provider other than browser speech). */

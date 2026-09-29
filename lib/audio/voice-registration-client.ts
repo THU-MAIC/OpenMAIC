@@ -115,6 +115,7 @@ function registrationScope(): string {
     tts?.providerId ?? '',
     tts?.registryId ?? '',
     tts?.baseUrl ?? '',
+    tts?.options ?? null,
     view?.revision ?? null,
   ]);
 }

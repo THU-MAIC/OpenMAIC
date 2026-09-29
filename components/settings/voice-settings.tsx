@@ -16,6 +16,7 @@ import {
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { getValidASRLanguage, useSettingsStore } from '@/lib/store/settings';
 import { useTTSSelection } from '@/lib/audio/use-tts-selection';
+import { slotVoxCPMBackend } from '@/lib/audio/tts-selection';
 import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { resolveASRProviderName, resolveTTSProviderName } from '@/lib/audio/provider-display';
 import {
@@ -55,7 +56,6 @@ import {
 import {
   VOXCPM_TTS_PROVIDER_ID,
   getVoxCPMProfileVoiceId,
-  normalizeVoxCPMBackend,
   voxCPMBackendSupportsReferenceAudio,
 } from '@/lib/audio/voxcpm';
 
@@ -81,7 +81,8 @@ function languageName(code: string, locale: string): string {
 export function VoiceSettings({ onOpenModels }: { onOpenModels?: () => void }) {
   const { t, locale } = useI18n();
   const selection = useTTSSelection();
-  const { asr } = useModelCapabilities();
+  const capabilities = useModelCapabilities();
+  const { asr } = capabilities;
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const setTTSSpeed = useSettingsStore((state) => state.setTTSSpeed);
   const asrLanguage = useSettingsStore((state) => state.asrLanguage);
@@ -118,7 +119,11 @@ export function VoiceSettings({ onOpenModels }: { onOpenModels?: () => void }) {
     try {
       const providerOptions =
         providerId === VOXCPM_TTS_PROVIDER_ID
-          ? await getVoxCPMProviderOptions(voice, { role: 'teacher', locale })
+          ? await getVoxCPMProviderOptions(voice, {
+              role: 'teacher',
+              locale,
+              backend: slotVoxCPMBackend(capabilities.tts),
+            })
           : undefined;
       await startPreview({
         text: testText,
@@ -290,9 +295,8 @@ function VoxCPMVoiceManager() {
   const { profiles, addPromptVoice, addCloneVoice, deleteVoice } = useVoxCPMVoiceProfiles();
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const { previewing, startPreview, stopPreview } = useTTSPreview();
-  // The endpoint and backend are the deployment's (the tts slot); the browser
-  // no longer chooses a backend, so the default one is assumed.
-  const voxcpmBackend = normalizeVoxCPMBackend(undefined);
+  // The backend is the tts slot's provider option (openmaic.yml `options`).
+  const voxcpmBackend = slotVoxCPMBackend(useModelCapabilities().tts);
   const supportsReferenceAudio = voxCPMBackendSupportsReferenceAudio(voxcpmBackend);
 
   const [createMode, setCreateMode] = useState<'prompt' | 'clone'>('prompt');
@@ -426,6 +430,7 @@ function VoxCPMVoiceManager() {
     setPreviewingVoiceId(voiceId);
     try {
       const providerOptions = await getVoxCPMProviderOptions(voiceId, {
+        backend: voxcpmBackend,
         role: 'teacher',
         locale,
       });
