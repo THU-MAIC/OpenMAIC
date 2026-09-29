@@ -2,6 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  ensureModelSettings,
+  MODEL_SETTINGS_RETRY_MS,
   effectiveTarget,
   llmUsable,
   loadModelCapabilities,
@@ -146,5 +148,50 @@ describe('speech synthesis from the tts slot', () => {
     expect(slotTTSProvidersConfig(browser.tts)['browser-native-tts'].enabled).toBe(true);
     expect(serverTTSAvailable(modelCapabilities(modelSettingsViewFor({})))).toBe(false);
     expect(ttsSelection(modelCapabilities(modelSettingsViewFor({})))).toBeNull();
+  });
+});
+
+describe('a failed read is not the last word', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('loadModelCapabilities reads again after a failure', async () => {
+    const view = modelSettingsViewFor({ llm: { registryId: 'openai', modelId: 'm' } });
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('offline'))
+      .mockResolvedValueOnce(new Response(JSON.stringify(view), { status: 200 }));
+    const client = createModelSettingsClient(fetch);
+    expect((await loadModelCapabilities(client)).known).toBe(false);
+    expect((await loadModelCapabilities(client)).llm?.modelId).toBe('m');
+  });
+
+  it('ensureModelSettings retries a failed read with backoff until one succeeds', async () => {
+    vi.useFakeTimers();
+    const view = modelSettingsViewFor({ tts: { registryId: 'openai-tts' } });
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('{}', { status: 503 }))
+      .mockResolvedValueOnce(new Response('{}', { status: 503 }))
+      .mockResolvedValue(new Response(JSON.stringify(view), { status: 200 }));
+    const client = createModelSettingsClient(fetch);
+
+    ensureModelSettings(client);
+    await vi.waitFor(() => expect(client.getState().phase).toBe('error'));
+    ensureModelSettings(client);
+    // A second call while a retry is scheduled schedules nothing more.
+    ensureModelSettings(client);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(MODEL_SETTINGS_RETRY_MS[0]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(MODEL_SETTINGS_RETRY_MS[1]);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(client.getState().phase).toBe('ready');
+    expect(modelCapabilities(client.getState().view).tts?.registryId).toBe('openai-tts');
+
+    // Read: nothing more is scheduled.
+    ensureModelSettings(client);
+    await vi.advanceTimersByTimeAsync(MODEL_SETTINGS_RETRY_MS.at(-1)! * 2);
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 });

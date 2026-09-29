@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 
-import { modelCapabilities, type ModelCapabilities } from './capabilities';
+import { ensureModelSettings, modelCapabilities, type ModelCapabilities } from './capabilities';
 import { modelSettingsClient, type ModelSettingsClient, type ModelSettingsView } from './client';
 
 /**
@@ -29,13 +29,16 @@ export function useModelCapabilities(
   return useMemo(() => modelCapabilities(view), [view]);
 }
 
-/** The workspace's model settings view, read once per page (null until read). */
+/**
+ * The workspace's model settings view, read once per page (null until read).
+ * A failed read is retried until one succeeds (see `ensureModelSettings`).
+ */
 export function useModelSettingsView(
   client: ModelSettingsClient = modelSettingsClient,
 ): ModelSettingsView | null {
   const state = useSyncExternalStore(client.subscribe, client.getState, client.getState);
   useEffect(() => {
-    if (client.getState().phase === 'idle') void client.load();
-  }, [client]);
+    ensureModelSettings(client);
+  }, [client, state.phase]);
   return state.view;
 }

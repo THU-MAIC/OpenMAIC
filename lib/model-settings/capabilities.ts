@@ -140,3 +140,40 @@ export async function loadModelCapabilities(
   }
   return modelCapabilities(viewOf(state));
 }
+
+/** Delays between reads after a failed one: a transient failure is not the page's last word. */
+export const MODEL_SETTINGS_RETRY_MS = [2_000, 5_000, 15_000, 30_000, 60_000] as const;
+
+const retries = new WeakMap<
+  ModelSettingsClient,
+  { attempt: number; timer: ReturnType<typeof setTimeout> | null }
+>();
+
+/**
+ * Make sure the page has (or is getting) the view: read it when nothing was
+ * read yet, and after a failed read with nothing to show, read again later
+ * (backing off up to a minute, then every minute) until a read succeeds. A
+ * view that was read is kept through later failures.
+ */
+export function ensureModelSettings(client: ModelSettingsClient = modelSettingsClient): void {
+  const state = client.getState();
+  if (state.phase === 'idle') {
+    void client.load();
+    return;
+  }
+  const entry = retries.get(client) ?? { attempt: 0, timer: null };
+  retries.set(client, entry);
+  if (state.phase !== 'error' || state.view) {
+    // Read (or reading): the next failure starts from the first delay.
+    if (state.phase !== 'loading') entry.attempt = 0;
+    return;
+  }
+  if (entry.timer) return;
+  const delay =
+    MODEL_SETTINGS_RETRY_MS[Math.min(entry.attempt, MODEL_SETTINGS_RETRY_MS.length - 1)];
+  entry.attempt += 1;
+  entry.timer = setTimeout(() => {
+    entry.timer = null;
+    void client.load().then(() => ensureModelSettings(client));
+  }, delay);
+}
