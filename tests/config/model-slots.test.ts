@@ -81,6 +81,17 @@ describe('capability slot tree', () => {
     }
   });
 
+  it('walks the full chain of ancestors', () => {
+    expect(slotLineage('course.content.slide')).toEqual([
+      'course.content.slide',
+      'course.content',
+      'llm',
+    ]);
+    expect(slotLineage('agent.title')).toEqual(['agent.title', 'agent', 'llm']);
+    expect(slotLineage('course.outline')).toEqual(['course.outline', 'llm']);
+    expect(slotLineage('video')).toEqual(['video']);
+  });
+
   it('names dotted slots after their parent, and top-level chat uses hang off llm', () => {
     for (const slot of MODEL_SLOTS) {
       if (slot.parent === null) continue;
@@ -113,6 +124,9 @@ describe('stage → slot mapping', () => {
 
   it('sends every stage to its intended slot', () => {
     expect(STAGE_SLOTS).toEqual(EXPECTED_STAGE_SLOTS);
+    for (const [stage, slot] of Object.entries(EXPECTED_STAGE_SLOTS)) {
+      expect(slotForStage(stage as LlmStage), stage).toBe(slot);
+    }
   });
 
   it('maps every stage to a chat slot', () => {
