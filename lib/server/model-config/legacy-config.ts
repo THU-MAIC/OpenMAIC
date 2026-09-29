@@ -174,8 +174,11 @@ export function translateLegacyConfig(
     // null keeps it off rather than inheriting the llm root.
     slots.agent = null;
   } else if (fallback) {
-    // Without DEFAULT_MODEL, MODEL_FALLBACK only ever applied to routed stages.
-    notices.push('MODEL_FALLBACK only applies with DEFAULT_MODEL and is not carried over');
+    // A fallback belongs to an assignment, and without DEFAULT_MODEL there is
+    // none to hold it: calls that retried on MODEL_FALLBACK stop retrying.
+    notices.push(
+      'MODEL_FALLBACK is not carried over without DEFAULT_MODEL, so calls that retried on it no longer do; set the llm slot with a fallback in openmaic.yml',
+    );
   }
 
   const config: ModelConfigFile = {};

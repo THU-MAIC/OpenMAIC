@@ -134,7 +134,7 @@ describe('translateLegacyConfig: models', () => {
     });
     expect(config.slots).toBeUndefined();
     expect(notices).toEqual([
-      'MODEL_FALLBACK only applies with DEFAULT_MODEL and is not carried over',
+      'MODEL_FALLBACK is not carried over without DEFAULT_MODEL, so calls that retried on it no longer do; set the llm slot with a fallback in openmaic.yml',
     ]);
   });
 
@@ -160,7 +160,7 @@ describe('translateLegacyConfig: models', () => {
     });
     expect(notices).toEqual([
       'DEFAULT_MODEL uses a provider without server configuration; it is left to the browser',
-      'MODEL_FALLBACK only applies with DEFAULT_MODEL and is not carried over',
+      'MODEL_FALLBACK is not carried over without DEFAULT_MODEL, so calls that retried on it no longer do; set the llm slot with a fallback in openmaic.yml',
     ]);
     const fallback = translateLegacyConfig(withProviders, {
       defaultModel: 'openai:gpt-5.6',

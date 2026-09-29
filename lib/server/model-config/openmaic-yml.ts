@@ -32,7 +32,7 @@ const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** A `${` with no closing brace, checked on the text as written. */
 const UNCLOSED_ENV_REF = /\$\{[^}]*$/;
 
-export const thinkingSchema = z
+const thinkingSchema = z
   .object({
     mode: z.enum(VALID_MODES as [string, ...string[]]).optional(),
     effort: z.enum(VALID_EFFORTS as [string, ...string[]]).optional(),
