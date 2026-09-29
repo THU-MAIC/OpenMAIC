@@ -90,3 +90,6 @@ e2e/screenshots/
 # local e2e screenshots for #619 review
 e2e/__screenshots-619/
 /.playwright-mcp/
+
+# Operator model configuration (see openmaic.yml in RFC #1701); it names secrets via ${VAR}
+/openmaic.yml

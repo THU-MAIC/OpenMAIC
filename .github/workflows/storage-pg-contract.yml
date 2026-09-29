@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, runtime-server-backend, feat/maic-editor-v0, feat/maic-editor-v1]
+    branches:
+      [main, runtime-server-backend, feat/maic-editor-v0, feat/maic-editor-v1, integration/provider-config]
 
 concurrency:
   group: storage-pg-contract-${{ github.ref }}
