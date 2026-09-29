@@ -124,6 +124,57 @@ describe('parseModelConfig', () => {
     expect(issuesOf(text)[0]).toMatch(/^slots\.course\.content\.slide\.thinking\.mode:/);
   });
 
+  it('does not take inherited object keys for declared providers', () => {
+    expect(issuesOf('slots:\n  llm: constructor:m\n')).toEqual([
+      'slots.llm: provider "constructor" is not declared under providers',
+    ]);
+    const fallback =
+      'providers:\n  m:\n    preset: minimax\n    apiKey: k\nslots:\n  llm:\n    model: m:MiniMax-M3\n    fallback: constructor:x\n';
+    expect(issuesOf(fallback)).toEqual([
+      'slots.llm.fallback: provider "constructor" is not declared under providers',
+    ]);
+  });
+
+  it('refuses YAML values that are not mappings where mappings are expected', () => {
+    expect(issuesOf('policy: 2026-01-01\n')).toEqual([
+      'policy: unsupported YAML value; quote it to use it as text',
+    ]);
+    expect(issuesOf('2026-01-01\n')).toEqual([
+      '(root): unsupported YAML value; quote it to use it as text',
+    ]);
+  });
+
+  it('refuses a YAML alias that refers back to itself', () => {
+    const issues = issuesOf('providers: &p\n  loop: *p\n');
+    expect(issues).toContainEqual('providers.loop: a YAML alias refers back to itself');
+  });
+
+  it('accepts lowercase variable names and keeps secrets that contain "${"', () => {
+    const text = 'providers:\n  m:\n    preset: minimax\n    apiKey: ${lower_key}\n';
+    const config = parseModelConfig(text, { env: { lower_key: 'a${b}c' } });
+    expect(config.providers?.m.apiKey).toBe('a${b}c');
+  });
+
+  it('refuses a placeholder with no closing brace', () => {
+    const text = 'providers:\n  m:\n    preset: minimax\n    apiKey: "${SECRET"\n';
+    expect(issuesOf(text, { SECRET: 'x' })).toEqual([
+      'providers.m.apiKey: "${" has no closing "}"',
+    ]);
+  });
+
+  it('reports schema and cross-check problems together', () => {
+    const text =
+      'providers:\n  a:\n    preset: nope\n  b:\n    preset: minimax\n    extra: 1\nslots:\n  llm: 123\n  video: b:x\n  tts: ghost:y\n';
+    expect([...issuesOf(text)].sort()).toEqual(
+      [
+        'providers.b: Unrecognized key: "extra"',
+        'slots.llm: expected null, "providerId:modelId" or a mapping',
+        'providers.a.preset: unknown preset "nope"',
+        'slots.tts: provider "ghost" is not declared under providers',
+      ].sort(),
+    );
+  });
+
   it('reports every problem at once', () => {
     const text =
       'providers:\n  a:\n    preset: nope\nslots:\n  llm: ghost:m\n  course.summary: null\n';

@@ -28,7 +28,9 @@ const PROVIDER_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 /** `providerId:modelId`; the model id may itself contain colons. */
 const MODEL_REF = /^([a-z0-9][a-z0-9-]{0,62}):(.+)$/;
 const ENV_REF = /\$\{([^}]*)\}/g;
-const ENV_NAME = /^[A-Z_][A-Z0-9_]*$/;
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+/** A `${` with no closing brace, checked on the text as written. */
+const UNCLOSED_ENV_REF = /\$\{[^}]*$/;
 
 const thinkingSchema = z
   .object({
@@ -64,6 +66,10 @@ export type SlotAssignment = null | string | z.infer<typeof assignmentObjectSche
  * `slots.llm.thinking.mode`) instead of as "invalid input" on the slot.
  */
 const assignmentSchema = z.unknown().transform((value, ctx): SlotAssignment => {
+  if (value !== null && typeof value !== 'string' && !isPlainMapping(value)) {
+    ctx.addIssue({ code: 'custom', message: 'expected null, "providerId:modelId" or a mapping' });
+    return z.NEVER;
+  }
   const schema =
     value === null ? z.null() : typeof value === 'string' ? modelRef : assignmentObjectSchema;
   const result = schema.safeParse(value);
@@ -111,9 +117,30 @@ function formatPath(segments: readonly PropertyKey[]): string {
   return segments.length ? segments.map(String).join('.') : '(root)';
 }
 
-/** Replaces `${VAR}` in every string value; unset or empty variables are errors. */
-function interpolate(value: unknown, env: ConfigEnv, at: PropertyKey[], issues: string[]): unknown {
+function isPlainMapping(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * Replaces `${VAR}` in every string value; unset or empty variables are errors.
+ * Only plain mappings and arrays are walked. Any other object YAML can produce
+ * (an unquoted timestamp becomes a Date) is refused here: the schema would
+ * otherwise accept it as an empty object. The placeholder syntax is checked
+ * on the text as written, never on substituted secrets.
+ */
+function interpolate(
+  value: unknown,
+  env: ConfigEnv,
+  at: PropertyKey[],
+  issues: string[],
+  ancestors: Set<object> = new Set(),
+): unknown {
   if (typeof value === 'string') {
+    if (UNCLOSED_ENV_REF.test(value)) {
+      issues.push(`${formatPath(at)}: "\${" has no closing "}"`);
+    }
     return value.replace(ENV_REF, (_match, name: string) => {
       if (!ENV_NAME.test(name)) {
         issues.push(`${formatPath(at)}: "\${${name}}" is not a valid environment variable name`);
@@ -127,26 +154,52 @@ function interpolate(value: unknown, env: ConfigEnv, at: PropertyKey[], issues: 
       return resolved;
     });
   }
-  if (Array.isArray(value))
-    return value.map((item, index) => interpolate(item, env, [...at, index], issues));
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
-        key,
-        interpolate(item, env, [...at, key], issues),
-      ]),
-    );
+  if (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    !isPlainMapping(value)
+  ) {
+    // YAML turns an unquoted timestamp into a Date; nothing in the file is one.
+    issues.push(`${formatPath(at)}: unsupported YAML value; quote it to use it as text`);
+    return undefined;
   }
-  return value;
+  if (!Array.isArray(value) && !isPlainMapping(value)) return value;
+  if (ancestors.has(value)) {
+    issues.push(`${formatPath(at)}: a YAML alias refers back to itself`);
+    return undefined;
+  }
+  ancestors.add(value);
+  const result = Array.isArray(value)
+    ? value.map((item, index) => interpolate(item, env, [...at, index], issues, ancestors))
+    : Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [
+          key,
+          interpolate(item, env, [...at, key], issues, ancestors),
+        ]),
+      );
+  ancestors.delete(value);
+  return result;
 }
 
 function modelRefProvider(ref: string): string {
   return MODEL_REF.exec(ref)![1];
 }
 
-/** Checks that need the whole file: presets, slot ids, provider references. */
-function crossCheck(config: ModelConfigFile, issues: string[]): void {
-  const providers = config.providers ?? {};
+type Providers = Record<string, z.infer<typeof providerSchema>>;
+type Slots = Record<string, SlotAssignment>;
+
+/**
+ * Checks that need the whole file: presets, slot ids, provider references.
+ * Runs on every entry that is valid on its own, so a schema error elsewhere in
+ * the file does not hide these problems.
+ */
+function crossCheck(
+  providers: Providers,
+  slots: Slots,
+  issues: string[],
+  declaredProviderIds: ReadonlySet<string> = new Set(Object.keys(providers)),
+): void {
   for (const [id, provider] of Object.entries(providers)) {
     const preset = getProviderPreset(provider.preset);
     if (!preset) {
@@ -160,9 +213,13 @@ function crossCheck(config: ModelConfigFile, issues: string[]): void {
 
   const covers = (ref: string, slot: SlotId, at: string) => {
     const providerId = modelRefProvider(ref);
-    const provider = providers[providerId];
+    // Own keys only: `constructor` and friends are not declared providers.
+    const provider = Object.hasOwn(providers, providerId) ? providers[providerId] : undefined;
     if (!provider) {
-      issues.push(`${at}: provider "${providerId}" is not declared under providers`);
+      // A provider that is declared but invalid has its own error already.
+      if (!declaredProviderIds.has(providerId)) {
+        issues.push(`${at}: provider "${providerId}" is not declared under providers`);
+      }
       return;
     }
     const preset = getProviderPreset(provider.preset);
@@ -174,7 +231,7 @@ function crossCheck(config: ModelConfigFile, issues: string[]): void {
     }
   };
 
-  for (const [slot, assignment] of Object.entries(config.slots ?? {})) {
+  for (const [slot, assignment] of Object.entries(slots)) {
     const at = `slots.${slot}`;
     if (!isSlotId(slot)) {
       issues.push(`${at}: unknown slot`);
@@ -196,6 +253,17 @@ function crossCheck(config: ModelConfigFile, issues: string[]): void {
   }
 }
 
+/** The entries of a section that are valid on their own, for cross-checking. */
+function validEntries<T>(section: unknown, schema: z.ZodType<T>): Record<string, T> {
+  if (!isPlainMapping(section)) return {};
+  const entries: Record<string, T> = {};
+  for (const [key, value] of Object.entries(section)) {
+    const result = schema.safeParse(value);
+    if (result.success) entries[key] = result.data;
+  }
+  return entries;
+}
+
 /** Parses and validates the text of a model configuration file. */
 export function parseModelConfig(
   text: string,
@@ -211,12 +279,23 @@ export function parseModelConfig(
 
   const issues: string[] = [];
   const interpolated = interpolate(raw, env, [], issues);
+  // The whole document was refused (for example a bare timestamp).
+  if (interpolated === undefined) throw new ModelConfigError(file, issues);
   const parsed = fileSchema.safeParse(interpolated);
-  if (!parsed.success) {
-    for (const issue of parsed.error.issues)
-      issues.push(`${formatPath(issue.path)}: ${issue.message}`);
+  if (parsed.success) {
+    crossCheck(parsed.data.providers ?? {}, parsed.data.slots ?? {}, issues);
   } else {
-    crossCheck(parsed.data, issues);
+    for (const issue of parsed.error.issues) {
+      issues.push(`${formatPath(issue.path)}: ${issue.message}`);
+    }
+    if (isPlainMapping(interpolated)) {
+      crossCheck(
+        validEntries(interpolated.providers, providerSchema),
+        validEntries(interpolated.slots, assignmentSchema),
+        issues,
+        new Set(isPlainMapping(interpolated.providers) ? Object.keys(interpolated.providers) : []),
+      );
+    }
   }
   if (issues.length) throw new ModelConfigError(file, issues);
   return parsed.data!;
