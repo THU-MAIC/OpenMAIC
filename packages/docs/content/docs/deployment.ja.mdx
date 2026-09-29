@@ -54,7 +54,7 @@ services:
       - ./openmaic.yml:/app/openmaic.yml:ro
 ```
 
-ホストに存在しないパスはマウントしないでください。Docker がその場所にディレクトリを作成し、サーバーが起動を拒否します。`docker run` では `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"` を追加します。ファイルを編集したらコンテナを再起動してください。`openmaic.yml` がない場合は、旧来の `server-providers.yml` が引き続き `/app/server-providers.yml` から読み込まれます。
+ホストに存在しないパスはマウントしないでください。Docker がその場所にディレクトリを作成し、サーバーが起動を拒否します。`docker run` では `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"` を追加します。ファイルを編集したらコンテナを再起動してください。`openmaic.yml` は `.dockerignore` に含まれているため、リポジトリからビルドしたイメージに焼き込まれることはありません。実行時にマウントしてください。`openmaic.yml` がない場合は、旧来の `server-providers.yml` が引き続き `/app/server-providers.yml` から読み込まれます。
 
 Docker コンテナ内の `localhost` はコンテナ自身を指します。ホスト上で Ollama、Lemonade、VoxCPM、ComfyUI を動かしている場合は `host.docker.internal` を使ってください。例：`http://host.docker.internal:11434/v1` や `http://host.docker.internal:8188`。Linux の Docker では通常、`openmaic` サービスに対して `extra_hosts: ["host.docker.internal:host-gateway"]` の追加が必要です。ComfyUI は現状サーバー管理型プロバイダーではないため、本番環境では `ALLOW_LOCAL_NETWORKS=true` を設定しないと SSRF 保護によりアクセスが拒否されます。
 

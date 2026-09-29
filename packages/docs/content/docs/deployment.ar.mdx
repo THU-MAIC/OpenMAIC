@@ -54,7 +54,7 @@ services:
       - ./openmaic.yml:/app/openmaic.yml:ro
 ```
 
-لا تربط مسارًا غير موجود على المضيف: سينشئ Docker مجلدًا مكانه ويرفض الخادم البدء. مع `docker run` أضف `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`. أعد تشغيل الحاوية بعد تعديل الملف. عند عدم وجود `openmaic.yml` ما زال `server-providers.yml` القديم يُقرأ من `/app/server-providers.yml`.
+لا تربط مسارًا غير موجود على المضيف: سينشئ Docker مجلدًا مكانه ويرفض الخادم البدء. مع `docker run` أضف `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`. أعد تشغيل الحاوية بعد تعديل الملف. الملف `openmaic.yml` مدرج في `.dockerignore`، فلا يُضمَّن أبدًا في صورة تُبنى من المستودع: اربطه وقت التشغيل بدلًا من ذلك. عند عدم وجود `openmaic.yml` ما زال `server-providers.yml` القديم يُقرأ من `/app/server-providers.yml`.
 
 يشير `localhost` داخل حاوية Docker إلى الحاوية نفسها. إذا كانت خدمات مثل Ollama أو Lemonade أو VoxCPM أو ComfyUI تعمل على المضيف، فاستخدم `host.docker.internal`، مثل `http://host.docker.internal:11434/v1` أو `http://host.docker.internal:8188`. على Linux، عادةً ما تحتاج إلى إضافة `extra_hosts: ["host.docker.internal:host-gateway"]` لخدمة `openmaic`. ComfyUI ليست مزودًا مُدارًا من الخادم، لذا في بيئة الإنتاج يجب تعيين `ALLOW_LOCAL_NETWORKS=true` لتجنب رفض الحماية من SSRF لهذا العنوان.
 

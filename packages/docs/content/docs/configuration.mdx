@@ -180,15 +180,15 @@ Write `null` on its slot. `video: null` turns video generation off for every wor
 
 ### Locks and the model settings
 
-Everything written under `slots` in `openmaic.yml` is **locked**: the model settings show it as set by the deployment and cannot change it. Only the slots that are written are locked. A workspace can still assign a child of a locked slot, which overrides the locked value for that child's subtree. To fix a whole subtree, write each of its slots.
+Everything written under `slots` in `openmaic.yml` is **locked**: the model settings mark it **Set by the server** and cannot change it. Only the slots that are written are locked. A workspace can still assign a child of a locked slot, which overrides the locked value for that child's subtree. To fix a whole subtree, write each of its slots.
 
 The model settings (**Settings → Models** in the web app) read and edit the same tree for the current workspace:
 
-- **Course model map**: each slot is a card that shows its effective model, where it comes from (the deployment, the workspace, or inherited from a parent) and whether it is locked. The model on a card is edited on the card itself; slots written in `openmaic.yml` are read-only there.
-- **Providers**: the providers the workspace can use. Providers from `openmaic.yml` are listed read-only and without anything about their keys. Providers the workspace adds are editable; their keys are write-only and shown only as a mask such as `…abcd`.
-- **Connect a service**: when no chat model is configured yet, a first-run setup adds a provider and fills the slots its preset recommends that are still unassigned. After that it is an ordinary provider.
+- **Model map** tab: each slot is a card that shows its effective model, where it comes from (the deployment, the workspace, or inherited from a parent) and whether it is locked. The model on a card is edited on the card itself; slots written in `openmaic.yml` are read-only there.
+- **Providers** tab: the providers the workspace can use. Providers from `openmaic.yml` are listed read-only and without anything about their keys. Providers the workspace adds are editable; their keys are write-only and shown only as a mask such as `…abcd`.
+- **Connect a service**: when no chat model is configured yet, this first-run setup adds a provider and fills the slots its preset recommends that are still unassigned. After that it is an ordinary provider.
 
-Provider settings that a browser stored in earlier versions (providers, keys and the chosen model) are imported into the workspace once. Anything the workspace already has, and every slot `openmaic.yml` locks, is kept; per-stage models from the browser are not imported and have to be set again on the model map.
+Provider settings that a browser stored in earlier versions (providers, keys and the chosen model) are imported into the workspace once, and the keys are removed from the browser once imported (a failed import keeps them there to try again). Anything the workspace already has, and every slot `openmaic.yml` locks, is kept. Speech input that was explicitly switched off becomes `asr: null`; per-stage models from the browser are not imported and have to be set again on the model map.
 
 A workspace is an owner in the sense of the [persistence documentation](./deployment.mdx#server-side-persistence-postgresql): with the default Docker Compose setup (single-user mode) there is one workspace, and in a multi-user deployment each signed-in account has its own.
 

@@ -31,17 +31,30 @@ pnpm install
 cp .env.example .env.local
 ```
 
-打开 `.env.local`，填入你有 key 的提供方。例如：
+然后配置一个模型。最简单的文件方式是在 `.env.local` 旁边放一个最小的 `openmaic.yml`，key 写在 `.env.local` 中：
 
 ```bash title=".env.local"
 OPENAI_API_KEY=sk-...
-# 或
-ANTHROPIC_API_KEY=sk-ant-...
-# 或本地 Ollama（不需要 key）
-OLLAMA_BASE_URL=http://localhost:11434/v1
 ```
 
-这些服务商变量是旧版配置方式，目前仍然有效。新的方式是 `openmaic.yml`：把 `openmaic.example.yml` 复制为 `openmaic.yml`，key 留在 `.env.local` 中，并以 `${VAR}` 引用。也可以在启动应用后，在模型设置中接入模型服务。
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+
+slots:
+  llm: openai:gpt-5.5
+```
+
+更完整的示例见 `openmaic.example.yml`。不使用该文件时，旧版服务商变量仍然有效，前提是用 `DEFAULT_MODEL` 指定模型：
+
+```bash title=".env.local"
+ANTHROPIC_API_KEY=sk-ant-...
+DEFAULT_MODEL=anthropic:claude-sonnet-4-6
+```
+
+两者都不想配置的话，启动应用后在 **设置 → 模型** 中使用 **Connect a service**（接入服务）。既没有 `openmaic.yml`、也没有 `DEFAULT_MODEL`、也没有在那里接入服务时，没有任何可用模型，生成会失败。
 
 完整的 provider、图像/视频生成、TTS、ASR、文档解析、联网搜索、访问控制和 feature flag 配置见[配置说明](./configuration.mdx)。
 

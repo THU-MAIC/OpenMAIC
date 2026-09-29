@@ -54,7 +54,7 @@ services:
       - ./openmaic.yml:/app/openmaic.yml:ro
 ```
 
-Не монтируйте путь, которого нет на хосте: Docker создаст на его месте каталог, и сервер откажется запускаться. Для `docker run` добавьте `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`. После изменения файла перезапустите контейнер. Если `openmaic.yml` нет, устаревший `server-providers.yml` по-прежнему читается из `/app/server-providers.yml`.
+Не монтируйте путь, которого нет на хосте: Docker создаст на его месте каталог, и сервер откажется запускаться. Для `docker run` добавьте `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`. После изменения файла перезапустите контейнер. `openmaic.yml` указан в `.dockerignore`, поэтому никогда не попадает в образ, собранный из репозитория: монтируйте его при запуске. Если `openmaic.yml` нет, устаревший `server-providers.yml` по-прежнему читается из `/app/server-providers.yml`.
 
 В Docker контейнере `localhost` указывает на сам контейнер. Если Ollama, Lemonade, VoxCPM или ComfyUI запущены на хосте, используйте `host.docker.internal`, например `http://host.docker.internal:11434/v1` или `http://host.docker.internal:8188`. В Linux обычно также нужно добавить `extra_hosts: ["host.docker.internal:host-gateway"]` для сервиса `openmaic`. ComfyUI пока не является серверным провайдером, поэтому в продакшене нужно задать `ALLOW_LOCAL_NETWORKS=true`, иначе SSRF-защита отклонит запросы к этому адресу.
 
