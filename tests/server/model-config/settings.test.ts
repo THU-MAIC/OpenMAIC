@@ -142,6 +142,7 @@ describe('modelSettingsView', () => {
 
   it('neither offers nor accepts a provider the operator switched off', async () => {
     vi.stubEnv('TTS_OPENAI_ENABLED', 'false');
+    vi.stubEnv('TTS_MINIMAX_ENABLED', 'false');
     // The switch is read once per module load.
     vi.resetModules();
     const { modelSettingsView, applyModelSettingsChange } =
@@ -155,6 +156,10 @@ describe('modelSettingsView', () => {
     expect(
       view.presets.find((preset) => preset.id === 'openai-tts')?.capabilities.tts,
     ).toBeUndefined();
+    // Nor does a plan recommend a capability it no longer offers.
+    for (const preset of view.presets) {
+      if (!preset.capabilities.tts) expect(preset.recommended).not.toHaveProperty('tts');
+    }
     const withProvider = await applyModelSettingsChange(null, {
       kind: 'provider',
       id: 'voice',

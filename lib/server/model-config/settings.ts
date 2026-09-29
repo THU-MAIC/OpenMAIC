@@ -370,15 +370,23 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
 
   const allowWorkspaceProviders = deployment?.config.policy?.allowWorkspaceProviders ?? true;
   const presets: PresetView[] = allowWorkspaceProviders
-    ? PROVIDER_PRESETS.filter((preset) => !workspacePresetProblem(preset)).map((preset) => ({
-        id: preset.id,
-        name: preset.name,
-        kind: preset.kind,
-        capabilities: capabilityModels(preset),
-        requiresBaseUrl: needsOwnEndpoint(preset),
-        customEndpoint: Boolean(preset.capabilities.chat),
-        recommended: { ...(preset.recommended ?? {}) },
-      }))
+    ? PROVIDER_PRESETS.filter((preset) => !workspacePresetProblem(preset)).map((preset) => {
+        const capabilities = capabilityModels(preset);
+        return {
+          id: preset.id,
+          name: preset.name,
+          kind: preset.kind,
+          capabilities,
+          requiresBaseUrl: needsOwnEndpoint(preset),
+          customEndpoint: Boolean(preset.capabilities.chat),
+          // Only what can be assigned: a capability the operator switched off is out.
+          recommended: Object.fromEntries(
+            Object.entries(preset.recommended ?? {}).filter(
+              ([slot]) => isSlotId(slot) && capabilities[getSlot(slot).capability],
+            ),
+          ) as PresetView['recommended'],
+        };
+      })
     : [];
 
   return {
