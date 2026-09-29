@@ -237,6 +237,11 @@ export function resolveSlot(
     const at = `slots.${node}`;
     const spec = typeof assignment === 'string' ? { model: assignment } : assignment;
     const target = resolveTarget(spec.model, capability, layers, at);
+    // Only language-model calls retry on a fallback; a fallback anywhere else
+    // would be configuration that silently does nothing.
+    if (spec.fallback && capability !== 'chat') {
+      throw new SlotResolutionError(`${at}.fallback: only language model slots use a fallback`);
+    }
     const fallback = spec.fallback
       ? resolveTarget(spec.fallback, capability, layers, `${at}.fallback`)
       : undefined;

@@ -239,12 +239,12 @@ describe('resolveSlot', () => {
     const wrongFallback: ModelConfigLayer = {
       source: 'workspace',
       config: {
-        providers: { mm: { preset: 'minimax' }, k: { preset: 'kimi-coding-plan' } },
-        slots: { tts: { model: 'mm:speech-2.8-hd', fallback: 'k:voice' } },
+        providers: { mm: { preset: 'minimax' }, tv: { preset: 'tavily' } },
+        slots: { llm: { model: 'mm:MiniMax-M2', fallback: 'tv:search' } },
       } as ModelConfigLayer['config'],
     };
-    expect(() => resolveSlot('tts', [wrongFallback])).toThrow(
-      /slots\.tts\.fallback: .*does not offer tts/,
+    expect(() => resolveSlot('llm', [wrongFallback])).toThrow(
+      /slots\.llm\.fallback: .*does not offer chat/,
     );
   });
 
@@ -290,6 +290,19 @@ describe('resolveSlot', () => {
       };
       expect(resolveSlot(slot, [layer])).toMatchObject({ status: 'assigned', modelId: expected });
     }
+  });
+
+  it('refuses a fallback on a slot whose calls never use one', () => {
+    const layer: ModelConfigLayer = {
+      source: 'deployment',
+      config: {
+        providers: { mm: { preset: 'minimax', apiKey: 'k' } },
+        slots: { tts: { model: 'mm:speech-2.8-turbo', fallback: 'mm:speech-2.8-hd' } },
+      },
+    };
+    expect(() => resolveSlot('tts', [layer])).toThrow(
+      'slots.tts.fallback: only language model slots use a fallback',
+    );
   });
 
   it('reports a malformed reference by path, without echoing it', () => {
