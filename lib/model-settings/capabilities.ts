@@ -6,7 +6,7 @@
  * the server, so the client only needs these facts to decide what to show and
  * what to ask for (browser speech runs in the browser, for instance).
  */
-import type { SlotId } from '@/lib/config/model-slots';
+import { MODEL_SLOTS, type SlotId } from '@/lib/config/model-slots';
 
 import {
   findSlot,
@@ -36,6 +36,11 @@ export interface ModelCapabilities {
   video: EffectiveTarget | null;
   webSearch: EffectiveTarget | null;
   document: EffectiveTarget | null;
+  /**
+   * Every slot that resolves to a model, assigned where it is or inherited:
+   * a child slot can resolve while the `llm` root is unassigned or off.
+   */
+  resolved: ReadonlySet<SlotId>;
 }
 
 /** The target a slot resolves to, or null when it is off, unassigned or invalid. */
@@ -87,16 +92,46 @@ export function modelCapabilities(view: ModelSettingsView | null | undefined): M
     video: effectiveTarget(view, 'video'),
     webSearch: effectiveTarget(view, 'webSearch'),
     document: effectiveTarget(view, 'document'),
+    resolved: new Set(
+      MODEL_SLOTS.map(({ id }) => id as SlotId).filter((id) => !!effectiveTarget(view, id)),
+    ),
   };
 }
 
 /**
- * Whether generation may start as far as the client can tell: a language
- * model is set up, or the settings could not be read (the server then says
+ * Whether requests that resolve through these slots may be sent, as far as
+ * the client can tell: every slot resolves to a model (whatever the `llm`
+ * root says), or the settings could not be read yet (the server then says
  * what is missing).
  */
-export function llmUsable(capabilities: ModelCapabilities): boolean {
-  return !capabilities.known || !!capabilities.llm;
+export function slotsUsable(capabilities: ModelCapabilities, slots: readonly SlotId[]): boolean {
+  return !capabilities.known || slots.every((slot) => capabilities.resolved.has(slot));
+}
+
+/** The content slots: the course content default and its per-scene-type children. */
+const CONTENT_SLOTS: readonly SlotId[] = [
+  'course.content',
+  'course.content.slide',
+  'course.content.quiz',
+  'course.content.interactive',
+  'course.content.pbl',
+];
+
+/**
+ * Whether a course can be generated: the outline and the scene actions
+ * resolve, and so does the content of at least one scene type (each scene
+ * resolves its own content slot; the server refuses a type without one).
+ */
+export function courseGenerationUsable(capabilities: ModelCapabilities): boolean {
+  return (
+    slotsUsable(capabilities, ['course.outline', 'course.actions']) &&
+    (!capabilities.known || CONTENT_SLOTS.some((slot) => capabilities.resolved.has(slot)))
+  );
+}
+
+/** Whether classroom chat and discussion can run: they resolve the `classroom` slot. */
+export function classroomChatUsable(capabilities: ModelCapabilities): boolean {
+  return slotsUsable(capabilities, ['classroom']);
 }
 
 /**

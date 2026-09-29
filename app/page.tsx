@@ -51,7 +51,7 @@ import type {
   SessionDocumentSource,
   UserRequirements,
 } from '@/lib/types/generation';
-import { llmUsable, loadModelCapabilities } from '@/lib/model-settings/capabilities';
+import { courseGenerationUsable, loadModelCapabilities } from '@/lib/model-settings/capabilities';
 import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
 import {
@@ -171,9 +171,10 @@ function HomePage() {
   const { cachedValue: cachedRequirement, updateCache: updateRequirementCache } =
     useDraftCache<string>({ key: 'requirementDraft' });
 
-  // Generation needs a language model in the workspace's model settings (the
-  // server's view; while it cannot be read the server has the last word).
-  const hasUsableProvider = llmUsable(useModelCapabilities());
+  // Generation needs the course slots it resolves (outline, content, actions)
+  // to name a model, whether or not the llm root does (the server's view;
+  // while it cannot be read the server has the last word).
+  const hasUsableProvider = courseGenerationUsable(useModelCapabilities());
   const [recentOpen, setRecentOpen] = useState(true);
   const persistRecentOpen = (next: boolean) => {
     setRecentOpen(next);

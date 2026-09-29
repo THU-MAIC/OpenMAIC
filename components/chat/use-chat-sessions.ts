@@ -26,7 +26,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore } from '@/lib/store/user-profile';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { llmUsable, loadModelCapabilities } from '@/lib/model-settings/capabilities';
+import { classroomChatUsable, loadModelCapabilities } from '@/lib/model-settings/capabilities';
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import { StreamBuffer } from '@/lib/buffer/stream-buffer';
 import type { AgentStartItem, ActionItem } from '@/lib/buffer/stream-buffer';
@@ -1766,9 +1766,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       // Capture the next request only after that mutation has settled.
       await pendingRetirementRef.current;
 
-      // Validate model configuration before sending
-      // The workspace's model settings must name a language model.
-      if (!llmUsable(await loadModelCapabilities())) {
+      // Validate model configuration before sending: chat resolves the
+      // workspace's classroom slot (assigned there or inherited).
+      if (!classroomChatUsable(await loadModelCapabilities())) {
         toast.error(t('settings.modelNotConfigured'));
         return;
       }
@@ -1928,9 +1928,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       // but being explicit guards against future refactors)
       livePausedRef.current = false;
 
-      // Validate model configuration before starting discussion
-      // The workspace's model settings must name a language model.
-      if (!llmUsable(await loadModelCapabilities())) {
+      // Validate model configuration before starting discussion: it resolves
+      // the workspace's classroom slot (assigned there or inherited).
+      if (!classroomChatUsable(await loadModelCapabilities())) {
         toast.error(t('settings.modelNotConfigured'));
         return;
       }

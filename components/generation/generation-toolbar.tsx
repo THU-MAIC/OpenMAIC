@@ -11,7 +11,11 @@ import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import { toast } from 'sonner';
 import { findSlot } from '@/lib/model-settings/client';
-import { effectiveTarget } from '@/lib/model-settings/capabilities';
+import {
+  courseGenerationUsable,
+  effectiveTarget,
+  modelCapabilities,
+} from '@/lib/model-settings/capabilities';
 import { modelChange, modelRef, providerLabel, providersFor } from '@/lib/model-settings/edit';
 import { useModelSettingsView } from '@/lib/model-settings/use-model-settings';
 import { modelSettingsClient } from '@/lib/model-settings/client';
@@ -205,6 +209,7 @@ export function GenerationToolbar({
         </span>
       ) : (
         view &&
+        !courseGenerationUsable(modelCapabilities(view)) &&
         onSettingsOpen && (
           <Tooltip>
             <TooltipTrigger asChild>

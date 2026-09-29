@@ -5,7 +5,9 @@ import {
   ensureModelSettings,
   MODEL_SETTINGS_RETRY_MS,
   effectiveTarget,
-  llmUsable,
+  classroomChatUsable,
+  courseGenerationUsable,
+  slotsUsable,
   loadModelCapabilities,
   mediaGenerationDisabled,
   modelCapabilities,
@@ -24,7 +26,8 @@ describe('modelCapabilities', () => {
   it('knows nothing without a view, and then neither blocks nor disables', () => {
     const capabilities = modelCapabilities(null);
     expect(capabilities.known).toBe(false);
-    expect(llmUsable(capabilities)).toBe(true);
+    expect(courseGenerationUsable(capabilities)).toBe(true);
+    expect(classroomChatUsable(capabilities)).toBe(true);
     expect(mediaGenerationDisabled(capabilities, 'image')).toBe(false);
   });
 
@@ -63,13 +66,59 @@ describe('modelCapabilities', () => {
     expect(capabilities.video).toBeNull();
     expect(mediaGenerationDisabled(capabilities, 'image')).toBe(false);
     expect(mediaGenerationDisabled(capabilities, 'video')).toBe(true);
-    expect(llmUsable(capabilities)).toBe(true);
+    expect(slotsUsable(capabilities, ['llm'])).toBe(true);
   });
 
   it('reports a workspace without a language model', () => {
     const capabilities = modelCapabilities(modelSettingsViewFor({}));
     expect(capabilities.llm).toBeNull();
-    expect(llmUsable(capabilities)).toBe(false);
+    expect(courseGenerationUsable(capabilities)).toBe(false);
+    expect(classroomChatUsable(capabilities)).toBe(false);
+  });
+
+  it('lets classroom chat run on its own slot while the llm root is unassigned or off', () => {
+    const classroom = { registryId: 'openai', modelId: 'gpt-5-mini' };
+    const unassigned = modelCapabilities(modelSettingsViewFor({ classroom }));
+    expect(unassigned.llm).toBeNull();
+    expect(classroomChatUsable(unassigned)).toBe(true);
+    expect(courseGenerationUsable(unassigned)).toBe(false);
+
+    const offView = modelSettingsViewFor({ classroom });
+    offView.slots.find((slot) => slot.slot === 'llm')!.effective = {
+      status: 'disabled',
+      resolvedAt: 'llm',
+      source: 'workspace',
+    };
+    expect(classroomChatUsable(modelCapabilities(offView))).toBe(true);
+  });
+
+  it('lets a course be generated from its own slots while the llm root is unassigned or off', () => {
+    const target = { registryId: 'anthropic', modelId: 'claude-sonnet-5' };
+    const view = modelSettingsViewFor({
+      'course.outline': target,
+      'course.actions': target,
+      'course.content.slide': target,
+    });
+    view.slots.find((slot) => slot.slot === 'llm')!.effective = {
+      status: 'disabled',
+      resolvedAt: 'llm',
+      source: 'workspace',
+    };
+    const capabilities = modelCapabilities(view);
+    expect(capabilities.llm).toBeNull();
+    // One content scene type is enough; the others are refused per scene.
+    expect(courseGenerationUsable(capabilities)).toBe(true);
+    // Chat still needs its own slot.
+    expect(classroomChatUsable(capabilities)).toBe(false);
+
+    // Without a content model for any scene type, nothing can be generated.
+    expect(
+      courseGenerationUsable(
+        modelCapabilities(
+          modelSettingsViewFor({ 'course.outline': target, 'course.actions': target }),
+        ),
+      ),
+    ).toBe(false);
   });
 
   it('treats a slot that is off or invalid as resolving to nothing', () => {
