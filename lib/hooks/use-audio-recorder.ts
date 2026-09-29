@@ -104,6 +104,8 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
         // Nothing to record with when the asr slot is off or unassigned.
         const setup = await asrSetup();
         if (!setup) {
+          // Release the lock: a later click (once speech input is set up) must work.
+          busyRef.current = false;
           onError?.(ASR_NOT_CONFIGURED_MESSAGE);
           return;
         }
@@ -113,6 +115,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
         if (setup.providerId === 'browser-native') {
           // Check if Speech Recognition is supported
           if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
+            busyRef.current = false;
             onError?.('您的浏览器不支持语音识别功能');
             return;
           }
