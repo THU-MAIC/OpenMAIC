@@ -13,7 +13,8 @@ import { makeDocument, makeSlideScene } from './_stage-fixtures';
  *   - `persistence` (`isServerPersistenceConfigured()`, a DATABASE_URL): the
  *     course library and folders (`/api/stages/**`, `/api/folders/**`,
  *     `/api/stage-meta/**`) and the owner-library material upload
- *     (`POST /api/materials`, which `POST /api/generate-classroom` consumes).
+ *     (`POST /api/materials`, which `POST /api/generate-classroom` consumes,
+ *     and `DELETE /api/materials/[id]`).
  *     They need the database and nothing else, so they serve with the agent
  *     runtime on OR off.
  *   - `runtime` (`isAgentRuntimeConfigured()`, the flag AND a DATABASE_URL):
@@ -100,7 +101,7 @@ import { GET as getScenes } from '@/app/api/stages/[id]/scenes/route';
 import { GET as getManifest } from '@/app/api/stages/[id]/manifest/route';
 import { GET as getFreshness } from '@/app/api/stages/[id]/freshness/route';
 import { GET as getMaterials, POST as postMaterials } from '@/app/api/materials/route';
-import { GET as getMaterial } from '@/app/api/materials/[id]/route';
+import { DELETE as deleteMaterial, GET as getMaterial } from '@/app/api/materials/[id]/route';
 import { GET as getFolders, POST as postFolders } from '@/app/api/folders/route';
 import { DELETE as deleteFolder, PATCH as patchFolder } from '@/app/api/folders/[id]/route';
 import { POST as postFolderMembers } from '@/app/api/folders/members/route';
@@ -249,6 +250,16 @@ const ROUTES: RouteCase[] = [
     call: () =>
       getMaterial(
         new NextRequest(`http://localhost/api/materials/${MATERIAL_ID}?sessionId=${SESSION_ID}`),
+        params(MATERIAL_ID),
+      ),
+    happyStatus: 200,
+  },
+  {
+    name: 'DELETE /api/materials/[id]',
+    gate: 'persistence',
+    call: () =>
+      deleteMaterial(
+        new NextRequest(`http://localhost/api/materials/${MATERIAL_ID}`, { method: 'DELETE' }),
         params(MATERIAL_ID),
       ),
     happyStatus: 200,
@@ -504,6 +515,7 @@ for (const state of STATES) {
                 bytes: 5,
                 original_name: 'notes.pdf',
                 asset_id: 'asset-1',
+                oss_key: '',
                 sha256: 'abc',
                 status: 'ready',
                 extraction: null,

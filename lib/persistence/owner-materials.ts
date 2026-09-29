@@ -236,7 +236,8 @@ export function ownerMaterialQuotaLockKey(ownerId: string): string {
 
 /**
  * Reclaim uploads that crashed before finalize and are older than the sweep
- * horizon.
+ * horizon, and deleted materials whose byte removal failed at delete time
+ * (see {@link deleteOwnerMaterial}).
  *
  * Order is load-bearing: each stale reservation's byte object is removed
  * first, and only then is the reservation deleted. Deleting the reservation
@@ -259,8 +260,7 @@ export async function reclaimStaleOwnerMaterialUploads(
     `SELECT id, oss_key
        FROM owner_material
       WHERE owner_id = $1
-        AND status = 'uploading'
-        AND created_at < $2`,
+        AND ((status = 'uploading' AND created_at < $2) OR deleted_at IS NOT NULL)`,
     [ownerId, staleBefore],
   );
   for (const row of stale.rows) {
@@ -275,10 +275,60 @@ export async function reclaimStaleOwnerMaterialUploads(
     }
     await queryable.query(
       `DELETE FROM owner_material
-        WHERE id = $1 AND status = 'uploading'`,
+        WHERE id = $1 AND (status = 'uploading' OR deleted_at IS NOT NULL)`,
       [row.id],
     );
   }
+}
+
+/**
+ * Delete one of the owner's ready materials.
+ *
+ * The row is marked deleted first: from then on the id no longer resolves
+ * (every read filters `deleted_at`) and it no longer counts against the
+ * owner's quota. Its byte object is removed next and only then the row, the
+ * same pointer-last order the reclaim sweep keeps; a byte deletion that throws
+ * leaves the marked row, whose recorded key {@link reclaimStaleOwnerMaterialUploads}
+ * retries on the owner's next upload. Agent sessions hold their own copy of a
+ * bound upload's bytes, so deleting a library material does not affect them;
+ * binding a deleted id fails as unavailable.
+ *
+ * @returns false when the owner has no such ready material (a missing id, an
+ *   unfinished upload and another owner's material are indistinguishable).
+ */
+export async function deleteOwnerMaterial(
+  queryable: Queryable,
+  ownerId: string,
+  materialId: string,
+  deleteBytes: (ossKey: string) => Promise<void>,
+): Promise<boolean> {
+  const marked = await queryable.query<{ oss_key: string }>(
+    `UPDATE owner_material
+        SET deleted_at = $3
+      WHERE id = $1
+        AND owner_id = $2
+        AND status = 'ready'
+        AND deleted_at IS NULL
+      RETURNING oss_key`,
+    [materialId, ownerId, Date.now()],
+  );
+  const row = marked.rows[0];
+  if (!row) return false;
+  if (row.oss_key !== '') {
+    try {
+      await deleteBytes(row.oss_key);
+    } catch (error) {
+      console.warn(
+        `[owner-materials] byte deletion failed for material ${materialId}; the reclaim sweep retries it`,
+        error,
+      );
+      return true;
+    }
+  }
+  await queryable.query(`DELETE FROM owner_material WHERE id = $1 AND deleted_at IS NOT NULL`, [
+    materialId,
+  ]);
+  return true;
 }
 
 /**

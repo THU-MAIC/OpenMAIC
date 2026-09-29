@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 
 import {
+  deleteOwnerMaterial,
   ensureOwnerMaterialSchema,
+  getReadyOwnerMaterials,
   finalizeOwnerMaterial,
   ownerMaterialQuotaLockKey,
   reclaimStaleOwnerMaterialUploads,
@@ -293,6 +295,92 @@ describe('owner material reservations', () => {
     expect(deleteBytes).not.toHaveBeenCalled();
     expect(await rowById(pool.db, 'mat_fresh')).toMatchObject({ status: 'uploading' });
     expect(await rowById(pool.db, 'mat_old_ready')).toMatchObject({ status: 'ready' });
+  });
+
+  it('deletes an owned ready material: releases quota, then bytes, then the row', async () => {
+    const limits = { maxCount: 1, maxTotalBytes: 1_000 };
+    await insertRawUpload(pool.db, {
+      id: 'mat_ready',
+      ossKey: 'materials/owner-1/mat_ready',
+      status: 'ready',
+    });
+
+    const deleteBytes = vi.fn(async () => {
+      // The id stops resolving before the bytes go, and the row (the pointer)
+      // outlives the byte deletion.
+      expect(
+        await getReadyOwnerMaterials(pool as unknown as ConnectableQueryable, 'owner-1', [
+          'mat_ready',
+        ]),
+      ).toEqual([]);
+      expect(await rowById(pool.db, 'mat_ready')).not.toBeNull();
+    });
+    await expect(
+      deleteOwnerMaterial(
+        pool as unknown as ConnectableQueryable,
+        'owner-1',
+        'mat_ready',
+        deleteBytes,
+      ),
+    ).resolves.toBe(true);
+
+    expect(deleteBytes).toHaveBeenCalledWith('materials/owner-1/mat_ready');
+    expect(await rowById(pool.db, 'mat_ready')).toBeNull();
+    // The quota slot is free again.
+    await expect(
+      registerOwnerMaterial(pool as unknown as ConnectableQueryable, input(), limits),
+    ).resolves.toMatchObject({ id: 'mat_1' });
+  });
+
+  it('refuses foreign, unknown and unfinished materials alike', async () => {
+    await insertRawUpload(pool.db, {
+      id: 'mat_other',
+      ownerId: 'owner-2',
+      ossKey: 'materials/owner-2/mat_other',
+      status: 'ready',
+    });
+    await insertRawUpload(pool.db, { id: 'mat_uploading', ossKey: 'materials/owner-1/up' });
+    const deleteBytes = vi.fn();
+
+    for (const id of ['mat_other', 'mat_missing', 'mat_uploading']) {
+      await expect(
+        deleteOwnerMaterial(pool as unknown as ConnectableQueryable, 'owner-1', id, deleteBytes),
+      ).resolves.toBe(false);
+    }
+    expect(deleteBytes).not.toHaveBeenCalled();
+    expect(await rowById(pool.db, 'mat_other')).toMatchObject({ status: 'ready' });
+    expect(await rowById(pool.db, 'mat_uploading')).toMatchObject({ status: 'uploading' });
+  });
+
+  it('keeps a deleted row whose byte deletion failed until the reclaim sweep removes it', async () => {
+    const limits = { maxCount: 1, maxTotalBytes: 1_000 };
+    await insertRawUpload(pool.db, {
+      id: 'mat_ready',
+      ossKey: 'materials/owner-1/mat_ready',
+      status: 'ready',
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      deleteOwnerMaterial(pool as unknown as ConnectableQueryable, 'owner-1', 'mat_ready', () =>
+        Promise.reject(new Error('store down')),
+      ),
+    ).resolves.toBe(true);
+    warn.mockRestore();
+    expect(await rowById(pool.db, 'mat_ready')).not.toBeNull();
+    // Deleted already: the quota is released even while the bytes remain.
+    await registerOwnerMaterial(pool as unknown as ConnectableQueryable, input(), limits);
+
+    const deleteBytes = vi.fn().mockResolvedValue(undefined);
+    await reclaimStaleOwnerMaterialUploads(
+      pool as unknown as ConnectableQueryable,
+      'owner-1',
+      deleteBytes,
+    );
+    expect(deleteBytes).toHaveBeenCalledWith('materials/owner-1/mat_ready');
+    expect(await rowById(pool.db, 'mat_ready')).toBeNull();
+    // The fresh reservation is untouched.
+    expect(await rowById(pool.db, 'mat_1')).toMatchObject({ status: 'uploading' });
   });
 
   it('upgrades a table created by the asset-id era schema', async () => {

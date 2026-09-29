@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   reclaimStaleOwnerMaterialUploads: vi.fn(),
   finalizeOwnerMaterial: vi.fn(),
   abandonOwnerMaterial: vi.fn(),
+  deleteOwnerMaterial: vi.fn(),
   byteStore: {
     put: vi.fn(),
     get: vi.fn(),
@@ -61,10 +62,12 @@ vi.mock('@/lib/persistence/owner-materials', async (importOriginal) => {
     reclaimStaleOwnerMaterialUploads: mocks.reclaimStaleOwnerMaterialUploads,
     finalizeOwnerMaterial: mocks.finalizeOwnerMaterial,
     abandonOwnerMaterial: mocks.abandonOwnerMaterial,
+    deleteOwnerMaterial: mocks.deleteOwnerMaterial,
   };
 });
 
 import { GET, POST } from '@/app/api/materials/route';
+import { DELETE } from '@/app/api/materials/[id]/route';
 import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
 
 const SESSION_ID = 'session-1';
@@ -438,4 +441,51 @@ describe('configured material upload limit metadata', () => {
       expect(mocks.byteStore.put).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('DELETE /api/materials/[id]', () => {
+  const MATERIAL_ID = 'mat_00000000000000000000000000';
+  const del = (id = MATERIAL_ID) =>
+    DELETE(new NextRequest(`http://localhost/api/materials/${id}`, { method: 'DELETE' }), {
+      params: Promise.resolve({ id }),
+    });
+
+  it("deletes the owner's material and removes its bytes", async () => {
+    mocks.deleteOwnerMaterial.mockImplementation(
+      async (
+        _pool: unknown,
+        _owner: string,
+        _id: string,
+        deleteBytes: (key: string) => Promise<void>,
+      ) => {
+        await deleteBytes('materials/owner-1/key');
+        return true;
+      },
+    );
+    const response = await del();
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ materialId: MATERIAL_ID, deleted: true });
+    expect(mocks.deleteOwnerMaterial).toHaveBeenCalledWith(
+      mocks.queryPool,
+      'owner-1',
+      MATERIAL_ID,
+      expect.any(Function),
+    );
+    expect(mocks.byteStore.delete).toHaveBeenCalledWith('materials/owner-1/key');
+  });
+
+  it('answers a plain 404 for a material the owner does not have', async () => {
+    mocks.deleteOwnerMaterial.mockResolvedValue(false);
+    const response = await del('mat_foreign');
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe('Not found');
+  });
+
+  it('serves without the agent runtime and 404s without server persistence', async () => {
+    mocks.deleteOwnerMaterial.mockResolvedValue(true);
+    mocks.runtimeConfigured = false;
+    expect((await del()).status).toBe(200);
+    mocks.persistenceConfigured = false;
+    expect((await del()).status).toBe(404);
+  });
 });
