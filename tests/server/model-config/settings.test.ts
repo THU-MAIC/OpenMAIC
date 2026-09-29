@@ -140,6 +140,32 @@ describe('modelSettingsView', () => {
     expect(provider('oc').capabilities.chat?.models).toEqual([]);
   });
 
+  it('neither offers nor accepts a provider the operator switched off', async () => {
+    vi.stubEnv('TTS_OPENAI_ENABLED', 'false');
+    // The switch is read once per module load.
+    vi.resetModules();
+    const { modelSettingsView, applyModelSettingsChange } =
+      await import('@/lib/server/model-config/settings');
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
+      layer: null,
+      defaults: null,
+      notices: [],
+    });
+    const view = modelSettingsView(null);
+    expect(
+      view.presets.find((preset) => preset.id === 'openai-tts')?.capabilities.tts,
+    ).toBeUndefined();
+    const withProvider = await applyModelSettingsChange(null, {
+      kind: 'provider',
+      id: 'voice',
+      preset: 'openai-tts',
+      apiKey: 'sk-k',
+    });
+    await expect(
+      applyModelSettingsChange(withProvider, { kind: 'slots', set: { tts: 'voice' } }),
+    ).rejects.toMatchObject({ code: 'INVALID_ASSIGNMENT' });
+  });
+
   it('flags a key that no longer opens', () => {
     const view = modelSettingsView({
       config: { providers: { mine: { preset: 'openai' } } },

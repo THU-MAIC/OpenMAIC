@@ -40,6 +40,15 @@ const FORCE_OFF_SECTION = {
   webSearch: 'webSearch',
 } as const;
 
+/**
+ * Whether the operator switched this provider off for the capability (the
+ * legacy `<CAP>_<VENDOR>_ENABLED=false` switches), whoever assigns it.
+ */
+export function isForceDisabled(capability: string, registryId: string): boolean {
+  const section = FORCE_OFF_SECTION[capability as keyof typeof FORCE_OFF_SECTION];
+  return section !== undefined && isServerProviderDisabled(section, registryId);
+}
+
 /** A workspace provider tried to reach a media capability at its own endpoint. */
 export class WorkspaceEndpointError extends Error {
   constructor(message: string) {
@@ -105,8 +114,7 @@ async function fromTarget(
 ): Promise<MediaConnection> {
   // While the legacy <CAP>_<VENDOR>_ENABLED=false switches are in effect, a
   // provider the operator switched off stays off whoever assigns it.
-  const section = FORCE_OFF_SECTION[slot as keyof typeof FORCE_OFF_SECTION];
-  if (section && isServerProviderDisabled(section, target.registryId)) {
+  if (isForceDisabled(slot, target.registryId)) {
     throw new SlotDisabledError(slot);
   }
   const managed = target.providerSource !== 'workspace';

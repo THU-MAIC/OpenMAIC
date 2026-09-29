@@ -29,7 +29,7 @@ import {
 } from '@/lib/config/provider-presets';
 import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 
-import { isLocalEndpoint } from './media';
+import { isForceDisabled, isLocalEndpoint } from './media';
 import { checkModelConfigShape, type ModelConfigFile, type SlotAssignment } from './openmaic-yml';
 import {
   resolveSlot,
@@ -192,6 +192,9 @@ function capabilityModels(
   if (!preset) return result;
   for (const capability of Object.keys(preset.capabilities) as SlotCapability[]) {
     if (chatOnly && capability !== 'chat') continue;
+    // A provider the operator switched off for this capability is not offered.
+    const registryId = preset.capabilities[capability]?.registryId;
+    if (registryId && isForceDisabled(capability, registryId)) continue;
     const offered = preset.trustsModelCatalogue === false ? [] : presetModels(preset, capability);
     // A provider's own model list narrows (or names) the chat models it serves.
     const models =
@@ -287,9 +290,19 @@ function effectiveFor(
 ): EffectiveView {
   try {
     const lookup = lookupFromLayers(slot, layers);
-    return effectiveView(
-      lookup.configured.status === 'unassigned' ? lookup.defaults() : lookup.configured,
-    );
+    const resolution =
+      lookup.configured.status === 'unassigned' ? lookup.defaults() : lookup.configured;
+    // The calls refuse a provider the operator switched off (media.ts).
+    if (
+      resolution.status === 'assigned' &&
+      isForceDisabled(getSlot(slot).capability, resolution.registryId)
+    ) {
+      return {
+        status: 'invalid',
+        message: `${resolution.providerId} is switched off by the server`,
+      };
+    }
+    return effectiveView(resolution);
   } catch (error) {
     if (error instanceof SlotResolutionError) return { status: 'invalid', message: error.message };
     throw error;
@@ -512,6 +525,15 @@ export async function applyModelSettingsChange(
   for (const slot of Object.keys(next.slots ?? {})) {
     try {
       const resolution = resolveSlot(slot as SlotId, layers);
+      if (
+        resolution.status === 'assigned' &&
+        isForceDisabled(getSlot(slot as SlotId).capability, resolution.registryId)
+      ) {
+        throw new ModelSettingsError(
+          'INVALID_ASSIGNMENT',
+          `${slot} cannot use ${resolution.providerId}: the server switched it off`,
+        );
+      }
       if (resolution.status === 'assigned' && getSlot(slot as SlotId).capability !== 'chat') {
         for (const target of [resolution, resolution.fallback]) {
           if (target?.providerSource === 'workspace' && target.customBaseUrl) {
