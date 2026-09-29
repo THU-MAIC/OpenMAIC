@@ -50,6 +50,18 @@ python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
 TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
 ```
 
+مع `openmaic.yml` أعلن VoxCPM2 مزودًا وعيّنه لخانة `tts` بدلًا من ذلك؛ المتغير أعلاه هو الشكل القديم:
+
+```yaml title="openmaic.yml"
+providers:
+  voxcpm:
+    preset: voxcpm-tts
+    baseUrl: http://localhost:8000/v1
+
+slots:
+  tts: voxcpm
+```
+
 الإعداد على الخادم يُوزع للمستخدمين؛ إذا كان الموفر مدارًا من الخادم، لا يمكن للعملاء تجاوز هذه الإعدادات.
 
 ## 3. إدارة الأصوات

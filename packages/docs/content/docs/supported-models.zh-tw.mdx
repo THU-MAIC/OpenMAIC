@@ -3,11 +3,42 @@ title: 支援模型
 description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 ---
 
-本頁列出開源版 OpenMAIC 程式碼中內建的 provider registry。內建 provider 可以透過設定、環境變數或 `server-providers.yml` 設定；自訂 OpenAI 相容 provider 請在設定中新增。實際可用性也取決於 provider 帳號、所在地區和伺服器端設定；託管實例也可能透過白名單隱藏部分內建模型。
+本頁列出開源版 OpenMAIC 內建的供應商和模型。在 [`openmaic.yml`](./configuration.mdx) 中，供應商透過 `preset` 指定其中之一；Web 端的模型設定提供同一份目錄。實際可用性也取決於供應商帳號、所在地區和伺服器端設定，供應商的 `models` 清單也可以縮小模型設定中提供的選項。
+
+## 範本
+
+範本（preset）是內建的供應商樣板：哪家廠商、哪個端點，以及一個帳號涵蓋哪些能力。`openmaic.yml` 或模型設定中的每個供應商都要指定一個範本。
+
+**單一能力範本**使用下方各表中的 provider ID，每種能力一個：`openai` 是 OpenAI 對話，OpenAI 的圖像、語音合成和語音辨識分別是 `openai-image`、`openai-tts` 和 `openai-whisper`。有三個 ID 因為已被其他範本占用而與 registry ID 不同：MiniMax 網路搜尋是 `minimax-search`，豆包網路搜尋是 `doubao-search`，Lemonade 圖像生成是 `lemonade-image`。
+
+**Token Plan 範本**用一把 key 涵蓋多種能力，每種能力使用該方案自己的端點。首次使用引導連接這類供應商時，也會為方案推薦了模型的插槽填入模型。
+
+| 範本 | 方案 | 涵蓋能力 |
+| --- | --- | --- |
+| `minimax` | MiniMax | 對話、圖像、影片、TTS、網路搜尋 |
+| `tokendance` | TokenDance | 對話、圖像、影片、TTS、網路搜尋 |
+| `volcengine-ark` | 火山方舟 Agent Plan | 對話、圖像、影片、TTS、網路搜尋 |
+| `kimi-coding-plan` | Kimi 程式設計方案 | 對話 |
+
+`openai-compatible` 用於連接任何 OpenAI 相容的對話服務：需要填寫 `baseUrl`，模型設定中提供的就是它的 `models` 清單。
+
+全部範本 ID：
+
+| 能力 | 範本 |
+| --- | --- |
+| 對話 | `openai`、`azure`、`atlascloud`、`anthropic`、`bedrock`、`google`、`glm`、`qwen`、`deepseek`、`kimi`、`siliconflow`、`doubao`、`openrouter`、`grok`、`tencent-hunyuan`、`xiaomi`、`ollama`、`lemonade`、`openai-compatible`，以及各 Token Plan |
+| TTS | `openai-tts`、`azure-tts`、`glm-tts`、`qwen-tts`、`minimax-tts`、`voxcpm-tts`、`doubao-tts`、`elevenlabs-tts`、`browser-native-tts`、`lemonade-tts` |
+| ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr` |
+| 圖像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
+| 影片 | `seedance`、`kling`、`veo`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
+| 網路搜尋 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`searxng` |
+| 文件解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
+
+`azure`、`openai-compatible`、`searxng` 和 `mineru` 需要 `baseUrl`；`alidocmind` 使用 `credentials`（金鑰對）驗證。自架的 TTS、ASR、圖像、搜尋和文件範本、金鑰對範本以及 Bedrock 只能在 `openmaic.yml` 中設定，請見[設定說明](./configuration.mdx)。
 
 ## LLM 模型
 
-`DEFAULT_MODEL` 或 YAML 中的模型寫法是 `provider:model-id`，例如 `openai:gpt-5.6`、`qwen:qwen3.7-plus`、`ollama:llama3.3`。
+在 `openmaic.yml` 中，對話插槽寫作 `<供應商 ID>:<模型 ID>`，其中供應商 ID 是你在 `providers` 下宣告的 ID。供應商 ID 與範本 ID 相同時，例如 `openai:gpt-5.6`、`qwen:qwen3.7-plus`、`ollama:llama3.3`。
 
 | 供應商          | Provider ID       | 內建模型                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | --------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -93,7 +124,7 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 
 ## Web Search 供應商
 
-Web Search provider 沒有模型選擇器。SearXNG 僅支援伺服器端託管設定；其他 provider 可依各自需求設定 API key 或 Base URL。
+大多數網路搜尋供應商沒有模型選擇器，因此插槽通常只寫供應商 ID（`webSearch: tavily`）。SearXNG 只能在 `openmaic.yml` 中設定；其他供應商依表中要求提供 API key 或 Base URL。MiniMax 和豆包網路搜尋的範本 ID 分別是 `minimax-search` 和 `doubao-search`。
 
 | 供應商       | Provider ID |
 | ------------ | ----------- |

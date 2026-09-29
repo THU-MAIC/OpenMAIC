@@ -1,192 +1,396 @@
 ---
 title: 設定
-description: LLM プロバイダー、メディア生成、ドキュメント解析、TTS、ASR、アクセス制御、機能フラグ。
+description: モデルとプロバイダー（openmaic.yml とモデル設定）、アクセス制御、機能フラグ、その他のサーバーオプション。
 ---
 
-OpenMAIC はサーバー起動時に環境変数を読み込みます。すべて任意項目なので、必要に応じて有効化してください。環境変数の例はリポジトリの [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) を参照してください。組み込みモデル ID は[対応モデル](./supported-models.mdx)にあります。
+OpenMAIC には 3 つの設定ソースがあり、それぞれが 1 つの役割だけを担います。
 
-環境変数のほかに、プロジェクトルートの `server-providers.yml` にコード内で登録済みのサーバー側 provider の設定を書くこともできます。環境変数は YAML の同名設定をフィールド単位で上書きします。カスタム OpenAI 互換 provider は設定画面から追加可能で、任意の環境変数 prefix や未知の YAML provider ID からは登録できません。
+| ソース | 書く人 | 内容 | 反映タイミング |
+| --- | --- | --- | --- |
+| `openmaic.yml` | 運用者 | AI モデルのプロバイダー、スロットの割り当て、ポリシー | 起動時（変更後は再起動が必要） |
+| Web アプリのモデル設定 | ワークスペースのユーザー | `openmaic.yml` が固定していないプロバイダーと割り当て。データベースに保存 | 即時 |
+| 環境変数（`.env.local`、コンテナの Secret） | 運用者 | `openmaic.yml` が参照するシークレットと、その他すべてのサーバーオプション | 起動時 |
 
-## LLM プロバイダー
+`DATABASE_URL` 以外の環境変数はすべて任意です（[デプロイ](./deployment.mdx)を参照）。すべての環境変数は [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) に、モデル設定のひな形は [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) に、プリセットとモデル ID は[対応モデル](./supported-models.mdx)にあります。
 
-クラウドプロバイダーは通常、API key、base URL、モデル一覧の3つの環境変数を使います。API key は必須の場合が多く、base URL とモデル一覧は任意です。Azure OpenAI はリソース endpoint の設定が必要で、Ollama と Lemonade は API key 不要です。
+以前のリリースでは、モデルはプロバイダー環境変数、`server-providers.yml`、`DEFAULT_MODEL`、`MODEL_ROUTES` でしか設定できませんでした。`MODEL_ROUTES` を除き、これらは現在も動作しますが非推奨です。[旧設定からの移行](#旧設定からの移行)を参照してください。
+
+## モデルとプロバイダー
+
+### 基本概念
+
+- **プロバイダー（provider）**：サーバーが呼び出せる 1 つのアカウント。たとえば OpenAI のキー、MiniMax の Token Plan、セルフホストの OpenAI 互換サーバーなど。各プロバイダーには自分で決める ID と、どのベンダーでどの機能をカバーするかを示す**プリセット（preset）**があります。
+- **スロット（slot）**：製品の中で AI を使う箇所。たとえばコースのアウトライン、スライドの内容、音声合成、Web 検索など。スロットは機能ごとに 1 本の木を構成し、割り当てのないスロットは親スロットに従います。
+- **割り当て（assignment）**：スロットが使うプロバイダーとモデル（`provider:model`）。呼び出しパラメーターとフォールバックモデルを付けることもでき、`null` でスロットを無効にできます。
+
+機能が使えるかどうかは、そのスロットが割り当てに解決されるかどうかだけで決まります。別のオン／オフスイッチはありません。
+
+### openmaic.yml
+
+サーバーは起動ディレクトリ（リポジトリのルート。Docker イメージでは `/app`）から `openmaic.yml` を読み込みます。別のパスを使うには `OPENMAIC_CONFIG` を設定します。相対パスは同じディレクトリを基準に解決され、この場合ファイルは必ず存在しなければなりません。ファイルがない場合、サーバーは Web アプリの設定と、まだ設定されている[旧来の変数](#旧設定からの移行)を使います。
+
+ファイルは起動時に一度だけ読み込まれるため、変更後はサーバーを再起動してください。サーバーは起動前にファイル全体を検証します。未設定の `${VAR}`、不明なプリセットやスロット、宣言されていないプロバイダーへの参照、スロットの機能を提供しないプロバイダーがあるとサーバーは起動せず、問題ごとにその場所が表示されます。
+
+```text
+[boot] Invalid server configuration; the server will not start: Invalid model configuration in /app/openmaic.yml:
+  - providers.openai.apiKey: environment variable OPENAI_API_KEY is not set
+  - slots.course.outlines: unknown slot
+```
+
+シークレットはファイルに直接書かず、`${VAR}` で参照して環境変数に設定してください。環境変数から来た値はこれらのメッセージに表示されません。
+
+### 完全な例
+
+```yaml title="openmaic.yml"
+providers:
+  # <プロバイダー ID>：小文字、数字、ハイフン
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}      # 起動時に環境変数から読み込む
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+  openai-image:                    # 同じキーを画像生成に使う
+    preset: openai-image
+    apiKey: ${OPENAI_API_KEY}
+  minimax:                         # Token Plan：チャット、画像、動画、TTS、検索
+    preset: minimax
+    apiKey: ${MINIMAX_API_KEY}
+  tavily:
+    preset: tavily
+    apiKey: ${TAVILY_API_KEY}
+  local:                           # 任意の OpenAI 互換サーバー
+    preset: openai-compatible
+    baseUrl: http://ollama:11434/v1
+    models: [qwen3:8b]
+
+slots:
+  llm: openai:gpt-5.5              # 以下のすべてのチャットスロットの既定値
+  course.outline:
+    model: anthropic:claude-sonnet-4-6
+    fallback: openai:gpt-5.4-mini  # 再試行可能な失敗時に一度だけ使う
+  course.content.slide:
+    model: minimax:MiniMax-M3
+    thinking: { enabled: false }
+    fallback: minimax:MiniMax-M2.7
+  classroom: local:qwen3:8b        # モデル ID にコロンを含めてよい
+  agent:
+    model: openai:gpt-5.5          # ツール呼び出しが必要
+    api: openai-completions
+  tts: minimax:speech-2.8-turbo
+  image: openai-image:gpt-image-2
+  webSearch: tavily                # プロバイダーのみ：その既定モデル
+  video: null                      # 無効化し、無効のままロック
+
+policy:
+  allowWorkspaceProviders: false   # ユーザーは独自のプロバイダーを追加できない
+```
+
+このファイルでは、記載したスロットはすべてのユーザーに対して固定されます。記載していないチャットスロット（例：`course.agents`）は親（`llm`）に従い、記載していない機能のルート（例：`asr` や `document`）は未設定のままです。ユーザーはどちらもモデル設定で、宣言済みのプロバイダーの中から割り当てられます。
+
+### プロバイダー
+
+`providers` の各エントリが 1 つのプロバイダーを宣言します。キーがその ID で、スロットからの参照に使います。1〜63 文字の小文字・数字・ハイフンで、先頭は英字か数字です。
+
+| フィールド | 必須 | 意味 |
+| --- | --- | --- |
+| `preset` | はい | 使用する組み込みプリセット。[対応モデル → プリセット](./supported-models.mdx#プリセット)を参照。 |
+| `apiKey` | 通常は必要 | API キー。キー不要のサービス（ローカルサーバー、Brave、SearXNG、unpdf）では省略します。 |
+| `baseUrl` | 一部のプリセット | プリセット既定のエンドポイントの代わりに呼ぶ URL。`openai-compatible`、`azure`、`searxng`、`mineru` では必須です。 |
+| `models` | いいえ | このプロバイダーがチャット用に提供するモデル ID。モデル設定に表示される一覧です。`openai-compatible` ではこれがモデル設定の唯一の一覧です。`slots` に書けるモデルを制限するものではありません。 |
+| `proxy` | いいえ | このプロバイダーへのリクエストに使う HTTP プロキシの URL。 |
+| `credentials` | 一部のプリセット | 単一のキーを使わないサービス用のキーペア。AliDocMind は `accessKeyId` と `accessKeySecret` を使います。 |
+
+ほとんどのプリセットは組み込みレジストリに対応し、1 つの機能だけをカバーします。`openai` プリセットはチャットのみで、OpenAI の画像・音声合成・文字起こしはそれぞれ `openai-image`、`openai-tts`、`openai-whisper` プリセットです。機能ごとにプロバイダーを 1 つ宣言し、1 つのキーで複数の機能を使う場合は同じ `${VAR}` を参照してください。**Token Plan プリセット**（`minimax`、`tokendance`、`volcengine-ark`、`kimi-coding-plan`）は 1 つのキーで複数の機能をカバーし、各機能はプラン独自のエンドポイントを使います。プロバイダーに設定した `baseUrl` は、そのプロバイダーがカバーするすべての機能のエンドポイントを置き換えるため、Token Plan に `baseUrl` を設定するのは全機能が一緒に移る場合だけにしてください。
+
+Amazon Bedrock（`preset: bedrock`）はサーバーの AWS 認証情報チェーン（環境変数、プロファイル、ロール）でリクエストに署名し、リージョンは `BEDROCK_REGION`、`AWS_REGION`、`AWS_DEFAULT_REGION` から読み取ります。`apiKey` は任意のベアラートークンです。
+
+### スロット
+
+| スロット | 機能 | 親 | 用途 |
+| --- | --- | --- | --- |
+| `llm` | chat | — | 既定のチャットモデル。以下のどのスロットにも該当しないチャット呼び出しすべて（ブラウザーを使わない `/api/generate-classroom` API のうち専用スロットのないステップを含む） |
+| `course.research` | chat | `llm` | コース調査時の Web 検索クエリの書き換え |
+| `course.outline` | chat | `llm` | シーンのアウトライン |
+| `course.agents` | chat | `llm` | 教師とクラスメイトのエージェントのプロフィール |
+| `course.content` | chat | `llm` | シーンの内容（専用スロットのないシーンタイプ） |
+| `course.content.slide` | chat | `course.content` | スライドシーン |
+| `course.content.quiz` | chat | `course.content` | クイズシーン |
+| `course.content.interactive` | chat | `course.content` | インタラクティブシーン |
+| `course.content.pbl` | chat | `course.content` | プロジェクト型学習（PBL）シーン |
+| `course.actions` | chat | `llm` | シーンのアクション（各シーンでエージェントが話す内容と行う動作） |
+| `classroom` | chat | `llm` | 授業中のチャット、クイズの採点、PBL ランタイム |
+| `agent` | chat | `llm` | Pro ワークベンチのエージェント。**ツール呼び出しが必要。** `api` と `contextWindow` も指定可能 |
+| `agent.title` | chat | `agent` | Pro セッションのタイトル。`openmaic.yml` でのみ設定でき、モデル設定には表示されません |
+| `tts` | tts | — | 音声合成 |
+| `asr` | asr | — | 音声認識（音声入力、音声・動画の文字起こし） |
+| `image` | image | — | 画像生成 |
+| `video` | video | — | 動画生成 |
+| `webSearch` | webSearch | — | Web 検索 |
+| `document` | document | — | ドキュメント解析サービス（MinerU、MinerU Cloud、AliDocMind）。組み込みの PDF テキスト抽出にはサービスは不要です |
+
+スロットの解決方法：
+
+- 呼び出し元のスロットから機能のルートへ向かって上にたどり、最初に見つかった割り当てが使われます。つまり親の割り当てがそのサブツリー全体の既定値になり、親を変えると自分の割り当てを持たない子もすべて変わります。
+- 各スロットでは、`openmaic.yml` がワークスペースのモデル設定より先に参照されます。
+- `null` はそこで探索を止めます。そのスロットと、その下で自分の割り当てを持たないスロットはすべて無効になります。
+- ルートまで割り当てがなければ、その機能は未設定です。呼び出しはスロット名を示すエラーで失敗し、どのベンダーにもフォールバックしません。
+- 要件（requirement）はそれを宣言したスロットに属し、割り当てか継承かにかかわらず、そのスロットが解決したモデルに対してチェックされます。`agent` はツール呼び出しを必要とし、組み込みカタログがそのモデルは非対応だとしている場合、エージェントは妥協せずに実行を拒否します。カタログにないモデルは許可されます。`agent.title` には要件がないので、小さいモデルを使えます。
+
+### 割り当て
+
+割り当ての書き方は 4 通りです。
+
+```yaml
+slots:
+  llm: openai:gpt-5.5            # プロバイダー:モデル
+  webSearch: tavily              # プロバイダーのみ：その既定モデル
+  course.outline:                # パラメーター付きのオブジェクト
+    model: openai:gpt-5.5
+    fallback: anthropic:claude-sonnet-4-6
+    thinking: { effort: low }
+  video: null                    # 無効
+```
+
+オブジェクト形式で使えるフィールド：
+
+| フィールド | 意味 |
+| --- | --- |
+| `model` | 必須。`プロバイダー:モデル`。チャット以外のスロットでは `プロバイダー` のみも可。 |
+| `fallback` | 一度だけ再試行するモデル（同じ書式）。[フォールバック](#フォールバック)を参照。 |
+| `thinking` | チャットモデルの推論パラメーター：`enabled`（true/false）、`mode`（`default`、`disabled`、`enabled`、`auto`）、`effort`（`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`）、`level`（`minimal`、`low`、`medium`、`high`）、`budgetTokens`、`excludeReasoningOutput`。各プロバイダーのアダプターは API が対応する部分だけを適用します。 |
+| `api` | `agent` のみ：転送方式。`openai-completions`（既定）または `openai-responses`。 |
+| `contextWindow` | `agent` のみ：コンテキスト圧縮で想定するウィンドウサイズ。カタログの値より小さくしたい場合に使います。 |
+
+`agent` スロットでは `thinking.effort` を設定できません。ツール呼び出しの転送方式では推論強度と関数ツールを併用できないためです。
+
+### プロバイダーのみの参照
+
+`:model` のない参照は、そのプロバイダーの既定モデルを意味します。Token Plan がその機能に推奨するモデル、なければ組み込みレジストリの既定モデルです。検索やドキュメントのサービスはほとんど選べるモデルがないため、`webSearch: tavily` や `document: mineru-cloud` と書くのが普通です。チャットスロットには必ずモデルを書き、`llm: openai` は起動時に拒否されます。
+
+### フォールバック
+
+主モデルの呼び出しが自身の再試行の後も再試行可能な失敗で終わった場合、スロットの `fallback` で一度だけ再試行します。再試行可能な失敗とは、SDK が一時的と判断したエラー、タイムアウト、ネットワークエラー、クォータ超過（429）、容量不足（503）、または空の出力です。コンテンツ安全性による拒否やその他の 4xx エラーではフォールバックしません。フォールバックは通常の呼び出しとストリーミング呼び出しの両方に適用され、スロットの `thinking` パラメーターを使います。
+
+フォールバックは割り当ての一部であり、割り当てと一緒に継承されます。自分の割り当てを持たない `course.content.slide` は、`course.content` のモデルとフォールバックを使います。要件のあるスロットは、要件を満たさないフォールバックでは再試行しません。
+
+### 機能を無効にする
+
+そのスロットに `null` を書きます。`video: null` はすべてのワークスペースで動画生成を無効にし、無効のままロックします。`course.content.pbl: null` は PBL シーンの生成だけを無効にし、`course.content` の残りは通常どおり動きます。無効なスロットへの呼び出しは即座に失敗し、メディア系の API は別のベンダーを選ぶ代わりに `403` を返します。
+
+### ロックとモデル設定
+
+`openmaic.yml` の `slots` に書いたものはすべて**ロック**されます。モデル設定ではデプロイで設定済みとして表示され、変更できません。ロックされるのは書いたスロットだけです。ワークスペースはロックされたスロットの子に割り当てることができ、その子のサブツリーではロックされた値が上書きされます。サブツリー全体を固定するには、各スロットを書いてください。
+
+モデル設定（Web アプリの **設定 → モデル**）は、現在のワークスペースについて同じ木を読み書きします。
+
+- **コースモデルマップ**：各スロットはカードで、実際に使われるモデル、その出所（デプロイ、ワークスペース、またはどの親から継承したか）、ロックの有無を表示します。モデルはカード上で直接編集します。`openmaic.yml` に書かれたスロットはここでは読み取り専用です。
+- **プロバイダー**：ワークスペースが使えるプロバイダー。`openmaic.yml` のプロバイダーは読み取り専用で表示され、キーに関する情報は一切表示されません。ワークスペースが追加したプロバイダーは編集でき、キーは書き込み専用で、`…abcd` のようなマスクだけが表示されます。
+- **サービスの接続**：チャットモデルがまだ設定されていない場合、初回セットアップがプロバイダーを追加し、そのプリセットが推奨するモデルをまだ割り当てのないスロットに設定します。その後は通常のプロバイダーです。
+
+以前のバージョンでブラウザーに保存されていたプロバイダー設定（プロバイダー、キー、選択したモデル）は、ワークスペースに一度だけインポートされます。ワークスペースに既にあるものと `openmaic.yml` がロックしたスロットはそのまま残ります。ブラウザーのステージ別モデルはインポートされないため、モデルマップで設定し直してください。
+
+ワークスペースとは[永続化のドキュメント](./deployment.mdx)でいうオーナー（owner）です。既定の Docker Compose 構成（シングルユーザーモード）ではワークスペースは 1 つで、マルチユーザー構成ではサインインした各アカウントが自分のワークスペースを持ちます。
+
+### ポリシー
+
+```yaml
+policy:
+  allowWorkspaceProviders: false
+```
+
+`allowWorkspaceProviders`（既定値 `true`）は、ワークスペースが独自のプロバイダーを追加できるかどうかを決めます。`false` の場合、ユーザーは `openmaic.yml` が宣言したプロバイダーの中から、ファイルが固定していないスロットについてのみ選択できます。すべての利用料を負担するマルチユーザー構成では、通常これを設定し、固定したいスロットをロックします。
+
+### シークレットと OPENMAIC_SECRET_KEY
+
+- `openmaic.yml` のキーは `${VAR}` で環境変数から読み込まれ、データベースに保存されることもブラウザーに送られることもありません。
+- ワークスペースがモデル設定で入力したキーはデータベースに保存され、インスタンスシークレット `OPENMAIC_SECRET_KEY` を使って AES-256-GCM で暗号化されます。
+- `OPENMAIC_SECRET_KEY` が未設定の場合、サーバーは初回使用時に `data/instance-secret.key`（Docker Compose では `openmaic-data` ボリューム内）にランダムなシークレットを作成し、以降それを使います。
+
+シークレットはデータベースのバックアップと一緒に保管してください。失われたり変更されたりしたシークレットで保存されたキーは読み取れず、再入力が必要です（モデル設定に表示されます）。複数のインスタンスが同じデータベースを共有する場合や、Vercel のように永続的なデータディレクトリがないホストでは、`OPENMAIC_SECRET_KEY` を明示的に設定してください。任意の文字列を使えます（例：`openssl rand -base64 32` の出力）。
+
+```bash
+OPENMAIC_SECRET_KEY=...        # モデル設定に保存されるキー用のインスタンスシークレット
+OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 任意：openmaic.yml の別のパス
+```
+
+### ワークスペースが追加できるもの
+
+`openmaic.yml` のプロバイダーはスキーマが許すものなら何でも構いません。ワークスペースがモデル設定で追加するプロバイダーは、エンドポイントとキーを Web アプリのユーザーが入力するため、より制限されます。
+
+- Amazon Bedrock は提供されません。サーバー自身の AWS 認証情報で署名してしまうためです。
+- `proxy` とキーペア（`credentials`）は使えません。AliDocMind などキーペアで認証するプリセットはデプロイ専用です。
+- 独自の `baseUrl` はチャットを提供するプリセットでのみ使え、それを持つプロバイダーはチャットスロット専用になります。URL には認証情報、クエリ文字列、フラグメントを含められず、サーバーが `ALLOW_LOCAL_NETWORKS=true` を設定していない限り公開アドレスに解決される必要があります。このエンドポイントへのリクエストはリダイレクトに従いません。
+- ローカルのモデルサーバー（Ollama、Lemonade）は、プリセット既定の `localhost` ではなく自分のエンドポイントを指定する必要があります。
+- セルフホストのメディア・検索・ドキュメントサービス（VoxCPM2、FunASR、Lemonade の音声と画像、ComfyUI、SearXNG、セルフホストの MinerU）はサーバー自身のネットワーク上で動くため、デプロイ専用です。
+- 運用者が旧来の `<CAP>_<VENDOR>_ENABLED=false` 変数で無効にしたプロバイダーは提供されません。
+- ワークスペースは `openmaic.yml` が既に宣言しているプロバイダー ID を宣言できません。
+
+ユーザーに内部サービスを使わせたい場合は、そのプロバイダーを `openmaic.yml` で宣言してください。
+
+### API クライアントと非推奨のリクエストフィールド
+
+生成リクエストでキーやモデルの選択を送る必要はなくなりました。`/api/generate-classroom` のようなブラウザーを使わない API 呼び出しも、呼び出し元のワークスペースについて Web アプリと同じスロットで解決されます。
+
+旧来のリクエストヘッダー `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`、および音声・検索・ドキュメント API の対応するボディフィールドは非推奨です。これらは、影響するスロットに `openmaic.yml` にもワークスペースにも割り当てがない間だけ有効です。割り当てがあれば設定が優先され、`null` のスロットはリクエストの内容にかかわらず拒否されます。リクエストが初めてこれらを使ったとき、サーバーは警告をログに記録します。上記のモデル設定のリリースから 2 マイナーバージョン後に削除される予定です。
+
+### 旧設定からの移行
+
+`openmaic.yml` がない場合、サーバーは起動時に旧設定を変換し、非推奨の通知と、変換できなかった項目ごとの通知をログに出します。
+
+| 旧設定 | 変換後 |
+| --- | --- |
+| プロバイダー変数（`OPENAI_API_KEY`、`TTS_MINIMAX_API_KEY` など）と `server-providers.yml` | デプロイのプロバイダー（モデル設定では読み取り専用）。プロバイダー ID はプリセット ID で、Web 検索の MiniMax（`minimax-search`）、Web 検索の Doubao（`doubao-search`）、Lemonade の画像（`lemonade-image`）を除き旧来のプロバイダー ID と同じです |
+| `<PREFIX>_MODELS` | プロバイダーの `models` |
+| `DEFAULT_MODEL` | `llm` の割り当て。ワークスペースが上書きできる既定値として扱われます（ロックされません）。`agent` スロットはこれまでどおり無効のままです |
+| `MODEL_FALLBACK` | `DEFAULT_MODEL` のフォールバック。`DEFAULT_MODEL` がない場合は通知付きで破棄されます |
+| 最初に設定された TTS、ASR、画像、動画、ドキュメントのプロバイダーと、旧来の優先順で選ばれた Web 検索 | その機能の既定の割り当て（画像プロバイダーは `DEFAULT_IMAGE_PROVIDER` で指定） |
+| `MODEL_ROUTES` | **変換されません。** サーバーは起動を拒否します（後述） |
+| `<CAP>_<VENDOR>_ENABLED=false` | 引き続き有効。誰が割り当てても、そのプロバイダーは無効のままです |
+
+`openmaic.yml` がある場合、プロバイダー変数、`server-providers.yml`、`DEFAULT_MODEL`、`MODEL_FALLBACK`、`MODEL_ROUTES` はモデルの解決に使われず、その旨が通知されます。`<CAP>_<VENDOR>_ENABLED=false` は引き続き適用されます。機能を無効にするには、代わりにスロットを `null` にしてください。
+
+**環境変数。** 移行前：
 
 ```bash
 OPENAI_API_KEY=sk-...
-OPENAI_BASE_URL=                # 任意の base URL 上書き
-OPENAI_MODELS=                  # 任意の許可モデル一覧（カンマ区切り）
+ANTHROPIC_API_KEY=sk-ant-...
+DEFAULT_MODEL=openai:gpt-5.5
+MODEL_FALLBACK=anthropic:claude-sonnet-4-6
+TTS_MINIMAX_API_KEY=...
+TAVILY_API_KEY=tvly-...
 ```
 
-対応している provider prefix:
+移行後（キーは環境変数に残します）：
 
-| Prefix             | プロバイダー                                     |
-| ------------------ | ------------------------------------------------ |
-| `OPENAI_`          | OpenAI                                           |
-| `AZURE_OPENAI_`    | Azure OpenAI                                     |
-| `ANTHROPIC_`       | Anthropic                                        |
-| `GOOGLE_`          | Google Gemini                                    |
-| `DEEPSEEK_`        | DeepSeek                                         |
-| `QWEN_`            | Alibaba Qwen                                     |
-| `KIMI_`            | Moonshot Kimi                                    |
-| `MINIMAX_`         | MiniMax（既定では Anthropic 互換エンドポイント） |
-| `GLM_`             | Zhipu GLM                                        |
-| `SILICONFLOW_`     | SiliconFlow                                      |
-| `DOUBAO_`          | Doubao（ByteDance）                              |
-| `OPENROUTER_`      | OpenRouter                                       |
-| `GROK_`            | xAI Grok                                         |
-| `TENCENT_`         | Tencent Hunyuan                                  |
-| `TENCENT_HUNYUAN_` | Tencent Hunyuan（別名）                          |
-| `XIAOMI_`          | Xiaomi MiMo                                      |
-| `MIMO_`            | Xiaomi MiMo（別名）                              |
-| `OLLAMA_`          | Ollama（ローカル）                               |
-| `LEMONADE_`        | Lemonade（ローカル）                             |
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+  minimax-tts:
+    preset: minimax-tts
+    apiKey: ${TTS_MINIMAX_API_KEY}
+  tavily:
+    preset: tavily
+    apiKey: ${TAVILY_API_KEY}
 
-Azure OpenAI は deployment name をモデル ID として使います：
+slots:
+  llm:
+    model: openai:gpt-5.5
+    fallback: anthropic:claude-sonnet-4-6
+  tts: minimax-tts
+  webSearch: tavily
+```
+
+その後 `DEFAULT_MODEL` と `MODEL_FALLBACK` を削除します。プロバイダー変数は `${VAR}` 参照の元として残して構いません。変換された `DEFAULT_MODEL` と異なり、ここに書いた `llm` はロックされます。ワークスペースに選ばせたい場合は `slots` に書かないでください。また変換結果と異なり、`agent` は `llm` に従うようになります。Pro エージェントを無効のままにするには `agent: null` と書いてください。
+
+**server-providers.yml。** 移行前：
+
+```yaml title="server-providers.yml"
+providers:
+  azure:
+    apiKey: ...
+    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
+    models: [my-deployment]
+pdf:
+  alidocmind:
+    accessKeyId: ...
+    accessKeySecret: ...
+web-search:
+  searxng:
+    baseUrl: http://searxng:8080
+```
+
+移行後：
+
+```yaml title="openmaic.yml"
+providers:
+  azure:
+    preset: azure
+    apiKey: ${AZURE_OPENAI_API_KEY}
+    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
+    models: [my-deployment]
+  alidocmind:
+    preset: alidocmind
+    credentials:
+      accessKeyId: ${ALIDOCMIND_ACCESS_KEY_ID}
+      accessKeySecret: ${ALIDOCMIND_ACCESS_KEY_SECRET}
+  searxng:
+    preset: searxng
+    baseUrl: http://searxng:8080
+
+slots:
+  llm: azure:my-deployment
+  document: alidocmind
+  webSearch: searxng
+```
+
+`server-providers.yml` の各セクションは、対応するプリセットのプロバイダーになります（`providers` → チャットのプリセット、`tts`、`asr`、`pdf` → ドキュメント、`image`、`video`、`web-search`）。`accessKeyId`／`accessKeySecret` は `credentials` の下に移します。
+
+**MODEL_ROUTES。** `openmaic.yml` なしで `MODEL_ROUTES` を設定したサーバーは起動しません。
+
+```text
+MODEL_ROUTES does not carry over to the model configuration: write the per-stage models as slots in openmaic.yml (or the file named by OPENMAIC_CONFIG) and remove MODEL_ROUTES
+```
+
+ステージ別のルートはスロットと 1 対 1 に対応しないため、変換されません。各ルートを、そのステージが属するスロットとして書き直してください。
+
+| `MODEL_ROUTES` のステージ | スロット |
+| --- | --- |
+| `web-search-query-rewrite` | `course.research` |
+| `scene-outlines-stream` | `course.outline` |
+| `agent-profiles` | `course.agents` |
+| `scene-content` | `course.content` |
+| `scene-content:slide`、`:quiz`、`:interactive`、`:pbl` | `course.content.slide`、`.quiz`、`.interactive`、`.pbl` |
+| `scene-actions` | `course.actions` |
+| `chat-adapter`、`quiz-grade`、`pbl-v2-runtime` とその `:instructor`、`:open-task`、`:evaluate`、`:simulator` | `classroom` |
+| `generate-classroom` | `llm` |
+| `maic-agent-driver` | `agent` |
+| `conversation-title` | `agent.title` |
+
+複数のステージが 1 つのスロットを共有する場合は、それらが使うべき 1 つのモデルをスロットに指定します。ルートの `thinking` はスロットの `thinking` に、`maic-agent-driver` ルートの `api` と `contextWindow` は `agent` スロットに移します。移行前：
 
 ```bash
-AZURE_OPENAI_API_KEY=...
-AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
-AZURE_OPENAI_MODELS=your-deployment-name
+DEFAULT_MODEL=openai:gpt-5.5
+MODEL_ROUTES='{"scene-outlines-stream":"anthropic:claude-sonnet-4-6","scene-content:slide":{"model":"openai:gpt-5.4","thinking":{"effort":"low"}},"maic-agent-driver":{"model":"openai:gpt-5.5","api":"openai-completions"}}'
 ```
 
-他の OpenAI 互換 LLM サービスに接続する場合は、**設定 → モデルプロバイダー** からカスタム provider を追加し、対応するプロトコルタイプを選択してください。
+移行後：
 
-## ローカルモデル（Ollama と Lemonade）
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
 
-Ollama と Lemonade は API key 不要です。ローカルサービスの base URL はサーバー側設定に書き、SSRF チェックを通過させます。
-
-```bash
-OLLAMA_BASE_URL=http://localhost:11434/v1
-# LEMONADE_BASE_URL=http://localhost:13305/v1
+slots:
+  llm: openai:gpt-5.5
+  course.outline: anthropic:claude-sonnet-4-6
+  course.content.slide:
+    model: openai:gpt-5.4
+    thinking: { effort: low }
+  agent:
+    model: openai:gpt-5.5
+    api: openai-completions
 ```
 
-利用可能モデルを制限したい場合は、`OLLAMA_MODELS` または `LEMONADE_MODELS` でホワイトリストを指定できます。
+その後 `MODEL_ROUTES`、`DEFAULT_MODEL`、`MODEL_FALLBACK` を削除します。
 
-## TTS プロバイダー
+**Docker。** ファイルをアプリの隣にマウントし、キーは `.env.local` に置きます。
 
-サーバー側 TTS プロバイダーは `TTS_<PROVIDER>_API_KEY` と任意の `TTS_<PROVIDER>_BASE_URL` を使います。
-
-```bash
-# Doubao TTS（Volcengine Seed-TTS、ネイティブ MP3）
-TTS_DOUBAO_API_KEY=appId:accessKey
-TTS_DOUBAO_BASE_URL=       # 任意の上書き
-
-# Qwen TTS
-TTS_QWEN_API_KEY=
-TTS_QWEN_BASE_URL=         # 任意の上書き
-
-# 任意の OpenAI 互換 TTS エンドポイント
-TTS_OPENAI_API_KEY=
-TTS_OPENAI_BASE_URL=
-
-# VoxCPM2（セルフホスト TTS、音声クローン対応。VoxCPM2 ページを参照）
-TTS_VOXCPM_BASE_URL=http://localhost:8000
+```yaml
+services:
+  openmaic:
+    volumes:
+      - ./openmaic.yml:/app/openmaic.yml:ro
 ```
-
-対応している TTS prefix は `TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_ELEVENLABS_`、`TTS_VOXCPM_`、`TTS_LEMONADE_` です。ローカル Lemonade TTS と VoxCPM2 は API key 不要です。ブラウザのネイティブ TTS はサーバー設定不要です。
-
-管理者は `TTS_<PROVIDER>_ENABLED=false` で特定の TTS プロバイダーをサーバー側で強制無効化できます。VoxCPM2（セルフホスト TTS＋音声クローン）については専用の [VoxCPM2](./voxcpm.mdx) ページを参照してください。
-
-カスタム OpenAI 互換 TTS provider は設定画面から追加可能で、Base URL、モデル、音色を指定します。これらはクライアント設定に保存され、任意の `TTS_*` 環境変数や YAML provider ID では登録されません。
-
-## ASR（音声認識）
-
-```bash
-# OpenAI Whisper
-ASR_OPENAI_API_KEY=
-ASR_OPENAI_BASE_URL=       # 任意の上書き
-
-# Qwen ASR
-ASR_QWEN_API_KEY=
-ASR_QWEN_BASE_URL=         # 任意の上書き
-
-# Azure ASR
-ASR_AZURE_API_KEY=
-ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
-
-# FunASR（ローカル、key 不要）
-ASR_FUNASR_BASE_URL=http://localhost:8000/v1
-
-# Lemonade ASR（ローカル、key 不要）
-ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
-```
-
-`funasr-server --device cuda` で OpenAI 互換サービスを起動します。`/v1/audio/transcriptions` で WAV を受け付け、モデル選択から SenseVoiceSmall、Paraformer、Fun-ASR-Nano を利用できます。
-
-ブラウザのネイティブ ASR はサーバー設定不要です。
-
-カスタム OpenAI 互換 ASR provider も設定画面から追加可能で、Base URL、モデル、対応言語を指定します。これらはクライアント設定に保存されます。
-
-## 画像生成プロバイダー
-
-画像生成プロバイダーは `IMAGE_<PROVIDER>_API_KEY` と任意の `IMAGE_<PROVIDER>_BASE_URL` を使います。対応 prefix は以下の通りです：
-
-`IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_`、`IMAGE_LEMONADE_`
-
-Lemonade はローカルサービスで API key 不要です：
-
-```bash
-IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
-```
-
-ComfyUI Image は API key 不要で、デフォルトで `http://localhost:8188` に接続します。設定画面で ComfyUI Base URL を指定し、OpenMAIC の `public/` ディレクトリに API 形式でエクスポートした workflow JSON（`comfyui-*.json` またはファイル名に `workflow` を含む）を置くと自動検出され、選択可能になります。Docker 本番環境ではビルド前に workflow を追加するか、単一の workflow ファイルをコンテナの `/app/public/` にマウントしてください。`comfyui-image` はサーバー管理 provider ではないため、本番環境でホストの ComfyUI に接続する場合は `ALLOW_LOCAL_NETWORKS=true` を設定してください。
-
-## 動画生成プロバイダー
-
-動画生成プロバイダーは `VIDEO_<PROVIDER>_API_KEY` と任意の `VIDEO_<PROVIDER>_BASE_URL` を使います。対応 prefix は：
-
-`VIDEO_SEEDANCE_`、`VIDEO_KLING_`、`VIDEO_VEO_`、`VIDEO_SORA_`、`VIDEO_MINIMAX_`、`VIDEO_GROK_`、`VIDEO_HAPPYHORSE_`
-
-## ドキュメント・メディア解析
-
-教材の具体的なフォーマットは選択したパーサーに依存します。現在はテキスト、PDF、Office 文書、画像、一部の音声・動画形式をサポートし、provider によって対応範囲が異なります。
-
-```bash
-# MinerU 自ホスト
-PDF_MINERU_BASE_URL=http://localhost:8888
-
-# MinerU 自ホストのオプションバックエンド
-PDF_MINERU_BACKEND=pipeline
-
-# MinerU Cloud
-PDF_MINERU_CLOUD_API_KEY=
-PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
-
-# AliDocMind（API key ではなく Alibaba Cloud AccessKey を使用）
-ALIDOCMIND_ACCESS_KEY_ID=
-ALIDOCMIND_ACCESS_KEY_SECRET=
-ALIDOCMIND_BASE_URL=       # 任意の上書き
-```
-
-`unpdf` は OpenMAIC に組み込み済みで、基本的な PDF 解析に使えます。Office 文書、画像、OCR、表、数式、レイアウト解析が必要な教材は MinerU または AliDocMind の互換 provider を選択してください。
-
-AliDocMind のドキュメント解析は PDF、DOCX、PPTX、XLSX、PNG、JPG/JPEG、BMP、GIF に対応します。現在の音声・動画素材は AliDocMind でのみ解析可能で、動画は MP4、MOV、AVI、MKV、WMV、音声は MP3、WAV、AAC に対応し、M4A は非対応です。
-
-## Web 検索
-
-Tavily、Exa、Bocha、Brave、Baidu、SearXNG、MiniMax を設定可能です。
-
-```bash
-TAVILY_API_KEY=
-TAVILY_BASE_URL=           # 任意の上書き
-
-EXA_API_KEY=
-EXA_BASE_URL=https://api.exa.ai  # 任意の上書き
-
-BOCHA_API_KEY=
-BOCHA_BASE_URL=            # 任意の上書き
-
-BAIDU_API_KEY=
-BAIDU_BASE_URL=https://qianfan.baidubce.com  # 任意の上書き
-
-# 自ホスト SearXNG（API key 不要）
-SEARXNG_BASE_URL=
-
-WEB_SEARCH_MINIMAX_API_KEY=
-WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # 任意の上書き
-```
-
-Brave と SearXNG は API key 不要です。フロントエンドでは生成ごとに検索を有効化するトグルが表示されます。Grok の Web 検索は Grok LLM の検索ツール経由で提供され、独立した Web 検索 provider ではありません。
 
 ## ACCESS_CODE — サイト全体のパスワード
 
@@ -197,16 +401,6 @@ ACCESS_CODE=your-secret-code
 ```
 
 十分な長さのランダムな値（16 文字以上）を使用してください。このコードはデプロイを保護する唯一の秘密です。検証に成功すると、署名付きトークンが HTTP-only cookie に 7 日間保存され、有効期限はサーバー側で検証されるため、期限切れ後は再入力が必要です。検証レートの制限は、`x-forwarded-for` / `x-real-ip` を上書きする信頼できるリバースプロキシの背後で `TRUST_PROXY_HEADERS=true` を設定した場合にのみ有効になり、クライアント単位で 60 秒あたり 10 回に制限されます。検証に成功するとそのクライアントのカウントは消去されます。信頼できるプロキシがない場合、リクエストをクライアントに紐付けられないため制限は行われず、コードの長さとランダム性が防御になります。空欄にすると無効になります。
-
-## デフォルトモデルとモデルルーティング
-
-サーバー API がクライアントからモデル指定を受け取らない場合、`DEFAULT_MODEL` でデフォルトモデルを指定します。モデル指定は `provider:model-id` 形式です。例：
-
-```bash
-DEFAULT_MODEL=openai:gpt-5.5
-```
-
-`MODEL_ROUTES` で生成の各フェーズに別モデルを割り当て可能です。未設定フェーズはクライアント指定モデルか `DEFAULT_MODEL` を使います。JSON オブジェクトで、キーがフェーズ名、値がモデル文字列または `model` と `thinking` を含むオブジェクトです。完全なフェーズ一覧と例はリポジトリの [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) を参照してください。
 
 ## 機能フラグ
 
@@ -265,7 +459,194 @@ LOG_FORMAT=pretty
 LLM_THINKING_DISABLED=false
 ```
 
-## YAML 設定ファイルを使う
+## 旧来のプロバイダー環境変数
+
+これらの変数と `server-providers.yml` は以前のリリースの設定方法です。`openmaic.yml` がない場合は引き続き動作しますが（[旧設定からの移行](#旧設定からの移行)を参照）、非推奨であり、モデル設定のリリースから 2 マイナーバージョン後に削除されます。`openmaic.yml` を使う場合は `${VAR}` 参照の元としてのみ使ってください。`DEFAULT_MODEL` と `MODEL_FALLBACK` は移行のセクションで説明しています。`MODEL_ROUTES` はもう読み込まれません。
+
+### LLM プロバイダー
+
+クラウドプロバイダーは通常、API key、base URL、モデル一覧の3つの環境変数を使います。API key は必須の場合が多く、base URL とモデル一覧は任意です。Azure OpenAI はリソース endpoint の設定が必要で、Ollama と Lemonade は API key 不要です。
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=                # 任意の base URL 上書き
+OPENAI_MODELS=                  # 任意の許可モデル一覧（カンマ区切り）
+```
+
+対応している provider prefix:
+
+| Prefix             | プロバイダー                                     |
+| ------------------ | ------------------------------------------------ |
+| `OPENAI_`          | OpenAI                                           |
+| `AZURE_OPENAI_`    | Azure OpenAI                                     |
+| `ANTHROPIC_`       | Anthropic                                        |
+| `GOOGLE_`          | Google Gemini                                    |
+| `DEEPSEEK_`        | DeepSeek                                         |
+| `QWEN_`            | Alibaba Qwen                                     |
+| `KIMI_`            | Moonshot Kimi                                    |
+| `MINIMAX_`         | MiniMax（既定では Anthropic 互換エンドポイント） |
+| `GLM_`             | Zhipu GLM                                        |
+| `SILICONFLOW_`     | SiliconFlow                                      |
+| `DOUBAO_`          | Doubao（ByteDance）                              |
+| `OPENROUTER_`      | OpenRouter                                       |
+| `GROK_`            | xAI Grok                                         |
+| `TENCENT_`         | Tencent Hunyuan                                  |
+| `TENCENT_HUNYUAN_` | Tencent Hunyuan（別名）                          |
+| `XIAOMI_`          | Xiaomi MiMo                                      |
+| `MIMO_`            | Xiaomi MiMo（別名）                              |
+| `OLLAMA_`          | Ollama（ローカル）                               |
+| `LEMONADE_`        | Lemonade（ローカル）                             |
+
+Azure OpenAI は deployment name をモデル ID として使います：
+
+```bash
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
+AZURE_OPENAI_MODELS=your-deployment-name
+```
+
+他の OpenAI 互換 LLM サービスに接続する場合は、**設定 → モデルプロバイダー** からカスタム provider を追加し、対応するプロトコルタイプを選択してください。
+
+### ローカルモデル（Ollama と Lemonade）
+
+Ollama と Lemonade は API key 不要です。ローカルサービスの base URL はサーバー側設定に書き、SSRF チェックを通過させます。
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434/v1
+# LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+利用可能モデルを制限したい場合は、`OLLAMA_MODELS` または `LEMONADE_MODELS` でホワイトリストを指定できます。
+
+### TTS プロバイダー
+
+サーバー側 TTS プロバイダーは `TTS_<PROVIDER>_API_KEY` と任意の `TTS_<PROVIDER>_BASE_URL` を使います。
+
+```bash
+# Doubao TTS（Volcengine Seed-TTS、ネイティブ MP3）
+TTS_DOUBAO_API_KEY=appId:accessKey
+TTS_DOUBAO_BASE_URL=       # 任意の上書き
+
+# Qwen TTS
+TTS_QWEN_API_KEY=
+TTS_QWEN_BASE_URL=         # 任意の上書き
+
+# 任意の OpenAI 互換 TTS エンドポイント
+TTS_OPENAI_API_KEY=
+TTS_OPENAI_BASE_URL=
+
+# VoxCPM2（セルフホスト TTS、音声クローン対応。VoxCPM2 ページを参照）
+TTS_VOXCPM_BASE_URL=http://localhost:8000
+```
+
+対応している TTS prefix は `TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_ELEVENLABS_`、`TTS_VOXCPM_`、`TTS_LEMONADE_` です。ローカル Lemonade TTS と VoxCPM2 は API key 不要です。ブラウザのネイティブ TTS はサーバー設定不要です。
+
+管理者は `TTS_<PROVIDER>_ENABLED=false` で特定の TTS プロバイダーをサーバー側で強制無効化できます。VoxCPM2（セルフホスト TTS＋音声クローン）については専用の [VoxCPM2](./voxcpm.mdx) ページを参照してください。
+
+カスタム OpenAI 互換 TTS provider は設定画面から追加可能で、Base URL、モデル、音色を指定します。これらはクライアント設定に保存され、任意の `TTS_*` 環境変数や YAML provider ID では登録されません。
+
+### ASR（音声認識）
+
+```bash
+# OpenAI Whisper
+ASR_OPENAI_API_KEY=
+ASR_OPENAI_BASE_URL=       # 任意の上書き
+
+# Qwen ASR
+ASR_QWEN_API_KEY=
+ASR_QWEN_BASE_URL=         # 任意の上書き
+
+# Azure ASR
+ASR_AZURE_API_KEY=
+ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
+
+# FunASR（ローカル、key 不要）
+ASR_FUNASR_BASE_URL=http://localhost:8000/v1
+
+# Lemonade ASR（ローカル、key 不要）
+ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+`funasr-server --device cuda` で OpenAI 互換サービスを起動します。`/v1/audio/transcriptions` で WAV を受け付け、モデル選択から SenseVoiceSmall、Paraformer、Fun-ASR-Nano を利用できます。
+
+ブラウザのネイティブ ASR はサーバー設定不要です。
+
+カスタム OpenAI 互換 ASR provider も設定画面から追加可能で、Base URL、モデル、対応言語を指定します。これらはクライアント設定に保存されます。
+
+### 画像生成プロバイダー
+
+画像生成プロバイダーは `IMAGE_<PROVIDER>_API_KEY` と任意の `IMAGE_<PROVIDER>_BASE_URL` を使います。対応 prefix は以下の通りです：
+
+`IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_`、`IMAGE_LEMONADE_`
+
+Lemonade はローカルサービスで API key 不要です：
+
+```bash
+IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+ComfyUI Image は API key 不要で、デフォルトで `http://localhost:8188` に接続します。設定画面で ComfyUI Base URL を指定し、OpenMAIC の `public/` ディレクトリに API 形式でエクスポートした workflow JSON（`comfyui-*.json` またはファイル名に `workflow` を含む）を置くと自動検出され、選択可能になります。Docker 本番環境ではビルド前に workflow を追加するか、単一の workflow ファイルをコンテナの `/app/public/` にマウントしてください。`comfyui-image` はサーバー管理 provider ではないため、本番環境でホストの ComfyUI に接続する場合は `ALLOW_LOCAL_NETWORKS=true` を設定してください。
+
+### 動画生成プロバイダー
+
+動画生成プロバイダーは `VIDEO_<PROVIDER>_API_KEY` と任意の `VIDEO_<PROVIDER>_BASE_URL` を使います。対応 prefix は：
+
+`VIDEO_SEEDANCE_`、`VIDEO_KLING_`、`VIDEO_VEO_`、`VIDEO_SORA_`、`VIDEO_MINIMAX_`、`VIDEO_GROK_`、`VIDEO_HAPPYHORSE_`
+
+### ドキュメント・メディア解析
+
+教材の具体的なフォーマットは選択したパーサーに依存します。現在はテキスト、PDF、Office 文書、画像、一部の音声・動画形式をサポートし、provider によって対応範囲が異なります。
+
+```bash
+# MinerU 自ホスト
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# MinerU 自ホストのオプションバックエンド
+PDF_MINERU_BACKEND=pipeline
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+
+# AliDocMind（API key ではなく Alibaba Cloud AccessKey を使用）
+ALIDOCMIND_ACCESS_KEY_ID=
+ALIDOCMIND_ACCESS_KEY_SECRET=
+ALIDOCMIND_BASE_URL=       # 任意の上書き
+```
+
+`unpdf` は OpenMAIC に組み込み済みで、基本的な PDF 解析に使えます。Office 文書、画像、OCR、表、数式、レイアウト解析が必要な教材は MinerU または AliDocMind の互換 provider を選択してください。
+
+AliDocMind のドキュメント解析は PDF、DOCX、PPTX、XLSX、PNG、JPG/JPEG、BMP、GIF に対応します。現在の音声・動画素材は AliDocMind でのみ解析可能で、動画は MP4、MOV、AVI、MKV、WMV、音声は MP3、WAV、AAC に対応し、M4A は非対応です。
+
+### Web 検索
+
+Tavily、Exa、Bocha、Brave、Baidu、SearXNG、MiniMax を設定可能です。
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # 任意の上書き
+
+EXA_API_KEY=
+EXA_BASE_URL=https://api.exa.ai  # 任意の上書き
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # 任意の上書き
+
+BAIDU_API_KEY=
+BAIDU_BASE_URL=https://qianfan.baidubce.com  # 任意の上書き
+
+# 自ホスト SearXNG（API key 不要）
+SEARXNG_BASE_URL=
+
+WEB_SEARCH_MINIMAX_API_KEY=
+WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # 任意の上書き
+```
+
+Brave と SearXNG は API key 不要です。フロントエンドでは生成ごとに検索を有効化するトグルが表示されます。Grok の Web 検索は Grok LLM の検索ツール経由で提供され、独立した Web 検索 provider ではありません。
+
+### server-providers.yml
+
+`openmaic.yml` に置き換えられ、非推奨です。両方がある場合、モデルの設定には `openmaic.yml` だけが使われます。
 
 環境変数のほかに、コード内で登録済みの provider 設定をプロジェクトルートの `server-providers.yml` に書くこともできます。サーバー起動時に読み込まれ、環境変数のカテゴリに対応した構造です。
 

@@ -41,6 +41,8 @@ ANTHROPIC_API_KEY=sk-ant-...
 OLLAMA_BASE_URL=http://localhost:11434/v1
 ```
 
+これらのプロバイダー変数は旧来の設定方法で、引き続き動作します。新しい方法は `openmaic.yml` です。`openmaic.example.yml` を `openmaic.yml` にコピーし、キーは `.env.local` に置いて `${VAR}` で参照します。アプリの起動後にモデル設定でモデルサービスを接続することもできます。
+
 プロバイダー、画像／動画生成、TTS、ASR、ドキュメント解析、Web 検索、アクセス制御、feature flag の詳細設定は[設定説明](./configuration.mdx)を参照してください。
 
 ## 実行

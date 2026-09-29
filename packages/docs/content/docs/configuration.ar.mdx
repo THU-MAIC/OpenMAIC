@@ -1,192 +1,396 @@
 ---
 title: شرح الإعدادات
-description: موفرو LLM، توليد الوسائط، تحليل المستندات، TTS، ASR، التحكم بالوصول و feature flags.
+description: النماذج والمزودون (openmaic.yml وإعدادات النماذج)، والتحكم في الوصول، ومفاتيح الميزات، وخيارات الخادم الأخرى.
 ---
 
-يقرأ OpenMAIC متغيرات البيئة عند بدء تشغيل الخادم. جميع الإعدادات اختيارية — فعّل ما تحتاجه فقط. مثال متغيرات البيئة موجود في المستودع ضمن [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example). لمعرفات النماذج المدمجة، راجع [النماذج المدعومة](./supported-models.mdx).
+لدى OpenMAIC ثلاثة مصادر للإعدادات، ولكل منها مهمة واحدة:
 
-بجانب متغيرات البيئة، يمكنك أيضًا استخدام ملف `server-providers.yml` في جذر المشروع لتكوين موفري الخادم المسجلين في الكود. متغيرات البيئة تتجاوز حقول YAML المطابقة حقلًا بحقل. لا يمكن تسجيل موفري LLM متوافقين مع OpenAI مخصصين عبر بادئات متغيرات بيئة عشوائية أو معرفات YAML غير معروفة، بل فقط من خلال الإعدادات.
+| المصدر | من يكتبه | ما يحتويه | متى يسري |
+| --- | --- | --- | --- |
+| `openmaic.yml` | المشغّل | المزودون وتعيينات الخانات والسياسة الخاصة بنماذج الذكاء الاصطناعي | عند بدء التشغيل (أعد التشغيل بعد التعديل) |
+| إعدادات النماذج في تطبيق الويب | مستخدمو مساحة العمل | المزودون والتعيينات التي يتركها `openmaic.yml` مفتوحة، وتُحفظ في قاعدة البيانات | فورًا |
+| متغيرات البيئة (`.env.local`، أو Secret الحاوية) | المشغّل | الأسرار التي يشير إليها `openmaic.yml`، وكل خيارات الخادم الأخرى | عند بدء التشغيل |
 
-## موفرو LLM
+كل متغيرات البيئة اختيارية باستثناء `DATABASE_URL` (راجع [النشر](./deployment.mdx)). تجد جميع المتغيرات في [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)، ونقطة بداية لإعدادات النماذج في [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml)، ومعرّفات الإعدادات المسبقة والنماذج في [النماذج المدعومة](./supported-models.mdx).
 
-عادةً ما يستخدم موفرو السحابة ثلاثة متغيرات بيئة: مفتاح API، عنوان URL الأساسي، وقائمة النماذج. مفتاح API عادةً مطلوب، أما العنوان الأساسي وقائمة النماذج فاختياريان. Azure OpenAI يحتاج إلى تكوين نقطة نهاية المورد، بينما Ollama وLemonade لا يحتاجان إلى مفتاح API.
+في الإصدارات السابقة كانت النماذج تُضبط فقط عبر متغيرات بيئة المزودين و`server-providers.yml` و`DEFAULT_MODEL` و`MODEL_ROUTES`. ما زالت هذه الطرق تعمل حاليًا، باستثناء `MODEL_ROUTES`، لكنها مهملة؛ راجع [الانتقال من الإعدادات القديمة](#الانتقال-من-الإعدادات-القديمة).
+
+## النماذج والمزودون
+
+### المفاهيم
+
+- **المزود (provider)**: حساب يستطيع الخادم استدعاءه، مثل مفتاح OpenAI أو Token Plan من MiniMax أو خادم متوافق مع OpenAI تستضيفه بنفسك. لكل مزود معرّف تختاره أنت، و**إعداد مسبق (preset)** يحدد المورّد والقدرات التي يغطيها.
+- **الخانة (slot)**: موضع في المنتج يستخدم الذكاء الاصطناعي، مثل مخطط المقرر أو محتوى الشرائح أو تحويل النص إلى كلام أو البحث على الويب. تشكّل الخانات شجرة لكل قدرة، والخانة التي ليس لها تعيين تتبع الخانة الأم.
+- **التعيين (assignment)**: المزود والنموذج اللذان تستخدمهما الخانة (`provider:model`)، مع معاملات استدعاء ونموذج احتياطي اختياريًا، أو `null` لإيقاف الخانة.
+
+تكون القدرة متاحة فقط عندما تُحل خانتها إلى تعيين. لا توجد مفاتيح تشغيل وإيقاف منفصلة.
+
+### openmaic.yml
+
+يقرأ الخادم `openmaic.yml` من المجلد الذي يبدأ فيه (جذر المستودع؛ `/app` في صورة Docker). لاستخدام مسار آخر اضبط `OPENMAIC_CONFIG`؛ يُحل المسار النسبي انطلاقًا من المجلد نفسه، ويجب عندها أن يكون الملف موجودًا. بدون الملف يستخدم الخادم إعدادات الويب، و[المتغيرات القديمة](#الانتقال-من-الإعدادات-القديمة) ما دامت مضبوطة.
+
+يُقرأ الملف مرة واحدة عند بدء التشغيل: أعد تشغيل الخادم بعد تعديله. يُتحقق من الملف كاملًا قبل بدء الخادم. أي `${VAR}` غير مضبوط، أو إعداد مسبق أو خانة غير معروفين، أو إشارة إلى مزود غير مُعلن، أو مزود لا يقدم قدرة الخانة، يوقف الخادم، وتُعرض كل مشكلة مع موضعها:
+
+```text
+[boot] Invalid server configuration; the server will not start: Invalid model configuration in /app/openmaic.yml:
+  - providers.openai.apiKey: environment variable OPENAI_API_KEY is not set
+  - slots.course.outlines: unknown slot
+```
+
+لا تكتب الأسرار في الملف نفسه: أشر إليها بـ `${VAR}` واضبط المتغير في البيئة. القيم الآتية من المتغيرات لا تُطبع أبدًا في هذه الرسائل.
+
+### مثال كامل
+
+```yaml title="openmaic.yml"
+providers:
+  # <معرّف المزود>: أحرف صغيرة وأرقام وشرطات
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}      # يُقرأ من البيئة عند بدء التشغيل
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+  openai-image:                    # المفتاح نفسه لتوليد الصور
+    preset: openai-image
+    apiKey: ${OPENAI_API_KEY}
+  minimax:                         # Token Plan: محادثة وصور وفيديو وTTS وبحث
+    preset: minimax
+    apiKey: ${MINIMAX_API_KEY}
+  tavily:
+    preset: tavily
+    apiKey: ${TAVILY_API_KEY}
+  local:                           # أي خادم متوافق مع OpenAI
+    preset: openai-compatible
+    baseUrl: http://ollama:11434/v1
+    models: [qwen3:8b]
+
+slots:
+  llm: openai:gpt-5.5              # الافتراضي لكل خانات المحادثة أدناه
+  course.outline:
+    model: anthropic:claude-sonnet-4-6
+    fallback: openai:gpt-5.4-mini  # يُجرَّب مرة واحدة عند فشل قابل لإعادة المحاولة
+  course.content.slide:
+    model: minimax:MiniMax-M3
+    thinking: { enabled: false }
+    fallback: minimax:MiniMax-M2.7
+  classroom: local:qwen3:8b        # قد يحتوي معرّف النموذج على نقطتين
+  agent:
+    model: openai:gpt-5.5          # يحتاج إلى استدعاء الأدوات
+    api: openai-completions
+  tts: minimax:speech-2.8-turbo
+  image: openai-image:gpt-image-2
+  webSearch: tavily                # المزود وحده: نموذجه الافتراضي
+  video: null                      # موقوف ومقفل على الإيقاف
+
+policy:
+  allowWorkspaceProviders: false   # لا يستطيع المستخدمون إضافة مزودين خاصين بهم
+```
+
+مع هذا الملف تكون كل خانة مذكورة ثابتة لجميع المستخدمين. خانة المحادثة غير المذكورة، مثل `course.agents`، تتبع الخانة الأم (`llm`)؛ وجذر القدرة غير المذكور، مثل `asr` أو `document`، يبقى غير مُعد. يستطيع المستخدمون تعيين أي منهما في إعدادات النماذج، مع الاختيار من بين المزودين المعلنين.
+
+### المزودون
+
+كل إدخال تحت `providers` يعلن مزودًا واحدًا. المفتاح هو معرّفه الذي تستخدمه الخانات للإشارة إليه: من 1 إلى 63 حرفًا من الأحرف الصغيرة والأرقام والشرطات، يبدأ بحرف أو رقم.
+
+| الحقل | إلزامي | المعنى |
+| --- | --- | --- |
+| `preset` | نعم | الإعداد المسبق المدمج الذي يستخدمه هذا المزود. راجع [النماذج المدعومة ← الإعدادات المسبقة](./supported-models.mdx#الإعدادات-المسبقة). |
+| `apiKey` | عادةً | مفتاح API. تحذفه الخدمات التي لا تحتاج إلى مفتاح (الخوادم المحلية، Brave، SearXNG، unpdf). |
+| `baseUrl` | لبعض الإعدادات المسبقة | عنوان يُستدعى بدلًا من عنوان الإعداد المسبق. إلزامي لـ `openai-compatible` و`azure` و`searxng` و`mineru`. |
+| `models` | لا | معرّفات نماذج المحادثة التي يقدمها هذا المزود كما تعرضها إعدادات النماذج. بالنسبة إلى `openai-compatible` فهي القائمة الوحيدة في الإعدادات. لا تقيّد ما يمكن كتابته في `slots`. |
+| `proxy` | لا | عنوان وكيل HTTP لطلبات هذا المزود. |
+| `credentials` | لبعض الإعدادات المسبقة | أزواج مفاتيح للخدمات التي لا تستخدم مفتاحًا واحدًا. يستخدم AliDocMind الحقلين `accessKeyId` و`accessKeySecret`. |
+
+تغطي معظم الإعدادات المسبقة قدرة واحدة وفق السجلات المدمجة: الإعداد `openai` للمحادثة فقط، أما صور OpenAI وتحويل النص إلى كلام والتفريغ الصوتي فهي الإعدادات `openai-image` و`openai-tts` و`openai-whisper`. أعلن مزودًا واحدًا لكل قدرة، وأشر إلى `${VAR}` نفسه عندما يغطي مفتاح واحد عدة قدرات. **إعدادات Token Plan المسبقة** (`minimax` و`tokendance` و`volcengine-ark` و`kimi-coding-plan`) تغطي عدة قدرات بمفتاح واحد، كل منها على عنوان الخطة الخاص. يستبدل `baseUrl` على المزود العنوان لكل القدرات التي يغطيها، لذا لا تضع `baseUrl` لـ Token Plan إلا إذا انتقلت كل قدراته معه.
+
+يوقّع Amazon Bedrock (`preset: bedrock`) الطلبات بسلسلة بيانات اعتماد AWS على الخادم (البيئة أو profile أو role)، ويقرأ المنطقة من `BEDROCK_REGION` أو `AWS_REGION` أو `AWS_DEFAULT_REGION`؛ و`apiKey` رمز bearer اختياري.
+
+### الخانات
+
+| الخانة | القدرة | الأم | ما تتحكم فيه |
+| --- | --- | --- | --- |
+| `llm` | chat | — | نموذج المحادثة الافتراضي: كل استدعاء محادثة لا تغطيه خانة أدناه، بما في ذلك خطوات واجهة `/api/generate-classroom` التي تعمل بلا متصفح وليس لها خانة خاصة |
+| `course.research` | chat | `llm` | إعادة صياغة استعلام البحث على الويب أثناء البحث للمقرر |
+| `course.outline` | chat | `llm` | مخططات المشاهد |
+| `course.agents` | chat | `llm` | ملفات تعريف وكلاء المعلم وزملاء الصف |
+| `course.content` | chat | `llm` | محتوى المشاهد لأنواع المشاهد التي ليس لها خانة خاصة |
+| `course.content.slide` | chat | `course.content` | مشاهد الشرائح |
+| `course.content.quiz` | chat | `course.content` | مشاهد الاختبارات |
+| `course.content.interactive` | chat | `course.content` | المشاهد التفاعلية |
+| `course.content.pbl` | chat | `course.content` | مشاهد التعلم القائم على المشاريع (PBL) |
+| `course.actions` | chat | `llm` | إجراءات المشاهد (ما يقوله الوكلاء ويفعلونه في كل مشهد) |
+| `classroom` | chat | `llm` | محادثة الصف وتصحيح الاختبارات وبيئة تشغيل PBL |
+| `agent` | chat | `llm` | وكيل Pro workbench. **يتطلب استدعاء الأدوات.** ويقبل أيضًا `api` و`contextWindow` |
+| `agent.title` | chat | `agent` | عناوين جلسات Pro. تُضبط في `openmaic.yml` فقط ولا تظهر في إعدادات النماذج |
+| `tts` | tts | — | تحويل النص إلى كلام |
+| `asr` | asr | — | التعرف على الكلام (الإدخال الصوتي وتفريغ الصوت والفيديو) |
+| `image` | image | — | توليد الصور |
+| `video` | video | — | توليد الفيديو |
+| `webSearch` | webSearch | — | البحث على الويب |
+| `document` | document | — | خدمة تحليل المستندات (MinerU وMinerU Cloud وAliDocMind). لا يحتاج استخراج نص PDF المدمج إلى خدمة |
+
+كيف تُحل الخانة:
+
+- يبدأ الحل من خانة الاستدعاء ويصعد نحو جذر القدرة، وأول تعيين يُعثر عليه هو الذي يُستخدم. لذلك يكون تعيين الخانة الأم هو الافتراضي لشجرتها الفرعية كلها، وتغيير الأم يغيّر كل خانة فرعية ليس لها تعيين خاص.
+- في كل خانة يُستشار `openmaic.yml` قبل إعدادات النماذج في مساحة العمل.
+- `null` يوقف الصعود: الخانة وكل الخانات تحتها التي ليس لها تعيين خاص تكون موقوفة.
+- إذا وصل الحل إلى الجذر دون تعيين، تبقى القدرة غير مُعدة. تفشل الاستدعاءات بخطأ يذكر اسم الخانة، ولا يوجد رجوع إلى أي مورّد.
+- المتطلبات تخص الخانة التي تعلنها، وتُفحص على النموذج الذي تُحل إليه الخانة، سواء كان معيّنًا لها أو موروثًا. تتطلب `agent` استدعاء الأدوات؛ وإذا قال الكتالوج المدمج إن نموذجها لا يدعمه، يرفض الوكيل العمل بدل أن يتدبر أمره. النموذج غير الموجود في الكتالوج مسموح به. لا متطلبات لـ `agent.title`، لذا يمكن أن يستخدم نموذجًا أصغر.
+
+### التعيينات
+
+للتعيين أربعة أشكال:
+
+```yaml
+slots:
+  llm: openai:gpt-5.5            # مزود:نموذج
+  webSearch: tavily              # المزود وحده: نموذجه الافتراضي
+  course.outline:                # كائن مع معاملات
+    model: openai:gpt-5.5
+    fallback: anthropic:claude-sonnet-4-6
+    thinking: { effort: low }
+  video: null                    # موقوف
+```
+
+يقبل شكل الكائن الحقول التالية:
+
+| الحقل | المعنى |
+| --- | --- |
+| `model` | إلزامي. `مزود:نموذج`، أو `مزود` وحده خارج خانات المحادثة. |
+| `fallback` | نموذج لإعادة المحاولة مرة واحدة، بالشكل نفسه. راجع [النماذج الاحتياطية](#النماذج-الاحتياطية). |
+| `thinking` | معاملات الاستدلال لنماذج المحادثة: `enabled` (true/false)، و`mode` (`default` و`disabled` و`enabled` و`auto`)، و`effort` (`none` و`minimal` و`low` و`medium` و`high` و`xhigh` و`max`)، و`level` (`minimal` و`low` و`medium` و`high`)، و`budgetTokens`، و`excludeReasoningOutput`. يطبّق محوّل كل مزود ما تدعمه واجهته. |
+| `api` | لـ `agent` فقط: لهجة النقل، `openai-completions` (الافتراضية) أو `openai-responses`. |
+| `contextWindow` | لـ `agent` فقط: حجم نافذة السياق المفترض عند الضغط، عندما يجب أن يكون أقل من قيمة الكتالوج. |
+
+يجب ألا تضبط خانة `agent` القيمة `thinking.effort`: فالنقل الذي يستدعي الأدوات لا يستطيع الجمع بين شدة الاستدلال وأدوات الدوال.
+
+### الإشارة إلى المزود وحده
+
+الإشارة بدون `:model` تعني النموذج الافتراضي للمزود: النموذج الذي توصي به Token Plan لتلك القدرة، وإلا فالنموذج الافتراضي في السجل المدمج. معظم خدمات البحث والمستندات لا تتيح اختيار نموذج، لذا فالشكل المعتاد هو `webSearch: tavily` أو `document: mineru-cloud`. خانات المحادثة تسمّي نموذجًا دائمًا؛ و`llm: openai` يُرفض عند بدء التشغيل.
+
+### النماذج الاحتياطية
+
+يُجرَّب `fallback` الخاص بالخانة مرة واحدة عندما يفشل استدعاء النموذج الأساسي، بعد محاولاته الخاصة، بفشل قابل لإعادة المحاولة: خطأ عابر من SDK، أو انتهاء المهلة، أو خطأ شبكة، أو نفاد الحصة (429)، أو نقص السعة (503)، أو مخرجات فارغة. رفض المحتوى لأسباب السلامة وأخطاء 4xx الأخرى لا تؤدي إلى الرجوع الاحتياطي. ينطبق الرجوع الاحتياطي على الاستدعاءات العادية والمتدفقة معًا، ويستخدم معاملات `thinking` الخاصة بالخانة.
+
+النموذج الاحتياطي جزء من التعيين ويُورث معه: `course.content.slide` بلا تعيين خاص تستخدم نموذج `course.content` ونموذجه الاحتياطي. الخانة ذات المتطلبات لا تعيد المحاولة على نموذج احتياطي لا يلبيها.
+
+### إيقاف قدرة
+
+اكتب `null` في خانتها. `video: null` يوقف توليد الفيديو لكل مساحات العمل ويقفله على الإيقاف؛ و`course.content.pbl: null` يوقف توليد مشاهد PBL بينما يواصل باقي `course.content` العمل. يفشل استدعاء الخانة الموقوفة فورًا، وتجيب مسارات الوسائط بـ `403` بدل اختيار مورّد آخر.
+
+### الأقفال وإعدادات النماذج
+
+كل ما يُكتب تحت `slots` في `openmaic.yml` يكون **مقفلًا**: تعرضه إعدادات النماذج على أنه مضبوط من النشر ولا تسمح بتغييره. تُقفل فقط الخانات المكتوبة. يمكن لمساحة العمل أن تعيّن خانة فرعية لخانة مقفلة، فتتجاوز القيمة المقفلة لشجرة تلك الخانة الفرعية. لتثبيت شجرة فرعية كاملة، اكتب كل خانة فيها.
+
+تقرأ إعدادات النماذج (**الإعدادات ← النماذج** في تطبيق الويب) الشجرة نفسها وتعدّلها لمساحة العمل الحالية:
+
+- **خريطة نماذج المقرر**: كل خانة بطاقة تعرض النموذج الفعلي ومصدره (النشر، أو مساحة العمل، أو موروث من خانة أم) وما إذا كانت مقفلة. يُعدّل النموذج على البطاقة نفسها؛ والخانات المكتوبة في `openmaic.yml` للقراءة فقط هنا.
+- **المزودون**: المزودون الذين يمكن لمساحة العمل استخدامهم. يُعرض مزودو `openmaic.yml` للقراءة فقط ودون أي معلومات عن مفاتيحهم. المزودون الذين تضيفهم مساحة العمل قابلون للتعديل، ومفاتيحهم للكتابة فقط ولا تظهر إلا كقناع مثل `…abcd`.
+- **ربط خدمة**: عندما لا يكون أي نموذج محادثة مُعدًا بعد، يضيف معالج التشغيل الأول مزودًا ويملأ الخانات التي يوصي إعداده المسبق بنماذج لها ولم تُعيّن بعد. بعد ذلك يصبح مزودًا عاديًا.
+
+تُستورد إعدادات المزودين التي حفظها المتصفح في الإصدارات السابقة (المزودون والمفاتيح والنموذج المختار) إلى مساحة العمل مرة واحدة. يُحتفظ بكل ما هو موجود في مساحة العمل وبكل خانة يقفلها `openmaic.yml`؛ ولا تُستورد نماذج المراحل من المتصفح، بل يجب ضبطها مجددًا على خريطة النماذج.
+
+مساحة العمل هي المالك (owner) بمعنى [توثيق التخزين الدائم](./deployment.mdx): في إعداد Docker Compose الافتراضي (وضع المستخدم الواحد) توجد مساحة عمل واحدة، وفي النشر متعدد المستخدمين يكون لكل حساب مسجّل مساحة عمله.
+
+### السياسة
+
+```yaml
+policy:
+  allowWorkspaceProviders: false
+```
+
+يحدد `allowWorkspaceProviders` (الافتراضي `true`) ما إذا كان بإمكان مساحات العمل إضافة مزودين خاصين بها. مع `false` يختار المستخدمون فقط من بين المزودين الذين يعلنهم `openmaic.yml`، وللخانات التي يتركها مفتوحة. عادةً ما يضبطه النشر متعدد المستخدمين الذي يدفع تكلفة كل الاستخدام، ويقفل الخانات التي يريد تثبيتها.
+
+### الأسرار و OPENMAIC_SECRET_KEY
+
+- المفاتيح في `openmaic.yml` تأتي من البيئة عبر `${VAR}`. لا تُخزن في قاعدة البيانات ولا تُرسل إلى المتصفح أبدًا.
+- المفاتيح التي تدخلها مساحة العمل في إعدادات النماذج تُخزن في قاعدة البيانات مشفرة بـ AES-256-GCM تحت سر المثيل `OPENMAIC_SECRET_KEY`.
+- عندما لا يكون `OPENMAIC_SECRET_KEY` مضبوطًا، ينشئ الخادم سرًا عشوائيًا عند أول استخدام في `data/instance-secret.key` (داخل وحدة التخزين `openmaic-data` مع Docker Compose) ويستخدمه بعد ذلك.
+
+احفظ السر مع نسخ قاعدة البيانات الاحتياطية: المفاتيح المحفوظة تحت سر مفقود أو متغير لا يمكن قراءتها ويجب إدخالها من جديد (تشير إليها إعدادات النماذج). اضبط `OPENMAIC_SECRET_KEY` صراحةً عندما تتشارك عدة مثيلات قاعدة البيانات نفسها، أو على المضيفات التي ليس لها مجلد بيانات دائم مثل Vercel؛ أي سلسلة نصية تصلح، مثل مخرجات `openssl rand -base64 32`.
+
+```bash
+OPENMAIC_SECRET_KEY=...        # سر المثيل للمفاتيح المحفوظة في إعدادات النماذج
+OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # اختياري: مسار آخر لـ openmaic.yml
+```
+
+### ما يمكن لمساحات العمل إضافته
+
+يمكن أن يكون مزودو `openmaic.yml` أي شيء يقبله المخطط. أما المزودون الذين تضيفهم مساحة العمل في إعدادات النماذج فهم أكثر تقييدًا، لأن عنوانهم ومفتاحهم يكتبهما مستخدم تطبيق الويب:
+
+- لا يُعرض Amazon Bedrock: فهو سيوقّع ببيانات اعتماد AWS الخاصة بالخادم.
+- لا `proxy` ولا أزواج مفاتيح (`credentials`): الإعدادات المسبقة التي تستخدم زوج مفاتيح، مثل AliDocMind، متاحة للنشر فقط.
+- يُسمح بـ `baseUrl` مخصص فقط للإعدادات المسبقة التي تقدم المحادثة، والمزود الذي يملكه يخدم خانات المحادثة فقط. يجب ألا يحتوي العنوان على بيانات اعتماد أو سلسلة استعلام أو جزء (fragment)، ويجب أن يُحل إلى عنوان عام ما لم يضبط الخادم `ALLOW_LOCAL_NETWORKS=true`. الطلبات إليه لا تتبع عمليات إعادة التوجيه.
+- يجب على خوادم النماذج المحلية (Ollama وLemonade) تسمية عنوانها الخاص بدل `localhost` الافتراضي في الإعداد المسبق.
+- خدمات الوسائط والبحث والمستندات المستضافة ذاتيًا (VoxCPM2 وFunASR وكلام وصور Lemonade وComfyUI وSearXNG وMinerU المستضاف ذاتيًا) تعمل على شبكة الخادم نفسه ومتاحة للنشر فقط.
+- لا يُعرض المزودون الذين أوقفهم المشغّل بمتغير `<CAP>_<VENDOR>_ENABLED=false` القديم.
+- لا يمكن لمساحة العمل إعلان معرّف مزود أعلنه `openmaic.yml` بالفعل.
+
+إذا أراد النشر أن يصل المستخدمون إلى خدمات داخلية، فليعلن هؤلاء المزودين في `openmaic.yml`.
+
+### عملاء API وحقول الطلب المهملة
+
+لم تعد طلبات التوليد بحاجة إلى حمل مفاتيح أو اختيارات نماذج: استدعاءات API التي تعمل بلا متصفح، مثل `/api/generate-classroom`، تُحل عبر الخانات نفسها التي يستخدمها تطبيق الويب، لمساحة عمل المستدعي.
+
+ترويسات الطلب القديمة `x-model` و`x-api-key` و`x-base-url` و`x-provider-type` و`x-model-routes` و`x-image-provider` و`x-image-model` و`x-video-provider` و`x-video-model`، وحقول جسم الطلب المقابلة في مسارات الكلام والبحث والمستندات، مهملة. لا يُعمل بها إلا ما دامت الخانة التي تؤثر فيها بلا تعيين في `openmaic.yml` أو في مساحة العمل؛ وعندما يوجد تعيين تكون الغلبة للإعدادات، والخانة المضبوطة على `null` ترفض الطلب أيًا كان ما يسميه. يسجّل الخادم تحذيرًا في أول مرة يستخدمها طلب. ستُزال بعد إصدارين فرعيين من صدور إعدادات النماذج الموصوفة أعلاه.
+
+### الانتقال من الإعدادات القديمة
+
+عندما لا يوجد `openmaic.yml`، يحوّل الخادم الإعدادات القديمة عند بدء التشغيل ويسجّل إشعار إهمال، وإشعارًا لكل إدخال تعذّر نقله:
+
+| الإعداد القديم | يصبح |
+| --- | --- |
+| متغيرات المزودين (`OPENAI_API_KEY` و`TTS_MINIMAX_API_KEY` و…) و`server-providers.yml` | مزودي النشر (للقراءة فقط في إعدادات النماذج). معرّف المزود هو معرّف الإعداد المسبق، وهو معرّف المزود القديم باستثناء بحث MiniMax على الويب (`minimax-search`) وبحث Doubao على الويب (`doubao-search`) وصور Lemonade (`lemonade-image`) |
+| `<PREFIX>_MODELS` | `models` الخاصة بالمزود |
+| `DEFAULT_MODEL` | تعيين `llm` كقيمة افتراضية يمكن لمساحة العمل تجاوزها (غير مقفلة). تبقى خانة `agent` موقوفة كما كانت |
+| `MODEL_FALLBACK` | النموذج الاحتياطي لـ `DEFAULT_MODEL`. بدون `DEFAULT_MODEL` يُسقط مع إشعار |
+| أول مزود مُعد للـ TTS والـ ASR والصور والفيديو والمستندات، والبحث على الويب بترتيب الأولوية القديم | التعيين الافتراضي لتلك القدرة (يختار `DEFAULT_IMAGE_PROVIDER` مزود الصور) |
+| `MODEL_ROUTES` | **لا يُحوَّل.** يرفض الخادم البدء (انظر أدناه) |
+| `<CAP>_<VENDOR>_ENABLED=false` | ما زال ساريًا: يبقى المزود موقوفًا أيًا كان من يعيّنه |
+
+عند وجود `openmaic.yml` تُتجاهل متغيرات المزودين و`server-providers.yml` و`DEFAULT_MODEL` و`MODEL_FALLBACK` و`MODEL_ROUTES` في حل النماذج، مع إشعار. ما زال `<CAP>_<VENDOR>_ENABLED=false` ساريًا؛ لإيقاف قدرة اضبط خانتها على `null` بدلًا من ذلك.
+
+**متغيرات البيئة.** قبل:
 
 ```bash
 OPENAI_API_KEY=sk-...
-OPENAI_BASE_URL=                # تجاوز اختياري للعنوان الأساسي
-OPENAI_MODELS=                  # قائمة بيضاء اختيارية للنماذج (مفصولة بفواصل)
+ANTHROPIC_API_KEY=sk-ant-...
+DEFAULT_MODEL=openai:gpt-5.5
+MODEL_FALLBACK=anthropic:claude-sonnet-4-6
+TTS_MINIMAX_API_KEY=...
+TAVILY_API_KEY=tvly-...
 ```
 
-بادئات الموفرين المدعومة:
+بعد (تبقى المفاتيح في البيئة):
 
-| البادئة             | الموفر                              |
-| ------------------- | ---------------------------------- |
-| `OPENAI_`           | OpenAI                             |
-| `AZURE_OPENAI_`     | Azure OpenAI                       |
-| `ANTHROPIC_`        | Anthropic                         |
-| `GOOGLE_`           | Google Gemini                     |
-| `DEEPSEEK_`         | DeepSeek                         |
-| `QWEN_`             | Alibaba Qwen                     |
-| `KIMI_`             | Moonshot Kimi                   |
-| `MINIMAX_`          | MiniMax (يستخدم نقطة نهاية متوافقة مع Anthropic افتراضيًا) |
-| `GLM_`              | Zhipu GLM                       |
-| `SILICONFLOW_`      | SiliconFlow                     |
-| `DOUBAO_`           | Doubao (ByteDance)              |
-| `OPENROUTER_`       | OpenRouter                     |
-| `GROK_`             | xAI Grok                       |
-| `TENCENT_`          | Tencent Hunyuan                |
-| `TENCENT_HUNYUAN_`  | Tencent Hunyuan (اسم بديل)    |
-| `XIAOMI_`           | Xiaomi MiMo                   |
-| `MIMO_`             | Xiaomi MiMo (اسم بديل)        |
-| `OLLAMA_`           | Ollama (محلي)                 |
-| `LEMONADE_`         | Lemonade (محلي)               |
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+  minimax-tts:
+    preset: minimax-tts
+    apiKey: ${TTS_MINIMAX_API_KEY}
+  tavily:
+    preset: tavily
+    apiKey: ${TAVILY_API_KEY}
 
-يستخدم Azure OpenAI اسم النشر كمعرف للنموذج:
+slots:
+  llm:
+    model: openai:gpt-5.5
+    fallback: anthropic:claude-sonnet-4-6
+  tts: minimax-tts
+  webSearch: tavily
+```
+
+احذف بعد ذلك `DEFAULT_MODEL` و`MODEL_FALLBACK`. يمكن إبقاء متغيرات المزودين مصدرًا لإشارات `${VAR}`. وعلى خلاف `DEFAULT_MODEL` المحوَّل، فإن `llm` المكتوب هنا مقفل؛ اتركه خارج `slots` لتدع مساحات العمل تختار. وعلى خلاف التحويل أيضًا، أصبحت `agent` تتبع `llm`: اكتب `agent: null` لإبقاء وكيل Pro موقوفًا.
+
+**server-providers.yml.** قبل:
+
+```yaml title="server-providers.yml"
+providers:
+  azure:
+    apiKey: ...
+    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
+    models: [my-deployment]
+pdf:
+  alidocmind:
+    accessKeyId: ...
+    accessKeySecret: ...
+web-search:
+  searxng:
+    baseUrl: http://searxng:8080
+```
+
+بعد:
+
+```yaml title="openmaic.yml"
+providers:
+  azure:
+    preset: azure
+    apiKey: ${AZURE_OPENAI_API_KEY}
+    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
+    models: [my-deployment]
+  alidocmind:
+    preset: alidocmind
+    credentials:
+      accessKeyId: ${ALIDOCMIND_ACCESS_KEY_ID}
+      accessKeySecret: ${ALIDOCMIND_ACCESS_KEY_SECRET}
+  searxng:
+    preset: searxng
+    baseUrl: http://searxng:8080
+
+slots:
+  llm: azure:my-deployment
+  document: alidocmind
+  webSearch: searxng
+```
+
+يصبح كل قسم من `server-providers.yml` مزودين بالإعداد المسبق المطابق (`providers` ← إعدادات المحادثة، و`tts` و`asr` و`pdf` ← المستندات، و`image` و`video` و`web-search`)، وينتقل `accessKeyId`/`accessKeySecret` إلى `credentials`.
+
+**MODEL_ROUTES.** الخادم الذي يضبط `MODEL_ROUTES` دون `openmaic.yml` لا يبدأ:
+
+```text
+MODEL_ROUTES does not carry over to the model configuration: write the per-stage models as slots in openmaic.yml (or the file named by OPENMAIC_CONFIG) and remove MODEL_ROUTES
+```
+
+لا تتطابق المسارات حسب المرحلة مع الخانات واحدًا لواحد، لذا لا تُحوَّل. أعد كتابة كل مسار كالخانة التي تنتمي إليها مرحلته:
+
+| مرحلة `MODEL_ROUTES` | الخانة |
+| --- | --- |
+| `web-search-query-rewrite` | `course.research` |
+| `scene-outlines-stream` | `course.outline` |
+| `agent-profiles` | `course.agents` |
+| `scene-content` | `course.content` |
+| `scene-content:slide` و`:quiz` و`:interactive` و`:pbl` | `course.content.slide` و`.quiz` و`.interactive` و`.pbl` |
+| `scene-actions` | `course.actions` |
+| `chat-adapter` و`quiz-grade` و`pbl-v2-runtime` ومتغيراته `:instructor` و`:open-task` و`:evaluate` و`:simulator` | `classroom` |
+| `generate-classroom` | `llm` |
+| `maic-agent-driver` | `agent` |
+| `conversation-title` | `agent.title` |
+
+عندما تتشارك عدة مراحل خانة واحدة، أعطِ الخانة النموذج الواحد الذي يجب أن تستخدمه. ينتقل `thinking` الخاص بالمسار إلى `thinking` الخانة، وينتقل `api` و`contextWindow` من مسار `maic-agent-driver` إلى خانة `agent`. قبل:
 
 ```bash
-AZURE_OPENAI_API_KEY=...
-AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
-AZURE_OPENAI_MODELS=your-deployment-name
+DEFAULT_MODEL=openai:gpt-5.5
+MODEL_ROUTES='{"scene-outlines-stream":"anthropic:claude-sonnet-4-6","scene-content:slide":{"model":"openai:gpt-5.4","thinking":{"effort":"low"}},"maic-agent-driver":{"model":"openai:gpt-5.5","api":"openai-completions"}}'
 ```
 
-للاتصال بخدمات LLM متوافقة مع OpenAI أخرى، أضف موفرًا مخصصًا في **الإعدادات → موفرو النماذج** واختر نوع البروتوكول المناسب.
+بعد:
 
-## النماذج المحلية (Ollama و Lemonade)
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
 
-لا تحتاج Ollama وLemonade إلى مفتاح API؛ يجب كتابة عنوان URL الأساسي للخدمة المحلية في إعدادات الخادم لتجاوز فحص SSRF:
-
-```bash
-OLLAMA_BASE_URL=http://localhost:11434/v1
-# LEMONADE_BASE_URL=http://localhost:13305/v1
+slots:
+  llm: openai:gpt-5.5
+  course.outline: anthropic:claude-sonnet-4-6
+  course.content.slide:
+    model: openai:gpt-5.4
+    thinking: { effort: low }
+  agent:
+    model: openai:gpt-5.5
+    api: openai-completions
 ```
 
-يمكن تحديد قائمة بيضاء للنماذج المتاحة باستخدام `OLLAMA_MODELS` أو `LEMONADE_MODELS`.
+ثم احذف `MODEL_ROUTES` و`DEFAULT_MODEL` و`MODEL_FALLBACK`.
 
-## موفرو TTS
+**Docker.** اربط الملف بجوار التطبيق وأبقِ المفاتيح في `.env.local`:
 
-يستخدم موفرو TTS على الخادم متغيرات `TTS_<PROVIDER>_API_KEY`، مع خيار `TTS_<PROVIDER>_BASE_URL` للتجاوز.
-
-```bash
-# Doubao TTS (Volcengine Seed-TTS، MP3 أصلي)
-TTS_DOUBAO_API_KEY=appId:accessKey
-TTS_DOUBAO_BASE_URL=       # تجاوز اختياري
-
-# Qwen TTS
-TTS_QWEN_API_KEY=
-TTS_QWEN_BASE_URL=         # تجاوز اختياري
-
-# أي نقطة نهاية متوافقة مع OpenAI TTS
-TTS_OPENAI_API_KEY=
-TTS_OPENAI_BASE_URL=
-
-# VoxCPM2 (TTS ذاتي الاستضافة مع استنساخ الصوت، راجع صفحة VoxCPM2)
-TTS_VOXCPM_BASE_URL=http://localhost:8000
+```yaml
+services:
+  openmaic:
+    volumes:
+      - ./openmaic.yml:/app/openmaic.yml:ro
 ```
-
-بادئات TTS المدعومة تشمل `TTS_OPENAI_`، `TTS_AZURE_`، `TTS_GLM_`، `TTS_QWEN_`، `TTS_MINIMAX_`، `TTS_DOUBAO_`، `TTS_ELEVENLABS_`، `TTS_VOXCPM_` و `TTS_LEMONADE_`. TTS المحلي لـ Lemonade وVoxCPM2 لا يحتاجان إلى مفتاح API. TTS المدمج في المتصفح لا يحتاج إلى إعدادات خادم.
-
-يمكن للمسؤولين تعطيل موفر TTS معين على الخادم باستخدام `TTS_<PROVIDER>_ENABLED=false`. لمزيد من التفاصيل عن VoxCPM2 (TTS ذاتي الاستضافة واستنساخ الصوت)، راجع الفصل الخاص بـ [VoxCPM2](./voxcpm.mdx).
-
-يمكن أيضًا إضافة provider مخصص متوافق مع OpenAI لـ TTS من الإعدادات عبر إدخال Base URL والنموذج والصوت. يُحفظ هذا provider المخصص في إعدادات العميل ولا يمكن تسجيله عبر متغيرات بيئة `TTS_*` عشوائية أو YAML provider ID.
-
-## ASR (تحويل الكلام إلى نص)
-
-```bash
-# OpenAI Whisper
-ASR_OPENAI_API_KEY=
-ASR_OPENAI_BASE_URL=       # تجاوز اختياري
-
-# Qwen ASR
-ASR_QWEN_API_KEY=
-ASR_QWEN_BASE_URL=         # تجاوز اختياري
-
-# Azure ASR
-ASR_AZURE_API_KEY=
-ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
-
-# FunASR (محلي، لا يحتاج إلى مفتاح)
-ASR_FUNASR_BASE_URL=http://localhost:8000/v1
-
-# Lemonade ASR (محلي، لا يحتاج إلى مفتاح)
-ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
-```
-
-شغّل خدمة FunASR المتوافقة مع OpenAI باستخدام `funasr-server --device cuda`. تستقبل ملفات WAV على `/v1/audio/transcriptions` وتدعم SenseVoiceSmall وParaformer وFun-ASR-Nano.
-
-ASR المدمج في المتصفح لا يحتاج إلى إعدادات خادم.
-
-يمكن أيضًا إضافة موفري ASR مخصصين متوافقين مع OpenAI من الإعدادات، مع إدخال عنوان URL الأساسي، النموذج، واللغات المدعومة. تحفظ هذه الإعدادات في إعدادات العميل.
-
-## موفرو توليد الصور
-
-يستخدم موفرو الصور متغيرات `IMAGE_<PROVIDER>_API_KEY`، مع خيار `IMAGE_<PROVIDER>_BASE_URL`. البادئات المدعومة تشمل:
-
-`IMAGE_OPENAI_`، `IMAGE_SEEDREAM_`، `IMAGE_QWEN_IMAGE_`، `IMAGE_NANO_BANANA_`، `IMAGE_MINIMAX_`، `IMAGE_GROK_` و `IMAGE_LEMONADE_`.
-
-Lemonade خدمة محلية ولا تحتاج إلى مفتاح API:
-
-```bash
-IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
-```
-
-ComfyUI Image لا يحتاج إلى مفتاح API، ويتصل افتراضيًا بـ `http://localhost:8188`. أدخل عنوان URL الأساسي لـ ComfyUI في الإعدادات، وضع ملفات workflow بصيغة JSON المصدرة من ComfyUI API في مجلد `public/` الخاص بـ OpenMAIC؛ يجب أن يكون اسم الملف مطابقًا لـ `comfyui-*.json` أو يحتوي على `workflow`. ستكتشف صفحة الإعدادات هذه الملفات تلقائيًا وتعرضها كخيارات workflow. عند نشر Docker، يجب تضمين ملفات workflow أثناء بناء الصورة أو ربط ملف workflow واحد بمجلد `/app/public/` داخل الحاوية. لأن `comfyui-image` ليس موفرًا مستضافًا على الخادم، عند تشغيل ComfyUI على المضيف مع Docker في الإنتاج، يجب تعيين `ALLOW_LOCAL_NETWORKS=true` للسماح بالوصول المحلي، وإلا سيرفض حارس SSRF العنوان المحلي المرسل من العميل.
-
-## موفرو توليد الفيديو
-
-يستخدم موفرو الفيديو متغيرات `VIDEO_<PROVIDER>_API_KEY`، مع خيار `VIDEO_<PROVIDER>_BASE_URL`. البادئات المدعومة تشمل:
-
-`VIDEO_SEEDANCE_`، `VIDEO_KLING_`، `VIDEO_VEO_`، `VIDEO_SORA_`، `VIDEO_MINIMAX_`، `VIDEO_GROK_` و `VIDEO_HAPPYHORSE_`.
-
-## تحليل المستندات والوسائط
-
-تعتمد صيغ المواد التعليمية على المحلل المختار. حاليًا يدعم النصوص، PDF، مستندات Office، الصور، وبعض صيغ الصوت والفيديو؛ تختلف الصيغ المدعومة والقدرات حسب الموفر.
-
-```bash
-# MinerU ذاتي الاستضافة
-PDF_MINERU_BASE_URL=http://localhost:8888
-
-# MinerU backend اختياري ذاتي الاستضافة
-PDF_MINERU_BACKEND=pipeline
-
-# MinerU Cloud
-PDF_MINERU_CLOUD_API_KEY=
-PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
-
-# AliDocMind (يستخدم AccessKey من Alibaba Cloud بدلاً من مفتاح API منفصل)
-ALIDOCMIND_ACCESS_KEY_ID=
-ALIDOCMIND_ACCESS_KEY_SECRET=
-ALIDOCMIND_BASE_URL=       # تجاوز اختياري
-```
-
-`unpdf` مدمج في OpenMAIC ويستخدم لتحليل PDF الأساسي. لتحليل مستندات Office، الصور، أو المواد التي تحتاج إلى OCR، جداول، معادلات أو تحليل تخطيط، يجب اختيار موفر MinerU أو AliDocMind المتوافق.
-
-يدعم AliDocMind تحليل PDF، DOCX، PPTX، XLSX، بالإضافة إلى PNG، JPG/JPEG، BMP، GIF. حاليًا، يدعم تحليل الوسائط الصوتية والفيديو فقط عبر AliDocMind: صيغ الفيديو MP4، MOV، AVI، MKV، WMV، وصيغ الصوت MP3، WAV، AAC؛ لا يدعم M4A.
-
-## البحث عبر الإنترنت
-
-اضبط موفري البحث Tavily، Exa، Bocha، Brave، Baidu، SearXNG أو MiniMax:
-
-```bash
-TAVILY_API_KEY=
-TAVILY_BASE_URL=           # تجاوز اختياري
-
-EXA_API_KEY=
-EXA_BASE_URL=https://api.exa.ai  # تجاوز اختياري
-
-BOCHA_API_KEY=
-BOCHA_BASE_URL=            # تجاوز اختياري
-
-BAIDU_API_KEY=
-BAIDU_BASE_URL=https://qianfan.baidubce.com  # تجاوز اختياري
-
-# SearXNG ذاتي الاستضافة، لا يحتاج إلى مفتاح API
-SEARXNG_BASE_URL=
-
-WEB_SEARCH_MINIMAX_API_KEY=
-WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # تجاوز اختياري
-```
-
-Brave وSearXNG لا يحتاجان إلى مفتاح API؛ يمكن للواجهة الأمامية اختيار تفعيل البحث في كل عملية توليد. بحث Grok متوفر عبر أدوات البحث في Grok LLM، وليس موفر بحث مستقل.
 
 ## ACCESS_CODE — كلمة مرور على مستوى الموقع
 
@@ -197,16 +401,6 @@ ACCESS_CODE=your-secret-code
 ```
 
 استخدم قيمة عشوائية طويلة (16 حرفًا على الأقل) — فهذا الرمز هو السر الوحيد الذي يحمي النشر. بعد نجاح التحقق، يُحفظ رمز موقَّع في cookie من نوع HTTP-only لمدة 7 أيام، ويُفرض انتهاء صلاحيته من جهة الخادم، لذا يلزم إعادة إدخال الرمز بعد انتهائه. لا يُقيَّد معدل التحقق إلا عند ضبط `TRUST_PROXY_HEADERS=true` خلف وكيل عكسي موثوق يعيد كتابة `x-forwarded-for` / `x-real-ip`: لكل عميل 10 محاولات كل 60 ثانية، ونجاح التحقق يمسح عدّاد ذلك العميل. وبدون وكيل موثوق لا يستطيع التطبيق نسبة الطلب إلى عميل بعينه، لذا لا يوجد أي تقييد، وتكون الحماية في طول الرمز وعشوائيته. اتركه فارغًا لتعطيله.
-
-## النموذج الافتراضي ومسارات النماذج
-
-عندما لا يرسل العميل نموذجًا، يستخدم API الخادم النموذج الافتراضي المحدد بـ `DEFAULT_MODEL`. صيغة النموذج هي `provider:model-id`، مثل:
-
-```bash
-DEFAULT_MODEL=openai:gpt-5.5
-```
-
-يمكن استخدام `MODEL_ROUTES` لتحديد نماذج مختلفة لمراحل توليد مختلفة؛ المراحل غير المحددة تستخدم النموذج المرسل من العميل أو `DEFAULT_MODEL`. هو كائن JSON، المفاتيح هي أسماء المراحل، والقيم إما سلسلة نموذج أو كائن يحتوي على `model` و `thinking`. قائمة المراحل الكاملة والأمثلة موجودة في [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example).
 
 ## feature flags (مفاتيح الميزات)
 
@@ -265,7 +459,194 @@ LOG_FORMAT=pretty
 LLM_THINKING_DISABLED=false
 ```
 
-## استخدام ملف إعداد YAML
+## متغيرات بيئة المزودين القديمة
+
+هذه المتغيرات و`server-providers.yml` هي إعدادات الإصدارات السابقة. ما زالت تعمل عند عدم وجود `openmaic.yml` (راجع [الانتقال من الإعدادات القديمة](#الانتقال-من-الإعدادات-القديمة))، لكنها مهملة وستُزال بعد إصدارين فرعيين من صدور إعدادات النماذج. مع `openmaic.yml` استخدمها فقط مصدرًا لإشارات `${VAR}`. يشرح قسم الانتقال `DEFAULT_MODEL` و`MODEL_FALLBACK`؛ ولم يعد `MODEL_ROUTES` يُقرأ.
+
+### موفرو LLM
+
+عادةً ما يستخدم موفرو السحابة ثلاثة متغيرات بيئة: مفتاح API، عنوان URL الأساسي، وقائمة النماذج. مفتاح API عادةً مطلوب، أما العنوان الأساسي وقائمة النماذج فاختياريان. Azure OpenAI يحتاج إلى تكوين نقطة نهاية المورد، بينما Ollama وLemonade لا يحتاجان إلى مفتاح API.
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=                # تجاوز اختياري للعنوان الأساسي
+OPENAI_MODELS=                  # قائمة بيضاء اختيارية للنماذج (مفصولة بفواصل)
+```
+
+بادئات الموفرين المدعومة:
+
+| البادئة             | الموفر                              |
+| ------------------- | ---------------------------------- |
+| `OPENAI_`           | OpenAI                             |
+| `AZURE_OPENAI_`     | Azure OpenAI                       |
+| `ANTHROPIC_`        | Anthropic                         |
+| `GOOGLE_`           | Google Gemini                     |
+| `DEEPSEEK_`         | DeepSeek                         |
+| `QWEN_`             | Alibaba Qwen                     |
+| `KIMI_`             | Moonshot Kimi                   |
+| `MINIMAX_`          | MiniMax (يستخدم نقطة نهاية متوافقة مع Anthropic افتراضيًا) |
+| `GLM_`              | Zhipu GLM                       |
+| `SILICONFLOW_`      | SiliconFlow                     |
+| `DOUBAO_`           | Doubao (ByteDance)              |
+| `OPENROUTER_`       | OpenRouter                     |
+| `GROK_`             | xAI Grok                       |
+| `TENCENT_`          | Tencent Hunyuan                |
+| `TENCENT_HUNYUAN_`  | Tencent Hunyuan (اسم بديل)    |
+| `XIAOMI_`           | Xiaomi MiMo                   |
+| `MIMO_`             | Xiaomi MiMo (اسم بديل)        |
+| `OLLAMA_`           | Ollama (محلي)                 |
+| `LEMONADE_`         | Lemonade (محلي)               |
+
+يستخدم Azure OpenAI اسم النشر كمعرف للنموذج:
+
+```bash
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
+AZURE_OPENAI_MODELS=your-deployment-name
+```
+
+للاتصال بخدمات LLM متوافقة مع OpenAI أخرى، أضف موفرًا مخصصًا في **الإعدادات → موفرو النماذج** واختر نوع البروتوكول المناسب.
+
+### النماذج المحلية (Ollama و Lemonade)
+
+لا تحتاج Ollama وLemonade إلى مفتاح API؛ يجب كتابة عنوان URL الأساسي للخدمة المحلية في إعدادات الخادم لتجاوز فحص SSRF:
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434/v1
+# LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+يمكن تحديد قائمة بيضاء للنماذج المتاحة باستخدام `OLLAMA_MODELS` أو `LEMONADE_MODELS`.
+
+### موفرو TTS
+
+يستخدم موفرو TTS على الخادم متغيرات `TTS_<PROVIDER>_API_KEY`، مع خيار `TTS_<PROVIDER>_BASE_URL` للتجاوز.
+
+```bash
+# Doubao TTS (Volcengine Seed-TTS، MP3 أصلي)
+TTS_DOUBAO_API_KEY=appId:accessKey
+TTS_DOUBAO_BASE_URL=       # تجاوز اختياري
+
+# Qwen TTS
+TTS_QWEN_API_KEY=
+TTS_QWEN_BASE_URL=         # تجاوز اختياري
+
+# أي نقطة نهاية متوافقة مع OpenAI TTS
+TTS_OPENAI_API_KEY=
+TTS_OPENAI_BASE_URL=
+
+# VoxCPM2 (TTS ذاتي الاستضافة مع استنساخ الصوت، راجع صفحة VoxCPM2)
+TTS_VOXCPM_BASE_URL=http://localhost:8000
+```
+
+بادئات TTS المدعومة تشمل `TTS_OPENAI_`، `TTS_AZURE_`، `TTS_GLM_`، `TTS_QWEN_`، `TTS_MINIMAX_`، `TTS_DOUBAO_`، `TTS_ELEVENLABS_`، `TTS_VOXCPM_` و `TTS_LEMONADE_`. TTS المحلي لـ Lemonade وVoxCPM2 لا يحتاجان إلى مفتاح API. TTS المدمج في المتصفح لا يحتاج إلى إعدادات خادم.
+
+يمكن للمسؤولين تعطيل موفر TTS معين على الخادم باستخدام `TTS_<PROVIDER>_ENABLED=false`. لمزيد من التفاصيل عن VoxCPM2 (TTS ذاتي الاستضافة واستنساخ الصوت)، راجع الفصل الخاص بـ [VoxCPM2](./voxcpm.mdx).
+
+يمكن أيضًا إضافة provider مخصص متوافق مع OpenAI لـ TTS من الإعدادات عبر إدخال Base URL والنموذج والصوت. يُحفظ هذا provider المخصص في إعدادات العميل ولا يمكن تسجيله عبر متغيرات بيئة `TTS_*` عشوائية أو YAML provider ID.
+
+### ASR (تحويل الكلام إلى نص)
+
+```bash
+# OpenAI Whisper
+ASR_OPENAI_API_KEY=
+ASR_OPENAI_BASE_URL=       # تجاوز اختياري
+
+# Qwen ASR
+ASR_QWEN_API_KEY=
+ASR_QWEN_BASE_URL=         # تجاوز اختياري
+
+# Azure ASR
+ASR_AZURE_API_KEY=
+ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
+
+# FunASR (محلي، لا يحتاج إلى مفتاح)
+ASR_FUNASR_BASE_URL=http://localhost:8000/v1
+
+# Lemonade ASR (محلي، لا يحتاج إلى مفتاح)
+ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+شغّل خدمة FunASR المتوافقة مع OpenAI باستخدام `funasr-server --device cuda`. تستقبل ملفات WAV على `/v1/audio/transcriptions` وتدعم SenseVoiceSmall وParaformer وFun-ASR-Nano.
+
+ASR المدمج في المتصفح لا يحتاج إلى إعدادات خادم.
+
+يمكن أيضًا إضافة موفري ASR مخصصين متوافقين مع OpenAI من الإعدادات، مع إدخال عنوان URL الأساسي، النموذج، واللغات المدعومة. تحفظ هذه الإعدادات في إعدادات العميل.
+
+### موفرو توليد الصور
+
+يستخدم موفرو الصور متغيرات `IMAGE_<PROVIDER>_API_KEY`، مع خيار `IMAGE_<PROVIDER>_BASE_URL`. البادئات المدعومة تشمل:
+
+`IMAGE_OPENAI_`، `IMAGE_SEEDREAM_`، `IMAGE_QWEN_IMAGE_`، `IMAGE_NANO_BANANA_`، `IMAGE_MINIMAX_`، `IMAGE_GROK_` و `IMAGE_LEMONADE_`.
+
+Lemonade خدمة محلية ولا تحتاج إلى مفتاح API:
+
+```bash
+IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+ComfyUI Image لا يحتاج إلى مفتاح API، ويتصل افتراضيًا بـ `http://localhost:8188`. أدخل عنوان URL الأساسي لـ ComfyUI في الإعدادات، وضع ملفات workflow بصيغة JSON المصدرة من ComfyUI API في مجلد `public/` الخاص بـ OpenMAIC؛ يجب أن يكون اسم الملف مطابقًا لـ `comfyui-*.json` أو يحتوي على `workflow`. ستكتشف صفحة الإعدادات هذه الملفات تلقائيًا وتعرضها كخيارات workflow. عند نشر Docker، يجب تضمين ملفات workflow أثناء بناء الصورة أو ربط ملف workflow واحد بمجلد `/app/public/` داخل الحاوية. لأن `comfyui-image` ليس موفرًا مستضافًا على الخادم، عند تشغيل ComfyUI على المضيف مع Docker في الإنتاج، يجب تعيين `ALLOW_LOCAL_NETWORKS=true` للسماح بالوصول المحلي، وإلا سيرفض حارس SSRF العنوان المحلي المرسل من العميل.
+
+### موفرو توليد الفيديو
+
+يستخدم موفرو الفيديو متغيرات `VIDEO_<PROVIDER>_API_KEY`، مع خيار `VIDEO_<PROVIDER>_BASE_URL`. البادئات المدعومة تشمل:
+
+`VIDEO_SEEDANCE_`، `VIDEO_KLING_`، `VIDEO_VEO_`، `VIDEO_SORA_`، `VIDEO_MINIMAX_`، `VIDEO_GROK_` و `VIDEO_HAPPYHORSE_`.
+
+### تحليل المستندات والوسائط
+
+تعتمد صيغ المواد التعليمية على المحلل المختار. حاليًا يدعم النصوص، PDF، مستندات Office، الصور، وبعض صيغ الصوت والفيديو؛ تختلف الصيغ المدعومة والقدرات حسب الموفر.
+
+```bash
+# MinerU ذاتي الاستضافة
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# MinerU backend اختياري ذاتي الاستضافة
+PDF_MINERU_BACKEND=pipeline
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+
+# AliDocMind (يستخدم AccessKey من Alibaba Cloud بدلاً من مفتاح API منفصل)
+ALIDOCMIND_ACCESS_KEY_ID=
+ALIDOCMIND_ACCESS_KEY_SECRET=
+ALIDOCMIND_BASE_URL=       # تجاوز اختياري
+```
+
+`unpdf` مدمج في OpenMAIC ويستخدم لتحليل PDF الأساسي. لتحليل مستندات Office، الصور، أو المواد التي تحتاج إلى OCR، جداول، معادلات أو تحليل تخطيط، يجب اختيار موفر MinerU أو AliDocMind المتوافق.
+
+يدعم AliDocMind تحليل PDF، DOCX، PPTX، XLSX، بالإضافة إلى PNG، JPG/JPEG، BMP، GIF. حاليًا، يدعم تحليل الوسائط الصوتية والفيديو فقط عبر AliDocMind: صيغ الفيديو MP4، MOV، AVI، MKV، WMV، وصيغ الصوت MP3، WAV، AAC؛ لا يدعم M4A.
+
+### البحث عبر الإنترنت
+
+اضبط موفري البحث Tavily، Exa، Bocha، Brave، Baidu، SearXNG أو MiniMax:
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # تجاوز اختياري
+
+EXA_API_KEY=
+EXA_BASE_URL=https://api.exa.ai  # تجاوز اختياري
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # تجاوز اختياري
+
+BAIDU_API_KEY=
+BAIDU_BASE_URL=https://qianfan.baidubce.com  # تجاوز اختياري
+
+# SearXNG ذاتي الاستضافة، لا يحتاج إلى مفتاح API
+SEARXNG_BASE_URL=
+
+WEB_SEARCH_MINIMAX_API_KEY=
+WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # تجاوز اختياري
+```
+
+Brave وSearXNG لا يحتاجان إلى مفتاح API؛ يمكن للواجهة الأمامية اختيار تفعيل البحث في كل عملية توليد. بحث Grok متوفر عبر أدوات البحث في Grok LLM، وليس موفر بحث مستقل.
+
+### server-providers.yml
+
+مهمل لصالح `openmaic.yml`. عند وجود الملفين معًا، يضبط `openmaic.yml` وحده النماذج.
 
 بدلاً من متغيرات البيئة، يمكنك وضع إعدادات موفري الخادم المسجلين في الكود داخل ملف `server-providers.yml` في جذر المشروع. يُحمّل الملف عند بدء الخادم، والبنية تطابق تصنيفات متغيرات البيئة:
 

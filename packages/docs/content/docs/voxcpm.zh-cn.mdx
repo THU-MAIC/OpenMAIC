@@ -11,7 +11,7 @@ description: 自托管 TTS 与声音克隆。后端选型、配置和声音管�
 - 想要声音克隆（每个 Agent 用一段短样本生成自己的音色）。
 - 在本地部署或离线环境。
 
-如果只想要一个默认音色，用内置的 **豆包** 或 **OpenAI 兼容** 提供方更简单，参见 [配置 → TTS 提供方](./configuration.mdx#tts-providers)。
+如果只想要一个默认音色，用内置的 **豆包** 或 **OpenAI 兼容** 提供方更简单，参见 [配置 → TTS 提供方](./configuration.mdx#tts-提供方)。
 
 ## 1. 起一个 VoxCPM 后端
 
@@ -48,6 +48,18 @@ python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
 
 ```bash
 TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+```
+
+使用 `openmaic.yml` 时，改为把 VoxCPM2 声明为服务商并分配给 `tts` 槽位；上面的变量是旧版写法：
+
+```yaml title="openmaic.yml"
+providers:
+  voxcpm:
+    preset: voxcpm-tts
+    baseUrl: http://localhost:8000/v1
+
+slots:
+  tts: voxcpm
 ```
 
 服务端配置会下发给用户；如果 provider 由服务端托管，客户端不能覆盖这些配置。

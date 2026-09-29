@@ -9,7 +9,7 @@ OpenMAIC 是一個標準的 Next.js 應用程式，任何能執行 Next.js 的�
 
 最快的方式是點選[儲存庫 README](https://github.com/THU-MAIC/OpenMAIC) 中的 Deploy 按鈕，fork 儲存庫，並依照提示填入至少一個 LLM 的 API key。
 
-Vercel 會在每次提交後重新建置並部署 Next.js 應用程式。部署時需要在專案設定中設定至少一個 LLM 供應商。
+Vercel 會在每次提交後重新建置並部署 Next.js 應用程式。首次部署後，開啟應用程式，在模型設定中連接模型服務；也可以在專案設定中透過環境變數設定供應商（[舊版變數](./configuration.mdx#從舊設定遷移)仍然有效）。Vercel 沒有持久化資料目錄，因此在模型設定中儲存 key 之前，請先在專案設定中設定 `OPENMAIC_SECRET_KEY`，請見[金鑰與 OPENMAIC_SECRET_KEY](./configuration.mdx#金鑰與-openmaic_secret_key)。
 
 Vercel 以 Serverless 函式執行 OpenMAIC，無法自帶資料庫。請在專案設定中把 `DATABASE_URL` 指向外部 PostgreSQL 資料庫（託管服務；有連線池端點時優先使用）；沒有它服務會拒絕啟動。
 
@@ -27,11 +27,13 @@ docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-hos
 
 ```bash
 cp .env.example .env.local
-# 編輯 .env.local，填入至少一個 LLM 供應商的設定，然後執行：
+# 編輯 .env.local（key 和伺服器端選項），然後：
 docker compose up --build
 ```
 
 預設 Compose 部署會啟動 OpenMAIC 應用程式和 PostgreSQL 兩個容器，自動設定兩者之間的 `DATABASE_URL`，並掛載 `openmaic-data` 與 `openmaic-postgres` 資料卷。其他 provider 與功能可依需求設定，詳見[設定說明](./configuration.mdx)。
+
+模型有兩種設定方式。個人安裝時，啟動服務後開啟應用程式，在模型設定中連接模型服務，設定儲存在資料庫中。若希望以檔案方式管理部署，把 `openmaic.example.yml` 複製為 `openmaic.yml`，key 放在 `.env.local` 中，再掛載該檔案（見下文）。詳見[設定說明](./configuration.mdx#模型與供應商)。
 
 `NEXT_PUBLIC_*` 功能開關會在 Docker 建置時編譯至用戶端，不能只寫在執行時的 `.env.local` 中。例如啟用影片匯出和實驗性 PPTX 匯入：
 
@@ -43,14 +45,16 @@ docker compose --profile video-export up --build
 
 其他用戶端功能開關也可以用相同方式傳入。若使用 `docker build`，請改用對應的 `--build-arg`。
 
-如需使用伺服器端 provider 設定，把檔案掛載到容器內的固定路徑：
+使用 `openmaic.yml` 時，把它掛載到應用程式的工作目錄；也可以掛載到其他位置，並用 `OPENMAIC_CONFIG` 指向它：
 
 ```yaml
 services:
   openmaic:
     volumes:
-      - ./server-providers.yml:/app/server-providers.yml:ro
+      - ./openmaic.yml:/app/openmaic.yml:ro
 ```
+
+不要掛載主機上不存在的路徑：Docker 會在該位置建立一個目錄，導致服務拒絕啟動。使用 `docker run` 時，加上 `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`。修改檔案後需要重新啟動容器。沒有 `openmaic.yml` 時，仍會從 `/app/server-providers.yml` 讀取舊版的 `server-providers.yml`。
 
 Docker 容器中的 `localhost` 指向容器本身。若 Ollama、Lemonade、VoxCPM 或 ComfyUI 執行在主機上，請使用 `host.docker.internal`，例如 `http://host.docker.internal:11434/v1` 或 `http://host.docker.internal:8188`。Linux Docker 通常還需要為 `openmaic` 服務新增 `extra_hosts: ["host.docker.internal:host-gateway"]`。ComfyUI 目前不是伺服器端託管 provider，因此正式環境還必須設定 `ALLOW_LOCAL_NETWORKS=true`，否則 SSRF 防護會拒絕此位址。
 
@@ -80,6 +84,8 @@ DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
 
 PostgreSQL 資料儲存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRES_PASSWORD` 只會在資料庫目錄首次初始化時設定密碼，之後修改環境變數不會自動修改已有資料庫使用者密碼。
 
+除非設定了 `OPENMAIC_SECRET_KEY`，`openmaic-data` 資料卷中還儲存著 `instance-secret.key`，也就是自動產生的實例金鑰，用於加密模型設定中儲存的供應商 key。請把它和資料庫一起備份：沒有它，已儲存的 key 需要重新填寫。
+
 早期版本可以把課程儲存在瀏覽器（IndexedDB）中。該模式已移除，`NEXT_PUBLIC_PERSISTENCE` 建置變數會被忽略。以這種方式儲存在瀏覽器中的課程，會在該瀏覽器首次開啟升級後的應用程式時自動搬到伺服器：單向匯入器把它們（連同對話、學習進度、資料夾和媒體）複製給伺服器為該瀏覽器解析出的擁有者，瀏覽器中的原始資料保持不變。每個瀏覽器只匯入一次：伺服器把該瀏覽器綁定給第一個載入升級後應用程式的擁有者，認領會把綁定帶到帳號（匿名擁有者在登入時被認領進帳號）。伺服器會拒絕匯入器為其他擁有者發出的請求，因此之後在同一瀏覽器中使用的其他擁有者不會得到任何匯入。整個過程無需操作，也沒有介面提示；如有問題，會以 `[legacy-browser-import]` 前綴記錄在瀏覽器主控台中。
 
 ## 選用：MP4 影片匯出
@@ -96,7 +102,7 @@ Compose 會透過 `RENDER_SERVICE_URL` 讓 OpenMAIC 連線至渲染服務。若�
 
 ## 環境變數
 
-完整的環境變數和 provider 設定請見[設定說明](./configuration.mdx)。至少需要設定一個 LLM 供應商的 key。
+模型設定（`openmaic.yml` 和模型設定頁）以及全部環境變數請見[設定說明](./configuration.mdx)。至少設定一個對話模型後才能生成課程。
 
 ## 存取控制
 

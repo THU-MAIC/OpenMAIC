@@ -50,6 +50,18 @@ python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
 TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
 ```
 
+`openmaic.yml` を使う場合は、代わりに VoxCPM2 をプロバイダーとして宣言し、`tts` スロットに割り当てます。上の変数は旧来の書き方です。
+
+```yaml title="openmaic.yml"
+providers:
+  voxcpm:
+    preset: voxcpm-tts
+    baseUrl: http://localhost:8000/v1
+
+slots:
+  tts: voxcpm
+```
+
 サーバー側の既定値は初回ユーザーの設定 UI に反映されます。プロバイダーがサーバー管理の場合、クライアント側からこれらの設定を上書きできません。
 
 ## 3. 音声管理
