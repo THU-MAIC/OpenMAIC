@@ -264,38 +264,31 @@ describe('buildModelSettingsProposal', () => {
     expect(proposal?.slots).toEqual({ llm: 'openai:gpt-5' });
     expect(JSON.stringify(proposal)).not.toContain('gpt-5-mini');
   });
-  it('proposes turning off what the user explicitly turned off', () => {
+
+  it('proposes speech input off only when the user turned it off', () => {
+    // Without an asr slot the browser's own recognition would take over.
+    expect(buildModelSettingsProposal({ asrEnabled: false })).toEqual({ slots: { asr: null } });
+    expect(buildModelSettingsProposal({})).toBeUndefined();
+    expect(buildModelSettingsProposal({ asrEnabled: true })).toBeUndefined();
+  });
+
+  it('carries no other off switch over: availability follows the slots', () => {
     expect(
       buildModelSettingsProposal({
-        autoConfigApplied: true,
         ttsEnabled: false,
-        asrEnabled: false,
         imageGenerationEnabled: false,
         videoGenerationEnabled: false,
         webSearchEnabled: false,
       }),
-    ).toEqual({
-      slots: { tts: null, asr: null, image: null, video: null, webSearch: null },
-    });
-  });
-
-  it('reads nothing into switches that were only never switched on', () => {
-    // Before the first sync with the server's providers, speech, image and
-    // video were off by default: that is no choice. Speech input defaulted
-    // on and research was opt-in, so their off switches always were one.
+    ).toBeUndefined();
     expect(
       buildModelSettingsProposal({
         ttsEnabled: false,
-        imageGenerationEnabled: false,
-        videoGenerationEnabled: false,
+        webSearchEnabled: false,
+        asrEnabled: false,
+        providersConfig: { openai: { apiKey: 'sk', baseUrl: '' } },
       }),
-    ).toBeUndefined();
-    expect(buildModelSettingsProposal({ asrEnabled: false })).toEqual({ slots: { asr: null } });
-    expect(buildModelSettingsProposal({ webSearchEnabled: false })).toEqual({
-      slots: { webSearch: null },
-    });
-    // Absent switches are not choices either.
-    expect(buildModelSettingsProposal({ autoConfigApplied: true })).toBeUndefined();
+    ).toEqual({ providers: { openai: { preset: 'openai', apiKey: 'sk' } }, slots: { asr: null } });
   });
 
   it('names a selected server-configured media provider by its preset id', () => {

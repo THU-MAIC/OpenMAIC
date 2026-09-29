@@ -99,8 +99,6 @@ export interface LegacyModelSettingsState {
   webSearchProvidersConfig?: ServiceMap;
   pdfProviderId?: string;
   pdfProvidersConfig?: ServiceMap;
-  /** Set once the first sync with the server's providers ran (it could switch media on). */
-  autoConfigApplied?: boolean;
 }
 
 type ServiceCapability = Exclude<SlotCapability, 'chat'>;
@@ -218,8 +216,6 @@ export function normalizeLegacyModelSettings(
   }
   delete state.webSearchApiKey;
   delete state.webSearchIsServerConfigured;
-  // Browsers from before the first-run sync existed had already set things up.
-  if (state.autoConfigApplied === undefined) state.autoConfigApplied = true;
   return state as LegacyModelSettingsState;
 }
 
@@ -326,18 +322,17 @@ export function buildModelSettingsProposal(
     if (id) slots.llm = `${id}:${modelId}`;
   }
 
-  // Whether a switch was explicitly off. Speech, image and video switches
-  // defaulted to off until the first sync with the server's providers (which
-  // could switch them on), so before that sync an off switch says nothing.
-  const synced = state.autoConfigApplied === true;
-  const off = (flag: boolean | undefined, meaningfulBeforeSync: boolean) =>
-    flag === false && (synced || meaningfulBeforeSync);
+  // Only speech input carries an explicit off over: with its slot unassigned
+  // the browser's own recognition would take over, which the user turned off.
+  // The other switches were per-browser toggles that availability following
+  // the slots replaces on purpose; a lasting workspace `null` made of them
+  // would override the deployment's defaults from then on.
 
   const services: Array<{
     capability: ServiceCapability;
     selected?: string;
     on: boolean;
-    /** The user turned the capability off: the slot is proposed as off (null). */
+    /** The user turned the capability off: the slot is proposed as off (null). Speech input only. */
     explicitlyOff: boolean;
     model?: string;
   }> = [
@@ -345,7 +340,7 @@ export function buildModelSettingsProposal(
       capability: 'tts',
       selected: state.ttsProviderId,
       on: state.ttsEnabled === true,
-      explicitlyOff: off(state.ttsEnabled, false),
+      explicitlyOff: false,
       model: state.ttsProvidersConfig?.[text(state.ttsProviderId)]?.modelId,
     },
     {
@@ -353,29 +348,28 @@ export function buildModelSettingsProposal(
       selected: state.asrProviderId,
       on: state.asrEnabled !== false,
       // Speech input defaulted to on: off was always the user's choice.
-      explicitlyOff: off(state.asrEnabled, true),
+      explicitlyOff: state.asrEnabled === false,
       model: state.asrProvidersConfig?.[text(state.asrProviderId)]?.modelId,
     },
     {
       capability: 'image',
       selected: state.imageProviderId,
       on: state.imageGenerationEnabled === true,
-      explicitlyOff: off(state.imageGenerationEnabled, false),
+      explicitlyOff: false,
       model: state.imageModelId,
     },
     {
       capability: 'video',
       selected: state.videoProviderId,
       on: state.videoGenerationEnabled === true,
-      explicitlyOff: off(state.videoGenerationEnabled, false),
+      explicitlyOff: false,
       model: state.videoModelId,
     },
     {
       capability: 'webSearch',
       selected: state.webSearchProviderId,
       on: state.webSearchEnabled === true,
-      // Research was opt-in and never switched on by a sync: off is the choice.
-      explicitlyOff: off(state.webSearchEnabled, true),
+      explicitlyOff: false,
     },
     // Document extraction had no switch: the selected extractor was used.
     { capability: 'document', selected: state.pdfProviderId, on: true, explicitlyOff: false },

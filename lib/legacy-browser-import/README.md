@@ -136,7 +136,7 @@ extraction). Model settings now live on the server (`/api/model-config`), and
    TTS model setting, global TTS/ASR model ids, a TTS provider's `model`, the
    flat web search key), builds a proposal (`buildModelSettingsProposal`, pure)
    and keeps it under `maic:legacy-import:model-settings`, only when it holds
-   something: a key, a custom endpoint, a model choice or a capability turned
+   something: a key, a custom endpoint, a model choice or speech input turned
    off. The store then drops those fields; it keeps only the user's
    preferences, with the narration voice tied to the provider it was picked
    for. **Keys are never dropped before they are staged**: when the proposal
@@ -177,7 +177,7 @@ What the proposal holds:
 | The chosen model                                                | `slots.llm` = `provider:model`; a server-configured provider is named by its preset id, as the server names translated legacy providers |
 | An enabled selection whose provider is proposed or server-configured | the capability's root slot (`tts`, `asr`, `image`, `video`, `webSearch`, `document`), with the selected model; a server-configured provider by its preset id, without credentials |
 | Browser speech synthesis or recognition, when selected          | a `browser-native-tts` / `browser-native` provider and its root slot                              |
-| A capability the user turned off (`ttsEnabled`, `asrEnabled`, `imageGenerationEnabled`, `videoGenerationEnabled`, `webSearchEnabled` stored as false) | its root slot set to `null` (off). Speech, image and video switches count only after the first sync with the server's providers (`autoConfigApplied`), before which they were off by default; speech input defaulted to on and research was opt-in, so their off switches always count |
+| Speech input turned off (`asrEnabled` stored as false)             | `slots.asr = null` (off): without an `asr` slot the browser's own speech recognition would take over. The other switches (`ttsEnabled`, `imageGenerationEnabled`, `videoGenerationEnabled`, `webSearchEnabled`) are not carried over: availability follows the slots, and a lasting `null` would override the deployment's defaults |
 
 Not imported: per-stage routes (`llmStageRoutes`), which do not map one to one
 onto slots; custom speech and transcription providers; AliDocMind's key pair
