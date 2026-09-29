@@ -116,6 +116,20 @@ export function resolveTTSModelForVoice(
     : TTS_PROVIDERS['qwen-tts'].defaultModelId;
 }
 
+/**
+ * Whether a model can speak a voice: a catalogue voice that lists compatible
+ * models (OpenAI's Marin and Cedar need gpt-4o-mini-tts) only on those; any
+ * other voice (no such list, a clone, a user voice) on any model. Without a
+ * model the provider's default model is meant.
+ */
+export function voiceServesModel(providerId: string, voiceId: string, modelId?: string): boolean {
+  const provider = TTS_PROVIDERS[providerId as BuiltInTTSProviderId];
+  const voice = provider?.voices.find((entry) => entry.id === voiceId);
+  if (!voice?.compatibleModels) return true;
+  const model = modelId || provider.defaultModelId;
+  return !!model && voice.compatibleModels.includes(model);
+}
+
 export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
   'openai-tts': {
     id: 'openai-tts',

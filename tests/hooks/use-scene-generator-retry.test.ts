@@ -296,6 +296,32 @@ describe('scene generation retry wrappers', () => {
     );
   });
 
+  it("narrates with a voice the slot's model can speak", async () => {
+    const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
+    // Marin needs gpt-4o-mini-tts; the slot speaks with tts-1.
+    mocks.settingsState.mockReturnValue({
+      ...mocks.settingsState(),
+      ttsVoiceProviderId: 'openai-tts',
+      ttsVoice: 'marin',
+    });
+    setModelSettingsViewForTests({ tts: { registryId: 'openai-tts', modelId: 'tts-1' } });
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse(200, { success: true, base64: btoa('audio'), format: 'wav' }),
+    );
+
+    await generateAndStoreTTS('request-model', 'Hello class');
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body));
+    expect(body.ttsVoice).toBe('alloy');
+
+    // On gpt-4o-mini-tts the same voice is kept.
+    setModelSettingsViewForTests({ tts: { registryId: 'openai-tts', modelId: 'gpt-4o-mini-tts' } });
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse(200, { success: true, base64: btoa('audio'), format: 'wav' }),
+    );
+    await generateAndStoreTTS('request-model-2', 'Hello class');
+    expect(JSON.parse(String(mockFetch.mock.calls[1][1]?.body)).ttsVoice).toBe('marin');
+  });
+
   it('falls back once from a missing narrator clone to the global voice', async () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
     mocks.settingsState.mockReturnValue({
