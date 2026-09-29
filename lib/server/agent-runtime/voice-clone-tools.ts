@@ -46,6 +46,7 @@ import {
 } from '@/lib/audio/voice-registration';
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import { validateReferenceAudio } from '@/lib/audio/wav-validate';
+import { adapterOptions } from '@/lib/server/model-config/adapter-options';
 import type { MediaConnection } from '@/lib/server/model-config/media';
 import {
   getAgentSessionMaterialStore,
@@ -138,7 +139,7 @@ export function registrationCapableProviderIds(tts?: MediaConnection | 'off' | n
   const slot = tts && tts !== 'off' ? tts : undefined;
   return (slot ? [slot.providerId] : []).filter((id) => {
     const adapter = getVoiceRegistrationAdapter(id);
-    if (!adapter || !adapter.supportsRegistration()) return false;
+    if (!adapter || !adapter.supportsRegistration(adapterOptions(slot))) return false;
     const config = TTS_PROVIDERS[id as keyof typeof TTS_PROVIDERS];
     if (config?.requiresApiKey && !slot?.apiKey) return false;
     return true;
@@ -337,7 +338,9 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
     execute: async (_callId, params, signal) => {
       const providerId = resolveRegistrationProviderId(deps.ttsConnection);
       const adapter = providerId ? getVoiceRegistrationAdapter(providerId) : undefined;
-      if (!providerId || !adapter || !adapter.supportsRegistration()) {
+      const connection =
+        deps.ttsConnection && deps.ttsConnection !== 'off' ? deps.ttsConnection : undefined;
+      if (!providerId || !adapter || !adapter.supportsRegistration(adapterOptions(connection))) {
         throw new Error('deployment has no voice registration backend configured');
       }
       throwIfAborted(signal);

@@ -24,6 +24,7 @@ import { generateTTS, TTSRateLimitError } from '@/lib/audio/tts-providers';
 import { DEFAULT_TTS_VOICES, DEFAULT_TTS_MODELS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
+import { adapterOptions } from '@/lib/server/model-config/adapter-options';
 import { serverMediaConnection } from '@/lib/server/model-config/media';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
@@ -573,6 +574,8 @@ export async function generateTTSForClassroom(
               publicOnly: tts.userEndpoint,
               voice,
               speed: speechAction.speed,
+              // The provider's own options (a VoxCPM backend, say).
+              providerOptions: adapterOptions(tts),
               signal,
             },
             speechAction.text,

@@ -4,6 +4,7 @@ import type { TTSProviderId } from '@/lib/audio/types';
 import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement';
 import type { LegacySpeechAction, SpeechAction } from '@/lib/types/action';
 import type { GeneratedAgentConfig, Scene } from '@/lib/types/stage';
+import { adapterOptions } from '@/lib/server/model-config/adapter-options';
 import { serverMediaConnection } from '@/lib/server/model-config/media';
 import { resolveTTSModel, slotTTSModel } from '@/lib/server/provider-config';
 import { persistClassroomMediaBytes } from '@/lib/server/classroom-media-bytes';
@@ -85,6 +86,8 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
           publicOnly: connection.userEndpoint,
           voice,
           speed: speech.speed,
+          // The provider's own options (a VoxCPM backend, say).
+          providerOptions: adapterOptions(connection),
           signal: input.signal,
         },
         speech.text,

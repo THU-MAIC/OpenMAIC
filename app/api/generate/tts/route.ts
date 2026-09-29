@@ -33,6 +33,7 @@ import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm
 import { QwenVoiceCloneError, qwenVoiceCloneErrorMessage } from '@/lib/audio/qwen-voice-clone';
 import { DEFAULT_TTS_VOICES, isQwenCloneVoice } from '@/lib/audio/constants';
 import {
+  adapterOptions,
   mediaResolutionResponse,
   RequestedProviderRefusedError,
   resolveMediaSlot,
@@ -167,8 +168,9 @@ export async function POST(req: NextRequest) {
       publicOnly,
       // A server-configured provider's endpoint may be on a local network.
       managed,
+      // The provider's own options (a VoxCPM backend, say) with the voice's.
       providerOptions: {
-        ...(ttsProviderOptions || {}),
+        ...adapterOptions(connection, ttsProviderOptions),
         ...(qwenCloneVoice ? { qwenVoiceClone: true } : {}),
       },
     };

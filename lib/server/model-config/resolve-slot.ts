@@ -58,6 +58,8 @@ export interface ResolvedModelTarget {
   /** Multi-part credentials for vendors without a single key. */
   credentials?: Record<string, string>;
   proxy?: string;
+  /** The provider's non-secret, provider-specific settings (openmaic.yml `options`). */
+  options?: Record<string, string | number | boolean>;
   /** The base URL is the provider's own, not the preset's or registry's. */
   customBaseUrl?: true;
   /** Absent: the provider's default model (never for chat). */
@@ -171,6 +173,7 @@ function resolveTarget(
     ...(provider.apiKey !== undefined ? { apiKey: provider.apiKey } : {}),
     ...(provider.credentials !== undefined ? { credentials: provider.credentials } : {}),
     ...(provider.proxy !== undefined ? { proxy: provider.proxy } : {}),
+    ...(provider.options !== undefined ? { options: { ...provider.options } } : {}),
     // A provider-only reference means the preset's own default (a token
     // plan's), else the registry's, which the adapter applies.
     ...((modelId ?? target.defaultModel) !== undefined

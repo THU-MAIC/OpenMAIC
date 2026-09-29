@@ -16,6 +16,7 @@
 
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import {
+  adapterOptions,
   mediaResolutionResponse,
   RequestedProviderRefusedError,
   resolveMediaSlot,
@@ -142,6 +143,21 @@ export async function POST(req: NextRequest) {
         'INVALID_REQUEST',
         400,
         `Provider "${providerId}" does not support voice registration`,
+      );
+    }
+
+    // Whether a configured provider registers voices depends on its options (a
+    // VoxCPM backend without runtime registration does not). The deprecated
+    // request path keeps its behaviour.
+    if (
+      !deleting &&
+      connection.origin === 'configuration' &&
+      !adapter.supportsRegistration(adapterOptions(connection))
+    ) {
+      return apiError(
+        'INVALID_REQUEST',
+        400,
+        `Provider "${providerId}" does not support voice registration with its configured options`,
       );
     }
 

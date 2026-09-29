@@ -86,6 +86,14 @@ const assignmentSchema = z.unknown().transform((value, ctx): SlotAssignment => {
   return z.NEVER;
 });
 
+/** A provider's non-secret options: short keys, scalar values. */
+export const providerOptionsSchema = z.record(
+  z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/, 'invalid option name'),
+  z.union([z.string().max(1024), z.number().finite(), z.boolean()]),
+);
+
+export type ProviderOptions = z.infer<typeof providerOptionsSchema>;
+
 export const providerSchema = z
   .object({
     preset: z.string().min(1),
@@ -96,6 +104,12 @@ export const providerSchema = z
     proxy: z.url().optional(),
     /** Multi-part credentials for vendors that do not use a single key. */
     credentials: z.record(z.string().min(1), z.string().min(1)).optional(),
+    /**
+     * Provider-specific settings that are not secret (a VoxCPM `backend`, for
+     * example): passed to the provider's adapter as its options. Shown in the
+     * settings view, so never a place for a key.
+     */
+    options: providerOptionsSchema.optional(),
   })
   .strict();
 
