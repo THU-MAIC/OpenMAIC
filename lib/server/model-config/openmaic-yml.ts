@@ -279,6 +279,26 @@ function checkKeys(document: Record<string, unknown>, issues: string[]): void {
   }
 }
 
+/**
+ * The schema checks alone, on a value that is already an object: for stores
+ * that hold the same shape as the file (the workspace configuration), where
+ * there are no placeholders and references may point at another layer.
+ */
+export function checkModelConfigShape(value: unknown): {
+  config?: ModelConfigFile;
+  issues: string[];
+} {
+  if (!isPlainMapping(value)) return { issues: ['(root): expected a mapping'] };
+  const issues: string[] = [];
+  checkKeys(value, issues);
+  const parsed = fileSchema.safeParse(value);
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues)
+      issues.push(`${formatPath(issue.path)}: ${issue.message}`);
+  }
+  return parsed.success && !issues.length ? { config: parsed.data, issues } : { issues };
+}
+
 /** Parses and validates the text of a model configuration file. */
 export function parseModelConfig(
   text: string,

@@ -21,6 +21,7 @@ import { ensureLegacyClassroomImportSchema } from '@/lib/persistence/legacy-clas
 import { ensureOwnerMaterialSchema } from '@/lib/persistence/owner-materials';
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
+import { ensureWorkspaceModelConfigSchema } from '@/lib/persistence/workspace-model-config';
 import { ensureStageMetaSchema } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 
@@ -83,6 +84,7 @@ async function createServerPersistenceProvider(
       await ensureAssetSchema(locked);
       await ensureClassroomGenerationJobSchema(locked);
       await ensureLegacyClassroomImportSchema(locked);
+      await ensureWorkspaceModelConfigSchema(locked);
     });
     const withTransaction = nodePostgresTransaction(queryable);
     const byteStore = configuredLazyAssetByteStore(queryable);

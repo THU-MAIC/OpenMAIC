@@ -1,0 +1,150 @@
+/**
+ * Encryption at rest for secrets the web settings store (RFC #1701).
+ *
+ * Workspace provider keys are sealed with AES-256-GCM under the instance
+ * secret, `OPENMAIC_SECRET_KEY`. When it is unset, a random secret is created
+ * on first use in the data directory (`data/instance-secret.key`, the Docker
+ * volume) and read from there afterwards. A deployment that runs more than one
+ * instance must set the variable, since each instance would otherwise create
+ * its own.
+ *
+ * Every sealed value records which secret sealed it (`kid`, a digest prefix,
+ * never the secret). Opening a value under a different secret raises
+ * {@link SecretKeyMismatchError} rather than an opaque authentication failure,
+ * so a lost or rotated secret shows up as "enter this key again".
+ */
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('SecretBox');
+
+export const INSTANCE_SECRET_FILE = 'instance-secret.key';
+const ALGORITHM = 'aes-256-gcm';
+
+export interface SealedSecret {
+  v: 1;
+  /** Which instance secret sealed this value (hex digest prefix). */
+  kid: string;
+  iv: string;
+  tag: string;
+  ct: string;
+}
+
+export class SecretKeyMismatchError extends Error {
+  constructor() {
+    super('sealed with a different instance secret; the value has to be entered again');
+    this.name = 'SecretKeyMismatchError';
+  }
+}
+
+export class SecretCorruptError extends Error {
+  constructor() {
+    super('sealed value is damaged and cannot be opened');
+    this.name = 'SecretCorruptError';
+  }
+}
+
+interface InstanceKey {
+  key: Buffer;
+  kid: string;
+}
+
+function deriveKey(secret: string): InstanceKey {
+  // Any string works as the secret; hashing gives the 32 bytes AES-256 needs.
+  const key = createHash('sha256').update(`openmaic.instance-secret:${secret}`, 'utf8').digest();
+  const kid = createHash('sha256').update(key).digest('hex').slice(0, 16);
+  return { key, kid };
+}
+
+function readOrCreateSecretFile(dataDir: string): string {
+  const file = path.join(dataDir, INSTANCE_SECRET_FILE);
+  try {
+    return fs.readFileSync(file, 'utf8').trim();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  fs.mkdirSync(dataDir, { recursive: true });
+  const secret = randomBytes(32).toString('base64');
+  try {
+    // Exclusive create: two processes starting together agree on one secret.
+    fs.writeFileSync(file, `${secret}\n`, { flag: 'wx', mode: 0o600 });
+    log.warn(
+      `OPENMAIC_SECRET_KEY is not set; created ${file}. Keep it with the database: stored keys cannot be read without it. Set OPENMAIC_SECRET_KEY when running more than one instance.`,
+    );
+    return secret;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    return fs.readFileSync(file, 'utf8').trim();
+  }
+}
+
+let cached: { source: string; key: InstanceKey } | undefined;
+
+/**
+ * The instance key: `OPENMAIC_SECRET_KEY`, or the secret file in `dataDir`
+ * (created when missing).
+ */
+export function instanceKey(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  dataDir: string = path.join(process.cwd(), 'data'),
+): InstanceKey {
+  const configured = env.OPENMAIC_SECRET_KEY?.trim();
+  const source = configured ? `env:${configured}` : `file:${dataDir}`;
+  if (cached?.source === source) return cached.key;
+  const key = deriveKey(configured || readOrCreateSecretFile(dataDir));
+  cached = { source, key };
+  return key;
+}
+
+export function resetInstanceKeyForTests(): void {
+  cached = undefined;
+}
+
+/**
+ * Seal `plaintext`. `context` is bound to the ciphertext (additional
+ * authenticated data): a value sealed for one context does not open under
+ * another.
+ */
+export function sealSecret(plaintext: string, context: string, key = instanceKey()): SealedSecret {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv(ALGORITHM, key.key, iv);
+  cipher.setAAD(Buffer.from(context, 'utf8'));
+  const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  return {
+    v: 1,
+    kid: key.kid,
+    iv: iv.toString('base64'),
+    tag: cipher.getAuthTag().toString('base64'),
+    ct: ct.toString('base64'),
+  };
+}
+
+export function isSealedSecret(value: unknown): value is SealedSecret {
+  if (!value || typeof value !== 'object') return false;
+  const box = value as Record<string, unknown>;
+  return (
+    box.v === 1 &&
+    typeof box.kid === 'string' &&
+    typeof box.iv === 'string' &&
+    typeof box.tag === 'string' &&
+    typeof box.ct === 'string'
+  );
+}
+
+export function openSecret(sealed: SealedSecret, context: string, key = instanceKey()): string {
+  if (sealed.kid !== key.kid) throw new SecretKeyMismatchError();
+  try {
+    const decipher = createDecipheriv(ALGORITHM, key.key, Buffer.from(sealed.iv, 'base64'));
+    decipher.setAAD(Buffer.from(context, 'utf8'));
+    decipher.setAuthTag(Buffer.from(sealed.tag, 'base64'));
+    return Buffer.concat([
+      decipher.update(Buffer.from(sealed.ct, 'base64')),
+      decipher.final(),
+    ]).toString('utf8');
+  } catch {
+    throw new SecretCorruptError();
+  }
+}
