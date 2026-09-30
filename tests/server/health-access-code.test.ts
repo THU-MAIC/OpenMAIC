@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 import { GET } from '@/app/api/health/route';
-import { middleware } from '@/middleware';
+import { middleware } from '@/proxy';
 
 vi.mock('@/lib/server/provider-config', () => ({
   getServerWebSearchProviders: () => ({}),

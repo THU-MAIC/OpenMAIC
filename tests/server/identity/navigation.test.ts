@@ -10,10 +10,10 @@ import {
 import type { OwnerAuthMethod } from '@/lib/server/identity/types';
 import { resolveRequestOwner } from '@/lib/server/identity/resolve';
 import { isDocumentNavigation } from '@/lib/server/identity/navigation';
-import { middleware } from '@/middleware';
+import { middleware } from '@/proxy';
 
 /**
- * The page request establishes the anonymous owner (middleware.ts,
+ * The page request establishes the anonymous owner (proxy.ts,
  * lib/server/identity/navigation.ts): one cookie, minted on the document
  * response with the route handlers' own format and attributes, before the
  * page can send an API request that would mint one of its own.

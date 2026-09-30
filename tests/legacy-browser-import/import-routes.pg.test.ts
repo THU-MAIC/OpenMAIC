@@ -363,7 +363,7 @@ describe.skipIf(!contractUrl)('the legacy browser importer against the app route
 
   /** The browser loading a page: the document request, through the middleware. */
   async function loadPage(path = '/'): Promise<void> {
-    const { middleware } = await import('@/middleware');
+    const { middleware } = await import('@/proxy');
     const response = await middleware(
       new NextRequest(`http://localhost${path}`, {
         headers: {

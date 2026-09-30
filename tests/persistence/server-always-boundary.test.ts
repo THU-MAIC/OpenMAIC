@@ -37,7 +37,7 @@ const ROOT = process.cwd();
 const CODE_ROOTS = ['app', 'components', 'lib', 'packages', 'scripts', 'e2e', 'skills'];
 const CODE_FILES = [
   'instrumentation.ts',
-  'middleware.ts',
+  'proxy.ts',
   'next.config.ts',
   'playwright.config.ts',
 ];

@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
-import { middleware } from '@/middleware';
+import { middleware } from '@/proxy';
 import {
   configureOwnerAuthentication,
   OWNER_ROLES,
