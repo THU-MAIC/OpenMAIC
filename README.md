@@ -148,7 +148,7 @@ slots:
   video: null                      # turn a capability off
 ```
 
-Slots you write are locked; slots you leave out follow their parent and can be chosen in the model settings of the web app, where users can also connect services of their own (keys saved there are encrypted with `OPENMAIC_SECRET_KEY`). The server validates the file at startup and names the exact line of any mistake. See [Configuration](packages/docs/content/docs/configuration.mdx) for the slot reference, presets, fallbacks and policy, and [Supported models](packages/docs/content/docs/supported-models.mdx) for preset and model IDs.
+Slots you write are locked; slots you leave out follow their parent and can be chosen in the model settings of the web app, where users can also connect services of their own (keys saved there are encrypted with `OPENMAIC_SECRET_KEY`). The server validates the file at startup and names every mistake by its field (or, for broken YAML, its line). See [Configuration](packages/docs/content/docs/configuration.mdx) for the slot reference, presets, fallbacks and policy, and [Supported models](packages/docs/content/docs/supported-models.mdx) for preset and model IDs.
 
 Supported providers: **OpenAI**, **Azure OpenAI**, **Anthropic**, **Amazon Bedrock**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **TokenDance**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), **Lemonade** (local LLM / image / TTS / ASR), **FunASR** (local ASR), and any OpenAI-compatible API.
 
