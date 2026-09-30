@@ -6,13 +6,16 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { withResearchDecision } from '@/lib/generation/research-decision';
+import type { UserRequirements } from '@/lib/types/generation';
 import { modelCapabilities, requireModelCapabilities } from '@/lib/model-settings/capabilities';
 import { createModelSettingsClient } from '@/lib/model-settings/client';
 
 import { modelSettingsViewFor } from '../helpers/model-settings-view';
 
 const withSearch = modelSettingsViewFor({ webSearch: { registryId: 'tavily' } });
-const session = { requirements: { requirement: 'Teach photosynthesis.' } };
+const session: { requirements: UserRequirements } = {
+  requirements: { requirement: 'Teach photosynthesis.' },
+};
 
 describe('the research decision', () => {
   it('is not made from a failed read, and is made once the read recovers', async () => {
