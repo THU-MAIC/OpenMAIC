@@ -90,4 +90,46 @@ describe('lookupFromLayers', () => {
     expect(lookup.configured).toEqual({ status: 'unassigned', slot: 'llm' });
     expect(lookup.defaults()).toEqual({ status: 'unassigned', slot: 'llm' });
   });
+
+  it('leaves out providers a workspace added once the policy forbids them', () => {
+    const deployment: ModelConfigLayer = {
+      source: 'deployment',
+      config: {
+        policy: { allowWorkspaceProviders: false },
+        providers: { op: { preset: 'deepseek', apiKey: 'k' } },
+        slots: { llm: 'op:deepseek-v4-pro' },
+      },
+    };
+    const workspace: ModelConfigLayer = {
+      source: 'workspace',
+      config: {
+        providers: { mine: { preset: 'openai', apiKey: 'k' } },
+        slots: {
+          'course.outline': 'mine:gpt-5.6',
+          'course.actions': { model: 'op:deepseek-v4-flash', fallback: 'mine:gpt-5.6' },
+          classroom: 'op:deepseek-v4-flash',
+        },
+      },
+    };
+    const layers = { deployment, workspace, defaults: null };
+    // Named its own provider: follows the deployment's llm instead.
+    expect(lookupFromLayers('course.outline', layers).configured).toMatchObject({
+      providerId: 'op',
+      modelId: 'deepseek-v4-pro',
+    });
+    // Its own model on a deployment provider stays, without its fallback.
+    const actions = lookupFromLayers('course.actions', layers).configured;
+    expect(actions).toMatchObject({ providerId: 'op', modelId: 'deepseek-v4-flash' });
+    expect(actions).not.toHaveProperty('fallback');
+    expect(lookupFromLayers('classroom', layers).configured).toMatchObject({
+      modelId: 'deepseek-v4-flash',
+    });
+
+    // Allowed again, the workspace's providers count.
+    const allowed = { ...deployment, config: { ...deployment.config, policy: {} } };
+    expect(
+      lookupFromLayers('course.outline', { deployment: allowed, workspace, defaults: null })
+        .configured,
+    ).toMatchObject({ providerId: 'mine' });
+  });
 });

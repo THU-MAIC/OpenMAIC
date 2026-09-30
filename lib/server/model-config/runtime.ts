@@ -17,6 +17,7 @@ import type { LlmStage } from '@/lib/server/model-routes';
 import type { OwnerAuthRequest } from '@/lib/server/identity/types';
 
 import { loadDeploymentLayer, type DeploymentLayer } from './deployment-layer';
+import { parseModelRef, type ModelConfigFile, type SlotAssignment } from './openmaic-yml';
 import { resolveSlot, type ModelConfigLayer, type SlotResolution } from './resolve-slot';
 
 const log = createLogger('ModelConfig');
@@ -127,11 +128,55 @@ export interface ResolutionLayers {
   defaults: ModelConfigLayer | null;
 }
 
+/**
+ * The workspace layer as the deployment's policy lets it count. With
+ * `policy.allowWorkspaceProviders: false`, providers a workspace added earlier
+ * are not used: they are left out, with the assignments that name them (an
+ * assignment whose fallback alone names one keeps its model).
+ */
+export function workspaceUnderPolicy(
+  workspace: ModelConfigLayer | null,
+  deployment: ModelConfigLayer | null,
+): ModelConfigLayer | null {
+  if (!workspace || deployment?.config.policy?.allowWorkspaceProviders !== false) return workspace;
+  const own = new Set(Object.keys(workspace.config.providers ?? {}));
+  if (!own.size) return workspace;
+  const names = (ref: string | undefined) => {
+    if (!ref) return false;
+    try {
+      return own.has(parseModelRef(ref).providerId);
+    } catch {
+      return false;
+    }
+  };
+  const slots: Record<string, SlotAssignment> = {};
+  for (const [slot, assignment] of Object.entries(workspace.config.slots ?? {})) {
+    if (assignment === null || assignment === undefined) {
+      if (assignment === null) slots[slot] = null;
+      continue;
+    }
+    if (typeof assignment === 'string') {
+      if (!names(assignment)) slots[slot] = assignment;
+      continue;
+    }
+    if (names(assignment.model)) continue;
+    if (names(assignment.fallback)) {
+      const { fallback: _fallback, ...kept } = assignment;
+      slots[slot] = kept as SlotAssignment;
+    } else {
+      slots[slot] = assignment;
+    }
+  }
+  const { providers: _providers, ...rest } = workspace.config;
+  return { ...workspace, config: { ...rest, slots } as ModelConfigFile };
+}
+
 /** The lookup over given layers; {@link lookupSlot} gathers them for a workspace. */
 export function lookupFromLayers(
   slot: SlotId,
-  { deployment, workspace, defaults }: ResolutionLayers,
+  { deployment, workspace: stored, defaults }: ResolutionLayers,
 ): SlotLookup {
+  const workspace = workspaceUnderPolicy(stored, deployment);
   const persisted = [deployment, workspace].filter((entry): entry is ModelConfigLayer => !!entry);
   return {
     configured: resolveSlot(slot, persisted),
