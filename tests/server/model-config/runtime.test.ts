@@ -132,4 +132,28 @@ describe('lookupFromLayers', () => {
         .configured,
     ).toMatchObject({ providerId: 'mine' });
   });
+
+  it('keeps references to an id the deployment also declares under that policy', () => {
+    const deployment: ModelConfigLayer = {
+      source: 'deployment',
+      config: {
+        policy: { allowWorkspaceProviders: false },
+        providers: { op: { preset: 'deepseek', apiKey: 'k' } },
+      },
+    };
+    const workspace: ModelConfigLayer = {
+      source: 'workspace',
+      config: {
+        providers: { op: { preset: 'openai', apiKey: 'k' } },
+        slots: { llm: { model: 'op:deepseek-v4-pro', fallback: 'op:deepseek-v4-flash' } },
+      },
+    };
+    expect(
+      lookupFromLayers('llm', { deployment, workspace, defaults: null }).configured,
+    ).toMatchObject({
+      providerId: 'op',
+      modelId: 'deepseek-v4-pro',
+      fallback: { modelId: 'deepseek-v4-flash' },
+    });
+  });
 });

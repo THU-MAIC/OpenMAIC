@@ -38,7 +38,7 @@ import {
   type ResolvedModelTarget,
   type SlotResolution,
 } from './resolve-slot';
-import { deploymentConfig, lookupFromLayers } from './runtime';
+import { deploymentConfig, lookupFromLayers, workspaceOnlyProviders } from './runtime';
 
 type Provider = NonNullable<ModelConfigFile['providers']>[string];
 
@@ -462,6 +462,28 @@ export async function applyModelSettingsChange(
   const providers = (next.providers ??= {});
 
   if (change.kind === 'slots') {
+    // Under a policy without workspace providers, an assignment may not name
+    // one the workspace kept from before (the calls would not use it).
+    if (!allowProviders && current) {
+      const forbidden = workspaceOnlyProviders(
+        { source: 'workspace', config: current },
+        deployment,
+      );
+      for (const [slot, assignment] of Object.entries(change.set ?? {})) {
+        const refs =
+          assignment === null || assignment === undefined
+            ? []
+            : typeof assignment === 'string'
+              ? [assignment]
+              : [assignment.model, assignment.fallback];
+        if (refs.some((ref) => typeof ref === 'string' && forbidden.has(ref.split(':')[0]))) {
+          throw new ModelSettingsError(
+            'INVALID_ASSIGNMENT',
+            `${slot} cannot use a workspace provider: this deployment does not allow them`,
+          );
+        }
+      }
+    }
     const touched = [...Object.keys(change.set ?? {}), ...(change.clear ?? [])];
     for (const slot of touched) {
       if (!isSlotId(slot)) throw new ModelSettingsError('UNKNOWN_SLOT', `Unknown slot ${slot}`);

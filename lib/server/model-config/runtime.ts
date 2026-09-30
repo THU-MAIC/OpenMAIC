@@ -129,6 +129,20 @@ export interface ResolutionLayers {
 }
 
 /**
+ * The providers only the workspace declares: a reference to an id the
+ * deployment also declares resolves to the deployment's provider.
+ */
+export function workspaceOnlyProviders(
+  workspace: ModelConfigLayer,
+  deployment: ModelConfigLayer | null,
+): Set<string> {
+  const declared = deployment?.config.providers ?? {};
+  return new Set(
+    Object.keys(workspace.config.providers ?? {}).filter((id) => !Object.hasOwn(declared, id)),
+  );
+}
+
+/**
  * The workspace layer as the deployment's policy lets it count. With
  * `policy.allowWorkspaceProviders: false`, providers a workspace added earlier
  * are not used: they are left out, with the assignments that name them (an
@@ -139,8 +153,8 @@ export function workspaceUnderPolicy(
   deployment: ModelConfigLayer | null,
 ): ModelConfigLayer | null {
   if (!workspace || deployment?.config.policy?.allowWorkspaceProviders !== false) return workspace;
-  const own = new Set(Object.keys(workspace.config.providers ?? {}));
-  if (!own.size) return workspace;
+  const own = workspaceOnlyProviders(workspace, deployment);
+  if (!own.size && !workspace.config.providers) return workspace;
   const names = (ref: string | undefined) => {
     if (!ref) return false;
     try {

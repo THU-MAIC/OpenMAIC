@@ -301,6 +301,21 @@ describe('applyModelSettingsChange', () => {
     ).rejects.toMatchObject({ code: 'PROVIDERS_NOT_ALLOWED' });
   });
 
+  it('refuses an assignment to a kept workspace provider once the policy forbids them', async () => {
+    const kept = {
+      providers: { mine: { preset: 'openai', apiKey: 'sk-mine-0000000000' } },
+      slots: { 'course.outline': 'mine:gpt-5.6' },
+    };
+    deployment({ policy: { allowWorkspaceProviders: false } });
+    await expect(
+      applyModelSettingsChange(kept, { kind: 'slots', set: { llm: 'mine:gpt-5.6' } }),
+    ).rejects.toMatchObject({ code: 'INVALID_ASSIGNMENT' });
+    // Other edits still save, leaving the dormant assignment as it is.
+    await expect(
+      applyModelSettingsChange(kept, { kind: 'slots', set: { video: null } }),
+    ).resolves.toMatchObject({ slots: { 'course.outline': 'mine:gpt-5.6', video: null } });
+  });
+
   it('drops the assignments of a removed provider', async () => {
     const next = await applyModelSettingsChange(
       {
