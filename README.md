@@ -503,7 +503,7 @@ matching `DATABASE_URL` is commented in `.env.example`, and `pnpm db:down` stops
 it again. Serverless hosts (see [Vercel Deployment](#vercel-deployment)) point
 `DATABASE_URL` at an external PostgreSQL database.
 
-Add your provider API keys to `.env.local` as usual. Course documents, folders,
+Configure models as usual (`openmaic.yml` with keys in `.env.local`, or Settings → Models). Course documents, folders,
 chat history and learner runtime sessions, and generated media are stored on
 the server. What stays in the browser is what belongs to the device and can be
 lost without losing a course: app settings and UI preferences, the playback
@@ -1379,7 +1379,7 @@ Voice registration works only on the `vllm-omni` backend; `python-api` and `nano
 
 Without `openmaic.yml`, the legacy `TTS_VOXCPM_BASE_URL=http://localhost:8000/v1` sets the endpoint but cannot choose a backend.
 
-**3. Manage voices.** Three voice modes, all under **Settings → Text-to-Speech → VoxCPM2 → VoxCPM Voices**.
+**3. Manage voices.** With VoxCPM2 assigned to the `tts` slot, open **Settings → Voice → VoxCPM voices** (the voice manager appears only when `tts` resolves to a `voxcpm-tts` provider). Three voice modes:
 
 <img src="assets/voxcpm/voxcpm-voice-manager.png" width="85%" alt="VoxCPM2 VoxCPM Voices section with Auto, Prompt and Clone modes" />
 

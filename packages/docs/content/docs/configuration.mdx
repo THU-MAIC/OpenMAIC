@@ -191,7 +191,7 @@ The model settings (**Settings → Models** in the web app) read and edit the sa
 - **Providers** tab: the providers the workspace can use. Providers from `openmaic.yml` are listed read-only and without anything about their keys. Providers the workspace adds are editable; their keys are write-only and shown only as a mask such as `…abcd`.
 - **Connect a service**: when no chat model is configured yet, this first-run setup adds a provider and fills the slots its preset recommends that are still unassigned. After that it is an ordinary provider.
 
-Provider settings that a browser stored in earlier versions (providers, keys and the chosen model) are imported into the workspace once, and the keys are removed from the browser once imported (a failed import keeps them there to try again). Anything the workspace already has, and every slot `openmaic.yml` locks, is kept. Speech input that was explicitly switched off becomes `asr: null`; per-stage models from the browser are not imported and have to be set again on the model map.
+Provider settings that a browser stored in earlier versions (providers with their keys and base URLs, the chosen model, token plan enrollment and each capability's selection) are imported into the workspace once. The import never replaces an existing workspace setting or a slot `openmaic.yml` locks, and it skips items that the policy or validation refuses. After any 2xx answer, even when items were skipped, and after a 400 or an unreadable proposal, the proposal and every key in it are removed from the browser: skipped items are not kept anywhere. It stays in the browser for a later attempt only on 401, 404, 409, a 5xx or a network error. Speech input that was explicitly switched off becomes `asr: null`. These have to be set up again by hand: per-stage models (on the model map, or `slots` in `openmaic.yml`), thinking settings (`thinking` on a slot), custom speech and transcription providers and AliDocMind's key pair (in `openmaic.yml`), the VoxCPM backend (`options.backend`), and Baidu search sub-sources (the server's defaults apply). The old per-browser switches for images, video, narration and research are not carried over: each capability now runs whenever its slot resolves.
 
 A workspace is an owner in the sense of the [persistence documentation](./deployment.mdx#server-side-persistence-postgresql): with the default Docker Compose setup (single-user mode) there is one workspace, and in a multi-user deployment each signed-in account has its own.
 
@@ -668,7 +668,7 @@ WEB_SEARCH_MINIMAX_API_KEY=
 WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # optional override
 ```
 
-Brave and SearXNG do not require an API key. The frontend lets users choose whether to enable search for each generation. Grok web search is provided through the Grok LLM search tool, not a standalone web-search provider.
+Brave and SearXNG do not require an API key. Web search has no per-generation switch: it runs whenever the workspace's `webSearch` slot resolves, and turning it off (`webSearch: null` in `openmaic.yml`, or in **Settings → Models**) affects later generations of that workspace. Grok web search is provided through the Grok LLM search tool, not a standalone web-search provider.
 
 ### server-providers.yml
 
