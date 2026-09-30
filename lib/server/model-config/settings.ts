@@ -38,7 +38,12 @@ import {
   type ResolvedModelTarget,
   type SlotResolution,
 } from './resolve-slot';
-import { deploymentConfig, lookupFromLayers, workspaceOnlyProviders } from './runtime';
+import {
+  deploymentConfig,
+  lookupFromLayers,
+  workspaceOnlyProviders,
+  workspaceUnderPolicy,
+} from './runtime';
 
 type Provider = NonNullable<ModelConfigFile['providers']>[string];
 
@@ -557,11 +562,12 @@ export async function applyModelSettingsChange(
 
   // Every slot the workspace writes must resolve against the whole
   // configuration: providers declared, capabilities offered.
-  const layers: ModelConfigLayer[] = [
-    ...(deployment ? [deployment] : []),
-    { source: 'workspace', config: next },
-  ];
-  for (const slot of Object.keys(next.slots ?? {})) {
+  // As the calls see it: under a policy without workspace providers, the
+  // assignments that name one are dormant and not checked (new ones were
+  // refused above).
+  const effective = workspaceUnderPolicy({ source: 'workspace', config: next }, deployment)!;
+  const layers: ModelConfigLayer[] = [...(deployment ? [deployment] : []), effective];
+  for (const slot of Object.keys(effective.config.slots ?? {})) {
     try {
       const resolution = resolveSlot(slot as SlotId, layers);
       if (

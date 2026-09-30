@@ -310,6 +310,22 @@ describe('applyModelSettingsChange', () => {
     await expect(
       applyModelSettingsChange(kept, { kind: 'slots', set: { llm: 'mine:gpt-5.6' } }),
     ).rejects.toMatchObject({ code: 'INVALID_ASSIGNMENT' });
+    // A dormant assignment is not checked, even on a provider switched off since.
+    vi.stubEnv('TAVILY_ENABLED', 'false');
+    vi.resetModules();
+    const fresh = await import('@/lib/server/model-config/settings');
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
+      layer: { source: 'deployment', config: { policy: { allowWorkspaceProviders: false } } },
+      defaults: null,
+      notices: [],
+    });
+    const dormantSearch = {
+      providers: { tv: { preset: 'tavily', apiKey: 'tvly-kept-000000' } },
+      slots: { webSearch: 'tv' },
+    };
+    await expect(
+      fresh.applyModelSettingsChange(dormantSearch, { kind: 'slots', set: { video: null } }),
+    ).resolves.toMatchObject({ slots: { webSearch: 'tv', video: null } });
     // Other edits still save, leaving the dormant assignment as it is.
     await expect(
       applyModelSettingsChange(kept, { kind: 'slots', set: { video: null } }),
