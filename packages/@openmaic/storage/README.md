@@ -286,8 +286,9 @@ adding a caller-configurable allocation path.
       data persists through `KVStore`, legacy `localStorage` keys are ignored
       (not migrated) and best-effort purged, and a user reconfigures once on
       upgrade
-- [ ] wire the app's third `persist` store (`agent-registry-storage`), still on
-      zustand's default `localStorage`
+- [x] the app's third `persist` store (`agent-registry-storage`) is retired:
+      custom agents are stored on the server (`/api/agents`), built-in agents
+      are code, and the old key is imported once
 - [ ] wire the app's remaining ad-hoc `localStorage` keys through `KVStore`
 - [ ] a hydration gate the app actually consumes — **required before an
       `account` scope can be served remotely**. With the browser backend,
