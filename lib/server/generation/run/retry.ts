@@ -44,7 +44,8 @@ export interface RouteRetryOptions {
   refusalStatus: 400 | 500;
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   signal?: AbortSignal;
-  onRetry?: (event: GenerationRetryEvent) => Promise<void> | void;
+  /** `cause` is the failure being retried, as the step reported it. */
+  onRetry?: (event: GenerationRetryEvent & { cause: string }) => Promise<void> | void;
 }
 
 /** Run `operation`, retried as the browser retries the route it replaces; throws the last failure. */
@@ -52,6 +53,7 @@ export async function withRouteRetry<T>(
   operation: () => Promise<T>,
   options: RouteRetryOptions,
 ): Promise<T> {
+  let cause = '';
   try {
     return await withGenerationRetry(
       async () => {
@@ -59,6 +61,7 @@ export async function withRouteRetry<T>(
           return await operation();
         } catch (error) {
           if (isAbortError(error)) throw error;
+          cause = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
           throw new RouteStatusError(error, routeStatus(error, options.refusalStatus));
         }
       },
@@ -67,7 +70,7 @@ export async function withRouteRetry<T>(
         maxRetries: options.maxRetries,
         sleep: options.sleep,
         signal: options.signal,
-        onRetry: options.onRetry,
+        onRetry: options.onRetry && ((event) => options.onRetry!({ ...event, cause })),
       },
     );
   } catch (error) {

@@ -44,6 +44,7 @@ export async function research(input: ResearchInput, ctx: StepContext): Promise<
         const result = await callLLM(
           {
             model: rewriteModel.model,
+            abortSignal: ctx.signal,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },

@@ -78,6 +78,20 @@ describe('run input', () => {
     expect(!parsed.ok && parsed.message).toMatch(message);
   });
 
+  it('numbers an edited outline by its order in the list, as the browser editor does', () => {
+    const scene = (id: string, order: number) => ({ id, type: 'slide', title: id, order });
+    const parsed = parseConfirmOutline({
+      commandId: 'c',
+      outlineRevision: 1,
+      outlines: [scene('b', 7), scene('a', 7), scene('c', 2)],
+    });
+    expect(parsed.ok && parsed.value.outlines!.map((o) => [o.id, o.order])).toEqual([
+      ['b', 1],
+      ['a', 2],
+      ['c', 3],
+    ]);
+  });
+
   it('checks commands', () => {
     expect(parseCommandId('a1:b-2.c_3')).toEqual({ ok: true, value: 'a1:b-2.c_3' });
     expect(parseCommandId('has space').ok).toBe(false);

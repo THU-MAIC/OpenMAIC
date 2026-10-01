@@ -18,6 +18,7 @@ import { buildDocumentBundle, type ParsedDocumentPart } from '@/lib/document/bun
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import { resolveAgentsForOwner } from '@/lib/server/agents/registry';
 import { resolveClassroomMaterials } from '@/lib/server/classroom-materials';
+import { classroomMediaMimeType } from '@/lib/server/classroom-storage';
 import { resolveServerGenerationCapabilities } from '@/lib/server/generation-capabilities';
 import {
   generateAgentProfiles,
@@ -52,7 +53,7 @@ import {
   SlotDisabledError,
   SlotUnassignedError,
 } from '@/lib/server/model-config/runtime';
-import type { LlmStage } from '@/lib/server/model-routes';
+import { LLM_STAGES, type LlmStage } from '@/lib/server/model-routes';
 import { getParallelSceneConcurrency } from '@/lib/server/provider-config';
 import { resolveModel, type ResolvedModel } from '@/lib/server/resolve-model';
 import { storeGeneratedAsset } from '@/lib/server/store-generated-asset';
@@ -233,8 +234,12 @@ export const defaultRunStepServices: RunStepServices = {
   presetAgents: resolveAgentsForOwner,
 
   async sceneContent(ownerId, input, ctx) {
-    const stage = input.outline.type
-      ? (`scene-content:${input.outline.type}` as LlmStage)
+    // A type with a content slot of its own resolves through it; any other
+    // (a type no content path supports) through plain course.content, so it
+    // reaches the content step's own refusal.
+    const typed = `scene-content:${input.outline.type}`;
+    const stage = (LLM_STAGES as readonly string[]).includes(typed)
+      ? (typed as LlmStage)
       : 'scene-content';
     return generateSceneContent(
       { ...input, model: await stageModel(ownerId, stage) },
@@ -280,11 +285,16 @@ export const defaultRunStepServices: RunStepServices = {
       },
       ctx,
     );
+    // The clip's real media type (mp3 is audio/mpeg), so it is served inline.
+    const mimeType = classroomMediaMimeType(`.${narration.format}`);
+    if (!mimeType || !mimeType.startsWith('audio/')) {
+      throw new Error(`The TTS provider returned audio in an unknown format: ${narration.format}`);
+    }
     const stored = await storeGeneratedAsset({
       ownerId,
       stageId: input.stageId,
       bytes: narration.audio,
-      mimeType: `audio/${narration.format}`,
+      mimeType,
       kind: 'audio',
       fence: input.fence,
     });

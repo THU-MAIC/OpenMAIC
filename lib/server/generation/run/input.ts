@@ -246,7 +246,16 @@ export function parseConfirmOutline(raw: unknown): Parsed<ConfirmOutlineCommand>
   if (body.outlines === undefined) {
     return { ok: true, value: { commandId: commandId.value, outlineRevision: revision } };
   }
-  const outlines = parseOutlines(body.outlines);
+  // Orders follow the list, as the browser's outline editor numbers them
+  // after every edit (position 1, 2, 3, ...).
+  const outlines = parseOutlines(
+    Array.isArray(body.outlines)
+      ? body.outlines.map((outline, index) => {
+          const item = record(outline);
+          return item ? { ...item, order: index + 1 } : outline;
+        })
+      : body.outlines,
+  );
   if (!outlines.ok) return outlines;
   return {
     ok: true,

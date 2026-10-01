@@ -84,6 +84,8 @@ export async function generateSceneActions(
       const result = await callLLM(
         {
           model: languageModel,
+          // A run cancels the call when it loses its lease or its course.
+          abortSignal: ctx.signal,
           system: systemPrompt,
           messages: [
             {
@@ -104,6 +106,7 @@ export async function generateSceneActions(
     const result = await callLLM(
       {
         model: languageModel,
+        abortSignal: ctx.signal,
         system: systemPrompt,
         prompt: userPrompt,
         maxOutputTokens: modelInfo?.outputWindow,

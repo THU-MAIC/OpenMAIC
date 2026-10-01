@@ -135,6 +135,8 @@ export async function synthesizeNarration(
     // A server-configured provider's endpoint may be on a local network.
     managed,
     // The provider's own options (a VoxCPM backend, say) with the voice's.
+    // A run cancels the request when it loses its lease or its course.
+    signal: ctx.signal,
     providerOptions: {
       ...adapterOptions(connection, ttsProviderOptions),
       ...(qwenCloneVoice ? { qwenVoiceClone: true } : {}),

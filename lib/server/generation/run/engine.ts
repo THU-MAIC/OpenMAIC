@@ -41,6 +41,7 @@ import { voiceBindingKey } from '@/lib/audio/unavailable-voice-bindings';
 import type { ResolvedVoice } from '@/lib/audio/voice-resolver';
 
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import { validateAppScene } from '@/lib/document-store/validators';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import { createLogger } from '@/lib/logger';
 import { BUILT_IN_AGENTS } from '@/lib/orchestration/registry/built-in';
@@ -81,6 +82,7 @@ import {
   withRouteRetry,
   type RouteRetryOptions,
 } from './retry';
+import { STEP_DEADLINES_MS, withDeadline } from './deadline';
 import type { RunStepServices } from './services';
 import {
   commitGenerationRun,
@@ -218,6 +220,8 @@ export interface ExecuteRunOptions {
   services: RunStepServices;
   /** Aborted when the lease is lost or the process stops. */
   signal: AbortSignal;
+  /** Called just before a commit that gives the lease up (the run waits, pauses or ends). */
+  onLeaseReleased?: () => void;
 }
 
 /** A failure that pauses the run at a step. */
@@ -228,6 +232,27 @@ class StepFailedError extends Error {
   ) {
     super(cause instanceof Error ? cause.message || 'The step failed' : String(cause));
     this.name = 'StepFailedError';
+  }
+}
+
+/** A generated scene the course cannot hold (it fails the document's own scene validation). */
+class InvalidSceneError extends Error {
+  constructor(stepId: string, problems: string) {
+    super(`${stepId} produced a scene the course cannot hold: ${problems}`);
+    this.name = 'InvalidSceneError';
+  }
+}
+
+function assertValidScene(scene: unknown, stepId: string): void {
+  const result = validateAppScene(scene);
+  if (!result.valid) {
+    throw new InvalidSceneError(
+      stepId,
+      result.errors
+        .slice(0, 5)
+        .map((error) => `${error.path}: ${error.message}`)
+        .join('; '),
+    );
   }
 }
 
@@ -269,6 +294,7 @@ export async function executeGenerationRun(
   const steps = await readGenerationRunSteps(run.id);
   const output = <T>(stepId: string) => steps.get(stepId) as T | undefined;
   const commit = async (change: StepCommit) => {
+    if (change.patch?.releaseLease) options.onLeaseReleased?.();
     const committed = await commitGenerationRun(lease, change);
     if (change.step) steps.set(change.step.id, change.step.output);
     // Only a commit that changes the row moves the engine's view of it: the
@@ -288,6 +314,9 @@ export async function executeGenerationRun(
     sleep: services.sleep,
     signal: retrySignal,
     onRetry: async (event) => {
+      log.warn(
+        `run ${run.id}: retrying ${stepId} (${event.attempt}/${event.maxAttempts}): ${event.cause}`,
+      );
       await commit({
         events: [
           {
@@ -297,6 +326,7 @@ export async function executeGenerationRun(
               attempt: event.attempt,
               maxAttempts: event.maxAttempts,
               reason: event.reason,
+              cause: event.cause,
             },
           },
         ],
@@ -320,22 +350,24 @@ export async function executeGenerationRun(
     const research = output<ResearchOutput>('research');
     return withRouteRetry(
       () =>
-        services.sceneContent(
-          owner,
-          {
-            outline: outlines[sceneIndex]!,
-            agents: agents().agents.agents,
-            languageDirective,
-            // The first scene is generated with the session's requirements;
-            // the classroom generates the rest with the task-engine flag only.
-            requirements:
-              sceneIndex === 0
-                ? runRequirements(input, research?.webSearch === true)
-                : taskEngineMode
-                  ? ({ taskEngineMode: true } as UserRequirements)
-                  : undefined,
-          },
-          { log, signal: contentSignal },
+        withDeadline(stepId, STEP_DEADLINES_MS.sceneContent, contentSignal, (callSignal) =>
+          services.sceneContent(
+            owner,
+            {
+              outline: outlines[sceneIndex]!,
+              agents: agents().agents.agents,
+              languageDirective,
+              // The first scene is generated with the session's requirements;
+              // the classroom generates the rest with the task-engine flag only.
+              requirements:
+                sceneIndex === 0
+                  ? runRequirements(input, research?.webSearch === true)
+                  : taskEngineMode
+                    ? ({ taskEngineMode: true } as UserRequirements)
+                    : undefined,
+            },
+            { log, signal: callSignal },
+          ),
         ),
       retryOptions(stepId, sceneIndex, 500, contentSignal),
     );
@@ -406,16 +438,28 @@ export async function executeGenerationRun(
 
     switch (step.kind) {
       case 'material-analysis': {
-        const pdfText = await services.analyzeMaterials(owner, input.materialIds, stepContext);
+        const pdfText = await withDeadline(
+          stepId,
+          STEP_DEADLINES_MS.materialAnalysis,
+          signal,
+          (callSignal) =>
+            services.analyzeMaterials(owner, input.materialIds, { log, signal: callSignal }),
+        );
         return done({ pdfText } satisfies MaterialOutput);
       }
 
       case 'research': {
         const pdfText = output<MaterialOutput>('material-analysis')?.pdfText;
-        const result = await services.research(
-          owner,
-          { query: input.requirement, ...(pdfText ? { pdfText } : {}) },
-          stepContext,
+        const result = await withDeadline(
+          stepId,
+          STEP_DEADLINES_MS.research,
+          signal,
+          (callSignal) =>
+            services.research(
+              owner,
+              { query: input.requirement, ...(pdfText ? { pdfText } : {}) },
+              { log, signal: callSignal },
+            ),
         );
         const sources = (result?.sources ?? []).map((source) => ({
           title: source.title,
@@ -480,21 +524,29 @@ export async function executeGenerationRun(
         const userProfile = learnerProfileText(input);
         const result = await withRouteRetry(
           () =>
-            services.sceneActions(
-              owner,
-              {
-                outline: content.effectiveOutline || outlines[index]!,
-                allOutlines: outlines,
-                // The route receives the content as JSON; so does this step.
-                content: content.content as SceneActionsInput['content'],
-                stageId: agents().stage.id,
-                agents: agents().agents.agents,
-                previousSpeeches: previousSpeechesFor(index),
-                ...(userProfile ? { userProfile } : {}),
-                languageDirective,
-              },
-              stepContext,
-            ),
+            withDeadline(stepId, STEP_DEADLINES_MS.sceneActions, signal, async (callSignal) => {
+              const generated = await services.sceneActions(
+                owner,
+                {
+                  outline: content.effectiveOutline || outlines[index]!,
+                  allOutlines: outlines,
+                  // The route receives the content as JSON; so does this step.
+                  content: content.content as SceneActionsInput['content'],
+                  stageId: agents().stage.id,
+                  agents: agents().agents.agents,
+                  previousSpeeches: previousSpeechesFor(index),
+                  ...(userProfile ? { userProfile } : {}),
+                  languageDirective,
+                },
+                { log, signal: callSignal },
+              );
+              // The complete scene must be one the course can hold before it is
+              // checkpointed: an invalid one (an action the model left without a
+              // type, say) fails this step, which regenerates it, rather than
+              // reaching narration and failing there for good.
+              assertValidScene(generated.scene, stepId);
+              return generated;
+            }),
           retryOptions(stepId, index, 500),
         );
         return done(result);
@@ -568,14 +620,16 @@ export async function executeGenerationRun(
     };
     let result: OutlineResult;
     try {
-      result = await services.outline(
-        owner,
-        {
-          requirements: runRequirements(input, research?.webSearch === true),
-          ...(pdfText ? { pdfText } : {}),
-          ...(research?.context ? { researchContext: research.context } : {}),
-        },
-        { log, signal, emit },
+      result = await withDeadline(stepId, STEP_DEADLINES_MS.outline, signal, (callSignal) =>
+        services.outline(
+          owner,
+          {
+            requirements: runRequirements(input, research?.webSearch === true),
+            ...(pdfText ? { pdfText } : {}),
+            ...(research?.context ? { researchContext: research.context } : {}),
+          },
+          { log, signal: callSignal, emit },
+        ),
       );
     } finally {
       await appending;
@@ -658,18 +712,27 @@ export async function executeGenerationRun(
     if (input.agents.mode === 'auto') {
       try {
         const target = await services.narrationTarget(owner);
-        const profiles = await services.agentProfiles(
-          owner,
-          {
-            stageInfo: { name, description: '' },
-            sceneOutlines: outlines.map((o) => ({ title: o.title, description: o.description })),
-            languageDirective,
-            availableAvatars: AGENT_AVATARS.map((a) => a.path),
-            avatarDescriptions: AGENT_AVATARS.map((a) => ({ path: a.path, desc: a.desc })),
-            availableVoices: target ? advertisedVoices(target) : [],
-            narratorVoice: target ? narratorVoiceForGeneration(target, input.voice) : undefined,
-          },
-          stepContext,
+        const profiles = await withDeadline(
+          'agents',
+          STEP_DEADLINES_MS.agentProfiles,
+          signal,
+          (callSignal) =>
+            services.agentProfiles(
+              owner,
+              {
+                stageInfo: { name, description: '' },
+                sceneOutlines: outlines.map((o) => ({
+                  title: o.title,
+                  description: o.description,
+                })),
+                languageDirective,
+                availableAvatars: AGENT_AVATARS.map((a) => a.path),
+                avatarDescriptions: AGENT_AVATARS.map((a) => ({ path: a.path, desc: a.desc })),
+                availableVoices: target ? advertisedVoices(target) : [],
+                narratorVoice: target ? narratorVoiceForGeneration(target, input.voice) : undefined,
+              },
+              { log, signal: callSignal },
+            ),
         );
         result = {
           agents: profiles.map((agent) => ({
@@ -762,19 +825,21 @@ export async function executeGenerationRun(
       try {
         return await withRouteRetry(
           () =>
-            services.narrateClip(
-              owner,
-              {
-                target,
-                stageId,
-                text: action.text,
-                audioId: `tts_s${scene.order}_${action.id}`,
-                voice: voice.voiceId,
-                speed,
-                ...(providerOptions ? { providerOptions } : {}),
-                fence,
-              },
-              stepContext,
+            withDeadline(stepId, STEP_DEADLINES_MS.narrationClip, signal, (callSignal) =>
+              services.narrateClip(
+                owner,
+                {
+                  target,
+                  stageId,
+                  text: action.text,
+                  audioId: `tts_s${scene.order}_${action.id}`,
+                  voice: voice.voiceId,
+                  speed,
+                  ...(providerOptions ? { providerOptions } : {}),
+                  fence,
+                },
+                { log, signal: callSignal },
+              ),
             ),
           retryOptions(stepId, sceneIndex, 400),
         );
@@ -898,6 +963,7 @@ export async function executeGenerationRun(
   const complete = async (): Promise<void> => {
     const stageId = agents().stage.id;
     let committed: StoredRun | undefined;
+    options.onLeaseReleased?.();
     await completeRunCourse({
       ownerId: owner,
       lease,

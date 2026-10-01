@@ -57,10 +57,13 @@ export async function runClaimedGenerationRun(
   abort: AbortController,
   heartbeatIntervalMs: number,
 ): Promise<string> {
+  // A run that gave its lease up itself (it waits for a command, paused or
+  // ended) is not one that lost it.
+  let released = false;
   const heartbeat = setInterval(() => {
     void heartbeatGenerationRun(claim.lease)
       .then((held) => {
-        if (!held && !abort.signal.aborted) {
+        if (!held && !released && !abort.signal.aborted) {
           log.warn(`run ${claim.run.id}: lease lost; aborting local execution`);
           abort.abort();
         }
@@ -69,7 +72,13 @@ export async function runClaimedGenerationRun(
   }, heartbeatIntervalMs);
   heartbeat.unref?.();
   try {
-    return await executeGenerationRun(claim, { services, signal: abort.signal });
+    return await executeGenerationRun(claim, {
+      services,
+      signal: abort.signal,
+      onLeaseReleased: () => {
+        released = true;
+      },
+    });
   } finally {
     clearInterval(heartbeat);
   }

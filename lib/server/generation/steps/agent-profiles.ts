@@ -250,6 +250,7 @@ Return a JSON object with this exact structure:
     await callLLM(
       {
         model: languageModel,
+        abortSignal: ctx.signal,
         system: systemPrompt,
         prompt: userPrompt,
       },

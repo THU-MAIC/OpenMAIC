@@ -42,6 +42,8 @@ const CLASSROOM_MEDIA_MIME_TYPES: Record<string, string> = {
   '.aac': 'audio/aac',
   '.flac': 'audio/flac',
   '.m4a': 'audio/mp4',
+  // Opus as TTS providers return it: in an Ogg container.
+  '.opus': 'audio/ogg',
 };
 
 /** The type of a classroom media file, by its extension (`.png`, `.mp3`, ...). */
