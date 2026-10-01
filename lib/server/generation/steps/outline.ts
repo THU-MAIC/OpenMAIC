@@ -28,6 +28,7 @@ import {
 import type { AgentInfo } from '@openmaic/generation';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from '@openmaic/generation';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { MAX_OUTLINE_SCENES } from '@/lib/server/generation/outline-schema';
 import { nanoid } from 'nanoid';
 import type {
   UserRequirements,
@@ -669,6 +670,7 @@ export async function streamOutlines(
         );
         scanFrom = nextScanFrom;
         for (const outline of newOutlines) {
+          if (parsedOutlines.length >= MAX_OUTLINE_SCENES) break;
           // Ensure ID and order
           const enrichedBase = {
             ...outline,
@@ -680,6 +682,12 @@ export async function streamOutlines(
           const enriched = ensureUniqueOutlineId(normalized, usedOutlineIds);
           parsedOutlines.push(enriched);
           emit({ type: 'outline', data: enriched, index: parsedOutlines.length - 1 });
+        }
+        if (parsedOutlines.length >= MAX_OUTLINE_SCENES) {
+          log.warn(
+            `Outline reached ${MAX_OUTLINE_SCENES} scenes; stopping read and finalizing with them`,
+          );
+          break;
         }
       }
 

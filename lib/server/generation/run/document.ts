@@ -122,11 +122,20 @@ export async function completeRunCourse(input: {
     await fenceGenerationRunWriteIn(tx, input.lease, input.stageId);
     const meta = await readStageMeta(tx, input.stageId);
     if (!meta || meta.deletedAt !== null) throw new RunCourseDeletedError(input.stageId);
+    const now = Date.now();
     await tx.query(
       `UPDATE document_outlines
           SET data = data || jsonb_build_object('generationComplete', true, 'updatedAt', $2::bigint)
         WHERE stage_id = $1`,
-      [input.stageId, Date.now()],
+      [input.stageId, now],
+    );
+    // Touch the stage row: its revision trigger tells an open workbench the
+    // course changed, so it reads the completion.
+    await tx.query(
+      `UPDATE document_stages
+          SET updated_at = $2, data = jsonb_set(data, '{updatedAt}', to_jsonb($2::double precision))
+        WHERE id = $1`,
+      [input.stageId, now],
     );
     await markStageGenerationComplete(tx, input.stageId);
     await input.commit(tx);

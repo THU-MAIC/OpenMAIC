@@ -6,7 +6,8 @@
  *     agents?, learnerProfile?, outlineReview?, voice? }`. No keys and no
  *     models: the owner's capability slots decide. 202 with the run's
  *     snapshot; 429 `ACTIVE_RUN_LIMIT` when the owner already has the
- *     configured number of active runs.
+ *     configured number of runs in progress, or of runs waiting for their
+ *     outline to be confirmed.
  *
  *   GET /api/generation-runs?active=1
  *     The owner's active runs (every state but completed and ended), for
@@ -33,6 +34,7 @@ import {
   createGenerationRun,
   listActiveGenerationRuns,
   runSnapshot,
+  WaitingRunLimitError,
 } from '@/lib/server/generation/run/store';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
 import { WorkspaceEndpointError } from '@/lib/server/model-config/media';
@@ -74,13 +76,15 @@ export async function POST(req: NextRequest) {
     }
 
     try {
+      const config = generationRunConfig();
       const run = await createGenerationRun(ownerId, input, {
-        maxActiveRunsPerOwner: generationRunConfig().maxActiveRunsPerOwner,
+        maxActiveRunsPerOwner: config.maxActiveRunsPerOwner,
+        maxWaitingRunsPerOwner: config.maxWaitingRunsPerOwner,
       });
       wakeGenerationRunner();
       return withOwnerResponseHeaders(apiSuccess({ run: runSnapshot(run) }, 202), responseHeaders);
     } catch (error) {
-      if (error instanceof ActiveRunLimitError) {
+      if (error instanceof ActiveRunLimitError || error instanceof WaitingRunLimitError) {
         return ownerApiError('ACTIVE_RUN_LIMIT', 429, error.message, responseHeaders);
       }
       log.error('Generation run creation failed:', error);

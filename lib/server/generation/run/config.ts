@@ -27,8 +27,13 @@ export interface GenerationRunConfig {
    * pauses there instead of being taken over again.
    */
   maxTakeovers: number;
-  /** Runs one owner may have active at once (any state but completed or ended). */
+  /**
+   * Runs one owner may have in progress at once: any state but completed,
+   * ended, or waiting for its outline to be confirmed (which holds no worker).
+   */
   maxActiveRunsPerOwner: number;
+  /** Runs one owner may have waiting for outline confirmation at once. */
+  maxWaitingRunsPerOwner: number;
 }
 
 /** Read on every call, so a test (or an operator restart) sees the environment as it is. */
@@ -40,5 +45,6 @@ export function generationRunConfig(): GenerationRunConfig {
     maxConcurrent: positiveIntegerFromEnv('OPENMAIC_GENERATION_RUN_MAX_CONCURRENT', 4),
     maxTakeovers: agentRuntimeConfig.maxAttempts,
     maxActiveRunsPerOwner: positiveIntegerFromEnv('OPENMAIC_MAX_ACTIVE_RUNS_PER_OWNER', 2),
+    maxWaitingRunsPerOwner: positiveIntegerFromEnv('OPENMAIC_MAX_WAITING_RUNS_PER_OWNER', 10),
   };
 }

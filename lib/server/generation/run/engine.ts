@@ -43,9 +43,10 @@ import type { ResolvedVoice } from '@/lib/audio/voice-resolver';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import { createLogger } from '@/lib/logger';
-import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import { BUILT_IN_AGENTS } from '@/lib/orchestration/registry/built-in';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { generateClassroomId } from '@/lib/server/classroom-persistence';
+import { normalizeSceneOutlines } from '@/lib/server/generation/outline-schema';
 import type { StepContext } from '@/lib/server/generation/steps/context';
 import type { OutlineEvent, OutlineResult } from '@/lib/server/generation/steps/outline';
 import type {
@@ -73,7 +74,7 @@ import {
   narratorVoiceForGeneration,
   slotVoice,
 } from './narration-voice';
-import { advanceRun, sceneStepId, type RunStep } from './plan';
+import { advanceRun, SCENE_STEP_KINDS, sceneStepId, type RunStep } from './plan';
 import {
   FIRST_SCENE_MAX_RETRIES,
   SCENE_MAX_RETRIES,
@@ -152,6 +153,9 @@ const AGENT_AVATARS = [
     desc: 'Girl reading a book intently, long dark hair, intellectual and focused',
   },
 ];
+
+/** The preset agents a learner has before choosing any (the browser's settings default). */
+export const DEFAULT_PRESET_AGENT_IDS = ['default-1', 'default-2', 'default-3'];
 
 /** The topic a stage is named after until the outline names the course. */
 function topicFromRequirement(requirement: string): string {
@@ -232,10 +236,7 @@ function errorCode(error: unknown): unknown {
 
 /** The built-in agents the browser's registry always holds, ahead of a generated roster. */
 function builtInAgents(): AgentConfig[] {
-  return useAgentRegistry
-    .getState()
-    .listAgents()
-    .filter((agent) => agent.isDefault);
+  return Object.values(BUILT_IN_AGENTS);
 }
 
 /** A generated roster entry as the registry holds it (for the narrator's voice options). */
@@ -383,14 +384,9 @@ export async function executeGenerationRun(
   const skippedScenes = new Map<number, string>();
   const skippedStepIds = () =>
     [...skippedScenes.keys()].flatMap((index) =>
-      (['content', 'actions', 'narration', 'append'] as const).map((kind) =>
-        sceneStepId(index, kind),
-      ),
+      SCENE_STEP_KINDS.map((kind) => sceneStepId(index, kind)),
     );
 
-  // Narration clips allocated and not yet committed by a checkpoint: released
-  // when the attempt that allocated them does not commit.
-  let uncommittedClips: string[] = [];
   // Voice bindings this execution found unusable (a deleted clone).
   const unavailableBindings = new Set<string>();
 
@@ -501,10 +497,9 @@ export async function executeGenerationRun(
       }
 
       case 'narration':
-        return done(await narrateScene(step.sceneIndex, stepId));
-
-      case 'append':
-        return appendScene(step.sceneIndex, stepId);
+        // Narration commits itself, with the scene's document write.
+        await narrateScene(step.sceneIndex, stepId);
+        return {};
     }
   };
 
@@ -582,6 +577,11 @@ export async function executeGenerationRun(
       await appending;
     }
     if (appendFailure) throw appendFailure;
+    // The outline in the normal form a confirmation takes, so the outline
+    // as generated is always confirmable unchanged.
+    const normalized = normalizeSceneOutlines(result.outlines);
+    if (!normalized.ok) throw new Error(`The generated outline is unusable: ${normalized.message}`);
+    result = { ...result, outlines: normalized.value };
     const confirmed: GenerationRunOutline = {
       outlines: result.outlines,
       languageDirective: result.languageDirective,
@@ -664,7 +664,9 @@ export async function executeGenerationRun(
         if (isAbortError(error)) throw error;
         // As the browser does: the learner's selected preset agents teach.
         log.warn(`run ${run.id}: agent generation failed, falling back to presets:`, error);
-        result = await presets(input.agents.presetAgentIds ?? []);
+        // Never an empty roster: without a selection, the browser's default one.
+        const selected = input.agents.presetAgentIds ?? [];
+        result = await presets(selected.length > 0 ? selected : DEFAULT_PRESET_AGENT_IDS);
       }
     } else {
       result = await presets(input.agents.agentIds);
@@ -689,11 +691,14 @@ export async function executeGenerationRun(
     return { agents: result, stage };
   };
 
-  const narrateScene = async (sceneIndex: number, stepId: string): Promise<NarrationOutput> => {
+  const narrateScene = async (sceneIndex: number, stepId: string): Promise<void> => {
     const actions = output<SceneActionsResult>(sceneStepId(sceneIndex, 'actions'))!;
     const scene: Scene = structuredClone(actions.scene) as Scene;
     const target = await services.narrationTarget(owner);
-    if (!target) return { scene };
+    if (!target) {
+      await appendScene(sceneIndex, stepId, scene);
+      return;
+    }
     scene.actions = splitLongSpeechActions(scene.actions || [], target.providerId);
     const speechActions = scene.actions.filter(
       (action): action is SpeechAction => action.type === 'speech' && !!action.text,
@@ -781,6 +786,8 @@ export async function executeGenerationRun(
     };
     try {
       const concurrency = services.parallelSceneConcurrency();
+      // The clips and the scene that names them commit together; a failure
+      // anywhere here retries both.
       if (concurrency > 1 && speechActions.length > 1) {
         const settled = await Promise.allSettled(
           lazyBoundedMap(speechActions, concurrency, narrateOne),
@@ -792,20 +799,20 @@ export async function executeGenerationRun(
       } else {
         for (const action of speechActions) await narrateOne(action);
       }
+      await appendScene(sceneIndex, stepId, scene);
     } catch (error) {
-      // The scene failed: its clips will never be committed.
+      // Nothing of this attempt committed: its clips are released (an entry
+      // the scene's write did commit is not touched by the release).
       await services.releaseClips(owner, allocated, stepContext);
       throw error;
     }
-    uncommittedClips = allocated;
-    return { scene };
   };
 
-  const appendScene = async (sceneIndex: number, stepId: string): Promise<StepCommit> => {
-    const scene = output<NarrationOutput>(sceneStepId(sceneIndex, 'narration'))!.scene;
+  /** Write the narrated scene into the course with the step's checkpoint, in one transaction. */
+  const appendScene = async (sceneIndex: number, stepId: string, scene: Scene): Promise<void> => {
     const { stage } = agents();
     const change: StepCommit = {
-      step: { id: stepId, output: { sceneId: scene.id } },
+      step: { id: stepId, output: { scene } satisfies NarrationOutput },
       patch: {
         scenesCompleted: run.progress.scenesCompleted + 1,
         ...(sceneIndex === 0 ? { stageId: stage.id } : {}),
@@ -825,7 +832,7 @@ export async function executeGenerationRun(
     };
     if (sceneIndex === 0) {
       await createRunCourse({
-        ownerId: run.ownerId,
+        ownerId: owner,
         lease,
         stage,
         outlines: outline().outlines,
@@ -834,7 +841,7 @@ export async function executeGenerationRun(
       });
     } else {
       await appendRunScene({
-        ownerId: run.ownerId,
+        ownerId: owner,
         lease,
         stageId: stage.id,
         scene,
@@ -842,7 +849,6 @@ export async function executeGenerationRun(
       });
     }
     steps.set(stepId, change.step!.output);
-    return {};
   };
 
   const pause = async (stepId: string, message: string) => {
@@ -865,7 +871,7 @@ export async function executeGenerationRun(
   const complete = async (): Promise<void> => {
     const stageId = agents().stage.id;
     await completeRunCourse({
-      ownerId: run.ownerId,
+      ownerId: owner,
       lease,
       stageId,
       commit: async (tx) => {
@@ -958,15 +964,10 @@ export async function executeGenerationRun(
         throw new StepFailedError(step.id, error);
       }
       if (change && (change.step || change.patch || change.events?.length)) await commit(change);
-      uncommittedClips = [];
       if (run.state === 'awaiting_outline_confirmation') return 'waiting';
     }
   } catch (error) {
     prewarmAbort.abort();
-    if (uncommittedClips.length > 0) {
-      await services.releaseClips(owner, uncommittedClips, stepContext);
-      uncommittedClips = [];
-    }
     if (error instanceof RunCourseDeletedError) {
       try {
         await end(error.stageId);

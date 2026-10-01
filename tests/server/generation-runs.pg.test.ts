@@ -229,6 +229,16 @@ async function drive(runId: string, services: RunStepServices, workerId = 'worke
   return executeGenerationRun(claimed, { services, signal: new AbortController().signal });
 }
 
+/** Confirm with a limit no test reaches unless it means to. */
+function confirm(
+  runId: string,
+  ownerId: string,
+  command: Parameters<typeof confirmGenerationRunOutline>[2],
+  maxActiveRunsPerOwner = 50,
+) {
+  return confirmGenerationRunOutline(runId, ownerId, command, { maxActiveRunsPerOwner });
+}
+
 function cookie(value: string) {
   return { cookie: `anonymous_id=${value}` };
 }
@@ -281,7 +291,10 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
   }
 
   async function start(input = runInput(), ownerId = OWNER) {
-    return createGenerationRun(ownerId, input, { maxActiveRunsPerOwner: 50 });
+    return createGenerationRun(ownerId, input, {
+      maxActiveRunsPerOwner: 50,
+      maxWaitingRunsPerOwner: 50,
+    });
   }
 
   async function eventTypes(runId: string) {
@@ -351,7 +364,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       'state',
     ]);
 
-    const confirmed = await confirmGenerationRunOutline(run.id, OWNER, {
+    const confirmed = await confirm(run.id, OWNER, {
       commandId: 'confirm-1',
       outlineRevision: 1,
     });
@@ -501,7 +514,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     // An edited outline is a new revision, and the run generates exactly it.
     const edited = await start();
     expect(await drive(edited.id, services)).toBe('waiting');
-    await confirmGenerationRunOutline(edited.id, OWNER, {
+    await confirm(edited.id, OWNER, {
       commandId: 'edit',
       outlineRevision: 1,
       outlines: [OUTLINES[2]!],
@@ -521,16 +534,16 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(await drive(run.id, services)).toBe('waiting');
 
     await expect(
-      confirmGenerationRunOutline(run.id, OWNER, { commandId: 'stale', outlineRevision: 7 }),
+      confirm(run.id, OWNER, { commandId: 'stale', outlineRevision: 7 }),
     ).rejects.toMatchObject({ reason: 'outline-revision' });
 
-    const first = await confirmGenerationRunOutline(run.id, OWNER, {
+    const first = await confirm(run.id, OWNER, {
       commandId: 'same',
       outlineRevision: 1,
       outlines: OUTLINES.slice(0, 2),
     });
     const eventsAfterFirst = await readGenerationRunEvents(run.id, 0);
-    const again = await confirmGenerationRunOutline(run.id, OWNER, {
+    const again = await confirm(run.id, OWNER, {
       commandId: 'same',
       outlineRevision: 1,
       outlines: OUTLINES.slice(0, 2),
@@ -540,15 +553,13 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect((await readGenerationRun(run.id, OWNER))!.outline!.revision).toBe(2);
 
     await expect(
-      confirmGenerationRunOutline(run.id, OWNER, { commandId: 'other', outlineRevision: 2 }),
+      confirm(run.id, OWNER, { commandId: 'other', outlineRevision: 2 }),
     ).rejects.toMatchObject({ reason: 'state' });
     await expect(retryGenerationRun(run.id, OWNER, { commandId: 'same' })).rejects.toMatchObject({
       reason: 'command-reused',
     });
     // Another owner cannot command the run at all.
-    expect(
-      await confirmGenerationRunOutline(run.id, OTHER, { commandId: 'x', outlineRevision: 2 }),
-    ).toBeNull();
+    expect(await confirm(run.id, OTHER, { commandId: 'x', outlineRevision: 2 })).toBeNull();
   });
 
   it('pauses at a step that fails after its retries, and Retry re-runs only that step', async () => {
@@ -623,7 +634,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       signal: new AbortController().signal,
     });
     await reachedScene2.promise;
-    expect((await readGenerationRunSteps(run.id)).has('scene:0:append')).toBe(true);
+    expect((await readGenerationRunSteps(run.id)).has('scene:0:narration')).toBe(true);
 
     // Worker A stops heartbeating; once its lease is stale, B takes over.
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -911,7 +922,8 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       }),
     );
     const body = (await listed.json()) as { runs: Array<{ input: { requirement: string } }> };
-    expect(body.runs.map((run) => run.input.requirement)).toEqual(['Two', 'Three']);
+    // Listed by creation time, which a test cannot rely on to the microsecond.
+    expect(body.runs.map((run) => run.input.requirement).sort()).toEqual(['Three', 'Two']);
 
     expect(
       (await post({ requirement: 'x', agents: { mode: 'preset', agentIds: ['nope'] } })).status,
@@ -957,7 +969,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect((await discard(waiting.id)).status).toBe(200);
     expect(await readGenerationRun(waiting.id, OWNER)).toMatchObject({ state: 'ended' });
     await expect(
-      confirmGenerationRunOutline(waiting.id, OWNER, { commandId: 'c', outlineRevision: 1 }),
+      confirm(waiting.id, OWNER, { commandId: 'c', outlineRevision: 1 }),
     ).rejects.toMatchObject({ reason: 'state' });
 
     const withCourse = await start(runInput({ outlineReview: 'auto' }));
@@ -970,12 +982,21 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
   it('does not count runs waiting for outline confirmation toward the limit', async () => {
     const owner = 'anon:6f5e4d3c-2b1a-4f9e-8d7c-6b5a4f3e2d1c';
     const { services } = fakeServices({ research: async () => null });
-    const waiting = await createGenerationRun(owner, runInput(), { maxActiveRunsPerOwner: 1 });
+    const waiting = await createGenerationRun(owner, runInput(), {
+      maxActiveRunsPerOwner: 1,
+      maxWaitingRunsPerOwner: 50,
+    });
     await expect(
-      createGenerationRun(owner, runInput(), { maxActiveRunsPerOwner: 1 }),
+      createGenerationRun(owner, runInput(), {
+        maxActiveRunsPerOwner: 1,
+        maxWaitingRunsPerOwner: 50,
+      }),
     ).rejects.toThrow(/does not count/);
     expect(await drive(waiting.id, services)).toBe('waiting');
-    const next = await createGenerationRun(owner, runInput(), { maxActiveRunsPerOwner: 1 });
+    const next = await createGenerationRun(owner, runInput(), {
+      maxActiveRunsPerOwner: 1,
+      maxWaitingRunsPerOwner: 50,
+    });
     expect(next.state).toBe('preparing');
   });
 
@@ -1175,6 +1196,251 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     }
   });
 
+  it('confirming an outline respects the limit on runs in progress', async () => {
+    const owner = 'anon:3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f';
+    const ownerCookie = owner.slice('anon:'.length);
+    const { services } = fakeServices({ research: async () => null });
+    const limits = { maxActiveRunsPerOwner: 1, maxWaitingRunsPerOwner: 50 };
+    const waiting = await createGenerationRun(owner, runInput(), limits);
+    expect(await drive(waiting.id, services)).toBe('waiting');
+    // The waiting run does not count, so another one may start...
+    const busy = await createGenerationRun(owner, runInput(), limits);
+    expect(busy.state).toBe('preparing');
+    // ...but confirming the first would make two in progress.
+    await expect(
+      confirm(waiting.id, owner, { commandId: 'c1', outlineRevision: 1 }, 1),
+    ).rejects.toThrow(/does not count/);
+    const { POST } = await import('@/app/api/generation-runs/[id]/confirm-outline/route');
+    process.env.OPENMAIC_MAX_ACTIVE_RUNS_PER_OWNER = '1';
+    const refused = await POST(
+      new NextRequest(`http://localhost/api/generation-runs/${waiting.id}/confirm-outline`, {
+        method: 'POST',
+        headers: { ...cookie(ownerCookie), 'content-type': 'application/json' },
+        body: JSON.stringify({ commandId: 'c1', outlineRevision: 1 }),
+      }),
+      { params: Promise.resolve({ id: waiting.id }) },
+    );
+    expect(refused.status).toBe(429);
+    expect(await refused.json()).toMatchObject({ errorCode: 'ACTIVE_RUN_LIMIT' });
+    expect((await readGenerationRun(waiting.id, owner))!.state).toBe(
+      'awaiting_outline_confirmation',
+    );
+    // Once the other run is over, the same command confirms.
+    await pool.query("UPDATE generation_runs SET state = 'ended' WHERE id = $1", [busy.id]);
+    expect(
+      await confirm(waiting.id, owner, { commandId: 'c1', outlineRevision: 1 }, 1),
+    ).toMatchObject({ state: 'generating' });
+  });
+
+  it('caps the runs one owner keeps waiting for an outline confirmation', async () => {
+    const owner = 'anon:4d5e6f7a-8b9c-4d0e-9f1a-2b3c4d5e6f7a';
+    const { services } = fakeServices({ research: async () => null });
+    const limits = { maxActiveRunsPerOwner: 50, maxWaitingRunsPerOwner: 1 };
+    const waiting = await createGenerationRun(owner, runInput(), limits);
+    expect(await drive(waiting.id, services)).toBe('waiting');
+    await expect(createGenerationRun(owner, runInput(), limits)).rejects.toThrow(
+      /wait for an outline confirmation/,
+    );
+  });
+
+  it('a generated outline with model-style nulls and extras confirms unchanged', async () => {
+    const loose = [
+      {
+        id: 'l1',
+        type: 'slide',
+        title: 'One',
+        description: null,
+        keyPoints: ['a', ''],
+        order: 1,
+        quizConfig: null,
+        notes: 'extra',
+      },
+      { id: 'l2', type: 'quiz', title: 'Two', order: 2, quizConfig: { questionTypes: ['essay'] } },
+    ];
+    const { services } = fakeServices({
+      research: async () => null,
+      outline: async () => ({
+        outlines: loose as never,
+        languageDirective: 'Use English.',
+        courseTitle: 'Loose',
+        taskEngineMode: false,
+      }),
+    });
+    const run = await start();
+    expect(await drive(run.id, services)).toBe('waiting');
+    const stored = (await readGenerationRun(run.id, OWNER))!;
+    expect(stored.outline!.outlines).toEqual([
+      { id: 'l1', type: 'slide', title: 'One', description: '', keyPoints: ['a'], order: 1 },
+      {
+        id: 'l2',
+        type: 'quiz',
+        title: 'Two',
+        description: '',
+        keyPoints: [],
+        order: 2,
+        quizConfig: { questionTypes: [] },
+      },
+    ]);
+    // The outline as the run holds it goes back through confirm as is.
+    const { parseConfirmOutline } = await import('@/lib/server/generation/run/input');
+    const parsed = parseConfirmOutline({
+      commandId: 'same',
+      outlineRevision: 1,
+      outlines: stored.outline!.outlines,
+    });
+    expect(parsed.ok && parsed.value.outlines).toEqual(stored.outline!.outlines);
+    expect(await confirm(run.id, OWNER, parsed.ok ? parsed.value : (null as never))).toMatchObject({
+      state: 'generating',
+      outlineRevision: 2,
+    });
+  });
+
+  it('sends a resync frame to a reader behind what a finished run keeps', async () => {
+    const { services } = fakeServices({ research: async () => null });
+    const run = await start(runInput({ outlineReview: 'auto' }));
+    expect(await drive(run.id, services)).toBe('completed');
+    const kept = await readGenerationRunEvents(run.id, 0);
+    expect(kept.map((event) => event.type)).toEqual(['completed', 'state']);
+    const { GET } = await import('@/app/api/generation-runs/[id]/events/route');
+    const read = async (after: number) => {
+      const response = await GET(
+        new NextRequest(`http://localhost/api/generation-runs/${run.id}/events?after=${after}`, {
+          headers: cookie(OWNER_COOKIE),
+        }),
+        { params: Promise.resolve({ id: run.id }) },
+      );
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let text = '';
+      while (!text.includes('event: caught_up')) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+      }
+      await reader.cancel();
+      return text
+        .split('\n\n')
+        .filter((frame) => frame.startsWith('event:') || frame.startsWith('id:'));
+    };
+    const behind = await read(0);
+    expect(behind[0]).toBe(
+      `event: resync\ndata: ${JSON.stringify({
+        type: 'resync',
+        reason: 'compacted',
+        from: 0,
+        snapshot: `/api/generation-runs/${run.id}`,
+        oldestSeq: kept[0]!.seq,
+      })}`,
+    );
+    expect(behind.slice(1, 3).map((frame) => /^id: (\d+)/.exec(frame)![1])).toEqual(
+      kept.map((event) => String(event.seq)),
+    );
+    // A reader already at the kept events gets no resync.
+    const current = await read(kept[0]!.seq - 1);
+    expect(current[0]!.startsWith(`id: ${kept[0]!.seq}`)).toBe(true);
+  });
+
+  it('writes the course for the owner a run belongs to now, across two claims mid-run', async () => {
+    const anonymous = 'anon:5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b';
+    const middle = 'user:merge-middle';
+    const account = 'user:merge-account';
+    const blocked = gate();
+    const reached = gate();
+    const base = fakeServices({ research: async () => null });
+    const { services } = fakeServices({
+      research: async () => null,
+      sceneContent: async (owner, input, ctx) => {
+        if (input.outline.id === 'o2') {
+          reached.release();
+          await blocked.promise;
+        }
+        return base.services.sceneContent(owner, input, ctx);
+      },
+    });
+    const run = await createGenerationRun(anonymous, runInput({ outlineReview: 'auto' }), {
+      maxActiveRunsPerOwner: 50,
+      maxWaitingRunsPerOwner: 50,
+    });
+    const execution = drive(run.id, services);
+    await reached.promise;
+    const stageId = (await readGenerationRun(run.id, anonymous))!.stageId!;
+    // anonymous → middle → account, the course moving with each (as the
+    // claim and a host's account merge move ownership rows).
+    await pool.query(
+      `INSERT INTO owner_merges (from_owner_id, to_owner_id) VALUES ($1, $2), ($2, $3)`,
+      [anonymous, middle, account],
+    );
+    await pool.query('UPDATE stage_meta SET owner_id = $2 WHERE stage_id = $1', [stageId, account]);
+    blocked.release();
+    expect(await execution).toBe('completed');
+    const document = await documentStore(account).loadDocument(stageId);
+    expect(document!.scenes.map((scene) => scene.id)).toEqual(['scene-o1', 'scene-o2', 'scene-o3']);
+    const meta = await pool.query(
+      'SELECT owner_id, generation_complete FROM stage_meta WHERE stage_id = $1',
+      [stageId],
+    );
+    expect(meta.rows).toEqual([{ owner_id: account, generation_complete: true }]);
+    // The account reads the run, two claims after it started.
+    expect(await readGenerationRun(run.id, account)).toMatchObject({ state: 'completed' });
+  });
+
+  it('completion sets only the flags, in a commit that fires the stage revision trigger', async () => {
+    // Every UPDATE of a stage row, as the revision trigger sees them.
+    await pool.query(`CREATE TABLE IF NOT EXISTS stage_row_updates (stage_id TEXT, rev BIGINT)`);
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION record_stage_row_update() RETURNS trigger AS $$
+      BEGIN
+        INSERT INTO stage_row_updates
+          SELECT NEW.id, (SELECT rev FROM document_stage_revision WHERE stage_id = NEW.id);
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql`);
+    await pool.query(`DROP TRIGGER IF EXISTS record_stage_row_update ON document_stages`);
+    await pool.query(`CREATE TRIGGER record_stage_row_update AFTER UPDATE ON document_stages
+      FOR EACH ROW EXECUTE FUNCTION record_stage_row_update()`);
+    try {
+      const { services } = fakeServices({ research: async () => null });
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      expect(await drive(run.id, services)).toBe('completed');
+      const stageId = (await readGenerationRun(run.id, OWNER))!.stageId!;
+      const updates = await pool.query('SELECT rev FROM stage_row_updates WHERE stage_id = $1', [
+        stageId,
+      ]);
+      // Only completion touches the stage row (appends write scenes), and
+      // the revision trigger ran for it.
+      expect(updates.rows).toHaveLength(1);
+      const revision = await pool.query(
+        'SELECT rev FROM document_stage_revision WHERE stage_id = $1',
+        [stageId],
+      );
+      expect(Number(updates.rows[0]!.rev)).toBe(Number(revision.rows[0]!.rev));
+      const scenes = (
+        await pool.query('SELECT id FROM document_scenes WHERE stage_id = $1 ORDER BY id', [
+          stageId,
+        ])
+      ).rows;
+      expect(scenes).toHaveLength(3);
+      const document = await documentStore(OWNER).loadDocument(stageId);
+      expect(document!.outline).toMatchObject({ generationComplete: true });
+      expect(document!.stage.updatedAt).toBeGreaterThanOrEqual(document!.stage.createdAt!);
+    } finally {
+      await pool.query(`DROP TRIGGER IF EXISTS record_stage_row_update ON document_stages`);
+    }
+  });
+
+  it('falls back to the default presets when agent generation fails and none were selected', async () => {
+    const { services, calls } = fakeServices({
+      research: async () => null,
+      agentProfiles: async () => {
+        throw new Error('profiles failed');
+      },
+    });
+    const run = await start(runInput({ outlineReview: 'auto' }));
+    expect(await drive(run.id, services)).toBe('completed');
+    expect(
+      (calls.sceneContent[0]!.agents as Array<{ id: string }>).map((agent) => agent.id),
+    ).toEqual(['default-1', 'default-2', 'default-3']);
+  });
+
   describe('the runner', () => {
     beforeEach(async () => {
       // A runner claims any executable run: leave it only the test's own
@@ -1246,28 +1512,39 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       });
     });
 
-    it('hands back a claim of a run it still executes under a stale lease', async () => {
+    it('hands back a claim of a run it still executes under a stale lease, uncounted', async () => {
       const { services, started, aborted } = blockingServices();
       const run = await start();
-      // No heartbeat within the test and a 1 ms lease: the next scan finds the
-      // run's lease stale while this process still executes it.
+      // A heartbeat that never fires within the test, and a lease that only
+      // goes stale once the execution is under way (set below). Two slots, so
+      // a scan may claim while the first execution still runs: the race.
       const runner = startGenerationRunner({
         services,
         workerId: 'runner-race',
         config: {
           scanIntervalMs: 20,
           heartbeatIntervalMs: 60_000,
-          leaseTtlMs: 1,
+          leaseTtlMs: 60_000,
           maxConcurrent: 2,
         },
       });
-      await started.promise;
-      // The stale execution is aborted rather than run twice.
-      await aborted.promise;
-      await runner.stop({ timeoutMs: 5_000 });
-      const stored = (await readGenerationRun(run.id, OWNER))!;
-      expect(stored.leaseWorkerId).toBeNull();
-      expect(stored.leaseGeneration).toBeGreaterThan(1);
+      try {
+        await started.promise;
+        await pool.query('UPDATE generation_runs SET lease_heartbeat_at = 0 WHERE id = $1', [
+          run.id,
+        ]);
+        // The next scan claims the run it still executes: it aborts the stale
+        // execution and hands the claim back rather than running it twice.
+        await aborted.promise;
+        const stored = (await readGenerationRun(run.id, OWNER))!;
+        expect(stored.leaseGeneration).toBeGreaterThan(1);
+      } finally {
+        await runner.stop({ timeoutMs: 5_000 });
+      }
+      expect((await readGenerationRun(run.id, OWNER))!).toMatchObject({
+        leaseWorkerId: null,
+        takeovers: 0,
+      });
     }, 30_000);
   });
 });

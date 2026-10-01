@@ -54,6 +54,7 @@ export async function GET(req: NextRequest) {
     wakeup: { kind: 'generation-run-owner', ownerId },
     pollIntervalMs: OWNER_RUN_EVENTS_POLL_INTERVAL_MS,
     onClose: release,
+    signal: req.signal,
     read: async (write) => {
       if (!snapshotSent) {
         const active = await listActiveGenerationRuns(ownerId);
@@ -66,11 +67,14 @@ export async function GET(req: NextRequest) {
         ownerId,
         new Date(newest - COMMIT_SKEW_MS),
       );
+      // In commit order; the cursor moves only past a frame actually queued,
+      // so a full queue defers the rest to the next read instead of skipping it.
       for (const run of changed) {
+        if ((sent.get(run.id) ?? -1) < run.seq) {
+          if (!write(sseFrame('run', { type: 'run', run: runSnapshot(run) }))) return;
+          sent.set(run.id, run.seq);
+        }
         newest = Math.max(newest, Date.parse(run.updatedAt));
-        if ((sent.get(run.id) ?? -1) >= run.seq) continue;
-        if (!write(sseFrame('run', { type: 'run', run: runSnapshot(run) }))) return;
-        sent.set(run.id, run.seq);
       }
     },
   });

@@ -3,7 +3,8 @@
  *     `{ outlineRevision, outlines?, commandId }`: confirm the outline the run
  *     waits on, at the revision the caller saw (409 `RUN_STATE_CONFLICT` when
  *     it moved on), optionally replacing it with the caller's edit. The run
- *     then generates the course to completion. Idempotent by `commandId`: a
+ *     then generates the course to completion. Confirming puts the run in
+ *     progress again, so the per-owner limit applies (429 `ACTIVE_RUN_LIMIT`). Idempotent by `commandId`: a
  *     repeated command answers what the first one did.
  */
 import type { NextRequest } from 'next/server';
@@ -20,7 +21,9 @@ import {
   readJsonBody,
 } from '@/lib/server/generation/run/input';
 import { wakeGenerationRunner } from '@/lib/server/generation/run/runner';
+import { generationRunConfig } from '@/lib/server/generation/run/config';
 import {
+  ActiveRunLimitError,
   confirmGenerationRunOutline,
   isRunId,
   RunCommandConflictError,
@@ -41,11 +44,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const parsed = parseConfirmOutline(raw);
     if (!parsed.ok) return ownerApiError('INVALID_REQUEST', 400, parsed.message, responseHeaders);
     try {
-      const result = await confirmGenerationRunOutline(id, ownerId, parsed.value);
+      const result = await confirmGenerationRunOutline(id, ownerId, parsed.value, {
+        maxActiveRunsPerOwner: generationRunConfig().maxActiveRunsPerOwner,
+      });
       if (!result) return ownerNotFound(responseHeaders);
       wakeGenerationRunner();
       return withOwnerResponseHeaders(apiSuccess({ ...result }), responseHeaders);
     } catch (error) {
+      if (error instanceof ActiveRunLimitError) {
+        return ownerApiError('ACTIVE_RUN_LIMIT', 429, error.message, responseHeaders);
+      }
       if (error instanceof RunCommandConflictError) {
         return ownerApiError('RUN_STATE_CONFLICT', 409, error.message, responseHeaders);
       }

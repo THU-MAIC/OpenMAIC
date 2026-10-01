@@ -3,15 +3,17 @@
  *
  * A run's steps follow the browser's classic order: material analysis (when
  * materials are given) → research → outline → [confirmation] → agents → for
- * each scene in outline order: content → actions → narration → append (the
- * scene's document write). The step list is fixed by the input and the
+ * each scene in outline order: content → actions → narration (which appends
+ * the narrated scene to the course in the same commit, so its clips are never
+ * held by a checkpoint alone). The step list is fixed by the input and the
  * confirmed outline; a step whose capability does not resolve (no web search,
  * no server TTS) still runs and checkpoints that it did nothing, so the plan
  * never depends on configuration read at another moment.
  */
 import type { ExecutableRunState, GenerationRunInput, GenerationRunState } from './types';
 
-export type SceneStepKind = 'content' | 'actions' | 'narration' | 'append';
+/** A scene's narration step also appends it to the course, in the same commit. */
+export type SceneStepKind = 'content' | 'actions' | 'narration';
 
 export type RunStep =
   | { id: 'material-analysis'; kind: 'material-analysis' }
@@ -20,7 +22,7 @@ export type RunStep =
   | { id: 'agents'; kind: 'agents' }
   | { id: string; kind: SceneStepKind; sceneIndex: number };
 
-const SCENE_STEP_KINDS: readonly SceneStepKind[] = ['content', 'actions', 'narration', 'append'];
+export const SCENE_STEP_KINDS: readonly SceneStepKind[] = ['content', 'actions', 'narration'];
 
 export function sceneStepId(sceneIndex: number, kind: SceneStepKind): string {
   return `scene:${sceneIndex}:${kind}`;
@@ -31,7 +33,7 @@ export function parseStepId(id: string): RunStep | null {
   if (id === 'material-analysis' || id === 'research' || id === 'outline' || id === 'agents') {
     return { id, kind: id } as RunStep;
   }
-  const match = /^scene:(\d+):(content|actions|narration|append)$/.exec(id);
+  const match = /^scene:(\d+):(content|actions|narration)$/.exec(id);
   if (!match) return null;
   return { id, kind: match[2] as SceneStepKind, sceneIndex: Number(match[1]) };
 }

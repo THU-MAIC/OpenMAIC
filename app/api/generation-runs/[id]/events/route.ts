@@ -5,7 +5,9 @@
  *     one `caught_up` frame when the backlog is drained, then each event as
  *     it commits (outline items stream as the model writes them). Frames
  *     carry `id: <seq>`. The stream stays open with a heartbeat; a client that
- *     cannot hold one polls `GET /api/generation-runs/:id` instead.
+ *     cannot hold one polls `GET /api/generation-runs/:id` instead. A
+ *     finished run keeps only its final events: a cursor behind them gets a
+ *     `resync` frame (reload the snapshot), then the events it keeps.
  *
  * Another owner's run answers the same 404 as an unknown one; an owner
  * holding too many run streams gets 429. The stream only reads: closing it
@@ -15,6 +17,7 @@ import type { NextRequest } from 'next/server';
 
 import {
   isRunId,
+  oldestGenerationRunEventSeq,
   readGenerationRun,
   readGenerationRunEvents,
 } from '@/lib/server/generation/run/store';
@@ -57,12 +60,36 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   let cursor = parseCursor(req.headers.get('last-event-id') ?? url.searchParams.get('after'));
   const from = cursor;
   let caughtUp = false;
+  let resynced = false;
 
   const stream = polledEventStream({
     wakeup: { kind: 'generation-run', runId: id },
     pollIntervalMs: RUN_EVENTS_POLL_INTERVAL_MS,
     onClose: release,
+    signal: req.signal,
     read: async (write) => {
+      if (!resynced) {
+        // A finished run keeps only its final events: a cursor behind them
+        // cannot be replayed, so the client reloads the snapshot instead.
+        const oldest = await oldestGenerationRunEventSeq(id);
+        if (oldest !== null && cursor + 1 < oldest) {
+          if (
+            !write(
+              sseFrame('resync', {
+                type: 'resync',
+                reason: 'compacted',
+                from,
+                snapshot: `/api/generation-runs/${id}`,
+                oldestSeq: oldest,
+              }),
+            )
+          ) {
+            return;
+          }
+          cursor = oldest - 1;
+        }
+        resynced = true;
+      }
       for (;;) {
         const page = await readGenerationRunEvents(id, cursor, PAGE);
         for (const event of page) {

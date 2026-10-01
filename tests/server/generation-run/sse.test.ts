@@ -80,4 +80,52 @@ describe('run event streams', () => {
     await stream.cancel();
     expect(openRunStreamsOf('owner-close')).toBe(0);
   });
+
+  it('sends a frame larger than the queue only when the queue is empty', async () => {
+    const small = sseFrame('small', { padding: 'x'.repeat(200_000) }, 1);
+    const large = sseFrame('large', { padding: 'y'.repeat(RUN_SSE_QUEUE_BYTES * 2) }, 2);
+    const written: string[] = [];
+    let pending = [small, large];
+    const stream = polledEventStream({
+      wakeup: { kind: 'generation-run', runId: 'run-big' },
+      pollIntervalMs: 60_000,
+      heartbeatIntervalMs: 60_000,
+      read: async (write) => {
+        while (pending.length > 0) {
+          if (!write(pending[0]!)) return;
+          written.push(pending[0]!.slice(0, 12));
+          pending = pending.slice(1);
+        }
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // The small frame is queued; the large one waits for an empty queue.
+    expect(written).toHaveLength(1);
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    while (!text.includes('event: large')) {
+      const { value } = await reader.read();
+      text += decoder.decode(value, { stream: true });
+    }
+    expect(written).toHaveLength(2);
+    await reader.cancel();
+  });
+
+  it('ends and frees its slot when the request is aborted', async () => {
+    const release = acquireRunStreamSlot('owner-abort')!;
+    const request = new AbortController();
+    const stream = polledEventStream({
+      wakeup: { kind: 'generation-run-owner', ownerId: 'owner-abort' },
+      pollIntervalMs: 60_000,
+      read: async () => undefined,
+      onClose: release,
+      signal: request.signal,
+    });
+    expect(openRunStreamsOf('owner-abort')).toBe(1);
+    request.abort();
+    expect(openRunStreamsOf('owner-abort')).toBe(0);
+    const { done } = await stream.getReader().read();
+    expect(done).toBe(true);
+  });
 });

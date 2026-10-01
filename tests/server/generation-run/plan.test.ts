@@ -27,17 +27,15 @@ describe('generation run plan', () => {
     ]);
   });
 
-  it('generates agents, then content → actions → narration → append scene by scene in order', () => {
+  it('generates agents, then content → actions → narration (with the append) scene by scene', () => {
     expect(generationSteps(2).map((step) => step.id)).toEqual([
       'agents',
       'scene:0:content',
       'scene:0:actions',
       'scene:0:narration',
-      'scene:0:append',
       'scene:1:content',
       'scene:1:actions',
       'scene:1:narration',
-      'scene:1:append',
     ]);
   });
 
@@ -87,7 +85,6 @@ describe('generation run plan', () => {
       'scene:0:content',
       'scene:0:actions',
       'scene:0:narration',
-      'scene:0:append',
       'scene:2:content',
     ]);
     expect(
@@ -123,6 +120,7 @@ describe('generation run plan', () => {
       expect(phaseOfStep(step)).toBe(stateForRetry(step.id));
     }
     expect(parseStepId('scene:1:render')).toBeNull();
+    expect(parseStepId('scene:1:append')).toBeNull();
     expect(parseStepId('stage')).toBeNull();
   });
 });

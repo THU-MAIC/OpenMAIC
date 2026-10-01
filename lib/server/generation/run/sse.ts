@@ -71,6 +71,8 @@ export interface PolledStreamOptions {
   read: (write: (chunk: string) => boolean, phase: 'backlog' | 'live') => Promise<void>;
   /** Runs once when the stream ends, however it ends. */
   onClose?: () => void;
+  /** The request's signal: the stream ends when the client goes away. */
+  signal?: AbortSignal;
 }
 
 export function polledEventStream(options: PolledStreamOptions): ReadableStream<Uint8Array> {
@@ -99,12 +101,16 @@ export function polledEventStream(options: PolledStreamOptions): ReadableStream<
   const write = (chunk: string) => {
     const controller = controllerRef;
     if (closed || !controller) return false;
-    if ((controller.desiredSize ?? 0) <= 0) {
+    const bytes = encoder.encode(chunk);
+    const room = controller.desiredSize ?? 0;
+    // The cap is hard: a frame goes in only when it fits, except one frame
+    // larger than the whole queue, which goes when the queue is empty.
+    if (bytes.byteLength > room && room < RUN_SSE_QUEUE_BYTES) {
       blocked = true;
       return false;
     }
     try {
-      controller.enqueue(encoder.encode(chunk));
+      controller.enqueue(bytes);
       return true;
     } catch {
       // Not every runtime calls cancel() for a broken socket.
@@ -117,6 +123,19 @@ export function polledEventStream(options: PolledStreamOptions): ReadableStream<
     {
       async start(controller) {
         controllerRef = controller;
+        const abort = () => {
+          clear();
+          try {
+            controller.close();
+          } catch {
+            // Already closed.
+          }
+        };
+        if (options.signal?.aborted) {
+          abort();
+          return;
+        }
+        options.signal?.addEventListener('abort', abort, { once: true });
         let initializing = true;
         let wokenDuringInitialization = false;
         let inFlight: Promise<void> | null = null;

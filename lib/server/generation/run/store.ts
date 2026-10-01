@@ -368,6 +368,36 @@ async function applyPatch(
 
 export interface CreateRunOptions {
   maxActiveRunsPerOwner: number;
+  /** Runs one owner may have waiting for outline confirmation at once. */
+  maxWaitingRunsPerOwner: number;
+}
+
+/** The owner already has as many runs waiting for outline confirmation as allowed. */
+export class WaitingRunLimitError extends Error {
+  constructor(readonly limit: number) {
+    super(
+      `At most ${limit} course${limit === 1 ? '' : 's'} may wait for an outline confirmation at ` +
+        'once; confirm or discard one and try again.',
+    );
+    this.name = 'WaitingRunLimitError';
+  }
+}
+
+/**
+ * Serialize the owner's starts and confirmations, then refuse one more run in
+ * a limited state when the owner already has `limit` of them. The lock comes
+ * first in the transaction, before any run row.
+ */
+async function enforceActiveRunLimitIn(tx: Queryable, ownerId: string, limit: number) {
+  await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+    `openmaic.generation-runs.owner:${ownerId}`,
+  ]);
+  const active = await tx.query<{ n: string | number }>(
+    `SELECT count(*) AS n FROM generation_runs
+      WHERE ${OWNED_BY('$1')} AND state = ANY($2::text[])`,
+    [ownerId, [...LIMITED_RUN_STATES]],
+  );
+  if (Number(active.rows[0]?.n ?? 0) >= limit) throw new ActiveRunLimitError(limit);
 }
 
 /**
@@ -382,16 +412,14 @@ export async function createGenerationRun(
 ): Promise<StoredRun> {
   const { withTransaction } = await provider();
   return withTransaction(async (tx) => {
-    await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
-      `openmaic.generation-runs.owner:${ownerId}`,
-    ]);
-    const active = await tx.query<{ n: string | number }>(
+    await enforceActiveRunLimitIn(tx, ownerId, options.maxActiveRunsPerOwner);
+    const waiting = await tx.query<{ n: string | number }>(
       `SELECT count(*) AS n FROM generation_runs
-        WHERE ${OWNED_BY('$1')} AND state = ANY($2::text[])`,
-      [ownerId, [...LIMITED_RUN_STATES]],
+        WHERE ${OWNED_BY('$1')} AND state = 'awaiting_outline_confirmation'`,
+      [ownerId],
     );
-    if (Number(active.rows[0]?.n ?? 0) >= options.maxActiveRunsPerOwner) {
-      throw new ActiveRunLimitError(options.maxActiveRunsPerOwner);
+    if (Number(waiting.rows[0]?.n ?? 0) >= options.maxWaitingRunsPerOwner) {
+      throw new WaitingRunLimitError(options.maxWaitingRunsPerOwner);
     }
     const id = generateRunId();
     await tx.query(
@@ -440,10 +468,25 @@ export async function listGenerationRunsUpdatedSince(
   const result = await pool.query<RunRow>(
     `SELECT ${RUN_COLUMNS} FROM generation_runs
       WHERE ${OWNED_BY('$1')} AND updated_at > $2
-      ORDER BY created_at, id`,
+      ORDER BY updated_at, id`,
     [ownerId, since],
   );
   return result.rows.map(storedRun);
+}
+
+/**
+ * The oldest event a run still keeps, or null for none. A finished run is
+ * compacted to its final commit's events: a reader behind them must reload
+ * the snapshot.
+ */
+export async function oldestGenerationRunEventSeq(runId: string): Promise<number | null> {
+  const { pool } = await provider();
+  const result = await pool.query<{ seq: string | number | null }>(
+    'SELECT min(seq) AS seq FROM generation_run_events WHERE run_id = $1',
+    [runId],
+  );
+  const seq = result.rows[0]?.seq;
+  return seq === null || seq === undefined ? null : Number(seq);
 }
 
 /** The run's events after `afterSeq`, in order. The caller has checked ownership. */
@@ -575,15 +618,22 @@ export async function heartbeatGenerationRun(lease: RunLease): Promise<boolean> 
 }
 
 /**
- * Give the run up without a commit (the process is shutting down): the next
- * claim resumes it from its last checkpoint and is not counted as a takeover.
+ * Give the run up without a commit (the process is shutting down, or the
+ * claim is handed back): the next claim resumes it from its last checkpoint.
+ * `undoTakeover` takes back the takeover the claim counted, for a claim
+ * handed back unused.
  */
-export async function releaseGenerationRunLease(lease: RunLease): Promise<void> {
+export async function releaseGenerationRunLease(
+  lease: RunLease,
+  { undoTakeover = false }: { undoTakeover?: boolean } = {},
+): Promise<void> {
   const { pool } = await provider();
   await pool.query(
-    `UPDATE generation_runs SET lease_worker_id = NULL, lease_heartbeat_at = NULL
+    `UPDATE generation_runs
+        SET lease_worker_id = NULL, lease_heartbeat_at = NULL,
+            takeovers = CASE WHEN $4::boolean THEN greatest(takeovers - 1, 0) ELSE takeovers END
       WHERE id = $1 AND lease_worker_id = $2 AND lease_generation = $3`,
-    [lease.runId, lease.workerId, lease.generation],
+    [lease.runId, lease.workerId, lease.generation, undoTakeover],
   );
 }
 
@@ -727,10 +777,22 @@ async function runCommand(
   ownerId: string,
   commandId: string,
   type: 'confirm-outline' | 'retry' | 'discard',
-  apply: (tx: Queryable, run: RunRow) => Promise<CommandResult>,
+  apply: (tx: Queryable, run: RunRow, refusal: unknown) => Promise<CommandResult>,
+  /** Runs first in the transaction, before the run row is locked. */
+  before?: (tx: Queryable) => Promise<void>,
 ): Promise<CommandResult | null> {
   const { withTransaction } = await provider();
   return withTransaction(async (tx) => {
+    // A lock taken here comes before the run row's, as in a start.
+    let refusal: unknown;
+    if (before) {
+      try {
+        await before(tx);
+      } catch (error) {
+        // Refused only if this command is new (a repeat answers what it did).
+        refusal = error;
+      }
+    }
     const locked = await tx.query<RunRow>(
       `SELECT ${RUN_COLUMNS} FROM generation_runs WHERE id = $1 AND ${OWNED_BY('$2')} FOR UPDATE`,
       [runId, ownerId],
@@ -751,7 +813,7 @@ async function runCommand(
       }
       return previous.result;
     }
-    const result = await apply(tx, run);
+    const result = await apply(tx, run, refusal);
     await tx.query(
       `INSERT INTO generation_run_commands (run_id, command_id, type, result)
        VALUES ($1, $2, $3, $4::jsonb)`,
@@ -771,44 +833,57 @@ export async function confirmGenerationRunOutline(
   runId: string,
   ownerId: string,
   command: { commandId: string; outlineRevision: number; outlines?: SceneOutline[] },
+  /** Confirming makes the run active again: it counts toward the limit from then on. */
+  options: { maxActiveRunsPerOwner: number },
 ): Promise<CommandResult | null> {
-  return runCommand(runId, ownerId, command.commandId, 'confirm-outline', async (tx, run) => {
-    if (run.state !== 'awaiting_outline_confirmation' || !run.outline) {
-      throw new RunCommandConflictError(
-        'state',
-        `The run is ${run.state.replaceAll('_', ' ')}, not waiting for its outline to be confirmed`,
+  const limit = (tx: Queryable) =>
+    enforceActiveRunLimitIn(tx, ownerId, options.maxActiveRunsPerOwner);
+  return runCommand(
+    runId,
+    ownerId,
+    command.commandId,
+    'confirm-outline',
+    async (tx, run, refusal) => {
+      if (run.state !== 'awaiting_outline_confirmation' || !run.outline) {
+        throw new RunCommandConflictError(
+          'state',
+          `The run is ${run.state.replaceAll('_', ' ')}, not waiting for its outline to be confirmed`,
+        );
+      }
+      if (command.outlineRevision !== run.outline_revision) {
+        throw new RunCommandConflictError(
+          'outline-revision',
+          `The outline is at revision ${run.outline_revision}, not ${command.outlineRevision}`,
+        );
+      }
+      // The run is confirmable: whether the owner may run one more decides.
+      if (refusal) throw refusal;
+      const edited = command.outlines !== undefined;
+      const outline: GenerationRunOutline = edited
+        ? { ...run.outline, outlines: command.outlines! }
+        : run.outline;
+      const revision = edited ? run.outline_revision + 1 : run.outline_revision;
+      const updated = await applyPatch(
+        tx,
+        runId,
+        {
+          state: 'generating',
+          step: null,
+          outline,
+          outlineRevision: revision,
+          scenesTotal: outline.outlines.length,
+          releaseLease: true,
+        },
+        { resetTakeovers: true },
       );
-    }
-    if (command.outlineRevision !== run.outline_revision) {
-      throw new RunCommandConflictError(
-        'outline-revision',
-        `The outline is at revision ${run.outline_revision}, not ${command.outlineRevision}`,
-      );
-    }
-    const edited = command.outlines !== undefined;
-    const outline: GenerationRunOutline = edited
-      ? { ...run.outline, outlines: command.outlines! }
-      : run.outline;
-    const revision = edited ? run.outline_revision + 1 : run.outline_revision;
-    const updated = await applyPatch(
-      tx,
-      runId,
-      {
-        state: 'generating',
-        step: null,
-        outline,
-        outlineRevision: revision,
-        scenesTotal: outline.outlines.length,
-        releaseLease: true,
-      },
-      { resetTakeovers: true },
-    );
-    const seq = await insertEvents(tx, runId, [
-      { type: 'outline_confirmed', data: { revision, edited } },
-      { type: 'state', data: { state: 'generating', step: null } },
-    ]);
-    return { state: updated.state, seq, outlineRevision: revision };
-  });
+      const seq = await insertEvents(tx, runId, [
+        { type: 'outline_confirmed', data: { revision, edited } },
+        { type: 'state', data: { state: 'generating', step: null } },
+      ]);
+      return { state: updated.state, seq, outlineRevision: revision };
+    },
+    limit,
+  );
 }
 
 /** Re-run the step a paused run stopped at. Null for a run the owner cannot see. */

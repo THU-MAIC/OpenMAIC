@@ -107,7 +107,9 @@ export function startGenerationRunner(
             // it over: hand the claim back. The stale execution is fenced and
             // stops at its next commit; the next scan claims the run afresh.
             running.get(claim.run.id)?.abort.abort();
-            await releaseGenerationRunLease(claim.lease).catch(() => undefined);
+            await releaseGenerationRunLease(claim.lease, { undoTakeover: claim.takeover }).catch(
+              () => undefined,
+            );
             // Not again in this scan: the stale execution settles first.
             break;
           }
@@ -159,7 +161,8 @@ export function startGenerationRunner(
       clearInterval(timer);
       for (const execution of running.values()) execution.abort.abort();
       const deadline = Date.now() + (stopOptions?.timeoutMs ?? 15_000);
-      while (running.size > 0 && Date.now() < deadline) {
+      // A scan in flight may still be handing back a claim it just took.
+      while ((running.size > 0 || scanning) && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       if (running.size > 0) {

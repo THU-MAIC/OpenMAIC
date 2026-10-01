@@ -145,26 +145,60 @@ describe('outline validation', () => {
     });
   });
 
+  it('is lenient where a model is loose: nulls are absent, wrong optional shapes dropped', () => {
+    const modelStyle = [
+      {
+        id: 'o1',
+        type: 'quiz',
+        title: 'Check',
+        description: null,
+        keyPoints: ['a', '', '  ', 7, null, 'b'],
+        teachingObjective: null,
+        estimatedDuration: 'five minutes',
+        order: 1,
+        suggestedImageIds: null,
+        mediaGenerations: [
+          { type: 'image', prompt: 'a leaf', elementId: 'gen_img_1', aspectRatio: 'wide' },
+          { type: 'gif', prompt: 'p', elementId: 'e' },
+          null,
+        ],
+        quizConfig: { questionCount: 3, difficulty: 'tricky', questionTypes: ['single', 'essay'] },
+        pblConfig: { projectTopic: 'Garden', projectDescription: null },
+        widgetType: 'chart',
+        widgetOutline: { concept: 'flow', nodes: null, steps: ['x', null] },
+        extra: { anything: true },
+      },
+    ];
+    const parsed = parseOutlines(modelStyle);
+    expect(parsed).toEqual({
+      ok: true,
+      value: [
+        {
+          id: 'o1',
+          type: 'quiz',
+          title: 'Check',
+          description: '',
+          keyPoints: ['a', 'b'],
+          order: 1,
+          mediaGenerations: [{ type: 'image', prompt: 'a leaf', elementId: 'gen_img_1' }],
+          quizConfig: { questionCount: 3, questionTypes: ['single'] },
+          pblConfig: { projectTopic: 'Garden' },
+          widgetOutline: { concept: 'flow', steps: ['x'] },
+        },
+      ],
+    });
+    // The normal form is a fixed point: a normalized outline confirms unchanged.
+    expect(parseOutlines(parsed.ok && parsed.value)).toEqual(parsed);
+  });
+
   it.each([
     ['an unknown scene type', [outline({ type: 'video' })], /type/],
     ['a fractional order', [outline({ order: 1.5 })], /order/],
+    ['a missing order', [outline({ order: null })], /order/],
+    ['a missing id', [outline({ id: null })], /id/],
     ['a repeated order', [outline(), outline({ id: 'o2' })], /repeat an order/],
     ['a repeated id', [outline(), outline({ order: 2 })], /repeat an id/],
-    ['an empty title', [outline({ title: ' ' })], /title/],
-    ['an overlong title', [outline({ title: 't'.repeat(501) })], /title/],
-    ['a key point that is not text', [outline({ keyPoints: [1] })], /keyPoints/],
-    ['too many key points', [outline({ keyPoints: Array(51).fill('k') })], /keyPoints/],
-    ['an unknown widget', [outline({ widgetType: 'chart' })], /widgetType/],
-    [
-      'an oversized widget outline',
-      [outline({ widgetOutline: { concept: 'c'.repeat(40_000) } })],
-      /widgetOutline/,
-    ],
-    [
-      'an unknown media type',
-      [outline({ mediaGenerations: [{ type: 'gif', prompt: 'p', elementId: 'e' }] })],
-      /mediaGenerations/,
-    ],
+    ['a scene that is not an object', [outline(), 'scene'], /object/],
     ['no scenes', [], /1 to/],
     [
       'too many scenes',
@@ -174,13 +208,7 @@ describe('outline validation', () => {
     [
       'too many bytes',
       Array.from({ length: 50 }, (_, i) =>
-        outline({
-          id: `o${i}`,
-          order: i,
-          description: 'd'.repeat(4_000),
-          teachingObjective: 't'.repeat(4_000),
-          languageNote: 'l'.repeat(4_000),
-        }),
+        outline({ id: `o${i}`, order: i, description: 'd'.repeat(12_000) }),
       ),
       /bytes/,
     ],
