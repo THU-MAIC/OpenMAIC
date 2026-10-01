@@ -93,7 +93,7 @@ After the user has chosen a startup mode and configured keys, start OpenMAIC usi
 
 Load [references/generate-flow.md](references/generate-flow.md).
 
-Use this only after the service is healthy. Confirm before reading local files to upload. If the user has already clearly asked to generate, do not ask for a second confirmation before submitting the generation job, and then follow the polling loop until it succeeds or fails. Only send the supported fields (`requirement`, `materialIds`) for generation requests; optional features follow the server's provider config. Uploads and the submission must resolve to the same owner: in anonymous-cookie mode reuse the same cookie jar on every request. For long-running jobs, prefer sparse polling and tell the user to check back later if the turn ends before completion.
+Use this only after the service is healthy. Confirm before reading local files to upload. If the user has already clearly asked to generate, do not ask for a second confirmation before submitting the generation job, and then follow the polling loop until it succeeds or fails (a failed job may be retried; see the generate flow). Only send the supported fields (`requirement`, `materialIds`) for generation requests; optional features follow the server's provider config. Uploads and the submission must resolve to the same owner: in anonymous-cookie mode reuse the same cookie jar on every request. For long-running jobs, prefer sparse polling and tell the user to check back later if the turn ends before completion.
 
 ## Response Style
 

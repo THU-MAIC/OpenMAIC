@@ -89,13 +89,6 @@ const SHIPPED: readonly (readonly [
     'd440298e2262b7ce4688848c2a8e23ca7d26b29e2b75cfc7011c0e60308178c5',
   ],
   [
-    'classroom-generation-jobs',
-    1,
-    'baseline',
-    false,
-    'f020fcefde84c2c397b05db5ae43d98702ec53b87267781191c48a002af3322d',
-  ],
-  [
     'legacy-classroom-imports',
     1,
     'baseline',

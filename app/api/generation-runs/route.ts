@@ -17,27 +17,14 @@ import type { NextRequest } from 'next/server';
 
 import { apiSuccess } from '@/lib/server/api-response';
 import { ownerApiError, withOwnerResponseHeaders } from '@/lib/server/agent-runtime/route-response';
-import { resolveAgentsForOwner, UnknownAgentsError } from '@/lib/server/agents/registry';
-import {
-  ClassroomMaterialsRejectedError,
-  resolveClassroomMaterials,
-} from '@/lib/server/classroom-materials';
-import { generationRunConfig } from '@/lib/server/generation/run/config';
 import {
   MAX_START_BODY_BYTES,
   parseRunInput,
   readJsonBody,
 } from '@/lib/server/generation/run/input';
-import { wakeGenerationRunner } from '@/lib/server/generation/run/runner';
-import {
-  ActiveRunLimitError,
-  createGenerationRun,
-  listActiveGenerationRuns,
-  runSnapshot,
-  WaitingRunLimitError,
-} from '@/lib/server/generation/run/store';
+import { startGenerationRun, startRefusal } from '@/lib/server/generation/run/start';
+import { listActiveGenerationRuns, runSnapshot } from '@/lib/server/generation/run/store';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
-import { WorkspaceEndpointError } from '@/lib/server/model-config/media';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('GenerationRuns API');
@@ -52,40 +39,14 @@ export async function POST(req: NextRequest) {
     }
     const parsed = parseRunInput(body.value);
     if (!parsed.ok) return ownerApiError('INVALID_REQUEST', 400, parsed.message, responseHeaders);
-    const input = parsed.value;
 
     try {
-      // Checked up front so a run never fails late for these reasons; the
-      // material-analysis step checks the materials again.
-      if (input.materialIds.length > 0) {
-        await resolveClassroomMaterials(ownerId, input.materialIds, { forward: false });
-      }
-      const agentIds =
-        input.agents.mode === 'preset'
-          ? input.agents.agentIds
-          : (input.agents.presetAgentIds ?? []);
-      if (agentIds.length > 0) await resolveAgentsForOwner(ownerId, agentIds);
-    } catch (error) {
-      if (error instanceof ClassroomMaterialsRejectedError || error instanceof UnknownAgentsError) {
-        return ownerApiError('INVALID_REQUEST', 400, error.message, responseHeaders);
-      }
-      if (error instanceof WorkspaceEndpointError) {
-        return ownerApiError('INVALID_URL', 403, error.message, responseHeaders);
-      }
-      throw error;
-    }
-
-    try {
-      const config = generationRunConfig();
-      const run = await createGenerationRun(ownerId, input, {
-        maxActiveRunsPerOwner: config.maxActiveRunsPerOwner,
-        maxWaitingRunsPerOwner: config.maxWaitingRunsPerOwner,
-      });
-      wakeGenerationRunner();
+      const run = await startGenerationRun(ownerId, parsed.value);
       return withOwnerResponseHeaders(apiSuccess({ run: runSnapshot(run) }, 202), responseHeaders);
     } catch (error) {
-      if (error instanceof ActiveRunLimitError || error instanceof WaitingRunLimitError) {
-        return ownerApiError('ACTIVE_RUN_LIMIT', 429, error.message, responseHeaders);
+      const refusal = startRefusal(error);
+      if (refusal) {
+        return ownerApiError(refusal.code, refusal.status, refusal.message, responseHeaders);
       }
       log.error('Generation run creation failed:', error);
       return ownerApiError(

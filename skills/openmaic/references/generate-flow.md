@@ -21,6 +21,8 @@
 
 Nothing else is a request field. Web search, image generation, video generation and TTS narration are attempted automatically whenever their slot (`webSearch`, `image`, `video`, `tts`) resolves to a provider in the server's model configuration for the caller's workspace; they cannot be switched on or off per request, and requests never carry provider choices or API keys. Other fields are ignored, except `pdfContent`, which is rejected with `400 INVALID_REQUEST` (upload the document instead, see below).
 
+A job is a server-side generation run, the same pipeline the web app's classic generation uses: the server generates the outline, confirms it itself, and then generates course-specific agents, the scenes in order, their narration, and the images and videos the outline asks for. The job id is the run id.
+
 Do not rely on request-time model or provider override parameters. To change what a generation job can do, change the slots in `openmaic.yml` or in the model settings (a slot set to `null` is off).
 
 ## Keep One Owner Across Requests
@@ -63,9 +65,9 @@ GET {url}/api/generate-classroom/capabilities
 }
 ```
 
-`capabilities` says which optional features the server has a provider configured for; nothing needs to be sent back. It is best-effort, not a promise: if a configured provider fails at run time, the job continues and completes without that output. Today only narration reports this — through `result.ttsCoverage` and `result.warning` — so a missing image, video or search context is not flagged in the result.
+`capabilities` says which optional features the server has a provider configured for; nothing needs to be sent back. A search that fails continues without its context. An image or video that fails does not fail the job: the classroom completes with a placeholder there, and `result.warning` counts the failures. Narration is part of each scene: a narration failure the server's retries cannot overcome fails the job like any other step (see the polling loop for Retry).
 
-`materials.formats` lists the upload types this server can extract text from with its current configuration (plain text, Markdown and PDF always; Office documents, images, audio and video only when a matching extraction service or local media pipeline is configured). Classroom generation uses only the extracted text of each material — no images, slides-as-pictures or video keyframes. With the local media pipeline (ffmpeg) but no server ASR provider, video is listed and audio is not: a video without an audio track extracts, but contributes almost nothing (its text is just "No audio track"), and a video with an audio track fails when the job runs, because its speech cannot be transcribed. `maxCount` and `maxTotalBytes` bound one request's `materialIds`; the byte limits apply per file (`maxMediaBytes` for audio/video, `maxDocumentBytes` for everything else). `POST /api/materials` may accept more types than are listed here, but a submission with a material of an unlisted type is refused.
+`materials.formats` lists the upload types this server can extract with its current configuration (plain text, Markdown and PDF always; Office documents, images, audio and video only when a matching extraction service or local media pipeline is configured). Classroom generation uses the extracted text of each material, and the images the extraction finds in documents are stored with the classroom and can be placed on its slides. With the local media pipeline (ffmpeg) but no server ASR provider, video is listed and audio is not: a video without an audio track extracts, but contributes almost nothing (its text is just "No audio track"), and a video with an audio track fails when the job runs, because its speech cannot be transcribed. `maxCount` and `maxTotalBytes` bound one request's `materialIds`; the byte limits apply per file (`maxMediaBytes` for audio/video, `maxDocumentBytes` for everything else). `POST /api/materials` may accept more types than are listed here, but a submission with a material of an unlisted type is refused.
 
 ## Requirement-Only Generation
 
@@ -86,13 +88,19 @@ Treat the `POST` response as job submission only. Expect fields such as:
 ```json
 {
   "success": true,
-  "jobId": "abc123",
+  "jobId": "run-Q2xhc3Nyb29tSm9i",
+  "runId": "run-Q2xhc3Nyb29tSm9i",
   "status": "queued",
   "step": "queued",
-  "pollUrl": "http://localhost:3000/api/generate-classroom/abc123",
+  "pollUrl": "http://localhost:3000/api/generate-classroom/run-Q2xhc3Nyb29tSm9i",
   "pollIntervalMs": 5000
 }
 ```
+
+The submission is refused before any job exists when:
+
+- the server has no model configured for the outline (`400 MISSING_MODEL`), or the outline provider has no API key (`400 MISSING_API_KEY`): tell the user to fix the server's model configuration;
+- the owner already has as many generations in progress as the server allows (`429 ACTIVE_RUN_LIMIT`; 2 by default, `OPENMAIC_MAX_ACTIVE_RUNS_PER_OWNER`): wait for a running job to finish, then submit again. A job that failed with a paused run (see below) still counts until it is retried to completion or its classroom is deleted.
 
 ## Generation From Local Files
 
@@ -138,7 +146,7 @@ The submission is checked before a job is created, and answers `400 INVALID_REQU
 
 If a document still cannot be extracted when the job runs (for example the extraction service fails, or the file contains no text), the job fails rather than generating without it; surface the error to the user.
 
-5. After the job reaches `succeeded` or `failed`, delete the uploads you no longer need:
+5. After the job reaches `succeeded`, or `failed` with no Retry planned, delete the uploads you no longer need:
 
 ```text
 DELETE {url}/api/materials/{materialId}
@@ -164,7 +172,18 @@ GET {pollUrl}
 
 4. Prefer a conservative polling cadence of about 60 seconds between polls for classroom generation jobs, even if `pollIntervalMs` is shorter.
 5. Treat `queued` and `running` as in-progress states.
-6. Stop only when `status` becomes `succeeded` or `failed`.
+6. Stop only when `status` becomes `succeeded` or `failed` (`done` is then `true`).
+
+`step` is one of `queued`, `initializing` (extracting materials), `researching`, `generating_outlines`, `generating_scenes`, `generating_media` (the scenes are in; images and videos are finishing), `completed` or `failed`. `scenesGenerated` counts the scenes already in the classroom, and `totalScenes` appears once the outline exists.
+
+### Failed Jobs And Retry
+
+A `failed` job carries `error`, naming the step that failed when there is one (for example `scene:2:content: ...`). Two kinds exist:
+
+- The run is paused at a failed step. Nothing is lost: the scenes generated so far stay, and the classroom is read-only until the run completes. With the user's confirmation, re-run only that step by calling `POST {url}/api/generation-runs/{runId}/retry` with `{ "commandId": "<a new unique id>" }` (same owner, same cookie jar); the job then reads `running` again, so keep polling the same `pollUrl`. Do not resubmit the requirement instead: that starts a second classroom.
+- The classroom was deleted, or the run was discarded, before it finished (`error` says so). It cannot be retried.
+
+`GET {url}/api/generation-runs/{runId}` shows the run itself (its state, the failed step, every image and video) for the same owner.
 
 ### Reliability Rules
 
@@ -177,10 +196,9 @@ GET {pollUrl}
 - Report progress to the user only when `status`, `step`, or visible progress meaningfully changes. Do not spam every poll result.
 - Do not try to recover from auth, provider, model, or base URL errors by changing request parameters. Tell the user to fix OpenMAIC server-side config and retry only after they confirm.
 - On `failed`, surface the server error and include the `jobId`.
-- On `succeeded`, read `result.classroomId` and `result.url` from the final poll response, and also read `result.warning` and `result.ttsCoverage` before telling the user the classroom is ready.
-  - If `result.warning` is set, quote it in the same update and describe narration as incomplete. A warning that says the asset storage is full names the outputs (images, video, narration) the server stopped storing; tell the user those were left out of the classroom.
-  - If `result.ttsCoverage` is set and `written` is less than `total`, tell the user how many narration clips were written and how many speech actions were left silent. The classroom URL is still usable, and narration is incomplete.
-  - A missing `ttsCoverage` means the server has no TTS provider configured, so no narration was generated. A TTS run includes `ttsCoverage`. `warning` is set when `written` is less than `total`, or when the TTS phase failed. A run with no narratable speech (`written: 0`, `total: 0`) has coverage and no `warning`.
+- On `succeeded`, read `result.classroomId` and `result.url` from the final poll response, and also read `result.warning` before telling the user the classroom is ready.
+  - If `result.warning` is set, quote it in the same update: some images or videos could not be generated (for example the provider refused them, or the owner's asset storage is full) and show a placeholder. The classroom URL is still usable. Each one can be retried with `POST {url}/api/generation-runs/{runId}/retry` and `{ "commandId": "<a new unique id>", "media": { "elementId": "<id>" } }`, where the element ids and their states are in `GET {url}/api/generation-runs/{runId}` under `media`.
+  - Narration is complete in a succeeded job when the server has a TTS provider configured, and absent when it has none.
 
 ## If The Loop Ends First
 
@@ -190,7 +208,7 @@ Use natural phrasing such as:
 
 ```text
 The classroom generation is still running in the background.
-Job ID: abc123
+Job ID: run-Q2xhc3Nyb29tSm9i
 
 Check back with me in a little while and I can continue tracking this same job without starting over.
 ```
@@ -199,7 +217,7 @@ Check back with me in a little while and I can continue tracking this same job w
 
 Return the generated classroom ID plus a directly clickable classroom URL.
 
-When the succeeded job includes `result.warning` or an incomplete `result.ttsCoverage` (`written` < `total`), say that narration is incomplete in the same reply, quoting `result.warning` when it is present, and still include the classroom ID and URL.
+When the succeeded job includes `result.warning`, say that some images or videos are missing in the same reply, quoting `result.warning`, and still include the classroom ID and URL.
 
 Output the URL as a raw absolute URL on its own line.
 
@@ -219,7 +237,7 @@ Classroom URL:
 http://localhost:3001/classroom/Uyh82Y32ZK
 ```
 
-If the job fails, return the job ID plus the server error.
+If the job fails, return the job ID plus the server error, and say whether it can be retried (a paused run) or not (a deleted classroom or a discarded run).
 
 If generation fails, surface the server error directly instead of paraphrasing it away.
 

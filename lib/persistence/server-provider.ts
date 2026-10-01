@@ -16,7 +16,6 @@ import { validateAppScene, validateAppStage } from '@/lib/document-store/validat
 import { configuredLazyAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { resolveAssetPendingTtlMs } from '@/lib/persistence/asset-pending-ttl';
 import { resolveAssetQuotaBytes } from '@/lib/persistence/asset-quota';
-import { ensureClassroomGenerationJobSchema } from '@/lib/persistence/classroom-generation-jobs';
 import { ensureLegacyClassroomImportSchema } from '@/lib/persistence/legacy-classroom-imports';
 import { ensureOwnerMaterialSchema } from '@/lib/persistence/owner-materials';
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
@@ -83,7 +82,6 @@ async function createServerPersistenceProvider(
       await ensureStageMetaSchema(locked);
       await ensureOwnerMaterialSchema(locked);
       await ensureAssetSchema(locked);
-      await ensureClassroomGenerationJobSchema(locked);
       await ensureLegacyClassroomImportSchema(locked);
       await ensureWorkspaceModelConfigSchema(locked);
       await ensureOwnerAgentSchema(locked);

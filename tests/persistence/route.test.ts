@@ -38,10 +38,6 @@ describe('embedded persistence route', () => {
     }));
     // The provider's remaining schema stores: their migrations need a real
     // database (the advisory lock), which the fakes here are not.
-    vi.doMock('@/lib/persistence/classroom-generation-jobs', async (importOriginal) => ({
-      ...(await importOriginal<object>()),
-      ensureClassroomGenerationJobSchema: vi.fn().mockResolvedValue(undefined),
-    }));
     vi.doMock('@/lib/persistence/legacy-classroom-imports', async (importOriginal) => ({
       ...(await importOriginal<object>()),
       ensureLegacyClassroomImportSchema: vi.fn().mockResolvedValue(undefined),

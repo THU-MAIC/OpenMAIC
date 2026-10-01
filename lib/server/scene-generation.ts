@@ -13,41 +13,15 @@ import {
   type AgentInfo,
   type ImageMapping,
   type PdfImage,
-  type GeneratedSceneContent,
   type SceneGenerationContext,
   type SceneOutline,
 } from '@openmaic/generation';
 import { callLLM } from '@/lib/ai/llm';
-import type { StageAPI } from '@/lib/api/stage-api';
 import { createLogger } from '@/lib/logger';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
-import type { Action } from '@/lib/types/action';
-import type { Scene, SceneContent } from '@/lib/types/stage';
+import type { Scene } from '@/lib/types/stage';
 
 const log = createLogger('Generation');
-
-/** Persist a package-built scene through the app's stage-store API. */
-export function createSceneWithActions(
-  outline: SceneOutline,
-  content: GeneratedSceneContent,
-  actions: Action[],
-  api: StageAPI,
-): string | null {
-  const scene = buildCompleteScene(outline, content, actions, '');
-  if (!scene) return null;
-
-  const result = api.scene.create({
-    type: scene.type,
-    title: scene.title,
-    order: scene.order,
-    // The package's PBL contract is runtime-compatible with the app overlay;
-    // the app type retains stronger learner-state field types.
-    content: scene.content as SceneContent,
-    actions: scene.actions,
-    outlineId: scene.outlineId,
-  });
-  return result.success ? (result.data ?? null) : null;
-}
 
 /** Generate both halves and assemble a store-independent app scene. */
 export async function buildSceneFromOutline(
