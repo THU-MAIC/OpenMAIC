@@ -98,6 +98,12 @@ const MEDIA_DEFAULTS: ReadonlyArray<[Section, SlotId]> = [
 /** The order the server preferred web search providers in (with a key). */
 const WEB_SEARCH_PRIORITY = ['tavily', 'exa', 'bocha', 'baidu', 'minimax', 'claude'];
 
+/**
+ * The document services the browser switched to when the server configured
+ * them (MinerU Cloud over self-hosted MinerU), ahead of the rest in order.
+ */
+const DOCUMENT_PRIORITY = ['mineru-cloud', 'mineru'];
+
 /** `providerId` or `providerId:modelId`, as openmaic.yml accepts it. */
 const MODEL_REF_SHAPE_ANY = /^[a-z0-9][a-z0-9-]{0,62}(?::.+)?$/;
 
@@ -217,7 +223,11 @@ export function translateLegacyConfig(
           )
         : section === 'image' && settings.defaultImageProvider
           ? usable.find(([registryId]) => registryId === settings.defaultImageProvider)
-          : undefined;
+          : section === 'pdf'
+            ? DOCUMENT_PRIORITY.map((id) => usable.find(([registryId]) => registryId === id)).find(
+                Boolean,
+              )
+            : undefined;
     // An explicit image default that is not configured stays unassigned (the
     // agent's image tool failed on it before): never another vendor instead.
     if (section === 'image' && settings.defaultImageProvider && !preferred) {

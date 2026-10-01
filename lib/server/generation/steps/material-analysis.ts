@@ -326,11 +326,12 @@ export async function analyzeMaterial(
     return mediaResult;
   }
 
-  // The document slot's service (openmaic.yml or the model settings) when the
-  // request names no other extractor; legacy server providers keep the rules
-  // below.
+  // The document slot's service (openmaic.yml, the model settings, or the
+  // default translated from the legacy provider variables) when the request
+  // names no other extractor; a provider the request names keeps the legacy
+  // rules below.
   const slotService =
-    services.document?.origin === 'configuration' &&
+    (services.document?.origin === 'configuration' || services.document?.origin === 'default') &&
     (!requestConfig.providerId || requestConfig.providerId === services.document.providerId)
       ? services.document
       : undefined;

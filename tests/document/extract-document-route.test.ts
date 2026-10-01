@@ -263,6 +263,36 @@ describe('POST /api/extract-document', () => {
     );
   });
 
+  it('uses the document default translated from the legacy provider variables', async () => {
+    // What loadDeploymentLayer builds from PDF_MINERU_CLOUD_API_KEY alone.
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: { providers: { 'mineru-cloud': { preset: 'mineru-cloud', apiKey: 'env-key' } } },
+      },
+      defaults: { source: 'default', config: { slots: { document: 'mineru-cloud' } } },
+      notices: [],
+    });
+    const res = await postExtractDocument({
+      file: new File(['%PDF-1.4'], 'lesson.pdf', { type: 'application/pdf' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mocks.parseWithMinerUCloud).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: 'mineru-cloud', apiKey: 'env-key' }),
+      expect.any(Buffer),
+      'lesson.pdf',
+    );
+
+    // A self-contained extractor the request names still wins over a default.
+    mocks.parseWithMinerUCloud.mockClear();
+    await postExtractDocument({
+      file: new File(['%PDF-1.4'], 'lesson.pdf', { type: 'application/pdf' }),
+      providerId: 'unpdf',
+    });
+    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+  });
+
   const deploymentDocumentSlot = async (
     config: import('@/lib/server/model-config/openmaic-yml').ModelConfigFile,
   ) =>
