@@ -35,6 +35,10 @@ export async function startSchemaBootCheck(
   poolFactory: SchemaCheckPoolFactory = (value) => new Pool({ connectionString: value, max: 1 }),
 ): Promise<void> {
   const pool = poolFactory(connectionString.trim());
+  // An idle connection that drops is reported here, not thrown at the process.
+  pool.on('error', (error) => {
+    console.error('[persistence] Schema check connection failed', error);
+  });
   try {
     await verifySchemaMigrations(pool, APP_SCHEMA_STORES);
   } catch (error) {

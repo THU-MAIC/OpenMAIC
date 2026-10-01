@@ -77,7 +77,8 @@ export interface LegacyOwnerAdoption {
  * existing ownership row is never touched (`ON CONFLICT DO NOTHING`), so a
  * second boot adopts nothing, and where the two records disagree `stage_meta`
  * stands and the disagreement is counted for an operator. A database created
- * without the column has nothing to adopt.
+ * without the column has nothing to adopt. Runs once per database, as
+ * migration 2 of `stage-meta`.
  */
 export async function adoptLegacyDocumentOwners(
   queryable: Queryable,
@@ -105,19 +106,20 @@ export async function adoptLegacyDocumentOwners(
 }
 
 /**
- * Adopt owned documents that have no ownership row, and say what was found.
+ * Version 2: adopt owned documents that have no ownership row.
  *
- * The adoption ({@link adoptLegacyDocumentOwners}) is a backfill for documents
- * written by a release that recorded ownership only on
- * `document_stages.owner_id` -- a database from before `stage_meta`, or courses
- * a rolled-back 1.1.x instance created -- and must run before anything serves a
- * course: nothing else reads that column. It runs at provider startup and
- * outside any request, so it records ownership **without** the host create
- * hooks (`authorizeCreate` / `onCreate`): there is no request, principal, or
- * create transaction to run them in. When it does adopt, it says how many so
- * an operator can reconcile any host rows those courses lack.
+ * The adoption ({@link adoptLegacyDocumentOwners}) is a backfill for databases
+ * written before `stage_meta` existed, and must run before anything serves a
+ * course: nothing else reads the owner recorded on a document row. It runs
+ * once per database, at provider startup and outside any request, so it
+ * records ownership **without** the host create hooks (`authorizeCreate` /
+ * `onCreate`): there is no request, principal, or create transaction to run
+ * them in. Releases from 1.1.x on record every course they create in
+ * `stage_meta` as well, and adopt column-only owners on their own starts, so
+ * nothing written after this ran needs it again. When it does adopt, it says
+ * how many so an operator can reconcile any host rows those courses lack.
  */
-async function reconcileLegacyDocumentOwners(queryable: Queryable): Promise<void> {
+async function adoptLegacyDocumentOwnersOnce(queryable: Queryable): Promise<void> {
   const { adopted, disagreeing } = await adoptLegacyDocumentOwners(queryable);
   if (adopted > 0) {
     console.warn(
@@ -137,23 +139,13 @@ export const STAGE_META_MIGRATIONS: SchemaMigrationSet = {
   store: 'stage-meta',
   migrations: [
     { version: 1, name: 'baseline', up: STAGE_META_SCHEMA, transaction: false },
-    { version: 2, name: 'adopt_legacy_document_owners', up: reconcileLegacyDocumentOwners },
+    { version: 2, name: 'adopt_legacy_document_owners', up: adoptLegacyDocumentOwnersOnce },
   ],
 };
 
-/**
- * Ensure the schema of course ownership, the claim records and the import
- * bindings, and adopt column-only owners.
- *
- * The adoption is migration 2, and also runs on every later start while
- * `document_stages.owner_id` exists: rolling back to 1.1.x is supported, and a
- * 1.1.x instance records the owner of a course it creates only on that column,
- * so a once-only backfill would leave such courses unowned after the upgrade
- * is repeated. It is idempotent and does nothing once the column is gone.
- */
+/** Ensure the schema of course ownership, the claim records and the import bindings. */
 export async function ensureStageMetaSchema(queryable: Queryable): Promise<void> {
-  const applied = await applySchemaMigrations(queryable, STAGE_META_MIGRATIONS);
-  if (!applied.includes(2)) await reconcileLegacyDocumentOwners(queryable);
+  await applySchemaMigrations(queryable, STAGE_META_MIGRATIONS);
   // The record of ownership moving between owners (claims), provisioned with
   // the record of ownership itself: every write path that checks one reads
   // the other (see ./owner-merges.ts).

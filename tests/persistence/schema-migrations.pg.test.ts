@@ -2,8 +2,7 @@
  * Versioned schema migrations through the application's bootstrap, on a real
  * PostgreSQL: upgrades of databases the earlier lines created (frozen DDL
  * snapshots of v1.1.2, `main` and `integration/provider-config`), the
- * pre-byte-store owner materials, a rollback to 1.1.x and forward again, a
- * one-time migration across restarts, and the refusal to start on a database
+ * pre-byte-store owner materials, a one-time migration across restarts, and the refusal to start on a database
  * a newer release upgraded -- for every store, including the lazily
  * provisioned ones.
  *
@@ -180,26 +179,6 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
     },
     60_000,
   );
-
-  it('adopts a course a rolled-back 1.1.x instance created, when upgraded again', async () => {
-    await withPool((pool) => provisionSnapshot(pool, RELEASE_1_1_2_SCHEMA));
-    await boot();
-    // Rolled back: 1.1.x writes ownership on the document row, and runs its
-    // own every-start DDL, which leaves the version table alone.
-    await withPool(async (pool) => {
-      await provisionSnapshot(pool, RELEASE_1_1_2_SCHEMA);
-      await insertColumnOnlyCourse(pool, 'during-rollback', 'owner-b');
-    });
-
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      await boot();
-      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/adopted 1 owned course\(s\)/));
-    } finally {
-      warn.mockRestore();
-    }
-    expect(await stageMeta()).toEqual([{ stage_id: 'during-rollback', owner_id: 'owner-b' }]);
-  }, 60_000);
 
   it('drops the pre-byte-store asset_id once, and never on a later start', async () => {
     await withPool(async (pool) => {

@@ -17,7 +17,8 @@ function named(name: string): Error {
 
 describe('schema check at startup', () => {
   const end = vi.fn(async () => {});
-  const pool = { end } as unknown as Pool;
+  const on = vi.fn();
+  const pool = { end, on } as unknown as Pool;
   const poolFactory = vi.fn(() => pool);
 
   beforeEach(() => {
@@ -40,6 +41,7 @@ describe('schema check at startup', () => {
     expect(poolFactory).toHaveBeenCalledWith('postgres://db/openmaic');
     expect(verifySchemaMigrations).toHaveBeenCalledWith(pool, APP_SCHEMA_STORES);
     expect(end).toHaveBeenCalledOnce();
+    expect(on).toHaveBeenCalledWith('error', expect.any(Function));
     expect(exitOnBootFailure).not.toHaveBeenCalled();
   });
 

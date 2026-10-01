@@ -1,5 +1,5 @@
 import type { Queryable } from '@openmaic/storage/document/pg';
-import { acquireSessionAdvisoryLock } from '@openmaic/storage/pg-migrations';
+import { withSessionAdvisoryLock } from '@openmaic/storage/pg-migrations';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 
 /**
@@ -44,16 +44,17 @@ export async function withSchemaBootstrapLock<T>(
   const client = await pool.connect();
   try {
     // Bounded: a holder that never finishes fails this start with an error
-    // naming the lock (SchemaLockTimeoutError) instead of hanging it.
-    await acquireSessionAdvisoryLock(client, SCHEMA_BOOTSTRAP_LOCK_KEY, {
-      name: 'schema bootstrap lock',
-      ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }),
-    });
-    try {
-      return await body(client);
-    } finally {
-      await client.query('SELECT pg_advisory_unlock($1::bigint)', [SCHEMA_BOOTSTRAP_LOCK_KEY]);
-    }
+    // naming the lock (SchemaLockTimeoutError) instead of hanging it. A failed
+    // unlock after a failed body is logged; the body's error is the one thrown.
+    return await withSessionAdvisoryLock(
+      client,
+      SCHEMA_BOOTSTRAP_LOCK_KEY,
+      {
+        name: 'schema bootstrap lock',
+        ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }),
+      },
+      () => body(client),
+    );
   } finally {
     client.release();
   }
