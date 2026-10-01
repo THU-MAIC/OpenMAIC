@@ -1,0 +1,82 @@
+---
+title: 职教任务引擎
+description: 启用实验性的职教课件生成，通过实操步骤、判断和后果反馈组织训练。
+---
+
+职教任务引擎围绕一项工作任务生成课件：学习者需要完成什么、使用哪些工具、何时继续或停止，以及如何确认任务完成。课件结合任务说明幻灯片、交互式步骤训练、原理解释和任务挑战。
+
+该功能目前属于实验性功能，默认关闭。先参考[快速上手](./getting-started.mdx)配置 OpenMAIC 和 LLM provider，再在自己的部署中启用下述开关。
+
+## 适用任务
+
+选择具有操作顺序、工具或设备、可观察状态，以及继续、停止、复检或交接等判断点的具体任务，例如设备检查、装配准备和维修前安全确认。
+
+大纲提示词要求先介绍任务，再围绕同一工作流程安排训练片段与挑战。规划器会被要求判断任务是否适合实操训练；只有概念讲解需求时，应使用普通幻灯片和交互组件。生成的大纲仍需人工检查。
+
+## 启用功能
+
+在 OpenMAIC 应用的 `.env.local` 中添加：
+
+```bash
+OPENMAIC_ENABLE_VOCATIONAL=true
+NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=true
+```
+
+| 开关                                  | 作用                                           | 生效时机                                     |
+| ------------------------------------- | ---------------------------------------------- | -------------------------------------------- |
+| `OPENMAIC_ENABLE_VOCATIONAL`          | 允许服务端使用职教任务规划和实操组件内容生成。 | 运行时读取；修改进程环境变量后重启应用。     |
+| `NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI` | 在首页显示实验性的职教开关。                   | 构建时读取；生产环境修改后需要重新构建应用。 |
+
+两个开关均接受 `true` 或 `1`，未配置时关闭。本地修改配置后重启 `pnpm dev`。生产环境应在 `pnpm build` 前配置前端开关，并在启动应用时提供服务端开关。它们配置的是 OpenMAIC 应用，不是文档站服务。完整配置见[配置说明](./configuration.mdx)。
+
+显示开关本身不会启用服务端功能。职教生成需要服务端开关开启，且生成请求包含 `requirements.taskEngineMode`。服务端开关关闭时，请求沿用普通或互动模式的生成流程。
+
+## 生成职教课件
+
+1. 打开 OpenMAIC 首页并配置要使用的模型。
+2. 开启标为 **职教任务** 的实验性开关。
+3. 描述工作任务、学习者基础、工具、判断点和完成标准；有相关课程材料时可一并上传。
+4. 生成并检查大纲，然后继续生成课堂。
+
+示例输入：
+
+```text
+为具有基础车间知识的学习者生成新能源汽车电池维修前安全确认的职教课件。
+先介绍任务，再练习防护用品与工具检查、检查结果判断、GO/STOP 决策和交接确认。
+具体操作流程与允许的限值以提供的参考材料为准。
+为错误判断提供后果反馈，并让每个练习都能重置。
+```
+
+启用职教生成的课程会保存服务端实际生效的模式，并可在课程列表显示 **Vocational Mode** 标识。后续场景生成和重试会传递已保存的模式，在服务端开关仍开启时继续支持实操组件。该标识表示生成模式，并不意味着每个场景都是实操组件。
+
+## 学习者如何练习
+
+`procedural-skill` 组件以生成的 HTML 练习页面接入现有交互场景渲染器。其提示词要求提供可操作控件、任务和工具说明、顺序步骤、进度、反馈、完成条件和重置功能。至少一项操作应涉及选择、测量或判断；错误选择应产生步骤阻断、需要复检等操作后果。
+
+完成条件应随练习状态更新，重置应恢复待完成步骤、进度、反馈和控件状态。由于页面由模型生成，使用课件前应检查这些行为。它提供的是轻量实操训练；组件内部的步骤状态不是平台持久化考核记录，也不是物理仿真。
+
+## 常见问题
+
+| 现象                     | 检查方法                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------ |
+| 首页没有职教开关         | 检查应用构建环境中的 `NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI`；生产环境重新构建，本地开发重启服务。 |
+| 开关可见，但生成普通内容 | 检查服务端 `OPENMAIC_ENABLE_VOCATIONAL`，并确认提交需求时已开启职教开关。                        |
+| 理论主题没有生成实操训练 | 规划器被要求避免为缺少工作操作或有效判断的主题生成实操组件；请描述具体任务。                     |
+| 操作、重置或反馈不正常   | 检查生成的场景 HTML，并重新生成相关内容。启用职教模式不能保证模型正确实现所有交互。              |
+
+## 实现说明
+
+[PR #685](https://github.com/THU-MAIC/OpenMAIC/pull/685) 引入的职教功能复用了现有生成与交互渲染流程。当前 `main` 的主要组成如下：
+
+| 组成                                                                                                                                                                                                                    | 职责                                                                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| [功能开关](https://github.com/THU-MAIC/OpenMAIC/blob/main/lib/config/feature-flags.ts)                                                                                                                                  | `resolveVocationalActive` 同时判断请求中的 `taskEngineMode` 和服务端开关；前端显示开关独立处理。                                         |
+| [大纲接口](https://github.com/THU-MAIC/OpenMAIC/blob/main/app/api/generate/scene-outlines-stream/route.ts)与[任务引擎提示词](https://github.com/THU-MAIC/OpenMAIC/tree/main/lib/prompts/templates/task-engine-outlines) | 选择职教规划器，并在流式完成事件中返回实际生效的模式。                                                                                   |
+| [场景内容接口](https://github.com/THU-MAIC/OpenMAIC/blob/main/app/api/generate/scene-content/route.ts)与[生成包](https://github.com/THU-MAIC/OpenMAIC/blob/main/packages/%40openmaic/generation/src/scene-generator.ts) | 再次检查服务端权限开关，将任务字段传入实操内容提示词。未启用时，大纲回退可将实操场景降级为示意图，组件生成器也会拒绝未获允许的实操内容。 |
+| [预览模式辅助模块](https://github.com/THU-MAIC/OpenMAIC/blob/main/app/generation-preview/vocational-mode.ts)与[场景生成 Hook](https://github.com/THU-MAIC/OpenMAIC/blob/main/lib/hooks/use-scene-generator.ts)          | 保存实际生效的课程模式，并在后续场景与重试中继续传递；包含 [PR #716](https://github.com/THU-MAIC/OpenMAIC/pull/716) 的后续修复。         |
+
+实操大纲包含 `procedureType`（`repair`、`assembly`、`inspection`、`operation` 或 `custom`）、`task`、`tools`、`steps`、`successCriteria` 和 `errorConsequences`。[内容模板](https://github.com/THU-MAIC/OpenMAIC/tree/main/packages/%40openmaic/generation/templates/procedural-skill-content)将这些字段转换为练习页面。
+
+教师动作复用平台向 iframe 发送的 `SET_WIDGET_STATE`、`HIGHLIGHT_ELEMENT`、`ANNOTATE_ELEMENT` 和 `REVEAL_ELEMENT`。实操提示词要求提供稳定的步骤选择器，让学习者操作与 `SET_WIDGET_STATE` 共用状态更新路径，并支持 `completedSteps`，从而沿用现有场景和动作协议。
+
+本研究得到中国国家重点研发计划（项目编号：2024YFC3308500）的资助。

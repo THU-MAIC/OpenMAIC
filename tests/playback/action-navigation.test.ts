@@ -258,6 +258,42 @@ describe('PlaybackEngine action navigation', () => {
     vi.unstubAllGlobals();
   });
 
+  it('replays the target speech visual cues on jump, just as sequential playback does', async () => {
+    const actions = [
+      speech('previous'),
+      { id: 'spot', type: 'spotlight', elementId: 'box' } as Action,
+      { id: 'laser', type: 'laser', elementId: 'label', color: '#f00' } as Action,
+      speech('target'),
+    ];
+    const natural = createActionEngine();
+    const naturalAudio = createAudioPlayer(async () => true);
+    const naturalEngine = new PlaybackEngine([scene(actions)], natural.engine, naturalAudio.player);
+    naturalEngine.start();
+    naturalAudio.fireEnded();
+    await flushPromises();
+    expect(natural.executions.map(({ action }) => action.id)).toEqual(['spot', 'laser']);
+
+    const jumped = createActionEngine();
+    const { player } = createAudioPlayer(async () => true);
+    const onSpeechStart = vi.fn();
+    const onProgress = vi.fn();
+    const onEffectFire = vi.fn();
+    const engine = new PlaybackEngine([scene(actions)], jumped.engine, player, {
+      onSpeechStart,
+      onProgress,
+      onEffectFire,
+    });
+    expect(await engine.jumpToAction(3, { autoplay: true })).toBe(true);
+    await flushPromises();
+
+    expect(jumped.executions).toEqual(natural.executions);
+    expect(onEffectFire.mock.calls.map(([effect]) => effect.kind)).toEqual(['spotlight', 'laser']);
+    expect(onSpeechStart.mock.calls).toEqual([['target']]);
+    expect(onProgress.mock.calls.every(([snapshot]) => snapshot.actionIndex === 3)).toBe(true);
+    engine.stop();
+    naturalEngine.stop();
+  });
+
   it('rejects invalid and unsafe jump targets', async () => {
     const { engine: actionEngine } = createActionEngine();
     const { player } = createAudioPlayer();
@@ -277,6 +313,148 @@ describe('PlaybackEngine action navigation', () => {
     expect(await engine.jumpToAction(99)).toBe(false);
     expect(await engine.jumpToAction(2)).toBe(false);
     expect('seekTo' in engine).toBe(false);
+  });
+
+  it.each(['idle', 'paused'] as const)(
+    'defers cues while %s and keeps the selected speech in snapshots until playback',
+    async (mode) => {
+      const { engine: actionEngine, executions } = createActionEngine();
+      const { player } = createAudioPlayer(async () => true);
+      const onSpeechStart = vi.fn();
+      const onProgress = vi.fn();
+      const actions = [
+        speech('previous'),
+        { id: 'spot', type: 'spotlight', elementId: 'box' } as Action,
+        speech('target'),
+      ];
+      const engine = new PlaybackEngine([scene(actions)], actionEngine, player, {
+        onSpeechStart,
+        onProgress,
+      });
+      if (mode === 'paused') {
+        engine.start();
+        engine.pause();
+      }
+      onSpeechStart.mockClear();
+      onProgress.mockClear();
+
+      await engine.jumpToAction(2, { autoplay: false });
+      expect(engine.getSnapshot().actionIndex).toBe(2);
+      expect(engine.getMode()).toBe(mode);
+      expect(executions).toEqual([]);
+      expect(onSpeechStart).not.toHaveBeenCalled();
+
+      if (mode === 'paused') engine.resume();
+      else engine.continuePlayback();
+      await flushPromises();
+      expect(executions.map(({ action }) => action.id)).toEqual(['spot']);
+      expect(onSpeechStart.mock.calls).toEqual([['target']]);
+      expect(onProgress.mock.calls.every(([snapshot]) => snapshot.actionIndex === 2)).toBe(true);
+      engine.pause();
+      engine.resume();
+      expect(executions).toHaveLength(1);
+      engine.stop();
+    },
+  );
+
+  it('replays first-sentence cues without clearing them again at the scene boundary', async () => {
+    const { engine: actionEngine, executions } = createActionEngine();
+    const { player } = createAudioPlayer(async () => true);
+    const actions = [
+      { id: 'spot', type: 'spotlight', elementId: 'box' } as Action,
+      speech('first'),
+    ];
+    const engine = new PlaybackEngine([scene(actions)], actionEngine, player);
+    await engine.jumpToAction(1, { autoplay: false });
+    vi.mocked(actionEngine.clearEffects).mockClear();
+    engine.continuePlayback();
+    await flushPromises();
+    expect(executions.map(({ action }) => action.id)).toEqual(['spot']);
+    expect(actionEngine.clearEffects).not.toHaveBeenCalled();
+    engine.stop();
+  });
+
+  it('stops collecting cues at whiteboard actions and earlier speech', async () => {
+    const { engine: actionEngine, executions } = createActionEngine();
+    const { player } = createAudioPlayer(async () => true);
+    const actions = [
+      { id: 'old-cue', type: 'spotlight', elementId: 'old' } as Action,
+      speech('previous'),
+      { id: 'before-board', type: 'laser', elementId: 'old' } as Action,
+      { id: 'board', type: 'wb_open' } as Action,
+      { id: 'target-cue', type: 'spotlight', elementId: 'box' } as Action,
+      speech('target'),
+      speech('no-cue'),
+    ];
+    const engine = new PlaybackEngine([scene(actions)], actionEngine, player);
+    await engine.jumpToAction(5, { autoplay: true });
+    expect(executions).toEqual([
+      { action: actions[3], silent: true },
+      { action: actions[4], silent: undefined },
+    ]);
+    executions.length = 0;
+    await engine.jumpToAction(6, { autoplay: true });
+    expect(executions).toEqual([{ action: actions[3], silent: true }]);
+    engine.stop();
+  });
+
+  it('only replays cues from the last of multiple paused jumps', async () => {
+    const { engine: actionEngine, executions } = createActionEngine();
+    const { player } = createAudioPlayer(async () => true);
+    const actions = [
+      { id: 'first-cue', type: 'spotlight', elementId: 'first' } as Action,
+      speech('first'),
+      { id: 'second-cue', type: 'laser', elementId: 'second' } as Action,
+      speech('second'),
+    ];
+    const engine = new PlaybackEngine([scene(actions)], actionEngine, player);
+    await engine.jumpToAction(1, { autoplay: false });
+    await engine.jumpToAction(3, { autoplay: false });
+    engine.continuePlayback();
+    await flushPromises();
+    expect(executions.map(({ action }) => action.id)).toEqual(['second-cue']);
+    engine.stop();
+  });
+
+  it('discards cues from a jump superseded during whiteboard reconstruction', async () => {
+    const { engine: actionEngine, executions } = createActionEngine();
+    const reconstruction = deferred<void>();
+    vi.mocked(actionEngine.execute).mockImplementationOnce(() => reconstruction.promise);
+    const { player } = createAudioPlayer(async () => true);
+    const onSpeechStart = vi.fn();
+    const actions = [
+      speech('first'),
+      { id: 'board', type: 'wb_open' } as Action,
+      { id: 'spot', type: 'spotlight', elementId: 'box' } as Action,
+      speech('target'),
+    ];
+    const engine = new PlaybackEngine([scene(actions)], actionEngine, player, { onSpeechStart });
+    const staleJump = engine.jumpToAction(3, { autoplay: true });
+    expect(await engine.jumpToAction(0, { autoplay: true })).toBe(true);
+    reconstruction.resolve();
+    expect(await staleJump).toBe(false);
+    expect(executions).toEqual([]);
+    expect(onSpeechStart.mock.calls).toEqual([['first']]);
+    engine.stop();
+  });
+
+  it('drops deferred cues on stop and preserves ordinary playback after restarting', async () => {
+    const { engine: actionEngine, executions } = createActionEngine();
+    const { player, fireEnded } = createAudioPlayer(async () => true);
+    const actions = [
+      speech('first'),
+      { id: 'spot', type: 'spotlight', elementId: 'box' } as Action,
+      speech('target'),
+    ];
+    const engine = new PlaybackEngine([scene(actions)], actionEngine, player);
+    await engine.jumpToAction(2, { autoplay: false });
+    engine.stop();
+    engine.start();
+    expect(executions).toEqual([]);
+    fireEnded();
+    await flushPromises();
+    expect(executions.map(({ action }) => action.id)).toEqual(['spot']);
+    engine.stop();
   });
 
   it.each([

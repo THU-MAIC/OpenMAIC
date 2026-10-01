@@ -45,6 +45,20 @@ export function isWhiteboardPlaybackAction(action: Action): boolean {
   return WHITEBOARD_ACTION_TYPES.has(action.type);
 }
 
+/** Only the contiguous visual cues immediately before a speech belong to its replay. */
+export function getSpeechVisualCueStartIndex(
+  actions: readonly Action[],
+  speechIndex: number,
+): number {
+  let start = speechIndex;
+  while (start > 0) {
+    const type = actions[start - 1]?.type;
+    if (type !== 'spotlight' && type !== 'laser') break;
+    start--;
+  }
+  return start;
+}
+
 export function canReconstructPrefixForAction(
   actions: readonly Action[],
   actionIndex: number,
