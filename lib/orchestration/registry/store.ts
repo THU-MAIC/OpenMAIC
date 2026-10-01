@@ -6,8 +6,16 @@
  * `/api/agents`), and the generated agents of the course on screen (mirrored
  * from its stage document by `applyGeneratedAgentsToRegistry`, never stored
  * here). Nothing is kept in browser storage: the custom agents an earlier build
- * kept in localStorage are imported to the server once
- * (`lib/legacy-browser-import/agents-import.ts`) before the first load.
+ * kept in localStorage are imported to the server in the background after the
+ * first read (`lib/legacy-browser-import/agents-import.ts`).
+ *
+ * Every request to the server (each change, each read of the list) runs in
+ * one queue, in the order it was made, and the registry applies only what the
+ * server answered: a refusal leaves nothing to undo, a later answer is always
+ * the newer state, and a read that began before a delete is applied before it.
+ *
+ * `agents` is a null-prototype object, so an id like `constructor` never finds
+ * an inherited property.
  *
  * Server-importable: the server-side chat paths read the built-in agents from
  * it, and nothing here reaches the network until a client calls the load or
@@ -17,7 +25,7 @@
 import { create } from 'zustand';
 import type { AgentConfig } from './types';
 import { getActionsForRole } from './types';
-import { BUILT_IN_AGENTS, isBuiltInAgentId } from './built-in';
+import { BUILT_IN_AGENTS, getBuiltInAgent, isBuiltInAgentId } from './built-in';
 import {
   createCustomAgent,
   deleteCustomAgent,
@@ -26,6 +34,7 @@ import {
 } from './client';
 import { customAgentFields, customAgentFieldsSchema, customAgentSchema } from './schema';
 import { isKnownTTSProviderId } from '@/lib/audio/constants';
+import type { PendingLegacyAgent } from '@/lib/legacy-browser-import/agents-import';
 import type { GeneratedAgentConfig } from '@/lib/types/stage';
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import type { Participant, ParticipantRole } from '@/lib/types/roundtable';
@@ -34,17 +43,36 @@ import { useUserProfileStore } from '@/lib/store/user-profile';
 export { getDefaultAgents } from './built-in';
 
 interface AgentRegistryState {
-  agents: Record<string, AgentConfig>; // Map of agentId -> config
+  agents: Record<string, AgentConfig>; // Map of agentId -> config (null prototype)
+  /** Whether the owner's custom agents have been read from the server on this page. */
+  customAgentsLoaded: boolean;
+  /**
+   * Custom agents an earlier build kept in this browser that are not on the
+   * server yet (the owner's limit, a record the server refuses). They stay in
+   * the browser and the import tries them again on a later load.
+   */
+  legacyAgentsPending: readonly PendingLegacyAgent[];
 
-  // Actions. A generated agent changes in memory only; a custom agent is
-  // saved on the server, and the promise settles with that save (on a refusal
-  // the agent is restored and the promise rejects). Built-in agents are
+  // Actions. A generated agent changes in memory only, at once. A custom agent
+  // changes once the server saved it; the promise settles with that save (and
+  // rejects on a refusal, leaving the registry as it was). Built-in agents are
   // read-only: changing or deleting one rejects.
   addAgent: (agent: AgentConfig) => Promise<void>;
   updateAgent: (id: string, updates: Partial<AgentConfig>) => Promise<void>;
   deleteAgent: (id: string) => Promise<void>;
   getAgent: (id: string) => AgentConfig | undefined;
   listAgents: () => AgentConfig[];
+}
+
+/** A null-prototype agent map holding `agents`. */
+function agentMap(agents: Iterable<AgentConfig> = []): Record<string, AgentConfig> {
+  const map = Object.create(null) as Record<string, AgentConfig>;
+  for (const agent of agents) map[agent.id] = agent;
+  return map;
+}
+
+function own(agents: Record<string, AgentConfig>, id: string): AgentConfig | undefined {
+  return Object.hasOwn(agents, id) ? agents[id] : undefined;
 }
 
 function readOnlyError(id: string): Error {
@@ -58,19 +86,30 @@ function usableCustomAgent(agent: AgentConfig): AgentConfig {
   return rest;
 }
 
+let serverQueue: Promise<unknown> = Promise.resolve();
+
+/** Run `operation` after every server request made before it. */
+function enqueue<T>(operation: () => Promise<T>): Promise<T> {
+  const run = serverQueue.then(operation, operation);
+  serverQueue = run.catch(() => undefined);
+  return run;
+}
+
 export const useAgentRegistry = create<AgentRegistryState>()((set, get) => {
-  /** Put `agent` back (or remove `id` when it was absent): a refused save. */
-  const restore = (id: string, previous: AgentConfig | undefined) =>
-    set((state) => {
-      const { [id]: _current, ...rest } = state.agents;
-      return { agents: previous ? { ...rest, [id]: previous } : rest };
-    });
   const put = (agent: AgentConfig) =>
-    set((state) => ({ agents: { ...state.agents, [agent.id]: agent } }));
+    set((state) => ({ agents: agentMap([...Object.values(state.agents), agent]) }));
+  /** Remove `id`, or put `replacement` in its place. */
+  const drop = (id: string, replacement?: AgentConfig) =>
+    set((state) => {
+      const kept = Object.values(state.agents).filter((agent) => agent.id !== id);
+      return { agents: agentMap(replacement ? [...kept, replacement] : kept) };
+    });
 
   return {
     // Built-in agents are always there, on the server too.
-    agents: { ...BUILT_IN_AGENTS },
+    agents: agentMap(Object.values(BUILT_IN_AGENTS)),
+    customAgentsLoaded: false,
+    legacyAgentsPending: [],
 
     addAgent: async (agent) => {
       if (agent.isGenerated) {
@@ -79,102 +118,141 @@ export const useAgentRegistry = create<AgentRegistryState>()((set, get) => {
       }
       if (isBuiltInAgentId(agent.id)) throw readOnlyError(agent.id);
       const custom = customAgentSchema.parse(customAgentFields(agent));
-      const previous = get().agents[agent.id];
-      put({ ...agent, isDefault: false });
-      try {
-        put(usableCustomAgent(await createCustomAgent(custom)));
-      } catch (error) {
-        restore(agent.id, previous);
-        throw error;
-      }
+      await enqueue(async () => put(usableCustomAgent(await createCustomAgent(custom))));
     },
 
     updateAgent: async (id, updates) => {
-      const current = get().agents[id];
-      if (!current) throw new Error(`Unknown agent ${id}`);
-      const next: AgentConfig = { ...current, ...updates, id, updatedAt: new Date() };
-      if (current.isGenerated) {
-        put(next);
+      const current = own(get().agents, id);
+      if (current?.isGenerated) {
+        put({ ...current, ...updates, id, updatedAt: new Date() });
         return;
       }
-      if (current.isDefault || isBuiltInAgentId(id)) throw readOnlyError(id);
-      const { id: _id, ...fields } = customAgentFields(next);
-      const parsed = customAgentFieldsSchema.parse(fields);
-      put(next);
-      try {
+      if (current?.isDefault || isBuiltInAgentId(id)) throw readOnlyError(id);
+      await enqueue(async () => {
+        // Merged with the agent as the requests before this one left it.
+        const latest = own(get().agents, id);
+        if (!latest) throw new Error(`Unknown agent ${id}`);
+        const { id: _id, ...fields } = customAgentFields({ ...latest, ...updates, id });
+        const parsed = customAgentFieldsSchema.parse(fields);
         put(usableCustomAgent(await updateCustomAgent(id, parsed)));
-      } catch (error) {
-        restore(id, current);
-        throw error;
-      }
+      });
     },
 
     deleteAgent: async (id) => {
-      const current = get().agents[id];
-      if (!current) return;
-      if (current.isGenerated) {
+      const current = own(get().agents, id);
+      if (current?.isGenerated) {
         // A generated agent may have shadowed a built-in one of the same id.
-        restore(id, BUILT_IN_AGENTS[id]);
+        drop(id, getBuiltInAgent(id));
         return;
       }
-      if (current.isDefault || isBuiltInAgentId(id)) throw readOnlyError(id);
-      restore(id, undefined);
-      try {
+      if (current?.isDefault || isBuiltInAgentId(id)) throw readOnlyError(id);
+      await enqueue(async () => {
         await deleteCustomAgent(id);
-      } catch (error) {
-        restore(id, current);
-        throw error;
-      }
+        drop(id);
+      });
     },
 
-    getAgent: (id) => get().agents[id],
+    getAgent: (id) => own(get().agents, id),
 
     listAgents: () => Object.values(get().agents),
   };
 });
 
 /**
- * Read the owner's custom agents from the server into the registry, after
- * importing the ones an earlier build kept in this browser (once per
- * browser). Built-in and generated agents stay as they are. Rejects when the
- * agents could not be read; the registry then keeps what it had.
+ * Read the owner's custom agents from the server into the registry, in the
+ * request queue. Built-in and generated agents stay as they are. Rejects when
+ * the agents could not be read; the registry then keeps what it had.
  */
-export async function loadAgentRegistry(): Promise<void> {
-  // The import never throws (it logs and retries on a later load), and is
-  // loaded on demand: it is temporary, and only this first read needs it.
-  await import('@/lib/legacy-browser-import/agents-import')
-    .then(({ runAgentsImport }) => runAgentsImport())
-    .catch((error: unknown) => console.warn('[legacy-browser-import] Could not load:', error));
-  const custom = (await fetchCustomAgents()).map(usableCustomAgent);
-  useAgentRegistry.setState((state) => {
-    const agents: Record<string, AgentConfig> = { ...BUILT_IN_AGENTS };
-    for (const agent of Object.values(state.agents)) {
-      if (agent.isGenerated) agents[agent.id] = agent;
-    }
-    for (const agent of custom) if (!agents[agent.id]) agents[agent.id] = agent;
-    return { agents };
+export function loadAgentRegistry(): Promise<void> {
+  return enqueue(async () => {
+    const custom = (await fetchCustomAgents()).map(usableCustomAgent);
+    useAgentRegistry.setState((state) => {
+      const generated = Object.values(state.agents).filter((agent) => agent.isGenerated);
+      const agents = agentMap([...Object.values(BUILT_IN_AGENTS), ...custom, ...generated]);
+      return { agents, customAgentsLoaded: true };
+    });
   });
 }
 
-let firstLoad: Promise<void> | undefined;
+let legacyImport: Promise<void> | undefined;
 
 /**
- * The page's first {@link loadAgentRegistry}, started on the first call and
- * shared by every caller after it. Never rejects: a failed read is logged and
- * the registry holds the built-in agents. Code that resolves agent ids the
- * user picked (a classroom's selection, a generation's preset agents) awaits
- * it, so a custom agent is not mistaken for a missing one before it arrives.
+ * Import the custom agents an earlier build kept in this browser (once they
+ * are all on the server, never again), and read the list again when that
+ * added any. Never rejects. Loaded on demand: it is temporary.
  */
-export function whenAgentRegistryLoaded(): Promise<void> {
-  firstLoad ??= loadAgentRegistry().catch((error: unknown) => {
-    console.warn('[agent-registry] Could not read the custom agents:', error);
-  });
-  return firstLoad;
+export function importLegacyAgents(): Promise<void> {
+  legacyImport ??= (async () => {
+    try {
+      const { runAgentsImport } = await import('@/lib/legacy-browser-import/agents-import');
+      const result = await runAgentsImport();
+      useAgentRegistry.setState({ legacyAgentsPending: result.pending });
+      if (result.imported > 0) await loadAgentRegistry();
+    } catch (error) {
+      console.warn('[legacy-browser-import] Agents import failed:', error);
+    } finally {
+      legacyImport = undefined;
+    }
+  })();
+  return legacyImport;
 }
 
-/** Test hook: forget the page's first load. */
+let firstLoad: Promise<boolean> | undefined;
+
+/** Read the list; on success, start the legacy import in the background. */
+function startLoad(): Promise<boolean> {
+  const load: Promise<boolean> = loadAgentRegistry().then(
+    () => {
+      void importLegacyAgents();
+      return true;
+    },
+    (error: unknown) => {
+      console.warn('[agent-registry] Could not read the custom agents:', error);
+      // Not remembered: the next caller reads again.
+      if (firstLoad === load) firstLoad = undefined;
+      return false;
+    },
+  );
+  firstLoad = load;
+  return load;
+}
+
+/** How long code that resolves agent ids waits for the custom agents. */
+export const AGENT_REGISTRY_WAIT_MS = 5_000;
+
+/**
+ * Whether the owner's custom agents are in the registry, waiting for the
+ * page's read (started on the first call, shared while it runs, and read again
+ * after a failure) at most `timeoutMs`. Never rejects. Code that resolves ids
+ * the user picked (a classroom's selection, a generation's preset agents)
+ * waits for it, and on `false` must not treat an unknown id as a deleted
+ * agent: it may be a custom agent the registry could not read yet.
+ */
+export function whenAgentRegistryLoaded(timeoutMs = AGENT_REGISTRY_WAIT_MS): Promise<boolean> {
+  if (useAgentRegistry.getState().customAgentsLoaded) return Promise.resolve(true);
+  const load = firstLoad ?? startLoad();
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), timeoutMs);
+    void load.then((loaded) => {
+      clearTimeout(timer);
+      resolve(loaded);
+    });
+  });
+}
+
+/**
+ * Read the custom agents again now (and retry the legacy import): after the
+ * access code was accepted, when the first read was refused.
+ */
+export function reloadAgentRegistry(): Promise<boolean> {
+  return startLoad();
+}
+
+/** Test hook: forget the page's loads and imports. */
 export function resetAgentRegistryLoadForTests(): void {
   firstLoad = undefined;
+  legacyImport = undefined;
+  serverQueue = Promise.resolve();
 }
 
 /**

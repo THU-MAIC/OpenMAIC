@@ -9,7 +9,7 @@ import type { AgentInfo } from '@openmaic/generation';
 import type { AgentConfig } from './types';
 import { SLIDE_ACTIONS, WHITEBOARD_ACTIONS } from './types';
 
-export const BUILT_IN_AGENTS: Readonly<Record<string, AgentConfig>> = {
+const CATALOGUE: Record<string, AgentConfig> = {
   'default-1': {
     id: 'default-1',
     name: 'AI teacher',
@@ -155,6 +155,20 @@ Tone: Thoughtful, measured, intellectually curious. You pause before speaking. Y
     isDefault: true,
   },
 };
+
+/**
+ * The built-in agents by id. A null-prototype object: look agents up with
+ * {@link getBuiltInAgent}, which never answers an inherited property for an
+ * id like `constructor`.
+ */
+export const BUILT_IN_AGENTS: Readonly<Record<string, AgentConfig>> = Object.freeze(
+  Object.assign(Object.create(null) as Record<string, AgentConfig>, CATALOGUE),
+);
+
+/** The built-in agent `id` names, if any. */
+export function getBuiltInAgent(id: string): AgentConfig | undefined {
+  return Object.hasOwn(BUILT_IN_AGENTS, id) ? BUILT_IN_AGENTS[id] : undefined;
+}
 
 /**
  * Ids built-in agents use, now and in later releases. A custom agent cannot

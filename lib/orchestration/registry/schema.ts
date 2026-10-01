@@ -39,7 +39,7 @@ export const customAgentFieldsSchema = z
     avatar: z.string().max(2_048),
     color: z.string().max(64),
     allowedActions: z.array(z.string().min(1).max(64)).max(64),
-    priority: z.number().finite(),
+    priority: z.number().finite().min(0).max(100),
     voiceConfig: voiceConfigSchema.optional(),
     voiceDesign: voiceDesignSchema.optional(),
   })

@@ -4,7 +4,7 @@
  * the UI name agents by id; this is where an id becomes an agent.
  */
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
-import { BUILT_IN_AGENTS } from '@/lib/orchestration/registry/built-in';
+import { BUILT_IN_AGENTS, getBuiltInAgent } from '@/lib/orchestration/registry/built-in';
 import type { CustomAgent } from '@/lib/orchestration/registry/schema';
 import { canonicalizeOwner } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
@@ -49,15 +49,16 @@ export async function listAgentsForOwner(ownerId: string): Promise<AgentConfig[]
 
 /**
  * The agents `agentIds` name, in that order: a built-in id from code, any
- * other from the owner's custom agents. Throws {@link UnknownAgentsError}
- * listing every id that names neither. Only built-in ids never touch the
- * database.
+ * other from the owner's custom agents. Registry ids only: the generated
+ * agents of a course roster (`stage.generatedAgentConfigs`) are not registry
+ * agents and are not resolved here. Throws {@link UnknownAgentsError} listing
+ * every id that names neither. Only built-in ids never touch the database.
  */
 export async function resolveAgentsForOwner(
   ownerId: string,
   agentIds: string[],
 ): Promise<AgentConfig[]> {
-  const customIds = [...new Set(agentIds.filter((id) => !Object.hasOwn(BUILT_IN_AGENTS, id)))];
+  const customIds = [...new Set(agentIds.filter((id) => !getBuiltInAgent(id)))];
   const custom = new Map<string, AgentConfig>();
   if (customIds.length > 0) {
     const queryable = await pool();
@@ -68,5 +69,5 @@ export async function resolveAgentsForOwner(
   }
   const unknown = customIds.filter((id) => !custom.has(id));
   if (unknown.length > 0) throw new UnknownAgentsError(unknown);
-  return agentIds.map((id) => BUILT_IN_AGENTS[id] ?? custom.get(id)!);
+  return agentIds.map((id) => getBuiltInAgent(id) ?? custom.get(id)!);
 }

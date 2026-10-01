@@ -214,7 +214,7 @@ the zustand `persist` snapshot of `lib/orchestration/registry/store.ts`). Built-
 agents are now code (`lib/orchestration/registry/built-in.ts`) and an owner's custom
 agents live on the server (`/api/agents`, `lib/server/agents`). `agents-import.ts`
 carries the custom ones over once: the registry's first load
-(`loadAgentRegistry`) runs it before it lists the owner's agents.
+runs it in the background (`importLegacyAgents`).
 
 - It reads the snapshot's custom agents (not the `default-*` built-ins, not
   generated agents, which belong to a course's roster) and sends their stored
@@ -224,10 +224,18 @@ carries the custom ones over once: the registry's first load
 - The server checks each agent with the registry's schema and keeps an agent
   the owner already has under that id; invalid agents, built-in ids and agents
   past the per-owner limit are skipped with the reason.
-- A 2xx answer, or a 400 (sending again cannot succeed), records
-  `agents: 'done'` in the ledger; anything else (another owner holds the
-  browser, 401, 409, 5xx, a network error) leaves it for a later load. A
-  browser with no custom agents gets no ledger from it.
+- The ledger records `agents: 'done'` only when every agent is on the server
+  (imported, or already there). Agents the server skipped (the owner's limit,
+  a record it refuses) keep the import open: the registry shows them as
+  `legacyAgentsPending`, and every later load sends the agents again. A
+  refused request, another owner holding the browser, 401, 409, 5xx or a
+  network error also leave it for a later load. A browser with no custom
+  agents gets no ledger from it.
+- Empty optional fields of an old record (a voice without a provider or voice
+  id, an empty model id, an incomplete voice design) are left out before it is
+  sent.
+- It runs in the background after the registry's first read of the owner's
+  agents, and the list is read again when it added any.
 - The snapshot is never written or removed. Clear Local Cache keeps it until
   the ledger records the import.
 
@@ -247,8 +255,8 @@ When the maintainers decide enough releases have passed:
    imports `LEDGER_KEY` and `legacyImportIsComplete` from `ledger.ts`: define the
    ledger key there again (or drop it with step 5) and drop the quiz-key retention,
    with its cases in `tests/settings/general-settings.test.ts`.
-   The custom agents import: remove the dynamic import of `agents-import.ts`
-   in `loadAgentRegistry` (`lib/orchestration/registry/store.ts`),
+   The custom agents import: remove `importLegacyAgents`, its call and
+   `legacyAgentsPending` in `lib/orchestration/registry/store.ts`,
    `app/api/agents/import/` with its case in
    `tests/server/agents/agents-route.test.ts` and its entry in the handler
    table of `tests/server/identity/legacy-import-binding-route.test.ts`, and

@@ -21,7 +21,13 @@ import {
   MAX_CUSTOM_AGENTS,
   type CustomAgent,
 } from '@/lib/orchestration/registry/schema';
-import { agentsJsonError, agentsPool, agentWriteErrorResponse } from '@/lib/server/agents/http';
+import {
+  agentsJsonError,
+  agentsPool,
+  agentWriteErrorResponse,
+  bodyTooLargeResponse,
+  readCappedJson,
+} from '@/lib/server/agents/http';
 import { importOwnerAgents } from '@/lib/server/agents/store';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
 
@@ -29,16 +35,15 @@ export const runtime = 'nodejs';
 
 /** More than an owner can keep is never a browser's own registry. */
 const MAX_IMPORTED = MAX_CUSTOM_AGENTS * 2;
+/** That many agents at the schema's limits. */
+const MAX_IMPORT_BODY_BYTES = 8 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
   if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
   return withRequestOwner(req, async ({ ownerId }, headers) => {
-    let body: { agents?: unknown } | undefined;
-    try {
-      body = (await req.json()) as { agents?: unknown };
-    } catch {
-      body = undefined;
-    }
+    const read = await readCappedJson(req, MAX_IMPORT_BODY_BYTES);
+    if (!read.ok && read.tooLarge) return bodyTooLargeResponse(MAX_IMPORT_BODY_BYTES, headers);
+    const body = (read.ok ? read.value : undefined) as { agents?: unknown } | undefined;
     const agents = body && typeof body === 'object' ? body.agents : undefined;
     if (!Array.isArray(agents) || agents.length > MAX_IMPORTED) {
       return agentsJsonError(

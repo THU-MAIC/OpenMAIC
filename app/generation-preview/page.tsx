@@ -683,9 +683,10 @@ function GenerationPreviewContent() {
       }
 
       // ── Agent generation (after outlines — uses languageDirective + outlines) ──
-      // The owner's custom agents come from the server: wait for them before
-      // the selection is read, or a custom agent would be dropped as unknown.
-      await whenAgentRegistryLoaded();
+      // The owner's custom agents come from the server: wait for them (with a
+      // bound) before the selection is read, or a custom agent would be
+      // dropped as unknown.
+      const agentsKnown = await whenAgentRegistryLoaded();
       const settings = useSettingsStore.getState();
       // The tts slot's provider, and the user's voice for it.
       const tts = ttsSelection();
@@ -870,6 +871,16 @@ function GenerationPreviewContent() {
         // Preset mode — use selected agents (include persona)
         // Filter out stale generated agent IDs that may linger in settings
         const registry = useAgentRegistry.getState();
+        // Before the custom agents arrived, an unknown id the user picked may
+        // be one of them: stop rather than generate without it (the selection
+        // is left as is). Stage-derived selections may name stale roster ids.
+        if (
+          !agentsKnown &&
+          settings.agentSelectionIsUserSet &&
+          settings.selectedAgentIds.some((id) => !registry.getAgent(id))
+        ) {
+          throw new Error('Your custom agents could not be loaded. Please try again.');
+        }
         const presetAgentIds = settings.selectedAgentIds.filter((id) => {
           const a = registry.getAgent(id);
           return a && !a.isGenerated;

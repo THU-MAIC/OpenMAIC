@@ -14,6 +14,7 @@ import {
 } from '@/lib/orchestration/registry/schema';
 import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
+import { capBodyStream } from '@/lib/server/capped-stream';
 
 import { OwnerAgentExistsError, OwnerAgentLimitError, OwnerAgentNotFoundError } from './store';
 
@@ -39,12 +40,32 @@ export async function agentsPool() {
   return (await getServerPersistenceProvider(process.env.DATABASE_URL ?? '')).pool;
 }
 
-async function readJson(req: Request): Promise<unknown> {
+/** The largest create or update body: one agent at its schema's limits, with room. */
+export const MAX_AGENT_BODY_BYTES = 64 * 1024;
+
+export type JsonBody = { ok: true; value: unknown } | { ok: false; tooLarge: boolean };
+
+/**
+ * The request body as JSON, read through a byte cap (a missing or false
+ * `Content-Length` does not get past it).
+ */
+export async function readCappedJson(req: Request, capBytes: number): Promise<JsonBody> {
+  if (!req.body) return { ok: false, tooLarge: false };
+  const capped = capBodyStream(req.body, capBytes);
   try {
-    return await req.json();
+    return { ok: true, value: JSON.parse(await new Response(capped.stream).text()) };
   } catch {
-    return undefined;
+    return { ok: false, tooLarge: capped.exceeded() };
   }
+}
+
+export function bodyTooLargeResponse(capBytes: number, headers?: Headers): NextResponse {
+  return agentsJsonError(
+    413,
+    'BODY_TOO_LARGE',
+    `the request body is larger than ${capBytes} bytes`,
+    headers,
+  );
 }
 
 type Parsed = { ok: true; agent: CustomAgent } | { ok: false; response: NextResponse };
@@ -58,7 +79,11 @@ export async function parseAgentBody(
   headers: Headers,
   pathId?: string,
 ): Promise<Parsed> {
-  const body = (await readJson(req)) as { agent?: unknown } | undefined;
+  const read = await readCappedJson(req, MAX_AGENT_BODY_BYTES);
+  if (!read.ok && read.tooLarge) {
+    return { ok: false, response: bodyTooLargeResponse(MAX_AGENT_BODY_BYTES, headers) };
+  }
+  const body = (read.ok ? read.value : undefined) as { agent?: unknown } | undefined;
   const raw = body && typeof body === 'object' ? body.agent : undefined;
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return {

@@ -79,10 +79,11 @@ export interface RunClassroomLoadArgs<TMediaTasks = unknown> {
   getSettings: () => ClassroomLoadSettings;
   getAgent: (agentId: string) => AgentLookupResult | undefined;
   /**
-   * Settles once the owner's custom agents are in the registry (or could not
-   * be read), so a selection naming one is not dropped as unknown.
+   * Whether the owner's custom agents are in the registry (waited for, with a
+   * bound). While they are not, an id the registry does not know may be one of
+   * them, so a selection naming it is kept rather than downgraded.
    */
-  agentsReady?: () => Promise<void>;
+  agentsReady?: () => Promise<boolean>;
   restoreAgentSelection: typeof restoreAgentSelection;
   setError: (message: string) => void;
   setLoading: (loading: boolean) => void;
@@ -196,7 +197,7 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     if (!isCurrent()) return { outcome: 'cancelled' };
     const generatedAgentIds = applyGeneratedAgents(classroomId, effectiveConfigs);
 
-    if (agentsReady) await agentsReady();
+    const agentsKnown = agentsReady ? await agentsReady() : true;
     if (!isCurrent()) return { outcome: 'cancelled' };
     const settings = getSettings();
     const { selection: next, isUserSet } = restoreSelection({
@@ -206,7 +207,9 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
       stageAgentIds: getCurrentStage()?.agentIds,
       isPresetAgent: (id) => {
         const agent = getAgent(id);
-        return !!agent && !agent.isGenerated;
+        // Unknown before the custom agents arrived: possibly one of them.
+        if (!agent) return !agentsKnown;
+        return !agent.isGenerated;
       },
     });
 
@@ -597,6 +600,6 @@ export const defaultClassroomLoadDeps = {
   loadLegacyAgentFallbacks: loadLegacyAgentFallbacksFromDB,
   commitMigratedAgentConfigs: commitMigratedAgentConfigsToStore,
   applyGeneratedAgents: applyGeneratedAgentsToRegistry,
-  agentsReady: whenAgentRegistryLoaded,
+  agentsReady: () => whenAgentRegistryLoaded(),
   restoreAgentSelection,
 };

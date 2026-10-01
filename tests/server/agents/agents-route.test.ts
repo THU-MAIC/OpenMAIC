@@ -180,6 +180,7 @@ describe('/api/agents', () => {
       { agent: 'x' },
       { agent: { ...agent('tutor'), name: '' } },
       { agent: { ...agent('tutor'), priority: 'high' } },
+      { agent: { ...agent('tutor'), priority: 1_000 } },
       { agent: { ...agent('tutor'), isGenerated: true } },
       { agent: { ...agent('has space') } },
       { agent: { ...agent('tutor'), voiceConfig: { providerId: 'x' } } },
@@ -246,6 +247,41 @@ describe('/api/agents', () => {
       expect.objectContaining({ id: 'buddy' }),
     ]);
     expect((await importAgents('alice', { agents: 'nope' })).status).toBe(400);
+  });
+
+  it('refuses bodies over the size limit', async () => {
+    const huge = { agent: { ...agent('tutor'), persona: 'x'.repeat(70 * 1024) } };
+    const response = await create('alice', huge);
+    expect(response.status).toBe(413);
+    expect((await response.json()).error.code).toBe('BODY_TOO_LARGE');
+    const importing = await importAgents('alice', { agents: [], pad: 'x'.repeat(9 * 1024 * 1024) });
+    expect(importing.status).toBe(413);
+  });
+
+  it('treats ids that name Object.prototype members as ordinary ids', async () => {
+    for (const id of ['constructor', '__proto__', 'toString']) {
+      expect((await create('alice', { agent: agent(id) })).status, id).toBe(201);
+    }
+    const listed = (await (await list('alice')).json()).agents as { id: string }[];
+    expect(
+      listed
+        .slice(-3)
+        .map((a) => a.id)
+        .sort(),
+    ).toEqual(['__proto__', 'constructor', 'toString']);
+
+    const { resolveAgentsForOwner } = await import('@/lib/server/agents/registry');
+    const resolved = await resolveAgentsForOwner('user:alice', ['toString', 'constructor']);
+    expect(resolved.map((a) => [a.id, a.name])).toEqual([
+      ['toString', 'Agent toString'],
+      ['constructor', 'Agent constructor'],
+    ]);
+    // Not inherited: bob has none of them.
+    await expect(
+      resolveAgentsForOwner('user:bob', ['constructor', 'hasOwnProperty']),
+    ).rejects.toMatchObject({
+      agentIds: ['constructor', 'hasOwnProperty'],
+    });
   });
 
   describe('the server resolver', () => {
