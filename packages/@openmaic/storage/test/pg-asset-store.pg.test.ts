@@ -446,7 +446,9 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
          FROM information_schema.table_constraints AS constraints
          JOIN information_schema.key_column_usage AS key
            ON key.constraint_name = constraints.constraint_name
-        WHERE constraints.table_name = 'document_asset_refs'
+          AND key.constraint_schema = constraints.constraint_schema
+        WHERE constraints.table_schema = current_schema()
+          AND constraints.table_name = 'document_asset_refs'
           AND constraints.constraint_type = 'PRIMARY KEY'
         ORDER BY key.ordinal_position`,
     );

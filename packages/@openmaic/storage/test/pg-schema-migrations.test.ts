@@ -321,8 +321,12 @@ describe('schema migrations with PGlite', () => {
   test('checks a single connection out of a pool for the whole run', async () => {
     const released = vi.fn();
     const viaPool = vi.fn();
+    // The shape of a node-postgres Pool: connect, and its three counters.
     const pool = {
       query: viaPool,
+      totalCount: 0,
+      idleCount: 0,
+      waitingCount: 0,
       connect: async () => ({
         query: (text: string, params?: unknown[]) => db.query(text, params),
         release: released,
@@ -334,6 +338,60 @@ describe('schema migrations with PGlite', () => {
     expect(viaPool).not.toHaveBeenCalled();
     expect(released).toHaveBeenCalledTimes(1);
     expect((await records(db, 'runtime')).map((row) => row.version)).toEqual([1]);
+  });
+
+  test.each([
+    // pg.native.Client: connect (to open itself), no release, no processID.
+    ['a pg.native.Client', { end: async () => {} }],
+    // A host's own single-connection wrapper.
+    ['a custom wrapper', {}],
+  ])('uses %s as the one connection it is, never connecting it again', async (_, extra) => {
+    const connect = vi.fn();
+    const single = {
+      ...extra,
+      connect,
+      query: (text: string, params?: unknown[]) => db.query(text, params),
+    };
+
+    await ensureSchema(single as unknown as MigrationQueryable);
+
+    expect(connect).not.toHaveBeenCalled();
+    expect((await records(db, 'runtime')).map((row) => row.version)).toEqual([1]);
+  });
+
+  test("refuses a caller's transaction that already failed, with the same error", async () => {
+    await db.query('BEGIN');
+    await expect(db.query('SELECT * FROM missing_table')).rejects.toThrow();
+
+    await expect(ensureSchema(db)).rejects.toBeInstanceOf(SchemaMigrationInTransactionError);
+    await db.query('ROLLBACK');
+  });
+
+  test('keeps the original error when releasing the lock fails as well', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const flaky: MigrationQueryable = {
+      query: async (text, params) => {
+        if (text.includes('pg_advisory_unlock')) throw new Error('connection lost');
+        return db.query(text, params);
+      },
+    };
+    const set: SchemaMigrationSet = {
+      store: 'probe',
+      migrations: [{ version: 1, name: 'broken', up: 'ALTER TABLE missing ADD COLUMN x TEXT' }],
+    };
+
+    await expect(applySchemaMigrations(flaky, set)).rejects.toThrow(/broken.*missing/);
+    expect(error).toHaveBeenCalledWith(
+      expect.stringMatching(/releasing the schema migration lock failed/),
+      expect.objectContaining({ message: 'connection lost' }),
+    );
+    // A run that succeeded still reports an unlock failure as its own.
+    await expect(
+      applySchemaMigrations(flaky, {
+        store: 'probe-ok',
+        migrations: [{ version: 1, name: 'baseline', up: 'SELECT 1' }],
+      }),
+    ).rejects.toThrow('connection lost');
   });
 
   test("refuses to run inside the caller's transaction, leaving it untouched", async () => {

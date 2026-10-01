@@ -194,6 +194,35 @@ export async function acquireSessionAdvisoryLock(
   }
 }
 
+/**
+ * Run `body` holding a session-level advisory lock on `session` (taken as
+ * {@link acquireSessionAdvisoryLock} takes it) and release it afterwards. If
+ * `body` failed and the unlock fails too, the unlock failure is logged and the
+ * original error is the one thrown; the lock then ends with the session.
+ */
+export async function withSessionAdvisoryLock<T>(
+  session: MigrationQueryable,
+  key: number,
+  options: { name: string; timeoutMs?: number },
+  body: () => Promise<T>,
+): Promise<T> {
+  await acquireSessionAdvisoryLock(session, key, options);
+  let failed = false;
+  try {
+    return await body();
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    try {
+      await session.query('SELECT pg_advisory_unlock($1::bigint)', [key]);
+    } catch (unlockError) {
+      if (!failed) throw unlockError;
+      console.error(`@openmaic/storage: releasing the ${options.name} failed`, unlockError);
+    }
+  }
+}
+
 /** The table the runner records applied migrations in. */
 export const SCHEMA_MIGRATIONS_TABLE = 'openmaic_schema_migrations';
 
@@ -224,21 +253,23 @@ interface PoolLike extends MigrationQueryable {
 /**
  * A pool hands each query to any of its connections, which would split a
  * transaction (and a session lock) across sessions, so the runner checks one
- * connection out instead. Told apart from a single connection by shape:
- *
- * - a client checked out of a pool has `release`;
- * - a node-postgres `Client` has `connect` too (to open itself), but carries
- *   `processID`, which a pool does not;
- * - PGlite has no `connect` at all.
- *
- * Anything else with `connect` and neither of those is used as a pool.
+ * connection out instead. A pool is recognized positively, by the counters a
+ * node-postgres `Pool` keeps (`totalCount`, `idleCount`, `waitingCount`);
+ * everything else -- a checked-out pool client, a connected `pg.Client` or
+ * `pg.native.Client`, PGlite, a host's own wrapper -- is used as the one
+ * connection it is.
  */
 function isPool(queryable: MigrationQueryable): queryable is PoolLike {
-  const candidate = queryable as Partial<PoolLike> & { release?: unknown };
+  const candidate = queryable as Partial<PoolLike> & {
+    totalCount?: unknown;
+    idleCount?: unknown;
+    waitingCount?: unknown;
+  };
   return (
     typeof candidate.connect === 'function' &&
-    typeof candidate.release !== 'function' &&
-    !('processID' in candidate)
+    typeof candidate.totalCount === 'number' &&
+    typeof candidate.idleCount === 'number' &&
+    typeof candidate.waitingCount === 'number'
   );
 }
 
@@ -248,10 +279,18 @@ function isPool(queryable: MigrationQueryable): queryable is PoolLike {
  * each statement is its own transaction). Asked with two plain reads, so a
  * server's log sees nothing from it; the setting is cleared again when found.
  * Timestamp comparisons (`now()` against `statement_timestamp()`) are not used
- * because a single-user engine such as PGlite does not keep them apart.
+ * because a single-user engine such as PGlite does not keep them apart. A
+ * caller's transaction that already failed counts as open.
  */
 async function isInsideTransaction(session: MigrationQueryable): Promise<boolean> {
-  await session.query(`SELECT set_config('openmaic.schema_migration_probe', 'on', true)`);
+  try {
+    await session.query(`SELECT set_config('openmaic.schema_migration_probe', 'on', true)`);
+  } catch (error) {
+    // 25P02: the caller's transaction already failed and refuses every
+    // statement -- a transaction all the same.
+    if ((error as { code?: unknown } | null)?.code === '25P02') return true;
+    throw error;
+  }
   const result = await session.query<{ inside: boolean }>(
     `SELECT current_setting('openmaic.schema_migration_probe', true) = 'on' AS inside`,
   );
@@ -394,9 +433,9 @@ function checkRecorded(
  * Bring one store's schema up to the newest version this code knows, and
  * answer the versions this call applied.
  *
- * `queryable` is a pool (one connection is checked out for the run), a
- * checked-out pool client, a connected node-postgres `Client`, or a
- * single-connection driver such as PGlite. It must not be inside a
+ * `queryable` is a node-postgres `Pool` (one connection is checked out for the
+ * run) or a single connection: a checked-out pool client, a connected
+ * `pg.Client` or `pg.native.Client`, or a driver such as PGlite. It must not be inside a
  * transaction: that is refused with {@link SchemaMigrationInTransactionError}.
  */
 export async function applySchemaMigrations(
@@ -411,30 +450,32 @@ export async function applySchemaMigrations(
   const session = client ?? queryable;
   try {
     if (await isInsideTransaction(session)) throw new SchemaMigrationInTransactionError(set.store);
-    await acquireSessionAdvisoryLock(session, SCHEMA_MIGRATION_LOCK_KEY, {
-      name: 'schema migration lock',
-      ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }),
-    });
-    try {
-      await session.query(SCHEMA_MIGRATIONS_TABLE_SQL);
-      const applied = (await readRecorded(session, [set.store])).get(set.store) ?? new Map();
-      checkRecorded(set, applied, checksums);
-      const appliedNow: number[] = [];
-      for (const migration of set.migrations) {
-        if (applied.has(migration.version)) continue;
-        await runMigration(
-          session,
-          set.store,
-          migration,
-          checksums[migration.version - 1]!,
-          rewriteSql,
-        );
-        appliedNow.push(migration.version);
-      }
-      return appliedNow;
-    } finally {
-      await session.query('SELECT pg_advisory_unlock($1::bigint)', [SCHEMA_MIGRATION_LOCK_KEY]);
-    }
+    return await withSessionAdvisoryLock(
+      session,
+      SCHEMA_MIGRATION_LOCK_KEY,
+      {
+        name: 'schema migration lock',
+        ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }),
+      },
+      async () => {
+        await session.query(SCHEMA_MIGRATIONS_TABLE_SQL);
+        const applied = (await readRecorded(session, [set.store])).get(set.store) ?? new Map();
+        checkRecorded(set, applied, checksums);
+        const appliedNow: number[] = [];
+        for (const migration of set.migrations) {
+          if (applied.has(migration.version)) continue;
+          await runMigration(
+            session,
+            set.store,
+            migration,
+            checksums[migration.version - 1]!,
+            rewriteSql,
+          );
+          appliedNow.push(migration.version);
+        }
+        return appliedNow;
+      },
+    );
   } finally {
     client?.release();
   }

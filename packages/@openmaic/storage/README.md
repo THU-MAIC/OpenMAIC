@@ -229,8 +229,10 @@ record them.
 
 **Going back to an older release.** An older release that knows versioned
 migrations refuses a database a newer one has recorded higher versions on.
-Restoring a backup taken before the upgrade is the safe way back. If the newer
-versions are known to be compatible with the older code, an operator may
+Restoring a backup taken before the upgrade is the safe way back; a release
+note may name extra steps a particular rollback needs (data the newer release
+writes differently), and those apply either way. If the newer versions are
+known to be compatible with the older code, an operator may
 instead delete their rows (`DELETE FROM openmaic_schema_migrations WHERE store
 = '<store>' AND version > <highest the older release knows>`); the schema
 changes they made are not undone, and the newer release applies them again
