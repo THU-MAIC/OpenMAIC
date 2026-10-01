@@ -76,6 +76,19 @@ export async function register(): Promise<void> {
     | import('@/lib/server/material-extraction/runner').MaterialExtractionRunnerHandle
     | undefined;
   let stopAgentEventNotifyBus: (() => Promise<void>) | null = null;
+  let generationRunner:
+    | import('@/lib/server/generation/run/runner').GenerationRunnerHandle
+    | undefined;
+  try {
+    // Course generation runs on the server in every deployment (classic
+    // generation is the default product), so its worker does not depend on
+    // the agent runtime being enabled. It only installs a timer; its tables
+    // are provisioned by the first scan.
+    const { startGenerationRunner } = await import('@/lib/server/generation/run/runner');
+    generationRunner = startGenerationRunner();
+  } catch (error) {
+    console.error('[instrumentation] Generation runner startup failed', error);
+  }
   try {
     const { isAgentRuntimeConfigured } = await import('@/lib/config/feature-flags');
     if (isAgentRuntimeConfigured()) {
@@ -113,7 +126,17 @@ export async function register(): Promise<void> {
         console.error('[instrumentation] Agent runner drain failed', error);
       }
       try {
-        await stopAgentEventNotifyBus?.();
+        await generationRunner?.stop();
+      } catch (error) {
+        console.error('[instrumentation] Generation runner drain failed', error);
+      }
+      try {
+        // Started at boot with the agent runtime, or on demand by the first
+        // stream that subscribes to it (a generation run's events).
+        await (
+          stopAgentEventNotifyBus ??
+          (await import('@/lib/server/agent-runtime/event-notify-bus')).stopAgentEventNotifyBus
+        )();
       } catch (error) {
         console.error('[instrumentation] Agent event notify bus drain failed', error);
       }

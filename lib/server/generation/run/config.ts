@@ -1,0 +1,44 @@
+/**
+ * Server-only configuration of generation runs. The lease timing is the agent
+ * runtime's (one set of numbers for every lease-coordinated worker in a
+ * process); the limits are the runs' own.
+ */
+import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
+
+function positiveIntegerFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`${name} must be a positive integer, got ${JSON.stringify(raw)}`);
+  }
+  return value;
+}
+
+export interface GenerationRunConfig {
+  scanIntervalMs: number;
+  heartbeatIntervalMs: number;
+  /** A lease with an older heartbeat is orphaned and taken over. */
+  leaseTtlMs: number;
+  /** Runs one process executes at once. */
+  maxConcurrent: number;
+  /**
+   * Takeovers of one step in a row (its worker died each time) before the run
+   * pauses there instead of being taken over again.
+   */
+  maxTakeovers: number;
+  /** Runs one owner may have active at once (any state but completed or ended). */
+  maxActiveRunsPerOwner: number;
+}
+
+/** Read on every call, so a test (or an operator restart) sees the environment as it is. */
+export function generationRunConfig(): GenerationRunConfig {
+  return {
+    scanIntervalMs: agentRuntimeConfig.scanIntervalMs,
+    heartbeatIntervalMs: agentRuntimeConfig.heartbeatIntervalMs,
+    leaseTtlMs: agentRuntimeConfig.leaseTtlMs,
+    maxConcurrent: positiveIntegerFromEnv('OPENMAIC_GENERATION_RUN_MAX_CONCURRENT', 4),
+    maxTakeovers: agentRuntimeConfig.maxAttempts,
+    maxActiveRunsPerOwner: positiveIntegerFromEnv('OPENMAIC_MAX_ACTIVE_RUNS_PER_OWNER', 2),
+  };
+}

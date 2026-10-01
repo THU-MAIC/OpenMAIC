@@ -3,7 +3,7 @@
  * storage package's PostgreSQL backends and this application's own tables.
  *
  * Several are provisioned lazily, by the feature that uses them (the agent
- * runtime's sessions, session materials and user skills), so no single
+ * runtime's sessions, session materials and user skills, generation runs), so no single
  * bootstrap call covers them all. This list is what the startup check verifies
  * against the database (./schema-boot-check.ts), and what the upgrade and
  * checksum tests enumerate; a new store belongs here.
@@ -19,6 +19,7 @@ import { USER_SKILL_PG_MIGRATIONS } from '@openmaic/storage/skill/pg';
 import { OWNER_AGENT_MIGRATIONS } from '@/lib/server/agents/store';
 
 import { CLASSROOM_GENERATION_JOB_MIGRATIONS } from './classroom-generation-jobs';
+import { GENERATION_RUN_MIGRATIONS } from './generation-runs';
 import { LEGACY_CLASSROOM_IMPORT_MIGRATIONS } from './legacy-classroom-imports';
 import { LEGACY_IMPORT_BINDING_MIGRATIONS } from './legacy-import-bindings';
 import { OWNER_MATERIAL_MIGRATIONS } from './owner-materials';
@@ -41,4 +42,5 @@ export const APP_SCHEMA_STORES: readonly SchemaMigrationSet[] = [
   AGENT_SESSION_PG_MIGRATIONS,
   AGENT_SESSION_MATERIAL_PG_MIGRATIONS,
   USER_SKILL_PG_MIGRATIONS,
+  GENERATION_RUN_MIGRATIONS,
 ];

@@ -97,5 +97,6 @@ jobs:
             tests/legacy-browser-import/import-routes.pg.test.ts \
             tests/server/classroom-generation-jobs.pg.test.ts \
             tests/server/classroom-generation-persistence.pg.test.ts \
+            tests/server/generation-runs.pg.test.ts \
             tests/server/legacy-classroom-import.pg.test.ts \
             tests/persistence/exclusive-create-invariant.pg.test.ts
