@@ -40,7 +40,11 @@ const log = createLogger('VideoGeneration API');
 
 export const maxDuration = 300;
 
-const REFUSAL_RESPONSES: Record<VideoRefusal, [ApiErrorCode, number]> = {
+/** The route never resumes a provider task, so the connection never changes under one. */
+const REFUSAL_RESPONSES: Record<
+  Exclude<VideoRefusal, 'task-connection-changed'>,
+  [ApiErrorCode, number]
+> = {
   'missing-api-key': ['MISSING_API_KEY', 401],
   'missing-model': ['MISSING_MODEL', 400],
 };
@@ -78,7 +82,8 @@ export async function POST(request: NextRequest) {
       );
     } catch (error) {
       if (!(error instanceof StepRefusal)) throw error;
-      const [code, status] = REFUSAL_RESPONSES[error.reason as VideoRefusal];
+      const [code, status] =
+        REFUSAL_RESPONSES[error.reason as Exclude<VideoRefusal, 'task-connection-changed'>];
       return apiError(code, status, error.message);
     }
 

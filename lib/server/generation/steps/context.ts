@@ -18,7 +18,10 @@ export type StepLogger = ReturnType<typeof createLogger>;
 
 /** What every step may use besides its input. */
 export interface StepContext<Event = never> {
-  /** Cancels the step's provider calls when the caller goes away. */
+  /**
+   * The caller went away. Only the steps that support it honour it (today:
+   * the outline step, which stops streaming); the others run to completion.
+   */
   signal?: AbortSignal;
   log: StepLogger;
   /** Progress a step reports while it runs (outline deltas, retries). */

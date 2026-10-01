@@ -1,8 +1,8 @@
 /**
  * Video: generate one video from a prompt through the video slot's provider,
  * submitting the provider task and waiting for it. A caller that must survive
- * a restart learns the task id before the wait (`onProviderTask`) and resumes
- * the wait on it later (`resumeTaskId`). Moved from POST /api/generate/video,
+ * a restart learns the task before the wait (`onProviderTask`) and resumes the
+ * wait on it later (`resume`), on the same connection only. Moved from POST /api/generate/video,
  * which keeps resolving the slot (with the request's deprecated provider
  * headers) and mapping failures to its responses.
  */
@@ -19,6 +19,18 @@ import { recordGenerationUsage } from '@/lib/server/usage-storage';
 
 import { StepRefusal, type StepContext } from './context';
 
+/**
+ * A submitted provider task and the connection it was submitted on: a task id
+ * means something only to that provider, model (one provider's models may use
+ * different task APIs) and endpoint.
+ */
+export interface VideoProviderTask {
+  taskId: string;
+  providerId: string;
+  model: string;
+  baseUrl?: string;
+}
+
 export interface VideoInput {
   options: VideoGenerationOptions;
   /** The video slot's connection. */
@@ -28,13 +40,21 @@ export interface VideoInput {
    * provider's allowlist, on the legacy default provider.
    */
   requestedModel?: string;
-  /** Told the provider's task id once it is submitted, before the step waits on it. */
-  onProviderTask?: (taskId: string) => void | Promise<void>;
-  /** Wait on this provider task, submitted earlier, instead of submitting a new one. */
-  resumeTaskId?: string;
+  /** Told the provider task once it is submitted, before the step waits on it. */
+  onProviderTask?: (task: VideoProviderTask) => void | Promise<void>;
+  /**
+   * Wait on this provider task, submitted earlier, instead of submitting a new
+   * one. Refused when the slot no longer resolves to the connection it was
+   * submitted on.
+   */
+  resume?: VideoProviderTask;
 }
 
-export type VideoRefusal = 'missing-api-key' | 'missing-model';
+export type VideoRefusal =
+  | 'missing-api-key'
+  | 'missing-model'
+  /** The task to resume was submitted on another provider, model or endpoint. */
+  | 'task-connection-changed';
 
 export async function generateVideoStep(
   input: VideoInput,
@@ -65,6 +85,17 @@ export async function generateVideoStep(
     );
   }
 
+  const { resume, onProviderTask } = input;
+  if (
+    resume &&
+    (resume.providerId !== providerId || resume.model !== model || resume.baseUrl !== baseUrl)
+  ) {
+    throw new StepRefusal<VideoRefusal>(
+      'task-connection-changed',
+      `The video task ${resume.taskId} was submitted to ${resume.providerId} (${resume.model}), which is no longer the video slot's connection`,
+    );
+  }
+
   // Normalize options against provider capabilities
   const options = normalizeVideoOptions(providerId, input.options);
 
@@ -76,10 +107,12 @@ export async function generateVideoStep(
 
   const config = withVideoProviderFetch({ providerId, apiKey, baseUrl, model }, managed);
   const result =
-    input.onProviderTask || input.resumeTaskId
+    onProviderTask || resume
       ? await generateVideo(config, options, {
-          onSubmitted: input.onProviderTask,
-          resumeTaskId: input.resumeTaskId,
+          onSubmitted: onProviderTask
+            ? (taskId) => onProviderTask({ taskId, providerId, model, baseUrl })
+            : undefined,
+          resumeTaskId: resume?.taskId,
         })
       : await generateVideo(config, options);
 

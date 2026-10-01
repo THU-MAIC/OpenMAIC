@@ -143,25 +143,67 @@ describe('video step', () => {
     );
   });
 
-  it('hands the provider task hooks to the provider wait', async () => {
+  it('reports the submitted task with the connection it was submitted on', async () => {
     const onProviderTask = vi.fn();
+    mocks.generateVideo.mockImplementation(
+      async (
+        _config: unknown,
+        _options: unknown,
+        control: { onSubmitted: (id: string) => void },
+      ) => {
+        await control.onSubmitted('task-1');
+        return videoResult;
+      },
+    );
     await generateVideoStep(
-      { options: { prompt: 'A river' }, connection: videoConnection, onProviderTask },
+      {
+        options: { prompt: 'A river' },
+        connection: { ...videoConnection, modelId: 'model-a', baseUrl: 'https://v.example.com' },
+        onProviderTask,
+      },
+      { log: testLogger() },
+    );
+    expect(onProviderTask).toHaveBeenCalledWith({
+      taskId: 'task-1',
+      providerId: 'seedance',
+      model: 'model-a',
+      baseUrl: 'https://v.example.com',
+    });
+    expect(mocks.generateVideo.mock.calls[0]![2]).toMatchObject({ resumeTaskId: undefined });
+  });
+
+  it('resumes a task on the connection it was submitted on', async () => {
+    const connection = { ...videoConnection, modelId: 'model-a' };
+    await generateVideoStep(
+      {
+        options: { prompt: 'A river' },
+        connection,
+        resume: { taskId: 'task-7', providerId: 'seedance', model: 'model-a' },
+      },
       { log: testLogger() },
     );
     expect(mocks.generateVideo.mock.calls[0]![2]).toEqual({
-      onSubmitted: onProviderTask,
-      resumeTaskId: undefined,
-    });
-
-    await generateVideoStep(
-      { options: { prompt: 'A river' }, connection: videoConnection, resumeTaskId: 'task-7' },
-      { log: testLogger() },
-    );
-    expect(mocks.generateVideo.mock.calls[1]![2]).toEqual({
       onSubmitted: undefined,
       resumeTaskId: 'task-7',
     });
+  });
+
+  it.each([
+    { providerId: 'kling', model: 'model-a' },
+    { providerId: 'seedance', model: 'model-b' },
+    { providerId: 'seedance', model: 'model-a', baseUrl: 'https://elsewhere.example.com' },
+  ])('refuses to resume a task submitted on another connection (%o)', async (recorded) => {
+    const failure = await generateVideoStep(
+      {
+        options: { prompt: 'A river' },
+        connection: { ...videoConnection, modelId: 'model-a' },
+        resume: { taskId: 'task-7', ...recorded },
+      },
+      { log: testLogger() },
+    ).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(StepRefusal);
+    expect((failure as StepRefusal).reason).toBe('task-connection-changed');
+    expect(mocks.generateVideo).not.toHaveBeenCalled();
   });
 
   it('refuses a provider without a key', async () => {

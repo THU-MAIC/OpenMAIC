@@ -222,4 +222,21 @@ describe('runPolledTask', () => {
     expect(onSubmitted).not.toHaveBeenCalled();
     expect(poll).toHaveBeenCalledWith('task-9');
   });
+
+  it('refuses to resume a task without an id instead of submitting a new one', async () => {
+    const submit = vi.fn();
+    const poll = vi.fn();
+    await expect(
+      runPolledTask({
+        submit,
+        poll,
+        intervalMs: 1_000,
+        maxAttempts: 3,
+        label: 'Test task',
+        control: { resumeTaskId: ' ' },
+      }),
+    ).rejects.toThrow('Test task: cannot resume a task without an id');
+    expect(submit).not.toHaveBeenCalled();
+    expect(poll).not.toHaveBeenCalled();
+  });
 });

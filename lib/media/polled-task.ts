@@ -19,10 +19,17 @@ export interface PolledTaskTimeoutContext {
 export interface PolledTaskControl {
   /**
    * Told the provider's task id once the task is submitted, before the first
-   * wait, so a caller can record it and resume the wait elsewhere.
+   * wait, so a caller can record it and resume the wait elsewhere. A
+   * submission that is already terminal (done or failed) has nothing to wait
+   * on or resume, so this is not called for it. When this rejects, the wait
+   * is abandoned with that error although the provider task was submitted.
    */
   onSubmitted?: (taskId: string) => void | Promise<void>;
-  /** Wait on this task, submitted earlier, instead of submitting a new one. */
+  /**
+   * Wait on this task, submitted earlier, instead of submitting a new one.
+   * The resumed wait gets a fresh poll budget (`maxAttempts`), not what was
+   * left of the original one. An empty id is an error, never a new task.
+   */
   resumeTaskId?: string;
 }
 
@@ -68,7 +75,10 @@ export async function runPolledTask<T>({
   control,
 }: RunPolledTaskOptions<T>): Promise<T> {
   let taskId = control?.resumeTaskId;
-  if (!taskId) {
+  if (taskId !== undefined && !taskId.trim()) {
+    throw new Error(`${label}: cannot resume a task without an id`);
+  }
+  if (taskId === undefined) {
     const submitted = await submit();
     if (submitted.status === 'done') return submitted.result;
     if (submitted.status === 'failed') throw new Error(submitted.message);
