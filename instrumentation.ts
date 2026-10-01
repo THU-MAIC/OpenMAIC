@@ -44,6 +44,12 @@ export async function register(): Promise<void> {
     warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
   }
 
+  // The schema, brought up in the background; a database this release must
+  // not run against (upgraded by a newer release) stops the process here
+  // rather than on every request (lib/persistence/schema-boot-check.ts).
+  const { startSchemaBootCheck } = await import('@/lib/persistence/schema-boot-check');
+  void startSchemaBootCheck(process.env.DATABASE_URL ?? '');
+
   // The one-time import of classrooms earlier versions stored as files
   // (lib/server/legacy-classroom-import.ts). It reads the disk and the
   // database, so it runs in the background, retrying with backoff until it
