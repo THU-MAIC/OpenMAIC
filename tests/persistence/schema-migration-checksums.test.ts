@@ -110,6 +110,13 @@ const SHIPPED: readonly (readonly [
     '82f0e38e650d3c51fd99ce8c24dab05b499cf30040f67ade7672dec064af104a',
   ],
   [
+    'owner-agents',
+    1,
+    'baseline',
+    true,
+    'c7eaf8e6df8b27b2cb1a4f38ad908e7d790a4f8af8ee865268df19ed543231c8',
+  ],
+  [
     'agent-session',
     1,
     'baseline',

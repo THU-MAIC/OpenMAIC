@@ -122,6 +122,8 @@ export const FENCED_ENDPOINTS = [
     path: '/api/model-config/import',
     route: 'app/api/model-config/import/route.ts',
   },
+  // The custom agents import (./agents-import.ts).
+  { method: 'POST', path: '/api/agents/import', route: 'app/api/agents/import/route.ts' },
 ] as const;
 
 /** What the importer needs from the server, all of it bound to one browser id. */

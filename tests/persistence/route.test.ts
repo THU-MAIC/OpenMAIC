@@ -50,6 +50,10 @@ describe('embedded persistence route', () => {
       ...(await importOriginal<object>()),
       ensureWorkspaceModelConfigSchema: vi.fn().mockResolvedValue(undefined),
     }));
+    vi.doMock('@/lib/server/agents/store', async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      ensureOwnerAgentSchema: vi.fn().mockResolvedValue(undefined),
+    }));
   });
 
   it('returns a clear 404 when DATABASE_URL is unset', async () => {

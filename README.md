@@ -1092,9 +1092,11 @@ What moves, in this fixed order (a host adds its own tables with
 8. **Legacy import bindings** (temporary, with the one-way legacy browser
    import): a browser whose pre-server data the anonymous owner held is then
    the account's, so the import continues for it.
+9. **Custom agents.** An agent id the account already uses keeps the
+   account's agent.
 
 Quotas are not applied to what moves: the account keeps everything, and if it
-is now above its asset, material, skill or folder limit it cannot add more
+is now above its asset, material, skill, agent or folder limit it cannot add more
 until it is back under. The claim is recorded in `owner_merges`.
 
 Rules: only an anonymous owner can be claimed, and only by a non-anonymous
@@ -1153,7 +1155,7 @@ A host registers participants for its own owner-keyed tables from
 const { registerClaimParticipant } = await import('@/lib/persistence/owner-claims');
 registerClaimParticipant({
   name: 'course-notes',
-  order: 1000, // after core's 100-800; see lib/persistence/owner-claims.ts
+  order: 1000, // after core's 100-950; see lib/persistence/owner-claims.ts
   rekey: async (tx, fromOwnerId, toOwnerId) =>
     (
       await tx.query('UPDATE course_notes SET owner_id = $2 WHERE owner_id = $1 RETURNING 1', [

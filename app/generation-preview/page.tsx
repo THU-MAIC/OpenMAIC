@@ -11,7 +11,7 @@ import { OutlinesEditor } from '@/components/generation/outlines-editor';
 import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
-import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import { useAgentRegistry, whenAgentRegistryLoaded } from '@/lib/orchestration/registry/store';
 import {
   getEnabledProvidersWithVoices,
   resolveNarratorVoiceForGeneration,
@@ -683,6 +683,9 @@ function GenerationPreviewContent() {
       }
 
       // ── Agent generation (after outlines — uses languageDirective + outlines) ──
+      // The owner's custom agents come from the server: wait for them before
+      // the selection is read, or a custom agent would be dropped as unknown.
+      await whenAgentRegistryLoaded();
       const settings = useSettingsStore.getState();
       // The tts slot's provider, and the user's voice for it.
       const tts = ttsSelection();

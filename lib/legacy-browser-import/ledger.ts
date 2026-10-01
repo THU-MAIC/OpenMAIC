@@ -97,6 +97,12 @@ export interface ImportLedger {
   folders: Record<string, FolderEntry>;
   /** The auto-voice reference clips were copied into the device cache. */
   autoVoiceCache?: 'done';
+  /**
+   * The custom agents of the old agent registry (`agent-registry-storage`)
+   * reached the server (`./agents-import.ts`). Tracked apart from the courses:
+   * it neither holds up nor waits for {@link ImportLedger.completedAt}.
+   */
+  agents?: 'done';
 }
 
 /** A course whose storage reads failed this often, over this long, settles. */
@@ -206,6 +212,7 @@ export function mergeStoredLedger(ledger: ImportLedger, stored: ImportLedger | u
     else if (progress(theirs) > progress(ours)) Object.assign(ours, theirs);
   }
   ledger.autoVoiceCache ??= stored.autoVoiceCache;
+  ledger.agents ??= stored.agents;
 }
 
 /** Persist the ledger, merged with the stored copy. A full storage throws (transient). */

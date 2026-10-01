@@ -1,5 +1,8 @@
 import { restoreAgentSelection } from '@/lib/orchestration/registry/agent-selection';
-import { applyGeneratedAgentsToRegistry } from '@/lib/orchestration/registry/store';
+import {
+  applyGeneratedAgentsToRegistry,
+  whenAgentRegistryLoaded,
+} from '@/lib/orchestration/registry/store';
 import { useMediaGenerationStore, type MediaTask } from '@/lib/store/media-generation';
 import {
   markStagePersistenceDirty,
@@ -75,6 +78,11 @@ export interface RunClassroomLoadArgs<TMediaTasks = unknown> {
   applyGeneratedAgents: (stageId: string, configs: readonly GeneratedAgentConfig[]) => string[];
   getSettings: () => ClassroomLoadSettings;
   getAgent: (agentId: string) => AgentLookupResult | undefined;
+  /**
+   * Settles once the owner's custom agents are in the registry (or could not
+   * be read), so a selection naming one is not dropped as unknown.
+   */
+  agentsReady?: () => Promise<void>;
   restoreAgentSelection: typeof restoreAgentSelection;
   setError: (message: string) => void;
   setLoading: (loading: boolean) => void;
@@ -112,6 +120,7 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
   applyGeneratedAgents,
   getSettings,
   getAgent,
+  agentsReady,
   restoreAgentSelection: restoreSelection,
   setError,
   setLoading,
@@ -187,6 +196,7 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     if (!isCurrent()) return { outcome: 'cancelled' };
     const generatedAgentIds = applyGeneratedAgents(classroomId, effectiveConfigs);
 
+    if (agentsReady) await agentsReady();
     if (!isCurrent()) return { outcome: 'cancelled' };
     const settings = getSettings();
     const { selection: next, isUserSet } = restoreSelection({
@@ -587,5 +597,6 @@ export const defaultClassroomLoadDeps = {
   loadLegacyAgentFallbacks: loadLegacyAgentFallbacksFromDB,
   commitMigratedAgentConfigs: commitMigratedAgentConfigsToStore,
   applyGeneratedAgents: applyGeneratedAgentsToRegistry,
+  agentsReady: whenAgentRegistryLoaded,
   restoreAgentSelection,
 };

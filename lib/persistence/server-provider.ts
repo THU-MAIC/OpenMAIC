@@ -24,6 +24,7 @@ import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock
 import { ensureWorkspaceModelConfigSchema } from '@/lib/persistence/workspace-model-config';
 import { ensureStageMetaSchema } from '@/lib/persistence/stage-meta';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
+import { ensureOwnerAgentSchema } from '@/lib/server/agents/store';
 
 export type PersistencePoolFactory = (connectionString: string) => Pool;
 
@@ -85,6 +86,7 @@ async function createServerPersistenceProvider(
       await ensureClassroomGenerationJobSchema(locked);
       await ensureLegacyClassroomImportSchema(locked);
       await ensureWorkspaceModelConfigSchema(locked);
+      await ensureOwnerAgentSchema(locked);
     });
     const withTransaction = nodePostgresTransaction(queryable);
     const byteStore = configuredLazyAssetByteStore(queryable);

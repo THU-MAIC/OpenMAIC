@@ -207,6 +207,30 @@ proposal.
 Clear Local Cache keeps a proposal that is still waiting: it exists nowhere
 else.
 
+## Custom agents
+
+Earlier builds kept the agent registry in localStorage (`agent-registry-storage`,
+the zustand `persist` snapshot of `lib/orchestration/registry/store.ts`). Built-in
+agents are now code (`lib/orchestration/registry/built-in.ts`) and an owner's custom
+agents live on the server (`/api/agents`, `lib/server/agents`). `agents-import.ts`
+carries the custom ones over once: the registry's first load
+(`loadAgentRegistry`) runs it before it lists the owner's agents.
+
+- It reads the snapshot's custom agents (not the `default-*` built-ins, not
+  generated agents, which belong to a course's roster) and sends their stored
+  fields to `POST /api/agents/import`, bound like the model settings import:
+  the binding first, then the request with `X-OpenMAIC-Legacy-Import` (one of
+  `FENCED_ENDPOINTS`).
+- The server checks each agent with the registry's schema and keeps an agent
+  the owner already has under that id; invalid agents, built-in ids and agents
+  past the per-owner limit are skipped with the reason.
+- A 2xx answer, or a 400 (sending again cannot succeed), records
+  `agents: 'done'` in the ledger; anything else (another owner holds the
+  browser, 401, 409, 5xx, a network error) leaves it for a later load. A
+  browser with no custom agents gets no ledger from it.
+- The snapshot is never written or removed. Clear Local Cache keeps it until
+  the ledger records the import.
+
 ## Removal
 
 When the maintainers decide enough releases have passed:
@@ -223,6 +247,13 @@ When the maintainers decide enough releases have passed:
    imports `LEDGER_KEY` and `legacyImportIsComplete` from `ledger.ts`: define the
    ledger key there again (or drop it with step 5) and drop the quiz-key retention,
    with its cases in `tests/settings/general-settings.test.ts`.
+   The custom agents import: remove the dynamic import of `agents-import.ts`
+   in `loadAgentRegistry` (`lib/orchestration/registry/store.ts`),
+   `app/api/agents/import/` with its case in
+   `tests/server/agents/agents-route.test.ts` and its entry in the handler
+   table of `tests/server/identity/legacy-import-binding-route.test.ts`, and
+   `LEGACY_AGENT_REGISTRY_KEY` with its retention in
+   `lib/device-storage/clear-local-cache.ts`.
 2. Remove the dynamic import at the end of `lib/persistence/bootstrap.ts`.
 3. Remove the server side:
    - `app/api/identity/legacy-import-binding/` and

@@ -89,6 +89,7 @@ jobs:
             tests/persistence/owner-assets-legacy-race.pg.test.ts \
             tests/persistence/owner-materials.pg.test.ts \
             tests/persistence/workspace-model-config.pg.test.ts \
+            tests/server/agents/owner-agents.pg.test.ts \
             tests/persistence/runtime-tombstone-collision.pg.test.ts \
             tests/agent-runtime/event-notify.pg.test.ts \
             tests/agent-runtime/park-attempt-budget.pg.test.ts \

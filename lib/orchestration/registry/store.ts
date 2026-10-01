@@ -1,276 +1,181 @@
 /**
  * Agent Registry Store
- * Manages configurable AI agents using Zustand with localStorage persistence
+ *
+ * The agents this page knows, in memory: the built-in agents (code,
+ * read-only), the owner's custom agents (read from and written to the server,
+ * `/api/agents`), and the generated agents of the course on screen (mirrored
+ * from its stage document by `applyGeneratedAgentsToRegistry`, never stored
+ * here). Nothing is kept in browser storage: the custom agents an earlier build
+ * kept in localStorage are imported to the server once
+ * (`lib/legacy-browser-import/agents-import.ts`) before the first load.
+ *
+ * Server-importable: the server-side chat paths read the built-in agents from
+ * it, and nothing here reaches the network until a client calls the load or
+ * changes a custom agent.
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type { AgentConfig } from './types';
 import { getActionsForRole } from './types';
+import { BUILT_IN_AGENTS, isBuiltInAgentId } from './built-in';
+import {
+  createCustomAgent,
+  deleteCustomAgent,
+  fetchCustomAgents,
+  updateCustomAgent,
+} from './client';
+import { customAgentFields, customAgentFieldsSchema, customAgentSchema } from './schema';
 import { isKnownTTSProviderId } from '@/lib/audio/constants';
 import type { GeneratedAgentConfig } from '@/lib/types/stage';
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import type { Participant, ParticipantRole } from '@/lib/types/roundtable';
 import { useUserProfileStore } from '@/lib/store/user-profile';
-import type { AgentInfo } from '@openmaic/generation';
+
+export { getDefaultAgents } from './built-in';
 
 interface AgentRegistryState {
   agents: Record<string, AgentConfig>; // Map of agentId -> config
 
-  // Actions
-  addAgent: (agent: AgentConfig) => void;
-  updateAgent: (id: string, updates: Partial<AgentConfig>) => void;
-  deleteAgent: (id: string) => void;
+  // Actions. A generated agent changes in memory only; a custom agent is
+  // saved on the server, and the promise settles with that save (on a refusal
+  // the agent is restored and the promise rejects). Built-in agents are
+  // read-only: changing or deleting one rejects.
+  addAgent: (agent: AgentConfig) => Promise<void>;
+  updateAgent: (id: string, updates: Partial<AgentConfig>) => Promise<void>;
+  deleteAgent: (id: string) => Promise<void>;
   getAgent: (id: string) => AgentConfig | undefined;
   listAgents: () => AgentConfig[];
 }
 
-// Action types available to agents
-const WHITEBOARD_ACTIONS = [
-  'wb_open',
-  'wb_close',
-  'wb_draw_text',
-  'wb_draw_shape',
-  'wb_draw_chart',
-  'wb_draw_latex',
-  'wb_draw_table',
-  'wb_draw_line',
-  'wb_draw_code',
-  'wb_edit_code',
-  'wb_clear',
-  'wb_delete',
-];
-
-const SLIDE_ACTIONS = ['spotlight', 'laser', 'play_video'];
-
-// Default agents - always available on both server and client
-const DEFAULT_AGENTS: Record<string, AgentConfig> = {
-  'default-1': {
-    id: 'default-1',
-    name: 'AI teacher',
-    role: 'teacher',
-    persona: `You are the lead teacher of this classroom. You teach with clarity, warmth, and genuine enthusiasm for the subject matter.
-
-Your teaching style:
-- Explain concepts step by step, building from what students already know
-- Use vivid analogies, real-world examples, and visual aids to make abstract ideas concrete
-- Pause to check understanding — ask questions, not just lecture
-- Adapt your pace: slow down for difficult parts, move briskly through familiar ground
-- Encourage students by name when they contribute, and gently correct mistakes without embarrassment
-
-You can spotlight or laser-point at slide elements, and use the whiteboard for hand-drawn explanations. Use these actions naturally as part of your teaching flow. Never announce your actions; just teach.
-
-Tone: Professional yet approachable. Patient. Encouraging. You genuinely care about whether students understand.`,
-    avatar: '/avatars/teacher.png',
-    color: '#3b82f6',
-    allowedActions: [...SLIDE_ACTIONS, ...WHITEBOARD_ACTIONS],
-    priority: 10,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isDefault: true,
-  },
-  'default-2': {
-    id: 'default-2',
-    name: 'AI助教',
-    role: 'assistant',
-    persona: `You are the teaching assistant. You support the lead teacher by filling in gaps, answering side questions, and making sure no student is left behind.
-
-Your style:
-- When a student is confused, rephrase the teacher's explanation in simpler terms or from a different angle
-- Provide concrete examples, especially practical or everyday ones that make concepts relatable
-- Proactively offer background context that the teacher might skip over
-- Summarize key takeaways after complex explanations
-- You can use the whiteboard to sketch quick clarifications when needed
-
-You play a supportive role — you don't take over the lesson, but you make sure everyone keeps up.
-
-Tone: Friendly, warm, down-to-earth. Like a helpful older classmate who just "gets it."`,
-    avatar: '/avatars/assist.png',
-    color: '#10b981',
-    allowedActions: [...WHITEBOARD_ACTIONS],
-    priority: 7,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isDefault: true,
-  },
-  'default-3': {
-    id: 'default-3',
-    name: '显眼包',
-    role: 'student',
-    persona: `You are the class clown — the student everyone notices. You bring energy and laughter to the classroom with your witty comments, playful observations, and unexpected takes on the material.
-
-Your personality:
-- You crack jokes and make humorous connections to the topic being discussed
-- You sometimes exaggerate your confusion for comedic effect, but you're actually paying attention
-- You use pop culture references, memes, and funny analogies
-- You're not disruptive — your humor makes the class more engaging and helps everyone relax
-- Occasionally you stumble onto surprisingly insightful points through your jokes
-
-You keep things light. When the class gets too heavy or boring, you're the one who livens it up. But you also know when to dial it back during serious moments.
-
-Tone: Playful, energetic, a little cheeky. You speak casually, like you're chatting with friends. Keep responses SHORT — one-liners and quick reactions, not paragraphs.`,
-    avatar: '/avatars/clown.png',
-    color: '#f59e0b',
-    allowedActions: [...WHITEBOARD_ACTIONS],
-    priority: 4,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isDefault: true,
-  },
-  'default-4': {
-    id: 'default-4',
-    name: '好奇宝宝',
-    role: 'student',
-    persona: `You are the endlessly curious student. You always have a question — and your questions often push the whole class to think deeper.
-
-Your personality:
-- You ask "why" and "how" constantly — not to be annoying, but because you genuinely want to understand
-- You notice details others miss and ask about edge cases, exceptions, and connections to other topics
-- You're not afraid to say "I don't get it" — your honesty helps other students who were too shy to ask
-- You get excited when you learn something new and express that enthusiasm openly
-- You sometimes ask questions that are slightly ahead of the current topic, pulling the discussion forward
-
-You represent the voice of genuine curiosity. Your questions make the teacher's explanations better for everyone.
-
-Tone: Eager, enthusiastic, occasionally puzzled. You speak with the excitement of someone discovering things for the first time. Keep questions concise and direct.`,
-    avatar: '/avatars/curious.png',
-    color: '#ec4899',
-    allowedActions: [...WHITEBOARD_ACTIONS],
-    priority: 5,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isDefault: true,
-  },
-  'default-5': {
-    id: 'default-5',
-    name: '笔记员',
-    role: 'student',
-    persona: `You are the dedicated note-taker of the class. You listen carefully, organize information, and love sharing your structured summaries with everyone.
-
-Your personality:
-- You naturally distill complex explanations into clear, organized bullet points
-- After a key concept is taught, you offer a quick summary or recap for the class
-- You use the whiteboard to write down key formulas, definitions, or structured outlines
-- You notice when something important was said but might have been missed, and you flag it
-- You occasionally ask the teacher to clarify something so your notes are accurate
-
-You're the student everyone wants to sit next to during exams. Your notes are legendary.
-
-Tone: Organized, helpful, slightly studious. You speak clearly and precisely. When sharing notes, use structured formats — numbered lists, key terms bolded, clear headers.`,
-    avatar: '/avatars/note-taker.png',
-    color: '#06b6d4',
-    allowedActions: [...WHITEBOARD_ACTIONS],
-    priority: 5,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isDefault: true,
-  },
-  'default-6': {
-    id: 'default-6',
-    name: '思考者',
-    role: 'student',
-    persona: `You are the deep thinker of the class. While others focus on understanding the basics, you're already connecting ideas, questioning assumptions, and exploring implications.
-
-Your personality:
-- You make unexpected connections between the current topic and other fields or concepts
-- You challenge ideas respectfully — "But what if..." and "Doesn't that contradict..." are your signature phrases
-- You think about the bigger picture: philosophical implications, real-world consequences, ethical dimensions
-- You sometimes play devil's advocate to push the discussion deeper
-- Your contributions often spark the most interesting class discussions
-
-You don't speak as often as others, but when you do, it changes the direction of the conversation. You value depth over breadth.
-
-Tone: Thoughtful, measured, intellectually curious. You pause before speaking. Your sentences are deliberate and carry weight. Ask provocative questions that make everyone stop and think.`,
-    avatar: '/avatars/thinker.png',
-    color: '#8b5cf6',
-    allowedActions: [...WHITEBOARD_ACTIONS],
-    priority: 6,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isDefault: true,
-  },
-};
-
-/**
- * Return the built-in default agents as lightweight AgentInfo objects
- * suitable for the generation pipeline (no UI-only fields like avatar/color).
- */
-export function getDefaultAgents(): AgentInfo[] {
-  return Object.values(DEFAULT_AGENTS).map((a) => ({
-    id: a.id,
-    name: a.name,
-    role: a.role,
-    persona: a.persona,
-  }));
+function readOnlyError(id: string): Error {
+  return new Error(`Agent ${id} is built in and cannot be changed`);
 }
 
-export const useAgentRegistry = create<AgentRegistryState>()(
-  persist(
-    (set, get) => ({
-      // Initialize with default agents so they're available on server
-      agents: { ...DEFAULT_AGENTS },
+/** A custom agent as the server answered it, with a voice this app can use. */
+function usableCustomAgent(agent: AgentConfig): AgentConfig {
+  if (!agent.voiceConfig || isKnownTTSProviderId(agent.voiceConfig.providerId)) return agent;
+  const { voiceConfig: _unknownProvider, ...rest } = agent;
+  return rest;
+}
 
-      addAgent: (agent) =>
-        set((state) => ({
-          agents: { ...state.agents, [agent.id]: agent },
-        })),
+export const useAgentRegistry = create<AgentRegistryState>()((set, get) => {
+  /** Put `agent` back (or remove `id` when it was absent): a refused save. */
+  const restore = (id: string, previous: AgentConfig | undefined) =>
+    set((state) => {
+      const { [id]: _current, ...rest } = state.agents;
+      return { agents: previous ? { ...rest, [id]: previous } : rest };
+    });
+  const put = (agent: AgentConfig) =>
+    set((state) => ({ agents: { ...state.agents, [agent.id]: agent } }));
 
-      updateAgent: (id, updates) =>
-        set((state) => ({
-          agents: {
-            ...state.agents,
-            [id]: { ...state.agents[id], ...updates, updatedAt: new Date() },
-          },
-        })),
+  return {
+    // Built-in agents are always there, on the server too.
+    agents: { ...BUILT_IN_AGENTS },
 
-      deleteAgent: (id) =>
-        set((state) => {
-          const { [id]: _removed, ...rest } = state.agents;
-          return { agents: rest };
-        }),
-
-      getAgent: (id) => get().agents[id],
-
-      listAgents: () => Object.values(get().agents),
-    }),
-    {
-      name: 'agent-registry-storage',
-      version: 11, // Bumped: add voiceOverrides field to AgentConfig
-      migrate: (persistedState: unknown) => persistedState,
-      // Generated agents are single-sourced on the stage document and rebuilt
-      // from it on every classroom load — keep them out of the localStorage
-      // snapshot entirely. The merge filter below stays as defense in depth
-      // for snapshots written before this partialize existed.
-      partialize: (state) => ({
-        agents: Object.fromEntries(
-          Object.entries(state.agents).filter(([, agent]) => !agent.isGenerated),
-        ),
-      }),
-      // Merge persisted state with default agents
-      // Default agents always use code-defined values (not cached)
-      // Custom agents use persisted values
-      merge: (persistedState: unknown, currentState) => {
-        const persisted = persistedState as Record<string, unknown> | undefined;
-        const persistedAgents = (persisted?.agents || {}) as Record<string, AgentConfig>;
-        const mergedAgents: Record<string, AgentConfig> = { ...DEFAULT_AGENTS };
-
-        // Only preserve non-default, non-generated (custom) agents from cache
-        // Generated agents are loaded on-demand from IndexedDB per stage
-        for (const [id, agent] of Object.entries(persistedAgents)) {
-          const agentConfig = agent as AgentConfig;
-          if (!id.startsWith('default-') && !agentConfig.isGenerated) {
-            mergedAgents[id] = agentConfig;
-          }
-        }
-
-        return {
-          ...currentState,
-          agents: mergedAgents,
-        };
-      },
+    addAgent: async (agent) => {
+      if (agent.isGenerated) {
+        put(agent);
+        return;
+      }
+      if (isBuiltInAgentId(agent.id)) throw readOnlyError(agent.id);
+      const custom = customAgentSchema.parse(customAgentFields(agent));
+      const previous = get().agents[agent.id];
+      put({ ...agent, isDefault: false });
+      try {
+        put(usableCustomAgent(await createCustomAgent(custom)));
+      } catch (error) {
+        restore(agent.id, previous);
+        throw error;
+      }
     },
-  ),
-);
+
+    updateAgent: async (id, updates) => {
+      const current = get().agents[id];
+      if (!current) throw new Error(`Unknown agent ${id}`);
+      const next: AgentConfig = { ...current, ...updates, id, updatedAt: new Date() };
+      if (current.isGenerated) {
+        put(next);
+        return;
+      }
+      if (current.isDefault || isBuiltInAgentId(id)) throw readOnlyError(id);
+      const { id: _id, ...fields } = customAgentFields(next);
+      const parsed = customAgentFieldsSchema.parse(fields);
+      put(next);
+      try {
+        put(usableCustomAgent(await updateCustomAgent(id, parsed)));
+      } catch (error) {
+        restore(id, current);
+        throw error;
+      }
+    },
+
+    deleteAgent: async (id) => {
+      const current = get().agents[id];
+      if (!current) return;
+      if (current.isGenerated) {
+        // A generated agent may have shadowed a built-in one of the same id.
+        restore(id, BUILT_IN_AGENTS[id]);
+        return;
+      }
+      if (current.isDefault || isBuiltInAgentId(id)) throw readOnlyError(id);
+      restore(id, undefined);
+      try {
+        await deleteCustomAgent(id);
+      } catch (error) {
+        restore(id, current);
+        throw error;
+      }
+    },
+
+    getAgent: (id) => get().agents[id],
+
+    listAgents: () => Object.values(get().agents),
+  };
+});
+
+/**
+ * Read the owner's custom agents from the server into the registry, after
+ * importing the ones an earlier build kept in this browser (once per
+ * browser). Built-in and generated agents stay as they are. Rejects when the
+ * agents could not be read; the registry then keeps what it had.
+ */
+export async function loadAgentRegistry(): Promise<void> {
+  // The import never throws (it logs and retries on a later load), and is
+  // loaded on demand: it is temporary, and only this first read needs it.
+  await import('@/lib/legacy-browser-import/agents-import')
+    .then(({ runAgentsImport }) => runAgentsImport())
+    .catch((error: unknown) => console.warn('[legacy-browser-import] Could not load:', error));
+  const custom = (await fetchCustomAgents()).map(usableCustomAgent);
+  useAgentRegistry.setState((state) => {
+    const agents: Record<string, AgentConfig> = { ...BUILT_IN_AGENTS };
+    for (const agent of Object.values(state.agents)) {
+      if (agent.isGenerated) agents[agent.id] = agent;
+    }
+    for (const agent of custom) if (!agents[agent.id]) agents[agent.id] = agent;
+    return { agents };
+  });
+}
+
+let firstLoad: Promise<void> | undefined;
+
+/**
+ * The page's first {@link loadAgentRegistry}, started on the first call and
+ * shared by every caller after it. Never rejects: a failed read is logged and
+ * the registry holds the built-in agents. Code that resolves agent ids the
+ * user picked (a classroom's selection, a generation's preset agents) awaits
+ * it, so a custom agent is not mistaken for a missing one before it arrives.
+ */
+export function whenAgentRegistryLoaded(): Promise<void> {
+  firstLoad ??= loadAgentRegistry().catch((error: unknown) => {
+    console.warn('[agent-registry] Could not read the custom agents:', error);
+  });
+  return firstLoad;
+}
+
+/** Test hook: forget the page's first load. */
+export function resetAgentRegistryLoadForTests(): void {
+  firstLoad = undefined;
+}
 
 /**
  * Convert agents to roundtable participants
@@ -342,9 +247,8 @@ export function agentsToParticipants(
  *
  * In-memory registry side effect: the persisted source of truth for the
  * roster is `stage.generatedAgentConfigs` on the stage document, and callers
- * persist it through the document path — the registry's own localStorage
- * snapshot excludes generated agents (see the persist `partialize` above), so
- * nothing written here becomes durable.
+ * persist it through the document path; a generated agent changes the
+ * registry in memory only, so nothing written here becomes durable.
  * Clears previously loaded generated agents first (even when the new roster is
  * empty) so a prior classroom's roster cannot leak into the current one.
  * The contract keeps `voiceConfig.providerId` an open string; a binding whose

@@ -118,6 +118,7 @@ export function ClassroomSurface({
           applyGeneratedAgents: defaultClassroomLoadDeps.applyGeneratedAgents,
           getSettings: () => useSettingsStore.getState(),
           getAgent: (id) => useAgentRegistry.getState().getAgent(id),
+          agentsReady: defaultClassroomLoadDeps.agentsReady,
           restoreAgentSelection: defaultClassroomLoadDeps.restoreAgentSelection,
           setError,
           setLoading,
