@@ -1071,6 +1071,7 @@
     "continue": "继续",
     "outlineRetrying": "大纲生成异常，正在重试...",
     "outlineEmptyResponse": "模型未返回有效的大纲内容，请检查模型配置后重试",
+    "customAgentsUnavailable": "无法加载你的自定义智能体，请稍后重试。",
     "outlineGenerateFailed": "大纲生成失败，请稍后重试",
     "sceneGenerateFailed": "场景生成失败，请稍后重试",
     "sceneGenerateAuthFailed": "场景生成失败：模型服务拒绝了当前凭据。请检查模型配置。",

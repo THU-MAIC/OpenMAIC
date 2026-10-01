@@ -1071,6 +1071,7 @@
     "continue": "Continuar",
     "outlineRetrying": "Problema na geração do roteiro, tentando novamente...",
     "outlineEmptyResponse": "O modelo não retornou roteiros válidos. Verifique a configuração do modelo e tente novamente",
+    "customAgentsUnavailable": "Não foi possível carregar seus agentes personalizados. Tente novamente.",
     "outlineGenerateFailed": "Falha ao gerar roteiro, tente novamente mais tarde",
     "sceneGenerateFailed": "Falha ao gerar cena, tente novamente mais tarde",
     "sceneGenerateAuthFailed": "A geração da cena falhou porque o provedor do modelo rejeitou as credenciais. Verifique a configuração do modelo.",

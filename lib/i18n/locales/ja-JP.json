@@ -1071,6 +1071,7 @@
     "continue": "続ける",
     "outlineRetrying": "アウトライン生成に問題があります。リトライしています...",
     "outlineEmptyResponse": "モデルから有効なアウトラインが返されませんでした。モデルの設定を確認して再度お試しください",
+    "customAgentsUnavailable": "カスタムエージェントを読み込めませんでした。もう一度お試しください。",
     "outlineGenerateFailed": "アウトラインの生成に失敗しました。しばらくしてからお試しください",
     "sceneGenerateFailed": "シーンの生成に失敗しました。しばらくしてからお試しください",
     "sceneGenerateAuthFailed": "モデルプロバイダーが認証情報を拒否したため、シーン生成に失敗しました。モデル設定を確認してください。",

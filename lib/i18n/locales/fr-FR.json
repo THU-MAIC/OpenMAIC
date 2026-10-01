@@ -1071,6 +1071,7 @@
     "continue": "Continuer",
     "outlineRetrying": "Problème lors de la génération du plan, nouvelle tentative…",
     "outlineEmptyResponse": "Le modèle n’a renvoyé aucun plan valide. Vérifiez sa configuration et réessayez",
+    "customAgentsUnavailable": "Impossible de charger vos agents personnalisés. Veuillez réessayer.",
     "outlineGenerateFailed": "Échec de la génération du plan, veuillez réessayer plus tard",
     "sceneGenerateFailed": "Échec de la génération de la scène, veuillez réessayer plus tard",
     "sceneGenerateAuthFailed": "La génération de la scène a échoué : le fournisseur de modèle a rejeté les identifiants. Vérifiez la configuration de votre modèle.",

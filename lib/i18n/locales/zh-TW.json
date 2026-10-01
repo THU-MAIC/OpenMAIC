@@ -1056,6 +1056,7 @@
     "continue": "繼續",
     "outlineRetrying": "大綱生成異常，正在重試...",
     "outlineEmptyResponse": "模型未傳回有效的大綱內容，請檢查模型設定後重試",
+    "customAgentsUnavailable": "無法載入你的自訂智慧體，請稍後再試。",
     "outlineGenerateFailed": "大綱生成失敗，請稍後重試",
     "sceneGenerateFailed": "場景生成失敗，請稍後重試",
     "sceneGenerateAuthFailed": "場景生成失敗：模型服務拒絕了目前憑證。請檢查模型設定。",

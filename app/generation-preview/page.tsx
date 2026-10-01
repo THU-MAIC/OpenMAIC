@@ -879,7 +879,7 @@ function GenerationPreviewContent() {
           settings.agentSelectionIsUserSet &&
           settings.selectedAgentIds.some((id) => !registry.getAgent(id))
         ) {
-          throw new Error('Your custom agents could not be loaded. Please try again.');
+          throw new Error(t('generation.customAgentsUnavailable'));
         }
         const presetAgentIds = settings.selectedAgentIds.filter((id) => {
           const a = registry.getAgent(id);

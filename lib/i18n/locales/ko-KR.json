@@ -1071,6 +1071,7 @@
     "continue": "계속",
     "outlineRetrying": "개요 생성에 문제가 발생하여 재시도 중...",
     "outlineEmptyResponse": "모델이 유효한 개요를 반환하지 않았습니다. 모델 설정을 확인하고 다시 시도해주세요",
+    "customAgentsUnavailable": "사용자 지정 에이전트를 불러오지 못했습니다. 다시 시도해주세요.",
     "outlineGenerateFailed": "개요 생성에 실패했습니다. 잠시 후 다시 시도해주세요",
     "sceneGenerateFailed": "장면 생성에 실패했습니다. 잠시 후 다시 시도해주세요",
     "sceneGenerateAuthFailed": "모델 제공자가 현재 인증 정보를 거부해 장면 생성에 실패했습니다. 모델 설정을 확인해주세요.",

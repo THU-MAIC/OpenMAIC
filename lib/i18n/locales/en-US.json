@@ -1071,6 +1071,7 @@
     "continue": "Continue",
     "outlineRetrying": "Outline generation issue, retrying...",
     "outlineEmptyResponse": "Model returned no valid outlines. Please check model configuration and try again",
+    "customAgentsUnavailable": "Your custom agents could not be loaded. Please try again.",
     "outlineGenerateFailed": "Outline generation failed, please try again later",
     "sceneGenerateFailed": "Scene generation failed, please try again later",
     "sceneGenerateAuthFailed": "Scene generation failed because the model provider rejected the credentials. Please check your model configuration.",

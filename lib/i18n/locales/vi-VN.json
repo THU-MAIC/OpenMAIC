@@ -1071,6 +1071,7 @@
     "continue": "Tiếp tục",
     "outlineRetrying": "Đề cương gặp sự cố, đang thử lại…",
     "outlineEmptyResponse": "Model không trả về đề cương hợp lệ. Vui lòng kiểm tra cấu hình model rồi thử lại",
+    "customAgentsUnavailable": "Không thể tải các tác nhân tùy chỉnh của bạn. Vui lòng thử lại.",
     "outlineGenerateFailed": "Tạo đề cương không thành công, vui lòng thử lại sau",
     "sceneGenerateFailed": "Tạo cảnh không thành công, vui lòng thử lại sau",
     "sceneGenerateAuthFailed": "Tạo cảnh không thành công vì nhà cung cấp model từ chối thông tin đăng nhập. Vui lòng kiểm tra cấu hình model.",

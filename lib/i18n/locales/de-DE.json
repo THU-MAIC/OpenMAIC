@@ -1071,6 +1071,7 @@
     "continue": "Weiter",
     "outlineRetrying": "Problem bei der Gliederungserstellung. Neuer Versuch…",
     "outlineEmptyResponse": "Das Modell hat keine gültige Gliederung zurückgegeben. Prüfe die Modellkonfiguration und versuche es erneut.",
+    "customAgentsUnavailable": "Deine eigenen Agenten konnten nicht geladen werden. Bitte versuche es erneut.",
     "outlineGenerateFailed": "Gliederung konnte nicht erstellt werden. Bitte versuche es später erneut.",
     "sceneGenerateFailed": "Szene konnte nicht erstellt werden. Bitte versuche es später erneut.",
     "sceneGenerateAuthFailed": "Die Szene konnte nicht erstellt werden, weil der Modellanbieter die Zugangsdaten abgelehnt hat. Prüfe deine Modellkonfiguration.",
