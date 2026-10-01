@@ -127,6 +127,14 @@ function slideScene(stageId: string, outline: SceneOutline): Scene {
   } as Scene;
 }
 
+/**
+ * How long a test waits for a run to reach a state it is driven towards: a
+ * condition, not a timing assumption, so the budget is the test's own (a run
+ * under a loaded full suite takes seconds to get there).
+ */
+const UNTIL = { timeout: 25_000, interval: 20 };
+const SLOW_TEST_MS = 30_000;
+
 type Gate = { promise: Promise<void>; release: () => void };
 function gate(): Gate {
   let release!: () => void;
@@ -2673,72 +2681,76 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       }
     });
 
-    it('a paused run goes on with its video after the pause, and a step Retry meanwhile takes no lease', async () => {
-      const submitted = gate();
-      const releaseVideo = gate();
-      let failScene = true;
-      let lastSceneAfterRetry = 0;
-      const { services, media } = mediaServices({
-        mediaConnections: async () => ({ image: OFF, video: ready('seedance') }),
-        sceneContent: async (owner, input, ctx) => {
-          if (input.outline.id === 'o3' && !failScene) lastSceneAfterRetry += 1;
-          if (input.outline.id === 'o3' && failScene) {
-            await submitted.promise;
-            throw new Error('content model down');
-          }
-          return fakeServices().services.sceneContent(owner, input, ctx);
-        },
-        generateVideo: async (_owner, input, ctx) => {
-          media.video.push({ resume: input.resume });
-          if (!input.resume) {
-            await input.onProviderTask(TASK);
-            submitted.release();
-            // Waits until the pause aborts the wait.
-            await new Promise((_, reject) =>
-              ctx.signal!.addEventListener('abort', () => reject(ctx.signal!.reason), {
-                once: true,
-              }),
-            );
-          }
-          await releaseVideo.promise;
-          return { video: { bytes: VIDEO_BYTES, mimeType: 'video/mp4' } };
-        },
-      });
-      const run = await start(runInput({ outlineReview: 'auto' }));
-      expect(await drive(run.id, services)).toBe('paused');
-      expect((await mediaOf(run.id)).gen_vid_1).toEqual({
-        mediaType: 'video',
-        status: 'submitted',
-        task: TASK,
-      });
-      expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
-        state: 'paused',
-        mediaPending: true,
-        leaseWorkerId: null,
-      });
+    it(
+      'a paused run goes on with its video after the pause, and a step Retry meanwhile takes no lease',
+      { timeout: SLOW_TEST_MS },
+      async () => {
+        const submitted = gate();
+        const releaseVideo = gate();
+        let failScene = true;
+        let lastSceneAfterRetry = 0;
+        const { services, media } = mediaServices({
+          mediaConnections: async () => ({ image: OFF, video: ready('seedance') }),
+          sceneContent: async (owner, input, ctx) => {
+            if (input.outline.id === 'o3' && !failScene) lastSceneAfterRetry += 1;
+            if (input.outline.id === 'o3' && failScene) {
+              await submitted.promise;
+              throw new Error('content model down');
+            }
+            return fakeServices().services.sceneContent(owner, input, ctx);
+          },
+          generateVideo: async (_owner, input, ctx) => {
+            media.video.push({ resume: input.resume });
+            if (!input.resume) {
+              await input.onProviderTask(TASK);
+              submitted.release();
+              // Waits until the pause aborts the wait.
+              await new Promise((_, reject) =>
+                ctx.signal!.addEventListener('abort', () => reject(ctx.signal!.reason), {
+                  once: true,
+                }),
+              );
+            }
+            await releaseVideo.promise;
+            return { video: { bytes: VIDEO_BYTES, mimeType: 'video/mp4' } };
+          },
+        });
+        const run = await start(runInput({ outlineReview: 'auto' }));
+        expect(await drive(run.id, services)).toBe('paused');
+        expect((await mediaOf(run.id)).gen_vid_1).toEqual({
+          mediaType: 'video',
+          status: 'submitted',
+          task: TASK,
+        });
+        expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+          state: 'paused',
+          mediaPending: true,
+          leaseWorkerId: null,
+        });
 
-      // Claimed for its media alone; a step Retry arrives while the video waits.
-      const claimed = (await claim(run.id, 'worker-m'))!;
-      const execution = executeGenerationRun(claimed, {
-        services,
-        signal: new AbortController().signal,
-      });
-      await vi.waitFor(() => expect(media.video).toHaveLength(2));
-      failScene = false;
-      await retryGenerationRun(run.id, OWNER, { commandId: 'step' });
-      // The lease stays with the worker generating the video.
-      expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
-        state: 'generating',
-        leaseWorkerId: 'worker-m',
-      });
-      expect(await claim(run.id, 'worker-n')).toBeNull();
-      releaseVideo.release();
-      // That worker goes on with the run once its media is done.
-      expect(await execution).toBe('completed');
-      expect(media.video).toEqual([{ resume: undefined }, { resume: TASK }]);
-      expect(lastSceneAfterRetry).toBe(1);
-      expect((await mediaOf(run.id)).gen_vid_1).toMatchObject({ status: 'done' });
-    });
+        // Claimed for its media alone; a step Retry arrives while the video waits.
+        const claimed = (await claim(run.id, 'worker-m'))!;
+        const execution = executeGenerationRun(claimed, {
+          services,
+          signal: new AbortController().signal,
+        });
+        await vi.waitFor(() => expect(media.video).toHaveLength(2), UNTIL);
+        failScene = false;
+        await retryGenerationRun(run.id, OWNER, { commandId: 'step' });
+        // The lease stays with the worker generating the video.
+        expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+          state: 'generating',
+          leaseWorkerId: 'worker-m',
+        });
+        expect(await claim(run.id, 'worker-n')).toBeNull();
+        releaseVideo.release();
+        // That worker goes on with the run once its media is done.
+        expect(await execution).toBe('completed');
+        expect(media.video).toEqual([{ resume: undefined }, { resume: TASK }]);
+        expect(lastSceneAfterRetry).toBe(1);
+        expect((await mediaOf(run.id)).gen_vid_1).toMatchObject({ status: 'done' });
+      },
+    );
 
     it('fails the media of a paused or completed run whose workers keep dying', async () => {
       const { services } = mediaServices({
@@ -2795,38 +2807,42 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       expect(await readGenerationRun(run.id, OWNER)).toMatchObject({ mediaPending: false });
     });
 
-    it('fails a held image loud when its bytes are gone before its scene is written', async () => {
-      const stored = gate();
-      const { services } = mediaServices({
-        mediaConnections: async () => ({ image: OFF, video: ready('seedance') }),
-        sceneContent: async (owner, input, ctx) => {
-          if (input.outline.id === 'o2') await stored.promise;
-          return fakeServices().services.sceneContent(owner, input, ctx);
-        },
-      });
-      const run = await start(runInput({ outlineReview: 'auto' }));
-      const execution = drive(run.id, services);
-      await vi.waitFor(async () => {
-        const video = (await mediaOf(run.id)).gen_vid_1;
-        expect(video?.status).toBe('stored');
-      });
-      // The pool lost the held bytes.
-      const assetId = (await mediaOf(run.id)).gen_vid_1!.assetId as string;
-      await pool.query('DELETE FROM asset_entries WHERE id = $1', [assetId]);
-      stored.release();
-      expect(await execution).toBe('completed');
-      expect((await mediaOf(run.id)).gen_vid_1).toEqual({
-        mediaType: 'video',
-        status: 'failed',
-        message: 'The stored video was gone before its scene was written',
-      });
-      const document = (await documentStore(OWNER).loadDocument(
-        (await readGenerationRun(run.id, OWNER))!.stageId!,
-      ))!;
-      expect(
-        elementsOf(document.scenes[1]).find((element) => element.type === 'video')!.mediaRef,
-      ).toBe('gen_vid_1');
-    });
+    it(
+      'fails a held image loud when its bytes are gone before its scene is written',
+      { timeout: SLOW_TEST_MS },
+      async () => {
+        const stored = gate();
+        const { services } = mediaServices({
+          mediaConnections: async () => ({ image: OFF, video: ready('seedance') }),
+          sceneContent: async (owner, input, ctx) => {
+            if (input.outline.id === 'o2') await stored.promise;
+            return fakeServices().services.sceneContent(owner, input, ctx);
+          },
+        });
+        const run = await start(runInput({ outlineReview: 'auto' }));
+        const execution = drive(run.id, services);
+        await vi.waitFor(async () => {
+          const video = (await mediaOf(run.id)).gen_vid_1;
+          expect(video?.status).toBe('stored');
+        }, UNTIL);
+        // The pool lost the held bytes.
+        const assetId = (await mediaOf(run.id)).gen_vid_1!.assetId as string;
+        await pool.query('DELETE FROM asset_entries WHERE id = $1', [assetId]);
+        stored.release();
+        expect(await execution).toBe('completed');
+        expect((await mediaOf(run.id)).gen_vid_1).toEqual({
+          mediaType: 'video',
+          status: 'failed',
+          message: 'The stored video was gone before its scene was written',
+        });
+        const document = (await documentStore(OWNER).loadDocument(
+          (await readGenerationRun(run.id, OWNER))!.stageId!,
+        ))!;
+        expect(
+          elementsOf(document.scenes[1]).find((element) => element.type === 'video')!.mediaRef,
+        ).toBe('gen_vid_1');
+      },
+    );
 
     it('deleting a completed course whose media is being retried ends the run', async () => {
       const { services } = mediaServices({
@@ -3109,42 +3125,46 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       return { services, started, aborted };
     }
 
-    it('keeps the allocations of live runs alive while it runs', async () => {
-      const { services } = fakeServices({
-        research: async () => null,
-        analyzeMaterials: async () => ({
-          text: 'material text',
-          images: [{ id: 'img_1', pageNumber: 1, bytes: CLIP, mimeType: 'image/png' }],
-        }),
-      });
-      const run = await start(runInput({ materialIds: ['mat-1'] }));
-      expect(await drive(run.id, services)).toBe('waiting');
-      const assetId = (
-        (await readGenerationRunSteps(run.id)).get('material-analysis') as {
-          imageMapping: Record<string, string>;
-        }
-      ).imageMapping.img_1!;
-      await pool.query(
-        "UPDATE asset_entries SET expires_at = now() + interval '1 minute' WHERE id = $1",
-        [assetId],
-      );
-      const runner = startGenerationRunner({
-        services,
-        workerId: 'keepalive',
-        config: { scanIntervalMs: 60_000 },
-      });
-      try {
-        await vi.waitFor(async () => {
-          const row = await pool.query<{ expires_at: Date }>(
-            'SELECT expires_at FROM asset_entries WHERE id = $1',
-            [assetId],
-          );
-          expect(row.rows[0]!.expires_at.getTime()).toBeGreaterThan(Date.now() + 60 * 60 * 1000);
+    it(
+      'keeps the allocations of live runs alive while it runs',
+      { timeout: SLOW_TEST_MS },
+      async () => {
+        const { services } = fakeServices({
+          research: async () => null,
+          analyzeMaterials: async () => ({
+            text: 'material text',
+            images: [{ id: 'img_1', pageNumber: 1, bytes: CLIP, mimeType: 'image/png' }],
+          }),
         });
-      } finally {
-        await runner.stop();
-      }
-    });
+        const run = await start(runInput({ materialIds: ['mat-1'] }));
+        expect(await drive(run.id, services)).toBe('waiting');
+        const assetId = (
+          (await readGenerationRunSteps(run.id)).get('material-analysis') as {
+            imageMapping: Record<string, string>;
+          }
+        ).imageMapping.img_1!;
+        await pool.query(
+          "UPDATE asset_entries SET expires_at = now() + interval '1 minute' WHERE id = $1",
+          [assetId],
+        );
+        const runner = startGenerationRunner({
+          services,
+          workerId: 'keepalive',
+          config: { scanIntervalMs: 60_000 },
+        });
+        try {
+          await vi.waitFor(async () => {
+            const row = await pool.query<{ expires_at: Date }>(
+              'SELECT expires_at FROM asset_entries WHERE id = $1',
+              [assetId],
+            );
+            expect(row.rows[0]!.expires_at.getTime()).toBeGreaterThan(Date.now() + 60 * 60 * 1000);
+          }, UNTIL);
+        } finally {
+          await runner.stop();
+        }
+      },
+    );
 
     it('stops without a lease-lost warning when the run was ended on purpose', async () => {
       const { services, started, aborted } = blockingServices();
