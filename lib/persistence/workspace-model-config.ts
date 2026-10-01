@@ -17,6 +17,7 @@
  * claim moves the row to the account unless the account has one already.
  */
 import type { Queryable } from '@openmaic/storage/document/pg';
+import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
 import { encodeJson } from '@openmaic/storage/pg-json';
 import {
   nodePostgresTransaction,
@@ -41,8 +42,13 @@ CREATE TABLE IF NOT EXISTS workspace_model_config (
 )
 `;
 
+export const WORKSPACE_MODEL_CONFIG_MIGRATIONS: SchemaMigrationSet = {
+  store: 'workspace-model-config',
+  migrations: [{ version: 1, name: 'baseline', up: WORKSPACE_MODEL_CONFIG_SCHEMA }],
+};
+
 export async function ensureWorkspaceModelConfigSchema(queryable: Queryable): Promise<void> {
-  await queryable.query(WORKSPACE_MODEL_CONFIG_SCHEMA);
+  await applySchemaMigrations(queryable, WORKSPACE_MODEL_CONFIG_MIGRATIONS);
   await ensureOwnerMergeSchema(queryable);
 }
 

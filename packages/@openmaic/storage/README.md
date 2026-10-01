@@ -176,6 +176,45 @@ a browser.
   retried as it is. Both are recognized across copies of the package by name
   and shape (`isDocumentWriteRefusedError`, `isStorageBusyError`).
 
+## PostgreSQL schema migrations
+
+Each PostgreSQL backend is a *store* with an ordered list of versioned
+migrations (`DOCUMENT_PG_MIGRATIONS`, `RUNTIME_PG_MIGRATIONS`,
+`ASSET_PG_MIGRATIONS`, `AGENT_SESSION_PG_MIGRATIONS`,
+`AGENT_SESSION_MATERIAL_PG_MIGRATIONS`, `USER_SKILL_PG_MIGRATIONS`). The
+`ensure*Schema` functions apply the pending ones with `applySchemaMigrations`
+(`@openmaic/storage/pg-migrations`) and are safe to call on every start:
+
+- Version 1 is the baseline, the idempotent DDL earlier releases ran on every
+  start, so it upgrades a database any earlier release created in place.
+  One-time and destructive steps are later versions and run once per database.
+- What ran is recorded in `openmaic_schema_migrations (store, version, name,
+  checksum, applied_at)`, in the first schema of the `search_path`. A table-name
+  override is a store of its own (`user-skill:<table>`, ...).
+- A run takes an advisory lock for its whole duration, so instances starting
+  together apply each migration once. Each migration runs in one transaction
+  with its record unless it sets `transaction: false` (the agent-session
+  constraint installs, which must release their lock before validating).
+- A database that records a newer version of a store than the code knows is
+  refused with `SchemaVersionAheadError`: it was upgraded by a newer release.
+- A recorded checksum that differs from the code's is a
+  `SchemaMigrationChecksumError` outside production and a warning under
+  `NODE_ENV=production`, where the migration has already run and stopping the
+  service would change nothing.
+- Pass a pool, a checked-out client or a single-connection driver (PGlite),
+  never a connection that is inside a transaction.
+
+**Adding a migration.** Append `{ version: <last + 1>, name, up }` to the
+store's list, with `up` as SQL (split into statements, PGlite-compatible) or an
+async function of the queryable. Never edit, reorder or remove a migration that
+has shipped; its checksum is recorded on every database it ran on. A migration
+that cannot run in a transaction (`CREATE INDEX CONCURRENTLY`) sets
+`transaction: false` and must be idempotent, because a failure leaves it
+unrecorded and it runs again on the next start. The `*_PG_SCHEMA` constants are
+every migration's SQL concatenated, for hosts that provision with their own
+tooling; such a host should still call the `ensure*Schema` functions, which then
+only record the versions.
+
 ## Upgrading from 0.1.x
 
 Version 0.2.0 removes `BrowserAssetProvider` outright; it no longer ships. The

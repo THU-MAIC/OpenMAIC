@@ -8,6 +8,7 @@
  * read the row, and that must never depend on a merge of the record.
  */
 import type { Queryable } from '@openmaic/storage/document/pg';
+import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
 
 // Jobs are only ever read by id, so the primary key is the only index.
 const SCHEMA = `
@@ -19,6 +20,11 @@ CREATE TABLE IF NOT EXISTS classroom_generation_jobs (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )`;
 
+export const CLASSROOM_GENERATION_JOB_MIGRATIONS: SchemaMigrationSet = {
+  store: 'classroom-generation-jobs',
+  migrations: [{ version: 1, name: 'baseline', up: SCHEMA }],
+};
+
 export async function ensureClassroomGenerationJobSchema(queryable: Queryable): Promise<void> {
-  await queryable.query(SCHEMA);
+  await applySchemaMigrations(queryable, CLASSROOM_GENERATION_JOB_MIGRATIONS);
 }

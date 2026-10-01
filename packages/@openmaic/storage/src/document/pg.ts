@@ -56,12 +56,14 @@ import {
 } from '../asset/references.js';
 import { assertJsonValue, isLosslessJsonString } from '../runtime/json-value.js';
 import { encodeJson } from '../pg-json.js';
+import { applySchemaMigrations, type SchemaMigrationSet } from '../pg-migrations.js';
 import { asStorageLockUnavailable } from '../runtime/pg.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
 export type { QueryResult, Queryable, WithTransaction } from '../runtime/pg.js';
 export type { DocumentOwnershipRelation } from './ownership.js';
 export { StorageLockUnavailableError, type StorageLockUnavailableReason } from '../runtime/pg.js';
+export { splitSqlStatements } from '../pg-migrations.js';
 
 export interface PgDocumentStoreOptions {
   /**
@@ -193,8 +195,8 @@ export class DocumentAssetReferencesDisabledError extends Error {
   }
 }
 
-/** Idempotent schema for the PostgreSQL document backend. */
-export const DOCUMENT_PG_SCHEMA = `
+/** Baseline (version 1) of the document schema: the DDL every start ran before migrations were versioned. */
+const DOCUMENT_PG_BASELINE = `
 CREATE TABLE IF NOT EXISTS document_folders (
   owner_id TEXT NOT NULL,
   id TEXT NOT NULL,
@@ -226,45 +228,6 @@ CREATE TABLE IF NOT EXISTS document_stages (
 
 ALTER TABLE document_stages
   ADD COLUMN IF NOT EXISTS folder_id TEXT;
-
--- Document ownership is not recorded here: a host keeps it in its own
--- relation (see DocumentOwnershipRelation). An installation created before
--- that keeps its owner_id column for one release -- so a rollback still finds
--- it, and a host can copy it into its relation first -- but nothing reads or
--- writes it any more, and the next release drops it. A NOT NULL or a default
--- a host added to it would fail or mislabel every new document, so both are
--- relaxed. The catalog is asked first, and each ALTER runs only when it has
--- something to change: an ALTER naming a column that is not there is an error,
--- and one with nothing to change would still take an exclusive table lock on
--- every boot. The indexes below served only the column.
-DO $document_stages_owner_retirement$
-BEGIN
-  IF EXISTS (
-    SELECT 1
-      FROM pg_attribute
-     WHERE attrelid = to_regclass('document_stages')
-       AND attname = 'owner_id'
-       AND NOT attisdropped
-       AND attnotnull
-  ) THEN
-    ALTER TABLE document_stages ALTER COLUMN owner_id DROP NOT NULL;
-  END IF;
-  IF EXISTS (
-    SELECT 1
-      FROM pg_attribute
-     WHERE attrelid = to_regclass('document_stages')
-       AND attname = 'owner_id'
-       AND NOT attisdropped
-       AND atthasdef
-  ) THEN
-    ALTER TABLE document_stages ALTER COLUMN owner_id DROP DEFAULT;
-  END IF;
-END
-$document_stages_owner_retirement$;
-
-DROP INDEX IF EXISTS document_stages_owner_idx;
-
-DROP INDEX IF EXISTS document_stages_owner_folder_idx;
 
 CREATE INDEX IF NOT EXISTS document_stages_folder_idx
   ON document_stages (folder_id, id) WHERE folder_id IS NOT NULL;
@@ -395,92 +358,84 @@ FOR EACH ROW EXECUTE FUNCTION openmaic_bump_stage_revision();
 `;
 
 /**
- * Split a DDL string into individual statements. A plain `split(';')` would
- * carve the `BEGIN ... END;` blocks inside the dollar-quoted plpgsql trigger
- * bodies into bogus statements, so the splitter skips over single-quoted
- * strings, double-quoted identifiers, `$$...$$` / `$tag$...$tag$` bodies, and
- * `--` line comments and slash-star block comments.
+ * Version 2: retire `document_stages.owner_id` on databases that still have
+ * it. A one-time step, so it no longer runs on every start.
  */
-export function splitSqlStatements(sql: string): string[] {
-  const statements: string[] = [];
-  let current = '';
-  let i = 0;
-  const end = sql.length;
-  while (i < end) {
-    const rest = sql.slice(i);
-    const ch = sql[i];
-    if (ch === ';') {
-      statements.push(current);
-      current = '';
-      i += 1;
-      continue;
-    }
-    if (ch === '-' && rest.startsWith('--')) {
-      const newline = rest.indexOf('\n');
-      const lineEnd = newline === -1 ? end : i + newline + 1;
-      current += sql.slice(i, lineEnd);
-      i = lineEnd;
-      continue;
-    }
-    if (ch === '/' && rest.startsWith('/*')) {
-      const close = rest.indexOf('*/', 2);
-      const blockEnd = close === -1 ? end : i + close + 2;
-      current += sql.slice(i, blockEnd);
-      i = blockEnd;
-      continue;
-    }
-    if (ch === "'" || ch === '"') {
-      // Single-quoted string literal or double-quoted identifier; the quote
-      // is escaped by doubling, and an unterminated run consumes the rest.
-      current += ch;
-      i += 1;
-      while (i < end) {
-        current += sql[i];
-        if (sql[i] === ch) {
-          if (sql[i + 1] === ch) {
-            current += sql[i + 1];
-            i += 2;
-            continue;
-          }
-          i += 1;
-          break;
-        }
-        i += 1;
-      }
-      continue;
-    }
-    if (ch === '$') {
-      const tag = /^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/.exec(rest)?.[0];
-      if (tag) {
-        const close = rest.indexOf(tag, tag.length);
-        if (close !== -1) {
-          current += rest.slice(0, close + tag.length);
-          i += close + tag.length;
-          continue;
-        }
-      }
-    }
-    current += ch;
-    i += 1;
-  }
-  return statements.map((statement) => statement.trim()).filter((statement) => statement !== '');
-}
+const DOCUMENT_PG_OWNER_COLUMN_RETIREMENT = `
+-- Document ownership is not recorded here: a host keeps it in its own
+-- relation (see DocumentOwnershipRelation). An installation created before
+-- that keeps its owner_id column for one release -- so a rollback still finds
+-- it, and a host can copy it into its relation first -- but nothing reads or
+-- writes it any more, and the next release drops it. A NOT NULL or a default
+-- a host added to it would fail or mislabel every new document, so both are
+-- relaxed. The catalog is asked first, and each ALTER runs only when it has
+-- something to change: an ALTER naming a column that is not there is an error,
+-- and one with nothing to change would still take an exclusive table lock on
+-- every boot. The indexes below served only the column.
+DO $document_stages_owner_retirement$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM pg_attribute
+     WHERE attrelid = to_regclass('document_stages')
+       AND attname = 'owner_id'
+       AND NOT attisdropped
+       AND attnotnull
+  ) THEN
+    ALTER TABLE document_stages ALTER COLUMN owner_id DROP NOT NULL;
+  END IF;
+  IF EXISTS (
+    SELECT 1
+      FROM pg_attribute
+     WHERE attrelid = to_regclass('document_stages')
+       AND attname = 'owner_id'
+       AND NOT attisdropped
+       AND atthasdef
+  ) THEN
+    ALTER TABLE document_stages ALTER COLUMN owner_id DROP DEFAULT;
+  END IF;
+END
+$document_stages_owner_retirement$;
+
+DROP INDEX IF EXISTS document_stages_owner_idx;
+
+DROP INDEX IF EXISTS document_stages_owner_folder_idx;
+`;
+
+/** The document backend's migrations, recorded under the store `document`. */
+export const DOCUMENT_PG_MIGRATIONS: SchemaMigrationSet = {
+  store: 'document',
+  migrations: [
+    { version: 1, name: 'baseline', up: DOCUMENT_PG_BASELINE },
+    {
+      version: 2,
+      name: 'retire_document_stages_owner_id',
+      up: DOCUMENT_PG_OWNER_COLUMN_RETIREMENT,
+    },
+  ],
+};
 
 /**
- * Create the tables owned by this backend when absent. Safe to call repeatedly;
- * changing an existing table requires a real migration.
+ * The whole document schema as one idempotent script: every migration's SQL,
+ * in order. {@link ensureDocumentSchema} runs it through the migration runner;
+ * this is for a host that provisions the tables with its own tooling.
+ */
+export const DOCUMENT_PG_SCHEMA = DOCUMENT_PG_MIGRATIONS.migrations
+  .map((migration) => migration.up)
+  .join('');
+
+/**
+ * Create the tables owned by this backend, or bring an existing database up to
+ * date, by applying the pending {@link DOCUMENT_PG_MIGRATIONS}. Safe to call on
+ * every start; a schema change is a new migration.
  *
- * Not safe to call from several sessions at once: `IF NOT EXISTS` and
- * `CREATE OR REPLACE` are not atomic across sessions, so two instances
- * starting together can fail on a catalog race. A host that starts several
- * instances serializes its schema bootstrap, for example under a
- * `pg_advisory_lock` held on one connection for the whole sequence.
+ * Runs are serialized across sessions (see `applySchemaMigrations`). A host
+ * that provisions several stores in one sequence, some of whose DDL depends on
+ * this one, may still serialize the whole sequence itself, for example under a
+ * `pg_advisory_lock` held on one connection.
  */
 export async function ensureDocumentSchema(queryable: Queryable): Promise<void> {
-  // Keep Queryable minimal and PGlite-compatible: issue one statement at a time.
-  for (const statement of splitSqlStatements(DOCUMENT_PG_SCHEMA)) {
-    await queryable.query(statement);
-  }
+  await applySchemaMigrations(queryable, DOCUMENT_PG_MIGRATIONS);
 }
 
 const STAGE_REV_SQL = `

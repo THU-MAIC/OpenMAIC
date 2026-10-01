@@ -1,5 +1,6 @@
 import { DocumentNotFoundError } from '@openmaic/storage';
 import type { Queryable } from '@openmaic/storage/document/pg';
+import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
 
 import { ensureLegacyImportBindingSchema } from './legacy-import-bindings';
 import { ensureOwnerMergeSchema } from './owner-merges';
@@ -76,7 +77,8 @@ export interface LegacyOwnerAdoption {
  * existing ownership row is never touched (`ON CONFLICT DO NOTHING`), so a
  * second boot adopts nothing, and where the two records disagree `stage_meta`
  * stands and the disagreement is counted for an operator. A database created
- * without the column has nothing to adopt.
+ * without the column has nothing to adopt. Runs once per database, as
+ * migration 2 of `stage-meta`.
  */
 export async function adoptLegacyDocumentOwners(
   queryable: Queryable,
@@ -104,31 +106,19 @@ export async function adoptLegacyDocumentOwners(
 }
 
 /**
- * Ensure the schema, and adopt owned documents that have no ownership row.
+ * Version 2: adopt owned documents that have no ownership row.
  *
  * The adoption ({@link adoptLegacyDocumentOwners}) is a backfill for databases
  * written before `stage_meta` existed, and must run before anything serves a
- * course: nothing else reads the owner recorded on a document row. It runs at
- * provider startup, outside any request, so it records ownership **without**
- * the host create hooks (`authorizeCreate` / `onCreate`): there is no request,
- * principal, or create transaction to run them in. On a database this version
- * created, every course is claimed with its hooks at creation and the
- * backfill adopts nothing; when it does adopt, it says how many so an operator
- * can reconcile any host rows those courses lack.
+ * course: nothing else reads the owner recorded on a document row. It runs
+ * once per database, at provider startup and outside any request, so it
+ * records ownership **without** the host create hooks (`authorizeCreate` /
+ * `onCreate`): there is no request, principal, or create transaction to run
+ * them in. On a database this version created, every course is claimed with
+ * its hooks at creation and the backfill adopts nothing; when it does adopt, it
+ * says how many so an operator can reconcile any host rows those courses lack.
  */
-export async function ensureStageMetaSchema(queryable: Queryable): Promise<void> {
-  for (const sql of STAGE_META_SCHEMA.split(';')) {
-    const statement = sql.trim();
-    if (statement === '') continue;
-    await queryable.query(statement);
-  }
-  // The record of ownership moving between owners (claims), provisioned with
-  // the record of ownership itself: every write path that checks one reads
-  // the other (see ./owner-merges.ts).
-  await ensureOwnerMergeSchema(queryable);
-  // Which owner a browser's pre-server data belongs to: a claim moves these
-  // with the rest of the owner's rows (see ./legacy-import-bindings.ts).
-  await ensureLegacyImportBindingSchema(queryable);
+async function adoptLegacyDocumentOwnersOnce(queryable: Queryable): Promise<void> {
   const { adopted, disagreeing } = await adoptLegacyDocumentOwners(queryable);
   if (adopted > 0) {
     console.warn(
@@ -142,6 +132,26 @@ export async function ensureStageMetaSchema(queryable: Queryable): Promise<void>
         'document_stages.owner_id column than in stage_meta; stage_meta is authoritative.',
     );
   }
+}
+
+export const STAGE_META_MIGRATIONS: SchemaMigrationSet = {
+  store: 'stage-meta',
+  migrations: [
+    { version: 1, name: 'baseline', up: STAGE_META_SCHEMA },
+    { version: 2, name: 'adopt_legacy_document_owners', up: adoptLegacyDocumentOwnersOnce },
+  ],
+};
+
+/** Ensure the schema of course ownership, the claim records and the import bindings. */
+export async function ensureStageMetaSchema(queryable: Queryable): Promise<void> {
+  await applySchemaMigrations(queryable, STAGE_META_MIGRATIONS);
+  // The record of ownership moving between owners (claims), provisioned with
+  // the record of ownership itself: every write path that checks one reads
+  // the other (see ./owner-merges.ts).
+  await ensureOwnerMergeSchema(queryable);
+  // Which owner a browser's pre-server data belongs to: a claim moves these
+  // with the rest of the owner's rows (see ./legacy-import-bindings.ts).
+  await ensureLegacyImportBindingSchema(queryable);
 }
 
 export async function readStageMeta(

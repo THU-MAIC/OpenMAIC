@@ -23,11 +23,13 @@ export const SCHEMA_BOOTSTRAP_LOCK_KEY = 71_310_523;
  * The lock is session-level and taken on one dedicated connection, which runs
  * every statement of `body` and is released in `finally`: the lock cannot be
  * held by a connection that went back to the pool, and a connection that dies
- * mid-bootstrap releases it with the session. It lives here, at the
- * application's bootstrap, rather than in each package `ensure*Schema`
- * function, because what must be serialized is the whole sequence -- package
- * tables and this application's own (`stage_meta`, owner materials) alike --
- * and every caller that provisions schema goes through this one helper.
+ * mid-bootstrap releases it with the session. Each store's versioned
+ * migrations (`applySchemaMigrations` in `@openmaic/storage/pg-migrations`)
+ * are serialized on their own as well; this lock, at the application's
+ * bootstrap, serializes the whole sequence -- package tables and this
+ * application's own (`stage_meta`, owner materials) alike, where one store's
+ * migrations depend on another's tables -- and every caller that provisions
+ * schema goes through this one helper.
  */
 export async function withSchemaBootstrapLock<T>(
   pool: ConnectableQueryable,

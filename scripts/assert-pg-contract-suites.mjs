@@ -63,6 +63,7 @@ const REQUIRED_SUITES = [
   'packages/@openmaic/storage/test/pg-runtime-store.pg.test.ts',
   'packages/@openmaic/storage/test/pg-scene-revision.pg.test.ts',
   'packages/@openmaic/storage/test/pg-asset-store.pg.test.ts',
+  'packages/@openmaic/storage/test/pg-schema-migrations.pg.test.ts',
 ];
 
 /**

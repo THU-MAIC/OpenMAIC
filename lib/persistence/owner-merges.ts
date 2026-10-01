@@ -29,6 +29,7 @@ import { createHash } from 'node:crypto';
 
 import { DocumentWriteRefusedError } from '@openmaic/storage';
 import type { Queryable } from '@openmaic/storage/document/pg';
+import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
 
 import { StorageBusyError } from '@openmaic/storage';
 
@@ -50,11 +51,13 @@ CREATE TABLE IF NOT EXISTS owner_merges (
 CREATE INDEX IF NOT EXISTS owner_merges_to_idx ON owner_merges (to_owner_id);
 `;
 
+export const OWNER_MERGE_MIGRATIONS: SchemaMigrationSet = {
+  store: 'owner-merges',
+  migrations: [{ version: 1, name: 'baseline', up: OWNER_MERGES_SCHEMA }],
+};
+
 export async function ensureOwnerMergeSchema(queryable: Queryable): Promise<void> {
-  for (const sql of OWNER_MERGES_SCHEMA.split(';')) {
-    const statement = sql.trim();
-    if (statement !== '') await queryable.query(statement);
-  }
+  await applySchemaMigrations(queryable, OWNER_MERGE_MIGRATIONS);
 }
 
 /**

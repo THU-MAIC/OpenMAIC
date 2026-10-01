@@ -21,7 +21,8 @@
  * its object first, then the reservation, so a crash mid-reclaim never loses
  * the pointer to the bytes.
  */
-import { splitSqlStatements, type Queryable } from '@openmaic/storage/document/pg';
+import type { Queryable } from '@openmaic/storage/document/pg';
+import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
 import { encodeJson } from '@openmaic/storage/pg-json';
 import {
   nodePostgresTransaction,
@@ -121,24 +122,32 @@ CREATE TABLE IF NOT EXISTS owner_material (
 
 CREATE INDEX IF NOT EXISTS owner_material_owner_created_idx
   ON owner_material (owner_id, created_at);
+`;
 
--- Databases created before the byte-store model have this table without
--- oss_key (they tracked an asset id instead); CREATE TABLE IF NOT EXISTS
--- leaves such tables untouched, so the column must be added here. The ''
--- default is the existing "no bytes recorded" sentinel the stale-upload
--- sweeper already understands. The old NOT NULL asset_id column must also
--- go, or its constraint rejects every insert of the new row shape.
+/**
+ * Version 2, the byte-store model. Databases created before it have this table
+ * without oss_key (they tracked an asset id instead); CREATE TABLE IF NOT
+ * EXISTS leaves such tables untouched, so the column must be added here. The
+ * '' default is the existing "no bytes recorded" sentinel the stale-upload
+ * sweeper already understands. The old NOT NULL asset_id column must also go,
+ * or its constraint rejects every insert of the new row shape. Destructive, so
+ * it runs once per database rather than on every start.
+ */
+const OWNER_MATERIAL_BYTE_STORE_KEY = `
 ALTER TABLE owner_material ADD COLUMN IF NOT EXISTS oss_key TEXT NOT NULL DEFAULT '';
 ALTER TABLE owner_material DROP COLUMN IF EXISTS asset_id;
 `;
 
+export const OWNER_MATERIAL_MIGRATIONS: SchemaMigrationSet = {
+  store: 'owner-material',
+  migrations: [
+    { version: 1, name: 'baseline', up: OWNER_MATERIAL_SCHEMA },
+    { version: 2, name: 'byte_store_key', up: OWNER_MATERIAL_BYTE_STORE_KEY },
+  ],
+};
+
 export async function ensureOwnerMaterialSchema(queryable: Queryable): Promise<void> {
-  // splitSqlStatements skips `--` line comments (and quoted strings), so a
-  // semicolon in the migration's prose can never split a statement mid-text
-  // the way a plain `split(';')` does.
-  for (const statement of splitSqlStatements(OWNER_MATERIAL_SCHEMA)) {
-    await queryable.query(statement);
-  }
+  await applySchemaMigrations(queryable, OWNER_MATERIAL_MIGRATIONS);
   // Registration fences on the claim records (./owner-merges.ts).
   await ensureOwnerMergeSchema(queryable);
 }

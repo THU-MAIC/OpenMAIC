@@ -11,6 +11,7 @@
  */
 import { randomBytes } from 'node:crypto';
 
+import { applySchemaMigrations, type SchemaMigrationSet } from '../pg-migrations.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 import {
   USER_SKILL_LIMIT,
@@ -111,30 +112,53 @@ function resolveTableNames(overrides?: Partial<UserSkillTableNames>): UserSkillT
   return names;
 }
 
-function schemaFor(names: UserSkillTableNames): string {
-  if (names.skills === DEFAULT_USER_SKILL_TABLE_NAMES.skills) return USER_SKILL_PG_SCHEMA;
+/** Rewrite default-name schema SQL for an overridden table name. */
+function renameTable(names: UserSkillTableNames, sql: string): string {
   const s = quoteIdentifier(names.skills);
   const unique = `${names.skills}_owner_name_unique`;
   const ownerIdx = `idx_${names.skills}_owner`;
   // Constraint/index names are rewritten first (they embed the default table
   // name), then the table-name occurrences themselves; only the CREATE TABLE
   // statement gets the quoted identifier.
-  return USER_SKILL_PG_SCHEMA.replaceAll('agent_user_skill_owner_name_unique', unique)
+  return sql
+    .replaceAll('agent_user_skill_owner_name_unique', unique)
     .replaceAll('idx_agent_user_skill_owner', ownerIdx)
     .replaceAll('agent_user_skill', names.skills)
     .replaceAll(`CREATE TABLE IF NOT EXISTS ${names.skills}`, `CREATE TABLE IF NOT EXISTS ${s}`);
 }
 
-/** Create the backend-owned table when absent; existing schemas require migrations. */
+/**
+ * The user-skill backend's migrations, for the default table name (recorded
+ * under the store `user-skill`).
+ */
+export const USER_SKILL_PG_MIGRATIONS: SchemaMigrationSet = {
+  store: 'user-skill',
+  migrations: [{ version: 1, name: 'baseline', up: USER_SKILL_PG_SCHEMA }],
+};
+
+/**
+ * Create the backend-owned table, or bring an existing database up to date, by
+ * applying the pending {@link USER_SKILL_PG_MIGRATIONS}. Safe to call on every
+ * start; a schema change is a new migration.
+ */
 export async function ensureUserSkillSchema(
   queryable: Queryable,
   tableNames?: Partial<UserSkillTableNames>,
 ): Promise<void> {
-  const schema = schemaFor(resolveTableNames(tableNames));
-  for (const sql of schema.split(';')) {
-    const statement = sql.trim();
-    if (statement !== '') await queryable.query(statement);
+  const names = resolveTableNames(tableNames);
+  if (names.skills === DEFAULT_USER_SKILL_TABLE_NAMES.skills) {
+    await applySchemaMigrations(queryable, USER_SKILL_PG_MIGRATIONS);
+    return;
   }
+  // An overridden table is its own store, recorded apart from the default one.
+  await applySchemaMigrations(
+    queryable,
+    {
+      store: `user-skill:${names.skills}`,
+      migrations: USER_SKILL_PG_MIGRATIONS.migrations,
+    },
+    { rewriteSql: (sql) => renameTable(names, sql) },
+  );
 }
 
 interface UserSkillRow extends Record<string, unknown> {

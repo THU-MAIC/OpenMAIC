@@ -75,6 +75,8 @@ describe('PgAgentSessionMaterialStore with PGlite', () => {
     // so `CREATE TABLE IF NOT EXISTS` cannot add it. CASCADE also drops the
     // partial unique index that depends on the column.
     await db.query('ALTER TABLE agent_session_materials DROP COLUMN owner_material_id CASCADE');
+    // ...and that release recorded no schema versions.
+    await db.query(`DELETE FROM openmaic_schema_migrations WHERE store = 'agent-session-material'`);
     const sessions = new PgAgentSessionStore(db, {
       withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),
     });
