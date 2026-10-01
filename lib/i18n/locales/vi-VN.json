@@ -1311,6 +1311,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "iflytek": "iFlytek Spark",
       "tokendance": "TokenDance",
       "lemonade": "Lemonade (Cục bộ)",
       "ollama": "Ollama (Cục bộ)",
@@ -1338,7 +1339,9 @@
       "xiaomiPayg": "Trả theo mức dùng",
       "xiaomiTokenPlanCN": "Gói token Trung Quốc",
       "xiaomiTokenPlanSGP": "Gói token Singapore",
-      "xiaomiTokenPlanEU": "Gói token châu Âu"
+      "xiaomiTokenPlanEU": "Gói token châu Âu",
+      "iflytekPayg": "Trả theo mức dùng",
+      "iflytekTokenPlan": "Gói token"
     },
     "contextShort": "ngữ cảnh",
     "resetToDefaultDescription": "Đưa danh sách model về cấu hình mặc định (khóa API và địa chỉ gốc vẫn được giữ)",

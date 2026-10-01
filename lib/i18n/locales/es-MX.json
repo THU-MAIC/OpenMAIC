@@ -1311,6 +1311,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "iflytek": "iFlytek Spark",
       "tokendance": "TokenDance",
       "lemonade": "Lemonade (local)",
       "ollama": "Ollama (local)",
@@ -1338,7 +1339,9 @@
       "xiaomiPayg": "Pago por uso",
       "xiaomiTokenPlanCN": "Plan de tokens CN",
       "xiaomiTokenPlanSGP": "Plan de tokens SG",
-      "xiaomiTokenPlanEU": "Plan de tokens EU"
+      "xiaomiTokenPlanEU": "Plan de tokens EU",
+      "iflytekPayg": "Pago por uso",
+      "iflytekTokenPlan": "Plan de tokens"
     },
     "contextShort": "ctx",
     "resetToDefaultDescription": "Restaura la lista de modelos a la configuración predeterminada (se conservarán la clave API y la URL base)",

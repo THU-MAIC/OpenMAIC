@@ -486,6 +486,8 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('xiaomi', 'mimo-v2-omni')]: toggleCapability('xiaomi'),
   [getModelMetadataKey('xiaomi', 'mimo-v2-flash')]: toggleCapability('xiaomi'),
 
+  [getModelMetadataKey('iflytek', 'spark-x2.5')]: toggleCapability('iflytek'),
+
   [getModelMetadataKey('lemonade', 'Qwen3-4B-GGUF')]: lemonadeToggleBudget,
   [getModelMetadataKey('lemonade', 'Qwen3.5-4B-GGUF')]: lemonadeToggleBudget,
   [getModelMetadataKey('lemonade', 'Gemma-4-26B-A4B-it-GGUF')]: lemonadeToggleBudget,
