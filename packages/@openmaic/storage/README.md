@@ -186,34 +186,55 @@ migrations (`DOCUMENT_PG_MIGRATIONS`, `RUNTIME_PG_MIGRATIONS`,
 (`@openmaic/storage/pg-migrations`) and are safe to call on every start:
 
 - Version 1 is the baseline, the idempotent DDL earlier releases ran on every
-  start, so it upgrades a database any earlier release created in place.
-  One-time and destructive steps are later versions and run once per database.
+  start, so it upgrades a database any earlier release created in place. It
+  runs statement by statement, outside a transaction, so it takes the same
+  short locks the earlier bootstrap took, and it is recorded only after its
+  last statement succeeded; a start that dies part-way runs it again.
+  One-time and destructive steps are later versions, each in one transaction
+  with its record, and run once per database.
 - What ran is recorded in `openmaic_schema_migrations (store, version, name,
   checksum, applied_at)`, in the first schema of the `search_path`. A table-name
   override is a store of its own (`user-skill:<table>`, ...).
-- A run takes an advisory lock for its whole duration, so instances starting
-  together apply each migration once. Each migration runs in one transaction
-  with its record unless it sets `transaction: false` (the agent-session
-  constraint installs, which must release their lock before validating).
+- A run takes a session-level advisory lock for its whole duration, waiting at
+  most `lockTimeoutMs` (default five minutes) before failing with
+  `SchemaLockTimeoutError`, so instances starting together apply each
+  migration once. This needs a direct or session-pooled connection; a pooler
+  in transaction mode (PgBouncer `pool_mode = transaction`) is not supported.
 - A database that records a newer version of a store than the code knows is
   refused with `SchemaVersionAheadError`: it was upgraded by a newer release.
+  `verifySchemaMigrations(queryable, sets)` makes the same check read-only,
+  creating nothing, for a host that refuses such a database at startup.
 - A recorded checksum that differs from the code's is a
   `SchemaMigrationChecksumError` outside production and a warning under
   `NODE_ENV=production`, where the migration has already run and stopping the
   service would change nothing.
-- Pass a pool, a checked-out client or a single-connection driver (PGlite),
-  never a connection that is inside a transaction.
+- Pass a pool (one connection is checked out for the run), a checked-out pool
+  client, a connected `pg.Client`, or PGlite. A connection inside an open
+  transaction is refused with `SchemaMigrationInTransactionError`, because the
+  runner's own transactions would commit or roll back the caller's work.
 
 **Adding a migration.** Append `{ version: <last + 1>, name, up }` to the
 store's list, with `up` as SQL (split into statements, PGlite-compatible) or an
 async function of the queryable. Never edit, reorder or remove a migration that
 has shipped; its checksum is recorded on every database it ran on. A migration
 that cannot run in a transaction (`CREATE INDEX CONCURRENTLY`) sets
-`transaction: false` and must be idempotent, because a failure leaves it
-unrecorded and it runs again on the next start. The `*_PG_SCHEMA` constants are
-every migration's SQL concatenated, for hosts that provision with their own
-tooling; such a host should still call the `ensure*Schema` functions, which then
-only record the versions.
+`transaction: false` and must be idempotent statement by statement, because a
+failure leaves it unrecorded and it runs again on the next start.
+
+**Hosts that provision with their own tooling.** The `*_PG_SCHEMA` constants are
+every migration's SQL concatenated. A host that ran them itself should still
+call the `ensure*Schema` functions: on a database with no versions recorded
+they run every migration again, which is idempotent on such a database, and
+record them.
+
+**Going back to an older release.** An older release that knows versioned
+migrations refuses a database a newer one has recorded higher versions on.
+Restoring a backup taken before the upgrade is the safe way back. If the newer
+versions are known to be compatible with the older code, an operator may
+instead delete their rows (`DELETE FROM openmaic_schema_migrations WHERE store
+= '<store>' AND version > <highest the older release knows>`); the schema
+changes they made are not undone, and the newer release applies them again
+when it next starts.
 
 ## Upgrading from 0.1.x
 

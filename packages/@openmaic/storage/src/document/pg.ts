@@ -406,7 +406,7 @@ DROP INDEX IF EXISTS document_stages_owner_folder_idx;
 export const DOCUMENT_PG_MIGRATIONS: SchemaMigrationSet = {
   store: 'document',
   migrations: [
-    { version: 1, name: 'baseline', up: DOCUMENT_PG_BASELINE },
+    { version: 1, name: 'baseline', up: DOCUMENT_PG_BASELINE, transaction: false },
     {
       version: 2,
       name: 'retire_document_stages_owner_id',

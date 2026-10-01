@@ -133,7 +133,7 @@ function renameTable(names: UserSkillTableNames, sql: string): string {
  */
 export const USER_SKILL_PG_MIGRATIONS: SchemaMigrationSet = {
   store: 'user-skill',
-  migrations: [{ version: 1, name: 'baseline', up: USER_SKILL_PG_SCHEMA }],
+  migrations: [{ version: 1, name: 'baseline', up: USER_SKILL_PG_SCHEMA, transaction: false }],
 };
 
 /**

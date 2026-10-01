@@ -195,7 +195,9 @@ export const ASSET_PG_SCHEMA: readonly string[] = [
 /** The asset backend's migrations, recorded under the store `asset`. */
 export const ASSET_PG_MIGRATIONS: SchemaMigrationSet = {
   store: 'asset',
-  migrations: [{ version: 1, name: 'baseline', up: ASSET_PG_SCHEMA.join(';\n') }],
+  migrations: [
+    { version: 1, name: 'baseline', up: ASSET_PG_SCHEMA.join(';\n'), transaction: false },
+  ],
 };
 
 /**

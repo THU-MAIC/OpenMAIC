@@ -161,7 +161,7 @@ CREATE INDEX IF NOT EXISTS runtime_records_session_scene_idx
 /** The runtime backend's migrations, recorded under the store `runtime`. */
 export const RUNTIME_PG_MIGRATIONS: SchemaMigrationSet = {
   store: 'runtime',
-  migrations: [{ version: 1, name: 'baseline', up: RUNTIME_PG_SCHEMA }],
+  migrations: [{ version: 1, name: 'baseline', up: RUNTIME_PG_SCHEMA, transaction: false }],
 };
 
 /**

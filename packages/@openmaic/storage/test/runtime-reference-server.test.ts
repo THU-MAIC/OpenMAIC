@@ -235,7 +235,8 @@ describe('reference HTTP handler principal capabilities', () => {
     const statements: string[] = [];
     const query = async (text: string) => {
       statements.push(text);
-      return { rows: [] };
+      // The schema migration lock is granted; nothing else answers rows.
+      return { rows: text.includes('pg_try_advisory_lock') ? [{ locked: true }] : [] };
     };
     const pool = {
       query,
@@ -298,7 +299,9 @@ describe('reference server asset byte egress', () => {
   }
 
   function queryable(): ConnectableQueryable {
-    const query = async () => ({ rows: [] });
+    const query = async (text: string) => ({
+      rows: text.includes('pg_try_advisory_lock') ? [{ locked: true }] : [],
+    });
     return {
       query,
       connect: async () => ({ query, release: () => undefined }),

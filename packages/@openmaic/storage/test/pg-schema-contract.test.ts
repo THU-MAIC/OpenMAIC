@@ -553,6 +553,10 @@ function recordingQueryable(): { statements: string[]; queryable: Queryable } {
     queryable: {
       async query<TRow extends Record<string, unknown>>(text: string) {
         statements.push(text);
+        // The migration runner's lock is granted; every other query answers
+        // no rows, so the runner sees nothing recorded and applies everything.
+        if (text.includes('pg_try_advisory_lock'))
+          return { rows: [{ locked: true }] as unknown as TRow[] };
         return { rows: [] as TRow[] };
       },
     },
@@ -569,7 +573,9 @@ function recordingQueryable(): { statements: string[]; queryable: Queryable } {
 function schemaStatements(statements: string[]): string[] {
   return statements.filter(
     (statement) =>
-      !/pg_advisory_(un)?lock|openmaic_schema_migrations/.test(statement) &&
+      !/pg_(try_)?advisory_(un)?lock|openmaic_schema_migrations|schema_migration_probe/.test(
+        statement,
+      ) &&
       statement !== 'BEGIN' &&
       statement !== 'COMMIT',
   );

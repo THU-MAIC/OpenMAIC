@@ -6,7 +6,7 @@
  * Works in a schema of its own (every pool sets `search_path`), so it shares
  * nothing but advisory locks with the other suites on the contract database.
  */
-import { Pool } from 'pg';
+import { Client, Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { ensureAgentSessionSchema } from '../src/agent-session/pg.js';
@@ -14,6 +14,9 @@ import { ensureAssetSchema } from '../src/asset/pg.js';
 import { ensureDocumentSchema } from '../src/document/pg.js';
 import { ensureAgentSessionMaterialSchema } from '../src/material/pg.js';
 import {
+  SCHEMA_MIGRATION_LOCK_KEY,
+  SchemaLockTimeoutError,
+  SchemaMigrationInTransactionError,
   SchemaVersionAheadError,
   applySchemaMigrations,
   type MigrationQueryable,
@@ -156,6 +159,100 @@ describe.skipIf(!contractUrl)('schema migrations (PostgreSQL)', () => {
       await check.end();
     }
   }, 60_000);
+
+  describe('on every kind of connection', () => {
+    const versions = async (): Promise<number[]> => {
+      const check = instancePool();
+      try {
+        const result = await check.query<{ version: number }>(
+          `SELECT version FROM openmaic_schema_migrations WHERE store = 'runtime'`,
+        );
+        return result.rows.map((row) => row.version);
+      } finally {
+        await check.end();
+      }
+    };
+
+    it('a pool, checking one connection out', async () => {
+      const pool = instancePool();
+      try {
+        await ensureSchema(pool);
+      } finally {
+        await pool.end();
+      }
+      expect(await versions()).toEqual([1]);
+    });
+
+    it('a client checked out of a pool', async () => {
+      const pool = instancePool();
+      const client = await pool.connect();
+      try {
+        await ensureSchema(client);
+      } finally {
+        client.release();
+        await pool.end();
+      }
+      expect(await versions()).toEqual([1]);
+    });
+
+    it('a connected node-postgres Client', async () => {
+      const client = new Client({
+        connectionString: contractUrl,
+        options: `-c search_path=${TEST_SCHEMA}`,
+      });
+      await client.connect();
+      try {
+        await ensureSchema(client);
+        await ensureSchema(client);
+      } finally {
+        await client.end();
+      }
+      expect(await versions()).toEqual([1]);
+    });
+
+    it("refuses a connection inside an open transaction, leaving the caller's work alone", async () => {
+      const client = new Client({
+        connectionString: contractUrl,
+        options: `-c search_path=${TEST_SCHEMA}`,
+      });
+      await client.connect();
+      try {
+        await client.query('CREATE TABLE caller_work (id TEXT)');
+        await client.query('BEGIN');
+        await client.query(`INSERT INTO caller_work VALUES ('pending')`);
+        await expect(ensureSchema(client)).rejects.toBeInstanceOf(
+          SchemaMigrationInTransactionError,
+        );
+        await client.query('ROLLBACK');
+        expect((await client.query('SELECT 1 FROM caller_work')).rows).toEqual([]);
+        expect((await client.query(`SELECT to_regclass('runtime_sessions') AS t`)).rows).toEqual([
+          { t: null },
+        ]);
+      } finally {
+        await client.end();
+      }
+    });
+  });
+
+  it('gives up waiting for a held migration lock, naming it', async () => {
+    const holder = new Client({ connectionString: contractUrl });
+    await holder.connect();
+    const pool = instancePool();
+    try {
+      await holder.query('SELECT pg_advisory_lock($1::bigint)', [SCHEMA_MIGRATION_LOCK_KEY]);
+      const waited = applySchemaMigrations(
+        pool,
+        { store: 'probe', migrations: [{ version: 1, name: 'baseline', up: 'SELECT 1' }] },
+        { lockTimeoutMs: 300 },
+      );
+      await expect(waited).rejects.toBeInstanceOf(SchemaLockTimeoutError);
+      await expect(waited).rejects.toThrow(/schema migration lock/);
+    } finally {
+      await holder.query('SELECT pg_advisory_unlock($1::bigint)', [SCHEMA_MIGRATION_LOCK_KEY]);
+      await holder.end();
+      await pool.end();
+    }
+  });
 
   it('every instance refuses a database a newer release upgraded', async () => {
     const pool = instancePool();

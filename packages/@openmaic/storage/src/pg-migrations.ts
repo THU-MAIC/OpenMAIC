@@ -6,6 +6,11 @@
  * idempotent DDL the store ran on every start before migrations were
  * versioned, so it is safe on a fresh database and on any database an earlier
  * release created. Everything after it runs exactly once per database.
+ * Baselines run with `transaction: false`: their statements are idempotent one
+ * by one, and running them one by one keeps the locks they take as short as
+ * the pre-versioned bootstrap kept them (an `ALTER TABLE ... ADD COLUMN IF NOT
+ * EXISTS` takes ACCESS EXCLUSIVE even when the column exists, and inside one
+ * transaction it would hold it until the whole baseline committed).
  *
  * What ran is recorded in `openmaic_schema_migrations`, one row per store and
  * version, with a checksum of the migration as it ran. On every start
@@ -18,12 +23,20 @@
  * - compares the checksums of applied migrations with the code's, and fails
  *   (development and test) or warns (`NODE_ENV=production`) on a difference;
  * - applies the pending migrations in order, each in its own transaction unless
- *   the migration opts out, recording it in the same transaction.
+ *   the migration opts out, recording it in the same transaction (or, for one
+ *   that opts out, after its last statement succeeded).
  *
- * Runs are serialized across sessions by an advisory lock held for the whole
- * run, so two instances starting together apply each migration once. A host
- * that provisions several stores in one sequence may still hold a lock of its
- * own around all of them; the two do not conflict.
+ * Runs are serialized across sessions by a session-level advisory lock held
+ * for the whole run, waited on for a bounded time, so two instances starting
+ * together apply each migration once. A host that provisions several stores in
+ * one sequence may still hold a lock of its own around all of them; the two do
+ * not conflict. Session-level locks and multi-statement transactions need a
+ * direct or session-pooled connection: a pooler in transaction mode (PgBouncer
+ * `pool_mode = transaction`) is not supported.
+ *
+ * {@link verifySchemaMigrations} is the read-only half: it checks recorded
+ * versions and checksums without creating or changing anything, for a host
+ * that wants to refuse a database at startup before its lazy stores run.
  *
  * ## Adding a migration
  *
@@ -54,7 +67,13 @@ export interface SchemaMigration {
    * of a function migration covers its version and name only.
    */
   readonly up: string | ((queryable: MigrationQueryable) => Promise<void>);
-  /** Run inside one transaction with its record. Defaults to `true`. */
+  /**
+   * Run inside one transaction with its record. Defaults to `true`. `false`
+   * runs each statement on its own, as the pre-versioned bootstrap did, and
+   * records the migration after the last one succeeded; every statement must
+   * then be idempotent, because a failure part-way leaves the migration
+   * unrecorded and it runs again from the start.
+   */
   readonly transaction?: boolean;
 }
 
@@ -71,6 +90,12 @@ export interface ApplySchemaMigrationsOptions {
    * so a rewrite does not change them.
    */
   rewriteSql?: (sql: string) => string;
+  /**
+   * How long to wait for another session's run to release the migration lock
+   * before failing with {@link SchemaLockTimeoutError}. Defaults to
+   * {@link DEFAULT_SCHEMA_LOCK_TIMEOUT_MS}.
+   */
+  lockTimeoutMs?: number;
 }
 
 /** The database records a version of a store newer than the running code knows. */
@@ -108,6 +133,67 @@ export class SchemaMigrationChecksumError extends Error {
   }
 }
 
+/** A session-level advisory lock was not granted within its wait budget. */
+export class SchemaLockTimeoutError extends Error {
+  constructor(
+    readonly lockName: string,
+    readonly lockKey: number,
+    readonly timeoutMs: number,
+  ) {
+    super(
+      `@openmaic/storage: timed out after ${timeoutMs} ms waiting for the ${lockName} ` +
+        `(pg_advisory_lock ${lockKey}); another session holds it, most likely another ` +
+        'instance applying schema changes. Retry once it finishes.',
+    );
+    this.name = 'SchemaLockTimeoutError';
+  }
+}
+
+/**
+ * Raised when a migration run is asked to start on a connection that is inside
+ * a transaction. The runner opens and commits transactions of its own, which
+ * would commit or roll back the caller's work with them.
+ */
+export class SchemaMigrationInTransactionError extends Error {
+  constructor(readonly store: string) {
+    super(
+      `@openmaic/storage: schema migrations of ${JSON.stringify(store)} were asked to run on a ` +
+        'connection inside an open transaction. They manage their own transactions, so they ' +
+        "would commit or roll back the caller's work; run them on a connection outside a " +
+        'transaction.',
+    );
+    this.name = 'SchemaMigrationInTransactionError';
+  }
+}
+
+/** The default wait for a schema advisory lock: five minutes. */
+export const DEFAULT_SCHEMA_LOCK_TIMEOUT_MS = 5 * 60 * 1000;
+
+const LOCK_POLL_MS = 100;
+
+/**
+ * Take a session-level advisory lock on `session`, polling with
+ * `pg_try_advisory_lock` until it is granted or `timeoutMs` passes. Bounded so
+ * a stuck holder fails a start with a clear error instead of hanging it.
+ */
+export async function acquireSessionAdvisoryLock(
+  session: MigrationQueryable,
+  key: number,
+  { name, timeoutMs = DEFAULT_SCHEMA_LOCK_TIMEOUT_MS }: { name: string; timeoutMs?: number },
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const result = await session.query<{ locked: boolean }>(
+      'SELECT pg_try_advisory_lock($1::bigint) AS locked',
+      [key],
+    );
+    if (result.rows[0]?.locked === true) return;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new SchemaLockTimeoutError(name, key, timeoutMs);
+    await new Promise((resolve) => setTimeout(resolve, Math.min(LOCK_POLL_MS, remaining)));
+  }
+}
+
 /** The table the runner records applied migrations in. */
 export const SCHEMA_MIGRATIONS_TABLE = 'openmaic_schema_migrations';
 
@@ -137,12 +223,41 @@ interface PoolLike extends MigrationQueryable {
 
 /**
  * A pool hands each query to any of its connections, which would split a
- * transaction across sessions; the runner checks one out instead. A checked-out
- * client has `release`, a pool does not.
+ * transaction (and a session lock) across sessions, so the runner checks one
+ * connection out instead. Told apart from a single connection by shape:
+ *
+ * - a client checked out of a pool has `release`;
+ * - a node-postgres `Client` has `connect` too (to open itself), but carries
+ *   `processID`, which a pool does not;
+ * - PGlite has no `connect` at all.
+ *
+ * Anything else with `connect` and neither of those is used as a pool.
  */
 function isPool(queryable: MigrationQueryable): queryable is PoolLike {
   const candidate = queryable as Partial<PoolLike> & { release?: unknown };
-  return typeof candidate.connect === 'function' && typeof candidate.release !== 'function';
+  return (
+    typeof candidate.connect === 'function' &&
+    typeof candidate.release !== 'function' &&
+    !('processID' in candidate)
+  );
+}
+
+/**
+ * Whether `session` is inside an open transaction: a transaction-local setting
+ * made by one statement is still visible to the next only inside one (outside,
+ * each statement is its own transaction). Asked with two plain reads, so a
+ * server's log sees nothing from it; the setting is cleared again when found.
+ * Timestamp comparisons (`now()` against `statement_timestamp()`) are not used
+ * because a single-user engine such as PGlite does not keep them apart.
+ */
+async function isInsideTransaction(session: MigrationQueryable): Promise<boolean> {
+  await session.query(`SELECT set_config('openmaic.schema_migration_probe', 'on', true)`);
+  const result = await session.query<{ inside: boolean }>(
+    `SELECT current_setting('openmaic.schema_migration_probe', true) = 'on' AS inside`,
+  );
+  if (result.rows[0]?.inside !== true) return false;
+  await session.query(`SELECT set_config('openmaic.schema_migration_probe', '', true)`);
+  return true;
 }
 
 function assertWellFormed(set: SchemaMigrationSet): void {
@@ -237,13 +352,52 @@ async function runMigration(
   }
 }
 
+async function readRecorded(
+  session: MigrationQueryable,
+  stores: readonly string[],
+): Promise<Map<string, Map<number, string>>> {
+  const recorded = await session.query<RecordedMigrationRow & { store: string }>(
+    `SELECT store, version, checksum FROM ${SCHEMA_MIGRATIONS_TABLE}
+      WHERE store = ANY($1::text[]) ORDER BY store, version`,
+    [stores],
+  );
+  const byStore = new Map<string, Map<number, string>>();
+  for (const row of recorded.rows) {
+    let versions = byStore.get(row.store);
+    if (!versions) byStore.set(row.store, (versions = new Map()));
+    versions.set(Number(row.version), row.checksum);
+  }
+  return byStore;
+}
+
+/** Refuse a newer recorded version; report an edited applied migration. */
+function checkRecorded(
+  set: SchemaMigrationSet,
+  applied: ReadonlyMap<number, string>,
+  checksums: readonly string[],
+): void {
+  const newest = Math.max(0, ...applied.keys());
+  if (newest > set.migrations.length) {
+    throw new SchemaVersionAheadError(set.store, newest, set.migrations.length);
+  }
+  for (const [version, recordedChecksum] of applied) {
+    const checksum = checksums[version - 1]!;
+    if (recordedChecksum !== checksum) {
+      reportChecksumMismatch(
+        new SchemaMigrationChecksumError(set.store, version, recordedChecksum, checksum),
+      );
+    }
+  }
+}
+
 /**
  * Bring one store's schema up to the newest version this code knows, and
  * answer the versions this call applied.
  *
  * `queryable` is a pool (one connection is checked out for the run), a
- * checked-out client, or a single-connection driver such as PGlite, and must
- * not be inside a transaction.
+ * checked-out pool client, a connected node-postgres `Client`, or a
+ * single-connection driver such as PGlite. It must not be inside a
+ * transaction: that is refused with {@link SchemaMigrationInTransactionError}.
  */
 export async function applySchemaMigrations(
   queryable: MigrationQueryable,
@@ -256,27 +410,15 @@ export async function applySchemaMigrations(
   const client = isPool(queryable) ? await queryable.connect() : undefined;
   const session = client ?? queryable;
   try {
-    await session.query('SELECT pg_advisory_lock($1::bigint)', [SCHEMA_MIGRATION_LOCK_KEY]);
+    if (await isInsideTransaction(session)) throw new SchemaMigrationInTransactionError(set.store);
+    await acquireSessionAdvisoryLock(session, SCHEMA_MIGRATION_LOCK_KEY, {
+      name: 'schema migration lock',
+      ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }),
+    });
     try {
       await session.query(SCHEMA_MIGRATIONS_TABLE_SQL);
-      const recorded = await session.query<RecordedMigrationRow>(
-        `SELECT version, checksum FROM ${SCHEMA_MIGRATIONS_TABLE}
-          WHERE store = $1 ORDER BY version`,
-        [set.store],
-      );
-      const applied = new Map(recorded.rows.map((row) => [Number(row.version), row.checksum]));
-      const newest = Math.max(0, ...applied.keys());
-      if (newest > set.migrations.length) {
-        throw new SchemaVersionAheadError(set.store, newest, set.migrations.length);
-      }
-      for (const [version, recordedChecksum] of applied) {
-        const checksum = checksums[version - 1]!;
-        if (recordedChecksum !== checksum) {
-          reportChecksumMismatch(
-            new SchemaMigrationChecksumError(set.store, version, recordedChecksum, checksum),
-          );
-        }
-      }
+      const applied = (await readRecorded(session, [set.store])).get(set.store) ?? new Map();
+      checkRecorded(set, applied, checksums);
       const appliedNow: number[] = [];
       for (const migration of set.migrations) {
         if (applied.has(migration.version)) continue;
@@ -295,6 +437,34 @@ export async function applySchemaMigrations(
     }
   } finally {
     client?.release();
+  }
+}
+
+/**
+ * Check, without creating or changing anything, that the database records no
+ * version of these stores newer than the code knows and that every applied
+ * migration still has its recorded checksum. Throws what
+ * {@link applySchemaMigrations} would throw for the same records; a database
+ * with no record table (nothing applied yet) passes. Takes no lock: it only
+ * reads, and a run that is applying migrations meanwhile only adds versions
+ * this code knows.
+ */
+export async function verifySchemaMigrations(
+  queryable: MigrationQueryable,
+  sets: readonly SchemaMigrationSet[],
+): Promise<void> {
+  sets.forEach(assertWellFormed);
+  const present = await queryable.query<{ present: boolean }>(
+    `SELECT to_regclass('${SCHEMA_MIGRATIONS_TABLE}') IS NOT NULL AS present`,
+  );
+  if (present.rows[0]?.present !== true) return;
+  const recorded = await readRecorded(
+    queryable,
+    sets.map((set) => set.store),
+  );
+  for (const set of sets) {
+    const checksums = await Promise.all(set.migrations.map(schemaMigrationChecksum));
+    checkRecorded(set, recorded.get(set.store) ?? new Map(), checksums);
   }
 }
 

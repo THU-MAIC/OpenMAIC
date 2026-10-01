@@ -10,8 +10,10 @@ import {
 } from '../src/material/pg.js';
 import {
   SchemaMigrationChecksumError,
+  SchemaMigrationInTransactionError,
   SchemaVersionAheadError,
   applySchemaMigrations,
+  verifySchemaMigrations,
   schemaMigrationChecksum,
   splitSqlStatements,
   type MigrationQueryable,
@@ -109,11 +111,14 @@ describe('schema migrations with PGlite', () => {
 
     await ensureAll(recording);
 
-    // Per store: the lock, the record table, the version read, the unlock.
-    expect(statements).toHaveLength(STORES.length * 4);
-    expect(statements.every((sql) => /pg_advisory|openmaic_schema_migrations/.test(sql))).toBe(
-      true,
-    );
+    // Per store: the two-read transaction check, the lock, the record table,
+    // the version read, the unlock.
+    expect(statements).toHaveLength(STORES.length * 6);
+    expect(
+      statements.every((sql) =>
+        /schema_migration_probe|pg_(try_)?advisory|openmaic_schema_migrations/.test(sql),
+      ),
+    ).toBe(true);
   });
 
   test('upgrades a database a 1.1.x start provisioned, keeping its rows', async () => {
@@ -329,6 +334,90 @@ describe('schema migrations with PGlite', () => {
     expect(viaPool).not.toHaveBeenCalled();
     expect(released).toHaveBeenCalledTimes(1);
     expect((await records(db, 'runtime')).map((row) => row.version)).toEqual([1]);
+  });
+
+  test("refuses to run inside the caller's transaction, leaving it untouched", async () => {
+    await db.query('CREATE TABLE caller_work (id TEXT)');
+    await db.query('BEGIN');
+    await db.query(`INSERT INTO caller_work VALUES ('pending')`);
+
+    await expect(ensureSchema(db)).rejects.toBeInstanceOf(SchemaMigrationInTransactionError);
+
+    // The caller's transaction is still open and still holds its write.
+    await db.query('ROLLBACK');
+    expect((await db.query('SELECT 1 FROM caller_work')).rows).toEqual([]);
+    expect((await db.query(`SELECT to_regclass('runtime_sessions') AS t`)).rows).toEqual([
+      { t: null },
+    ]);
+  });
+
+  test('a baseline is recorded only after its last statement succeeded, and re-runs cleanly', async () => {
+    let fail = true;
+    const set = (): SchemaMigrationSet => ({
+      store: 'probe',
+      migrations: [
+        {
+          version: 1,
+          name: 'baseline',
+          transaction: false,
+          up: fail
+            ? 'CREATE TABLE IF NOT EXISTS probe (id TEXT); ALTER TABLE missing ADD COLUMN x TEXT'
+            : 'CREATE TABLE IF NOT EXISTS probe (id TEXT); ALTER TABLE probe ADD COLUMN IF NOT EXISTS x TEXT',
+        },
+      ],
+    });
+
+    await expect(applySchemaMigrations(db, set())).rejects.toThrow(/baseline/);
+    expect(await records(db, 'probe')).toEqual([]);
+    // A crash part-way: the next start runs the whole baseline again.
+    fail = false;
+    await expect(applySchemaMigrations(db, set())).resolves.toEqual([1]);
+    expect(await columnExists(db, 'probe', 'x')).toBe(true);
+  });
+
+  test('every shipped baseline runs outside a transaction', () => {
+    for (const { set } of STORES) {
+      expect(set.migrations[0]).toMatchObject({ version: 1, name: 'baseline', transaction: false });
+    }
+  });
+
+  describe('verifySchemaMigrations', () => {
+    const sets = STORES.map(({ set }) => set);
+
+    test('passes a database with nothing recorded, and creates nothing', async () => {
+      await verifySchemaMigrations(db, sets);
+      expect(
+        (await db.query(`SELECT to_regclass('openmaic_schema_migrations') AS t`)).rows,
+      ).toEqual([{ t: null }]);
+    });
+
+    test('passes a database this code provisioned', async () => {
+      await ensureAll(db);
+      await expect(verifySchemaMigrations(db, sets)).resolves.toBeUndefined();
+    });
+
+    test('refuses a newer version of any store, provisioned or not', async () => {
+      await ensureSchema(db);
+      await db.query(
+        `INSERT INTO openmaic_schema_migrations (store, version, name, checksum)
+         VALUES ('user-skill', 2, 'from_a_newer_release', 'x')`,
+      );
+      await expect(verifySchemaMigrations(db, sets)).rejects.toMatchObject({
+        name: 'SchemaVersionAheadError',
+        store: 'user-skill',
+      });
+    });
+
+    test('reports an edited applied migration like the runner does', async () => {
+      await ensureSchema(db);
+      await db.query(
+        `UPDATE openmaic_schema_migrations SET checksum = 'x' WHERE store = 'runtime'`,
+      );
+      vi.stubEnv('NODE_ENV', 'test');
+      await expect(verifySchemaMigrations(db, sets)).rejects.toBeInstanceOf(
+        SchemaMigrationChecksumError,
+      );
+    });
   });
 
   test('the splitter keeps a last statement that has no semicolon', () => {

@@ -143,7 +143,9 @@ function renameTable(names: AgentSessionMaterialTableNames, sql: string): string
  */
 export const AGENT_SESSION_MATERIAL_PG_MIGRATIONS: SchemaMigrationSet = {
   store: 'agent-session-material',
-  migrations: [{ version: 1, name: 'baseline', up: AGENT_SESSION_MATERIAL_PG_SCHEMA }],
+  migrations: [
+    { version: 1, name: 'baseline', up: AGENT_SESSION_MATERIAL_PG_SCHEMA, transaction: false },
+  ],
 };
 
 /**
