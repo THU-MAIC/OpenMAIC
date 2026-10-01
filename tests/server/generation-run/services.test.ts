@@ -71,6 +71,7 @@ describe('run step services', () => {
     ['opus', 'audio/ogg'],
     ['aac', 'audio/aac'],
     ['flac', 'audio/flac'],
+    ['webm', 'audio/webm'],
   ])('stores a %s clip as %s', async (format, mimeType) => {
     mocks.synthesizeNarration.mockResolvedValue({ audio: new Uint8Array([1]), format });
     mocks.storeGeneratedAsset.mockReset().mockResolvedValue({ status: 'stored', assetId: 'ast_1' });

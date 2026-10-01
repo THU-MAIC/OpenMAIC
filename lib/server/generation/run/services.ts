@@ -118,6 +118,17 @@ export interface RunStepServices {
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
 }
 
+/**
+ * The media type of a narration clip in `format`: the classroom media types
+ * that are audio, and the containers that are audio when TTS returns them
+ * (webm), which the shared map types as video. Undefined for any other.
+ */
+function narrationMimeType(format: string): string | undefined {
+  if (format.toLowerCase() === 'webm') return 'audio/webm';
+  const mimeType = classroomMediaMimeType(`.${format}`);
+  return mimeType?.startsWith('audio/') ? mimeType : undefined;
+}
+
 /** The model of `stage` for the owner the run works for now (a claim may have moved it). */
 async function stageModel(ownerId: string, stage: LlmStage): Promise<ResolvedModel> {
   return resolveModel({ stage, workspaceId: await backgroundWorkspaceId(ownerId) });
@@ -286,8 +297,8 @@ export const defaultRunStepServices: RunStepServices = {
       ctx,
     );
     // The clip's real media type (mp3 is audio/mpeg), so it is served inline.
-    const mimeType = classroomMediaMimeType(`.${narration.format}`);
-    if (!mimeType || !mimeType.startsWith('audio/')) {
+    const mimeType = narrationMimeType(narration.format);
+    if (!mimeType) {
       throw new Error(`The TTS provider returned audio in an unknown format: ${narration.format}`);
     }
     const stored = await storeGeneratedAsset({

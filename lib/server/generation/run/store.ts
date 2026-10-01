@@ -632,6 +632,16 @@ export async function claimNextGenerationRun(
   return null;
 }
 
+/** The state a run is in now, or null for none (the runner's own reads). */
+export async function readGenerationRunState(runId: string): Promise<GenerationRunState | null> {
+  const { pool } = await provider();
+  const result = await pool.query<{ state: GenerationRunState }>(
+    'SELECT state FROM generation_runs WHERE id = $1',
+    [runId],
+  );
+  return result.rows[0]?.state ?? null;
+}
+
 /** Refresh the lease; false once it is no longer held. */
 export async function heartbeatGenerationRun(lease: RunLease): Promise<boolean> {
   const { pool } = await provider();

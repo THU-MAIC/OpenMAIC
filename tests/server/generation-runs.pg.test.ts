@@ -7,7 +7,7 @@
  */
 import { NextRequest } from 'next/server';
 import { Pool } from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
@@ -23,6 +23,7 @@ import {
   commitGenerationRun,
   confirmGenerationRunOutline,
   createGenerationRun,
+  discardGenerationRun,
   GenerationRunLeaseLostError,
   listActiveGenerationRuns,
   readGenerationRun,
@@ -1664,6 +1665,31 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       });
       return { services, started, aborted };
     }
+
+    it('stops without a lease-lost warning when the run was ended on purpose', async () => {
+      const { services, started, aborted } = blockingServices();
+      const run = await start();
+      const claimed = (await claim(run.id, 'worker-a'))!;
+      const warn = vi.spyOn(console, 'warn');
+      const log = vi.spyOn(console, 'log');
+      try {
+        const execution = runClaimedGenerationRun(claimed, services, new AbortController(), 20);
+        await started.promise;
+        // Discarding the pending course ends the run and takes its lease.
+        expect(await discardGenerationRun(run.id, OWNER)).toMatchObject({ state: 'ended' });
+        await aborted.promise;
+        expect(await execution).toBe('interrupted');
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const messages = (spy: typeof warn) => spy.mock.calls.map((call) => call.join(' '));
+        expect(messages(warn).some((message) => message.includes('lease lost'))).toBe(false);
+        expect(
+          messages(log).some((message) => message.includes('ended (its course was deleted)')),
+        ).toBe(true);
+      } finally {
+        warn.mockRestore();
+        log.mockRestore();
+      }
+    });
 
     it('aborts a local execution once its heartbeat finds the lease gone', async () => {
       const { services, started, aborted } = blockingServices();

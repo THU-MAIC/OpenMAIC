@@ -20,6 +20,7 @@ import {
   claimNextGenerationRun,
   compactFinishedGenerationRuns,
   heartbeatGenerationRun,
+  readGenerationRunState,
   releaseGenerationRunLease,
   type ClaimedRun,
 } from './store';
@@ -64,8 +65,18 @@ export async function runClaimedGenerationRun(
     void heartbeatGenerationRun(claim.lease)
       .then((held) => {
         if (!held && !released && !abort.signal.aborted) {
-          log.warn(`run ${claim.run.id}: lease lost; aborting local execution`);
           abort.abort();
+          // A run whose course was deleted ended on purpose; anything else
+          // (another worker took it over) is worth a warning.
+          void readGenerationRunState(claim.run.id)
+            .catch(() => null)
+            .then((state) => {
+              if (state === 'ended') {
+                log.info(`run ${claim.run.id}: ended (its course was deleted); stopping`);
+              } else {
+                log.warn(`run ${claim.run.id}: lease lost; aborting local execution`);
+              }
+            });
         }
       })
       .catch((error) => log.warn(`run ${claim.run.id}: heartbeat failed`, error));
