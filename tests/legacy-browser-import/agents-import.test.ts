@@ -328,4 +328,56 @@ describe('the custom agents import', () => {
     }
     expect(batches.length).toBeGreaterThan(1);
   });
+
+  it('serializes tabs: a tab that waited reads what is settled after the lock', async () => {
+    // One Web Lock manager shared by two tabs of the same browser.
+    let held = false;
+    const locks = {
+      request: async (
+        _name: string,
+        _options: { ifAvailable: boolean },
+        work: (lock: object | null) => Promise<unknown>,
+      ) => {
+        if (held) return work(null);
+        held = true;
+        try {
+          return await work({});
+        } finally {
+          held = false;
+        }
+      },
+    } as unknown as LockManager;
+    const storage = registryOf([{ ...custom, id: 'a' }]);
+    const owner = ownerServer(5);
+    const answer = deferred<void>();
+    const slow = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input === AGENTS_IMPORT_ENDPOINT) await answer.promise;
+      return owner.fetch(input, init);
+    });
+
+    const tabA = runAgentsImport({ fetch: slow, storage, locks });
+    await vi.waitFor(() => expect(slow).toHaveBeenCalledTimes(2));
+    const tabB = vi.fn((input: string, init?: RequestInit) => owner.fetch(input, init));
+    await expect(runAgentsImport({ fetch: tabB, storage, locks })).resolves.toMatchObject({
+      outcome: 'kept',
+      pending: [{ id: 'a', reason: 'importing in another tab' }],
+    });
+    expect(tabB).not.toHaveBeenCalled();
+
+    answer.resolve();
+    await expect(tabA).resolves.toMatchObject({ outcome: 'imported', imported: 1 });
+    owner.held.delete('a');
+    // Tab B's next attempt finds the import done and sends nothing.
+    await expect(runAgentsImport({ fetch: tabB, storage, locks })).resolves.toMatchObject({
+      outcome: 'none',
+    });
+    expect(tabB).not.toHaveBeenCalled();
+    expect(owner.held.has('a')).toBe(false);
+  });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => (resolve = res));
+  return { promise, resolve };
+}

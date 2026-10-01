@@ -18,6 +18,12 @@
  * for later loads. The agents go in batches that fit the route's limits. The
  * legacy key itself is never written or removed, and Clear Local Cache keeps
  * it until the ledger records the import.
+ *
+ * Runs are serialized across tabs with the Web Lock `AGENTS_IMPORT_LOCK_NAME`,
+ * and the settled ids are read and recorded under it. A tab that finds the
+ * lock taken leaves the import to that tab. Without Web Locks the tabs are not
+ * serialized: two tabs can then still both send an agent, and one the user
+ * deleted in between can be created again.
  */
 import { isBuiltInAgentId } from '@/lib/orchestration/registry/built-in';
 import {
@@ -27,6 +33,7 @@ import {
 } from '@/lib/orchestration/registry/schema';
 
 import { ensureLedger, loadLedger, saveLedger } from './ledger';
+import { defaultLocks, withImportLock } from './lock';
 import { defaultStorage, errorCategory, LOG_PREFIX } from './model-settings';
 import { BINDING_ENDPOINT, LEGACY_IMPORT_HEADER } from './protocol';
 
@@ -34,6 +41,9 @@ import { BINDING_ENDPOINT, LEGACY_IMPORT_HEADER } from './protocol';
 export const LEGACY_AGENT_REGISTRY_KEY = 'agent-registry-storage';
 
 export const AGENTS_IMPORT_ENDPOINT = '/api/agents/import';
+
+/** The Web Lock that serializes agents import runs across tabs. */
+export const AGENTS_IMPORT_LOCK_NAME = 'openmaic:legacy-agents-import';
 
 export type AgentsImportOutcome =
   /** Nothing to import, or this browser's agents were imported before. */
@@ -203,21 +213,51 @@ export function importBatches(agents: readonly Record<string, unknown>[]): {
 /** Server skip reasons that settle an agent: it is there, or never the owner's to import. */
 const SETTLED = new Set(['exists', 'built-in']);
 
+const NONE: AgentsImportResult = { outcome: 'none', imported: 0, pending: [] };
+
 /**
  * Send this browser's custom agents to the owner it is bound to. The import is
  * recorded in the ledger once nothing is pending; until then every load sends
  * the agents again (the server skips the ones it already has).
  */
 export async function runAgentsImport(
-  options: { fetch?: Fetch; storage?: ImportStorage | null } = {},
+  options: {
+    fetch?: Fetch;
+    storage?: ImportStorage | null;
+    /** `navigator.locks` by default; `null` runs without cross-tab locking. */
+    locks?: LockManager | null;
+  } = {},
 ): Promise<AgentsImportResult> {
-  const none: AgentsImportResult = { outcome: 'none', imported: 0, pending: [] };
   const storage = options.storage === undefined ? defaultStorage() : options.storage;
-  if (!storage) return none;
-  if (legacyAgentImportIsComplete(storage)) return none;
+  if (!storage) return NONE;
+  if (legacyAgentImportIsComplete(storage)) return NONE;
+  const locks = options.locks === undefined ? defaultLocks() : options.locks;
+  // One tab at a time: what is settled is read, and recorded, under the lock,
+  // so a tab cannot send an agent another tab imported and the user then
+  // deleted. Without Web Locks, tabs are not serialized and that race remains.
+  const outcome = await withImportLock(AGENTS_IMPORT_LOCK_NAME, locks, () =>
+    runAgentsImportLocked(storage, options.fetch),
+  );
+  if (outcome !== 'busy-elsewhere') return outcome;
+  return {
+    outcome: 'kept',
+    imported: 0,
+    pending: readLegacyCustomAgents(storage).map((agent) => ({
+      id: String(agent.id),
+      reason: 'importing in another tab',
+    })),
+  };
+}
+
+async function runAgentsImportLocked(
+  storage: ImportStorage,
+  fetchOption: Fetch | undefined,
+): Promise<AgentsImportResult> {
+  // Read again under the lock: another tab may have finished meanwhile.
+  if (legacyAgentImportIsComplete(storage)) return NONE;
   const all = readLegacyCustomAgents(storage);
   // No ledger is created for a browser that has nothing to import.
-  if (all.length === 0) return none;
+  if (all.length === 0) return NONE;
   const allIds = all.map((agent) => String(agent.id));
   const alreadySettled = new Set(loadLedger(storage as Storage)?.agentsSettled ?? []);
   const unresolved = all.filter((agent) => !alreadySettled.has(String(agent.id)));
@@ -236,10 +276,10 @@ export async function runAgentsImport(
   if (unresolved.length === 0) {
     // Every agent settled on earlier runs whose completion was not recorded.
     recordSettled(storage, [], allIds);
-    return none;
+    return NONE;
   }
 
-  const fetchImpl: Fetch = options.fetch ?? ((input, init) => fetch(input, init));
+  const fetchImpl: Fetch = fetchOption ?? ((input, init) => fetch(input, init));
   if (!(await bind(fetchImpl, browserId))) {
     return {
       outcome: 'kept',

@@ -238,6 +238,11 @@ runs it in the background (`importLegacyAgents`).
 - Empty optional fields of an old record (a voice without a provider or voice
   id, an empty model id, an incomplete voice design) are left out before it is
   sent.
+- Runs are serialized across tabs with the Web Lock
+  `openmaic:legacy-agents-import`; the settled ids are read and recorded
+  under it, and a tab that finds it taken leaves the import to that tab.
+  Without Web Locks tabs are not serialized, and an agent deleted while two
+  tabs import at once can be created again.
 - It runs in the background after the registry's first read of the owner's
   agents, in the registry's request queue, and the list is read again (queued
   after it) when it added any.

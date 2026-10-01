@@ -67,6 +67,7 @@ import {
   stillWaiting,
   type ImportLedger,
 } from './ledger';
+import { withImportLock } from './lock';
 import { connectImportServer, type ImportClients } from './server';
 import {
   legacyMediaCourseIndex,
@@ -155,16 +156,6 @@ function quizKeySceneIds(storage: Storage): Set<string> {
     if (key && prefix) scenes.add(key.slice(prefix.length));
   }
   return scenes;
-}
-
-async function withImportLock<T>(
-  locks: LockManager | null | undefined,
-  work: () => Promise<T>,
-): Promise<T | 'busy-elsewhere'> {
-  if (!locks) return work();
-  return locks.request(IMPORT_LOCK_NAME, { ifAvailable: true }, async (lock) =>
-    lock ? work() : ('busy-elsewhere' as const),
-  );
 }
 
 async function runLocked(
@@ -420,7 +411,9 @@ export async function runLegacyBrowserImport(
           ? navigator.locks
           : undefined
         : options.locks;
-    const outcome = await withImportLock(locks, () => runLocked(storage, options));
+    const outcome = await withImportLock(IMPORT_LOCK_NAME, locks, () =>
+      runLocked(storage, options),
+    );
     return outcome === 'busy-elsewhere' ? { status: 'busy-elsewhere' } : outcome;
   } catch (error) {
     // Defensive: nothing above should throw, but an importer bug must never
