@@ -88,6 +88,8 @@ import {
   slotVoice,
 } from './narration-voice';
 import {
+  doneOf,
+  endsLane,
   isMediaWork,
   mayGenerate,
   mediaEvent,
@@ -120,6 +122,7 @@ import {
   fenceGenerationRunWriteIn,
   hasMediaWorkIn,
   isGenerationRunLeaseLostError,
+  finishMediaOnlyRun,
   readGenerationRunMedia,
   readGenerationRunSteps,
   type ClaimedRun,
@@ -1006,28 +1009,33 @@ export async function executeGenerationRun(
   /**
    * Put the media stored for `scene` in its slots: the items waiting for it
    * become done with its write, and an item already placed elsewhere names
-   * its asset here too. A held allocation that expired meanwhile is queued
-   * again instead (nothing names it, so the pool reclaimed it).
+   * its asset here too. Held bytes are checked first: the run keeps them
+   * alive, so bytes that are gone are a fault, and the item fails loud (with
+   * a Retry) instead of the scene naming nothing.
    */
   const placeHeldMedia = async (scene: Scene): Promise<StepCommit> => {
     const placed: NonNullable<StepCommit['steps']> = [];
     const events: NewGenerationRunEvent[] = [];
+    owner = await currentOwnerOf(run.ownerId);
     for (const { request } of mediaItems()) {
       const checkpoint = mediaCheckpoint(request.elementId);
       if (checkpoint?.status !== 'stored' && checkpoint?.status !== 'done') continue;
       if (!sceneCarriesMediaReference(scene, request.elementId)) continue;
       if (checkpoint.status === 'stored' && !(await ownerAssetExists(owner, checkpoint.assetId))) {
-        const queued: GenerationRunMediaCheckpoint = { mediaType: request.type, status: 'queued' };
-        placed.push({ id: mediaStepId(request.elementId), output: queued });
-        events.push(mediaEvent(request.elementId, queued));
+        const failed: GenerationRunMediaCheckpoint = {
+          mediaType: request.type,
+          status: 'failed',
+          message: `The stored ${request.type} was gone before its scene was written`,
+        };
+        placed.push({ id: mediaStepId(request.elementId), output: failed });
+        events.push(mediaEvent(request.elementId, failed));
         continue;
       }
       placeInScene(scene, request.elementId, checkpoint);
       if (checkpoint.status === 'stored') {
-        placed.push({
-          id: mediaStepId(request.elementId),
-          output: { ...checkpoint, status: 'done' },
-        });
+        const done = doneOf(checkpoint);
+        placed.push({ id: mediaStepId(request.elementId), output: done });
+        events.push(mediaEvent(request.elementId, done));
       }
     }
     return { steps: placed, events };
@@ -1154,12 +1162,14 @@ export async function executeGenerationRun(
 
   /**
    * Place a Retry's media into a course that has completed, which its author
-   * may be editing meanwhile: each scene that holds the placeholder now is
-   * read and rewritten in one transaction, its other content untouched, and
-   * the stage row is touched so an open editor reloads. When the author
-   * removed the element (or its scene), the result is dropped and its bytes
-   * released: the item fails as {@link MEDIA_ELEMENT_REMOVED}, final, so the
-   * element is not resurrected and no Retry pays for media nothing shows.
+   * may be editing meanwhile. Each scene that holds the placeholder now is
+   * read and rewritten in one transaction (only the matched slots change),
+   * and the stage row is touched so an open editor reloads. The item is done
+   * with the last scene written, so a crash in between leaves it stored and
+   * the next execution places the rest. When the author removed the element
+   * (or its scene), the result is dropped and its bytes released: the item
+   * fails as {@link MEDIA_ELEMENT_REMOVED}, final, so the element is not
+   * resurrected and no Retry pays for media nothing shows.
    */
   const placeIntoCurrentCourse = (
     elementId: string,
@@ -1167,11 +1177,24 @@ export async function executeGenerationRun(
     events: NewGenerationRunEvent[],
   ): Promise<boolean> =>
     exclusive(async () => {
+      owner = await currentOwnerOf(run.ownerId);
       const stageId = agents().stage.id;
       const course = await loadRunCourse({ ownerId: owner, lease, stageId });
-      let placed = false;
-      for (const candidate of course.scenes) {
-        if (!sceneCarriesMediaReference(candidate as Scene, elementId)) continue;
+      const candidates = course.scenes.filter((scene) =>
+        sceneCarriesMediaReference(scene as Scene, elementId),
+      );
+      // Placed before an interruption: a scene already names these bytes.
+      let placed = course.scenes.some((scene) =>
+        sceneCarriesMediaReference(scene as Scene, checkpoint.assetId),
+      );
+      const finish = async (tx: Queryable) => {
+        await commitGenerationRunIn(tx, lease, {
+          step: { id: mediaStepId(elementId), output: checkpoint },
+          events,
+        });
+      };
+      for (const [position, candidate] of candidates.entries()) {
+        const last = position === candidates.length - 1;
         await mutateRunScene({
           ownerId: owner,
           lease,
@@ -1183,17 +1206,19 @@ export async function executeGenerationRun(
             return placeInScene(next, elementId, checkpoint) ? next : null;
           },
           after: async (tx, wrote) => {
-            if (!wrote) return;
-            await touchRunCourseIn(tx, stageId);
-            await commitGenerationRunIn(tx, lease, {
-              step: { id: mediaStepId(elementId), output: checkpoint },
-              events: placed ? [] : events,
-            });
-            placed = true;
+            if (wrote) {
+              await touchRunCourseIn(tx, stageId);
+              placed = true;
+            }
+            if (last && placed) await finish(tx);
           },
         });
       }
       if (placed) {
+        // Placed before an interruption, with no scene left to write: done now.
+        if (candidates.length === 0) {
+          await commit({ step: { id: mediaStepId(elementId), output: checkpoint }, events });
+        }
         steps.set(mediaStepId(elementId), checkpoint);
         return true;
       }
@@ -1221,6 +1246,7 @@ export async function executeGenerationRun(
 
   const lane: {
     running: Promise<void> | null;
+    /** What ended the lane and must end this execution (a lost lease or course). */
     failure: unknown;
     /** The pass of this execution queued what it found (and placed what a takeover left stored). */
     started: boolean;
@@ -1236,35 +1262,76 @@ export async function executeGenerationRun(
     abort: new AbortController(),
   };
 
+  /**
+   * A fault of the media pass itself (its slots could not be read, a write
+   * failed): the media work left fails, with a Retry, and the run goes on.
+   * Bytes already stored stay stored and are placed later.
+   */
+  const failMediaWork = async (fault: unknown, items: RunMediaItem[] = mediaItems()) => {
+    log.error(`run ${run.id}: the media pass failed; its remaining media fails`, fault);
+    const failed = items.flatMap(({ request }) => {
+      const current = mediaCheckpoint(request.elementId);
+      if (current && !isMediaWork(current)) return [];
+      const label = request.type === 'image' ? 'Image' : 'Video';
+      const checkpoint: GenerationRunMediaCheckpoint = {
+        mediaType: request.type,
+        status: 'failed',
+        message: `${label} generation failed`,
+        ...(current?.status === 'submitted' ? { task: current.task } : {}),
+      };
+      return [{ elementId: request.elementId, checkpoint }];
+    });
+    if (failed.length === 0) return;
+    await commit({
+      steps: failed.map(({ elementId, checkpoint }) => ({
+        id: mediaStepId(elementId),
+        output: checkpoint,
+      })),
+      events: failed.map(({ elementId, checkpoint }) => mediaEvent(elementId, checkpoint)),
+    });
+  };
+
+  const placeStoredMedia = async () => {
+    for (const { request } of mediaItems()) {
+      const checkpoint = mediaCheckpoint(request.elementId);
+      if (checkpoint?.status !== 'stored') continue;
+      const done = doneOf(checkpoint);
+      await placer()(request.elementId, done, [mediaEvent(request.elementId, done)]);
+    }
+  };
+
   const startLane = (place: boolean) => {
     lane.stopping = false;
     lane.abort = new AbortController();
+    const laneSignal = AbortSignal.any([signal, lane.abort.signal]);
     lane.running = (async () => {
-      if (place) {
+      try {
         // Bytes a takeover found stored go where their scenes are now.
-        for (const { request } of mediaItems()) {
-          const checkpoint = mediaCheckpoint(request.elementId);
-          if (checkpoint?.status !== 'stored') continue;
-          await placer()(request.elementId, { ...checkpoint, status: 'done' }, []);
-        }
+        if (place) await placeStoredMedia();
+        await runMediaLane({
+          runId: run.id,
+          lease,
+          signal: laneSignal,
+          services,
+          owner: () => owner,
+          refreshOwner: async () => {
+            owner = await currentOwnerOf(run.ownerId);
+          },
+          stageId: agents().stage.id,
+          outline: outline(),
+          items: mediaItems(),
+          steps,
+          commit,
+          place: placer(),
+          stopping: () => lane.stopping,
+          onItemStarted: (item) => {
+            lane.current = item;
+          },
+        });
+      } catch (error) {
+        if (endsLane(error, laneSignal)) throw error;
+        await failMediaWork(error);
       }
-      await runMediaLane({
-        runId: run.id,
-        lease,
-        signal: AbortSignal.any([signal, lane.abort.signal]),
-        services,
-        owner: () => owner,
-        stageId: agents().stage.id,
-        outline: outline(),
-        items: mediaItems(),
-        steps,
-        commit,
-        place: placer(),
-        stopping: () => lane.stopping,
-        onItemStarted: (item) => {
-          lane.current = item;
-        },
-      });
     })()
       .catch((error) => {
         lane.failure = error;
@@ -1278,10 +1345,49 @@ export async function executeGenerationRun(
   /** Adopt the media a Retry queued since this execution read the checkpoints. */
   const refreshMedia = async () => {
     for (const [elementId, checkpoint] of await readGenerationRunMedia(run.id)) {
-      if (checkpoint.status === 'queued' && mediaCheckpoint(elementId)?.status === 'failed') {
+      const current = mediaCheckpoint(elementId);
+      if (
+        (checkpoint.status === 'queued' || checkpoint.status === 'submitted') &&
+        (current?.status === 'failed' || current?.status === 'skipped')
+      ) {
         steps.set(mediaStepId(elementId), checkpoint);
       }
     }
+  };
+
+  /**
+   * The pass queues every item it may generate that has no answer yet, as the
+   * browser's pass enqueues its tasks; an item of a kind whose slot is off is
+   * skipped (the browser leaves it to its next pass, which a Retry stands for
+   * here), and one skipped before is queued once its slot resolves.
+   */
+  const queueMedia = async () => {
+    const open = mediaItems().filter(({ request }) => {
+      const current = mediaCheckpoint(request.elementId);
+      return !current || current.status === 'skipped';
+    });
+    if (open.length === 0) return;
+    let connections;
+    try {
+      connections = await services.mediaConnections(owner);
+    } catch (error) {
+      await failMediaWork(error, open);
+      return;
+    }
+    const decided = open.flatMap(({ request }) => {
+      const status: 'queued' | 'skipped' = mayGenerate(connections, request) ? 'queued' : 'skipped';
+      if (mediaCheckpoint(request.elementId)?.status === status) return [];
+      const checkpoint = { mediaType: request.type, status } as GenerationRunMediaCheckpoint;
+      return [{ elementId: request.elementId, checkpoint }];
+    });
+    if (decided.length === 0) return;
+    await commit({
+      steps: decided.map(({ elementId, checkpoint }) => ({
+        id: mediaStepId(elementId),
+        output: checkpoint,
+      })),
+      events: decided.map(({ elementId, checkpoint }) => mediaEvent(elementId, checkpoint)),
+    });
   };
 
   /** Keep the media pass going while the run generates, once the course exists. */
@@ -1292,30 +1398,15 @@ export async function executeGenerationRun(
     const first = !lane.started;
     if (first) {
       lane.started = true;
-      // The pass queues every item it may generate that has no answer yet, as
-      // the browser's pass enqueues its tasks.
-      const connections = await services.mediaConnections(owner);
-      const fresh = mediaItems().filter(
-        ({ request }) => !mediaCheckpoint(request.elementId) && mayGenerate(connections, request),
-      );
-      if (fresh.length > 0) {
-        const queued = fresh.map(({ request }) => ({
-          elementId: request.elementId,
-          checkpoint: { mediaType: request.type, status: 'queued' } as GenerationRunMediaCheckpoint,
-        }));
-        await commit({
-          steps: queued.map(({ elementId, checkpoint }) => ({
-            id: mediaStepId(elementId),
-            output: checkpoint,
-          })),
-          events: queued.map(({ elementId, checkpoint }) => mediaEvent(elementId, checkpoint)),
-        });
-      }
+      await queueMedia();
     }
     if (first || hasMediaWork()) startLane(first);
   };
 
-  /** Wait until every media item has an answer (Retries queued meanwhile included). */
+  /**
+   * Wait until every media item has an answer (Retries queued meanwhile
+   * included), and place the stored bytes a scene holds the placeholder of.
+   */
   const settleMedia = async () => {
     for (;;) {
       if (lane.running) await lane.running;
@@ -1323,11 +1414,12 @@ export async function executeGenerationRun(
       await refreshMedia();
       if (!lane.started || hasMediaWork()) {
         await ensureMediaLane();
-        if (!lane.running) return;
+        if (!lane.running) break;
         continue;
       }
-      return;
+      break;
     }
+    await placeStoredMedia();
   };
 
   /** Stop the pass: after the image in hand; a video's wait resumes on its task later. */
@@ -1338,13 +1430,24 @@ export async function executeGenerationRun(
   };
 
   /** Bytes stored for a placeholder no scene holds: the course is complete without them. */
-  const unplacedMedia = (): NonNullable<StepCommit['steps']> =>
-    mediaItems().flatMap(({ request }) => {
+  const unplacedMedia = (): {
+    steps: NonNullable<StepCommit['steps']>;
+    events: NewGenerationRunEvent[];
+  } => {
+    const done = mediaItems().flatMap(({ request }) => {
       const checkpoint = mediaCheckpoint(request.elementId);
       return checkpoint?.status === 'stored'
-        ? [{ id: mediaStepId(request.elementId), output: { ...checkpoint, status: 'done' } }]
+        ? [{ elementId: request.elementId, checkpoint: doneOf(checkpoint) }]
         : [];
     });
+    return {
+      steps: done.map(({ elementId, checkpoint }) => ({
+        id: mediaStepId(elementId),
+        output: checkpoint,
+      })),
+      events: done.map(({ elementId, checkpoint }) => mediaEvent(elementId, checkpoint)),
+    };
+  };
 
   const pause = async (stepId: string, message: string) => {
     // Content generated ahead stops before the run pauses, and so does the
@@ -1378,9 +1481,10 @@ export async function executeGenerationRun(
         if (await hasMediaWorkIn(tx, run.id)) throw new MediaWorkPendingError();
         options.onLeaseReleased?.();
         committed = await commitGenerationRunIn(tx, lease, {
-          steps: unplaced,
+          steps: unplaced.steps,
           patch: { state: 'completed', step: null, releaseLease: true },
           events: [
+            ...unplaced.events,
             { type: 'completed', data: { stageId } },
             { type: 'state', data: { state: 'completed', step: null } },
           ],
@@ -1388,7 +1492,7 @@ export async function executeGenerationRun(
       },
     });
     run = committed!;
-    for (const checkpoint of unplaced) steps.set(checkpoint.id, checkpoint.output);
+    for (const checkpoint of unplaced.steps) steps.set(checkpoint.id, checkpoint.output);
   };
 
   const end = async (stageId: string): Promise<void> => {
@@ -1403,9 +1507,10 @@ export async function executeGenerationRun(
 
   /**
    * A paused or completed run claimed for its media: generate what is queued
-   * (or resume a video's wait), then give the run up as it was.
+   * (or resume a video's wait), then give the run up as it was; or, when a
+   * step Retry made it executable meanwhile, go on with it ('resume').
    */
-  const executeMediaOnly = async (): Promise<RunExecutionOutcome> => {
+  const executeMediaOnly = async (): Promise<RunExecutionOutcome | 'resume'> => {
     const settled = run.state as 'paused' | 'completed';
     try {
       if (run.stageId && (await isRunCourseDeleted(run.stageId))) {
@@ -1416,11 +1521,16 @@ export async function executeGenerationRun(
       startLane(true);
       await lane.running;
       if (lane.failure) throw lane.failure;
-      await commit({
-        // A completed course gets no more scenes to place stored media into.
-        ...(settled === 'completed' ? { steps: unplacedMedia() } : {}),
-        patch: { releaseLease: true },
-      });
+      // A completed course gets no more scenes to place stored media into.
+      const unplaced = settled === 'completed' ? unplacedMedia() : { steps: [], events: [] };
+      run = await finishMediaOnlyRun(lease, unplaced.steps, unplaced.events);
+      for (const checkpoint of unplaced.steps) steps.set(checkpoint.id, checkpoint.output);
+      if (run.state !== settled) {
+        log.info(`run ${run.id}: retried while its media generated; going on with it`);
+        lane.started = false;
+        return 'resume';
+      }
+      options.onLeaseReleased?.();
       return settled;
     } catch (error) {
       if (error instanceof RunCourseDeletedError) {
@@ -1440,7 +1550,10 @@ export async function executeGenerationRun(
       if (lane.running) await lane.running;
     }
   };
-  if (run.state === 'paused' || run.state === 'completed') return executeMediaOnly();
+  if (run.state === 'paused' || run.state === 'completed') {
+    const outcome = await executeMediaOnly();
+    if (outcome !== 'resume') return outcome;
+  }
 
   try {
     for (;;) {

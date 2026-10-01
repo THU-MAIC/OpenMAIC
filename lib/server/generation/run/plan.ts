@@ -10,7 +10,7 @@
  * no server TTS) still runs and checkpoints that it did nothing, so the plan
  * never depends on configuration read at another moment.
  */
-import { isRetryableMediaFailure } from '@/lib/media/media-failure';
+import { PERMANENT_MEDIA_FAILURE_CODES } from '@/lib/media/media-failure';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import type { SceneOutline } from '@/lib/types/generation';
 
@@ -152,7 +152,15 @@ export function mediaItemsOf(outlines: readonly SceneOutline[]): RunMediaItem[] 
  */
 export const MEDIA_ELEMENT_REMOVED = 'MEDIA_ELEMENT_REMOVED';
 
-/** Whether a failed media item may be retried: the browser's rule, and not a removed element. */
+/** The failures no Retry of a run changes: the browser's final ones, and a removed element. */
+export const FINAL_RUN_MEDIA_FAILURE_CODES: readonly string[] = [
+  ...PERMANENT_MEDIA_FAILURE_CODES,
+  MEDIA_ELEMENT_REMOVED,
+];
+
+/** Whether a failed media item may be retried. */
 export function isRetryableRunMedia(failure: { readonly errorCode?: string }): boolean {
-  return isRetryableMediaFailure(failure) && failure.errorCode !== MEDIA_ELEMENT_REMOVED;
+  return (
+    failure.errorCode === undefined || !FINAL_RUN_MEDIA_FAILURE_CODES.includes(failure.errorCode)
+  );
 }

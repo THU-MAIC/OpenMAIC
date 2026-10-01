@@ -50,7 +50,7 @@ export const ASSET_REFUSED = 'ASSET_REFUSED';
  * is treated as transient, because the cost of one extra attempt is much
  * smaller than the cost of a slide that can never be recovered.
  */
-const PERMANENT_MEDIA_FAILURE_CODES: ReadonlySet<string> = new Set([
+export const PERMANENT_MEDIA_FAILURE_CODES: ReadonlySet<string> = new Set([
   'CONTENT_SENSITIVE',
   'GENERATION_DISABLED',
   ASSET_REFUSED,

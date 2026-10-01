@@ -121,15 +121,9 @@ export async function mutateRunScene(input: {
 }): Promise<boolean> {
   const store = await fencedStore(input.ownerId, input.lease, input.stageId);
   try {
-    return await store.mutateScene(
-      input.stageId,
-      input.sceneId,
-      (scene) => {
-        const next = input.mutate(scene);
-        return next ? sanitizeSceneContent(next) : null;
-      },
-      input.after,
-    );
+    // Not sanitized as a whole: the scene is the author's, and the mutation
+    // changes media references only.
+    return await store.mutateScene(input.stageId, input.sceneId, input.mutate, input.after);
   } catch (error) {
     if (courseGone(error)) throw new RunCourseDeletedError(input.stageId);
     throw error;

@@ -23,7 +23,7 @@ import type {
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
 import { probeAuth } from '../probe-auth';
-import { runPolledTask, type PolledTaskControl } from '../polled-task';
+import { ProviderTaskFailedError, runPolledTask, type PolledTaskControl } from '../polled-task';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
@@ -202,7 +202,7 @@ export async function generateWithGrokVideo(
 
       if (result.status === 'done') {
         if (!result.video?.url) {
-          throw new Error('Grok video task completed but no video URL returned');
+          throw new ProviderTaskFailedError('Grok video task completed but no video URL returned');
         }
         const { width, height } = getDimensions(options.aspectRatio);
         return {

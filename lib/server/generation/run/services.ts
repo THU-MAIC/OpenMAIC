@@ -62,7 +62,12 @@ import {
 } from '@/lib/server/generation/steps/scene-content';
 import { resolveExtractionServices } from '@/lib/server/material-extraction/services';
 import { getMaterialByteStore } from '@/lib/server/materials/bytes';
-import { resolveMediaSlot, type MediaConnection } from '@/lib/server/model-config/media';
+import {
+  resolveMediaSlot,
+  WorkspaceEndpointError,
+  type MediaConnection,
+} from '@/lib/server/model-config/media';
+import { InvalidOwnerCredentialError } from '@/lib/server/identity/resolve';
 import {
   backgroundWorkspaceId,
   SlotDisabledError,
@@ -108,10 +113,20 @@ export interface AnalyzedMaterials {
   images: RunMaterialImage[];
 }
 
-/** The image and video slots' connections; null for a slot that is turned off or unassigned. */
+/**
+ * One media slot as the media pass reads it: a connection, `off` (turned off
+ * or unassigned: the kind is not generated), or `refused` with what the
+ * browser's generation route answers for it (an endpoint or a credential it
+ * refuses), which each item of the kind fails with.
+ */
+export type RunMediaSlot =
+  | { status: 'ready'; connection: MediaConnection }
+  | { status: 'off' }
+  | { status: 'refused'; message: string; errorCode: string };
+
 export interface RunMediaConnections {
-  image: MediaConnection | null;
-  video: MediaConnection | null;
+  image: RunMediaSlot;
+  video: RunMediaSlot;
 }
 
 export interface GenerateRunImageInput {
@@ -207,8 +222,10 @@ async function stageModel(ownerId: string, stage: LlmStage): Promise<ResolvedMod
 
 /**
  * Vision images for the owner the run works for: the material images are
- * course assets, resolved to data URLs for the prompt; one that does not
- * resolve (an allocation that expired, say) is dropped, as the routes drop it.
+ * course assets, resolved to data URLs for the prompt. The run keeps them
+ * alive until it ends, so one that is gone is a fault, and the step fails
+ * loud instead of generating without it; one over the size limit is dropped,
+ * as the routes drop it.
  */
 function ownerVisionImages(ownerId: string, log: StepContext['log']): VisionImageResolver {
   return async (images) => {
@@ -225,6 +242,7 @@ function ownerVisionImages(ownerId: string, log: StepContext['log']): VisionImag
         process.env.DATABASE_URL ?? '',
         MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES,
       );
+      if (resolution.status === 'missing') throw new MaterialImageMissingError(image.id);
       if (resolution.status !== 'resolved') {
         log.warn(`Vision image "${image.id}" does not resolve (${resolution.status}); dropping it`);
         continue;
@@ -429,7 +447,7 @@ export const defaultRunStepServices: RunStepServices = {
       {
         ...input,
         ...(input.imageMapping
-          ? { imageMapping: await liveImageMapping(ownerId, input.outline, input.imageMapping) }
+          ? { imageMapping: await storedImageMapping(ownerId, input.outline, input.imageMapping) }
           : {}),
         model: await stageModel(ownerId, stage),
       },
@@ -512,15 +530,25 @@ export const defaultRunStepServices: RunStepServices = {
 
   async mediaConnections(ownerId) {
     const workspaceId = await backgroundWorkspaceId(ownerId);
-    const connection = async (slot: 'image' | 'video') => {
+    // As the generation routes map a resolution failure
+    // (`mediaResolutionResponse`); anything else is a fault, not an answer.
+    const slot = async (kind: 'image' | 'video'): Promise<RunMediaSlot> => {
       try {
-        return await resolveMediaSlot(slot, { workspaceId });
+        return { status: 'ready', connection: await resolveMediaSlot(kind, { workspaceId }) };
       } catch (error) {
-        if (error instanceof SlotDisabledError || error instanceof SlotUnassignedError) return null;
+        if (error instanceof SlotDisabledError || error instanceof SlotUnassignedError) {
+          return { status: 'off' };
+        }
+        if (error instanceof WorkspaceEndpointError) {
+          return { status: 'refused', message: error.message, errorCode: 'INVALID_URL' };
+        }
+        if (error instanceof InvalidOwnerCredentialError) {
+          return { status: 'refused', message: 'invalid owner credential', errorCode: error.code };
+        }
         throw error;
       }
     };
-    const [image, video] = await Promise.all([connection('image'), connection('video')]);
+    const [image, video] = await Promise.all([slot('image'), slot('video')]);
     return { image, video };
   },
 
@@ -595,24 +623,29 @@ export const defaultRunStepServices: RunStepServices = {
   sleep,
 };
 
+/** A material image the run stored is no longer in the owner's pool. */
+export class MaterialImageMissingError extends Error {
+  constructor(imageId: string) {
+    super(`The material image ${imageId} is no longer stored`);
+    this.name = 'MaterialImageMissingError';
+  }
+}
+
 /**
- * The material images an outline is assigned that the owner's pool still
- * holds. An allocation that was never written into a course expires (the
- * outline may have waited long for its confirmation); an image element must
- * not name it, so it goes the way an unknown image id goes (the element is
- * left out).
+ * The image mapping, once the images the outline is assigned are known to be
+ * stored: an image element must never name bytes that are gone, and the run
+ * keeps its material images alive, so a missing one fails the step.
  */
-async function liveImageMapping(
+async function storedImageMapping(
   ownerId: string,
   outline: { suggestedImageIds?: string[] },
   imageMapping: Record<string, string>,
 ): Promise<Record<string, string>> {
-  const assigned = new Set(outline.suggestedImageIds ?? []);
-  const live: Record<string, string> = {};
-  for (const [imageId, assetId] of Object.entries(imageMapping)) {
-    if (!assigned.has(imageId) || (await ownerAssetExists(ownerId, assetId))) {
-      live[imageId] = assetId;
+  for (const imageId of outline.suggestedImageIds ?? []) {
+    const assetId = imageMapping[imageId];
+    if (assetId && !(await ownerAssetExists(ownerId, assetId))) {
+      throw new MaterialImageMissingError(imageId);
     }
   }
-  return live;
+  return imageMapping;
 }

@@ -29,6 +29,7 @@ import { rewriteSceneMediaReference } from '@/lib/media/generated-media-referenc
 import { ASSET_QUOTA_EXCEEDED } from '@/lib/media/media-failure';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
+import { ProviderTaskFailedError } from '@/lib/media/polled-task';
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { StepRefusal } from '@/lib/server/generation/steps/context';
@@ -47,7 +48,6 @@ import {
 } from './store';
 import type {
   GenerationRunMediaCheckpoint,
-  GenerationRunMediaEventData,
   GenerationRunMediaState,
   GenerationRunOutline,
   NewGenerationRunEvent,
@@ -64,7 +64,11 @@ export const MEDIA_DEADLINE_MS = 300_000;
 
 /** The statuses that still need the lane (stored bytes wait for their scene instead). */
 export function isMediaWork(checkpoint: GenerationRunMediaCheckpoint | undefined): boolean {
-  return checkpoint?.status === 'queued' || checkpoint?.status === 'submitted';
+  return (
+    checkpoint?.status === 'queued' ||
+    checkpoint?.status === 'generating' ||
+    checkpoint?.status === 'submitted'
+  );
 }
 
 /** The event a checkpoint reports, as the browser's media task states read. */
@@ -80,9 +84,13 @@ function mediaState(checkpoint: GenerationRunMediaCheckpoint): GenerationRunMedi
   switch (checkpoint.status) {
     case 'queued':
       return { mediaType, status: 'pending' };
+    case 'generating':
     case 'submitted':
-      return { mediaType, status: 'generating' };
+    // Stored bytes are done once the course names them.
     case 'stored':
+      return { mediaType, status: 'generating' };
+    case 'skipped':
+      return { mediaType, status: 'disabled' };
     case 'done':
       return {
         mediaType,
@@ -113,12 +121,12 @@ export function runMediaStates(
   );
 }
 
-/** The kinds the media pass may generate, from the slots it resolved. */
+/** Whether the media pass generates this kind: its slot is not off. */
 export function mayGenerate(
   connections: RunMediaConnections,
   request: Pick<MediaGenerationRequest, 'type'>,
 ): boolean {
-  return (request.type === 'image' ? connections.image : connections.video) !== null;
+  return (request.type === 'image' ? connections.image : connections.video).status !== 'off';
 }
 
 /**
@@ -186,8 +194,9 @@ export interface MediaLaneContext {
   /** Aborted when the run loses its lease or its course, or the lane must stop now. */
   signal: AbortSignal;
   services: RunStepServices;
-  /** The owner the run works for now. */
+  /** The owner the run works for now, followed through claims before each item. */
   owner(): string;
+  refreshOwner(): Promise<void>;
   stageId: string;
   outline: GenerationRunOutline;
   items: readonly RunMediaItem[];
@@ -197,8 +206,8 @@ export interface MediaLaneContext {
   commit(change: StepCommit): Promise<void>;
   /**
    * Write stored bytes into the course's scenes that hold the placeholder,
-   * with `checkpoint` (the item done) in the same transaction; false, with
-   * nothing written, when no scene in the course holds it yet.
+   * with `checkpoint` (the item done) and `events` in the same transaction;
+   * false, with nothing written, when no scene in the course holds it yet.
    */
   place(
     elementId: string,
@@ -212,7 +221,7 @@ export interface MediaLaneContext {
 }
 
 /** A failure that ends the lane rather than one item: the run lost its lease or its course. */
-function endsLane(error: unknown, signal: AbortSignal): boolean {
+export function endsLane(error: unknown, signal: AbortSignal): boolean {
   return (
     signal.aborted ||
     isAbortError(error) ||
@@ -223,9 +232,13 @@ function endsLane(error: unknown, signal: AbortSignal): boolean {
 
 /**
  * Generate the run's media work in outline order until none is left, one
- * item at a time. Throws only what ends the lane (see {@link endsLane}).
+ * item at a time. A failure of one item is that item's; what the lane throws
+ * is either what ends it ({@link endsLane}) or a fault outside any item (the
+ * slots could not be read, a placement write failed), which the engine
+ * answers by failing the work left, never the run.
  */
 export async function runMediaLane(ctx: MediaLaneContext): Promise<void> {
+  await ctx.refreshOwner();
   const connections = await ctx.services.mediaConnections(ctx.owner());
   const checkpointOf = (item: RunMediaItem) =>
     ctx.steps.get(mediaStepId(item.request.elementId)) as GenerationRunMediaCheckpoint | undefined;
@@ -239,10 +252,19 @@ export async function runMediaLane(ctx: MediaLaneContext): Promise<void> {
     if (!item) return;
     attempted.add(item.request.elementId);
     ctx.onItemStarted?.(item);
-    const storageFull = await generateItem(ctx, item, checkpointOf(item)!, connections);
-    if (!storageFull) continue;
-    // The store had no room: the pass stops, and every item it has not
-    // reached shows that reason (each is retryable once there is room).
+    await ctx.refreshOwner();
+    const outcome = await generateItem(ctx, item, checkpointOf(item)!, connections);
+    if (outcome.stored) {
+      // Placing is not part of the item's failure: bytes that are stored stay
+      // stored when a placement write fails, and are placed later.
+      await placeStored(ctx, item.request.elementId, outcome.stored);
+      continue;
+    }
+    if (!outcome.storageFull) continue;
+    // The store had no room: the pass stops, as the browser's does, and the
+    // items it has not reached show that reason with a Retry. The browser
+    // keeps that state in memory and a later load of the course generates
+    // them; a run has no later load, so the state is recorded instead.
     const rest = ctx.items.filter((candidate) => checkpointOf(candidate)?.status === 'queued');
     if (rest.length === 0) return;
     const failed = rest.map((candidate) => {
@@ -265,46 +287,45 @@ export async function runMediaLane(ctx: MediaLaneContext): Promise<void> {
   }
 }
 
-/** Generate (or resume, or place) one item. Answers whether the store refused it for room. */
+/** How many times a video's task record is written before the item gives up on it. */
+const TASK_RECORD_ATTEMPTS = 3;
+
+type StoredCheckpoint = Extract<GenerationRunMediaCheckpoint, { status: 'stored' }>;
+
+/** Generate (or resume) one item, up to its stored bytes. */
 async function generateItem(
   ctx: MediaLaneContext,
   item: RunMediaItem,
   checkpoint: GenerationRunMediaCheckpoint,
   connections: RunMediaConnections,
-): Promise<boolean> {
+): Promise<{ stored?: StoredCheckpoint; storageFull?: boolean }> {
   const { request } = item;
   const { elementId, type: mediaType } = request;
   const stepId = mediaStepId(elementId);
   const owner = ctx.owner();
-  const fail = async (failure: { message: string; errorCode?: string }) => {
-    const failed: GenerationRunMediaCheckpoint = { mediaType, status: 'failed', ...failure };
-    await ctx.commit({
-      step: { id: stepId, output: failed },
-      events: [mediaEvent(elementId, failed)],
-    });
+  const record = async (next: GenerationRunMediaCheckpoint) => {
+    await ctx.commit({ step: { id: stepId, output: next }, events: [mediaEvent(elementId, next)] });
   };
 
-  const connection = mediaType === 'image' ? connections.image : connections.video;
-  if (!connection) {
-    // The slot was turned off since the item was queued, as a Retry finds it
-    // in the browser.
-    await fail({ message: 'Generation disabled', errorCode: 'GENERATION_DISABLED' });
-    return false;
+  const slot = mediaType === 'image' ? connections.image : connections.video;
+  if (slot.status === 'off') {
+    // The slot was turned off since the item was queued: the element renders
+    // as disabled, and a Retry generates it once the slot resolves.
+    await record({ mediaType, status: 'skipped' });
+    return {};
   }
+  if (slot.status === 'refused') {
+    // What the route answers for this slot (an endpoint or a credential it refuses).
+    await record({ mediaType, status: 'failed', message: slot.message, errorCode: slot.errorCode });
+    return {};
+  }
+  const { connection } = slot;
 
+  // The task this attempt waits on (resumed, or recorded once submitted).
+  let task = checkpoint.status === 'submitted' ? checkpoint.task : undefined;
+  let posterAssetId: string | undefined;
   try {
-    await ctx.commit({
-      events: [
-        {
-          type: 'media',
-          data: {
-            elementId,
-            mediaType,
-            status: 'generating',
-          } satisfies GenerationRunMediaEventData,
-        },
-      ],
-    });
+    if (!task) await record({ mediaType, status: 'generating' });
     const fence = (tx: Parameters<typeof fenceGenerationRunWriteIn>[0]) =>
       fenceGenerationRunWriteIn(tx, ctx.lease);
     let media: { bytes: Uint8Array; mimeType: string };
@@ -318,7 +339,7 @@ async function generateItem(
         ),
       );
     } else {
-      const resume = checkpoint.status === 'submitted' ? checkpoint.task : undefined;
+      const resume = task;
       if (resume) log.info(`run ${ctx.runId}: resuming the wait on video task ${resume.taskId}`);
       const video = await withDeadline(stepId, MEDIA_DEADLINE_MS, ctx.signal, (signal) =>
         ctx.services.generateVideo(
@@ -327,11 +348,30 @@ async function generateItem(
             request,
             connection,
             ...(resume ? { resume } : {}),
-            // Recorded before the wait, so a takeover waits on this task.
-            onProviderTask: (task) =>
-              ctx.commit({
-                step: { id: stepId, output: { mediaType, status: 'submitted', task } },
-              }),
+            // Recorded before the wait, so a takeover or a Retry waits on this
+            // task. A write that fails for a passing reason is tried again in
+            // place: the task is paid for.
+            onProviderTask: async (submitted) => {
+              task = submitted;
+              for (let attempt = 1; ; attempt += 1) {
+                try {
+                  await ctx.commit({
+                    step: {
+                      id: stepId,
+                      output: { mediaType, status: 'submitted', task: submitted },
+                    },
+                  });
+                  return;
+                } catch (error) {
+                  if (endsLane(error, ctx.signal) || attempt >= TASK_RECORD_ATTEMPTS) throw error;
+                  log.warn(
+                    `run ${ctx.runId}: recording video task ${submitted.taskId} failed; again`,
+                    error,
+                  );
+                  await ctx.services.sleep(500 * attempt, ctx.signal);
+                }
+              }
+            },
           },
           { log, signal },
         ),
@@ -341,7 +381,6 @@ async function generateItem(
     }
 
     // A poster is decorative: a failure to store it costs the poster only.
-    let posterAssetId: string | undefined;
     if (poster) {
       try {
         const stored = await storeGeneratedAsset({
@@ -360,7 +399,7 @@ async function generateItem(
     }
 
     // The bytes and their checkpoint commit together.
-    let storedCheckpoint: GenerationRunMediaCheckpoint | undefined;
+    let storedCheckpoint: StoredCheckpoint | undefined;
     const stored = await storeGeneratedAsset({
       ownerId: owner,
       stageId: ctx.stageId,
@@ -377,40 +416,64 @@ async function generateItem(
         };
         await commitGenerationRunIn(tx, ctx.lease, {
           step: { id: stepId, output: storedCheckpoint },
-          events: [mediaEvent(elementId, storedCheckpoint)],
         });
       },
     });
     if (stored.status === 'refused') {
-      await fail({
+      await releasePoster(ctx, posterAssetId);
+      await record({
+        mediaType,
+        status: 'failed',
         message: `Asset storage is full; the ${mediaType} was not generated`,
         errorCode: ASSET_QUOTA_EXCEEDED,
       });
-      return true;
+      return { storageFull: true };
     }
     ctx.steps.set(stepId, storedCheckpoint);
-    await placeStored(ctx, elementId, storedCheckpoint!);
-    return false;
+    return { stored: storedCheckpoint! };
   } catch (error) {
+    await releasePoster(ctx, posterAssetId);
     if (endsLane(error, ctx.signal)) throw error;
     log.warn(`run ${ctx.runId}: ${mediaType} ${elementId} failed:`, error);
-    await fail(mediaFailure(error, mediaType));
-    return false;
+    // Only the provider's own final answer, or a task that can no longer be
+    // waited on, lets go of a submitted task: a Retry of anything else waits
+    // on it again (and downloads its result) instead of paying for another.
+    const final =
+      error instanceof ProviderTaskFailedError ||
+      (error instanceof StepRefusal && error.reason === 'task-connection-changed');
+    await record({
+      mediaType,
+      status: 'failed',
+      ...mediaFailure(error, mediaType),
+      ...(task && !final ? { task } : {}),
+    });
+    return {};
   }
+}
+
+async function releasePoster(ctx: MediaLaneContext, posterAssetId: string | undefined) {
+  if (!posterAssetId) return;
+  await ctx.services.releaseAssets(ctx.owner(), [posterAssetId], { log });
+}
+
+/** The done checkpoint of stored bytes. */
+export function doneOf(
+  stored: StoredCheckpoint,
+): Extract<GenerationRunMediaCheckpoint, { status: 'done' }> {
+  return {
+    mediaType: stored.mediaType,
+    status: 'done',
+    assetId: stored.assetId,
+    ...(stored.posterAssetId ? { posterAssetId: stored.posterAssetId } : {}),
+  };
 }
 
 /** Write stored bytes into the scenes that hold their placeholder, if any is in the course. */
 export async function placeStored(
   ctx: Pick<MediaLaneContext, 'place'>,
   elementId: string,
-  stored: GenerationRunMediaCheckpoint,
+  stored: StoredCheckpoint,
 ): Promise<boolean> {
-  if (stored.status !== 'stored') return false;
-  const done: Extract<GenerationRunMediaCheckpoint, { status: 'done' }> = {
-    mediaType: stored.mediaType,
-    status: 'done',
-    assetId: stored.assetId,
-    ...(stored.posterAssetId ? { posterAssetId: stored.posterAssetId } : {}),
-  };
-  return ctx.place(elementId, done, []);
+  const done = doneOf(stored);
+  return ctx.place(elementId, done, [mediaEvent(elementId, done)]);
 }

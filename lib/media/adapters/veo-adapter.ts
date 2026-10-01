@@ -34,7 +34,12 @@ import type {
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
 import { connectivityHttpFailure, connectivityTransportFailure } from '../probe-auth';
-import { runPolledTask, type TerminalResult, type PolledTaskControl } from '../polled-task';
+import {
+  ProviderTaskFailedError,
+  runPolledTask,
+  type TerminalResult,
+  type PolledTaskControl,
+} from '../polled-task';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
@@ -167,7 +172,7 @@ async function resolveCompletedOperation(
     return { status: 'failed', message: `Veo generation was filtered: ${filtered.join('; ')}` };
   }
 
-  throw new Error('Veo returned no generated videos');
+  throw new ProviderTaskFailedError('Veo returned no generated videos');
 }
 
 // ---------------------------------------------------------------------------

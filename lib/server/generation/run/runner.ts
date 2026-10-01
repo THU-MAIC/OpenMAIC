@@ -13,6 +13,8 @@ import { randomUUID } from 'node:crypto';
 
 import { createLogger } from '@/lib/logger';
 
+import { resolveAssetPendingTtlMs } from '@/lib/persistence/asset-pending-ttl';
+
 import { generationRunConfig, type GenerationRunConfig } from './config';
 import { executeGenerationRun } from './engine';
 import { defaultRunStepServices, type RunStepServices } from './services';
@@ -20,6 +22,7 @@ import {
   claimNextGenerationRun,
   compactFinishedGenerationRuns,
   heartbeatGenerationRun,
+  keepGenerationRunAssetsAlive,
   readGenerationRunState,
   releaseGenerationRunLease,
   type ClaimedRun,
@@ -173,6 +176,19 @@ export function startGenerationRunner(
     );
   const sweepTimer = setInterval(sweep, config.compactionIntervalMs);
   sweepTimer.unref?.();
+  // The allocations live runs hold (material images, media stored for a
+  // scene not written yet) are kept from expiring, well within their window.
+  const pendingTtlMs = resolveAssetPendingTtlMs();
+  const keepAlive = () =>
+    void keepGenerationRunAssetsAlive(pendingTtlMs).catch((error) =>
+      log.warn('keeping run assets alive failed', error),
+    );
+  const keepAliveTimer = setInterval(
+    keepAlive,
+    Math.max(1000, Math.min(config.compactionIntervalMs, Math.floor(pendingTtlMs / 4))),
+  );
+  keepAliveTimer.unref?.();
+  keepAlive();
   void scan();
   log.info(
     `generation runner ${workerId} started (scan=${config.scanIntervalMs}ms, ` +
@@ -188,6 +204,7 @@ export function startGenerationRunner(
       if (runnerState[RUNNER_KEY] === handle) delete runnerState[RUNNER_KEY];
       clearInterval(timer);
       clearInterval(sweepTimer);
+      clearInterval(keepAliveTimer);
       for (const execution of running.values()) execution.abort.abort();
       const deadline = Date.now() + (stopOptions?.timeoutMs ?? 15_000);
       // A scan in flight may still be handing back a claim it just took.

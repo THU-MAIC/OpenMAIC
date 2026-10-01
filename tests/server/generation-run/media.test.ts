@@ -9,6 +9,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   generateImageStep: vi.fn(),
   generateVideoStep: vi.fn(),
+  resolveMediaSlot: vi.fn(),
+  storeGeneratedAsset: vi.fn(),
+  commitGenerationRunIn: vi.fn(),
+}));
+
+vi.mock('@/lib/server/model-config/media', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/server/model-config/media')>()),
+  resolveMediaSlot: mocks.resolveMediaSlot,
+}));
+vi.mock('@/lib/server/model-config/runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/server/model-config/runtime')>()),
+  backgroundWorkspaceId: async (ownerId: string) => ownerId,
+}));
+vi.mock('@/lib/server/store-generated-asset', () => ({
+  storeGeneratedAsset: mocks.storeGeneratedAsset,
+}));
+vi.mock('@/lib/server/generation/run/store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/server/generation/run/store')>()),
+  commitGenerationRunIn: mocks.commitGenerationRunIn,
 }));
 
 vi.mock('@/lib/server/generation/steps/image', () => ({
@@ -20,7 +39,11 @@ vi.mock('@/lib/server/generation/steps/video', () => ({
 
 import { StepRefusal } from '@/lib/server/generation/steps/context';
 import { parseRetry } from '@/lib/server/generation/run/input';
-import { mediaFailure, runMediaStates } from '@/lib/server/generation/run/media';
+import { mediaFailure, runMediaLane, runMediaStates } from '@/lib/server/generation/run/media';
+import { GenerationRunLeaseLostError } from '@/lib/server/generation/run/store';
+import { InvalidOwnerCredentialError } from '@/lib/server/identity/resolve';
+import { SlotDisabledError, SlotUnassignedError } from '@/lib/server/model-config/runtime';
+import { WorkspaceEndpointError } from '@/lib/server/model-config/media';
 import { mediaItemsOf } from '@/lib/server/generation/run/plan';
 import { defaultRunStepServices } from '@/lib/server/generation/run/services';
 import type { MediaConnection } from '@/lib/server/model-config/media';
@@ -80,6 +103,8 @@ describe('the media lane', () => {
           ['a', { mediaType: 'image', status: 'queued' }],
           ['b', { mediaType: 'video', status: 'submitted', task: {} as never }],
           ['c', { mediaType: 'image', status: 'stored', assetId: 'ast_c' }],
+          ['g', { mediaType: 'image', status: 'generating' }],
+          ['s', { mediaType: 'video', status: 'skipped' }],
           ['d', { mediaType: 'video', status: 'done', assetId: 'ast_d', posterAssetId: 'ast_p' }],
           [
             'e',
@@ -91,7 +116,10 @@ describe('the media lane', () => {
     ).toEqual({
       a: { mediaType: 'image', status: 'pending' },
       b: { mediaType: 'video', status: 'generating' },
-      c: { mediaType: 'image', status: 'done', assetId: 'ast_c' },
+      // Stored bytes are done once the course names them.
+      c: { mediaType: 'image', status: 'generating' },
+      g: { mediaType: 'image', status: 'generating' },
+      s: { mediaType: 'video', status: 'disabled' },
       d: { mediaType: 'video', status: 'done', assetId: 'ast_d', posterAssetId: 'ast_p' },
       e: {
         mediaType: 'image',
@@ -190,5 +218,145 @@ describe('media step services', () => {
       { log },
     );
     expect(result).toEqual({ video: { bytes: Buffer.from([9, 9]), mimeType: 'video/mp4' } });
+  });
+});
+
+describe('the media slots of a run', () => {
+  beforeEach(() => {
+    mocks.resolveMediaSlot.mockReset();
+  });
+
+  it('answers each kind as the generation routes answer its resolution', async () => {
+    const refusals: Record<string, unknown> = {
+      off: new SlotDisabledError('image'),
+      unassigned: new SlotUnassignedError('image'),
+      endpoint: new WorkspaceEndpointError('The endpoint is not allowed'),
+      credential: new InvalidOwnerCredentialError(),
+    };
+    for (const [name, error] of Object.entries(refusals)) {
+      mocks.resolveMediaSlot.mockImplementation(async (kind: string) => {
+        if (kind === 'image') throw error;
+        return connection;
+      });
+      const slots = await defaultRunStepServices.mediaConnections('user:a');
+      expect(slots.video).toEqual({ status: 'ready', connection });
+      expect([name, slots.image]).toEqual([
+        name,
+        {
+          off: { status: 'off' },
+          unassigned: { status: 'off' },
+          endpoint: {
+            status: 'refused',
+            message: 'The endpoint is not allowed',
+            errorCode: 'INVALID_URL',
+          },
+          credential: {
+            status: 'refused',
+            message: 'invalid owner credential',
+            errorCode: 'INVALID_CREDENTIAL',
+          },
+        }[name],
+      ]);
+    }
+  });
+
+  it('lets any other failure through: a fault of the pass, not an answer', async () => {
+    mocks.resolveMediaSlot.mockImplementation(async () => {
+      throw new Error('config unreadable');
+    });
+    await expect(defaultRunStepServices.mediaConnections('user:a')).rejects.toThrow(
+      'config unreadable',
+    );
+  });
+});
+
+describe('recording a submitted video task', () => {
+  const TASK = { taskId: 't1', providerId: 'seedance', model: 'm', endpoint: 'https://e' };
+
+  function laneContext(commit: (change: unknown) => Promise<void>) {
+    const steps = new Map<string, unknown>([
+      ['media:gen_vid_1', { mediaType: 'video', status: 'queued' }],
+    ]);
+    const services = {
+      ...defaultRunStepServices,
+      mediaConnections: async () => ({
+        image: { status: 'off' as const },
+        video: { status: 'ready' as const, connection },
+      }),
+      generateVideo: vi.fn(
+        async (_owner: string, input: { onProviderTask: (task: typeof TASK) => Promise<void> }) => {
+          await input.onProviderTask(TASK);
+          return { video: { bytes: new Uint8Array([1]), mimeType: 'video/mp4' } };
+        },
+      ),
+      sleep: vi.fn(async () => undefined),
+      releaseAssets: vi.fn(async () => undefined),
+    };
+    return {
+      steps,
+      services,
+      ctx: {
+        runId: 'run-x',
+        lease: { runId: 'run-x', workerId: 'w', generation: 1 },
+        signal: new AbortController().signal,
+        services,
+        owner: () => 'user:a',
+        refreshOwner: async () => undefined,
+        stageId: 'stage-1',
+        outline: { outlines: [], languageDirective: '', taskEngineMode: false },
+        items: [
+          {
+            request: { type: 'video' as const, prompt: 'p', elementId: 'gen_vid_1' },
+            sceneIndex: 0,
+          },
+        ],
+        steps,
+        commit: async (change: { step?: { id: string; output: unknown } }) => {
+          await commit(change);
+          if (change.step) steps.set(change.step.id, change.step.output);
+        },
+        place: vi.fn(async () => true),
+        stopping: () => false,
+      },
+    };
+  }
+
+  beforeEach(() => {
+    mocks.storeGeneratedAsset
+      .mockReset()
+      .mockImplementation(
+        async (input: { afterPut?: (tx: unknown, id: string) => Promise<void> }) => {
+          await input.afterPut?.({}, 'ast_v');
+          return { status: 'stored', assetId: 'ast_v' };
+        },
+      );
+  });
+
+  it('writes the task record again in place when the write fails for a passing reason', async () => {
+    let failures = 1;
+    const { ctx, services, steps } = laneContext(async (change) => {
+      const output = (change as { step?: { output: { status: string } } }).step?.output;
+      if (output?.status === 'submitted' && failures-- > 0) throw new Error('connection reset');
+    });
+    await runMediaLane(ctx as never);
+    expect(services.sleep).toHaveBeenCalledTimes(1);
+    expect(services.generateVideo).toHaveBeenCalledTimes(1);
+    expect(steps.get('media:gen_vid_1')).toEqual({
+      mediaType: 'video',
+      status: 'stored',
+      assetId: 'ast_v',
+    });
+    expect(ctx.place).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not write it again for a lease that is gone', async () => {
+    const { ctx, services } = laneContext(async (change) => {
+      const output = (change as { step?: { output: { status: string } } }).step?.output;
+      if (output?.status === 'submitted') {
+        throw new GenerationRunLeaseLostError({ runId: 'run-x', workerId: 'w', generation: 1 });
+      }
+    });
+    await expect(runMediaLane(ctx as never)).rejects.toBeInstanceOf(GenerationRunLeaseLostError);
+    expect(services.sleep).not.toHaveBeenCalled();
   });
 });

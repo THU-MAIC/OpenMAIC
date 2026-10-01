@@ -136,35 +136,53 @@ export interface GenerationRunProgress {
   scenesCompleted: number;
 }
 
+/** A submitted provider task: the id means something to that provider, model and endpoint only. */
+export interface GenerationRunVideoTask {
+  taskId: string;
+  providerId: string;
+  model: string;
+  endpoint: string;
+}
+
 /**
  * One generated image or video of a run, as its checkpoint (`media:<elementId>`)
- * records it. `queued`: to be generated; `submitted`: a video task the
- * provider is working on, resumed after a takeover instead of submitted again;
- * `stored`: the bytes are in the asset pool and wait for the scene that holds
- * the placeholder; `done`: the course names the asset (or, when no scene holds
- * the placeholder, the run finished without one); `failed`: the placeholder
- * stays, with a Retry unless the failure is permanent.
+ * records it.
+ *
+ * - `queued`: to be generated; `generating`: a worker is generating it (a
+ *   takeover generates it again);
+ * - `submitted`: a video task the provider is working on, whose wait a
+ *   takeover resumes instead of submitting again;
+ * - `stored`: the bytes are in the asset pool and wait for the scene that
+ *   holds the placeholder;
+ * - `done`: the course names the asset (or, when no scene held the
+ *   placeholder when the run completed, the run finished without one);
+ * - `skipped`: its slot was turned off or unassigned when the pass reached it
+ *   (the placeholder renders as disabled); a Retry generates it once the slot
+ *   resolves, as the browser's next pass would;
+ * - `failed`: the placeholder stays, with a Retry unless the failure is final.
+ *   A video failure that is not the provider's own final answer keeps its
+ *   `task`, and a Retry resumes the wait on it instead of paying for another.
  */
 export type GenerationRunMediaCheckpoint = { mediaType: 'image' | 'video' } & (
   | { status: 'queued' }
-  | {
-      status: 'submitted';
-      task: { taskId: string; providerId: string; model: string; endpoint: string };
-    }
+  | { status: 'generating' }
+  | { status: 'submitted'; task: GenerationRunVideoTask }
   | { status: 'stored'; assetId: string; posterAssetId?: string }
   | { status: 'done'; assetId: string; posterAssetId?: string }
-  | { status: 'failed'; message: string; errorCode?: string }
+  | { status: 'skipped' }
+  | { status: 'failed'; message: string; errorCode?: string; task?: GenerationRunVideoTask }
 );
 
 /**
  * The states a client renders for a media element, as the browser's media
- * tasks have them: `pending`, `generating`, `done` (with the asset), `failed`
- * (with the reason, and an error code when the failure has one).
+ * tasks have them: `pending`, `generating`, `done` (with the asset, once the
+ * course names it), `disabled` (its slot is off), `failed` (with the reason,
+ * and an error code when the failure has one).
  */
 export interface GenerationRunMediaEventData {
   elementId: string;
   mediaType: 'image' | 'video';
-  status: 'pending' | 'generating' | 'done' | 'failed';
+  status: 'pending' | 'generating' | 'done' | 'disabled' | 'failed';
   assetId?: string;
   posterAssetId?: string;
   message?: string;

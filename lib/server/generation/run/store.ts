@@ -28,7 +28,13 @@ import { getServerPersistenceProvider } from '@/lib/persistence/server-provider'
 import { notifyDurableAgentEvent } from '@/lib/server/agent-runtime/event-notify-bus';
 import type { SceneOutline } from '@/lib/types/generation';
 
-import { isRetryableRunMedia, MEDIA_STEP_PREFIX, mediaStepId, stateForRetry } from './plan';
+import {
+  FINAL_RUN_MEDIA_FAILURE_CODES,
+  isRetryableRunMedia,
+  MEDIA_STEP_PREFIX,
+  mediaStepId,
+  stateForRetry,
+} from './plan';
 import {
   ACTIVE_RUN_STATES,
   EXECUTABLE_RUN_STATES,
@@ -292,9 +298,9 @@ export async function currentOwnerOf(storedOwnerId: string): Promise<string> {
  * ago to what their final snapshot needs: their checkpoints go, and so does
  * every event but the final commit's two (`completed`/`ended` and `state`).
  * A follower still sees how a run ended; one further behind is told to
- * reload the snapshot (the events stream's `resync`). A completed run with a
- * failed image or video keeps everything, so its Retry still works. Answers
- * how many runs it compacted.
+ * reload the snapshot (the events stream's `resync`). A completed run with an
+ * image or video a Retry may still generate keeps everything, so that Retry
+ * still works. Answers how many runs it compacted.
  */
 export async function compactFinishedGenerationRuns(graceMs: number): Promise<number> {
   const { withTransaction } = await provider();
@@ -306,12 +312,14 @@ export async function compactFinishedGenerationRuns(graceMs: number): Promise<nu
           AND NOT (state = 'completed' AND EXISTS (
             SELECT 1 FROM generation_run_steps s
              WHERE s.run_id = r.id AND s.step_id LIKE '${MEDIA_STEP_PREFIX}%'
-               AND s.output->>'status' = 'failed'))
+               AND (s.output->>'status' = 'skipped'
+                    OR (s.output->>'status' = 'failed'
+                        AND COALESCE(s.output->>'errorCode', '') <> ALL($2::text[])))))
           AND (EXISTS (SELECT 1 FROM generation_run_steps s WHERE s.run_id = r.id)
                OR EXISTS (SELECT 1 FROM generation_run_events e
                            WHERE e.run_id = r.id AND e.seq <= r.seq - 2))
         ORDER BY id LIMIT 500`,
-      [graceMs / 1000],
+      [graceMs / 1000, [...FINAL_RUN_MEDIA_FAILURE_CODES]],
     );
     const ids = finished.rows.map((row) => row.id);
     if (ids.length === 0) return 0;
@@ -371,13 +379,13 @@ async function lockLeased(tx: Queryable, lease: RunLease): Promise<RunRow> {
 
 /**
  * Whether the run has media to generate: an item queued (a Retry, or one not
- * reached yet) or a video task waiting. Bytes stored for a scene that does
+ * reached yet), one a worker was generating, or a video task waiting. Bytes stored for a scene that does
  * not exist yet are no work: they wait for that scene's commit.
  */
 const MEDIA_WORK_EXISTS = (runParam: string) =>
   `EXISTS (SELECT 1 FROM generation_run_steps s
             WHERE s.run_id = ${runParam} AND s.step_id LIKE '${MEDIA_STEP_PREFIX}%'
-              AND s.output->>'status' IN ('queued', 'submitted'))`;
+              AND s.output->>'status' IN ('queued', 'generating', 'submitted'))`;
 
 /** Whether the run has media to generate (see {@link MEDIA_WORK_EXISTS}), on `tx`. */
 export async function hasMediaWorkIn(tx: Queryable, runId: string): Promise<boolean> {
@@ -518,6 +526,59 @@ export async function createGenerationRun(
   });
 }
 
+/**
+ * The run and its media checkpoints, for its owner, read in one statement
+ * (one snapshot); null for an unknown run and for another owner's alike.
+ */
+export async function readGenerationRunWithMedia(
+  runId: string,
+  ownerId: string,
+): Promise<{ run: StoredRun; media: Map<string, GenerationRunMediaCheckpoint> } | null> {
+  const { pool } = await provider();
+  const result = await pool.query<RunRow & { media: Record<string, GenerationRunMediaCheckpoint> }>(
+    `SELECT ${RUN_COLUMNS},
+            (SELECT COALESCE(jsonb_object_agg(s.step_id, s.output), '{}'::jsonb)
+               FROM generation_run_steps s
+              WHERE s.run_id = r.id AND s.step_id LIKE '${MEDIA_STEP_PREFIX}%') AS media
+       FROM generation_runs r WHERE id = $1 AND ${OWNED_BY('$2')}`,
+    [runId, ownerId],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    run: storedRun(row),
+    media: new Map(
+      Object.entries(row.media).map(([stepId, output]) => [
+        stepId.slice(MEDIA_STEP_PREFIX.length),
+        output,
+      ]),
+    ),
+  };
+}
+
+/**
+ * The last commit of a paused or completed run's media-only execution: its
+ * checkpoints, and the lease given up, unless a command made the run
+ * executable meanwhile (a step Retry), in which case the holder keeps the
+ * lease and goes on with the run. Answers the run as committed.
+ */
+export async function finishMediaOnlyRun(
+  lease: RunLease,
+  steps: NonNullable<StepCommit['steps']>,
+  events: NewGenerationRunEvent[],
+): Promise<StoredRun> {
+  const { withTransaction } = await provider();
+  return withTransaction(async (tx) => {
+    const locked = await lockLeased(tx, lease);
+    const executable = (EXECUTABLE_RUN_STATES as readonly string[]).includes(locked.state);
+    return commitGenerationRunIn(tx, lease, {
+      steps,
+      events,
+      ...(executable ? {} : { patch: { releaseLease: true } }),
+    });
+  });
+}
+
 /** The run, for its owner; null for an unknown run and for another owner's alike. */
 export async function readGenerationRun(runId: string, ownerId: string): Promise<StoredRun | null> {
   const { pool } = await provider();
@@ -639,6 +700,9 @@ export async function claimNextGenerationRun(
           tx,
           previous.id,
           'The media generation was interrupted too many times',
+          {
+            includeStored: previous.state === 'completed',
+          },
         );
         await applyPatch(tx, previous.id, { releaseLease: true }, { resetTakeovers: true });
         await notifyOwner(tx, previous.owner_id);
@@ -687,24 +751,40 @@ export async function claimNextGenerationRun(
   return null;
 }
 
-/** Fail every queued or waiting media item of a run, with events (the run row is locked). */
-async function failMediaWorkIn(tx: Queryable, runId: string, message: string): Promise<void> {
-  const pending = await tx.query<{ step_id: string; media_type: 'image' | 'video' }>(
-    `SELECT step_id, output->>'mediaType' AS media_type FROM generation_run_steps
+/**
+ * Fail every media item of a run still in work, with events (the run row is
+ * locked): a waiting video keeps its task, so a Retry waits on it again;
+ * `stored` bytes fail too when `includeStored` (a completed run has no scene
+ * left to place them with).
+ */
+async function failMediaWorkIn(
+  tx: Queryable,
+  runId: string,
+  message: string,
+  { includeStored }: { includeStored: boolean },
+): Promise<void> {
+  const statuses = ['queued', 'generating', 'submitted', ...(includeStored ? ['stored'] : [])];
+  const pending = await tx.query<{ step_id: string; output: GenerationRunMediaCheckpoint }>(
+    `SELECT step_id, output FROM generation_run_steps
       WHERE run_id = $1 AND step_id LIKE '${MEDIA_STEP_PREFIX}%'
-        AND output->>'status' IN ('queued', 'submitted')
+        AND output->>'status' = ANY($2::text[])
       ORDER BY step_id`,
-    [runId],
+    [runId, statuses],
   );
   const events: NewGenerationRunEvent[] = [];
-  for (const { step_id: stepId, media_type: mediaType } of pending.rows) {
-    const failed: GenerationRunMediaCheckpoint = { mediaType, status: 'failed', message };
+  for (const { step_id: stepId, output } of pending.rows) {
+    const failed: GenerationRunMediaCheckpoint = {
+      mediaType: output.mediaType,
+      status: 'failed',
+      message,
+      ...(output.status === 'submitted' ? { task: output.task } : {}),
+    };
     await upsertStep(tx, runId, { id: stepId, output: failed });
     events.push({
       type: 'media',
       data: {
         elementId: stepId.slice(MEDIA_STEP_PREFIX.length),
-        mediaType,
+        mediaType: output.mediaType,
         status: 'failed',
         message,
         retryable: true,
@@ -949,8 +1029,63 @@ async function endRunIn(
     { type: 'ended', data },
     { type: 'state', data: { state: 'ended', step: null } },
   ]);
+  // What the run kept alive and no course names is released now.
+  await setRunPendingAssetDeadlineIn(tx, 'r.id = $1', [runId], 'now()');
   await notifyOwner(tx, ownerId);
   return seq;
+}
+
+/**
+ * Set the pending deadline of the allocations runs hold in their checkpoints
+ * (material images, media stored for a scene not written yet) that no
+ * document has committed: the runs `runFilter` selects (on `generation_runs r`).
+ */
+async function setRunPendingAssetDeadlineIn(
+  tx: Queryable,
+  runFilter: string,
+  params: unknown[],
+  deadline: string,
+): Promise<number> {
+  const provisioned = await tx.query<{ present: string | null }>(
+    "SELECT to_regclass('asset_entries')::text AS present",
+  );
+  if (!provisioned.rows[0]?.present) return 0;
+  const updated = await tx.query<{ id: string }>(
+    `WITH held AS (
+       SELECT s.output FROM generation_run_steps s JOIN generation_runs r ON r.id = s.run_id
+        WHERE ${runFilter}
+          AND (s.step_id = 'material-analysis' OR s.step_id LIKE '${MEDIA_STEP_PREFIX}%')
+     ), ids AS (
+       SELECT mapping.value AS id
+         FROM held, jsonb_each_text(COALESCE(held.output->'imageMapping', '{}'::jsonb)) AS mapping
+       UNION SELECT held.output->>'assetId' FROM held WHERE held.output->>'status' = 'stored'
+       UNION SELECT held.output->>'posterAssetId' FROM held WHERE held.output->>'status' = 'stored'
+     )
+     UPDATE asset_entries SET expires_at = ${deadline}
+      WHERE committed_at IS NULL AND expires_at IS NOT NULL
+        AND id IN (SELECT id FROM ids WHERE id IS NOT NULL)
+     RETURNING id`,
+    params,
+  );
+  return updated.rows.length;
+}
+
+/**
+ * Keep the allocations live runs hold from expiring: their pending deadline
+ * moves `ttlMs` ahead. A run's material images and the media it stored wait
+ * for a scene that may come much later (an outline waiting for its
+ * confirmation, a paused run retried days later). Answers how many it kept.
+ */
+export async function keepGenerationRunAssetsAlive(ttlMs: number): Promise<number> {
+  const { withTransaction } = await provider();
+  return withTransaction((tx) =>
+    setRunPendingAssetDeadlineIn(
+      tx,
+      `(r.state NOT IN ('completed', 'ended') OR r.media_pending)`,
+      [ttlMs / 1000],
+      'greatest(expires_at, now() + make_interval(secs => $1))',
+    ),
+  );
 }
 
 export interface CommandResult {
@@ -1106,7 +1241,10 @@ export async function retryGenerationRun(
     const updated = await applyPatch(
       tx,
       runId,
-      { state, error: null, releaseLease: true },
+      // No lease is taken from a worker that holds the run (one generating a
+      // paused run's media): it sees the state when it finishes and goes on
+      // with the run itself. A run nobody holds is claimable as it is.
+      { state, error: null },
       { resetTakeovers: true },
     );
     const seq = await insertEvents(tx, runId, [{ type: 'state', data: { state, step: run.step } }]);
@@ -1130,7 +1268,9 @@ async function retryMediaIn(tx: Queryable, run: RunRow, elementId: string): Prom
   if (!media) {
     throw new RunCommandConflictError('media', `The run has no media element ${elementId}`);
   }
-  if (media.status !== 'failed' || !isRetryableRunMedia(media)) {
+  const retryable =
+    media.status === 'skipped' || (media.status === 'failed' && isRetryableRunMedia(media));
+  if (!retryable) {
     throw new RunCommandConflictError(
       'media',
       media.status === 'failed'
@@ -1138,7 +1278,11 @@ async function retryMediaIn(tx: Queryable, run: RunRow, elementId: string): Prom
         : `The media element ${elementId} has not failed`,
     );
   }
-  const queued: GenerationRunMediaCheckpoint = { mediaType: media.mediaType, status: 'queued' };
+  // A video whose task is still the provider's is waited on again, not paid for again.
+  const queued: GenerationRunMediaCheckpoint =
+    media.status === 'failed' && media.task
+      ? { mediaType: media.mediaType, status: 'submitted', task: media.task }
+      : { mediaType: media.mediaType, status: 'queued' };
   await upsertStep(tx, run.id, { id: mediaStepId(elementId), output: queued });
   // A run that is generating takes it up at its next step; a paused or
   // completed one is claimed for it.

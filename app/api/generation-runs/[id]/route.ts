@@ -23,8 +23,7 @@ import {
 import {
   discardGenerationRun,
   isRunId,
-  readGenerationRun,
-  readGenerationRunMedia,
+  readGenerationRunWithMedia,
   RunCommandConflictError,
   runSnapshot,
 } from '@/lib/server/generation/run/store';
@@ -37,11 +36,11 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
-    const run = isRunId(id) ? await readGenerationRun(id, ownerId) : null;
-    if (!run) return ownerNotFound(responseHeaders);
-    const media = runMediaStates(await readGenerationRunMedia(run.id));
+    // The run and its media in one read, so the two agree.
+    const read = isRunId(id) ? await readGenerationRunWithMedia(id, ownerId) : null;
+    if (!read) return ownerNotFound(responseHeaders);
     return withOwnerResponseHeaders(
-      apiSuccess({ run: { ...runSnapshot(run), media } }),
+      apiSuccess({ run: { ...runSnapshot(read.run), media: runMediaStates(read.media) } }),
       responseHeaders,
     );
   });
