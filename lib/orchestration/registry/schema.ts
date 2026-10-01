@@ -14,6 +14,23 @@ import { isBuiltInAgentId } from './built-in';
 /** Most custom agents one owner keeps. */
 export const MAX_CUSTOM_AGENTS = 100;
 
+/**
+ * The most bytes one schema-valid agent takes as UTF-8 JSON: every string at
+ * its length limit in characters that JSON escapes to six bytes (`\u0000`),
+ * with the keys and punctuation. `tests/server/agents/agents-route.test.ts`
+ * builds that agent and checks it fits.
+ */
+export const MAX_AGENT_JSON_BYTES = 256 * 1024;
+
+/** Most agents one import request carries. */
+export const MAX_IMPORT_BATCH_AGENTS = MAX_CUSTOM_AGENTS * 2;
+
+/**
+ * The largest import request body. The importer sends the agents in batches
+ * under it (any single schema-valid agent fits many times over).
+ */
+export const MAX_IMPORT_BODY_BYTES = 8 * 1024 * 1024;
+
 const voiceConfigSchema = z
   .object({
     providerId: z.string().min(1).max(64),

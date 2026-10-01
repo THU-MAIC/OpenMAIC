@@ -103,6 +103,12 @@ export interface ImportLedger {
    * it neither holds up nor waits for {@link ImportLedger.completedAt}.
    */
   agents?: 'done';
+  /**
+   * Ids of the old registry's custom agents that are settled: the server took
+   * them, or already had them. A later run sends only the others, so an agent
+   * the user deleted on the server after it arrived is not created again.
+   */
+  agentsSettled?: string[];
 }
 
 /** A course whose storage reads failed this often, over this long, settles. */
@@ -213,6 +219,9 @@ export function mergeStoredLedger(ledger: ImportLedger, stored: ImportLedger | u
   }
   ledger.autoVoiceCache ??= stored.autoVoiceCache;
   ledger.agents ??= stored.agents;
+  if (stored.agentsSettled?.length) {
+    ledger.agentsSettled = [...new Set([...(ledger.agentsSettled ?? []), ...stored.agentsSettled])];
+  }
 }
 
 /** Persist the ledger, merged with the stored copy. A full storage throws (transient). */

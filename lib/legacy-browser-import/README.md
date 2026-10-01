@@ -224,8 +224,12 @@ runs it in the background (`importLegacyAgents`).
 - The server checks each agent with the registry's schema and keeps an agent
   the owner already has under that id; invalid agents, built-in ids and agents
   past the per-owner limit are skipped with the reason.
-- The ledger records `agents: 'done'` only when every agent is on the server
-  (imported, or already there). Agents the server skipped (the owner's limit,
+- The ledger records each agent the server settled (imported, or already
+  there) in `agentsSettled`, and a later run sends only the others, so an
+  agent the user deleted on the server after it arrived is not created again.
+  It records `agents: 'done'` once every agent is settled. The agents go in
+  batches under the route's limits (`MAX_IMPORT_BATCH_AGENTS`,
+  `MAX_IMPORT_BODY_BYTES`). Agents the server skipped (the owner's limit,
   a record it refuses) keep the import open: the registry shows them as
   `legacyAgentsPending`, and every later load sends the agents again. A
   refused request, another owner holding the browser, 401, 409, 5xx or a
@@ -235,7 +239,8 @@ runs it in the background (`importLegacyAgents`).
   id, an empty model id, an incomplete voice design) are left out before it is
   sent.
 - It runs in the background after the registry's first read of the owner's
-  agents, and the list is read again when it added any.
+  agents, in the registry's request queue, and the list is read again (queued
+  after it) when it added any.
 - The snapshot is never written or removed. Clear Local Cache keeps it until
   the ledger records the import.
 

@@ -10,16 +10,21 @@
  * (`POST /api/identity/legacy-import-binding`), and the import request carries
  * it in `X-OpenMAIC-Legacy-Import`, so owner resolution refuses it (409
  * `LEGACY_IMPORT_NOT_BOUND`) for any owner that does not hold the browser.
- * The ledger records the import (`agents: 'done'`) only once every agent is
- * on the server (imported now, or already there); an agent the server skipped
- * (the owner's limit, a record it refuses) keeps the import open, and every
- * later load sends the agents again. The server keeps an agent the owner
- * already has, so a repeat changes nothing for those. The legacy key itself is
- * never written or removed, and Clear Local Cache keeps it until the ledger
- * records the import.
+ * The ledger records each agent the server settled (took, or already had) in
+ * `agentsSettled`, and a later run sends only the others: an agent the user
+ * deleted on the server after it arrived is never created again. The import
+ * is recorded as done (`agents: 'done'`) once every agent is settled; an agent
+ * the server skipped (the owner's limit, a record it refuses) keeps it open
+ * for later loads. The agents go in batches that fit the route's limits. The
+ * legacy key itself is never written or removed, and Clear Local Cache keeps
+ * it until the ledger records the import.
  */
 import { isBuiltInAgentId } from '@/lib/orchestration/registry/built-in';
-import { customAgentFields } from '@/lib/orchestration/registry/schema';
+import {
+  customAgentFields,
+  MAX_IMPORT_BATCH_AGENTS,
+  MAX_IMPORT_BODY_BYTES,
+} from '@/lib/orchestration/registry/schema';
 
 import { ensureLedger, loadLedger, saveLedger } from './ledger';
 import { defaultStorage, errorCategory, LOG_PREFIX } from './model-settings';
@@ -152,10 +157,47 @@ async function bind(fetchImpl: Fetch, browserId: string): Promise<boolean> {
   }
 }
 
-function markDone(storage: ImportStorage): void {
+/** Record `ids` as settled, and the import as done once `allIds` all are. */
+function recordSettled(storage: ImportStorage, ids: readonly string[], allIds: readonly string[]) {
   const ledger = ensureLedger(storage as Storage);
-  ledger.agents = 'done';
+  const settled = new Set([...(ledger.agentsSettled ?? []), ...ids]);
+  ledger.agentsSettled = [...settled];
+  if (allIds.every((id) => settled.has(id))) ledger.agents = 'done';
   saveLedger(storage as Storage, ledger);
+}
+
+const encoder = new TextEncoder();
+
+/**
+ * `agents` in request bodies the import route accepts: at most
+ * `MAX_IMPORT_BATCH_AGENTS` each, under `MAX_IMPORT_BODY_BYTES`. An agent too
+ * large to send on its own is returned apart (the server would refuse it).
+ */
+export function importBatches(agents: readonly Record<string, unknown>[]): {
+  batches: Record<string, unknown>[][];
+  tooLarge: Record<string, unknown>[];
+} {
+  const envelope = encoder.encode('{"agents":[]}').length;
+  const batches: Record<string, unknown>[][] = [];
+  const tooLarge: Record<string, unknown>[] = [];
+  let batch: Record<string, unknown>[] = [];
+  let bytes = envelope;
+  for (const agent of agents) {
+    const size = encoder.encode(JSON.stringify(agent)).length + 1;
+    if (envelope + size > MAX_IMPORT_BODY_BYTES) {
+      tooLarge.push(agent);
+      continue;
+    }
+    if (batch.length === MAX_IMPORT_BATCH_AGENTS || bytes + size > MAX_IMPORT_BODY_BYTES) {
+      batches.push(batch);
+      batch = [];
+      bytes = envelope;
+    }
+    batch.push(agent);
+    bytes += size;
+  }
+  if (batch.length) batches.push(batch);
+  return { batches, tooLarge };
 }
 
 /** Server skip reasons that settle an agent: it is there, or never the owner's to import. */
@@ -173,14 +215,14 @@ export async function runAgentsImport(
   const storage = options.storage === undefined ? defaultStorage() : options.storage;
   if (!storage) return none;
   if (legacyAgentImportIsComplete(storage)) return none;
-  const agents = readLegacyCustomAgents(storage);
+  const all = readLegacyCustomAgents(storage);
   // No ledger is created for a browser that has nothing to import.
-  if (agents.length === 0) return none;
-  const kept = (reason: string): AgentsImportResult => ({
-    outcome: 'kept',
-    imported: 0,
-    pending: agents.map((agent) => ({ id: String(agent.id), reason })),
-  });
+  if (all.length === 0) return none;
+  const allIds = all.map((agent) => String(agent.id));
+  const alreadySettled = new Set(loadLedger(storage as Storage)?.agentsSettled ?? []);
+  const unresolved = all.filter((agent) => !alreadySettled.has(String(agent.id)));
+  const waiting = (agents: readonly Record<string, unknown>[], reason: string) =>
+    agents.map((agent) => ({ id: String(agent.id), reason }));
 
   let browserId: string;
   try {
@@ -189,46 +231,74 @@ export async function runAgentsImport(
     console.warn(
       `${LOG_PREFIX} No browser id for the agents import (${errorCategory(error)}); retrying on a later load`,
     );
-    return kept('no browser id');
+    return { outcome: 'kept', imported: 0, pending: waiting(unresolved, 'no browser id') };
+  }
+  if (unresolved.length === 0) {
+    // Every agent settled on earlier runs whose completion was not recorded.
+    recordSettled(storage, [], allIds);
+    return none;
   }
 
   const fetchImpl: Fetch = options.fetch ?? ((input, init) => fetch(input, init));
-  if (!(await bind(fetchImpl, browserId))) return kept('not bound to this owner');
-
-  let response: Response;
-  try {
-    response = await fetchImpl(AGENTS_IMPORT_ENDPOINT, {
-      method: 'POST',
-      credentials: 'same-origin',
-      cache: 'no-store',
-      headers: { 'Content-Type': 'application/json', [LEGACY_IMPORT_HEADER]: browserId },
-      body: JSON.stringify({ agents }),
-    });
-  } catch (error) {
-    console.warn(
-      `${LOG_PREFIX} Agents import failed (${errorCategory(error)}); retrying on a later load`,
-    );
-    return kept('network error');
-  }
-  if (!response.ok) {
-    // 409 LEGACY_IMPORT_NOT_BOUND (the owner changed since the binding), 400 or
-    // 413 (the agents as sent), 401, 404, 5xx: the agents stay for a later load.
-    console.warn(
-      `${LOG_PREFIX} Agents import answered HTTP ${response.status}; retrying on a later load`,
-    );
-    return kept(`HTTP ${response.status}`);
+  if (!(await bind(fetchImpl, browserId))) {
+    return {
+      outcome: 'kept',
+      imported: 0,
+      pending: waiting(unresolved, 'not bound to this owner'),
+    };
   }
 
-  let body: { imported?: unknown; skipped?: Array<{ id?: unknown; reason?: unknown }> };
-  try {
-    body = (await response.json()) as typeof body;
-  } catch {
-    return kept('unreadable answer');
+  const { batches, tooLarge } = importBatches(unresolved);
+  const pending: PendingLegacyAgent[] = waiting(tooLarge, 'too large');
+  let imported = 0;
+  for (const [index, batch] of batches.entries()) {
+    const rest = () => waiting(batches.slice(index).flat(), 'not sent');
+    let response: Response;
+    try {
+      response = await fetchImpl(AGENTS_IMPORT_ENDPOINT, {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', [LEGACY_IMPORT_HEADER]: browserId },
+        body: JSON.stringify({ agents: batch }),
+      });
+    } catch (error) {
+      console.warn(
+        `${LOG_PREFIX} Agents import failed (${errorCategory(error)}); retrying on a later load`,
+      );
+      return { outcome: 'kept', imported, pending: [...pending, ...rest()] };
+    }
+    let body: { imported?: unknown; skipped?: Array<{ id?: unknown; reason?: unknown }> };
+    try {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      body = (await response.json()) as typeof body;
+    } catch {
+      // 409 LEGACY_IMPORT_NOT_BOUND (the owner changed since the binding), 400
+      // or 413 (the agents as sent), 401, 404, 5xx, an unreadable answer: the
+      // agents not settled yet stay for a later load.
+      console.warn(
+        `${LOG_PREFIX} Agents import answered HTTP ${response.status}; retrying on a later load`,
+      );
+      return { outcome: 'kept', imported, pending: [...pending, ...rest()] };
+    }
+    const took = (Array.isArray(body.imported) ? body.imported : []).filter(
+      (id): id is string => typeof id === 'string',
+    );
+    imported += took.length;
+    const settled = [...took];
+    for (const { id, reason } of Array.isArray(body.skipped) ? body.skipped : []) {
+      if (typeof id !== 'string') continue;
+      if (SETTLED.has(String(reason))) settled.push(id);
+      else pending.push({ id, reason: String(reason) });
+    }
+    try {
+      recordSettled(storage, settled, allIds);
+    } catch (error) {
+      // A later run sends these again; the server keeps what it has.
+      console.warn(`${LOG_PREFIX} Could not record the agents import (${errorCategory(error)})`);
+    }
   }
-  const imported = Array.isArray(body.imported) ? body.imported.length : 0;
-  const pending = (Array.isArray(body.skipped) ? body.skipped : [])
-    .filter(({ reason }) => !SETTLED.has(String(reason)))
-    .map(({ id, reason }) => ({ id: typeof id === 'string' ? id : '', reason: String(reason) }));
+
   if (pending.length > 0) {
     console.warn(
       `${LOG_PREFIX} Custom agents not imported yet: ${pending
@@ -236,12 +306,6 @@ export async function runAgentsImport(
         .join(', ')}; retrying on a later load`,
     );
     return { outcome: 'partial', imported, pending };
-  }
-  try {
-    markDone(storage);
-  } catch (error) {
-    // Harmless: a repeat finds the agents on the server and skips them.
-    console.warn(`${LOG_PREFIX} Could not record the agents import (${errorCategory(error)})`);
   }
   return { outcome: 'imported', imported, pending: [] };
 }

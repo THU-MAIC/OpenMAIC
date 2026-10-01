@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AGENTS_IMPORT_ENDPOINT,
+  importBatches,
   LEGACY_AGENT_REGISTRY_KEY,
   readLegacyCustomAgents,
   runAgentsImport,
@@ -14,7 +15,11 @@ import {
 import { LEDGER_KEY, loadLedger } from '@/lib/legacy-browser-import/ledger';
 import { BINDING_ENDPOINT, LEGACY_IMPORT_HEADER } from '@/lib/legacy-browser-import/protocol';
 import { clearLocalStorageKeepingImportState } from '@/lib/device-storage/clear-local-cache';
-import { customAgentSchema } from '@/lib/orchestration/registry/schema';
+import {
+  customAgentSchema,
+  MAX_IMPORT_BATCH_AGENTS,
+  MAX_IMPORT_BODY_BYTES,
+} from '@/lib/orchestration/registry/schema';
 
 import { MemoryStorage } from './harness';
 
@@ -276,5 +281,51 @@ describe('the custom agents import', () => {
       outcome: 'imported',
       imported: 3,
     });
+  });
+
+  it('never recreates an agent the user deleted on the server after it arrived', async () => {
+    const storage = registryOf([
+      { ...custom, id: 'a' },
+      { ...custom, id: 'b' },
+    ]);
+    const owner = ownerServer(1);
+    await expect(runAgentsImport({ fetch: owner.fetch, storage })).resolves.toMatchObject({
+      outcome: 'partial',
+      imported: 1,
+      pending: [{ id: 'b', reason: 'limit' }],
+    });
+    expect(loadLedger(storage)!.agentsSettled).toEqual(['a']);
+
+    // The user deletes "a" on the server; there is room again.
+    owner.held.delete('a');
+    owner.setCapacity(5);
+    clearLocalStorageKeepingImportState(storage);
+    await expect(runAgentsImport({ fetch: owner.fetch, storage })).resolves.toEqual({
+      outcome: 'imported',
+      imported: 1,
+      pending: [],
+    });
+    const sent = owner.fetch.mock.calls
+      .filter(([url]) => url === AGENTS_IMPORT_ENDPOINT)
+      .map(([, init]) => JSON.parse(init!.body as string).agents.map((a: { id: string }) => a.id));
+    expect(sent).toEqual([['a', 'b'], ['b']]);
+    expect([...owner.held.keys()]).toEqual(['b']);
+    expect(loadLedger(storage)!.agents).toBe('done');
+  });
+
+  it('sends agents in batches that fit the import route', async () => {
+    const big = (id: string) => ({ ...custom, id, persona: '\u0000'.repeat(32_000) });
+    const { batches, tooLarge } = importBatches(
+      Array.from({ length: 250 }, (_, index) => big(`a-${index}`)),
+    );
+    expect(tooLarge).toEqual([]);
+    expect(batches.flat()).toHaveLength(250);
+    for (const batch of batches) {
+      expect(batch.length).toBeLessThanOrEqual(MAX_IMPORT_BATCH_AGENTS);
+      expect(
+        new TextEncoder().encode(JSON.stringify({ agents: batch })).length,
+      ).toBeLessThanOrEqual(MAX_IMPORT_BODY_BYTES);
+    }
+    expect(batches.length).toBeGreaterThan(1);
   });
 });

@@ -250,7 +250,7 @@ describe('/api/agents', () => {
   });
 
   it('refuses bodies over the size limit', async () => {
-    const huge = { agent: { ...agent('tutor'), persona: 'x'.repeat(70 * 1024) } };
+    const huge = { agent: { ...agent('tutor'), persona: 'x'.repeat(300 * 1024) } };
     const response = await create('alice', huge);
     expect(response.status).toBe(413);
     expect((await response.json()).error.code).toBe('BODY_TOO_LARGE');
@@ -283,6 +283,84 @@ describe('/api/agents', () => {
       agentIds: ['constructor', 'hasOwnProperty'],
     });
   });
+
+  it('takes the largest schema-valid agent, a full-length CJK persona included', async () => {
+    const { MAX_AGENT_JSON_BYTES, customAgentSchema } =
+      await import('@/lib/orchestration/registry/schema');
+    // Every string at its limit, in characters JSON escapes to six bytes.
+    const worst = {
+      id: 'w'.repeat(128),
+      name: '\u0001'.repeat(200),
+      role: '\u0001'.repeat(64),
+      persona: '\u0001'.repeat(32_000),
+      avatar: '\u0001'.repeat(2_048),
+      color: '\u0001'.repeat(64),
+      allowedActions: Array.from({ length: 64 }, () => '\u0001'.repeat(64)),
+      priority: 100,
+      voiceConfig: {
+        providerId: '\u0001'.repeat(64),
+        modelId: '\u0001'.repeat(128),
+        voiceId: '\u0001'.repeat(256),
+      },
+      voiceDesign: {
+        identity: '\u0001'.repeat(500),
+        texture: '\u0001'.repeat(500),
+        delivery: '\u0001'.repeat(500),
+      },
+    };
+    expect(customAgentSchema.safeParse(worst).success).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(worst))).toBeLessThanOrEqual(MAX_AGENT_JSON_BYTES);
+    expect((await create('alice', { agent: worst })).status).toBe(201);
+
+    const cjk = agent('cjk', { persona: '课'.repeat(32_000) });
+    expect((await create('alice', { agent: cjk })).status).toBe(201);
+    const updated = await update('alice', 'cjk', { agent: { ...cjk, name: '助教' } });
+    expect(updated.status).toBe(200);
+    expect((await updated.json()).agent.persona).toHaveLength(32_000);
+  });
+
+  it('imports a full registry of maximum-size agents in batches', async () => {
+    const { runAgentsImport, LEGACY_AGENT_REGISTRY_KEY } =
+      await import('@/lib/legacy-browser-import/agents-import');
+    const { MAX_CUSTOM_AGENTS } = await import('@/lib/orchestration/registry/schema');
+    const { MemoryStorage } = await import('../../legacy-browser-import/harness');
+    const routes: Record<string, () => Promise<{ POST: (req: never) => Promise<Response> }>> = {
+      '/api/identity/legacy-import-binding': () =>
+        import('@/app/api/identity/legacy-import-binding/route') as never,
+      '/api/agents/import': () => import('@/app/api/agents/import/route') as never,
+    };
+    const fetchToRoutes = vi.fn(async (url: string, init?: RequestInit) => {
+      const { POST } = await routes[url]!();
+      return POST(
+        new Request(`http://localhost${url}`, {
+          ...init,
+          headers: {
+            ...(init?.headers as Record<string, string>),
+            'x-test-session': 'alice',
+            'sec-fetch-site': 'same-origin',
+          },
+        }) as never,
+      );
+    });
+    const storage = new MemoryStorage();
+    const agents = Array.from({ length: MAX_CUSTOM_AGENTS }, (_, index) =>
+      agent(`big-${index}`, { persona: '课'.repeat(32_000), isDefault: false }),
+    );
+    storage.setItem(
+      LEGACY_AGENT_REGISTRY_KEY,
+      JSON.stringify({ state: { agents: Object.fromEntries(agents.map((a) => [a.id, a])) } }),
+    );
+
+    await expect(runAgentsImport({ fetch: fetchToRoutes, storage })).resolves.toEqual({
+      outcome: 'imported',
+      imported: MAX_CUSTOM_AGENTS,
+      pending: [],
+    });
+    const posts = fetchToRoutes.mock.calls.filter(([url]) => url === '/api/agents/import');
+    expect(posts.length).toBeGreaterThan(1);
+    const listed = (await (await list('alice')).json()).agents as { id: string }[];
+    expect(listed.filter((a) => a.id.startsWith('big-'))).toHaveLength(MAX_CUSTOM_AGENTS);
+  }, 60_000);
 
   describe('the server resolver', () => {
     it('resolves built-in and custom ids in order, and names every unknown one', async () => {

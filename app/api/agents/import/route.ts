@@ -6,7 +6,9 @@
  * Each agent is checked like a create (`customAgentSchema`); one that fails,
  * names a built-in id, or uses an id the owner already has (whose agent is
  * kept) is skipped with the reason, and the rest are imported in one
- * transaction. Safe to repeat: a second import finds every agent there. The
+ * transaction. The importer sends at most `MAX_IMPORT_BATCH_AGENTS` agents in
+ * a body under `MAX_IMPORT_BODY_BYTES` per request, in as many requests as it
+ * needs. Safe to repeat: a second import finds every agent there. The
  * importer's requests carry its browser id, so owner resolution refuses them
  * for an owner that does not hold the browser (`FENCED_ENDPOINTS`).
  */
@@ -18,7 +20,8 @@ import { isBuiltInAgentId } from '@/lib/orchestration/registry/built-in';
 import {
   customAgentSchema,
   describeAgentIssue,
-  MAX_CUSTOM_AGENTS,
+  MAX_IMPORT_BATCH_AGENTS,
+  MAX_IMPORT_BODY_BYTES,
   type CustomAgent,
 } from '@/lib/orchestration/registry/schema';
 import {
@@ -33,11 +36,6 @@ import { withRequestOwner } from '@/lib/server/identity/with-owner';
 
 export const runtime = 'nodejs';
 
-/** More than an owner can keep is never a browser's own registry. */
-const MAX_IMPORTED = MAX_CUSTOM_AGENTS * 2;
-/** That many agents at the schema's limits. */
-const MAX_IMPORT_BODY_BYTES = 8 * 1024 * 1024;
-
 export async function POST(req: NextRequest) {
   if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
   return withRequestOwner(req, async ({ ownerId }, headers) => {
@@ -45,11 +43,11 @@ export async function POST(req: NextRequest) {
     if (!read.ok && read.tooLarge) return bodyTooLargeResponse(MAX_IMPORT_BODY_BYTES, headers);
     const body = (read.ok ? read.value : undefined) as { agents?: unknown } | undefined;
     const agents = body && typeof body === 'object' ? body.agents : undefined;
-    if (!Array.isArray(agents) || agents.length > MAX_IMPORTED) {
+    if (!Array.isArray(agents) || agents.length > MAX_IMPORT_BATCH_AGENTS) {
       return agentsJsonError(
         400,
         'INVALID_REQUEST',
-        `expected { agents } with at most ${MAX_IMPORTED} agents`,
+        `expected { agents } with at most ${MAX_IMPORT_BATCH_AGENTS} agents`,
         headers,
       );
     }

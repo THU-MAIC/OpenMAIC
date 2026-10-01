@@ -179,13 +179,15 @@ let legacyImport: Promise<void> | undefined;
 /**
  * Import the custom agents an earlier build kept in this browser (once they
  * are all on the server, never again), and read the list again when that
- * added any. Never rejects. Loaded on demand: it is temporary.
+ * added any. Both run in the request queue, one after the other, so a change
+ * made while the import runs is applied after it and before the new read.
+ * Never rejects. Loaded on demand: it is temporary.
  */
 export function importLegacyAgents(): Promise<void> {
   legacyImport ??= (async () => {
     try {
       const { runAgentsImport } = await import('@/lib/legacy-browser-import/agents-import');
-      const result = await runAgentsImport();
+      const result = await enqueue(() => runAgentsImport());
       useAgentRegistry.setState({ legacyAgentsPending: result.pending });
       if (result.imported > 0) await loadAgentRegistry();
     } catch (error) {

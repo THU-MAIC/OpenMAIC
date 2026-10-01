@@ -10,6 +10,7 @@ import {
   customAgentIdSchema,
   customAgentSchema,
   describeAgentIssue,
+  MAX_AGENT_JSON_BYTES,
   type CustomAgent,
 } from '@/lib/orchestration/registry/schema';
 import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
@@ -40,8 +41,8 @@ export async function agentsPool() {
   return (await getServerPersistenceProvider(process.env.DATABASE_URL ?? '')).pool;
 }
 
-/** The largest create or update body: one agent at its schema's limits, with room. */
-export const MAX_AGENT_BODY_BYTES = 64 * 1024;
+/** The largest create or update body: `{ agent }` with the largest schema-valid agent. */
+export const MAX_AGENT_BODY_BYTES = MAX_AGENT_JSON_BYTES + 1024;
 
 export type JsonBody = { ok: true; value: unknown } | { ok: false; tooLarge: boolean };
 

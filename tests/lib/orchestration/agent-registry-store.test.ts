@@ -280,6 +280,38 @@ describe('changing custom agents', () => {
     ]);
   });
 
+  it('an import that began before a delete cannot bring the agent back', async () => {
+    useAgentRegistry.setState((state) => ({
+      agents: Object.assign(Object.create(null), state.agents, { tutor: custom('tutor') }),
+    }));
+    let deleted = false;
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE') {
+        deleted = true;
+        return new Response(null, { status: 204 });
+      }
+      return listing(...(deleted ? [view('old')] : [view('tutor'), view('old')]));
+    });
+    const importing = deferred<AgentsImportResult>();
+    runAgentsImport.mockReturnValueOnce(importing.promise);
+
+    const imported = importLegacyAgents();
+    await vi.waitFor(() => expect(runAgentsImport).toHaveBeenCalledOnce());
+    const deleting = registry().deleteAgent('tutor');
+    await Promise.resolve();
+    // The delete waits for the import.
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    importing.resolve({ outcome: 'imported', imported: 1, pending: [] });
+    await deleting;
+    await imported;
+    expect(fetchMock.mock.calls.map(([, init]) => init?.method ?? 'GET')).toEqual([
+      'DELETE',
+      'GET',
+    ]);
+    expect(customIds()).toEqual(['old']);
+  });
+
   it('refuses to change built-in agents and invalid custom ones, without a request', async () => {
     await expect(registry().updateAgent('default-1', { name: 'Mine' })).rejects.toThrow(/built in/);
     await expect(registry().deleteAgent('default-1')).rejects.toThrow(/built in/);
