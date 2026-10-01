@@ -34,6 +34,13 @@ export interface GenerationRunConfig {
   maxActiveRunsPerOwner: number;
   /** Runs one owner may have waiting for outline confirmation at once. */
   maxWaitingRunsPerOwner: number;
+  /**
+   * How long a finished run keeps its full log (checkpoints and every event)
+   * before the sweep compacts it to what its final snapshot needs.
+   */
+  finishedRetentionMs: number;
+  /** How often a process sweeps finished runs. */
+  compactionIntervalMs: number;
 }
 
 /** Read on every call, so a test (or an operator restart) sees the environment as it is. */
@@ -46,5 +53,8 @@ export function generationRunConfig(): GenerationRunConfig {
     maxTakeovers: agentRuntimeConfig.maxAttempts,
     maxActiveRunsPerOwner: positiveIntegerFromEnv('OPENMAIC_MAX_ACTIVE_RUNS_PER_OWNER', 2),
     maxWaitingRunsPerOwner: positiveIntegerFromEnv('OPENMAIC_MAX_WAITING_RUNS_PER_OWNER', 10),
+    finishedRetentionMs:
+      positiveIntegerFromEnv('OPENMAIC_GENERATION_RUN_RETENTION_HOURS', 24) * 60 * 60 * 1000,
+    compactionIntervalMs: 60 * 60 * 1000,
   };
 }

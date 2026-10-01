@@ -31,7 +31,6 @@ import { stateForRetry } from './plan';
 import {
   ACTIVE_RUN_STATES,
   EXECUTABLE_RUN_STATES,
-  isTerminalRunState,
   LIMITED_RUN_STATES,
   type GenerationRunAgentsResult,
   type GenerationRunEvent,
@@ -275,16 +274,35 @@ export async function currentOwnerOf(storedOwnerId: string): Promise<string> {
 }
 
 /**
- * Keep a finished run's log to what its final snapshot needs: the
- * checkpoints go, and so does every event before its final commit's (a
- * follower still sees how it ended; the snapshot holds the rest).
+ * Compact the runs that finished (completed or ended) more than `graceMs`
+ * ago to what their final snapshot needs: their checkpoints go, and so does
+ * every event but the final commit's two (`completed`/`ended` and `state`).
+ * A follower still sees how a run ended; one further behind is told to
+ * reload the snapshot (the events stream's `resync`). Answers how many runs
+ * it compacted.
  */
-async function compactFinishedRunIn(tx: Queryable, runId: string, keepFromSeq: number) {
-  await tx.query('DELETE FROM generation_run_steps WHERE run_id = $1', [runId]);
-  await tx.query('DELETE FROM generation_run_events WHERE run_id = $1 AND seq < $2', [
-    runId,
-    keepFromSeq,
-  ]);
+export async function compactFinishedGenerationRuns(graceMs: number): Promise<number> {
+  const { withTransaction } = await provider();
+  return withTransaction(async (tx) => {
+    const finished = await tx.query<{ id: string }>(
+      `SELECT id FROM generation_runs r
+        WHERE state IN ('completed', 'ended') AND updated_at < now() - make_interval(secs => $1)
+          AND (EXISTS (SELECT 1 FROM generation_run_steps s WHERE s.run_id = r.id)
+               OR EXISTS (SELECT 1 FROM generation_run_events e
+                           WHERE e.run_id = r.id AND e.seq <= r.seq - 2))
+        ORDER BY id LIMIT 500`,
+      [graceMs / 1000],
+    );
+    const ids = finished.rows.map((row) => row.id);
+    if (ids.length === 0) return 0;
+    await tx.query('DELETE FROM generation_run_steps WHERE run_id = ANY($1)', [ids]);
+    await tx.query(
+      `DELETE FROM generation_run_events e USING generation_runs r
+        WHERE e.run_id = r.id AND r.id = ANY($1) AND e.seq <= r.seq - 2`,
+      [ids],
+    );
+    return ids.length;
+  });
 }
 
 /** Append events under the run row lock (held by the caller), allocating their seqs. */
@@ -388,16 +406,39 @@ export class WaitingRunLimitError extends Error {
  * a limited state when the owner already has `limit` of them. The lock comes
  * first in the transaction, before any run row.
  */
-async function enforceActiveRunLimitIn(tx: Queryable, ownerId: string, limit: number) {
+async function enforceActiveRunLimitIn(
+  tx: Queryable,
+  ownerId: string,
+  limit: number,
+): Promise<string> {
+  // Counted for the owner the runs belong to now: every owner claimed into it
+  // shares its limit, and its lock.
+  const owner = await canonicalOwnerIn(tx, ownerId);
   await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
-    `openmaic.generation-runs.owner:${ownerId}`,
+    `openmaic.generation-runs.owner:${owner}`,
   ]);
   const active = await tx.query<{ n: string | number }>(
     `SELECT count(*) AS n FROM generation_runs
       WHERE ${OWNED_BY('$1')} AND state = ANY($2::text[])`,
-    [ownerId, [...LIMITED_RUN_STATES]],
+    [owner, [...LIMITED_RUN_STATES]],
   );
   if (Number(active.rows[0]?.n ?? 0) >= limit) throw new ActiveRunLimitError(limit);
+  return owner;
+}
+
+/** {@link currentOwnerOf}, on an open transaction. */
+async function canonicalOwnerIn(tx: Queryable, ownerId: string): Promise<string> {
+  let current = ownerId;
+  for (let hop = 0; hop < MAX_MERGE_HOPS; hop += 1) {
+    const merged = await tx.query<{ to_owner_id: string }>(
+      'SELECT to_owner_id FROM owner_merges WHERE from_owner_id = $1',
+      [current],
+    );
+    const next = merged.rows[0]?.to_owner_id;
+    if (!next) return current;
+    current = next;
+  }
+  throw new Error(`The claims of owner ${ownerId} form a chain longer than ${MAX_MERGE_HOPS}`);
 }
 
 /**
@@ -412,11 +453,11 @@ export async function createGenerationRun(
 ): Promise<StoredRun> {
   const { withTransaction } = await provider();
   return withTransaction(async (tx) => {
-    await enforceActiveRunLimitIn(tx, ownerId, options.maxActiveRunsPerOwner);
+    const owner = await enforceActiveRunLimitIn(tx, ownerId, options.maxActiveRunsPerOwner);
     const waiting = await tx.query<{ n: string | number }>(
       `SELECT count(*) AS n FROM generation_runs
         WHERE ${OWNED_BY('$1')} AND state = 'awaiting_outline_confirmation'`,
-      [ownerId],
+      [owner],
     );
     if (Number(waiting.rows[0]?.n ?? 0) >= options.maxWaitingRunsPerOwner) {
       throw new WaitingRunLimitError(options.maxWaitingRunsPerOwner);
@@ -472,21 +513,6 @@ export async function listGenerationRunsUpdatedSince(
     [ownerId, since],
   );
   return result.rows.map(storedRun);
-}
-
-/**
- * The oldest event a run still keeps, or null for none. A finished run is
- * compacted to its final commit's events: a reader behind them must reload
- * the snapshot.
- */
-export async function oldestGenerationRunEventSeq(runId: string): Promise<number | null> {
-  const { pool } = await provider();
-  const result = await pool.query<{ seq: string | number | null }>(
-    'SELECT min(seq) AS seq FROM generation_run_events WHERE run_id = $1',
-    [runId],
-  );
-  const seq = result.rows[0]?.seq;
-  return seq === null || seq === undefined ? null : Number(seq);
 }
 
 /** The run's events after `afterSeq`, in order. The caller has checked ownership. */
@@ -673,9 +699,6 @@ export async function commitGenerationRunIn(
     await insertEvents(tx, lease.runId, commit.events);
     row = { ...row, seq: Number(row.seq) + commit.events.length };
   }
-  if (commit.patch?.state !== undefined && isTerminalRunState(commit.patch.state)) {
-    await compactFinishedRunIn(tx, lease.runId, Number(row.seq) - (commit.events?.length ?? 0) + 1);
-  }
   if (commit.patch?.state !== undefined && commit.patch.state !== before.state) {
     await notifyOwner(tx, before.owner_id);
   } else if (commit.patch?.scenesCompleted !== undefined || commit.patch?.stageId !== undefined) {
@@ -755,7 +778,6 @@ async function endRunIn(
     { type: 'ended', data },
     { type: 'state', data: { state: 'ended', step: null } },
   ]);
-  await compactFinishedRunIn(tx, runId, seq - 1);
   await notifyOwner(tx, ownerId);
   return seq;
 }
@@ -836,8 +858,9 @@ export async function confirmGenerationRunOutline(
   /** Confirming makes the run active again: it counts toward the limit from then on. */
   options: { maxActiveRunsPerOwner: number },
 ): Promise<CommandResult | null> {
-  const limit = (tx: Queryable) =>
-    enforceActiveRunLimitIn(tx, ownerId, options.maxActiveRunsPerOwner);
+  const limit = async (tx: Queryable) => {
+    await enforceActiveRunLimitIn(tx, ownerId, options.maxActiveRunsPerOwner);
+  };
   return runCommand(
     runId,
     ownerId,

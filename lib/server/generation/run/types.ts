@@ -10,6 +10,7 @@
  */
 import type { AgentInfo } from '@openmaic/generation';
 
+import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { GeneratedAgentConfig } from '@/lib/types/stage';
 
@@ -48,10 +49,6 @@ export const ACTIVE_RUN_STATES = [
  * for its outline to be confirmed holds no worker, so it does not count.
  */
 export const LIMITED_RUN_STATES = ['preparing', 'outlining', 'generating', 'paused'] as const;
-
-export function isTerminalRunState(state: GenerationRunState): boolean {
-  return state === 'completed' || state === 'ended';
-}
 
 /** Which agents teach the course. */
 export type GenerationRunAgents =
@@ -94,6 +91,20 @@ export interface GenerationRunOutline {
   taskEngineMode: boolean;
 }
 
+/** A custom preset agent as narration reads it. */
+export type GenerationRunCustomAgent = Pick<
+  AgentConfig,
+  | 'id'
+  | 'name'
+  | 'role'
+  | 'persona'
+  | 'avatar'
+  | 'color'
+  | 'priority'
+  | 'voiceConfig'
+  | 'voiceDesign'
+>;
+
 /** The agents a run teaches with, as the agents step resolved them. */
 export interface GenerationRunAgentsResult {
   /** What the content and actions steps receive. */
@@ -102,6 +113,11 @@ export interface GenerationRunAgentsResult {
   agentIds: string[];
   /** The generated roster, embedded in the stage; absent for preset agents. */
   generatedAgentConfigs?: GeneratedAgentConfig[];
+  /**
+   * The owner's custom agents among the presets, with what their voice needs
+   * (a custom teacher narrates with its own voice, as in the browser).
+   */
+  customAgents?: GenerationRunCustomAgent[];
 }
 
 /** The failure a paused run stopped at. */

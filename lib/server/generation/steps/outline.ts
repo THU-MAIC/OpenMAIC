@@ -607,6 +607,8 @@ export async function streamOutlines(
   ) {
     try {
       let fullText = '';
+      // In UTF-8 bytes, the unit of the cap (and of the outline normalizer's).
+      let fullTextBytes = 0;
       let scanFrom = 0;
       parsedOutlines = [];
       languageDirective = null;
@@ -642,10 +644,11 @@ export async function streamOutlines(
         const chunk = part.text;
 
         fullText += chunk;
+        fullTextBytes += Buffer.byteLength(chunk, 'utf8');
 
-        if (fullText.length > MAX_OUTLINE_STREAM_BYTES) {
+        if (fullTextBytes > MAX_OUTLINE_STREAM_BYTES) {
           log.warn(
-            `Outline stream exceeded ${MAX_OUTLINE_STREAM_BYTES} bytes (len=${fullText.length}); stopping read and finalizing with ${parsedOutlines.length} outline(s)`,
+            `Outline stream exceeded ${MAX_OUTLINE_STREAM_BYTES} bytes (bytes=${fullTextBytes}); stopping read and finalizing with ${parsedOutlines.length} outline(s)`,
           );
           break;
         }

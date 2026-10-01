@@ -4,8 +4,10 @@
  * step generated is always confirmable unchanged.
  *
  * It is lenient where a model is loose and strict only where the pipeline
- * depends on it: the number of scenes, the size, each scene's id, order and
- * type. A `null` member is treated as absent; an optional member of the wrong
+ * depends on it: the number of scenes, the size, each scene's id and order,
+ * and that a scene has a type. The type is not checked against the known
+ * ones: as in the browser, a scene of a type no content path supports fails
+ * at its own content step, not the outline. A `null` member is treated as absent; an optional member of the wrong
  * shape is dropped (and so are the items of a list that are not what the
  * list holds); members the schema does not know are not carried over.
  * Normalizing a normalized outline changes nothing.
@@ -16,10 +18,22 @@ import type { SceneOutline } from '@/lib/types/generation';
 
 /** The most scenes an outline may plan (the outline step stops reading the model there). */
 export const MAX_OUTLINE_SCENES = 100;
-/** The most JSON an outline may be: the outline step's own read cap on the model's output. */
+/**
+ * The most an outline may be, in UTF-8 bytes of JSON: the outline step's own
+ * read cap on the model's output, in the same unit.
+ */
 export const MAX_OUTLINE_JSON_BYTES = 512 * 1024;
+/** The bounds a confirmed outline keeps its scenes within. */
+const MAX_TYPE_CHARS = 64;
+const MAX_ORDER = 10_000;
+const MAX_QUESTION_COUNT = 100;
+const MAX_MEDIA_GENERATIONS = 20;
 
-const SCENE_TYPES: readonly SceneOutline['type'][] = ['slide', 'quiz', 'interactive', 'pbl'];
+const QUESTION_TYPES = ['single', 'multiple', 'text'] as const;
+
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), 'utf8');
+}
 
 export type NormalizedOutlines =
   | { ok: true; value: SceneOutline[] }
@@ -71,7 +85,8 @@ function withoutNulls(value: unknown): unknown {
 
 function mediaGenerations(value: unknown): SceneOutline['mediaGenerations'] {
   if (!Array.isArray(value)) return undefined;
-  return value.flatMap((item) => {
+  // At most so many requests; the rest go the way invalid items go.
+  return value.slice(0, MAX_MEDIA_GENERATIONS).flatMap((item) => {
     const media = record(item);
     const type = oneOf(media?.type, ['image', 'video'] as const);
     const prompt = text(media?.prompt);
@@ -89,19 +104,33 @@ function mediaGenerations(value: unknown): SceneOutline['mediaGenerations'] {
   });
 }
 
+/**
+ * A quiz configuration the content generator can use as it is, or none at
+ * all (the generator then applies its defaults): every member present and
+ * recognised, a question count within bounds, at least one question type.
+ */
 function quizConfig(value: unknown): SceneOutline['quizConfig'] {
   const quiz = record(value);
   if (!quiz) return undefined;
-  return defined({
-    questionCount: finite(quiz.questionCount),
-    difficulty: oneOf(quiz.difficulty, ['easy', 'medium', 'hard'] as const),
-    questionTypes: Array.isArray(quiz.questionTypes)
-      ? quiz.questionTypes.flatMap((type) => {
-          const known = oneOf(type, ['single', 'multiple', 'text'] as const);
-          return known ? [known] : [];
-        })
-      : undefined,
-  }) as SceneOutline['quizConfig'];
+  const questionCount = finite(quiz.questionCount);
+  const difficulty = oneOf(quiz.difficulty, ['easy', 'medium', 'hard'] as const);
+  const questionTypes = Array.isArray(quiz.questionTypes)
+    ? quiz.questionTypes.flatMap((type) => {
+        const known = oneOf(type, QUESTION_TYPES);
+        return known ? [known] : [];
+      })
+    : [];
+  if (
+    questionCount === undefined ||
+    !Number.isInteger(questionCount) ||
+    questionCount < 1 ||
+    questionCount > MAX_QUESTION_COUNT ||
+    !difficulty ||
+    questionTypes.length === 0
+  ) {
+    return undefined;
+  }
+  return { questionCount, difficulty, questionTypes };
 }
 
 function interactiveConfig(value: unknown): SceneOutline['interactiveConfig'] {
@@ -137,16 +166,20 @@ function sceneOutline(value: unknown, index: number): SceneOutline {
   if (!raw) throw new OutlineRefused(`${at} must be an object`);
   const id = text(raw.id);
   if (!id || !id.trim()) throw new OutlineRefused(`${at}.id must be a non-empty string`);
-  const type = oneOf(raw.type, SCENE_TYPES);
-  if (!type) throw new OutlineRefused(`${at}.type must be one of ${SCENE_TYPES.join(', ')}`);
+  const type = text(raw.type);
+  if (!type || !type.trim() || type.length > MAX_TYPE_CHARS) {
+    throw new OutlineRefused(
+      `${at}.type must be a non-empty string of at most ${MAX_TYPE_CHARS} characters`,
+    );
+  }
   const order = raw.order;
-  if (typeof order !== 'number' || !Number.isInteger(order) || order < 0) {
-    throw new OutlineRefused(`${at}.order must be a non-negative integer`);
+  if (typeof order !== 'number' || !Number.isInteger(order) || order < 0 || order > MAX_ORDER) {
+    throw new OutlineRefused(`${at}.order must be an integer from 0 to ${MAX_ORDER}`);
   }
   const widgetOutline = record(raw.widgetOutline);
   return defined({
     id,
-    type,
+    type: type as SceneOutline['type'],
     title: text(raw.title) ?? '',
     description: text(raw.description) ?? '',
     keyPoints: texts(raw.keyPoints, { nonEmpty: true }) ?? [],
@@ -178,12 +211,11 @@ export function normalizeSceneOutlines(value: unknown): NormalizedOutlines {
       message: `outlines must be an array of 1 to ${MAX_OUTLINE_SCENES} scene outlines`,
     };
   }
-  if (Buffer.byteLength(JSON.stringify(value), 'utf8') > MAX_OUTLINE_JSON_BYTES) {
-    return {
-      ok: false,
-      message: `outlines may be at most ${MAX_OUTLINE_JSON_BYTES} bytes of JSON`,
-    };
-  }
+  const tooLarge = {
+    ok: false as const,
+    message: `outlines may be at most ${MAX_OUTLINE_JSON_BYTES} bytes of JSON`,
+  };
+  if (jsonBytes(value) > MAX_OUTLINE_JSON_BYTES) return tooLarge;
   let outlines: SceneOutline[];
   try {
     outlines = value.map(sceneOutline);
@@ -197,5 +229,8 @@ export function normalizeSceneOutlines(value: unknown): NormalizedOutlines {
   if (new Set(outlines.map((outline) => outline.order)).size !== outlines.length) {
     return { ok: false, message: 'outlines must not repeat an order' };
   }
+  // The normal form is measured too, so what normalizing yields always
+  // normalizes again.
+  if (jsonBytes(outlines) > MAX_OUTLINE_JSON_BYTES) return tooLarge;
   return { ok: true, value: outlines };
 }

@@ -19,6 +19,7 @@ import { runClaimedGenerationRun, startGenerationRunner } from '@/lib/server/gen
 import { defaultRunStepServices, type RunStepServices } from '@/lib/server/generation/run/services';
 import {
   claimNextGenerationRun,
+  compactFinishedGenerationRuns,
   commitGenerationRun,
   confirmGenerationRunOutline,
   createGenerationRun,
@@ -35,6 +36,9 @@ import {
 import type { GenerationRunInput } from '@/lib/server/generation/run/types';
 import type { MediaConnection } from '@/lib/server/model-config/media';
 import { storeGeneratedAsset } from '@/lib/server/store-generated-asset';
+import { createOwnerAgent } from '@/lib/server/agents/store';
+import { StepRefusal } from '@/lib/server/generation/steps/context';
+import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
 
@@ -484,9 +488,11 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       ['scene_ready', 0],
       ['scene_ready', 1],
     ]);
-    // Finished: only the final commit's events and no checkpoints remain.
-    expect(await eventTypes(run.id)).toEqual(['completed', 'state']);
-    expect((await readGenerationRunSteps(run.id)).size).toBe(0);
+    // Finished, and still whole until the grace period is over.
+    expect((await eventTypes(run.id)).slice(-2)).toEqual(['completed', 'state']);
+    expect((await readGenerationRunSteps(run.id)).size).toBeGreaterThan(0);
+    await compactFinishedGenerationRuns(24 * 60 * 60 * 1000);
+    expect((await readGenerationRunSteps(run.id)).size).toBeGreaterThan(0);
   });
 
   it('uses preset agents, confirms an edited outline, and confirms itself for headless callers', async () => {
@@ -496,9 +502,6 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     );
     // Confirmed in the outline's own commit: one execution, no waiting.
     expect(await drive(run.id, services)).toBe('completed');
-    // A finished run keeps only its final commit's events and no checkpoints.
-    expect(await eventTypes(run.id)).toEqual(['completed', 'state']);
-    expect((await readGenerationRunSteps(run.id)).size).toBe(0);
     expect(calls.agentProfiles).toEqual([]);
     expect(calls.sceneContent[0]!.agents).toEqual([
       { id: 'default-2', name: 'Agent default-2', role: 'teacher', persona: 'Built in.' },
@@ -943,7 +946,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     const stageId = (await readGenerationRun(run.id, OWNER))!.stageId!;
     await documentStore(OWNER).deleteDocument(stageId);
     expect(await readGenerationRun(run.id, OWNER)).toMatchObject({ state: 'ended', step: null });
-    expect(await eventTypes(run.id)).toEqual(['ended', 'state']);
+    expect((await eventTypes(run.id)).slice(-2)).toEqual(['ended', 'state']);
     await expect(retryGenerationRun(run.id, OWNER, { commandId: 'late' })).rejects.toMatchObject({
       reason: 'state',
     });
@@ -1278,7 +1281,6 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         description: '',
         keyPoints: [],
         order: 2,
-        quizConfig: { questionTypes: [] },
       },
     ]);
     // The outline as the run holds it goes back through confirm as is.
@@ -1299,6 +1301,9 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     const { services } = fakeServices({ research: async () => null });
     const run = await start(runInput({ outlineReview: 'auto' }));
     expect(await drive(run.id, services)).toBe('completed');
+    // Past its grace period (none, here), the sweep compacts it.
+    expect(await compactFinishedGenerationRuns(0)).toBeGreaterThanOrEqual(1);
+    expect((await readGenerationRunSteps(run.id)).size).toBe(0);
     const kept = await readGenerationRunEvents(run.id, 0);
     expect(kept.map((event) => event.type)).toEqual(['completed', 'state']);
     const { GET } = await import('@/app/api/generation-runs/[id]/events/route');
@@ -1439,6 +1444,103 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(
       (calls.sceneContent[0]!.agents as Array<{ id: string }>).map((agent) => agent.id),
     ).toEqual(['default-1', 'default-2', 'default-3']);
+  });
+
+  it('a scene of a type no content path supports fails at its content step, as in the browser', async () => {
+    const outlines: SceneOutline[] = [
+      OUTLINES[0]!,
+      { ...OUTLINES[1]!, type: 'video' as SceneOutline['type'] },
+      OUTLINES[2]!,
+    ];
+    const base = fakeServices({ research: async () => null });
+    const refuseUnknown = (parallel: number) =>
+      fakeServices({
+        research: async () => null,
+        parallelSceneConcurrency: () => parallel,
+        outline: async () => ({
+          outlines,
+          languageDirective: 'Use English.',
+          courseTitle: 'Mixed',
+          taskEngineMode: false,
+        }),
+        sceneContent: async (owner, input, ctx) => {
+          if (!['slide', 'quiz', 'interactive', 'pbl'].includes(input.outline.type)) {
+            throw new StepRefusal(
+              'generation-failed',
+              `Failed to generate content: ${input.outline.title}`,
+            );
+          }
+          return base.services.sceneContent(owner, input, ctx);
+        },
+      });
+
+    // Serial: the run pauses at that scene; the outline was accepted as is.
+    const serial = await start(runInput({ outlineReview: 'auto' }));
+    expect(await drive(serial.id, refuseUnknown(0).services)).toBe('paused');
+    expect(await readGenerationRun(serial.id, OWNER)).toMatchObject({
+      step: 'scene:1:content',
+      outline: { outlines: [{ id: 'o1' }, { id: 'o2', type: 'video' }, { id: 'o3' }] },
+      progress: { scenesCompleted: 1 },
+    });
+
+    // Parallel: it is marked, the others go on, and the run pauses at it after.
+    const parallel = await start(runInput({ outlineReview: 'auto' }));
+    expect(await drive(parallel.id, refuseUnknown(3).services)).toBe('paused');
+    expect(await readGenerationRun(parallel.id, OWNER)).toMatchObject({
+      step: 'scene:1:content',
+      progress: { scenesCompleted: 2 },
+    });
+  });
+
+  it("narrates a custom preset teacher with its own voice, from the owner's registry", async () => {
+    const owner = 'anon:6a7b8c9d-0e1f-4a2b-9c3d-4e5f6a7b8c9d';
+    await createOwnerAgent(pool as unknown as ConnectableQueryable, owner, {
+      id: 'custom-teacher',
+      name: 'Mira',
+      role: 'teacher',
+      persona: 'Calm and exact.',
+      avatar: '/avatars/teacher-2.png',
+      color: '#123456',
+      allowedActions: [],
+      priority: 10,
+      voiceConfig: { providerId: 'qwen-tts', voiceId: 'Ethan' },
+    });
+    const base = fakeServices({ research: async () => null });
+    const voices: string[] = [];
+    const { services, calls } = fakeServices({
+      research: async () => null,
+      presetAgents: defaultRunStepServices.presetAgents,
+      narrationTarget: async () => ({
+        connection: {
+          providerId: 'qwen-tts',
+          managed: true,
+          userEndpoint: false,
+          origin: 'configuration',
+        } as MediaConnection,
+        providerId: 'qwen-tts',
+        modelId: 'qwen3-tts-flash',
+      }),
+      narrateClip: async (who, input, ctx) => {
+        voices.push(input.voice);
+        return base.services.narrateClip(who, input, ctx);
+      },
+    });
+    const run = await createGenerationRun(
+      owner,
+      runInput({ agents: { mode: 'preset', agentIds: ['custom-teacher'] }, outlineReview: 'auto' }),
+      { maxActiveRunsPerOwner: 50, maxWaitingRunsPerOwner: 50 },
+    );
+    expect(await drive(run.id, services)).toBe('completed');
+    expect(calls.sceneContent[0]!.agents).toEqual([
+      { id: 'custom-teacher', name: 'Mira', role: 'teacher', persona: 'Calm and exact.' },
+    ]);
+    // Its bound voice, not the slot's default (Cherry).
+    expect(voices).toEqual(['Ethan', 'Ethan', 'Ethan']);
+    expect((await readGenerationRun(run.id, owner))!.agents).toMatchObject({
+      customAgents: [
+        { id: 'custom-teacher', voiceConfig: { providerId: 'qwen-tts', voiceId: 'Ethan' } },
+      ],
+    });
   });
 
   describe('the runner', () => {

@@ -128,4 +128,32 @@ describe('run event streams', () => {
     const { done } = await stream.getReader().read();
     expect(done).toBe(true);
   });
+
+  it('keeps a pull that arrives while a read is still in flight', async () => {
+    const frame = (seq: number) => sseFrame('item', { seq, padding: 'x'.repeat(1000) }, seq);
+    const total = 2000;
+    let cursor = 0;
+    const stream = polledEventStream({
+      wakeup: { kind: 'generation-run', runId: 'run-pull' },
+      pollIntervalMs: 60_000,
+      heartbeatIntervalMs: 60_000,
+      read: async (write) => {
+        while (cursor < total) {
+          // A read that yields mid-way: the client drains (pulls) meanwhile.
+          if (cursor % 25 === 0) await new Promise((resolve) => setImmediate(resolve));
+          if (!write(frame(cursor + 1))) return;
+          cursor += 1;
+        }
+      },
+    });
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    while (!text.includes(`id: ${total}\n`)) {
+      const { value } = await reader.read();
+      text += decoder.decode(value, { stream: true });
+    }
+    await reader.cancel();
+    expect([...text.matchAll(/^id: (\d+)$/gm)]).toHaveLength(total);
+  });
 });

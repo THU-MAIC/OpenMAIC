@@ -17,7 +17,6 @@ import type { NextRequest } from 'next/server';
 
 import {
   isRunId,
-  oldestGenerationRunEventSeq,
   readGenerationRun,
   readGenerationRunEvents,
 } from '@/lib/server/generation/run/store';
@@ -60,7 +59,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   let cursor = parseCursor(req.headers.get('last-event-id') ?? url.searchParams.get('after'));
   const from = cursor;
   let caughtUp = false;
-  let resynced = false;
 
   const stream = polledEventStream({
     wakeup: { kind: 'generation-run', runId: id },
@@ -68,30 +66,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     onClose: release,
     signal: req.signal,
     read: async (write) => {
-      if (!resynced) {
-        // A finished run keeps only its final events: a cursor behind them
-        // cannot be replayed, so the client reloads the snapshot instead.
-        const oldest = await oldestGenerationRunEventSeq(id);
-        if (oldest !== null && cursor + 1 < oldest) {
+      for (;;) {
+        const page = await readGenerationRunEvents(id, cursor, PAGE);
+        // A gap after the cursor means the events were compacted away (a
+        // finished run keeps its final ones): the client reloads the
+        // snapshot, then follows on from what is kept.
+        if (page.length > 0 && page[0]!.seq > cursor + 1) {
           if (
             !write(
               sseFrame('resync', {
                 type: 'resync',
                 reason: 'compacted',
-                from,
+                from: cursor,
                 snapshot: `/api/generation-runs/${id}`,
-                oldestSeq: oldest,
+                oldestSeq: page[0]!.seq,
               }),
             )
           ) {
             return;
           }
-          cursor = oldest - 1;
+          cursor = page[0]!.seq - 1;
         }
-        resynced = true;
-      }
-      for (;;) {
-        const page = await readGenerationRunEvents(id, cursor, PAGE);
         for (const event of page) {
           if (
             !write(

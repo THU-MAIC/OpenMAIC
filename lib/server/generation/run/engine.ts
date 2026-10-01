@@ -95,6 +95,7 @@ import {
 } from './store';
 import type {
   GenerationRunAgentsResult,
+  GenerationRunCustomAgent,
   GenerationRunInput,
   GenerationRunOutline,
   NewGenerationRunEvent,
@@ -239,15 +240,18 @@ function builtInAgents(): AgentConfig[] {
   return Object.values(BUILT_IN_AGENTS);
 }
 
-/** A generated roster entry as the registry holds it (for the narrator's voice options). */
-function rosterAgent(agent: GeneratedAgentConfig): AgentConfig {
+/** A roster entry as the registry holds it (for the narrator's voice options). */
+function rosterAgent(
+  agent: GeneratedAgentConfig | GenerationRunCustomAgent,
+  generated: boolean,
+): AgentConfig {
   return {
     ...agent,
     allowedActions: [],
     createdAt: new Date(0),
     updatedAt: new Date(0),
     isDefault: false,
-    isGenerated: true,
+    ...(generated ? { isGenerated: true } : {}),
   } as AgentConfig;
 }
 
@@ -631,6 +635,23 @@ export async function executeGenerationRun(
           persona: agent.persona,
         })),
         agentIds: configs.map((agent) => agent.id),
+        ...(configs.some((agent) => !agent.isDefault)
+          ? {
+              customAgents: configs
+                .filter((agent) => !agent.isDefault)
+                .map((agent) => ({
+                  id: agent.id,
+                  name: agent.name,
+                  role: agent.role,
+                  persona: agent.persona,
+                  avatar: agent.avatar,
+                  color: agent.color,
+                  priority: agent.priority,
+                  ...(agent.voiceConfig ? { voiceConfig: agent.voiceConfig } : {}),
+                  ...(agent.voiceDesign ? { voiceDesign: agent.voiceDesign } : {}),
+                })),
+            }
+          : {}),
       };
     };
     let result: GenerationRunAgentsResult;
@@ -704,10 +725,11 @@ export async function executeGenerationRun(
       (action): action is SpeechAction => action.type === 'speech' && !!action.text,
     );
     // The narrator as the browser's registry finds it: the built-in agents
-    // first, then the course's generated roster.
+    // first, then the owner's custom agents, then the course's generated roster.
     const teacher = pickNarratorAgent([
       ...builtInAgents(),
-      ...(agents().agents.generatedAgentConfigs ?? []).map(rosterAgent),
+      ...(agents().agents.customAgents ?? []).map((agent) => rosterAgent(agent, false)),
+      ...(agents().agents.generatedAgentConfigs ?? []).map((agent) => rosterAgent(agent, true)),
     ]);
     const bound = teacher?.voiceConfig;
     const { speed } = slotVoice(target, input.voice);
@@ -814,7 +836,9 @@ export async function executeGenerationRun(
     const change: StepCommit = {
       step: { id: stepId, output: { scene } satisfies NarrationOutput },
       patch: {
-        scenesCompleted: run.progress.scenesCompleted + 1,
+        // The scenes in the course: every narrated scene, this one included.
+        scenesCompleted:
+          [...steps.keys()].filter((id) => id !== stepId && id.endsWith(':narration')).length + 1,
         ...(sceneIndex === 0 ? { stageId: stage.id } : {}),
       },
       events: [
@@ -827,8 +851,10 @@ export async function executeGenerationRun(
     };
     // The document write and the checkpoint that records it, in one
     // transaction (a retried append rewrites the same scene id).
+    // The engine's view of the run moves only once the whole write committed.
+    let committed: StoredRun | undefined;
     const inTransaction = async (tx: Queryable) => {
-      run = await commitGenerationRunIn(tx, lease, change);
+      committed = await commitGenerationRunIn(tx, lease, change);
     };
     if (sceneIndex === 0) {
       await createRunCourse({
@@ -848,6 +874,7 @@ export async function executeGenerationRun(
         inTransaction,
       });
     }
+    run = committed!;
     steps.set(stepId, change.step!.output);
   };
 
@@ -870,12 +897,13 @@ export async function executeGenerationRun(
 
   const complete = async (): Promise<void> => {
     const stageId = agents().stage.id;
+    let committed: StoredRun | undefined;
     await completeRunCourse({
       ownerId: owner,
       lease,
       stageId,
       commit: async (tx) => {
-        run = await commitGenerationRunIn(tx, lease, {
+        committed = await commitGenerationRunIn(tx, lease, {
           patch: { state: 'completed', step: null, releaseLease: true },
           events: [
             { type: 'completed', data: { stageId } },
@@ -884,6 +912,7 @@ export async function executeGenerationRun(
         });
       },
     });
+    run = committed!;
   };
 
   const end = async (stageId: string): Promise<void> => {

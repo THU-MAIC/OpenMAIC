@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { StepRefusal } from '@/lib/server/generation/steps/context';
 import {
+  MAX_OUTLINE_JSON_BYTES,
   MAX_OUTLINE_SCENES,
   MAX_START_BODY_BYTES,
   parseCommandId,
@@ -181,7 +182,6 @@ describe('outline validation', () => {
           keyPoints: ['a', 'b'],
           order: 1,
           mediaGenerations: [{ type: 'image', prompt: 'a leaf', elementId: 'gen_img_1' }],
-          quizConfig: { questionCount: 3, questionTypes: ['single'] },
           pblConfig: { projectTopic: 'Garden' },
           widgetOutline: { concept: 'flow', steps: ['x'] },
         },
@@ -191,8 +191,52 @@ describe('outline validation', () => {
     expect(parseOutlines(parsed.ok && parsed.value)).toEqual(parsed);
   });
 
+  it('keeps a scene of a type it does not know (its content step decides), bounded', () => {
+    const parsed = parseOutlines([outline({ type: 'video' })]);
+    expect(parsed.ok && parsed.value[0]!.type).toBe('video');
+  });
+
+  it('keeps a quiz configuration only when the generator can use it as it is', () => {
+    const quiz = (quizConfig: unknown) => {
+      const parsed = parseOutlines([outline({ type: 'quiz', quizConfig })]);
+      return parsed.ok ? parsed.value[0]!.quizConfig : 'refused';
+    };
+    const usable = { questionCount: 3, difficulty: 'easy', questionTypes: ['single', 'essay'] };
+    expect(quiz(usable)).toEqual({
+      questionCount: 3,
+      difficulty: 'easy',
+      questionTypes: ['single'],
+    });
+    expect(quiz({ ...usable, questionTypes: ['essay'] })).toBeUndefined();
+    expect(quiz({ ...usable, difficulty: undefined })).toBeUndefined();
+    expect(quiz({ ...usable, questionCount: 0 })).toBeUndefined();
+    expect(quiz({ ...usable, questionCount: 101 })).toBeUndefined();
+  });
+
+  it('keeps at most 20 media requests per scene', () => {
+    const media = Array.from({ length: 25 }, (_, i) => ({
+      type: 'image',
+      prompt: `p${i}`,
+      elementId: `gen_img_${i}`,
+    }));
+    const parsed = parseOutlines([outline({ mediaGenerations: media })]);
+    expect(parsed.ok && parsed.value[0]!.mediaGenerations).toHaveLength(20);
+  });
+
+  it("measures its size in UTF-8 bytes, the outline step's unit", () => {
+    // Under the byte cap in UTF-16 code units, over it in UTF-8 bytes.
+    const wide = '\u4e2d'.repeat(60_000);
+    const outlines = Array.from({ length: 3 }, (_, i) =>
+      outline({ id: `o${i}`, order: i, description: wide }),
+    );
+    expect(JSON.stringify(outlines).length).toBeLessThan(MAX_OUTLINE_JSON_BYTES);
+    expect(parseOutlines(outlines)).toMatchObject({ ok: false, message: /bytes/ });
+  });
+
   it.each([
-    ['an unknown scene type', [outline({ type: 'video' })], /type/],
+    ['a scene without a type', [outline({ type: '' })], /type/],
+    ['an overlong type', [outline({ type: 't'.repeat(65) })], /type/],
+    ['an order out of bounds', [outline({ order: 10_001 })], /order/],
     ['a fractional order', [outline({ order: 1.5 })], /order/],
     ['a missing order', [outline({ order: null })], /order/],
     ['a missing id', [outline({ id: null })], /id/],

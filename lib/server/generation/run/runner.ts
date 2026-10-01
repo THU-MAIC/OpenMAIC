@@ -18,6 +18,7 @@ import { executeGenerationRun } from './engine';
 import { defaultRunStepServices, type RunStepServices } from './services';
 import {
   claimNextGenerationRun,
+  compactFinishedGenerationRuns,
   heartbeatGenerationRun,
   releaseGenerationRunLease,
   type ClaimedRun,
@@ -145,6 +146,13 @@ export function startGenerationRunner(
   const config = { ...generationRunConfig(), ...options.config };
   const timer = setInterval(() => void scan(), config.scanIntervalMs);
   timer.unref?.();
+  // Finished runs are compacted once their grace period is over.
+  const sweep = () =>
+    void compactFinishedGenerationRuns(config.finishedRetentionMs).catch((error) =>
+      log.warn('finished run compaction failed', error),
+    );
+  const sweepTimer = setInterval(sweep, config.compactionIntervalMs);
+  sweepTimer.unref?.();
   void scan();
   log.info(
     `generation runner ${workerId} started (scan=${config.scanIntervalMs}ms, ` +
@@ -159,6 +167,7 @@ export function startGenerationRunner(
       stopping = true;
       if (runnerState[RUNNER_KEY] === handle) delete runnerState[RUNNER_KEY];
       clearInterval(timer);
+      clearInterval(sweepTimer);
       for (const execution of running.values()) execution.abort.abort();
       const deadline = Date.now() + (stopOptions?.timeoutMs ?? 15_000);
       // A scan in flight may still be handing back a claim it just took.

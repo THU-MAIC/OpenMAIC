@@ -84,6 +84,8 @@ export function polledEventStream(options: PolledStreamOptions): ReadableStream<
   let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
   // Set once a read stopped on a full queue: the next pull reads again.
   let blocked = false;
+  // Set by a pull, so one that arrives while a read is in flight is not lost.
+  let pulled = false;
   let requestRead: (() => Promise<void>) | null = null;
 
   const clear = () => {
@@ -153,13 +155,16 @@ export function polledEventStream(options: PolledStreamOptions): ReadableStream<
           inFlight = (async () => {
             do {
               again = false;
+              pulled = false;
               blocked = false;
               try {
                 await options.read(write, 'live');
               } catch {
                 // A transient database failure: the next wake-up or poll retries.
               }
-            } while (again && !closed && !blocked);
+              // A read that stopped at a full queue goes on only if the client
+              // drained some of it meanwhile (a pull during the read is kept).
+            } while (!closed && (blocked ? pulled : again));
           })().finally(() => {
             inFlight = null;
           });
@@ -189,6 +194,7 @@ export function polledEventStream(options: PolledStreamOptions): ReadableStream<
       },
       pull() {
         // The client drained the queue: go on where a full queue stopped.
+        pulled = true;
         if (blocked && requestRead) void requestRead();
       },
       cancel() {
