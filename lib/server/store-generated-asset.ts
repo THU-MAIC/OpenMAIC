@@ -1,5 +1,6 @@
 import { AssetQuotaExceededError, type AssetStore } from '@openmaic/storage';
 import type { AssetMeta } from '@openmaic/dsl';
+import type { Queryable } from '@openmaic/storage/document/pg';
 
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
 import { forwardOwnerWrite } from '@/lib/persistence/owner-merges';
@@ -44,6 +45,12 @@ export interface StoreGeneratedAssetInput {
    * database; production callers never pass it.
    */
   assetStore?: AssetStore;
+  /**
+   * Runs first on the allocation's transaction (after the owner's identity
+   * lock): a background worker's lease check, so a worker whose work was
+   * taken over allocates nothing.
+   */
+  fence?: (tx: Queryable) => Promise<void>;
 }
 
 export type StoreGeneratedAssetResult =
@@ -110,6 +117,7 @@ export async function storeGeneratedAsset(
         const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
         return provider.withTransaction(async (tx) => {
           const ownerId = await forwardOwnerWrite(tx, input.ownerId);
+          await input.fence?.(tx);
           return provider.assetStoreIn(tx).put(assetPrincipalForOwner(ownerId), blob, meta);
         });
       };

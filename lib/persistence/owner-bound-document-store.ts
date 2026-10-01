@@ -116,6 +116,18 @@ interface PendingOperation {
   mode: OwnershipMode;
   /** A create that must insert: any existing course under the id refuses it. */
   exclusive?: CreateDocumentOptions;
+  /** A mutation's own rows, on its transaction (see {@link MutationOptions}). */
+  inTransaction?: (queryable: Queryable) => Promise<void>;
+}
+
+/** What a scene write may add to its transaction. */
+export interface MutationOptions {
+  /**
+   * Runs on the write's transaction after the write, before COMMIT: whatever
+   * it writes commits or rolls back with the scene (a generation run's
+   * checkpoint, say).
+   */
+  inTransaction?: (queryable: Queryable) => Promise<void>;
 }
 
 /** What {@link CreateOnlyDocumentStore.createDocument} may add to its transaction. */
@@ -158,6 +170,8 @@ export function isStageIdTakenError(error: unknown): error is StageIdTakenError 
  */
 export interface CreateOnlyDocumentStore<TScene extends SceneLike, TStage extends Stage> {
   createDocument(doc: MaicDocument<TScene, TStage>, options?: CreateDocumentOptions): Promise<void>;
+  /** `putScene`, with rows of the caller's own committed in the same transaction. */
+  putScene(stageId: string, scene: TScene, options?: MutationOptions): Promise<void>;
 }
 
 interface RawOwnershipRow extends Record<string, unknown> {
@@ -224,8 +238,10 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
     return this.tagged({ stageId, mode: 'mutate' }, () => this.inner.putStage(stageId, stage));
   }
 
-  putScene(stageId: string, scene: TScene): Promise<void> {
-    return this.tagged({ stageId, mode: 'mutate' }, () => this.inner.putScene(stageId, scene));
+  putScene(stageId: string, scene: TScene, options: MutationOptions = {}): Promise<void> {
+    return this.tagged({ stageId, mode: 'mutate', inTransaction: options.inTransaction }, () =>
+      this.inner.putScene(stageId, scene),
+    );
   }
 
   deleteScene(stageId: string, sceneId: string): Promise<void> {
@@ -261,6 +277,11 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
         // `stage_meta` row `FOR UPDATE` and refused a foreign owner, so the
         // delete is decided before anything below is written.
         await tombstoneStageMeta(queryable, stageId);
+        // A course that is still generating ends with its deletion, in this
+        // transaction, whatever state its run is in.
+        const { endGenerationRunsOfDeletedCourseIn } =
+          await import('@/lib/server/generation/run/store');
+        await endGenerationRunsOfDeletedCourseIn(queryable, stageId);
         await queryable.query('UPDATE document_stages SET folder_id = NULL WHERE id = $1', [
           stageId,
         ]);
@@ -461,6 +482,7 @@ export function createOwnerBoundDocumentStore<
             await operation.exclusive.inTransaction?.(queryable);
           }
         }
+        if (operation?.mode === 'mutate') await operation.inTransaction?.(queryable);
         if (operation && operation.mode !== 'read') await options.mutationFence?.(queryable);
         await client.query('COMMIT');
         return result;

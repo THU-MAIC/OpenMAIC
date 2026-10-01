@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto';
 
 import { createLogger } from '@/lib/logger';
 
-import { generationRunConfig } from './config';
+import { generationRunConfig, type GenerationRunConfig } from './config';
 import { executeGenerationRun } from './engine';
 import { defaultRunStepServices, type RunStepServices } from './services';
 import {
@@ -45,6 +45,8 @@ export interface GenerationRunnerHandle {
 export interface GenerationRunnerOptions {
   services?: RunStepServices;
   workerId?: string;
+  /** Overrides of the configuration (tests). */
+  config?: Partial<GenerationRunConfig>;
 }
 
 /** Execute one claimed run to its next stop, under a heartbeat. Exported for the contract tests. */
@@ -92,14 +94,23 @@ export function startGenerationRunner(
     try {
       do {
         rescan = false;
-        const config = generationRunConfig();
+        const config = { ...generationRunConfig(), ...options.config };
         while (running.size < config.maxConcurrent && !stopping) {
           const claim = await claimNextGenerationRun(workerId, {
             leaseTtlMs: config.leaseTtlMs,
             maxTakeovers: config.maxTakeovers,
           });
           if (!claim) break;
-          if (running.has(claim.run.id)) continue;
+          if (stopping || running.has(claim.run.id)) {
+            // Stopping, or this process still executes the run under a lease
+            // that went stale (its heartbeat stalled) and the claim just took
+            // it over: hand the claim back. The stale execution is fenced and
+            // stops at its next commit; the next scan claims the run afresh.
+            running.get(claim.run.id)?.abort.abort();
+            await releaseGenerationRunLease(claim.lease).catch(() => undefined);
+            // Not again in this scan: the stale execution settles first.
+            break;
+          }
           log.info(
             `claimed ${claim.run.id} (generation ${claim.lease.generation}${claim.takeover ? ', takeover' : ''})`,
           );
@@ -111,7 +122,6 @@ export function startGenerationRunner(
                 // A clean park: the next claim resumes from the last checkpoint.
                 await releaseGenerationRunLease(claim.lease).catch(() => undefined);
               }
-              if (outcome === 'requeued') rescan = true;
             })
             .catch((error) => {
               log.error(`run ${claim.run.id} crashed`, error);
@@ -130,7 +140,7 @@ export function startGenerationRunner(
     }
   };
 
-  const config = generationRunConfig();
+  const config = { ...generationRunConfig(), ...options.config };
   const timer = setInterval(() => void scan(), config.scanIntervalMs);
   timer.unref?.();
   void scan();

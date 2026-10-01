@@ -34,7 +34,7 @@ export type GenerationRunState = (typeof GENERATION_RUN_STATES)[number];
 export const EXECUTABLE_RUN_STATES = ['preparing', 'outlining', 'generating'] as const;
 export type ExecutableRunState = (typeof EXECUTABLE_RUN_STATES)[number];
 
-/** States that count against the per-owner limit on active runs. */
+/** States of a run that is not over: what course cards show. */
 export const ACTIVE_RUN_STATES = [
   'preparing',
   'outlining',
@@ -43,14 +43,24 @@ export const ACTIVE_RUN_STATES = [
   'paused',
 ] as const;
 
+/**
+ * States that count against the per-owner limit on active runs. A run waiting
+ * for its outline to be confirmed holds no worker, so it does not count.
+ */
+export const LIMITED_RUN_STATES = ['preparing', 'outlining', 'generating', 'paused'] as const;
+
 export function isTerminalRunState(state: GenerationRunState): boolean {
   return state === 'completed' || state === 'ended';
 }
 
 /** Which agents teach the course. */
 export type GenerationRunAgents =
-  /** Generate course-specific agents (the agent-profiles step). */
-  | { mode: 'auto' }
+  /**
+   * Generate course-specific agents (the agent-profiles step). When that
+   * fails, the course is taught by `presetAgentIds`, the learner's selected
+   * preset agents (as the browser falls back to its selection).
+   */
+  | { mode: 'auto'; presetAgentIds?: string[] }
   /** These agents, by id: built-in ones or the owner's custom ones. */
   | { mode: 'preset'; agentIds: string[] };
 
@@ -96,8 +106,11 @@ export interface GenerationRunAgentsResult {
 
 /** The failure a paused run stopped at. */
 export interface GenerationRunFailure {
-  step: string;
+  /** The step that failed; null when the run stopped before it chose one. */
+  step: string | null;
   message: string;
+  /** Where `retry` resumes a run that stopped without a step. */
+  resumeState?: ExecutableRunState;
 }
 
 export interface GenerationRunProgress {

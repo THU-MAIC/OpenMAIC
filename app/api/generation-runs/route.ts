@@ -16,13 +16,17 @@ import type { NextRequest } from 'next/server';
 
 import { apiSuccess } from '@/lib/server/api-response';
 import { ownerApiError, withOwnerResponseHeaders } from '@/lib/server/agent-runtime/route-response';
-import { resolveAgentsForOwner, UnknownAgentError } from '@/lib/server/agents/registry';
+import { resolveAgentsForOwner, UnknownAgentsError } from '@/lib/server/agents/registry';
 import {
   ClassroomMaterialsRejectedError,
   resolveClassroomMaterials,
 } from '@/lib/server/classroom-materials';
 import { generationRunConfig } from '@/lib/server/generation/run/config';
-import { parseRunInput } from '@/lib/server/generation/run/input';
+import {
+  MAX_START_BODY_BYTES,
+  parseRunInput,
+  readJsonBody,
+} from '@/lib/server/generation/run/input';
 import { wakeGenerationRunner } from '@/lib/server/generation/run/runner';
 import {
   ActiveRunLimitError,
@@ -40,13 +44,11 @@ export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
-    let raw: unknown;
-    try {
-      raw = await req.json();
-    } catch {
-      return ownerApiError('INVALID_REQUEST', 400, 'Invalid JSON body', responseHeaders);
+    const body = await readJsonBody(req, MAX_START_BODY_BYTES);
+    if (!body.ok) {
+      return ownerApiError('INVALID_REQUEST', body.status, body.message, responseHeaders);
     }
-    const parsed = parseRunInput(raw);
+    const parsed = parseRunInput(body.value);
     if (!parsed.ok) return ownerApiError('INVALID_REQUEST', 400, parsed.message, responseHeaders);
     const input = parsed.value;
 
@@ -56,11 +58,13 @@ export async function POST(req: NextRequest) {
       if (input.materialIds.length > 0) {
         await resolveClassroomMaterials(ownerId, input.materialIds, { forward: false });
       }
-      if (input.agents.mode === 'preset') {
-        await resolveAgentsForOwner(ownerId, input.agents.agentIds);
-      }
+      const agentIds =
+        input.agents.mode === 'preset'
+          ? input.agents.agentIds
+          : (input.agents.presetAgentIds ?? []);
+      if (agentIds.length > 0) await resolveAgentsForOwner(ownerId, agentIds);
     } catch (error) {
-      if (error instanceof ClassroomMaterialsRejectedError || error instanceof UnknownAgentError) {
+      if (error instanceof ClassroomMaterialsRejectedError || error instanceof UnknownAgentsError) {
         return ownerApiError('INVALID_REQUEST', 400, error.message, responseHeaders);
       }
       if (error instanceof WorkspaceEndpointError) {

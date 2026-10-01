@@ -6,9 +6,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { StepRefusal } from '@/lib/server/generation/steps/context';
 import {
+  MAX_OUTLINE_SCENES,
+  MAX_START_BODY_BYTES,
   parseCommandId,
   parseConfirmOutline,
+  parseOutlines,
   parseRunInput,
+  readJsonBody,
 } from '@/lib/server/generation/run/input';
 import { withRouteRetry } from '@/lib/server/generation/run/retry';
 
@@ -90,7 +94,129 @@ describe('run input', () => {
     ).toBe(false);
     expect(
       parseConfirmOutline({ commandId: 'c', outlineRevision: 1, outlines: [outline] }),
-    ).toEqual({ ok: true, value: { commandId: 'c', outlineRevision: 1, outlines: [outline] } });
+    ).toEqual({
+      ok: true,
+      value: {
+        commandId: 'c',
+        outlineRevision: 1,
+        outlines: [{ ...outline, description: '', keyPoints: [] }],
+      },
+    });
+  });
+});
+
+describe('outline validation', () => {
+  const outline = (overrides: Record<string, unknown> = {}) => ({
+    id: 'o1',
+    type: 'slide',
+    title: 'Intro',
+    description: 'Why',
+    keyPoints: ['a', 'b'],
+    order: 1,
+    ...overrides,
+  });
+
+  it('keeps the outline schema and drops members it does not know', () => {
+    const parsed = parseOutlines([
+      outline({
+        mediaGenerations: [{ type: 'image', prompt: 'a leaf', elementId: 'gen_img_1' }],
+        quizConfig: { questionCount: 3, difficulty: 'easy', questionTypes: ['single'] },
+        widgetType: 'diagram',
+        widgetOutline: { concept: 'flow', nodeCount: 4 },
+        notes: 'not part of the schema',
+      }),
+    ]);
+    expect(parsed).toEqual({
+      ok: true,
+      value: [
+        {
+          id: 'o1',
+          type: 'slide',
+          title: 'Intro',
+          description: 'Why',
+          keyPoints: ['a', 'b'],
+          order: 1,
+          mediaGenerations: [{ type: 'image', prompt: 'a leaf', elementId: 'gen_img_1' }],
+          quizConfig: { questionCount: 3, difficulty: 'easy', questionTypes: ['single'] },
+          widgetType: 'diagram',
+          widgetOutline: { concept: 'flow', nodeCount: 4 },
+        },
+      ],
+    });
+  });
+
+  it.each([
+    ['an unknown scene type', [outline({ type: 'video' })], /type/],
+    ['a fractional order', [outline({ order: 1.5 })], /order/],
+    ['a repeated order', [outline(), outline({ id: 'o2' })], /repeat an order/],
+    ['a repeated id', [outline(), outline({ order: 2 })], /repeat an id/],
+    ['an empty title', [outline({ title: ' ' })], /title/],
+    ['an overlong title', [outline({ title: 't'.repeat(501) })], /title/],
+    ['a key point that is not text', [outline({ keyPoints: [1] })], /keyPoints/],
+    ['too many key points', [outline({ keyPoints: Array(51).fill('k') })], /keyPoints/],
+    ['an unknown widget', [outline({ widgetType: 'chart' })], /widgetType/],
+    [
+      'an oversized widget outline',
+      [outline({ widgetOutline: { concept: 'c'.repeat(40_000) } })],
+      /widgetOutline/,
+    ],
+    [
+      'an unknown media type',
+      [outline({ mediaGenerations: [{ type: 'gif', prompt: 'p', elementId: 'e' }] })],
+      /mediaGenerations/,
+    ],
+    ['no scenes', [], /1 to/],
+    [
+      'too many scenes',
+      Array.from({ length: MAX_OUTLINE_SCENES + 1 }, (_, i) => outline({ id: `o${i}`, order: i })),
+      /1 to/,
+    ],
+    [
+      'too many bytes',
+      Array.from({ length: 50 }, (_, i) =>
+        outline({
+          id: `o${i}`,
+          order: i,
+          description: 'd'.repeat(4_000),
+          teachingObjective: 't'.repeat(4_000),
+          languageNote: 'l'.repeat(4_000),
+        }),
+      ),
+      /bytes/,
+    ],
+  ])('refuses %s', (_label, outlines, message) => {
+    const parsed = parseOutlines(outlines);
+    expect(parsed.ok).toBe(false);
+    expect(!parsed.ok && parsed.message).toMatch(message);
+  });
+
+  it('refuses a body over its byte limit, declared or not', async () => {
+    const big = JSON.stringify({ requirement: 'x'.repeat(MAX_START_BODY_BYTES) });
+    const declared = await readJsonBody(
+      new Request('http://localhost/', { method: 'POST', body: big }),
+      MAX_START_BODY_BYTES,
+    );
+    expect(declared).toMatchObject({ ok: false, status: 413 });
+    const streamed = await readJsonBody(
+      new Request('http://localhost/', {
+        method: 'POST',
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(big));
+            controller.close();
+          },
+        }),
+        duplex: 'half',
+      } as RequestInit),
+      MAX_START_BODY_BYTES,
+    );
+    expect(streamed).toMatchObject({ ok: false, status: 413 });
+    expect(
+      await readJsonBody(
+        new Request('http://localhost/', { method: 'POST', body: '{"a":1}' }),
+        MAX_START_BODY_BYTES,
+      ),
+    ).toEqual({ ok: true, value: { a: 1 } });
   });
 });
 

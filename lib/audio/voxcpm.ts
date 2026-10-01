@@ -129,3 +129,20 @@ export function buildAutoVoxCPMVoicePrompt(context: VoxCPMVoicePromptContext = {
   const fallbackPrompt = sanitizeAutoVoicePromptPart(fallbackParts.join(' '));
   return fallbackPrompt || 'natural classroom voice';
 }
+
+/**
+ * The VoxCPM options of a voice that needs nothing the browser keeps: the
+ * auto voice (its inline prompt), a profile voice whose profile is not at hand
+ * (the auto prompt, as when the profile was deleted), or a free-text prompt.
+ * The browser adds what it keeps on top (a registered auto voice, a profile's
+ * prompt or reference audio); the server has nothing more.
+ */
+export function voxCPMPromptProviderOptions(
+  voiceId: string,
+  context?: VoxCPMVoicePromptContext,
+): VoxCPMProviderOptions {
+  if (voiceId === VOXCPM_AUTO_VOICE_ID || getVoxCPMProfileIdFromVoiceId(voiceId)) {
+    return { voiceMode: 'auto', voicePrompt: buildAutoVoxCPMVoicePrompt(context) };
+  }
+  return { voiceMode: 'prompt', voicePrompt: voiceId };
+}

@@ -12,84 +12,30 @@
  */
 
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
-import type { VoiceDesign } from '@/lib/audio/voice-design';
 import { getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
-import {
-  VOXCPM_AUTO_VOICE_ID,
-  VOXCPM_TTS_PROVIDER_ID,
-  normalizeVoxCPMBackend,
-} from '@/lib/audio/voxcpm';
+import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { ttsSelection } from '@/lib/audio/tts-selection';
+import {
+  effectiveVoiceDesign,
+  pickNarratorAgent,
+  resolveAgentVoiceOptionsFrom,
+  type AgentVoiceResolveOptions,
+} from '@/lib/audio/agent-voice-options';
 
-/** What a voice's options depend on: the model (the provider's key and endpoint stay on the server). */
-interface TTSProviderConfigShape {
-  modelId?: string;
-  providerOptions?: Record<string, unknown>;
-}
-
-export interface AgentVoiceResolveOptions {
-  providerId: string;
-  providerConfig?: TTSProviderConfigShape;
-  voiceId: string;
-  /** Course language / locale — only selects the one-time bootstrap sample sentence. */
-  language?: string;
-}
-
-/**
- * Pick the agent whose voice narration should use (the teacher).
- *
- * The registry is always seeded with the DEFAULT agents, so a plain
- * `find(role === 'teacher')` returns the default teacher (no voice binding or
- * design) even when a generated classroom is active. Prefer an explicit
- * voiceConfig first, then a teacher carrying voiceDesign, and finally any teacher.
- */
-export function pickNarratorAgent(agents: AgentConfig[]): AgentConfig | undefined {
-  return (
-    agents.find((a) => a.role === 'teacher' && a.voiceConfig) ??
-    agents.find((a) => a.role === 'teacher' && a.voiceDesign) ??
-    agents.find((a) => a.role === 'teacher')
-  );
-}
-
-/**
- * The descriptor used to bootstrap an agent's voice: the real `voiceDesign`
- * when present (generated agents), otherwise the persona as a fallback seed.
- * Persona is not a vocal description, so the resulting voice is stable but
- * generic — good enough to register a consistent reference clip (no drift),
- * pending a real descriptor if quality matters for that agent.
- */
-function effectiveVoiceDesign(agent: AgentConfig | undefined): VoiceDesign | undefined {
-  if (agent?.voiceDesign) return agent.voiceDesign;
-  const persona = agent?.persona?.trim();
-  return persona ? { identity: persona, texture: '', delivery: '' } : undefined;
-}
+export { pickNarratorAgent, type AgentVoiceResolveOptions };
 
 /**
  * Produce the `ttsProviderOptions` to send to /api/generate/tts for `agent`
  * (pass the teacher agent for narration, the speaking agent for discussion,
  * or undefined when there is no agent). Returns undefined for providers with
- * no special options.
+ * no special options. VoxCPM options include what this browser keeps (its
+ * voice profiles, a registered auto voice).
  */
-export async function resolveAgentVoiceOptions(
+export function resolveAgentVoiceOptions(
   agent: AgentConfig | undefined,
   opts: AgentVoiceResolveOptions,
 ): Promise<Record<string, unknown> | undefined> {
-  if (opts.providerId !== VOXCPM_TTS_PROVIDER_ID) return undefined;
-  return {
-    ...(opts.providerConfig?.providerOptions || {}),
-    ...(await getVoxCPMProviderOptions(
-      opts.voiceId,
-      {
-        agentName: agent?.name,
-        role: agent?.role ?? 'teacher',
-        persona: agent?.persona,
-        voiceDesign: effectiveVoiceDesign(agent),
-        language: opts.language,
-        backend: normalizeVoxCPMBackend(opts.providerConfig?.providerOptions?.backend),
-      },
-      { ttsModelId: opts.providerConfig?.modelId },
-    )),
-  };
+  return resolveAgentVoiceOptionsFrom(getVoxCPMProviderOptions, agent, opts);
 }
 
 /**

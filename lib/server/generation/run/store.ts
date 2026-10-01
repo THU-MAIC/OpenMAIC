@@ -31,12 +31,15 @@ import { stateForRetry } from './plan';
 import {
   ACTIVE_RUN_STATES,
   EXECUTABLE_RUN_STATES,
+  isTerminalRunState,
+  LIMITED_RUN_STATES,
   type GenerationRunAgentsResult,
   type GenerationRunEvent,
   type GenerationRunFailure,
   type GenerationRunInput,
   type GenerationRunOutline,
   type GenerationRunSnapshot,
+  type ExecutableRunState,
   type GenerationRunState,
   type NewGenerationRunEvent,
 } from './types';
@@ -64,7 +67,9 @@ export function isGenerationRunLeaseLostError(error: unknown): boolean {
 export class ActiveRunLimitError extends Error {
   constructor(readonly limit: number) {
     super(
-      `At most ${limit} course generation${limit === 1 ? '' : 's'} may run at once; wait for one to finish (or delete its course) and try again.`,
+      `At most ${limit} course generation${limit === 1 ? '' : 's'} may be in progress at once ` +
+        '(one waiting for its outline to be confirmed does not count); wait for one to finish, ' +
+        'or delete its course, and try again.',
     );
     this.name = 'ActiveRunLimitError';
   }
@@ -73,7 +78,7 @@ export class ActiveRunLimitError extends Error {
 /** A command the run cannot take in its current state. The message is caller-facing. */
 export class RunCommandConflictError extends Error {
   constructor(
-    readonly reason: 'state' | 'outline-revision' | 'command-reused',
+    readonly reason: 'state' | 'outline-revision' | 'command-reused' | 'course-exists',
     message: string,
   ) {
     super(message);
@@ -190,10 +195,21 @@ export interface StepCommit {
   events?: NewGenerationRunEvent[];
 }
 
-/** The owner predicate: the run's owner, or an owner claimed into the reader. */
+/**
+ * The owner predicate: the run's owner, or any owner claimed into the reader,
+ * however many claims ago (the merge records are followed transitively).
+ */
 const OWNED_BY = (ownerParam: string) =>
-  `(owner_id = ${ownerParam} OR owner_id IN (
-     SELECT from_owner_id FROM owner_merges WHERE to_owner_id = ${ownerParam}))`;
+  `owner_id IN (
+     WITH RECURSIVE merged(id) AS (
+       SELECT ${ownerParam}::text
+       UNION
+       SELECT m.from_owner_id FROM owner_merges m JOIN merged ON m.to_owner_id = merged.id
+     )
+     SELECT id FROM merged)`;
+
+/** How many claims a chain of merge records may span before it is taken as corrupt. */
+const MAX_MERGE_HOPS = 16;
 
 const SCHEMA_STATE_KEY = Symbol.for('openmaic.generation-runs.schema');
 const schemaState = globalThis as typeof globalThis & {
@@ -226,14 +242,49 @@ export function resetGenerationRunSchemaForTests(): void {
 }
 
 async function notifyOwner(tx: Queryable, ownerId: string): Promise<void> {
-  await notifyDurableAgentEvent(tx, { kind: 'generation-run-owner', ownerId });
-  // The account a claimed owner moved into reads its runs too.
-  const merged = await tx.query<{ to_owner_id: string }>(
-    'SELECT to_owner_id FROM owner_merges WHERE from_owner_id = $1',
-    [ownerId],
+  // The owner, and every account it was claimed into since, read its runs.
+  let current: string | undefined = ownerId;
+  for (let hop = 0; current && hop <= MAX_MERGE_HOPS; hop += 1) {
+    await notifyDurableAgentEvent(tx, { kind: 'generation-run-owner', ownerId: current });
+    const merged: { rows: Array<{ to_owner_id: string }> } = await tx.query<{
+      to_owner_id: string;
+    }>('SELECT to_owner_id FROM owner_merges WHERE from_owner_id = $1', [current]);
+    current = merged.rows[0]?.to_owner_id;
+  }
+}
+
+/**
+ * The owner a stored owner id belongs to now, following every claim since
+ * (background work reads what the account holds after a claim moved it).
+ */
+export async function currentOwnerOf(storedOwnerId: string): Promise<string> {
+  const { pool } = await provider();
+  let current = storedOwnerId;
+  for (let hop = 0; hop < MAX_MERGE_HOPS; hop += 1) {
+    const merged = await pool.query<{ to_owner_id: string }>(
+      'SELECT to_owner_id FROM owner_merges WHERE from_owner_id = $1',
+      [current],
+    );
+    const next = merged.rows[0]?.to_owner_id;
+    if (!next) return current;
+    current = next;
+  }
+  throw new Error(
+    `The claims of owner ${storedOwnerId} form a chain longer than ${MAX_MERGE_HOPS}`,
   );
-  const target = merged.rows[0]?.to_owner_id;
-  if (target) await notifyDurableAgentEvent(tx, { kind: 'generation-run-owner', ownerId: target });
+}
+
+/**
+ * Keep a finished run's log to what its final snapshot needs: the
+ * checkpoints go, and so does every event before its final commit's (a
+ * follower still sees how it ended; the snapshot holds the rest).
+ */
+async function compactFinishedRunIn(tx: Queryable, runId: string, keepFromSeq: number) {
+  await tx.query('DELETE FROM generation_run_steps WHERE run_id = $1', [runId]);
+  await tx.query('DELETE FROM generation_run_events WHERE run_id = $1 AND seq < $2', [
+    runId,
+    keepFromSeq,
+  ]);
 }
 
 /** Append events under the run row lock (held by the caller), allocating their seqs. */
@@ -337,7 +388,7 @@ export async function createGenerationRun(
     const active = await tx.query<{ n: string | number }>(
       `SELECT count(*) AS n FROM generation_runs
         WHERE ${OWNED_BY('$1')} AND state = ANY($2::text[])`,
-      [ownerId, [...ACTIVE_RUN_STATES]],
+      [ownerId, [...LIMITED_RUN_STATES]],
     );
     if (Number(active.rows[0]?.n ?? 0) >= options.maxActiveRunsPerOwner) {
       throw new ActiveRunLimitError(options.maxActiveRunsPerOwner);
@@ -472,14 +523,17 @@ export async function claimNextGenerationRun(
       if (takeover && previous.takeovers >= options.maxTakeovers) {
         // The step's worker died this many times in a row: pausing lets the
         // owner retry it deliberately instead of crashing workers forever.
+        // A worker that died before it chose a step leaves no step: retry
+        // then resumes the run in the state it was executing.
         const failure: GenerationRunFailure = {
-          step: previous.step ?? previous.state,
+          step: previous.step,
           message: 'The step was interrupted too many times',
+          ...(previous.step ? {} : { resumeState: previous.state as ExecutableRunState }),
         };
         await applyPatch(
           tx,
           previous.id,
-          { state: 'paused', error: failure, releaseLease: true },
+          { state: 'paused', step: previous.step, error: failure, releaseLease: true },
           { resetTakeovers: true },
         );
         await insertEvents(tx, previous.id, [
@@ -569,6 +623,9 @@ export async function commitGenerationRunIn(
     await insertEvents(tx, lease.runId, commit.events);
     row = { ...row, seq: Number(row.seq) + commit.events.length };
   }
+  if (commit.patch?.state !== undefined && isTerminalRunState(commit.patch.state)) {
+    await compactFinishedRunIn(tx, lease.runId, Number(row.seq) - (commit.events?.length ?? 0) + 1);
+  }
   if (commit.patch?.state !== undefined && commit.patch.state !== before.state) {
     await notifyOwner(tx, before.owner_id);
   } else if (commit.patch?.scenesCompleted !== undefined || commit.patch?.stageId !== undefined) {
@@ -584,14 +641,73 @@ export async function commitGenerationRun(lease: RunLease, commit: StepCommit): 
   return withTransaction((tx) => commitGenerationRunIn(tx, lease, commit));
 }
 
-/** Assert, inside `tx`, that the worker still holds the run (a document write's fence). */
-export async function assertGenerationRunLease(tx: Queryable, lease: RunLease): Promise<void> {
-  const held = await tx.query(
-    `SELECT 1 FROM generation_runs
-      WHERE id = $1 AND lease_worker_id = $2 AND lease_generation = $3 FOR SHARE`,
-    [lease.runId, lease.workerId, lease.generation],
+/**
+ * The fence of a write the run makes outside its own rows (a document write,
+ * an asset allocation), inside that write's transaction: refused with
+ * {@link GenerationRunLeaseLostError} once the worker no longer holds the run.
+ *
+ * It locks the course's ownership row first, then the run row, in the order
+ * a course deletion takes them (the deletion ends the course's runs in its
+ * own transaction), so the two can never wait on each other in a cycle.
+ */
+export async function fenceGenerationRunWriteIn(
+  tx: Queryable,
+  lease: RunLease,
+  stageId?: string,
+): Promise<void> {
+  if (stageId) {
+    await tx.query('SELECT 1 FROM stage_meta WHERE stage_id = $1 FOR UPDATE', [stageId]);
+  }
+  await lockLeased(tx, lease);
+}
+
+/**
+ * End every unfinished run of a course, on the transaction that deletes it
+ * (`deleteDocument` of the owner-bound document store), whatever state the
+ * run is in. A worker executing one loses its lease with it. A no-op on a
+ * database whose run tables do not exist yet.
+ */
+export async function endGenerationRunsOfDeletedCourseIn(
+  tx: Queryable,
+  stageId: string,
+): Promise<void> {
+  const provisioned = await tx.query<{ present: string | null }>(
+    "SELECT to_regclass('generation_runs')::text AS present",
   );
-  if (held.rows.length === 0) throw new GenerationRunLeaseLostError(lease);
+  if (!provisioned.rows[0]?.present) return;
+  const runs = await tx.query<{ id: string; owner_id: string }>(
+    `SELECT id, owner_id FROM generation_runs
+      WHERE stage_id = $1 AND state NOT IN ('completed', 'ended')
+      ORDER BY id FOR UPDATE`,
+    [stageId],
+  );
+  for (const run of runs.rows) {
+    await endRunIn(tx, run.id, run.owner_id, { stageId });
+  }
+}
+
+/** End a run (its course is gone or was never made), fencing whoever held it. */
+async function endRunIn(
+  tx: Queryable,
+  runId: string,
+  ownerId: string,
+  data: { stageId: string | null },
+): Promise<number> {
+  await tx.query(
+    `UPDATE generation_runs
+        SET state = 'ended', step = NULL, error = NULL,
+            lease_worker_id = NULL, lease_heartbeat_at = NULL,
+            lease_generation = lease_generation + 1, updated_at = now()
+      WHERE id = $1`,
+    [runId],
+  );
+  const seq = await insertEvents(tx, runId, [
+    { type: 'ended', data },
+    { type: 'state', data: { state: 'ended', step: null } },
+  ]);
+  await compactFinishedRunIn(tx, runId, seq - 1);
+  await notifyOwner(tx, ownerId);
+  return seq;
 }
 
 export interface CommandResult {
@@ -610,7 +726,7 @@ async function runCommand(
   runId: string,
   ownerId: string,
   commandId: string,
-  type: 'confirm-outline' | 'retry',
+  type: 'confirm-outline' | 'retry' | 'discard',
   apply: (tx: Queryable, run: RunRow) => Promise<CommandResult>,
 ): Promise<CommandResult | null> {
   const { withTransaction } = await provider();
@@ -702,13 +818,16 @@ export async function retryGenerationRun(
   command: { commandId: string },
 ): Promise<CommandResult | null> {
   return runCommand(runId, ownerId, command.commandId, 'retry', async (tx, run) => {
-    if (run.state !== 'paused' || !run.step) {
+    if (run.state !== 'paused') {
       throw new RunCommandConflictError(
         'state',
         `The run is ${run.state.replaceAll('_', ' ')}, not paused`,
       );
     }
-    const state = stateForRetry(run.step);
+    // A run paused before it chose a step resumes where it was executing.
+    const state = run.step
+      ? stateForRetry(run.step)
+      : (run.error?.resumeState ?? (run.outline ? 'generating' : 'preparing'));
     const updated = await applyPatch(
       tx,
       runId,
@@ -717,5 +836,39 @@ export async function retryGenerationRun(
     );
     const seq = await insertEvents(tx, runId, [{ type: 'state', data: { state, step: run.step } }]);
     return { state: updated.state, seq };
+  });
+}
+
+/**
+ * Discard a run that has no course yet: its course card is all there is of
+ * the course, and discarding it is deleting that pending course (the run
+ * ends, and a worker executing it loses its lease). A run whose course
+ * exists ends when the course is deleted instead. Repeating a discard
+ * answers the same. Null for a run the owner cannot see.
+ */
+export async function discardGenerationRun(
+  runId: string,
+  ownerId: string,
+): Promise<CommandResult | null> {
+  const { withTransaction } = await provider();
+  return withTransaction(async (tx) => {
+    const locked = await tx.query<RunRow>(
+      `SELECT ${RUN_COLUMNS} FROM generation_runs WHERE id = $1 AND ${OWNED_BY('$2')} FOR UPDATE`,
+      [runId, ownerId],
+    );
+    const run = locked.rows[0];
+    if (!run) return null;
+    if (run.stage_id) {
+      throw new RunCommandConflictError(
+        'course-exists',
+        'The run already has its course; delete the course to end the run',
+      );
+    }
+    if (run.state === 'ended') return { state: 'ended', seq: Number(run.seq) };
+    if (run.state === 'completed') {
+      throw new RunCommandConflictError('state', 'The run is completed');
+    }
+    const seq = await endRunIn(tx, run.id, run.owner_id, { stageId: null });
+    return { state: 'ended', seq };
   });
 }

@@ -13,7 +13,12 @@ import {
   listGenerationRunsUpdatedSince,
   runSnapshot,
 } from '@/lib/server/generation/run/store';
-import { polledEventStream, sseFrame, sseHeaders } from '@/lib/server/generation/run/sse';
+import {
+  acquireRunStreamSlot,
+  polledEventStream,
+  sseFrame,
+  sseHeaders,
+} from '@/lib/server/generation/run/sse';
 import { authenticateRequestOwner } from '@/lib/server/identity/with-owner';
 
 export const runtime = 'nodejs';
@@ -32,18 +37,29 @@ export async function GET(req: NextRequest) {
   if (!owner.ok) return owner.response;
   const { principal, responseHeaders } = owner;
   const ownerId = principal.ownerId;
+  const release = acquireRunStreamSlot(ownerId);
+  if (!release) {
+    responseHeaders.set('Retry-After', '5');
+    return new Response('Too many open generation run streams', {
+      status: 429,
+      headers: responseHeaders,
+    });
+  }
   // The last seq sent per run: a run is sent again only when it moved on.
   const sent = new Map<string, number>();
   let newest = Date.now();
+  let snapshotSent = false;
 
   const stream = polledEventStream({
     wakeup: { kind: 'generation-run-owner', ownerId },
     pollIntervalMs: OWNER_RUN_EVENTS_POLL_INTERVAL_MS,
-    read: async (write, phase) => {
-      if (phase === 'backlog') {
+    onClose: release,
+    read: async (write) => {
+      if (!snapshotSent) {
         const active = await listActiveGenerationRuns(ownerId);
+        if (!write(sseFrame('runs', { type: 'runs', runs: active.map(runSnapshot) }))) return;
         for (const run of active) sent.set(run.id, run.seq);
-        write(sseFrame('runs', { type: 'runs', runs: active.map(runSnapshot) }));
+        snapshotSent = true;
         return;
       }
       const changed = await listGenerationRunsUpdatedSince(

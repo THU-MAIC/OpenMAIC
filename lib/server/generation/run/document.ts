@@ -7,20 +7,25 @@
  * browser navigates to the classroom, and marked as produced by a server job
  * so no browser generates into it; every later scene is appended as it
  * completes, and `generationComplete` is set at the end. Every write is fenced
- * by the run's lease, so a worker whose run was taken over cannot write.
+ * by the run's lease and commits with the run's checkpoint, so a worker whose
+ * run was taken over cannot write, and a write and its checkpoint never part.
  */
 import type { Queryable } from '@openmaic/storage/document/pg';
 
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
-import { readStageMeta } from '@/lib/persistence/stage-meta';
-import { StageAccessError } from '@/lib/persistence/stage-meta';
+import { forwardOwnerWrite } from '@/lib/persistence/owner-merges';
+import {
+  markStageGenerationComplete,
+  readStageMeta,
+  StageAccessError,
+} from '@/lib/persistence/stage-meta';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getBackgroundDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { sanitizeSceneContent } from '@/lib/server/sanitize-scene-content';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 
-import { assertGenerationRunLease, type RunLease } from './store';
+import { fenceGenerationRunWriteIn, type RunLease } from './store';
 
 /** The course was deleted while its run was generating. */
 export class RunCourseDeletedError extends Error {
@@ -37,8 +42,8 @@ function courseGone(error: unknown): boolean {
   );
 }
 
-function fencedStore(ownerId: string, lease: RunLease) {
-  return getBackgroundDocumentStore(ownerId, (tx) => assertGenerationRunLease(tx, lease));
+function fencedStore(ownerId: string, lease: RunLease, stageId: string) {
+  return getBackgroundDocumentStore(ownerId, (tx) => fenceGenerationRunWriteIn(tx, lease, stageId));
 }
 
 /**
@@ -63,7 +68,7 @@ export async function createRunCourse(input: {
     createdAt: now,
     updatedAt: now,
   };
-  const store = await fencedStore(input.ownerId, input.lease);
+  const store = await fencedStore(input.ownerId, input.lease, input.stage.id);
   await store.createDocument(
     {
       stage: sanitizeSceneContent(input.stage),
@@ -74,41 +79,58 @@ export async function createRunCourse(input: {
   );
 }
 
-/** Append (or, on a retried append, rewrite) one scene. */
+/**
+ * Append (or, on a retried append, rewrite) one scene; `inTransaction` (the
+ * run's checkpoint) commits with it.
+ */
 export async function appendRunScene(input: {
   ownerId: string;
   lease: RunLease;
   stageId: string;
   scene: Scene;
+  inTransaction?: (queryable: Queryable) => Promise<void>;
 }): Promise<void> {
-  const store = await fencedStore(input.ownerId, input.lease);
+  const store = await fencedStore(input.ownerId, input.lease, input.stageId);
   try {
-    await store.putScene(input.stageId, sanitizeSceneContent(input.scene));
+    await store.putScene(input.stageId, sanitizeSceneContent(input.scene), {
+      inTransaction: input.inTransaction,
+    });
   } catch (error) {
     if (courseGone(error)) throw new RunCourseDeletedError(input.stageId);
     throw error;
   }
 }
 
-/** Record in the document that every scene is generated. */
+/**
+ * Record that every scene is generated: the document outline's and the
+ * ownership row's completion flags, with the run's completion (`commit`), in
+ * one transaction fenced by the lease. Only the flags change; the document is
+ * not rewritten. Throws {@link RunCourseDeletedError} for a course deleted
+ * since.
+ */
 export async function completeRunCourse(input: {
   ownerId: string;
   lease: RunLease;
   stageId: string;
+  commit: (queryable: Queryable) => Promise<void>;
 }): Promise<void> {
-  const store = await fencedStore(input.ownerId, input.lease);
-  const document = await store.loadDocument(input.stageId);
-  if (!document) throw new RunCourseDeletedError(input.stageId);
-  const outline = (document.outline ?? {}) as AppDocumentOutline;
-  try {
-    await store.saveDocument({
-      ...document,
-      outline: { ...outline, generationComplete: true, updatedAt: Date.now() },
-    });
-  } catch (error) {
-    if (courseGone(error)) throw new RunCourseDeletedError(input.stageId);
-    throw error;
-  }
+  const { withTransaction } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+  await withTransaction(async (tx) => {
+    // The order every course write takes its locks in: the owner's identity
+    // lock, the course's ownership row, then the run row.
+    await forwardOwnerWrite(tx, input.ownerId);
+    await fenceGenerationRunWriteIn(tx, input.lease, input.stageId);
+    const meta = await readStageMeta(tx, input.stageId);
+    if (!meta || meta.deletedAt !== null) throw new RunCourseDeletedError(input.stageId);
+    await tx.query(
+      `UPDATE document_outlines
+          SET data = data || jsonb_build_object('generationComplete', true, 'updatedAt', $2::bigint)
+        WHERE stage_id = $1`,
+      [input.stageId, Date.now()],
+    );
+    await markStageGenerationComplete(tx, input.stageId);
+    await input.commit(tx);
+  });
 }
 
 /** Whether the run's course was deleted (a step boundary checks before going on). */

@@ -12,7 +12,11 @@ import {
   ownerNotFound,
   withOwnerResponseHeaders,
 } from '@/lib/server/agent-runtime/route-response';
-import { parseCommandId } from '@/lib/server/generation/run/input';
+import {
+  MAX_COMMAND_BODY_BYTES,
+  parseCommandId,
+  readJsonBody,
+} from '@/lib/server/generation/run/input';
 import { wakeGenerationRunner } from '@/lib/server/generation/run/runner';
 import {
   isRunId,
@@ -27,12 +31,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     if (!isRunId(id)) return ownerNotFound(responseHeaders);
-    let raw: unknown;
-    try {
-      raw = await req.json();
-    } catch {
-      return ownerApiError('INVALID_REQUEST', 400, 'Invalid JSON body', responseHeaders);
+    const body = await readJsonBody(req, MAX_COMMAND_BODY_BYTES);
+    if (!body.ok) {
+      return ownerApiError('INVALID_REQUEST', body.status, body.message, responseHeaders);
     }
+    const raw = body.value;
     const commandId = parseCommandId((raw as { commandId?: unknown } | null)?.commandId);
     if (!commandId.ok) {
       return ownerApiError('INVALID_REQUEST', 400, commandId.message, responseHeaders);

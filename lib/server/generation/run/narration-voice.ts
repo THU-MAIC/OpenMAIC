@@ -13,14 +13,19 @@ import {
   voiceServesModel,
 } from '@/lib/audio/constants';
 import type { BuiltInTTSProviderId, TTSProviderId } from '@/lib/audio/types';
+import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
+import { voiceBindingKey } from '@/lib/audio/unavailable-voice-bindings';
 import {
+  deterministicNarratorVoice,
   getEnabledProvidersWithVoices,
+  narratorBindingDiffers,
+  narratorVoiceAfterMissingClone,
   resolveNarratorVoiceBinding,
   resolveNarratorVoiceForGeneration,
   type ResolvedVoice,
 } from '@/lib/audio/voice-resolver';
+import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { MediaConnection } from '@/lib/server/model-config/media';
-import type { GeneratedAgentConfig } from '@/lib/types/stage';
 
 import type { GenerationRunInput } from './types';
 
@@ -33,7 +38,17 @@ export interface RunNarrationTarget {
 }
 
 /** The per-provider map the voice helpers read: the slot's provider, available through the server. */
-function providersConfig(target: RunNarrationTarget) {
+function providersConfig(target: RunNarrationTarget): Record<
+  string,
+  {
+    apiKey: string;
+    baseUrl: string;
+    enabled: boolean;
+    isServerConfigured: boolean;
+    modelId?: string;
+    providerOptions?: Record<string, string | number | boolean>;
+  }
+> {
   return {
     [target.providerId]: {
       apiKey: '',
@@ -106,30 +121,74 @@ export function narratorVoiceForGeneration(
   );
 }
 
-/** The voice one narration clip is synthesized with. */
-export function clipVoice(
-  target: RunNarrationTarget,
-  preference: GenerationRunInput['voice'],
-  roster: readonly GeneratedAgentConfig[] | undefined,
-): ResolvedVoice {
-  const teacher =
-    roster?.find((agent) => agent.role === 'teacher' && agent.voiceConfig) ??
-    roster?.find((agent) => agent.role === 'teacher');
-  const bound = teacher?.voiceConfig;
-  const { voice } = slotVoice(target, preference);
-  return resolveNarratorVoiceBinding(
-    bound
-      ? {
-          providerId: bound.providerId as TTSProviderId,
-          voiceId: bound.voiceId,
-          ...(bound.modelId ? { modelId: bound.modelId } : {}),
-        }
-      : undefined,
-    {
-      providerId: target.providerId,
-      ...(target.connection.modelId ? { modelId: target.connection.modelId } : {}),
-      voiceId: voice,
-    },
-    providersConfig(target),
-  );
+/**
+ * The voice one narration clip starts with, as the browser decides it
+ * (`generateAndStoreTTS`): the teacher's bound voice unless it was found
+ * unusable, else the slot voice; a pinned narrator (bound == slot voice) whose
+ * provider is not the slot's falls to the deterministic enabled-provider
+ * pick. Null when the voice's provider is not one the slot enables (the line
+ * stays unvoiced, as in the browser).
+ */
+export function clipVoice(input: {
+  target: RunNarrationTarget;
+  preference: GenerationRunInput['voice'];
+  bound: AgentConfig['voiceConfig'] | undefined;
+  /** The bindings this run found unusable (a deleted clone, say). */
+  unavailable: ReadonlySet<string>;
+  /** An explicit voice a retry uses instead. */
+  override?: ResolvedVoice;
+}): { voice: ResolvedVoice; globalVoice: ResolvedVoice } | null {
+  const { target, bound } = input;
+  const configs = providersConfig(target);
+  const globalVoice: ResolvedVoice = {
+    providerId: target.providerId,
+    ...(target.connection.modelId ? { modelId: target.connection.modelId } : {}),
+    voiceId: slotVoice(target, input.preference).voice,
+  };
+  let voice =
+    input.override ??
+    resolveNarratorVoiceBinding(
+      bound && input.unavailable.has(voiceBindingKey(bound)) ? undefined : bound,
+      globalVoice,
+      configs,
+    );
+  if (
+    bound &&
+    !narratorBindingDiffers(bound, globalVoice) &&
+    !isTTSProviderEnabled(voice.providerId, configs[voice.providerId])
+  ) {
+    voice = deterministicNarratorVoice(configs) ?? voice;
+  }
+  if (!isTTSProviderEnabled(voice.providerId, configs[voice.providerId])) return null;
+  return { voice, globalVoice };
+}
+
+/** The voice to retry a clip with after its voice clone was not found, or null. */
+export function clipVoiceAfterMissingClone(input: {
+  target: RunNarrationTarget;
+  bound: AgentConfig['voiceConfig'] | undefined;
+  globalVoice: ResolvedVoice;
+  failed: ResolvedVoice;
+  usedFallbackVoice: boolean;
+}): ResolvedVoice | null {
+  return narratorVoiceAfterMissingClone({
+    bound: input.bound,
+    globalVoice: input.globalVoice,
+    failed: input.failed,
+    providerConfigs: providersConfig(input.target),
+    usedFallbackVoice: input.usedFallbackVoice,
+  });
+}
+
+/** The provider config a voice's options are resolved against (its model follows the voice). */
+export function clipProviderConfig(target: RunNarrationTarget, voice: ResolvedVoice) {
+  const config = providersConfig(target)[voice.providerId];
+  return {
+    ...config,
+    modelId: resolveTTSModelForVoice(
+      voice.providerId,
+      voice.voiceId,
+      voice.modelId ?? config?.modelId,
+    ),
+  };
 }

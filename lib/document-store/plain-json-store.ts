@@ -1,7 +1,10 @@
 import type { DocumentStore } from '@openmaic/storage';
 
 import type { AppScene } from '@/lib/types/stage';
-import type { CreateOnlyDocumentStore } from '@/lib/persistence/owner-bound-document-store';
+import type {
+  CreateOnlyDocumentStore,
+  MutationOptions,
+} from '@/lib/persistence/owner-bound-document-store';
 import { omitUndefinedObjectMembers } from '@/lib/persistence/plain-json';
 
 import type { AppStage } from './persistence-types';
@@ -41,8 +44,14 @@ export function withPlainJsonDocumentWrites<TStore extends DocumentStore<AppScen
     putStage(stageId, stage) {
       return store.putStage(stageId, omitUndefinedObjectMembers(stage));
     },
-    putScene(stageId, scene) {
-      return store.putScene(stageId, omitUndefinedObjectMembers(scene));
+    putScene(stageId, scene, ...options: [MutationOptions?]) {
+      // The owner-bound store's scene write takes options (its transaction's own rows).
+      return (store.putScene as (...args: unknown[]) => Promise<void>).call(
+        store,
+        stageId,
+        omitUndefinedObjectMembers(scene),
+        ...options,
+      );
     },
     getScene(stageId, sceneId) {
       return store.getScene(stageId, sceneId);

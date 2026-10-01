@@ -15,13 +15,15 @@ import { getServerPersistenceProvider } from '@/lib/persistence/server-provider'
 import { stopAgentEventNotifyBus } from '@/lib/server/agent-runtime/event-notify-bus';
 import { appendRunScene } from '@/lib/server/generation/run/document';
 import { executeGenerationRun } from '@/lib/server/generation/run/engine';
-import type { RunStepServices } from '@/lib/server/generation/run/services';
+import { runClaimedGenerationRun, startGenerationRunner } from '@/lib/server/generation/run/runner';
+import { defaultRunStepServices, type RunStepServices } from '@/lib/server/generation/run/services';
 import {
   claimNextGenerationRun,
   commitGenerationRun,
   confirmGenerationRunOutline,
   createGenerationRun,
   GenerationRunLeaseLostError,
+  listActiveGenerationRuns,
   readGenerationRun,
   readGenerationRunEvents,
   readGenerationRunSteps,
@@ -113,6 +115,7 @@ function fakeServices(overrides: Partial<RunStepServices> = {}) {
     sceneContent: [] as Array<{ outline: SceneOutline } & Record<string, unknown>>,
     sceneActions: [] as Array<Record<string, unknown>>,
     narrateClip: [] as Array<Record<string, unknown>>,
+    releasedClips: [] as string[],
   };
   const services: RunStepServices = {
     analyzeMaterials: async () => 'material text',
@@ -145,7 +148,19 @@ function fakeServices(overrides: Partial<RunStepServices> = {}) {
       return GENERATED_AGENTS;
     },
     presetAgents: async (_owner, ids) =>
-      ids.map((id) => ({ id, name: `Agent ${id}`, role: 'teacher', persona: 'Built in.' })),
+      ids.map((id) => ({
+        id,
+        name: `Agent ${id}`,
+        role: 'teacher',
+        persona: 'Built in.',
+        avatar: '/avatars/teacher.png',
+        color: '#000',
+        allowedActions: [],
+        priority: 10,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+        isDefault: true,
+      })),
     sceneContent: async (_owner, input) => {
       calls.sceneContent.push(input as never);
       return {
@@ -176,8 +191,13 @@ function fakeServices(overrides: Partial<RunStepServices> = {}) {
         bytes: CLIP,
         mimeType: 'audio/mp3',
         kind: 'audio',
+        fence: input.fence,
       });
       return stored.status === 'stored' ? stored.assetId : null;
+    },
+    releaseClips: async (owner, ids, ctx) => {
+      calls.releasedClips.push(...ids);
+      return defaultRunStepServices.releaseClips(owner, ids, ctx);
     },
     parallelSceneConcurrency: () => 0,
     sleep: async () => undefined,
@@ -269,7 +289,17 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
   }
 
   it('produces the course the browser flow would, step by step, with the same context', async () => {
-    const { services, calls } = fakeServices();
+    // The log as it stood while the last scene generated (a finished run's
+    // log is compacted to its final commit).
+    let midway: Awaited<ReturnType<typeof readGenerationRunEvents>> = [];
+    const base = fakeServices();
+    const { services, calls } = fakeServices({
+      sceneActions: async (owner, input, ctx) => {
+        if (input.outline.id === 'o3') midway = await readGenerationRunEvents(run.id, 0);
+        return base.services.sceneActions(owner, input, ctx);
+      },
+    });
+    calls.sceneActions = base.calls.sceneActions;
     const run = await start();
 
     // Preparation: research, then the outline, which waits holding no worker.
@@ -432,16 +462,18 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(meta.rows).toEqual([{ owner_id: OWNER, generation_complete: true }]);
 
     // The course appeared with the first scene, and scenes followed in order.
-    const tail = (await readGenerationRunEvents(run.id, confirmed!.seq)).filter((event) =>
-      ['course_created', 'scene_ready', 'completed'].includes(event.type),
+    const tail = midway.filter(
+      (event) =>
+        event.seq > confirmed!.seq && ['course_created', 'scene_ready'].includes(event.type),
     );
     expect(tail.map((event) => [event.type, event.data.index ?? null])).toEqual([
       ['course_created', null],
       ['scene_ready', 0],
       ['scene_ready', 1],
-      ['scene_ready', 2],
-      ['completed', null],
     ]);
+    // Finished: only the final commit's events and no checkpoints remain.
+    expect(await eventTypes(run.id)).toEqual(['completed', 'state']);
+    expect((await readGenerationRunSteps(run.id)).size).toBe(0);
   });
 
   it('uses preset agents, confirms an edited outline, and confirms itself for headless callers', async () => {
@@ -449,9 +481,11 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     const run = await start(
       runInput({ agents: { mode: 'preset', agentIds: ['default-2'] }, outlineReview: 'auto' }),
     );
-    expect(await drive(run.id, services)).toBe('requeued');
-    expect((await readGenerationRun(run.id, OWNER))!.state).toBe('generating');
+    // Confirmed in the outline's own commit: one execution, no waiting.
     expect(await drive(run.id, services)).toBe('completed');
+    // A finished run keeps only its final commit's events and no checkpoints.
+    expect(await eventTypes(run.id)).toEqual(['completed', 'state']);
+    expect((await readGenerationRunSteps(run.id)).size).toBe(0);
     expect(calls.agentProfiles).toEqual([]);
     expect(calls.sceneContent[0]!.agents).toEqual([
       { id: 'default-2', name: 'Agent default-2', role: 'teacher', persona: 'Built in.' },
@@ -532,7 +566,6 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       sceneContent: services.sceneContent,
     });
     const run = await start(runInput({ outlineReview: 'auto' }));
-    expect(await drive(run.id, failing.services)).toBe('requeued');
     expect(await drive(run.id, failing.services)).toBe('paused');
     // The browser's retries for a later scene: 5, so 6 attempts.
     expect(failures).toBe(6);
@@ -584,7 +617,6 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       },
     });
     const run = await start(runInput({ outlineReview: 'auto' }));
-    expect(await drive(run.id, dying.services, 'worker-a')).toBe('requeued');
     const claimA = (await claim(run.id, 'worker-a')) as ClaimedRun;
     const executionA = executeGenerationRun(claimA, {
       services: dying.services,
@@ -646,7 +678,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     });
   });
 
-  it('ends at the next step boundary once its course is deleted', async () => {
+  it('ends in the deletion of its course, fencing the worker executing it', async () => {
     const blocked = gate();
     const reached = gate();
     const base = fakeServices({ research: async () => null });
@@ -661,13 +693,17 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       },
     });
     const run = await start(runInput({ outlineReview: 'auto' }));
-    expect(await drive(run.id, services)).toBe('requeued');
     const execution = drive(run.id, services);
     await reached.promise;
     const stageId = (await readGenerationRun(run.id, OWNER))!.stageId!;
     await documentStore(OWNER).deleteDocument(stageId);
+    // Ended by the deletion itself, while the worker is still mid-step.
+    expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+      state: 'ended',
+      leaseWorkerId: null,
+    });
     blocked.release();
-    expect(await execution).toBe('ended');
+    expect(await execution).toBe('interrupted');
     expect(calls.sceneActions).toHaveLength(1);
     expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
       state: 'ended',
@@ -693,7 +729,6 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       },
     });
     const run = await start(runInput({ outlineReview: 'auto' }));
-    await drive(run.id, services);
     expect(await drive(run.id, services)).toBe('completed');
     // The first scene is serial (the preview); then the rest of the content
     // starts before the second scene's actions.
@@ -867,7 +902,6 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       `UPDATE generation_runs SET input = input || '{"outlineReview":"auto"}' WHERE id = $1`,
       [runOne.id],
     );
-    await drive(runOne.id, services);
     expect(await drive(runOne.id, services)).toBe('completed');
     expect((await post({ requirement: 'Three' })).status).toBe(202);
 
@@ -882,5 +916,358 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(
       (await post({ requirement: 'x', agents: { mode: 'preset', agentIds: ['nope'] } })).status,
     ).toBe(400);
+  });
+
+  it('ends a paused run when its course is deleted, and Retry is then refused', async () => {
+    const { services } = fakeServices({
+      research: async () => null,
+      sceneActions: async (owner, input, ctx) => {
+        if (input.outline.id === 'o2') throw Object.assign(new Error('no'), { statusCode: 400 });
+        return fakeServices().services.sceneActions(owner, input, ctx);
+      },
+    });
+    const run = await start(runInput({ outlineReview: 'auto' }));
+    expect(await drive(run.id, services)).toBe('paused');
+    const stageId = (await readGenerationRun(run.id, OWNER))!.stageId!;
+    await documentStore(OWNER).deleteDocument(stageId);
+    expect(await readGenerationRun(run.id, OWNER)).toMatchObject({ state: 'ended', step: null });
+    expect(await eventTypes(run.id)).toEqual(['ended', 'state']);
+    await expect(retryGenerationRun(run.id, OWNER, { commandId: 'late' })).rejects.toMatchObject({
+      reason: 'state',
+    });
+  });
+
+  it('discards a run that has no course yet (waiting for its outline), and only such a run', async () => {
+    const { services } = fakeServices({ research: async () => null });
+    const { DELETE } = await import('@/app/api/generation-runs/[id]/route');
+    const discard = (id: string, who = OWNER_COOKIE) =>
+      DELETE(
+        new NextRequest(`http://localhost/api/generation-runs/${id}`, {
+          method: 'DELETE',
+          headers: cookie(who),
+        }),
+        { params: Promise.resolve({ id }) },
+      );
+    const waiting = await start();
+    expect(await drive(waiting.id, services)).toBe('waiting');
+    expect((await discard(waiting.id, OTHER_COOKIE)).status).toBe(404);
+    const first = await discard(waiting.id);
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ success: true, state: 'ended' });
+    expect((await discard(waiting.id)).status).toBe(200);
+    expect(await readGenerationRun(waiting.id, OWNER)).toMatchObject({ state: 'ended' });
+    await expect(
+      confirmGenerationRunOutline(waiting.id, OWNER, { commandId: 'c', outlineRevision: 1 }),
+    ).rejects.toMatchObject({ reason: 'state' });
+
+    const withCourse = await start(runInput({ outlineReview: 'auto' }));
+    expect(await drive(withCourse.id, services)).toBe('completed');
+    const refused = await discard(withCourse.id);
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ errorCode: 'RUN_STATE_CONFLICT' });
+  });
+
+  it('does not count runs waiting for outline confirmation toward the limit', async () => {
+    const owner = 'anon:6f5e4d3c-2b1a-4f9e-8d7c-6b5a4f3e2d1c';
+    const { services } = fakeServices({ research: async () => null });
+    const waiting = await createGenerationRun(owner, runInput(), { maxActiveRunsPerOwner: 1 });
+    await expect(
+      createGenerationRun(owner, runInput(), { maxActiveRunsPerOwner: 1 }),
+    ).rejects.toThrow(/does not count/);
+    expect(await drive(waiting.id, services)).toBe('waiting');
+    const next = await createGenerationRun(owner, runInput(), { maxActiveRunsPerOwner: 1 });
+    expect(next.state).toBe('preparing');
+  });
+
+  it("threads the first scene's split speeches into the second scene, as the classroom does", async () => {
+    const long = `${'A sentence about light. '.repeat(30)}${'A sentence about water. '.repeat(30)}`;
+    const base = fakeServices({ research: async () => null });
+    const { services, calls } = fakeServices({
+      research: async () => null,
+      narrationTarget: async () => ({
+        connection: {
+          providerId: 'glm-tts',
+          managed: true,
+          userEndpoint: false,
+          origin: 'configuration',
+        } as MediaConnection,
+        providerId: 'glm-tts',
+        modelId: 'glm-tts',
+      }),
+      sceneActions: async (owner, input, ctx) => {
+        const result = await base.services.sceneActions(owner, input, ctx);
+        if (input.outline.id === 'o1') {
+          (result.scene.actions![0] as { text: string }).text = long;
+          return { ...result, previousSpeeches: [long] };
+        }
+        return result;
+      },
+    });
+    const run = await start(runInput({ outlineReview: 'auto' }));
+    expect(await drive(run.id, services)).toBe('completed');
+    const [first, second, third] = base.calls.sceneActions.map(
+      (call) => call.previousSpeeches as string[],
+    );
+    expect(first).toEqual([]);
+    // Narration split the long line for the provider; the stored scene holds the chunks.
+    expect(second!.length).toBeGreaterThan(1);
+    expect(second!.join(' ')).toBe(long.trim());
+    expect(third).toEqual(['Say Body']);
+    expect(calls.narrateClip.length).toBe(second!.length + 2);
+  });
+
+  it('in parallel mode marks a failed scene, goes on with the others and pauses at it', async () => {
+    let failing = true;
+    const base = fakeServices({ research: async () => null });
+    const { services, calls } = fakeServices({
+      research: async () => null,
+      parallelSceneConcurrency: () => 3,
+      sceneContent: async (owner, input, ctx) => {
+        if (input.outline.id === 'o2' && failing) {
+          throw Object.assign(new Error('content refused'), { statusCode: 400 });
+        }
+        return base.services.sceneContent(owner, input, ctx);
+      },
+    });
+    const run = await start(runInput({ outlineReview: 'auto' }));
+    expect(await drive(run.id, services)).toBe('paused');
+    let stored = (await readGenerationRun(run.id, OWNER))!;
+    expect(stored).toMatchObject({
+      state: 'paused',
+      step: 'scene:1:content',
+      error: { step: 'scene:1:content', message: 'content refused' },
+      progress: { scenesCompleted: 2 },
+    });
+    let document = await documentStore(OWNER).loadDocument(stored.stageId!);
+    expect(document!.scenes.map((scene) => scene.id)).toEqual(['scene-o1', 'scene-o3']);
+    // The scene after the failed one followed the last scene generated before it.
+    expect(calls.sceneActions.map((call) => call.previousSpeeches)).toEqual([[], ['Say Intro']]);
+
+    failing = false;
+    await retryGenerationRun(run.id, OWNER, { commandId: 'retry-parallel' });
+    expect(await drive(run.id, services)).toBe('completed');
+    stored = (await readGenerationRun(run.id, OWNER))!;
+    expect(stored.progress).toEqual({ scenesTotal: 3, scenesCompleted: 3 });
+    document = await documentStore(OWNER).loadDocument(stored.stageId!);
+    expect(document!.scenes.map((scene) => scene.id)).toEqual(['scene-o1', 'scene-o2', 'scene-o3']);
+  });
+
+  it("narrates with the teacher's voice options, and retries a missing clone with another voice", async () => {
+    const clone = 'qwen-tts-vc-clone-1';
+    const base = fakeServices({ research: async () => null });
+    const voxcpm = fakeServices({
+      research: async () => null,
+      narrationTarget: async () => ({
+        connection: {
+          providerId: 'voxcpm-tts',
+          managed: true,
+          userEndpoint: false,
+          origin: 'configuration',
+        } as MediaConnection,
+        providerId: 'voxcpm-tts',
+      }),
+    });
+    const auto = await start(runInput({ outlineReview: 'auto' }));
+    expect(await drive(auto.id, voxcpm.services)).toBe('completed');
+    // The narrator is the registry's first teacher with nothing bound (the
+    // built-in teacher, as in the browser), voiced from its persona.
+    expect(voxcpm.calls.narrateClip[0]).toMatchObject({
+      voice: 'voxcpm:auto',
+      providerOptions: { voiceMode: 'auto', voicePrompt: expect.stringContaining('lead teacher') },
+    });
+
+    const voices: string[] = [];
+    const qwen = fakeServices({
+      research: async () => null,
+      agentProfiles: async () => [
+        {
+          ...GENERATED_AGENTS[0]!,
+          voiceConfig: { providerId: 'qwen-tts', modelId: 'qwen3-tts-vc-realtime', voiceId: clone },
+        },
+        GENERATED_AGENTS[1]!,
+      ],
+      narrationTarget: async () => ({
+        connection: {
+          providerId: 'qwen-tts',
+          managed: true,
+          userEndpoint: false,
+          origin: 'configuration',
+        } as MediaConnection,
+        providerId: 'qwen-tts',
+        modelId: 'qwen3-tts-flash',
+      }),
+      narrateClip: async (owner, input, ctx) => {
+        voices.push(input.voice);
+        if (input.voice === clone) {
+          throw Object.assign(new Error('missing clone'), {
+            code: 'QWEN_VC_VOICE_NOT_FOUND',
+            httpStatus: 404,
+          });
+        }
+        return base.services.narrateClip(owner, input, ctx);
+      },
+    });
+    const bound = await start(runInput({ outlineReview: 'auto' }));
+    expect(await drive(bound.id, qwen.services)).toBe('completed');
+    // The clone failed once; that clip and every later one used the slot voice.
+    expect(voices).toEqual([clone, 'Cherry', 'Cherry', 'Cherry']);
+  });
+
+  it('releases the clips of a narration attempt that failed', async () => {
+    const base = fakeServices({ research: async () => null });
+    let clips = 0;
+    const { services, calls } = fakeServices({
+      research: async () => null,
+      sceneActions: async (owner, input, ctx) => {
+        const result = await base.services.sceneActions(owner, input, ctx);
+        result.scene.actions = [
+          ...result.scene.actions!,
+          { id: `second-${input.outline.id}`, type: 'speech', text: 'Second line.' },
+        ] as never;
+        return result;
+      },
+      narrateClip: async (owner, input, ctx) => {
+        clips += 1;
+        if (clips === 2) throw Object.assign(new Error('voice refused'), { httpStatus: 400 });
+        return base.services.narrateClip(owner, input, ctx);
+      },
+    });
+    const run = await start(runInput({ outlineReview: 'auto' }));
+    expect(await drive(run.id, services)).toBe('paused');
+    expect(calls.releasedClips).toHaveLength(1);
+    const entries = await pool.query('SELECT 1 FROM asset_entries WHERE id = ANY($1)', [
+      calls.releasedClips,
+    ]);
+    expect(entries.rows).toEqual([]);
+  });
+
+  it('caps the run streams one owner holds', async () => {
+    process.env.OPENMAIC_GENERATION_RUN_STREAMS_PER_OWNER = '1';
+    try {
+      const run = await start();
+      const events = await import('@/app/api/generation-runs/[id]/events/route');
+      const owner = await import('@/app/api/generation-runs/events/route');
+      const open = () =>
+        events.GET(
+          new NextRequest(`http://localhost/api/generation-runs/${run.id}/events`, {
+            headers: cookie(OWNER_COOKIE),
+          }),
+          { params: Promise.resolve({ id: run.id }) },
+        );
+      const first = await open();
+      expect(first.status).toBe(200);
+      expect((await open()).status).toBe(429);
+      expect(
+        (
+          await owner.GET(
+            new NextRequest('http://localhost/api/generation-runs/events', {
+              headers: cookie(OWNER_COOKIE),
+            }),
+          )
+        ).status,
+      ).toBe(429);
+      await first.body!.cancel();
+      const again = await open();
+      expect(again.status).toBe(200);
+      await again.body!.cancel();
+    } finally {
+      delete process.env.OPENMAIC_GENERATION_RUN_STREAMS_PER_OWNER;
+    }
+  });
+
+  describe('the runner', () => {
+    beforeEach(async () => {
+      // A runner claims any executable run: leave it only the test's own
+      // (the read first provisions the run tables when this block runs alone).
+      await listActiveGenerationRuns(OWNER);
+      await pool.query(
+        `UPDATE generation_runs SET state = 'ended', lease_worker_id = NULL
+          WHERE state IN ('preparing', 'outlining', 'generating')`,
+      );
+    });
+
+    /** An outline step that runs until its signal aborts. */
+    function blockingServices() {
+      const started = gate();
+      const aborted = gate();
+      const { services } = fakeServices({
+        research: async () => null,
+        outline: (_owner, _input, ctx) =>
+          new Promise((_resolve, reject) => {
+            started.release();
+            ctx.signal!.addEventListener('abort', () => {
+              aborted.release();
+              reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+            });
+          }),
+      });
+      return { services, started, aborted };
+    }
+
+    it('aborts a local execution once its heartbeat finds the lease gone', async () => {
+      const { services, started, aborted } = blockingServices();
+      const run = await start();
+      const claimed = (await claim(run.id, 'worker-a'))!;
+      const execution = runClaimedGenerationRun(claimed, services, new AbortController(), 20);
+      await started.promise;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      // Another worker takes the run over; A's next heartbeat notices.
+      let takenOver = null;
+      for (let attempt = 0; !takenOver && attempt < 100; attempt += 1) {
+        takenOver = await claim(run.id, 'worker-b', 1);
+        if (!takenOver) await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      expect(takenOver).not.toBeNull();
+      await aborted.promise;
+      expect(await execution).toBe('interrupted');
+    });
+
+    it('releases its leases when it stops, without counting a takeover', async () => {
+      const { services, started, aborted } = blockingServices();
+      const run = await start();
+      const runner = startGenerationRunner({
+        services,
+        workerId: 'runner-stop',
+        config: {
+          scanIntervalMs: 20,
+          heartbeatIntervalMs: 50,
+          leaseTtlMs: 60_000,
+          maxConcurrent: 1,
+        },
+      });
+      await started.promise;
+      expect((await readGenerationRun(run.id, OWNER))!.leaseWorkerId).toBe('runner-stop');
+      await runner.stop({ timeoutMs: 5_000 });
+      await aborted.promise;
+      expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+        state: 'outlining',
+        leaseWorkerId: null,
+        takeovers: 0,
+      });
+    });
+
+    it('hands back a claim of a run it still executes under a stale lease', async () => {
+      const { services, started, aborted } = blockingServices();
+      const run = await start();
+      // No heartbeat within the test and a 1 ms lease: the next scan finds the
+      // run's lease stale while this process still executes it.
+      const runner = startGenerationRunner({
+        services,
+        workerId: 'runner-race',
+        config: {
+          scanIntervalMs: 20,
+          heartbeatIntervalMs: 60_000,
+          leaseTtlMs: 1,
+          maxConcurrent: 2,
+        },
+      });
+      await started.promise;
+      // The stale execution is aborted rather than run twice.
+      await aborted.promise;
+      await runner.stop({ timeoutMs: 5_000 });
+      const stored = (await readGenerationRun(run.id, OWNER))!;
+      expect(stored.leaseWorkerId).toBeNull();
+      expect(stored.leaseGeneration).toBeGreaterThan(1);
+    }, 30_000);
   });
 });

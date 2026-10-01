@@ -6,7 +6,11 @@
  * The engine depends on this interface only, so a test runs the engine with
  * its own step outputs and checks the inputs each step received.
  */
-import type { AgentInfo } from '@openmaic/generation';
+import type { Queryable } from '@openmaic/storage/document/pg';
+
+import type { AgentConfig } from '@/lib/orchestration/registry/types';
+import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
+import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import type { BuiltInTTSProviderId, TTSProviderId } from '@/lib/audio/types';
@@ -65,6 +69,10 @@ export interface NarrateClipInput {
   audioId: string;
   voice: string;
   speed: number;
+  /** The voice's provider options (a VoxCPM voice prompt, say). */
+  providerOptions?: Record<string, unknown>;
+  /** The run's lease check, on the clip's asset allocation. */
+  fence: (tx: Queryable) => Promise<void>;
 }
 
 export interface RunStepServices {
@@ -86,7 +94,7 @@ export interface RunStepServices {
     input: Omit<AgentProfilesInput, 'model'>,
     ctx: StepContext,
   ): Promise<GeneratedAgentProfile[]>;
-  presetAgents(ownerId: string, agentIds: readonly string[]): Promise<AgentInfo[]>;
+  presetAgents(ownerId: string, agentIds: readonly string[]): Promise<AgentConfig[]>;
   sceneContent(
     ownerId: string,
     input: Omit<SceneContentInput, 'model'>,
@@ -101,6 +109,8 @@ export interface RunStepServices {
   narrationTarget(ownerId: string): Promise<RunNarrationTarget | null>;
   /** Synthesize and store one clip; its asset id, or null when the asset store had no room. */
   narrateClip(ownerId: string, input: NarrateClipInput, ctx: StepContext): Promise<string | null>;
+  /** Release clips allocated for a narration attempt that did not commit. */
+  releaseClips(ownerId: string, assetIds: readonly string[], ctx: StepContext): Promise<void>;
   /** How many scenes (and clips) may generate at once; 0 or 1 is serial. */
   parallelSceneConcurrency(): number;
   /** The wait between retries. */
@@ -266,6 +276,7 @@ export const defaultRunStepServices: RunStepServices = {
         connection: input.target.connection,
         requestedVoice: input.voice,
         speed: input.speed,
+        ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
       },
       ctx,
     );
@@ -275,6 +286,7 @@ export const defaultRunStepServices: RunStepServices = {
       bytes: narration.audio,
       mimeType: `audio/${narration.format}`,
       kind: 'audio',
+      fence: input.fence,
     });
     if (stored.status === 'refused') {
       // A clip the store has no room for leaves its line unvoiced, as the
@@ -283,6 +295,19 @@ export const defaultRunStepServices: RunStepServices = {
       return null;
     }
     return stored.assetId;
+  },
+
+  async releaseClips(ownerId, assetIds, ctx) {
+    if (assetIds.length === 0) return;
+    const { assetStore } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+    for (const assetId of assetIds) {
+      try {
+        await assetStore.releasePending(assetPrincipalForOwner(ownerId), assetId);
+      } catch (error) {
+        // Still pending: the collector reclaims it once its deadline passes.
+        ctx.log.warn(`Could not release narration asset ${assetId}:`, error);
+      }
+    }
   },
 
   parallelSceneConcurrency: getParallelSceneConcurrency,

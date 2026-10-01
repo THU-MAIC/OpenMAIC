@@ -7,8 +7,9 @@
  *     carry `id: <seq>`. The stream stays open with a heartbeat; a client that
  *     cannot hold one polls `GET /api/generation-runs/:id` instead.
  *
- * Another owner's run answers the same 404 as an unknown one. The stream only
- * reads: closing it never affects the run.
+ * Another owner's run answers the same 404 as an unknown one; an owner
+ * holding too many run streams gets 429. The stream only reads: closing it
+ * never affects the run.
  */
 import type { NextRequest } from 'next/server';
 
@@ -17,7 +18,12 @@ import {
   readGenerationRun,
   readGenerationRunEvents,
 } from '@/lib/server/generation/run/store';
-import { polledEventStream, sseFrame, sseHeaders } from '@/lib/server/generation/run/sse';
+import {
+  acquireRunStreamSlot,
+  polledEventStream,
+  sseFrame,
+  sseHeaders,
+} from '@/lib/server/generation/run/sse';
 import { authenticateRequestOwner } from '@/lib/server/identity/with-owner';
 
 export const runtime = 'nodejs';
@@ -38,6 +44,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { principal, responseHeaders } = owner;
   const run = isRunId(id) ? await readGenerationRun(id, principal.ownerId) : null;
   if (!run) return new Response('Not found', { status: 404, headers: responseHeaders });
+  const release = acquireRunStreamSlot(principal.ownerId);
+  if (!release) {
+    responseHeaders.set('Retry-After', '5');
+    return new Response('Too many open generation run streams', {
+      status: 429,
+      headers: responseHeaders,
+    });
+  }
 
   const url = new URL(req.url);
   let cursor = parseCursor(req.headers.get('last-event-id') ?? url.searchParams.get('after'));
@@ -47,6 +61,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const stream = polledEventStream({
     wakeup: { kind: 'generation-run', runId: id },
     pollIntervalMs: RUN_EVENTS_POLL_INTERVAL_MS,
+    onClose: release,
     read: async (write) => {
       for (;;) {
         const page = await readGenerationRunEvents(id, cursor, PAGE);
