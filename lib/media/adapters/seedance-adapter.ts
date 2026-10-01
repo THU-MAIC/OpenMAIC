@@ -34,7 +34,7 @@ import type {
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
 import { probeAuth } from '../probe-auth';
-import { runPolledTask } from '../polled-task';
+import { runPolledTask, type PolledTaskControl } from '../polled-task';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
@@ -251,6 +251,7 @@ export async function pollSeedanceTask(
 export async function generateWithSeedance(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
+  control?: PolledTaskControl,
 ): Promise<VideoGenerationResult> {
   return runPolledTask<VideoGenerationResult>({
     submit: async () => ({
@@ -264,6 +265,7 @@ export async function generateWithSeedance(
     intervalMs: POLL_INTERVAL_MS,
     maxAttempts: MAX_POLL_ATTEMPTS,
     label: 'Seedance video generation',
+    control,
     formatTimeout: ({ taskId, elapsedMs }) =>
       `Seedance video generation timed out after ${elapsedMs / 1000}s (task: ${taskId})`,
   });

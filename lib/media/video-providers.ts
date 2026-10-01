@@ -9,6 +9,7 @@ import type {
   VideoGenerationResult,
   VideoProviderConfig,
 } from './types';
+import type { PolledTaskControl } from './polled-task';
 import { generateWithSeedance, testSeedanceConnectivity } from './adapters/seedance-adapter';
 import { generateWithKling, testKlingConnectivity } from './adapters/kling-adapter';
 import { generateWithVeo, testVeoConnectivity } from './adapters/veo-adapter';
@@ -214,25 +215,31 @@ export function normalizeVideoOptions(
   return normalized;
 }
 
+/**
+ * Generate a video: submit the provider task and wait for it. `control`
+ * learns the provider's task id before the wait, or resumes the wait on a
+ * task submitted earlier.
+ */
 export async function generateVideo(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
+  control?: PolledTaskControl,
 ): Promise<VideoGenerationResult> {
   switch (config.providerId) {
     case 'seedance':
-      return generateWithSeedance(config, options);
+      return generateWithSeedance(config, options, control);
     case 'kling':
-      return generateWithKling(config, options);
+      return generateWithKling(config, options, control);
     case 'veo':
-      return generateWithVeo(config, options);
+      return generateWithVeo(config, options, control);
     case 'minimax-video':
-      return generateWithMiniMaxVideo(config, options);
+      return generateWithMiniMaxVideo(config, options, control);
     case 'grok-video':
-      return generateWithGrokVideo(config, options);
+      return generateWithGrokVideo(config, options, control);
     case 'happyhorse':
-      return generateWithHappyHorse(config, options);
+      return generateWithHappyHorse(config, options, control);
     case 'openrouter-video':
-      return generateWithOpenRouterVideo(config, options);
+      return generateWithOpenRouterVideo(config, options, control);
     default:
       throw new Error(`Unsupported video provider: ${config.providerId}`);
   }

@@ -17,7 +17,7 @@ import type {
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
 import { connectivityHttpFailure, connectivityTransportFailure, probeAuth } from '../probe-auth';
-import { runPolledTask } from '../polled-task';
+import { runPolledTask, type PolledTaskControl } from '../polled-task';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 import { appAttributionHeaders } from '@/lib/config/app-attribution';
@@ -254,6 +254,7 @@ async function retrieveFileDownloadUrl(
 export async function generateWithMiniMaxVideo(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
+  control?: PolledTaskControl,
 ): Promise<VideoGenerationResult> {
   return runPolledTask<VideoGenerationResult>({
     submit: async () => ({
@@ -313,6 +314,7 @@ export async function generateWithMiniMaxVideo(
     intervalMs: POLL_INTERVAL_MS,
     maxAttempts: MAX_POLL_ATTEMPTS,
     label: 'MiniMax Video',
+    control,
     formatTimeout: ({ attempts, lastPendingDetail }) =>
       `MiniMax Video: timeout after ${attempts} polls, last status: ${lastPendingDetail ?? ''}`,
   });
