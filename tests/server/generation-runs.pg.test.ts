@@ -1863,10 +1863,12 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
 
     it('a media failure leaves its placeholder without pausing, and Retry regenerates only it', async () => {
       let failImage = true;
+      const hooks: { editDuringRetry?: () => Promise<void> } = {};
       const { services, media, calls } = mediaServices({
         generateImage: async (_owner, input) => {
           media.image.push(input.request.elementId);
           if (failImage) throw new Error('provider said 500: upstream detail');
+          await hooks.editDuringRetry?.();
           return { bytes: IMAGE_BYTES, mimeType: 'image/png' };
         },
       });
@@ -1917,14 +1919,15 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       ).toEqual(retried);
       stored = (await readGenerationRun(run.id, OWNER))!;
       expect(stored).toMatchObject({ state: 'completed', mediaPending: true });
-      // While its media is generated again the course is read-only again.
-      await expect(
-        documentStore(OWNER).putScene(stageId, document.scenes[2]!),
-      ).rejects.toMatchObject({
-        code: 'COURSE_GENERATING',
-      });
+      // A Retry after completion does not lock the course: the author keeps
+      // editing while the item regenerates.
+      await documentStore(OWNER).putScene(stageId, document.scenes[2]!);
 
       failImage = false;
+      hooks.editDuringRetry = async () => {
+        const current = (await documentStore(OWNER).loadDocument(stageId))!.scenes[0]!;
+        await documentStore(OWNER).putScene(stageId, { ...current, title: 'Edited during retry' });
+      };
       const contentCalls = calls.sceneContent.length;
       expect(await drive(run.id, services)).toBe('completed');
       expect(calls.sceneContent).toHaveLength(contentCalls);
@@ -1932,9 +1935,12 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       const after = await mediaOf(run.id);
       expect(after.gen_img_1).toMatchObject({ status: 'done' });
       document = (await documentStore(OWNER).loadDocument(stageId))!;
+      // Placed into the scene as the author left it: the edit stays.
+      expect(document.scenes[0]!.title).toBe('Edited during retry');
       expect(elementsOf(document.scenes[0]).find((element) => element.type === 'image')!.src).toBe(
         after.gen_img_1!.assetId,
       );
+      expect(await committedAt(after.gen_img_1!.assetId as string)).not.toBeNull();
       expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
         state: 'completed',
         mediaPending: false,
@@ -1943,6 +1949,57 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       await documentStore(OWNER).putScene(stageId, document.scenes[2]!);
       // Nothing is left to claim.
       expect(await claim(run.id)).toBeNull();
+    });
+
+    it('drops a retried result whose element the author removed, without resurrecting it', async () => {
+      let failImage = true;
+      let stageId = '';
+      const { services } = mediaServices({
+        mediaConnections: async () => ({ image: connection('seedream'), video: null }),
+        generateImage: async () => {
+          if (failImage) throw new Error('provider down');
+          // The author deletes the image while it regenerates.
+          const current = (await documentStore(OWNER).loadDocument(stageId))!.scenes[0]!;
+          const canvas = (current.content as { canvas: { elements: Array<{ type: string }> } })
+            .canvas;
+          canvas.elements = canvas.elements.filter((element) => element.type !== 'image');
+          await documentStore(OWNER).putScene(stageId, current);
+          return { bytes: IMAGE_BYTES, mimeType: 'image/png' };
+        },
+      });
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      expect(await drive(run.id, services)).toBe('completed');
+      stageId = (await readGenerationRun(run.id, OWNER))!.stageId!;
+      failImage = false;
+      await retryGenerationRun(run.id, OWNER, {
+        commandId: 'gone',
+        media: { elementId: 'gen_img_1' },
+      });
+      const assetsBefore = await pool.query<{ n: string }>(
+        'SELECT count(*) AS n FROM asset_entries',
+      );
+      expect(await drive(run.id, services)).toBe('completed');
+
+      const document = (await documentStore(OWNER).loadDocument(stageId))!;
+      expect(elementsOf(document.scenes[0]).some((element) => element.type === 'image')).toBe(
+        false,
+      );
+      expect((await mediaOf(run.id)).gen_img_1).toMatchObject({
+        status: 'failed',
+        errorCode: 'MEDIA_ELEMENT_REMOVED',
+      });
+      // Its bytes were released, and a Retry is refused.
+      const assetsAfter = await pool.query<{ n: string }>(
+        'SELECT count(*) AS n FROM asset_entries',
+      );
+      expect(Number(assetsAfter.rows[0]!.n)).toBe(Number(assetsBefore.rows[0]!.n));
+      await expect(
+        retryGenerationRun(run.id, OWNER, {
+          commandId: 'gone-2',
+          media: { elementId: 'gen_img_1' },
+        }),
+      ).rejects.toMatchObject({ reason: 'media' });
+      expect(await readGenerationRun(run.id, OWNER)).toMatchObject({ mediaPending: false });
     });
 
     it('a content refusal is final, and a paused run generates its media without retrying the scene', async () => {

@@ -74,7 +74,10 @@ import {
   completeRunCourse,
   createRunCourse,
   isRunCourseDeleted,
+  loadRunCourse,
+  mutateRunScene,
   RunCourseDeletedError,
+  touchRunCourseIn,
 } from './document';
 import {
   advertisedVoices,
@@ -94,6 +97,7 @@ import {
 } from './media';
 import {
   advanceRun,
+  MEDIA_ELEMENT_REMOVED,
   mediaItemsOf,
   mediaStepId,
   SCENE_STEP_KINDS,
@@ -1148,6 +1152,73 @@ export async function executeGenerationRun(
       return true;
     });
 
+  /**
+   * Place a Retry's media into a course that has completed, which its author
+   * may be editing meanwhile: each scene that holds the placeholder now is
+   * read and rewritten in one transaction, its other content untouched, and
+   * the stage row is touched so an open editor reloads. When the author
+   * removed the element (or its scene), the result is dropped and its bytes
+   * released: the item fails as {@link MEDIA_ELEMENT_REMOVED}, final, so the
+   * element is not resurrected and no Retry pays for media nothing shows.
+   */
+  const placeIntoCurrentCourse = (
+    elementId: string,
+    checkpoint: Extract<GenerationRunMediaCheckpoint, { status: 'done' }>,
+    events: NewGenerationRunEvent[],
+  ): Promise<boolean> =>
+    exclusive(async () => {
+      const stageId = agents().stage.id;
+      const course = await loadRunCourse({ ownerId: owner, lease, stageId });
+      let placed = false;
+      for (const candidate of course.scenes) {
+        if (!sceneCarriesMediaReference(candidate as Scene, elementId)) continue;
+        await mutateRunScene({
+          ownerId: owner,
+          lease,
+          stageId,
+          sceneId: candidate.id,
+          mutate: (scene) => {
+            if (!scene) return null;
+            const next = structuredClone(scene) as Scene;
+            return placeInScene(next, elementId, checkpoint) ? next : null;
+          },
+          after: async (tx, wrote) => {
+            if (!wrote) return;
+            await touchRunCourseIn(tx, stageId);
+            await commitGenerationRunIn(tx, lease, {
+              step: { id: mediaStepId(elementId), output: checkpoint },
+              events: placed ? [] : events,
+            });
+            placed = true;
+          },
+        });
+      }
+      if (placed) {
+        steps.set(mediaStepId(elementId), checkpoint);
+        return true;
+      }
+      log.info(`run ${run.id}: ${elementId} is no longer in the course; dropping its media`);
+      await services.releaseAssets(
+        owner,
+        [checkpoint.assetId, ...(checkpoint.posterAssetId ? [checkpoint.posterAssetId] : [])],
+        stepContext,
+      );
+      const dropped: GenerationRunMediaCheckpoint = {
+        mediaType: checkpoint.mediaType,
+        status: 'failed',
+        message: `The ${checkpoint.mediaType} was generated after its element was removed from the course`,
+        errorCode: MEDIA_ELEMENT_REMOVED,
+      };
+      await commit({
+        step: { id: mediaStepId(elementId), output: dropped },
+        events: [mediaEvent(elementId, dropped)],
+      });
+      return true;
+    });
+
+  /** Where stored media goes: the generated scenes, or a completed course as it is now. */
+  const placer = () => (run.state === 'completed' ? placeIntoCurrentCourse : placeMedia);
+
   const lane: {
     running: Promise<void> | null;
     failure: unknown;
@@ -1174,7 +1245,7 @@ export async function executeGenerationRun(
         for (const { request } of mediaItems()) {
           const checkpoint = mediaCheckpoint(request.elementId);
           if (checkpoint?.status !== 'stored') continue;
-          await placeMedia(request.elementId, { ...checkpoint, status: 'done' }, []);
+          await placer()(request.elementId, { ...checkpoint, status: 'done' }, []);
         }
       }
       await runMediaLane({
@@ -1188,7 +1259,7 @@ export async function executeGenerationRun(
         items: mediaItems(),
         steps,
         commit,
-        place: placeMedia,
+        place: placer(),
         stopping: () => lane.stopping,
         onItemStarted: (item) => {
           lane.current = item;

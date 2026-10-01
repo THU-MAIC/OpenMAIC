@@ -106,6 +106,58 @@ export async function appendRunScene(input: {
 }
 
 /**
+ * A targeted read-modify-write of one scene of the course as it is now (see
+ * `mutateScene` of the owner-bound document store), fenced by the lease;
+ * `after` (the run's checkpoint) commits with it. Answers whether the scene
+ * was written.
+ */
+export async function mutateRunScene(input: {
+  ownerId: string;
+  lease: RunLease;
+  stageId: string;
+  sceneId: string;
+  mutate: (scene: Scene | null) => Scene | null;
+  after: (queryable: Queryable, wrote: boolean) => Promise<void>;
+}): Promise<boolean> {
+  const store = await fencedStore(input.ownerId, input.lease, input.stageId);
+  try {
+    return await store.mutateScene(
+      input.stageId,
+      input.sceneId,
+      (scene) => {
+        const next = input.mutate(scene);
+        return next ? sanitizeSceneContent(next) : null;
+      },
+      input.after,
+    );
+  } catch (error) {
+    if (courseGone(error)) throw new RunCourseDeletedError(input.stageId);
+    throw error;
+  }
+}
+
+/** The course's current document, as the run's owner reads it. */
+export async function loadRunCourse(input: { ownerId: string; lease: RunLease; stageId: string }) {
+  const store = await fencedStore(input.ownerId, input.lease, input.stageId);
+  const document = await store.loadDocument(input.stageId);
+  if (!document) throw new RunCourseDeletedError(input.stageId);
+  return document;
+}
+
+/**
+ * Touch the stage row: its revision trigger tells an open workbench or
+ * editor that the course changed, so it reads it again.
+ */
+export async function touchRunCourseIn(tx: Queryable, stageId: string, now = Date.now()) {
+  await tx.query(
+    `UPDATE document_stages
+        SET updated_at = $2, data = jsonb_set(data, '{updatedAt}', to_jsonb($2::double precision))
+      WHERE id = $1`,
+    [stageId, now],
+  );
+}
+
+/**
  * Record that every scene is generated: the document outline's and the
  * ownership row's completion flags, with the run's completion (`commit`), in
  * one transaction fenced by the lease. Only the flags change; the document is
@@ -133,14 +185,8 @@ export async function completeRunCourse(input: {
         WHERE stage_id = $1`,
       [input.stageId, now],
     );
-    // Touch the stage row: its revision trigger tells an open workbench the
-    // course changed, so it reads the completion.
-    await tx.query(
-      `UPDATE document_stages
-          SET updated_at = $2, data = jsonb_set(data, '{updatedAt}', to_jsonb($2::double precision))
-        WHERE id = $1`,
-      [input.stageId, now],
-    );
+    // An open workbench reads the completion.
+    await touchRunCourseIn(tx, input.stageId, now);
     await markStageGenerationComplete(tx, input.stageId);
     await input.commit(tx);
   });

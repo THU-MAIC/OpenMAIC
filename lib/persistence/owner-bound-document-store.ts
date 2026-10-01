@@ -183,7 +183,21 @@ export interface CreateOnlyDocumentStore<TScene extends SceneLike, TStage extend
   createDocument(doc: MaicDocument<TScene, TStage>, options?: CreateDocumentOptions): Promise<void>;
   /** `putScene`, with rows of the caller's own committed in the same transaction. */
   putScene(stageId: string, scene: TScene, options?: MutationOptions): Promise<void>;
+  /** A targeted read-modify-write of one scene (see the store's own documentation). */
+  mutateScene(
+    stageId: string,
+    sceneId: string,
+    mutate: (scene: TScene | null) => TScene | null,
+    after?: SceneMutationHook,
+  ): Promise<boolean>;
 }
+
+/**
+ * Runs on a scene mutation's transaction once it decided, before COMMIT:
+ * whatever it writes commits or rolls back with the scene. `wrote` says
+ * whether the scene was written.
+ */
+export type SceneMutationHook = (queryable: Queryable, wrote: boolean) => Promise<void>;
 
 interface RawOwnershipRow extends Record<string, unknown> {
   owner_id: string;
@@ -256,6 +270,33 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
     return this.tagged(
       { stageId, mode: 'mutate', inTransaction: options.inTransaction, content: true },
       () => this.inner.putScene(stageId, scene),
+    );
+  }
+
+  /**
+   * Read one scene of the current document and write what `mutate` makes of
+   * it, in one transaction that holds the course's ownership row (which every
+   * other write of the course takes too): a targeted read-modify-write, so
+   * whatever else the scene holds now is kept. `mutate` answers null to leave
+   * the scene as it is (it is also handed null for a scene that is gone).
+   * Answers whether the scene was written.
+   */
+  mutateScene(
+    stageId: string,
+    sceneId: string,
+    mutate: (scene: TScene | null) => TScene | null,
+    after?: SceneMutationHook,
+  ): Promise<boolean> {
+    return this.tagged({ stageId, mode: 'mutate', content: true }, () =>
+      this.runTransaction(async (queryable) => {
+        // Pinned to this transaction, as in `deleteDocument`: a package call
+        // that opened its own would wait on the ownership row this one holds.
+        const pinned = this.pinnedToTransaction(queryable);
+        const next = mutate(await pinned.getScene(stageId, sceneId));
+        if (next) await pinned.putScene(stageId, next);
+        await after?.(queryable, next !== null);
+        return next !== null;
+      }),
     );
   }
 

@@ -25,11 +25,10 @@ import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 import { ensureGenerationRunSchema } from '@/lib/persistence/generation-runs';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
-import { isRetryableMediaFailure } from '@/lib/media/media-failure';
 import { notifyDurableAgentEvent } from '@/lib/server/agent-runtime/event-notify-bus';
 import type { SceneOutline } from '@/lib/types/generation';
 
-import { MEDIA_STEP_PREFIX, mediaStepId, stateForRetry } from './plan';
+import { isRetryableRunMedia, MEDIA_STEP_PREFIX, mediaStepId, stateForRetry } from './plan';
 import {
   ACTIVE_RUN_STATES,
   EXECUTABLE_RUN_STATES,
@@ -861,9 +860,11 @@ export function isCourseGeneratingError(error: unknown): boolean {
 
 /**
  * Refuse a write into `stageId` while a run is producing the course: its
- * state is not completed or ended, or it is completed with media still to
- * generate. `writerRunId` is the run making the write, whose own (lease-fenced)
- * writes go through. Called on the write's transaction with the course's
+ * state is not completed or ended (its first media pass included, which
+ * completion waits for). A completed run regenerating one retried image or
+ * video does not lock the course: that write is a targeted read-modify-write
+ * of the current document. `writerRunId` is the run making the write, whose
+ * own (lease-fenced) writes go through. Called on the write's transaction with the course's
  * ownership row locked, which every run commit that touches the course locks
  * too, so the answer holds until the write commits. A no-op on a database
  * whose run tables do not exist yet.
@@ -880,7 +881,7 @@ export async function assertCourseWritableIn(
   const producing = await tx.query<{ id: string }>(
     `SELECT id FROM generation_runs
       WHERE stage_id = $1 AND id IS DISTINCT FROM $2
-        AND (state NOT IN ('completed', 'ended') OR (state = 'completed' AND media_pending))
+        AND state NOT IN ('completed', 'ended')
       LIMIT 1`,
     [stageId, writerRunId ?? null],
   );
@@ -1129,7 +1130,7 @@ async function retryMediaIn(tx: Queryable, run: RunRow, elementId: string): Prom
   if (!media) {
     throw new RunCommandConflictError('media', `The run has no media element ${elementId}`);
   }
-  if (media.status !== 'failed' || !isRetryableMediaFailure(media)) {
+  if (media.status !== 'failed' || !isRetryableRunMedia(media)) {
     throw new RunCommandConflictError(
       'media',
       media.status === 'failed'

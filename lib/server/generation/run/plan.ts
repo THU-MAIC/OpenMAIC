@@ -10,6 +10,7 @@
  * no server TTS) still runs and checkpoints that it did nothing, so the plan
  * never depends on configuration read at another moment.
  */
+import { isRetryableMediaFailure } from '@/lib/media/media-failure';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import type { SceneOutline } from '@/lib/types/generation';
 
@@ -142,4 +143,16 @@ export function mediaItemsOf(outlines: readonly SceneOutline[]): RunMediaItem[] 
     }
   });
   return items;
+}
+
+/**
+ * A media item regenerated after its course completed whose element the
+ * course no longer has (the author deleted it, or its scene): the result was
+ * dropped. Final: a Retry would pay for media nothing can show.
+ */
+export const MEDIA_ELEMENT_REMOVED = 'MEDIA_ELEMENT_REMOVED';
+
+/** Whether a failed media item may be retried: the browser's rule, and not a removed element. */
+export function isRetryableRunMedia(failure: { readonly errorCode?: string }): boolean {
+  return isRetryableMediaFailure(failure) && failure.errorCode !== MEDIA_ELEMENT_REMOVED;
 }

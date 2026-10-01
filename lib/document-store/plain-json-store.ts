@@ -62,6 +62,21 @@ export function withPlainJsonDocumentWrites<TStore extends DocumentStore<AppScen
   };
   // The create-only write of the owner-bound store, when the store has one.
   const createOnly = store as Partial<CreateOnlyDocumentStore<AppScene, AppStage>>;
+  if (typeof createOnly.mutateScene === 'function') {
+    const mutateScene = createOnly.mutateScene.bind(store);
+    Object.assign(methods, {
+      mutateScene: (...[stageId, sceneId, mutate, after]: Parameters<typeof mutateScene>) =>
+        mutateScene(
+          stageId,
+          sceneId,
+          (scene) => {
+            const next = mutate(scene);
+            return next ? omitUndefinedObjectMembers(next) : null;
+          },
+          after,
+        ),
+    });
+  }
   if (typeof createOnly.createDocument === 'function') {
     const createDocument = createOnly.createDocument.bind(store);
     Object.assign(methods, {

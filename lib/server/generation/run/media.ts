@@ -26,7 +26,7 @@ import { isAbortError } from '@openmaic/generation';
 import { toAssetId } from '@openmaic/storage';
 
 import { rewriteSceneMediaReference } from '@/lib/media/generated-media-references';
-import { isRetryableMediaFailure, ASSET_QUOTA_EXCEEDED } from '@/lib/media/media-failure';
+import { ASSET_QUOTA_EXCEEDED } from '@/lib/media/media-failure';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
@@ -36,7 +36,7 @@ import { storeGeneratedAsset } from '@/lib/server/store-generated-asset';
 import type { Scene } from '@/lib/types/stage';
 
 import { withDeadline } from './deadline';
-import { mediaStepId, type RunMediaItem } from './plan';
+import { isRetryableRunMedia, mediaStepId, type RunMediaItem } from './plan';
 import type { RunMediaConnections, RunStepServices } from './services';
 import {
   commitGenerationRunIn,
@@ -96,7 +96,7 @@ function mediaState(checkpoint: GenerationRunMediaCheckpoint): GenerationRunMedi
         status: 'failed',
         message: checkpoint.message,
         ...(checkpoint.errorCode ? { errorCode: checkpoint.errorCode } : {}),
-        retryable: isRetryableMediaFailure(checkpoint),
+        retryable: isRetryableRunMedia(checkpoint),
       };
   }
 }
