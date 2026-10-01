@@ -91,6 +91,8 @@ import {
   doneOf,
   endsLane,
   isMediaWork,
+  MAX_PLACEMENT_ATTEMPTS,
+  MEDIA_PLACEMENT_FAILED,
   mayGenerate,
   mediaEvent,
   ownerAssetExists,
@@ -1242,7 +1244,60 @@ export async function executeGenerationRun(
     });
 
   /** Where stored media goes: the generated scenes, or a completed course as it is now. */
-  const placer = () => (run.state === 'completed' ? placeIntoCurrentCourse : placeMedia);
+  const placeInto = () => (run.state === 'completed' ? placeIntoCurrentCourse : placeMedia);
+
+  /**
+   * Place stored bytes, counting the placements that fail: the bytes stay
+   * stored (and are placed again later) until {@link MAX_PLACEMENT_ATTEMPTS}
+   * failed in a row; then the item fails with a Retry and its bytes are
+   * released, as every failed item's are (a Retry generates anew), so the run
+   * stops being claimed for it.
+   */
+  const placer =
+    () =>
+    async (
+      elementId: string,
+      checkpoint: Extract<GenerationRunMediaCheckpoint, { status: 'done' }>,
+      events: NewGenerationRunEvent[],
+    ): Promise<boolean> => {
+      try {
+        return await placeInto()(elementId, checkpoint, events);
+      } catch (error) {
+        if (endsLane(error, signal)) throw error;
+        const current = mediaCheckpoint(elementId);
+        if (current?.status !== 'stored') throw error;
+        const failures = (current.placementFailures ?? 0) + 1;
+        log.warn(
+          `run ${run.id}: placing ${elementId} failed (${failures}/${MAX_PLACEMENT_ATTEMPTS})`,
+          error,
+        );
+        if (failures < MAX_PLACEMENT_ATTEMPTS) {
+          await commit({
+            step: {
+              id: mediaStepId(elementId),
+              output: { ...current, placementFailures: failures },
+            },
+          });
+          return false;
+        }
+        await services.releaseAssets(
+          owner,
+          [current.assetId, ...(current.posterAssetId ? [current.posterAssetId] : [])],
+          stepContext,
+        );
+        const failed: GenerationRunMediaCheckpoint = {
+          mediaType: current.mediaType,
+          status: 'failed',
+          message: `The ${current.mediaType} could not be placed in the course`,
+          errorCode: MEDIA_PLACEMENT_FAILED,
+        };
+        await commit({
+          step: { id: mediaStepId(elementId), output: failed },
+          events: [mediaEvent(elementId, failed)],
+        });
+        return true;
+      }
+    };
 
   const lane: {
     running: Promise<void> | null;

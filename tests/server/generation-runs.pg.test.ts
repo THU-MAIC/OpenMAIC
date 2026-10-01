@@ -2519,6 +2519,61 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       expect(await readGenerationRun(run.id, OWNER)).toMatchObject({ mediaPending: false });
     });
 
+    it('stops placing bytes whose placement keeps failing: the item fails with a Retry', async () => {
+      let failImage = true;
+      const { services, media } = mediaServices({
+        mediaConnections: async () => ({ image: ready('seedream'), video: OFF }),
+        generateImage: async (_owner, input) => {
+          media.image.push(input.request.elementId);
+          if (failImage) throw new Error('provider down');
+          return { bytes: IMAGE_BYTES, mimeType: 'image/png' };
+        },
+      });
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      expect(await drive(run.id, services)).toBe('completed');
+      failImage = false;
+      await retryGenerationRun(run.id, OWNER, {
+        commandId: 'cap',
+        media: { elementId: 'gen_img_1' },
+      });
+      completionHooks.beforeMutate = async () => {
+        throw new Error('scene writes keep failing');
+      };
+      let assetId = '';
+      try {
+        for (const failures of [1, 2]) {
+          expect(await drive(run.id, services)).toBe('completed');
+          const stored = (await mediaOf(run.id)).gen_img_1!;
+          expect(stored).toMatchObject({ status: 'stored', placementFailures: failures });
+          assetId = stored.assetId as string;
+          expect(await readGenerationRun(run.id, OWNER)).toMatchObject({ mediaPending: true });
+        }
+        expect(await drive(run.id, services)).toBe('completed');
+      } finally {
+        completionHooks.beforeMutate = undefined;
+      }
+      // Generated once; placed never; failed with a Retry, its bytes released.
+      expect(media.image).toEqual(['gen_img_1', 'gen_img_1']);
+      expect((await mediaOf(run.id)).gen_img_1).toEqual({
+        mediaType: 'image',
+        status: 'failed',
+        message: 'The image could not be placed in the course',
+        errorCode: 'MEDIA_PLACEMENT_FAILED',
+      });
+      expect(await readGenerationRun(run.id, OWNER)).toMatchObject({ mediaPending: false });
+      expect(await claim(run.id)).toBeNull();
+      expect(
+        (await pool.query('SELECT 1 FROM asset_entries WHERE id = $1', [assetId])).rows,
+      ).toEqual([]);
+      // A Retry generates it again and places it.
+      await retryGenerationRun(run.id, OWNER, {
+        commandId: 'cap-2',
+        media: { elementId: 'gen_img_1' },
+      });
+      expect(await drive(run.id, services)).toBe('completed');
+      expect((await mediaOf(run.id)).gen_img_1).toMatchObject({ status: 'done' });
+    });
+
     it('fails stored bytes loud when they are gone before they are placed', async () => {
       const { services } = mediaServices({
         mediaConnections: async () => ({ image: ready('seedream'), video: OFF }),

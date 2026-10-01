@@ -166,7 +166,13 @@ export type GenerationRunMediaCheckpoint = { mediaType: 'image' | 'video' } & (
   | { status: 'queued' }
   | { status: 'generating' }
   | { status: 'submitted'; task: GenerationRunVideoTask }
-  | { status: 'stored'; assetId: string; posterAssetId?: string }
+  | {
+      status: 'stored';
+      assetId: string;
+      posterAssetId?: string;
+      /** Placements of these bytes that failed in a row (see `MAX_PLACEMENT_ATTEMPTS`). */
+      placementFailures?: number;
+    }
   | { status: 'done'; assetId: string; posterAssetId?: string }
   | { status: 'skipped' }
   | { status: 'failed'; message: string; errorCode?: string }

@@ -286,6 +286,16 @@ export async function runMediaLane(ctx: MediaLaneContext): Promise<void> {
   }
 }
 
+/**
+ * Placements of stored bytes that may fail in a row before the item fails:
+ * past it the fault is not passing, and a completed run would otherwise be
+ * claimed for the placement on every scan.
+ */
+export const MAX_PLACEMENT_ATTEMPTS = 3;
+
+/** The code of an item whose bytes could not be placed in the course (retryable). */
+export const MEDIA_PLACEMENT_FAILED = 'MEDIA_PLACEMENT_FAILED';
+
 /** How many times a video's task record is written before the item gives up on it. */
 const TASK_RECORD_ATTEMPTS = 3;
 
