@@ -1024,7 +1024,11 @@
     "notFoundDesc": "Dieser Kurs existiert nicht oder wurde gelöscht.",
     "loadUnavailable": "Kurs konnte nicht geladen werden",
     "loadUnavailableDesc": "Der Kurs konnte nicht abgerufen werden. Prüfen Sie Ihren Zugriff oder versuchen Sie es erneut.",
-    "backToHome": "Zurück zur Startseite"
+    "backToHome": "Zurück zur Startseite",
+    "runOutlining": "Gliederung wird erstellt…",
+    "runAwaitingConfirmation": "Wartet auf Bestätigung",
+    "runGenerating": "Wird generiert {{completed}}/{{total}}",
+    "runPaused": "Pausiert"
   },
   "upload": {
     "pdfSizeLimit": "Unterstützt PDF-Dateien bis zu 50 MB",
@@ -1148,7 +1152,8 @@
     "outlinesReadyCount": "Abschnitte bereit: {{ready}} / {{total}}",
     "jumpToBlankTitle": "Zu einem Abschnitt ohne Titel springen",
     "analyzingMediaMaterial": "Audio- und Videomaterial wird analysiert",
-    "modelSettingsUnavailable": "Die Modelleinstellungen konnten nicht gelesen werden; die Erstellung wurde angehalten. Bitte erneut versuchen."
+    "modelSettingsUnavailable": "Die Modelleinstellungen konnten nicht gelesen werden; die Erstellung wurde angehalten. Bitte erneut versuchen.",
+    "activeRunLimit": "Es werden bereits so viele Kurse wie möglich generiert. Warte, bis einer fertig ist, und versuche es erneut."
   },
   "settings": {
     "title": "Einstellungen",

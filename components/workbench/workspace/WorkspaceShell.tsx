@@ -923,7 +923,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     () => courses.classrooms.find((course) => course.id === panes.courseId)?.isOwner,
     [courses.classrooms, panes.courseId],
   );
-  const readOnlyCourse = courseIsOwner === false || storeIsOwner === false;
+  // A course its generation run is still producing is read-only until the run
+  // completes.
+  const courseGenerating = useStageStore((s) => s.courseGenerating);
+  const readOnlyCourse = courseIsOwner === false || storeIsOwner === false || courseGenerating;
 
   /* ── What a course is CALLED ───────────────────────────────────────────
      Tabs and in-chat links both need a name and a page count for an id, and

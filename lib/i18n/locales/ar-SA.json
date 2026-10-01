@@ -1024,7 +1024,11 @@
     "notFoundDesc": "هذه الدورة غير موجودة أو تم حذفها.",
     "loadUnavailable": "تعذر تحميل هذه الدورة",
     "loadUnavailableDesc": "تعذر استرداد الدورة. تحقق من صلاحية الوصول أو حاول مرة أخرى.",
-    "backToHome": "العودة إلى الصفحة الرئيسية"
+    "backToHome": "العودة إلى الصفحة الرئيسية",
+    "runOutlining": "جارٍ إعداد المخطط…",
+    "runAwaitingConfirmation": "بانتظار التأكيد",
+    "runGenerating": "جارٍ التوليد {{completed}}/{{total}}",
+    "runPaused": "متوقف مؤقتًا"
   },
   "upload": {
     "pdfSizeLimit": "يدعم ملفات PDF حتى 50 ميغابايت",
@@ -1148,7 +1152,8 @@
     "outlinesReadyCount": "{{ready}} / {{total}} أقسام جاهزة",
     "jumpToBlankTitle": "الانتقال إلى قسم بحاجة إلى عنوان",
     "analyzingMediaMaterial": "تحليل الصوت/الفيديو",
-    "modelSettingsUnavailable": "تعذّرت قراءة إعدادات النماذج، فتوقف التوليد. حاول مرة أخرى."
+    "modelSettingsUnavailable": "تعذّرت قراءة إعدادات النماذج، فتوقف التوليد. حاول مرة أخرى.",
+    "activeRunLimit": "لديك بالفعل الحد الأقصى من المقررات قيد التوليد. انتظر حتى ينتهي أحدها ثم حاول مرة أخرى."
   },
   "settings": {
     "title": "الإعدادات",

@@ -1024,7 +1024,11 @@
     "notFoundDesc": "Este curso no existe o ha sido eliminado.",
     "loadUnavailable": "No se pudo cargar este curso",
     "loadUnavailableDesc": "No se pudo obtener el curso. Comprueba tu acceso o inténtalo de nuevo.",
-    "backToHome": "Volver al inicio"
+    "backToHome": "Volver al inicio",
+    "runOutlining": "Creando el esquema…",
+    "runAwaitingConfirmation": "Esperando confirmación",
+    "runGenerating": "Generando {{completed}}/{{total}}",
+    "runPaused": "En pausa"
   },
   "upload": {
     "pdfSizeLimit": "Admite archivos PDF de hasta 50 MB",
@@ -1148,7 +1152,8 @@
     "outlinesReadyCount": "{{ready}} / {{total}} secciones listas",
     "jumpToBlankTitle": "Ir a una sección que aún necesita título",
     "analyzingMediaMaterial": "Analizando audio/video",
-    "modelSettingsUnavailable": "No se pudo leer la configuración de modelos, así que la generación se detuvo. Inténtalo de nuevo."
+    "modelSettingsUnavailable": "No se pudo leer la configuración de modelos, así que la generación se detuvo. Inténtalo de nuevo.",
+    "activeRunLimit": "Ya tienes el número máximo de cursos generándose. Espera a que termine uno e inténtalo de nuevo."
   },
   "settings": {
     "title": "Configuración",

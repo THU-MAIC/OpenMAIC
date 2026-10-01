@@ -11,7 +11,12 @@ vi.mock('@/lib/utils/stage-storage', () => ({
   loadStageData: vi.fn().mockResolvedValue(null),
 }));
 
-import { flushStageSave, restorePendingStageChanges, useStageStore } from '@/lib/store/stage';
+import {
+  flushStageSave,
+  restorePendingStageChanges,
+  setServerGeneratingStage,
+  useStageStore,
+} from '@/lib/store/stage';
 import { getAssetPool } from '@/lib/media/asset-pool';
 import type { ChatSession } from '@/lib/types/chat';
 import type { Scene, Stage } from '@/lib/types/stage';
@@ -61,9 +66,29 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setServerGeneratingStage(null);
   useStageStore.getState().clearStore();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+describe('a course its generation run is producing', () => {
+  it('queues no content save, only the reading position', async () => {
+    setServerGeneratingStage('stage-1');
+    useStageStore.getState().updateScene('scene-2', { title: 'changed' });
+    useStageStore.getState().setCurrentSceneId('scene-2');
+    await flushStageSave();
+    expect(incrementalSave).toHaveBeenCalledOnce();
+    expect(incrementalSave.mock.calls[0]![1]).toEqual([{ kind: 'currentScene' }]);
+    expect(await useStageStore.getState().saveToStorage()).toBe(false);
+    expect(fullSave).not.toHaveBeenCalled();
+
+    // Once the run completes, edits save again.
+    setServerGeneratingStage(null);
+    useStageStore.getState().updateScene('scene-2', { title: 'edited' });
+    await flushStageSave();
+    expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
+  });
 });
 
 describe('incremental stage flush', () => {

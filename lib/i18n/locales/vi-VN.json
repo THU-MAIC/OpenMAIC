@@ -1024,7 +1024,11 @@
     "notFoundDesc": "Khóa học này không tồn tại hoặc đã bị xóa.",
     "loadUnavailable": "Không tải được khóa học này",
     "loadUnavailableDesc": "Không thể truy xuất khóa học. Hãy kiểm tra quyền truy cập hoặc thử lại.",
-    "backToHome": "Về trang chủ"
+    "backToHome": "Về trang chủ",
+    "runOutlining": "Đang lập dàn ý…",
+    "runAwaitingConfirmation": "Đang chờ xác nhận",
+    "runGenerating": "Đang tạo {{completed}}/{{total}}",
+    "runPaused": "Đã tạm dừng"
   },
   "upload": {
     "pdfSizeLimit": "Nhận tệp PDF tối đa 50MB",
@@ -1148,7 +1152,8 @@
     "outlinesReadyCount": "{{ready}} / {{total}} phần đã xong",
     "jumpToBlankTitle": "Nhảy tới phần còn thiếu tên",
     "analyzingMediaMaterial": "Đang phân tích âm thanh/video",
-    "modelSettingsUnavailable": "Không đọc được cài đặt mô hình nên quá trình tạo đã dừng. Vui lòng thử lại."
+    "modelSettingsUnavailable": "Không đọc được cài đặt mô hình nên quá trình tạo đã dừng. Vui lòng thử lại.",
+    "activeRunLimit": "Bạn đã đạt số khóa học được tạo cùng lúc tối đa. Hãy chờ một khóa hoàn tất rồi thử lại."
   },
   "settings": {
     "title": "Cài đặt",

@@ -27,6 +27,7 @@ import {
   X,
   Presentation,
   Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -40,22 +41,25 @@ import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
-import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
-import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import {
   courseMaterialFingerprint,
   dedupeCourseMaterialFiles,
 } from '@/lib/document/course-materials';
-import type {
-  SelectedCourseMaterial,
-  SessionDocumentSource,
-  UserRequirements,
-} from '@/lib/types/generation';
+import type { SelectedCourseMaterial } from '@/lib/types/generation';
 import {
   courseGenerationUsable,
   requireModelCapabilities,
 } from '@/lib/model-settings/capabilities';
-import { withResearchDecision } from '@/lib/generation/research-decision';
+import { RunApiError, discardGenerationRun } from '@/lib/generation-run-client/api';
+import { RunStartRefusedError, startClassicRun } from '@/lib/generation-run-client/start';
+import { useOwnerRuns } from '@/lib/generation-run-client/use-owner-runs';
+import {
+  courseRunHref,
+  courseRunStatus,
+  pendingCourseName,
+  type CourseRunStatus,
+} from '@/lib/generation-run-client/course-card';
+import type { RunSnapshot } from '@/lib/generation-run-client/types';
 import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
 import {
@@ -289,6 +293,12 @@ function HomePage() {
     }
   };
 
+  // Courses being generated on the server: a card from the moment the run
+  // starts, live through the owner's run stream.
+  const { runs, forget: forgetRun } = useOwnerRuns({
+    onCourseChanged: () => void loadClassrooms(),
+  });
+
   const loadFolders = async () => {
     try {
       setFolders(await listFolders());
@@ -364,6 +374,14 @@ function HomePage() {
   const confirmDelete = async (id: string) => {
     setPendingDeleteId(null);
     try {
+      // A card whose course does not exist yet is its run: discarding the run
+      // deletes it. Deleting a course ends its run.
+      const pendingRun = runs.find((run) => run.id === id);
+      if (pendingRun) {
+        await discardGenerationRun(id);
+        forgetRun(id);
+        return;
+      }
       await deleteStageData(id);
       await loadClassrooms();
     } catch (err) {
@@ -511,6 +529,23 @@ function HomePage() {
   }, [classrooms, thumbnails]);
   const currentFolder = folders.find((f) => f.id === currentFolderId);
 
+  const listedStageIds = useMemo(() => new Set(classrooms.map((c) => c.id)), [classrooms]);
+  const runByStageId = useMemo(
+    () =>
+      new Map(
+        runs.flatMap(
+          (run): Array<[string, RunSnapshot]> => (run.stageId ? [[run.stageId, run]] : []),
+        ),
+      ),
+    [runs],
+  );
+  // Runs whose course is not in the library yet are cards of their own.
+  const pendingRuns = useMemo(
+    () => runs.filter((run) => !run.stageId || !listedStageIds.has(run.stageId)),
+    [runs, listedStageIds],
+  );
+  const showPendingRuns = !isSearching && currentFolderId === undefined;
+
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     try {
@@ -584,81 +619,34 @@ function HomePage() {
     setError(null);
 
     // The material list is frozen for the duration of prep: `preparingGenerate`
-    // makes add/remove inert, so it cannot change under the session build
-    // below. Capture it at click time and build the session from this
-    // snapshot, never from live form state. (The extractor is the workspace's
-    // document slot, resolved on the server.)
+    // makes add/remove inert, so it cannot change under the uploads below.
+    // Capture it at click time and start the run from this snapshot, never
+    // from live form state.
     const frozenMaterials = [...form.courseMaterials].sort((a, b) => a.order - b.order);
-    // Flip the generating UI state before material bytes are copied locally.
     setPreparingGenerate(true);
     try {
-      const userProfile = useUserProfileStore.getState();
-      const requirements: UserRequirements = {
-        requirement: form.requirement,
-        userNickname: userProfile.nickname || undefined,
-        userBio: userProfile.bio || undefined,
-        // Research follows the workspace's webSearch slot; decided below from
-        // a successful read (and again when generation starts).
-        interactiveMode: form.vocationalTestMode ? true : form.interactiveMode,
-        ...(form.vocationalTestMode ? { taskEngineMode: true } : {}),
-      };
-
-      // Nothing is saved from settings that could not be read.
+      // Nothing is started from settings that could not be read.
       const capabilities = await requireModelCapabilities();
       if (!capabilities) throw new Error(t('generation.modelSettingsUnavailable'));
-      Object.assign(
-        requirements,
-        withResearchDecision({ requirements }, capabilities).requirements,
-      );
-
-      let documentSources: SessionDocumentSource[] | undefined;
-
-      if (frozenMaterials.length > 0) {
-        const storedDocumentKeys: string[] = [];
-        try {
-          documentSources = [];
-          for (const [index, item] of frozenMaterials.entries()) {
-            const storageKey = await storeDocumentBlob(item.file);
-            storedDocumentKeys.push(storageKey);
-            documentSources.push({
-              id: item.id,
-              name: item.name,
-              size: item.size,
-              lastModified: item.lastModified,
-              mimeType: normalizeDocumentMimeType({
-                mimeType: item.file.type,
-                fileName: item.file.name,
-              }),
-              order: index + 1,
-              storageKey,
-            });
-          }
-        } catch (error) {
-          await Promise.allSettled(storedDocumentKeys.map((key) => deleteDocumentBlob(key)));
-          throw error;
-        }
-      }
-
-      const sessionState = {
-        sessionId: nanoid(),
-        requirements,
-        pdfText: '',
-        pdfImages: [],
-        imageStorageIds: [],
-        documentSources,
-        // Backward-compatible single-document fields for previously saved sessions.
-        pdfStorageKey: documentSources?.[0]?.storageKey,
-        pdfFileName: documentSources?.[0]?.name,
-        documentMimeType: documentSources?.[0]?.mimeType,
-        sceneOutlines: null,
-        currentStep: 'generating' as const,
-      };
-      sessionStorage.setItem('generationSession', JSON.stringify(sessionState));
-
-      router.push('/generation-preview');
+      // The server generates the course: the materials go to the owner's
+      // library, and the run follows the workspace's model settings.
+      const run = await startClassicRun({
+        requirement: form.requirement,
+        materials: frozenMaterials.map((item) => item.file),
+        interactive: form.vocationalTestMode ? true : form.interactiveMode,
+        taskEngine: form.vocationalTestMode,
+        capabilities,
+      });
+      router.push(`/generation-preview?run=${encodeURIComponent(run.id)}`);
     } catch (err) {
-      log.error('Error preparing generation:', err);
-      setError(err instanceof Error ? err.message : t('upload.generateFailed'));
+      log.error('Error starting generation:', err);
+      if (err instanceof RunStartRefusedError) {
+        setError(t(err.reason, err.values));
+      } else if (err instanceof RunApiError && err.errorCode === 'ACTIVE_RUN_LIMIT') {
+        setError(t('generation.activeRunLimit'));
+      } else {
+        setError(err instanceof Error ? err.message : t('upload.generateFailed'));
+      }
     } finally {
       // Unfreeze the set once prep settles (navigation unmounts this page, so
       // this is normally a no-op on the way out).
@@ -1188,7 +1176,7 @@ function HomePage() {
                 transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
                 className="w-full overflow-hidden"
               >
-                {folders.length === 0 && classrooms.length === 0 ? (
+                {folders.length === 0 && classrooms.length === 0 && pendingRuns.length === 0 ? (
                   <div className="pt-8 pb-2 text-center text-[13px] text-muted-foreground/60">
                     {t('classroom.emptyLibraryHint')}
                   </div>
@@ -1267,6 +1255,30 @@ function HomePage() {
                             </motion.div>
                           ))}
 
+                        {/* Courses still being generated, before their course exists. */}
+                        {showPendingRuns &&
+                          pendingRuns.map((run) => (
+                            <motion.div
+                              key={run.id}
+                              initial={{ opacity: 0, y: 16 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ duration: 0.35, ease: 'easeOut' }}
+                            >
+                              <ClassroomCard
+                                classroom={pendingRunListItem(run)}
+                                formatDate={formatDate}
+                                runStatus={courseRunStatus(run)}
+                                pendingCourse
+                                onDelete={handleDelete}
+                                onRename={handleRename}
+                                confirmingDelete={pendingDeleteId === run.id}
+                                onConfirmDelete={() => confirmDelete(run.id)}
+                                onCancelDelete={() => setPendingDeleteId(null)}
+                                onClick={() => router.push(courseRunHref(run))}
+                              />
+                            </motion.div>
+                          ))}
+
                         {/* Course tiles for the active view. */}
                         {visibleClassrooms.map((classroom, i) => (
                           <motion.div
@@ -1279,12 +1291,21 @@ function HomePage() {
                               classroom={classroom}
                               slide={thumbnails[classroom.id]}
                               formatDate={formatDate}
+                              runStatus={(() => {
+                                const run = runByStageId.get(classroom.id);
+                                return run ? courseRunStatus(run) : null;
+                              })()}
                               onDelete={handleDelete}
                               onRename={handleRename}
                               confirmingDelete={pendingDeleteId === classroom.id}
                               onConfirmDelete={() => confirmDelete(classroom.id)}
                               onCancelDelete={() => setPendingDeleteId(null)}
-                              onClick={() => router.push(`/classroom/${classroom.id}`)}
+                              onClick={() => {
+                                const run = runByStageId.get(classroom.id);
+                                router.push(
+                                  run ? courseRunHref(run) : `/classroom/${classroom.id}`,
+                                );
+                              }}
                               overlay={
                                 <>
                                   <MoveToFolderMenu
@@ -1621,10 +1642,57 @@ function GreetingBar() {
 }
 
 // ─── Classroom Card — clean, minimal style ──────────────────────
+/** A card for a run whose course does not exist yet. */
+function pendingRunListItem(run: RunSnapshot): StageListItem {
+  return {
+    id: run.id,
+    name: pendingCourseName(run),
+    sceneCount: run.progress.scenesCompleted,
+    createdAt: Date.parse(run.createdAt),
+    updatedAt: Date.parse(run.updatedAt),
+    interactiveMode: run.input.interactive,
+    taskEngineMode: run.input.taskEngine,
+  };
+}
+
+function RunStatusLabel({ status }: { status: CourseRunStatus }) {
+  const { t } = useI18n();
+  const label =
+    status.kind === 'outlining'
+      ? t('classroom.runOutlining')
+      : status.kind === 'awaiting-confirmation'
+        ? t('classroom.runAwaitingConfirmation')
+        : status.kind === 'generating'
+          ? t('classroom.runGenerating', { completed: status.completed, total: status.total })
+          : t('classroom.runPaused');
+  return (
+    <span
+      className={cn(
+        'shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
+        status.kind === 'paused'
+          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+          : 'bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400',
+      )}
+      data-testid="course-run-status"
+    >
+      {status.kind === 'paused' ? (
+        <AlertCircle className="size-3" />
+      ) : status.kind === 'awaiting-confirmation' ? (
+        <Clock className="size-3" />
+      ) : (
+        <Loader2 className="size-3 animate-spin" />
+      )}
+      {label}
+    </span>
+  );
+}
+
 function ClassroomCard({
   classroom,
   slide,
   formatDate,
+  runStatus = null,
+  pendingCourse = false,
   overlay,
   onDelete,
   onRename,
@@ -1636,6 +1704,10 @@ function ClassroomCard({
   classroom: StageListItem;
   slide?: Slide;
   formatDate: (ts: number) => string;
+  /** The state of the run generating this course, while it runs. */
+  runStatus?: CourseRunStatus | null;
+  /** The card is a run whose course does not exist yet: it can only be opened or deleted. */
+  pendingCourse?: boolean;
   /** Extra absolutely-positioned layers over the thumbnail (move menu, badges). */
   overlay?: React.ReactNode;
   onDelete: (id: string, e: React.MouseEvent) => void;
@@ -1690,7 +1762,7 @@ function ClassroomCard({
     <div
       className="group cursor-pointer"
       onClick={confirmingDelete ? undefined : onClick}
-      draggable={!confirmingDelete && !editing}
+      draggable={!confirmingDelete && !editing && !pendingCourse}
       onDragStart={(e) => {
         e.dataTransfer.setData('text/stage-id', classroom.id);
         e.dataTransfer.effectAllowed = 'move';
@@ -1771,14 +1843,16 @@ function ClassroomCard({
               >
                 <Trash2 className="size-3.5" />
               </Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="absolute top-2 right-11 size-7 opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 hover:bg-black/50 text-white hover:text-white backdrop-blur-sm rounded-full"
-                onClick={startRename}
-              >
-                <Pencil className="size-3.5" />
-              </Button>
+              {!pendingCourse && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="absolute top-2 right-11 size-7 opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 hover:bg-black/50 text-white hover:text-white backdrop-blur-sm rounded-full"
+                  onClick={startRename}
+                >
+                  <Pencil className="size-3.5" />
+                </Button>
+              )}
               {overlay}
             </motion.div>
           )}
@@ -1819,9 +1893,13 @@ function ClassroomCard({
 
       {/* Info — outside the thumbnail */}
       <div className="mt-2.5 px-1 flex items-center gap-2">
-        <span className="shrink-0 inline-flex items-center rounded-full bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:text-violet-400">
-          {classroom.sceneCount} {t('classroom.slides')} · {formatDate(classroom.updatedAt)}
-        </span>
+        {runStatus ? (
+          <RunStatusLabel status={runStatus} />
+        ) : (
+          <span className="shrink-0 inline-flex items-center rounded-full bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:text-violet-400">
+            {classroom.sceneCount} {t('classroom.slides')} · {formatDate(classroom.updatedAt)}
+          </span>
+        )}
         {editing ? (
           <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
             <input
@@ -1843,7 +1921,7 @@ function ClassroomCard({
             <TooltipTrigger asChild>
               <p
                 className="font-medium text-[15px] truncate text-foreground/90 min-w-0 cursor-text"
-                onDoubleClick={startRename}
+                onDoubleClick={pendingCourse ? undefined : startRename}
               >
                 {classroom.name}
               </p>

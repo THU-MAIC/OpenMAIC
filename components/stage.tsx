@@ -96,7 +96,10 @@ export function Stage({
   // would not pass the owner check anyway.
   const isOwner = useStageStore((s) => s.isOwner);
   const readOnly = useStageStore((s) => s.readOnly);
-  const canEditOwnedStage = isOwner && !readOnly;
+  // A course its generation run is still producing is read-only until the run
+  // completes (the server refuses its edits).
+  const courseGenerating = useStageStore((s) => s.courseGenerating);
+  const canEditOwnedStage = isOwner && !readOnly && !courseGenerating;
 
   // Hosted by the Pro workspace's classroom pane. Ambient rather than a prop
   // because `Stage` is built by `ClassroomSurface`, which is mounted by both

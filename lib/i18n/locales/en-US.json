@@ -1024,7 +1024,11 @@
     "notFoundDesc": "This course does not exist, or it has been deleted.",
     "loadUnavailable": "Couldn't load this course",
     "loadUnavailableDesc": "The course could not be retrieved. Check your access or try again.",
-    "backToHome": "Back to home"
+    "backToHome": "Back to home",
+    "runOutlining": "Outlining…",
+    "runAwaitingConfirmation": "Waiting for confirmation",
+    "runGenerating": "Generating {{completed}}/{{total}}",
+    "runPaused": "Paused"
   },
   "upload": {
     "pdfSizeLimit": "Supports PDF files up to 50MB",
@@ -1148,7 +1152,8 @@
     "outlinesReadyCount": "{{ready}} / {{total}} sections ready",
     "jumpToBlankTitle": "Jump to a section that still needs a title",
     "analyzingMediaMaterial": "Analyzing audio/video",
-    "modelSettingsUnavailable": "The model settings could not be read, so generation stopped. Please try again."
+    "modelSettingsUnavailable": "The model settings could not be read, so generation stopped. Please try again.",
+    "activeRunLimit": "You already have the maximum number of courses generating. Wait for one to finish and try again."
   },
   "settings": {
     "title": "Settings",

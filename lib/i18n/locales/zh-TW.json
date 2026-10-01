@@ -1009,7 +1009,11 @@
     "notFoundDesc": "課程不存在，或已被刪除。",
     "loadUnavailable": "暫時無法載入這門課程",
     "loadUnavailableDesc": "無法取得課程，請檢查存取權限或重試。",
-    "backToHome": "返回首頁"
+    "backToHome": "返回首頁",
+    "runOutlining": "正在生成大綱…",
+    "runAwaitingConfirmation": "等待確認",
+    "runGenerating": "生成中 {{completed}}/{{total}}",
+    "runPaused": "已暫停"
   },
   "upload": {
     "pdfSizeLimit": "支援最大50MB的PDF檔案",
@@ -1133,7 +1137,8 @@
     "outlinesReadyCount": "{{ready}} / {{total}} 章節就緒",
     "jumpToBlankTitle": "跳至待補充標題的章節",
     "analyzingMediaMaterial": "解析音影片內容",
-    "modelSettingsUnavailable": "無法讀取模型設定，已停止生成。請重試。"
+    "modelSettingsUnavailable": "無法讀取模型設定，已停止生成。請重試。",
+    "activeRunLimit": "同時生成的課程已達上限，請等待其中一門完成後再試。"
   },
   "settings": {
     "title": "設定",

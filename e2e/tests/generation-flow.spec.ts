@@ -1,89 +1,68 @@
 import { test, expect } from '../fixtures/base';
 import { GenerationPreviewPage } from '../pages/generation-preview.page';
+import { HomePage } from '../pages/home.page';
 import { createSettingsStorage, SETTINGS_KV_KEY } from '../fixtures/test-data/settings';
-import { mockOutlines } from '../fixtures/test-data/scene-outlines';
+import type { Page } from '@playwright/test';
 
 const SETTINGS_STORAGE = createSettingsStorage();
 const REVIEW_SETTINGS_STORAGE = createSettingsStorage({ reviewOutlineEnabled: true });
 
-const GENERATION_SESSION = JSON.stringify({
-  sessionId: 'e2e-test-session',
-  requirements: {
-    requirement: '讲解光合作用',
-    language: 'zh-CN',
-  },
-  pdfText: '',
-  pdfImages: [],
-  imageStorageIds: [],
-  sceneOutlines: null,
-  currentStep: 'generating',
-});
-
-const PERSISTED_REVIEW_SESSION = JSON.stringify({
-  sessionId: 'e2e-review-session',
-  requirements: {
-    requirement: '讲解光合作用',
-    language: 'zh-CN',
-  },
-  pdfText: '',
-  pdfImages: [],
-  imageStorageIds: [],
-  sceneOutlines: mockOutlines,
-  languageDirective: 'Use Chinese for the generated course.',
-  currentStep: 'generating',
-  previewPhase: 'review',
-});
+async function startFromHome(page: Page) {
+  const home = new HomePage(page);
+  await home.goto();
+  await home.fillRequirement('讲解光合作用');
+  await home.submit();
+  await page.waitForURL(/\/generation-preview\?run=/);
+}
 
 test.describe('Generation Flow', () => {
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(
-      ({ settings, session }) => {
-        localStorage.setItem('maic:account:settings-storage', settings);
-        sessionStorage.setItem('generationSession', session);
-      },
-      { settings: SETTINGS_STORAGE, session: GENERATION_SESSION },
-    );
+    await page.addInitScript((settings) => {
+      localStorage.setItem('maic:account:settings-storage', settings);
+    }, SETTINGS_STORAGE);
   });
 
-  test('completes generation pipeline and redirects to classroom', async ({ page, mockApi }) => {
-    // Set up all API mocks
-    await mockApi.setupGenerationMocks();
+  test('starts a run and follows it to the classroom', async ({ page, mockApi }) => {
+    const run = await mockApi.setupGenerationMocks();
+    await startFromHome(page);
 
     const preview = new GenerationPreviewPage(page);
-    await preview.goto();
-
-    // Generation card with progress dots should be visible
     await expect(preview.stepTitle).toBeVisible();
 
-    // Wait for auto-redirect to classroom
+    // The outline auto-continues after its 2.5 s beat; the run takes it from there.
     await preview.waitForRedirectToClassroom();
-    expect(page.url()).toMatch(/\/classroom\//);
+    expect(page.url()).toContain(`/classroom/${run.stageId}`);
+    expect(run.confirmations).toHaveLength(1);
+    expect(run.confirmations[0]).toMatchObject({ outlineRevision: 1 });
+    expect(run.confirmations[0]).not.toHaveProperty('outlines');
   });
 
   test('opens outline editor from preview review opportunity and resumes generation', async ({
     page,
     mockApi,
   }) => {
-    await mockApi.setupGenerationMocks();
+    const run = await mockApi.setupGenerationMocks();
+    await startFromHome(page);
 
     const preview = new GenerationPreviewPage(page);
-    await preview.goto();
-
     await preview.waitForReviewOpportunity();
     await preview.openOutlineReview();
     await expect(preview.editorTitle).toBeVisible();
+    // The review holds the run: nothing is confirmed until the learner does.
+    await page.waitForTimeout(3_000);
+    expect(run.confirmations).toHaveLength(0);
 
     await preview.confirmOutlines();
     await preview.waitForRedirectToClassroom();
     expect(page.url()).toMatch(/\/classroom\//);
+    expect(run.confirmations).toHaveLength(1);
   });
 
   test('persists always review preference from the outline editor', async ({ page, mockApi }) => {
     await mockApi.setupGenerationMocks();
+    await startFromHome(page);
 
     const preview = new GenerationPreviewPage(page);
-    await preview.goto();
-
     await preview.waitForReviewOpportunity();
     await preview.openOutlineReview();
     await preview.enableAlwaysReview();
@@ -107,19 +86,14 @@ test.describe('Generation Flow', () => {
     page,
     mockApi,
   }) => {
-    await page.addInitScript(
-      ({ settings, session }) => {
-        localStorage.setItem('maic:account:settings-storage', settings);
-        sessionStorage.setItem('generationSession', session);
-      },
-      { settings: REVIEW_SETTINGS_STORAGE, session: GENERATION_SESSION },
-    );
+    await page.addInitScript((settings) => {
+      localStorage.setItem('maic:account:settings-storage', settings);
+    }, REVIEW_SETTINGS_STORAGE);
 
     await mockApi.setupGenerationMocks();
+    await startFromHome(page);
 
     const preview = new GenerationPreviewPage(page);
-    await preview.goto();
-
     await preview.waitForEditor();
     await expect(preview.editorTitle).toBeVisible();
 
@@ -128,22 +102,25 @@ test.describe('Generation Flow', () => {
   });
 });
 
-test('resumes generation from a persisted outline review session', async ({ page, mockApi }) => {
-  await page.addInitScript(
-    ({ settings, session }) => {
-      localStorage.setItem('maic:account:settings-storage', settings);
-      sessionStorage.setItem('generationSession', session);
-    },
-    { settings: SETTINGS_STORAGE, session: PERSISTED_REVIEW_SESSION },
-  );
+test('a reload during outline review shows the same review, which confirms the run', async ({
+  page,
+  mockApi,
+}) => {
+  await page.addInitScript((settings) => {
+    localStorage.setItem('maic:account:settings-storage', settings);
+  }, SETTINGS_STORAGE);
 
-  await mockApi.setupGenerationMocks();
+  const run = await mockApi.setupGenerationMocks();
+  await startFromHome(page);
 
   const preview = new GenerationPreviewPage(page);
-  await preview.goto();
+  await preview.waitForReviewOpportunity();
+  await preview.openOutlineReview();
+  await page.reload();
 
+  // The run is still waiting: the page attaches to it in review.
   await preview.waitForEditor();
   await preview.confirmOutlines();
   await preview.waitForRedirectToClassroom();
-  expect(page.url()).toMatch(/\/classroom\//);
+  expect(run.confirmations).toHaveLength(1);
 });

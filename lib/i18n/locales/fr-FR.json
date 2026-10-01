@@ -1024,7 +1024,11 @@
     "notFoundDesc": "Ce cours n’existe pas ou a été supprimé.",
     "loadUnavailable": "Impossible de charger ce cours",
     "loadUnavailableDesc": "Le cours n'a pas pu être récupéré. Vérifiez votre accès ou réessayez.",
-    "backToHome": "Retour à l’accueil"
+    "backToHome": "Retour à l’accueil",
+    "runOutlining": "Création du plan…",
+    "runAwaitingConfirmation": "En attente de confirmation",
+    "runGenerating": "Génération {{completed}}/{{total}}",
+    "runPaused": "En pause"
   },
   "upload": {
     "pdfSizeLimit": "Accepte les fichiers PDF jusqu’à 50 Mo",
@@ -1148,7 +1152,8 @@
     "outlinesReadyCount": "{{ready}} / {{total}} sections prêtes",
     "jumpToBlankTitle": "Aller à une section dont le titre manque encore",
     "analyzingMediaMaterial": "Analyse de l’audio et de la vidéo",
-    "modelSettingsUnavailable": "Les réglages des modèles n'ont pas pu être lus : la génération s'est arrêtée. Réessayez."
+    "modelSettingsUnavailable": "Les réglages des modèles n'ont pas pu être lus : la génération s'est arrêtée. Réessayez.",
+    "activeRunLimit": "Le nombre maximal de cours en cours de génération est atteint. Attendez qu'un cours se termine, puis réessayez."
   },
   "settings": {
     "title": "Paramètres",

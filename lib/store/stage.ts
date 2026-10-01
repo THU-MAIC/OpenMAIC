@@ -101,8 +101,36 @@ function schedulePendingSave(): void {
   }, nextSaveDelayMs());
 }
 
+/**
+ * The course whose server-side generation run is still producing it. Its
+ * document is read-only to this browser until the run completes (the server
+ * refuses the write with `COURSE_GENERATING`), so its content changes are not
+ * queued for saving; the reading position and chats still are.
+ */
+let serverGeneratingStageId: string | null = null;
+
+/** Fence (or, with null, unfence) the course a generation run is producing. */
+export function setServerGeneratingStage(stageId: string | null): void {
+  serverGeneratingStageId = stageId;
+}
+
+export function isServerGeneratingStage(stageId: string | undefined | null): boolean {
+  return !!stageId && stageId === serverGeneratingStageId;
+}
+
+const DOCUMENT_CHANGE_KINDS = new Set<PendingChange['kind']>([
+  'scene',
+  'structure',
+  'stage',
+  'outline',
+]);
+
 function markPendingChanges(stageId: string | undefined, ...changes: PendingChange[]): void {
   if (!stageId || isStageDeleted(stageId)) return;
+  if (isServerGeneratingStage(stageId)) {
+    changes = changes.filter((change) => !DOCUMENT_CHANGE_KINDS.has(change.kind));
+    if (changes.length === 0) return;
+  }
   if (pendingStageId !== stageId) resetPendingChanges(stageId);
   for (const change of changes) {
     pendingRevision += 1;
@@ -324,6 +352,13 @@ interface StageState {
    * course can be told apart from a client-authored one.
    */
   outlineProducer: DocumentProducer | null;
+  /** The producing job's handle (a generation run's id for a course a run generates). */
+  outlineProducerRef: string | null;
+  /**
+   * The course's generation run has not completed: the course is read-only
+   * (no editing, no Pro mode) until it does.
+   */
+  courseGenerating: boolean;
 
   // Transient generation tracking (not persisted)
   generationEpoch: number;
@@ -479,6 +514,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   outlines: [],
   generationComplete: false,
   outlineProducer: null,
+  outlineProducerRef: null,
+  courseGenerating: false,
   isOwner: true,
   readOnly: false,
   generationEpoch: 0,
@@ -835,6 +872,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       log.warn('Cannot save: stage.id is required');
       return false;
     }
+    // The run producing this course writes it; the server refuses anyone else.
+    if (isServerGeneratingStage(stage.id)) return false;
 
     // Epoch captured with the state read above: a deletion during the PBL
     // preparation await below permanently invalidates this write.
@@ -1048,13 +1087,16 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         const inMemoryState = get();
         const failedOutlines =
           inMemoryState.stage?.id === stageId ? inMemoryState.failedOutlines : [];
+        // A course a server job produces records its own completion.
+        const serverProduced = outlinesRecord?.producer === 'server-job';
         const generationComplete =
           persistedComplete ||
-          isDeckComplete({
-            outlines,
-            scenes: migrated,
-            failedOutlines,
-          });
+          (!serverProduced &&
+            isDeckComplete({
+              outlines,
+              scenes: migrated,
+              failedOutlines,
+            }));
         set({
           stage: data.stage,
           scenes: migrated,
@@ -1070,6 +1112,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           generatingOutlines: generationComplete
             ? []
             : outlines.filter((o) => !migrated.some((s) => s.order === o.order)),
+          outlineProducer: outlinesRecord?.producer ?? null,
+          outlineProducerRef: outlinesRecord?.producerRef ?? null,
           // `mode` is transient UI state, not persisted with the stage.
           // Reset to 'playback' on every load so SPA navigation between
           // classrooms doesn't carry Pro-mode state across — e.g. user

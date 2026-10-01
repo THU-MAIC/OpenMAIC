@@ -49,6 +49,7 @@ import {
   shouldResumeClassroomGeneration,
 } from '@/lib/classroom/progressive-load-policy';
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
+import { useRunCourse } from '@/lib/generation-run-client/use-run-course';
 
 const log = createLogger('Classroom');
 
@@ -280,6 +281,11 @@ export function ClassroomSurface({
   // narration exactly as the standalone page does.
   useNarrationAdoption(classroomId, { ready: !loading && !error, mayGenerate });
 
+  // A course a server-side generation run produces: the classroom follows the
+  // run (its scenes, media and pauses) and sends it Retry.
+  const runCourse = useRunCourse({ classroomId, ready: !loading && !error });
+  const retryOutline = runCourse.runId ? runCourse.retryOutline : retrySingleOutline;
+
   // Auto-resume generation for pending outlines (owner only). Two independent
   // ownership facts gate it. The sidecar's per-viewer answer decides whether
   // this browser may spend the operator's provider budget at all, and fails
@@ -470,7 +476,7 @@ export function ClassroomSurface({
           ) : (
             <Stage
               classroomId={classroomId}
-              onRetryOutline={mayGenerate ? retrySingleOutline : undefined}
+              onRetryOutline={mayGenerate ? retryOutline : undefined}
             />
           )}
         </div>

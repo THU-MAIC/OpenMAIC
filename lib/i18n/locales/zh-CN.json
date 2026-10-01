@@ -1024,7 +1024,11 @@
     "notFoundDesc": "课程不存在，或已被删除。",
     "loadUnavailable": "暂时无法加载这门课程",
     "loadUnavailableDesc": "无法获取课程，请检查访问权限或重试。",
-    "backToHome": "返回首页"
+    "backToHome": "返回首页",
+    "runOutlining": "正在生成大纲…",
+    "runAwaitingConfirmation": "等待确认",
+    "runGenerating": "生成中 {{completed}}/{{total}}",
+    "runPaused": "已暂停"
   },
   "upload": {
     "pdfSizeLimit": "支持最大50MB的PDF文件",
@@ -1148,7 +1152,8 @@
     "outlinesReadyCount": "{{ready}} / {{total}} 章节就绪",
     "jumpToBlankTitle": "跳到待补充标题的章节",
     "analyzingMediaMaterial": "解析音视频内容",
-    "modelSettingsUnavailable": "无法读取模型设置，已停止生成。请重试。"
+    "modelSettingsUnavailable": "无法读取模型设置，已停止生成。请重试。",
+    "activeRunLimit": "同时生成的课程已达上限，请等待其中一门完成后再试。"
   },
   "settings": {
     "title": "设置",

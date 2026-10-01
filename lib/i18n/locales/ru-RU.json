@@ -1024,7 +1024,11 @@
     "notFoundDesc": "Этот курс не существует или был удалён.",
     "loadUnavailable": "Не удалось загрузить курс",
     "loadUnavailableDesc": "Не удалось получить курс. Проверьте доступ или попробуйте ещё раз.",
-    "backToHome": "На главную"
+    "backToHome": "На главную",
+    "runOutlining": "Составление плана…",
+    "runAwaitingConfirmation": "Ожидает подтверждения",
+    "runGenerating": "Генерация {{completed}}/{{total}}",
+    "runPaused": "Приостановлено"
   },
   "upload": {
     "pdfSizeLimit": "Поддержка PDF до 50 МБ",
@@ -1148,7 +1152,8 @@
     "outlinesReadyCount": "Готово разделов: {{ready}} / {{total}}",
     "jumpToBlankTitle": "Перейти к разделу без заголовка",
     "analyzingMediaMaterial": "Анализ аудио/видео",
-    "modelSettingsUnavailable": "Не удалось прочитать настройки моделей, поэтому создание остановлено. Попробуйте ещё раз."
+    "modelSettingsUnavailable": "Не удалось прочитать настройки моделей, поэтому создание остановлено. Попробуйте ещё раз.",
+    "activeRunLimit": "Уже создаётся максимальное число курсов. Дождитесь завершения одного из них и повторите попытку."
   },
   "settings": {
     "title": "Настройки",

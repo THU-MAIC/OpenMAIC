@@ -30,8 +30,10 @@ export class GenerationPreviewPage {
     });
   }
 
-  async goto() {
-    await this.page.goto('/generation-preview');
+  async goto(runId?: string) {
+    await this.page.goto(
+      runId ? `/generation-preview?run=${encodeURIComponent(runId)}` : '/generation-preview',
+    );
   }
 
   async waitForRedirectToClassroom() {

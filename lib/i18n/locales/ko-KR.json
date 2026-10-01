@@ -1024,7 +1024,11 @@
     "notFoundDesc": "해당 강의가 존재하지 않거나 이미 삭제되었습니다.",
     "loadUnavailable": "강의를 불러오지 못했습니다",
     "loadUnavailableDesc": "강의를 가져올 수 없습니다. 접근 권한을 확인하거나 다시 시도해 주세요.",
-    "backToHome": "홈으로 돌아가기"
+    "backToHome": "홈으로 돌아가기",
+    "runOutlining": "개요 작성 중…",
+    "runAwaitingConfirmation": "확인 대기 중",
+    "runGenerating": "생성 중 {{completed}}/{{total}}",
+    "runPaused": "일시 중지됨"
   },
   "upload": {
     "pdfSizeLimit": "최대 50MB PDF 파일을 지원합니다",
@@ -1148,7 +1152,8 @@
     "outlinesReadyCount": "{{ready}} / {{total}}개 섹션 준비됨",
     "jumpToBlankTitle": "제목이 필요한 섹션으로 이동",
     "analyzingMediaMaterial": "오디오/비디오 분석 중",
-    "modelSettingsUnavailable": "모델 설정을 읽을 수 없어 생성을 중단했습니다. 다시 시도해 주세요."
+    "modelSettingsUnavailable": "모델 설정을 읽을 수 없어 생성을 중단했습니다. 다시 시도해 주세요.",
+    "activeRunLimit": "동시에 생성할 수 있는 강의 수에 도달했습니다. 하나가 끝난 후 다시 시도하세요."
   },
   "settings": {
     "title": "설정",

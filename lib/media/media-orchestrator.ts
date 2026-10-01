@@ -45,6 +45,7 @@ import {
 import { isAssetStorageFull, markAssetStorageFull } from '@/lib/media/asset-storage-full';
 import { fetchProxiedMediaUrl } from '@/lib/media/proxy-media-cache';
 import { createLogger } from '@/lib/logger';
+import { runMediaRetryFor } from '@/lib/generation-run-client/run-media';
 
 const log = createLogger('MediaOrchestrator');
 
@@ -344,6 +345,23 @@ export async function retryMediaTask(
   elementId: string,
   _target?: { readonly elementId: string; readonly sceneId?: string; readonly slideId?: string },
 ): Promise<void> {
+  // A course a generation run produces: its run generates the element again.
+  const runTask = useMediaGenerationStore.getState().getTask(elementId);
+  const runRetry = runMediaRetryFor(runTask?.stageId);
+  if (runTask && runRetry) {
+    if (runTask.status !== 'failed' || !isRetryableMediaFailure(runTask)) return;
+    useMediaGenerationStore.getState().markPendingForRetry(elementId);
+    try {
+      await runRetry(elementId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn(`Media retry for ${elementId} was refused:`, message);
+      useMediaGenerationStore
+        .getState()
+        .markFailed(elementId, runTask.error ?? message, runTask.errorCode);
+    }
+    return;
+  }
   // Whether the workspace can still generate this kind of media (read first,
   // so the task checked below is the one acted on). Settings that cannot be
   // read leave the task as it is: that is no refusal.

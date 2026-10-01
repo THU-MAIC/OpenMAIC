@@ -175,7 +175,7 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     // An unresolved answer is asked again rather than accepted for the load.
     expect(session).toContain('retryWhileOwnershipUnresolved');
     // The outline-retry affordance is withheld, not merely refused.
-    expect(surface).toMatch(/onRetryOutline=\{mayGenerate \? retrySingleOutline : undefined\}/);
+    expect(surface).toMatch(/onRetryOutline=\{mayGenerate \? retryOutline : undefined\}/);
   });
 
   it('the standalone route mounts the shared page variant', () => {
