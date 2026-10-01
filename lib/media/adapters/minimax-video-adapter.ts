@@ -17,7 +17,7 @@ import type {
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
 import { connectivityHttpFailure, connectivityTransportFailure, probeAuth } from '../probe-auth';
-import { ProviderTaskFailedError, runPolledTask, type PolledTaskControl } from '../polled-task';
+import { runPolledTask, type PolledTaskControl } from '../polled-task';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 import { appAttributionHeaders } from '@/lib/config/app-attribution';
@@ -269,10 +269,7 @@ export async function generateWithMiniMaxVideo(
         const task = envelope.task ?? envelope;
         if (task.status === 'succeeded') {
           const url = task.content?.url;
-          if (!url)
-            throw new ProviderTaskFailedError(
-              'MiniMax Video: task succeeded but no video url returned',
-            );
+          if (!url) throw new Error('MiniMax Video: task succeeded but no video url returned');
           const { width, height } =
             V2_DIMENSIONS[options.aspectRatio || '16:9'] ?? V2_DIMENSIONS['16:9'];
           return { status: 'done', result: { url, width, height, duration: 6 } };
@@ -291,9 +288,7 @@ export async function generateWithMiniMaxVideo(
 
       if (result.status === 'Success') {
         if (!result.file_id) {
-          throw new ProviderTaskFailedError(
-            `MiniMax Video: task succeeded but no file_id returned`,
-          );
+          throw new Error(`MiniMax Video: task succeeded but no file_id returned`);
         }
 
         return {

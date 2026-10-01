@@ -156,7 +156,7 @@ const SHIPPED: readonly (readonly [
     2,
     'media_pending',
     true,
-    '71301660eb6163d220d0bb4d0621d4ce4f6e1f42617d50d6ca99d1f327248793',
+    '7f6f57d0c4ca3056e8a01de8fa243bc20db5e300099275aee7b5a10de5387edf',
   ],
 ];
 

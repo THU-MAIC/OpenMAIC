@@ -1,15 +1,3 @@
-/**
- * The provider's own final answer for a task: it failed (or finished without
- * a result). Waiting on the task again cannot change it; every other failure
- * of a wait (a poll that timed out or errored) leaves the task as it was.
- */
-export class ProviderTaskFailedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ProviderTaskFailedError';
-  }
-}
-
 export type TerminalResult<T> =
   | { status: 'done'; result: T }
   | { status: 'failed'; message: string };
@@ -93,7 +81,7 @@ export async function runPolledTask<T>({
   if (taskId === undefined) {
     const submitted = await submit();
     if (submitted.status === 'done') return submitted.result;
-    if (submitted.status === 'failed') throw new ProviderTaskFailedError(submitted.message);
+    if (submitted.status === 'failed') throw new Error(submitted.message);
     taskId = submitted.taskId;
     await control?.onSubmitted?.(taskId);
   }
@@ -107,7 +95,7 @@ export async function runPolledTask<T>({
     attempts++;
 
     if (result.status === 'done') return result.result;
-    if (result.status === 'failed') throw new ProviderTaskFailedError(result.message);
+    if (result.status === 'failed') throw new Error(result.message);
     lastPendingDetail = result.detail;
   }
 

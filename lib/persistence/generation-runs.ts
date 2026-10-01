@@ -22,7 +22,9 @@
  * Such a run holds no step, so the claim reads this flag instead of the run's
  * state; every commit that gives the lease up recomputes it from the media
  * checkpoints. It also indexes the runs still producing a course by
- * `stage_id`, which every content write of a course looks up.
+ * `stage_id` (and the completed ones with media pending), which every content
+ * write of a course and its deletion look up; both queries' predicates imply
+ * the index's.
  */
 import type { Queryable } from '@openmaic/storage/document/pg';
 import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
@@ -91,7 +93,7 @@ CREATE INDEX IF NOT EXISTS generation_runs_media_pending_idx
   ON generation_runs (updated_at) WHERE media_pending AND state IN ('paused','completed');
 
 CREATE INDEX IF NOT EXISTS generation_runs_stage_active_idx
-  ON generation_runs (stage_id) WHERE state NOT IN ('completed','ended')`;
+  ON generation_runs (stage_id) WHERE state NOT IN ('completed','ended') OR media_pending`;
 
 export const GENERATION_RUN_MIGRATIONS: SchemaMigrationSet = {
   store: 'generation-runs',

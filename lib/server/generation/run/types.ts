@@ -159,9 +159,8 @@ export interface GenerationRunVideoTask {
  * - `skipped`: its slot was turned off or unassigned when the pass reached it
  *   (the placeholder renders as disabled); a Retry generates it once the slot
  *   resolves, as the browser's next pass would;
- * - `failed`: the placeholder stays, with a Retry unless the failure is final.
- *   A video failure that is not the provider's own final answer keeps its
- *   `task`, and a Retry resumes the wait on it instead of paying for another.
+ * - `failed`: the placeholder stays, with a Retry unless the failure is final
+ *   (a video's Retry submits a new task, as the browser's does).
  */
 export type GenerationRunMediaCheckpoint = { mediaType: 'image' | 'video' } & (
   | { status: 'queued' }
@@ -170,7 +169,7 @@ export type GenerationRunMediaCheckpoint = { mediaType: 'image' | 'video' } & (
   | { status: 'stored'; assetId: string; posterAssetId?: string }
   | { status: 'done'; assetId: string; posterAssetId?: string }
   | { status: 'skipped' }
-  | { status: 'failed'; message: string; errorCode?: string; task?: GenerationRunVideoTask }
+  | { status: 'failed'; message: string; errorCode?: string }
 );
 
 /**

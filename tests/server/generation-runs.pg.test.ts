@@ -12,6 +12,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 /** A hook into the run's completion, for a command that lands in its window. */
 const completionHooks = vi.hoisted(() => ({
   before: undefined as (() => Promise<void>) | undefined,
+  /** Before each targeted scene write of a placement into a completed course. */
+  beforeMutate: undefined as ((sceneId: string) => Promise<void>) | undefined,
 }));
 vi.mock('@/lib/server/generation/run/document', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/server/generation/run/document')>();
@@ -20,6 +22,10 @@ vi.mock('@/lib/server/generation/run/document', async (importOriginal) => {
     completeRunCourse: async (input: Parameters<typeof actual.completeRunCourse>[0]) => {
       await completionHooks.before?.();
       return actual.completeRunCourse(input);
+    },
+    mutateRunScene: async (input: Parameters<typeof actual.mutateRunScene>[0]) => {
+      await completionHooks.beforeMutate?.(input.sceneId);
+      return actual.mutateRunScene(input);
     },
   };
 });
@@ -53,7 +59,6 @@ import {
 import type { GenerationRunInput } from '@/lib/server/generation/run/types';
 import type { MediaConnection } from '@/lib/server/model-config/media';
 import { storeGeneratedAsset } from '@/lib/server/store-generated-asset';
-import { ProviderTaskFailedError } from '@/lib/media/polled-task';
 import { sanitizeSceneContent } from '@/lib/server/sanitize-scene-content';
 import { createOwnerAgent } from '@/lib/server/agents/store';
 import { StepRefusal } from '@/lib/server/generation/steps/context';
@@ -2414,19 +2419,16 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       });
     });
 
-    it('a video that failed without the provider saying so keeps its task, and Retry waits on it', async () => {
+    it('a failed video lets go of its task: Retry submits a new one, as the browser does', async () => {
       let attempt = 0;
       const submissions: unknown[] = [];
       const { services } = mediaServices({
         generateVideo: async (_owner, input) => {
           attempt += 1;
-          if (!input.resume) {
-            submissions.push(input.request.elementId);
-            await input.onProviderTask(TASK);
-          }
+          expect(input.resume).toBeUndefined();
+          submissions.push(input.request.elementId);
+          await input.onProviderTask({ ...TASK, taskId: `task-${attempt}` });
           if (attempt === 1) throw new Error('Seedance video generation timed out after 300s');
-          if (attempt === 2)
-            throw new ProviderTaskFailedError('Seedance video generation failed: x');
           return { video: { bytes: VIDEO_BYTES, mimeType: 'video/mp4' } };
         },
       });
@@ -2436,33 +2438,184 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         mediaType: 'video',
         status: 'failed',
         message: 'Video generation failed',
-        task: TASK,
       });
       await retryGenerationRun(run.id, OWNER, {
         commandId: 'v-a',
         media: { elementId: 'gen_vid_1' },
       });
-      expect((await mediaOf(run.id)).gen_vid_1).toEqual({
-        mediaType: 'video',
-        status: 'submitted',
-        task: TASK,
-      });
-      // The resumed wait meets the provider's own failure: the task is let go.
-      expect(await drive(run.id, services)).toBe('completed');
-      expect(submissions).toHaveLength(1);
-      expect((await mediaOf(run.id)).gen_vid_1).toEqual({
-        mediaType: 'video',
-        status: 'failed',
-        message: 'Video generation failed',
-      });
-      // Only now does a Retry pay for a new task.
-      await retryGenerationRun(run.id, OWNER, {
-        commandId: 'v-b',
-        media: { elementId: 'gen_vid_1' },
-      });
+      expect((await mediaOf(run.id)).gen_vid_1).toEqual({ mediaType: 'video', status: 'queued' });
       expect(await drive(run.id, services)).toBe('completed');
       expect(submissions).toHaveLength(2);
       expect((await mediaOf(run.id)).gen_vid_1).toMatchObject({ status: 'done' });
+    });
+
+    it('keeps bytes stored when placing them into a completed course fails, and places them later', async () => {
+      // The same image is asked for on two slides.
+      const twice = MEDIA_OUTLINES.map((outline, index) =>
+        index === 2
+          ? { ...outline, mediaGenerations: MEDIA_OUTLINES[0]!.mediaGenerations }
+          : outline,
+      );
+      let failImage = true;
+      const { services, media } = mediaServices({
+        mediaConnections: async () => ({ image: ready('seedream'), video: OFF }),
+        outline: async () => ({
+          outlines: twice,
+          languageDirective: 'Use English.',
+          courseTitle: 'Plants',
+          taskEngineMode: false,
+        }),
+        generateImage: async (_owner, input) => {
+          media.image.push(input.request.elementId);
+          if (failImage) throw new Error('provider down');
+          return { bytes: IMAGE_BYTES, mimeType: 'image/png' };
+        },
+      });
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      expect(await drive(run.id, services)).toBe('completed');
+      const stageId = (await readGenerationRun(run.id, OWNER))!.stageId!;
+      failImage = false;
+      await retryGenerationRun(run.id, OWNER, {
+        commandId: 'p1',
+        media: { elementId: 'gen_img_1' },
+      });
+      // The first scene is written; the write of the second fails (a passing fault).
+      let writes = 0;
+      completionHooks.beforeMutate = async () => {
+        writes += 1;
+        if (writes === 2) throw new Error('connection reset');
+      };
+      try {
+        expect(await drive(run.id, services)).toBe('completed');
+      } finally {
+        completionHooks.beforeMutate = undefined;
+      }
+      const stored = (await mediaOf(run.id)).gen_img_1!;
+      expect(stored).toMatchObject({ mediaType: 'image', status: 'stored' });
+      let document = (await documentStore(OWNER).loadDocument(stageId))!;
+      expect(elementsOf(document.scenes[0]).find((element) => element.type === 'image')!.src).toBe(
+        stored.assetId,
+      );
+      expect(elementsOf(document.scenes[2]).find((element) => element.type === 'image')!.src).toBe(
+        'gen_img_1',
+      );
+      // Still owed: the next claim places the rest, without generating again.
+      expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+        state: 'completed',
+        mediaPending: true,
+      });
+      expect(await drive(run.id, services)).toBe('completed');
+      expect(media.image).toEqual(['gen_img_1', 'gen_img_1']);
+      document = (await documentStore(OWNER).loadDocument(stageId))!;
+      for (const index of [0, 2]) {
+        expect(
+          elementsOf(document.scenes[index]).find((element) => element.type === 'image')!.src,
+        ).toBe(stored.assetId);
+      }
+      expect((await mediaOf(run.id)).gen_img_1).toMatchObject({
+        status: 'done',
+        assetId: stored.assetId,
+      });
+      expect(await readGenerationRun(run.id, OWNER)).toMatchObject({ mediaPending: false });
+    });
+
+    it('fails stored bytes loud when they are gone before they are placed', async () => {
+      const { services } = mediaServices({
+        mediaConnections: async () => ({ image: ready('seedream'), video: OFF }),
+        generateImage: async () => {
+          throw new Error('provider down');
+        },
+      });
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      expect(await drive(run.id, services)).toBe('completed');
+      // A takeover finds bytes stored whose entry is gone.
+      await pool.query(
+        `UPDATE generation_run_steps SET output = $3::jsonb WHERE run_id = $1 AND step_id = $2`,
+        [
+          run.id,
+          'media:gen_img_1',
+          JSON.stringify({ mediaType: 'image', status: 'stored', assetId: 'ast_gone' }),
+        ],
+      );
+      await pool.query('UPDATE generation_runs SET media_pending = true WHERE id = $1', [run.id]);
+      expect(await drive(run.id, services)).toBe('completed');
+      expect((await mediaOf(run.id)).gen_img_1).toEqual({
+        mediaType: 'image',
+        status: 'failed',
+        message: 'The stored image was gone before it was placed',
+      });
+      const stageId = (await readGenerationRun(run.id, OWNER))!.stageId!;
+      const document = (await documentStore(OWNER).loadDocument(stageId))!;
+      expect(elementsOf(document.scenes[0]).find((element) => element.type === 'image')!.src).toBe(
+        'gen_img_1',
+      );
+    });
+
+    it('releases what a run held when its course is deleted', async () => {
+      const blocked = gate();
+      const reached = gate();
+      const { services } = mediaServices({
+        mediaConnections: async () => ({ image: OFF, video: OFF }),
+        analyzeMaterials: async () => ({
+          text: 'material text',
+          images: [{ id: 'img_1', pageNumber: 1, bytes: IMAGE_BYTES, mimeType: 'image/png' }],
+        }),
+        sceneContent: async (owner, input, ctx) => {
+          if (input.outline.id === 'o2') {
+            reached.release();
+            await blocked.promise;
+          }
+          return fakeServices().services.sceneContent(owner, input, ctx);
+        },
+      });
+      const run = await start(runInput({ outlineReview: 'auto', materialIds: ['mat-1'] }));
+      const execution = drive(run.id, services);
+      await reached.promise;
+      const assetId = (
+        (await readGenerationRunSteps(run.id)).get('material-analysis') as {
+          imageMapping: Record<string, string>;
+        }
+      ).imageMapping.img_1!;
+      const stageId = (await readGenerationRun(run.id, OWNER))!.stageId!;
+      await documentStore(OWNER).deleteDocument(stageId);
+      const expiry = await pool.query<{ expires_at: Date }>(
+        'SELECT expires_at FROM asset_entries WHERE id = $1',
+        [assetId],
+      );
+      expect(expiry.rows[0]!.expires_at.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+      blocked.release();
+      expect(await execution).toBe('interrupted');
+    });
+
+    it('finds the runs producing a course through the stage index', async () => {
+      const run = await start();
+      await pool.query("UPDATE generation_runs SET stage_id = 'stage-explain' WHERE id = $1", [
+        run.id,
+      ]);
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL enable_seqscan = off');
+        for (const sql of [
+          // The read-only guard's lookup.
+          `SELECT id FROM generation_runs WHERE stage_id = $1 AND id IS DISTINCT FROM $2
+              AND state NOT IN ('completed', 'ended') LIMIT 1`,
+          // The deletion's.
+          `SELECT id FROM generation_runs WHERE stage_id = $1
+              AND (state NOT IN ('completed', 'ended') OR (state = 'completed' AND media_pending))`,
+        ]) {
+          const plan = await client.query<{ 'QUERY PLAN': string }>(`EXPLAIN ${sql}`, [
+            'stage-explain',
+            ...(sql.includes('$2') ? [null] : []),
+          ]);
+          expect(plan.rows.map((row) => row['QUERY PLAN']).join('\n')).toContain(
+            'generation_runs_stage_active_idx',
+          );
+        }
+      } finally {
+        await client.query('ROLLBACK');
+        client.release();
+      }
     });
 
     it('a paused run goes on with its video after the pause, and a step Retry meanwhile takes no lease', async () => {
@@ -2880,6 +3033,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         `UPDATE generation_runs SET state = 'ended', lease_worker_id = NULL
           WHERE state IN ('preparing', 'outlining', 'generating')`,
       );
+      await pool.query('UPDATE generation_runs SET media_pending = false');
     });
 
     /** An outline step that runs until its signal aborts. */
@@ -2899,6 +3053,43 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       });
       return { services, started, aborted };
     }
+
+    it('keeps the allocations of live runs alive while it runs', async () => {
+      const { services } = fakeServices({
+        research: async () => null,
+        analyzeMaterials: async () => ({
+          text: 'material text',
+          images: [{ id: 'img_1', pageNumber: 1, bytes: CLIP, mimeType: 'image/png' }],
+        }),
+      });
+      const run = await start(runInput({ materialIds: ['mat-1'] }));
+      expect(await drive(run.id, services)).toBe('waiting');
+      const assetId = (
+        (await readGenerationRunSteps(run.id)).get('material-analysis') as {
+          imageMapping: Record<string, string>;
+        }
+      ).imageMapping.img_1!;
+      await pool.query(
+        "UPDATE asset_entries SET expires_at = now() + interval '1 minute' WHERE id = $1",
+        [assetId],
+      );
+      const runner = startGenerationRunner({
+        services,
+        workerId: 'keepalive',
+        config: { scanIntervalMs: 60_000 },
+      });
+      try {
+        await vi.waitFor(async () => {
+          const row = await pool.query<{ expires_at: Date }>(
+            'SELECT expires_at FROM asset_entries WHERE id = $1',
+            [assetId],
+          );
+          expect(row.rows[0]!.expires_at.getTime()).toBeGreaterThan(Date.now() + 60 * 60 * 1000);
+        });
+      } finally {
+        await runner.stop();
+      }
+    });
 
     it('stops without a lease-lost warning when the run was ended on purpose', async () => {
       const { services, started, aborted } = blockingServices();

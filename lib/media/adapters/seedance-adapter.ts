@@ -34,7 +34,7 @@ import type {
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
 import { probeAuth } from '../probe-auth';
-import { ProviderTaskFailedError, runPolledTask, type PolledTaskControl } from '../polled-task';
+import { runPolledTask, type PolledTaskControl } from '../polled-task';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
@@ -231,7 +231,7 @@ export async function pollSeedanceTask(
 
   if (data.status === 'succeeded') {
     if (!data.content?.video_url) {
-      throw new ProviderTaskFailedError('Seedance task succeeded but no video URL returned');
+      throw new Error('Seedance task succeeded but no video URL returned');
     }
     const dims = estimateDimensions(data.ratio, data.resolution);
     return {
@@ -243,9 +243,7 @@ export async function pollSeedanceTask(
   }
 
   if (data.status === 'failed') {
-    throw new ProviderTaskFailedError(
-      `Seedance video generation failed: ${data.error?.message || 'Unknown error'}`,
-    );
+    throw new Error(`Seedance video generation failed: ${data.error?.message || 'Unknown error'}`);
   }
 
   // queued or running

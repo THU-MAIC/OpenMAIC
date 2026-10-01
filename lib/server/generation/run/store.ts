@@ -379,18 +379,25 @@ async function lockLeased(tx: Queryable, lease: RunLease): Promise<RunRow> {
 
 /**
  * Whether the run has media to generate: an item queued (a Retry, or one not
- * reached yet), one a worker was generating, or a video task waiting. Bytes stored for a scene that does
- * not exist yet are no work: they wait for that scene's commit.
+ * reached yet), one a worker was generating, or a video task waiting. Bytes
+ * stored for a scene that does not exist yet are no work: they wait for that
+ * scene's commit. In a completed run (`stateExpr`, the state the run is left
+ * in) stored bytes are work: no scene is coming, and a placement that failed
+ * is tried again by the next claim.
  */
-const MEDIA_WORK_EXISTS = (runParam: string) =>
+const MEDIA_WORK_EXISTS = (runParam: string, stateExpr: string) =>
   `EXISTS (SELECT 1 FROM generation_run_steps s
             WHERE s.run_id = ${runParam} AND s.step_id LIKE '${MEDIA_STEP_PREFIX}%'
-              AND s.output->>'status' IN ('queued', 'generating', 'submitted'))`;
+              AND (s.output->>'status' IN ('queued', 'generating', 'submitted')
+                   OR (s.output->>'status' = 'stored' AND ${stateExpr} = 'completed')))`;
 
-/** Whether the run has media to generate (see {@link MEDIA_WORK_EXISTS}), on `tx`. */
+/**
+ * Whether the run has media still to generate before it may complete (see
+ * {@link MEDIA_WORK_EXISTS}; stored bytes do not hold a completion up), on `tx`.
+ */
 export async function hasMediaWorkIn(tx: Queryable, runId: string): Promise<boolean> {
   const result = await tx.query<{ pending: boolean }>(
-    `SELECT ${MEDIA_WORK_EXISTS('$1')} AS pending`,
+    `SELECT ${MEDIA_WORK_EXISTS('$1', "''")} AS pending`,
     [runId],
   );
   return result.rows[0]?.pending === true;
@@ -410,6 +417,7 @@ async function applyPatch(
     sets.push(`${column} = $${params.length}${cast}`);
   };
   if (patch.state !== undefined) set('state', patch.state);
+  const stateParam = params.length;
   if (patch.step !== undefined) set('step', patch.step);
   if (patch.outline !== undefined) set('outline', encodeJson(patch.outline, 'outline'), '::jsonb');
   if (patch.outlineRevision !== undefined) set('outline_revision', patch.outlineRevision);
@@ -423,7 +431,9 @@ async function applyPatch(
   if (patch.releaseLease) {
     sets.push('lease_worker_id = NULL', 'lease_heartbeat_at = NULL');
     // Whoever gives the run up says whether media is left for a claim to do.
-    sets.push(`media_pending = ${MEDIA_WORK_EXISTS('$1')}`);
+    // The state the run is left in: the patch's, else the row's own.
+    const leftIn = patch.state !== undefined ? `$${stateParam}::text` : 'state';
+    sets.push(`media_pending = ${MEDIA_WORK_EXISTS('$1', leftIn)}`);
   }
   if (resetTakeovers) sets.push('takeovers = 0');
   const updated = await tx.query<RunRow>(
@@ -753,9 +763,8 @@ export async function claimNextGenerationRun(
 
 /**
  * Fail every media item of a run still in work, with events (the run row is
- * locked): a waiting video keeps its task, so a Retry waits on it again;
- * `stored` bytes fail too when `includeStored` (a completed run has no scene
- * left to place them with).
+ * locked); `stored` bytes fail too when `includeStored` (a completed run has
+ * no scene left to place them with).
  */
 async function failMediaWorkIn(
   tx: Queryable,
@@ -777,7 +786,6 @@ async function failMediaWorkIn(
       mediaType: output.mediaType,
       status: 'failed',
       message,
-      ...(output.status === 'submitted' ? { task: output.task } : {}),
     };
     await upsertStep(tx, runId, { id: stepId, output: failed });
     events.push({
@@ -1060,11 +1068,18 @@ async function setRunPendingAssetDeadlineIn(
          FROM held, jsonb_each_text(COALESCE(held.output->'imageMapping', '{}'::jsonb)) AS mapping
        UNION SELECT held.output->>'assetId' FROM held WHERE held.output->>'status' = 'stored'
        UNION SELECT held.output->>'posterAssetId' FROM held WHERE held.output->>'status' = 'stored'
+     ), targets AS (
+       -- Locked in id order, the order every multi-entry asset write takes
+       -- (an owner claim re-keying entries), so the two cannot deadlock.
+       SELECT e.id FROM asset_entries e
+        WHERE e.committed_at IS NULL AND e.expires_at IS NOT NULL
+          AND e.id IN (SELECT id FROM ids WHERE id IS NOT NULL)
+        ORDER BY e.id
+          FOR UPDATE
      )
-     UPDATE asset_entries SET expires_at = ${deadline}
-      WHERE committed_at IS NULL AND expires_at IS NOT NULL
-        AND id IN (SELECT id FROM ids WHERE id IS NOT NULL)
-     RETURNING id`,
+     UPDATE asset_entries SET expires_at = ${deadline.replaceAll('expires_at', 'asset_entries.expires_at')}
+       FROM targets WHERE asset_entries.id = targets.id
+     RETURNING asset_entries.id`,
     params,
   );
   return updated.rows.length;
@@ -1278,11 +1293,8 @@ async function retryMediaIn(tx: Queryable, run: RunRow, elementId: string): Prom
         : `The media element ${elementId} has not failed`,
     );
   }
-  // A video whose task is still the provider's is waited on again, not paid for again.
-  const queued: GenerationRunMediaCheckpoint =
-    media.status === 'failed' && media.task
-      ? { mediaType: media.mediaType, status: 'submitted', task: media.task }
-      : { mediaType: media.mediaType, status: 'queued' };
+  // Generated anew, as the browser's Retry does (a video submits a new task).
+  const queued: GenerationRunMediaCheckpoint = { mediaType: media.mediaType, status: 'queued' };
   await upsertStep(tx, run.id, { id: mediaStepId(elementId), output: queued });
   // A run that is generating takes it up at its next step; a paused or
   // completed one is claimed for it.

@@ -13,7 +13,7 @@ import type {
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
 import { probeAuth } from '../probe-auth';
-import { ProviderTaskFailedError, runPolledTask, type PolledTaskControl } from '../polled-task';
+import { runPolledTask, type PolledTaskControl } from '../polled-task';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
@@ -165,7 +165,7 @@ export async function pollHappyHorseTask(
 
   if (status === 'SUCCEEDED') {
     if (!data.output?.video_url) {
-      throw new ProviderTaskFailedError('HappyHorse task succeeded but no video URL returned');
+      throw new Error('HappyHorse task succeeded but no video URL returned');
     }
     const dimensions = estimateDimensions(data.usage?.ratio, data.usage?.SR);
     return {
@@ -177,9 +177,7 @@ export async function pollHappyHorseTask(
   }
 
   if (status === 'FAILED' || status === 'CANCELED' || status === 'UNKNOWN') {
-    throw new ProviderTaskFailedError(
-      `HappyHorse video generation failed: ${getErrorMessage(data)}`,
-    );
+    throw new Error(`HappyHorse video generation failed: ${getErrorMessage(data)}`);
   }
 
   return null;

@@ -26,7 +26,7 @@ import type {
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
 import { probeAuth } from '../probe-auth';
-import { ProviderTaskFailedError, runPolledTask, type PolledTaskControl } from '../polled-task';
+import { runPolledTask, type PolledTaskControl } from '../polled-task';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
@@ -261,7 +261,7 @@ export async function generateWithKling(
       if (result.task_status === 'succeed') {
         const video = result.task_result?.videos?.[0];
         if (!video?.url) {
-          throw new ProviderTaskFailedError('Kling task succeeded but no video URL returned');
+          throw new Error('Kling task succeeded but no video URL returned');
         }
         const { width, height } = getDimensions(options.aspectRatio);
         return {

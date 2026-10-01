@@ -29,7 +29,6 @@ import { rewriteSceneMediaReference } from '@/lib/media/generated-media-referenc
 import { ASSET_QUOTA_EXCEEDED } from '@/lib/media/media-failure';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
-import { ProviderTaskFailedError } from '@/lib/media/polled-task';
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { StepRefusal } from '@/lib/server/generation/steps/context';
@@ -321,8 +320,8 @@ async function generateItem(
   }
   const { connection } = slot;
 
-  // The task this attempt waits on (resumed, or recorded once submitted).
-  let task = checkpoint.status === 'submitted' ? checkpoint.task : undefined;
+  // The task a takeover found submitted: its wait is resumed.
+  const task = checkpoint.status === 'submitted' ? checkpoint.task : undefined;
   let posterAssetId: string | undefined;
   try {
     if (!task) await record({ mediaType, status: 'generating' });
@@ -348,11 +347,10 @@ async function generateItem(
             request,
             connection,
             ...(resume ? { resume } : {}),
-            // Recorded before the wait, so a takeover or a Retry waits on this
+            // Recorded before the wait, so a takeover waits on this
             // task. A write that fails for a passing reason is tried again in
             // place: the task is paid for.
             onProviderTask: async (submitted) => {
-              task = submitted;
               for (let attempt = 1; ; attempt += 1) {
                 try {
                   await ctx.commit({
@@ -435,18 +433,9 @@ async function generateItem(
     await releasePoster(ctx, posterAssetId);
     if (endsLane(error, ctx.signal)) throw error;
     log.warn(`run ${ctx.runId}: ${mediaType} ${elementId} failed:`, error);
-    // Only the provider's own final answer, or a task that can no longer be
-    // waited on, lets go of a submitted task: a Retry of anything else waits
-    // on it again (and downloads its result) instead of paying for another.
-    const final =
-      error instanceof ProviderTaskFailedError ||
-      (error instanceof StepRefusal && error.reason === 'task-connection-changed');
-    await record({
-      mediaType,
-      status: 'failed',
-      ...mediaFailure(error, mediaType),
-      ...(task && !final ? { task } : {}),
-    });
+    // A failed item lets go of its task: a Retry submits a new one, as the
+    // browser's does. Only a takeover waits on a task again (see above).
+    await record({ mediaType, status: 'failed', ...mediaFailure(error, mediaType) });
     return {};
   }
 }

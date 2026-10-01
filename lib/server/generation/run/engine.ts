@@ -1277,7 +1277,6 @@ export async function executeGenerationRun(
         mediaType: request.type,
         status: 'failed',
         message: `${label} generation failed`,
-        ...(current?.status === 'submitted' ? { task: current.task } : {}),
       };
       return [{ elementId: request.elementId, checkpoint }];
     });
@@ -1291,11 +1290,33 @@ export async function executeGenerationRun(
     });
   };
 
+  /**
+   * Place the bytes stored before this execution (a takeover's, or a
+   * placement that failed). They were kept alive, so bytes that are gone are
+   * a fault: the item fails loud, with a Retry; a poster that is gone only
+   * costs the poster.
+   */
   const placeStoredMedia = async () => {
+    owner = await currentOwnerOf(run.ownerId);
     for (const { request } of mediaItems()) {
       const checkpoint = mediaCheckpoint(request.elementId);
       if (checkpoint?.status !== 'stored') continue;
+      if (!(await ownerAssetExists(owner, checkpoint.assetId))) {
+        const failed: GenerationRunMediaCheckpoint = {
+          mediaType: request.type,
+          status: 'failed',
+          message: `The stored ${request.type} was gone before it was placed`,
+        };
+        await commit({
+          step: { id: mediaStepId(request.elementId), output: failed },
+          events: [mediaEvent(request.elementId, failed)],
+        });
+        continue;
+      }
+      const posterKept =
+        checkpoint.posterAssetId && (await ownerAssetExists(owner, checkpoint.posterAssetId));
       const done = doneOf(checkpoint);
+      if (!posterKept) delete done.posterAssetId;
       await placer()(request.elementId, done, [mediaEvent(request.elementId, done)]);
     }
   };
@@ -1347,7 +1368,7 @@ export async function executeGenerationRun(
     for (const [elementId, checkpoint] of await readGenerationRunMedia(run.id)) {
       const current = mediaCheckpoint(elementId);
       if (
-        (checkpoint.status === 'queued' || checkpoint.status === 'submitted') &&
+        checkpoint.status === 'queued' &&
         (current?.status === 'failed' || current?.status === 'skipped')
       ) {
         steps.set(mediaStepId(elementId), checkpoint);
@@ -1419,7 +1440,14 @@ export async function executeGenerationRun(
       }
       break;
     }
-    await placeStoredMedia();
+    try {
+      await placeStoredMedia();
+    } catch (error) {
+      if (endsLane(error, signal)) throw error;
+      // The bytes stay stored, and the completed run is claimed again to
+      // place them (see `media_pending`); the course completes meanwhile.
+      log.error(`run ${run.id}: placing stored media failed; it is tried again later`, error);
+    }
   };
 
   /** Stop the pass: after the image in hand; a video's wait resumes on its task later. */
@@ -1429,14 +1457,23 @@ export async function executeGenerationRun(
     if (lane.running) await lane.running;
   };
 
-  /** Bytes stored for a placeholder no scene holds: the course is complete without them. */
+  /**
+   * Bytes stored for a placeholder no generated scene holds: the course is
+   * complete without them. Bytes a scene does hold stay stored (their
+   * placement failed): the completed run is claimed again to place them.
+   */
   const unplacedMedia = (): {
     steps: NonNullable<StepCommit['steps']>;
     events: NewGenerationRunEvent[];
   } => {
+    const held = (elementId: string) =>
+      outline().outlines.some((_, index) => {
+        const narrated = output<NarrationOutput>(sceneStepId(index, 'narration'));
+        return narrated ? sceneCarriesMediaReference(narrated.scene, elementId) : false;
+      });
     const done = mediaItems().flatMap(({ request }) => {
       const checkpoint = mediaCheckpoint(request.elementId);
-      return checkpoint?.status === 'stored'
+      return checkpoint?.status === 'stored' && !held(request.elementId)
         ? [{ elementId: request.elementId, checkpoint: doneOf(checkpoint) }]
         : [];
     });
@@ -1521,10 +1558,9 @@ export async function executeGenerationRun(
       startLane(true);
       await lane.running;
       if (lane.failure) throw lane.failure;
-      // A completed course gets no more scenes to place stored media into.
-      const unplaced = settled === 'completed' ? unplacedMedia() : { steps: [], events: [] };
-      run = await finishMediaOnlyRun(lease, unplaced.steps, unplaced.events);
-      for (const checkpoint of unplaced.steps) steps.set(checkpoint.id, checkpoint.output);
+      // Bytes still stored here failed to be placed: they stay stored, and a
+      // completed run is claimed again for them (`media_pending`).
+      run = await finishMediaOnlyRun(lease, [], []);
       if (run.state !== settled) {
         log.info(`run ${run.id}: retried while its media generated; going on with it`);
         lane.started = false;
