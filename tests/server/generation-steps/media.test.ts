@@ -143,7 +143,7 @@ describe('video step', () => {
     );
   });
 
-  it('reports the submitted task with the connection it was submitted on', async () => {
+  it('reports the submitted task with the endpoint it was submitted on', async () => {
     const onProviderTask = vi.fn();
     mocks.generateVideo.mockImplementation(
       async (
@@ -158,7 +158,7 @@ describe('video step', () => {
     await generateVideoStep(
       {
         options: { prompt: 'A river' },
-        connection: { ...videoConnection, modelId: 'model-a', baseUrl: 'https://v.example.com' },
+        connection: { ...videoConnection, modelId: 'model-a', baseUrl: 'https://v.example.com/' },
         onProviderTask,
       },
       { log: testLogger() },
@@ -167,18 +167,29 @@ describe('video step', () => {
       taskId: 'task-1',
       providerId: 'seedance',
       model: 'model-a',
-      baseUrl: 'https://v.example.com',
+      endpoint: 'https://v.example.com/api/v3',
     });
     expect(mocks.generateVideo.mock.calls[0]![2]).toMatchObject({ resumeTaskId: undefined });
   });
 
-  it('resumes a task on the connection it was submitted on', async () => {
-    const connection = { ...videoConnection, modelId: 'model-a' };
+  const recorded = {
+    taskId: 'task-7',
+    providerId: 'seedance',
+    model: 'model-a',
+    endpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+  };
+
+  it.each([
+    ['no base URL', undefined],
+    ['the default host', 'https://ark.cn-beijing.volces.com'],
+    ['the default host with a trailing slash', 'https://ark.cn-beijing.volces.com/'],
+    ['the API root itself', 'https://ark.cn-beijing.volces.com/api/v3/'],
+  ])('resumes a task on an equivalent endpoint (%s)', async (_case, baseUrl) => {
     await generateVideoStep(
       {
         options: { prompt: 'A river' },
-        connection,
-        resume: { taskId: 'task-7', providerId: 'seedance', model: 'model-a' },
+        connection: { ...videoConnection, modelId: 'model-a', ...(baseUrl ? { baseUrl } : {}) },
+        resume: recorded,
       },
       { log: testLogger() },
     );
@@ -189,21 +200,32 @@ describe('video step', () => {
   });
 
   it.each([
-    { providerId: 'kling', model: 'model-a' },
-    { providerId: 'seedance', model: 'model-b' },
-    { providerId: 'seedance', model: 'model-a', baseUrl: 'https://elsewhere.example.com' },
-  ])('refuses to resume a task submitted on another connection (%o)', async (recorded) => {
+    ['another provider', { providerId: 'kling' }, {}],
+    ['another model', { model: 'model-b' }, {}],
+    ['another host', {}, { baseUrl: 'https://elsewhere.example.com' }],
+    ['another API path', {}, { baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3' }],
+  ])('refuses to resume a task submitted on %s', async (_case, task, slot) => {
     const failure = await generateVideoStep(
       {
         options: { prompt: 'A river' },
-        connection: { ...videoConnection, modelId: 'model-a' },
-        resume: { taskId: 'task-7', ...recorded },
+        connection: { ...videoConnection, modelId: 'model-a', ...slot },
+        resume: { ...recorded, ...task },
       },
       { log: testLogger() },
     ).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(StepRefusal);
     expect((failure as StepRefusal).reason).toBe('task-connection-changed');
     expect(mocks.generateVideo).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['kling', undefined, 'https://api-beijing.klingai.com'],
+    ['kling', 'https://api-beijing.klingai.com/', 'https://api-beijing.klingai.com'],
+    ['openrouter-video', 'https://openrouter.ai/api/v1/videos/', 'https://openrouter.ai/api/v1'],
+    ['minimax-video', '', 'https://api.minimaxi.com'],
+  ] as const)('names the endpoint %s reaches from %o', async (providerId, baseUrl, endpoint) => {
+    const { videoTaskEndpoint } = await import('@/lib/media/video-providers');
+    expect(videoTaskEndpoint(providerId, baseUrl)).toBe(endpoint);
   });
 
   it('refuses a provider without a key', async () => {

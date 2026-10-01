@@ -10,7 +10,11 @@ import type {
   VideoProviderConfig,
 } from './types';
 import type { PolledTaskControl } from './polled-task';
-import { generateWithSeedance, testSeedanceConnectivity } from './adapters/seedance-adapter';
+import {
+  generateWithSeedance,
+  seedanceApiRoot,
+  testSeedanceConnectivity,
+} from './adapters/seedance-adapter';
 import { generateWithKling, testKlingConnectivity } from './adapters/kling-adapter';
 import { generateWithVeo, testVeoConnectivity } from './adapters/veo-adapter';
 import {
@@ -23,7 +27,10 @@ import {
   generateWithOpenRouterVideo,
   testOpenRouterVideoConnectivity,
 } from './adapters/openrouter-video-adapter';
-import { OPENROUTER_DEFAULT_BASE_URL } from './adapters/openrouter-image-adapter';
+import {
+  OPENROUTER_DEFAULT_BASE_URL,
+  openRouterBaseUrl,
+} from './adapters/openrouter-image-adapter';
 
 export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   seedance: {
@@ -213,6 +220,22 @@ export function normalizeVideoOptions(
   }
 
   return normalized;
+}
+
+/**
+ * The endpoint a provider's video tasks live on, as its adapter reaches it
+ * from a configured base URL: the provider's default when none is set, with
+ * the adapter's own normalization and without trailing slashes. Two base
+ * URLs with the same endpoint reach the same tasks.
+ */
+export function videoTaskEndpoint(providerId: VideoProviderId, baseUrl?: string): string {
+  const root =
+    providerId === 'seedance'
+      ? seedanceApiRoot(baseUrl)
+      : providerId === 'openrouter-video'
+        ? openRouterBaseUrl(baseUrl)
+        : baseUrl || VIDEO_PROVIDERS[providerId]?.defaultBaseUrl || '';
+  return root.replace(/\/+$/, '');
 }
 
 /**

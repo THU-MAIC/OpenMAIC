@@ -50,6 +50,11 @@ function resolveArkRoot(baseUrl: string): string {
   const trimmed = baseUrl.replace(/\/+$/, '');
   return /\/api\//.test(trimmed) ? trimmed : `${trimmed}/api/v3`;
 }
+
+/** The Ark API root a configured base URL (or none, the default host) reaches. */
+export function seedanceApiRoot(baseUrl?: string): string {
+  return resolveArkRoot(baseUrl || DEFAULT_BASE_URL);
+}
 const MAX_POLL_ATTEMPTS = 60; // 5 minutes max
 
 /** Response shape for task creation (only returns id) */

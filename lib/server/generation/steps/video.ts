@@ -6,7 +6,12 @@
  * which keeps resolving the slot (with the request's deprecated provider
  * headers) and mapping failures to its responses.
  */
-import { generateVideo, normalizeVideoOptions, VIDEO_PROVIDERS } from '@/lib/media/video-providers';
+import {
+  generateVideo,
+  normalizeVideoOptions,
+  VIDEO_PROVIDERS,
+  videoTaskEndpoint,
+} from '@/lib/media/video-providers';
 import type {
   VideoGenerationOptions,
   VideoGenerationResult,
@@ -28,7 +33,8 @@ export interface VideoProviderTask {
   taskId: string;
   providerId: string;
   model: string;
-  baseUrl?: string;
+  /** The effective endpoint (videoTaskEndpoint), not the configured base URL. */
+  endpoint: string;
 }
 
 export interface VideoInput {
@@ -86,9 +92,10 @@ export async function generateVideoStep(
   }
 
   const { resume, onProviderTask } = input;
+  const endpoint = videoTaskEndpoint(providerId, baseUrl);
   if (
     resume &&
-    (resume.providerId !== providerId || resume.model !== model || resume.baseUrl !== baseUrl)
+    (resume.providerId !== providerId || resume.model !== model || resume.endpoint !== endpoint)
   ) {
     throw new StepRefusal<VideoRefusal>(
       'task-connection-changed',
@@ -110,7 +117,7 @@ export async function generateVideoStep(
     onProviderTask || resume
       ? await generateVideo(config, options, {
           onSubmitted: onProviderTask
-            ? (taskId) => onProviderTask({ taskId, providerId, model, baseUrl })
+            ? (taskId) => onProviderTask({ taskId, providerId, model, endpoint })
             : undefined,
           resumeTaskId: resume?.taskId,
         })

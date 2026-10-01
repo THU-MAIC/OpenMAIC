@@ -118,17 +118,12 @@ describe('POST /api/extract-document refusals', () => {
 
   it('refuses a type no extractor reads (400), generically on the asset-id form', async () => {
     const mime = 'application/x-echo-probe';
-    const { selectDocumentExtractorProvider } =
-      await vi.importActual<typeof import('@/lib/document')>('@/lib/document');
-    let selectionError = '';
-    try {
-      selectDocumentExtractorProvider({ mimeType: mime, requiredCapabilities: { text: true } });
-    } catch (error) {
-      selectionError = (error as Error).message;
-    }
-    expect(selectionError).toContain(mime);
     expect(await upload(new File(['x'], 'probe.bin', { type: mime }))).toEqual(
-      refusal(400, 'INVALID_REQUEST', selectionError),
+      refusal(
+        400,
+        'INVALID_REQUEST',
+        'No document extractor supports MIME type "application/x-echo-probe" with the requested capabilities',
+      ),
     );
     expect(await byAssetId({ fileName: 'probe.bin', mimeType: mime }, 'x', mime)).toEqual(
       refusal(
