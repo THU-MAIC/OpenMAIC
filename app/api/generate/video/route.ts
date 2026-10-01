@@ -15,8 +15,6 @@
  */
 
 import { NextRequest } from 'next/server';
-import { recordGenerationUsage } from '@/lib/server/usage-storage';
-import { generateVideo, normalizeVideoOptions, VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import {
   isServerConfiguredProvider,
   isServerProviderDisabled,
@@ -26,9 +24,8 @@ import {
 } from '@/lib/server/provider-config';
 import type { VideoProviderId, VideoGenerationOptions } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { apiError, apiSuccess, type ApiErrorCode } from '@/lib/server/api-response';
 import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
-import { withVideoProviderFetch } from '@/lib/server/media-provider-fetch';
 import {
   mediaResolutionResponse,
   RequestedProviderRefusedError,
@@ -36,10 +33,17 @@ import {
   type MediaConnection,
 } from '@/lib/server/model-config/media';
 import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
+import { StepRefusal } from '@/lib/server/generation/steps/context';
+import { generateVideoStep, type VideoRefusal } from '@/lib/server/generation/steps/video';
 
 const log = createLogger('VideoGeneration API');
 
 export const maxDuration = 300;
+
+const REFUSAL_RESPONSES: Record<VideoRefusal, [ApiErrorCode, number]> = {
+  'missing-api-key': ['MISSING_API_KEY', 401],
+  'missing-model': ['MISSING_MODEL', 400],
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -62,57 +66,21 @@ export async function POST(request: NextRequest) {
       if (refused) return refused;
       throw error;
     }
-    const providerId = connection.providerId as VideoProviderId;
-    const { apiKey, baseUrl, managed } = connection;
-    if (!apiKey) {
-      return apiError(
-        'MISSING_API_KEY',
-        401,
-        `No API key configured for video provider: ${providerId}`,
+    let result;
+    try {
+      result = await generateVideoStep(
+        {
+          options: body,
+          connection,
+          requestedModel: request.headers.get('x-video-model')?.trim() || undefined,
+        },
+        { log },
       );
+    } catch (error) {
+      if (!(error instanceof StepRefusal)) throw error;
+      const [code, status] = REFUSAL_RESPONSES[error.reason as VideoRefusal];
+      return apiError(code, status, error.message);
     }
-    // A configured slot without a model uses the provider's first catalogue
-    // model. On the legacy default provider the request's model still applies
-    // through its allowlist, as before slots.
-    const model =
-      connection.origin === 'configuration'
-        ? (connection.modelId ?? VIDEO_PROVIDERS[providerId]?.models?.[0]?.id)
-        : connection.origin === 'default'
-          ? resolveVideoModel(providerId, request.headers.get('x-video-model')?.trim() || undefined)
-          : connection.modelId;
-    if (!model) {
-      return apiError(
-        'MISSING_MODEL',
-        400,
-        `No model configured for video provider: ${providerId}`,
-      );
-    }
-
-    // Normalize options against provider capabilities
-    const options = normalizeVideoOptions(providerId, body);
-
-    log.info(
-      `Generating video: provider=${providerId}, model=${model || 'default'}, ` +
-        `prompt="${body.prompt.slice(0, 80)}...", duration=${options.duration ?? 'auto'}, ` +
-        `aspect=${options.aspectRatio ?? 'auto'}, resolution=${options.resolution ?? 'auto'}`,
-    );
-
-    const result = await generateVideo(
-      withVideoProviderFetch({ providerId, apiKey, baseUrl, model }, managed),
-      options,
-    );
-
-    log.info(
-      `Video generated: url=${result.url ? 'yes' : 'no'}, ${result.width}x${result.height}, ${result.duration}s`,
-    );
-
-    void recordGenerationUsage({
-      kind: 'video',
-      unit: 'second',
-      providerId,
-      modelId: model,
-      quantity: result.duration,
-    });
 
     return apiSuccess({ result });
   } catch (error) {

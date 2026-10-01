@@ -1,28 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getDocumentExtractorProvider, getMediaExtractorProvider } from '@/lib/document';
 import {
-  isServerConfiguredProvider,
-  resolveManagedAliDocMindCredentials,
-  resolvePDFApiKey,
-  resolvePDFBaseUrl,
-} from '@/lib/server/provider-config';
-import { PDF_PROVIDERS } from '@/lib/pdf/constants';
-import type { PDFProviderId } from '@/lib/pdf/types';
-import type { ParsedPdfContent } from '@/lib/types/pdf';
-import {
-  documentArtifactToParsedPdfContent,
-  extractMedia,
-  getDocumentExtractorProvider,
-  getMediaExtractorProvider,
-  selectDocumentExtractorProvider,
-} from '@/lib/document';
-import type { MediaArtifact } from '@/lib/document';
-import type { DocumentExtractorConfig, DocumentExtractorProvider } from '@/lib/document/types';
-import {
-  documentSlotGoverns,
-  extractorConfigFor,
   resolveExtractionServices,
-  slotGovernedRequest,
-  slotMediaExtractorConfig,
   type ExtractionServices,
 } from '@/lib/server/material-extraction/services';
 import { mediaResolutionResponse } from '@/lib/server/model-config/media';
@@ -34,12 +13,15 @@ import {
   type ServerAssetResolution,
 } from '@/lib/persistence/resolve-server-asset';
 import { attachOwnerCookies } from '@/lib/server/identity/with-owner';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
-import {
-  checkClientDocumentExtractorBaseUrl,
-  checkClientMediaExtractorBaseUrl,
-} from '@/lib/server/client-extractor-endpoint';
+import { apiError, apiSuccess, type ApiErrorCode } from '@/lib/server/api-response';
 import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation';
+import { StepRefusal } from '@/lib/server/generation/steps/context';
+import {
+  analyzeMaterial,
+  type MaterialAnalysisRefusal,
+  type MaterialExtractorRequest,
+  type MaterialSource,
+} from '@/lib/server/generation/steps/material-analysis';
 
 // The asset-id path resolves bytes from the server asset store, which lives in
 // the PostgreSQL persistence backend; it needs the Node runtime, not the edge.
@@ -47,30 +29,8 @@ export const runtime = 'nodejs';
 
 const log = createLogger('Extract Document');
 
-/**
- * A normalized extraction input, independent of how the bytes arrived: either
- * parsed from a multipart upload or resolved from the server asset store by
- * asset id. Both forms then run the same extractor selection below.
- */
-interface ExtractSource {
-  fileName: string;
-  fileSize: number;
-  /** Normalized canonical MIME type (see `normalizeDocumentMimeType`). */
-  mimeType: string;
-  buffer: Buffer;
-}
-
-/** Provider configuration fields the client already sends on both forms. */
-interface ExtractRequestConfig {
-  providerId?: string;
-  apiKey?: string;
-  baseUrl?: string;
-  accessKeyId?: string;
-  accessKeySecret?: string;
-}
-
 /** JSON body for the asset-id form: an asset id plus the same provider config. */
-interface AssetIdExtractRequest extends ExtractRequestConfig {
+interface AssetIdExtractRequest extends MaterialExtractorRequest {
   assetId?: string;
   fileName?: string;
   mimeType?: string;
@@ -87,22 +47,21 @@ const ASSET_ID_EXTRACT_STRING_FIELDS = [
   'accessKeySecret',
 ] as const;
 
-/** Mutable logging context shared with the shared extraction helper. */
+/** Mutable logging context shared with the material analysis step. */
 interface ExtractLogState {
   fileName?: string;
   resolvedProviderId?: string;
 }
 
-function isPdfProviderId(providerId: string): providerId is PDFProviderId {
-  return providerId in PDF_PROVIDERS;
-}
-
-function supportsMimeType(
-  provider: { supportedMimeTypes: readonly string[] },
-  mimeType: string,
-): boolean {
-  return provider.supportedMimeTypes.map((type) => type.toLowerCase()).includes(mimeType);
-}
+/** How each material analysis refusal answers. */
+const REFUSAL_RESPONSES: Record<MaterialAnalysisRefusal, [ApiErrorCode, number]> = {
+  'provider-cannot-extract': ['INVALID_REQUEST', 400],
+  'unknown-provider': ['INVALID_REQUEST', 400],
+  'unsupported-type': ['INVALID_REQUEST', 400],
+  'endpoint-refused': ['INVALID_URL', 403],
+  'no-content': ['PARSE_FAILED', 422],
+  'service-required': ['INVALID_REQUEST', 422],
+};
 
 /**
  * JSON-path-only pre-validation of a requested provider, run BEFORE the shared
@@ -111,7 +70,7 @@ function supportsMimeType(
  * never echoes the caller's provider id or MIME type, making the shared path's
  * echoing 400s unreachable from the asset-id form. A known document provider
  * that does not support the effective MIME type is NOT pre-blocked: it is a
- * hint, exactly like multipart, and the shared `runExtraction` auto-selects a
+ * hint, exactly like multipart, and the shared `analyzeMaterial` auto-selects a
  * compatible provider (that path does not echo caller input). The multipart
  * byte form is untouched and keeps its behavior exactly.
  */
@@ -133,7 +92,7 @@ function validateJsonPathProvider(
   }
   // Document MIME: reject only a provider that does not exist in the document
   // registry (the shared path would echo its id). A known provider that does
-  // not support the MIME passes through so `runExtraction` auto-selects.
+  // not support the MIME passes through so `analyzeMaterial` auto-selects.
   if (!getDocumentExtractorProvider(providerId)) {
     return apiError(
       'INVALID_REQUEST',
@@ -142,372 +101,6 @@ function validateJsonPathProvider(
     );
   }
   return null;
-}
-
-function isSelfHostedMinerUProvider(
-  providerId: string,
-): providerId is Extract<PDFProviderId, 'mineru'> {
-  return providerId === 'mineru';
-}
-
-/**
- * Operator opt-in for the MinerU Cloud fallback (default OFF). A self-hosted
- * MinerU deployment must never silently hand documents to a third-party cloud;
- * the MinerU Cloud fallback only happens when the operator explicitly enables
- * it with `ALLOW_MINERU_CLOUD_FALLBACK=true`.
- */
-function isMinerUCloudFallbackEnabled(): boolean {
-  const value = process.env.ALLOW_MINERU_CLOUD_FALLBACK;
-  return value === 'true' || value === '1';
-}
-
-function requestedTypeLabel(mimeType: string): string {
-  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-    return 'DOCX';
-  }
-  if (mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
-    return 'PPTX';
-  }
-  return mimeType;
-}
-
-/**
- * Flatten a MediaArtifact (transcript + keyframes + synopsis) into the
- * text-shaped ParsedPdfContent the generation pipeline consumes. Media takes
- * the same route + downstream path as documents; only the extraction differs.
- */
-function mediaArtifactToText(artifact: MediaArtifact): string {
-  const parts: string[] = [];
-
-  const synopsis =
-    artifact.providerRaw &&
-    typeof artifact.providerRaw === 'object' &&
-    'synopsis' in artifact.providerRaw
-      ? String((artifact.providerRaw as { synopsis?: unknown }).synopsis ?? '')
-      : '';
-  if (synopsis.trim()) {
-    parts.push(`## Synopsis\n\n${synopsis.trim()}`);
-  }
-
-  if (artifact.transcript?.length) {
-    const lines = artifact.transcript
-      .filter((seg) => seg.text?.trim())
-      .map((seg) => {
-        const ts = formatTimestamp(seg.startMs);
-        const speaker = seg.speaker ? `${seg.speaker}: ` : '';
-        return `[${ts}] ${speaker}${seg.text.trim()}`;
-      });
-    if (lines.length) parts.push(`## Transcript\n\n${lines.join('\n')}`);
-  }
-
-  if (artifact.keyframes?.length) {
-    const lines = artifact.keyframes
-      .filter((kf) => (kf.description || kf.ocrText)?.trim())
-      .map((kf) => {
-        const ts = formatTimestamp(kf.timeMs);
-        return `[${ts}] ${(kf.description || kf.ocrText || '').trim()}`;
-      });
-    if (lines.length) parts.push(`## Keyframes\n\n${lines.join('\n')}`);
-  }
-
-  return parts.join('\n\n');
-}
-
-function formatTimestamp(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  const mm = String(m).padStart(2, '0');
-  const ss = String(s).padStart(2, '0');
-  // Use HH:MM:SS once past an hour so a 75-minute video reads 01:15:03, not 75:03.
-  return h > 0 ? `${String(h).padStart(2, '0')}:${mm}:${ss}` : `${mm}:${ss}`;
-}
-
-/**
- * Run extractor selection and extraction over a normalized input. Shared by
- * the multipart byte form and the asset-id form so the two paths cannot drift.
- * `isAssetIdForm` only switches the handful of messages that must stay generic
- * on the asset-id form (no caller-controlled text echoed); multipart keeps its
- * exact current messages.
- */
-async function runExtraction(
-  services: ExtractionServices,
-  source: ExtractSource,
-  requestConfig: ExtractRequestConfig,
-  logState: ExtractLogState,
-  isAssetIdForm: boolean,
-) {
-  const { fileName, fileSize, mimeType, buffer } = source;
-  // A configured or turned-off document slot decides the service; the
-  // deprecated request fields may only pick a self-contained extractor.
-  const governed = documentSlotGoverns(services);
-  requestConfig = slotGovernedRequest(services, requestConfig);
-
-  async function extractionResponse(
-    extractor: DocumentExtractorProvider,
-    extractorConfig: DocumentExtractorConfig,
-  ): Promise<Response> {
-    const artifact = await extractor.extract({
-      buffer,
-      fileName,
-      fileSize,
-      mimeType,
-      config: extractorConfig,
-    });
-    const result = documentArtifactToParsedPdfContent(artifact);
-
-    const resultWithMetadata: ParsedPdfContent = {
-      ...result,
-      metadata: {
-        ...result.metadata,
-        pageCount: result.metadata?.pageCount ?? 0,
-        fileName,
-        fileSize,
-        mimeType,
-        parser: result.metadata?.parser ?? extractor.id,
-      },
-    };
-
-    return apiSuccess({ data: resultWithMetadata });
-  }
-
-  // Media (audio/video) takes the media extraction path → MediaArtifact,
-  // flattened to the same text shape documents produce. Same route, same
-  // downstream generation path.
-  if (SUPPORTED_MEDIA_MIME_TYPES.includes(mimeType)) {
-    logState.resolvedProviderId = requestConfig.providerId || '';
-    // Reject a document-only provider (e.g. unpdf/mineru) for a media upload
-    // with a clear 4xx instead of forwarding it into the media registry and
-    // surfacing an opaque 500.
-    const mediaProvider = requestConfig.providerId
-      ? getMediaExtractorProvider(requestConfig.providerId)
-      : undefined;
-    if (
-      requestConfig.providerId &&
-      (!mediaProvider || !mediaProvider.supportedMimeTypes.includes(mimeType))
-    ) {
-      return apiError(
-        'INVALID_REQUEST',
-        400,
-        `Provider "${requestConfig.providerId}" cannot extract ${mimeType}. Choose a media-capable provider (AliDocMind or local ffmpeg).`,
-      );
-    }
-    // The document slot's media extractor (openmaic.yml or the model
-    // settings), else the legacy rules below.
-    const slotMedia = slotMediaExtractorConfig(services, requestConfig.providerId);
-    const mediaManaged =
-      !slotMedia &&
-      !governed &&
-      requestConfig.providerId !== 'local-ffmpeg' &&
-      isServerConfiguredProvider('pdf', 'alidocmind');
-    // When managed, resolve the server-owned AK/SK (env OR YAML) explicitly so
-    // a YAML-only deployment works — the client-level env fallback reads env
-    // vars only. Client-entered creds are used only when unmanaged.
-    const mediaManagedCreds = mediaManaged ? resolveManagedAliDocMindCredentials() : undefined;
-    let mediaClientBaseUrl =
-      mediaManaged || slotMedia ? undefined : requestConfig.baseUrl || undefined;
-    // A client-supplied media extractor endpoint must pass the extractor's
-    // endpoint rule (see checkClientMediaExtractorBaseUrl).
-    if (mediaClientBaseUrl) {
-      const checked = checkClientMediaExtractorBaseUrl(mediaClientBaseUrl);
-      if (!checked.ok) {
-        return apiError('INVALID_URL', 403, checked.message);
-      }
-      mediaClientBaseUrl = checked.baseUrl;
-    }
-    const mediaArtifact = await extractMedia({
-      buffer,
-      fileName,
-      fileSize,
-      mimeType,
-      config: slotMedia
-        ? { ...slotMedia, providerId: requestConfig.providerId || '' }
-        : {
-            providerId: requestConfig.providerId || '',
-            // Local transcription uses the asr slot's connection.
-            ...(services.asr ? { asr: services.asr } : {}),
-            apiKey: mediaManaged ? undefined : requestConfig.apiKey || undefined,
-            baseUrl: mediaManaged ? mediaManagedCreds?.baseUrl : mediaClientBaseUrl,
-            accessKeyId: mediaManaged
-              ? mediaManagedCreds?.accessKeyId
-              : requestConfig.accessKeyId || undefined,
-            accessKeySecret: mediaManaged
-              ? mediaManagedCreds?.accessKeySecret
-              : requestConfig.accessKeySecret || undefined,
-            // Env fallback is a last resort for a managed provider whose creds
-            // weren't resolved above (defensive; resolver already covers env+YAML).
-            allowEnvFallback: mediaManaged,
-          },
-    });
-    logState.resolvedProviderId =
-      mediaArtifact.metadata.providerId || requestConfig.providerId || '';
-
-    const mediaText = mediaArtifactToText(mediaArtifact);
-    // An artifact with no transcript, keyframes, or synopsis carries no usable
-    // content. Returning empty text as 200 would silently generate from
-    // nothing — surface a parse error instead. The asset-id form uses a
-    // generic static message so the caller-controlled file name is not echoed.
-    if (!mediaText.trim()) {
-      return apiError(
-        'PARSE_FAILED',
-        422,
-        isAssetIdForm
-          ? 'No transcript, keyframes, or synopsis could be extracted from this course material.'
-          : `No transcript, keyframes, or synopsis could be extracted from "${fileName}".`,
-      );
-    }
-    const mediaResult: ParsedPdfContent = {
-      text: mediaText,
-      images: [],
-      metadata: {
-        pageCount: 0,
-        fileName,
-        fileSize,
-        mimeType,
-        parser: mediaArtifact.metadata.providerId ?? logState.resolvedProviderId,
-      },
-    };
-    return apiSuccess({ data: mediaResult });
-  }
-
-  // The document slot's service (openmaic.yml or the model settings) when the
-  // request names no other extractor; legacy server providers keep the rules
-  // below.
-  const slotService =
-    services.document?.origin === 'configuration' &&
-    (!requestConfig.providerId || requestConfig.providerId === services.document.providerId)
-      ? services.document
-      : undefined;
-  let provider = requestConfig.providerId
-    ? getDocumentExtractorProvider(requestConfig.providerId)
-    : slotService
-      ? getDocumentExtractorProvider(slotService.providerId)
-      : undefined;
-  if (requestConfig.providerId && !provider) {
-    return apiError(
-      'INVALID_REQUEST',
-      400,
-      `Unknown document extractor provider: ${requestConfig.providerId}`,
-    );
-  }
-
-  if (provider && !supportsMimeType(provider, mimeType)) provider = undefined;
-
-  try {
-    provider =
-      provider ||
-      selectDocumentExtractorProvider({
-        mimeType,
-        requiredCapabilities: { text: true },
-      });
-  } catch (error) {
-    // With no provider hint and an unrecognized MIME, selection throws the
-    // extractor registry's interpolated message (it carries the caller's MIME
-    // type). The asset-id form must not echo caller-controlled input, so it
-    // answers this catch with a generic static message; multipart keeps the
-    // interpolated message byte-for-byte.
-    return apiError(
-      'INVALID_REQUEST',
-      400,
-      isAssetIdForm
-        ? 'The requested document extractor cannot process this course material.'
-        : error instanceof Error
-          ? error.message
-          : `Unsupported course material type "${mimeType}"`,
-    );
-  }
-  logState.resolvedProviderId = provider.id;
-
-  const usesSlotService = slotService?.providerId === provider.id;
-  if (governed && provider.requiresServiceConfig && !usesSlotService) {
-    return apiError(
-      'INVALID_REQUEST',
-      422,
-      `${requestedTypeLabel(mimeType)} extraction needs a document service, and ${
-        services.document ? 'the configured one cannot read this type' : 'none is configured'
-      }. Assign one to the document slot in the model settings or openmaic.yml.`,
-    );
-  }
-
-  if (slotService && usesSlotService) {
-    let slotConfig = extractorConfigFor(provider.id, services);
-    // A workspace provider's endpoint was typed by a user: the extractor's
-    // endpoint rule applies as to a client one.
-    if (!slotService.managed && slotConfig.baseUrl) {
-      const checked = await checkClientDocumentExtractorBaseUrl(provider.id, slotConfig.baseUrl);
-      if (!checked.ok) return apiError('INVALID_URL', 403, checked.message);
-      slotConfig = { ...slotConfig, baseUrl: checked.baseUrl };
-    }
-    return extractionResponse(provider, slotConfig);
-  }
-
-  let managed = isPdfProviderId(provider.id) && isServerConfiguredProvider('pdf', provider.id);
-  let clientBaseUrl = managed ? undefined : requestConfig.baseUrl || undefined;
-  if (isSelfHostedMinerUProvider(provider.id) && !managed && !clientBaseUrl) {
-    const cloudProvider = getDocumentExtractorProvider('mineru-cloud');
-    const cloudManaged = isServerConfiguredProvider('pdf', 'mineru-cloud');
-    const cloudApiKey = resolvePDFApiKey(
-      'mineru-cloud',
-      cloudManaged ? undefined : requestConfig.apiKey || undefined,
-    );
-    const cloudFallbackAvailable =
-      cloudProvider && supportsMimeType(cloudProvider, mimeType) && cloudApiKey;
-    // A self-hosted extractor must never silently substitute a third-party
-    // cloud: the MinerU Cloud fallback happens only under an explicit operator
-    // opt-in (ALLOW_MINERU_CLOUD_FALLBACK, default OFF). Otherwise the request
-    // fails loudly, naming what was configured (self-hosted MinerU) and what
-    // was unavailable (its base URL).
-    if (cloudFallbackAvailable && isMinerUCloudFallbackEnabled()) {
-      provider = cloudProvider;
-      managed = cloudManaged;
-      clientBaseUrl = managed ? undefined : requestConfig.baseUrl || undefined;
-      logState.resolvedProviderId = provider.id;
-    } else {
-      return apiError(
-        'INVALID_REQUEST',
-        422,
-        `${requestedTypeLabel(mimeType)} extraction requires a configured MinerU document extractor. ` +
-          `Self-hosted MinerU was selected, but no self-hosted MinerU base URL is configured, so it is ` +
-          `unavailable. Documents are not sent to MinerU Cloud automatically: configure a self-hosted MinerU ` +
-          `base URL in PDF provider settings, or set ALLOW_MINERU_CLOUD_FALLBACK=1 to explicitly allow the ` +
-          `MinerU Cloud fallback.`,
-      );
-    }
-  }
-  if (clientBaseUrl) {
-    const checked = await checkClientDocumentExtractorBaseUrl(provider.id, clientBaseUrl);
-    if (!checked.ok) {
-      return apiError('INVALID_URL', 403, checked.message);
-    }
-    clientBaseUrl = checked.baseUrl;
-  }
-
-  // For a managed AliDocMind provider, resolve server-owned AK/SK (env OR
-  // YAML) explicitly so a YAML-only deployment extracts successfully — the
-  // client-level env fallback reads env vars only.
-  const managedAliCreds =
-    managed && provider.id === 'alidocmind' ? resolveManagedAliDocMindCredentials() : undefined;
-  const config = {
-    providerId: provider.id,
-    apiKey: isPdfProviderId(provider.id)
-      ? resolvePDFApiKey(provider.id, managed ? undefined : requestConfig.apiKey || undefined)
-      : requestConfig.apiKey || undefined,
-    baseUrl: isPdfProviderId(provider.id)
-      ? (managedAliCreds?.baseUrl ?? resolvePDFBaseUrl(provider.id, clientBaseUrl))
-      : clientBaseUrl,
-    // AliDocMind uses AK/SK: managed → server-owned creds; else client values.
-    accessKeyId: managed ? managedAliCreds?.accessKeyId : requestConfig.accessKeyId || undefined,
-    accessKeySecret: managed
-      ? managedAliCreds?.accessKeySecret
-      : requestConfig.accessKeySecret || undefined,
-    // Env fallback is a last resort for a managed provider (defensive; the
-    // resolver already covers env+YAML).
-    allowEnvFallback: managed,
-    managed,
-  };
-
-  return extractionResponse(provider, config);
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -531,8 +124,8 @@ async function extract(req: NextRequest, ownerCookies: OwnerCookies): Promise<Re
   let isAssetIdForm = false;
   try {
     const contentType = req.headers.get('content-type') || '';
-    let source: ExtractSource;
-    let requestConfig: ExtractRequestConfig;
+    let source: MaterialSource;
+    let requestConfig: MaterialExtractorRequest;
 
     if (contentType.includes('multipart/form-data')) {
       // Legacy byte form: the client uploads the original bytes, used by
@@ -730,7 +323,23 @@ async function extract(req: NextRequest, ownerCookies: OwnerCookies): Promise<Re
       if (refused) return refused;
       throw error;
     }
-    return await runExtraction(services, source, requestConfig, logState, isAssetIdForm);
+    try {
+      const data = await analyzeMaterial(
+        {
+          source,
+          services,
+          request: requestConfig,
+          redactCallerInput: isAssetIdForm,
+          trace: logState,
+        },
+        { log },
+      );
+      return apiSuccess({ data });
+    } catch (error) {
+      if (!(error instanceof StepRefusal)) throw error;
+      const [code, status] = REFUSAL_RESPONSES[error.reason as MaterialAnalysisRefusal];
+      return apiError(code, status, error.message);
+    }
   } catch (error) {
     log.error(
       `Document extraction failed [provider=${logState.resolvedProviderId ?? 'unknown'}, file="${sanitizeLogValue(

@@ -75,6 +75,12 @@ const PROVIDER_NEUTRAL_FILES = [
   'app/api/web-search/route.ts',
   'app/api/extract-document/route.ts',
   'app/api/parse-pdf/route.ts',
+  // The generation steps those routes call (lib/server/generation/steps)
+  'lib/server/generation/steps/narration.ts',
+  'lib/server/generation/steps/image.ts',
+  'lib/server/generation/steps/video.ts',
+  'lib/server/generation/steps/research.ts',
+  'lib/server/generation/steps/material-analysis.ts',
   'lib/audio/voice-registration-client.ts',
   'lib/web-search/index.ts',
   'lib/server/web-search-config.ts',
@@ -215,10 +221,18 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
   ),
   ...groupedDebt(
     'app/api/generate/tts/route.ts',
-    'Temporary: TTS request preparation and error behavior have not moved behind adapters.',
+    'Temporary: TTS error behavior has not moved behind adapters.',
     [
-      ['qwen', 14],
-      ['voxcpm', 12],
+      ['qwen', 7],
+      ['voxcpm', 1],
+    ],
+  ),
+  ...groupedDebt(
+    'lib/server/generation/steps/narration.ts',
+    'Temporary: TTS request preparation has not moved behind adapters.',
+    [
+      ['qwen', 7],
+      ['voxcpm', 11],
       ['browser-native-tts', 2],
       ['browser-native', 2],
     ],
@@ -244,8 +258,8 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     [['local', 3]],
   ),
   ...groupedDebt(
-    'app/api/extract-document/route.ts',
-    'Temporary: managed document-provider configuration and fallback policy remain in the route.',
+    'lib/server/generation/steps/material-analysis.ts',
+    'Temporary: managed document-provider configuration and fallback policy remain in material analysis.',
     [
       ['alidocmind', 6],
       ['mineru', 15],

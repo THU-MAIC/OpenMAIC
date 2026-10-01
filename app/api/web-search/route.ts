@@ -6,16 +6,9 @@
  */
 
 import { NextRequest } from 'next/server';
-import { callLLM } from '@/lib/ai/llm';
-import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import {
-  buildSearchQuery,
-  SEARCH_QUERY_REWRITE_EXCERPT_LENGTH,
-} from '@/lib/server/search-query-builder';
-import { resolveModelFromRequest } from '@/lib/server/resolve-model';
-import type { AICallFn } from '@openmaic/generation';
+import { resolveModelFromRequest, type ResolvedModel } from '@/lib/server/resolve-model';
 import { DEFAULT_WEB_SEARCH_PROVIDER_ID, WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 import {
@@ -25,6 +18,7 @@ import {
 } from '@/lib/server/web-search-config';
 import { mediaResolutionResponse } from '@/lib/server/model-config/media';
 import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
+import { research } from '@/lib/server/generation/steps/research';
 
 const log = createLogger('WebSearch');
 
@@ -93,56 +87,15 @@ export async function POST(req: NextRequest) {
       throw error;
     }
 
-    // Clamp rewrite input at the route boundary; framework body limits still apply to total request size.
-    const boundedPdfText = pdfText?.slice(0, SEARCH_QUERY_REWRITE_EXCERPT_LENGTH);
-
-    let aiCall: AICallFn | undefined;
+    let rewriteModel: ResolvedModel | undefined;
     try {
-      const {
-        model: languageModel,
-        thinkingConfig,
-        serverManaged,
-      } = await resolveModelFromRequest(req, body, 'web-search-query-rewrite');
-      aiCall = async (systemPrompt, userPrompt) => {
-        const result = await callLLM(
-          {
-            model: languageModel,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            maxOutputTokens: 256,
-          },
-          'web-search-query-rewrite',
-          undefined,
-          thinkingConfig,
-          { serverManaged },
-        );
-        return result.text;
-      };
+      rewriteModel = await resolveModelFromRequest(req, body, 'web-search-query-rewrite');
     } catch (error) {
       log.warn('Search query rewrite model unavailable, falling back to raw requirement:', error);
     }
 
-    const searchQuery = await buildSearchQuery(query, boundedPdfText, aiCall);
-
-    log.info('Running web search API request', {
-      hasPdfContext: searchQuery.hasPdfContext,
-      rawRequirementLength: searchQuery.rawRequirementLength,
-      rewriteAttempted: searchQuery.rewriteAttempted,
-      finalQueryLength: searchQuery.finalQueryLength,
-    });
-
-    const result = await searchWeb({ ...config, query: searchQuery.query });
-    const context = formatSearchResultsAsContext(result);
-
-    return apiSuccess({
-      answer: result.answer,
-      sources: result.sources,
-      context,
-      query: result.query,
-      responseTime: result.responseTime,
-    });
+    const result = await research({ query, pdfText, config, rewriteModel }, { log });
+    return apiSuccess({ ...result });
   } catch (err) {
     log.error(`Web search failed [query="${query?.substring(0, 60) ?? 'unknown'}"]:`, err);
     const message = err instanceof Error ? err.message : 'Web search failed';
