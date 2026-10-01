@@ -51,6 +51,13 @@ export interface StoreGeneratedAssetInput {
    * taken over allocates nothing.
    */
   fence?: (tx: Queryable) => Promise<void>;
+  /**
+   * Runs on the allocation's transaction once the id is allocated, before
+   * COMMIT: a background worker's checkpoint of the id, so the bytes and the
+   * record of them commit together and a takeover never pays for them again.
+   * Production path only (not with `assetStore`).
+   */
+  afterPut?: (tx: Queryable, assetId: string) => Promise<void>;
 }
 
 export type StoreGeneratedAssetResult =
@@ -118,7 +125,11 @@ export async function storeGeneratedAsset(
         return provider.withTransaction(async (tx) => {
           const ownerId = await forwardOwnerWrite(tx, input.ownerId);
           await input.fence?.(tx);
-          return provider.assetStoreIn(tx).put(assetPrincipalForOwner(ownerId), blob, meta);
+          const assetId = await provider
+            .assetStoreIn(tx)
+            .put(assetPrincipalForOwner(ownerId), blob, meta);
+          await input.afterPut?.(tx, assetId);
+          return assetId;
         });
       };
   // `stageId` rides in the entry's metadata rather than in a dedicated column:

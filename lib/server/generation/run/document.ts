@@ -43,7 +43,11 @@ function courseGone(error: unknown): boolean {
 }
 
 function fencedStore(ownerId: string, lease: RunLease, stageId: string) {
-  return getBackgroundDocumentStore(ownerId, (tx) => fenceGenerationRunWriteIn(tx, lease, stageId));
+  return getBackgroundDocumentStore(
+    ownerId,
+    (tx) => fenceGenerationRunWriteIn(tx, lease, stageId),
+    lease.runId,
+  );
 }
 
 /**

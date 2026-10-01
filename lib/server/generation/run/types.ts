@@ -136,6 +136,46 @@ export interface GenerationRunProgress {
   scenesCompleted: number;
 }
 
+/**
+ * One generated image or video of a run, as its checkpoint (`media:<elementId>`)
+ * records it. `queued`: to be generated; `submitted`: a video task the
+ * provider is working on, resumed after a takeover instead of submitted again;
+ * `stored`: the bytes are in the asset pool and wait for the scene that holds
+ * the placeholder; `done`: the course names the asset (or, when no scene holds
+ * the placeholder, the run finished without one); `failed`: the placeholder
+ * stays, with a Retry unless the failure is permanent.
+ */
+export type GenerationRunMediaCheckpoint = { mediaType: 'image' | 'video' } & (
+  | { status: 'queued' }
+  | {
+      status: 'submitted';
+      task: { taskId: string; providerId: string; model: string; endpoint: string };
+    }
+  | { status: 'stored'; assetId: string; posterAssetId?: string }
+  | { status: 'done'; assetId: string; posterAssetId?: string }
+  | { status: 'failed'; message: string; errorCode?: string }
+);
+
+/**
+ * The states a client renders for a media element, as the browser's media
+ * tasks have them: `pending`, `generating`, `done` (with the asset), `failed`
+ * (with the reason, and an error code when the failure has one).
+ */
+export interface GenerationRunMediaEventData {
+  elementId: string;
+  mediaType: 'image' | 'video';
+  status: 'pending' | 'generating' | 'done' | 'failed';
+  assetId?: string;
+  posterAssetId?: string;
+  message?: string;
+  errorCode?: string;
+  /** Whether Retry may be offered for a failure. */
+  retryable?: boolean;
+}
+
+/** A media element's state in a run snapshot. */
+export type GenerationRunMediaState = Omit<GenerationRunMediaEventData, 'elementId'>;
+
 /** A run as its owner reads it. */
 export interface GenerationRunSnapshot {
   id: string;
@@ -199,6 +239,11 @@ export const GENERATION_RUN_EVENT_TYPES = [
   'completed',
   /** `{ stageId }`: the course was deleted; the run ended. */
   'ended',
+  /**
+   * `{ elementId, mediaType, status, ... }`: a generated image or video
+   * changed state (see {@link GenerationRunMediaEventData}).
+   */
+  'media',
 ] as const;
 export type GenerationRunEventType = (typeof GENERATION_RUN_EVENT_TYPES)[number];
 

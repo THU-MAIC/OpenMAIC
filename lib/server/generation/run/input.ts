@@ -262,3 +262,27 @@ export function parseConfirmOutline(raw: unknown): Parsed<ConfirmOutlineCommand>
     value: { commandId: commandId.value, outlineRevision: revision, outlines: outlines.value },
   };
 }
+
+export interface RetryCommand {
+  commandId: string;
+  /** Retry this failed media element only. */
+  media?: { elementId: string };
+}
+
+const MAX_ELEMENT_ID_CHARS = 128;
+
+export function parseRetry(raw: unknown): Parsed<RetryCommand> {
+  const body = record(raw);
+  if (!body) return { ok: false, message: 'The body must be a JSON object' };
+  const commandId = parseCommandId(body.commandId);
+  if (!commandId.ok) return commandId;
+  if (body.media === undefined) return { ok: true, value: { commandId: commandId.value } };
+  const elementId = record(body.media)?.elementId;
+  if (typeof elementId !== 'string' || !elementId || elementId.length > MAX_ELEMENT_ID_CHARS) {
+    return {
+      ok: false,
+      message: `media must be { elementId } with an element id of 1 to ${MAX_ELEMENT_ID_CHARS} characters`,
+    };
+  }
+  return { ok: true, value: { commandId: commandId.value, media: { elementId } } };
+}

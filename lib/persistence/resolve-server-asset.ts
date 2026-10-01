@@ -74,7 +74,8 @@ export async function resolveServerAsset(
   };
 }
 
-async function resolveOwnedAsset(
+/** {@link resolveServerAsset} for an owner already resolved (background work). */
+export async function resolveOwnedAsset(
   assetId: string,
   ownerId: string,
   connectionString: string,

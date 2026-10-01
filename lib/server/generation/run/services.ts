@@ -9,8 +9,23 @@
 import type { Queryable } from '@openmaic/storage/document/pg';
 
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
+import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation';
+import type { MediaGenerationRequest } from '@/lib/media/types';
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
+import { resolveOwnedAsset } from '@/lib/persistence/resolve-server-asset';
+import type { VisionPromptImage } from '@/lib/persistence/resolve-vision-images';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
+import {
+  DownloadByteBudget,
+  MAX_REMOTE_IMAGE_BATCH_BYTES,
+  MAX_REMOTE_IMAGE_BYTES,
+  readResponseBodyWithLimit,
+} from '@/lib/server/bounded-download';
+import { MAX_GENERATED_VIDEO_BYTES } from '@/lib/server/agent-runtime/generate-video';
+import { generateImageStep } from '@/lib/server/generation/steps/image';
+import { generateVideoStep, type VideoProviderTask } from '@/lib/server/generation/steps/video';
+import { decodeDataUrl, fetchProviderResultUrl } from '@/lib/server/provider-result-fetch';
+import type { PdfImage } from '@/lib/types/generation';
 
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import type { BuiltInTTSProviderId, TTSProviderId } from '@/lib/audio/types';
@@ -25,7 +40,7 @@ import {
   type AgentProfilesInput,
   type GeneratedAgentProfile,
 } from '@/lib/server/generation/steps/agent-profiles';
-import type { StepContext } from '@/lib/server/generation/steps/context';
+import type { StepContext, VisionImageResolver } from '@/lib/server/generation/steps/context';
 import { analyzeMaterial } from '@/lib/server/generation/steps/material-analysis';
 import { synthesizeNarration } from '@/lib/server/generation/steps/narration';
 import {
@@ -47,7 +62,7 @@ import {
 } from '@/lib/server/generation/steps/scene-content';
 import { resolveExtractionServices } from '@/lib/server/material-extraction/services';
 import { getMaterialByteStore } from '@/lib/server/materials/bytes';
-import { resolveMediaSlot } from '@/lib/server/model-config/media';
+import { resolveMediaSlot, type MediaConnection } from '@/lib/server/model-config/media';
 import {
   backgroundWorkspaceId,
   SlotDisabledError,
@@ -60,6 +75,7 @@ import { storeGeneratedAsset } from '@/lib/server/store-generated-asset';
 import { DEFAULT_WEB_SEARCH_PROVIDER_ID } from '@/lib/web-search/constants';
 import { resolveWebSearchConnection } from '@/lib/server/web-search-config';
 
+import { ownerAssetExists } from './media';
 import type { RunNarrationTarget } from './narration-voice';
 
 export interface NarrateClipInput {
@@ -76,9 +92,50 @@ export interface NarrateClipInput {
   fence: (tx: Queryable) => Promise<void>;
 }
 
+/** Generated or extracted bytes and their media type. */
+export interface RunMediaBytes {
+  bytes: Uint8Array;
+  mimeType: string;
+}
+
+/** One image of the owner's materials, as the document bundle numbers it, with its bytes. */
+export type RunMaterialImage = Omit<PdfImage, 'src' | 'storageId' | 'assetId'> & RunMediaBytes;
+
+export interface AnalyzedMaterials {
+  /** The bundle's text: the outline's source text. */
+  text: string;
+  /** The bundle's images, in its order (the engine stores them as course assets). */
+  images: RunMaterialImage[];
+}
+
+/** The image and video slots' connections; null for a slot that is turned off or unassigned. */
+export interface RunMediaConnections {
+  image: MediaConnection | null;
+  video: MediaConnection | null;
+}
+
+export interface GenerateRunImageInput {
+  request: MediaGenerationRequest;
+  stageId: string;
+  connection: MediaConnection;
+}
+
+export interface GenerateRunVideoInput {
+  request: MediaGenerationRequest;
+  connection: MediaConnection;
+  /** Wait on this task (submitted before a takeover) instead of submitting one. */
+  resume?: VideoProviderTask;
+  /** Told the provider task once it is submitted, before the wait. */
+  onProviderTask: (task: VideoProviderTask) => Promise<void>;
+}
+
 export interface RunStepServices {
-  /** Extract and bundle the owner's materials into the outline's source text. */
-  analyzeMaterials(ownerId: string, materialIds: string[], ctx: StepContext): Promise<string>;
+  /** Extract and bundle the owner's materials: the outline's source text and the images. */
+  analyzeMaterials(
+    ownerId: string,
+    materialIds: string[],
+    ctx: StepContext,
+  ): Promise<AnalyzedMaterials>;
   /** Research the requirement; null when the webSearch slot resolves to nothing. */
   research(
     ownerId: string,
@@ -110,8 +167,22 @@ export interface RunStepServices {
   narrationTarget(ownerId: string): Promise<RunNarrationTarget | null>;
   /** Synthesize and store one clip; its asset id, or null when the asset store had no room. */
   narrateClip(ownerId: string, input: NarrateClipInput, ctx: StepContext): Promise<string | null>;
-  /** Release clips allocated for a narration attempt that did not commit. */
-  releaseClips(ownerId: string, assetIds: readonly string[], ctx: StepContext): Promise<void>;
+  /** Release allocations no commit names (a narration attempt's clips, unused material images). */
+  releaseAssets(ownerId: string, assetIds: readonly string[], ctx: StepContext): Promise<void>;
+  /** The slots the media pass generates with, read once per pass. */
+  mediaConnections(ownerId: string): Promise<RunMediaConnections>;
+  /** Generate one image and download its bytes. */
+  generateImage(
+    ownerId: string,
+    input: GenerateRunImageInput,
+    ctx: StepContext,
+  ): Promise<RunMediaBytes>;
+  /** Generate (or resume waiting on) one video, and download it and its poster. */
+  generateVideo(
+    ownerId: string,
+    input: GenerateRunVideoInput,
+    ctx: StepContext,
+  ): Promise<{ video: RunMediaBytes; poster?: RunMediaBytes }>;
   /** How many scenes (and clips) may generate at once; 0 or 1 is serial. */
   parallelSceneConcurrency(): number;
   /** The wait between retries. */
@@ -134,8 +205,79 @@ async function stageModel(ownerId: string, stage: LlmStage): Promise<ResolvedMod
   return resolveModel({ stage, workspaceId: await backgroundWorkspaceId(ownerId) });
 }
 
-/** Vision images are material images, which runs attach from their own assets (not yet). */
-const noVisionImages = async () => [];
+/**
+ * Vision images for the owner the run works for: the material images are
+ * course assets, resolved to data URLs for the prompt; one that does not
+ * resolve (an allocation that expired, say) is dropped, as the routes drop it.
+ */
+function ownerVisionImages(ownerId: string, log: StepContext['log']): VisionImageResolver {
+  return async (images) => {
+    const resolved: VisionPromptImage[] = [];
+    for (const image of images) {
+      if (!image.src) continue;
+      if (/^(?:data:|https?:)/i.test(image.src)) {
+        resolved.push(image);
+        continue;
+      }
+      const resolution = await resolveOwnedAsset(
+        image.src,
+        ownerId,
+        process.env.DATABASE_URL ?? '',
+        MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES,
+      );
+      if (resolution.status !== 'resolved') {
+        log.warn(`Vision image "${image.id}" does not resolve (${resolution.status}); dropping it`);
+        continue;
+      }
+      resolved.push({
+        id: image.id,
+        src: `data:${resolution.mimeType};base64,${resolution.buffer.toString('base64')}`,
+        ...(image.width !== undefined ? { width: image.width } : {}),
+        ...(image.height !== undefined ? { height: image.height } : {}),
+      });
+    }
+    return resolved;
+  };
+}
+
+/** The media type of downloaded bytes: what the response declares, else `fallback`. */
+function declaredType(response: Response, fallback: string): string {
+  const declared = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
+  return declared && declared !== 'application/octet-stream' ? declared : fallback;
+}
+
+/** Download a provider's result URL (or decode its data URL) under a byte limit. */
+async function downloadResult(
+  url: string,
+  options: {
+    maxBytes: number;
+    fallbackType: string;
+    signal?: AbortSignal;
+    budget?: DownloadByteBudget;
+  },
+): Promise<RunMediaBytes> {
+  if (url.startsWith('data:')) {
+    const decoded = decodeDataUrl(url, options.maxBytes);
+    return {
+      bytes: decoded.bytes,
+      mimeType:
+        decoded.mimeType && decoded.mimeType !== 'application/octet-stream'
+          ? decoded.mimeType
+          : options.fallbackType,
+    };
+  }
+  const response = await fetchProviderResultUrl(url, {
+    maxBytes: options.maxBytes,
+    ...(options.signal ? { signal: options.signal } : {}),
+  });
+  if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
+  const mimeType = declaredType(response, options.fallbackType);
+  const bytes = await readResponseBodyWithLimit(response, {
+    maxBytes: options.maxBytes,
+    ...(options.budget ? { aggregateBudget: options.budget } : {}),
+  });
+  return { bytes, mimeType };
+}
 
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
@@ -191,12 +333,43 @@ export const defaultRunStepServices: RunStepServices = {
         ...(parsed.metadata?.pageCount !== undefined
           ? { pageCount: parsed.metadata.pageCount }
           : {}),
-        // Material images are stored as course assets in a later step of
-        // this design; until then the run generates from the text.
-        images: [],
+        // The images as the generation preview reads them off the
+        // extraction: the extractor's own list, else its bare data URLs.
+        images: parsed.metadata?.pdfImages
+          ? parsed.metadata.pdfImages.map((image) => ({
+              id: image.id,
+              src: image.src || '',
+              pageNumber: image.pageNumber ?? 1,
+              description: image.description,
+              width: image.width,
+              height: image.height,
+            }))
+          : (parsed.images ?? []).map((src, index) => ({
+              id: `img_${index + 1}`,
+              src,
+              pageNumber: 1,
+            })),
       });
     }
-    return buildDocumentBundle(parts).text;
+    const bundle = buildDocumentBundle(parts);
+    return {
+      text: bundle.text,
+      images: bundle.images.map(({ src, ...image }) => {
+        // The browser stores every image's bytes or fails the analysis.
+        if (!src.startsWith('data:')) {
+          throw new Error(`Material image ${image.id} has no inline bytes`);
+        }
+        const decoded = decodeDataUrl(src, MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES);
+        return {
+          ...image,
+          bytes: decoded.bytes,
+          mimeType:
+            decoded.mimeType && decoded.mimeType.startsWith('image/')
+              ? decoded.mimeType
+              : 'image/png',
+        };
+      }),
+    };
   },
 
   async research(ownerId, input, ctx) {
@@ -230,7 +403,7 @@ export const defaultRunStepServices: RunStepServices = {
       {
         ...ctx,
         workspaceId: await backgroundWorkspaceId(ownerId),
-        resolveVisionImages: noVisionImages,
+        resolveVisionImages: ownerVisionImages(ownerId, ctx.log),
       },
     );
   },
@@ -253,8 +426,14 @@ export const defaultRunStepServices: RunStepServices = {
       ? (typed as LlmStage)
       : 'scene-content';
     return generateSceneContent(
-      { ...input, model: await stageModel(ownerId, stage) },
-      { ...ctx, resolveVisionImages: noVisionImages },
+      {
+        ...input,
+        ...(input.imageMapping
+          ? { imageMapping: await liveImageMapping(ownerId, input.outline, input.imageMapping) }
+          : {}),
+        model: await stageModel(ownerId, stage),
+      },
+      { ...ctx, resolveVisionImages: ownerVisionImages(ownerId, ctx.log) },
     );
   },
 
@@ -318,7 +497,7 @@ export const defaultRunStepServices: RunStepServices = {
     return stored.assetId;
   },
 
-  async releaseClips(ownerId, assetIds, ctx) {
+  async releaseAssets(ownerId, assetIds, ctx) {
     if (assetIds.length === 0) return;
     const { assetStore } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
     for (const assetId of assetIds) {
@@ -326,11 +505,114 @@ export const defaultRunStepServices: RunStepServices = {
         await assetStore.releasePending(assetPrincipalForOwner(ownerId), assetId);
       } catch (error) {
         // Still pending: the collector reclaims it once its deadline passes.
-        ctx.log.warn(`Could not release narration asset ${assetId}:`, error);
+        ctx.log.warn(`Could not release asset ${assetId}:`, error);
       }
     }
+  },
+
+  async mediaConnections(ownerId) {
+    const workspaceId = await backgroundWorkspaceId(ownerId);
+    const connection = async (slot: 'image' | 'video') => {
+      try {
+        return await resolveMediaSlot(slot, { workspaceId });
+      } catch (error) {
+        if (error instanceof SlotDisabledError || error instanceof SlotUnassignedError) return null;
+        throw error;
+      }
+    };
+    const [image, video] = await Promise.all([connection('image'), connection('video')]);
+    return { image, video };
+  },
+
+  async generateImage(_ownerId, input, ctx) {
+    // What the browser's media pass sends POST /api/generate/image.
+    const result = await generateImageStep(
+      {
+        options: {
+          prompt: input.request.prompt,
+          ...(input.request.aspectRatio ? { aspectRatio: input.request.aspectRatio } : {}),
+          ...(input.request.style ? { style: input.request.style } : {}),
+          stageId: input.stageId,
+          ...(ctx.signal ? { signal: ctx.signal } : {}),
+        },
+        connection: input.connection,
+      },
+      ctx,
+    );
+    if (result.base64) {
+      const bytes = Buffer.from(result.base64, 'base64');
+      if (bytes.byteLength === 0) throw new Error('The image provider returned empty image data');
+      if (bytes.byteLength > MAX_REMOTE_IMAGE_BYTES) {
+        throw new Error(`The generated image exceeds the ${MAX_REMOTE_IMAGE_BYTES}-byte limit`);
+      }
+      return { bytes, mimeType: result.mimeType || 'image/png' };
+    }
+    if (!result.url) throw new Error('No image URL in response');
+    return downloadResult(result.url, {
+      maxBytes: MAX_REMOTE_IMAGE_BYTES,
+      fallbackType: 'image/png',
+      ...(ctx.signal ? { signal: ctx.signal } : {}),
+    });
+  },
+
+  async generateVideo(_ownerId, input, ctx) {
+    // What the browser's media pass sends POST /api/generate/video.
+    const result = await generateVideoStep(
+      {
+        options: {
+          prompt: input.request.prompt,
+          ...(input.request.aspectRatio ? { aspectRatio: input.request.aspectRatio } : {}),
+          ...(ctx.signal ? { signal: ctx.signal } : {}),
+        },
+        connection: input.connection,
+        onProviderTask: input.onProviderTask,
+        ...(input.resume ? { resume: input.resume } : {}),
+      },
+      ctx,
+    );
+    if (!result.url) throw new Error('No video URL in response');
+    const video = await downloadResult(result.url, {
+      maxBytes: MAX_GENERATED_VIDEO_BYTES,
+      fallbackType: 'video/mp4',
+      ...(ctx.signal ? { signal: ctx.signal } : {}),
+    });
+    // A poster that cannot be fetched costs the poster only.
+    const poster = result.poster
+      ? await downloadResult(result.poster, {
+          maxBytes: MAX_REMOTE_IMAGE_BYTES,
+          fallbackType: 'image/jpeg',
+          budget: new DownloadByteBudget(MAX_REMOTE_IMAGE_BATCH_BYTES),
+          ...(ctx.signal ? { signal: ctx.signal } : {}),
+        }).catch((error) => {
+          ctx.log.warn('The video poster could not be downloaded:', error);
+          return undefined;
+        })
+      : undefined;
+    return { video, ...(poster ? { poster } : {}) };
   },
 
   parallelSceneConcurrency: getParallelSceneConcurrency,
   sleep,
 };
+
+/**
+ * The material images an outline is assigned that the owner's pool still
+ * holds. An allocation that was never written into a course expires (the
+ * outline may have waited long for its confirmation); an image element must
+ * not name it, so it goes the way an unknown image id goes (the element is
+ * left out).
+ */
+async function liveImageMapping(
+  ownerId: string,
+  outline: { suggestedImageIds?: string[] },
+  imageMapping: Record<string, string>,
+): Promise<Record<string, string>> {
+  const assigned = new Set(outline.suggestedImageIds ?? []);
+  const live: Record<string, string> = {};
+  for (const [imageId, assetId] of Object.entries(imageMapping)) {
+    if (!assigned.has(imageId) || (await ownerAssetExists(ownerId, assetId))) {
+      live[imageId] = assetId;
+    }
+  }
+  return live;
+}

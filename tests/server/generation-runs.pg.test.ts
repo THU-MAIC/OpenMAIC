@@ -123,7 +123,7 @@ function fakeServices(overrides: Partial<RunStepServices> = {}) {
     releasedClips: [] as string[],
   };
   const services: RunStepServices = {
-    analyzeMaterials: async () => 'material text',
+    analyzeMaterials: async () => ({ text: 'material text', images: [] }),
     research: async (_owner, input) => {
       calls.research.push(input);
       return {
@@ -200,9 +200,16 @@ function fakeServices(overrides: Partial<RunStepServices> = {}) {
       });
       return stored.status === 'stored' ? stored.assetId : null;
     },
-    releaseClips: async (owner, ids, ctx) => {
+    releaseAssets: async (owner, ids, ctx) => {
       calls.releasedClips.push(...ids);
-      return defaultRunStepServices.releaseClips(owner, ids, ctx);
+      return defaultRunStepServices.releaseAssets(owner, ids, ctx);
+    },
+    mediaConnections: async () => ({ image: null, video: null }),
+    generateImage: async () => {
+      throw new Error('no image slot in this test');
+    },
+    generateVideo: async () => {
+      throw new Error('no video slot in this test');
     },
     parallelSceneConcurrency: () => 0,
     sleep: async () => undefined,
@@ -1635,6 +1642,678 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     abort.abort();
     expect(await execution).toBe('interrupted');
     expect(cancelled).toBe(true);
+  });
+
+  describe('media, material images and the read-only course', () => {
+    const IMAGE_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+    const VIDEO_BYTES = new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70]);
+    const POSTER_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 9]);
+    const TASK = {
+      taskId: 'task-1',
+      providerId: 'seedance',
+      model: 'seedance-1',
+      endpoint: 'https://video.example.com',
+    };
+    const MEDIA_OUTLINES: SceneOutline[] = [
+      {
+        ...OUTLINES[0]!,
+        mediaGenerations: [
+          { type: 'image', prompt: 'A leaf', elementId: 'gen_img_1', aspectRatio: '16:9' },
+        ],
+      },
+      {
+        ...OUTLINES[1]!,
+        mediaGenerations: [{ type: 'video', prompt: 'Sunlight', elementId: 'gen_vid_1' }],
+      },
+      OUTLINES[2]!,
+    ];
+    const connection = (providerId: string) =>
+      ({
+        providerId,
+        managed: true,
+        userEndpoint: false,
+        origin: 'configuration',
+      }) as MediaConnection;
+
+    /** A slide holding the outline's media placeholders, as the content step leaves them. */
+    function mediaScene(stageId: string, outline: SceneOutline, imageSrc?: string): Scene {
+      const scene = slideScene(stageId, outline);
+      const canvas = (scene.content as { canvas: { elements: unknown[] } }).canvas;
+      const box = { left: 0, top: 0, width: 100, height: 60, rotate: 0 };
+      for (const media of outline.mediaGenerations ?? []) {
+        canvas.elements.push(
+          media.type === 'image'
+            ? {
+                id: `el-${media.elementId}`,
+                type: 'image',
+                ...box,
+                fixedRatio: true,
+                src: media.elementId,
+              }
+            : {
+                id: `el-${media.elementId}`,
+                type: 'video',
+                ...box,
+                src: media.elementId,
+                mediaRef: media.elementId,
+                autoplay: false,
+              },
+        );
+      }
+      if (imageSrc) {
+        canvas.elements.push({
+          id: 'el-material',
+          type: 'image',
+          ...box,
+          fixedRatio: true,
+          src: imageSrc,
+        });
+      }
+      return scene;
+    }
+
+    function mediaServices(overrides: Partial<RunStepServices> = {}) {
+      const order: string[] = [];
+      const media = { image: [] as string[], video: [] as Array<{ resume?: unknown }> };
+      const base = fakeServices({ research: async () => null });
+      const built = fakeServices({
+        research: async () => null,
+        outline: async () => ({
+          outlines: MEDIA_OUTLINES,
+          languageDirective: 'Use English.',
+          courseTitle: 'Plants',
+          taskEngineMode: false,
+        }),
+        sceneActions: async (owner, input, ctx) => {
+          order.push(`actions:${input.outline.id}`);
+          await base.services.sceneActions(owner, input, ctx);
+          return {
+            scene: mediaScene(input.stageId, input.outline) as never,
+            previousSpeeches: [`Say ${input.outline.title}`],
+          };
+        },
+        mediaConnections: async () => ({
+          image: connection('seedream'),
+          video: connection('seedance'),
+        }),
+        generateImage: async (_owner, input) => {
+          order.push(`image:${input.request.elementId}`);
+          media.image.push(input.request.elementId);
+          return { bytes: IMAGE_BYTES, mimeType: 'image/png' };
+        },
+        generateVideo: async (_owner, input) => {
+          order.push(`video:${input.request.elementId}`);
+          media.video.push({ resume: input.resume });
+          if (!input.resume) await input.onProviderTask(TASK);
+          return {
+            video: { bytes: VIDEO_BYTES, mimeType: 'video/mp4' },
+            poster: { bytes: POSTER_BYTES, mimeType: 'image/jpeg' },
+          };
+        },
+        ...overrides,
+      });
+      return { ...built, order, media };
+    }
+
+    function elementsOf(scene: Scene | undefined) {
+      return ((scene?.content as { canvas?: { elements?: Array<Record<string, unknown>> } })?.canvas
+        ?.elements ?? []) as Array<Record<string, unknown>>;
+    }
+
+    async function committedAt(assetId: string) {
+      const result = await pool.query<{ committed_at: Date | null }>(
+        'SELECT committed_at FROM asset_entries WHERE id = $1',
+        [assetId],
+      );
+      return result.rows[0]?.committed_at ?? null;
+    }
+
+    async function mediaOf(runId: string) {
+      const steps = await readGenerationRunSteps(runId);
+      return Object.fromEntries(
+        [...steps.entries()]
+          .filter(([id]) => id.startsWith('media:'))
+          .map(([id, output]) => [id.slice('media:'.length), output]),
+      ) as Record<string, Record<string, unknown>>;
+    }
+
+    async function mediaEvents(runId: string) {
+      return (await readGenerationRunEvents(runId, 0))
+        .filter((event) => event.type === 'media')
+        .map((event) => `${event.data.elementId}:${event.data.status}`);
+    }
+
+    it('generates the outline media alongside the scenes and names the assets in the course', async () => {
+      const { services, order } = mediaServices();
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      // The log as it stands before completion compacts nothing (retention is hours).
+      expect(await drive(run.id, services)).toBe('completed');
+      const stored = (await readGenerationRun(run.id, OWNER))!;
+      const document = (await documentStore(OWNER).loadDocument(stored.stageId!))!;
+
+      // As in the browser: the pass starts once the first scene is in.
+      expect(order.indexOf('image:gen_img_1')).toBeGreaterThan(order.indexOf('actions:o1'));
+      expect(
+        order.filter((entry) => entry.startsWith('image:') || entry.startsWith('video:')),
+      ).toEqual(['image:gen_img_1', 'video:gen_vid_1']);
+
+      const media = await mediaOf(run.id);
+      expect(media.gen_img_1).toMatchObject({ mediaType: 'image', status: 'done' });
+      expect(media.gen_vid_1).toMatchObject({ mediaType: 'video', status: 'done' });
+      const image = elementsOf(document.scenes[0]).find((element) => element.type === 'image')!;
+      const video = elementsOf(document.scenes[1]).find((element) => element.type === 'video')!;
+      expect(image.src).toBe(media.gen_img_1!.assetId);
+      expect(video).toMatchObject({
+        src: media.gen_vid_1!.assetId,
+        mediaRef: media.gen_vid_1!.assetId,
+        poster: media.gen_vid_1!.posterAssetId,
+      });
+      // The document write committed the allocations.
+      for (const assetId of [image.src, video.src, video.poster] as string[]) {
+        expect(assetId).toMatch(/^ast_/);
+        expect(await committedAt(assetId)).not.toBeNull();
+      }
+      // The stage's video manifest stays keyed by the placeholder, as in the browser.
+      expect(Object.keys(document.stage.videoManifest ?? {})).toEqual(['gen_vid_1']);
+      expect(await mediaEvents(run.id)).toEqual([
+        'gen_img_1:pending',
+        'gen_vid_1:pending',
+        'gen_img_1:generating',
+        'gen_img_1:done',
+        'gen_vid_1:generating',
+        'gen_vid_1:done',
+      ]);
+
+      const route = await import('@/app/api/generation-runs/[id]/route');
+      const snapshot = await route.GET(
+        new NextRequest(`http://localhost/api/generation-runs/${run.id}`, {
+          headers: cookie(OWNER_COOKIE),
+        }),
+        { params: Promise.resolve({ id: run.id }) },
+      );
+      expect((await snapshot.json()).run.media).toEqual({
+        gen_img_1: { mediaType: 'image', status: 'done', assetId: image.src },
+        gen_vid_1: {
+          mediaType: 'video',
+          status: 'done',
+          assetId: video.src,
+          posterAssetId: video.poster,
+        },
+      });
+    });
+
+    it('generates only the kinds whose slot resolves', async () => {
+      const { services, media } = mediaServices({
+        mediaConnections: async () => ({ image: connection('seedream'), video: null }),
+      });
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      expect(await drive(run.id, services)).toBe('completed');
+      expect(media.video).toEqual([]);
+      expect(Object.keys(await mediaOf(run.id))).toEqual(['gen_img_1']);
+      const stored = (await readGenerationRun(run.id, OWNER))!;
+      const document = (await documentStore(OWNER).loadDocument(stored.stageId!))!;
+      // The video keeps its placeholder, which renders as generation disabled.
+      expect(
+        elementsOf(document.scenes[1]).find((element) => element.type === 'video'),
+      ).toMatchObject({
+        src: 'gen_vid_1',
+        mediaRef: 'gen_vid_1',
+      });
+    });
+
+    it('a media failure leaves its placeholder without pausing, and Retry regenerates only it', async () => {
+      let failImage = true;
+      const { services, media, calls } = mediaServices({
+        generateImage: async (_owner, input) => {
+          media.image.push(input.request.elementId);
+          if (failImage) throw new Error('provider said 500: upstream detail');
+          return { bytes: IMAGE_BYTES, mimeType: 'image/png' };
+        },
+      });
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      expect(await drive(run.id, services)).toBe('completed');
+      let stored = (await readGenerationRun(run.id, OWNER))!;
+      const stageId = stored.stageId!;
+      expect(stored).toMatchObject({ state: 'completed', mediaPending: false });
+      // The provider's text is not what the element shows.
+      expect((await mediaOf(run.id)).gen_img_1).toEqual({
+        mediaType: 'image',
+        status: 'failed',
+        message: 'Image generation failed',
+      });
+      let document = (await documentStore(OWNER).loadDocument(stageId))!;
+      expect(elementsOf(document.scenes[0]).find((element) => element.type === 'image')!.src).toBe(
+        'gen_img_1',
+      );
+      // The video was generated anyway, and the course is complete and editable.
+      expect((await mediaOf(run.id)).gen_vid_1).toMatchObject({ status: 'done' });
+      await documentStore(OWNER).putScene(stageId, document.scenes[2]!);
+
+      // Another owner's Retry is the same miss as an unknown run's.
+      expect(
+        await retryGenerationRun(run.id, OTHER, {
+          commandId: 'm1',
+          media: { elementId: 'gen_img_1' },
+        }),
+      ).toBeNull();
+      // An element that did not fail, or is not the run's, is refused.
+      for (const elementId of ['gen_vid_1', 'gen_img_9']) {
+        await expect(
+          retryGenerationRun(run.id, OWNER, { commandId: `x-${elementId}`, media: { elementId } }),
+        ).rejects.toMatchObject({ reason: 'media' });
+      }
+
+      const retried = await retryGenerationRun(run.id, OWNER, {
+        commandId: 'm1',
+        media: { elementId: 'gen_img_1' },
+      });
+      expect(retried).toMatchObject({ state: 'completed' });
+      // The same command again answers the same, and queues nothing more.
+      expect(
+        await retryGenerationRun(run.id, OWNER, {
+          commandId: 'm1',
+          media: { elementId: 'gen_img_1' },
+        }),
+      ).toEqual(retried);
+      stored = (await readGenerationRun(run.id, OWNER))!;
+      expect(stored).toMatchObject({ state: 'completed', mediaPending: true });
+      // While its media is generated again the course is read-only again.
+      await expect(
+        documentStore(OWNER).putScene(stageId, document.scenes[2]!),
+      ).rejects.toMatchObject({
+        code: 'COURSE_GENERATING',
+      });
+
+      failImage = false;
+      const contentCalls = calls.sceneContent.length;
+      expect(await drive(run.id, services)).toBe('completed');
+      expect(calls.sceneContent).toHaveLength(contentCalls);
+      expect(media.image).toEqual(['gen_img_1', 'gen_img_1']);
+      const after = await mediaOf(run.id);
+      expect(after.gen_img_1).toMatchObject({ status: 'done' });
+      document = (await documentStore(OWNER).loadDocument(stageId))!;
+      expect(elementsOf(document.scenes[0]).find((element) => element.type === 'image')!.src).toBe(
+        after.gen_img_1!.assetId,
+      );
+      expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+        state: 'completed',
+        mediaPending: false,
+        leaseWorkerId: null,
+      });
+      await documentStore(OWNER).putScene(stageId, document.scenes[2]!);
+      // Nothing is left to claim.
+      expect(await claim(run.id)).toBeNull();
+    });
+
+    it('a content refusal is final, and a paused run generates its media without retrying the scene', async () => {
+      let sensitive = true;
+      const { services, calls, media } = mediaServices({
+        generateImage: async (_owner, input) => {
+          media.image.push(input.request.elementId);
+          if (sensitive) throw new Error('OutputImageSensitiveContentDetected');
+          throw new Error('timeout talking to provider');
+        },
+        sceneContent: async (owner, input, ctx) => {
+          if (input.outline.id === 'o3') throw new Error('content model down');
+          return fakeServices().services.sceneContent(owner, input, ctx);
+        },
+      });
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      expect(await drive(run.id, services)).toBe('paused');
+      expect((await mediaOf(run.id)).gen_img_1).toMatchObject({
+        status: 'failed',
+        errorCode: 'CONTENT_SENSITIVE',
+      });
+      await expect(
+        retryGenerationRun(run.id, OWNER, { commandId: 'cs', media: { elementId: 'gen_img_1' } }),
+      ).rejects.toMatchObject({ reason: 'media' });
+
+      // A retryable failure on a paused run: only the media runs again.
+      sensitive = false;
+      await commitMediaFailure(run.id, 'gen_img_1', 'image');
+      expect(
+        await retryGenerationRun(run.id, OWNER, {
+          commandId: 'p1',
+          media: { elementId: 'gen_img_1' },
+        }),
+      ).toMatchObject({ state: 'paused' });
+      const contentCalls = calls.sceneContent.length;
+      expect(await drive(run.id, services)).toBe('paused');
+      expect(calls.sceneContent).toHaveLength(contentCalls);
+      expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+        state: 'paused',
+        step: 'scene:2:content',
+        mediaPending: false,
+      });
+      expect((await mediaOf(run.id)).gen_img_1).toMatchObject({ status: 'failed' });
+    });
+
+    /** Record a retryable failure for an element (as a provider timeout leaves it). */
+    async function commitMediaFailure(
+      runId: string,
+      elementId: string,
+      mediaType: 'image' | 'video',
+    ) {
+      await pool.query(
+        `UPDATE generation_run_steps SET output = $3::jsonb WHERE run_id = $1 AND step_id = $2`,
+        [
+          runId,
+          `media:${elementId}`,
+          JSON.stringify({
+            mediaType,
+            status: 'failed',
+            message: `${mediaType} generation failed`,
+          }),
+        ],
+      );
+    }
+
+    it('a takeover waits on the submitted video task instead of submitting it again', async () => {
+      const submitted = gate();
+      const never = gate();
+      const dying = mediaServices({
+        generateVideo: async (_owner, input) => {
+          await input.onProviderTask(TASK);
+          submitted.release();
+          await never.promise;
+          throw new Error('unreachable');
+        },
+      });
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      const claimA = (await claim(run.id, 'worker-a')) as ClaimedRun;
+      const abortA = new AbortController();
+      const executionA = executeGenerationRun(claimA, {
+        services: dying.services,
+        signal: abortA.signal,
+      });
+      await submitted.promise;
+      expect((await mediaOf(run.id)).gen_vid_1).toEqual({
+        mediaType: 'video',
+        status: 'submitted',
+        task: TASK,
+      });
+      // The process dies while the provider works on the video.
+      abortA.abort();
+      expect(await executionA).toBe('interrupted');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const takeover = (await claim(run.id, 'worker-b', 1))!;
+      expect(takeover).toMatchObject({ takeover: true });
+
+      const resumed = mediaServices();
+      expect(
+        await executeGenerationRun(takeover, {
+          services: resumed.services,
+          signal: new AbortController().signal,
+        }),
+      ).toBe('completed');
+      // One submission in all: B resumed the wait on A's task.
+      expect(resumed.media.video).toEqual([{ resume: TASK }]);
+      // The image A had stored was not generated again.
+      expect(resumed.media.image).toEqual([]);
+      expect((await mediaOf(run.id)).gen_vid_1).toMatchObject({ status: 'done' });
+      never.release();
+    });
+
+    it('places bytes a dead worker stored without generating them again', async () => {
+      const blocked = gate();
+      const reached = gate();
+      const first = mediaServices({
+        mediaConnections: async () => ({ image: connection('seedream'), video: null }),
+        sceneContent: async (owner, input, ctx) => {
+          if (input.outline.id === 'o2') {
+            reached.release();
+            await blocked.promise;
+          }
+          return fakeServices().services.sceneContent(owner, input, ctx);
+        },
+        // The worker dies right after storing (before the image reaches the scene).
+        generateImage: async () => {
+          throw new Error('not in this execution');
+        },
+      });
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      const claimA = (await claim(run.id, 'worker-a')) as ClaimedRun;
+      const abortA = new AbortController();
+      const executionA = executeGenerationRun(claimA, {
+        services: first.services,
+        signal: abortA.signal,
+      });
+      await reached.promise;
+      // Simulate the crash window: the bytes and their checkpoint committed together.
+      const stageId = (await readGenerationRun(run.id, OWNER))!.stageId!;
+      const stored = await storeGeneratedAsset({
+        ownerId: OWNER,
+        stageId,
+        bytes: IMAGE_BYTES,
+        mimeType: 'image/png',
+        kind: 'image',
+        afterPut: async (tx, assetId) => {
+          await tx.query(
+            `UPDATE generation_run_steps SET output = $3::jsonb WHERE run_id = $1 AND step_id = $2`,
+            [
+              run.id,
+              'media:gen_img_1',
+              JSON.stringify({ mediaType: 'image', status: 'stored', assetId }),
+            ],
+          );
+        },
+      });
+      abortA.abort();
+      blocked.release();
+      expect(await executionA).toBe('interrupted');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const takeover = (await claim(run.id, 'worker-b', 1))!;
+      const resumed = mediaServices({
+        mediaConnections: async () => ({ image: connection('seedream'), video: null }),
+      });
+      expect(
+        await executeGenerationRun(takeover, {
+          services: resumed.services,
+          signal: new AbortController().signal,
+        }),
+      ).toBe('completed');
+      expect(resumed.media.image).toEqual([]);
+      const assetId = (stored as { assetId: string }).assetId;
+      const document = (await documentStore(OWNER).loadDocument(stageId))!;
+      expect(elementsOf(document.scenes[0]).find((element) => element.type === 'image')!.src).toBe(
+        assetId,
+      );
+      expect(await committedAt(assetId)).not.toBeNull();
+    });
+
+    it('a video whose connection changed fails, and Retry submits a new task', async () => {
+      const first = mediaServices({
+        generateVideo: async (_owner, input) => {
+          if (input.resume) {
+            throw new StepRefusal('task-connection-changed', 'The video slot changed');
+          }
+          await input.onProviderTask(TASK);
+          throw new Error('poll budget');
+        },
+      });
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      expect(await drive(run.id, first.services)).toBe('completed');
+      // Make it the case a takeover meets: a submitted task, resumed on another connection.
+      await pool.query(
+        `UPDATE generation_run_steps SET output = $3::jsonb WHERE run_id = $1 AND step_id = $2`,
+        [
+          run.id,
+          'media:gen_vid_1',
+          JSON.stringify({ mediaType: 'video', status: 'submitted', task: TASK }),
+        ],
+      );
+      await pool.query('UPDATE generation_runs SET media_pending = true WHERE id = $1', [run.id]);
+      expect(await drive(run.id, first.services)).toBe('completed');
+      expect((await mediaOf(run.id)).gen_vid_1).toEqual({
+        mediaType: 'video',
+        status: 'failed',
+        message: 'The video slot changed',
+        errorCode: 'TASK_CONNECTION_CHANGED',
+      });
+      await retryGenerationRun(run.id, OWNER, {
+        commandId: 'v1',
+        media: { elementId: 'gen_vid_1' },
+      });
+      const second = mediaServices();
+      expect(await drive(run.id, second.services)).toBe('completed');
+      expect(second.media.video).toEqual([{ resume: undefined }]);
+      expect((await mediaOf(run.id)).gen_vid_1).toMatchObject({ status: 'done' });
+    });
+
+    it('stores material images as course assets and generates with them by id', async () => {
+      const outlineInputs: unknown[] = [];
+      const contentInputs: Array<Record<string, unknown>> = [];
+      const { services } = mediaServices({
+        mediaConnections: async () => ({ image: null, video: null }),
+        analyzeMaterials: async () => ({
+          text: 'material text [img_1]',
+          images: [
+            {
+              id: 'img_1',
+              pageNumber: 2,
+              description: 'A chloroplast',
+              width: 640,
+              height: 480,
+              visionPriority: 1,
+              bytes: IMAGE_BYTES,
+              mimeType: 'image/png',
+            },
+          ],
+        }),
+        outline: async (_owner, input) => {
+          outlineInputs.push(input);
+          return {
+            outlines: OUTLINES.map((outline, index) =>
+              index === 0 ? { ...outline, suggestedImageIds: ['img_1'] } : outline,
+            ),
+            languageDirective: 'Use English.',
+            courseTitle: 'Plants',
+            taskEngineMode: false,
+          };
+        },
+        sceneContent: async (owner, input, ctx) => {
+          contentInputs.push(input as never);
+          return fakeServices().services.sceneContent(owner, input, ctx);
+        },
+        sceneActions: async (_owner, input) => {
+          // The content step resolves `img_1` through the mapping it was given.
+          const mapping = contentInputs.at(-1)!.imageMapping as Record<string, string>;
+          const imageSrc = input.outline.id === 'o1' ? mapping.img_1 : undefined;
+          return {
+            scene: mediaScene(input.stageId, input.outline, imageSrc) as never,
+            previousSpeeches: [],
+          };
+        },
+      });
+      const run = await start(runInput({ outlineReview: 'auto', materialIds: ['mat-1'] }));
+      expect(await drive(run.id, services)).toBe('completed');
+
+      const material = (await readGenerationRunSteps(run.id)).get('material-analysis') as {
+        pdfImages: Array<Record<string, unknown>>;
+        imageMapping: Record<string, string>;
+        stageId: string;
+      };
+      const assetId = material.imageMapping.img_1!;
+      expect(assetId).toMatch(/^ast_/);
+      expect(material.pdfImages).toEqual([
+        {
+          id: 'img_1',
+          src: '',
+          assetId,
+          pageNumber: 2,
+          description: 'A chloroplast',
+          width: 640,
+          height: 480,
+          visionPriority: 1,
+        },
+      ]);
+      expect(outlineInputs[0]).toMatchObject({
+        pdfText: 'material text [img_1]',
+        pdfImages: material.pdfImages,
+        imageMapping: { img_1: assetId },
+      });
+      for (const input of contentInputs) {
+        expect(input).toMatchObject({
+          pdfImages: material.pdfImages,
+          imageMapping: { img_1: assetId },
+        });
+      }
+      const stored = (await readGenerationRun(run.id, OWNER))!;
+      // The course is the one the images were stored for, and its write committed them.
+      expect(stored.stageId).toBe(material.stageId);
+      const document = (await documentStore(OWNER).loadDocument(stored.stageId!))!;
+      expect(
+        elementsOf(document.scenes[0]).find((element) => element.id === 'el-material')!.src,
+      ).toBe(assetId);
+      expect(await committedAt(assetId)).not.toBeNull();
+      // No image bytes travel in the checkpoints.
+      const raw = await pool.query<{ output: string }>(
+        'SELECT output::text AS output FROM generation_run_steps WHERE run_id = $1',
+        [run.id],
+      );
+      expect(raw.rows.some((row) => row.output.includes('base64'))).toBe(false);
+    });
+
+    it('keeps the course read-only to every other writer until its run completes', async () => {
+      const blocked = gate();
+      const reached = gate();
+      const { services } = mediaServices({
+        mediaConnections: async () => ({ image: null, video: null }),
+        sceneContent: async (owner, input, ctx) => {
+          if (input.outline.id === 'o3') {
+            reached.release();
+            await blocked.promise;
+          }
+          return fakeServices().services.sceneContent(owner, input, ctx);
+        },
+      });
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      const execution = drive(run.id, services);
+      await reached.promise;
+      const stageId = (await readGenerationRun(run.id, OWNER))!.stageId!;
+      const editor = documentStore(OWNER);
+      const document = (await editor.loadDocument(stageId))!;
+
+      // The classroom editor's whole-document save, through the route.
+      const stages = await import('@/app/api/stages/[id]/route');
+      const save = () =>
+        stages.PUT(
+          new NextRequest(`http://localhost/api/stages/${stageId}`, {
+            method: 'PUT',
+            headers: { ...cookie(OWNER_COOKIE), 'content-type': 'application/json' },
+            body: JSON.stringify(document),
+          }),
+          { params: Promise.resolve({ id: stageId }) },
+        );
+      const refused = await save();
+      expect(refused.status).toBe(409);
+      expect(await refused.json()).toMatchObject({ error: { code: 'COURSE_GENERATING' } });
+      // Every content write of the store, and the Pro agent's background store.
+      await expect(editor.putScene(stageId, document.scenes[0]!)).rejects.toMatchObject({
+        code: 'COURSE_GENERATING',
+      });
+      await expect(editor.putStage(stageId, document.stage)).rejects.toMatchObject({
+        code: 'COURSE_GENERATING',
+      });
+      await expect(editor.deleteScene(stageId, document.scenes[0]!.id)).rejects.toMatchObject({
+        code: 'COURSE_GENERATING',
+      });
+      const { getBackgroundDocumentStore } =
+        await import('@/lib/server/agent-runtime/owner-scoped-documents');
+      const agent = await getBackgroundDocumentStore(OWNER);
+      await expect(agent.putScene(stageId, document.scenes[0]!)).rejects.toMatchObject({
+        code: 'COURSE_GENERATING',
+      });
+      // Library organization is not a content write.
+      await (
+        editor as unknown as { setStageFolder(id: string, folder: string | null): Promise<boolean> }
+      ).setStageFolder(stageId, null);
+
+      blocked.release();
+      expect(await execution).toBe('completed');
+      expect((await save()).status).toBe(200);
+      await agent.putScene(stageId, (await editor.loadDocument(stageId))!.scenes[0]!);
+    });
   });
 
   describe('the runner', () => {

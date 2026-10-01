@@ -1,7 +1,8 @@
 /**
  *   GET /api/generation-runs/:id
  *     The run's snapshot, with the `seq` of its last event: follow it with
- *     `GET …/events?after=<seq>`, or poll this snapshot.
+ *     `GET …/events?after=<seq>`, or poll this snapshot. `media` holds the
+ *     state of every image and video the run has reached, by element id.
  *
  *   DELETE /api/generation-runs/:id
  *     Discard a run that has no course yet (its course card is the pending
@@ -23,9 +24,11 @@ import {
   discardGenerationRun,
   isRunId,
   readGenerationRun,
+  readGenerationRunMedia,
   RunCommandConflictError,
   runSnapshot,
 } from '@/lib/server/generation/run/store';
+import { runMediaStates } from '@/lib/server/generation/run/media';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
 
 export const runtime = 'nodejs';
@@ -36,7 +39,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const run = isRunId(id) ? await readGenerationRun(id, ownerId) : null;
     if (!run) return ownerNotFound(responseHeaders);
-    return withOwnerResponseHeaders(apiSuccess({ run: runSnapshot(run) }), responseHeaders);
+    const media = runMediaStates(await readGenerationRunMedia(run.id));
+    return withOwnerResponseHeaders(
+      apiSuccess({ run: { ...runSnapshot(run), media } }),
+      responseHeaders,
+    );
   });
 }
 

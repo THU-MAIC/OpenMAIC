@@ -279,7 +279,8 @@ export function ownerRetiredResponse(headers?: HeadersInit): Response {
 
 /**
  * The response for an owner write that failed because of a claim -- retired
- * (`403 OWNER_RETIRED`) or busy (`503 OWNER_BUSY`) -- or `undefined` for any
+ * (`403 OWNER_RETIRED`) or busy (`503 OWNER_BUSY`) -- or because the course is
+ * still being generated (`409 COURSE_GENERATING`), or `undefined` for any
  * other error. Routes that write under the request's owner map with it.
  */
 export function ownerWriteErrorResponse(
@@ -288,6 +289,14 @@ export function ownerWriteErrorResponse(
 ): Response | undefined {
   if (isOwnerRetiredError(error)) return ownerRetiredResponse(headers);
   if (isOwnerBusyError(error)) return ownerBusyResponse(headers);
+  // A course its generation run is still producing (see
+  // `lib/server/generation/run/store.ts`): read-only until the run completes.
+  if (error instanceof DocumentWriteRefusedError && error.code === 'COURSE_GENERATING') {
+    return Response.json(
+      { error: { code: error.code, message: error.message } },
+      { status: 409, headers },
+    );
+  }
   return undefined;
 }
 
