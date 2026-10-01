@@ -141,7 +141,7 @@ ALTER TABLE owner_material DROP COLUMN IF EXISTS asset_id;
 export const OWNER_MATERIAL_MIGRATIONS: SchemaMigrationSet = {
   store: 'owner-material',
   migrations: [
-    { version: 1, name: 'baseline', up: OWNER_MATERIAL_SCHEMA },
+    { version: 1, name: 'baseline', up: OWNER_MATERIAL_SCHEMA, transaction: false },
     { version: 2, name: 'byte_store_key', up: OWNER_MATERIAL_BYTE_STORE_KEY },
   ],
 };

@@ -1,4 +1,5 @@
 import type { Queryable } from '@openmaic/storage/document/pg';
+import { acquireSessionAdvisoryLock } from '@openmaic/storage/pg-migrations';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 
 /**
@@ -30,14 +31,24 @@ export const SCHEMA_BOOTSTRAP_LOCK_KEY = 71_310_523;
  * application's own (`stage_meta`, owner materials) alike, where one store's
  * migrations depend on another's tables -- and every caller that provisions
  * schema goes through this one helper.
+ *
+ * Session-level advisory locks need a direct or session-pooled connection; a
+ * pooler in transaction mode (PgBouncer `pool_mode = transaction`) is not
+ * supported.
  */
 export async function withSchemaBootstrapLock<T>(
   pool: ConnectableQueryable,
   body: (queryable: Queryable) => Promise<T>,
+  options: { lockTimeoutMs?: number } = {},
 ): Promise<T> {
   const client = await pool.connect();
   try {
-    await client.query('SELECT pg_advisory_lock($1::bigint)', [SCHEMA_BOOTSTRAP_LOCK_KEY]);
+    // Bounded: a holder that never finishes fails this start with an error
+    // naming the lock (SchemaLockTimeoutError) instead of hanging it.
+    await acquireSessionAdvisoryLock(client, SCHEMA_BOOTSTRAP_LOCK_KEY, {
+      name: 'schema bootstrap lock',
+      ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }),
+    });
     try {
       return await body(client);
     } finally {

@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS legacy_classroom_imports (
 
 export const LEGACY_CLASSROOM_IMPORT_MIGRATIONS: SchemaMigrationSet = {
   store: 'legacy-classroom-imports',
-  migrations: [{ version: 1, name: 'baseline', up: SCHEMA }],
+  migrations: [{ version: 1, name: 'baseline', up: SCHEMA, transaction: false }],
 };
 
 export async function ensureLegacyClassroomImportSchema(queryable: Queryable): Promise<void> {

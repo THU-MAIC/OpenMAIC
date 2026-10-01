@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS classroom_generation_jobs (
 
 export const CLASSROOM_GENERATION_JOB_MIGRATIONS: SchemaMigrationSet = {
   store: 'classroom-generation-jobs',
-  migrations: [{ version: 1, name: 'baseline', up: SCHEMA }],
+  migrations: [{ version: 1, name: 'baseline', up: SCHEMA, transaction: false }],
 };
 
 export async function ensureClassroomGenerationJobSchema(queryable: Queryable): Promise<void> {

@@ -44,9 +44,10 @@ export async function register(): Promise<void> {
     warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
   }
 
-  // The schema, brought up in the background; a database this release must
-  // not run against (upgraded by a newer release) stops the process here
-  // rather than on every request (lib/persistence/schema-boot-check.ts).
+  // Every store's recorded schema versions, read in the background: a database
+  // this release must not run against (upgraded by a newer release) stops the
+  // process here rather than failing every request that touches the store
+  // (lib/persistence/schema-boot-check.ts).
   const { startSchemaBootCheck } = await import('@/lib/persistence/schema-boot-check');
   void startSchemaBootCheck(process.env.DATABASE_URL ?? '');
 

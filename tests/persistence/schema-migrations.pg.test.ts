@@ -1,97 +1,45 @@
 /**
  * Versioned schema migrations through the application's bootstrap, on a real
- * PostgreSQL: a database 1.1.x created, one the previous development line
- * created (today's DDL, no version records), a one-time migration across
- * restarts, and the refusal to start on a database a newer release upgraded.
+ * PostgreSQL: upgrades of databases the earlier lines created (frozen DDL
+ * snapshots of v1.1.2, `main` and `integration/provider-config`), the
+ * pre-byte-store owner materials, a rollback to 1.1.x and forward again, a
+ * one-time migration across restarts, and the refusal to start on a database
+ * a newer release upgraded -- for every store, including the lazily
+ * provisioned ones.
  *
- * Every round works in a schema of its own, so the suite shares nothing with
+ * Every case works in a schema of its own, so the suite shares nothing with
  * the package suites on the contract database.
  */
-import {
-  AGENT_SESSION_PG_MIGRATIONS,
-  ensureAgentSessionSchema,
-} from '@openmaic/storage/agent-session/pg';
-import { ASSET_PG_MIGRATIONS } from '@openmaic/storage/asset/pg';
-import { DOCUMENT_PG_MIGRATIONS, splitSqlStatements } from '@openmaic/storage/document/pg';
-import {
-  AGENT_SESSION_MATERIAL_PG_MIGRATIONS,
-  ensureAgentSessionMaterialSchema,
-} from '@openmaic/storage/material/pg';
-import type { SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
-import { RUNTIME_PG_MIGRATIONS } from '@openmaic/storage/runtime/pg';
+import { ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
+import { ensureAgentSessionMaterialSchema } from '@openmaic/storage/material/pg';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
-import { USER_SKILL_PG_MIGRATIONS, ensureUserSkillSchema } from '@openmaic/storage/skill/pg';
+import { ensureUserSkillSchema } from '@openmaic/storage/skill/pg';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { CLASSROOM_GENERATION_JOB_MIGRATIONS } from '@/lib/persistence/classroom-generation-jobs';
-import { LEGACY_CLASSROOM_IMPORT_MIGRATIONS } from '@/lib/persistence/legacy-classroom-imports';
-import { LEGACY_IMPORT_BINDING_MIGRATIONS } from '@/lib/persistence/legacy-import-bindings';
-import { OWNER_MATERIAL_MIGRATIONS } from '@/lib/persistence/owner-materials';
-import { OWNER_MERGE_MIGRATIONS } from '@/lib/persistence/owner-merges';
-import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
-import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
-import { STAGE_META_MIGRATIONS } from '@/lib/persistence/stage-meta';
-import { WORKSPACE_MODEL_CONFIG_MIGRATIONS } from '@/lib/persistence/workspace-model-config';
+const exitOnBootFailure = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/server/boot-failure', () => ({ exitOnBootFailure }));
 
-import { provisionRelease11Storage } from '../../packages/@openmaic/storage/test/schema-release-1-1';
+import { startSchemaBootCheck } from '@/lib/persistence/schema-boot-check';
+import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
+import { APP_SCHEMA_STORES } from '@/lib/persistence/schema-stores';
+import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
+
+import {
+  MAIN_SCHEMA,
+  PRE_BYTE_STORE_OWNER_MATERIAL_SCHEMA,
+  PROVIDER_CONFIG_SCHEMA,
+  RELEASE_1_1_2_SCHEMA,
+  provisionSnapshot,
+} from './_schema-snapshots';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
 const TEST_SCHEMA = 'openmaic_app_schema_migrations_test';
 
-/** Every store the application provisions, in its bootstrap order. */
-const APP_STORES: readonly SchemaMigrationSet[] = [
-  RUNTIME_PG_MIGRATIONS,
-  DOCUMENT_PG_MIGRATIONS,
-  STAGE_META_MIGRATIONS,
-  OWNER_MERGE_MIGRATIONS,
-  LEGACY_IMPORT_BINDING_MIGRATIONS,
-  OWNER_MATERIAL_MIGRATIONS,
-  ASSET_PG_MIGRATIONS,
-  CLASSROOM_GENERATION_JOB_MIGRATIONS,
-  LEGACY_CLASSROOM_IMPORT_MIGRATIONS,
-  WORKSPACE_MODEL_CONFIG_MIGRATIONS,
-  AGENT_SESSION_PG_MIGRATIONS,
-  AGENT_SESSION_MATERIAL_PG_MIGRATIONS,
-  USER_SKILL_PG_MIGRATIONS,
-];
-
-const EVERY_VERSION = APP_STORES.map((set) => ({
+const EVERY_VERSION = APP_SCHEMA_STORES.map((set) => ({
   store: set.store,
   versions: set.migrations.map((migration) => migration.version),
 })).sort((a, b) => a.store.localeCompare(b.store));
-
-/** What 1.1.x added beside the package tables (verbatim from v1.1.2). */
-const RELEASE_11_APP_SCHEMA = `
-CREATE TABLE IF NOT EXISTS stage_meta (
-  stage_id TEXT PRIMARY KEY REFERENCES document_stages(id) ON DELETE CASCADE,
-  owner_id TEXT NOT NULL,
-  is_public BOOLEAN NOT NULL DEFAULT false,
-  deleted_at TIMESTAMPTZ
-);
-ALTER TABLE stage_meta ADD COLUMN IF NOT EXISTS published_at DOUBLE PRECISION;
-ALTER TABLE stage_meta ADD COLUMN IF NOT EXISTS generation_complete BOOLEAN NOT NULL DEFAULT false;
-CREATE INDEX IF NOT EXISTS stage_meta_owner_idx ON stage_meta (owner_id, stage_id);
-CREATE INDEX IF NOT EXISTS stage_meta_public_live_idx
-  ON stage_meta (stage_id) WHERE is_public AND deleted_at IS NULL;
-CREATE TABLE IF NOT EXISTS owner_material (
-  id TEXT PRIMARY KEY,
-  owner_id TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  derived_from TEXT,
-  mime TEXT,
-  bytes DOUBLE PRECISION NOT NULL,
-  original_name TEXT,
-  oss_key TEXT NOT NULL,
-  sha256 TEXT,
-  status TEXT NOT NULL DEFAULT 'ready',
-  extraction JSONB,
-  created_at DOUBLE PRECISION NOT NULL,
-  deleted_at DOUBLE PRECISION
-);
-CREATE INDEX IF NOT EXISTS owner_material_owner_created_idx
-  ON owner_material (owner_id, created_at);
-`;
 
 describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)', () => {
   let admin: Pool;
@@ -107,6 +55,7 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
   });
 
   beforeEach(async () => {
+    exitOnBootFailure.mockReset();
     await admin.query(`DROP SCHEMA IF EXISTS ${TEST_SCHEMA} CASCADE`);
     await admin.query(`CREATE SCHEMA ${TEST_SCHEMA}`);
   });
@@ -163,20 +112,31 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
     return result.rows[0]?.present === true;
   }
 
+  /** A course as a 1.1.x writer records it: owner on the document row only. */
+  async function insertColumnOnlyCourse(pool: Pool, stageId: string, ownerId: string) {
+    await pool.query(
+      `INSERT INTO document_stages (id, name, created_at, updated_at, owner_id, data)
+       VALUES ($1, $1, 1, 1, $2, jsonb_build_object('id', $1::text))`,
+      [stageId, ownerId],
+    );
+  }
+
+  async function stageMeta(): Promise<unknown[]> {
+    return withPool(
+      async (pool) =>
+        (await pool.query('SELECT stage_id, owner_id FROM stage_meta ORDER BY stage_id')).rows,
+    );
+  }
+
   it('a fresh install records every version of every store', async () => {
     await boot();
     expect(await recordedVersions()).toEqual(EVERY_VERSION);
   }, 60_000);
 
-  it('upgrades a database 1.1.x created, adopting its column-only owners', async () => {
+  it('upgrades a database v1.1.2 created, adopting its column-only courses', async () => {
     await withPool(async (pool) => {
-      await provisionRelease11Storage(pool);
-      for (const statement of splitSqlStatements(RELEASE_11_APP_SCHEMA))
-        await pool.query(statement);
-      await pool.query(
-        `INSERT INTO document_stages (id, name, created_at, updated_at, owner_id, data)
-         VALUES ('legacy', 'Legacy', 1, 1, 'owner-a', '{"id":"legacy"}'::jsonb)`,
-      );
+      await provisionSnapshot(pool, RELEASE_1_1_2_SCHEMA);
+      await insertColumnOnlyCourse(pool, 'legacy', 'owner-a');
     });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
@@ -187,24 +147,72 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
     }
 
     expect(await recordedVersions()).toEqual(EVERY_VERSION);
-    await withPool(async (pool) => {
-      const meta = await pool.query('SELECT stage_id, owner_id FROM stage_meta');
-      expect(meta.rows).toEqual([{ stage_id: 'legacy', owner_id: 'owner-a' }]);
-    });
+    expect(await stageMeta()).toEqual([{ stage_id: 'legacy', owner_id: 'owner-a' }]);
   }, 60_000);
 
-  it('upgrades a database the unversioned bootstrap created, and runs its one-time steps once', async () => {
-    // Today's DDL as the bootstrap ran it before versions were recorded: every
-    // SQL migration, with an owner_material table from before the byte store.
+  it.each([
+    ['main', MAIN_SCHEMA],
+    ['integration/provider-config', PROVIDER_CONFIG_SCHEMA],
+  ])(
+    'upgrades a database %s created, keeping its courses',
+    async (_, snapshot) => {
+      await withPool(async (pool) => {
+        await provisionSnapshot(pool, snapshot);
+        // Those lines record ownership in stage_meta only.
+        await pool.query(
+          `INSERT INTO document_stages (id, name, created_at, updated_at, data)
+         VALUES ('course', 'Course', 1, 1, '{"id":"course"}'::jsonb)`,
+        );
+        await pool.query(
+          `INSERT INTO stage_meta (stage_id, owner_id) VALUES ('course', 'owner-a')`,
+        );
+      });
+
+      await boot();
+
+      expect(await recordedVersions()).toEqual(EVERY_VERSION);
+      expect(await stageMeta()).toEqual([{ stage_id: 'course', owner_id: 'owner-a' }]);
+      await withPool(async (pool) => {
+        expect((await pool.query('SELECT id FROM document_stages')).rows).toEqual([
+          { id: 'course' },
+        ]);
+      });
+    },
+    60_000,
+  );
+
+  it('adopts a course a rolled-back 1.1.x instance created, when upgraded again', async () => {
+    await withPool((pool) => provisionSnapshot(pool, RELEASE_1_1_2_SCHEMA));
+    await boot();
+    // Rolled back: 1.1.x writes ownership on the document row, and runs its
+    // own every-start DDL, which leaves the version table alone.
     await withPool(async (pool) => {
-      for (const set of APP_STORES) {
-        for (const migration of set.migrations) {
-          if (typeof migration.up !== 'string') continue;
-          for (const statement of splitSqlStatements(migration.up)) await pool.query(statement);
-        }
-      }
-      await pool.query('ALTER TABLE owner_material DROP COLUMN oss_key');
-      await pool.query(`ALTER TABLE owner_material ADD COLUMN asset_id TEXT NOT NULL DEFAULT 'a'`);
+      await provisionSnapshot(pool, RELEASE_1_1_2_SCHEMA);
+      await insertColumnOnlyCourse(pool, 'during-rollback', 'owner-b');
+    });
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await boot();
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/adopted 1 owned course\(s\)/));
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await stageMeta()).toEqual([{ stage_id: 'during-rollback', owner_id: 'owner-b' }]);
+  }, 60_000);
+
+  it('drops the pre-byte-store asset_id once, and never on a later start', async () => {
+    await withPool(async (pool) => {
+      // `main`'s tables, with an owner_material from before the byte store.
+      await provisionSnapshot(
+        pool,
+        MAIN_SCHEMA.filter(([store]) => store !== 'owner-material'),
+      );
+      await provisionSnapshot(pool, [['owner-material', PRE_BYTE_STORE_OWNER_MATERIAL_SCHEMA]]);
+      await pool.query(
+        `INSERT INTO owner_material (id, owner_id, kind, bytes, asset_id, created_at)
+         VALUES ('mat-1', 'owner-a', 'source', 1, 'asset-1', 1)`,
+      );
     });
 
     await boot();
@@ -212,7 +220,8 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
     expect(await recordedVersions()).toEqual(EVERY_VERSION);
     await withPool(async (pool) => {
       expect(await hasColumn(pool, 'owner_material', 'asset_id')).toBe(false);
-      expect(await hasColumn(pool, 'owner_material', 'oss_key')).toBe(true);
+      const rows = await pool.query('SELECT id, oss_key FROM owner_material');
+      expect(rows.rows).toEqual([{ id: 'mat-1', oss_key: '' }]);
       // A later schema brings the column back for a purpose of its own...
       await pool.query('ALTER TABLE owner_material ADD COLUMN asset_id TEXT');
     });
@@ -241,4 +250,55 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
       knownVersion: 2,
     });
   }, 60_000);
+
+  describe('the startup check', () => {
+    const checkPool = () => schemaPool();
+
+    it('passes a database with nothing recorded yet, and creates nothing', async () => {
+      await startSchemaBootCheck(contractUrl!, checkPool);
+
+      expect(exitOnBootFailure).not.toHaveBeenCalled();
+      const tables = await admin.query(
+        `SELECT table_name FROM information_schema.tables WHERE table_schema = $1`,
+        [TEST_SCHEMA],
+      );
+      expect(tables.rows).toEqual([]);
+    });
+
+    it('passes a database this release provisioned', async () => {
+      await boot();
+      await startSchemaBootCheck(contractUrl!, checkPool);
+      expect(exitOnBootFailure).not.toHaveBeenCalled();
+    }, 60_000);
+
+    it.each(APP_SCHEMA_STORES.map((set) => [set.store, set.migrations.length] as const))(
+      'stops the process when %s records a version newer than this release knows',
+      async (store, known) => {
+        // Only the provider's stores: the lazily provisioned ones need not exist.
+        await withPool(async (pool) => {
+          await pool.query(
+            `CREATE TABLE openmaic_schema_migrations (
+               store TEXT NOT NULL, version INTEGER NOT NULL, name TEXT NOT NULL,
+               checksum TEXT NOT NULL, applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+               PRIMARY KEY (store, version))`,
+          );
+          await pool.query(
+            `INSERT INTO openmaic_schema_migrations (store, version, name, checksum)
+             VALUES ($1, $2, 'from_a_newer_release', 'x')`,
+            [store, known + 1],
+          );
+        });
+
+        await startSchemaBootCheck(contractUrl!, checkPool);
+
+        expect(exitOnBootFailure).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: 'SchemaVersionAheadError',
+            store,
+            recordedVersion: known + 1,
+          }),
+        );
+      },
+    );
+  });
 });

@@ -5,6 +5,7 @@ import type { AssetCollectorSchedule } from '@/lib/persistence/asset-collector-s
 // Schema bootstrap is serialized by a PostgreSQL advisory lock on a dedicated
 // connection; the fakes here have no connections, and the lock itself is
 // exercised against a real server in schema-bootstrap-concurrency.pg.test.ts.
+vi.mock('@/lib/persistence/schema-boot-check', () => ({ startSchemaBootCheck: vi.fn() }));
 vi.mock('@/lib/persistence/schema-bootstrap-lock', () => ({
   SCHEMA_BOOTSTRAP_LOCK_KEY: 0,
   withSchemaBootstrapLock: <T>(pool: unknown, body: (queryable: never) => Promise<T>) =>

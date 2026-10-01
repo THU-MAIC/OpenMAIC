@@ -44,7 +44,9 @@ CREATE TABLE IF NOT EXISTS workspace_model_config (
 
 export const WORKSPACE_MODEL_CONFIG_MIGRATIONS: SchemaMigrationSet = {
   store: 'workspace-model-config',
-  migrations: [{ version: 1, name: 'baseline', up: WORKSPACE_MODEL_CONFIG_SCHEMA }],
+  migrations: [
+    { version: 1, name: 'baseline', up: WORKSPACE_MODEL_CONFIG_SCHEMA, transaction: false },
+  ],
 };
 
 export async function ensureWorkspaceModelConfigSchema(queryable: Queryable): Promise<void> {

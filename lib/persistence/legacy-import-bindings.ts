@@ -44,7 +44,7 @@ CREATE INDEX IF NOT EXISTS legacy_import_bindings_owner_idx
 
 export const LEGACY_IMPORT_BINDING_MIGRATIONS: SchemaMigrationSet = {
   store: 'legacy-import-bindings',
-  migrations: [{ version: 1, name: 'baseline', up: SCHEMA }],
+  migrations: [{ version: 1, name: 'baseline', up: SCHEMA, transaction: false }],
 };
 
 export async function ensureLegacyImportBindingSchema(queryable: Queryable): Promise<void> {

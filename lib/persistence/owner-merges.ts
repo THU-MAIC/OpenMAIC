@@ -53,7 +53,7 @@ CREATE INDEX IF NOT EXISTS owner_merges_to_idx ON owner_merges (to_owner_id);
 
 export const OWNER_MERGE_MIGRATIONS: SchemaMigrationSet = {
   store: 'owner-merges',
-  migrations: [{ version: 1, name: 'baseline', up: OWNER_MERGES_SCHEMA }],
+  migrations: [{ version: 1, name: 'baseline', up: OWNER_MERGES_SCHEMA, transaction: false }],
 };
 
 export async function ensureOwnerMergeSchema(queryable: Queryable): Promise<void> {
