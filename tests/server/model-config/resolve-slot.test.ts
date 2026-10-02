@@ -223,6 +223,36 @@ describe('resolveSlot', () => {
     });
   });
 
+  it('drops a thinking effort the agent inherits, and only for the agent', () => {
+    const inherited = layer(
+      'deployment',
+      'providers:\n  mm:\n    preset: minimax\n    apiKey: k\nslots:\n  llm:\n    model: mm:MiniMax-M3\n    thinking: { mode: enabled, effort: high, budgetTokens: 2048 }\n',
+    );
+    expect(resolveSlot('agent', [inherited])).toMatchObject({
+      resolvedAt: 'llm',
+      thinking: { mode: 'enabled', budgetTokens: 2048 },
+    });
+    expect(resolveSlot('agent', [inherited])).not.toHaveProperty('thinking.effort');
+    // Other slots keep it, and so does the agent's title, which calls no tools.
+    expect(resolveSlot('classroom', [inherited])).toMatchObject({
+      thinking: { mode: 'enabled', effort: 'high', budgetTokens: 2048 },
+    });
+    expect(resolveSlot('agent.title', [inherited])).toMatchObject({
+      thinking: { effort: 'high' },
+    });
+  });
+
+  it('leaves the agent no thinking settings when the inherited ones were only an effort', () => {
+    const inherited: ModelConfigLayer = {
+      source: 'workspace',
+      config: {
+        providers: { mm: { preset: 'minimax', apiKey: 'k' } },
+        slots: { llm: { model: 'mm:MiniMax-M3', thinking: { effort: 'high' } } },
+      },
+    };
+    expect(resolveSlot('agent', [inherited])).not.toHaveProperty('thinking');
+  });
+
   it('fails loudly on a reference no layer can resolve', () => {
     const broken: ModelConfigLayer = {
       source: 'workspace',

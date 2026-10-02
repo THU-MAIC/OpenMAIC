@@ -177,6 +177,44 @@ describe('/api/model-config', () => {
     expect((await locked.json()).error.code).toBe('SLOT_LOCKED');
   });
 
+  it('refuses a thinking effort on the agent slot, and drops the one it inherits', async () => {
+    const refused = await put('alice', null, {
+      kind: 'slots',
+      set: { agent: { model: 'operator:deepseek-v4-flash', thinking: { effort: 'high' } } },
+    });
+    expect(refused.status).toBe(400);
+    const error = (await refused.json()).error;
+    expect(error.code).toBe('INVALID_ASSIGNMENT');
+    expect(error.message).toContain('the agent slot cannot set a thinking effort');
+    expect((await get('alice')).status).toBe(200);
+    expect((await (await get('alice')).json()).revision).toBeNull();
+
+    // On/off without an effort is fine on the agent itself.
+    const toggled = await put('alice', null, {
+      kind: 'slots',
+      set: { agent: { model: 'operator:deepseek-v4-flash', thinking: { mode: 'disabled' } } },
+    });
+    expect(toggled.status).toBe(200);
+
+    // A level picked for the default model is saved, and the agent that
+    // follows it runs without the effort.
+    const saved = await put('alice', 1, {
+      kind: 'slots',
+      set: {
+        llm: { model: 'operator:deepseek-v4-flash', thinking: { mode: 'enabled', effort: 'max' } },
+      },
+      clear: ['agent'],
+    });
+    expect(saved.status).toBe(200);
+    const { resolveAgentDriverModel } =
+      await import('@/lib/server/agent-runtime/agent-driver-model');
+    const driver = await resolveAgentDriverModel('user:alice');
+    expect(driver.connection).toMatchObject({
+      modelId: 'deepseek-v4-flash',
+      thinkingConfig: { mode: 'enabled' },
+    });
+  });
+
   it('answers a refused credential with 401 and a malformed body with 400', async () => {
     expect((await get('bad')).status).toBe(401);
     const malformed = await put('alice', 'x' as never, { kind: 'slots' });

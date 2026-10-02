@@ -1311,7 +1311,8 @@ While the flag is off, the `/api/agent/sessions*` and `/api/agent/owner-events`
 routes answer `404`; the course library and folder routes do not depend on the
 flag (see [Server-backed persistence](#server-backed-persistence-postgresql)). The `agent` slot's
 `api` is `openai-completions` (the default) or `openai-responses`, and it must not set
-`thinking.effort`. A deployment still configured only through `DEFAULT_MODEL` has the
+`thinking.effort` (the configuration is refused at startup or when saved); it may set
+`thinking.mode`. An effort the agent inherits from `llm` is dropped for the agent. A deployment still configured only through `DEFAULT_MODEL` has the
 agent turned off until the `agent` slot is assigned.
 
 Runner cadence (scan interval, heartbeat, lease TTL, concurrency, attempts) and

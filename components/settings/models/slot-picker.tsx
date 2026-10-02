@@ -32,7 +32,8 @@ import {
   splitRef,
 } from '@/lib/model-settings/edit';
 import { cn } from '@/lib/utils';
-import type { SlotCapability } from '@/lib/config/model-slots';
+import { slotRefusesThinkingEffort, type SlotCapability } from '@/lib/config/model-slots';
+import { thinkingCapabilityWithoutEffort } from '@/lib/ai/thinking-config';
 import {
   assignService,
   keylessServices,
@@ -260,12 +261,17 @@ export function SlotPicker({
     void run(ref, modelChange(slot, ref));
   };
   // The thinking settings of the model the slot names itself, when the model has any.
+  // A slot whose tool calls cannot carry a reasoning effort (the agent) is not
+  // offered effort levels: an effort model it can turn off becomes on/off.
   const thinkingCapability = (() => {
     if (current.kind !== 'model') return undefined;
     const { providerId, modelId } = splitRef(current.model);
-    return view.providers
+    const capability = view.providers
       .find((provider) => provider.id === providerId)
       ?.capabilities.chat?.models.find((model) => model.id === modelId)?.capabilities?.thinking;
+    return slotRefusesThinkingEffort(slot.slot)
+      ? thinkingCapabilityWithoutEffort(capability)
+      : capability;
   })();
   // Services the workspace may add without a key: listed for media slots, added when picked.
   const keyless =

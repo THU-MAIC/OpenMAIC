@@ -36,6 +36,14 @@ export interface SlotDefinition {
   requires?: readonly SlotRequirement[];
   /** Configurable in `openmaic.yml` only; the settings UI does not show it. */
   configOnly?: boolean;
+  /**
+   * The slot's calls carry function tools, which a reasoning effort cannot
+   * accompany on every transport. An effort set on the slot itself is refused
+   * when the configuration is saved or loaded; one inherited from an ancestor
+   * is dropped (the rest of the thinking settings still apply). Not passed
+   * down to child slots.
+   */
+  noThinkingEffort?: boolean;
 }
 
 export const MODEL_SLOTS = [
@@ -50,7 +58,13 @@ export const MODEL_SLOTS = [
   { id: 'course.content.pbl', capability: 'chat', parent: 'course.content' },
   { id: 'course.actions', capability: 'chat', parent: 'llm' },
   { id: 'classroom', capability: 'chat', parent: 'llm' },
-  { id: 'agent', capability: 'chat', parent: 'llm', requires: ['toolCalling'] },
+  {
+    id: 'agent',
+    capability: 'chat',
+    parent: 'llm',
+    requires: ['toolCalling'],
+    noThinkingEffort: true,
+  },
   { id: 'agent.title', capability: 'chat', parent: 'agent', configOnly: true },
   { id: 'tts', capability: 'tts', parent: null },
   { id: 'asr', capability: 'asr', parent: null },
@@ -98,6 +112,11 @@ export function getSlot(id: SlotId): SlotDefinition {
   const slot = SLOT_BY_ID.get(id);
   if (!slot) throw new Error(`Unknown capability slot "${id}"`);
   return slot;
+}
+
+/** Whether a slot may not carry a thinking effort (see {@link SlotDefinition.noThinkingEffort}). */
+export function slotRefusesThinkingEffort(id: SlotId): boolean {
+  return getSlot(id).noThinkingEffort === true;
 }
 
 export function isSlotId(value: string): value is SlotId {

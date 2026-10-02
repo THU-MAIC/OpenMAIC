@@ -425,6 +425,100 @@ describe('the card picker', () => {
     expect(bases).toEqual([4]);
   });
 
+  describe('thinking on the agent card', () => {
+    const effortProvider = (): ProviderView => ({
+      ...workspaceProvider('acme'),
+      capabilities: {
+        chat: {
+          models: [
+            {
+              id: 'acme-large',
+              name: 'Acme Large',
+              capabilities: {
+                thinking: {
+                  control: 'effort',
+                  requestAdapter: 'deepseek',
+                  effortValues: ['none', 'high', 'max'],
+                  defaultEffort: 'high',
+                  defaultMode: 'enabled',
+                  toggleable: true,
+                },
+              },
+            },
+            {
+              id: 'acme-always',
+              name: 'Acme Always',
+              capabilities: {
+                thinking: {
+                  control: 'effort',
+                  requestAdapter: 'openai',
+                  effortValues: ['low', 'medium', 'high'],
+                  defaultEffort: 'medium',
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+    const pickerFor = (slotId: string, assignment: SlotView['assignment']) => {
+      const view = withSlots(makeView({ providers: [effortProvider()] }), {
+        [slotId]: { assignment },
+      });
+      const recorded = recordingApply(view);
+      const slot = view.slots.find((entry) => entry.slot === slotId)!;
+      mount(
+        createElement(SlotPicker, { view, slot, apply: recorded.apply, onDone: () => {}, t: T }),
+      );
+      return recorded;
+    };
+    const thinkingOptions = () =>
+      [
+        ...byLabel('settings.modelSettings.picker.thinking').querySelectorAll<HTMLOptionElement>(
+          'option',
+        ),
+      ]
+        .map((option) => option.value)
+        .filter(Boolean);
+
+    it('offers effort levels on another stage', () => {
+      pickerFor('classroom', 'acme:acme-large');
+      expect(thinkingOptions()).toEqual(['none', 'high', 'max']);
+    });
+
+    it('offers the agent on/off only, and saves no effort', async () => {
+      const { changes } = pickerFor('agent', {
+        model: 'acme:acme-large',
+        // Saved before the agent refused one: the control shows it as on.
+        thinking: { mode: 'enabled', effort: 'max' },
+      });
+      expect(thinkingOptions()).toEqual(['disabled', 'enabled']);
+      const select = byLabel('settings.modelSettings.picker.thinking').querySelector('select')!;
+      expect(select.value).toBe('enabled');
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(
+          select,
+          'disabled',
+        );
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await flush();
+      expect(changes).toEqual([
+        {
+          kind: 'slots',
+          set: { agent: { model: 'acme:acme-large', thinking: { mode: 'disabled' } } },
+        },
+      ]);
+    });
+
+    it('offers the agent nothing for a model whose only control is an effort', () => {
+      pickerFor('agent', 'acme:acme-always');
+      expect(
+        document.body.querySelector('[aria-label="settings.modelSettings.picker.thinking"]'),
+      ).toBeNull();
+    });
+  });
+
   it('adds and assigns a service that needs no key, from an empty workspace', async () => {
     const browserTts: PresetView = {
       id: 'browser-native-tts',

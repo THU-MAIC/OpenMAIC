@@ -11,7 +11,7 @@ import type { ResolvedModel } from '@/lib/server/resolve-model';
 export const AGENT_DRIVER_STAGE = 'maic-agent-driver' as const;
 export const UNKNOWN_MODEL_RESERVED_OUTPUT_TOKENS = 8_192;
 // The agent slot owns the model choice. This adapter only enforces its transport
-// contract: no thinking effort and an OpenAI-compatible pi api/dialect. The actual HTTP transport is selected by
+// contract: no thinking effort of its own and an OpenAI-compatible pi api/dialect. The actual HTTP transport is selected by
 // lib/ai/providers.ts.
 const OPENAI_PI_APIS = new Set<Api>(['openai-completions', 'openai-responses']);
 const DEFAULT_DRIVER_API: Api = 'openai-completions';
@@ -74,10 +74,14 @@ export async function resolveAgentDriverModel(workspaceId: string | null = null)
       `The agent model ${resolution.modelId} does not support tool calling; choose another model for the agent.`,
     );
   }
+  // An effort inherited from an ancestor was already dropped by the
+  // resolution, and saving refuses one on the slot itself; this backstop only
+  // catches a configuration stored before that check existed.
   if (resolution.thinking?.effort !== undefined) {
     throw new Error(
       `The agent slot must not set thinking.effort because ${resolution.modelId} ` +
-        `cannot combine reasoning_effort with function tools on this transport.`,
+        `cannot combine reasoning_effort with function tools on this transport. ` +
+        `Remove the thinking effort from the agent slot.`,
     );
   }
   const connection = await slotLanguageModel(resolution);

@@ -118,6 +118,33 @@ describe('agent driver model', () => {
     await expect(resolve()).rejects.toThrow('must not set thinking.effort');
   });
 
+  it('drops the effort the agent inherits from the default model and keeps the rest', async () => {
+    // The home toolbar writes a thinking level on llm; the agent follows llm.
+    const resolve = await configure(undefined, {
+      workspace: {
+        source: 'workspace',
+        config: {
+          slots: {
+            llm: { model: 'openai:gpt-5.6-luna', thinking: { mode: 'enabled', effort: 'high' } },
+          },
+        },
+      },
+    });
+    const resolved = await resolve('user:alice');
+    expect(resolved.piModel).toMatchObject({ id: 'gpt-5.6-luna', provider: 'openai' });
+    expect(resolved.connection.thinkingConfig).toEqual({ mode: 'enabled' });
+  });
+
+  it('keeps an inherited "no thinking" as thinking off rather than the model default', async () => {
+    const resolve = await configure(undefined, {
+      workspace: {
+        source: 'workspace',
+        config: { slots: { llm: { model: 'openai:gpt-5.6-luna', thinking: { effort: 'none' } } } },
+      },
+    });
+    expect((await resolve('user:alice')).connection.thinkingConfig).toEqual({ mode: 'disabled' });
+  });
+
   it('refuses a model the catalogue says cannot call tools', async () => {
     const resolve = await configure('ac:qwen/qwen3.5-flash');
     await expect(resolve()).rejects.toThrow('does not support tool calling');

@@ -239,6 +239,34 @@ describe('applyModelSettingsChange', () => {
     });
   });
 
+  it('refuses a thinking effort on the agent slot, whatever else the change sets', async () => {
+    await expect(
+      applyModelSettingsChange(null, {
+        kind: 'slots',
+        set: {
+          'course.outline': 'operator:deepseek-v4-flash',
+          agent: {
+            model: 'operator:deepseek-v4-flash',
+            thinking: { mode: 'enabled', effort: 'high' },
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_ASSIGNMENT',
+      message: expect.stringContaining('slots.agent.thinking.effort'),
+    });
+    // The same effort on another slot, or no effort on the agent, is saved.
+    expect(
+      await applyModelSettingsChange(null, {
+        kind: 'slots',
+        set: {
+          classroom: { model: 'operator:deepseek-v4-flash', thinking: { effort: 'high' } },
+          agent: { model: 'operator:deepseek-v4-flash', thinking: { mode: 'enabled' } },
+        },
+      }),
+    ).toMatchObject({ slots: { agent: { thinking: { mode: 'enabled' } } } });
+  });
+
   it('refuses an assignment that does not resolve', async () => {
     await expect(
       applyModelSettingsChange(null, { kind: 'slots', set: { tts: 'operator' } }),

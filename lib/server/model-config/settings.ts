@@ -32,7 +32,12 @@ import {
 import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 
 import { isForceDisabled, isLocalEndpoint } from './media';
-import { checkModelConfigShape, type ModelConfigFile, type SlotAssignment } from './openmaic-yml';
+import {
+  checkModelConfigShape,
+  thinkingEffortIssue,
+  type ModelConfigFile,
+  type SlotAssignment,
+} from './openmaic-yml';
 import {
   resolveSlot,
   SlotResolutionError,
@@ -532,6 +537,10 @@ export async function applyModelSettingsChange(
       if (Object.hasOwn(deploymentSlots, slot)) {
         throw new ModelSettingsError('SLOT_LOCKED', `${slot} is set by the deployment`);
       }
+    }
+    for (const [slot, assignment] of Object.entries(change.set ?? {})) {
+      const issue = thinkingEffortIssue(slot as SlotId, assignment as SlotAssignment);
+      if (issue) throw new ModelSettingsError('INVALID_ASSIGNMENT', issue);
     }
     for (const slot of change.clear ?? []) delete slots[slot];
     for (const [slot, assignment] of Object.entries(change.set ?? {})) {

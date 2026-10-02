@@ -127,6 +127,30 @@ describe('parseModelConfig', () => {
     );
   });
 
+  it('refuses a thinking effort on the agent slot but not its other thinking settings', () => {
+    const base = 'providers:\n  m:\n    preset: minimax\n    apiKey: k\nslots:\n';
+    expect(
+      issuesOf(`${base}  agent:\n    model: m:MiniMax-M3\n    thinking: { effort: high }\n`),
+    ).toEqual([
+      'slots.agent.thinking.effort: the agent slot cannot set a thinking effort, because its ' +
+        'tool calls cannot be combined with a reasoning effort; set thinking.mode instead',
+    ]);
+    expect(() =>
+      parseModelConfig(
+        `${base}  agent:\n    model: m:MiniMax-M3\n    thinking: { mode: enabled }\n`,
+        {
+          env,
+        },
+      ),
+    ).not.toThrow();
+    // An effort on llm stays valid: the agent drops it when it inherits.
+    expect(() =>
+      parseModelConfig(`${base}  llm:\n    model: m:MiniMax-M3\n    thinking: { effort: high }\n`, {
+        env,
+      }),
+    ).not.toThrow();
+  });
+
   it('validates thinking options strictly', () => {
     const text = EXAMPLE.replace('thinking: { enabled: false }', 'thinking: { mode: sometimes }');
     expect(issuesOf(text)).toHaveLength(1);

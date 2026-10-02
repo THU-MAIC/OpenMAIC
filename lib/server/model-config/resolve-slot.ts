@@ -13,9 +13,11 @@
  */
 import { PROVIDERS } from '@/lib/ai/providers';
 import { findModelById } from '@/lib/ai/model-aliases';
+import { withoutThinkingEffort } from '@/lib/ai/thinking-config';
 import {
   getSlot,
   slotLineage,
+  slotRefusesThinkingEffort,
   type SlotCapability,
   type SlotId,
   type SlotRequirement,
@@ -275,12 +277,17 @@ export function resolveSlot(
       fallback && requires.length
         ? requires.map((requirement) => checkRequirement(requirement, capability, fallback))
         : undefined;
+    // A slot that may not carry a thinking effort drops one it inherits; one
+    // set on the slot itself is refused when the configuration is saved.
+    const own = 'thinking' in spec ? (spec.thinking as ThinkingConfig | undefined) : undefined;
+    const thinking =
+      node !== slot && slotRefusesThinkingEffort(slot) ? withoutThinkingEffort(own) : own;
     return {
       ...base,
       ...target,
       status: 'assigned',
       capability,
-      ...('thinking' in spec && spec.thinking ? { thinking: spec.thinking as ThinkingConfig } : {}),
+      ...(thinking ? { thinking } : {}),
       ...('api' in spec && spec.api ? { api: spec.api } : {}),
       ...('contextWindow' in spec && spec.contextWindow
         ? { contextWindow: spec.contextWindow }

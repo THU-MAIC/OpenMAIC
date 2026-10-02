@@ -15,7 +15,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { z } from 'zod';
-import { getSlot, isSlotId, type SlotId } from '@/lib/config/model-slots';
+import {
+  getSlot,
+  isSlotId,
+  slotRefusesThinkingEffort,
+  type SlotId,
+} from '@/lib/config/model-slots';
 import { getProviderPreset } from '@/lib/config/provider-presets';
 import { VALID_EFFORTS, VALID_LEVELS, VALID_MODES } from '@/lib/server/model-routes';
 
@@ -232,6 +237,23 @@ export function parseModelRef(ref: string): { providerId: string; modelId?: stri
 }
 
 /**
+ * The problem with an assignment that sets a thinking effort on a slot that
+ * may not carry one (the agent: its tool calls cannot be combined with a
+ * reasoning effort on every transport), else undefined. Checked for
+ * openmaic.yml at load and for a workspace change when it is saved.
+ */
+export function thinkingEffortIssue(slot: SlotId, assignment: SlotAssignment): string | undefined {
+  if (!assignment || typeof assignment === 'string') return undefined;
+  if (assignment.thinking?.effort === undefined || !slotRefusesThinkingEffort(slot)) {
+    return undefined;
+  }
+  return (
+    `slots.${slot}.thinking.effort: the ${slot} slot cannot set a thinking effort, because its ` +
+    'tool calls cannot be combined with a reasoning effort; set thinking.mode instead'
+  );
+}
+
+/**
  * Checks that need the whole file: presets and provider references. They run
  * only on a file that passed the schema, so they never see a half-valid value.
  * Values that came from `${VAR}` are never printed.
@@ -299,6 +321,8 @@ function crossCheck(
     ) {
       issues.push(`${at}: api and contextWindow only apply to the agent slot`);
     }
+    const effortIssue = thinkingEffortIssue(slot, assignment);
+    if (effortIssue) issues.push(effortIssue);
   }
 }
 

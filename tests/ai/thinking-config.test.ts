@@ -7,6 +7,8 @@ import {
   getThinkingDisplayValue,
   normalizeThinkingConfig,
   supportsConfigurableThinking,
+  thinkingCapabilityWithoutEffort,
+  withoutThinkingEffort,
 } from '@/lib/ai/thinking-config';
 import type { ProviderId } from '@/lib/types/provider';
 
@@ -393,5 +395,55 @@ describe('thinking config normalization', () => {
     });
     expect(getThinkingDisplayValue(thinking, undefined)).toBe('auto');
     expect(getThinkingDisplayValue(thinking, { mode: 'enabled', budgetTokens: 8192 })).toBe('8192');
+  });
+});
+
+describe('withoutThinkingEffort', () => {
+  it('takes the effort out and keeps the rest', () => {
+    expect(withoutThinkingEffort({ mode: 'enabled', effort: 'high', budgetTokens: 1024 })).toEqual({
+      mode: 'enabled',
+      budgetTokens: 1024,
+    });
+    expect(withoutThinkingEffort({ effort: 'high' })).toBeUndefined();
+    expect(withoutThinkingEffort(undefined)).toBeUndefined();
+  });
+
+  it('keeps an effort of none as thinking off unless the mode already says', () => {
+    expect(withoutThinkingEffort({ effort: 'none' })).toEqual({ mode: 'disabled' });
+    expect(withoutThinkingEffort({ effort: 'none', enabled: true })).toEqual({ enabled: true });
+  });
+});
+
+describe('thinkingCapabilityWithoutEffort', () => {
+  it('turns an effort control that can be switched off into on/off', () => {
+    expect(
+      thinkingCapabilityWithoutEffort({
+        control: 'effort',
+        requestAdapter: 'deepseek',
+        effortValues: ['none', 'high', 'max'],
+        defaultEffort: 'high',
+        defaultMode: 'enabled',
+        toggleable: true,
+      }),
+    ).toEqual({
+      control: 'toggle',
+      requestAdapter: 'deepseek',
+      defaultMode: 'enabled',
+      toggleable: true,
+    });
+  });
+
+  it('leaves nothing for an effort control that cannot be switched off, and other controls alone', () => {
+    expect(
+      thinkingCapabilityWithoutEffort({
+        control: 'effort',
+        requestAdapter: 'openai',
+        effortValues: ['low', 'high'],
+        defaultEffort: 'low',
+      }),
+    ).toBeUndefined();
+    const toggle = { control: 'toggle', requestAdapter: 'kimi' } as const;
+    expect(thinkingCapabilityWithoutEffort(toggle)).toBe(toggle);
+    expect(thinkingCapabilityWithoutEffort(undefined)).toBeUndefined();
   });
 });
