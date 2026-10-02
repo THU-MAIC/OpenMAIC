@@ -2,7 +2,11 @@
  *   GET /api/generation-runs/:id
  *     The run's snapshot, with the `seq` of its last event: follow it with
  *     `GET …/events?after=<seq>`, or poll this snapshot. `media` holds the
- *     state of every image and video the run has reached, by element id.
+ *     state of every image and video the run has reached, by element id. A
+ *     failure (the paused run's `error`, a failed or skipped media item)
+ *     carries `failureSeq`, the seq of the event that reported it: its
+ *     identity, which a Retry command's id is derived from. `materialKinds`
+ *     and `materialTruncated` repeat what the material analysis reported.
  *
  *   DELETE /api/generation-runs/:id
  *     Discard a run that has no course yet (its course card is the pending
@@ -39,8 +43,31 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     // The run and its media in one read, so the two agree.
     const read = isRunId(id) ? await readGenerationRunWithMedia(id, ownerId) : null;
     if (!read) return ownerNotFound(responseHeaders);
+    const { details } = read;
+    const snapshot = runSnapshot(read.run);
+    const media = Object.fromEntries(
+      Object.entries(runMediaStates(read.media)).map(([elementId, state]) => {
+        const failureSeq = details.mediaFailureSeqs[elementId];
+        return [
+          elementId,
+          (state.status === 'failed' || state.status === 'disabled') && failureSeq !== undefined
+            ? { ...state, failureSeq }
+            : state,
+        ];
+      }),
+    );
     return withOwnerResponseHeaders(
-      apiSuccess({ run: { ...runSnapshot(read.run), media: runMediaStates(read.media) } }),
+      apiSuccess({
+        run: {
+          ...snapshot,
+          ...(snapshot.error && details.failureSeq !== null
+            ? { error: { ...snapshot.error, failureSeq: details.failureSeq } }
+            : {}),
+          media,
+          ...(details.materialKinds ? { materialKinds: details.materialKinds } : {}),
+          ...(details.materialTruncated ? { materialTruncated: details.materialTruncated } : {}),
+        },
+      }),
       responseHeaders,
     );
   });

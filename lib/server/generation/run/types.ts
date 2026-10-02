@@ -138,6 +138,8 @@ export interface GenerationRunFailure {
   errorCode?: string;
   /** The provider's HTTP status, for a provider's refusal. */
   statusCode?: number;
+  /** In a run's own snapshot: the seq of the `step_failed` event that reported it. */
+  failureSeq?: number;
   /** Where `retry` resumes a run that stopped without a step. */
   resumeState?: ExecutableRunState;
 }
@@ -207,6 +209,8 @@ export interface GenerationRunMediaEventData {
   errorCode?: string;
   /** Whether Retry may be offered for a failure. */
   retryable?: boolean;
+  /** In a snapshot, for a failed or skipped item: the seq of the event that reported it. */
+  failureSeq?: number;
 }
 
 /** A media element's state in a run snapshot. */

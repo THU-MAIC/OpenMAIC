@@ -576,16 +576,55 @@ export async function createGenerationRun(
  * The run and its media checkpoints, for its owner, read in one statement
  * (one snapshot); null for an unknown run and for another owner's alike.
  */
+/** What a run's own snapshot adds from its event log (see `readGenerationRunWithMedia`). */
+export interface RunLogDetails {
+  /** The seq of the failure a paused run stopped at: the identity of that failure. */
+  failureSeq: number | null;
+  /** By element id, the seq of the media item's latest failure (or skip). */
+  mediaFailureSeqs: Record<string, number>;
+  /** What `material_kinds` said, when the run analyzed materials. */
+  materialKinds: Array<'document' | 'media'> | null;
+  /** What `material_truncated` said, when the materials were cut. */
+  materialTruncated: Record<string, unknown> | null;
+}
+
 export async function readGenerationRunWithMedia(
   runId: string,
   ownerId: string,
-): Promise<{ run: StoredRun; media: Map<string, GenerationRunMediaCheckpoint> } | null> {
+): Promise<{
+  run: StoredRun;
+  media: Map<string, GenerationRunMediaCheckpoint>;
+  details: RunLogDetails;
+} | null> {
   const { pool } = await provider();
-  const result = await pool.query<RunRow & { media: Record<string, GenerationRunMediaCheckpoint> }>(
+  const result = await pool.query<
+    RunRow & {
+      media: Record<string, GenerationRunMediaCheckpoint>;
+      failure_seq: string | null;
+      media_failure_seqs: Record<string, string | number>;
+      material_kinds: { kinds?: Array<'document' | 'media'> } | null;
+      material_truncated: Record<string, unknown> | null;
+    }
+  >(
     `SELECT ${RUN_COLUMNS},
             (SELECT COALESCE(jsonb_object_agg(s.step_id, s.output), '{}'::jsonb)
                FROM generation_run_steps s
-              WHERE s.run_id = r.id AND s.step_id LIKE '${MEDIA_STEP_PREFIX}%') AS media
+              WHERE s.run_id = r.id AND s.step_id LIKE '${MEDIA_STEP_PREFIX}%') AS media,
+            (SELECT max(e.seq) FROM generation_run_events e
+              WHERE e.run_id = r.id AND e.type = 'step_failed'
+                AND NOT (e.data ? 'continuing')) AS failure_seq,
+            (SELECT COALESCE(jsonb_object_agg(f.element_id, f.seq), '{}'::jsonb)
+               FROM (SELECT e.data->>'elementId' AS element_id, max(e.seq) AS seq
+                       FROM generation_run_events e
+                      WHERE e.run_id = r.id AND e.type = 'media'
+                        AND e.data->>'status' IN ('failed', 'disabled')
+                      GROUP BY 1) f) AS media_failure_seqs,
+            (SELECT e.data FROM generation_run_events e
+              WHERE e.run_id = r.id AND e.type = 'material_kinds'
+              ORDER BY e.seq DESC LIMIT 1) AS material_kinds,
+            (SELECT e.data FROM generation_run_events e
+              WHERE e.run_id = r.id AND e.type = 'material_truncated'
+              ORDER BY e.seq DESC LIMIT 1) AS material_truncated
        FROM generation_runs r WHERE id = $1 AND ${OWNED_BY('$2')}`,
     [runId, ownerId],
   );
@@ -599,6 +638,14 @@ export async function readGenerationRunWithMedia(
         output,
       ]),
     ),
+    details: {
+      failureSeq: row.failure_seq === null ? null : Number(row.failure_seq),
+      mediaFailureSeqs: Object.fromEntries(
+        Object.entries(row.media_failure_seqs).map(([id, seq]) => [id, Number(seq)]),
+      ),
+      materialKinds: row.material_kinds?.kinds ?? null,
+      materialTruncated: row.material_truncated,
+    },
   };
 }
 

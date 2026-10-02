@@ -11,7 +11,10 @@
  *
  *   GET /api/generation-runs?active=1
  *     The owner's active runs (every state but completed and ended), for
- *     course cards.
+ *     course cards, and the owner's `limits` (`maxActive` runs preparing,
+ *     outlining or generating; `maxWaiting` runs waiting for confirmation),
+ *     so a client can tell before uploading materials that a start would be
+ *     refused.
  */
 import type { NextRequest } from 'next/server';
 
@@ -22,6 +25,7 @@ import {
   parseRunInput,
   readJsonBody,
 } from '@/lib/server/generation/run/input';
+import { generationRunConfig } from '@/lib/server/generation/run/config';
 import { startGenerationRun, startRefusal } from '@/lib/server/generation/run/start';
 import { listActiveGenerationRuns, runSnapshot } from '@/lib/server/generation/run/store';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
@@ -70,6 +74,16 @@ export async function GET(req: NextRequest) {
       );
     }
     const runs = await listActiveGenerationRuns(ownerId);
-    return withOwnerResponseHeaders(apiSuccess({ runs: runs.map(runSnapshot) }), responseHeaders);
+    const config = generationRunConfig();
+    return withOwnerResponseHeaders(
+      apiSuccess({
+        runs: runs.map(runSnapshot),
+        limits: {
+          maxActive: config.maxActiveRunsPerOwner,
+          maxWaiting: config.maxWaitingRunsPerOwner,
+        },
+      }),
+      responseHeaders,
+    );
   });
 }
