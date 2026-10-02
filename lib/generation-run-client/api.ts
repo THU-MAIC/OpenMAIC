@@ -83,9 +83,13 @@ export async function startGenerationRun(input: StartRunInput): Promise<RunSnaps
 }
 
 /** The run's snapshot, or null when the owner has no such run. */
-export async function fetchGenerationRun(runId: string): Promise<RunSnapshot | null> {
+export async function fetchGenerationRun(
+  runId: string,
+  signal?: AbortSignal,
+): Promise<RunSnapshot | null> {
   const response = await fetch(`/api/generation-runs/${encodeURIComponent(runId)}`, {
     cache: 'no-store',
+    ...(signal ? { signal } : {}),
   });
   if (response.status === 404) return null;
   if (!response.ok) throw await failure(response, 'generation.runLoadFailed');

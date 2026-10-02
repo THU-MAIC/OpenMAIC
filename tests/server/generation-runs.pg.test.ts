@@ -664,6 +664,16 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     await discardGenerationRun(waiting.id, OWNER);
     expect(await deletedAt(waitingMaterial)).not.toBeNull();
 
+    // A material another run still works from is kept until that run is over.
+    const shared = await material(OWNER);
+    const other = await start(runInput({ materialIds: [shared] }));
+    expect(await drive(other.id, services)).toBe('waiting');
+    const sharing = await start(
+      runInput({ outlineReview: 'auto', materialIds: [shared], releaseMaterials: true }),
+    );
+    expect(await drive(sharing.id, services)).toBe('completed');
+    expect(await deletedAt(shared)).toBeNull();
+
     // A caller that reuses its material ids does not ask for it: kept.
     const reused = await material(OWNER);
     const headless = await start(runInput({ outlineReview: 'auto', materialIds: [reused] }));

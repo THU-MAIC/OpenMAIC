@@ -155,9 +155,17 @@ export async function startClassicRun(input: {
       outlineReview: 'wait',
     });
   } catch (error) {
-    await releaseUploads(materialIds);
+    // Only a definitive refusal says no run holds them. A lost answer (the
+    // network, a 5xx) may hide a run that was created: it keeps them, and
+    // releases them when it is over.
+    if (startDefinitelyRefused(error)) await releaseUploads(materialIds);
     throw error;
   }
+}
+
+/** A start the server answered with a refusal (a 4xx): no run exists for it. */
+export function startDefinitelyRefused(error: unknown): boolean {
+  return error instanceof RunApiError && error.status >= 400 && error.status < 500;
 }
 
 /** Delete materials uploaded for a start that did not happen (best effort). */

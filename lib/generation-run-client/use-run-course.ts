@@ -28,15 +28,11 @@ import { applyRunMedia, registerRunMediaRetry } from './run-media';
 import { courseFenced, mergeServerScenes, RunCourseSceneSync } from './run-course';
 import { isFinishedRunState, type RunView } from './types';
 import { useGenerationRun } from './use-generation-run';
+import { runIdOfCourse } from './run-id';
 
 const log = createLogger('RunCourse');
 
-const RUN_ID = /^run-[A-Za-z0-9_-]{16}$/;
-
-/** The run producing a course, from its document's producer fields. */
-export function runIdOfCourse(producer: string | null, producerRef: string | null): string | null {
-  return producer === 'server-job' && producerRef && RUN_ID.test(producerRef) ? producerRef : null;
-}
+export { runIdOfCourse } from './run-id';
 
 /** The scene index a step id names. */
 function sceneIndexOfStep(step: string | null | undefined): number | null {

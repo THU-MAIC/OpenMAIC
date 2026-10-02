@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RunEventSource } from '@/lib/generation-run-client/follower';
 import { OwnerRunsWatcher } from '@/lib/generation-run-client/owner-runs';
-import { wouldExceedRunLimits } from '@/lib/generation-run-client/start';
+import { startDefinitelyRefused, wouldExceedRunLimits } from '@/lib/generation-run-client/start';
+import { RunApiError } from '@/lib/generation-run-client/api';
 import type { RunSnapshot } from '@/lib/generation-run-client/types';
 
 import { snapshot } from './fixtures';
@@ -151,5 +152,15 @@ describe('the owner run list', () => {
     expect(
       wouldExceedRunLimits([snapshot({ state: 'awaiting_outline_confirmation' })], limits),
     ).toBe(true);
+  });
+
+  it('releases the uploads of a start only when the server refused it', () => {
+    const refused = (status: number) => new RunApiError(status, undefined, undefined, 'x');
+    expect(startDefinitelyRefused(refused(429))).toBe(true);
+    expect(startDefinitelyRefused(refused(400))).toBe(true);
+    // A lost answer may hide a run that was created: its materials are kept.
+    expect(startDefinitelyRefused(refused(502))).toBe(false);
+    expect(startDefinitelyRefused(new TypeError('Failed to fetch'))).toBe(false);
+    expect(startDefinitelyRefused(new DOMException('aborted', 'AbortError'))).toBe(false);
   });
 });

@@ -42,7 +42,9 @@ export interface RunEventSource {
 }
 
 export interface RunFollowerDeps {
-  fetchSnapshot: (runId: string) => Promise<RunSnapshot | null>;
+  fetchSnapshot: (runId: string, signal?: AbortSignal) => Promise<RunSnapshot | null>;
+  /** How long one snapshot read may take before it counts as failed (default 15 s). */
+  readTimeoutMs?: number;
   /** Null when the browser has no `EventSource`: the snapshot is polled instead. */
   openEvents: ((url: string) => RunEventSource) | null;
   onChange: (state: RunFollowerState) => void;
@@ -149,6 +151,26 @@ export class RunFollower {
   }
 
   private reading: Promise<void> = Promise.resolve();
+  private readonly outstanding = new Set<AbortController>();
+
+  /** One snapshot read, bounded: one that never settles must not hold every later read. */
+  private async fetchSnapshot(): Promise<RunSnapshot | null> {
+    const controller = new AbortController();
+    this.outstanding.add(controller);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const timedOut = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error('Reading the run timed out'));
+      }, this.deps.readTimeoutMs ?? 15_000);
+    });
+    try {
+      return await Promise.race([this.deps.fetchSnapshot(this.runId, controller.signal), timedOut]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      this.outstanding.delete(controller);
+    }
+  }
 
   /** Snapshot reads one at a time, so an older answer never lands after a newer one. */
   private readSnapshot(): Promise<void> {
@@ -158,7 +180,7 @@ export class RunFollower {
   }
 
   private async readSnapshotNow(): Promise<void> {
-    const snapshot = await this.deps.fetchSnapshot(this.runId);
+    const snapshot = await this.fetchSnapshot();
     if (this.closed) return;
     // An answer older than what the view already holds changes nothing.
     if (snapshot && this.state.view && snapshot.seq < this.state.view.seq) {
@@ -215,7 +237,7 @@ export class RunFollower {
   async start(): Promise<void> {
     let snapshot: RunSnapshot | null;
     try {
-      snapshot = await this.deps.fetchSnapshot(this.runId);
+      snapshot = await this.fetchSnapshot();
     } catch (error) {
       if (this.closed) return;
       // Not "no such run": the read failed, and is tried again.
@@ -345,6 +367,8 @@ export class RunFollower {
 
   close(): void {
     this.closed = true;
+    for (const controller of this.outstanding) controller.abort();
+    this.outstanding.clear();
     this.closeSource();
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;

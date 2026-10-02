@@ -1114,8 +1114,9 @@ export async function endGenerationRunsOfDeletedCourseIn(
  * run is over: marked deleted, as the material delete path marks them, so
  * they stop resolving and counting against the owner's quota; their bytes go
  * with the owner's next reclaim sweep (`reclaimStaleOwnerMaterialUploads`).
- * Only materials the run's owner owns; the course assets copied from their
- * images are the course's and stay. Idempotent.
+ * Only materials the run's owner owns and no other of the owner's runs that
+ * is not over names; the course assets copied from their images are the
+ * course's and stay. Idempotent.
  */
 export async function releaseRunMaterialsIn(tx: Queryable, runId: string): Promise<number> {
   const provisioned = await tx.query<{ present: string | null }>(
@@ -1132,6 +1133,14 @@ export async function releaseRunMaterialsIn(tx: Queryable, runId: string): Promi
         AND m.owner_id = r.owner_id
         AND m.status = 'ready'
         AND m.deleted_at IS NULL
+        -- Another run of the owner still working from it keeps it.
+        AND NOT EXISTS (
+          SELECT 1 FROM generation_runs o
+           WHERE o.id <> r.id
+             AND o.owner_id = r.owner_id
+             AND o.state NOT IN ('completed', 'ended')
+             AND o.input->'materialIds' ? m.id
+        )
       RETURNING m.id`,
     [runId, Date.now()],
   );

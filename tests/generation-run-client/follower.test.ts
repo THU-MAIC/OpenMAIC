@@ -347,4 +347,43 @@ describe('RunFollower reads', () => {
     expect(fetchSnapshot).toHaveBeenCalledTimes(2);
     follower.close();
   });
+
+  it('gives up on a snapshot read that never settles, and aborts what is outstanding on close', async () => {
+    const signals: AbortSignal[] = [];
+    const fetchSnapshot = vi
+      .fn()
+      .mockImplementationOnce(
+        (_runId: string, signal: AbortSignal) =>
+          new Promise(() => {
+            signals.push(signal);
+          }),
+      )
+      .mockResolvedValueOnce(generating())
+      .mockImplementation(
+        (_runId: string, signal: AbortSignal) =>
+          new Promise(() => {
+            signals.push(signal);
+          }),
+      );
+    const follower = new RunFollower('run-AAAAAAAAAAAAAAAA', {
+      fetchSnapshot,
+      openEvents: (url) => new FakeSource(url),
+      onChange: () => {},
+      readTimeoutMs: 1_000,
+      retryBaseMs: 100,
+      random: () => 0.5,
+    });
+    void follower.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    // Timed out: aborted, counted as a failed read, tried again after the backoff.
+    expect(signals[0]!.aborted).toBe(true);
+    expect(follower.current.status).toBe('error');
+    await vi.advanceTimersByTimeAsync(100);
+    expect(follower.current.status).toBe('live');
+    // A later read hangs; close aborts it.
+    void follower.resync();
+    await vi.advanceTimersByTimeAsync(0);
+    follower.close();
+    expect(signals.at(-1)!.aborted).toBe(true);
+  });
 });

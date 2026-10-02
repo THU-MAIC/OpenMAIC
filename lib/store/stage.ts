@@ -20,6 +20,7 @@ import { applyGeneratedAgentsToRegistry } from '@/lib/orchestration/registry/sto
 import { migrateScene } from '@/lib/edit/slide-schema';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
+import { runIdOfCourse } from '@/lib/generation-run-client/run-id';
 import type { ChatStorageSnapshot } from '@/lib/utils/chat-storage';
 import type { DocumentProducer } from '@/lib/document-store/persistence-types';
 import type { PendingChange, StaleDroppedSave } from '@/lib/utils/stage-storage';
@@ -1178,11 +1179,13 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         // A course its generation run is still producing is read-only from
         // the moment it is shown (the classroom's run follower lifts it).
         if (
-          serverProduced &&
           !persistedComplete &&
-          /^run-/.test(outlinesRecord?.producerRef ?? '')
+          runIdOfCourse(outlinesRecord?.producer, outlinesRecord?.producerRef)
         ) {
           setServerGeneratingStage(stageId);
+        } else if (isServerGeneratingStage(stageId)) {
+          // No run to follow: nothing would ever lift the fence.
+          setServerGeneratingStage(null);
         }
         if (generationComplete && !persistedComplete) void get().saveToStorage();
         log.info('Loaded from storage:', stageId);
