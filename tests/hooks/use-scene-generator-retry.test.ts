@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+
+import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
 import type { SceneOutline } from '@/lib/types/generation';
 
 const mocks = vi.hoisted(() => ({
-  getCurrentModelConfig: vi.fn(),
+  parallelSceneConcurrency: 0,
   settingsState: vi.fn(),
   audioPut: vi.fn(),
   audioDelete: vi.fn(),
@@ -16,8 +18,9 @@ const mocks = vi.hoisted(() => ({
   toastWarning: vi.fn(),
 }));
 
-vi.mock('@/lib/utils/model-config', () => ({
-  getCurrentModelConfig: mocks.getCurrentModelConfig,
+// How many narration clips may be generated at once (GET /api/health).
+vi.mock('@/lib/generation/server-generation-settings', () => ({
+  getParallelSceneConcurrency: async () => mocks.parallelSceneConcurrency,
 }));
 
 vi.mock('@/lib/store/settings', () => ({
@@ -26,7 +29,7 @@ vi.mock('@/lib/store/settings', () => ({
   },
 }));
 
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: {
     audioFiles: {
       put: mocks.audioPut,
@@ -87,8 +90,9 @@ function jsonResponse(status: number, body: unknown) {
   };
 }
 
-describe('browser scene generation retry wrappers', () => {
+describe('scene generation retry wrappers', () => {
   beforeEach(() => {
+    mocks.parallelSceneConcurrency = 0;
     mockFetch.mockReset();
     mocks.audioPut.mockReset();
     mocks.audioDelete.mockReset().mockResolvedValue(undefined);
@@ -96,7 +100,6 @@ describe('browser scene generation retry wrappers', () => {
     mocks.poolReplace.mockReset().mockResolvedValue(undefined);
     mocks.poolRemove.mockReset().mockResolvedValue(undefined);
     mocks.poolPut.mockResolvedValue('ast_audio_allocated');
-    mocks.getCurrentModelConfig.mockReturnValue({});
     mocks.settingsState.mockReturnValue({
       imageProviderId: '',
       imageProvidersConfig: {},
@@ -104,7 +107,7 @@ describe('browser scene generation retry wrappers', () => {
       videoProviderId: '',
       videoProvidersConfig: {},
       videoGenerationEnabled: false,
-      ttsProviderId: 'server-tts',
+      ttsVoiceProviderId: 'server-tts',
       ttsProvidersConfig: {
         'server-tts': {
           apiKey: 'tts-key',
@@ -114,6 +117,8 @@ describe('browser scene generation retry wrappers', () => {
       ttsVoice: 'narrator',
       ttsSpeed: 1,
     });
+    // The workspace's tts slot resolves to this provider.
+    setModelSettingsViewForTests({ tts: { registryId: 'server-tts', modelId: 'tts-model' } });
     mocks.isTTSProviderEnabled.mockReturnValue(true);
     mocks.pickNarratorAgent.mockReturnValue(undefined);
     mocks.resolveAgentVoiceOptions.mockResolvedValue({});
@@ -140,6 +145,25 @@ describe('browser scene generation retry wrappers', () => {
 
     expect(result).toMatchObject({ success: true, content: { elements: [] } });
     expect(mockFetch).toHaveBeenCalledTimes(2);
+    // The server decides which media may be planned: no media headers.
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+  });
+
+  it('narration plan: stops rather than guessing when the model settings cannot be read', async () => {
+    const { narrationPlan } = await import('@/lib/audio/tts-selection');
+    setModelSettingsViewForTests(null);
+    mockFetch.mockRejectedValue(new TypeError('offline'));
+    expect(await narrationPlan()).toBe('unknown');
+    // Read once, then once more.
+    expect(mockFetch.mock.calls.filter(([url]) => url === '/api/model-config')).toHaveLength(2);
+
+    setModelSettingsViewForTests({ tts: { registryId: 'server-tts' } });
+    expect(await narrationPlan()).toBe('server');
+    setModelSettingsViewForTests({ tts: { registryId: 'browser-native-tts' } });
+    expect(await narrationPlan()).toBe('none');
+    setModelSettingsViewForTests({});
+    expect(await narrationPlan()).toBe('none');
   });
 
   it('does not retry permanent scene action HTTP failures', async () => {
@@ -279,26 +303,57 @@ describe('browser scene generation retry wrappers', () => {
       retryOptions,
     );
 
-    expect(audioId).toBe('tts_s2_action_1');
+    expect(audioId).toBe('ast_audio_allocated');
     expect(mockFetch).toHaveBeenCalledTimes(2);
-    expect(mocks.poolPut).not.toHaveBeenCalled();
+    expect(mocks.poolPut).toHaveBeenCalledOnce();
+    // The local copy is a cache of the pool entry, under the allocated id.
     expect(mocks.audioPut).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'tts_s2_action_1',
+        id: 'ast_audio_allocated',
         format: 'wav',
       }),
     );
+  });
+
+  it("narrates with a voice the slot's model can speak", async () => {
+    const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
+    // Marin needs gpt-4o-mini-tts; the slot speaks with tts-1.
+    mocks.settingsState.mockReturnValue({
+      ...mocks.settingsState(),
+      ttsVoiceProviderId: 'openai-tts',
+      ttsVoice: 'marin',
+    });
+    setModelSettingsViewForTests({ tts: { registryId: 'openai-tts', modelId: 'tts-1' } });
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse(200, { success: true, base64: btoa('audio'), format: 'wav' }),
+    );
+
+    await generateAndStoreTTS('request-model', 'Hello class');
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body));
+    expect(body.ttsVoice).toBe('alloy');
+
+    // On gpt-4o-mini-tts the same voice is kept.
+    setModelSettingsViewForTests({ tts: { registryId: 'openai-tts', modelId: 'gpt-4o-mini-tts' } });
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse(200, { success: true, base64: btoa('audio'), format: 'wav' }),
+    );
+    await generateAndStoreTTS('request-model-2', 'Hello class');
+    expect(JSON.parse(String(mockFetch.mock.calls[1][1]?.body)).ttsVoice).toBe('marin');
   });
 
   it('falls back once from a missing narrator clone to the global voice', async () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
     mocks.settingsState.mockReturnValue({
       ...mocks.settingsState(),
-      ttsProviderId: 'qwen-tts',
+      ttsVoiceProviderId: 'qwen-tts',
       ttsVoice: 'Cherry',
       ttsProvidersConfig: {
         'qwen-tts': { apiKey: 'tts-key', modelId: 'qwen3-tts-vc-2026-01-22' },
       },
+    });
+    // The workspace's tts slot resolves to this provider.
+    setModelSettingsViewForTests({
+      tts: { registryId: 'qwen-tts', modelId: 'qwen3-tts-vc-2026-01-22' },
     });
     mocks.pickNarratorAgent.mockReturnValue({
       id: 'teacher-missing-clone',
@@ -321,19 +376,18 @@ describe('browser scene generation retry wrappers', () => {
         ...retryOptions,
         maxRetries: 0,
       }),
-    ).resolves.toBe('request-fallback');
+    ).resolves.toBe('ast_audio_allocated');
     expect(mockFetch).toHaveBeenCalledTimes(2);
     const firstBody = JSON.parse(String(mockFetch.mock.calls[0][1]?.body));
     const secondBody = JSON.parse(String(mockFetch.mock.calls[1][1]?.body));
     expect(firstBody).toMatchObject({
       ttsVoice: 'deleted-clone-id',
-      ttsModelId: 'qwen3-tts-vc-2026-01-22',
     });
-    expect(secondBody).toMatchObject({ ttsVoice: 'Cherry', ttsModelId: 'qwen3-tts-flash' });
+    expect(secondBody).toMatchObject({ ttsVoice: 'Cherry' });
     expect(mocks.toastWarning).toHaveBeenCalledOnce();
   });
 
-  it('stores directly in Dexie without consulting the asset pool', async () => {
+  it('reports the allocated id even when the local cache write fails', async () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
     mockFetch.mockResolvedValue(
       jsonResponse(200, {
@@ -342,28 +396,13 @@ describe('browser scene generation retry wrappers', () => {
         format: 'wav',
       }),
     );
-    mocks.poolPut.mockRejectedValueOnce(new Error('pool unavailable'));
+    mocks.audioPut.mockRejectedValueOnce(new Error('cache unavailable'));
 
-    await expect(generateAndStoreTTS('request-1', 'Hello class')).resolves.toBe('request-1');
-    expect(mocks.poolPut).not.toHaveBeenCalled();
-    expect(mocks.audioPut).toHaveBeenCalledOnce();
-  });
-
-  it('does not report an allocated id when the compatibility write fails', async () => {
-    const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
-    mockFetch.mockResolvedValue(
-      jsonResponse(200, {
-        success: true,
-        base64: btoa('audio-data'),
-        format: 'wav',
-      }),
+    // The bytes are in the pool; a failed cache write only costs a re-download.
+    await expect(generateAndStoreTTS('request-1', 'Hello class')).resolves.toBe(
+      'ast_audio_allocated',
     );
-    mocks.audioPut.mockRejectedValueOnce(new Error('Dexie unavailable'));
-
-    await expect(generateAndStoreTTS('request-1', 'Hello class')).rejects.toThrow(
-      'Dexie unavailable',
-    );
-    expect(mocks.poolPut).not.toHaveBeenCalled();
+    expect(mocks.poolPut).toHaveBeenCalledOnce();
     expect(mocks.poolRemove).not.toHaveBeenCalled();
   });
 
@@ -399,16 +438,13 @@ describe('browser scene generation retry wrappers', () => {
 
     expect(result).toMatchObject({ success: false, failedCount: 1 });
     expect(mocks.poolRemove).not.toHaveBeenCalled();
-    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('tts_s1_speech-1');
+    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('ast_first_audio');
     expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
   });
 
   it('waits for parallel TTS workers before rolling back an abandoned scene', async () => {
     const { generateTTSForScene } = await import('@/lib/hooks/use-scene-generator');
-    mocks.settingsState.mockReturnValue({
-      ...mocks.settingsState(),
-      parallelSceneConcurrency: 2,
-    });
+    mocks.parallelSceneConcurrency = 2;
     const abort = Object.assign(new Error('Aborted'), { name: 'AbortError' });
     let releaseSibling!: () => void;
     const siblingMayFinish = new Promise<void>((resolve) => {
@@ -444,35 +480,7 @@ describe('browser scene generation retry wrappers', () => {
     await expect(generating).rejects.toBe(abort);
 
     expect(mocks.poolRemove).not.toHaveBeenCalled();
-    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('tts_s1_speech-2');
+    expect(mocks.audioDelete).toHaveBeenCalledExactlyOnceWith('ast_late_audio');
     expect(scene.actions?.every((action) => !('audioId' in action))).toBe(true);
-  });
-
-  it('replaces allocated audio under the stable id and refreshes its compatibility row', async () => {
-    const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
-    mockFetch.mockResolvedValue(
-      jsonResponse(200, {
-        success: true,
-        base64: btoa('replacement-audio'),
-        format: 'wav',
-      }),
-    );
-
-    await expect(
-      generateAndStoreTTS(
-        'request-1',
-        'Updated class',
-        'English',
-        undefined,
-        undefined,
-        'ast_stable_audio',
-      ),
-    ).resolves.toBe('ast_stable_audio');
-
-    expect(mocks.poolPut).not.toHaveBeenCalled();
-    expect(mocks.poolReplace).not.toHaveBeenCalled();
-    expect(mocks.audioPut).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ id: 'ast_stable_audio', format: 'wav' }),
-    );
   });
 });

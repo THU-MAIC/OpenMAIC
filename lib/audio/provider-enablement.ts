@@ -26,11 +26,18 @@ import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import { isCustomTTSProvider, type TTSProviderId } from '@/lib/audio/types';
 
 export const BROWSER_NATIVE_TTS_PROVIDER_ID = 'browser-native-tts' as const;
+/** Speech recognition in the browser: nothing the server can transcribe with. */
+export const BROWSER_NATIVE_ASR_PROVIDER_ID = 'browser-native' as const;
 
 /** The slice of a persisted ttsProvidersConfig entry the predicates rely on. */
 export interface TTSEnablementConfig {
   apiKey?: string;
   baseUrl?: string;
+  /**
+   * Dialog-supplied default URL for custom providers. `addCustomTTSProvider`
+   * writes this and leaves `baseUrl` empty; Test TTS already falls back to it.
+   */
+  customDefaultBaseUrl?: string;
   /** User-level per-provider toggle. Absent / true ⇒ allowed; false ⇒ hidden. */
   enabled?: boolean;
   isServerConfigured?: boolean;
@@ -69,7 +76,10 @@ export function isTTSProviderConfigured(
     // A custom provider is usable once it has a credential path or any voices
     // the user defined for it (its existing visibility rule).
     return (
-      hasText(config.apiKey) || hasText(config.baseUrl) || (config.customVoices?.length ?? 0) > 0
+      hasText(config.apiKey) ||
+      hasText(config.baseUrl) ||
+      hasText(config.customDefaultBaseUrl) ||
+      (config.customVoices?.length ?? 0) > 0
     );
   }
 

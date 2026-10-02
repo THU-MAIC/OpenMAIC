@@ -786,9 +786,9 @@ export class ActionEngine {
       case 'replace_lines': {
         if (!action.lineIds?.length) return;
         const replaceIds = action.lineIds;
-        const firstIdx = lines.findIndex((l) => l.id === replaceIds[0]);
-        if (firstIdx === -1) return;
         const deleteSet = new Set(replaceIds);
+        const firstIdx = lines.findIndex((l) => deleteSet.has(l.id));
+        if (firstIdx === -1) return;
         lines = lines.filter((l) => !deleteSet.has(l.id));
         const newLines = newContentLines.map((content, i) => ({
           id: i < replaceIds.length ? replaceIds[i] : newLineIds[i],

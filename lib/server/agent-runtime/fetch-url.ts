@@ -22,8 +22,6 @@
  * STRIPPED vs the reference: `runBilledCall`/`logDocCall` (billing) and the
  * managed extraction wrapper — the PDF path calls `provider.extract` directly.
  */
-import { lookup as dnsLookup, type LookupAddress } from 'node:dns';
-
 import { gfm } from '@joplin/turndown-plugin-gfm';
 import { Readability } from '@mozilla/readability';
 import { parseHTML } from 'linkedom/worker';
@@ -43,11 +41,13 @@ import {
   type DocumentExtractorProvider,
 } from '@/lib/document';
 import {
-  getServerPDFProviders,
-  resolvePDFApiKey,
-  resolvePDFBaseUrl,
-} from '@/lib/server/provider-config';
-import { assertSafeIp, normalizeUrlForStrictFetch } from '@/lib/server/ssrf-guard';
+  extractorConfigFor,
+  resolveExtractionServices,
+  type ExtractionServices,
+} from '@/lib/server/material-extraction/services';
+import { backgroundWorkspaceId } from '@/lib/server/model-config/runtime';
+import { normalizeUrlForStrictFetch } from '@/lib/server/ssrf-guard';
+import { createPinnedAgent } from '@/lib/server/pinned-dispatcher';
 import type { AgentSessionMaterial } from '@openmaic/storage';
 
 import { createWebMaterial } from './session-materials';
@@ -105,6 +105,8 @@ export interface ExtractedWebPage {
 type FetchImplementation = (input: string | URL, init?: UndiciRequestInit) => Promise<Response>;
 
 export interface FetchUrlOptions {
+  /** The document service a fetched PDF may use; the deployment's by default. */
+  extractionServices?: ExtractionServices;
   fetchImpl?: FetchImplementation;
   dispatcher?: Dispatcher;
   maxBytes?: number;
@@ -126,50 +128,14 @@ export interface FetchUrlOptions {
   signal?: AbortSignal;
 }
 
-function lookupAllThenPin(
-  hostname: string,
-  options: Record<string, unknown>,
-  callback: (...args: unknown[]) => void,
-): void {
-  dnsLookup(
-    hostname,
-    { ...options, all: true, verbatim: true },
-    (error: NodeJS.ErrnoException | null, addresses: LookupAddress[]) => {
-      if (error) {
-        callback(error);
-        return;
-      }
-      try {
-        assertSafeLookupAddresses(addresses);
-      } catch (lookupError) {
-        callback(lookupError);
-        return;
-      }
-      if (options.all === true) {
-        callback(null, addresses);
-      } else {
-        const first = addresses[0]!;
-        callback(null, first.address, first.family);
-      }
-    },
-  );
-}
-
-/** Reject the whole DNS answer set if any candidate could reach a non-public network. */
-export function assertSafeLookupAddresses(addresses: LookupAddress[]): void {
-  if (addresses.length === 0) throw new Error('DNS returned no addresses');
-  for (const answer of addresses) assertSafeIp(answer.address);
-}
+export { assertSafeLookupAddresses } from '@/lib/server/pinned-dispatcher';
 
 /** Pin connection-time DNS to the exact answer set that passed IP classification. */
 export function createPinnedFetchAgent(): Agent {
-  return new Agent({
+  return createPinnedAgent({
     headersTimeout: HEADERS_TIMEOUT_MS,
     bodyTimeout: BODY_TIMEOUT_MS,
-    connect: {
-      timeout: CONNECT_TIMEOUT_MS,
-      lookup: lookupAllThenPin as never,
-    },
+    connectTimeout: CONNECT_TIMEOUT_MS,
   });
 }
 
@@ -313,16 +279,12 @@ export function extractHtmlToMarkdown(
  * fallback. Product-specific gateways and accounting wrappers are omitted;
  * `provider.extract` is called directly.
  */
-function pdfExtractionCandidates(): Array<{
+function pdfExtractionCandidates(services: ExtractionServices): Array<{
   provider: DocumentExtractorProvider;
   config: DocumentExtractorConfig;
 }> {
-  const configured = getServerPDFProviders();
-  const ids: string[] = [];
-  if (configured.mineru) ids.push('mineru');
-  if (configured['mineru-cloud']) ids.push('mineru-cloud');
-  if (configured.alidocmind) ids.push('alidocmind');
-  ids.push('unpdf');
+  // The document slot's service first, then the local unpdf.
+  const ids = [...(services.document ? [services.document.providerId] : []), 'unpdf'];
   return ids
     .map((id) => {
       const provider = getDocumentExtractorProvider(id);
@@ -330,10 +292,7 @@ function pdfExtractionCandidates(): Array<{
       return {
         provider,
         config: {
-          providerId: id,
-          apiKey: resolvePDFApiKey(id) || undefined,
-          baseUrl: resolvePDFBaseUrl(id),
-          allowEnvFallback: true,
+          ...extractorConfigFor(id, services),
           // fetch_url persists and returns text only. Avoid materializing
           // attacker-controlled PDF rasters in the application process.
           textOnly: true,
@@ -346,9 +305,10 @@ function pdfExtractionCandidates(): Array<{
 
 async function extractPdfToMarkdown(
   bytes: Buffer,
+  services: ExtractionServices,
 ): Promise<{ title: string; markdown: string; truncated: boolean }> {
   const failures: string[] = [];
-  for (const { provider, config } of pdfExtractionCandidates()) {
+  for (const { provider, config } of pdfExtractionCandidates(services)) {
     try {
       const artifact = await provider.extract({
         buffer: bytes,
@@ -524,7 +484,10 @@ export async function fetchAndExtractUrl(
         extracted = extractHtmlToMarkdown(downloaded.bytes.toString('utf8'), current.href);
       } else if (contentType === 'application/pdf') {
         const prepared = await truncatePdfPages(downloaded.bytes);
-        extracted = await extractPdfToMarkdown(prepared.bytes);
+        extracted = await extractPdfToMarkdown(
+          prepared.bytes,
+          options.extractionServices ?? (await resolveExtractionServices()),
+        );
         downloaded.truncated ||= prepared.truncated || extracted.truncated === true;
       } else {
         extracted = { title: '', markdown: cleanMarkdown(downloaded.bytes.toString('utf8')) };
@@ -594,6 +557,8 @@ const FETCH_URL_SCHEMA = Type.Object({
 
 export interface FetchUrlToolDependencies {
   sessionId: string;
+  /** The run's owner, whose document slot a fetched PDF uses. */
+  ownerId?: string;
   /** Test seam; defaults to the session-urls trust gate. */
   isUrlAllowed?: (sessionId: string, url: string) => Promise<boolean>;
   /** Test seam; defaults to the pinned-DNS strict fetch. */
@@ -639,6 +604,9 @@ export function buildFetchUrlTool(deps: FetchUrlToolDependencies): AgentTool<nev
       }
       throwIfAborted(signal);
       const page = await fetchUrl(params.url, {
+        extractionServices: await resolveExtractionServices(
+          deps.ownerId ? await backgroundWorkspaceId(deps.ownerId) : undefined,
+        ),
         signal,
         isUrlAllowed: (url) => urlAllowed(deps.sessionId, url),
       });

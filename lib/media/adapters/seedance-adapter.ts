@@ -32,8 +32,10 @@ import type {
   VideoGenerationOptions,
   VideoGenerationResult,
 } from '../types';
+import { mediaFetchFor } from '../media-fetch';
 import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
@@ -127,11 +129,14 @@ export async function testSeedanceConnectivity(
   return probeAuth({
     providerName: 'Seedance',
     request: () =>
-      fetch(`${resolveArkRoot(baseUrl)}/contents/generations/tasks/connectivity-test-nonexistent`, {
-        method: 'GET',
-        redirect: 'manual',
-        headers: { Authorization: `Bearer ${config.apiKey}` },
-      }),
+      mediaFetchFor(config)(
+        `${resolveArkRoot(baseUrl)}/contents/generations/tasks/connectivity-test-nonexistent`,
+        {
+          method: 'GET',
+          redirect: 'manual',
+          headers: { Authorization: `Bearer ${config.apiKey}` },
+        },
+      ),
   });
 }
 
@@ -160,14 +165,20 @@ export async function submitSeedanceTask(
   const resolution = toSeedanceResolution(options.resolution);
   if (resolution) body.resolution = resolution;
 
-  const response = await fetch(`${resolveArkRoot(baseUrl)}/contents/generations/tasks`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
+  const response = await mediaFetchFor(config)(
+    `${resolveArkRoot(baseUrl)}/contents/generations/tasks`,
+    {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+  );
+
+  assertNotRedirected(response, 'Seedance');
 
   if (!response.ok) {
     const text = await response.text();
@@ -193,12 +204,18 @@ export async function pollSeedanceTask(
 ): Promise<VideoGenerationResult | null> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
 
-  const response = await fetch(`${resolveArkRoot(baseUrl)}/contents/generations/tasks/${taskId}`, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
+  const response = await mediaFetchFor(config)(
+    `${resolveArkRoot(baseUrl)}/contents/generations/tasks/${taskId}`,
+    {
+      method: 'GET',
+      redirect: 'manual',
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+      },
     },
-  });
+  );
+
+  assertNotRedirected(response, 'Seedance');
 
   if (!response.ok) {
     const text = await response.text();

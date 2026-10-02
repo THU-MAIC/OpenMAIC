@@ -41,7 +41,11 @@
     "maxSelected": "Puedes seleccionar hasta {{count}} materiales a la vez",
     "remove": "Quitar {{name}}",
     "removeFailed": "Quitar la carga fallida",
-    "uploadFailed": "No se pudo subir {{name}}. Inténtalo de nuevo."
+    "uploadFailed": "No se pudo subir {{name}}. Inténtalo de nuevo.",
+    "fileTooLarge": "El archivo es demasiado grande. Comprímelo o divídelo e inténtalo de nuevo.",
+    "fileTooLargeWithLimit": "El archivo es demasiado grande. Selecciona uno de {{limit}} MB como máximo.",
+    "unsupportedType": "Tipo de archivo no compatible. Elige un archivo compatible.",
+    "quotaExceeded": "Se alcanzó el límite de carga de materiales."
   },
   "skill": {
     "listFailed": "No se pudo cargar la lista de skills",
@@ -76,6 +80,7 @@
     "title": {
       "build-personal-skill": "Crear un Skill propio",
       "curriculum-planner": "Planeación de serie",
+      "zone-of-proximal-development": "Clase de práctica (zona de desarrollo próximo)",
       "stage-dsl": "Estructura del documento del aula",
       "deep-interactive": "Interactivo profundo",
       "deep-research": "Investigación profunda",

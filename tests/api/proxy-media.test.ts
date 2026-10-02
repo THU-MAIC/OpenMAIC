@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({ validateUrlForSSRF: vi.fn() }));
-vi.mock('@/lib/server/ssrf-guard', () => ({ validateUrlForSSRF: mocks.validateUrlForSSRF }));
+vi.mock('@/lib/server/ssrf-guard', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/server/ssrf-guard')>();
+  return { ...actual, validateUrlForSSRF: mocks.validateUrlForSSRF };
+});
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),

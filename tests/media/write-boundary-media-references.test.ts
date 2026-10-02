@@ -12,13 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   mutateDocument: vi.fn(),
-  serverBacked: vi.fn(),
   saveCurrentScene: vi.fn(),
   saveStageChats: vi.fn(),
-}));
-
-vi.mock('@/lib/persistence/media-persistence', () => ({
-  isServerBackedMediaPersistence: mocks.serverBacked,
 }));
 
 vi.mock('@/lib/document-store', async () => {
@@ -127,7 +122,6 @@ describe('the persistence write boundary rewrites stale placeholders', () => {
     // out; the boundary pass runs long before that.
     vi.stubGlobal('localStorage', memoryStorage());
     clearPendingMediaAllocations();
-    mocks.serverBacked.mockReset().mockReturnValue(true);
     mocks.mutateDocument.mockReset();
     recordMediaAllocation({ stageId, placeholderRef: placeholder, assetId: 'ast_boundary' });
   });
@@ -285,14 +279,5 @@ describe('the persistence write boundary rewrites stale placeholders', () => {
     await saving;
 
     expect(imageSrcOf(written.scenes[0])).toBe('ast_late');
-  });
-
-  it('is inert in browser-only mode', async () => {
-    mocks.serverBacked.mockReturnValue(false);
-    const written = captureWrites();
-
-    await saveStageData(stageId, snapshot([sceneWithImage(placeholder)]), 0);
-
-    expect(imageSrcOf(written.scenes[0])).toBe(placeholder);
   });
 });

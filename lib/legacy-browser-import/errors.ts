@@ -1,0 +1,162 @@
+/**
+ * How the importer reads a failure: retry it later, give up on this item, or
+ * stop the whole run.
+ *
+ * The persistence clients carry the server's answer as `status` + `code` on
+ * their error classes (documents, runtime, assets); a write-back failure wraps
+ * the store's error in `cause`. Only a refusal the server sent (4xx) or a
+ * local validation failure is ever final. Everything else is transient:
+ * anything without a status (the document, runtime, folder and binding
+ * clients let a rejected fetch through as it is), the asset client's
+ * `status 0 HTTP_REQUEST_FAILED` (it wraps a rejected or timed-out fetch, the
+ * existence probe's deadline included), and a 2xx/3xx answer the client could
+ * not use (`MALFORMED_RESPONSE`, an unfollowed redirect), which the server
+ * never meant as a refusal.
+ */
+export type FailureKind =
+  /** Network, 5xx, 408/429, 409: leave the item pending and retry on a later load. */
+  | 'transient'
+  /** 503 OWNER_BUSY: the owner is being claimed; wait `retryAfterMs` and retry. */
+  | 'busy'
+  /**
+   * 401 (an expired or rejected credential, or the access-code gate): the
+   * owner may come back with the same id after signing in again, so the run
+   * pauses and a later load retries.
+   */
+  | 'unauthorized'
+  /**
+   * 403 OWNER_RETIRED: this owner was claimed into an account and writes
+   * nothing any more. The owner that loads next continues the import.
+   */
+  | 'retired'
+  /** 403 FORBIDDEN_LEARNER: the browser's owner changed during the run. */
+  | 'owner-changed'
+  /**
+   * 409 LEGACY_IMPORT_NOT_BOUND: the server refused a request because the
+   * owner it resolved to does not hold this browser's binding (another owner
+   * does, or the cookie changed since the run bound). Stop; a later load asks
+   * for the binding again.
+   */
+  | 'not-bound'
+  /** The asset store has no room for these bytes. */
+  | 'quota'
+  /** 403 on a document this owner does not own. */
+  | 'forbidden'
+  /** 404 on a write: the target is gone (for a course: deleted on the server). */
+  | 'not-found'
+  /** 400 / 413 / 422 and the like: the server refuses this item as it is. */
+  | 'permanent';
+
+export interface Failure {
+  readonly kind: FailureKind;
+  readonly reason: string;
+  /** The server's error code, when it sent one. */
+  readonly code?: string;
+  readonly retryAfterMs?: number;
+}
+
+/** The server's documented pause for OWNER_BUSY (`Retry-After: 2`). */
+export const DEFAULT_BUSY_RETRY_MS = 2_000;
+
+interface StatusLike {
+  status?: unknown;
+  code?: unknown;
+  retryAfterMs?: unknown;
+  cause?: unknown;
+}
+
+function statusOf(error: unknown): { status?: number; code?: string; retryAfterMs?: number } {
+  // Walk the `cause` chain: MediaReferenceWriteBackError and friends wrap the
+  // store error that carries the status.
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && typeof current === 'object' && current !== null; depth += 1) {
+    const candidate = current as StatusLike;
+    if (typeof candidate.status === 'number') {
+      return {
+        status: candidate.status,
+        ...(typeof candidate.code === 'string' ? { code: candidate.code } : {}),
+        ...(typeof candidate.retryAfterMs === 'number'
+          ? { retryAfterMs: candidate.retryAfterMs }
+          : {}),
+      };
+    }
+    if (typeof candidate.code === 'string' && candidate.code === 'ASSET_QUOTA_EXCEEDED') {
+      return { status: 507, code: candidate.code };
+    }
+    current = candidate.cause;
+  }
+  return {};
+}
+
+function describe(error: unknown): string {
+  if (error instanceof Error) return error.message || error.name;
+  return String(error);
+}
+
+export function classifyFailure(error: unknown): Failure {
+  const { status, code, retryAfterMs } = statusOf(error);
+  if (status === undefined) return { kind: 'transient', reason: describe(error) };
+  const reason = code ? `${status} ${code}` : `HTTP ${status}`;
+  const failure = (kind: FailureKind, extra: object = {}): Failure => ({
+    kind,
+    reason,
+    ...(code ? { code } : {}),
+    ...extra,
+  });
+  if (code === 'OWNER_BUSY') {
+    return failure('busy', { retryAfterMs: retryAfterMs ?? DEFAULT_BUSY_RETRY_MS });
+  }
+  if (code === 'OWNER_RETIRED') return failure('retired');
+  if (code === 'FORBIDDEN_LEARNER') return failure('owner-changed');
+  if (code === 'LEGACY_IMPORT_NOT_BOUND') return failure('not-bound');
+  if (status === 401 || code === 'INVALID_CREDENTIAL') return failure('unauthorized');
+  if (status === 507 || code === 'ASSET_QUOTA_EXCEEDED') return failure('quota');
+  if (status === 0) {
+    // The asset client's local failures: a request that never got an answer
+    // is transient; a local validation failure is final.
+    return failure(code === 'HTTP_REQUEST_FAILED' ? 'transient' : 'permanent');
+  }
+  if (status < 400) return failure('transient');
+  if (status >= 500 || status === 408 || status === 409 || status === 425 || status === 429) {
+    return failure('transient');
+  }
+  if (status === 403) return failure('forbidden');
+  if (status === 404) return failure('not-found');
+  return failure('permanent');
+}
+
+/**
+ * Thrown to end a run early: the owner refused every write, or asked to be
+ * left alone for a while. Carries the failure that ended it.
+ */
+export class ImportRunStop extends Error {
+  override readonly name = 'ImportRunStop';
+
+  constructor(readonly failure: Failure) {
+    super(failure.reason);
+  }
+}
+
+/** Failures that end the whole run rather than one item. */
+export const RUN_STOPS: ReadonlySet<FailureKind> = new Set([
+  'busy',
+  'unauthorized',
+  'retired',
+  'owner-changed',
+  'not-bound',
+]);
+
+/** The failure as a run stop when it is one (whatever call it came from), else undefined. */
+export function asRunStop(error: unknown): ImportRunStop | undefined {
+  if (error instanceof ImportRunStop) return error;
+  const failure = classifyFailure(error);
+  return RUN_STOPS.has(failure.kind) ? new ImportRunStop(failure) : undefined;
+}
+
+/** Rethrow run-level failures as a run stop; hand every other failure back. */
+export function failureOrStop(error: unknown): Failure {
+  if (error instanceof ImportRunStop) throw error;
+  const failure = classifyFailure(error);
+  if (RUN_STOPS.has(failure.kind)) throw new ImportRunStop(failure);
+  return failure;
+}

@@ -6,12 +6,11 @@ import type { AppScene } from '@/lib/types/stage';
 import { createLogger } from '@/lib/logger';
 import { omitUndefinedObjectMembers } from '@/lib/persistence/plain-json';
 import { withRuntimeStorageSharedLock } from '@/lib/utils/chat-storage-lock';
-import {
-  db,
-  type SceneRecord,
-  type StageOutlinesRecord,
-  type StageRecord,
-} from '@/lib/utils/database';
+import type {
+  SceneRecord,
+  StageOutlinesRecord,
+  StageRecord,
+} from '@/lib/legacy-browser-storage/schema';
 
 import {
   canonicalizeLegacyOutline,
@@ -248,36 +247,27 @@ export async function withDocumentLock<T>(
   );
 }
 
-function defaultLegacyStore(): LegacyDocumentStore {
-  return {
-    async read(stageId) {
-      // Dexie disables auto-open after db.delete(). A migration that was
-      // queued behind clearDatabase must reopen the now-empty legacy database
-      // so it observes a missing source instead of surfacing DatabaseClosedError.
-      if (!db.isOpen()) await db.open();
-      return db.transaction('r', [db.stages, db.scenes, db.stageOutlines], async () => {
-        const [stage, scenes, outline] = await Promise.all([
-          db.stages.get(stageId),
-          db.scenes.where('stageId').equals(stageId).sortBy('order'),
-          db.stageOutlines.get(stageId),
-        ]);
-        return stage ? { stage, scenes, outline } : null;
-      });
-    },
-    async listStages() {
-      if (!db.isOpen()) await db.open();
-      return db.stages.toArray();
-    },
-  };
-}
+/**
+ * No legacy source. The load and save paths read the destination store only;
+ * pre-document-store aggregates reach it through the one-way importer, which
+ * passes its own read-only `legacyStore`.
+ */
+const NO_LEGACY_DOCUMENTS: LegacyDocumentStore = {
+  read: async () => null,
+  listStages: async () => [],
+};
 
 export function getLegacyDocumentStore(
   deps: Pick<DocumentMigrationDeps, 'legacyStore'> = {},
 ): LegacyDocumentStore {
-  return deps.legacyStore ?? defaultLegacyStore();
+  return deps.legacyStore ?? NO_LEGACY_DOCUMENTS;
 }
 
-function canonicalize(snapshot: LegacyDocumentSnapshot): AppDocument {
+/**
+ * The document a pre-document-store snapshot becomes. Shared with the one-way
+ * importer, which moves such snapshots to the server.
+ */
+export function canonicalizeLegacySnapshot(snapshot: LegacyDocumentSnapshot): AppDocument {
   const { stage } = canonicalizeLegacyStage(snapshot.stage);
   const scenes = snapshot.scenes.map(canonicalizeLegacyScene).sort((a, b) => a.order - b.order);
   const document: AppDocument = { stage, scenes };
@@ -436,7 +426,7 @@ async function migrateLocked(
         metadataPending = true;
       } else {
         try {
-          assertMigrationVerified(canonicalize(snapshot), existing, deps.migrateDsl);
+          assertMigrationVerified(canonicalizeLegacySnapshot(snapshot), existing, deps.migrateDsl);
           metadataPending = true;
         } catch (error) {
           log.warn(
@@ -474,7 +464,7 @@ async function migrateLocked(
   // ladder preserves) verifies consistently.
   const expected =
     probe && !probe.existing && probe.snapshot
-      ? await convertLoadedDocument(canonicalize(probe.snapshot), deps, passLedger)
+      ? await convertLoadedDocument(canonicalizeLegacySnapshot(probe.snapshot), deps, passLedger)
       : null;
 
   // Phase 3, shared lock: fence, reconcile, commit.
@@ -509,7 +499,7 @@ async function migrateLocked(
         return { document: null, readOnlyLegacy: false };
       }
       const freshExpected = await convertLoadedDocument(
-        canonicalize(freshSnapshot),
+        canonicalizeLegacySnapshot(freshSnapshot),
         deps,
         passLedger,
       );
@@ -641,7 +631,7 @@ export async function accessDocument(
     const snapshot = await getLegacyDocumentStore(deps).read(stageId);
     if (!snapshot) return { document: null, readOnlyLegacy: false };
     return {
-      document: canonicalize(snapshot),
+      document: canonicalizeLegacySnapshot(snapshot),
       legacyCurrentSceneId: snapshot.stage.currentSceneId,
       readOnlyLegacy: true,
     };

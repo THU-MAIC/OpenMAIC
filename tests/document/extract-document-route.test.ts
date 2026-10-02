@@ -22,6 +22,14 @@ vi.mock('@/lib/server/provider-config', () => ({
   isServerConfiguredProvider: mocks.isServerConfiguredProvider,
   resolvePDFApiKey: mocks.resolvePDFApiKey,
   resolvePDFBaseUrl: mocks.resolvePDFBaseUrl,
+  isServerProviderDisabled: () => false,
+}));
+
+// No model configuration: these cases exercise the providers a request names.
+// (The deployment config lives on globalThis; the setup file clears it before
+// each test.)
+vi.mock('@/lib/server/model-config/deployment-layer', () => ({
+  loadDeploymentLayer: () => ({ layer: null, defaults: null, notices: [] }),
 }));
 
 vi.mock('@/lib/pdf/mineru-cloud', () => ({
@@ -76,6 +84,29 @@ describe('POST /api/extract-document', () => {
     delete process.env.PDF_MINERU_BASE_URL;
     delete process.env.PDF_MINERU_API_KEY;
   });
+
+  it.each([
+    ['missing', 404],
+    ['too_large', 413],
+    ['unauthenticated', 401],
+  ] as const)(
+    'carries the owner resolution cookies on an asset-id answer (%s)',
+    async (status, httpStatus) => {
+      const renewal =
+        'anonymous_id=44444444-4444-4444-8444-444444444444; Path=/; HttpOnly; SameSite=Lax; Max-Age=34560000';
+      mocks.resolveServerAsset.mockResolvedValue({ status, setCookies: [renewal] });
+      const { POST } = await import('@/app/api/extract-document/route');
+      const res = await POST(
+        new Request('http://localhost/api/extract-document', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ assetId: 'ast_1', fileName: 'a.pdf' }),
+        }) as unknown as NextRequest,
+      );
+      expect(res.status).toBe(httpStatus);
+      expect(res.headers.getSetCookie()).toEqual([renewal]);
+    },
+  );
 
   it('returns 400 for unsupported course material MIME types', async () => {
     const res = await postExtractDocument({
@@ -206,6 +237,118 @@ describe('POST /api/extract-document', () => {
       expect.any(Buffer),
       'lesson.pdf',
     );
+  });
+
+  it("uses the document slot's service and key when the request names none", async () => {
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: { mc: { preset: 'mineru-cloud', apiKey: 'slot-key' } },
+          slots: { document: 'mc' },
+        },
+      },
+      defaults: null,
+      notices: [],
+    });
+    const res = await postExtractDocument({
+      file: new File(['%PDF-1.4'], 'lesson.pdf', { type: 'application/pdf' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mocks.parseWithMinerUCloud).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: 'mineru-cloud', apiKey: 'slot-key' }),
+      expect.any(Buffer),
+      'lesson.pdf',
+    );
+  });
+
+  const deploymentDocumentSlot = async (
+    config: import('@/lib/server/model-config/openmaic-yml').ModelConfigFile,
+  ) =>
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
+      layer: { source: 'deployment', config },
+      defaults: null,
+      notices: [],
+    });
+
+  it("never lets a request's provider or key replace a configured document slot", async () => {
+    await deploymentDocumentSlot({
+      providers: { mc: { preset: 'mineru-cloud', apiKey: 'slot-key' } },
+      slots: { document: 'mc' },
+    });
+    for (const request of [
+      { providerId: 'mineru-cloud', apiKey: 'client-key' },
+      { providerId: 'mineru', baseUrl: 'https://mineru.example' },
+    ]) {
+      mocks.parseWithMinerUCloud.mockClear();
+      const res = await postExtractDocument({
+        file: new File(['%PDF-1.4'], 'lesson.pdf', { type: 'application/pdf' }),
+        ...request,
+      });
+      expect(res.status).toBe(200);
+      expect(mocks.parseWithMinerUCloud).toHaveBeenCalledWith(
+        expect.objectContaining({ providerId: 'mineru-cloud', apiKey: 'slot-key' }),
+        expect.any(Buffer),
+        'lesson.pdf',
+      );
+    }
+  });
+
+  it('uses no document service, requested or operator-configured, once the slot is off', async () => {
+    mocks.isServerConfiguredProvider.mockReturnValue(true);
+    await deploymentDocumentSlot({ slots: { document: null } });
+    const res = await postExtractDocument({
+      file: new File(['not really docx'], 'lesson.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+      providerId: 'mineru-cloud',
+      apiKey: 'client-key',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(422);
+    expect(json.error).toContain('none is configured');
+    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+  });
+
+  it('refuses a document service the workspace may not use with 403, not a parse failure', async () => {
+    const runtime = await import('@/lib/server/model-config/runtime');
+    runtime.setWorkspaceLayerLoaderForTests(async () => ({
+      source: 'workspace',
+      config: {
+        providers: { mc: { preset: 'mineru-cloud', apiKey: 'k', baseUrl: 'https://1.1.1.1' } },
+        slots: { document: 'mc' },
+      },
+    }));
+    vi.spyOn(runtime, 'requestWorkspaceId').mockResolvedValue('user:alice');
+    try {
+      const res = await postExtractDocument({
+        file: new File(['%PDF-1.4'], 'lesson.pdf', { type: 'application/pdf' }),
+      });
+      expect(res.status).toBe(403);
+    } finally {
+      runtime.setWorkspaceLayerLoaderForTests();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('keeps self-contained extraction when the speech assignment is unusable', async () => {
+    const runtime = await import('@/lib/server/model-config/runtime');
+    runtime.setWorkspaceLayerLoaderForTests(async () => ({
+      source: 'workspace',
+      config: { providers: { fa: { preset: 'funasr-asr' } }, slots: { asr: 'fa' } },
+    }));
+    vi.spyOn(runtime, 'requestWorkspaceId').mockResolvedValue('user:alice');
+    try {
+      const res = await postExtractDocument({
+        file: new File(['plain notes'], 'notes.txt', { type: 'text/plain' }),
+      });
+      expect(res.status).toBe(200);
+    } finally {
+      runtime.setWorkspaceLayerLoaderForTests();
+      vi.restoreAllMocks();
+    }
   });
 
   it('fails loudly instead of silently falling back to MinerU Cloud for DOCX when self-hosted MinerU is unavailable', async () => {
@@ -483,6 +626,32 @@ describe('POST /api/extract-document (asset-id form)', () => {
       mimeType: 'application/pdf',
       providerId: 'mineru-cloud',
       baseUrl: 'http://192.168.1.10/v1/',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_URL',
+    });
+    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+  });
+
+  it('rejects a client-supplied local baseUrl when ALLOW_LOCAL_NETWORKS is unset', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('ALLOW_LOCAL_NETWORKS', undefined);
+    mocks.resolveServerAsset.mockResolvedValue({
+      status: 'resolved',
+      buffer: Buffer.from('%PDF-1.4'),
+      mimeType: 'application/pdf',
+    });
+
+    const res = await postExtractDocumentByAssetId({
+      assetId: 'ast_abc',
+      fileName: 'lesson.pdf',
+      mimeType: 'application/pdf',
+      providerId: 'mineru-cloud',
+      baseUrl: 'http://127.0.0.1:8000/v1/',
     });
     const json = await res.json();
 

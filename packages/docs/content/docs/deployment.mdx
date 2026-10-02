@@ -9,9 +9,9 @@ OpenMAIC is a standard Next.js application. It runs anywhere Next.js runs.
 
 The fastest path is the Deploy button in the [repository README](https://github.com/THU-MAIC/OpenMAIC). Fork the repository and enter an API key for at least one LLM when prompted.
 
-Vercel rebuilds and deploys the Next.js application after every commit. Configure at least one LLM provider in the project settings for deployment.
+Vercel rebuilds and deploys the Next.js application after every commit. After the first deploy, open the app and connect a model service in the model settings, or configure providers through the environment variables in the project settings (the [legacy variables](./configuration.mdx#migrating-from-the-legacy-configuration) still work). Vercel has no persistent data directory, so set `OPENMAIC_SECRET_KEY` in the project settings before saving keys in the model settings; see [Secrets and OPENMAIC_SECRET_KEY](./configuration.mdx#secrets-and-openmaic_secret_key).
 
-Vercel deployments use browser-side persistence by default. For server-side persistence, use an external PostgreSQL database and a server deployment; the `server-persistence` Compose profile cannot be used directly with Vercel.
+Vercel runs OpenMAIC as serverless functions, which cannot host a database. Set `DATABASE_URL` to an external PostgreSQL database (a managed service; prefer its pooled connection endpoint) in the project settings; the server refuses to start without it.
 
 ## Docker
 
@@ -20,18 +20,26 @@ The repository includes a production-ready `Dockerfile`. The image uses Node.js 
 ```bash
 docker build -t openmaic .
 
-docker run --env-file .env.local -p 3000:3000 openmaic
+docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-host:5432/openmaic -p 3000:3000 openmaic
 ```
 
 We recommend the repository's Docker Compose configuration:
 
 ```bash
 cp .env.example .env.local
-# Edit .env.local and configure at least one LLM provider, then:
+# Edit .env.local (keys and server options), then:
 docker compose up --build
 ```
 
-The default Compose deployment starts the OpenMAIC app and mounts the `openmaic-data` volume. Configure other providers and features as needed; see [Configuration](./configuration.mdx).
+The default Compose deployment starts two containers, the OpenMAIC app and PostgreSQL, wires `DATABASE_URL` between them, and mounts the `openmaic-data` and `openmaic-postgres` volumes. Configure other providers and features as needed; see [Configuration](./configuration.mdx).
+
+Models are configured in one of two ways. For a personal installation, start the stack, open the app and connect a model service in the model settings; the configuration is stored in the database. For a deployment you manage as files, copy `openmaic.example.yml` to `openmaic.yml`, keep the keys in `.env.local` and mount the file (see below). See [Configuration](./configuration.mdx#models-and-providers).
+
+The image creates the volume's data directory with the runtime user's ownership, so fresh volumes persist classrooms and usage records out of the box. A volume created by an older image may be root-owned, which makes every server-side save fail with `EACCES` while the app keeps serving normally (classrooms silently never reach disk; the log shows `Failed to record usage ... EACCES: permission denied`). Repair such a volume once, then restart the app:
+
+```bash
+docker exec -u root <container> chown -R 1001:1001 /app/data
+```
 
 `NEXT_PUBLIC_*` feature flags are injected at Docker build time and cannot be set only in the runtime `.env.local`. For example, to enable video export and experimental PPTX import:
 
@@ -43,16 +51,18 @@ docker compose --profile video-export up --build
 
 Other client-side feature flags can be passed in the same way. When using `docker build`, use the corresponding `--build-arg` options instead.
 
-To use a server-side provider configuration, mount the file at its fixed container path:
+To use `openmaic.yml`, mount it at the app's working directory, or anywhere else with `OPENMAIC_CONFIG` pointing at it:
 
 ```yaml
 services:
   openmaic:
     volumes:
-      - ./server-providers.yml:/app/server-providers.yml:ro
+      - ./openmaic.yml:/app/openmaic.yml:ro
 ```
 
-Inside a Docker container, `localhost` refers to the container itself. If Ollama, Lemonade, VoxCPM, or ComfyUI runs on the host, use `host.docker.internal`, for example `http://host.docker.internal:11434/v1` or `http://host.docker.internal:8188`. Linux Docker usually also requires `extra_hosts: ["host.docker.internal:host-gateway"]` on the `openmaic` service. Because ComfyUI is not currently a server-managed provider, production deployments must also set `ALLOW_LOCAL_NETWORKS=true`, or the SSRF guard will reject the address.
+Do not mount a path that does not exist on the host: Docker creates a directory in its place, and the server refuses to start. With `docker run`, add `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`. Restart the container after editing the file. `openmaic.yml` is listed in `.dockerignore`, so it is never baked into an image built from the repository: mount it at run time instead. The legacy `server-providers.yml` is still read from `/app/server-providers.yml` when there is no `openmaic.yml`.
+
+Inside a Docker container, `localhost` refers to the container itself. If Ollama, Lemonade, VoxCPM, or ComfyUI runs on the host, use `host.docker.internal`, for example `http://host.docker.internal:11434/v1` or `http://host.docker.internal:8188`. Linux Docker usually also requires `extra_hosts: ["host.docker.internal:host-gateway"]` on the `openmaic` service. Providers declared in `openmaic.yml` (or through the legacy variables) are server-managed, so their endpoints may be on the host or a private network without `ALLOW_LOCAL_NETWORKS`. That variable only matters for endpoints a user types: chat base URLs added in **Settings → Model Services**, and the deprecated request fields.
 
 ## Self-host on a VM
 
@@ -61,35 +71,28 @@ The host needs Node.js `22.19.0` or later and pnpm `10.28.0`. Build and start wi
 ```bash
 pnpm install
 pnpm build
-pnpm start      # listens on port 3000 by default
+DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # listens on port 3000 by default
 ```
 
-Put nginx or Caddy in front for TLS termination. By default, classroom state is stored in browser IndexedDB. With server-side persistence enabled, runtime data and course documents are stored in server storage and PostgreSQL. Choose an appropriate persistence strategy before deploying multiple instances.
+Put nginx or Caddy in front for TLS termination. Courses, runtime data and generated media are stored in PostgreSQL, so several instances can share one database.
 
 ## Server-side persistence (PostgreSQL)
 
-The repository's `server-persistence` profile starts OpenMAIC and PostgreSQL in two containers. The persistence HTTP API is embedded in OpenMAIC; no separate persistence service is required.
+OpenMAIC stores courses, chat history, learner progress and generated media in PostgreSQL, and **`DATABASE_URL` is required**: without it the server prints `[boot] Invalid server configuration; the server will not start: DATABASE_URL is not set. ...` with the fix and exits with code `1`. The persistence HTTP API is embedded in OpenMAIC; no separate persistence service is required.
 
-First add the database connection and development token to `.env.local`:
-
-```bash
-DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
-PERSISTENCE_DEV_TOKEN=openmaic-local-dev
-```
-
-Then start the profile:
+`docker compose up` starts PostgreSQL next to the app and sets `DATABASE_URL` for it. For local development, `pnpm db:up` starts a separate development database from the same service definition (its own Compose project and volume, `openmaic-dev-db`, shared by every checkout on this machine, so it never touches the stack's database), published on `127.0.0.1` (port `OPENMAIC_DB_PORT`, default `5432`); `pnpm db:down` stops it again. Then set the connection in `.env.local`:
 
 ```bash
-NEXT_PUBLIC_PERSISTENCE=1 \
-NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev \
-docker compose --profile server-persistence up --build
+DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
 ```
 
-`NEXT_PUBLIC_PERSISTENCE` and `NEXT_PUBLIC_PERSISTENCE_TOKEN` are build-time variables and must match the server-side runtime configuration. `PERSISTENCE_DEV_TOKEN` is suitable only for local or trusted private-network deployments. It does not provide real user isolation and must not be used directly as authentication for a public production deployment.
+There is no separate persistence credential: every request is attributed to the owner that owner resolution returns (by default an anonymous per-browser cookie), and runtime sessions and media are partitioned by that owner. The default identity isolates browsers but authenticates nobody, so a deployment serving real users should register owner auth methods backed by its own accounts. Earlier releases used `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN`; both are removed and ignored, and runtime sessions stored under the old browser-minted learner key are no longer reachable. If `PERSISTENCE_DEV_TOKEN` was your only access gate, put the deployment behind `ACCESS_CODE` or a gateway, or register owner auth methods, before upgrading.
 
 PostgreSQL data is stored in the `openmaic-postgres` volume. `PERSISTENCE_POSTGRES_PASSWORD` sets the password only when the database directory is first initialized. Changing the environment variable later does not automatically change the existing database user's password.
 
-Leave `NEXT_PUBLIC_PERSISTENCE` unset to keep the original browser-side persistence behavior.
+The `openmaic-data` volume also holds `instance-secret.key`, the generated instance secret that encrypts provider keys saved in the model settings, unless `OPENMAIC_SECRET_KEY` is set. Back it up together with the database: without it, saved keys have to be entered again. Running several replicas, or the app without a persistent volume or on a read-only filesystem? Set `OPENMAIC_SECRET_KEY` instead (the same value on every replica); see [Secrets and OPENMAIC_SECRET_KEY](./configuration.mdx#secrets-and-openmaic_secret_key).
+
+Earlier releases could keep courses in the browser (IndexedDB). That mode is gone, and the `NEXT_PUBLIC_PERSISTENCE` build variable is ignored. Courses a browser stored that way move to the server automatically the first time that browser opens the upgraded app: a one-way importer copies them (with their chat, learner progress, folders and media) to the owner the server resolves for that browser, and leaves the browser copy untouched. It runs once per browser: the server binds the browser to the first owner that loads the upgraded app, and a claim carries the binding to the account (an anonymous owner claimed into an account at sign-in). The server refuses the importer's requests for any other owner, so another owner that later uses the same browser gets nothing imported. It needs no action and shows no UI; problems are logged in the browser console under `[legacy-browser-import]`.
 
 ## Optional: MP4 video export
 
@@ -105,7 +108,7 @@ Compose connects OpenMAIC to the rendering service through `RENDER_SERVICE_URL`.
 
 ## Environment variables
 
-See [Configuration](./configuration.mdx) for the complete environment variables and provider configuration. You must configure a key for at least one LLM provider.
+See [Configuration](./configuration.mdx) for model configuration (`openmaic.yml` and the model settings) and every environment variable. At least one chat model must be configured before courses can be generated.
 
 ## Access control
 

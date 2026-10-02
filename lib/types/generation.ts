@@ -77,7 +77,6 @@ export interface SessionDocumentSource {
    * legacy sessions predating the digest carry only `storageKey`.
    */
   contentDigest?: string;
-  providerId?: string;
 }
 
 // ==================== Stage 1 Input ====================

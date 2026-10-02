@@ -88,6 +88,12 @@ const screenshot = Buffer.from('test screenshot');
 const page = {
   evaluate: pageWorld.evaluate,
   waitForFunction: pageWorld.waitForFunction,
+  mainFrame() {
+    return { name: 'main' };
+  },
+  async setRequestInterception(enabled) {
+    assert.equal(enabled, true);
+  },
   async setViewport(value) {
     assert.deepEqual(value, viewport);
   },

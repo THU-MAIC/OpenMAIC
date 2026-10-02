@@ -24,7 +24,7 @@ vi.mock('@/lib/document-store', () => ({
   loadCurrentScene: vi.fn().mockResolvedValue({ sceneId: 'deleted-scene' }),
 }));
 
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: {
     stages: {
       get: vi.fn().mockResolvedValue({

@@ -17,6 +17,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
+
 const mocks = vi.hoisted(() => ({
   mutateDocument: vi.fn(),
   saveStageData: vi.fn(),
@@ -32,8 +34,6 @@ const mocks = vi.hoisted(() => ({
   placeAllocations: vi.fn(),
   pendingAllocation: vi.fn(),
   forgetAllocation: vi.fn(),
-  serverBacked: vi.fn(),
-  settings: vi.fn(),
 }));
 
 vi.mock('@/lib/document-store', () => ({ mutateDocument: mocks.mutateDocument }));
@@ -45,7 +45,7 @@ vi.mock('@/lib/media/asset-pool', () => ({
   putAsset: mocks.putAsset,
   removeAsset: mocks.removeAsset,
 }));
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
   db: {
     audioFiles: { get: mocks.audioGet, put: mocks.audioPut },
@@ -56,12 +56,6 @@ vi.mock('@/lib/utils/database', () => ({
       where: () => ({ equals: () => ({ toArray: async () => [] }) }),
     },
   },
-}));
-vi.mock('@/lib/persistence/media-persistence', () => ({
-  isServerBackedMediaPersistence: mocks.serverBacked,
-}));
-vi.mock('@/lib/store/settings', () => ({
-  useSettingsStore: { getState: mocks.settings },
 }));
 vi.mock('@/lib/media/persist-media-reference', async () => {
   const actual = await vi.importActual<typeof import('@/lib/media/persist-media-reference')>(
@@ -168,7 +162,6 @@ describe('a narration clip that does not fit, and the course that still needs im
     resetGenerationPermissionsForTests();
     resetMediaPassesForTests();
     noteStageGenerationOwnership(stageId, 'owner');
-    mocks.serverBacked.mockReset().mockReturnValue(true);
     mocks.saveStageData.mockReset().mockResolvedValue(undefined);
     mocks.saveStageDataIncremental.mockReset().mockResolvedValue(undefined);
     mocks.audioPut.mockReset().mockResolvedValue(undefined);
@@ -180,15 +173,10 @@ describe('a narration clip that does not fit, and the course that still needs im
     mocks.placeAllocations.mockReset().mockReturnValue(false);
     mocks.pendingAllocation.mockReset().mockReturnValue(undefined);
     mocks.forgetAllocation.mockReset();
-    mocks.settings.mockReset().mockReturnValue({
-      imageGenerationEnabled: true,
-      videoGenerationEnabled: true,
-      imageProviderId: 'image-provider',
-      imageModelId: 'image-model',
-      imageProvidersConfig: {},
-      videoProviderId: 'video-provider',
-      videoModelId: 'video-model',
-      videoProvidersConfig: {},
+    // The workspace's image and video slots resolve to a provider.
+    setModelSettingsViewForTests({
+      image: { registryId: 'seedream' },
+      video: { registryId: 'seedance' },
     });
     useMediaGenerationStore.setState({ tasks: {} });
 

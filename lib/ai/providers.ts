@@ -24,6 +24,8 @@
  * - https://www.volcengine.com/docs/82379/1330310
  * - https://platform.xiaomimimo.com/static/docs/pricing.md
  * - https://platform.xiaomimimo.com/static/docs/tokenplan/quick-access.md
+ * - https://mimo.mi.com/static/docs/quick-start/summary/model.md
+ * - https://mimo.mi.com/static/docs/api/chat/openai-api.md
  */
 
 import { createOpenAI } from '@ai-sdk/openai';
@@ -33,8 +35,9 @@ import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { wrapLanguageModel, extractReasoningMiddleware } from 'ai';
 import {
-  createKimiReasoningPreservationMiddleware,
-  restoreKimiReasoningInRequestBody,
+  createReasoningPreservationMiddleware,
+  restoreReasoningContentInRequestBody,
+  stripReasoningContentInRequestBody,
   wrapJsonResponseWithReasoning,
   wrapResponseWithReasoning,
 } from './reasoning-sse';
@@ -55,6 +58,7 @@ import {
   pickThinkingEffort,
 } from './thinking-config';
 import { createLogger } from '@/lib/logger';
+import { withAppAttributionInit } from '@/lib/config/app-attribution';
 import { normalizeAzureBaseUrl } from './azure';
 // NOTE: Do NOT import thinking-context.ts here — it uses node:async_hooks
 // which is server-only, and this file is also used on the client via
@@ -488,6 +492,38 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     icon: '/logos/gemini.svg',
     models: [
+      {
+        id: 'gemini-3.8-flash',
+        name: 'Gemini 3.8 Flash',
+        contextWindow: 1048576,
+        outputWindow: 65536,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'gemini-3.7-flash',
+        name: 'Gemini 3.7 Flash',
+        contextWindow: 1048576,
+        outputWindow: 65536,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
       {
         id: 'gemini-3.6-flash',
         name: 'Gemini 3.6 Flash',
@@ -1471,6 +1507,38 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/xiaomi.svg',
     models: [
       {
+        id: 'mimo-v2.6-pro',
+        name: 'MiMo V2.6 Pro',
+        contextWindow: 1048576,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'mimo-v2.6-flash',
+        name: 'MiMo V2.6 Flash',
+        contextWindow: 1048576,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
         id: 'mimo-v2.5-pro',
         name: 'MiMo V2.5 Pro',
         contextWindow: 1048576,
@@ -1549,6 +1617,59 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
             defaultEnabled: true,
           },
         },
+      },
+    ],
+  },
+
+  tokendance: {
+    id: 'tokendance',
+    name: 'TokenDance',
+    type: 'openai',
+    defaultBaseUrl: 'https://tokendance.space/gateway/v1',
+    requiresApiKey: true,
+    icon: '/logos/tokendance.svg',
+    models: [
+      {
+        id: 'deepseek-v4.1-flash',
+        name: 'DeepSeek V4.1 Flash',
+        contextWindow: 1000000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'deepseek-v4-pro',
+        name: 'DeepSeek V4 Pro',
+        contextWindow: 1048576,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'glm-5.3',
+        name: 'GLM-5.3',
+        contextWindow: 1000000,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'kimi-k3',
+        name: 'Kimi K3',
+        contextWindow: 1048576,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'qwen3.8-max',
+        name: 'Qwen3.8 Max',
+        contextWindow: 1000000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'seed-2.1-pro',
+        name: 'Seed 2.1 Pro',
+        contextWindow: 256000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'minimax-m3',
+        name: 'MiniMax M3',
+        contextWindow: 1000000,
+        capabilities: { streaming: true, tools: true, vision: true },
       },
     ],
   },
@@ -1648,38 +1769,68 @@ export interface ModelWithInfo {
   modelInfo: ModelInfo | null;
 }
 
+/**
+ * Whether the transport must keep a response's reasoning and send it back on
+ * the next turn. Covers every model on DeepSeek's request adapter (deepseek and
+ * the atlascloud deepseek models) plus Kimi K3, which each reject a multi-turn
+ * request whose assistant messages drop the field. One predicate for both the
+ * request-side gates below and the agent driver's includeReasoning gate, so the
+ * two cannot drift apart again.
+ */
+export function preservesReasoning(providerId: string, modelId: string): boolean {
+  if (providerId === 'kimi' && modelId === 'kimi-k3') return true;
+  return getCatalogThinkingCapability(providerId, modelId)?.requestAdapter === 'deepseek';
+}
+
+/** {@link preservesReasoning} for the AI SDK model instance the driver holds. */
+export function preservesReasoningForModel(model: LanguageModel | string): boolean {
+  if (typeof model === 'string') return false;
+  const provider = (model as { provider?: string }).provider;
+  const modelId = (model as { modelId?: string }).modelId;
+  if (!provider || !modelId) return false;
+  const separator = provider.indexOf('.');
+  const providerId = separator > 0 ? provider.slice(0, separator) : provider;
+  return providerId in PROVIDERS && preservesReasoning(providerId, modelId);
+}
+
 function getCompatThinkingBodyParams(
   providerId: ProviderId,
   modelId: string,
   config: ThinkingConfig,
-): Record<string, unknown> | undefined {
+  options: { hasTools?: boolean } = {},
+): { params: Record<string, unknown>; disablesThinking: boolean } | undefined {
   // This model is served through an OpenAI-compatible gateway even when the
   // deployment uses the `openai` provider slot. The gateway's chat template
   // toggle is neither OpenAI's `reasoning_effort` nor DeepSeek's native
   // `thinking` object: it requires this exact vLLM template argument.
+  const mode = getThinkingMode(config);
   if (providerId === 'openai' && modelId === 'deepseek-v4-flash-vision-exp') {
-    const mode = getThinkingMode(config);
-    return mode === undefined
-      ? undefined
-      : { chat_template_kwargs: { thinking: mode === 'enabled' } };
+    if (mode === undefined) return undefined;
+    const gatewayThinkingEnabled = mode === 'enabled';
+    return {
+      params: { chat_template_kwargs: { thinking: gatewayThinkingEnabled } },
+      disablesThinking: !gatewayThinkingEnabled,
+    };
   }
 
   const capability = getCatalogThinkingCapability(providerId, modelId);
   if (!capability || capability.control === 'none') return undefined;
 
-  const mode = getThinkingMode(config);
   const budget = pickThinkingBudget(capability, config);
 
   switch (capability.requestAdapter) {
     case 'openai': {
       const effort = pickThinkingEffort(capability, config);
-      return effort ? { reasoning_effort: effort } : undefined;
+      // An effort value never disables thinking on this transport.
+      return effort ? { params: { reasoning_effort: effort }, disablesThinking: false } : undefined;
     }
 
     case 'kimi':
     case 'xiaomi':
-      if (mode === 'disabled') return { thinking: { type: 'disabled' } };
-      if (mode === 'enabled') return { thinking: { type: 'enabled' } };
+      if (mode === 'disabled')
+        return { params: { thinking: { type: 'disabled' } }, disablesThinking: true };
+      if (mode === 'enabled')
+        return { params: { thinking: { type: 'enabled' } }, disablesThinking: false };
       return undefined;
 
     case 'glm': {
@@ -1691,10 +1842,13 @@ function getCompatThinkingBodyParams(
           if (capability.toggleable === false) {
             const lightest = capability.effortValues?.[0];
             return lightest
-              ? { thinking: { type: 'enabled' }, reasoning_effort: lightest }
+              ? {
+                  params: { thinking: { type: 'enabled' }, reasoning_effort: lightest },
+                  disablesThinking: false,
+                }
               : undefined;
           }
-          return { thinking: { type: 'disabled' } };
+          return { params: { thinking: { type: 'disabled' } }, disablesThinking: true };
         }
 
         const effort =
@@ -1706,41 +1860,57 @@ function getCompatThinkingBodyParams(
         const body: Record<string, unknown> = {};
         if (mode === 'enabled' || effort) body.thinking = { type: 'enabled' };
         if (effort) body.reasoning_effort = effort;
-        return Object.keys(body).length > 0 ? body : undefined;
+        return Object.keys(body).length > 0 ? { params: body, disablesThinking: false } : undefined;
       }
-      if (mode === 'disabled') return { thinking: { type: 'disabled' } };
-      if (mode === 'enabled') return { thinking: { type: 'enabled' } };
+      if (mode === 'disabled')
+        return { params: { thinking: { type: 'disabled' } }, disablesThinking: true };
+      if (mode === 'enabled')
+        return { params: { thinking: { type: 'enabled' } }, disablesThinking: false };
       return undefined;
     }
 
     case 'deepseek': {
       if (mode === 'disabled' || config.effort === 'none') {
-        return { thinking: { type: 'disabled' } };
+        return { params: { thinking: { type: 'disabled' } }, disablesThinking: true };
       }
-
+      // A tool-carrying request may never set reasoning_effort (the transport
+      // rejects function tools combined with it), so the toggle goes alone;
+      // every other request keeps the historical effort (explicit value, else
+      // the default).
+      if (options.hasTools) {
+        return { params: { thinking: { type: 'enabled' } }, disablesThinking: false };
+      }
       const effort = config.effort === 'max' || config.effort === 'xhigh' ? 'max' : 'high';
       return {
-        thinking: { type: 'enabled' },
-        reasoning_effort: effort,
+        params: {
+          thinking: { type: 'enabled' },
+          reasoning_effort: effort,
+        },
+        disablesThinking: false,
       };
     }
 
     case 'qwen': {
-      if (mode === 'disabled') return { enable_thinking: false };
+      if (mode === 'disabled')
+        return { params: { enable_thinking: false }, disablesThinking: true };
       const body: Record<string, unknown> = {};
       if (mode === 'enabled') body.enable_thinking = true;
       if (budget !== undefined) body.thinking_budget = budget;
-      return Object.keys(body).length > 0 ? body : undefined;
+      return Object.keys(body).length > 0 ? { params: body, disablesThinking: false } : undefined;
     }
 
     case 'siliconflow': {
       const body: Record<string, unknown> = {};
+      let disablesThinking = false;
       if (capability.control === 'toggle-budget') {
-        if (mode === 'disabled') body.enable_thinking = false;
+        if (mode === 'disabled') {
+          body.enable_thinking = false;
+          disablesThinking = true;
+        }
         if (mode === 'enabled') body.enable_thinking = true;
       }
       if (budget !== undefined && budget > 0) body.thinking_budget = budget;
-      return Object.keys(body).length > 0 ? body : undefined;
+      return Object.keys(body).length > 0 ? { params: body, disablesThinking } : undefined;
     }
 
     case 'doubao': {
@@ -1753,11 +1923,17 @@ function getCompatThinkingBodyParams(
               : mode === 'enabled'
                 ? capability.defaultEffort
                 : undefined;
-        return effort ? { reasoning_effort: effort } : undefined;
+        // 'minimal' is the floor below 'disabled': the model still reasons.
+        return effort
+          ? { params: { reasoning_effort: effort }, disablesThinking: false }
+          : undefined;
       }
-      if (mode === 'auto') return { thinking: { type: 'auto' } };
-      if (mode === 'disabled') return { thinking: { type: 'disabled' } };
-      if (mode === 'enabled') return { thinking: { type: 'enabled' } };
+      if (mode === 'auto')
+        return { params: { thinking: { type: 'auto' } }, disablesThinking: false };
+      if (mode === 'disabled')
+        return { params: { thinking: { type: 'disabled' } }, disablesThinking: true };
+      if (mode === 'enabled')
+        return { params: { thinking: { type: 'enabled' } }, disablesThinking: false };
       return undefined;
     }
 
@@ -1770,7 +1946,9 @@ function getCompatThinkingBodyParams(
       if (typeof config.excludeReasoningOutput === 'boolean') {
         reasoning.exclude = config.excludeReasoningOutput;
       }
-      return Object.keys(reasoning).length > 0 ? { reasoning } : undefined;
+      return Object.keys(reasoning).length > 0
+        ? { params: { reasoning }, disablesThinking: mode === 'disabled' }
+        : undefined;
     }
 
     case 'hunyuan': {
@@ -1789,21 +1967,24 @@ function getCompatThinkingBodyParams(
         reasoningEffort = capability.defaultEffort === 'high' ? 'high' : 'low';
       }
       return reasoningEffort
-        ? { chat_template_kwargs: { reasoning_effort: reasoningEffort } }
+        ? {
+            params: { chat_template_kwargs: { reasoning_effort: reasoningEffort } },
+            disablesThinking: reasoningEffort === 'no_think',
+          }
         : undefined;
     }
 
     case 'lemonade': {
       const chatTemplateKwargs: Record<string, unknown> = {};
-      if (mode === 'enabled') {
-        chatTemplateKwargs.enable_thinking = true;
-      } else {
-        chatTemplateKwargs.enable_thinking = false;
-      }
-      if (mode === 'enabled' && budget !== undefined) {
+      const thinkingEnabled = mode === 'enabled';
+      chatTemplateKwargs.enable_thinking = thinkingEnabled;
+      if (thinkingEnabled && budget !== undefined) {
         chatTemplateKwargs.thinking_budget = budget;
       }
-      return { chat_template_kwargs: chatTemplateKwargs };
+      return {
+        params: { chat_template_kwargs: chatTemplateKwargs },
+        disablesThinking: !thinkingEnabled,
+      };
     }
 
     default:
@@ -1880,23 +2061,59 @@ function shouldUseOpenAIResponsesApi(providerId: ProviderId, modelId: string): b
   );
 }
 
+/**
+ * A base URL reduced to the endpoint it addresses: origin plus path, with
+ * trailing slashes dropped and any query string discarded. `undefined` when it
+ * does not parse as a URL.
+ */
+function endpointKey(baseUrl: string): string | undefined {
+  try {
+    const url = new URL(baseUrl.trim());
+    return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
+  } catch {
+    return undefined;
+  }
+}
+
 function usesCustomOpenAIBaseUrl(baseUrl?: string): boolean {
   if (!baseUrl) return false;
   const trimmed = baseUrl.trim();
   if (!trimmed) return false;
 
-  try {
-    const url = new URL(trimmed);
-    const pathname = url.pathname.replace(/\/+$/, '');
-    return url.origin !== 'https://api.openai.com' || pathname !== '/v1';
-  } catch {
-    return true;
-  }
+  const key = endpointKey(trimmed);
+  // An unparseable URL counts as custom: the operator pointed this provider
+  // somewhere, and that somewhere is not the OpenAI service.
+  return key === undefined || key !== 'https://api.openai.com/v1';
+}
+
+/**
+ * Whether `baseUrl` addresses a provider's own service rather than a relay.
+ *
+ * `usesCustomOpenAIBaseUrl` recognises OpenAI's origin alone, so every other
+ * provider's native endpoint reads as "custom" to it. The distinction decides
+ * whether the compat streaming path applies, and that path exists for RELAYS: a
+ * relay is what carries an idle timeout to defeat, and a provider's own
+ * endpoint is not.
+ */
+function isProviderNativeBaseUrl(providerId: ProviderId, baseUrl?: string): boolean {
+  if (!baseUrl) return false;
+  const nativeBaseUrl = PROVIDERS[providerId]?.defaultBaseUrl;
+  if (!nativeBaseUrl) return false;
+  const key = endpointKey(baseUrl);
+  return key !== undefined && key === endpointKey(nativeBaseUrl);
 }
 
 function shouldUseOpenAIStreamingChatCompat(providerId: ProviderId, baseUrl?: string): boolean {
   return (
-    providerId === 'openai' &&
+    // Grok behind a relay is the same shape as OpenAI behind one. A long
+    // non-streaming generation sends nothing until the model has the whole
+    // answer, so the relay's idle timeout cuts the connection (~5 min 504).
+    // Streaming upstream keeps bytes flowing; the SSE is buffered back into a
+    // normal JSON response for the caller.
+    (providerId === 'openai' || providerId === 'grok') &&
+    // ...but only for a relay. Grok's own api.x.ai is not one, and it reads as
+    // custom to `usesCustomOpenAIBaseUrl`, which knows OpenAI's origin alone.
+    !isProviderNativeBaseUrl(providerId, baseUrl) &&
     usesCustomOpenAIBaseUrl(baseUrl) &&
     process.env.OPENAI_COMPAT_USE_STREAMING_CHAT === 'true'
   );
@@ -2115,6 +2332,19 @@ async function fetchCustomOpenAIChat(
   );
 }
 
+/** A request's headers without an `Authorization` that carries no credential (`Bearer `). */
+export function withoutEmptyBearer(init: RequestInit | undefined): RequestInit | undefined {
+  if (!init?.headers) return init;
+  const headers = new Headers(init.headers);
+  let empty = false;
+  headers.forEach((value, name) => {
+    if (name === 'authorization' && /^bearer\s*$/i.test(value)) empty = true;
+  });
+  if (!empty) return init;
+  headers.delete('authorization');
+  return { ...init, headers };
+}
+
 /** Returns true if the provider requires an API key (defaults to true for unknown providers). */
 export function isProviderKeyRequired(providerId: string): boolean {
   return getProviderConfig(providerId as ProviderId)?.requiresApiKey ?? true;
@@ -2147,7 +2377,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
   // providerType can come from client for custom providers; fall back to registry.
   let providerType = config.providerType;
   const provider = getProviderConfig(config.providerId);
-  const requiresApiKey = provider?.requiresApiKey ?? true;
+  const requiresApiKey = config.requiresApiKey ?? provider?.requiresApiKey ?? true;
 
   if (provider && providerType && providerType !== provider.type) {
     throw new Error(
@@ -2186,6 +2416,12 @@ export function getModel(config: ModelConfig): ModelWithInfo {
   // See LLM_FETCH_TIMEOUT_MS: every outbound LLM request — whatever transport
   // it ends up on — carries the extended-timeout dispatcher.
   const transportFetch: typeof fetch = async (fetchInput, fetchInit) => {
+    // App attribution first: gateways that support it (TokenDance) receive
+    // X-App-URL on every outbound request; every other provider is untouched.
+    fetchInit = withAppAttributionInit(fetchInput, fetchInit);
+    // Without a key (a local or self-hosted server) the SDK still sends an
+    // empty bearer token: send no Authorization header instead.
+    if (!effectiveApiKey) fetchInit = withoutEmptyBearer(fetchInit);
     // A caller-supplied dispatcher (config.fetchImpl may carry one) wins over
     // ours; only inject ours when the request doesn't already carry one.
     if ((fetchInit as (RequestInit & { dispatcher?: unknown }) | undefined)?.dispatcher) {
@@ -2260,6 +2496,10 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       const usesCompatTransport =
         config.providerId !== 'openai' ||
         (usesCustomOpenAIBaseUrl(config.baseUrl) && !usesOpenAIResponses);
+      const roundTripProvider = preservesReasoning(config.providerId, config.modelId);
+      const deepseekAdapter =
+        getCatalogThinkingCapability(config.providerId, config.modelId)?.requestAdapter ===
+        'deepseek';
       if (usesCompatTransport) {
         const providerId = config.providerId;
         const compatFetch = async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -2268,20 +2508,41 @@ export function getModel(config: ModelConfig): ModelWithInfo {
             | { getStore?: () => unknown }
             | undefined;
           const thinkingFromContext = thinkingCtx?.getStore?.() as ThinkingConfig | undefined;
+          // Preserved-reasoning providers get the catalog default injected when
+          // no caller supplied one, so the wire always states the thinking mode
+          // explicitly instead of relying on the provider's server-side default
+          // (which decides whether reasoning_content must round-trip at all).
           const thinking =
             thinkingFromContext ??
-            (providerId === 'lemonade'
+            (providerId === 'lemonade' || roundTripProvider
               ? getDefaultThinkingConfig(getCatalogThinkingCapability(providerId, config.modelId))
               : undefined);
+
+          const hasRequestTools =
+            !!init?.body &&
+            typeof init.body === 'string' &&
+            (() => {
+              try {
+                const tools = JSON.parse(init.body).tools;
+                return Array.isArray(tools) && tools.length > 0;
+              } catch {
+                return false;
+              }
+            })();
+
+          let thinkingDisabledOnWire = false;
           if (thinking && init?.body && typeof init.body === 'string') {
-            const extra = getCompatThinkingBodyParams(providerId, config.modelId, thinking);
-            if (extra) {
+            const built = getCompatThinkingBodyParams(providerId, config.modelId, thinking, {
+              hasTools: hasRequestTools,
+            });
+            if (built) {
+              thinkingDisabledOnWire = built.disablesThinking;
               try {
                 const body = JSON.parse(init.body);
                 if (providerId === 'lemonade' && 'stream_options' in body) {
                   delete body.stream_options;
                 }
-                Object.assign(body, extra);
+                Object.assign(body, built.params);
                 init = { ...init, body: JSON.stringify(body) };
               } catch {
                 /* leave body as-is */
@@ -2289,15 +2550,21 @@ export function getModel(config: ModelConfig): ModelWithInfo {
             }
           }
 
-          if (
-            providerId === 'kimi' &&
-            config.modelId === 'kimi-k3' &&
-            init?.body &&
-            typeof init.body === 'string'
-          ) {
+          if (roundTripProvider && init?.body && typeof init.body === 'string') {
             try {
               const body = JSON.parse(init.body);
-              restoreKimiReasoningInRequestBody(body);
+              if (thinkingDisabledOnWire) {
+                stripReasoningContentInRequestBody(body);
+              } else {
+                restoreReasoningContentInRequestBody(body);
+                if (deepseekAdapter) {
+                  for (const message of body.messages ?? []) {
+                    if (message?.role === 'assistant' && message.reasoning_content === undefined) {
+                      message.reasoning_content = '';
+                    }
+                  }
+                }
+              }
               init = { ...init, body: JSON.stringify(body) };
             } catch {
               /* leave body as-is */
@@ -2321,7 +2588,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           }
           const normalizedReasoningResponse = streaming
             ? wrapResponseWithReasoning(response)
-            : providerId === 'kimi' && config.modelId === 'kimi-k3'
+            : roundTripProvider
               ? await wrapJsonResponseWithReasoning(response)
               : response;
 
@@ -2378,13 +2645,12 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       // Split it into first-class reasoning parts so the agent stream and UI can
       // show a thinking panel and the answer text stays clean.
       if (usesCompatTransport) {
-        const middleware =
-          config.providerId === 'kimi' && config.modelId === 'kimi-k3'
-            ? [
-                createKimiReasoningPreservationMiddleware(),
-                extractReasoningMiddleware({ tagName: 'think' }),
-              ]
-            : extractReasoningMiddleware({ tagName: 'think' });
+        const middleware = roundTripProvider
+          ? [
+              createReasoningPreservationMiddleware(),
+              extractReasoningMiddleware({ tagName: 'think' }),
+            ]
+          : extractReasoningMiddleware({ tagName: 'think' });
         model = wrapLanguageModel({
           model,
           middleware,
@@ -2515,7 +2781,7 @@ const warnedBareModelIds = new Set<string>();
 
 /**
  * Warn once per unique bare model id. `where` names the config site (e.g.
- * `DEFAULT_MODEL` or a MODEL_ROUTES stage). Callers must pass only
+ * `DEFAULT_MODEL`). Callers must pass only
  * config-derived ids (the config surface is finite, so the dedupe set is
  * bounded); request-derived strings must never reach this function.
  */

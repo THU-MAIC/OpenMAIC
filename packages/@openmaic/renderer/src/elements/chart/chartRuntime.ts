@@ -20,6 +20,7 @@ export function loadChartRuntime(): Promise<EChartsRuntime> {
   ]).then(([echarts, charts, components, renderers]) => {
     echarts.use([
       charts.BarChart,
+      charts.PictorialBarChart,
       charts.LineChart,
       charts.PieChart,
       charts.ScatterChart,

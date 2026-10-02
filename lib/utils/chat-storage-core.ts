@@ -11,7 +11,7 @@ import type { UIMessage } from 'ai';
 import { isEqual } from 'lodash';
 
 import type { ChatMessageMetadata, ChatSession, SessionStatus } from '@/lib/types/chat';
-import type { ChatSessionRecord } from './database';
+import type { ChatSessionRecord } from '@/lib/legacy-browser-storage/schema';
 
 const MAX_MESSAGES_PER_SESSION = 200;
 const MAX_RUNTIME_RECORDS_PER_CHAT_SESSION = 256;

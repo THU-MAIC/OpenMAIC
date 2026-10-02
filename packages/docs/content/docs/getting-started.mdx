@@ -31,19 +31,44 @@ Copy the example environment file and configure at least one LLM provider:
 cp .env.example .env.local
 ```
 
-Open `.env.local` and enter credentials for a provider you use. For example:
+Then configure a model. The simplest file setup is a minimal `openmaic.yml` next to `.env.local`, with the key in `.env.local`:
 
 ```bash title=".env.local"
 OPENAI_API_KEY=sk-...
-# or
-ANTHROPIC_API_KEY=sk-ant-...
-# or local Ollama (no key required)
-OLLAMA_BASE_URL=http://localhost:11434/v1
 ```
+
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+
+slots:
+  llm: openai:gpt-5.5
+```
+
+`openmaic.example.yml` is this same starting point, with optional providers and slots commented out. Without the file, the legacy provider variables still work as long as `DEFAULT_MODEL` names the model:
+
+```bash title=".env.local"
+ANTHROPIC_API_KEY=sk-ant-...
+DEFAULT_MODEL=anthropic:claude-sonnet-4-6
+```
+
+To skip both, start the app and enter a plan's key in **Settings → Token Plan**, or a service's key in **Settings → Model Services**. Without `openmaic.yml`, `DEFAULT_MODEL` or a service set up there, no model is configured and generation fails.
 
 See [Configuration](./configuration.mdx) for complete provider, image/video generation, TTS, ASR, document parsing, web search, access control, and feature flag configuration.
 
 ## Run
+
+Courses are stored in PostgreSQL, and the server refuses to start without `DATABASE_URL`. Start a local development database (a separate PostgreSQL in Docker on `127.0.0.1:5432`, shared by every checkout on this machine; set `OPENMAIC_DB_PORT` for another port) and set `DATABASE_URL` in `.env.local`:
+
+```bash
+pnpm db:up
+```
+
+```bash title=".env.local"
+DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
+```
 
 Start the development server:
 
@@ -57,7 +82,7 @@ Open [http://localhost:3000](http://localhost:3000). You should see the OpenMAIC
 
 ```bash
 pnpm build
-pnpm start
+DATABASE_URL=postgres://... pnpm start
 ```
 
 Or deploy to Vercel, Docker, or your own server—see the [Deployment guide](./deployment.mdx).

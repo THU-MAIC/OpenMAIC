@@ -33,7 +33,7 @@ import { collectVideoAssets } from '@/lib/video-export-app/collect';
 import type { VideoTimeline } from '@/lib/video-export';
 import type { VideoTimelineRecords } from '@/lib/video-export-app/timeline-deps';
 import type { Scene } from '@/lib/types/stage';
-import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
+import type { AudioFileRecord, MediaFileRecord } from '@/lib/device-storage/database';
 
 /** Minimal IR carrying only an asset plan — collectVideoAssets reads `ir.assets.entries`. */
 function irWith(entries: VideoTimeline['assets']['entries']): VideoTimeline {

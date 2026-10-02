@@ -415,16 +415,30 @@ describe('polled video adapter compatibility', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('keeps Veo operation routing and polled success extraction unchanged', async () => {
+  it('polls the Gemini API operation and downloads the generated video URI with the key', async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ name: 'operations/veo-task' }))
+      .mockResolvedValueOnce(
+        jsonResponse({ name: 'models/veo-3.1-generate-preview/operations/veo-task' }),
+      )
       .mockResolvedValueOnce(
         jsonResponse({
-          name: 'operations/veo-task',
+          name: 'models/veo-3.1-generate-preview/operations/veo-task',
           done: true,
           response: {
-            videos: [{ bytesBase64Encoded: 'cG9sbGVk', mimeType: 'video/webm' }],
+            '@type':
+              'type.googleapis.com/google.ai.generativelanguage.v1beta.PredictLongRunningResponse',
+            generateVideoResponse: {
+              generatedSamples: [
+                { video: { uri: 'https://veo.example/v1beta/files/abc:download?alt=media' } },
+              ],
+            },
           },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array([112, 111, 108, 108, 101, 100]), {
+          status: 200,
+          headers: { 'Content-Type': 'video/mp4' },
         }),
       );
 
@@ -433,7 +447,7 @@ describe('polled video adapter compatibility', () => {
         providerId: 'veo',
         apiKey: 'veo-key',
         baseUrl: 'https://veo.example',
-        model: 'veo-3.0-generate-001',
+        model: 'veo-3.1-generate-preview',
       },
       { prompt: 'a paper city', aspectRatio: '9:16', duration: 8 },
     );
@@ -443,14 +457,92 @@ describe('polled video adapter compatibility', () => {
     await vi.advanceTimersByTimeAsync(1);
 
     await expect(promise).resolves.toEqual({
-      url: 'data:video/webm;base64,cG9sbGVk',
+      url: 'data:video/mp4;base64,cG9sbGVk',
       duration: 8,
       width: 720,
       height: 1280,
     });
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toEqual({
-      operationName: 'operations/veo-task',
+    const [pollUrl, pollInit] = fetchMock.mock.calls[1];
+    expect(pollUrl).toBe(
+      'https://veo.example/v1beta/models/veo-3.1-generate-preview/operations/veo-task',
+    );
+    expect(pollInit).toMatchObject({
+      method: 'GET',
+      redirect: 'manual',
+      headers: { 'x-goog-api-key': 'veo-key' },
     });
+    expect(pollInit.body).toBeUndefined();
+    const [downloadUrl, downloadInit] = fetchMock.mock.calls[2];
+    expect(downloadUrl).toBe('https://veo.example/v1beta/files/abc:download?alt=media');
+    expect(downloadInit).toMatchObject({
+      method: 'GET',
+      redirect: 'manual',
+      headers: { 'x-goog-api-key': 'veo-key' },
+    });
+  });
+
+  it('sends the Veo video download to the configured base URL, never to another host', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          name: 'operations/veo-proxy',
+          done: true,
+          response: {
+            generateVideoResponse: {
+              generatedSamples: [
+                {
+                  video: {
+                    uri: 'https://generativelanguage.googleapis.com/v1beta/files/abc:download?alt=media',
+                  },
+                },
+              ],
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(new Uint8Array([1]), { status: 200 }));
+
+    await generateWithVeo(
+      {
+        providerId: 'veo',
+        apiKey: 'veo-key',
+        baseUrl: 'https://proxy.example/gemini',
+        model: 'veo-3.1-generate-preview',
+      },
+      { prompt: 'a paper city' },
+    );
+
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'https://proxy.example/gemini/v1beta/files/abc:download?alt=media',
+    );
+  });
+
+  it('reports a Veo operation whose output was filtered as a failure', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        name: 'operations/veo-filtered',
+        done: true,
+        response: {
+          generateVideoResponse: {
+            raiMediaFilteredCount: 1,
+            raiMediaFilteredReasons: ['The prompt could not be submitted.'],
+          },
+        },
+      }),
+    );
+
+    await expect(
+      generateWithVeo(
+        {
+          providerId: 'veo',
+          apiKey: 'veo-key',
+          baseUrl: 'https://veo.example',
+          model: 'veo-3.1-generate-preview',
+        },
+        { prompt: 'a paper city' },
+      ),
+    ).rejects.toThrow('Veo generation was filtered: The prompt could not be submitted.');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('preserves the Veo timeout message and exact poll count', async () => {
@@ -530,5 +622,96 @@ describe('polled video adapter compatibility', () => {
 
     await rejection;
     expect(fetchMock).toHaveBeenCalledTimes(121);
+  });
+
+  it('routes MiniMax H3 models through the v2 task API', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'h3-task' })).mockResolvedValueOnce(
+      jsonResponse({
+        task: { status: 'succeeded', content: { url: 'https://cdn.example.com/h3.mp4' } },
+      }),
+    );
+    const promise = generateWithMiniMaxVideo(
+      {
+        providerId: 'minimax-video',
+        apiKey: 'gateway-key',
+        baseUrl: 'https://gateway.example/minimax/',
+        model: 'minimax-h3',
+      },
+      { prompt: 'a paper city', aspectRatio: '9:16', resolution: '1080p', duration: 10 },
+    );
+
+    const [submitUrl, submitInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(submitUrl).toBe('https://gateway.example/minimax/v2/video_generation');
+    expect(submitInit.headers).toMatchObject({ Authorization: 'Bearer gateway-key' });
+    expect(JSON.parse(submitInit.body as string)).toEqual({
+      model: 'minimax-h3',
+      resolution: '768P',
+      duration: 6,
+      ratio: '9:16',
+      content: [{ type: 'text', text: 'a paper city' }],
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(promise).resolves.toEqual({
+      url: 'https://cdn.example.com/h3.mp4',
+      duration: 6,
+      width: 768,
+      height: 1366,
+    });
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'https://gateway.example/minimax/v2/query/video_generation/h3-task',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports MiniMax H3 v2 dimensions for the requested aspect ratio', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ task_id: 'h3-square' }))
+      .mockResolvedValueOnce(
+        jsonResponse({ status: 'succeeded', content: { url: 'https://cdn.example.com/sq.mp4' } }),
+      );
+    const promise = generateWithMiniMaxVideo(
+      {
+        providerId: 'minimax-video',
+        apiKey: 'gateway-key',
+        baseUrl: 'https://gateway.example/minimax',
+        model: 'minimax-h3',
+      },
+      { prompt: 'a paper city', aspectRatio: '1:1' },
+    );
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(promise).resolves.toEqual({
+      url: 'https://cdn.example.com/sq.mp4',
+      duration: 6,
+      width: 768,
+      height: 768,
+    });
+  });
+
+  it('reports a terminal MiniMax H3 v2 failure with its error message', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ task_id: 'h3-failed' }))
+      .mockResolvedValueOnce(
+        jsonResponse({ status: 'failed', error: { message: 'content moderation' } }),
+      );
+    const promise = generateWithMiniMaxVideo(
+      {
+        providerId: 'minimax-video',
+        apiKey: 'gateway-key',
+        baseUrl: 'https://gateway.example/minimax',
+        model: 'minimax-h3-max',
+      },
+      { prompt: 'a paper city' },
+    );
+    const rejection = expect(promise).rejects.toThrow(
+      'MiniMax Video generation failed: content moderation',
+    );
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await rejection;
+    expect(fetchMock.mock.calls[0][0]).toBe('https://gateway.example/minimax/v2/video_generation');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

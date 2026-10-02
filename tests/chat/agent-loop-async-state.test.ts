@@ -22,7 +22,7 @@ describe('agent loop async store state', () => {
     const pending = deferred<AgentLoopStoreState>();
     const fetchChat = vi.fn(async () => new Response(''));
     const running = runAgentLoop(
-      { config: { agentIds: [] }, apiKey: '' },
+      { config: { agentIds: [] } },
       {
         getStoreState: () => pending.promise,
         getMessages: () => [],
@@ -48,7 +48,7 @@ describe('agent loop async store state', () => {
     const controller = new AbortController();
     const fetchChat = vi.fn(async () => new Response(''));
     const running = runAgentLoop(
-      { config: { agentIds: [] }, apiKey: '' },
+      { config: { agentIds: [] } },
       {
         getStoreState: () => pending.promise,
         getMessages: () => [],

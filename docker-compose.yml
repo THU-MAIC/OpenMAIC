@@ -5,12 +5,12 @@ services:
       args:
         - ALPINE_MIRROR=${ALPINE_MIRROR:-}
         - NPM_REGISTRY=${NPM_REGISTRY:-}
-        # NEXT_PUBLIC_* values are compiled into the browser bundle. Leave them
-        # empty unless the corresponding client feature is explicitly enabled;
-        # persistence and other build-time flags can be supplied on the command line.
+        # NEXT_PUBLIC_* values are compiled into the browser bundle. Empty values
+        # follow each feature's documented default; explicit build-time overrides
+        # can be supplied on the command line.
+        # env_file below does not feed build args. For a legacy-chat rollback:
+        # NEXT_PUBLIC_PI_CHAT_ENABLED=false docker compose up -d --build openmaic
         - ALLOWED_FRAME_ANCESTORS=${ALLOWED_FRAME_ANCESTORS:-}
-        - NEXT_PUBLIC_PERSISTENCE=${NEXT_PUBLIC_PERSISTENCE:-}
-        - NEXT_PUBLIC_PERSISTENCE_TOKEN=${NEXT_PUBLIC_PERSISTENCE_TOKEN:-}
         - NEXT_PUBLIC_MAIC_EDITOR_ENABLED=${NEXT_PUBLIC_MAIC_EDITOR_ENABLED:-}
         - NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED=${NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED:-}
         - NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED=${NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED:-}
@@ -20,11 +20,29 @@ services:
         - NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=${NEXT_PUBLIC_ENABLE_VIDEO_EXPORT:-}
         - NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION=${NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION:-}
         - NEXT_PUBLIC_ENABLE_PPTX_IMPORT=${NEXT_PUBLIC_ENABLE_PPTX_IMPORT:-}
+        - NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=${NEXT_PUBLIC_PRO_WORKBENCH_ENABLED:-}
+    # Published on loopback by default: the single-user owner (see
+    # docker-compose.defaults.env) serves one course library to every request,
+    # so only this machine should reach it. To publish on the network, set
+    # ACCESS_CODE in .env.local (strongly recommended: without it anyone who
+    # reaches the port shares, edits and can delete the library) and start with
+    # OPENMAIC_PUBLISH_ADDRESS=0.0.0.0 (or a specific interface address).
     ports:
-      - '3000:3000'
+      - '${OPENMAIC_PUBLISH_ADDRESS:-127.0.0.1}:${OPENMAIC_PORT:-3000}:3000'
     env_file:
+      # Compose's defaults for this deployment (the bundled DATABASE_URL, the
+      # single-user owner); .env.local is read after it, so a key set there
+      # (for example an external DATABASE_URL) overrides the default.
+      - docker-compose.defaults.env
       - .env.local
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
+      # The address the port above is published on, passed in so the app can
+      # warn when it is published beyond loopback with the default PostgreSQL
+      # password below.
+      - OPENMAIC_PUBLISH_ADDRESS=${OPENMAIC_PUBLISH_ADDRESS:-127.0.0.1}
       # Point the app at the render service when it's running. This wins over any
       # RENDER_SERVICE_URL in .env.local; the service only starts under the
       # "video-export" profile. The app's capability check probes the service's
@@ -36,23 +54,29 @@ services:
       - default # outbound internet (LLM/media provider APIs, etc.)
       - render # reach the render service over the isolated network
     volumes:
-      # Optional: mount server-providers.yml for provider config
+      # Optional: the model configuration (copy openmaic.example.yml to
+      # openmaic.yml first; a missing file would be mounted as a directory).
+      # - ./openmaic.yml:/app/openmaic.yml:ro
+      # Legacy, read only when there is no openmaic.yml:
       # - ./server-providers.yml:/app/server-providers.yml:ro
       - openmaic-data:/app/data
     restart: unless-stopped
 
-  # Optional PostgreSQL backing for the app-embedded persistence API.
-  # The app reads DATABASE_URL and PERSISTENCE_DEV_TOKEN from .env.local; keeping
-  # those values there avoids changing the default browser-only deployment.
+  # PostgreSQL for the app-embedded persistence API. Started by default; the
+  # app waits for its health check. Its port is not published to the host here;
+  # `pnpm db:up` runs this service definition as a separate development
+  # database (its own project and volume, see docker-compose.db.yml).
   postgres:
     image: postgres:16
-    profiles:
-      - server-persistence
     environment:
       - POSTGRES_DB=openmaic
       - POSTGRES_USER=openmaic
-      # Development default only. Override this and the matching DATABASE_URL
-      # before using the stack outside a local trusted environment.
+      # Development default. It initializes the role only when the volume is
+      # empty; the default DATABASE_URL in docker-compose.defaults.env is built
+      # from the same variable, so use letters and digits only (or set an
+      # encoded DATABASE_URL in .env.local). Set PERSISTENCE_POSTGRES_PASSWORD before
+      # publishing the app beyond loopback; the app warns at startup if it is
+      # published elsewhere with this default.
       - POSTGRES_PASSWORD=${PERSISTENCE_POSTGRES_PASSWORD:-openmaic-dev}
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U openmaic -d openmaic']

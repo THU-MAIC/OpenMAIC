@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The media generation store imports Dexie at module scope; the fold under
 // test never touches it, so a stub is enough.
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
   db: { mediaFiles: { where: vi.fn(), put: vi.fn(), delete: vi.fn() } },
 }));
@@ -109,6 +109,40 @@ describe('media_ready client fold', () => {
       kind: 'url',
       url: '/api/classroom-media/stage-1/media/v.mp4',
     });
+  });
+
+  it('an allocated-id frame settles the task as an identity, not as a URL', () => {
+    // What a workbench video completion looks like since #1522: the frame
+    // carries the id the pool allocated. The task holds it verbatim -- the
+    // shape `lookupMediaTask` already documents -- and the bytes arrive by
+    // leasing that id, never by handing the string to the DOM.
+    applyMediaReadyFrame({
+      ref: REF,
+      stageId: 'stage-1',
+      status: 'done',
+      src: 'ast_generated_video',
+      mime: 'video/mp4',
+      durationSec: 5,
+    });
+
+    const task = lookupMediaTask(useMediaGenerationStore.getState().tasks, REF, 'stage-1');
+    expect(task).toMatchObject({ status: 'done', objectUrl: 'ast_generated_video' });
+
+    const binding = resolveVideoMediaForElement(
+      useMediaGenerationStore.getState().tasks,
+      videoElement(),
+      'stage-1',
+    );
+    // Without the lease the id is never presented as an address: the element
+    // waits, rather than being handed a string that renders nothing.
+    expect(resolveMediaRef(binding.sourceRef, binding.task)).toEqual({ kind: 'pending' });
+    // With the lease over that same id, it renders.
+    expect(
+      resolveMediaRef(binding.sourceRef, binding.task, {
+        status: 'resolved',
+        url: 'blob:leased-video',
+      }),
+    ).toEqual({ kind: 'url', url: 'blob:leased-video' });
   });
 
   it('a failed frame upserts the error state with the structured code', () => {

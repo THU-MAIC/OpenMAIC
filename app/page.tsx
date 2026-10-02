@@ -51,8 +51,12 @@ import type {
   SessionDocumentSource,
   UserRequirements,
 } from '@/lib/types/generation';
-import { useSettingsStore } from '@/lib/store/settings';
-import { hasUsableLLMProvider } from '@/lib/store/settings-validation';
+import {
+  courseGenerationUsable,
+  requireModelCapabilities,
+} from '@/lib/model-settings/capabilities';
+import { withResearchDecision } from '@/lib/generation/research-decision';
+import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
 import {
   StageListItem,
@@ -67,9 +71,10 @@ import {
   deleteFolder,
   setStageFolder,
   FolderNameError,
+  LIBRARY_CHANGED_EVENT,
   type DeleteFolderMode,
 } from '@/lib/utils/stage-storage';
-import type { FolderRecord } from '@/lib/utils/database';
+import type { FolderRecord } from '@/lib/types/folder';
 import { displayNameWidth, FOLDER_NAME_MAX_WIDTH } from '@/lib/utils/folder-name-validation';
 import { FolderCard } from '@/components/discovery/folder-card';
 import { NewFolderDialog } from '@/components/discovery/folder-dialogs';
@@ -98,7 +103,6 @@ import {
 
 const log = createLogger('Home');
 
-const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
 
@@ -113,7 +117,6 @@ let workbenchRuntimeCache: boolean | null = null;
 interface FormState {
   courseMaterials: SelectedCourseMaterial[];
   requirement: string;
-  webSearch: boolean;
   interactiveMode: boolean;
   vocationalTestMode: boolean;
 }
@@ -121,7 +124,6 @@ interface FormState {
 const initialFormState: FormState = {
   courseMaterials: [],
   requirement: '',
-  webSearch: false,
   interactiveMode: false,
   vocationalTestMode: false,
 };
@@ -173,11 +175,10 @@ function HomePage() {
   const { cachedValue: cachedRequirement, updateCache: updateRequirementCache } =
     useDraftCache<string>({ key: 'requirementDraft' });
 
-  // A usable LLM provider exists ⇒ a concrete model is always selected (#580
-  // invariant). Gate generation on this single condition (state A vs B)
-  // instead of inspecting modelId directly.
-  const providersConfig = useSettingsStore((s) => s.providersConfig);
-  const hasUsableProvider = hasUsableLLMProvider(providersConfig);
+  // Generation needs the course slots it resolves (outline, content, actions)
+  // to name a model, whether or not the llm root does (the server's view;
+  // while it cannot be read the server has the last word).
+  const hasUsableProvider = courseGenerationUsable(useModelCapabilities());
   const [recentOpen, setRecentOpen] = useState(true);
   const persistRecentOpen = (next: boolean) => {
     setRecentOpen(next);
@@ -197,13 +198,9 @@ function HomePage() {
       /* localStorage unavailable */
     }
     try {
-      const savedWebSearch = localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
       const savedInteractiveMode = localStorage.getItem(INTERACTIVE_MODE_STORAGE_KEY);
-      const updates: Partial<FormState> = {};
-      if (savedWebSearch === 'true') updates.webSearch = true;
-      if (savedInteractiveMode === 'true') updates.interactiveMode = true;
-      if (Object.keys(updates).length > 0) {
-        setForm((prev) => ({ ...prev, ...updates }));
+      if (savedInteractiveMode === 'true') {
+        setForm((prev) => ({ ...prev, interactiveMode: true }));
       }
     } catch {
       /* localStorage unavailable */
@@ -345,7 +342,15 @@ function HomePage() {
     // not thrash as each lands independently.
     void Promise.all([loadClassrooms(), loadFolders()]).finally(() => setHydrated(true));
 
+    // Courses can arrive in the background (the one-way import of what this
+    // browser stored before persistence moved to the server).
+    const onLibraryChanged = () => {
+      void Promise.all([loadClassrooms(), loadFolders()]);
+    };
+    window.addEventListener(LIBRARY_CHANGED_EVENT, onLibraryChanged);
+
     return () => {
+      window.removeEventListener(LIBRARY_CHANGED_EVENT, onLibraryChanged);
       revokeThumbnailSlideMediaUrls(thumbnailsRef.current);
       thumbnailsRef.current = {};
     };
@@ -509,7 +514,6 @@ function HomePage() {
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     try {
-      if (field === 'webSearch') localStorage.setItem(WEB_SEARCH_STORAGE_KEY, String(value));
       if (field === 'interactiveMode')
         localStorage.setItem(INTERACTIVE_MODE_STORAGE_KEY, String(value));
       if (field === 'requirement') updateRequirementCache(value as string);
@@ -579,28 +583,12 @@ function HomePage() {
 
     setError(null);
 
-    // The material list and the extractor provider config are frozen for the
-    // duration of prep: `preparingGenerate` makes add/remove inert and
-    // disables the toolbar affordances (including the extractor Select and the
-    // web-search toggle), so neither can change under the session build below.
-    // Capture both at click time and build the session from this snapshot,
-    // never from live form state or live store state.
+    // The material list is frozen for the duration of prep: `preparingGenerate`
+    // makes add/remove inert, so it cannot change under the session build
+    // below. Capture it at click time and build the session from this
+    // snapshot, never from live form state. (The extractor is the workspace's
+    // document slot, resolved on the server.)
     const frozenMaterials = [...form.courseMaterials].sort((a, b) => a.order - b.order);
-    const settingsSnapshot = useSettingsStore.getState();
-    const frozenPdfProviderId = settingsSnapshot.pdfProviderId;
-    const frozenPdfProviderConfig = settingsSnapshot.pdfProvidersConfig?.[
-      settingsSnapshot.pdfProviderId
-    ]
-      ? {
-          apiKey: settingsSnapshot.pdfProvidersConfig[settingsSnapshot.pdfProviderId].apiKey,
-          baseUrl: settingsSnapshot.pdfProvidersConfig[settingsSnapshot.pdfProviderId].baseUrl,
-          accessKeyId:
-            settingsSnapshot.pdfProvidersConfig[settingsSnapshot.pdfProviderId].accessKeyId,
-          accessKeySecret:
-            settingsSnapshot.pdfProvidersConfig[settingsSnapshot.pdfProviderId].accessKeySecret,
-        }
-      : undefined;
-
     // Flip the generating UI state before material bytes are copied locally.
     setPreparingGenerate(true);
     try {
@@ -609,23 +597,23 @@ function HomePage() {
         requirement: form.requirement,
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
-        webSearch: form.webSearch || undefined,
+        // Research follows the workspace's webSearch slot; decided below from
+        // a successful read (and again when generation starts).
         interactiveMode: form.vocationalTestMode ? true : form.interactiveMode,
         ...(form.vocationalTestMode ? { taskEngineMode: true } : {}),
       };
 
+      // Nothing is saved from settings that could not be read.
+      const capabilities = await requireModelCapabilities();
+      if (!capabilities) throw new Error(t('generation.modelSettingsUnavailable'));
+      Object.assign(
+        requirements,
+        withResearchDecision({ requirements }, capabilities).requirements,
+      );
+
       let documentSources: SessionDocumentSource[] | undefined;
-      let pdfProviderId: string | undefined;
-      let pdfProviderConfig:
-        | { apiKey?: string; baseUrl?: string; accessKeyId?: string; accessKeySecret?: string }
-        | undefined;
 
       if (frozenMaterials.length > 0) {
-        // The session is built from the click-time snapshot (frozen above),
-        // never from live store state.
-        pdfProviderId = frozenPdfProviderId;
-        pdfProviderConfig = frozenPdfProviderConfig;
-
         const storedDocumentKeys: string[] = [];
         try {
           documentSources = [];
@@ -643,7 +631,6 @@ function HomePage() {
               }),
               order: index + 1,
               storageKey,
-              providerId: pdfProviderId,
             });
           }
         } catch (error) {
@@ -663,8 +650,6 @@ function HomePage() {
         pdfStorageKey: documentSources?.[0]?.storageKey,
         pdfFileName: documentSources?.[0]?.name,
         documentMimeType: documentSources?.[0]?.mimeType,
-        pdfProviderId,
-        pdfProviderConfig,
         sceneOutlines: null,
         currentStep: 'generating' as const,
       };
@@ -899,17 +884,15 @@ function HomePage() {
             <div className="px-3 pb-3 flex items-end gap-2">
               <div className="flex-1 min-w-0">
                 <GenerationToolbar
-                  webSearch={form.webSearch}
-                  onWebSearchChange={(v) => updateForm('webSearch', v)}
-                  onSettingsOpen={(section) => {
-                    setSettingsSection(section);
-                    setSettingsOpen(true);
-                  }}
                   courseMaterials={form.courseMaterials}
                   onCourseMaterialsAdd={addCourseMaterials}
                   onCourseMaterialRemove={removeCourseMaterial}
                   onPdfError={setError}
                   materialsLocked={preparingGenerate}
+                  onSettingsOpen={(section) => {
+                    setSettingsSection(section);
+                    setSettingsOpen(true);
+                  }}
                 />
               </div>
 

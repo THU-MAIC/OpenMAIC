@@ -13,12 +13,14 @@ vi.mock('@/lib/config/feature-flags', () => ({
   isAgentRuntimeEnabled: () => true,
   isAgentRuntimeConfigured: () => true,
 }));
-vi.mock('@/lib/server/agent-runtime/owner', () => ({
-  resolveRequestOwnerId: (_request: NextRequest, headers: Headers) => {
-    headers.append('Set-Cookie', 'anonymous_id=test; Path=/; HttpOnly');
-    return 'owner-1';
-  },
-}));
+vi.mock('@/lib/server/identity/resolve', async () =>
+  (await import('../helpers/owner-resolution-mock')).ownerResolveModule(
+    (_request: NextRequest, headers: Headers) => {
+      headers.append('Set-Cookie', 'anonymous_id=test; Path=/; HttpOnly');
+      return 'owner-1';
+    },
+  ),
+);
 vi.mock('@/lib/server/agent-runtime/store', () => ({
   getAgentSessionStore: async () => ({
     getSession: mocks.getSession,

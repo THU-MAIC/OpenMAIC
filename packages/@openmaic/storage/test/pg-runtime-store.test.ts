@@ -394,3 +394,75 @@ describe('PgRuntimeStore Postgres behavior', () => {
     await expect(store.getSession(created.id)).rejects.toThrow(/corrupt stored row.*"sess-1"/i);
   });
 });
+
+describe('PgRuntimeStore owner fencing and re-keying with PGlite', () => {
+  let db: PGlite;
+
+  beforeEach(async () => {
+    db = new PGlite();
+    await db.waitReady;
+    await ensureSchema(db);
+  });
+
+  afterEach(async () => {
+    await db.close();
+  });
+
+  test("createSession resolves the learner as the transaction's first statement", async () => {
+    const statements: string[] = [];
+    const store = new PgRuntimeStore(db, {
+      withTransaction: (body) =>
+        db.transaction((tx: Queryable) =>
+          body({
+            query: (text: string, params?: unknown[]) => {
+              statements.push(text);
+              return tx.query(text, params);
+            },
+          } as Queryable),
+        ),
+      resolveFinalLearner: async (tx, learnerKey) => {
+        await tx.query('SELECT 1 AS fence');
+        return learnerKey === 'anon:old' ? 'user:new' : learnerKey;
+      },
+    });
+    const created = await store.createSession(makeSession({ learnerKey: 'anon:old' }));
+    expect(created.learnerKey).toBe('user:new');
+    expect(statements[0]).toBe('SELECT 1 AS fence');
+    await expect(store.getSession('sess-1')).resolves.toMatchObject({ learnerKey: 'user:new' });
+  });
+
+  test('a refusing resolver stores nothing', async () => {
+    const store = new PgRuntimeStore(db, {
+      ...transactionOptions(db),
+      resolveFinalLearner: async () => {
+        throw new Error('retired');
+      },
+    });
+    await expect(store.createSession(makeSession())).rejects.toThrow('retired');
+    await expect(store.getSession('sess-1')).resolves.toBeUndefined();
+  });
+
+  test('reassignLearner moves every session, even one that no longer validates', async () => {
+    const store = new PgRuntimeStore(db, transactionOptions(db));
+    await store.createSession(makeSession({ id: 'a', learnerKey: 'anon:x' }));
+    await store.createSession(makeSession({ id: 'b', learnerKey: 'anon:x' }));
+    await store.createSession(makeSession({ id: 'c', learnerKey: 'someone-else' }));
+    // A row written by a newer runtime: mergeLearner refuses it.
+    await db.query(
+      `UPDATE runtime_sessions SET data = jsonb_set(data, '{runtimeDslVersion}', '"99.0.0"')
+        WHERE id = 'b'`,
+    );
+    await expect(store.mergeLearner('anon:x', 'user:y')).rejects.toThrow();
+    await expect(store.reassignLearner('anon:x', 'user:y')).resolves.toBe(2);
+    const rows = await db.query<{ id: string; learner_key: string; key: string }>(
+      `SELECT id, learner_key, data->>'learnerKey' AS key FROM runtime_sessions ORDER BY id`,
+    );
+    expect(rows.rows).toEqual([
+      { id: 'a', learner_key: 'user:y', key: 'user:y' },
+      { id: 'b', learner_key: 'user:y', key: 'user:y' },
+      { id: 'c', learner_key: 'someone-else', key: 'someone-else' },
+    ]);
+    await expect(store.getSession('a')).resolves.toMatchObject({ learnerKey: 'user:y' });
+    await expect(store.reassignLearner('anon:x', 'user:y')).resolves.toBe(0);
+  });
+});

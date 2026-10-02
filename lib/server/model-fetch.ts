@@ -7,7 +7,22 @@
  * suffix-strip fallback) and try each until one returns a model list.
  */
 
-import { fetchWithTimeout } from './fetch-with-timeout';
+import { appAttributionHeaders } from '@/lib/config/app-attribution';
+import { createProviderFetch, isRejectedRedirectError } from '@/lib/server/provider-fetch';
+
+/** The `fetch`-shaped transport one candidate request is issued with. */
+export type ModelFetchTransport = (url: string, init: RequestInit) => Promise<Response>;
+
+/**
+ * Default transport: the strict provider fetch under the operator address
+ * policy (the one the probe route validated the URL against:
+ * `allowLocalNetworks` unset falls back to ALLOW_LOCAL_NETWORKS). The connect
+ * address is pinned to the vetted DNS answers and a 3xx is refused.
+ */
+const pinnedModelsFetch: ModelFetchTransport = createProviderFetch({
+  allowLocalNetworks: undefined,
+  rejectRedirects: true,
+});
 
 /** A model id discovered from a provider's /models endpoint. */
 export interface FetchedModel {
@@ -33,6 +48,13 @@ const KNOWN_COMPAT_SUFFIXES = [
 ] as const;
 
 const FETCH_TIMEOUT_MS = 15_000;
+// Preserve the existing per-attempt allowance, with one retry and a finite
+// budget shared by every candidate and attempt in a discovery operation.
+const DISCOVERY_TIMEOUT_MS = 2 * FETCH_TIMEOUT_MS;
+
+function discoveryTimeout(): DOMException {
+  return new DOMException('Model discovery timed out', 'TimeoutError');
+}
 
 /** Whether the URL's last path segment is an OpenAI-style version segment `/v{N}`. */
 function endsWithVersionSegment(url: string): boolean {
@@ -106,7 +128,8 @@ interface ModelsApiResponse {
 /**
  * Fetches the model list by trying each candidate URL in order. A 404/405 means
  * "wrong path" and moves on to the next candidate; any other non-2xx is returned
- * as an error immediately (e.g. 401 = bad key, surfaced to the caller verbatim).
+ * as a {@link ModelFetchError} immediately (e.g. 401 = bad key), carrying the
+ * status but never the provider's body.
  *
  * Throws on network failure or when all candidates 404. The caller (probe route)
  * is responsible for SSRF validation of `baseUrl` before calling this.
@@ -114,42 +137,108 @@ interface ModelsApiResponse {
 export async function fetchModels(
   baseUrl: string,
   apiKey: string,
-  opts: { modelsUrlOverride?: string } = {},
+  opts: { modelsUrlOverride?: string; fetchImpl?: ModelFetchTransport } = {},
 ): Promise<FetchedModel[]> {
   const candidates = buildModelsUrlCandidates(baseUrl, opts);
+  const fetchImpl = opts.fetchImpl ?? pinnedModelsFetch;
+
+  const deadline = Date.now() + DISCOVERY_TIMEOUT_MS;
+  let retried = false;
 
   for (const url of candidates) {
-    const res = await fetchWithTimeout(
-      url,
-      {
-        method: 'GET',
-        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-        redirect: 'manual',
-      },
-      FETCH_TIMEOUT_MS,
-    );
-
-    if (res.status >= 300 && res.status < 400) {
-      throw new ModelFetchError(res.status, 'Redirects are not allowed');
+    let body: ModelsApiResponse | null;
+    for (;;) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw discoveryTimeout();
+      try {
+        body = await fetchModelsCandidate(
+          fetchImpl,
+          url,
+          apiKey,
+          Math.min(FETCH_TIMEOUT_MS, remaining),
+        );
+        break;
+      } catch (error) {
+        // HTTP errors and malformed JSON are terminal. Only a transport failure
+        // or our deadline gets one retry, shared across all candidate URLs.
+        if (
+          retried ||
+          Date.now() >= deadline ||
+          !(
+            error instanceof TypeError ||
+            (error instanceof DOMException && error.name === 'TimeoutError')
+          )
+        ) {
+          throw error;
+        }
+        retried = true;
+      }
     }
-
-    if (res.ok) {
-      const body = (await res.json()) as ModelsApiResponse;
-      return (body.data ?? [])
-        .map((m) => ({ id: m.id, ownedBy: m.owned_by }))
-        .sort((a, b) => a.id.localeCompare(b.id));
-    }
-
-    if (res.status === 404 || res.status === 405) {
-      continue;
-    }
-
-    // Other statuses (401/403/5xx) are terminal — surface the body for context.
-    const text = await res.text().catch(() => '');
-    throw new ModelFetchError(res.status, `HTTP ${res.status}: ${text.slice(0, 512)}`);
+    if (body === null) continue;
+    return (body.data ?? [])
+      .map((m) => ({ id: m.id, ownedBy: m.owned_by }))
+      .sort((a, b) => a.id.localeCompare(b.id));
   }
 
   throw new ModelFetchError(404, `No /models endpoint found (tried: ${candidates.join(', ')})`);
+}
+
+/**
+ * The timer owns the entire finite response, including the JSON read. Errors
+ * carry the status only: the provider's body is never read on failure, so it
+ * cannot reach the caller.
+ */
+async function fetchModelsCandidate(
+  fetchImpl: ModelFetchTransport,
+  url: string,
+  apiKey: string,
+  timeoutMs: number,
+): Promise<ModelsApiResponse | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(discoveryTimeout()), timeoutMs);
+  try {
+    let res: Response;
+    try {
+      res = await fetchImpl(url, {
+        method: 'GET',
+        headers: {
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          ...appAttributionHeaders(url),
+        },
+        redirect: 'manual',
+        signal: controller.signal,
+      });
+    } catch (error) {
+      // The strict transport refuses a 3xx instead of returning it; the hop's
+      // status is not reported, so any 3xx code maps to the same contract.
+      if (isRejectedRedirectError(error)) {
+        throw new ModelFetchError(302, 'Redirects are not allowed');
+      }
+      throw error;
+    }
+    if (res.status >= 300 && res.status < 400) {
+      throw new ModelFetchError(res.status, 'Redirects are not allowed');
+    }
+    if (res.ok) {
+      try {
+        return (await res.json()) as ModelsApiResponse;
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+        // A SyntaxError quotes a snippet of the body; report the status only.
+        throw new ModelFetchError(res.status, 'The model list response is not valid JSON');
+      }
+    }
+    if (res.status === 404 || res.status === 405) return null;
+    throw new ModelFetchError(res.status, `HTTP ${res.status}`);
+  } catch (error) {
+    if (error instanceof ModelFetchError) throw error;
+    if (controller.signal.aborted) throw controller.signal.reason;
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    // Release unread redirect/error bodies before trying another endpoint.
+    controller.abort();
+  }
 }
 
 /** Error carrying the upstream HTTP status so the route can map it (401 vs 404). */

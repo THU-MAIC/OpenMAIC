@@ -3,9 +3,10 @@
 import { useCallback, useRef } from 'react';
 import { useStageStore } from '@/lib/store/stage';
 import { isSceneEditLocked } from '@/lib/edit/regen-lock';
-import { getCurrentModelConfig } from '@/lib/utils/model-config';
-import { useSettingsStore } from '@/lib/store/settings';
-import { db } from '@/lib/utils/database';
+import { loadModelCapabilities } from '@/lib/model-settings/capabilities';
+import { narrationPlan, ttsSelection } from '@/lib/audio/tts-selection';
+import { getParallelSceneConcurrency } from '@/lib/generation/server-generation-settings';
+import { db } from '@/lib/device-storage/database';
 import type {
   SceneOutline,
   PdfImage,
@@ -28,9 +29,8 @@ import {
 import { resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
-import { putAsset } from '@/lib/media/asset-pool';
+import { commitToPool } from '@/lib/media/commit-to-pool';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
-import { isServerBackedMediaPersistence } from '@/lib/persistence/media-persistence';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
 import { toast } from 'sonner';
@@ -45,7 +45,7 @@ import {
   isAbortError,
   withGenerationRetry,
   type GenerationRetryOptions,
-} from '@openmaic/generation';
+} from '@openmaic/generation/browser';
 
 const log = createLogger('SceneGenerator');
 
@@ -71,37 +71,21 @@ type ClientRetryOptions<T> = Partial<
   Omit<GenerationRetryOptions<T>, 'label' | 'shouldRetryResult' | 'signal'>
 >;
 
-function getApiHeaders(): HeadersInit {
-  const config = getCurrentModelConfig();
-  const settings = useSettingsStore.getState();
-  const imageProviderConfig = settings.imageProvidersConfig?.[settings.imageProviderId];
-  const videoProviderConfig = settings.videoProvidersConfig?.[settings.videoProviderId];
-
-  return {
-    'Content-Type': 'application/json',
-    'x-model': config.modelString || '',
-    'x-api-key': config.apiKey || '',
-    'x-base-url': config.baseUrl || '',
-    'x-provider-type': config.providerType || '',
-    // Image generation provider
-    'x-image-provider': settings.imageProviderId || '',
-    'x-image-model': settings.imageModelId || '',
-    'x-image-api-key': imageProviderConfig?.apiKey || '',
-    'x-image-base-url': imageProviderConfig?.baseUrl || '',
-    // Video generation provider
-    'x-video-provider': settings.videoProviderId || '',
-    'x-video-model': settings.videoModelId || '',
-    'x-video-api-key': videoProviderConfig?.apiKey || '',
-    'x-video-base-url': videoProviderConfig?.baseUrl || '',
-    // Media generation toggles
-    'x-image-generation-enabled': String(settings.imageGenerationEnabled ?? false),
-    'x-video-generation-enabled': String(settings.videoGenerationEnabled ?? false),
-  };
+/**
+ * Headers for the generation routes. The server resolves every model and
+ * provider, and which media may be planned, from the workspace's model
+ * settings.
+ */
+async function getApiHeaders(): Promise<HeadersInit> {
+  return { 'Content-Type': 'application/json' };
 }
 
-function withThinkingConfig<T extends Record<string, unknown>>(body: T): T {
-  const { thinkingConfig } = getCurrentModelConfig();
-  return thinkingConfig ? ({ ...body, thinkingConfig } as T) : body;
+/** Why generation stopped when the model settings could not be read. */
+const MODEL_SETTINGS_UNAVAILABLE = 'The model settings could not be read';
+
+/** Tell the user generation stopped because the model settings could not be read. */
+function notifyModelSettingsUnavailable(): void {
+  toast.error(getClientTranslation('generation.modelSettingsUnavailable'));
 }
 
 async function readJsonResponse(response: Response): Promise<Record<string, unknown>> {
@@ -158,7 +142,7 @@ export async function fetchSceneContent(
     };
     agents?: AgentInfo[];
     languageDirective?: string;
-    requirements?: UserRequirements;
+    requirements?: Partial<UserRequirements>;
   },
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<SceneContentResult>,
@@ -168,8 +152,8 @@ export async function fetchSceneContent(
       async () => {
         const response = await fetch('/api/generate/scene-content', {
           method: 'POST',
-          headers: getApiHeaders(),
-          body: JSON.stringify(withThinkingConfig(params)),
+          headers: await getApiHeaders(),
+          body: JSON.stringify(params),
           signal,
         });
 
@@ -217,8 +201,8 @@ export async function fetchSceneActions(
       async () => {
         const response = await fetch('/api/generate/scene-actions', {
           method: 'POST',
-          headers: getApiHeaders(),
-          body: JSON.stringify(withThinkingConfig(params)),
+          headers: await getApiHeaders(),
+          body: JSON.stringify(params),
           signal,
         });
 
@@ -269,7 +253,6 @@ export async function generateAndStoreTTS(
   language?: string,
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<TTSApiResponse>,
-  existingAudioId?: string,
   stageId?: string,
   // Internal: an explicit voice that bypasses narrator binding resolution — used
   // to retry narration against the deterministic enabled-provider pick when the
@@ -280,11 +263,13 @@ export async function generateAndStoreTTS(
   // /api/generate/tts beyond a single fallback hop.
   fallbackHops = 0,
 ): Promise<string | null> {
-  const settings = useSettingsStore.getState();
+  // The `tts` slot's provider, and the user's voice for it.
+  const selection = ttsSelection(await loadModelCapabilities());
+  if (!selection) return null;
+  const providersConfig = selection.providersConfig;
   // A generated roster's explicit voice binding is the course voice source of truth.
   // Global settings remain the fallback for classrooms without a binding.
   const teacher = pickNarratorAgent(useAgentRegistry.getState().listAgents());
-  const globalProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
   const boundVoice = teacher?.voiceConfig;
   const boundKey = boundVoice ? voiceBindingKey(boundVoice) : undefined;
   // The narrator pin makes boundVoice == the global voice. That equality must
@@ -294,7 +279,7 @@ export async function generateAndStoreTTS(
   // instead of throwing (QWEN_VC_VOICE_NOT_FOUND) or silently skipping.
   const globalDiffers =
     !!boundVoice &&
-    (boundVoice.providerId !== settings.ttsProviderId || boundVoice.voiceId !== settings.ttsVoice);
+    (boundVoice.providerId !== selection.providerId || boundVoice.voiceId !== selection.voice);
   const fallbackForUnusablePin = (): ResolvedVoice | null => {
     if (!boundVoice) return null;
     const key = voiceBindingKey(boundVoice);
@@ -302,10 +287,7 @@ export async function generateAndStoreTTS(
     if (markVoiceBindingNoticeShown(key)) {
       toast.warning(getClientTranslation('settings.qwenCloneNarrationUnavailable'));
     }
-    return resolveDeterministicFallbackVoice(
-      getEnabledProvidersWithVoices(settings.ttsProvidersConfig),
-      0,
-    );
+    return resolveDeterministicFallbackVoice(getEnabledProvidersWithVoices(providersConfig), 0);
   };
 
   let resolvedVoice =
@@ -313,11 +295,11 @@ export async function generateAndStoreTTS(
     resolveNarratorVoiceBinding(
       boundVoice && isVoiceBindingUnavailable(boundVoice) ? undefined : boundVoice,
       {
-        providerId: settings.ttsProviderId,
-        modelId: globalProviderConfig?.modelId,
-        voiceId: settings.ttsVoice,
+        providerId: selection.providerId,
+        modelId: selection.modelId,
+        voiceId: selection.voice,
       },
-      settings.ttsProvidersConfig,
+      providersConfig,
     );
 
   // Pinned narrator (bound == global) whose provider became disabled:
@@ -327,17 +309,14 @@ export async function generateAndStoreTTS(
   if (
     boundVoice &&
     !globalDiffers &&
-    !isTTSProviderEnabled(
-      resolvedVoice.providerId,
-      settings.ttsProvidersConfig?.[resolvedVoice.providerId],
-    )
+    !isTTSProviderEnabled(resolvedVoice.providerId, providersConfig[resolvedVoice.providerId])
   ) {
     resolvedVoice = fallbackForUnusablePin() ?? resolvedVoice;
   }
 
   const ttsProviderId = resolvedVoice.providerId;
   const ttsVoice = resolvedVoice.voiceId;
-  const ttsProviderConfig = settings.ttsProvidersConfig?.[ttsProviderId];
+  const ttsProviderConfig = providersConfig[ttsProviderId];
   const ttsModelId = resolveTTSModelForVoice(
     ttsProviderId,
     ttsVoice,
@@ -345,7 +324,7 @@ export async function generateAndStoreTTS(
   );
 
   if (ttsProviderId === 'browser-native-tts') return null;
-  // Don't server-generate against a disabled/unconfigured provider (#665).
+  // Don't server-generate a voice of a provider the tts slot does not name (#665).
   if (!isTTSProviderEnabled(ttsProviderId, ttsProviderConfig)) return null;
 
   // Narration is the teacher's voice — resolve it from the teacher agent profile
@@ -363,18 +342,13 @@ export async function generateAndStoreTTS(
         const response = await fetch('/api/generate/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          // The tts slot names the provider and model; the voice decides a
+          // voice-clone model on the server.
           body: JSON.stringify({
             text,
             audioId: requestId,
-            ttsProviderId,
-            ttsModelId,
             ttsVoice,
-            ttsSpeed: settings.ttsSpeed,
-            ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-            // Managed providers resolve their base URL server-side; only send the
-            // client's own base URL (custom providers).
-            ttsBaseUrl:
-              ttsProviderConfig?.baseUrl || ttsProviderConfig?.customDefaultBaseUrl || undefined,
+            ttsSpeed: selection.speed,
             ttsProviderOptions: providerOptions,
           }),
           signal,
@@ -426,7 +400,6 @@ export async function generateAndStoreTTS(
             language,
             signal,
             retryOptions,
-            existingAudioId,
             stageId,
             undefined,
             fallbackHops + 1,
@@ -444,7 +417,6 @@ export async function generateAndStoreTTS(
               language,
               signal,
               retryOptions,
-              existingAudioId,
               stageId,
               fallbackVoice,
               fallbackHops + 1,
@@ -473,89 +445,100 @@ export async function generateAndStoreTTS(
   // clip onto a timeline without re-decoding. null → leave undefined; the audio
   // still persists and plays.
   const duration = measureAudioDuration(bytes, data.format) ?? undefined;
-  const serverBacked = isServerBackedMediaPersistence();
-  // Server-backed: the bytes go to the pool and the pool allocates the
-  // identity, so the id the speech action ends up holding names durable audio
-  // rather than this browser's local table. Bytes land BEFORE the caller
-  // stamps the action, so a document can never name narration that was not
-  // stored. Browser-only keeps the historical derived key: document and audio
-  // share one lifetime there, and nothing outside this browser reads either.
-  let audioId: string;
-  if (serverBacked) {
-    const allocated = await allocatePooledAudio(blob, duration, stageId).catch((error: unknown) => {
-      // Storing narration failed, not synthesizing it. A scene whose audio
-      // cannot be stored keeps its text and leaves the line unvoiced and
-      // retryable, exactly as an image that cannot be stored leaves its slide;
-      // reporting it as a TTS failure would pause the whole deck at its first
-      // slide over one clip's storage.
-      log.warn('Narration storage failed; leaving the line unvoiced:', error);
-      return null;
-    });
-    if (allocated === null) return null;
-    audioId = allocated;
-  } else {
-    audioId = existingAudioId ?? requestId;
-  }
-  const cacheWrite = db.audioFiles.put({
-    id: audioId,
+  /** This clip's local row, under whichever id it is currently known by. */
+  const cachedNarrationRow = (id: string) => ({
+    id,
     stageId,
     blob,
     duration,
-    format: data.format,
+    format: data.format as string,
     text,
     voice: ttsVoice,
     createdAt: Date.now(),
   });
-  if (serverBacked) {
-    // A cache the pool already backs: a failed write costs a re-download.
-    await cacheWrite.catch((error: unknown) => {
-      log.warn('Local narration cache write failed for', audioId, error);
-    });
-  } else {
-    await cacheWrite;
+  // The bytes go to the pool and the pool allocates the identity, so the id the speech action ends up holding names durable audio
+  // rather than this browser's local table. Bytes land BEFORE the caller stamps
+  // the action, so a document can never name narration that was not stored.
+  const outcome = await commitToPool<void>({
+    stageId,
+    // The derived key, which is both what a refusal keeps the bytes under and
+    // what narration adoption reads them back by on a later load.
+    slot: requestId,
+    bytes: blob,
+    mimeType: blob.type,
+    ...(duration === undefined ? {} : { meta: { durationSeconds: duration } }),
+    // The bytes were just bought. A full store must not be what throws them
+    // away: keeping them under the derived key is what lets the next load
+    // re-attempt the upload from cache instead of paying the provider again,
+    // which is the same contract the media pass's retained bytes have had since
+    // it learned to keep them. See the caller's handling below for the other
+    // half of it -- the action has to carry this key for adoption to find them.
+    //
+    // The rejection is NOT swallowed, and that is the point of awaiting it: a
+    // stamp is only safe once the bytes are somewhere that can be read back. A
+    // local table that refuses the row leaves nothing to adopt, so the commit
+    // demotes itself to `failed` and the line goes unvoiced instead of carrying
+    // a derived key that resolves to nothing for the rest of the course's life.
+    retain: async () => {
+      await db.audioFiles.put(cachedNarrationRow(requestId));
+    },
+    // Nothing to write back: the action this narration belongs to is not in the
+    // document yet. The caller stamps it from the id returned here, which is
+    // why this path has no funnel of its own to invent one.
+    writeBack: async () => undefined,
+    // A cache the pool already backs: a failed write costs a re-download, and
+    // the primitive holds that to be best-effort for every caller.
+    mirror: async (assetId) => {
+      await db.audioFiles.put(cachedNarrationRow(assetId));
+    },
+  });
+
+  if (outcome.status === 'stored') return outcome.assetId;
+  if (outcome.status === 'refused-retained') {
+    // The store had no room, and the bytes are kept. The action is stamped with
+    // the derived key they are kept under, exactly as a refused image leaves
+    // its placeholder in the slide: adoption reads that key on the next load,
+    // re-attempts the upload, and writes the allocated id back with no provider
+    // called. Returning null instead would leave the line unvoiced AND the
+    // bytes unreachable, which is paying for the same clip on every attempt.
+    log.warn(
+      `Asset storage is full; keeping the narration for ${requestId} under its derived key.`,
+    );
+    return requestId;
   }
-  return audioId;
+  // Storing narration failed for some other reason -- or the bytes could not be
+  // kept -- and neither says anything about whether a later attempt would fit,
+  // so nothing is left under a key a later load would take for adoptable
+  // narration. A scene whose audio cannot be
+  // stored keeps its text and leaves the line unvoiced and retryable, exactly
+  // as an image that cannot be stored leaves its slide; reporting it as a TTS
+  // failure would pause the whole deck at its first slide over one clip's
+  // storage.
+  log.warn('Narration storage failed; leaving the line unvoiced:', outcome.error);
+  return null;
 }
 
 /**
- * Store narration bytes in the asset pool and return the reference the
- * document should hold.
+ * Why a fresh clip never replaces the bytes behind an id it is superseding.
  *
- * Regeneration always forks to a fresh id; the caller's `existingAudioId` is
- * deliberately ignored here. Replacing bytes behind a live id requires proof
- * that no other document holds it, and that proof is unavailable by
- * construction once references can leave this browser — asking the pool who
- * else holds an id would be exactly the existence oracle the asset contract
- * forbids, so `proveExclusiveAssetOwnership` fails closed under server-backed
- * persistence and every caller forks. Keeping a branch that can never be taken
- * would only describe a capability this deployment shape does not have.
+ * Regeneration always forks to a fresh allocation. Replacing bytes behind a
+ * live id requires proof that no other document holds it, and that proof is
+ * unavailable by construction once references can leave this browser — asking
+ * the pool who else holds an id would be exactly the existence oracle the
+ * asset contract forbids.
  *
- * The superseded id is NOT removed here. Nothing at this point has observed
- * the new id reaching a durable document, so deleting the old bytes could
- * leave a still-referenced action pointing at nothing if the save that follows
- * fails; and the exclusivity that would make deletion safe is the same proof
- * that is unavailable. Nothing reclaims it either: the stage-scoped registry
- * sweep is written but deliberately not wired up, so a superseded clip's entry
- * and bytes persist. Every regeneration therefore leaves one behind.
+ * The superseded id is NOT removed either. Nothing at this point has observed
+ * the new id reaching a durable document, so deleting the old bytes could leave
+ * a still-referenced action pointing at nothing if the save that follows fails;
+ * and the exclusivity that would make deletion safe is the same proof that is
+ * unavailable. It does not have to be removed here: the save that writes the
+ * new id is also the write that stops naming the old one, so the server stamps
+ * the superseded entry as it lands and the collector releases it after the
+ * grace period, the bytes following after their own. If that save never lands,
+ * it is the NEW id that nothing committed, and it expires on
+ * `ASSET_PENDING_TTL_MS` — either way regeneration leaves nothing permanent
+ * behind.
  */
-async function allocatePooledAudio(
-  blob: Blob,
-  duration: number | undefined,
-  stageId: string | undefined,
-): Promise<string> {
-  return putAsset(
-    blob,
-    {
-      contentType: blob.type,
-      ...(duration === undefined ? {} : { durationSeconds: duration }),
-    },
-    // A write that goes through retires this course's "no room" note. This path
-    // allocates directly rather than through the media commit, so without it a
-    // course whose narration is generated rather than adopted has nothing that
-    // can establish that.
-    { ...(stageId ? { stageId } : {}) },
-  );
-}
 
 /**
  * Drop the local copies of narration a scene has rolled back.
@@ -585,7 +568,8 @@ export async function generateTTSForScene(
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<TTSApiResponse>,
 ): Promise<{ success: boolean; failedCount: number; error?: string }> {
-  const providerId = useSettingsStore.getState().ttsProviderId;
+  const providerId =
+    ttsSelection(await loadModelCapabilities())?.providerId ?? 'browser-native-tts';
   scene.actions = splitLongSpeechActions(scene.actions || [], providerId);
   const speechActions = scene.actions.filter(
     (a): a is SpeechAction => a.type === 'speech' && !!a.text,
@@ -595,10 +579,36 @@ export async function generateTTSForScene(
   let failedCount = 0;
   let lastError: string | undefined;
   const freshAllocations: string[] = [];
+  /**
+   * Actions holding retained bytes rather than a fresh allocation.
+   *
+   * A clip the store refused for want of room comes back under its own derived
+   * key with its bytes kept in the local table. Nothing was allocated, so a
+   * rollback has nothing to reclaim -- and running one anyway would delete the
+   * only copy of audio that is already paid for and unstamp the key adoption
+   * reads it back by, which is the double billing this whole path exists to
+   * stop. A sibling line failing is not a reason to throw them away.
+   */
+  const retainedRefusals = new Set<SpeechAction>();
 
   // Scene order keeps the provider request correlation label unique. Storage
   // identity is allocated by the pool and is never derived from this value.
   const sceneOrder = scene.order;
+
+  /**
+   * Undo this scene's narration, keeping whatever a rollback cannot own.
+   *
+   * Everything in `freshAllocations` was minted for this scene and nothing else
+   * holds it, so its local copy goes. A retained refusal is the exception, and
+   * the only one.
+   */
+  const rollBackFreshNarration = async (): Promise<void> => {
+    await removeFreshTtsAllocations(freshAllocations);
+    for (const action of speechActions) {
+      if (retainedRefusals.has(action)) continue;
+      delete action.audioId;
+    }
+  };
 
   // Generate + store one action's audio. Failures are counted, not thrown, so
   // one bad clip never aborts the rest of the scene.
@@ -611,12 +621,15 @@ export async function generateTTSForScene(
         language,
         signal,
         retryOptions,
-        undefined,
         scene.stageId,
       );
       if (assetId) {
         action.audioId = assetId;
-        freshAllocations.push(assetId);
+        // The pool answers with an allocated id, so the request key coming
+        // back means one thing only: the store refused these bytes and they
+        // were kept under it.
+        if (assetId === requestId) retainedRefusals.add(action);
+        else freshAllocations.push(assetId);
       }
     } catch (error) {
       if (isAbortError(error)) throw error;
@@ -639,10 +652,7 @@ export async function generateTTSForScene(
   // the server opts into parallel generation, render them with bounded
   // concurrency (reusing the PARALLEL_SCENE_CONCURRENCY knob) instead of one at a
   // time. Default (0 / unset) keeps the original strictly-serial behaviour.
-  const ttsConcurrency = Math.max(
-    0,
-    Math.floor(useSettingsStore.getState().parallelSceneConcurrency ?? 0),
-  );
+  const ttsConcurrency = await getParallelSceneConcurrency();
   try {
     if (ttsConcurrency > 1 && speechActions.length > 1) {
       const settled = await Promise.allSettled(
@@ -658,14 +668,12 @@ export async function generateTTSForScene(
       }
     }
   } catch (error) {
-    await removeFreshTtsAllocations(freshAllocations);
-    for (const action of speechActions) delete action.audioId;
+    await rollBackFreshNarration();
     throw error;
   }
 
   if (failedCount > 0) {
-    await removeFreshTtsAllocations(freshAllocations);
-    for (const action of speechActions) delete action.audioId;
+    await rollBackFreshNarration();
   }
 
   return {
@@ -694,6 +702,8 @@ export interface GenerationParams {
   agents?: AgentInfo[];
   userProfile?: string;
   languageDirective?: string;
+  /** Vocational task-engine flag; gates procedural-skill generation server-side (see resolveVocationalActive). */
+  taskEngineMode?: boolean;
 }
 
 export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
@@ -750,15 +760,13 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       store.getState().setGeneratingOutlines(pending);
 
       // Launch media generation in parallel — does not block content/action generation.
-      // Under server-backed persistence, abort whatever the ref held first:
-      // replacing it would orphan that loop with a signal nothing can ever
-      // fire, leaving it calling providers and storing assets — real spend and
-      // real storage — for a course the user may already have left, and leaving
-      // `stop()` able to reach only the newest pass. The orchestrator then
-      // waits for the aborted pass to settle before collecting, so the two
-      // never overlap. Browser-only mode keeps its original behaviour, where an
-      // overlapping pass costs a duplicate download and nothing else.
-      if (isServerBackedMediaPersistence()) mediaAbortRef.current?.abort();
+      // Abort whatever the ref held first: replacing it would orphan that loop
+      // with a signal nothing can ever fire, leaving it calling providers and
+      // storing assets — real spend and real storage — for a course the user
+      // may already have left, and leaving `stop()` able to reach only the
+      // newest pass. The orchestrator then waits for the aborted pass to
+      // settle before collecting, so the two never overlap.
+      mediaAbortRef.current?.abort();
       mediaAbortRef.current = new AbortController();
       generateMediaForOutlines(outlines, stage.id, mediaAbortRef.current.signal).catch((err) => {
         log.warn('Media generation error:', err);
@@ -777,13 +785,9 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       // #572: opt-in parallel content fetch. Concurrency is server-configured
       // (PARALLEL_SCENE_CONCURRENCY), default 0 = off, so out-of-box behaviour is
       // unchanged.
-      const parallelConcurrency = Math.max(
-        0,
-        // Belt-and-suspenders: the value is already clamped server-side and again
-        // in the settings store; re-clamp here so a stale/garbage store value can
-        // never spawn an unbounded fetch fan-out.
-        Math.floor(useSettingsStore.getState().parallelSceneConcurrency ?? 0),
-      );
+      // Clamped server-side and again by the reader, so a garbage value can
+      // never spawn an unbounded fetch fan-out.
+      const parallelConcurrency = await getParallelSceneConcurrency();
       const useParallelContent = parallelConcurrency > 1 && pending.length > 1;
 
       // Pipelined generation loop (#572). When parallelism is on, scene *content*
@@ -807,6 +811,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               stageInfo: params.stageInfo,
               agents: params.agents,
               languageDirective: params.languageDirective,
+              ...(params.taskEngineMode ? { requirements: { taskEngineMode: true } } : {}),
             },
             signal,
           );
@@ -908,17 +913,19 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
           if (actionsResult.success && actionsResult.scene) {
             const scene = actionsResult.scene;
-            const settings = useSettingsStore.getState();
-
-            // TTS generation — failure means the whole scene fails
-            if (
-              settings.ttsEnabled &&
-              settings.ttsProviderId !== 'browser-native-tts' &&
-              isTTSProviderEnabled(
-                settings.ttsProviderId,
-                settings.ttsProvidersConfig?.[settings.ttsProviderId],
-              )
-            ) {
+            // TTS generation — failure means the whole scene fails, and so do
+            // model settings that cannot be read: narration is never dropped
+            // silently.
+            const narration = await narrationPlan();
+            if (narration === 'unknown') {
+              store.getState().addFailedOutline(outline);
+              notifyModelSettingsUnavailable();
+              options.onSceneFailed?.(outline, MODEL_SETTINGS_UNAVAILABLE);
+              store.getState().setGenerationStatus('paused');
+              pausedByFailureOrAbort = true;
+              break;
+            }
+            if (narration === 'server') {
               const ttsResult = await generateTTSForScene(
                 scene,
                 params.languageDirective || params.stageInfo.language,
@@ -1060,6 +1067,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             stageInfo: params.stageInfo,
             agents: params.agents,
             languageDirective: params.languageDirective,
+            ...(params.taskEngineMode ? { requirements: { taskEngineMode: true } } : {}),
           },
           signal,
         );
@@ -1097,16 +1105,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           return;
         }
 
-        // Step 3: TTS
-        const settings = useSettingsStore.getState();
-        if (
-          settings.ttsEnabled &&
-          settings.ttsProviderId !== 'browser-native-tts' &&
-          isTTSProviderEnabled(
-            settings.ttsProviderId,
-            settings.ttsProvidersConfig?.[settings.ttsProviderId],
-          )
-        ) {
+        // Step 3: TTS (model settings that cannot be read fail the retry)
+        const narration = await narrationPlan();
+        if (narration === 'unknown') {
+          notifyModelSettingsUnavailable();
+          store.getState().addFailedOutline(outline);
+          return;
+        }
+        if (narration === 'server') {
           const ttsResult = await generateTTSForScene(
             actionsResult.scene,
             params.languageDirective || params.stageInfo.language,

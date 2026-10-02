@@ -11,7 +11,7 @@
  */
 import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
-import { DocumentFolderLimitError } from '@openmaic/storage';
+import { DocumentFolderLimitError, isDocumentWriteRefusedError } from '@openmaic/storage';
 import type { Queryable } from '@openmaic/storage/document/pg';
 import type { StageLinkLifecycleData } from '@/lib/agent-runtime/lifecycle';
 
@@ -195,6 +195,10 @@ export function buildCurriculumTools(deps: CurriculumToolDeps): AgentTool<never,
     description:
       'Create a NEW stage document owned by this session user and return its stageId and classroom url. Pass that stageId explicitly to every later stage tool. Use for multi-stage series: one stage per unit/day.',
     parameters: CreateStageParams,
+    // A mint is a write, and it must not share a batch with other stage tools
+    // running in parallel: the run's owner-bound store is shared by every
+    // tool, and a sequential tool makes pi run the whole batch in order.
+    executionMode: 'sequential',
     async execute(callId, params: Static<typeof CreateStageParams>, signal) {
       if (signal?.aborted) throw new Error('aborted');
       const title = params.title?.trim();
@@ -300,7 +304,21 @@ export function buildCurriculumTools(deps: CurriculumToolDeps): AgentTool<never,
       // the owner scope in one transaction. A concurrent mint of the same id
       // is refused by the store's owner scope; the replay is sequential, so
       // the loadDocument pre-check above is the ordering guarantee.
-      await runStageMutation(signal, () => deps.store.saveDocument(document));
+      try {
+        await runStageMutation(signal, () => deps.store.saveDocument(document));
+      } catch (error) {
+        // The deployment's creation policy refused the course (a host
+        // authorizeCreate hook). A stable, generic result: the host's own
+        // refusal text is for its clients, not for the model.
+        if (isDocumentWriteRefusedError(error)) {
+          return toolResult(
+            'Creating a new stage was refused by this deployment. Do not retry; tell the user that a new course could not be created.',
+            { refused: true, error: 'create-refused' },
+            true,
+          );
+        }
+        throw error;
+      }
       if (signal?.aborted) throw new Error('aborted');
       if (folderId) {
         const moved = await runStageMutation(signal, () =>

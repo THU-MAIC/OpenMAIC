@@ -7,6 +7,7 @@ export const API_ERROR_CODES = {
   MISSING_MODEL: 'MISSING_MODEL',
   INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
   INVALID_REQUEST: 'INVALID_REQUEST',
+  CREATE_REFUSED: 'CREATE_REFUSED',
   UNAUTHENTICATED: 'UNAUTHENTICATED',
   ASSET_NOT_FOUND: 'ASSET_NOT_FOUND',
   PROVIDER_DISABLED: 'PROVIDER_DISABLED',
@@ -47,6 +48,7 @@ export interface ApiErrorBody {
   errorCode: ApiErrorCode;
   error: string;
   details?: string;
+  reason?: string;
 }
 
 export function apiError(
@@ -54,6 +56,7 @@ export function apiError(
   status: number,
   error: string,
   details?: string,
+  reason?: string,
 ): NextResponse<ApiErrorBody> {
   return NextResponse.json(
     {
@@ -61,6 +64,7 @@ export function apiError(
       errorCode: code,
       error,
       ...(details ? { details } : {}),
+      ...(reason ? { reason } : {}),
     },
     { status },
   );

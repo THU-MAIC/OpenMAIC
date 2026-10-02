@@ -13,6 +13,12 @@ import {
   defaultMediaCommands,
 } from '@/lib/document/extractors/local-media';
 
+// No operator ASR configuration: local transcription has no provider.
+vi.mock('@/lib/server/provider-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/server/provider-config')>()),
+  resolveServerASRProviderId: () => undefined,
+}));
+
 const execFileAsync = promisify(execFile);
 const unavailableCommands = {
   resolve: vi.fn(async (name: 'ffmpeg' | 'ffprobe') => {
@@ -52,6 +58,19 @@ describe('optional local media extractor availability', () => {
     await expect(local.availability?.(input)).resolves.toMatchObject({ available: false });
     expect(unavailableCommands.resolve).toHaveBeenCalledWith('ffmpeg');
     expect(unavailableCommands.resolve).toHaveBeenCalledWith('ffprobe');
+  });
+
+  it('still selects the local provider for a silent video without a server ASR provider', async () => {
+    const commands = { resolve: vi.fn(async () => '/usr/bin/tool'), run: vi.fn() };
+    const local = createLocalMediaExtractorProvider({ commands });
+
+    await expect(
+      selectMediaExtractorProvider({
+        mimeType: input.mimeType,
+        input,
+        providers: [cloudProvider(false), local],
+      }),
+    ).resolves.toBe(local);
   });
 
   it('falls back to a configured cloud provider without calling local extraction', async () => {
@@ -142,7 +161,14 @@ describe.skipIf(!ffmpegAvailable)('local media extractor real pipeline', () => {
       ]);
       expect(artifact.transcript?.[0].endMs).toBeGreaterThan(1_500);
       expect(artifact.keyframes?.length).toBeGreaterThan(0);
-      expect(artifact.assets?.[0]).toMatchObject({ type: 'image', mimeType: 'image/webp' });
+      const keyframe = artifact.assets?.[0];
+      expect(keyframe).toMatchObject({ type: 'image', mimeType: 'image/webp' });
+      // Keyframe `data` must be a data URL, the same form every other
+      // `DocumentAsset` producer emits and the form document-bundle consumers
+      // (`pdf-compat` → `decodeBase64DataUrl`) expect. Material extraction
+      // accepts both forms via `decodeMediaAssetData`. This test needs ffmpeg,
+      // so it does not run in CI.
+      expect(keyframe?.data).toMatch(/^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/);
 
       const deadlineProvider = createLocalMediaExtractorProvider({
         transcribe: vi.fn(() => new Promise<{ text: string }>(() => undefined)),

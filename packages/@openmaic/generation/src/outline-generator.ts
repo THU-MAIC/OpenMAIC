@@ -172,6 +172,9 @@ export async function generateSceneOutlinesFromRequirements(
       ...outline,
       id: outline.id || nanoid(),
       order: index + 1,
+      // LLMs occasionally emit mediaGenerations as a string or object; every
+      // downstream consumer requires an array, so drop non-array values here.
+      ...(Array.isArray(outline.mediaGenerations) ? null : { mediaGenerations: undefined }),
     }));
 
     const result = uniquifyMediaElementIds(enriched);

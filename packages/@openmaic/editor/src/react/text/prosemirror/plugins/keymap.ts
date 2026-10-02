@@ -1,10 +1,11 @@
 import { splitListItem, liftListItem, sinkListItem } from 'prosemirror-schema-list';
+import { toggleInlineMark } from '../commands/toggleInlineMark';
+import { splitListItemInInlineContainer } from '../commands/splitListItemInInlineContainer';
 import type { Schema } from 'prosemirror-model';
 import { undo, redo } from 'prosemirror-history';
 import { undoInputRule } from 'prosemirror-inputrules';
 import type { Command } from 'prosemirror-state';
 import {
-  toggleMark,
   selectParentNode,
   joinUp,
   joinDown,
@@ -25,17 +26,18 @@ export const buildKeymap = (schema: Schema) => {
   bind('Mod-y', redo);
   bind('Backspace', undoInputRule);
   bind('Escape', selectParentNode);
-  bind('Mod-b', toggleMark(schema.marks.strong));
-  bind('Mod-i', toggleMark(schema.marks.em));
-  bind('Mod-u', toggleMark(schema.marks.underline));
-  bind('Mod-d', toggleMark(schema.marks.strikethrough));
-  bind('Mod-e', toggleMark(schema.marks.code));
-  bind('Mod-;', toggleMark(schema.marks.superscript));
-  bind(`Mod-'`, toggleMark(schema.marks.subscript));
+  bind('Mod-b', toggleInlineMark(schema.marks.strong));
+  bind('Mod-i', toggleInlineMark(schema.marks.em));
+  bind('Mod-u', toggleInlineMark(schema.marks.underline));
+  bind('Mod-d', toggleInlineMark(schema.marks.strikethrough));
+  bind('Mod-e', toggleInlineMark(schema.marks.code));
+  bind('Mod-;', toggleInlineMark(schema.marks.superscript));
+  bind(`Mod-'`, toggleInlineMark(schema.marks.subscript));
   bind(
     'Enter',
     chainCommands(
       splitListItem(schema.nodes.list_item),
+      splitListItemInInlineContainer(schema.nodes.list_item),
       newlineInCode,
       createParagraphNear,
       liftEmptyBlock,

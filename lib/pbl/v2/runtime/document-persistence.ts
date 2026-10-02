@@ -14,6 +14,8 @@ import { stripToDesignTemplate } from './learner-state';
 export async function preparePBLScenesForDocumentPersistence(
   stageId: string,
   scenes: readonly Scene[],
+  /** A runtime store and learner key other than the app's (the one-way importer's). */
+  runtime: Pick<Parameters<typeof synchronizePBLProjectRuntime>[0], 'store' | 'learnerKey'> = {},
 ): Promise<Scene[]> {
   await Promise.all(
     scenes.map(async (scene) => {
@@ -25,6 +27,7 @@ export async function preparePBLScenesForDocumentPersistence(
         stageId,
         sceneId: scene.id,
         project: resolved.projectV2,
+        ...runtime,
       });
     }),
   );

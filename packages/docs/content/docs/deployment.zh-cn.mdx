@@ -9,9 +9,9 @@ OpenMAIC 是一个标准的 Next.js 应用，Next.js 能跑的地方它就能跑
 
 最快的路径。点[仓库 README](https://github.com/THU-MAIC/OpenMAIC)里的 Deploy 按钮，fork 仓库，按提示填入至少一个 LLM 的 API key 即可。
 
-Vercel 会在每次提交后重新构建并部署 Next.js 应用。部署时需要在项目设置中配置至少一个 LLM 提供方。
+Vercel 会在每次提交后重新构建并部署 Next.js 应用。首次部署后，打开应用，在模型设置中接入模型服务；也可以在项目设置中通过环境变量配置服务商（[旧版变量](./configuration.mdx#从旧配置迁移)仍然有效）。Vercel 没有持久化数据目录，因此在模型设置中保存 key 之前，请先在项目设置中设置 `OPENMAIC_SECRET_KEY`，见[密钥与 OPENMAIC_SECRET_KEY](./configuration.mdx#密钥与-openmaic_secret_key)。
 
-Vercel 部署默认使用浏览器端持久化。若需要服务端持久化，请使用外部 PostgreSQL 和服务端部署方案；`server-persistence` Compose profile 不能直接用于 Vercel。
+Vercel 以 Serverless 函数运行 OpenMAIC，无法自带数据库。请在项目设置中把 `DATABASE_URL` 指向外部 PostgreSQL 数据库（托管服务；有连接池端点时优先使用）；没有它服务会拒绝启动。
 
 ## Docker
 
@@ -20,18 +20,26 @@ Vercel 部署默认使用浏览器端持久化。若需要服务端持久化，�
 ```bash
 docker build -t openmaic .
 
-docker run --env-file .env.local -p 3000:3000 openmaic
+docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-host:5432/openmaic -p 3000:3000 openmaic
 ```
 
 推荐使用仓库里的 Docker Compose 配置：
 
 ```bash
 cp .env.example .env.local
-# 编辑 .env.local，填入至少一个 LLM 提供方的配置，然后：
+# 编辑 .env.local（key 和服务端选项），然后：
 docker compose up --build
 ```
 
-默认 Compose 部署会启动 OpenMAIC 应用，并挂载 `openmaic-data` 数据卷。其他 provider 和功能按需配置，详见[配置说明](./configuration.mdx)。
+默认 Compose 部署会启动 OpenMAIC 应用和 PostgreSQL 两个容器，自动配置两者之间的 `DATABASE_URL`，并挂载 `openmaic-data` 与 `openmaic-postgres` 数据卷。其他 provider 和功能按需配置，详见[配置说明](./configuration.mdx)。
+
+模型有两种配置方式。个人安装时，启动服务后打开应用，在模型设置中接入模型服务，配置保存在数据库中。如果希望以文件方式管理部署，把 `openmaic.example.yml` 复制为 `openmaic.yml`，key 放在 `.env.local` 中，再挂载该文件（见下文）。详见[配置说明](./configuration.mdx#模型与服务商)。
+
+镜像会以运行用户的身份创建数据卷中的数据目录，因此新建的数据卷可以直接持久化课程和用量记录。旧版镜像创建的数据卷可能归 root 所有，这会让所有服务端保存都因 `EACCES` 失败，而应用仍照常提供服务（课程悄无声息地从未写入磁盘；日志中出现 `Failed to record usage ... EACCES: permission denied`）。请修复一次这样的数据卷，然后重启应用：
+
+```bash
+docker exec -u root <container> chown -R 1001:1001 /app/data
+```
 
 `NEXT_PUBLIC_*` 功能开关会在 Docker 构建时注入，不能只写在运行时的 `.env.local` 中。例如启用视频导出和实验性 PPTX 导入：
 
@@ -43,16 +51,18 @@ docker compose --profile video-export up --build
 
 其他客户端功能开关也可以用同样方式传入。若使用 `docker build`，请改用对应的 `--build-arg`。
 
-如需使用服务端 provider 配置，把文件挂载到容器内的固定路径：
+使用 `openmaic.yml` 时，把它挂载到应用的工作目录；也可以挂载到其他位置，并用 `OPENMAIC_CONFIG` 指向它：
 
 ```yaml
 services:
   openmaic:
     volumes:
-      - ./server-providers.yml:/app/server-providers.yml:ro
+      - ./openmaic.yml:/app/openmaic.yml:ro
 ```
 
-Docker 容器中的 `localhost` 指向容器自身。若 Ollama、Lemonade、VoxCPM 或 ComfyUI 运行在宿主机上，请使用 `host.docker.internal`，例如 `http://host.docker.internal:11434/v1` 或 `http://host.docker.internal:8188`。Linux Docker 通常还需要为 `openmaic` 服务添加 `extra_hosts: ["host.docker.internal:host-gateway"]`。其中 ComfyUI 目前不是服务端托管 provider，生产环境还要设置 `ALLOW_LOCAL_NETWORKS=true`，否则 SSRF 防护会拒绝该地址。
+不要挂载宿主机上不存在的路径：Docker 会在该位置创建一个目录，导致服务拒绝启动。使用 `docker run` 时，添加 `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`。修改文件后需要重启容器。`openmaic.yml` 已列入 `.dockerignore`，不会被打包进从仓库构建的镜像：请在运行时挂载它。没有 `openmaic.yml` 时，仍会从 `/app/server-providers.yml` 读取旧版的 `server-providers.yml`。
+
+Docker 容器中的 `localhost` 指向容器自身。若 Ollama、Lemonade、VoxCPM 或 ComfyUI 运行在宿主机上，请使用 `host.docker.internal`，例如 `http://host.docker.internal:11434/v1` 或 `http://host.docker.internal:8188`。Linux Docker 通常还需要为 `openmaic` 服务添加 `extra_hosts: ["host.docker.internal:host-gateway"]`。在 `openmaic.yml`（或旧版变量）中声明的服务商由服务端托管，其端点可以位于宿主机或内网，无需 `ALLOW_LOCAL_NETWORKS`。该变量只影响用户自行填写的端点：在 **设置 → 模型服务** 中添加的对话 Base URL，以及已弃用的请求字段。
 
 ## 自建虚拟机
 
@@ -61,35 +71,28 @@ Docker 容器中的 `localhost` 指向容器自身。若 Ollama、Lemonade、Vox
 ```bash
 pnpm install
 pnpm build
-pnpm start      # 默认监听 3000 端口
+DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # 默认监听 3000 端口
 ```
 
-前面套 nginx 或 Caddy 做 TLS 终止。默认情况下，课堂状态保存在浏览器 IndexedDB 中；启用服务端持久化后，运行时数据和课程文档会保存到服务端存储和 PostgreSQL。多实例部署前应先选择合适的持久化方案。
+前面套 nginx 或 Caddy 做 TLS 终止。课程、运行时数据和生成的媒体都保存在 PostgreSQL 中，多个实例可以共用同一个数据库。
 
 ## 服务端持久化（PostgreSQL）
 
-仓库的 `server-persistence` profile 会启动 OpenMAIC 和 PostgreSQL 两个容器。持久化 HTTP API 内嵌在 OpenMAIC 中，不需要额外的 persistence 服务。
+OpenMAIC 把课程、对话历史、学习进度和生成的媒体保存在 PostgreSQL 中，**必须提供 `DATABASE_URL`**：没有它服务会输出 `[boot] Invalid server configuration; the server will not start: DATABASE_URL is not set. ...` 及修复方法，并以退出码 `1` 退出。持久化 HTTP API 内嵌在 OpenMAIC 中，不需要额外的 persistence 服务。
 
-先在 `.env.local` 中加入数据库连接和开发令牌：
-
-```bash
-DATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic
-PERSISTENCE_DEV_TOKEN=openmaic-local-dev
-```
-
-然后启动 profile：
+`docker compose up` 会在应用旁启动 PostgreSQL 并为其设置 `DATABASE_URL`。本地开发时，`pnpm db:up` 以同一服务定义启动一个独立的开发数据库（单独的 Compose 项目和数据卷 `openmaic-dev-db`，本机所有检出共用，不会影响该栈的数据库），并发布到 `127.0.0.1`（端口 `OPENMAIC_DB_PORT`，默认 `5432`）；`pnpm db:down` 可将其停止。然后在 `.env.local` 中设置连接：
 
 ```bash
-NEXT_PUBLIC_PERSISTENCE=1 \
-NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev \
-docker compose --profile server-persistence up --build
+DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
 ```
 
-`NEXT_PUBLIC_PERSISTENCE` 和 `NEXT_PUBLIC_PERSISTENCE_TOKEN` 是构建时变量，必须与运行时的服务端配置匹配。`PERSISTENCE_DEV_TOKEN` 方案只适合本地或可信内网部署，不提供真正的用户隔离，不应直接作为公开生产环境的认证方案。
+持久化不再有单独的凭证：每个请求都归属于所有者解析得出的所有者（默认是每个浏览器一个的匿名 cookie），运行时会话和媒体按该所有者分区。默认身份只隔离浏览器、并不认证任何人，面向真实用户的部署应注册基于自有账号体系的所有者认证方法。早期版本使用的 `PERSISTENCE_DEV_TOKEN` / `NEXT_PUBLIC_PERSISTENCE_TOKEN` 已移除并被忽略；按旧的浏览器自生成学习者 key 存储的运行时会话将无法再访问。如果 `PERSISTENCE_DEV_TOKEN` 曾是唯一的访问门槛，请在升级前用 `ACCESS_CODE` 或网关保护部署，或注册所有者认证方法。
 
 PostgreSQL 数据保存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRES_PASSWORD` 只会在数据库目录首次初始化时设置密码，之后修改环境变量不会自动修改已有数据库用户密码。
 
-不设置 `NEXT_PUBLIC_PERSISTENCE` 即保持原有的浏览器端持久化行为。
+除非设置了 `OPENMAIC_SECRET_KEY`，`openmaic-data` 数据卷中还保存着 `instance-secret.key`，即自动生成的实例密钥，用于加密模型设置中保存的服务商 key。请把它和数据库一起备份：没有它，已保存的 key 需要重新填写。如果运行多个副本、没有持久化数据卷或文件系统只读，请改为设置 `OPENMAIC_SECRET_KEY`（所有副本使用同一个值）；参见 [密钥与 OPENMAIC_SECRET_KEY](./configuration.mdx#密钥与-openmaic_secret_key)。
+
+早期版本可以把课程保存在浏览器（IndexedDB）中。该模式已移除，`NEXT_PUBLIC_PERSISTENCE` 构建变量会被忽略。以这种方式保存在浏览器中的课程，会在该浏览器首次打开升级后的应用时自动搬到服务端：单向导入器把它们（连同对话、学习进度、文件夹和媒体）复制给服务端为该浏览器解析出的所有者，浏览器中的原始数据保持不变。每个浏览器只导入一次：服务端把该浏览器绑定给第一个加载升级后应用的所有者，认领会把绑定带到账号（匿名所有者在登录时被认领进账号）。服务端会拒绝导入器为其他所有者发出的请求，因此之后在同一浏览器中使用的其他所有者不会得到任何导入。整个过程无需操作，也没有界面提示；如有问题，会以 `[legacy-browser-import]` 前缀记录在浏览器控制台中。
 
 ## 可选：MP4 视频导出
 
@@ -105,7 +108,7 @@ Compose 会通过 `RENDER_SERVICE_URL` 让 OpenMAIC 连接渲染服务。未启�
 
 ## 环境变量
 
-完整的环境变量和 provider 配置见[配置说明](./configuration.mdx)。至少要配置一个 LLM 提供方的 key。
+模型配置（`openmaic.yml` 和模型设置）以及全部环境变量见[配置说明](./configuration.mdx)。至少配置一个对话模型后才能生成课程。
 
 ## 访问控制
 

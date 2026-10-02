@@ -116,6 +116,42 @@ describe('RendererTableEditor', () => {
     ).toBe('center');
   });
 
+  it('keeps left-aligned body paragraphs when editing a cell with a centered heading', () => {
+    vi.useFakeTimers();
+    const mixedTable: PPTTableElement = {
+      ...table,
+      data: [
+        [
+          {
+            id: 'mixed',
+            colspan: 1,
+            rowspan: 1,
+            style: { align: 'center', fontsize: '32px' },
+            text:
+              '<p style="text-align:center;font-size:32px">Heading</p>' +
+              '<p style="text-align:left;font-size:24px">Body</p>',
+          },
+        ],
+      ],
+    };
+    let controller: TextEditorController | null = null;
+    render(
+      <RendererTableEditor
+        element={mixedTable}
+        onChange={vi.fn()}
+        onTextEditorChange={(next) => {
+          controller = next;
+        }}
+      />,
+    );
+    fireEvent.pointerDown(screen.getByRole('cell'));
+    const paragraphs = document.querySelectorAll<HTMLElement>('.ProseMirror p');
+    expect(Array.from(paragraphs, (p) => p.style.textAlign)).toEqual(['center', 'left']);
+    expect(Array.from(paragraphs, (p) => p.style.fontSize)).toEqual(['32px', '24px']);
+    const activeController = controller as TextEditorController | null;
+    expect(activeController?.getHTML()).toContain('text-align: left');
+  });
+
   it('reports table-cell format state and persists shared text toolbar commands', () => {
     const onChange = vi.fn();
     const onTextFormatChange = vi.fn();

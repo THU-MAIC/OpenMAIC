@@ -35,11 +35,60 @@ import type {
   RuntimeStore,
   RuntimeTailOptions,
 } from './types.js';
-import { RuntimeAppendConflictError } from './types.js';
+import { RuntimeAppendConflictError, RuntimeSessionExistsError } from './types.js';
 import { assertJsonValue, isLosslessJsonString } from './json-value.js';
+import { encodeJson } from '../pg-json.js';
 
 export interface QueryResult<TRow extends Record<string, unknown> = Record<string, unknown>> {
   rows: TRow[];
+}
+
+/** Why a lock-bounded transaction gave up. */
+export type StorageLockUnavailableReason = 'lock-timeout' | 'deadlock';
+
+/**
+ * A write transaction gave up waiting for a row lock, or was chosen to break a
+ * deadlock.
+ *
+ * Both are contention, not corruption: the transaction rolled back, nothing it
+ * intended is half-written, and retrying later is the right response. They get
+ * a type because a host cannot otherwise tell "another writer is holding this
+ * row" from a generic database failure without matching on driver error codes
+ * -- and because these are the failures the package's own `lock_timeout`
+ * budget deliberately manufactures rather than inherits. The driver's error is
+ * kept as `cause`.
+ */
+export class StorageLockUnavailableError extends Error {
+  readonly reason: StorageLockUnavailableReason;
+
+  constructor(reason: StorageLockUnavailableReason, cause: unknown) {
+    super(
+      reason === 'deadlock'
+        ? '@openmaic/storage: the write transaction was chosen to break a deadlock'
+        : '@openmaic/storage: the write transaction timed out waiting for a row lock',
+      { cause },
+    );
+    this.name = 'StorageLockUnavailableError';
+    this.reason = reason;
+  }
+}
+
+/**
+ * Classify a driver error as lock contention, or `undefined` when it is
+ * something else.
+ *
+ * Reads only the SQLSTATE, which every PostgreSQL driver surfaces verbatim as
+ * `code`: `55P03` is `lock_not_available` (what `SET LOCAL lock_timeout`
+ * produces) and `40P01` is `deadlock_detected`. Message text is deliberately
+ * not consulted -- it is localized and version-dependent.
+ */
+export function asStorageLockUnavailable(error: unknown): StorageLockUnavailableError | undefined {
+  if (error instanceof StorageLockUnavailableError) return error;
+  if (typeof error !== 'object' || error === null) return undefined;
+  const code = (error as { code?: unknown }).code;
+  if (code === '55P03') return new StorageLockUnavailableError('lock-timeout', error);
+  if (code === '40P01') return new StorageLockUnavailableError('deadlock', error);
+  return undefined;
 }
 
 /** The common query surface implemented by a node-postgres Pool/Client and PGlite. */
@@ -62,6 +111,15 @@ export interface PgRuntimeStoreOptions {
   withTransaction: WithTransaction;
   /** Replaces the default chat / quizAttempt skeleton validator map. */
   payloadValidators?: Record<string, RuntimePayloadValidator>;
+  /**
+   * Resolve the learner a new session is created for, as the create
+   * transaction's first statement. A host that retires owners (claiming
+   * anonymous work into an account) takes the identity lock the retiring
+   * operation takes and either refuses a retired learner (throw, for a
+   * request) or returns the learner it forwards to (for background work).
+   * Unset, `createSession` is the single insert it always was.
+   */
+  resolveFinalLearner?: (transaction: Queryable, learnerKey: string) => Promise<string>;
 }
 
 /** Idempotent schema for the PostgreSQL runtime backend. */
@@ -165,16 +223,6 @@ function isPlainObject(value: unknown): boolean {
   return prototype === Object.prototype || prototype === null;
 }
 
-function encodeJson(value: unknown, label: string): string {
-  try {
-    const encoded = JSON.stringify(value);
-    if (encoded === undefined) throw new TypeError('value is not JSON-serializable');
-    return encoded;
-  } catch (error) {
-    throw new Error(`@openmaic/storage: ${label} is not JSON-serializable`, { cause: error });
-  }
-}
-
 function isFutureRuntimeVersioned(row: unknown): boolean {
   if (typeof row !== 'object' || row === null) return false;
   return !needsRuntimeMigration(row) && runtimeDslVersionOf(row) !== RUNTIME_DSL_VERSION;
@@ -226,6 +274,7 @@ export class PgRuntimeStore implements RuntimeStore {
   private readonly queryable: Queryable;
   private readonly transactionHook: WithTransaction;
   private readonly payloadValidators: Record<string, RuntimePayloadValidator>;
+  private readonly resolveLearner?: PgRuntimeStoreOptions['resolveFinalLearner'];
 
   constructor(queryable: Queryable, options: PgRuntimeStoreOptions) {
     if (typeof options?.withTransaction !== 'function') {
@@ -238,6 +287,7 @@ export class PgRuntimeStore implements RuntimeStore {
     this.queryable = queryable;
     this.transactionHook = options.withTransaction;
     this.payloadValidators = options.payloadValidators ?? DEFAULT_PAYLOAD_VALIDATORS;
+    this.resolveLearner = options.resolveFinalLearner;
   }
 
   private async transaction<T>(body: (queryable: Queryable) => Promise<T>): Promise<T> {
@@ -296,12 +346,32 @@ export class PgRuntimeStore implements RuntimeStore {
   }
 
   async createSession(init: RuntimeSessionInit): Promise<RuntimeSession> {
-    const stamped: RuntimeSession = { ...init, runtimeDslVersion: RUNTIME_DSL_VERSION };
-    assertValid(validateRuntimeSession(stamped), `runtime session ${JSON.stringify(stamped.id)}`);
-    assertJsonValue(stamped, `runtime session ${JSON.stringify(stamped.id)}`);
+    const requested: RuntimeSession = { ...init, runtimeDslVersion: RUNTIME_DSL_VERSION };
+    assertValid(
+      validateRuntimeSession(requested),
+      `runtime session ${JSON.stringify(requested.id)}`,
+    );
+    assertJsonValue(requested, `runtime session ${JSON.stringify(requested.id)}`);
+    const resolveLearner = this.resolveLearner;
+    if (resolveLearner === undefined) return this.insertSession(this.queryable, requested);
+    return this.transaction(async (queryable) => {
+      const learnerKey = await resolveLearner(queryable, requested.learnerKey);
+      if (learnerKey === requested.learnerKey) return this.insertSession(queryable, requested);
+      const forwarded: RuntimeSession = { ...requested, learnerKey };
+      assertValid(
+        validateRuntimeSession(forwarded),
+        `runtime session ${JSON.stringify(forwarded.id)}`,
+      );
+      return this.insertSession(queryable, forwarded);
+    });
+  }
 
+  private async insertSession(
+    queryable: Queryable,
+    stamped: RuntimeSession,
+  ): Promise<RuntimeSession> {
     try {
-      await this.queryable.query(
+      await queryable.query(
         `INSERT INTO runtime_sessions
            (id, stage_id, learner_key, kind, status, created_at, updated_at, data)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
@@ -318,9 +388,7 @@ export class PgRuntimeStore implements RuntimeStore {
       );
     } catch (error) {
       if (isUniqueViolation(error)) {
-        throw new Error(`@openmaic/storage: session ${JSON.stringify(stamped.id)} already exists`, {
-          cause: error,
-        });
+        throw new RuntimeSessionExistsError(stamped.id, { cause: error });
       }
       throw error;
     }
@@ -583,6 +651,48 @@ export class PgRuntimeStore implements RuntimeStore {
       });
       for (const session of updatedSessions) await this.persistSession(queryable, session);
       return updatedSessions.length;
+    });
+  }
+
+  /**
+   * Move every session of `fromLearnerKey` to `toLearnerKey` without reading
+   * them back: the learner key column and the stored session's `learnerKey`
+   * are rewritten in place, and nothing is migrated or validated. For a host
+   * merging two owners inside a transaction of its own (pin the store to it),
+   * where one session that no longer validates -- written by a newer version,
+   * say -- must not make the whole merge fail; readers keep validating as they
+   * always do. {@link mergeLearner} is the validating form. Answers how many
+   * sessions moved.
+   */
+  async reassignLearner(fromLearnerKey: string, toLearnerKey: string): Promise<number> {
+    if (
+      typeof fromLearnerKey !== 'string' ||
+      fromLearnerKey === '' ||
+      typeof toLearnerKey !== 'string' ||
+      toLearnerKey === ''
+    ) {
+      throw new Error('@openmaic/storage: learner keys must be non-empty strings');
+    }
+    assertJsonValue(toLearnerKey, 'target learner key');
+    if (!isPgQueryableKey(fromLearnerKey) || fromLearnerKey === toLearnerKey) return 0;
+    return this.transaction(async (queryable) => {
+      await queryable.query(
+        'SELECT id FROM runtime_sessions WHERE learner_key = $1 ORDER BY id FOR UPDATE',
+        [fromLearnerKey],
+      );
+      const moved = await queryable.query<{ id: string } & Record<string, unknown>>(
+        `UPDATE runtime_sessions
+            SET learner_key = $2,
+                data = CASE
+                  WHEN jsonb_typeof(data) = 'object'
+                    THEN jsonb_set(data, '{learnerKey}', to_jsonb($2::text))
+                  ELSE data
+                END
+          WHERE learner_key = $1
+          RETURNING id`,
+        [fromLearnerKey, toLearnerKey],
+      );
+      return moved.rows.length;
     });
   }
 

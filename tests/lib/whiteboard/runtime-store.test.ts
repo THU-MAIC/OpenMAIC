@@ -625,9 +625,9 @@ describe('whiteboard RuntimeStore service', () => {
             {
               id: 'code-1',
               lines: [
-                { id: 'L2', content: 'const two = 2;' },
                 { id: 'host-A', content: '' },
                 { id: 'host-B', content: 'replacement' },
+                { id: 'L2', content: 'const two = 2;' },
               ],
             },
           ],

@@ -150,6 +150,11 @@ import { experimental_transcribe as transcribe } from 'ai';
 import type { ASRModelConfig } from './types';
 import { isCustomASRProvider } from './types';
 import { ASR_PROVIDERS } from './constants';
+import {
+  audioEndpointPolicy,
+  audioProviderFetch,
+  createAudioProviderFetch,
+} from '@/lib/server/audio-provider-fetch';
 
 /**
  * Result of ASR transcription
@@ -235,11 +240,15 @@ async function transcribeWavOpenAICompatibleASR(
     formData.set('language', config.language);
   }
 
-  const response = await fetch(`${baseUrl}/audio/transcriptions`, {
-    method: 'POST',
-    headers: getOptionalBearerAuthHeaders(config.apiKey),
-    body: formData,
-  });
+  const response = await audioProviderFetch(
+    `${baseUrl}/audio/transcriptions`,
+    {
+      method: 'POST',
+      headers: getOptionalBearerAuthHeaders(config.apiKey),
+      body: formData,
+    },
+    audioEndpointPolicy(config),
+  );
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => response.statusText);
@@ -356,11 +365,15 @@ async function transcribeCustomOpenAICompatibleASR(
     formData.set('language', config.language);
   }
 
-  const response = await fetch(`${baseUrl}/audio/transcriptions`, {
-    method: 'POST',
-    headers: getOptionalBearerAuthHeaders(config.apiKey),
-    body: formData,
-  });
+  const response = await audioProviderFetch(
+    `${baseUrl}/audio/transcriptions`,
+    {
+      method: 'POST',
+      headers: getOptionalBearerAuthHeaders(config.apiKey),
+      body: formData,
+    },
+    audioEndpointPolicy(config),
+  );
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => response.statusText);
@@ -389,6 +402,10 @@ async function transcribeOpenAIWhisper(
   const openai = createOpenAI({
     apiKey: config.apiKey!,
     baseURL: config.baseUrl || ASR_PROVIDERS['openai-whisper'].defaultBaseUrl,
+    // The AI SDK issues the multipart upload through this transport, so the
+    // provider request inherits the same redirect + pinned-DNS protection as
+    // the raw provider fetches.
+    fetch: createAudioProviderFetch(audioEndpointPolicy(config)) as typeof fetch,
   });
 
   // Convert to Buffer or Uint8Array (which is required by the AI SDK)
@@ -471,15 +488,19 @@ async function transcribeQwenASR(
     };
   }
 
-  const response = await fetch(`${baseUrl}/services/aigc/multimodal-generation/generation`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      'Content-Type': 'application/json; charset=utf-8',
-      'X-DashScope-Audio-Format': 'wav',
+  const response = await audioProviderFetch(
+    `${baseUrl}/services/aigc/multimodal-generation/generation`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-DashScope-Audio-Format': 'wav',
+      },
+      body: JSON.stringify(requestBody),
     },
-    body: JSON.stringify(requestBody),
-  });
+    audioEndpointPolicy(config),
+  );
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => response.statusText);
@@ -572,11 +593,15 @@ async function transcribeAzureASR(
     formData.append('definition', JSON.stringify({ locales: [locale] }));
   }
 
-  const response = await fetch(url.toString(), {
-    method: 'POST',
-    headers: { 'Ocp-Apim-Subscription-Key': config.apiKey! },
-    body: formData,
-  });
+  const response = await audioProviderFetch(
+    url.toString(),
+    {
+      method: 'POST',
+      headers: { 'Ocp-Apim-Subscription-Key': config.apiKey! },
+      body: formData,
+    },
+    audioEndpointPolicy(config),
+  );
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => response.statusText);
@@ -598,33 +623,6 @@ async function transcribeAzureASR(
     .join(' ');
 
   return { text: combinedText || phraseText || '' };
-}
-
-/**
- * Get current ASR configuration from settings store
- * Note: This function should only be called in browser context
- */
-export async function getCurrentASRConfig(): Promise<ASRModelConfig> {
-  if (typeof window === 'undefined') {
-    throw new Error('getCurrentASRConfig() can only be called in browser context');
-  }
-
-  // Lazy import to avoid circular dependency
-  const { useSettingsStore } = await import('@/lib/store/settings');
-  const { asrProviderId, asrLanguage, asrProvidersConfig } = useSettingsStore.getState();
-
-  const providerConfig = asrProvidersConfig?.[asrProviderId];
-
-  return {
-    providerId: asrProviderId,
-    modelId:
-      providerConfig?.modelId ||
-      ASR_PROVIDERS[asrProviderId as keyof typeof ASR_PROVIDERS]?.defaultModelId ||
-      '',
-    apiKey: providerConfig?.apiKey,
-    baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
-    language: asrLanguage,
-  };
 }
 
 // Re-export from constants for convenience

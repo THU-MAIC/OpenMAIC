@@ -16,12 +16,15 @@
  */
 
 import type {
+  MediaProviderFetch,
   VideoGenerationConfig,
   VideoGenerationOptions,
   VideoGenerationResult,
 } from '../types';
+import { mediaFetchFor } from '../media-fetch';
 import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const DEFAULT_MODEL = 'grok-imagine-video';
@@ -88,7 +91,7 @@ export async function testGrokVideoConnectivity(
   return probeAuth({
     providerName: 'Grok Video',
     request: () =>
-      fetch(`${baseUrl}/videos/generations`, {
+      mediaFetchFor(config)(`${baseUrl}/videos/generations`, {
         method: 'POST',
         redirect: 'manual',
         headers: apiHeaders(config.apiKey),
@@ -105,6 +108,7 @@ export async function testGrokVideoConnectivity(
 // ---------------------------------------------------------------------------
 
 async function submitVideoGeneration(
+  fetchImpl: MediaProviderFetch,
   baseUrl: string,
   apiKey: string,
   model: string,
@@ -117,11 +121,14 @@ async function submitVideoGeneration(
 
   if (options.duration) body.duration = options.duration;
 
-  const response = await fetch(`${baseUrl}/videos/generations`, {
+  const response = await fetchImpl(`${baseUrl}/videos/generations`, {
     method: 'POST',
+    redirect: 'manual',
     headers: apiHeaders(apiKey),
     body: JSON.stringify(body),
   });
+
+  assertNotRedirected(response, 'Grok Video');
 
   if (!response.ok) {
     const text = await response.text();
@@ -141,14 +148,18 @@ async function submitVideoGeneration(
 // ---------------------------------------------------------------------------
 
 async function pollVideoStatus(
+  fetchImpl: MediaProviderFetch,
   baseUrl: string,
   apiKey: string,
   requestId: string,
 ): Promise<GrokVideoPollResponse> {
-  const response = await fetch(`${baseUrl}/videos/${requestId}`, {
+  const response = await fetchImpl(`${baseUrl}/videos/${requestId}`, {
     method: 'GET',
+    redirect: 'manual',
     headers: apiHeaders(apiKey),
   });
+
+  assertNotRedirected(response, 'Grok Video');
 
   if (!response.ok) {
     const text = await response.text();
@@ -172,10 +183,21 @@ export async function generateWithGrokVideo(
   return runPolledTask<VideoGenerationResult>({
     submit: async () => ({
       status: 'submitted',
-      taskId: await submitVideoGeneration(baseUrl, config.apiKey, model, options),
+      taskId: await submitVideoGeneration(
+        mediaFetchFor(config),
+        baseUrl,
+        config.apiKey,
+        model,
+        options,
+      ),
     }),
     poll: async (requestId) => {
-      const result = await pollVideoStatus(baseUrl, config.apiKey, requestId);
+      const result = await pollVideoStatus(
+        mediaFetchFor(config),
+        baseUrl,
+        config.apiKey,
+        requestId,
+      );
 
       if (result.status === 'done') {
         if (!result.video?.url) {

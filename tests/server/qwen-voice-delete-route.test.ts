@@ -1,5 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+
+// The Qwen voice-clone adapter now issues requests through undici's fetch with
+// a pinned dispatcher, so the vendor double stands in for undici.
+const fetchMock = vi.hoisted(() => vi.fn());
+vi.mock('undici', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('undici')>();
+  return { ...actual, fetch: fetchMock };
+});
 
 function deleteRequest(apiKey?: string): NextRequest {
   return new NextRequest('http://localhost/api/generate/voice', {
@@ -15,6 +23,7 @@ function deleteRequest(apiKey?: string): NextRequest {
 }
 
 describe('Qwen voice deletion authorization', () => {
+  beforeEach(() => fetchMock.mockReset());
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
@@ -23,7 +32,7 @@ describe('Qwen voice deletion authorization', () => {
 
   it('is local-only when the provider uses a server-managed key', async () => {
     vi.stubEnv('TTS_QWEN_API_KEY', 'server-managed-key');
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const fetchSpy = fetchMock;
     const { POST } = await import('@/app/api/generate/voice/route');
 
     const response = await POST(deleteRequest());
@@ -39,9 +48,9 @@ describe('Qwen voice deletion authorization', () => {
 
   it('deletes provider-side only with the caller-owned key', async () => {
     vi.stubEnv('TTS_QWEN_API_KEY', '');
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response(JSON.stringify({ output: { voice: 'exported-vendor-id' } })));
+    const fetchSpy = fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ output: { voice: 'exported-vendor-id' } })),
+    );
     const { POST } = await import('@/app/api/generate/voice/route');
 
     const response = await POST(deleteRequest('caller-owned-key'));

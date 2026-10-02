@@ -1,5 +1,6 @@
 import type { AICallFn } from '@openmaic/generation';
 
+import { backgroundWorkspaceId } from '@/lib/server/model-config/runtime';
 import { callLLM } from '@/lib/ai/llm';
 import type { LlmStage } from '@/lib/server/model-routes';
 import { resolveModel } from '@/lib/server/resolve-model';
@@ -13,6 +14,8 @@ export function sceneContentStage(type?: string): LlmStage {
 /** Bind the generation package's neutral callback seam to server stage routing. */
 export function createGenerationAiCallFactory(options?: {
   abortSignal?: AbortSignal;
+  /** Whose model settings apply: the run's session owner. */
+  ownerId?: string;
 }): (stage: LlmStage) => AICallFn {
   const calls = new Map<LlmStage, AICallFn>();
   return (stage) => {
@@ -20,7 +23,10 @@ export function createGenerationAiCallFactory(options?: {
     if (cached) return cached;
     let resolved: Awaited<ReturnType<typeof resolveModel>> | undefined;
     const call: AICallFn = async (systemPrompt, userPrompt) => {
-      resolved ??= await resolveModel({ stage });
+      resolved ??= await resolveModel({
+        stage,
+        workspaceId: options?.ownerId ? await backgroundWorkspaceId(options.ownerId) : null,
+      });
       const result = await callLLM(
         {
           model: resolved.model,
@@ -33,6 +39,7 @@ export function createGenerationAiCallFactory(options?: {
         stage,
         undefined,
         resolved.thinkingConfig,
+        { serverManaged: resolved.serverManaged },
       );
       return result.text;
     };

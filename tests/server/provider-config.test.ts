@@ -24,6 +24,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'TENCENT_HUNYUAN',
   'XIAOMI',
   'MIMO',
+  'TOKENDANCE',
   'HY3',
   'OLLAMA',
   'BEDROCK',
@@ -33,6 +34,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'TTS_QWEN',
   'TTS_DOUBAO',
   'TTS_ELEVENLABS',
+  'TTS_GOOGLE',
   'TTS_MINIMAX',
   'TTS_VOXCPM',
   'ASR_OPENAI',
@@ -313,6 +315,17 @@ providers:
         'hunyuan-2.0-instruct-20251111',
       ]);
       expect(providers.xiaomi.models).toEqual(['mimo-v2.5-pro']);
+    });
+
+    it('maps TokenDance env vars to the built-in OpenAI-compatible provider', async () => {
+      vi.stubEnv('TOKENDANCE_API_KEY', 'sk-td');
+      vi.stubEnv('TOKENDANCE_BASE_URL', 'https://tokendance.space/gateway/v1');
+      vi.stubEnv('TOKENDANCE_MODELS', 'deepseek-v4.1-flash,glm-5.3');
+      const { getServerProviders, resolveBaseUrl } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.tokendance.models).toEqual(['deepseek-v4.1-flash', 'glm-5.3']);
+      expect(resolveBaseUrl('tokendance')).toBe('https://tokendance.space/gateway/v1');
     });
 
     it('does not treat HY3 as an env prefix', async () => {
@@ -730,6 +743,39 @@ video:
       // section-scoped: an LLM provider id is not a video provider
       expect(isServerConfiguredProvider('video', 'openai')).toBe(false);
     });
+
+    it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+      'does not treat the inherited property name %s as a configured provider',
+      async (providerId) => {
+        vi.stubEnv('OPENAI_API_KEY', 'sk-openai');
+        const {
+          isServerConfiguredProvider,
+          resolveApiKey,
+          resolveBaseUrl,
+          resolveProxy,
+          resolveTTSApiKey,
+          resolveASRModel,
+          resolveImageModel,
+          resolveVideoModel,
+          resolveWebSearchModel,
+        } = await import('@/lib/server/provider-config');
+
+        for (const section of ['providers', 'tts', 'asr', 'pdf', 'image', 'video'] as const) {
+          expect(isServerConfiguredProvider(section, providerId)).toBe(false);
+        }
+        // Unmanaged: the client's values are used, not an inherited property.
+        expect(resolveApiKey(providerId, 'client-key')).toBe('client-key');
+        expect(resolveTTSApiKey(providerId, 'client-key')).toBe('client-key');
+        expect(resolveBaseUrl(providerId, 'https://client.example/v1')).toBe(
+          'https://client.example/v1',
+        );
+        expect(resolveProxy(providerId)).toBeUndefined();
+        expect(resolveASRModel(providerId, 'm')).toBe('m');
+        expect(resolveImageModel(providerId, 'm')).toBe('m');
+        expect(resolveVideoModel(providerId, 'm')).toBe('m');
+        expect(resolveWebSearchModel(providerId, 'm')).toBe('m');
+      },
+    );
   });
 
   describe('getServerTTSProviders force-disable (#665)', () => {

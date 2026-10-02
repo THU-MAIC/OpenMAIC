@@ -7,19 +7,20 @@
  * course ids are returned, so the caller can run its own cascade (the
  * workbench deletes the owner courses it captured).
  *
- * Every handler is owner-scoped exactly like the other workbench routes (see
- * `app/api/folders/route.ts`), and the whole family is gated on the
- * configured runtime.
+ * Every handler is owner-scoped exactly like the other folder routes (see
+ * `app/api/folders/route.ts`), and the whole family is gated on server
+ * persistence (a DATABASE_URL), not on the agent runtime.
  */
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import type { DocumentFolder, DocumentFolderStore } from '@openmaic/storage';
 
-import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
+import { isServerPersistenceConfigured } from '@/lib/config/feature-flags';
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { ownerJson } from '@/lib/server/agent-runtime/route-response';
-import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import { folderNameErrorResponse } from '@/lib/server/folder-name-errors';
 import { validateFolderName } from '@/lib/utils/folder-name-validation';
 
@@ -38,7 +39,7 @@ function jsonError(status: number, code: string, message: string, headers?: Head
 
 // PATCH /api/folders/[id] — rename { name }.
 export async function PATCH(req: NextRequest, { params }: Params) {
-  if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
+  if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
 
   let body: unknown;
   try {
@@ -60,7 +61,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     );
   }
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const { id } = await params;
     try {
       const store = (await getOwnerScopedDocumentStore(ownerId)) as unknown as DocumentFolderStore;
@@ -84,6 +85,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       }
       return ownerJson({ folder: folderResponse(updated, ownerId) }, 200, responseHeaders);
     } catch (error) {
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
       // The rename re-checks the name through the unique index; a duplicate
       // that slipped past the pre-check answers the same 409.
       const nameError = folderNameErrorResponse(error);
@@ -99,12 +102,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
 // DELETE /api/folders/[id]?mode=ungroup|remove
 export async function DELETE(req: NextRequest, { params }: Params) {
-  if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
+  if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
 
   const modeParam = req.nextUrl.searchParams.get('mode');
   const mode: 'ungroup' | 'remove' = modeParam === 'remove' ? 'remove' : 'ungroup';
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const { id } = await params;
     try {
       const store = (await getOwnerScopedDocumentStore(ownerId)) as unknown as DocumentFolderStore;
@@ -114,6 +117,8 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       }
       return ownerJson({ ok: true, removedStageIds: result.removedStageIds }, 200, responseHeaders);
     } catch (error) {
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
       console.error(`[Folders] Failed to delete [owner=${ownerId}, id=${id}]:`, error);
       return jsonError(500, 'FOLDER_DELETE_FAILED', 'Failed to delete folder', responseHeaders);
     }

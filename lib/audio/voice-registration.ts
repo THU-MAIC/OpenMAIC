@@ -18,6 +18,16 @@ export interface VoiceRegistrationConfig {
   baseUrl: string;
   apiKey?: string;
   model?: string;
+  /**
+   * `true` pins a client-supplied BYOK `baseUrl` to the strict public policy;
+   * unset falls back to the process-wide `ALLOW_LOCAL_NETWORKS` behavior.
+   */
+  publicOnly?: boolean;
+  /**
+   * `true` for a server-configured provider: its `baseUrl` may be on a local
+   * network without ALLOW_LOCAL_NETWORKS.
+   */
+  managed?: boolean;
 }
 
 export interface VoiceRegistrationAdapter {

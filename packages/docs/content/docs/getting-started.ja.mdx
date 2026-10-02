@@ -31,19 +31,44 @@ pnpm install
 cp .env.example .env.local
 ```
 
-`.env.local` を開き、利用可能な key を持つプロバイダーを設定します。例：
+次にモデルを設定します。ファイルで設定する最も簡単な方法は、`.env.local` の隣に最小限の `openmaic.yml` を置き、キーを `.env.local` に書くことです。
 
 ```bash title=".env.local"
 OPENAI_API_KEY=sk-...
-# または
-ANTHROPIC_API_KEY=sk-ant-...
-# またはローカル Ollama（key 不要）
-OLLAMA_BASE_URL=http://localhost:11434/v1
 ```
+
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+
+slots:
+  llm: openai:gpt-5.5
+```
+
+`openmaic.example.yml` はこれと同じ出発点で、任意のプロバイダーとスロットがコメントアウトされた状態で含まれています。ファイルを使わない場合も、`DEFAULT_MODEL` でモデルを指定すれば旧来のプロバイダー変数が使えます。
+
+```bash title=".env.local"
+ANTHROPIC_API_KEY=sk-ant-...
+DEFAULT_MODEL=anthropic:claude-sonnet-4-6
+```
+
+どちらも使わない場合は、アプリを起動して **設定 → Token Plan** でプランのキーを、または **設定 → モデルサービス** でサービスのキーを入力してください。`openmaic.yml`、`DEFAULT_MODEL`、そこで設定したサービスのいずれもなければ、モデルは設定されず生成は失敗します。
 
 プロバイダー、画像／動画生成、TTS、ASR、ドキュメント解析、Web 検索、アクセス制御、feature flag の詳細設定は[設定説明](./configuration.mdx)を参照してください。
 
 ## 実行
+
+授業は PostgreSQL に保存され、`DATABASE_URL` がないとサーバーは起動を拒否します。まずローカル開発用データベース（Docker 上の独立した PostgreSQL、`127.0.0.1:5432`、このマシン上のすべてのチェックアウトで共有。別のポートは `OPENMAIC_DB_PORT` で指定）を起動し、`.env.local` に `DATABASE_URL` を設定します：
+
+```bash
+pnpm db:up
+```
+
+```bash title=".env.local"
+DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
+```
 
 開発サーバーを起動します。
 
@@ -57,7 +82,7 @@ pnpm dev
 
 ```bash
 pnpm build
-pnpm start
+DATABASE_URL=postgres://... pnpm start
 ```
 
 または Vercel、Docker、自分のサーバーにデプロイ可能です。詳しくは[デプロイガイド](./deployment.mdx)を参照してください。

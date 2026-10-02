@@ -1,3 +1,4 @@
+import type { ASRModelConfig } from '@/lib/audio/types';
 export type DocumentExtractorProviderId = string;
 
 export interface DocumentExtractorCapabilities {
@@ -20,8 +21,18 @@ export interface DocumentExtractorConfig {
   accessKeySecret?: string;
   /** Allow AliDocMind to use server env credentials (trusted context only). */
   allowEnvFallback?: boolean;
+  /**
+   * The base URL is server configuration, not caller input: it may reach a
+   * local network without ALLOW_LOCAL_NETWORKS (cloud metadata stays refused).
+   */
+  managed?: boolean;
   /** Skip image extraction when the caller needs text only. */
   textOnly?: boolean;
+  /**
+   * The speech recognition connection, resolved by the server from its asr
+   * slot, for media extractors that transcribe an audio track.
+   */
+  asr?: ASRModelConfig;
 }
 
 export interface DocumentExtractorInput {
@@ -37,6 +48,11 @@ export interface DocumentExtractorProvider {
   displayName: string;
   supportedMimeTypes: readonly string[];
   capabilities: DocumentExtractorCapabilities;
+  /**
+   * Whether extraction needs a server-configured service (see the extractor
+   * manifest). Absent on ad-hoc providers, which count as self-contained.
+   */
+  requiresServiceConfig?: boolean;
   /**
    * Provider version. Bump it whenever this provider's extraction output
    * shape or quality changes; it is the version half of the
@@ -79,6 +95,8 @@ export interface MediaExtractorProvider {
    */
   supportedMimeTypes: readonly string[];
   capabilities: MediaExtractorCapabilities;
+  /** Whether an audio track needs a server ASR provider (see the extractor manifest). */
+  requiresServerASR?: boolean;
   /**
    * Provider version. Bump it whenever this provider's extraction output
    * shape or quality changes; it is the version half of the

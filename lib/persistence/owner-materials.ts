@@ -22,10 +22,13 @@
  * the pointer to the bytes.
  */
 import { splitSqlStatements, type Queryable } from '@openmaic/storage/document/pg';
+import { encodeJson } from '@openmaic/storage/pg-json';
 import {
   nodePostgresTransaction,
   type ConnectableQueryable,
 } from '@openmaic/storage/server/reference';
+
+import { ensureOwnerMergeSchema, fenceOwnerWrite } from './owner-merges';
 
 export const OWNER_MATERIAL_STATUSES = ['uploading', 'ready'] as const;
 export type OwnerMaterialStatus = (typeof OWNER_MATERIAL_STATUSES)[number];
@@ -136,6 +139,8 @@ export async function ensureOwnerMaterialSchema(queryable: Queryable): Promise<v
   for (const statement of splitSqlStatements(OWNER_MATERIAL_SCHEMA)) {
     await queryable.query(statement);
   }
+  // Registration fences on the claim records (./owner-merges.ts).
+  await ensureOwnerMergeSchema(queryable);
 }
 
 interface RawOwnerMaterialRow extends Record<string, unknown> {
@@ -231,7 +236,8 @@ export function ownerMaterialQuotaLockKey(ownerId: string): string {
 
 /**
  * Reclaim uploads that crashed before finalize and are older than the sweep
- * horizon.
+ * horizon, and deleted materials whose byte removal failed at delete time
+ * (see {@link deleteOwnerMaterial}).
  *
  * Order is load-bearing: each stale reservation's byte object is removed
  * first, and only then is the reservation deleted. Deleting the reservation
@@ -254,8 +260,7 @@ export async function reclaimStaleOwnerMaterialUploads(
     `SELECT id, oss_key
        FROM owner_material
       WHERE owner_id = $1
-        AND status = 'uploading'
-        AND created_at < $2`,
+        AND ((status = 'uploading' AND created_at < $2) OR deleted_at IS NOT NULL)`,
     [ownerId, staleBefore],
   );
   for (const row of stale.rows) {
@@ -270,10 +275,67 @@ export async function reclaimStaleOwnerMaterialUploads(
     }
     await queryable.query(
       `DELETE FROM owner_material
-        WHERE id = $1 AND status = 'uploading'`,
+        WHERE id = $1 AND (status = 'uploading' OR deleted_at IS NOT NULL)`,
       [row.id],
     );
   }
+}
+
+/**
+ * Delete one of the owner's ready materials.
+ *
+ * The row is marked deleted first: from then on the id no longer resolves
+ * (every read filters `deleted_at`) and it no longer counts against the
+ * owner's quota. Its byte object is removed next and only then the row, the
+ * same pointer-last order the reclaim sweep keeps; a byte deletion that throws
+ * leaves the marked row, whose recorded key {@link reclaimStaleOwnerMaterialUploads}
+ * retries on the owner's next upload. Agent sessions hold their own copy of a
+ * bound upload's bytes, so deleting a library material does not affect them;
+ * binding a deleted id fails as unavailable.
+ *
+ * @returns false when the owner has no such ready material (a missing id, an
+ *   unfinished upload and another owner's material are indistinguishable).
+ */
+export async function deleteOwnerMaterial(
+  queryable: ConnectableQueryable,
+  ownerId: string,
+  materialId: string,
+  deleteBytes: (ossKey: string) => Promise<void>,
+): Promise<boolean> {
+  const withTransaction = nodePostgresTransaction(queryable);
+  const row = await withTransaction(async (tx) => {
+    // The identity lock first, as every owner write takes it: a delete racing
+    // a claim of this owner lands before the claim or is refused (a retired
+    // owner) -- see ./owner-merges.ts.
+    await fenceOwnerWrite(tx, ownerId);
+    const marked = await tx.query<{ oss_key: string }>(
+      `UPDATE owner_material
+          SET deleted_at = $3
+        WHERE id = $1
+          AND owner_id = $2
+          AND status = 'ready'
+          AND deleted_at IS NULL
+        RETURNING oss_key`,
+      [materialId, ownerId, Date.now()],
+    );
+    return marked.rows[0];
+  });
+  if (!row) return false;
+  if (row.oss_key !== '') {
+    try {
+      await deleteBytes(row.oss_key);
+    } catch (error) {
+      console.warn(
+        `[owner-materials] byte deletion failed for material ${materialId}; the reclaim sweep retries it`,
+        error,
+      );
+      return true;
+    }
+  }
+  await queryable.query(`DELETE FROM owner_material WHERE id = $1 AND deleted_at IS NOT NULL`, [
+    materialId,
+  ]);
+  return true;
 }
 
 /**
@@ -294,6 +356,10 @@ export async function registerOwnerMaterial(
 ): Promise<OwnerMaterialRecord> {
   const withTransaction = nodePostgresTransaction(queryable);
   return withTransaction(async (tx) => {
+    // The identity lock first, as every owner write takes it: a registration
+    // racing a claim of this owner lands before the claim (and is moved) or
+    // is refused -- see ./owner-merges.ts.
+    await fenceOwnerWrite(tx, input.ownerId);
     // hashtextextended is 64-bit (hashtext is 32-bit and could block unrelated
     // owners on a collision); the lock is transaction-scoped and releases on
     // commit or rollback.
@@ -332,7 +398,7 @@ export async function registerOwnerMaterial(
         input.bytes,
         input.originalName ?? null,
         input.ossKey,
-        input.extraction ? JSON.stringify(input.extraction) : null,
+        input.extraction ? encodeJson(input.extraction, 'owner material extraction') : null,
         Date.now(),
       ],
     );

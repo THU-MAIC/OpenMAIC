@@ -92,6 +92,43 @@ describe('planRunStart', () => {
     ).toEqual({ kind: 'continue' });
   });
 
+  it('starts over after runs that left the tree empty, keeping the opening message apart from follow-ups', () => {
+    const opening = { text: 'Build a lesson', durableMessageSeq: 1 };
+    const followUp = { text: 'Please try again', durableMessageSeq: 4 };
+    // Created with opening context: the opening message precedes the first run.
+    expect(
+      planRunStart({
+        plan: planResume(null),
+        claimReason: 'queued',
+        pending: [opening, followUp],
+        prompt: 'Build a lesson',
+        firstRunSeq: 2,
+      }),
+    ).toEqual({ kind: 'prompt', text: 'Build a lesson', durableMessageSeq: 1 });
+    // Created without one: a message posted after the first run is a
+    // follow-up, so the session's own prompt starts and consumes nothing.
+    expect(
+      planRunStart({
+        plan: planResume(null),
+        claimReason: 'queued',
+        pending: [followUp],
+        prompt: 'Build a lesson',
+        firstRunSeq: 2,
+      }),
+    ).toEqual({ kind: 'prompt', text: 'Build a lesson' });
+    // An idle attachment's first message is its opening as long as it came first.
+    expect(
+      planRunStart({
+        plan: planResume(null),
+        claimReason: 'queued',
+        pending: [{ text: 'Shorten the second section', durableMessageSeq: 1 }, followUp],
+        prompt: 'Existing lesson',
+        idleAttach: true,
+        firstRunSeq: 2,
+      }),
+    ).toEqual({ kind: 'prompt', text: 'Shorten the second section', durableMessageSeq: 1 });
+  });
+
   it('prompts an answer after an ask checkpoint even when the claim is orphaned', () => {
     const plan = planResume([user('Start'), askUserResult()]);
     expect(plan.kind).toBe('already-complete');

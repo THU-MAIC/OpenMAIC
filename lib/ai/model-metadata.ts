@@ -160,6 +160,9 @@ const anthropicFable5Effort: ThinkingCapability = {
 };
 
 const kimiK3Effort = effortCapability('openai', ['low', 'high', 'max'], 'max');
+
+// TokenDance 网关统一 reasoning_effort（见 THINKING_CAPABILITIES 末尾的注释）
+const tokendanceEffort = effortCapability('openai', ['low', 'medium', 'high'], 'medium');
 const grok46Effort = effortCapability('openai', ['low', 'medium', 'high', 'xhigh'], 'high');
 const grok45Effort = effortCapability('openai', ['low', 'medium', 'high'], 'high');
 const grok43Effort = effortCapability('openai', ['none', 'low', 'medium', 'high'], 'none');
@@ -314,6 +317,16 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('anthropic', 'claude-sonnet-4-5')]: anthropicManualEffort,
   [getModelMetadataKey('anthropic', 'claude-haiku-4-5')]: anthropicBudget,
 
+  // gemini-3.8/3.7-flash: thinking always on; levels low|medium|high, default medium
+  // ("minimal is not supported and returns an error" — docs, 12.09.2026).
+  [getModelMetadataKey('google', 'gemini-3.8-flash')]: levelCapability(
+    ['low', 'medium', 'high'],
+    'medium',
+  ),
+  [getModelMetadataKey('google', 'gemini-3.7-flash')]: levelCapability(
+    ['low', 'medium', 'high'],
+    'medium',
+  ),
   [getModelMetadataKey('google', 'gemini-3.6-flash')]: levelCapability(
     ['minimal', 'low', 'medium', 'high'],
     'medium',
@@ -384,6 +397,12 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('atlascloud', 'deepseek-ai/deepseek-v4-pro')]: deepseekEffort,
 
   [getModelMetadataKey('kimi', 'kimi-k3')]: kimiK3Effort,
+  // Kimi Coding Plan 的套餐模型 id（K3 家族与 K2.8 coding 系列）：与对应
+  // 官方目录条目同款思考能力，token plan 播种目录后行内思考控件可用。
+  [getModelMetadataKey('kimi', 'k3')]: kimiK3Effort,
+  [getModelMetadataKey('kimi', 'k3-256k')]: kimiK3Effort,
+  [getModelMetadataKey('kimi', 'kimi-for-coding')]: fixedThinkingCapability,
+  [getModelMetadataKey('kimi', 'kimi-for-coding-highspeed')]: fixedThinkingCapability,
   [getModelMetadataKey('kimi', 'kimi-k2.7-code')]: fixedThinkingCapability,
   [getModelMetadataKey('kimi', 'kimi-k2.7-code-highspeed')]: fixedThinkingCapability,
   [getModelMetadataKey('kimi', 'kimi-k2.6')]: toggleCapability('kimi'),
@@ -417,6 +436,9 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('doubao', 'doubao-seed-2.0-code')]: doubaoSeed20Effort,
   [getModelMetadataKey('doubao', 'doubao-seed-2.0-lite')]: doubaoSeed20Effort,
   [getModelMetadataKey('doubao', 'doubao-seed-2.0-mini')]: doubaoSeed20Effort,
+  // Agent Plan 新增的 Seed 2.1 dotted 别名（token-plan preset 默认主线模型），
+  // 与 2.0 dotted 系列同族，思考控制一致。
+  [getModelMetadataKey('doubao', 'doubao-seed-2.1-turbo')]: doubaoSeed20Effort,
   // Cross-vendor models the Ark Agent Plan also serves through its
   // OpenAI-compatible endpoint (all under the `doubao` provider id). Verified
   // against a live plan key: each accepts the gateway's unified `reasoning_effort`
@@ -456,6 +478,8 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
 
   [getModelMetadataKey('tencent-hunyuan', 'hy3-preview')]: hunyuanHy3Effort,
 
+  [getModelMetadataKey('xiaomi', 'mimo-v2.6-pro')]: toggleCapability('xiaomi'),
+  [getModelMetadataKey('xiaomi', 'mimo-v2.6-flash')]: toggleCapability('xiaomi'),
   [getModelMetadataKey('xiaomi', 'mimo-v2.5-pro')]: toggleCapability('xiaomi'),
   [getModelMetadataKey('xiaomi', 'mimo-v2-pro')]: toggleCapability('xiaomi'),
   [getModelMetadataKey('xiaomi', 'mimo-v2.5')]: toggleCapability('xiaomi'),
@@ -467,6 +491,21 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('lemonade', 'Gemma-4-26B-A4B-it-GGUF')]: lemonadeToggleBudget,
   [getModelMetadataKey('lemonade', 'gpt-oss-20b')]: lemonadeToggleBudget,
   [getModelMetadataKey('lemonade', 'GPT-OSS-20B-GGUF')]: lemonadeToggleBudget,
+
+  // TokenDance 网关（OpenAI 兼容，/gateway/v1）：套餐目录统一透传网关的
+  // reasoning_effort 字段（low/medium/high）——包括网关自有的 cogevol 系列
+  // 和跨厂商模型（各家原生思考传输不经网关透传，统一走网关字段；与火山
+  // Ark 套餐跨厂商模型的口径一致）。
+  [getModelMetadataKey('tokendance', 'cogevol-base')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'cogevol-slide-0828')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'cogevol-interactive-0828')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'deepseek-v4.1-flash')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'deepseek-v4-pro')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'glm-5.3')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'kimi-k3')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'qwen3.8-max')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'seed-2.1-pro')]: tokendanceEffort,
+  [getModelMetadataKey('tokendance', 'minimax-m3')]: tokendanceEffort,
 };
 
 export function getCatalogThinkingCapability(

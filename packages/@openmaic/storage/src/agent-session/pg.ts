@@ -9,6 +9,8 @@
 import { randomUUID } from 'node:crypto';
 
 import { splitSqlStatements } from '../document/pg.js';
+import { encodeJson } from '../pg-json.js';
+import { sanitizePgText } from '../pg-text.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 import {
   AGENT_SESSION_LIFECYCLE,
@@ -437,16 +439,6 @@ function sessionMeta(row: SessionRow): AgentSessionMeta {
   };
 }
 
-function encodeJson(value: unknown, label: string): string {
-  try {
-    const encoded = JSON.stringify(value === undefined ? null : value);
-    if (encoded === undefined) throw new TypeError('value is not JSON-serializable');
-    return encoded;
-  } catch (error) {
-    throw new Error(`@openmaic/storage: ${label} is not JSON-serializable`, { cause: error });
-  }
-}
-
 function decodedObject(value: unknown): Record<string, unknown> {
   const decoded = typeof value === 'string' ? (JSON.parse(value) as unknown) : value;
   return decoded && typeof decoded === 'object' ? (decoded as Record<string, unknown>) : {};
@@ -541,7 +533,7 @@ export class PgAgentSessionStore
         [
           id,
           ownerId,
-          input.prompt,
+          sanitizePgText(input.prompt),
           title,
           input.titleState ?? 'manual',
           input.stageId ?? `stage-${id.slice(0, 8)}`,
@@ -592,7 +584,7 @@ export class PgAgentSessionStore
          SET title = $3, title_state = 'manual', updated_at = clock_timestamp()
          WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
          RETURNING ${SESSION_COLUMNS}`,
-        [sessionId, ownerId, title],
+        [sessionId, ownerId, title === null ? null : sanitizePgText(title)],
       );
       const row = result.rows[0];
       if (!row) return null;
@@ -648,7 +640,8 @@ export class PgAgentSessionStore
     ownerId: string,
     title: string,
   ): Promise<AgentSessionMeta | null> {
-    if (title.trim() === '') return null;
+    const safeTitle = sanitizePgText(title);
+    if (safeTitle.trim() === '') return null;
     return this.transaction(async (tx) => {
       const result = await tx.query<SessionRow>(
         `UPDATE ${this.table('sessions')}
@@ -656,7 +649,7 @@ export class PgAgentSessionStore
          WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
            AND title_state = 'automatic' AND title = ''
          RETURNING ${SESSION_COLUMNS}`,
-        [sessionId, ownerId, title],
+        [sessionId, ownerId, safeTitle],
       );
       const row = result.rows[0];
       if (!row) return null;
@@ -905,7 +898,7 @@ export class PgAgentSessionStore
           workerId,
           patch.status,
           patch.error !== undefined,
-          patch.error ?? null,
+          patch.error == null ? null : sanitizePgText(patch.error),
           release,
           patch.resetAttempt === true,
           patch.consumeCancelRequestedAt ?? null,

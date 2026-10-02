@@ -36,7 +36,7 @@ describe('probeAuth', () => {
   );
 
   it.each([401, 403])(
-    'reports HTTP %i as an auth failure with the response body',
+    'reports HTTP %i as an auth failure without reading the response body',
     async (status) => {
       const response = new Response('invalid key', { status });
       const textSpy = vi.spyOn(response, 'text');
@@ -44,32 +44,33 @@ describe('probeAuth', () => {
 
       await expect(probeAuth({ providerName: 'Example', request })).resolves.toEqual({
         success: false,
-        message: `Example auth failed (${status}): invalid key`,
+        message: `Example auth failed (${status}), please check the API Key`,
       });
       expect(request).toHaveBeenCalledTimes(1);
-      expect(textSpy).toHaveBeenCalledTimes(1);
+      expect(textSpy).not.toHaveBeenCalled();
     },
   );
 
-  it('converts request errors into connectivity failures', async () => {
-    const request = vi.fn().mockRejectedValue(new Error('offline'));
+  it('converts request errors into one fixed connectivity failure', async () => {
+    const request = vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED 10.0.0.1:80'));
 
     await expect(probeAuth({ providerName: 'Example', request })).resolves.toEqual({
       success: false,
-      message: 'Example connectivity error: Error: offline',
+      message: 'Example connectivity error: cannot reach the provider, please check the Base URL',
     });
     expect(request).toHaveBeenCalledTimes(1);
   });
 
-  it('converts auth response body errors into connectivity failures', async () => {
-    const response = new Response('unused', { status: 401 });
-    vi.spyOn(response, 'text').mockRejectedValue(new Error('body unavailable'));
-    const request = vi.fn().mockResolvedValue(response);
+  it('maps a transport-refused redirect to the redirect message', async () => {
+    const request = vi
+      .fn()
+      .mockRejectedValue(
+        new TypeError('fetch failed', { cause: new Error('unexpected redirect') }),
+      );
 
     await expect(probeAuth({ providerName: 'Example', request })).resolves.toEqual({
       success: false,
-      message: 'Example connectivity error: Error: body unavailable',
+      message: 'Example connectivity error: Redirects are not allowed',
     });
-    expect(request).toHaveBeenCalledTimes(1);
   });
 });

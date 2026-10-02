@@ -46,11 +46,8 @@ import {
 } from '@/lib/audio/voice-registration';
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import { validateReferenceAudio } from '@/lib/audio/wav-validate';
-import {
-  enabledServerTTSProviderIds,
-  resolveTTSApiKey,
-  resolveTTSBaseUrl,
-} from '@/lib/server/provider-config';
+import { adapterOptions } from '@/lib/server/model-config/adapter-options';
+import type { MediaConnection } from '@/lib/server/model-config/media';
 import {
   getAgentSessionMaterialStore,
   getSessionMaterial,
@@ -128,6 +125,8 @@ export interface VoiceCloneToolDependencies {
    * set_roster can see the cloned voice in the same session.
    */
   registeredVoices?: RegisteredVoiceInfo[];
+  /** The tts slot for the run's owner: voices register on its provider. */
+  ttsConnection?: MediaConnection | 'off' | null;
 }
 
 /**
@@ -136,24 +135,27 @@ export interface VoiceCloneToolDependencies {
  * provider's API key configured when it requires one. `register_voice` is only
  * offered as a runner tool when this list is non-empty.
  */
-export function registrationCapableProviderIds(): string[] {
-  return enabledServerTTSProviderIds().filter((id) => {
+export function registrationCapableProviderIds(tts?: MediaConnection | 'off' | null): string[] {
+  const slot = tts && tts !== 'off' ? tts : undefined;
+  return (slot ? [slot.providerId] : []).filter((id) => {
     const adapter = getVoiceRegistrationAdapter(id);
-    if (!adapter || !adapter.supportsRegistration()) return false;
+    if (!adapter || !adapter.supportsRegistration(adapterOptions(slot))) return false;
     const config = TTS_PROVIDERS[id as keyof typeof TTS_PROVIDERS];
-    if (config?.requiresApiKey && !resolveTTSApiKey(id)) return false;
+    if (config?.requiresApiKey && !slot?.apiKey) return false;
     return true;
   });
 }
 
-/** Whether this deployment has a working voice-registration backend. */
-export function hasConfiguredVoiceRegistrationCapability(): boolean {
-  return registrationCapableProviderIds().length > 0;
+/** Whether the run's tts slot offers a working voice-registration backend. */
+export function hasConfiguredVoiceRegistrationCapability(
+  tts?: MediaConnection | 'off' | null,
+): boolean {
+  return registrationCapableProviderIds(tts).length > 0;
 }
 
-/** The configured registration provider the tool registers on (first wins). */
-function resolveRegistrationProviderId(): string | undefined {
-  return registrationCapableProviderIds()[0];
+/** The registration provider the tool registers on: the tts slot's. */
+function resolveRegistrationProviderId(tts?: MediaConnection | 'off' | null): string | undefined {
+  return registrationCapableProviderIds(tts)[0];
 }
 
 function sourceExtension(record: AgentSessionMaterial): string {
@@ -334,9 +336,11 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
       'provider and voice id that can be bound to a teacher with set_roster.',
     parameters: REGISTER_VOICE_SCHEMA,
     execute: async (_callId, params, signal) => {
-      const providerId = resolveRegistrationProviderId();
+      const providerId = resolveRegistrationProviderId(deps.ttsConnection);
       const adapter = providerId ? getVoiceRegistrationAdapter(providerId) : undefined;
-      if (!providerId || !adapter || !adapter.supportsRegistration()) {
+      const connection =
+        deps.ttsConnection && deps.ttsConnection !== 'off' ? deps.ttsConnection : undefined;
+      if (!providerId || !adapter || !adapter.supportsRegistration(adapterOptions(connection))) {
         throw new Error('deployment has no voice registration backend configured');
       }
       throwIfAborted(signal);
@@ -359,8 +363,23 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
       throwIfAborted(signal);
 
       const cfg: VoiceRegistrationConfig = {
-        baseUrl: resolveTTSBaseUrl(providerId) ?? '',
-        apiKey: resolveTTSApiKey(providerId),
+        baseUrl:
+          (deps.ttsConnection && deps.ttsConnection !== 'off'
+            ? deps.ttsConnection.baseUrl
+            : undefined) ??
+          TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS]?.defaultBaseUrl ??
+          '',
+        apiKey:
+          deps.ttsConnection && deps.ttsConnection !== 'off'
+            ? (deps.ttsConnection.apiKey ?? '')
+            : '',
+        managed:
+          deps.ttsConnection && deps.ttsConnection !== 'off' ? deps.ttsConnection.managed : true,
+        // A user-typed endpoint is held to the public-only network policy.
+        publicOnly:
+          deps.ttsConnection && deps.ttsConnection !== 'off'
+            ? deps.ttsConnection.userEndpoint
+            : false,
         model: adapter.resolveRegistrationModel(),
       };
       const registrationKey = createHash('sha256')
@@ -418,7 +437,7 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
   // "deployment has no voice registration backend configured". The internal
   // guard above stays as defense in depth for direct calls.
   const tools: AgentTool<never, never>[] = [clipAudioTool] as unknown as AgentTool<never, never>[];
-  if (hasConfiguredVoiceRegistrationCapability()) {
+  if (hasConfiguredVoiceRegistrationCapability(deps.ttsConnection)) {
     tools.push(registerVoiceTool as unknown as AgentTool<never, never>);
   }
   return tools;

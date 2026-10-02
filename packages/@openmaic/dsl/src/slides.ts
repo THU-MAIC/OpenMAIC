@@ -499,6 +499,47 @@ export type ChartType = 'bar' | 'column' | 'line' | 'pie' | 'ring' | 'area' | 'r
 export interface ChartOptions {
   lineSmooth?: boolean;
   stack?: boolean;
+  /** Plot category shares while retaining original data for labels and editing. */
+  percentStack?: boolean;
+}
+
+/** Explicit imported chart formatting; absent for legacy/authored charts. */
+export type ChartFill =
+  | string
+  | {
+      type: 'linear';
+      x: number;
+      y: number;
+      x2: number;
+      y2: number;
+      colorStops: { offset: number; color: string }[];
+    };
+export interface ImportedChartAxis {
+  show?: boolean;
+  gridlines?: boolean;
+  gridlineColor?: string;
+  lineColor?: string;
+  lineVisible?: boolean;
+  labelVisible?: boolean;
+  labelColor?: string;
+  labelFontSize?: number; // canvas units (import adapter uses points before scaling)
+  labelBold?: boolean;
+  min?: number;
+  max?: number;
+  majorUnit?: number;
+  numberFormat?: string;
+}
+export interface ImportedChartStyle {
+  series: {
+    fill?: ChartFill;
+    pointFills?: Record<string, ChartFill>;
+    pointImages?: Record<string, string>;
+    showValue?: boolean;
+  }[];
+  categoryAxis?: ImportedChartAxis;
+  valueAxis?: ImportedChartAxis;
+  gapWidth?: number;
+  plotArea?: { x: number; y: number; w: number; h: number };
 }
 
 export interface ChartData {
@@ -534,6 +575,7 @@ export interface PPTChartElement extends PPTBaseElement {
   chartType: ChartType;
   data: ChartData;
   options?: ChartOptions;
+  importedStyle?: ImportedChartStyle;
   outline?: PPTElementOutline;
   themeColors: string[];
   textColor?: string;

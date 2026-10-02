@@ -50,9 +50,30 @@ describe('isTTSProviderConfigured', () => {
   it('custom provider is configured once it has a credential path or voices', () => {
     expect(isTTSProviderConfigured('custom-tts-foo', {})).toBe(false);
     expect(isTTSProviderConfigured('custom-tts-foo', { apiKey: 'k' })).toBe(true);
+    expect(isTTSProviderConfigured('custom-tts-foo', { baseUrl: 'http://127.0.0.1:8020/v1' })).toBe(
+      true,
+    );
     expect(
       isTTSProviderConfigured('custom-tts-foo', { customVoices: [{ id: 'v', name: 'V' }] }),
     ).toBe(true);
+  });
+
+  it('treats the Add-dialog default base URL as a credential path', () => {
+    // addCustomTTSProvider persists the dialog URL on customDefaultBaseUrl and
+    // leaves baseUrl empty. Test TTS already honours that fallback; generation
+    // must too, or isTTSProviderEnabled stays false and narration is skipped.
+    expect(
+      isTTSProviderConfigured('custom-tts-foo', {
+        customDefaultBaseUrl: 'http://127.0.0.1:8020/v1',
+      }),
+    ).toBe(true);
+    expect(
+      isTTSProviderEnabled('custom-tts-foo', {
+        customDefaultBaseUrl: 'http://127.0.0.1:8020/v1',
+        enabled: true,
+      }),
+    ).toBe(true);
+    expect(isTTSProviderConfigured('custom-tts-foo', { customDefaultBaseUrl: '   ' })).toBe(false);
   });
 });
 

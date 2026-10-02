@@ -102,7 +102,7 @@ export async function retryMaterialUpload<T>(
         error && typeof error === 'object' && 'status' in error
           ? Number((error as { status: unknown }).status)
           : 0;
-      if ((status !== 429 && status !== 503) || attempt >= 2) throw error;
+      if (status !== 503 || attempt >= 2) throw error;
       await sleep(250 * 2 ** attempt);
     }
   }

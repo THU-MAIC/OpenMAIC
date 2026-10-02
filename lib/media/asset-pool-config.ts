@@ -1,6 +1,6 @@
 import type { AssetMeta, AssetRef, BinaryBlob } from '@openmaic/dsl';
 
-/** Common browser-facing surface implemented by local and HTTP asset stores. */
+/** The browser-facing asset pool surface (implemented by the HTTP asset store). */
 export interface AssetPoolStore {
   put(data: BinaryBlob, meta?: AssetMeta): Promise<AssetRef>;
   resolve(ref: AssetRef): Promise<string | null>;
@@ -8,9 +8,9 @@ export interface AssetPoolStore {
   remove(ref: AssetRef): Promise<void>;
   release(ref: AssetRef): Promise<void>;
   /**
-   * Metadata-only existence probe. Optional for test doubles; production
-   * stores implement it with a HEAD (HTTP) or an entry lookup (browser), so
-   * migration-time checks never download bytes.
+   * Metadata-only existence probe. Optional for test doubles; the production
+   * store implements it with a HEAD, so migration-time checks never download
+   * bytes.
    */
   exists?(ref: AssetRef): Promise<boolean>;
   close(): Promise<void>;
@@ -29,12 +29,6 @@ export interface AssetPoolStorageOptions {
    * builds a fresh one.
    */
   store?: AssetPoolStore | AssetPoolStoreFactory;
-  /**
-   * Whether references can be held outside this browser. Remote stores must
-   * fail closed for ownership proofs and must never be deleted by local-cache
-   * cleanup.
-   */
-  serverBacked?: boolean;
 }
 
 let options: AssetPoolStorageOptions | undefined;
@@ -47,13 +41,14 @@ let concreteStoreHandedOut = false;
  * This is a client-bootstrap-only, single-shot API. Call it at module-level
  * bootstrap before any asset consumer runs. A second call always throws, and
  * resolution seals the configuration so one live app cannot split assets
- * across backends. Omitting the store retains the existing IndexedDB pool.
+ * across backends. The browser persistence bootstrap
+ * (`lib/persistence/bootstrap.ts`) is the production caller; without a
+ * configured store, the asset pool does not resolve.
  */
 export function configureAssetPoolStorage(next: AssetPoolStorageOptions): void {
   assertAssetPoolStorageConfigurable();
-  // Snapshot the options so later caller mutation cannot swap a sealed backend
-  // or weaken its ownership scope.
-  options = { store: next.store, serverBacked: next.serverBacked };
+  // Snapshot the options so later caller mutation cannot swap a sealed backend.
+  options = { store: next.store };
 }
 
 /** @internal Synchronous bootstrap preflight for atomic multi-seam configuration. */
@@ -71,17 +66,6 @@ export function assertAssetPoolStorageConfigurable(): void {
 /** Whether client bootstrap has supplied asset-pool configuration. */
 export function isAssetPoolStorageConfigured(): boolean {
   return options !== undefined;
-}
-
-/**
- * Whether asset references may be held outside this browser.
- *
- * Reading the mode seals configuration just like resolving the store: an
- * ownership decision must not race a later backend change.
- */
-export function isAssetPoolServerBacked(): boolean {
-  resolutionStarted = true;
-  return options?.serverBacked === true;
 }
 
 type AssetPoolStorageResetHook = () => void;

@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import type { Scene, Stage } from '@openmaic/dsl';
 import {
   PgDocumentStore,
@@ -14,8 +16,20 @@ import type {
   SceneValidator,
   StageValidator,
 } from '@openmaic/storage';
+import { DocumentWriteRefusedError } from '@openmaic/storage';
 
+import type { OwnerPrincipal } from '@/lib/server/identity/types';
+import { getPersistenceHooks } from '@/lib/server/persistence-hooks/registry';
+import type {
+  CreateDecision,
+  DocumentActor,
+  PersistenceHooks,
+} from '@/lib/server/persistence-hooks/types';
+
+import { assetReferencePrincipalsForOwner } from './owner-assets';
+import { fenceOwnerWrite } from './owner-merges';
 import { claimStageMeta, StageAccessError, tombstoneStageMeta } from './stage-meta';
+import { STAGE_META_OWNERSHIP } from './stage-meta-ownership';
 
 export interface PoolClientLike {
   query(text: string, params?: unknown[]): Promise<{ rows: unknown[] }>;
@@ -33,12 +47,117 @@ export interface OwnerBoundDocumentStoreOptions {
   validateStage: StageValidator;
   /** Runner-only lease fence, evaluated inside every mutation transaction. */
   mutationFence?: (queryable: Queryable) => Promise<void>;
+  /**
+   * The principal the request writing through this store was resolved to.
+   * Passed to the create hooks; absent for a background agent run, which
+   * knows only the owner id. Must be the principal of `ownerId`.
+   */
+  principal?: OwnerPrincipal;
+  /** The create hooks; defaults to the registered ones (`configurePersistenceHooks`). */
+  createHooks?: Pick<PersistenceHooks, 'name' | 'authorizeCreate' | 'onCreate'>;
+}
+
+/** The code a refused course creation answers with, as `403`. */
+export const CREATE_REFUSED = 'CREATE_REFUSED';
+
+/**
+ * The message a refusal carries on a background (agent run) write. Fixed, so a
+ * host's refusal text -- meant for its own client -- never reaches a model
+ * transcript through a tool error.
+ */
+export const BACKGROUND_CREATE_REFUSED_MESSAGE = 'course creation was refused by this deployment';
+
+function isCreateDecision(value: unknown): value is CreateDecision {
+  if (!value || typeof value !== 'object') return false;
+  const decision = value as { allow?: unknown; message?: unknown };
+  if (decision.allow === true) return true;
+  return (
+    decision.allow === false &&
+    (decision.message === undefined || typeof decision.message === 'string')
+  );
+}
+
+/**
+ * Run the host create hooks inside the create transaction. Called only by the
+ * transaction that inserted the course's ownership row, so each created course
+ * sees them exactly once; a save of an existing course never does.
+ */
+async function runCreateHooks(
+  hooks: Pick<PersistenceHooks, 'name' | 'authorizeCreate' | 'onCreate'>,
+  queryable: Queryable,
+  actor: DocumentActor,
+  stageId: string,
+): Promise<void> {
+  if (hooks.authorizeCreate) {
+    const decision: unknown = await hooks.authorizeCreate(queryable, actor, stageId);
+    if (!isCreateDecision(decision)) {
+      // A host bug, not a refusal: surfaces as a 500 and still rolls back.
+      throw new Error(
+        `Persistence hooks ${hooks.name}: authorizeCreate must resolve { allow: true } or ` +
+          '{ allow: false, message? }',
+      );
+    }
+    if (!decision.allow) {
+      throw new DocumentWriteRefusedError(
+        stageId,
+        CREATE_REFUSED,
+        actor.source === 'request'
+          ? (decision.message ?? 'course creation refused')
+          : BACKGROUND_CREATE_REFUSED_MESSAGE,
+      );
+    }
+  }
+  if (hooks.onCreate) await hooks.onCreate(queryable, actor, stageId);
 }
 
 type OwnershipMode = 'create' | 'mutate' | 'read' | 'delete' | 'library';
 interface PendingOperation {
   stageId?: string;
   mode: OwnershipMode;
+  /** A create that must insert: any existing course under the id refuses it. */
+  exclusive?: CreateDocumentOptions;
+}
+
+/** What {@link CreateOnlyDocumentStore.createDocument} may add to its transaction. */
+export interface CreateDocumentOptions {
+  /**
+   * Runs on the create's transaction after the course, its ownership row and
+   * the host create hooks, before COMMIT: whatever it writes commits or rolls
+   * back with the course.
+   */
+  inTransaction?: (queryable: Queryable) => Promise<void>;
+}
+
+/**
+ * A create was refused because a course already holds the id: live or
+ * deleted, this owner's or another's. Nothing was written.
+ */
+export class StageIdTakenError extends Error {
+  readonly code = 'STAGE_ID_TAKEN' as const;
+
+  constructor(readonly stageId: string) {
+    super(`a course with the id ${JSON.stringify(stageId)} already exists`);
+    this.name = 'StageIdTakenError';
+  }
+}
+
+export function isStageIdTakenError(error: unknown): error is StageIdTakenError {
+  return (
+    error instanceof StageIdTakenError ||
+    (typeof error === 'object' &&
+      error !== null &&
+      (error as { code?: unknown }).code === 'STAGE_ID_TAKEN')
+  );
+}
+
+/**
+ * The create-only write, for server flows that mint a course and must never
+ * replace one: `saveDocument` treats a save of an id this owner already holds
+ * as an update, which a concurrent create of the same id (another tab, an
+ * import) would silently lose to.
+ */
+export interface CreateOnlyDocumentStore<TScene extends SceneLike, TStage extends Stage> {
+  createDocument(doc: MaicDocument<TScene, TStage>, options?: CreateDocumentOptions): Promise<void>;
 }
 
 interface RawOwnershipRow extends Record<string, unknown> {
@@ -56,27 +175,47 @@ function queryableFor(connection: Pick<PoolClientLike, 'query'>): Queryable {
 }
 
 class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
-  implements DocumentStore<TScene, TStage>, DocumentFolderStore
+  implements
+    DocumentStore<TScene, TStage>,
+    DocumentFolderStore,
+    CreateOnlyDocumentStore<TScene, TStage>
 {
   constructor(
     private readonly inner: PgDocumentStore<TScene, TStage>,
-    private readonly pending: { operation?: PendingOperation },
+    private readonly operations: AsyncLocalStorage<PendingOperation>,
     private readonly runTransaction: WithTransaction,
-    private readonly queryable: Queryable,
     private readonly ownerId: string,
+    /** The same store, pinned to one already-open transaction. See its use. */
+    private readonly pinnedToTransaction: (queryable: Queryable) => PgDocumentStore<TScene, TStage>,
   ) {}
 
-  private async tagged<T>(operation: PendingOperation, body: () => Promise<T>): Promise<T> {
-    this.pending.operation = operation;
-    try {
-      return await body();
-    } finally {
-      this.pending.operation = undefined;
-    }
+  /**
+   * Run `body` with `operation` as the operation its transaction gates.
+   *
+   * The operation travels with the call's own async context, never on the
+   * instance: one store is shared by every tool of an agent run, and those
+   * tools can run concurrently. A field set here and read after the
+   * transaction's first await would be overwritten by a concurrent call, so a
+   * create could be gated as a read -- no ownership row, no create hooks -- or
+   * claimed under another call's stage id.
+   */
+  private tagged<T>(operation: PendingOperation, body: () => Promise<T>): Promise<T> {
+    return this.operations.run(operation, body);
   }
 
   saveDocument(doc: MaicDocument<TScene, TStage>): Promise<void> {
     return this.tagged({ stageId: doc.stage.id, mode: 'create' }, () =>
+      this.inner.saveDocument(doc),
+    );
+  }
+
+  /**
+   * {@link saveDocument}, refused with {@link StageIdTakenError} when any
+   * course holds the id. Decided inside the create's transaction, under the
+   * per-id create lock, so two creates of one id cannot both land.
+   */
+  createDocument(doc: MaicDocument<TScene, TStage>, options: CreateDocumentOptions = {}) {
+    return this.tagged({ stageId: doc.stage.id, mode: 'create', exclusive: options }, () =>
       this.inner.saveDocument(doc),
     );
   }
@@ -93,13 +232,71 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
     return this.tagged({ stageId, mode: 'mutate' }, () => this.inner.deleteScene(stageId, sceneId));
   }
 
+  /**
+   * Retire a course: tombstone it, and release the assets it was holding.
+   *
+   * Deletion here is a tombstone, not a delete. `stage_meta` is what records
+   * that the id is permanently retired, and it references
+   * `document_stages(id) ON DELETE CASCADE`, so removing the document row
+   * would take the tombstone with it and let the retired id be claimed again.
+   * The document rows therefore stay, and the package's `deleteDocument` can
+   * never be called from here.
+   *
+   * What the document rows must NOT keep is the assets they name. Reference
+   * rows carry no foreign key to `document_stages`, so nothing releases them
+   * on their own: a retired course would hold every asset it ever named alive
+   * forever, and against the principal's quota. `withdrawAssetReferences` is
+   * the half of the package's delete that releases assets without deleting
+   * anything, so the two facts — the id is retired, and its assets are free —
+   * are recorded together.
+   *
+   * All of it in one transaction, deliberately. A withdrawal that committed
+   * beside a tombstone that did not would free the assets of a course still
+   * live and still naming them; the rollback is what makes that unreachable.
+   */
   async deleteDocument(stageId: string): Promise<void> {
     await this.tagged({ stageId, mode: 'delete' }, () =>
       this.runTransaction(async (queryable) => {
+        // By the time this body runs, `runTransaction` has already taken the
+        // `stage_meta` row `FOR UPDATE` and refused a foreign owner, so the
+        // delete is decided before anything below is written.
         await tombstoneStageMeta(queryable, stageId);
         await queryable.query('UPDATE document_stages SET folder_id = NULL WHERE id = $1', [
           stageId,
         ]);
+        // Pinned to this transaction rather than called on `this.inner`.
+        //
+        // `withdrawAssetReferences` opens its own write transaction through
+        // the hook its store was built with, and ours checks out a fresh
+        // connection and re-runs the ownership gate on it. From inside this
+        // transaction that second connection would contend for the very rows
+        // this one already holds — the stage row just updated, and the
+        // `stage_meta` row the gate locked — so it would wait out the
+        // package's lock budget and fail as contention every single time,
+        // while this transaction sat idle waiting for it. PostgreSQL cannot
+        // see that cycle: one backend is blocked, the other is merely
+        // idle-in-transaction.
+        //
+        // The package warns that a pass-through hook is invalid because
+        // concurrent calls would interleave inside one transaction. That is
+        // not this: the store below is constructed here, used for exactly one
+        // call, and dropped, on a connection no one else holds.
+        const released = await this.pinnedToTransaction(queryable).withdrawAssetReferences(stageId);
+        if (!released) {
+          // Unreachable as the schema stands: the gate above found a
+          // `stage_meta` row for this owner, that table's foreign key
+          // guarantees the document row exists, and both are written with the
+          // same owner in the same transaction. So this means the tombstone
+          // and the document disagree about who owns the stage. The tombstone
+          // is still correct and must stand — rolling it back over a
+          // bookkeeping mismatch would leave the course undeletable — but the
+          // assets stayed behind and someone should know.
+          console.warn(
+            `Tombstoned stage ${stageId} but withdrew no asset references: the document row is ` +
+              `absent or not owned by ${this.ownerId}. Its registry entries will not be ` +
+              `reclaimed.`,
+          );
+        }
       }),
     );
   }
@@ -126,16 +323,13 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
     }
   }
 
-  async listDocuments(folderId?: string): Promise<DocumentSummary[]> {
-    const [documents, live] = await Promise.all([
-      this.inner.listDocuments(folderId),
-      this.queryable.query<{ stage_id: string } & Record<string, unknown>>(
-        'SELECT stage_id FROM stage_meta WHERE owner_id = $1 AND deleted_at IS NULL',
-        [this.ownerId],
-      ),
-    ]);
-    const liveIds = new Set(live.rows.map((row) => row.stage_id));
-    return documents.filter((document) => liveIds.has(document.id));
+  /**
+   * This owner's live courses: the package lists through `stage_meta`
+   * (`STAGE_META_OWNERSHIP`), owned by this owner and not tombstoned, in one
+   * query.
+   */
+  listDocuments(folderId?: string): Promise<DocumentSummary[]> {
+    return this.inner.listDocuments(folderId);
   }
 
   createFolder(folderId: string, name: string, limit?: number) {
@@ -173,17 +367,49 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
 export function createOwnerBoundDocumentStore<
   TScene extends SceneLike = Scene,
   TStage extends Stage = Stage,
->(options: OwnerBoundDocumentStoreOptions): DocumentStore<TScene, TStage> & DocumentFolderStore {
-  const pending: { operation?: PendingOperation } = {};
+>(
+  options: OwnerBoundDocumentStoreOptions,
+): DocumentStore<TScene, TStage> & DocumentFolderStore & CreateOnlyDocumentStore<TScene, TStage> {
+  const operations = new AsyncLocalStorage<PendingOperation>();
+  if (options.principal && options.principal.ownerId !== options.ownerId) {
+    throw new Error('createOwnerBoundDocumentStore: principal does not match ownerId');
+  }
+  const createHooks = options.createHooks ?? getPersistenceHooks();
+  const actor: DocumentActor = options.principal
+    ? { source: 'request', ownerId: options.ownerId, principal: options.principal }
+    : { source: 'background', ownerId: options.ownerId };
 
   const withTransaction: WithTransaction = async (body) => {
+    // Read before the first await, from this call's own context (see `tagged`).
+    const operation = operations.getStore();
     const client = await options.pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       try {
         const queryable = queryableFor(client);
-        const operation = pending.operation;
-        if (operation && operation.mode !== 'read') await options.mutationFence?.(queryable);
+        if (operation && operation.mode !== 'read') {
+          // First, before any row lock: the identity lock orders this write
+          // against a claim of its owner, and a retired owner writes nothing
+          // (see `./owner-merges.ts`). A background run forwards its owner
+          // before it gets here (`getOwnerScopedDocumentStore`).
+          await fenceOwnerWrite(queryable, options.ownerId, operation.stageId);
+          await options.mutationFence?.(queryable);
+        }
+        if (operation?.mode === 'create' && operation.stageId) {
+          // Creates of one course id take turns. The probe below reads
+          // `stage_meta` and then `document_stages` in two statements, and a
+          // concurrent create of the same id commits both rows in between, so
+          // an unserialized second create could find the document row without
+          // its ownership row and refuse it as reserved. Serialized, the
+          // second create finds the first one's ownership row: for the same
+          // owner it is an update (no create hooks run again), for another
+          // owner a foreign refusal. Transaction-scoped; taken after the
+          // identity lock, and no claim takes it, so it adds no lock-order edge.
+          await queryable.query(
+            "SELECT pg_advisory_xact_lock(hashtextextended('openmaic.stage-create:' || $1, 0))",
+            [operation.stageId],
+          );
+        }
         if (operation?.stageId) {
           const lock = operation.mode === 'read' ? 'FOR SHARE' : 'FOR UPDATE';
           const result = await queryable.query<RawOwnershipRow>(
@@ -191,6 +417,9 @@ export function createOwnerBoundDocumentStore<
             [operation.stageId],
           );
           const row = result.rows[0];
+          if (row && operation.exclusive) {
+            throw new StageIdTakenError(operation.stageId);
+          }
           if (row) {
             if (operation.mode !== 'read' && row.owner_id !== options.ownerId) {
               throw new StageAccessError(operation.stageId, options.ownerId, 'foreign');
@@ -204,6 +433,7 @@ export function createOwnerBoundDocumentStore<
               [operation.stageId],
             );
             if (occupied.rows[0]?.exists) {
+              if (operation.exclusive) throw new StageIdTakenError(operation.stageId);
               throw new StageAccessError(operation.stageId, options.ownerId, 'reserved-document');
             }
           } else {
@@ -213,7 +443,23 @@ export function createOwnerBoundDocumentStore<
 
         const result = await body(queryable);
         if (operation?.mode === 'create') {
-          await claimStageMeta(queryable, operation.stageId!, options.ownerId);
+          // "Created" means exactly this: the transaction that inserts the
+          // ownership row. A save of a course the owner already holds -- found
+          // above, or committed by a concurrent create of the same id first --
+          // is an update and runs no create hook. The hooks run after the
+          // course rows are written and before COMMIT, on this transaction, so
+          // a refusal or a throw rolls the course and the ownership row back
+          // together with anything the hooks wrote.
+          const created = await claimStageMeta(queryable, operation.stageId!, options.ownerId);
+          if (created) await runCreateHooks(createHooks, queryable, actor, operation.stageId!);
+          if (operation.exclusive) {
+            // An exclusive create found no row above and holds the create lock,
+            // so it must be the transaction that created the course. Anything
+            // else is a broken invariant: refuse rather than commit without
+            // the rows `inTransaction` owes.
+            if (!created) throw new StageIdTakenError(operation.stageId!);
+            await operation.exclusive.inTransaction?.(queryable);
+          }
         }
         if (operation && operation.mode !== 'read') await options.mutationFence?.(queryable);
         await client.query('COMMIT');
@@ -237,11 +483,47 @@ export function createOwnerBoundDocumentStore<
       }
     },
   };
-  const inner = new PgDocumentStore<TScene, TStage>(queryable, {
-    withTransaction,
+  const innerOptions = {
     ownerId: options.ownerId,
+    // Ownership lives in `stage_meta` alone: the package scopes listings,
+    // writes, deletes and folder membership through it. It never claims a
+    // row itself -- the gate above does, with the host create hooks.
+    documentOwnership: STAGE_META_OWNERSHIP,
     validateScene: options.validateScene,
     validateStage: options.validateStage,
+    // The reference half of the asset lifecycle, on for the same reason the
+    // asset schema is always ensured: this store is the write path that commits
+    // an allocation and records what a document claims, and the collector's
+    // entry pass -- always scheduled where server persistence exists -- reads
+    // exactly that. There is no configuration in this application where one
+    // runs without the other. It is also what `withdrawAssetReferences`
+    // requires, and `deleteDocument` calls that on every retirement.
+    trackAssetReferences: true,
+    // A write references and commits only this owner's own asset entries and
+    // legacy shared ones. Naming another owner's id in a course records
+    // nothing, so it can neither commit (and expose) another owner's pending
+    // allocation nor pin their entry and quota.
+    assetReferencePrincipals: assetReferencePrincipalsForOwner,
+  };
+  const inner = new PgDocumentStore<TScene, TStage>(queryable, {
+    ...innerOptions,
+    withTransaction,
   });
-  return new OwnerBoundDocumentStore(inner, pending, withTransaction, queryable, options.ownerId);
+  /**
+   * The same store over one already-open transaction, for a caller that is
+   * inside one and needs a package write to join it rather than open its own.
+   * Single-use by construction; see the call in `deleteDocument`.
+   */
+  const pinnedToTransaction = (pinned: Queryable): PgDocumentStore<TScene, TStage> =>
+    new PgDocumentStore<TScene, TStage>(pinned, {
+      ...innerOptions,
+      withTransaction: (body) => body(pinned),
+    });
+  return new OwnerBoundDocumentStore(
+    inner,
+    operations,
+    withTransaction,
+    options.ownerId,
+    pinnedToTransaction,
+  );
 }

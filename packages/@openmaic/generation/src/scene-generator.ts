@@ -31,6 +31,7 @@ import type {
 } from './outline-types.js';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator.js';
 import { postProcessInteractiveHtml } from './interactive-post-processor.js';
+import { findInteractiveScriptSyntaxFailure } from './interactive-script-validator.js';
 import { parseActionsFromStructuredOutput } from './action-parser.js';
 import { parseJsonResponse } from './json-repair.js';
 import {
@@ -891,7 +892,8 @@ async function generateQuizContent(
 
   log.debug(`Got ${generatedQuestions.length} questions for: ${outline.title}`);
 
-  // Ensure each question has an ID and normalize options format
+  // Ensure each question has an ID and normalize options format.
+  // Plain strings become letter/content pairs. Object fields stay as written.
   const questions: QuizQuestion[] = generatedQuestions.map((q) => {
     const isText = q.type === 'short_answer';
     const options = isText ? undefined : normalizeQuizOptions(q.options);
@@ -906,17 +908,72 @@ async function generateQuizContent(
     };
   });
 
+  const contractFailure = findQuizOptionsContractFailure(questions);
+  if (contractFailure) {
+    log.error(`Quiz option contract failed for "${outline.title}": ${contractFailure}`);
+    onFailure?.({ code: 'invalid-model-output' });
+    return null;
+  }
+
   return { questions };
 }
+
+const QUIZ_OPTION_VALUE = /^[A-Z]$/;
+
+/**
+ * Reason a built quiz breaks the choice-option contract, or null when it holds.
+ *
+ * Choice questions (everything except `short_answer`) need a non-empty option
+ * list whose `value`s are single ASCII letters A-Z, and every answer entry
+ * must equal one of those values exactly. Short-answer questions are skipped.
+ */
+export function findQuizOptionsContractFailure(questions: readonly QuizQuestion[]): string | null {
+  for (let index = 0; index < questions.length; index += 1) {
+    const question = questions[index];
+    if (!question || question.type === 'short_answer') continue;
+
+    const where = question.id ? `question ${index + 1} (${question.id})` : `question ${index + 1}`;
+    const options = question.options;
+    if (!options || options.length === 0) {
+      return `${where}: choice question has no options`;
+    }
+
+    for (let optionIndex = 0; optionIndex < options.length; optionIndex += 1) {
+      const value = options[optionIndex]?.value;
+      if (typeof value !== 'string' || !QUIZ_OPTION_VALUE.test(value)) {
+        const shown = JSON.stringify(value);
+        return `${where}: option ${optionIndex + 1} value ${shown} is not a single letter A-Z`;
+      }
+    }
+
+    const answer = question.answer;
+    if (!answer || answer.length === 0) {
+      return `${where}: answer key does not reference an option value`;
+    }
+
+    const values = new Set(options.map((option) => option.value));
+    for (const entry of answer) {
+      if (!values.has(entry)) {
+        return `${where}: answer ${JSON.stringify(entry)} does not match an option value`;
+      }
+    }
+  }
+
+  return null;
+}
+
+type NormalizedQuizOption = { value: string; label: string };
 
 /**
  * Normalize quiz options from AI response.
  * AI may generate plain strings ["OptionA", "OptionB"] or QuizOption objects.
- * This normalizes to QuizOption[] format: { value: "A", label: "OptionA" }
+ * Plain strings become { value: "A", label: "OptionA" }. Object `value` and
+ * `label` are kept as provided — a letter in `label` with content in `value`
+ * is not swapped.
  */
-function normalizeQuizOptions(
+export function normalizeQuizOptions(
   options: unknown[] | undefined,
-): { value: string; label: string }[] | undefined {
+): NormalizedQuizOption[] | undefined {
   if (!options || !Array.isArray(options)) return undefined;
 
   return options.map((opt, index) => {
@@ -1274,6 +1331,16 @@ export async function generateWidgetContent(
 
   if (!html) {
     log.error(`Failed to extract HTML from ${widgetType} response for: ${outline.title}`);
+    options.onFailure?.({ code: 'invalid-model-output' });
+    return null;
+  }
+
+  // Reject visually valid but inert widgets whose classic inline JS cannot parse.
+  const scriptSyntaxFailure = findInteractiveScriptSyntaxFailure(html);
+  if (scriptSyntaxFailure) {
+    log.error(
+      `Generated ${widgetType} widget contains invalid inline JavaScript in script #${scriptSyntaxFailure.scriptIndex}: ${scriptSyntaxFailure.message}`,
+    );
     options.onFailure?.({ code: 'invalid-model-output' });
     return null;
   }

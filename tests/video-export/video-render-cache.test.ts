@@ -22,7 +22,7 @@ vi.mock('@/lib/store/media-generation', async () => {
   const { createStore } = await import('zustand/vanilla');
   return { useMediaGenerationStore: createStore(() => ({ tasks: {} })) };
 });
-vi.mock('@/lib/utils/database', async () => {
+vi.mock('@/lib/device-storage/database', async () => {
   const { default: Dexie } = await import('dexie');
   const db = new Dexie('video-render-cache-test');
   db.version(1).stores({ audioFiles: 'id', mediaFiles: 'id', unrelated: 'id' });
@@ -45,7 +45,7 @@ vi.mock('@/lib/media/polled-task', async (importOriginal) => {
 import { useVideoRenderStore } from '@/lib/store/video-render';
 import { useStageStore } from '@/lib/store/stage';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
-import { db } from '@/lib/utils/database';
+import { db } from '@/lib/device-storage/database';
 import i18n from '@/lib/i18n/config';
 import { notifyAssetReplaced } from '@/lib/media/asset-replacement-events';
 import type { Locale } from '@/lib/i18n';
@@ -357,7 +357,7 @@ describe('video render ZIP retry cache', () => {
     const unsubscribe = vi.spyOn(Dexie.on('storagemutated'), 'unsubscribe');
     mocks.build.mockRejectedValueOnce(new Error('compile failed'));
     await start();
-    expect(options().error).toBe('compile');
+    expect(options().error).toBe('compile failed');
     expect(mocks.fetch).not.toHaveBeenCalled();
     expect(unsubscribe).toHaveBeenCalledOnce();
     rejectSubmit();

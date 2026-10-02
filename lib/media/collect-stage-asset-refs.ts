@@ -1,28 +1,10 @@
 import { enumerateAssetManifest, type Slide } from '@openmaic/dsl';
-import { getDocumentStore } from '@/lib/document-store';
-import { createLogger } from '@/lib/logger';
 import type { Scene, Stage } from '@/lib/types/stage';
-import { useStageStore } from '@/lib/store/stage';
-import { isAssetPoolServerBacked } from './asset-pool-config';
 import { slideMediaReferenceSlots } from './slide-media-slots';
-import { probeStageRealmPresence } from './stage-realm-presence';
-
-const log = createLogger('PersistedAssetRefs');
 
 export interface StageAssetDocument {
   readonly stage: Stage;
   readonly scenes: readonly Scene[];
-}
-
-export interface StageMediaRow {
-  readonly id: string;
-  readonly stageId: string;
-}
-
-export interface StageAudioRow {
-  readonly id: string;
-  /** Missing on rows written before the per-stage audio index existed. */
-  readonly stageId?: string;
 }
 
 export interface StageAssetRefs {
@@ -36,18 +18,10 @@ export interface StageAssetRefs {
   readonly sceneWhiteboard: ReadonlySet<string>;
   readonly speechAudioId: ReadonlySet<string>;
   readonly videoManifestKey: ReadonlySet<string>;
-  readonly mediaRow: ReadonlySet<string>;
-  readonly audioRow: ReadonlySet<string>;
-  readonly mediaOrphans: ReadonlySet<string>;
-  readonly audioOrphans: ReadonlySet<string>;
   /** Refs held by renderable elements or speech cues (manifest metadata excluded). */
   readonly referenced: ReadonlySet<string>;
   /** Every document ref, including video-manifest metadata. */
   readonly document: ReadonlySet<string>;
-  /** Document refs plus stage-owned Dexie-only orphan rows. */
-  readonly all: ReadonlySet<string>;
-  /** Refs with a stage-owned compatibility row and therefore safe to remove from the pool. */
-  readonly poolOwned: ReadonlySet<string>;
   /** Logical owners per ref; video src+mediaRef on one element count once. */
   readonly referenceCounts: ReadonlyMap<string, number>;
 }
@@ -65,29 +39,20 @@ function addValue(target: Set<string>, value: string | undefined): value is stri
   return true;
 }
 
-function mediaRefFromRow(stageId: string, rowId: string): string {
-  const prefix = `${stageId}:`;
-  return rowId.startsWith(prefix) ? rowId.slice(prefix.length) : rowId;
-}
-
 /**
- * Enumerate the complete stage asset reference space without performing I/O.
+ * Enumerate what a stage's document references, without performing I/O.
+ *
+ * Document refs only: the local media cache is not consulted, because the
+ * question this answers — which ids does this document claim — is now asked of
+ * the document alone. The server maintains the other direction (which entries
+ * any document still claims) in its own reference table.
  *
  * Categories intentionally overlap: a whiteboard image belongs to both
  * `imageSrc` and its whiteboard category. `referenceCounts` counts the logical
  * owning element/action only once, which is what duplication-safe replacement
  * needs when a video repeats the same ref in both `src` and `mediaRef`.
  */
-export function collectStageAssetRefs(
-  document: StageAssetDocument | null,
-  {
-    mediaRows,
-    audioRows,
-  }: {
-    readonly mediaRows: readonly StageMediaRow[];
-    readonly audioRows: readonly StageAudioRow[];
-  },
-): StageAssetRefs {
+export function collectStageAssetRefs(document: StageAssetDocument | null): StageAssetRefs {
   const imageSrc = new Set<string>();
   const slideAudioSrc = new Set<string>();
   const videoSrc = new Set<string>();
@@ -151,22 +116,7 @@ export function collectStageAssetRefs(
     }
   }
 
-  const stageId = document?.stage.id;
-  const mediaRow = new Set(
-    mediaRows
-      .filter((row) => !stageId || row.stageId === stageId)
-      .map((row) => mediaRefFromRow(row.stageId, row.id)),
-  );
-  const audioRow = new Set(
-    audioRows
-      .filter((row) => (stageId ? row.stageId === stageId : row.stageId !== undefined))
-      .map((row) => row.id),
-  );
   const documentRefs = new Set([...referenced, ...videoManifestKey]);
-  const mediaOrphans = new Set([...mediaRow].filter((ref) => !documentRefs.has(ref)));
-  const audioOrphans = new Set([...audioRow].filter((ref) => !documentRefs.has(ref)));
-  const all = new Set([...documentRefs, ...mediaRow, ...audioRow]);
-  const poolOwned = new Set([...mediaRow, ...audioRow]);
   // Consume the DSL's position-keyed ownership accounting directly. Keeping
   // one implementation prevents user-controlled duplicate scene/slide/
   // element/action ids from collapsing distinct owners here.
@@ -185,14 +135,8 @@ export function collectStageAssetRefs(
     sceneWhiteboard,
     speechAudioId,
     videoManifestKey,
-    mediaRow,
-    audioRow,
-    mediaOrphans,
-    audioOrphans,
     referenced,
     document: documentRefs,
-    all,
-    poolOwned,
     referenceCounts,
   };
 }
@@ -205,7 +149,7 @@ export function collectPersistedDocumentAssetRefs(
   const byDocument = new Map<string, StageAssetRefs>();
 
   for (const document of documents) {
-    const refs = collectStageAssetRefs(document, { mediaRows: [], audioRows: [] });
+    const refs = collectStageAssetRefs(document);
     byDocument.set(document.stage.id, refs);
     for (const [ref, count] of refs.referenceCounts) {
       referenceCounts.set(ref, (referenceCounts.get(ref) ?? 0) + count);
@@ -213,110 +157,4 @@ export function collectPersistedDocumentAssetRefs(
   }
 
   return { referenceCounts, byDocument };
-}
-
-/**
- * Return whether an allocated ref remains live in any persisted document other
- * than the optional document being replaced or deleted. Repository enumeration
- * is authoritative and fail-closed: an unavailable listing, an unreadable
- * listed document, or any other enumeration failure returns `true`.
- */
-export async function isAllocatedAssetRefReferencedBySurvivingDocument(
-  ref: string,
-  excludedDocumentId?: string,
-): Promise<boolean> {
-  const liveRefs = await loadSurvivingDocumentAssetRefs(excludedDocumentId);
-  return liveRefs === null || liveRefs.has(ref);
-}
-
-/**
- * Owners the editor holds but has not flushed yet. Slide duplication updates the
- * Zustand aggregate synchronously and schedules persistence behind a debounce, so
- * the persisted document can still report a single owner while the live stage
- * already has two. An in-place replacement decided from the persisted copy alone
- * would rewrite bytes both slides reference. Returns undefined when the live
- * snapshot represents a different stage and therefore has nothing to say.
- */
-function unflushedStageOwnerCount(assetId: string, stageId: string): number | undefined {
-  const { stage, scenes } = useStageStore.getState();
-  if (!stage || stage.id !== stageId) return undefined;
-  return collectStageAssetRefs(
-    { stage, scenes },
-    { mediaRows: [], audioRows: [] },
-  ).referenceCounts.get(assetId);
-}
-
-/**
- * Whether an allocated ref may have its bytes replaced in place. Every writer
- * that mutates a globally keyed asset — media retry, poster replacement, speech
- * regeneration — clears this first, so the rule lives here once instead of being
- * restated per call site.
- */
-export async function proveExclusiveAssetOwnership(
-  assetId: string,
-  stageId: string,
-): Promise<{ readonly exclusive: boolean; readonly activePersistedRefs?: StageAssetRefs }> {
-  // A server-backed id can be referenced by another device, outside the local
-  // document snapshot, unflushed Zustand state, and cross-tab presence probe.
-  // Asking which other principals hold it would create the existence oracle
-  // the asset contract forbids. The proof therefore cannot be strengthened:
-  // fail closed and let the existing regeneration path fork to a fresh id.
-  if (isAssetPoolServerBacked()) return { exclusive: false };
-
-  let activePersistedRefs: StageAssetRefs | undefined;
-  try {
-    const document = await getDocumentStore().loadDocument(stageId);
-    if (!document) throw new Error(`Document ${stageId} could not be loaded`);
-    activePersistedRefs = collectStageAssetRefs(document, { mediaRows: [], audioRows: [] });
-  } catch (error) {
-    log.warn(`Could not prove exclusive ownership of asset ${assetId}:`, error);
-  }
-  const referencedByAnotherDocument = await isAllocatedAssetRefReferencedBySurvivingDocument(
-    assetId,
-    stageId,
-  );
-  // The live snapshot only participates when it represents this stage; when it
-  // does, an owner it knows about counts even though persistence is pending.
-  const liveOwners = unflushedStageOwnerCount(assetId, stageId);
-  // Another realm's unflushed edits are unobservable — its Zustand state lives
-  // in a different realm and leaves no persisted trace during its debounce — so
-  // a peer editing this stage forces the fork path rather than a global mutation
-  // decided from state we cannot see. A probe we could not carry out is treated
-  // exactly like a peer: proving nothing is not the same as proving absence.
-  const peerRealmEditing = (await probeStageRealmPresence(stageId)) !== 'absent';
-  return {
-    exclusive:
-      (activePersistedRefs?.referenceCounts.get(assetId) ?? 0) === 1 &&
-      (liveOwners === undefined || liveOwners === 1) &&
-      !peerRealmEditing &&
-      !referencedByAnotherDocument,
-    activePersistedRefs,
-  };
-}
-
-/** Load complete document refs once; null means enumeration failed and callers must fail closed. */
-export async function loadSurvivingDocumentAssetRefs(
-  excludedDocumentId?: string,
-): Promise<ReadonlySet<string> | null> {
-  try {
-    const store = getDocumentStore();
-    const summaries = await store.listDocuments();
-    const documents = await Promise.all(
-      summaries
-        .filter(({ id }) => id !== excludedDocumentId)
-        .map(async ({ id }) => {
-          const document = await store.loadDocument(id);
-          if (!document) throw new Error(`Listed document ${id} could not be loaded`);
-          return document;
-        }),
-    );
-    const liveRefs = new Set<string>();
-    for (const refs of collectPersistedDocumentAssetRefs(documents).byDocument.values()) {
-      for (const ref of refs.document) liveRefs.add(ref);
-    }
-    return liveRefs;
-  } catch (error) {
-    log.warn('Could not enumerate persisted asset liveness:', error);
-    return null;
-  }
 }

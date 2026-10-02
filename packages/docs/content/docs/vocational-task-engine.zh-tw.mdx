@@ -1,0 +1,82 @@
+---
+title: 職教任務引擎
+description: 啟用實驗性的職教課件生成，透過實作步驟、判斷與後果回饋組織訓練。
+---
+
+職教任務引擎圍繞一項工作任務生成課件：學習者需要完成什麼、使用哪些工具、何時繼續或停止，以及如何確認任務完成。課件結合任務說明投影片、互動式步驟訓練、原理解釋與任務挑戰。
+
+此功能目前屬於實驗性功能，預設關閉。先參考[快速上手](./getting-started.mdx)設定 OpenMAIC 與 LLM provider，再於自己的部署中啟用下述開關。
+
+## 適用任務
+
+選擇具有操作順序、工具或設備、可觀察狀態，以及繼續、停止、複檢或交接等判斷點的具體任務，例如設備檢查、組裝準備與維修前安全確認。
+
+大綱提示詞要求先介紹任務，再圍繞同一工作流程安排訓練片段與挑戰。規劃器會被要求判斷任務是否適合實作訓練；只有概念講解需求時，應使用一般投影片與互動元件。生成的大綱仍需人工檢查。
+
+## 啟用功能
+
+在 OpenMAIC 應用的 `.env.local` 中加入：
+
+```bash
+OPENMAIC_ENABLE_VOCATIONAL=true
+NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=true
+```
+
+| 開關                                  | 用途                                           | 生效時機                                     |
+| ------------------------------------- | ---------------------------------------------- | -------------------------------------------- |
+| `OPENMAIC_ENABLE_VOCATIONAL`          | 允許伺服器使用職教任務規劃與實作元件內容生成。 | 執行時讀取；修改程序環境變數後重新啟動應用。 |
+| `NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI` | 在首頁顯示實驗性的職教開關。                   | 建置時讀取；正式環境修改後需要重新建置應用。 |
+
+兩個開關均接受 `true` 或 `1`，未設定時關閉。本機修改設定後重新啟動 `pnpm dev`。正式環境應在 `pnpm build` 前設定前端開關，並在啟動應用時提供伺服器開關。這些設定屬於 OpenMAIC 應用，而非文件站服務。完整設定見[設定說明](./configuration.mdx)。
+
+顯示開關本身不會啟用伺服器功能。職教生成需要伺服器開關開啟，且生成請求包含 `requirements.taskEngineMode`。伺服器開關關閉時，請求沿用一般或互動模式的生成流程。
+
+## 生成職教課件
+
+1. 開啟 OpenMAIC 首頁並設定要使用的模型。
+2. 開啟標示為 **职教任务** 的實驗性開關。
+3. 描述工作任務、學習者基礎、工具、判斷點與完成標準；有相關課程材料時可一併上傳。
+4. 生成並檢查大綱，接著繼續生成課堂。
+
+範例輸入：
+
+```text
+為具備基礎工場知識的學習者生成電動車電池維修前安全確認的職教課件。
+先介紹任務，再練習防護用品與工具檢查、檢查結果判斷、GO/STOP 決策與交接確認。
+具體操作流程與允許的限值以提供的參考材料為準。
+為錯誤判斷提供後果回饋，並讓每個練習都能重設。
+```
+
+啟用職教生成的課程會儲存伺服器實際生效的模式，並可在課程清單顯示 **Vocational Mode** 標示。後續場景生成與重試會傳遞已儲存的模式，在伺服器開關仍開啟時繼續支援實作元件。此標示代表生成模式，不表示每個場景都是實作元件。
+
+## 學習者如何練習
+
+`procedural-skill` 元件以生成的 HTML 練習頁面接入現有互動場景渲染器。其提示詞要求提供可操作控制項、任務與工具說明、順序步驟、進度、回饋、完成條件與重設功能。至少一項操作應涉及選擇、測量或判斷；錯誤選擇應產生步驟阻擋、需要複檢等操作後果。
+
+完成條件應隨練習狀態更新，重設應恢復待完成步驟、進度、回饋與控制項狀態。由於頁面由模型生成，使用課件前應檢查這些行為。它提供輕量實作訓練；元件內的步驟狀態不是平台持久化考核紀錄，也不是物理模擬。
+
+## 常見問題
+
+| 現象                     | 檢查方式                                                                                             |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| 首頁沒有職教開關         | 檢查應用建置環境中的 `NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI`；正式環境重新建置，本機開發重新啟動服務。 |
+| 開關可見，但生成一般內容 | 檢查伺服器的 `OPENMAIC_ENABLE_VOCATIONAL`，並確認提交需求時已開啟職教開關。                          |
+| 理論主題沒有生成實作訓練 | 規劃器被要求避免為缺少工作操作或有效判斷的主題生成實作元件；請描述具體任務。                         |
+| 操作、重設或回饋不正常   | 檢查生成的場景 HTML，並重新生成相關內容。啟用職教模式無法保證模型正確實作所有互動。                  |
+
+## 實作說明
+
+[PR #685](https://github.com/THU-MAIC/OpenMAIC/pull/685) 引入的職教功能沿用現有生成與互動渲染流程。當前 `main` 的主要組成如下：
+
+| 組成                                                                                                                                                                                                                      | 職責                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| [功能開關](https://github.com/THU-MAIC/OpenMAIC/blob/main/lib/config/feature-flags.ts)                                                                                                                                    | `resolveVocationalActive` 同時判斷請求中的 `taskEngineMode` 與伺服器開關；前端顯示開關獨立處理。                                     |
+| [大綱介面](https://github.com/THU-MAIC/OpenMAIC/blob/main/app/api/generate/scene-outlines-stream/route.ts)與[任務引擎提示詞](https://github.com/THU-MAIC/OpenMAIC/tree/main/lib/prompts/templates/task-engine-outlines)   | 選擇職教規劃器，並在串流完成事件中回傳實際生效的模式。                                                                               |
+| [場景內容介面](https://github.com/THU-MAIC/OpenMAIC/blob/main/app/api/generate/scene-content/route.ts)與[生成套件](https://github.com/THU-MAIC/OpenMAIC/blob/main/packages/%40openmaic/generation/src/scene-generator.ts) | 再次檢查伺服器開關，將任務欄位傳入實作內容提示詞。未啟用時，大綱回退可將實作場景降級為示意圖，元件生成器也會拒絕未獲允許的實作內容。 |
+| [預覽模式輔助模組](https://github.com/THU-MAIC/OpenMAIC/blob/main/app/generation-preview/vocational-mode.ts)與[場景生成 Hook](https://github.com/THU-MAIC/OpenMAIC/blob/main/lib/hooks/use-scene-generator.ts)            | 儲存實際生效的課程模式，並在後續場景與重試中繼續傳遞；包含 [PR #716](https://github.com/THU-MAIC/OpenMAIC/pull/716) 的後續修正。     |
+
+實作大綱包含 `procedureType`（`repair`、`assembly`、`inspection`、`operation` 或 `custom`）、`task`、`tools`、`steps`、`successCriteria` 與 `errorConsequences`。[內容模板](https://github.com/THU-MAIC/OpenMAIC/tree/main/packages/%40openmaic/generation/templates/procedural-skill-content)將這些欄位轉換為練習頁面。
+
+教師動作沿用平台傳送至 iframe 的 `SET_WIDGET_STATE`、`HIGHLIGHT_ELEMENT`、`ANNOTATE_ELEMENT` 與 `REVEAL_ELEMENT`。實作提示詞要求提供穩定的步驟選擇器，讓學習者操作與 `SET_WIDGET_STATE` 共用狀態更新路徑，並支援 `completedSteps`，以沿用現有場景與動作協定。
+
+本研究獲得中國國家重點研發計畫（計畫編號：2024YFC3308500）的資助。

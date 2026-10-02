@@ -79,4 +79,12 @@ describe('Security response headers', () => {
       });
     });
   });
+
+  it('lets browsers reuse provider logos instead of revalidating each one', async () => {
+    const headerGroups = await (await loadConfig()).headers!();
+    const logos = headerGroups.find((g) => g.source === '/logos/:path*');
+    const cache = logos?.headers.find((h) => h.key === 'Cache-Control')?.value ?? '';
+    expect(cache).toMatch(/max-age=[1-9]/);
+    expect(cache).not.toContain('immutable');
+  });
 });

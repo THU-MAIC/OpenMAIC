@@ -3,11 +3,42 @@ title: النماذج المدعومة
 description: قائمة النماذج المدمجة ومزودي الخدمة في النسخة المفتوحة من OpenMAIC.
 ---
 
-تسرد هذه الصفحة provider registry المضمن في كود نسخة OpenMAIC مفتوحة المصدر. يمكن إعداد provider المضمنة من Settings أو متغيرات البيئة أو `server-providers.yml`، أما provider المخصصة المتوافقة مع OpenAI فتُضاف من Settings. يعتمد التوفر أيضًا على حساب provider والمنطقة وإعداد الخادم، وقد تخفي النسخ المستضافة بعض النماذج المضمنة عبر قائمة سماح.
+تسرد هذه الصفحة المزودين والنماذج المدمجة في نسخة OpenMAIC مفتوحة المصدر. في [`openmaic.yml`](./configuration.mdx) يسمّي المزود أحدها بوصفه `preset`، وتعرض إعدادات النماذج في تطبيق الويب الكتالوج نفسه. يعتمد التوفر أيضًا على حساب المزود والمنطقة وإعدادات الخادم، ويمكن لقائمة `models` الخاصة بالمزود أن تضيّق ما تعرضه إعدادات النماذج.
+
+## الإعدادات المسبقة
+
+الإعداد المسبق (preset) قالب مزود مدمج: أي مورّد، وأي عنوان، وأي قدرات يغطيها حساب واحد. كل مزود في `openmaic.yml` أو في إعدادات النماذج يسمّي إعدادًا مسبقًا.
+
+**الإعدادات المسبقة ذات القدرة الواحدة** تستخدم معرّفات المزودين في الجداول أدناه، واحدًا لكل قدرة: `openai` هو محادثة OpenAI، أما صور OpenAI وتحويل النص إلى كلام والتفريغ الصوتي فهي `openai-image` و`openai-tts` و`openai-whisper`. تختلف ثلاثة معرّفات عن معرّف السجل لأن إعدادًا مسبقًا آخر يستخدمه: بحث MiniMax على الويب هو `minimax-search`، وبحث Doubao على الويب هو `doubao-search`، وتوليد صور Lemonade هو `lemonade-image`.
+
+**إعدادات Token Plan المسبقة** تغطي عدة قدرات بمفتاح واحد، كل منها على عنوان الخطة الخاص. ربط أحدها في **الإعدادات ← Token Plan** يملأ أيضًا الخانات التي توصي الخطة بنماذج لها ولم تُعيّن بعد.
+
+| الإعداد المسبق | الخطة | يغطي |
+| --- | --- | --- |
+| `minimax` | MiniMax | المحادثة والصور والفيديو وTTS والبحث على الويب |
+| `tokendance` | TokenDance | المحادثة والصور والفيديو وTTS والبحث على الويب |
+| `volcengine-ark` | Volcengine Ark Agent Plan | المحادثة والصور والفيديو وTTS والبحث على الويب |
+| `kimi-coding-plan` | Kimi coding plan | المحادثة |
+
+يربط `openai-compatible` أي خادم محادثة متوافق مع OpenAI: يحتاج إلى `baseUrl`، وتعرض إعدادات النماذج قائمة `models` الخاصة به.
+
+جميع معرّفات الإعدادات المسبقة:
+
+| القدرة | الإعدادات المسبقة |
+| --- | --- |
+| المحادثة | `openai` و`azure` و`atlascloud` و`anthropic` و`bedrock` و`google` و`glm` و`qwen` و`deepseek` و`kimi` و`siliconflow` و`doubao` و`openrouter` و`grok` و`tencent-hunyuan` و`xiaomi` و`ollama` و`lemonade` و`openai-compatible`، وخطط Token Plan |
+| TTS | `openai-tts` و`azure-tts` و`glm-tts` و`qwen-tts` و`minimax-tts` و`voxcpm-tts` و`doubao-tts` و`elevenlabs-tts` و`google-tts` و`browser-native-tts` و`lemonade-tts` |
+| ASR | `openai-whisper` و`qwen-asr` و`azure-asr` و`browser-native` و`funasr-asr` و`lemonade-asr` |
+| الصور | `seedream` و`openai-image` و`qwen-image` و`nano-banana` و`minimax-image` و`grok-image` و`comfyui-image` و`lemonade-image` و`openrouter-image` |
+| الفيديو | `seedance` و`kling` و`veo` و`minimax-video` و`grok-video` و`happyhorse` و`openrouter-video` |
+| البحث على الويب | `tavily` و`exa` و`bocha` و`brave` و`baidu` و`claude` و`minimax-search` و`doubao-search` و`searxng` |
+| تحليل المستندات | `unpdf` و`mineru` و`mineru-cloud` و`alidocmind` |
+
+تحتاج `azure` و`openai-compatible` و`searxng` و`mineru` إلى `baseUrl`، ويصادق `alidocmind` عبر `credentials` (زوج مفاتيح). إعدادات TTS وASR والصور والبحث والمستندات المستضافة ذاتيًا، وإعدادات أزواج المفاتيح، وBedrock لا تُضبط إلا في `openmaic.yml`؛ راجع [الإعدادات](./configuration.mdx).
 
 ## نماذج LLM
 
-تُكتب النماذج في `DEFAULT_MODEL` أو YAML بصيغة `provider:model-id`، مثل `openai:gpt-5.6` و`qwen:qwen3.7-plus` و`ollama:llama3.3`.
+في `openmaic.yml` تسمّي خانة المحادثة `<معرّف المزود>:<معرّف النموذج>`، حيث معرّف المزود هو الذي أعلنته تحت `providers`. عندما تطابق معرّفات المزودين معرّفات الإعدادات المسبقة يكون ذلك مثلًا `openai:gpt-5.6` أو `qwen:qwen3.7-plus` أو `ollama:llama3.3`.
 
 | المزود           | معرف المزود       | النماذج المدمجة                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ---------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -25,7 +56,7 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | OpenRouter      | `openrouter`      | DeepSeek V4 Pro (`deepseek/deepseek-v4-pro`)<br />DeepSeek V4 Flash (`deepseek/deepseek-v4-flash`)                                                                                                                                                                                                                                                                                                                         |
 | Grok            | `grok`            | Grok 4.6 (`grok-4.6`)<br />Grok 4.5 (`grok-4.5`)<br />Grok 4.3 (`grok-4.3`)<br />Grok Build 0.1 (`grok-build-0.1`)<br />Grok 4.20 Reasoning (`grok-4.20-reasoning`)<br />Grok 4.20 (`grok-4.20`)<br />Grok 4.20 Multi-Agent (`grok-4.20-multi-agent`)<br />Grok 4.1 Fast Reasoning (`grok-4-1-fast-reasoning`)<br />Grok 4.1 Fast (`grok-4-1-fast-non-reasoning`)<br />Grok Code Fast (`grok-code-fast-1`)                                                                                                                                         |
 | Tencent Hunyuan | `tencent-hunyuan` | Tencent Hy3 Preview (`hy3-preview`)                                                                                                                                                                                                                                                                                                                                                                                        |
-| Xiaomi MiMo     | `xiaomi`          | MiMo V2.5 Pro (`mimo-v2.5-pro`)<br />MiMo V2 Pro (`mimo-v2-pro`)<br />MiMo V2.5 (`mimo-v2.5`)<br />MiMo V2 Omni (`mimo-v2-omni`)<br />MiMo V2 Flash (`mimo-v2-flash`) |
+| Xiaomi MiMo     | `xiaomi`          | MiMo V2.6 Pro (`mimo-v2.6-pro`)<br />MiMo V2.6 Flash (`mimo-v2.6-flash`)<br />MiMo V2.5 Pro (`mimo-v2.5-pro`)<br />MiMo V2 Pro (`mimo-v2-pro`)<br />MiMo V2.5 (`mimo-v2.5`)<br />MiMo V2 Omni (`mimo-v2-omni`)<br />MiMo V2 Flash (`mimo-v2-flash`) |
 | Ollama          | `ollama`          | Llama 3.3 70B (`llama3.3`)<br />Gemma 3 12B (`gemma3`)<br />DeepSeek R1 (`deepseek-r1`)                                                                                                                                                                                                                                                                                                                                    |
 | Lemonade        | `lemonade`        | Gemma 4 26B A4B IT GGUF (`Gemma-4-26B-A4B-it-GGUF`) |
 
@@ -69,6 +100,7 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | Lemonade TTS       | `lemonade-tts`       | Kokoro v1 (`kokoro-v1`)                                                                                                                                                                                                                |
 | Doubao TTS 2.0     | `doubao-tts`         | لا يوجد محدد نموذج؛ تُستخدم معرّفات أصوات Doubao TTS 2.0.                                                                                                                                                                                      |
 | ElevenLabs TTS     | `elevenlabs-tts`     | Multilingual v2 (`eleven_multilingual_v2`)<br />Flash v2.5 (`eleven_flash_v2_5`)<br />Flash v2 (`eleven_flash_v2`)                                                                                                                     |
+| Google Gemini TTS  | `google-tts`         | Gemini 3.1 Flash TTS Preview (`gemini-3.1-flash-tts-preview`)<br />Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`)<br />Gemini 2.5 Pro Preview TTS (`gemini-2.5-pro-preview-tts`)                                        |
 | Browser Native TTS | `browser-native-tts` | لا يوجد محدد نموذج؛ تُستخدم قائمة أصوات المتصفح ونظام التشغيل.                                                                                                                                                                |
 
 ## نماذج ASR
@@ -93,7 +125,7 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 
 ## مزودو البحث على الويب
 
-مزودو البحث على الويب لا يمتلكون محددات للنماذج. يدعم SearXNG فقط التكوين المستضاف على الخادم؛ يمكن للمزودين الآخرين تكوين مفاتيح API أو عناوين URL أساسية حسب متطلباتهم.
+معظم مزودي البحث على الويب لا يملكون محددًا للنماذج، لذا تسمّيهم الخانات عادةً بمعرّف المزود وحده (`webSearch: tavily`). لا يُضبط SearXNG إلا في `openmaic.yml`؛ ويحتاج المزودون الآخرون إلى مفتاح API أو عنوان URL أساسي حسب ما هو مذكور. معرّفا الإعداد المسبق لبحث MiniMax وDoubao على الويب هما `minimax-search` و`doubao-search`.
 
 | المزود       | معرف المزود |
 | ------------ | ----------- |

@@ -4,12 +4,9 @@ import type { TTSProviderId } from '@/lib/audio/types';
 import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement';
 import type { LegacySpeechAction, SpeechAction } from '@/lib/types/action';
 import type { GeneratedAgentConfig, Scene } from '@/lib/types/stage';
-import {
-  getServerTTSProviders,
-  resolveTTSApiKey,
-  resolveTTSBaseUrl,
-  resolveTTSModel,
-} from '@/lib/server/provider-config';
+import { adapterOptions } from '@/lib/server/model-config/adapter-options';
+import { serverMediaConnection } from '@/lib/server/model-config/media';
+import { resolveTTSModel, slotTTSModel } from '@/lib/server/provider-config';
 import { persistClassroomMediaBytes } from '@/lib/server/classroom-media-bytes';
 
 export interface SceneTtsSummary {
@@ -25,12 +22,8 @@ export interface SceneTtsInput {
   force: boolean;
   roster?: readonly GeneratedAgentConfig[] | null;
   signal?: AbortSignal;
-}
-
-function enabledProviderIds(): TTSProviderId[] {
-  return Object.entries(getServerTTSProviders())
-    .filter(([id, config]) => id !== BROWSER_NATIVE_TTS_PROVIDER_ID && !config.disabled)
-    .map(([id]) => id as TTSProviderId);
+  /** The run's owner, whose tts slot applies. */
+  ownerId?: string;
 }
 
 function narratorVoice(roster: SceneTtsInput['roster']) {
@@ -43,18 +36,20 @@ function audioMime(format: string) {
 
 /** Server-configured narration synthesis into the stage's classroom-media path. */
 export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<SceneTtsSummary> {
-  const enabled = enabledProviderIds();
-  const bound = narratorVoice(input.roster);
-  const providerId = (
-    bound?.providerId && enabled.includes(bound.providerId as TTSProviderId)
-      ? bound.providerId
-      : enabled[0]
-  ) as TTSProviderId | undefined;
-  if (!providerId) {
+  // The tts slot decides the provider; the narrator's bound voice applies
+  // only when it belongs to that provider.
+  const connection = await serverMediaConnection('tts', input.ownerId);
+  if (
+    !connection ||
+    connection === 'off' ||
+    connection.providerId === BROWSER_NATIVE_TTS_PROVIDER_ID
+  ) {
     return { available: false, changed: false, generated: 0, skipped: 0, failed: [] };
   }
+  const providerId = connection.providerId as TTSProviderId;
+  const bound = narratorVoice(input.roster);
   const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
-  const apiKey = resolveTTSApiKey(providerId);
+  const apiKey = connection.apiKey ?? '';
   if (provider?.requiresApiKey && !apiKey) {
     return { available: false, changed: false, generated: 0, skipped: 0, failed: [] };
   }
@@ -62,12 +57,13 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
     bound?.providerId === providerId && bound.voiceId
       ? bound.voiceId
       : DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] || '';
+  const model =
+    connection.modelId ?? (DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '');
+  // A configured slot's own model; the legacy server pins apply only to a default.
   const modelId =
-    resolveTTSModel(
-      providerId,
-      DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
-      voice,
-    ) || '';
+    (connection.origin === 'configuration'
+      ? slotTTSModel(providerId, model, voice)
+      : resolveTTSModel(providerId, model, voice)) || '';
   let generated = 0;
   let skipped = 0;
   const failed: string[] = [];
@@ -85,9 +81,13 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
           providerId,
           modelId,
           apiKey,
-          baseUrl: resolveTTSBaseUrl(providerId),
+          baseUrl: connection.baseUrl,
+          managed: connection.managed,
+          publicOnly: connection.userEndpoint,
           voice,
           speed: speech.speed,
+          // The provider's own options (a VoxCPM backend, say).
+          providerOptions: adapterOptions(connection),
           signal: input.signal,
         },
         speech.text,

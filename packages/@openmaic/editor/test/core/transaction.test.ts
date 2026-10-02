@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PPTTextElement, SlideContent } from '@openmaic/dsl';
+import type { PPTLineElement, PPTTextElement, SlideContent } from '@openmaic/dsl';
 import {
   applyEditorTransaction,
   compileEditorEditIntents,
@@ -274,6 +274,107 @@ describe('editor transaction core', () => {
       content: '<p>Second</p>',
       height: 100,
     });
+  });
+
+  it.each<{
+    name: string;
+    geometry: Partial<PPTLineElement>;
+    command: 'bottom' | 'left' | 'top' | 'center';
+    position: { left?: number; top?: number };
+  }>([
+    {
+      name: 'quadratic control hull',
+      geometry: { curve: [50, 60] },
+      command: 'bottom',
+      position: { top: 660 },
+    },
+    {
+      name: 'negative cubic control',
+      geometry: {
+        cubic: [
+          [-40, 80],
+          [160, -30],
+        ],
+      },
+      command: 'left',
+      position: { left: 40 },
+    },
+    {
+      name: 'negative elbow vertex',
+      geometry: { broken: [50, -30] },
+      command: 'top',
+      position: { top: 30 },
+    },
+    {
+      name: 'active double-elbow axis only',
+      geometry: { end: [100, 20], broken2: [140, 800] },
+      command: 'center',
+      position: { left: 570, top: 350 },
+    },
+    {
+      name: 'offset endpoint minimum',
+      geometry: { start: [20, 30], end: [80, 90] },
+      command: 'left',
+      position: { left: -20 },
+    },
+  ])('aligns a line using its $name', ({ geometry, command, position }) => {
+    const content = slideContent();
+    content.canvas.viewportRatio = 9 / 16;
+    const line: PPTLineElement = {
+      id: 'line',
+      type: 'line',
+      left: 100,
+      top: 100,
+      width: 2,
+      start: [0, 0],
+      end: [100, 0],
+      style: 'solid',
+      color: '#000000',
+      points: ['', ''],
+      ...geometry,
+    };
+    content.canvas.elements = [line];
+    const result = applyEditorTransaction(
+      content,
+      createEditorTransaction({
+        origin: 'canvas',
+        operations: [{ type: 'element.align', elementIds: ['line'], command }],
+      }),
+    );
+
+    expect(result.canvas.elements[0]).toMatchObject({ ...line, ...position });
+    expect(content.canvas.elements[0]).toEqual(line);
+  });
+
+  it('aligns a mixed selection by its full union and restores it with undo', () => {
+    const content = slideContent();
+    content.canvas.viewportRatio = 9 / 16;
+    content.canvas.elements.push({
+      id: 'line',
+      type: 'line',
+      left: 100,
+      top: 650,
+      width: 2,
+      start: [0, 0],
+      end: [100, 0],
+      curve: [50, 100],
+      style: 'solid',
+      color: '#000000',
+      points: ['', ''],
+    });
+    const history = applyEditorTransaction(
+      createEditorHistory(content),
+      createEditorTransaction({
+        origin: 'canvas',
+        operations: [{ type: 'element.align', elementIds: ['text-1', 'line'], command: 'bottom' }],
+      }),
+    );
+
+    expect(history.present.canvas.elements.map(({ left, top }) => ({ left, top }))).toEqual([
+      { left: 40, top: 10 },
+      { left: 100, top: 620 },
+    ]);
+    expect(undoEditorTransaction(history).present).toEqual(content);
   });
 
   it('rejects an alignment batch when any requested element is missing', () => {

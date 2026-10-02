@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, createElement, type ReactNode } from 'react';
+import { act, createElement, createRef, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PPTElement } from '@openmaic/dsl';
@@ -40,6 +40,7 @@ vi.mock('@/lib/hooks/use-i18n', () => ({
 import {
   getSlideElementPresentation,
   SlideElementPickOverlay,
+  ElementPickOverlay,
 } from '@/components/canvas/slide-element-pick-overlay';
 
 const scene = {
@@ -272,6 +273,87 @@ describe('SlideElementPickOverlay renderer DOM differential', () => {
     if (!button) throw new Error(`button not found: ${text}`);
     return button;
   }
+
+  it('scopes whiteboard hits to its own paint nodes and remeasures after pan/zoom', () => {
+    const scopeRef = createRef<HTMLDivElement>();
+    const onPick = vi.fn();
+    const onCancel = vi.fn();
+    rects.set('whiteboard-fact', { left: 300, top: 200, width: 200, height: 80 });
+    render(
+      createElement(
+        'div',
+        null,
+        legacyRendererHost('text-1'), // Same id outside the whiteboard must not win.
+        createElement(
+          'div',
+          { ref: scopeRef },
+          legacyRendererHost('text-1', 'whiteboard-fact'),
+          createElement(ElementPickOverlay, {
+            elements: [scene.content.canvas.elements[0]],
+            scopeRef,
+            onPick,
+            onCancel,
+          }),
+        ),
+      ),
+    );
+    const overlay = container.querySelector('[data-testid="slide-element-pick-overlay"]')!;
+    click(overlay, 50, 40);
+    expect(onPick).not.toHaveBeenCalled();
+    click(overlay, 350, 230);
+    expect(onPick).toHaveBeenLastCalledWith(scene.content.canvas.elements[0]);
+    onPick.mockClear();
+    rects.set('whiteboard-fact', { left: 500, top: 300, width: 100, height: 40 });
+    click(overlay, 350, 230);
+    expect(onPick).not.toHaveBeenCalled();
+    click(overlay, 550, 320);
+    expect(onPick).toHaveBeenCalledOnce();
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it('keeps only the selected outline after picking, follows geometry, and leaves input alone', () => {
+    const onCancel = vi.fn();
+    const draw = (selectedElementId?: string) =>
+      render(
+        createElement(
+          'div',
+          null,
+          legacyRendererHost('text-1', 'selected-fact'),
+          legacyRendererHost('shape-1', 'other-fact'),
+          createElement(ElementPickOverlay, {
+            elements: scene.content.canvas.elements,
+            picking: false,
+            selectedElementId,
+            onPick: vi.fn(),
+            onCancel,
+          }),
+        ),
+      );
+    rects.set('selected-fact', { left: 100, top: 100, width: 200, height: 60 });
+    rects.set('other-fact', { left: 400, top: 100, width: 100, height: 60 });
+    draw('text-1');
+    const outline = container.querySelector<HTMLElement>(
+      '[data-testid="whiteboard-element-reference-outline"]',
+    )!;
+    expect(
+      container.querySelectorAll('[data-testid="whiteboard-element-reference-outline"]'),
+    ).toHaveLength(1);
+    expect(outline.dataset.elementId).toBe('text-1');
+    expect(outline.parentElement!.className).toContain('pointer-events-none');
+    expect(container.textContent).not.toContain('Click a courseware element');
+    const previousLeft = outline.style.left;
+    rects.set('selected-fact', { left: 200, top: 100, width: 100, height: 30 });
+    flushAnimationFrame();
+    expect(outline.style.left).not.toBe(previousLeft);
+    expect(outline.style.width).toBe('100px');
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(onCancel).not.toHaveBeenCalled();
+    draw(undefined);
+    expect(
+      container.querySelector('[data-testid="whiteboard-element-reference-outline"]'),
+    ).toBeNull();
+  });
 
   it('uses the New renderer hit-target paint subtree instead of its full-slide host', () => {
     const onPick = vi.fn();

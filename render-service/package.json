@@ -11,7 +11,8 @@
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "start:resources": "tsx src/resource-main.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
@@ -22,6 +23,7 @@
     "esbuild": "0.28.1",
     "fflate": "^0.8.2",
     "hono": "^4.6.14",
+    "hyperframes-resource-producer": "npm:@hyperframes/producer@0.8.37",
     "motion": "^12.27.5",
     "parse5": "^8.0.1",
     "puppeteer-core": "^25.6.0",

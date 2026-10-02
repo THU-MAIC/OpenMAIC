@@ -315,3 +315,6 @@ const objectY = baseY - BOTTOM_MARGIN - (value / maxValue) * playableHeight;
 - [ ] Simulation objects are visible and not hidden under UI overlays
 - [ ] **Visible animation: Objects visibly move/rotate when simulation runs**
 - [ ] **Animation is OBVIOUS, not subtle - user can tell simulation is running**
+
+
+{{snippet:interactive-observation}}

@@ -9,8 +9,10 @@
  */
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
+import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
+
 const mocks = vi.hoisted(() => ({
-  getCurrentModelConfig: vi.fn(),
+  parallelSceneConcurrency: 0,
   settingsState: vi.fn(),
   audioPut: vi.fn(),
   audioDelete: vi.fn(),
@@ -21,18 +23,18 @@ const mocks = vi.hoisted(() => ({
   resolveAgentVoiceOptions: vi.fn(),
   listAgents: vi.fn(),
   toastWarning: vi.fn(),
-  serverBacked: vi.fn(),
 }));
 
-vi.mock('@/lib/utils/model-config', () => ({
-  getCurrentModelConfig: mocks.getCurrentModelConfig,
+// How many narration clips may be generated at once (GET /api/health).
+vi.mock('@/lib/generation/server-generation-settings', () => ({
+  getParallelSceneConcurrency: async () => mocks.parallelSceneConcurrency,
 }));
 
 vi.mock('@/lib/store/settings', () => ({
   useSettingsStore: { getState: mocks.settingsState },
 }));
 
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: {
     audioFiles: { put: mocks.audioPut, delete: mocks.audioDelete },
   },
@@ -52,10 +54,6 @@ vi.mock('@/lib/media/asset-pool-config', async (importOriginal) => {
       ({ put: mocks.poolPut }) as unknown as import('@/lib/media/asset-pool-config').AssetPoolStore,
   };
 });
-
-vi.mock('@/lib/persistence/media-persistence', () => ({
-  isServerBackedMediaPersistence: mocks.serverBacked,
-}));
 
 vi.mock('@/lib/audio/provider-enablement', () => ({
   isTTSProviderEnabled: mocks.isTTSProviderEnabled,
@@ -97,8 +95,6 @@ describe('server-backed narration storage', () => {
     mocks.audioDelete.mockReset().mockResolvedValue(undefined);
     mocks.poolPut.mockReset().mockResolvedValue('ast_audio_allocated');
     mocks.poolRemove.mockReset().mockResolvedValue(undefined);
-    mocks.serverBacked.mockReset().mockReturnValue(true);
-    mocks.getCurrentModelConfig.mockReturnValue({});
     mocks.settingsState.mockReturnValue({
       imageProviderId: '',
       imageProvidersConfig: {},
@@ -106,11 +102,13 @@ describe('server-backed narration storage', () => {
       videoProviderId: '',
       videoProvidersConfig: {},
       videoGenerationEnabled: false,
-      ttsProviderId: 'server-tts',
+      ttsVoiceProviderId: 'server-tts',
       ttsProvidersConfig: { 'server-tts': { apiKey: 'tts-key', modelId: 'tts-model' } },
       ttsVoice: 'narrator',
       ttsSpeed: 1,
     });
+    // The workspace's tts slot resolves to this provider.
+    setModelSettingsViewForTests({ tts: { registryId: 'server-tts', modelId: 'tts-model' } });
     mocks.isTTSProviderEnabled.mockReturnValue(true);
     mocks.pickNarratorAgent.mockReturnValue(undefined);
     mocks.resolveAgentVoiceOptions.mockResolvedValue({});
@@ -147,13 +145,13 @@ describe('server-backed narration storage', () => {
   });
 
   // Regeneration forks. Replacing bytes behind a live id needs proof that no
-  // other document holds it, and that proof is unavailable once references can
-  // leave this browser: `proveExclusiveAssetOwnership` refuses unconditionally
-  // in that mode (pinned by tests/media/prove-exclusive-ownership.test.ts), so
-  // the upstream caller supplies no existing id at all. The superseded clip is
-  // left for the stage-scoped document-truth sweep rather than deleted here,
-  // where nothing has yet observed the new id reaching a durable document.
-  it('forks to a fresh id even when handed the id it just superseded', async () => {
+  // other document holds it, and no browser can have that proof, so there is no
+  // way to hand an existing id in at all. The superseded clip is left for the
+  // server-side reclamation rather than deleted here, where nothing has yet
+  // observed the new id reaching a durable document: the save that writes the
+  // new id is the write that stops naming the old one, and releasing it is the
+  // server's job from there.
+  it('allocates a fresh id for every clip and removes nothing', async () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
     mockFetch.mockResolvedValueOnce(ttsResponse());
 
@@ -164,7 +162,7 @@ describe('server-backed narration storage', () => {
         undefined,
         undefined,
         undefined,
-        'ast_owned_audio',
+        'course-1',
       ),
     ).resolves.toBe('ast_audio_allocated');
 
@@ -254,7 +252,6 @@ describe('server-backed narration storage', () => {
           undefined,
           undefined,
           undefined,
-          undefined,
           'course-1',
         ),
       ).resolves.toBe('ast_audio_allocated');
@@ -263,20 +260,5 @@ describe('server-backed narration storage', () => {
     } finally {
       setAssetStorageFullStoreForTests(undefined);
     }
-  });
-
-  it('leaves the pool untouched when media persistence is browser-only', async () => {
-    mocks.serverBacked.mockReturnValue(false);
-    const { generateAndStoreTTS, removeFreshTtsAllocations } =
-      await import('@/lib/hooks/use-scene-generator');
-    mockFetch.mockResolvedValueOnce(ttsResponse());
-
-    await expect(generateAndStoreTTS('tts_s2_action_1', 'Hello class')).resolves.toBe(
-      'tts_s2_action_1',
-    );
-    await removeFreshTtsAllocations(['tts_s2_action_1']);
-
-    expect(mocks.poolPut).not.toHaveBeenCalled();
-    expect(mocks.poolRemove).not.toHaveBeenCalled();
   });
 });

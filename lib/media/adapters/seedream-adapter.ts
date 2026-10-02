@@ -19,8 +19,11 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { mediaFetchFor } from '../media-fetch';
 import { probeAuth } from '../probe-auth';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
+import { appAttributionHeaders } from '@/lib/config/app-attribution';
 
 const DEFAULT_MODEL = 'doubao-seedream-5-0-260128';
 const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
@@ -29,12 +32,13 @@ const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
  * Resolves the Ark API root. A bare host (e.g. the default
  * `https://ark.cn-beijing.volces.com`) gets the standard `/api/v3` appended; a
  * baseUrl that already carries an `/api/...` path (e.g. a token plan's
- * `https://ark.cn-beijing.volces.com/api/plan/v3`) is used verbatim. Trailing
- * slashes are trimmed.
+ * `https://ark.cn-beijing.volces.com/api/plan/v3`) or ends in a version segment
+ * (e.g. a gateway route such as `https://gateway.example/ark/v3`) is used
+ * verbatim. Trailing slashes are trimmed.
  */
 function resolveArkRoot(baseUrl: string): string {
   const trimmed = baseUrl.replace(/\/+$/, '');
-  return /\/api\//.test(trimmed) ? trimmed : `${trimmed}/api/v3`;
+  return /\/api\//.test(trimmed) || /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/api/v3`;
 }
 
 /**
@@ -65,15 +69,17 @@ export async function testSeedreamConnectivity(
   config: ImageGenerationConfig,
 ): Promise<{ success: boolean; message: string }> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
+  const url = `${resolveArkRoot(baseUrl)}/images/generations`;
   return probeAuth({
     providerName: 'Seedream',
     request: () =>
-      fetch(`${resolveArkRoot(baseUrl)}/images/generations`, {
+      mediaFetchFor(config)(url, {
         method: 'POST',
         redirect: 'manual',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${config.apiKey}`,
+          ...appAttributionHeaders(url),
         },
         body: JSON.stringify({
           model: config.model || DEFAULT_MODEL,
@@ -90,11 +96,14 @@ export async function generateWithSeedream(
 ): Promise<ImageGenerationResult> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
 
-  const response = await fetch(`${resolveArkRoot(baseUrl)}/images/generations`, {
+  const url = `${resolveArkRoot(baseUrl)}/images/generations`;
+  const response = await mediaFetchFor(config)(url, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.apiKey}`,
+      ...appAttributionHeaders(url),
     },
     body: JSON.stringify({
       model: requireModel(config.model, 'Seedream'),
@@ -103,6 +112,8 @@ export async function generateWithSeedream(
       watermark: false,
     }),
   });
+
+  assertNotRedirected(response, 'Seedream');
 
   if (!response.ok) {
     const text = await response.text();

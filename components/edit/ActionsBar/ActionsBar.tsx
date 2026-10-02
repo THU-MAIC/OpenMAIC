@@ -94,6 +94,7 @@ import {
   resolveSpeechAudioId,
 } from '@/lib/audio/regenerate-speech-tts';
 import { useMayGenerateForStage } from '@/lib/classroom/generation-permission';
+import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 
 const EMPTY: Action[] = [];
 const EMPTY_ELEMENTS: { id?: string; type: string; content?: string }[] = [];
@@ -1057,9 +1058,8 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   // narration that already exists, and seeing whether a line has any, spend
   // nothing, and a course with no ownership record must not lose its playback
   // controls the way it must lose its ability to bill the operator.
-  const ttsActive = useSettingsStore(
-    (s) => s.ttsEnabled && s.ttsProviderId !== 'browser-native-tts',
-  );
+  const ttsTarget = useModelCapabilities().tts;
+  const ttsActive = !!ttsTarget && ttsTarget.registryId !== 'browser-native-tts';
   const mayGenerate = useMayGenerateForStage(useStageStore((s) => s.stage?.id));
 
   // Agents a discussion can be initiated by — sourced from the user's currently

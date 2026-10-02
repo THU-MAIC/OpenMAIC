@@ -11,7 +11,7 @@ const { fetchMediaUrlMock, resolveAudioBlobMock } = vi.hoisted(() => ({
 vi.mock('@/lib/media/fetch-media-url', () => ({
   fetchMediaUrl: (...args: unknown[]) => fetchMediaUrlMock(...args),
 }));
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   db: { audioFiles: { get: vi.fn() } },
 }));
 vi.mock('@/lib/media/convert-legacy-asset-refs', () => ({
@@ -58,7 +58,10 @@ describe('legacy audio URL export', () => {
     const action = { id: 'a1', type: 'speech', text: 'Hi', audioId: 'tts_dangling', audioUrl: url };
     const scenes = [sceneWithSpeech([action])];
 
-    const { audioUrlToPath, blobs } = await collectLegacyAudioForExport(scenes, new Map());
+    const { audioUrlToPath, blobs, fullyRescuedAudioIds } = await collectLegacyAudioForExport(
+      scenes,
+      new Map(),
+    );
 
     expect(fetchMediaUrlMock).toHaveBeenCalledWith(url, 15_000);
     expect(blobs).toHaveLength(1);
@@ -67,6 +70,7 @@ describe('legacy audio URL export', () => {
     // The legacy URL itself is the natural source ref and travels with the
     // fetched asset into the serialized media index.
     expect(blobs[0]?.sourceRef).toBe(url);
+    expect(fullyRescuedAudioIds).toEqual(new Set(['tts_dangling']));
     expect(legacyAudioMediaIndexEntry(blobs[0]!)).toMatchObject({
       type: 'audio',
       sourceRef: url,
@@ -90,13 +94,14 @@ describe('legacy audio URL export', () => {
     const action = { id: 'a1', type: 'speech', text: 'Hi', audioId: 'ast_have', audioUrl: url };
     const scenes = [sceneWithSpeech([action])];
 
-    const { blobs } = await collectLegacyAudioForExport(
+    const { blobs, fullyRescuedAudioIds } = await collectLegacyAudioForExport(
       scenes,
       new Map([['ast_have', 'audio/ast_have.mp3']]),
     );
 
     expect(fetchMediaUrlMock).not.toHaveBeenCalled();
     expect(blobs).toHaveLength(0);
+    expect(fullyRescuedAudioIds).toEqual(new Set());
   });
 
   it('exports no audio entry for a URL that will not fetch, without leaking the field', async () => {
@@ -105,7 +110,10 @@ describe('legacy audio URL export', () => {
     const action = { id: 'a1', type: 'speech', text: 'Hi', audioUrl: url };
     const scenes = [sceneWithSpeech([action])];
 
-    const { audioUrlToPath, blobs } = await collectLegacyAudioForExport(scenes, new Map());
+    const { audioUrlToPath, blobs, fullyRescuedAudioIds } = await collectLegacyAudioForExport(
+      scenes,
+      new Map(),
+    );
     const manifest = actionsToManifest(
       scenes[0].actions as never,
       new Map(),
@@ -114,6 +122,7 @@ describe('legacy audio URL export', () => {
     );
 
     expect(blobs).toHaveLength(0);
+    expect(fullyRescuedAudioIds).toEqual(new Set());
     expect(manifest[0]).not.toHaveProperty('audioRef');
     expect(manifest[0]).not.toHaveProperty('audioUrl');
   });
@@ -126,7 +135,7 @@ describe('legacy audio URL export', () => {
     // collectLegacyAudioForExport skipped the live co-present URL.
     const url = 'https://server.example.com/audio/evicted.mp3';
     const audioId = 'ast_evicted';
-    const { db } = await import('@/lib/utils/database');
+    const { db } = await import('@/lib/device-storage/database');
     (db.audioFiles.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: audioId,
       stageId: 'stage-1',
@@ -149,18 +158,62 @@ describe('legacy audio URL export', () => {
     // ...so the id is missing from the archive map and the URL rescue
     // fetches the live narration instead of being skipped.
     const audioIdToPath = new Map(collected.map((c) => [c.record.id, c.zipPath]));
-    const { blobs } = await collectLegacyAudioForExport(scenes, audioIdToPath);
+    const { blobs, fullyRescuedAudioIds } = await collectLegacyAudioForExport(
+      scenes,
+      audioIdToPath,
+    );
     expect(fetchMediaUrlMock).toHaveBeenCalledWith(url, 15_000);
     expect(blobs).toHaveLength(1);
     expect(blobs[0]?.zipPath).toBe('audio/legacy-1.mpeg');
     expect(await blobs[0]?.blob.text()).toBe('url-bytes');
+    expect(fullyRescuedAudioIds).toEqual(new Set([audioId]));
+  });
+
+  it('does not mark a shared id fully rescued when another owner has no usable URL', async () => {
+    const url = 'https://server.example.com/audio/partial.mp3';
+    const audioId = 'ast_shared';
+    fetchMediaUrlMock.mockResolvedValue(
+      new Response(new Blob(['partial-bytes'], { type: 'audio/mpeg' }), { status: 200 }),
+    );
+    const scenes = [
+      sceneWithSpeech([
+        { id: 'a1', type: 'speech', text: 'First', audioId, audioUrl: url },
+        { id: 'a2', type: 'speech', text: 'Second', audioId },
+      ]),
+    ];
+
+    const { blobs, fullyRescuedAudioIds } = await collectLegacyAudioForExport(scenes, new Map());
+
+    expect(blobs).toHaveLength(1);
+    expect(fullyRescuedAudioIds).toEqual(new Set());
+  });
+
+  it('does not mark narration fully rescued when a slide-audio element shares its id', async () => {
+    const url = 'https://server.example.com/audio/shared-with-element.mp3';
+    const audioId = 'ast_shared_with_element';
+    fetchMediaUrlMock.mockResolvedValue(
+      new Response(new Blob(['speech-bytes'], { type: 'audio/mpeg' }), { status: 200 }),
+    );
+    const scene = sceneWithSpeech([
+      { id: 'a1', type: 'speech', text: 'First', audioId, audioUrl: url },
+    ]);
+    (scene.content as { canvas: { elements: unknown[] } }).canvas.elements.push({
+      id: 'audio-element',
+      type: 'audio',
+      src: audioId,
+    });
+
+    const { blobs, fullyRescuedAudioIds } = await collectLegacyAudioForExport([scene], new Map());
+
+    expect(blobs).toHaveLength(1);
+    expect(fullyRescuedAudioIds).toEqual(new Set());
   });
 
   it('a row with usable row bytes still ships even when the pool resolve is empty', async () => {
     // The pool resolve can fail (pool unavailable) while the compatibility
     // row itself carries the narration; that row must still reach the ZIP.
     const audioId = 'ast_row_backed';
-    const { db } = await import('@/lib/utils/database');
+    const { db } = await import('@/lib/device-storage/database');
     (db.audioFiles.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: audioId,
       stageId: 'stage-1',
@@ -180,7 +233,7 @@ describe('legacy audio URL export', () => {
 
   it('assigns distinct safe paths without interpolating adversarial audio refs', async () => {
     const refs = ['../evil', 'a/b', 'a/../collision', 'collision'];
-    const { db } = await import('@/lib/utils/database');
+    const { db } = await import('@/lib/device-storage/database');
     (db.audioFiles.get as ReturnType<typeof vi.fn>).mockImplementation(async (id: string) => ({
       id,
       stageId: 'stage-1',
@@ -208,7 +261,7 @@ describe('legacy audio URL export', () => {
     're-exports imported audio format %s under a safe canonical path',
     async (format) => {
       const audioId = 'ast_imported_audio';
-      const { db } = await import('@/lib/utils/database');
+      const { db } = await import('@/lib/device-storage/database');
       (db.audioFiles.get as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: audioId,
         stageId: 'stage-1',

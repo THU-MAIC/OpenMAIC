@@ -7,6 +7,7 @@ import { PlaybackScreenCanvas } from '@/components/slide-renderer/Editor/ScreenC
 import { getPlaybackImageState } from '@/components/slide-renderer/Editor/RendererScreenCanvas';
 import type { SlideContent } from '@/lib/types/stage';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
+import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
 
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
@@ -64,6 +65,7 @@ describe('PlaybackScreenCanvas', () => {
   });
 
   afterEach(() => {
+    setModelSettingsViewForTests(null);
     if (original === undefined) {
       delete process.env[flag];
     } else {
@@ -152,6 +154,8 @@ describe('PlaybackScreenCanvas', () => {
   // pool never held such a ref, so it is no longer asked.
   it('renders an untracked generated placeholder as disabled when generation is off', () => {
     process.env[flag] = 'true';
+    // The workspace's image slot resolves to nothing.
+    setModelSettingsViewForTests({});
     const imageContent: SlideContent = {
       ...content,
       canvas: {

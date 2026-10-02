@@ -1,22 +1,17 @@
 // @vitest-environment jsdom
 
 /**
- * PG-mode folder data flow — the create/list seam the workspace rail depends on.
+ * Folder data flow — the create/list seam the workspace rail depends on.
  *
- * With server persistence on (`NEXT_PUBLIC_PERSISTENCE=1`) the workspace rail
- * creates folders through `POST /api/folders` (and renames/deletes through the
- * `/api/folders/:id` family), so the list the sidebar renders must read the
- * same owner-scoped server store. This suite pins that contract at the storage
- * boundary: a successful create is visible to the very next `listFolders`, and
- * a duplicate refusal surfaces as `FolderNameError` with the list unchanged —
- * the two halves of the acceptance finding (the new folder never appearing
- * until reload, while a second create reports a duplicate).
- *
- * The storage seams (IndexedDB document store, Dexie folder tables) are mocked
- * so the local fallback path is inert; the real PG-mode branches of
- * `listFolders` / `createFolder` / `renameFolder` / `deleteFolder` are what
- * runs. The final test mounts `useHomeDiscovery` the way `WorkspaceShell` does
- * and drives the rail's own create-then-reload sequence.
+ * The workspace rail creates folders through `POST /api/folders` (and
+ * renames/deletes through the `/api/folders/:id` family), so the list the
+ * sidebar renders must read the same owner-scoped server store. This suite
+ * pins that contract at the storage boundary: a successful create is visible
+ * to the very next `listFolders`, a duplicate refusal surfaces as
+ * `FolderNameError` with the list unchanged, and course membership goes
+ * through `POST /api/folders/members`. The final test mounts
+ * `useHomeDiscovery` the way `WorkspaceShell` does and drives the rail's own
+ * create-then-reload sequence.
  */
 import { act, createElement, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -24,10 +19,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   listDocuments: vi.fn(),
-  listLegacyStages: vi.fn(),
-  readLegacyStage: vi.fn(),
-  folders: vi.fn(),
-  stageFolders: vi.fn(),
   toastError: vi.fn(),
   mutateDocument: vi.fn(),
 }));
@@ -56,27 +47,17 @@ vi.mock('@/lib/import/use-import-classroom', () => ({
 }));
 vi.mock('@/lib/document-store', () => ({
   getDocumentStore: () => ({ listDocuments: mocks.listDocuments }),
-  getLegacyDocumentStore: () => ({
-    listStages: mocks.listLegacyStages,
-    read: mocks.readLegacyStage,
-  }),
   mutateDocument: mocks.mutateDocument,
   accessDocument: vi.fn(),
   clearCurrentScene: vi.fn().mockResolvedValue(undefined),
   loadCurrentScene: vi.fn().mockResolvedValue(null),
   saveCurrentScene: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('@/lib/utils/database', () => ({
-  db: {
-    folders: { toArray: mocks.folders },
-    stageFolders: { toArray: mocks.stageFolders },
-  },
-}));
+vi.mock('@/lib/device-storage/database', () => ({ db: {} }));
 vi.mock('@/lib/utils/chat-storage', () => ({
   ChatStorageLockUnavailableError: class extends Error {},
   saveChatSessions: vi.fn(),
   loadChatSessions: vi.fn(),
-  deleteChatSessions: vi.fn(),
 }));
 vi.mock('@/lib/playback/cursor', () => ({ clearCursor: vi.fn() }));
 vi.mock('@/lib/quiz/persistence', () => ({ clearAllForScene: vi.fn() }));
@@ -146,15 +127,11 @@ function Harness({ onDiscovery }: { onDiscovery: (value: HomeDiscovery) => void 
   return null;
 }
 
-describe('PG-mode folder listing and creation', () => {
+describe('folder listing and creation', () => {
   beforeEach(() => {
     discovery = null;
-    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
     vi.stubGlobal('fetch', vi.fn());
     mocks.listDocuments.mockClear();
-    mocks.listLegacyStages.mockClear();
-    mocks.folders.mockClear();
-    mocks.stageFolders.mockResolvedValue([]);
   });
 
   afterEach(async () => {
@@ -166,7 +143,7 @@ describe('PG-mode folder listing and creation', () => {
     vi.resetModules();
   });
 
-  it('lists the owner folders through /api/folders and never consults Dexie', async () => {
+  it('lists the owner folders through /api/folders', async () => {
     const fetchMock = stubFolderRoutes([
       {
         method: 'GET',
@@ -182,7 +159,6 @@ describe('PG-mode folder listing and creation', () => {
       { id: 'folder-1', name: 'Math', order: 0, createdAt: 1, updatedAt: 2 },
     ]);
     expect(fetchMock).toHaveBeenCalledWith('/api/folders', expect.objectContaining({}));
-    expect(mocks.folders).not.toHaveBeenCalled();
   });
 
   it('makes a created folder visible to the very next listFolders', async () => {
@@ -272,17 +248,65 @@ describe('PG-mode folder listing and creation', () => {
     );
   });
 
-  it('keeps the device-local Dexie listing when server persistence is off', async () => {
-    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '');
-    mocks.folders.mockResolvedValue([
-      { id: 'local-1', name: 'Local', order: 0, createdAt: 1, updatedAt: 2 },
+  it('files and unfiles a course through /api/folders/members', async () => {
+    const bodies: unknown[] = [];
+    stubFolderRoutes([
+      {
+        method: 'POST',
+        url: '/api/folders/members',
+        respond: (_input, init) => {
+          bodies.push(JSON.parse(String(init?.body)));
+          return jsonResponse(200, { ok: true });
+        },
+      },
     ]);
 
-    const { listFolders } = await import('@/lib/utils/stage-storage');
-    const folders = await listFolders();
+    const { setStageFolder } = await import('@/lib/utils/stage-storage');
+    await setStageFolder('stage-1', 'folder-1');
+    await setStageFolder('stage-1', undefined);
 
-    expect(folders).toEqual([expect.objectContaining({ id: 'local-1', name: 'Local' })]);
-    expect(fetch).not.toHaveBeenCalled();
+    expect(bodies).toEqual([
+      { stageId: 'stage-1', folderId: 'folder-1' },
+      { stageId: 'stage-1', folderId: null },
+    ]);
+  });
+
+  it('refuses to file a course into a folder the owner does not have', async () => {
+    stubFolderRoutes([
+      {
+        method: 'POST',
+        url: '/api/folders/members',
+        respond: () =>
+          jsonResponse(404, { error: { code: 'FOLDER_NOT_FOUND', message: 'folder not found' } }),
+      },
+    ]);
+
+    const { setStageFolder } = await import('@/lib/utils/stage-storage');
+    await expect(setStageFolder('stage-1', 'gone')).rejects.toThrow('Folder not found: gone');
+  });
+
+  it('reports the folder each listed course is filed in, as the server returns it', async () => {
+    stubFolderRoutes([
+      {
+        method: 'GET',
+        url: '/api/stages',
+        respond: () =>
+          jsonResponse(200, {
+            stages: [
+              { ...OWNER_STAGES[0], folderId: 'folder-1' },
+              { id: 'stage-2', name: 'Unfiled', sceneCount: 1, createdAt: 1, updatedAt: 3 },
+            ],
+          }),
+      },
+    ]);
+
+    const { listStages } = await import('@/lib/utils/stage-storage');
+    const stages = await listStages();
+
+    expect(stages.map((stage) => [stage.id, stage.folderId])).toEqual([
+      ['stage-2', undefined],
+      ['stage-1', 'folder-1'],
+    ]);
   });
 
   it('shows a folder created through the rail adapter in the mounted list after reload', async () => {
@@ -325,7 +349,7 @@ describe('PG-mode folder listing and creation', () => {
     );
 
     // The rail renders its course tree from `useHomeDiscovery`'s folders; the
-    // initial list arrives from the server, not Dexie.
+    // initial list arrives from the server.
     expect(discovery?.folders.map((folder) => folder.id)).toEqual(['folder-1']);
 
     // The workspace rail's create handler: POST /api/folders, then reload the

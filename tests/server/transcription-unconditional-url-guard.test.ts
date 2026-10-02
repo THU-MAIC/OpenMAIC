@@ -28,6 +28,23 @@ vi.mock('@/lib/server/provider-config', () => ({
   resolveASRBaseUrl: (_id: string, clientBaseUrl?: string | null) => clientBaseUrl || undefined,
   resolveASRModel: (_id: string, clientModel?: string | null) => clientModel || 'whisper-1',
   resolveServerASRProviderId: () => undefined,
+  // No legacy configuration: the request's own provider is what resolves.
+  getServerProviderConfig: () => ({
+    providers: {},
+    tts: {},
+    asr: {},
+    pdf: {},
+    image: {},
+    video: {},
+    webSearch: {},
+    disabled: {
+      tts: new Set(),
+      asr: new Set(),
+      image: new Set(),
+      video: new Set(),
+      webSearch: new Set(),
+    },
+  }),
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -76,20 +93,41 @@ describe('transcription — client-supplied base URL guard applies in every envi
     expect(mocks.transcribeAudio).not.toHaveBeenCalled();
   });
 
-  it('still lets a private-network base URL through when ALLOW_LOCAL_NETWORKS=true', async () => {
+  it('still lets a server-managed provider use a private-network backend when ALLOW_LOCAL_NETWORKS=true', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('ALLOW_LOCAL_NETWORKS', 'true');
+    mocks.serverManaged = true;
+    const res = await postTranscription('');
+
+    expect(res.status).toBe(200);
+    expect(mocks.transcribeAudio).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: 'openai', publicOnly: false, managed: true }),
+      expect.any(File),
+    );
+  });
+
+  it('marks an unmanaged provider without a client base URL as not managed', async () => {
+    const res = await postTranscription('');
+
+    expect(res.status).toBe(200);
+    expect(mocks.transcribeAudio).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: 'openai', publicOnly: false, managed: false }),
+      expect.any(File),
+    );
+  });
+
+  it('refuses a client-supplied private-network base URL even when ALLOW_LOCAL_NETWORKS=true', async () => {
+    // The operator's local-network opt-in governs server-owned backends only.
+    // A client BYOK URL stays on the strict public policy, so enabling local
+    // networks for self-hosted providers can never be turned into a
+    // client-driven request to loopback/RFC1918/metadata.
     vi.stubEnv('NODE_ENV', 'development');
     vi.stubEnv('ALLOW_LOCAL_NETWORKS', 'true');
     const res = await postTranscription('http://192.168.1.10/v1/');
     const json = await res.json();
 
-    expect(res.status).toBe(200);
-    expect(json).toMatchObject({ success: true });
-    expect(mocks.transcribeAudio).toHaveBeenCalledWith(
-      expect.objectContaining({
-        providerId: 'openai',
-        baseUrl: 'http://192.168.1.10/v1/',
-      }),
-      expect.any(File),
-    );
+    expect(res.status).toBe(403);
+    expect(json).toMatchObject({ success: false, errorCode: 'INVALID_URL' });
+    expect(mocks.transcribeAudio).not.toHaveBeenCalled();
   });
 });

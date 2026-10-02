@@ -31,19 +31,44 @@ pnpm install
 cp .env.example .env.local
 ```
 
-開啟 `.env.local`，填入你有 key 的供應商。例如：
+接著設定一個模型。最簡單的檔案方式是在 `.env.local` 旁邊放一個最小的 `openmaic.yml`，key 寫在 `.env.local` 中：
 
 ```bash title=".env.local"
 OPENAI_API_KEY=sk-...
-# 或
-ANTHROPIC_API_KEY=sk-ant-...
-# 或本機 Ollama（不需要 key）
-OLLAMA_BASE_URL=http://localhost:11434/v1
 ```
+
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+
+slots:
+  llm: openai:gpt-5.5
+```
+
+`openmaic.example.yml` 就是這個起點，另外附有已註解的選用供應商和插槽。不使用該檔案時，舊版供應商變數仍然有效，前提是用 `DEFAULT_MODEL` 指定模型：
+
+```bash title=".env.local"
+ANTHROPIC_API_KEY=sk-ant-...
+DEFAULT_MODEL=anthropic:claude-sonnet-4-6
+```
+
+兩者都不想設定的話，啟動應用程式後在 **設定 → Token Plan** 中填入方案 key，或在 **設定 → 模型服務** 中填入某個服務的 key。既沒有 `openmaic.yml`、也沒有 `DEFAULT_MODEL`、也沒有在那裡設定服務時，沒有任何可用模型，生成會失敗。
 
 完整的 provider、圖片／影片生成、TTS、ASR、文件解析、網路搜尋、存取控制和 feature flag 設定請見[設定說明](./configuration.mdx)。
 
 ## 執行
+
+課程儲存在 PostgreSQL 中，未設定 `DATABASE_URL` 時服務會拒絕啟動。先啟動本機開發資料庫（Docker 中一個獨立的 PostgreSQL，位於 `127.0.0.1:5432`，本機所有檢出共用；可用 `OPENMAIC_DB_PORT` 換連接埠），並在 `.env.local` 中設定 `DATABASE_URL`：
+
+```bash
+pnpm db:up
+```
+
+```bash title=".env.local"
+DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
+```
 
 啟動開發伺服器：
 
@@ -57,7 +82,7 @@ pnpm dev
 
 ```bash
 pnpm build
-pnpm start
+DATABASE_URL=postgres://... pnpm start
 ```
 
 也可以部署到 Vercel、Docker 或你自己的伺服器上——請見[部署指南](./deployment.mdx)。

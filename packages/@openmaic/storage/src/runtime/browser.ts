@@ -33,7 +33,7 @@ import type {
   RuntimeStore,
   RuntimeTailOptions,
 } from './types.js';
-import { RuntimeAppendConflictError } from './types.js';
+import { RuntimeAppendConflictError, RuntimeSessionExistsError } from './types.js';
 
 const SESSIONS = 'sessions';
 const RECORDS = 'records';
@@ -238,7 +238,7 @@ export class BrowserRuntimeStore implements RuntimeStore {
       // stays as the safety net so a race can never silently overwrite.
       const existing = await reqP<RuntimeSession | undefined>(sessions.get(stamped.id));
       if (existing !== undefined) {
-        throw new Error(`@openmaic/storage: session ${JSON.stringify(stamped.id)} already exists`);
+        throw new RuntimeSessionExistsError(stamped.id);
       }
       sessions.add(stamped);
     });

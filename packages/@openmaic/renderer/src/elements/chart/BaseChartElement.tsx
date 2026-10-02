@@ -48,6 +48,7 @@ export function BaseChartElement({ elementInfo, target }: BaseChartElementProps)
             textColor={elementInfo.textColor}
             lineColor={elementInfo.lineColor}
             options={elementInfo.options}
+            importedStyle={elementInfo.importedStyle}
           />
         </div>
       </div>

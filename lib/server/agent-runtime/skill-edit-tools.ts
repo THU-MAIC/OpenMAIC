@@ -260,7 +260,15 @@ function paged(
  * exactly as `create_skill` does it: the model cannot name a target owner, so
  * the only reachable rows are the caller's own.
  */
-export function buildSkillEditTools(ownerId: string): AgentTool<never, never>[] {
+export function buildSkillEditTools(
+  ownerId: string,
+  /**
+   * The owner the run's skills belong to now. A claim can move the run's
+   * owner (and its skills) to an account mid-run; the runner passes the
+   * canonicalizing resolver so reads and patches follow. Defaults to `ownerId`.
+   */
+  currentOwner: () => Promise<string> = async () => ownerId,
+): AgentTool<never, never>[] {
   const readSkill: AgentTool<typeof READ_SKILL_SCHEMA, unknown> = {
     name: 'read_skill',
     label: 'Read Skill source',
@@ -271,7 +279,7 @@ export function buildSkillEditTools(ownerId: string): AgentTool<never, never>[] 
       if (signal?.aborted) throw new Error('aborted');
       const detail = params.detail ?? 'source';
       try {
-        const skill = await findUserSkillByRef(ownerId, params.skillId);
+        const skill = await findUserSkillByRef(await currentOwner(), params.skillId);
         if (!skill) {
           return toolResult(
             `No Skill ${JSON.stringify(params.skillId)} was found for this owner. Only /my-* Skills you created yourself can be read or edited; built-in Skills are read with the read tool.`,
@@ -314,7 +322,7 @@ export function buildSkillEditTools(ownerId: string): AgentTool<never, never>[] 
       const details = { skillId: params.skillId, intent };
       try {
         const outcome = await patchUserSkill(
-          ownerId,
+          await currentOwner(),
           params.skillId,
           params.ops as readonly UserSkillPatchOpInput[],
         );

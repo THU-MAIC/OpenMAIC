@@ -34,7 +34,7 @@ async function freshStore(persistedState?: Record<string, unknown>) {
   vi.resetModules();
   storage.clear();
   if (persistedState) {
-    await persistKv.set('settings-storage', { state: persistedState, version: 4 }, 'account');
+    await persistKv.set('settings-storage', { state: persistedState, version: 5 }, 'account');
   }
   const { useSettingsStore } = await import('@/lib/store/settings');
   // persist hydrates asynchronously now that it reads through the KVStore —
@@ -125,40 +125,16 @@ describe('agentSelectionIsUserSet', () => {
   });
 });
 
-describe('Qwen voice/model self-healing', () => {
-  it('repairs a persisted VC-model plus catalog-voice wedge', async () => {
+describe('narration voice', () => {
+  it('records the voice with the provider it was picked for', async () => {
     const store = await freshStore();
-    store.setState((state) => ({
-      ttsProviderId: 'qwen-tts',
-      ttsVoice: 'vendor-clone-id',
-      ttsProvidersConfig: {
-        ...state.ttsProvidersConfig,
-        'qwen-tts': {
-          ...state.ttsProvidersConfig['qwen-tts'],
-          modelId: 'qwen3-tts-vc-2026-01-22',
-        },
-      },
-    }));
-
-    store.getState().setTTSVoice('Cherry');
-    expect(store.getState().ttsVoice).toBe('Cherry');
-    expect(store.getState().ttsProvidersConfig['qwen-tts']?.modelId).toBe('qwen3-tts-flash');
-  });
-
-  it('does not pin the provider model when selecting a clone voice', async () => {
-    const store = await freshStore();
-    store.setState((state) => ({
-      ttsProviderId: 'qwen-tts',
-      ttsProvidersConfig: {
-        ...state.ttsProvidersConfig,
-        'qwen-tts': {
-          ...state.ttsProvidersConfig['qwen-tts'],
-          modelId: 'qwen3-tts-flash',
-        },
-      },
-    }));
-
-    store.getState().setTTSVoice('vendor-clone-id');
-    expect(store.getState().ttsProvidersConfig['qwen-tts']?.modelId).toBe('qwen3-tts-flash');
+    store.getState().setTTSVoice('Cherry', 'qwen-tts');
+    expect(store.getState()).toMatchObject({ ttsVoice: 'Cherry', ttsVoiceProviderId: 'qwen-tts' });
+    await vi.waitFor(async () => {
+      expect(await readPersistedState()).toMatchObject({
+        ttsVoice: 'Cherry',
+        ttsVoiceProviderId: 'qwen-tts',
+      });
+    });
   });
 });

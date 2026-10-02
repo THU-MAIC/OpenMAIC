@@ -1,0 +1,135 @@
+/**
+ * The `sharedTeam` built-in: one deployment-wide owner, for single-tenant
+ * installations.
+ *
+ * Course documents, folders, materials and agent sessions are partitioned by an
+ * owner id. Without a host auth layer that id comes from a renewed 400-day anonymous
+ * cookie (`./anonymous-cookie.ts`), which means one physical browser is one learner: a
+ * second browser sees an empty course list, a cleared cookie looks like a new
+ * installation, and `POST /api/stages/[id]/publish` refuses every owner because
+ * an anonymous principal does not hold the `course:publish` role.
+ *
+ * For one team behind one `ACCESS_CODE` that partitioning buys nothing — those
+ * visitors already share the site password and can read each other's courses by
+ * id (`SECURITY.md` says as much about `ACCESS_CODE`). `PERSISTENCE_SHARED_OWNER_ID`
+ * replaces the cookie-derived id with that fixed value, so the deployment has
+ * one course library, and publishing works: the shared principal holds
+ * `course:publish`.
+ *
+ * It **requires** `ACCESS_CODE`, and refuses to run without one: see the note
+ * in {@link resolveSharedOwnerId}. It is also not a substitute for server
+ * persistence — Postgres answers where courses live, this answers who owns
+ * them, and a multi-user or multi-instance deployment still wants the former.
+ *
+ * Unset — the default — changes nothing: every request keeps resolving to its
+ * cookie partition.
+ *
+ * It is a method like any other (`./registry.ts`): with no host registration,
+ * setting the variable makes it the only method; a host that registers its
+ * own methods and wants the team owner too includes {@link sharedTeamAuthMethod}
+ * last in its list. It has no credential, so it always authenticates: nothing
+ * after it is ever asked, including the anonymous fallback.
+ */
+
+import type { OwnerAuthMethod, OwnerAuthMethodResult, OwnerPrincipal } from './types';
+import { OWNER_ROLES } from './types';
+
+const SHARED_OWNER_ENV = 'PERSISTENCE_SHARED_OWNER_ID';
+
+/**
+ * The value becomes an owner id and part of material object keys, so it is
+ * restricted to characters that survive that path unchanged. `:` is excluded,
+ * which also rules out the `anon:` namespace of the anonymous cookie
+ * method — an id there would alias onto a cookie owner.
+ */
+const SHARED_OWNER_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+
+/**
+ * The configured shared owner id, or `undefined` when the deployment has none.
+ *
+ * Read from the environment on each call so a value changed for a test is
+ * observed without a module reload, matching `allowLocalNetworksEnabled()` in
+ * `lib/server/ssrf-guard.ts`.
+ *
+ * An empty or whitespace-only value is treated as unset rather than rejected:
+ * a blank variable is how `KEY=` in an env file reads, and it cannot be told
+ * apart from an operator who meant to leave the feature off. Any other
+ * malformed value throws instead of being ignored — silently falling back to
+ * cookie owners would reproduce exactly the confusing behaviour this setting
+ * exists to remove. `instrumentation.ts` calls this at startup so the mistake
+ * fails a deployment rather than every request that follows.
+ */
+export function resolveSharedOwnerId(): string | undefined {
+  const raw = process.env[SHARED_OWNER_ENV]?.trim();
+  if (!raw) return undefined;
+  if (!SHARED_OWNER_PATTERN.test(raw)) {
+    throw new Error(
+      `${SHARED_OWNER_ENV} must be 1-128 characters of [A-Za-z0-9._-], got ${JSON.stringify(raw)}. ` +
+        'It becomes the owner id for every request and part of material object keys, so it ' +
+        'cannot use the reserved "anon:" prefix or a character the key sanitiser would rewrite.',
+    );
+  }
+  // The gate this assumes is the middleware's: with `ACCESS_CODE` unset it lets
+  // every request through, and resolving them all to one owner would hand a
+  // single readable, editable, publishable course library to whoever asks. That
+  // is a far worse deployment than the per-browser partitioning this setting
+  // exists to remove, so it is refused rather than warned about — the operator
+  // either wants an access code or did not mean to set this.
+  if (!process.env.ACCESS_CODE) {
+    throw new Error(
+      `${SHARED_OWNER_ENV} requires ACCESS_CODE. Without an access code the middleware lets ` +
+        'every request through, so a single shared owner would expose one course library to ' +
+        `anyone who can reach the deployment. Set ACCESS_CODE, or unset ${SHARED_OWNER_ENV}.`,
+    );
+  }
+  return raw;
+}
+
+const SHARED_ROLES: ReadonlySet<string> = new Set<string>([OWNER_ROLES.coursePublish]);
+
+const SHARED_TEAM_METHOD = Symbol.for('openmaic.owner-identity.shared-team-method');
+
+/** Whether `method` is the built-in from {@link sharedTeamAuthMethod}. */
+export function isSharedTeamAuthMethod(method: OwnerAuthMethod): boolean {
+  return (method as { [SHARED_TEAM_METHOD]?: true })[SHARED_TEAM_METHOD] === true;
+}
+
+function sharedOwnerIdOrThrow(): string {
+  const ownerId = resolveSharedOwnerId();
+  // Boot validation refuses a registration that includes this method without
+  // the variable; reaching here means it was unset after boot.
+  if (!ownerId) throw new Error(`sharedTeam is registered but ${SHARED_OWNER_ENV} is not set.`);
+  return ownerId;
+}
+
+/**
+ * The `sharedTeam` method: every request resolves to the validated
+ * `PERSISTENCE_SHARED_OWNER_ID` (see {@link resolveSharedOwnerId}) with
+ * `kind: 'shared'` and the `course:publish` role, and no cookie is minted —
+ * there is nothing to remember per browser. The access-code middleware in
+ * front of it is what admits a request; the method has no credential of its
+ * own, so `assurance` is `unverified-legacy`, it never answers
+ * `not-applicable`, and core never attaches a claim candidate to its
+ * principal (nothing in the request proves which person is behind it).
+ *
+ * The id is read from the environment per call, like the variable itself.
+ */
+export function sharedTeamAuthMethod(): OwnerAuthMethod {
+  const authenticate = async (): Promise<OwnerAuthMethodResult> => ({
+    status: 'authenticated',
+    principal: {
+      ownerId: sharedOwnerIdOrThrow(),
+      kind: 'shared',
+      roles: SHARED_ROLES,
+      assurance: 'unverified-legacy',
+    } satisfies OwnerPrincipal,
+  });
+  return {
+    [SHARED_TEAM_METHOD]: true,
+    name: 'sharedTeam',
+    authenticate,
+    authenticateFromContext: authenticate,
+    describeStoredOwner: (storedId) =>
+      storedId === resolveSharedOwnerId() ? { kind: 'shared', roles: SHARED_ROLES } : undefined,
+  } as OwnerAuthMethod;
+}

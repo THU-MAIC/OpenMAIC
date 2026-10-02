@@ -20,7 +20,6 @@ import {
 } from '@/lib/types/chat';
 import {
   loadChatSessions,
-  restoreChatSessionsFromBackup,
   saveChatSessions,
   type ChatStorageSnapshot,
 } from '@/lib/utils/chat-storage';
@@ -29,21 +28,6 @@ import { buildChatRecordInit, runtimeSessionId, statePayload } from '@/lib/utils
 if (!('IDBKeyRange' in globalThis)) {
   Object.defineProperty(globalThis, 'IDBKeyRange', { value: IDBKeyRange, configurable: true });
 }
-
-vi.mock('@/lib/utils/database', () => ({
-  db: {
-    chatSessions: {
-      where: vi.fn(() => ({
-        equals: vi.fn(() => ({
-          delete: vi.fn().mockResolvedValue(0),
-          sortBy: vi.fn().mockResolvedValue([]),
-        })),
-      })),
-      bulkPut: vi.fn().mockResolvedValue(undefined),
-    },
-    transaction: vi.fn(async (_mode: string, _table: unknown, work: () => Promise<void>) => work()),
-  },
-}));
 
 const STAGE_ID = 'stage-chat';
 const LEARNER_KEY = 'anon:chat-test';
@@ -1879,86 +1863,6 @@ describe('chat RuntimeStore cutover', () => {
         updatedAt: runtimeUpdatedAt + 24 * 60 * 60 * 1_000,
       },
     ]);
-  });
-
-  it('preserves post-cutover timestamps while restoring legacy backup rows', async () => {
-    const store = makeRuntimeStore();
-    const legacyStore = new MemoryLegacyChatStore();
-    const restoredAt = Date.UTC(2027, 0, 1);
-
-    await restoreChatSessionsFromBackup(
-      [STAGE_ID],
-      async () => {
-        legacyStore.sessions = [session({ status: 'completed', updatedAt: restoredAt })];
-      },
-      { store, learnerKey: LEARNER_KEY, legacyStore },
-    );
-
-    await expect(
-      loadChatSessions(STAGE_ID, { store, learnerKey: LEARNER_KEY, legacyStore }),
-    ).resolves.toMatchObject([{ updatedAt: restoredAt }]);
-  });
-
-  it('fails backup restore loudly before deleting runtime data when a row is malformed', async () => {
-    const store = makeRuntimeStore();
-    const legacyStore = new MemoryLegacyChatStore();
-    const original = session({ title: 'Runtime before restore', status: 'completed' });
-    await saveChatSessions(STAGE_ID, [original], {
-      store,
-      learnerKey: LEARNER_KEY,
-      legacyStore,
-    });
-    const rollbackLegacyRows = vi.fn().mockResolvedValue(undefined);
-
-    await expect(
-      restoreChatSessionsFromBackup(
-        [STAGE_ID],
-        async () => {
-          legacyStore.sessions = [
-            { ...session({ id: 'invalid-backup-row' }), messages: null } as unknown as ChatSession,
-          ];
-        },
-        { store, learnerKey: LEARNER_KEY, legacyStore, rollbackLegacyRows },
-      ),
-    ).rejects.toThrow(/invalid-backup-row/);
-
-    expect(rollbackLegacyRows).toHaveBeenCalledOnce();
-    await expect(
-      loadChatSessions(STAGE_ID, {
-        store,
-        learnerKey: LEARNER_KEY,
-        legacyStore: new MemoryLegacyChatStore(),
-      }),
-    ).resolves.toMatchObject([{ title: 'Runtime before restore' }]);
-  });
-
-  it('keeps a restore marker visible after the learner partition is merged', async () => {
-    const store = makeRuntimeStore();
-    const legacyStore = new MemoryLegacyChatStore();
-    await saveChatSessions(STAGE_ID, [session()], {
-      store,
-      learnerKey: LEARNER_KEY,
-      legacyStore,
-    });
-    await restoreChatSessionsFromBackup([STAGE_ID], async () => {}, {
-      store,
-      learnerKey: LEARNER_KEY,
-      legacyStore,
-    });
-
-    const accountLearnerKey = 'user:restored-chat-test';
-    await store.mergeLearner(LEARNER_KEY, accountLearnerKey);
-    let snapshot: ChatStorageSnapshot | undefined;
-    await loadChatSessions(STAGE_ID, {
-      store,
-      learnerKey: accountLearnerKey,
-      legacyStore,
-      onSnapshot: (loaded) => {
-        snapshot = loaded;
-      },
-    });
-
-    expect(snapshot?.restoreMarker).toMatch(/^chat-restore-marker:/);
   });
 
   it('retains migrated observations when clearing legacy rows fails', async () => {

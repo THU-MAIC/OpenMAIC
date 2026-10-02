@@ -9,6 +9,9 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { mediaFetchFor } from '../media-fetch';
+import { connectivityHttpFailure, connectivityTransportFailure } from '../probe-auth';
+import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
 const DEFAULT_BASE_URL = 'http://localhost:13305/v1';
@@ -31,21 +34,21 @@ export async function testLemonadeImageConnectivity(
 ): Promise<{ success: boolean; message: string }> {
   const baseUrl = normalizeBaseUrl(config.baseUrl);
 
+  let response: Response;
   try {
-    const response = await fetch(`${baseUrl}/models`, {
+    response = await mediaFetchFor(config)(`${baseUrl}/models`, {
       redirect: 'manual',
       headers: authHeaders(config.apiKey),
     });
-
-    if (response.ok) {
-      return { success: true, message: 'Connected to Lemonade image generation' };
-    }
-
-    const text = await response.text().catch(() => response.statusText);
-    return { success: false, message: `Lemonade API error (${response.status}): ${text}` };
   } catch (err) {
-    return { success: false, message: `Lemonade connectivity error: ${err}` };
+    return connectivityTransportFailure('Lemonade', err);
   }
+  await response.body?.cancel().catch(() => undefined);
+
+  if (response.ok) {
+    return { success: true, message: 'Connected to Lemonade image generation' };
+  }
+  return connectivityHttpFailure('Lemonade', response.status);
 }
 
 export async function generateWithLemonadeImage(
@@ -56,8 +59,9 @@ export async function generateWithLemonadeImage(
   const width = options.width || 1024;
   const height = options.height || 1024;
 
-  const response = await fetch(`${baseUrl}/images/generations`, {
+  const response = await mediaFetchFor(config)(`${baseUrl}/images/generations`, {
     method: 'POST',
+    redirect: 'manual',
     headers: {
       'Content-Type': 'application/json',
       ...authHeaders(config.apiKey),
@@ -70,6 +74,8 @@ export async function generateWithLemonadeImage(
       response_format: 'b64_json',
     }),
   });
+
+  assertNotRedirected(response, 'Lemonade Image');
 
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText);

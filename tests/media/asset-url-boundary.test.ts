@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const SOURCE_ROOTS = ['app', 'components', 'lib', 'packages', 'scripts'];
@@ -9,7 +9,12 @@ const ALIASED_GET_POOL_IMPORT =
 const NAMESPACE_POOL_IMPORT =
   /import\s+\*\s+as\s+\w+\s+from\s*['"](?:@\/lib\/media\/asset-pool|(?:\.\.?\/)+(?:[\w.-]+\/)*asset-pool(?:\.[cm]?[jt]s)?)['"]/;
 const FORBIDDEN = [
-  { pattern: /\bnew\s+BrowserAssetStore\s*\(/, allowed: new Set(['lib/media/asset-pool.ts']) },
+  // The app pool is the server-backed store the bootstrap configures; the only
+  // browser store left is the read-only reader of pre-server data.
+  {
+    pattern: /\bnew\s+BrowserAssetStore\s*\(/,
+    allowed: new Set(['lib/legacy-browser-storage/index.ts']),
+  },
   {
     pattern: /\bgetAssetPool\s*\(/,
     allowed: new Set(['lib/media/asset-pool.ts', 'lib/media/use-asset-url.ts']),
@@ -51,7 +56,7 @@ describe('asset URL ownership boundary', () => {
   it('keeps pool URL resolution and release inside the shared owner module', () => {
     const cwd = process.cwd();
     const sources = SOURCE_ROOTS.flatMap((root) => sourceFiles(join(cwd, root))).map((path) => ({
-      path: relative(cwd, path),
+      path: relative(cwd, path).split(sep).join('/'),
       source: readFileSync(path, 'utf8'),
     }));
     // Best-effort static guard: dynamic import(), require aliases, and computed

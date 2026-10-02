@@ -27,7 +27,15 @@ import {
 import type { ImageProviderId } from '@/lib/media/types';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
-import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
+import { withMediaProviderFetch } from '@/lib/server/media-provider-fetch';
+import {
+  savedMediaConnection,
+  savedProviderRef,
+  savedProviderResponse,
+} from '@/lib/server/model-config/saved-provider';
+import { requestProvidersAllowed } from '@/lib/server/model-config/runtime';
+import { REQUEST_PROVIDERS_REFUSED } from '@/lib/server/resolve-model';
 
 const log = createLogger('VerifyImageProvider');
 
@@ -38,6 +46,41 @@ export const maxDuration = 30;
 
 export async function POST(request: NextRequest) {
   try {
+    // The settings test a saved provider by its id (JSON body `provider`, with
+    // an optional `model`): the server's configuration supplies key and endpoint.
+    const body = request.headers.get('content-type')?.includes('application/json')
+      ? ((await request.json().catch(() => null)) as { provider?: unknown; model?: unknown } | null)
+      : null;
+    if (body?.provider !== undefined) {
+      let connection;
+      try {
+        const ref = savedProviderRef(body.provider, body.model);
+        if (!ref) return apiError('MISSING_PROVIDER', 400, 'No image provider named');
+        connection = await savedMediaConnection(request, 'image', ref);
+      } catch (error) {
+        const refused = savedProviderResponse(error, 'image');
+        if (refused) return refused;
+        throw error;
+      }
+      const providerId = connection.providerId as ImageProviderId;
+      const model = connection.modelId ?? IMAGE_PROVIDERS[providerId]?.models?.[0]?.id;
+      const result = await testImageConnectivity(
+        withMediaProviderFetch(
+          { providerId, apiKey: connection.apiKey ?? '', baseUrl: connection.baseUrl, model },
+          connection.managed,
+        ),
+      );
+      if (!result.success) return apiError('UPSTREAM_ERROR', 500, result.message);
+      return apiSuccess({ message: result.message });
+    }
+
+    // The old header form tests a provider the request names: not under
+    // `policy.allowWorkspaceProviders: false`, which leaves only the
+    // configuration's providers (tested by id above).
+    if (!requestProvidersAllowed()) {
+      return apiError('PROVIDER_DISABLED', 403, REQUEST_PROVIDERS_REFUSED);
+    }
+
     const providerId = (request.headers.get('x-image-provider')?.trim() ||
       resolveServerImageProviderId()) as ImageProviderId;
     if (!providerId) {
@@ -55,7 +98,7 @@ export async function POST(request: NextRequest) {
     const clientBaseUrl = managed ? undefined : request.headers.get('x-base-url') || undefined;
 
     if (clientBaseUrl) {
-      const ssrfError = await validateUrlForSSRF(clientBaseUrl);
+      const ssrfError = await validateClientBaseUrl(clientBaseUrl);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }
@@ -80,12 +123,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await testImageConnectivity({
-      providerId,
-      apiKey,
-      baseUrl,
-      model,
-    });
+    // Every probe request runs on the pinned provider transport; the adapters'
+    // result messages are fixed text (no provider body, no transport detail).
+    const result = await testImageConnectivity(
+      withMediaProviderFetch({ providerId, apiKey, baseUrl, model }, managed),
+    );
 
     if (!result.success) {
       return apiError('UPSTREAM_ERROR', 500, result.message);
@@ -94,6 +136,6 @@ export async function POST(request: NextRequest) {
     return apiSuccess({ message: result.message });
   } catch (err) {
     log.error(`Image provider verification failed: ${err}`, err);
-    return apiError('INTERNAL_ERROR', 500, `Connectivity test error: ${err}`);
+    return apiError('INTERNAL_ERROR', 500, 'Connectivity test error');
   }
 }

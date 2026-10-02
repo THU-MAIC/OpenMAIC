@@ -1,13 +1,474 @@
 ---
 title: Configuration
-description: LLM providers, media generation, document parsing, TTS, ASR, access control, and feature flags.
+description: Models and providers (openmaic.yml and the model settings), access control, feature flags and other server options.
 ---
 
-OpenMAIC reads environment variables when the server starts. Every setting is optional—enable only what you need. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) in the repository for environment variable examples. See [Supported models](./supported-models.mdx) for built-in model IDs.
+OpenMAIC has three configuration sources, and each has one job:
 
-In addition to environment variables, you can configure server-side providers registered in the code through `server-providers.yml` in the project root. Environment variables override matching YAML fields one by one. Custom OpenAI-compatible providers can only be added in Settings; they cannot be registered with arbitrary environment variable prefixes or unknown YAML provider IDs.
+| Source | Written by | Holds | Takes effect |
+| --- | --- | --- | --- |
+| `openmaic.yml` | The operator | Providers, slot assignments and policy for AI models | At startup (restart to apply) |
+| Model settings in the web app | Users of a workspace | The providers and assignments `openmaic.yml` leaves open, stored in the database | Immediately |
+| Environment variables (`.env.local`, a container secret) | The operator | Secrets that `openmaic.yml` references, and every other server option | At startup |
 
-## LLM providers
+Every environment variable is optional except `DATABASE_URL` (see [Deployment](./deployment.mdx)). See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for all of them, [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) for a model configuration to start from, and [Supported models](./supported-models.mdx) for preset and model IDs.
+
+Earlier releases configured models only through provider environment variables, `server-providers.yml`, `DEFAULT_MODEL` and `MODEL_ROUTES`. Those still work for now, with the exception of `MODEL_ROUTES`, and are deprecated; see [Migrating from the legacy configuration](#migrating-from-the-legacy-configuration).
+
+## Models and providers
+
+### Concepts
+
+- **Provider**: an account the server can call, such as an OpenAI key, a MiniMax token plan or a self-hosted OpenAI-compatible server. Each provider has an id you choose and a **preset** that says which vendor it is and which capabilities it covers.
+- **Slot**: a use of AI in the product, such as the course outline, slide content, text to speech or web search. Slots form one tree per capability; a slot without an assignment follows its parent.
+- **Assignment**: which provider and model a slot uses (`provider:model`), optionally with call parameters and a fallback model, or `null` to turn the slot off.
+
+A capability is available exactly when its slot resolves to an assignment. There are no separate on/off switches.
+
+### openmaic.yml
+
+The server reads `openmaic.yml` from the directory it starts in (the repository root; `/app` in the Docker image). Set `OPENMAIC_CONFIG` to use another path; a relative path is resolved against the same directory, and the file must then exist. Without the file, the server uses the web settings and, while they are still set, the [legacy variables](#migrating-from-the-legacy-configuration).
+
+The file is read once at startup: restart the server after changing it. It is validated completely before the server starts. An unset `${VAR}`, an unknown preset or slot, a reference to a provider that is not declared, or a provider that does not offer a slot's capability stops the server, and each problem is listed with its location:
+
+```text
+[boot] Invalid server configuration; the server will not start: Invalid model configuration in /app/openmaic.yml:
+  - providers.openai.apiKey: environment variable OPENAI_API_KEY is not set
+  - slots.course.outlines: unknown slot
+```
+
+Keep secrets out of the file itself: reference them as `${VAR}` and set the variable in the environment. Values that came from a variable are never printed in these messages.
+
+### A complete example
+
+```yaml title="openmaic.yml"
+providers:
+  # <provider id>: lowercase letters, digits and dashes
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}      # read from the environment at startup
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+  openai-image:                    # the same key, used for images
+    preset: openai-image
+    apiKey: ${OPENAI_API_KEY}
+  minimax:                         # a token plan: chat, image, video, TTS, search
+    preset: minimax
+    apiKey: ${MINIMAX_API_KEY}
+  tavily:
+    preset: tavily
+    apiKey: ${TAVILY_API_KEY}
+  local:                           # any OpenAI-compatible server
+    preset: openai-compatible
+    baseUrl: http://ollama:11434/v1
+    models: [qwen3:8b]
+
+slots:
+  llm: openai:gpt-5.5              # default for every chat slot below
+  course.outline:
+    model: anthropic:claude-sonnet-4-6
+    fallback: openai:gpt-5.4-mini  # tried once on a retryable failure
+  course.content.slide:
+    model: minimax:MiniMax-M3
+    thinking: { enabled: false }
+    fallback: minimax:MiniMax-M2.7
+  classroom: local:qwen3:8b        # the model id may contain colons
+  agent:
+    model: openai:gpt-5.5          # needs tool calling
+    api: openai-completions
+  tts: minimax:speech-2.8-turbo
+  image: openai-image:gpt-image-2
+  webSearch: tavily                # provider only: its default model
+  video: null                      # off, and locked off
+
+policy:
+  allowWorkspaceProviders: false   # users cannot add providers of their own
+```
+
+With this file, every slot listed is fixed for all users. A chat slot it leaves out, such as `course.agents`, follows its parent (`llm`); a capability root it leaves out, such as `asr` or `document`, stays unconfigured. Users can assign either in the model settings, choosing among the declared providers.
+
+### Providers
+
+Each entry under `providers` declares one provider. The key is its id, which slots use in references: 1 to 63 lowercase letters, digits and dashes, starting with a letter or digit.
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `preset` | Yes | Which built-in preset this provider uses. See [Supported models → Presets](./supported-models.mdx#presets). |
+| `apiKey` | Usually | The API key. Keyless services (local servers, Brave, SearXNG, unpdf) omit it. |
+| `baseUrl` | Some presets | Endpoint to call instead of the preset's own. Required for `openai-compatible`, `azure`, `searxng` and `mineru`. |
+| `models` | No | Model ids this provider offers for chat, as the model settings list them. For `openai-compatible` it is the only list the settings have. It does not restrict what `slots` may name. |
+| `proxy` | No | HTTP proxy URL for this provider's requests. |
+| `credentials` | Some presets | Key pairs for services that do not use one key. AliDocMind takes `accessKeyId` and `accessKeySecret`. |
+| `options` | No | Non-secret, provider-specific settings, such as `backend` for `voxcpm-tts`. Names are letters, digits, `_` and `-`; values are strings, numbers or booleans (no nested maps or lists), and `${VAR}` works. The model settings show options, so never put a key in them. Deployment only: the model settings cannot set them. |
+
+Most presets cover one capability, following the built-in registries: the `openai` preset is chat only, and OpenAI images and speech are the `openai-image`, `openai-tts` and `openai-whisper` presets. Declare one provider per capability, and reference the same `${VAR}` when one key covers several. **Token plan presets** (`minimax`, `tokendance`, `volcengine-ark`, `kimi-coding-plan`) cover several capabilities with one key, each at the plan's own endpoint. A `baseUrl` on a provider replaces the endpoint for every capability that provider covers, so give a token plan a `baseUrl` only when all of its capabilities move with it.
+
+Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain of the server (environment, profile or role) and reads the region from `BEDROCK_REGION`, `AWS_REGION` or `AWS_DEFAULT_REGION`; `apiKey` is an optional bearer token.
+
+### Slots
+
+| Slot | Capability | Parent | What it drives |
+| --- | --- | --- | --- |
+| `llm` | chat | — | The default chat model: every chat call no slot below covers, including the steps of the browserless `/api/generate-classroom` API that have no slot of their own |
+| `course.research` | chat | `llm` | Rewriting the web search query while researching a course |
+| `course.outline` | chat | `llm` | Scene outlines |
+| `course.agents` | chat | `llm` | Teacher and classmate agent profiles |
+| `course.content` | chat | `llm` | Scene content, for scene types without a slot of their own |
+| `course.content.slide` | chat | `course.content` | Slide scenes |
+| `course.content.quiz` | chat | `course.content` | Quiz scenes |
+| `course.content.interactive` | chat | `course.content` | Interactive scenes |
+| `course.content.pbl` | chat | `course.content` | Project-based learning scenes |
+| `course.actions` | chat | `llm` | Scene actions (what the agents say and do on each scene) |
+| `classroom` | chat | `llm` | Classroom chat, quiz grading and the project-based learning runtime |
+| `agent` | chat | `llm` | The Pro workbench agent. **Requires tool calling.** Also accepts `api` and `contextWindow` |
+| `agent.title` | chat | `agent` | Pro session titles. Configurable in `openmaic.yml` only; the model settings do not show it |
+| `tts` | tts | — | Text to speech |
+| `asr` | asr | — | Speech recognition (voice input, audio and video transcripts) |
+| `image` | image | — | Image generation |
+| `video` | video | — | Video generation |
+| `webSearch` | webSearch | — | Web search |
+| `document` | document | — | The document parsing service (MinerU, MinerU Cloud, AliDocMind). The built-in PDF text extraction needs no service |
+
+How a slot resolves:
+
+- Resolution starts at the slot of the call and walks up to its capability root. The first assignment found wins, so a parent's assignment is the default for its whole subtree. Changing a parent changes every child without its own assignment.
+- At each slot, `openmaic.yml` is consulted before the workspace's model settings.
+- `null` stops the walk: the slot and every slot below it that has no assignment of its own are off.
+- Reaching the root without an assignment leaves the capability unconfigured. Calls fail with an error that names the slot; there is no fallback to any vendor.
+- Requirements belong to the slot that declares them and are checked against the model it resolves to, assigned or inherited. `agent` requires tool calling; if the built-in catalogue says its model lacks it, the agent refuses to run instead of making do. A model the catalogue does not know is allowed. `agent.title` has no requirement, so it can use a smaller model.
+
+### Assignments
+
+An assignment has one of four forms:
+
+```yaml
+slots:
+  llm: openai:gpt-5.5            # provider:model
+  webSearch: tavily              # provider only: the provider's default model
+  course.outline:                # an object with parameters
+    model: openai:gpt-5.5
+    fallback: anthropic:claude-sonnet-4-6
+    thinking: { effort: low }
+  video: null                    # off
+```
+
+The object form accepts:
+
+| Field | Meaning |
+| --- | --- |
+| `model` | Required. `provider:model`, or `provider` alone outside chat slots. |
+| `fallback` | A model to retry on once, in the same form. Language-model slots only; see [Fallbacks](#fallbacks). |
+| `thinking` | Reasoning parameters for chat models: `enabled` (true/false), `mode` (`default`, `disabled`, `enabled`, `auto`), `effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`), `level` (`minimal`, `low`, `medium`, `high`), `budgetTokens`, `excludeReasoningOutput`. Each provider adapter applies what its API supports. |
+| `api` | `agent` only: the transport dialect, `openai-completions` (the default) or `openai-responses`. |
+| `contextWindow` | `agent` only: the context window to assume for compaction, when it should be lower than the catalogue's. |
+
+The `agent` slot must not set `thinking.effort`: its tool-calling transport cannot combine reasoning effort with function tools.
+
+### Provider-only references
+
+A reference without `:model` means the provider's default model: the model a token plan recommends for that capability, else the default of the built-in registry. Search and document services mostly have no model to pick, so `webSearch: tavily` or `document: mineru-cloud` is the usual form. Chat slots always name a model; `llm: openai` is refused at startup.
+
+### Fallbacks
+
+Fallbacks apply to language-model slots: `llm` and every slot below it. A `fallback` on a `tts`, `asr`, `image`, `video`, `webSearch` or `document` slot is refused, at startup for `openmaic.yml` and on save in the model settings.
+
+A slot's `fallback` is tried once when a call on the primary model fails after its own retries with a retryable failure: a transient SDK error, a timeout, a network error, quota exhaustion (429), capacity (503), or empty output. Content-safety refusals and other 4xx errors never fall back. The fallback applies to both regular and streaming calls and uses the slot's `thinking` parameters.
+
+The fallback belongs to the assignment and is inherited with it: `course.content.slide` without an assignment of its own uses the model and the fallback of `course.content`. A slot with a requirement does not retry on a fallback that fails it.
+
+### Turning a capability off
+
+Write `null` on its slot. `video: null` turns video generation off for every workspace and locks it off; `course.content.pbl: null` turns off project-based learning scene generation while the rest of `course.content` keeps working. A call on a slot that is off fails immediately, and the media routes answer `403` instead of choosing another vendor.
+
+### Locks and the model settings
+
+Everything written under `slots` in `openmaic.yml` is **locked**: the model settings mark it **Set by the server** and cannot change it. Only the slots that are written are locked. A workspace can still assign a child of a locked slot, which overrides the locked value for that child's subtree. To fix a whole subtree, write each of its slots.
+
+The model settings in the web app read and edit the same tree for the current workspace:
+
+- **Token Plan**: connecting a plan adds its provider with the key and fills the slots the plan recommends that are still unassigned. Disconnecting removes the provider; the slots that used it follow their parents again.
+- **Model Services**: one tab per capability (language models, images, video, text to speech, speech recognition, document parsing, web search) lists its services. Providers from `openmaic.yml` are shown read-only and without anything about their keys. A service the workspace sets up becomes a workspace provider: its key is write-only and shown only as a mask such as `…abcd`, a custom endpoint is possible for language models only (Azure Speech takes its official regional endpoint, such as `https://<region>.tts.speech.microsoft.com`), and self-hosted services and key pairs are configured in `openmaic.yml`. The test buttons check the saved provider on the server.
+- **Course Model Config**: the main model is the `llm` slot and each pipeline stage is its own slot (following the main model means the stage has no assignment of its own); the image, video, speech, search and transcription switches set their slot to `null`. Slots written in `openmaic.yml` are shown but cannot be changed there.
+
+Provider settings that a browser stored in earlier versions (providers with their keys and base URLs, the chosen model, token plan enrollment and each capability's selection) are imported into the workspace once. The import never replaces an existing workspace setting or a slot `openmaic.yml` locks, and it skips items that the policy or validation refuses. After a 2xx answer, only what the workspace now holds leaves the browser: every item the server skipped (a custom endpoint for a media service, a preset a workspace may not use, a provider id the deployment declares, ...) is kept in this browser with its key, never sent again, announced once, and listed in Settings → Model Services with the reason until it is set up again or discarded. An Azure Speech provider with its regional endpoint is imported. A 400 refuses the whole proposal: it is not sent again, and its items are kept in this browser with their keys and listed like the skipped ones. An unreadable proposal is dropped. The proposal stays in the browser for a later attempt only on 401, 404, 409, a 5xx or a network error. Speech input that was explicitly switched off becomes `asr: null`, and narration, images or video switched off while a usable provider for them was set up become `tts: null`, `image: null` or `video: null` (a slot `openmaic.yml` locks is left as it is). These have to be set up again by hand: per-stage models (in Course Model Config, or `slots` in `openmaic.yml`), thinking settings (`thinking` on a slot), custom speech and transcription providers and AliDocMind's key pair (in `openmaic.yml`; they are kept in the browser and listed with the skipped items), the VoxCPM backend (`options.backend`), and Baidu search sub-sources (the server's defaults apply). Research switched off is not carried over (it only stopped course research; chat and the agent kept searching), nor is a switch that was off only by default: each capability now runs whenever its slot resolves.
+
+A workspace is an owner in the sense of the [persistence documentation](./deployment.mdx#server-side-persistence-postgresql): with the default Docker Compose setup (single-user mode) there is one workspace, and in a multi-user deployment each signed-in account has its own.
+
+### Policy
+
+```yaml
+policy:
+  allowWorkspaceProviders: false
+```
+
+`allowWorkspaceProviders` (default `true`) decides whether workspaces may add providers of their own. With `false`, users only choose among the providers `openmaic.yml` declares, for the slots it leaves open. Requests that still name their own model, key or endpoint (the deprecated `x-model`, `x-api-key` and `x-base-url` headers, and the provider fields of the media routes) are ignored then, and the header form of the provider test buttons is refused. A multi-user deployment that pays for all usage typically sets it and locks the slots it wants fixed.
+
+### Secrets and OPENMAIC_SECRET_KEY
+
+- Keys in `openmaic.yml` come from the environment through `${VAR}`. They are never stored in the database and never sent to the browser.
+- Keys a workspace enters in the model settings are stored in the database, encrypted with AES-256-GCM under the instance secret `OPENMAIC_SECRET_KEY`.
+- When `OPENMAIC_SECRET_KEY` is unset, the server creates a random secret on first use in `data/instance-secret.key` (inside the `openmaic-data` volume with Docker Compose) and uses it from then on.
+
+Keep the secret with the database backups: keys saved under a lost or changed secret cannot be read and have to be entered again (the model settings mark them). Set `OPENMAIC_SECRET_KEY` explicitly when more than one instance shares the database, or on hosts without a persistent data directory such as Vercel; any string works, for example the output of `openssl rand -base64 32`.
+
+Without it, a data directory that does not survive a restart (a container without a volume, an ephemeral disk) means a new secret on every start, and several replicas each generate their own; on a read-only working directory no secret can be created and saving a key in the model settings fails. At startup the server warns when `OPENMAIC_SECRET_KEY` is unset and the data directory is not writable, and when the database holds keys sealed under a different secret than the current one (for example because `data/instance-secret.key` was lost); it starts anyway.
+
+```bash
+OPENMAIC_SECRET_KEY=...        # instance secret for keys saved in the model settings
+OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # optional: another path for openmaic.yml
+```
+
+### What workspaces may add
+
+Providers from `openmaic.yml` can be anything the schema accepts. Providers a workspace adds in the model settings are more restricted, because their endpoint and key are typed by a user of the web app:
+
+- Amazon Bedrock is not offered: it would sign with the server's own AWS credentials.
+- No `proxy`, and no key pairs (`credentials`): presets that authenticate with a key pair, such as AliDocMind, are deployment-only.
+- A custom `baseUrl` is allowed only for presets that offer chat, and a provider with one serves chat slots only. The URL must not contain credentials, a query string or a fragment, and must resolve to a public address unless the server sets `ALLOW_LOCAL_NETWORKS=true`. Requests to it do not follow redirects.
+- Local model servers (Ollama, Lemonade) must name their own endpoint rather than use the preset's `localhost` default.
+- Self-hosted media, search and document services (VoxCPM2, FunASR, Lemonade speech and images, ComfyUI, SearXNG, self-hosted MinerU) run on the server's own network and are deployment-only.
+- Providers the operator switched off with a legacy `<CAP>_<VENDOR>_ENABLED=false` variable are not offered.
+- A workspace cannot declare a provider id that `openmaic.yml` already declares.
+
+A deployment that wants users to reach internal services declares those providers in `openmaic.yml`.
+
+### API clients and deprecated request fields
+
+Generation requests no longer need to carry keys or model choices: browserless API calls such as `/api/generate-classroom` resolve through the same slots as the web app, for the workspace of the caller.
+
+The older request headers `x-model`, `x-api-key`, `x-base-url`, `x-provider-type`, `x-model-routes`, `x-image-provider`, `x-image-model`, `x-video-provider` and `x-video-model`, and the equivalent body fields of the speech, search and document routes, are deprecated. They are honoured only while the slot they would affect has no assignment in `openmaic.yml` or the workspace; once it has one, the configuration wins, and a slot set to `null` refuses the request whatever it names. Under `policy.allowWorkspaceProviders: false` they are ignored altogether. The server logs a warning the first time a request uses them. They will be removed two minor versions after the model settings described above ship.
+
+### Migrating from the legacy configuration
+
+When `openmaic.yml` is absent, the server translates the legacy configuration at startup and logs a deprecation notice, plus a notice for each entry that could not carry over:
+
+| Legacy setting | Becomes |
+| --- | --- |
+| Provider variables (`OPENAI_API_KEY`, `TTS_MINIMAX_API_KEY`, …) and `server-providers.yml` | Deployment providers (read-only in the model settings). The provider id is the preset id, which is the legacy provider id except for web search MiniMax (`minimax-search`), web search Doubao (`doubao-search`) and Lemonade images (`lemonade-image`) |
+| `<PREFIX>_MODELS` | The provider's `models` |
+| `DEFAULT_MODEL` | The `llm` assignment, as a default a workspace can override (not locked). The `agent` slot stays off, as before |
+| `MODEL_FALLBACK` | The fallback of `DEFAULT_MODEL`. Without `DEFAULT_MODEL` it is dropped with a notice |
+| The first configured TTS, ASR, image, video and document provider, and web search in the old priority order | The default assignment of that capability (`DEFAULT_IMAGE_PROVIDER` picks the image provider) |
+| `MODEL_ROUTES` | **Not translated.** The server refuses to start (see below) |
+| `<CAP>_<VENDOR>_ENABLED=false` | Still honoured: the provider stays off whatever assigns it |
+
+When `openmaic.yml` exists, the provider variables, `server-providers.yml`, `DEFAULT_MODEL`, `MODEL_FALLBACK` and `MODEL_ROUTES` are ignored for model resolution, with a notice. `<CAP>_<VENDOR>_ENABLED=false` still applies; to turn a capability off, set its slot to `null` instead.
+
+**Environment variables.** Before:
+
+```bash
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+DEFAULT_MODEL=openai:gpt-5.5
+MODEL_FALLBACK=anthropic:claude-sonnet-4-6
+TTS_MINIMAX_API_KEY=...
+TAVILY_API_KEY=tvly-...
+```
+
+After (the keys stay in the environment):
+
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+  minimax-tts:
+    preset: minimax-tts
+    apiKey: ${TTS_MINIMAX_API_KEY}
+  tavily:
+    preset: tavily
+    apiKey: ${TAVILY_API_KEY}
+
+slots:
+  llm:
+    model: openai:gpt-5.5
+    fallback: anthropic:claude-sonnet-4-6
+  tts: minimax-tts
+  webSearch: tavily
+```
+
+Remove `DEFAULT_MODEL` and `MODEL_FALLBACK` afterwards. The provider variables can stay as the source of the `${VAR}` references. Unlike the translated `DEFAULT_MODEL`, the `llm` written here is locked; leave it out of `slots` to let workspaces choose. And unlike the translation, `agent` now follows `llm`: write `agent: null` to keep the Pro agent off.
+
+**server-providers.yml.** Before:
+
+```yaml title="server-providers.yml"
+providers:
+  azure:
+    apiKey: ...
+    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
+    models: [my-deployment]
+pdf:
+  alidocmind:
+    accessKeyId: ...
+    accessKeySecret: ...
+web-search:
+  searxng:
+    baseUrl: http://searxng:8080
+```
+
+After:
+
+```yaml title="openmaic.yml"
+providers:
+  azure:
+    preset: azure
+    apiKey: ${AZURE_OPENAI_API_KEY}
+    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
+    models: [my-deployment]
+  alidocmind:
+    preset: alidocmind
+    credentials:
+      accessKeyId: ${ALIDOCMIND_ACCESS_KEY_ID}
+      accessKeySecret: ${ALIDOCMIND_ACCESS_KEY_SECRET}
+  searxng:
+    preset: searxng
+    baseUrl: http://searxng:8080
+
+slots:
+  llm: azure:my-deployment
+  document: alidocmind
+  webSearch: searxng
+```
+
+Each section of `server-providers.yml` becomes providers with the matching preset (`providers` → chat presets, `tts`, `asr`, `pdf` → document, `image`, `video`, `web-search`), and `accessKeyId`/`accessKeySecret` move under `credentials`.
+
+**MODEL_ROUTES.** A server that sets `MODEL_ROUTES` without `openmaic.yml` does not start:
+
+```text
+MODEL_ROUTES does not carry over to the model configuration: write the per-stage models as slots in openmaic.yml (or the file named by OPENMAIC_CONFIG) and remove MODEL_ROUTES
+```
+
+Per-stage routes do not map one to one onto slots, so they are not translated. Rewrite each route as the slot its stage belongs to:
+
+| `MODEL_ROUTES` stage | Slot |
+| --- | --- |
+| `web-search-query-rewrite` | `course.research` |
+| `scene-outlines-stream` | `course.outline` |
+| `agent-profiles` | `course.agents` |
+| `scene-content` | `course.content` |
+| `scene-content:slide`, `:quiz`, `:interactive`, `:pbl` | `course.content.slide`, `.quiz`, `.interactive`, `.pbl` |
+| `scene-actions` | `course.actions` |
+| `chat-adapter`, `quiz-grade`, `pbl-v2-runtime` and its `:instructor`, `:open-task`, `:evaluate`, `:simulator` variants | `classroom` |
+| `generate-classroom` | `llm` |
+| `maic-agent-driver` | `agent` |
+| `conversation-title` | `agent.title` |
+
+Several stages share a slot: give the slot the one model they should use. A route's `thinking` moves to the slot's `thinking`, and a `maic-agent-driver` route's `api` and `contextWindow` move to the `agent` slot. Before:
+
+```bash
+DEFAULT_MODEL=openai:gpt-5.5
+MODEL_ROUTES='{"scene-outlines-stream":"anthropic:claude-sonnet-4-6","scene-content:slide":{"model":"openai:gpt-5.4","thinking":{"effort":"low"}},"maic-agent-driver":{"model":"openai:gpt-5.5","api":"openai-completions"}}'
+```
+
+After:
+
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+
+slots:
+  llm: openai:gpt-5.5
+  course.outline: anthropic:claude-sonnet-4-6
+  course.content.slide:
+    model: openai:gpt-5.4
+    thinking: { effort: low }
+  agent:
+    model: openai:gpt-5.5
+    api: openai-completions
+```
+
+Then remove `MODEL_ROUTES`, `DEFAULT_MODEL` and `MODEL_FALLBACK`.
+
+**Docker.** Mount the file next to the app and keep the keys in `.env.local`:
+
+```yaml
+services:
+  openmaic:
+    volumes:
+      - ./openmaic.yml:/app/openmaic.yml:ro
+```
+
+## ACCESS_CODE — site-wide password
+
+For shared deployments such as internal demos or classrooms, set an access code so visitors must enter a password before they can see the app:
+
+```bash
+ACCESS_CODE=your-secret-code
+```
+
+Use a long random value (at least 16 characters) — this code is the only secret guarding the deployment. The code is remembered in a signed token stored in an HTTP-only cookie for 7 days; the lifetime is enforced server-side, so visitors re-verify after it expires. Verification is rate limited only when `TRUST_PROXY_HEADERS=true` is set behind a trusted proxy that overwrites `x-forwarded-for` / `x-real-ip`: each client gets 10 attempts per 60 seconds, and a successful verification clears that client's counter. Without a trusted proxy the app cannot attribute a request to a client, so there is no throttle; rely on the length and randomness of the code. Leave it empty to disable access control.
+
+## Feature flags
+
+Feature flags accept `true` or `1`; unless noted otherwise, all other values are treated as disabled. `NEXT_PUBLIC_*` flags are injected into the client at build time, so changing them requires a rebuild:
+
+```bash
+# MAIC Editor (Pro mode)
+NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
+
+# Pi chat is enabled by default; uncomment the next line for legacy rollback
+# NEXT_PUBLIC_PI_CHAT_ENABLED=false
+
+# PPT and Interactive courseware references in Pi playback (build-time; editor references are separate)
+NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED=true
+
+# Vocational education task engine (server-side flag)
+OPENMAIC_ENABLE_VOCATIONAL=true
+
+# Show the vocational education experimental switch
+NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=true
+
+# Show the video export entry point
+NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
+
+# Show the experimental PPTX import entry point
+NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
+```
+
+Pi chat requires model tool/function calling. If the selected model or provider does not support tool calls, set `NEXT_PUBLIC_PI_CHAT_ENABLED=false` (or `0`) and rebuild to use the legacy chat path.
+
+With Docker Compose, `.env.local` is loaded by `env_file` at runtime, not used for build-arg interpolation. Rebuild with an explicit build-time override as below; a runtime-only change leaves the built client and server on their original chat path.
+
+```bash
+NEXT_PUBLIC_PI_CHAT_ENABLED=false docker compose up -d --build openmaic
+```
+
+PPTX import is still experimental, and its parsed output is not yet fully integrated into the classroom data flow. All `NEXT_PUBLIC_*` variables above are build-time flags. Docker deployments must also pass them as build args; setting them only as container runtime environment variables is not sufficient.
+
+## Other server options
+
+The following server options can also be configured with environment variables:
+
+```bash
+# Parallel scene-content generation; 0 or unset means sequential
+PARALLEL_SCENE_CONCURRENCY=3
+
+# Allow localhost and private-network addresses; self-hosted/private deployments only
+ALLOW_LOCAL_NETWORKS=true
+
+# Optional MP4 rendering service
+RENDER_SERVICE_URL=http://render-service:9000
+
+# Logging and reasoning
+LOG_LEVEL=info
+LOG_FORMAT=pretty
+LLM_THINKING_DISABLED=false
+```
+
+## Legacy provider environment variables
+
+These variables and `server-providers.yml` are the configuration of earlier releases. They still work when there is no `openmaic.yml` (see [Migrating from the legacy configuration](#migrating-from-the-legacy-configuration)) and are deprecated: they will be removed two minor versions after the model settings ship. With `openmaic.yml`, use them only as the source of `${VAR}` references. `DEFAULT_MODEL` and `MODEL_FALLBACK` are covered in the migration section; `MODEL_ROUTES` is no longer read.
+
+### LLM providers
 
 Cloud providers generally use three environment variables: an API key, a base URL, and a model list. The API key is usually required; the base URL and model list are optional. Azure OpenAI requires a resource endpoint, while Ollama and Lemonade do not require an API key.
 
@@ -49,9 +510,9 @@ AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
 AZURE_OPENAI_MODELS=your-deployment-name
 ```
 
-To connect another OpenAI-compatible LLM service, add a custom provider under **Settings → Model providers** and select the corresponding protocol type.
+To connect another OpenAI-compatible LLM service, declare an `openai-compatible` provider with its `baseUrl` and `models` in `openmaic.yml`, or add one with **Add provider** under **Settings → Model Services → LLM**.
 
-## Local models (Ollama and Lemonade)
+### Local models (Ollama and Lemonade)
 
 Ollama and Lemonade do not require an API key. Put the local service base URL in the server configuration so it passes SSRF validation:
 
@@ -62,7 +523,7 @@ OLLAMA_BASE_URL=http://localhost:11434/v1
 
 To limit available models, use `OLLAMA_MODELS` or `LEMONADE_MODELS` as a model allowlist.
 
-## TTS providers
+### TTS providers
 
 Server-side TTS providers use `TTS_<PROVIDER>_API_KEY` and optionally `TTS_<PROVIDER>_BASE_URL`.
 
@@ -83,13 +544,13 @@ TTS_OPENAI_BASE_URL=
 TTS_VOXCPM_BASE_URL=http://localhost:8000
 ```
 
-Supported TTS prefixes include `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_ELEVENLABS_`, `TTS_VOXCPM_`, and `TTS_LEMONADE_`. Local Lemonade TTS and VoxCPM2 do not require an API key. Browser-native TTS requires no server configuration.
+Supported TTS prefixes include `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_ELEVENLABS_`, `TTS_GOOGLE_`, `TTS_VOXCPM_`, and `TTS_LEMONADE_`. Local Lemonade TTS and VoxCPM2 do not require an API key. Browser-native TTS requires no server configuration.
 
 Administrators can force-disable a TTS provider on the server with `TTS_<PROVIDER>_ENABLED=false`. See the dedicated [VoxCPM2](./voxcpm.mdx) section for self-hosted TTS and voice cloning.
 
-You can also add a custom OpenAI-compatible TTS provider in Settings by entering its Base URL, model, and voice. Custom providers are stored in client settings and cannot be registered through arbitrary `TTS_*` environment variables or YAML provider IDs.
+To use another OpenAI-compatible TTS endpoint, declare an `openai-tts` provider with that `baseUrl` in `openmaic.yml` and assign the `tts` slot to it. Workspaces cannot add custom TTS endpoints in the model settings.
 
-## ASR (speech to text)
+### ASR (speech to text)
 
 ```bash
 # OpenAI Whisper
@@ -115,9 +576,20 @@ Start the OpenAI-compatible FunASR service with `funasr-server --device cuda`. I
 
 Browser-native ASR requires no server configuration.
 
-You can also add a custom OpenAI-compatible ASR provider in Settings by entering its Base URL, model, and supported languages; this configuration is stored in client settings.
+To use another OpenAI-compatible ASR endpoint, declare it in `openmaic.yml` with the `openai-whisper` preset and its `baseUrl`, and assign the `asr` slot to it. Workspaces cannot add custom ASR endpoints in the model settings:
 
-## Image generation providers
+```yaml title="openmaic.yml"
+providers:
+  my-asr:
+    preset: openai-whisper
+    apiKey: ${MY_ASR_API_KEY}
+    baseUrl: https://asr.example.com/v1
+
+slots:
+  asr: my-asr:whisper-1
+```
+
+### Image generation providers
 
 Image generation providers use `IMAGE_<PROVIDER>_API_KEY` and optionally `IMAGE_<PROVIDER>_BASE_URL`. Supported prefixes include:
 
@@ -129,15 +601,27 @@ Lemonade is a local service and does not require a key:
 IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
 ```
 
-ComfyUI Image does not require an API key and connects to `http://localhost:8188` by default. Enter the ComfyUI Base URL in Settings, and place workflow JSON exported in API format in OpenMAIC's `public/` directory. Use filenames matching `comfyui-*.json` or containing `workflow`; the Settings page discovers these files automatically and offers them as workflows. With Docker, add the workflow before building the image or mount an individual workflow file into `/app/public/` in the container. Because `comfyui-image` is not a server-managed provider, production deployments connecting to host-side ComfyUI must also set `ALLOW_LOCAL_NETWORKS=true`.
+ComfyUI Image does not require an API key. It runs on your own network, so it is configured by the deployment: declare it in `openmaic.yml` with the address of your ComfyUI server and assign the `image` slot to it.
 
-## Video generation providers
+```yaml title="openmaic.yml"
+providers:
+  comfyui:
+    preset: comfyui-image
+    baseUrl: http://host.docker.internal:8188
+
+slots:
+  image: comfyui
+```
+
+Place workflow JSON exported in API format in OpenMAIC's `public/` directory. Use filenames matching `comfyui-*.json` or containing `workflow`; OpenMAIC discovers these files automatically and offers them as workflows. With Docker, add the workflow before building the image or mount an individual workflow file into `/app/public/` in the container. Because the provider is declared by the deployment, a ComfyUI server on the host or a private network does not need `ALLOW_LOCAL_NETWORKS`.
+
+### Video generation providers
 
 Video generation providers use `VIDEO_<PROVIDER>_API_KEY` and optionally `VIDEO_<PROVIDER>_BASE_URL`. Supported prefixes include:
 
 `VIDEO_SEEDANCE_`, `VIDEO_KLING_`, `VIDEO_VEO_`, `VIDEO_SORA_`, `VIDEO_MINIMAX_`, `VIDEO_GROK_`, and `VIDEO_HAPPYHORSE_`.
 
-## Document and media parsing
+### Document and media parsing
 
 The exact course-material formats depend on the selected parser. OpenMAIC currently supports text, PDF, Office documents, images, and some audio/video formats; supported formats and capabilities vary by provider.
 
@@ -162,7 +646,7 @@ ALIDOCMIND_BASE_URL=       # optional override
 
 AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, BMP, and GIF. Audio and video material is currently supported only through AliDocMind: MP4, MOV, AVI, MKV, and WMV for video; MP3, WAV, and AAC for audio. M4A is not supported.
 
-## Web search
+### Web search
 
 Configure Tavily, Exa, Bocha, Brave, Baidu, SearXNG, or MiniMax:
 
@@ -186,78 +670,11 @@ WEB_SEARCH_MINIMAX_API_KEY=
 WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # optional override
 ```
 
-Brave and SearXNG do not require an API key. The frontend lets users choose whether to enable search for each generation. Grok web search is provided through the Grok LLM search tool, not a standalone web-search provider.
+Brave and SearXNG do not require an API key. Web search has no per-generation switch: it runs whenever the workspace's `webSearch` slot resolves, and turning it off (`webSearch: null` in `openmaic.yml`, or with the search switch in **Settings → Course Model Config**) affects later generations of that workspace. Grok web search is provided through the Grok LLM search tool, not a standalone web-search provider.
 
-## ACCESS_CODE — site-wide password
+### server-providers.yml
 
-For shared deployments such as internal demos or classrooms, set an access code so visitors must enter a password before they can see the app:
-
-```bash
-ACCESS_CODE=your-secret-code
-```
-
-Visitors are prompted only once; the password is stored in an HTTP-only cookie. Leave it empty to disable access control.
-
-## Default model and model routing
-
-When the server API receives no client model, set the default with `DEFAULT_MODEL`. Use the format `provider:model-id`, for example:
-
-```bash
-DEFAULT_MODEL=openai:gpt-5.5
-```
-
-Use `MODEL_ROUTES` to choose models for individual generation stages. Unconfigured stages continue to resolve through the client model and `DEFAULT_MODEL`. Its value is a JSON object whose keys are generation stages and whose values can be model strings or objects containing `model` and `thinking`. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for the complete stage list and examples.
-
-## Feature flags
-
-Feature flags accept `true` or `1`; all other values are treated as disabled. `NEXT_PUBLIC_*` flags are injected into the client at build time, so changing them requires a rebuild:
-
-```bash
-# MAIC Editor (Pro mode)
-NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
-
-# Pi chat runtime
-NEXT_PUBLIC_PI_CHAT_ENABLED=true
-
-# PPT and Interactive courseware references in Pi playback (build-time; editor references are separate)
-NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED=true
-
-# Vocational education task engine (server-side flag)
-OPENMAIC_ENABLE_VOCATIONAL=true
-
-# Show the vocational education experimental switch
-NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=true
-
-# Show the video export entry point
-NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
-
-# Show the experimental PPTX import entry point
-NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
-```
-
-PPTX import is still experimental, and its parsed output is not yet fully integrated into the classroom data flow. All `NEXT_PUBLIC_*` variables above are build-time flags. Docker deployments must also pass them as build args; setting them only as container runtime environment variables is not sufficient.
-
-## Other server options
-
-The following server options can also be configured with environment variables:
-
-```bash
-# Parallel scene-content generation; 0 or unset means sequential
-PARALLEL_SCENE_CONCURRENCY=3
-
-# Allow localhost and private-network addresses; self-hosted/private deployments only
-ALLOW_LOCAL_NETWORKS=true
-
-# Optional MP4 rendering service
-RENDER_SERVICE_URL=http://render-service:9000
-
-# Logging and reasoning
-LOG_LEVEL=info
-LOG_FORMAT=pretty
-LLM_THINKING_DISABLED=false
-```
-
-## Using a YAML configuration file
+Deprecated in favour of `openmaic.yml`. When both exist, only `openmaic.yml` configures models.
 
 In addition to environment variables, place configuration for providers registered in the code in `server-providers.yml` at the project root. The server loads it at startup, and its structure follows the environment variable categories:
 

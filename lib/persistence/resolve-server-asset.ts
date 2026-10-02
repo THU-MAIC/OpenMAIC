@@ -6,23 +6,38 @@
  * documents and SDK clients may still name an existing entry.
  *
  * The resolution answers in five states so the route can map each to an honest
- * HTTP status: not configured (no `DATABASE_URL`), unauthenticated (the
- * development persistence credential is missing or wrong), missing (no entry
- * under this id for this principal), too large (the recorded byte length
+ * HTTP status: not configured (no `DATABASE_URL`), unauthenticated (owner
+ * resolution refused the request), missing (no entry under
+ * this id that this owner may read), too large (the recorded byte length
  * exceeds the caller-supplied cap, rejected before any bytes are read), or
  * resolved.
+ *
+ * "May read" is the persistence route's own rule (`./owner-assets.ts`): the
+ * owner's own entries, legacy shared entries, and other owners' committed
+ * entries that a live course references.
  */
-import { AssetNotFoundError, toAssetId, type AssetPrincipal } from '@openmaic/storage';
+import { AssetNotFoundError, toAssetId } from '@openmaic/storage';
 
-import { authenticatePersistenceHeaders } from './server-auth';
+import { resolveRequestOwner } from '@/lib/server/identity/resolve';
+import type { OwnerAuthRequest } from '@/lib/server/identity/types';
+
+import { assetPrincipalForOwner, createOwnerAssetStore } from './owner-assets';
 import { getServerPersistenceProvider } from './server-provider';
 
-export type ServerAssetResolution =
+export type ServerAssetResolution = (
   | { status: 'resolved'; buffer: Buffer; mimeType: string }
   | { status: 'unconfigured' }
   | { status: 'unauthenticated' }
   | { status: 'missing' }
-  | { status: 'too_large' };
+  | { status: 'too_large' }
+) & {
+  /**
+   * The owner resolution's `Set-Cookie` values (a minted anonymous owner, or
+   * the renewal of a presented one). The route attaches them to its response
+   * with `attachOwnerCookies`, whatever the status.
+   */
+  setCookies?: readonly string[];
+};
 
 /**
  * Resolve an allocated asset id to its bytes for extraction.
@@ -37,38 +52,52 @@ export type ServerAssetResolution =
  */
 export async function resolveServerAsset(
   assetId: string,
-  headers: Headers,
+  request: OwnerAuthRequest,
   maxByteLength?: number,
 ): Promise<ServerAssetResolution> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) return { status: 'unconfigured' };
 
-  // Shared-partition development auth: this authenticator maps every caller to
-  // one 'shared' asset principal (see the server-auth.ts docstring). It is the
-  // documented stopgap for this deployment shape — its cost surface is
-  // accepted until real per-learner principals land in a later part of the
-  // RFC; do not extend it here.
-  const principal = authenticatePersistenceHeaders(headers);
-  // The authenticator always supplies a partition key on success, but its type
-  // leaves it optional; a keyless principal fails closed as unauthenticated.
-  if (!principal?.key) return { status: 'unauthenticated' };
-  const assetPrincipal: AssetPrincipal = {
-    key: principal.key,
-    ...(principal.learnerKey ? { learnerKey: principal.learnerKey } : {}),
+  // The same memoized owner resolution the rest of the request uses. Its
+  // cookies ride every answer below, for the route to send back.
+  const outcome = await resolveRequestOwner(request);
+  if (!outcome.ok) return { status: 'unauthenticated' };
+  const cookies = outcome.setCookies?.length ? { setCookies: outcome.setCookies } : {};
+  return {
+    ...(await resolveOwnedAsset(
+      assetId,
+      outcome.principal.ownerId,
+      connectionString,
+      maxByteLength,
+    )),
+    ...cookies,
   };
+}
+
+async function resolveOwnedAsset(
+  assetId: string,
+  ownerId: string,
+  connectionString: string,
+  maxByteLength: number | undefined,
+): Promise<ServerAssetResolution> {
+  const assetPrincipal = assetPrincipalForOwner(ownerId);
 
   try {
     const provider = await getServerPersistenceProvider(connectionString);
+    const assetStore = createOwnerAssetStore(provider.assetStore, {
+      ownerId,
+      queryable: provider.pool,
+    });
     const ref = toAssetId(assetId);
     // Size check BEFORE materialization: `identify` reads only the registry
     // row (recorded byte length), never the bytes, so an oversized asset is
     // rejected without ever pulling it into server memory.
     if (maxByteLength !== undefined) {
-      const identity = await provider.assetStore.identify(assetPrincipal, ref);
+      const identity = await assetStore.identify(assetPrincipal, ref);
       if (!identity) return { status: 'missing' };
       if (identity.byteLength > maxByteLength) return { status: 'too_large' };
     }
-    const resolved = await provider.assetStore.resolve(assetPrincipal, ref);
+    const resolved = await assetStore.resolve(assetPrincipal, ref);
     if (!resolved) return { status: 'missing' };
     return { status: 'resolved', buffer: Buffer.from(resolved.bytes), mimeType: resolved.mime };
   } catch (error) {

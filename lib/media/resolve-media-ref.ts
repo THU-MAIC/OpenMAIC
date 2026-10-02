@@ -55,13 +55,20 @@ export function resolveMediaRef(
 ): MediaResolution {
   const value = ref ?? '';
   const leaseUrl = lease.status === 'resolved' ? lease.url : undefined;
+  // A task whose bytes went to the pool carries the ALLOCATED ID here, not a
+  // renderable URL: the server-side media tools store their bytes first and
+  // the completion frame names the id (#1522). Handing that string to the DOM
+  // would render nothing, and `renderableMediaUrl` would drop it anyway — so
+  // it is not treated as a URL at all. The lease over that same id is what
+  // produces the bytes, and it is preferred below exactly as before.
+  const taskUrl = mayNameAPoolAsset(task?.objectUrl) ? undefined : task?.objectUrl;
 
   if (task?.status === 'pending' || task?.status === 'generating') {
     return mediaGenerationDisabled ? { kind: 'disabled' } : { kind: 'pending' };
   }
 
   if (task?.status === 'failed') {
-    const lastUrl = leaseUrl ?? task.objectUrl;
+    const lastUrl = leaseUrl ?? taskUrl;
     if (lastUrl) return { kind: 'url', url: lastUrl, retryable: isRetryableFailure(task) };
     if (task.errorCode === 'GENERATION_DISABLED') return { kind: 'disabled' };
     return { kind: 'failed', retryable: isRetryableFailure(task) };
@@ -71,7 +78,7 @@ export function resolveMediaRef(
   // task can still render its compatibility object URL while that lookup is in
   // flight, but a later pool replacement must win when both exist.
   if (leaseUrl) return { kind: 'url', url: leaseUrl };
-  if (task?.status === 'done' && task.objectUrl) return { kind: 'url', url: task.objectUrl };
+  if (task?.status === 'done' && taskUrl) return { kind: 'url', url: taskUrl };
 
   // A known task whose durable bytes have not resolved must never be handed to
   // the DOM as a concrete address, even when its key is not gen_-shaped.
@@ -107,11 +114,19 @@ export function useResolvedMediaRef(
 ): MediaResolution {
   // A ref this application minted itself was never in the pool, so leasing it
   // would only ever be a round trip that answers "no".
-  const leasable = ref && !isConcreteMediaAddress(ref) && mayNameAPoolAsset(ref);
-  const lease = useAssetUrlLease(leasable ? ref : undefined);
+  const refLeasable = !!ref && !isConcreteMediaAddress(ref) && mayNameAPoolAsset(ref);
+  // The window between a completion frame and the document catching up. The
+  // element still names the generation placeholder, which the pool cannot
+  // hold, while the task already names the allocated id — so the id is what
+  // gets leased, and the video plays as soon as the frame arrives instead of
+  // waiting for the stage-freshness sync. Only ever a SECOND choice: when the
+  // document's own ref is leasable it is the one that counts.
+  const taskId = !refLeasable && mayNameAPoolAsset(task?.objectUrl) ? task?.objectUrl : undefined;
+  const leaseRef = refLeasable ? ref : taskId;
+  const lease = useAssetUrlLease(leaseRef);
   const mayGenerate = useMayGenerateForStage(useMediaStageId());
   return withGenerationPermission(
-    resolveMediaRef(ref, task, leasable ? lease : MISSING_ASSET_LEASE, mediaGenerationDisabled),
+    resolveMediaRef(ref, task, leaseRef ? lease : MISSING_ASSET_LEASE, mediaGenerationDisabled),
     mayGenerate,
   );
 }

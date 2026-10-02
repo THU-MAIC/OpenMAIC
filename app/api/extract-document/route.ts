@@ -16,14 +16,29 @@ import {
   selectDocumentExtractorProvider,
 } from '@/lib/document';
 import type { MediaArtifact } from '@/lib/document';
+import type { DocumentExtractorConfig, DocumentExtractorProvider } from '@/lib/document/types';
+import {
+  documentSlotGoverns,
+  extractorConfigFor,
+  resolveExtractionServices,
+  slotGovernedRequest,
+  slotMediaExtractorConfig,
+  type ExtractionServices,
+} from '@/lib/server/material-extraction/services';
+import { mediaResolutionResponse } from '@/lib/server/model-config/media';
+import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
 import { normalizeDocumentMimeType, SUPPORTED_MEDIA_MIME_TYPES } from '@/lib/document/mime';
 import { createLogger } from '@/lib/logger';
 import {
   resolveServerAsset,
   type ServerAssetResolution,
 } from '@/lib/persistence/resolve-server-asset';
+import { attachOwnerCookies } from '@/lib/server/identity/with-owner';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import {
+  checkClientDocumentExtractorBaseUrl,
+  checkClientMediaExtractorBaseUrl,
+} from '@/lib/server/client-extractor-endpoint';
 import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation';
 
 // The asset-id path resolves bytes from the server asset store, which lives in
@@ -217,12 +232,45 @@ function formatTimestamp(ms: number): string {
  * exact current messages.
  */
 async function runExtraction(
+  services: ExtractionServices,
   source: ExtractSource,
   requestConfig: ExtractRequestConfig,
   logState: ExtractLogState,
   isAssetIdForm: boolean,
 ) {
   const { fileName, fileSize, mimeType, buffer } = source;
+  // A configured or turned-off document slot decides the service; the
+  // deprecated request fields may only pick a self-contained extractor.
+  const governed = documentSlotGoverns(services);
+  requestConfig = slotGovernedRequest(services, requestConfig);
+
+  async function extractionResponse(
+    extractor: DocumentExtractorProvider,
+    extractorConfig: DocumentExtractorConfig,
+  ): Promise<Response> {
+    const artifact = await extractor.extract({
+      buffer,
+      fileName,
+      fileSize,
+      mimeType,
+      config: extractorConfig,
+    });
+    const result = documentArtifactToParsedPdfContent(artifact);
+
+    const resultWithMetadata: ParsedPdfContent = {
+      ...result,
+      metadata: {
+        ...result.metadata,
+        pageCount: result.metadata?.pageCount ?? 0,
+        fileName,
+        fileSize,
+        mimeType,
+        parser: result.metadata?.parser ?? extractor.id,
+      },
+    };
+
+    return apiSuccess({ data: resultWithMetadata });
+  }
 
   // Media (audio/video) takes the media extraction path → MediaArtifact,
   // flattened to the same text shape documents produce. Same route, same
@@ -245,41 +293,52 @@ async function runExtraction(
         `Provider "${requestConfig.providerId}" cannot extract ${mimeType}. Choose a media-capable provider (AliDocMind or local ffmpeg).`,
       );
     }
+    // The document slot's media extractor (openmaic.yml or the model
+    // settings), else the legacy rules below.
+    const slotMedia = slotMediaExtractorConfig(services, requestConfig.providerId);
     const mediaManaged =
+      !slotMedia &&
+      !governed &&
       requestConfig.providerId !== 'local-ffmpeg' &&
       isServerConfiguredProvider('pdf', 'alidocmind');
     // When managed, resolve the server-owned AK/SK (env OR YAML) explicitly so
     // a YAML-only deployment works — the client-level env fallback reads env
     // vars only. Client-entered creds are used only when unmanaged.
     const mediaManagedCreds = mediaManaged ? resolveManagedAliDocMindCredentials() : undefined;
-    const mediaClientBaseUrl = mediaManaged ? undefined : requestConfig.baseUrl || undefined;
-    // Same SSRF guard the document path applies: a client-supplied endpoint
-    // must not let the server connect to internal/metadata hosts.
+    let mediaClientBaseUrl =
+      mediaManaged || slotMedia ? undefined : requestConfig.baseUrl || undefined;
+    // A client-supplied media extractor endpoint must pass the extractor's
+    // endpoint rule (see checkClientMediaExtractorBaseUrl).
     if (mediaClientBaseUrl) {
-      const ssrfError = await validateUrlForSSRF(mediaClientBaseUrl);
-      if (ssrfError) {
-        return apiError('INVALID_URL', 403, ssrfError);
+      const checked = checkClientMediaExtractorBaseUrl(mediaClientBaseUrl);
+      if (!checked.ok) {
+        return apiError('INVALID_URL', 403, checked.message);
       }
+      mediaClientBaseUrl = checked.baseUrl;
     }
     const mediaArtifact = await extractMedia({
       buffer,
       fileName,
       fileSize,
       mimeType,
-      config: {
-        providerId: requestConfig.providerId || '',
-        apiKey: mediaManaged ? undefined : requestConfig.apiKey || undefined,
-        baseUrl: mediaManaged ? mediaManagedCreds?.baseUrl : mediaClientBaseUrl,
-        accessKeyId: mediaManaged
-          ? mediaManagedCreds?.accessKeyId
-          : requestConfig.accessKeyId || undefined,
-        accessKeySecret: mediaManaged
-          ? mediaManagedCreds?.accessKeySecret
-          : requestConfig.accessKeySecret || undefined,
-        // Env fallback is a last resort for a managed provider whose creds
-        // weren't resolved above (defensive; resolver already covers env+YAML).
-        allowEnvFallback: mediaManaged,
-      },
+      config: slotMedia
+        ? { ...slotMedia, providerId: requestConfig.providerId || '' }
+        : {
+            providerId: requestConfig.providerId || '',
+            // Local transcription uses the asr slot's connection.
+            ...(services.asr ? { asr: services.asr } : {}),
+            apiKey: mediaManaged ? undefined : requestConfig.apiKey || undefined,
+            baseUrl: mediaManaged ? mediaManagedCreds?.baseUrl : mediaClientBaseUrl,
+            accessKeyId: mediaManaged
+              ? mediaManagedCreds?.accessKeyId
+              : requestConfig.accessKeyId || undefined,
+            accessKeySecret: mediaManaged
+              ? mediaManagedCreds?.accessKeySecret
+              : requestConfig.accessKeySecret || undefined,
+            // Env fallback is a last resort for a managed provider whose creds
+            // weren't resolved above (defensive; resolver already covers env+YAML).
+            allowEnvFallback: mediaManaged,
+          },
     });
     logState.resolvedProviderId =
       mediaArtifact.metadata.providerId || requestConfig.providerId || '';
@@ -312,9 +371,19 @@ async function runExtraction(
     return apiSuccess({ data: mediaResult });
   }
 
+  // The document slot's service (openmaic.yml or the model settings) when the
+  // request names no other extractor; legacy server providers keep the rules
+  // below.
+  const slotService =
+    services.document?.origin === 'configuration' &&
+    (!requestConfig.providerId || requestConfig.providerId === services.document.providerId)
+      ? services.document
+      : undefined;
   let provider = requestConfig.providerId
     ? getDocumentExtractorProvider(requestConfig.providerId)
-    : undefined;
+    : slotService
+      ? getDocumentExtractorProvider(slotService.providerId)
+      : undefined;
   if (requestConfig.providerId && !provider) {
     return apiError(
       'INVALID_REQUEST',
@@ -350,6 +419,29 @@ async function runExtraction(
   }
   logState.resolvedProviderId = provider.id;
 
+  const usesSlotService = slotService?.providerId === provider.id;
+  if (governed && provider.requiresServiceConfig && !usesSlotService) {
+    return apiError(
+      'INVALID_REQUEST',
+      422,
+      `${requestedTypeLabel(mimeType)} extraction needs a document service, and ${
+        services.document ? 'the configured one cannot read this type' : 'none is configured'
+      }. Assign one to the document slot in the model settings or openmaic.yml.`,
+    );
+  }
+
+  if (slotService && usesSlotService) {
+    let slotConfig = extractorConfigFor(provider.id, services);
+    // A workspace provider's endpoint was typed by a user: the extractor's
+    // endpoint rule applies as to a client one.
+    if (!slotService.managed && slotConfig.baseUrl) {
+      const checked = await checkClientDocumentExtractorBaseUrl(provider.id, slotConfig.baseUrl);
+      if (!checked.ok) return apiError('INVALID_URL', 403, checked.message);
+      slotConfig = { ...slotConfig, baseUrl: checked.baseUrl };
+    }
+    return extractionResponse(provider, slotConfig);
+  }
+
   let managed = isPdfProviderId(provider.id) && isServerConfiguredProvider('pdf', provider.id);
   let clientBaseUrl = managed ? undefined : requestConfig.baseUrl || undefined;
   if (isSelfHostedMinerUProvider(provider.id) && !managed && !clientBaseUrl) {
@@ -384,10 +476,11 @@ async function runExtraction(
     }
   }
   if (clientBaseUrl) {
-    const ssrfError = await validateUrlForSSRF(clientBaseUrl);
-    if (ssrfError) {
-      return apiError('INVALID_URL', 403, ssrfError);
+    const checked = await checkClientDocumentExtractorBaseUrl(provider.id, clientBaseUrl);
+    if (!checked.ok) {
+      return apiError('INVALID_URL', 403, checked.message);
     }
+    clientBaseUrl = checked.baseUrl;
   }
 
   // For a managed AliDocMind provider, resolve server-owned AK/SK (env OR
@@ -411,33 +504,26 @@ async function runExtraction(
     // Env fallback is a last resort for a managed provider (defensive; the
     // resolver already covers env+YAML).
     allowEnvFallback: managed,
+    managed,
   };
 
-  const artifact = await provider.extract({
-    buffer,
-    fileName,
-    fileSize,
-    mimeType,
-    config,
-  });
-  const result = documentArtifactToParsedPdfContent(artifact);
-
-  const resultWithMetadata: ParsedPdfContent = {
-    ...result,
-    metadata: {
-      ...result.metadata,
-      pageCount: result.metadata?.pageCount ?? 0,
-      fileName,
-      fileSize,
-      mimeType,
-      parser: result.metadata?.parser ?? provider.id,
-    },
-  };
-
-  return apiSuccess({ data: resultWithMetadata });
+  return extractionResponse(provider, config);
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest): Promise<Response> {
+  const ownerCookies: OwnerCookies = {};
+  // The asset-id form resolves the request owner: every answer after that,
+  // success or error, carries the resolution's cookies (the anonymous
+  // owner's renewal).
+  return attachOwnerCookies(await extract(req, ownerCookies), ownerCookies.setCookies);
+}
+
+/** Filled in once the asset-id form has resolved the request owner. */
+interface OwnerCookies {
+  setCookies?: readonly string[];
+}
+
+async function extract(req: NextRequest, ownerCookies: OwnerCookies): Promise<Response> {
   const logState: ExtractLogState = {};
   // Whether this request took the asset-id (JSON) form. The multipart byte
   // form's observable behavior is frozen; a few JSON-path-only responses use
@@ -532,9 +618,10 @@ export async function POST(req: NextRequest) {
       try {
         resolution = await resolveServerAsset(
           body.assetId,
-          req.headers,
+          req,
           MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES,
         );
+        ownerCookies.setCookies = resolution.setCookies;
       } catch (error) {
         // A failure from the server asset store (DB outage, registry failure)
         // must not reach the client as raw `error.message`; log the real error
@@ -557,7 +644,7 @@ export async function POST(req: NextRequest) {
         return apiError(
           'UNAUTHENTICATED',
           401,
-          'Asset-id extraction requires server persistence credentials.',
+          'Asset-id extraction requires a valid owner credential.',
         );
       }
       if (resolution.status === 'missing') {
@@ -631,7 +718,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return await runExtraction(source, requestConfig, logState, isAssetIdForm);
+    // The document and speech services of the request's workspace (slots).
+    // A request's own workspace: never forwarded through a claim.
+    let services: ExtractionServices;
+    try {
+      services = await resolveExtractionServices((await requestWorkspaceId(req)) ?? undefined, {
+        forward: false,
+      });
+    } catch (error) {
+      const refused = mediaResolutionResponse(error, 'Document extraction');
+      if (refused) return refused;
+      throw error;
+    }
+    return await runExtraction(services, source, requestConfig, logState, isAssetIdForm);
   } catch (error) {
     log.error(
       `Document extraction failed [provider=${logState.resolvedProviderId ?? 'unknown'}, file="${sanitizeLogValue(

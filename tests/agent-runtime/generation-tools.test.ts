@@ -280,7 +280,65 @@ describe('generation and deck tools', () => {
       media: [{ src: 'image:pending', description: 'Pending image' }],
     } as never);
     expect(badMedia).toMatchObject({ isError: true, details: { error: 'media-placeholder-src' } });
+    const dataUrlMedia = await generate.execute('data-url-media', {
+      stageId: 'stage-test',
+      order: 2,
+      title: 'Media',
+      type: 'slide',
+      brief: 'Use media',
+      media: [{ src: 'data:image/png;base64,AAAA', description: 'Inline image' }],
+    } as never);
+    expect(dataUrlMedia).toMatchObject({ isError: true, details: { error: 'invalid-media-src' } });
     expect(current.get()?.scenes).toHaveLength(1);
+  });
+
+  it('accepts the stored-asset id generate_image returns and writes it onto the element', async () => {
+    // The documented flow is generate_image -> generate_scene.media, and
+    // generate_image returns an allocated id now that it stores its bytes in
+    // the pool (#1522). The id has to survive both the media gate and the
+    // image-id resolution, and land on the element exactly as issued.
+    const current = state(document([]));
+    let calls = 0;
+    const generate = find(
+      buildGenerationTools(
+        deps(current.store, {
+          aiCall: vi.fn(async () => {
+            calls += 1;
+            return calls === 1
+              ? JSON.stringify({
+                  elements: [
+                    {
+                      id: 'image-1',
+                      type: 'image',
+                      src: 'img_1',
+                      left: 0,
+                      top: 0,
+                      width: 400,
+                      height: 225,
+                    },
+                  ],
+                })
+              : JSON.stringify([{ type: 'text', content: 'Narration' }]);
+          }),
+        }),
+      ),
+      'generate_scene',
+    );
+
+    const response = await generate.execute('pool-media', {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Media',
+      type: 'slide',
+      brief: 'Use the generated image',
+      media: [{ src: 'ast_generated_1', description: 'A microscope', width: 400, height: 225 }],
+    } as never);
+
+    expect(response).not.toMatchObject({ isError: true });
+    const scene = current.get()?.scenes[0];
+    const elements = (scene?.content as { canvas: { elements: { src?: string }[] } }).canvas
+      .elements;
+    expect(elements[0]?.src).toBe('ast_generated_1');
   });
 
   it('passes widgetType and widgetOutline through to interactive generation', async () => {

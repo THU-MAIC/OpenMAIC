@@ -9,13 +9,21 @@ import {
 
 export interface TTSPreviewOptions {
   text: string;
+  /**
+   * The provider the voice belongs to: browser speech plays here, anything
+   * else is synthesized by the server with the `tts` slot's provider.
+   */
   providerId: string;
-  modelId?: string;
   voice: string;
   speed: number;
-  apiKey?: string;
-  baseUrl?: string;
   providerOptions?: unknown;
+  /**
+   * A saved provider to preview instead of the `tts` slot's (the settings'
+   * test of a service), with an optional model: the server uses its stored
+   * configuration.
+   */
+  previewProvider?: string;
+  previewModel?: string;
 }
 
 /**
@@ -96,14 +104,14 @@ export function useTTSPreview() {
         const body: Record<string, unknown> = {
           text: options.text,
           audioId: 'preview',
-          ttsProviderId: options.providerId,
-          ttsModelId: options.modelId,
           ttsVoice: options.voice,
           ttsSpeed: options.speed,
         };
-        if (options.apiKey?.trim()) body.ttsApiKey = options.apiKey;
-        if (options.baseUrl?.trim()) body.ttsBaseUrl = options.baseUrl;
         if (options.providerOptions) body.ttsProviderOptions = options.providerOptions;
+        if (options.previewProvider) {
+          body.previewProvider = options.previewProvider;
+          if (options.previewModel) body.previewModel = options.previewModel;
+        }
 
         const res = await fetch('/api/generate/tts', {
           method: 'POST',

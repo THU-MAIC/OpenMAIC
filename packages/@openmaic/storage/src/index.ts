@@ -59,16 +59,27 @@ export {
 export type { AssetByteStore, AssetSignedReadHeaders } from './asset/byte-store.js';
 export {
   ASSET_PG_SCHEMA,
+  DEFAULT_ASSET_PENDING_TTL_MS,
   PgAssetStore,
   ensureAssetSchema,
   type PgAssetStoreOptions,
 } from './asset/pg.js';
+// `./asset/references.js` is deliberately NOT re-exported. Its functions are
+// transaction-scoped maintenance primitives that replace and delete reference
+// rows; called outside a document write they would corrupt the table they
+// maintain. The supported surface is the two options -- PgDocumentStore's
+// `trackAssetReferences` and AssetCollector's `documentReferences` -- which is
+// everything a host needs to run the feature.
 export { PgAssetByteStore } from './asset/pg-bytes.js';
 export {
+  AssetCollectionFailure,
   AssetCollector,
+  AssetReferenceTrackingNotEnabledError,
   assertSignedUrlTtlWithinGrace,
   DEFAULT_ASSET_COLLECTION_BATCH_SIZE,
   DEFAULT_ASSET_COLLECTION_GRACE_MS,
+  DEFAULT_ASSET_REFERENCE_BACKFILL_BATCH_SIZE,
+  type AssetCollectionEntryLevelFailure,
   type AssetCollectionPass,
   type AssetCollectorOptions,
 } from './asset/collector.js';
@@ -92,10 +103,13 @@ export type {
   StageFreshnessManifest,
   StageFreshnessManifestStore,
 } from './document/types.js';
+export { StorageBusyError, isStorageBusyError } from './store-errors.js';
 export {
   DocumentFolderLimitError,
   DocumentNotFoundError,
   DocumentVersionError,
+  DocumentWriteRefusedError,
+  isDocumentWriteRefusedError,
 } from './document/types.js';
 export { BrowserDocumentStore, type BrowserDocumentStoreOptions } from './document/browser.js';
 export {
@@ -108,10 +122,17 @@ export {
 export {
   PgDocumentStore,
   DOCUMENT_PG_SCHEMA,
+  DocumentAssetReferencesDisabledError,
+  StorageLockUnavailableError,
   ensureDocumentSchema,
   readStageFreshnessManifest,
+  reassignDocumentFolders,
   splitSqlStatements,
+  type DocumentFolderReassignment,
+  type DocumentOwnershipRelation,
   type PgDocumentStoreOptions,
+  type ReassignDocumentFoldersInput,
+  type StorageLockUnavailableReason,
 } from './document/pg.js';
 
 export type {
@@ -121,7 +142,11 @@ export type {
   RuntimeAppendOptions,
   RuntimeTailOptions,
 } from './runtime/types.js';
-export { RuntimeAppendConflictError } from './runtime/types.js';
+export {
+  RuntimeAppendConflictError,
+  RuntimeSessionExistsError,
+  RuntimeStageNotFoundError,
+} from './runtime/types.js';
 export { BrowserRuntimeStore, type BrowserRuntimeStoreOptions } from './runtime/browser.js';
 
 export {
@@ -202,6 +227,7 @@ export {
   USER_SKILL_PG_SCHEMA,
   ensureUserSkillSchema,
   type PgUserSkillStoreOptions,
+  type UserSkillOwnerMerge,
   type UserSkillTableNames,
 } from './skill/pg.js';
 

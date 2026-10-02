@@ -22,6 +22,12 @@ vi.mock('@/lib/ai/providers', async (importOriginal) => {
   };
 });
 
+// No openmaic.yml policy here: requests may still name their own provider.
+vi.mock('@/lib/server/model-config/runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/server/model-config/runtime')>()),
+  requestProvidersAllowed: () => true,
+}));
+
 vi.mock('@/lib/server/provider-config', () => ({
   isServerConfiguredProvider: () => mocks.serverManaged,
   resolveApiKey: (_id: string, clientKey: string) => clientKey || 'server-key',
@@ -39,7 +45,7 @@ describe('resolveModel — installs the redirect-validating transport on every m
     mocks.serverManaged = false;
   });
 
-  it('passes fetchWithRedirectValidation as the fetch implementation for a client-supplied base URL', async () => {
+  it('installs the pinned, redirect-refusing transport for a client-supplied base URL', async () => {
     const { resolveModel } = await import('@/lib/server/resolve-model');
     const { fetchWithRedirectValidation } =
       await import('@/lib/server/fetch-with-redirect-validation');
@@ -49,10 +55,12 @@ describe('resolveModel — installs the redirect-validating transport on every m
       baseUrl: 'https://8.8.8.8/v1',
     });
 
-    expect(mocks.getModelCalls.at(-1)).toMatchObject({
-      baseUrl: 'https://8.8.8.8/v1',
-      fetchImpl: fetchWithRedirectValidation,
-    });
+    // The pinned transport's behavior (rebinding, redirect refusal, streaming)
+    // is covered end to end in resolve-model-pinned-transport.test.ts.
+    const call = mocks.getModelCalls.at(-1)!;
+    expect(call).toMatchObject({ baseUrl: 'https://8.8.8.8/v1' });
+    expect(typeof call.fetchImpl).toBe('function');
+    expect(call.fetchImpl).not.toBe(fetchWithRedirectValidation);
   });
 
   it('keeps the same hop re-validation for managed providers, whose origin is operator-trusted but whose redirects are not', async () => {

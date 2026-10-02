@@ -15,8 +15,12 @@
  * - `x-material-filename` is the display name (required).
  * - Size caps are per class: media (audio/video) uploads cap at
  *   `maxUploadBytes`, documents/images at `min(maxDocumentBytes,
- *   maxUploadBytes)` — both 413 when exceeded, checked on the declared
- *   `content-length` AND on the streamed body.
+ *   maxUploadBytes)`. Exceeding that effective limit answers 413, both for
+ *   the declared `content-length` and while reading the body. Those two
+ *   responses include a top-level numeric `maxBytes`: the exact byte
+ *   threshold that check enforced, not the rounded figure the client shows.
+ *   A body larger than its declared content-length is a separate 413 and
+ *   does not include `maxBytes`.
  * - Lifecycle: the upload reclaims crashed `uploading` leftovers older than
  *   24 hours (their byte objects first, then the reservations), reserves a
  *   quota-checked `uploading` row (429 when the owner's count or byte quota is
@@ -27,8 +31,12 @@
  * - Every response echoes the `x-request-id` header so the uploader can pair
  *   a failure with its log line.
  *
- * The configured runtime gates the family (the workbench is agent-runtime
- * territory): off, or on without a DATABASE_URL, answers the same plain 404.
+ * Gates: the upload writes only the owner-scoped material library, so it is
+ * served whenever server persistence is configured (a DATABASE_URL), with the
+ * agent runtime on or off — `POST /api/generate-classroom` consumes these
+ * uploads by id. The list stays behind the agent runtime gate: it names an
+ * agent session (`sessionId`) and reads that session's materials, which only
+ * exist with the runtime on. Either gate closed answers the same plain 404.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
@@ -39,11 +47,14 @@ import { NextResponse } from 'next/server';
 import { createMaterialId } from '@openmaic/storage';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 
-import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
+import {
+  isAgentRuntimeConfigured,
+  isServerPersistenceConfigured,
+} from '@/lib/config/feature-flags';
 import { apiError } from '@/lib/server/api-response';
 import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
 import { ownerJson, ownerNotFound } from '@/lib/server/agent-runtime/route-response';
-import { withRequestOwnerId } from '@/lib/server/agent-runtime/with-owner';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
 import {
   resolveOwnedSession,
   listSessionMaterials,
@@ -57,20 +68,21 @@ import {
   reclaimStaleOwnerMaterialUploads,
   registerOwnerMaterial,
 } from '@/lib/persistence/owner-materials';
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getMaterialByteStore } from '@/lib/server/materials/bytes';
 import {
+  MATERIAL_DOCUMENT_UPLOAD_LIMIT,
+  MATERIAL_MEDIA_UPLOAD_LIMIT,
+} from '@/lib/server/materials/upload-limits';
+import {
   isWorkbenchMaterialMime,
   MEDIA_MIME_TYPES,
-  normalizeWorkbenchMaterialMime,
+  resolveWorkbenchMaterialMime,
 } from '@/lib/workbench/material-upload-policy';
 
 export const runtime = 'nodejs';
 
-const DOCUMENT_UPLOAD_LIMIT = Math.min(
-  agentRuntimeConfig.maxDocumentBytes,
-  agentRuntimeConfig.maxUploadBytes,
-);
 const MEDIA_MIME_SET = new Set<string>(MEDIA_MIME_TYPES);
 
 /** The store's keyset-paging ceiling (default 50, capped at 200). */
@@ -87,6 +99,18 @@ export function ownerMaterialObjectKey(ownerId: string, materialId: string): str
 }
 
 class MaterialPayloadTooLarge extends Error {}
+
+function materialTooLarge(maxBytes: number) {
+  return NextResponse.json(
+    {
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+      error: `upload exceeds ${maxBytes} bytes`,
+      maxBytes,
+    },
+    { status: 413 },
+  );
+}
 
 /** The `x-material-filename` header, sanitized to a bare file name. */
 function materialFilename(req: NextRequest): string | null {
@@ -134,7 +158,7 @@ export async function GET(req: NextRequest) {
   }
   const before = url.searchParams.get('before')?.trim() || undefined;
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const session = await resolveOwnedSession(sessionId, ownerId);
     if (!session) return ownerNotFound(responseHeaders);
     const materials = await listSessionMaterials(sessionId, {
@@ -158,6 +182,7 @@ export async function POST(req: NextRequest) {
   let phase = 'feature_gate';
   let materialId: string | undefined;
   let mime = '';
+  let declaredMime = '';
   let declaredBytes = 0;
   let receivedBytes = 0;
   let failureLogged = false;
@@ -166,6 +191,7 @@ export async function POST(req: NextRequest) {
     phase,
     ...(materialId ? { materialId } : {}),
     ...(mime ? { mime } : {}),
+    ...(declaredMime && declaredMime !== mime ? { declaredMime } : {}),
     declaredBytes,
     receivedBytes,
     durationMs: Date.now() - startedAt,
@@ -178,13 +204,19 @@ export async function POST(req: NextRequest) {
     return response;
   };
 
-  if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
+  if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
 
-  return withRequestOwnerId(req, async (ownerId, responseHeaders) => {
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     try {
       phase = 'validate_request';
       const rawMime = (req.headers.get('content-type') ?? '').split(';', 1)[0];
-      mime = normalizeWorkbenchMaterialMime(rawMime);
+      declaredMime = rawMime;
+      const originalName = materialFilename(req);
+      // A generic content-type (empty, octet-stream, zip-family, or the
+      // generic Office container some Linux browsers report for OOXML —
+      // #1497) is resolved from the filename extension; a specific but
+      // unsupported type falls through verbatim for the whitelist to reject.
+      mime = resolveWorkbenchMaterialMime({ mimeType: rawMime, fileName: originalName });
       if (!isWorkbenchMaterialMime(mime)) {
         return reject(
           apiError(
@@ -197,16 +229,12 @@ export async function POST(req: NextRequest) {
         );
       }
       const uploadLimit = MEDIA_MIME_SET.has(mime)
-        ? agentRuntimeConfig.maxUploadBytes
-        : DOCUMENT_UPLOAD_LIMIT;
+        ? MATERIAL_MEDIA_UPLOAD_LIMIT
+        : MATERIAL_DOCUMENT_UPLOAD_LIMIT;
 
       declaredBytes = Number(req.headers.get('content-length') ?? 0);
       if (Number.isFinite(declaredBytes) && declaredBytes > uploadLimit) {
-        return reject(
-          apiError('INVALID_REQUEST', 413, `upload exceeds ${uploadLimit} bytes`),
-          'declared_body_too_large',
-          responseHeaders,
-        );
+        return reject(materialTooLarge(uploadLimit), 'declared_body_too_large', responseHeaders);
       }
       if (!req.body) {
         return reject(
@@ -216,7 +244,6 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const originalName = materialFilename(req);
       if (!originalName) {
         return reject(
           apiError('MISSING_REQUIRED_FIELD', 400, 'x-material-filename header is required'),
@@ -293,6 +320,8 @@ export async function POST(req: NextRequest) {
             responseHeaders,
           );
         }
+        const claimed = ownerWriteErrorResponse(error);
+        if (claimed) return reject(claimed, 'owner_claim', responseHeaders);
         throw error;
       }
 
@@ -309,11 +338,7 @@ export async function POST(req: NextRequest) {
             provider.pool as unknown as ConnectableQueryable,
             createdMaterialId,
           ).catch(() => undefined);
-          return reject(
-            apiError('INVALID_REQUEST', 413, `upload exceeds ${uploadLimit} bytes`),
-            'streamed_body_too_large',
-            responseHeaders,
-          );
+          return reject(materialTooLarge(uploadLimit), 'streamed_body_too_large', responseHeaders);
         }
         failureLogged = true;
         await abandonOwnerMaterial(

@@ -1,32 +1,22 @@
-import { promises as fs } from 'fs';
 import path from 'path';
 import type { NextRequest } from 'next/server';
-import type { Scene, Stage } from '@/lib/types/stage';
 
-export const CLASSROOMS_DIR = path.join(process.cwd(), 'data', 'classrooms');
-export const CLASSROOM_JOBS_DIR = path.join(process.cwd(), 'data', 'classroom-jobs');
-
-async function ensureDir(dir: string) {
-  await fs.mkdir(dir, { recursive: true });
-}
-
-export async function ensureClassroomsDir() {
-  await ensureDir(CLASSROOMS_DIR);
-}
-
-export async function ensureClassroomJobsDir() {
-  await ensureDir(CLASSROOM_JOBS_DIR);
-}
-
-export async function writeJsonFileAtomic(filePath: string, data: unknown) {
-  const dir = path.dirname(filePath);
-  await ensureDir(dir);
-
-  const tempFilePath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  const content = JSON.stringify(data, null, 2);
-  await fs.writeFile(tempFilePath, content, 'utf-8');
-  await fs.rename(tempFilePath, filePath);
-}
+/**
+ * The file-backed classroom directory of earlier versions: `<id>.json` course
+ * files plus `<id>/media` and `<id>/audio`. Defaults to `<cwd>/data/classrooms`;
+ * `OPENMAIC_CLASSROOMS_DIR` overrides it.
+ *
+ * Courses no longer live here: server-side generation writes through the
+ * document store and the asset pool. What still reads the directory is the
+ * one-time import of the courses older versions wrote
+ * (`lib/server/legacy-classroom-import.ts`), the agent runtime's
+ * narration/material media writer (`classroom-media-bytes.ts`), and the
+ * `/api/classroom-media` route that serves both kinds of files to the courses
+ * that still name them.
+ */
+export const CLASSROOMS_DIR = process.env.OPENMAIC_CLASSROOMS_DIR
+  ? path.resolve(process.env.OPENMAIC_CLASSROOMS_DIR)
+  : path.join(process.cwd(), 'data', 'classrooms');
 
 export function buildRequestOrigin(req: NextRequest): string {
   return req.headers.get('x-forwarded-host')
@@ -34,67 +24,27 @@ export function buildRequestOrigin(req: NextRequest): string {
     : req.nextUrl.origin;
 }
 
-export interface PersistedClassroomData {
-  id: string;
-  stage: Stage;
-  scenes: Scene[];
-  createdAt: string;
-}
-
 export function isValidClassroomId(id: string): boolean {
   return /^[a-zA-Z0-9_-]+$/.test(id);
 }
 
-/**
- * Resolve the on-disk JSON path for a classroom id, asserting the result stays
- * inside CLASSROOMS_DIR. The route validates ids up front, but storage must
- * not trust callers: an id carrying path separators (e.g. `..`) must never be
- * allowed to name a file outside the classrooms directory.
- */
-export function resolveClassroomFilePath(id: string): string {
-  const resolvedRoot = path.resolve(CLASSROOMS_DIR);
-  const filePath = path.resolve(resolvedRoot, `${id}.json`);
-  const rootPrefix = `${resolvedRoot}${path.sep}`;
-  if (filePath !== resolvedRoot && !filePath.startsWith(rootPrefix)) {
-    throw new Error(`Classroom id "${id}" resolves outside the classrooms directory`);
-  }
-  return filePath;
-}
+const CLASSROOM_MEDIA_MIME_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.aac': 'audio/aac',
+  '.flac': 'audio/flac',
+  '.m4a': 'audio/mp4',
+};
 
-export async function readClassroom(id: string): Promise<PersistedClassroomData | null> {
-  const filePath = resolveClassroomFilePath(id);
-  try {
-    const content = await fs.readFile(filePath, 'utf-8');
-    return JSON.parse(content) as PersistedClassroomData;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return null;
-    }
-    throw error;
-  }
-}
-
-export async function persistClassroom(
-  data: {
-    id: string;
-    stage: Stage;
-    scenes: Scene[];
-  },
-  baseUrl: string,
-): Promise<PersistedClassroomData & { url: string }> {
-  const classroomData: PersistedClassroomData = {
-    id: data.id,
-    stage: data.stage,
-    scenes: data.scenes,
-    createdAt: new Date().toISOString(),
-  };
-
-  const filePath = resolveClassroomFilePath(data.id);
-  await ensureClassroomsDir();
-  await writeJsonFileAtomic(filePath, classroomData);
-
-  return {
-    ...classroomData,
-    url: `${baseUrl}/classroom/${data.id}`,
-  };
+/** The type of a classroom media file, by its extension (`.png`, `.mp3`, ...). */
+export function classroomMediaMimeType(extension: string): string | undefined {
+  return CLASSROOM_MEDIA_MIME_TYPES[extension.toLowerCase()];
 }

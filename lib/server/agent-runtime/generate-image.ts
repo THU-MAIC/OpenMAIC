@@ -1,36 +1,31 @@
-import { createHash } from 'node:crypto';
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
-
 import type { AgentTool } from '@earendil-works/pi-agent-core';
+import type { AssetStore } from '@openmaic/storage';
 import { Type, type Static } from 'typebox';
 
 import { generateImage, IMAGE_PROVIDERS } from '@/lib/media/image-providers';
+import { managedMediaProviderFetch, mediaProviderFetch } from '@/lib/server/media-provider-fetch';
+import { serverMediaConnection } from '@/lib/server/model-config/media';
 import type {
   ImageGenerationConfig,
   ImageGenerationOptions,
   ImageGenerationResult,
   ImageProviderId,
 } from '@/lib/media/types';
-import {
-  enabledProviderIds,
-  getServerImageProviders,
-  isServerProviderDisabled,
-  resolveImageApiKey,
-  resolveImageBaseUrl,
-  resolveImageModel,
-} from '@/lib/server/provider-config';
+import { enabledProviderIds, isServerProviderDisabled } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { resolveImageSize } from '@/lib/server/image-sizing';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
-import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { fetchProviderResultUrl } from '@/lib/server/provider-result-fetch';
 import {
   DownloadByteBudget,
   MAX_REMOTE_IMAGE_BATCH_BYTES,
   MAX_REMOTE_IMAGE_BYTES,
   readResponseBodyWithLimit,
 } from '@/lib/server/bounded-download';
-import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
+import {
+  AssetStorageFullError,
+  storeGeneratedAssetOrThrow,
+} from '@/lib/server/store-generated-asset';
 import type { CourseToolDeps } from './course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import { errorResult, MEDIA_TOOL_ERROR_REASONS } from './media-tool-result';
@@ -69,23 +64,24 @@ interface PersistImageInput {
   result: ImageGenerationResult;
   stageId: string;
   signal: AbortSignal;
+  /** The run's owner; the bytes are allocated in its asset partition. */
+  ownerId?: string;
 }
 
 type PersistGeneratedImage = (input: PersistImageInput) => Promise<string>;
 
-export interface GenerateImageToolDeps extends Pick<CourseToolDeps, 'sessionId' | 'abortSignal'> {
-  getConfiguredProviders?: typeof getServerImageProviders;
-  resolveProviderConfig?: (providerId: ImageProviderId) => ImageGenerationConfig;
+export interface GenerateImageToolDeps extends Pick<
+  CourseToolDeps,
+  'sessionId' | 'abortSignal' | 'ownerId'
+> {
+  /** The providers to pick from; by default, the one the image slot resolves to. */
+  getConfiguredProviders?: () => ImageProviderListing | Promise<ImageProviderListing>;
+  resolveProviderConfig?: (
+    providerId: ImageProviderId,
+  ) => ImageGenerationConfig | Promise<ImageGenerationConfig>;
   generateConfiguredImage?: GenerateConfiguredImage;
   persistGeneratedImage?: PersistGeneratedImage;
   timeoutMs?: number;
-}
-
-function extensionForMime(mime: string): string {
-  if (mime === 'image/jpeg') return 'jpg';
-  if (mime === 'image/webp') return 'webp';
-  if (mime === 'image/gif') return 'gif';
-  return 'png';
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -103,25 +99,6 @@ function isTimeout(signal: AbortSignal): boolean {
   );
 }
 
-async function fetchGeneratedImage(url: string, signal: AbortSignal): Promise<Response> {
-  const maxRedirects = 5;
-  let currentUrl = url;
-  for (let hop = 0; ; hop++) {
-    throwIfAborted(signal);
-    const ssrfError = await validateUrlForSSRF(currentUrl);
-    throwIfAborted(signal);
-    if (ssrfError) throw new Error(ssrfError);
-
-    const response = await fetch(currentUrl, { redirect: 'manual', signal });
-    if (response.status < 300 || response.status >= 400) return response;
-
-    const location = response.headers.get('location');
-    if (!location) throw new Error('Image download redirect has no Location header');
-    if (hop >= maxRedirects) throw new Error('Image download exceeded 5 redirects');
-    currentUrl = new URL(location, currentUrl).href;
-  }
-}
-
 async function imageBytes(
   result: ImageGenerationResult,
   signal: AbortSignal,
@@ -132,11 +109,17 @@ async function imageBytes(
     if (bytes.length > MAX_REMOTE_IMAGE_BYTES) {
       throw new Error(`Generated image exceeds the ${MAX_REMOTE_IMAGE_BYTES}-byte limit`);
     }
-    return { bytes, mime: 'image/png' };
+    // Inline bytes have no `Content-Type` to read, so the adapter that received
+    // them is the one that knows their type. PNG stays the fallback for an
+    // adapter that does not report one.
+    return { bytes, mime: result.mimeType ?? 'image/png' };
   }
   if (!result.url) throw new Error('Image provider returned neither URL nor image bytes');
 
-  const response = await fetchGeneratedImage(result.url, signal);
+  const response = await fetchProviderResultUrl(result.url, {
+    signal,
+    maxBytes: MAX_REMOTE_IMAGE_BYTES,
+  });
   if (!response.ok) throw new Error(`Generated image download failed: HTTP ${response.status}`);
   const mime = response.headers.get('content-type')?.split(';')[0]?.trim() || 'image/png';
   if (!mime.startsWith('image/')) {
@@ -151,59 +134,88 @@ async function imageBytes(
 }
 
 /**
- * Persist through the same local classroom-media path used by classic mode,
- * returning an origin-independent RELATIVE serving path. The agent runtime has
- * no request to derive an origin from, and the durable value must stay valid
- * regardless of the origin the app is served from; the browser resolves the
- * relative path against the page origin. Classic request-bearing routes build
- * absolute URLs through `resolveMediaServingOrigin` instead.
+ * Store the generated bytes in the asset pool and return the id it allocated.
+ *
+ * The returned value is an `ast_` id, not a URL: the model puts it on an image
+ * element through `patch_stage`, and that document write is what commits the
+ * allocation and records the reference (#1473). Until it happens the entry is
+ * pending and the collector will reclaim it, which is exactly the behaviour a
+ * generation the agent never used should have.
+ *
+ * `assetStore` is a test seam — the historical shape of this function before
+ * #1242 replaced the pool with a local file. Production calls pass nothing and
+ * get this deployment's PostgreSQL store.
  */
-export async function defaultPersistGeneratedImage({
-  result,
-  stageId,
-  signal,
-}: PersistImageInput): Promise<string> {
+export async function defaultPersistGeneratedImage(
+  { result, stageId, signal, ownerId }: PersistImageInput,
+  assetStore?: AssetStore,
+): Promise<string> {
+  if (!ownerId) throw new Error('Generated media cannot be stored without the run owner');
   const { bytes, mime } = await imageBytes(result, signal);
-  const hash = createHash('sha256').update(bytes).digest('hex');
   throwIfAborted(signal);
+  const assetId = await storeGeneratedAssetOrThrow({
+    ownerId,
+    stageId,
+    bytes,
+    mimeType: mime,
+    kind: 'image',
+    assetStore,
+  });
+  throwIfAborted(signal);
+  return assetId;
+}
 
-  const mediaDir = path.join(CLASSROOMS_DIR, stageId, 'media');
-  const filename = `generated-${hash}.${extensionForMime(mime)}`;
-  await fs.mkdir(mediaDir, { recursive: true });
-  throwIfAborted(signal);
-  await fs.writeFile(path.join(mediaDir, filename), bytes);
-  throwIfAborted(signal);
-  return `/api/classroom-media/${stageId}/media/${filename}`;
+type ImageProviderListing = Record<string, { models?: string[]; disabled?: boolean }>;
+
+/**
+ * Pick the image provider for this call: the first enabled one listed. The
+ * default listing is the image slot's single provider. Resolution goes through
+ * {@link enabledProviderIds}, so a force-disabled provider is never selected
+ * (#665).
+ */
+function selectProvider(configured: ImageProviderListing): ImageProviderId | null {
+  return (enabledProviderIds(configured)[0] as ImageProviderId | undefined) ?? null;
 }
 
 /**
- * Pick the image provider for this call: the operator's `DEFAULT_IMAGE_PROVIDER`
- * when it names an enabled provider, otherwise the first enabled provider.
- * Resolution goes through {@link enabledProviderIds}, so a force-disabled
- * provider is never selected and `DEFAULT_IMAGE_PROVIDER` cannot bypass the
- * force-off switch (#665).
+ * The image slot for the run's owner as a one-provider listing and its
+ * connection. Resolved once per call.
  */
-function selectProvider(
-  configured: Record<string, { models?: string[]; disabled?: boolean }>,
-): ImageProviderId | null {
-  const ids = enabledProviderIds(configured);
-  const requested = process.env.DEFAULT_IMAGE_PROVIDER?.trim();
-  if (requested) return ids.includes(requested) ? (requested as ImageProviderId) : null;
-  return (ids[0] as ImageProviderId | undefined) ?? null;
+function slotImageProvider(ownerId: string | undefined) {
+  let pending: ReturnType<typeof serverMediaConnection> | undefined;
+  const connection = () => (pending ??= serverMediaConnection('image', ownerId));
+  return {
+    listing: async (): Promise<ImageProviderListing> => {
+      const resolved = await connection();
+      return resolved && resolved !== 'off' ? { [resolved.providerId]: {} } : {};
+    },
+    config: async (providerId: ImageProviderId): Promise<ImageGenerationConfig> => {
+      const resolved = await connection();
+      if (!resolved || resolved === 'off' || resolved.providerId !== providerId) {
+        throw new Error('the image slot no longer resolves to this provider');
+      }
+      return {
+        providerId,
+        apiKey: resolved.apiKey ?? '',
+        ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
+        // A slot without a model uses the provider's first catalogue model.
+        model: resolved.modelId ?? IMAGE_PROVIDERS[providerId]?.models?.[0]?.id,
+        fetchImpl: resolved.managed ? managedMediaProviderFetch : mediaProviderFetch,
+      };
+    },
+  };
 }
 
 export function buildGenerateImageTool(
   deps: GenerateImageToolDeps,
 ): AgentTool<typeof GenerateImageParams, unknown> {
-  const configuredProviders = deps.getConfiguredProviders ?? getServerImageProviders;
-  const resolveProviderConfig =
-    deps.resolveProviderConfig ??
-    ((providerId: ImageProviderId): ImageGenerationConfig => ({
-      providerId,
-      apiKey: resolveImageApiKey(providerId),
-      baseUrl: resolveImageBaseUrl(providerId),
-      model: resolveImageModel(providerId),
-    }));
+  const providerSource = () => {
+    const slot = slotImageProvider(deps.ownerId);
+    return {
+      configuredProviders: deps.getConfiguredProviders ?? slot.listing,
+      resolveProviderConfig: deps.resolveProviderConfig ?? slot.config,
+    };
+  };
   const callProvider = deps.generateConfiguredImage ?? generateImage;
   const persist = deps.persistGeneratedImage ?? defaultPersistGeneratedImage;
 
@@ -211,7 +223,7 @@ export function buildGenerateImageTool(
     name: GENERATE_IMAGE_TOOL_NAME,
     label: 'Generate image',
     description:
-      'Create a new image from a prompt, persist it with the explicitly targeted course media, and return a renderable src plus dimensions. Use the returned src in a later patch_stage set of an existing media element, or add an image element with patch_stage. This tool never edits a page itself.',
+      'Create a new image from a prompt, store it with the explicitly targeted course media, and return its src plus dimensions. The src is a stored-asset id, not a URL; use it verbatim in a later patch_stage set of an existing media element, or add an image element with patch_stage. The image is only kept once a page references it. This tool never edits a page itself.',
     parameters: GenerateImageParams,
     async execute(toolCallId, params: Static<typeof GenerateImageParams>, signal) {
       const callerSignal = signal ?? deps.abortSignal;
@@ -223,23 +235,13 @@ export function buildGenerateImageTool(
       const stageId = params.stageId;
       throwIfAborted(callerSignal);
 
-      const providers = configuredProviders();
+      const { configuredProviders, resolveProviderConfig } = providerSource();
+      const providers = await configuredProviders();
       const providerId = selectProvider(providers);
-      const requestedDefault = process.env.DEFAULT_IMAGE_PROVIDER?.trim();
       if (!providerId) {
-        if (requestedDefault) {
-          log.warn(
-            `[${toolCallId}] Image generation unavailable: requested default provider ${requestedDefault} is not enabled`,
-          );
-        } else {
-          log.warn(
-            `[${toolCallId}] Image generation unavailable: no enabled server image provider`,
-          );
-        }
+        log.warn(`[${toolCallId}] Image generation unavailable: no image provider resolves`);
         return errorResult(
-          requestedDefault
-            ? 'Image generation is unavailable: the server default image provider is not available.'
-            : 'Image generation is unavailable: no server image provider is available.',
+          'Image generation is unavailable: no server image provider is available.',
           {
             stageId,
             sessionId: deps.sessionId,
@@ -274,7 +276,7 @@ export function buildGenerateImageTool(
           },
         );
       }
-      const providerConfig = resolveProviderConfig(providerId);
+      const providerConfig = await resolveProviderConfig(providerId);
       if (provider.requiresApiKey && !providerConfig.apiKey) {
         log.warn(
           `[${toolCallId}] Image generation unavailable: no API key configured for provider ${providerId}`,
@@ -320,7 +322,12 @@ export function buildGenerateImageTool(
         });
         throwIfAborted(ioSignal);
 
-        const src = await persist({ result, stageId, signal: ioSignal });
+        const src = await persist({
+          result,
+          stageId,
+          signal: ioSignal,
+          ...(deps.ownerId ? { ownerId: deps.ownerId } : {}),
+        });
         throwIfAborted(ioSignal);
         void recordGenerationUsage({
           kind: 'image',
@@ -337,7 +344,7 @@ export function buildGenerateImageTool(
           content: [
             {
               type: 'text',
-              text: `Generated image: src=${src}, width=${result.width}, height=${result.height}. Use this src with patch_stage set or add an image element.`,
+              text: `Generated image: src=${src}, width=${result.width}, height=${result.height}. src is a stored-asset id; use it verbatim with patch_stage set or add an image element.`,
             },
           ],
           details: {
@@ -348,6 +355,17 @@ export function buildGenerateImageTool(
         };
       } catch (error) {
         if (callerSignal?.aborted) throw new Error('aborted');
+        // A full store is the one failure the model can act on, so it is said
+        // plainly and given its own code. Nothing was written: there is no
+        // local-disk fallback, because a fallback would put the workbench back
+        // on two storage models — the thing this path exists to end.
+        if (error instanceof AssetStorageFullError) {
+          log.warn(`[${toolCallId}] Image generation refused: the asset store is full`);
+          return errorResult(
+            'Image generation failed: asset storage is full, so the generated image could not be stored. Nothing was saved. Ask the operator to raise the asset storage limit or free space, then try again.',
+            { stageId, reason: MEDIA_TOOL_ERROR_REASONS.storageFull },
+          );
+        }
         if (isTimeout(ioSignal)) {
           log.warn(
             `[${toolCallId}] Image generation timed out: provider=${providerId}, model=${model ?? 'default'}, timeoutMs=${deps.timeoutMs ?? GENERATE_IMAGE_TIMEOUT_MS}`,

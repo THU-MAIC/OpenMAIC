@@ -1,3 +1,4 @@
+import type { InteractiveStateEvidence } from '@/lib/interactive/chat-observation';
 /**
  * Shared Type Definitions for Multi-Agent Orchestration
  *
@@ -320,7 +321,17 @@ export interface InteractiveComponentReference {
   selector: string;
 }
 
-export type ElementReference = SlideElementReference | InteractiveComponentReference;
+/** Identity only; content is resolved from this request's Stage snapshot. */
+export interface WhiteboardElementReference {
+  kind: 'whiteboard_element';
+  whiteboardId: string;
+  elementId: string;
+}
+
+export type ElementReference =
+  | SlideElementReference
+  | InteractiveComponentReference
+  | WhiteboardElementReference;
 
 /**
  * Request body for the stateless chat API
@@ -362,6 +373,8 @@ export interface StatelessChatRequest {
   };
   /** Optional Pi-only, identity-only reference to one classroom component. */
   elementReference?: ElementReference;
+  /** Request-scoped browser evidence, never a tool permission or static definition. */
+  interactiveState?: InteractiveStateEvidence;
   /** Agent configuration */
   config: {
     agentIds: string[];

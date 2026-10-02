@@ -6,17 +6,19 @@ import type { AppScene } from '@/lib/types/stage';
 import { createFakeDocumentStore } from './_fake-document-store';
 
 const mocks = vi.hoisted(() => ({
-  runtimeConfigured: true,
+  persistenceConfigured: true,
   resolveRequestOwnerId: vi.fn(),
   fakeStore: null as ReturnType<typeof createFakeDocumentStore> | null,
 }));
 
 vi.mock('@/lib/config/feature-flags', () => ({
-  isAgentRuntimeConfigured: () => mocks.runtimeConfigured,
+  isServerPersistenceConfigured: () => mocks.persistenceConfigured,
 }));
-vi.mock('@/lib/server/agent-runtime/owner', () => ({
-  resolveRequestOwnerId: mocks.resolveRequestOwnerId,
-}));
+vi.mock('@/lib/server/identity/resolve', async () =>
+  (await import('../helpers/owner-resolution-mock')).ownerResolveModule(
+    mocks.resolveRequestOwnerId,
+  ),
+);
 vi.mock('@/lib/server/agent-runtime/owner-scoped-documents', () => ({
   getOwnerScopedDocumentStore: async () => mocks.fakeStore!.store,
 }));
@@ -48,7 +50,7 @@ function makeDocument(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.runtimeConfigured = true;
+  mocks.persistenceConfigured = true;
   mocks.resolveRequestOwnerId.mockReturnValue('owner-1');
   mocks.fakeStore = createFakeDocumentStore();
 });
@@ -81,8 +83,8 @@ describe('GET /api/stages', () => {
     expect(mocks.resolveRequestOwnerId).toHaveBeenCalledOnce();
   });
 
-  it('answers 404 when the agent runtime is not configured', async () => {
-    mocks.runtimeConfigured = false;
+  it('answers 404 when server persistence is not configured', async () => {
+    mocks.persistenceConfigured = false;
     const response = await GET(new NextRequest('http://localhost/api/stages'));
     expect(response.status).toBe(404);
     expect(mocks.resolveRequestOwnerId).not.toHaveBeenCalled();
@@ -100,6 +102,39 @@ describe('GET /api/stages', () => {
 });
 
 describe('POST /api/stages', () => {
+  it('answers 403 CREATE_REFUSED for a refusal thrown by another copy of the storage package', async () => {
+    // Recognized by name and shape, not by `instanceof` alone.
+    mocks.fakeStore!.failNextSaveWith(
+      Object.assign(new Error('refused by policy'), {
+        name: 'DocumentWriteRefusedError',
+        code: 'CREATE_REFUSED',
+        stageId: 'stage-x',
+      }),
+    );
+    const response = await POST(
+      new NextRequest('http://localhost/api/stages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Refused' }),
+      }),
+    );
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ errorCode: 'CREATE_REFUSED' });
+  });
+
+  it('does not turn an unrelated coded error into a refusal', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.fakeStore!.failNextSaveWith(Object.assign(new Error('raise'), { code: 'P0001' }));
+    const response = await POST(
+      new NextRequest('http://localhost/api/stages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Broken' }),
+      }),
+    );
+    expect(response.status).toBe(500);
+  });
+
   it('creates an empty stage shell and returns its summary', async () => {
     const response = await POST(
       new NextRequest('http://localhost/api/stages', {
@@ -205,8 +240,8 @@ describe('POST /api/stages', () => {
     expect(mocks.resolveRequestOwnerId).not.toHaveBeenCalled();
   });
 
-  it('answers 404 when the agent runtime is not configured', async () => {
-    mocks.runtimeConfigured = false;
+  it('answers 404 when server persistence is not configured', async () => {
+    mocks.persistenceConfigured = false;
     const response = await POST(
       new NextRequest('http://localhost/api/stages', {
         method: 'POST',

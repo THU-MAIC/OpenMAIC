@@ -134,6 +134,14 @@ function invalidateCachedZip() {
   releaseIdleObservers();
 }
 
+function rejectionMessageKey(status: number | null, reason?: string): string | undefined {
+  if (status === 413) return 'export.videoTooLarge';
+  if (status !== 429) return undefined;
+  if (reason === 'queue_full') return 'export.videoQueueFull';
+  if (reason === 'per_identity_limit') return 'export.videoRenderInProgress';
+  return undefined;
+}
+
 export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
   status: 'idle',
   percent: 0,
@@ -224,13 +232,14 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
       }
       ({ zipBlob, stageName, missingCount, errorCount } = built);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      set({ status: 'failed', error: message });
       if (error instanceof NoScenesError) {
         toast.error(t('export.videoNoScenes'), { id: toastId });
       } else {
         log.error('Video render (compile) failed:', error);
         toast.error(t('export.videoFailed'), { id: toastId });
       }
-      set({ status: 'failed', error: 'compile' });
       activeRenders -= 1;
       releaseIdleObservers();
       return;
@@ -254,6 +263,7 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
     // unavailable" (degrade to ZIP) from a real rejection like 429/413/5xx
     // (surface the error instead of an unsolicited download). null = fetch threw.
     let submitStatus: number | null = null;
+    let submitReason: string | undefined;
 
     try {
       const form = new FormData();
@@ -274,9 +284,11 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
             jobId?: string;
             error?: string;
             details?: string;
+            reason?: string;
           };
           if (!res.ok || !data.jobId) {
             submitStatus = res.status;
+            submitReason = data.reason;
             const detail = [data.error, data.details].filter(Boolean).join(': ');
             return { status: 'failed', message: detail || `HTTP ${res.status}` };
           }
@@ -348,7 +360,8 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
         } else {
           if (submitStatus === 400 || submitStatus === 413) invalidateCachedZip();
           set({ status: 'failed', error: message });
-          toast.error(t('export.videoFailed'), { id: toastId });
+          const key = rejectionMessageKey(submitStatus, submitReason);
+          toast.error(t(key ?? 'export.videoFailed'), { id: toastId });
         }
       } else {
         // The render started but failed / timed out. Cancel the server job so it

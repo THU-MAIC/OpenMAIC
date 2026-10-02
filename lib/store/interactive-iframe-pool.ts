@@ -16,6 +16,12 @@
  * bounds how many documents stay resident in memory.
  */
 
+import type { ObservationIdentity } from '@/lib/interactive/observation-bridge';
+import {
+  OBSERVATION_SCOPE_ID,
+  supportsInteractiveObservation,
+} from '@/lib/interactive/observation';
+import { patchHtmlForIframe } from '@/lib/utils/iframe';
 import { create } from 'zustand';
 
 export const IFRAME_POOL_CAP = 3;
@@ -30,6 +36,16 @@ export interface IframeRect {
 export interface IframePoolEntry {
   /** Patched HTML for `srcDoc`, when the scene carries inline HTML. */
   readonly srcDoc?: string;
+  /**
+   * Identity of the observation reader baked into `srcDoc`. Minted here, with the
+   * entry, because the entry is the document's lifetime: a placeholder remount
+   * must reuse this document, and an identity minted per React instance would
+   * produce a new `srcDoc` string, miss the keep-alive path below, and reload the
+   * iframe — resetting whatever the student had set.
+   */
+  readonly observationIdentity?: ObservationIdentity;
+  /** Original source identity for send-time observation; never a state cache. */
+  readonly sourceHtml?: string;
   /** URL for `src`, when the scene points at an external page. */
   readonly src?: string;
   /** Full available slot rect. The host contain-fits one fixed logical viewport inside it. */
@@ -51,7 +67,8 @@ export interface IframePoolEntry {
 }
 
 interface MountInput {
-  readonly srcDoc?: string;
+  /** Authored HTML. The entry owns patching, so callers pass the source itself. */
+  readonly sourceHtml?: string;
   readonly src?: string;
 }
 
@@ -105,17 +122,27 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
       const tick = state.tick + 1;
       const existing = state.entries[sceneId];
       // Same content already loaded: just refresh recency. Crucially we keep the
-      // existing srcDoc/src reference so the host never re-sets it (which would
-      // reload the iframe). String `===` is by value, so a remount that produces
-      // an equal-but-new srcDoc string still hits this keep-alive fast path.
-      if (existing && existing.srcDoc === input.srcDoc && existing.src === input.src) {
+      // existing entry — its srcDoc, and the reader identity baked into it — so
+      // the host never re-sets srcDoc (which would reload the iframe). Matching on
+      // the authored source, not on the prepared document, is what makes a
+      // placeholder remount with identical content hit this keep-alive path.
+      if (existing && existing.src === input.src && existing.sourceHtml === input.sourceHtml) {
         const entries = { ...state.entries, [sceneId]: { ...existing, tick } };
         return { entries, tick };
       }
       // New scene, or content changed: (re)build the entry. A content change here
       // is the one intended reload path.
+      // One document preparation step, at the one moment a document is born.
+      const observationIdentity =
+        input.sourceHtml && supportsInteractiveObservation()
+          ? { sceneId, scopeId: OBSERVATION_SCOPE_ID, documentId: crypto.randomUUID() }
+          : undefined;
       const entry: IframePoolEntry = {
-        srcDoc: input.srcDoc,
+        srcDoc: input.sourceHtml
+          ? patchHtmlForIframe(input.sourceHtml, observationIdentity)
+          : undefined,
+        observationIdentity,
+        sourceHtml: input.sourceHtml,
         src: input.src,
         rect: existing?.rect ?? null,
         clip: existing?.clip ?? null,

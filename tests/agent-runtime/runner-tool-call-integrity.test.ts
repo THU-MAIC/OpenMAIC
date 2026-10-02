@@ -126,7 +126,7 @@ function makeMeta(overrides: Partial<ClaimedAgentSession> = {}): ClaimedAgentSes
   };
 }
 
-function makeStore(meta: ClaimedAgentSession, options: { hasSessionRunHistory?: boolean } = {}) {
+function makeStore(meta: ClaimedAgentSession) {
   let seq = 0;
   return {
     appendRunEvent: vi.fn(
@@ -143,7 +143,7 @@ function makeStore(meta: ClaimedAgentSession, options: { hasSessionRunHistory?: 
     clearCancel: vi.fn(async () => undefined),
     finishSession: vi.fn(async () => true),
     getSession: vi.fn(async () => ({ ...meta, lease: { workerId: WORKER_ID } })),
-    hasSessionRunHistory: vi.fn(async () => options.hasSessionRunHistory ?? false),
+    readEventsAfter: vi.fn(async () => []),
     heartbeat: vi.fn(async () => true),
     getCancelRequestedAt: vi.fn(async () => null),
     isCancelRequested: vi.fn(async () => false),
@@ -357,7 +357,7 @@ describe('read-time repair of an orphaned durable tool call', () => {
     const seedUser = userMessage('Build a lesson', 1);
     const seedAssistant = assistantCallMessage(2);
     const session = await makeEntryTree([seedUser, seedAssistant]);
-    const store = makeStore(meta, { hasSessionRunHistory: true });
+    const store = makeStore(meta);
     mocks.openEntryStorage.mockResolvedValue(session.getStorage());
     mocks.getAgentSessionStore.mockResolvedValue(store);
 

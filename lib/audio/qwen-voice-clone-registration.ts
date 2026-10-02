@@ -32,6 +32,8 @@ function registrationConfigKey(cfg: VoiceRegistrationConfig): string {
     .update(cfg.apiKey || '')
     .update('\0')
     .update(cfg.model || '')
+    .update('\0')
+    .update(cfg.publicOnly ? 'public-only' : cfg.managed ? 'managed' : 'server-policy')
     .digest('hex');
 }
 
@@ -90,6 +92,8 @@ async function registerVoice(
         apiKey: cfg.apiKey,
         baseUrl: cfg.baseUrl,
         targetModel: cfg.model || QWEN_TTS_VOICE_CLONE_MODEL,
+        publicOnly: cfg.publicOnly,
+        managed: cfg.managed,
       },
       { name: params.voiceId, audio, text: refText },
       undefined,
@@ -157,7 +161,13 @@ async function voiceExists(
   signal?: AbortSignal,
 ): Promise<boolean | 'unknown'> {
   const result = await qwenVoiceExists(
-    { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, targetModel: cfg.model },
+    {
+      apiKey: cfg.apiKey,
+      baseUrl: cfg.baseUrl,
+      targetModel: cfg.model,
+      publicOnly: cfg.publicOnly,
+      managed: cfg.managed,
+    },
     voiceId,
     signal,
   );
@@ -183,7 +193,13 @@ async function deleteVoice(
   signal?: AbortSignal,
 ): Promise<void> {
   await deleteQwenVoice(
-    { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, targetModel: cfg.model },
+    {
+      apiKey: cfg.apiKey,
+      baseUrl: cfg.baseUrl,
+      targetModel: cfg.model,
+      publicOnly: cfg.publicOnly,
+      managed: cfg.managed,
+    },
     voiceId,
     signal,
   );

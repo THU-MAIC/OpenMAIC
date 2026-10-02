@@ -37,4 +37,6 @@ export interface WebSearchProviderConfig {
   defaultBaseUrl?: string;
   endpointPath: string;
   icon?: string;
+  /** The models a provider that searches through a model offers, best first. */
+  models?: ReadonlyArray<{ id: string; name: string }>;
 }

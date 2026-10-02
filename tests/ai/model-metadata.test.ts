@@ -23,6 +23,16 @@ const MODELS_WITHOUT_CONFIGURABLE_THINKING = new Set<string>([
   'grok:grok-4-1-fast-non-reasoning',
   'grok:grok-code-fast-1',
   'atlascloud:qwen/qwen3.5-flash',
+  // TokenDance serves many vendors' models behind one OpenAI-compatible
+  // gateway; per-model thinking parameters are left at the model default until
+  // their pass-through on the gateway is verified.
+  'tokendance:deepseek-v4.1-flash',
+  'tokendance:deepseek-v4-pro',
+  'tokendance:glm-5.3',
+  'tokendance:kimi-k3',
+  'tokendance:qwen3.8-max',
+  'tokendance:seed-2.1-pro',
+  'tokendance:minimax-m3',
   'ollama:llama3.3',
   'ollama:gemma3',
   'ollama:deepseek-r1',

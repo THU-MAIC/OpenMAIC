@@ -21,6 +21,11 @@ function toHttpErrorStatus(value: unknown): number | undefined {
     : undefined;
 }
 
+/** The provider's HTTP error status carried by an AI SDK (or similar) error, if any. */
+export function upstreamHttpStatus(error: unknown): number | undefined {
+  return statusFromError(error);
+}
+
 function statusFromError(error: unknown, seen = new Set<unknown>()): number | undefined {
   if (!error || seen.has(error)) return undefined;
   seen.add(error);

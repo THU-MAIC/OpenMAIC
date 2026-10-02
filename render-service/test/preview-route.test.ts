@@ -85,6 +85,7 @@ function appWith(
     extractionGate?: Semaphore;
     previewDeadlineMs?: number;
     previewMaxJsonBytes?: number;
+    resourceMode?: boolean;
   } = {},
 ) {
   const jobs = createMemoryJobStore();
@@ -99,10 +100,28 @@ function appWith(
     previewRenderer,
     previewDeadlineMs: options.previewDeadlineMs,
     previewMaxJsonBytes: options.previewMaxJsonBytes,
+    resourceMode: options.resourceMode,
   });
 }
 
 describe('POST /preview', () => {
+  it('rejects resource mode before parsing the request or starting Chromium', async () => {
+    const render = vi.fn<PreviewRenderer['render']>();
+    const response = await appWith({ render }, undefined, {
+      resourceMode: true,
+      // A normal route would reject this body as oversized first. Resource mode
+      // must win before even declared-length/body processing.
+      previewMaxJsonBytes: 1,
+    }).fetch(previewRequest());
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Preview is unavailable while per-task resource budgets are enabled',
+      reason: 'resource_mode_unsupported',
+    });
+    expect(render).not.toHaveBeenCalled();
+  });
+
   it('returns the rendered PNG synchronously', async () => {
     const render = vi.fn<PreviewRenderer['render']>(async () => new Uint8Array([137, 80, 78, 71]));
     const response = await appWith({ render }).fetch(previewRequest());

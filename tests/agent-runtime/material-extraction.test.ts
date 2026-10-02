@@ -12,7 +12,10 @@ import {
 } from '@openmaic/storage/material/pg';
 
 import { buildMaterialTools } from '@/lib/server/agent-runtime/material-tools';
-import { extractClaimedSessionMaterial } from '@/lib/server/material-extraction/extract';
+import {
+  decodeMediaAssetData,
+  extractClaimedSessionMaterial,
+} from '@/lib/server/material-extraction/extract';
 import { runNextMaterialExtraction } from '@/lib/server/material-extraction/runner';
 import { LocalMediaExtractionError } from '@/lib/document/extractors/local-media';
 import type { MediaExtractorProvider } from '@/lib/document';
@@ -43,6 +46,32 @@ describe('uploaded material extraction lifecycle', () => {
 
   afterEach(async () => {
     await db?.close();
+  });
+
+  it('decodes both legacy raw-base64 and data-URL media assets identically', () => {
+    const encoded = Buffer.from('prepared-webp').toString('base64');
+
+    expect(decodeMediaAssetData(encoded)).toEqual(Buffer.from('prepared-webp'));
+    expect(decodeMediaAssetData(`data:image/webp;base64,${encoded}`)).toEqual(
+      Buffer.from('prepared-webp'),
+    );
+    expect(() => decodeMediaAssetData('data:image/webp,not-base64')).toThrow(
+      'Unsupported media asset data URL encoding',
+    );
+  });
+
+  it('rejects malformed or empty data URLs instead of decoding garbage bytes', () => {
+    const encoded = Buffer.from('prepared-webp').toString('base64');
+
+    expect(() => decodeMediaAssetData(`data:image/webp;base64${encoded}`)).toThrow(
+      'Malformed media asset data URL',
+    );
+    expect(decodeMediaAssetData(` data:image/webp;base64,${encoded}`)).toEqual(
+      Buffer.from('prepared-webp'),
+    );
+    expect(() => decodeMediaAssetData('data:image/webp;base64,')).toThrow(
+      'Empty media asset data URL payload',
+    );
   });
 
   it('uploads a source, extracts it through the registry, and reads the extracted text', async () => {
@@ -184,7 +213,7 @@ describe('uploaded material extraction lifecycle', () => {
               id: 'frame-1',
               type: 'image',
               mimeType: 'image/webp',
-              data: Buffer.from('prepared-webp').toString('base64'),
+              data: `data:image/webp;base64,${Buffer.from('prepared-webp').toString('base64')}`,
             },
           ],
         })),

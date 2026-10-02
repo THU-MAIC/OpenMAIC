@@ -11,8 +11,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
+
 const mocks = vi.hoisted(() => ({
-  settings: vi.fn(),
   mediaPut: vi.fn(),
   mediaDelete: vi.fn(),
   mediaGet: vi.fn(),
@@ -20,16 +21,11 @@ const mocks = vi.hoisted(() => ({
   putAsset: vi.fn(),
   removeAsset: vi.fn(),
   mutateDocument: vi.fn(),
-  serverBacked: vi.fn(),
   saveStageDataIncremental: vi.fn(),
   saveStageData: vi.fn(),
 }));
 
-vi.mock('@/lib/store/settings', () => ({
-  useSettingsStore: { getState: mocks.settings },
-}));
-
-vi.mock('@/lib/utils/database', () => ({
+vi.mock('@/lib/device-storage/database', () => ({
   mediaFileKey: (stageId: string, ref: string) => `${stageId}:${ref}`,
   db: {
     mediaFiles: {
@@ -56,10 +52,6 @@ vi.mock('@/lib/media/asset-pool', () => ({
 // exactly what these tests exist to pin. Only the document store is doubled.
 vi.mock('@/lib/document-store', () => ({
   mutateDocument: mocks.mutateDocument,
-}));
-
-vi.mock('@/lib/persistence/media-persistence', () => ({
-  isServerBackedMediaPersistence: mocks.serverBacked,
 }));
 
 vi.mock('@/lib/utils/stage-storage', () => ({
@@ -133,18 +125,12 @@ describe('media that finishes before its scene exists', () => {
         async (_stageId: string, work: (doc: null, store: unknown) => Promise<void>) =>
           work(null, { putScene: vi.fn(), putStage: vi.fn() }),
       );
-    mocks.serverBacked.mockReset().mockReturnValue(true);
     mocks.saveStageDataIncremental.mockReset().mockResolvedValue({ failedChanges: [] });
     mocks.saveStageData.mockReset().mockResolvedValue(undefined);
-    mocks.settings.mockReset().mockReturnValue({
-      imageGenerationEnabled: true,
-      videoGenerationEnabled: true,
-      imageProviderId: 'image-provider',
-      imageModelId: 'image-model',
-      imageProvidersConfig: {},
-      videoProviderId: 'video-provider',
-      videoModelId: 'video-model',
-      videoProvidersConfig: {},
+    // The workspace's image and video slots resolve to a provider.
+    setModelSettingsViewForTests({
+      image: { registryId: 'seedream' },
+      video: { registryId: 'seedance' },
     });
     useMediaGenerationStore.setState({ tasks: {} });
     useStageStore.setState({
@@ -341,11 +327,5 @@ describe('media that finishes before its scene exists', () => {
     await retryMediaTask(imageRef);
 
     expect(providerCalls()).toBe(2);
-  });
-
-  it('does nothing in browser-only mode', async () => {
-    mocks.serverBacked.mockReturnValue(false);
-    useStageStore.getState().addScene(sceneWithImage(imageRef));
-    expect(imageSrcOf(useStageStore.getState().scenes[0])).toBe(imageRef);
   });
 });

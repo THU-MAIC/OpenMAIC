@@ -394,3 +394,6 @@ function startGame() {
 ```
 
 **Avoid**: Complex dependencies like reading localStorage before events are bound, multiple async operations during init, or chained promises for game start.
+
+
+{{snippet:interactive-observation}}

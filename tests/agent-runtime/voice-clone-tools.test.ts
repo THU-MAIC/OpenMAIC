@@ -43,10 +43,31 @@ vi.mock('@/lib/server/provider-config', async (importOriginal) => {
   return {
     ...actual,
     enabledServerTTSProviderIds: mocks.enabledServerTTSProviderIds,
+    // The enabled server TTS providers are the operator-configured ones.
+    isServerConfiguredProvider: (section: string, id: string) =>
+      section === 'tts' && (mocks.enabledServerTTSProviderIds() as string[]).includes(id),
     resolveTTSApiKey: mocks.resolveTTSApiKey,
     resolveTTSBaseUrl: mocks.resolveTTSBaseUrl,
   };
 });
+
+/** The tts slot as the mocked server listing describes it (first enabled provider). */
+function ttsFromMocks() {
+  const [providerId] = (mocks.enabledServerTTSProviderIds() as string[] | undefined) ?? [];
+  if (!providerId) return null;
+  const apiKey = mocks.resolveTTSApiKey(providerId) as string | undefined;
+  const baseUrl = (
+    mocks as { resolveTTSBaseUrl?: (id: string) => string | undefined }
+  ).resolveTTSBaseUrl?.(providerId);
+  return {
+    providerId,
+    ...(apiKey ? { apiKey } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
+    managed: true,
+    userEndpoint: false,
+    origin: 'configuration' as const,
+  };
+}
 
 vi.mock('@/lib/audio/voice-registration', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/audio/voice-registration')>();
@@ -170,7 +191,10 @@ describe('voice clone agent tools', () => {
     { startSec: 5, endSec: 4 },
   ])('rejects an invalid clip duration: $startSec-$endSec', async ({ startSec, endSec }) => {
     const getMaterial = vi.fn();
-    const clip = tool(buildVoiceCloneTools({ sessionId: 'ses_1', getMaterial }), 'clip_audio');
+    const clip = tool(
+      buildVoiceCloneTools({ ttsConnection: ttsFromMocks(), sessionId: 'ses_1', getMaterial }),
+      'clip_audio',
+    );
     await expect(
       clip.execute('call_1', { materialId: 'mat_source', startSec, endSec } as never),
     ).rejects.toThrow('duration must be between 1 and 60 seconds');
@@ -181,7 +205,12 @@ describe('voice clone agent tools', () => {
     const getMaterial = vi.fn().mockResolvedValue(null);
     const clipAudio = vi.fn();
     const clip = tool(
-      buildVoiceCloneTools({ sessionId: 'ses_1', getMaterial, clipAudio }),
+      buildVoiceCloneTools({
+        ttsConnection: ttsFromMocks(),
+        sessionId: 'ses_1',
+        getMaterial,
+        clipAudio,
+      }),
       'clip_audio',
     );
     await expect(
@@ -200,7 +229,12 @@ describe('voice clone agent tools', () => {
       .mockResolvedValue(material({ kind: 'source', rawAssetId: 'ast_foreign' }));
     const readRawAsset = vi.fn().mockResolvedValue(null);
     const clip = tool(
-      buildVoiceCloneTools({ sessionId: 'ses_1', getMaterial, readRawAsset }),
+      buildVoiceCloneTools({
+        ttsConnection: ttsFromMocks(),
+        sessionId: 'ses_1',
+        getMaterial,
+        readRawAsset,
+      }),
       'clip_audio',
     );
     await expect(
@@ -216,7 +250,12 @@ describe('voice clone agent tools', () => {
       .fn()
       .mockResolvedValue({ bytes: Buffer.from('markdown body'), mime: 'text/markdown' });
     const clip = tool(
-      buildVoiceCloneTools({ sessionId: 'ses_1', getMaterial, readRawAsset }),
+      buildVoiceCloneTools({
+        ttsConnection: ttsFromMocks(),
+        sessionId: 'ses_1',
+        getMaterial,
+        readRawAsset,
+      }),
       'clip_audio',
     );
     await expect(
@@ -225,7 +264,11 @@ describe('voice clone agent tools', () => {
   });
 
   it('does not register register_voice when no served provider supports registration', () => {
-    const tools = buildVoiceCloneTools({ sessionId: 'ses_1', getMaterial: vi.fn() });
+    const tools = buildVoiceCloneTools({
+      ttsConnection: ttsFromMocks(),
+      sessionId: 'ses_1',
+      getMaterial: vi.fn(),
+    });
     expect(tools.map((candidate) => candidate.name)).toEqual(['clip_audio']);
   });
 
@@ -234,14 +277,22 @@ describe('voice clone agent tools', () => {
     mocks.getVoiceRegistrationAdapter.mockReturnValue(
       fakeAdapter({ supportsRegistration: vi.fn(() => false) }),
     );
-    const tools = buildVoiceCloneTools({ sessionId: 'ses_1', getMaterial: vi.fn() });
+    const tools = buildVoiceCloneTools({
+      ttsConnection: ttsFromMocks(),
+      sessionId: 'ses_1',
+      getMaterial: vi.fn(),
+    });
     expect(tools.map((candidate) => candidate.name)).toEqual(['clip_audio']);
   });
 
   it('registers register_voice when an adapter supports registration for a served provider', () => {
     mocks.enabledServerTTSProviderIds.mockReturnValue(['fake-tts']);
     mocks.getVoiceRegistrationAdapter.mockReturnValue(fakeAdapter());
-    const tools = buildVoiceCloneTools({ sessionId: 'ses_1', getMaterial: vi.fn() });
+    const tools = buildVoiceCloneTools({
+      ttsConnection: ttsFromMocks(),
+      sessionId: 'ses_1',
+      getMaterial: vi.fn(),
+    });
     expect(tools.map((candidate) => candidate.name)).toEqual(['clip_audio', 'register_voice']);
   });
 
@@ -254,7 +305,12 @@ describe('voice clone agent tools', () => {
     const getMaterial = vi.fn().mockResolvedValue(clip);
     const readRawAsset = vi.fn().mockResolvedValue({ bytes: wav, mime: 'audio/wav' });
     const register = tool(
-      buildVoiceCloneTools({ sessionId: 'ses_1', getMaterial, readRawAsset }),
+      buildVoiceCloneTools({
+        ttsConnection: ttsFromMocks(),
+        sessionId: 'ses_1',
+        getMaterial,
+        readRawAsset,
+      }),
       'register_voice',
     );
     const result = await register.execute('call_1', {
@@ -274,7 +330,9 @@ describe('voice clone agent tools', () => {
     expect(cfg).toEqual({
       baseUrl: 'https://fake.example',
       apiKey: 'sk-test',
+      managed: true,
       model: 'fake-model',
+      publicOnly: false,
     });
     expect(params).toMatchObject({
       voiceId: 'Andrew Ng',
@@ -303,6 +361,7 @@ describe('voice clone agent tools', () => {
     }> = [];
     const register = tool(
       buildVoiceCloneTools({
+        ttsConnection: ttsFromMocks(),
         sessionId: 'ses_1',
         getMaterial: vi.fn().mockResolvedValue(material()),
         readRawAsset: vi.fn().mockResolvedValue({ bytes: wav, mime: 'audio/wav' }),
@@ -324,6 +383,7 @@ describe('voice clone agent tools', () => {
     mocks.getVoiceRegistrationAdapter.mockReturnValue(fakeAdapter());
     const register = tool(
       buildVoiceCloneTools({
+        ttsConnection: ttsFromMocks(),
         sessionId: 'ses_1',
         getMaterial: vi.fn().mockResolvedValue(null),
       }),
@@ -343,6 +403,7 @@ describe('voice clone agent tools', () => {
     mocks.getVoiceRegistrationAdapter.mockReturnValue(fakeAdapter());
     const register = tool(
       buildVoiceCloneTools({
+        ttsConnection: ttsFromMocks(),
         sessionId: 'ses_1',
         getMaterial: vi.fn().mockResolvedValue(material({ kind: 'source' })),
       }),
@@ -362,6 +423,7 @@ describe('voice clone agent tools', () => {
     mocks.getVoiceRegistrationAdapter.mockReturnValue(fakeAdapter());
     const register = tool(
       buildVoiceCloneTools({
+        ttsConnection: ttsFromMocks(),
         sessionId: 'ses_1',
         getMaterial: vi.fn().mockResolvedValue(material()),
         readRawAsset: vi.fn().mockResolvedValue(null),
@@ -382,6 +444,7 @@ describe('voice clone agent tools', () => {
     mocks.getVoiceRegistrationAdapter.mockReturnValue(fakeAdapter());
     const register = tool(
       buildVoiceCloneTools({
+        ttsConnection: ttsFromMocks(),
         sessionId: 'ses_1',
         getMaterial: vi.fn().mockResolvedValue(material()),
         readRawAsset: vi
@@ -412,6 +475,7 @@ describe('voice clone agent tools', () => {
     const clipAudio = vi.fn().mockResolvedValue(clipWav);
     const clip = tool(
       buildVoiceCloneTools({
+        ttsConnection: ttsFromMocks(),
         sessionId: 'ses_1',
         getMaterial,
         readRawAsset,
@@ -455,6 +519,7 @@ describe('voice clone agent tools', () => {
     const removeRawAsset = vi.fn().mockResolvedValue(undefined);
     const clip = tool(
       buildVoiceCloneTools({
+        ttsConnection: ttsFromMocks(),
         sessionId: 'ses_1',
         getMaterial,
         readRawAsset,
@@ -487,6 +552,7 @@ describe('voice clone agent tools', () => {
       const createMaterial = vi.fn().mockResolvedValue(material({ rawAssetId: 'ast_clip_new' }));
       const clip = tool(
         buildVoiceCloneTools({
+          ttsConnection: ttsFromMocks(),
           sessionId: 'ses_1',
           getMaterial,
           readRawAsset,

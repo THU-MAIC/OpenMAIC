@@ -436,6 +436,12 @@ export function parseChildNode(
       // Non-table/chart/ole graphic frames — skip
       return undefined;
     case 'AlternateContent':
+      // Tables containing Office 2010 inline math are wrapped in a14 Choices,
+      // with a degraded preview in Fallback. Keep the native, editable table.
+      for (const choice of child.children('Choice')) {
+        const frame = choice.child('graphicFrame');
+        if (frame.exists() && isTableFrame(frame)) return parseTableNode(frame);
+      }
       if (isMathAlternateContent(child)) {
         // A box that mixes real text runs with inline formulas (公式与正文混排，
         // 如「设 N 为类别数量」) must be parsed as a TEXT shape — parseMathNode

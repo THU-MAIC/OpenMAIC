@@ -1,5 +1,6 @@
 import { test, expect } from '../fixtures/base';
 import { ClassroomPage } from '../pages/classroom.page';
+import { seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
 
 /**
  * The classroom-complete page must adapt to short stage viewports instead of
@@ -11,13 +12,12 @@ import { ClassroomPage } from '../pages/classroom.page';
  *     above FULL_SAFE it re-expands — hysteresis both ways), and
  *   - the trophy stays reachable (its top never clips above the section).
  *
- * Bootstrap: the spec POSTs a 3-slide classroom through the file-backed
- * /api/classroom route, then marks the document's outline record complete in
- * IndexedDB (the same signal generation writes), so the playback pager offers
- * the completion slot.
+ * Bootstrap: the spec stores a 3-slide course through the server whose
+ * outline is marked complete (the same signal generation writes), so the
+ * playback pager offers the completion slot.
  */
 
-const STAGE_ID = 'classroom-complete-adaptive-e2e';
+const STAGE_ID = uniqueStageId('classroom-complete-adaptive-e2e');
 
 const CLASSROOM_PAYLOAD = {
   stage: {
@@ -79,72 +79,26 @@ test.describe('Classroom complete adaptive layout', () => {
   test('shrinks on short viewports, re-expands on tall ones, never clips the trophy', async ({
     page,
   }) => {
-    // Persist the classroom server-side (file store), then load it once so
-    // the document lands in IndexedDB…
-    const response = await page.request.post('/api/classroom', { data: CLASSROOM_PAYLOAD });
-    expect(response.ok()).toBe(true);
+    await page.goto('/', { waitUntil: 'networkidle' });
+    await seedServerDocument(page, {
+      ...CLASSROOM_PAYLOAD,
+      outline: {
+        outlines: [0, 1, 2].map((order) => ({
+          id: `o${order}`,
+          type: 'slide',
+          title: `Page ${order + 1}`,
+          description: `Outline ${order + 1}`,
+          keyPoints: [],
+          order,
+        })),
+        generationComplete: true,
+      },
+    });
     const classroom = new ClassroomPage(page);
-    await classroom.goto(STAGE_ID);
-    await classroom.waitForLoaded();
-    await expect(page.getByRole('heading', { name: 'Page 1' })).toBeVisible();
+    const classroomId = STAGE_ID;
 
-    // The fallback apply schedules an async full-aggregate save; that save
-    // carries no outline and would DELETE an outline row written before it
-    // commits ("a full-aggregate save with no outline means no outline").
-    // Wait for the document to land first…
-    await expect
-      .poll(() =>
-        page.evaluate(
-          ({ stageId }) =>
-            new Promise<number>((resolve) => {
-              const req = indexedDB.open('maic-documents');
-              req.onsuccess = () => {
-                const tx = req.result.transaction(['stages'], 'readonly');
-                const get = tx.objectStore('stages').get(stageId);
-                get.onsuccess = () => resolve(get.result ? 1 : 0);
-                get.onerror = () => resolve(-1);
-              };
-              req.onerror = () => resolve(-1);
-            }),
-          { stageId: STAGE_ID },
-        ),
-      )
-      .toBe(1, { timeout: 15_000 });
-    await page.waitForTimeout(500); // let the aggregate save transaction settle
-
-    // …then mark the outline record complete the way the generator would.
-    // Row shape mirrors splitDocument: { stageId, outline: AppDocumentOutline }.
-    await page.evaluate(
-      ({ stageId }) =>
-        new Promise<void>((resolve, reject) => {
-          const req = indexedDB.open('maic-documents');
-          req.onsuccess = () => {
-            const db = req.result;
-            const tx = db.transaction(['outlines'], 'readwrite');
-            tx.objectStore('outlines').put({
-              stageId,
-              outline: {
-                outlines: [0, 1, 2].map((order) => ({
-                  id: `o${order}`,
-                  type: 'slide',
-                  title: `Page ${order + 1}`,
-                  description: `Outline ${order + 1}`,
-                  keyPoints: [],
-                  order,
-                })),
-                generationComplete: true,
-              },
-            });
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-          };
-          req.onerror = () => reject(req.error);
-        }),
-      { stageId: STAGE_ID },
-    );
-
-    // Reload: the completed document now offers the completion slot (N/N + 1).
-    await classroom.goto(STAGE_ID);
+    // The completed document offers the completion slot (N/N + 1).
+    await classroom.goto(classroomId);
     await classroom.waitForLoaded();
     await expect(page.getByText('1/4', { exact: true })).toBeVisible({ timeout: 10_000 });
 

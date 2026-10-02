@@ -945,3 +945,86 @@ describe('OpenAI provider defaults', () => {
     }
   });
 });
+
+describe('Grok streaming compatibility (OPENAI_COMPAT_USE_STREAMING_CHAT)', () => {
+  beforeEach(() => {
+    openAiMock.chat.mockClear();
+    openAiMock.responses.mockClear();
+    openAiMock.createOpenAI.mockReset();
+    openAiMock.createOpenAI.mockReturnValue({
+      chat: openAiMock.chat,
+      responses: openAiMock.responses,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  /**
+   * The body Grok's endpoint is actually sent, for a caller that asked for a
+   * plain (non-streaming) completion.
+   *
+   * The compat path is the only thing that rewrites that request into a stream,
+   * so `stream: true` upstream is the observable difference. The dialect cannot
+   * stand in for it here: `shouldUseOpenAIResponsesApi` is OpenAI-only, so grok
+   * goes through Chat Completions either way.
+   */
+  async function upstreamRequestBody(baseUrl: string): Promise<Record<string, unknown>> {
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({ id: 'chatcmpl_test' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    try {
+      globalThis.fetch = fetchMock as typeof fetch;
+      getModel({ providerId: 'grok', modelId: 'grok-4.6', apiKey: 'sk-test', baseUrl });
+
+      const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+        | { fetch?: typeof fetch }
+        | undefined;
+      await options?.fetch?.('https://example.test/v1/chat/completions', {
+        method: 'POST',
+        body: JSON.stringify({
+          model: 'grok-4.6',
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      });
+
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+      return JSON.parse(init.body as string) as Record<string, unknown>;
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  it('streams a relay base URL, so the gateway idle timer never fires', async () => {
+    vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'true');
+
+    const body = await upstreamRequestBody('https://relay.example/v1');
+
+    expect(body.stream).toBe(true);
+  });
+
+  it.each(['https://api.x.ai/v1', 'https://api.x.ai/v1/', ' https://API.x.ai/v1 '])(
+    "leaves Grok's own endpoint on the plain transport: %s",
+    async (baseUrl) => {
+      vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'true');
+
+      const body = await upstreamRequestBody(baseUrl);
+
+      expect(body.stream).toBeUndefined();
+    },
+  );
+
+  it('leaves a relay on the plain transport while the flag is off', async () => {
+    vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'false');
+
+    const body = await upstreamRequestBody('https://relay.example/v1');
+
+    expect(body.stream).toBeUndefined();
+  });
+});
