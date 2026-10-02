@@ -213,3 +213,33 @@ describe('saveStageData', () => {
     expect(saveCurrentScene).toHaveBeenCalledWith('stage-1', 'scene-1');
   });
 });
+
+describe('the outline a producer recorded', () => {
+  it('keeps producer and producerRef through a full save of the browser outline', async () => {
+    loadDocument.mockReturnValue({
+      stage,
+      scenes,
+      outline: {
+        outlines: [],
+        generationComplete: true,
+        producer: 'server-job',
+        producerRef: 'run-AAAAAAAAAAAAAAAA',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      dslVersion: 'current',
+    });
+    await saveStageData(
+      'stage-1',
+      { ...data, outline: { outlines: [], generationComplete: true, createdAt: 5, updatedAt: 5 } },
+      0,
+    );
+    expect(saveDocument).toHaveBeenCalledOnce();
+    expect(saveDocument.mock.calls[0]![0].outline).toMatchObject({
+      producer: 'server-job',
+      producerRef: 'run-AAAAAAAAAAAAAAAA',
+      generationComplete: true,
+      updatedAt: 5,
+    });
+  });
+});

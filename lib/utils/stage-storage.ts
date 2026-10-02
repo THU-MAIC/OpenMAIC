@@ -141,7 +141,10 @@ function documentSnapshot(
   existingOutline: AppDocumentOutline | undefined,
   now: number,
 ) {
-  const outline = data.outline ??
+  // The browser's outline carries the plan and its completion; what a
+  // producer recorded beside them (`producer`, `producerRef`, receipts) stays,
+  // so a course a generation run produced is still known as the run's.
+  const outline = (data.outline ? { ...existingOutline, ...data.outline } : undefined) ??
     existingOutline ?? {
       outlines: [],
       createdAt: now,
