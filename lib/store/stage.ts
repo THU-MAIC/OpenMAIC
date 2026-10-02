@@ -121,8 +121,20 @@ const LEARNER_RUNTIME_SYNC_DELAY_MS = 500;
 
 /** Fence (or, with null, unfence) the course a generation run is producing. */
 export function setServerGeneratingStage(stageId: string | null): void {
-  if (serverGeneratingStageId !== stageId) learnerChangedScenes.clear();
+  if (serverGeneratingStageId === stageId) return;
+  learnerChangedScenes.clear();
   serverGeneratingStageId = stageId;
+  if (!stageId || pendingStageId !== stageId) return;
+  // Content changes queued before the fence would only be refused: the
+  // learner's scene changes go to their runtime store instead.
+  for (const [key, entry] of [...pendingChanges]) {
+    if (!DOCUMENT_CHANGE_KINDS.has(entry.change.kind)) continue;
+    pendingChanges.delete(key);
+    if (entry.change.kind === 'scene') {
+      learnerChangedScenes.add(entry.change.sceneId);
+      syncLearnerRuntime(stageId, entry.change.sceneId);
+    }
+  }
 }
 
 export function isServerGeneratingStage(stageId: string | undefined | null): boolean {
@@ -1163,6 +1175,15 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           mode: 'playback',
         });
         resetPendingChanges(stageId);
+        // A course its generation run is still producing is read-only from
+        // the moment it is shown (the classroom's run follower lifts it).
+        if (
+          serverProduced &&
+          !persistedComplete &&
+          /^run-/.test(outlinesRecord?.producerRef ?? '')
+        ) {
+          setServerGeneratingStage(stageId);
+        }
         if (generationComplete && !persistedComplete) void get().saveToStorage();
         log.info('Loaded from storage:', stageId);
       } else {

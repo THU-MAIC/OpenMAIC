@@ -106,8 +106,16 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
       apply: (scenes) => {
         const state = useStageStore.getState();
         if (state.stage?.id !== stageId) return;
-        const patch = mergeServerScenes(state, scenes, stageId, (sceneId) =>
-          hasLearnerSceneChange(stageId, sceneId),
+        // A PBL scene the classroom holds carries the learner's progress
+        // (the run never changes it after appending it): it is kept.
+        const pblScenes = new Set(
+          state.scenes.filter((scene) => scene.content.type === 'pbl').map((scene) => scene.id),
+        );
+        const patch = mergeServerScenes(
+          state,
+          scenes,
+          stageId,
+          (sceneId) => pblScenes.has(sceneId) || hasLearnerSceneChange(stageId, sceneId),
         );
         if (patch) useStageStore.setState(patch);
       },

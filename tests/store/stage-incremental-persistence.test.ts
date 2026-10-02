@@ -61,6 +61,7 @@ const scene = (id: string, stageId = 'stage-1'): Scene => ({
 });
 
 beforeEach(() => {
+  preparePBL.mockClear();
   vi.useFakeTimers();
   fullSave.mockReset().mockResolvedValue(undefined);
   incrementalSave.mockReset().mockResolvedValue(undefined);
@@ -81,6 +82,24 @@ afterEach(() => {
 });
 
 describe('a course its generation run is producing', () => {
+  it('drops content changes queued before the fence, sending a scene change to its runtime store', async () => {
+    useStageStore.setState({
+      scenes: [
+        ...useStageStore.getState().scenes,
+        { ...scene('scene-pbl'), content: { type: 'pbl', projectV2: {} } } as unknown as Scene,
+      ],
+    });
+    // A PBL scene normalizes its project on mount, before the classroom fenced the course.
+    useStageStore.getState().updateScene('scene-pbl', { title: 'mounted' });
+    setServerGeneratingStage('stage-1');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(incrementalSave).not.toHaveBeenCalled();
+    expect(preparePBL).toHaveBeenCalledWith('stage-1', [
+      expect.objectContaining({ id: 'scene-pbl' }),
+    ]);
+    expect(hasLearnerSceneChange('stage-1', 'scene-pbl')).toBe(true);
+  });
+
   it('writes no content while fenced, only the reading position; PBL progress goes to its runtime store', async () => {
     setServerGeneratingStage('stage-1');
     useStageStore.getState().updateScene('scene-2', { title: 'changed' });
