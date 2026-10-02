@@ -13,13 +13,16 @@
  * writer.
  */
 import { useCallback, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 
 import { PENDING_SCENE_ID, setServerGeneratingStage, useStageStore } from '@/lib/store/stage';
 import { fetchScenesByIds, fetchStageManifest } from '@/lib/workbench/stage-freshness';
 import { createLogger } from '@/lib/logger';
+import { getClientTranslation } from '@/lib/i18n';
 import type { Scene } from '@/lib/types/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 
+import { RunApiError } from './api';
 import { retryPausedRun, retryRunMedia } from './commands';
 import { applyRunMedia, registerRunMediaRetry } from './run-media';
 import { isFinishedRunState, type RunView } from './types';
@@ -229,6 +232,11 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
       useStageStore.setState({ failedOutlines: [], generationStatus: 'generating' });
     } catch (error) {
       log.warn('Retrying the run failed:', error);
+      // A paused run does not count against the limit on active runs; its
+      // Retry makes it count again.
+      if (error instanceof RunApiError && error.errorCode === 'ACTIVE_RUN_LIMIT') {
+        toast.error(getClientTranslation('generation.activeRunLimit'));
+      }
     }
   }, []);
 

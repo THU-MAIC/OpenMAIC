@@ -224,6 +224,8 @@ function GenerationPreviewContent() {
       log.warn('Retrying the run failed:', error);
       if (error instanceof RunApiError && error.errorCode === 'RUN_STATE_CONFLICT') {
         await refresh();
+      } else if (error instanceof RunApiError && error.errorCode === 'ACTIVE_RUN_LIMIT') {
+        setCommandError(t('generation.activeRunLimit'));
       } else {
         setCommandError(error instanceof Error ? error.message : String(error));
       }
