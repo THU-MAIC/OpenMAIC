@@ -25,6 +25,7 @@ import {
   getProviderPreset,
   presetModels,
   registryDefaultBaseUrl,
+  registryRequiresApiKey,
   type CatalogueModel,
   type ProviderPreset,
 } from '@/lib/config/provider-presets';
@@ -461,6 +462,25 @@ async function checkProvider(id: string, provider: Provider): Promise<void> {
 }
 
 /**
+ * Drop the slot assignments that name a provider (as their model or their
+ * fallback), so those slots follow their parents again; `which` narrows the
+ * slots affected.
+ */
+function dropAssignmentsNaming(
+  slots: Record<string, SlotAssignment>,
+  providerId: string,
+  which?: (slot: SlotId) => boolean,
+): void {
+  for (const [slot, assignment] of Object.entries(slots)) {
+    if (assignment === null) continue;
+    if (which && !(isSlotId(slot) && which(slot))) continue;
+    const refs =
+      typeof assignment === 'string' ? [assignment] : [assignment.model, assignment.fallback];
+    if (refs.some((ref) => ref?.split(':')[0] === providerId)) delete slots[slot];
+  }
+}
+
+/**
  * Apply a change to a workspace's configuration and return the configuration
  * to store. Throws ModelSettingsError for a change the workspace may not make
  * or that would not resolve.
@@ -548,18 +568,24 @@ export async function applyModelSettingsChange(
     };
     await checkProvider(change.id, provider);
     providers[change.id] = provider;
+    // Removing the key leaves the provider unable to serve what needs one:
+    // the assignments that used it for that follow their parents again, as
+    // when the provider itself is removed.
+    if (change.apiKey === '') {
+      const preset = getProviderPreset(provider.preset)!;
+      dropAssignmentsNaming(slots, change.id, (slot) => {
+        const capability = getSlot(slot).capability;
+        const registryId = preset.capabilities[capability]?.registryId;
+        return !registryId || registryRequiresApiKey(capability, registryId);
+      });
+    }
   } else {
     if (!Object.hasOwn(providers, change.id)) {
       throw new ModelSettingsError('UNKNOWN_PROVIDER', 'No such workspace provider');
     }
     delete providers[change.id];
     // Assignments that named it lose it and follow their parents again.
-    for (const [slot, assignment] of Object.entries(slots)) {
-      if (assignment === null) continue;
-      const refs =
-        typeof assignment === 'string' ? [assignment] : [assignment.model, assignment.fallback];
-      if (refs.some((ref) => ref?.split(':')[0] === change.id)) delete slots[slot];
-    }
+    dropAssignmentsNaming(slots, change.id);
   }
 
   if (!Object.keys(slots).length) delete next.slots;

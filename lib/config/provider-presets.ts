@@ -63,7 +63,12 @@ export interface ProviderPreset {
   trustsModelCatalogue?: false;
 }
 
-type RegistryEntry = { name?: string; requiresBaseUrl?: boolean; requiresCredentials?: boolean };
+type RegistryEntry = {
+  name?: string;
+  requiresApiKey?: boolean;
+  requiresBaseUrl?: boolean;
+  requiresCredentials?: boolean;
+};
 
 const REGISTRIES: Record<SlotCapability, Record<string, RegistryEntry>> = {
   chat: PROVIDERS,
@@ -177,6 +182,14 @@ export function registryDefaultBaseUrl(
 ): string | undefined {
   const entry = REGISTRIES[capability][registryId] as { defaultBaseUrl?: string } | undefined;
   return entry?.defaultBaseUrl || undefined;
+}
+
+/**
+ * Whether a capability's provider needs a key to be called (a local server or
+ * a keyless search does not). Unknown entries are taken to need one.
+ */
+export function registryRequiresApiKey(capability: SlotCapability, registryId: string): boolean {
+  return REGISTRIES[capability][registryId]?.requiresApiKey !== false;
 }
 
 export interface CatalogueModel {

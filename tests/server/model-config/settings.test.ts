@@ -357,6 +357,48 @@ describe('applyModelSettingsChange', () => {
     ).resolves.toMatchObject({ slots: { 'course.outline': 'mine:gpt-5.6', video: null } });
   });
 
+  it('drops the assignments a provider can no longer serve once its key is removed', async () => {
+    const current = {
+      providers: {
+        plan: { preset: 'tokendance', apiKey: 'sk-plan-key-0001' },
+        local: { preset: 'ollama', baseUrl: 'https://1.1.1.1/v1', models: ['llama4'] },
+      },
+      slots: {
+        classroom: 'plan:cogevol-base',
+        'course.outline': { model: 'operator:deepseek-v4-pro', fallback: 'plan:cogevol-base' },
+        webSearch: 'plan',
+        'agent.title': 'local:llama4',
+        image: null,
+      },
+    };
+    // A new key keeps them.
+    await expect(
+      applyModelSettingsChange(current, {
+        kind: 'provider',
+        id: 'plan',
+        preset: 'tokendance',
+        apiKey: 'sk-plan-key-0002',
+      }),
+    ).resolves.toMatchObject({ slots: current.slots });
+    // No key: the slots that used the plan follow their parents again.
+    const next = await applyModelSettingsChange(current, {
+      kind: 'provider',
+      id: 'plan',
+      preset: 'tokendance',
+      apiKey: '',
+    });
+    expect(next.providers?.plan).toEqual({ preset: 'tokendance' });
+    expect(next.slots).toEqual({ 'agent.title': 'local:llama4', image: null });
+    // A provider that needs no key keeps what it serves.
+    const keyless = await applyModelSettingsChange(next, {
+      kind: 'provider',
+      id: 'local',
+      preset: 'ollama',
+      apiKey: '',
+    });
+    expect(keyless.slots).toEqual({ 'agent.title': 'local:llama4', image: null });
+  });
+
   it('drops the assignments of a removed provider', async () => {
     const next = await applyModelSettingsChange(
       {
