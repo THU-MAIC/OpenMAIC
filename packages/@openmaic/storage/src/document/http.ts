@@ -25,6 +25,16 @@ export interface HttpDocumentStoreOptions {
   baseUrl: string;
   /** Fetch implementation. Defaults to `globalThis.fetch`. */
   fetch?: typeof globalThis.fetch;
+  /**
+   * Abort a request whose round trip — sending the body and receiving the
+   * response headers — has not settled within this many milliseconds, so a
+   * stalled endpoint fails like any other transport error instead of holding
+   * its caller forever. Reading the response body is deliberately outside the
+   * bound: a large document on a slow link is slow, not stalled, and the
+   * failure this guards against is a peer that never answers. `<= 0` disables
+   * the bound. Defaults to {@link DEFAULT_REQUEST_TIMEOUT_MS}.
+   */
+  requestTimeoutMs?: number;
   /** Called for every request so deployments can attach authentication headers. */
   headers?: HttpDocumentHeadersHook;
   /** Client-side scene validator. Defaults to the DSL validator. */
@@ -52,6 +62,36 @@ export class HttpDocumentStoreError extends Error {
     super(message);
     this.name = 'HttpDocumentStoreError';
   }
+}
+
+/**
+ * How long one request may go without settling before it is aborted.
+ *
+ * Generous on purpose: a full save carries the whole document, and a slow but
+ * progressing upload must not be mistaken for a stall. What this bound exists
+ * to stop is not slowness but a request that never settles at all — the
+ * autosave holds at most one save in flight and starts the next one only once
+ * that promise settles, so a request that hangs forever strands every later
+ * save for the life of the page, silently.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
+/** One absolute deadline for one request; `settle()` clears the timer. */
+interface RequestDeadline {
+  readonly signal: AbortSignal;
+  settle(): void;
+}
+
+/**
+ * Start a request's deadline, mirroring the asset store's bounded-operation
+ * budget (`asset/http.ts`) so both HTTP stores treat a stalled persistence
+ * endpoint the same way. A non-positive budget returns null: no deadline.
+ */
+function startRequestDeadline(timeoutMs: number): RequestDeadline | null {
+  if (timeoutMs <= 0) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return { signal: controller.signal, settle: () => clearTimeout(timer) };
 }
 
 function assertAddressableSegment(value: string): void {
@@ -122,6 +162,7 @@ export class HttpDocumentStore<
 > implements DocumentStore<TScene, TStage> {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof globalThis.fetch;
+  private readonly requestTimeoutMs: number;
   private readonly headersHook: HttpDocumentHeadersHook | undefined;
   private readonly validateSceneFn: SceneValidator;
   private readonly validateStageFn: StageValidator;
@@ -143,6 +184,7 @@ export class HttpDocumentStore<
     const fetchImpl = selectedFetch.bind(globalThis);
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.fetchImpl = fetchImpl;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.headersHook = options.headers;
     this.validateSceneFn = options.validateScene ?? validateScene;
     this.validateStageFn = options.validateStage ?? validateStage;
@@ -160,11 +202,31 @@ export class HttpDocumentStore<
       headers['content-type'] ??= 'application/json';
       serializedBody = JSON.stringify(body);
     }
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      method,
-      headers,
-      ...(serializedBody === undefined ? {} : { body: serializedBody }),
-    });
+    const deadline = startRequestDeadline(this.requestTimeoutMs);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        method,
+        headers,
+        ...(deadline === null ? {} : { signal: deadline.signal }),
+        ...(serializedBody === undefined ? {} : { body: serializedBody }),
+      });
+    } catch (error) {
+      // The deadline ended this wait, not the peer. Rejecting is the whole
+      // point: the autosave's single-flight guard releases on rejection and its
+      // backoff retries, so a stalled save costs one retry — but a promise that
+      // never settles is never released, and every later save queues behind it.
+      if (deadline !== null && deadline.signal.aborted) {
+        throw new HttpDocumentStoreError(
+          0,
+          'HTTP_REQUEST_TIMEOUT',
+          `@openmaic/storage: DocumentStore HTTP request did not settle within ${this.requestTimeoutMs}ms`,
+        );
+      }
+      throw error;
+    } finally {
+      deadline?.settle();
+    }
     if (!response.ok) {
       let errorBody: ErrorResponseBody | undefined;
       try {
