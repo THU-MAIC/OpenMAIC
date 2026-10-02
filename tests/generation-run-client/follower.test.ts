@@ -61,6 +61,7 @@ function setup(replies: SnapshotReply[]) {
     pollIntervalMs: 1_000,
     quietPollIntervalMs: 5_000,
     retryBaseMs: 100,
+    random: () => 0.5,
   });
   const live = () => sources.filter((source) => !source.closed);
   return { follower, sources, states, fetchSnapshot, live };
@@ -285,5 +286,65 @@ describe('failure identities', () => {
     );
     expect(again.failedSeq).toBe(58);
     expect(again.media.gen_img_1!.seq).toBe(55);
+  });
+});
+
+describe('RunFollower reads', () => {
+  it('replays the outline items logged while its stream was down, from its own cursor', async () => {
+    const { follower, sources, live } = setup([
+      snapshot({ state: 'outlining', seq: 3 }),
+      // Read on reconnect: still outlining, so the items are in the log only.
+      snapshot({ state: 'outlining', seq: 9 }),
+    ]);
+    await follower.start();
+    sources[0]!.frame(4, 'outline_item', { index: 0, outline: outline(1) });
+    sources[0]!.refuse();
+    await vi.advanceTimersByTimeAsync(100);
+    // Followed again from seq 4, not from the snapshot's 9.
+    expect(live()[0]!.url).toMatch(/after=4$/);
+    live()[0]!.frame(5, 'outline_reset');
+    live()[0]!.frame(6, 'outline_item', { index: 0, outline: outline(1, 'Again') });
+    live()[0]!.frame(7, 'outline_item', { index: 1, outline: outline(2) });
+    expect(follower.current.view?.streamingOutlines.map((o) => o.title)).toEqual([
+      'Again',
+      'Scene 2',
+    ]);
+    follower.close();
+  });
+
+  it('ignores a snapshot older than what the view holds', async () => {
+    let releaseOld!: (value: RunSnapshot) => void;
+    const old = new Promise<RunSnapshot>((resolve) => (releaseOld = resolve));
+    const fetchSnapshot = vi
+      .fn()
+      .mockResolvedValueOnce(generating({ seq: 20 }))
+      .mockReturnValueOnce(old)
+      .mockResolvedValueOnce(generating({ state: 'paused', seq: 40 }));
+    const follower = new RunFollower('run-AAAAAAAAAAAAAAAA', {
+      fetchSnapshot,
+      openEvents: (url) => new FakeSource(url),
+      onChange: () => {},
+      random: () => 0.5,
+    });
+    await follower.start();
+    const first = follower.resync();
+    // A newer frame lands while the slow read is in flight.
+    releaseOld(generating({ state: 'generating', seq: 10 }));
+    await first;
+    expect(follower.current.view?.seq).toBe(20);
+    await follower.wake();
+    expect(follower.current.view?.state).toBe('paused');
+    follower.close();
+  });
+
+  it('keeps its backoff when the page is shown again', async () => {
+    const { follower, fetchSnapshot } = setup([new Error('503'), new Error('503'), generating()]);
+    await follower.start();
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+    await follower.wake('visible');
+    expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2);
+    follower.close();
   });
 });

@@ -210,11 +210,13 @@ function GenerationPreviewContent() {
   }, [view?.generatedAgents, view?.input.agents.mode, view?.stageId]);
 
   // The first scene is in the course: the classroom takes over.
+  // A confirmation that lost to another tab keeps its edits on screen until
+  // the learner acknowledges it.
   useEffect(() => {
-    if (!view?.stageId || agentRevealPending) return;
+    if (!view?.stageId || agentRevealPending || confirmConflict) return;
     if (view.state === 'ended') return;
     router.replace(`/classroom/${encodeURIComponent(view.stageId)}`);
-  }, [view?.stageId, view?.state, agentRevealPending, router]);
+  }, [view?.stageId, view?.state, agentRevealPending, confirmConflict, router]);
 
   // A Retry is queued until a step starts after it (a media item in flight
   // finishes first).

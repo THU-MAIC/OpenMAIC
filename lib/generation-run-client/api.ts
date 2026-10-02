@@ -160,6 +160,12 @@ export function materialMime(file: File): string {
   );
 }
 
+/** A byte count as the upload limits are written (MB, rounded down; KB below 1 MB). */
+export function formatBytes(bytes: number): string {
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1 ? `${Math.floor(mb)}MB` : `${Math.max(1, Math.floor(bytes / 1024))}KB`;
+}
+
 function uploadFailureKey(status: number): string {
   if (status === 413) return 'upload.fileTooLarge';
   if (status === 415) return 'upload.unsupportedCourseMaterial';
@@ -178,16 +184,24 @@ export async function uploadMaterial(file: File): Promise<string> {
     body: file,
   });
   if (!response.ok) {
-    const refused = await failure(response, uploadFailureKey(response.status), {
-      name: file.name,
-    });
-    // The upload route's refusals are said in the learner's language.
+    const body = (await response.json().catch(() => null)) as {
+      errorCode?: unknown;
+      maxBytes?: unknown;
+    } | null;
+    const maxBytes = typeof body?.maxBytes === 'number' && body.maxBytes > 0 ? body.maxBytes : null;
+    // The upload route's refusals are said in the learner's language; a size
+    // refusal with the limit the route enforced.
     throw new RunApiError(
-      refused.status,
-      refused.errorCode,
+      response.status,
+      typeof body?.errorCode === 'string' ? body.errorCode : undefined,
       undefined,
-      refused.fallbackKey,
-      refused.fallbackValues,
+      response.status === 413 && maxBytes !== null
+        ? 'upload.materialTooLarge'
+        : uploadFailureKey(response.status),
+      {
+        name: file.name,
+        ...(maxBytes !== null ? { size: formatBytes(maxBytes) } : {}),
+      },
     );
   }
   const body = (await response.json()) as { materialId?: unknown };
@@ -197,6 +211,16 @@ export async function uploadMaterial(file: File): Promise<string> {
     });
   }
   return body.materialId;
+}
+
+/** Delete one of the owner's uploads (one a start that did not happen uploaded). */
+export async function deleteMaterial(materialId: string): Promise<void> {
+  const response = await fetch(`/api/materials/${encodeURIComponent(materialId)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok && response.status !== 404) {
+    throw await failure(response, 'upload.materialUploadFailed', { name: materialId });
+  }
 }
 
 /** A fresh command id: the idempotency key of one command, reused when it is sent again. */

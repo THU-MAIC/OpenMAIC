@@ -1041,7 +1041,8 @@
     "courseMaterialTotalSizeLimit": "La taille totale des supports de cours doit rester sous 150 Mo",
     "unsupportedCourseMaterial": "Ce format n’est pas pris en charge par l’extracteur actuel. Changez d’extracteur ou choisissez un autre fichier.",
     "materialQuotaExceeded": "Votre espace de stockage des supports est plein. Supprimez des supports et réessayez.",
-    "materialUploadFailed": "Échec de l'envoi de {{name}}. Veuillez réessayer."
+    "materialUploadFailed": "Échec de l'envoi de {{name}}. Veuillez réessayer.",
+    "materialTooLarge": "{{name}} est trop volumineux : un support peut faire au plus {{size}}."
   },
   "generation": {
     "pdfLoadFailed": "Échec du chargement du fichier PDF, veuillez réessayer",

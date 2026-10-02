@@ -27,6 +27,8 @@ export interface OwnerRunsDeps {
   /** How often the list is read without a stream (default 30 s). */
   idlePollMs?: number;
   retryBaseMs?: number;
+  /** A [0, 1) source for the backoff's jitter (tests fix it). */
+  random?: () => number;
 }
 
 const EVENT_SOURCE_CLOSED = 2;
@@ -139,18 +141,23 @@ export class OwnerRunsWatcher {
 
   private retryDelay(): number {
     const base = this.deps.retryBaseMs ?? 1_000;
-    return Math.min(base * 2 ** Math.max(0, this.failures - 1), MAX_RETRY_MS);
+    const delay = Math.min(base * 2 ** Math.max(0, this.failures - 1), MAX_RETRY_MS);
+    return Math.round(delay * (0.75 + (this.deps.random ?? Math.random)() * 0.5));
   }
 
-  /** Read the list now (on mount, when the page is shown again, after a start). */
-  async poll(): Promise<void> {
+  /**
+   * Read the list now (on mount, when the page is shown again). The backoff
+   * is reset only by a stream that attached (it sent a frame): a list read
+   * succeeding says nothing about the stream cap that refused the stream.
+   */
+  async poll(reason: 'timer' | 'visible' = 'timer'): Promise<void> {
     if (this.closed) return;
+    if (reason === 'visible' && this.failures > 0) return;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     try {
       const listed = await this.deps.listActive();
       if (this.closed) return;
-      this.failures = 0;
       this.limits = listed.limits ?? this.limits;
       this.replace(listed.runs);
     } catch (error) {

@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { hasPendingSceneChange, setServerGeneratingStage, useStageStore } from '@/lib/store/stage';
+import { hasLearnerSceneChange, setServerGeneratingStage, useStageStore } from '@/lib/store/stage';
 import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { fetchScenesByIds, fetchStageManifest } from '@/lib/workbench/stage-freshness';
 import { createLogger } from '@/lib/logger';
@@ -107,7 +107,7 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
         const state = useStageStore.getState();
         if (state.stage?.id !== stageId) return;
         const patch = mergeServerScenes(state, scenes, stageId, (sceneId) =>
-          hasPendingSceneChange(stageId, sceneId),
+          hasLearnerSceneChange(stageId, sceneId),
         );
         if (patch) useStageStore.setState(patch);
       },
@@ -121,21 +121,12 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
   }, [runId, input.classroomId]);
 
   // The course is read-only while its run is not over, or not known to be; a
-  // finished run lifts it once the classroom holds the run's last writes.
+  // finished run lifts it once the classroom holds the run's last writes. The
+  // document was loaded before the run was read, so even a run that was over
+  // when the classroom opened is read once more first.
   const [reconciled, setReconciled] = useState(false);
-  const firstStateRef = useRef<string | null>(null);
   const finished = !!view && isFinishedRunState(view.state);
   useEffect(() => {
-    if (!view) return;
-    if (firstStateRef.current === null) {
-      firstStateRef.current = view.state;
-      // A run that was already over when the course was opened: the document
-      // the classroom loaded is its last write.
-      if (isFinishedRunState(view.state)) {
-        setReconciled(true);
-        return;
-      }
-    }
     if (!finished || reconciled || !sync) return;
     let cancelled = false;
     void sync.reconcile().then(() => {
@@ -144,7 +135,7 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
     return () => {
       cancelled = true;
     };
-  }, [view, finished, reconciled, sync]);
+  }, [finished, reconciled, sync]);
 
   const fenced = courseFenced({ runId, status, view, reconciled });
   useEffect(() => {

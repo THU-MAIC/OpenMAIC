@@ -139,4 +139,13 @@ describe('reading the run course', () => {
     expect(deps.fetchScenes.mock.calls.at(-1)![1]).toEqual(['s1', 's2']);
     s.close();
   });
+
+  it('gives up on a scene the manifest names but that never reads', async () => {
+    const { sync: s } = sync([manifest(['s1', 'ghost'])], [[scene('s1', 1)]]);
+    let done = false;
+    void s.reconcile().then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(done).toBe(true);
+    s.close();
+  });
 });

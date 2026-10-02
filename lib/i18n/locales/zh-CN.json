@@ -1041,7 +1041,8 @@
     "courseMaterialTotalSizeLimit": "课程材料总大小需小于 150MB",
     "unsupportedCourseMaterial": "当前解析器不支持该格式，请切换解析器或选择其他文件",
     "materialQuotaExceeded": "素材存储空间已满，请删除部分素材后重试。",
-    "materialUploadFailed": "上传 {{name}} 失败，请重试。"
+    "materialUploadFailed": "上传 {{name}} 失败，请重试。",
+    "materialTooLarge": "{{name}} 过大：单个素材最大为 {{size}}。"
   },
   "generation": {
     "pdfLoadFailed": "无法加载 PDF 文件，请重试",

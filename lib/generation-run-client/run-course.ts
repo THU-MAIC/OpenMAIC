@@ -86,6 +86,8 @@ export interface SceneSyncDeps {
 }
 
 const MAX_RETRY_MS = 30_000;
+/** Passes whose manifest read but whose scenes did not, before the final reconciliation gives up. */
+const MAX_UNREADABLE_PASSES = 5;
 
 /**
  * Reads the scenes the run appended or changed. A scene id stays wanted until
@@ -99,6 +101,8 @@ export class RunCourseSceneSync {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private failures = 0;
   private closed = false;
+  /** Whether the last pass read the manifest (its scenes may still have failed). */
+  private manifestRead = false;
 
   constructor(
     private readonly stageId: string,
@@ -137,11 +141,27 @@ export class RunCourseSceneSync {
     return this.running;
   }
 
-  /** Read every scene again until it succeeds: the run's last writes. */
+  /**
+   * Read every scene again until it succeeds: the run's last writes. A scene
+   * the manifest names but that never reads (after a few tries with the
+   * manifest read fine) is given up on, so the course is not read-only for
+   * good over it.
+   */
   async reconcile(): Promise<void> {
     this.markChanged(this.deps.knownSceneIds());
+    let unreadable = 0;
     while (!this.closed) {
       if (await this.sync()) return;
+      if (this.manifestRead) {
+        unreadable += 1;
+        if (unreadable >= MAX_UNREADABLE_PASSES) {
+          this.deps.onWarn?.(
+            `Scenes ${[...this.wanted].join(', ')} of ${this.stageId} could not be read; going on without them`,
+            null,
+          );
+          return;
+        }
+      }
       await new Promise((resolve) => setTimeout(resolve, this.retryDelay()));
     }
   }
@@ -160,6 +180,7 @@ export class RunCourseSceneSync {
   }
 
   private async pass(): Promise<boolean> {
+    this.manifestRead = false;
     let manifest: ManifestRead;
     try {
       manifest = await this.deps.fetchManifest(this.stageId);
@@ -169,6 +190,7 @@ export class RunCourseSceneSync {
     }
     if (manifest.status === 'missing') return true;
     if (manifest.status !== 'ok') return false;
+    this.manifestRead = true;
     const present = new Set(manifest.manifest.scenes.map((scene) => scene.id));
     const known = new Set(this.deps.knownSceneIds());
     // Scenes the course no longer has are not wanted any more.

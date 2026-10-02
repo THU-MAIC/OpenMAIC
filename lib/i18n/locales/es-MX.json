@@ -1041,7 +1041,8 @@
     "courseMaterialTotalSizeLimit": "El tamaño total del material del curso debe ser menor a 150 MB",
     "unsupportedCourseMaterial": "El extractor actual no admite este formato. Cambia de extractor o elige otro archivo.",
     "materialQuotaExceeded": "Tu almacenamiento de materiales está lleno. Elimina algunos materiales e inténtalo de nuevo.",
-    "materialUploadFailed": "No se pudo subir {{name}}. Inténtalo de nuevo."
+    "materialUploadFailed": "No se pudo subir {{name}}. Inténtalo de nuevo.",
+    "materialTooLarge": "{{name}} es demasiado grande: un material puede medir como máximo {{size}}."
   },
   "generation": {
     "pdfLoadFailed": "Error al cargar el archivo PDF, inténtalo de nuevo",

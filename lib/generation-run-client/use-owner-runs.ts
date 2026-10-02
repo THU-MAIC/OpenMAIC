@@ -43,7 +43,7 @@ export function useOwnerRuns(options: OwnerRunsOptions = {}): {
     watcherRef.current = watcher;
     void watcher.poll();
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void watcher.poll();
+      if (document.visibilityState === 'visible') void watcher.poll('visible');
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {

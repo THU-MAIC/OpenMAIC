@@ -1041,7 +1041,8 @@
     "courseMaterialTotalSizeLimit": "教材の合計サイズは150MB未満にしてください",
     "unsupportedCourseMaterial": "現在の解析器はこの形式に対応していません。解析器を切り替えるか、別のファイルを選択してください。",
     "materialQuotaExceeded": "資料の保存容量がいっぱいです。資料を削除してから再度お試しください。",
-    "materialUploadFailed": "{{name}} のアップロードに失敗しました。再度お試しください。"
+    "materialUploadFailed": "{{name}} のアップロードに失敗しました。再度お試しください。",
+    "materialTooLarge": "{{name}} が大きすぎます。資料は最大 {{size}} までです。"
   },
   "generation": {
     "pdfLoadFailed": "PDFファイルの読み込みに失敗しました。もう一度お試しください",

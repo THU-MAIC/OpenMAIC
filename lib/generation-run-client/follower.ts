@@ -50,6 +50,10 @@ export interface RunFollowerDeps {
   /** How often a run without a stream is read (default 3 s while it can change, else 15 s). */
   pollIntervalMs?: number;
   quietPollIntervalMs?: number;
+  /** Whether the page is shown: a waiting run is read every 5 s then. */
+  isVisible?: () => boolean;
+  /** A [0, 1) source for the backoff's jitter (tests fix it). */
+  random?: () => number;
   /** The first delay before a failed read or stream is tried again (doubles to 30 s). */
   retryBaseMs?: number;
 }
@@ -68,10 +72,17 @@ export function runIsMoving(view: RunView): boolean {
   );
 }
 
-/** Keep what only the log carries when a snapshot replaces the view. */
+/**
+ * Keep what only the log carries when a snapshot replaces the view. A run
+ * whose outline is still streaming keeps the view's cursor: the items it
+ * logged since are only in the log, and the stream replays them from there.
+ */
 export function mergeSnapshotView(current: RunView | null, snapshot: RunSnapshot): RunView {
   const next = viewFromSnapshot(snapshot);
   if (!current) return next;
+  const logOnly =
+    !snapshot.outline && (snapshot.state === 'preparing' || snapshot.state === 'outlining');
+  if (logOnly) return current;
   return {
     ...next,
     researchSources: current.researchSources,
@@ -113,7 +124,9 @@ export class RunFollower {
 
   private retryDelay(): number {
     const base = this.deps.retryBaseMs ?? 1_000;
-    return Math.min(base * 2 ** Math.max(0, this.failures - 1), MAX_RETRY_MS);
+    const delay = Math.min(base * 2 ** Math.max(0, this.failures - 1), MAX_RETRY_MS);
+    // Jitter, so tabs refused together do not come back together.
+    return Math.round(delay * (0.75 + (this.deps.random ?? Math.random)() * 0.5));
   }
 
   private schedule(delayMs: number, run: () => void): void {
@@ -135,9 +148,23 @@ export class RunFollower {
     this.settleTransport();
   }
 
-  private async readSnapshot(): Promise<void> {
+  private reading: Promise<void> = Promise.resolve();
+
+  /** Snapshot reads one at a time, so an older answer never lands after a newer one. */
+  private readSnapshot(): Promise<void> {
+    const next = this.reading.catch(() => {}).then(() => this.readSnapshotNow());
+    this.reading = next;
+    return next;
+  }
+
+  private async readSnapshotNow(): Promise<void> {
     const snapshot = await this.deps.fetchSnapshot(this.runId);
     if (this.closed) return;
+    // An answer older than what the view already holds changes nothing.
+    if (snapshot && this.state.view && snapshot.seq < this.state.view.seq) {
+      this.publish({ status: 'live' });
+      return;
+    }
     if (!snapshot) {
       this.closeSource();
       this.publish({ status: 'missing' });
@@ -274,7 +301,12 @@ export class RunFollower {
     if (this.timer) return;
     const quiet = !runIsMoving(view);
     const interval = quiet
-      ? (this.deps.quietPollIntervalMs ?? (isFinishedRunState(view.state) ? 30_000 : 15_000))
+      ? (this.deps.quietPollIntervalMs ??
+        (isFinishedRunState(view.state)
+          ? 30_000
+          : (this.deps.isVisible?.() ?? false)
+            ? 5_000
+            : 15_000))
       : (this.deps.pollIntervalMs ?? 3_000);
     this.schedule(interval, () => void this.poll());
   }
@@ -294,13 +326,16 @@ export class RunFollower {
 
   /**
    * Read the run again now and follow it as it is: after a command from this
-   * page (a confirmation, a Retry), or when the page is shown again.
+   * page (a confirmation, a Retry), or when the page is shown again. A page
+   * shown again while a failed read or stream waits out its backoff keeps
+   * waiting: the backoff is what keeps a refused stream from hammering.
    */
-  async wake(): Promise<void> {
+  async wake(reason: 'command' | 'visible' = 'command'): Promise<void> {
     if (this.closed) return;
+    if (reason === 'visible' && this.failures > 0) return;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
-    this.failures = 0;
+    if (reason === 'command') this.failures = 0;
     if (!this.state.view) {
       await this.start();
       return;

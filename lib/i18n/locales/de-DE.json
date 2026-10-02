@@ -1041,7 +1041,8 @@
     "courseMaterialTotalSizeLimit": "Die Gesamtgröße der Kursmaterialien muss unter 150 MB liegen",
     "unsupportedCourseMaterial": "Dieses Format wird vom aktuellen Extraktor nicht unterstützt. Wechsle den Extraktor oder wähle eine andere Datei.",
     "materialQuotaExceeded": "Dein Materialspeicher ist voll. Lösche einige Materialien und versuche es erneut.",
-    "materialUploadFailed": "Hochladen von {{name}} fehlgeschlagen. Bitte versuche es erneut."
+    "materialUploadFailed": "Hochladen von {{name}} fehlgeschlagen. Bitte versuche es erneut.",
+    "materialTooLarge": "{{name}} ist zu groß: Ein Material darf höchstens {{size}} groß sein."
   },
   "generation": {
     "pdfLoadFailed": "PDF-Datei konnte nicht geladen werden. Bitte versuche es erneut.",

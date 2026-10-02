@@ -11,6 +11,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore } from '@/lib/store/user-profile';
 
 import {
+  deleteMaterial,
   fetchMaterialPolicy,
   listActiveGenerationRuns,
   RunApiError,
@@ -121,7 +122,13 @@ export async function startClassicRun(input: {
       throw new RunStartRefusedError('upload.unsupportedCourseMaterial');
     }
     materialIds = [];
-    for (const file of input.materials) materialIds.push(await uploadMaterial(file));
+    try {
+      for (const file of input.materials) materialIds.push(await uploadMaterial(file));
+    } catch (error) {
+      // The start will not happen: what was uploaded for it goes.
+      await releaseUploads(materialIds);
+      throw error;
+    }
   }
 
   const profile = useUserProfileStore.getState();
@@ -134,14 +141,26 @@ export async function startClassicRun(input: {
       : undefined;
   const voice = selectedRunVoice(input.capabilities);
 
-  return startGenerationRun({
-    requirement: input.requirement,
-    materialIds,
-    interactive: input.interactive,
-    taskEngine: input.taskEngine,
-    agents,
-    ...(learnerProfile ? { learnerProfile } : {}),
-    ...(voice ? { voice } : {}),
-    outlineReview: 'wait',
-  });
+  try {
+    return await startGenerationRun({
+      requirement: input.requirement,
+      materialIds,
+      interactive: input.interactive,
+      taskEngine: input.taskEngine,
+      agents,
+      ...(learnerProfile ? { learnerProfile } : {}),
+      ...(voice ? { voice } : {}),
+      // Uploaded for this run only: released when it completes or ends.
+      ...(materialIds.length > 0 ? { releaseMaterials: true } : {}),
+      outlineReview: 'wait',
+    });
+  } catch (error) {
+    await releaseUploads(materialIds);
+    throw error;
+  }
+}
+
+/** Delete materials uploaded for a start that did not happen (best effort). */
+async function releaseUploads(materialIds: readonly string[]): Promise<void> {
+  await Promise.allSettled(materialIds.map((id) => deleteMaterial(id)));
 }

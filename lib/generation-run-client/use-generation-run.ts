@@ -38,13 +38,14 @@ export function useGenerationRun(runId: string | null): FollowedRun {
       openEvents: typeof EventSource === 'undefined' ? null : (url: string) => new EventSource(url),
       onChange: (value) => setState({ runId, value }),
       onWarn: (message, error) => log.warn(`${message}:`, error),
+      isVisible: () => document.visibilityState === 'visible',
     });
     followerRef.current = follower;
     void follower.start();
     // A page shown again reads the run at once (a throttled tab may have
     // missed polls, or its stream may have dropped).
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void follower.wake();
+      if (document.visibilityState === 'visible') void follower.wake('visible');
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {

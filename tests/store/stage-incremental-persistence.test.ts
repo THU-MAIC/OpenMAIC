@@ -5,6 +5,13 @@ const { fullSave, incrementalSave } = vi.hoisted(() => ({
   incrementalSave: vi.fn().mockResolvedValue(undefined),
 }));
 
+const { preparePBL } = vi.hoisted(() => ({
+  preparePBL: vi.fn(async (_stageId: string, scenes: unknown[]) => scenes),
+}));
+vi.mock('@/lib/pbl/v2/runtime/document-persistence', () => ({
+  preparePBLScenesForDocumentPersistence: preparePBL,
+}));
+
 vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageData: (...args: unknown[]) => fullSave(...args),
   saveStageDataIncremental: (...args: unknown[]) => incrementalSave(...args),
@@ -13,7 +20,7 @@ vi.mock('@/lib/utils/stage-storage', () => ({
 
 import {
   flushStageSave,
-  hasPendingSceneChange,
+  hasLearnerSceneChange,
   restorePendingStageChanges,
   setServerGeneratingStage,
   useStageStore,
@@ -74,9 +81,8 @@ afterEach(() => {
 });
 
 describe('a course its generation run is producing', () => {
-  it('holds its content changes until the run completes, and writes them then', async () => {
+  it('writes no content while fenced, only the reading position; PBL progress goes to its runtime store', async () => {
     setServerGeneratingStage('stage-1');
-    // A learner's progress on a scene (PBL), and the reading position.
     useStageStore.getState().updateScene('scene-2', { title: 'changed' });
     useStageStore.getState().setCurrentSceneId('scene-2');
     await flushStageSave();
@@ -84,16 +90,30 @@ describe('a course its generation run is producing', () => {
     expect(incrementalSave.mock.calls[0]![1]).toEqual([{ kind: 'currentScene' }]);
     expect(await useStageStore.getState().saveToStorage()).toBe(false);
     expect(fullSave).not.toHaveBeenCalled();
-    expect(hasPendingSceneChange('stage-1', 'scene-2')).toBe(true);
-    await vi.advanceTimersByTimeAsync(5_000);
+    expect(hasLearnerSceneChange('stage-1', 'scene-2')).toBe(true);
+
+    // A PBL scene's learner progress is synced to the runtime store on its own.
+    useStageStore.setState({
+      scenes: [
+        ...useStageStore.getState().scenes,
+        { ...scene('scene-pbl'), content: { type: 'pbl', projectV2: {} } } as unknown as Scene,
+      ],
+    });
+    useStageStore.getState().updateScene('scene-pbl', { title: 'progress' });
+    await vi.advanceTimersByTimeAsync(600);
+    expect(preparePBL).toHaveBeenCalledWith('stage-1', [
+      expect.objectContaining({ id: 'scene-pbl' }),
+    ]);
     expect(incrementalSave).toHaveBeenCalledOnce();
 
-    // The run completes: the held change is written, without a new edit.
+    // Unfenced: nothing held is written; edits save again.
     setServerGeneratingStage(null);
-    await vi.advanceTimersByTimeAsync(500);
-    expect(incrementalSave).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(incrementalSave).toHaveBeenCalledOnce();
+    expect(hasLearnerSceneChange('stage-1', 'scene-2')).toBe(false);
+    useStageStore.getState().updateScene('scene-2', { title: 'edited' });
+    await flushStageSave();
     expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
-    expect(hasPendingSceneChange('stage-1', 'scene-2')).toBe(false);
   });
 });
 

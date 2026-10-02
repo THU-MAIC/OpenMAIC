@@ -49,6 +49,7 @@ function setup(lists: RunSnapshot[][]) {
     onCourseChanged: (run) => changed.push(run.id),
     idlePollMs: 30_000,
     retryBaseMs: 100,
+    random: () => 0.5,
   });
   const live = () => streams.filter((stream) => !stream.closed);
   return { watcher, streams, changed, listActive, live };
@@ -78,6 +79,35 @@ describe('the owner run list', () => {
     });
     expect(watcher.current.runs.map((run) => run.id)).toEqual(['run-w']);
     expect(live()).toHaveLength(0);
+    watcher.close();
+  });
+
+  it('backs off over consecutive refusals; a list read does not reset it, a stream frame does', async () => {
+    const generating = snapshot({ id: 'run-g', state: 'generating' });
+    const { watcher, listActive, live } = setup([[generating]]);
+    await watcher.poll();
+    live()[0]!.refuse();
+    await vi.advanceTimersByTimeAsync(100);
+    live()[0]!.refuse();
+    // The second wait is twice the first, though the list read in between succeeded.
+    await vi.advanceTimersByTimeAsync(100);
+    expect(live()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(live()).toHaveLength(1);
+    live()[0]!.refuse();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(live()).toHaveLength(0);
+    // Shown again while it waits: the backoff stands.
+    await watcher.poll('visible');
+    expect(live()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(live()).toHaveLength(1);
+    // The stream attached: the next refusal waits the base delay again.
+    live()[0]!.emit('runs', { type: 'runs', runs: [generating] });
+    live()[0]!.refuse();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(live()).toHaveLength(1);
+    expect(listActive.mock.calls.length).toBeGreaterThan(3);
     watcher.close();
   });
 

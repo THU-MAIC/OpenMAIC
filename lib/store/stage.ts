@@ -88,11 +88,6 @@ function resetPendingChanges(stageId: string | null = null): void {
 }
 
 function schedulePendingSave(): void {
-  // Nothing to write until the course's generation run completes.
-  if (flushableChanges().size === 0) {
-    cancelScheduledSave();
-    return;
-  }
   // Once a write has failed, keep the already-armed backoff timer. Streaming
   // chat mutations are already represented by the dirty descriptor; rearming
   // per delta would collapse the backoff to the base cadence or starve it.
@@ -109,37 +104,53 @@ function schedulePendingSave(): void {
 /**
  * The course whose server-side generation run is still producing it. Its
  * document is read-only to other writers until the run completes (the server
- * refuses the write with `COURSE_GENERATING`), so its content changes (a
- * learner's PBL progress, for one) stay queued and are written once the run
- * completes; the reading position and chats are written as usual.
+ * refuses the write with `COURSE_GENERATING`), so its content changes are not
+ * queued for saving; the reading position and chats are written as usual.
+ *
+ * The one learner write to scene content during playback is PBL progress
+ * (`PBLRenderer` → `updateScene`). Its durable home is the PBL runtime store,
+ * not the course document (a document save strips the learner state off the
+ * project after syncing it there), so while the course is fenced that sync
+ * runs on its own, without a document write.
  */
 let serverGeneratingStageId: string | null = null;
+/** Scenes of the fenced course the learner changed (a server copy must not replace them). */
+const learnerChangedScenes = new Set<string>();
+const learnerRuntimeSyncs = new Map<string, ReturnType<typeof setTimeout>>();
+const LEARNER_RUNTIME_SYNC_DELAY_MS = 500;
 
 /** Fence (or, with null, unfence) the course a generation run is producing. */
 export function setServerGeneratingStage(stageId: string | null): void {
-  const released = serverGeneratingStageId;
+  if (serverGeneratingStageId !== stageId) learnerChangedScenes.clear();
   serverGeneratingStageId = stageId;
-  // The changes held while the run was generating are written now.
-  if (released && released !== stageId && pendingStageId === released) schedulePendingSave();
-}
-
-/** The pending changes a save may write now (content waits for a fenced course's run). */
-function flushableChanges(): Map<string, PendingEntry> {
-  if (!isServerGeneratingStage(pendingStageId)) return new Map(pendingChanges);
-  return new Map(
-    [...pendingChanges].filter(([, entry]) => !DOCUMENT_CHANGE_KINDS.has(entry.change.kind)),
-  );
-}
-
-/** Whether this browser holds an unsaved change of a scene (a server copy must not replace it). */
-export function hasPendingSceneChange(stageId: string, sceneId: string): boolean {
-  return (
-    pendingStageId === stageId && pendingChanges.has(pendingChangeKey({ kind: 'scene', sceneId }))
-  );
 }
 
 export function isServerGeneratingStage(stageId: string | undefined | null): boolean {
   return !!stageId && stageId === serverGeneratingStageId;
+}
+
+/** Whether the learner changed this scene of the fenced course (a server copy must not replace it). */
+export function hasLearnerSceneChange(stageId: string, sceneId: string): boolean {
+  return isServerGeneratingStage(stageId) && learnerChangedScenes.has(sceneId);
+}
+
+/** Write a fenced course's PBL learner progress to its runtime store (no document write). */
+function syncLearnerRuntime(stageId: string, sceneId: string): void {
+  const pending = learnerRuntimeSyncs.get(sceneId);
+  if (pending) clearTimeout(pending);
+  learnerRuntimeSyncs.set(
+    sceneId,
+    setTimeout(() => {
+      learnerRuntimeSyncs.delete(sceneId);
+      const state = useStageStore.getState();
+      if (state.stage?.id !== stageId) return;
+      const scene = state.scenes.find((candidate) => candidate.id === sceneId);
+      if (!scene || scene.content.type !== 'pbl') return;
+      void preparePBLScenesForDocumentPersistence(stageId, [scene]).catch((error) => {
+        log.warn(`Saving the PBL progress of ${sceneId} failed:`, error);
+      });
+    }, LEARNER_RUNTIME_SYNC_DELAY_MS),
+  );
 }
 
 const DOCUMENT_CHANGE_KINDS = new Set<PendingChange['kind']>([
@@ -151,6 +162,15 @@ const DOCUMENT_CHANGE_KINDS = new Set<PendingChange['kind']>([
 
 function markPendingChanges(stageId: string | undefined, ...changes: PendingChange[]): void {
   if (!stageId || isStageDeleted(stageId)) return;
+  if (isServerGeneratingStage(stageId)) {
+    for (const change of changes) {
+      if (change.kind !== 'scene') continue;
+      learnerChangedScenes.add(change.sceneId);
+      syncLearnerRuntime(stageId, change.sceneId);
+    }
+    changes = changes.filter((change) => !DOCUMENT_CHANGE_KINDS.has(change.kind));
+    if (changes.length === 0) return;
+  }
   if (pendingStageId !== stageId) resetPendingChanges(stageId);
   for (const change of changes) {
     pendingRevision += 1;
@@ -1173,8 +1193,7 @@ function startFlushRound(): FlushRound | null {
   if (!pendingStageId || pendingChanges.size === 0) return null;
 
   const stageId = pendingStageId;
-  const dirtySnapshot = flushableChanges();
-  if (dirtySnapshot.size === 0) return null;
+  const dirtySnapshot = new Map(pendingChanges);
   const state = useStageStore.getState();
   if (state.stage?.id !== stageId) {
     resetPendingChanges(state.stage?.id ?? null);

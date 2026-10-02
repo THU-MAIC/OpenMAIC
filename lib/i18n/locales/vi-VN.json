@@ -1041,7 +1041,8 @@
     "courseMaterialTotalSizeLimit": "Tổng dung lượng tài liệu phải dưới 150MB",
     "unsupportedCourseMaterial": "Bộ bóc tách hiện tại không hỗ trợ định dạng này. Hãy đổi bộ bóc tách hoặc chọn tệp khác.",
     "materialQuotaExceeded": "Bộ nhớ tài liệu đã đầy. Hãy xóa bớt tài liệu rồi thử lại.",
-    "materialUploadFailed": "Tải lên {{name}} thất bại. Vui lòng thử lại."
+    "materialUploadFailed": "Tải lên {{name}} thất bại. Vui lòng thử lại.",
+    "materialTooLarge": "{{name}} quá lớn: mỗi tài liệu tối đa {{size}}."
   },
   "generation": {
     "pdfLoadFailed": "Không nạp được tệp PDF, vui lòng thử lại",
