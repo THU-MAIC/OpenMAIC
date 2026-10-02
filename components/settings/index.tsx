@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { Button } from '@/components/ui/button';
 import { X, Settings, Boxes, CreditCard, GraduationCap, Sparkles } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useAgentRuntimeAvailable } from '@/lib/hooks/use-agent-runtime-available';
 import { cn } from '@/lib/utils';
 import { GeneralSettings } from './general-settings';
 import { SkillSettings } from './skill-settings';
@@ -44,7 +45,15 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const { t } = useI18n();
 
   // Navigation
-  const [activeSection, setActiveSection] = useState<SettingsSection>('token-plan');
+  const [requestedSection, setActiveSection] = useState<SettingsSection>('token-plan');
+  // Skills are served by the agent runtime (`/api/agent/skills` 404s without
+  // it), so the section is offered only once the server says the runtime is
+  // available. Until then — and on a deployment without it — the item is
+  // hidden, and a request to open it lands on the first section instead.
+  const skillsAvailable = useAgentRuntimeAvailable();
+  const nav = skillsAvailable ? NAV : NAV.filter(({ id }) => id !== 'skills');
+  const activeSection =
+    requestedSection === 'skills' && !skillsAvailable ? nav[0].id : requestedSection;
   // 「模型服务」分区内的服务 tab（沿用旧一级分区值）
   const [serviceTab, setServiceTab] = useState<ServiceTab>('providers');
 
@@ -154,9 +163,10 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             className="flex flex-shrink-0 gap-1 overflow-x-auto border-b bg-muted/30 p-2 sm:block sm:w-[var(--settings-nav-width)] sm:space-y-1 sm:overflow-visible sm:border-b-0 sm:p-3"
             style={{ '--settings-nav-width': `${sidebarWidth}px` } as React.CSSProperties}
           >
-            {NAV.map(({ id, icon: Icon, label }) => (
+            {nav.map(({ id, icon: Icon, label }) => (
               <button
                 key={id}
+                data-testid={`settings-nav-${id}`}
                 onClick={() => setActiveSection(id)}
                 className={cn(
                   'flex shrink-0 items-center gap-3 whitespace-nowrap px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0 sm:w-full sm:whitespace-normal',
