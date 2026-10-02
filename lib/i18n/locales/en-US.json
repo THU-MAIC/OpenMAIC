@@ -1028,14 +1028,15 @@
   },
   "upload": {
     "pdfSizeLimit": "Supports PDF files up to 50MB",
-    "courseMaterialSizeLimit": "Documents, slides, spreadsheets, images, and plain text — up to 50MB (accepted formats depend on the selected extractor)",
+    "courseMaterialFormats": "Supports {{formats}} — up to {{size}}MB per file",
+    "formatListSeparator": ", ",
     "generateFailed": "Failed to generate classroom, please try again",
     "requirementPlaceholder": "Tell me anything you want to learn, e.g.\n\"Teach me Python from scratch in 30 minutes\"\n\"Explain Fourier Transform on the whiteboard\"\n\"How to play the board game Avalon\"",
     "requirementRequired": "Please enter course requirements",
     "fileTooLarge": "File too large. Please select a file smaller than 50MB",
     "courseMaterialCountLimit": "You can upload up to 5 course material files",
     "courseMaterialTotalSizeLimit": "Total course material size must be under 150MB",
-    "unsupportedCourseMaterial": "This format isn't supported by the current extractor. Switch the extractor or pick a different file."
+    "unsupportedCourseMaterial": "{{parser}} can't read this file type. Supported: {{formats}}"
   },
   "generation": {
     "pdfLoadFailed": "Failed to load PDF file, please try again",

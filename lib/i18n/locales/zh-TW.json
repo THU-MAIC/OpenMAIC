@@ -1013,14 +1013,15 @@
   },
   "upload": {
     "pdfSizeLimit": "支援最大50MB的PDF檔案",
-    "courseMaterialSizeLimit": "支援文件、簡報、表格、圖像、純文字，最大 50MB（實際支援格式依所選解析器而定）",
+    "courseMaterialFormats": "支援 {{formats}}，單檔最大 {{size}}MB",
+    "formatListSeparator": "、",
     "generateFailed": "生成課堂失敗，請重試",
     "requirementPlaceholder": "輸入你想學的任何內容，例如：\n「從零學 Python，30 分鐘寫出第一個程式」\n「用白板為我講解傅立葉轉換」\n「阿瓦隆桌遊怎麼玩」",
     "requirementRequired": "請輸入課程需求",
     "fileTooLarge": "檔案過大，請選擇小於 50MB 的檔案",
     "courseMaterialCountLimit": "最多可上傳 5 個課程材料檔案",
     "courseMaterialTotalSizeLimit": "課程材料總大小需小於 150MB",
-    "unsupportedCourseMaterial": "目前的解析器不支援此格式，請切換解析器或選擇其他檔案"
+    "unsupportedCourseMaterial": "{{parser}} 不支援此檔案類型，目前支援：{{formats}}"
   },
   "generation": {
     "pdfLoadFailed": "無法載入 PDF 檔案，請重試",

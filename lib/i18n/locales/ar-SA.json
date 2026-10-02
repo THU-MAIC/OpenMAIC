@@ -1028,14 +1028,15 @@
   },
   "upload": {
     "pdfSizeLimit": "يدعم ملفات PDF حتى 50 ميغابايت",
-    "courseMaterialSizeLimit": "المستندات والعروض التقديمية وجداول البيانات والصور والنصوص العادية — حتى 50 ميغابايت (تعتمد الصيغ المقبولة على المستخرج المحدد)",
+    "courseMaterialFormats": "الصيغ المدعومة: {{formats}} — حتى {{size}} ميغابايت لكل ملف",
+    "formatListSeparator": "، ",
     "generateFailed": "فشل توليد الفصل، يرجى المحاولة مرة أخرى",
     "requirementPlaceholder": "أخبرني بأي شيء تريد تعلمه، مثلاً:\n\"علمني بايثون من الصفر في 30 دقيقة\"\n\"اشرح تحويل فورييه على السبورة\"\n\"كيف تلعب لعبة أفالون\"",
     "requirementRequired": "يرجى إدخال متطلبات المقرر",
     "fileTooLarge": "الملف كبير جدًا. يرجى اختيار ملف أصغر من 50 ميغابايت",
     "courseMaterialCountLimit": "يمكنك رفع ما يصل إلى 5 ملفات لمواد المقرر",
     "courseMaterialTotalSizeLimit": "يجب أن يكون الحجم الإجمالي لمواد المقرر أقل من 150 ميغابايت",
-    "unsupportedCourseMaterial": "المستخرج الحالي لا يدعم هذه الصيغة. غيّر المستخرج أو اختر ملفًا آخر."
+    "unsupportedCourseMaterial": "لا يدعم {{parser}} نوع الملف هذا. الصيغ المدعومة: {{formats}}"
   },
   "generation": {
     "pdfLoadFailed": "فشل تحميل ملف PDF، يرجى المحاولة مرة أخرى",

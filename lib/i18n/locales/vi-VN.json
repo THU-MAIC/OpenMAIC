@@ -1028,14 +1028,15 @@
   },
   "upload": {
     "pdfSizeLimit": "Nhận tệp PDF tối đa 50MB",
-    "courseMaterialSizeLimit": "Tài liệu, slide, bảng tính, ảnh và văn bản thuần — tối đa 50MB (định dạng được nhận tùy vào bộ bóc tách đang chọn)",
+    "courseMaterialFormats": "Hỗ trợ {{formats}} — tối đa {{size}}MB mỗi tệp",
+    "formatListSeparator": ", ",
     "generateFailed": "Không tạo được lớp học, vui lòng thử lại",
     "requirementPlaceholder": "Hãy nói bạn muốn học gì, ví dụ\n\"Dạy tôi Python từ đầu trong 30 phút\"\n\"Giảng phép biến đổi Fourier trên bảng\"\n\"Cách chơi board game Avalon\"",
     "requirementRequired": "Vui lòng nhập yêu cầu về bài học",
     "fileTooLarge": "Tệp quá lớn. Vui lòng chọn tệp nhỏ hơn 50MB",
     "courseMaterialCountLimit": "Bạn chỉ tải lên được tối đa 5 tệp tài liệu",
     "courseMaterialTotalSizeLimit": "Tổng dung lượng tài liệu phải dưới 150MB",
-    "unsupportedCourseMaterial": "Bộ bóc tách hiện tại không hỗ trợ định dạng này. Hãy đổi bộ bóc tách hoặc chọn tệp khác."
+    "unsupportedCourseMaterial": "{{parser}} không hỗ trợ loại tệp này. Định dạng được hỗ trợ: {{formats}}"
   },
   "generation": {
     "pdfLoadFailed": "Không nạp được tệp PDF, vui lòng thử lại",

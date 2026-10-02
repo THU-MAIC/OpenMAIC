@@ -1028,14 +1028,15 @@
   },
   "upload": {
     "pdfSizeLimit": "Accepte les fichiers PDF jusqu’à 50 Mo",
-    "courseMaterialSizeLimit": "Documents, présentations, tableurs, images et texte brut, jusqu’à 50 Mo (les formats acceptés dépendent de l’extracteur choisi)",
+    "courseMaterialFormats": "Formats pris en charge : {{formats}} — jusqu’à {{size}} Mo par fichier",
+    "formatListSeparator": ", ",
     "generateFailed": "Échec de la génération de la classe, veuillez réessayer",
     "requirementPlaceholder": "Dites-moi ce que vous voulez apprendre, par exemple :\n« Apprends-moi Python en partant de zéro en 30 minutes »\n« Explique la transformation de Fourier au tableau »\n« Comment jouer au jeu de société Avalon »",
     "requirementRequired": "Veuillez saisir vos attentes pour le cours",
     "fileTooLarge": "Fichier trop volumineux. Veuillez choisir un fichier de moins de 50 Mo",
     "courseMaterialCountLimit": "Vous pouvez envoyer jusqu’à 5 supports de cours",
     "courseMaterialTotalSizeLimit": "La taille totale des supports de cours doit rester sous 150 Mo",
-    "unsupportedCourseMaterial": "Ce format n’est pas pris en charge par l’extracteur actuel. Changez d’extracteur ou choisissez un autre fichier."
+    "unsupportedCourseMaterial": "{{parser}} ne prend pas en charge ce type de fichier. Formats pris en charge : {{formats}}"
   },
   "generation": {
     "pdfLoadFailed": "Échec du chargement du fichier PDF, veuillez réessayer",

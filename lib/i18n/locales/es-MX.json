@@ -1028,14 +1028,15 @@
   },
   "upload": {
     "pdfSizeLimit": "Admite archivos PDF de hasta 50 MB",
-    "courseMaterialSizeLimit": "Documentos, diapositivas, hojas de cálculo, imágenes y texto plano — hasta 50 MB (los formatos aceptados dependen del extractor seleccionado)",
+    "courseMaterialFormats": "Admite {{formats}} — hasta {{size}} MB por archivo",
+    "formatListSeparator": ", ",
     "generateFailed": "No se pudo generar el aula, inténtalo de nuevo",
     "requirementPlaceholder": "Dime qué quieres aprender, p. ej.\n\"Enséñame Python desde cero en 30 minutos\"\n\"Explica la transformada de Fourier en el pizarrón\"\n\"Cómo jugar el juego de mesa Avalon\"",
     "requirementRequired": "Ingresa los requisitos del curso",
     "fileTooLarge": "Archivo demasiado grande. Selecciona uno de menos de 50 MB",
     "courseMaterialCountLimit": "Puedes subir hasta 5 archivos de material del curso",
     "courseMaterialTotalSizeLimit": "El tamaño total del material del curso debe ser menor a 150 MB",
-    "unsupportedCourseMaterial": "El extractor actual no admite este formato. Cambia de extractor o elige otro archivo."
+    "unsupportedCourseMaterial": "{{parser}} no admite este tipo de archivo. Formatos admitidos: {{formats}}"
   },
   "generation": {
     "pdfLoadFailed": "Error al cargar el archivo PDF, inténtalo de nuevo",

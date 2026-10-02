@@ -27,7 +27,11 @@ import { assignmentRefs, modelChange, modelRef, providerLabel } from '@/lib/mode
 import { serviceEntries, slotThinking, thinkingChange } from '@/lib/model-settings/services';
 import { useModelSettingsView } from '@/lib/model-settings/use-model-settings';
 import { modelSettingsClient } from '@/lib/model-settings/client';
-import { getAcceptStringForProviders, isMimeSupportedByProviders } from '@/lib/document/mime';
+import {
+  getAcceptStringForProviders,
+  getFormatLabelsForProviders,
+  isMimeSupportedByProviders,
+} from '@/lib/document/mime';
 import {
   MAX_DOCUMENT_BUNDLE_FILES,
   MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES,
@@ -40,6 +44,29 @@ import { useLLMPickerGroups } from '@/components/settings/use-llm-picker-groups'
 // ─── Constants ───────────────────────────────────────────────
 const MAX_COURSE_MATERIAL_SIZE_MB = 50;
 const MAX_COURSE_MATERIAL_SIZE_BYTES = MAX_COURSE_MATERIAL_SIZE_MB * 1024 * 1024;
+
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+/**
+ * The formats the active extractors accept, as a localized list ("PDF, TXT,
+ * MD"). The format labels are file-type names shared by every locale; only
+ * the separator is localized.
+ */
+export function courseMaterialFormatList(t: Translate, providerIds: readonly string[]): string {
+  return getFormatLabelsForProviders(providerIds).join(t('upload.formatListSeparator'));
+}
+
+/** The "this file type is unsupported" message, naming the extractor and what it accepts. */
+export function unsupportedCourseMaterialMessage(
+  t: Translate,
+  extractorName: string,
+  providerIds: readonly string[],
+): string {
+  return t('upload.unsupportedCourseMaterial', {
+    parser: extractorName,
+    formats: courseMaterialFormatList(t, providerIds),
+  });
+}
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
@@ -146,6 +173,9 @@ export function GenerationToolbar({
     () => getAcceptStringForProviders(activeDocumentProviderIds),
     [activeDocumentProviderIds],
   );
+  const extractorName = PDF_PROVIDERS[documentProviderId]?.name ?? documentProviderId;
+  const unsupportedMessage = () =>
+    unsupportedCourseMaterialMessage(t, extractorName, activeDocumentProviderIds);
 
   // If the user switches to a provider that doesn't support already attached
   // materials, drop only the incompatible files so the eventual extraction
@@ -163,7 +193,7 @@ export function GenerationToolbar({
     for (const file of unsupportedMaterials) {
       onCourseMaterialRemove(file.id);
     }
-    onPdfError(t('upload.unsupportedCourseMaterial'));
+    onPdfError(unsupportedMessage());
     // Intentionally omit callbacks/t from deps: adding them would re-run this
     // provider capability cleanup on unrelated parent re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -179,12 +209,8 @@ export function GenerationToolbar({
         activeDocumentProviderIds,
       ),
     );
-    if (supportedFiles.length === 0) {
-      onPdfError(t('upload.unsupportedCourseMaterial'));
-      return;
-    }
     if (supportedFiles.length !== incomingFiles.length) {
-      onPdfError(t('upload.unsupportedCourseMaterial'));
+      onPdfError(unsupportedMessage());
       return;
     }
     if (supportedFiles.some((file) => file.size > MAX_COURSE_MATERIAL_SIZE_BYTES)) {
@@ -380,7 +406,10 @@ export function GenerationToolbar({
                 <Paperclip className="size-5 text-muted-foreground/50 mb-1.5" />
                 <p className="text-xs font-medium">{t('toolbar.courseMaterialUpload')}</p>
                 <p className="text-[10px] text-muted-foreground/60 mt-0.5 text-center">
-                  {t('upload.courseMaterialSizeLimit')}
+                  {t('upload.courseMaterialFormats', {
+                    formats: courseMaterialFormatList(t, activeDocumentProviderIds),
+                    size: MAX_COURSE_MATERIAL_SIZE_MB,
+                  })}
                 </p>
                 <p className="text-[10px] text-muted-foreground/60 text-center">
                   {t('upload.courseMaterialCountLimit', { n: MAX_DOCUMENT_BUNDLE_FILES })}
