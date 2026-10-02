@@ -91,6 +91,7 @@ export async function savedChatEndpoint(
 ): Promise<{ baseUrl?: string; apiKey: string }> {
   const target = await savedProviderTarget(providerId, 'chat', await requestWorkspaceId(req), {
     workspaceOnly: true,
+    providerOnly: true,
   });
   const registered = getProvider(target.registryId as ProviderId);
   return {

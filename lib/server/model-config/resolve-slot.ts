@@ -144,8 +144,9 @@ export function resolveModelReference(
   ref: string,
   capability: SlotCapability,
   layers: readonly ModelConfigLayer[],
+  { providerOnly = false }: { providerOnly?: boolean } = {},
 ): ResolvedModelTarget {
-  return resolveTarget(ref, capability, inPrecedence(layers), 'reference');
+  return resolveTarget(ref, capability, inPrecedence(layers), 'reference', providerOnly);
 }
 
 function resolveTarget(
@@ -153,6 +154,8 @@ function resolveTarget(
   capability: SlotCapability,
   layers: readonly ModelConfigLayer[],
   at: string,
+  /** The provider's connection alone: a chat reference without a model is accepted. */
+  providerOnly = false,
 ): ResolvedModelTarget {
   let parsed: { providerId: string; modelId?: string };
   try {
@@ -161,7 +164,7 @@ function resolveTarget(
     throw new SlotResolutionError(`${at}: invalid model reference`);
   }
   const { providerId, modelId } = parsed;
-  if (modelId === undefined && capability === 'chat') {
+  if (modelId === undefined && capability === 'chat' && !providerOnly) {
     throw new SlotResolutionError(`${at}: a chat model needs "providerId:modelId"`);
   }
   const found = findProvider(providerId, layers);

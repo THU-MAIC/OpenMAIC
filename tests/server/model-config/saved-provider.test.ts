@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   testImageConnectivity: vi.fn(),
   callLLM: vi.fn(),
+  fetchModels: vi.fn(),
 }));
 
 vi.mock('@/lib/persistence/server-provider', () => ({
@@ -27,6 +28,10 @@ vi.mock('@/lib/media/image-providers', async (importOriginal) => ({
   testImageConnectivity: mocks.testImageConnectivity,
 }));
 vi.mock('@/lib/ai/llm', () => ({ callLLM: mocks.callLLM }));
+vi.mock('@/lib/server/model-fetch', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/server/model-fetch')>()),
+  fetchModels: mocks.fetchModels,
+}));
 // No DNS in tests: the endpoint checks pass.
 vi.mock('@/lib/server/ssrf-guard', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/server/ssrf-guard')>()),
@@ -56,6 +61,7 @@ beforeEach(() => {
   workspaces.clear();
   mocks.testImageConnectivity.mockReset();
   mocks.callLLM.mockReset();
+  mocks.fetchModels.mockReset();
   runtime.setDeploymentConfigForTests({
     layer: {
       source: 'deployment',
@@ -169,5 +175,32 @@ describe('saved provider requests', () => {
     const response = await POST(request({ provider: 'mine', model: 'gpt-5' }));
     expect(response.status).toBe(200);
     expect(mocks.callLLM).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists a workspace chat provider's models with its stored endpoint and key", async () => {
+    workspaces.set('user:alice', {
+      providers: {
+        mine: {
+          preset: 'openai-compatible',
+          apiKey: 'sk-workspace',
+          baseUrl: 'https://llm.example/v1',
+        },
+      },
+    });
+    mocks.fetchModels.mockResolvedValue([{ id: 'gpt-x' }]);
+    const { POST } = await import('@/app/api/provider/probe-models/route');
+    const response = await POST(request({ provider: 'mine' }));
+    expect(response.status).toBe(200);
+    expect(mocks.fetchModels).toHaveBeenCalledWith('https://llm.example/v1', 'sk-workspace', {
+      modelsUrlOverride: undefined,
+    });
+  });
+
+  it("does not list a deployment provider's models (not the workspace's to edit)", async () => {
+    mocks.fetchModels.mockResolvedValue([]);
+    const { POST } = await import('@/app/api/provider/probe-models/route');
+    const response = await POST(request({ provider: 'operator' }));
+    expect(response.status).toBe(400);
+    expect(mocks.fetchModels).not.toHaveBeenCalled();
   });
 });

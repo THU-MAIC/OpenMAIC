@@ -109,6 +109,26 @@ describe('modelSettingsView', () => {
     expect(json).not.toContain('endpoint-secret');
   });
 
+  it("offers an OpenAI-compatible deployment provider's listed models for chat", () => {
+    deployment({
+      providers: {
+        gateway: {
+          preset: 'openai-compatible',
+          apiKey: 'sk-operator',
+          baseUrl: 'https://gateway.example/v1',
+          models: ['gpt-5.1', 'gpt-5.4-mini', 'deepseek-v4-flash-0731'],
+        },
+      },
+    });
+    const gateway = modelSettingsView(null).providers.find((entry) => entry.id === 'gateway')!;
+    expect(gateway).toMatchObject({ source: 'deployment', preset: 'openai-compatible' });
+    expect(gateway.capabilities.chat?.models.map((model) => model.id)).toEqual([
+      'gpt-5.1',
+      'gpt-5.4-mini',
+      'deepseek-v4-flash-0731',
+    ]);
+  });
+
   it('never shows credentials a stored endpoint carries', () => {
     const view = modelSettingsView({
       config: {

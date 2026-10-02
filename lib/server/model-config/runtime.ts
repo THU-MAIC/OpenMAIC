@@ -247,7 +247,14 @@ export async function savedProviderTarget(
   ref: string,
   capability: SlotCapability,
   workspaceId: string | null,
-  { workspaceOnly = false }: { workspaceOnly?: boolean } = {},
+  {
+    workspaceOnly = false,
+    providerOnly = false,
+  }: {
+    workspaceOnly?: boolean;
+    /** The provider's connection without a model (listing the models it serves). */
+    providerOnly?: boolean;
+  } = {},
 ): Promise<ResolvedModelTarget> {
   const { layer: deployment } = deploymentConfig();
   const stored = workspaceId ? await (loadWorkspace ?? workspaceLayer)(workspaceId) : null;
@@ -255,7 +262,7 @@ export async function savedProviderTarget(
   const layers = workspaceOnly
     ? [workspace].filter((entry): entry is ModelConfigLayer => !!entry)
     : [deployment, workspace].filter((entry): entry is ModelConfigLayer => !!entry);
-  const target = resolveModelReference(ref, capability, layers);
+  const target = resolveModelReference(ref, capability, layers, { providerOnly });
   // A deployment's provider of the same id outranks the workspace's.
   if (
     workspaceOnly &&
