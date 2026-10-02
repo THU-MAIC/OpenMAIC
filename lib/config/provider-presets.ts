@@ -60,6 +60,12 @@ export interface ProviderPreset {
   /** True when the preset authenticates with a key pair (`credentials`) rather than one key. */
   requiresCredentials?: boolean;
   /**
+   * True when a key is optional although the registry entry serving the
+   * preset asks for one: a self-hosted OpenAI-compatible server (Ollama,
+   * vLLM) usually takes none.
+   */
+  apiKeyOptional?: true;
+  /**
    * False when the registry entry only supplies the transport, so its model
    * catalogue says nothing about the models behind the endpoint (a custom
    * OpenAI-compatible server).
@@ -131,6 +137,7 @@ function singlePresets(): ProviderPreset[] {
     capabilities: { chat: { registryId: 'openai' } },
     requiresBaseUrl: true,
     trustsModelCatalogue: false,
+    apiKeyOptional: true,
   });
   return presets;
 }
